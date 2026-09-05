@@ -11,7 +11,12 @@
       <div class="lnaddr-grabber" aria-hidden="true"><div class="lnaddr-grabber-bar"></div></div>
 
       <div class="lnaddr-header">
-        <q-btn flat round dense class="glass-back-btn" :aria-label="$t('Back')" v-close-popup>
+        <q-btn
+          flat round dense
+          class="glass-back-btn"
+          :aria-label="$t('Back')"
+          @click="onBack"
+        >
           <Icon icon="tabler:chevron-left" width="20" height="20" />
         </q-btn>
         <div class="lnaddr-title">{{ $t('Lightning Address') }}</div>
@@ -23,8 +28,8 @@
         <q-spinner size="28px" />
       </div>
 
-      <!-- Address owned: show + copy + remove -->
-      <template v-else-if="phase === 'set'">
+      <!-- Address held: show + copy + change -->
+      <template v-else-if="phase === 'view'">
         <div class="lnaddr-body">
           <div class="lnaddr-icon-tile">
             <Icon icon="tabler:at" width="26" height="26" />
@@ -33,54 +38,37 @@
           <div class="lnaddr-caption">
             {{ $t('Payments sent to this address arrive in this wallet. It stays yours after reinstalling or restoring from your recovery phrase.') }}
           </div>
-
-          <div v-if="confirmingRemove" class="lnaddr-remove-confirm">
-            {{ $t('This address stops working right away. The name stays reserved for this wallet.') }}
-          </div>
         </div>
 
         <div class="lnaddr-cta-row">
-          <template v-if="!confirmingRemove">
-            <q-btn
-              unelevated no-caps
-              class="lnaddr-cta-primary"
-              :label="$t('Copy address')"
-              @click="copyAddress"
-            />
-            <q-btn
-              flat no-caps
-              class="lnaddr-cta-danger"
-              :label="$t('Remove address')"
-              :loading="busy"
-              @click="confirmingRemove = true"
-            />
-          </template>
-          <template v-else>
-            <q-btn
-              unelevated no-caps
-              class="lnaddr-cta-primary"
-              :label="$t('Keep it')"
-              @click="confirmingRemove = false"
-            />
-            <q-btn
-              flat no-caps
-              class="lnaddr-cta-danger"
-              :label="$t('Remove')"
-              :loading="busy"
-              @click="removeAddress"
-            />
-          </template>
+          <q-btn
+            unelevated no-caps
+            class="lnaddr-cta-primary"
+            :label="$t('Copy address')"
+            @click="copyAddress"
+          />
+          <q-btn
+            flat no-caps
+            class="lnaddr-cta-secondary"
+            :label="$t('Change address')"
+            @click="enterChange"
+          />
         </div>
       </template>
 
-      <!-- No address yet: claim flow -->
+      <!-- Pick a new name (also the first claim when none exists yet) -->
       <template v-else>
         <div class="lnaddr-body">
           <div class="lnaddr-icon-tile">
             <Icon icon="tabler:at" width="26" height="26" />
           </div>
           <div class="lnaddr-caption lnaddr-caption-lead">
-            {{ $t('Pick a name. Payments sent to it arrive in this wallet.') }}
+            <template v-if="address">
+              {{ $t('Pick a new name. Your current name stays reserved for this wallet.') }}
+            </template>
+            <template v-else>
+              {{ $t('Pick a name. Payments sent to it arrive in this wallet.') }}
+            </template>
           </div>
 
           <div class="lnaddr-field" :class="{ 'lnaddr-field-focus': fieldFocused }">
@@ -114,10 +102,10 @@
           <q-btn
             unelevated no-caps
             class="lnaddr-cta-primary"
-            :label="$t('Claim address')"
+            :label="address ? $t('Use this name') : $t('Claim address')"
             :disable="availability !== 'available'"
             :loading="busy"
-            @click="claimAddress"
+            @click="submitUsername"
           />
         </div>
       </template>
@@ -127,10 +115,16 @@
 
 <script>
 /**
- * Bottom sheet for the wallet's Breez-hosted Lightning address
- * (user@<domain>). Only reachable when the active Spark wallet runs on the
- * Breez engine; the address is registered server-side against the wallet
- * identity, so it survives reinstall and recovery-phrase restore.
+ * Bottom sheet for a Spark wallet's Lightning address (user@<domain>,
+ * Breez engine only). Wallets receive a random address automatically at
+ * creation; this sheet shows it and lets the user replace it.
+ *
+ * There is deliberately no remove action - the rule is that every wallet
+ * holds an address. Changing is a single register call: the server keys a
+ * registration by (domain, pubkey), so claiming a new name atomically
+ * replaces the old one AND reserves the old name to this wallet, which can
+ * therefore take it back later. A failed change leaves the current address
+ * untouched - nothing to roll back.
  *
  * The server is the authority on username rules; the client pre-validates
  * lowercase a-z0-9 (3-32 chars) and surfaces the server's verdict through
@@ -152,12 +146,11 @@ export default {
   emits: ['update:modelValue', 'changed'],
   data() {
     return {
-      phase: 'loading', // 'loading' | 'set' | 'claim'
+      phase: 'loading', // 'loading' | 'view' | 'change'
       address: null,
       username: '',
       availability: 'idle', // 'idle' | 'invalid' | 'checking' | 'available' | 'taken' | 'error'
       busy: false,
-      confirmingRemove: false,
       fieldFocused: false,
       _checkTimer: null,
       _checkSeq: 0,
@@ -179,7 +172,7 @@ export default {
         case 'taken': return this.$t('Taken. Try another name.');
         case 'invalid': return this.$t('Use 3 to 32 lowercase letters or numbers');
         case 'error': return this.$t('Could not check right now. Try again.');
-        default: return ' ';
+        default: return ' ';
       }
     },
   },
@@ -203,7 +196,6 @@ export default {
     },
     async onOpen() {
       this.phase = 'loading';
-      this.confirmingRemove = false;
       this.username = '';
       this.availability = 'idle';
       try {
@@ -213,10 +205,29 @@ export default {
       } catch (e) {
         this.address = null;
       }
-      this.phase = this.address ? 'set' : 'claim';
-      if (this.phase === 'claim') {
+      // Addresses are auto-assigned, so 'view' is the normal case; the
+      // change form doubles as the manual claim when auto-assign failed.
+      this.phase = this.address ? 'view' : 'change';
+      if (this.phase === 'change') {
         this.$nextTick(() => this.$refs.usernameInput?.focus());
       }
+    },
+    onBack() {
+      // From the change form, back returns to the address view when there
+      // is one; everywhere else the sheet closes.
+      if (this.phase === 'change' && this.address) {
+        this.phase = 'view';
+        this.username = '';
+        this.availability = 'idle';
+        return;
+      }
+      this.$emit('update:modelValue', false);
+    },
+    enterChange() {
+      this.phase = 'change';
+      this.username = '';
+      this.availability = 'idle';
+      this.$nextTick(() => this.$refs.usernameInput?.focus());
     },
     scheduleAvailabilityCheck() {
       if (this._checkTimer) clearTimeout(this._checkTimer);
@@ -243,54 +254,34 @@ export default {
         }
       }, 400);
     },
-    async claimAddress() {
+    async submitUsername() {
       if (this.availability !== 'available' || this.busy) return;
+      const firstClaim = !this.address;
       this.busy = true;
       try {
         const provider = this._provider();
         const info = await provider.registerLightningAddress(this.username);
-        this.address = info?.lightningAddress || `${this.username}${this.domainSuffix}`;
-        this.phase = 'set';
-        this._syncStore(this.address);
-        this.$emit('changed', this.address);
-        this.$q.notify({ type: 'positive', message: this.$t('Lightning address ready') });
+        const address = info?.lightningAddress || `${this.username}${this.domainSuffix}`;
+        this.address = address;
+        this.phase = 'view';
+        const store = useWalletStore();
+        await store.setSparkLightningAddress(this.walletId, address);
+        this.$emit('changed', address);
+        this.$q.notify({
+          type: 'positive',
+          message: firstClaim ? this.$t('Lightning address ready') : this.$t('Lightning address updated'),
+        });
       } catch (e) {
         const msg = String(e?.message || '').toLowerCase();
         this.$q.notify({
           type: 'negative',
-          message: msg.includes('taken') || msg.includes('exists') || msg.includes('unavailable')
+          message: msg.includes('taken') || msg.includes('exists') || msg.includes('unavailable') || msg.includes('in use')
             ? this.$t('Taken. Try another name.')
             : this.$t('Could not claim the address. Try again.'),
         });
         this.scheduleAvailabilityCheck();
       } finally {
         this.busy = false;
-      }
-    },
-    async removeAddress() {
-      if (this.busy) return;
-      this.busy = true;
-      try {
-        const provider = this._provider();
-        await provider.deleteLightningAddress();
-        this.address = null;
-        this.confirmingRemove = false;
-        this.phase = 'claim';
-        this._syncStore(null);
-        this.$emit('changed', null);
-        this.$q.notify({ type: 'positive', message: this.$t('Lightning address removed') });
-      } catch (e) {
-        this.$q.notify({ type: 'negative', message: this.$t('Could not remove the address. Try again.') });
-      } finally {
-        this.busy = false;
-      }
-    },
-    _syncStore(address) {
-      // Keep the store's cached wallet info in step so the Settings row and
-      // the receive screen reflect the change without a reconnect.
-      const store = useWalletStore();
-      if (store.walletInfos[this.walletId]) {
-        store.walletInfos[this.walletId].lightningAddress = address;
       }
     },
     async copyAddress() {
@@ -456,14 +447,6 @@ export default {
   opacity: 1;
 }
 
-.lnaddr-remove-confirm {
-  margin-top: 14px;
-  font-size: 13px;
-  line-height: 1.45;
-  color: #d84c4c;
-  max-width: 300px;
-}
-
 .lnaddr-cta-row {
   display: flex;
   flex-direction: column;
@@ -484,9 +467,9 @@ export default {
   background: #15de72;
   color: #0c2417;
 }
-.lnaddr-cta-danger {
+.lnaddr-cta-secondary {
   height: 40px;
-  color: #d84c4c;
   font-size: 14px;
+  opacity: 0.8;
 }
 </style>

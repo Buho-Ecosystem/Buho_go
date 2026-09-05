@@ -42,6 +42,7 @@ import { buildLnurlPayCallbackUrl } from '../utils/lnurlPay.js';
 import { fiatRatesService } from '../utils/fiatRates.js';
 import { isBitcoinAddress } from '../utils/addressUtils.js';
 import { identityPublicKeyFromSparkAddress } from '../utils/sparkPayment.js';
+import { registerRandomLightningAddress } from '../utils/lightningAddressNames.js';
 import { setSparkEngine } from '../config/breez.js';
 import * as breezSdk from '../services/breezSdk.js';
 import {
@@ -203,10 +204,10 @@ export class BreezSparkWalletProvider extends WalletProvider {
       this.isConnected = true;
       this.connectionError = null;
 
-      // Best-effort niceties, never connect gates: private mode re-assert
-      // and the Lightning-address cache fill.
+      // Best-effort nicety, never a connect gate. The Lightning-address
+      // cache fills through the store's ensureLightningAddress step after
+      // the connect completes.
       this._armPrivacyMode();
-      this._refreshLightningAddressCache();
 
       return true;
     } catch (error) {
@@ -266,12 +267,61 @@ export class BreezSparkWalletProvider extends WalletProvider {
     }
   }
 
-  _refreshLightningAddressCache() {
+  /**
+   * Make sure this wallet holds a Lightning address, assigning one when
+   * needed. The rule is that every Spark wallet on this engine has one.
+   *
+   * Resolution order:
+   *   1. The server already has an address for this identity — keep it.
+   *      (Registrations are server-side per pubkey, so restored wallets
+   *      find their old address here and nothing is overwritten.)
+   *   2. The server confirms NONE, but this wallet is on record as having
+   *      held one (`previousAddress`) — re-register that exact username.
+   *      The server reserves a released name for the pubkey that released
+   *      it, so asking for it back restores the wallet precisely; if the
+   *      name has since moved on, the request is refused and a fresh name
+   *      is minted, which is the right answer in that case.
+   *   3. Mint a random {adjective}{animal}{digits} name, retrying on
+   *      collision.
+   *
+   * Throws when the server LOOKUP fails: registering blind could orphan an
+   * address that actually exists. Callers retry on the next connect.
+   *
+   * @param {Object} [options]
+   * @param {string|null} [options.previousAddress] - last address this
+   *   wallet is known to have held (user@domain or bare username)
+   * @returns {Promise<string>} the wallet's address (kept, reclaimed, or new)
+   */
+  async ensureLightningAddress({ previousAddress = null } = {}) {
+    this._ensureConnected();
+
+    let info;
     try {
-      this.sdk.getLightningAddress()
-        .then((info) => { this._lightningAddress = info?.lightningAddress || null; })
-        .catch(() => { /* dormant without a registered domain */ });
-    } catch (e) { /* ignore */ }
+      info = await this.sdk.getLightningAddress();
+    } catch (error) {
+      throw new Error('Lightning address lookup failed — skipped auto-registration');
+    }
+    if (info?.lightningAddress) {
+      this._lightningAddress = info.lightningAddress;
+      return info.lightningAddress;
+    }
+
+    const previousUsername = previousAddress
+      ? String(previousAddress).trim().split('@')[0]
+      : '';
+    if (previousUsername) {
+      try {
+        const reclaimed = await this.sdk.registerLightningAddress({ username: previousUsername });
+        if (reclaimed?.lightningAddress) {
+          this._lightningAddress = reclaimed.lightningAddress;
+          return reclaimed.lightningAddress;
+        }
+      } catch (err) {
+        console.warn('Could not reclaim the previous Lightning address:', err?.message || err);
+      }
+    }
+
+    return registerRandomLightningAddress(this);
   }
 
   async connect() {

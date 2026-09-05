@@ -17,6 +17,7 @@ import {
   deleteWalletStorage as deleteBreezStorage,
   deleteAllStorage as deleteAllBreezStorage,
 } from '../services/breezSdk';
+import { isBreezEngine } from '../config/breez';
 import { useAutoWithdrawStore } from './autoWithdraw';
 import { useTransactionMetadataStore } from './transactionMetadata';
 import { createClaimedDepositRegistry } from '../utils/claimedDeposits.js';
@@ -295,10 +296,13 @@ export const useWalletStore = defineStore('wallet', {
       };
 
       // Spark wallets have a lightning address only on the Breez engine
-      // (registered against the wallet identity, surfaced via getInfo into
-      // walletInfos). On the direct engine this is always null.
+      // (registered server-side against the wallet identity). Live wallet
+      // info wins; the persisted metadata copy keeps it visible while the
+      // wallet is locked or not yet connected. Always null on the direct
+      // engine (neither source is ever written there).
       if (activeWallet.type === 'spark') {
-        const breezAddress = state.walletInfos?.[activeWallet.id]?.lightningAddress;
+        const breezAddress = state.walletInfos?.[activeWallet.id]?.lightningAddress
+          || activeWallet.metadata?.lud16;
         return isValidLnAddress(breezAddress) ? breezAddress : null;
       }
 
@@ -1060,6 +1064,12 @@ export const useWalletStore = defineStore('wallet', {
         // live Spark wallets corrupt each other's SDK auth session.
         await this.connectAllSparkWallets();
 
+        // Breez engine: the active wallet received its Lightning address
+        // during connect; give the inactive half its own now with a short
+        // dedicated connection, released right after. Non-fatal — the
+        // ensure-on-connect step assigns it on first activation instead.
+        await this._assignAddressToInactiveSparkWallet(businessWallet, personalWallet);
+
         // Legacy store-level backup flag
         if (walletData.isRestore) {
           this.hasBackedUp = true;
@@ -1278,6 +1288,21 @@ export const useWalletStore = defineStore('wallet', {
           await this.persistState();
         }
 
+        // Every Spark wallet on the Breez engine holds a Lightning address:
+        // keep the server's one, reclaim the remembered one, or mint a
+        // random name (the user can change it in Settings). Non-fatal - a
+        // failed lookup or registration retries on the next connect.
+        if (typeof provider.ensureLightningAddress === 'function') {
+          try {
+            const address = await provider.ensureLightningAddress({
+              previousAddress: wallet.metadata.lud16 || null,
+            });
+            await this.setSparkLightningAddress(walletId, address);
+          } catch (error) {
+            console.warn('Lightning address setup skipped:', error?.message || error);
+          }
+        }
+
       } catch (error) {
         this.connectionStates[walletId] = {
           connected: false,
@@ -1285,6 +1310,52 @@ export const useWalletStore = defineStore('wallet', {
           error: error.message,
         };
         throw error;
+      }
+    },
+
+    /**
+     * Record a Spark wallet's Lightning address wherever the app reads it:
+     * `metadata.lud16` (persisted; also the memory the reclaim rule uses)
+     * and the live wallet info (Settings row, receive screen). Passing null
+     * is a no-op — the address rule is "always have one", never "clear it".
+     */
+    async setSparkLightningAddress(walletId, address) {
+      if (!address) return;
+      const wallet = this.wallets.find(w => w.id === walletId);
+      if (!wallet) return;
+      if (this.walletInfos[walletId]) {
+        this.walletInfos[walletId].lightningAddress = address;
+      }
+      wallet.metadata = wallet.metadata || {};
+      if (wallet.metadata.lud16 !== address) {
+        wallet.metadata.lud16 = address;
+        await this.persistState();
+      }
+    },
+
+    /**
+     * Give the inactive half of a freshly created Spark pair its Lightning
+     * address without waiting for its first activation. Connecting it runs
+     * the ensure-on-connect assignment; the connection is released right
+     * after so the single-live invariant holds. Breez engine only, and
+     * strictly best-effort — on any failure the wallet simply gets its
+     * address the first time the user switches to it.
+     */
+    async _assignAddressToInactiveSparkWallet(inactiveWallet, activeWallet) {
+      if (!isBreezEngine()) return;
+      if (!inactiveWallet || inactiveWallet.id === activeWallet?.id) return;
+      if (inactiveWallet.metadata?.lud16) return;
+      try {
+        await this.connectSparkWallet(inactiveWallet.id);
+      } catch (error) {
+        console.warn(
+          `Deferred Lightning address for ${inactiveWallet.name}:`,
+          error?.message || error
+        );
+      } finally {
+        try {
+          await this.disconnectWallet(inactiveWallet.id);
+        } catch (e) { /* the active connection stays untouched either way */ }
       }
     },
 
