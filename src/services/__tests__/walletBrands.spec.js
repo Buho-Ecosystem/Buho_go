@@ -37,6 +37,18 @@ test('Wallet of Satoshi: resolves name + logo from walletofsatoshi.com', () => {
   assert.equal(b.logo, '/Social_Wallet_logos/walletofsatoshi-icon.svg')
 })
 
+test('Community domains: ereignishorizont.xyz crops, bamo21.de is contained', () => {
+  const eh = matchWalletBrand('ereignishorizont.xyz')
+  assert.equal(eh.name, 'Ereignishorizont')
+  assert.equal(eh.logo, '/Social_Wallet_logos/Axel_ereignishorizont.png')
+  assert.ok(!eh.logoContain)
+
+  const bamo = matchWalletBrand('bamo21.de')
+  assert.equal(bamo.name, 'Axels Gemüsegärten')
+  assert.equal(bamo.logo, '/Social_Wallet_logos/Bamo_Axels_Guemuesegaerten.png')
+  assert.equal(bamo.logoContain, true)
+})
+
 test('Coinsnap: resolves from coinsnap.app and is contained, not cropped', () => {
   const b = matchWalletBrand('coinsnap.app')
   assert.equal(b.name, 'Coinsnap')
