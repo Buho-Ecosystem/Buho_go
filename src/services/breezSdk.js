@@ -117,12 +117,21 @@ function untrackDbName(name) {
 }
 
 async function buildInstance(walletId, { mnemonic, accountNumber, network }) {
+  // The SDK itself refuses to build on mainnet without a key ("Missing
+  // Breez API key", verified in-browser); fail before WASM init with a
+  // message that names the fix.
+  if (!BREEZ_API_KEY) {
+    const err = new Error(
+      'Breez engine needs an API key — set VITE_BREEZ_API_KEY in .env.local and rebuild.'
+    );
+    err.code = 'BREEZ_API_KEY_MISSING';
+    throw err;
+  }
+
   const mod = await ensureWasmInit();
 
   const config = mod.defaultConfig(toBreezNetwork(network));
-  if (BREEZ_API_KEY) {
-    config.apiKey = BREEZ_API_KEY;
-  }
+  config.apiKey = BREEZ_API_KEY;
   // Spark private mode from the first initialization onward; the provider
   // additionally re-asserts it per connect via updateUserSettings.
   config.privateEnabledDefault = true;
