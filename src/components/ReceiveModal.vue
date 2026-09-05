@@ -64,14 +64,6 @@
                 <Icon icon="tabler:edit" width="14" height="14" />
               </button>
 
-              <!-- The Lightning rail rides a swap; disclose the net amount. -->
-              <div
-                v-if="generatedInvoice && generatedInvoice.amountReceivable && generatedInvoice.amountReceivable < generatedInvoice.amount"
-                class="address-hint hero-subhint"
-                :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'"
-              >
-                {{ $t('You receive about {n} sats after the network fee', { n: generatedInvoice.amountReceivable.toLocaleString() }) }}
-              </div>
             </template>
 
             <div v-if="arkadeBoardingAddress" class="qr-section">
@@ -198,10 +190,6 @@
             </span>
             <span class="ln-fiat" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'">
               {{ formatInvoiceFiat(generatedInvoice.amount) }}
-            </span>
-            <span v-if="generatedInvoice.amountReceivable && generatedInvoice.amountReceivable < generatedInvoice.amount"
-                  class="ln-memo" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'">
-              {{ $t('You receive about {n} sats after the network fee', { n: generatedInvoice.amountReceivable.toLocaleString() }) }}
             </span>
             <span v-if="generatedInvoice.description && generatedInvoice.description !== 'BuhoGO Payment'"
                   class="ln-memo" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'">
@@ -390,7 +378,7 @@
             no-caps
             unelevated
           >
-            <span v-if="!isCreatingInvoice">{{ $t('Create Invoice') }}</span>
+            <span v-if="!isCreatingInvoice">{{ isArkadeWallet ? $t('Set Amount') : $t('Create Invoice') }}</span>
             <template v-slot:loading>
               <q-spinner-dots class="q-mr-sm"/>
               {{ $t('Creating...') }}
@@ -655,6 +643,9 @@ export default {
         lightning: invoice,
         ark: this.arkadeAddress || '',
         amountSats: this.generatedInvoice?.amount || null,
+        // With no invoice to carry a memo, the note rides BIP21's own
+        // message= field so BIP21-aware payers still see it.
+        message: this.generatedInvoice?.description || '',
       });
     },
     // The user-created specific-amount invoice screen (LNbits / NWC). The
@@ -677,7 +668,9 @@ export default {
     },
     headerTitle() {
       if (this.showSpecificInvoiceView || this.showAmountKeypadView) {
-        return this.$t('Invoice');
+        // Arkade mints no invoice while its Lightning rail is out - the
+        // keypad only sets the request amount on the unified code.
+        return this.isArkadeWallet ? this.$t('Set Amount') : this.$t('Invoice');
       }
       return this.$t('Receive');
     },
@@ -1100,9 +1093,18 @@ export default {
       }
       let baseline = 0;
       try { baseline = Number((await provider.getBalance())?.balance ?? 0); } catch (e) { /* ignore */ }
+      // The awaits above race a quick modal close (and the four call sites
+      // never await this method): registering now would orphan a listener
+      // that pops the success screen with a stale baseline after close.
+      if (!this.show) return;
+      if (this._arkadeStopIncoming) {
+        try { this._arkadeStopIncoming(); } catch { /* already gone */ }
+        this._arkadeStopIncoming = null;
+      }
       this.paymentStatus = PaymentStatus.PENDING;
       try {
         this._arkadeStopIncoming = await provider.startIncomingFundsListener(async () => {
+          if (!this.show) return;
           if (this.isPaymentConfirmed) return;
           let received;
           try {
@@ -1656,9 +1658,6 @@ export default {
           payment_hash: paymentHash,
           invoice_id: invoice.invoice_id || invoice.id || null,
           amount: invoice.amount || this.amountInSats,
-          // Carry the Arkade reverse-swap net amount through so the receive
-          // view can show it (undefined for other wallet types -> hint hidden).
-          amountReceivable: invoice.amountReceivable,
           description: invoice.description || this.description || 'BuhoGO Payment',
           expires_at: invoice.expires_at || invoice.expiresAt,
           created_at: Math.floor(Date.now() / 1000)

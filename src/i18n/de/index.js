@@ -137,7 +137,6 @@ export default {
   "Switch to Arkade wallet to pay this address": "Wechsle zum Arkade Wallet, um diese Adresse zu bezahlen",
   "Switch to Arkade wallet to pay this contact": "Wechsle zum Arkade Wallet, um diesen Kontakt zu bezahlen",
   "Switch to your Arkade wallet to pay this address": "Wechsle zu deinem Arkade Wallet, um diese Adresse zu bezahlen",
-  "Receive over Lightning (a small swap fee applies)": "Über Lightning empfangen (eine kleine Swap-Gebühr fällt an)",
   "Share this address to receive instant, near zero fee payments from other Arkade wallets.": "Teile diese Adresse, um sofortige Zahlungen mit fast null Gebühren von anderen Arkade Wallets zu empfangen.",
   // ─── Arkade Lightning (swap) errors ───
   "Sending to an on-chain Bitcoin address from Arkade is coming soon. Use a Lightning or Arkade address for now.": "Das Senden an eine On-Chain Bitcoin Adresse von Arkade kommt bald. Nutze vorerst eine Lightning oder Arkade Adresse.",
@@ -169,7 +168,6 @@ export default {
   "That amount is too small to send to a Bitcoin address. The minimum is {min} sats.": "Dieser Betrag ist zu klein, um an eine Bitcoin Adresse zu senden. Das Minimum sind {min} Sats.",
   "Sending to a Bitcoin address didn't go through. Please try again.": "Das Senden an eine Bitcoin Adresse hat nicht geklappt. Bitte versuche es erneut.",
   "Switch to a Spark or Arkade wallet to send Bitcoin": "Wechsle zu einem Spark oder Arkade Wallet, um Bitcoin zu senden",
-  "You receive about {n} sats after the network fee": "Du erhältst etwa {n} Sats nach Abzug der Netzwerkgebühr",
   // The text that rode along with the payment (payer comment or invoice
   // description), kept distinct from the recipient's reply below.
   "Message": "Nachricht",
@@ -1030,6 +1028,8 @@ export default {
   "Connected": "Verbunden",
   "Total Balance": "Gesamtguthaben",
   "Online": "Online",
+  "Kiosk needs a wallet that can create Lightning invoices. Add a Spark, LNbits or NWC wallet first.": "Der Kiosk braucht ein Wallet, das Lightning-Rechnungen erstellen kann. Füge zuerst ein Spark-, LNbits- oder NWC-Wallet hinzu.",
+  "Lightning transfers are temporarily unavailable on Arkade - use the Arkade option": "Lightning-Transfers sind auf Arkade vorübergehend nicht verfügbar - nutze die Arkade-Option",
   "Arkade pays instantly - on-chain needs a confirmation": "Arkade zahlt sofort - On-Chain braucht eine Bestätigung",
   "Lightning is temporarily unavailable on Arkade - switch to another wallet": "Lightning ist auf Arkade vorübergehend nicht verfügbar - wechsle zu einem anderen Wallet",
   "Lightning is temporarily unavailable on Arkade wallets. Your Arkade address and Bitcoin address still work, and any other wallet can pay Lightning.": "Lightning ist auf Arkade-Wallets vorübergehend nicht verfügbar. Deine Arkade-Adresse und Bitcoin-Adresse funktionieren weiterhin, und jedes andere Wallet kann Lightning zahlen.",

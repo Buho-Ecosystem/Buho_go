@@ -42,20 +42,6 @@ import { MnemonicIdentity } from '@arkade-os/sdk';
 export const ARKADE_MAINNET_SERVER = 'https://arkade.computer';
 
 /**
- * Mainnet Boltz endpoint for Arkade Lightning swaps. We pin the GENERIC Boltz
- * `https://api.boltz.exchange` (also boltz-swap@0.3.38's own default).
- *
- * The Arkade docs point at the dedicated `https://api.ark.boltz.exchange`, but
- * verified empirically (2026-06-10): that host's swap WebSocket
- * `wss://api.ark.boltz.exchange/v2/ws` NEVER opens (times out every attempt),
- * so the SwapManager can't track settlement and every Lightning swap stalls —
- * which is the WS-reconnect storm + "Load failed" seen on-device. The generic
- * host serves the SAME mainnet ARK<->BTC pairs (identical limits, same
- * reverse-swap hash, even a lower submarine fee), full CORS, AND a working WS.
- * Pinned explicitly so a future package-default change can't silently move us
- * back to the broken host. (Re-verify if Arkade fixes api.ark's WS.)
- */
-/**
  * SDK `NetworkName` for the Ark server BuhoGO ships with. `'bitcoin'` is
  * mainnet. Kept as a constant so flipping to a testnet build is a one-line
  * change. Address HRP follows the server's network: `ark1…` (bitcoin) vs

@@ -69,8 +69,11 @@ export function canWalletPay(walletType, type) {
 
 /**
  * The one localized "switch wallet" explanation per rail — every
- * surface shows the same words for the same constraint. Empty string
- * for lightning rails (no switch needed).
+ * surface shows the same words for the same constraint. Callers only
+ * render this after canWalletPay() said no; since Arkade is the only
+ * wallet that can fail the lightning rail (temporary outage), the
+ * lightning fallback names it. Revisit if another wallet ever blocks
+ * that rail.
  * @param {string} type  payment type or addressType
  * @param {(key: string) => string} t  vue-i18n translate
  * @returns {string}

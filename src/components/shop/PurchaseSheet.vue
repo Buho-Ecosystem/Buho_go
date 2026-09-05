@@ -577,6 +577,10 @@ export default {
       const price = this.priceSats || 0;
       const out = [];
       for (const w of this.walletStore.wallets || []) {
+        // Store purchases are Lightning invoices; Arkade's Lightning rail is
+        // out of service (Boltz retired) and would fail after the order is
+        // marked attempted.
+        if (w.type === 'arkade') continue;
         const connected = !!this.walletStore.connectionStates?.[w.id]?.connected;
         const balance = this.walletStore.balances?.[w.id] || 0;
         if (!connected) continue;

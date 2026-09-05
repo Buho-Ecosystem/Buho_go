@@ -344,11 +344,6 @@ function translateErrorCode(error, t) {
     case 'ARKADE_OFFBOARD_FAILED':
       return t("Sending to a Bitcoin address didn't go through. Please try again.");
     default:
-      if (code.startsWith('ARKADE_SWAP_')) {
-        return error.isRefundable
-          ? t("The Lightning payment failed, so your funds were returned. Please try again.")
-          : t("The Lightning payment couldn't be completed. Please try again.");
-      }
       return null;
   }
 }

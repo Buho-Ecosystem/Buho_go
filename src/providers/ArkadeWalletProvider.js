@@ -64,11 +64,10 @@ import {
 // LNbits `#FF1FE1` convention for `getInfo().color`.
 const ARKADE_COLOR = '#F14317';
 
-// IndexedDB database the boltz-swap package persists pending swaps in (its
 // package default). Single-instance: BuhoGO allows exactly one Arkade wallet,
 // so it is deleted together with the wallet's own cache on removal.
-// The retired boltz-swap package's IndexedDB. The package is gone; the name
-// stays so deleteStorage() can still clear the residue on old installs.
+// The retired boltz-swap package's IndexedDB name, kept only so
+// deleteStorage() can clear the residue on old installs.
 const BOLTZ_SWAP_DB = 'arkade-boltz-swap';
 
 /** Per-wallet IndexedDB database backing the SDK's repositories. */
@@ -508,7 +507,10 @@ export class ArkadeWalletProvider extends WalletProvider {
   _lightningUnavailable() {
     const err = new Error('Lightning is temporarily unavailable for Arkade wallets');
     err.code = 'ARKADE_LN_UNAVAILABLE';
-    this.setError(err);
+    // Deliberately NOT setError(): the base class flips isConnected on it,
+    // and a blocked Lightning attempt must not mark a healthy ark1/onchain
+    // wallet as disconnected (that cascades into codeless errors and a
+    // leaked replacement provider on the store's next self-heal).
     return err;
   }
 
@@ -538,10 +540,15 @@ export class ArkadeWalletProvider extends WalletProvider {
     throw this._lightningUnavailable();
   }
 
+  /** Lightning receive lookups are out of service with their rail. */
+  async lookupInvoice() {
+    this._ensureConnected();
+    throw this._lightningUnavailable();
+  }
+
   /**
-   * Subscribe to incoming funds (native ark1 receipts AND claimed Lightning
-   * reverse swaps both land as VTXOs here). Returns/stores a stop handle that
-   * disconnect() also tears down.
+   * Subscribe to incoming funds (native ark1 receipts land as VTXOs here).
+   * Returns/stores a stop handle that disconnect() also tears down.
    * @param {(funds: any) => void} callback
    * @returns {Promise<() => void>}
    */

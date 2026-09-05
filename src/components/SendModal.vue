@@ -361,7 +361,7 @@ import { useWalletStore } from '../stores/wallet';
 import { readClipboardCrossPlatform } from '../utils/shopClipboard.js';
 import { isSARetailerQR, convertToLightningAddress, getMerchantInfo, SA_RETAIL_SOURCE } from '../utils/merchantQR';
 import { parseBip21, selectBip21Destination, extractLnFallbackParam } from '../utils/bip21';
-import { isSilentPaymentAddress,
+import { isSilentPaymentAddress, nativeRailsFromBip21,
   isSparkAddress,
   isArkadeAddress,
   isBolt12Offer,
@@ -1017,6 +1017,21 @@ export default {
 
       const bip21 = parseBip21(trimmed);
       if (bip21) {
+        // A unified QR offers several rails; pick one the ACTIVE wallet can
+        // actually pay before falling back to the generic preference order.
+        // Without this, an Arkade wallet scanning bitcoin:?lightning=..&ark=..
+        // classifies as a (blocked) Lightning invoice and never reaches the
+        // ark leg it pays natively.
+        const rails = nativeRailsFromBip21(bip21);
+        if (this.walletStore.isActiveWalletSpark && rails.spark) {
+          return { cleaned: rails.spark, bip21 };
+        }
+        if (this.walletStore.isActiveWalletArkade) {
+          if (rails.ark) return { cleaned: rails.ark, bip21 };
+          // No ark leg: the on-chain base is still payable (Ramps offboard),
+          // while the lightning leg is not - prefer what works.
+          if (bip21.address) return { cleaned: bip21.address, bip21 };
+        }
         const destination = selectBip21Destination(bip21);
         return { cleaned: destination ? destination.value : '', bip21 };
       }

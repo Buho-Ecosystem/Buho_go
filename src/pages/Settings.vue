@@ -520,6 +520,9 @@
             <p class="kiosk-setup-desc">{{ $t('kiosk.selectDestinationDesc') }}</p>
 
             <div class="kiosk-wallet-list">
+              <p v-if="!kioskEligibleWallets.length" class="kiosk-wallet-empty" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'">
+                {{ $t('Kiosk needs a wallet that can create Lightning invoices. Add a Spark, LNbits or NWC wallet first.') }}
+              </p>
               <button
                 v-for="w in kioskEligibleWallets" :key="w.id"
                 type="button"
@@ -2105,13 +2108,17 @@
                 :class="[
                   awConfigForm.payoutType === 'lightning' ? 'aw-pill-selected aw-pill-sel-spark' : '',
                   $q.dark.isActive ? 'aw-pill-dark' : 'aw-pill-light',
-                  !awConfigForm.enabled ? 'aw-pill-disabled' : ''
+                  (!awConfigForm.enabled || awArkadeLightningBlocked) ? 'aw-pill-disabled' : ''
                 ]"
-                @click="awConfigForm.enabled && (awConfigForm.payoutType = 'lightning')"
+                @click="awConfigForm.enabled && !awArkadeLightningBlocked && (awConfigForm.payoutType = 'lightning')"
               >
                 <Icon icon="tabler:bolt" width="16" height="16" />
                 {{ $t('Lightning') }}
               </div>
+            </div>
+            <div v-if="awArkadeLightningBlocked" class="aw-spark-hint" :class="$q.dark.isActive ? 'aw-hint-dark' : 'aw-hint-light'">
+              <Icon icon="tabler:info-circle" width="14" height="14" />
+              {{ $t('Lightning transfers are temporarily unavailable on Arkade - use the Arkade option') }}
             </div>
             <div v-if="awConfigForm.payoutType === 'arkade'" class="aw-spark-hint" :class="$q.dark.isActive ? 'aw-hint-dark' : 'aw-hint-light'">
               <Icon icon="tabler:discount-check" width="14" height="14" />
@@ -2517,6 +2524,15 @@ export default {
     }
   },
   computed: {
+    /**
+     * An Arkade wallet's auto-withdraw cannot ride Lightning while the rail
+     * is out of service (Boltz retired) - the pill is disabled and existing
+     * lightning configs are steered to the Arkade option when opened.
+     */
+    awArkadeLightningBlocked() {
+      return this.awConfigWallet?.type === 'arkade';
+    },
+
     /**
      * Wallets the kiosk can charge through. Kiosk charges are Lightning
      * invoices, and Arkade's Lightning rail is out of service (Boltz
@@ -3213,9 +3229,14 @@ export default {
         // otherwise default to the currently active wallet so the wizard's
         // wallet step always has a sensible default and can never produce
         // a half-configured state (kiosk enabled, no destination).
-        this.kioskWalletSelection = this.walletStore.kioskWalletId
-          || this.walletStore.activeWalletId
-          || '';
+        // Only pre-select a wallet the kiosk can actually charge through
+        // (Arkade is filtered out of the picker while its Lightning rail is
+        // out; a hidden ineligible selection would let Next persist it).
+        const eligible = new Set(this.kioskEligibleWallets.map((w) => w.id));
+        const preferred = this.walletStore.kioskWalletId || this.walletStore.activeWalletId || '';
+        this.kioskWalletSelection = eligible.has(preferred)
+          ? preferred
+          : (this.kioskEligibleWallets[0]?.id || '');
         this.showKioskPinSetupDialog = true;
       } else {
         this.showKioskDisableDialog = true;
@@ -3224,6 +3245,8 @@ export default {
 
     async advanceFromKioskWalletSelect() {
       if (!this.kioskWalletSelection) return;
+      // Defense in depth: never persist a wallet the picker doesn't offer.
+      if (!this.kioskEligibleWallets.some((w) => w.id === this.kioskWalletSelection)) return;
       await this.walletStore.setKioskWallet(this.kioskWalletSelection);
       this.kioskPinSetupStep = 'enter';
     },
@@ -4588,10 +4611,15 @@ export default {
       this.awConfigEntryName = entryName || wallet.name;
       const existing = this.getAutoWithdrawConfig(this.awConfigWalletId);
       if (existing) {
+        // A persisted Arkade+Lightning config predates the outage; steer it
+        // to the Arkade option so the sheet never shows a dead selection.
+        const existingPayoutType = (wallet.type === 'arkade' && (existing.payoutType || 'lightning') === 'lightning')
+          ? 'arkade'
+          : (existing.payoutType || 'lightning');
         this.awConfigForm = {
           enabled: existing.enabled,
           thresholdSats: existing.thresholdSats,
-          payoutType: existing.payoutType || 'lightning',
+          payoutType: existingPayoutType,
           lightningAddress: existing.lightningAddress || '',
           bitcoinAddress: existing.bitcoinAddress || '',
           sparkAddress: existing.sparkAddress || '',

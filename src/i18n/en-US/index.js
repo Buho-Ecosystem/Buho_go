@@ -131,7 +131,6 @@ export default {
   "Switch to Arkade wallet to pay this address": "Switch to Arkade wallet to pay this address",
   "Switch to Arkade wallet to pay this contact": "Switch to Arkade wallet to pay this contact",
   "Switch to your Arkade wallet to pay this address": "Switch to your Arkade wallet to pay this address",
-  "Receive over Lightning (a small swap fee applies)": "Receive over Lightning (a small swap fee applies)",
   "Share this address to receive instant, near zero fee payments from other Arkade wallets.": "Share this address to receive instant, near zero fee payments from other Arkade wallets.",
   // ─── Arkade Lightning (swap) errors ───
   "Sending to an on-chain Bitcoin address from Arkade is coming soon. Use a Lightning or Arkade address for now.": "Sending to an on-chain Bitcoin address from Arkade is coming soon. Use a Lightning or Arkade address for now.",
@@ -163,7 +162,6 @@ export default {
   "That amount is too small to send to a Bitcoin address. The minimum is {min} sats.": "That amount is too small to send to a Bitcoin address. The minimum is {min} sats.",
   "Sending to a Bitcoin address didn't go through. Please try again.": "Sending to a Bitcoin address didn't go through. Please try again.",
   "Switch to a Spark or Arkade wallet to send Bitcoin": "Switch to a Spark or Arkade wallet to send Bitcoin",
-  "You receive about {n} sats after the network fee": "You receive about {n} sats after the network fee",
   // The text that rode along with the payment (payer comment or invoice
   // description), kept distinct from the recipient's reply below.
   "Message": "Message",
@@ -970,6 +968,8 @@ export default {
   "Connected": "Connected",
   "Total Balance": "Total Balance",
   "Online": "Online",
+  "Kiosk needs a wallet that can create Lightning invoices. Add a Spark, LNbits or NWC wallet first.": "Kiosk needs a wallet that can create Lightning invoices. Add a Spark, LNbits or NWC wallet first.",
+  "Lightning transfers are temporarily unavailable on Arkade - use the Arkade option": "Lightning transfers are temporarily unavailable on Arkade - use the Arkade option",
   "Arkade pays instantly - on-chain needs a confirmation": "Arkade pays instantly - on-chain needs a confirmation",
   "Lightning is temporarily unavailable on Arkade - switch to another wallet": "Lightning is temporarily unavailable on Arkade - switch to another wallet",
   "Lightning is temporarily unavailable on Arkade wallets. Your Arkade address and Bitcoin address still work, and any other wallet can pay Lightning.": "Lightning is temporarily unavailable on Arkade wallets. Your Arkade address and Bitcoin address still work, and any other wallet can pay Lightning.",

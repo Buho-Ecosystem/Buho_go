@@ -300,8 +300,12 @@ export const useAutoWithdrawStore = defineStore('autoWithdraw', {
         throw err
       }
 
-      // Lightning (default): reuse the shared LN-address → invoice resolver.
-      return this._executeLightningPayout(configKey, sendAmount, config, walletStore, WALLET_TYPES.ARKADE)
+      // Lightning payouts are gated off upstream (the rail is out of
+      // service); a config that still reaches here must fail with the coded
+      // outage error, never attempt the dead swap path.
+      const err = new Error('Lightning is temporarily unavailable for Arkade wallets')
+      err.code = 'ARKADE_LN_UNAVAILABLE'
+      throw err
     },
 
     /**

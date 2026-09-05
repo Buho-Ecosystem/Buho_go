@@ -4224,6 +4224,9 @@ export default {
         const safeMessage = this.redactPinFromString(error?.message || 'Something went wrong');
         const safeError = new Error(safeMessage);
         safeError.name = error?.name || 'Error';
+        // Carry the code: translateErrorCode keys on it (ARKADE_LN_UNAVAILABLE
+        // and friends), and codes never contain PINs.
+        if (error?.code) safeError.code = error.code;
 
         console.error('Withdraw failed:', safeMessage);
         this.lnurlWithdrawStatus = 'error';
@@ -4257,10 +4260,12 @@ export default {
         if (!provider) throw new Error('No LNbits provider available');
         result = await provider.createInvoice({ amount: amountSats, description });
       } else if (walletType === 'arkade') {
-        // Arkade receives Lightning via a Boltz reverse swap; the provider
-        // returns { paymentRequest, paymentHash } normalized below.
-        const provider = await this.walletStore.ensureArkadeConnected();
-        result = await provider.createInvoice({ amount: amountSats, description });
+        // Arkade's Lightning rail is out of service (Boltz retired); an
+        // LNURL-withdraw needs an invoice this wallet cannot mint. Throw the
+        // coded error so the dialog shows the translated outage copy.
+        const err = new Error('Lightning is temporarily unavailable for Arkade wallets');
+        err.code = 'ARKADE_LN_UNAVAILABLE';
+        throw err;
       } else {
         // NWC - LightningPaymentService uses positional args and returns snake_case
         const activeWallet = this.getActiveWallet();
