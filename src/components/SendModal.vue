@@ -358,6 +358,7 @@ import { Capacitor } from '@capacitor/core';
 import QrScanSheet from './QrScanSheet.vue';
 import { useAddressBookStore } from '../stores/addressBook';
 import { useWalletStore } from '../stores/wallet';
+import { readClipboardCrossPlatform } from '../utils/shopClipboard.js';
 import { isSARetailerQR, convertToLightningAddress, getMerchantInfo, SA_RETAIL_SOURCE } from '../utils/merchantQR';
 import { parseBip21, selectBip21Destination, extractLnFallbackParam } from '../utils/bip21';
 import {
@@ -1046,32 +1047,11 @@ export default {
     },
 
     async pasteFromClipboard() {
-      let clipboardText = '';
-
-      // Modern Clipboard API
-      if (navigator.clipboard && navigator.clipboard.readText) {
-        try {
-          clipboardText = await navigator.clipboard.readText();
-        } catch (e) {
-          console.warn('clipboard.readText() failed:', e);
-        }
-      }
-
-      // Some Android WebViews block readText() but allow read()
-      if (!clipboardText && navigator.clipboard && navigator.clipboard.read) {
-        try {
-          const items = await navigator.clipboard.read();
-          for (const item of items) {
-            if (item.types.includes('text/plain')) {
-              const blob = await item.getType('text/plain');
-              clipboardText = await blob.text();
-              break;
-            }
-          }
-        } catch (e) {
-          console.warn('clipboard.read() failed:', e);
-        }
-      }
+      // Native plugin first, WebView APIs as fallback: on Android the
+      // WebView rejects programmatic reads, which used to leave the Paste
+      // button focusing an empty field and coaching a long-press instead
+      // of pasting.
+      const clipboardText = await readClipboardCrossPlatform();
 
       // Always land the clipboard in the visible field for the user to
       // verify before committing. No silent fire-and-forget — too easy
