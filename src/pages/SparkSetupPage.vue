@@ -29,7 +29,8 @@
 
 <script>
 import { useWalletStore } from '../stores/wallet';
-import { SparkWalletProvider } from '../providers/SparkWalletProvider';
+import { generateMnemonic } from '@scure/bip39';
+import { wordlist } from '@scure/bip39/wordlists/english';
 
 export default {
   name: 'SparkSetupPage',
@@ -56,9 +57,9 @@ export default {
   methods: {
     async generateAndCreate() {
       try {
-        const { wallet, mnemonic } = await SparkWalletProvider.createNewWallet('MAINNET');
-        this.mnemonic = mnemonic;
-        wallet.cleanupConnections();
+        // A fresh 12-word BIP-39 phrase; the wallet itself is derived and
+        // validated by the SDK during addSparkWallet's connect.
+        this.mnemonic = generateMnemonic(wordlist, 128);
       } catch (error) {
         console.error('Failed to generate wallet:', error);
         this.walletStore.showPaymentError(error, {

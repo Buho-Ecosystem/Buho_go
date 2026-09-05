@@ -57,7 +57,7 @@ const RAW_TYPE_BY_METHOD = Object.freeze({
 
 /**
  * Map one Breez Payment onto the transaction-row shape BuhoGO's normalizer
- * and transaction UIs consume (same contract as the direct engine's rows).
+ * and transaction UIs consume.
  */
 export function mapBreezPaymentToTx(payment) {
   const isSend = payment.paymentType === 'send';
@@ -166,7 +166,7 @@ export function claimErrorKind(message) {
 
 /**
  * Deposit classification from a mature claim quote — same thresholds and
- * categories as the direct engine's classifier.
+ * categories the deposit flow acts on.
  */
 export function classifyFromMatureQuote({ depositAmountSats, quote, thresholds }) {
   const amount = Number(depositAmountSats || 0);
@@ -177,8 +177,8 @@ export function classifyFromMatureQuote({ depositAmountSats, quote, thresholds }
 
   // 'too_small' is decided by the caller's MIN_DEPOSIT_SATS floor before a
   // quote is ever fetched; a quoted fee at or above the amount classifies as
-  // needs_approval (ratio > cap), matching the direct engine's categories -
-  // the approval sheet is where the user learns the fee eats the deposit.
+  // needs_approval (its ratio exceeds the cap) - the approval sheet is
+  // where the user learns the fee eats the deposit.
   const withinAbsoluteCap = feeSats <= thresholds.MAX_FEE_SATS;
   const withinRelativeCap = feeRatio <= thresholds.MAX_FEE_RATIO;
   return {
@@ -191,7 +191,7 @@ export function classifyFromMatureQuote({ depositAmountSats, quote, thresholds }
 /**
  * Withdrawal status from a Breez Payment. Breez has three payment statuses;
  * 'broadcasting' is synthesized from pending + a known txid, and broadcast
- * with txid is terminal-for-UX (same rule as the direct engine).
+ * with txid is terminal-for-UX (funds left, verifiable on mempool).
  */
 export function withdrawalStatusFromPayment(payment, requestId) {
   if (!payment) {

@@ -99,6 +99,17 @@ export default defineConfig((ctx) => {
         viteConf.optimizeDeps = viteConf.optimizeDeps || {}
         viteConf.optimizeDeps.exclude = viteConf.optimizeDeps.exclude || []
         viteConf.optimizeDeps.exclude.push('@breeztech/breez-sdk-spark')
+
+        // The Arkade SDK's descriptor dependency references Node's `global`;
+        // map it to globalThis in the dev pre-bundle (the production build
+        // resolves it on its own).
+        viteConf.optimizeDeps.esbuildOptions = {
+          ...(viteConf.optimizeDeps.esbuildOptions || {}),
+          define: {
+            ...((viteConf.optimizeDeps.esbuildOptions || {}).define || {}),
+            global: 'globalThis',
+          },
+        }
       },
       // viteVuePluginOptions: {},
 

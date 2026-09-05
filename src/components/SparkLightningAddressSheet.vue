@@ -115,9 +115,9 @@
 
 <script>
 /**
- * Bottom sheet for a Spark wallet's Lightning address (user@<domain>,
- * Breez engine only). Wallets receive a random address automatically at
- * creation; this sheet shows it and lets the user replace it.
+ * Bottom sheet for a Spark wallet's Lightning address (user@<domain>).
+ * Wallets receive a random address automatically at creation; this sheet
+ * shows it and lets the user replace it.
  *
  * There is deliberately no remove action - the rule is that every wallet
  * holds an address. Changing is a single register call: the server keys a

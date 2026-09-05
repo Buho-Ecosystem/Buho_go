@@ -220,6 +220,70 @@ async function teardownEntry(entry) {
 }
 
 /**
+ * Probe whether a mnemonic has Spark activity on a given account number,
+ * without touching any real wallet state. Used by restore flows to pick
+ * account pairs (legacy account-0 detection) and to auto-detect the wallet
+ * type behind a recovery phrase.
+ *
+ * Builds a throwaway instance in its own storage, waits for a bounded sync
+ * so a funded wallet reports real numbers, reads balance + one payment,
+ * then disconnects and deletes the probe storage.
+ *
+ * @returns {Promise<{hasActivity: boolean, balance: number, transferCount: number}>}
+ */
+export async function probeAccountActivity(mnemonic, { accountNumber, network = 'MAINNET', syncTimeoutMs = 30000 } = {}) {
+  const mod = await ensureWasmInit();
+
+  const config = mod.defaultConfig(toBreezNetwork(network));
+  if (!BREEZ_API_KEY) {
+    throw new Error('Breez engine needs an API key — set VITE_BREEZ_API_KEY in .env.local and rebuild.');
+  }
+  config.apiKey = BREEZ_API_KEY;
+  config.maxDepositClaimFee = { type: 'fixed', amount: 0 };
+
+  // Unique per call: restore runs probes for several accounts in parallel,
+  // and two instances must never share a storage database.
+  const probeId = `probe-${accountNumber}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+  let builder = mod.SdkBuilder.new(config, {
+    type: 'mnemonic',
+    mnemonic,
+    passphrase: undefined,
+  });
+  builder = builder.withAccountNumber(accountNumber);
+  builder = await builder.withDefaultStorage(storageDirFor(probeId));
+  const sdk = await builder.build();
+
+  try {
+    let info;
+    try {
+      const synced = sdk.getInfo({ ensureSynced: true });
+      synced.catch(() => {});
+      info = await Promise.race([
+        synced,
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('probe sync timeout')), syncTimeoutMs)
+        ),
+      ]);
+    } catch (e) {
+      info = await sdk.getInfo({});
+    }
+    const payments = await sdk.listPayments({ limit: 1, sortAscending: false });
+
+    const balance = Number(info?.balanceSats ?? 0);
+    const transferCount = payments?.payments?.length || 0;
+    return {
+      hasActivity: balance > 0 || transferCount > 0,
+      balance,
+      transferCount,
+    };
+  } finally {
+    try { await sdk.disconnect(); } catch (e) { /* probe teardown is best-effort */ }
+    await deleteWalletStorage(probeId);
+  }
+}
+
+/**
  * Get (or build) the live SDK instance for a wallet. Deduped: a second
  * acquire for the same wallet returns the existing instance; concurrent
  * acquires share one in-flight build. `forceReinit` tears the instance down
@@ -284,14 +348,28 @@ export async function release(walletId) {
 }
 
 /**
- * Permanently delete a wallet's Breez storage (both IndexedDB databases).
- * Call only on wallet removal, after release(); a live handle would block
- * deletion in some browsers (best-effort either way).
+ * Permanently delete a wallet's Breez storage. The SDK derives the actual
+ * IndexedDB database names from the storage dir (observed shape:
+ * `<dir>/<network>/<hash>` plus a `-tree` sibling), so deletion enumerates
+ * the databases and removes everything under the dir prefix. Call only on
+ * wallet removal, after release(); a live handle would block deletion in
+ * some browsers (best-effort either way).
  */
 export async function deleteWalletStorage(walletId) {
   await release(walletId);
-  const name = storageDirFor(walletId);
-  for (const dbName of [name, `${name}-tree`]) {
+  const dir = storageDirFor(walletId);
+
+  let names = [dir, `${dir}-tree`];
+  try {
+    if (typeof indexedDB.databases === 'function') {
+      const all = await indexedDB.databases();
+      names = all
+        .map((db) => db.name)
+        .filter((n) => n && (n === dir || n === `${dir}-tree` || n.startsWith(`${dir}/`)));
+    }
+  } catch (e) { /* enumeration unsupported — fall back to the literal names */ }
+
+  for (const dbName of names) {
     try {
       await new Promise((resolve) => {
         const req = indexedDB.deleteDatabase(dbName);
@@ -299,7 +377,7 @@ export async function deleteWalletStorage(walletId) {
       });
     } catch (e) { /* best-effort */ }
   }
-  untrackDbName(name);
+  untrackDbName(dir);
 }
 
 /**

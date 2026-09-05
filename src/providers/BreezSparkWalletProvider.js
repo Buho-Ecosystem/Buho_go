@@ -1,35 +1,31 @@
 /**
- * BreezSparkWalletProvider - Spark wallet on the Breez SDK engine
+ * BreezSparkWalletProvider - Spark wallets on the Breez SDK
  *
- * Drop-in sibling of SparkWalletProvider: it implements the exact same
- * public contract (method names, argument shapes, return shapes, units,
- * status vocabularies, and user-facing error strings) on top of
- * @breeztech/breez-sdk-spark, so every consumer — Wallet.vue orchestration,
- * receive/kiosk monitors, deposit classifier UI, batch send, auto-withdraw,
- * tax report — runs unchanged regardless of the engine WalletFactory picks.
+ * The app's Spark implementation, on @breeztech/breez-sdk-spark. Every
+ * consumer — Wallet.vue orchestration, receive/kiosk monitors, deposit
+ * classifier UI, batch send, auto-withdraw, tax report — talks to the
+ * WalletProvider contract this class implements: integer-sat numbers,
+ * the completed/pending/failed status vocabulary, and stable user-facing
+ * error strings.
  *
- * Both engines derive the identical wallet: same mnemonic + same account
- * number = same Spark identity, funds, and on-network history (purpose path
- * m/8797555'/{account}'). initializeWithMnemonic() additionally asserts this
- * at runtime against the wallet's stored spark address and auto-reverts the
- * device to the direct engine on any mismatch.
+ * Key derivation follows the Spark purpose path (m/8797555'/{account}'),
+ * so wallets created under the previously integrated direct Spark SDK
+ * resolve to the identical identity, funds, and on-network history.
+ * initializeWithMnemonic() asserts that at runtime against the wallet's
+ * stored spark address and refuses to connect on any mismatch.
  *
- * Engine-specific notes (full rationale: Plans WIP/breez-spark-migration.md):
+ * Implementation notes (full rationale: Plans WIP/breez-spark-migration.md):
  *  - Breez `PaymentDetails` is a flattened tagged union — every read goes
  *    through a discriminant switch on `details.type`, never property access
  *    on a variant name.
  *  - Amounts: Breez reports amount and fees separately; BuhoGO's normalizer
- *    expects fee-inclusive gross on sends, so rows re-add the fee.
- *  - No SDK-side auto-claiming (config bounds it to 0): the app's classifier
- *    remains the only claimer, exactly as with the direct engine.
+ *    expects fee-inclusive gross rows, so the mapper re-adds the fee.
+ *  - No SDK-side auto-claiming (config bounds it to 0): the app's deposit
+ *    classifier remains the only claimer.
  *  - Invoice ids are BOLT11 payment hashes (Breez has no receive-request
  *    UUID); status lookups scan listPayments for the hash.
  *  - The instance registry, event fan-out, and churn-surviving caches live
  *    in services/breezSdk.js.
- *
- * Static wallet creation/restore/probing stays on SparkWalletProvider for
- * the duration of the dual-engine phase (identical derivation makes the
- * results engine-independent).
  */
 
 import { WalletProvider } from './WalletProvider.js';
@@ -43,7 +39,6 @@ import { fiatRatesService } from '../utils/fiatRates.js';
 import { isBitcoinAddress } from '../utils/addressUtils.js';
 import { identityPublicKeyFromSparkAddress } from '../utils/sparkPayment.js';
 import { registerRandomLightningAddress } from '../utils/lightningAddressNames.js';
-import { setSparkEngine } from '../config/breez.js';
 import * as breezSdk from '../services/breezSdk.js';
 import {
   BREEZ_PAYMENT_STATUS as PAYMENT_STATUS,
@@ -174,10 +169,10 @@ export class BreezSparkWalletProvider extends WalletProvider {
   // ==========================================
 
   /**
-   * Connect this wallet on the Breez engine. Same contract as the direct
-   * provider: resolves `true`, sets isConnected, caches the spark address.
-   * The registry in breezSdk dedupes live instances per wallet, so calling
-   * this repeatedly (startup, switch, poll, self-heal) reuses one SDK.
+   * Connect this wallet: resolves `true`, sets isConnected, caches the
+   * spark address. The registry in breezSdk dedupes live instances per
+   * wallet, so calling this repeatedly (startup, switch, poll, self-heal)
+   * reuses one SDK.
    */
   async initializeWithMnemonic(mnemonic, { forceReinit = false } = {}) {
     try {
@@ -218,10 +213,11 @@ export class BreezSparkWalletProvider extends WalletProvider {
   }
 
   /**
-   * Both engines must land on the same wallet. The stored spark address (or
-   * its identity pubkey) is the direct engine's ground truth; if the Breez
-   * instance reports a different identity, connecting would show a stranger's
-   * wallet — refuse, and flip the device back to the proven engine.
+   * Every connect must land on the wallet this entry has always been. The
+   * spark address recorded at the wallet's first connect is the reference;
+   * if the SDK now derives a different identity (account-number mixup,
+   * corrupted stored state), showing it would present a stranger's wallet —
+   * refuse the connection instead.
    */
   async _assertSameIdentity() {
     const expected = this.walletData?.metadata?.sparkAddress
@@ -239,11 +235,10 @@ export class BreezSparkWalletProvider extends WalletProvider {
 
     const got = String(this._identityPubkey).toLowerCase();
     if (String(expectedPubkey).toLowerCase() !== got) {
-      setSparkEngine('direct');
       await breezSdk.release(this.walletId);
       this.sdk = null;
       const err = new Error(
-        'Wallet engine mismatch detected — reverted to the standard engine. Please reconnect.'
+        'This connection derived a different wallet identity than expected. Please restart the app; if this persists, restore from your recovery phrase.'
       );
       err.code = 'BREEZ_IDENTITY_MISMATCH';
       throw err;
@@ -392,9 +387,9 @@ export class BreezSparkWalletProvider extends WalletProvider {
 
       return {
         balance: Number(info?.balanceSats ?? 0),
-        // The direct SDK's `incoming` (pending Spark transfers) has no Breez
-        // equivalent — transfers are claimed automatically; deposits surface
-        // through the dedicated deposit flow, not here.
+        // Pending incoming Spark transfers have no separate figure here —
+        // the SDK claims them automatically; deposits surface through the
+        // dedicated deposit flow, not here.
         pending: 0,
         tokenBalances: []
       };
@@ -451,7 +446,7 @@ export class BreezSparkWalletProvider extends WalletProvider {
   }
 
   // ==========================================
-  // Lightning address (Breez engine feature)
+  // Lightning address
   // ==========================================
 
   /** Cached user@domain, or null when none is registered / domain dormant. */
@@ -571,7 +566,7 @@ export class BreezSparkWalletProvider extends WalletProvider {
 
   /**
    * Find the receive payment for an invoice id (payment hash). A bolt11
-   * invoice can settle over Lightning OR as a direct Spark transfer, so both
+   * invoice can settle over Lightning OR as a native Spark transfer, so both
    * detail arms are checked. Scans newest-first with paging.
    */
   async _findReceiveByHash(paymentHash, { maxPages = 3, pageSize = 100 } = {}) {
@@ -778,9 +773,9 @@ export class BreezSparkWalletProvider extends WalletProvider {
       });
       return { estimatedFeeSats: routeFee, invoice: cleanInvoice };
     } catch (error) {
-      // Same fallback chain as the direct engine: for a zero-amount invoice
-      // with no amount hint, assume 10k sats so the percentage floor never
-      // produces a 5-sat cap that blocks the eventual send.
+      // Fallback chain: invoice amount, then the caller's hint, then an
+      // assumed 10k sats — so a zero-amount invoice never yields a 5-sat
+      // percentage-floor cap that would block the eventual send.
       const fallbackAmount = BreezSparkWalletProvider.decodeInvoiceAmount(cleanInvoice).amount
         || amountSats
         || 10000;
@@ -821,9 +816,9 @@ export class BreezSparkWalletProvider extends WalletProvider {
       });
 
       // The engine has no SDK-side fee cap; enforce the caller's cap against
-      // the quoted route fee before any funds move. The cap carries the same
-      // +5 sat headroom the direct engine bakes into its default, so a quote
-      // refreshed between estimate and send doesn't refuse over rounding.
+      // the quoted route fee before any funds move. The cap carries a
+      // +5 sat headroom so a quote refreshed between estimate and send
+      // doesn't refuse over rounding.
       const feeCap = typeof maxFee === 'number' ? maxFee + 5 : routeFee + 5;
       if (routeFee > feeCap) {
         throw new Error(
@@ -1136,7 +1131,7 @@ export class BreezSparkWalletProvider extends WalletProvider {
 
   /**
    * Incoming-payment notifications. Fires the callback only for settled
-   * receives (the closest analogue of the direct SDK's `transfer:claimed`);
+   * receives — the payment-settled signal the receive monitors key on;
    * outgoing payments and deposit bookkeeping events never reach it.
    */
   onPaymentReceived(callback) {
@@ -1167,7 +1162,7 @@ export class BreezSparkWalletProvider extends WalletProvider {
   }
 
   onConnectionChange(onConnect, onDisconnect) {
-    // The Breez engine exposes no stream-connection events; the registry
+    // The SDK exposes no stream-connection events; the registry
     // rebuilds dead instances on demand instead. Contract-compatible no-op.
     return () => {};
   }
@@ -1543,10 +1538,9 @@ export class BreezSparkWalletProvider extends WalletProvider {
         fresh: true,
       });
     } catch (error) {
-      // Quoting here is a real send-prepare, so it CAN fail for a balance
-      // the direct engine's pure SSP quote never checks. While the user is
-      // still typing an amount that is a "no quote yet", not a payment
-      // error dialog.
+      // Quoting here is a real send-prepare, so it can fail on balance.
+      // While the user is still typing an amount that is a "no quote
+      // yet", not a payment error dialog.
       const msg = String(error?.message || '').toLowerCase();
       if (msg.includes('insufficient') || msg.includes('balance')) {
         throw new Error('No withdrawal fee quote available right now. Please try again.');
@@ -1681,7 +1675,7 @@ export class BreezSparkWalletProvider extends WalletProvider {
       }
 
       // Broadcast-with-txid is terminal-for-UX: funds have left, the tx is
-      // verifiable on mempool — same rule as the direct engine.
+      // verifiable on mempool — terminal for the UX.
       return withdrawalStatusFromPayment(payment, requestId);
     } catch (error) {
       this.setError(error);

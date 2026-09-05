@@ -47,13 +47,11 @@
           </SettingsRow>
 
           <!--
-            Lightning Address row - Breez engine only. The address is
-            registered server-side against the wallet identity, so it
-            survives reinstall and recovery; the sheet handles claim,
-            copy, and removal. Hidden entirely on the direct engine.
+            Lightning Address row. The address is registered server-side
+            against the wallet identity, so it survives reinstall and
+            recovery; the sheet shows it and handles changing the name.
           -->
           <SettingsRow
-            v-if="sparkOnBreezEngine"
             icon="tabler:at"
             :label="$t('Lightning Address')"
             :caption-mono="!!activeWalletLightningAddress"
@@ -316,7 +314,7 @@
 
       <!-- Breez-engine Spark Lightning address: claim / copy / remove -->
       <SparkLightningAddressSheet
-        v-if="sparkOnBreezEngine && activeWalletId"
+        v-if="activeWalletId"
         v-model="showSparkLnAddressSheet"
         :wallet-id="activeWalletId"
       />
@@ -2162,7 +2160,6 @@ import WalletBrandMark from '../components/WalletBrandMark.vue'
 import BiometricEnableDialog from '../components/BiometricEnableDialog.vue'
 import LNBitsLightningAddressDialog from '../components/LNBitsLightningAddressDialog.vue'
 import SparkLightningAddressSheet from '../components/SparkLightningAddressSheet.vue'
-import { isBreezEngine } from '../config/breez'
 import GetAppDialog from '../components/GetAppDialog.vue'
 import TaxReportSheet from '../components/settings/TaxReportSheet.vue'
 import SettingsSection from '../components/settings/SettingsSection.vue'
@@ -2424,16 +2421,6 @@ export default {
     }
   },
   computed: {
-    /**
-     * Lightning addresses for Spark wallets exist only on the Breez engine
-     * (registered server-side against the wallet identity). The engine is
-     * device-local and read once per page lifetime - flipping it requires
-     * a reconnect anyway.
-     */
-    sparkOnBreezEngine() {
-      return isBreezEngine();
-    },
-
     /**
      * An Arkade wallet's auto-withdraw cannot ride Lightning while the rail
      * is out of service (Boltz retired) - the pill is disabled and existing
@@ -4235,7 +4222,7 @@ export default {
     },
 
     async refreshSparkLightningAddress() {
-      if (!this.sparkOnBreezEngine || !this.isActiveWalletSpark) return;
+      if (!this.isActiveWalletSpark) return;
       const provider = this.walletStore.providers[this.activeWalletId];
       if (!provider?.getLightningAddress) return;
       try {

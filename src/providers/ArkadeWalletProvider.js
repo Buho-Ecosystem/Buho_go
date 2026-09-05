@@ -33,7 +33,7 @@
  *     both spendable); not-yet-spendable on-chain boarding UTXOs are surfaced
  *     as `pending`.
  *
- * Mirrors the shape of SparkWalletProvider / LNBitsWalletProvider so the store
+ * Mirrors the shape of BreezSparkWalletProvider / LNBitsWalletProvider so the store
  * and UI treat all backends uniformly.
  */
 

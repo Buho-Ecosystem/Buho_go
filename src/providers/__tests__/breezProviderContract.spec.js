@@ -1,5 +1,5 @@
 /**
- * breezPayments — contract behaviors behind the Breez engine's provider.
+ * breezPayments — contract behaviors behind the Spark wallet provider.
  *
  * Coverage focus:
  *   - bolt11 route choice (embedded-spark rail vs Lightning) mirrors the
@@ -8,7 +8,7 @@
  *     race treated as success+processing (the claimed-registry must still
  *     record the txid); too-small comes from the "not enough to cover"
  *     wording, never from a raw `fee` match
- *   - deposit classification reproduces the direct engine's thresholds
+ *   - deposit classification reproduces the app's claim thresholds
  *     (MAX_FEE_SATS 3000, MAX_FEE_RATIO 0.05) and category names verbatim
  *   - withdrawal status synthesis: only three SDK statuses exist;
  *     'broadcasting' = pending + txid and is terminal-for-UX
@@ -138,9 +138,9 @@ test('fee over the 5% ratio needs approval even under the absolute cap', () => {
 });
 
 test('fee at or above the deposit amount needs approval (never a silent too_small)', () => {
-  // The direct engine reserves 'too_small' for deposits under the
-  // MIN_DEPOSIT_SATS floor (decided before quoting); a fee-eats-the-deposit
-  // quote goes to the approval sheet where the numbers are disclosed.
+  // 'too_small' is reserved for deposits under the MIN_DEPOSIT_SATS floor
+  // (decided before quoting); a fee-eats-the-deposit quote goes to the
+  // approval sheet where the numbers are disclosed.
   const c = classifyFromMatureQuote({
     depositAmountSats: 1200,
     quote: { creditAmountSats: 0, feeSats: 1500 },
