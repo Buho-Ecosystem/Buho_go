@@ -55,8 +55,6 @@ export const ARKADE_MAINNET_SERVER = 'https://arkade.computer';
  * Pinned explicitly so a future package-default change can't silently move us
  * back to the broken host. (Re-verify if Arkade fixes api.ark's WS.)
  */
-export const ARKADE_BOLTZ_API_URL = 'https://api.boltz.exchange';
-
 /**
  * SDK `NetworkName` for the Ark server BuhoGO ships with. `'bitcoin'` is
  * mainnet. Kept as a constant so flipping to a testnet build is a one-line
