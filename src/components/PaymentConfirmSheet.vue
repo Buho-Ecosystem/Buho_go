@@ -218,21 +218,9 @@
             <span>{{ amountInvalidReason }}</span>
           </div>
 
-          <!-- Quick chips — only meaningful for free / range modes. -->
-          <div v-if="quickAmounts.length" class="quick-row">
-            <button
-              v-for="q in quickAmounts"
-              :key="q.value"
-              type="button"
-              class="quick-chip"
-              :class="{ active: isQuickActive(q) }"
-              @click="pickQuickAmount(q)"
-            >
-              {{ q.label }}
-            </button>
-          </div>
-
-          <!-- Comment -->
+          <!-- Comment: sits directly under the amount block, in the slot
+               the preset chips used to hold, so it stays visible above the
+               CTA even with the keyboard up. -->
           <div v-if="payment?.commentAllowed" class="note-row">
             <Icon icon="tabler:message-circle" width="14" height="14" class="note-icon" />
             <input
@@ -691,32 +679,6 @@ export default {
       return `${fe.sats.toLocaleString()} sats`
     },
 
-    // Quick chips: only when the user is free to choose. For range mode
-    // we filter to chips that fit the constraints so we never offer an
-    // amount that would fail validation.
-    quickAmounts() {
-      if (this.amountMode === 'fixed') return []
-      // No preset chips in local-currency mode: sat/fiat presets are meaningless
-      // in the recipient's currency, and inventing round local amounts would be
-      // a guess. The user types the amount directly.
-      if (this.isLocalDenomination) return []
-      const baseSats = [1000, 5000, 10000, 21000]
-      if (this.currentCurrency === 'sats') {
-        const chips = baseSats.map(v => ({ value: v, label: this.formatChipLabel(v, 'sats') }))
-        if (this.amountMode === 'range') {
-          return chips.filter(c => c.value >= this.minSats && c.value <= this.maxSats)
-        }
-        return chips
-      }
-      if (this.currentCurrency === 'btc') return []
-      const sym = this.fiatSymbol.trim()
-      const chips = [1, 5, 10, 20].map(v => ({ value: v, label: `${sym}${v}` }))
-      // No range filtering on fiat chips — sats conversion drift makes a
-      // perfect filter unreliable; we let inline validation catch out-of-
-      // range picks if the user taps one.
-      return chips
-    },
-
     requiresSlide() {
       // Tap button up to the threshold; slide-to-confirm above it. Flows
       // can force the deliberate gesture regardless of amount (on-chain
@@ -925,11 +887,6 @@ export default {
       this.displayAmount = ''
     },
 
-    pickQuickAmount(q) {
-      if (this.amountMode === 'fixed') return
-      this.displayAmount = String(q.value)
-    },
-
     /**
      * Public (called via ref): set the amount from outside, in sats.
      * Used by slot content that owns a "Use all" affordance (on-chain
@@ -940,18 +897,6 @@ export default {
       if (this.amountMode === 'fixed') return
       this.currentCurrency = 'sats'
       this.displayAmount = String(Math.max(0, Math.floor(sats)))
-    },
-
-    isQuickActive(q) {
-      return parseFloat(this.displayAmount) === q.value
-    },
-
-    formatChipLabel(value, unit) {
-      if (unit === 'sats') {
-        if (value >= 1000) return `${value / 1000}k`
-        return String(value)
-      }
-      return String(value)
     },
 
     emitConfirm() {
@@ -1382,49 +1327,30 @@ export default {
   color: #EF4444;
 }
 
-/* ─── Quick chips ─── */
-.quick-row {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 8px;
-}
-.quick-chip {
-  height: 38px;
-  border-radius: var(--radius-pill);
-  border: none;
-  background: var(--bg-input);
-  color: var(--text-secondary);
-  font-size: 13px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: background 0.15s ease, color 0.15s ease, transform 0.08s ease;
-}
-.quick-chip:hover { color: var(--text-primary); }
-.quick-chip:active { transform: scale(0.97); }
-.quick-chip.active {
-  background: var(--brand-accent-soft);
-  color: var(--brand-accent);
-  box-shadow: inset 0 0 0 1px rgba(21, 222, 114, 0.32);
-}
-.body--light .quick-chip.active { box-shadow: inset 0 0 0 1px rgba(5, 149, 115, 0.28); }
-
 /* ─── Note ─── */
 .note-row {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 12px 14px;
+  min-height: 44px;
+  padding: 10px 14px;
   border-radius: var(--radius-md);
   background: var(--bg-input);
+  transition: box-shadow 0.15s ease;
+}
+.note-row:focus-within {
+  box-shadow: inset 0 0 0 1px rgba(128, 128, 128, 0.35);
 }
 .note-icon { color: var(--text-muted); flex-shrink: 0; }
 .note-input {
   flex: 1;
+  min-width: 0;
   border: none;
   outline: none;
   background: transparent;
   font-family: inherit;
-  font-size: 14px;
+  /* 16px on purpose: anything smaller makes iOS zoom the sheet on focus. */
+  font-size: 16px;
   color: var(--text-primary);
 }
 .note-input::placeholder { color: var(--text-muted); }
