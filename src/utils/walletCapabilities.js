@@ -59,6 +59,11 @@ export function canWalletPay(walletType, type) {
   if (kind === 'spark') return walletType === 'spark'
   if (kind === 'arkade') return walletType === 'arkade'
   if (kind === 'bitcoin') return walletType === 'spark' || walletType === 'arkade'
+  // Arkade's Lightning rode Boltz swaps; that service is retired and gone.
+  // Gate it here so every surface says so up front instead of dead-ending
+  // at send time. Lift when Arkade Intents Lightning ships
+  // (Plans WIP/arkade-maintenance-map.md, phase 1).
+  if (walletType === 'arkade') return false
   return true
 }
 
@@ -75,5 +80,7 @@ export function walletSwitchHint(type, t) {
   if (kind === 'spark') return t('Switch to your Spark wallet to pay this address')
   if (kind === 'arkade') return t('Switch to your Arkade wallet to pay this address')
   if (kind === 'bitcoin') return t('Switch to a Spark or Arkade wallet to send Bitcoin')
-  return ''
+  // Only Arkade ever fails the lightning kind (see canWalletPay), so the
+  // hint can name it.
+  return t('Lightning is temporarily unavailable on Arkade - switch to another wallet')
 }

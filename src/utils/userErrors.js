@@ -336,29 +336,9 @@ function translateErrorCode(error, t) {
 
   switch (code) {
     case 'ARKADE_LN_UNAVAILABLE':
-      return t('Lightning is temporarily unavailable. You can still receive with your Arkade address, or try again shortly.');
+      return t('Lightning is temporarily unavailable on Arkade wallets. Your Arkade address and Bitcoin address still work, and any other wallet can pay Lightning.');
     case 'ARKADE_ONCHAIN_SOON':
       return t("Sending to a Bitcoin address automatically isn't available for Arkade yet. Use a Lightning or Arkade address instead.");
-    case 'ARKADE_SWAP_InsufficientFundsError':
-      return t('Not enough balance to cover this payment and its fee.');
-    case 'ARKADE_SWAP_InvoiceExpiredError':
-      return t('This Lightning invoice expired before it could be paid. Ask for a fresh one.');
-    case 'ARKADE_SWAP_InvoiceFailedToPayError':
-      return t("The Lightning payment couldn't be completed, so your funds were returned.");
-    case 'ARKADE_SWAP_TransactionFailedError':
-      return t("The payment didn't go through, so your funds were returned. Please try again.");
-    case 'ARKADE_SWAP_SwapExpiredError':
-      return t('This took too long to finish, so your funds were returned.');
-    case 'ARKADE_SWAP_NetworkError':
-      return t("Couldn't reach Lightning. Check your connection and try again.");
-    case 'ARKADE_SWAP_QuoteRejectedError':
-      return t("That amount can't be sent over Lightning right now. Try a different amount, or use your Arkade address.");
-    case 'ARKADE_SWAP_PreimageFetchError':
-      return t('Your payment was sent. It will show in your balance in a moment.');
-    case 'ARKADE_SWAP_BELOW_MIN':
-      return t('That amount is too small for Lightning. The minimum is {min} sats.', { min: error.minSats || 0 });
-    case 'ARKADE_SWAP_ABOVE_MAX':
-      return t('That amount is too large for Lightning. The maximum is {max} sats.', { max: error.maxSats || 0 });
     case 'ARKADE_OFFBOARD_BELOW_MIN':
       return t('That amount is too small to send to a Bitcoin address. The minimum is {min} sats.', { min: error.minSats || 0 });
     case 'ARKADE_OFFBOARD_FAILED':

@@ -521,7 +521,7 @@
 
             <div class="kiosk-wallet-list">
               <button
-                v-for="w in wallets" :key="w.id"
+                v-for="w in kioskEligibleWallets" :key="w.id"
                 type="button"
                 class="kiosk-wallet-row"
                 :class="{ 'kiosk-wallet-row-active': kioskWalletSelection === w.id }"
@@ -631,7 +631,7 @@
               {{ $t('kiosk.selectWallet') }}
             </div>
             <q-list>
-              <q-item v-for="w in wallets" :key="w.id" clickable v-ripple
+              <q-item v-for="w in kioskEligibleWallets" :key="w.id" clickable v-ripple
                 @click="kioskWalletSelection = w.id">
                 <q-item-section side>
                   <q-radio :model-value="kioskWalletSelection" :val="w.id"
@@ -2517,6 +2517,15 @@ export default {
     }
   },
   computed: {
+    /**
+     * Wallets the kiosk can charge through. Kiosk charges are Lightning
+     * invoices, and Arkade's Lightning rail is out of service (Boltz
+     * retired) - offering it would set up a kiosk that cannot charge.
+     */
+    kioskEligibleWallets() {
+      return this.wallets.filter((w) => w.type !== 'arkade');
+    },
+
     /** The wallet the detail sheet is showing; null once it is removed. */
     detailWallet() {
       return this.wallets.find((w) => w.id === this.detailWalletId) || null;
