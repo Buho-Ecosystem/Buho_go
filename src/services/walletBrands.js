@@ -85,6 +85,18 @@ export const WALLET_BRANDS = Object.freeze({
   'lnbits.de':           { name: 'Business Bitcoin',  logo: `${SOCIAL}/BusinessBitcoin.png` },
   'timecatcher.lnbits.de': { name: 'Business Bitcoin', logo: `${SOCIAL}/BusinessBitcoin.png` },
 
+  // ── Community / personal domains ───────────────────────────────────────
+  // Self-hosted Lightning-address servers run by people we know by name.
+  // Same contract as the wallets above: the domain after the "@" is the key.
+  //
+  // The event-horizon photo is a full-bleed dark plate, so the circular
+  // cover-crop removes only background.
+  'ereignishorizont.xyz': { name: 'Ereignishorizont', logo: `${SOCIAL}/Axel_ereignishorizont.png` },
+  // Badge art whose wooden sign runs edge-to-edge on its own cream plate:
+  // cropped, the circle slices the lettering. Contained on a matching cream
+  // backdrop the whole badge reads at avatar size.
+  'bamo21.de':            { name: 'Axels Gemüsegärten', logo: `${SOCIAL}/Bamo_Axels_Guemuesegaerten.png`, logoBg: '#FBF7EA', logoContain: true, logoInset: '6%' },
+
   // Buho itself — our own hosted Lightning addresses across the brand domains.
   'mybuho.de':           { name: 'Buho',              logo: '/buho_logo_grey.svg' },
   'pay.mybuho.de':       { name: 'Buho',              logo: '/buho_logo_grey.svg' },

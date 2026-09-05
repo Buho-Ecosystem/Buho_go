@@ -358,9 +358,10 @@ import { Capacitor } from '@capacitor/core';
 import QrScanSheet from './QrScanSheet.vue';
 import { useAddressBookStore } from '../stores/addressBook';
 import { useWalletStore } from '../stores/wallet';
+import { readClipboardCrossPlatform } from '../utils/shopClipboard.js';
 import { isSARetailerQR, convertToLightningAddress, getMerchantInfo, SA_RETAIL_SOURCE } from '../utils/merchantQR';
 import { parseBip21, selectBip21Destination, extractLnFallbackParam } from '../utils/bip21';
-import {
+import { isSilentPaymentAddress,
   isSparkAddress,
   isArkadeAddress,
   isBolt12Offer,
@@ -519,6 +520,7 @@ export default {
       const labels = {
         spark: this.$t('Bitcoin'),
         bolt12_offer: this.$t('BOLT12 offer'),
+        silent_payment: this.$t('Silent payment'),
         lightning_invoice: this.$t('Bitcoin'),
         lightning_address: this.$t('Bitcoin'),
         lnurl: this.$t('Bitcoin'),
@@ -536,6 +538,7 @@ export default {
       // glyph (it is a link), phone and Nostr keep their identities.
       const icons = {
         bolt12_offer: 'tabler:bolt',
+        silent_payment: 'tabler:eye-off',
         lightning_invoice: 'tabler:currency-bitcoin',
         lightning_address: 'tabler:currency-bitcoin',
         lnurl: 'tabler:link',
@@ -792,6 +795,7 @@ export default {
     isSuggestibleDestination(text) {
       const paymentType = this.determinePaymentType(text);
       if (paymentType === 'bolt12_offer') return false;
+      if (paymentType === 'silent_payment') return false;
       if (paymentType !== 'unknown') {
         return canWalletPay(this.walletStore.activeWalletType, paymentType);
       }
@@ -1035,6 +1039,8 @@ export default {
       const { cleaned } = this.normalizePaymentInput(data);
       if (!cleaned) return 'unknown';
 
+      if (isSilentPaymentAddress(cleaned)) return 'silent_payment';
+      if (isSilentPaymentAddress(cleaned)) return 'silent_payment';
       if (isSparkAddress(cleaned)) return 'spark_address';
       if (isArkadeAddress(cleaned)) return 'arkade_address';
       if (isBolt12Offer(cleaned)) return 'bolt12_offer';
@@ -1046,32 +1052,11 @@ export default {
     },
 
     async pasteFromClipboard() {
-      let clipboardText = '';
-
-      // Modern Clipboard API
-      if (navigator.clipboard && navigator.clipboard.readText) {
-        try {
-          clipboardText = await navigator.clipboard.readText();
-        } catch (e) {
-          console.warn('clipboard.readText() failed:', e);
-        }
-      }
-
-      // Some Android WebViews block readText() but allow read()
-      if (!clipboardText && navigator.clipboard && navigator.clipboard.read) {
-        try {
-          const items = await navigator.clipboard.read();
-          for (const item of items) {
-            if (item.types.includes('text/plain')) {
-              const blob = await item.getType('text/plain');
-              clipboardText = await blob.text();
-              break;
-            }
-          }
-        } catch (e) {
-          console.warn('clipboard.read() failed:', e);
-        }
-      }
+      // Native plugin first, WebView APIs as fallback: on Android the
+      // WebView rejects programmatic reads, which used to leave the Paste
+      // button focusing an empty field and coaching a long-press instead
+      // of pasting.
+      const clipboardText = await readClipboardCrossPlatform();
 
       // Always land the clipboard in the visible field for the user to
       // verify before committing. No silent fire-and-forget — too easy
@@ -1611,6 +1596,7 @@ export default {
 
 .detected-pill--spark,
 .detected-pill--arkade,
+.detected-pill--silent_payment,
 .detected-pill--bolt12_offer {
   background: rgba(120, 120, 120, 0.12);
   color: var(--text-primary);

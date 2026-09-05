@@ -50,7 +50,8 @@ function parseDeepLinkURI(url) {
 
   const parsed = parsePaymentDestination(input)
 
-  if (!parsed || (!parsed.valid && parsed.type !== 'bolt12_offer') || parsed.type === 'unknown') {
+  const EXPLAINED_UNPAYABLE = ['bolt12_offer', 'silent_payment']
+  if (!parsed || (!parsed.valid && !EXPLAINED_UNPAYABLE.includes(parsed.type)) || parsed.type === 'unknown') {
     return null
   }
 
@@ -106,6 +107,10 @@ function handleDeepLink(url, router, walletStore) {
   // requiring a configured wallet for a payment we will not attempt.
   if (paymentData.type === 'bolt12_offer') {
     walletStore.showUnsupportedBolt12Offer({ route: 'Android deep link' })
+    return
+  }
+  if (paymentData.type === 'silent_payment') {
+    walletStore.showUnsupportedSilentPayment({ route: 'Android deep link' })
     return
   }
 
