@@ -1266,10 +1266,16 @@ export const useWalletStore = defineStore('wallet', {
         // Backfill the stored spark address for wallets created before it
         // was persisted (migration-created entries hold null). It is the
         // ground truth the Breez engine's identity assertion checks against,
-        // so the first successful connect on any engine records it.
-        if (info?.sparkAddress && !wallet.metadata.sparkAddress) {
+        // so ONLY the direct engine may write it - letting the Breez
+        // provider seed its own reference would make the assertion
+        // self-confirming for exactly the wallets that lack one.
+        if (
+          info?.sparkAddress &&
+          !wallet.metadata.sparkAddress &&
+          provider instanceof SparkWalletProvider
+        ) {
           wallet.metadata.sparkAddress = info.sparkAddress;
-          this.persistState();
+          await this.persistState();
         }
 
       } catch (error) {

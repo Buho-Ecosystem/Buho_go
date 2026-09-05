@@ -206,10 +206,23 @@ export default defineConfig((ctx) => {
       // injectPwaMetaTags: false,
       // extendPWACustomSWConf (esbuildConf) {},
       extendGenerateSWOptions (cfg) {
-        // Workbox precaches nothing over 2 MiB by default, which silently
-        // drops the ~12.5 MB Breez SDK wasm and breaks offline use on the
-        // Breez engine. Raise the cap so the wasm ships in the precache.
-        cfg.maximumFileSizeToCacheInBytes = 15 * 1024 * 1024
+        // The ~12.5 MB Breez SDK wasm must NOT be precached - that would
+        // push it to every installer while the engine defaults to the
+        // direct SDK. Instead it is cached on first use, so only devices
+        // actually running the Breez engine pay for it, and those stay
+        // offline-capable afterwards.
+        cfg.globIgnores = [...(cfg.globIgnores || []), '**/breez_sdk_spark_wasm_bg*.wasm']
+        cfg.runtimeCaching = [
+          ...(cfg.runtimeCaching || []),
+          {
+            urlPattern: /breez_sdk_spark_wasm_bg.*\.wasm$/,
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'breez-wasm',
+              expiration: { maxEntries: 2 },
+            },
+          },
+        ]
       },
       // extendInjectManifestOptions (cfg) {}
     },

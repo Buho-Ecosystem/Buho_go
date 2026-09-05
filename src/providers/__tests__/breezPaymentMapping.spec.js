@@ -88,9 +88,13 @@ test('send rows are re-grossed: amount = net + fee, fee kept separately', () => 
   assert.equal(row.fee, 12);
 });
 
-test('receive rows never add the fee', () => {
+test('receive rows are re-grossed too (normalizer subtracts the fee once)', () => {
+  // computeAmounts('spark') does recipient = gross - fee for BOTH directions;
+  // Breez reports net + fee separately, so a receive row must also carry the
+  // gross or the fee would be deducted twice downstream.
   const row = mapBreezPaymentToTx(lightningPayment({ amount: 5000n, fees: 12n }));
-  assert.equal(row.amount, 5000);
+  assert.equal(row.amount, 5012);
+  assert.equal(row.fee, 12);
 });
 
 test('sender comment outranks the bolt11 description (LUD-06 hash case)', () => {

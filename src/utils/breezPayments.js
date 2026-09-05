@@ -80,8 +80,12 @@ export function mapBreezPaymentToTx(payment) {
   return {
     id: payment.id,
     type: isSend ? 'send' : 'receive',
-    // Fee-inclusive gross on sends: recipient = amount, total debit = amount + fee.
-    amount: isSend ? net + fee : net,
+    // Fee-inclusive gross in BOTH directions - the Spark row contract feeds
+    // computeAmounts('spark'), which subtracts the fee to get recipientSats
+    // for sends and receives alike. Breez reports the net amount and the fee
+    // separately, so the gross is reconstructed here; a net-only amount
+    // would have the fee deducted twice downstream.
+    amount: net + fee,
     timestamp: Number(payment.timestamp) || null,
     description,
     status: payment.status || BREEZ_PAYMENT_STATUS.COMPLETED,
@@ -171,10 +175,10 @@ export function classifyFromMatureQuote({ depositAmountSats, quote, thresholds }
     : Math.max(0, amount - Number(quote?.creditAmountSats || 0));
   const feeRatio = amount > 0 ? feeSats / amount : 1;
 
-  if (feeSats >= amount) {
-    return { category: 'too_small', feeSats, feeRatio };
-  }
-
+  // 'too_small' is decided by the caller's MIN_DEPOSIT_SATS floor before a
+  // quote is ever fetched; a quoted fee at or above the amount classifies as
+  // needs_approval (ratio > cap), matching the direct engine's categories -
+  // the approval sheet is where the user learns the fee eats the deposit.
   const withinAbsoluteCap = feeSats <= thresholds.MAX_FEE_SATS;
   const withinRelativeCap = feeRatio <= thresholds.MAX_FEE_RATIO;
   return {

@@ -189,7 +189,10 @@ export class BreezSparkWalletProvider extends WalletProvider {
         });
         this.sdk = entry.sdk;
       }
-      this.mnemonic = mnemonic;
+      // Deliberately NOT retained: every reconnect path re-decrypts the
+      // phrase, and provider objects can be replaced without disconnect -
+      // holding the plaintext here would only widen its lifetime.
+      this.mnemonic = null;
 
       const info = await this.sdk.getInfo({});
       this._identityPubkey = info?.identityPubkey || null;
@@ -523,7 +526,12 @@ export class BreezSparkWalletProvider extends WalletProvider {
    */
   async _findReceiveByHash(paymentHash, { maxPages = 3, pageSize = 100 } = {}) {
     const record = breezSdk.getInvoiceRecord(paymentHash);
-    const fromTimestamp = record?.createdAt ? record.createdAt - 60 : undefined;
+    // Without a record (foreign restart, pre-persistence invoice) bound the
+    // scan to the last 24h - the maximum invoice lifetime this engine mints -
+    // instead of walking the whole history every poll tick.
+    const fromTimestamp = record?.createdAt
+      ? record.createdAt - 60
+      : Math.floor(Date.now() / 1000) - 24 * 60 * 60;
 
     for (let page = 0; page < maxPages; page++) {
       const response = await this.sdk.listPayments({
@@ -606,18 +614,38 @@ export class BreezSparkWalletProvider extends WalletProvider {
         amount: Number(payment.amount)
       };
     } catch (error) {
+      // Transport/connection failures must PROPAGATE - PaymentMonitor bails
+      // out after consecutive throws, and a swallowed error would keep a
+      // dead wallet "waiting for payment" for the full poll budget.
+      if (BreezSparkWalletProvider.isTransientTransportError(error)
+        || String(error?.message || '').includes('not connected')) {
+        this.setError(error);
+        throw error;
+      }
       return { paid: false, preimage: null, amount: 0 };
     }
   }
 
-  async waitForInvoicePayment(invoiceId, { intervalMs = 3000, timeoutMs = 600000 } = {}) {
+  async waitForInvoicePayment(invoiceId, options = {}) {
+    const {
+      intervalMs = 3000,
+      timeoutMs = 300000,
+      onStatusChange = null
+    } = options;
+
     const startedAt = Date.now();
+    let lastStatus = null;
+
     while (Date.now() - startedAt < timeoutMs) {
       const status = await this.getLightningReceiveStatus(invoiceId);
+      if (onStatusChange && status.status !== lastStatus) {
+        onStatusChange(status);
+        lastStatus = status.status;
+      }
       if (status.isPaid || status.isExpired) return status;
       await new Promise(resolve => setTimeout(resolve, intervalMs));
     }
-    throw new Error('Invoice payment wait timed out');
+    throw new Error('Invoice payment check timed out');
   }
 
   // ==========================================
@@ -665,6 +693,17 @@ export class BreezSparkWalletProvider extends WalletProvider {
     return prepareResponse;
   }
 
+  /**
+   * Drop cached prepares for an input once a send consumed them - a retry
+   * of the same destination must go through a fresh prepare, never re-submit
+   * an already-spent prepare response.
+   */
+  _consumePrepared(input) {
+    for (const key of this._preparedSends.keys()) {
+      if (key.startsWith(`${input}::`)) this._preparedSends.delete(key);
+    }
+  }
+
   async getLightningSendFeeEstimate(invoice, amountSats = null) {
     this._ensureConnected();
 
@@ -678,14 +717,23 @@ export class BreezSparkWalletProvider extends WalletProvider {
       if (pm?.type !== 'bolt11Invoice') {
         throw new Error('Not a Lightning invoice');
       }
-      const sparkFee = pm.sparkTransferFeeSats;
-      const lnFee = Number(pm.lightningFeeSats ?? 0);
-      const estimatedFeeSats = sparkFee != null ? Math.min(Number(sparkFee), lnFee) : lnFee;
-      return { estimatedFeeSats, invoice: cleanInvoice };
+      // Estimate with the SAME route selection payInvoice will make - every
+      // in-app Spark send passes preferSpark, and this estimate flows back
+      // in as payInvoice's fee cap, so a cheaper-rail estimate against a
+      // preferred-rail send would refuse payable invoices.
+      const { routeFee } = pickBolt11Route({
+        sparkTransferFeeSats: pm.sparkTransferFeeSats,
+        lightningFeeSats: pm.lightningFeeSats,
+        preferSpark: true,
+      });
+      return { estimatedFeeSats: routeFee, invoice: cleanInvoice };
     } catch (error) {
-      const fallbackAmount = amountSats
-        || BreezSparkWalletProvider.decodeInvoiceAmount(cleanInvoice).amount
-        || 0;
+      // Same fallback chain as the direct engine: for a zero-amount invoice
+      // with no amount hint, assume 10k sats so the percentage floor never
+      // produces a 5-sat cap that blocks the eventual send.
+      const fallbackAmount = BreezSparkWalletProvider.decodeInvoiceAmount(cleanInvoice).amount
+        || amountSats
+        || 10000;
       return {
         estimatedFeeSats: BreezSparkWalletProvider.calculateRecommendedFee(fallbackAmount),
         invoice: cleanInvoice,
@@ -723,9 +771,10 @@ export class BreezSparkWalletProvider extends WalletProvider {
       });
 
       // The engine has no SDK-side fee cap; enforce the caller's cap against
-      // the quoted route fee before any funds move. Default cap mirrors the
-      // direct engine: estimate + 5 sats headroom (never blocks).
-      const feeCap = typeof maxFee === 'number' ? maxFee : routeFee + 5;
+      // the quoted route fee before any funds move. The cap carries the same
+      // +5 sat headroom the direct engine bakes into its default, so a quote
+      // refreshed between estimate and send doesn't refuse over rounding.
+      const feeCap = typeof maxFee === 'number' ? maxFee + 5 : routeFee + 5;
       if (routeFee > feeCap) {
         throw new Error(
           `Lightning payment failed: fee ${routeFee} sats exceeds the ${feeCap} sats limit`
@@ -745,6 +794,8 @@ export class BreezSparkWalletProvider extends WalletProvider {
           ? crypto.randomUUID()
           : undefined,
       });
+
+      this._consumePrepared(cleanInvoice);
 
       const payment = sendResponse?.payment;
       if (!payment) {
@@ -885,13 +936,21 @@ export class BreezSparkWalletProvider extends WalletProvider {
   async transferToSparkAddress(sparkAddress, amount) {
     this._ensureConnected();
 
+    if (!WalletProvider.isSparkAddress(sparkAddress)) {
+      throw new Error('Invalid Spark address');
+    }
+    const amountSats = Number(amount);
+    if (!Number.isFinite(amountSats) || amountSats <= 0) {
+      throw new Error('Invalid transfer amount');
+    }
+
     try {
       const prep = await this._prepareSend(sparkAddress, {
-        amountSats: Number(amount),
+        amountSats,
         fresh: true,
       });
       if (prep?.paymentMethod?.type !== 'sparkAddress') {
-        throw new Error('Not a valid Spark address');
+        throw new Error('Invalid Spark address');
       }
 
       const sendResponse = await this.sdk.sendPayment({
@@ -901,6 +960,8 @@ export class BreezSparkWalletProvider extends WalletProvider {
           ? crypto.randomUUID()
           : undefined,
       });
+
+      this._consumePrepared(sparkAddress);
 
       const payment = sendResponse?.payment;
       if (!payment || payment.status === PAYMENT_STATUS.FAILED) {
@@ -963,6 +1024,8 @@ export class BreezSparkWalletProvider extends WalletProvider {
           ? crypto.randomUUID()
           : undefined,
       });
+
+      this._consumePrepared(invoice);
 
       const payment = sendResponse?.payment;
       if (!payment) {
@@ -1278,10 +1341,14 @@ export class BreezSparkWalletProvider extends WalletProvider {
         vout: outputIndex,
         maxFee: { type: 'fixed', amount: feeSats },
       });
-      if (!result) {
+      // The response's payment is optional; callers durably mark the txid
+      // claimed on our success, so a resolve WITHOUT an executed claim must
+      // fail loudly - the 0-conf path degrades to the 3-conf flow, never to
+      // a deposit silently excluded from every claim path.
+      if (!result?.payment) {
         throw new Error('Instant claim was not accepted');
       }
-      return { success: true, claimId: result.payment?.id || null };
+      return { success: true, claimId: result.payment.id || null };
     } finally {
       this.setSyncing(false);
     }
@@ -1305,10 +1372,23 @@ export class BreezSparkWalletProvider extends WalletProvider {
       });
 
       this.setSyncing(false);
+      // A mature claim that resolves without a payment object is treated as
+      // still processing (the SDK finishes it on sync), mirroring the
+      // TRANSFER_LOCKED semantics - success either way, so the claimed
+      // registry records the txid and the user isn't re-prompted.
+      if (!result?.payment) {
+        return {
+          success: true,
+          processing: true,
+          message: 'Claim is being processed. Your balance will update shortly.',
+          amount: creditAmountSats,
+          transferId: null
+        };
+      }
       return {
         success: true,
         amount: creditAmountSats,
-        transferId: result?.payment?.id || null
+        transferId: result.payment.id || null
       };
     } catch (error) {
       this.setSyncing(false);
@@ -1413,6 +1493,14 @@ export class BreezSparkWalletProvider extends WalletProvider {
         fresh: true,
       });
     } catch (error) {
+      // Quoting here is a real send-prepare, so it CAN fail for a balance
+      // the direct engine's pure SSP quote never checks. While the user is
+      // still typing an amount that is a "no quote yet", not a payment
+      // error dialog.
+      const msg = String(error?.message || '').toLowerCase();
+      if (msg.includes('insufficient') || msg.includes('balance')) {
+        throw new Error('No withdrawal fee quote available right now. Please try again.');
+      }
       this.setError(error);
       throw error;
     }
@@ -1470,11 +1558,29 @@ export class BreezSparkWalletProvider extends WalletProvider {
       }
 
       if (prep?.paymentMethod?.type !== 'bitcoinAddress') {
-        throw new Error('No withdrawal fee quote available right now. Please try again.');
+        const err = new Error('No withdrawal fee quote available right now. Please try again.');
+        err.code = 'BREEZ_NO_QUOTE';
+        throw err;
       }
 
       const speedKey = String(speed || 'medium').toLowerCase();
       const confirmationSpeed = speedKey === 'fast' ? 'fast' : speedKey === 'slow' ? 'slow' : 'medium';
+
+      // The fee lock the contract promises: the UI showed feeAmountSats for
+      // the chosen speed; if the live quote now charges more, refuse instead
+      // of silently debiting the higher figure (the SSP can reprice between
+      // quote and confirm).
+      const speedQuote = confirmationSpeed === 'fast'
+        ? prep.paymentMethod.feeQuote?.speedFast
+        : confirmationSpeed === 'slow'
+          ? prep.paymentMethod.feeQuote?.speedSlow
+          : prep.paymentMethod.feeQuote?.speedMedium;
+      const liveFee = Number(speedQuote?.userFeeSat || 0) + Number(speedQuote?.l1BroadcastFeeSat || 0);
+      if (liveFee > feeAmountSats) {
+        const err = new Error('Fee quote expired. Please try again.');
+        err.code = 'BREEZ_FEE_DRIFT';
+        throw err;
+      }
 
       const sendResponse = await this.sdk.sendPayment({
         prepareResponse: prep,
@@ -1491,10 +1597,15 @@ export class BreezSparkWalletProvider extends WalletProvider {
 
       return {
         requestId: payment.id,
-        status: payment.status === PAYMENT_STATUS.COMPLETED ? 'completed' : 'pending',
+        status: payment.status === PAYMENT_STATUS.COMPLETED
+          ? 'completed'
+          : payment.status === PAYMENT_STATUS.FAILED ? 'failed' : 'pending',
         amount: amountSats
       };
     } catch (error) {
+      if (error?.code === 'BREEZ_NO_QUOTE' || error?.code === 'BREEZ_FEE_DRIFT') {
+        throw error; // already user-facing; don't let the substring mapper rewrite it
+      }
       const msg = String(error?.message || '').toLowerCase();
       if (msg.includes('balance') || msg.includes('insufficient')) {
         throw new Error('Insufficient balance for this withdrawal');

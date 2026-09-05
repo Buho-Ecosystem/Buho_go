@@ -137,13 +137,17 @@ test('fee over the 5% ratio needs approval even under the absolute cap', () => {
   assert.ok(c.feeRatio > 0.05);
 });
 
-test('fee at or above the deposit amount is too_small', () => {
+test('fee at or above the deposit amount needs approval (never a silent too_small)', () => {
+  // The direct engine reserves 'too_small' for deposits under the
+  // MIN_DEPOSIT_SATS floor (decided before quoting); a fee-eats-the-deposit
+  // quote goes to the approval sheet where the numbers are disclosed.
   const c = classifyFromMatureQuote({
     depositAmountSats: 1200,
     quote: { creditAmountSats: 0, feeSats: 1500 },
     thresholds: THRESHOLDS,
   });
-  assert.equal(c.category, 'too_small');
+  assert.equal(c.category, 'needs_approval');
+  assert.ok(c.feeRatio > 1);
 });
 
 test('fee derived from credit delta when the quote omits feeSats', () => {

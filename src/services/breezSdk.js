@@ -36,7 +36,7 @@ import { BREEZ_API_KEY, BREEZ_LNURL_DOMAIN } from '../config/breez.js';
 const DB_NAMES_KEY = 'buhoGO_breez_dbs';
 
 let sdkModulePromise = null;
-let wasmReady = false;
+let wasmInitPromise = null;
 let loggingArmed = false;
 
 /** walletId -> { sdk, listenerId, subscribers:Set<fn>, storageDir } */
@@ -44,9 +44,30 @@ const instances = new Map();
 /** walletId -> in-flight acquire promise (init mutex) */
 const initLocks = new Map();
 
-/** paymentHash -> { expiresAt (unix s), createdAt (unix s) } */
-const invoiceRecords = new Map();
+/**
+ * paymentHash -> { expiresAt (unix s), createdAt (unix s) }.
+ * Persisted: the expiry judgment must survive an app reload, or a
+ * reopened receive screen would poll an expired invoice forever and the
+ * status scan would lose its time bound.
+ */
+const INVOICE_RECORDS_KEY = 'buhoGO_breez_invoices';
 const INVOICE_RECORDS_MAX = 200;
+const invoiceRecords = loadInvoiceRecords();
+
+function loadInvoiceRecords() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(INVOICE_RECORDS_KEY) || '[]');
+    return new Map(Array.isArray(raw) ? raw : []);
+  } catch (e) {
+    return new Map();
+  }
+}
+
+function saveInvoiceRecords() {
+  try {
+    localStorage.setItem(INVOICE_RECORDS_KEY, JSON.stringify([...invoiceRecords]));
+  } catch (e) { /* persistence is best-effort */ }
+}
 
 /** `${walletId}:${quoteId}` -> { prepareResponse, amountSats, destinationAddress, expiresAt } */
 const withdrawQuotes = new Map();
@@ -64,17 +85,19 @@ async function loadSdkModule() {
  */
 export async function ensureWasmInit() {
   const mod = await loadSdkModule();
-  if (!wasmReady) {
-    if (typeof mod.default === 'function') {
-      await mod.default();
-    }
-    wasmReady = true;
+  // Latch on the PROMISE, not a done-flag: the module's own init has no
+  // in-flight guard, and a second concurrent instantiation would replace
+  // the wasm binding under live handles.
+  if (!wasmInitPromise) {
+    wasmInitPromise = typeof mod.default === 'function'
+      ? mod.default()
+      : Promise.resolve();
   }
-  if (!loggingArmed) {
+  await wasmInitPromise;
+  // SDK log lines carry invoices, hashes, and addresses - dev builds only.
+  if (!loggingArmed && import.meta.env?.DEV) {
     loggingArmed = true;
     try {
-      // Fire-and-forget: logging is a diagnostic nicety, never a boot gate.
-      // 'info' filter — TRACE/DEBUG from the SDK is far too chatty.
       await mod.initLogging(
         { log: (entry) => console.debug(`[breez:${entry.level}] ${entry.line}`) },
         'info'
@@ -205,29 +228,28 @@ async function teardownEntry(entry) {
  * @returns {Promise<{ sdk: object }>} the registry entry
  */
 export async function acquire(walletId, { mnemonic, accountNumber, network, forceReinit = false }) {
-  // Serialize per-wallet: piggyback on an in-flight acquire unless we're
-  // explicitly forcing a rebuild (then wait for it to settle first).
-  const inFlight = initLocks.get(walletId);
-  if (inFlight) {
-    try { await inFlight; } catch (e) { /* prior attempt failed; retry below */ }
-    if (!forceReinit && instances.has(walletId)) {
-      return instances.get(walletId);
-    }
-  } else if (!forceReinit && instances.has(walletId)) {
+  // Fast path: a live instance and nobody rebuilding it.
+  if (!forceReinit && !initLocks.get(walletId) && instances.has(walletId)) {
     return instances.get(walletId);
   }
 
-  const work = (async () => {
-    const existing = instances.get(walletId);
-    if (existing) {
-      if (!forceReinit) return existing;
-      instances.delete(walletId);
-      await teardownEntry(existing);
-    }
-    const entry = await buildInstance(walletId, { mnemonic, accountNumber, network });
-    instances.set(walletId, entry);
-    return entry;
-  })();
+  // Serialize per wallet by CHAINING onto whatever is in flight - two
+  // concurrent forceReinits must run one after the other, never both
+  // tearing down and rebuilding against the same IndexedDB database.
+  const prev = initLocks.get(walletId) || Promise.resolve();
+  const work = prev
+    .catch(() => { /* a failed predecessor doesn't poison the chain */ })
+    .then(async () => {
+      const existing = instances.get(walletId);
+      if (existing && !forceReinit) return existing;
+      if (existing) {
+        instances.delete(walletId);
+        await teardownEntry(existing);
+      }
+      const entry = await buildInstance(walletId, { mnemonic, accountNumber, network });
+      instances.set(walletId, entry);
+      return entry;
+    });
 
   initLocks.set(walletId, work);
   try {
@@ -306,6 +328,7 @@ export function rememberInvoice(paymentHash, { expiresAt, createdAt }) {
     const oldest = invoiceRecords.keys().next().value;
     invoiceRecords.delete(oldest);
   }
+  saveInvoiceRecords();
 }
 
 export function getInvoiceRecord(paymentHash) {
