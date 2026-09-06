@@ -3245,4 +3245,12 @@ export default {
   "Use my BuhoGO address": "Meine BuhoGO-Adresse verwenden",
   "Enter an address first.": "Gib zuerst eine Adresse ein.",
   "Limits {min} – {max} {unit}": "Limits {min} – {max} {unit}",
+  "Quick pay": "Schnell zahlen",
+  "Everyone": "Alle",
+  "No address yet": "Noch keine Adresse",
+  "Between you": "Zwischen euch",
+  "No payments between you yet.": "Noch keine Zahlungen zwischen euch.",
+  "Payments you made to this contact.": "Zahlungen, die du an diesen Kontakt gemacht hast.",
+  "{n} contacts · saved with your identity": "{n} Kontakte · gespeichert mit deiner Identität",
+  "1 contact · saved with your identity": "1 Kontakt · gespeichert mit deiner Identität",
 }

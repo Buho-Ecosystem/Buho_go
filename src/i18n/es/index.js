@@ -3244,4 +3244,12 @@ export default {
   "Use my BuhoGO address": "Usar mi dirección de BuhoGO",
   "Enter an address first.": "Introduce primero una dirección.",
   "Limits {min} – {max} {unit}": "Límites {min} – {max} {unit}",
+  "Quick pay": "Pago rápido",
+  "Everyone": "Todos",
+  "No address yet": "Aún sin dirección",
+  "Between you": "Entre ustedes",
+  "No payments between you yet.": "Aún no hay pagos entre ustedes.",
+  "Payments you made to this contact.": "Pagos que hiciste a este contacto.",
+  "{n} contacts · saved with your identity": "{n} contactos · guardados con tu identidad",
+  "1 contact · saved with your identity": "1 contacto · guardado con tu identidad",
 }

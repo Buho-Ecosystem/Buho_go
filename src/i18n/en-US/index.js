@@ -3239,4 +3239,12 @@ export default {
   "Use my BuhoGO address": "Use my BuhoGO address",
   "Enter an address first.": "Enter an address first.",
   "Limits {min} – {max} {unit}": "Limits {min} – {max} {unit}",
+  "Quick pay": "Quick pay",
+  "Everyone": "Everyone",
+  "No address yet": "No address yet",
+  "Between you": "Between you",
+  "No payments between you yet.": "No payments between you yet.",
+  "Payments you made to this contact.": "Payments you made to this contact.",
+  "{n} contacts · saved with your identity": "{n} contacts · saved with your identity",
+  "1 contact · saved with your identity": "1 contact · saved with your identity",
 }

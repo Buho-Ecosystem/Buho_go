@@ -19,65 +19,46 @@
       </q-input>
     </div>
 
-    <!-- Entries List (sectioned: Favorites + Other Contacts) -->
+    <!-- The payee list: favorites as one-tap quick-pay tiles, then
+         everyone as rows whose whole surface is the Pay action. The
+         info glyph on each row is the door to the contact's page. -->
     <div class="entries-container" v-if="filteredEntries.length > 0">
-      <div class="entries-header" :class="$q.dark.isActive ? 'entries-header-dark' : 'entries-header-light'">
-        <span class="entries-count">
-          {{ filteredEntries.length }} {{ $t('contact') }}{{ filteredEntries.length !== 1 ? 's' : '' }}
-        </span>
-        <q-btn
-          flat
-          dense
-          no-caps
-          :label="$t('Clear All')"
-          @click="showClearAllDialog"
-          class="clear-all-btn"
-          :class="$q.dark.isActive ? 'clear-all-btn-dark' : 'clear-all-btn-light'"
-          size="sm"
-          v-if="entries.length > 0"
-        />
-      </div>
-
       <q-scroll-area class="entries-scroll">
-        <!-- Favorites Section -->
-        <div v-if="filteredFavorites.length > 0">
-          <div class="section-header">
-            <Icon icon="tabler:star-filled" width="16" height="16" style="color: var(--color-green)" />
-            <span class="section-title">{{ $t('Favorites') }}</span>
-            <span class="section-count">{{ filteredFavorites.length }}</span>
-          </div>
-          <div class="entries-list">
-            <AddressBookEntry
-              v-for="entry in filteredFavorites"
-              :key="entry.id"
-              :entry="entry"
-              @edit="editEntry"
-              @delete="confirmDeleteEntry"
-              @pay="payContact"
-              @toggle-favorite="toggleFavorite"
-              @copy-address="copyAddress"
-            />
-          </div>
-        </div>
+        <div class="entries-list">
+          <template v-if="filteredFavorites.length > 0">
+            <div class="sec-label">{{ $t('Quick pay') }}</div>
+            <div class="pay-grid">
+              <button
+                v-for="entry in filteredFavorites"
+                :key="'fav-' + entry.id"
+                type="button"
+                class="pay-tile"
+                @click="payContact(entry)"
+              >
+                <ContactAvatar class="pay-tile-avatar" :entry="entry" />
+                <strong>{{ entry.name }}</strong>
+                <small>{{ $t('Pay') }}</small>
+              </button>
+            </div>
+          </template>
 
-        <!-- Other Contacts Section -->
-        <div v-if="filteredNonFavorites.length > 0">
-          <div class="section-header">
-            <Icon icon="tabler:star" width="16" height="16" style="color: var(--color-green)" />
-            <span class="section-title">{{ $t('Other Contacts') }}</span>
-            <span class="section-count">{{ filteredNonFavorites.length }}</span>
-          </div>
-          <div class="entries-list">
+          <div class="sec-label">{{ filteredFavorites.length > 0 ? $t('Everyone') : $t('Contacts') }}</div>
+          <div class="payee-rows">
             <AddressBookEntry
-              v-for="entry in filteredNonFavorites"
+              v-for="entry in filteredEntries"
               :key="entry.id"
               :entry="entry"
-              @edit="editEntry"
-              @delete="confirmDeleteEntry"
               @pay="payContact"
-              @toggle-favorite="toggleFavorite"
-              @copy-address="copyAddress"
+              @open="openContact"
             />
+          </div>
+
+          <!-- One count, once — and the reminder that contact lists are
+               scoped to the identity they were saved with. -->
+          <div class="count-foot">
+            {{ filteredEntries.length === 1
+              ? $t('1 contact · saved with your identity')
+              : $t('{n} contacts · saved with your identity', { n: filteredEntries.length }) }}
           </div>
         </div>
       </q-scroll-area>
@@ -124,73 +105,6 @@
         {{ $t('Add Contact') }}
       </q-btn>
     </div>
-
-
-    <!-- Delete Confirmation Dialog -->
-    <q-dialog v-model="showDeleteDialog" :class="$q.dark.isActive ? 'dialog_dark' : 'dialog_light'">
-      <q-card class="delete-confirm-card" :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'">
-        <q-card-section class="delete-header">
-          <div class="delete-icon-wrapper">
-            <Icon icon="tabler:trash" width="32" height="32" class="delete-icon"/>
-          </div>
-          <div class="delete-title">{{ $t('Delete Contact') }}</div>
-          <div class="delete-message" :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'">
-            {{ $t('Are you sure you want to delete') }} <strong>{{ entryToDelete?.name }}</strong>{{ $t('?') }}
-          </div>
-        </q-card-section>
-
-        <q-card-actions class="delete-actions">
-          <q-btn
-            flat
-            no-caps
-            :label="$t('Cancel')"
-            @click="showDeleteDialog = false"
-            class="cancel-btn"
-            :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-6'"
-          />
-          <q-btn
-            unelevated
-            no-caps
-            :label="$t('Delete')"
-            @click="executeDeleteEntry"
-            class="delete-action-btn"
-          />
-        </q-card-actions>
-      </q-card>
-    </q-dialog>
-
-    <!-- Clear All Confirmation Dialog -->
-    <q-dialog v-model="showClearAllConfirmDialog" :class="$q.dark.isActive ? 'dialog_dark' : 'dialog_light'">
-      <q-card class="delete-confirm-card" :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'">
-        <q-card-section class="delete-header">
-          <div class="delete-icon-wrapper">
-            <Icon icon="tabler:alert-triangle" width="32" height="32" class="delete-icon"/>
-          </div>
-          <div class="delete-title">{{ $t('Clear All Contacts') }}</div>
-          <div class="delete-message" :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'">
-            {{ $t('This will permanently delete all your contacts. This action cannot be undone.') }}
-          </div>
-        </q-card-section>
-
-        <q-card-actions class="delete-actions">
-          <q-btn
-            flat
-            no-caps
-            :label="$t('Cancel')"
-            @click="showClearAllConfirmDialog = false"
-            class="cancel-btn"
-            :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-6'"
-          />
-          <q-btn
-            unelevated
-            no-caps
-            :label="$t('Clear All')"
-            @click="executeClearAll"
-            class="delete-action-btn"
-          />
-        </q-card-actions>
-      </q-card>
-    </q-dialog>
   </div>
 </template>
 
@@ -198,21 +112,15 @@
 import { useAddressBookStore } from '../../stores/addressBook'
 import { mapState, mapActions } from 'pinia'
 import AddressBookEntry from './AddressBookEntry.vue'
+import ContactAvatar from './ContactAvatar.vue'
 
 export default {
   name: 'AddressBookList',
   components: {
-    AddressBookEntry
+    AddressBookEntry,
+    ContactAvatar
   },
-  emits: ['add-contact', 'edit-contact', 'pay-contact'],
-  data() {
-    return {
-      selectedEntry: null,
-      showDeleteDialog: false,
-      entryToDelete: null,
-      showClearAllConfirmDialog: false
-    }
-  },
+  emits: ['add-contact', 'pay-contact', 'open-contact'],
   computed: {
     ...mapState(useAddressBookStore, [
       'entries',
@@ -222,98 +130,20 @@ export default {
 
     filteredFavorites() {
       return this.filteredEntries.filter(entry => entry.isFavorite)
-    },
-
-    filteredNonFavorites() {
-      return this.filteredEntries.filter(entry => !entry.isFavorite)
     }
   },
   methods: {
     ...mapActions(useAddressBookStore, [
       'setSearchQuery',
-      'clearSearch',
-      'deleteEntry',
-      'updateEntry',
-      'clearAll'
+      'clearSearch'
     ]),
-
-    async toggleFavorite(entry) {
-      const store = useAddressBookStore()
-      await store.toggleFavorite(entry.id)
-    },
-
-    editEntry(entry) {
-      this.$emit('edit-contact', entry)
-    },
 
     payContact(entry) {
       this.$emit('pay-contact', entry)
     },
 
-    copyAddress(entry) {
-      const address = entry.address || entry.lightningAddress || ''
-      if (address) {
-        navigator.clipboard.writeText(address).then(() => {
-          this.$q.notify({
-            type: 'positive',
-            message: this.$t('Address copied'),
-            timeout: 2000
-          })
-        }).catch(() => {
-          this.$q.notify({
-            type: 'negative',
-            message: this.$t('Couldn\'t copy'),
-          })
-        })
-      }
-    },
-
-    confirmDeleteEntry(entry) {
-      this.entryToDelete = entry
-      this.showDeleteDialog = true
-    },
-
-    async executeDeleteEntry() {
-      if (!this.entryToDelete) return
-      try {
-        await this.deleteEntry(this.entryToDelete.id)
-        this.showDeleteDialog = false
-        this.entryToDelete = null
-        this.$q.notify({
-          type: 'positive',
-          message: this.$t('Contact removed'),
-
-        })
-      } catch (error) {
-        this.$q.notify({
-          type: 'negative',
-          message: this.$t('Couldn\'t delete contact'),
-
-        })
-      }
-    },
-
-
-    showClearAllDialog() {
-      this.showClearAllConfirmDialog = true
-    },
-
-    async executeClearAll() {
-      try {
-        await this.clearAll()
-        this.showClearAllConfirmDialog = false
-        this.$q.notify({
-          type: 'positive',
-          message: this.$t('Contacts cleared'),
-
-        })
-      } catch (error) {
-        this.$q.notify({
-          type: 'negative',
-          message: this.$t('Couldn\'t clear contacts'),
-
-        })
-      }
+    openContact(entry) {
+      this.$emit('open-contact', entry)
     }
   }
 }
@@ -328,7 +158,7 @@ export default {
 }
 
 .search-section {
-  padding: 1rem;
+  padding: 1rem 1rem 0.25rem;
   flex: 0 0 auto;
 }
 
@@ -339,58 +169,6 @@ export default {
   flex-direction: column;
 }
 
-.entries-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 0.5rem 1rem;
-  flex: 0 0 auto;
-}
-
-.entries-header-dark {
-  color: #666;
-}
-
-.entries-header-light {
-  color: var(--text-muted);
-}
-
-.entries-count {
-  font-family: 'Manrope', sans-serif;
-  font-size: 12px;
-  font-weight: 500;
-  text-transform: uppercase;
-  letter-spacing: 0.02em;
-}
-
-.clear-all-btn {
-  font-family: 'Manrope', sans-serif;
-  font-size: 12px;
-  font-weight: 500;
-  border-radius: 20px;
-  padding: 4px 12px;
-}
-
-.clear-all-btn-dark {
-  color: #EF4444;
-  border: 1px solid rgba(239, 68, 68, 0.3);
-}
-
-.clear-all-btn-light {
-  color: #DC2626;
-  border: 1px solid rgba(220, 38, 38, 0.3);
-}
-
-.clear-all-btn-dark:hover {
-  background: rgba(239, 68, 68, 0.15);
-  border-color: rgba(239, 68, 68, 0.5);
-}
-
-.clear-all-btn-light:hover {
-  background: rgba(220, 38, 38, 0.1);
-  border-color: rgba(220, 38, 38, 0.5);
-}
-
 .entries-scroll {
   flex: 1 1 auto;
   min-height: 0;
@@ -398,31 +176,82 @@ export default {
 
 .entries-list {
   padding: 0 1rem 0.5rem;
-}
-
-/* Section Headers */
-.section-header {
   display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 12px 16px 8px;
+  flex-direction: column;
 }
 
-.section-title {
-  font-size: 14px;
-  font-weight: 600;
+.sec-label {
+  font-family: 'Manrope', sans-serif;
+  font-size: 10.5px;
+  font-weight: 750;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin: 14px 2px 8px;
+}
+
+/* Quick-pay tiles: the favorite payees, one tap each. */
+.pay-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 9px;
+}
+
+.pay-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 7px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-card);
+  border-radius: 16px;
+  padding: 13px 6px 11px;
+  cursor: pointer;
   color: var(--text-primary);
   font-family: 'Manrope', sans-serif;
+  min-width: 0;
+  -webkit-tap-highlight-color: transparent;
 }
 
-.section-count {
+.pay-tile:active {
   background: var(--bg-input);
-  color: var(--text-secondary);
+}
+
+.pay-tile-avatar {
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  overflow: hidden;
+}
+
+.pay-tile strong {
   font-size: 12px;
-  font-weight: 500;
-  padding: 2px 8px;
-  border-radius: 999px;
+  font-weight: 700;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pay-tile small {
+  font-size: 9.5px;
+  color: var(--text-muted);
+  font-weight: 650;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.payee-rows {
+  display: flex;
+  flex-direction: column;
+}
+
+.count-foot {
+  text-align: center;
   font-family: 'Manrope', sans-serif;
+  font-size: 11px;
+  color: var(--text-muted);
+  padding: 16px 0 10px;
 }
 
 /* Empty States — single CSS-variable-driven classes replace the old
@@ -520,9 +349,8 @@ export default {
 
 /* Responsive Design */
 @media (max-width: 480px) {
-  .search-section,
-  .entries-header {
-    padding: 0.75rem;
+  .search-section {
+    padding: 0.75rem 0.75rem 0.25rem;
   }
 
   .entries-list {
@@ -547,117 +375,5 @@ export default {
     font-size: 0.8125rem;
     max-width: 240px;
   }
-
-  .section-header {
-    padding: 10px 12px 6px;
-  }
-}
-
-
-/* Delete / Clear-All Confirmation Dialog
-   Surface language: rounded card (--radius-xl), layered shadow, generous
-   padding. Destructive accent moves from orange-warning to red-destructive
-   so the dialog reads as "this deletes" rather than "heads up". The name
-   stays in primary text color — the action button carries the red, the
-   copy doesn't need to. */
-.delete-confirm-card {
-  width: 100%;
-  max-width: 380px;
-  border-radius: var(--radius-xl);
-  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.35),
-              0 4px 12px rgba(0, 0, 0, 0.18);
-}
-
-.body--light .delete-confirm-card {
-  box-shadow: 0 20px 40px rgba(17, 24, 39, 0.14),
-              0 4px 12px rgba(17, 24, 39, 0.06);
-}
-
-.delete-header {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  text-align: center;
-  padding: 1.75rem 1.5rem 0.5rem;
-}
-
-.delete-icon-wrapper {
-  width: 64px;
-  height: 64px;
-  border-radius: 50%;
-  background: rgba(239, 68, 68, 0.12);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  margin-bottom: 1.1rem;
-  box-shadow: inset 0 0 0 1px rgba(239, 68, 68, 0.18);
-}
-
-.delete-icon {
-  color: #EF4444;
-}
-
-.delete-title {
-  font-family: 'Manrope', sans-serif;
-  font-size: 20px;
-  font-weight: 700;
-  color: var(--text-primary);
-  margin-bottom: 0.5rem;
-  letter-spacing: -0.01em;
-}
-
-.delete-message {
-  font-family: 'Manrope', sans-serif;
-  font-size: 14px;
-  line-height: 1.55;
-  max-width: 280px;
-}
-
-.delete-message strong {
-  color: var(--text-primary);
-  font-weight: 600;
-}
-
-.delete-actions {
-  padding: 1.25rem 1.5rem 1.5rem;
-  display: flex;
-  gap: 0.6rem;
-}
-
-.delete-actions .cancel-btn,
-.delete-actions .delete-action-btn {
-  flex: 1;
-  height: 44px;
-  font-family: 'Manrope', sans-serif;
-  font-size: 14px;
-  border-radius: var(--radius-xl);
-}
-
-.cancel-btn {
-  font-weight: 500;
-  background: var(--bg-input);
-}
-
-.body--light .cancel-btn {
-  background: rgba(17, 24, 39, 0.05);
-}
-
-.delete-action-btn {
-  font-weight: 600;
-  background: #EF4444 !important;
-  color: #fff !important;
-  transition: background 0.15s ease, transform 0.08s ease;
-}
-
-.delete-action-btn:hover {
-  background: #DC2626 !important;
-}
-
-.delete-action-btn:active {
-  transform: scale(0.98);
-}
-
-.delete-action-btn:disabled {
-  opacity: 0.4;
 }
 </style>
