@@ -1,8 +1,8 @@
 <template>
   <q-page class="id-page identity-surface" :class="$q.dark.isActive ? 'bg-dark' : 'bg-light'">
+    <!-- No title: the card right below says who this screen is about
+         better than a word could. Scan sits left, home stays far right. -->
     <div class="id-topbar">
-      <h1 class="id-large-title id-topbar-title">{{ $t('You') }}</h1>
-      <div class="id-topbar-spacer"></div>
       <button
         type="button"
         class="id-topbar-btn"
@@ -12,6 +12,7 @@
       >
         <Icon icon="tabler:scan" width="21" height="21" />
       </button>
+      <div class="id-topbar-spacer"></div>
       <!-- Far right, like every hub header: the one universal way home. -->
       <button
         type="button"
@@ -360,8 +361,6 @@ export default {
   margin: 0 auto;
   flex: 0 0 auto;
 }
-
-.id-topbar-title { margin: 0; }
 
 .id-topbar-spacer { flex: 1; }
 
