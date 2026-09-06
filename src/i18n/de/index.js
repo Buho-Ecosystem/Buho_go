@@ -3244,4 +3244,5 @@ export default {
   "Payments come back to BuhoGO": "Zahlungen kommen zurück zu BuhoGO",
   "Use my BuhoGO address": "Meine BuhoGO-Adresse verwenden",
   "Enter an address first.": "Gib zuerst eine Adresse ein.",
+  "Limits {min} – {max} {unit}": "Limits {min} – {max} {unit}",
 }

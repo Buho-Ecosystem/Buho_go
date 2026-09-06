@@ -52,8 +52,60 @@
         fee) is shown exactly once.
       -->
       <div class="stage stage-compose">
-          <!-- Recipient hero -->
-          <section class="recipient">
+          <!-- Amount leads: the recipient was chosen on the screen before,
+               so the number is this screen's job and takes the stage.
+               Locked, range, or free depending on mode. -->
+          <section class="amount-stage" :class="{ 'amount-stage--locked': amountMode === 'fixed' }">
+            <input
+              v-model="displayAmount"
+              @input="onAmountChange"
+              @focus="onAmountFocus"
+              @blur="onAmountBlur"
+              type="text"
+              inputmode="decimal"
+              class="amount-input"
+              :class="{ 'amount-input--invalid': amountInvalidReason }"
+              :placeholder="amountPlaceholder"
+              :readonly="amountMode === 'fixed'"
+              :tabindex="amountMode === 'fixed' ? -1 : undefined"
+              autofocus
+            />
+            <button
+              type="button"
+              class="unit-pill"
+              :disabled="amountMode === 'fixed'"
+              @click="toggleCurrency"
+            >
+              <span>{{ unitPillLabel }}</span>
+              <Icon v-if="amountMode !== 'fixed'" icon="tabler:arrows-up-down" width="11" height="11" />
+              <Icon v-else icon="tabler:lock" width="11" height="11" />
+            </button>
+            <!-- One helper row in the banking manner: limits on the left,
+                 the conversion on the right. Either side may be empty. -->
+            <div v-if="limitsHelperText || fiatEquivalent" class="amount-helper">
+              <span>{{ limitsHelperText }}</span>
+              <span class="amount-helper-convert">{{ fiatEquivalent }}</span>
+            </div>
+            <!-- Secondary ZAR line for SA-retail merchants when the
+                 user's preferred fiat isn't ZAR. The merchant QR carries
+                 a ZAR amount that we want to remain visible alongside
+                 the user's chosen display currency. -->
+            <div v-if="zarSecondary" class="zar-secondary">
+              R{{ zarSecondary }} ZAR
+            </div>
+          </section>
+
+          <!-- Inline validation -->
+          <div v-if="amountInvalidReason" class="amount-error">
+            <Icon icon="tabler:alert-circle" width="13" height="13" />
+            <span>{{ amountInvalidReason }}</span>
+          </div>
+
+          <!-- The recipient cell: who (avatar + name), where (one quiet
+               identifier line), and everything else behind the info glyph.
+               No ambiguous chevron and no verification marks the app
+               cannot honestly make. -->
+          <section class="recipient-cell">
             <div
               class="recipient-avatar"
               :class="{
@@ -104,20 +156,57 @@
                   <span>{{ formattedCountdown }}</span>
                 </div>
               </div>
-              <div v-if="recipientLnService" class="ln-service-hint">
-                <Icon icon="tabler:device-mobile" width="13" height="13" />
-                <span>{{ recipientLnService.hint }}</span>
-              </div>
-              <!-- Hosting consumer wallet (Wallet of Satoshi, Phoenix, …),
-                   recognized from the address domain. The logo (avatar) and the
-                   username (name above) carry the identity; this quiet line
-                   names the wallet so it's unmistakable. -->
-              <div v-else-if="recipientWalletBrand" class="wallet-brand-hint">
-                <Icon icon="tabler:wallet" width="13" height="13" />
-                <span>{{ recipientWalletBrand }}</span>
-              </div>
+              <div v-if="recipientAddress" class="recipient-addr">{{ recipientAddress }}</div>
             </div>
+            <button
+              v-if="recipientAddress"
+              type="button"
+              class="recipient-info"
+              :aria-label="$t('Details')"
+              :aria-expanded="showAddress ? 'true' : 'false'"
+              @click="showAddress = !showAddress"
+            >
+              <Icon icon="tabler:info-circle" width="17" height="17" />
+            </button>
           </section>
+
+          <!-- The labeled detail panel behind the info glyph, with copy
+               for manual verification against another surface. -->
+          <transition name="fade-collapse">
+            <div v-if="showAddress && recipientAddress" class="recipient-details">
+              <div class="recipient-details-copy">
+                <div class="recipient-details-label">{{ $t('Address') }}</div>
+                <div class="recipient-details-value">{{ recipientAddress }}</div>
+              </div>
+              <button
+                type="button"
+                class="recipient-details-copy-btn"
+                :aria-label="$t('Copy')"
+                @click="copyAddress"
+              >
+                <Icon :icon="addressCopied ? 'tabler:check' : 'tabler:copy'" width="14" height="14" />
+              </button>
+            </div>
+          </transition>
+
+          <!-- Rare context keeps its quiet lines under the cell: the
+               fiat-payout delivery hint, the hosting-wallet name, the
+               invoice's own description, the redeem rail override. -->
+          <div v-if="recipientLnService" class="ln-service-hint">
+            <Icon icon="tabler:device-mobile" width="13" height="13" />
+            <span>{{ recipientLnService.hint }}</span>
+          </div>
+          <div v-else-if="recipientWalletBrand" class="wallet-brand-hint">
+            <Icon icon="tabler:wallet" width="13" height="13" />
+            <span>{{ recipientWalletBrand }}</span>
+          </div>
+          <div v-if="payment?.description" class="payment-desc">
+            <Icon icon="tabler:file-description" width="14" height="14" />
+            <span>{{ payment.description }}</span>
+          </div>
+          <div v-if="payment?.recipient?.viaOverride" class="amount-confirm-via">
+            {{ payment.recipient.viaOverride }}
+          </div>
 
           <!-- Wallet capability hint (e.g. Bitcoin/Spark needs Spark wallet). -->
           <div v-if="!walletCanPay && walletHint" class="wallet-hint">
@@ -131,91 +220,6 @@
           <div v-if="payment?.ratesStale" class="wallet-hint">
             <Icon icon="tabler:alert-triangle" width="14" height="14" />
             <span>{{ $t('Exchange rates may be outdated') }}</span>
-          </div>
-
-          <!-- Payment indicator. Shows the payment description (or a
-               payment-type fallback) and, when there is a destination,
-               doubles as the tap-to-reveal raw-address control for manual
-               verification. This replaces the old "via X" line that used
-               to sit in the recipient hero and duplicated this row. Applies
-               to every payment, Branta-verified or not. -->
-          <div v-if="payment?.description || recipientAddress" class="payment-indicator">
-            <button
-              type="button"
-              class="payment-indicator-row"
-              :class="{ 'payment-indicator-row--static': !recipientAddress }"
-              @click="showAddress = !showAddress"
-            >
-              <Icon icon="tabler:file-description" width="14" height="14" class="payment-indicator-icon" />
-              <span class="payment-indicator-label">{{ paymentLabel }}</span>
-              <Icon
-                v-if="recipientAddress"
-                icon="tabler:chevron-down"
-                width="14"
-                height="14"
-                class="payment-indicator-chev"
-                :class="{ flipped: showAddress }"
-              />
-            </button>
-            <transition name="fade-collapse">
-              <div v-if="showAddress && recipientAddress" class="payment-indicator-address">
-                {{ recipientAddress }}
-              </div>
-            </transition>
-          </div>
-
-          <!-- Optional rail line, only when the parent overrides it (LNURL-
-               Withdraw → "Lightning · Withdrawal"). Normal sends already show
-               the payment type in the indicator above, so it's never repeated. -->
-          <div v-if="payment?.recipient?.viaOverride" class="amount-confirm-via">
-            {{ payment.recipient.viaOverride }}
-          </div>
-
-          <!-- Amount — locked, range, or free depending on mode. -->
-          <section class="amount-stage" :class="{ 'amount-stage--locked': amountMode === 'fixed' }">
-            <input
-              v-model="displayAmount"
-              @input="onAmountChange"
-              @focus="onAmountFocus"
-              @blur="onAmountBlur"
-              type="text"
-              inputmode="decimal"
-              class="amount-input"
-              :class="{ 'amount-input--invalid': amountInvalidReason }"
-              :placeholder="amountPlaceholder"
-              :readonly="amountMode === 'fixed'"
-              :tabindex="amountMode === 'fixed' ? -1 : undefined"
-              autofocus
-            />
-            <button
-              type="button"
-              class="unit-pill"
-              :disabled="amountMode === 'fixed'"
-              @click="toggleCurrency"
-            >
-              <span>{{ unitPillLabel }}</span>
-              <Icon v-if="amountMode !== 'fixed'" icon="tabler:arrows-up-down" width="11" height="11" />
-              <Icon v-else icon="tabler:lock" width="11" height="11" />
-            </button>
-            <div class="fiat-shadow">{{ fiatEquivalent || ' ' }}</div>
-            <!-- Secondary ZAR line for SA-retail merchants when the
-                 user's preferred fiat isn't ZAR. The merchant QR carries
-                 a ZAR amount that we want to remain visible alongside
-                 the user's chosen display currency. -->
-            <div v-if="zarSecondary" class="zar-secondary">
-              R{{ zarSecondary }} ZAR
-            </div>
-          </section>
-
-          <!-- Range hint -->
-          <div v-if="amountMode === 'range'" class="range-hint">
-            {{ rangeHintText }}
-          </div>
-
-          <!-- Inline validation -->
-          <div v-if="amountInvalidReason" class="amount-error">
-            <Icon icon="tabler:alert-circle" width="13" height="13" />
-            <span>{{ amountInvalidReason }}</span>
           </div>
 
           <!-- Comment: sits directly under the amount block, in the slot
@@ -366,12 +370,14 @@ export default {
   data() {
     return {
       showAddress: false,
+      addressCopied: false,
       displayAmount: '',
       currentCurrency: 'sats',
       isAmountFocused: false,
       comment: '',
       fiatRates: {},
-      logoFailed: false
+      logoFailed: false,
+      _copyTimer: null
     }
   },
   computed: {
@@ -456,17 +462,6 @@ export default {
       return this.payment?.recipient?.walletBrand || null
     },
 
-    // Label for the payment-indicator row: the human description when the
-    // invoice / LNURL carried one (real content), otherwise a plain
-    // "Show details" so the row reads as what it is — the reveal for the
-    // raw destination string. Never the rail name: the payment-language
-    // unification says only "Bitcoin payment" on send, and the hero
-    // identity already carries that, so repeating it here would be the
-    // old shown-twice bug in new clothes.
-    paymentLabel() {
-      if (this.payment?.description) return this.payment.description
-      return this.$t('Show details')
-    },
 
     // LUD-21 / currency-extension (#207) payout currency, present when the
     // provider returns one (fiat-payout addresses: ChapSmart TZS, Tando KES,
@@ -586,18 +581,32 @@ export default {
       return this.walletCanPay && this.isAmountAcceptable && this.commitGate
     },
 
-    rangeHintText() {
+    // The left half of the amount helper row. Only range mode has bounds
+    // to show; free and fixed leave the slot empty and the conversion
+    // holds the row alone.
+    limitsHelperText() {
       if (this.amountMode !== 'range') return ''
       if (this.isLocalDenomination) {
         const { minSendable, maxSendable, code } = this.payoutCurrency
-        // Only show the bounds we actually have — never "Min 0 · Max 0".
+        // Only show the bounds we actually have — never "Limits 0 – 0".
         if (!minSendable && !maxSendable) return ''
+        if (minSendable && maxSendable) {
+          return this.$t('Limits {min} – {max} {unit}', {
+            min: minSendable.toLocaleString(),
+            max: maxSendable.toLocaleString(),
+            unit: code
+          })
+        }
         const parts = []
         if (minSendable) parts.push(`${this.$t('Min')} ${minSendable.toLocaleString()}`)
         if (maxSendable) parts.push(`${this.$t('Max')} ${maxSendable.toLocaleString()}`)
         return `${parts.join(' · ')} ${code}`
       }
-      return `${this.$t('Min')} ${this.minSats.toLocaleString()} · ${this.$t('Max')} ${this.maxSats.toLocaleString()} sats`
+      return this.$t('Limits {min} – {max} {unit}', {
+        min: this.minSats.toLocaleString(),
+        max: this.maxSats.toLocaleString(),
+        unit: 'sats'
+      })
     },
 
     // ───── Countdown (merchant-bounded payments) ─────
@@ -782,8 +791,23 @@ export default {
       }
     },
 
+    /** From the detail panel: copy the raw destination for cross-checking. */
+    async copyAddress() {
+      if (!this.recipientAddress) return
+      try {
+        await navigator.clipboard.writeText(this.recipientAddress)
+        this.addressCopied = true
+        if (this._copyTimer) clearTimeout(this._copyTimer)
+        this._copyTimer = setTimeout(() => { this.addressCopied = false }, 1600)
+      } catch {
+        // Clipboard can be unavailable (permissions); the string stays
+        // selectable in the panel, so failing quietly loses nothing.
+      }
+    },
+
     resetForFreshOpen() {
       this.showAddress = false
+      this.addressCopied = false
       this.comment = ''
       this.logoFailed = false
       // Fiat-payout addresses default to the recipient's own currency (the
@@ -982,22 +1006,25 @@ export default {
    Borderless, airy hero (Apple/Blitz-elegant): the recipient reads as
    content, not a chunky filled card. No fill, no border, minimal padding —
    the avatar + name carry it, verification lives in the top-right corner. */
-.recipient {
+/* The recipient cell: one quiet chip row below the amount. */
+.recipient-cell {
   display: flex;
   align-items: center;
-  gap: 13px;
-  padding: 2px 2px 4px;
+  gap: 11px;
+  padding: 11px 12px;
+  border-radius: var(--radius-md);
+  background: var(--bg-input);
 }
 
 .recipient-avatar {
-  width: 48px;
-  height: 48px;
-  min-width: 48px;
+  width: 40px;
+  height: 40px;
+  min-width: 40px;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 20px;
+  font-size: 17px;
   font-weight: 700;
   color: #fff;
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.18);
@@ -1049,8 +1076,8 @@ export default {
 
 .recipient-name {
   flex: 1;
-  font-size: 18px;
-  font-weight: 600;
+  font-size: 15px;
+  font-weight: 650;
   color: var(--text-primary);
   letter-spacing: -0.01em;
   overflow: hidden;
@@ -1058,21 +1085,96 @@ export default {
   white-space: nowrap;
 }
 
-/* Fiat-payout service hint (Tando, Bitzed, …): a quiet line under the
-   phone number reminding the user the money lands as local currency.
-   The wallet-brand hint (Wallet of Satoshi, Phoenix, …) shares the look —
-   a quiet line under the username naming the hosting wallet. */
+/* The one identifier line: the raw destination, quiet and single-line.
+   The full string lives in the detail panel behind the info glyph. */
+.recipient-addr {
+  margin-top: 2px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.recipient-info {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 0;
+  background: var(--bg-card);
+  box-shadow: inset 0 0 0 1px var(--border-card);
+  color: var(--text-muted);
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: color 0.15s ease;
+}
+.recipient-info[aria-expanded="true"] { color: var(--text-primary); }
+
+/* The labeled detail panel the info glyph opens. */
+.recipient-details {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  background: var(--bg-input);
+  overflow: hidden;
+}
+.recipient-details-copy { flex: 1; min-width: 0; }
+.recipient-details-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: 3px;
+}
+.recipient-details-value {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-primary);
+  word-break: break-all;
+  line-height: 1.5;
+  user-select: text;
+}
+.recipient-details-copy-btn {
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  border: 0;
+  background: var(--bg-card);
+  box-shadow: inset 0 0 0 1px var(--border-card);
+  color: var(--text-secondary);
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Fiat-payout service hint (Tando, Bitzed, …): a quiet line reminding
+   the user the money lands as local currency. The wallet-brand hint
+   (Wallet of Satoshi, Phoenix, …) shares the look, and the invoice's
+   own description joins them as a third quiet line. */
 .ln-service-hint,
-.wallet-brand-hint {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  margin-top: 4px;
+.wallet-brand-hint,
+.payment-desc {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 0 2px;
   font-size: 12.5px;
   font-weight: 500;
-  line-height: 1.3;
+  line-height: 1.4;
   color: var(--text-secondary);
 }
+.ln-service-hint svg,
+.wallet-brand-hint svg,
+.payment-desc svg { flex: 0 0 auto; margin-top: 2px; color: var(--text-muted); }
 
 /* Countdown chip — neutral grey for the standing time, flips to a soft
    red wash once the remaining time crosses the urgent threshold so users
@@ -1138,60 +1240,6 @@ export default {
   box-shadow: inset 0 0 0 1px rgba(245, 158, 11, 0.28);
 }
 
-/* ─── Payment indicator (compose) ─── */
-/* The payment description / type row. When a destination exists it is a
-   button that folds out the raw address for manual verification, replacing
-   the redundant "via X" line that used to live in the recipient hero. */
-.payment-indicator { display: flex; flex-direction: column; }
-.payment-indicator-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
-  box-sizing: border-box;
-  margin: 0;
-  padding: 10px 12px;
-  border: none;
-  border-radius: var(--radius-md);
-  background: var(--bg-input);
-  font-family: inherit;
-  font-size: 13px;
-  color: var(--text-secondary);
-  line-height: 1.4;
-  text-align: left;
-  cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
-  transition: background 0.15s ease;
-}
-.payment-indicator-row--static { cursor: default; }
-.body--light .payment-indicator-row:not(.payment-indicator-row--static):hover { background: rgba(17, 24, 39, 0.06); }
-.body--dark .payment-indicator-row:not(.payment-indicator-row--static):hover { background: rgba(255, 255, 255, 0.05); }
-.payment-indicator-icon { color: var(--text-muted); flex-shrink: 0; }
-.payment-indicator-label {
-  flex: 1;
-  min-width: 0;
-  text-align: left;
-  word-break: break-word;
-}
-.payment-indicator-chev {
-  color: var(--text-muted);
-  flex-shrink: 0;
-  opacity: 0.7;
-  transition: transform 0.18s ease;
-}
-.payment-indicator-chev.flipped { transform: rotate(180deg); }
-.payment-indicator-address {
-  margin-top: 8px;
-  padding: 10px 12px;
-  border-radius: var(--radius-md);
-  background: var(--bg-input);
-  font-family: var(--font-mono);
-  font-size: 11px;
-  color: var(--text-muted);
-  word-break: break-all;
-  line-height: 1.5;
-}
-
 /* ─── Amount stage ─── */
 .amount-stage {
   display: flex;
@@ -1239,9 +1287,23 @@ export default {
 .unit-pill:disabled { cursor: default; opacity: 0.7; }
 .body--light .unit-pill { background: rgba(17, 24, 39, 0.05); }
 
-.fiat-shadow { font-size: 14px; font-weight: 500; color: var(--text-muted); min-height: 18px; }
+/* One helper row under the amount: limits left, conversion right. */
+.amount-helper {
+  width: 100%;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 2px;
+  min-height: 16px;
+  font-size: 11.5px;
+  color: var(--text-muted);
+  letter-spacing: 0.01em;
+  font-variant-numeric: tabular-nums;
+}
+.amount-helper-convert { margin-left: auto; }
 
-/* ZAR secondary — sits below fiat-shadow for SA-retail merchants when
+/* ZAR secondary — sits below the helper row for SA-retail merchants when
    the user's preferred fiat differs from the QR's native ZAR amount. */
 .zar-secondary {
   font-size: 12px;
@@ -1278,13 +1340,6 @@ export default {
   display: inline-flex;
   align-items: center;
   font-variant-numeric: tabular-nums;
-}
-
-.range-hint {
-  text-align: center;
-  font-size: 12px;
-  color: var(--text-muted);
-  letter-spacing: 0.01em;
 }
 
 .amount-error {
