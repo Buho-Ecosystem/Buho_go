@@ -15,130 +15,126 @@
         <span class="pp-state-mark"><Icon icon="tabler:user-question" width="30" height="30" /></span>
         <h1 class="pp-state-title">{{ $t('No card here') }}</h1>
         <p class="pp-state-text">{{ $t('This link does not point at anyone. It may have been mistyped.') }}</p>
-        <a class="pp-btn pp-btn--ghost" :href="BUHOGO_HOME">{{ $t('Go to BuhoGO') }}</a>
+        <a class="pp-ghost" :href="BUHOGO_HOME">{{ $t('Go to BuhoGO') }}</a>
       </div>
 
-      <template v-else>
-        <!--
-          1. Who this is.
+      <!--
+        The page: one screen, one verb.
 
-          The person owns the top of the page on their own. Everything below
-          is something the visitor can do about them, which is the order a
-          stranger reads in: who, then what.
-        -->
-        <section class="pp-person">
+        Identity with a way to keep the person, the amount as the page,
+        a note, Pay in the thumb zone with the code one tap away, and the
+        recruiting line at the foot. Nothing scrolls.
+      -->
+      <template v-else>
+        <!-- 1. Who this is, and Save riding the row. -->
+        <div class="pp-top pp-in" style="--d: 0ms">
           <span class="pp-avatar">
             <img v-if="avatar" :src="avatar" alt="" @error="avatarBroken = true" />
-            <Icon v-else icon="tabler:user" width="38" height="38" />
+            <Icon v-else icon="tabler:user" width="20" height="20" />
           </span>
-
-          <h1 class="pp-name">{{ displayName }}</h1>
-          <p v-if="username" class="pp-username">{{ '@' + username }}</p>
-          <p v-if="about" class="pp-about">{{ about }}</p>
-        </section>
-
-        <!--
-          2. The one thing most visitors came to do.
-
-          A single filled button, alone, with nothing competing beside it.
-          Everything else on the page is quieter than this by design.
-        -->
-        <template v-if="lud16">
-          <button type="button" class="pp-btn pp-btn--primary" @click="onPay">
-            <Icon icon="tabler:arrow-up-right" width="18" height="18" />
-            {{ payLabel }}
+          <div class="pp-top-copy">
+            <div class="pp-top-name">{{ displayName }}</div>
+            <div v-if="trustLine" class="pp-top-nip">{{ trustLine }}</div>
+          </div>
+          <button
+            v-if="insideBuhoGo"
+            type="button"
+            class="pp-save"
+            :disabled="saved || saving"
+            @click="saveContact"
+          >
+            <q-spinner v-if="saving" size="13px" />
+            <Icon v-else :icon="saved ? 'tabler:check' : 'tabler:user-plus'" width="13" height="13" />
+            {{ saved ? $t('Saved') : $t('Save') }}
           </button>
-          <p class="pp-caption">{{ $t('Opens your Bitcoin wallet.') }}</p>
+          <a v-else class="pp-save" :href="nostrUri">
+            <Icon icon="tabler:user-plus" width="13" height="13" />
+            {{ $t('Save') }}
+          </a>
+        </div>
 
-          <!--
-            3. The same payment, by hand.
-
-            A grouped list rather than more buttons: these are for people
-            whose wallet cannot take a link, or who are reading this on a
-            desktop, and they should read as details rather than as choices
-            competing with Pay.
-          -->
-          <div class="pp-group">
-            <button type="button" class="pp-row" @click="copyAddress">
-              <span class="pp-row-icon"><Icon :icon="copied ? 'tabler:check' : 'tabler:copy'" width="17" height="17" /></span>
-              <span class="pp-row-text">
-                <span class="pp-row-label">{{ copied ? $t('Copied') : $t('Copy the address') }}</span>
-                <span class="pp-row-caption pp-row-caption--mono">{{ lud16 }}</span>
-              </span>
-            </button>
-
-            <button type="button" class="pp-row" :aria-expanded="showCode" @click="showCode = !showCode">
-              <span class="pp-row-icon"><Icon icon="tabler:qrcode" width="17" height="17" /></span>
-              <span class="pp-row-text">
-                <span class="pp-row-label">{{ showCode ? $t('Hide the code') : $t('Show the code') }}</span>
-                <span class="pp-row-caption">{{ $t('Scan it from another phone') }}</span>
-              </span>
-              <Icon
-                icon="tabler:chevron-down"
-                width="17"
-                height="17"
-                class="pp-row-chev"
-                :class="{ 'pp-row-chev--open': showCode }"
+        <!-- 2. The amount is the page. -->
+        <template v-if="lud16">
+          <div class="pp-mid">
+            <div class="pp-amount-wrap pp-in" style="--d: 90ms">
+              <input
+                v-model="displayAmount"
+                type="text"
+                inputmode="decimal"
+                class="pp-amount"
+                :class="{ 'pp-amount--long': displayAmount.length > 6 }"
+                :style="{ width: amountWidth }"
+                :placeholder="amountPlaceholder"
+                :aria-label="$t('Amount')"
+                maxlength="12"
               />
+              <span class="pp-amount-unit">{{ unitShort }}</span>
+            </div>
+
+            <button v-if="hasRates" type="button" class="pp-unit pp-in" style="--d: 130ms" @click="toggleCurrency">
+              <span>{{ unitPillLabel }}</span>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 16V4M7 4L3 8M7 4l4 4M17 8v12m0 0l4-4m-4 4l-4-4"/></svg>
             </button>
 
-            <div v-if="showCode" class="pp-code">
-              <div class="pp-qr">
-                <vue-qrcode :value="payUri" :options="qrOptions" class="pp-qr-canvas" />
-              </div>
-            </div>
+            <div class="pp-conv pp-in" style="--d: 160ms">{{ conversionLine || ' ' }}</div>
+          </div>
+
+          <!-- 3. The note rides along. -->
+          <label class="pp-note pp-in" style="--d: 210ms">
+            <Icon icon="tabler:message-circle" width="15" height="15" />
+            <input
+              v-model="comment"
+              type="text"
+              :placeholder="$t('Add a note')"
+              maxlength="150"
+            />
+          </label>
+
+          <!-- 4. The verb, and the code beside it. -->
+          <div class="pp-actions pp-in" style="--d: 250ms">
+            <button type="button" class="pp-cta" :disabled="paying" @click="onPay">
+              <q-spinner v-if="paying" size="17px" />
+              <Icon v-else icon="tabler:arrow-up-right" width="17" height="17" />
+              {{ ctaLabel }}
+            </button>
+            <button type="button" class="pp-micro" :aria-label="$t('Show the code')" @click="showCode = true">
+              <Icon icon="tabler:qrcode" width="20" height="20" />
+            </button>
           </div>
         </template>
 
-        <!-- Nothing to pay yet. Stated once, quietly, where the pay button
+        <!-- Nothing to pay yet. Stated once, quietly, where the amount
              would have been. -->
-        <div v-else class="pp-note">
-          <Icon icon="tabler:info-circle" width="17" height="17" />
-          <span>{{ $t('{name} has not set up payments yet, so there is nothing to send to.', { name: spokenName }) }}</span>
+        <div v-else class="pp-mid">
+          <div class="pp-note-empty pp-in" style="--d: 90ms">
+            <Icon icon="tabler:info-circle" width="17" height="17" />
+            <span>{{ $t('{name} has not set up payments yet, so there is nothing to send to.', { name: spokenName }) }}</span>
+          </div>
         </div>
 
-        <!--
-          4. Keeping the person.
-
-          Inside BuhoGO this saves them outright. Outside it is a handoff to
-          the app, because a contact has nowhere else to live.
-        -->
-        <div class="pp-group pp-group--spaced">
-          <button v-if="insideBuhoGo" type="button" class="pp-row" :disabled="saved || saving" @click="saveContact">
-            <span class="pp-row-icon"><Icon :icon="saved ? 'tabler:check' : 'tabler:user-plus'" width="17" height="17" /></span>
-            <span class="pp-row-text">
-              <span class="pp-row-label">{{ saved ? $t('Saved to your contacts') : $t('Save to my contacts') }}</span>
-              <span v-if="!saved" class="pp-row-caption">{{ $t('Pay them by name next time') }}</span>
-            </span>
-          </button>
-
-          <a v-else class="pp-row" :href="nostrUri">
-            <span class="pp-row-icon"><Icon icon="tabler:user-plus" width="17" height="17" /></span>
-            <span class="pp-row-text">
-              <span class="pp-row-label">{{ $t('Add to BuhoGO') }}</span>
-              <span class="pp-row-caption">{{ $t('Opens the app if you have it') }}</span>
-            </span>
-          </a>
-        </div>
-
-        <!--
-          5. What this even is.
-
-          The visitor may never have heard of BuhoGO, and a bare logo does
-          not answer that. One sentence, at the end, where it belongs.
-        -->
-        <footer class="pp-foot">
-          <a class="pp-foot-brand" :href="BUHOGO_HOME">
-            <img src="/buho_logo.svg" alt="" width="17" height="17" />
-            <span>BuhoGO</span>
-          </a>
-          <p class="pp-foot-text">
-            {{ $t('A Bitcoin wallet you can pay people by name with.') }}
-            <a class="pp-link" :href="BUHOGO_HOME">{{ $t('Get BuhoGO') }}</a>
-          </p>
+        <!-- 5. The foot, the Alby way: a question, answered by the product. -->
+        <footer class="pp-foot pp-in" style="--d: 300ms">
+          <img src="/buho_logo.svg" alt="" width="16" height="16" />
+          <span>{{ $t('Want a page like this too?') }} <a :href="BUHOGO_HOME">{{ $t('Get BuhoGO') }}</a></span>
         </footer>
       </template>
     </div>
+
+    <!-- The code sheet: everything secondary, one tap away. -->
+    <q-dialog v-model="showCode" position="bottom">
+      <div class="pp-code-sheet">
+        <div class="pp-grab" aria-hidden="true"></div>
+        <div class="pp-qr">
+          <vue-qrcode v-if="payUri" :value="payUri" :options="qrOptions" class="pp-qr-canvas" />
+          <span v-if="avatar" class="pp-qr-avatar"><img :src="avatar" alt="" /></span>
+        </div>
+        <p class="pp-code-caption">{{ $t('Scan from another phone, or with a wallet app.') }}</p>
+        <button type="button" class="pp-code-addr" @click="copyAddress">
+          <code>{{ lud16 }}</code>
+          <Icon :icon="copied ? 'tabler:check' : 'tabler:copy'" width="14" height="14" />
+        </button>
+      </div>
+    </q-dialog>
   </q-page>
 </template>
 
@@ -152,8 +148,30 @@ import { profileDisplayName, sanitizeImageUrl, shortenNpub } from '../services/n
 import { isLightningAddress } from '../utils/addressUtils.js';
 import { BUHOGO_HOME, expandProfileSlug, isKey, KEY_PARAM } from '../utils/profileLink.js';
 import { getQrOptionsWithSize } from '../utils/qrConfig.js';
+import { lnurlGetJson } from '../utils/lnurlHttp.js';
+import { fiatRatesService } from '../utils/fiatRates.js';
+import { FIAT_SYMBOLS } from '../utils/fiatCurrencies.js';
 import { useWalletStore } from '../stores/wallet';
 import { useAddressBookStore } from '../stores/addressBook';
+
+/**
+ * The visitor's currency, guessed from their locale region. Sats stay the
+ * source of truth; this only decides which fiat the swap offers. USD is the
+ * fallback the world over.
+ */
+const EURO_REGIONS = new Set(['AT', 'BE', 'CY', 'DE', 'EE', 'ES', 'FI', 'FR', 'GR', 'HR', 'IE', 'IT', 'LT', 'LU', 'LV', 'MT', 'NL', 'PT', 'SI', 'SK']);
+const REGION_CURRENCY = { US: 'USD', GB: 'GBP', CH: 'CHF', JP: 'JPY', CA: 'CAD', AU: 'AUD', SE: 'SEK', NO: 'NOK', DK: 'DKK', PL: 'PLN', CZ: 'CZK', MX: 'MXN', BR: 'BRL', KE: 'KES', ZM: 'ZMW', TZ: 'TZS', ZA: 'ZAR' };
+
+function guessVisitorCurrency() {
+  try {
+    const locale = new Intl.Locale(navigator.language || 'en-US');
+    const region = (locale.maximize?.().region || locale.region || 'US').toUpperCase();
+    if (EURO_REGIONS.has(region)) return 'EUR';
+    return REGION_CURRENCY[region] || 'USD';
+  } catch {
+    return 'USD';
+  }
+}
 
 export default {
   name: 'PublicProfilePage',
@@ -179,6 +197,12 @@ export default {
       copied: false,
       saved: false,
       saving: false,
+      paying: false,
+      displayAmount: '',
+      comment: '',
+      currency: 'sats', // 'sats' | the visitor's fiat code
+      fiatCode: guessVisitorCurrency(),
+      fiatRates: {},
       BUHOGO_HOME,
       _copyTimer: null,
     };
@@ -209,23 +233,17 @@ export default {
     },
 
     /**
-     * The handle to print under the name.
-     *
-     * A NIP-05 address of `_@domain` is the convention for "this domain
-     * itself" and its local part is not a name: printing it verbatim gives
-     * the reader `@_`. Those show the domain instead, which is what every
-     * other client does and what the person actually goes by.
+     * The trust line under the name: handle and domain, plainly, per the
+     * Nostr design guide. `_@domain` is the convention for "the domain
+     * itself" and prints as just the domain.
      */
-    username() {
+    trustLine() {
       const nip05 = String(this.profile?.nip05 || '').trim();
+      if (!nip05) return '';
       if (!nip05.includes('@')) return nip05;
       const [local, domain] = nip05.split('@');
       if (!local || local === '_') return domain || '';
-      return local;
-    },
-
-    about() {
-      return this.profile?.about || '';
+      return `@${local} · ${domain}`;
     },
 
     /**
@@ -235,7 +253,9 @@ export default {
      */
     contactName() {
       if (this.hasName) return this.profile.name;
-      return this.username || this.$t('Unnamed');
+      const nip05 = String(this.profile?.nip05 || '').trim();
+      const local = nip05.split('@')[0];
+      return (local && local !== '_' ? local : '') || this.$t('Unnamed');
     },
 
     avatar() {
@@ -257,8 +277,8 @@ export default {
     },
 
     /**
-     * The code and the button hand over the same thing, and both carry the
-     * scheme so the receiving app knows what it is being given.
+     * The code and the plain-link fallback hand over the same thing, and
+     * both carry the scheme so the receiving app knows what it is given.
      */
     payUri() {
       return this.lud16 ? `lightning:${this.lud16}` : '';
@@ -275,22 +295,90 @@ export default {
       return (this.walletStore.wallets || []).length > 0;
     },
 
-    payLabel() {
-      return this.hasName ? this.$t('Pay {name}', { name: this.firstName }) : this.$t('Pay');
-    },
-
     /** Opens BuhoGO on Android, which already claims the nostr scheme. */
     nostrUri() {
       return this.npub ? `nostr:${this.npub}` : BUHOGO_HOME;
     },
 
+    hasRates() {
+      return !!this.fiatRates[this.fiatCode];
+    },
+
+    isFiat() {
+      return this.currency !== 'sats';
+    },
+
+    fiatSymbol() {
+      return FIAT_SYMBOLS[this.fiatCode] || (this.fiatCode + ' ');
+    },
+
+    unitShort() {
+      return this.isFiat ? this.fiatSymbol.trim() : this.$t('sats');
+    },
+
+    unitPillLabel() {
+      return this.isFiat ? this.fiatCode : 'SATS';
+    },
+
+    amountPlaceholder() {
+      return this.isFiat ? '0.00' : '0';
+    },
+
+    /** The typed amount in sats, whatever the unit on screen. */
+    amountInSats() {
+      const n = parseFloat(String(this.displayAmount).replace(',', '.'));
+      if (!isFinite(n) || n <= 0) return 0;
+      if (!this.isFiat) return Math.floor(n);
+      const rate = this.fiatRates[this.fiatCode];
+      if (!rate) return 0;
+      return Math.floor((n / rate) * 100000000);
+    },
+
+    conversionLine() {
+      const sats = this.amountInSats;
+      if (!sats) return '';
+      if (this.isFiat) return `≈ ${sats.toLocaleString()} ${this.$t('sats')}`;
+      const fiat = fiatRatesService.convertSatsToFiatSync(sats, this.fiatCode);
+      if (fiat === null || !this.hasRates) return '';
+      return `≈ ${this.fiatSymbol}${fiat.toFixed(2)}`;
+    },
+
+    ctaLabel() {
+      const sats = this.amountInSats;
+      if (!sats) {
+        return this.hasName ? this.$t('Pay {name}', { name: this.firstName }) : this.$t('Pay');
+      }
+      if (this.isFiat) {
+        const n = parseFloat(String(this.displayAmount).replace(',', '.'));
+        return `${this.$t('Pay')} ${this.fiatSymbol}${n.toFixed(2)}`;
+      }
+      return `${this.$t('Pay')} ${sats.toLocaleString()} ${this.$t('sats')}`;
+    },
+
+    /**
+     * The input is exactly as wide as what it holds, so the figure and
+     * its unit center as one group. `ch` tracks the digit width closely
+     * enough under tabular numerals; the fraction covers the caret.
+     */
+    amountWidth() {
+      const shown = String(this.displayAmount || this.amountPlaceholder);
+      return `${Math.max(shown.length, 1) + 0.3}ch`;
+    },
+
     qrOptions() {
-      return getQrOptionsWithSize(168);
+      // 212 sits inside the 228 plate with its padding; H-level error
+      // correction (the app-wide default) tolerates the centered avatar.
+      return getQrOptionsWithSize(212);
     },
   },
 
   async created() {
     await this.resolve();
+    // Rates power the fiat swap; the page works sats-only without them.
+    fiatRatesService.ensureRatesLoaded()
+      .then(() => fiatRatesService.getRates())
+      .then((rates) => { this.fiatRates = rates || {}; })
+      .catch(() => {});
   },
 
   beforeUnmount() {
@@ -301,11 +389,10 @@ export default {
     /**
      * Slug to profile.
      *
-     * A username goes through NIP-05, which is a call to that username's
-     * domain and can fail for reasons that have nothing to do with the
-     * person or the link. The link carries the key in `k` for exactly that
-     * case, so a lookup failure falls back to it instead of showing a
-     * stranger a dead page. Only a link with no key left to try is missing.
+     * The link leads with the key, which resolves with no network call. A
+     * username slug goes through NIP-05 and can fail for reasons that have
+     * nothing to do with the person, so `k` still works as the fallback for
+     * older links. Only a link with nothing resolvable is missing.
      */
     async resolve() {
       const identifier = expandProfileSlug(this.$route.params.id);
@@ -332,7 +419,7 @@ export default {
       this.pubkey = resolved.pubkey;
       this.relayHints = Array.isArray(resolved.relays) ? resolved.relays : [];
 
-      // The card renders either way. A key that resolves but has published
+      // The page renders either way. A key that resolves but has published
       // nothing is still a real person, and a relay round trip that fails is
       // not a reason to tell a visitor the link is broken.
       try {
@@ -368,13 +455,22 @@ export default {
       }
     },
 
+    toggleCurrency() {
+      this.currency = this.isFiat ? 'sats' : this.fiatCode;
+      this.displayAmount = '';
+    },
+
     /**
-     * Inside the app this hands the address to the send flow. Outside it
-     * hands it to the operating system, which offers every installed wallet
-     * including BuhoGO.
+     * Pay.
+     *
+     * Inside the app this hands the address to the send flow. Outside, a
+     * typed amount is turned into a real invoice through the address's own
+     * pay endpoint so the wallet opens with the number inside; anything that
+     * fails on that path falls back to the plain lightning: link, which
+     * every wallet accepts. No amount, plain link straight away.
      */
-    onPay() {
-      if (!this.lud16) return;
+    async onPay() {
+      if (!this.lud16 || this.paying) return;
 
       if (this.insideBuhoGo) {
         this.$router.push({
@@ -389,7 +485,73 @@ export default {
         return;
       }
 
-      window.location.href = `lightning:${this.lud16}`;
+      const sats = this.amountInSats;
+      if (sats > 0) {
+        this.paying = true;
+        try {
+          const invoice = await this.fetchInvoice(sats);
+          if (invoice) {
+            this.openInWallet(`lightning:${invoice}`);
+            return;
+          }
+        } catch (err) {
+          console.warn('[public-profile] invoice fetch failed, using the plain link:', err);
+        } finally {
+          this.paying = false;
+        }
+      }
+
+      this.openInWallet(this.payUri);
+    },
+
+    /**
+     * Amount to invoice, through the address's own LNURL-pay endpoint. The
+     * note rides along when the endpoint accepts comments. Returns '' when
+     * the amount is outside the endpoint's bounds (after telling the user)
+     * and throws on network trouble so the caller can fall back.
+     */
+    async fetchInvoice(sats) {
+      const [name, domain] = this.lud16.split('@');
+      const paramsResponse = await lnurlGetJson(`https://${domain}/.well-known/lnurlp/${name}`);
+      if (!paramsResponse.ok) throw new Error('lnurlp params unavailable');
+      const params = paramsResponse.data;
+      if (!params || params.status === 'ERROR' || !params.callback) throw new Error(params?.reason || 'lnurlp error');
+
+      const msat = sats * 1000;
+      if (params.minSendable && msat < params.minSendable) {
+        this.$q.notify({
+          type: 'warning',
+          message: this.$t('Minimum is {n} sats', { n: Math.ceil(params.minSendable / 1000).toLocaleString() }),
+          timeout: 3000,
+        });
+        return '';
+      }
+      if (params.maxSendable && msat > params.maxSendable) {
+        this.$q.notify({
+          type: 'warning',
+          message: this.$t('Maximum is {n} sats', { n: Math.floor(params.maxSendable / 1000).toLocaleString() }),
+          timeout: 3000,
+        });
+        return '';
+      }
+
+      const callback = new URL(params.callback);
+      callback.searchParams.set('amount', String(msat));
+      const note = this.comment.trim();
+      const allowed = Number(params.commentAllowed) || 0;
+      if (note && allowed > 0) {
+        callback.searchParams.set('comment', note.slice(0, allowed));
+      }
+
+      const invoiceResponse = await lnurlGetJson(callback.toString());
+      if (!invoiceResponse.ok) throw new Error('invoice unavailable');
+      const data = invoiceResponse.data;
+      if (!data || data.status === 'ERROR' || !data.pr) throw new Error(data?.reason || 'no invoice');
+      return data.pr;
+    },
+
+    openInWallet(uri) {
+      window.location.href = uri;
       // Nothing handled the scheme, most likely a desktop browser. Open the
       // code so the visit still ends somewhere useful.
       setTimeout(() => { this.showCode = true; }, 1200);
@@ -472,13 +634,15 @@ export default {
    a setting the visitor has not made. */
 .pp-page {
   min-height: 100vh;
+  min-height: 100dvh;
   background: #FAF7EF;
+  color: #1C1B18;
   font-family: 'Manrope', sans-serif;
   display: flex;
   justify-content: center;
   /* --safe-top / --safe-bottom, not raw env(): env resolves to 0 on most
      Android Capacitor WebViews, and this page is reachable inside the app. */
-  padding: max(28px, var(--safe-top, 0px)) 20px max(28px, var(--safe-bottom, 0px));
+  padding: max(16px, var(--safe-top, 0px)) 20px max(12px, var(--safe-bottom, 0px));
 }
 
 .pp-shell {
@@ -486,7 +650,23 @@ export default {
   max-width: 400px;
   display: flex;
   flex-direction: column;
-  justify-content: center;
+  min-height: 0;
+}
+
+/* Snappy entrance: pop and rise, staggered, everything inside 400ms. */
+.pp-in {
+  opacity: 0;
+  animation: pp-rise 0.32s cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation-delay: var(--d, 0ms);
+}
+
+@keyframes pp-rise {
+  0% { opacity: 0; transform: translateY(14px) scale(0.98); }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pp-in { animation: none; opacity: 1; }
 }
 
 /* States */
@@ -494,6 +674,8 @@ export default {
   display: flex;
   flex-direction: column;
   align-items: center;
+  justify-content: center;
+  flex: 1;
   text-align: center;
   gap: 12px;
   padding: 40px 0;
@@ -502,255 +684,371 @@ export default {
 .pp-state-mark {
   width: 66px;
   height: 66px;
-  border-radius: 22px;
-  background: #F3EFE3;
-  color: #5F5B52;
+  border-radius: 50%;
+  background: rgba(28, 27, 24, 0.06);
+  color: #9A9488;
   display: grid;
   place-items: center;
 }
 
 .pp-state-title {
   font-size: 22px;
-  font-weight: 750;
-  letter-spacing: -0.03em;
-  color: #1A1A1C;
-  margin: 4px 0 0;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  margin: 0;
 }
 
 .pp-state-text {
-  font-size: 14.5px;
-  color: #5F5B52;
-  line-height: 1.5;
+  font-size: 14px;
+  color: #9A9488;
+  line-height: 1.55;
+  max-width: 32ch;
   margin: 0;
-  max-width: 300px;
 }
 
-/* 1. The person */
-.pp-person {
-  display: flex;
-  flex-direction: column;
+.pp-ghost {
+  display: inline-flex;
   align-items: center;
-  text-align: center;
-  padding: 4px 0 28px;
+  min-height: 44px;
+  padding: 0 20px;
+  border-radius: 22px;
+  background: rgba(28, 27, 24, 0.06);
+  color: #1C1B18;
+  font-size: 14px;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+/* 1. Identity row */
+.pp-top {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-top: 8px;
+  flex: 0 0 auto;
 }
 
 .pp-avatar {
-  width: 96px;
-  height: 96px;
+  width: 40px;
+  height: 40px;
   border-radius: 50%;
   overflow: hidden;
-  background: #F3EFE3;
-  color: #928D83;
-  display: grid;
-  place-items: center;
-  box-shadow: 0 12px 30px -18px rgba(40, 34, 20, 0.5);
-}
-
-.pp-avatar img { width: 100%; height: 100%; object-fit: cover; display: block; }
-
-.pp-name {
-  font-size: 26px;
-  font-weight: 760;
-  letter-spacing: -0.034em;
-  color: #1A1A1C;
-  margin: 16px 0 0;
-  line-height: 1.2;
-  word-break: break-word;
-}
-
-.pp-username {
-  font-size: 14.5px;
-  color: #5F5B52;
-  margin: 5px 0 0;
-  font-family: 'SF Mono', 'Monaco', 'Menlo', monospace;
-}
-
-.pp-about {
-  font-size: 14.5px;
-  color: #5F5B52;
-  line-height: 1.5;
-  margin: 12px 0 0;
-  max-width: 320px;
-}
-
-/* 2. The primary action, alone */
-.pp-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 9px;
-  width: 100%;
-  min-height: 54px;
-  padding: 16px 18px;
-  border-radius: 16px;
-  border: 1px solid transparent;
-  font-family: 'Manrope', sans-serif;
-  font-size: 16px;
-  font-weight: 650;
-  letter-spacing: -0.01em;
-  cursor: pointer;
-  text-decoration: none;
-}
-
-.pp-btn--primary { background: #1A1A1C; color: #FAF7EF; }
-.pp-btn--primary:active { opacity: 0.9; }
-
-.pp-btn--ghost {
-  background: transparent;
-  color: #1A1A1C;
-  border-color: #E3DCC7;
-  margin-top: 10px;
-}
-
-.pp-caption {
-  font-size: 12.5px;
-  color: #928D83;
-  text-align: center;
-  margin: 9px 0 0;
-}
-
-/* 3 and 4. Grouped lists, the same inset shape the app uses */
-.pp-group {
-  margin-top: 20px;
-  background: #FAF7EF;
-  border: 1px solid #E3DCC7;
-  border-radius: 18px;
-  overflow: hidden;
-}
-
-.pp-group--spaced { margin-top: 14px; }
-
-.pp-row {
-  display: flex;
-  align-items: center;
-  gap: 13px;
-  width: 100%;
-  min-height: 62px;
-  padding: 13px 14px;
-  background: transparent;
-  border: 0;
-  text-align: left;
-  font-family: 'Manrope', sans-serif;
-  color: #1A1A1C;
-  cursor: pointer;
-  text-decoration: none;
-}
-
-.pp-row + .pp-row { border-top: 1px solid #E3DCC7; }
-.pp-row:active { background: rgba(40, 34, 20, 0.04); }
-.pp-row:disabled { cursor: default; opacity: 0.75; }
-
-.pp-row-icon {
-  width: 36px;
-  height: 36px;
-  border-radius: 12px;
-  background: #F3EFE3;
-  color: #5F5B52;
+  background: rgba(28, 27, 24, 0.06);
+  color: #9A9488;
   display: grid;
   place-items: center;
   flex: 0 0 auto;
 }
 
-.pp-row-text { flex: 1; min-width: 0; }
-
-.pp-row-label {
+.pp-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
   display: block;
-  font-size: 15px;
-  font-weight: 620;
-  letter-spacing: -0.012em;
 }
 
-.pp-row-caption {
-  display: block;
-  font-size: 12.5px;
-  color: #5F5B52;
-  margin-top: 2px;
+.pp-top-copy { flex: 1; min-width: 0; }
+
+.pp-top-name {
+  font-size: 15px;
+  font-weight: 780;
+  letter-spacing: -0.01em;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-/* The address is a value, so it gets the monospace face; the rest of the
-   captions are prose and stay in the body face. */
-.pp-row-caption--mono { font-family: 'SF Mono', 'Monaco', 'Menlo', monospace; }
-
-.pp-row-chev {
-  color: #928D83;
-  flex: 0 0 auto;
-  transition: transform 0.2s ease;
+.pp-top-nip {
+  font-family: var(--font-mono, 'JetBrains Mono', Menlo, monospace);
+  font-size: 10px;
+  color: #9A9488;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.pp-row-chev--open { transform: rotate(180deg); }
+.pp-save {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: 0;
+  background: rgba(5, 149, 115, 0.1);
+  color: #059573;
+  font-family: 'Manrope', sans-serif;
+  font-size: 12px;
+  font-weight: 750;
+  border-radius: 999px;
+  min-height: 34px;
+  padding: 0 13px;
+  flex: 0 0 auto;
+  text-decoration: none;
+  cursor: pointer;
+  transition: transform 0.1s ease;
+}
 
-.pp-code {
+.pp-save:active { transform: scale(0.94); }
+.pp-save:disabled { cursor: default; }
+
+/* 2. The amount */
+.pp-mid {
+  flex: 1;
   display: flex;
+  flex-direction: column;
+  align-items: center;
   justify-content: center;
-  padding: 0 14px 18px;
-  border-top: 1px solid #E3DCC7;
+  min-height: 0;
+}
+
+.pp-amount-wrap {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+}
+
+.pp-amount {
+  max-width: 270px;
+  border: 0;
+  outline: none;
+  background: transparent;
+  text-align: center;
+  font-family: 'Manrope', sans-serif;
+  font-size: 56px;
+  font-weight: 800;
+  letter-spacing: -0.035em;
+  font-variant-numeric: tabular-nums;
+  color: #1C1B18;
+  caret-color: #059573;
+  padding: 0;
+  min-width: 0;
+}
+
+.pp-amount--long { font-size: 42px; }
+
+.pp-amount::placeholder { color: #C9C4B5; }
+
+.pp-amount-unit {
+  font-size: 18px;
+  font-weight: 700;
+  color: #9A9488;
+  flex: 0 0 auto;
+}
+
+.pp-unit {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 0;
+  background: rgba(28, 27, 24, 0.06);
+  color: #1C1B18;
+  font-family: 'Manrope', sans-serif;
+  font-size: 12px;
+  font-weight: 750;
+  letter-spacing: 0.08em;
+  min-height: 34px;
+  padding: 0 14px;
+  border-radius: 999px;
+  margin-top: 12px;
+  cursor: pointer;
+  transition: transform 0.1s ease;
+}
+
+.pp-unit:active { transform: scale(0.94); }
+
+.pp-conv {
+  font-size: 13px;
+  color: #9A9488;
+  margin-top: 8px;
+  min-height: 18px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 3. The note */
+.pp-note {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  background: rgba(28, 27, 24, 0.06);
+  border-radius: 14px;
+  padding: 0 14px;
+  min-height: 46px;
+  color: #9A9488;
+  margin-bottom: 10px;
+  flex: 0 0 auto;
+}
+
+.pp-note input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: none;
+  background: transparent;
+  font-family: 'Manrope', sans-serif;
+  font-size: 13.5px;
+  color: #1C1B18;
+}
+
+.pp-note input::placeholder { color: #9A9488; }
+
+.pp-note-empty {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 13.5px;
+  color: #9A9488;
+  line-height: 1.5;
+  max-width: 34ch;
+}
+
+/* 4. The verb */
+.pp-actions {
+  display: flex;
+  gap: 9px;
+  flex: 0 0 auto;
+}
+
+.pp-cta {
+  flex: 1;
+  min-height: 52px;
+  border-radius: 26px;
+  border: 0;
+  background: #1A1A1C;
+  color: #FAF7EF;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-family: 'Manrope', sans-serif;
+  font-size: 16px;
+  font-weight: 780;
+  letter-spacing: -0.01em;
+  cursor: pointer;
+  transition: transform 0.1s ease;
+}
+
+.pp-cta:active { transform: scale(0.97); }
+.pp-cta:disabled { opacity: 0.75; cursor: default; }
+
+.pp-micro {
+  width: 52px;
+  min-height: 52px;
+  border-radius: 26px;
+  border: 0;
+  background: rgba(28, 27, 24, 0.06);
+  color: #1C1B18;
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  cursor: pointer;
+  transition: transform 0.1s ease;
+}
+
+.pp-micro:active { transform: scale(0.94); }
+
+/* 5. The foot */
+.pp-foot {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 14px 0 4px;
+  font-size: 12px;
+  color: #9A9488;
+  flex: 0 0 auto;
+}
+
+.pp-foot a {
+  color: #059573;
+  font-weight: 800;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+/* The code sheet */
+.pp-code-sheet {
+  width: 100%;
+  max-width: 400px;
+  background: #FAF7EF;
+  color: #1C1B18;
+  border-radius: 22px 22px 0 0;
+  padding: 10px 20px max(20px, env(safe-area-inset-bottom, 0px));
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  font-family: 'Manrope', sans-serif;
+}
+
+.pp-grab {
+  width: 36px;
+  height: 4px;
+  border-radius: 999px;
+  background: #9A9488;
+  opacity: 0.4;
+  margin: 0 auto 16px;
 }
 
 .pp-qr {
-  width: 188px;
-  height: 188px;
-  border-radius: 20px;
-  background: #fff;
-  padding: 10px;
-  margin-top: 16px;
-  box-shadow: 0 14px 30px -20px rgba(40, 34, 20, 0.55);
+  position: relative;
+  width: 228px;
+  height: 228px;
+  border-radius: 18px;
+  background: #FFFFFF;
+  padding: 8px;
+  box-shadow: 0 12px 26px -16px rgba(0, 0, 0, 0.4), inset 0 0 0 1px rgba(28, 27, 24, 0.1);
 }
 
 .pp-qr :deep(img),
 .pp-qr :deep(canvas),
 .pp-qr-canvas { width: 100%; height: 100%; display: block; }
 
-.pp-note {
-  display: flex;
-  gap: 9px;
-  align-items: flex-start;
-  padding: 14px;
+/* Centered face on the code, same as the card's own: safe at level-H
+   error correction, clear of the three finder patterns. */
+.pp-qr-avatar {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 52px;
+  height: 52px;
   border-radius: 14px;
-  background: #F3EFE3;
-  color: #5F5B52;
-  font-size: 13.5px;
-  line-height: 1.5;
+  overflow: hidden;
+  border: 4px solid #FFFFFF;
+  box-shadow: 0 0 0 1px rgba(28, 27, 24, 0.1);
+  display: block;
 }
 
-.pp-note svg { color: #928D83; margin-top: 1px; flex: 0 0 auto; }
+.pp-qr-avatar img { width: 100%; height: 100%; object-fit: cover; display: block; }
 
-/* 5. What this is */
-.pp-foot {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 7px;
-  padding-top: 28px;
-}
-
-.pp-foot-brand {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  font-size: 13px;
-  font-weight: 700;
-  color: #5F5B52;
-  text-decoration: none;
-  letter-spacing: -0.01em;
-}
-
-.pp-foot-text {
-  font-size: 12.5px;
-  color: #928D83;
+.pp-code-caption {
   text-align: center;
-  line-height: 1.5;
-  margin: 0;
-  max-width: 300px;
+  font-size: 12.5px;
+  color: #9A9488;
+  margin: 14px 0 0;
 }
 
-.pp-link { color: #059573; font-weight: 620; text-decoration: none; white-space: nowrap; }
+.pp-code-addr {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  border: 0;
+  background: rgba(28, 27, 24, 0.06);
+  border-radius: 12px;
+  padding: 11px 13px;
+  margin-top: 18px;
+  color: #9A9488;
+  cursor: pointer;
+  text-align: left;
+}
 
-/* Desktop keeps the same single column: the page is a handoff, and a wide
-   version of it would only add empty space around the same four elements. */
-@media (min-width: 720px) {
-  .pp-page { align-items: center; }
+.pp-code-addr code {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font-mono, 'JetBrains Mono', Menlo, monospace);
+  font-size: 11px;
+  color: #1C1B18;
+  overflow-wrap: anywhere;
+  line-height: 1.5;
 }
 </style>

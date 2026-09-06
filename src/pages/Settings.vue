@@ -709,30 +709,16 @@
         </q-card>
       </q-dialog>
 
-      <!-- ─────────────── HELP & SUPPORT ───────────────
-           Just the onboarding tour now. Bitcoin Lessons was
-           previously here but has been promoted to a Feature Card
-           at the top (earning sats is the strongest noob hook in
-           the app — burying it in Help & Support was a UX miss).
-           The donation row split out into its own "Support BuhoGO"
-           section below so the ask reads cleanly. -->
-      <SettingsSection :title="$t('Help & Support')">
-        <SettingsRow
-          icon="tabler:school"
-          :label="$t('Onboarding Guide')"
-          :caption="$t('Learn about all BuhoGO features')"
-          @click="$router.push('/spark-success?full=true')"
-        />
-      </SettingsSection>
+      <!-- The Onboarding Guide lives on the About page now, next to the
+           project's story, so Settings stays pure configuration. -->
 
       <!-- ─────────────── ADVANCED ───────────────
            Collapsed by default. Power-user toggles that the
            typical user never needs to touch (exchange-rate source,
-           auto-add Bitcoin deposits). Positioned after Support
-           BuhoGO so the main mainstream surfaces — wallet,
-           preferences, kiosk, help, donate — read first; anyone
-           hunting for advanced controls is happy to scroll the
-           extra row. -->
+           auto-add Bitcoin deposits). Positioned after the
+           mainstream surfaces — wallet, preferences, kiosk — so
+           anyone hunting for advanced controls is happy to scroll
+           the extra row. -->
       <SettingsSection
         :title="$t('Advanced')"
         collapsible
@@ -847,19 +833,8 @@
         />
       </SettingsSection>
 
-      <!-- ─────────────── ABOUT ───────────────
-           Single entry point into its own page (mission, source,
-           community, downloads, version) rather than an inline
-           section — keeps this already-long page shorter and gives
-           About room to breathe on its own screen. -->
-      <SettingsSection>
-        <SettingsRow
-          icon="tabler:info-circle"
-          :label="$t('About BuhoGO')"
-          :caption="'BuhoGO v' + appVersion"
-          @click="$router.push('/about')"
-        />
-      </SettingsSection>
+      <!-- About lives behind its own door in the home menu now; Settings
+           stays pure configuration. -->
 
     </div>
 
@@ -2175,7 +2150,6 @@ import { LNBitsWalletProvider } from '../providers/LNBitsWalletProvider'
 // of the flow intentionally — the order-tap check is stronger. Retained
 // here for future reuse.
 // import MnemonicVerify from '../components/MnemonicVerify.vue'
-import { version } from '../../package.json'
 import { SUPPORTED_LOCALES, applyLocale, getSavedLocale } from '../i18n/locales'
 import { isCloudBackupPlatform } from '../services/cloudStorage.js'
 
@@ -2880,10 +2854,6 @@ export default {
         return this.$t('Blocktrainer');
       }
       return this.$t('Custom server');
-    },
-
-    appVersion() {
-      return version;
     },
 
     // Expand wallets into auto-transfer entries

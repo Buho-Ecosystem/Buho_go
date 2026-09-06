@@ -28,11 +28,22 @@
              username must never make. -->
         <span class="id-card-issuer">{{ $t('Your BuhoGO card') }}</span>
 
+        <!-- Icon-only by deliberate exception: a pencil is as universal as
+             glyphs get, and the aria-label carries the words. -->
+        <button
+          type="button"
+          class="id-card-round-btn id-card-edit-btn"
+          :aria-label="$t('Edit profile')"
+          @click.stop="$emit('edit')"
+        >
+          <Icon icon="tabler:pencil" width="17" height="17" />
+        </button>
+
         <span class="id-card-body">
           <button
             type="button"
             class="id-card-ring"
-            :aria-label="$t('Switch account')"
+            :aria-label="$t('Switch identity')"
             @click.stop="$emit('switch-identity')"
           >
             <svg class="id-card-progress" viewBox="0 0 76 76" aria-hidden="true">
@@ -73,17 +84,27 @@
         </span>
 
         <span class="id-card-foot">
-          <!-- Progress and warnings only. "Ready, 12 words saved" forever is
-               a completed to-do pinned to the one object the user sees most;
-               done states earn silence. -->
-          <span v-if="statusTone !== 'ok'" class="id-card-status">
+          <!-- Progress and warnings only, and a door to the backup screen
+               while they last. "Backed up" forever is a completed to-do
+               pinned to the one object the user sees most; done states earn
+               silence (the words stay reachable from the Identities page). -->
+          <button
+            v-if="statusTone !== 'ok'"
+            type="button"
+            class="id-card-status"
+            @click.stop="$emit('backup')"
+          >
             <Icon :icon="statusIcon" width="13" height="13" />
             {{ status }}
-          </span>
+          </button>
           <span v-else class="id-card-status" aria-hidden="true"></span>
-          <button type="button" class="id-card-flip-btn" @click.stop="flip">
-            <Icon icon="tabler:qrcode" width="13" height="13" />
-            {{ $t('Code') }}
+          <button
+            type="button"
+            class="id-card-round-btn"
+            :aria-label="$t('Show code')"
+            @click.stop="flip"
+          >
+            <Icon icon="tabler:qrcode" width="18" height="18" />
           </button>
         </span>
       </div>
@@ -144,7 +165,7 @@ export default {
     canSwitch: { type: Boolean, default: false },
   },
 
-  emits: ['switch-identity', 'avatar-error', 'flip', 'add-name'],
+  emits: ['switch-identity', 'avatar-error', 'flip', 'add-name', 'edit', 'backup'],
 
   data() {
     return {
@@ -381,6 +402,8 @@ body.body--dark .id-card-front::after {
   z-index: 2;
 }
 
+/* A control now: it opens the backup screen. Kept in the card's own quiet
+   voice, with a 44pt-tall hit area even though the text is small. */
 .id-card-status {
   flex: 1;
   display: flex;
@@ -389,23 +412,39 @@ body.body--dark .id-card-front::after {
   font-size: 11.5px;
   color: rgba(243, 247, 244, 0.62);
   min-width: 0;
-}
-
-.id-card-flip-btn {
+  min-height: 44px;
   border: 0;
+  padding: 0;
+  background: transparent;
   cursor: pointer;
   font-family: 'Manrope', sans-serif;
-  display: flex;
-  align-items: center;
-  gap: 6px;
+  text-align: left;
+}
+
+/* The card's two icon-only controls: translucent circles in the same
+   material the old Code chip used. */
+.id-card-round-btn {
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  border: 0;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
   background: rgba(255, 255, 255, 0.14);
   color: #F3F7F4;
-  border-radius: var(--radius-pill);
-  padding: 9px 14px;
-  font-size: 12px;
-  font-weight: 650;
-  min-height: 36px;
   flex: 0 0 auto;
+}
+
+.id-card-round-btn:active {
+  background: rgba(255, 255, 255, 0.24);
+}
+
+.id-card-edit-btn {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 3;
 }
 
 /* Back */

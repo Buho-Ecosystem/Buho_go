@@ -612,13 +612,11 @@ export default {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #EAEFF7;
-  color: #3B82F6;
+  background: var(--bg-input);
+  color: var(--text-muted);
 }
 
 .body--dark .preview-circle {
-  background: #23272E;
-  color: #5B8DEF;
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.05);
 }
 

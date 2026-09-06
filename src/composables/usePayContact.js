@@ -74,6 +74,9 @@ export function usePayContact(ctx) {
       return;
     }
 
+    // Recency feeds the Quick pay shelf. Best effort, never blocks the tap.
+    store.updateLastUsed(contact.id).catch(() => {});
+
     ctx.$router.push({
       path: '/wallet',
       query: {

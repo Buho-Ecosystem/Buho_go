@@ -92,7 +92,10 @@ export default {
         this.creatingStatus = this.$t('Wallet created!');
         await new Promise(resolve => setTimeout(resolve, 800));
 
-        this.$router.replace('/spark-success');
+        // Straight into the wallet. The feature tour is not part of setup
+        // anymore (users asked to land in their money first); it lives in
+        // About > Onboarding Guide for whenever they want it.
+        this.$router.replace('/wallet');
       } catch (error) {
         console.error('Failed to create wallet:', error);
         this.walletStore.showPaymentError(error, {

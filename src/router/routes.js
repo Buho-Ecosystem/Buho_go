@@ -69,8 +69,16 @@ const routes = [
       // Identity. The tab itself is the card. Larger configuration tasks use
       // pushed screens; the quick Get paid action stays in a bottom sheet.
       { path: '/identity', component: () => import('pages/identity/IdentityHomePage.vue') },
-      { path: '/identity/about', component: () => import('pages/identity/IdentityAboutPage.vue') },
-      { path: '/identity/manage', component: () => import('pages/identity/IdentityManagePage.vue') },
+      // The flat tab has no Manage layer and no About page; old deep links
+      // land on the card itself, query preserved like the /profile redirect.
+      {
+        path: '/identity/about',
+        redirect: (to) => ({ path: '/identity', query: to.query }),
+      },
+      {
+        path: '/identity/manage',
+        redirect: (to) => ({ path: '/identity', query: to.query }),
+      },
       { path: '/identity/profile', component: () => import('pages/identity/IdentityProfilePage.vue') },
       { path: '/identity/username', component: () => import('pages/identity/IdentityUsernamePage.vue') },
       // Keep old bookmarks/deep links working while presenting Get paid in
@@ -94,7 +102,6 @@ const routes = [
       { path: '/identity/words', component: () => import('pages/identity/IdentityWordsPage.vue') },
       { path: '/identity/identities', component: () => import('pages/identity/IdentityListPage.vue') },
       { path: '/identity/advanced', component: () => import('pages/identity/IdentityAdvancedPage.vue') },
-      { path: '/identity/visible', component: () => import('pages/identity/IdentityVisiblePage.vue') },
       { path: '/identity/erase', component: () => import('pages/identity/IdentityErasePage.vue') },
       // Legacy alias - anything that still links to /profile (e.g. an
       // older deep link) lands on the same page under its new tab name.
@@ -105,6 +112,8 @@ const routes = [
       { path: '/transactions', component: () => import('pages/TransactionHistory.vue') },
       { path: '/transaction/:id', component: () => import('pages/TransactionDetails.vue') },
       { path: '/address-book', component: () => import('pages/AddressBook.vue') },
+      // A contact's own page: identity, pay, and the payments between you.
+      { path: '/address-book/:id', component: () => import('pages/ContactProfilePage.vue') },
       // Bitcoin merchant map. Lazy-loaded so maplibre-gl (~200KB gzipped)
       // never lands in the initial bundle. `?place=<id>` deep-links a pin.
       { path: '/map', component: () => import('pages/MapPage.vue') },

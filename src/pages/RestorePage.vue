@@ -400,9 +400,9 @@ export default {
         this.restoringStatus = this.$t('Wallet restored!');
         await new Promise((resolve) => setTimeout(resolve, 800));
 
-        this.$router.replace(
-          resolvedType === 'arkade' ? '/spark-success?mode=arkade' : '/spark-success'
-        );
+        // A restoring user is a returning user: straight into the wallet,
+        // no feature tour (it waits in About > Onboarding Guide).
+        this.$router.replace('/wallet');
       } catch (error) {
         console.error('Failed to restore wallet:', error);
         const { message, caption } = this._userFacingRestoreError(error);

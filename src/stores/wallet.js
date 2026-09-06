@@ -19,6 +19,7 @@ import {
 } from '../services/breezSdk';
 import { useAutoWithdrawStore } from './autoWithdraw';
 import { useTransactionMetadataStore } from './transactionMetadata';
+import { isLightningAddress } from '../utils/addressUtils.js';
 import { createClaimedDepositRegistry } from '../utils/claimedDeposits.js';
 import {
   buildPaymentError,
@@ -507,6 +508,33 @@ export const useWalletStore = defineStore('wallet', {
       return state.wallets.find(w =>
         w.type === WALLET_TYPES.SPARK && w.connectionData?.accountNumber === 2
       ) || null;
+    },
+
+    /**
+     * A Spark wallet's Lightning address: live wallet info first, the
+     * persisted metadata copy while the wallet is locked or not yet
+     * connected. Lowercased so every comparison against the profile's
+     * lud16 is case-blind.
+     */
+    sparkLightningAddressOf: (state) => (wallet) => {
+      if (!wallet || wallet.type !== WALLET_TYPES.SPARK) return null;
+      const address = state.walletInfos?.[wallet.id]?.lightningAddress
+        || wallet.metadata?.lud16
+        || '';
+      return isLightningAddress(address) ? String(address).toLowerCase() : null;
+    },
+
+    /**
+     * The address the profile adopts by default: the first Spark wallet's
+     * (Business, then Personal). Null while no Spark wallet has one, which
+     * is what sends the profile to its Social Bucket fallback.
+     */
+    preferredProfileLightningAddress() {
+      for (const wallet of [this.sparkBusinessWallet, this.sparkPersonalWallet]) {
+        const address = this.sparkLightningAddressOf(wallet);
+        if (address) return address;
+      }
+      return null;
     },
 
     /**
@@ -1310,6 +1338,7 @@ export const useWalletStore = defineStore('wallet', {
       if (!address) return;
       const wallet = this.wallets.find(w => w.id === walletId);
       if (!wallet) return;
+      const previousAddress = wallet.metadata?.lud16 || null;
       if (this.walletInfos[walletId]) {
         this.walletInfos[walletId].lightningAddress = address;
       }
@@ -1317,6 +1346,61 @@ export const useWalletStore = defineStore('wallet', {
       if (wallet.metadata.lud16 !== address) {
         wallet.metadata.lud16 = address;
         await this.persistState();
+        // The published profile may point at the old name. Serve the user:
+        // move it to the new one and publish a fresh profile event, without
+        // being asked. A custom address is never touched (see the helper).
+        this._syncProfilePaymentAddress({ previousAddresses: [previousAddress] })
+          .catch(() => {});
+      }
+    },
+
+    /**
+     * Keep the published profile's payment address in step with the app's
+     * default. Runs after a Spark address changes or a Spark wallet is
+     * removed: when the profile pointed at an old default (one of the given
+     * previous addresses, or the Social Bucket), it adopts the current
+     * preferred address and publishes a fresh profile event. An address the
+     * user typed themselves is never touched. Dynamic imports keep the
+     * wallet store free of a static profile dependency.
+     */
+    async _syncProfilePaymentAddress({ previousAddresses = [] } = {}) {
+      try {
+        const [
+          { useProfileStore },
+          { useIdentityStore },
+          { npubCashAddress, isNpubCashAddress },
+        ] = await Promise.all([
+          import('./profile.js'),
+          import('./identity.js'),
+          import('../services/npubCash.js'),
+        ]);
+        const profile = useProfileStore();
+        const identity = useIdentityStore();
+        await identity.hydrate();
+        if (!identity.bootstrapped) return;
+        await profile.hydrate();
+
+        const preferred = this.preferredProfileLightningAddress
+          || npubCashAddress(identity.nostrNpub);
+        if (!preferred) return;
+
+        const previous = previousAddresses
+          .filter(Boolean)
+          .map((value) => String(value).toLowerCase());
+        const changed = profile.adoptDefaultPaymentAddress(preferred, {
+          isReplaceable: (current) => {
+            const value = String(current).toLowerCase();
+            return isNpubCashAddress(value) || previous.includes(value);
+          },
+        });
+        if (!changed) return;
+
+        const result = await profile.publish().catch(() => null);
+        if (!result?.ok) {
+          console.warn('[wallet] profile address saved locally, publish will retry');
+        }
+      } catch (err) {
+        console.warn('[wallet] could not sync the profile payment address:', err);
       }
     },
 
@@ -1983,6 +2067,13 @@ export const useWalletStore = defineStore('wallet', {
 
         const wallet = this.wallets[walletIndex];
 
+        // The profile may be pointing at a removed wallet's Lightning
+        // address; remember every address leaving with this removal so the
+        // profile can fall back to the next default afterwards.
+        const removedSparkAddresses = wallet.type === WALLET_TYPES.SPARK
+          ? [wallet.metadata?.lud16]
+          : [];
+
         // Disconnect and cleanup
         await this.disconnectWallet(walletId);
 
@@ -2019,6 +2110,7 @@ export const useWalletStore = defineStore('wallet', {
             const idx = this.wallets.indexOf(member);
             if (idx !== -1) this.wallets.splice(idx, 1);
             if (member.type === WALLET_TYPES.SPARK) {
+              removedSparkAddresses.push(member.metadata?.lud16);
               try { await deleteBreezStorage(member.id); } catch (e) { /* best-effort */ }
             }
             const autoWithdrawStore = useAutoWithdrawStore();
@@ -2061,6 +2153,13 @@ export const useWalletStore = defineStore('wallet', {
         }
 
         await this.persistState();
+
+        // A profile pointing at a removed address falls back to the next
+        // default (remaining Spark wallet, then the bucket) and republishes.
+        if (removedSparkAddresses.some(Boolean)) {
+          this._syncProfilePaymentAddress({ previousAddresses: removedSparkAddresses })
+            .catch(() => {});
+        }
       } catch (error) {
         this.lastError = error.message;
         throw error;

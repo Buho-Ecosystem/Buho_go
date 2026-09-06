@@ -49,6 +49,13 @@
             :chevron="false"
             @click="onCopy"
           />
+          <IdentityRow
+            icon="tabler:external-link"
+            :label="$t('Open my page')"
+            :caption="$t('See what your link shows')"
+            :chevron="false"
+            @click="onOpenPage"
+          />
         </IdentityGroup>
 
         <p v-if="shareUrl" class="share-foot">
@@ -172,6 +179,12 @@ export default {
       } catch {
         this.$q.notify({ type: 'warning', message: this.$t("Couldn't copy"), timeout: 1800, position: 'top' });
       }
+    },
+
+    /** See the page a stranger would see: open the link in the browser. */
+    onOpenPage() {
+      if (!this.shareUrl) return;
+      window.open(this.shareUrl, '_blank', 'noopener,noreferrer');
     },
 
     /**
