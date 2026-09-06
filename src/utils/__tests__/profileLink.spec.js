@@ -22,10 +22,14 @@ import {
 
 const NPUB = 'npub1az708q3kd9zy6z6f44zav5ygvdwelkzspf6mtusttx47lft2z38sghk0w7';
 
-await test('buildProfileLink prefers the username and carries the key as a fallback', () => {
+await test('buildProfileLink leads with the key, which needs no network to resolve', () => {
   const link = buildProfileLink({ username: 'maria', npub: NPUB });
-  assert.ok(link.startsWith(`${PUBLIC_WEB_ORIGIN}${PROFILE_PATH}maria`), link);
-  assert.match(link, /[?&]k=npub1/);
+  assert.equal(link, `${PUBLIC_WEB_ORIGIN}${PROFILE_PATH}${NPUB}`);
+});
+
+await test('buildProfileLink falls back to the username when no key is known', () => {
+  const link = buildProfileLink({ username: 'maria' });
+  assert.equal(link, `${PUBLIC_WEB_ORIGIN}${PROFILE_PATH}maria`);
 });
 
 await test('buildProfileLink with only a key does not append the key to itself', () => {
@@ -99,8 +103,8 @@ await test('parseProfileLink rejects a profile path with an empty slug', () => {
   assert.equal(parseProfileLink(`${PUBLIC_WEB_ORIGIN}/p/%20`), '');
 });
 
-await test('profileSlug and expandProfileSlug round-trip a username', () => {
-  const slug = profileSlug({ username: 'maria', npub: NPUB });
+await test('profileSlug and expandProfileSlug round-trip a username when no key is known', () => {
+  const slug = profileSlug({ username: 'maria' });
   assert.equal(slug, 'maria');
   assert.match(expandProfileSlug(slug), /^maria@/);
 });

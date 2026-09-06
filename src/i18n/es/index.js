@@ -3253,4 +3253,6 @@ export default {
   "{n} contacts · saved with your identity": "{n} contactos · guardados con tu identidad",
   "1 contact · saved with your identity": "1 contacto · guardado con tu identidad",
   "Your unique username across the whole network.": "Tu nombre de usuario único en toda la red.",
+  "Open my page": "Abrir mi página",
+  "See what your link shows": "Mira lo que muestra tu enlace",
 }

@@ -3248,4 +3248,6 @@ export default {
   "{n} contacts · saved with your identity": "{n} contacts · saved with your identity",
   "1 contact · saved with your identity": "1 contact · saved with your identity",
   "Your unique username across the whole network.": "Your unique username across the whole network.",
+  "Open my page": "Open my page",
+  "See what your link shows": "See what your link shows",
 }
