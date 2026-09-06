@@ -75,7 +75,14 @@ const WITHDRAW_QUOTES_MAX = 20;
 
 async function loadSdkModule() {
   if (!sdkModulePromise) {
-    sdkModulePromise = import('@breeztech/breez-sdk-spark');
+    const p = import('@breeztech/breez-sdk-spark');
+    sdkModulePromise = p;
+    // A rejected load must not be latched: on the web the module (and its
+    // ~12.5 MB wasm) arrives over the network, and caching a one-off fetch
+    // failure would permanently fail every later connect this session.
+    p.catch(() => {
+      if (sdkModulePromise === p) sdkModulePromise = null;
+    });
   }
   return sdkModulePromise;
 }
@@ -87,11 +94,16 @@ export async function ensureWasmInit() {
   const mod = await loadSdkModule();
   // Latch on the PROMISE, not a done-flag: the module's own init has no
   // in-flight guard, and a second concurrent instantiation would replace
-  // the wasm binding under live handles.
+  // the wasm binding under live handles. A rejection clears the latch: a
+  // failed init leaves no live binding, so the next caller retries cleanly.
   if (!wasmInitPromise) {
-    wasmInitPromise = typeof mod.default === 'function'
+    const p = typeof mod.default === 'function'
       ? mod.default()
       : Promise.resolve();
+    wasmInitPromise = p;
+    p.catch(() => {
+      if (wasmInitPromise === p) wasmInitPromise = null;
+    });
   }
   await wasmInitPromise;
   // SDK log lines carry invoices, hashes, and addresses - dev builds only.
@@ -145,7 +157,7 @@ async function buildInstance(walletId, { mnemonic, accountNumber, network }) {
   // message that names the fix.
   if (!BREEZ_API_KEY) {
     const err = new Error(
-      'Breez engine needs an API key — set VITE_BREEZ_API_KEY in .env.local and rebuild.'
+      'Breez engine needs an API key. Set VITE_BREEZ_API_KEY in .env.local and rebuild.'
     );
     err.code = 'BREEZ_API_KEY_MISSING';
     throw err;
@@ -236,7 +248,7 @@ export async function probeAccountActivity(mnemonic, { accountNumber, network = 
 
   const config = mod.defaultConfig(toBreezNetwork(network));
   if (!BREEZ_API_KEY) {
-    throw new Error('Breez engine needs an API key — set VITE_BREEZ_API_KEY in .env.local and rebuild.');
+    throw new Error('Breez engine needs an API key. Set VITE_BREEZ_API_KEY in .env.local and rebuild.');
   }
   config.apiKey = BREEZ_API_KEY;
   config.maxDepositClaimFee = { type: 'fixed', amount: 0 };
@@ -311,6 +323,11 @@ export async function acquire(walletId, { mnemonic, accountNumber, network, forc
         await teardownEntry(existing);
       }
       const entry = await buildInstance(walletId, { mnemonic, accountNumber, network });
+      // A rebuild adopts the old entry's subscriber Set (the same object, so
+      // earlier unsubscribe closures stay valid). Without this, a self-heal
+      // forceReinit would silently detach every live subscriber - an open
+      // receive screen would keep waiting on events that now go nowhere.
+      if (existing) entry.subscribers = existing.subscribers;
       instances.set(walletId, entry);
       return entry;
     });
@@ -339,12 +356,32 @@ export function subscribe(walletId, handler) {
   return () => entry.subscribers.delete(handler);
 }
 
-/** Tear down a wallet's live instance (disconnect paths). */
+/**
+ * Tear down a wallet's live instance (disconnect paths).
+ *
+ * Serialized through the same per-wallet chain as acquire(): a release that
+ * raced an in-flight build used to no-op, and the build then registered a
+ * live SDK the store believed was gone (leaked instance, duplicate event
+ * stream, and storage deletion running under an open handle). Chained, the
+ * release waits for the build and tears down whatever it produced.
+ */
 export async function release(walletId) {
-  const entry = instances.get(walletId);
-  if (!entry) return;
-  instances.delete(walletId);
-  await teardownEntry(entry);
+  const prev = initLocks.get(walletId) || Promise.resolve();
+  const work = prev
+    .catch(() => { /* a failed predecessor doesn't poison the chain */ })
+    .then(async () => {
+      const entry = instances.get(walletId);
+      if (!entry) return;
+      instances.delete(walletId);
+      await teardownEntry(entry);
+    });
+
+  initLocks.set(walletId, work);
+  try {
+    await work;
+  } finally {
+    if (initLocks.get(walletId) === work) initLocks.delete(walletId);
+  }
 }
 
 /**

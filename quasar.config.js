@@ -220,10 +220,10 @@ export default defineConfig((ctx) => {
       // extendPWACustomSWConf (esbuildConf) {},
       extendGenerateSWOptions (cfg) {
         // The ~12.5 MB Breez SDK wasm must NOT be precached - that would
-        // push it to every installer while the engine defaults to the
-        // direct SDK. Instead it is cached on first use, so only devices
-        // actually running the Breez engine pay for it, and those stay
-        // offline-capable afterwards.
+        // push it to every PWA visitor at install time, wallet or no
+        // wallet. Instead it is cached on the first Spark connect, so only
+        // devices actually running a Spark wallet pay for it once, and
+        // those stay offline-capable afterwards.
         cfg.globIgnores = [...(cfg.globIgnores || []), '**/breez_sdk_spark_wasm_bg*.wasm']
         cfg.runtimeCaching = [
           ...(cfg.runtimeCaching || []),

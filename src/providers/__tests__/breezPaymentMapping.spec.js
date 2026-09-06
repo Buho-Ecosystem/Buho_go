@@ -19,6 +19,7 @@
 import { strict as assert } from 'node:assert';
 import {
   mapBreezPaymentToTx,
+  mapBreezPaymentsToTxList,
   detailsArm,
   paymentHashOf,
 } from '../../utils/breezPayments.js';
@@ -192,6 +193,22 @@ test('detailsArm narrows strictly by discriminant', () => {
   assert.equal(detailsArm(p, 'spark'), null);
   assert.equal(detailsArm(p, 'spark', 'lightning'), p.details);
   assert.equal(detailsArm({}, 'lightning'), null);
+});
+
+test('token payments never become sat rows: the list mapper drops them', () => {
+  // A token Payment.amount is in the token's own base units. Mapped through
+  // the sat pipeline it would state money that never moved, so the list
+  // mapper excludes the row entirely (and keeps everything else).
+  const token = lightningPayment({
+    id: 'tok-1',
+    method: 'token',
+    amount: 1000000n,
+    details: { type: 'token', metadata: { decimals: 6 } },
+  });
+  const rows = mapBreezPaymentsToTxList([lightningPayment(), token]);
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].id, 'pay-1');
+  assert.deepEqual(mapBreezPaymentsToTxList(null), []);
 });
 
 test('paymentHashOf reads lightning AND spark arms (spark-rail settles)', () => {

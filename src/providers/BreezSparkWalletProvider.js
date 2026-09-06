@@ -45,7 +45,7 @@ import {
   detailsArm,
   paymentHashOf,
   preimageOf,
-  mapBreezPaymentToTx,
+  mapBreezPaymentsToTxList,
   mapWithdrawFeeQuoteToTiers,
   pickBolt11Route,
   claimErrorKind,
@@ -294,7 +294,7 @@ export class BreezSparkWalletProvider extends WalletProvider {
     try {
       info = await this.sdk.getLightningAddress();
     } catch (error) {
-      throw new Error('Lightning address lookup failed — skipped auto-registration');
+      throw new Error('Lightning address lookup failed, skipped auto-registration');
     }
     if (info?.lightningAddress) {
       this._lightningAddress = info.lightningAddress;
@@ -978,6 +978,20 @@ export class BreezSparkWalletProvider extends WalletProvider {
   // Spark-native transfers
   // ==========================================
 
+  /**
+   * The app presents spark-native transfers as fee-free (WalletFactory sets
+   * `isZeroFee` and every confirm surface says so), and nothing on this path
+   * discloses or caps a fee. The prepare response still carries a quoted
+   * `fee`, so if the service ever prices this rail, refuse loudly instead of
+   * silently debiting an amount the user never saw.
+   */
+  _assertZeroSparkFee(paymentMethod) {
+    const quotedFee = Number(paymentMethod?.fee ?? 0) || 0;
+    if (quotedFee > 0) {
+      throw new Error(`Transfer not sent: a ${quotedFee} sat fee was quoted on a transfer shown as fee-free`);
+    }
+  }
+
   async transferToSparkAddress(sparkAddress, amount) {
     this._ensureConnected();
 
@@ -997,6 +1011,7 @@ export class BreezSparkWalletProvider extends WalletProvider {
       if (prep?.paymentMethod?.type !== 'sparkAddress') {
         throw new Error('Invalid Spark address');
       }
+      this._assertZeroSparkFee(prep.paymentMethod);
 
       const sendResponse = await this.sdk.sendPayment({
         prepareResponse: prep,
@@ -1056,6 +1071,7 @@ export class BreezSparkWalletProvider extends WalletProvider {
       if (pm?.type !== 'sparkInvoice') {
         throw new Error('Not a valid Spark invoice');
       }
+      this._assertZeroSparkFee(pm);
       // WASM serde round-trip quirk: an absent optional amount comes back as
       // a missing key, but re-submitting the prepare response requires the
       // key to exist (null = none). Harmless once fixed upstream.
@@ -1118,7 +1134,7 @@ export class BreezSparkWalletProvider extends WalletProvider {
       const response = await this._withTransportRetry(() =>
         this.sdk.listPayments({ offset, limit, sortAscending: false })
       );
-      return (response?.payments || []).map((p) => mapBreezPaymentToTx(p));
+      return mapBreezPaymentsToTxList(response?.payments);
     } catch (error) {
       this.setError(error);
       throw error;
@@ -1442,7 +1458,7 @@ export class BreezSparkWalletProvider extends WalletProvider {
       // A claim already running (or already done) is a race, not a failure —
       // callers must still record the txid as claimed.
       if (kind === 'processing') {
-        console.log('Claim already in progress, will complete shortly');
+        console.warn('Claim already in progress, will complete shortly');
         return {
           success: true,
           processing: true,
@@ -1452,7 +1468,7 @@ export class BreezSparkWalletProvider extends WalletProvider {
         };
       }
       if (kind === 'too_small') {
-        throw new Error('Deposit too small to claim — the fee would exceed the amount.');
+        throw new Error('Deposit too small to claim: the fee would exceed the amount.');
       }
       if (kind === 'confirmations') {
         throw new Error('Deposit needs more confirmations. Please wait.');
@@ -1579,7 +1595,7 @@ export class BreezSparkWalletProvider extends WalletProvider {
       throw new Error('Invalid Bitcoin address');
     }
     if (!feeQuoteId) {
-      throw new Error('Missing feeQuoteId — call getWithdrawalFeeQuote() first');
+      throw new Error('Missing feeQuoteId: call getWithdrawalFeeQuote() first');
     }
     if (typeof feeAmountSats !== 'number' || feeAmountSats < 0) {
       throw new Error('Missing or invalid feeAmountSats');
@@ -1636,7 +1652,7 @@ export class BreezSparkWalletProvider extends WalletProvider {
 
       const payment = sendResponse?.payment;
       if (!payment?.id) {
-        throw new Error('Withdrawal failed — SSP did not return a request ID');
+        throw new Error('Withdrawal failed: no request ID came back');
       }
 
       return {

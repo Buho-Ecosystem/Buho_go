@@ -56,6 +56,21 @@ const RAW_TYPE_BY_METHOD = Object.freeze({
 });
 
 /**
+ * Map a Breez payment list onto BuhoGO transaction rows.
+ *
+ * Token payments are dropped, not mapped: `Payment.amount` for a token
+ * transfer is in the token's own base units, so rendering the row through
+ * the sat-denominated pipeline (history, details, tax report) would state
+ * money that was never moved. The wallet has no token surface; when one
+ * exists these rows get their own mapping.
+ */
+export function mapBreezPaymentsToTxList(payments) {
+  return (payments || [])
+    .filter((p) => p?.method !== 'token')
+    .map((p) => mapBreezPaymentToTx(p));
+}
+
+/**
  * Map one Breez Payment onto the transaction-row shape BuhoGO's normalizer
  * and transaction UIs consume.
  */

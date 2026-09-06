@@ -163,7 +163,7 @@ export async function registerRandomLightningAddress(provider, { maxAttempts = 5
     try {
       const available = await provider.checkLightningAddressAvailable(username);
       if (!available) {
-        console.log(`[lightning-address] "${username}" taken, retrying (${attempt}/${maxAttempts})`);
+        console.warn(`[lightning-address] "${username}" taken, retrying (${attempt}/${maxAttempts})`);
         continue;
       }
       const result = await provider.registerLightningAddress(username);

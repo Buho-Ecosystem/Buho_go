@@ -1446,7 +1446,24 @@ async function startBatch() {
           result.status = 'skipped'
           result.error = t('Requires Spark')
         } else {
-          await provider.sendOnChain(address, result.amount)
+          // An on-chain send from Spark is a withdrawal request: quote the
+          // fee, then submit at medium speed (batch rows have no fee picker).
+          // The fee rides on top so the recipient gets the row's amount, and
+          // "success" means the request was accepted - the broadcast follows
+          // on the service's schedule, same as the single-send flow.
+          const feeQuote = await provider.getWithdrawalFeeQuote(result.amount, address)
+          const quote = feeQuote?.medium
+          if (!quote?.feeQuoteId) {
+            throw new Error('No withdrawal fee quote available right now. Please try again.')
+          }
+          payment = await provider.withdrawToL1({
+            amountSats: result.amount,
+            destinationAddress: address,
+            speed: 'medium',
+            feeQuoteId: quote.feeQuoteId,
+            feeAmountSats: quote.totalFee,
+            deductFeeFromWithdrawalAmount: false
+          })
           result.status = 'success'
         }
       }
