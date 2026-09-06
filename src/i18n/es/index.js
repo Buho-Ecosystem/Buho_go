@@ -3255,4 +3255,6 @@ export default {
   "Your unique username across the whole network.": "Tu nombre de usuario único en toda la red.",
   "Open my page": "Abrir mi página",
   "See what your link shows": "Mira lo que muestra tu enlace",
+  "Want a page like this too?": "¿Quieres una página así también?",
+  "Scan from another phone, or with a wallet app.": "Escanéalo desde otro teléfono o con una app de monedero.",
 }
