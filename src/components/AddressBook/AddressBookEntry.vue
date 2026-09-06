@@ -1,15 +1,18 @@
 <template>
   <!--
-    A payee row. The whole row is the Pay action (a wallet contact's
-    first job is being paid) and says so with one quiet chip; the info
-    glyph is the HIG detail disclosure — the row acts, the glyph opens
-    the contact's profile page where everything else lives (favorite,
-    copy, edit, remove, history). No badges, no action clusters.
+    A split payee row, the way App Store rows split: tapping the ROW
+    navigates to the contact's page, and the capsule button on the
+    right performs the primary action (pay) with its own distinct hit
+    target. Two zones, one row, no chevron — the capsule anchors the
+    right edge. No badges, no action clusters.
   -->
-  <button
-    type="button"
+  <div
     class="payee-row"
-    @click="$emit('pay', entry)"
+    role="button"
+    tabindex="0"
+    :aria-label="entry.name"
+    @click="$emit('open', entry)"
+    @keydown.enter.prevent="$emit('open', entry)"
   >
     <!-- Avatar — real picture for nostr-sourced contacts, the
          app-wide grey silhouette otherwise. -->
@@ -22,33 +25,29 @@
       <span class="payee-name">{{ entry.name }}</span>
       <span v-if="isPayable" class="payee-addr">{{ truncatedAddress }}</span>
       <!-- Identity-only Nostr contact: saved (or restored) without a
-           current address. Calm, not an error — the tap still works,
-           it explains and re-checks. -->
+           current address. Calm, not an error — their page explains
+           and re-checks. -->
       <span v-else class="payee-addr payee-addr--plain">{{ $t('No address yet') }}</span>
     </span>
 
-    <span v-if="isPayable" class="payee-chip" aria-hidden="true">{{ $t('Pay') }}</span>
-
-    <span
-      class="payee-info"
-      role="button"
-      :aria-label="$t('Details')"
-      @click.stop="$emit('open', entry)"
-      @keydown.enter.stop.prevent="$emit('open', entry)"
-      tabindex="0"
+    <button
+      v-if="isPayable"
+      type="button"
+      class="payee-pay"
+      :aria-label="$t('Pay {name}', { name: entry.name })"
+      @click.stop="$emit('pay', entry)"
     >
-      <Icon icon="tabler:info-circle" width="16" height="16" />
-    </span>
-  </button>
+      {{ $t('Pay') }}
+    </button>
+  </div>
 </template>
 
 <script>
-import { Icon } from '@iconify/vue'
 import ContactAvatar from './ContactAvatar.vue'
 
 export default {
   name: 'AddressBookEntry',
-  components: { Icon, ContactAvatar },
+  components: { ContactAvatar },
   props: {
     entry: {
       type: Object,
@@ -147,31 +146,26 @@ export default {
   font-size: 11.5px;
 }
 
-.payee-chip {
+/* The capsule action, App Store style: its own pressable target on
+   the row's right edge, visually distinct from the navigation row. */
+.payee-pay {
   flex: 0 0 auto;
-  font-size: 11px;
+  min-height: 34px;
+  padding: 0 16px;
+  border: 0;
+  border-radius: 999px;
+  font-family: 'Manrope', sans-serif;
+  font-size: 12px;
   font-weight: 750;
   letter-spacing: 0.04em;
   color: var(--brand-accent-text, var(--color-green));
   background: var(--brand-accent-soft);
-  border-radius: 999px;
-  padding: 6px 12px;
-}
-
-/* HIG detail disclosure: tapping the row pays, tapping this opens the
-   contact. Rendered as a span so the row stays one <button>. */
-.payee-info {
-  width: 34px;
-  height: 34px;
-  border-radius: 50%;
-  display: grid;
-  place-items: center;
-  color: var(--text-muted);
-  flex: 0 0 auto;
   cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: transform 0.1s ease;
 }
 
-.payee-info:active {
-  background: rgba(127, 127, 127, 0.12);
+.payee-pay:active {
+  transform: scale(0.95);
 }
 </style>
