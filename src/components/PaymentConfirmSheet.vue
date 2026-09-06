@@ -59,7 +59,6 @@
             <input
               v-model="displayAmount"
               @input="onAmountChange"
-              @focus="onAmountFocus"
               @blur="onAmountBlur"
               type="text"
               inputmode="decimal"
@@ -374,7 +373,6 @@ export default {
       addressCopied: false,
       displayAmount: '',
       currentCurrency: 'sats',
-      isAmountFocused: false,
       comment: '',
       fiatRates: {},
       logoFailed: false,
@@ -443,9 +441,6 @@ export default {
      */
     addressNeedsDetails() {
       return this.recipientAddress.length > 34
-    },
-    recipientAddressType() {
-      return this.payment?.recipient?.addressType || 'lightning'
     },
     // Branta merchant verification, present only when the parent's adapter
     // attached it after a positive lookup. Absent on every unverified
@@ -891,9 +886,7 @@ export default {
       }
       if (v !== this.displayAmount) this.displayAmount = v
     },
-    onAmountFocus()  { this.isAmountFocused = true },
     onAmountBlur() {
-      this.isAmountFocused = false
       // Light formatting on blur — same UX as PaymentModal.
       const n = parseFloat(this.displayAmount)
       if (!isFinite(n)) return
@@ -1475,7 +1468,6 @@ export default {
 @media (max-width: 480px) {
   .stage { padding: 6px 16px 8px; gap: 11px; }
   .confirm-cta { padding: 10px 16px 0; }
-  .recipient { padding: 2px 0 2px; }
   .recipient-avatar { width: 44px; height: 44px; min-width: 44px; font-size: 18px; }
   .amount-input { font-size: 40px; }
   .primary-cta { height: 50px; font-size: 14.5px; }

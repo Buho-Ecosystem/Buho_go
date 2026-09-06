@@ -1,10 +1,10 @@
 <template>
   <!--
-    A split payee row, the way App Store rows split: tapping the ROW
-    navigates to the contact's page, and the capsule button on the
-    right performs the primary action (pay) with its own distinct hit
-    target. Two zones, one row, no chevron — the capsule anchors the
-    right edge. No badges, no action clusters.
+    A split payee row: tapping the ROW navigates to the contact's
+    page, and the capsule button on the right performs the primary
+    action (pay) with its own distinct hit target. Two zones, one
+    row, no chevron — the capsule anchors the right edge. No badges,
+    no action clusters.
   -->
   <div
     class="payee-row"
@@ -146,8 +146,8 @@ export default {
   font-size: 11.5px;
 }
 
-/* The capsule action, App Store style: its own pressable target on
-   the row's right edge, visually distinct from the navigation row. */
+/* The capsule action: its own pressable target on the row's right
+   edge, visually distinct from the navigation row. */
 .payee-pay {
   flex: 0 0 auto;
   min-height: 34px;

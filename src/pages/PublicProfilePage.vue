@@ -112,7 +112,7 @@
           </div>
         </div>
 
-        <!-- 5. The foot, the Alby way: a question, answered by the product. -->
+        <!-- 5. The foot: a question, answered by the product. -->
         <footer class="pp-foot pp-in" style="--d: 300ms">
           <img src="/buho_logo.svg" alt="" width="16" height="16" />
           <span>{{ $t('Want a page like this too?') }} <a :href="BUHOGO_HOME">{{ $t('Get BuhoGO') }}</a></span>

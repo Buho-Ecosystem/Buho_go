@@ -199,7 +199,7 @@
 
 <script>
 import { useAddressBookStore } from '../../stores/addressBook'
-import { mapState, mapActions } from 'pinia'
+import { mapActions } from 'pinia'
 import {
   isSparkAddress,
   isBitcoinAddress,

@@ -19,18 +19,18 @@
       </q-input>
     </div>
 
-    <!-- The payee list: favorites as one-tap quick-pay tiles, then
-         everyone as rows whose whole surface is the Pay action. The
-         info glyph on each row is the door to the contact's page. -->
+    <!-- The payee list: a quick-pay shelf of recent recipients, then
+         everyone as split rows — the row opens the contact's page,
+         the capsule Pay button pays. -->
     <div class="entries-container" v-if="filteredEntries.length > 0">
       <q-scroll-area class="entries-scroll">
         <div class="entries-list">
           <!-- The Quick pay shelf: a swipeable strip of the last people
                actually paid. No per-bubble verb — the section title
-               carries it, the way the Phone app's favorites carry
-               "call". The shelf bleeds to the screen edge so the next
-               bubble peeks, which is the swipe affordance. Hidden while
-               searching: the search is about the list below. -->
+               carries it for the whole shelf. The shelf bleeds to the
+               screen edge so the next bubble peeks, which is the swipe
+               affordance. Hidden while searching: the search is about
+               the list below. -->
           <template v-if="!searchQuery && recentlyPaidEntries.length > 0">
             <div class="sec-label">{{ $t('Quick pay') }}</div>
             <div class="quickpay-shelf">

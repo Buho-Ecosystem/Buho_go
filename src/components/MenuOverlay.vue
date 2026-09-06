@@ -183,7 +183,7 @@ export default {
 </script>
 
 <style scoped>
-/* Control-Center material: heavy blur, a tint from the theme, faint
+/* Frosted overlay material: heavy blur, a tint from the theme, faint
    context kept underneath. */
 .menu-surface {
   position: relative;

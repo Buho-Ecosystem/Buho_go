@@ -2123,10 +2123,8 @@ import { isBiometricAvailable } from '../utils/biometric.js'
 import { isScreenPrivacySupported } from '../utils/secureScreen.js'
 import { Capacitor } from '@capacitor/core'
 import {truncateAddress} from '../utils/addressUtils.js'
-import {lnurlGetJson} from '../utils/lnurlHttp.js'
 import { parseNwcConnection, NWC_REASON_I18N_KEYS } from '../utils/nwcConnection'
 import { loadDismissedWarnings, saveDismissedWarnings } from '../utils/attentionWarnings.js'
-import VueQrcode from '@chenfengyuan/vue-qrcode'
 import KioskPinPad from '../components/KioskPinPad.vue'
 import SparkSeedPhraseDialog from '../components/SparkSeedPhraseDialog.vue'
 import CloudBackupSheet from '../components/CloudBackupSheet.vue'
@@ -2165,7 +2163,6 @@ const MEMPOOL_PRESET_URLS = [MEMPOOL_DEFAULT_URL, MEMPOOL_BLOCKTRAINER_URL];
 export default {
   name: 'SettingsPage',
   components: {
-    VueQrcode,
     ArkadeLogo,
     WalletBrandMark,
     SparkSeedPhraseDialog,

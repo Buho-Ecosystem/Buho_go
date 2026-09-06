@@ -117,12 +117,6 @@
       @open-existing="handleOpenExisting"
     />
 
-    <!-- Batch Send Modal -->
-    <BatchSendModal
-      v-model="showBatchSend"
-      @batch-completed="handleBatchCompleted"
-    />
-
     <!-- Clear All Confirmation -->
     <q-dialog v-model="showClearAllConfirmDialog" :class="$q.dark.isActive ? 'dialog_dark' : 'dialog_light'">
       <q-card class="delete-confirm-card" :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'">
@@ -174,20 +168,17 @@ import { mapActions, mapState } from 'pinia'
 
 import AddressBookList from '../components/AddressBook/AddressBookList.vue'
 import AddressBookModal from '../components/AddressBook/AddressBookModal.vue'
-import BatchSendModal from '../components/BatchSendModal.vue'
 
 export default {
   name: 'AddressBookPage',
   components: {
     AddressBookList,
     AddressBookModal,
-    BatchSendModal,
   },
   data() {
     return {
       showModal: false,
       selectedEntry: null,
-      showBatchSend: false,
       showClearAllConfirmDialog: false,
     }
   },
@@ -290,7 +281,7 @@ export default {
       this.showModal = true
     },
 
-    /** The row's info glyph: push the contact's own page. */
+    /** A row tap: push the contact's own page. */
     openContact(entry) {
       this.$router.push(`/address-book/${entry.id}`)
     },
@@ -306,9 +297,9 @@ export default {
     },
 
     /**
-     * Lives in usePayContact now, because the identity tab's People strip
-     * pays the same contacts and its own copy of this had dropped both the
-     * identity-only guard and the silent re-sync.
+     * Lives in usePayContact so every surface that pays a contact shares
+     * one flow: the identity-only guard, the silent re-sync, and the
+     * last-used stamp all happen there.
      */
     payContact(contact) {
       usePayContact(this).payContact(contact)
@@ -329,19 +320,6 @@ export default {
       if (!entry) return
       this.payContact(entry)
     },
-
-    handleBatchCompleted(results) {
-      const succeeded = results.filter(r => r.status === 'success').length
-      const failed = results.filter(r => r.status === 'failed' || r.status === 'skipped').length
-
-      this.$q.notify({
-        type: failed === 0 ? 'positive' : 'warning',
-        message: failed === 0
-          ? this.$t('{count} payments sent', { count: succeeded })
-          : this.$t('{sent} sent, {failed} failed', { sent: succeeded, failed }),
-        timeout: 3000
-      })
-    }
   }
 }
 </script>
