@@ -244,7 +244,7 @@ import { formatSuccessActionUrl } from '../utils/successAction.js';
 const AUTO_CLOSE_SECONDS = 2.8;
 // Content windows (a recipient message, link, secret, or a save-contact
 // offer) stay long enough to read and act on; a tap closes sooner.
-const AUTO_CLOSE_LONG_SECONDS = 10;
+const AUTO_CLOSE_LONG_SECONDS = 6;
 
 export default {
   name: 'PaymentConfirmation',
