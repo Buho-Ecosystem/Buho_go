@@ -833,19 +833,8 @@
         />
       </SettingsSection>
 
-      <!-- ─────────────── ABOUT ───────────────
-           Single entry point into its own page (mission, source,
-           community, downloads, version) rather than an inline
-           section — keeps this already-long page shorter and gives
-           About room to breathe on its own screen. -->
-      <SettingsSection>
-        <SettingsRow
-          icon="tabler:info-circle"
-          :label="$t('About BuhoGO')"
-          :caption="'BuhoGO v' + appVersion"
-          @click="$router.push('/about')"
-        />
-      </SettingsSection>
+      <!-- About lives behind its own door in the home menu now; Settings
+           stays pure configuration. -->
 
     </div>
 
@@ -2161,7 +2150,6 @@ import { LNBitsWalletProvider } from '../providers/LNBitsWalletProvider'
 // of the flow intentionally — the order-tap check is stronger. Retained
 // here for future reuse.
 // import MnemonicVerify from '../components/MnemonicVerify.vue'
-import { version } from '../../package.json'
 import { SUPPORTED_LOCALES, applyLocale, getSavedLocale } from '../i18n/locales'
 import { isCloudBackupPlatform } from '../services/cloudStorage.js'
 
@@ -2866,10 +2854,6 @@ export default {
         return this.$t('Blocktrainer');
       }
       return this.$t('Custom server');
-    },
-
-    appVersion() {
-      return version;
     },
 
     // Expand wallets into auto-transfer entries
