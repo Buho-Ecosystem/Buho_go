@@ -1074,19 +1074,16 @@ export default {
   overflow: hidden;
 }
 
-/* Silhouette hero — same blue-on-pale-blue treatment as ContactAvatar
-   (the reference wallet's look, copied 1:1), so the confirm sheet and
-   every list agree. */
+/* Silhouette hero — the same grey placeholder recipe as ContactAvatar,
+   so the confirm sheet and every list agree. */
 .recipient-avatar--silhouette {
-  background: #EAEFF7;
-  color: #3B82F6;
+  background: var(--bg-input);
+  color: var(--text-muted);
   text-shadow: none;
   box-shadow: none;
 }
 
 .body--dark .recipient-avatar--silhouette {
-  background: #23272E;
-  color: #5B8DEF;
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.05);
 }
 

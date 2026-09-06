@@ -16,11 +16,10 @@
       :alt="''"
       @error="onImgError"
     />
-    <!-- No picture: the filled-bust silhouette (the reference wallet's
-         treatment, adopted 1:1) — solid blue figure on a pale blue-
-         tinted disc, both themes. One mark for everyone, no initials,
-         no per-contact color. The glyph scales with whatever size the
-         parent sets, so every surface keeps its rhythm. -->
+    <!-- No picture: the filled-bust silhouette in the app's grey
+         placeholder language, both themes. One mark for everyone, no
+         initials, no per-contact color. The glyph scales with whatever
+         size the parent sets, so every surface keeps its rhythm. -->
     <svg
       v-else
       class="contact-avatar__glyph"
@@ -39,9 +38,10 @@
  *
  * Renders a Nostr-sourced profile picture when one is available,
  * otherwise falls back to the filled-bust silhouette — one mark for
- * every picture-less contact, blue on a pale blue-tinted disc in both
- * themes (the reference wallet's treatment, adopted 1:1). The old
- * colored-initial circles are retired (design decision 2026-07-25).
+ * every picture-less contact, the app's grey placeholder (muted figure
+ * on the input surface) in both themes. The old colored-initial
+ * circles are retired (design decision 2026-07-25); the blue disc
+ * went grey 2026-09-10 to match the rest of the app.
  *
  * Layout is intentionally *not* owned by this component — the parent
  * supplies width / height / font-size through its own class so each
@@ -228,17 +228,15 @@ export default {
   padding: 19%;
 }
 
-/* Silhouette fallback — the reference wallet's look, copied 1:1:
-   solid blue bust on a pale blue-tinted disc. Dark mode keeps the
-   same blue (slightly lifted for contrast) on a cool dark disc. */
+/* Silhouette fallback — the app's one grey placeholder language
+   (same recipe as the identity avatar): muted figure on the input
+   surface, themed by the tokens in both modes. */
 .contact-avatar--fallback {
-  background: #EAEFF7;
-  color: #3B82F6;
+  background: var(--bg-input);
+  color: var(--text-muted);
 }
 
 .body--dark .contact-avatar--fallback {
-  background: #23272E;
-  color: #5B8DEF;
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.05);
 }
 
