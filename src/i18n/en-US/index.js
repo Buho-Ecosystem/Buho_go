@@ -1372,8 +1372,6 @@ export default {
   "Failed to assign contact": "Failed to assign contact",
   "See top donors & recent donations": "See top donors & recent donations",
   "Donations Portal": "Donations Portal",
-  "Closing in {seconds}s...": "Closing in {seconds}s...",
-  "Close Now": "Close Now",
   // "Payment Sent" is already declared above (paired with
   // "Payment Received") — don't redeclare here.
   "Still sending…": "Still sending…",
@@ -3180,4 +3178,5 @@ export default {
   "Change address": "Change address",
   "Use this name": "Use this name",
   "Pick a new name. Your current name stays reserved for this wallet.": "Pick a new name. Your current name stays reserved for this wallet.",
+  "Tap anywhere to close": "Tap anywhere to close",
 }

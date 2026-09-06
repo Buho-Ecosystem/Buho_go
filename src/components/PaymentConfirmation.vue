@@ -7,7 +7,16 @@
     transition-hide="fade"
     class="payment-confirmation"
   >
-    <div class="confirmation-backdrop" :class="$q.dark.isActive ? 'backdrop-dark' : 'backdrop-light'">
+    <!--
+      The whole surface is the dismiss target: one tap anywhere closes it.
+      Interactive children (save, link, secret) stop propagation so acting
+      on them never doubles as a dismissal.
+    -->
+    <div
+      class="confirmation-backdrop"
+      :class="$q.dark.isActive ? 'backdrop-dark' : 'backdrop-light'"
+      @click="closeNow"
+    >
       <div class="confirmation-content">
         <!--
           Success animation. The shared SuccessCheckmark primitive
@@ -86,8 +95,8 @@
           LUD-09 successAction — the recipient's post-payment message. Shown as
           a distinct card (not the faint footer `description`) because it can
           carry a link to open or a one-time secret to copy. Its presence also
-          suppresses auto-close (see `keepsOpen`) so the user has time to read
-          or act on it.
+          widens the auto-close window (see `closeDelaySeconds`) so the user
+          has time to read or act on it.
         -->
         <div
           v-if="successAction"
@@ -133,7 +142,7 @@
                 type="button"
                 class="success-action-open"
                 :class="$q.dark.isActive ? 'sa-open-dark' : 'sa-open-light'"
-                @click="openSuccessActionUrl"
+                @click.stop="openSuccessActionUrl"
               >
                 <span class="success-action-open-label">{{ successActionUrlLabel }}</span>
                 <Icon icon="tabler:external-link" width="16" height="16" class="success-action-open-icon" />
@@ -157,7 +166,7 @@
                 type="button"
                 class="success-action-secret"
                 :class="$q.dark.isActive ? 'sa-secret-dark' : 'sa-secret-light'"
-                @click="copySecret"
+                @click.stop="copySecret"
               >
                 <span class="success-action-secret-text">{{ successAction.secret }}</span>
                 <Icon icon="tabler:copy" width="16" height="16" />
@@ -175,7 +184,7 @@
         <div
           v-if="showSaveContact"
           class="save-contact-area"
-          :class="{ 'fade-in': showCountdown }"
+          :class="{ 'fade-in': showFooter }"
         >
           <q-btn
             outline
@@ -183,7 +192,7 @@
             rounded
             class="save-contact-btn"
             :class="$q.dark.isActive ? 'save-contact-btn-dark' : 'save-contact-btn-light'"
-            @click="onSaveContactClicked"
+            @click.stop="onSaveContactClicked"
           >
             <Icon icon="tabler:user-plus" width="16" height="16" class="q-mr-xs" />
             {{ saveContactLabel || $t('Save to Contacts') }}
@@ -191,37 +200,21 @@
         </div>
       </div>
 
-      <!-- Bottom area: countdown + description -->
+      <!-- Bottom area: dismissal hint + description. The hint is the whole
+           affordance — the screen closes on its own, and any tap closes it
+           sooner, so a button would only add chrome. -->
       <div class="bottom-area">
-        <div class="countdown-section" :class="{ 'fade-in': showCountdown }">
-          <!--
-            Countdown text is suppressed when the modal is in
-            "decision-pending" mode (save-contact button visible).
-            There's no countdown to surface — the modal stays open until
-            the user picks one of the two actions.
-          -->
-          <div
-            v-if="!keepsOpen"
-            class="countdown-text"
-            :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'"
-          >
-            {{ $t('Closing in {seconds}s...', { seconds: countdown }) }}
-          </div>
-          <q-btn
-            flat
-            no-caps
-            class="close-now-btn"
-            :class="$q.dark.isActive ? 'close-btn-dark' : 'close-btn-light'"
-            @click="closeNow"
-          >
-            {{ closeLabelText }}
-          </q-btn>
+        <div
+          class="dismiss-hint"
+          :class="[{ 'fade-in': showFooter }, $q.dark.isActive ? 'text-grey-6' : 'text-grey-5']"
+        >
+          {{ $t('Tap anywhere to close') }}
         </div>
 
         <div
           v-if="description"
           class="description-section"
-          :class="[{ 'fade-in': showCountdown }, $q.dark.isActive ? 'desc-dark' : 'desc-light']"
+          :class="[{ 'fade-in': showFooter }, $q.dark.isActive ? 'desc-dark' : 'desc-light']"
         >
           {{ description }}
         </div>
@@ -245,6 +238,13 @@ import { copySensitive } from '../utils/sensitiveClipboard.js';
 import SuccessCheckmark from './SuccessCheckmark.vue';
 import { openInAppBrowser } from '../utils/inAppBrowser.js';
 import { formatSuccessActionUrl } from '../utils/successAction.js';
+
+// A bare confirmation is glanceable: long enough to register the amount,
+// short enough that the screen leaves before it becomes a wall.
+const AUTO_CLOSE_SECONDS = 2.8;
+// Content windows (a recipient message, link, secret, or a save-contact
+// offer) stay long enough to read and act on; a tap closes sooner.
+const AUTO_CLOSE_LONG_SECONDS = 10;
 
 export default {
   name: 'PaymentConfirmation',
@@ -270,13 +270,6 @@ export default {
       type: String,
       default: ''
     },
-    autoCloseDelay: {
-      // Seconds. Long enough to read the amount, short enough that the
-      // screen leaves on its own before it becomes a wall. Fractions are
-      // honored by the close timer; the visible countdown rounds up.
-      type: Number,
-      default: 2.8
-    },
     accentColor: {
       type: String,
       default: 'green'
@@ -301,15 +294,11 @@ export default {
       default: 'To '
     },
     /**
-     * Promote the modal to a "decision-pending" surface: shows a "Save
-     * to Contacts" button below the amount, disables auto-close, hides
-     * the countdown text, and relabels the close action to a neutral
-     * "Done" (since there's no "now" to act on without a timer).
-     *
-     * The button click is forwarded via `save-contact-clicked` so the
-     * parent can run the actual save flow. If the user dismisses the
-     * modal without tapping the button, they've opted out — no dialog
-     * should pop afterwards.
+     * Shows a "Save to Contacts" button below the amount and widens the
+     * auto-close window so the offer is actually reachable. The click is
+     * forwarded via `save-contact-clicked` so the parent can run the save
+     * flow. If the user dismisses the modal without tapping the button,
+     * they've opted out — no dialog should pop afterwards.
      */
     showSaveContact: {
       type: Boolean,
@@ -317,15 +306,6 @@ export default {
     },
     /** Override the save-button label if a host wants different copy. */
     saveContactLabel: {
-      type: String,
-      default: ''
-    },
-    /**
-     * Override the close-button label. Defaults to "Close Now" when
-     * auto-close is running and "Done" when the modal is persistent
-     * (showSaveContact = true). Callers rarely need to set this.
-     */
-    closeLabel: {
       type: String,
       default: ''
     },
@@ -360,10 +340,9 @@ export default {
     return {
       showAnimation: false,
       showAmount: false,
-      showCountdown: false,
+      showFooter: false,
       showConfetti: false,
-      countdown: 5,
-      countdownInterval: null,
+      closeTimer: null,
       animationTimeout: null
     }
   },
@@ -377,28 +356,24 @@ export default {
       }
     },
     /**
-     * Whether the modal should stay open instead of auto-closing. Both the
-     * save-contact decision and a LUD-09 message need the user to read or act,
-     * so either one suppresses the countdown.
+     * A fiat-payout delivery that is still confirming holds the screen open —
+     * an in-flight process must never vanish mid-report. Everything else
+     * auto-closes; content only widens the window (see closeDelaySeconds).
      */
-    keepsOpen() {
-      // A pending delivery keeps the screen open so the user can watch it land;
-      // once terminal it no longer holds the screen (the receipt/save decision may).
-      const deliveryPending = !!this.deliveryStatus && !this.deliveryStatus.done
-      return this.showSaveContact || !!this.successAction || deliveryPending
+    holdsOpen() {
+      return !!this.deliveryStatus && !this.deliveryStatus.done
     },
     /**
-     * Close-button copy. "Close Now" reads right with a visible
-     * countdown ("close it sooner than the timer"); when the timer is
-     * suppressed (decision-pending mode) there is no "now" to refer
-     * to, so we use "Done" instead. Callers can override with
-     * `closeLabel`.
+     * How long the screen stays before closing itself. A bare confirmation
+     * is glanceable and leaves quickly; a recipient message, link, secret,
+     * or a save-contact offer is content the user may want to read or act
+     * on, so it earns the long window. A tap anywhere closes sooner either
+     * way, and engaging with the content cancels the timer entirely.
      */
-    closeLabelText() {
-      if (this.closeLabel) return this.closeLabel
-      return this.keepsOpen
-        ? this.$t('Done')
-        : this.$t('Close Now')
+    closeDelaySeconds() {
+      return (this.successAction || this.showSaveContact)
+        ? AUTO_CLOSE_LONG_SECONDS
+        : AUTO_CLOSE_SECONDS
     },
     /**
      * The destination of a LUD-09 `url` action, shortened for the pill. Shown
@@ -417,19 +392,15 @@ export default {
         this.cleanup()
       }
     },
-    // Auto-close is decided once (700ms into the entry animation) based on
-    // keepsOpen. But keepsOpen has live inputs — most notably a pending LUD-21
-    // delivery poll — so when the hold is released mid-view (delivery confirms,
-    // or a message/save state clears) the initial decision is stale. Re-sync the
-    // countdown here so a resolved screen actually auto-closes instead of
-    // freezing on "Closing in 5s...".
-    keepsOpen(holdOpen) {
-      if (!this.modelValue || !this.showCountdown) return
-      if (holdOpen) {
-        this.clearCountdown()
+    // The hold has a live input — the LUD-21 delivery poll — so when it
+    // releases mid-view (delivery confirms) the timer must start then, and
+    // if a fresh poll ever re-arms it, stop again.
+    holdsOpen(holding) {
+      if (!this.modelValue || !this.showFooter) return
+      if (holding) {
+        this.clearCloseTimer()
       } else {
-        this.countdown = Math.ceil(this.autoCloseDelay)
-        this.startCountdown()
+        this.startCloseTimer()
       }
     }
   },
@@ -438,10 +409,9 @@ export default {
   },
   methods: {
     startAnimationSequence() {
-      this.countdown = Math.ceil(this.autoCloseDelay)
       this.showAnimation = false
       this.showAmount = false
-      this.showCountdown = false
+      this.showFooter = false
       this.showConfetti = false
 
       setTimeout(() => {
@@ -454,35 +424,22 @@ export default {
       }, 380)
 
       setTimeout(() => {
-        this.showCountdown = true
-        // Auto-close is suppressed when the modal is in decision-pending
-        // mode — the user needs to actively pick Save or Done, and an
-        // expiring timer would pressure that choice.
-        if (!this.keepsOpen) {
-          this.startCountdown()
+        this.showFooter = true
+        if (!this.holdsOpen) {
+          this.startCloseTimer()
         }
       }, 700)
     },
 
-    startCountdown() {
-      this.clearCountdown()
-      // Wall-clock based so a fractional delay (2.8s) closes on time and a
-      // stalled timer can never freeze the screen open at "1s".
-      const startedAt = Date.now()
-      const totalMs = this.autoCloseDelay * 1000
-      this.countdownInterval = setInterval(() => {
-        const remainingMs = totalMs - (Date.now() - startedAt)
-        this.countdown = Math.max(0, Math.ceil(remainingMs / 1000))
-        if (remainingMs <= 0) {
-          this.closeNow()
-        }
-      }, 250)
+    startCloseTimer() {
+      this.clearCloseTimer()
+      this.closeTimer = setTimeout(() => this.closeNow(), this.closeDelaySeconds * 1000)
     },
 
-    clearCountdown() {
-      if (this.countdownInterval) {
-        clearInterval(this.countdownInterval)
-        this.countdownInterval = null
+    clearCloseTimer() {
+      if (this.closeTimer) {
+        clearTimeout(this.closeTimer)
+        this.closeTimer = null
       }
     },
 
@@ -508,10 +465,7 @@ export default {
     },
 
     cleanup() {
-      if (this.countdownInterval) {
-        clearInterval(this.countdownInterval)
-        this.countdownInterval = null
-      }
+      this.clearCloseTimer()
       if (this.animationTimeout) {
         clearTimeout(this.animationTimeout)
         this.animationTimeout = null
@@ -536,12 +490,18 @@ export default {
      */
     openSuccessActionUrl() {
       const url = this.successAction?.url;
-      if (url) openInAppBrowser(url);
+      if (!url) return;
+      // The user is acting on the content — the screen must not vanish
+      // beneath them while they are away in the browser. From here on it
+      // waits for their tap.
+      this.clearCloseTimer();
+      openInAppBrowser(url);
     },
 
     async copySecret() {
       const secret = this.successAction?.secret;
       if (!secret) return;
+      this.clearCloseTimer();
       try {
         await copySensitive(secret);
         this.$q.notify({ type: 'positive', message: this.$t('Copied') });
@@ -730,54 +690,19 @@ export default {
   padding: 0 1.5rem;
 }
 
-.countdown-section {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 0.75rem;
+.dismiss-hint {
+  font-family: 'Manrope', sans-serif;
+  font-size: 13px;
+  letter-spacing: 0.01em;
   opacity: 0;
   transform: translateY(8px);
   transition: opacity 0.4s cubic-bezier(0.2, 0.7, 0.2, 1),
               transform 0.4s cubic-bezier(0.2, 0.7, 0.2, 1);
 }
 
-.countdown-section.fade-in {
-  opacity: 1;
+.dismiss-hint.fade-in {
+  opacity: 0.75;
   transform: translateY(0);
-}
-
-.countdown-text {
-  font-family: 'Manrope', sans-serif;
-  font-size: 14px;
-}
-
-.close-now-btn {
-  padding: 10px 28px;
-  border-radius: 999px;
-  font-family: 'Manrope', sans-serif;
-  font-size: 14px;
-  font-weight: 600;
-  transition: background-color 0.2s ease;
-}
-
-.close-btn-dark {
-  background: rgba(255, 255, 255, 0.08);
-  color: #FFF;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-}
-
-.close-btn-dark:hover {
-  background: rgba(255, 255, 255, 0.12);
-}
-
-.close-btn-light {
-  background: rgba(0, 0, 0, 0.04);
-  color: var(--text-primary);
-  border: 1px solid var(--border-card);
-}
-
-.close-btn-light:hover {
-  background: rgba(0, 0, 0, 0.08);
 }
 
 /* Description (e.g. "BuhoGO Payment") — centered footer */
@@ -1011,7 +936,7 @@ export default {
   .success-animation,
   .amount-section,
   .success-action-area,
-  .countdown-section,
+  .dismiss-hint,
   .description-section {
     transition: none !important;
     animation: none !important;

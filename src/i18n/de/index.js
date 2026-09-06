@@ -1427,8 +1427,6 @@ export default {
   "Failed to assign contact": "Fehler beim Zuweisen des Kontakts",
   "See top donors & recent donations": "Top-Spender & aktuelle Spenden ansehen",
   "Donations Portal": "Spenden-Portal",
-  "Closing in {seconds}s...": "Schließt in {seconds}s...",
-  "Close Now": "Jetzt schließen",
   // "Payment Sent" is already declared above (paired with
   // "Payment Received") — don't redeclare here.
   "Still sending…": "Wird noch gesendet…",
@@ -3186,4 +3184,5 @@ export default {
   "Change address": "Adresse ändern",
   "Use this name": "Diesen Namen verwenden",
   "Pick a new name. Your current name stays reserved for this wallet.": "Wähle einen neuen Namen. Dein aktueller Name bleibt für dieses Wallet reserviert.",
+  "Tap anywhere to close": "Zum Schließen irgendwo tippen",
 }
