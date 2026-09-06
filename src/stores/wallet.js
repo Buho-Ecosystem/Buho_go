@@ -423,7 +423,12 @@ export const useWalletStore = defineStore('wallet', {
      */
     activeWalletType: (state) => {
       const activeWallet = state.wallets.find((w) => w.id === state.activeWalletId);
-      return activeWallet?.type || inferWalletType(activeWallet);
+      // No active wallet is a legal state (fresh install, all wallets
+      // removed): answer null instead of letting inferWalletType read
+      // properties off undefined. Type comparisons downstream all read
+      // false against null, which is the correct answer everywhere.
+      if (!activeWallet) return null;
+      return activeWallet.type || inferWalletType(activeWallet);
     },
 
     /**
