@@ -25,27 +25,33 @@
     <div class="entries-container" v-if="filteredEntries.length > 0">
       <q-scroll-area class="entries-scroll">
         <div class="entries-list">
-          <template v-if="filteredFavorites.length > 0">
+          <!-- The Quick pay shelf: a swipeable strip of the last people
+               actually paid. No per-bubble verb — the section title
+               carries it, the way the Phone app's favorites carry
+               "call". The shelf bleeds to the screen edge so the next
+               bubble peeks, which is the swipe affordance. Hidden while
+               searching: the search is about the list below. -->
+          <template v-if="!searchQuery && recentlyPaidEntries.length > 0">
             <div class="sec-label">{{ $t('Quick pay') }}</div>
-            <div class="pay-grid">
+            <div class="quickpay-shelf">
               <button
-                v-for="entry in filteredFavorites"
-                :key="'fav-' + entry.id"
+                v-for="entry in recentlyPaidEntries"
+                :key="'recent-' + entry.id"
                 type="button"
-                class="pay-tile"
+                class="quickpay-bubble"
+                :aria-label="$t('Pay {name}', { name: entry.name })"
                 @click="payContact(entry)"
               >
-                <ContactAvatar class="pay-tile-avatar" :entry="entry" />
-                <strong>{{ entry.name }}</strong>
-                <small>{{ $t('Pay') }}</small>
+                <ContactAvatar class="quickpay-avatar" :entry="entry" />
+                <span>{{ entry.name }}</span>
               </button>
             </div>
           </template>
 
-          <div class="sec-label">{{ filteredFavorites.length > 0 ? $t('Everyone') : $t('Contacts') }}</div>
+          <div class="sec-label">{{ $t('Contacts') }}</div>
           <div class="payee-rows">
             <AddressBookEntry
-              v-for="entry in filteredEntries"
+              v-for="entry in sortedEntries"
               :key="entry.id"
               :entry="entry"
               @pay="payContact"
@@ -125,11 +131,15 @@ export default {
     ...mapState(useAddressBookStore, [
       'entries',
       'filteredEntries',
-      'searchQuery'
+      'searchQuery',
+      'recentlyPaidEntries'
     ]),
 
-    filteredFavorites() {
-      return this.filteredEntries.filter(entry => entry.isFavorite)
+    /** Favorites first, then the rest — the star keeps its meaning. */
+    sortedEntries() {
+      return [...this.filteredEntries].sort(
+        (a, b) => (b.isFavorite ? 1 : 0) - (a.isFavorite ? 1 : 0)
+      )
     }
   },
   methods: {
@@ -190,55 +200,61 @@ export default {
   margin: 14px 2px 8px;
 }
 
-/* Quick-pay tiles: the favorite payees, one tap each. */
-.pay-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 9px;
+/* The Quick pay shelf: horizontal, snap-scrolled, scrollbarless. It
+   bleeds past the content padding so a partial bubble peeks at the
+   screen edge — the swipe affordance, no chrome needed. */
+.quickpay-shelf {
+  display: flex;
+  gap: 16px;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  margin: 0 -1rem;
+  padding: 2px 1rem 6px;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
 }
 
-.pay-tile {
+.quickpay-shelf::-webkit-scrollbar {
+  display: none;
+}
+
+.quickpay-bubble {
+  scroll-snap-align: start;
+  flex: 0 0 auto;
+  width: 64px;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 7px;
-  background: var(--bg-card);
-  border: 1px solid var(--border-card);
-  border-radius: 16px;
-  padding: 13px 6px 11px;
+  gap: 6px;
+  border: 0;
+  background: none;
+  padding: 0;
   cursor: pointer;
   color: var(--text-primary);
   font-family: 'Manrope', sans-serif;
-  min-width: 0;
   -webkit-tap-highlight-color: transparent;
 }
 
-.pay-tile:active {
-  background: var(--bg-input);
+.quickpay-bubble:active .quickpay-avatar {
+  transform: scale(0.93);
 }
 
-.pay-tile-avatar {
-  width: 46px;
-  height: 46px;
+.quickpay-avatar {
+  width: 56px;
+  height: 56px;
   border-radius: 50%;
   overflow: hidden;
+  display: block;
+  transition: transform 0.12s ease;
 }
 
-.pay-tile strong {
-  font-size: 12px;
-  font-weight: 700;
-  max-width: 100%;
+.quickpay-bubble span {
+  font-size: 11px;
+  font-weight: 650;
+  max-width: 64px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.pay-tile small {
-  font-size: 9.5px;
-  color: var(--text-muted);
-  font-weight: 650;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
 }
 
 .payee-rows {
