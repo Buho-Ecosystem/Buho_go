@@ -49,10 +49,20 @@
       </transition>
 
       <q-space/>
-      <!-- One trigger, five doors. The former Address Book / Map / Profile
-           buttons live behind it as menu doors now (the map keeps its reach
-           through Spend); the bucket pill rides the trigger so waiting money
+      <!-- The map keeps its own toolbar spot; everything else lives behind
+           the menu trigger as doors (settings, profile, spend, address
+           book, about). The bucket pill rides the trigger so new money
            stays visible from home. -->
+      <q-btn
+        flat
+        dense
+        class="float-right q-mr-xs"
+        :class="$q.dark.isActive ? 'modern-menu-btn-dark' : 'modern-menu-btn-light'"
+        @click="$router.push('/map')"
+        aria-label="Bitcoin Map"
+      >
+        <Icon icon="tabler:map" width="21" height="21" class="header-icon" />
+      </q-btn>
       <q-btn
         flat
         dense
@@ -76,7 +86,7 @@
           <path d="M10 6h10M10 12h10M10 18h10M7 9l-3 3 3 3" />
         </svg>
         <span
-          v-if="socialBucketStore.paymentCount > 0"
+          v-if="socialBucketStore.hasUnseenPayments"
           class="profile-money-pill"
           aria-hidden="true"
         >{{ bucketPaymentBadge }}</span>
@@ -1098,8 +1108,8 @@ export default {
   },
   computed: {
     menuButtonLabel() {
+      if (!this.socialBucketStore.hasUnseenPayments) return this.$t('Menu');
       const count = this.socialBucketStore.paymentCount;
-      if (!count) return this.$t('Menu');
       return `${this.$t('Menu')}, ${this.$t('{n} payments waiting', { n: count })}`;
     },
 

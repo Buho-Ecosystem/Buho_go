@@ -314,10 +314,12 @@ export default {
     }
 
     // The wallet-home badge leads here, so repeat the same live count on the
-    // exact action that explains and moves those payments.
+    // exact action that explains and moves those payments. Arriving counts
+    // as looking: once the view has settled, acknowledge the bucket so the
+    // home badge goes quiet until new money lands.
     this.bucket.hydrate({ pubkey: this.identity.nostrPubkeyHex }).then(() => (
       this.bucket.sync({ identityStore: this.identity })
-    )).catch(() => {});
+    )).catch(() => {}).then(() => this.bucket.markPaymentsSeen());
 
     // The card footer now reports on the wallet phrase too, and the wallet
     // store only reads its blob inside initialize(). Without this the card

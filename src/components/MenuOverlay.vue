@@ -51,7 +51,7 @@
           <span class="menu-door-word">
             {{ $t('Profile') }}
             <span
-              v-if="socialBucketStore.paymentCount > 0"
+              v-if="socialBucketStore.hasUnseenPayments"
               class="menu-door-pill menu-door-pill--money"
               aria-hidden="true"
             >{{ bucketBadge }}</span>
@@ -147,8 +147,8 @@ export default {
     },
 
     profileDoorLabel() {
+      if (!this.socialBucketStore.hasUnseenPayments) return this.$t('Profile');
       const count = this.socialBucketStore.paymentCount;
-      if (!count) return this.$t('Profile');
       return `${this.$t('Profile')}, ${this.$t('{n} payments waiting', { n: count })}`;
     },
 
@@ -157,10 +157,26 @@ export default {
       return `${this.$t('About')}, ${this.$t('A newer version is ready')}`;
     },
   },
+  data() {
+    return {
+      navigating: false,
+    };
+  },
   methods: {
-    go(path) {
-      this.show = false;
-      this.$router.push(path);
+    async go(path) {
+      if (this.navigating) return;
+      this.navigating = true;
+      try {
+        // Navigate first and keep the frost up while the destination (and
+        // its lazy chunk) loads. Closing the dialog first would fade the
+        // home screen back in for the gap before the new page mounts.
+        // A successful push unmounts the wallet page and this dialog with
+        // it, so the menu leaves in the same frame the destination lands.
+        await this.$router.push(path);
+      } finally {
+        this.navigating = false;
+        this.show = false;
+      }
     },
   },
 };
@@ -281,9 +297,9 @@ body.body--dark .menu-surface {
 
 .menu-door-word {
   position: relative;
-  font-size: 28px;
-  font-weight: 500;
-  letter-spacing: -0.015em;
+  font-size: 32px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
   line-height: 1;
   text-transform: lowercase;
   color: var(--text-primary);
@@ -294,8 +310,8 @@ body.body--dark .menu-surface {
    a superscript on the door's word. */
 .menu-door-pill {
   position: absolute;
-  top: -6px;
-  right: -26px;
+  top: -8px;
+  right: -28px;
   min-width: 20px;
   height: 17px;
   padding: 0 5px;
