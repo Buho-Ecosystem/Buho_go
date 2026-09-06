@@ -159,7 +159,7 @@
               <div v-if="recipientAddress" class="recipient-addr">{{ recipientAddress }}</div>
             </div>
             <button
-              v-if="recipientAddress"
+              v-if="addressNeedsDetails"
               type="button"
               class="recipient-info"
               :aria-label="$t('Details')"
@@ -171,9 +171,10 @@
           </section>
 
           <!-- The labeled detail panel behind the info glyph, with copy
-               for manual verification against another surface. -->
+               for manual verification against another surface. Only for
+               destinations the cell's line cannot show whole. -->
           <transition name="fade-collapse">
-            <div v-if="showAddress && recipientAddress" class="recipient-details">
+            <div v-if="showAddress && addressNeedsDetails" class="recipient-details">
               <div class="recipient-details-copy">
                 <div class="recipient-details-label">{{ $t('Address') }}</div>
                 <div class="recipient-details-value">{{ recipientAddress }}</div>
@@ -431,6 +432,18 @@ export default {
     recipientAddress() {
       return this.payment?.recipient?.address || ''
     },
+    /**
+     * Whether the destination earns the info glyph and its detail panel.
+     * The cell's identifier line shows about 35 mono characters before it
+     * truncates on the narrowest phones; anything at or under that is
+     * already fully readable in place (a Lightning address, typically),
+     * and repeating it in a panel would say the same thing twice. Long
+     * strings (invoices, LNURLs, on-chain addresses) truncate, so they
+     * keep the panel with the full value and copy.
+     */
+    addressNeedsDetails() {
+      return this.recipientAddress.length > 34
+    },
     recipientAddressType() {
       return this.payment?.recipient?.addressType || 'lightning'
     },
@@ -601,6 +614,34 @@ export default {
         if (minSendable) parts.push(`${this.$t('Min')} ${minSendable.toLocaleString()}`)
         if (maxSendable) parts.push(`${this.$t('Max')} ${maxSendable.toLocaleString()}`)
         return `${parts.join(' · ')} ${code}`
+      }
+      // The limits speak the denomination the user is typing in. In fiat
+      // mode the min rounds UP to the cent and the max DOWN, so the row
+      // never promises an amount the sat bounds would reject.
+      if (this.denominationMode === 'fiat' && this.fiatRates) {
+        const currency = this.fiatCurrencyCode
+        const min = fiatRatesService.convertSatsToFiatSync(this.minSats, currency)
+        const max = fiatRatesService.convertSatsToFiatSync(this.maxSats, currency)
+        if (min !== null && max !== null) {
+          const grouped = (v) => v.toLocaleString(undefined, {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2
+          })
+          return this.$t('Limits {min} – {max} {unit}', {
+            min: this.fiatSymbol + grouped(Math.ceil(min * 100) / 100),
+            max: this.fiatSymbol + grouped(Math.floor(max * 100) / 100),
+            unit: currency
+          })
+        }
+        // Rates not loaded yet: fall through to the sat bounds below.
+      }
+      if (this.denominationMode === 'btc') {
+        const toBtc = (sats) => (sats / 100000000).toLocaleString(undefined, { maximumFractionDigits: 8 })
+        return this.$t('Limits {min} – {max} {unit}', {
+          min: toBtc(this.minSats),
+          max: toBtc(this.maxSats),
+          unit: 'BTC'
+        })
       }
       return this.$t('Limits {min} – {max} {unit}', {
         min: this.minSats.toLocaleString(),
