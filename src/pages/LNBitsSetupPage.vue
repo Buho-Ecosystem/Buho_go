@@ -627,12 +627,12 @@ export default {
     },
 
     /**
-     * Navigate to the standard post-setup success screen. Kept as a single
-     * method so every exit path (kiosk, dialog skipped, dialog confirmed,
-     * lnurlp unavailable) lands in the same place.
+     * Every exit path (kiosk, dialog skipped, dialog confirmed, lnurlp
+     * unavailable) lands in the same place: the wallet itself. The feature
+     * tour left the setup flow and waits in About > Onboarding Guide.
      */
     goToSuccess() {
-      this.$router.replace('/spark-success?mode=nwc-lnbits');
+      this.$router.replace('/wallet');
     },
 
     /**

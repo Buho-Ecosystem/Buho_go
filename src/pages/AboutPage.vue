@@ -14,35 +14,43 @@
     </div>
 
     <div class="about-content">
-      <!-- Identity hero: the mark, the name, and the version as one calm
-           block - the platform's own About pages lead with who the app
-           is before what it links to. The version pill is the update
+      <!-- Identity hero: mark, name, version and the story share one
+           horizontal card, so the page leads with who the app is without
+           spending half the screen on it. The version pill is the update
            checker; a dot appears when a newer build is waiting. -->
       <div class="about-hero">
         <div class="about-hero-mark">
           <img src="/buho_logo.svg" alt="" class="about-hero-logo" />
         </div>
-        <div class="about-hero-name">BuhoGO</div>
-        <button
-          type="button"
-          class="about-version-pill"
-          :class="{ 'about-version-pill--update': updateStore.hasUpdate }"
-          @click="onVersionClick"
-        >
-          <span v-if="updateStore.hasUpdate" class="about-version-dot" aria-hidden="true"></span>
-          v{{ appVersion }}
-        </button>
-        <div class="about-version-caption">{{ versionCaption }}</div>
+        <div class="about-hero-body">
+          <div class="about-hero-title-row">
+            <span class="about-hero-name">BuhoGO</span>
+            <button
+              type="button"
+              class="about-version-pill"
+              :class="{ 'about-version-pill--update': updateStore.hasUpdate }"
+              @click="onVersionClick"
+            >
+              <span v-if="updateStore.hasUpdate" class="about-version-dot" aria-hidden="true"></span>
+              v{{ appVersion }}
+            </button>
+          </div>
+          <div class="about-version-caption">{{ versionCaption }}</div>
+          <p class="about-mission">
+            {{ $t("BuhoGO started as a wallet for our friends. We keep it simple and skip the confusing tech talk, because that's how we'd want it too.") }}
+          </p>
+        </div>
       </div>
 
-      <p class="about-mission">
-        {{ $t("BuhoGO started as a wallet for our friends. We keep it simple and skip the confusing tech talk, because that's how we'd want it too.") }}
-      </p>
-
-      <!-- The ask lives next to the story it belongs to. -->
-      <SupportBuhoGo />
-
+      <!-- Learn it, read it, join it: one grouped list in task order. -->
       <SettingsSection>
+        <SettingsRow
+          icon="tabler:school"
+          :label="$t('Onboarding Guide')"
+          :caption="$t('Learn about all BuhoGO features')"
+          @click="$router.push('/spark-success?full=true')"
+        />
+
         <SettingsRow
           icon="tabler:brand-github"
           :label="$t('View source on GitHub')"
@@ -88,6 +96,10 @@
           </button>
         </div>
       </div>
+
+      <!-- The ask closes the page: story first, then the ways in, then
+           support for the people who just read why it exists. -->
+      <SupportBuhoGo />
     </div>
   </q-page>
 </template>
@@ -226,66 +238,79 @@ export default {
 }
 
 .about-content {
-  padding: 1.25rem 1rem calc(2rem + var(--safe-bottom, 0px));
+  padding: 1rem 1rem calc(1.5rem + var(--safe-bottom, 0px));
   display: flex;
   flex-direction: column;
-  gap: 21px;
+  gap: 16px;
   max-width: 480px;
   margin: 0 auto;
   box-sizing: border-box;
 }
 
 /* ----------------------------------------------------------------
-   Identity hero
+   Identity hero — one horizontal card on the grouped-card surface.
 ---------------------------------------------------------------- */
 .about-hero {
   display: flex;
-  flex-direction: column;
-  align-items: center;
-  padding-top: 13px;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 16px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-card);
+  border-radius: var(--radius-md, 16px);
 }
 
 .about-hero-mark {
-  width: 84px;
-  height: 84px;
-  border-radius: 22px;
+  width: 56px;
+  height: 56px;
+  border-radius: 16px;
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--bg-card);
+  background: var(--bg-secondary);
   border: 1px solid var(--border-card);
-  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.08);
 }
 
 .about-hero-logo {
-  width: 56px;
-  height: 56px;
+  width: 38px;
+  height: 38px;
   object-fit: contain;
 }
 
+.about-hero-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.about-hero-title-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
 .about-hero-name {
-  margin-top: 13px;
-  font-size: 21px;
+  font-size: 17px;
   font-weight: 700;
   letter-spacing: -0.01em;
   color: var(--text-primary);
 }
 
 /* The version pill IS the update checker: quiet by default, ringed with
-   a dot when a newer build waits. 44pt target via padding. */
+   a dot when a newer build waits. */
 .about-version-pill {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  margin-top: 8px;
-  min-height: 32px;
-  padding: 4px 14px;
+  gap: 5px;
+  min-height: 28px;
+  padding: 3px 10px;
   border: 1px solid var(--border-card);
   border-radius: 999px;
-  background: var(--bg-card);
+  background: var(--bg-secondary);
   color: var(--text-secondary);
   font-family: var(--font-mono);
-  font-size: 12.5px;
+  font-size: 11.5px;
   font-weight: 600;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
@@ -302,25 +327,22 @@ export default {
 }
 
 .about-version-dot {
-  width: 7px;
-  height: 7px;
+  width: 6px;
+  height: 6px;
   border-radius: 50%;
   background: #15DE72;
 }
 
 .about-version-caption {
-  margin-top: 6px;
-  font-size: 11.5px;
+  margin-top: 3px;
+  font-size: 11px;
   color: var(--text-muted);
 }
 
 .about-mission {
-  margin: 0 auto;
-  padding: 0 0.5rem;
-  max-width: 40ch;
-  font-size: 14px;
-  line-height: 1.55;
-  text-align: center;
+  margin: 8px 0 0;
+  font-size: 13px;
+  line-height: 1.5;
   color: var(--text-secondary);
 }
 
@@ -368,9 +390,9 @@ export default {
 
 .channel-icon {
   position: relative;
-  width: 52px;
-  height: 52px;
-  border-radius: 16px;
+  width: 48px;
+  height: 48px;
+  border-radius: 14px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -393,9 +415,9 @@ export default {
 }
 
 .channel-icon-img {
-  width: 52px;
-  height: 52px;
-  border-radius: 16px;
+  width: 48px;
+  height: 48px;
+  border-radius: 14px;
   object-fit: cover;
   display: block;
 }
@@ -424,8 +446,7 @@ export default {
 }
 
 /* ----------------------------------------------------------------
-   Downloads — real "Get it on" store badges, centered as the page's
-   end cap.
+   Downloads — real "Get it on" store badges.
 ---------------------------------------------------------------- */
 .about-downloads {
   padding: 0 0.25rem;
@@ -455,7 +476,7 @@ export default {
 }
 
 .store-badge-img {
-  height: 52px;
+  height: 48px;
   width: auto;
   display: block;
 }
@@ -464,7 +485,7 @@ export default {
   display: flex;
   align-items: center;
   gap: 10px;
-  height: 52px;
+  height: 48px;
   padding: 0 16px;
   border-radius: 12px;
   background: #000;

@@ -709,30 +709,16 @@
         </q-card>
       </q-dialog>
 
-      <!-- ─────────────── HELP & SUPPORT ───────────────
-           Just the onboarding tour now. Bitcoin Lessons was
-           previously here but has been promoted to a Feature Card
-           at the top (earning sats is the strongest noob hook in
-           the app — burying it in Help & Support was a UX miss).
-           The donation row split out into its own "Support BuhoGO"
-           section below so the ask reads cleanly. -->
-      <SettingsSection :title="$t('Help & Support')">
-        <SettingsRow
-          icon="tabler:school"
-          :label="$t('Onboarding Guide')"
-          :caption="$t('Learn about all BuhoGO features')"
-          @click="$router.push('/spark-success?full=true')"
-        />
-      </SettingsSection>
+      <!-- The Onboarding Guide lives on the About page now, next to the
+           project's story, so Settings stays pure configuration. -->
 
       <!-- ─────────────── ADVANCED ───────────────
            Collapsed by default. Power-user toggles that the
            typical user never needs to touch (exchange-rate source,
-           auto-add Bitcoin deposits). Positioned after Support
-           BuhoGO so the main mainstream surfaces — wallet,
-           preferences, kiosk, help, donate — read first; anyone
-           hunting for advanced controls is happy to scroll the
-           extra row. -->
+           auto-add Bitcoin deposits). Positioned after the
+           mainstream surfaces — wallet, preferences, kiosk — so
+           anyone hunting for advanced controls is happy to scroll
+           the extra row. -->
       <SettingsSection
         :title="$t('Advanced')"
         collapsible

@@ -317,7 +317,8 @@ export default {
         this.loadingText = this.$t('Loading wallet...');
         await new Promise(resolve => setTimeout(resolve, 500));
 
-        this.$router.replace('/spark-success?mode=nwc-lnbits');
+        // Straight into the wallet; the tour waits in About > Onboarding Guide.
+        this.$router.replace('/wallet');
       } catch (error) {
         console.error('Failed to connect NWC wallet:', error);
         this.showLoadingScreen = false;

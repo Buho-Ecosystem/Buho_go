@@ -65,7 +65,8 @@ export default {
         this.creatingStatus = this.$t('Wallet created!');
         await new Promise((resolve) => setTimeout(resolve, 800));
 
-        this.$router.replace('/spark-success?mode=arkade');
+        // Straight into the wallet; the tour waits in About > Onboarding Guide.
+        this.$router.replace('/wallet');
       } catch (error) {
         console.error('Failed to create Arkade wallet:', error);
         this.walletStore.showPaymentError(error, {
