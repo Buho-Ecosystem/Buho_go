@@ -13,15 +13,15 @@
       <div class="header-spacer"></div>
     </div>
 
+    <!-- No cards on this page: the story sits directly on the background
+         and hairlines carry the structure. The only boxed things left are
+         real controls (version pill, donate buttons) and the official
+         store badges, which are boxes by design. -->
     <div class="about-content">
-      <!-- Identity hero: mark, name, version and the story share one
-           horizontal card, so the page leads with who the app is without
-           spending half the screen on it. The version pill is the update
-           checker; a dot appears when a newer build is waiting. -->
+      <!-- Identity hero: bare mark, name, version. The version pill is the
+           update checker; a dot appears when a newer build is waiting. -->
       <div class="about-hero">
-        <div class="about-hero-mark">
-          <img src="/buho_logo.svg" alt="" class="about-hero-logo" />
-        </div>
+        <img src="/buho_logo.svg" alt="" class="about-hero-logo" />
         <div class="about-hero-body">
           <div class="about-hero-title-row">
             <span class="about-hero-name">BuhoGO</span>
@@ -36,54 +36,58 @@
             </button>
           </div>
           <div class="about-version-caption">{{ versionCaption }}</div>
-          <p class="about-mission">
-            {{ $t("BuhoGO started as a wallet for our friends. We keep it simple and skip the confusing tech talk, because that's how we'd want it too.") }}
-          </p>
         </div>
       </div>
 
-      <!-- Learn it, read it, join it: one grouped list in task order. -->
-      <SettingsSection>
+      <p class="about-mission">
+        {{ $t("BuhoGO started as a wallet for our friends. We keep it simple and skip the confusing tech talk, because that's how we'd want it too.") }}
+      </p>
+
+      <!-- Plain rows, full-bleed tap targets, one hairline between. -->
+      <div class="about-list">
         <SettingsRow
           icon="tabler:school"
           :label="$t('Onboarding Guide')"
           :caption="$t('Learn about all BuhoGO features')"
           @click="$router.push('/spark-success?full=true')"
         />
-
         <SettingsRow
           icon="tabler:brand-github"
           :label="$t('View source on GitHub')"
           @click="openGithubRepo"
         />
+      </div>
 
-        <div class="about-tile-block">
-          <div class="about-tile-label">{{ $t('Join our community') }}</div>
-          <div class="channel-row">
-            <button type="button" class="channel-btn" @click="openTelegramCommunity">
-              <span class="channel-icon channel-icon--telegram">
-                <Icon icon="tabler:brand-telegram" width="22" height="22" />
+      <div class="about-group">
+        <div class="about-label">{{ $t('Join our community') }}</div>
+        <div class="about-list">
+          <!-- Both channels wear the same filled 20px brand tile, so the
+               pair reads as one set. -->
+          <SettingsRow label="Telegram" @click="openTelegramCommunity">
+            <template #icon>
+              <span class="about-brand-tile about-brand-tile--telegram">
+                <Icon icon="tabler:brand-telegram" width="14" height="14" />
               </span>
-              <span class="channel-label">Telegram</span>
-            </button>
-
-            <button type="button" class="channel-btn" @click="openNostrCommunity">
-              <span class="channel-icon channel-icon--nostr">
-                <img src="/nostr/nostr.png" alt="Nostr" class="channel-icon-img" />
-                <span v-if="!nostrCommunityUrl" class="channel-soon-badge">{{ $t('Soon') }}</span>
-              </span>
-              <span class="channel-label">Nostr</span>
-            </button>
-          </div>
+            </template>
+          </SettingsRow>
+          <SettingsRow
+            label="Nostr"
+            :caption="nostrCommunityUrl ? '' : $t('Soon')"
+            @click="openNostrCommunity"
+          >
+            <template #icon>
+              <img src="/nostr/nostr.png" alt="" class="about-brand-tile" />
+            </template>
+          </SettingsRow>
         </div>
-      </SettingsSection>
+      </div>
 
-      <div class="about-downloads">
-        <div class="about-tile-label about-tile-label--freestanding">{{ $t('Get the app') }}</div>
+      <div class="about-group">
+        <div class="about-label">{{ $t('Get the app') }}</div>
         <div class="store-badge-row">
           <button type="button" class="store-badge-btn" @click="openPlayStore">
             <span class="store-badge-playstore">
-              <Icon icon="logos:google-play-icon" width="26" height="26" />
+              <Icon icon="logos:google-play-icon" width="24" height="24" />
               <span class="store-badge-text">
                 <span class="store-badge-eyebrow">GET IT ON</span>
                 <span class="store-badge-title">Google Play</span>
@@ -107,14 +111,13 @@
 <script>
 import { Icon } from '@iconify/vue';
 import { version } from '../../package.json';
-import SettingsSection from '../components/settings/SettingsSection.vue';
 import SettingsRow from '../components/settings/SettingsRow.vue';
 import SupportBuhoGo from '../components/settings/SupportBuhoGo.vue';
 import { useUpdateStore } from '../stores/update';
 
 export default {
   name: 'AboutPage',
-  components: { Icon, SettingsSection, SettingsRow, SupportBuhoGo },
+  components: { Icon, SettingsRow, SupportBuhoGo },
   setup() {
     return { updateStore: useUpdateStore() };
   },
@@ -238,44 +241,29 @@ export default {
 }
 
 .about-content {
-  padding: 1rem 1rem calc(1.5rem + var(--safe-bottom, 0px));
+  padding: 1.25rem 1rem calc(1.5rem + var(--safe-bottom, 0px));
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 24px;
   max-width: 480px;
   margin: 0 auto;
   box-sizing: border-box;
 }
 
 /* ----------------------------------------------------------------
-   Identity hero — one horizontal card on the grouped-card surface.
+   Identity hero — bare mark, no tile, no card.
 ---------------------------------------------------------------- */
 .about-hero {
   display: flex;
-  align-items: flex-start;
-  gap: 14px;
-  padding: 16px;
-  background: var(--bg-card);
-  border: 1px solid var(--border-card);
-  border-radius: var(--radius-md, 16px);
-}
-
-.about-hero-mark {
-  width: 56px;
-  height: 56px;
-  border-radius: 16px;
-  flex-shrink: 0;
-  display: flex;
   align-items: center;
-  justify-content: center;
-  background: var(--bg-secondary);
-  border: 1px solid var(--border-card);
+  gap: 14px;
 }
 
 .about-hero-logo {
-  width: 38px;
-  height: 38px;
+  width: 52px;
+  height: 52px;
   object-fit: contain;
+  flex-shrink: 0;
 }
 
 .about-hero-body {
@@ -291,14 +279,14 @@ export default {
 }
 
 .about-hero-name {
-  font-size: 17px;
+  font-size: 20px;
   font-weight: 700;
   letter-spacing: -0.01em;
   color: var(--text-primary);
 }
 
 /* The version pill IS the update checker: quiet by default, ringed with
-   a dot when a newer build waits. */
+   a dot when a newer build waits. The one boxed control up here. */
 .about-version-pill {
   display: inline-flex;
   align-items: center;
@@ -307,7 +295,7 @@ export default {
   padding: 3px 10px;
   border: 1px solid var(--border-card);
   border-radius: 999px;
-  background: var(--bg-secondary);
+  background: transparent;
   color: var(--text-secondary);
   font-family: var(--font-mono);
   font-size: 11.5px;
@@ -340,123 +328,68 @@ export default {
 }
 
 .about-mission {
-  margin: 8px 0 0;
-  font-size: 13px;
-  line-height: 1.5;
+  margin: -8px 0 0;
+  font-size: 13.5px;
+  line-height: 1.55;
   color: var(--text-secondary);
+  max-width: 44ch;
 }
 
 /* ----------------------------------------------------------------
-   Freeform content inside SettingsSection (same pattern as before):
-   the tile block isn't a .settings-row so it draws no auto-divider.
+   Plain lists — rows bleed to the screen edges so their built-in
+   16px inset lines up with the page padding, and a single hairline
+   separates neighbours. No wrapper card.
 ---------------------------------------------------------------- */
-.about-tile-block {
-  padding: 14px 16px;
+.about-list {
+  margin: 0 -1rem;
+  border-top: 1px solid var(--border-card);
+  border-bottom: 1px solid var(--border-card);
 }
 
-.about-tile-label {
-  font-family: 'Manrope', sans-serif;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--text-muted);
-  margin-bottom: 12px;
+.about-list :deep(.settings-row + .settings-row) {
+  border-top: 1px solid var(--border-card);
 }
 
-.about-tile-label--freestanding {
-  text-align: center;
-}
-
-/* ----------------------------------------------------------------
-   Community channels — Telegram / Nostr. Soft brand-tinted circles
-   matching the app's quiet-tint language.
----------------------------------------------------------------- */
-.channel-row {
-  display: flex;
-  justify-content: center;
-  gap: 28px;
-}
-
-.channel-btn {
+.about-group {
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: 6px;
-  background: none;
-  border: none;
-  padding: 0;
-  cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
+  gap: 8px;
 }
 
-.channel-icon {
-  position: relative;
-  width: 48px;
-  height: 48px;
-  border-radius: 14px;
-  display: flex;
+/* One label voice for every group on the page (the support block
+   below uses the same recipe). */
+.about-label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+/* Filled 20px brand tiles so both community rows read as one set. */
+.about-brand-tile {
+  width: 20px;
+  height: 20px;
+  border-radius: 5px;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
-  transition: transform 0.12s ease, filter 0.15s ease;
-}
-
-.channel-btn:active .channel-icon {
-  transform: scale(0.93);
-}
-
-.channel-icon--telegram {
-  background: rgba(38, 165, 228, 0.14);
-  color: #26A5E4;
-}
-
-/* The Nostr PNG already carries its own purple fill and mark, so the
-   tile just frames it at the same footprint as the other one. */
-.channel-icon--nostr {
-  background: transparent;
-}
-
-.channel-icon-img {
-  width: 48px;
-  height: 48px;
-  border-radius: 14px;
   object-fit: cover;
-  display: block;
 }
 
-.channel-soon-badge {
-  position: absolute;
-  bottom: -4px;
-  right: -6px;
-  padding: 2px 6px;
-  border-radius: 999px;
-  background: var(--bg-card);
-  box-shadow: inset 0 0 0 1px var(--border-card);
-  color: var(--text-secondary);
-  font-family: 'Manrope', sans-serif;
-  font-size: 9px;
-  font-weight: 700;
-  letter-spacing: 0.02em;
-  text-transform: uppercase;
-}
-
-.channel-label {
-  font-family: 'Manrope', sans-serif;
-  font-size: 11.5px;
-  font-weight: 600;
-  color: var(--text-secondary);
+.about-brand-tile--telegram {
+  background: #26A5E4;
+  color: #FFFFFF;
 }
 
 /* ----------------------------------------------------------------
-   Downloads — real "Get it on" store badges.
+   Downloads — the official badges are boxes by design; left-aligned
+   like everything else on the page.
 ---------------------------------------------------------------- */
-.about-downloads {
-  padding: 0 0.25rem;
-}
-
 .store-badge-row {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  justify-content: center;
   gap: 12px;
 }
 
@@ -476,7 +409,7 @@ export default {
 }
 
 .store-badge-img {
-  height: 48px;
+  height: 44px;
   width: auto;
   display: block;
 }
@@ -484,10 +417,10 @@ export default {
 .store-badge-playstore {
   display: flex;
   align-items: center;
-  gap: 10px;
-  height: 48px;
-  padding: 0 16px;
-  border-radius: 12px;
+  gap: 9px;
+  height: 44px;
+  padding: 0 14px;
+  border-radius: 10px;
   background: #000;
   border: 1.5px solid #A6A6A6;
   box-sizing: border-box;
@@ -501,7 +434,7 @@ export default {
 
 .store-badge-eyebrow {
   font-family: 'Manrope', sans-serif;
-  font-size: 8.5px;
+  font-size: 8px;
   font-weight: 600;
   letter-spacing: 0.08em;
   color: #A6A6A6;
@@ -509,7 +442,7 @@ export default {
 
 .store-badge-title {
   font-family: 'Manrope', sans-serif;
-  font-size: 16px;
+  font-size: 14.5px;
   font-weight: 700;
   color: #fff;
   margin-top: 2px;
