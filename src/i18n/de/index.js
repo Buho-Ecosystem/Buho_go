@@ -1338,6 +1338,8 @@ export default {
   "Failed to load wallet": "Fehler beim Laden des Wallets",
   "Failed to load wallet from backup": "Fehler beim Laden des Wallets aus dem Backup",
   "Address Book": "Adressbuch",
+  "Menu": "Menü",
+  "Close menu": "Menü schließen",
   "Add Contact": "Kontakt hinzufügen",
   "Edit Contact": "Kontakt bearbeiten",
   "Delete Contact": "Kontakt löschen",

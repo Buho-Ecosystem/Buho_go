@@ -49,39 +49,32 @@
       </transition>
 
       <q-space/>
-      <!-- Header icon row: Address Book, Bitcoin Map, then the hub (profile).
-           All three share one box + icon size so they read as a set. The icons
-           sit at 21px with a thinner stroke - big enough to recognise at a
-           glance, still sharp rather than chunky. -->
+      <!-- One trigger, five doors. The former Address Book / Map / Profile
+           buttons live behind it as menu doors now (the map keeps its reach
+           through Spend); the bucket pill rides the trigger so waiting money
+           stays visible from home. -->
       <q-btn
         flat
         dense
-        class="float-right q-mr-xs"
+        class="float-right"
         :class="$q.dark.isActive ? 'modern-menu-btn-dark' : 'modern-menu-btn-light'"
-        @click="showAddressBookQuick = true"
-        aria-label="Address Book"
+        :aria-label="menuButtonLabel"
+        :aria-expanded="showMenu ? 'true' : 'false'"
+        @click="showMenu = true"
       >
-        <Icon icon="tabler:address-book" width="21" height="21" class="header-icon" />
-      </q-btn>
-      <q-btn
-        flat
-        dense
-        class="float-right q-mr-xs"
-        :class="$q.dark.isActive ? 'modern-menu-btn-dark' : 'modern-menu-btn-light'"
-        @click="$router.push('/map')"
-        aria-label="Bitcoin Map"
-      >
-        <Icon icon="tabler:map" width="21" height="21" class="header-icon" />
-      </q-btn>
-      <q-btn
-        flat
-        dense
-        class="float-right profile-menu-btn"
-        :class="$q.dark.isActive ? 'modern-menu-btn-dark' : 'modern-menu-btn-light'"
-        @click="$router.push('/identity')"
-        :aria-label="profileButtonLabel"
-      >
-        <Icon icon="tabler:user" width="21" height="21" class="header-icon" />
+        <svg
+          width="22"
+          height="22"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.6"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          aria-hidden="true"
+        >
+          <path d="M10 6h10M10 12h10M10 18h10M7 9l-3 3 3 3" />
+        </svg>
         <span
           v-if="socialBucketStore.paymentCount > 0"
           class="profile-money-pill"
@@ -618,12 +611,8 @@
       @transfer-complete="onTransferComplete"
     />
 
-    <!-- Address Book Quick Modal -->
-    <AddressBookQuickModal
-      v-model="showAddressBookQuick"
-      @pay-contact="handlePayContact"
-      @open-batch-send="showBatchSend = true"
-    />
+    <!-- Full-screen menu: settings / profile / spend / address book / about -->
+    <MenuOverlay v-model="showMenu" />
 
     <!-- Batch Send Modal -->
     <BatchSendModal
@@ -879,7 +868,7 @@ import OnchainFeePanel from '../components/OnchainFeePanel.vue';
 import {describeL1WithdrawError} from '../utils/l1WithdrawErrors.js';
 import {parseBip21, bip21AmountToSats} from '../utils/bip21.js';
 import InternalTransferModal from '../components/InternalTransferModal.vue';
-import AddressBookQuickModal from '../components/AddressBookQuickModal.vue';
+import MenuOverlay from '../components/MenuOverlay.vue';
 import ArkadeLogo from '../components/ArkadeLogo.vue';
 import WalletBrandMark from '../components/WalletBrandMark.vue';
 import PaymentConfirmSheet from '../components/PaymentConfirmSheet.vue';
@@ -924,7 +913,7 @@ export default {
     ArkadeLogo,
     OnchainFeePanel,
     InternalTransferModal,
-    AddressBookQuickModal,
+    MenuOverlay,
     PaymentConfirmSheet,
     BatchSendModal,
     PaymentConfirmation,
@@ -1055,7 +1044,7 @@ export default {
       // Internal transfer modal
       showTransferModal: false,
       // Address Book Quick Modal
-      showAddressBookQuick: false,
+      showMenu: false,
       // Batch Send Modal
       showBatchSend: false,
       // Contact Payment Modal
@@ -1108,10 +1097,10 @@ export default {
     };
   },
   computed: {
-    profileButtonLabel() {
+    menuButtonLabel() {
       const count = this.socialBucketStore.paymentCount;
-      if (!count) return this.$t('You');
-      return `${this.$t('You')}, ${this.$t('{n} payments waiting', { n: count })}`;
+      if (!count) return this.$t('Menu');
+      return `${this.$t('Menu')}, ${this.$t('{n} payments waiting', { n: count })}`;
     },
 
     bucketPaymentBadge() {
@@ -2547,18 +2536,6 @@ export default {
         type: typeMap[addressType] || 'lightning_address',
         data: address,
         contactName: name || null,
-      });
-    },
-
-    /**
-     * Handle pay contact from AddressBookQuickModal
-     */
-    handlePayContact(contact) {
-      this.showAddressBookQuick = false;
-      this.payContactDestination({
-        address: this.addressBookStore.getEntryAddress(contact),
-        addressType: this.addressBookStore.getEntryAddressType(contact),
-        name: contact.name,
       });
     },
 
@@ -6791,28 +6768,6 @@ export default {
 
 .modern-menu-btn-light:hover {
   background: var(--bg-input);
-}
-
-.menu-icon {
-  display: flex;
-  flex-direction: column;
-  gap: 2.5px;
-  width: 16px;
-  height: 12px;
-}
-
-.menu-line {
-  height: 1.5px;
-  border-radius: 0.75px;
-  transition: all 0.2s ease;
-}
-
-.menu-line-dark {
-  background: #F6F6F6;
-}
-
-.menu-line-light {
-  background: var(--text-primary);
 }
 
 /* Main Content */

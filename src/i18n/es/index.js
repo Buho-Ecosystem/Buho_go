@@ -1338,6 +1338,8 @@ export default {
   "Failed to load wallet": "Error al cargar cartera",
   "Failed to load wallet from backup": "Error al cargar cartera desde respaldo",
   "Address Book": "Libreta de Direcciones",
+  "Menu": "Menú",
+  "Close menu": "Cerrar menú",
   "Add Contact": "Agregar Contacto",
   "Edit Contact": "Editar Contacto",
   "Delete Contact": "Eliminar Contacto",
