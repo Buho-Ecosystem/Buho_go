@@ -3247,4 +3247,5 @@ export default {
   "Payments you made to this contact.": "Payments you made to this contact.",
   "{n} contacts · saved with your identity": "{n} contacts · saved with your identity",
   "1 contact · saved with your identity": "1 contact · saved with your identity",
+  "Your unique username across the whole network.": "Your unique username across the whole network.",
 }

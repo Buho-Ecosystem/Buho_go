@@ -86,7 +86,7 @@
       </IdentityGroup>
 
       <p class="id-foot">
-        {{ $t('Saving updates your card everywhere, including in other apps that show it. You can change or clear this any time.') }}
+        {{ $t('Your unique username across the whole network.') }}
       </p>
     </div>
 

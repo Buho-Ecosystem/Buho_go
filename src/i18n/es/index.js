@@ -3252,4 +3252,5 @@ export default {
   "Payments you made to this contact.": "Pagos que hiciste a este contacto.",
   "{n} contacts · saved with your identity": "{n} contactos · guardados con tu identidad",
   "1 contact · saved with your identity": "1 contacto · guardado con tu identidad",
+  "Your unique username across the whole network.": "Tu nombre de usuario único en toda la red.",
 }
