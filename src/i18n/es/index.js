@@ -3239,4 +3239,8 @@ export default {
   "The words that back up every identity here": "Las palabras que respaldan cada identidad aquí",
   "Separate profile": "Perfil separado",
   "Add a photo and your name": "Añade una foto y tu nombre",
+  "Payments to your name land in your {name} wallet.": "Los pagos a tu nombre llegan a tu monedero {name}.",
+  "Payments come back to BuhoGO": "Los pagos vuelven a BuhoGO",
+  "Use my BuhoGO address": "Usar mi dirección de BuhoGO",
+  "Enter an address first.": "Introduce primero una dirección.",
 }

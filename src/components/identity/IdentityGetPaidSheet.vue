@@ -107,58 +107,6 @@
 
           <p v-if="usingBucket || bucket.hasBalance" class="pay-row-foot">{{ bucketFooter }}</p>
           <p class="pay-row-foot">{{ addressFooter }}</p>
-
-          <!-- Editing one string stays inline. No second sheet and no new
-               navigation level for a task this small. -->
-          <transition name="pay-editor">
-            <div v-if="showEditor" class="pay-editor">
-              <div class="pay-editor-head">
-                <strong>{{ $t('Your own address') }}</strong>
-                <button type="button" :aria-label="$t('Close')" @click="showEditor = false">
-                  <Icon icon="tabler:x" width="16" height="16" />
-                </button>
-              </div>
-              <input
-                v-model="editorInput"
-                type="text"
-                class="field-input"
-                :class="{ 'field-input--error': editorError }"
-                placeholder="you@your-wallet.com"
-                spellcheck="false"
-                autocomplete="off"
-                autocapitalize="none"
-                inputmode="email"
-                maxlength="200"
-                @keydown.enter.prevent="saveAddress"
-              />
-              <span v-if="editorError" class="field-error">{{ editorError }}</span>
-              <span v-else class="field-help">{{ $t('Copy it from the wallet you want to be paid in.') }}</span>
-              <div class="pay-editor-note">
-                <Icon icon="tabler:info-circle" width="15" height="15" />
-                <span>{{ $t('Payments then arrive in that wallet instead of your bucket. If it is not one of your BuhoGO wallets, your balance here will not change.') }}</span>
-              </div>
-              <div class="pay-editor-actions">
-                <button
-                  v-if="!usingBucket"
-                  type="button"
-                  class="pay-editor-secondary"
-                  :disabled="profile.isPublishing"
-                  @click="clearAddress"
-                >
-                  {{ $t('Go back to my bucket') }}
-                </button>
-                <button
-                  type="button"
-                  class="pay-editor-save"
-                  :disabled="profile.isPublishing"
-                  @click="saveAddress"
-                >
-                  <q-spinner v-if="profile.isPublishing" size="16px" />
-                  <span v-else>{{ $t('Save') }}</span>
-                </button>
-              </div>
-            </div>
-          </transition>
         </template>
 
         <div v-else class="pay-empty">
@@ -177,6 +125,66 @@
   </q-dialog>
 
   <SocialBucketSheet v-model="showBucket" />
+
+  <!-- One string, its own sheet: paste an address from another wallet and
+       payments to the name go there instead of the BuhoGO default. -->
+  <q-dialog
+    v-model="showEditor"
+    position="bottom"
+    :class="$q.dark.isActive ? 'dialog_dark' : 'dialog_light'"
+  >
+    <q-card
+      class="identity-surface own-address-sheet"
+      :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'"
+    >
+      <div class="sheet-grab" aria-hidden="true"><span></span></div>
+      <div class="sheet-head">
+        <div class="sheet-title">{{ $t('Your own address') }}</div>
+        <q-btn flat round class="sheet-close" :aria-label="$t('Close')" @click="showEditor = false">
+          <Icon icon="tabler:x" width="18" height="18" />
+        </q-btn>
+      </div>
+
+      <div class="own-address-body">
+        <input
+          v-model="editorInput"
+          type="text"
+          class="field-input"
+          :class="{ 'field-input--error': editorError }"
+          placeholder="you@your-wallet.com"
+          spellcheck="false"
+          autocomplete="off"
+          autocapitalize="none"
+          inputmode="email"
+          maxlength="200"
+          @keydown.enter.prevent="saveAddress"
+        />
+        <span v-if="editorError" class="field-error">{{ editorError }}</span>
+        <span v-else class="field-help">{{ $t('Copy it from the wallet you want to be paid in.') }}</span>
+
+        <div class="own-address-actions">
+          <button
+            v-if="!usingDefault"
+            type="button"
+            class="own-address-reset"
+            :disabled="profile.isPublishing"
+            @click="clearAddress"
+          >
+            {{ $t('Use my BuhoGO address') }}
+          </button>
+          <button
+            type="button"
+            class="own-address-save"
+            :disabled="profile.isPublishing"
+            @click="saveAddress"
+          >
+            <q-spinner v-if="profile.isPublishing" size="16px" />
+            <span v-else>{{ $t('Save') }}</span>
+          </button>
+        </div>
+      </div>
+    </q-card>
+  </q-dialog>
 
   <q-dialog
     v-model="showPaymentDetails"
@@ -340,6 +348,25 @@ export default {
       return isNpubCashAddress(this.payAddress);
     },
 
+    /** The Spark wallet this address belongs to, when it is one of ours. */
+    ownWallet() {
+      const address = this.payAddress.trim().toLowerCase();
+      if (!address) return null;
+      return this.walletStore.wallets.find(
+        (wallet) => this.walletStore.sparkLightningAddressOf(wallet) === address,
+      ) || null;
+    },
+
+    /** True while payments land straight in one of this app's Spark wallets. */
+    usingOwnWallet() {
+      return !!this.ownWallet;
+    },
+
+    /** Bucket or own wallet: the app's default, as opposed to a typed address. */
+    usingDefault() {
+      return this.usingBucket || this.usingOwnWallet;
+    },
+
     /**
      * Names the term the user will have been shown by whatever app sent them
      * looking. "Lightning address" is not a word this surface uses, but it is
@@ -347,6 +374,11 @@ export default {
      * leave someone unable to match the two.
      */
     addressFooter() {
+      if (this.usingOwnWallet) {
+        return this.$t('Payments to your name land in your {name} wallet.', {
+          name: this.ownWallet.name || this.$t('Wallet'),
+        });
+      }
       return this.usingBucket
         ? this.$t('Some apps ask for a "Lightning address". This is yours. You never have to remember it: send your link instead.')
         : this.$t('Payments go straight to that wallet. Remove it and BuhoGO receives for you again.');
@@ -444,11 +476,13 @@ export default {
 
         // Adopting the address is a boot step, but the sheet may open in the
         // few seconds before it finishes, or after it failed while offline.
+        // Same default chain as the boot: Spark wallet first, bucket after.
         if (!this.payAddress && this.identity.nostrNpub) {
-          const address = npubCashAddress(this.identity.nostrNpub);
+          const address = this.walletStore.preferredProfileLightningAddress
+            || npubCashAddress(this.identity.nostrNpub);
           if (address) {
-            const changed = this.profile.adoptBucketAddress(address, {
-              isBucketAddress: isNpubCashAddress,
+            const changed = this.profile.adoptDefaultPaymentAddress(address, {
+              isReplaceable: isNpubCashAddress,
             });
             if (changed) this.profile.publish().catch(() => {});
           }
@@ -567,6 +601,9 @@ export default {
 
     /** The wallet's advertised address, used only to attribute a receipt. */
     walletLightningAddress(wallet) {
+      const spark = this.walletStore.sparkLightningAddressOf(wallet);
+      if (spark) return spark;
+
       const stored = String(wallet?.metadata?.lud16 || '').trim().toLowerCase();
       if (isLightningAddress(stored)) return stored;
 
@@ -639,7 +676,7 @@ export default {
     },
 
     openEditor() {
-      this.editorInput = this.usingBucket ? '' : this.payAddress;
+      this.editorInput = this.usingDefault ? '' : this.payAddress;
       this.editorError = '';
       this.showEditor = true;
     },
@@ -647,7 +684,7 @@ export default {
     async saveAddress() {
       const value = this.editorInput.trim().toLowerCase();
       if (!value) {
-        this.editorError = this.$t('Enter an address, or go back to your bucket.');
+        this.editorError = this.$t('Enter an address first.');
         return;
       }
       if (!isLightningAddress(value)) {
@@ -658,10 +695,11 @@ export default {
       await this.persist(value, this.$t('Payments now go to your own wallet'));
     },
 
-    /** Back to the bucket: clear the field and let the identity receive again. */
+    /** Back to the default chain: Spark wallet first, bucket after. */
     async clearAddress() {
-      const address = npubCashAddress(this.identity.nostrNpub);
-      await this.persist(address, this.$t('Payments come back to your bucket'));
+      const address = this.walletStore.preferredProfileLightningAddress
+        || npubCashAddress(this.identity.nostrNpub);
+      await this.persist(address, this.$t('Payments come back to BuhoGO'));
     },
 
     /**
@@ -769,8 +807,8 @@ export default {
 }
 
 .pay-share,
-.pay-editor-save,
-.pay-editor-secondary {
+.own-address-save,
+.own-address-reset {
   min-height: 38px;
   border: 0;
   border-radius: var(--radius-md);
@@ -779,13 +817,13 @@ export default {
 }
 
 .pay-share,
-.pay-editor-save {
+.own-address-save {
   background: #1a1a1c;
   color: #faf7ef;
 }
 
 .get-paid-sheet.card_dark_style .pay-share,
-.get-paid-sheet.card_dark_style .pay-editor-save {
+.own-address-sheet.card_dark_style .own-address-save {
   background: #f4f4f4;
   color: #0c0c0c;
 }
@@ -891,8 +929,7 @@ button.pay-row { cursor: pointer; }
 .pay-address { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .pay-row-actions { display: flex; align-items: center; gap: 2px; }
-.pay-row-actions button,
-.pay-editor-head button {
+.pay-row-actions button {
   width: 32px;
   height: 32px;
   border: 0;
@@ -904,57 +941,36 @@ button.pay-row { cursor: pointer; }
   cursor: pointer;
 }
 
-.pay-row-actions button:active,
-.pay-editor-head button:active { background: rgba(127, 127, 127, 0.12); }
+.pay-row-actions button:active { background: rgba(127, 127, 127, 0.12); }
 
 .pay-row-foot { margin: 5px 5px 9px; font-size: 12.5px; }
 
-.pay-editor {
-  margin-top: 7px;
-  padding: 11px;
-  border: 1px solid var(--border-card);
-  border-radius: var(--radius-md);
-  background: var(--bg-card);
+/* The own-address sheet: one input, one save. */
+.own-address-sheet {
+  width: 100%;
+  max-width: 520px;
+  border-radius: var(--radius-xl) var(--radius-xl) 0 0;
+  padding-bottom: max(18px, env(safe-area-inset-bottom, 0px));
 }
 
-.pay-editor-head {
+.own-address-body {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin: -4px -4px 7px 1px;
-  color: var(--text-primary);
-  font-size: 14px;
+  flex-direction: column;
+  padding: 4px 16px 2px;
 }
 
-.pay-editor-note {
-  display: flex;
-  align-items: flex-start;
-  gap: 7px;
-  margin-top: 9px;
-  color: var(--text-secondary);
-  font-size: 12.5px;
-  line-height: 1.45;
-}
-
-.pay-editor-note svg { flex: 0 0 auto; margin-top: 1px; }
-
-.pay-editor-actions {
+.own-address-actions {
   display: flex;
   justify-content: flex-end;
   gap: 8px;
-  margin-top: 11px;
+  margin-top: 16px;
 }
 
-.pay-editor-save,
-.pay-editor-secondary { padding: 0 13px; }
-.pay-editor-secondary { background: var(--bg-input); color: var(--text-primary); }
-.pay-editor-save:disabled,
-.pay-editor-secondary:disabled { opacity: 0.55; cursor: default; }
-
-.pay-editor-enter-active,
-.pay-editor-leave-active { transition: opacity 0.16s ease, transform 0.16s ease; }
-.pay-editor-enter-from,
-.pay-editor-leave-to { opacity: 0; transform: translateY(-5px); }
+.own-address-save,
+.own-address-reset { padding: 0 16px; min-height: 44px; }
+.own-address-reset { background: var(--bg-input); color: var(--text-primary); }
+.own-address-save:disabled,
+.own-address-reset:disabled { opacity: 0.55; cursor: default; }
 
 .pay-empty { text-align: center; padding: 12px 6px 8px; }
 .pay-empty-mark {

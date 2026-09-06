@@ -1021,5 +1021,70 @@ await test('recoverFromNostr: non-string content values are coerced to empty', a
   assert.equal(profile.picture, '');
 });
 
+// ---------------------------------------------------------------------------
+// adoptDefaultPaymentAddress — the guard that keeps the app's default
+// (Spark wallet address, bucket as fallback) from ever clobbering an
+// address the user typed themselves.
+// ---------------------------------------------------------------------------
+
+const isBucket = (value) => String(value).endsWith('@npub.cash');
+
+await test('adoptDefaultPaymentAddress fills an empty lud16 and marks dirty', async () => {
+  const profile = freshEnv();
+  await profile.hydrate();
+  const changed = profile.adoptDefaultPaymentAddress('coolowl123@btc.mybuho.de', {
+    isReplaceable: isBucket,
+  });
+  assert.equal(changed, true);
+  assert.equal(profile.lud16, 'coolowl123@btc.mybuho.de');
+  assert.equal(profile.isDirty, true);
+});
+
+await test('adoptDefaultPaymentAddress upgrades a bucket address to the preferred one', async () => {
+  const profile = freshEnv();
+  await profile.hydrate();
+  profile.lud16 = 'npub1abc@npub.cash';
+  const changed = profile.adoptDefaultPaymentAddress('coolowl123@btc.mybuho.de', {
+    isReplaceable: isBucket,
+  });
+  assert.equal(changed, true);
+  assert.equal(profile.lud16, 'coolowl123@btc.mybuho.de');
+});
+
+await test('adoptDefaultPaymentAddress never touches a user-typed address', async () => {
+  const profile = freshEnv();
+  await profile.hydrate();
+  profile.lud16 = 'me@my-external-wallet.com';
+  const changed = profile.adoptDefaultPaymentAddress('coolowl123@btc.mybuho.de', {
+    isReplaceable: isBucket,
+  });
+  assert.equal(changed, false);
+  assert.equal(profile.lud16, 'me@my-external-wallet.com');
+});
+
+await test('adoptDefaultPaymentAddress follows a rename when the old address is declared replaceable', async () => {
+  const profile = freshEnv();
+  await profile.hydrate();
+  profile.lud16 = 'oldname77@btc.mybuho.de';
+  const previous = ['oldname77@btc.mybuho.de'];
+  const changed = profile.adoptDefaultPaymentAddress('newname42@btc.mybuho.de', {
+    isReplaceable: (current) => isBucket(current) || previous.includes(String(current).toLowerCase()),
+  });
+  assert.equal(changed, true);
+  assert.equal(profile.lud16, 'newname42@btc.mybuho.de');
+});
+
+await test('adoptDefaultPaymentAddress is a no-op on the same value', async () => {
+  const profile = freshEnv();
+  await profile.hydrate();
+  profile.lud16 = 'coolowl123@btc.mybuho.de';
+  profile.isDirty = false;
+  const changed = profile.adoptDefaultPaymentAddress('coolowl123@btc.mybuho.de', {
+    isReplaceable: isBucket,
+  });
+  assert.equal(changed, false);
+  assert.equal(profile.isDirty, false);
+});
+
 console.log(`\n  ${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);
