@@ -15,8 +15,8 @@
     </IdentityNav>
 
     <div class="id-sub-body">
-      <h1 class="id-large-title">{{ $t('Photo and name') }}</h1>
-      <p class="id-lede">{{ $t('This is the first thing people see when they find or scan you.') }}</p>
+      <h1 class="id-large-title">{{ $t('Your profile') }}</h1>
+      <p class="id-lede">{{ $t('This is what people see when they find or scan you.') }}</p>
 
       <div class="avatar-wrap">
         <button
@@ -76,6 +76,15 @@
         </div>
       </div>
 
+      <IdentityGroup :title="$t('Username')" class="username-group">
+        <IdentityRow
+          icon="tabler:at"
+          :label="usernameLabel"
+          :mono-label="!!activeHandle"
+          @click="$router.push('/identity/username')"
+        />
+      </IdentityGroup>
+
       <p class="id-foot">
         {{ $t('Saving updates your card everywhere, including in other apps that show it. You can change or clear this any time.') }}
       </p>
@@ -97,6 +106,8 @@ import { Icon } from '@iconify/vue';
 import IdentityNav from '../../components/identity/IdentityNav.vue';
 import SettingsHubNav from '../../components/settings/SettingsHubNav.vue';
 import { identityBack } from '../../composables/useIdentityBack';
+import IdentityGroup from '../../components/identity/IdentityGroup.vue';
+import IdentityRow from '../../components/identity/IdentityRow.vue';
 import ProfileAvatarPickerSheet from '../../components/ProfileAvatarPickerSheet.vue';
 import { useProfileStore } from '../../stores/profile';
 import { useIdentityStore } from '../../stores/identity';
@@ -104,7 +115,7 @@ import { useIdentityStore } from '../../stores/identity';
 export default {
   name: 'IdentityProfilePage',
 
-  components: { SettingsHubNav, Icon, IdentityNav, ProfileAvatarPickerSheet },
+  components: { SettingsHubNav, Icon, IdentityNav, IdentityGroup, IdentityRow, ProfileAvatarPickerSheet },
 
   setup() {
     return { profile: useProfileStore(), identity: useIdentityStore() };
@@ -135,6 +146,14 @@ export default {
       return dirty || this.profile.isDirty;
     },
 
+    activeHandle() {
+      return this.identity.nip05ActiveEntry?.handle || '';
+    },
+
+    /** The handle IS the label; before one exists, the row is the invitation. */
+    usernameLabel() {
+      return this.activeHandle ? `@${this.activeHandle}` : this.$t('Choose a username');
+    },
   },
 
   async created() {

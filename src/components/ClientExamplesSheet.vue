@@ -1,11 +1,10 @@
 <!--
   ClientExamplesSheet
 
-  Surfaces concrete apps where the user can sign in with their
-  BuhoGO profile's private key. Reached from the "Where can I use
-  this key?" row on the Advanced screen, right after the user
-  reveals the key — the exact moment they're asking "ok, where do
-  I take this?".
+  The Keys screen's help sheet, behind the "?" in its header: what the
+  two keys are for in two bold-anchored lines, then concrete apps where
+  the card works. The explanation and the examples live together because
+  they answer the same question ("where do I take this?").
 
   Pattern mirrors the other identity information sheets:
     - Bottom sheet, mobile-native, dismissible by swipe / tap-outside
@@ -31,7 +30,7 @@
       <div class="sheet-grab" aria-hidden="true"><span></span></div>
 
       <div class="sheet-head">
-        <div class="sheet-title">{{ $t('Use your profile elsewhere') }}</div>
+        <div class="sheet-title">{{ $t('Your card works in other apps') }}</div>
         <q-btn
           flat
           round
@@ -44,11 +43,23 @@
       </div>
 
       <div class="sheet-body examples-body">
-        <p class="examples-lede">
-          {{ $t('These Nostr apps can use the same public profile. Choose one you trust when you sign in.') }}
-        </p>
+        <!-- Two facts, bold term first. Short on purpose: this is a simple
+             step and the sheet should read like one. -->
+        <div class="keys-help-facts">
+          <p class="keys-help-fact">
+            <strong>{{ $t('Public code') }}:</strong>
+            {{ $t('how apps and people find you.') }}
+          </p>
+          <p class="keys-help-fact">
+            <strong>{{ $t('Secret key') }}:</strong>
+            {{ $t('how you sign in as you.') }}
+          </p>
+          <p class="keys-help-more">
+            {{ $t('Sign in with it in an app you trust and your name, photo and contacts come with you. No new account, no password.') }}
+          </p>
+        </div>
 
-        <div class="examples-section-label">{{ $t('Profile apps') }}</div>
+        <div class="examples-section-label">{{ $t('Apps to try') }}</div>
         <ul class="examples-list">
           <li
             v-for="client in clients"
@@ -246,11 +257,34 @@ export default {
   overflow-y: auto;
 }
 
-.examples-lede {
+/* The two-fact explainer: quiet tinted panel, bold terms carrying the
+   structure so the eye lands on the two words that matter. */
+.keys-help-facts {
+  background: var(--brand-accent-soft);
+  border-radius: 14px;
+  padding: 13px 15px;
+  margin: 2px 0 16px;
+}
+
+.keys-help-fact {
+  font-family: 'Manrope', sans-serif;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+  margin: 0 0 4px;
+}
+
+.keys-help-fact strong {
+  font-weight: 750;
+  color: var(--text-primary);
+}
+
+.keys-help-more {
   font-family: 'Manrope', sans-serif;
   font-size: 13px;
   line-height: 1.5;
-  margin: 0 0 14px;
+  color: var(--text-secondary);
+  margin: 8px 0 0;
 }
 
 /*

@@ -3,11 +3,11 @@
     <IdentityNav :back-to="$t(backNav.key)" :to="backNav.to" />
 
     <div class="id-sub-body">
-      <h1 class="id-large-title">{{ $t('Your accounts') }}</h1>
+      <h1 class="id-large-title">{{ $t('Identities') }}</h1>
 
       <button type="button" class="btn-primary add-account" :disabled="busy || bucket.isSweeping" @click="step = 'create'">
         <Icon icon="tabler:plus" width="18" height="18" />
-        <span>{{ $t('Add an account') }}</span>
+        <span>{{ $t('New identity') }}</span>
       </button>
 
       <!--
@@ -23,14 +23,18 @@
           <Icon v-else icon="tabler:user" width="25" height="25" />
         </span>
         <span class="current-account-copy">
-          <span class="current-account-kicker">{{ $t('This account') }}</span>
+          <span class="current-account-kicker">{{ $t('This identity') }}</span>
           <strong>{{ currentAccountName }}</strong>
           <span v-if="currentUsername">@{{ currentUsername }}</span>
         </span>
         <span class="current-account-chip">{{ $t('In use') }}</span>
       </section>
 
-      <IdentityGroup v-if="otherIdentities.length" :title="$t('Switch account')">
+      <IdentityGroup
+        v-if="otherIdentities.length"
+        :title="$t('Switch identity')"
+        :footer="$t('Tap an identity to switch to it. The same 12 words back up all of them.')"
+      >
         <IdentityRow
           v-for="row in otherIdentities"
           :key="row.account"
@@ -50,7 +54,35 @@
         </IdentityRow>
       </IdentityGroup>
 
-      <p v-else class="accounts-empty">{{ $t('You have one account on this phone.') }}</p>
+      <p v-else class="accounts-empty">{{ $t('You have one identity on this phone.') }}</p>
+
+      <!-- The words live with the identities they back up. Once the card
+           says nothing anymore (backed up = silence), this is the door for
+           seeing the words again or bringing saved ones back. -->
+      <IdentityGroup class="words-group">
+        <IdentityRow
+          icon="tabler:file-text"
+          :label="$t('Your 12 words')"
+          :caption="$t('The words that back up every identity here')"
+          @click="$router.push('/identity/words')"
+        />
+      </IdentityGroup>
+
+      <!-- The erase entry lives with the identities it acts on. On a page
+           that lists several, the caption names the one "this" means. -->
+      <IdentityGroup
+        class="erase-group"
+        :footer="$t('Erasing never touches your wallets or your Bitcoin. Your money is separate from your card.')"
+      >
+        <IdentityRow
+          icon="tabler:trash"
+          tone="danger"
+          :label="$t('Erase this identity')"
+          :caption="$t('Removes {name} from this phone', { name: currentAccountName })"
+          :chevron="false"
+          @click="$router.push('/identity/erase')"
+        />
+      </IdentityGroup>
 
     </div>
 
@@ -69,7 +101,7 @@
         <div class="account-sheet-header">
           <div>
             <span class="account-sheet-kicker">
-              {{ step === 'create' ? $t('New account') : $t('Account switch') }}
+              {{ step === 'create' ? $t('New identity') : $t('Identity switch') }}
             </span>
             <h2 class="account-sheet-title">{{ askTitle }}</h2>
           </div>
@@ -130,7 +162,7 @@
 
             <div class="account-recovery-note">
               <Icon icon="tabler:shield-check" width="17" height="17" />
-              <span>{{ $t('The same 12 words recover this account too.') }}</span>
+              <span>{{ $t('The same 12 words recover this identity too.') }}</span>
             </div>
           </div>
 
@@ -157,7 +189,7 @@
           <div class="sheet-handle" aria-hidden="true"><span></span></div>
           <div class="profile-setup-head">
             <div>
-              <span class="account-sheet-kicker">{{ $t('New account') }}</span>
+              <span class="account-sheet-kicker">{{ $t('New identity') }}</span>
               <h2>{{ $t('Make it yours') }}</h2>
             </div>
             <q-btn flat round dense :aria-label="$t('Close')" @click="showProfileSetup = false">
@@ -238,8 +270,8 @@ export default {
 
     contactCopyText() {
       return this.contactCount === 1
-        ? this.$t('Copy one contact into the new account.')
-        : this.$t('Copy {n} contacts into the new account.', { n: this.contactCount });
+        ? this.$t('Copy one contact into the new identity.')
+        : this.$t('Copy {n} contacts into the new identity.', { n: this.contactCount });
     },
 
     activeIdentity() {
@@ -256,7 +288,7 @@ export default {
 
     currentAccountName() {
       return this.profile.displayName || this.profile.name ||
-        (this.activeIdentity ? this.identityName(this.activeIdentity) : this.$t('This account'));
+        (this.activeIdentity ? this.identityName(this.activeIdentity) : this.$t('This identity'));
     },
 
     currentPicture() {
@@ -274,8 +306,8 @@ export default {
 
     askTitle() {
       return this.step === 'create'
-        ? this.$t('Create another account')
-        : this.$t('Switch account?');
+        ? this.$t('Create another identity')
+        : this.$t('Switch identity?');
     },
 
     askBody() {
@@ -286,8 +318,8 @@ export default {
 
     busyTitle() {
       return this.step === 'create'
-        ? this.$t('Creating your account…')
-        : this.$t('Switching accounts…');
+        ? this.$t('Creating your identity…')
+        : this.$t('Switching identities…');
     },
 
     busyBody() {
@@ -366,7 +398,7 @@ export default {
       if (row.displayName) return row.displayName;
       if (row.label) return row.label;
       if (row.username) return `@${row.username}`;
-      return this.$t('Account {n}', { n: row.account + 1 });
+      return this.$t('Identity {n}', { n: row.account + 1 });
     },
 
     onSwitch(row) {
@@ -421,21 +453,21 @@ export default {
           return;
         }
         if (!result.ok) {
-          this._notifyFailed(result, this.$t("Couldn't switch account"));
+          this._notifyFailed(result, this.$t("Couldn't switch identity"));
           await this.refresh();
           return;
         }
 
         await this._refreshProfileForNewIdentity();
         await this.refresh();
-        this.$q.notify({ type: 'positive', message: this.$t('Switched account'), timeout: 3000 });
+        this.$q.notify({ type: 'positive', message: this.$t('Switched identity'), timeout: 3000 });
         this.step = null;
         this.pending = null;
       } catch (err) {
         console.warn('[identity-list] switch failed:', err);
         this.$q.notify({
           type: 'negative',
-          message: this.$t("Couldn't switch account"),
+          message: this.$t("Couldn't switch identity"),
           caption: this.$t('Check your connection and try again.'),
           timeout: 4000,
         });
@@ -463,7 +495,7 @@ export default {
           return;
         }
         if (!result.ok) {
-          this._notifyFailed(result, this.$t("Couldn't create the account"));
+          this._notifyFailed(result, this.$t("Couldn't create the identity"));
           await this.refresh();
           return;
         }
@@ -477,7 +509,7 @@ export default {
         console.warn('[identity-list] create failed:', err);
         this.$q.notify({
           type: 'negative',
-          message: this.$t("Couldn't create the account"),
+          message: this.$t("Couldn't create the identity"),
           caption: this.$t('Check your connection and try again.'),
           timeout: 4000,
         });
@@ -490,13 +522,22 @@ export default {
       this.profile.setField('displayName', this.profileName.trim());
       if (this.profile.isDirty) await this.profile.publish().catch(() => {});
       this.showProfileSetup = false;
-      this.$q.notify({ type: 'positive', message: this.$t('New account created'), timeout: 2200 });
+      this.$q.notify({ type: 'positive', message: this.$t('New identity created'), timeout: 2200 });
     },
   },
 };
 </script>
 
 <style scoped>
+.words-group {
+  margin-top: 22px;
+}
+
+/* Destructive territory sits apart from the switching it must never be
+   mistaken for. */
+.erase-group {
+  margin-top: 22px;
+}
 
 .add-account { margin-top: 0 !important; margin-bottom: 4px; }
 

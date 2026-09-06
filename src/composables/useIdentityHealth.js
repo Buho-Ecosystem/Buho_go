@@ -74,7 +74,7 @@ export function useIdentityHealth() {
     {
       id: 'username',
       done: !!identity.nip05ActiveEntry,
-      label: 'Your name is reserved',
+      label: 'Your username is ready',
       route: '/identity/username',
     },
     {
@@ -86,7 +86,7 @@ export function useIdentityHealth() {
     {
       id: 'words',
       done: cardWordsSaved.value,
-      label: 'Save your 12 words',
+      label: 'Back up your card',
       route: '/identity/words',
     },
   ]);

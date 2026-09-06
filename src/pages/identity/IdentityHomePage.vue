@@ -40,6 +40,8 @@
         :needs-name="needsName"
         @switch-identity="onSwitchIdentity"
         @add-name="$router.push('/identity/profile')"
+        @edit="$router.push('/identity/profile')"
+        @backup="$router.push('/identity/words')"
         @avatar-error="avatarBroken = true"
       />
 
@@ -67,48 +69,26 @@
       <template v-if="!setupComplete">
         <SetupLadder :steps="steps" :done="stepsDone" :total="stepsTotal" />
         <p v-if="!cardWordsSaved" class="id-foot">
-          {{ $t('Without the 12 words, a lost phone means a lost card. It takes two minutes and a piece of paper.') }}
+          {{ $t('Lose this phone before backing up and your card is gone with it. Two minutes and a piece of paper.') }}
         </p>
       </template>
 
-      <!-- The payoff once setup is done: the people you actually pay. -->
-      <PeopleStrip
-        v-if="setupComplete && recentPeople.length > 0"
-        :people="recentPeople"
-        :total="contactCount"
-        @pay="payContact"
-        @scan="showScanSheet = true"
-        @see-all="$router.push('/address-book')"
-      />
-
+      <!-- The two quiet doors. Everything else the tab can do lives on the
+           card or in the three verbs above. -->
       <IdentityGroup class="id-block">
         <IdentityRow
-          v-if="!setupComplete || recentPeople.length === 0"
-          icon="tabler:address-book"
-          :label="$t('Contacts')"
-          :caption="contactCount > 0
-            ? $t('{n} people you can pay by name', { n: contactCount })
-            : $t('No contacts yet')"
-          @click="$router.push('/address-book')"
+          icon="tabler:users"
+          :label="$t('Identities')"
+          :caption="$t('Switch, or create a new one')"
+          @click="$router.push('/identity/identities')"
         />
         <IdentityRow
-          icon="tabler:adjustments-horizontal"
-          :label="$t('Manage your card')"
-          :caption="$t('Photo, username, 12 words, more')"
-          @click="$router.push('/identity/manage')"
-        />
-        <IdentityRow
-          v-if="!setupComplete"
-          icon="tabler:info-circle"
-          :label="$t('What is this card for')"
-          :caption="$t('One minute, three answers')"
-          @click="$router.push('/identity/about')"
+          icon="tabler:key"
+          :label="$t('Keys')"
+          :caption="$t('Your public code and secret key')"
+          @click="$router.push('/identity/advanced')"
         />
       </IdentityGroup>
-
-      <p v-if="!setupComplete" class="id-foot id-foot--last">
-        {{ $t('Your card is separate from your money. Nothing here can move your Bitcoin.') }}
-      </p>
     </div>
 
     <!-- Share: one sheet, replacing the two competing ones the old page had. -->
@@ -140,7 +120,6 @@ import { Icon } from '@iconify/vue';
 import SettingsHubNav from '../../components/settings/SettingsHubNav.vue';
 import IdentityCard from '../../components/identity/IdentityCard.vue';
 import SetupLadder from '../../components/identity/SetupLadder.vue';
-import PeopleStrip from '../../components/identity/PeopleStrip.vue';
 import IdentityGroup from '../../components/identity/IdentityGroup.vue';
 import IdentityRow from '../../components/identity/IdentityRow.vue';
 import IdentityShareSheet from '../../components/identity/IdentityShareSheet.vue';
@@ -148,13 +127,9 @@ import IdentityGetPaidSheet from '../../components/identity/IdentityGetPaidSheet
 import IdentitySignInSheet from '../../components/identity/IdentitySignInSheet.vue';
 import AddressBookModal from '../../components/AddressBook/AddressBookModal.vue';
 import { useIdentityHealth } from '../../composables/useIdentityHealth';
-import { useAddressBookStore } from '../../stores/addressBook';
 import { useSocialBucketStore } from '../../stores/socialBucket';
 import { usePayContact } from '../../composables/usePayContact';
 import { buildNostrIdentityUri } from '../../utils/nostrLookup.js';
-
-/** How many faces fit the strip before it needs scrolling on a small phone. */
-const PEOPLE_SHOWN = 8;
 
 export default {
   name: 'IdentityHomePage',
@@ -164,7 +139,6 @@ export default {
     SettingsHubNav,
     IdentityCard,
     SetupLadder,
-    PeopleStrip,
     IdentityGroup,
     IdentityRow,
     IdentityShareSheet,
@@ -175,9 +149,8 @@ export default {
 
   setup() {
     const health = useIdentityHealth();
-    const addressBook = useAddressBookStore();
     const bucket = useSocialBucketStore();
-    return { ...health, addressBook, bucket };
+    return { ...health, bucket };
   },
 
   data() {
@@ -226,11 +199,11 @@ export default {
         case 'setting-up':
           return this.$t('Setting up');
         case 'words-missing':
-          return this.$t('12 words not saved');
+          return this.$t('Not backed up yet');
         case 'steps-left':
           return this.$t('{done} of {total} done', { done: this.stepsDone, total: this.stepsTotal });
         default:
-          return this.$t('Ready, 12 words saved');
+          return this.$t('Backed up');
       }
     },
 
@@ -258,20 +231,6 @@ export default {
       return this.$t('Someone can scan this to save you as a contact');
     },
 
-    contactCount() {
-      return this.addressBook.entries.length;
-    },
-
-    /**
-     * Most recently added contacts. Sorting by "last paid" would be better,
-     * but the address book does not record it yet, and inventing a field for
-     * a first release would be a data migration for a nicety.
-     */
-    recentPeople() {
-      return [...this.addressBook.entries]
-        .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))
-        .slice(0, PEOPLE_SHOWN);
-    },
   },
 
   watch: {
@@ -439,15 +398,15 @@ export default {
   background: var(--bg-card);
   border: 1px solid var(--border-card);
   border-radius: var(--radius-md);
-  padding: 15px 8px 13px;
+  padding: 17px 8px 15px;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 8px;
+  gap: 9px;
   cursor: pointer;
   font-family: 'Manrope', sans-serif;
   color: var(--text-primary);
-  min-height: 88px;
+  min-height: 102px;
   position: relative;
 }
 
@@ -472,8 +431,8 @@ export default {
 .id-verb:active { background: rgba(127, 127, 127, 0.06); }
 
 .id-verb-icon {
-  width: 40px;
-  height: 40px;
+  width: 46px;
+  height: 46px;
   border-radius: var(--radius-ms);
   background: var(--bg-input);
   color: var(--text-secondary);
@@ -482,7 +441,7 @@ export default {
 }
 
 .id-verb-label {
-  font-size: 12.5px;
+  font-size: 13.5px;
   font-weight: 650;
   letter-spacing: -0.01em;
 }

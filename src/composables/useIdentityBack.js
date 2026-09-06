@@ -16,22 +16,20 @@
 
 /** Route -> acceptable parents, nearest-the-root first. First entry is the default. */
 const PARENTS = {
-  '/identity/manage': ['/identity'],
   '/identity/sign-in': ['/identity'],
-  '/identity/about': ['/identity', '/identity/manage'],
-  '/identity/profile': ['/identity', '/identity/manage'],
-  '/identity/identities': ['/identity', '/identity/manage'],
-  '/identity/username': ['/identity/manage'],
-  '/identity/words': ['/identity/manage'],
-  '/identity/advanced': ['/identity/manage'],
-  '/identity/visible': ['/identity/manage'],
-  '/identity/erase': ['/identity/manage'],
+  '/identity/profile': ['/identity'],
+  '/identity/identities': ['/identity'],
+  '/identity/username': ['/identity/profile', '/identity'],
+  '/identity/words': ['/identity', '/identity/identities'],
+  '/identity/advanced': ['/identity'],
+  '/identity/erase': ['/identity/identities', '/identity'],
 };
 
 /** Route -> the title its screen shows. Values are also the i18n keys. */
 const IDENTITY_TITLES = {
   '/identity': 'You',
-  '/identity/manage': 'Manage',
+  '/identity/profile': 'Your profile',
+  '/identity/identities': 'Identities',
 };
 
 /**

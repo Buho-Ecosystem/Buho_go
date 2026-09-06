@@ -3,42 +3,66 @@
     <IdentityNav :back-to="$t(backNav.key)" :to="backNav.to" />
 
     <div class="id-sub-body">
-      <h1 class="id-large-title">{{ $t('Your 12 words') }}</h1>
+      <h1 class="id-large-title">{{ $t('Back up your card') }}</h1>
 
       <!--
-        One subject: the card's words.
-
-        This screen used to also list every wallet phrase the user holds.
-        Well-intentioned (saving one set is easily mistaken for saving all of
-        them) but wrong here: someone who tapped "Your 12 words" inside their
-        identity expects the identity's words, and being handed three sets to
-        choose from at that moment reads as a test they did not study for.
+        Story first, artifact second: the screen explains what the paper is
+        for in three beats, and the 12 words themselves stay behind the one
+        CTA (reveal, order-check and biometric gate unchanged in the dialog).
         Wallet backups belong to Settings, next to the wallets; one quiet
         sentence at the bottom points anyone who came for those.
       -->
       <p class="id-lede">
-        {{ $t('These 12 words are the only way to bring your card back on another phone.') }}
+        {{ $t('Your card lives only on this phone. If the phone is lost or broken, 12 words on paper are the only way back. It takes two minutes.') }}
       </p>
 
       <section class="words-panel">
-        <span class="words-mark" :class="cardWordsSaved ? 'words-mark--ok' : 'words-mark--warn'">
-          <Icon icon="tabler:shield-lock" width="26" height="26" />
-        </span>
-        <p class="words-body">{{ $t('Bring back your name, photo and contacts.') }}</p>
+        <!-- The same illustration the onboarding tour uses for backing up,
+             so the two moments read as one idea. -->
+        <img
+          src="/Onboarding wizard spark/storyset-secure-login-bro.svg"
+          class="words-illustration"
+          alt=""
+        />
+
+        <ol class="words-beats">
+          <li class="words-beat">
+            <span class="words-beat-num" aria-hidden="true">1</span>
+            <span class="words-beat-copy">
+              <strong>{{ $t('Write 12 words on paper') }}</strong>
+              <span>{{ $t('We show them to you. You copy them down, in order.') }}</span>
+            </span>
+          </li>
+          <li class="words-beat">
+            <span class="words-beat-num" aria-hidden="true">2</span>
+            <span class="words-beat-copy">
+              <strong>{{ $t('Check your paper once') }}</strong>
+              <span>{{ $t('Tap the words in order, so a mistake shows now and not on your next phone.') }}</span>
+            </span>
+          </li>
+          <li class="words-beat">
+            <span class="words-beat-num" aria-hidden="true">3</span>
+            <span class="words-beat-copy">
+              <strong>{{ $t('Keep it somewhere safe') }}</strong>
+              <span>{{ $t('Whoever holds the paper holds your card. No photos, no screenshots.') }}</span>
+            </span>
+          </li>
+        </ol>
+
         <span class="words-state" :class="cardWordsSaved ? 'words-state--ok' : 'words-state--warn'">
           <Icon v-if="cardWordsSaved" icon="tabler:check" width="12" height="12" />
-          {{ cardWordsSaved ? $t('Saved') : $t('Not saved yet') }}
+          {{ cardWordsSaved ? $t('Backed up') : $t('Not backed up yet') }}
         </span>
         <button type="button" class="btn-primary" @click="openCardWords">
-          {{ cardWordsSaved ? $t('View these words') : $t('Save these words') }}
+          {{ cardWordsSaved ? $t('View my 12 words') : $t('Show my 12 words') }}
         </button>
       </section>
 
       <IdentityGroup :title="$t('Coming back')">
         <IdentityRow
           icon="tabler:refresh"
-          :label="$t('I have 12 words to enter')"
-          :caption="$t('Bring back a card or a wallet')"
+          :label="$t('I already have 12 words')"
+          :caption="$t('Bring back what you saved on another phone')"
           @click="showRestoreChoice = true"
         />
       </IdentityGroup>
@@ -46,7 +70,7 @@
       <!-- For whoever came here looking for a wallet backup: where it lives,
            without putting it back on the screen as a competing set. -->
       <p v-if="hasWalletWords" class="id-foot">
-        {{ $t('Your wallets keep their own recovery words. You will find those in Settings, next to your wallets.') }}
+        {{ $t('Your wallets keep their own recovery words. Those live in Settings, next to each wallet.') }}
       </p>
     </div>
 
@@ -232,36 +256,72 @@ export default {
 </script>
 
 <style scoped>
-/* One panel, one action. Centred because the screen has a single subject and
-   a single verb, which is the layout Settings-style rows are wrong for. */
+/* One panel: the story in three beats, then the single verb. */
 .words-panel {
   background: var(--bg-card);
   border: 1px solid var(--border-card);
   border-radius: var(--radius-lg);
-  padding: 26px 20px 20px;
+  padding: 20px 18px 18px;
   display: flex;
   flex-direction: column;
   align-items: center;
-  text-align: center;
 }
 
-.words-mark {
-  width: 56px;
-  height: 56px;
-  border-radius: var(--radius-md);
+.words-illustration {
+  width: 148px;
+  height: auto;
+  margin: 2px auto 14px;
+  display: block;
+}
+
+.words-beats {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.words-beat {
+  display: flex;
+  gap: 13px;
+  align-items: flex-start;
+}
+
+.words-beat-num {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  flex: 0 0 auto;
   display: grid;
   place-items: center;
+  background: var(--bg-input);
+  color: var(--text-secondary);
+  font-size: 12.5px;
+  font-weight: 750;
 }
 
-.words-mark--ok   { background: var(--brand-accent-soft); color: var(--brand-accent-text); }
-.words-mark--warn { background: var(--color-warn-soft); color: var(--color-warn); }
+.words-beat-copy {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-top: 2px;
+}
 
-.words-body {
+.words-beat-copy strong {
   font-size: 14px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--text-primary);
+}
+
+.words-beat-copy span {
+  font-size: 12.5px;
   color: var(--text-secondary);
-  line-height: 1.5;
-  max-width: 300px;
-  margin: 12px 0 0;
+  line-height: 1.45;
 }
 
 .words-state {
