@@ -123,8 +123,8 @@ export const useWalletStore = defineStore('wallet', {
     // reactive; the boot file `secure-screen.js` reconciles this
     // with the native source of truth on app start and propagates
     // user toggles back down through the plugin. Default mirrors
-    // the native default — opt-out is explicit.
-    privacyScreenEnabled: true,
+    // the native default — off until the user opts in.
+    privacyScreenEnabled: false,
 
     // Global payment-error dialog state. A single global instance lives
     // in App.vue; any page or store funnels failures here via
@@ -891,12 +891,12 @@ export const useWalletStore = defineStore('wallet', {
               exchangeRatesLastUpdate: ratesStillValid ? parsed.exchangeRatesLastUpdate : null,
               hasBackedUp: parsed.hasBackedUp || false,
               biometricsEnabled: parsed.biometricsEnabled || false,
-              // Screen privacy: fail-secure default. A `false` only
-              // takes effect if it was explicitly persisted; missing
-              // or undefined keeps the protection on.
+              // Screen privacy: off by default. Only an explicitly
+              // persisted choice takes effect; missing or undefined
+              // means the user never opted in.
               privacyScreenEnabled: parsed.privacyScreenEnabled !== undefined
                 ? !!parsed.privacyScreenEnabled
-                : true,
+                : false,
               // Kiosk
               kioskEnabled: parsed.kioskEnabled || false,
               kioskPin: parsed.kioskPin || '',

@@ -93,6 +93,7 @@ export default {
   "Google Drive backup": "Google Drive backup",
   "A backup of your wallets": "A backup of your wallets",
   "Restore from Google Drive": "Restore from Google Drive",
+  "Bring your wallets back from a backup": "Bring your wallets back from a backup",
   "Your cloud backup": "Your cloud backup",
   // ─── Arkade (Ark L2) onboarding, restore & success ───
   "Create an Arkade wallet": "Create an Arkade wallet",

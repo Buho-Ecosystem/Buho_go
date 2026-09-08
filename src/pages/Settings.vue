@@ -186,14 +186,11 @@
           </SettingsRow>
         </template>
 
-        <!-- Wallet-level admin sits right under the wallet's name, before
-             the per-wallet extras - the user asked "which wallets do I
-             have" before "where is my seed". -->
         <!--
           Wallet-level admin: managing the connected wallets list.
-          Auto-Transfer and Address Book were here previously — they
-          have moved up into the Feature Cards row at the top of the
-          page so they read as features rather than wallet config.
+          Auto-Transfer and Address Book moved up into the Feature
+          Cards row so they read as features rather than wallet
+          config; the seed-phrase rows moved down into Security.
         -->
         <SettingsRow
           icon="tabler:wallet"
@@ -201,57 +198,6 @@
           :caption="`${wallets.length} ${wallets.length === 1 ? $t('wallet') : $t('wallets')}`"
           @click="showWalletsDialog = true"
         />
-
-        <!-- Arkade Wallet: backup -->
-        <template v-if="isActiveWalletArkade">
-          <SettingsRow
-            v-if="!activeArkadeBackedUp"
-            icon="tabler:shield-check"
-            :label="$t('Backup Seed Phrase')"
-            :caption="$t('Verify your recovery phrase')"
-            :badge="$t('Not verified')"
-            badge-variant="warning"
-            @click="openSeedPhraseDialog('backup')"
-          />
-          <SettingsRow
-            v-else
-            icon="tabler:eye"
-            :label="$t('View Seed Phrase')"
-            :caption="$t('Show your recovery phrase')"
-            :badge="$t('Verified')"
-            badge-variant="success"
-            @click="openSeedPhraseDialog('view')"
-          />
-        </template>
-
-        <!-- Spark Wallet: backup -->
-        <template v-if="isActiveWalletSpark && hasSparkWallet">
-          <!--
-            Backup row: presents the same affordance in two states — the
-            CTA-flavoured "Backup Seed Phrase" before verification and
-            the calmer "View Seed Phrase" after. Both share the same
-            dialog target so the user mental model stays one thing.
-          -->
-          <SettingsRow
-            v-if="!activeSparkBackedUp"
-            icon="tabler:shield-check"
-            :label="$t('Backup Seed Phrase')"
-            :caption="$t('Verify your recovery phrase')"
-            :badge="$t('Not verified')"
-            badge-variant="warning"
-            @click="openSeedPhraseDialog('backup')"
-          />
-          <SettingsRow
-            v-else
-            icon="tabler:eye"
-            :label="$t('View Seed Phrase')"
-            :caption="$t('Show your recovery phrase')"
-            :badge="$t('Verified')"
-            badge-variant="success"
-            @click="openSeedPhraseDialog('view')"
-          />
-        </template>
-
 
         <!--
           Transaction report. Wallet-level because it reads across the
@@ -263,20 +209,6 @@
           :label="$t('Transaction report')"
           :caption="$t('PDF, CSV or XML for your accountant')"
           @click="showTaxReportSheet = true"
-        />
-
-        <!--
-          Encrypted cloud backup (Android only — Drive via the native
-          plugin). Complements the seed-phrase rows above: the phrase is
-          still THE backup a user should verify; this puts an encrypted
-          copy of all wallet secrets where a lost phone can't take it.
-        -->
-        <SettingsRow
-          v-if="cloudBackupAvailable"
-          icon="tabler:cloud-lock"
-          :label="$t('Google Drive backup')"
-          :caption="$t('A backup of your wallets')"
-          @click="showCloudBackupSheet = true"
         />
       </SettingsSection>
 
@@ -361,6 +293,93 @@
             />
           </template>
         </SettingsRow>
+
+      </SettingsSection>
+
+      <!--
+        Security: the keys, their copies, and the device protections.
+        The recovery-phrase rows moved here out of the Wallet section
+        ("where is my seed" is a security question, not a wallet-list
+        question), joined by the encrypted Drive backup and a restore
+        row - restoring used to be reachable only from the welcome
+        screen, which stranded anyone who set up first and remembered
+        their backup later. Screen Privacy moved in from Preferences:
+        it protects, it does not prefer. The section always has at
+        least that row, so it never renders as an empty card.
+      -->
+      <SettingsSection :title="$t('Security')">
+        <!-- Arkade Wallet: backup -->
+        <template v-if="isActiveWalletArkade">
+          <SettingsRow
+            v-if="!activeArkadeBackedUp"
+            icon="tabler:shield-check"
+            :label="$t('Backup Seed Phrase')"
+            :caption="$t('Verify your recovery phrase')"
+            :badge="$t('Not verified')"
+            badge-variant="warning"
+            @click="openSeedPhraseDialog('backup')"
+          />
+          <SettingsRow
+            v-else
+            icon="tabler:eye"
+            :label="$t('View Seed Phrase')"
+            :caption="$t('Show your recovery phrase')"
+            :badge="$t('Verified')"
+            badge-variant="success"
+            @click="openSeedPhraseDialog('view')"
+          />
+        </template>
+
+        <!-- Spark Wallet: backup -->
+        <template v-if="isActiveWalletSpark && hasSparkWallet">
+          <!--
+            Backup row: presents the same affordance in two states — the
+            CTA-flavoured "Backup Seed Phrase" before verification and
+            the calmer "View Seed Phrase" after. Both share the same
+            dialog target so the user mental model stays one thing.
+          -->
+          <SettingsRow
+            v-if="!activeSparkBackedUp"
+            icon="tabler:shield-check"
+            :label="$t('Backup Seed Phrase')"
+            :caption="$t('Verify your recovery phrase')"
+            :badge="$t('Not verified')"
+            badge-variant="warning"
+            @click="openSeedPhraseDialog('backup')"
+          />
+          <SettingsRow
+            v-else
+            icon="tabler:eye"
+            :label="$t('View Seed Phrase')"
+            :caption="$t('Show your recovery phrase')"
+            :badge="$t('Verified')"
+            badge-variant="success"
+            @click="openSeedPhraseDialog('view')"
+          />
+        </template>
+
+        <!--
+          Encrypted cloud backup (Android only — Drive via the native
+          plugin). Complements the seed-phrase rows above: the phrase is
+          still THE backup a user should verify; this puts an encrypted
+          copy of all wallet secrets where a lost phone can't take it.
+          Backup and restore are separate rows because they are separate
+          intents: one writes, the other adds missing wallets back.
+        -->
+        <SettingsRow
+          v-if="cloudBackupAvailable"
+          icon="tabler:cloud-lock"
+          :label="$t('Google Drive backup')"
+          :caption="$t('A backup of your wallets')"
+          @click="openCloudBackup('backup')"
+        />
+        <SettingsRow
+          v-if="cloudBackupAvailable"
+          icon="tabler:cloud-download"
+          :label="$t('Restore from Google Drive')"
+          :caption="$t('Bring your wallets back from a backup')"
+          @click="openCloudBackup('restore')"
+        />
 
         <!--
           Screen Privacy — Android FLAG_SECURE.
@@ -1755,8 +1774,10 @@
       @verified="onSeedPhraseVerified"
     />
 
-    <!-- Encrypted Google Drive backup (Android only) -->
-    <CloudBackupSheet v-model="showCloudBackupSheet" />
+    <!-- Encrypted Google Drive backup (Android only). The intent decides
+         where the sheet lands after sign-in: the backup row opens the
+         menu, the restore row jumps straight to restoring. -->
+    <CloudBackupSheet v-model="showCloudBackupSheet" :intent="cloudBackupIntent" />
 
     <!-- App Lock enable: explain what happens before the native prompt -->
     <BiometricEnableDialog
@@ -2259,6 +2280,7 @@ export default {
       showSeedPhraseDialog: false,
       // Encrypted Google Drive backup sheet (Android only)
       showCloudBackupSheet: false,
+      cloudBackupIntent: 'backup',
       seedPhraseMode: 'view', // 'view' | 'backup'
       // Set only by the identity surface's per-phrase deep link; null means
       // "the active seed wallet", which is what this page's own rows want.
@@ -3090,6 +3112,41 @@ export default {
       await this.initialize()
     },
 
+    // ─── Security ─────────────────────────────────────
+
+    /**
+     * The one dialog behind all four seed rows: identity gate
+     * (biometric / device PIN on native, skipped on web), phrase
+     * reveal with 120s auto-hide and screenshot protection, and,
+     * in backup mode, the tap-12-words-in-order verification.
+     *
+     * @param {'view'|'backup'} mode
+     */
+    openSeedPhraseDialog(mode, walletId = null) {
+      this.seedPhraseMode = mode;
+      // This page's own rows act on the active wallet; only the identity
+      // deep link names one, and it sets the field before calling.
+      if (walletId !== null) this.seedPhraseWalletId = walletId;
+      this.showSeedPhraseDialog = true;
+    },
+
+    onSeedPhraseVerified() {
+      // Backup flow succeeded — the dialog has already flagged the
+      // wallet as backed up via the store, closed itself, and emitted.
+      // Nothing else to do here; the Settings row re-renders via the
+      // `activeSparkBackedUp` computed.
+    },
+
+    /**
+     * Both Drive rows share one mounted sheet; the intent decides
+     * whether it lands on the backup menu or goes straight to restore.
+     * @param {'backup'|'restore'} intent
+     */
+    openCloudBackup(intent) {
+      this.cloudBackupIntent = intent;
+      this.showCloudBackupSheet = true;
+    },
+
     // ─── Kiosk Mode ───────────────────────────────────
 
     handleKioskToggle(val) {
@@ -3775,6 +3832,31 @@ export default {
       this.dangerConfirmButtonText = this.$t('Remove LNbits');
       this.dangerConfirmInput = '';
       this.dangerConfirmAction = 'disconnectLNBits';
+      this.showDangerConfirmDialog = true;
+    },
+
+    confirmDeleteSparkWallet() {
+      if (!this.sparkWallets.length) return;
+
+      const count = this.sparkWallets.length;
+      this.dangerConfirmTitle = this.$t('Delete Spark Wallets');
+      this.dangerConfirmMessage = count > 1
+        ? this.$t('This will permanently delete all {count} Spark wallets. Make sure you have backed up your seed phrases. This action cannot be undone.', { count })
+        : this.$t('This will permanently delete your Spark wallet. Make sure you have backed up your seed phrase. This action cannot be undone.');
+      this.dangerConfirmButtonText = this.$t('Delete');
+      this.dangerConfirmInput = '';
+      this.dangerConfirmAction = 'deleteSparkWallet';
+      this.showDangerConfirmDialog = true;
+    },
+
+    confirmDeleteArkadeWallet() {
+      if (!this.wallets.some(w => w.type === 'arkade')) return;
+
+      this.dangerConfirmTitle = this.$t('Delete Arkade Wallet');
+      this.dangerConfirmMessage = this.$t('This will permanently delete your Arkade wallet. Make sure you have backed up your recovery phrase. This action cannot be undone.');
+      this.dangerConfirmButtonText = this.$t('Delete');
+      this.dangerConfirmInput = '';
+      this.dangerConfirmAction = 'deleteArkadeWallet';
       this.showDangerConfirmDialog = true;
     },
 
