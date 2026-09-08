@@ -94,6 +94,7 @@ export default {
   "Google Drive backup": "Google Drive Backup",
   "A backup of your wallets": "Ein Backup deiner Wallets",
   "Restore from Google Drive": "Aus Google Drive wiederherstellen",
+  "Bring your wallets back from a backup": "Hol deine Wallets aus einem Backup zurück",
   "Your cloud backup": "Dein Cloud-Backup",
   // ─── BOLT12 offer recognition ───
   "BOLT12 offer": "BOLT12-Angebot",

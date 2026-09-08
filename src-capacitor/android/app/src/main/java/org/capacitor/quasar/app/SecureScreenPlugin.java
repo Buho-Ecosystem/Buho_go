@@ -58,9 +58,10 @@ public class SecureScreenPlugin extends Plugin {
 
     /**
      * Default applied when no preference has been persisted yet.
-     * Fail-secure: protection is on by default; opt-out is explicit.
+     * Off by default; enabling the protection is an explicit opt-in
+     * from the Security section in Settings.
      */
-    public static final boolean DEFAULT_ENABLED = true;
+    public static final boolean DEFAULT_ENABLED = false;
 
     /**
      * Read the persisted preference. Used by {@link MainActivity} on
