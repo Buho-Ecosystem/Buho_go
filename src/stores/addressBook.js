@@ -282,6 +282,18 @@ export const useAddressBookStore = defineStore('addressBook', {
       return state.entries.find(entry => entry.id === id)
     },
 
+    /**
+     * The Quick pay shelf: the last people actually paid, newest first.
+     * `lastUsedAt` is stamped by every pay path (send modal contact pick,
+     * batch recipients, the pay composable), so this is real recency.
+     */
+    recentlyPaidEntries: (state) => {
+      return state.entries
+        .filter((entry) => Number(entry.lastUsedAt) > 0)
+        .sort((a, b) => (b.lastUsedAt || 0) - (a.lastUsedAt || 0))
+        .slice(0, 10)
+    },
+
     getRandomColor: (state) => () => {
       return state.colorPalette[Math.floor(Math.random() * state.colorPalette.length)]
     },

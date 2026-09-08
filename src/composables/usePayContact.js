@@ -1,13 +1,11 @@
 /**
  * Paying a saved contact, from wherever the tap happened.
  *
- * There were two implementations of this. The address book's version guards
- * identity-only Nostr contacts (saved from a card that has not published a
- * Lightning address yet), explains why the tap cannot become a payment, and
- * kicks off a silent re-sync that promotes the contact the moment they publish
- * one. The identity tab's People strip had a shorter copy that dropped both,
- * so the same face that explained itself in the address book did nothing at
- * all when tapped from the identity tab.
+ * Guards identity-only Nostr contacts (saved from a card that has not
+ * published a Lightning address yet), explains why the tap cannot become a
+ * payment, and kicks off a silent re-sync that promotes the contact the
+ * moment they publish one. Before this composable existed, each surface
+ * carried its own copy and the shorter ones dropped both behaviours.
  *
  * One behaviour, one place. Everything routes through the wallet page's
  * dispatcher, which is the single send pipeline (LNURL metadata, merchant
@@ -73,6 +71,9 @@ export function usePayContact(ctx) {
       });
       return;
     }
+
+    // Recency feeds the Quick pay shelf. Best effort, never blocks the tap.
+    store.updateLastUsed(contact.id).catch(() => {});
 
     ctx.$router.push({
       path: '/wallet',

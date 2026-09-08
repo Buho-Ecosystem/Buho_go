@@ -173,7 +173,7 @@
 <script>
 import { useWalletStore } from '../stores/wallet';
 import { useBip39Mnemonic } from '../composables/useBip39Mnemonic';
-import { SparkWalletProvider } from '../providers/SparkWalletProvider';
+import { probeAccountActivity as probeSparkAccountActivity } from '../services/breezSdk';
 import { ArkadeWalletProvider } from '../providers/ArkadeWalletProvider';
 
 const SEED_WORD_COUNT = 12;
@@ -400,9 +400,9 @@ export default {
         this.restoringStatus = this.$t('Wallet restored!');
         await new Promise((resolve) => setTimeout(resolve, 800));
 
-        this.$router.replace(
-          resolvedType === 'arkade' ? '/spark-success?mode=arkade' : '/spark-success'
-        );
+        // A restoring user is a returning user: straight into the wallet,
+        // no feature tour (it waits in About > Onboarding Guide).
+        this.$router.replace('/wallet');
       } catch (error) {
         console.error('Failed to restore wallet:', error);
         const { message, caption } = this._userFacingRestoreError(error);
@@ -430,8 +430,8 @@ export default {
      */
     async _detectFundedType(mnemonic) {
       const [sparkModern, sparkLegacy, arkade] = await Promise.allSettled([
-        SparkWalletProvider.probeAccountActivity(mnemonic, 'MAINNET', 1),
-        SparkWalletProvider.probeAccountActivity(mnemonic, 'MAINNET', 0),
+        probeSparkAccountActivity(mnemonic, { accountNumber: 1, network: 'MAINNET' }),
+        probeSparkAccountActivity(mnemonic, { accountNumber: 0, network: 'MAINNET' }),
         ArkadeWalletProvider.probeActivity(mnemonic, { network: 'bitcoin' }),
       ]);
       const sparkActive = !!(sparkModern.value?.hasActivity || sparkLegacy.value?.hasActivity);

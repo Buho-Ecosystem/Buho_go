@@ -3,7 +3,7 @@
  */
 
 export { WalletProvider } from './WalletProvider';
-export { SparkWalletProvider } from './SparkWalletProvider';
+export { BreezSparkWalletProvider } from './BreezSparkWalletProvider';
 export { NWCWalletProvider } from './NWCWalletProvider';
 export { ArkadeWalletProvider } from './ArkadeWalletProvider';
 export {

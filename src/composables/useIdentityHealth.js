@@ -2,11 +2,10 @@
  * Identity health.
  *
  * One source of truth for every place that reports "is this set up, is this
- * safe": the ring on the card, the card's footer line, the setup ladder, and
- * the rows inside Manage identity. The old surface computed these facts
- * inline in three different components and disagreed with itself, which is
- * how a user could see a green "Backed up" tile while their identity phrase
- * had never been written down.
+ * safe": the ring on the card, the card's footer line, and the setup ladder.
+ * The old surface computed these facts inline in three different components
+ * and disagreed with itself, which is how a user could see a green
+ * "Backed up" tile while their identity phrase had never been written down.
  *
  * The identity surface reports the identity's words and nothing else. The
  * one wallet-phrase fact still exported is `hasWalletWords`: whether any
@@ -74,7 +73,7 @@ export function useIdentityHealth() {
     {
       id: 'username',
       done: !!identity.nip05ActiveEntry,
-      label: 'Your name is reserved',
+      label: 'Your username is ready',
       route: '/identity/username',
     },
     {
@@ -86,7 +85,7 @@ export function useIdentityHealth() {
     {
       id: 'words',
       done: cardWordsSaved.value,
-      label: 'Save your 12 words',
+      label: 'Back up your card',
       route: '/identity/words',
     },
   ]);

@@ -61,6 +61,24 @@
                   </q-item-label>
                 </q-item-section>
               </q-item>
+
+              <!-- Destructive, so it lives here behind its confirm rather
+                   than as a standing button in the list header. -->
+              <q-item
+                v-if="entries.length > 0"
+                clickable
+                v-close-popup
+                @click="showClearAllConfirmDialog = true"
+              >
+                <q-item-section avatar style="min-width: 32px;">
+                  <Icon icon="tabler:trash" width="16" height="16" style="color: #EF4444" />
+                </q-item-section>
+                <q-item-section>
+                  <q-item-label style="color: #EF4444;">
+                    {{ $t('Clear All') }}
+                  </q-item-label>
+                </q-item-section>
+              </q-item>
             </q-list>
           </q-menu>
         </q-btn>
@@ -86,8 +104,8 @@
     <div class="page-content full">
       <AddressBookList
         @add-contact="showAddModal"
-        @edit-contact="showEditModal"
         @pay-contact="payContact"
+        @open-contact="openContact"
       />
     </div>
 
@@ -99,11 +117,38 @@
       @open-existing="handleOpenExisting"
     />
 
-    <!-- Batch Send Modal -->
-    <BatchSendModal
-      v-model="showBatchSend"
-      @batch-completed="handleBatchCompleted"
-    />
+    <!-- Clear All Confirmation -->
+    <q-dialog v-model="showClearAllConfirmDialog" :class="$q.dark.isActive ? 'dialog_dark' : 'dialog_light'">
+      <q-card class="delete-confirm-card" :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'">
+        <q-card-section class="delete-header">
+          <div class="delete-icon-wrapper">
+            <Icon icon="tabler:alert-triangle" width="32" height="32" class="delete-icon"/>
+          </div>
+          <div class="delete-title">{{ $t('Clear All Contacts') }}</div>
+          <div class="delete-message" :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'">
+            {{ $t('This will permanently delete all your contacts. This action cannot be undone.') }}
+          </div>
+        </q-card-section>
+
+        <q-card-actions class="delete-actions">
+          <q-btn
+            flat
+            no-caps
+            :label="$t('Cancel')"
+            @click="showClearAllConfirmDialog = false"
+            class="cancel-btn"
+            :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-6'"
+          />
+          <q-btn
+            unelevated
+            no-caps
+            :label="$t('Clear All')"
+            @click="executeClearAll"
+            class="delete-action-btn"
+          />
+        </q-card-actions>
+      </q-card>
+    </q-dialog>
 
     <!-- Identity switcher: each identity owns its own contact list,
          so the entry point lives here next to the restore action. -->
@@ -123,26 +168,24 @@ import { mapActions, mapState } from 'pinia'
 
 import AddressBookList from '../components/AddressBook/AddressBookList.vue'
 import AddressBookModal from '../components/AddressBook/AddressBookModal.vue'
-import BatchSendModal from '../components/BatchSendModal.vue'
 
 export default {
   name: 'AddressBookPage',
   components: {
     AddressBookList,
     AddressBookModal,
-    BatchSendModal,
   },
   data() {
     return {
       showModal: false,
       selectedEntry: null,
-      showBatchSend: false,
+      showClearAllConfirmDialog: false,
     }
   },
   computed: {
     // Surfaced for the kebab's disabled state. `isSyncing` is read by
     // the status component directly off the store.
-    ...mapState(useAddressBookStore, ['isRecovering', 'syncDirty']),
+    ...mapState(useAddressBookStore, ['isRecovering', 'syncDirty', 'entries']),
   },
   // Automatic publishing is owned by the app-level driver
   // (useAddressBookSync) so contacts added from ANY surface sync,
@@ -238,15 +281,25 @@ export default {
       this.showModal = true
     },
 
-    showEditModal(entry) {
-      this.selectedEntry = entry
-      this.showModal = true
+    /** A row tap: push the contact's own page. */
+    openContact(entry) {
+      this.$router.push(`/address-book/${entry.id}`)
+    },
+
+    async executeClearAll() {
+      try {
+        await useAddressBookStore().clearAll()
+        this.showClearAllConfirmDialog = false
+        this.$q.notify({ type: 'positive', message: this.$t('Contacts cleared') })
+      } catch (error) {
+        this.$q.notify({ type: 'negative', message: this.$t('Couldn\'t clear contacts') })
+      }
     },
 
     /**
-     * Lives in usePayContact now, because the identity tab's People strip
-     * pays the same contacts and its own copy of this had dropped both the
-     * identity-only guard and the silent re-sync.
+     * Lives in usePayContact so every surface that pays a contact shares
+     * one flow: the identity-only guard, the silent re-sync, and the
+     * last-used stamp all happen there.
      */
     payContact(contact) {
       usePayContact(this).payContact(contact)
@@ -267,19 +320,6 @@ export default {
       if (!entry) return
       this.payContact(entry)
     },
-
-    handleBatchCompleted(results) {
-      const succeeded = results.filter(r => r.status === 'success').length
-      const failed = results.filter(r => r.status === 'failed' || r.status === 'skipped').length
-
-      this.$q.notify({
-        type: failed === 0 ? 'positive' : 'warning',
-        message: failed === 0
-          ? this.$t('{count} payments sent', { count: succeeded })
-          : this.$t('{sent} sent, {failed} failed', { sent: succeeded, failed }),
-        timeout: 3000
-      })
-    }
   }
 }
 </script>

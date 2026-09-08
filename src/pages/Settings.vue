@@ -46,6 +46,33 @@
             </template>
           </SettingsRow>
 
+          <!--
+            Lightning Address row. The address is registered server-side
+            against the wallet identity, so it survives reinstall and
+            recovery; the sheet shows it and handles changing the name.
+          -->
+          <SettingsRow
+            icon="tabler:at"
+            :label="$t('Lightning Address')"
+            :caption-mono="!!activeWalletLightningAddress"
+            :interactive="true"
+            :show-chevron="true"
+            @click="showSparkLnAddressSheet = true"
+          >
+            <template #caption>
+              <template v-if="activeWalletLightningAddress">{{ activeWalletLightningAddress }}</template>
+              <template v-else>{{ $t('Get one to receive payments by name') }}</template>
+            </template>
+            <template v-if="activeWalletLightningAddress" #right>
+              <q-btn
+                flat round dense size="sm"
+                @click.stop="copyToClipboard(activeWalletLightningAddress, $t('Lightning address copied'))"
+              >
+                <Icon icon="tabler:copy" width="16" height="16" />
+              </q-btn>
+            </template>
+          </SettingsRow>
+
         </template>
 
         <!-- Arkade Wallet -->
@@ -159,14 +186,11 @@
           </SettingsRow>
         </template>
 
-        <!-- Wallet-level admin sits right under the wallet's name, before
-             the per-wallet extras - the user asked "which wallets do I
-             have" before "where is my seed". -->
         <!--
           Wallet-level admin: managing the connected wallets list.
-          Auto-Transfer and Address Book were here previously — they
-          have moved up into the Feature Cards row at the top of the
-          page so they read as features rather than wallet config.
+          Auto-Transfer and Address Book moved up into the Feature
+          Cards row so they read as features rather than wallet
+          config; the seed-phrase rows moved down into Security.
         -->
         <SettingsRow
           icon="tabler:wallet"
@@ -175,6 +199,115 @@
           @click="showWalletsDialog = true"
         />
 
+        <!--
+          Transaction report. Wallet-level because it reads across the
+          wallets rather than belonging to any one of them, which is also
+          why it sits next to Manage Wallets.
+        -->
+        <SettingsRow
+          icon="tabler:file-text"
+          :label="$t('Transaction report')"
+          :caption="$t('PDF, CSV or XML for your accountant')"
+          @click="showTaxReportSheet = true"
+        />
+      </SettingsSection>
+
+      <!--
+        Feature cards — three value features that were previously
+        plain rows: Auto-Transfer, Address Book, Kiosk. Positioned
+        after the Wallet section (rather than at the very top)
+        because the Quick Toggles already occupy the prime above-
+        the-fold slot; stacking two card rows at the top read as
+        too dense, and putting features here gives them their own
+        breathing room while staying high on the page.
+      -->
+      <SettingsFeatureCards
+        :features="featureCards"
+        @select="onFeatureSelect"
+      />
+
+      <!--
+        Reusable lightning-address dialog. Always mounted (gated by its
+        own v-if) so the trigger row stays simple. Same component used
+        by LNBitsSetupPage during onboarding — the prop contract
+        decouples UI from data, so the caller owns the throwaway
+        provider, existing-addresses list, and persist step.
+      -->
+      <LNBitsLightningAddressDialog
+        v-if="lnAddressPrompt.visible"
+        v-model="lnAddressPrompt.visible"
+        :domain="lnAddressPrompt.domain"
+        :existing-addresses="lnAddressPrompt.existingAddresses"
+        :default-username="lnAddressPrompt.defaultUsername"
+        :create-address="lnAddressPrompt.createAddress"
+        @confirm="onLightningAddressConfirm"
+        @skip="onLightningAddressSkip"
+      />
+
+      <!-- Breez-engine Spark Lightning address: claim / copy / remove -->
+      <SparkLightningAddressSheet
+        v-if="activeWalletId"
+        v-model="showSparkLnAddressSheet"
+        :wallet-id="activeWalletId"
+      />
+
+      <!-- ─────────────── PREFERENCES ───────────────
+           Pickers only. Theme / Display Currency / Amount Format /
+           App Lock all live in Quick Toggles at the top of the page
+           — they are binary controls and don't need a full row.
+           What stays here are the pickers that need a dialog
+           (Currency, Language) because they're 1-of-many choices,
+           not on/off flips. -->
+      <SettingsSection :title="$t('Preferences')">
+        <SettingsRow
+          icon="tabler:currency-dollar"
+          :label="$t('Currency')"
+          :inline-value="preferredFiatCurrency"
+          @click="openCurrencyDialog"
+        />
+        <SettingsRow
+          icon="tabler:language"
+          :label="$t('Language')"
+          :inline-value="getCurrentLanguageLabel()"
+          @click="showLanguageDialog = true"
+        />
+        <!--
+          Amount format — moved down from Quick Toggles. Almost no
+          mainstream user has a reason to flip this (it controls
+          ₿ vs sats writing convention), so its old home as a
+          top-of-page quick pill was prime real estate wasted. Now
+          a regular row with a plain-language caption so a curious
+          user can still find and understand it.
+        -->
+        <SettingsRow
+          icon="tabler:hash"
+          :label="$t('Amount Display Format')"
+          :caption="useBip177Format ? $t('Show amounts as ₿ 1,234') : $t('Show amounts as 1,234 sats')"
+          :interactive="false"
+        >
+          <template #right>
+            <q-toggle
+              :model-value="useBip177Format"
+              @update:model-value="updateAmountFormat"
+              :color="$q.dark.isActive ? 'brand-green' : 'brand-green-dark'"
+            />
+          </template>
+        </SettingsRow>
+
+      </SettingsSection>
+
+      <!--
+        Security: the keys, their copies, and the device protections.
+        The recovery-phrase rows moved here out of the Wallet section
+        ("where is my seed" is a security question, not a wallet-list
+        question), joined by the encrypted Drive backup and a restore
+        row - restoring used to be reachable only from the welcome
+        screen, which stranded anyone who set up first and remembered
+        their backup later. Screen Privacy moved in from Preferences:
+        it protects, it does not prefer. The section always has at
+        least that row, so it never renders as an empty card.
+      -->
+      <SettingsSection :title="$t('Security')">
         <!-- Arkade Wallet: backup -->
         <template v-if="isActiveWalletArkade">
           <SettingsRow
@@ -225,108 +358,28 @@
           />
         </template>
 
-
-        <!--
-          Transaction report. Wallet-level because it reads across the
-          wallets rather than belonging to any one of them, which is also
-          why it sits next to Manage Wallets.
-        -->
-        <SettingsRow
-          icon="tabler:file-text"
-          :label="$t('Transaction report')"
-          :caption="$t('PDF, CSV or XML for your accountant')"
-          @click="showTaxReportSheet = true"
-        />
-
         <!--
           Encrypted cloud backup (Android only — Drive via the native
           plugin). Complements the seed-phrase rows above: the phrase is
           still THE backup a user should verify; this puts an encrypted
           copy of all wallet secrets where a lost phone can't take it.
+          Backup and restore are separate rows because they are separate
+          intents: one writes, the other adds missing wallets back.
         -->
         <SettingsRow
           v-if="cloudBackupAvailable"
           icon="tabler:cloud-lock"
           :label="$t('Google Drive backup')"
           :caption="$t('A backup of your wallets')"
-          @click="showCloudBackupSheet = true"
-        />
-      </SettingsSection>
-
-      <!--
-        Feature cards — three value features that were previously
-        plain rows: Auto-Transfer, Address Book, Kiosk. Positioned
-        after the Wallet section (rather than at the very top)
-        because the Quick Toggles already occupy the prime above-
-        the-fold slot; stacking two card rows at the top read as
-        too dense, and putting features here gives them their own
-        breathing room while staying high on the page.
-      -->
-      <SettingsFeatureCards
-        :features="featureCards"
-        @select="onFeatureSelect"
-      />
-
-      <!--
-        Reusable lightning-address dialog. Always mounted (gated by its
-        own v-if) so the trigger row stays simple. Same component used
-        by LNBitsSetupPage during onboarding — the prop contract
-        decouples UI from data, so the caller owns the throwaway
-        provider, existing-addresses list, and persist step.
-      -->
-      <LNBitsLightningAddressDialog
-        v-if="lnAddressPrompt.visible"
-        v-model="lnAddressPrompt.visible"
-        :domain="lnAddressPrompt.domain"
-        :existing-addresses="lnAddressPrompt.existingAddresses"
-        :default-username="lnAddressPrompt.defaultUsername"
-        :create-address="lnAddressPrompt.createAddress"
-        @confirm="onLightningAddressConfirm"
-        @skip="onLightningAddressSkip"
-      />
-
-      <!-- ─────────────── PREFERENCES ───────────────
-           Pickers only. Theme / Display Currency / Amount Format /
-           App Lock all live in Quick Toggles at the top of the page
-           — they are binary controls and don't need a full row.
-           What stays here are the pickers that need a dialog
-           (Currency, Language) because they're 1-of-many choices,
-           not on/off flips. -->
-      <SettingsSection :title="$t('Preferences')">
-        <SettingsRow
-          icon="tabler:currency-dollar"
-          :label="$t('Currency')"
-          :inline-value="preferredFiatCurrency"
-          @click="openCurrencyDialog"
+          @click="openCloudBackup('backup')"
         />
         <SettingsRow
-          icon="tabler:language"
-          :label="$t('Language')"
-          :inline-value="getCurrentLanguageLabel()"
-          @click="showLanguageDialog = true"
+          v-if="cloudBackupAvailable"
+          icon="tabler:cloud-download"
+          :label="$t('Restore from Google Drive')"
+          :caption="$t('Bring your wallets back from a backup')"
+          @click="openCloudBackup('restore')"
         />
-        <!--
-          Amount format — moved down from Quick Toggles. Almost no
-          mainstream user has a reason to flip this (it controls
-          ₿ vs sats writing convention), so its old home as a
-          top-of-page quick pill was prime real estate wasted. Now
-          a regular row with a plain-language caption so a curious
-          user can still find and understand it.
-        -->
-        <SettingsRow
-          icon="tabler:hash"
-          :label="$t('Amount Display Format')"
-          :caption="useBip177Format ? $t('Show amounts as ₿ 1,234') : $t('Show amounts as 1,234 sats')"
-          :interactive="false"
-        >
-          <template #right>
-            <q-toggle
-              :model-value="useBip177Format"
-              @update:model-value="updateAmountFormat"
-              :color="$q.dark.isActive ? 'brand-green' : 'brand-green-dark'"
-            />
-          </template>
-        </SettingsRow>
 
         <!--
           Screen Privacy — Android FLAG_SECURE.
@@ -675,30 +728,16 @@
         </q-card>
       </q-dialog>
 
-      <!-- ─────────────── HELP & SUPPORT ───────────────
-           Just the onboarding tour now. Bitcoin Lessons was
-           previously here but has been promoted to a Feature Card
-           at the top (earning sats is the strongest noob hook in
-           the app — burying it in Help & Support was a UX miss).
-           The donation row split out into its own "Support BuhoGO"
-           section below so the ask reads cleanly. -->
-      <SettingsSection :title="$t('Help & Support')">
-        <SettingsRow
-          icon="tabler:school"
-          :label="$t('Onboarding Guide')"
-          :caption="$t('Learn about all BuhoGO features')"
-          @click="$router.push('/spark-success?full=true')"
-        />
-      </SettingsSection>
+      <!-- The Onboarding Guide lives on the About page now, next to the
+           project's story, so Settings stays pure configuration. -->
 
       <!-- ─────────────── ADVANCED ───────────────
            Collapsed by default. Power-user toggles that the
            typical user never needs to touch (exchange-rate source,
-           auto-add Bitcoin deposits). Positioned after Support
-           BuhoGO so the main mainstream surfaces — wallet,
-           preferences, kiosk, help, donate — read first; anyone
-           hunting for advanced controls is happy to scroll the
-           extra row. -->
+           auto-add Bitcoin deposits). Positioned after the
+           mainstream surfaces — wallet, preferences, kiosk — so
+           anyone hunting for advanced controls is happy to scroll
+           the extra row. -->
       <SettingsSection
         :title="$t('Advanced')"
         collapsible
@@ -813,19 +852,8 @@
         />
       </SettingsSection>
 
-      <!-- ─────────────── ABOUT ───────────────
-           Single entry point into its own page (mission, source,
-           community, downloads, version) rather than an inline
-           section — keeps this already-long page shorter and gives
-           About room to breathe on its own screen. -->
-      <SettingsSection>
-        <SettingsRow
-          icon="tabler:info-circle"
-          :label="$t('About BuhoGO')"
-          :caption="'BuhoGO v' + appVersion"
-          @click="$router.push('/about')"
-        />
-      </SettingsSection>
+      <!-- About lives behind its own door in the home menu now; Settings
+           stays pure configuration. -->
 
     </div>
 
@@ -1746,8 +1774,10 @@
       @verified="onSeedPhraseVerified"
     />
 
-    <!-- Encrypted Google Drive backup (Android only) -->
-    <CloudBackupSheet v-model="showCloudBackupSheet" />
+    <!-- Encrypted Google Drive backup (Android only). The intent decides
+         where the sheet lands after sign-in: the backup row opens the
+         menu, the restore row jumps straight to restoring. -->
+    <CloudBackupSheet v-model="showCloudBackupSheet" :intent="cloudBackupIntent" />
 
     <!-- App Lock enable: explain what happens before the native prompt -->
     <BiometricEnableDialog
@@ -2114,10 +2144,8 @@ import { isBiometricAvailable } from '../utils/biometric.js'
 import { isScreenPrivacySupported } from '../utils/secureScreen.js'
 import { Capacitor } from '@capacitor/core'
 import {truncateAddress} from '../utils/addressUtils.js'
-import {lnurlGetJson} from '../utils/lnurlHttp.js'
 import { parseNwcConnection, NWC_REASON_I18N_KEYS } from '../utils/nwcConnection'
 import { loadDismissedWarnings, saveDismissedWarnings } from '../utils/attentionWarnings.js'
-import VueQrcode from '@chenfengyuan/vue-qrcode'
 import KioskPinPad from '../components/KioskPinPad.vue'
 import SparkSeedPhraseDialog from '../components/SparkSeedPhraseDialog.vue'
 import CloudBackupSheet from '../components/CloudBackupSheet.vue'
@@ -2125,6 +2153,7 @@ import ArkadeLogo from '../components/ArkadeLogo.vue'
 import WalletBrandMark from '../components/WalletBrandMark.vue'
 import BiometricEnableDialog from '../components/BiometricEnableDialog.vue'
 import LNBitsLightningAddressDialog from '../components/LNBitsLightningAddressDialog.vue'
+import SparkLightningAddressSheet from '../components/SparkLightningAddressSheet.vue'
 import GetAppDialog from '../components/GetAppDialog.vue'
 import TaxReportSheet from '../components/settings/TaxReportSheet.vue'
 import SettingsSection from '../components/settings/SettingsSection.vue'
@@ -2140,7 +2169,6 @@ import { LNBitsWalletProvider } from '../providers/LNBitsWalletProvider'
 // of the flow intentionally — the order-tap check is stronger. Retained
 // here for future reuse.
 // import MnemonicVerify from '../components/MnemonicVerify.vue'
-import { version } from '../../package.json'
 import { SUPPORTED_LOCALES, applyLocale, getSavedLocale } from '../i18n/locales'
 import { isCloudBackupPlatform } from '../services/cloudStorage.js'
 
@@ -2156,7 +2184,6 @@ const MEMPOOL_PRESET_URLS = [MEMPOOL_DEFAULT_URL, MEMPOOL_BLOCKTRAINER_URL];
 export default {
   name: 'SettingsPage',
   components: {
-    VueQrcode,
     ArkadeLogo,
     WalletBrandMark,
     SparkSeedPhraseDialog,
@@ -2164,6 +2191,7 @@ export default {
     BiometricEnableDialog,
     KioskPinPad,
     LNBitsLightningAddressDialog,
+    SparkLightningAddressSheet,
     GetAppDialog,
     TaxReportSheet,
     SettingsSection,
@@ -2182,6 +2210,7 @@ export default {
   data() {
     return {
       showWalletsDialog: false,
+      showSparkLnAddressSheet: false,
       showAddWalletDialog: false,
       // Per-wallet detail sheet (opened from a Manage Wallets row).
       showWalletDetail: false,
@@ -2251,6 +2280,7 @@ export default {
       showSeedPhraseDialog: false,
       // Encrypted Google Drive backup sheet (Android only)
       showCloudBackupSheet: false,
+      cloudBackupIntent: 'backup',
       seedPhraseMode: 'view', // 'view' | 'backup'
       // Set only by the identity surface's per-phrase deep link; null means
       // "the active seed wallet", which is what this page's own rows want.
@@ -2845,10 +2875,6 @@ export default {
       return this.$t('Custom server');
     },
 
-    appVersion() {
-      return version;
-    },
-
     // Expand wallets into auto-transfer entries
     awWalletEntries() {
       const entries = [];
@@ -3011,6 +3037,11 @@ export default {
       this.loadExchangeRates();
     }, 300000); // 5 minutes
 
+    // The Breez lightning address is fetched lazily after connect, so the
+    // cached wallet info can lag one refresh cycle behind. Pull it live so
+    // the row shows the current state on first paint.
+    this.refreshSparkLightningAddress();
+
     // Handle deep link from backup banner (Spark or Arkade — whichever
     // seed wallet still needs its phrase confirmed). The dialog resolves the
     // active seed wallet itself.
@@ -3079,6 +3110,41 @@ export default {
 
     async initializeStore() {
       await this.initialize()
+    },
+
+    // ─── Security ─────────────────────────────────────
+
+    /**
+     * The one dialog behind all four seed rows: identity gate
+     * (biometric / device PIN on native, skipped on web), phrase
+     * reveal with 120s auto-hide and screenshot protection, and,
+     * in backup mode, the tap-12-words-in-order verification.
+     *
+     * @param {'view'|'backup'} mode
+     */
+    openSeedPhraseDialog(mode, walletId = null) {
+      this.seedPhraseMode = mode;
+      // This page's own rows act on the active wallet; only the identity
+      // deep link names one, and it sets the field before calling.
+      if (walletId !== null) this.seedPhraseWalletId = walletId;
+      this.showSeedPhraseDialog = true;
+    },
+
+    onSeedPhraseVerified() {
+      // Backup flow succeeded — the dialog has already flagged the
+      // wallet as backed up via the store, closed itself, and emitted.
+      // Nothing else to do here; the Settings row re-renders via the
+      // `activeSparkBackedUp` computed.
+    },
+
+    /**
+     * Both Drive rows share one mounted sheet; the intent decides
+     * whether it lands on the backup menu or goes straight to restore.
+     * @param {'backup'|'restore'} intent
+     */
+    openCloudBackup(intent) {
+      this.cloudBackupIntent = intent;
+      this.showCloudBackupSheet = true;
     },
 
     // ─── Kiosk Mode ───────────────────────────────────
@@ -3769,6 +3835,31 @@ export default {
       this.showDangerConfirmDialog = true;
     },
 
+    confirmDeleteSparkWallet() {
+      if (!this.sparkWallets.length) return;
+
+      const count = this.sparkWallets.length;
+      this.dangerConfirmTitle = this.$t('Delete Spark Wallets');
+      this.dangerConfirmMessage = count > 1
+        ? this.$t('This will permanently delete all {count} Spark wallets. Make sure you have backed up your seed phrases. This action cannot be undone.', { count })
+        : this.$t('This will permanently delete your Spark wallet. Make sure you have backed up your seed phrase. This action cannot be undone.');
+      this.dangerConfirmButtonText = this.$t('Delete');
+      this.dangerConfirmInput = '';
+      this.dangerConfirmAction = 'deleteSparkWallet';
+      this.showDangerConfirmDialog = true;
+    },
+
+    confirmDeleteArkadeWallet() {
+      if (!this.wallets.some(w => w.type === 'arkade')) return;
+
+      this.dangerConfirmTitle = this.$t('Delete Arkade Wallet');
+      this.dangerConfirmMessage = this.$t('This will permanently delete your Arkade wallet. Make sure you have backed up your recovery phrase. This action cannot be undone.');
+      this.dangerConfirmButtonText = this.$t('Delete');
+      this.dangerConfirmInput = '';
+      this.dangerConfirmAction = 'deleteArkadeWallet';
+      this.showDangerConfirmDialog = true;
+    },
+
     async executeDangerAction() {
       if (this.dangerConfirmInput !== this.dangerConfirmPhrase) return;
 
@@ -4177,6 +4268,19 @@ export default {
     openWalletDetail(walletId) {
       this.detailWalletId = walletId;
       this.showWalletDetail = true;
+    },
+
+    async refreshSparkLightningAddress() {
+      if (!this.isActiveWalletSpark) return;
+      const provider = this.walletStore.providers[this.activeWalletId];
+      if (!provider?.getLightningAddress) return;
+      try {
+        const info = await provider.getLightningAddress();
+        if (this.walletStore.walletInfos[this.activeWalletId]) {
+          this.walletStore.walletInfos[this.activeWalletId].lightningAddress =
+            info?.lightningAddress || null;
+        }
+      } catch (e) { /* row falls back to the cached value */ }
     },
 
     async copyToClipboard(text, successMessage) {

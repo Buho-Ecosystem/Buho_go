@@ -929,39 +929,121 @@ body.barcode-scanner-active .barcode-scanner-modal * {
 /* ==================================================================
    Inset connect form — shared by the NWC and LNbits setup pages.
 
-   A native-settings-style layout: an app-icon tile beside the title,
-   a section label carrying an inline "Scan" action, and one grouped
-   inset card of fields. Fully theme-aware through the design tokens
-   (var(--bg-input) etc.), so it renders dark on near-black and cream
-   on paper without any per-theme class juggling.
+   Presented as a route-hosted full-height sheet: the ground dims, the
+   surface slides up to the large detent with a grabber and a glass
+   back button for chrome, and the identity lives in a centered hero
+   (brand tile over the serif title). Below it: a section label with
+   an inline "Scan" action, one grouped inset card of fields, and the
+   Connect CTA pinned in the sheet footer. Fully theme-aware through
+   the design tokens (var(--bg-input) etc.), so it renders dark on
+   near-black and cream on paper without per-theme class juggling.
    ================================================================== */
+.iform-sheet-page {
+  padding: 0 !important;
+  min-height: 100vh;
+  min-height: 100dvh;
+  background: var(--bg-primary);
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  align-items: center;
+}
+
+.iform-sheet-scrim {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  animation: iform-scrim-in 0.22s ease-out both;
+}
+
+/* The large detent: a sliver of dimmed ground stays visible above. */
+.iform-sheet {
+  position: relative;
+  width: 100%;
+  max-width: 520px;
+  height: calc(100vh - var(--safe-top, 0px) - 10px);
+  height: calc(100dvh - var(--safe-top, 0px) - 10px);
+  border-radius: var(--radius-xl, 24px) var(--radius-xl, 24px) 0 0;
+  background: var(--bg-card);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: 0 -20px 60px rgba(0, 0, 0, 0.35);
+  animation: iform-sheet-up 0.38s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.iform-sheet-grab {
+  width: 36px;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--text-muted);
+  opacity: 0.45;
+  margin: 8px auto 4px;
+  flex-shrink: 0;
+}
+
+.iform-sheet-top {
+  display: flex;
+  align-items: center;
+  padding: 4px 12px 8px;
+  flex-shrink: 0;
+}
+.iform-sheet-title {
+  flex: 1;
+  text-align: center;
+  font-family: 'Manrope', sans-serif;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: -0.005em;
+  color: var(--text-primary);
+}
+.iform-sheet-spacer {
+  width: 40px;
+  flex-shrink: 0;
+}
+
+.iform-sheet-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.iform-sheet-footer {
+  flex-shrink: 0;
+  padding: 12px 20px calc(12px + var(--safe-bottom, 0px));
+}
+.iform-sheet-footer .iform-connect {
+  margin-top: 0;
+}
+
+@keyframes iform-sheet-up {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
+}
+@keyframes iform-scrim-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .iform-sheet,
+  .iform-sheet-scrim {
+    animation: none;
+  }
+}
+
 .iform-body {
   padding: 0 20px 22px;
 }
 
-.iform-eyebrow {
-  font-family: 'Manrope', sans-serif;
-  font-size: 10.5px;
-  font-weight: 600;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-  color: var(--text-muted);
+/* Centered identity hero: the brand tile above the serif title. */
+.iform-hero {
   display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 10px;
-  margin-bottom: 16px;
-}
-.iform-eyebrow::after {
-  content: '';
-  flex: 1;
-  height: 1px;
-  background: var(--border-card);
-}
-
-.iform-head {
-  display: flex;
-  align-items: flex-start;
-  gap: 15px;
+  text-align: center;
+  padding-top: 8px;
   margin-bottom: 24px;
 }
 .iform-tile {
@@ -975,25 +1057,27 @@ body.barcode-scanner-active .barcode-scanner-modal * {
   background: var(--bg-input);
   border: 1px solid var(--border-card);
 }
-.iform-titles {
-  flex: 1;
-  min-width: 0;
-  padding-top: 2px;
+.iform-hero .iform-tile {
+  width: 56px;
+  height: 56px;
+  border-radius: 15px;
 }
-.iform-title {
+.iform-hero-title {
   font-family: 'Fraunces', 'Manrope', serif;
   font-weight: 400;
-  font-size: 25px;
+  font-size: 24px;
   letter-spacing: -0.02em;
-  line-height: 1.06;
+  line-height: 1.1;
   color: var(--text-primary);
+  margin-top: 12px;
 }
-.iform-sub {
+.iform-hero-sub {
   font-family: 'Manrope', sans-serif;
   font-size: 12.5px;
   line-height: 1.5;
   color: var(--text-secondary);
-  margin-top: 6px;
+  margin-top: 5px;
+  max-width: 34ch;
 }
 
 .iform-secrow {
@@ -1123,3 +1207,96 @@ body.body--dark .glass-back-btn {
   border-color: rgba(255, 255, 255, 0.12);
   color: #FFF;
 }
+
+/* ─── Destructive confirm dialog (shared) ────────────────────────────
+   Used by the address book's remove-contact and clear-all confirms.
+   Rounded card, red destructive accent on the action button only. */
+.delete-confirm-card {
+  width: 100%;
+  max-width: 380px;
+  border-radius: var(--radius-xl);
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.35),
+              0 4px 12px rgba(0, 0, 0, 0.18);
+}
+
+body.body--light .delete-confirm-card {
+  box-shadow: 0 20px 40px rgba(17, 24, 39, 0.14),
+              0 4px 12px rgba(17, 24, 39, 0.06);
+}
+
+.delete-confirm-card .delete-header {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 1.75rem 1.5rem 0.5rem;
+}
+
+.delete-confirm-card .delete-icon-wrapper {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  background: rgba(239, 68, 68, 0.12);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 1.1rem;
+  box-shadow: inset 0 0 0 1px rgba(239, 68, 68, 0.18);
+}
+
+.delete-confirm-card .delete-icon { color: #EF4444; }
+
+.delete-confirm-card .delete-title {
+  font-family: 'Manrope', sans-serif;
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 0.5rem;
+  letter-spacing: -0.01em;
+}
+
+.delete-confirm-card .delete-message {
+  font-family: 'Manrope', sans-serif;
+  font-size: 14px;
+  line-height: 1.55;
+  max-width: 280px;
+}
+
+.delete-confirm-card .delete-message strong {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.delete-confirm-card .delete-actions {
+  padding: 1.25rem 1.5rem 1.5rem;
+  display: flex;
+  gap: 0.6rem;
+}
+
+.delete-confirm-card .cancel-btn,
+.delete-confirm-card .delete-action-btn {
+  flex: 1;
+  height: 44px;
+  font-family: 'Manrope', sans-serif;
+  font-size: 14px;
+  border-radius: var(--radius-xl);
+}
+
+.delete-confirm-card .cancel-btn {
+  font-weight: 500;
+  background: var(--bg-input);
+}
+
+body.body--light .delete-confirm-card .cancel-btn {
+  background: rgba(17, 24, 39, 0.05);
+}
+
+.delete-confirm-card .delete-action-btn {
+  font-weight: 600;
+  background: #EF4444 !important;
+  color: #fff !important;
+  transition: background 0.15s ease, transform 0.08s ease;
+}
+
+.delete-confirm-card .delete-action-btn:hover { background: #DC2626 !important; }
+.delete-confirm-card .delete-action-btn:active { transform: scale(0.98); }

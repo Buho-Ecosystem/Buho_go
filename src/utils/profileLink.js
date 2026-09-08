@@ -13,14 +13,13 @@
  *
  * Shape:
  *
- *     https://go.mybuho.de/p/maria?k=npub1…
+ *     https://go.mybuho.de/p/npub1…
  *
- * The username leads because it is readable and sayable, and because it
- * survives a key change. Resolving it needs NIP-05, which is a network call
- * to the username's domain and can fail: the domain can be down, or slow, or
- * the record can be gone. The key rides along in `k` purely as the fallback,
- * so the page still resolves when the lookup does not. A link is forever, and
- * a link that only works while a server is healthy is not.
+ * The key leads (owner's decision, 2026-09-10): it resolves on the page with
+ * no network call at all, so the link works even when the username's domain
+ * is slow, misconfigured or gone. A link is forever, and a link that only
+ * works while a server is healthy is not. Username and full NIP-05 slugs
+ * remain fully accepted by the page for links minted elsewhere.
  */
 
 import { NIP05_DOMAIN } from '../services/nip05.js';
@@ -67,10 +66,13 @@ export function buildProfileLink({ username, nip05, npub } = {}) {
 /**
  * The identifier that goes in the URL.
  *
- * A username on the BuhoGO domain is shortened to its local part; anything
- * else keeps its full form so the page can resolve it.
+ * The key first: it makes the page work with zero network. A username (or
+ * a NIP-05 on the BuhoGO domain, shortened to its local part) is only the
+ * slug when no key is known.
  */
 export function profileSlug({ username, nip05, npub } = {}) {
+  if (npub) return encodeURIComponent(npub);
+
   if (username) return encodeURIComponent(username);
 
   if (nip05) {

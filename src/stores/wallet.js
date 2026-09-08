@@ -8,13 +8,18 @@
 import { defineStore } from 'pinia';
 import { NostrWebLNProvider } from '@getalby/sdk';
 import { fiatRatesService } from '../utils/fiatRates.js';
-import { SparkWalletProvider, SPARK_ACCOUNT_DEFAULTS } from '../providers/SparkWalletProvider';
 import { LNBitsWalletProvider } from '../providers/LNBitsWalletProvider';
 import { ArkadeWalletProvider } from '../providers/ArkadeWalletProvider';
 import { ARKADE_MAINNET_SERVER, ARKADE_DEFAULT_NETWORK } from '../utils/arkadeKeys';
 import { createWalletProvider, inferWalletType, WALLET_TYPES } from '../providers/WalletFactory';
+import {
+  deleteWalletStorage as deleteBreezStorage,
+  deleteAllStorage as deleteAllBreezStorage,
+  probeAccountActivity as probeSparkAccountActivity,
+} from '../services/breezSdk';
 import { useAutoWithdrawStore } from './autoWithdraw';
 import { useTransactionMetadataStore } from './transactionMetadata';
+import { isLightningAddress } from '../utils/addressUtils.js';
 import { createClaimedDepositRegistry } from '../utils/claimedDeposits.js';
 import {
   buildPaymentError,
@@ -118,8 +123,8 @@ export const useWalletStore = defineStore('wallet', {
     // reactive; the boot file `secure-screen.js` reconciles this
     // with the native source of truth on app start and propagates
     // user toggles back down through the plugin. Default mirrors
-    // the native default — opt-out is explicit.
-    privacyScreenEnabled: true,
+    // the native default — off until the user opts in.
+    privacyScreenEnabled: false,
 
     // Global payment-error dialog state. A single global instance lives
     // in App.vue; any page or store funnels failures here via
@@ -275,15 +280,13 @@ export const useWalletStore = defineStore('wallet', {
      *   2. For NWC wallets only: parse the `lud16` query param from `nwcUrl` as a fallback
      *      so wallets added before lud16 extraction was implemented still light up.
      *
-     * Always returns a validated `user@domain` string or null. Spark wallets don't
-     * support lightning addresses and always return null.
+     * Always returns a validated `user@domain` string or null. Spark
+     * wallets carry a Breez-hosted address registered server-side against
+     * the wallet identity.
      */
     activeWalletLightningAddress: (state) => {
       const activeWallet = state.wallets.find((w) => w.id === state.activeWalletId);
       if (!activeWallet) return null;
-
-      // Spark wallets don't have lightning addresses
-      if (activeWallet.type === 'spark') return null;
 
       // Helper: validate lightning address format (user@domain)
       const isValidLnAddress = (addr) => {
@@ -291,6 +294,15 @@ export const useWalletStore = defineStore('wallet', {
         const parts = addr.split('@');
         return parts.length === 2 && parts[0].length > 0 && parts[1].includes('.') && !addr.includes('://');
       };
+
+      // Spark: live wallet info wins; the persisted metadata copy keeps
+      // the address visible while the wallet is locked or not yet
+      // connected.
+      if (activeWallet.type === 'spark') {
+        const breezAddress = state.walletInfos?.[activeWallet.id]?.lightningAddress
+          || activeWallet.metadata?.lud16;
+        return isValidLnAddress(breezAddress) ? breezAddress : null;
+      }
 
       // Helper: extract lud16 from NWC URL string
       const extractLud16FromUrl = (url) => {
@@ -411,7 +423,12 @@ export const useWalletStore = defineStore('wallet', {
      */
     activeWalletType: (state) => {
       const activeWallet = state.wallets.find((w) => w.id === state.activeWalletId);
-      return activeWallet?.type || inferWalletType(activeWallet);
+      // No active wallet is a legal state (fresh install, all wallets
+      // removed): answer null instead of letting inferWalletType read
+      // properties off undefined. Type comparisons downstream all read
+      // false against null, which is the correct answer everywhere.
+      if (!activeWallet) return null;
+      return activeWallet.type || inferWalletType(activeWallet);
     },
 
     /**
@@ -496,6 +513,33 @@ export const useWalletStore = defineStore('wallet', {
       return state.wallets.find(w =>
         w.type === WALLET_TYPES.SPARK && w.connectionData?.accountNumber === 2
       ) || null;
+    },
+
+    /**
+     * A Spark wallet's Lightning address: live wallet info first, the
+     * persisted metadata copy while the wallet is locked or not yet
+     * connected. Lowercased so every comparison against the profile's
+     * lud16 is case-blind.
+     */
+    sparkLightningAddressOf: (state) => (wallet) => {
+      if (!wallet || wallet.type !== WALLET_TYPES.SPARK) return null;
+      const address = state.walletInfos?.[wallet.id]?.lightningAddress
+        || wallet.metadata?.lud16
+        || '';
+      return isLightningAddress(address) ? String(address).toLowerCase() : null;
+    },
+
+    /**
+     * The address the profile adopts by default: the first Spark wallet's
+     * (Business, then Personal). Null while no Spark wallet has one, which
+     * is what sends the profile to its Social Bucket fallback.
+     */
+    preferredProfileLightningAddress() {
+      for (const wallet of [this.sparkBusinessWallet, this.sparkPersonalWallet]) {
+        const address = this.sparkLightningAddressOf(wallet);
+        if (address) return address;
+      }
+      return null;
     },
 
     /**
@@ -847,12 +891,12 @@ export const useWalletStore = defineStore('wallet', {
               exchangeRatesLastUpdate: ratesStillValid ? parsed.exchangeRatesLastUpdate : null,
               hasBackedUp: parsed.hasBackedUp || false,
               biometricsEnabled: parsed.biometricsEnabled || false,
-              // Screen privacy: fail-secure default. A `false` only
-              // takes effect if it was explicitly persisted; missing
-              // or undefined keeps the protection on.
+              // Screen privacy: off by default. Only an explicitly
+              // persisted choice takes effect; missing or undefined
+              // means the user never opted in.
               privacyScreenEnabled: parsed.privacyScreenEnabled !== undefined
                 ? !!parsed.privacyScreenEnabled
-                : true,
+                : false,
               // Kiosk
               kioskEnabled: parsed.kioskEnabled || false,
               kioskPin: parsed.kioskPin || '',
@@ -1050,6 +1094,12 @@ export const useWalletStore = defineStore('wallet', {
         // live Spark wallets corrupt each other's SDK auth session.
         await this.connectAllSparkWallets();
 
+        // The active wallet received its Lightning address during connect;
+        // give the inactive half its own now with a short dedicated
+        // connection, released right after. Non-fatal — the ensure-on-
+        // connect step assigns it on first activation instead.
+        await this._assignAddressToInactiveSparkWallet(businessWallet, personalWallet);
+
         // Legacy store-level backup flag
         if (walletData.isRestore) {
           this.hasBackedUp = true;
@@ -1129,7 +1179,7 @@ export const useWalletStore = defineStore('wallet', {
 
       onProgress?.('legacyCheck');
       try {
-        const probe = await SparkWalletProvider.probeAccountActivity(mnemonic, network, 0);
+        const probe = await probeSparkAccountActivity(mnemonic, { accountNumber: 0, network });
         if (probe.hasActivity) {
           console.info('Spark restore: legacy account 0 detected', {
             balance: probe.balance,
@@ -1153,11 +1203,6 @@ export const useWalletStore = defineStore('wallet', {
      * that were fully returned from here.
      */
     async _createSparkWalletEntry({ mnemonic, encryptedMnemonic, name, network, accountNumber, walletGroupId, isRestore, isLegacy = false }) {
-      // Validate mnemonic
-      const testWallet = await SparkWalletProvider.restoreWallet(mnemonic, network, accountNumber);
-      const sparkAddress = await testWallet.getSparkAddress();
-      testWallet.cleanupConnections();
-
       const wallet = {
         id: this.generateWalletId(),
         type: WALLET_TYPES.SPARK,
@@ -1173,7 +1218,11 @@ export const useWalletStore = defineStore('wallet', {
           walletGroupId,
         },
         metadata: {
-          sparkAddress,
+          // Written by the first successful connect below - the derived
+          // address at birth is the identity every later connect asserts
+          // against, so there is no separate pre-derivation step (the
+          // connect itself validates the mnemonic).
+          sparkAddress: null,
           hasBackedUp: isRestore || false,
           // Marks pre-v1.6.0 derivations restored from account 0 on mainnet.
           // Purely informational — the accountNumber is the source of truth
@@ -1183,7 +1232,6 @@ export const useWalletStore = defineStore('wallet', {
       };
 
       this.wallets.push(wallet);
-      this.walletInfos[wallet.id] = { sparkAddress, type: 'spark' };
 
       try {
         await this.connectSparkWallet(wallet.id);
@@ -1215,18 +1263,16 @@ export const useWalletStore = defineStore('wallet', {
           wallet.connectionData.encryptedMnemonic
         );
 
-        // Create provider (accountNumber falls back to network default for pre-1.5.0 wallets)
-        const provider = new SparkWalletProvider(walletId, {
-          name: wallet.name,
-          network: wallet.connectionData.network,
-          accountNumber: wallet.connectionData.accountNumber,
-        });
+        // The full wallet object rides through the factory so the provider
+        // can assert identity against the stored spark address before
+        // going live.
+        const provider = createWalletProvider(wallet);
 
-        // Initialize with mnemonic. getOrCreateWallet (inside) reuses the SDK's
-        // single live instance for this wallet, so calling connectSparkWallet
-        // repeatedly (startup, switch, balance poll, history load) no longer
-        // piles up duplicate event streams. Pass forceReinit only when
-        // recovering from a confirmed-dead connection.
+        // Initialize with mnemonic. The Breez instance registry dedupes
+        // live SDKs per wallet, so calling connectSparkWallet repeatedly
+        // (startup, switch, balance poll, history load) never piles up
+        // duplicate event streams. Pass forceReinit only when recovering
+        // from a confirmed-dead connection.
         await provider.initializeWithMnemonic(mnemonic, { forceReinit });
 
         // Store provider
@@ -1252,6 +1298,31 @@ export const useWalletStore = defineStore('wallet', {
         const info = await provider.getInfo();
         this.walletInfos[walletId] = info;
 
+        // Record the derived spark address the first time this wallet
+        // connects (new entries are created without one). It becomes the
+        // reference every later connect's identity assertion checks
+        // against, catching account-number or storage corruption before a
+        // wrong wallet could ever be shown.
+        if (info?.sparkAddress && !wallet.metadata.sparkAddress) {
+          wallet.metadata.sparkAddress = info.sparkAddress;
+          await this.persistState();
+        }
+
+        // Every Spark wallet holds a Lightning address:
+        // keep the server's one, reclaim the remembered one, or mint a
+        // random name (the user can change it in Settings). Non-fatal - a
+        // failed lookup or registration retries on the next connect.
+        if (typeof provider.ensureLightningAddress === 'function') {
+          try {
+            const address = await provider.ensureLightningAddress({
+              previousAddress: wallet.metadata.lud16 || null,
+            });
+            await this.setSparkLightningAddress(walletId, address);
+          } catch (error) {
+            console.warn('Lightning address setup skipped:', error?.message || error);
+          }
+        }
+
       } catch (error) {
         this.connectionStates[walletId] = {
           connected: false,
@@ -1259,6 +1330,107 @@ export const useWalletStore = defineStore('wallet', {
           error: error.message,
         };
         throw error;
+      }
+    },
+
+    /**
+     * Record a Spark wallet's Lightning address wherever the app reads it:
+     * `metadata.lud16` (persisted; also the memory the reclaim rule uses)
+     * and the live wallet info (Settings row, receive screen). Passing null
+     * is a no-op — the address rule is "always have one", never "clear it".
+     */
+    async setSparkLightningAddress(walletId, address) {
+      if (!address) return;
+      const wallet = this.wallets.find(w => w.id === walletId);
+      if (!wallet) return;
+      const previousAddress = wallet.metadata?.lud16 || null;
+      if (this.walletInfos[walletId]) {
+        this.walletInfos[walletId].lightningAddress = address;
+      }
+      wallet.metadata = wallet.metadata || {};
+      if (wallet.metadata.lud16 !== address) {
+        wallet.metadata.lud16 = address;
+        await this.persistState();
+        // The published profile may point at the old name. Serve the user:
+        // move it to the new one and publish a fresh profile event, without
+        // being asked. A custom address is never touched (see the helper).
+        this._syncProfilePaymentAddress({ previousAddresses: [previousAddress] })
+          .catch(() => {});
+      }
+    },
+
+    /**
+     * Keep the published profile's payment address in step with the app's
+     * default. Runs after a Spark address changes or a Spark wallet is
+     * removed: when the profile pointed at an old default (one of the given
+     * previous addresses, or the Social Bucket), it adopts the current
+     * preferred address and publishes a fresh profile event. An address the
+     * user typed themselves is never touched. Dynamic imports keep the
+     * wallet store free of a static profile dependency.
+     */
+    async _syncProfilePaymentAddress({ previousAddresses = [] } = {}) {
+      try {
+        const [
+          { useProfileStore },
+          { useIdentityStore },
+          { npubCashAddress, isNpubCashAddress },
+        ] = await Promise.all([
+          import('./profile.js'),
+          import('./identity.js'),
+          import('../services/npubCash.js'),
+        ]);
+        const profile = useProfileStore();
+        const identity = useIdentityStore();
+        await identity.hydrate();
+        if (!identity.bootstrapped) return;
+        await profile.hydrate();
+
+        const preferred = this.preferredProfileLightningAddress
+          || npubCashAddress(identity.nostrNpub);
+        if (!preferred) return;
+
+        const previous = previousAddresses
+          .filter(Boolean)
+          .map((value) => String(value).toLowerCase());
+        const changed = profile.adoptDefaultPaymentAddress(preferred, {
+          isReplaceable: (current) => {
+            const value = String(current).toLowerCase();
+            return isNpubCashAddress(value) || previous.includes(value);
+          },
+        });
+        if (!changed) return;
+
+        const result = await profile.publish().catch(() => null);
+        if (!result?.ok) {
+          console.warn('[wallet] profile address saved locally, publish will retry');
+        }
+      } catch (err) {
+        console.warn('[wallet] could not sync the profile payment address:', err);
+      }
+    },
+
+    /**
+     * Give the inactive half of a freshly created Spark pair its Lightning
+     * address without waiting for its first activation. Connecting it runs
+     * the ensure-on-connect assignment; the connection is released right
+     * after so the single-live invariant holds. Strictly best-effort — on
+     * any failure the wallet simply gets its address the first time the
+     * user switches to it.
+     */
+    async _assignAddressToInactiveSparkWallet(inactiveWallet, activeWallet) {
+      if (!inactiveWallet || inactiveWallet.id === activeWallet?.id) return;
+      if (inactiveWallet.metadata?.lud16) return;
+      try {
+        await this.connectSparkWallet(inactiveWallet.id);
+      } catch (error) {
+        console.warn(
+          `Deferred Lightning address for ${inactiveWallet.name}:`,
+          error?.message || error
+        );
+      } finally {
+        try {
+          await this.disconnectWallet(inactiveWallet.id);
+        } catch (e) { /* the active connection stays untouched either way */ }
       }
     },
 
@@ -1365,7 +1537,7 @@ export const useWalletStore = defineStore('wallet', {
     /**
      * Get Spark wallet provider
      * @param {string} walletId
-     * @returns {SparkWalletProvider|null}
+     * @returns {BreezSparkWalletProvider|null}
      */
     getSparkProvider(walletId) {
       return this.providers[walletId] || null;
@@ -1900,6 +2072,13 @@ export const useWalletStore = defineStore('wallet', {
 
         const wallet = this.wallets[walletIndex];
 
+        // The profile may be pointing at a removed wallet's Lightning
+        // address; remember every address leaving with this removal so the
+        // profile can fall back to the next default afterwards.
+        const removedSparkAddresses = wallet.type === WALLET_TYPES.SPARK
+          ? [wallet.metadata?.lud16]
+          : [];
+
         // Disconnect and cleanup
         await this.disconnectWallet(walletId);
 
@@ -1913,6 +2092,12 @@ export const useWalletStore = defineStore('wallet', {
         // done on disconnect — that runs on every wallet switch.
         if (wallet.type === WALLET_TYPES.ARKADE) {
           await ArkadeWalletProvider.deleteStorage(walletId);
+        }
+
+        // Also delete the wallet's Breez SDK databases: wallet deletion
+        // must not leave payment history behind in IndexedDB.
+        if (wallet.type === WALLET_TYPES.SPARK) {
+          try { await deleteBreezStorage(walletId); } catch (e) { /* best-effort */ }
         }
 
         // If this wallet is in a group, also remove all other group members
@@ -1929,6 +2114,10 @@ export const useWalletStore = defineStore('wallet', {
             delete this.walletInfos[member.id];
             const idx = this.wallets.indexOf(member);
             if (idx !== -1) this.wallets.splice(idx, 1);
+            if (member.type === WALLET_TYPES.SPARK) {
+              removedSparkAddresses.push(member.metadata?.lud16);
+              try { await deleteBreezStorage(member.id); } catch (e) { /* best-effort */ }
+            }
             const autoWithdrawStore = useAutoWithdrawStore();
             await autoWithdrawStore.removeConfig(member.id);
           }
@@ -1969,6 +2158,13 @@ export const useWalletStore = defineStore('wallet', {
         }
 
         await this.persistState();
+
+        // A profile pointing at a removed address falls back to the next
+        // default (remaining Spark wallet, then the bucket) and republishes.
+        if (removedSparkAddresses.some(Boolean)) {
+          this._syncProfilePaymentAddress({ previousAddresses: removedSparkAddresses })
+            .catch(() => {});
+        }
       } catch (error) {
         this.lastError = error.message;
         throw error;
@@ -3101,6 +3297,10 @@ export const useWalletStore = defineStore('wallet', {
       this.$reset();
       localStorage.removeItem(STORAGE_KEYS.WALLET_STORE);
       localStorage.removeItem(STORAGE_KEYS.LEGACY_STATE);
+
+      // Full reset also removes every Breez-engine database (fire-and-forget;
+      // clearAll is sync by contract and the deletes are independent).
+      deleteAllBreezStorage().catch(() => {});
     },
 
     // ─── Kiosk Mode ───────────────────────────────────────────

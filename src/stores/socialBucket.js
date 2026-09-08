@@ -53,6 +53,13 @@ const STORAGE_KEYS = Object.freeze({
 /** Bump on a breaking change to the persisted shape. */
 const META_VERSION = 1;
 
+/**
+ * Seen-marker for the home badge, kept outside STORAGE_KEYS on purpose:
+ * those keys define "a bucket exists" (hasStoredBucket) and take part in
+ * the legacy migration, and a UI acknowledgement must never do either.
+ */
+const SEEN_STORAGE_KEY = 'buhoGO_social_bucket_seen_v1';
+
 /** Quotes older than this are assumed collected; keeps the sync payload small. */
 const QUOTE_LOOKBACK_DAYS = 90;
 
@@ -121,6 +128,12 @@ export const useSocialBucketStore = defineStore('socialBucket', {
     /** Quote ids already minted, so a re-sync never double counts them. */
     collectedQuoteIds: [],
 
+    /**
+     * paymentsSignature at the owner's last look at the bucket. The home
+     * badge only shows while the live signature differs from this.
+     */
+    seenPaymentsSignature: '',
+
     /** NIP-60 wallet metadata, encrypted locally and on Nostr relays. */
     nip60Wallet: null,
 
@@ -174,6 +187,26 @@ export const useSocialBucketStore = defineStore('socialBucket', {
     canSweep() {
       return this.balanceSats >= MIN_SWEEP_SATS && !this.isSweeping;
     },
+
+    /**
+     * Fingerprint of everything receivable. The last collected quote id
+     * keeps the value moving across mint and sweep cycles, so money that
+     * arrives after a drain never collides with an older acknowledgement.
+     */
+    paymentsSignature(state) {
+      const waiting = Array.isArray(state.waitingQuotes) ? state.waitingQuotes : [];
+      const waitingIds = waiting.map((q) => q?.quoteId).filter(Boolean).sort().join(',');
+      const collected = Array.isArray(state.collectedQuoteIds) ? state.collectedQuoteIds : [];
+      const lastCollected = collected.length ? collected[collected.length - 1] : '';
+      const held = Math.max(0, Number(state.heldPaymentCount) || 0);
+      return `${waitingIds}|${held}|${lastCollected}`;
+    },
+
+    /** Money is waiting that the owner has not looked at yet. */
+    hasUnseenPayments() {
+      return this.paymentCount > 0
+        && this.paymentsSignature !== this.seenPaymentsSignature;
+    },
   },
 
   actions: {
@@ -215,6 +248,16 @@ export const useSocialBucketStore = defineStore('socialBucket', {
       // hydrating the target profile.
       this._clearHydratedState();
       this.ownerPubkey = requestedOwner;
+
+      // Independent of the bucket payload below: a failed read here only
+      // means the badge shows again until the next look.
+      try {
+        this.seenPaymentsSignature = localStorage.getItem(
+          profileStorageKey(SEEN_STORAGE_KEY, requestedOwner),
+        ) || '';
+      } catch {
+        this.seenPaymentsSignature = '';
+      }
 
       const sourceOwner = migrateLegacy ? null : requestedOwner;
       try {
@@ -333,6 +376,25 @@ export const useSocialBucketStore = defineStore('socialBucket', {
       }
     },
 
+    /**
+     * The identity page calls this once its own bucket view has settled:
+     * the home badge goes quiet until a payment outside the acknowledged
+     * signature arrives. Scoped per profile, so another identity never
+     * inherits the acknowledgement.
+     */
+    markPaymentsSeen() {
+      if (!this.hydrated || !this.ownerPubkey) return;
+      this.seenPaymentsSignature = this.paymentsSignature;
+      try {
+        localStorage.setItem(
+          profileStorageKey(SEEN_STORAGE_KEY, this.ownerPubkey),
+          this.seenPaymentsSignature,
+        );
+      } catch {
+        // Storage unavailable (private browsing): quiet this session only.
+      }
+    },
+
     _clearHydratedState() {
       this.waitingQuotes = [];
       this.recentReceipts = [];
@@ -347,6 +409,7 @@ export const useSocialBucketStore = defineStore('socialBucket', {
       this.lastSyncAt = null;
       this.lastError = null;
       this.sweepStage = null;
+      this.seenPaymentsSignature = '';
       this.hydrated = false;
     },
 
