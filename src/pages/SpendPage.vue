@@ -21,13 +21,18 @@
       </div>
 
       <div class="spend-rows">
-        <button type="button" class="spend-row" @click="$router.push('/shop')">
+        <button
+          type="button"
+          class="spend-row"
+          :class="{ 'spend-row--waiting': shopNeedsAttention }"
+          @click="onShopSelect"
+        >
           <span class="spend-row-icon">
             <Icon icon="tabler:device-sim" width="22" height="22" />
           </span>
           <span class="spend-row-text">
             <span class="spend-row-title">{{ $t('eSIM & VPN') }}</span>
-            <span class="spend-row-sub">{{ $t('Mobile data and a private connection, paid in bitcoin') }}</span>
+            <span class="spend-row-sub">{{ shopRowMeta }}</span>
           </span>
           <Icon icon="tabler:chevron-right" class="spend-row-chevron" width="18" height="18" />
         </button>
@@ -70,6 +75,7 @@
 import { Icon } from '@iconify/vue';
 import { Capacitor } from '@capacitor/core';
 import { useEarnStore } from '../stores/earn';
+import { useNadanadaOrdersStore } from '../stores/nadanadaOrders';
 import SettingsHubHeader from '../components/settings/SettingsHubHeader.vue';
 import SettingsHubNav from '../components/settings/SettingsHubNav.vue';
 import GetAppDialog from '../components/GetAppDialog.vue';
@@ -89,9 +95,30 @@ export default {
       getAppDialogMessage: '',
     };
   },
+  mounted() {
+    // Native-only redirect. A direct web navigation to /shop is bounced here
+    // by the router guard (see router/routes.js) with ?getApp=shop. Open the
+    // same dialog the row tap opens, so both paths say the same thing.
+    if (this.$route.query.getApp === 'shop') {
+      this.$nextTick(() => this.onShopSelect());
+    }
+  },
+
   computed: {
     isNativeApp() {
       return Capacitor.isNativePlatform();
+    },
+    /** An order the user paid for but never received must be findable without
+     *  walking back into the shop first. Reads local storage only, no network. */
+    shopNeedsAttention() {
+      return useNadanadaOrdersStore().attentionCount > 0;
+    },
+    shopRowMeta() {
+      const n = useNadanadaOrdersStore().attentionCount;
+      if (!n) return this.$t('Mobile data and a private connection, paid in bitcoin');
+      return n === 1
+        ? this.$t('1 order is waiting to be delivered')
+        : this.$t('{n} orders are waiting to be delivered', { n });
     },
     bitcoinLessonsMeta() {
       const earn = useEarnStore();
@@ -109,6 +136,19 @@ export default {
     },
   },
   methods: {
+    onShopSelect() {
+      if (!this.isNativeApp) {
+        // The shop talks to nadanada directly, and nadanada's API is not
+        // reachable from a browser. Say so plainly instead of routing into a
+        // screen that could only fail.
+        this.promptForApp(
+          this.$t('The eSIM and VPN shop is only available in the BuhoGO Android app. Install it from Google Play to buy and manage your plans.')
+        );
+        return;
+      }
+      this.$router.push('/shop');
+    },
+
     onEarnSatsSelect() {
       if (!this.isNativeApp) {
         // Learn & Earn pays out real sats. On the web build there is no way
@@ -336,6 +376,18 @@ body.body--dark .spend-row {
   flex-shrink: 0;
   color: var(--text-muted);
 }
+
+/* An undelivered order is a problem to resolve, not a reward to collect, so it
+   gets its own calm amber state rather than the green pulse used for claims. */
+.spend-row--waiting {
+  border-color: rgba(247, 147, 26, 0.45);
+  background-color: rgba(247, 147, 26, 0.12);
+}
+.spend-row--waiting .spend-row-sub {
+  color: #b45309;
+  font-weight: 600;
+}
+body.body--dark .spend-row--waiting .spend-row-sub { color: #fbbf24; }
 
 .spend-row--active {
   position: relative;

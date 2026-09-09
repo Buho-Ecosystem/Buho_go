@@ -19,6 +19,7 @@ import { createClaimedDepositRegistry } from '../utils/claimedDeposits.js';
 import {
   buildPaymentError,
   getUnsupportedBolt12OfferCopy,
+  getUnsupportedSilentPaymentCopy,
   getUserFriendlyError,
   getUserFriendlyErrorMessage,
 } from '../utils/userErrors';
@@ -162,8 +163,6 @@ export const useWalletStore = defineStore('wallet', {
     // Boltz swap min/max for the active Arkade wallet, mirrored from the
     // provider once Lightning warms up so amount UIs can bound entry
     // synchronously. Null until known; shape {min, max} in sats.
-    arkadeLnSendLimits: null,
-    arkadeLnReceiveLimits: null,
 
     // Buffered payment intent from a boot-time deep link / NFC scan.
     // Boot files (deep-links.js, nfc.js) write here when a payment URI arrives
@@ -593,6 +592,20 @@ export const useWalletStore = defineStore('wallet', {
      *
      * @param {{route?: string, t?: Function}} [ctx]
      */
+    showUnsupportedSilentPayment(ctx = {}) {
+      const t = typeof ctx.t === 'function'
+        ? ctx.t
+        : i18n.global.t.bind(i18n.global);
+      const copy = getUnsupportedSilentPaymentCopy(t);
+      this.showPaymentError(new Error('Silent Payment address detected'), {
+        context: 'payment',
+        title: copy.title,
+        reason: copy.reason,
+        route: ctx.route || 'Silent Payment address',
+        t,
+      });
+    },
+
     showUnsupportedBolt12Offer(ctx = {}) {
       const t = typeof ctx.t === 'function'
         ? ctx.t
@@ -1534,18 +1547,6 @@ export const useWalletStore = defineStore('wallet', {
 
         await provider.connect();
 
-        // Mirror the Lightning swap bounds into reactive state once the swap
-        // layer is up (connect() starts its init in the background), so
-        // amount inputs can prevent out-of-range entries up front instead of
-        // failing after the user taps Send. Must run after connect(): only
-        // then does the provider know its Lightning warm-up promise.
-        for (const direction of ['send', 'receive']) {
-          provider.getLightningLimitsWhenReady?.(direction).then((limits) => {
-            if (!limits) return;
-            if (direction === 'send') this.arkadeLnSendLimits = limits;
-            else this.arkadeLnReceiveLimits = limits;
-          }).catch(() => {});
-        }
         this.providers[walletId] = provider;
         this.connectionStates[walletId] = {
           connected: true,
@@ -2595,7 +2596,14 @@ export const useWalletStore = defineStore('wallet', {
           canSend: isConnected && balance > 0,
           canReceive: true // All wallets can receive
         };
-      });
+      })
+      // Internal transfers ride Lightning invoices between the two wallets
+      // (except the Spark-native pair path), and Arkade's Lightning rail is
+      // out of service - an Arkade leg can neither mint nor pay the invoice.
+      // Same reason Social Bucket sweeps (which mint an invoice on the
+      // destination) must not offer Arkade. Lift with Arkade Intents
+      // (Plans WIP/arkade-maintenance-map.md).
+      .filter((w) => w.type !== 'arkade');
     },
 
     /**

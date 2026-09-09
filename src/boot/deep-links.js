@@ -50,7 +50,8 @@ function parseDeepLinkURI(url) {
 
   const parsed = parsePaymentDestination(input)
 
-  if (!parsed || (!parsed.valid && parsed.type !== 'bolt12_offer') || parsed.type === 'unknown') {
+  const EXPLAINED_UNPAYABLE = ['bolt12_offer', 'silent_payment']
+  if (!parsed || (!parsed.valid && !EXPLAINED_UNPAYABLE.includes(parsed.type)) || parsed.type === 'unknown') {
     return null
   }
 
@@ -58,7 +59,9 @@ function parseDeepLinkURI(url) {
   // (same shape as SendModal's payment-detected emit)
   const data = parsed.invoice || parsed.offer || parsed.address || parsed.lnurl || input
 
-  return { data, type: parsed.type }
+  // Keep the BIP21 metadata: a unified QR's spark=/ark= rails and amount=
+  // let onPaymentDetected route the payment over the wallet's native rail.
+  return { data, type: parsed.type, ...(parsed.bip21 ? { bip21: parsed.bip21 } : {}) }
 }
 
 function handleDeepLink(url, router, walletStore) {
@@ -104,6 +107,10 @@ function handleDeepLink(url, router, walletStore) {
   // requiring a configured wallet for a payment we will not attempt.
   if (paymentData.type === 'bolt12_offer') {
     walletStore.showUnsupportedBolt12Offer({ route: 'Android deep link' })
+    return
+  }
+  if (paymentData.type === 'silent_payment') {
+    walletStore.showUnsupportedSilentPayment({ route: 'Android deep link' })
     return
   }
 

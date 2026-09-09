@@ -97,7 +97,14 @@
       @dismiss="walletStore.dismissBackupPrompt()"
     />
 
-    <!-- Skeleton Loading State -->
+    <!--
+      Loading state. One language across the app: a skeleton where content
+      will land, never a word standing in for it. It holds until the balance
+      is authoritative, for a returning user as much as a fresh install — a
+      figure carried over from the last session is a claim about someone's
+      money, and a cached zero would read as an empty wallet rather than as
+      "not fetched yet". A skeleton claims nothing.
+    -->
     <div v-if="showLoadingScreen" class="main-content">
       <!-- Wallet Chip skeleton -->
       <q-skeleton type="QChip" width="90px" height="28px" animation="wave" style="margin-bottom: 1rem; border-radius: 20px;" />
@@ -230,10 +237,7 @@
                 :prefix="balancePrefix"
                 :suffix="balanceSuffix"
                 class="amount-number"
-                :class="[
-                  $q.dark.isActive ? 'amount-number-dark' : 'amount-number-light',
-                  { 'amount-number--provisional': balanceProvisional },
-                ]"
+                :class="$q.dark.isActive ? 'amount-number-dark' : 'amount-number-light'"
                 :spin-timing="{ duration: 750, easing: 'cubic-bezier(0.16, 1, 0.3, 1)' }"
                 :transform-timing="{ duration: 750, easing: 'cubic-bezier(0.16, 1, 0.3, 1)' }"
               />
@@ -245,7 +249,6 @@
               <span v-if="walletStore.balanceHidden" class="secondary-amount-display">
                 <span class="secondary-value">••••</span>
               </span>
-              <span v-else-if="balanceProvisional" class="loading-secondary">{{ $t('Updating') }}...</span>
               <span v-else-if="secondaryValue" class="secondary-amount-display">
                 <span class="secondary-value">{{ secondaryValue }}</span>
               </span>
@@ -485,22 +488,23 @@
     </q-dialog>
 
     <!-- Wallet Switcher Dialog -->
-    <q-dialog v-model="showWalletSwitcher" :class="$q.dark.isActive ? 'dialog_dark' : 'dialog_light'">
+    <q-dialog
+      v-model="showWalletSwitcher"
+      position="bottom"
+      transition-show="slide-up"
+      transition-hide="slide-down"
+      :class="$q.dark.isActive ? 'dialog_dark' : 'dialog_light'"
+    >
       <q-card class="wallet-switcher-card" :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'">
+        <div class="sheet-grabber" aria-hidden="true"><div class="grabber-bar"></div></div>
         <q-card-section class="switcher-header">
           <div class="switcher-title" :class="$q.dark.isActive ? 'dialog_title_dark' : 'dialog_title_light'">
             {{ $t('Switch Wallet') }}
           </div>
-          <q-btn flat round dense v-close-popup
-                 :class="$q.dark.isActive ? 'close_btn_dark' : 'close_btn_light'">
-            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 20 20" fill="none">
-              <path d="M15 5L5 15M5 5L15 15" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-            </svg>
-          </q-btn>
         </q-card-section>
 
         <q-card-section class="switcher-content">
-          <div class="wallet-switch-list">
+          <div class="wallet-switch-list" :class="$q.dark.isActive ? 'switch-list-dark' : 'switch-list-light'">
             <template
               v-for="wallet in storeWallets"
               :key="wallet.id"
@@ -517,29 +521,7 @@
               <!-- Avatar -->
               <div class="switch-avatar">
                 <div class="switch-avatar-circle switch-avatar-black">
-                  <!-- Spark Logo -->
-                  <svg v-if="wallet.type === 'spark'" width="20" height="19" viewBox="0 0 135 128" fill="none" xmlns="http://www.w3.org/2000/svg">
-                    <path fill-rule="evenodd" clip-rule="evenodd" d="M79.4319 49.3554L81.7454 0H52.8438L55.1573 49.356L8.9311 31.9035L0 59.3906L47.6565 72.4425L16.7743 111.012L40.1562 128L67.2966 86.7083L94.4358 127.998L117.818 111.01L86.9359 72.4412L134.587 59.3907L125.656 31.9036L79.4319 49.3554Z" fill="white"/>
-                  </svg>
-                  <!-- NWC Logo -->
-                  <svg v-else-if="wallet.type === 'nwc'" width="20" height="20" viewBox="0 0 257 256" fill="none" xmlns="http://www.w3.org/2000/svg">
-                    <path d="M110.938 31.0639C100.704 20.8691 84.0846 20.9782 73.8873 31.2091L7.91341 97.4141C-2.28517 107.646 -2.15541 123.974 8.07554 134.17L116.246 242.34C126.479 252.534 143.066 252.449 153.263 242.218L185.415 210.066C176.038 219.443 168.322 212.701 159.178 203.595L141.244 185.662C127.63 191.051 111.718 188.374 100.688 177.365L87.0221 163.699C86.5623 163.243 86.2075 162.767 85.9582 162.17C85.7089 161.572 85.5803 160.931 85.5797 160.284C85.5792 159.637 85.7067 158.995 85.955 158.398C86.2033 157.8 86.5923 157.293 87.0513 156.837L94.7848 149.103L77.9497 132.268C75.3144 129.638 74.8841 125.391 77.2407 122.522C79.9345 119.228 84.8188 119.053 87.7741 122.002L104.837 139.051L116.394 127.494L99.5187 110.661C96.8822 108.03 96.4531 103.784 98.8298 100.895C99.4602 100.128 100.244 99.5006 101.131 99.0542C102.019 98.6077 102.989 98.3518 103.981 98.3028C104.973 98.2538 105.964 98.4129 106.891 98.7697C107.818 99.1266 108.66 99.6733 109.363 100.375L126.495 117.393L133.755 110.132C134.211 109.673 134.66 109.259 135.258 109.01C135.855 108.761 136.496 108.632 137.144 108.632C137.791 108.631 138.432 108.758 139.03 109.006C139.628 109.254 140.171 109.618 140.628 110.077L154.316 123.738C165.208 134.609 168.056 150.431 162.964 163.943L180.901 181.88C190.045 190.985 197.696 197.785 207.074 188.408L247.645 147.836C237.893 157.588 229.881 150.075 220.244 140.446L110.938 31.0639Z" fill="url(#nwc_switch_grad)"/>
-                    <path d="M187.641 13.0273L153.153 47.4873L229.781 124.116C237.116 131.419 243.491 137.239 250.565 134.417C254.654 132.787 257.461 128.351 255.894 124.238C219.227 28.0253 219.212 28.0238 214.348 17.507C209.484 6.99014 195.804 4.76016 187.641 13.0273Z" fill="#897FFF"/>
-                    <defs>
-                      <linearGradient id="nwc_switch_grad" x1="123.989" y1="10.4384" x2="123.989" y2="249.939" gradientUnits="userSpaceOnUse">
-                        <stop stop-color="#FFCA4A"/>
-                        <stop offset="1" stop-color="#F7931A"/>
-                      </linearGradient>
-                    </defs>
-                  </svg>
-                  <!-- LNbits Logo -->
-                  <svg v-else-if="wallet.type === 'lnbits'" width="18" height="20" viewBox="0 0 502 902" fill="none" xmlns="http://www.w3.org/2000/svg">
-                    <path d="M158.566 493.857L1 901L450.49 355.202H264.831L501.791 1H187.881L36.4218 493.857H158.566Z" fill="#FF1FE1"/>
-                  </svg>
-                  <!-- Arkade brand mark -->
-                  <ArkadeLogo v-else-if="wallet.type === 'arkade'" variant="mark" color="orange" :size="20" />
-                  <!-- Default wallet icon -->
-                  <Icon v-else icon="tabler:wallet" width="20" height="20" />
+                  <WalletBrandMark :type="wallet.type" :size="20" />
                 </div>
                 <div
                   class="switch-status-dot"
@@ -571,7 +553,6 @@
                     <Icon v-else icon="tabler:wallet" width="9" height="9" />
                     <span>{{ getWalletTypeLabel(wallet.type) }}</span>
                   </div>
-                  <div v-if="wallet.id === storeActiveWalletId" class="switch-tag tag-active">{{ $t('Active') }}</div>
                 </div>
                 <div class="switch-balance" :class="$q.dark.isActive ? 'switch-balance-dark' : 'switch-balance-light'">
                   <q-skeleton v-if="refreshingWalletIds[wallet.id]" type="text" width="80px" height="14px" />
@@ -586,6 +567,7 @@
                 width="20"
                 height="20"
                 class="switch-check-icon"
+                :class="$q.dark.isActive ? 'check-accent-dark' : 'check-accent-light'"
               />
             </div>
 
@@ -699,7 +681,6 @@
       :amount="withdrawConfirmedAmount"
       :fiat-amount="withdrawConfirmedFiat"
       label="Sats Received"
-      :auto-close-delay="5"
       @closed="onWithdrawSuccessClosed"
     />
 
@@ -746,7 +727,6 @@
       :show-save-contact="sendSuccessShowSaveContact"
       :success-action="sendSuccessAction"
       :delivery-status="sendDeliveryStatus"
-      :auto-close-delay="5"
       @closed="onSendSuccessClosed"
       @save-contact-clicked="onSendSaveContactClicked"
     />
@@ -859,18 +839,18 @@ import {validateVerifyUrl, pollVerify} from '../utils/lnurlVerify.js';
 import {lnurlFetch, lnurlGetJson} from '../utils/lnurlHttp.js';
 import {classifyTransportFailure} from '../utils/userErrors.js';
 import {buildLnurlPayCallbackUrl} from '../utils/lnurlPay.js';
-import {isLightningInvoice as isLightningInvoiceShared, stripWrapperScheme} from '../utils/addressUtils.js';
+import {isLightningInvoice as isLightningInvoiceShared, stripWrapperScheme, nativeRailsFromBip21} from '../utils/addressUtils.js';
 import {canWalletPay, walletSwitchHint} from '../utils/walletCapabilities.js';
 import {
   decodeSparkDestination,
   sparkInvoiceProblem,
   identityPublicKeyFromSparkAddress,
 } from '../utils/sparkPayment.js';
-import {readPersistedWalletState} from '../utils/walletHydration.js';
 import {zapInfoFromTx} from '../utils/zaps.js';
 import {getTxMessage} from '../utils/txMessage.js';
 import {zapperDisplayName, zapperPicture} from '../services/zapperProfiles.js';
 import {NOSTRICH_HEAD_ICON} from '../utils/nostrIcon.js';
+import { Capacitor } from '@capacitor/core';
 import {matchLnAddressService, formatPhoneHandle} from '../services/lnAddressServices';
 import {matchWalletBrand} from '../services/walletBrands';
 import {npubFromLightningAddress, shortenNpub, profileDisplayName, sanitizeImageUrl} from '../services/nostrRecipient';
@@ -897,10 +877,11 @@ import QrScanSheet from '../components/QrScanSheet.vue';
 import {parsePaymentDestination} from '../providers/WalletFactory';
 import OnchainFeePanel from '../components/OnchainFeePanel.vue';
 import {describeL1WithdrawError} from '../utils/l1WithdrawErrors.js';
-import {parseBip21} from '../utils/bip21.js';
+import {parseBip21, bip21AmountToSats} from '../utils/bip21.js';
 import InternalTransferModal from '../components/InternalTransferModal.vue';
 import AddressBookQuickModal from '../components/AddressBookQuickModal.vue';
 import ArkadeLogo from '../components/ArkadeLogo.vue';
+import WalletBrandMark from '../components/WalletBrandMark.vue';
 import PaymentConfirmSheet from '../components/PaymentConfirmSheet.vue';
 import ContactAvatar from '../components/AddressBook/ContactAvatar.vue';
 import BatchSendModal from '../components/BatchSendModal.vue';
@@ -936,6 +917,7 @@ function emptySaveContactData() {
 export default {
   name: 'WalletPage',
   components: {
+    WalletBrandMark,
     ReceiveModal,
     SendModal,
     QrScanSheet,
@@ -1008,12 +990,6 @@ export default {
       // computed properties.
       lastTransaction: null,
       isLoadingLastTransaction: true,
-
-      // True while the shown balance is the persisted cache from the last
-      // session, before the first authoritative fetch lands. Drives the
-      // dimmed amount + "Updating..." secondary line. Display only — no
-      // spend/max logic ever reads walletState.balance while provisional.
-      balanceProvisional: false,
 
       showReceiveModal: false,
       showSendModal: false,
@@ -3425,11 +3401,6 @@ export default {
     },
     async initializeWallet() {
       try {
-        // A returning user has a cached balance from the last session —
-        // paint it immediately (marked provisional) instead of holding the
-        // whole screen on a skeleton until the wallet has connected.
-        this.seedBalanceFromCache();
-
         await this.loadWalletState();
 
         // Initialize wallet store
@@ -3513,26 +3484,6 @@ export default {
     },
 
     /**
-     * Seed the balance display from the wallet store's persisted
-     * `metadata.cachedBalance` of the active wallet, written on every
-     * successful balance fetch. When a value exists the skeleton is
-     * skipped and the amount renders provisionally until the first live
-     * fetch replaces it. A fresh install has no snapshot and keeps
-     * today's skeleton behaviour.
-     */
-    seedBalanceFromCache() {
-      const saved = readPersistedWalletState();
-      const active = saved?.wallets?.find?.((w) => w?.id === saved?.activeWalletId);
-      const cached = active?.metadata?.cachedBalance;
-      if (typeof cached !== 'number' || !Number.isFinite(cached)) return false;
-
-      this.walletState.balance = cached;
-      this.balanceProvisional = true;
-      this.showLoadingScreen = false;
-      return true;
-    },
-
-    /**
      * Refresh the active wallet's balance and the last-transaction preview.
      *
      * Called from the 30s periodic tick, after every send/receive, on wallet
@@ -3572,7 +3523,6 @@ export default {
               balanceResult = await provider.getBalance();
             }
             this.walletState.balance = balanceResult.balance;
-            this.balanceProvisional = false;
             localStorage.setItem('buhoGO_wallet_state', JSON.stringify(this.walletState));
 
             // Auto-withdraw check (never reachable from a cached read: an
@@ -3613,7 +3563,6 @@ export default {
             const provider = await this.walletStore.ensureLNBitsConnected();
             const balanceResult = await provider.getBalance();
             this.walletState.balance = balanceResult.balance;
-            this.balanceProvisional = false;
 
             // Update wallet in store
             const activeWallet = this.walletState.connectedWallets.find(
@@ -3645,7 +3594,6 @@ export default {
             const provider = await this.walletStore.ensureArkadeConnected();
             const balanceResult = await provider.getBalance();
             this.walletState.balance = balanceResult.balance;
-            this.balanceProvisional = false;
 
             const activeWallet = this.walletState.connectedWallets.find(
               w => w.id === this.walletState.activeWalletId
@@ -3678,7 +3626,6 @@ export default {
           await nwc.enable();
           const balance = await nwc.getBalance();
           this.walletState.balance = balance.balance;
-          this.balanceProvisional = false;
           activeWallet.balance = balance.balance;
 
           localStorage.setItem('buhoGO_wallet_state', JSON.stringify(this.walletState));
@@ -4163,7 +4110,13 @@ export default {
         return;
       }
       const data = parsed.invoice || parsed.offer || parsed.address || parsed.lnurl || value;
-      void this.onPaymentDetected({ data, type: parsed.type });
+      // Carry the BIP21 metadata so a scanned unified QR can take the
+      // native-rail shortcut in onPaymentDetected, same as the Send field.
+      void this.onPaymentDetected({
+        data,
+        type: parsed.type,
+        ...(parsed.bip21 ? { bip21: parsed.bip21 } : {}),
+      });
     },
 
     // ========================================================================
@@ -4271,6 +4224,9 @@ export default {
         const safeMessage = this.redactPinFromString(error?.message || 'Something went wrong');
         const safeError = new Error(safeMessage);
         safeError.name = error?.name || 'Error';
+        // Carry the code: translateErrorCode keys on it (ARKADE_LN_UNAVAILABLE
+        // and friends), and codes never contain PINs.
+        if (error?.code) safeError.code = error.code;
 
         console.error('Withdraw failed:', safeMessage);
         this.lnurlWithdrawStatus = 'error';
@@ -4304,10 +4260,12 @@ export default {
         if (!provider) throw new Error('No LNbits provider available');
         result = await provider.createInvoice({ amount: amountSats, description });
       } else if (walletType === 'arkade') {
-        // Arkade receives Lightning via a Boltz reverse swap; the provider
-        // returns { paymentRequest, paymentHash } normalized below.
-        const provider = await this.walletStore.ensureArkadeConnected();
-        result = await provider.createInvoice({ amount: amountSats, description });
+        // Arkade's Lightning rail is out of service (Boltz retired); an
+        // LNURL-withdraw needs an invoice this wallet cannot mint. Throw the
+        // coded error so the dialog shows the translated outage copy.
+        const err = new Error('Lightning is temporarily unavailable for Arkade wallets');
+        err.code = 'ARKADE_LN_UNAVAILABLE';
+        throw err;
       } else {
         // NWC - LightningPaymentService uses positional args and returns snake_case
         const activeWallet = this.getActiveWallet();
@@ -4789,6 +4747,40 @@ export default {
       this.paymentAmount = '';
     },
 
+    /**
+     * Re-route a BIP21-resolved destination onto a native rail the active
+     * wallet can settle for free (Spark transfer) or near-free (ark1 → ark1).
+     *
+     * Only destinations that came out of the URI itself are re-routed
+     * (lightning_invoice / bitcoin_address / bolt12_offer); a payload that is
+     * already on a native rail, or that never was a BIP21 URI, passes through
+     * untouched. The rail values are pre-validated by nativeRailsFromBip21 —
+     * a malformed spark=/ark= param can never hijack the destination.
+     *
+     * Main send flow only, on purpose: batch send, auto-withdraw, internal
+     * transfer and kiosk keep their existing rails.
+     */
+    preferNativeBip21Rail(paymentData) {
+      const bip21 = paymentData?.bip21;
+      if (!bip21) return paymentData;
+      const reroutable = paymentData.type === 'lightning_invoice'
+        || paymentData.type === 'bitcoin_address'
+        || paymentData.type === 'bolt12_offer';
+      if (!reroutable) return paymentData;
+
+      const rails = nativeRailsFromBip21(bip21);
+      const amountSats = bip21AmountToSats(bip21.amount);
+      const withAmount = amountSats ? { fixedAmountSats: amountSats } : {};
+
+      if (this.walletStore.isActiveWalletSpark && rails.spark) {
+        return { ...paymentData, type: 'spark_address', data: rails.spark, ...withAmount };
+      }
+      if (this.walletStore.isActiveWalletArkade && rails.ark) {
+        return { ...paymentData, type: 'arkade_address', data: rails.ark, ...withAmount };
+      }
+      return paymentData;
+    },
+
     async onPaymentDetected(paymentData) {
       console.log('Payment detected:', paymentData);
 
@@ -4808,7 +4800,26 @@ export default {
       this.pendingWithdrawTargetSats = null;
 
       try {
+        // A unified receive QR (bitcoin:addr?lightning=...&spark=...&ark=...)
+        // may offer a rail this wallet speaks natively at zero / near-zero
+        // fee. Take that road before anything else: the resolved Lightning /
+        // on-chain destination is swapped for the native address from the
+        // same URI, and a BIP21 amount= carries over as the fixed amount so
+        // every rail asks the payer for the same number.
+        paymentData = this.preferNativeBip21Rail(paymentData);
+
         // Transform the payment data to match expected structure
+        if (paymentData.type === 'silent_payment' && paymentData.data) {
+          // Recognized BIP-352 format, unpayable on every rail we have.
+          // Stop before any provider call with the explanation, exactly
+          // like BOLT12 offers.
+          this.walletStore.showUnsupportedSilentPayment({
+            route: 'Silent Payment address',
+            t: this.$t.bind(this),
+          });
+          return;
+        }
+
         if (paymentData.type === 'bolt12_offer' && paymentData.data) {
           // This is a recognized payment request, but none of our wallet
           // providers can request and pay the BOLT12 invoice behind an offer.
@@ -6189,6 +6200,20 @@ export default {
         return {};
       }
 
+      // A payout provider that serves no Access-Control-Allow-Origin cannot be
+      // reached from a browser at all. On device the request goes through the
+      // native HTTP stack and CORS never applies, so this is only ever the web
+      // build. Said here rather than after the attempt, because the browser
+      // reports a blocked request as an indistinguishable "Failed to fetch"
+      // and the user gets told to check an internet connection that is fine.
+      const payoutService = matchLnAddressService(address);
+      if (payoutService?.webUnsupported && !Capacitor.isNativePlatform()) {
+        return {
+          error: true,
+          reason: this.$t('This payout service can only be reached from the BuhoGO app, not from a browser.'),
+        };
+      }
+
       try {
         const endpoint = `https://${domain}/.well-known/lnurlp/${username}`;
         const response = await lnurlGetJson(endpoint, { timeoutMs: 10000 });
@@ -6994,11 +7019,6 @@ export default {
   line-height: 1;
   font-family: 'Manrope', sans-serif;
   transition: opacity 0.3s ease;
-}
-
-/* Cached last-session figure shown before the first live fetch lands */
-.amount-number--provisional {
-  opacity: 0.55;
 }
 
 .amount-number-dark {
@@ -8391,30 +8411,50 @@ export default {
 }
 
 /* Wallet Switcher Dialog */
+/* Bottom sheet: full width, rounded top, sized to its content with the
+   list scrolling inside and the CTAs pinned hard at the bottom. */
 .wallet-switcher-card {
   width: 100%;
-  max-width: 360px;
-  border-radius: 20px;
+  max-width: 100%;
+  max-height: 78dvh;
+  display: flex;
+  flex-direction: column;
+  border-radius: 24px 24px 0 0;
   overflow: hidden;
+}
+
+.wallet-switcher-card .sheet-grabber {
+  display: flex;
+  justify-content: center;
+  padding: 10px 0 2px;
+  flex-shrink: 0;
+}
+
+.wallet-switcher-card .grabber-bar {
+  width: 36px;
+  height: 5px;
+  border-radius: 3px;
+  background: rgba(128, 128, 128, 0.35);
 }
 
 .switcher-header {
   display: flex;
-  justify-content: space-between;
+  justify-content: center;
   align-items: center;
-  padding: 1rem 1.25rem;
-  border-bottom: 1px solid rgba(128, 128, 128, 0.15);
+  padding: 0.25rem 1.25rem 0.5rem;
+  flex-shrink: 0;
 }
 
 .switcher-title {
   font-family: 'Manrope', sans-serif;
-  font-size: 17px;
+  font-size: 16px;
   font-weight: 600;
 }
 
 .switcher-content {
-  padding: 0.5rem;
-  max-height: 320px;
+  flex: 1;
+  min-height: 0;
+  padding: 0.25rem 0.75rem 0.5rem;
   overflow-y: auto;
   scrollbar-width: none;
 }
@@ -8423,50 +8463,49 @@ export default {
   display: none;
 }
 
+/* Inset grouped list: one rounded surface, hairline separators inset past
+   the leading mark, rows that highlight on press - selection is the
+   trailing checkmark, the platform-native reading. */
 .wallet-switch-list {
   display: flex;
   flex-direction: column;
-  gap: 0.375rem;
+  border-radius: 16px;
+  overflow: hidden;
 }
 
-/* Wallet Switch Card - iOS style */
+.switch-list-light { background: #FFFFFF; }
+.switch-list-dark  { background: #2C2C2E; }
+
+/* Wallet row */
 .wallet-switch-card {
+  position: relative;
   display: flex;
   align-items: center;
-  gap: 0.75rem;
-  padding: 0.75rem 0.875rem;
-  border-radius: 12px;
+  gap: 0.875rem;
+  padding: 0.875rem 1rem;
   cursor: pointer;
-  transition: background 0.15s ease;
+  transition: background 0.12s ease;
+  -webkit-tap-highlight-color: transparent;
 }
 
-.wallet-switch-card-dark {
-  background: transparent;
+.wallet-switch-card:not(:first-child)::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 74px;
+  right: 0;
+  height: 1px;
+  background: rgba(128, 128, 128, 0.18);
 }
 
-.wallet-switch-card-light {
-  background: transparent;
+.wallet-switch-card-light:hover,
+.wallet-switch-card-light:active {
+  background: rgba(0, 0, 0, 0.045);
 }
 
-.wallet-switch-card-dark:hover {
-  background: #222;
-}
-
-.wallet-switch-card-light:hover {
-  background: #F3F4F6;
-}
-
-.wallet-switch-card-active {
-  box-shadow: inset 0 0 0 1px #15DE72;
-  background: rgba(21, 222, 114, 0.03) !important;
-}
-
-.wallet-switch-card-active.wallet-switch-card-dark:hover {
-  background: rgba(21, 222, 114, 0.06) !important;
-}
-
-.wallet-switch-card-active.wallet-switch-card-light:hover {
-  background: rgba(21, 222, 114, 0.05) !important;
+.wallet-switch-card-dark:hover,
+.wallet-switch-card-dark:active {
+  background: rgba(255, 255, 255, 0.06);
 }
 
 /* Switch Avatar */
@@ -8476,8 +8515,8 @@ export default {
 }
 
 .switch-avatar-circle {
-  width: 40px;
-  height: 40px;
+  width: 44px;
+  height: 44px;
   border-radius: 50%;
   display: flex;
   align-items: center;
@@ -8520,7 +8559,7 @@ export default {
 }
 
 .wallet-switch-card-dark .switch-status-dot {
-  border-color: #0C0C0C;
+  border-color: #2C2C2E;
 }
 
 .wallet-switch-card-light .switch-status-dot {
@@ -8544,7 +8583,7 @@ export default {
 
 .switch-name {
   font-family: 'Manrope', sans-serif;
-  font-size: 14px;
+  font-size: 15px;
   font-weight: 600;
   white-space: nowrap;
   overflow: hidden;
@@ -8620,15 +8659,10 @@ export default {
   letter-spacing: 0.02em;
 }
 
-.tag-active {
-  background: #D1FAE5;
-  color: #065F46;
-}
-
 /* Switch Balance */
 .switch-balance {
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 500;
 }
 
@@ -8643,17 +8677,21 @@ export default {
 /* Check Icon */
 .switch-check-icon {
   flex-shrink: 0;
-  color: #15DE72;
 }
 
-/* Switcher Footer */
+.check-accent-light { color: #1A1A1A; }
+.check-accent-dark  { color: #15DE72; }
+
+/* Switcher Footer - pinned hard at the sheet's bottom edge. */
 .switcher-footer {
+  flex-shrink: 0;
   padding: 0.75rem 1rem;
+  padding-bottom: max(0.875rem, var(--safe-bottom, 0px));
   border-top: 1px solid;
   display: flex;
   flex-wrap: nowrap;
   justify-content: center;
-  gap: 8px;
+  gap: 10px;
 }
 
 .switcher-footer-dark {
@@ -8666,51 +8704,56 @@ export default {
   background: var(--bg-primary);
 }
 
-/* Transfer Funds Button */
+/* Transfer Funds - the primary CTA: dark ink in light mode, the app's
+   credit green in dark mode. */
 .transfer-funds-btn {
   font-family: 'Manrope', sans-serif;
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 600;
-  border-radius: 10px;
+  border-radius: 12px;
+  min-height: 48px;
   padding: 0.5rem 1rem;
   flex: 1;
   transition: all 0.15s ease;
 }
 
 .transfer-btn-dark {
-  color: #22c55e;
-  background: rgba(34, 197, 94, 0.1);
+  color: #FFFFFF;
+  background: linear-gradient(135deg, #15DE72, #0DBB5F);
 }
 
 .transfer-btn-dark:hover {
-  background: rgba(34, 197, 94, 0.2);
+  filter: brightness(1.05);
 }
 
 .transfer-btn-light {
-  color: #16a34a;
-  background: rgba(34, 197, 94, 0.1);
+  color: #FFFFFF;
+  background: #1A1A1A;
 }
 
 .transfer-btn-light:hover {
-  background: rgba(34, 197, 94, 0.15);
+  background: #2A2A2A;
 }
 
 .manage-wallets-btn {
   font-family: 'Manrope', sans-serif;
-  font-size: 13px;
-  font-weight: 500;
-  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 600;
+  border-radius: 12px;
+  min-height: 48px;
   padding: 0.5rem 1rem;
   flex: 1;
   transition: all 0.15s ease;
 }
 
 .manage-btn-dark {
-  color: #888;
+  color: rgba(255, 255, 255, 0.75);
+  background: rgba(255, 255, 255, 0.08);
 }
 
 .manage-btn-light {
-  color: var(--text-secondary);
+  color: rgba(0, 0, 0, 0.7);
+  background: rgba(0, 0, 0, 0.05);
 }
 
 .manage-wallets-btn:hover {

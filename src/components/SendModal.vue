@@ -42,10 +42,11 @@
     <q-card class="send-sheet" :class="$q.dark.isActive ? 'send-sheet-dark' : 'send-sheet-light'">
       <div class="grab-bar"></div>
 
-      <!-- Always-reachable close. While busy it cancels the whole Send flow
-           (the backdrop is persistent then, so this is the one exit). -->
-      <q-btn flat round dense class="sheet-close" :aria-label="$t('Close')" @click="closeModal">
-        <Icon icon="tabler:x" width="18" height="18" />
+      <!-- Always-reachable way out. While busy it cancels the whole Send
+           flow (the backdrop is persistent then, so this is the one exit).
+           Hidden in Mobile Money mode, whose header owns the back slot. -->
+      <q-btn v-if="!mobileMoneyMode" flat round dense class="sheet-close glass-back-btn" :aria-label="$t('Back')" @click="closeModal">
+        <Icon icon="tabler:chevron-left" width="20" height="20" />
       </q-btn>
 
       <!-- Mobile Money mode header: back arrow + label. The field below
@@ -109,7 +110,11 @@
               <span>{{ capabilityBlocked }}</span>
             </template>
             <template v-else-if="mobileMoneyMode">
-              <span v-if="mmCountryOption">{{ countryName(mmCountryOption.code) }} · +{{ mmCountryOption.callingCode }}</span>
+              <span v-if="mmCountryOption">
+                {{ countryName(mmCountryOption.code) }} · +{{ mmCountryOption.callingCode }}<template
+                  v-if="mmCountryOption.networkNote"
+                > · {{ $t(mmCountryOption.networkNote) }}</template>
+              </span>
               <span v-else>{{ $t('Type the number, or pick the country first') }}</span>
             </template>
           </div>
@@ -137,7 +142,11 @@
            own. Picking a country locks recognition to it — which also lets
            us accept the bare local number and removes the KE/ZM 07x
            ambiguity before it can appear. -->
-      <div v-if="mobileMoneyMode" class="mm-countries">
+      <div
+        v-if="mobileMoneyMode"
+        class="mm-countries"
+        :style="{ gridTemplateColumns: `repeat(${mmCountryColumns}, 1fr)` }"
+      >
         <button
           v-for="c in payoutCountries"
           :key="c.code"
@@ -349,9 +358,10 @@ import { Capacitor } from '@capacitor/core';
 import QrScanSheet from './QrScanSheet.vue';
 import { useAddressBookStore } from '../stores/addressBook';
 import { useWalletStore } from '../stores/wallet';
+import { readClipboardCrossPlatform } from '../utils/shopClipboard.js';
 import { isSARetailerQR, convertToLightningAddress, getMerchantInfo, SA_RETAIL_SOURCE } from '../utils/merchantQR';
 import { parseBip21, selectBip21Destination, extractLnFallbackParam } from '../utils/bip21';
-import {
+import { isSilentPaymentAddress, nativeRailsFromBip21,
   isSparkAddress,
   isArkadeAddress,
   isBolt12Offer,
@@ -510,6 +520,7 @@ export default {
       const labels = {
         spark: this.$t('Bitcoin'),
         bolt12_offer: this.$t('BOLT12 offer'),
+        silent_payment: this.$t('Silent payment'),
         lightning_invoice: this.$t('Bitcoin'),
         lightning_address: this.$t('Bitcoin'),
         lnurl: this.$t('Bitcoin'),
@@ -527,6 +538,7 @@ export default {
       // glyph (it is a link), phone and Nostr keep their identities.
       const icons = {
         bolt12_offer: 'tabler:bolt',
+        silent_payment: 'tabler:eye-off',
         lightning_invoice: 'tabler:currency-bitcoin',
         lightning_address: 'tabler:currency-bitcoin',
         lnurl: 'tabler:link',
@@ -574,6 +586,21 @@ export default {
 
     mmCountryOption() {
       return this.payoutCountries.find((c) => c.code === this.mmCountry) || null;
+    },
+
+    /**
+     * How many country tiles sit on a row.
+     *
+     * Fixed at three, a fourth country made a second row holding one orphan
+     * tile. CSS cannot count its own children, so the column count is chosen
+     * here: up to three fit on one row, four go two by two, and five or more
+     * fall back to three across with the row itself scrolling.
+     */
+    mmCountryColumns() {
+      const n = this.payoutCountries.length;
+      if (n <= 3) return Math.max(1, n);
+      if (n === 4) return 2;
+      return 3;
     },
 
     // True when the number is valid in more than one country (075-078 KE/ZM
@@ -768,6 +795,7 @@ export default {
     isSuggestibleDestination(text) {
       const paymentType = this.determinePaymentType(text);
       if (paymentType === 'bolt12_offer') return false;
+      if (paymentType === 'silent_payment') return false;
       if (paymentType !== 'unknown') {
         return canWalletPay(this.walletStore.activeWalletType, paymentType);
       }
@@ -989,6 +1017,21 @@ export default {
 
       const bip21 = parseBip21(trimmed);
       if (bip21) {
+        // A unified QR offers several rails; pick one the ACTIVE wallet can
+        // actually pay before falling back to the generic preference order.
+        // Without this, an Arkade wallet scanning bitcoin:?lightning=..&ark=..
+        // classifies as a (blocked) Lightning invoice and never reaches the
+        // ark leg it pays natively.
+        const rails = nativeRailsFromBip21(bip21);
+        if (this.walletStore.isActiveWalletSpark && rails.spark) {
+          return { cleaned: rails.spark, bip21 };
+        }
+        if (this.walletStore.isActiveWalletArkade) {
+          if (rails.ark) return { cleaned: rails.ark, bip21 };
+          // No ark leg: the on-chain base is still payable (Ramps offboard),
+          // while the lightning leg is not - prefer what works.
+          if (bip21.address) return { cleaned: bip21.address, bip21 };
+        }
         const destination = selectBip21Destination(bip21);
         return { cleaned: destination ? destination.value : '', bip21 };
       }
@@ -1011,6 +1054,8 @@ export default {
       const { cleaned } = this.normalizePaymentInput(data);
       if (!cleaned) return 'unknown';
 
+      if (isSilentPaymentAddress(cleaned)) return 'silent_payment';
+      if (isSilentPaymentAddress(cleaned)) return 'silent_payment';
       if (isSparkAddress(cleaned)) return 'spark_address';
       if (isArkadeAddress(cleaned)) return 'arkade_address';
       if (isBolt12Offer(cleaned)) return 'bolt12_offer';
@@ -1022,32 +1067,11 @@ export default {
     },
 
     async pasteFromClipboard() {
-      let clipboardText = '';
-
-      // Modern Clipboard API
-      if (navigator.clipboard && navigator.clipboard.readText) {
-        try {
-          clipboardText = await navigator.clipboard.readText();
-        } catch (e) {
-          console.warn('clipboard.readText() failed:', e);
-        }
-      }
-
-      // Some Android WebViews block readText() but allow read()
-      if (!clipboardText && navigator.clipboard && navigator.clipboard.read) {
-        try {
-          const items = await navigator.clipboard.read();
-          for (const item of items) {
-            if (item.types.includes('text/plain')) {
-              const blob = await item.getType('text/plain');
-              clipboardText = await blob.text();
-              break;
-            }
-          }
-        } catch (e) {
-          console.warn('clipboard.read() failed:', e);
-        }
-      }
+      // Native plugin first, WebView APIs as fallback: on Android the
+      // WebView rejects programmatic reads, which used to leave the Paste
+      // button focusing an empty field and coaching a long-press instead
+      // of pasting.
+      const clipboardText = await readClipboardCrossPlatform();
 
       // Always land the clipboard in the visible field for the user to
       // verify before committing. No silent fire-and-forget — too easy
@@ -1210,7 +1234,12 @@ export default {
     },
 
     countryName(code) {
-      return { KE: this.$t('Kenya'), ZM: this.$t('Zambia'), TZ: this.$t('Tanzania') }[code] || code;
+      return {
+        KE: this.$t('Kenya'),
+        ZM: this.$t('Zambia'),
+        TZ: this.$t('Tanzania'),
+        GH: this.$t('Ghana'),
+      }[code] || code;
     },
 
     // Ambiguous-number chooser: emit the picked country's constructed address
@@ -1359,11 +1388,8 @@ export default {
 
 .sheet-close {
   position: absolute;
-  top: 8px;
-  right: 10px;
-  width: 30px;
-  height: 30px;
-  color: var(--text-muted);
+  top: 12px;
+  left: 12px;
   z-index: 2;
 }
 
@@ -1393,9 +1419,9 @@ export default {
    Entry field
    ───────────────────────────────────────────────────────────── */
 .entry-block {
-  /* Top padding clears the floating close button — the sheet is
-     deliberately headerless (grab bar + field, no title noise). */
-  padding: 30px 20px 0;
+  /* Top padding clears the floating glass back button — the sheet is
+     deliberately headerless (grab bar + back + field, no title noise). */
+  padding: 58px 20px 0;
   flex-shrink: 0;
 }
 
@@ -1585,6 +1611,7 @@ export default {
 
 .detected-pill--spark,
 .detected-pill--arkade,
+.detected-pill--silent_payment,
 .detected-pill--bolt12_offer {
   background: rgba(120, 120, 120, 0.12);
   color: var(--text-primary);
@@ -1619,8 +1646,14 @@ export default {
    ───────────────────────────────────────────────────────────── */
 .mm-countries {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  /* Column count is set inline from mmCountryColumns: CSS cannot count its
+     own children, and a fixed three left a fourth country alone on a row. */
   gap: 10px;
+  /* With enough countries the tiles would push the field and the keyboard
+     apart, so the row carries its own scroll rather than growing the sheet. */
+  max-height: 42vh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   /* Bottom inset carries the safe area for the (footer-less) resting
      Mobile Money state, so the sheet ends cleanly at the chips. */
   padding: 14px 20px max(16px, var(--safe-bottom, 16px));

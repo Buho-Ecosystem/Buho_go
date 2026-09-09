@@ -11,7 +11,7 @@ import { LNBitsWalletProvider } from './LNBitsWalletProvider';
 import { ArkadeWalletProvider } from './ArkadeWalletProvider';
 import { WalletProvider } from './WalletProvider';
 import { parseBip21, selectBip21Destination, extractLnFallbackParam } from '../utils/bip21';
-import {
+import { isSilentPaymentAddress,
   isSparkAddress,
   isArkadeAddress,
   isBolt12Offer,
@@ -127,7 +127,7 @@ export function inferWalletType(wallet) {
 }
 
 // `isSparkAddress` / `isArkadeAddress` are re-exported from addressUtils — no wrapper needed.
-export { isSparkAddress, isArkadeAddress } from '../utils/addressUtils';
+export { isSparkAddress, isArkadeAddress, isSilentPaymentAddress } from '../utils/addressUtils';
 
 /**
  * Parse a payment destination and determine its type
@@ -172,6 +172,19 @@ export function parsePaymentDestination(input) {
   // Attach BIP21 metadata (amount, label, message, ...) to every result so
   // downstream UI can prefill where useful.
   const withBip21 = (result) => (bip21 ? { ...result, bip21 } : result);
+
+  // BIP-352 Silent Payments share Spark's legacy sp1/tsp1 prefixes, so
+  // this more specific check must run first. Recognized, not payable:
+  // deriving the one-time output needs sender-side BIP-352 support none
+  // of our rails (Spark SDK, Arkade, Lightning backends) offer.
+  if (isSilentPaymentAddress(cleaned)) {
+    return withBip21({
+      type: 'silent_payment',
+      address: cleaned,
+      valid: false,
+      unsupported: true,
+    });
+  }
 
   if (isSparkAddress(cleaned)) {
     return withBip21({

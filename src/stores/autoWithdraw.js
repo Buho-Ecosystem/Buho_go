@@ -157,19 +157,14 @@ export const useAutoWithdrawStore = defineStore('autoWithdraw', {
           else if (config.payoutType === 'onchain') destination = config.bitcoinAddress
           else destination = config.lightningAddress
         } else if (walletType === WALLET_TYPES.ARKADE) {
-          // Arkade Lightning payouts ride a swap with its own min/max. Gate
-          // like the MIN_SEND_SATS check above: below the minimum, skip
-          // silently until the balance grows; above the maximum, sweep in
-          // maximum-sized chunks (the remainder goes on later triggers).
-          // Best-effort — when limits aren't known yet the attempt proceeds
-          // and the BELOW_MIN/ABOVE_MAX catch below backstops it.
+          // Arkade Lightning is out of service (Boltz retired - see
+          // Plans WIP/arkade-maintenance-map.md). A Lightning payout from an
+          // Arkade wallet cannot succeed, so skip the trigger silently the
+          // way the below-minimum gate does: no retry storm, funds stay
+          // put, and ark/onchain payout types keep working.
           if (config.payoutType !== 'arkade' && config.payoutType !== 'onchain') {
-            const provider = configKey.includes(':')
-              ? walletStore.providers[configKey]
-              : walletStore.getProvider(configKey)
-            const limits = await provider?.getLightningLimits?.('send').catch(() => null)
-            if (limits?.min && sendAmount < limits.min) return
-            if (limits?.max && sendAmount > limits.max) sendAmount = limits.max
+            console.warn('[Auto-withdraw] Skipped: Arkade Lightning payouts are unavailable')
+            return
           }
           result = await this._executeArkadePayout(configKey, sendAmount, config, walletStore)
           if (config.payoutType === 'arkade') destination = config.arkadeAddress
@@ -210,12 +205,6 @@ export const useAutoWithdrawStore = defineStore('autoWithdraw', {
         }
       } catch (error) {
         console.error('[Auto-withdraw] Failed:', error.message)
-
-        // An Arkade Lightning payout outside the swap limits cannot succeed
-        // by retrying (below-min waits for the balance to grow; above-max is
-        // clamped by the pre-flight once limits are known). Treat both like
-        // the MIN_SEND_SATS gate: skip silently on the normal cooldown.
-        if (error?.code === 'ARKADE_SWAP_BELOW_MIN' || error?.code === 'ARKADE_SWAP_ABOVE_MAX') return
 
         // The cooldown was set to "now" before the attempt to dam the storm of
         // balance-refresh ticks. On failure, roll it back so the next tick can
@@ -311,8 +300,12 @@ export const useAutoWithdrawStore = defineStore('autoWithdraw', {
         throw err
       }
 
-      // Lightning (default): reuse the shared LN-address → invoice resolver.
-      return this._executeLightningPayout(configKey, sendAmount, config, walletStore, WALLET_TYPES.ARKADE)
+      // Lightning payouts are gated off upstream (the rail is out of
+      // service); a config that still reaches here must fail with the coded
+      // outage error, never attempt the dead swap path.
+      const err = new Error('Lightning is temporarily unavailable for Arkade wallets')
+      err.code = 'ARKADE_LN_UNAVAILABLE'
+      throw err
     },
 
     /**

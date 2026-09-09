@@ -60,7 +60,7 @@ test('wallet × rail matrix', () => {
     spark_address: { spark: true, arkade: false, lnbits: false, nwc: false },
     arkade_address: { spark: false, arkade: true, lnbits: false, nwc: false },
     bitcoin_address: { spark: true, arkade: true, lnbits: false, nwc: false },
-    lightning_address: { spark: true, arkade: true, lnbits: true, nwc: true },
+    lightning_address: { spark: true, arkade: false, lnbits: true, nwc: true },
   };
   for (const [type, byWallet] of Object.entries(expectations)) {
     for (const wallet of WALLETS) {
@@ -81,10 +81,18 @@ test('contact addressTypes gate identically to payment types', () => {
 
 test('switch hints exist exactly for blockable rails', () => {
   assert.equal(walletSwitchHint('spark_address', t), 'Switch to your Spark wallet to pay this address');
-  assert.equal(walletSwitchHint('arkade', t), 'Switch to your Arkade wallet to pay this address');
-  assert.equal(walletSwitchHint('bitcoin_address', t), 'Switch to a Spark or Arkade wallet to send Bitcoin');
-  assert.equal(walletSwitchHint('lightning_address', t), '');
-  assert.equal(walletSwitchHint('unknown', t), '');
+  assert.equal(walletSwitchHint('arkade', t), 'Switch to your Arkade wallet to pay this address')
+  assert.equal(
+    walletSwitchHint('lightning_invoice', t),
+    'Lightning is temporarily unavailable on Arkade - switch to another wallet'
+  );
+  assert.equal(walletSwitchHint('bitcoin_address', t), 'Switch to a Spark or Arkade wallet to send Bitcoin');;
+  // Unknown types collapse to the lightning rail (permissive), and only
+  // Arkade blocks that rail today - so they share its outage hint.
+  assert.equal(
+    walletSwitchHint('unknown', t),
+    'Lightning is temporarily unavailable on Arkade - switch to another wallet'
+  );
 });
 
 console.log(`\n  ${passed} passed, ${failed} failed`);

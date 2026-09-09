@@ -12,7 +12,10 @@ export const QR_SIZE = 240;
  * Default QR code colors
  */
 export const QR_COLORS = {
-  dark: '#000000',
+  // Near-black ink instead of pure #000: full-contrast modules on a white
+  // card read harsh next to the app's soft palette, and every scanner
+  // handles slate ink identically.
+  dark: '#1E293B',
   light: '#ffffff'
 };
 

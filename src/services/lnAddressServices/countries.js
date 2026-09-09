@@ -28,6 +28,18 @@
  *                the logo instead of the flag (Zambia -> Bitzed). null falls
  *                back to the flag.
  *   hint         Flat i18n key, resolved by the caller.
+ *   webUnsupported  Set when the provider serves no Access-Control-Allow-Origin
+ *                header. On device the app uses the native HTTP stack and CORS
+ *                does not apply, but the WEB build is a browser and cannot
+ *                reach the address at all. Verified per provider, not assumed:
+ *                bitcoin.co.ke, bitzed.xyz and chapsmart.com all send `*`.
+ *                Delete the flag the day the provider adds the header.
+ *   networkNote  Optional flat i18n key naming a network restriction, shown
+ *                under the number field once the country is chosen. Set it
+ *                whenever the provider pays only some of the country's
+ *                networks, because `operators` is also the validity rule and
+ *                a customer on another network would otherwise be told their
+ *                own number is invalid.
  *   currency     ISO 4217 local payout currency, for the on-sheet estimate.
  *   domains      Lightning Address domains we RECOGNIZE for this country.
  *   sendDomain   The domain we CONSTRUCT against for a typed phone number.
@@ -121,6 +133,9 @@ export const PAYOUT_COUNTRIES = [
     logoFile: 'logos/chapsmart.png', // ChapSmart is the sole TZ provider -> brand with its logo.
     hint: 'You are about to pay a Tanzanian phone number',
     note: 'ChapSmart Tanzanian Lightning address', // prefilled when saving as a contact
+    // Same reason as Ghana: `operators` below is also the validity rule, so an
+    // Airtel or Yas customer would be told their own number is not a number.
+    networkNote: 'Vodacom M-Pesa only',
     currency: 'TZS',
     domains: ['chapsmart.com'],
     sendDomain: 'chapsmart.com',
@@ -144,6 +159,62 @@ export const PAYOUT_COUNTRIES = [
     // international form is unambiguous — the country chooser resolves the rest.
     operators: [
       { name: 'Vodacom', prefixes: ['74', '75', '76', '79'] },
+    ],
+  },
+  {
+    code: 'GH',
+    flagFile: 'flags/circle-flags--gh.svg',
+    logoFile: 'logos/bitspenda.png', // BitSpenda is the sole GH provider -> brand with the logo.
+    hint: 'You are about to pay a Ghanaian phone number',
+    note: 'BitSpenda Ghanaian Lightning address', // prefilled when saving as a contact
+    // Said BEFORE the first keystroke. The operators table below is also the
+    // validity rule, so without this a Telecel or AirtelTigo customer types a
+    // number that is perfectly valid in Ghana and is told it is not a number.
+    networkNote: 'MTN Mobile Money only',
+    // Verified 2026-08-27: bitspenda.app, www.bitspenda.app and
+    // api.bitspenda.app all answer without an Access-Control-Allow-Origin
+    // header, while the other three providers send `*`. So Ghana resolves on
+    // Android and iOS, where the request goes through the native HTTP stack,
+    // and is unreachable from the web build. Without this flag the browser's
+    // opaque failure is classified as "offline" and the user is told to check
+    // an internet connection that is working perfectly.
+    webUnsupported: true,
+    currency: 'GHS',
+    // bitspenda.app 308-redirects to www.bitspenda.app, which both HTTP
+    // stacks follow, so we construct the canonical bare form their docs use
+    // and recognise the redirected one if it is ever pasted back to us.
+    domains: ['bitspenda.app', 'www.bitspenda.app'],
+    sendDomain: 'bitspenda.app',
+    callingCode: '233',
+    trunkPrefix: '0',
+    nsnLength: 9,
+    // Verified live 2026-08-27: bitspenda.app resolves both 233... (international)
+    // and 0... (local) local-parts to the same payout (callback .../0246341938).
+    // We construct the international form for consistent, readable display,
+    // the same as the other three.
+    localPartFormat: 'international',
+    localPartVerified: true,
+    // MTN ONLY, and this is not a numbering-plan fact — it is what BitSpenda
+    // will actually pay. Their docs enumerate it under Best Practices:
+    // "Only MTN Ghana numbers 024 054 055 059 prefixes are currently
+    // supported" (developer.bitspenda.app/lightning-address).
+    //
+    // 053 is deliberately NOT here even though the live endpoint accepts it.
+    // Probed 2026-08-27: 0531234567 returns a payRequest labelled "via MTN
+    // Mobile Money", so their LNURL layer is more permissive than their
+    // documentation. Resolving is not the same as paying, and there is no
+    // refund path once an invoice is settled, so the documented set is the
+    // safe one: a Ghanaian who cannot pay a 053 number is inconvenienced,
+    // one whose payment resolves and then fails has lost the money. Add it
+    // when BitSpenda confirms 053 in writing.
+    //
+    // The rest, probed the same day: 020/026/027/050/056/057 are real
+    // Ghanaian numbers that come back "only MTN Mobile Money supported", and
+    // 023/025/028/029/051/052/058 come back "unsupported phone prefix".
+    // Since this table is also the validity rule, listing a block BitSpenda
+    // will not pay would let a user reach a resolution that always fails.
+    operators: [
+      { name: 'MTN', prefixes: ['24', '54', '55', '59'] },
     ],
   },
 ]

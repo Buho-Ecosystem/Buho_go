@@ -16,6 +16,23 @@ const earnNativeOnly = (to, from, next) => {
   next({ path: '/settings', query: { getApp: 'learn' } })
 }
 
+/**
+ * The nadanada shop is native-only. nadanada's API sends no CORS headers, so a
+ * browser cannot reach it at all without a reverse proxy, and a half-working
+ * shop that can still create an invoice is worse than none. Bounces to /spend,
+ * which pops the shared Get-the-App dialog (see SpendPage).
+ *
+ * Same three-layer shape as Learn & Earn: this guard, the row tap in
+ * SpendPage, and the money-exit lock in services/nadanada/client.js.
+ */
+const shopNativeOnly = (to, from, next) => {
+  if (Capacitor.isNativePlatform()) {
+    next()
+    return
+  }
+  next({ path: '/spend', query: { getApp: 'shop' } })
+}
+
 const routes = [
   {
     path: '/',
@@ -93,7 +110,7 @@ const routes = [
       { path: '/map', component: () => import('pages/MapPage.vue') },
       // eSIM + VPN shop (nadanada). Lazy-loaded so the catalog + QR code only
       // enter the bundle when the user opens the store. Same pattern as /map.
-      { path: '/shop', component: () => import('pages/ShopPage.vue') },
+      { path: '/shop', component: () => import('pages/ShopPage.vue'), beforeEnter: shopNativeOnly },
       // Online shops directory (BitcoinListings + BTCPay + Nostr). Lazy-loaded
       // so the adapters + Nostr code never land in the initial bundle.
       { path: '/online-shops', component: () => import('pages/OnlineShopsPage.vue') },

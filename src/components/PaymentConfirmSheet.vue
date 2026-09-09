@@ -29,8 +29,8 @@
       <div class="grab-bar"></div>
 
       <header class="top-row">
-        <q-btn flat round dense @click="onTopAction" class="top-btn">
-          <Icon icon="tabler:x" width="20" height="20" />
+        <q-btn flat round dense @click="onTopAction" class="top-btn glass-back-btn" :aria-label="$t('Back')">
+          <Icon icon="tabler:chevron-left" width="20" height="20" />
         </q-btn>
         <div class="top-title">{{ topTitle }}</div>
         <!-- Verification sits in the top-right corner (Blitz-style): a single
@@ -218,21 +218,9 @@
             <span>{{ amountInvalidReason }}</span>
           </div>
 
-          <!-- Quick chips — only meaningful for free / range modes. -->
-          <div v-if="quickAmounts.length" class="quick-row">
-            <button
-              v-for="q in quickAmounts"
-              :key="q.value"
-              type="button"
-              class="quick-chip"
-              :class="{ active: isQuickActive(q) }"
-              @click="pickQuickAmount(q)"
-            >
-              {{ q.label }}
-            </button>
-          </div>
-
-          <!-- Comment -->
+          <!-- Comment: sits directly under the amount block, in the slot
+               the preset chips used to hold, so it stays visible above the
+               CTA even with the keyboard up. -->
           <div v-if="payment?.commentAllowed" class="note-row">
             <Icon icon="tabler:message-circle" width="14" height="14" class="note-icon" />
             <input
@@ -365,177 +353,17 @@ export default {
      * where a bare spinner would hide what's actually happening.
      */
     statusMessage: { type: String, default: '' },
-    /**
-     * Extra parent-owned commit condition, ANDed into the standard gates
-     * (wallet capability + amount validity). Used by flows whose slot
-     * content must settle before committing — e.g. the on-chain fee
-     * panel: no confirmed fee quote, no send. Defaults open so ordinary
-     * payments never need to pass it.
-     */
-    commitGate: { type: Boolean, default: true }
-  },
-  emits: ['update:modelValue', 'confirm', 'cancel', 'amount-changed'],
-  data() {
-    return {
-      showAddress: false,
-      displayAmount: '',
-      currentCurrency: 'sats',
-      isAmountFocused: false,
-      comment: '',
-      fiatRates: {},
-      logoFailed: false
-    }
-  },
-  computed: {
-    ...mapState(useWalletStore, ['preferredFiatCurrency', 'denominationCurrency', 'useBip177Format', 'isActiveWalletArkade', 'arkadeLnSendLimits']),
-
-    show: {
-      get() { return this.modelValue },
-      set(v) { this.$emit('update:modelValue', v) }
-    },
-
-    // ───── Recipient ─────
-    recipientName() {
-      return this.payment?.recipient?.name || this.$t('Recipient')
-    },
-    recipientColor() {
-      return this.payment?.recipient?.color || '#3B82F6'
-    },
-    recipientLogo() {
-      return this.payment?.recipient?.logoUrl || ''
-    },
-    // Render the logo image only when we have a URL that has not failed to
-    // load; otherwise the avatar falls back to the colored initial rather
-    // than a broken-image glyph (this is a verified-merchant trust surface).
-    showRecipientLogo() {
-      return !!this.recipientLogo && !this.logoFailed
-    },
-    // Art without its own background plate (merchant marks from Branta, a
-    // wordmark, a bare wallet logomark) is fitted whole inside the circle
-    // rather than cropped edge-to-edge. App-icon art stays full-bleed.
-    recipientLogoContain() {
-      return this.payment?.recipient?.logoContain === true
-    },
-    // Optional per-logo override of the contain padding, for art whose
-    // silhouette is known to clear the circle at a tighter inset (see
-    // walletBrands). Empty -> the conservative default in the stylesheet.
-    recipientLogoInset() {
-      return this.payment?.recipient?.logoInset || ''
-    },
-    // Optional avatar backdrop for a logo that needs one (e.g. ZBD's white
-    // wordmark, which would vanish on the default white circle). Empty -> the
-    // default `.has-logo` white background.
-    recipientLogoBg() {
-      return this.payment?.recipient?.logoBg || ''
-    },
-    recipientInitial() {
-      const explicit = this.payment?.recipient?.initial
-      if (explicit) return explicit
-      const name = this.payment?.recipient?.name
-      return name ? name.charAt(0).toUpperCase() : '?'
-    },
-    recipientAddress() {
-      return this.payment?.recipient?.address || ''
-    },
-    recipientAddressType() {
-      return this.payment?.recipient?.addressType || 'lightning'
-    },
-    // Branta merchant verification, present only when the parent's adapter
-    // attached it after a positive lookup. Absent on every unverified
-    // payment, so the badge simply never renders in the common case.
-    recipientVerification() {
-      return this.payment?.recipient?.verification || null
-    },
-
-    // Picture-less matched contact → the app-wide silhouette mark. A
-    // loaded logo (photo / brand / Branta) always wins over it.
-    isSilhouetteRecipient() {
-      return !!this.payment?.recipient?.silhouette && !this.showRecipientLogo
-    },
-
-    // Fiat-payout service context (Tando, Bitzed, …), attached by the
-    // parent adapter when the destination is a recognized phone-payout
-    // Lightning Address. Absent on every normal payment, so the hint
-    // simply never renders in the common case.
-    recipientLnService() {
-      return this.payment?.recipient?.lnService || null
-    },
-
-    // Hosting consumer wallet name (Wallet of Satoshi, Phoenix, Blink, …),
-    // attached by the parent adapter when the address domain matches a known
-    // wallet. Absent otherwise, so the brand hint never renders in that case.
-    recipientWalletBrand() {
-      return this.payment?.recipient?.walletBrand || null
-    },
-
-    // Label for the payment-indicator row: the human description when the
-    // invoice / LNURL carried one (real content), otherwise a plain
-    // "Show details" so the row reads as what it is — the reveal for the
-    // raw destination string. Never the rail name: the payment-language
-    // unification says only "Bitcoin payment" on send, and the hero
-    // identity already carries that, so repeating it here would be the
-    // old shown-twice bug in new clothes.
-    paymentLabel() {
-      if (this.payment?.description) return this.payment.description
-      return this.$t('Show details')
-    },
-
-    // LUD-21 / currency-extension (#207) payout currency, present when the
-    // provider returns one (fiat-payout addresses: ChapSmart TZS, Tando KES,
-    // Bitzed ZMW). Shape: { code, symbol, decimals, minSendable, maxSendable,
-    // multiplier }, where multiplier is millisats per 1 unit of the currency.
-    // Lets the sender denominate in the recipient's currency with the sat cost
-    // derived from the callback's own multiplier — no external rate needed.
-    payoutCurrency() {
-      return this.payment?.payoutCurrency || null
-    },
-    // True while the amount is being entered in the recipient's local currency.
-    isLocalDenomination() {
-      return !!this.payoutCurrency && this.currentCurrency === this.payoutCurrency.code
-    },
-    // Single source of truth for how the amount is denominated, so every
-    // consumer switches on one value instead of re-deriving from currentCurrency
-    // (which now also holds a payout code like 'TZS', not just sats/btc/fiat).
-    denominationMode() {
-      if (this.isLocalDenomination) return 'local'
-      if (this.currentCurrency === 'sats') return 'sats'
-      if (this.currentCurrency === 'btc') return 'btc'
-      return 'fiat'
-    },
-
-    // ───── Amount mode ─────
-
-    // Arkade pays Lightning through a swap with its own floor and ceiling.
-    // Surface those bounds in the amount entry itself so the user can never
-    // confirm an amount the swap layer would refuse a moment later. Null for
-    // every non-Arkade wallet, for non-Lightning destinations (ark1/bitcoin
-    // ride other rails), and for redeem (receive-direction) flows.
-    arkadeSwapBounds() {
-      if (!this.isActiveWalletArkade || this.isRedeem) return null
-      const t = this.recipientAddressType
-      if (t !== 'lightning' && t !== 'invoice' && t !== 'lnurl') return null
-      return this.arkadeLnSendLimits || null
-    },
     amountMode() {
-      const mode = this.payment?.amount?.mode || 'free'
-      // A free-amount Lightning send on Arkade is still bounded by the swap;
-      // present it as a range so the hint and validation engage.
-      if (mode === 'free' && this.arkadeSwapBounds) return 'range'
-      return mode
+      return this.payment?.amount?.mode || 'free'
     },
     fixedSats() {
       return this.payment?.amount?.fixedSats || 0
     },
     minSats() {
-      const base = this.payment?.amount?.minSats || 0
-      const swap = this.arkadeSwapBounds
-      return swap?.min ? Math.max(base, swap.min) : base
+      return this.payment?.amount?.minSats || 0
     },
     maxSats() {
-      const base = this.payment?.amount?.maxSats || 0
-      const swap = this.arkadeSwapBounds
-      if (!swap?.max) return base
-      return base ? Math.min(base, swap.max) : swap.max
+      return this.payment?.amount?.maxSats || 0
     },
 
     fiatCurrencyCode() {
@@ -581,17 +409,6 @@ export default {
     // registration vue-i18n skips placeholder substitution and the user
     // sees a literal "{n}" in the UI.
     amountInvalidReason() {
-      // A fixed-amount invoice outside the Arkade swap bounds can never be
-      // paid from this wallet, and the user can't edit the amount — say so
-      // up front instead of failing after the Send tap.
-      if (this.amountMode === 'fixed' && this.arkadeSwapBounds && this.fixedSats > 0) {
-        if (this.minSats && this.fixedSats < this.minSats) {
-          return this.$t('Minimum is {n} sats', { n: this.minSats.toLocaleString() })
-        }
-        if (this.maxSats && this.fixedSats > this.maxSats) {
-          return this.$t('Maximum is {n} sats', { n: this.maxSats.toLocaleString() })
-        }
-      }
       if (!this.displayAmount || this.amountMode === 'fixed') return ''
       // Local-currency mode: validate the entered LOCAL amount against the
       // provider's own min/max. Runs before the sats>0 check below so a
@@ -689,32 +506,6 @@ export default {
       if (typeof fe.sats !== 'number') return ''
       if (fe.sats === 0) return this.$t('Free')
       return `${fe.sats.toLocaleString()} sats`
-    },
-
-    // Quick chips: only when the user is free to choose. For range mode
-    // we filter to chips that fit the constraints so we never offer an
-    // amount that would fail validation.
-    quickAmounts() {
-      if (this.amountMode === 'fixed') return []
-      // No preset chips in local-currency mode: sat/fiat presets are meaningless
-      // in the recipient's currency, and inventing round local amounts would be
-      // a guess. The user types the amount directly.
-      if (this.isLocalDenomination) return []
-      const baseSats = [1000, 5000, 10000, 21000]
-      if (this.currentCurrency === 'sats') {
-        const chips = baseSats.map(v => ({ value: v, label: this.formatChipLabel(v, 'sats') }))
-        if (this.amountMode === 'range') {
-          return chips.filter(c => c.value >= this.minSats && c.value <= this.maxSats)
-        }
-        return chips
-      }
-      if (this.currentCurrency === 'btc') return []
-      const sym = this.fiatSymbol.trim()
-      const chips = [1, 5, 10, 20].map(v => ({ value: v, label: `${sym}${v}` }))
-      // No range filtering on fiat chips — sats conversion drift makes a
-      // perfect filter unreliable; we let inline validation catch out-of-
-      // range picks if the user taps one.
-      return chips
     },
 
     requiresSlide() {
@@ -925,11 +716,6 @@ export default {
       this.displayAmount = ''
     },
 
-    pickQuickAmount(q) {
-      if (this.amountMode === 'fixed') return
-      this.displayAmount = String(q.value)
-    },
-
     /**
      * Public (called via ref): set the amount from outside, in sats.
      * Used by slot content that owns a "Use all" affordance (on-chain
@@ -940,18 +726,6 @@ export default {
       if (this.amountMode === 'fixed') return
       this.currentCurrency = 'sats'
       this.displayAmount = String(Math.max(0, Math.floor(sats)))
-    },
-
-    isQuickActive(q) {
-      return parseFloat(this.displayAmount) === q.value
-    },
-
-    formatChipLabel(value, unit) {
-      if (unit === 'sats') {
-        if (value >= 1000) return `${value / 1000}k`
-        return String(value)
-      }
-      return String(value)
     },
 
     emitConfirm() {
@@ -1025,7 +799,7 @@ export default {
   padding: 4px 12px 8px;
   flex-shrink: 0;
 }
-.top-btn { width: 36px; height: 36px; color: var(--text-secondary); }
+.top-btn { /* size + glass come from .glass-back-btn (app.css) */ }
 .top-title {
   flex: 1;
   text-align: center;
@@ -1037,7 +811,7 @@ export default {
 /* Mirrors the left button's width so the title stays optically centered;
    holds the top-right verification seal when present. */
 .top-action {
-  width: 36px;
+  width: 40px;
   display: flex;
   align-items: center;
   justify-content: flex-end;
@@ -1382,49 +1156,30 @@ export default {
   color: #EF4444;
 }
 
-/* ─── Quick chips ─── */
-.quick-row {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 8px;
-}
-.quick-chip {
-  height: 38px;
-  border-radius: var(--radius-pill);
-  border: none;
-  background: var(--bg-input);
-  color: var(--text-secondary);
-  font-size: 13px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: background 0.15s ease, color 0.15s ease, transform 0.08s ease;
-}
-.quick-chip:hover { color: var(--text-primary); }
-.quick-chip:active { transform: scale(0.97); }
-.quick-chip.active {
-  background: var(--brand-accent-soft);
-  color: var(--brand-accent);
-  box-shadow: inset 0 0 0 1px rgba(21, 222, 114, 0.32);
-}
-.body--light .quick-chip.active { box-shadow: inset 0 0 0 1px rgba(5, 149, 115, 0.28); }
-
 /* ─── Note ─── */
 .note-row {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 12px 14px;
+  min-height: 44px;
+  padding: 10px 14px;
   border-radius: var(--radius-md);
   background: var(--bg-input);
+  transition: box-shadow 0.15s ease;
+}
+.note-row:focus-within {
+  box-shadow: inset 0 0 0 1px rgba(128, 128, 128, 0.35);
 }
 .note-icon { color: var(--text-muted); flex-shrink: 0; }
 .note-input {
   flex: 1;
+  min-width: 0;
   border: none;
   outline: none;
   background: transparent;
   font-family: inherit;
-  font-size: 14px;
+  /* 16px on purpose: anything smaller makes iOS zoom the sheet on focus. */
+  font-size: 16px;
   color: var(--text-primary);
 }
 .note-input::placeholder { color: var(--text-muted); }

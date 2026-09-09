@@ -48,8 +48,8 @@
     >
       <div class="web-scan-surface">
         <header class="ws-top">
-          <q-btn flat round dense class="ws-btn" :aria-label="$t('Close')" @click="close">
-            <Icon icon="tabler:x" width="22" height="22" />
+          <q-btn flat round dense class="ws-btn" :aria-label="$t('Back')" @click="close">
+            <Icon icon="tabler:chevron-left" width="22" height="22" />
           </q-btn>
           <!-- Optional headline. Payment flows pass none — the bottom prompt
                carries the context, keeping the camera surface clean. -->

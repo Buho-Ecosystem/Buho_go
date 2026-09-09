@@ -18,12 +18,15 @@ import {
   normalizeRegion,
   normalizeBundle,
   sortBundles,
-  toPurchasableBundleName,
+  deriveEsimState,
+  declaredBundleBytes,
+  unitsAreBytes,
 } from '../esim.js'
 import {
   normalizeVpnCountry,
   normalizeDuration,
   sortDurations,
+  deriveVpnState,
 } from '../vpn.js'
 
 let passed = 0
@@ -60,17 +63,7 @@ test('normalizeRegion handles object and string forms', () => {
   assert.deepEqual(normalizeRegion('Middle East'), { name: 'Middle East', slug: 'middle-east' })
 })
 
-test('toPurchasableBundleName maps catalog name to the esim_*_V2 SKU', () => {
-  // The purchase endpoint rejects the catalog `fixed_*` name and only accepts
-  // the versioned eSIM SKU (verified live for AT/BR + the docs' JP example).
-  assert.equal(toPurchasableBundleName('fixed_1GB_7D_AT'), 'esim_1GB_7D_AT_V2')
-  assert.equal(toPurchasableBundleName('fixed_50GB_30D_BR'), 'esim_50GB_30D_BR_V2')
-  // already a SKU / unknown shape -> passthrough
-  assert.equal(toPurchasableBundleName('esim_1GB_7D_AT_V2'), 'esim_1GB_7D_AT_V2')
-  assert.equal(toPurchasableBundleName(''), '')
-})
-
-test('normalizeBundle yields the purchasable SKU + keeps the raw name', () => {
+test('normalizeBundle sends the catalog name to the purchase endpoint', () => {
   const b = normalizeBundle({
     name: 'fixed_1GB_7D_AT',
     description: 'eSIM, 1GB, 7 Days, Austria',
@@ -80,7 +73,10 @@ test('normalizeBundle yields the purchasable SKU + keeps the raw name', () => {
     price: 0.99,
     unlimited: false,
   })
-  assert.equal(b.bundleName, 'esim_1GB_7D_AT_V2')
+  // nadanada documents the catalog name as the canonical purchase input and
+  // resolves it to the consumption SKU itself. An earlier build rewrote this
+  // to an invented `esim_*_V2` form that appears nowhere in their spec.
+  assert.equal(b.bundleName, 'fixed_1GB_7D_AT')
   assert.equal(b.rawName, 'fixed_1GB_7D_AT')
   assert.equal(b.dataInGB, 1)
   assert.equal(b.durationInDays, 7)
@@ -132,6 +128,102 @@ test('normalizeDuration builds a pluralised label and keeps the value', () => {
 
 test('normalizeDuration rejects records without a duration', () => {
   assert.equal(normalizeDuration({ price: 1 }), null)
+})
+
+// ---------------------------------------------------------------------------
+// Derived state — what the product cards lead with
+// ---------------------------------------------------------------------------
+
+const NOW = Date.parse('2026-08-26T12:00:00Z')
+const iso = (days) => new Date(NOW + days * 86400000).toISOString()
+
+test('deriveEsimState reads active from the live assignment window', () => {
+  const d = deriveEsimState({
+    activeBundleCount: 1,
+    usage: { percent: 12.5 },
+    bundles: [{ startTime: iso(-3), endTime: iso(27), usage: { percent: 12.5 } }],
+  }, NOW)
+  assert.equal(d.state, 'active')
+  assert.equal(d.daysLeft, 27)
+  assert.equal(d.percent, 12.5)
+})
+
+test('deriveEsimState marks a past window expired', () => {
+  const d = deriveEsimState({
+    activeBundleCount: 0,
+    usage: { percent: 100 },
+    bundles: [{ startTime: iso(-40), endTime: iso(-10), usage: { percent: 100 } }],
+  }, NOW)
+  assert.equal(d.state, 'expired')
+  assert.equal(d.daysLeft, 0)
+})
+
+test('deriveEsimState never guesses from profileStatus', () => {
+  // profileStatus is a provider enum with no documented values, so an eSIM
+  // with no assignment windows stays "unknown" rather than being called active.
+  const d = deriveEsimState({ profileStatus: 'RELEASED', activeBundleCount: 0, bundles: [] }, NOW)
+  assert.equal(d.state, 'unknown')
+  assert.equal(d.endsAt, null)
+})
+
+test('deriveEsimState survives a null status', () => {
+  assert.deepEqual(deriveEsimState(null, NOW), {
+    state: 'unknown', endsAt: null, startsAt: null, daysLeft: null,
+    percent: null, bytesUsed: null, bytesTotal: null,
+  })
+})
+
+test('a data figure is only shown when the provider proves the unit', () => {
+  // `provider_units` is undocumented. The one thing that pins it down is the
+  // provider's own arithmetic: a bundle calling itself 1GB and reporting
+  // 1000000000 units has said what a unit is. Live sample, 2026-08-26:
+  // esimc_1GB_7D_DE_V2 -> totalInitialQuantity 1000000000.
+  assert.equal(declaredBundleBytes('esimc_1GB_7D_DE_V2'), 1e9)
+  assert.equal(declaredBundleBytes('eSIM, 500MB, 7 Days, Germany'), 5e8)
+  assert.equal(declaredBundleBytes('esimc_unlimited_30D_DE'), null)
+
+  assert.equal(unitsAreBytes({ initial: 1e9 }, 'esimc_1GB_7D_DE_V2'), true)
+  // Disagreement means we do NOT know the unit — stay silent rather than lie
+  // about how much allowance is left.
+  assert.equal(unitsAreBytes({ initial: 1024 }, 'esimc_1GB_7D_DE_V2'), false)
+  assert.equal(unitsAreBytes({ initial: 1e9 }, 'esimc_unlimited_30D_DE'), false)
+  assert.equal(unitsAreBytes(null, 'esimc_1GB_7D_DE_V2'), false)
+})
+
+test('deriveEsimState exposes bytes only once confirmed', () => {
+  const confirmed = deriveEsimState({
+    activeBundleCount: 1,
+    usage: { initial: 1e9, used: 4.14e8, percent: 41.4, isBytes: true },
+    bundles: [{ startTime: iso(-1), endTime: iso(6) }],
+  }, NOW)
+  assert.equal(confirmed.bytesTotal, 1e9)
+  assert.equal(confirmed.bytesUsed, 4.14e8)
+
+  const unconfirmed = deriveEsimState({
+    activeBundleCount: 1,
+    usage: { initial: 1e9, used: 4.14e8, percent: 41.4, isBytes: false },
+    bundles: [{ startTime: iso(-1), endTime: iso(6) }],
+  }, NOW)
+  assert.equal(unconfirmed.bytesTotal, null)
+  assert.equal(unconfirmed.bytesUsed, null)
+  assert.equal(unconfirmed.percent, 41.4, 'the percentage still carries the meaning')
+})
+
+test('deriveVpnState reports active, expired and paused', () => {
+  assert.equal(deriveVpnState({ found: true, expiryDate: iso(10), isEnabled: true }, NOW).state, 'active')
+  assert.equal(deriveVpnState({ found: true, expiryDate: iso(-1), isEnabled: true }, NOW).state, 'expired')
+  assert.equal(deriveVpnState({ found: true, expiryDate: iso(10), isEnabled: false }, NOW).state, 'disabled')
+  assert.equal(deriveVpnState({ found: false }, NOW).state, 'unknown')
+})
+
+test('deriveVpnState omits the meter unless both figures are reported', () => {
+  // A bar drawn at 0% because the data is missing reads as broken.
+  assert.equal(deriveVpnState({ found: true, expiryDate: iso(5), isEnabled: true, bandwidthUsed: 5 }, NOW).percent, null)
+  const withBoth = deriveVpnState(
+    { found: true, expiryDate: iso(5), isEnabled: true, bandwidthUsed: 25, bandwidthAllotted: 100 },
+    NOW,
+  )
+  assert.equal(withBoth.percent, 25)
 })
 
 test('sortDurations orders cheapest first', () => {

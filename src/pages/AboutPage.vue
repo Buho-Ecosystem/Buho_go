@@ -6,17 +6,41 @@
          header into the content at rest on Android (overflow-x:hidden
          promotes this page to a non-scrolling sticky-container ancestor). -->
     <div class="page-header">
-      <q-btn flat round dense @click="$router.back()" class="back-btn">
-        <Icon icon="tabler:chevron-left" width="18" height="18" />
+      <q-btn flat round dense @click="$router.back()" class="back-btn glass-back-btn">
+        <Icon icon="tabler:chevron-left" width="20" height="20" />
       </q-btn>
       <div class="header-title">{{ $t('About BuhoGO') }}</div>
       <div class="header-spacer"></div>
     </div>
 
     <div class="about-content">
+      <!-- Identity hero: the mark, the name, and the version as one calm
+           block - the platform's own About pages lead with who the app
+           is before what it links to. The version pill is the update
+           checker; a dot appears when a newer build is waiting. -->
+      <div class="about-hero">
+        <div class="about-hero-mark">
+          <img src="/buho_logo.svg" alt="" class="about-hero-logo" />
+        </div>
+        <div class="about-hero-name">BuhoGO</div>
+        <button
+          type="button"
+          class="about-version-pill"
+          :class="{ 'about-version-pill--update': updateStore.hasUpdate }"
+          @click="onVersionClick"
+        >
+          <span v-if="updateStore.hasUpdate" class="about-version-dot" aria-hidden="true"></span>
+          v{{ appVersion }}
+        </button>
+        <div class="about-version-caption">{{ versionCaption }}</div>
+      </div>
+
       <p class="about-mission">
         {{ $t("BuhoGO started as a wallet for our friends. We keep it simple and skip the confusing tech talk, because that's how we'd want it too.") }}
       </p>
+
+      <!-- The ask lives next to the story it belongs to. -->
+      <SupportBuhoGo />
 
       <SettingsSection>
         <SettingsRow
@@ -44,20 +68,10 @@
             </button>
           </div>
         </div>
-
-        <SettingsRow
-          icon="tabler:info-circle"
-          :label="$t('Version')"
-          :inline-value="'v' + appVersion"
-          :caption="versionCaption"
-          :badge="updateStore.hasUpdate ? $t('Update available') : ''"
-          :badge-variant="updateStore.isRequired ? 'danger' : 'info'"
-          @click="onVersionClick"
-        />
       </SettingsSection>
 
       <div class="about-downloads">
-        <div class="about-tile-label">{{ $t('Get the app') }}</div>
+        <div class="about-tile-label about-tile-label--freestanding">{{ $t('Get the app') }}</div>
         <div class="store-badge-row">
           <button type="button" class="store-badge-btn" @click="openPlayStore">
             <span class="store-badge-playstore">
@@ -83,11 +97,12 @@ import { Icon } from '@iconify/vue';
 import { version } from '../../package.json';
 import SettingsSection from '../components/settings/SettingsSection.vue';
 import SettingsRow from '../components/settings/SettingsRow.vue';
+import SupportBuhoGo from '../components/settings/SupportBuhoGo.vue';
 import { useUpdateStore } from '../stores/update';
 
 export default {
   name: 'AboutPage',
-  components: { Icon, SettingsSection, SettingsRow },
+  components: { Icon, SettingsSection, SettingsRow, SupportBuhoGo },
   setup() {
     return { updateStore: useUpdateStore() };
   },
@@ -188,32 +203,16 @@ export default {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: calc(1rem + var(--safe-top, 0px)) 1rem 1rem;
+  padding: calc(0.75rem + var(--safe-top, 0px)) 1rem 0.75rem;
   background: var(--bg-primary);
-  border-bottom: 1px solid var(--border-card);
   position: sticky;
   top: 0;
   z-index: 100;
 }
 
-.back-btn {
-  width: 40px;
-  height: 40px;
-  border-radius: 10px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--text-primary);
-  transition: background-color 0.15s ease;
-}
-
-.back-btn:hover {
-  background: var(--bg-input);
-}
-
 .header-title {
   color: var(--text-primary);
-  font-size: 1.25rem;
+  font-size: 16px;
   font-weight: 600;
   flex: 1;
   text-align: center;
@@ -230,29 +229,107 @@ export default {
   padding: 1.25rem 1rem calc(2rem + var(--safe-bottom, 0px));
   display: flex;
   flex-direction: column;
-  gap: 1.25rem;
+  gap: 21px;
   max-width: 480px;
   margin: 0 auto;
   box-sizing: border-box;
 }
 
+/* ----------------------------------------------------------------
+   Identity hero
+---------------------------------------------------------------- */
+.about-hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding-top: 13px;
+}
+
+.about-hero-mark {
+  width: 84px;
+  height: 84px;
+  border-radius: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-card);
+  border: 1px solid var(--border-card);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.08);
+}
+
+.about-hero-logo {
+  width: 56px;
+  height: 56px;
+  object-fit: contain;
+}
+
+.about-hero-name {
+  margin-top: 13px;
+  font-size: 21px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--text-primary);
+}
+
+/* The version pill IS the update checker: quiet by default, ringed with
+   a dot when a newer build waits. 44pt target via padding. */
+.about-version-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  min-height: 32px;
+  padding: 4px 14px;
+  border: 1px solid var(--border-card);
+  border-radius: 999px;
+  background: var(--bg-card);
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: transform 0.1s ease;
+}
+
+.about-version-pill:active {
+  transform: scale(0.96);
+}
+
+.about-version-pill--update {
+  border-color: #15DE72;
+  color: var(--text-primary);
+}
+
+.about-version-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #15DE72;
+}
+
+.about-version-caption {
+  margin-top: 6px;
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+
 .about-mission {
-  margin: 0;
-  padding: 0 0.25rem;
+  margin: 0 auto;
+  padding: 0 0.5rem;
+  max-width: 40ch;
   font-size: 14px;
   line-height: 1.55;
+  text-align: center;
   color: var(--text-secondary);
 }
 
 /* ----------------------------------------------------------------
-   Freeform content inside SettingsSection (same pattern as
-   Settings.vue's .support-row): the tile block isn't a .settings-row
-   so it draws no auto-divider and needs its own spacing/border to
-   sit cleanly between the GitHub and Version rows.
+   Freeform content inside SettingsSection (same pattern as before):
+   the tile block isn't a .settings-row so it draws no auto-divider.
 ---------------------------------------------------------------- */
 .about-tile-block {
   padding: 14px 16px;
-  border-bottom: 1px solid var(--border-card);
 }
 
 .about-tile-label {
@@ -263,15 +340,18 @@ export default {
   margin-bottom: 12px;
 }
 
+.about-tile-label--freestanding {
+  text-align: center;
+}
+
 /* ----------------------------------------------------------------
    Community channels — Telegram / Nostr. Soft brand-tinted circles
-   rather than solid-fill tiles, matching the app's existing "quiet
-   tint" language (wallet-hint, seed-callout, quick-chip.active)
-   instead of a loud row of saturated brand colors.
+   matching the app's quiet-tint language.
 ---------------------------------------------------------------- */
 .channel-row {
   display: flex;
-  gap: 22px;
+  justify-content: center;
+  gap: 28px;
 }
 
 .channel-btn {
@@ -307,8 +387,7 @@ export default {
 }
 
 /* The Nostr PNG already carries its own purple fill and mark, so the
-   tile just frames it at the same footprint as the other one — no
-   extra background or icon color needed. */
+   tile just frames it at the same footprint as the other one. */
 .channel-icon--nostr {
   background: transparent;
 }
@@ -345,12 +424,8 @@ export default {
 }
 
 /* ----------------------------------------------------------------
-   Downloads — real "Get it on" store badges. The Zapstore badge is
-   the exact asset provided (already includes its own black chrome,
-   border, and wordmark); the Play Store badge is built to match that
-   same visual language using the real Play Store triangle icon from
-   Iconify's "logos" set, since Google doesn't ship a matching asset
-   in this repo.
+   Downloads — real "Get it on" store badges, centered as the page's
+   end cap.
 ---------------------------------------------------------------- */
 .about-downloads {
   padding: 0 0.25rem;
@@ -360,6 +435,7 @@ export default {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
+  justify-content: center;
   gap: 12px;
 }
 

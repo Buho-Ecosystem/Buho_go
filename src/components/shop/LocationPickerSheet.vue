@@ -6,7 +6,7 @@
     @show="onShow"
     @hide="onHide"
   >
-    <q-card class="loc-sheet" :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'">
+    <q-card class="loc-sheet shop-surface" :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'">
       <div class="sheet-handle" aria-hidden="true">
         <span :class="$q.dark.isActive ? 'sheet-handle-bar-dark' : 'sheet-handle-bar-light'"></span>
       </div>
@@ -116,7 +116,7 @@ export default {
 </script>
 
 <style scoped>
-.loc-sheet { width: 100%; max-width: 520px; border-top-left-radius: 22px; border-top-right-radius: 22px; overflow: hidden; padding-bottom: max(16px, env(safe-area-inset-bottom, 0px)); display: flex; flex-direction: column; max-height: 88vh; max-height: 88dvh; }
+.loc-sheet { width: 100%; max-width: 520px; border-top-left-radius: 22px; border-top-right-radius: 22px; overflow: hidden; padding-bottom: max(16px, var(--safe-bottom, 16px)); display: flex; flex-direction: column; max-height: 88vh; max-height: 88dvh; }
 .sheet-handle { display: flex; justify-content: center; padding: 8px 0 4px; flex-shrink: 0; }
 .sheet-handle-bar-light, .sheet-handle-bar-dark { width: 36px; height: 4px; border-radius: 999px; display: block; }
 .sheet-handle-bar-light { background: rgba(15, 23, 42, 0.18); }

@@ -2,10 +2,16 @@
  * ArkadeWalletProvider — Arkade backend for BuhoGO.
  *
  * Implements the WalletProvider contract on top of `@arkade-os/sdk` 0.4.x.
- * Covers the full payment matrix: native ark1↔ark1 transfers, Lightning in
- * both directions (Boltz submarine / reverse swaps via `@arkade-os/boltz-swap`),
- * and on-chain in both directions (boarding receive + collaborative offboard
- * send via the SDK's Ramps).
+ * Covers native ark1↔ark1 transfers and on-chain in both directions
+ * (boarding receive + collaborative offboard send via the SDK's Ramps).
+ *
+ * Lightning is OUT OF SERVICE: it rode Boltz swaps, and the Boltz service
+ * behind the retired `@arkade-os/boltz-swap` package is gone. The Lightning
+ * methods below throw ARKADE_LN_UNAVAILABLE so any path that slips past the
+ * capability gates fails with honest copy. The replacement (Arkade Intents,
+ * `@arkade-os/swap` RFQ corridors) is mapped in
+ * `Plans WIP/arkade-maintenance-map.md` - send is phase 1, receive is
+ * blocked upstream until a solver serves the corridor.
  *
  * Key facts that shape this provider:
  *   - Identity is the SDK's `MnemonicIdentity` (HD, BIP-86 account template
@@ -44,16 +50,9 @@ import {
   InMemoryWalletRepository,
   InMemoryContractRepository,
 } from '@arkade-os/sdk';
-import {
-  ArkadeSwaps,
-  BoltzSwapProvider,
-  SwapError,
-  getInvoiceSatoshis,
-} from '@arkade-os/boltz-swap';
 import { decryptString } from '../utils/deviceCrypto';
 import {
   ARKADE_MAINNET_SERVER,
-  ARKADE_BOLTZ_API_URL,
   ARKADE_DEFAULT_NETWORK,
   isMainnetNetwork,
   generateArkadeMnemonic,
@@ -65,9 +64,10 @@ import {
 // LNbits `#FF1FE1` convention for `getInfo().color`.
 const ARKADE_COLOR = '#F14317';
 
-// IndexedDB database the boltz-swap package persists pending swaps in (its
 // package default). Single-instance: BuhoGO allows exactly one Arkade wallet,
 // so it is deleted together with the wallet's own cache on removal.
+// The retired boltz-swap package's IndexedDB name, kept only so
+// deleteStorage() can clear the residue on old installs.
 const BOLTZ_SWAP_DB = 'arkade-boltz-swap';
 
 /** Per-wallet IndexedDB database backing the SDK's repositories. */
@@ -96,37 +96,17 @@ export class ArkadeWalletProvider extends WalletProvider {
     this.network = walletData.network || ARKADE_DEFAULT_NETWORK;
     this.arkServerUrl = walletData.arkServerUrl || ARKADE_MAINNET_SERVER;
 
-    // Lightning is delivered via Boltz swaps (Arkade has no native LN). Built
-    // lazily in connect(); ark1 + onchain keep working if this fails to init.
-    /** @type {import('@arkade-os/boltz-swap').ArkadeSwaps | null} */
-    this.lightningSwaps = null;
-    // The in-flight _initLightning() promise. disconnect() awaits it before
-    // disposing, so a rapid wallet switch can't strand a live SwapManager
-    // (WebSocket + timers) created after teardown already ran.
-    this._initLightningPromise = null;
-    // Resolved Boltz REST base for direction-specific limit lookups; null on
-    // networks where the package default applies (no receive pre-validation).
-    this._boltzApiUrl = null;
-    // paymentHash -> { pendingSwap, claimed, preimage } for incoming LN swaps.
-    this._reverseSwaps = new Map();
-    // Boltz swap limits per direction, cached briefly so send/receive (and
-    // the auto-withdraw pre-flight) don't refetch per call.
-    this._sendLimits = null;
-    this._sendLimitsFetchedAt = 0;
-    this._receiveLimits = null;
-    this._receiveLimitsFetchedAt = 0;
     this._lastRecoveryCheck = 0;
     // Optional callback the store wires up to mirror "a recovery settlement
     // is in flight" into reactive state (subtle wallet-maintenance indicator).
     this._onMaintenance = null;
-    // Optional callback the store wires up to react to background swap
-    // activity (auto-claimed receives, auto-refunded failures): refresh the
-    // balance, tell the user. `(kind, swap, error?) => void`.
+    // Optional callback the store wires up to react to background wallet
+    // activity that changes the balance (restore scan, recovery settlement):
+    // refresh, tell the user. `(kind, detail?, error?) => void`.
     this._onSwapActivity = null;
     // Optional callback the store wires up to persist "the one-time HD
     // restore scan finished" onto the wallet's metadata.
     this._onRestoreScanComplete = null;
-    this._swapUnsubscribers = [];
 
     // Stop handle for the notifyIncomingFunds subscription; tracked here so
     // disconnect() can always tear it down.
@@ -270,7 +250,6 @@ export class ArkadeWalletProvider extends WalletProvider {
       // Everything below is background warm-up: the address and any cached
       // balance are usable now, and none of these may fail the connect (the
       // wallet must come up offline too).
-      this._initLightningPromise = this._initLightning();
       void this._restoreScanIfNeeded();
       // If a previous send was interrupted mid-submit (app killed between
       // submit and finalize), finalize it now. No-ops (no server round trip)
@@ -317,76 +296,6 @@ export class ArkadeWalletProvider extends WalletProvider {
     }
   }
 
-  /**
-   * Best-effort init of the Lightning swap layer. Never throws: a Boltz
-   * hiccup must not break the core ark1 + balance flow, it just leaves
-   * Lightning temporarily unavailable.
-   */
-  async _initLightning() {
-    try {
-      // Pin the mainnet Boltz endpoint explicitly (see ARKADE_BOLTZ_API_URL):
-      // the docs' dedicated host has a DEAD swap WebSocket, so we use the
-      // generic Boltz which serves the same ARK<->BTC pairs with a working WS.
-      // Non-mainnet keeps the package default (mutinynet/regtest are correct).
-      const apiUrl = isMainnetNetwork(this.network) ? ARKADE_BOLTZ_API_URL : undefined;
-      this._boltzApiUrl = apiUrl || null;
-      const swapProvider = new BoltzSwapProvider({ network: this.network, apiUrl });
-      // create() is the SDK-recommended entry point. It auto-starts the
-      // SwapManager (incoming swaps auto-claim, failed outgoing swaps
-      // auto-refund) backed by IndexedDbSwapRepository, so pending swaps
-      // survive an app restart. It adopts the swapProvider we built, so our
-      // endpoint wins.
-      this.lightningSwaps = await ArkadeSwaps.create({ wallet: this.wallet, swapProvider });
-      await this._subscribeSwapManager();
-    } catch (error) {
-      console.warn('[arkade] Lightning swaps unavailable (ark1 still works):', error?.message || error);
-      this.lightningSwaps = null;
-    }
-  }
-
-  /**
-   * Mirror the autonomous SwapManager's lifecycle events up to the store:
-   * a completed reverse swap means funds arrived (refresh the balance, mark
-   * the tracked invoice paid); a failed swap means an auto-refund is under
-   * way (refresh + tell the user their funds are coming back).
-   */
-  async _subscribeSwapManager() {
-    const mgr = this.lightningSwaps?.getSwapManager?.();
-    if (!mgr) return;
-
-    const onCompleted = (swap) => {
-      try {
-        if (swap?.type === 'reverse') {
-          // Reverse swaps are tracked by paymentHash; the manager hands back
-          // the swap object, so match on the Boltz swap id.
-          for (const [paymentHash, tracked] of this._reverseSwaps) {
-            if (tracked.pendingSwap?.id === swap.id) {
-              this.markReverseSwapClaimed(paymentHash, { preimage: swap.preimage });
-              break;
-            }
-          }
-        }
-        this._onSwapActivity?.('completed', swap);
-      } catch (error) {
-        console.warn('[arkade] swap-completed callback error:', error);
-      }
-    };
-    const onFailed = (swap, error) => {
-      try {
-        this._onSwapActivity?.('failed', swap, error);
-      } catch (cbError) {
-        console.warn('[arkade] swap-failed callback error:', cbError);
-      }
-    };
-
-    await mgr.onSwapCompleted(onCompleted);
-    await mgr.onSwapFailed(onFailed);
-    this._swapUnsubscribers = [
-      () => mgr.offSwapCompleted(onCompleted),
-      () => mgr.offSwapFailed(onFailed),
-    ];
-  }
-
   async disconnect() {
     try {
       if (this._stopIncoming) this._stopIncoming();
@@ -394,26 +303,6 @@ export class ArkadeWalletProvider extends WalletProvider {
       console.warn('[arkade] error stopping incoming-funds listener:', error);
     }
     this._stopIncoming = null;
-    // A rapid wallet switch can land here while _initLightning() is still
-    // mid-flight; wait for it to settle so the teardown below disposes the
-    // real SwapManager instead of a null that gets replaced moments later.
-    try {
-      await this._initLightningPromise;
-    } catch { /* init already logs its own failures */ }
-    this._initLightningPromise = null;
-    for (const unsubscribe of this._swapUnsubscribers) {
-      try { unsubscribe(); } catch { /* manager may already be gone */ }
-    }
-    this._swapUnsubscribers = [];
-    // Cleanly stop the SwapManager's WebSocket + poll timers before dropping the
-    // reference, otherwise they leak across reconnects (boltz-swap "Cleanup").
-    try {
-      await this.lightningSwaps?.dispose?.();
-    } catch (error) {
-      console.warn('[arkade] error disposing Lightning swaps:', error?.message || error);
-    }
-    this.lightningSwaps = null;
-    this._reverseSwaps.clear();
     // Tear down the SDK wallet's background machinery (contract watcher,
     // settlement poll, provider streams) — 0.4.x wallets own live resources.
     try {
@@ -606,220 +495,60 @@ export class ArkadeWalletProvider extends WalletProvider {
   }
 
   // ==========================================
-  // Lightning (Boltz swaps)
+  // Lightning (out of service - Boltz retired)
   // ==========================================
 
-  _ensureLightning() {
-    if (!this.lightningSwaps) {
-      const err = new Error('Lightning is temporarily unavailable for this wallet');
-      err.code = 'ARKADE_LN_UNAVAILABLE';
-      throw err;
-    }
+  /**
+   * The one error every Lightning entry point throws while the rail is out.
+   * Kept as real methods (not deleted) so any path that slips past the
+   * capability gates fails with honest, translated copy
+   * (userErrors: ARKADE_LN_UNAVAILABLE) instead of a TypeError.
+   */
+  _lightningUnavailable() {
+    const err = new Error('Lightning is temporarily unavailable for Arkade wallets');
+    err.code = 'ARKADE_LN_UNAVAILABLE';
+    // Deliberately NOT setError(): the base class flips isConnected on it,
+    // and a blocked Lightning attempt must not mark a healthy ark1/onchain
+    // wallet as disconnected (that cascades into codeless errors and a
+    // leaked replacement provider on the store's next self-heal).
+    return err;
   }
 
   /**
-   * Lightning swap limits for a direction, cached for 10 minutes.
-   *
-   * The two directions have independent Boltz limits: `'send'` (submarine,
-   * paying out over Lightning) comes from the package's `getLimits()`;
-   * `'receive'` (reverse swap, incoming Lightning) is not exposed by the
-   * package, so it is read from the same Boltz REST base the swap provider
-   * was pinned to. Best-effort: returns null when the fetch fails (or no
-   * pinned base exists), in which case pre-validation is skipped and Boltz's
-   * own rejection (mapped by _mapSwapError) is the backstop.
-   *
-   * Public because the auto-withdraw pre-flight also gates on it.
-   *
-   * @param {'send'|'receive'} [direction]
-   * @returns {Promise<{min: number, max: number}|null>}
+   * API-compat stub: callers (auto-withdraw pre-flight, the store's limits
+   * mirror) treat null as "no known limits", which skips pre-validation.
+   * @returns {Promise<null>}
    */
-  async getLightningLimits(direction = 'send') {
-    const TTL_MS = 10 * 60 * 1000;
-    if (!this.lightningSwaps) return null;
-    if (direction === 'receive') {
-      if (this._receiveLimits && Date.now() - this._receiveLimitsFetchedAt < TTL_MS) {
-        return this._receiveLimits;
-      }
-      if (!this._boltzApiUrl) return null;
-      try {
-        const res = await fetch(`${this._boltzApiUrl}/v2/swap/reverse`);
-        const pairs = await res.json();
-        const limits = pairs?.BTC?.ARK?.limits;
-        if (limits?.minimal != null) {
-          this._receiveLimits = { min: Number(limits.minimal), max: Number(limits.maximal) };
-          this._receiveLimitsFetchedAt = Date.now();
-        }
-      } catch (error) {
-        console.warn('[arkade] could not fetch receive swap limits:', error?.message || error);
-      }
-      return this._receiveLimits;
-    }
-    if (this._sendLimits && Date.now() - this._sendLimitsFetchedAt < TTL_MS) {
-      return this._sendLimits;
-    }
-    try {
-      this._sendLimits = await this.lightningSwaps.getLimits();
-      this._sendLimitsFetchedAt = Date.now();
-    } catch (error) {
-      console.warn('[arkade] could not fetch send swap limits:', error?.message || error);
-    }
-    return this._sendLimits;
+  async getLightningLimits() {
+    return null;
   }
 
-  /**
-   * Like getLightningLimits, but waits for the Lightning layer to finish its
-   * background init first — for callers that run right after connect() (the
-   * store mirrors these bounds into reactive state for the amount UIs).
-   * @param {'send'|'receive'} [direction]
-   * @returns {Promise<{min: number, max: number}|null>}
-   */
-  async getLightningLimitsWhenReady(direction = 'send') {
-    try {
-      await this._initLightningPromise;
-    } catch { /* init logs its own failures */ }
-    return this.getLightningLimits(direction);
+  /** @returns {Promise<null>} see getLightningLimits */
+  async getLightningLimitsWhenReady() {
+    return null;
   }
 
-  /**
-   * Pre-flight a swap amount against Boltz's min/max for the given direction
-   * so the user gets a friendly, amount-aware error before any swap is
-   * created.
-   * @param {number} amountSats
-   * @param {'send'|'receive'} direction
-   */
-  async _validateSwapAmount(amountSats, direction) {
-    const sats = Math.floor(Number(amountSats) || 0);
-    if (sats <= 0) return;
-    const limits = await this.getLightningLimits(direction);
-    if (!limits) return;
-    if (limits.min && sats < limits.min) {
-      const err = new Error(`Amount below the Lightning swap minimum (${limits.min} sats)`);
-      err.code = 'ARKADE_SWAP_BELOW_MIN';
-      err.minSats = Number(limits.min);
-      throw err;
-    }
-    if (limits.max && sats > limits.max) {
-      const err = new Error(`Amount above the Lightning swap maximum (${limits.max} sats)`);
-      err.code = 'ARKADE_SWAP_ABOVE_MAX';
-      err.maxSats = Number(limits.max);
-      throw err;
-    }
-  }
-
-  /**
-   * Receive over Lightning: create a Boltz reverse swap and hand back the
-   * BOLT11 invoice. When the payer pays, the autonomous SwapManager claims the
-   * VHTLC into a VTXO — which surfaces through `notifyIncomingFunds` exactly
-   * like a native ark1 receipt, so the receive UI needs no special-casing.
-   *
-   * Note: the on-chain amount the wallet ends up with (`amountReceivable`) is
-   * the invoice amount minus the Boltz reverse-swap fee.
-   *
-   * @returns {Promise<{paymentRequest: string, paymentHash: string|null, id: string|null, expiresAt: number|null, amountReceivable: number}>}
-   */
-  async createInvoice({ amount, description } = {}) {
+  /** Lightning receive is out of service - see the class header. */
+  async createInvoice() {
     this._ensureConnected();
-    this._ensureLightning();
-    try {
-      await this._validateSwapAmount(amount, 'receive');
-      const r = await this.lightningSwaps.createLightningInvoice({
-        amount,
-        description: description || undefined,
-      });
-      if (r.paymentHash) {
-        this._reverseSwaps.set(r.paymentHash, {
-          pendingSwap: r.pendingSwap,
-          claimed: false,
-          preimage: null,
-        });
-      }
-      return {
-        paymentRequest: r.invoice,
-        paymentHash: r.paymentHash || null,
-        id: r.paymentHash || null,
-        expiresAt: r.expiry ? Number(r.expiry) : null,
-        amountReceivable: Number(r.amount ?? amount ?? 0),
-      };
-    } catch (error) {
-      throw this._mapSwapError(error);
-    }
+    throw this._lightningUnavailable();
   }
 
-  /**
-   * Send over Lightning: pay a BOLT11 invoice via a Boltz submarine swap. The
-   * SDK creates the swap, sends the VHTLC, waits for settlement, and
-   * auto-refunds on failure before throwing — so a thrown error means the
-   * outgoing funds are being returned, not lost.
-   *
-   * `maxFee` from the unified contract is informational here: the swap fee is
-   * fixed by the Boltz quote (shown to the user on the confirm sheet) rather
-   * than a routing budget we can cap.
-   *
-   * @returns {Promise<{preimage: string|null, txid: string|null, fee: number, status: string}>}
-   */
-  async payInvoice({ invoice } = {}) {
+  /** Lightning send is out of service - see the class header. */
+  async payInvoice() {
     this._ensureConnected();
-    this._ensureLightning();
-    try {
-      let invoiceSats = 0;
-      try {
-        invoiceSats = Number(getInvoiceSatoshis(invoice) || 0);
-      } catch {
-        /* leave 0 if the invoice can't be decoded; Boltz validates anyway */
-      }
-      await this._validateSwapAmount(invoiceSats, 'send');
-      const r = await this.lightningSwaps.sendLightningPayment({ invoice });
-      // Swap fee ≈ what left the wallet minus the invoice's own amount.
-      let fee = 0;
-      const paid = Number(r.amount || 0);
-      if (invoiceSats > 0 && paid > 0) fee = Math.max(0, paid - invoiceSats);
-      this._recoverChangeAfterSend();
-      return {
-        preimage: r.preimage || null,
-        txid: r.txid || null,
-        fee,
-        status: 'completed',
-      };
-    } catch (error) {
-      throw this._mapSwapError(error);
-    }
+    throw this._lightningUnavailable();
   }
 
-  /**
-   * Look up an incoming Lightning payment by hash. Arkade's primary receive
-   * signal is `notifyIncomingFunds` (the autonomous claim lands a VTXO), and
-   * the SwapManager's completion event also marks the swap claimed here — so
-   * this reports paid once either signal has arrived.
-   * @param {string} paymentHash
-   * @returns {Promise<{paid: boolean, preimage?: string|null, amount?: number}>}
-   */
-  async lookupInvoice(paymentHash) {
+  /** Lightning receive lookups are out of service with their rail. */
+  async lookupInvoice() {
     this._ensureConnected();
-    const tracked = this._reverseSwaps.get(paymentHash);
-    if (tracked?.claimed) {
-      return { paid: true, preimage: tracked.preimage || null };
-    }
-    return { paid: false };
+    throw this._lightningUnavailable();
   }
 
   /**
-   * Mark a tracked reverse swap as claimed once the receive flow confirms the
-   * incoming funds (via notifyIncomingFunds / the SwapManager completion
-   * event / balance reconcile). Lets lookupInvoice report completion for any
-   * later poller.
-   */
-  markReverseSwapClaimed(paymentHash, { preimage } = {}) {
-    const tracked = this._reverseSwaps.get(paymentHash);
-    if (tracked) {
-      tracked.claimed = true;
-      if (preimage) tracked.preimage = preimage;
-    }
-  }
-
-  /**
-   * Subscribe to incoming funds (native ark1 receipts AND claimed Lightning
-   * reverse swaps both land as VTXOs here). Returns/stores a stop handle that
-   * disconnect() also tears down.
+   * Subscribe to incoming funds (native ark1 receipts land as VTXOs here).
+   * Returns/stores a stop handle that disconnect() also tears down.
    * @param {(funds: any) => void} callback
    * @returns {Promise<() => void>}
    */
@@ -912,29 +641,6 @@ export class ArkadeWalletProvider extends WalletProvider {
     } catch (error) {
       console.warn('[arkade] maintenance callback failed:', error);
     }
-  }
-
-  /**
-   * Preserve Boltz recovery flags (isRefundable / isClaimable / pendingSwap)
-   * and tag a stable code so userErrors.js can render a friendly, actionable
-   * message for each swap failure mode.
-   */
-  _mapSwapError(error) {
-    // Most Boltz swap errors extend SwapError, but NetworkError extends plain
-    // Error — tag it by name too so a connectivity failure gets the friendly
-    // "couldn't reach Lightning" copy instead of a raw fetch error.
-    // (_mapSwapError is only called from the swap paths, so name-based
-    // tagging is safe here.)
-    if (error instanceof SwapError || error?.name === 'NetworkError') {
-      // Use error.name (a string literal each SwapError subclass sets, e.g.
-      // 'InvoiceExpiredError') NOT error.constructor.name — the latter is
-      // mangled by the production minifier (becomes 'o'/'t') and is the inner
-      // binding name '_QuoteRejectedError' even unminified, so the userErrors
-      // switch would miss every specific case and only hit the generic arm.
-      error.code = error.code || `ARKADE_SWAP_${error.name || 'ERROR'}`;
-    }
-    this.setError(error);
-    return error;
   }
 
   /**

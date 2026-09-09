@@ -1,5 +1,23 @@
 <template>
   <div class="l1-bitcoin-receive">
+    <!-- Hero: amount badge, the code and its rail badges, vertically
+         centered in the space between header and the bottom action row -
+         the natural focus point on a phone. -->
+    <div class="unified-hero">
+      <!-- The request the QR currently carries; tapping edits it. -->
+      <button
+        v-if="amountSats > 0"
+        type="button"
+        class="invoice-badge"
+        :class="$q.dark.isActive ? 'invoice-badge-dark' : 'invoice-badge-light'"
+        @click="$emit('request-amount')"
+      >
+        <span class="invoice-badge-amount">{{ formatAmount(amountSats) }}</span>
+        <span v-if="amountFiat" class="invoice-badge-fiat">{{ amountFiat }}</span>
+        <span v-if="note" class="invoice-badge-note">{{ note }}</span>
+        <Icon icon="tabler:edit" width="14" height="14" />
+      </button>
+
     <!-- QR Code Section -->
     <div class="qr-section">
       <div class="qr-card" @click="copyAddress">
@@ -12,44 +30,30 @@
             class="qr-code"
           />
           <q-spinner v-else size="32px" color="primary" />
+          <!-- One mark on every code: this is a BuhoGO code, whatever
+               rail ends up paying it. -->
+          <span v-if="depositAddress" class="qr-logo" aria-hidden="true">
+            <img src="/buho_logo.svg" alt="" />
+          </span>
         </div>
       </div>
-      <div class="qr-hint" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'">
-        {{ $t('Tap QR to copy address') }}
-      </div>
     </div>
 
-    <!-- Address Display - Compact -->
-    <div
-      v-if="depositAddress"
-      class="address-pill"
-      :class="$q.dark.isActive ? 'pill-dark' : 'pill-light'"
-      @click="copyAddress"
-    >
-      <Icon icon="tabler:currency-bitcoin" width="16" height="16" class="pill-icon" />
-      <span class="pill-address">{{ truncateAddress(depositAddress) }}</span>
-      <Icon icon="tabler:copy" width="14" height="14" class="pill-copy" />
+    <!-- The rails this one code carries, stacked like profile avatars:
+         any of these networks can pay it. The address strings live behind
+         Copy on purpose - showing one under the QR made the code read as
+         on-chain only. -->
+    <div v-if="depositAddress" class="rail-stack" aria-hidden="true">
+      <span class="rail-badge rail-badge-btc" :class="$q.dark.isActive ? 'rail-ring-dark' : 'rail-ring-light'">
+        <Icon icon="tabler:currency-bitcoin" width="18" height="18" />
+      </span>
+      <span class="rail-badge" :class="$q.dark.isActive ? 'rail-badge-dark rail-ring-dark' : 'rail-badge-light rail-ring-light'">
+        <img :src="$q.dark.isActive ? '/Arkade-Media-Kit/Logo/SVG/Logo Only/Logo Only + Purple.svg' : '/Arkade-Media-Kit/Logo/SVG/Logo Only/Logo Only + Orange.svg'" alt="" />
+      </span>
+      <span class="rail-badge" :class="$q.dark.isActive ? 'rail-badge-dark rail-ring-dark' : 'rail-badge-light rail-ring-light'">
+        <img :src="$q.dark.isActive ? '/Spark/Spark Asterisk White.svg' : '/Spark/Spark Asterisk Black.svg'" alt="" />
+      </span>
     </div>
-
-    <!-- Action Buttons — markup and styling intentionally mirror the Spark
-         receive view (ReceiveModal.vue) so both flows feel identical. -->
-    <div v-if="depositAddress" class="action-buttons">
-      <button
-        class="action-btn"
-        :class="$q.dark.isActive ? 'action-btn-dark' : 'action-btn-light'"
-        @click="copyAddress"
-      >
-        <Icon icon="tabler:copy" width="18" height="18" />
-        <span>{{ $t('Copy') }}</span>
-      </button>
-      <button
-        class="action-btn"
-        :class="$q.dark.isActive ? 'action-btn-dark' : 'action-btn-light'"
-        @click="shareAddress"
-      >
-        <Icon icon="tabler:share" width="18" height="18" />
-        <span>{{ $t('Share') }}</span>
-      </button>
     </div>
 
     <!--
@@ -97,20 +101,72 @@
       </button>
     </div>
 
-    <!-- Empty State: Check Button -->
-    <div v-else class="empty-state">
-      <q-btn
-        flat
-        no-caps
-        class="check-btn"
-        :class="$q.dark.isActive ? 'check-dark' : 'check-light'"
-        :loading="isCheckingDeposits"
-        @click="checkDeposits"
-      >
-        <Icon icon="tabler:refresh" width="16" height="16" class="q-mr-xs" />
-        {{ $t('Check for deposits') }}
-      </q-btn>
+    <!-- End cap: what this code can do, in small quiet type. Last on
+         purpose, so its per-language height can never push a control out
+         of view. Deposits need no manual check: the 30s poll here, the
+         wallet home's 60s poll and the store's refresh signal already
+         cover detection - chips appear above when something arrives. -->
+    <div class="unified-hint" :class="$q.dark.isActive ? 'text-grey-6' : 'text-grey-5'">
+      {{ $t('Lightning and Spark pay instantly - on-chain needs 3 confirmations') }}
     </div>
+
+    <!-- One row of equal, labeled actions (52pt targets): shape the
+         request, hand out an identity, hand out the code, pull in a
+         voucher. Copy asks which identity instead of guessing; Share
+         hands out the full unified string - exactly what the QR encodes. -->
+    <div v-if="depositAddress" class="cta-row">
+      <button class="cta" @click="$emit('request-amount')">
+        <span class="cta-circle cta-circle-accent" :class="$q.dark.isActive ? 'cta-accent-dark' : 'cta-accent-light'">
+          <Icon icon="tabler:edit" width="20" height="20" />
+        </span>
+        <span class="cta-label" :class="$q.dark.isActive ? 'cta-label-dark' : 'cta-label-light'">{{ $t('Amount') }}</span>
+      </button>
+      <button class="cta">
+        <span class="cta-circle" :class="$q.dark.isActive ? 'cta-circle-dark' : 'cta-circle-light'">
+          <Icon icon="tabler:copy" width="20" height="20" />
+        </span>
+        <span class="cta-label" :class="$q.dark.isActive ? 'cta-label-dark' : 'cta-label-light'">{{ $t('Copy') }}</span>
+        <q-menu
+          anchor="top middle"
+          self="bottom middle"
+          :offset="[0, 6]"
+        >
+          <q-list class="copy-menu" :class="$q.dark.isActive ? 'copy-menu-dark' : 'copy-menu-light'">
+            <q-item v-if="lightningInvoice" v-close-popup clickable @click="copyValue(lightningInvoice, $t('Invoice copied'))">
+              <div class="copy-item">
+                <span>{{ $t('Lightning invoice') }}</span>
+                <small>{{ truncateAddress(lightningInvoice) }}</small>
+              </div>
+            </q-item>
+            <q-item v-close-popup clickable @click="copyAddress">
+              <div class="copy-item">
+                <span>{{ $t('Bitcoin address') }}</span>
+                <small>{{ truncateAddress(depositAddress) }}</small>
+              </div>
+            </q-item>
+            <q-item v-if="sparkAddress" v-close-popup clickable @click="copyValue(sparkAddress, $t('Spark address copied'))">
+              <div class="copy-item">
+                <span>{{ $t('Spark address') }}</span>
+                <small>{{ truncateAddress(sparkAddress) }}</small>
+              </div>
+            </q-item>
+          </q-list>
+        </q-menu>
+      </button>
+      <button class="cta" @click="shareAddress">
+        <span class="cta-circle" :class="$q.dark.isActive ? 'cta-circle-dark' : 'cta-circle-light'">
+          <Icon icon="tabler:share" width="20" height="20" />
+        </span>
+        <span class="cta-label" :class="$q.dark.isActive ? 'cta-label-dark' : 'cta-label-light'">{{ $t('Share') }}</span>
+      </button>
+      <button class="cta" @click="$emit('scan-withdraw')">
+        <span class="cta-circle" :class="$q.dark.isActive ? 'cta-circle-dark' : 'cta-circle-light'">
+          <Icon icon="tabler:scan" width="20" height="20" />
+        </span>
+        <span class="cta-label" :class="$q.dark.isActive ? 'cta-label-dark' : 'cta-label-light'">{{ $t('Redeem') }}</span>
+      </button>
+    </div>
+
 
     <!--
       Deposit Sheet — single bottom sheet that handles every state of
@@ -275,6 +331,7 @@ import { shareContent } from 'src/utils/share';
 import { qrBlobFromRef } from 'src/utils/qrShare';
 import { truncateAddress } from 'src/utils/addressUtils';
 import { getQrOptions } from 'src/utils/qrConfig';
+import { composeUnifiedBip21 } from 'src/utils/bip21';
 import { AUTO_CLAIM_THRESHOLDS } from 'src/stores/bitcoinPreferences';
 
 export default {
@@ -288,10 +345,36 @@ export default {
     qrOptions: {
       type: Object,
       default: () => getQrOptions()
+    },
+    /**
+     * The wallet's current BOLT11 (zero-amount by default, amount-carrying
+     * after the user sets one). Minted and monitored by ReceiveModal; here
+     * it only rides inside the unified QR as its lightning= param. Empty
+     * while minting or after a mint failure - the QR then degrades to the
+     * rails that still work.
+     */
+    lightningInvoice: {
+      type: String,
+      default: ''
+    },
+    /** Requested amount in sats (0 = amountless). Becomes amount= in BTC. */
+    amountSats: {
+      type: Number,
+      default: 0
+    },
+    /** Preformatted fiat equivalent for the amount badge ('' hides it). */
+    amountFiat: {
+      type: String,
+      default: ''
+    },
+    /** The note attached to the request, shown truncated on the badge. */
+    note: {
+      type: String,
+      default: ''
     }
   },
 
-  emits: ['deposit-claimed', 'deposits-updated'],
+  emits: ['deposit-claimed', 'deposits-updated', 'request-amount', 'scan-withdraw'],
 
   data() {
     return {
@@ -327,9 +410,26 @@ export default {
   },
 
   computed: {
+    /** The wallet's static Spark address - the spark= rail of the QR. */
+    sparkAddress() {
+      return this.walletStore.activeSparkAddress || '';
+    },
+
+    /**
+     * ONE code that carries every rail: the on-chain address as the base,
+     * the BOLT11 as lightning= (which itself embeds a Spark fallback for
+     * Spark-aware payers) and the bare Spark address as spark=. Rails that
+     * are missing (invoice mint failed, no Spark address yet) simply drop
+     * out - the QR degrades to exactly what still works.
+     */
     qrValue() {
-      // Use bitcoin: URI scheme for better wallet compatibility
-      return this.depositAddress ? `bitcoin:${this.depositAddress}` : '';
+      if (!this.depositAddress) return '';
+      return composeUnifiedBip21({
+        address: this.depositAddress,
+        lightning: this.lightningInvoice,
+        spark: this.sparkAddress,
+        amountSats: this.amountSats > 0 ? this.amountSats : null,
+      });
     },
 
     /**
@@ -342,7 +442,7 @@ export default {
      * width/height attributes.
      */
     bitcoinQrOptions() {
-      return { ...this.qrOptions, width: 220 };
+      return { ...this.qrOptions, width: 232 };
     },
 
     netClaimAmount() {
@@ -427,9 +527,8 @@ export default {
     },
 
     async checkDeposits() {
+      if (this.isCheckingDeposits) return;
       this.isCheckingDeposits = true;
-      const startTime = Date.now();
-      const minLoadingTime = 2000; // Minimum 2 seconds for better UX
 
       try {
         // Ensure Spark is connected (auto-reconnects with session PIN if needed)
@@ -463,12 +562,6 @@ export default {
       } catch (error) {
         console.error('Failed to check deposits:', error);
       } finally {
-        // Ensure minimum loading time for better UX feedback
-        const elapsed = Date.now() - startTime;
-        const remainingTime = minLoadingTime - elapsed;
-        if (remainingTime > 0) {
-          await new Promise(resolve => setTimeout(resolve, remainingTime));
-        }
         this.isCheckingDeposits = false;
       }
     },
@@ -832,13 +925,18 @@ export default {
     },
 
     async copyAddress() {
-      if (!this.depositAddress) return;
+      await this.copyValue(this.depositAddress, this.$t('Address copied'));
+    },
+
+    /** Copy one of the QR's identities with its own confirmation toast. */
+    async copyValue(value, message) {
+      if (!value) return;
 
       try {
-        await navigator.clipboard.writeText(this.depositAddress);
+        await navigator.clipboard.writeText(value);
         this.$q.notify({
           type: 'positive',
-          message: this.$t('Address copied'),
+          message,
 
         });
       } catch (error) {
@@ -856,9 +954,10 @@ export default {
       const qrBlob = await qrBlobFromRef(this.$refs.depositQr, { label: this.depositAddress });
       const result = await shareContent({
         title: this.$t('Bitcoin Address'),
-        // Pure address so recipients can copy-paste cleanly. The
-        // BuhoGO wordmark is baked into the QR image by qrShare.
-        text: this.depositAddress,
+        // The full unified string - exactly what the QR encodes, so the
+        // recipient's wallet gets every rail. The BuhoGO wordmark is baked
+        // into the QR image by qrShare.
+        text: this.qrValue,
         files: qrBlob ? [{ blob: qrBlob, name: 'bitcoin-address.png', mimeType: 'image/png' }] : undefined,
       });
 
@@ -981,11 +1080,62 @@ export default {
 /* ==========================================
    QR Code Section - Clean & Centered
    ========================================== */
+/* Centers the badge + code + rails in whatever space the header and the
+   bottom action row leave - the natural focus point on a phone. */
+.unified-hero {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  align-self: stretch;
+  min-height: 0;
+}
+
 .qr-section {
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding-top: 8px;
+}
+
+.invoice-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  max-width: 100%;
+  margin-bottom: 13px;
+  padding: 8px 14px;
+  border: 0;
+  border-radius: 999px;
+  cursor: pointer;
+  font-family: 'Manrope', sans-serif;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.invoice-badge:active { transform: scale(0.98); }
+
+.invoice-badge-light { background: rgba(0, 0, 0, 0.05); color: rgba(0, 0, 0, 0.85); }
+.invoice-badge-dark  { background: rgba(255, 255, 255, 0.10); color: rgba(255, 255, 255, 0.9); }
+
+.invoice-badge-amount {
+  font-size: 15px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.invoice-badge-fiat {
+  font-size: 12px;
+  opacity: 0.6;
+}
+
+.invoice-badge-note {
+  max-width: 90px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  opacity: 0.7;
 }
 
 .qr-card {
@@ -998,15 +1148,16 @@ export default {
 }
 
 .qr-frame {
+  position: relative;
   background: white;
-  padding: 12px;
+  padding: 14px;
   border-radius: 16px;
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
 }
 
 .qr-frame.loading {
-  width: 220px;
-  height: 220px;
+  width: 260px;
+  height: 260px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1014,109 +1165,173 @@ export default {
 
 .qr-code {
   display: block;
-  border-radius: 8px;
+  border-radius: 0;
 }
 
-.qr-hint {
-  font-size: 12px;
-  margin-top: 8px;
-  opacity: 0.5;
-}
-
-/* ==========================================
-   Address Pill - Compact & Tappable
-   ========================================== */
-.address-pill {
-  display: inline-flex;
+.qr-logo {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  width: 44px;
+  height: 44px;
   align-items: center;
-  gap: 8px;
-  padding: 10px 14px;
-  border-radius: 20px;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  margin: 12px auto 0;
+  justify-content: center;
+  margin: auto;
+  padding: 6px;
+  border-radius: 10px;
+  background: white;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.10);
 }
 
-.address-pill:active {
-  transform: scale(0.98);
-}
-
-.pill-dark {
-  background: rgba(255, 255, 255, 0.08);
-}
-
-.pill-dark:hover {
-  background: rgba(255, 255, 255, 0.12);
-}
-
-.pill-light {
-  background: rgba(0, 0, 0, 0.04);
-}
-
-.pill-light:hover {
-  background: rgba(0, 0, 0, 0.06);
-}
-
-.pill-icon {
-  color: #F7931A;
-}
-
-.pill-address {
-  font-family: var(--font-mono);
-  font-size: 12px;
-  letter-spacing: 0.02em;
-}
-
-.pill-copy {
-  opacity: 0.4;
+.qr-logo img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
 }
 
 /* ==========================================
-   Action Buttons
+   Rail stack - the networks this one code carries, overlapped like
+   profile avatars. Informational; the strings live behind Copy.
    ========================================== */
-.action-buttons {
+.rail-stack {
   display: flex;
   justify-content: center;
-  gap: 12px;
-  margin-top: 12px;
+  margin-top: 13px;
 }
 
-/* Action button styles intentionally mirror ReceiveModal.vue's Spark view
-   so the Bitcoin receive screen matches the Spark receive screen pixel-
-   for-pixel. Keep these in sync if either side changes. */
-.action-btn {
-  display: inline-flex;
+.rail-badge {
+  display: flex;
+  width: 34px;
+  height: 34px;
   align-items: center;
   justify-content: center;
+  border-radius: 50%;
+  border: 2.5px solid transparent;
+}
+
+.rail-badge + .rail-badge {
+  margin-left: -9px;
+}
+
+.rail-badge img {
+  width: 20px;
+  height: 20px;
+  object-fit: contain;
+}
+
+.rail-badge-btc {
+  background: #F7931A;
+  color: #FFFFFF;
+}
+
+.rail-badge-light { background: #FFFFFF; }
+.rail-badge-dark  { background: #2A2A2A; }
+
+/* The ring wears the sheet's own surface color, so where badges overlap
+   the joint reads as a clean cutout instead of a stray white halo. */
+.rail-ring-light { border-color: var(--bg-card, #FAF7EF); }
+.rail-ring-dark  { border-color: var(--bg-card, #1A1A1A); }
+
+/* ==========================================
+   CTA row - equal, labeled actions on 52pt circular targets.
+   Amount wears the accent; the rest stay quiet.
+   ========================================== */
+.cta-row {
+  display: flex;
+  justify-content: center;
+  gap: 20px;
+  align-self: stretch;
+  margin-top: 13px;
+  padding-bottom: max(10px, var(--safe-bottom, 0px));
+}
+
+.cta {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
   gap: 6px;
-  padding: 10px 16px;
-  border-radius: 10px;
-  border: none;
+  min-width: 56px;
+  padding: 0;
+  border: 0;
+  background: none;
   cursor: pointer;
   font-family: 'Manrope', sans-serif;
-  font-size: 14px;
-  font-weight: 500;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.cta:active .cta-circle {
+  transform: scale(0.94);
+}
+
+.cta-circle {
+  display: flex;
+  width: 52px;
+  height: 52px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  transition: transform 0.12s ease, background-color 0.18s ease;
+}
+
+.cta-circle-light { background: rgba(0, 0, 0, 0.05); color: rgba(0, 0, 0, 0.75); }
+.cta-circle-light:hover { background: rgba(0, 0, 0, 0.08); }
+.cta-circle-dark { background: rgba(255, 255, 255, 0.08); color: rgba(255, 255, 255, 0.85); }
+.cta-circle-dark:hover { background: rgba(255, 255, 255, 0.12); }
+
+.cta-accent-light { background: rgba(247, 147, 26, 0.14); color: #B86E0F; }
+.cta-accent-light:hover { background: rgba(247, 147, 26, 0.20); }
+.cta-accent-dark { background: rgba(247, 147, 26, 0.18); color: #FBBF77; }
+.cta-accent-dark:hover { background: rgba(247, 147, 26, 0.24); }
+
+.cta-label {
+  font-size: 12px;
+  font-weight: 600;
   letter-spacing: -0.005em;
-  transition: background-color 0.18s ease, color 0.18s ease;
 }
 
-.action-btn-dark {
-  color: rgba(255, 255, 255, 0.8);
-  background: rgba(255, 255, 255, 0.08);
+.cta-label-light { color: rgba(0, 0, 0, 0.65); }
+.cta-label-dark  { color: rgba(255, 255, 255, 0.7); }
+
+/* ==========================================
+   Copy chooser - three identities, each with its value
+   ========================================== */
+.copy-menu {
+  min-width: 230px;
+  padding: 4px 0;
 }
 
-.action-btn-dark:hover {
-  background: rgba(255, 255, 255, 0.12);
+.copy-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
 
-.action-btn-light {
-  color: rgba(0, 0, 0, 0.7);
-  background: rgba(0, 0, 0, 0.05);
+.copy-item span {
+  font-size: 14px;
+  font-weight: 600;
 }
 
-.action-btn-light:hover {
-  background: rgba(0, 0, 0, 0.08);
+.copy-item small {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  opacity: 0.55;
 }
+
+/* ==========================================
+   End cap - quiet capability sentence
+   ========================================== */
+.unified-hint {
+  margin-top: 13px;
+  padding: 0 12px;
+  font-size: 11px;
+  line-height: 1.4;
+  text-align: center;
+}
+
+
+
+
+
 
 /* ==========================================
    Pending Deposits — slim chip list. Each row is a single tap
@@ -1128,7 +1343,7 @@ export default {
    ========================================== */
 .deposits-list {
   align-self: stretch;
-  margin-top: 14px;
+  margin-top: 21px;
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -1244,31 +1459,6 @@ export default {
   background: #F7931A;
   box-shadow: 0 0 0 0 rgba(247, 147, 26, 0.55);
   animation: eyebrow-pulse 1.8s ease-out infinite;
-}
-
-/* ==========================================
-   Empty State
-   ========================================== */
-.empty-state {
-  text-align: center;
-  padding: 8px 0;
-}
-
-.check-btn {
-  padding: 10px 20px;
-  border-radius: 10px;
-  font-size: 13px;
-  font-weight: 500;
-}
-
-.check-dark {
-  color: rgba(255, 255, 255, 0.7);
-  background: rgba(255, 255, 255, 0.06);
-}
-
-.check-light {
-  color: rgba(0, 0, 0, 0.6);
-  background: rgba(0, 0, 0, 0.04);
 }
 
 /* ==========================================
