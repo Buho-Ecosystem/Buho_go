@@ -857,6 +857,7 @@ import {npubFromLightningAddress, shortenNpub, profileDisplayName, sanitizeImage
 import {fetchProfile, parseProfileContent, DEFAULT_FETCH_TIMEOUT_MS} from '../utils/nostrFetch.js';
 import {resolveNostrLightningTarget} from '../services/nostrPaymentTarget';
 import {Invoice} from '@getalby/lightning-tools';
+import {parseLightningInvoice} from '../utils/lightningInvoice.js';
 import {fiatRatesService} from '../utils/fiatRates.js';
 import {formatMainBalance as formatMainBalanceUtil, formatAmount} from '../utils/amountFormatting.js';
 import {haptics} from '../utils/haptics.js';
@@ -4015,60 +4016,6 @@ export default {
 
     // Payment processing methods
 
-    parseInvoiceManually(invoice) {
-      try {
-        const cleanInvoice = invoice.replace(/^lightning:/i, '').toLowerCase();
-
-        let amount = 0;
-        const amountMatch = cleanInvoice.match(/lnbc(\d+)([munp]?)/);
-        if (amountMatch) {
-          const value = parseInt(amountMatch[1]);
-          const unit = amountMatch[2];
-
-          switch (unit) {
-            case 'm':
-              amount = value * 100000; // milli-bitcoin
-              break;
-            case 'u':
-              amount = value * 100; // micro-bitcoin
-              break;
-            case 'n':
-              amount = value / 10; // nano-bitcoin
-              break;
-            case 'p':
-              amount = value / 10000; // pico-bitcoin
-              break;
-            default:
-              // No unit or unrecognized unit - likely variable amount invoice
-              amount = 0;
-          }
-        }
-
-        // No memo extraction here (that needs a full bolt11 decoder) — and
-        // no placeholder either: an empty description lets the confirm
-        // sheet show its "Show details" reveal instead of printing the
-        // rail name as if it were content.
-        const description = '';
-        const now = Math.floor(Date.now() / 1000);
-        const expiry = now + 3600;
-
-        return {
-          amount: Math.floor(amount),
-          description,
-          expiry,
-          invoice: cleanInvoice
-        };
-      } catch (error) {
-        console.error('Error parsing invoice manually:', error);
-        return {
-          amount: 0,
-          description: '',
-          expiry: Math.floor(Date.now() / 1000) + 3600,
-          invoice: invoice
-        };
-      }
-    },
-
     getActiveWallet() {
       return this.walletState.connectedWallets.find(
         w => w.id === this.walletState.activeWalletId
@@ -4860,7 +4807,7 @@ export default {
 
         if (paymentData.type === 'lightning_invoice' && paymentData.data) {
           // Parse the invoice to get the amount
-          const parsedInvoice = this.parseInvoiceManually(paymentData.data);
+          const parsedInvoice = parseLightningInvoice(paymentData.data);
 
           this.pendingPayment = {
             ...paymentData,
