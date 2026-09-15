@@ -1,7 +1,7 @@
 <template>
   <q-page :class="$q.dark.isActive ? 'wallet-page-dark' : 'wallet-page-light'">
     <!-- Header -->
-    <q-toolbar>
+    <q-toolbar class="wallet-toolbar">
 
       <button
         type="button"
@@ -17,13 +17,15 @@
         </transition>
       </button>
 
+      <BackupShortcut />
+
       <!-- NFC-ready badge. Only shown on a device where NFC is actually
            available + enabled, so it honestly signals "tap a Bolt Card / NFC
            tag here". Tap it for a one-line explainer. -->
       <button
         v-if="nfcReady"
         type="button"
-        class="nfc-badge"
+        class="nfc-badge wallet-toolbar-status"
         :class="$q.dark.isActive ? 'nfc-badge-dark' : 'nfc-badge-light'"
         @click="onNfcBadge"
         aria-label="NFC ready"
@@ -39,7 +41,7 @@
           clickable
           dense
           :ripple="false"
-          class="btc-chip"
+          class="btc-chip wallet-toolbar-status"
           :class="$q.dark.isActive ? 'btc-chip-dark' : 'btc-chip-light'"
           @click="openReceiveModalBitcoin"
         >
@@ -885,6 +887,7 @@ import PaymentConfirmSheet from '../components/PaymentConfirmSheet.vue';
 import ContactAvatar from '../components/AddressBook/ContactAvatar.vue';
 import BatchSendModal from '../components/BatchSendModal.vue';
 import BackupBanner from '../components/BackupBanner.vue';
+import BackupShortcut from '../components/BackupShortcut.vue';
 import IdentityAuthDialog from '../components/IdentityAuthDialog.vue';
 import {useAutoWithdrawStore} from '../stores/autoWithdraw';
 import {useIdentityStore} from '../stores/identity';
@@ -930,6 +933,7 @@ export default {
     NumberFlow,
     HiddenAmount,
     BackupBanner,
+    BackupShortcut,
     IdentityAuthDialog,
     ContactAvatar,
     PinEntryDialog,
@@ -6615,6 +6619,17 @@ export default {
 }
 
 /* Header */
+.wallet-toolbar { flex-wrap: wrap; }
+
+/* Keep the persistent key reachable while the existing reminder is visible. */
+:deep(.backup-banner-wrapper) { position: relative; flex-shrink: 0; }
+
+/* Optional device/deposit badges get their own line on compact screens. */
+@media (max-width: 480px) {
+  .wallet-toolbar-status { order: 1; }
+  .wallet-toolbar::after { content: ''; flex-basis: 100%; order: 0; }
+}
+
 .app-logo-button {
   all: unset;
   position: relative;

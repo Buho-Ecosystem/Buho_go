@@ -1,4 +1,12 @@
 export default {
+  // Home backup shortcut
+  "Backups": "Copias de seguridad",
+  "Backups: backup needed": "Copias de seguridad: copia pendiente",
+  "Wallet backup · {wallet}": "Copia de la cartera · {wallet}",
+  "Identity backup": "Copia de la identidad",
+  "Your wallet and identity have separate recovery words. Save each set.": "Tu cartera y tu identidad tienen palabras de recuperación distintas. Guarda cada conjunto.",
+  "For connected wallets, keep the recovery details from your wallet provider.": "Para las carteras conectadas, guarda los datos de recuperación de tu proveedor de cartera.",
+
   // --- transaction report (tax export) ---
   "1 transaction": "1 transacción",
   "One transaction has no recorded exchange rate, so no value is stated for it.": "Una transacción no tiene tipo de cambio registrado, por lo que no se indica ningún valor.",

@@ -21,6 +21,7 @@ import { useAutoWithdrawStore } from './autoWithdraw';
 import { useTransactionMetadataStore } from './transactionMetadata';
 import { isLightningAddress } from '../utils/addressUtils.js';
 import { createClaimedDepositRegistry } from '../utils/claimedDeposits.js';
+import { isWalletBackedUp } from '../utils/backupStatus.js';
 import {
   buildPaymentError,
   getUnsupportedBolt12OfferCopy,
@@ -401,10 +402,7 @@ export const useWalletStore = defineStore('wallet', {
       return seedWallets.some((w) => {
         // Spark falls back to the legacy store-level flag for pre-migration
         // installs; Arkade (new) always uses its own per-wallet metadata flag.
-        const backedUp = w.type === WALLET_TYPES.SPARK
-          ? (w.metadata?.hasBackedUp ?? state.hasBackedUp)
-          : !!w.metadata?.hasBackedUp;
-        if (backedUp) return false;
+        if (isWalletBackedUp(w, state.hasBackedUp)) return false;
         const balance = state.balances[w.id] || 0;
         return balance > 0;
       });
