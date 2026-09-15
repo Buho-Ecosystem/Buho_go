@@ -15,11 +15,11 @@
         <button v-else type="button" class="recovery-nav" :disabled="busy" @click="back">
           <Icon icon="tabler:chevron-left" width="18" height="18" />{{ $t('Back') }}
         </button>
-        <div class="recovery-subject"><BackupKeyring :size="26" /><span>{{ title }}</span></div>
+        <div class="recovery-subject"><BackupSubjectIcon :kind="activeKind" :size="24" /><span>{{ title }}</span></div>
       </header>
 
       <div ref="body" class="recovery-body">
-        <p class="recovery-context">{{ detail }}</p>
+        <p v-if="step !== 'prepare'" class="recovery-context">{{ detail }}</p>
         <ol v-if="mode === 'backup' && step !== 'done'" class="recovery-progress" :aria-label="$t('Backup progress')">
           <li v-for="(item, index) in stages" :key="item" :aria-current="stageIndex === index ? 'step' : undefined" :class="{ 'is-current': stageIndex === index, 'is-complete': stageIndex > index }">
             <span aria-hidden="true">{{ index + 1 }}</span>{{ $t(item) }}
@@ -29,7 +29,8 @@
         <template v-if="step === 'prepare'">
           <BackupCoverage :selected="activeKind" />
           <h1 ref="heading" tabindex="-1">{{ mode === 'view' ? $t('View recovery words') : $t('Keep a way back') }}</h1>
-          <p class="recovery-lede">{{ benefit }}</p>
+          <p v-if="!isIdentity" class="recovery-context">{{ detail }}</p>
+          <p v-if="mode === 'backup'" class="recovery-lede">{{ benefit }}</p>
           <div v-if="mode === 'backup'" class="recovery-note">
             <strong>{{ $t('Get a pen and paper') }}</strong>
             <p>{{ $t('Write the words in order, then check your copy. Keep the paper somewhere private.') }}</p>
@@ -66,7 +67,7 @@
         </template>
 
         <template v-else-if="step === 'done'">
-          <div class="recovery-complete-mark"><BackupKeyring :size="76" /><Icon icon="tabler:circle-check-filled" width="26" height="26" /></div>
+          <div class="recovery-complete-mark"><BackupSubjectIcon :kind="activeKind" :size="52" /><Icon icon="tabler:circle-check-filled" width="26" height="26" /></div>
           <h1 ref="heading" tabindex="-1">{{ $t('Backup checked') }}</h1>
           <p class="recovery-lede">{{ $t('Your copy matches. Keep the paper in a private place you can find again.') }}</p>
           <div class="recovery-note"><strong>{{ paperLabel }}</strong><p>{{ $t('Only this set of recovery words was checked.') }}</p></div>
@@ -99,7 +100,7 @@ import { useWalletStore } from '../stores/wallet';
 import { useIdentityStore } from '../stores/identity';
 import { isBiometricAvailable, authenticate } from '../utils/biometric';
 import { useRecoveryPhraseFlow } from '../composables/useRecoveryPhraseFlow.js';
-import BackupKeyring from './BackupKeyring.vue';
+import BackupSubjectIcon from './BackupSubjectIcon.vue';
 import BackupCoverage from './BackupCoverage.vue';
 import { bitcoinBackupName, walletBackupGroups } from '../utils/backupStatus.js';
 import MnemonicOrderVerify from './MnemonicOrderVerify.vue';
@@ -214,7 +215,7 @@ onBeforeUnmount(() => { document.removeEventListener('visibilitychange', onVisib
 
 <style scoped>
 .recovery-card { display: flex; flex-direction: column; width: 560px; max-width: 100%; max-height: 90dvh; background: var(--bg-primary); color: var(--text-primary); border-radius: 24px; }
-.recovery-header { display: flex; align-items: center; gap: 12px; padding: 12px 20px; border-bottom: 1px solid var(--border-card); flex-shrink: 0; }
+.recovery-header { display: flex; align-items: center; gap: 12px; padding: 12px 20px; flex-shrink: 0; }
 .recovery-subject { display: flex; align-items: center; justify-content: flex-end; gap: 7px; flex: 1; min-width: 0; font: 600 14px/1.3 'Manrope', sans-serif; text-align: right; }
 .recovery-nav { display: inline-flex; align-items: center; justify-content: center; gap: 5px; min-height: 44px; min-width: 44px; padding: 8px; border: 0; background: transparent; color: var(--text-secondary); font: inherit; cursor: pointer; border-radius: 10px; }
 .recovery-nav:disabled { opacity: .5; cursor: default; }
@@ -229,7 +230,7 @@ onBeforeUnmount(() => { document.removeEventListener('visibilitychange', onVisib
 .recovery-hero { margin: 12px 0 20px; }
 .recovery-body h1 { font: 700 27px/1.2 'Manrope', sans-serif; letter-spacing: -.03em; margin: 0 0 14px; outline: 0; overflow-wrap: anywhere; }
 .recovery-lede { color: var(--text-secondary); font-size: 15px; line-height: 1.6; margin: 0 0 24px; }
-.recovery-note { padding: 18px; background: var(--bg-card); border: 1px solid var(--border-card); border-radius: 16px; font-size: 14px; line-height: 1.5; }
+.recovery-note { padding: 18px; background: var(--bg-card); border-radius: 16px; font-size: 14px; line-height: 1.5; }
 .recovery-note p { margin: 6px 0 0; color: var(--text-secondary); }
 .recovery-footnote { margin: 18px 0 0; font-size: 13px; color: var(--text-secondary); line-height: 1.5; }
 .recovery-reveal-bar { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 12px; color: var(--text-secondary); }
@@ -238,7 +239,7 @@ onBeforeUnmount(() => { document.removeEventListener('visibilitychange', onVisib
 .recovery-words li { display: flex; align-items: center; gap: 8px; min-height: 48px; padding: 10px; background: var(--bg-input); border-radius: 10px; font-size: 14px; }
 .recovery-word-number { color: var(--text-secondary); font-size: 11px; }
 .recovery-placeholder { color: var(--text-secondary); letter-spacing: 2px; }
-.recovery-footer { flex-shrink: 0; padding: 16px 28px max(20px, env(safe-area-inset-bottom)); border-top: 1px solid var(--border-card); }
+.recovery-footer { flex-shrink: 0; padding: 16px 28px max(20px, env(safe-area-inset-bottom)); }
 .recovery-primary { width: 100%; min-height: 48px; border-radius: 14px; background: var(--brand-accent); color: #052d20; font-weight: 700; font-size: 15px; }
 .recovery-cancel { display: flex; margin: 4px auto -8px; font-size: 13px; }
 .recovery-error { display: flex; align-items: flex-start; gap: 8px; background: var(--color-warn-soft); color: var(--text-primary); padding: 14px; border-radius: 12px; margin-top: 18px; font-size: 14px; }

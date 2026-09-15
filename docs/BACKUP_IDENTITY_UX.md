@@ -6,6 +6,7 @@ This redesign applies Apple HIG and Nostr Design to BuhoGO's existing Vue/Quasar
 
 | Primary source | Application in BuhoGO |
 | --- | --- |
+| [Apple: Layout](https://developer.apple.com/design/human-interface-guidelines/layout) and [Icons](https://developer.apple.com/design/human-interface-guidelines/icons) | Group backup choices with spacing and soft surfaces instead of repeated headings and separator lines. Use a wallet silhouette for Bitcoin and a gender-neutral person silhouette for Identity, with adjacent text labels. |
 | [Apple: Segmented controls](https://developer.apple.com/design/human-interface-guidelines/segmented-controls) | Two equal segments, **Bitcoin / Identity**, switch closely related views in place. Both retain a clear selection and separate status. Labels are nouns; selecting a segment does not launch a dialog. |
 | [Apple: Sheets](https://developer.apple.com/design/human-interface-guidelines/sheets) and [Modality](https://developer.apple.com/design/human-interface-guidelines/modality) | One focused task at a time. Choosers finish dismissing before opening the next sheet. The longer paper-backup task uses a full-screen modal on narrow phones. |
 | [Apple: Onboarding](https://developer.apple.com/design/human-interface-guidelines/onboarding) | Contextual preparation and an optional next backup, with a way to leave each stage. The initial wallet tour explains the two backup types briefly. |
@@ -16,7 +17,7 @@ This redesign applies Apple HIG and Nostr Design to BuhoGO's existing Vue/Quasar
 | [Nostr: Error handling](https://nostrdesign.org/docs/how-to/error-handling/) | Wrong-word feedback names the paper position without exposing the answer. Failed storage/authentication/upload stays recoverable in context. Native configuration details stay in diagnostics. |
 | [Nostr: Starting from scratch](https://nostrdesign.org/docs/design-principles/starting-from-scratch/) | Map the complete journeys and share repeated components instead of maintaining separate wallet and identity verification implementations. |
 
-The colored keyring comes from the user's Wallet of Satoshi reference. Disabling the home backup banner and Settings attention strip is also an explicit product decision from the user. Both mounts remain commented in their original pages, and their implementations remain available.
+The colored keyring comes from the user's Wallet of Satoshi reference and remains on generic backup entry points. Subject-specific choices, summaries and recovery headers use distinct bundled wallet/person SVGs so both types remain recognizable offline. Disabling the home backup banner and Settings attention strip is also an explicit product decision from the user. Both mounts remain commented in their original pages, and their implementations remain available.
 
 ## What each backup means
 
@@ -39,7 +40,7 @@ An `nsec` is a single account's raw private key. The paper flow is a separate, e
 | Wallet home | Persistent colored keyring. Pending label is Bitcoin & identity, Bitcoin, or Identity. Once all existing phrases are checked, only the keyring remains. |
 | Home backup banner | Mount commented out in `Wallet.vue`; component retained with shared keyring. |
 | Settings attention strip | Mount commented out in `Settings.vue`; reminder implementation retained. Destructive-action warnings remain. |
-| Settings → Security → Backups | Common chooser with Bitcoin and Identity sections, each showing its own state. |
+| Settings → Security → Backups | One compact choice per backup with a subject icon, title, secondary scope and independent state. |
 | Settings → Google Drive backup / Restore | Existing optional Android integration; shared keyring and contextual retry. |
 | Profile hero | Copy public key with inline confirmation; name/photo editing, code flip, identity switching, and existing pending-backup link remain. Hidden card face is inert to keyboard/accessibility focus. |
 | Profile → Identity backup | Canonical identity-backup entry. Opens the Bitcoin / Identity switch with Identity selected. |
@@ -146,7 +147,8 @@ Google backup is optional and uses the existing native implementation. It does n
 
 ## Code organization
 
-- `BackupKeyring.vue`: single reusable asset wrapper.
+- `BackupKeyring.vue`: generic backup-entry asset wrapper.
+- `BackupSubjectIcon.vue`: bundled wallet/person silhouettes for labeled subject-specific UI.
 - `BackupCoverage.vue`: independent status plus an opt-in keyboard-accessible tab selector.
 - `BackupsSheet.vue`: chooser and dismissal-based handoff.
 - `RecoveryPhraseDialog.vue`: subject-specific copy and store adapters.

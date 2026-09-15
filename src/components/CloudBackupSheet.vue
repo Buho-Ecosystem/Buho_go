@@ -90,8 +90,8 @@
       </q-card-section>
 
       <div v-if="['sign-in', 'backup'].includes(step)" class="cb-contents">
-        <div v-if="wallet.wallets.length"><BackupKeyring :size="30" /><strong>{{ $t('Bitcoin') }}</strong><span>{{ $t('Included') }}</span></div>
-        <div v-if="identity.bootstrapped"><BackupKeyring :size="30" /><strong>{{ $t('Identity') }}</strong><span>{{ $t('Included') }}</span></div>
+        <div v-if="wallet.wallets.length"><BackupSubjectIcon kind="wallet" :size="26" /><strong>{{ $t('Bitcoin') }}</strong><span>{{ $t('Included') }}</span></div>
+        <div v-if="identity.bootstrapped"><BackupSubjectIcon kind="identity" :size="26" /><strong>{{ $t('Identity') }}</strong><span>{{ $t('Included') }}</span></div>
       </div>
 
       <!-- Step: MENU — signed in -->
@@ -238,6 +238,7 @@
 
 <script>
 import { Icon } from '@iconify/vue';
+import BackupSubjectIcon from './BackupSubjectIcon.vue';
 import BackupKeyring from './BackupKeyring.vue';
 import { useWalletStore } from '../stores/wallet';
 import { useIdentityStore } from '../stores/identity';
@@ -247,7 +248,7 @@ import { WrongPassphraseError } from '../utils/backupCrypto.js';
 export default {
   name: 'CloudBackupSheet',
 
-  components: { Icon, BackupKeyring },
+  components: { Icon, BackupKeyring, BackupSubjectIcon },
 
   props: {
     modelValue: { type: Boolean, required: true },

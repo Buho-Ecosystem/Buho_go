@@ -53,17 +53,17 @@ try {
  await page.goto('http://127.0.0.1:9000/#/wallet');
  await page.locator('.backup-shortcut').waitFor({timeout:60000});
  assert.equal(await page.locator('.backup-banner-wrapper').count(),0);
- await page.locator('.backup-shortcut').click();await page.getByRole('heading',{name:'Bitcoin backup',exact:true}).waitFor();
- assert.equal(await page.getByRole('heading',{name:'Identity backup',exact:true}).count(),1);
+ await page.locator('.backup-shortcut').click();await page.getByRole('button',{name:/^Bitcoin backup/}).first().waitFor();
+ assert.equal(await page.getByRole('button',{name:/^Identity backup/}).count(),1);
  await shot('01-backups-light');
- await page.locator('.backup-choices .settings-row').filter({hasText:'Spark'}).click();
+ await page.locator('.backup-choices .backup-choice').filter({hasText:'Spark'}).click();
  await page.getByRole('heading',{name:'Keep a way back'}).waitFor();
  assert.equal(await page.locator('.recovery-card .backup-coverage-item').count(),2);
  await shot('02-wallet-prepare-light');
  await page.getByRole('button',{name:'Cancel',exact:true}).click();
  await page.locator('.recovery-card').waitFor({state:'hidden'});
  assert.equal(await page.locator('.backup-shortcut-label').count(),1);
- await page.locator('.backup-shortcut').click();await page.locator('.backup-choices .settings-row').filter({hasText:'Spark'}).click();
+ await page.locator('.backup-shortcut').click();await page.locator('.backup-choices .backup-choice').filter({hasText:'Spark'}).click();
  await writeAndCheck();
  // Failure must retain the check and roll back optimistic store flags.
  await page.evaluate(()=>{window.__originalStorageSet=Storage.prototype.setItem;Storage.prototype.setItem=function(k,v){if(k==='buhoGO_wallet_store')throw new Error('Simulated full disk');return window.__originalStorageSet.call(this,k,v);};});
@@ -194,7 +194,7 @@ try {
   await page.evaluate(l=>{document.querySelector('.q-page').__vueParentComponent.proxy.$i18n.locale=l;window.__audit.setDark(true);},locale);
   await page.setViewportSize({width:320,height:700});
   await page.locator('.backup-shortcut').click();await page.locator('.backup-choices').waitFor();await shot('08-backups-'+locale+'-320');
-  await page.locator('.backup-choices .settings-row').filter({hasText:'Spark'}).click();await page.locator('.recovery-card').waitFor();await shot('09-prepare-'+locale+'-320');
+  await page.locator('.backup-choices .backup-choice').filter({hasText:'Spark'}).click();await page.locator('.recovery-card').waitFor();await shot('09-prepare-'+locale+'-320');
   const overflow=await page.locator('.recovery-body').evaluate(el=>el.scrollWidth>el.clientWidth);assert.equal(overflow,false);
   await page.locator('.recovery-header .recovery-nav').click();
  }

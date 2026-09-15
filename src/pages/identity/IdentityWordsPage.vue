@@ -7,7 +7,7 @@
       <BackupCoverage :selected="selectedBackup" interactive @select="selectedBackup = $event" />
       <div id="backup-panel-identity" role="tabpanel" aria-labelledby="backup-tab-identity" :hidden="selectedBackup !== 'identity'">
         <section class="words-panel">
-          <BackupKeyring :size="52" />
+          <BackupSubjectIcon kind="identity" :size="40" />
           <h2>{{ $t('Identity backup') }}</h2>
           <p>{{ $t('Name, photo and contacts') }}</p>
           <button type="button" class="btn-primary" @click="openCardWords">
@@ -17,7 +17,7 @@
       </div>
       <div id="backup-panel-wallet" role="tabpanel" aria-labelledby="backup-tab-wallet" :hidden="selectedBackup !== 'wallet'">
         <section class="words-panel">
-          <BackupKeyring :size="52" />
+          <BackupSubjectIcon kind="wallet" :size="40" />
           <h2>{{ $t('Bitcoin backup') }}</h2>
           <IdentityGroup v-if="walletGroups.length">
             <IdentityRow v-for="group in walletGroups" :key="group.key" :label="bitcoinBackupName(group, $t)"
@@ -73,12 +73,12 @@
               :label="$t('Identity')"
               :caption="$t('Name, photo and contacts from another phone')"
               @click="startCardRestore"
-            ><template #leading><BackupKeyring :size="28" /></template></IdentityRow>
+            ><template #leading><BackupSubjectIcon kind="identity" :size="26" /></template></IdentityRow>
             <IdentityRow
               :label="$t('Bitcoin')"
               :caption="$t('Bitcoin from another phone')"
               @click="startWalletRestore"
-            ><template #leading><BackupKeyring :size="28" /></template></IdentityRow>
+            ><template #leading><BackupSubjectIcon kind="wallet" :size="26" /></template></IdentityRow>
           </IdentityGroup>
         </div>
       </q-card>
@@ -96,6 +96,7 @@ import SparkSeedPhraseDialog from '../../components/SparkSeedPhraseDialog.vue';
 import { useWalletStore } from '../../stores/wallet';
 import { bitcoinBackupName, walletBackupGroups } from '../../utils/backupStatus.js';
 import BackupKeyring from '../../components/BackupKeyring.vue';
+import BackupSubjectIcon from '../../components/BackupSubjectIcon.vue';
 import BackupCoverage from '../../components/BackupCoverage.vue';
 import CloudBackupSheet from '../../components/CloudBackupSheet.vue';
 import { isCloudBackupPlatform } from '../../services/cloudStorage.js';
@@ -114,7 +115,7 @@ export default {
   name: 'IdentityWordsPage',
 
   components: {
-    BackupKeyring, BackupCoverage, CloudBackupSheet, SparkSeedPhraseDialog,
+    BackupKeyring, BackupSubjectIcon, BackupCoverage, CloudBackupSheet, SparkSeedPhraseDialog,
     SettingsHubNav,
     Icon,
     IdentityNav,
@@ -252,7 +253,7 @@ export default {
 
 <style scoped>
 .words-wallet-state { display: block; margin-top: 4px; }
-.words-panel { padding: 24px; border: 1px solid var(--border-card); border-radius: 20px; background: var(--bg-card); margin-bottom: 24px; }
+.words-panel { padding: 24px; border: 0; border-radius: 20px; background: var(--bg-card); margin-bottom: 24px; }
 .words-panel h2 { font: 700 22px/1.3 'Manrope', sans-serif; margin: 16px 0 10px; color: var(--text-primary); }
 .words-panel p { color: var(--text-secondary); font-size: 14px; line-height: 1.5; margin: 0 0 22px; }
 .words-panel .btn-primary { width: 100%; min-height: 48px; }

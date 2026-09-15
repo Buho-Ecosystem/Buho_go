@@ -14,50 +14,28 @@
           <Icon icon="tabler:x" width="18" height="18" />
         </q-btn>
       </div>
-      <p v-if="groups.length && identity.bootstrapped" class="backup-choices-intro">
-        {{ $t('Each has its own recovery words.') }}
-      </p>
-      <h3 v-if="groups.length" class="backup-section-title">{{ $t('Bitcoin backup') }}</h3>
-      <div v-if="groups.length" class="backup-choices-list">
-        <SettingsRow
-          v-for="group in groups"
-          :key="group.key"
-          :label="bitcoinBackupName(group, $t)"
-          @click="selectBackup({ kind: 'wallet', walletId: group.walletId, mode: group.saved ? 'view' : 'backup' })"
-        >
-          <template #icon><BackupKeyring :size="28" /></template>
-          <template #caption>
-            <span>{{ group.type === 'spark' ? 'Spark' : 'Arkade' }}</span>
-            <span class="backup-choice-state" :class="{ 'backup-choice-state--saved': group.saved }">
-              <Icon v-if="group.saved" icon="tabler:check" width="13" height="13" aria-hidden="true" />
-              {{ group.saved ? $t('Recovery words checked') : $t('Recovery words not checked yet') }}
+      <div class="backup-choices-list">
+        <button v-for="choice in choices" :key="choice.key" type="button" class="backup-choice" @click="selectBackup(choice)">
+          <span class="backup-choice-icon"><BackupSubjectIcon :kind="choice.kind" :size="28" /></span>
+          <span class="backup-choice-copy">
+            <strong>{{ $t(choice.kind === 'wallet' ? 'Bitcoin backup' : 'Identity backup') }}</strong>
+            <span class="backup-choice-detail">{{ choice.detail }}</span>
+            <span class="backup-choice-state" :class="{ 'is-saved': choice.saved }">
+              <Icon v-if="choice.saved" icon="tabler:check" width="14" height="14" aria-hidden="true" />
+              {{ $t(choice.saved ? 'Words checked' : 'Not checked yet') }}
             </span>
-          </template>
-        </SettingsRow>
+          </span>
+          <Icon icon="tabler:chevron-right" width="18" height="18" class="backup-choice-chevron" aria-hidden="true" />
+        </button>
       </div>
-      <h3 v-if="identity.bootstrapped" class="backup-section-title">{{ $t('Identity backup') }}</h3>
-      <div v-if="identity.bootstrapped" class="backup-choices-list">
-        <SettingsRow
-          :label="$t('Name, photo and contacts')"
-          @click="selectBackup({ kind: 'identity', mode: identity.backupConfirmed ? 'view' : 'backup' })"
-        >
-          <template #icon><BackupKeyring :size="28" /></template>
-          <template #caption>
-            <span class="backup-choice-state" :class="{ 'backup-choice-state--saved': identity.backupConfirmed }">
-              <Icon v-if="identity.backupConfirmed" icon="tabler:check" width="13" height="13" aria-hidden="true" />
-              {{ identity.backupConfirmed ? $t('Recovery words checked') : $t('Recovery words not checked yet') }}
-            </span>
-          </template>
-        </SettingsRow>
-      </div>
-      <h3 v-if="cloudAvailable" class="backup-section-title">{{ $t('Optional backup') }}</h3>
-      <div v-if="cloudAvailable" class="backup-choices-list">
-        <SettingsRow
-          :label="$t('Google Drive backup')"
-          :caption="$t('Wallet and identity together')"
-          @click="selectBackup({ kind: 'cloud' })"
-        ><template #icon><BackupKeyring :size="28" /></template></SettingsRow>
-      </div>
+      <button v-if="cloudAvailable" type="button" class="backup-choice backup-choice-cloud" @click="selectBackup({ kind: 'cloud' })">
+        <span class="backup-choice-icon"><BackupKeyring :size="28" /></span>
+        <span class="backup-choice-copy">
+          <strong>{{ $t('Google Drive backup') }}</strong>
+          <span class="backup-choice-detail">{{ $t('Optional backup') }}</span>
+        </span>
+        <Icon icon="tabler:chevron-right" width="18" height="18" class="backup-choice-chevron" aria-hidden="true" />
+      </button>
       <p v-if="!groups.length" class="backup-choices-intro">
         {{ $t('For connected wallets, keep the recovery details from your wallet provider.') }}
       </p>
@@ -72,14 +50,14 @@
 
 <script setup>
 
-import { computed, ref } from 'vue';
+import { computed, getCurrentInstance, ref } from 'vue';
 import BackupKeyring from './BackupKeyring.vue';
 import { Icon } from '@iconify/vue';
 import { useWalletStore } from '../stores/wallet';
 import { useIdentityStore } from '../stores/identity';
 import { bitcoinBackupName, walletBackupGroups } from '../utils/backupStatus.js';
 import { isCloudBackupPlatform } from '../services/cloudStorage.js';
-import SettingsRow from './settings/SettingsRow.vue';
+import BackupSubjectIcon from './BackupSubjectIcon.vue';
 import SparkSeedPhraseDialog from './SparkSeedPhraseDialog.vue';
 import IdentitySeedPhraseDialog from './IdentitySeedPhraseDialog.vue';
 import CloudBackupSheet from './CloudBackupSheet.vue';
@@ -88,6 +66,20 @@ const wallet = useWalletStore();
 const identity = useIdentityStore();
 const groups = computed(() => walletBackupGroups(wallet.wallets, wallet.hasBackedUp));
 const cloudAvailable = isCloudBackupPlatform();
+const { proxy } = getCurrentInstance();
+const t = key => proxy.$t(key);
+// Each button names the backup first; wallet/provider details remain subordinate.
+const choices = computed(() => [
+  ...groups.value.map(group => ({
+    key: group.key, kind: 'wallet', walletId: group.walletId, saved: group.saved,
+    mode: group.saved ? 'view' : 'backup',
+    detail: `${bitcoinBackupName(group, t)} · ${group.type === 'spark' ? 'Spark' : 'Arkade'}`,
+  })),
+  ...(identity.bootstrapped ? [{
+    key: 'identity', kind: 'identity', saved: identity.backupConfirmed,
+    mode: identity.backupConfirmed ? 'view' : 'backup', detail: t('Name, photo and contacts'),
+  }] : []),
+]);
 const props = defineProps({ modelValue: Boolean });
 const emit = defineEmits(['update:modelValue']);
 const open = computed({ get: () => props.modelValue, set: value => emit('update:modelValue', value) });
@@ -135,12 +127,17 @@ function openSelectedBackup() {
 .backup-choices-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .backup-choices-header h2 { margin: 0; font: 700 21px/1.3 'Manrope', sans-serif; }
 .backup-choices-intro { margin: 10px 0 16px; color: var(--text-secondary); font-size: 13px; line-height: 1.5; }
-.backup-choices-list { margin-top: 12px; border: 1px solid var(--border-card); border-radius: 16px; overflow: hidden; }
-.backup-choices-list :deep(.settings-row + .settings-row) { border-top: 1px solid var(--border-card); }
-.backup-choices-list :deep(.settings-row:focus-visible) { outline: 2px solid var(--brand-accent); outline-offset: -2px; }
-.backup-choice-state { display: flex; align-items: center; gap: 4px; margin-top: 5px; color: var(--text-secondary); }
-.backup-choice-state--saved { color: var(--brand-accent-text); }
-
-.backup-section-title { margin: 24px 2px 8px; font: 650 14px/1.4 'Manrope', sans-serif; }
-.backup-section-title + .backup-choices-list { margin-top: 0; }
+.backup-choices-list { display: grid; gap: 8px; margin-top: 20px; }
+.backup-choice { display: flex; align-items: center; gap: 14px; width: 100%; min-height: 88px; padding: 16px; border: 0; border-radius: 18px; background: var(--bg-input); color: var(--text-primary); text-align: start; font: inherit; cursor: pointer; }
+.backup-choice:focus-visible { outline: 2px solid var(--brand-accent-text); outline-offset: 2px; }
+.backup-choice:active { background: var(--brand-accent-soft); }
+.backup-choice-icon { display: grid; place-items: center; flex-shrink: 0; width: 32px; color: var(--text-secondary); }
+.backup-choice-copy { display: flex; flex: 1; min-width: 0; flex-direction: column; gap: 4px; }
+.backup-choice-copy strong { font-size: 16px; font-weight: 650; line-height: 1.35; }
+.backup-choice-detail { color: var(--text-secondary); font-size: 12px; line-height: 1.45; overflow-wrap: anywhere; }
+.backup-choice-state { display: flex; align-items: center; gap: 4px; color: var(--text-secondary); font-size: 12px; line-height: 1.4; }
+.backup-choice-state.is-saved { color: var(--brand-accent-text); }
+.backup-choice-state svg, .backup-choice-chevron { flex-shrink: 0; }
+.backup-choice-chevron { color: var(--text-secondary); }
+.backup-choice-cloud { margin-top: 16px; background: transparent; }
 </style>

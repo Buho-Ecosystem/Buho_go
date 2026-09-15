@@ -7,11 +7,13 @@
       :aria-selected="interactive ? selected === item.id : undefined" :aria-controls="interactive ? `backup-panel-${item.id}` : undefined"
       :tabindex="interactive ? (selected === item.id ? 0 : -1) : undefined"
       @click="interactive && $emit('select', item.id)" @keydown="onKeydown($event, item.id)">
-      <BackupKeyring v-if="!interactive" :size="30" />
-      <strong>{{ $t(item.label) }}</strong>
-      <span class="backup-coverage-state">
-        <Icon v-if="item.done" icon="tabler:check" width="14" height="14" aria-hidden="true" />
-        {{ $t(item.state) }}
+      <BackupSubjectIcon :kind="item.id" :size="22" />
+      <span class="backup-coverage-copy">
+        <strong>{{ $t(item.label) }}</strong>
+        <span class="backup-coverage-state">
+          <Icon v-if="item.done" icon="tabler:check" width="14" height="14" aria-hidden="true" />
+          {{ $t(item.state) }}
+        </span>
       </span>
     </component>
   </div>
@@ -23,7 +25,7 @@ import { Icon } from '@iconify/vue';
 import { useWalletStore } from '../stores/wallet';
 import { useIdentityStore } from '../stores/identity';
 import { walletBackupGroups } from '../utils/backupStatus.js';
-import BackupKeyring from './BackupKeyring.vue';
+import BackupSubjectIcon from './BackupSubjectIcon.vue';
 const props = defineProps({ selected: { type: String, default: '' }, interactive: Boolean });
 const emit = defineEmits(['select']);
 function onKeydown(event, id) {
@@ -46,15 +48,16 @@ const items = computed(() => {
 </script>
 
 <style scoped>
-.backup-coverage { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin: 20px 0; }
-.backup-coverage-item { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; padding: 16px; background: var(--bg-card); border: 1px solid var(--border-card); border-radius: 16px; }
-.backup-coverage-item.is-selected { border-color: var(--brand-accent-text); background: var(--brand-accent-soft); }
-.backup-coverage-item strong { font-size: 14px; color: var(--text-primary); }
-.backup-coverage-state { display: flex; align-items: center; gap: 4px; font-size: 12px; line-height: 1.4; color: var(--text-secondary); }
-.backup-coverage-state svg { color: var(--brand-accent-text); flex-shrink: 0; }
-.backup-coverage.is-interactive { gap: 4px; padding: 4px; background: var(--bg-input); border-radius: 18px; }
-.is-interactive .backup-coverage-item { align-items: center; justify-content: center; text-align: center; font: inherit; min-height: 76px; border: 2px solid transparent; background: transparent; cursor: pointer; padding: 10px 6px; }
-.is-interactive .backup-coverage-item.is-selected { background: var(--bg-card); border-color: var(--brand-accent-text); box-shadow: 0 2px 6px #0000000d; }
+.backup-coverage { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin: 20px 0 28px; }
+.backup-coverage-item { display: flex; align-items: flex-start; gap: 9px; min-width: 0; padding: 6px 0; color: var(--text-secondary); }
+.backup-coverage-copy { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.backup-coverage-item strong { font-size: 14px; line-height: 1.4; font-weight: 600; color: var(--text-primary); }
+.backup-coverage-item.is-selected > .backup-subject-icon { color: var(--brand-accent-text); }
+.backup-coverage-state { display: flex; align-items: baseline; gap: 4px; font-size: 12px; line-height: 1.4; color: var(--text-secondary); }
+.backup-coverage-state svg { color: var(--brand-accent-text); flex-shrink: 0; align-self: center; }
+.backup-coverage.is-interactive { gap: 4px; padding: 4px; background: var(--bg-input); border-radius: 16px; }
+.is-interactive .backup-coverage-item { align-items: center; justify-content: center; min-height: 64px; padding: 10px 8px; font: inherit; border: 0; border-radius: 12px; background: transparent; cursor: pointer; }
+.is-interactive .backup-coverage-item.is-selected { background: var(--bg-card); box-shadow: 0 2px 6px #00000012; }
+.is-interactive .backup-coverage-item.is-selected strong { font-weight: 750; }
 .is-interactive .backup-coverage-item:focus-visible { outline: 2px solid var(--brand-accent-text); outline-offset: 2px; }
-.is-interactive .backup-coverage-state { justify-content: center; }
 </style>
