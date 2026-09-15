@@ -502,9 +502,17 @@ export const useIdentityStore = defineStore('identity', {
      * succeeds in the seed-phrase dialog.
      */
     async confirmBackup() {
+      const previous = this.backupConfirmed;
+      const dismissed = this.backupBannerDismissedUntil;
       this.backupConfirmed = true;
       this.backupBannerDismissedUntil = null;
-      this._persistMetadata();
+      try {
+        this._persistMetadata();
+      } catch (error) {
+        this.backupConfirmed = previous;
+        this.backupBannerDismissedUntil = dismissed;
+        throw error;
+      }
     },
 
     /**
@@ -748,19 +756,32 @@ export const useIdentityStore = defineStore('identity', {
      *
      * @returns {Promise<{ privateKeyHex: string, nsec: string }>}
      */
-    async revealNostrSecret() {
+    async revealNostrSecret(account = this.nostrAccountIndex) {
       if (!this.bootstrapped) {
         const err = new Error('No identity seed');
         err.code = 'IDENTITY_NOT_BOOTSTRAPPED';
         throw err;
       }
+      // Pin the requested roster entry before decrypting. Exporting an inactive
+      // identity must not switch the user's profile, contacts or signer.
+      if (!this.nostrKnownAccounts.some(entry => entry.i === account)) {
+        throw new Error('Unknown identity account');
+      }
+      const fingerprint = this.fingerprint;
       const mnemonic = await this.getMnemonic();
       try {
+        if (fingerprint !== this.fingerprint || !this.nostrKnownAccounts.some(entry => entry.i === account)) {
+          throw new Error('Identity changed');
+        }
         const { privateKey, nsec } = deriveNostrIdentity(
           mnemonic,
-          this.nostrAccountIndex,
+          account,
         );
-        return { privateKeyHex: bytesToHex(privateKey), nsec };
+        try {
+          return { privateKeyHex: bytesToHex(privateKey), nsec };
+        } finally {
+          privateKey.fill(0);
+        }
       } finally {
         // eslint-disable-next-line no-unused-vars
         const _drop = mnemonic;

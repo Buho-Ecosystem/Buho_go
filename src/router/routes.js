@@ -101,7 +101,8 @@ const routes = [
       },
       { path: '/identity/words', component: () => import('pages/identity/IdentityWordsPage.vue') },
       { path: '/identity/identities', component: () => import('pages/identity/IdentityListPage.vue') },
-      { path: '/identity/advanced', component: () => import('pages/identity/IdentityAdvancedPage.vue') },
+      // Legacy Keys links now land beside the identity each private key belongs to.
+      { path: '/identity/advanced', redirect: '/identity/identities' },
       { path: '/identity/erase', component: () => import('pages/identity/IdentityErasePage.vue') },
       // Legacy alias - anything that still links to /profile (e.g. an
       // older deep link) lands on the same page under its new tab name.

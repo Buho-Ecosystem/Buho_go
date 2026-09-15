@@ -1,17 +1,17 @@
 <template>
   <div class="mnemonic-order-verify">
     <!-- Status Message -->
-    <div class="verify-status">
+    <div class="verify-status" role="status" aria-live="polite">
       <div v-if="isComplete" class="status-success">
         <div class="status-icon-wrap status-icon-success">
           <Icon icon="tabler:circle-check" width="24" height="24" />
         </div>
         <div class="status-text-wrap">
           <span class="status-title" :class="$q.dark.isActive ? 'status-title-success-dark' : 'status-title-success-light'">
-            {{ $t('Backup verified') }}
+            {{ $t('The words match') }}
           </span>
           <span class="status-desc" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-7'">
-            {{ $t('Store your recovery phrase safely offline.') }}
+            {{ $t('Confirm to save your backup status.') }}
           </span>
         </div>
       </div>
@@ -38,7 +38,8 @@
           getWordState(index),
           getWordPosition(index) !== null ? 'has-badge' : ''
         ]"
-        :disabled="isWordSelected(index) || isComplete"
+        :disabled="isWordSelected(index) || isComplete || busy"
+        :aria-label="item.word + (getWordPosition(index) !== null ? `, ${getWordPosition(index)}` : '')"
         @click="handleWordTap(index)"
       >
         <span
@@ -56,6 +57,7 @@
     <div class="verify-actions">
       <button
         class="show-again-btn"
+        :disabled="busy"
         :class="$q.dark.isActive ? 'btn-outline-dark' : 'btn-outline-light'"
         @click="$emit('show-phrase')"
       >
@@ -66,9 +68,10 @@
       <button
         v-if="isComplete"
         class="confirm-btn"
+        :disabled="busy"
         @click="$emit('verify-success')"
       >
-        {{ $t('Complete Backup') }}
+        {{ busy ? $t('Saving…') : $t('Confirm backup') }}
       </button>
     </div>
   </div>
@@ -78,6 +81,7 @@
 export default {
   name: 'MnemonicOrderVerify',
   props: {
+    busy: Boolean,
     mnemonic: {
       type: Array,
       required: true,
@@ -142,8 +146,7 @@ export default {
         }
       } else {
         this.errorIndex = shuffledIndex
-        const ordinal = this.getOrdinal(expectedPosition + 1)
-        this.errorMessage = this.$t('Wrong - expected the {ordinal} word', { ordinal })
+        this.errorMessage = this.$t('Check word {number} on your paper and try again.', { number: expectedPosition + 1 })
 
         setTimeout(() => {
           if (this.errorIndex === shuffledIndex) {
@@ -152,16 +155,6 @@ export default {
           }
         }, 2000)
       }
-    },
-
-    getOrdinal(n) {
-      const ordinals = {
-        1: this.$t('1st'), 2: this.$t('2nd'), 3: this.$t('3rd'),
-        4: this.$t('4th'), 5: this.$t('5th'), 6: this.$t('6th'),
-        7: this.$t('7th'), 8: this.$t('8th'), 9: this.$t('9th'),
-        10: this.$t('10th'), 11: this.$t('11th'), 12: this.$t('12th')
-      }
-      return ordinals[n] || `${n}th`
     },
 
     isWordSelected(shuffledIndex) {
@@ -521,4 +514,10 @@ export default {
     font-size: 12px;
   }
 }
+
+.word-chip { min-height: 48px; }
+.word-chip:focus-visible, .show-again-btn:focus-visible, .confirm-btn:focus-visible { outline: 2px solid var(--brand-accent-text); outline-offset: 2px; }
+.verify-actions button { min-height: 48px; }
+.verify-actions button:disabled { opacity: .6; cursor: default; }
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
 </style>

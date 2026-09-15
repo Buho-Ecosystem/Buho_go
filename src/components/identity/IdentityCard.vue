@@ -22,7 +22,7 @@
   <div class="id-card-stage" :class="{ 'is-flipped': flipped }">
     <div class="id-card-flipper">
       <!-- Front -->
-      <div class="id-card-face id-card-front" @click="flip">
+      <div class="id-card-face id-card-front" :inert="flipped" @click="flip">
         <!-- No mark here. A tick or a shield above the photo and the handle
              reads as "this person is verified", which is the one claim a
              username must never make. -->
@@ -83,18 +83,24 @@
           </component>
         </span>
 
+        <button v-if="npub" type="button" class="id-card-public-key" @click.stop="copyPublic">
+          <Icon :icon="publicCopied ? 'tabler:check' : 'tabler:copy'" width="16" height="16" />
+          <span aria-live="polite">{{ publicCopied ? $t('Copied') : $t('Copy public key') }}</span>
+          <span class="id-card-public-preview" aria-hidden="true">{{ npub.slice(0, 8) }}…{{ npub.slice(-4) }}</span>
+        </button>
+
         <span class="id-card-foot">
           <!-- Progress and warnings only, and a door to the backup screen
                while they last. "Backed up" forever is a completed to-do
                pinned to the one object the user sees most; done states earn
-               silence (the words stay reachable from the Identities page). -->
+               silence (the words stay reachable from Profile). -->
           <button
             v-if="statusTone !== 'ok'"
             type="button"
             class="id-card-status"
             @click.stop="$emit('backup')"
           >
-            <Icon :icon="statusIcon" width="13" height="13" />
+            <BackupKeyring :size="20" />
             {{ status }}
           </button>
           <span v-else class="id-card-status" aria-hidden="true"></span>
@@ -114,6 +120,7 @@
       <button
         type="button"
         class="id-card-face id-card-back"
+        :inert="!flipped"
         :aria-label="qrCaption ? qrCaption + '. ' + $t('Turn back') : $t('Turn back')"
         @click="flip"
       >
@@ -136,6 +143,8 @@
 </template>
 
 <script>
+import { copyToClipboard } from 'quasar';
+import BackupKeyring from '../BackupKeyring.vue';
 import { Icon } from '@iconify/vue';
 import VueQrcode from '@chenfengyuan/vue-qrcode';
 import { getQrOptionsWithSize } from '../../utils/qrConfig.js';
@@ -146,7 +155,7 @@ const RING_LENGTH = 220;
 export default {
   name: 'IdentityCard',
 
-  components: { Icon, VueQrcode },
+  components: { BackupKeyring, Icon, VueQrcode },
 
   props: {
     name: { type: String, required: true },
@@ -160,6 +169,7 @@ export default {
     needsName: { type: Boolean, default: false },
     /** 0..1 setup progress. 1 turns the ring neutral. */
     progress: { type: Number, default: 1 },
+    npub: { type: String, default: '' },
     qrValue: { type: String, default: '' },
     qrCaption: { type: String, default: '' },
     canSwitch: { type: Boolean, default: false },
@@ -170,24 +180,19 @@ export default {
   data() {
     return {
       flipped: false,
+      publicCopied: false,
+      copyTimer: null,
       RING_LENGTH,
     };
   },
 
+  beforeUnmount() { clearTimeout(this.copyTimer); },
+
+  watch: { npub() { this.publicCopied = false; } },
+
   computed: {
     complete() {
       return this.progress >= 1;
-    },
-
-    /**
-     * Setup running is progress, not a fault. The warning mark is reserved
-     * for the state that genuinely is one: the words are the last thing left
-     * and they are still not written down.
-     */
-    statusIcon() {
-      if (this.statusTone === 'ok') return 'tabler:check';
-      if (this.statusTone === 'warn') return 'tabler:alert-triangle';
-      return 'tabler:circle-dashed';
     },
 
     ringOffset() {
@@ -206,6 +211,16 @@ export default {
   },
 
   methods: {
+    async copyPublic() {
+      try {
+        await copyToClipboard(this.npub);
+        this.publicCopied = true;
+        clearTimeout(this.copyTimer);
+        this.copyTimer = setTimeout(() => { this.publicCopied = false; }, 2000);
+      } catch {
+        this.$q.notify({ type: 'warning', message: this.$t("Couldn't copy"), timeout: 2000 });
+      }
+    },
     onAddName(event) {
       event.stopPropagation();
       this.$emit('add-name');
@@ -220,6 +235,9 @@ export default {
 </script>
 
 <style scoped>
+.id-card-public-key { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; min-height: 44px; padding: 6px 0; margin: 4px 0; border: 0; border-radius: 8px; background: transparent; color: #fff; font: inherit; font-size: 12px; cursor: pointer; }
+.id-card-public-key:focus-visible { outline: 2px solid #15de72; outline-offset: 3px; }
+.id-card-public-preview { opacity: .7; font-family: var(--font-mono); font-size: 11px; }
 /* The card is the one place in the identity surface with its own palette,
    and it follows the theme's own logic: light mode is black-on-cream
    everywhere in this app, so the card is the same near-black as the primary
@@ -364,6 +382,7 @@ body.body--dark .id-card-front::after {
 }
 
 .id-card-meta--action {
+  color: inherit;
   border: 0;
   background: transparent;
   padding: 0;

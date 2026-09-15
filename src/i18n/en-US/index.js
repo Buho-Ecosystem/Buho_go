@@ -1,4 +1,14 @@
+import backup from './backup.js';
 export default {
+  ...backup,
+  // Home backup shortcut
+  "Wallet & identity": "Wallet & identity",
+  "Backups": "Backups",
+  "Wallet backup · {wallet}": "Wallet backup · {wallet}",
+  "Identity backup": "Identity backup",
+  "Your wallet and identity have separate recovery words. Save each set.": "Your wallet and identity have separate recovery words. Save each set.",
+  "For connected wallets, keep the recovery details from your wallet provider.": "For connected wallets, keep the recovery details from your wallet provider.",
+
   // --- transaction report (tax export) ---
   "1 transaction": "1 transaction",
   "One transaction has no recorded exchange rate, so no value is stated for it.": "One transaction has no recorded exchange rate, so no value is stated for it.",

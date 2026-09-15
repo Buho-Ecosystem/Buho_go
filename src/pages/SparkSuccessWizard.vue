@@ -216,12 +216,13 @@
           <!-- 11: Backup Reminder -->
           <q-carousel-slide name="backup" class="wizard-slide">
             <div class="slide-content">
-              <img src="/Onboarding wizard spark/storyset-secure-login-bro.svg" class="slide-illustration" alt="" />
+              <BackupKeyring :size="100" class="q-mb-lg" />
+              <div class="wizard-backup-types"><span>{{ $t('Bitcoin') }}</span><span>{{ $t('Identity') }}</span></div>
               <h2 class="slide-title" :class="$q.dark.isActive ? 'text-white' : 'text-dark'">
-                {{ $t('Back Up Your Words') }}
+                {{ $t('Two backups, kept separate') }}
               </h2>
               <p class="slide-text" :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'">
-                {{ $t('Your 12 recovery words are the only way to restore your wallet. Write them down and keep them somewhere safe.') }}
+                {{ $t('The keyring takes you to both backups. Save each set of words when you are ready.') }}
               </p>
             </div>
           </q-carousel-slide>
@@ -376,7 +377,7 @@ const ARKADE_FEATURES = [
 
 export default {
   name: 'SparkSuccessWizard',
-  components: { ArkadeLogo },
+  components: { BackupKeyring, ArkadeLogo },
   data() {
     const mode = this.$route.query.mode || 'spark'
     const isArkadeMode = mode === 'arkade'
@@ -593,4 +594,6 @@ body.body--light .dot {
   .slide-title { font-size: 20px; }
   .slide-text { font-size: 14px; }
 }
+.wizard-backup-types { display: flex; gap: 12px; justify-content: center; margin: 0 0 20px; }
+.wizard-backup-types span { padding: 8px 18px; border: 1px solid var(--border-card); border-radius: 12px; color: var(--text-primary); }
 </style>
