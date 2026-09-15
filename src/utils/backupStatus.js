@@ -23,3 +23,9 @@ export function walletBackupGroups(wallets, legacySparkBackedUp = false) {
   }
   return groups;
 }
+
+/** Put the user's wallet names first; provider names remain secondary UI text. */
+export function bitcoinBackupName(group, t) {
+  const names = group.names.filter(name => name && !/^(spark|arkade)( wallet)?$/i.test(name.trim()));
+  return names.length ? names.join(' · ') : t('Your bitcoin');
+}

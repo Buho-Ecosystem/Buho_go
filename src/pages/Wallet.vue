@@ -96,11 +96,13 @@
     </q-toolbar>
 
     <!-- Backup Reminder Banner -->
+    <!-- Paused: the persistent keyring is the home backup entry point.
     <BackupBanner
       :visible="walletStore.shouldPromptBackup && (walletStore.isActiveWalletSpark || walletStore.isActiveWalletArkade)"
       @backup="goToBackup"
       @dismiss="walletStore.dismissBackupPrompt()"
     />
+    -->
 
     <!--
       Loading state. One language across the app: a skeleton where content

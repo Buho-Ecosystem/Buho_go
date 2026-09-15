@@ -970,28 +970,27 @@ export const useWalletStore = defineStore('wallet', {
      * @param {string} [walletId] - Specific wallet ID (defaults to active Spark wallet)
      */
     async confirmBackup(walletId) {
-      // Resolve the wallet being confirmed. The dialog passes a specific id;
-      // with none, default to the active seed wallet (Arkade or Spark).
       const target = walletId
-        ? this.wallets.find((w) => w.id === walletId)
+        ? this.wallets.find(w => w.id === walletId)
         : (this.activeWallet?.type === WALLET_TYPES.ARKADE ? this.activeWallet : this.sparkWallet);
-
-      if (target?.type === WALLET_TYPES.ARKADE) {
-        // Arkade is a single wallet — mark just this one.
-        if (!target.metadata) target.metadata = {};
-        target.metadata.hasBackedUp = true;
-      } else {
-        // Spark: all Spark wallets share one mnemonic, so mark them together.
-        for (const w of this.sparkWallets) {
-          if (w.metadata) {
-            w.metadata.hasBackedUp = true;
-          }
-        }
-        // Legacy store-level flag
-        this.hasBackedUp = true;
+      if (!target || ![WALLET_TYPES.SPARK, WALLET_TYPES.ARKADE].includes(target.type)) {
+        throw new Error('No seed wallet to confirm');
       }
+      const affected = target.type === WALLET_TYPES.SPARK ? this.sparkWallets : [target];
+      const previous = affected.map(w => ({ wallet: w, metadata: w.metadata ? { ...w.metadata } : undefined }));
+      const legacy = this.hasBackedUp;
+      const dismissed = this.backupDismissedUntil;
+      for (const w of affected) w.metadata = { ...w.metadata, hasBackedUp: true };
+      if (target.type === WALLET_TYPES.SPARK) this.hasBackedUp = true;
       this.backupDismissedUntil = null;
-      await this.persistState();
+      try {
+        await this.persistState({ requireDurable: true });
+      } catch (error) {
+        for (const entry of previous) entry.wallet.metadata = entry.metadata;
+        this.hasBackedUp = legacy;
+        this.backupDismissedUntil = dismissed;
+        throw error;
+      }
     },
 
     /**
@@ -3201,7 +3200,7 @@ export const useWalletStore = defineStore('wallet', {
     /**
      * Persist state to localStorage
      */
-    async persistState() {
+    async persistState({ requireDurable = false } = {}) {
       try {
         // Safety: never save fewer wallets than localStorage already has,
         // unless the user explicitly removed wallets (disconnect/remove actions).
@@ -3213,6 +3212,7 @@ export const useWalletStore = defineStore('wallet', {
             const savedCount = parsed.wallets?.length || 0;
             if (savedCount > 0 && this.wallets.length < savedCount) {
               console.warn(`[wallet-store] Refusing to persist — would lose wallets (${this.wallets.length} < ${savedCount} saved). This is likely an HMR or race condition.`);
+              if (requireDurable) throw new Error('Wallet state changed before backup confirmation');
               return;
             }
           }
@@ -3262,9 +3262,16 @@ export const useWalletStore = defineStore('wallet', {
           preferredFiatCurrency: this.preferredFiatCurrency,
           denominationCurrency: this.denominationCurrency,
         };
-        localStorage.setItem(STORAGE_KEYS.LEGACY_STATE, JSON.stringify(legacyState));
+        try {
+          localStorage.setItem(STORAGE_KEYS.LEGACY_STATE, JSON.stringify(legacyState));
+        } catch (error) {
+          // The canonical wallet blob is already durable; legacy cache failure
+          // must not report a successful phrase confirmation as unsaved.
+          console.warn('Failed to update legacy wallet cache:', error);
+        }
       } catch (error) {
         console.error('Failed to persist wallet state:', error);
+        if (requireDurable) throw error;
       }
     },
 

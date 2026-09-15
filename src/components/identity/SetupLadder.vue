@@ -31,10 +31,11 @@
       :disabled="!step.route"
       @click="step.route ? $router.push(step.route) : null"
     >
-      <span class="ladder-tick">
+      <BackupKeyring v-if="step.id === 'words'" :size="26" />
+      <span v-else class="ladder-tick">
         <Icon v-if="step.done" icon="tabler:check" width="13" height="13" />
       </span>
-      <span class="ladder-label">{{ $t(step.label) }}</span>
+      <span class="ladder-label">{{ $t(step.label) }}<span v-if="step.id === 'words'" class="ladder-description">{{ $t('Identity backup') }}</span></span>
       <Icon
         v-if="step.route"
         icon="tabler:chevron-right"
@@ -47,12 +48,13 @@
 </template>
 
 <script>
+import BackupKeyring from '../BackupKeyring.vue';
 import { Icon } from '@iconify/vue';
 
 export default {
   name: 'SetupLadder',
 
-  components: { Icon },
+  components: { Icon, BackupKeyring },
 
   props: {
     steps: { type: Array, required: true },
@@ -151,4 +153,6 @@ export default {
 .ladder-step--done .ladder-label { color: var(--text-secondary); }
 
 .ladder-chev { color: var(--text-muted); }
+.ladder-description { display: block; margin-top: 3px; font-size: 12px; font-weight: 400; color: var(--text-secondary); }
+.ladder-step:focus-visible { outline: 2px solid var(--brand-accent-text); outline-offset: -2px; }
 </style>

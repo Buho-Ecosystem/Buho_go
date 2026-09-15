@@ -3,79 +3,48 @@
     <IdentityNav :back-to="$t(backNav.key)" :to="backNav.to" />
 
     <div class="id-sub-body">
-      <h1 class="id-large-title">{{ $t('Back up your card') }}</h1>
-
-      <!--
-        Story first, artifact second: the screen explains what the paper is
-        for in three beats, and the 12 words themselves stay behind the one
-        CTA (reveal, order-check and biometric gate unchanged in the dialog).
-        Wallet backups belong to Settings, next to the wallets; one quiet
-        sentence at the bottom points anyone who came for those.
-      -->
-      <p class="id-lede">
-        {{ $t('Your card lives only on this phone. If the phone is lost or broken, 12 words on paper are the only way back. It takes two minutes.') }}
-      </p>
-
-      <section class="words-panel">
-        <!-- The same illustration the onboarding tour uses for backing up,
-             so the two moments read as one idea. -->
-        <img
-          src="/Onboarding wizard spark/storyset-secure-login-bro.svg"
-          class="words-illustration"
-          alt=""
-        />
-
-        <ol class="words-beats">
-          <li class="words-beat">
-            <span class="words-beat-num" aria-hidden="true">1</span>
-            <span class="words-beat-copy">
-              <strong>{{ $t('Write 12 words on paper') }}</strong>
-              <span>{{ $t('We show them to you. You copy them down, in order.') }}</span>
-            </span>
-          </li>
-          <li class="words-beat">
-            <span class="words-beat-num" aria-hidden="true">2</span>
-            <span class="words-beat-copy">
-              <strong>{{ $t('Check your paper once') }}</strong>
-              <span>{{ $t('Tap the words in order, so a mistake shows now and not on your next phone.') }}</span>
-            </span>
-          </li>
-          <li class="words-beat">
-            <span class="words-beat-num" aria-hidden="true">3</span>
-            <span class="words-beat-copy">
-              <strong>{{ $t('Keep it somewhere safe') }}</strong>
-              <span>{{ $t('Whoever holds the paper holds your card. No photos, no screenshots.') }}</span>
-            </span>
-          </li>
-        </ol>
-
-        <span class="words-state" :class="cardWordsSaved ? 'words-state--ok' : 'words-state--warn'">
-          <Icon v-if="cardWordsSaved" icon="tabler:check" width="12" height="12" />
-          {{ cardWordsSaved ? $t('Backed up') : $t('Not backed up yet') }}
-        </span>
-        <button type="button" class="btn-primary" @click="openCardWords">
-          {{ cardWordsSaved ? $t('View my 12 words') : $t('Show my 12 words') }}
-        </button>
-      </section>
-
-      <IdentityGroup :title="$t('Coming back')">
-        <IdentityRow
-          icon="tabler:refresh"
-          :label="$t('I already have 12 words')"
-          :caption="$t('Bring back what you saved on another phone')"
-          @click="showRestoreChoice = true"
-        />
+      <h1 class="id-large-title">{{ $t('Backups') }}</h1>
+      <BackupCoverage :selected="selectedBackup" interactive @select="selectedBackup = $event" />
+      <div id="backup-panel-identity" role="tabpanel" aria-labelledby="backup-tab-identity" :hidden="selectedBackup !== 'identity'">
+        <section class="words-panel">
+          <BackupKeyring :size="52" />
+          <h2>{{ $t('Identity backup') }}</h2>
+          <p>{{ $t('Name, photo and contacts') }}</p>
+          <button type="button" class="btn-primary" @click="openCardWords">
+            {{ cardWordsSaved ? $t('View recovery words') : $t('Back up identity') }}
+          </button>
+        </section>
+      </div>
+      <div id="backup-panel-wallet" role="tabpanel" aria-labelledby="backup-tab-wallet" :hidden="selectedBackup !== 'wallet'">
+        <section class="words-panel">
+          <BackupKeyring :size="52" />
+          <h2>{{ $t('Bitcoin backup') }}</h2>
+          <IdentityGroup v-if="walletGroups.length">
+            <IdentityRow v-for="group in walletGroups" :key="group.key" :label="bitcoinBackupName(group, $t)"
+              @click="openWalletWords(group)">
+              <template #caption>
+                <span>{{ group.type === 'spark' ? 'Spark' : 'Arkade' }}</span>
+                <span class="words-wallet-state">{{ group.saved ? $t('Words checked') : $t('Not checked yet') }}</span>
+              </template>
+            </IdentityRow>
+          </IdentityGroup>
+          <p v-else>{{ $t('For connected wallets, keep the recovery details from your wallet provider.') }}</p>
+        </section>
+      </div>
+      <IdentityGroup :title="$t('Already have a backup?')">
+        <IdentityRow icon="tabler:refresh" :label="$t('Restore from recovery words')" @click="showRestoreChoice = true" />
+      </IdentityGroup>
+      <IdentityGroup v-if="cloudAvailable" :title="$t('Optional backup')">
+        <IdentityRow :label="$t('Google Drive backup')" :caption="$t('Wallet and identity together')" @click="showCloudBackup = true">
+          <template #leading><BackupKeyring :size="28" /></template>
+        </IdentityRow>
       </IdentityGroup>
 
-      <!-- For whoever came here looking for a wallet backup: where it lives,
-           without putting it back on the screen as a competing set. -->
-      <p v-if="hasWalletWords" class="id-foot">
-        {{ $t('Your wallets keep their own recovery words. Those live in Settings, next to each wallet.') }}
-      </p>
     </div>
+    <SparkSeedPhraseDialog v-model="showWalletWords" :wallet-id="selectedWalletId" :mode="walletPhraseMode" />
+    <CloudBackupSheet v-if="cloudAvailable" v-model="showCloudBackup" />
 
-    <!-- Card words: reveal, then the tap-in-order check that is the only
-         thing proving the paper is right. Unchanged. -->
+    <!-- The shared phrase dialog verifies the selected paper copy. -->
     <IdentitySeedPhraseDialog
       v-model="showSeedDialog"
       :label-paper="hasWalletWords"
@@ -86,7 +55,7 @@
     <!-- Which of the two phrases is in the user's hand. Both are valid
          BIP-39, so the app genuinely cannot tell them apart and says so
          rather than pretending to detect it. -->
-    <q-dialog v-model="showRestoreChoice" position="bottom" :class="$q.dark.isActive ? 'dialog_dark' : 'dialog_light'">
+    <q-dialog v-model="showRestoreChoice" position="bottom" @hide="onRestoreChoiceHidden" :class="$q.dark.isActive ? 'dialog_dark' : 'dialog_light'">
       <q-card class="identity-surface choice-sheet" :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'">
         <div class="sheet-grab" aria-hidden="true"><span></span></div>
         <div class="sheet-head">
@@ -97,21 +66,19 @@
         </div>
         <div class="sheet-body">
           <p class="sheet-lede">
-            {{ $t('Both are 12 words, so we cannot tell them apart on our own. Pick what you wrote on the paper.') }}
+            {{ $t('Which backup is on your paper?') }}
           </p>
-          <IdentityGroup :footer="$t('Not sure? Pick one and try it. Nothing is lost if it turns out to be the other one.')">
+          <IdentityGroup >
             <IdentityRow
-              icon="tabler:user"
-              :label="$t('My card')"
+              :label="$t('Identity')"
               :caption="$t('Name, photo and contacts from another phone')"
               @click="startCardRestore"
-            />
+            ><template #leading><BackupKeyring :size="28" /></template></IdentityRow>
             <IdentityRow
-              icon="tabler:wallet"
-              :label="$t('My wallet')"
+              :label="$t('Bitcoin')"
               :caption="$t('Bitcoin from another phone')"
               @click="startWalletRestore"
-            />
+            ><template #leading><BackupKeyring :size="28" /></template></IdentityRow>
           </IdentityGroup>
         </div>
       </q-card>
@@ -125,6 +92,13 @@
 </template>
 
 <script>
+import SparkSeedPhraseDialog from '../../components/SparkSeedPhraseDialog.vue';
+import { useWalletStore } from '../../stores/wallet';
+import { bitcoinBackupName, walletBackupGroups } from '../../utils/backupStatus.js';
+import BackupKeyring from '../../components/BackupKeyring.vue';
+import BackupCoverage from '../../components/BackupCoverage.vue';
+import CloudBackupSheet from '../../components/CloudBackupSheet.vue';
+import { isCloudBackupPlatform } from '../../services/cloudStorage.js';
 import { Icon } from '@iconify/vue';
 import IdentityNav from '../../components/identity/IdentityNav.vue';
 import SettingsHubNav from '../../components/settings/SettingsHubNav.vue';
@@ -140,6 +114,7 @@ export default {
   name: 'IdentityWordsPage',
 
   components: {
+    BackupKeyring, BackupCoverage, CloudBackupSheet, SparkSeedPhraseDialog,
     SettingsHubNav,
     Icon,
     IdentityNav,
@@ -150,12 +125,19 @@ export default {
   },
 
   setup() {
-    return { ...useIdentityHealth(), addressBook: useAddressBookStore() };
+    return { wallet: useWalletStore(), ...useIdentityHealth(), addressBook: useAddressBookStore() };
   },
 
   data() {
     return {
+      selectedBackup: 'identity',
+      showWalletWords: false,
+      selectedWalletId: null,
+      walletPhraseMode: 'backup',
       showSeedDialog: false,
+      showCloudBackup: false,
+      cloudAvailable: isCloudBackupPlatform(),
+      pendingRestore: null,
       seedDialogMode: 'backup',
       showRestoreChoice: false,
       showRestoreDialog: false,
@@ -164,17 +146,23 @@ export default {
 
   async created() {
     await this.identity.hydrate();
-    // Whether wallet phrases exist decides the label-the-paper hint and the
-    // Settings pointer, and that fact lives in the wallet store.
+    // Both segments must reflect persisted wallets, including on a cold deep link.
     await this.ensureWalletLoaded();
   },
 
   computed: {
+    walletGroups() { return walletBackupGroups(this.wallet.wallets, this.wallet.hasBackedUp); },
     /** Back goes to whichever screen opened this one. */
     backNav() { return identityBack(this.$router, this.$route.path); },
   },
 
   methods: {
+    bitcoinBackupName,
+    openWalletWords(group) {
+      this.selectedWalletId = group.walletId;
+      this.walletPhraseMode = group.saved ? 'view' : 'backup';
+      this.showWalletWords = true;
+    },
     async openCardWords() {
       await this.identity.ensureIdentity();
       this.seedDialogMode = this.cardWordsSaved ? 'view' : 'backup';
@@ -188,12 +176,19 @@ export default {
 
     startCardRestore() {
       this.showRestoreChoice = false;
-      setTimeout(() => { this.showRestoreDialog = true; }, 180);
+      this.pendingRestore = 'identity';
     },
 
     startWalletRestore() {
       this.showRestoreChoice = false;
-      this.$router.push('/restore');
+      this.pendingRestore = 'wallet';
+    },
+
+    onRestoreChoiceHidden() {
+      const target = this.pendingRestore;
+      this.pendingRestore = null;
+      if (target === 'identity') this.showRestoreDialog = true;
+      if (target === 'wallet') this.$router.push('/restore');
     },
 
     /**
@@ -256,100 +251,11 @@ export default {
 </script>
 
 <style scoped>
-/* One panel: the story in three beats, then the single verb. */
-.words-panel {
-  background: var(--bg-card);
-  border: 1px solid var(--border-card);
-  border-radius: var(--radius-lg);
-  padding: 20px 18px 18px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-}
-
-.words-illustration {
-  width: 148px;
-  height: auto;
-  margin: 2px auto 14px;
-  display: block;
-}
-
-.words-beats {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  width: 100%;
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-.words-beat {
-  display: flex;
-  gap: 13px;
-  align-items: flex-start;
-}
-
-.words-beat-num {
-  width: 26px;
-  height: 26px;
-  border-radius: 50%;
-  flex: 0 0 auto;
-  display: grid;
-  place-items: center;
-  background: var(--bg-input);
-  color: var(--text-secondary);
-  font-size: 12.5px;
-  font-weight: 750;
-}
-
-.words-beat-copy {
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding-top: 2px;
-}
-
-.words-beat-copy strong {
-  font-size: 14px;
-  font-weight: 700;
-  letter-spacing: -0.01em;
-  color: var(--text-primary);
-}
-
-.words-beat-copy span {
-  font-size: 12.5px;
-  color: var(--text-secondary);
-  line-height: 1.45;
-}
-
-.words-state {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  font-size: 11.5px;
-  font-weight: 650;
-  padding: 4px 10px;
-  border-radius: var(--radius-pill);
-  margin-top: 12px;
-}
-
-.words-state--ok   { background: var(--brand-accent-soft); color: var(--brand-accent-text); }
-.words-state--warn { background: var(--color-warn-soft); color: var(--color-warn); }
-
-/* Sheet */
-.choice-sheet {
-  width: 100%;
-  max-width: 520px;
-  border-radius: var(--radius-xl) var(--radius-xl) 0 0;
-  padding-bottom: max(16px, env(safe-area-inset-bottom, 0px));
-}
-
-.sheet-lede {
-  font-size: 14px;
-  color: var(--text-secondary);
-  line-height: 1.5;
-  margin: 0 0 14px;
-}
+.words-wallet-state { display: block; margin-top: 4px; }
+.words-panel { padding: 24px; border: 1px solid var(--border-card); border-radius: 20px; background: var(--bg-card); margin-bottom: 24px; }
+.words-panel h2 { font: 700 22px/1.3 'Manrope', sans-serif; margin: 16px 0 10px; color: var(--text-primary); }
+.words-panel p { color: var(--text-secondary); font-size: 14px; line-height: 1.5; margin: 0 0 22px; }
+.words-panel .btn-primary { width: 100%; min-height: 48px; }
+.choice-sheet { width: 100%; max-width: 520px; border-radius: 24px 24px 0 0; padding-bottom: max(16px, env(safe-area-inset-bottom)); }
+.sheet-lede { color: var(--text-secondary); font-size: 14px; line-height: 1.5; margin: 0 0 16px; }
 </style>

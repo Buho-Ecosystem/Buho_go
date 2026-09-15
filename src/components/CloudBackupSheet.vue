@@ -34,7 +34,7 @@
           <Icon icon="tabler:chevron-left" width="18" height="18" />
         </button>
         <div class="cb-title" :class="$q.dark.isActive ? 'dialog_title_dark' : 'dialog_title_light'">
-          {{ headerTitle }}
+          <BackupKeyring :size="28" /> {{ headerTitle }}
         </div>
         <q-btn
           flat
@@ -71,11 +71,11 @@
       <!-- Step: SIGN IN -->
       <q-card-section v-else-if="step === 'sign-in'" class="cb-body">
         <div class="cb-illustration">
-          <Icon icon="tabler:cloud-lock" width="40" height="40" />
+          <BackupKeyring :size="48" />
         </div>
         <h2 class="cb-heading">{{ $t('Google Drive backup') }}</h2>
         <p class="cb-lede">
-          {{ $t('Keeps a backup of your wallets and Nostr identity in your Google Drive, so you can bring them back on a new phone.') }}
+          {{ $t('Save an encrypted copy in Google Drive. This is optional.') }}
         </p>
         <div class="cb-callout" :class="$q.dark.isActive ? 'cb-callout-dark' : 'cb-callout-light'">
           <Icon icon="tabler:shield-check" width="18" height="18" class="cb-callout-icon" />
@@ -89,8 +89,13 @@
         </div>
       </q-card-section>
 
+      <div v-if="['sign-in', 'backup'].includes(step)" class="cb-contents">
+        <div v-if="wallet.wallets.length"><BackupKeyring :size="30" /><strong>{{ $t('Bitcoin') }}</strong><span>{{ $t('Included') }}</span></div>
+        <div v-if="identity.bootstrapped"><BackupKeyring :size="30" /><strong>{{ $t('Identity') }}</strong><span>{{ $t('Included') }}</span></div>
+      </div>
+
       <!-- Step: MENU — signed in -->
-      <q-card-section v-else-if="step === 'menu'" class="cb-body">
+      <q-card-section v-if="step === 'menu'" class="cb-body">
         <div class="cb-account-row" :class="$q.dark.isActive ? 'cb-account-dark' : 'cb-account-light'">
           <Icon icon="tabler:user-circle" width="18" height="18" />
           <span class="cb-account-email">{{ store.signedInEmail || $t('Signed in') }}</span>
@@ -110,7 +115,7 @@
           :disabled="!store.hasBackupableSecret || busy"
           @click="step = 'backup'"
         >
-          <div class="cb-menu-icon"><Icon icon="tabler:cloud-upload" width="22" height="22" /></div>
+          <div class="cb-menu-icon"><BackupKeyring :size="28" /></div>
           <div class="cb-menu-text">
             <div class="cb-menu-title">
               {{ store.hasRemoteBackup ? $t('Back up again') : $t('Back up now') }}
@@ -132,7 +137,7 @@
           :disabled="!store.hasRemoteBackup || busy"
           @click="step = 'restore'"
         >
-          <div class="cb-menu-icon"><Icon icon="tabler:cloud-download" width="22" height="22" /></div>
+          <div class="cb-menu-icon"><BackupKeyring :size="28" /></div>
           <div class="cb-menu-text">
             <div class="cb-menu-title">{{ $t('Restore from backup') }}</div>
             <div class="cb-menu-sub">
@@ -162,12 +167,8 @@
 
       <!-- Step: BACKUP — confirm -->
       <q-card-section v-else-if="step === 'backup'" class="cb-body">
-        <div class="cb-illustration">
-          <Icon icon="tabler:cloud-upload" width="40" height="40" />
-        </div>
-        <p class="cb-lede">
-          {{ $t('Your wallets and Nostr identity will be backed up to your Google Drive.') }}
-        </p>
+        <p class="cb-lede">{{ $t('Recovery words can still be checked separately.') }}</p>
+        <div v-if="backupError" class="cb-callout cb-callout--warn" role="alert">{{ backupError }}</div>
         <div v-if="store.hasRemoteBackup" class="cb-callout cb-callout--warn">
           <Icon icon="tabler:alert-triangle" width="18" height="18" class="cb-callout-icon" />
           <div class="cb-callout-text">
@@ -179,7 +180,7 @@
       <!-- Step: RESTORE — confirm -->
       <q-card-section v-else-if="step === 'restore'" class="cb-body">
         <div class="cb-illustration">
-          <Icon icon="tabler:cloud-download" width="40" height="40" />
+          <BackupKeyring :size="48" />
         </div>
         <p class="cb-lede">
           {{ $t('Bring back the wallets and Nostr identity from the backup in your Google Drive.') }}
@@ -237,13 +238,16 @@
 
 <script>
 import { Icon } from '@iconify/vue';
+import BackupKeyring from './BackupKeyring.vue';
+import { useWalletStore } from '../stores/wallet';
+import { useIdentityStore } from '../stores/identity';
 import { useCloudBackupStore } from '../stores/cloudBackup.js';
 import { WrongPassphraseError } from '../utils/backupCrypto.js';
 
 export default {
   name: 'CloudBackupSheet',
 
-  components: { Icon },
+  components: { Icon, BackupKeyring },
 
   props: {
     modelValue: { type: Boolean, required: true },
@@ -263,13 +267,14 @@ export default {
 
   setup() {
     const store = useCloudBackupStore();
-    return { store };
+    return { store, wallet: useWalletStore(), identity: useIdentityStore() };
   },
 
   data() {
     return {
       step: 'checking',
       restoreError: '',
+      backupError: '',
       signInError: '',
       // True when the last sign-in failure smells like an OAuth/consent
       // state worth escaping via revoke; shows "Sign out and retry".
@@ -375,6 +380,7 @@ export default {
     },
 
     resetLocalState() {
+      this.backupError = '';
       this.restoreError = '';
       this.signInError = '';
       this.offerSignOutRetry = false;
@@ -413,9 +419,7 @@ export default {
     },
 
     /**
-     * Map the native plugin's raw failure reasons to actionable copy. The
-     * raw reason is appended for bug reports; the headline tells the user
-     * (or the developer testing a build) what to actually do.
+     * Keep native setup details in diagnostics; show only actionable language.
      */
     signInReasonToMessage(reason) {
       const r = String(reason || '');
@@ -432,9 +436,9 @@ export default {
         return this.$t('Google Drive access was not granted. Sign in again and allow the Drive permission.');
       }
       if (/developer-error|sha1|12500|sign-in-failed/i.test(r)) {
-        return this.$t('Google sign-in is not set up for this build. The app package and signing key must be registered in Google Cloud Console.');
+        return this.$t('Google sign-in is unavailable right now. Try again later.');
       }
-      return r;
+      return this.$t('Google sign-in could not finish. Please try again.');
     },
 
     async onSignIn() {
@@ -444,6 +448,7 @@ export default {
         this.afterAuth();
       } catch (err) {
         const reason = err?.reason || err?.message || String(err);
+        console.warn('[cloud-backup] Sign-in failed:', reason);
         this.signInError = this.signInReasonToMessage(reason);
         // A wedged consent/config state is best escaped by revoking and
         // starting clean; a plain cancel is not.
@@ -473,6 +478,7 @@ export default {
     },
 
     async onBackup() {
+      this.backupError = '';
       try {
         await this.store.backup();
         this.doneTitle = this.$t('Backup uploaded');
@@ -484,12 +490,7 @@ export default {
           this.signInError = this.$t('Please sign in to Google again.');
           return;
         }
-        this.$q.notify({
-          type: 'negative',
-          message: this.$t('Backup failed'),
-          caption: err?.message || String(err),
-          timeout: 5000,
-        });
+        this.backupError = this.$t('Google Drive backup did not finish. Check your connection and try again.');
       }
     },
 
@@ -805,4 +806,10 @@ export default {
   font-family: 'Manrope', sans-serif;
   font-size: 13px;
 }
+
+.cb-title { display: flex; align-items: center; gap: 8px; }
+.cb-contents { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; padding: 0 24px 20px; }
+.cb-contents > div { display: flex; flex-direction: column; gap: 6px; padding: 14px; border: 1px solid var(--border-card); border-radius: 14px; }
+.cb-contents strong { color: var(--text-primary); font-size: 14px; }
+.cb-contents span { color: var(--text-secondary); font-size: 12px; }
 </style>

@@ -7,12 +7,8 @@
  * and disagreed with itself, which is how a user could see a green
  * "Backed up" tile while their identity phrase had never been written down.
  *
- * The identity surface reports the identity's words and nothing else. The
- * one wallet-phrase fact still exported is `hasWalletWords`: whether any
- * seed-based wallet exists at all, which decides whether the user is told to
- * label the paper (two identical-looking phrases in one drawer) and whether
- * the Words screen points at Settings. The state of those backups is
- * Settings' story, not this surface's.
+ * Profile health reports identity setup. BackupCoverage separately reports
+ * Bitcoin and identity verification on the shared backup page.
  */
 
 import { computed } from 'vue';

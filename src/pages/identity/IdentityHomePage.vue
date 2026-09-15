@@ -36,6 +36,7 @@
         :status-tone="statusTone"
         :progress="progress"
         :qr-value="qrValue"
+        :npub="identity.nostrNpub"
         :qr-caption="qrCaption"
         :can-switch="canSwitch"
         :needs-name="needsName"
@@ -69,26 +70,22 @@
       <!-- Setup, while it lasts. Gone for good once complete. -->
       <template v-if="!setupComplete">
         <SetupLadder :steps="steps" :done="stepsDone" :total="stepsTotal" />
-        <p v-if="!cardWordsSaved" class="id-foot">
-          {{ $t('Lose this phone before backing up and your card is gone with it. Two minutes and a piece of paper.') }}
-        </p>
+
       </template>
 
       <!-- The two quiet doors. Everything else the tab can do lives on the
            card or in the three verbs above. -->
       <IdentityGroup class="id-block">
+        <IdentityRow :label="$t('Identity backup')" :caption="cardWordsSaved ? $t('Recovery words checked') : $t('Recovery words not checked yet')" @click="$router.push('/identity/words')">
+          <template #leading><BackupKeyring :size="28" /></template>
+        </IdentityRow>
         <IdentityRow
           icon="tabler:users"
           :label="$t('Identities')"
           :caption="$t('Switch, or create a new one')"
           @click="$router.push('/identity/identities')"
         />
-        <IdentityRow
-          icon="tabler:key"
-          :label="$t('Keys')"
-          :caption="$t('Your public code and secret key')"
-          @click="$router.push('/identity/advanced')"
-        />
+
       </IdentityGroup>
     </div>
 
@@ -117,6 +114,7 @@
 </template>
 
 <script>
+import BackupKeyring from '../../components/BackupKeyring.vue';
 import { Icon } from '@iconify/vue';
 import SettingsHubNav from '../../components/settings/SettingsHubNav.vue';
 import IdentityCard from '../../components/identity/IdentityCard.vue';
@@ -136,6 +134,7 @@ export default {
   name: 'IdentityHomePage',
 
   components: {
+    BackupKeyring,
     Icon,
     SettingsHubNav,
     IdentityCard,

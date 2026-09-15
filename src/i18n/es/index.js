@@ -1,4 +1,6 @@
+import backup from './backup.js';
 export default {
+  ...backup,
   // Home backup shortcut
   "Wallet & identity": "Cartera e identidad",
   "Backups": "Copias de seguridad",

@@ -144,11 +144,7 @@
 
         <button class="bgo-srow" type="button" @click="goToRestore">
           <span class="bgo-tile">
-            <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-              <circle cx="5" cy="6" r="1.7"/><circle cx="12" cy="6" r="1.7"/><circle cx="19" cy="6" r="1.7"/>
-              <circle cx="5" cy="12" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="19" cy="12" r="1.7"/>
-              <circle cx="5" cy="18" r="1.7"/><circle cx="12" cy="18" r="1.7"/><circle cx="19" cy="18" r="1.7"/>
-            </svg>
+            <BackupKeyring :size="28" />
           </span>
           <span class="bgo-st">
             <span class="bgo-t">{{ $t('Restore from backup') }}</span>
@@ -231,6 +227,7 @@
 
 <script>
 import LoadingScreen from '../components/LoadingScreen.vue'
+import BackupKeyring from '../components/BackupKeyring.vue'
 import CloudBackupSheet from '../components/CloudBackupSheet.vue'
 import { isCloudBackupPlatform } from '../services/cloudStorage.js'
 import {
@@ -244,6 +241,7 @@ export default {
   components: {
     LoadingScreen,
     CloudBackupSheet,
+    BackupKeyring,
   },
   data() {
     return {

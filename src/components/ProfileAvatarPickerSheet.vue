@@ -183,7 +183,7 @@ export default {
     modelValue: { type: Boolean, required: true },
   },
 
-  emits: ['update:modelValue', 'uploaded', 'removed'],
+  emits: ['update:modelValue', 'uploaded', 'removed', 'hide'],
 
   setup() {
     const profile = useProfileStore();
@@ -229,6 +229,7 @@ export default {
     },
 
     onHide() {
+      this.$emit('hide');
       // Reset both hidden inputs so picking the same file twice in
       // a row still fires `change`. Without this, the second tap
       // is a silent no-op because the input's value hasn't changed.
