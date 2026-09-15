@@ -86,5 +86,9 @@ export default {
   "Keep your current identity’s recovery words if you want to return to it.": "Bewahre die Backup-Wörter deiner jetzigen Identität auf, um zu ihr zurückzukehren.",
   "Google sign-in is unavailable right now. Try again later.": "Die Google-Anmeldung ist gerade nicht verfügbar. Versuche es später erneut.",
   "Google sign-in could not finish. Please try again.": "Die Google-Anmeldung konnte nicht abgeschlossen werden. Versuche es erneut.",
-  "Back up bitcoin": "Bitcoin sichern"
+  "Back up bitcoin": "Bitcoin sichern",
+  "Save your recovery words": "Sichere deine Backup-Wörter",
+  "Write the words in order, then check your copy.": "Schreibe die Wörter der Reihe nach auf und prüfe deine Kopie.",
+  "Keep these words private": "Halte diese Wörter geheim",
+  "Open recovery words": "Backup-Wörter öffnen"
 };

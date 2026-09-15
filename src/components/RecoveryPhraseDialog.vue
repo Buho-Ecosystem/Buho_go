@@ -1,13 +1,14 @@
 <template>
   <q-dialog
     :model-value="modelValue"
-    :maximized="$q.screen.lt.sm"
+    :maximized="$q.screen.lt.sm && step !== 'prepare'"
+    :position="$q.screen.lt.sm && step === 'prepare' ? 'bottom' : 'standard'"
     :persistent="busy"
     class="recovery-dialog"
     :aria-label="title"
     @update:model-value="close"
   >
-    <q-card class="recovery-card">
+    <q-card class="recovery-card" :class="{ 'is-preparing': step === 'prepare' }">
       <header class="recovery-header">
         <button v-if="step === 'prepare' || step === 'done'" type="button" class="recovery-nav" :disabled="busy" @click="close">
           {{ $t(step === 'done' ? 'Close' : 'Cancel') }}
@@ -20,23 +21,32 @@
 
       <div ref="body" class="recovery-body">
         <p v-if="step !== 'prepare'" class="recovery-context">{{ detail }}</p>
-        <ol v-if="mode === 'backup' && step !== 'done'" class="recovery-progress" :aria-label="$t('Backup progress')">
+        <ol v-if="mode === 'backup' && ['write', 'check'].includes(step)" class="recovery-progress" :aria-label="$t('Backup progress')">
           <li v-for="(item, index) in stages" :key="item" :aria-current="stageIndex === index ? 'step' : undefined" :class="{ 'is-current': stageIndex === index, 'is-complete': stageIndex > index }">
             <span aria-hidden="true">{{ index + 1 }}</span>{{ $t(item) }}
           </li>
         </ol>
 
         <template v-if="step === 'prepare'">
-          <BackupCoverage :selected="activeKind" />
-          <h1 ref="heading" tabindex="-1">{{ mode === 'view' ? $t('View recovery words') : $t('Keep a way back') }}</h1>
-          <p v-if="!isIdentity" class="recovery-context">{{ detail }}</p>
-          <p v-if="mode === 'backup'" class="recovery-lede">{{ benefit }}</p>
-          <div v-if="mode === 'backup'" class="recovery-note">
-            <strong>{{ $t('Get a pen and paper') }}</strong>
-            <p>{{ $t('Write the words in order, then check your copy. Keep the paper somewhere private.') }}</p>
+          <!-- Preparation is a short, content-sized sheet. Backup comparison
+               belongs to the chooser and completion, not the reveal decision. -->
+          <h1 ref="heading" tabindex="-1">{{ mode === 'view' ? $t('View recovery words') : $t('Save your recovery words') }}</h1>
+          <p class="recovery-context">{{ detail }}</p>
+          <div v-if="mode === 'backup'" class="recovery-preparation">
+            <span class="recovery-preparation-icon" aria-hidden="true"><Icon icon="tabler:pencil" width="22" height="22" /></span>
+            <div>
+              <strong>{{ $t('Get a pen and paper') }}</strong>
+              <p>{{ $t('Write the words in order, then check your copy.') }}</p>
+            </div>
           </div>
-          <p class="recovery-footnote">{{ risk }}</p>
-          <p v-if="wallet.biometricsEnabled" class="recovery-footnote">{{ $t('Your phone will ask you to unlock before showing the words.') }}</p>
+          <div class="recovery-privacy">
+            <Icon icon="tabler:lock" width="20" height="20" aria-hidden="true" />
+            <div>
+              <strong>{{ $t('Keep these words private') }}</strong>
+              <p>{{ risk }}</p>
+            </div>
+          </div>
+          <p v-if="wallet.biometricsEnabled" class="recovery-unlock-note">{{ $t('Your phone will ask you to unlock before showing the words.') }}</p>
         </template>
 
         <template v-else-if="step === 'write'">
@@ -80,7 +90,7 @@
       </div>
 
       <footer v-if="step !== 'check'" class="recovery-footer">
-        <q-btn v-if="step === 'prepare'" unelevated no-caps class="recovery-primary" :loading="busy" :label="$t('Continue')" @click="start" />
+        <q-btn v-if="step === 'prepare'" unelevated no-caps class="recovery-primary" :loading="busy" :label="mode === 'view' ? $t('Open recovery words') : $t('Continue')" @click="start" />
         <q-btn v-else-if="step === 'write' && mode === 'backup'" unelevated no-caps class="recovery-primary" :disable="!visible" :label="$t('Check my backup')" @click="check" />
         <template v-else-if="step === 'done' && nextBackup">
           <q-btn unelevated no-caps class="recovery-primary" :label="nextBackup.label" @click="continueWithNextBackup" />
@@ -127,8 +137,8 @@ const isIdentity = computed(() => activeKind.value === 'identity');
 const title = computed(() => isIdentity.value ? t('Identity backup') : t('Bitcoin backup'));
 const groups = computed(() => walletBackupGroups(wallet.wallets, wallet.hasBackedUp));
 const detail = computed(() => isIdentity.value ? t('Name, photo and contacts')
-  : target.value?.type === 'spark' ? `Spark · ${groups.value.find(group => group.type === 'spark')?.names.join(' · ') || t('Wallet')}`
-    : `Arkade · ${target.value?.name || t('Wallet')}`);
+  : target.value?.type === 'spark' ? `${groups.value.find(group => group.type === 'spark')?.names.join(' · ') || t('Wallet')} · Spark`
+    : `${target.value?.name || t('Wallet')} · Arkade`);
 const nextBackup = computed(() => {
   const group = groups.value.find(group => !group.saved);
   if (group) {
@@ -139,9 +149,6 @@ const nextBackup = computed(() => {
   return null;
 });
 const paperLabel = computed(() => isIdentity.value ? `BuhoGO · ${t('Identity')}` : `BuhoGO · ${target.value?.type === 'arkade' ? 'Arkade' : 'Spark'}`);
-const benefit = computed(() => isIdentity.value
-  ? t('These words restore your identity, including your name, photo and contacts.')
-  : t('These words restore your wallet and access to its bitcoin.'));
 const risk = computed(() => isIdentity.value
   ? t('Anyone with these words can use your identity.')
   : t('Anyone with these words can spend your bitcoin.'));
@@ -227,7 +234,20 @@ onBeforeUnmount(() => { document.removeEventListener('visibilitychange', onVisib
 .recovery-progress li > span { display: grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: var(--bg-input); }
 .recovery-progress .is-current { color: var(--text-primary); font-weight: 700; }
 .recovery-progress .is-current > span, .recovery-progress .is-complete > span { background: var(--brand-accent-soft); color: var(--brand-accent-text); }
-.recovery-hero { margin: 12px 0 20px; }
+/* Keep the short preparation content and its action together. Only the
+   word grid and verification need the full-height task layout on phones. */
+.recovery-card.is-preparing { width: 480px; }
+.is-preparing .recovery-body { flex: 0 1 auto; padding-top: 12px; padding-bottom: 8px; }
+.is-preparing .recovery-body h1 { font-size: 26px; line-height: 1.2; margin-bottom: 10px; }
+.is-preparing .recovery-context { margin-bottom: 24px; }
+.is-preparing .recovery-footer { padding-top: 16px; }
+.recovery-privacy { display: flex; align-items: flex-start; gap: 12px; padding: 18px; border-radius: 16px; background: var(--bg-input); }
+.recovery-privacy > svg { flex-shrink: 0; margin-top: 1px; color: var(--text-secondary); }
+.recovery-privacy strong, .recovery-preparation strong { font-size: 14px; line-height: 1.4; font-weight: 650; }
+.recovery-privacy p, .recovery-preparation p { margin: 5px 0 0; font-size: 13px; line-height: 1.5; color: var(--text-secondary); }
+.recovery-preparation { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 22px; }
+.recovery-preparation-icon { flex-shrink: 0; color: var(--text-secondary); }
+.recovery-unlock-note { font-size: 12px; line-height: 1.5; color: var(--text-secondary); margin: 16px 0 0; }
 .recovery-body h1 { font: 700 27px/1.2 'Manrope', sans-serif; letter-spacing: -.03em; margin: 0 0 14px; outline: 0; overflow-wrap: anywhere; }
 .recovery-lede { color: var(--text-secondary); font-size: 15px; line-height: 1.6; margin: 0 0 24px; }
 .recovery-note { padding: 18px; background: var(--bg-card); border-radius: 16px; font-size: 14px; line-height: 1.5; }
@@ -249,6 +269,8 @@ onBeforeUnmount(() => { document.removeEventListener('visibilitychange', onVisib
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 @media (max-width: 599px) {
   .recovery-card { width: 100%; height: 100dvh; max-height: 100dvh; border-radius: 0; }
+  .recovery-card.is-preparing { width: 100%; height: auto; max-height: calc(100dvh - max(24px, var(--safe-top, 0px))); border-radius: 24px 24px 0 0; }
+  .is-preparing .recovery-header { padding-top: 12px; }
   .recovery-header { padding-top: max(12px, var(--safe-top, 0px)); }
   .recovery-body { padding: 20px; }
   .recovery-footer { padding-left: 20px; padding-right: 20px; }

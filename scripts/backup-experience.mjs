@@ -57,8 +57,9 @@ try {
  assert.equal(await page.getByRole('button',{name:/^Identity backup/}).count(),1);
  await shot('01-backups-light');
  await page.locator('.backup-choices .backup-choice').filter({hasText:'Spark'}).click();
- await page.getByRole('heading',{name:'Keep a way back'}).waitFor();
- assert.equal(await page.locator('.recovery-card .backup-coverage-item').count(),2);
+ await page.getByRole('heading',{name:'Save your recovery words'}).waitFor();
+ assert.equal(await page.locator('.recovery-card .backup-coverage-item').count(),0);
+ assert.ok((await page.locator('.recovery-card').boundingBox()).height < 700, 'preparation fits its content');
  await shot('02-wallet-prepare-light');
  await page.getByRole('button',{name:'Cancel',exact:true}).click();
  await page.locator('.recovery-card').waitFor({state:'hidden'});
@@ -164,7 +165,9 @@ try {
  await page.getByRole('tab',{name:/^Bitcoin/}).press('ArrowRight');
  assert.equal(await page.getByRole('tab',{name:/^Identity/}).getAttribute('aria-selected'),'true');
  await page.getByRole('button',{name:'View recovery words',exact:true}).click();
- await page.getByRole('button',{name:'Continue',exact:true}).click();
+ await shot('14-view-words-sheet');
+ assert.ok((await page.locator('.recovery-card').boundingBox()).height < 520, 'view preparation uses a compact sheet');
+ await page.getByRole('button',{name:'Open recovery words',exact:true}).click();
  await page.getByRole('button',{name:'Show words',exact:true}).click();
  // Simulate backgrounding; secrets and check grid must disappear.
  await page.evaluate(()=>{Object.defineProperty(document,'hidden',{configurable:true,value:true});document.dispatchEvent(new Event('visibilitychange'));});

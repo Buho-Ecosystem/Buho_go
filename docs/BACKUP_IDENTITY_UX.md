@@ -8,7 +8,7 @@ This redesign applies Apple HIG and Nostr Design to BuhoGO's existing Vue/Quasar
 | --- | --- |
 | [Apple: Layout](https://developer.apple.com/design/human-interface-guidelines/layout) and [Icons](https://developer.apple.com/design/human-interface-guidelines/icons) | Group backup choices with spacing and soft surfaces instead of repeated headings and separator lines. Use a wallet silhouette for Bitcoin and a gender-neutral person silhouette for Identity, with adjacent text labels. |
 | [Apple: Segmented controls](https://developer.apple.com/design/human-interface-guidelines/segmented-controls) | Two equal segments, **Bitcoin / Identity**, switch closely related views in place. Both retain a clear selection and separate status. Labels are nouns; selecting a segment does not launch a dialog. |
-| [Apple: Sheets](https://developer.apple.com/design/human-interface-guidelines/sheets) and [Modality](https://developer.apple.com/design/human-interface-guidelines/modality) | One focused task at a time. Choosers finish dismissing before opening the next sheet. The longer paper-backup task uses a full-screen modal on narrow phones. |
+| [Apple: Sheets](https://developer.apple.com/design/human-interface-guidelines/sheets) and [Modality](https://developer.apple.com/design/human-interface-guidelines/modality) | One focused task at a time. Choosers finish dismissing before opening the next sheet. Preparation uses a compact sheet sized to its content. The word grid and verification use a full-screen modal on narrow phones. |
 | [Apple: Onboarding](https://developer.apple.com/design/human-interface-guidelines/onboarding) | Contextual preparation and an optional next backup, with a way to leave each stage. The initial wallet tour explains the two backup types briefly. |
 | [Apple: Accessibility](https://developer.apple.com/design/human-interface-guidelines/accessibility) and [Design tips](https://developer.apple.com/design/tips/) | Labels plus checkmarks, visible keyboard focus, controls at least 44 CSS pixels high, reflow, light/dark themes, and no color-only backup status. |
 | [Apple: Writing](https://developer.apple.com/design/human-interface-guidelines/writing) and [Alerts](https://developer.apple.com/design/human-interface-guidelines/alerts) | Concrete actions, short contextual errors, and explicit identity-replacement confirmation immediately before replacement. |
@@ -51,7 +51,7 @@ An `nsec` is a single account's raw private key. The paper flow is a separate, e
 | Backup page → Bitcoin segment | User-named wallet groups with small provider captions and checked state; selecting a group starts its backup/view task. |
 | Backup page → Identity segment | Name/photo/contacts scope and one Back up identity or View recovery words action. |
 | Backup page → Restore from recovery words | Identity / Bitcoin chooser; dismissal precedes navigation or the restore dialog. |
-| Shared recovery modal | Prepare → Write → Check → Done, or Prepare → View for already-checked words. Detailed states below. |
+| Shared recovery modal | Compact preparation with selected backup details, paper instructions when needed, one privacy note, and the adjacent action. Opens full-screen for Write → Check → Done, or View for already-checked words. |
 | Identity restore modal | Enter words → validate → replacement confirmation when an identity exists → apply → existing profile/contact recovery. Cancel preserves current identity. Failed restore retains input for correction. |
 | Wallet restore page | Existing mnemonic validation and provider restore, now marked with the shared keyring. |
 | Welcome → existing wallet / Google Drive restore | Existing optional recovery entry points retained. The paper-restore entry uses the shared keyring. |
@@ -84,6 +84,7 @@ flowchart TD
   Write -->|Finish later| Return
 ```
 
+- Backup comparison stays in the chooser, backup page and completion. Preparation focuses on the selected backup and uses an explicit Open recovery words action for viewing.
 - The subject stays visible throughout the modal. Wallet and identity preparation use the same lifecycle and verifier.
 - A wrong word never reveals the expected word. All positions must match before confirmation is offered.
 - Closing/backgrounding clears displayed words and the verification grid. A hidden preparation/authentication stage may finish loading but never reveals words automatically.
