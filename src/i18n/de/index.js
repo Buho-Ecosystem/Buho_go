@@ -1,7 +1,7 @@
 export default {
   // Home backup shortcut
+  "Wallet & identity": "Wallet & Identität",
   "Backups": "Backups",
-  "Backups: backup needed": "Backups: Sicherung erforderlich",
   "Wallet backup · {wallet}": "Wallet-Backup · {wallet}",
   "Identity backup": "Identitäts-Backup",
   "Your wallet and identity have separate recovery words. Save each set.": "Deine Wallet und deine Identität haben eigene Wiederherstellungswörter. Sichere jeden Satz.",

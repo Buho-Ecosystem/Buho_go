@@ -2,13 +2,16 @@
   <button
     type="button"
     class="backup-shortcut"
-    :aria-label="needsBackup ? $t('Backups: backup needed') : $t('Backups')"
+    :aria-label="needsBackup ? `${$t('Backup')}: ${pendingLabel}` : $t('Backups')"
     aria-haspopup="dialog"
     :aria-expanded="showChoices"
     @click="showChoices = true"
   >
-    <Icon icon="tabler:key" width="21" height="21" aria-hidden="true" />
-    <span v-if="needsBackup" class="backup-shortcut-label">{{ $t('Backup') }}</span>
+    <img src="/icons/backup-keyring.svg" width="29" height="29" alt="" class="backup-shortcut-keyring" />
+    <span v-if="needsBackup" class="backup-shortcut-label">
+      <span>{{ $t('Backup') }}</span>
+      <span>{{ pendingLabel }}</span>
+    </span>
   </button>
 
   <q-dialog
@@ -80,6 +83,7 @@
 
 <script setup>
 import { computed, ref } from 'vue';
+import { i18n } from '../boot/i18n';
 import { Icon } from '@iconify/vue';
 import { useWalletStore } from '../stores/wallet';
 import { useIdentityStore } from '../stores/identity';
@@ -93,8 +97,12 @@ import CloudBackupSheet from './CloudBackupSheet.vue';
 const wallet = useWalletStore();
 const identity = useIdentityStore();
 const groups = computed(() => walletBackupGroups(wallet.wallets, wallet.hasBackedUp));
-const needsBackup = computed(() => groups.value.some((group) => !group.saved)
-  || (identity.bootstrapped && !identity.backupConfirmed));
+const walletNeedsBackup = computed(() => groups.value.some((group) => !group.saved));
+const identityNeedsBackup = computed(() => identity.bootstrapped && !identity.backupConfirmed);
+const needsBackup = computed(() => walletNeedsBackup.value || identityNeedsBackup.value);
+const pendingLabel = computed(() => walletNeedsBackup.value
+  ? (identityNeedsBackup.value ? i18n.global.t('Wallet & identity') : i18n.global.t('Wallet'))
+  : i18n.global.t('Identity'));
 const cloudAvailable = isCloudBackupPlatform();
 const showChoices = ref(false);
 const showWalletWords = ref(false);
@@ -132,17 +140,19 @@ function openSelectedBackup() {
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  gap: 5px;
+  gap: 4px;
   min-width: 44px;
   min-height: 44px;
-  padding: 0 7px;
+  padding: 0 6px;
   border: 0;
   border-radius: 12px;
   background: transparent;
   color: var(--text-secondary);
-  font: 500 11px/1.25 'Manrope', sans-serif;
+  font: 400 11px/1.15 'Manrope', sans-serif;
   cursor: pointer;
 }
+.backup-shortcut-keyring { flex-shrink: 0; }
+.backup-shortcut-label { display: flex; flex-direction: column; align-items: flex-start; }
 .backup-shortcut:hover, .backup-shortcut:active { background: var(--brand-accent-soft); }
 .backup-shortcut:focus-visible { outline: 2px solid var(--brand-accent); outline-offset: -2px; }
 .backup-choices {
