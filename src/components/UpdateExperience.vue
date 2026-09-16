@@ -145,14 +145,11 @@ function eligibleForCue() {
 
 function eligibleForRequiredUpdate() {
   if (props.suspended) return false
-  // Required updates may yield only to the recovery-phrase screen. As soon as
-  // the user leaves that exact route, the update sheet becomes persistent
-  // again instead of granting unrestricted access for the rest of the session.
-  if (
-    updateStore.requiredRecoveryAccess
-    && route.path === '/settings'
-    && route.query.section === 'backup'
-  ) return false
+  // Required updates may yield only to Security, where the recovery words
+  // live. As soon as the user leaves that exact route, the update sheet
+  // becomes persistent again instead of granting unrestricted access for the
+  // rest of the session.
+  if (updateStore.requiredRecoveryAccess && route.path === '/security') return false
   return !['/', '/kiosk'].includes(route.path) && !route.path.includes('setup') && !route.path.includes('restore')
 }
 

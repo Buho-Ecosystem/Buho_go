@@ -4,15 +4,20 @@
     position="bottom"
     :class="$q.dark.isActive ? 'dialog_dark' : 'dialog_light'"
   >
-    <q-card class="bundles-sheet" :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'">
+    <q-card class="bundles-sheet shop-surface" :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'">
       <div class="sheet-handle" aria-hidden="true">
         <span :class="$q.dark.isActive ? 'sheet-handle-bar-dark' : 'sheet-handle-bar-light'"></span>
       </div>
 
       <div class="sheet-header">
-        <div class="sheet-title" :class="$q.dark.isActive ? 'item-label-dark' : 'item-label-light'">
-          <span v-if="country?.flag" class="title-flag">{{ country.flag }}</span>
-          {{ country?.name || $t('Data plans') }}
+        <div class="sheet-title-wrap">
+          <div class="sheet-title" :class="$q.dark.isActive ? 'item-label-dark' : 'item-label-light'">
+            <span v-if="country?.flag" class="title-flag">{{ country.flag }}</span>
+            {{ country?.name || $t('Data plans') }}
+          </div>
+          <div v-if="subtitle" class="sheet-subtitle" :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-6'">
+            {{ subtitle }}
+          </div>
         </div>
         <q-btn flat round dense :aria-label="$t('Close')" class="sheet-close-btn" :class="$q.dark.isActive ? 'back_btn_dark' : 'back_btn_light'" @click="open = false">
           <Icon icon="tabler:x" width="18" height="18" />
@@ -104,6 +109,8 @@ export default {
   props: {
     modelValue: { type: Boolean, default: false },
     country: { type: Object, default: null },
+    /** Optional second line, e.g. when the sheet is topping up an existing eSIM. */
+    subtitle: { type: String, default: '' },
     bundles: { type: Array, default: () => [] },
     loading: { type: Boolean, default: false },
     error: { type: String, default: '' },
@@ -159,7 +166,7 @@ export default {
 </script>
 
 <style scoped>
-.bundles-sheet { width: 100%; max-width: 520px; border-top-left-radius: 22px; border-top-right-radius: 22px; overflow: hidden; padding-bottom: max(16px, env(safe-area-inset-bottom, 0px)); display: flex; flex-direction: column; max-height: 88vh; max-height: 88dvh; position: relative; }
+.bundles-sheet { width: 100%; max-width: 520px; border-top-left-radius: 22px; border-top-right-radius: 22px; overflow: hidden; padding-bottom: max(16px, var(--safe-bottom, 16px)); display: flex; flex-direction: column; max-height: 88vh; max-height: 88dvh; position: relative; }
 .bundles-sheet::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 180px; background: linear-gradient(to bottom, rgba(21, 222, 114, 0.14) 0%, rgba(21, 222, 114, 0.07) 50%, transparent 100%); pointer-events: none; z-index: 0; border-top-left-radius: 22px; border-top-right-radius: 22px; }
 body.body--dark .bundles-sheet::before { background: linear-gradient(to bottom, rgba(21, 222, 114, 0.24) 0%, rgba(21, 222, 114, 0.10) 50%, transparent 100%); }
 .bundles-sheet > * { position: relative; z-index: 1; }
@@ -170,6 +177,8 @@ body.body--dark .bundles-sheet::before { background: linear-gradient(to bottom, 
 .sheet-handle-bar-dark { background: rgba(255, 255, 255, 0.22); }
 
 .sheet-header { display: flex; align-items: center; padding: 4px 18px 8px; gap: 8px; flex-shrink: 0; }
+.sheet-title-wrap { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.sheet-subtitle { font-family: 'Manrope', sans-serif; font-size: 12.5px; font-weight: 500; }
 .sheet-title { flex: 1 1 auto; font-family: 'Manrope', sans-serif; font-size: 17px; font-weight: 700; letter-spacing: -0.01em; display: flex; align-items: center; gap: 8px; min-width: 0; }
 .title-flag { font-size: 20px; }
 .sheet-close-btn { flex: 0 0 auto; }

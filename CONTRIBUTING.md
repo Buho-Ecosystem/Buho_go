@@ -165,7 +165,7 @@ Short, present-tense, conventional-ish:
 fix: prevent kiosk PIN dialog from closing on outside tap
 feat(spark): show pending L1 deposits in receive sheet
 i18n(es): translate batch-send wizard
-chore: bump @buildonspark/spark-sdk to 0.x.y
+chore: bump @breeztech/breez-sdk-spark to 0.x.y
 ```
 
 </details>

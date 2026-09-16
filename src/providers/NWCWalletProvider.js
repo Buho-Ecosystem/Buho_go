@@ -13,6 +13,22 @@
 import { WalletProvider } from './WalletProvider';
 import { NostrWebLNProvider, NWCClient } from '@getalby/sdk';
 
+/**
+ * The settlement state of one NIP-47 transaction record.
+ *
+ * NIP-47 reports `state`: settled | pending | failed | accepted. "accepted"
+ * means a hold invoice the recipient has taken but not settled, so the money
+ * has not moved and it is not completed. A service that predates `state` is
+ * read from `settled_at` instead, which is set only once it has.
+ */
+function resolveNwcStatus(tx) {
+  const state = String(tx?.state || '').toLowerCase();
+  if (state === 'settled') return 'completed';
+  if (state === 'failed') return 'failed';
+  if (state) return 'pending';
+  return tx?.settled_at || tx?.settledAt ? 'completed' : 'pending';
+}
+
 export class NWCWalletProvider extends WalletProvider {
   constructor(walletId, walletData) {
     super(walletId, walletData);
@@ -320,13 +336,14 @@ export class NWCWalletProvider extends WalletProvider {
     this._ensureConnected();
 
     try {
-      // NWC may have limited transaction history support
+      // `from`/`until` are NIP-47 unix TIMESTAMPS bounding when a payment
+      // happened, not a row window. Passing the paging offset into them asked
+      // a spec-compliant service for the hundred seconds after 1 January 1970
+      // and got an empty list back, while `offset` was never sent at all.
       const transactions = await this.nwc.listTransactions({
-        from: offset,
-        until: offset + limit,
-        limit: limit,
-        unpaid: false,
-        type: undefined
+        limit,
+        offset,
+        unpaid: false
       });
 
       if (!transactions || !Array.isArray(transactions.transactions)) {
@@ -345,13 +362,21 @@ export class NWCWalletProvider extends WalletProvider {
       return transactions.transactions.map(tx => ({
         ...tx,
         id: tx.payment_hash || tx.paymentHash || tx.id,
-        type: tx.type === 'incoming' || tx.amount > 0 ? 'receive' : 'send',
+        // NIP-47 states the direction itself, and its `amount` is UNSIGNED.
+        // Falling back to `amount > 0` therefore matched every row, including
+        // sends, and reported a spent bitcoin as income.
+        type: tx.type === 'outgoing' ? 'send' : 'receive',
         amount: Math.abs(tx.amount || 0),
         timestamp: tx.settled_at || tx.settledAt || tx.created_at || tx.createdAt || null,
         created_at: tx.created_at || tx.createdAt || null,
         settled_at: tx.settled_at || tx.settledAt || null,
         description: tx.description || tx.memo || '',
-        status: tx.settled ? 'completed' : 'pending',
+        // NIP-47 reports `state`, one of settled | pending | failed | accepted.
+        // There is no `settled` boolean on the record (see the SDK's
+        // Nip47Transaction type), so reading one marked every payment pending
+        // and the report then dropped all of them as unsettled. `settled_at`
+        // is the fallback for a service that omits `state`.
+        status: resolveNwcStatus(tx),
         fee: tx.fees_paid || tx.feesPaid || 0,
         paymentHash: tx.payment_hash || tx.paymentHash || null,
         preimage: tx.preimage || null,

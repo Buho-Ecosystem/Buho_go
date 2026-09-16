@@ -25,6 +25,7 @@
  * them as-is, and the regex uses the `/i` flag only for the bech32 arms.
  */
 
+import { bech32m } from 'bech32';
 import { extractLnFallbackParam } from './bip21.js';
 import { BOLT12_OFFER_HRP as BOLT12_OFFER_HRP_VALUE, isValidBolt12Offer } from './bolt12.js';
 
@@ -133,14 +134,51 @@ export function stripWrapperScheme(value) {
 }
 
 /**
+ * True if the input is a BIP-352 Silent Payment address.
+ *
+ * These share Spark's legacy `sp1` / `tsp1` prefixes (both are bech32m
+ * with the `sp` / `tsp` HRP), so the prefix alone cannot tell them
+ * apart - the payload can. A silent payment address carries a version
+ * word plus a 66-byte payload (33-byte scan key + 33-byte spend key;
+ * future versions may only grow it), while a legacy Spark address is a
+ * bare 33-byte public key. We decode and check, so a checksum-valid
+ * silent payment address is recognized and a Spark address never is.
+ *
+ * Recognition only: no rail in the app can pay these yet (deriving the
+ * one-time output needs BIP-352 sender support the SDKs don't offer),
+ * but naming the format beats a misleading "cannot be read" error.
+ *
+ * @param {unknown} address
+ * @returns {boolean}
+ */
+export function isSilentPaymentAddress(address) {
+  const lower = norm(address);
+  if (!lower.startsWith('sp1') && !lower.startsWith('tsp1')) return false;
+  try {
+    const { prefix, words } = bech32m.decode(lower, 1023);
+    if (prefix !== 'sp' && prefix !== 'tsp') return false;
+    const version = words[0];
+    if (version === 31) return false; // forbidden by the BIP
+    const payload = bech32m.fromWords(words.slice(1));
+    if (version === 0) return payload.length === 66;
+    return version >= 1 && version <= 30 && payload.length >= 66;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * True if the input looks like a Spark address (any supported prefix).
+ * A valid Silent Payment address is excluded despite sharing the legacy
+ * `sp1`/`tsp1` prefixes - see isSilentPaymentAddress.
  * @param {unknown} address
  * @returns {boolean}
  */
 export function isSparkAddress(address) {
   const lower = norm(address);
   if (!lower) return false;
-  return SPARK_PREFIXES.some(prefix => lower.startsWith(prefix));
+  if (!SPARK_PREFIXES.some(prefix => lower.startsWith(prefix))) return false;
+  return !isSilentPaymentAddress(lower);
 }
 
 /**
@@ -155,6 +193,34 @@ export function isArkadeAddress(address) {
   const lower = norm(address);
   if (!lower) return false;
   return ARKADE_PREFIXES.some(prefix => lower.startsWith(prefix));
+}
+
+/**
+ * Extract the native-rail destinations a unified BIP21 URI offers.
+ *
+ * A unified receive QR can carry a `spark=` and/or `ark=` param next to the
+ * on-chain address and `lightning=` invoice (see composeUnifiedBip21 in
+ * bip21.js). A payer whose wallet speaks one of those rails natively can
+ * settle over it at zero / near-zero fee instead of paying the Lightning
+ * route. Values that do not look like an address of the right family are
+ * dropped — a stray param must never hijack the destination, only offer a
+ * cheaper road to it.
+ *
+ * Lives here (not bip21.js) because the address validators are this
+ * module's single source of truth, and bip21.js must stay import-free of
+ * us — addressUtils already imports extractLnFallbackParam from there.
+ *
+ * @param {{ params?: Record<string, string> } | null} parsed - parseBip21() result
+ * @returns {{ spark: string|null, ark: string|null }}
+ */
+export function nativeRailsFromBip21(parsed) {
+  const params = parsed?.params || {};
+  const spark = typeof params.spark === 'string' ? params.spark.trim() : '';
+  const ark = typeof params.ark === 'string' ? params.ark.trim() : '';
+  return {
+    spark: spark && isSparkAddress(spark) ? spark : null,
+    ark: ark && isArkadeAddress(ark) ? ark : null,
+  };
 }
 
 /**

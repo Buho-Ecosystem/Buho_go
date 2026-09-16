@@ -633,6 +633,7 @@
 
 <script setup>
 import { ref, computed, watch, nextTick, getCurrentInstance } from 'vue'
+import { canWalletPay } from '../utils/walletCapabilities'
 import { useQuasar } from 'quasar'
 import { useWalletStore } from '../stores/wallet'
 import { useAddressBookStore } from '../stores/addressBook'
@@ -1004,6 +1005,12 @@ function canSelectContact(contact) {
   }
   // ark1 contacts only payable with an Arkade wallet
   if (contact.addressType === 'arkade' && !isArkadeWallet.value) {
+    return false
+  }
+  // Everything else is a Lightning destination - gate it through the shared
+  // capability check so an Arkade wallet (Lightning out of service) dims
+  // these rows instead of minting N real invoices that all fail at pay time.
+  if (!canWalletPay(walletStore.activeWalletType, contact.addressType || 'lightning')) {
     return false
   }
   return true
@@ -1439,7 +1446,24 @@ async function startBatch() {
           result.status = 'skipped'
           result.error = t('Requires Spark')
         } else {
-          await provider.sendOnChain(address, result.amount)
+          // An on-chain send from Spark is a withdrawal request: quote the
+          // fee, then submit at medium speed (batch rows have no fee picker).
+          // The fee rides on top so the recipient gets the row's amount, and
+          // "success" means the request was accepted - the broadcast follows
+          // on the service's schedule, same as the single-send flow.
+          const feeQuote = await provider.getWithdrawalFeeQuote(result.amount, address)
+          const quote = feeQuote?.medium
+          if (!quote?.feeQuoteId) {
+            throw new Error('No withdrawal fee quote available right now. Please try again.')
+          }
+          payment = await provider.withdrawToL1({
+            amountSats: result.amount,
+            destinationAddress: address,
+            speed: 'medium',
+            feeQuoteId: quote.feeQuoteId,
+            feeAmountSats: quote.totalFee,
+            deductFeeFromWithdrawalAmount: false
+          })
           result.status = 'success'
         }
       }

@@ -15,9 +15,6 @@ export default defineConfig((ctx) => {
       // 'theme' runs first so the persisted light/dark choice is applied
       // before any component renders — avoids a flash of the wrong theme.
       'theme',
-      // 'chunk-recovery' installs the missing-chunk refresh as early as it can,
-      // so a tab left open across a deploy recovers rather than going blank.
-      'chunk-recovery',
       'axios',
       'i18n',
       'iconify',
@@ -33,11 +30,13 @@ export default defineConfig((ctx) => {
       // handle once an identity exists. Safe everywhere (a plain fetch);
       // idempotent and best-effort.
       'nip05',
-      // 'social-bucket' gives every identity a payment address it did not have
-      // to go and find, by adopting <npub>@npub.cash as the profile's lud16 and
-      // publishing it. Without this a new user's username resolves to a profile
-      // with nothing to pay. Best-effort and idempotent, same as 'nip05'.
-      'social-bucket',
+      // 'payment-address' gives every identity a payment address it did not
+      // have to go and find: the first Spark wallet's Lightning address when
+      // one exists, the Social Bucket (<npub>@npub.cash) otherwise, adopted
+      // as the profile's lud16 and published. Without this a new user's
+      // username resolves to a profile with nothing to pay. Best-effort and
+      // idempotent, same as 'nip05'.
+      'payment-address',
       // Keep profile changes synced quietly; publishing is not a user task.
       'profile-sync',
       ctx.mode.capacitor ? 'deep-links' : '',
@@ -95,6 +94,24 @@ export default defineConfig((ctx) => {
         // Disable crossorigin attribute on script/link tags — can cause loading issues in Capacitor Android WebView
         viteConf.build = viteConf.build || {}
         viteConf.build.crossOriginLoading = false
+
+        // The Breez SDK ships a WASM module loaded via its own storage-global
+        // wrapper; Vite's dependency optimizer must not pre-bundle it or the
+        // wasm URL resolution and IndexedDB globals break at runtime.
+        viteConf.optimizeDeps = viteConf.optimizeDeps || {}
+        viteConf.optimizeDeps.exclude = viteConf.optimizeDeps.exclude || []
+        viteConf.optimizeDeps.exclude.push('@breeztech/breez-sdk-spark')
+
+        // The Arkade SDK's descriptor dependency references Node's `global`;
+        // map it to globalThis in the dev pre-bundle (the production build
+        // resolves it on its own).
+        viteConf.optimizeDeps.esbuildOptions = {
+          ...(viteConf.optimizeDeps.esbuildOptions || {}),
+          define: {
+            ...((viteConf.optimizeDeps.esbuildOptions || {}).define || {}),
+            global: 'globalThis',
+          },
+        }
       },
       // viteVuePluginOptions: {},
 
@@ -198,6 +215,7 @@ export default defineConfig((ctx) => {
       // so its update lifecycle and caching strategies are reviewable code
       // instead of generated config. See that file for the reasoning.
       workboxMode: 'InjectManifest',
+      // swFilename: 'sw.js',
       manifestFilename: 'manifest.json',
       extendPWACustomSWConf (esbuildConf) {
         // esbuild refuses to compile for Safari 14: WebKit destructuring bugs
@@ -230,6 +248,13 @@ export default defineConfig((ctx) => {
           '*.svg',
           'manifest.json',
         ]
+        // The ~12.5 MB Breez SDK wasm lives under assets/ and sits just under
+        // the size cap below, so without this it would be precached and
+        // pushed to every visitor at install time, wallet or no wallet. It is
+        // cached on the first Spark connect instead (see the worker's
+        // breez-wasm route), so only devices actually running a Spark wallet
+        // pay for it once, and those stay offline-capable afterwards.
+        cfg.globIgnores = [...(cfg.globIgnores || []), '**/breez_sdk_spark_wasm_bg*.wasm']
         // Everything in assets/ is content-hashed, so the URL itself is the
         // version; skip the revision query parameter on those fetches.
         cfg.dontCacheBustURLsMatching = /^assets\//

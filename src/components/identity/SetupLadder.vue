@@ -11,6 +11,8 @@
         persuasive than a counter.
       - It disappears for good when complete, and the space it occupied
         becomes the people you actually pay.
+      - It is about the card only. Backing up is not a setup step; it lives
+        in Security and on the home reminder.
 
     It never blocks anything. On the halfway screen it sits below the three
     verbs, because the card already works and setup must not stand in front
@@ -151,4 +153,5 @@ export default {
 .ladder-step--done .ladder-label { color: var(--text-secondary); }
 
 .ladder-chev { color: var(--text-muted); }
+.ladder-step:focus-visible { outline: 2px solid var(--brand-accent-text); outline-offset: -2px; }
 </style>

@@ -198,6 +198,7 @@
 
 <script>
 import { Icon } from '@iconify/vue';
+import { readClipboardCrossPlatform } from '../utils/shopClipboard.js';
 import QrScanner from 'qr-scanner';
 import { createQrScanner } from '../utils/qrScanner';
 import { isNativeScannerAvailable } from '../utils/nativeScanner';
@@ -288,21 +289,16 @@ export default {
     },
 
     /**
-     * Best-effort clipboard read. Browsers and Capacitor WebViews both
-     * support `navigator.clipboard.readText()` when granted permission;
-     * if the user has denied it (or the platform refuses), we fall back
-     * gracefully and let them paste manually.
+     * Best-effort clipboard read: native plugin first (the only reliable
+     * road on Android, where the WebView rejects programmatic reads),
+     * web API in browsers. On a miss the input is already focused and
+     * the user can long-press to paste using the system menu.
      */
     async pasteFromClipboard() {
-      try {
-        const text = await navigator.clipboard.readText();
-        if (text) {
-          this.rawInput = text.trim();
-          this.onInput();
-        }
-      } catch {
-        // Silent fallback — the input is already focused, the user can
-        // long-press to paste using the system menu.
+      const text = await readClipboardCrossPlatform();
+      if (text) {
+        this.rawInput = text.trim();
+        this.onInput();
       }
     },
 

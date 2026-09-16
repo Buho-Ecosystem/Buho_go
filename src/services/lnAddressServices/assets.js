@@ -13,17 +13,21 @@
 import keFlag from '../../assets/lnAddressServices/flags/circle-flags--ke.svg?url'
 import zmFlag from '../../assets/lnAddressServices/flags/circle-flags--zm.svg?url'
 import tzFlag from '../../assets/lnAddressServices/flags/circle-flags--tz.svg?url'
+import ghFlag from '../../assets/lnAddressServices/flags/circle-flags--gh.svg?url'
 import bitzedLogo from '../../assets/lnAddressServices/logos/bitzed.svg?url'
 import tandoLogo from '../../assets/lnAddressServices/logos/tando.png?url'
 import chapsmartLogo from '../../assets/lnAddressServices/logos/chapsmart.png?url'
+import bitspendaLogo from '../../assets/lnAddressServices/logos/bitspenda.png?url'
 
 const ASSET_URLS = {
   'flags/circle-flags--ke.svg': keFlag,
   'flags/circle-flags--zm.svg': zmFlag,
   'flags/circle-flags--tz.svg': tzFlag,
+  'flags/circle-flags--gh.svg': ghFlag,
   'logos/bitzed.svg': bitzedLogo,
   'logos/tando.png': tandoLogo,
   'logos/chapsmart.png': chapsmartLogo,
+  'logos/bitspenda.png': bitspendaLogo,
 }
 
 /**

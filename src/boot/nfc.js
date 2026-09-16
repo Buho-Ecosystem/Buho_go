@@ -74,7 +74,8 @@ export default boot(async ({ router }) => {
       parsed = { type: 'lnurl', lnurl: raw, valid: true }
     }
 
-    if (!parsed || (!parsed.valid && parsed.type !== 'bolt12_offer') || parsed.type === 'unknown') {
+    const EXPLAINED_UNPAYABLE = ['bolt12_offer', 'silent_payment']
+    if (!parsed || (!parsed.valid && !EXPLAINED_UNPAYABLE.includes(parsed.type)) || parsed.type === 'unknown') {
       Notify.create({
         type: 'warning',
         icon: 'nfc',
@@ -90,6 +91,10 @@ export default boot(async ({ router }) => {
     // an unreadable NFC tag or asking the user to configure a wallet.
     if (parsed.type === 'bolt12_offer') {
       walletStore.showUnsupportedBolt12Offer({ route: 'NFC tag' })
+      return
+    }
+    if (parsed.type === 'silent_payment') {
+      walletStore.showUnsupportedSilentPayment({ route: 'NFC tag' })
       return
     }
 
@@ -108,7 +113,10 @@ export default boot(async ({ router }) => {
     // Map to { data, type } shape that Wallet.vue's onPaymentDetected expects
     const paymentData = {
       data: parsed.invoice || parsed.offer || parsed.address || parsed.lnurl || raw,
-      type: parsed.type
+      type: parsed.type,
+      // BIP21 metadata rides along so a unified QR written to a tag can take
+      // the native-rail shortcut in onPaymentDetected, same as a scan.
+      ...(parsed.bip21 ? { bip21: parsed.bip21 } : {})
     }
 
     // Buffer on the store; Wallet.vue's watcher consumes it. Same channel as

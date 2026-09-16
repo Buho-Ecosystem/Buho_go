@@ -21,17 +21,41 @@
       </div>
 
       <div class="spend-rows">
-        <button type="button" class="spend-row" @click="$router.push('/shop')">
-          <span class="spend-row-icon">
-            <Icon icon="tabler:device-sim" width="22" height="22" />
+        <button
+          type="button"
+          class="spend-row"
+          :class="{ 'spend-row--waiting': shopNeedsAttention }"
+          @click="onShopSelect"
+        >
+          <span class="spend-row-icon spend-row-icon--brand">
+            <img src="/NadaNada/NadaNada.png" alt="" />
           </span>
           <span class="spend-row-text">
             <span class="spend-row-title">{{ $t('eSIM & VPN') }}</span>
-            <span class="spend-row-sub">{{ $t('Mobile data and a private connection, paid in bitcoin') }}</span>
+            <span class="spend-row-sub">{{ shopRowMeta }}</span>
           </span>
           <Icon icon="tabler:chevron-right" class="spend-row-chevron" width="18" height="18" />
         </button>
 
+        <!-- Bitrefill: gift cards, mobile top-ups and more, bought inside
+             the app and paid from this wallet. The store is not built yet;
+             the door is here so the shape of Spend is settled. -->
+        <button type="button" class="spend-row" @click="showBitrefill = true">
+          <span class="spend-row-icon spend-row-icon--brand">
+            <img src="/Bitrefill/bitrefill-mark.png" alt="" />
+          </span>
+          <span class="spend-row-text">
+            <span class="spend-row-title">Bitrefill</span>
+            <span class="spend-row-sub">{{ $t('Gift cards, mobile top-ups and more') }}</span>
+          </span>
+          <Icon icon="tabler:chevron-right" class="spend-row-chevron" width="18" height="18" />
+        </button>
+
+        <!-- Retired: the online-shops directory was a list of merchants that
+             take Bitcoin. Too technical for the people this tab is for, so
+             Bitrefill takes its place. The page, store and service stay in
+             the repo unrouted (see router/routes.js) until we decide to
+             delete them.
         <button type="button" class="spend-row" @click="$router.push('/online-shops')">
           <span class="spend-row-icon">
             <Icon icon="tabler:building-store" width="22" height="22" />
@@ -42,6 +66,7 @@
           </span>
           <Icon icon="tabler:chevron-right" class="spend-row-chevron" width="18" height="18" />
         </button>
+        -->
 
         <button
           type="button"
@@ -63,6 +88,13 @@
 
     <SettingsHubNav />
     <GetAppDialog v-model="showGetAppDialog" :message="getAppDialogMessage" />
+    <ComingSoonSheet
+      v-model="showBitrefill"
+      :title="$t('Bitrefill is on its way')"
+      :message="$t('Buy gift cards and mobile top-ups with your bitcoin, right here. We are building it now.')"
+    >
+      <template #brand><img src="/Bitrefill/bitrefill-mark.png" alt="" /></template>
+    </ComingSoonSheet>
   </q-page>
 </template>
 
@@ -70,28 +102,52 @@
 import { Icon } from '@iconify/vue';
 import { Capacitor } from '@capacitor/core';
 import { useEarnStore } from '../stores/earn';
+import { useNadanadaOrdersStore } from '../stores/nadanadaOrders';
 import SettingsHubHeader from '../components/settings/SettingsHubHeader.vue';
 import SettingsHubNav from '../components/settings/SettingsHubNav.vue';
 import GetAppDialog from '../components/GetAppDialog.vue';
+import ComingSoonSheet from '../components/ComingSoonSheet.vue';
 
 /**
  * Spend tab of the Settings / Identity / Spend hub - the default landing
  * tab. The Bitcoin Map is the hero (full width, tallest, map photo as
- * the actual background); eSIM & VPN, Spend online, and Earn Sats follow
+ * the actual background); eSIM & VPN, Bitrefill, and Learn & Earn follow
  * as one consistent stack of full-width rows.
  */
 export default {
   name: 'SpendPage',
-  components: { Icon, SettingsHubHeader, SettingsHubNav, GetAppDialog },
+  components: { Icon, SettingsHubHeader, SettingsHubNav, GetAppDialog, ComingSoonSheet },
   data() {
     return {
       showGetAppDialog: false,
       getAppDialogMessage: '',
+      showBitrefill: false,
     };
   },
+  mounted() {
+    // Native-only redirect. A direct web navigation to /shop is bounced here
+    // by the router guard (see router/routes.js) with ?getApp=shop. Open the
+    // same dialog the row tap opens, so both paths say the same thing.
+    if (this.$route.query.getApp === 'shop') {
+      this.$nextTick(() => this.onShopSelect());
+    }
+  },
+
   computed: {
     isNativeApp() {
       return Capacitor.isNativePlatform();
+    },
+    /** An order the user paid for but never received must be findable without
+     *  walking back into the shop first. Reads local storage only, no network. */
+    shopNeedsAttention() {
+      return useNadanadaOrdersStore().attentionCount > 0;
+    },
+    shopRowMeta() {
+      const n = useNadanadaOrdersStore().attentionCount;
+      if (!n) return this.$t('Mobile data and a private connection, paid in bitcoin');
+      return n === 1
+        ? this.$t('1 order is waiting to be delivered')
+        : this.$t('{n} orders are waiting to be delivered', { n });
     },
     bitcoinLessonsMeta() {
       const earn = useEarnStore();
@@ -109,6 +165,19 @@ export default {
     },
   },
   methods: {
+    onShopSelect() {
+      if (!this.isNativeApp) {
+        // The shop talks to nadanada directly, and nadanada's API is not
+        // reachable from a browser. Say so plainly instead of routing into a
+        // screen that could only fail.
+        this.promptForApp(
+          this.$t('The eSIM and VPN shop is only available in the BuhoGO Android app. Install it from Google Play to buy and manage your plans.')
+        );
+        return;
+      }
+      this.$router.push('/shop');
+    },
+
     onEarnSatsSelect() {
       if (!this.isNativeApp) {
         // Learn & Earn pays out real sats. On the web build there is no way
@@ -305,6 +374,18 @@ body.body--dark .spend-row {
   color: var(--map-cta-fg);
   background: var(--map-accent);
 }
+/* A partner mark fills the tile edge to edge instead of sitting as a glyph
+   on the accent. */
+.spend-row-icon--brand {
+  background: transparent;
+  overflow: hidden;
+}
+.spend-row-icon--brand img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
 .spend-row-text {
   flex: 1;
   min-width: 0;
@@ -336,6 +417,18 @@ body.body--dark .spend-row {
   flex-shrink: 0;
   color: var(--text-muted);
 }
+
+/* An undelivered order is a problem to resolve, not a reward to collect, so it
+   gets its own calm amber state rather than the green pulse used for claims. */
+.spend-row--waiting {
+  border-color: rgba(247, 147, 26, 0.45);
+  background-color: rgba(247, 147, 26, 0.12);
+}
+.spend-row--waiting .spend-row-sub {
+  color: #b45309;
+  font-weight: 600;
+}
+body.body--dark .spend-row--waiting .spend-row-sub { color: #fbbf24; }
 
 .spend-row--active {
   position: relative;

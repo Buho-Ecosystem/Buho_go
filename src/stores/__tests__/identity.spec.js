@@ -97,6 +97,19 @@ function freshEnv() {
 
 console.log('identity store');
 
+await test('confirmBackup restores its previous state when storage fails', async () => {
+  const store = freshEnv();
+  store.backupBannerDismissedUntil = 123;
+  await withFailingStorageWrite('buhoGO_identity_v1', async () => {
+    await assert.rejects(() => store.confirmBackup(), /quota/);
+  });
+  assert.equal(store.backupConfirmed, false);
+  assert.equal(store.backupBannerDismissedUntil, 123);
+  await store.confirmBackup();
+  assert.equal(store.backupConfirmed, true);
+});
+
+
 // ---------------------------------------------------------------------------
 // ensureIdentity — fresh state, idempotent
 // ---------------------------------------------------------------------------
@@ -377,6 +390,22 @@ await test('revealNostrSecret reflects the rotated account', async () => {
   await s.rotateNostrIdentity();
   const after = await s.revealNostrSecret();
   assert.notEqual(before.nsec, after.nsec);
+});
+
+await test('exporting an inactive identity pins its account without switching', async () => {
+  const s = freshEnv();
+  await s.importMnemonic(FIXED_SEED);
+  const original = await s.revealNostrSecret();
+  await s.createAnotherNostrIdentity({ pointer: false });
+  const activeNpub = s.nostrNpub;
+  const activeAccount = s.nostrAccountIndex;
+  const inactive = await s.revealNostrSecret(0);
+  assert.equal(inactive.nsec, original.nsec);
+  assert.notEqual(inactive.nsec, (await s.revealNostrSecret()).nsec);
+  assert.equal(s.nostrAccountIndex, activeAccount);
+  assert.equal(s.nostrNpub, activeNpub);
+  await assert.rejects(() => s.revealNostrSecret(100), /Unknown identity/);
+  assert.equal(JSON.stringify(s.$state).includes(inactive.nsec), false);
 });
 
 await test('loadNostrIdentity lazily backfills the cache for legacy users', async () => {

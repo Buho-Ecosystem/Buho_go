@@ -393,29 +393,33 @@ export const useProfileStore = defineStore('profile', {
     },
 
     /**
-     * Adopt the identity's own payment address (the Social Bucket) as `lud16`.
+     * Adopt a default payment address as `lud16`.
      *
      * Without a `lud16` a username is unpayable: a payer resolves the name to
-     * this profile and then to this field, and gives up when it is empty. New
-     * users cannot supply one, so the identity brings its own.
+     * this profile and then to this field, and gives up when it is empty. The
+     * app brings its own default — the first Spark wallet's Lightning address
+     * when one exists, the Social Bucket otherwise.
      *
      * A user's own address always wins. This only fills an empty field or
-     * refreshes the bucket address after a key change, and never touches an
+     * replaces a value the caller declares replaceable (a bucket address, or
+     * a spark address of ours that just changed), and never touches an
      * address the user typed in, because that is their money routing decision
      * and not ours to override.
      *
      * Marks the profile dirty on purpose: the field is worthless until it is
      * published, and `isDirty` is what tells the boot step to publish it.
      *
+     * @param {string} address The default to adopt.
+     * @param {{ isReplaceable: (current: string) => boolean }} opts
      * @returns {boolean} true when the value changed
      */
-    adoptBucketAddress(address, { isBucketAddress }) {
+    adoptDefaultPaymentAddress(address, { isReplaceable }) {
       const value = normaliseFieldValue('lud16', address);
       if (!value) return false;
       const current = this.lud16;
       if (current === value) return false;
-      // Only ever replace nothing, or a stale bucket address of our own.
-      if (current && !isBucketAddress(current)) return false;
+      // Only ever replace nothing, or a default of our own.
+      if (current && !isReplaceable(current)) return false;
       this.lud16 = value;
       this.isDirty = true;
       this._persistMetadata();

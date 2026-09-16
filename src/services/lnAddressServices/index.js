@@ -41,6 +41,8 @@ export function matchLnAddressService(lightningAddress) {
     logo: assetUrl(country.logoFile),
     hint: country.hint,
     note: country.note,
+    networkNote: country.networkNote || null,
+    webUnsupported: country.webUnsupported === true,
     currency: country.currency,
     handle: trimmed.slice(0, at),
   }
@@ -72,6 +74,7 @@ export function payoutCountryOptions() {
     code: country.code,
     callingCode: country.callingCode,
     currency: country.currency,
+    networkNote: country.networkNote || null,
     flag: assetUrl(country.flagFile),
     logo: assetUrl(country.logoFile),
   }))

@@ -31,7 +31,7 @@
       <!-- Top bar -->
       <div class="so-topbar">
         <button type="button" class="so-icon-btn" @click="$emit('close')">
-          <Icon icon="tabler:x" width="22" height="22" />
+          <Icon icon="tabler:chevron-left" width="22" height="22" />
         </button>
         <!-- Optional headline. Payment flows pass none — the bottom prompt
              carries the context, keeping the camera surface clean. -->

@@ -18,7 +18,8 @@
         @click="navigate(tab)"
       >
         <span class="hub-nav-tab-pill">
-          <Icon :icon="tab.icon" class="hub-nav-tab-icon" width="22" height="22" />
+          <BackupKeyringGlyph v-if="tab.keyring" class="hub-nav-tab-icon" :size="24" />
+          <Icon v-else :icon="tab.icon" class="hub-nav-tab-icon" width="22" height="22" />
         </span>
       </button>
     </nav>
@@ -27,10 +28,13 @@
 
 <script>
 import { Icon } from '@iconify/vue';
+import BackupKeyringGlyph from '../BackupKeyringGlyph.vue';
 import { haptics } from '../../utils/haptics';
 
 /**
- * Floating bottom navigation for the Settings / Identity / Spend hub.
+ * Floating bottom navigation for the Settings / Security / Identity / Spend
+ * hub. Security wears the keyring from the home reminder rather than a
+ * generic glyph, so the tab reads as the same thing the reminder points to.
  * Same glass-pill recipe as EarnBottomNav (Learn & Earn), so the two
  * floating bars in the app read as one design language.
  *
@@ -43,11 +47,12 @@ import { haptics } from '../../utils/haptics';
  */
 export default {
   name: 'SettingsHubNav',
-  components: { Icon },
+  components: { Icon, BackupKeyringGlyph },
   data() {
     return {
       tabs: [
         { id: 'settings', icon: 'tabler:settings', label: 'Settings', route: '/settings' },
+        { id: 'security', keyring: true, label: 'Security', route: '/security' },
         { id: 'identity', icon: 'tabler:user', label: 'You', route: '/identity' },
         { id: 'spend', icon: 'tabler:shopping-bag', label: 'Spend', route: '/spend' },
       ],
@@ -57,9 +62,10 @@ export default {
     activeTab() {
       const path = this.$route.path;
       // Prefix match, not equality: the identity tab now has child routes
-      // (/identity/manage, /identity/words …) and an exact comparison
+      // (/identity/profile, /identity/identities …) and an exact comparison
       // silently dropped the highlight the moment a user pushed one.
       if (path === '/profile' || path === '/identity' || path.startsWith('/identity/')) return 'identity';
+      if (path === '/security') return 'security';
       if (path === '/spend') return 'spend';
       return 'settings';
     },

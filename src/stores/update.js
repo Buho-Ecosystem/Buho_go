@@ -226,7 +226,7 @@ export const useUpdateStore = defineStore('appUpdate', {
     async allowRecoveryAccess(router) {
       this.requiredRecoveryAccess = true
       this.sheetOpen = false
-      await router.push({ path: '/settings', query: { section: 'backup' } })
+      await router.push('/security')
     },
 
     async performUpdate() {

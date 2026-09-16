@@ -117,3 +117,25 @@ registerRoute(
     ],
   }),
 )
+
+// --- Breez Spark engine: cached on first connect, never precached ---
+
+// The ~12.5 MB Spark engine is kept out of the precache in quasar.config.js
+// (pwa.extendInjectManifestOptions): pushing it to every visitor at install
+// time would cost people without a Spark wallet a download they never use.
+// It is fetched the first time a Spark wallet connects and kept from then on,
+// so those devices pay once and stay offline-capable. The file is
+// content-hashed, so a new engine simply arrives under a new name and the
+// expiry lets the old one go.
+registerRoute(
+  ({ url }) =>
+    url.origin === self.location.origin
+    && /breez_sdk_spark_wasm_bg.*\.wasm$/.test(url.pathname),
+  new CacheFirst({
+    cacheName: 'breez-wasm',
+    plugins: [
+      new CacheableResponsePlugin({ statuses: [200] }),
+      new ExpirationPlugin({ maxEntries: 2, purgeOnQuotaError: true }),
+    ],
+  }),
+)

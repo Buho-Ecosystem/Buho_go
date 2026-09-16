@@ -25,6 +25,14 @@
       <span>{{ $t('This contains your private key. Do not share or screenshot it publicly.') }}</span>
     </div>
 
+    <!-- The provider issues a config exactly once per payment, so an unusual
+         response is kept and shown rather than thrown away and re-requested.
+         Say so, instead of letting the user wonder why it looks different. -->
+    <div v-if="receipt.configIsRaw" class="raw-note" :class="$q.dark.isActive ? 'raw-note-dark' : 'raw-note-light'">
+      <Icon icon="tabler:alert-triangle" width="14" height="14" />
+      <span>{{ $t('The provider sent this in an unexpected format, so it is shown exactly as received. Copy it out if the QR does not import.') }}</span>
+    </div>
+
     <!-- One primary action: hand the .conf to the WireGuard app. -->
     <button
       type="button"
@@ -169,6 +177,10 @@ body.body--dark .success-check { color: #2bd17f; }
 .qr-canvas { width: min(100%, 230px) !important; height: auto !important; border-radius: 12px; }
 .qr-hint { font-family: 'Manrope', sans-serif; font-size: 12.5px; text-align: center; max-width: 280px; }
 
+.raw-note { display: flex; align-items: flex-start; gap: 7px; padding: 9px 11px; border-radius: 11px; font-family: 'Manrope', sans-serif; font-size: 12px; line-height: 1.4; }
+.raw-note-light { background: rgba(247, 147, 26, 0.1); color: #92400e; }
+.raw-note-dark { background: rgba(247, 147, 26, 0.14); color: #fbbf24; }
+.raw-note :deep(svg) { flex-shrink: 0; margin-top: 1px; }
 .key-warning { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-radius: 10px; font-family: 'Manrope', sans-serif; font-size: 12px; line-height: 1.35; }
 .key-warning-light { background: rgba(245, 158, 11, 0.10); color: #b45309; }
 .key-warning-dark { background: rgba(245, 158, 11, 0.14); color: #fbbf24; }
@@ -176,14 +188,14 @@ body.body--dark .success-check { color: #2bd17f; }
 .primary-cta { width: 100%; height: 48px; border-radius: 16px; border: 0; display: inline-flex; align-items: center; justify-content: center; gap: 8px; font-family: 'Manrope', sans-serif; font-size: 15px; font-weight: 600; cursor: pointer; -webkit-tap-highlight-color: transparent; transition: filter 0.18s ease, transform 0.1s ease; }
 .primary-cta:active { transform: scale(0.98); }
 
-.disclosure-toggle { all: unset; display: inline-flex; align-items: center; gap: 6px; font-family: 'Manrope', sans-serif; font-size: 12.5px; font-weight: 600; cursor: pointer; align-self: center; -webkit-tap-highlight-color: transparent; }
+.disclosure-toggle { all: unset; display: inline-flex; align-items: center; min-height: 44px; gap: 6px; font-family: 'Manrope', sans-serif; font-size: 12.5px; font-weight: 600; cursor: pointer; align-self: center; -webkit-tap-highlight-color: transparent; }
 
 .advanced-block { display: flex; flex-direction: column; gap: 8px; }
 .ghost-row { display: flex; align-items: center; gap: 10px; padding: 12px; border: 0; border-radius: 12px; font-family: 'Manrope', sans-serif; font-size: 13.5px; font-weight: 600; cursor: pointer; -webkit-tap-highlight-color: transparent; text-align: left; }
 .ghost-row-light { background: rgba(15, 23, 42, 0.05); color: #0f172a; }
 .ghost-row-dark { background: rgba(255, 255, 255, 0.06); color: #f8fafc; }
 
-.done-link { all: unset; align-self: center; padding: 6px 12px; font-family: 'Manrope', sans-serif; font-size: 13px; font-weight: 600; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.done-link { all: unset; display: inline-flex; align-items: center; min-height: 44px; align-self: center; padding: 0 12px; font-family: 'Manrope', sans-serif; font-size: 13px; font-weight: 600; cursor: pointer; -webkit-tap-highlight-color: transparent; }
 
 .item-label-light { color: #0f172a; }
 .item-label-dark  { color: #f8fafc; }

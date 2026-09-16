@@ -71,6 +71,11 @@ export const WALLET_BRANDS = Object.freeze({
   'blitzwalletapp.com':  { name: 'Blitz Wallet',      logo: `${SOCIAL}/BlitzWalet.png` },
   'strike.me':           { name: 'Strike',            logo: `${SOCIAL}/strike.png` }, // Strike's standard domain
   'strik.me':            { name: 'Strike',            logo: `${SOCIAL}/strike.png` }, // short variant seen in the wild
+  // Bare logomark on transparency, taller than wide (66x85 viewBox, no
+  // background plate): cropped edge-to-edge the circle takes the top and bottom
+  // off the mark itself. Its silhouette clears the circle from 7% inward, so a
+  // 10% inset keeps a margin and still reads at avatar size.
+  'coinsnap.app':        { name: 'Coinsnap',          logo: `${SOCIAL}/coinsnap.svg`, logoContain: true, logoInset: '10%' },
 
   // LNbits — flagship instances. Self-hosted instances live on their own
   // domains and stay unbranded (there's no way to know them here); add any
@@ -79,6 +84,18 @@ export const WALLET_BRANDS = Object.freeze({
   // The German instances run the "Business Bitcoin" brand (its own B logo).
   'lnbits.de':           { name: 'Business Bitcoin',  logo: `${SOCIAL}/BusinessBitcoin.png` },
   'timecatcher.lnbits.de': { name: 'Business Bitcoin', logo: `${SOCIAL}/BusinessBitcoin.png` },
+
+  // ── Community / personal domains ───────────────────────────────────────
+  // Self-hosted Lightning-address servers run by people we know by name.
+  // Same contract as the wallets above: the domain after the "@" is the key.
+  //
+  // The event-horizon photo is a full-bleed dark plate, so the circular
+  // cover-crop removes only background.
+  'ereignishorizont.xyz': { name: 'Ereignishorizont', logo: `${SOCIAL}/Axel_ereignishorizont.png` },
+  // Badge art whose wooden sign runs edge-to-edge on its own cream plate:
+  // cropped, the circle slices the lettering. Contained on a matching cream
+  // backdrop the whole badge reads at avatar size.
+  'bamo21.de':            { name: 'Axels Gemüsegärten', logo: `${SOCIAL}/Bamo_Axels_Guemuesegaerten.png`, logoBg: '#FBF7EA', logoContain: true, logoInset: '6%' },
 
   // Buho itself — our own hosted Lightning addresses across the brand domains.
   'mybuho.de':           { name: 'Buho',              logo: '/buho_logo_grey.svg' },
@@ -113,4 +130,23 @@ export const WALLET_BRANDS = Object.freeze({
 export function matchWalletBrand(domain) {
   if (typeof domain !== 'string') return null
   return WALLET_BRANDS[domain.trim().toLowerCase()] || null
+}
+
+/**
+ * The same lookup keyed by a whole Lightning Address instead of a bare domain.
+ *
+ * Mirrors `matchLnAddressService(address)` so a caller holding an address can
+ * ask both registries the same way, and the "@" split lives in one place
+ * rather than at every call site.
+ *
+ * @param {string} lightningAddress e.g. "satoshi@coinsnap.app"
+ * @returns {{ name: string, logo: string } | null}
+ */
+export function matchWalletBrandByAddress(lightningAddress) {
+  if (typeof lightningAddress !== 'string') return null
+  const trimmed = lightningAddress.trim()
+  const at = trimmed.lastIndexOf('@')
+  // Require a non-empty handle and domain ("a@b" at minimum).
+  if (at < 1 || at === trimmed.length - 1) return null
+  return matchWalletBrand(trimmed.slice(at + 1))
 }

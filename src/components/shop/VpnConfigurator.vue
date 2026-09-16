@@ -328,7 +328,7 @@ body.body--dark .plan-price--selected { color: #6ee7a8; }
 .trust-item { display: inline-flex; align-items: center; gap: 5px; }
 
 /* Sticky CTA bar — fades over the shop page background. */
-.cta-bar { position: sticky; bottom: 0; display: flex; flex-direction: column; align-items: stretch; gap: 6px; padding: 12px 0 max(8px, env(safe-area-inset-bottom, 0px)); margin-top: 2px; }
+.cta-bar { position: sticky; bottom: 0; display: flex; flex-direction: column; align-items: stretch; gap: 6px; padding: 12px 0 max(8px, var(--safe-bottom, 8px)); margin-top: 2px; }
 .cta-bar-light { background: linear-gradient(to top, #FAF7EF 62%, rgba(250, 247, 239, 0)); }
 .cta-bar-dark { background: linear-gradient(to top, #0C0C0C 62%, rgba(12, 12, 12, 0)); }
 .cta-context { text-align: center; font-family: 'Manrope', sans-serif; font-size: 12px; font-weight: 500; }

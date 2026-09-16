@@ -11,9 +11,9 @@
       2. Tapping the photo opens the identity switcher, the pattern people
          already know from account switchers. It is the only promotion the
          multi-identity feature needs.
-      3. The footer is the only place in the app that reports identity health,
-         and it does it in words rather than colour, so there is no amber dot
-         anywhere.
+      3. The code button sits in the top corner beside the pencil, so the
+         card ends with the public code and carries no footer. Backing up
+         lives in Security, not here.
 
     The ring around the photo carries setup progress and goes neutral once it
     completes. A permanent green ring around a face reads as a verification
@@ -22,17 +22,39 @@
   <div class="id-card-stage" :class="{ 'is-flipped': flipped }">
     <div class="id-card-flipper">
       <!-- Front -->
-      <div class="id-card-face id-card-front" @click="flip">
+      <div class="id-card-face id-card-front" :inert="flipped" @click="flip">
         <!-- No mark here. A tick or a shield above the photo and the handle
              reads as "this person is verified", which is the one claim a
              username must never make. -->
         <span class="id-card-issuer">{{ $t('Your BuhoGO card') }}</span>
 
+        <!-- The card's two controls, in the corner where a card carries its
+             chip. Icon-only by deliberate exception: a code and a pencil are
+             as universal as glyphs get, and the aria-labels carry the words. -->
+        <span class="id-card-actions">
+          <button
+            type="button"
+            class="id-card-round-btn"
+            :aria-label="$t('Show code')"
+            @click.stop="flip"
+          >
+            <Icon icon="tabler:qrcode" width="18" height="18" />
+          </button>
+          <button
+            type="button"
+            class="id-card-round-btn"
+            :aria-label="$t('Edit profile')"
+            @click.stop="$emit('edit')"
+          >
+            <Icon icon="tabler:pencil" width="17" height="17" />
+          </button>
+        </span>
+
         <span class="id-card-body">
           <button
             type="button"
             class="id-card-ring"
-            :aria-label="$t('Switch account')"
+            :aria-label="$t('Switch identity')"
             @click.stop="$emit('switch-identity')"
           >
             <svg class="id-card-progress" viewBox="0 0 76 76" aria-hidden="true">
@@ -57,34 +79,25 @@
             </span>
           </button>
 
-          <!-- When there is no name yet this slot holds an instruction, so
-               it has to be the control that carries it out. Left as plain
-               text once a real name is there: a name is not a button. -->
-          <component
-            :is="needsName ? 'button' : 'span'"
-            :type="needsName ? 'button' : null"
-            class="id-card-meta"
-            :class="{ 'id-card-meta--action': needsName }"
-            @click="needsName ? onAddName($event) : null"
-          >
-            <span class="id-card-name">{{ name }}</span>
-            <span v-if="username" class="id-card-handle">{{ '@' + username }}</span>
-          </component>
-        </span>
-
-        <span class="id-card-foot">
-          <!-- Progress and warnings only. "Ready, 12 words saved" forever is
-               a completed to-do pinned to the one object the user sees most;
-               done states earn silence. -->
-          <span v-if="statusTone !== 'ok'" class="id-card-status">
-            <Icon :icon="statusIcon" width="13" height="13" />
-            {{ status }}
+          <!-- The name, and under it the public code: the two things a
+               person hands over. When there is no name yet the name slot
+               holds an instruction, so it has to be the control that carries
+               it out. Left as plain text once a real name is there: a name
+               is not a button. -->
+          <span class="id-card-meta">
+            <component
+              :is="needsName ? 'button' : 'span'"
+              :type="needsName ? 'button' : null"
+              class="id-card-name"
+              :class="{ 'id-card-name--action': needsName }"
+              @click="needsName ? onAddName($event) : null"
+            >{{ name }}</component>
+            <button v-if="npub" type="button" class="id-card-public-key" :aria-label="$t('Copy public key')" @click.stop="copyPublic">
+              <span class="id-card-public-preview" aria-hidden="true">{{ npub.slice(0, 8) }}…{{ npub.slice(-4) }}</span>
+              <Icon :icon="publicCopied ? 'tabler:check' : 'tabler:copy'" width="15" height="15" aria-hidden="true" />
+              <span class="id-card-copy-status" role="status">{{ publicCopied ? $t('Copied') : '' }}</span>
+            </button>
           </span>
-          <span v-else class="id-card-status" aria-hidden="true"></span>
-          <button type="button" class="id-card-flip-btn" @click.stop="flip">
-            <Icon icon="tabler:qrcode" width="13" height="13" />
-            {{ $t('Code') }}
-          </button>
         </span>
       </div>
 
@@ -93,6 +106,7 @@
       <button
         type="button"
         class="id-card-face id-card-back"
+        :inert="!flipped"
         :aria-label="qrCaption ? qrCaption + '. ' + $t('Turn back') : $t('Turn back')"
         @click="flip"
       >
@@ -115,6 +129,7 @@
 </template>
 
 <script>
+import { copyToClipboard } from 'quasar';
 import { Icon } from '@iconify/vue';
 import VueQrcode from '@chenfengyuan/vue-qrcode';
 import { getQrOptionsWithSize } from '../../utils/qrConfig.js';
@@ -129,44 +144,35 @@ export default {
 
   props: {
     name: { type: String, required: true },
-    username: { type: String, default: '' },
     avatar: { type: String, default: '' },
-    /** Health line shown in the footer. Already localised by the caller. */
-    status: { type: String, required: true },
-    /** 'ok' | 'warn' | 'progress'. Decides the mark beside the status line. */
-    statusTone: { type: String, default: 'progress' },
     /** True when `name` is the "add one" prompt rather than a real name. */
     needsName: { type: Boolean, default: false },
     /** 0..1 setup progress. 1 turns the ring neutral. */
     progress: { type: Number, default: 1 },
+    npub: { type: String, default: '' },
     qrValue: { type: String, default: '' },
     qrCaption: { type: String, default: '' },
     canSwitch: { type: Boolean, default: false },
   },
 
-  emits: ['switch-identity', 'avatar-error', 'flip', 'add-name'],
+  emits: ['switch-identity', 'avatar-error', 'flip', 'add-name', 'edit'],
 
   data() {
     return {
       flipped: false,
+      publicCopied: false,
+      copyTimer: null,
       RING_LENGTH,
     };
   },
 
+  beforeUnmount() { clearTimeout(this.copyTimer); },
+
+  watch: { npub() { this.publicCopied = false; } },
+
   computed: {
     complete() {
       return this.progress >= 1;
-    },
-
-    /**
-     * Setup running is progress, not a fault. The warning mark is reserved
-     * for the state that genuinely is one: the words are the last thing left
-     * and they are still not written down.
-     */
-    statusIcon() {
-      if (this.statusTone === 'ok') return 'tabler:check';
-      if (this.statusTone === 'warn') return 'tabler:alert-triangle';
-      return 'tabler:circle-dashed';
     },
 
     ringOffset() {
@@ -185,6 +191,16 @@ export default {
   },
 
   methods: {
+    async copyPublic() {
+      try {
+        await copyToClipboard(this.npub);
+        this.publicCopied = true;
+        clearTimeout(this.copyTimer);
+        this.copyTimer = setTimeout(() => { this.publicCopied = false; }, 2000);
+      } catch {
+        this.$q.notify({ type: 'warning', message: this.$t("Couldn't copy"), timeout: 2000 });
+      }
+    },
     onAddName(event) {
       event.stopPropagation();
       this.$emit('add-name');
@@ -199,6 +215,12 @@ export default {
 </script>
 
 <style scoped>
+/* Sits under the name where the handle used to be, so it keeps that line's
+   size and tone while staying a comfortable tap target. */
+.id-card-public-key { display: flex; align-items: center; gap: 6px; min-height: 40px; padding: 2px 0; margin: 0; border: 0; border-radius: 8px; background: transparent; color: #fff; font: inherit; cursor: pointer; }
+.id-card-public-key:focus-visible { outline: 2px solid #15de72; outline-offset: 3px; }
+.id-card-public-preview { opacity: .7; font-family: var(--font-mono); font-size: 13px; }
+.id-card-copy-status { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 /* The card is the one place in the identity surface with its own palette,
    and it follows the theme's own logic: light mode is black-on-cream
    everywhere in this app, so the card is the same near-black as the primary
@@ -211,10 +233,11 @@ export default {
 
 /* min-height keeps both faces the same size: the back is absolutely
    positioned, so without it the card would collapse to the front's height
-   and the code would spill over the edges. */
+   and the code would spill over the edges. 150 is the back's code plate
+   plus its padding; the front matches it below. */
 .id-card-flipper {
   position: relative;
-  min-height: 196px;
+  min-height: 150px;
   transform-style: preserve-3d;
   transition: transform 0.62s cubic-bezier(0.4, 0.1, 0.2, 1);
 }
@@ -240,6 +263,8 @@ export default {
 .id-card-front {
   background: linear-gradient(150deg, #17171A, #232328);
   color: #F3F7F4;
+  box-sizing: border-box;
+  min-height: 150px;
   padding: 19px 20px 17px;
   position: relative;
   overflow: hidden;
@@ -342,10 +367,12 @@ body.body--dark .id-card-front::after {
   border: 2.5px solid #12271F;
 }
 
-.id-card-meta--action {
+.id-card-name--action {
+  color: inherit;
   border: 0;
   background: transparent;
   padding: 0;
+  max-width: 100%;
   cursor: pointer;
   text-align: left;
   font-family: 'Manrope', sans-serif;
@@ -364,48 +391,32 @@ body.body--dark .id-card-front::after {
   white-space: nowrap;
 }
 
-.id-card-handle {
-  display: block;
-  font-size: 13.5px;
-  color: rgba(243, 247, 244, 0.62);
-  margin-top: 3px;
-  font-family: var(--font-mono);
-}
-
-.id-card-foot {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-top: 17px;
-  position: relative;
-  z-index: 2;
-}
-
-.id-card-status {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  font-size: 11.5px;
-  color: rgba(243, 247, 244, 0.62);
-  min-width: 0;
-}
-
-.id-card-flip-btn {
+/* The card's two icon-only controls: translucent circles in the same
+   material the old Code chip used. */
+.id-card-round-btn {
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
   border: 0;
   cursor: pointer;
-  font-family: 'Manrope', sans-serif;
-  display: flex;
-  align-items: center;
-  gap: 6px;
+  display: grid;
+  place-items: center;
   background: rgba(255, 255, 255, 0.14);
   color: #F3F7F4;
-  border-radius: var(--radius-pill);
-  padding: 9px 14px;
-  font-size: 12px;
-  font-weight: 650;
-  min-height: 36px;
   flex: 0 0 auto;
+}
+
+.id-card-round-btn:active {
+  background: rgba(255, 255, 255, 0.24);
+}
+
+.id-card-actions {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 3;
+  display: flex;
+  gap: 8px;
 }
 
 /* Back */
@@ -415,12 +426,12 @@ body.body--dark .id-card-front::after {
   transform: rotateY(180deg);
   background: var(--bg-card);
   border: 1px solid var(--border-card);
+  /* Code on the left, its caption beside it: a row is what fits the
+     shorter front, and it reads like the back of a real card. */
   display: flex;
-  flex-direction: column;
   align-items: center;
-  justify-content: center;
-  gap: 10px;
-  padding: 14px;
+  gap: 16px;
+  padding: 10px 16px 10px 10px;
   overflow: hidden;
   cursor: pointer;
   font-family: 'Manrope', sans-serif;
@@ -468,11 +479,12 @@ body.body--dark .id-card-front::after {
 
 .id-card-qr-caption {
   display: block;
-  font-size: 12px;
+  flex: 1;
+  min-width: 0;
+  font-size: 12.5px;
   color: var(--text-secondary);
-  text-align: center;
-  max-width: 260px;
-  line-height: 1.35;
+  text-align: left;
+  line-height: 1.4;
 }
 
 

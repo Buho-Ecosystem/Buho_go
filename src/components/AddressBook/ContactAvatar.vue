@@ -1,20 +1,25 @@
 <template>
   <span
     class="contact-avatar"
-    :class="visibleAvatarUrl ? 'contact-avatar--has-image' : 'contact-avatar--fallback'"
+    :class="[
+      visibleAvatarUrl ? 'contact-avatar--has-image' : 'contact-avatar--fallback',
+      { 'contact-avatar--plated': containBrandArt },
+    ]"
+    :style="brandPlateStyle"
   >
     <img
       v-if="visibleAvatarUrl"
       class="contact-avatar__img"
+      :class="{ 'contact-avatar__img--contain': containBrandArt }"
+      :style="brandInsetStyle"
       :src="visibleAvatarUrl"
       :alt="''"
       @error="onImgError"
     />
-    <!-- No picture: the filled-bust silhouette (the reference wallet's
-         treatment, adopted 1:1) — solid blue figure on a pale blue-
-         tinted disc, both themes. One mark for everyone, no initials,
-         no per-contact color. The glyph scales with whatever size the
-         parent sets, so every surface keeps its rhythm. -->
+    <!-- No picture: the filled-bust silhouette in the app's grey
+         placeholder language, both themes. One mark for everyone, no
+         initials, no per-contact color. The glyph scales with whatever
+         size the parent sets, so every surface keeps its rhythm. -->
     <svg
       v-else
       class="contact-avatar__glyph"
@@ -33,9 +38,10 @@
  *
  * Renders a Nostr-sourced profile picture when one is available,
  * otherwise falls back to the filled-bust silhouette — one mark for
- * every picture-less contact, blue on a pale blue-tinted disc in both
- * themes (the reference wallet's treatment, adopted 1:1). The old
- * colored-initial circles are retired (design decision 2026-07-25).
+ * every picture-less contact, the app's grey placeholder (muted figure
+ * on the input surface) in both themes. The old colored-initial
+ * circles are retired (design decision 2026-07-25); the blue disc
+ * went grey 2026-09-10 to match the rest of the app.
  *
  * Layout is intentionally *not* owned by this component — the parent
  * supplies width / height / font-size through its own class so each
@@ -57,6 +63,7 @@
  */
 
 import { matchLnAddressService } from '../../services/lnAddressServices'
+import { matchWalletBrandByAddress } from '../../services/walletBrands'
 
 export default {
   name: 'ContactAvatar',
@@ -105,12 +112,67 @@ export default {
       return this.serviceLogoUrl
     },
 
-    serviceLogoUrl() {
+    /**
+     * A bundled mark for the address itself, when we recognise where it lives.
+     * Two registries can answer, and they answer different questions:
+     *
+     *   1. a fiat-payout rail (Tando, Bitzed) — that the money lands as local
+     *      currency on a phone matters more than the wallet hosting the
+     *      address, so it wins;
+     *   2. the consumer wallet hosting it (Wallet of Satoshi, Strike,
+     *      Coinsnap, …), so history reads by who was paid, not just by arrow.
+     *
+     * Neither ever outranks a picture: this is only reached once an explicit
+     * picture and a Nostr profile picture have both missed (see
+     * visibleAvatarUrl). The whole registry row is kept rather than just a URL,
+     * because the wallet marks carry their own fit rules (below). Bundled
+     * assets, resolved fresh each render so they survive asset-hash changes.
+     */
+    addressBrand() {
       const address = this.entry?.address || this.entry?.lightningAddress || ''
+      if (!address) return null
       const svc = matchLnAddressService(address)
-      return svc?.logo || ''
+      if (svc?.logo) return { logo: svc.logo }
+      return matchWalletBrandByAddress(address)
     },
 
+    serviceLogoUrl() {
+      return this.addressBrand?.logo || ''
+    },
+
+    /**
+     * Whether the mark currently on screen is a brand logo rather than a
+     * person's own picture. The fit rules below apply only then — a contact's
+     * Nostr avatar must never be padded onto a plate just because their
+     * address happens to be one we recognise.
+     */
+    showingBrandArt() {
+      return !!this.serviceLogoUrl && this.visibleAvatarUrl === this.serviceLogoUrl
+    },
+
+    /**
+     * Plate-less art (a bare logomark or a wordmark) is fitted whole instead of
+     * cropped: the circle would otherwise slice the mark itself. The registry
+     * marks these with `logoContain`, exactly as the send sheet reads them.
+     */
+    containBrandArt() {
+      return this.showingBrandArt && this.addressBrand?.logoContain === true
+    },
+
+    /** Per-brand inset override; the stylesheet's conservative default holds
+     *  for any mark whose silhouette has not been measured. */
+    brandInsetStyle() {
+      const inset = this.containBrandArt ? this.addressBrand?.logoInset : ''
+      return inset ? { padding: inset } : null
+    },
+
+    /** Contained art sits on a plate so a light mark stays visible; a brand
+     *  with its own backdrop (a white wordmark) overrides the default white. */
+    brandPlateStyle() {
+      if (!this.containBrandArt) return null
+      const bg = this.addressBrand?.logoBg
+      return bg ? { background: bg } : null
+    },
   },
 
   watch: {
@@ -154,17 +216,27 @@ export default {
   display: block;
 }
 
-/* Silhouette fallback — the reference wallet's look, copied 1:1:
-   solid blue bust on a pale blue-tinted disc. Dark mode keeps the
-   same blue (slightly lifted for contrast) on a cool dark disc. */
+/* Plate-less brand art: fitted whole rather than cropped, on a plate so a
+   light mark still reads. The default inset is deep enough that even a
+   full-bleed square keeps its corners inside the circle; a brand whose
+   silhouette is known overrides it with `logoInset`. Mirrors the send sheet's
+   treatment so the same wallet looks the same everywhere. */
+.contact-avatar--plated { background: #fff; }
+
+.contact-avatar__img--contain {
+  object-fit: contain;
+  padding: 19%;
+}
+
+/* Silhouette fallback — the app's one grey placeholder language
+   (same recipe as the identity avatar): muted figure on the input
+   surface, themed by the tokens in both modes. */
 .contact-avatar--fallback {
-  background: #EAEFF7;
-  color: #3B82F6;
+  background: var(--bg-input);
+  color: var(--text-muted);
 }
 
 .body--dark .contact-avatar--fallback {
-  background: #23272E;
-  color: #5B8DEF;
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.05);
 }
 

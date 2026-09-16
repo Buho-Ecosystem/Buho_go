@@ -229,3 +229,67 @@ test('a late sync from the previous profile cannot overwrite the active one', as
   assert.deepEqual(store.waitingQuotes.map((quote) => quote.quoteId), ['profile-b-payment']);
   assert.equal(store.waitingSats, 9);
 });
+
+test('the home badge quiets after a look and returns for new money', async () => {
+  const store = freshStore();
+  await store.hydrate({ pubkey: PROFILE_A });
+  store.waitingQuotes = [{ quoteId: 'zap-1', amount: 21, state: 'PAID', mintUrl: MINT }];
+
+  assert.equal(store.hasUnseenPayments, true);
+  store.markPaymentsSeen();
+  assert.equal(store.hasUnseenPayments, false);
+
+  store.waitingQuotes = [
+    ...store.waitingQuotes,
+    { quoteId: 'zap-2', amount: 5, state: 'PAID', mintUrl: MINT },
+  ];
+  assert.equal(store.hasUnseenPayments, true);
+});
+
+test('the acknowledgement survives a restart', async () => {
+  const store = freshStore();
+  await store.hydrate({ pubkey: PROFILE_A });
+  store.heldPaymentCount = 2;
+  store.markPaymentsSeen();
+
+  // Same storage, fresh process.
+  setActivePinia(createPinia());
+  const reborn = useSocialBucketStore();
+  await reborn.hydrate({ pubkey: PROFILE_A });
+  reborn.heldPaymentCount = 2;
+  assert.equal(reborn.hasUnseenPayments, false);
+
+  reborn.heldPaymentCount = 3;
+  assert.equal(reborn.hasUnseenPayments, true);
+});
+
+test('one profile looking never quiets another profile badge', async () => {
+  const store = freshStore();
+  await store.hydrate({ pubkey: PROFILE_A });
+  store.heldPaymentCount = 1;
+  store.markPaymentsSeen();
+  assert.equal(store.hasUnseenPayments, false);
+
+  await store.hydrate({ pubkey: PROFILE_B });
+  store.heldPaymentCount = 1;
+  assert.equal(store.hasUnseenPayments, true);
+});
+
+test('money arriving after a drain badges again despite equal counts', async () => {
+  const store = freshStore();
+  await store.hydrate({ pubkey: PROFILE_A });
+  store.heldPaymentCount = 1;
+  store.collectedQuoteIds = ['zap-1'];
+  store.markPaymentsSeen();
+  assert.equal(store.hasUnseenPayments, false);
+
+  // Sweep drains the bucket; nothing to show, nothing unseen.
+  store.heldPaymentCount = 0;
+  assert.equal(store.hasUnseenPayments, false);
+
+  // The next zap mints into the same held count as before the sweep. The
+  // collected-id component of the signature is what keeps this visible.
+  store.heldPaymentCount = 1;
+  store.collectedQuoteIds = ['zap-1', 'zap-2'];
+  assert.equal(store.hasUnseenPayments, true);
+});
