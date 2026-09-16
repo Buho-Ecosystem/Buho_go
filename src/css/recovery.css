@@ -1,0 +1,63 @@
+/* Shared by the word display, order check and backup success surface. */
+.recovery-card { display: flex; flex-direction: column; width: 520px; max-width: 100%; height: min(880px, 94dvh); max-height: 94dvh; background: var(--bg-primary); color: var(--text-primary); border-radius: 24px; font-family: 'Manrope', sans-serif; }
+.recovery-header { display: flex; align-items: center; min-height: 76px; padding: 16px 18px; flex-shrink: 0; }
+.recovery-header h1 { flex: 1; padding-left: 44px; margin: 0; font: 700 22px/1.3 'Manrope', sans-serif; letter-spacing: -.025em; text-align: center; outline: none; }
+.recovery-nav { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; min-height: 44px; min-width: 44px; padding: 8px; border: 0; background: transparent; color: var(--text-primary); font: inherit; cursor: pointer; border-radius: 10px; }
+.recovery-nav:disabled { opacity: .5; cursor: default; }
+.recovery-nav:focus-visible, .recovery-primary:focus-visible, .word-chip:focus-visible, .recovery-show:focus-visible { outline: 2px solid var(--brand-accent-text); outline-offset: 3px; }
+.recovery-body { padding: 22px 28px; overflow-y: auto; min-height: 0; flex: 1; }
+.recovery-intro { color: var(--text-primary); font: 700 23px/1.3 'Manrope', sans-serif; letter-spacing: -.025em; margin: 0 0 22px; }
+.recovery-notice p { font: 500 15px/1.5 'Manrope', sans-serif; color: var(--text-secondary); margin: 0 0 16px; }
+.recovery-notice strong { font-weight: 750; color: var(--text-primary); }
+.recovery-illustration { display: block; width: 112px; height: 112px; max-width: 100%; margin: 24px auto 0; color: var(--brand-accent-text); }
+.recovery-instruction { font-size: 16px; line-height: 1.45; text-align: center; margin: 4px 0 28px; }
+.recovery-paper-label { text-align: center; font-size: 12px; color: var(--text-secondary); margin: -16px 0 22px; overflow-wrap: anywhere; }
+.recovery-word-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px 14px; margin: 0; padding: 0; list-style: none; }
+.recovery-word-tile { display: flex; align-items: center; justify-content: center; position: relative; min-height: 52px; padding: 12px 26px; border: 0; border-radius: 9px; background: var(--bg-input); color: var(--text-primary); font: 600 15px/1.3 'Manrope', sans-serif; overflow-wrap: anywhere; }
+.recovery-word-number { position: absolute; left: 12px; font-size: 13px; font-weight: 500; }
+.recovery-footnote { text-align: center; font-size: 15px; line-height: 1.45; margin: 34px 0 0; }
+.recovery-show { display: block; margin: 16px auto 0; min-height: 44px; padding: 8px 16px; color: var(--brand-accent-text); background: transparent; border: 1px solid currentColor; border-radius: 12px; cursor: pointer; }
+.recovery-footer { flex-shrink: 0; padding: 18px 22px max(24px, env(safe-area-inset-bottom)); }
+.recovery-primary { width: 100%; min-height: 54px; border-radius: 20px; background: var(--brand-accent); color: #061c12; font-weight: 650; font-size: 18px; }
+.body--light .recovery-primary { background: var(--btn-neutral-bg); color: var(--btn-neutral-fg); }
+/* WoS-style consent switch: native keyboard behavior and a generous label hit area. */
+.recovery-acknowledgement { position: relative; display: flex; align-items: center; gap: 12px; width: fit-content; min-height: 52px; padding: 8px; margin: 0 0 12px; color: var(--text-primary); font: 600 16px/1.4 'Manrope', sans-serif; cursor: pointer; }
+.recovery-acknowledgement input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+.recovery-consent-track { display: inline-flex; align-items: center; flex-shrink: 0; width: 46px; height: 28px; padding: 3px; border-radius: 999px; background: #636963; transition: background .18s ease; }
+.recovery-consent-track > span { width: 22px; height: 22px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px #0003; transition: transform .18s ease; }
+.recovery-acknowledgement input:checked + .recovery-consent-track { background: var(--brand-accent); }
+.recovery-acknowledgement input:checked + .recovery-consent-track > span { transform: translateX(18px); }
+.recovery-acknowledgement input:focus-visible + .recovery-consent-track { outline: 2px solid var(--brand-accent-text); outline-offset: 4px; }
+.recovery-acknowledgement input:disabled + .recovery-consent-track { opacity: .5; }
+.recovery-primary.disabled { opacity: 1 !important; background: var(--bg-input); color: var(--text-muted); }
+.recovery-error, .recovery-verify-feedback { color: var(--text-primary); background: var(--color-warn-soft); padding: 12px; border-radius: 10px; margin: 16px 0 0; font-size: 14px; line-height: 1.45; }
+.word-chip { cursor: pointer; }
+.word-chip:disabled { cursor: default; opacity: 1; }
+.word-chip.chip-selected { background: var(--brand-accent); color: #061c12; }
+.body--light .word-chip.chip-selected { background: var(--brand-accent-soft); color: var(--brand-accent-text); box-shadow: inset 0 0 0 1px var(--brand-accent-text); }
+.word-chip.chip-error { box-shadow: inset 0 0 0 2px var(--color-warn); }
+.recovery-sr-only { position: absolute !important; width: 1px !important; height: 1px !important; padding: 0 !important; margin: -1px !important; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+@media (max-width: 599px) {
+  .recovery-card { width: 100%; height: 100dvh; max-height: 100dvh; border-radius: 0; }
+  .recovery-header { padding-top: max(16px, var(--safe-top, 0px)); }
+  .recovery-body { padding: 18px 24px; }
+}
+@media (max-width: 359px) {
+  .recovery-body { padding: 16px 18px; }
+  .recovery-word-grid { gap: 12px; }
+  .recovery-word-tile { font-size: 14px; padding-left: 24px; padding-right: 14px; }
+  .recovery-word-number { left: 8px; }
+}
+@media (max-height: 740px) {
+  .recovery-header { min-height: 64px; padding-top: max(10px, var(--safe-top, 0px)); padding-bottom: 10px; }
+  .recovery-body { padding-top: 12px; padding-bottom: 12px; }
+  .recovery-intro { font-size: 21px; margin-bottom: 18px; }
+  .recovery-notice p { font-size: 14px; line-height: 1.4; margin-bottom: 12px; }
+  .recovery-illustration { width: 88px; height: 88px; margin: 18px auto 0; }
+  .recovery-word-grid { row-gap: 10px; }
+  .recovery-word-tile { min-height: 48px; padding-top: 10px; padding-bottom: 10px; }
+  .recovery-footnote { margin-top: 20px; font-size: 14px; }
+  .recovery-footer { padding-top: 12px; padding-bottom: max(18px, env(safe-area-inset-bottom)); }
+}
+
+@media (prefers-reduced-motion: reduce) { .recovery-consent-track, .recovery-consent-track > span { transition: none; } }

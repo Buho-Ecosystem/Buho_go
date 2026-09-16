@@ -52,8 +52,8 @@
 
       <q-space/>
       <!-- The map keeps its own toolbar spot; everything else lives behind
-           the menu trigger as doors (settings, profile, spend, address
-           book, about). The bucket pill rides the trigger so new money
+           the menu trigger as doors (settings, security, profile, spend,
+           address book, about). The bucket pill rides the trigger so new money
            stays visible from home. -->
       <q-btn
         flat
@@ -2485,7 +2485,7 @@ export default {
     },
 
     goToBackup() {
-      this.$router.push('/settings?section=backup');
+      this.$router.push('/security');
     },
 
     async openWalletManagement() {

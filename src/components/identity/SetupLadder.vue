@@ -11,6 +11,8 @@
         persuasive than a counter.
       - It disappears for good when complete, and the space it occupied
         becomes the people you actually pay.
+      - It is about the card only. Backing up is not a setup step; it lives
+        in Security and on the home reminder.
 
     It never blocks anything. On the halfway screen it sits below the three
     verbs, because the card already works and setup must not stand in front
@@ -31,11 +33,10 @@
       :disabled="!step.route"
       @click="step.route ? $router.push(step.route) : null"
     >
-      <BackupKeyring v-if="step.id === 'words'" :size="26" />
-      <span v-else class="ladder-tick">
+      <span class="ladder-tick">
         <Icon v-if="step.done" icon="tabler:check" width="13" height="13" />
       </span>
-      <span class="ladder-label">{{ $t(step.label) }}<span v-if="step.id === 'words'" class="ladder-description">{{ $t('Identity backup') }}</span></span>
+      <span class="ladder-label">{{ $t(step.label) }}</span>
       <Icon
         v-if="step.route"
         icon="tabler:chevron-right"
@@ -48,13 +49,12 @@
 </template>
 
 <script>
-import BackupKeyring from '../BackupKeyring.vue';
 import { Icon } from '@iconify/vue';
 
 export default {
   name: 'SetupLadder',
 
-  components: { Icon, BackupKeyring },
+  components: { Icon },
 
   props: {
     steps: { type: Array, required: true },
@@ -153,6 +153,5 @@ export default {
 .ladder-step--done .ladder-label { color: var(--text-secondary); }
 
 .ladder-chev { color: var(--text-muted); }
-.ladder-description { display: block; margin-top: 3px; font-size: 12px; font-weight: 400; color: var(--text-secondary); }
 .ladder-step:focus-visible { outline: 2px solid var(--brand-accent-text); outline-offset: -2px; }
 </style>

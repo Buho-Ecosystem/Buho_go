@@ -1,5 +1,26 @@
 // Backup and recovery journeys. Keep the same keys in all three locales.
+// WoS reference copy: German transcribed from the supplied screenshots.
+// Only subject, authentication availability and phrase length are adapted.
 export default {
+  wosBackup: {
+    "walletTitle": "Backup Wallet",
+    "identityTitle": "Backup Identität",
+    "intro": "Lass uns deine Wiederherstellungsphrase sichern.",
+    "revealWithUnlock": "Auf der nächsten Seite wird dir nach der Überprüfung deiner biometrischen Daten deine Wiederherstellungsphrase angezeigt.",
+    "reveal": "Auf der nächsten Seite wird dir deine Wiederherstellungsphrase angezeigt.",
+    "keepWallet": "Notiere es und bewahren es sicher auf. Dies ist der Schlüssel zu deinem Guthaben, verliere ihn nicht.",
+    "keepIdentity": "Notiere es und bewahren es sicher auf. Dies ist der Schlüssel zu deiner Identität, verliere ihn nicht.",
+    "privatePlace": "Tu dies an einem privaten Ort, fern von Kameras oder Menschen.",
+    "noPhoto": "Mache keinen Screenshot oder Foto.",
+    "usePaper": "Es ist verlockend, aber unsicher. Verwende Stift und Papier.",
+    "understand": "Ich verstehe",
+    "next": "Nächster",
+    "write": "Schreibe deinen Seedphrase wie hier gezeigt auf, und zwar sowohl mit Zahlen als auch mit Wörtern.",
+    "checkNext": "Wir werden dich auf der nächsten Seite bitten, dies zu bestätigen.",
+    "check": "Tippe die Wörter in der richtigen Reihenfolge an.",
+    "walletSuccess": "Wallet-Sicherung abgeschlossen!",
+    "identitySuccess": "Identitätssicherung abgeschlossen!"
+},
   "Already have a backup?": "Schon ein Backup vorhanden?",
   "Anyone with these words can spend your bitcoin.": "Wer diese Wörter hat, kann deine Bitcoin ausgeben.",
   "Anyone with these words can use your identity.": "Wer diese Wörter hat, kann deine Identität verwenden.",
@@ -90,5 +111,6 @@ export default {
   "Save your recovery words": "Sichere deine Backup-Wörter",
   "Write the words in order, then check your copy.": "Schreibe die Wörter der Reihe nach auf und prüfe deine Kopie.",
   "Keep these words private": "Halte diese Wörter geheim",
-  "Open recovery words": "Backup-Wörter öffnen"
+  "Open recovery words": "Backup-Wörter öffnen",
+  "Bitcoin or identity from another phone": "Bitcoin oder Identität von einem anderen Handy"
 };

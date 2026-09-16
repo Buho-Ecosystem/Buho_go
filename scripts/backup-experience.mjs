@@ -12,7 +12,7 @@ const identityMeta = () => ({
 });
 import assert from 'node:assert/strict';
 import { mkdir } from 'node:fs/promises';
-const out=new URL('../output/backup-identity-experience', import.meta.url).pathname;
+const out=new URL('../output/backup-wos', import.meta.url).pathname;
 await mkdir(out,{recursive:true});
 const browser=await chromium.launch({headless:true});
 const page=await browser.newPage({viewport:{width:390,height:844}});
@@ -37,64 +37,122 @@ await page.addInitScript(({key,seed,meta})=>{
 },{key:AUDIT_DEVICE_KEY,seed:AUDIT_SEED_ENVELOPE,meta:identityMeta()});
 async function shot(name){await page.waitForTimeout(400);await page.screenshot({path:out+'/'+name+'.png'});}
 async function route(path){await page.evaluate(p=>window.__audit.app.config.globalProperties.$router.push(p),path);await page.waitForTimeout(500);}
-async function writeAndCheck(){
- await page.getByRole('button',{name:'Continue',exact:true}).click();
- await page.getByRole('heading',{name:'Write down each word',exact:true}).waitFor();
- assert.equal(await page.locator('.recovery-words').getByText('abandon',{exact:true}).count(),0,'concealed words absent from DOM');
- await page.getByRole('button',{name:'Show words',exact:true}).click();
- assert.equal(await page.locator('.recovery-words li').count(),12);
- await page.getByRole('button',{name:'Check my backup',exact:true}).click();
+async function writeAndCheck(prefix) {
+ const next = page.locator('.recovery-primary');
+ assert.equal(await next.isDisabled(), true, 'acknowledgement gates reveal');
+ await page.locator('.recovery-acknowledgement').click();
+ assert.equal(await page.getByRole('switch').isChecked(), true, 'the whole consent row is tappable');
+ await page.getByRole('switch').focus(); await page.getByRole('switch').press('Space');
+ assert.equal(await next.isDisabled(), true, 'keyboard unchecking disables Next');
+ await page.getByRole('switch').press('Space');
+ await next.click();
+ await page.locator('.recovery-words').waitFor();
+ assert.equal(await page.locator('.recovery-words li').count(), 12);
+ assert.equal(await page.locator('.recovery-words li').filter({hasText:'abandon'}).count(), 11, 'words appear after the acknowledged reveal');
+ if (prefix) await shot(prefix + '-words');
+ await next.click();
+ await page.locator('.word-chip').first().waitFor();
+ assert.equal(await next.isDisabled(), true, 'all words must match');
+ if (prefix) await shot(prefix + '-check');
  await page.locator('.word-chip:not([disabled])').filter({hasText:/^about$/}).click();
  await page.getByText('Check word 1 on your paper and try again.',{exact:true}).waitFor();
- for(let i=0;i<11;i++)await page.locator('.word-chip:not([disabled])').filter({hasText:/^abandon$/}).first().click();
+ assert.equal(await next.isDisabled(), true);
+ for(let i=0;i<11;i++) await page.locator('.word-chip:not([disabled])').filter({hasText:/^abandon$/}).first().click();
  await page.locator('.word-chip:not([disabled])').filter({hasText:/^about$/}).click();
+ assert.equal(await next.isDisabled(), false);
+}
+async function choose(subject) {
+ await page.locator('.backup-choices').waitFor();
+ await page.locator('.backup-choices .backup-choice').filter({hasText:subject}).click();
+ await page.locator('.recovery-body--prepare').waitFor();
+ // The flow opens straight from the page, so let the dialog's entrance settle before measuring it.
+ await page.waitForFunction(()=>[...document.querySelectorAll('.q-dialog__inner')].every(el=>![...el.classList].some(c=>c.includes('enter-active'))));
+}
+async function expectSecurityPage() {
+ await page.locator('.security-page .backup-choices-list').waitFor();
+ assert.equal(await page.evaluate(()=>window.location.hash), '#/security');
+}
+async function finish() {
+ await page.locator('.recovery-primary').click();
+ await page.locator('.backup-success').waitFor();
+ assert.equal(await page.locator('.recovery-words, .word-chip').count(),0,'success clears the words');
+ assert.equal(await page.locator('.backup-success p').count(),0,'success shows only the large title and visual');
 }
 try {
  await page.goto('http://127.0.0.1:9000/#/wallet');
  await page.locator('.backup-shortcut').waitFor({timeout:60000});
  assert.equal(await page.locator('.backup-banner-wrapper').count(),0);
- await page.locator('.backup-shortcut').click();await page.getByRole('button',{name:/^Bitcoin backup/}).first().waitFor();
+ await route('/identity');
+ assert.equal(await page.locator('.id-card-status').count(),0,'identity card has no backup reminder before backup');
+ assert.equal(await page.locator('.id-card-stage').getByRole('button',{name:/backup/i}).count(),0);
+ assert.equal(await page.locator('.id-row').filter({hasText:'Identity backup'}).count(),0,'profile has no backup row');
+ assert.equal(await page.locator('.ladder-step').filter({hasText:'Back up your card'}).count(),0,'setup ladder has no backup step');
+ // The menu door is the permanent way in; the keyring is the reminder.
+ await route('/wallet');
+ await page.getByRole('button',{name:/^Menu/}).click();
+ await page.locator('.menu-door').filter({hasText:/security/i}).waitFor();
+ assert.equal(await page.locator('.menu-door').count(),6);
+ await shot('00-menu-light');
+ await page.locator('.menu-door').filter({hasText:/security/i}).click();
+ await expectSecurityPage();
+ await route('/wallet');
+ await page.locator('.backup-shortcut').click();
+ await expectSecurityPage();
+ await page.getByRole('button',{name:/^Bitcoin backup/}).first().waitFor();
  assert.equal(await page.getByRole('button',{name:/^Identity backup/}).count(),1);
- await shot('01-backups-light');
- await page.locator('.backup-choices .backup-choice').filter({hasText:'Spark'}).click();
- await page.getByRole('heading',{name:'Save your recovery words'}).waitFor();
+ assert.equal(await page.getByRole('button',{name:/^Restore from backup/}).count(),1);
+ await shot('01-security-light');
+ await choose('Spark');
  assert.equal(await page.locator('.recovery-card .backup-coverage-item').count(),0);
- assert.ok((await page.locator('.recovery-card').boundingBox()).height < 700, 'preparation fits its content');
+ assert.ok((await page.locator('.recovery-card').boundingBox()).height >= 800, 'preparation is a full phone screen');
+ await page.evaluate(()=>document.fonts.ready);
+ assert.match(await page.locator('.recovery-intro').evaluate(el=>getComputedStyle(el).fontFamily), /Manrope/);
+ assert.equal(await page.evaluate(()=>document.fonts.check('700 23px Manrope')),true);
  await shot('02-wallet-prepare-light');
- await page.getByRole('button',{name:'Cancel',exact:true}).click();
- await page.locator('.recovery-card').waitFor({state:'hidden'});
- assert.equal(await page.locator('.backup-shortcut-label').count(),1);
- await page.locator('.backup-shortcut').click();await page.locator('.backup-choices .backup-choice').filter({hasText:'Spark'}).click();
- await writeAndCheck();
+ await page.locator('.recovery-acknowledgement').click();
+ await shot('02-wallet-prepare-accepted-light');
+ await page.getByRole('button',{name:'Close',exact:true}).click();
+ await choose('Spark');
+ await writeAndCheck('03-wallet');
  // Failure must retain the check and roll back optimistic store flags.
  await page.evaluate(()=>{window.__originalStorageSet=Storage.prototype.setItem;Storage.prototype.setItem=function(k,v){if(k==='buhoGO_wallet_store')throw new Error('Simulated full disk');return window.__originalStorageSet.call(this,k,v);};});
- await page.getByRole('button',{name:'Confirm backup',exact:true}).click();
+ await page.locator('.recovery-primary').click();
  await page.locator('.recovery-error').waitFor();
  assert.equal(await page.evaluate(()=>window.__audit.app.config.globalProperties.$pinia._s.get('wallet').hasBackedUp),false);
  await page.evaluate(()=>{Storage.prototype.setItem=window.__originalStorageSet;});
- await page.getByRole('button',{name:'Confirm backup',exact:true}).click();
- await page.getByRole('heading',{name:'Backup checked'}).waitFor();
- assert.equal(await page.locator('.recovery-words').count(),0);
- await shot('03-wallet-checked-light');
- await page.getByRole('button',{name:'Back up bitcoin',exact:true}).click();
- await writeAndCheck();await page.getByRole('button',{name:'Confirm backup',exact:true}).click();
- await page.getByRole('heading',{name:'Backup checked'}).waitFor();
- await page.getByRole('button',{name:'Back up identity',exact:true}).click();
- assert.ok((await page.locator('.recovery-subject').innerText()).includes('Identity backup'));
- await shot('04-identity-prepare-light');
- await writeAndCheck();await page.getByRole('button',{name:'Confirm backup',exact:true}).click();
- await page.getByRole('heading',{name:'Backup checked'}).waitFor();
- await shot('05-all-checked-light');
+ await finish();
+ await shot('04-wallet-success-light');
  await page.getByRole('button',{name:'Done',exact:true}).click();
- await page.locator('.recovery-card').waitFor({state:'hidden'});
- assert.equal(await page.locator('.backup-shortcut-label').count(),0);
- // Settings has one backup destination and no attention banner.
+ await page.locator('.backup-choices').waitFor();
+ assert.equal(await page.locator('.backup-choice').filter({hasText:'Spark'}).getByText('Words checked',{exact:true}).count(),1);
+ assert.equal(await page.locator('.backup-choice').filter({hasText:'Identity backup'}).getByText('Not checked yet',{exact:true}).count(),1);
+ await choose('Arkade');
+ await writeAndCheck(); await finish();
+ await page.getByRole('button',{name:'Done',exact:true}).click();
+ await choose('Identity backup');
+ await shot('05-identity-prepare-light');
+ await writeAndCheck(); await finish();
+ await shot('06-identity-success-light');
+ await page.getByRole('button',{name:'Done',exact:true}).click();
+ await page.locator('.backup-choices').waitFor();
+ assert.equal(await page.locator('.backup-choice').filter({hasText:'Identity backup'}).getByText('Words checked',{exact:true}).count(),1);
+ // Every set checked: the reminder leaves the home screen entirely.
+ await route('/wallet');
+ assert.equal(await page.locator('.backup-shortcut').count(),0,'keyring hides once every backup is checked');
+ // Settings carries no backup rows any more; Screen Privacy sits in Preferences.
  await route('/settings');
  assert.equal(await page.locator('.settings-attention-strip').count(),0);
- await page.getByRole('button',{name:/^Backups/}).click();
- await page.locator('.backup-choices').waitFor();
- await page.getByRole('button',{name:'Close',exact:true}).click();
+ assert.equal(await page.getByRole('button',{name:/^Backups/}).count(),0);
+ assert.equal(await page.getByText('Screen Privacy',{exact:true}).count(),1);
+ await shot('02-settings-light');
+ // The hub bar has a fourth tab for Security, and it is the active one on the page.
+ assert.equal(await page.getByRole('tab').count(),4);
+ await page.getByRole('tab',{name:'Security',exact:true}).click();
+ await expectSecurityPage();
+ assert.equal(await page.locator('.hub-nav-tab-active').getAttribute('aria-label'),'Security');
+ assert.equal(await page.locator('.hub-nav-tab-active .backup-keyring-glyph').count(),1,'security tab wears the keyring');
  // Exercise optional Android presentation with a mocked transport; no Google writes.
+ await route('/security');
  assert.equal(await page.getByRole('button',{name:/^Google Drive backup/}).count(),0,'Drive is not advertised on web');
  await page.evaluate(()=>{
   const cloud=window.__audit.app.config.globalProperties.$pinia._s.get('cloudBackup');
@@ -102,9 +160,9 @@ try {
   cloud.refresh=async()=>{cloud.signedIn=true;cloud.signedInEmail='test@example.invalid';};
   cloud.backup=async()=>{throw new Error('Simulated offline transport');};
   let owner=document.querySelector('.q-page').__vueParentComponent;
-  while(owner && !Object.hasOwn(owner.data,'showCloudBackupSheet')) owner=owner.parent;
-  if(!owner) throw new Error('Settings component missing');
-  owner.proxy.showCloudBackupSheet=true;
+  while(owner && !Object.hasOwn(owner.data,'showCloudBackup')) owner=owner.parent;
+  if(!owner) throw new Error('Security page missing');
+  owner.proxy.showCloudBackup=true;
  });
  await page.locator('.cb-menu-row').filter({hasText:'Back up now'}).click();
  await page.locator('.cb-contents').waitFor();
@@ -119,7 +177,7 @@ try {
  assert.equal(await page.evaluate(()=>window.__audit.app.config.globalProperties.$pinia._s.get('identity').backupConfirmed),beforeCloud);
  await page.locator('.cb-primary').click();
  await route('/identity');
- assert.equal(await page.locator('.id-row').filter({hasText:'Identity backup'}).count(),1);
+ assert.equal(await page.locator('.id-row').filter({hasText:'Identity backup'}).count(),0);
  await page.evaluate(()=>{window.__clipboard='';Object.defineProperty(navigator,'clipboard',{configurable:true,value:{writeText:async value=>{window.__clipboard=value;}}});});
  await page.getByRole('button',{name:/^Copy public key/}).click();
  assert.equal(await page.evaluate(()=>window.__clipboard),await page.evaluate(()=>window.__audit.app.config.globalProperties.$pinia._s.get('identity').nostrNpub));
@@ -158,30 +216,29 @@ try {
  await page.locator('.profile-setup-sheet').getByRole('button',{name:'Close',exact:true}).click();
 
  await route('/identity/words');
- await page.getByRole('heading',{name:'Identity backup',exact:true}).waitFor();await shot('06-identity-backup-page');
- await page.getByRole('tab',{name:/^Bitcoin/}).click();
- await page.getByRole('heading',{name:'Bitcoin backup',exact:true}).waitFor();
- await shot('12-wallet-backup-page');
- await page.getByRole('tab',{name:/^Bitcoin/}).press('ArrowRight');
- assert.equal(await page.getByRole('tab',{name:/^Identity/}).getAttribute('aria-selected'),'true');
- await page.getByRole('button',{name:'View recovery words',exact:true}).click();
- await shot('14-view-words-sheet');
- assert.ok((await page.locator('.recovery-card').boundingBox()).height < 520, 'view preparation uses a compact sheet');
- await page.getByRole('button',{name:'Open recovery words',exact:true}).click();
- await page.getByRole('button',{name:'Show words',exact:true}).click();
+ await expectSecurityPage();
+ await shot('07-security-all-checked');
+ await page.locator('.backup-choice').filter({hasText:'Identity backup'}).click();
+ await page.locator('.recovery-acknowledgement').click();
+ await page.locator('.recovery-primary').click();
+ await page.locator('.recovery-words').waitFor();
+ assert.equal(await page.locator('.word-chip').count(),0,'view mode has no verification');
  // Simulate backgrounding; secrets and check grid must disappear.
  await page.evaluate(()=>{Object.defineProperty(document,'hidden',{configurable:true,value:true});document.dispatchEvent(new Event('visibilitychange'));});
- await page.getByRole('heading',{name:'View recovery words',exact:true}).waitFor();
+ await page.locator('.recovery-body--prepare').waitFor();
  assert.equal(await page.locator('.recovery-words').count(),0);
+ assert.equal(await page.getByRole('switch').isChecked(),false);
  await page.evaluate(()=>{delete document.hidden;});
- await page.getByRole('button',{name:'Cancel',exact:true}).click();
+ await page.getByRole('button',{name:'Close',exact:true}).click();
  await route('/identity/advanced');
  assert.equal(await page.getByRole('button',{name:'Show secret key',exact:true}).count(),0);
  assert.equal(await page.locator('.secret-value').count(),0);
  // Identity restore: choose a subject, enter words, then explicit replacement confirmation.
- await route('/identity/words');
- await page.getByRole('button',{name:'Restore from recovery words',exact:true}).click();
- await page.locator('.choice-sheet .id-row').filter({hasText:/^Identity/}).click();
+ await route('/security');
+ await page.getByRole('button',{name:/^Restore from backup/}).click();
+ await page.locator('.restore-sheet').waitFor();
+ await shot('07-restore-choice');
+ await page.locator('.restore-sheet .id-row').filter({hasText:/^Identity/}).click();
  await page.locator('.restore-dialog').waitFor();
  await page.getByRole('combobox',{name:'Word 1',exact:true}).fill('abandon');
  assert.equal(await page.getByText('Replace your current profile?',{exact:true}).count(),0);
@@ -191,15 +248,58 @@ try {
  await page.getByText('Replace your current profile?',{exact:true}).waitFor();
  await shot('07-restore-confirmation');
  await page.getByRole('button',{name:'Close',exact:true}).click();
- // Narrow, translated layouts and large text with no horizontal overflow.
- for(const locale of ['en-US','de','es']){
+ // Legacy update recovery links must land on Security as well.
+ await route('/settings?section=backup');
+ await expectSecurityPage();
+ // The same flow supports a 24-word phrase with repeated words.
+ await route('/wallet');
+ await page.evaluate(()=>{
+   const wallet=window.__audit.app.config.globalProperties.$pinia._s.get('wallet');
+   window.__getMnemonic=wallet.getMnemonicForWallet;
+   wallet.getMnemonicForWallet=async()=>Array(23).fill('abandon').concat('art').join(' ');
+   for(const w of wallet.wallets.filter(w=>w.type==='spark')) w.metadata.hasBackedUp=false;
+   wallet.hasBackedUp=false;
+ });
+ await page.locator('.backup-shortcut').click(); await choose('Spark');
+ await page.locator('.recovery-acknowledgement').click(); await page.locator('.recovery-primary').click();
+ await page.locator('.recovery-words').waitFor();
+ assert.equal(await page.locator('.recovery-words li').count(),24);
+ await page.locator('.recovery-primary').click();
+ await page.locator('.word-chip').first().waitFor();
+ await page.evaluate(()=>{Object.defineProperty(document,'hidden',{configurable:true,value:true});document.dispatchEvent(new Event('visibilitychange'));});
+ await page.locator('.recovery-body--prepare').waitFor();
+ assert.equal(await page.locator('.word-chip').count(),0,'backgrounding removes verification words');
+ await page.evaluate(()=>{delete document.hidden;});
+ await page.locator('.recovery-acknowledgement').click(); await page.locator('.recovery-primary').click();
+ await page.locator('.recovery-words').waitFor();
+ await page.locator('.recovery-primary').click();
+ for(let i=0;i<23;i++) await page.locator('.word-chip:not([disabled])').filter({hasText:/^abandon$/}).first().click();
+ await page.locator('.word-chip:not([disabled])').filter({hasText:/^art$/}).click();
+ await finish(); await page.getByRole('button',{name:'Done',exact:true}).click();
+ await page.locator('.backup-choices').waitFor();
+ await page.evaluate(()=>{window.__audit.app.config.globalProperties.$pinia._s.get('wallet').getMnemonicForWallet=window.__getMnemonic;});
+ // Narrow, translated screens, including the exact German reference copy.
+ for(const locale of ['en-US','de','es']) {
   await route('/wallet');
   await page.evaluate(l=>{document.querySelector('.q-page').__vueParentComponent.proxy.$i18n.locale=l;window.__audit.setDark(true);},locale);
   await page.setViewportSize({width:320,height:700});
-  await page.locator('.backup-shortcut').click();await page.locator('.backup-choices').waitFor();await shot('08-backups-'+locale+'-320');
-  await page.locator('.backup-choices .backup-choice').filter({hasText:'Spark'}).click();await page.locator('.recovery-card').waitFor();await shot('09-prepare-'+locale+'-320');
-  const overflow=await page.locator('.recovery-body').evaluate(el=>el.scrollWidth>el.clientWidth);assert.equal(overflow,false);
-  await page.locator('.recovery-header .recovery-nav').click();
+  await page.evaluate(()=>{const wallet=window.__audit.app.config.globalProperties.$pinia._s.get('wallet');for(const w of wallet.wallets.filter(w=>w.type==='spark'))w.metadata.hasBackedUp=false;wallet.hasBackedUp=false;});
+  await page.locator('.backup-shortcut').click();
+  await expectSecurityPage(); await shot('08-security-'+locale+'-320');
+  await choose('Spark'); await shot('09-prepare-'+locale+'-320');
+  if (locale === 'de') await page.getByText('Lass uns deine Wiederherstellungsphrase sichern.',{exact:true}).waitFor();
+  assert.equal(await page.locator('.recovery-body').evaluate(el=>el.scrollWidth>el.clientWidth),false);
+  await page.locator('.recovery-acknowledgement').click();
+  await page.locator('.recovery-primary').click();
+  await page.locator('.recovery-words').waitFor(); await shot('10-words-'+locale+'-320');
+  assert.equal(await page.locator('.recovery-body').evaluate(el=>el.scrollWidth>el.clientWidth),false);
+  await page.locator('.recovery-primary').click();
+  await page.locator('.word-chip').first().waitFor(); await shot('11-check-'+locale+'-320');
+  for(let i=0;i<11;i++) await page.locator('.word-chip:not([disabled])').filter({hasText:/^abandon$/}).first().click();
+  await page.locator('.word-chip:not([disabled])').filter({hasText:/^about$/}).click();
+  await finish(); await shot('12-success-'+locale+'-320');
+  await page.locator('.backup-success .recovery-primary').click();
+  await page.locator('.backup-choices').waitFor();
  }
  assert.deepEqual(errors,[]);
  console.log(JSON.stringify({passed:true,errors,screenshots:out}));

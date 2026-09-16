@@ -25,8 +25,8 @@ import { Icon } from '@iconify/vue';
 import { haptics } from '../../utils/haptics';
 
 /**
- * Shared header for the Settings and Spend tabs. Identity is the third tab
- * in the same hub but owns its own top bar, so it does not use this.
+ * Shared header for the Settings, Security and Spend tabs. Identity is the
+ * fourth tab in the same hub but owns its own top bar, so it does not use this.
  *
  * The tabs are peers reached via SettingsHubNav, not a push-stack, so there
  * is no back chevron here: the home icon (always present, far right) is the

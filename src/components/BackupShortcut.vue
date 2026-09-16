@@ -1,33 +1,35 @@
 <template>
+  <!-- The home reminder. Present only while a set of recovery words is still
+       unchecked; once every applicable set is checked it leaves entirely and
+       Security stays reachable from the menu. -->
   <button
+    v-if="needsBackup"
     type="button"
     class="backup-shortcut"
-    :aria-label="needsBackup ? `${$t('Backup')}: ${pendingLabel}` : $t('Backups')"
-    aria-haspopup="dialog"
-    :aria-expanded="showChoices"
-    @click="showChoices = true"
+    :aria-label="`${$t('Backup')}: ${pendingLabel}`"
+    @click="router.push('/security')"
   >
     <BackupKeyring :size="29" />
-    <span v-if="needsBackup" class="backup-shortcut-label">
+    <span class="backup-shortcut-label">
       <span>{{ $t('Backup') }}</span>
       <span>{{ pendingLabel }}</span>
     </span>
   </button>
-
-  <BackupsSheet v-model="showChoices" />
 </template>
 
 <script setup>
-import { computed, ref } from 'vue';
+import { computed } from 'vue';
+import { useRouter } from 'vue-router';
 import { i18n } from '../boot/i18n';
 import { useWalletStore } from '../stores/wallet';
 import { useIdentityStore } from '../stores/identity';
 import { walletBackupGroups } from '../utils/backupStatus.js';
 import BackupKeyring from './BackupKeyring.vue';
-import BackupsSheet from './BackupsSheet.vue';
+
+const router = useRouter();
 const wallet = useWalletStore();
 const identity = useIdentityStore();
-const showChoices = ref(false);
+// Same source as the Security rows, so the reminder and the page never disagree.
 const walletNeedsBackup = computed(() => walletBackupGroups(wallet.wallets, wallet.hasBackedUp).some(group => !group.saved));
 const identityNeedsBackup = computed(() => identity.bootstrapped && !identity.backupConfirmed);
 const needsBackup = computed(() => walletNeedsBackup.value || identityNeedsBackup.value);
@@ -53,7 +55,6 @@ const pendingLabel = computed(() => walletNeedsBackup.value
   font: 400 11px/1.15 'Manrope', sans-serif;
   cursor: pointer;
 }
-.backup-shortcut-keyring { flex-shrink: 0; }
 .backup-shortcut-label { display: flex; flex-direction: column; align-items: flex-start; }
 .backup-shortcut:hover, .backup-shortcut:active { background: var(--brand-accent-soft); }
 .backup-shortcut:focus-visible { outline: 2px solid var(--brand-accent); outline-offset: -2px; }

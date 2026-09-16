@@ -1,5 +1,26 @@
 // Backup and recovery journeys. Keep the same keys in all three locales.
+// WoS reference copy: German transcribed from the supplied screenshots.
+// Only subject, authentication availability and phrase length are adapted.
 export default {
+  wosBackup: {
+    "walletTitle": "Copia de seguridad de la cartera",
+    "identityTitle": "Copia de seguridad de la identidad",
+    "intro": "Vamos a guardar tu frase de recuperación.",
+    "revealWithUnlock": "En la siguiente página se mostrará tu frase de recuperación después de verificar tus datos biométricos.",
+    "reveal": "En la siguiente página se mostrará tu frase de recuperación.",
+    "keepWallet": "Anótala y guárdala en un lugar seguro. Es la llave de tus fondos, no la pierdas.",
+    "keepIdentity": "Anótala y guárdala en un lugar seguro. Es la llave de tu identidad, no la pierdas.",
+    "privatePlace": "Hazlo en un lugar privado, lejos de cámaras o personas.",
+    "noPhoto": "No hagas una captura de pantalla ni una foto.",
+    "usePaper": "Es tentador, pero inseguro. Usa lápiz y papel.",
+    "understand": "Entiendo",
+    "next": "Siguiente",
+    "write": "Anota tu frase semilla tal como se muestra aquí, con números y palabras.",
+    "checkNext": "Te pediremos que lo confirmes en la siguiente página.",
+    "check": "Toca las palabras en el orden correcto.",
+    "walletSuccess": "¡Copia de la cartera completada!",
+    "identitySuccess": "¡Copia de la identidad completada!"
+},
   "Already have a backup?": "¿Ya tienes una copia?",
   "Anyone with these words can spend your bitcoin.": "Quien tenga estas palabras puede gastar tus bitcoin.",
   "Anyone with these words can use your identity.": "Quien tenga estas palabras puede usar tu identidad.",
@@ -90,5 +111,6 @@ export default {
   "Save your recovery words": "Guarda tus palabras de recuperación",
   "Write the words in order, then check your copy.": "Escribe las palabras en orden y comprueba tu copia.",
   "Keep these words private": "Mantén estas palabras en privado",
-  "Open recovery words": "Abrir palabras de recuperación"
+  "Open recovery words": "Abrir palabras de recuperación",
+  "Bitcoin or identity from another phone": "Bitcoin o identidad desde otro teléfono"
 };

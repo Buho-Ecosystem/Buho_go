@@ -13,7 +13,7 @@
         a user who never scrolls past the first fold still gets the
         high-value entry points (warnings, frequent toggles).
       -->
-      <!-- Paused: backup status lives in the Security rows.
+      <!-- Paused: backup status lives on the Security page.
       <SettingsAttentionStrip
         :warnings="attentionWarnings"
         @action="onAttentionAction"
@@ -254,12 +254,11 @@
       />
 
       <!-- ─────────────── PREFERENCES ───────────────
-           Pickers only. Theme / Display Currency / Amount Format /
-           App Lock all live in Quick Toggles at the top of the page
-           — they are binary controls and don't need a full row.
-           What stays here are the pickers that need a dialog
-           (Currency, Language) because they're 1-of-many choices,
-           not on/off flips. -->
+           Theme / Display Currency / App Lock live in Quick Toggles at
+           the top of the page: binary controls that don't need a full
+           row. Here are the pickers that need a dialog (Currency,
+           Language) plus the two on/off rows too rarely flipped to earn
+           a quick toggle (Amount format, Screen Privacy). -->
       <SettingsSection :title="$t('Preferences')">
         <SettingsRow
           icon="tabler:currency-dollar"
@@ -294,30 +293,6 @@
               :color="$q.dark.isActive ? 'brand-green' : 'brand-green-dark'"
             />
           </template>
-        </SettingsRow>
-
-      </SettingsSection>
-
-      <!--
-        Security: the keys, their copies, and the device protections.
-        The recovery-phrase rows moved here out of the Wallet section
-        ("where is my seed" is a security question, not a wallet-list
-        question), joined by the encrypted Drive backup and a restore
-        row - restoring used to be reachable only from the welcome
-        screen, which stranded anyone who set up first and remembered
-        their backup later. Screen Privacy moved in from Preferences:
-        it protects, it does not prefer. The section always has at
-        least that row, so it never renders as an empty card.
-      -->
-      <SettingsSection :title="$t('Security')">
-        <SettingsRow :label="$t('Backups')" :caption="$t('Bitcoin & identity')" @click="showBackupsSheet = true">
-          <template #icon><BackupKeyring :size="28" /></template>
-        </SettingsRow>
-        <SettingsRow v-if="cloudBackupAvailable" :label="$t('Google Drive backup')" :caption="$t('Optional · Wallet and identity')" @click="openCloudBackup('backup')">
-          <template #icon><BackupKeyring :size="28" /></template>
-        </SettingsRow>
-        <SettingsRow v-if="cloudBackupAvailable" :label="$t('Restore from Google Drive')" :caption="$t('Bring your wallets back from a backup')" @click="openCloudBackup('restore')">
-          <template #icon><BackupKeyring :size="28" /></template>
         </SettingsRow>
 
         <!--
@@ -1705,8 +1680,6 @@
       </q-card>
     </q-dialog>
 
-    <BackupsSheet v-model="showBackupsSheet" />
-
     <!-- Spark recovery phrase (unified view + backup flow) -->
     <SparkSeedPhraseDialog
       v-model="showSeedPhraseDialog"
@@ -1714,11 +1687,6 @@
       :wallet-id="seedPhraseWalletId"
       @verified="onSeedPhraseVerified"
     />
-
-    <!-- Encrypted Google Drive backup (Android only). The intent decides
-         where the sheet lands after sign-in: the backup row opens the
-         menu, the restore row jumps straight to restoring. -->
-    <CloudBackupSheet v-model="showCloudBackupSheet" :intent="cloudBackupIntent" />
 
     <!-- App Lock enable: explain what happens before the native prompt -->
     <BiometricEnableDialog
@@ -2089,9 +2057,6 @@ import { parseNwcConnection, NWC_REASON_I18N_KEYS } from '../utils/nwcConnection
 import { loadDismissedWarnings, saveDismissedWarnings } from '../utils/attentionWarnings.js'
 import KioskPinPad from '../components/KioskPinPad.vue'
 import SparkSeedPhraseDialog from '../components/SparkSeedPhraseDialog.vue'
-import BackupKeyring from '../components/BackupKeyring.vue'
-import BackupsSheet from '../components/BackupsSheet.vue'
-import CloudBackupSheet from '../components/CloudBackupSheet.vue'
 import ArkadeLogo from '../components/ArkadeLogo.vue'
 import WalletBrandMark from '../components/WalletBrandMark.vue'
 import BiometricEnableDialog from '../components/BiometricEnableDialog.vue'
@@ -2113,7 +2078,6 @@ import { LNBitsWalletProvider } from '../providers/LNBitsWalletProvider'
 // here for future reuse.
 // import MnemonicVerify from '../components/MnemonicVerify.vue'
 import { SUPPORTED_LOCALES, applyLocale, getSavedLocale } from '../i18n/locales'
-import { isCloudBackupPlatform } from '../services/cloudStorage.js'
 
 // Preset Mempool servers offered in the exchange-rate source picker.
 // Kept at module scope so they are referenced via computed getters in
@@ -2130,9 +2094,6 @@ export default {
     ArkadeLogo,
     WalletBrandMark,
     SparkSeedPhraseDialog,
-    BackupKeyring,
-    BackupsSheet,
-    CloudBackupSheet,
     BiometricEnableDialog,
     KioskPinPad,
     LNBitsLightningAddressDialog,
@@ -2219,10 +2180,6 @@ export default {
 
       // Unified seed-phrase dialog (view + backup flows)
       showSeedPhraseDialog: false,
-      showBackupsSheet: false,
-      // Encrypted Google Drive backup sheet (Android only)
-      showCloudBackupSheet: false,
-      cloudBackupIntent: 'backup',
       seedPhraseMode: 'view', // 'view' | 'backup'
       // Set only by the identity surface's per-phrase deep link; null means
       // "the active seed wallet", which is what this page's own rows want.
@@ -2436,15 +2393,6 @@ export default {
      */
     isNativeApp() {
       return Capacitor.isNativePlatform();
-    },
-
-    /**
-     * Cloud backup is Android-only today (Google Drive via the native
-     * plugin). The row is hidden elsewhere rather than shown disabled:
-     * web builds must not advertise a backup they cannot perform.
-     */
-    cloudBackupAvailable() {
-      return isCloudBackupPlatform();
     },
 
     bitcoinPrefsStore() {
@@ -2984,32 +2932,6 @@ export default {
     // the row shows the current state on first paint.
     this.refreshSparkLightningAddress();
 
-    // Handle deep link from backup banner (Spark or Arkade — whichever
-    // seed wallet still needs its phrase confirmed). The dialog resolves the
-    // active seed wallet itself.
-    const needsSeedBackup =
-      (this.hasSparkWallet && !this.activeSparkBackedUp) ||
-      (this.arkadeWallet && !this.activeArkadeBackedUp);
-    if (this.$route.query.section === 'backups') this.showBackupsSheet = true;
-    if (this.$route.query.section === 'backup') {
-      // The identity surface can name a specific wallet, because a user with
-      // Spark and Arkade has two different phrases and its screen shows one
-      // card per phrase. Without the id the dialog falls back to the active
-      // seed wallet, which is right for the rows on this page.
-      const walletId = String(this.$route.query.walletId || '') || null;
-      const target = walletId
-        ? this.walletStore.wallets.find((w) => w.id === walletId)
-        : null;
-      // Open in whichever mode fits: the identity surface links here to show
-      // the wallet words, and refusing to open once they are already saved
-      // made that a dead tap with no explanation.
-      const outstanding = target
-        ? target.metadata?.hasBackedUp !== true
-        : needsSeedBackup;
-      this.seedPhraseWalletId = target ? target.id : null;
-      this.$nextTick(() => this.openSeedPhraseDialog(outstanding ? 'backup' : 'view'));
-    }
-
     // Handle deep link from wallet switcher "Manage Wallets" button
     if (this.$route.query.section === 'wallets') {
       this.$nextTick(() => { this.showWalletsDialog = true; });
@@ -3078,16 +3000,6 @@ export default {
       // wallet as backed up via the store, closed itself, and emitted.
       // Nothing else to do here; the Settings row re-renders via the
       // `activeSparkBackedUp` computed.
-    },
-
-    /**
-     * Both Drive rows share one mounted sheet; the intent decides
-     * whether it lands on the backup menu or goes straight to restore.
-     * @param {'backup'|'restore'} intent
-     */
-    openCloudBackup(intent) {
-      this.cloudBackupIntent = intent;
-      this.showCloudBackupSheet = true;
     },
 
     // ─── Kiosk Mode ───────────────────────────────────
