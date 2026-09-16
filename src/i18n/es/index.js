@@ -1,6 +1,10 @@
 import backup from './backup.js';
 export default {
   ...backup,
+  // Spend: Bitrefill door
+  "Gift cards, mobile top-ups and more": "Tarjetas regalo, recargas móviles y más",
+  "Bitrefill is on its way": "Bitrefill está en camino",
+  "Buy gift cards and mobile top-ups with your bitcoin, right here. We are building it now.": "Compra tarjetas regalo y recargas móviles con tus bitcoin, aquí mismo. Lo estamos construyendo.",
   // Home clipboard offer
   "Found in your clipboard": "Encontrado en tu portapapeles",
   "Use": "Usar",

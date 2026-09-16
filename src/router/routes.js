@@ -135,7 +135,9 @@ const routes = [
       { path: '/shop', component: () => import('pages/ShopPage.vue'), beforeEnter: shopNativeOnly },
       // Online shops directory (BitcoinListings + BTCPay + Nostr). Lazy-loaded
       // so the adapters + Nostr code never land in the initial bundle.
-      { path: '/online-shops', component: () => import('pages/OnlineShopsPage.vue') },
+      // Retired with the Spend online row: the merchant directory was too
+      // technical for this tab. Page and service stay in the repo unrouted.
+      // { path: '/online-shops', component: () => import('pages/OnlineShopsPage.vue') },
       { path: '/kiosk', name: 'kiosk', component: () => import('pages/KioskDashboard.vue') },
       { path: '/learn', component: () => import('pages/EarnMap.vue'), beforeEnter: earnNativeOnly },
       { path: '/learn/summary', component: () => import('pages/EarnSummary.vue'), beforeEnter: earnNativeOnly },
