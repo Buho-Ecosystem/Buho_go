@@ -52,8 +52,8 @@
 
       <q-space/>
       <!-- The map keeps its own toolbar spot; everything else lives behind
-           the menu trigger as doors (settings, profile, spend, address
-           book, about). The bucket pill rides the trigger so new money
+           the menu trigger as doors (settings, security, profile, spend,
+           address book, about). The bucket pill rides the trigger so new money
            stays visible from home. -->
       <q-btn
         flat
@@ -94,6 +94,10 @@
         >{{ bucketPaymentBadge }}</span>
       </q-btn>
     </q-toolbar>
+
+    <!-- A payable destination copied elsewhere is offered once per return
+         to the app; Use hands it to the Send sheet as a paste would. -->
+    <ClipboardSuggestion @use="useClipboardDestination" />
 
     <!-- Backup Reminder Banner -->
     <!-- Paused: the persistent keyring is the home backup entry point.
@@ -891,6 +895,7 @@ import ContactAvatar from '../components/AddressBook/ContactAvatar.vue';
 import BatchSendModal from '../components/BatchSendModal.vue';
 import BackupBanner from '../components/BackupBanner.vue';
 import BackupShortcut from '../components/BackupShortcut.vue';
+import ClipboardSuggestion from '../components/ClipboardSuggestion.vue';
 import IdentityAuthDialog from '../components/IdentityAuthDialog.vue';
 import {useAutoWithdrawStore} from '../stores/autoWithdraw';
 import {useIdentityStore} from '../stores/identity';
@@ -937,6 +942,7 @@ export default {
     HiddenAmount,
     BackupBanner,
     BackupShortcut,
+    ClipboardSuggestion,
     IdentityAuthDialog,
     ContactAvatar,
     PinEntryDialog,
@@ -2485,7 +2491,17 @@ export default {
     },
 
     goToBackup() {
-      this.$router.push('/settings?section=backup');
+      this.$router.push('/security');
+    },
+
+    /**
+     * The clipboard strip's Use: open Send with the text already in the
+     * field, so it resolves the way a paste does and lands on the confirm
+     * sheet. The sheet's open watcher has run by the next tick.
+     */
+    useClipboardDestination(text) {
+      this.showSendModal = true;
+      this.$nextTick(() => this.$refs.sendModal?.useDestination(text));
     },
 
     async openWalletManagement() {

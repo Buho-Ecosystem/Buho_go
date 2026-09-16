@@ -1,5 +1,26 @@
 // Backup and recovery journeys. Keep the same keys in all three locales.
+// WoS reference copy: German transcribed from the supplied screenshots.
+// Only subject, authentication availability and phrase length are adapted.
 export default {
+  wosBackup: {
+    "walletTitle": "Backup Wallet",
+    "identityTitle": "Backup Identity",
+    "intro": "Let’s back up your recovery phrase.",
+    "revealWithUnlock": "On the next page, your recovery phrase will be displayed after verifying your biometric data.",
+    "reveal": "On the next page, your recovery phrase will be displayed.",
+    "keepWallet": "Write it down and keep it safe. This is the key to your funds, don’t lose it.",
+    "keepIdentity": "Write it down and keep it safe. This is the key to your identity, don’t lose it.",
+    "privatePlace": "Do this in a private place, away from cameras or people.",
+    "noPhoto": "Do not take a screenshot or photo.",
+    "usePaper": "It is tempting, but unsafe. Use pen and paper.",
+    "understand": "I understand",
+    "next": "Next",
+    "write": "Write down your seed phrase as shown here, with both numbers and words.",
+    "checkNext": "We will ask you to confirm this on the next page.",
+    "check": "Tap the words in the correct order.",
+    "walletSuccess": "Wallet backup complete!",
+    "identitySuccess": "Identity backup complete!"
+},
   "Already have a backup?": "Already have a backup?",
   "Anyone with these words can spend your bitcoin.": "Anyone with these words can spend your bitcoin.",
   "Anyone with these words can use your identity.": "Anyone with these words can use your identity.",
@@ -90,5 +111,6 @@ export default {
   "Save your recovery words": "Save your recovery words",
   "Write the words in order, then check your copy.": "Write the words in order, then check your copy.",
   "Keep these words private": "Keep these words private",
-  "Open recovery words": "Open recovery words"
+  "Open recovery words": "Open recovery words",
+  "Bitcoin or identity from another phone": "Bitcoin or identity from another phone"
 };

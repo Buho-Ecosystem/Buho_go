@@ -8,13 +8,15 @@
   >
     <!-- The frosted material IS the surface: the home never moves, this
          layer fades in over it and a tap anywhere that is not a door
-         closes it again. -->
-    <div class="menu-surface" @click="show = false">
+         closes it again. Closing plays the arrival backwards: the doors
+         glide back out to the right, last in first out, and the surface
+         fades once the final door has gone. -->
+    <div class="menu-surface" :class="{ 'is-closing': closing }" @click="close">
       <button
         type="button"
         class="menu-close"
         :aria-label="$t('Close menu')"
-        @click.stop="show = false"
+        @click.stop="close"
       >
         <svg
           width="22"
@@ -31,7 +33,8 @@
         </svg>
       </button>
 
-      <nav class="menu-doors" :aria-label="$t('Menu')">
+      <!-- --last is the final door's --d; the exit stagger counts down from it. -->
+      <nav class="menu-doors" :aria-label="$t('Menu')" style="--last: 350ms">
         <button
           type="button"
           class="menu-door"
@@ -41,10 +44,21 @@
           <span class="menu-door-word">{{ $t('Settings') }}</span>
         </button>
 
+        <!-- Backups and restoration. Permanent, so the words stay findable
+             once the home keyring has done its job and gone. -->
         <button
           type="button"
           class="menu-door"
           style="--d: 70ms"
+          @click.stop="go('/security')"
+        >
+          <span class="menu-door-word">{{ $t('Security') }}</span>
+        </button>
+
+        <button
+          type="button"
+          class="menu-door"
+          style="--d: 140ms"
           :aria-label="profileDoorLabel"
           @click.stop="go('/identity')"
         >
@@ -61,7 +75,7 @@
         <button
           type="button"
           class="menu-door"
-          style="--d: 140ms"
+          style="--d: 210ms"
           @click.stop="go('/spend')"
         >
           <span class="menu-door-word">{{ $t('Spend') }}</span>
@@ -70,7 +84,7 @@
         <button
           type="button"
           class="menu-door"
-          style="--d: 210ms"
+          style="--d: 280ms"
           @click.stop="go('/address-book')"
         >
           <span class="menu-door-word">{{ $t('Address Book') }}</span>
@@ -79,7 +93,7 @@
         <button
           type="button"
           class="menu-door"
-          style="--d: 280ms"
+          style="--d: 350ms"
           :aria-label="aboutDoorLabel"
           @click.stop="go('/about')"
         >
@@ -106,14 +120,29 @@ import { version } from '../../package.json';
 import { useUpdateStore } from '../stores/update';
 import { useSocialBucketStore } from '../stores/socialBucket';
 
+/* Timing of the exit, mirrored from the CSS below: every door takes
+   DOOR_MS to leave, the last door to arrive is the first to go, and the
+   surface starts its SURFACE_FADE_MS fade so that it finishes exactly as
+   the final door does. Keep these in step with the keyframes. */
+const DOOR_MS = 460;
+const LAST_DOOR_DELAY_MS = 350;
+const SURFACE_FADE_MS = 220;
+const SURFACE_FADE_AT_MS = LAST_DOOR_DELAY_MS + DOOR_MS - SURFACE_FADE_MS;
+
+function prefersReducedMotion() {
+  return typeof window !== 'undefined'
+    && typeof window.matchMedia === 'function'
+    && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+}
+
 /**
- * Full-screen menu behind the wallet toolbar's single trigger. Five doors,
+ * Full-screen menu behind the wallet toolbar's single trigger. Six doors,
  * one attention vocabulary: the Profile door carries the social-bucket
  * money pill, the About door carries the update pill, and both reuse the
  * exact signals the rest of the app already trusts (paymentCount and
  * updateStore.hasUpdate). The doors glide in from the right and stop dead
- * on their final position; the version line at the foot is informational
- * and untappable.
+ * on their final position, and leave the same way they came; the version
+ * line at the foot is informational and untappable.
  */
 export default {
   name: 'MenuOverlay',
@@ -133,7 +162,11 @@ export default {
         return this.modelValue;
       },
       set(value) {
-        this.$emit('update:modelValue', value);
+        // Every close request takes the animated way out, including the
+        // Escape key, which the dialog turns into a model change like any
+        // other and then waits for.
+        if (value) this.$emit('update:modelValue', true);
+        else this.close();
       },
     },
 
@@ -160,11 +193,45 @@ export default {
   data() {
     return {
       navigating: false,
+      closing: false,
+      closeTimer: null,
+      unmounted: false,
     };
   },
+  watch: {
+    modelValue(open) {
+      if (open) this.resetClose();
+    },
+  },
+  beforeUnmount() {
+    this.unmounted = true;
+    this.resetClose();
+  },
   methods: {
+    /**
+     * Start the exit: the doors animate out under the `is-closing` class
+     * and the model only flips once they have left, so the dialog's own
+     * fade takes the surface away last. Reduced motion skips straight to
+     * the fade.
+     */
+    close() {
+      if (this.closing || this.unmounted || !this.modelValue) return;
+      this.closing = true;
+      const delay = prefersReducedMotion() ? 0 : SURFACE_FADE_AT_MS;
+      this.closeTimer = setTimeout(() => {
+        this.closeTimer = null;
+        this.$emit('update:modelValue', false);
+      }, delay);
+    },
+
+    resetClose() {
+      if (this.closeTimer) clearTimeout(this.closeTimer);
+      this.closeTimer = null;
+      this.closing = false;
+    },
+
     async go(path) {
-      if (this.navigating) return;
+      if (this.navigating || this.closing) return;
       this.navigating = true;
       try {
         // Navigate first and keep the frost up while the destination (and
@@ -175,7 +242,9 @@ export default {
         await this.$router.push(path);
       } finally {
         this.navigating = false;
-        this.show = false;
+        // A successful push has already unmounted this menu with the home
+        // screen; close() is a no-op then and animates out otherwise.
+        this.close();
       }
     },
   },
@@ -216,6 +285,9 @@ body.body--dark .menu-surface {
 .menu-close {
   all: unset;
   position: absolute;
+  /* Above the doors' full-bleed nav, so the X itself takes the tap instead
+     of relying on the tap bubbling up from the nav to the surface. */
+  z-index: 1;
   top: calc(var(--safe-top, 0px) + 5px);
   right: 12px;
   width: 40px;
@@ -241,6 +313,22 @@ body.body--dark .menu-surface {
 
   to {
     transform: rotate(180deg);
+  }
+}
+
+/* The exit is the arrival played backwards. A new animation name (not a
+   reversed direction) so a finished entrance restarts as an exit. */
+.is-closing .menu-close {
+  animation: menu-close-turn-back 0.4s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+
+@keyframes menu-close-turn-back {
+  from {
+    transform: rotate(180deg);
+  }
+
+  to {
+    transform: rotate(0deg);
   }
 }
 
@@ -292,6 +380,34 @@ body.body--dark .menu-surface {
   100% {
     opacity: 1;
     transform: translateX(0);
+  }
+}
+
+/* Same 150px glide back out on the mirrored curve (expo-in), last door
+   first: the exit delay counts down from --last. Doors stop taking taps
+   the moment the exit starts. */
+.is-closing .menu-doors {
+  pointer-events: none;
+}
+
+.is-closing .menu-door {
+  animation: menu-door-out 460ms cubic-bezier(0.7, 0, 0.84, 0) both;
+  animation-delay: calc(var(--last) - var(--d));
+}
+
+@keyframes menu-door-out {
+  0% {
+    opacity: 1;
+    transform: translateX(0);
+  }
+
+  40% {
+    opacity: 1;
+  }
+
+  100% {
+    opacity: 0;
+    transform: translateX(150px);
   }
 }
 
@@ -352,7 +468,7 @@ body.body--dark .menu-surface {
   color: var(--text-muted);
   opacity: 0;
   animation: menu-fade-in 0.5s ease both;
-  animation-delay: 680ms;
+  animation-delay: 750ms;
 }
 
 @keyframes menu-fade-in {
@@ -361,10 +477,28 @@ body.body--dark .menu-surface {
   }
 }
 
+/* First to go: it was the last to arrive. */
+.is-closing .menu-version {
+  animation: menu-fade-out 0.2s ease both;
+}
+
+@keyframes menu-fade-out {
+  from {
+    opacity: 1;
+  }
+
+  to {
+    opacity: 0;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .menu-door,
   .menu-close,
-  .menu-version {
+  .menu-version,
+  .is-closing .menu-door,
+  .is-closing .menu-close,
+  .is-closing .menu-version {
     animation: none;
     opacity: 1;
     transform: none;

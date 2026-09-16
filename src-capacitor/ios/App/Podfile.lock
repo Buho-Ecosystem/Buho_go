@@ -3,6 +3,8 @@ PODS:
     - CapacitorCordova
   - CapacitorApp (8.1.0):
     - Capacitor
+  - CapacitorClipboard (8.0.1):
+    - Capacitor
   - CapacitorCordova (8.3.1)
   - CapacitorMlkitBarcodeScanning (8.0.1):
     - Capacitor
@@ -61,6 +63,7 @@ PODS:
 DEPENDENCIES:
   - "Capacitor (from `../../node_modules/@capacitor/ios`)"
   - "CapacitorApp (from `../../node_modules/@capacitor/app`)"
+  - "CapacitorClipboard (from `../../node_modules/@capacitor/clipboard`)"
   - "CapacitorCordova (from `../../node_modules/@capacitor/ios`)"
   - "CapacitorMlkitBarcodeScanning (from `../../node_modules/@capacitor-mlkit/barcode-scanning`)"
   - "CapacitorShare (from `../../node_modules/@capacitor/share`)"
@@ -85,6 +88,8 @@ EXTERNAL SOURCES:
     :path: "../../node_modules/@capacitor/ios"
   CapacitorApp:
     :path: "../../node_modules/@capacitor/app"
+  CapacitorClipboard:
+    :path: "../../node_modules/@capacitor/clipboard"
   CapacitorCordova:
     :path: "../../node_modules/@capacitor/ios"
   CapacitorMlkitBarcodeScanning:
@@ -97,6 +102,7 @@ EXTERNAL SOURCES:
 SPEC CHECKSUMS:
   Capacitor: 46dbaa89c1d1cd121b9fc2dc839c1f39cc49e326
   CapacitorApp: 449ffe26375e96f8aaaee625ac6e01e5c57c8650
+  CapacitorClipboard: c75fdaa6e622111119f35e7914ecfc67b05efecb
   CapacitorCordova: 9010447fe25e869705fcf525e5f490facde87608
   CapacitorMlkitBarcodeScanning: d97b2398adb4a8686fce9b1c0c6f09623f1baae8
   CapacitorShare: 0c58305114538568059bfc07111f22dcb9cb2a82
@@ -113,6 +119,6 @@ SPEC CHECKSUMS:
   nanopb: fad817b59e0457d11a5dfbde799381cd727c1275
   PromisesObjC: 752c3227f599e3467650e47ea36f433eeb10c273
 
-PODFILE CHECKSUM: 06e69301cf2adda4214fa77a89a06fd08c84fdce
+PODFILE CHECKSUM: d2e4d1928a0f129af1e94ea6d69db8e32b9d0187
 
 COCOAPODS: 1.16.2

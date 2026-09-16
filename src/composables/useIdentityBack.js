@@ -20,7 +20,6 @@ const PARENTS = {
   '/identity/profile': ['/identity'],
   '/identity/identities': ['/identity'],
   '/identity/username': ['/identity/profile', '/identity'],
-  '/identity/words': ['/identity', '/identity/identities'],
   '/identity/advanced': ['/identity'],
   '/identity/erase': ['/identity/identities', '/identity'],
 };

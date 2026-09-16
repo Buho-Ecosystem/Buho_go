@@ -26,14 +26,11 @@
 
     <div class="id-body">
       <!-- The card. Everything the user needs to recognise and hand over
-           their identity is on one object: photo, name, username, health,
-           and the code on its back. -->
+           their identity is on one object: photo, name, public code, setup
+           progress, and the scannable code on its back. -->
       <IdentityCard
         :name="cardName"
-        :username="username"
         :avatar="avatarUrl"
-        :status="statusLine"
-        :status-tone="statusTone"
         :progress="progress"
         :qr-value="qrValue"
         :npub="identity.nostrNpub"
@@ -43,7 +40,6 @@
         @switch-identity="onSwitchIdentity"
         @add-name="$router.push('/identity/profile')"
         @edit="$router.push('/identity/profile')"
-        @backup="$router.push('/identity/words')"
         @avatar-error="avatarBroken = true"
       />
 
@@ -73,12 +69,9 @@
 
       </template>
 
-      <!-- The two quiet doors. Everything else the tab can do lives on the
-           card or in the three verbs above. -->
+      <!-- The one quiet door. Everything else the tab can do lives on the
+           card or in the three verbs above; backing up lives in Security. -->
       <IdentityGroup class="id-block">
-        <IdentityRow :label="$t('Identity backup')" :caption="cardWordsSaved ? $t('Recovery words checked') : $t('Recovery words not checked yet')" @click="$router.push('/identity/words')">
-          <template #leading><BackupKeyring :size="28" /></template>
-        </IdentityRow>
         <IdentityRow
           icon="tabler:users"
           :label="$t('Identities')"
@@ -114,7 +107,6 @@
 </template>
 
 <script>
-import BackupKeyring from '../../components/BackupKeyring.vue';
 import { Icon } from '@iconify/vue';
 import SettingsHubNav from '../../components/settings/SettingsHubNav.vue';
 import IdentityCard from '../../components/identity/IdentityCard.vue';
@@ -134,7 +126,6 @@ export default {
   name: 'IdentityHomePage',
 
   components: {
-    BackupKeyring,
     Icon,
     SettingsHubNav,
     IdentityCard,
@@ -184,37 +175,9 @@ export default {
       return !this.profile.displayName && !this.profile.name;
     },
 
-    /** Local part only. The domain is plumbing and lives on Get paid. */
-    username() {
-      return this.identity.nip05ActiveEntry?.handle || '';
-    },
-
     avatarUrl() {
       if (!this.profile.picture || this.avatarBroken) return '';
       return this.profile.picture;
-    },
-
-    statusLine() {
-      switch (this.statusKey) {
-        case 'setting-up':
-          return this.$t('Setting up');
-        case 'words-missing':
-          return this.$t('Not backed up yet');
-        case 'steps-left':
-          return this.$t('{done} of {total} done', { done: this.stepsDone, total: this.stepsTotal });
-        default:
-          return this.$t('Backed up');
-      }
-    },
-
-    /**
-     * Only two states earn a warning mark: the card words are the last thing
-     * left, or the wallet phrase is outstanding. Everything else is either
-     * finished or in progress, and neither is a fault.
-     */
-    statusTone() {
-      if (this.statusKey === 'words-missing') return 'warn';
-      return this.statusKey === 'ready' ? 'ok' : 'progress';
     },
 
     /** The physical card exchange is identity-to-identity, not a web share. */
@@ -280,9 +243,9 @@ export default {
       this.bucket.sync({ identityStore: this.identity })
     )).catch(() => {}).then(() => this.bucket.markPaymentsSeen());
 
-    // The card footer now reports on the wallet phrase too, and the wallet
-    // store only reads its blob inside initialize(). Without this the card
-    // would say "Ready" on a cold start purely because no wallets had loaded.
+    // Get paid reads wallet state, and the wallet store only reads its blob
+    // inside initialize(). A cold deep link to this tab would otherwise open
+    // that sheet with no wallets loaded.
     await this.ensureWalletLoaded();
 
     // Only offer the switcher when there is something to switch to. A user

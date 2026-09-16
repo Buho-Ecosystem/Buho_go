@@ -360,8 +360,8 @@ import { useAddressBookStore } from '../stores/addressBook';
 import { useWalletStore } from '../stores/wallet';
 import { readClipboardCrossPlatform } from '../utils/shopClipboard.js';
 import { isSARetailerQR, convertToLightningAddress, getMerchantInfo, SA_RETAIL_SOURCE } from '../utils/merchantQR';
-import { parseBip21, selectBip21Destination, extractLnFallbackParam } from '../utils/bip21';
-import { isSilentPaymentAddress, nativeRailsFromBip21,
+import { parseBip21, extractLnFallbackParam } from '../utils/bip21';
+import {
   isSparkAddress,
   isArkadeAddress,
   isBolt12Offer,
@@ -380,6 +380,12 @@ import {
 import { getPreferredPayoutCountry, rememberPayoutCountry } from '../utils/payoutCountryPreference';
 import { classifyIdentifier, LOOKUP_ERROR } from '../utils/nostrLookup';
 import { canWalletPay, walletSwitchHint } from '../utils/walletCapabilities';
+import {
+  MAX_CLIPBOARD_LENGTH,
+  classifyDestination,
+  isSuggestibleDestination,
+  normalizeDestination,
+} from '../utils/clipboardSuggestion.js';
 import { resolveNostrLightningTarget, NOSTR_TARGET_ERROR } from '../services/nostrPaymentTarget';
 import ContactAvatar from './AddressBook/ContactAvatar.vue';
 import ArkadeLogo from './ArkadeLogo.vue';
@@ -763,8 +769,9 @@ export default {
      * Clipboard peek on open — web only. Native platforms surface a
      * system "app pasted from your clipboard" notice on every
      * programmatic read (Android 12+ toast, iOS paste banner/prompt);
-     * peeking on each open would fire it constantly, so there the
-     * explicit Paste button remains the only clipboard access.
+     * there the home screen offers the clipboard once per return to
+     * the app instead (ClipboardSuggestion), and the explicit Paste
+     * button remains this sheet's only clipboard access.
      *
      * The chip appears only for a string this wallet could actually
      * take further (recognized format, payable rail) — anything else
@@ -777,7 +784,9 @@ export default {
       if (!navigator.clipboard?.readText) return;
       try {
         const text = (await navigator.clipboard.readText() || '').trim();
-        if (!text || text.length > 4096) return;
+        // The field may have been filled while the read was in flight.
+        if (this.manualInput) return;
+        if (!text || text.length > MAX_CLIPBOARD_LENGTH) return;
         if (!this.isSuggestibleDestination(text)) return;
         this.clipboardSuggestion = { value: text };
       } catch {
@@ -785,36 +794,30 @@ export default {
       }
     },
 
-    /**
-     * Would this string get somewhere if the user pasted it? Mirrors the
-     * field's detection set (rails + Nostr identities + payout phone
-     * numbers), minus BOLT12 (recognized but unpayable — suggesting it
-     * would only advertise a dead end), and gated on the same wallet
-     * capability check the field enforces.
-     */
+    /** Would this string get somewhere if the user pasted it? One rule, shared with the home strip. */
     isSuggestibleDestination(text) {
-      const paymentType = this.determinePaymentType(text);
-      if (paymentType === 'bolt12_offer') return false;
-      if (paymentType === 'silent_payment') return false;
-      if (paymentType !== 'unknown') {
-        return canWalletPay(this.walletStore.activeWalletType, paymentType);
-      }
-      const nostrKind = classifyIdentifier(stripWrapperScheme(text));
-      if (nostrKind === 'npub' || nostrKind === 'nprofile') return true;
-      return !!recognizePhoneNumber(text);
+      return isSuggestibleDestination(text, this.walletStore.activeWalletType);
     },
 
     applyClipboardSuggestion() {
       const value = this.clipboardSuggestion?.value;
       if (!value) return;
+      this.useDestination(value);
+    },
+
+    /**
+     * Take a destination the user has already chosen (the chip here, the
+     * clipboard strip on the home screen) exactly as a paste: it lands in
+     * the visible field, then resolves after the same short beat the
+     * Paste button gives — to the confirm sheet, never a send.
+     */
+    useDestination(value) {
       this.clipboardSuggestion = null;
       if (this.resolveError) this.$emit('update:resolveError', '');
       this.manualInput = value;
       this.$nextTick(() => {
         this.$refs.manualTextarea?.focus();
       });
-      // Same short beat the Paste button gives: a glimpse of what landed
-      // in the field, then resolve — to the confirm sheet, never a send.
       clearTimeout(this.pasteAdvanceTimer);
       this.pasteAdvanceTimer = setTimeout(() => this.autoAdvance(), 300);
     },
@@ -1012,58 +1015,13 @@ export default {
      * - `bitcoin:<addr>?...`   → parse BIP21, prefer embedded `lightning=`
      *                            invoice over on-chain address
      */
+    /** Bare destination plus any BIP21 it came from; see normalizeDestination. */
     normalizePaymentInput(input) {
-      const trimmed = (input || '').trim();
-
-      const bip21 = parseBip21(trimmed);
-      if (bip21) {
-        // A unified QR offers several rails; pick one the ACTIVE wallet can
-        // actually pay before falling back to the generic preference order.
-        // Without this, an Arkade wallet scanning bitcoin:?lightning=..&ark=..
-        // classifies as a (blocked) Lightning invoice and never reaches the
-        // ark leg it pays natively.
-        const rails = nativeRailsFromBip21(bip21);
-        if (this.walletStore.isActiveWalletSpark && rails.spark) {
-          return { cleaned: rails.spark, bip21 };
-        }
-        if (this.walletStore.isActiveWalletArkade) {
-          if (rails.ark) return { cleaned: rails.ark, bip21 };
-          // No ark leg: the on-chain base is still payable (Ramps offboard),
-          // while the lightning leg is not - prefer what works.
-          if (bip21.address) return { cleaned: bip21.address, bip21 };
-        }
-        const destination = selectBip21Destination(bip21);
-        return { cleaned: destination ? destination.value : '', bip21 };
-      }
-
-      // http(s) "fallback URL" carrying the LNURL in a `lightning=` query param
-      // (LNbits / Fossa ATMs). Pull out the bare LNURL/invoice so the
-      // recognizers downstream can classify it.
-      const lnFallback = extractLnFallbackParam(trimmed);
-      if (lnFallback) {
-        return { cleaned: lnFallback, bip21: null };
-      }
-
-      // Otherwise unwrap a `lightning:` / `lnurl:` scheme down to the bare
-      // payload so the type classifier and the emitted value are both
-      // wrapper-free. No-op when no wrapper is present.
-      return { cleaned: stripWrapperScheme(trimmed), bip21: null };
+      return normalizeDestination(input, this.walletStore.activeWalletType);
     },
 
     determinePaymentType(data) {
-      const { cleaned } = this.normalizePaymentInput(data);
-      if (!cleaned) return 'unknown';
-
-      if (isSilentPaymentAddress(cleaned)) return 'silent_payment';
-      if (isSilentPaymentAddress(cleaned)) return 'silent_payment';
-      if (isSparkAddress(cleaned)) return 'spark_address';
-      if (isArkadeAddress(cleaned)) return 'arkade_address';
-      if (isBolt12Offer(cleaned)) return 'bolt12_offer';
-      if (isLightningInvoice(cleaned)) return 'lightning_invoice';
-      if (isLightningAddress(cleaned)) return 'lightning_address';
-      if (isLnurl(cleaned)) return 'lnurl';
-      if (isBitcoinAddress(cleaned)) return 'bitcoin_address';
-      return 'unknown';
+      return classifyDestination(data, this.walletStore.activeWalletType);
     },
 
     async pasteFromClipboard() {

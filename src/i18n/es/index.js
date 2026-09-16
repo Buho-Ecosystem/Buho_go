@@ -1,6 +1,9 @@
 import backup from './backup.js';
 export default {
   ...backup,
+  // Home clipboard offer
+  "Found in your clipboard": "Encontrado en tu portapapeles",
+  "Use": "Usar",
   // Home backup shortcut
   "Wallet & identity": "Cartera e identidad",
   "Backups": "Copias de seguridad",

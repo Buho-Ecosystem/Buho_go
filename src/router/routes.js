@@ -33,6 +33,13 @@ const shopNativeOnly = (to, from, next) => {
   next({ path: '/spend', query: { getApp: 'shop' } })
 }
 
+// `/settings?section=backup` was the backup entry for years and is still
+// what older links name. Backups now live on `/security`.
+function legacyBackupSection(to, from, next) {
+  if (['backup', 'backups'].includes(to.query.section)) return next('/security')
+  next()
+}
+
 const routes = [
   {
     path: '/',
@@ -55,9 +62,13 @@ const routes = [
       // profile icon opens `/identity`, Map's back-fallback opens `/spend`.
       // Nothing lands on the hub without naming a tab, so the Settings route
       // needs no default-tab redirect - it always shows the Settings tab,
-      // with or without a query (`?section=backup`, `?section=wallets`,
-      // `?getApp=learn` all still land here as before).
-      { path: '/settings', component: () => import('pages/Settings.vue') },
+      // with or without a query (`?section=wallets`, `?getApp=learn`).
+      // Backups left Settings for Security; the guard sends old links on.
+      { path: '/settings', component: () => import('pages/Settings.vue'), beforeEnter: legacyBackupSection },
+      // Security: backups and restoration. Reached from the home menu at any
+      // time and from the pending-backup keyring, and the one route the
+      // required-update gate yields to (see UpdateExperience.vue).
+      { path: '/security', component: () => import('pages/SecurityPage.vue') },
       { path: '/about', component: () => import('pages/AboutPage.vue') },
       { path: '/spend', component: () => import('pages/SpendPage.vue') },
       // Public profile page. The one route in the app meant for people who
@@ -99,7 +110,8 @@ const routes = [
           query: { ...to.query, sheet: 'sign-in' },
         }),
       },
-      { path: '/identity/words', component: () => import('pages/identity/IdentityWordsPage.vue') },
+      // The identity backup page merged into Security.
+      { path: '/identity/words', redirect: '/security' },
       { path: '/identity/identities', component: () => import('pages/identity/IdentityListPage.vue') },
       // Legacy Keys links now land beside the identity each private key belongs to.
       { path: '/identity/advanced', redirect: '/identity/identities' },
