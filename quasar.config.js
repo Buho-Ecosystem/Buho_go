@@ -211,33 +211,59 @@ export default defineConfig((ctx) => {
 
     // https://v2.quasar.dev/quasar-cli-vite/developing-pwa/configuring-pwa
     pwa: {
-      workboxMode: 'GenerateSW', // 'GenerateSW' or 'InjectManifest'
+      // The worker is hand-authored source (src-pwa/custom-service-worker.js)
+      // so its update lifecycle and caching strategies are reviewable code
+      // instead of generated config. See that file for the reasoning.
+      workboxMode: 'InjectManifest',
       // swFilename: 'sw.js',
       manifestFilename: 'manifest.json',
-      // extendManifestJson (json) {},
-      // useCredentialsForManifestTag: true,
-      // injectPwaMetaTags: false,
-      // extendPWACustomSWConf (esbuildConf) {},
-      extendGenerateSWOptions (cfg) {
-        // The ~12.5 MB Breez SDK wasm must NOT be precached - that would
-        // push it to every PWA visitor at install time, wallet or no
-        // wallet. Instead it is cached on the first Spark connect, so only
-        // devices actually running a Spark wallet pay for it once, and
-        // those stay offline-capable afterwards.
-        cfg.globIgnores = [...(cfg.globIgnores || []), '**/breez_sdk_spark_wasm_bg*.wasm']
-        cfg.runtimeCaching = [
-          ...(cfg.runtimeCaching || []),
-          {
-            urlPattern: /breez_sdk_spark_wasm_bg.*\.wasm$/,
-            handler: 'CacheFirst',
-            options: {
-              cacheName: 'breez-wasm',
-              expiration: { maxEntries: 2 },
-            },
-          },
-        ]
+      extendPWACustomSWConf (esbuildConf) {
+        // esbuild refuses to compile for Safari 14: WebKit destructuring bugs
+        // make it a target that would need lowering, and esbuild has not
+        // implemented that lowering ("Transforming destructuring ... is not
+        // supported yet"). The Workbox modules the worker imports are full of
+        // destructuring, so the worker build hard-fails. Safari 14 never ran
+        // transpiled worker code anyway: the previously generated worker
+        // shipped these same patterns as-is. Lift only the worker's floor to
+        // Safari 15; the app bundle keeps the project-wide browser target.
+        if (Array.isArray(esbuildConf.target)) {
+          esbuildConf.target = esbuildConf.target.map(
+            target => (target === 'safari14' ? 'safari15' : target),
+          )
+        }
       },
-      // extendInjectManifestOptions (cfg) {}
+      extendInjectManifestOptions (cfg) {
+        // Precache the app shell only: what the app needs to boot and render
+        // offline. public/ also holds a large media library (store
+        // screenshots, onboarding art, partner kits); precaching it made
+        // every worker update a ~44 MB download that phones often never
+        // finished, stranding them on stale builds. Those images now cache at
+        // runtime as they are viewed (see the worker's image route).
+        cfg.globPatterns = [
+          'index.html',
+          'assets/**',
+          'fonts/**',
+          'icons/**',
+          'favicon/**',
+          '*.svg',
+          'manifest.json',
+        ]
+        // The ~12.5 MB Breez SDK wasm lives under assets/ and sits just under
+        // the size cap below, so without this it would be precached and
+        // pushed to every visitor at install time, wallet or no wallet. It is
+        // cached on the first Spark connect instead (see the worker's
+        // breez-wasm route), so only devices actually running a Spark wallet
+        // pay for it once, and those stay offline-capable afterwards.
+        cfg.globIgnores = [...(cfg.globIgnores || []), '**/breez_sdk_spark_wasm_bg*.wasm']
+        // Everything in assets/ is content-hashed, so the URL itself is the
+        // version; skip the revision query parameter on those fetches.
+        cfg.dontCacheBustURLsMatching = /^assets\//
+        // Workbox silently drops files over 2 MiB from the precache, which
+        // left the largest (boot-critical) chunk as a mandatory network fetch
+        // and blanked stale clients after every deploy. Raise the cap well
+        // clear of the current worst case.
+        cfg.maximumFileSizeToCacheInBytes = 12 * 1024 * 1024
+      },
     },
 
     // Full list of options: https://v2.quasar.dev/quasar-cli-vite/developing-cordova-apps/configuring-cordova

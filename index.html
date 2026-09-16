@@ -78,6 +78,41 @@
       })();
     </script>
 
+
+    <!--
+      Last-resort refresh when the entry bundle is missing.
+
+      Deploys are atomic, so the previous build's hashed files are gone the
+      moment a new one is live. A browser (or service worker) still holding the
+      old index.html then asks for a script that 404s, and if it is the entry
+      bundle, nothing in the app is running to notice — the page just stays
+      blank. Catch the load failure here and refresh onto the current deploy.
+
+      src/utils/chunkReload.js handles every failure that happens after the app
+      is up and shares the storage key below, so the two together refresh at
+      most once before letting the failure stand.
+    -->
+    <script>
+      (function () {
+        var MARK = 'buhogo:chunk-reload-at';
+        var COOLDOWN_MS = 30000;
+        window.addEventListener('error', function (event) {
+          var el = event.target;
+          if (!el || el.tagName !== 'SCRIPT' || !el.src) return;
+          if (el.src.indexOf('/assets/') === -1) return;
+          if (navigator.onLine === false) return;
+          try {
+            var at = Number(window.sessionStorage.getItem(MARK));
+            if (at > 0 && Date.now() - at < COOLDOWN_MS) return;
+            window.sessionStorage.setItem(MARK, String(Date.now()));
+          } catch (e) {
+            return;
+          }
+          window.location.reload();
+        }, true); // resource errors do not bubble, so listen on the way down
+      })();
+    </script>
+
 </head>
 <body>
 <!-- quasar:entry-point -->
