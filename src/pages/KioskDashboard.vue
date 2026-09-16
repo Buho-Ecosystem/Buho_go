@@ -368,18 +368,26 @@ export default defineComponent({
       // to the kiosk charge; querying by invoice id is unambiguous and works
       // for both Spark-native and Lightning receive paths.
       if (isSpark && invoiceId && provider && typeof provider.getLightningReceiveStatus === 'function') {
-        sparkPollState = { cancelled: false }
+        sparkPollState = { cancelled: false, failures: 0 }
         const state = sparkPollState
         const intervalMs = 3000
 
         const tick = async () => {
           if (state.cancelled) return
+          // A visibility catch-up can call tick() while a timeout is armed;
+          // clear it so there is only ever ONE tick chain (an orphaned chain
+          // would survive clearPolling and could double-fire the success).
+          if (pollTimer) { clearTimeout(pollTimer); pollTimer = null }
           try {
-            const status = await provider.getLightningReceiveStatus(invoiceId)
+            // Re-resolve each tick: a reconnect below (or elsewhere in the
+            // app) replaces the provider object in the store.
+            const p = store.providers[store.kioskWalletId] || provider
+            const status = await p.getLightningReceiveStatus(invoiceId)
             if (state.cancelled) return
+            state.failures = 0
             if (status.isPaid) {
               try {
-                const b = await provider.getBalance()
+                const b = await p.getBalance()
                 store.balances[store.kioskWalletId] = Number(b?.balance ?? b ?? 0)
               } catch (_) { /* balance refresh is best-effort */ }
               clearPolling()
@@ -387,7 +395,17 @@ export default defineComponent({
               return
             }
             if (status.isExpired) { clearPolling(); return }
-          } catch (_) { /* transient — keep polling */ }
+          } catch (_) {
+            // Transient errors are expected; a streak means the SDK died
+            // while the kiosk was backgrounded (the wallet self-heal lives on
+            // a route the kiosk never mounts) — force a rebuild, since a
+            // plain reconnect would hand back the same dead instance.
+            state.failures += 1
+            if (state.failures >= 5) {
+              state.failures = 0
+              try { await store.connectSparkWallet(store.kioskWalletId, { forceReinit: true }) } catch (_) { /* retry next streak */ }
+            }
+          }
           if (!state.cancelled) pollTimer = setTimeout(tick, intervalMs)
         }
         pollTimer = setTimeout(tick, intervalMs)
@@ -488,6 +506,9 @@ export default defineComponent({
     }
 
     function showSuccess() {
+      // Idempotent: overlapping poll chains or a race between the event and
+      // the poll must not record the same sale twice.
+      if (state.value === 'success') return
       // Stamp the sale onto the incoming tx once it surfaces in history.
       // Best-effort and non-blocking: the kiosk boots on its own path, so
       // the metadata store lazy-initializes itself, and a metadata failure

@@ -54,6 +54,21 @@
         <img :src="$q.dark.isActive ? '/Spark/Spark Asterisk White.svg' : '/Spark/Spark Asterisk Black.svg'" alt="" />
       </span>
     </div>
+
+    <!-- The wallet's name on the network - the one receive handle a human
+         can read aloud or type. Tap to copy. Machine strings stay behind
+         Copy; this line replaces the anonymous zero-amount invoice as the
+         default identity of the request. -->
+    <button
+      v-if="depositAddress && leadWithLightningAddress"
+      class="ln-address-line"
+      :class="$q.dark.isActive ? 'ln-address-dark' : 'ln-address-light'"
+      @click="copyValue(lightningAddress, $t('Lightning address copied'))"
+    >
+      <Icon icon="tabler:at" width="14" height="14" aria-hidden="true" />
+      <span class="ln-address-text">{{ lightningAddress }}</span>
+      <Icon icon="tabler:copy" width="13" height="13" class="ln-address-copy" aria-hidden="true" />
+    </button>
     </div>
 
     <!--
@@ -101,15 +116,6 @@
       </button>
     </div>
 
-    <!-- End cap: what this code can do, in small quiet type. Last on
-         purpose, so its per-language height can never push a control out
-         of view. Deposits need no manual check: the 30s poll here, the
-         wallet home's 60s poll and the store's refresh signal already
-         cover detection - chips appear above when something arrives. -->
-    <div class="unified-hint" :class="$q.dark.isActive ? 'text-grey-6' : 'text-grey-5'">
-      {{ $t('Lightning and Spark pay instantly - on-chain needs 3 confirmations') }}
-    </div>
-
     <!-- One row of equal, labeled actions (52pt targets): shape the
          request, hand out an identity, hand out the code, pull in a
          voucher. Copy asks which identity instead of guessing; Share
@@ -132,7 +138,13 @@
           :offset="[0, 6]"
         >
           <q-list class="copy-menu" :class="$q.dark.isActive ? 'copy-menu-dark' : 'copy-menu-light'">
-            <q-item v-if="lightningInvoice" v-close-popup clickable @click="copyValue(lightningInvoice, $t('Invoice copied'))">
+            <q-item v-if="leadWithLightningAddress" v-close-popup clickable @click="copyValue(lightningAddress, $t('Lightning address copied'))">
+              <div class="copy-item">
+                <span>{{ $t('Lightning Address') }}</span>
+                <small>{{ lightningAddress }}</small>
+              </div>
+            </q-item>
+            <q-item v-if="lightningInvoice && !leadWithLightningAddress" v-close-popup clickable @click="copyValue(lightningInvoice, $t('Invoice copied'))">
               <div class="copy-item">
                 <span>{{ $t('Lightning invoice') }}</span>
                 <small>{{ truncateAddress(lightningInvoice) }}</small>
@@ -413,6 +425,27 @@ export default {
     /** The wallet's static Spark address - the spark= rail of the QR. */
     sparkAddress() {
       return this.walletStore.activeSparkAddress || '';
+    },
+
+    /**
+     * The wallet's Lightning address (user@domain), when it has one. This
+     * is the one human-readable receive handle, so the default amountless
+     * view shows it under the QR and hands it to Copy and Share; the QR
+     * itself keeps carrying the machine rails. Empty when the wallet has
+     * no address (the pre-address engine), which restores the invoice-
+     * centric behavior everywhere below.
+     */
+    lightningAddress() {
+      return this.walletStore.activeWalletLightningAddress || '';
+    },
+
+    /**
+     * Whether the human layer leads with the Lightning address: only on
+     * the default amountless view. Once the user sets an amount the
+     * request IS the invoice, and copy/share hand that out as before.
+     */
+    leadWithLightningAddress() {
+      return !!this.lightningAddress && !(this.amountSats > 0);
     },
 
     /**
@@ -951,14 +984,19 @@ export default {
     async shareAddress() {
       if (!this.depositAddress) return;
 
-      const qrBlob = await qrBlobFromRef(this.$refs.depositQr, { label: this.depositAddress });
+      // Amountless with a Lightning address: hand the human-readable name
+      // to the recipient (the QR image still rides along for scanning).
+      // With an amount set, share the full unified string exactly as the
+      // QR encodes it, so the recipient's wallet gets every rail. The
+      // BuhoGO wordmark is baked into the QR image by qrShare.
+      const leadAddress = this.leadWithLightningAddress;
+      const qrBlob = await qrBlobFromRef(this.$refs.depositQr, {
+        label: leadAddress ? this.lightningAddress : this.depositAddress,
+      });
       const result = await shareContent({
-        title: this.$t('Bitcoin Address'),
-        // The full unified string - exactly what the QR encodes, so the
-        // recipient's wallet gets every rail. The BuhoGO wordmark is baked
-        // into the QR image by qrShare.
-        text: this.qrValue,
-        files: qrBlob ? [{ blob: qrBlob, name: 'bitcoin-address.png', mimeType: 'image/png' }] : undefined,
+        title: leadAddress ? this.$t('Lightning Address') : this.$t('Bitcoin Address'),
+        text: leadAddress ? this.lightningAddress : this.qrValue,
+        files: qrBlob ? [{ blob: qrBlob, name: leadAddress ? 'lightning-address.png' : 'bitcoin-address.png', mimeType: 'image/png' }] : undefined,
       });
 
       if (result.success) {
@@ -1199,6 +1237,39 @@ export default {
   margin-top: 13px;
 }
 
+.ln-address-line {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 12px auto 0;
+  padding: 0 16px;
+  min-height: 44px; /* full-size touch target */
+  border: none;
+  border-radius: 999px;
+  cursor: pointer;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 14px;
+  font-weight: 500;
+  max-width: 100%;
+}
+.ln-address-light {
+  background: rgba(26, 26, 26, 0.05);
+  color: #1a1a1a;
+}
+.ln-address-dark {
+  background: rgba(255, 255, 255, 0.07);
+  color: #f0f0f0;
+}
+.ln-address-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ln-address-copy {
+  opacity: 0.45;
+  flex-shrink: 0;
+}
+
 .rail-badge {
   display: flex;
   width: 34px;
@@ -1317,16 +1388,6 @@ export default {
   opacity: 0.55;
 }
 
-/* ==========================================
-   End cap - quiet capability sentence
-   ========================================== */
-.unified-hint {
-  margin-top: 13px;
-  padding: 0 12px;
-  font-size: 11px;
-  line-height: 1.4;
-  text-align: center;
-}
 
 
 

@@ -5,117 +5,94 @@
     :loading-text="loadingText"
   />
 
-  <q-page class="nwc-setup-page flex flex-center" :class="$q.dark.isActive ? 'bg-dark' : 'bg-light'">
-    <div class="container">
+  <!-- The route presents as a 100% bottom sheet: dimmed ground, surface
+       at the large detent, grabber + glass back for chrome. The identity
+       lives in the centered hero, so the bar itself stays headerless. -->
+  <q-page class="iform-sheet-page">
+    <div class="iform-sheet-scrim" aria-hidden="true" @click="goBack"></div>
 
-      <q-card
-        class="setup-card"
-        :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'"
-        v-if="!showScanner"
-      >
-        <q-card-section class="card-header">
-          <div class="header-with-back">
-            <q-btn
-              flat
-              round
-              dense
-              @click="goBack"
-              class="back-btn"
-              :class="$q.dark.isActive ? 'back_btn_dark' : 'back_btn_light'"
-            >
-              <svg v-if="$q.dark.isActive" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 20 20" fill="none">
-                <path d="M8.83191 10.5936C8.75381 10.5162 8.69181 10.424 8.6495 10.3224C8.6072 10.2209 8.58542 10.112 8.58542 10.002C8.58542 9.89195 8.6072 9.78303 8.6495 9.68148C8.69181 9.57993 8.75381 9.48777 8.83191 9.4103L12.6569 5.59363C12.735 5.51616 12.797 5.42399 12.8393 5.32244C12.8816 5.22089 12.9034 5.11197 12.9034 5.00196C12.9034 4.89195 12.8816 4.78303 12.8393 4.68148C12.797 4.57993 12.735 4.48776 12.6569 4.4103C12.5008 4.25509 12.2896 4.16797 12.0694 4.16797C11.8493 4.16797 11.638 4.25509 11.4819 4.4103L7.65691 8.2353C7.18875 8.70405 6.92578 9.33946 6.92578 10.002C6.92578 10.6645 7.18875 11.2999 7.65691 11.7686L11.4819 15.5936C11.6371 15.7476 11.8466 15.8344 12.0652 15.8353C12.1749 15.8359 12.2836 15.8149 12.3852 15.7734C12.4867 15.732 12.579 15.6709 12.6569 15.5936C12.735 15.5162 12.797 15.424 12.8393 15.3224C12.8816 15.2209 12.9034 15.112 12.9034 15.002C12.9034 14.892 12.8816 14.783 12.8393 14.6815C12.797 14.5799 12.735 14.4878 12.6569 14.4103L8.83191 10.5936Z" fill="white"/>
-              </svg>
-              <svg v-else xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 20 20" fill="none">
-                <path d="M8.83191 10.5936C8.75381 10.5162 8.69181 10.424 8.6495 10.3224C8.6072 10.2209 8.58542 10.112 8.58542 10.002C8.58542 9.89195 8.6072 9.78303 8.6495 9.68148C8.69181 9.57993 8.75381 9.48777 8.83191 9.4103L12.6569 5.59363C12.735 5.51616 12.797 5.42399 12.8393 5.32244C12.8816 5.22089 12.9034 5.11197 12.9034 5.00196C12.9034 4.89195 12.8816 4.78303 12.8393 4.68148C12.797 4.57993 12.735 4.48776 12.6569 4.4103C12.5008 4.25509 12.2896 4.16797 12.0694 4.16797C11.8493 4.16797 11.638 4.25509 11.4819 4.4103L7.65691 8.2353C7.18875 8.70405 6.92578 9.33946 6.92578 10.002C6.92578 10.6645 7.18875 11.2999 7.65691 11.7686L11.4819 15.5936C11.6371 15.7476 11.8466 15.8344 12.0652 15.8353C12.1749 15.8359 12.2836 15.8149 12.3852 15.7734C12.4867 15.732 12.579 15.6709 12.6569 15.5936C12.735 15.5162 12.797 15.424 12.8393 15.3224C12.8816 15.2209 12.9034 15.112 12.9034 15.002C12.9034 14.892 12.8816 14.783 12.8393 14.6815C12.797 14.5799 12.735 14.4878 12.6569 14.4103L8.83191 10.5936Z" fill="#6D6D6D"/>
-              </svg>
-            </q-btn>
-            <div class="header-logo">
-              <svg xmlns="http://www.w3.org/2000/svg" width="30" height="32" viewBox="0 0 30 32" fill="none">
-                <path d="M0 13.4423C0 6.01833 6.01833 0 13.4423 0V18.5577C13.4423 25.9817 7.42399 32 0 32V13.4423Z"
-                      fill="#059573"/>
-                <path
-                  d="M15.3906 7.30444C15.3906 3.27031 18.6609 0 22.6951 0C26.7292 0 29.9995 3.27031 29.9995 7.30444V7.72091C29.9995 11.755 26.7292 15.0253 22.6951 15.0253C18.6609 15.0253 15.3906 11.755 15.3906 7.72091V7.30444Z"
-                  fill="#15DE72"/>
-                <path
-                  d="M15.3906 24.281C15.3906 20.2469 18.6609 16.9766 22.6951 16.9766C26.7292 16.9766 29.9995 20.2469 29.9995 24.281V24.6975C29.9995 28.7316 26.7292 32.0019 22.6951 32.0019C18.6609 32.0019 15.3906 28.7316 15.3906 24.6975V24.281Z"
-                  fill="#43B65B"/>
-              </svg>
-              <span class="app-title">BuhoGO</span>
+    <div class="iform-sheet" role="dialog" aria-modal="true" :aria-label="$t('Connect NWC Wallet')">
+      <div class="iform-sheet-grab" aria-hidden="true"></div>
+
+      <!-- Connect form -->
+      <template v-if="!showScanner">
+        <header class="iform-sheet-top">
+          <q-btn flat round dense class="glass-back-btn" :aria-label="$t('Back')" @click="goBack">
+            <Icon icon="tabler:chevron-left" width="20" height="20" />
+          </q-btn>
+          <div class="iform-sheet-title"></div>
+          <div class="iform-sheet-spacer"></div>
+        </header>
+
+        <div class="iform-sheet-scroll">
+          <div class="iform-body">
+            <div class="iform-hero">
+              <div class="iform-tile">
+                <!-- NWC Logo -->
+                <svg width="30" height="30" viewBox="0 0 257 256" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M110.938 31.0639C100.704 20.8691 84.0846 20.9782 73.8873 31.2091L7.91341 97.4141C-2.28517 107.646 -2.15541 123.974 8.07554 134.17L116.246 242.34C126.479 252.534 143.066 252.449 153.263 242.218L185.415 210.066C176.038 219.443 168.322 212.701 159.178 203.595L141.244 185.662C127.63 191.051 111.718 188.374 100.688 177.365L87.0221 163.699C86.5623 163.243 86.2075 162.767 85.9582 162.17C85.7089 161.572 85.5803 160.931 85.5797 160.284C85.5792 159.637 85.7067 158.995 85.955 158.398C86.2033 157.8 86.5923 157.293 87.0513 156.837L94.7848 149.103L77.9497 132.268C75.3144 129.638 74.8841 125.391 77.2407 122.522C79.9345 119.228 84.8188 119.053 87.7741 122.002L104.837 139.051L116.394 127.494L99.5187 110.661C96.8822 108.03 96.4531 103.784 98.8298 100.895C99.4602 100.128 100.244 99.5006 101.131 99.0542C102.019 98.6077 102.989 98.3518 103.981 98.3028C104.973 98.2538 105.964 98.4129 106.891 98.7697C107.818 99.1266 108.66 99.6733 109.363 100.375L126.495 117.393L133.755 110.132C134.211 109.673 134.66 109.259 135.258 109.01C135.855 108.761 136.496 108.632 137.144 108.632C137.791 108.631 138.432 108.758 139.03 109.006C139.628 109.254 140.171 109.618 140.628 110.077L154.316 123.738C165.208 134.609 168.056 150.431 162.964 163.943L180.901 181.88C190.045 190.985 197.696 197.785 207.074 188.408L247.645 147.836C237.893 157.588 229.881 150.075 220.244 140.446L110.938 31.0639Z" fill="url(#nwc_setup_grad)"/>
+                  <path d="M187.641 13.0273L153.153 47.4873L229.781 124.116C237.116 131.419 243.491 137.239 250.565 134.417C254.654 132.787 257.461 128.351 255.894 124.238C219.227 28.0253 219.212 28.0238 214.348 17.507C209.484 6.99014 195.804 4.76016 187.641 13.0273Z" fill="#897FFF"/>
+                  <defs>
+                    <linearGradient id="nwc_setup_grad" x1="123.989" y1="10.4384" x2="123.989" y2="249.939" gradientUnits="userSpaceOnUse">
+                      <stop stop-color="#FFCA4A"/>
+                      <stop offset="1" stop-color="#F7931A"/>
+                    </linearGradient>
+                  </defs>
+                </svg>
+              </div>
+              <div class="iform-hero-title">{{ $t('Connect NWC Wallet') }}</div>
+              <div class="iform-hero-sub">{{ $t('Link your existing Lightning wallet via Nostr Wallet Connect') }}</div>
             </div>
-            <div class="header-spacer"></div>
-          </div>
-        </q-card-section>
 
-        <q-card-section class="iform-body">
-          <div class="iform-eyebrow">{{ $t('Bring your own wallet') }}</div>
-
-          <div class="iform-head">
-            <div class="iform-tile">
-              <!-- NWC Logo -->
-              <svg width="26" height="26" viewBox="0 0 257 256" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path d="M110.938 31.0639C100.704 20.8691 84.0846 20.9782 73.8873 31.2091L7.91341 97.4141C-2.28517 107.646 -2.15541 123.974 8.07554 134.17L116.246 242.34C126.479 252.534 143.066 252.449 153.263 242.218L185.415 210.066C176.038 219.443 168.322 212.701 159.178 203.595L141.244 185.662C127.63 191.051 111.718 188.374 100.688 177.365L87.0221 163.699C86.5623 163.243 86.2075 162.767 85.9582 162.17C85.7089 161.572 85.5803 160.931 85.5797 160.284C85.5792 159.637 85.7067 158.995 85.955 158.398C86.2033 157.8 86.5923 157.293 87.0513 156.837L94.7848 149.103L77.9497 132.268C75.3144 129.638 74.8841 125.391 77.2407 122.522C79.9345 119.228 84.8188 119.053 87.7741 122.002L104.837 139.051L116.394 127.494L99.5187 110.661C96.8822 108.03 96.4531 103.784 98.8298 100.895C99.4602 100.128 100.244 99.5006 101.131 99.0542C102.019 98.6077 102.989 98.3518 103.981 98.3028C104.973 98.2538 105.964 98.4129 106.891 98.7697C107.818 99.1266 108.66 99.6733 109.363 100.375L126.495 117.393L133.755 110.132C134.211 109.673 134.66 109.259 135.258 109.01C135.855 108.761 136.496 108.632 137.144 108.632C137.791 108.631 138.432 108.758 139.03 109.006C139.628 109.254 140.171 109.618 140.628 110.077L154.316 123.738C165.208 134.609 168.056 150.431 162.964 163.943L180.901 181.88C190.045 190.985 197.696 197.785 207.074 188.408L247.645 147.836C237.893 157.588 229.881 150.075 220.244 140.446L110.938 31.0639Z" fill="url(#nwc_setup_grad)"/>
-                <path d="M187.641 13.0273L153.153 47.4873L229.781 124.116C237.116 131.419 243.491 137.239 250.565 134.417C254.654 132.787 257.461 128.351 255.894 124.238C219.227 28.0253 219.212 28.0238 214.348 17.507C209.484 6.99014 195.804 4.76016 187.641 13.0273Z" fill="#897FFF"/>
-                <defs>
-                  <linearGradient id="nwc_setup_grad" x1="123.989" y1="10.4384" x2="123.989" y2="249.939" gradientUnits="userSpaceOnUse">
-                    <stop stop-color="#FFCA4A"/>
-                    <stop offset="1" stop-color="#F7931A"/>
-                  </linearGradient>
-                </defs>
-              </svg>
+            <div class="iform-secrow">
+              <span class="iform-seclabel">{{ $t('Connection') }}</span>
+              <button class="iform-scan" type="button" @click="openScanner">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M4 7V6a2 2 0 0 1 2-2h2"/><path d="M4 17v1a2 2 0 0 0 2 2h2"/><path d="M16 4h2a2 2 0 0 1 2 2v1"/><path d="M16 20h2a2 2 0 0 0 2-2v-1"/><path d="M5 12h14"/>
+                </svg>
+                {{ $t('Scan') }}
+              </button>
             </div>
-            <div class="iform-titles">
-              <div class="iform-title">{{ $t('Connect NWC Wallet') }}</div>
-              <div class="iform-sub">{{ $t('Link your existing Lightning wallet via Nostr Wallet Connect') }}</div>
-            </div>
-          </div>
 
-          <div class="iform-secrow">
-            <span class="iform-seclabel">{{ $t('Connection') }}</span>
-            <button class="iform-scan" type="button" @click="openScanner">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                <path d="M4 7V6a2 2 0 0 1 2-2h2"/><path d="M4 17v1a2 2 0 0 0 2 2h2"/><path d="M16 4h2a2 2 0 0 1 2 2v1"/><path d="M16 20h2a2 2 0 0 0 2-2v-1"/><path d="M5 12h14"/>
-              </svg>
-              {{ $t('Scan') }}
-            </button>
-          </div>
-
-          <div class="iform-group">
-            <div class="iform-row">
-              <div class="iform-label">{{ $t('Wallet Name') }}</div>
-              <q-input
-                v-model="walletName"
-                :placeholder="$t('e.g. My Lightning Wallet')"
-                class="iform-input"
-                borderless
-                dense
-                hide-bottom-space
-              />
+            <div class="iform-group">
+              <div class="iform-row">
+                <div class="iform-label">{{ $t('Wallet Name') }}</div>
+                <q-input
+                  v-model="walletName"
+                  :placeholder="$t('e.g. My Lightning Wallet')"
+                  class="iform-input"
+                  borderless
+                  dense
+                  hide-bottom-space
+                />
+              </div>
+              <div class="iform-row">
+                <div class="iform-label">{{ $t('NWC Connection String') }}</div>
+                <q-input
+                  v-model="nwcString"
+                  :placeholder="$t('nostr+walletconnect://...')"
+                  class="iform-input"
+                  borderless
+                  dense
+                  type="textarea"
+                  autogrow
+                  hide-bottom-space
+                />
+              </div>
             </div>
-            <div class="iform-row">
-              <div class="iform-label">{{ $t('NWC Connection String') }}</div>
-              <q-input
-                v-model="nwcString"
-                :placeholder="$t('nostr+walletconnect://...')"
-                class="iform-input"
-                borderless
-                dense
-                type="textarea"
-                autogrow
-                hide-bottom-space
-              />
+
+            <!-- Error Message -->
+            <div v-if="errorMessage" class="error-message q-mt-md">
+              {{ errorMessage }}
+            </div>
+
+            <div class="iform-hint">
+              {{ $t('Get your NWC string from your Lightning wallet\'s settings') }}
             </div>
           </div>
+        </div>
 
-          <!-- Error Message -->
-          <div v-if="errorMessage" class="error-message q-mt-md">
-            {{ errorMessage }}
-          </div>
-
-          <div class="iform-hint">
-            {{ $t('Get your NWC string from your Lightning wallet\'s settings') }}
-          </div>
-
+        <footer class="iform-sheet-footer">
           <q-btn
             class="iform-connect full-width"
             :class="$q.dark.isActive ? 'dialog_add_btn_dark' : 'dialog_add_btn_light'"
@@ -131,81 +108,64 @@
               {{ $t('Connecting...') }}
             </template>
           </q-btn>
-        </q-card-section>
+        </footer>
+      </template>
 
-      </q-card>
+      <!-- Web QR scanner (native uses ScannerOverlay below) -->
+      <template v-else>
+        <header class="iform-sheet-top">
+          <q-btn flat round dense class="glass-back-btn" :aria-label="$t('Back')" @click="closeScanner">
+            <Icon icon="tabler:chevron-left" width="20" height="20" />
+          </q-btn>
+          <div class="iform-sheet-title">{{ $t('Scan QR Code') }}</div>
+          <div class="iform-sheet-spacer"></div>
+        </header>
 
-      <!-- QR Scanner Card -->
-      <q-card
-        class="setup-card"
-        :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'"
-        v-else
-      >
-        <q-card-section class="card-header">
-          <div class="scanner-header">
-            <q-btn
-              flat
-              round
-              dense
-              @click="closeScanner"
-              class="back-btn"
-              :class="$q.dark.isActive ? 'back-btn-dark' : 'back-btn-light'"
-            >
-              <Icon icon="tabler:chevron-left" width="18" height="18" />
-            </q-btn>
-            <div class="scanner-title-container">
-              <div class="scanner-title" :class="$q.dark.isActive ? 'main_page_title_dark' : 'main_page_title_light'">
-                {{ $t('Scan QR Code') }}
-              </div>
-              <div class="scanner-subtitle" :class="$q.dark.isActive ? 'view_title_dark' : 'view_title'">
-                {{ $t('Scan your NWC connection QR code') }}
-              </div>
-            </div>
-            <div class="header-spacer"></div>
-          </div>
-        </q-card-section>
+        <div class="iform-sheet-scroll">
+          <div class="iform-body">
+            <div class="iform-scan-lede">{{ $t('Scan your NWC connection QR code') }}</div>
 
-        <q-card-section class="q-pt-none">
-          <div class="qr-scanner-container" :class="$q.dark.isActive ? 'scanner-dark' : 'scanner-light'">
-            <video
-              v-if="!cameraError"
-              ref="videoElement"
-              class="qr-video"
-              style="width: 100%; height: 100%; object-fit: cover; border-radius: 16px;"
-              playsinline
-            />
-
-            <!-- Camera Error State -->
-            <div v-if="cameraError" class="camera-error">
-              <Icon icon="tabler:camera" style="font-size: 3em; color: #9CA3AF;" />
-              <p class="error-text">{{ cameraErrorMessage }}</p>
-              <q-btn
-                unelevated
-                :label="$t('Try Again')"
-                @click="retryCamera"
-                class="retry-btn"
-                :class="$q.dark.isActive ? 'dialog_add_btn_dark' : 'dialog_add_btn_light'"
-                no-caps
+            <div class="qr-scanner-container" :class="$q.dark.isActive ? 'scanner-dark' : 'scanner-light'">
+              <video
+                v-if="!cameraError"
+                ref="videoElement"
+                class="qr-video"
+                style="width: 100%; height: 100%; object-fit: cover; border-radius: 16px;"
+                playsinline
               />
-            </div>
 
-            <!-- Loading State -->
-            <div v-if="cameraLoading && !cameraError" class="camera-loading">
-              <q-spinner-dots color="#F7931A" size="2em"/>
-              <p class="loading-text">{{ $t('Starting camera...') }}</p>
-            </div>
+              <!-- Camera Error State -->
+              <div v-if="cameraError" class="camera-error">
+                <Icon icon="tabler:camera" style="font-size: 3em; color: #9CA3AF;" />
+                <p class="error-text">{{ cameraErrorMessage }}</p>
+                <q-btn
+                  unelevated
+                  :label="$t('Try Again')"
+                  @click="retryCamera"
+                  class="retry-btn"
+                  :class="$q.dark.isActive ? 'dialog_add_btn_dark' : 'dialog_add_btn_light'"
+                  no-caps
+                />
+              </div>
 
-            <!-- Scanning Frame -->
-            <div v-if="!cameraError && !cameraLoading" class="scanning-frame">
-              <div class="frame-corner top-left"></div>
-              <div class="frame-corner top-right"></div>
-              <div class="frame-corner bottom-left"></div>
-              <div class="frame-corner bottom-right"></div>
+              <!-- Loading State -->
+              <div v-if="cameraLoading && !cameraError" class="camera-loading">
+                <q-spinner-dots color="#F7931A" size="2em"/>
+                <p class="loading-text">{{ $t('Starting camera...') }}</p>
+              </div>
+
+              <!-- Scanning Frame -->
+              <div v-if="!cameraError && !cameraLoading" class="scanning-frame">
+                <div class="frame-corner top-left"></div>
+                <div class="frame-corner top-right"></div>
+                <div class="frame-corner bottom-left"></div>
+                <div class="frame-corner bottom-right"></div>
+              </div>
             </div>
           </div>
-        </q-card-section>
+        </div>
 
-        <q-card-section class="card-footer">
+        <footer class="iform-sheet-footer">
           <q-btn
             unelevated
             class="full-width cancel-btn"
@@ -214,9 +174,8 @@
             @click="closeScanner"
             no-caps
           />
-        </q-card-section>
-      </q-card>
-
+        </footer>
+      </template>
     </div>
 
     <!-- Native MLKit scanner (iOS/Android). Teleports to <body>. -->
@@ -317,7 +276,8 @@ export default {
         this.loadingText = this.$t('Loading wallet...');
         await new Promise(resolve => setTimeout(resolve, 500));
 
-        this.$router.replace('/spark-success?mode=nwc-lnbits');
+        // Straight into the wallet; the tour waits in About > Onboarding Guide.
+        this.$router.replace('/wallet');
       } catch (error) {
         console.error('Failed to connect NWC wallet:', error);
         this.showLoadingScreen = false;
@@ -445,85 +405,16 @@ export default {
 </script>
 
 <style scoped>
-.nwc-setup-page {
-  min-height: 100vh;
-  padding: 1rem;
-}
+/* Sheet shell + form recipes live in app.css (.iform-*). Only the
+   page-specific pieces remain here. */
 
-.bg-dark {
-  background: var(--bg-primary);
-  color: var(--text-primary);
-}
-
-.bg-light {
-  background: var(--bg-secondary);
-  color: var(--text-primary);
-}
-
-.container {
-  width: 100%;
-  max-width: 500px;
-  margin: 0 auto;
-}
-
-/* Header Styling */
-.card-header {
-  padding: 1.5rem 1rem 1rem;
-  text-align: center;
-}
-
-.header-with-back {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 1rem;
-}
-
-.header-with-back .header-logo {
-  margin-bottom: 0;
-}
-
-.header-with-back .header-spacer {
-  width: 40px;
-}
-
-.back-btn {
-  width: 40px;
-  height: 40px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.header-logo {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.75rem;
-  margin-bottom: 1rem;
-}
-
-.app-title {
+.iform-scan-lede {
   font-family: 'Manrope', sans-serif;
-  font-size: 24px;
-  font-weight: 800;
-  line-height: 100%;
-  background: linear-gradient(90deg, #059573 0%, #15DE72 50%, #78D53C 100%);
-  background-size: 200% 200%;
-  animation: gradientShift 3s ease-in-out infinite;
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-}
-
-@keyframes gradientShift {
-  0%, 100% { background-position: 0% 50%; }
-  50% { background-position: 100% 50%; }
-}
-
-/* Scanner subtitle keeps its muted colour in dark mode */
-.view_title_dark {
-  color: #B0B0B0;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+  text-align: center;
+  margin: 4px 0 14px;
 }
 
 /* Error Message */
@@ -538,28 +429,6 @@ export default {
 }
 
 /* Scanner Styles */
-.scanner-header {
-  display: flex;
-  align-items: flex-start;
-  gap: 1rem;
-  text-align: left;
-}
-
-.scanner-title-container {
-  flex: 1;
-}
-
-.scanner-title {
-  font-family: 'Manrope', sans-serif;
-  margin-bottom: 0.5rem;
-}
-
-.scanner-subtitle {
-  font-family: 'Manrope', sans-serif;
-  font-size: 12px;
-  line-height: 1.4;
-}
-
 .qr-scanner-container {
   height: 280px;
   display: flex;
@@ -642,10 +511,6 @@ export default {
 .frame-corner.bottom-left { bottom: 0; left: 0; border-right: none; border-top: none; }
 .frame-corner.bottom-right { bottom: 0; right: 0; border-left: none; border-top: none; }
 
-.card-footer {
-  padding: 1rem;
-}
-
 .cancel-btn {
   height: 48px;
   border-radius: 12px;
@@ -654,16 +519,7 @@ export default {
   font-weight: 500;
 }
 
-/* Responsive Design */
 @media (max-width: 480px) {
-  .nwc-setup-page {
-    padding: 0.75rem;
-  }
-
-  .container {
-    max-width: 100%;
-  }
-
   .qr-scanner-container {
     height: 250px;
   }

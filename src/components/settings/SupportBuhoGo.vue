@@ -9,7 +9,7 @@
   Falls back to copying the Lightning address when the resolve fails.
 -->
 <template>
-  <div class="support-card" :class="$q.dark.isActive ? 'support-card-dark' : 'support-card-light'">
+  <div class="support-block">
     <div class="support-heading">{{ $t('Support BuhoGO') }}</div>
     <div class="support-message">{{ $t('Fuel BuhoGO to Fly Higher') }}</div>
     <div class="donation-row">
@@ -246,46 +246,35 @@ export default {
 </script>
 
 <style scoped>
-/* Card shell matches the SettingsSection surface so it reads as part of
-   the page's grouped language. */
-.support-card {
-  border-radius: 16px;
-  padding: 16px;
-  text-align: center;
-}
-
-.support-card-dark {
-  background: var(--bg-card, #1A1A1A);
-}
-
-.support-card-light {
-  background: var(--bg-card, #FFFFFF);
-  border: 1px solid var(--border-card, #E3DCC7);
+/* No card shell: the block sits directly on the page background, using
+   the same quiet label voice as the About page's other groups. */
+.support-block {
+  display: flex;
+  flex-direction: column;
 }
 
 .support-heading {
   font-family: 'Manrope', sans-serif;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--text-muted);
-  margin-bottom: 6px;
+  margin-bottom: 8px;
 }
 
 .support-message {
   font-family: 'Manrope', sans-serif;
-  font-size: 14px;
+  font-size: 13.5px;
   font-weight: 500;
   color: var(--text-secondary);
-  margin-bottom: 13px;
+  margin-bottom: 12px;
 }
 
 .donation-row {
   display: flex;
   gap: 8px;
   width: 100%;
-  justify-content: center;
 }
 
 .donate-btn {

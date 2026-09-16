@@ -52,8 +52,8 @@ public class MainActivity extends BridgeActivity implements NfcAdapter.ReaderCal
     /**
      * Register plugins and apply the screen-privacy flag before the first
      * frame. FLAG_SECURE is read straight from SharedPreferences (owned by
-     * SecureScreenPlugin) so it is set before super.onCreate() renders —
-     * fail-secure on first launch (default ON until the user opts out).
+     * SecureScreenPlugin) so an opted-in user is protected before
+     * super.onCreate() renders. Default is OFF until the user opts in.
      */
     @Override
     public void onCreate(Bundle savedInstanceState) {

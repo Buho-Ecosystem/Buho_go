@@ -5,7 +5,7 @@
  * based on wallet type (spark or nwc).
  */
 
-import { SparkWalletProvider } from './SparkWalletProvider';
+import { BreezSparkWalletProvider } from './BreezSparkWalletProvider';
 import { NWCWalletProvider } from './NWCWalletProvider';
 import { LNBitsWalletProvider } from './LNBitsWalletProvider';
 import { ArkadeWalletProvider } from './ArkadeWalletProvider';
@@ -39,7 +39,7 @@ export function createWalletProvider(wallet) {
 
   switch (type) {
     case 'spark':
-      return new SparkWalletProvider(wallet.id, {
+      return new BreezSparkWalletProvider(wallet.id, {
         name: wallet.name,
         network: wallet.connectionData?.network || 'MAINNET',
         accountNumber: wallet.connectionData?.accountNumber,

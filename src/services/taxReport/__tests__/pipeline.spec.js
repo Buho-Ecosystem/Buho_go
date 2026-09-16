@@ -9,7 +9,7 @@
  * So every fixture below is copied from the provider that produces it:
  *
  *   LNbits  providers/LNBitsWalletProvider.js  getTransactions
- *   Spark   providers/SparkWalletProvider.js   getTransactions
+ *   Spark   providers/BreezSparkWalletProvider.js   getTransactions
  *   Arkade  providers/ArkadeWalletProvider.js  getTransactions
  *   NWC     providers/NWCWalletProvider.js     getTransactions
  *

@@ -1,7 +1,9 @@
 <template>
   <q-dialog
     v-model="open"
-    persistent
+    :persistent="isApplying"
+    :maximized="$q.screen.lt.sm"
+    :aria-label="$t('Restore identity')"
     :class="$q.dark.isActive ? 'dialog_dark' : 'dialog_light'"
     @hide="onDialogHidden"
   >
@@ -15,7 +17,7 @@
           class="restore-title"
           :class="$q.dark.isActive ? 'dialog_title_dark' : 'dialog_title_light'"
         >
-          {{ headerTitle }}
+          <BackupKeyring :size="26" /> {{ headerTitle }}
         </div>
         <q-btn
           flat
@@ -46,7 +48,7 @@
             class="restore-lede"
             :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'"
           >
-            {{ $t('Your wallets are safe and stay untouched. This replaces your current profile and sign-in keys with the ones in the recovery phrase you enter next.') }}
+            {{ $t('This replaces the identities on this phone with the ones from your backup.') }}
           </p>
           <div
             class="restore-bullets"
@@ -54,16 +56,13 @@
           >
             <div class="restore-bullet">
               <Icon icon="tabler:check" width="14" height="14" class="bullet-ok" />
-              <span>{{ $t('Your Spark, NWC and LNbits wallets stay untouched.') }}</span>
+              <span>{{ $t('Your wallets stay unchanged.') }}</span>
             </div>
             <div class="restore-bullet">
               <Icon icon="tabler:check" width="14" height="14" class="bullet-ok" />
-              <span>{{ $t('You can return to the previous profile by entering its recovery phrase again later.') }}</span>
+              <span>{{ $t('Keep your current identity’s recovery words if you want to return to it.') }}</span>
             </div>
-            <div class="restore-bullet">
-              <Icon icon="tabler:x" width="14" height="14" class="bullet-warn" />
-              <span>{{ $t('Sites you signed in to with the old profile, and your old name and picture, are forgotten on this device.') }}</span>
-            </div>
+
           </div>
         </q-card-section>
 
@@ -73,16 +72,18 @@
             no-caps
             class="restore-primary-btn"
             :class="$q.dark.isActive ? 'dialog_add_btn_dark' : 'dialog_add_btn_light'"
-            :label="$t('I understand, continue')"
-            @click="step = 'enter'"
+            :label="$t('Replace and restore identity')"
+            :loading="isApplying"
+            @click="apply"
           />
           <q-btn
             flat
             no-caps
             class="restore-secondary-btn"
             :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'"
-            :label="$t('Cancel')"
-            @click="close"
+            :label="$t('Back')"
+            :disable="isApplying"
+            @click="step = 'enter'"
           />
         </q-card-actions>
       </template>
@@ -136,6 +137,7 @@
               <input
                 v-model="inputWords[index]"
                 type="text"
+                :aria-label="$t('Word {number}', { number: index + 1 })"
                 autocomplete="off"
                 autocapitalize="none"
                 autocorrect="off"
@@ -185,10 +187,10 @@
             no-caps
             class="restore-primary-btn"
             :class="$q.dark.isActive ? 'dialog_add_btn_dark' : 'dialog_add_btn_light'"
-            :label="$t('Restore profile')"
+            :label="identity.bootstrapped ? $t('Continue') : $t('Restore identity')"
             :loading="isApplying"
             :disable="!canSubmit"
-            @click="apply"
+            @click="identity.bootstrapped ? step = 'warn' : apply()"
           />
           <q-btn
             flat
@@ -206,6 +208,7 @@
 </template>
 
 <script>
+import BackupKeyring from './BackupKeyring.vue';
 import { Icon } from '@iconify/vue';
 import { useIdentityStore } from '../stores/identity';
 import {
@@ -219,7 +222,7 @@ const SEED_WORD_COUNT = 12;
 export default {
   name: 'IdentityRestoreDialog',
 
-  components: { Icon },
+  components: { Icon, BackupKeyring },
 
   props: {
     modelValue: {
@@ -238,7 +241,7 @@ export default {
 
   data() {
     return {
-      step: 'warn', // 'warn' (if existing identity) | 'enter'
+      step: 'enter', // 'warn' (if existing identity) | 'enter'
       isApplying: false,
       errorText: '',
     };
@@ -289,7 +292,7 @@ export default {
       if (isOpen) {
         this.resetState();
         // Skip the warning step if there's no existing identity to lose.
-        this.step = this.identity.bootstrapped ? 'warn' : 'enter';
+        this.step = 'enter';
       }
     },
   },
@@ -313,6 +316,7 @@ export default {
     },
 
     async apply() {
+      if (this.isApplying) return;
       this.errorText = '';
       const phrase = this.normalisedMnemonic;
 
@@ -334,12 +338,13 @@ export default {
         this.close();
       } catch (err) {
         console.error('[IdentityRestore] importMnemonic failed', err);
-        this.errorText = err?.message || this.$t('Could not restore identity.');
+        this.errorText = this.$t('Identity could not be restored. Check your words and try again.');
+        this.step = 'enter';
       } finally {
         this.isApplying = false;
         // Best-effort wipe so the visible inputs (and the in-memory
         // ref the composable holds) don't outlive the apply call.
-        this.resetMnemonic();
+        if (!this.errorText) this.resetMnemonic();
       }
     },
 
@@ -681,5 +686,10 @@ export default {
   .restore-body {
     padding: 8px 16px 18px;
   }
+}
+
+.restore-title { display: flex; align-items: center; gap: 8px; }
+@media (max-width: 599px) {
+  .restore-dialog { max-width: 100%; height: 100dvh; max-height: 100dvh; border-radius: 0; overflow-y: auto; padding-top: var(--safe-top, 0px); padding-bottom: var(--safe-bottom, 0px); }
 }
 </style>

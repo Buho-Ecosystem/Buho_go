@@ -3,11 +3,11 @@
     <IdentityNav :back-to="$t(backNav.key)" :to="backNav.to" />
 
     <div class="id-sub-body">
-      <h1 class="id-large-title">{{ $t('Your accounts') }}</h1>
+      <h1 class="id-large-title">{{ $t('Identities') }}</h1>
 
       <button type="button" class="btn-primary add-account" :disabled="busy || bucket.isSweeping" @click="step = 'create'">
         <Icon icon="tabler:plus" width="18" height="18" />
-        <span>{{ $t('Add an account') }}</span>
+        <span>{{ $t('New identity') }}</span>
       </button>
 
       <!--
@@ -23,42 +23,71 @@
           <Icon v-else icon="tabler:user" width="25" height="25" />
         </span>
         <span class="current-account-copy">
-          <span class="current-account-kicker">{{ $t('This account') }}</span>
+          <span class="current-account-kicker">{{ $t('This identity') }}</span>
           <strong>{{ currentAccountName }}</strong>
           <span v-if="currentUsername">@{{ currentUsername }}</span>
         </span>
         <span class="current-account-chip">{{ $t('In use') }}</span>
       </section>
+      <button type="button" class="account-private-key" :disabled="busy || !activeIdentity" @click="openPrivateKey(activeIdentity)">
+        <Icon icon="tabler:lock" width="16" height="16" />{{ $t('Private key') }}
+      </button>
 
-      <IdentityGroup v-if="otherIdentities.length" :title="$t('Switch account')">
-        <IdentityRow
-          v-for="row in otherIdentities"
-          :key="row.account"
-          icon=""
-          tone="neutral"
-          :label="identityName(row)"
-          :caption="row.username ? '@' + row.username : $t('Separate profile')"
-          :interactive="!busy && !bucket.isSweeping"
-          @click="onSwitch(row)"
-        >
-          <template #leading>
-            <span class="account-row-avatar">
-              <img v-if="row.picture" :src="row.picture" alt="" />
-              <Icon v-else icon="tabler:user" width="19" height="19" />
-            </span>
-          </template>
-        </IdentityRow>
+      <IdentityGroup
+        v-if="otherIdentities.length"
+        :title="$t('Switch identity')"
+        :footer="$t('Tap an identity to switch to it. The same 12 words back up all of them.')"
+      >
+        <div v-for="row in otherIdentities" :key="row.account" class="account-entry">
+          <IdentityRow
+            icon=""
+            tone="neutral"
+            :label="identityName(row)"
+            :caption="row.username ? '@' + row.username : $t('Separate profile')"
+            :interactive="!busy && !bucket.isSweeping"
+            @click="onSwitch(row)"
+          >
+            <template #leading>
+              <span class="account-row-avatar">
+                <img v-if="row.picture" :src="row.picture" alt="" />
+                <Icon v-else icon="tabler:user" width="19" height="19" />
+              </span>
+            </template>
+          </IdentityRow>
+          <button type="button" class="account-private-key" :disabled="busy" :aria-label="$t('Private key for {name}', { name: identityName(row) })" @click="openPrivateKey(row)">
+            <Icon icon="tabler:lock" width="16" height="16" />{{ $t('Private key') }}
+          </button>
+        </div>
       </IdentityGroup>
 
-      <p v-else class="accounts-empty">{{ $t('You have one account on this phone.') }}</p>
+      <p v-else class="accounts-empty">{{ $t('You have one identity on this phone.') }}</p>
+
+      <!-- The erase entry lives with the identities it acts on. On a page
+           that lists several, the caption names the one "this" means. -->
+      <IdentityGroup
+        class="erase-group"
+        :footer="$t('Erasing never touches your wallets or your Bitcoin. Your money is separate from your card.')"
+      >
+        <IdentityRow
+          icon="tabler:trash"
+          tone="danger"
+          :label="$t('Erase this identity')"
+          :caption="$t('Removes {name} from this phone', { name: currentAccountName })"
+          :chevron="false"
+          @click="$router.push('/identity/erase')"
+        />
+      </IdentityGroup>
 
     </div>
+
+    <IdentityPrivateKeySheet v-model="showPrivateKey" :account="keyAccount" :name="keyName" :npub="keyNpub" />
 
     <!-- Creating an identity is a small choice, not an alert. A bottom sheet
          keeps it in the same spatial language as the rest of the profile UI,
          and a dedicated progress stage avoids a spinner jumping into a row. -->
     <q-dialog
       v-model="showAsk"
+      @hide="onAskHidden"
       position="bottom"
       :persistent="busy"
       :class="$q.dark.isActive ? 'dialog_dark' : 'dialog_light'"
@@ -69,7 +98,7 @@
         <div class="account-sheet-header">
           <div>
             <span class="account-sheet-kicker">
-              {{ step === 'create' ? $t('New account') : $t('Account switch') }}
+              {{ step === 'create' ? $t('New identity') : $t('Identity switch') }}
             </span>
             <h2 class="account-sheet-title">{{ askTitle }}</h2>
           </div>
@@ -130,7 +159,7 @@
 
             <div class="account-recovery-note">
               <Icon icon="tabler:shield-check" width="17" height="17" />
-              <span>{{ $t('The same 12 words recover this account too.') }}</span>
+              <span>{{ $t('The same 12 words recover this identity too.') }}</span>
             </div>
           </div>
 
@@ -152,12 +181,12 @@
         </div>
       </q-card>
     </q-dialog>
-      <q-dialog v-model="showProfileSetup" position="bottom" :class="$q.dark.isActive ? 'dialog_dark' : 'dialog_light'">
+      <q-dialog v-model="showProfileSetup" @hide="onProfileSetupHidden" position="bottom" :class="$q.dark.isActive ? 'dialog_dark' : 'dialog_light'">
         <q-card class="profile-setup-sheet" :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'">
           <div class="sheet-handle" aria-hidden="true"><span></span></div>
           <div class="profile-setup-head">
             <div>
-              <span class="account-sheet-kicker">{{ $t('New account') }}</span>
+              <span class="account-sheet-kicker">{{ $t('New identity') }}</span>
               <h2>{{ $t('Make it yours') }}</h2>
             </div>
             <q-btn flat round dense :aria-label="$t('Close')" @click="showProfileSetup = false">
@@ -165,7 +194,7 @@
             </q-btn>
           </div>
           <div class="profile-setup-body">
-            <button type="button" class="setup-avatar" @click="showProfilePicker = true">
+            <button type="button" class="setup-avatar" @click="openProfilePicker">
               <img v-if="profile.picture" :src="profile.picture" alt="" />
               <Icon v-else icon="tabler:camera-plus" width="25" height="25" />
               <span>{{ profile.picture ? $t('Change photo') : $t('Add a photo') }}</span>
@@ -178,7 +207,7 @@
           </div>
         </q-card>
       </q-dialog>
-      <ProfileAvatarPickerSheet v-model="showProfilePicker" />
+      <ProfileAvatarPickerSheet v-model="showProfilePicker" @hide="onProfilePickerHidden" />
 
       <SettingsHubNav />
 
@@ -186,6 +215,7 @@
 </template>
 
 <script>
+import IdentityPrivateKeySheet from '../../components/identity/IdentityPrivateKeySheet.vue';
 import IdentityNav from '../../components/identity/IdentityNav.vue';
 import { Icon } from '@iconify/vue';
 import SettingsHubNav from '../../components/settings/SettingsHubNav.vue';
@@ -202,7 +232,7 @@ import { fetchProfiles, parseProfileContent } from '../../utils/nostrFetch.js';
 export default {
   name: 'IdentityListPage',
 
-  components: { SettingsHubNav, Icon, IdentityNav, IdentityGroup, IdentityRow, ProfileAvatarPickerSheet },
+  components: { IdentityPrivateKeySheet, SettingsHubNav, Icon, IdentityNav, IdentityGroup, IdentityRow, ProfileAvatarPickerSheet },
 
   setup() {
     return {
@@ -216,12 +246,18 @@ export default {
   data() {
     return {
       identities: [],
+      showPrivateKey: false,
+      keyAccount: null,
+      keyName: '',
+      keyNpub: '',
       step: null, // null | 'switch' | 'create'
       pending: null,
       busy: false,
       createChoice: null,
       avatarBroken: false,
       showProfileSetup: false,
+      pendingProfileSetup: false,
+      pendingProfilePicker: false,
       showProfilePicker: false,
       profileName: '',
     };
@@ -238,8 +274,8 @@ export default {
 
     contactCopyText() {
       return this.contactCount === 1
-        ? this.$t('Copy one contact into the new account.')
-        : this.$t('Copy {n} contacts into the new account.', { n: this.contactCount });
+        ? this.$t('Copy one contact into the new identity.')
+        : this.$t('Copy {n} contacts into the new identity.', { n: this.contactCount });
     },
 
     activeIdentity() {
@@ -256,7 +292,7 @@ export default {
 
     currentAccountName() {
       return this.profile.displayName || this.profile.name ||
-        (this.activeIdentity ? this.identityName(this.activeIdentity) : this.$t('This account'));
+        (this.activeIdentity ? this.identityName(this.activeIdentity) : this.$t('This identity'));
     },
 
     currentPicture() {
@@ -274,8 +310,8 @@ export default {
 
     askTitle() {
       return this.step === 'create'
-        ? this.$t('Create another account')
-        : this.$t('Switch account?');
+        ? this.$t('Create another identity')
+        : this.$t('Switch identity?');
     },
 
     askBody() {
@@ -286,8 +322,8 @@ export default {
 
     busyTitle() {
       return this.step === 'create'
-        ? this.$t('Creating your account…')
-        : this.$t('Switching accounts…');
+        ? this.$t('Creating your identity…')
+        : this.$t('Switching identities…');
     },
 
     busyBody() {
@@ -314,6 +350,22 @@ export default {
   },
 
   methods: {
+    // Sheet handoffs wait for dismissal; only one task owns focus at a time.
+    onAskHidden() {
+      if (this.pendingProfileSetup) { this.pendingProfileSetup = false; this.showProfileSetup = true; }
+    },
+    openProfilePicker() { this.pendingProfilePicker = true; this.showProfileSetup = false; },
+    onProfileSetupHidden() {
+      if (this.pendingProfilePicker) { this.pendingProfilePicker = false; this.showProfilePicker = true; }
+    },
+    onProfilePickerHidden() { this.showProfileSetup = true; },
+    openPrivateKey(row) {
+      if (!row || this.busy) return;
+      this.keyAccount = row.account;
+      this.keyName = row.active ? this.currentAccountName : this.identityName(row);
+      this.keyNpub = row.npub;
+      this.showPrivateKey = true;
+    },
     async refresh() {
       try {
         const rows = await this.identity.listNostrIdentities();
@@ -366,7 +418,7 @@ export default {
       if (row.displayName) return row.displayName;
       if (row.label) return row.label;
       if (row.username) return `@${row.username}`;
-      return this.$t('Account {n}', { n: row.account + 1 });
+      return this.$t('Identity {n}', { n: row.account + 1 });
     },
 
     onSwitch(row) {
@@ -421,21 +473,21 @@ export default {
           return;
         }
         if (!result.ok) {
-          this._notifyFailed(result, this.$t("Couldn't switch account"));
+          this._notifyFailed(result, this.$t("Couldn't switch identity"));
           await this.refresh();
           return;
         }
 
         await this._refreshProfileForNewIdentity();
         await this.refresh();
-        this.$q.notify({ type: 'positive', message: this.$t('Switched account'), timeout: 3000 });
+        this.$q.notify({ type: 'positive', message: this.$t('Switched identity'), timeout: 3000 });
         this.step = null;
         this.pending = null;
       } catch (err) {
         console.warn('[identity-list] switch failed:', err);
         this.$q.notify({
           type: 'negative',
-          message: this.$t("Couldn't switch account"),
+          message: this.$t("Couldn't switch identity"),
           caption: this.$t('Check your connection and try again.'),
           timeout: 4000,
         });
@@ -463,21 +515,21 @@ export default {
           return;
         }
         if (!result.ok) {
-          this._notifyFailed(result, this.$t("Couldn't create the account"));
+          this._notifyFailed(result, this.$t("Couldn't create the identity"));
           await this.refresh();
           return;
         }
 
         await this._refreshProfileForNewIdentity();
         await this.refresh();
+        this.pendingProfileSetup = true;
         this.step = null;
         this.profileName = '';
-        this.showProfileSetup = true;
       } catch (err) {
         console.warn('[identity-list] create failed:', err);
         this.$q.notify({
           type: 'negative',
-          message: this.$t("Couldn't create the account"),
+          message: this.$t("Couldn't create the identity"),
           caption: this.$t('Check your connection and try again.'),
           timeout: 4000,
         });
@@ -490,13 +542,22 @@ export default {
       this.profile.setField('displayName', this.profileName.trim());
       if (this.profile.isDirty) await this.profile.publish().catch(() => {});
       this.showProfileSetup = false;
-      this.$q.notify({ type: 'positive', message: this.$t('New account created'), timeout: 2200 });
+      this.$q.notify({ type: 'positive', message: this.$t('New identity created'), timeout: 2200 });
     },
   },
 };
 </script>
 
 <style scoped>
+.account-entry + .account-entry { border-top: 1px solid var(--border-card); }
+.account-private-key { display: flex; align-items: center; gap: 8px; min-height: 44px; padding: 10px 16px; border: 0; border-radius: 12px; background: transparent; color: var(--text-secondary); font: inherit; font-size: 13px; cursor: pointer; }
+.account-private-key:focus-visible { outline: 2px solid var(--brand-accent-text); outline-offset: -2px; }
+.account-private-key:disabled { opacity: .5; cursor: default; }
+/* Destructive territory sits apart from the switching it must never be
+   mistaken for. */
+.erase-group {
+  margin-top: 22px;
+}
 
 .add-account { margin-top: 0 !important; margin-bottom: 4px; }
 

@@ -613,7 +613,7 @@ export class LNBitsWalletProvider extends WalletProvider {
     // its own. (The extension also supports `success_url` for the `url`
     // variant; left unwired until there's a UI for it.) Spark and NWC addresses
     // are served by their own infrastructure and cannot carry a successAction
-    // at all — see SparkWalletProvider.getSparkAddress / NWCWalletProvider.getInfo.
+    // at all — see BreezSparkWalletProvider.getSparkAddress / NWCWalletProvider.getInfo.
     const trimmedText = (successText || '').trim();
     if (trimmedText) payload.success_text = trimmedText.slice(0, SUCCESS_ACTION_MAX_CHARS);
 

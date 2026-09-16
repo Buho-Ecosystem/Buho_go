@@ -10,11 +10,7 @@
         <div class="banner-body">
           <div class="banner-left">
             <div class="logo-block">
-              <img
-                src="/Buho_logo__Sharp_grey.jpg"
-                alt="Buho"
-                class="logo-image"
-              />
+              <BackupKeyring :size="40" />
             </div>
 
             <div class="banner-text">
@@ -41,7 +37,7 @@
               class="dismiss-btn"
               :class="$q.dark.isActive ? 'dismiss-dark' : 'dismiss-light'"
               @click="$emit('dismiss')"
-              aria-label="Dismiss"
+              :aria-label="$t('Dismiss')"
             >
               <Icon icon="tabler:x" width="14" height="14" />
             </button>
@@ -53,7 +49,10 @@
 </template>
 
 <script>
+import BackupKeyring from './BackupKeyring.vue';
+
 export default {
+  components: { BackupKeyring },
   name: 'BackupBanner',
   props: {
     visible: {
@@ -238,8 +237,8 @@ export default {
 
 /* Dismiss button */
 .dismiss-btn {
-  width: 30px;
-  height: 30px;
+  width: 44px;
+  height: 44px;
   border-radius: 8px;
   border: none;
   display: flex;

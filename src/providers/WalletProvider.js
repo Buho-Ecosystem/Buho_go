@@ -11,7 +11,7 @@
 import {
   isSparkAddress as isSparkAddressPredicate,
   isArkadeAddress as isArkadeAddressPredicate,
-} from '../utils/addressUtils';
+} from '../utils/addressUtils.js';
 
 export class WalletProvider {
   constructor(walletId, walletData) {

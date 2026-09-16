@@ -14,7 +14,7 @@
 | State | Pinia |
 | Build | Vite |
 | Mobile | Capacitor (Android shipped, iOS planned) |
-| Lightning | `@buildonspark/spark-sdk` · `@getalby/sdk` · LNBits REST |
+| Lightning | `@breeztech/breez-sdk-spark` · `@getalby/sdk` · LNBits REST |
 | Nostr | [nostr-core](https://nostr-core.netlify.app/) for all Nostr work (identity, NIP-05, pay-to-Nostr) |
 
 ## Data flow
@@ -75,7 +75,7 @@ class WalletProvider {
 ```
 
 <details>
-<summary><b>SparkWalletProvider</b></summary>
+<summary><b>BreezSparkWalletProvider</b></summary>
 
 ```js
 await provider.initializeWithMnemonic(mnemonic)         // after device-key decrypt
@@ -83,7 +83,7 @@ await provider.transferToSparkAddress('spark1…', 10000) // zero fee
 await provider.payLightningAddress('a@b.com', 5000)
 ```
 
-Each seed yields **Business** (account 1) and **Personal** (account 0). Derivation: `m/8797555'/account'/keyType'`.
+Runs on the Breez SDK Spark implementation. Each seed yields **Business** (account 1) and **Personal** (account 2; legacy restores map account 0). Derivation: `m/8797555'/account'/keyType'`.
 
 </details>
 
@@ -189,15 +189,15 @@ The send flow is intentionally **one screen**: `SendModal.vue` raises `onPayment
 ## L1 Bitcoin (Spark)
 
 ```
-On-chain BTC → mempool.space (monitor) → Spark SDK (claim/withdraw) → Lightning-spendable
+On-chain BTC → mempool.space (monitor) → Breez SDK (claim/withdraw) → Lightning-spendable
 ```
 
-**Constants** (in `SparkWalletProvider.js`):
+**Constants** (in `BreezSparkWalletProvider.js`):
 
 | Constant | Value |
 | --- | --- |
 | `REQUIRED_CONFIRMATIONS` | 3 |
-| `MIN_DEPOSIT_SATS` | 500 |
+
 | `DEFAULT_MEMPOOL_API` | `https://mempool.space/api` |
 | `TYPICAL_TX_VBYTES` | 140 |
 
@@ -435,7 +435,7 @@ Capacitor config: `src-capacitor/capacitor.config.json`. Intent filters for `lig
 
 ## Resources
 
-[Vue 3](https://vuejs.org/) · [Quasar](https://quasar.dev/) · [Pinia](https://pinia.vuejs.org/) · [Spark SDK](https://github.com/buildonspark/spark-sdk) · [Alby SDK](https://github.com/getAlby/js-sdk) · [nostr-core](https://nostr-core.netlify.app/) · [Arkade docs](https://docs.arkadeos.com/) · [NIP-47](https://github.com/nostr-protocol/nips/blob/master/47.md) · [LNBits API](https://demo.lnbits.com/docs) · [Capacitor](https://capacitorjs.com/docs)
+[Vue 3](https://vuejs.org/) · [Quasar](https://quasar.dev/) · [Pinia](https://pinia.vuejs.org/) · [Breez SDK Spark](https://sdk-doc-spark.breez.technology/) · [Alby SDK](https://github.com/getAlby/js-sdk) · [nostr-core](https://nostr-core.netlify.app/) · [Arkade docs](https://docs.arkadeos.com/) · [NIP-47](https://github.com/nostr-protocol/nips/blob/master/47.md) · [LNBits API](https://demo.lnbits.com/docs) · [Capacitor](https://capacitorjs.com/docs)
 
 > Working on the Arkade backend? See **[ARK_ME.md](ARK_ME.md)** for the provider, key derivation, swaps, liveness loop, and endpoints in depth.
 </content>

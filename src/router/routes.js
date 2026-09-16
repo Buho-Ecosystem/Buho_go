@@ -33,6 +33,13 @@ const shopNativeOnly = (to, from, next) => {
   next({ path: '/spend', query: { getApp: 'shop' } })
 }
 
+// `/settings?section=backup` was the backup entry for years and is still
+// what older links name. Backups now live on `/security`.
+function legacyBackupSection(to, from, next) {
+  if (['backup', 'backups'].includes(to.query.section)) return next('/security')
+  next()
+}
+
 const routes = [
   {
     path: '/',
@@ -55,9 +62,13 @@ const routes = [
       // profile icon opens `/identity`, Map's back-fallback opens `/spend`.
       // Nothing lands on the hub without naming a tab, so the Settings route
       // needs no default-tab redirect - it always shows the Settings tab,
-      // with or without a query (`?section=backup`, `?section=wallets`,
-      // `?getApp=learn` all still land here as before).
-      { path: '/settings', component: () => import('pages/Settings.vue') },
+      // with or without a query (`?section=wallets`, `?getApp=learn`).
+      // Backups left Settings for Security; the guard sends old links on.
+      { path: '/settings', component: () => import('pages/Settings.vue'), beforeEnter: legacyBackupSection },
+      // Security: backups and restoration. Reached from the home menu at any
+      // time and from the pending-backup keyring, and the one route the
+      // required-update gate yields to (see UpdateExperience.vue).
+      { path: '/security', component: () => import('pages/SecurityPage.vue') },
       { path: '/about', component: () => import('pages/AboutPage.vue') },
       { path: '/spend', component: () => import('pages/SpendPage.vue') },
       // Public profile page. The one route in the app meant for people who
@@ -69,8 +80,16 @@ const routes = [
       // Identity. The tab itself is the card. Larger configuration tasks use
       // pushed screens; the quick Get paid action stays in a bottom sheet.
       { path: '/identity', component: () => import('pages/identity/IdentityHomePage.vue') },
-      { path: '/identity/about', component: () => import('pages/identity/IdentityAboutPage.vue') },
-      { path: '/identity/manage', component: () => import('pages/identity/IdentityManagePage.vue') },
+      // The flat tab has no Manage layer and no About page; old deep links
+      // land on the card itself, query preserved like the /profile redirect.
+      {
+        path: '/identity/about',
+        redirect: (to) => ({ path: '/identity', query: to.query }),
+      },
+      {
+        path: '/identity/manage',
+        redirect: (to) => ({ path: '/identity', query: to.query }),
+      },
       { path: '/identity/profile', component: () => import('pages/identity/IdentityProfilePage.vue') },
       { path: '/identity/username', component: () => import('pages/identity/IdentityUsernamePage.vue') },
       // Keep old bookmarks/deep links working while presenting Get paid in
@@ -91,10 +110,11 @@ const routes = [
           query: { ...to.query, sheet: 'sign-in' },
         }),
       },
-      { path: '/identity/words', component: () => import('pages/identity/IdentityWordsPage.vue') },
+      // The identity backup page merged into Security.
+      { path: '/identity/words', redirect: '/security' },
       { path: '/identity/identities', component: () => import('pages/identity/IdentityListPage.vue') },
-      { path: '/identity/advanced', component: () => import('pages/identity/IdentityAdvancedPage.vue') },
-      { path: '/identity/visible', component: () => import('pages/identity/IdentityVisiblePage.vue') },
+      // Legacy Keys links now land beside the identity each private key belongs to.
+      { path: '/identity/advanced', redirect: '/identity/identities' },
       { path: '/identity/erase', component: () => import('pages/identity/IdentityErasePage.vue') },
       // Legacy alias - anything that still links to /profile (e.g. an
       // older deep link) lands on the same page under its new tab name.
@@ -105,6 +125,8 @@ const routes = [
       { path: '/transactions', component: () => import('pages/TransactionHistory.vue') },
       { path: '/transaction/:id', component: () => import('pages/TransactionDetails.vue') },
       { path: '/address-book', component: () => import('pages/AddressBook.vue') },
+      // A contact's own page: identity, pay, and the payments between you.
+      { path: '/address-book/:id', component: () => import('pages/ContactProfilePage.vue') },
       // Bitcoin merchant map. Lazy-loaded so maplibre-gl (~200KB gzipped)
       // never lands in the initial bundle. `?place=<id>` deep-links a pin.
       { path: '/map', component: () => import('pages/MapPage.vue') },
@@ -113,7 +135,9 @@ const routes = [
       { path: '/shop', component: () => import('pages/ShopPage.vue'), beforeEnter: shopNativeOnly },
       // Online shops directory (BitcoinListings + BTCPay + Nostr). Lazy-loaded
       // so the adapters + Nostr code never land in the initial bundle.
-      { path: '/online-shops', component: () => import('pages/OnlineShopsPage.vue') },
+      // Retired with the Spend online row: the merchant directory was too
+      // technical for this tab. Page and service stay in the repo unrouted.
+      // { path: '/online-shops', component: () => import('pages/OnlineShopsPage.vue') },
       { path: '/kiosk', name: 'kiosk', component: () => import('pages/KioskDashboard.vue') },
       { path: '/learn', component: () => import('pages/EarnMap.vue'), beforeEnter: earnNativeOnly },
       { path: '/learn/summary', component: () => import('pages/EarnSummary.vue'), beforeEnter: earnNativeOnly },
