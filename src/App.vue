@@ -25,7 +25,7 @@
 </template>
 
 <script>
-import { defineComponent, ref, onMounted, onUnmounted } from 'vue'
+import { defineComponent, ref, provide, onMounted, onUnmounted } from 'vue'
 import { Capacitor } from '@capacitor/core'
 import { useQuasar } from 'quasar'
 import { useWalletStore } from 'src/stores/wallet'
@@ -50,6 +50,8 @@ export default defineComponent({
     useAddressBookSync()
 
     const locked = ref(false)
+    // Screens that read the clipboard on foreground wait until the lock is gone.
+    provide('appLocked', locked)
     const isDark = ref($q.dark.isActive)
     let stateListener = null
     let isPrompting = false

@@ -82,6 +82,22 @@ try {
  await page.goto('http://127.0.0.1:9000/#/wallet');
  await page.locator('.backup-shortcut').waitFor({timeout:60000});
  assert.equal(await page.locator('.backup-banner-wrapper').count(),0);
+ // Clipboard offer strip: native reads cannot run in the browser, so the strip is offered text directly.
+ await page.evaluate(()=>{
+  const find=(vnode)=>{ if(!vnode) return null; if(vnode.component){ if(vnode.component.type.name==='ClipboardSuggestion') return vnode.component; return find(vnode.component.subTree); } if(Array.isArray(vnode.children)){ for(const c of vnode.children){ const hit=find(c); if(hit) return hit; } } return null; };
+  let owner=document.querySelector('.q-page').__vueParentComponent; while(owner && owner.type.name!=='WalletPage') owner=owner.parent;
+  const strip=find(owner.subTree); if(!strip) throw new Error('ClipboardSuggestion missing'); strip.proxy.offer('alice@example.com');
+ });
+ await page.locator('.clipboard-strip').waitFor();
+ assert.equal(await page.locator('.clipboard-strip-value').innerText(),'alice@example.com');
+ await shot('00-clipboard-offer-light');
+ await page.getByRole('button',{name:'Use',exact:true}).click();
+ await page.locator('.clipboard-strip').waitFor({state:'detached'});
+ await page.locator('.send-sheet-dialog textarea').waitFor();
+ assert.equal(await page.locator('.send-sheet-dialog textarea').inputValue(),'alice@example.com','Use lands the text in the Send field');
+ await shot('00-clipboard-offer-send');
+ await page.keyboard.press('Escape');
+ await page.locator('.send-sheet-dialog').waitFor({state:'detached'});
  await route('/identity');
  assert.equal(await page.locator('.id-card-status').count(),0,'identity card has no backup reminder before backup');
  assert.equal(await page.locator('.id-card-stage').getByRole('button',{name:/backup/i}).count(),0);
