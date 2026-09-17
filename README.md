@@ -1,7 +1,5 @@
 <div align="center">
 
-<img src="public/buho_logo.png" alt="BuhoGO" width="110">
-
 # BuhoGO
 
 **The friendly Bitcoin wallet. Hold your own keys, pay anyone, spend anywhere.**

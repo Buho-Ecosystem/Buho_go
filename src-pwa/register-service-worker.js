@@ -29,9 +29,11 @@ register(process.env.SERVICE_WORKER_FILE, {
   },
 
   updated (/* registration */) {
-    // GenerateSW activates the new worker immediately, but the current page
-    // still runs its existing JavaScript until reload. Hand readiness to the
-    // shared in-app update experience instead of forcing a surprise refresh.
+    // The worker does not skipWaiting() on install, so at this point the new
+    // version is parked in the waiting state and the page still runs the old
+    // build undisturbed. Hand readiness to the shared in-app update
+    // experience; applying it goes through reloadPwa(), which promotes the
+    // waiting worker and reloads once it has taken control.
     window[PWA_UPDATE_FLAG] = true
     window.dispatchEvent(new CustomEvent(PWA_UPDATE_EVENT))
   },

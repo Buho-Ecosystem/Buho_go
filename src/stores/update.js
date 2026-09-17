@@ -11,8 +11,8 @@ import {
   isKioskLocked,
   NativeUpdate,
   openUpdateDestination,
-  reloadPwa,
 } from '../services/updateRuntime'
+import { reloadPwa } from '../services/pwaReload'
 import { PWA_UPDATE_FLAG } from '../utils/updateEvents'
 
 const STORAGE_KEY = 'buhoGO_update_state_v1'
@@ -236,7 +236,9 @@ export const useUpdateStore = defineStore('appUpdate', {
       try {
         if (this.release.channel === 'web') {
           if (!this.pwaReloadReady) throw new Error('The new web version is still preparing')
-          reloadPwa()
+          // Resolves once the waiting worker has taken over (or a fallback
+          // reload fired), so the button stays busy for the whole switch.
+          await reloadPwa()
           return true
         }
 
