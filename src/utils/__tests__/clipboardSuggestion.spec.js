@@ -4,11 +4,10 @@ import {
   abbreviateDestination,
   classifyDestination,
   fingerprint,
-  hasBeenOffered,
+  createClipboardOfferMemory,
   isSuggestibleDestination,
   normalizeDestination,
   offerLabelKey,
-  rememberOffered,
 } from '../clipboardSuggestion.js';
 
 const npub = 'npub1az708q3kd9zy6z6f44zav5ygvdwelkzspf6mtusttx47lft2z38sghk0w7';
@@ -42,30 +41,52 @@ assert.equal(offerLabelKey('LNURL1DP68GURN8GHJ7MRWW4EXCTNXD9SHG6NPVCHXXMMD9AKXUA
 assert.equal(offerLabelKey(`nostr:${npub}`, 'spark'), 'Copied Nostr profile');
 assert.equal(offerLabelKey('+254712345678', 'spark'), 'Copied phone number');
 
-// The offer memory outlives the component: it tracks the last text only,
-// and stores a fingerprint rather than the clipboard's contents.
+// Only fingerprints reach storage; session memory survives storage failure.
 const store = new Map();
 const storage = {
-  getItem: (k) => (store.has(k) ? store.get(k) : null),
-  setItem: (k, v) => store.set(k, v),
+  getItem: (key) => store.get(key) ?? null,
+  setItem: (key, value) => store.set(key, value),
 };
-assert.equal(hasBeenOffered('alice@example.com', storage), false);
-rememberOffered('alice@example.com', storage);
-assert.equal(hasBeenOffered('alice@example.com', storage), true);
-assert.equal(hasBeenOffered('bob@example.com', storage), false);
-rememberOffered('bob@example.com', storage);
-assert.equal(hasBeenOffered('alice@example.com', storage), false);
-assert.equal(hasBeenOffered('bob@example.com', storage), true);
-assert.ok(![...store.values()].some((v) => v.includes('example.com')));
-assert.equal(fingerprint('alice@example.com'), fingerprint('alice@example.com'));
-assert.notEqual(fingerprint('alice@example.com'), fingerprint('alice@example.co'));
-assert.match(fingerprint(''), /^[0-9a-f]{8}$/);
+const memory = createClipboardOfferMemory(storage);
+assert.equal(memory.hasBeenOffered('alice@example.com'), false);
+memory.rememberOffered('alice@example.com');
+assert.equal(memory.hasBeenOffered('alice@example.com'), true);
+assert.equal(createClipboardOfferMemory(storage).hasBeenOffered('alice@example.com'), true);
+assert.equal(memory.hasBeenOffered('bob@example.com'), false);
+assert.ok(![...store.values()].some((value) => value.includes('example.com')));
+assert.match(fingerprint('alice@example.com'), /^[0-9a-f]{8}$/);
 
-// No storage at all: never "seen", never throws.
-assert.equal(hasBeenOffered('alice@example.com', null), false);
-rememberOffered('alice@example.com', null);
-const broken = { getItem() { throw new Error('nope'); }, setItem() { throw new Error('nope'); } };
-assert.equal(hasBeenOffered('alice@example.com', broken), false);
-rememberOffered('alice@example.com', broken);
+// Observing a different clipboard is separate from displaying a payable offer.
+for (const changed of ['ordinary copied text', '', 'bob@example.com']) {
+  memory.rememberOffered('alice@example.com');
+  memory.observe(changed);
+  assert.equal(memory.hasBeenOffered('alice@example.com'), false);
+  assert.equal(createClipboardOfferMemory(storage).hasBeenOffered('alice@example.com'), false);
+}
+memory.rememberOffered('alice@example.com');
+memory.observe('  alice@example.com  ');
+memory.observe(null); // Denied / failed reads are not clipboard changes.
+assert.equal(memory.hasBeenOffered('alice@example.com'), true);
+
+for (const unavailable of [null, {
+  getItem() { throw new Error('unavailable'); },
+  setItem() { throw new Error('unavailable'); },
+}]) {
+  const fallback = createClipboardOfferMemory(unavailable);
+  fallback.rememberOffered('alice@example.com');
+  assert.equal(fallback.hasBeenOffered('alice@example.com'), true);
+  fallback.observe('ordinary copied text');
+  assert.equal(fallback.hasBeenOffered('alice@example.com'), false);
+}
+
+// A failed write must not allow an older on-disk value to overwrite memory.
+const failingWrites = createClipboardOfferMemory({
+  getItem: storage.getItem,
+  setItem() { throw new Error('quota'); },
+});
+failingWrites.observe('different text');
+assert.equal(failingWrites.hasBeenOffered('alice@example.com'), false);
+failingWrites.rememberOffered('bob@example.com');
+assert.equal(failingWrites.hasBeenOffered('bob@example.com'), true);
 
 console.log('clipboardSuggestion: all assertions passed');

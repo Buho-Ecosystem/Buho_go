@@ -30,6 +30,26 @@ export async function writeClipboardCrossPlatform(text) {
 }
 
 /**
+ * Passive Home suggestions are Android-only. iOS reads can prompt for paste
+ * permission, so there the user chooses Paste in Send instead. Unlike the
+ * explicit-paste helper below, null preserves offer memory on read failure;
+ * an empty string confirms that the clipboard has changed to empty.
+ */
+export async function readClipboardForSuggestion() {
+  const { Capacitor } = await import('@capacitor/core');
+  if (Capacitor.getPlatform() !== 'android') return null;
+  try {
+    const { Clipboard } = await import('@capacitor/clipboard');
+    const { value } = await Clipboard.read();
+    return typeof value === 'string' ? value.trim() : null;
+  } catch (error) {
+    // Capacitor's Android plugin rejects an empty clipboard with this message.
+    if (error?.message === 'There is no data on the clipboard') return '';
+    return null;
+  }
+}
+
+/**
  * Read text from the platform clipboard.
  *
  * Tries, in order: the native Capacitor plugin (the only reliable road on

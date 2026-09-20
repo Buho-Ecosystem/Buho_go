@@ -95,8 +95,8 @@
       </q-btn>
     </q-toolbar>
 
-    <!-- A payable destination copied elsewhere is offered once per return
-         to the app; Use hands it to the Send sheet as a paste would. -->
+    <!-- Android offers a copied destination once until the clipboard changes.
+         Send opens the same confirmation flow as an explicit paste. -->
     <ClipboardSuggestion @use="useClipboardDestination" />
 
     <!-- Backup Reminder Banner -->

@@ -769,9 +769,9 @@ export default {
      * Clipboard peek on open — web only. Native platforms surface a
      * system "app pasted from your clipboard" notice on every
      * programmatic read (Android 12+ toast, iOS paste banner/prompt);
-     * there the home screen offers the clipboard once per return to
-     * the app instead (ClipboardSuggestion), and the explicit Paste
-     * button remains this sheet's only clipboard access.
+     * Android's home screen offers new clipboard contents on app return
+     * (ClipboardSuggestion). iOS waits for explicit Paste, avoiding an
+     * unsolicited permission prompt. Paste is this sheet's only native read.
      *
      * The chip appears only for a string this wallet could actually
      * take further (recognized format, payable rail) — anything else

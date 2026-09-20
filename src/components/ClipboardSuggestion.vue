@@ -35,64 +35,34 @@
 <script>
 import { ref } from 'vue';
 import { Capacitor } from '@capacitor/core';
+import { App } from '@capacitor/app';
 import { useWalletStore } from '../stores/wallet';
-import { readClipboardCrossPlatform } from '../utils/shopClipboard.js';
+import { readClipboardForSuggestion } from '../utils/shopClipboard.js';
+import { createClipboardOfferSession } from '../utils/clipboardOfferSession.js';
 import {
   abbreviateDestination,
-  hasBeenOffered,
+  createClipboardOfferMemory,
   isSuggestibleDestination,
   offerLabelKey,
-  rememberOffered,
 } from '../utils/clipboardSuggestion.js';
 
 /** How long an offer stays before it leaves on its own. */
 const OFFER_MS = 10000;
 /** Belt to the countdown's braces: if the bar never reports its end, leave anyway. */
 const OFFER_FALLBACK_MS = OFFER_MS * 2;
-/** A shorter absence is a system dialog closing (unlock, paste consent), not a return to the app. */
-const MIN_ABSENCE_MS = 1500;
-/** Android hands the clipboard only to the focused window, which lags the resume event by a beat. */
-const READ_DELAY_MS = 350;
-const READ_RETRY_MS = 900;
-/** Upward drag that counts as "get rid of it". */
+/** Upward drag that dismisses the suggestion. */
 const SWIPE_DISMISS_PX = 28;
 
-const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+const memory = createClipboardOfferMemory();
+const session = createClipboardOfferSession({ read: readClipboardForSuggestion });
+let returnListener = null;
 
-/**
- * Reads happen once per app start and once per genuine return to the app,
- * not once per mount: the home page remounts on every route change, and
- * every read costs the platform's clipboard notice. This state therefore
- * lives at module level, where it survives remounts and resets with the
- * process. The return listener is registered once and kept for the app's
- * lifetime; it only ever pokes whichever strip is currently on screen.
- */
-const session = {
-  /** A start or return whose clipboard has not been read yet. */
-  readPending: true,
-  inactiveSince: 0,
-  /** Resolves once the app-state listener is in place. */
-  listenerReady: null,
-  /** The strip on screen, when the home page is showing. */
-  instance: null,
-};
-
-/** Hear every genuine return to the app, whichever page is showing. Registered once. */
+// Listen across route changes; only the current Home can display a suggestion.
 function ensureReturnListener() {
-  if (!session.listenerReady) {
-    session.listenerReady = import('@capacitor/app').then(({ App }) =>
-      App.addListener('appStateChange', ({ isActive }) => {
-        if (!isActive) {
-          session.inactiveSince = Date.now();
-          return;
-        }
-        if (!session.inactiveSince || Date.now() - session.inactiveSince < MIN_ABSENCE_MS) return;
-        session.readPending = true;
-        session.instance?.check();
-      })
-    );
+  if (!returnListener) {
+    returnListener = App.addListener('appStateChange', ({ isActive }) => session.setActive(isActive))
+      .catch(() => { returnListener = null; });
   }
-  return session.listenerReady;
 }
 
 /**
@@ -103,9 +73,9 @@ function ensureReturnListener() {
  * and a countdown. Send hands the text to the Send sheet exactly as a
  * paste would; nothing advances on its own.
  *
- * Native only: on the web the Send sheet's own chip covers this, and a
- * programmatic read there needs a permission prompt. Reads happen only on
- * the home screen, only while no sheet or dialog is in front, and never
+ * Android only: iOS uses explicit Paste to avoid unsolicited permission
+ * prompts; on the web the Send sheet's own chip covers this. Reads happen
+ * only on the home screen, while no sheet or dialog is in front, and never
  * while the app lock is up. The same clipboard content is offered once:
  * used or dismissed, it is not offered again until it changes, and that
  * memory is kept on disk so a restart does not repeat the offer.
@@ -129,7 +99,8 @@ export default {
       offered: null,
       held: false,
       pointerStartY: null,
-      pendingCheck: false,
+      homeVisible: false,
+      dialogObserver: null,
       fallbackTimer: null,
       OFFER_MS,
     };
@@ -144,57 +115,61 @@ export default {
     },
   },
 
-  async mounted() {
-    if (!Capacitor.isNativePlatform()) return;
-    // A read that was waiting for the lock runs as soon as it clears.
-    this.$watch(() => this.appLocked.value, (locked) => {
-      if (!locked && this.pendingCheck) this.check();
+  mounted() {
+    if (Capacitor.getPlatform() !== 'android') return;
+    this.homeVisible = true;
+    // Options API automatically unwraps injected refs.
+    this.$watch(() => this.appLocked, (locked) => {
+      if (locked) this.clear();
+      else this.check();
     });
-    session.instance = this;
-    if (session.readPending) this.check();
-    await ensureReturnListener();
+    this.dialogObserver = new MutationObserver(() => {
+      if (document.body.classList.contains('q-body--dialog')) this.clear();
+      else this.check();
+    });
+    this.dialogObserver.observe(document.body, { attributes: true, attributeFilter: ['class'] });
+    window.addEventListener('focus', this.check);
+    ensureReturnListener();
+    session.attach(this);
   },
 
   beforeUnmount() {
-    if (session.instance === this) session.instance = null;
-    clearTimeout(this.fallbackTimer);
+    this.homeVisible = false;
+    session.detach(this);
+    this.dialogObserver?.disconnect();
+    window.removeEventListener('focus', this.check);
+    this.clear();
   },
 
   methods: {
-    async check() {
-      if (this.appLocked.value) {
-        this.pendingCheck = true;
-        return;
-      }
-      this.pendingCheck = false;
-      // A sheet or dialog in front means the user is mid-task; an offer
-      // behind it would only confuse, and the read would still cost the
-      // system's clipboard notice.
-      if (document.body.classList.contains('q-body--dialog')) return;
-      session.readPending = false;
-      this.offer(await this.readWhenFocused());
+    canOffer() {
+      return this.homeVisible && !this.appLocked && document.hasFocus()
+        && !document.body.classList.contains('q-body--dialog');
     },
 
-    async readWhenFocused() {
-      await wait(READ_DELAY_MS);
-      let text = (await readClipboardCrossPlatform() || '').trim();
-      if (!text) {
-        await wait(READ_RETRY_MS);
-        text = (await readClipboardCrossPlatform() || '').trim();
-      }
-      return text;
+    check() {
+      return session.check();
     },
 
-    /** Show `text` if it is new and payable. Public, so a test can offer without a clipboard. */
-    offer(text) {
-      const value = (text || '').trim();
-      if (!value || hasBeenOffered(value)) return;
-      if (!isSuggestibleDestination(value, this.wallet.activeWalletType)) return;
-      rememberOffered(value);
-      this.held = false;
+    async offer(text, stillVisible = () => this.canOffer()) {
+      if (!stillVisible()) return false;
+      const value = text.trim();
+      memory.observe(value);
+      if (this.offered && this.offered !== value) this.clear();
+      if (!value || memory.hasBeenOffered(value)
+        || !isSuggestibleDestination(value, this.wallet.activeWalletType)) return true;
+
+      this.clear();
       this.offered = value;
-      clearTimeout(this.fallbackTimer);
+      await this.$nextTick();
+      // Navigation, locking or a new dialog can interrupt the render.
+      if (!stillVisible() || this.offered !== value) {
+        this.clear();
+        return false;
+      }
+      memory.rememberOffered(value);
       this.fallbackTimer = setTimeout(() => this.dismiss(), OFFER_FALLBACK_MS);
+      return true;
     },
 
     use() {

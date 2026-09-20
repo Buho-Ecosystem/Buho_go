@@ -173,32 +173,34 @@ function defaultStorage() {
 }
 
 /**
- * Was this exact text the last one offered? The answer survives restarts
- * and route changes, so an address that sits in the clipboard for days is
- * offered once, not on every visit to the home screen.
- *
- * @param {string} text
- * @param {Storage|null} [storage]  injectable for tests
+ * Offer memory shared by every Home instance. Disk seeds the session once;
+ * memory remains authoritative if later storage reads or writes fail.
+ * Only an offered destination's fingerprint is persisted, never other
+ * clipboard contents. A confirmed change (including empty text) clears it.
+ * `null` means an unreadable clipboard and must not clear the memory.
  */
-export function hasBeenOffered(text, storage = defaultStorage()) {
+export function createClipboardOfferMemory(storage = defaultStorage()) {
+  let offered = null;
   try {
-    return !!storage && storage.getItem(OFFERED_STORAGE_KEY) === fingerprint(text);
-  } catch {
-    return false;
-  }
-}
+    offered = storage?.getItem(OFFERED_STORAGE_KEY) || null;
+  } catch { /* Session memory still works without storage. */ }
 
-/**
- * Record `text` as offered. Only the last one is kept: anything new in the
- * clipboard is new, even if it was offered before that.
- *
- * @param {string} text
- * @param {Storage|null} [storage]  injectable for tests
- */
-export function rememberOffered(text, storage = defaultStorage()) {
-  try {
-    storage?.setItem(OFFERED_STORAGE_KEY, fingerprint(text));
-  } catch {
-    // Storage unavailable: the offer simply repeats next time.
+  function save(value) {
+    offered = value;
+    try {
+      storage?.setItem(OFFERED_STORAGE_KEY, value || '');
+    } catch { /* Keep the in-memory value even when persistence fails. */ }
   }
+
+  return {
+    observe(text) {
+      if (typeof text === 'string' && offered && fingerprint(text.trim()) !== offered) save(null);
+    },
+    hasBeenOffered(text) {
+      return offered === fingerprint(text.trim());
+    },
+    rememberOffered(text) {
+      save(fingerprint(text.trim()));
+    },
+  };
 }
