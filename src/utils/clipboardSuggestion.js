@@ -117,3 +117,88 @@ export function abbreviateDestination(text, { head = 14, tail = 10 } = {}) {
   if (value.length <= head + tail + 1) return value;
   return `${value.slice(0, head)}…${value.slice(-tail)}`;
 }
+
+/**
+ * What to call the clipboard's contents on the offer strip, as an i18n key.
+ * Names the thing in the app's own words (address, payment request,
+ * Nostr profile, phone number), never the rail that carries it.
+ *
+ * @param {string} text
+ * @param {string|null} walletType
+ * @returns {string} i18n key
+ */
+export function offerLabelKey(text, walletType) {
+  const trimmed = (text || '').trim();
+  switch (classifyDestination(trimmed, walletType)) {
+    case 'lightning_invoice':
+    case 'lnurl':
+      return 'Copied payment request';
+    case 'unknown':
+      break;
+    default:
+      return 'Copied address';
+  }
+  const nostrKind = classifyIdentifier(stripWrapperScheme(trimmed));
+  if (nostrKind === 'npub' || nostrKind === 'nprofile') return 'Copied Nostr profile';
+  if (recognizePhoneNumber(trimmed)) return 'Copied phone number';
+  return 'Copied address';
+}
+
+/** Where the fingerprint of the last offered clipboard text lives. */
+export const OFFERED_STORAGE_KEY = 'buhoGO_clipboard_offered';
+
+/**
+ * A short, stable fingerprint of `text` (32-bit FNV-1a, as hex). Not
+ * cryptographic and not meant to be: it only has to tell "the same text
+ * again" from "something new", and it keeps the clipboard's own contents
+ * off the disk.
+ *
+ * @param {string} text
+ */
+export function fingerprint(text) {
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < text.length; i += 1) {
+    hash ^= text.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193) >>> 0;
+  }
+  return hash.toString(16).padStart(8, '0');
+}
+
+function defaultStorage() {
+  try {
+    return globalThis.localStorage || null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Was this exact text the last one offered? The answer survives restarts
+ * and route changes, so an address that sits in the clipboard for days is
+ * offered once, not on every visit to the home screen.
+ *
+ * @param {string} text
+ * @param {Storage|null} [storage]  injectable for tests
+ */
+export function hasBeenOffered(text, storage = defaultStorage()) {
+  try {
+    return !!storage && storage.getItem(OFFERED_STORAGE_KEY) === fingerprint(text);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Record `text` as offered. Only the last one is kept: anything new in the
+ * clipboard is new, even if it was offered before that.
+ *
+ * @param {string} text
+ * @param {Storage|null} [storage]  injectable for tests
+ */
+export function rememberOffered(text, storage = defaultStorage()) {
+  try {
+    storage?.setItem(OFFERED_STORAGE_KEY, fingerprint(text));
+  } catch {
+    // Storage unavailable: the offer simply repeats next time.
+  }
+}

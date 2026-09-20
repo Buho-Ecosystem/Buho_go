@@ -14,10 +14,10 @@
         @pointercancel="onPointerEnd"
       >
         <span class="clipboard-strip-copy">
-          <span class="clipboard-strip-label">{{ $t('Found in your clipboard') }}</span>
+          <span class="clipboard-strip-label">{{ $t(labelKey) }}</span>
           <span class="clipboard-strip-value">{{ abbreviated }}</span>
         </span>
-        <button type="button" class="clipboard-strip-use" @click="use">{{ $t('Use') }}</button>
+        <button type="button" class="clipboard-strip-use" @click="use">{{ $t('Send') }}</button>
         <!-- The countdown is the dismissal: when the bar reaches zero the
              strip leaves. A finger resting on the strip pauses it. -->
         <span
@@ -37,7 +37,13 @@ import { ref } from 'vue';
 import { Capacitor } from '@capacitor/core';
 import { useWalletStore } from '../stores/wallet';
 import { readClipboardCrossPlatform } from '../utils/shopClipboard.js';
-import { abbreviateDestination, isSuggestibleDestination } from '../utils/clipboardSuggestion.js';
+import {
+  abbreviateDestination,
+  hasBeenOffered,
+  isSuggestibleDestination,
+  offerLabelKey,
+  rememberOffered,
+} from '../utils/clipboardSuggestion.js';
 
 /** How long an offer stays before it leaves on its own. */
 const OFFER_MS = 10000;
@@ -54,18 +60,55 @@ const SWIPE_DISMISS_PX = 28;
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /**
+ * Reads happen once per app start and once per genuine return to the app,
+ * not once per mount: the home page remounts on every route change, and
+ * every read costs the platform's clipboard notice. This state therefore
+ * lives at module level, where it survives remounts and resets with the
+ * process. The return listener is registered once and kept for the app's
+ * lifetime; it only ever pokes whichever strip is currently on screen.
+ */
+const session = {
+  /** A start or return whose clipboard has not been read yet. */
+  readPending: true,
+  inactiveSince: 0,
+  /** Resolves once the app-state listener is in place. */
+  listenerReady: null,
+  /** The strip on screen, when the home page is showing. */
+  instance: null,
+};
+
+/** Hear every genuine return to the app, whichever page is showing. Registered once. */
+function ensureReturnListener() {
+  if (!session.listenerReady) {
+    session.listenerReady = import('@capacitor/app').then(({ App }) =>
+      App.addListener('appStateChange', ({ isActive }) => {
+        if (!isActive) {
+          session.inactiveSince = Date.now();
+          return;
+        }
+        if (!session.inactiveSince || Date.now() - session.inactiveSince < MIN_ABSENCE_MS) return;
+        session.readPending = true;
+        session.instance?.check();
+      })
+    );
+  }
+  return session.listenerReady;
+}
+
+/**
  * The home screen's clipboard offer.
  *
- * Once per return to the app, and once on start, read the clipboard and,
- * if it holds something this wallet can pay, show it with a Use button and
- * a countdown. Use hands the text to the Send sheet exactly as a paste
- * would; nothing advances on its own.
+ * Once on start and once per return to the app, read the clipboard and,
+ * if it holds something this wallet can pay, show it with a Send button
+ * and a countdown. Send hands the text to the Send sheet exactly as a
+ * paste would; nothing advances on its own.
  *
  * Native only: on the web the Send sheet's own chip covers this, and a
  * programmatic read there needs a permission prompt. Reads happen only on
  * the home screen, only while no sheet or dialog is in front, and never
  * while the app lock is up. The same clipboard content is offered once:
- * used or dismissed, it is not offered again until it changes.
+ * used or dismissed, it is not offered again until it changes, and that
+ * memory is kept on disk so a restart does not repeat the offer.
  */
 export default {
   name: 'ClipboardSuggestion',
@@ -84,12 +127,9 @@ export default {
   data() {
     return {
       offered: null,
-      lastOffered: '',
       held: false,
       pointerStartY: null,
-      inactiveSince: 0,
       pendingCheck: false,
-      stateListener: null,
       fallbackTimer: null,
       OFFER_MS,
     };
@@ -99,6 +139,9 @@ export default {
     abbreviated() {
       return abbreviateDestination(this.offered);
     },
+    labelKey() {
+      return offerLabelKey(this.offered, this.wallet.activeWalletType);
+    },
   },
 
   async mounted() {
@@ -107,19 +150,13 @@ export default {
     this.$watch(() => this.appLocked.value, (locked) => {
       if (!locked && this.pendingCheck) this.check();
     });
-    const { App } = await import('@capacitor/app');
-    this.stateListener = await App.addListener('appStateChange', ({ isActive }) => {
-      if (!isActive) {
-        this.inactiveSince = Date.now();
-        return;
-      }
-      if (this.inactiveSince && Date.now() - this.inactiveSince >= MIN_ABSENCE_MS) this.check();
-    });
-    this.check();
+    session.instance = this;
+    if (session.readPending) this.check();
+    await ensureReturnListener();
   },
 
   beforeUnmount() {
-    this.stateListener?.remove();
+    if (session.instance === this) session.instance = null;
     clearTimeout(this.fallbackTimer);
   },
 
@@ -134,6 +171,7 @@ export default {
       // behind it would only confuse, and the read would still cost the
       // system's clipboard notice.
       if (document.body.classList.contains('q-body--dialog')) return;
+      session.readPending = false;
       this.offer(await this.readWhenFocused());
     },
 
@@ -150,9 +188,9 @@ export default {
     /** Show `text` if it is new and payable. Public, so a test can offer without a clipboard. */
     offer(text) {
       const value = (text || '').trim();
-      if (!value || value === this.lastOffered) return;
+      if (!value || hasBeenOffered(value)) return;
       if (!isSuggestibleDestination(value, this.wallet.activeWalletType)) return;
-      this.lastOffered = value;
+      rememberOffered(value);
       this.held = false;
       this.offered = value;
       clearTimeout(this.fallbackTimer);
@@ -244,7 +282,7 @@ export default {
 
 .clipboard-strip-use {
   flex-shrink: 0;
-  min-height: 40px;
+  min-height: 44px;
   padding: 0 18px;
   border: 0;
   border-radius: 999px;
