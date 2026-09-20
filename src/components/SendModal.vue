@@ -910,7 +910,7 @@ export default {
         const { cleaned: resolved, bip21 } = this.normalizePaymentInput(trimmedData);
         let cleanData = resolved;
 
-        if (cleanData.includes('@') && cleanData.includes('.')) {
+        if (isLightningAddress(cleanData)) {
           cleanData = cleanData.toLowerCase();
         }
 

@@ -1,5 +1,8 @@
 import backup from './backup.js';
 export default {
+  "Receiving wallet: {wallet}": "Empfangende Wallet: {wallet}",
+  "There are no funds to redeem from this request.": "Für diese Anfrage ist kein Guthaben zum Einlösen verfügbar.",
+  "This request cannot be redeemed in whole sats. Ask the service for a new one.": "Diese Anfrage lässt sich nicht in ganzen Sats einlösen. Bitte den Dienst um eine neue Anfrage.",
   ...backup,
   // Spend: Bitrefill door
   "Gift cards, mobile top-ups and more": "Geschenkkarten, Handy-Guthaben und mehr",

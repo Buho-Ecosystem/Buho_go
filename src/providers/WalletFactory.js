@@ -16,6 +16,7 @@ import { isSilentPaymentAddress,
   isArkadeAddress,
   isBolt12Offer,
   isLightningInvoice,
+  isLightningAddress,
   isLnurl,
   isBitcoinAddress,
   stripWrapperScheme,
@@ -226,17 +227,14 @@ export function parsePaymentDestination(input) {
     });
   }
 
-  // Lightning address (user@domain) — cheap structural check; full regex
-  // validation lives in addressUtils.isLightningAddress when needed.
-  if (cleaned.includes('@') && cleaned.split('@').length === 2) {
-    const [name, domain] = cleaned.split('@');
-    if (name.length > 0 && domain.includes('.')) {
-      return withBip21({
-        type: 'lightning_address',
-        address: cleaned.toLowerCase(),
-        valid: true,
-      });
-    }
+  // A description inside a withdraw URL may contain @. Only normalize
+  // actual Lightning addresses; callback paths and challenges are opaque.
+  if (isLightningAddress(cleaned)) {
+    return withBip21({
+      type: 'lightning_address',
+      address: cleaned.toLowerCase(),
+      valid: true,
+    });
   }
 
   if (isLnurl(cleaned)) {
