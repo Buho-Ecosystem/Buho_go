@@ -6,8 +6,10 @@ export default {
   "Bitrefill is on its way": "Bitrefill está en camino",
   "Buy gift cards and mobile top-ups with your bitcoin, right here. We are building it now.": "Compra tarjetas regalo y recargas móviles con tus bitcoin, aquí mismo. Lo estamos construyendo.",
   // Home clipboard offer
-  "Found in your clipboard": "Encontrado en tu portapapeles",
-  "Use": "Usar",
+  "Copied address": "Dirección copiada",
+  "Copied payment request": "Solicitud de pago copiada",
+  "Copied Nostr profile": "Perfil de Nostr copiado",
+  "Copied phone number": "Número de teléfono copiado",
   // Home backup shortcut
   "Wallet & identity": "Cartera e identidad",
   "Backups": "Copias de seguridad",
