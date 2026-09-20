@@ -43,3 +43,7 @@ Redeem remains one focused review: amount, service domain, receiving wallet, and
 Run browser checks after `pnpm dev --port 9003`; set `LUD08_BASE_URL` if using another origin. Screenshots default to `/private/tmp/lud08-review`, configurable with `LUD08_OUTPUT`. External traffic is blocked, and invoice creation/submission are prohibited in the UI fixtures. No live withdrawals are performed.
 
 Physical NFC/camera delivery, device keyboards, VoiceOver/TalkBack, real provider payouts, and Tor connectivity remain device/integration validation tasks. Automated native coverage uses controlled bridges.
+
+## Compatibility with LUD-23
+
+An isolated checkout combined this implementation with PR #281 (`c4ec5c3`). The full regression suite, production build, and both browser scripts passed on the combined source. The two PRs remain independent against `dev`. When merging them in sequence, preserve both test commands, the new locale entries and address-request dictionary, both Wallet imports, and the LUD-23 dispatcher guard; these are the overlapping text changes resolved for the compatibility check.
