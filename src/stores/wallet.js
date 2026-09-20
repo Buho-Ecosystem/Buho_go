@@ -8,6 +8,7 @@
 import { defineStore } from 'pinia';
 import { NostrWebLNProvider } from '@getalby/sdk';
 import { fiatRatesService } from '../utils/fiatRates.js';
+import { SELECTABLE_FIAT_CURRENCIES } from '../utils/fiatCurrencies.js';
 import { LNBitsWalletProvider } from '../providers/LNBitsWalletProvider';
 import { ArkadeWalletProvider } from '../providers/ArkadeWalletProvider';
 import { ARKADE_MAINNET_SERVER, ARKADE_DEFAULT_NETWORK } from '../utils/arkadeKeys';
@@ -3068,18 +3069,11 @@ export const useWalletStore = defineStore('wallet', {
         const rates = await fiatRatesService.getRates();
 
         if (rates && fiatRatesService.areRatesAvailable()) {
-          this.exchangeRates = {
-            usd: rates.USD || 0,
-            eur: rates.EUR || 0,
-            gbp: rates.GBP || 0,
-            jpy: rates.JPY || 0,
-            chf: rates.CHF || 0,
-            cad: rates.CAD || 0,
-            aud: rates.AUD || 0,
-            zar: rates.ZAR || 0,
-            kes: rates.KES || 0,
-            zmw: rates.ZMW || 0,
-          };
+          // Keyed by lowercase code. Every selectable currency gets an
+          // entry so a rate the upstream failed to deliver reads as 0.
+          this.exchangeRates = Object.fromEntries(
+            SELECTABLE_FIAT_CURRENCIES.map((code) => [code.toLowerCase(), rates[code] || 0])
+          );
           this.exchangeRatesAvailable = true;
           this.exchangeRatesLastUpdate = new Date().toISOString();
           this.exchangeRatesError = null;

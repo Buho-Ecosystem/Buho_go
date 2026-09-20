@@ -438,6 +438,7 @@ import VueQrcode from '@chenfengyuan/vue-qrcode';
 import { NostrWebLNProvider } from "@getalby/sdk";
 import { Invoice } from "@getalby/lightning-tools";
 import { formatAmount } from '../utils/amountFormatting.js';
+import { fiatSymbol as fiatSymbolFor } from '../utils/fiatCurrencies.js';
 import { useWalletStore } from '../stores/wallet';
 import { createPaymentMonitor, PaymentStatus, checkNWCPaymentStatus } from '../utils/paymentMonitor';
 import { shareContent } from '../utils/share';
@@ -550,13 +551,7 @@ export default {
       return this.walletState.exchangeRates?.[this.fiatCode] || 0;
     },
     fiatSymbol() {
-      switch (this.fiatCode) {
-        case 'usd': return '$';
-        case 'eur': return '€';
-        case 'gbp': return '£';
-        case 'jpy': return '¥';
-        default: return this.fiatCode.toUpperCase() + ' ';
-      }
+      return fiatSymbolFor(this.fiatCode);
     },
     /**
      * Keys for the 3x4 keypad grid. The bottom-left key swaps between
