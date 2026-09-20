@@ -1,8 +1,11 @@
 /**
  * Fiat Rates Service
- * Handles fetching and caching of Bitcoin fiat exchange rates from Mempool API
+ * Handles fetching and caching of Bitcoin fiat exchange rates. Mempool's
+ * /prices endpoint is the primary source; currencies it omits come from
+ * Alby's per-currency endpoint. Which currency uses which is declared once
+ * in fiatCurrencies.js.
  */
-import { FIAT_SYMBOLS, ALBY_RATE_CURRENCIES } from './fiatCurrencies.js'
+import { FIAT_SYMBOLS, MEMPOOL_RATE_CURRENCIES, ALBY_RATE_CURRENCIES } from './fiatCurrencies.js'
 
 export class FiatRatesService {
   constructor() {
@@ -159,20 +162,14 @@ export class FiatRatesService {
       }
 
       // Convert to our expected format (rates per BTC)
-      this.rates = {
-        USD: data.USD || 0,
-        EUR: data.EUR || 0,
-        GBP: data.GBP || 0,
-        CAD: data.CAD || 0,
-        CHF: data.CHF || 0,
-        AUD: data.AUD || 0,
-        JPY: data.JPY || 0,
-        time: data.time || Math.floor(Date.now() / 1000)
-      };
+      this.rates = { time: data.time || Math.floor(Date.now() / 1000) };
+      for (const code of MEMPOOL_RATE_CURRENCIES) {
+        this.rates[code] = data[code] || 0;
+      }
 
-      // Currencies the Mempool /prices endpoint doesn't return (ZAR, KES,
-      // ZMW, …) come from Alby's per-currency endpoint. Fetched in parallel;
-      // one failure never blocks the others or the rest of the rates.
+      // Currencies the Mempool /prices endpoint doesn't return come from
+      // Alby's per-currency endpoint. Fetched in parallel; one failure never
+      // blocks the others or the rest of the rates.
       await Promise.all(ALBY_RATE_CURRENCIES.map(async (code) => {
         try {
           const res = await fetch(`https://getalby.com/api/rates/${code.toLowerCase()}.json`, {
