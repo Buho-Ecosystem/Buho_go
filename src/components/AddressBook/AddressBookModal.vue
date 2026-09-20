@@ -1,6 +1,6 @@
 <template>
   <q-dialog
-    v-model="show"
+    v-model="dialogOpen"
     persistent
     :class="$q.dark.isActive ? 'dialog_dark' : 'dialog_light'"
     @hide="onHide"
@@ -59,6 +59,7 @@
           @open-existing="onOpenExisting"
           @switch-to-search="switchTab('search')"
           @detected-address="onScanDetectedAddress"
+          @address-request="shareAddress"
         />
 
         <!-- SEARCH -->
@@ -132,13 +133,16 @@
                   addressShowsError ? 'form-input--error' : ''
                 ]"
                 ref="addressInput"
-                maxlength="150"
+                maxlength="16384"
                 autocapitalize="off"
                 autocorrect="off"
                 spellcheck="false"
               />
               <div class="input-helper" :class="$q.dark.isActive ? 'helper-dark' : 'helper-light'">
-                <template v-if="addressShowsError">
+                <template v-if="addressIsRequest">
+                  <span>{{ $t('Review this request to share your Lightning address.') }}</span>
+                </template>
+                <template v-else-if="addressShowsError">
                   <Icon icon="tabler:alert-circle" width="13" height="13" />
                   <span v-if="addressIsSparkRequest">{{ $t('This is a one-time payment request, not a lasting address. Pay it and save the contact from the payment screen instead.') }}</span>
                   <span v-else>{{ $t("We don't recognize this as a Lightning, Spark, Bitcoin, or LNURL address") }}</span>
@@ -184,10 +188,10 @@
         />
         <q-btn
           unelevated
-          :label="isEditing ? $t('Update') : $t('Add')"
+          :label="addressIsRequest ? $t('Review request') : isEditing ? $t('Update') : $t('Add')"
           @click="saveEntry"
           :loading="isSaving"
-          :disable="!isFormValid"
+          :disable="!isFormValid && !addressIsRequest"
           class="save-btn"
           no-caps
         />
@@ -198,6 +202,9 @@
 </template>
 
 <script>
+import { isAddressRequest } from '../../utils/lud23.js';
+import { offerAddressRequest } from '../../services/addressRequestIntake.js';
+import { useAddressRequestStore } from '../../stores/addressRequest.js';
 import { useAddressBookStore } from '../../stores/addressBook'
 import { mapActions } from 'pinia'
 import {
@@ -217,7 +224,7 @@ import ArkadeLogo from '../ArkadeLogo.vue'
 function detectType(address) {
   if (!address || typeof address !== 'string') return null
   const v = address.trim()
-  if (!v) return null
+  if (!v || isAddressRequest(v)) return null
   // A Spark invoice shares the spark1… prefix but is single-use — it must
   // never become a contact. The helper text below names it specifically.
   if (isSparkAddress(v)) return isSparkPaymentRequest(v) ? null : 'spark'
@@ -269,6 +276,7 @@ export default {
   data() {
     return {
       activeTab: 'manual',
+      addressHandoff: false,
       tabs: TABS,
       formData: {
         name: '',
@@ -278,7 +286,13 @@ export default {
       isSaving: false,
     }
   },
+  setup() { return { addressRequests: useAddressRequestStore() }; },
   computed: {
+    addressIsRequest() { return isAddressRequest(this.formData.address); },
+    dialogOpen: {
+      get() { return this.show && !this.addressHandoff; },
+      set(value) { if (!this.addressHandoff) this.show = value; }
+    },
 
     show: {
       get() {
@@ -336,7 +350,7 @@ export default {
     },
 
     addressShowsError() {
-      return this.formData.address.trim().length > 0 && !this.detectedType
+      return this.formData.address.trim().length > 0 && !this.detectedType && !this.addressIsRequest
     },
     addressIsSparkRequest() {
       const v = this.formData.address.trim()
@@ -348,6 +362,12 @@ export default {
     }
   },
   watch: {
+    'addressRequests.state.presented'(value) {
+      if (!value && this.addressRequests.state.stage === 'idle') this.addressHandoff = false;
+    },
+    'addressRequests.state.stage'(value) {
+      if (value === 'idle' && !this.addressRequests.state.presented) this.addressHandoff = false;
+    },
     show(newVal) {
       if (newVal) {
         this.initializeForm()
@@ -436,7 +456,15 @@ export default {
       this.switchTab('manual')
     },
 
+    shareAddress(value) {
+      if (offerAddressRequest(value, { t: this.$t.bind(this) })) {
+        this.addressHandoff = this.addressRequests.state.stage !== 'idle';
+        this.activeTab = 'manual';
+      }
+    },
+
     async saveEntry() {
+      if (this.addressIsRequest) { this.shareAddress(this.formData.address); return; }
       if (!this.isFormValid) return
 
       this.isSaving = true
@@ -483,6 +511,7 @@ export default {
     },
 
     onHide() {
+      if (this.addressHandoff) return;
       // Final cleanup if the dialog was dismissed via escape or
       // backdrop (the `show` watcher handles regular closes).
       this.resetForm()

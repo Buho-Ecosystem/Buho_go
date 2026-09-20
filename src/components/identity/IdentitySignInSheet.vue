@@ -104,7 +104,7 @@
 
   <!-- Each child task replaces this sheet instead of stacking above it.
        When the child closes, this scoped overview returns. -->
-  <AddSiteSheet v-model="showAddSite" @submit="onAddSiteSubmitted" />
+  <AddSiteSheet v-model="showAddSite" @submit="onAddSiteSubmitted" @address-request="returningFromChild = false" />
   <IdentityAuthDialog v-model="showAuth" :challenge="pendingChallenge" />
   <ConnectedSiteSheet v-model="showSiteSheet" :site="selectedSite" @forget="forgetSite" />
 </template>

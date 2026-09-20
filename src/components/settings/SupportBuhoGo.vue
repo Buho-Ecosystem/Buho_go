@@ -176,7 +176,7 @@ export default {
           throw new Error('Failed to fetch LNURL-pay params');
         }
         const params = paramsResponse.data;
-        if (!params || params.status === 'ERROR') {
+        if (!params || params.tag !== 'payRequest' || !params.callback || params.status === 'ERROR') {
           throw new Error(params?.reason || 'LNURL-pay error');
         }
 

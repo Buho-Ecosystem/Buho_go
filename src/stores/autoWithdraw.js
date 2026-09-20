@@ -319,7 +319,7 @@ export const useAutoWithdrawStore = defineStore('autoWithdraw', {
       if (!username || !domain) throw new Error('Could not resolve Lightning address')
       const metaResponse = await lnurlGetJson(`https://${domain}/.well-known/lnurlp/${username}`)
       const lnurlpData = metaResponse.ok ? metaResponse.data : null
-      if (!lnurlpData?.callback || lnurlpData.status === 'ERROR') {
+      if (!lnurlpData?.callback || lnurlpData.tag !== 'payRequest' || lnurlpData.status === 'ERROR') {
         throw new Error('Could not resolve Lightning address')
       }
 

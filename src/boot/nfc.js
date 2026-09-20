@@ -1,3 +1,4 @@
+import { offerAddressRequest } from '../services/addressRequestIntake.js';
 import { boot } from 'quasar/wrappers'
 import { Notify } from 'quasar'
 import { Capacitor } from '@capacitor/core'
@@ -47,6 +48,7 @@ export default boot(async ({ router }) => {
    * 'system_dispatch' (cold/backgrounded start via NfcDispatchActivity).
    */
   const processNfcPayload = (raw, source) => {
+    if (offerAddressRequest(raw)) return
     // Scheme + length only: raw payloads carry one-time card-authentication
     // parameters and must never reach logcat.
     console.log(`[nfc] Tag scanned (${source}):`, redactPaymentInput(raw))
@@ -74,6 +76,7 @@ export default boot(async ({ router }) => {
       parsed = { type: 'lnurl', lnurl: raw, valid: true }
     }
 
+    if (parsed && offerAddressRequest(parsed.data || parsed.lnurl)) return
     const EXPLAINED_UNPAYABLE = ['bolt12_offer', 'silent_payment']
     if (!parsed || (!parsed.valid && !EXPLAINED_UNPAYABLE.includes(parsed.type)) || parsed.type === 'unknown') {
       Notify.create({

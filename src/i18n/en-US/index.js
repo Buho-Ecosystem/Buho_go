@@ -1,5 +1,7 @@
+import addressRequest from './addressRequest.js';
 import backup from './backup.js';
 export default {
+  ...addressRequest,
   ...backup,
   // Spend: Bitrefill door
   "Gift cards, mobile top-ups and more": "Gift cards, mobile top-ups and more",
