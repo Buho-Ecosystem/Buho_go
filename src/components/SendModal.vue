@@ -922,7 +922,7 @@ export default {
         }
         let cleanData = resolved;
 
-        if (cleanData.includes('@') && cleanData.includes('.')) {
+        if (isLightningAddress(cleanData)) {
           cleanData = cleanData.toLowerCase();
         }
 

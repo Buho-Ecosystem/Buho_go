@@ -678,9 +678,19 @@
       verb="redeem"
       :is-sending="withdrawSheetIsBusy"
       :status-message="withdrawSheetStatus"
+      :commit-gate="!withdrawUnavailableMessage"
       @confirm="onWithdrawSheetConfirm"
       @cancel="onWithdrawSheetCancel"
-    />
+    >
+      <template #extras>
+        <p v-if="walletDisplayName" class="withdraw-review-context">
+          {{ $t('Receiving wallet: {wallet}', { wallet: walletDisplayName }) }}
+        </p>
+        <p v-if="withdrawUnavailableMessage" class="withdraw-review-context" role="status">
+          {{ withdrawUnavailableMessage }}
+        </p>
+      </template>
+    </PaymentConfirmSheet>
 
     <!-- LNURL-Withdraw Success Screen -->
     <PaymentConfirmation
@@ -841,6 +851,7 @@
 <script>
 import { offerAddressRequest } from '../services/addressRequestIntake.js';
 import { assertPaymentInput } from '../utils/lud23.js';
+import { parseFastWithdrawRequest, withdrawInfo } from '../utils/lnurlWithdraw.js';
 import { NostrWebLNProvider } from "@getalby/sdk";
 import {LightningPaymentService, resolveLUD17URL} from '../utils/lightning.js';
 import {parseSuccessAction, resolveSuccessAction} from '../utils/successAction.js';
@@ -1904,13 +1915,15 @@ export default {
       // A recognized Bolt Card gets its own mark + clean name instead of the
       // generic blue ↓ and the technical "Boltcard (refund address …)" text.
       const isBoltcard = this.isBoltcardWithdraw(p);
+      let serviceHost = '';
+      try { serviceHost = new URL(p.callback).host; } catch { /* legacy malformed metadata */ }
       const recipient = {
         name: isBoltcard ? 'Bolt Card' : (p.defaultDescription || this.$t('LNURL Withdrawal')),
         initial: '↓',
         color: '#3B82F6',
         addressType: 'lnurl',
         viaOverride: this.$t('Lightning · Withdrawal'),
-        address: '',
+        address: serviceHost,
         ...(isBoltcard ? { logoUrl: '/Social_Wallet_logos/BoltCard.png' } : {}),
       };
 
@@ -1959,6 +1972,13 @@ export default {
 
     withdrawSheetStatus() {
       return this.withdrawSheetIsBusy ? this.withdrawStatusMessage : '';
+    },
+    withdrawUnavailableMessage() {
+      const p = this.pendingPayment;
+      if (!p || p.type !== 'lnurl_withdraw') return '';
+      if (p.maxWithdrawable === 0) return this.$t('There are no funds to redeem from this request.');
+      if (p.minSats > p.maxSats) return this.$t('This request cannot be redeemed in whole sats. Ask the service for a new one.');
+      return '';
     },
     // Show fee estimate row only when we have actual fee data to display
     // - Spark wallet: Show when we have an estimate OR it's a free Spark transfer
@@ -2042,9 +2062,9 @@ export default {
     canConfirmWithdraw() {
       if (!this.pendingPayment || this.pendingPayment.type !== 'lnurl_withdraw') return false;
       if (this.lnurlWithdrawStatus !== 'idle') return false;
-      if (this.pendingPayment.isFixedAmount) return true;
       const sats = this.withdrawAmountSats;
-      return sats >= this.pendingPayment.minSats && sats <= this.pendingPayment.maxSats;
+      return Number.isSafeInteger(sats) && sats > 0
+        && sats >= this.pendingPayment.minSats && sats <= this.pendingPayment.maxSats;
     },
     withdrawStatusMessage() {
       const messages = {
@@ -6273,6 +6293,8 @@ export default {
     async fetchLNURLInfo(lnurl) {
       try {
         const url = this.decodeLNURL(lnurl);
+        const inline = parseFastWithdrawRequest(url);
+        if (inline) return withdrawInfo(inline);
         const response = await lnurlGetJson(url, { timeoutMs: 10000 });
 
         if (!response.ok) {
@@ -6293,32 +6315,7 @@ export default {
         }
 
         if (data.tag === 'withdrawRequest') {
-          const minWithdrawable = data.minWithdrawable || 1000;
-          const maxWithdrawable = data.maxWithdrawable || 100000000000;
-          const isFixedAmount = minWithdrawable === maxWithdrawable;
-          const minSats = Math.ceil(minWithdrawable / 1000);
-          const maxSats = Math.floor(maxWithdrawable / 1000);
-
-          return {
-            lnurlType: 'withdrawRequest',
-            k1: data.k1,
-            callback: data.callback,
-            minWithdrawable,
-            maxWithdrawable,
-            minSats,
-            maxSats,
-            isFixedAmount,
-            fixedAmountSats: isFixedAmount ? maxSats : null,
-            defaultDescription: data.defaultDescription || 'Withdrawal',
-            // LUD-XX: `pinLimit` MUST be a positive integer in millisats.
-            // Coerce anything else (negative, zero, string, NaN, Infinity,
-            // missing) to null so a malformed server response can't
-            // silently bypass the PIN check via comparison short-circuits
-            // (`amount * 1000 >= NaN` is always false).
-            pinLimit: Number.isInteger(data.pinLimit) && data.pinLimit > 0
-              ? data.pinLimit
-              : null
-          };
+          return withdrawInfo(data);
         }
 
         if (data.tag === 'addressRequest') {
@@ -8897,4 +8894,5 @@ export default {
   opacity: 0;
   transform: translateX(-10px);
 }
+.withdraw-review-context { margin: 0; font-size: .9375rem; line-height: 1.5; overflow-wrap: anywhere; }
 </style>

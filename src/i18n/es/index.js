@@ -2,6 +2,9 @@ import addressRequest from './addressRequest.js';
 import backup from './backup.js';
 export default {
   ...addressRequest,
+  "Receiving wallet: {wallet}": "Monedero receptor: {wallet}",
+  "There are no funds to redeem from this request.": "Esta solicitud no tiene fondos disponibles para canjear.",
+  "This request cannot be redeemed in whole sats. Ask the service for a new one.": "Esta solicitud no se puede canjear en sats enteros. Pide una nueva al servicio.",
   ...backup,
   // Spend: Bitrefill door
   "Gift cards, mobile top-ups and more": "Tarjetas regalo, recargas móviles y más",
