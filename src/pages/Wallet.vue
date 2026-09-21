@@ -2903,7 +2903,7 @@ export default {
      * there, no progress bar. Every non-instant outcome is a silent
      * no-op that leaves today's 3-conf pipeline untouched. Honors the
      * same auto-add opt-out as the confirmed flow; with the toggle off,
-     * the claim sheet's "Add instantly" action covers the manual path.
+     * the claim sheet's "Add now" action covers the manual path.
      */
     async handleUnconfirmedDeposit(deposit) {
       if (!this.bitcoinPrefsStore.autoAddIncomingBitcoin) return;
@@ -3004,7 +3004,7 @@ export default {
     notifyAutoClaimSucceeded(amountSats, feeSats) {
       const amountCopy = `${amountSats.toLocaleString()} ${this.$t('sats added to your wallet')}`;
       const feeCopy = feeSats > 0
-        ? `${this.$t('Network fee')}: ${feeSats.toLocaleString()} ${this.$t('sats')}`
+        ? `${this.$t('Fee')}: ${feeSats.toLocaleString()} ${this.$t('sats')}`
         : null;
 
       this.$q.notify({

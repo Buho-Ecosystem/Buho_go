@@ -3184,8 +3184,10 @@ export default {
   "Your public profile will update once BuhoGO can reach the network.": "Tu perfil público se actualizará cuando BuhoGO pueda conectarse a la red.",
   "{name} is now on your profile": "{name} aparece ahora en tu perfil",
   // ─── Depósitos Bitcoin instantáneos ───
-  "Add instantly": "Añadir al instante",
-  "Instant fee": "Comisión instantánea",
+  "Add now": "Añadir ahora",
+  "Wait": "Esperar",
+  "Now": "Ahora",
+  "You get": "Recibes",
   "The deposit stays on the normal confirmation path.": "El depósito sigue el proceso normal de confirmación.",
   // ─── Solicitudes de pago Spark ───
   "Any amount": "Cualquier cantidad",

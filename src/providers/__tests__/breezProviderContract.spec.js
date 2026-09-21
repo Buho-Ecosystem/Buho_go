@@ -12,6 +12,10 @@
  *     (MAX_FEE_SATS 3000, MAX_FEE_RATIO 0.05) and category names verbatim
  *   - withdrawal status synthesis: only three SDK statuses exist;
  *     'broadcasting' = pending + txid and is terminal-for-UX
+ *   - early (0-conf) claim outcome: the SDK resolves an ACCEPTED early
+ *     claim with no payment (it settles asynchronously) and throws on a
+ *     decline, so a resolve is never treated as a refusal
+ *   - the wait leg of a claim quote keeps its estimate flag
  *
  * Run directly with Node:
  *   node src/providers/__tests__/breezProviderContract.spec.js
@@ -23,6 +27,8 @@ import {
   claimErrorKind,
   classifyFromMatureQuote,
   withdrawalStatusFromPayment,
+  instantClaimOutcome,
+  waitQuoteFromMature,
 } from '../../utils/breezPayments.js';
 
 let passed = 0;
@@ -198,6 +204,35 @@ test('failed maps to failed; unknown payment reads as pending', () => {
     id: 'w5', status: 'pending', rawStatus: null, txId: null,
     isComplete: false, isFailed: false,
   });
+});
+
+// --- early (0-conf) claim outcome ----------------------------------------
+
+test('an accepted early claim resolves with no payment and is NOT a refusal', () => {
+  assert.deepEqual(instantClaimOutcome({ payment: undefined }), { claimId: null, settled: false });
+  assert.deepEqual(instantClaimOutcome({}), { claimId: null, settled: false });
+});
+
+test('a deposit that matured meanwhile settles in the same call', () => {
+  assert.deepEqual(
+    instantClaimOutcome({ payment: { id: 'pay_1', status: 'completed' } }),
+    { claimId: 'pay_1', settled: true }
+  );
+});
+
+// --- wait leg of a claim quote -------------------------------------------
+
+test('wait quote keeps credit, fee and the estimate flag', () => {
+  assert.deepEqual(
+    waitQuoteFromMature({ creditAmountSats: 66490, feeSats: 120, isEstimate: true, confirmationsRequired: 3, feeRateSatPerVbyte: 2 }),
+    { creditAmountSats: 66490, feeSats: 120, isEstimate: true, confirmationsRequired: 3 }
+  );
+  assert.equal(waitQuoteFromMature({ creditAmountSats: 1, feeSats: 1 }).isEstimate, false);
+});
+
+test('missing mature leg yields null', () => {
+  assert.equal(waitQuoteFromMature(undefined), null);
+  assert.equal(waitQuoteFromMature(null), null);
 });
 
 console.log(`\n${passed} passed, ${failed} failed`);

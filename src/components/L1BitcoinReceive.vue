@@ -233,11 +233,27 @@
             </div>
           </div>
 
-          <!-- Instant (0-conf) offer: only rendered when the SSP handed us
-               a zero-confirmation plan. Reuses the ready view's fee rows
-               so the deduction is disclosed before the tap. -->
+          <!-- Early add offered: both ways of adding the deposit, priced
+               side by side from the one quote the SDK returns. Two facts
+               per way, nothing to read. The wait figures carry "~" while
+               the service has not yet quoted the immature deposit, the
+               same mark the timing line above already uses. -->
+          <div v-if="instantClassification && waitQuote" class="claim-choice">
+            <span class="choice-cell choice-head"></span>
+            <span class="choice-cell choice-head">{{ $t('Wait') }}</span>
+            <span class="choice-cell choice-head choice-now">{{ $t('Now') }}</span>
+
+            <span class="choice-cell choice-label">{{ $t('Fee') }}</span>
+            <span class="choice-cell choice-value deduct">{{ waitPrefix }}{{ formatAmount(waitQuote.feeSats) }}</span>
+            <span class="choice-cell choice-value deduct choice-now">{{ formatAmount(instantClassification.feeSats) }}</span>
+
+            <span class="choice-cell choice-label">{{ $t('You get') }}</span>
+            <span class="choice-cell choice-value credit">{{ waitPrefix }}{{ formatAmount(waitQuote.creditAmountSats) }}</span>
+            <span class="choice-cell choice-value credit choice-now">{{ formatAmount(instantClassification.creditSats) }}</span>
+          </div>
+          <!-- An engine that prices only the early leg: disclose that one. -->
           <div
-            v-if="instantClassification"
+            v-else-if="instantClassification"
             class="fee-details"
             :class="$q.dark.isActive ? 'details-dark' : 'details-light'"
           >
@@ -246,7 +262,7 @@
               <span class="fee-value">{{ formatAmount(claimingDeposit.amount || 0) }}</span>
             </div>
             <div class="fee-row deduct">
-              <span class="fee-label">{{ $t('Instant fee') }}</span>
+              <span class="fee-label">{{ $t('Fee') }}</span>
               <span class="fee-value">-{{ formatAmount(instantClassification.feeSats) }}</span>
             </div>
           </div>
@@ -261,8 +277,10 @@
               :loading="isClaimingInstant || walletStore.isDepositClaimInFlight(claimingDeposit.txId)"
               @click="confirmInstantClaim"
             >
-              {{ $t('Add instantly') }}
+              {{ $t('Add now') }}
             </q-btn>
+            <!-- With a choice on screen the quiet exit is the other way to
+                 add it; the deposit simply stays on the confirmation path. -->
             <q-btn
               flat
               no-caps
@@ -270,7 +288,7 @@
               :class="$q.dark.isActive ? 'cancel-dark' : 'cancel-light'"
               @click="cancelClaim"
             >
-              {{ $t('Close') }}
+              {{ instantClassification ? $t('Wait') : $t('Close') }}
             </q-btn>
           </div>
         </template>
@@ -297,7 +315,7 @@
               <span class="fee-value">{{ formatAmount(claimingDeposit.amount || 0) }}</span>
             </div>
             <div class="fee-row deduct">
-              <span class="fee-label">{{ $t('Network fee') }}</span>
+              <span class="fee-label">{{ $t('Fee') }}</span>
               <span class="fee-value">-{{ formatAmount(claimFeeAmount) }}</span>
             </div>
           </div>
@@ -476,6 +494,16 @@ export default {
      */
     bitcoinQrOptions() {
       return { ...this.qrOptions, width: 232 };
+    },
+
+    /** The wait-for-confirmations leg the SDK quoted next to the early one. */
+    waitQuote() {
+      return this.instantClassification?.wait || null;
+    },
+
+    /** Estimated wait figures carry the "~" the timing line already uses. */
+    waitPrefix() {
+      return this.waitQuote?.isEstimate ? '~' : '';
     },
 
     netClaimAmount() {
@@ -733,7 +761,7 @@ export default {
     },
 
     /**
-     * "Add instantly" on the confirming view. Same coordination guards
+     * "Add now" on the confirming view. Same coordination guards
      * as the 3-conf claim; on success the deposit is durably marked
      * claimed so the confirmation-window pipeline can never resubmit it.
      */
@@ -759,7 +787,7 @@ export default {
       this.isClaimingInstant = true;
       try {
         const provider = await this.walletStore.ensureSparkConnected();
-        await provider.claimInstantDeposit(
+        const result = await provider.claimInstantDeposit(
           claimTxId,
           classification.quote,
           classification.plan,
@@ -767,6 +795,11 @@ export default {
         );
 
         this.walletStore.markDepositClaimed(claimTxId);
+        // An early claim settles asynchronously; keep the balance moving
+        // until the credit lands so the home screen agrees with the toast.
+        if (result && result.settled === false) {
+          this.startBalancePolling();
+        }
 
         this.$q.notify({
           type: 'positive',
@@ -1673,6 +1706,60 @@ export default {
 
 .fee-row.deduct .fee-value {
   color: #FF6B6B;
+}
+
+/* Two ways to add a confirming deposit, priced side by side. It sits
+   directly on the sheet, no card: the Now column's faint tint is the
+   only surface, so the two columns never read as one list and the eye
+   lands on the column the primary button acts on. */
+.claim-choice {
+  margin: 0 20px 16px;
+  padding: 6px 8px;
+  border-radius: 12px;
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  column-gap: 6px;
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+}
+.choice-cell {
+  padding: 6px 8px;
+}
+.choice-head {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  opacity: 0.6;
+  text-align: right;
+  white-space: nowrap;
+}
+.choice-label {
+  opacity: 0.7;
+}
+/* A price is one token: the "~" mark, the unit and the digits never
+   break across lines, whatever the locale's grouping does to the width. */
+.choice-value {
+  font-weight: 500;
+  text-align: right;
+  white-space: nowrap;
+}
+.choice-value.deduct {
+  color: #FF6B6B;
+}
+.choice-value.credit {
+  color: var(--color-green, #15DE72);
+  font-weight: 600;
+}
+.choice-now {
+  background: rgba(247, 147, 26, 0.08);
+}
+.choice-head.choice-now {
+  border-radius: 8px 8px 0 0;
+  opacity: 0.85;
+}
+.choice-value.credit.choice-now {
+  border-radius: 0 0 8px 8px;
 }
 
 /* Fee Alert */
