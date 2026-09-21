@@ -206,10 +206,16 @@ export function createExitDriver({
 
 let instance = null;
 let walletStoreFactory = null;
+let exitStoreFactory = null;
 let monitor = null;
 
+/** The boot file registers both Pinia store factories, so this module imports no store. */
 export function attachExitWalletStore(factory) {
   walletStoreFactory = factory;
+}
+
+export function attachEmergencyExitStore(factory) {
+  exitStoreFactory = factory;
 }
 
 function walletStore() {
@@ -217,46 +223,42 @@ function walletStore() {
   return walletStoreFactory();
 }
 
+function exitStore() {
+  if (!exitStoreFactory) throw new Error('exit driver used before the exit store attached');
+  return exitStoreFactory();
+}
+
+/** The persisted ledger, seen through the store. */
+const ledger = {
+  exitFor: (walletId) => exitStore().exitFor(walletId),
+  set: (exit) => exitStore().set(exit),
+  remove: (walletId) => exitStore().remove(walletId),
+  get activeExits() { return exitStore().activeExits; },
+};
+
 export function exitDriver() {
   if (instance) return instance;
   instance = createExitDriver({
     getWallet: (walletId) => walletStore().wallets.find(w => w.id === walletId) || null,
     getProvider: (walletId) => walletStore().getSparkProvider(walletId),
     getMnemonic: (walletId) => walletStore().getSparkMnemonic(walletId),
-    ledger: ledgerFacade(),
+    ledger,
     esplora: lazyEsplora(),
     createSigner: async (privateKey) => (await import('./breezSdk.js')).createCpfpSigner(privateKey),
     reminders: {
-      schedule: async ({ walletId, at }) => (await import('./exitNotifications.js')).scheduleUnlockReminder({
-        walletId, at, title: 'Bitcoin ready to move', body: 'Your emergency exit can finish now. Open BuhoGO.',
-      }),
+      schedule: async ({ walletId, at }) => {
+        const [{ scheduleUnlockReminder }, { i18n }] = await Promise.all([import('./exitNotifications.js'), import('../boot/i18n')]);
+        return scheduleUnlockReminder({
+          walletId, at, title: i18n.global.t('Bitcoin ready to move'), body: i18n.global.t('Your emergency exit can finish now. Open BuhoGO.'),
+        });
+      },
       cancel: async (walletId) => (await import('./exitNotifications.js')).cancelUnlockReminder(walletId),
     },
   });
   return instance;
 }
 
-function ledgerFacade() {
-  let store = null;
-  const get = () => store || (store = useStoreLazily());
-  return {
-    exitFor: (id) => get().exitFor(id),
-    set: (exit) => get().set(exit),
-    remove: (id) => get().remove(id),
-    get activeExits() { return get().activeExits; },
-  };
-}
-
-let _useEmergencyExitStore = null;
-function useStoreLazily() {
-  if (!_useEmergencyExitStore) throw new Error('emergency exit store not attached');
-  return _useEmergencyExitStore();
-}
-
-export function attachEmergencyExitStore(factory) {
-  _useEmergencyExitStore = factory;
-}
-
+/** One Esplora client, created on first use so tests never touch the network. */
 function lazyEsplora() {
   let client = null;
   const get = async () => client || (client = (await import('./esplora.js')).createEsploraClient());

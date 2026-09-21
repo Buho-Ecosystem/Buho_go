@@ -167,7 +167,6 @@ export default {
       showHow: false,
       remindersOn: false,
       timer: null,
-      now: Date.now(),
     };
   },
   computed: {
@@ -284,7 +283,6 @@ export default {
     },
     async tick() {
       if (this.exit) await exitDriver().tick(this.walletId).catch(() => {});
-      this.now = Date.now();
     },
     describeError(error) {
       const code = error?.code || '';

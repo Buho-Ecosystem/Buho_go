@@ -251,6 +251,26 @@ try {
   await shot('exit-unlock-de-320-200pct');
   console.log('✓ German at 320px and 200% text');
 
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.evaluate(async () => {
+    const { applyLocale } = await import('/src/i18n/locales.js');
+    applyLocale(window.__audit.app._instance.proxy.$i18n, 'en-US');
+    document.documentElement.style.fontSize = '16px';
+    window.__audit.setDark(true);
+  });
+  await page.getByText(/Unlocks around/).first().waitFor();
+  await shot('exit-unlock-dark');
+  await go('/security');
+  await page.getByRole('button', { name: /^Emergency exit kit/ }).waitFor();
+  await shot('security-dark');
+  await page.getByRole('button', { name: /^Emergency exit kit/ }).click();
+  await page.locator('.exit-kit-sheet').waitFor();
+  await shot('kit-sheet-dark');
+  await go('/wallet');
+  await page.getByRole('button', { name: 'Exit in progress', exact: true }).waitFor();
+  await shot('home-chip-dark');
+  console.log('✓ dark theme');
+
   assert.deepEqual(errors, []);
   console.log(`Screenshots: ${output}`);
 } catch (error) {
