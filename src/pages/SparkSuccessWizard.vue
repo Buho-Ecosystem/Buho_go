@@ -422,8 +422,13 @@ export default {
 </script>
 
 <style scoped>
+/* padding-top: 0 cancels the global `.q-page { padding-top: var(--safe-top) }`
+   in app.css — .wizard-container below is already a full viewport tall, so
+   inheriting that pad makes the page taller than the screen and pushes the nav
+   buttons behind the system bar. .wizard-topbar takes the inset instead. */
 .wizard-page {
-  min-height: 100vh;
+  min-height: 100dvh;
+  padding-top: 0;
   display: flex;
   justify-content: center;
 }
@@ -447,7 +452,7 @@ export default {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 16px 20px 0;
+  padding: calc(16px + var(--safe-top, 0px)) 20px 0;
   flex-shrink: 0;
 }
 
