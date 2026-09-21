@@ -208,7 +208,24 @@
             <div class="hero-value hero-value-pending">
               +{{ formatAmount(claimingDeposit.amount) }}
             </div>
-            <div class="hero-label" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-7'">
+            <!-- The eyebrow and the strip already say the deposit is
+                 confirming, so the line under the amount carries what
+                 waiting costs: the SDK's mature quote, with the "~" the
+                 timing line uses while it is still an estimate. Without
+                 a quote the plain sentence keeps the slot, so nothing
+                 moves when the quote lands. -->
+            <div
+              v-if="waitQuote"
+              class="hero-fee"
+              :class="$q.dark.isActive ? 'hero-fee-dark' : 'hero-fee-light'"
+            >
+              <span>{{ $t('Fee') }}</span>
+              <strong>{{ waitPrefix }}{{ formatAmount(waitQuote.feeSats) }}</strong>
+              <span class="meta-sep" aria-hidden="true">·</span>
+              <span>{{ $t('You get') }}</span>
+              <strong>{{ waitPrefix }}{{ formatAmount(waitQuote.creditAmountSats) }}</strong>
+            </div>
+            <div v-else class="hero-label" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-7'">
               {{ $t('Confirming on the Bitcoin network') }}
             </div>
           </div>
@@ -233,62 +250,100 @@
             </div>
           </div>
 
-          <!-- Early add offered: both ways of adding the deposit, priced
-               side by side from the one quote the SDK returns. Two facts
-               per way, nothing to read. The wait figures carry "~" while
-               the service has not yet quoted the immature deposit, the
-               same mark the timing line above already uses. -->
-          <div v-if="instantClassification && waitQuote" class="claim-choice">
-            <span class="choice-cell choice-head"></span>
-            <span class="choice-cell choice-head">{{ $t('Wait') }}</span>
-            <span class="choice-cell choice-head choice-now">{{ $t('Now') }}</span>
-
-            <span class="choice-cell choice-label">{{ $t('Fee') }}</span>
-            <span class="choice-cell choice-value deduct">{{ waitPrefix }}{{ formatAmount(waitQuote.feeSats) }}</span>
-            <span class="choice-cell choice-value deduct choice-now">{{ formatAmount(instantClassification.feeSats) }}</span>
-
-            <span class="choice-cell choice-label">{{ $t('You get') }}</span>
-            <span class="choice-cell choice-value credit">{{ waitPrefix }}{{ formatAmount(waitQuote.creditAmountSats) }}</span>
-            <span class="choice-cell choice-value credit choice-now">{{ formatAmount(instantClassification.creditSats) }}</span>
-          </div>
-          <!-- An engine that prices only the early leg: disclose that one. -->
-          <div
-            v-else-if="instantClassification"
-            class="fee-details"
-            :class="$q.dark.isActive ? 'details-dark' : 'details-light'"
-          >
-            <div class="fee-row">
-              <span class="fee-label">{{ $t('Deposit') }}</span>
-              <span class="fee-value">{{ formatAmount(claimingDeposit.amount || 0) }}</span>
+          <!-- Speed up. Offered only when the service prices an early add,
+               and only as one quiet pill until asked: the default view is
+               the plain confirming sheet. Tapping the pill opens the
+               comparison in its place, so nothing above the strip moves.
+               The wait column repeats the line under the amount; the Now
+               column is the offer. "~" marks the SDK's estimate. -->
+          <transition name="speed-reveal" mode="out-in">
+            <div
+              v-if="instantClassification && !speedUpOpen"
+              key="pill"
+              class="speed-pill-row"
+            >
+              <button
+                type="button"
+                class="speed-pill"
+                :class="$q.dark.isActive ? 'speed-pill-dark' : 'speed-pill-light'"
+                data-audit="deposit-speed-up"
+                @click="openSpeedUp"
+              >
+                <Icon icon="tabler:gauge" width="19" height="19" aria-hidden="true" />
+                {{ $t('Speed up') }}
+              </button>
             </div>
-            <div class="fee-row deduct">
-              <span class="fee-label">{{ $t('Fee') }}</span>
-              <span class="fee-value">-{{ formatAmount(instantClassification.feeSats) }}</span>
+            <div
+              v-else-if="instantClassification && waitQuote"
+              key="compare"
+              class="claim-choice"
+              role="table"
+              :aria-label="$t('Speed up')"
+            >
+              <span class="choice-cell choice-head"></span>
+              <span class="choice-cell choice-head">{{ $t('Wait') }}</span>
+              <span class="choice-cell choice-head choice-now">{{ $t('Now') }}</span>
+
+              <span class="choice-cell choice-label">{{ $t('Ready in') }}</span>
+              <span class="choice-cell choice-value">{{ $t('~10-60 min') }}</span>
+              <span class="choice-cell choice-value choice-now">{{ $t('Right away') }}</span>
+
+              <span class="choice-cell choice-label">{{ $t('Fee') }}</span>
+              <span class="choice-cell choice-value deduct">{{ waitPrefix }}{{ formatAmount(waitQuote.feeSats) }}</span>
+              <span class="choice-cell choice-value deduct choice-now">{{ formatAmount(instantClassification.feeSats) }}</span>
+
+              <span class="choice-cell choice-label">{{ $t('You get') }}</span>
+              <span class="choice-cell choice-value credit">{{ waitPrefix }}{{ formatAmount(waitQuote.creditAmountSats) }}</span>
+              <span class="choice-cell choice-value credit choice-now">{{ formatAmount(instantClassification.creditSats) }}</span>
             </div>
-          </div>
+            <!-- An engine that prices only the early leg: disclose that one. -->
+            <div
+              v-else-if="instantClassification"
+              key="single"
+              class="fee-details"
+              :class="$q.dark.isActive ? 'details-dark' : 'details-light'"
+            >
+              <div class="fee-row">
+                <span class="fee-label">{{ $t('Deposit') }}</span>
+                <span class="fee-value">{{ formatAmount(claimingDeposit.amount || 0) }}</span>
+              </div>
+              <div class="fee-row deduct">
+                <span class="fee-label">{{ $t('Fee') }}</span>
+                <span class="fee-value">-{{ formatAmount(instantClassification.feeSats) }}</span>
+              </div>
+            </div>
+          </transition>
 
           <div class="sheet-actions">
             <q-btn
-              v-if="instantClassification"
+              v-if="instantClassification && speedUpOpen"
               unelevated
               no-caps
               class="confirm-btn"
               :class="$q.dark.isActive ? 'confirm-btn-dark' : 'confirm-btn-light'"
               :loading="isClaimingInstant || walletStore.isDepositClaimInFlight(claimingDeposit.txId)"
+              data-audit="deposit-add-now"
               @click="confirmInstantClaim"
             >
               {{ $t('Add now') }}
+              <template v-slot:loading>
+                <q-spinner size="18px" class="q-mr-sm" />
+                {{ $t('Adding') }}
+              </template>
             </q-btn>
-            <!-- With a choice on screen the quiet exit is the other way to
-                 add it; the deposit simply stays on the confirmation path. -->
+            <!-- With the comparison open the quiet exit is the other way
+                 to add it: Wait closes the sheet and the deposit simply
+                 stays on the confirmation path. Held while a claim is
+                 in flight so the answer is never missed. -->
             <q-btn
               flat
               no-caps
               class="cancel-btn"
               :class="$q.dark.isActive ? 'cancel-dark' : 'cancel-light'"
+              :disable="isClaimingInstant"
               @click="cancelClaim"
             >
-              {{ instantClassification ? $t('Wait') : $t('Close') }}
+              {{ speedUpOpen ? $t('Wait') : $t('Close') }}
             </q-btn>
           </div>
         </template>
@@ -424,6 +479,11 @@ export default {
       // a classification from classifyUnconfirmedDeposit with
       // category 'instant', or null when the SSP offered none.
       instantClassification: null,
+      // What waiting costs, from the same quote: shown under the amount
+      // whether or not an early add is offered.
+      waitQuote: null,
+      // The comparison behind the Speed up pill; false = the pill.
+      speedUpOpen: false,
       isClaimingInstant: false,
       claimFeeQuote: null,
       isLoadingQuote: false,
@@ -494,11 +554,6 @@ export default {
      */
     bitcoinQrOptions() {
       return { ...this.qrOptions, width: 232 };
-    },
-
-    /** The wait-for-confirmations leg the SDK quoted next to the early one. */
-    waitQuote() {
-      return this.instantClassification?.wait || null;
     },
 
     /** Estimated wait figures carry the "~" the timing line already uses. */
@@ -613,8 +668,9 @@ export default {
               const justConfirmed = fresh.confirmed && !this.claimingDeposit.confirmed;
               this.claimingDeposit = fresh;
               if (justConfirmed && !this.claimFeeQuote) {
-                // The instant offer only makes sense pre-confirmation.
+                // The early offer only makes sense pre-confirmation.
                 this.instantClassification = null;
+                this.speedUpOpen = false;
                 this.openDepositSheet(fresh);
               }
             }
@@ -694,14 +750,17 @@ export default {
       this.claimingDeposit = deposit;
       this.claimFeeQuote = null;
       this.instantClassification = null;
+      this.waitQuote = null;
+      this.speedUpOpen = false;
       this.showClaimDialog = true;
 
       if (!deposit.confirmed) {
-        // Confirming view: ask the SSP for a 0-conf plan in the
-        // background. When one exists, the sheet grows an "Add
-        // instantly" action with the fee disclosed; when none exists
-        // (or the quote fails) the view stays exactly as today.
-        this.loadInstantOffer(deposit);
+        // Confirming view: price both ways of adding it in the
+        // background. The wait leg fills the line under the amount;
+        // an early leg, when the service offers one, adds the Speed up
+        // pill. Until then, and if the quote fails, the view is the
+        // plain confirming sheet.
+        this.loadDepositOffers(deposit);
         return;
       }
 
@@ -736,15 +795,18 @@ export default {
       this.claimFeeQuote = null;
       this.isLoadingQuote = false;
       this.instantClassification = null;
+      this.waitQuote = null;
+      this.speedUpOpen = false;
       this.isClaimingInstant = false;
     },
 
     /**
-     * Fetch the instant (0-conf) offer for an unconfirmed deposit.
-     * Best-effort: any failure leaves `instantClassification` null and
-     * the confirming view unchanged.
+     * Price both ways of adding an unconfirmed deposit. One provider call
+     * returns the wait leg, shown under the amount, and, when the service
+     * fronts this deposit, the early leg behind the Speed up pill.
+     * Best-effort: any failure leaves the plain confirming view.
      */
-    async loadInstantOffer(deposit) {
+    async loadDepositOffers(deposit) {
       try {
         const provider = await this.walletStore.ensureSparkConnected();
         if (!provider?.classifyUnconfirmedDeposit) return;
@@ -752,12 +814,16 @@ export default {
         // The sheet may have moved on (closed, or promoted to confirmed)
         // while the quote was in flight.
         if (this.claimingDeposit?.txId !== deposit.txId || this.claimingDeposit?.confirmed) return;
-        if (classification.category === 'instant') {
-          this.instantClassification = classification;
-        }
+        this.waitQuote = classification.wait || null;
+        this.instantClassification = classification.category === 'instant' ? classification : null;
       } catch (error) {
-        console.warn('Instant offer lookup failed:', error?.message || error);
+        console.warn('Deposit offers lookup failed:', error?.message || error);
       }
+    },
+
+    /** The pill gives way to the comparison, in place. */
+    openSpeedUp() {
+      this.speedUpOpen = true;
     },
 
     /**
@@ -816,18 +882,21 @@ export default {
         this.showClaimDialog = false;
         this.claimingDeposit = null;
         this.instantClassification = null;
+        this.waitQuote = null;
+        this.speedUpOpen = false;
       } catch (error) {
-        console.error('Instant claim failed:', error);
-        const userMessage = this.getUserFriendlyError(error, 'claim');
+        console.error('Speed up failed:', error);
+        // Rare: the service's price moved between quote and claim, or it
+        // withdrew the offer. Nothing was charged. Say so in the user's
+        // words and withdraw the pill; the confirmation path continues.
         this.$q.notify({
           type: 'negative',
-          message: userMessage.title,
-          caption: this.$t('The deposit stays on the normal confirmation path.'),
+          message: this.$t('Could not speed up'),
+          caption: this.$t('It still arrives after 3 confirmations.'),
           timeout: 5000
         });
-        // Withdraw the offer — the SSP already refused it once, and the
-        // 3-conf pipeline remains the safe road for this deposit.
         this.instantClassification = null;
+        this.speedUpOpen = false;
       } finally {
         this.isClaimingInstant = false;
         this.walletStore.clearDepositClaimInFlight(claimTxId);
@@ -1609,6 +1678,30 @@ export default {
   margin-top: 10px;
 }
 
+/* What waiting costs, under the arriving amount. Labels muted, numbers
+   in the text colour, one line that never wraps. Same slot and size as
+   .hero-label so the quote landing never moves the strip below. */
+.hero-fee {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  font-size: 13px;
+  margin-top: 10px;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.hero-fee strong {
+  font-weight: 600;
+}
+.hero-fee .meta-sep {
+  margin: 0 2px;
+  opacity: 0.5;
+}
+.hero-fee-light { color: rgba(15, 23, 42, 0.6); }
+.hero-fee-light strong { color: #0F172A; }
+.hero-fee-dark { color: rgba(255, 255, 255, 0.55); }
+.hero-fee-dark strong { color: #F5F5F7; }
+
 /* Confirming-state hero overrides — small uppercase eyebrow above
    the amount, and a softer orange tint for the amount itself so it
    doesn't claim the same credit-green meaning as the ready state. */
@@ -1708,10 +1801,68 @@ export default {
   color: #FF6B6B;
 }
 
-/* Two ways to add a confirming deposit, priced side by side. It sits
-   directly on the sheet, no card: the Now column's faint tint is the
-   only surface, so the two columns never read as one list and the eye
-   lands on the column the primary button acts on. */
+/* Speed up pill: a real button one step below the primary. Tinted with
+   the credit green, 44pt, centered, icon + verb. It is an offer, not
+   the sheet's purpose, so it is a pill and not a full-width bar. */
+.speed-pill-row {
+  display: flex;
+  justify-content: center;
+  margin: 2px 20px 14px;
+}
+.speed-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 44px;
+  padding: 0 18px 0 14px;
+  border: 0;
+  border-radius: 999px;
+  font-family: inherit;
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: transform 0.12s ease, background-color 0.2s ease;
+}
+.speed-pill:active {
+  transform: scale(0.97);
+}
+.speed-pill:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 2px;
+}
+.speed-pill-light {
+  background: rgba(5, 149, 115, 0.12);
+  color: #05704F;
+}
+.speed-pill-dark {
+  background: rgba(21, 222, 114, 0.14);
+  color: #7BF0B3;
+}
+/* The pill gives way to the comparison in place: a short fade, no
+   layout jump above the strip. */
+.speed-reveal-enter-active,
+.speed-reveal-leave-active {
+  transition: opacity 0.16s ease, transform 0.16s ease;
+}
+.speed-reveal-enter-from,
+.speed-reveal-leave-to {
+  opacity: 0;
+  transform: translateY(4px);
+}
+@media (prefers-reduced-motion: reduce) {
+  .speed-pill,
+  .speed-reveal-enter-active,
+  .speed-reveal-leave-active {
+    transition: none;
+  }
+}
+
+/* Two ways to add a confirming deposit, priced side by side. Shown only
+   once Speed up is tapped. It sits directly on the sheet, no card: the
+   Now column's faint tint is the only surface, so the two columns never
+   read as one list and the eye lands on the column the primary button
+   acts on. */
 .claim-choice {
   margin: 0 20px 16px;
   padding: 6px 8px;

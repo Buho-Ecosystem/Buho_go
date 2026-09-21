@@ -3189,6 +3189,12 @@ export default {
   "Wait": "Warten",
   "Now": "Jetzt",
   "You get": "Du erhältst",
+  "Speed up": "Beschleunigen",
+  "Ready in": "Fertig in",
+  "Right away": "Sofort",
+  "~10-60 min": "~10-60 Min",
+  "Could not speed up": "Beschleunigen nicht möglich",
+  "It still arrives after 3 confirmations.": "Es kommt trotzdem nach 3 Bestätigungen an.",
   "The deposit stays on the normal confirmation path.": "Die Einzahlung bleibt auf dem normalen Bestätigungsweg.",
   // ─── Spark-Zahlungsanfragen ───
   "Any amount": "Beliebiger Betrag",
