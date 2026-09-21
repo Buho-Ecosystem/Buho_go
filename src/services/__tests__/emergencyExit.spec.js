@@ -46,7 +46,7 @@ function harness({ recoverable = 89700, fundingSat = 8500 } = {}) {
     createSigner: async key => { signers.push(key); return { signPsbt: async b => b }; },
     now: () => clock,
   });
-  return { driver, provider, chain, ledger, reminders, signers, exits, tick: ms => { clock += ms; } };
+  return { driver, provider, chain, ledger, reminders, signers, exits, esplora, tick: ms => { clock += ms; } };
 }
 
 test('start quotes at the medium fee tier, derives both addresses from the words, and is idempotent', async () => {
@@ -159,4 +159,52 @@ test('a chain outage is recorded and the next pass recovers; higher fees send th
   await assert.rejects(() => pricier.driver.confirmSend('w1'), error => error.code === 'MORE_FEE_MONEY');
   assert.equal(pricier.ledger.exitFor('w1').stage, 'fund');
   assert.equal(pricier.ledger.exitFor('w1').funding.shortfallSat, 2900);
+});
+
+test('cancel is queued behind a funding poll in flight, so the poll cannot bring the exit back', async () => {
+  const h = harness();
+  await h.driver.start('w1');
+  let release;
+  const gate = new Promise(resolve => { release = resolve; });
+  const realUtxos = h.esplora.utxos;
+  h.esplora.utxos = async address => { await gate; return realUtxos(address); };
+  h.chain.utxos = [{ txid: 'fee', vout: 0, value: 9000, confirmed: true }];
+  const poll = h.driver.refreshFunding('w1');
+  const cancelling = h.driver.cancel('w1');
+  release();
+  await poll;
+  await cancelling;
+  assert.equal(h.ledger.exitFor('w1'), null, 'the record stays gone after the poll settles');
+  await h.driver.tick('w1');
+  assert.equal(h.ledger.exitFor('w1'), null);
+});
+
+test('only the fee money the exit needs is signed, and a rebuilt chain re-reads confirmed heights', async () => {
+  const h = harness();
+  await h.driver.start('w1');
+  h.chain.utxos = [
+    { txid: 'small', vout: 0, value: 3000, confirmed: true },
+    { txid: 'big', vout: 1, value: 9000, confirmed: true },
+    { txid: 'extra', vout: 0, value: 50000, confirmed: true },
+  ];
+  await h.driver.tick('w1');
+  h.provider.buildUnilateralExit = async request => {
+    h.provider.calls.build.push(request);
+    return { recoverableValueSat: 89700, totalFeeSat: 8800, leaves: [], transactions: CHAIN.map(tx => (['F', 'N'].includes(tx.txid) ? { ...tx, status: 'confirmed' } : tx)) };
+  };
+  h.chain.statuses.F = { known: true, confirmed: true, blockHeight: 1001 };
+  h.chain.statuses.N = { known: true, confirmed: true, blockHeight: 1002 };
+  h.chain.tip = 1002;
+  const exit = await h.driver.confirmSend('w1');
+  assert.deepEqual(h.provider.calls.build[0].fundingInputs.map(i => i.txid), ['big'], 'the smallest single UTXO that covers the need');
+  assert.equal(exit.stage, 'unlock', 'heights of already-confirmed steps were fetched');
+  assert.equal(exit.unlock.height, 1102);
+  assert.deepEqual(h.chain.broadcasts, [], 'nothing re-broadcast for confirmed steps');
+});
+
+test('the wallet\'s own deposit address is refused as a destination', async () => {
+  const h = harness();
+  const deposit = 'bc1p5cyxnuxmeuwuvkwfem96lqzszd02n6xdcjrs20cac6yqjjwudpxqkedrcr';
+  await assert.rejects(() => h.driver.start('w1', { destination: deposit, excluded: [deposit] }), error => error.code === 'DESTINATION_SPARK_DEPOSIT');
+  assert.equal(h.ledger.exitFor('w1'), null);
 });

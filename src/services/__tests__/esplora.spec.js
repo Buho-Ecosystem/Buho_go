@@ -61,3 +61,14 @@ test('a rejected package is surfaced, not retried on another node', async () => 
   assert.equal(calls.length, 1);
   await assert.rejects(() => client.broadcastPackage([]), /1 to 25/);
 });
+
+test('a node without the package route is skipped, and single-tx broadcasts fail over too', async () => {
+  const missing = fakeFetch([['a.example/api/txs/package', { status: 404, body: 'not found' }], ['b.example/api/txs/package', { body: '{"ok":true}' }]]);
+  assert.deepEqual(await createEsploraClient({ endpoints, fetchImpl: missing.fetchImpl }).broadcastPackage(['aa', 'bb']), { ok: true });
+  assert.equal(missing.calls.length, 2);
+  const single = fakeFetch([['a.example/api/tx', { status: 503, body: 'busy' }], ['b.example/api/tx', { body: 'txid-b' }]]);
+  assert.equal(await createEsploraClient({ endpoints, fetchImpl: single.fetchImpl }).broadcastTx('aa'), 'txid-b');
+  const rejected = fakeFetch([['a.example/api/tx', { status: 400, body: 'bad-txns-inputs-missingorspent' }], ['b.example/api/tx', { body: 'txid-b' }]]);
+  await assert.rejects(() => createEsploraClient({ endpoints, fetchImpl: rejected.fetchImpl }).broadcastTx('aa'), error => error.code === 'REJECTED');
+  assert.equal(rejected.calls.length, 1);
+});

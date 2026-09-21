@@ -105,10 +105,16 @@ export function createEsploraClient({
   }
 
   async function broadcastTx(txHex) {
-    const res = await request(bases[0], '/tx', { method: 'POST', body: txHex, headers: { 'Content-Type': 'text/plain' } });
-    if (res.ok) return res.text.trim();
-    if (isAlreadyKnownMessage(res.text)) return null;
-    throw new EsploraError(res.text || `HTTP ${res.status}`, { code: 'REJECTED', status: res.status, endpoint: bases[0] });
+    let lastError = null;
+    for (const base of bases) {
+      const res = await request(base, '/tx', { method: 'POST', body: txHex, headers: { 'Content-Type': 'text/plain' } }).catch(error => ({ ok: false, status: 0, text: error.message }));
+      if (res.ok) return res.text.trim();
+      if (isAlreadyKnownMessage(res.text)) return null;
+      const missingRoute = [404, 405, 501].includes(res.status);
+      lastError = new EsploraError(res.text || `HTTP ${res.status}`, { code: res.status && !missingRoute ? 'REJECTED' : 'UNREACHABLE', status: res.status, endpoint: base });
+      if (res.status && res.status < 500 && !missingRoute) throw lastError;
+    }
+    throw lastError || new EsploraError('No endpoint reachable', { code: 'UNREACHABLE' });
   }
 
   /** One parent with its fee child, as bitcoind's submitpackage expects. */
@@ -121,9 +127,11 @@ export function createEsploraClient({
       const res = await request(base, '/txs/package', { method: 'POST', body: JSON.stringify(txHexes), headers: { 'Content-Type': 'application/json' } }).catch(error => ({ ok: false, status: 0, text: error.message }));
       if (res.ok) return res.text ? safeJson(res.text) : {};
       if (isAlreadyKnownMessage(res.text)) return { alreadyKnown: true };
-      lastError = new EsploraError(res.text || `HTTP ${res.status}`, { code: res.status ? 'REJECTED' : 'UNREACHABLE', status: res.status, endpoint: base });
-      // Only a transport failure or a server error justifies asking the next node.
-      if (res.status && res.status < 500) throw lastError;
+      const missingRoute = [404, 405, 501].includes(res.status);
+      lastError = new EsploraError(res.text || `HTTP ${res.status}`, { code: res.status && !missingRoute ? 'REJECTED' : 'UNREACHABLE', status: res.status, endpoint: base });
+      // A real rejection is an answer; a node without the route, a transport
+      // failure or a server error justifies asking the next node.
+      if (res.status && res.status < 500 && !missingRoute) throw lastError;
     }
     throw lastError || new EsploraError('No endpoint reachable', { code: 'UNREACHABLE' });
   }
@@ -133,4 +141,19 @@ export function createEsploraClient({
 
 function safeJson(text) {
   try { return JSON.parse(text); } catch { return { raw: text }; }
+}
+
+/**
+ * The app's client: the person's configured mempool instance first (the same
+ * choice on-chain deposits honour), then the public instances. Imported
+ * lazily so this module stays free of app state for tests.
+ */
+export async function appEsploraClient() {
+  let endpoints = [...DEFAULT_ESPLORA_ENDPOINTS];
+  try {
+    const { fiatRatesService } = await import('../utils/fiatRates.js');
+    const custom = String(fiatRatesService.getApiUrl() || '').replace(/\/+$/, '').replace(/\/v1$/, '');
+    if (custom && !endpoints.includes(custom)) endpoints = [custom, ...endpoints];
+  } catch { /* no configured instance: public endpoints only */ }
+  return createEsploraClient({ endpoints });
 }

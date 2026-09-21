@@ -105,7 +105,7 @@ try {
   await shot('security-kit-line');
   await page.getByRole('button', { name: /^Emergency exit kit/ }).click();
   await page.locator('.exit-kit-sheet').waitFor();
-  await page.getByText('89,700 sats could leave on their own').first().waitFor();
+  await page.getByText('89,700 sats could leave without Spark').first().waitFor();
   await shot('kit-sheet');
   await page.getByRole('button', { name: 'How the emergency exit works', exact: true }).click();
   await page.locator('.exit-how-sheet').waitFor();
@@ -141,7 +141,7 @@ try {
   await page.getByText('Add fee money', { exact: true }).first().waitFor();
   await page.locator('.exit-address').waitFor();
   assert.equal(await page.locator('.exit-address').innerText(), FUNDING);
-  await page.getByText(/Send 8,500 sats of on-chain Bitcoin/).waitFor();
+  await page.getByText(/Send exactly 8,500 sats to this address/).waitFor();
   let exit = await exitRecord();
   assert.equal(exit.stage, 'fund');
   assert.equal(exit.destination.address, DESTINATION);
@@ -160,7 +160,7 @@ try {
   await page.getByRole('heading', { name: 'Send to Bitcoin now?', exact: true }).waitFor();
   await page.getByText(/89,700 sats leave Spark/).waitFor();
   await shot('exit-confirm');
-  await page.locator('.exit-confirm').getByRole('button', { name: 'Send', exact: true }).click();
+  await page.locator('.exit-confirm').getByRole('button', { name: 'Send to Bitcoin', exact: true }).click();
   // The dialog closes only after signing and the first broadcast pass.
   await page.locator('.exit-confirm').waitFor({ state: 'detached', timeout: 90000 });
   await page.getByText('On its way', { exact: true }).first().waitFor();
@@ -194,17 +194,26 @@ try {
   chain.statuses.S = { confirmed: true, block_height: 900103 }; chain.tip = 900103;
   await tick();
   await page.getByText('Your money is plain Bitcoin now', { exact: true }).waitFor();
-  await page.getByText(/89,400 sats arrived at/).waitFor();
+  await page.getByText(/89,400 sats arrived on/).waitFor();
+  await page.getByText('Where the money is now', { exact: true }).waitFor();
+  await page.getByRole('button', { name: 'View on mempool.space', exact: true }).waitFor();
+  await page.getByText(DESTINATION, { exact: true }).waitFor();
   await shot('exit-done');
   await page.getByRole('button', { name: 'Done', exact: true }).click();
   await page.getByRole('button', { name: 'Start emergency exit', exact: true }).waitFor();
-  console.log('✓ packages go out in dependency order, the timelock is waited out, the sweep finishes the exit');
+  await page.getByText(/Last exit finished/).waitFor();
+  assert.equal((await exitRecord()).stage, 'done', 'the receipt stays as history');
+  await shot('exit-after-done');
+  console.log('✓ packages go out in dependency order, the timelock is waited out, the sweep finishes the exit, the receipt stays');
 
   await page.getByRole('button', { name: 'Start emergency exit', exact: true }).click();
-  await page.getByRole('button', { name: 'Cancel exit', exact: true }).click();
+  await page.getByRole('button', { name: 'Cancel emergency exit', exact: true }).click();
+  await page.getByText('Cancel emergency exit?', { exact: true }).waitFor();
+  await shot('exit-cancel-confirm');
+  await page.locator('.q-dialog').getByRole('button', { name: 'Cancel emergency exit', exact: true }).click();
   await page.getByRole('button', { name: 'Start emergency exit', exact: true }).waitFor();
   assert.equal(await exitRecord(), null);
-  console.log('✓ an unsigned exit can be cancelled');
+  console.log('✓ an unsigned exit can be cancelled after a confirmation');
 
   // Home: the door after a sustained outage, the chip while an exit runs.
   await page.evaluate(() => {
@@ -215,6 +224,7 @@ try {
   await page.waitForFunction(() => !!window.__audit?.app, { timeout: 120000 });
   await go('/wallet');
   await page.getByText('Spark is not responding', { exact: true }).waitFor({ timeout: 60000 });
+  await page.getByText(/No answer from Spark for 7 hours/).waitFor();
   await shot('home-banner');
   // A consistent record: a signed chain whose tree is confirmed and whose refund waits on its timelock.
   chain.statuses.F2 = { confirmed: true, block_height: 900100 };
@@ -229,11 +239,11 @@ try {
     ];
     store.set({ v: 1, walletId: 'spark-personal-1', stage: 'unlock', createdAt: Date.now(), updatedAt: Date.now(), destination: { address: 'bc1qcr8te4kr609gcawutmrza0j4xv80jy8z306fyu' }, funding: { address: 'x', utxos: [], confirmedSat: 9000, requiredSat: 8500, shortfallSat: 0, confirmedAt: Date.now() }, quote: { recoverableValueSat: 89700, totalFeeSat: 8800, singleUtxoFundingSat: 8500, feeRateSatPerVbyte: 4, leafIds: [] }, triage: { recoverableSat: 89700, notWorthSat: 9900 }, built: { transactions, totalFeeSat: 8800, recoverableValueSat: 89700 }, statuses: { F2: { known: true, confirmed: true, blockHeight: 900100 }, N2: { known: true, confirmed: true, blockHeight: 900101 } }, tipHeight: 900103, unlock: { height: 901501, blocksLeft: 1397, estimatedAt: Date.now() + 14 * 86400e3 }, progress: { confirmed: 2, total: 4 } });
   });
-  await page.getByRole('button', { name: 'Exit in progress', exact: true }).waitFor();
+  await page.getByRole('button', { name: 'Emergency exit running', exact: true }).waitFor();
   await page.getByRole('button', { name: 'Dismiss', exact: true }).click();
   await page.getByText('Spark is not responding', { exact: true }).waitFor({ state: 'detached' });
   await shot('home-chip');
-  await page.getByRole('button', { name: 'Exit in progress', exact: true }).click();
+  await page.getByRole('button', { name: 'Emergency exit running', exact: true }).click();
   await page.waitForFunction(() => location.hash.includes('/security/exit/spark-personal-1'));
   await page.getByText(/Unlocks around/).first().waitFor();
   await shot('exit-unlock-resumed');
@@ -267,7 +277,7 @@ try {
   await page.locator('.exit-kit-sheet').waitFor();
   await shot('kit-sheet-dark');
   await go('/wallet');
-  await page.getByRole('button', { name: 'Exit in progress', exact: true }).waitFor();
+  await page.getByRole('button', { name: 'Emergency exit running', exact: true }).waitFor();
   await shot('home-chip-dark');
   console.log('✓ dark theme');
 

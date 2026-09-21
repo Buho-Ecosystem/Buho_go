@@ -69,7 +69,7 @@
 
     <IdentityRestoreDialog v-model="showRestoreDialog" @restored="onIdentityRestored" />
     <!-- The emergency exit kit receipt and its door, Spark wallets only. -->
-    <ExitKitSheet v-model="showKitSheet" @how="onKitHow" />
+    <ExitKitSheet v-model="showKitSheet" @how="onKitHow" @cloud="onKitCloud" />
     <HowExitWorksSheet v-model="showHowExit" />
 
     <SettingsHubNav />
@@ -170,6 +170,11 @@ export default {
       // One sheet at a time: let the kit sheet finish closing first.
       this.showKitSheet = false;
       setTimeout(() => { this.showHowExit = true; }, 250);
+    },
+
+    onKitCloud() {
+      this.showKitSheet = false;
+      setTimeout(() => this.openCloud('backup'), 250);
     },
 
     openCloud(intent) {

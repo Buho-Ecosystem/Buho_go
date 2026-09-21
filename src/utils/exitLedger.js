@@ -45,6 +45,40 @@ export function isActive(exit) {
   return !!exit && ACTIVE_STAGES.includes(exit.stage);
 }
 
+/** Finished but not yet acknowledged: the receipt still needs to be seen. */
+export function needsAttention(exit) {
+  return isActive(exit) || (!!exit && exit.stage === 'done' && !exit.acknowledgedAt);
+}
+
+export function acknowledge(exit, now = Date.now()) {
+  if (!exit || exit.stage !== 'done') return exit;
+  return { ...exit, acknowledgedAt: exit.acknowledgedAt || now, updatedAt: now };
+}
+
+/**
+ * Which confirmed fee money UTXOs to sign: the smallest single one that covers
+ * the requirement, else the largest ones until it is covered. Whatever the
+ * inputs carry beyond the requirement is exposed as `excessSat`, so the
+ * person can be told before signing that extra fee money may be spent too.
+ */
+export function selectFundingInputs(utxos, requiredSat) {
+  const confirmed = (utxos || []).filter(u => u.confirmed);
+  const single = confirmed.filter(u => u.value >= requiredSat).sort((a, b) => a.value - b.value)[0];
+  const selected = [];
+  let total = 0;
+  if (single) {
+    selected.push(single);
+    total = single.value;
+  } else {
+    for (const utxo of [...confirmed].sort((a, b) => b.value - a.value)) {
+      if (total >= requiredSat) break;
+      selected.push(utxo);
+      total += utxo.value;
+    }
+  }
+  return { inputs: selected, totalSat: total, excessSat: Math.max(0, total - requiredSat), enough: total >= requiredSat };
+}
+
 export function canCancel(exit) {
   return !!exit && (exit.stage === 'fund' || exit.stage === 'ready');
 }
@@ -158,11 +192,24 @@ export function withChain(exit, { statuses = {}, tipHeight, now = Date.now() }) 
 }
 
 export function withError(exit, error, now = Date.now()) {
-  return { ...exit, lastError: String(error?.message || error || 'unknown').slice(0, 300), attempts: (exit.attempts || 0) + 1, updatedAt: now };
+  return {
+    ...exit,
+    lastError: String(error?.message || error || 'unknown').slice(0, 300),
+    lastErrorCode: error?.code || null,
+    attempts: (exit.attempts || 0) + 1,
+    updatedAt: now,
+  };
 }
 
 export function withoutError(exit, now = Date.now()) {
-  return exit.lastError ? { ...exit, lastError: null, attempts: 0, updatedAt: now } : exit;
+  return exit.lastError ? { ...exit, lastError: null, lastErrorCode: null, attempts: 0, updatedAt: now } : exit;
+}
+
+/** What the sweep takes out of the recovered amount; fee money covers the rest. */
+export function sweepFeeSat(exit) {
+  const quote = exit?.quote;
+  if (!quote) return 0;
+  return Math.max(0, quote.totalFeeSat - quote.singleUtxoFundingSat);
 }
 
 /** What arrives, net of the sweep's own fee, once the exit is done. */

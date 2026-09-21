@@ -55,6 +55,11 @@ export const useExitKitStore = defineStore('exitKit', {
       this._persist();
     },
 
+    clear() {
+      this.kits = {};
+      this._persist();
+    },
+
     _persist() {
       try {
         storage()?.setItem(EXIT_KIT_STORAGE_KEY, JSON.stringify({ v: 1, kits: this.kits }));

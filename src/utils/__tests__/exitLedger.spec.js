@@ -63,3 +63,24 @@ test('errors are counted and cleared without touching the stage', () => {
   assert.equal(exit.stage, 'fund');
   assert.equal(withoutError(exit, 20).lastError, null);
 });
+
+test('a finished exit stays as a receipt until acknowledged, and fee money inputs are the fewest that cover the need', async () => {
+  const { needsAttention, acknowledge, selectFundingInputs, sweepFeeSat } = await import('../exitLedger.js');
+  const done = { ...base(), stage: 'done', quote: { totalFeeSat: 8800, singleUtxoFundingSat: 8500 } };
+  assert.equal(needsAttention(done), true);
+  const seen = acknowledge(done, 99);
+  assert.equal(seen.acknowledgedAt, 99);
+  assert.equal(needsAttention(seen), false);
+  assert.equal(acknowledge(base(), 5).acknowledgedAt, undefined, 'only a finished exit can be acknowledged');
+  assert.equal(sweepFeeSat(done), 300);
+  const utxos = [{ txid: 'a', vout: 0, value: 3000, confirmed: true }, { txid: 'b', vout: 0, value: 9000, confirmed: true }, { txid: 'c', vout: 0, value: 50000, confirmed: false }];
+  assert.deepEqual(selectFundingInputs(utxos, 8500), { inputs: [utxos[1]], totalSat: 9000, excessSat: 500, enough: true });
+  assert.deepEqual(selectFundingInputs(utxos, 11000).inputs.map(u => u.txid), ['b', 'a']);
+  assert.equal(selectFundingInputs(utxos, 20000).enough, false);
+});
+
+test('errors keep their code so the page can explain them', () => {
+  const exit = withError(base(), Object.assign(new Error('boom'), { code: 'UNREACHABLE' }), 10);
+  assert.equal(exit.lastErrorCode, 'UNREACHABLE');
+  assert.equal(withoutError(exit, 20).lastErrorCode, null);
+});

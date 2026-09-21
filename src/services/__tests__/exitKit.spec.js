@@ -150,10 +150,11 @@ test('pure helpers: names, states and copies', () => {
   assert.equal(kitFilename('', 0), 'buhogo-exit-kit-spark-1970-01-01.json');
   assert.equal(kitState(null), 'none');
   assert.equal(kitState({ exportedAt: 1, failedSince: 2 }), 'failed');
+  assert.equal(kitState({ failedSince: 2 }), 'failed', 'a first export that fails is a failure, not "not checked yet"');
   assert.equal(kitState({ exportedAt: 1, checkedAt: 1 }), 'checked');
   assert.equal(kitState({ exportedAt: 1 }), 'saved');
   assert.deepEqual(kitCopies({ exportedAt: 10, driveAt: 9, sharedAt: 3 }), ['phone', 'drive', 'file']);
-  assert.deepEqual(kitCopies({ exportedAt: 10 * 24 * 3600 * 1000, driveAt: 1 }), ['phone']);
+  assert.deepEqual(kitCopies({ exportedAt: 10 }), ['phone']);
   assert.equal(toExitNetwork('REGTEST'), 'regtest');
   assert.equal(toExitNetwork(undefined), 'mainnet');
   assert.equal(deriveKitPassphrase(MNEMONIC).length, 64);

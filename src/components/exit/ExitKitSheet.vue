@@ -28,7 +28,16 @@
             wrap
           />
           <IdentityRow
+            v-if="needsDriveCopy(entry)"
+            :label="$t('Add a copy to Google Drive')"
+            :caption="hasDriveCopy(entry) ? $t('The Google Drive copy is older than the kit.') : $t('So the kit survives a lost phone')"
+            icon="tabler:cloud-upload"
+            wrap
+            @click="$emit('cloud')"
+          />
+          <IdentityRow
             :label="$t('Share exit kit')"
+            :caption="hasKit(entry) ? '' : $t('No kit saved yet')"
             icon="tabler:share"
             :interactive="hasKit(entry)"
             :chevron="false"
@@ -36,7 +45,7 @@
           />
           <IdentityRow
             :label="refreshing(entry) ? $t('Refreshing') : $t('Refresh kit')"
-            :caption="connected(entry) ? '' : $t('Connect this wallet to refresh its kit.')"
+            :caption="connected(entry) ? '' : $t('Switch to this wallet on the home screen to connect it.')"
             icon="tabler:refresh"
             :interactive="connected(entry) && !refreshing(entry)"
             :chevron="false"
@@ -52,7 +61,7 @@
             @click="openExit(entry)"
           />
         </IdentityGroup>
-        <p class="exit-kit-footer">{{ $t('The kit is what lets this wallet\'s money move to plain Bitcoin without Spark. It refreshes after each payment, is encrypted, and travels with every backup. Recovery words alone cannot do this.') }}</p>
+        <p class="exit-kit-footer">{{ $t('The kit is what lets this wallet\'s money move to plain Bitcoin without Spark. It refreshes after each payment, is encrypted, and travels with the Google Drive backup. Recovery words alone cannot do this.') }}</p>
         <button type="button" class="btn-quiet" @click="$emit('how')">{{ $t('How the emergency exit works') }}</button>
       </div>
     </q-card>
@@ -69,6 +78,7 @@ import { exitKitService } from '../../services/exitKit.js';
 import { kitState, kitCopies } from '../../utils/exitKit.js';
 import { formatSats, relativeDay } from '../../composables/useExitFormat.js';
 import { WALLET_TYPES } from '../../providers/WalletFactory';
+import { isCloudBackupPlatform } from '../../services/cloudStorage.js';
 
 /**
  * The receipt: per Spark wallet, when the kit was last checked, what could
@@ -79,9 +89,9 @@ export default {
   name: 'ExitKitSheet',
   components: { Icon, IdentityGroup, IdentityRow },
   props: { modelValue: { type: Boolean, required: true } },
-  emits: ['update:modelValue', 'how'],
+  emits: ['update:modelValue', 'how', 'cloud'],
   setup() {
-    return { wallet: useWalletStore(), kits: useExitKitStore() };
+    return { wallet: useWalletStore(), kits: useExitKitStore(), cloudAvailable: isCloudBackupPlatform() };
   },
   computed: {
     open: {
@@ -114,10 +124,18 @@ export default {
     stateCaption(entry) {
       const meta = this.meta(entry);
       const state = kitState(meta);
-      if (state === 'failed') return this.$t('Could not refresh since {date}. Payments after that date are not covered yet.', { date: this.day(meta.failedSince) });
-      if (state === 'checked') return this.$t('{amount} sats could leave on their own', { amount: formatSats(meta.recoverableSat) });
-      if (state === 'none' && !this.connected(entry)) return this.$t('Connect this wallet to refresh its kit.');
+      if (state === 'failed') {
+        const reason = meta.lastError ? ` (${String(meta.lastError).slice(0, 80)})` : '';
+        return this.$t('Could not refresh since {date}. Payments after that date are not covered yet.', { date: this.day(meta.failedSince) }) + reason;
+      }
+      if (state === 'checked') return this.$t('{amount} sats could leave without Spark', { amount: formatSats(meta.recoverableSat, this.$i18n.locale) });
+      if (state === 'none' && !this.connected(entry)) return this.$t('Switch to this wallet on the home screen to connect it.');
       return '';
+    },
+    hasDriveCopy(entry) { return !!this.meta(entry)?.driveAt; },
+    needsDriveCopy(entry) {
+      const meta = this.meta(entry);
+      return this.cloudAvailable && !!meta?.exportedAt && (!meta.driveAt || meta.driveAt < meta.exportedAt);
     },
     stateIcon(entry) { return kitState(this.meta(entry)) === 'failed' ? 'tabler:alert-triangle' : 'tabler:shield-check'; },
     stateTone(entry) {
@@ -125,11 +143,16 @@ export default {
       return state === 'failed' ? 'warn' : state === 'checked' ? 'accent' : 'neutral';
     },
     copiesText(entry) {
-      const copies = kitCopies(this.meta(entry));
+      const meta = this.meta(entry);
+      const copies = kitCopies(meta);
       if (!copies.length) return '';
       if (copies.length === 1 && copies[0] === 'phone') return this.$t('This phone only');
-      const labels = { phone: this.$t('This phone'), drive: this.$t('Google Drive'), file: this.$t('Shared file') };
-      return copies.map(copy => labels[copy]).join(' · ');
+      const labels = {
+        phone: this.$t('This phone'),
+        drive: this.$t('Google Drive {date}', { date: this.day(meta.driveAt) }),
+        file: this.$t('Shared file {date}', { date: this.day(meta.sharedAt) }),
+      };
+      return copies.map(copy => labels[copy]).join(' \u00b7 ');
     },
     async share(entry) {
       try {

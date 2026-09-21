@@ -371,22 +371,8 @@ export class BreezSparkWalletProvider extends WalletProvider {
     try {
       let info;
       try {
-        // The synced read can outlive the race on a slow sync; keep its
-        // rejection handled so losing the race never surfaces as an
-        // unhandled promise rejection.
-        const synced = this.sdk.getInfo({ ensureSynced: true });
-        synced.catch(() => {});
-        info = await Promise.race([
-          synced,
-          new Promise((_, reject) =>
-            setTimeout(() => reject(new Error('breez sync timeout')), 15000)
-          ),
-        ]);
-        // A synced read is the one proof that Spark answered; the emergency
-        // exit door opens only after this keeps failing for hours.
-        sparkHealth().recordSuccess(this.walletId);
+        info = await this._syncedInfo();
       } catch (e) {
-        sparkHealth().recordFailure(this.walletId);
         info = await this.sdk.getInfo({});
       }
 
@@ -1821,6 +1807,40 @@ export class BreezSparkWalletProvider extends WalletProvider {
   async importUnilateralExitState(exitState) {
     this._ensureConnected();
     await this.sdk.importUnilateralExitState({ exitState });
+  }
+
+  /**
+   * One synced read, bounded so a slow sync degrades instead of hanging.
+   * The losing promise's rejection stays handled. A synced read is the one
+   * proof that Spark answered, so reachability is recorded here: the
+   * emergency exit door opens only after it keeps failing for hours. A phone
+   * that is itself offline says nothing about Spark.
+   */
+  async _syncedInfo({ timeoutMs = 15000 } = {}) {
+    const synced = this.sdk.getInfo({ ensureSynced: true });
+    synced.catch(() => {});
+    try {
+      const info = await Promise.race([
+        synced,
+        new Promise((_, reject) => setTimeout(() => reject(new Error('breez sync timeout')), timeoutMs)),
+      ]);
+      sparkHealth().recordSuccess(this.walletId);
+      return info;
+    } catch (error) {
+      if (typeof navigator === 'undefined' || navigator.onLine !== false) sparkHealth().recordFailure(this.walletId);
+      throw error;
+    }
+  }
+
+  /** Reachability only, for the background monitor. Never throws. */
+  async probeReachability({ timeoutMs } = {}) {
+    if (!this.sdk || !this.isConnected) return false;
+    try {
+      await this._syncedInfo({ timeoutMs });
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   /** Local balance read, no sync: the number an offline quote should be compared against. */

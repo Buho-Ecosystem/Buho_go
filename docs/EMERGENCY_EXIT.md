@@ -10,8 +10,8 @@ A Spark wallet's money can move to plain Bitcoin without Spark's operators, usin
 
 `src/services/exitKit.js`, `src/stores/exitKit.js`, `src/utils/kitStorage.js`, `src/utils/exitKit.js`.
 
-- After every settled payment, claimed deposit or SDK exit-state change, and once after each connect, the wallet exports `exportUnilateralExitState()` into app-owned IndexedDB (`buhoGO-exit-kits`, keyed by the wallet's Spark address). This storage outlives the SDK's own databases, which `deleteWalletStorage` wipes.
-- Each refresh runs an offline quote (`prepareUnilateralExit`, auto selection, the slow fee tier) so the receipt says what could leave today.
+- After every settled payment, claimed deposit or SDK exit-state change, and once after each connect, the wallet exports `exportUnilateralExitState()` into app-owned IndexedDB (`buhoGO-exit-kits`, keyed by the wallet's Spark address). This storage outlives the SDK's own databases, which `deleteWalletStorage` wipes; a full app reset clears it together with the ledger and the reachability record. A refresh inside the one-minute debounce is deferred, never dropped.
+- Each refresh runs an offline quote (`prepareUnilateralExit`, auto selection, the medium fee tier, the same tier an exit starts at) so the receipt says what could leave today, and remembers the wallet's deposit address so it can never be chosen as a destination.
 - On connect, a stored kit is imported back with `importUnilateralExitState` before refreshing, so an evicted or freshly created SDK database never overwrites a good kit with an empty one.
 - Removing a Spark wallet takes one last export first (`removeWallet` in the wallet store); the delete dialog says so.
 - The Drive backup payload carries `exitKits`; a restore stores them for import at the next connect. Sharing writes a file encrypted with a key derived from the recovery words (`deriveKitPassphrase`), so a leaked file is useless without the words and the words alone are useless without a kit.
@@ -20,23 +20,23 @@ A Spark wallet's money can move to plain Bitcoin without Spark's operators, usin
 ### The door
 
 - Security page: the Spark backup card shows a second state line (`Exit kit checked today`), and a quiet row opens `ExitKitSheet.vue` with the receipt, copies, share, refresh, the explainer and the door. `HowExitWorksSheet.vue` is the briefing card.
-- Home: `ExitBanner.vue` appears only after a sustained outage (`src/utils/sparkHealth.js`: three failed synced reads over six hours, recorded by the provider's `getBalance`) and can be dismissed for a day. `ExitProgressChip.vue` appears while an exit runs.
+- Home: `ExitBanner.vue` appears only after a sustained outage (`src/utils/sparkHealth.js`: three failed synced reads over six hours, recorded by the provider's synced reads and by a five-minute reachability probe from the exit monitor, never while the phone itself is offline) and can be dismissed for a day. `ExitProgressChip.vue` appears while an exit runs and until a finished exit's receipt is acknowledged.
 - Kiosk mode never reaches any of it: the kiosk router guard redirects unlisted routes, and the banner respects `isKioskRestricted`.
 
 ### The exit page
 
 `src/pages/EmergencyExitPage.vue` at `/security/exit/:walletId`, driven by `src/services/emergencyExit.js` over a persisted ledger (`src/stores/emergencyExit.js`, transitions in `src/utils/exitLedger.js`, chain planning in `src/utils/exitPlan.js`).
 
-1. Start: quote at the medium fee tier with auto leaf triage. Destination defaults to `m/84'/0'/0'/0/0` of the wallet's own words (any Bitcoin wallet restoring the words finds it) and can be changed to any plain Bitcoin address; the wallet's own deposit address is refused. Free and cancellable.
+1. Start: quote at the medium fee tier with auto leaf triage. The page shows three figures with one vocabulary: fee money you send (`singleUtxoFundingSat`), taken from the amount (the sweep's own fee), and what arrives. Destination defaults to `m/84'/0'/0'/0/0` of the wallet's own words (any Bitcoin wallet restoring the words finds it) and can be changed to any plain Bitcoin address; the wallet's own deposit address is refused. Free, and cancellable behind a confirmation that says where the fee money stays.
 2. Fee money: the person sends the quoted amount to `m/84'/0'/0'/0/1` of the same words. The page polls the address; confirmed value moves the stage forward.
-3. Send: the only alert. The exit re-quotes for the same leaves at today's fees, signs with `unilateralExit` and the SDK's `singleKeyCpfpSigner` over the fee money key, and broadcasts the first package. If fees rose, it asks for more fee money instead.
-4. On its way, unlock, sweep, done: every pass reads tip height and transaction statuses, broadcasts whatever has its dependencies confirmed and its timelock matured (tree transactions as parent plus fee child packages, fan-out and sweep alone), and derives the stage. A boot file keeps this running every five minutes while the app is open, without a Spark connection.
+3. Send: the only alert, naming the destination, both fee figures and the duty to keep this phone. The exit re-quotes for the same leaves at today's fees, signs with `unilateralExit` and the SDK's `singleKeyCpfpSigner` over the fee money key (only the inputs the requirement needs; the signer is released and the key bytes wiped afterwards), and broadcasts the first package. If fees rose, it asks for more fee money instead.
+4. On its way, unlock, sweep, done: every pass reads tip height and transaction statuses (re-reading anything confirmed without a known height, since timelocks count from the parent's height), broadcasts whatever has its dependencies confirmed and its timelock matured (tree transactions as parent plus fee child packages, fan-out and sweep alone), and derives the stage. Esplora calls honour the person's configured mempool instance first, fail over across public instances, and treat a node without the package route as unavailable rather than as a rejection. A boot file keeps this running every five minutes whenever the app is open, without a Spark connection. Done keeps the receipt (full address, copy, explorer link, how to spend it) until acknowledged.
 5. A reminder is scheduled for the unlock date when the LocalNotifications native plugin is present; otherwise the copy says to open the app on the day.
 
 ## Validation
 
-- `npm test` runs 7 new spec files (33 tests): key derivation against the BIP-84 vectors, address validation, chain planning, ledger transitions, the Esplora client with failover and package rules, the kit life cycle, the exit driver end to end against fakes, and outage tracking.
-- `node scripts/check-emergency-exit.mjs` against the dev server (`pnpm dev --port 9011`): seeds public test words, stubs the SDK provider and every chain endpoint, and drives the real UI from the Security page through start, destination validation, fee money, the confirmation, package broadcasting in dependency order, the timelock, the sweep, done, cancel, the outage banner, the progress chip, resume, and German at 320px with 200% text. Screenshots land in `output/emergency-exit/`.
+- `npm test` runs 7 new spec files (39 tests): key derivation against the BIP-84 vectors, address validation, chain planning, ledger transitions, the Esplora client with failover and package rules, the kit life cycle, the exit driver end to end against fakes, and outage tracking.
+- `node scripts/check-emergency-exit.mjs` against the dev server (`pnpm dev --port 9011`): seeds public test words, stubs the SDK provider and every chain endpoint, and drives the real UI from the Security page through start, destination validation, fee money, the confirmation, package broadcasting in dependency order, the timelock, the sweep, done with its receipt, cancel behind its confirmation, the outage banner, the progress chip, resume, German at 320px with 200% text, and the dark theme. Screenshots land in `output/emergency-exit/`.
 
 ## Limits and follow-ups
 

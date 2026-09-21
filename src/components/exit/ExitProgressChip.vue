@@ -4,11 +4,11 @@
     type="button"
     class="exit-chip wallet-toolbar-status"
     :class="$q.dark.isActive ? 'exit-chip-dark' : 'exit-chip-light'"
-    :aria-label="$t('Exit in progress')"
+    :aria-label="label"
     @click="open"
   >
     <Icon icon="tabler:lifebuoy" width="14" height="14" />
-    <span>{{ $t('Exit in progress') }}</span>
+    <span>{{ label }}</span>
   </button>
 </template>
 
@@ -16,13 +16,14 @@
 import { Icon } from '@iconify/vue';
 import { useEmergencyExitStore } from '../../stores/emergencyExit';
 
-/** Home toolbar chip while an exit runs: the way back to its page. */
+/** Home toolbar chip while an exit runs or its receipt is unseen: the way back to its page. */
 export default {
   name: 'ExitProgressChip',
   components: { Icon },
   setup() { return { exits: useEmergencyExitStore() }; },
   computed: {
-    exit() { return this.exits.activeExits[0] || null; },
+    exit() { return this.exits.attentionExits[0] || null; },
+    label() { return this.exit?.stage === 'done' ? this.$t('Exit finished') : this.$t('Emergency exit running'); },
   },
   methods: {
     open() { if (this.exit) this.$router.push(`/security/exit/${this.exit.walletId}`); },

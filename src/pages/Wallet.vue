@@ -104,7 +104,7 @@
          for hours, never on a happy path. Dismissal lasts a day. -->
     <ExitBanner
       :visible="showExitBanner"
-      :last-contact="exitBannerLastContact"
+      :outage="exitBannerOutage"
       @open="openEmergencyExit"
       @dismiss="dismissExitBanner"
     />
@@ -921,7 +921,7 @@ import BackupShortcut from '../components/BackupShortcut.vue';
 import ExitBanner from '../components/exit/ExitBanner.vue';
 import ExitProgressChip from '../components/exit/ExitProgressChip.vue';
 import { sparkHealth } from '../utils/sparkHealth.js';
-import { relativeDay as exitRelativeDay } from '../composables/useExitFormat.js';
+import { durationText as exitDurationText } from '../composables/useExitFormat.js';
 import ClipboardSuggestion from '../components/ClipboardSuggestion.vue';
 import IdentityAuthDialog from '../components/IdentityAuthDialog.vue';
 import {useAutoWithdrawStore} from '../stores/autoWithdraw';
@@ -1159,10 +1159,10 @@ export default {
       if (typeof navigator !== 'undefined' && navigator.onLine === false) return false;
       return sparkHealth().isSustainedOutage(this.walletStore.activeWalletId);
     },
-    exitBannerLastContact() {
+    exitBannerOutage() {
       void this.exitHealthTick;
-      const at = sparkHealth().lastSuccessAt(this.walletStore.activeWalletId);
-      return at ? exitRelativeDay(at, (key, params) => this.$t(key, params), this.$i18n.locale) : '';
+      const ms = sparkHealth().unreachableFor(this.walletStore.activeWalletId);
+      return ms ? exitDurationText(ms, (key, params) => this.$t(key, params)) : '';
     },
     menuButtonLabel() {
       if (!this.socialBucketStore.hasUnseenPayments) return this.$t('Menu');

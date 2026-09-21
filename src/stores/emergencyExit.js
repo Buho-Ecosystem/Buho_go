@@ -6,7 +6,7 @@
  */
 
 import { defineStore } from 'pinia';
-import { isActive } from '../utils/exitLedger.js';
+import { isActive, needsAttention, acknowledge } from '../utils/exitLedger.js';
 
 export const EMERGENCY_EXIT_STORAGE_KEY = 'buhoGO_emergency_exit_v1';
 
@@ -25,13 +25,14 @@ function load() {
 }
 
 export const useEmergencyExitStore = defineStore('emergencyExit', {
-  state: () => ({ exits: load(), busy: {} }),
+  state: () => ({ exits: load() }),
 
   getters: {
     exitFor: (state) => (walletId) => state.exits[walletId] || null,
     activeExits: (state) => Object.values(state.exits).filter(isActive),
     hasActiveExit: (state) => Object.values(state.exits).some(isActive),
-    isBusy: (state) => (walletId) => !!state.busy[walletId],
+    /** Active, or finished and not yet acknowledged: what the home chip points at. */
+    attentionExits: (state) => Object.values(state.exits).filter(needsAttention),
   },
 
   actions: {
@@ -44,9 +45,14 @@ export const useEmergencyExitStore = defineStore('emergencyExit', {
       delete this.exits[walletId];
       this._persist();
     },
-    setBusy(walletId, value) {
-      if (value) this.busy[walletId] = true;
-      else delete this.busy[walletId];
+    clear() {
+      this.exits = {};
+      this._persist();
+    },
+    /** The receipt was seen; the record stays as history until the next exit replaces it. */
+    acknowledge(walletId) {
+      const exit = this.exits[walletId];
+      if (exit) this.set(acknowledge(exit));
     },
     _persist() {
       try {

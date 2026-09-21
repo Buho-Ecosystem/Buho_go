@@ -13,7 +13,7 @@
       </div>
       <div class="exit-banner-actions">
         <button type="button" class="exit-banner-open" @click="$emit('open')">{{ $t('Emergency exit') }}</button>
-        <span v-if="lastContact" class="exit-banner-meta">{{ $t('Last contact {when}', { when: lastContact }) }}</span>
+        <span v-if="outage" class="exit-banner-meta">{{ $t('No answer from Spark for {duration}', { duration: outage }) }}</span>
       </div>
     </div>
   </Transition>
@@ -32,7 +32,8 @@ export default {
   components: { Icon },
   props: {
     visible: { type: Boolean, default: false },
-    lastContact: { type: String, default: '' },
+    /** Human duration of the outage, e.g. "7 hours". */
+    outage: { type: String, default: '' },
   },
   emits: ['open', 'dismiss'],
 };
@@ -47,10 +48,10 @@ export default {
 .exit-banner-text { display: flex; flex: 1; min-width: 0; flex-direction: column; gap: 4px; }
 .exit-banner-text strong { font-size: 15px; font-weight: 700; line-height: 1.3; }
 .exit-banner-text span { font-size: 13px; line-height: 1.45; color: rgba(250, 247, 239, 0.82); }
-.exit-banner-meta { font-size: 12px; color: rgba(250, 247, 239, 0.62); }
+.exit-banner-meta { flex: 1; min-width: 0; font-size: 12px; line-height: 1.4; color: rgba(250, 247, 239, 0.62); }
 .exit-banner-actions { display: flex; align-items: center; gap: 12px; }
 .exit-banner-dismiss { width: 32px; height: 32px; border: 0; border-radius: 50%; background: rgba(255, 255, 255, 0.1); color: inherit; display: grid; place-items: center; padding: 0; cursor: pointer; }
-.exit-banner-open { min-height: 40px; padding: 0 16px; border: 0; border-radius: 999px; background: #FAF7EF; color: #1A1A1C; font: inherit; font-size: 14px; font-weight: 700; cursor: pointer; }
+.exit-banner-open { flex-shrink: 0; white-space: nowrap; min-height: 40px; padding: 0 16px; border: 0; border-radius: 999px; background: #FAF7EF; color: #1A1A1C; font: inherit; font-size: 14px; font-weight: 700; cursor: pointer; }
 .exit-banner-enter-active, .exit-banner-leave-active { transition: opacity 0.2s ease, transform 0.2s ease; }
 .exit-banner-enter-from, .exit-banner-leave-to { opacity: 0; transform: translateY(-6px); }
 </style>

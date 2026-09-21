@@ -12,10 +12,12 @@ import { deriveExitAddresses, deriveFundingKey, classifyDestination } from '../u
 import { toExitNetwork } from '../utils/exitKit.js';
 import { packageFor } from '../utils/exitPlan.js';
 import {
-  newExit, withQuote, withDestination, withFunding, withBuild, withChain, withError, withoutError, canCancel, isActive,
+  newExit, withQuote, withDestination, withFunding, withBuild, withChain, withError, withoutError, canCancel, canChangeDestination, isActive, selectFundingInputs,
 } from '../utils/exitLedger.js';
 
 const STATUS_CONCURRENCY = 4;
+const REMINDER_DRIFT_MS = 60 * 60 * 1000;
+const SYNC_TIMEOUT_MS = 15000;
 
 export class ExitError extends Error {
   constructor(code, message) { super(message || code); this.code = code; }
@@ -28,9 +30,10 @@ export function createExitDriver({
 }) {
   const inFlight = new Map();
 
+  /** One operation per wallet at a time, in call order: a cancel queued behind a poll sees the poll's result, never the other way round. */
   function exclusive(walletId, task) {
-    if (inFlight.has(walletId)) return inFlight.get(walletId);
-    const run = (async () => { try { return await task(); } finally { inFlight.delete(walletId); } })();
+    const previous = inFlight.get(walletId) || Promise.resolve();
+    const run = previous.catch(() => {}).then(task).finally(() => { if (inFlight.get(walletId) === run) inFlight.delete(walletId); });
     inFlight.set(walletId, run);
     return run;
   }
@@ -47,7 +50,7 @@ export function createExitDriver({
   }
 
   /** Quote and open the ledger record. Free, offline-capable, cancellable. */
-  async function start(walletId, { destination = null } = {}) {
+  async function start(walletId, { destination = null, excluded = [] } = {}) {
     return exclusive(walletId, async () => {
       const wallet = getWallet(walletId);
       if (!wallet) throw new ExitError('NO_WALLET', 'Wallet not found');
@@ -55,11 +58,11 @@ export function createExitDriver({
       const provider = requireProvider(walletId);
       const derived = await addressesFor(wallet);
       const target = destination
-        ? { address: assertDestination(destination, derived.network), source: 'custom' }
+        ? { address: assertDestination(destination, derived.network, excluded), source: 'custom' }
         : { address: derived.destination.address, source: 'derived' };
       const feeRateSatPerVbyte = (await esplora.recommendedFees()).medium;
       const quote = await provider.prepareUnilateralExit({ feeRateSatPerVbyte, destination: target.address });
-      if (!(quote.recoverableValueSat > 0) || !(quote.leaves || []).length) throw new ExitError('NOTHING_TO_EXIT', 'Nothing can be moved at today’s fees');
+      if (!(quote.recoverableValueSat > 0) || !(quote.leaves || []).length) throw new ExitError('NOTHING_TO_EXIT', 'Nothing can be moved at today\'s fees');
       const balanceSat = await provider.getBalanceSatsLocal();
       return ledger.set(newExit({
         walletId, walletName: wallet.name, network: derived.network, destination: target,
@@ -78,7 +81,7 @@ export function createExitDriver({
   async function setDestination(walletId, address, { excluded = [] } = {}) {
     return exclusive(walletId, async () => {
       const exit = ledger.exitFor(walletId);
-      if (!exit || !canCancel(exit)) throw new ExitError('LOCKED', 'Destination cannot change now');
+      if (!exit || !canChangeDestination(exit)) throw new ExitError('LOCKED', 'Destination cannot change now');
       const provider = requireProvider(walletId);
       const clean = assertDestination(address, exit.network, excluded);
       const quote = await provider.prepareUnilateralExit({ feeRateSatPerVbyte: exit.quote.feeRateSatPerVbyte, destination: clean });
@@ -102,11 +105,14 @@ export function createExitDriver({
 
   /** Nothing signed yet: forget the record. Fee money stays on its address, under the words. */
   async function cancel(walletId) {
-    const exit = ledger.exitFor(walletId);
-    if (!exit) return;
-    if (!canCancel(exit)) throw new ExitError('LOCKED', 'The exit cannot be stopped now');
-    ledger.remove(walletId);
-    await reminders.cancel(walletId).catch(() => {});
+    // Exclusive, so a funding poll in flight cannot write the record back.
+    return exclusive(walletId, async () => {
+      const exit = ledger.exitFor(walletId);
+      if (!exit) return;
+      if (!canCancel(exit)) throw new ExitError('LOCKED', 'The exit cannot be stopped now');
+      ledger.remove(walletId);
+      await reminders.cancel(walletId).catch(() => {});
+    });
   }
 
   /**
@@ -129,19 +135,31 @@ export function createExitDriver({
         ledger.set(exit);
         throw new ExitError('MORE_FEE_MONEY', 'Fees rose; more fee money is needed');
       }
-      const fundingInputs = exit.funding.utxos.filter(u => u.confirmed)
+      // Only the inputs the requirement needs: extra fee money on the address
+      // is left alone rather than handed to the fee-paying children.
+      const fundingInputs = selectFundingInputs(exit.funding.utxos, exit.funding.requiredSat).inputs
         .map(u => ({ type: 'p2wpkh', txid: u.txid, vout: u.vout, value: u.value, pubkey: exit.funding.publicKeyHex }));
       const key = deriveFundingKey(await getMnemonic(wallet.id), { network: exit.network });
       if (key.address !== exit.funding.address) throw new ExitError('KEY_MISMATCH', 'Fee money key does not match');
+      let response;
       const signer = await createSigner(key.privateKey);
-      const response = await provider.buildUnilateralExit({ prepared, fundingInputs, signer });
+      try {
+        response = await provider.buildUnilateralExit({ prepared, fundingInputs, signer });
+      } finally {
+        // The secret's job is done: release the WASM signer and wipe the bytes.
+        try { signer?.free?.(); } catch { /* already released */ }
+        key.privateKey.fill(0);
+      }
       exit = ledger.set(withBuild(exit, response, now()));
       return advance(exit);
     });
   }
 
   async function statusesFor(exit) {
-    const targets = exit.built.transactions.filter(tx => !exit.statuses[tx.txid]?.confirmed).map(tx => tx.txid);
+    // Anything not confirmed at a known height is asked again: a timelock
+    // counts from the parent's height, so "confirmed" alone is not enough.
+    const settled = status => status?.confirmed && Number.isInteger(status.blockHeight);
+    const targets = exit.built.transactions.filter(tx => !settled(exit.statuses[tx.txid])).map(tx => tx.txid);
     const statuses = {};
     for (let i = 0; i < targets.length; i += STATUS_CONCURRENCY) {
       const batch = targets.slice(i, i + STATUS_CONCURRENCY);
@@ -177,7 +195,9 @@ export function createExitDriver({
   async function syncReminder(before, after) {
     let exit = after;
     const at = after.unlock?.estimatedAt;
-    if (after.stage === 'unlock' && at && at !== before.unlock?.estimatedAt) {
+    // The estimate moves a little on every pass; only a real drift reschedules.
+    const drifted = !after.reminderAt || Math.abs(at - after.reminderAt) > REMINDER_DRIFT_MS;
+    if (after.stage === 'unlock' && at && drifted) {
       const ok = await reminders.schedule({ walletId: after.walletId, at }).catch(() => false);
       exit = ledger.set({ ...after, reminderAt: ok ? at : null });
     }
@@ -261,7 +281,7 @@ export function exitDriver() {
 /** One Esplora client, created on first use so tests never touch the network. */
 function lazyEsplora() {
   let client = null;
-  const get = async () => client || (client = (await import('./esplora.js')).createEsploraClient());
+  const get = async () => client || (client = await (await import('./esplora.js')).appEsploraClient());
   return {
     tipHeight: async () => (await get()).tipHeight(),
     txStatus: async (txid) => (await get()).txStatus(txid),
@@ -272,10 +292,24 @@ function lazyEsplora() {
   };
 }
 
-/** Keep every active exit moving while the app is open. Safe to call repeatedly. */
+/**
+ * One bounded synced read of the active Spark wallet, recording only whether
+ * Spark answered. This is what lets the home screen notice a sustained outage
+ * while the app sits open on cached balances.
+ */
+async function probeSparkHealth() {
+  const store = walletStore();
+  const provider = store.activeWalletId ? store.getSparkProvider(store.activeWalletId) : null;
+  if (provider?.isConnected && typeof provider.probeReachability === 'function') await provider.probeReachability({ timeoutMs: SYNC_TIMEOUT_MS });
+}
+
+/** Keep every active exit moving and Spark's reachability known while the app is open. Safe to call repeatedly. */
 export function startExitMonitor({ intervalMs = 5 * 60 * 1000 } = {}) {
   if (monitor) return monitor;
-  const run = () => exitDriver().tickAll().catch(error => console.warn('exit monitor pass failed:', error?.message || error));
+  const run = async () => {
+    await exitDriver().tickAll().catch(error => console.warn('exit monitor pass failed:', error?.message || error));
+    await probeSparkHealth().catch(() => {});
+  };
   const timer = setInterval(run, intervalMs);
   const onVisible = () => { if (document.visibilityState === 'visible') run(); };
   document.addEventListener('visibilitychange', onVisible);

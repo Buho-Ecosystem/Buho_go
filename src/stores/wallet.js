@@ -23,7 +23,7 @@ import { useAutoWithdrawStore } from './autoWithdraw';
 import { useTransactionMetadataStore } from './transactionMetadata';
 import { isLightningAddress } from '../utils/addressUtils.js';
 import { createClaimedDepositRegistry } from '../utils/claimedDeposits.js';
-import { exitKitService, attachWalletStore } from '../services/exitKit.js';
+import { exitKitService, clearExitData } from '../services/exitKit.js';
 import { useExitKitStore } from './exitKit';
 import { isWalletBackedUp } from '../utils/backupStatus.js';
 import {
@@ -3322,6 +3322,9 @@ export const useWalletStore = defineStore('wallet', {
       // Full reset also removes every Breez-engine database (fire-and-forget;
       // clearAll is sync by contract and the deletes are independent).
       deleteAllBreezStorage().catch(() => {});
+      // A full reset takes the exit kits, any exit in progress and the
+      // reachability record with it.
+      clearExitData().catch(() => {});
     },
 
     // ─── Kiosk Mode ───────────────────────────────────────────
@@ -3402,6 +3405,3 @@ export const useWalletStore = defineStore('wallet', {
     },
   },
 });
-
-// The exit kit service reaches the store through this hook, never by import.
-attachWalletStore(useWalletStore);

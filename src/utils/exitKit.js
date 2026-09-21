@@ -15,8 +15,6 @@ import { bytesToHex } from '@noble/hashes/utils.js';
 
 export const KIT_FILE_VERSION = 1;
 const KIT_KEY_LABEL = 'BuhoGO emergency exit kit v1';
-const DAY_MS = 24 * 60 * 60 * 1000;
-
 /** Passphrase for a kit file: an HMAC of the BIP-39 seed, never the words. */
 export function deriveKitPassphrase(mnemonic) {
   const seed = mnemonicToSeedSync(mnemonic);
@@ -43,17 +41,17 @@ export function toExitNetwork(walletNetwork) {
  * 'checked' (kit fresh and quoted), 'saved' (exported but not quoted yet).
  */
 export function kitState(meta) {
+  if (meta?.failedSince) return 'failed';
   if (!meta || !meta.exportedAt) return 'none';
-  if (meta.failedSince) return 'failed';
   if (meta.checkedAt) return 'checked';
   return 'saved';
 }
 
-/** Where copies of the kit exist, oldest first is irrelevant: the newest of each place. */
+/** Where copies of the kit exist. Ages are shown next to them, so nothing is hidden here. */
 export function kitCopies(meta) {
   const copies = [];
   if (meta?.exportedAt) copies.push('phone');
-  if (meta?.driveAt && meta.driveAt >= (meta.exportedAt || 0) - DAY_MS) copies.push('drive');
+  if (meta?.driveAt) copies.push('drive');
   if (meta?.sharedAt) copies.push('file');
   return copies;
 }

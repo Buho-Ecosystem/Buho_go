@@ -3698,7 +3698,7 @@ export default {
       this.dangerConfirmMessage = (count > 1
         ? this.$t('This will permanently delete all {count} Spark wallets. Make sure you have backed up your seed phrases. This action cannot be undone.', { count })
         : this.$t('This will permanently delete your Spark wallet. Make sure you have backed up your seed phrase. This action cannot be undone.'))
-        + ' ' + this.$t('The emergency exit kit is saved first, so the money can still leave Spark on its own later.');
+        + ' ' + this.$t('The last saved exit kit stays on this phone in case you add the wallet again with the same words.');
       this.dangerConfirmButtonText = this.$t('Delete');
       this.dangerConfirmInput = '';
       this.dangerConfirmAction = 'deleteSparkWallet';

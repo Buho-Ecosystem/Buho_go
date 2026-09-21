@@ -56,6 +56,7 @@ export function createSparkHealth({ storage = globalThis.localStorage, key = SPA
       return !!e?.firstFailureAt && e.failures >= 3 && now() - e.firstFailureAt >= windowMs;
     },
     forget(walletId) { delete state[walletId]; write(); },
+    clear() { state = {}; write(); },
   };
 }
 

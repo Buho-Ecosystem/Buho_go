@@ -8,17 +8,17 @@ import { boot } from 'quasar/wrappers';
 import { useWalletStore } from '../stores/wallet';
 import { useEmergencyExitStore } from '../stores/emergencyExit';
 import { attachEmergencyExitStore, attachExitWalletStore, startExitMonitor } from '../services/emergencyExit.js';
+import { attachWalletStore as attachKitWalletStore } from '../services/exitKit.js';
 
 const FIRST_PASS_DELAY_MS = 8000;
 
 export default boot(() => {
-  // The wallet store registers itself with the kit service on import; the
-  // driver gets both stores here so neither service imports a store.
+  // Both services take their stores from here, so neither imports a store.
+  attachKitWalletStore(useWalletStore);
   attachExitWalletStore(useWalletStore);
   attachEmergencyExitStore(useEmergencyExitStore);
   if (typeof window === 'undefined' || window.__AUDIT__?.noExitMonitor) return;
-  setTimeout(() => {
-    if (!useEmergencyExitStore().hasActiveExit) return;
-    startExitMonitor();
-  }, FIRST_PASS_DELAY_MS);
+  // Always on: a pass with no active exit costs one reachability probe, and
+  // an exit started later in this session must keep moving without a restart.
+  setTimeout(() => startExitMonitor(), FIRST_PASS_DELAY_MS);
 });

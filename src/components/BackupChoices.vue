@@ -66,6 +66,7 @@ import { isCloudBackupPlatform } from '../services/cloudStorage.js';
 import { useExitKitStore } from '../stores/exitKit';
 import { kitState, isSameDay } from '../utils/exitKit.js';
 import { relativeDay } from '../composables/useExitFormat.js';
+import { WALLET_TYPES } from '../providers/WalletFactory';
 import BackupKeyring from './BackupKeyring.vue';
 import BackupSubjectIcon from './BackupSubjectIcon.vue';
 
@@ -85,7 +86,7 @@ const cloudAvailable = isCloudBackupPlatform();
 const { proxy } = getCurrentInstance();
 const t = (key, params) => proxy.$t(key, params);
 const kits = useExitKitStore();
-const sparkWallets = computed(() => wallet.wallets.filter(w => w.type === 'spark'));
+const sparkWallets = computed(() => wallet.wallets.filter(w => w.type === WALLET_TYPES.SPARK));
 const hasSpark = computed(() => sparkWallets.value.length > 0);
 // One line for the pair: the weakest kit decides what it says.
 const kitLine = computed(() => {

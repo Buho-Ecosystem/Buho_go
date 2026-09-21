@@ -36,7 +36,7 @@ export async function remindersAvailable() {
 function idFor(walletId) {
   let hash = 0;
   for (const char of String(walletId)) hash = (hash * 31 + char.charCodeAt(0)) >>> 0;
-  return UNLOCK_ID_BASE + (hash % 1000);
+  return UNLOCK_ID_BASE + (hash % 100000);
 }
 
 /** Schedule (or move) the unlock reminder. Returns true when a reminder exists. */

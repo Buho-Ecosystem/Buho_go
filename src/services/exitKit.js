@@ -21,6 +21,8 @@ import { useExitKitStore } from '../stores/exitKit.js';
 const REFRESH_DEBOUNCE_MS = 60 * 1000;
 const EVENT_SETTLE_MS = 5 * 1000;
 const CONNECT_SETTLE_MS = 3 * 1000;
+// Used only when no fee source answers: an old quote beats no quote, and the
+// surfaces say the figures come from the last check.
 const FALLBACK_FEE_RATE = 2;
 
 export function createExitKitService({
@@ -80,7 +82,7 @@ export function createExitKitService({
    * Export the kit, store it, and check it with an offline quote. Returns
    * `{ ok, reason }`; failures are recorded on the kit, never thrown.
    */
-  async function refresh(walletId, { reason = 'manual', force = false } = {}) {
+  async function refresh(walletId, { reason = 'manual', force = false, quote = true } = {}) {
     const wallet = getWallet(walletId);
     const provider = getProvider(walletId);
     if (!wallet || !provider?.isConnected) return { ok: false, reason: 'not_connected' };
@@ -99,7 +101,17 @@ export function createExitKitService({
       });
       meta.upsert(walletId, { ...id, exportedAt, exportBytes: exitState.length, failedSince: null, lastError: null, lastReason: reason });
 
+      // The wallet's own deposit address is the one destination an exit must
+      // never pay (it would go straight back into Spark). Remembered once.
+      if (!meta.kitFor(walletId)?.depositAddress && typeof provider.getL1DepositAddress === 'function') {
+        try {
+          const depositAddress = await provider.getL1DepositAddress();
+          if (typeof depositAddress === 'string' && depositAddress) meta.upsert(walletId, { depositAddress });
+        } catch { /* offline or unsupported: the exclusion is best effort */ }
+      }
+
       // The check: an offline quote at today's fees says what could leave.
+      if (!quote) return { ok: true };
       try {
         const rate = await feeRate().catch(() => meta.kitFor(walletId)?.feeRate || FALLBACK_FEE_RATE);
         const prepared = await provider.prepareUnilateralExit({ feeRateSatPerVbyte: rate, destination: addresses.destinationAddress });
@@ -110,6 +122,8 @@ export function createExitKitService({
       }
       return { ok: true };
     } catch (error) {
+      // A failed export must not hold the debounce: the next event may succeed.
+      lastRun.delete(walletId);
       meta.markFailed(walletId, error?.message || error);
       return { ok: false, reason: 'failed', error };
     } finally {
@@ -122,7 +136,11 @@ export function createExitKitService({
     timers.set(walletId, null);
     const handle = schedule(() => {
       timers.delete(walletId);
-      refresh(walletId, { reason }).catch(() => {});
+      refresh(walletId, { reason })
+        // Deferred, not dropped: a payment inside the debounce window still
+        // ends in a fresh kit once the window closes.
+        .then(result => { if (result.reason === 'debounced') scheduleRefresh(walletId, REFRESH_DEBOUNCE_MS, reason); })
+        .catch(() => {});
     }, delayMs);
     // A scheduler that ran the task synchronously has already cleared the slot.
     if (timers.get(walletId) === null) timers.set(walletId, handle);
@@ -150,7 +168,8 @@ export function createExitKitService({
   async function preserveBeforeRemoval(walletId) {
     const provider = getProvider(walletId);
     if (!provider?.isConnected) return { ok: false, reason: 'not_connected' };
-    return refresh(walletId, { reason: 'removal', force: true });
+    // Export only: a wallet being deleted needs no fee lookup or quote.
+    return refresh(walletId, { reason: 'removal', force: true, quote: false });
   }
 
   /** Everything the Drive backup should carry. Kits are already plaintext-safe inside the encrypted payload. */
@@ -234,14 +253,21 @@ export function exitKitService() {
       markFailed: (id, message) => useExitKitStore().markFailed(id, message),
       setRefreshing: (id, value) => useExitKitStore().setRefreshing(id, value),
     },
-    feeRate: async () => {
-      const { createEsploraClient } = await import('./esplora.js');
-      return (await createEsploraClient().recommendedFees()).slow;
-    },
+    // The tier an exit itself quotes at, so the receipt and the start figure agree.
+    feeRate: async () => (await (await import('./esplora.js')).appEsploraClient().then(c => c.recommendedFees())).medium,
     encrypt: async (payload, passphrase) => (await import('../utils/backupCrypto.js')).encryptBackup(payload, passphrase, { hint: 'Spark emergency exit kit' }),
     deliver: async (args) => (await import('./taxReport/delivery.js')).deliverReport({ ...args, kind: 'json' }),
   });
   return instance;
+}
+
+/** A full app reset: every kit, ledger record and health entry goes too. */
+export async function clearExitData() {
+  const storage = (await import('../utils/kitStorage.js')).kitStorage();
+  for (const key of await storage.keys().catch(() => [])) await storage.delete(key).catch(() => {});
+  useExitKitStore().clear();
+  (await import('../stores/emergencyExit.js')).useEmergencyExitStore().clear();
+  (await import('../utils/sparkHealth.js')).sparkHealth().clear();
 }
 
 function lazyStorage() {
