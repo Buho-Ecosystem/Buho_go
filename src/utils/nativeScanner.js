@@ -228,7 +228,9 @@ export async function startLiveScan({
   }
 
   if (stopped) {
-    // A decoder failure raced the start; the scan is already torn down.
+    // A decoder failure raced the start; the scan was torn down, but the
+    // camera may have finished binding after that teardown — release it.
+    try { await BarcodeScanner.stopScan(); } catch { /* noop */ }
     throw codedError(NATIVE_ERROR.DECODER_FAILED, 'Native scanner stopped during startup.');
   }
   started = true;

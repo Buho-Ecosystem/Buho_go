@@ -76,7 +76,7 @@ sequence counter so a stale camera can never be left running.
 | --- | --- | --- |
 | Standard Android with Play services | native | Camera opens with our overlay (no Google-branded screen). Torch toggle works. Send sheet tiles (Manual / Paste / Contacts) stay tappable. Deny the permission once: permission message, no fallback attempt. |
 | GrapheneOS without sandboxed Play | native expected; web if the model is not usable | First scan may take up to the 6 s budget if native stalls, then the overlay paints black and shows the live video. Subsequent scans open the web engine immediately. After installing an app update the native engine is probed again once. |
-| Android feature phone (Android Go / KaiOS-style Android forks) | either | Bundled MLKit runs on arm/arm64 and x86 ABIs shipped in the APK. If CameraX cannot bind on the OEM camera HAL the web engine takes over. Low-end CPUs decode noticeably slower on the web engine; hold the code steady inside the frame. |
+| Android feature phone (Android Go class devices) | either | The bundled MLKit model ships inside the APK, so it needs no download. If CameraX cannot bind on the OEM camera HAL, or the model cannot load, the web engine takes over. Low-end CPUs decode noticeably slower on the web engine; hold the code steady inside the frame. |
 | iOS | native | Unchanged. The web engine is also viable on WKWebView (iOS 14.3+) should native ever fail there. |
 | Web / PWA | in-page qr-scanner | Unchanged. `ScannerOverlay` is not mounted on web. |
 
