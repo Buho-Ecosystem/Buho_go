@@ -30,7 +30,7 @@
 import { Icon } from '@iconify/vue';
 
 /**
- * The briefing card for the emergency exit: three facts and what the
+ * The briefing card for the emergency exit: the essential facts and what the
  * feature is not, in plain words, reachable from the kit and the exit page.
  * Pictograms never stand alone; every row carries its sentence.
  */
@@ -47,6 +47,8 @@ export default {
     rows() {
       return [
         { icon: 'tabler:fire-extinguisher', title: 'The kit is the key', text: 'BuhoGO keeps an encrypted kit for each Spark wallet and refreshes it after every payment. With the kit, the money can move to plain Bitcoin without Spark.' },
+        { icon: 'tabler:key', title: 'Your words control the payout', text: "The default Bitcoin address is controlled by this wallet's same 12 recovery words. After the exit completes, restore them in a compatible Bitcoin wallet (BIP39, Native SegWit) to spend the funds." },
+        { icon: 'tabler:address-book', title: 'Or choose another Bitcoin address', text: "Before sending, tap Change next to the payout amount to enter another on-chain Bitcoin address. The funds will then be controlled by the destination wallet." },
         { icon: 'tabler:coins', title: 'It costs fees', text: 'Fees are paid from a separate small on-chain amount. Small balances may cost more to move than they are worth; you see this before anything starts.' },
         { icon: 'tabler:calendar-time', title: 'It takes about two weeks', text: "Bitcoin's timelocks set the pace. Nothing runs while the app is closed, so open it once a day until it is done." },
       ];
