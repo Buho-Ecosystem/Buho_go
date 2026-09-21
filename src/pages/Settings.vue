@@ -296,11 +296,13 @@
         </SettingsRow>
 
         <!--
-          Payment notifications. Mirrors the OS permission rather than
-          claiming its own truth: the store re-reads it on every open, so a
-          permission revoked in system settings shows here as OFF. Turning it
-          on raises the system dialog the first time; after a denial the OS
-          will not ask again, so the caption says where to go instead.
+          Payment notifications. A full peer of the setup wizard's slide, not a
+          read-out of it: someone who tapped "Not now" there turns them on
+          here, and the system dialog is raised from this row. The switch shows
+          `canNotify` (our switch AND the OS permission), so a permission
+          revoked in system settings reads as OFF without destroying the
+          user's own choice. After an OS-level denial Android never asks again,
+          so the caption says where to go instead of leaving a dead toggle.
         -->
         <SettingsRow
           v-if="notificationsStore.supported"
@@ -2937,7 +2939,12 @@ export default {
   created() {
     this.initializeStore();
     this.loadPinState();
-    this.notificationsStore.initialize();
+    // Load the user's switch, then re-read the OS permission: they may have
+    // changed it in system settings since the app started, and this row must
+    // never claim more than the OS allows.
+    this.notificationsStore.initialize()
+      .then(() => this.notificationsStore.syncPermission())
+      .catch(() => {});
     this.loadMempoolSettings();
     this.loadLanguagePreference();
     this.checkBiometricAvailability();
@@ -3522,25 +3529,6 @@ export default {
     },
 
     /**
-     * Flip the Screen Privacy toggle.
-     *
-     * On web / PWA the underlying OS primitive doesn't exist, so
-     * any tap to enable opens the Get-the-App dialog instead of
-     * updating store state. The toggle's one-way `:model-value`
-     * binding ensures it visually stays OFF — the user sees the
-     * dialog appear in lieu of the toggle flipping, which makes
-     * the constraint self-explanatory.
-     *
-     * On native we update pessimistically: the Pinia state only
-     * flips after the plugin confirms the value has been persisted
-     * to SharedPreferences AND applied to the window. If the native
-     * call rejects, the store stays at its last good value (the
-     * action doesn't mutate on rejection) and we surface a warning
-     * toast so the toggle visually springs back.
-     *
-     * @param {boolean} value
-     */
-    /**
      * The in-app switch. Turning it on asks the OS the first time; a denial is
      * final on Android, so we say where the user can change their mind instead
      * of pretending the toggle worked.
@@ -3561,6 +3549,25 @@ export default {
       });
     },
 
+    /**
+     * Flip the Screen Privacy toggle.
+     *
+     * On web / PWA the underlying OS primitive doesn't exist, so
+     * any tap to enable opens the Get-the-App dialog instead of
+     * updating store state. The toggle's one-way `:model-value`
+     * binding ensures it visually stays OFF — the user sees the
+     * dialog appear in lieu of the toggle flipping, which makes
+     * the constraint self-explanatory.
+     *
+     * On native we update pessimistically: the Pinia state only
+     * flips after the plugin confirms the value has been persisted
+     * to SharedPreferences AND applied to the window. If the native
+     * call rejects, the store stays at its last good value (the
+     * action doesn't mutate on rejection) and we surface a warning
+     * toast so the toggle visually springs back.
+     *
+     * @param {boolean} value
+     */
     async togglePrivacyScreen(value) {
       if (!this.screenPrivacySupported) {
         // Only prompt on the enable attempt — there's nothing to

@@ -77,18 +77,18 @@ export const useNotificationsStore = defineStore('notifications', {
     },
 
     /**
-     * Re-read the OS answer. Called on load and whenever the app comes back to
-     * the front, because the user may have changed it in system settings while
-     * they were away — the in-app toggle must never claim more than the OS
-     * allows.
+     * Re-read the OS answer. Called on load, whenever the app comes back to
+     * the front, and when Settings opens — the user may have changed it in
+     * system settings while they were away.
+     *
+     * It updates the OS side ONLY. `enabled` is the user's own answer and
+     * survives a revoke untouched: `canNotify` already gates on the
+     * permission, so silently flipping it here would buy nothing and would
+     * lose the user's choice — re-granting in system settings would come back
+     * to a switch that says OFF, which they never turned off.
      */
     async syncPermission() {
       this.permission = await permissionState()
-      if (this.permission !== 'granted' && this.enabled) {
-        // Revoked outside the app: our switch follows, silently.
-        this.enabled = false
-        this.persist()
-      }
       return this.permission
     },
 
