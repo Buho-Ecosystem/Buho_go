@@ -2441,6 +2441,28 @@ export default {
     },
 
     /**
+     * Payment-notification store. Drives the row's visibility
+     * (`supported`), the toggle state (`canNotify`), and the enable /
+     * disable actions; `created()` calls `initialize()` so the row
+     * reflects the live OS permission on first paint.
+     */
+    notificationsStore() {
+      return useNotificationsStore();
+    },
+
+    /**
+     * Caption under the Payment notifications row. A denial is final on
+     * Android — the OS will not raise the dialog again — so once the
+     * permission is 'denied' the caption stops explaining the feature and
+     * points at the only place the user can still change it.
+     */
+    notificationsCaption() {
+      return this.notificationsStore.permission === 'denied'
+        ? this.$t('Notifications are blocked for BuhoGO in your phone settings.')
+        : this.$t('Get a notification when a payment lands while you are in another app.');
+    },
+
+    /**
      * The auto-add-incoming-Bitcoin setting only applies to Spark
      * wallets (the only wallet type that produces static deposit
      * addresses). Hide the section for everyone else so we don't
