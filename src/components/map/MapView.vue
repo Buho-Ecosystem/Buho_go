@@ -1,6 +1,8 @@
 <script setup>
 import { onMounted, onBeforeUnmount, ref, watch } from 'vue'
-import maplibregl from 'maplibre-gl'
+// Namespace import, not a default one: maplibre-gl v6 ships named exports only
+// (the v5 default export is gone), and the call sites below read `maplibregl.X`.
+import * as maplibregl from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import { loadEinundzwanzigPinImage } from '../../services/map/meetupPin.js'
 
