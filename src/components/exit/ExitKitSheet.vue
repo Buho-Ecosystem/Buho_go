@@ -10,58 +10,71 @@
       </div>
       <div class="sheet-body exit-kit-body">
         <IdentityGroup v-for="entry in sparkWallets" :key="entry.id" :title="entry.name || $t('Bitcoin')">
+          <details class="exit-kit-details">
+            <summary class="exit-kit-summary">
+              <span class="exit-kit-state-icon" :class="`exit-kit-state-icon--${stateTone(entry)}`" aria-hidden="true">
+                <Icon :icon="stateIcon(entry)" width="20" height="20" />
+              </span>
+              <span class="exit-kit-summary-copy">
+                <strong>{{ stateLabel(entry) }}</strong>
+                <span v-if="summaryCaption(entry)" class="exit-kit-summary-caption">{{ summaryCaption(entry) }}</span>
+                <span class="exit-kit-summary-hint">{{ $t('Kit details') }}</span>
+              </span>
+              <Icon icon="tabler:chevron-down" class="exit-kit-chevron" width="18" height="18" aria-hidden="true" />
+            </summary>
+            <div class="exit-kit-detail-rows">
+              <IdentityRow
+                v-if="stateCaption(entry)"
+                :label="stateCaption(entry)"
+                :interactive="false"
+                :chevron="false"
+              />
+              <IdentityRow
+                v-if="copiesText(entry)"
+                :label="$t('Copies')"
+                :caption="copiesText(entry)"
+                :interactive="false"
+                :chevron="false"
+                wrap
+              />
+              <IdentityRow
+                v-if="needsDriveCopy(entry)"
+                :label="$t('Add a copy to Google Drive')"
+                :caption="hasDriveCopy(entry) ? $t('The Google Drive copy is older than the kit.') : $t('So the kit survives a lost phone')"
+                icon="tabler:cloud-upload"
+                wrap
+                @click="$emit('cloud')"
+              />
+              <IdentityRow
+                :label="$t('Share exit kit')"
+                :caption="hasKit(entry) ? '' : $t('No kit saved yet')"
+                icon="tabler:share"
+                :interactive="hasKit(entry)"
+                :chevron="false"
+                @click="share(entry)"
+              />
+              <IdentityRow
+                :label="refreshing(entry) ? $t('Refreshing') : $t('Refresh kit')"
+                :caption="connected(entry) ? '' : $t('Switch to this wallet on the home screen to connect it.')"
+                icon="tabler:refresh"
+                :interactive="connected(entry) && !refreshing(entry)"
+                :chevron="false"
+                wrap
+                @click="refresh(entry)"
+              />
+            </div>
+          </details>
           <IdentityRow
-            :label="stateLabel(entry)"
-            :caption="stateCaption(entry)"
-            :icon="stateIcon(entry)"
-            :tone="stateTone(entry)"
-            :interactive="false"
-            :chevron="false"
-            wrap
-          />
-          <IdentityRow
-            v-if="copiesText(entry)"
-            :label="$t('Copies')"
-            :caption="copiesText(entry)"
-            :interactive="false"
-            :chevron="false"
-            wrap
-          />
-          <IdentityRow
-            v-if="needsDriveCopy(entry)"
-            :label="$t('Add a copy to Google Drive')"
-            :caption="hasDriveCopy(entry) ? $t('The Google Drive copy is older than the kit.') : $t('So the kit survives a lost phone')"
-            icon="tabler:cloud-upload"
-            wrap
-            @click="$emit('cloud')"
-          />
-          <IdentityRow
-            :label="$t('Share exit kit')"
-            :caption="hasKit(entry) ? '' : $t('No kit saved yet')"
-            icon="tabler:share"
-            :interactive="hasKit(entry)"
-            :chevron="false"
-            @click="share(entry)"
-          />
-          <IdentityRow
-            :label="refreshing(entry) ? $t('Refreshing') : $t('Refresh kit')"
-            :caption="connected(entry) ? '' : $t('Switch to this wallet on the home screen to connect it.')"
-            icon="tabler:refresh"
-            :interactive="connected(entry) && !refreshing(entry)"
-            :chevron="false"
-            wrap
-            @click="refresh(entry)"
-          />
-          <IdentityRow
+            class="exit-kit-open"
             :label="$t('Emergency exit')"
-            :caption="$t('Move this wallet\'s money to plain Bitcoin without Spark\'s help.')"
-            icon="tabler:lifebuoy"
+            :caption="$t('Review fees and timing before you decide.')"
+            icon="tabler:fire-extinguisher"
             tone="accent"
             wrap
             @click="openExit(entry)"
           />
         </IdentityGroup>
-        <p class="exit-kit-footer">{{ $t('The kit is what lets this wallet\'s money move to plain Bitcoin without Spark. It refreshes after each payment, is encrypted, and travels with the Google Drive backup. Recovery words alone cannot do this.') }}</p>
+        <p class="exit-kit-footer">{{ $t('Keep a copy of this kit outside your phone. Recovery words alone are not enough.') }}</p>
         <button type="button" class="btn-quiet" @click="$emit('how')">{{ $t('How the emergency exit works') }}</button>
       </div>
     </q-card>
@@ -82,7 +95,8 @@ import { isCloudBackupPlatform } from '../../services/cloudStorage.js';
 
 /**
  * The receipt: per Spark wallet, when the kit was last checked, what could
- * leave, where copies live, and the door to the exit itself. Opened from
+ * leave, where copies live, and the door to the exit itself. Maintenance
+ * details start collapsed; kit problems stay visible. Opened from
  * Settings → Advanced; it changes nothing on its own.
  */
 export default {
@@ -112,14 +126,30 @@ export default {
       const meta = this.meta(entry);
       switch (kitState(meta)) {
         case 'failed': return this.$t('Exit kit needs a refresh');
-        case 'checked':
-        case 'saved': {
+        case 'saved': return this.$t('Kit saved');
+        case 'checked': {
           const at = meta.checkedAt || meta.exportedAt;
           const day = this.day(at);
           return day === this.$t('today') ? this.$t('Checked today') : this.$t('Checked {date}', { date: day });
         }
         default: return this.$t('Exit kit not checked yet');
       }
+    },
+    summaryCaption(entry) {
+      const meta = this.meta(entry);
+      const state = kitState(meta);
+      // Keep problems visible even when maintenance details are collapsed.
+      if (state === 'failed') {
+        return this.$t('Could not refresh since {date}. Payments after that date are not covered yet.', { date: this.day(meta.failedSince) });
+      }
+      if (state === 'none') {
+        return this.connected(entry) ? this.$t('No kit saved yet') : this.$t('Switch to this wallet on the home screen to connect it.');
+      }
+      if (!meta.driveAt && !meta.sharedAt) return this.$t('This phone only');
+      if (Math.max(meta.driveAt || 0, meta.sharedAt || 0) < meta.exportedAt) {
+        return this.$t('Copies outside this phone are older than the kit.');
+      }
+      return '';
     },
     stateCaption(entry) {
       const meta = this.meta(entry);
@@ -178,5 +208,26 @@ export default {
 
 <style scoped>
 .exit-kit-body { display: flex; flex-direction: column; gap: 16px; }
+.exit-kit-summary {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 60px;
+  padding: 14px;
+  list-style: none;
+  cursor: pointer;
+}
+.exit-kit-summary::-webkit-details-marker { display: none; }
+.exit-kit-summary:focus-visible { outline: 2px solid var(--brand-accent-text); outline-offset: -3px; border-radius: var(--radius-lg); }
+.exit-kit-summary-copy { display: flex; flex: 1; min-width: 0; flex-direction: column; gap: 4px; }
+.exit-kit-summary-copy strong { font-size: 0.9375rem; line-height: 1.4; font-weight: 650; }
+.exit-kit-summary-caption, .exit-kit-summary-hint { font-size: 0.8125rem; line-height: 1.45; color: var(--text-secondary); overflow-wrap: anywhere; }
+.exit-kit-summary-hint { color: var(--brand-accent-text); }
+.exit-kit-state-icon { display: grid; place-items: center; flex: 0 0 36px; width: 36px; height: 36px; border-radius: var(--radius-ms); background: var(--bg-input); color: var(--text-secondary); }
+.exit-kit-state-icon--accent { background: var(--brand-accent-soft); color: var(--brand-accent-text); }
+.exit-kit-state-icon--warn { background: var(--color-warn-soft); color: var(--color-warn); }
+.exit-kit-chevron { flex-shrink: 0; color: var(--text-secondary); }
+.exit-kit-details[open] .exit-kit-chevron { transform: rotate(180deg); }
+.exit-kit-detail-rows, .exit-kit-body :deep(.exit-kit-open) { border-top: 1px solid var(--border-card); }
 .exit-kit-footer { margin: 0; font-size: 13px; line-height: 1.5; color: var(--text-secondary); }
 </style>

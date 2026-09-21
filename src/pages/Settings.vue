@@ -660,7 +660,7 @@
       >
         <SettingsRow
           v-if="walletStore.sparkWallets.length"
-          icon="tabler:lifebuoy"
+          icon="tabler:fire-extinguisher"
           :label="$t('Emergency exit kit')"
           :caption="$t('Move this wallet\'s money to plain Bitcoin without Spark\'s help.')"
           @click="showKitSheet = true"

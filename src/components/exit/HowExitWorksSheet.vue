@@ -46,7 +46,7 @@ export default {
     },
     rows() {
       return [
-        { icon: 'tabler:lifebuoy', title: 'The kit is the key', text: 'BuhoGO keeps an encrypted kit for each Spark wallet and refreshes it after every payment. With the kit, the money can move to plain Bitcoin without Spark.' },
+        { icon: 'tabler:fire-extinguisher', title: 'The kit is the key', text: 'BuhoGO keeps an encrypted kit for each Spark wallet and refreshes it after every payment. With the kit, the money can move to plain Bitcoin without Spark.' },
         { icon: 'tabler:coins', title: 'It costs fees', text: 'Fees are paid from a separate small on-chain amount. Small balances may cost more to move than they are worth; you see this before anything starts.' },
         { icon: 'tabler:calendar-time', title: 'It takes about two weeks', text: "Bitcoin's timelocks set the pace. Nothing runs while the app is closed, so open it once a day until it is done." },
       ];

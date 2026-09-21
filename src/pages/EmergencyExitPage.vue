@@ -106,13 +106,40 @@
       </template>
     </div>
 
-    <!-- The one alert: the point of no return. -->
-    <q-dialog v-model="confirmOpen" :class="$q.dark.isActive ? 'dialog_dark' : 'dialog_light'">
-      <q-card class="identity-surface exit-confirm" :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'" role="alertdialog" aria-labelledby="exit-confirm-title" aria-describedby="exit-confirm-text">
+    <!-- Keep the transaction facts and the point of no return visible together. -->
+    <q-dialog v-model="confirmOpen" :position="$q.screen.lt.sm ? 'bottom' : 'standard'" :persistent="sending" :class="$q.dark.isActive ? 'dialog_dark' : 'dialog_light'">
+      <q-card class="identity-surface exit-confirm" :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'" role="dialog" aria-labelledby="exit-confirm-title" aria-describedby="exit-confirm-warning">
         <h2 id="exit-confirm-title" class="exit-confirm-title">{{ $t('Send to Bitcoin now?') }}</h2>
-        <p id="exit-confirm-text" class="exit-confirm-text">{{ confirmText }}</p>
-        <button type="button" class="btn-primary" :disabled="sending" @click="send">{{ sending ? $t('Signing') : $t('Send to Bitcoin') }}</button>
-        <button type="button" class="btn-quiet" :disabled="sending" @click="confirmOpen = false">{{ $t('Cancel') }}</button>
+        <div v-if="exit?.quote" class="exit-confirm-body">
+          <dl class="exit-confirm-facts">
+            <div class="exit-confirm-amount">
+              <dt>{{ $t('Leaving Spark') }}</dt>
+              <dd>{{ sats(exit.quote.recoverableValueSat) }}</dd>
+            </div>
+            <div class="exit-confirm-destination">
+              <dt>{{ $t('Where the money arrives') }}</dt>
+              <dd>{{ exit.destination.address }}</dd>
+            </div>
+            <div>
+              <dt>{{ $t('Fee money used') }}</dt>
+              <dd>{{ $t('about {amount} sats', { amount: num(exit.quote.singleUtxoFundingSat) }) }}</dd>
+            </div>
+            <div>
+              <dt>{{ $t('Taken from the amount') }}</dt>
+              <dd>{{ $t('about {amount} sats', { amount: num(confirmSweepFeeSat) }) }}</dd>
+            </div>
+          </dl>
+          <p v-if="fundingExcessSat > 0" class="exit-confirm-extra">{{ $t('{amount} sats of extra fee money may also be spent on fees.', { amount: num(fundingExcessSat) }) }}</p>
+          <div class="exit-confirm-warning">
+            <strong id="exit-confirm-warning">{{ $t('Once sent, this cannot be stopped.') }}</strong>
+            <p>{{ $t('It takes about two weeks') }}</p>
+            <p>{{ $t('Keep BuhoGO installed on this phone. Open it daily until the exit finishes.') }}</p>
+          </div>
+        </div>
+        <div class="exit-confirm-actions">
+          <button type="button" class="btn-primary" :disabled="sending" @click="send">{{ sending ? $t('Signing') : $t('Send to Bitcoin') }}</button>
+          <button type="button" class="btn-quiet" autofocus :disabled="sending" @click="confirmOpen = false">{{ $t('Cancel') }}</button>
+        </div>
       </q-card>
     </q-dialog>
 
@@ -291,15 +318,7 @@ export default {
       const exit = this.exit;
       return exit ? selectFundingInputs(exit.funding.utxos, exit.funding.requiredSat).excessSat : 0;
     },
-    confirmText() {
-      const exit = this.exit;
-      if (!exit?.quote) return '';
-      const text = this.$t('{amount} sats leave Spark to {address}. About {funding} sats of fee money is used and about {sweep} sats come out of the amount. Once sent, this cannot be stopped and takes about two weeks. It runs from this phone: keep BuhoGO installed.', {
-        amount: this.num(exit.quote.recoverableValueSat), address: shortAddress(exit.destination.address),
-        funding: this.num(exit.quote.singleUtxoFundingSat), sweep: this.num(sweepFeeSat(exit)),
-      });
-      return this.fundingExcessSat > 0 ? `${text} ${this.$t('{amount} sats of extra fee money may also be spent on fees.', { amount: this.num(this.fundingExcessSat) })}` : text;
-    },
+    confirmSweepFeeSat() { return this.exit ? sweepFeeSat(this.exit) : 0; },
     spendHint() {
       return this.exit?.destination.source === 'custom'
         ? this.$t('It is in the wallet you chose.')
@@ -321,7 +340,7 @@ export default {
           const reason = this.kit.lastError ? ` ${this.describeError({ message: this.kit.lastError })}` : '';
           return { icon: 'tabler:alert-triangle', tone: 'warn', title: t('Exit kit needs a refresh'), text: t('Could not refresh since {date}. Payments after that date are not covered yet.', { date: this.relativeDay(this.kit.failedSince) }) + reason };
         }
-        if (state === 'none') return { icon: 'tabler:lifebuoy', tone: 'neutral', title: t('Exit kit not checked yet'), text: t('Checking now.') };
+        if (state === 'none') return { icon: 'tabler:fire-extinguisher', tone: 'neutral', title: t('Exit kit not checked yet'), text: t('Checking now.') };
         if (this.triage.recoverableSat <= 0) {
           if (this.triage.notWorthSat > 0) return { icon: 'tabler:coins', tone: 'neutral', title: t('Nothing worth moving at today\'s fees'), text: `${t('{amount} sats are here, but each piece costs more to move than it is worth.', { amount: this.num(this.triage.notWorthSat) })} ${t('They stay in this Spark wallet and can be spent normally if Spark comes back.')}` };
           return { icon: 'tabler:wallet', tone: 'neutral', title: t('This wallet is empty'), text: t('There is nothing to move.') };
@@ -331,13 +350,13 @@ export default {
         return { icon: 'tabler:shield-check', tone: 'accent', title: t('Ready to leave on your own'), text: [`${checked}.`, this.sparkLine].filter(Boolean).join(' ') };
       }
       switch (exit.stage) {
-        case 'fund': return { icon: 'tabler:lifebuoy', tone: 'neutral', title: t('Add fee money'), text: t('Waiting for the fee money.') };
-        case 'ready': return { icon: 'tabler:lifebuoy', tone: 'accent', title: t('Fee money confirmed'), text: this.connected ? t('Confirm the send when you are ready. Nothing has left Spark yet.') : t('Switch to {wallet} on the home screen first, then confirm the send.', { wallet: this.walletName }) };
+        case 'fund': return { icon: 'tabler:fire-extinguisher', tone: 'neutral', title: t('Add fee money'), text: t('Waiting for the fee money.') };
+        case 'ready': return { icon: 'tabler:fire-extinguisher', tone: 'accent', title: t('Fee money confirmed'), text: this.connected ? t('Confirm the send when you are ready. Nothing has left Spark yet.') : t('Switch to {wallet} on the home screen first, then confirm the send.', { wallet: this.walletName }) };
         case 'send': return exit.sentAt
-          ? { icon: 'tabler:lifebuoy', tone: 'accent', title: t('On its way'), text: t('Cannot be stopped now. Continues each time you open BuhoGO.') }
-          : { icon: 'tabler:lifebuoy', tone: 'accent', title: t('Signed, sending the first transaction'), text: t('Continues each time you open BuhoGO.') };
+          ? { icon: 'tabler:fire-extinguisher', tone: 'accent', title: t('On its way'), text: t('Cannot be stopped now. Continues each time you open BuhoGO.') }
+          : { icon: 'tabler:fire-extinguisher', tone: 'accent', title: t('Signed, sending the first transaction'), text: t('Continues each time you open BuhoGO.') };
         case 'unlock': return { icon: 'tabler:calendar-time', tone: 'accent', title: t('Unlocks around {date}', { date: this.day(exit.unlock?.estimatedAt) }), text: this.unlockNote };
-        case 'sweep': return { icon: 'tabler:lifebuoy', tone: 'accent', title: t('Unlocked, sending the last transaction'), text: t('Waiting for its confirmation.') };
+        case 'sweep': return { icon: 'tabler:fire-extinguisher', tone: 'accent', title: t('Unlocked, sending the last transaction'), text: t('Waiting for its confirmation.') };
         default: return { icon: 'tabler:check', tone: 'accent', title: t('Your money is plain Bitcoin now'), text: t('{amount} sats arrived on {date}.', { amount: this.num(arrivedSat(exit)), date: this.day(exit.doneAt) }) };
       }
     },
@@ -541,9 +560,23 @@ export default {
 .exit-note--center { text-align: center; }
 .exit-progress { width: 100%; height: 6px; border-radius: 999px; background: var(--border-card); overflow: hidden; }
 .exit-progress span { display: block; height: 100%; border-radius: 999px; background: var(--brand-accent-text); }
-.exit-confirm { width: 100%; max-width: 360px; padding: 22px 20px 12px; border-radius: 20px; display: flex; flex-direction: column; gap: 12px; }
-.exit-confirm-title { margin: 0; font-size: 18px; font-weight: 700; text-align: center; line-height: 1.3; }
-.exit-confirm-text { margin: 0 0 6px; font-size: 14px; line-height: 1.5; text-align: center; color: var(--text-secondary); }
+.exit-confirm { width: 100%; max-width: 480px; max-height: calc(100dvh - 32px); padding: 0; border-radius: 20px; display: flex; flex-direction: column; overflow: hidden; }
+.exit-confirm-title { flex-shrink: 0; margin: 0; padding: 20px 20px 16px; font-size: 1.125rem; font-weight: 700; line-height: 1.3; }
+.exit-confirm-body { min-height: 0; overflow-y: auto; padding: 0 20px 16px; }
+.exit-confirm-facts { margin: 0; }
+.exit-confirm-facts > div { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 4px 16px; padding: 12px 0; border-bottom: 1px solid var(--border-card); }
+.exit-confirm-facts dt { font-size: 0.875rem; line-height: 1.4; color: var(--text-secondary); }
+.exit-confirm-facts dd { margin: 0; font-size: 0.9375rem; line-height: 1.4; font-weight: 650; font-variant-numeric: tabular-nums; }
+.exit-confirm-facts .exit-confirm-amount { padding-top: 0; }
+.exit-confirm-amount dd { font-size: 1.375rem; }
+.exit-confirm-facts .exit-confirm-destination { flex-direction: column; }
+.exit-confirm-destination dd { font-family: ui-monospace, Menlo, monospace; font-size: 0.8125rem; font-weight: 400; overflow-wrap: anywhere; max-width: 100%; }
+.exit-confirm-extra { margin: 12px 0 0; font-size: 0.8125rem; line-height: 1.45; color: var(--text-secondary); }
+.exit-confirm-warning { display: flex; flex-direction: column; gap: 6px; margin-top: 16px; padding: 14px; border-radius: 12px; background: var(--color-warn-soft); }
+.exit-confirm-warning strong { font-size: 0.9375rem; line-height: 1.4; }
+.exit-confirm-warning p { margin: 0; font-size: 0.875rem; line-height: 1.45; color: var(--text-secondary); }
+.exit-confirm-actions { flex-shrink: 0; display: flex; flex-direction: column; gap: 4px; padding: 12px 20px max(12px, env(safe-area-inset-bottom)); border-top: 1px solid var(--border-card); }
+.exit-confirm-actions > button { margin-top: 0; min-height: 52px; padding: 12px 16px; font-size: 0.96875rem; line-height: 1.4; }
 .exit-destination-body { display: flex; flex-direction: column; gap: 14px; }
 .exit-destination-actions {
   display: grid;

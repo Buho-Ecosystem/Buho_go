@@ -122,8 +122,14 @@ try {
   await shot('settings-advanced');
   await page.getByRole('button', { name: /^Emergency exit kit/ }).click();
   await page.locator('.exit-kit-sheet').waitFor();
+  assert.equal(await page.locator('.exit-kit-details[open]').count(), 0);
+  assert.equal(await page.getByText('89,700 sats could leave without Spark').first().isVisible(), false);
+  await shot('kit-sheet-collapsed');
+  await page.locator('.exit-kit-summary').first().focus();
+  await page.keyboard.press('Enter');
   await page.getByText('89,700 sats could leave without Spark').first().waitFor();
-  await shot('kit-sheet');
+  assert.equal(await page.locator('.exit-kit-details[open]').count(), 1);
+  await shot('kit-sheet-expanded');
   await page.getByRole('button', { name: 'How the emergency exit works', exact: true }).click();
   await page.locator('.exit-how-sheet').waitFor();
   await page.getByText('What it is not', { exact: true }).waitFor();
@@ -134,6 +140,7 @@ try {
 
   await injectProvider();
   await page.getByRole('button', { name: /^Emergency exit kit/ }).click();
+  assert.equal(await page.locator('.exit-kit-details[open]').count(), 0);
   await page.locator('.exit-kit-sheet').getByRole('button', { name: /^Emergency exit\b/ }).first().click();
   await page.waitForFunction(() => location.hash.includes('/security/exit/'));
   await page.getByRole('button', { name: 'Start emergency exit', exact: true }).waitFor();
@@ -175,7 +182,17 @@ try {
   await shot('exit-funded');
   await page.getByRole('button', { name: 'Send to Bitcoin', exact: true }).click();
   await page.getByRole('heading', { name: 'Send to Bitcoin now?', exact: true }).waitFor();
-  await page.getByText(/89,700 sats leave Spark/).waitFor();
+  await page.locator('.exit-confirm').getByText('89,700 sats', { exact: true }).waitFor();
+  await page.locator('.exit-confirm').getByText(DESTINATION, { exact: true }).waitFor();
+  await page.locator('.exit-confirm').getByText('about 8,500 sats', { exact: true }).waitFor();
+  await page.locator('.exit-confirm').getByText('about 300 sats', { exact: true }).waitFor();
+  await page.locator('.exit-confirm').getByText('Once sent, this cannot be stopped.', { exact: true }).waitFor();
+  await page.locator('.exit-confirm').getByText('500 sats of extra fee money may also be spent on fees.', { exact: true }).waitFor();
+  assert.deepEqual(chain.broadcasts, [], 'opening confirmation sends nothing');
+  await page.locator('.exit-confirm').getByRole('button', { name: 'Cancel', exact: true }).click();
+  await page.locator('.exit-confirm').waitFor({ state: 'detached' });
+  assert.equal((await exitRecord()).stage, 'ready', 'dismissing the review keeps the exit unsigned');
+  await page.getByRole('button', { name: 'Send to Bitcoin', exact: true }).click();
   await shot('exit-confirm');
   await page.locator('.exit-confirm').getByRole('button', { name: 'Send to Bitcoin', exact: true }).click();
   // The dialog closes only after signing and the first broadcast pass.
