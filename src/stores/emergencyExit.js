@@ -31,7 +31,7 @@ export const useEmergencyExitStore = defineStore('emergencyExit', {
     exitFor: (state) => (walletId) => state.exits[walletId] || null,
     activeExits: (state) => Object.values(state.exits).filter(isActive),
     hasActiveExit: (state) => Object.values(state.exits).some(isActive),
-    /** Active, or finished and not yet acknowledged: what the home chip points at. */
+    /** Active exits and finished exits whose receipts have not been acknowledged. */
     attentionExits: (state) => Object.values(state.exits).filter(needsAttention),
   },
 

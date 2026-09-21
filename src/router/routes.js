@@ -69,7 +69,7 @@ const routes = [
       // time and from the pending-backup keyring, and the one route the
       // required-update gate yields to (see UpdateExperience.vue).
       { path: '/security', component: () => import('pages/SecurityPage.vue') },
-      // Emergency exit for one Spark wallet: the door below the backups. A
+      // Emergency exit for one Spark wallet: opened from Settings → Advanced. A
       // resumable page, not a flow, because an exit spans days. Kiosk mode
       // never reaches it (the kiosk guard redirects every unlisted route).
       { path: '/security/exit/:walletId', component: () => import('pages/EmergencyExitPage.vue') },

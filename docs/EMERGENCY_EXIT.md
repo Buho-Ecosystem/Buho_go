@@ -19,8 +19,8 @@ A Spark wallet's money can move to plain Bitcoin without Spark's operators, usin
 
 ### The door
 
-- Security page: the Spark backup card shows a second state line (`Exit kit checked today`), and a quiet row opens `ExitKitSheet.vue` with the receipt, copies, share, refresh, the explainer and the door. `HowExitWorksSheet.vue` is the briefing card.
-- Home: `ExitBanner.vue` appears only after a sustained outage (`src/utils/sparkHealth.js`: three failed synced reads over six hours, recorded by the provider's synced reads and by a five-minute reachability probe from the exit monitor, never while the phone itself is offline) and can be dismissed for a day. `ExitProgressChip.vue` appears while an exit runs and until a finished exit's receipt is acknowledged.
+- Settings → Advanced: the Spark-only Emergency exit kit row opens `ExitKitSheet.vue` with the receipt, copies, share, refresh, the explainer and the door to start or resume an exit. `HowExitWorksSheet.vue` is the briefing card. The exit page returns to Advanced, expanded. Security keeps the backup card's second state line (`Exit kit checked today`).
+- Home: `ExitBanner.vue` appears only after a sustained outage (`src/utils/sparkHealth.js`: three failed synced reads over six hours, recorded by the provider's synced reads and by a five-minute reachability probe from the exit monitor, never while the phone itself is offline) and can be dismissed for a day. Exit progress is available through Settings → Advanced; no progress chip appears on the home screen.
 - Kiosk mode never reaches any of it: the kiosk router guard redirects unlisted routes, and the banner respects `isKioskRestricted`.
 
 ### The exit page

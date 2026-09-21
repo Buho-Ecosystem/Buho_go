@@ -68,9 +68,6 @@
     </q-dialog>
 
     <IdentityRestoreDialog v-model="showRestoreDialog" @restored="onIdentityRestored" />
-    <!-- The emergency exit kit receipt and its door, Spark wallets only. -->
-    <ExitKitSheet v-model="showKitSheet" @how="onKitHow" @cloud="onKitCloud" />
-    <HowExitWorksSheet v-model="showHowExit" />
 
     <SettingsHubNav />
   </q-page>
@@ -84,8 +81,6 @@ import BackupSubjectIcon from '../components/BackupSubjectIcon.vue';
 import CloudBackupSheet from '../components/CloudBackupSheet.vue';
 import IdentityRestoreDialog from '../components/IdentityRestoreDialog.vue';
 import RecoveryPhraseDialog from '../components/RecoveryPhraseDialog.vue';
-import ExitKitSheet from '../components/exit/ExitKitSheet.vue';
-import HowExitWorksSheet from '../components/exit/HowExitWorksSheet.vue';
 import IdentityGroup from '../components/identity/IdentityGroup.vue';
 import IdentityRow from '../components/identity/IdentityRow.vue';
 import SettingsHubHeader from '../components/settings/SettingsHubHeader.vue';
@@ -116,8 +111,6 @@ export default {
     CloudBackupSheet,
     IdentityRestoreDialog,
     RecoveryPhraseDialog,
-    ExitKitSheet,
-    HowExitWorksSheet,
     IdentityGroup,
     IdentityRow,
     SettingsHubHeader,
@@ -140,8 +133,6 @@ export default {
       showRestoreChoice: false,
       pendingRestore: null,
       showRestoreDialog: false,
-      showKitSheet: false,
-      showHowExit: false,
     };
   },
 
@@ -158,23 +149,10 @@ export default {
         this.openCloud('backup');
       } else if (choice.kind === 'restore') {
         this.showRestoreChoice = true;
-      } else if (choice.kind === 'kit') {
-        this.showKitSheet = true;
       } else {
         this.selection = choice;
         this.showWords = true;
       }
-    },
-
-    onKitHow() {
-      // One sheet at a time: let the kit sheet finish closing first.
-      this.showKitSheet = false;
-      setTimeout(() => { this.showHowExit = true; }, 250);
-    },
-
-    onKitCloud() {
-      this.showKitSheet = false;
-      setTimeout(() => this.openCloud('backup'), 250);
     },
 
     openCloud(intent) {

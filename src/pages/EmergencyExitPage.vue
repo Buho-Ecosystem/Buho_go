@@ -1,6 +1,6 @@
 <template>
   <q-page class="id-sub-page identity-surface exit-page" :class="$q.dark.isActive ? 'bg-dark' : 'bg-light'">
-    <IdentityNav :back-to="$t('Security')" to="/security" />
+    <IdentityNav :back-to="$t('Settings')" to="/settings?section=advanced" />
 
     <div class="id-sub-body exit-body">
       <h1 class="id-large-title">{{ $t('Emergency exit') }}</h1>

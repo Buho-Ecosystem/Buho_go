@@ -18,7 +18,6 @@
       </button>
 
       <BackupShortcut />
-      <ExitProgressChip />
 
       <!-- NFC-ready badge. Only shown on a device where NFC is actually
            available + enabled, so it honestly signals "tap a Bolt Card / NFC
@@ -919,7 +918,6 @@ import BatchSendModal from '../components/BatchSendModal.vue';
 import BackupBanner from '../components/BackupBanner.vue';
 import BackupShortcut from '../components/BackupShortcut.vue';
 import ExitBanner from '../components/exit/ExitBanner.vue';
-import ExitProgressChip from '../components/exit/ExitProgressChip.vue';
 import { sparkHealth } from '../utils/sparkHealth.js';
 import { durationText as exitDurationText } from '../composables/useExitFormat.js';
 import ClipboardSuggestion from '../components/ClipboardSuggestion.vue';
@@ -970,7 +968,6 @@ export default {
     BackupBanner,
     BackupShortcut,
     ExitBanner,
-    ExitProgressChip,
     ClipboardSuggestion,
     IdentityAuthDialog,
     ContactAvatar,

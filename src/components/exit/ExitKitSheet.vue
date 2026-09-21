@@ -1,5 +1,5 @@
 <template>
-  <q-dialog v-model="open" position="bottom" :class="$q.dark.isActive ? 'dialog_dark' : 'dialog_light'">
+  <q-dialog v-model="open" position="bottom" :class="$q.dark.isActive ? 'dialog_dark' : 'dialog_light'" @hide="$emit('hide')">
     <q-card class="identity-surface exit-kit-sheet" :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'">
       <div class="sheet-grab" aria-hidden="true"><span></span></div>
       <div class="sheet-head">
@@ -83,13 +83,13 @@ import { isCloudBackupPlatform } from '../../services/cloudStorage.js';
 /**
  * The receipt: per Spark wallet, when the kit was last checked, what could
  * leave, where copies live, and the door to the exit itself. Opened from
- * the Security page; it changes nothing on its own.
+ * Settings → Advanced; it changes nothing on its own.
  */
 export default {
   name: 'ExitKitSheet',
   components: { Icon, IdentityGroup, IdentityRow },
   props: { modelValue: { type: Boolean, required: true } },
-  emits: ['update:modelValue', 'how', 'cloud'],
+  emits: ['update:modelValue', 'how', 'cloud', 'hide'],
   setup() {
     return { wallet: useWalletStore(), kits: useExitKitStore(), cloudAvailable: isCloudBackupPlatform() };
   },
