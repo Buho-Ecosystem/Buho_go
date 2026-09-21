@@ -46,6 +46,10 @@ function harness(get = () => assert.fail('unexpected network request')) {
   }).default;
   const vm = { $t: text => text, ...component.methods, $refs: {},
     walletStore: { activeWalletType: 'spark' },
+    // LUD-14: the page hands every resolved withdrawRequest to the voucher
+    // store. Tracking is a side note to a withdrawal and must never be in its
+    // way, so the stub records instead of asserting.
+    withdrawVouchersStore: { tracked: [], track(info) { this.tracked.push(info); return Promise.resolve(null); } },
     preferNativeBip21Rail: data => data, runBrantaVerification() {}, runNostrRecipientEnrichment() {},
     resetWithdrawState() { this.lnurlWithdrawStatus = 'idle'; },
     failSendResolution() { assert.fail('valid withdrawal must reach review'); },
@@ -90,6 +94,31 @@ test('all payment wallets open Redeem review without creating an invoice or subm
     assert.equal(vm.pendingPayment.receiveAmount, 12); assert.equal(vm.pendingWithdrawTargetSats, null);
     assert.equal(calls.length, 0);
   }
+});
+
+test('a balanceCheck link is remembered as a voucher, an ordinary withdraw link is not', async () => {
+  const balanceCheck = 'https://cash.example/balance/abc';
+  const voucherUrl = `https://cash.example/withdraw?${new URLSearchParams({ ...metadata, balanceCheck })}`;
+
+  const voucher = harness();
+  await voucher.vm.onPaymentDetected({ type: 'lnurl', data: encoded(voucherUrl) });
+  assert.equal(voucher.vm.showWithdrawSheet, true);
+  assert.equal(voucher.vm.withdrawVouchersStore.tracked.length, 1);
+  assert.equal(voucher.vm.withdrawVouchersStore.tracked[0].balanceCheck, balanceCheck);
+
+  // No balanceCheck: a one-shot code, tracked nowhere.
+  const plain = harness();
+  await plain.vm.onPaymentDetected({ type: 'lnurl', data: encoded(url) });
+  assert.equal(plain.vm.showWithdrawSheet, true);
+  assert.equal(plain.vm.withdrawVouchersStore.tracked[0].balanceCheck, null);
+});
+
+test('a balanceCheck pointing at another host is never stored', async () => {
+  const foreign = `https://cash.example/withdraw?${new URLSearchParams({ ...metadata, balanceCheck: 'https://evil.example/balance/abc' })}`;
+  const h = harness();
+  await h.vm.onPaymentDetected({ type: 'lnurl', data: encoded(foreign) });
+  assert.equal(h.vm.showWithdrawSheet, true, 'the withdrawal itself still works');
+  assert.equal(h.vm.withdrawVouchersStore.tracked[0].balanceCheck, null);
 });
 
 test('zero and sub-satoshi-only bounds cannot pass the final confirmation guard', () => {

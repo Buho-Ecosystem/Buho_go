@@ -828,6 +828,27 @@ export default {
       this.pasteAdvanceTimer = setTimeout(() => this.autoAdvance(), 300);
     },
 
+    /**
+     * Open on a destination that already failed to resolve elsewhere.
+     *
+     * The home clipboard strip resolves without raising this sheet, so the
+     * sheet is not part of a successful send anymore — it appears only when
+     * that resolve failed, and then it must land exactly where the user
+     * would have typed: the string in the field, the reason under it,
+     * nothing auto-advancing (it has had its try). The error is applied on
+     * the next tick because the `manualInput` watcher clears a stale error
+     * on every edit, and this assignment counts as one.
+     */
+    revealFailed(value, message) {
+      this.manualInput = value;
+      this.$nextTick(() => {
+        clearTimeout(this.phoneAdvanceTimer);
+        clearTimeout(this.pasteAdvanceTimer);
+        this.isProcessing = false;
+        if (message) this.$emit('update:resolveError', message);
+      });
+    },
+
     openScanner() {
       if (this.ctaBusy) return;
       if (this.resolveError) this.$emit('update:resolveError', '');

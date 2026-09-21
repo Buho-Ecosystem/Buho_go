@@ -22,4 +22,7 @@ ext {
     androidxEspressoCoreVersion = '3.7.0'
     cordovaAndroidVersion = '14.0.1'
     playServicesVersion = '18.7.2'
+    // Transitive-version override, not a UI toolkit BuhoGO builds on -
+    // see the material dependency in app/build.gradle.
+    materialVersion = '1.13.0'
 }

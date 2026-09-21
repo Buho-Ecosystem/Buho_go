@@ -586,6 +586,52 @@ await test('a kiosk sale link carrying label/source/saleBreakdown stamps the bre
   assert.equal(store.getSaleBreakdownForTransaction('kiosk-tx-1', 'wallet-other'), null);
 });
 
+// ---------------------------------------------------------------------------
+// LUD-11: a reusable pay link is stamped onto the send it came from
+// ---------------------------------------------------------------------------
+
+await test('a LUD-11 reusable pay link is stamped onto the matching send and read back per wallet', async () => {
+  const store = freshStore();
+  await store.enqueuePendingContactLink({
+    payLink: 'LNURL1REUSABLE',
+    amountSats: 1500,
+    walletId: 'wallet-a',
+  });
+
+  const txs = [makeTx('lnurl-tx-1', { type: 'outgoing', amount: 1500 })];
+  assert.equal(await store.consumePendingContactLinks(txs, 'wallet-a'), 1);
+  assert.equal(store.getPayLinkForTransaction('lnurl-tx-1', 'wallet-a'), 'LNURL1REUSABLE');
+  // Same bare id on another wallet is a different payment entirely.
+  assert.equal(store.getPayLinkForTransaction('lnurl-tx-1', 'wallet-other'), null);
+});
+
+await test('a pay-link-only link needs the amount to match before it stamps anything', async () => {
+  const store = freshStore();
+  await store.enqueuePendingContactLink({
+    payLink: 'LNURL1REUSABLE',
+    amountSats: 1500,
+    walletId: 'wallet-a',
+  });
+
+  // A send of a different size in the same window is not this payment: a
+  // wrong stamp would offer "Pay again" for a service the user never paid.
+  const txs = [makeTx('lnurl-tx-2', { type: 'outgoing', amount: 2500 })];
+  assert.equal(await store.consumePendingContactLinks(txs, 'wallet-a'), 0);
+  assert.equal(store.getPayLinkForTransaction('lnurl-tx-2', 'wallet-a'), null);
+});
+
+await test('the newest reusable link for a recipient address is what a contact re-pays', async () => {
+  const store = freshStore();
+  await store.setRecipientAddressForTransaction('tx-old', 'wallet-a', 'Merchant@Example.com');
+  await store.setPayLinkForTransaction('tx-old', 'wallet-a', 'LNURL1OLD');
+  await store.setRecipientAddressForTransaction('tx-new', 'wallet-a', 'merchant@example.com');
+  await store.setPayLinkForTransaction('tx-new', 'wallet-a', 'LNURL1NEW');
+
+  assert.equal(store.getPayLinkForAddress('Merchant@example.com'), 'LNURL1NEW');
+  assert.equal(store.getPayLinkForAddress('someone@else.com'), null);
+  assert.equal(store.getPayLinkForAddress(''), null);
+});
+
 console.log(`\n  ${passed} passed, ${failed} failed`);
 // Force-exit: importing the store transitively loads utils/fiatRates.js,
 // whose singleton starts a real setInterval background refresh at module

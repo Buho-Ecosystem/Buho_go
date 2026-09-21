@@ -3285,4 +3285,12 @@ export default {
   "See what your link shows": "Sieh, was dein Link zeigt",
   "Want a page like this too?": "Willst du auch so eine Seite?",
   "Scan from another phone, or with a wallet app.": "Scanne von einem anderen Handy oder mit einer Wallet-App.",
+  "Pay again": "Erneut bezahlen",
+  "Reusable link": "Wiederverwendbarer Link",
+  "This service keeps its payment link open, so you can pay it again without scanning.": "Dieser Dienst lässt seinen Zahlungslink offen, du kannst also erneut bezahlen, ohne zu scannen.",
+  "Vouchers": "Gutscheine",
+  "Still holds {amount}": "Enthält noch {amount}",
+  "Couldn't reach this service": "Dieser Dienst war nicht erreichbar",
+  "Forget this voucher": "Diesen Gutschein vergessen",
+  "This voucher is empty": "Dieser Gutschein ist leer",
 }

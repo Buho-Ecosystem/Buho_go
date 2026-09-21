@@ -38,6 +38,53 @@
         </div>
       </q-card-section>
 
+      <!-- LUD-14: withdraw links that still hold money.
+           A voucher is the one thing on this sheet the user cannot produce
+           themselves — it came from an ATM slip or a gift card and would
+           otherwise be a paper QR to find again — so it sits above the
+           receive views rather than inside any one of them. Tapping a row
+           sweeps what is left; the circle re-checks with the service. -->
+      <div v-if="vouchers.length" class="voucher-strip">
+        <div class="voucher-strip-label">{{ $t('Vouchers') }}</div>
+        <div
+          v-for="voucher in vouchers"
+          :key="voucher.id"
+          class="voucher-row"
+          role="button"
+          tabindex="0"
+          @click="$emit('redeem-voucher', voucher)"
+          @keyup.enter="$emit('redeem-voucher', voucher)"
+        >
+          <span class="voucher-icon">
+            <Icon icon="tabler:ticket" width="18" height="18" />
+          </span>
+          <span class="voucher-copy">
+            <strong class="voucher-title">{{ voucher.description || voucher.domain }}</strong>
+            <small class="voucher-sub">
+              {{ $t('Still holds {amount}', { amount: formatInvoiceAmount(voucher.lastKnownSats) }) }}
+              <template v-if="voucher.lastError"> · {{ $t("Couldn't reach this service") }}</template>
+            </small>
+          </span>
+          <button
+            type="button"
+            class="voucher-btn"
+            :aria-label="$t('Check again')"
+            @click.stop="$emit('recheck-voucher', voucher)"
+          >
+            <q-spinner v-if="checkingVouchers[voucher.id]" size="16px" />
+            <Icon v-else icon="tabler:refresh" width="16" height="16" />
+          </button>
+          <button
+            type="button"
+            class="voucher-btn"
+            :aria-label="$t('Forget this voucher')"
+            @click.stop="$emit('forget-voucher', voucher)"
+          >
+            <Icon icon="tabler:x" width="16" height="16" />
+          </button>
+        </div>
+      </div>
+
       <!-- Content -->
       <q-card-section class="receive-content">
         <!-- Arkade unified Bitcoin view: ONE code carrying the on-chain
@@ -464,9 +511,23 @@ export default {
     modelValue: {
       type: Boolean,
       default: false
+    },
+    // LUD-14 vouchers with a balance left (withdrawVouchers store). Owned by
+    // the wallet page — this sheet only shows them and reports taps.
+    vouchers: {
+      type: Array,
+      default: () => []
+    },
+    // id → true while that voucher is being re-checked.
+    checkingVouchers: {
+      type: Object,
+      default: () => ({})
     }
   },
-  emits: ['update:modelValue', 'invoice-created', 'bitcoin-deposits-updated', 'scan-withdraw'],
+  emits: [
+    'update:modelValue', 'invoice-created', 'bitcoin-deposits-updated', 'scan-withdraw',
+    'redeem-voucher', 'recheck-voucher', 'forget-voucher',
+  ],
   data() {
     return {
       // In-app keypad state. `keypadValue` is the raw string the user has
@@ -3298,5 +3359,87 @@ export default {
   font-family: 'Manrope', sans-serif;
   font-size: 15px;
   font-weight: 600;
+}
+
+/* ─────────────────────────────────────────────────────────────
+   LUD-14 voucher strip — saved withdraw links with a balance left
+   ───────────────────────────────────────────────────────────── */
+.voucher-strip {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 0 16px 10px;
+}
+
+.voucher-strip-label {
+  font: 600 12px/1 'Manrope', sans-serif;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+.voucher-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--border-card);
+  border-radius: 14px;
+  background: var(--bg-card);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.voucher-row:active {
+  opacity: 0.85;
+}
+
+.voucher-icon {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+}
+
+.voucher-copy {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.voucher-title {
+  font: 650 13.5px/1.3 'Manrope', sans-serif;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.voucher-sub {
+  font: 12px/1.3 'Manrope', sans-serif;
+  color: var(--text-secondary);
+}
+
+.voucher-btn {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.voucher-btn:active {
+  background: var(--bg-secondary);
 }
 </style>

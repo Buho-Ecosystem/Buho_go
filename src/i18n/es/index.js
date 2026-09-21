@@ -3284,4 +3284,12 @@ export default {
   "See what your link shows": "Mira lo que muestra tu enlace",
   "Want a page like this too?": "¿Quieres una página así también?",
   "Scan from another phone, or with a wallet app.": "Escanéalo desde otro teléfono o con una app de monedero.",
+  "Pay again": "Pagar de nuevo",
+  "Reusable link": "Enlace reutilizable",
+  "This service keeps its payment link open, so you can pay it again without scanning.": "Este servicio mantiene su enlace de pago abierto, así que puedes pagarle otra vez sin escanear.",
+  "Vouchers": "Vales",
+  "Still holds {amount}": "Aún tiene {amount}",
+  "Couldn't reach this service": "No pudimos contactar con este servicio",
+  "Forget this voucher": "Olvidar este vale",
+  "This voucher is empty": "Este vale está vacío",
 }

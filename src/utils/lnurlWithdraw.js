@@ -17,6 +17,31 @@ function secureEndpoint(value) {
   } catch { return false; }
 }
 
+/**
+ * LUD-14 — validate a `balanceCheck` URL before we ever store or call it.
+ *
+ * balanceCheck turns a one-shot withdraw QR into a voucher: GET it later and
+ * the service answers with a fresh withdrawRequest carrying whatever balance
+ * is left. Because the WALLET calls this URL by itself — no user reading a
+ * link first — it is pinned to the service that issued the voucher: same
+ * transport rules as any other endpoint here (https, or http only for .onion,
+ * no credentials, no fragment) AND the same host as the callback. Anything
+ * else fails closed and the voucher simply isn't tracked.
+ *
+ * @param {unknown} balanceCheck
+ * @param {unknown} callback  the withdrawRequest callback it arrived with
+ * @returns {string|null} the URL to keep, or null
+ */
+export function validateBalanceCheckUrl(balanceCheck, callback) {
+  if (typeof balanceCheck !== 'string' || !balanceCheck) return null;
+  if (!secureEndpoint(balanceCheck) || !secureEndpoint(callback)) return null;
+  try {
+    const url = new URL(balanceCheck);
+    if (url.hostname !== new URL(callback).hostname) return null;
+    return url.toString();
+  } catch { return null; }
+}
+
 /** Inspect an already decoded LNURL without IO or changing opaque values.
  * Unlike LNURL-auth, a withdrawal k1 is an arbitrary service-defined string.
  * An empty description is valid; absence is not. */
@@ -39,10 +64,15 @@ export function parseFastWithdrawRequest(endpoint) {
     pinLimit = millisats(params.get('pinLimit'));
     if (params.getAll('pinLimit').length !== 1 || pinLimit === null || pinLimit <= 0) return null;
   }
+  // LUD-14 is optional metadata, never a reason to reject the fast path: an
+  // unusable balanceCheck just means this code isn't trackable as a voucher.
+  const balanceCheck = validateBalanceCheckUrl(params.get('balanceCheck'), callback);
+
   return {
     tag: 'withdrawRequest', k1, callback, minWithdrawable, maxWithdrawable,
     defaultDescription: params.get('defaultDescription'),
     ...(pinLimit === undefined ? {} : { pinLimit }),
+    ...(balanceCheck ? { balanceCheck } : {}),
   };
 }
 
@@ -61,5 +91,12 @@ export function withdrawInfo(data) {
     fixedAmountSats: isFixedAmount ? maxSats : null,
     defaultDescription: data.defaultDescription || 'Withdrawal',
     pinLimit: Number.isSafeInteger(data.pinLimit) && data.pinLimit > 0 ? data.pinLimit : null,
+    // LUD-14: the handle on what is left after this withdrawal, and the
+    // balance the service claims right now (millisats, informational — the
+    // authoritative number is maxWithdrawable on the next fetch).
+    balanceCheck: validateBalanceCheckUrl(data.balanceCheck, data.callback),
+    currentBalance: Number.isSafeInteger(data.currentBalance) && data.currentBalance >= 0
+      ? data.currentBalance
+      : null,
   };
 }

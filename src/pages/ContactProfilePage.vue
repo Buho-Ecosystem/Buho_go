@@ -64,7 +64,10 @@
         <span>{{ $t('No address yet') }}</span>
       </div>
 
-      <button type="button" class="profile-pay" @click="onPay">
+      <button v-if="reusablePayLink" type="button" class="profile-pay" @click="onPayAgain">
+        {{ $t('Pay again') }}
+      </button>
+      <button v-else type="button" class="profile-pay" @click="onPay">
         {{ $t('Pay {name}', { name: entry.name }) }}
       </button>
 
@@ -184,6 +187,21 @@ export default {
       if (!this.entry) return ''
       return this.entry.address || this.entry.lightningAddress || ''
     },
+
+    /**
+     * LUD-11: the newest reusable LNURL among the payments joined to this
+     * contact, when they have no address of their own to pay.
+     *
+     * Only surfaced in that case on purpose. A contact WITH an address is
+     * already payable through the button above, and a second one pointing at
+     * the same recipient by a different route is noise. Where it earns its
+     * place is the merchant whose only handle is a raw LNURL-pay code: the
+     * stored link is the one thing that makes them payable again.
+     */
+    reusablePayLink() {
+      if (this.entryAddress) return null
+      return this.history.find((tx) => tx.payLink)?.payLink || null
+    },
   },
 
   async created() {
@@ -206,6 +224,26 @@ export default {
       // Shared composable: handles the identity-only explain + re-sync
       // path exactly like the list rows do.
       usePayContact(this).payContact(this.entry)
+    },
+
+    /**
+     * Pay an addressless contact through the reusable link their last payment
+     * used. Same dispatcher as every other send (usePayContact routes there
+     * too), so the confirm sheet still asks before anything leaves.
+     */
+    onPayAgain() {
+      const link = this.reusablePayLink
+      if (!link) return
+      this.addressBook.updateLastUsed(this.entry.id).catch(() => {})
+      this.$router.push({
+        path: '/wallet',
+        query: {
+          action: 'pay_contact',
+          address: link,
+          addressType: 'lnurl',
+          contactName: this.entry.name,
+        },
+      })
     },
 
     async onToggleFavorite() {
@@ -271,6 +309,9 @@ export default {
                 sourceKey: `${wallet.id}:${tx.id || tx.timestamp}`,
                 amountSats: tx.recipientSats || Math.abs(Number(tx.amount) || 0),
                 timeMs: this.txTimeMs(tx),
+                // LUD-11: the link this payment went through, when the service
+                // marked it reusable. Newest one wins (see reusablePayLink).
+                payLink: meta.payLink || null,
                 matches,
               }
             })

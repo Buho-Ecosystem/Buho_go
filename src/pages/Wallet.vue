@@ -97,7 +97,7 @@
 
     <!-- Android offers a copied destination once until the clipboard changes.
          Send opens the same confirmation flow as an explicit paste. -->
-    <ClipboardSuggestion @use="useClipboardDestination" />
+    <ClipboardSuggestion :busy="clipboardResolving" @use="useClipboardDestination" />
 
     <!-- Backup Reminder Banner -->
     <!-- Paused: the persistent keyring is the home backup entry point.
@@ -430,8 +430,13 @@
     <ReceiveModal
       ref="receiveModal"
       v-model="showReceiveModal"
+      :vouchers="withdrawVouchersStore.active"
+      :checking-vouchers="withdrawVouchersStore.checking"
       @bitcoin-deposits-updated="handleBitcoinDepositsUpdated"
       @scan-withdraw="handleScanWithdraw"
+      @redeem-voucher="redeemVoucher"
+      @recheck-voucher="recheckVoucher"
+      @forget-voucher="forgetVoucher"
     />
 
     <!-- Send Modal -->
@@ -858,8 +863,12 @@ import {parseSuccessAction, resolveSuccessAction} from '../utils/successAction.j
 import {validateVerifyUrl, pollVerify} from '../utils/lnurlVerify.js';
 import {lnurlFetch, lnurlGetJson} from '../utils/lnurlHttp.js';
 import {classifyTransportFailure} from '../utils/userErrors.js';
-import {buildLnurlPayCallbackUrl} from '../utils/lnurlPay.js';
-import {isLightningInvoice as isLightningInvoiceShared, stripWrapperScheme, nativeRailsFromBip21} from '../utils/addressUtils.js';
+import {buildLnurlPayCallbackUrl, isStoreablePayLink} from '../utils/lnurlPay.js';
+import {isLightningInvoice as isLightningInvoiceShared, isLightningAddress as isLightningAddressShared, stripWrapperScheme, nativeRailsFromBip21} from '../utils/addressUtils.js';
+// One rule for "what is this string", shared with the Send field and the
+// home clipboard strip, so resolving from Home can't disagree with the sheet.
+import {classifyDestination, normalizeDestination} from '../utils/clipboardSuggestion.js';
+import {classifyIdentifier} from '../utils/nostrLookup.js';
 import {canWalletPay, walletSwitchHint} from '../utils/walletCapabilities.js';
 import {
   decodeSparkDestination,
@@ -871,7 +880,7 @@ import {getTxMessage} from '../utils/txMessage.js';
 import {zapperDisplayName, zapperPicture} from '../services/zapperProfiles.js';
 import {NOSTRICH_HEAD_ICON} from '../utils/nostrIcon.js';
 import { Capacitor } from '@capacitor/core';
-import {matchLnAddressService, formatPhoneHandle} from '../services/lnAddressServices';
+import {matchLnAddressService, formatPhoneHandle, recognizePhoneNumber} from '../services/lnAddressServices';
 import {matchWalletBrand} from '../services/walletBrands';
 import {npubFromLightningAddress, shortenNpub, profileDisplayName, sanitizeImageUrl} from '../services/nostrRecipient';
 import {fetchProfile, parseProfileContent, DEFAULT_FETCH_TIMEOUT_MS} from '../utils/nostrFetch.js';
@@ -911,6 +920,7 @@ import BackupShortcut from '../components/BackupShortcut.vue';
 import ClipboardSuggestion from '../components/ClipboardSuggestion.vue';
 import IdentityAuthDialog from '../components/IdentityAuthDialog.vue';
 import {useAutoWithdrawStore} from '../stores/autoWithdraw';
+import {useWithdrawVouchersStore} from '../stores/withdrawVouchers';
 import {useIdentityStore} from '../stores/identity';
 import {useSocialBucketStore} from '../stores/socialBucket';
 import {LUD04_ERROR, parseLud04Input, looksLikeLud04} from '../utils/lud4.js';
@@ -968,6 +978,7 @@ export default {
     const identityStore = useIdentityStore();
     const updateStore = useUpdateStore();
     const socialBucketStore = useSocialBucketStore();
+    const withdrawVouchersStore = useWithdrawVouchersStore();
     return {
       walletStore,
       addressBookStore,
@@ -976,6 +987,7 @@ export default {
       identityStore,
       socialBucketStore,
       updateStore,
+      withdrawVouchersStore,
     };
   },
   data() {
@@ -1023,6 +1035,10 @@ export default {
       // validate a destination it emitted (before the confirm sheet opens).
       sendResolving: false,
       sendResolveError: '',
+      // True while a destination taken from the home clipboard strip is
+      // resolving with no sheet up: the strip itself shows the wait, and
+      // the confirm sheet is the next surface the user sees.
+      clipboardResolving: false,
       // PaymentConfirmSheet flags. Both paths use the same shared sheet
       // component — the only difference is the `verb` prop (send vs
       // redeem) which switches all the labels, and the payload shape
@@ -2086,6 +2102,9 @@ export default {
     // Restore display currency from user preference
     this.currentDisplayMode = this.walletStore.defaultDisplayCurrency || 'bitcoin';
     this.addressBookStore.initialize();
+    // LUD-14 vouchers: load what is saved so the Receive sheet can offer a
+    // half-spent withdraw link the moment it opens. Cheap and idempotent.
+    this.withdrawVouchersStore.initialize().catch(() => {});
     // Hydrate the Identity store so the header avatar paints with the
     // right gradient (and the backup-pip with the right state) on first
     // mount. Idempotent and cheap.
@@ -2517,14 +2536,88 @@ export default {
     },
 
     /**
-     * The clipboard strip's Use: open Send with the text already in the
-     * field, so it resolves the way a paste does and lands on the confirm
-     * sheet. The sheet's open watcher has run by the next tick.
+     * The clipboard strip's Use.
+     *
+     * The destination is already chosen, so the Send sheet has nothing to
+     * ask: raising it only to fill its field, show "Fetching…" and drop it
+     * again made the user watch three surfaces cycle for one tap. We
+     * resolve straight from Home instead — the strip carries the wait in
+     * place (clipboardResolving) and the confirm sheet is the only thing
+     * that opens.
+     *
+     * The Send sheet is still the home for anything that needs a human:
+     * a string these rails can't route on their own (wrapped address
+     * requests, a wallet switched under the offer) is handed to it as a
+     * paste, and a destination that fails to resolve reopens it with the
+     * text and the reason inline, where fixing it belongs.
      */
-    useClipboardDestination(text) {
+    async useClipboardDestination(text) {
+      if (this.clipboardResolving) return;
       if (offerAddressRequest(text, { t: this.$t.bind(this) })) return;
-      this.showSendModal = true;
-      this.$nextTick(() => this.$refs.sendModal?.useDestination(text));
+
+      const payload = this.clipboardPaymentPayload(text);
+      if (!payload) {
+        this.showSendModal = true;
+        this.$nextTick(() => this.$refs.sendModal?.useDestination(text));
+        return;
+      }
+
+      haptics.tap();
+      this.sendResolveError = '';
+      this.clipboardResolving = true;
+      try {
+        await this.onPaymentDetected(payload);
+      } finally {
+        this.clipboardResolving = false;
+      }
+      // Didn't resolve: the sheet takes over, carrying both the string and
+      // the reason (onPaymentDetected reported it inline — see fromField).
+      if (this.sendResolveError) {
+        const message = this.sendResolveError;
+        this.sendResolveError = '';
+        this.showSendModal = true;
+        this.$nextTick(() => this.$refs.sendModal?.revealFailed(text, message));
+      }
+    },
+
+    /**
+     * Turn a copied destination into the payload onPaymentDetected takes,
+     * or null when these rails can't route it on their own.
+     *
+     * Mirrors the Send field's own pre-dispatch steps — payout phone number
+     * first (its digits would otherwise be read as something else), then
+     * the BIP21 / wrapper unwrap, a bare Nostr key, and the capability
+     * guard — so the strip reaches the confirm sheet by exactly the rails
+     * a paste would take, minus the sheet. Anything else returns null and
+     * the sheet resolves it the long way, which keeps the rarer shapes
+     * (SA-retail QR text, a wrapped address request) on one code path.
+     */
+    clipboardPaymentPayload(text) {
+      const rawInput = (text || '').trim();
+      if (!rawInput) return null;
+      const walletType = this.walletStore.activeWalletType;
+
+      // A recognized KE/ZM mobile number is a fiat payout: resolve it to
+      // its provider Lightning address before any other classifier sees
+      // the digits.
+      const phone = recognizePhoneNumber(rawInput);
+      if (phone) return { data: phone.lightningAddress, type: 'lightning_address', rawInput };
+
+      const { cleaned, bip21 } = normalizeDestination(rawInput, walletType);
+      if (!cleaned) return null;
+      const data = isLightningAddressShared(cleaned) ? cleaned.toLowerCase() : cleaned;
+
+      // Bare npub / nprofile: onPaymentDetected resolves the profile to its
+      // Lightning target and carries the person onto the confirm sheet.
+      const nostrKind = classifyIdentifier(data);
+      if (nostrKind === 'npub' || nostrKind === 'nprofile') {
+        return { data, type: 'nostr_identifier', rawInput, paymentOnly: true };
+      }
+
+      const type = classifyDestination(data, walletType);
+      if (type === 'unknown' || type === 'address_request') return null;
+      if (!canWalletPay(walletType, type)) return null;
+      return { data, type, rawInput, ...(bip21 ? { bip21 } : {}) };
     },
 
     async openWalletManagement() {
@@ -4191,6 +4284,12 @@ export default {
           );
         }
 
+        // LUD-14: the k1 we just spent is dead, but the voucher behind it may
+        // not be. Ask what is left (fire-and-forget) so the saved entry shows
+        // the remaining balance — or retires itself — without the user having
+        // to check. The service needs a moment to settle the withdrawal first.
+        this.refreshVoucherAfterWithdraw(this.pendingPayment?.balanceCheck);
+
         // Step 3: Monitor for incoming payment — the existing
         // PaymentConfirmation surface (SuccessCheckmark + amount)
         // fires once the monitor confirms receipt.
@@ -4227,6 +4326,73 @@ export default {
           }
         }, 4000);
       }
+    },
+
+    // ========================================================================
+    // LUD-14 vouchers — reusable withdraw links
+    // ========================================================================
+
+    /**
+     * Re-read a voucher's balance after the withdrawal it just funded.
+     *
+     * Fire-and-forget by design: the withdrawal is the user's business here,
+     * and the voucher list is a convenience that must never delay or fail it.
+     * The short wait lets the service settle before we ask, so the number we
+     * store is the one the user would see on a manual re-check.
+     */
+    refreshVoucherAfterWithdraw(balanceCheck) {
+      const voucher = balanceCheck ? this.withdrawVouchersStore.byUrl(balanceCheck) : null;
+      if (!voucher) return;
+      setTimeout(() => {
+        this.withdrawVouchersStore.refresh(voucher.id)
+          .catch((err) => console.warn('[vouchers] post-withdraw re-check failed:', err));
+      }, 2500);
+    },
+
+    /**
+     * Sweep a saved voucher: hand its balanceCheck URL to the canonical
+     * dispatcher, which fetches the fresh withdrawRequest (new k1, current
+     * bounds), tracks whatever URL it rotated to, and opens the redeem sheet.
+     * One path — a voucher redeems exactly like a scanned QR.
+     */
+    redeemVoucher(voucher) {
+      if (!voucher?.balanceCheck) return;
+      haptics.tap();
+      this.showReceiveModal = false;
+      void this.onPaymentDetected({ type: 'lnurl', data: voucher.balanceCheck });
+    },
+
+    /** Ask the service what is left, and say so in the user's own words. */
+    async recheckVoucher(voucher) {
+      if (!voucher?.id) return;
+      const result = await this.withdrawVouchersStore.refresh(voucher.id);
+      if (result.ok && result.sats > 0) {
+        this.$q.notify({
+          type: 'positive',
+          message: this.$t('Still holds {amount}', {
+            amount: formatAmount(result.sats, this.walletStore.useBip177Format),
+          }),
+          timeout: 2500,
+        });
+        return;
+      }
+      if (result.ok) {
+        this.$q.notify({ type: 'info', message: this.$t('This voucher is empty'), timeout: 2500 });
+        return;
+      }
+      this.$q.notify({
+        type: 'warning',
+        message: result.reason === 'unreachable'
+          ? this.$t("Couldn't reach this service")
+          : this.$t('This voucher is empty'),
+        timeout: 2500,
+      });
+    },
+
+    /** Drop our copy of a voucher. Whatever paper it came on still works. */
+    async forgetVoucher(voucher) {
+      if (!voucher?.id) return;
+      await this.withdrawVouchersStore.forget(voucher.id);
     },
 
     async createInvoiceForWithdraw(amountSats, description) {
@@ -4772,9 +4938,11 @@ export default {
       }
 
       // Drive the Send sheet's loading CTA + inline error only when the request
-      // came from the open sheet. Deep-link / external calls (fromField=false)
-      // keep the existing dialog-based error path and never touch the sheet.
-      const fromField = this.showSendModal;
+      // came from the open sheet — or from the home clipboard strip, which
+      // resolves with the sheet still down and reveals it (text + reason)
+      // only if this fails. Deep-link / external calls (fromField=false) keep
+      // the existing dialog-based error path and never touch the sheet.
+      const fromField = this.showSendModal || this.clipboardResolving;
       let delegated = false; // a nested re-dispatch (NIP-05 rescue) owns the outcome
       let resolved = true;   // assume we'll reach a confirm sheet / handoff
       if (fromField) { this.sendResolving = true; this.sendResolveError = ''; }
@@ -4883,6 +5051,14 @@ export default {
           if (lnurlInfo.lnurlType === 'withdrawRequest') {
             // LNURL-withdraw: set up withdraw flow
             this.resetWithdrawState();
+
+            // LUD-14: a withdrawRequest carrying a balanceCheck URL is a
+            // voucher, not a one-shot code. Remember it (and whatever it
+            // rotated to) so what is left stays visible after a partial
+            // withdrawal, instead of living on a paper slip. Best effort —
+            // tracking must never stand between the user and their money.
+            this.withdrawVouchersStore.track(lnurlInfo)
+              .catch((err) => console.warn('[vouchers] could not track:', err));
 
             // Pre-fill the redeem sheet with the amount the user intended to
             // receive, instead of opening at 0. Two sources feed this:
@@ -5403,6 +5579,13 @@ export default {
         const isPayoutProvider = !!recipientAddress && !!matchLnAddressService(recipientAddress);
         const verifyUrl = (isCompletedSend && isPayoutProvider) ? (result?.verify || null) : null;
 
+        // LUD-11: the service said this LNURL is reusable (disposable: false),
+        // so the link is worth keeping as a durable handle on the recipient —
+        // a raw LNURL-pay QR has no address form, and this is what turns it
+        // into a one-tap repeat payment from Transaction Details. Only for a
+        // send that actually went through.
+        const payLink = isCompletedSend ? (result?.payLink || null) : null;
+
         // Queue a pending link by recipient address + amount + send
         // time. The next tx-list refresh drains the queue and stamps
         // the newly observed outgoing tx — wallet-agnostic, so it
@@ -5430,7 +5613,7 @@ export default {
           ? { name: bv.name || '', logoUrl: bv.logoUrl || '', logoLightUrl: bv.logoLightUrl || '', verifyUrl: bv.verifyUrl || '' }
           : null;
 
-        if (recipientAddress || successAction || verifyUrl || paymentSource || merchantVerification) {
+        if (recipientAddress || successAction || verifyUrl || paymentSource || merchantVerification || payLink) {
           try {
             // A resolved Nostr send carries the person's avatar + display
             // name so the tx row/hero show who was actually paid instead of
@@ -5453,6 +5636,9 @@ export default {
               // Persist the LUD-21 verify URL too, so Transaction Details can
               // re-confirm delivery (receipt + recipient) when viewed later.
               verifyUrl,
+              // LUD-11 reusable LNURL — Transaction Details turns it into
+              // "Pay again" instead of asking for the QR a second time.
+              payLink,
               source: paymentSource,
               // Nostr sends only — the person's name (title) and avatar.
               label: nostrLabel,
@@ -5704,14 +5890,14 @@ export default {
       // LNURL - decode and fetch invoice, then pay
       // Note: LNURL invoices already have amount encoded, so don't pass amountSats
       if (this.pendingPayment.lnurl) {
-        const { pr, successAction, verify } = await this.fetchLNURLInvoice(this.pendingPayment.lnurl, amount, payout);
+        const { pr, successAction, verify, payLink } = await this.fetchLNURLInvoice(this.pendingPayment.lnurl, amount, payout);
         const result = await provider.payInvoice({
           invoice: pr,
           preferSpark: true,
           maxFee: this.estimatedFee || undefined // Pass UI-displayed fee estimate
           // amountSats intentionally omitted - LNURL invoice has amount encoded
         });
-        return { ...result, successAction, verify };
+        return { ...result, successAction, verify, payLink };
       }
 
       throw new Error('Unsupported payment type for Spark wallet');
@@ -5759,9 +5945,9 @@ export default {
 
       // LNURL-pay → fetch the encoded-amount invoice, then swap.
       if (this.pendingPayment.lnurl) {
-        const { pr, successAction, verify } = await this.fetchLNURLInvoice(this.pendingPayment.lnurl, amount, payout);
+        const { pr, successAction, verify, payLink } = await this.fetchLNURLInvoice(this.pendingPayment.lnurl, amount, payout);
         const result = await provider.payInvoice({ invoice: pr });
-        return { ...result, successAction, verify };
+        return { ...result, successAction, verify, payLink };
       }
 
       // On-chain (bc1…): collaborative exit (offboard) via Ramps.
@@ -5812,9 +5998,9 @@ export default {
 
       // LNURL - fetch invoice then pay
       if (this.pendingPayment.lnurl) {
-        const { pr, successAction, verify } = await this.fetchLNURLInvoice(this.pendingPayment.lnurl, amount, payout);
+        const { pr, successAction, verify, payLink } = await this.fetchLNURLInvoice(this.pendingPayment.lnurl, amount, payout);
         const result = await provider.payInvoice({ invoice: pr });
-        return { ...result, successAction, verify };
+        return { ...result, successAction, verify, payLink };
       }
 
       throw new Error('Unsupported payment type for LNbits wallet');
@@ -6144,10 +6330,17 @@ export default {
       // post-payment message) and LUD-21 `verify` URL the callback included.
       // `verify` is validated same-domain against the callback (never a third
       // party), mirroring the LUD-09 url guard. Callers thread them onward.
+      //
+      // LUD-11: a service that answers `disposable: false` is telling us this
+      // LNURL is reusable. That is the one case where the QR itself is worth
+      // keeping — a raw LNURL has no address form, so without it paying the
+      // same merchant again means finding the code again. `payLink` is null
+      // for every ordinary (single-use) link.
       return {
         pr: invoiceData.pr,
         successAction: parseSuccessAction(invoiceData.successAction, data.callback),
         verify: validateVerifyUrl(invoiceData.verify, data.callback),
+        payLink: (isStoreablePayLink(invoiceData) || isStoreablePayLink(data)) ? lnurl : null,
       };
     },
 
