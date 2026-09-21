@@ -1,3 +1,4 @@
+import { assertPaymentInput } from '../utils/lud23.js';
 /**
  * Resolve a Nostr identifier to a payable Lightning destination.
  *
@@ -100,6 +101,7 @@ export async function resolveNostrLightningTarget(input, opts = {}) {
   }
 
   const lud06 = typeof content.lud06 === 'string' ? content.lud06.trim() : ''
+  if (lud06) assertPaymentInput(lud06);
   if (lud06 && isLnurl(lud06)) {
     return {
       kind: 'lnurl',

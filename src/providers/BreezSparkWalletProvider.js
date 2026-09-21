@@ -922,7 +922,7 @@ export class BreezSparkWalletProvider extends WalletProvider {
       }
 
       const lnurlData = response.data;
-      if (!lnurlData || lnurlData.status === 'ERROR') {
+      if (!lnurlData || lnurlData.tag !== 'payRequest' || !lnurlData.callback || lnurlData.status === 'ERROR') {
         throw new Error(lnurlData?.reason || 'Failed to fetch Lightning address info');
       }
 

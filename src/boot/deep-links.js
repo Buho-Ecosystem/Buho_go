@@ -1,3 +1,4 @@
+import { offerAddressRequest } from '../services/addressRequestIntake.js';
 import { boot } from 'quasar/wrappers'
 import { Notify } from 'quasar'
 import { Capacitor } from '@capacitor/core'
@@ -57,7 +58,7 @@ function parseDeepLinkURI(url) {
 
   // Map to the { data, type } shape that Wallet.vue's onPaymentDetected expects
   // (same shape as SendModal's payment-detected emit)
-  const data = parsed.invoice || parsed.offer || parsed.address || parsed.lnurl || input
+  const data = parsed.data || parsed.invoice || parsed.offer || parsed.address || parsed.lnurl || input
 
   // Keep the BIP21 metadata: a unified QR's spark=/ark= rails and amount=
   // let onPaymentDetected route the payment over the wallet's native rail.
@@ -65,6 +66,7 @@ function parseDeepLinkURI(url) {
 }
 
 function handleDeepLink(url, router, walletStore) {
+  if (offerAddressRequest(url)) return
   if (!url || url === lastHandledUrl) return
   lastHandledUrl = url
 
@@ -93,6 +95,7 @@ function handleDeepLink(url, router, walletStore) {
   }
 
   const paymentData = parseDeepLinkURI(url)
+  if (paymentData && offerAddressRequest(paymentData.data)) return
   if (!paymentData) {
     Notify.create({
       type: 'warning',

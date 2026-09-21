@@ -1,3 +1,4 @@
+import { isAddressRequest } from './lud23.js';
 /**
  * What the clipboard can offer.
  *
@@ -70,8 +71,10 @@ export function normalizeDestination(input, walletType) {
  * @param {string|null} walletType
  */
 export function classifyDestination(input, walletType) {
+  if (isAddressRequest(input)) return 'address_request';
   const { cleaned } = normalizeDestination(input, walletType);
   if (!cleaned) return 'unknown';
+  if (isAddressRequest(cleaned)) return 'address_request';
 
   if (isSilentPaymentAddress(cleaned)) return 'silent_payment';
   if (isSparkAddress(cleaned)) return 'spark_address';
@@ -99,6 +102,7 @@ export function isSuggestibleDestination(text, walletType) {
   if (!trimmed || trimmed.length > MAX_CLIPBOARD_LENGTH) return false;
 
   const paymentType = classifyDestination(trimmed, walletType);
+  if (paymentType === 'address_request') return true;
   if (paymentType === 'bolt12_offer' || paymentType === 'silent_payment') return false;
   if (paymentType !== 'unknown') return canWalletPay(walletType, paymentType);
 
@@ -130,9 +134,9 @@ export function abbreviateDestination(text, { head = 14, tail = 10 } = {}) {
 export function offerLabelKey(text, walletType) {
   const trimmed = (text || '').trim();
   switch (classifyDestination(trimmed, walletType)) {
-    case 'lightning_invoice':
-    case 'lnurl':
-      return 'Copied payment request';
+    case 'address_request': return 'Copied address request';
+    case 'lnurl': return 'Copied link';
+    case 'lightning_invoice': return 'Copied payment request';
     case 'unknown':
       break;
     default:
@@ -203,4 +207,9 @@ export function createClipboardOfferMemory(storage = defaultStorage()) {
       save(fingerprint(text.trim()));
     },
   };
+}
+
+export function offerActionKey(text, walletType) {
+  const kind = classifyDestination(text, walletType);
+  return kind === 'address_request' ? 'Review' : kind === 'lnurl' ? 'Open' : 'Send';
 }

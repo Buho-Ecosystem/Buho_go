@@ -17,7 +17,7 @@
           <span class="clipboard-strip-label">{{ $t(labelKey) }}</span>
           <span class="clipboard-strip-value">{{ abbreviated }}</span>
         </span>
-        <button type="button" class="clipboard-strip-use" @click="use">{{ $t('Send') }}</button>
+        <button type="button" class="clipboard-strip-use" @click="use">{{ $t(actionKey) }}</button>
         <!-- The countdown is the dismissal: when the bar reaches zero the
              strip leaves. A finger resting on the strip pauses it. -->
         <span
@@ -33,6 +33,7 @@
 </template>
 
 <script>
+import { offerActionKey } from '../utils/clipboardSuggestion.js';
 import { ref } from 'vue';
 import { Capacitor } from '@capacitor/core';
 import { App } from '@capacitor/app';
@@ -69,9 +70,9 @@ function ensureReturnListener() {
  * The home screen's clipboard offer.
  *
  * Once on start and once per return to the app, read the clipboard and,
- * if it holds something this wallet can pay, show it with a Send button
- * and a countdown. Send hands the text to the Send sheet exactly as a
- * paste would; nothing advances on its own.
+ * if it holds a supported destination or address request, offer the
+ * corresponding Send, Open, or Review action with a countdown. Use hands
+ * the text to the matching flow; nothing advances on its own.
  *
  * Android only: iOS uses explicit Paste to avoid unsolicited permission
  * prompts; on the web the Send sheet's own chip covers this. Reads happen
@@ -110,6 +111,7 @@ export default {
     abbreviated() {
       return abbreviateDestination(this.offered);
     },
+    actionKey() { return offerActionKey(this.offered, this.wallet.activeWalletType); },
     labelKey() {
       return offerLabelKey(this.offered, this.wallet.activeWalletType);
     },

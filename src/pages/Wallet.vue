@@ -839,6 +839,8 @@
 </template>
 
 <script>
+import { offerAddressRequest } from '../services/addressRequestIntake.js';
+import { assertPaymentInput } from '../utils/lud23.js';
 import { NostrWebLNProvider } from "@getalby/sdk";
 import {LightningPaymentService, resolveLUD17URL} from '../utils/lightning.js';
 import {parseSuccessAction, resolveSuccessAction} from '../utils/successAction.js';
@@ -2500,6 +2502,7 @@ export default {
      * sheet. The sheet's open watcher has run by the next tick.
      */
     useClipboardDestination(text) {
+      if (offerAddressRequest(text, { t: this.$t.bind(this) })) return;
       this.showSendModal = true;
       this.$nextTick(() => this.$refs.sendModal?.useDestination(text));
     },
@@ -2549,6 +2552,7 @@ export default {
      */
     payContactDestination({ address, addressType, name }) {
       if (!address) return;
+      if (offerAddressRequest(address, { t: this.$t.bind(this), paymentOnly: true })) return;
       if (!canWalletPay(this.walletStore.activeWalletType, addressType)) {
         this.$q.notify({
           type: 'warning',
@@ -2569,6 +2573,7 @@ export default {
         type: typeMap[addressType] || 'lightning_address',
         data: address,
         contactName: name || null,
+        paymentOnly: true,
       });
     },
 
@@ -4065,7 +4070,7 @@ export default {
         });
         return;
       }
-      const data = parsed.invoice || parsed.offer || parsed.address || parsed.lnurl || value;
+      const data = parsed.data || parsed.invoice || parsed.offer || parsed.address || parsed.lnurl || value;
       // Carry the BIP21 metadata so a scanned unified QR can take the
       // native-rail shortcut in onPaymentDetected, same as the Send field.
       void this.onPaymentDetected({
@@ -4738,7 +4743,13 @@ export default {
     },
 
     async onPaymentDetected(paymentData) {
-      console.log('Payment detected:', paymentData);
+      if (offerAddressRequest(paymentData.data, { t: this.$t.bind(this), paymentOnly: !!paymentData.paymentOnly || !!paymentData.nostrPubkey })) {
+        this.pendingWithdrawTargetSats = null;
+        this.showSendModal = false;
+        this.showReceiveModal = false;
+        this.showRedeemScanner = false;
+        return;
+      }
 
       // Drive the Send sheet's loading CTA + inline error only when the request
       // came from the open sheet. Deep-link / external calls (fromField=false)
@@ -6082,6 +6093,7 @@ export default {
 
     // Helper: Fetch invoice from LNURL
     async fetchLNURLInvoice(lnurl, amountSats, payout = null) {
+      assertPaymentInput(lnurl);
       const url = this.decodeLNURL(lnurl);
 
       // Fetch LNURL endpoint
@@ -6089,7 +6101,7 @@ export default {
       if (!response.ok) throw new Error('Failed to fetch LNURL');
 
       const data = response.data;
-      if (!data || data.status === 'ERROR') throw new Error(data?.reason || 'LNURL error');
+      if (!data || data.tag !== 'payRequest' || !data.callback || data.status === 'ERROR') throw new Error(data?.reason || 'LNURL error');
 
       // Standard sat sends are bounds-checked here; a currency (Option-A) send
       // is bounded by the provider in its own units (validated in the sheet).
@@ -6180,7 +6192,7 @@ export default {
 
         const data = response.data;
 
-        if (!data || data.status === 'ERROR') {
+        if (!data || data.tag !== 'payRequest' || !data.callback || data.status === 'ERROR') {
           return {};
         }
 
@@ -6309,6 +6321,9 @@ export default {
           };
         }
 
+        if (data.tag === 'addressRequest') {
+          return { error: true, reason: this.$t('This address request is incomplete or does not match the original link. Ask the service for a new one.') };
+        }
         if (data.tag !== 'payRequest') {
           return {};
         }
@@ -6360,7 +6375,7 @@ export default {
       }
 
       const data = response.data;
-      if (!data || data.status === 'ERROR') {
+      if (!data || data.tag !== 'payRequest' || !data.callback || data.status === 'ERROR') {
         throw new Error(data?.reason || 'Lightning address error');
       }
 

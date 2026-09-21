@@ -37,7 +37,7 @@ assert.equal(abbreviateDestination('  padded  ', { head: 2, tail: 2 }), 'pa…ed
 // The strip names the thing in the app's own words, never the rail.
 assert.equal(offerLabelKey('alice@example.com', 'spark'), 'Copied address');
 assert.equal(offerLabelKey('bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq', 'spark'), 'Copied address');
-assert.equal(offerLabelKey('LNURL1DP68GURN8GHJ7MRWW4EXCTNXD9SHG6NPVCHXXMMD9AKXUATJDSKHQCTED', 'spark'), 'Copied payment request');
+assert.equal(offerLabelKey('LNURL1DP68GURN8GHJ7MRWW4EXCTNXD9SHG6NPVCHXXMMD9AKXUATJDSKHQCTED', 'spark'), 'Copied link');
 assert.equal(offerLabelKey(`nostr:${npub}`, 'spark'), 'Copied Nostr profile');
 assert.equal(offerLabelKey('+254712345678', 'spark'), 'Copied phone number');
 

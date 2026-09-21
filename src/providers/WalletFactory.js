@@ -1,3 +1,4 @@
+import { isAddressRequest } from '../utils/lud23.js';
 /**
  * WalletFactory - Creates wallet provider instances
  *
@@ -139,6 +140,7 @@ export function parsePaymentDestination(input) {
     return { type: 'unknown', valid: false };
   }
 
+  if (isAddressRequest(input)) return { type: 'address_request', data: input, valid: true };
   let cleaned = input.trim();
 
   // BIP21 (bitcoin:<addr>?amount=...&lightning=lnbc...) needs structured
@@ -168,6 +170,8 @@ export function parsePaymentDestination(input) {
       cleaned = stripWrapperScheme(cleaned);
     }
   }
+
+  if (isAddressRequest(cleaned)) return { type: 'address_request', data: cleaned, valid: true };
 
   // Attach BIP21 metadata (amount, label, message, ...) to every result so
   // downstream UI can prefill where useful.

@@ -199,7 +199,7 @@ function selectMeetup(m) {
 // the wallet. 100% in-app: no web, no external app.
 function onPayMerchant(lightningAddress) {
   if (!lightningAddress) return
-  walletStore.pendingDeepLink = { type: 'lightning_address', data: lightningAddress }
+  walletStore.pendingDeepLink = { type: 'lightning_address', data: lightningAddress, paymentOnly: true }
   router.push('/wallet')
 }
 
