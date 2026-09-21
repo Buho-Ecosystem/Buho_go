@@ -175,9 +175,12 @@
              activity belongs to a library.
 
              BuhoGO scans with the plugin's own camera surface (startScan) and
-             only ever reaches this library activity through the Google scanner
-             module availability/install calls, so relaxing the lock costs us
-             nothing and lets it follow the device on foldables and tablets. -->
+             never launches this activity: it belongs to the Google-branded
+             scan() flow, which needs Play services and which BuhoGO does not
+             use (the module availability/install probes that used to touch it
+             are gone as well — see src/utils/nativeScanner.js). It is only
+             here because the library merges it in, so relaxing the lock costs
+             us nothing and lets it follow the device on foldables and tablets. -->
         <activity
             android:name="com.google.mlkit.vision.codescanner.internal.GmsBarcodeScanningDelegateActivity"
             android:screenOrientation="unspecified"

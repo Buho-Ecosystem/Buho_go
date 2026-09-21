@@ -2,6 +2,12 @@
 // https://v2.quasar.dev/quasar-cli-vite/quasar-config-file
 
 import { defineConfig } from '#q-app/wrappers'
+import { createRequire } from 'node:module'
+
+// The app's own version, exposed to runtime code as process.env.APP_VERSION.
+// Used to key per-install memory to a build — e.g. the QR scanner engine
+// choice (src/utils/scannerEngine.js) is re-evaluated after every update.
+const { version: appVersion } = createRequire(import.meta.url)('./package.json')
 
 export default defineConfig((ctx) => {
   return {
@@ -83,7 +89,9 @@ export default defineConfig((ctx) => {
 
       // publicPath: '/',
       // analyze: true,
-      // env: {},
+      env: {
+        APP_VERSION: appVersion,
+      },
       // rawDefine: {}
       // ignorePublicFolder: true,
       // minify: false,
