@@ -1,6 +1,11 @@
 <!DOCTYPE html>
 <html>
 <head>
+    <!-- The Arkade SDK's descriptor dependency assigns to Node's `global` at
+         load time. The dev server's dependency optimizer (Rolldown, Vite 8) does
+         not honour a `define` for it, so the alias is provided before any module
+         runs. Harmless in the production bundle. -->
+    <script>if (typeof globalThis.global === 'undefined') { globalThis.global = globalThis; }</script>
     <meta charset="utf-8">
     <meta name="format-detection" content="telephone=no">
     <meta name="msapplication-tap-highlight" content="no">

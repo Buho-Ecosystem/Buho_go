@@ -35,7 +35,7 @@ A Spark wallet's money can move to plain Bitcoin without Spark's operators, usin
 
 ## Validation
 
-- `npm test` runs 7 new spec files (44 tests): key derivation against the BIP-84 vectors, address validation, chain planning, ledger transitions, the Esplora client with failover and package rules, the kit life cycle, the exit driver end to end against fakes, and outage tracking.
+- `npm test` runs 7 new spec files (33 tests): key derivation against the BIP-84 vectors, address validation, chain planning, ledger transitions, the Esplora client with failover and package rules, the kit life cycle, the exit driver end to end against fakes, and outage tracking.
 - `node scripts/check-emergency-exit.mjs` against the dev server (`pnpm dev --port 9011`): seeds public test words, stubs the SDK provider and every chain endpoint, and drives the real UI from the Security page through start, destination validation, fee money, the confirmation, package broadcasting in dependency order, the timelock, the sweep, done, cancel, the outage banner, the progress chip, resume, and German at 320px with 200% text. Screenshots land in `output/emergency-exit/`.
 
 ## Limits and follow-ups
