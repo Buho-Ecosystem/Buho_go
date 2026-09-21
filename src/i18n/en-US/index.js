@@ -3179,8 +3179,16 @@ export default {
   "Your public profile will update once BuhoGO can reach the network.": "Your public profile will update once BuhoGO can reach the network.",
   "{name} is now on your profile": "{name} is now on your profile",
   // ─── Instant Bitcoin deposits ───
-  "Add instantly": "Add instantly",
-  "Instant fee": "Instant fee",
+  "Add now": "Add now",
+  "Wait": "Wait",
+  "Now": "Now",
+  "You get": "You get",
+  "Speed up": "Speed up",
+  "Ready in": "Ready in",
+  "Right away": "Right away",
+  "~10-60 min": "~10-60 min",
+  "Could not speed up": "Could not speed up",
+  "It still arrives after 3 confirmations.": "It still arrives after 3 confirmations.",
   "The deposit stays on the normal confirmation path.": "The deposit stays on the normal confirmation path.",
   // ─── Spark payment requests ───
   "Any amount": "Any amount",

@@ -3185,8 +3185,16 @@ export default {
   "Your public profile will update once BuhoGO can reach the network.": "Dein öffentliches Profil wird aktualisiert, sobald BuhoGO das Netzwerk erreicht.",
   "{name} is now on your profile": "{name} wird jetzt in deinem Profil angezeigt",
   // ─── Sofortige Bitcoin-Einzahlungen ───
-  "Add instantly": "Sofort hinzufügen",
-  "Instant fee": "Sofort-Gebühr",
+  "Add now": "Jetzt hinzufügen",
+  "Wait": "Warten",
+  "Now": "Jetzt",
+  "You get": "Du erhältst",
+  "Speed up": "Beschleunigen",
+  "Ready in": "Fertig in",
+  "Right away": "Sofort",
+  "~10-60 min": "~10-60 Min",
+  "Could not speed up": "Beschleunigen nicht möglich",
+  "It still arrives after 3 confirmations.": "Es kommt trotzdem nach 3 Bestätigungen an.",
   "The deposit stays on the normal confirmation path.": "Die Einzahlung bleibt auf dem normalen Bestätigungsweg.",
   // ─── Spark-Zahlungsanfragen ───
   "Any amount": "Beliebiger Betrag",
