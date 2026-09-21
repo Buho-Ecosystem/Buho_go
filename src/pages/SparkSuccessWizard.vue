@@ -99,9 +99,10 @@
           <!-- 5: NFC / Bolt Card -->
           <!-- Notifications. Placed right after Send/Receive: the wallet
                exists, the user has just been told money can arrive, and this
-               is the moment that makes the ask make sense. Shown once, native
-               only (the web has no app to be away from), and the copy promises
-               exactly what a local notification can do — no more. -->
+               is the moment that makes the ask make sense. Shown once, and in
+               the installed app only — on the web the Settings row is the way
+               in. The copy promises exactly what a local notification can do,
+               no more. -->
           <q-carousel-slide v-if="showNotificationsSlide" name="notifications" class="wizard-slide">
             <div class="slide-content">
               <img src="/Onboarding wizard spark/storyset-money-income-bro.svg" class="slide-illustration" alt="" />
@@ -447,7 +448,8 @@ export default {
 
   async created() {
     await this.notifications.initialize()
-    this.showNotificationsSlide = this.notifications.canAsk
+    // Native only — see canAskInSetup. On the web the Settings row carries it.
+    this.showNotificationsSlide = this.notifications.canAskInSetup
   },
   computed: {
     activeSlides() {

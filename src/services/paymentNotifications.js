@@ -8,11 +8,17 @@
  * the app is closed. Real push (a server that knows a payment is coming) is a
  * separate transport and a separate product decision.
  *
+ * This works in the browser too, not only in the app: the plugin ships a real
+ * web implementation over the Notification API, and `App.getState()` reports
+ * `document.hidden`, so "posted only while out of sight" means the same thing
+ * for a backgrounded PWA or an unfocused tab. Only Android channels are
+ * native-only, and creating one is skipped elsewhere.
+ *
  * The plugin is loaded lazily and defensively, the same way the native scanner
- * is: on the web there is nothing to load, and a missing plugin degrades to
- * "no notifications" rather than breaking whatever called us. Nothing here
- * ever throws at a caller — a notification is never worth failing a payment
- * path over.
+ * is: a missing plugin, an unsupported browser, or a blocked permission all
+ * degrade to "no notifications" rather than breaking whatever called us.
+ * Nothing here ever throws at a caller — a notification is never worth failing
+ * a payment path over.
  */
 
 import { Capacitor } from '@capacitor/core'
@@ -29,7 +35,7 @@ let _channelReady = false
 let _nextId = 0
 
 function loadPlugin() {
-  if (!Capacitor.isNativePlatform()) return Promise.resolve(null)
+  if (!isSupported()) return Promise.resolve(null)
   if (!_pluginPromise) {
     _pluginPromise = import('@capacitor/local-notifications')
       .then((mod) => mod.LocalNotifications || null)
@@ -41,8 +47,24 @@ function loadPlugin() {
   return _pluginPromise
 }
 
-/** Notifications only exist where there is an OS to post them to. */
+/**
+ * Is there anything here that can show a notification? The app always can; a
+ * browser can when it implements the Notification API (every current one does,
+ * except in some embedded webviews and insecure contexts).
+ */
 export function isSupported() {
+  if (Capacitor.isNativePlatform()) return true
+  return typeof window !== 'undefined'
+    && 'Notification' in window
+    && typeof window.Notification?.requestPermission === 'function'
+}
+
+/**
+ * Specifically the installed app. Only the setup wizard asks this: its slide
+ * is native-only by product decision, while the Settings row is the way in
+ * everywhere (see the notifications store's `canAskInSetup`).
+ */
+export function isNativeApp() {
   return Capacitor.isNativePlatform()
 }
 
@@ -104,10 +126,10 @@ async function ensureChannel(plugin, title) {
  *
  * The whole point of this module: while the user is looking at BuhoGO, the
  * screen already tells them the money arrived, and a notification on top of
- * that is noise.
+ * that is noise. On the web the plugin answers this from `document.hidden`,
+ * which is the same question asked of a tab.
  */
 export async function isInBackground() {
-  if (!Capacitor.isNativePlatform()) return false
   try {
     const { isActive } = await App.getState()
     return isActive === false

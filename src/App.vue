@@ -121,13 +121,13 @@ export default defineComponent({
     locked.value = Capacitor.isNativePlatform() && appLockActive()
 
     onMounted(async () => {
-      if (!Capacitor.isNativePlatform()) return
-
-      // Payment notifications: load the user's switch, then re-read the OS
-      // permission on every return to the front. It can be revoked in system
-      // settings while we are away, and a toggle that still claims "on" after
-      // that would be a lie. Never blocks the lock flow below.
+      // Payment notifications: load the user's switch before anything can want
+      // to post one. Above the native gate on purpose — the browser posts
+      // through its own Notification API, and a receive on the web would
+      // otherwise stay silent until the user happened to open Settings.
       notifications.initialize().catch(() => {})
+
+      if (!Capacitor.isNativePlatform()) return
 
       // Dynamic import — @capacitor/app is only available in Capacitor builds.
       // Must resolve BEFORE cold-start prompt to avoid race with appStateChange listener.
@@ -139,13 +139,16 @@ export default defineComponent({
         setTimeout(() => promptUnlock(), 300)
       }
 
-      // Listen for background -> foreground transitions.
-      // The biometric dialog itself causes a brief inactive->active cycle;
-      // suppress it with isPrompting flag + 1.5s cooldown after last prompt.
+      // Re-read the OS permission on every return to the front: it can be
+      // revoked in system settings while we are away, and a row that still
+      // claims "on" after that would be a lie.
       notificationsListener = await CapApp.addListener('appStateChange', ({ isActive }) => {
         if (isActive) notifications.syncPermission().catch(() => {})
       })
 
+      // Listen for background -> foreground transitions.
+      // The biometric dialog itself causes a brief inactive->active cycle;
+      // suppress it with isPrompting flag + 1.5s cooldown after last prompt.
       stateListener = await CapApp.addListener('appStateChange', ({ isActive }) => {
         if (!appLockActive()) return
 

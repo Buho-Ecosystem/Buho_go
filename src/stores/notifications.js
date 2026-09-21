@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia'
 import {
+  isNativeApp,
   isSupported,
   notify,
   permissionState,
@@ -15,6 +16,10 @@ import {
  *   - `enabled` is the user's answer inside the app. It exists so the Settings
  *     toggle can turn notifications off without sending anyone into system
  *     settings, and so a granted permission does not silently mean "on".
+ *
+ * Both exist wherever BuhoGO runs: the plugin posts through the browser's own
+ * Notification API on the web, so the Settings row is offered there too. Only
+ * the setup wizard's slide is app-only (`canAskInSetup`).
  *
  * `prompted` remembers that we already asked in the wizard, because the system
  * dialog is a one-shot on Android: asking again does nothing, and asking a
@@ -42,10 +47,22 @@ export const useNotificationsStore = defineStore('notifications', {
     canNotify: (state) => isSupported() && state.enabled && state.permission === 'granted',
 
     /**
-     * Worth offering the prompt? Not on the web, not twice, and not when the
-     * OS has already made the decision for us.
+     * Is the question still open — somewhere we can post, not asked before,
+     * and the OS has not already decided for us? The Settings row uses this
+     * shape of reasoning wherever the app runs, browser included.
      */
     canAsk: (state) => isSupported() && !state.prompted && state.permission === 'prompt',
+
+    /**
+     * Same question, for the setup wizard's slide only. Native-only on
+     * purpose: a first-run tour is where an installed app earns the OS dialog,
+     * while on the web the Settings row is the way in (and a browser
+     * permission prompt during onboarding is exactly the kind of thing people
+     * dismiss on reflex).
+     */
+    canAskInSetup() {
+      return isNativeApp() && this.canAsk
+    },
   },
 
   actions: {

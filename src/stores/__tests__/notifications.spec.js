@@ -9,7 +9,8 @@
  *
  * It also pins down that Settings is a peer of the setup wizard, not a mirror
  * of it: someone who said "Not now" there can still turn notifications on
- * here, dialog and all.
+ * here, dialog and all — and that the row exists in a browser too, where only
+ * the wizard slide is withheld.
  *
  * Run directly with Node:
  *   node src/stores/__tests__/notifications.spec.js
@@ -46,12 +47,13 @@ function loadStore(service) {
   return module.exports.useNotificationsStore;
 }
 
-function service({ supported = true, permission = 'prompt', grant = true } = {}) {
+function service({ supported = true, native = true, permission = 'prompt', grant = true } = {}) {
   const state = { permission, posted: [] };
   state.requests = 0;
   return {
     state,
     isSupported: () => supported,
+    isNativeApp: () => native && supported,
     permissionState: async () => (supported ? state.permission : 'unsupported'),
     requestPermission: async () => {
       // Counting these is how the tests tell "the OS dialog came up" from
@@ -192,11 +194,22 @@ await test('a wizard denial leaves Settings honest instead of hopeful', async ()
   assert.equal(store.canNotify, false);
 });
 
-await test('the web is not a place with notifications', async () => {
+await test('a browser gets the Settings row but never the setup slide', async () => {
+  const { store } = fresh(service({ native: false }));
+  await store.initialize();
+  assert.equal(store.supported, true, 'the plugin posts through the browser Notification API');
+  assert.equal(store.canAsk, true, 'Settings may raise the prompt');
+  assert.equal(store.canAskInSetup, false, 'the wizard slide stays app-only');
+  assert.equal(await store.enable(), true);
+  assert.equal(store.canNotify, true);
+});
+
+await test('somewhere with no notifications at all, nothing is offered', async () => {
   const { store } = fresh(service({ supported: false }));
   await store.initialize();
   assert.equal(store.supported, false);
   assert.equal(store.canAsk, false);
+  assert.equal(store.canAskInSetup, false);
   assert.equal(await store.enable(), false);
 });
 
