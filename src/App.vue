@@ -17,7 +17,8 @@
 
   <!-- Shared, channel-aware update UI. Soft updates stay nonmodal until the
        user opens them; required updates wait until biometric UI is gone. -->
-  <UpdateExperience :suspended="locked" />
+  <UpdateExperience :suspended="locked || addressRequest.state.stage !== 'idle'" />
+  <AddressRequestSheet :suspended="locked" />
 
   <!-- Global payment-error dialog. Wired to walletStore.paymentError so
        any page or store can surface a failure via showPaymentError(). -->
@@ -34,15 +35,18 @@ import { triggerWalletStoreHydration, readPersistedWalletState } from 'src/utils
 import { useAddressBookSync } from 'src/composables/useAddressBookSync'
 import PaymentErrorDialog from 'src/components/PaymentErrorDialog.vue'
 import UpdateExperience from 'src/components/UpdateExperience.vue'
+import AddressRequestSheet from 'src/components/AddressRequestSheet.vue'
+import { useAddressRequestStore } from 'src/stores/addressRequest.js'
 
 export default defineComponent({
   name: 'App',
 
-  components: { PaymentErrorDialog, UpdateExperience },
+  components: { PaymentErrorDialog, UpdateExperience, AddressRequestSheet },
 
   setup () {
     const store = useWalletStore()
     const $q = useQuasar()
+    const addressRequest = useAddressRequestStore()
 
     // Shared-contacts sync driver. App-level so contacts added from
     // any surface publish, whether or not the Address Book page is
@@ -110,6 +114,9 @@ export default defineComponent({
       }
     }
 
+    // Establish the lock before child consent UI can become available.
+    locked.value = Capacitor.isNativePlatform() && appLockActive()
+
     onMounted(async () => {
       if (!Capacitor.isNativePlatform()) return
 
@@ -150,7 +157,7 @@ export default defineComponent({
       }
     })
 
-    return { locked, isDark, promptUnlock }
+    return { locked, isDark, promptUnlock, addressRequest }
   }
 })
 </script>

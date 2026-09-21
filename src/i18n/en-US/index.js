@@ -1,5 +1,7 @@
+import addressRequest from './addressRequest.js';
 import backup from './backup.js';
 export default {
+  ...addressRequest,
   "Receiving wallet: {wallet}": "Receiving wallet: {wallet}",
   "There are no funds to redeem from this request.": "There are no funds to redeem from this request.",
   "This request cannot be redeemed in whole sats. Ask the service for a new one.": "This request cannot be redeemed in whole sats. Ask the service for a new one.",

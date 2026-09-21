@@ -197,6 +197,8 @@
 </template>
 
 <script>
+import { isAddressRequest } from '../utils/lud23.js';
+import { offerAddressRequest } from '../services/addressRequestIntake.js';
 import { Icon } from '@iconify/vue';
 import { readClipboardCrossPlatform } from '../utils/shopClipboard.js';
 import QrScanner from 'qr-scanner';
@@ -214,7 +216,7 @@ export default {
     modelValue: { type: Boolean, required: true },
   },
 
-  emits: ['update:modelValue', 'submit'],
+  emits: ['update:modelValue', 'submit', 'address-request'],
 
   data() {
     return {
@@ -254,7 +256,7 @@ export default {
      * user is typing and avoids enabling on a half-typed string.
      */
     canSubmit() {
-      return looksLikeLud04(this.rawInput.trim());
+      return isAddressRequest(this.rawInput) || looksLikeLud04(this.rawInput.trim());
     },
   },
 
@@ -317,6 +319,11 @@ export default {
      * whether the link came from typing or from the camera.
      */
     submitText(text) {
+      if (offerAddressRequest(text, { t: this.$t.bind(this) })) {
+        this.$emit('address-request');
+        this.close();
+        return;
+      }
       let challenge;
       try {
         challenge = parseLud04Input(text);
@@ -455,9 +462,9 @@ export default {
     onQRDetect(text) {
       if (this.detected || !text) return;
       // Pre-filter so a stray Lightning invoice / Bitcoin address
-      // doesn't trigger our error path. Only LUD-04 carriers are
-      // accepted here; payment QRs belong in the Send flow.
-      if (!looksLikeLud04(text)) return;
+      // doesn't trigger our error path. LUD-04 and LUD-23 carriers can
+      // open their respective consent flows; payments belong in Send.
+      if (!isAddressRequest(text) && !looksLikeLud04(text)) return;
       this.detected = true;
       // Stop scanning immediately so the camera doesn't keep firing
       // detects while we hand off to the auth dialog.

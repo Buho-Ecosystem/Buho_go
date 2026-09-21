@@ -335,6 +335,8 @@ function translateErrorCode(error, t) {
   if (!code || typeof code !== 'string') return null;
 
   switch (code) {
+    case 'ADDRESS_REQUEST_NOT_PAYMENT':
+      return t('This link asks for your address. It cannot receive a payment.');
     case 'ARKADE_LN_UNAVAILABLE':
       return t('Lightning is temporarily unavailable on Arkade wallets. Your Arkade address and Bitcoin address still work, and any other wallet can pay Lightning.');
     case 'ARKADE_ONCHAIN_SOON':

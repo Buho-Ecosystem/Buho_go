@@ -515,7 +515,7 @@ export default {
       const paramsResponse = await lnurlGetJson(`https://${domain}/.well-known/lnurlp/${name}`);
       if (!paramsResponse.ok) throw new Error('lnurlp params unavailable');
       const params = paramsResponse.data;
-      if (!params || params.status === 'ERROR' || !params.callback) throw new Error(params?.reason || 'lnurlp error');
+      if (!params || params.tag !== 'payRequest' || params.status === 'ERROR' || !params.callback) throw new Error(params?.reason || 'lnurlp error');
 
       const msat = sats * 1000;
       if (params.minSendable && msat < params.minSendable) {
