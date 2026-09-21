@@ -31,7 +31,10 @@
             <template #trailing><span class="exit-figure">{{ sats(triage.notWorthSat) }}</span></template>
           </IdentityRow>
           <IdentityRow :label="$t('Arrives as plain Bitcoin')" :caption="shortAddress(destinationAddress)" mono :chevron="false" @click="openDestination">
-            <template #trailing><span class="exit-figure exit-figure--strong">{{ $t('about {amount} sats', { amount: num(triage.arrivesSat) }) }}</span><span class="exit-change">{{ $t('Change') }}</span></template>
+            <template #trailing>
+              <span class="exit-change">{{ $t('Change') }}</span>
+              <span class="exit-figure exit-figure--strong">{{ $t('about {amount} sats', { amount: num(triage.arrivesSat) }) }}</span>
+            </template>
           </IdentityRow>
         </IdentityGroup>
 
@@ -512,7 +515,7 @@ export default {
 .exit-status-meta { font-size: 12px; }
 .exit-figure { font-size: 15px; color: var(--text-secondary); white-space: nowrap; font-variant-numeric: tabular-nums; }
 .exit-figure--strong { color: var(--text-primary); font-weight: 700; }
-.exit-change { margin-left: 10px; font-size: 14px; font-weight: 700; color: var(--brand-accent-text); }
+.exit-change { font-size: 14px; font-weight: 700; color: var(--brand-accent-text); }
 .exit-callout { display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; border-radius: 12px; background: var(--bg-input); font-size: 14px; line-height: 1.45; }
 .exit-callout svg { flex-shrink: 0; margin-top: 2px; color: var(--brand-accent-text); }
 .exit-hint { margin: -6px 0 0; text-align: center; font-size: 13px; color: var(--text-secondary); }
@@ -542,6 +545,17 @@ export default {
 .exit-confirm-title { margin: 0; font-size: 18px; font-weight: 700; text-align: center; line-height: 1.3; }
 .exit-confirm-text { margin: 0 0 6px; font-size: 14px; line-height: 1.5; text-align: center; color: var(--text-secondary); }
 .exit-destination-body { display: flex; flex-direction: column; gap: 14px; }
-.exit-destination-actions { display: flex; gap: 10px; }
-.exit-destination-actions .btn-primary { flex: 1; }
+.exit-destination-actions {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 10rem), 1fr));
+  gap: 12px;
+}
+.exit-destination-actions > button {
+  min-width: 0;
+  min-height: 52px;
+  margin-top: 0;
+  padding: 12px 16px;
+  font-size: 0.96875rem;
+  line-height: 1.4;
+}
 </style>
