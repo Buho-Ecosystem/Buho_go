@@ -102,18 +102,12 @@ export default defineConfig((ctx) => {
         viteConf.optimizeDeps.exclude = viteConf.optimizeDeps.exclude || []
         viteConf.optimizeDeps.exclude.push('@breeztech/breez-sdk-spark')
 
-        // The Arkade SDK's descriptor dependency references Node's `global`;
-        // map it to globalThis in the dev pre-bundle (the production build
-        // resolves it on its own). Vite 8 optimizes deps with Rolldown, not
-        // esbuild — the old `optimizeDeps.esbuildOptions` is deprecated and
-        // silently ignored, so this has to ride on `rolldownOptions`.
-        viteConf.optimizeDeps.rolldownOptions = {
-          ...(viteConf.optimizeDeps.rolldownOptions || {}),
-          define: {
-            ...((viteConf.optimizeDeps.rolldownOptions || {}).define || {}),
-            global: 'globalThis',
-          },
-        }
+        // The Arkade SDK's descriptor dependency writes through a bare `global`
+        // identifier. That used to be patched here with an optimizeDeps define
+        // (global -> globalThis), which only ever covered the dev pre-bundle and
+        // went silent when Vite 8 swapped esbuild for Rolldown. It is now a
+        // classic <script> shim at the top of index.html, which no bundler
+        // change can quietly drop — see the comment there.
       },
       // viteVuePluginOptions: {},
 
