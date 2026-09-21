@@ -121,6 +121,7 @@
 </template>
 
 <script>
+import { isAddressRequest } from '../../utils/lud23.js';
 import { Icon } from '@iconify/vue';
 import QrScanner from 'qr-scanner';
 import { createQrScanner } from '../../utils/qrScanner';
@@ -150,7 +151,7 @@ export default {
     active: { type: Boolean, default: false },
   },
 
-  emits: ['saved', 'open-existing', 'switch-to-search', 'detected-address'],
+  emits: ['saved', 'open-existing', 'switch-to-search', 'detected-address', 'address-request'],
 
   data() {
     return {
@@ -314,6 +315,10 @@ export default {
      */
     onDetect(text) {
       if (this.detected || !text) return;
+      if (isAddressRequest(text)) {
+        this.detected = true; this.stopScanner(); this.showCamera = false;
+        this.$emit('address-request', text); return;
+      }
       // Honor and strip the NIP-21 `nostr:` scheme up front so a
       // `nostr:npub…` / `nostr:nprofile…` QR is treated exactly like the
       // bare identifier. (`lightning:` / `bitcoin:` are unwrapped further

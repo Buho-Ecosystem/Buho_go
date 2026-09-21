@@ -107,11 +107,13 @@ export default defineConfig((ctx) => {
 
         // The Arkade SDK's descriptor dependency references Node's `global`;
         // map it to globalThis in the dev pre-bundle (the production build
-        // resolves it on its own).
-        viteConf.optimizeDeps.esbuildOptions = {
-          ...(viteConf.optimizeDeps.esbuildOptions || {}),
+        // resolves it on its own). Vite 8 optimizes deps with Rolldown, not
+        // esbuild — the old `optimizeDeps.esbuildOptions` is deprecated and
+        // silently ignored, so this has to ride on `rolldownOptions`.
+        viteConf.optimizeDeps.rolldownOptions = {
+          ...(viteConf.optimizeDeps.rolldownOptions || {}),
           define: {
-            ...((viteConf.optimizeDeps.esbuildOptions || {}).define || {}),
+            ...((viteConf.optimizeDeps.rolldownOptions || {}).define || {}),
             global: 'globalThis',
           },
         }

@@ -1,3 +1,4 @@
+import { isAddressRequest } from '../utils/lud23.js';
 /**
  * WalletFactory - Creates wallet provider instances
  *
@@ -16,6 +17,7 @@ import { isSilentPaymentAddress,
   isArkadeAddress,
   isBolt12Offer,
   isLightningInvoice,
+  isLightningAddress,
   isLnurl,
   isBitcoinAddress,
   stripWrapperScheme,
@@ -139,6 +141,7 @@ export function parsePaymentDestination(input) {
     return { type: 'unknown', valid: false };
   }
 
+  if (isAddressRequest(input)) return { type: 'address_request', data: input, valid: true };
   let cleaned = input.trim();
 
   // BIP21 (bitcoin:<addr>?amount=...&lightning=lnbc...) needs structured
@@ -168,6 +171,8 @@ export function parsePaymentDestination(input) {
       cleaned = stripWrapperScheme(cleaned);
     }
   }
+
+  if (isAddressRequest(cleaned)) return { type: 'address_request', data: cleaned, valid: true };
 
   // Attach BIP21 metadata (amount, label, message, ...) to every result so
   // downstream UI can prefill where useful.
@@ -226,17 +231,14 @@ export function parsePaymentDestination(input) {
     });
   }
 
-  // Lightning address (user@domain) — cheap structural check; full regex
-  // validation lives in addressUtils.isLightningAddress when needed.
-  if (cleaned.includes('@') && cleaned.split('@').length === 2) {
-    const [name, domain] = cleaned.split('@');
-    if (name.length > 0 && domain.includes('.')) {
-      return withBip21({
-        type: 'lightning_address',
-        address: cleaned.toLowerCase(),
-        valid: true,
-      });
-    }
+  // A description inside a withdraw URL may contain @. Only normalize
+  // actual Lightning addresses; callback paths and challenges are opaque.
+  if (isLightningAddress(cleaned)) {
+    return withBip21({
+      type: 'lightning_address',
+      address: cleaned.toLowerCase(),
+      valid: true,
+    });
   }
 
   if (isLnurl(cleaned)) {

@@ -1,3 +1,4 @@
+import { preferredProfileLightningAddress as preferredProfileAddress } from '../utils/profilePaymentAddress.js';
 /**
  * Wallet Store
  *
@@ -536,11 +537,7 @@ export const useWalletStore = defineStore('wallet', {
      * is what sends the profile to its Social Bucket fallback.
      */
     preferredProfileLightningAddress() {
-      for (const wallet of [this.sparkBusinessWallet, this.sparkPersonalWallet]) {
-        const address = this.sparkLightningAddressOf(wallet);
-        if (address) return address;
-      }
-      return null;
+      return preferredProfileAddress(this);
     },
 
     /**

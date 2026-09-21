@@ -632,6 +632,7 @@
 </template>
 
 <script setup>
+import { assertPaymentInput } from '../utils/lud23.js';
 import { ref, computed, watch, nextTick, getCurrentInstance } from 'vue'
 import { canWalletPay } from '../utils/walletCapabilities'
 import { useQuasar } from 'quasar'
@@ -1152,7 +1153,7 @@ async function fetchLightningAddressInvoice(address, amountSats) {
   }
 
   const data = response.data
-  if (!data || data.status === 'ERROR') {
+  if (!data || data.tag !== 'payRequest' || !data.callback || data.status === 'ERROR') {
     throw new Error(data?.reason || 'Lightning address error')
   }
 
@@ -1195,6 +1196,7 @@ async function fetchLightningAddressInvoice(address, amountSats) {
 // Returns { pr, amountSats, successAction } so the caller can record the amount
 // actually sent and surface the recipient's LUD-09 message.
 async function fetchLnurlInvoice(lnurl, requestedSats) {
+  assertPaymentInput(lnurl);
   const clean = stripWrapperScheme(lnurl)
 
   // LUD-17 scheme (lnurlp://…) maps straight to https; otherwise bech32-decode.

@@ -688,9 +688,19 @@
       verb="redeem"
       :is-sending="withdrawSheetIsBusy"
       :status-message="withdrawSheetStatus"
+      :commit-gate="!withdrawUnavailableMessage"
       @confirm="onWithdrawSheetConfirm"
       @cancel="onWithdrawSheetCancel"
-    />
+    >
+      <template #extras>
+        <p v-if="walletDisplayName" class="withdraw-review-context">
+          {{ $t('Receiving wallet: {wallet}', { wallet: walletDisplayName }) }}
+        </p>
+        <p v-if="withdrawUnavailableMessage" class="withdraw-review-context" role="status">
+          {{ withdrawUnavailableMessage }}
+        </p>
+      </template>
+    </PaymentConfirmSheet>
 
     <!-- LNURL-Withdraw Success Screen -->
     <PaymentConfirmation
@@ -849,6 +859,9 @@
 </template>
 
 <script>
+import { offerAddressRequest } from '../services/addressRequestIntake.js';
+import { assertPaymentInput } from '../utils/lud23.js';
+import { parseFastWithdrawRequest, withdrawInfo } from '../utils/lnurlWithdraw.js';
 import { NostrWebLNProvider } from "@getalby/sdk";
 import {LightningPaymentService, resolveLUD17URL} from '../utils/lightning.js';
 import {parseSuccessAction, resolveSuccessAction} from '../utils/successAction.js';
@@ -1933,13 +1946,15 @@ export default {
       // A recognized Bolt Card gets its own mark + clean name instead of the
       // generic blue ↓ and the technical "Boltcard (refund address …)" text.
       const isBoltcard = this.isBoltcardWithdraw(p);
+      let serviceHost = '';
+      try { serviceHost = new URL(p.callback).host; } catch { /* legacy malformed metadata */ }
       const recipient = {
         name: isBoltcard ? 'Bolt Card' : (p.defaultDescription || this.$t('LNURL Withdrawal')),
         initial: '↓',
         color: '#3B82F6',
         addressType: 'lnurl',
         viaOverride: this.$t('Lightning · Withdrawal'),
-        address: '',
+        address: serviceHost,
         ...(isBoltcard ? { logoUrl: '/Social_Wallet_logos/BoltCard.png' } : {}),
       };
 
@@ -1988,6 +2003,13 @@ export default {
 
     withdrawSheetStatus() {
       return this.withdrawSheetIsBusy ? this.withdrawStatusMessage : '';
+    },
+    withdrawUnavailableMessage() {
+      const p = this.pendingPayment;
+      if (!p || p.type !== 'lnurl_withdraw') return '';
+      if (p.maxWithdrawable === 0) return this.$t('There are no funds to redeem from this request.');
+      if (p.minSats > p.maxSats) return this.$t('This request cannot be redeemed in whole sats. Ask the service for a new one.');
+      return '';
     },
     // Show fee estimate row only when we have actual fee data to display
     // - Spark wallet: Show when we have an estimate OR it's a free Spark transfer
@@ -2071,9 +2093,9 @@ export default {
     canConfirmWithdraw() {
       if (!this.pendingPayment || this.pendingPayment.type !== 'lnurl_withdraw') return false;
       if (this.lnurlWithdrawStatus !== 'idle') return false;
-      if (this.pendingPayment.isFixedAmount) return true;
       const sats = this.withdrawAmountSats;
-      return sats >= this.pendingPayment.minSats && sats <= this.pendingPayment.maxSats;
+      return Number.isSafeInteger(sats) && sats > 0
+        && sats >= this.pendingPayment.minSats && sats <= this.pendingPayment.maxSats;
     },
     withdrawStatusMessage() {
       const messages = {
@@ -2539,6 +2561,7 @@ export default {
      * sheet. The sheet's open watcher has run by the next tick.
      */
     useClipboardDestination(text) {
+      if (offerAddressRequest(text, { t: this.$t.bind(this) })) return;
       this.showSendModal = true;
       this.$nextTick(() => this.$refs.sendModal?.useDestination(text));
     },
@@ -2588,6 +2611,7 @@ export default {
      */
     payContactDestination({ address, addressType, name }) {
       if (!address) return;
+      if (offerAddressRequest(address, { t: this.$t.bind(this), paymentOnly: true })) return;
       if (!canWalletPay(this.walletStore.activeWalletType, addressType)) {
         this.$q.notify({
           type: 'warning',
@@ -2608,6 +2632,7 @@ export default {
         type: typeMap[addressType] || 'lightning_address',
         data: address,
         contactName: name || null,
+        paymentOnly: true,
       });
     },
 
@@ -4106,7 +4131,7 @@ export default {
         });
         return;
       }
-      const data = parsed.invoice || parsed.offer || parsed.address || parsed.lnurl || value;
+      const data = parsed.data || parsed.invoice || parsed.offer || parsed.address || parsed.lnurl || value;
       // Carry the BIP21 metadata so a scanned unified QR can take the
       // native-rail shortcut in onPaymentDetected, same as the Send field.
       void this.onPaymentDetected({
@@ -4779,7 +4804,13 @@ export default {
     },
 
     async onPaymentDetected(paymentData) {
-      console.log('Payment detected:', paymentData);
+      if (offerAddressRequest(paymentData.data, { t: this.$t.bind(this), paymentOnly: !!paymentData.paymentOnly || !!paymentData.nostrPubkey })) {
+        this.pendingWithdrawTargetSats = null;
+        this.showSendModal = false;
+        this.showReceiveModal = false;
+        this.showRedeemScanner = false;
+        return;
+      }
 
       // Drive the Send sheet's loading CTA + inline error only when the request
       // came from the open sheet. Deep-link / external calls (fromField=false)
@@ -6123,6 +6154,7 @@ export default {
 
     // Helper: Fetch invoice from LNURL
     async fetchLNURLInvoice(lnurl, amountSats, payout = null) {
+      assertPaymentInput(lnurl);
       const url = this.decodeLNURL(lnurl);
 
       // Fetch LNURL endpoint
@@ -6130,7 +6162,7 @@ export default {
       if (!response.ok) throw new Error('Failed to fetch LNURL');
 
       const data = response.data;
-      if (!data || data.status === 'ERROR') throw new Error(data?.reason || 'LNURL error');
+      if (!data || data.tag !== 'payRequest' || !data.callback || data.status === 'ERROR') throw new Error(data?.reason || 'LNURL error');
 
       // Standard sat sends are bounds-checked here; a currency (Option-A) send
       // is bounded by the provider in its own units (validated in the sheet).
@@ -6221,7 +6253,7 @@ export default {
 
         const data = response.data;
 
-        if (!data || data.status === 'ERROR') {
+        if (!data || data.tag !== 'payRequest' || !data.callback || data.status === 'ERROR') {
           return {};
         }
 
@@ -6302,6 +6334,8 @@ export default {
     async fetchLNURLInfo(lnurl) {
       try {
         const url = this.decodeLNURL(lnurl);
+        const inline = parseFastWithdrawRequest(url);
+        if (inline) return withdrawInfo(inline);
         const response = await lnurlGetJson(url, { timeoutMs: 10000 });
 
         if (!response.ok) {
@@ -6322,34 +6356,12 @@ export default {
         }
 
         if (data.tag === 'withdrawRequest') {
-          const minWithdrawable = data.minWithdrawable || 1000;
-          const maxWithdrawable = data.maxWithdrawable || 100000000000;
-          const isFixedAmount = minWithdrawable === maxWithdrawable;
-          const minSats = Math.ceil(minWithdrawable / 1000);
-          const maxSats = Math.floor(maxWithdrawable / 1000);
-
-          return {
-            lnurlType: 'withdrawRequest',
-            k1: data.k1,
-            callback: data.callback,
-            minWithdrawable,
-            maxWithdrawable,
-            minSats,
-            maxSats,
-            isFixedAmount,
-            fixedAmountSats: isFixedAmount ? maxSats : null,
-            defaultDescription: data.defaultDescription || 'Withdrawal',
-            // LUD-XX: `pinLimit` MUST be a positive integer in millisats.
-            // Coerce anything else (negative, zero, string, NaN, Infinity,
-            // missing) to null so a malformed server response can't
-            // silently bypass the PIN check via comparison short-circuits
-            // (`amount * 1000 >= NaN` is always false).
-            pinLimit: Number.isInteger(data.pinLimit) && data.pinLimit > 0
-              ? data.pinLimit
-              : null
-          };
+          return withdrawInfo(data);
         }
 
+        if (data.tag === 'addressRequest') {
+          return { error: true, reason: this.$t('This address request is incomplete or does not match the original link. Ask the service for a new one.') };
+        }
         if (data.tag !== 'payRequest') {
           return {};
         }
@@ -6401,7 +6413,7 @@ export default {
       }
 
       const data = response.data;
-      if (!data || data.status === 'ERROR') {
+      if (!data || data.tag !== 'payRequest' || !data.callback || data.status === 'ERROR') {
         throw new Error(data?.reason || 'Lightning address error');
       }
 
@@ -8923,4 +8935,5 @@ export default {
   opacity: 0;
   transform: translateX(-10px);
 }
+.withdraw-review-context { margin: 0; font-size: .9375rem; line-height: 1.5; overflow-wrap: anywhere; }
 </style>

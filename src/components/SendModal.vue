@@ -354,6 +354,8 @@
 </template>
 
 <script>
+import { isAddressRequest, parseAddressRequest } from '../utils/lud23.js';
+import { offerAddressRequest } from '../services/addressRequestIntake.js';
 import { Capacitor } from '@capacitor/core';
 import QrScanSheet from './QrScanSheet.vue';
 import { useAddressBookStore } from '../stores/addressBook';
@@ -468,6 +470,7 @@ export default {
     detectedInputType() {
       const raw = (this.manualInput || '').trim();
       if (!raw) return null;
+      if (isAddressRequest(raw)) return 'address_request';
       const lower = raw.toLowerCase();
 
       // BIP21 first — bitcoin:<addr>?... is structurally distinct and
@@ -484,6 +487,7 @@ export default {
       const lnFallback = extractLnFallbackParam(raw);
       const cleaned = lnFallback ? lnFallback : stripWrapperScheme(raw);
 
+      if (isAddressRequest(cleaned)) return 'address_request';
       if (isSparkAddress(cleaned)) return 'spark';
       if (isArkadeAddress(cleaned)) return 'arkade';
       if (isBolt12Offer(cleaned)) return 'bolt12_offer';
@@ -524,6 +528,7 @@ export default {
       // non-rail identities (a Nostr person) and the one unsupported
       // format we must name (BOLT12, so its error makes sense) differ.
       const labels = {
+        address_request: this.$t('Address request'),
         spark: this.$t('Bitcoin'),
         bolt12_offer: this.$t('BOLT12 offer'),
         silent_payment: this.$t('Silent payment'),
@@ -543,6 +548,7 @@ export default {
       // mark, matching the unified "Bitcoin" label. LNURL keeps the link
       // glyph (it is a link), phone and Nostr keep their identities.
       const icons = {
+        address_request: 'tabler:address-book',
         bolt12_offer: 'tabler:bolt',
         silent_payment: 'tabler:eye-off',
         lightning_invoice: 'tabler:currency-bitcoin',
@@ -566,7 +572,7 @@ export default {
     // CTA disables, and nothing is ever emitted — so a confirm sheet
     // that could only dead-end never opens.
     capabilityBlocked() {
-      if (!this.isValidManualInput) return '';
+      if (!this.isValidManualInput || this.detectedInputType === 'address_request') return '';
       const paymentType = this.determinePaymentType(this.manualInput.trim());
       if (canWalletPay(this.walletStore.activeWalletType, paymentType)) return '';
       return walletSwitchHint(paymentType, this.$t.bind(this));
@@ -861,6 +867,9 @@ export default {
           throw new Error(this.$t('Invalid payment data'));
         }
 
+        if (offerAddressRequest(inputData, { t: this.$t.bind(this) })) {
+          this.show = false; this.isProcessing = false; return;
+        }
         let trimmedData = inputData.trim();
 
         // A recognized Kenyan/Zambian phone number is a fiat-payout destination
@@ -908,9 +917,12 @@ export default {
         // (`bitcoin:<addr>?amount=...&lightning=lnbc...`) prefer the embedded
         // BOLT11 invoice over the on-chain address.
         const { cleaned: resolved, bip21 } = this.normalizePaymentInput(trimmedData);
+        if (offerAddressRequest(resolved, { t: this.$t.bind(this) })) {
+          this.show = false; this.isProcessing = false; return;
+        }
         let cleanData = resolved;
 
-        if (cleanData.includes('@') && cleanData.includes('.')) {
+        if (isLightningAddress(cleanData)) {
           cleanData = cleanData.toLowerCase();
         }
 
@@ -927,6 +939,7 @@ export default {
               data: target.address,
               type: target.kind, // 'lightning_address' | 'lnurl'
               rawInput: trimmedData,
+              paymentOnly: true,
               nostrPubkey: target.pubkey,
               nostrNpub: target.npub,
               nostrProfile: target.profile,
@@ -1122,6 +1135,7 @@ export default {
       }
 
       const address = this.getContactAddress(contact);
+      if (offerAddressRequest(address, { t: this.$t.bind(this), paymentOnly: true })) return;
       const addressType = this.getContactAddressType(contact);
 
       // Defensive — block payment paths the active wallet can't satisfy,
@@ -1156,7 +1170,8 @@ export default {
       this.isProcessing = true;
       this.$emit('payment-detected', {
         data: address,
-        type: paymentType
+        type: paymentType,
+        paymentOnly: true
       });
       // Parent closes us on success / surfaces an inline error on failure.
     },
@@ -1223,6 +1238,11 @@ export default {
     // an ambiguous number still needs a KE/ZM choice, or a resolve already
     // failed for exactly this input (editing clears the error and re-arms).
     autoAdvance() {
+      // A person can pause while typing a URL. Only advance a complete
+      // request automatically; explicit Continue can explain malformed input.
+      if (this.detectedInputType === 'address_request') {
+        try { parseAddressRequest(this.manualInput); } catch { return; }
+      }
       if (this.show && !this.isProcessing && !this.resolveError && this.isValidManualInput
           && !this.phoneNeedsCountryChoice && !this.capabilityBlocked) {
         this.processManualInput();

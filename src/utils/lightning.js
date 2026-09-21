@@ -1,3 +1,4 @@
+import { assertPaymentInput } from './lud23.js';
 /**
  * Lightning Payment Service
  *
@@ -181,6 +182,7 @@ export class LightningPaymentService {
    * @throws {Error} If the input format is invalid or processing fails
    */
   async processPaymentInput(input) {
+    assertPaymentInput(input);
     const cleanInput = (input || '').trim();
 
     if (this.isLightningAddress(cleanInput)) {
@@ -264,6 +266,7 @@ export class LightningPaymentService {
    * @returns {Promise<Object>} Payment data with callback, minSendable, maxSendable, etc.
    */
   async handleLNURL(lnurlInput) {
+    assertPaymentInput(lnurlInput);
     try {
       const cleanLnurl = stripWrapperScheme(lnurlInput);
       const url = this.decodeLNURL(cleanLnurl);

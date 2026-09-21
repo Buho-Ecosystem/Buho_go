@@ -1,3 +1,4 @@
+import { isAddressRequest } from '../utils/lud23.js';
 import { defineStore } from 'pinia'
 import { verifyEvent, nip19 } from 'nostr-core'
 import {
@@ -1918,7 +1919,7 @@ export const useAddressBookStore = defineStore('addressBook', {
 
     // Validate address based on type
     isValidAddress(address, type = 'lightning') {
-      if (!address || !address.trim()) return false
+      if (!address || !address.trim() || isAddressRequest(address)) return false
 
       if (type === 'spark') {
         return this.isValidSparkAddress(address)
@@ -1959,6 +1960,7 @@ export const useAddressBookStore = defineStore('addressBook', {
     // Detect address type from input. Order matters: Spark addresses can look
     // vaguely like base58 if misread, so we check them first.
     detectAddressType(address) {
+      if (isAddressRequest(address)) return null;
       if (!address) return null
       if (isSparkAddress(address)) return 'spark'
       if (isArkadeAddress(address)) return 'arkade'
