@@ -52,6 +52,7 @@ import {
   classifyFromMatureQuote,
   withdrawalStatusFromPayment,
 } from '../utils/breezPayments.js';
+import { sparkHealth } from '../utils/sparkHealth.js';
 
 const BITCOIN_L1 = {
   REQUIRED_CONFIRMATIONS: 3,
@@ -381,7 +382,11 @@ export class BreezSparkWalletProvider extends WalletProvider {
             setTimeout(() => reject(new Error('breez sync timeout')), 15000)
           ),
         ]);
+        // A synced read is the one proof that Spark answered; the emergency
+        // exit door opens only after this keeps failing for hours.
+        sparkHealth().recordSuccess(this.walletId);
       } catch (e) {
+        sparkHealth().recordFailure(this.walletId);
         info = await this.sdk.getInfo({});
       }
 

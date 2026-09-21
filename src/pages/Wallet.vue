@@ -18,6 +18,7 @@
       </button>
 
       <BackupShortcut />
+      <ExitProgressChip />
 
       <!-- NFC-ready badge. Only shown on a device where NFC is actually
            available + enabled, so it honestly signals "tap a Bolt Card / NFC
@@ -98,6 +99,15 @@
     <!-- Android offers a copied destination once until the clipboard changes.
          Send opens the same confirmation flow as an explicit paste. -->
     <ClipboardSuggestion @use="useClipboardDestination" />
+
+    <!-- The emergency exit door: shown only after Spark has been unreachable
+         for hours, never on a happy path. Dismissal lasts a day. -->
+    <ExitBanner
+      :visible="showExitBanner"
+      :last-contact="exitBannerLastContact"
+      @open="openEmergencyExit"
+      @dismiss="dismissExitBanner"
+    />
 
     <!-- Backup Reminder Banner -->
     <!-- Paused: the persistent keyring is the home backup entry point.
@@ -895,6 +905,10 @@ import ContactAvatar from '../components/AddressBook/ContactAvatar.vue';
 import BatchSendModal from '../components/BatchSendModal.vue';
 import BackupBanner from '../components/BackupBanner.vue';
 import BackupShortcut from '../components/BackupShortcut.vue';
+import ExitBanner from '../components/exit/ExitBanner.vue';
+import ExitProgressChip from '../components/exit/ExitProgressChip.vue';
+import { sparkHealth } from '../utils/sparkHealth.js';
+import { relativeDay as exitRelativeDay } from '../composables/useExitFormat.js';
 import ClipboardSuggestion from '../components/ClipboardSuggestion.vue';
 import IdentityAuthDialog from '../components/IdentityAuthDialog.vue';
 import {useAutoWithdrawStore} from '../stores/autoWithdraw';
@@ -942,6 +956,8 @@ export default {
     HiddenAmount,
     BackupBanner,
     BackupShortcut,
+    ExitBanner,
+    ExitProgressChip,
     ClipboardSuggestion,
     IdentityAuthDialog,
     ContactAvatar,
@@ -967,6 +983,9 @@ export default {
   },
   data() {
     return {
+      // Emergency exit door state: re-evaluated on each balance tick.
+      exitHealthTick: 0,
+      exitBannerDismissedUntil: Number(localStorage.getItem('buhoGO_exit_banner_dismissed_until') || 0),
       // True only on a device where NFC is available + enabled — drives the
       // small "NFC ready" badge next to the logo.
       nfcReady: false,
@@ -1120,6 +1139,18 @@ export default {
     };
   },
   computed: {
+    showExitBanner() {
+      void this.exitHealthTick;
+      if (!this.walletStore.isActiveWalletSpark || this.walletStore.isKioskRestricted) return false;
+      if (Date.now() < this.exitBannerDismissedUntil) return false;
+      if (typeof navigator !== 'undefined' && navigator.onLine === false) return false;
+      return sparkHealth().isSustainedOutage(this.walletStore.activeWalletId);
+    },
+    exitBannerLastContact() {
+      void this.exitHealthTick;
+      const at = sparkHealth().lastSuccessAt(this.walletStore.activeWalletId);
+      return at ? exitRelativeDay(at, (key, params) => this.$t(key, params), this.$i18n.locale) : '';
+    },
     menuButtonLabel() {
       if (!this.socialBucketStore.hasUnseenPayments) return this.$t('Menu');
       const count = this.socialBucketStore.paymentCount;
@@ -2244,6 +2275,14 @@ export default {
     }
   },
   methods: {
+    openEmergencyExit() {
+      this.$router.push(`/security/exit/${this.walletStore.activeWalletId}`);
+    },
+    dismissExitBanner() {
+      const until = Date.now() + 24 * 60 * 60 * 1000;
+      this.exitBannerDismissedUntil = until;
+      localStorage.setItem('buhoGO_exit_banner_dismissed_until', String(until));
+    },
     onAppLogoClick() {
       if (this.updateStore.hasUpdate) {
         this.updateStore.openSheet();
@@ -3534,6 +3573,7 @@ export default {
             }
             this.walletState.balance = balanceResult.balance;
             localStorage.setItem('buhoGO_wallet_state', JSON.stringify(this.walletState));
+            this.exitHealthTick++;
 
             // Auto-withdraw check (never reachable from a cached read: an
             // enabled config forces the authoritative branch above)
@@ -3560,6 +3600,7 @@ export default {
                   await this.walletStore.connectSparkWallet(activeWalletId, { forceReinit: true });
                 } catch (reconnectErr) {
                   console.warn('Spark auto-reconnect failed:', reconnectErr.message);
+                  this.exitHealthTick++;
                 }
               }
             }

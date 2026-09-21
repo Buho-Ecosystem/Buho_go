@@ -1,6 +1,8 @@
 import backup from './backup.js';
+import exit from './exit.js';
 export default {
   ...backup,
+  ...exit,
   // Spend: Bitrefill door
   "Gift cards, mobile top-ups and more": "Geschenkkarten, Handy-Guthaben und mehr",
   "Bitrefill is on its way": "Bitrefill kommt bald",

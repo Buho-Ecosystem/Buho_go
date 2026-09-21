@@ -1,16 +1,22 @@
 /**
- * The one reminder the emergency exit sends: when the money unlocks. Uses
- * the local notifications plugin when the app ships it; otherwise reports
- * that reminders are unavailable so the copy can say "open the app on the
- * day" instead of promising a notification.
+ * The one reminder the emergency exit sends: when the money unlocks. Talks
+ * to the LocalNotifications native plugin through Capacitor's runtime
+ * registry, so the web build needs no package and a device without the
+ * plugin reports that reminders are unavailable; the copy then says "open
+ * the app on the day" instead of promising a notification.
  */
+import { Capacitor, registerPlugin } from '@capacitor/core';
 
 const UNLOCK_ID_BASE = 74_000;
 
+const LocalNotifications = Capacitor.isNativePlatform() ? registerPlugin('LocalNotifications') : null;
+
 async function plugin() {
+  if (!LocalNotifications) return null;
   try {
-    const mod = await import(/* @vite-ignore */ '@capacitor/local-notifications');
-    return mod?.LocalNotifications || null;
+    // A plugin that is not compiled in throws here; that is the "unavailable" answer.
+    await LocalNotifications.checkPermissions();
+    return LocalNotifications;
   } catch {
     return null;
   }

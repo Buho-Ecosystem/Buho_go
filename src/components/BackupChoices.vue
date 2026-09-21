@@ -12,6 +12,11 @@
             <Icon v-if="choice.saved" icon="tabler:check" width="14" height="14" aria-hidden="true" />
             {{ $t(choice.saved ? 'Words checked' : 'Not checked yet') }}
           </span>
+          <!-- The exit kit's state sits next to the backup it belongs to. -->
+          <span v-if="choice.type === 'spark' && kitLine" class="backup-choice-state" :class="{ 'is-saved': kitLine.ok }">
+            <Icon v-if="kitLine.ok" icon="tabler:check" width="14" height="14" aria-hidden="true" />
+            {{ kitLine.text }}
+          </span>
         </span>
         <Icon icon="tabler:chevron-right" width="18" height="18" class="backup-choice-chevron" aria-hidden="true" />
       </button>
@@ -23,6 +28,14 @@
     <!-- Quieter rows: the optional cloud copy and the way back for someone
          who already has a backup. Neither changes whether words are checked. -->
     <div class="backup-choices-more">
+      <button v-if="hasSpark" type="button" class="backup-choice backup-choice-quiet" @click="$emit('select', { kind: 'kit' })">
+        <span class="backup-choice-icon"><Icon icon="tabler:lifebuoy" width="26" height="26" aria-hidden="true" /></span>
+        <span class="backup-choice-copy">
+          <strong>{{ $t('Emergency exit kit') }}</strong>
+          <span class="backup-choice-detail">{{ $t('Move this wallet\'s money to plain Bitcoin without Spark\'s help.') }}</span>
+        </span>
+        <Icon icon="tabler:chevron-right" width="18" height="18" class="backup-choice-chevron" aria-hidden="true" />
+      </button>
       <button v-if="cloudAvailable" type="button" class="backup-choice backup-choice-quiet" @click="$emit('select', { kind: 'cloud' })">
         <span class="backup-choice-icon"><BackupKeyring :size="28" /></span>
         <span class="backup-choice-copy">
@@ -50,6 +63,9 @@ import { useWalletStore } from '../stores/wallet';
 import { useIdentityStore } from '../stores/identity';
 import { bitcoinBackupName, walletBackupGroups } from '../utils/backupStatus.js';
 import { isCloudBackupPlatform } from '../services/cloudStorage.js';
+import { useExitKitStore } from '../stores/exitKit';
+import { kitState, isSameDay } from '../utils/exitKit.js';
+import { relativeDay } from '../composables/useExitFormat.js';
 import BackupKeyring from './BackupKeyring.vue';
 import BackupSubjectIcon from './BackupSubjectIcon.vue';
 
@@ -59,6 +75,7 @@ import BackupSubjectIcon from './BackupSubjectIcon.vue';
  *                        and the `mode` the recovery dialog should open in
  *   cloud              - the optional Google Drive copy
  *   restore            - the person already has a backup and wants it back
+ *   kit                - the emergency exit kit sheet (Spark wallets only)
  */
 defineEmits(['select']);
 const wallet = useWalletStore();
@@ -66,11 +83,25 @@ const identity = useIdentityStore();
 const groups = computed(() => walletBackupGroups(wallet.wallets, wallet.hasBackedUp));
 const cloudAvailable = isCloudBackupPlatform();
 const { proxy } = getCurrentInstance();
-const t = key => proxy.$t(key);
+const t = (key, params) => proxy.$t(key, params);
+const kits = useExitKitStore();
+const sparkWallets = computed(() => wallet.wallets.filter(w => w.type === 'spark'));
+const hasSpark = computed(() => sparkWallets.value.length > 0);
+// One line for the pair: the weakest kit decides what it says.
+const kitLine = computed(() => {
+  const metas = sparkWallets.value.map(w => kits.kitFor(w.id));
+  if (!metas.length) return null;
+  const states = metas.map(kitState);
+  if (states.includes('failed')) return { ok: false, text: t('Exit kit needs a refresh') };
+  if (states.includes('none')) return { ok: false, text: t('Exit kit not checked yet') };
+  const oldest = Math.min(...metas.map(m => m.checkedAt || m.exportedAt));
+  if (isSameDay(oldest, Date.now())) return { ok: true, text: t('Exit kit checked today') };
+  return { ok: true, text: t('Exit kit checked {date}', { date: relativeDay(oldest, t, proxy.$i18n.locale) }) };
+});
 // Each button names the backup first; wallet/provider details remain subordinate.
 const choices = computed(() => [
   ...groups.value.map(group => ({
-    key: group.key, kind: 'wallet', walletId: group.walletId, saved: group.saved,
+    key: group.key, kind: 'wallet', type: group.type, walletId: group.walletId, saved: group.saved,
     mode: group.saved ? 'view' : 'backup',
     detail: `${bitcoinBackupName(group, t)} · ${group.type === 'spark' ? 'Spark' : 'Arkade'}`,
   })),

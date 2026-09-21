@@ -37,6 +37,9 @@ export default defineConfig((ctx) => {
       // username resolves to a profile with nothing to pay. Best-effort and
       // idempotent, same as 'nip05'.
       'payment-address',
+      // 'emergency-exit' resumes any exit in progress: chain checks and the
+      // next package broadcasts, independent of Spark being reachable.
+      'emergency-exit',
       // Keep profile changes synced quietly; publishing is not a user task.
       'profile-sync',
       ctx.mode.capacitor ? 'deep-links' : '',
