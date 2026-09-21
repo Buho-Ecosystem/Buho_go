@@ -20,6 +20,7 @@ import {
   probeAccountActivity as probeSparkAccountActivity,
 } from '../services/breezSdk';
 import { useAutoWithdrawStore } from './autoWithdraw';
+import { useNotificationsStore } from './notifications';
 import { useTransactionMetadataStore } from './transactionMetadata';
 import { isLightningAddress } from '../utils/addressUtils.js';
 import { createClaimedDepositRegistry } from '../utils/claimedDeposits.js';
@@ -2318,6 +2319,12 @@ export const useWalletStore = defineStore('wallet', {
       const wallet = this.wallets.find(w => w.id === walletId);
       if (!wallet) return;
 
+      // What this wallet held before the refresh. Every rail assigns
+      // `balances[walletId]` below, so comparing here is the one
+      // provider-agnostic place to notice that money arrived — Spark events,
+      // NWC notifications and LNbits polling all land in the same number.
+      const balanceBefore = this.balances[walletId];
+
       try {
         if (wallet.type === WALLET_TYPES.SPARK) {
           const provider = this.providers[walletId];
@@ -2411,6 +2418,8 @@ export const useWalletStore = defineStore('wallet', {
           const autoWithdrawStore = useAutoWithdrawStore();
           autoWithdrawStore.checkAndExecute(walletId, newBalance, this);
         }
+
+        this.noticeIncomingPayment(wallet, balanceBefore, newBalance);
       } catch (error) {
         console.error(`Refresh wallet ${walletId} failed:`, error);
         this.connectionStates[walletId] = {
@@ -2419,6 +2428,40 @@ export const useWalletStore = defineStore('wallet', {
           error: error.message,
         };
       }
+    },
+
+    /**
+     * Tell the user money arrived while they were looking at something else.
+     *
+     * A balance that went UP between two refreshes is the honest, rail-agnostic
+     * signal here: it covers a Lightning receive, an on-chain deposit landing
+     * and a transfer in, without this store having to understand any of them.
+     * A send lowers the balance and is never announced.
+     *
+     * Deliberately quiet in three cases: the first reading of a session (we
+     * have nothing to compare against, and "you received your whole balance"
+     * on launch would be a lie), while the app is on screen (the UI is already
+     * showing it — the service checks this), and when the user has not asked
+     * for notifications at all.
+     *
+     * Fire-and-forget: a notification is never worth failing a refresh over.
+     */
+    noticeIncomingPayment(wallet, balanceBefore, balanceAfter) {
+      if (typeof balanceBefore !== 'number' || typeof balanceAfter !== 'number') return;
+      const received = balanceAfter - balanceBefore;
+      if (received <= 0) return;
+
+      const notifications = useNotificationsStore();
+      if (!notifications.canNotify) return;
+
+      const t = i18n.global.t.bind(i18n.global);
+      notifications.notifyIfEnabled({
+        title: t('Money arrived'),
+        body: t('{amount} sats landed in {wallet}', {
+          amount: new Intl.NumberFormat().format(received),
+          wallet: wallet.name || t('your wallet'),
+        }),
+      }).catch((err) => console.warn('[notifications] receive notice failed:', err?.message || err));
     },
 
     /**

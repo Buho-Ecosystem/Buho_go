@@ -37,6 +37,7 @@ import PaymentErrorDialog from 'src/components/PaymentErrorDialog.vue'
 import UpdateExperience from 'src/components/UpdateExperience.vue'
 import AddressRequestSheet from 'src/components/AddressRequestSheet.vue'
 import { useAddressRequestStore } from 'src/stores/addressRequest.js'
+import { useNotificationsStore } from 'src/stores/notifications'
 
 export default defineComponent({
   name: 'App',
@@ -47,6 +48,7 @@ export default defineComponent({
     const store = useWalletStore()
     const $q = useQuasar()
     const addressRequest = useAddressRequestStore()
+    const notifications = useNotificationsStore()
 
     // Shared-contacts sync driver. App-level so contacts added from
     // any surface publish, whether or not the Address Book page is
@@ -58,6 +60,7 @@ export default defineComponent({
     provide('appLocked', locked)
     const isDark = ref($q.dark.isActive)
     let stateListener = null
+    let notificationsListener = null
     let isPrompting = false
     let lastPromptEnd = 0
 
@@ -120,6 +123,12 @@ export default defineComponent({
     onMounted(async () => {
       if (!Capacitor.isNativePlatform()) return
 
+      // Payment notifications: load the user's switch, then re-read the OS
+      // permission on every return to the front. It can be revoked in system
+      // settings while we are away, and a toggle that still claims "on" after
+      // that would be a lie. Never blocks the lock flow below.
+      notifications.initialize().catch(() => {})
+
       // Dynamic import — @capacitor/app is only available in Capacitor builds.
       // Must resolve BEFORE cold-start prompt to avoid race with appStateChange listener.
       const { App: CapApp } = await import('@capacitor/app')
@@ -133,6 +142,10 @@ export default defineComponent({
       // Listen for background -> foreground transitions.
       // The biometric dialog itself causes a brief inactive->active cycle;
       // suppress it with isPrompting flag + 1.5s cooldown after last prompt.
+      notificationsListener = await CapApp.addListener('appStateChange', ({ isActive }) => {
+        if (isActive) notifications.syncPermission().catch(() => {})
+      })
+
       stateListener = await CapApp.addListener('appStateChange', ({ isActive }) => {
         if (!appLockActive()) return
 
@@ -154,6 +167,9 @@ export default defineComponent({
     onUnmounted(() => {
       if (stateListener) {
         stateListener.remove()
+      }
+      if (notificationsListener) {
+        notificationsListener.remove()
       }
     })
 

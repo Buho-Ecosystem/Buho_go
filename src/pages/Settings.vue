@@ -296,6 +296,29 @@
         </SettingsRow>
 
         <!--
+          Payment notifications. Mirrors the OS permission rather than
+          claiming its own truth: the store re-reads it on every open, so a
+          permission revoked in system settings shows here as OFF. Turning it
+          on raises the system dialog the first time; after a denial the OS
+          will not ask again, so the caption says where to go instead.
+        -->
+        <SettingsRow
+          v-if="notificationsStore.supported"
+          icon="tabler:bell"
+          :label="$t('Payment notifications')"
+          :caption="notificationsCaption"
+          :interactive="false"
+        >
+          <template #right>
+            <q-toggle
+              :model-value="notificationsStore.canNotify"
+              @update:model-value="toggleNotifications"
+              :color="$q.dark.isActive ? 'brand-green' : 'brand-green-dark'"
+            />
+          </template>
+        </SettingsRow>
+
+        <!--
           Screen Privacy — Android FLAG_SECURE.
           On native: toggle mirrors the canonical persisted value
           owned by SecureScreenPlugin; toggling here flows through
@@ -2043,6 +2066,7 @@ import {useAutoWithdrawStore} from '../stores/autoWithdraw'
 import {useBitcoinPreferencesStore} from '../stores/bitcoinPreferences'
 import {useIdentityStore} from '../stores/identity'
 import {useProfileStore} from '../stores/profile'
+import {useNotificationsStore} from '../stores/notifications'
 import {mapState, mapActions} from 'pinia'
 import {fiatRatesService} from '../utils/fiatRates.js'
 import {formatAmount} from '../utils/amountFormatting.js'
@@ -2135,8 +2159,6 @@ export default {
       isReconnecting: {},
 
       // Settings
-      notificationsEnabled: true,
-      hasNotificationPermission: false,
       pinEnabled: false,
       hasPin: false,
       currentPin: '',
@@ -2893,7 +2915,7 @@ export default {
   created() {
     this.initializeStore();
     this.loadPinState();
-    this.checkNotificationPermission();
+    this.notificationsStore.initialize();
     this.loadMempoolSettings();
     this.loadLanguagePreference();
     this.checkBiometricAvailability();
@@ -3496,6 +3518,27 @@ export default {
      *
      * @param {boolean} value
      */
+    /**
+     * The in-app switch. Turning it on asks the OS the first time; a denial is
+     * final on Android, so we say where the user can change their mind instead
+     * of pretending the toggle worked.
+     */
+    async toggleNotifications(value) {
+      if (!value) {
+        this.notificationsStore.disable();
+        return;
+      }
+      const on = await this.notificationsStore.enable();
+      if (on) return;
+      this.$q.notify({
+        message: this.notificationsStore.permission === 'denied'
+          ? this.$t('Notifications are blocked for BuhoGO in your phone settings.')
+          : this.$t('Notifications not available'),
+        color: 'warning',
+        timeout: 3500,
+      });
+    },
+
     async togglePrivacyScreen(value) {
       if (!this.screenPrivacySupported) {
         // Only prompt on the enable attempt — there's nothing to
@@ -3877,63 +3920,6 @@ export default {
           type: 'positive',
           message: this.$t('PIN updated'),
 
-        });
-      }
-    },
-
-    async checkNotificationPermission() {
-      if ('Notification' in window) {
-        this.hasNotificationPermission = Notification.permission === 'granted';
-        this.notificationsEnabled = this.hasNotificationPermission;
-      }
-    },
-
-    async requestNotificationPermission() {
-      try {
-        const permission = await Notification.requestPermission();
-        this.hasNotificationPermission = permission === 'granted';
-        this.notificationsEnabled = this.hasNotificationPermission;
-
-        if (this.hasNotificationPermission) {
-          if ('serviceWorker' in navigator) {
-            try {
-              const registration = await navigator.serviceWorker.register('/service-worker.js');
-              console.log('Service Worker registered:', registration);
-            } catch (error) {
-              console.error('Service Worker registration failed:', error);
-            }
-          }
-        }
-      } catch (error) {
-        console.error('Error requesting notification permission:', error);
-        this.$q.notify({
-          type: 'negative',
-          message: this.$t('Notifications not available'),
-
-        });
-      }
-    },
-
-    handleNotificationsToggle(enabled) {
-      if (enabled && !this.hasNotificationPermission) {
-        this.requestNotificationPermission();
-      } else if (!enabled) {
-        this.$q.dialog({
-          title: this.$t('Disable Notifications'),
-          message: this.$t('Are you sure you want to disable notifications?'),
-          cancel: true,
-          persistent: true
-        }).onOk(() => {
-          this.notificationsEnabled = false;
-          if ('serviceWorker' in navigator) {
-            navigator.serviceWorker.getRegistrations().then(registrations => {
-              registrations.forEach(registration => {
-                registration.unregister();
-              });
-            });
-          }
-        }).onCancel(() => {
-          this.notificationsEnabled = true;
         });
       }
     },
