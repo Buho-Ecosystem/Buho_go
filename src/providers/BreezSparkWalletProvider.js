@@ -1782,4 +1782,66 @@ export class BreezSparkWalletProvider extends WalletProvider {
     const fallbackUrl = BITCOIN_L1.DEFAULT_MEMPOOL_API;
     return customUrl !== fallbackUrl ? [customUrl, fallbackUrl] : [fallbackUrl];
   }
+  // ==========================================
+  // Emergency exit (unilateral exit)
+  // ==========================================
+
+  /**
+   * Quote an exit from local exit data. Sends nothing, needs no funds, and
+   * works with the operators unreachable. `selection` defaults to the SDK's
+   * economic triage: only leaves worth more than their own exit cost.
+   */
+  async prepareUnilateralExit({ feeRateSatPerVbyte, destination, selection = { type: 'auto' }, fundingKind = { type: 'p2wpkh' } }) {
+    this._ensureConnected();
+    return this.sdk.prepareUnilateralExit({ feeRateSatPerVbyte, fundingKind, destination, selection });
+  }
+
+  /**
+   * Build and sign the whole exit set from a quote and real fee-money UTXOs.
+   * The SDK never broadcasts; the app owns package submission. Idempotent:
+   * re-running returns already-confirmed steps as confirmed.
+   */
+  async buildUnilateralExit({ prepared, fundingInputs, signer }) {
+    this._ensureConnected();
+    return this.sdk.unilateralExit({ prepared, fundingInputs }, signer);
+  }
+
+  /** The exit kit: everything needed to leave without the operators. Opaque, can be several MB. */
+  async exportUnilateralExitState() {
+    this._ensureConnected();
+    const { exitState } = await this.sdk.exportUnilateralExitState();
+    return exitState;
+  }
+
+  async importUnilateralExitState(exitState) {
+    this._ensureConnected();
+    await this.sdk.importUnilateralExitState({ exitState });
+  }
+
+  /** Local balance read, no sync: the number an offline quote should be compared against. */
+  async getBalanceSatsLocal() {
+    this._ensureConnected();
+    const info = await this.sdk.getInfo({});
+    return Number(info?.balanceSats ?? 0);
+  }
+
+  /**
+   * Fires whenever the exit kit may be stale: exit data changed, a payment
+   * settled in either direction, or a deposit was claimed.
+   */
+  onExitDataChanged(callback) {
+    this._ensureConnected();
+    const unsub = breezSdk.subscribe(this.walletId, (event) => {
+      const type = event?.type;
+      if (type === 'unilateralExitStateChanged' || type === 'paymentSucceeded' || type === 'claimedDeposits') {
+        try { callback(type); } catch (e) { console.warn('onExitDataChanged callback failed:', e?.message || e); }
+      }
+    });
+    this._eventUnsubscribers.add(unsub);
+    return () => {
+      this._eventUnsubscribers.delete(unsub);
+      unsub();
+    };
+  }
+
 }
