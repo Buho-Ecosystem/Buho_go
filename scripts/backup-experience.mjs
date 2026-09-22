@@ -114,7 +114,7 @@ try {
  await route('/wallet');
  await page.locator('.backup-shortcut').click();
  await expectSecurityPage();
- await page.getByRole('button',{name:/^Bitcoin backup/}).first().waitFor();
+ await page.getByRole('button',{name:/^Bitcoin Backup/}).first().waitFor();
  assert.equal(await page.getByRole('button',{name:/^Identity backup/}).count(),1);
  assert.equal(await page.getByRole('button',{name:/^Restore from backup/}).count(),1);
  await shot('01-security-light');
