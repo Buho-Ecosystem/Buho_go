@@ -30,6 +30,8 @@ const balanceReads = new Map();
 import { useTransactionMetadataStore } from './transactionMetadata';
 import { isLightningAddress } from '../utils/addressUtils.js';
 import { createClaimedDepositRegistry } from '../utils/claimedDeposits.js';
+import { exitKitService, clearExitData } from '../services/exitKit.js';
+import { useExitKitStore } from './exitKit';
 import { isWalletBackedUp } from '../utils/backupStatus.js';
 import {
   buildPaymentError,
@@ -1325,6 +1327,15 @@ export const useWalletStore = defineStore('wallet', {
           }
         }
 
+        // Keep this wallet's emergency exit kit fresh: put a stored kit back
+        // if the SDK databases are new, then refresh after every settled
+        // payment. Non-fatal by design.
+        try {
+          exitKitService().onSparkConnected(walletId);
+        } catch (error) {
+          console.warn('exit kit sync skipped:', error?.message || error);
+        }
+
       } catch (error) {
         this.connectionStates[walletId] = {
           connected: false,
@@ -1484,6 +1495,7 @@ export const useWalletStore = defineStore('wallet', {
      * switchActiveWallet().
      */
     async _disconnectSparkProvider(walletId) {
+      try { exitKitService().onSparkDisconnected(walletId); } catch (e) { /* not attached yet */ }
       const provider = this.providers[walletId];
       if (provider) {
         try {
@@ -2074,6 +2086,17 @@ export const useWalletStore = defineStore('wallet', {
 
         const wallet = this.wallets[walletIndex];
 
+        // The wallet's databases are about to be deleted with its exit
+        // chains. Take one last export of the emergency exit kit while the
+        // SDK still holds them; the kit outlives the wallet in app storage.
+        if (wallet.type === WALLET_TYPES.SPARK) {
+          try {
+            await exitKitService().preserveBeforeRemoval(walletId);
+          } catch (error) {
+            console.warn('exit kit not preserved:', error?.message || error);
+          }
+        }
+
         // The profile may be pointing at a removed wallet's Lightning
         // address; remember every address leaving with this removal so the
         // profile can fall back to the next default afterwards.
@@ -2122,6 +2145,7 @@ export const useWalletStore = defineStore('wallet', {
             }
             const autoWithdrawStore = useAutoWithdrawStore();
             await autoWithdrawStore.removeConfig(member.id);
+            try { useExitKitStore().remove(member.id); } catch (e) { /* metadata only */ }
           }
         }
 
@@ -2130,6 +2154,7 @@ export const useWalletStore = defineStore('wallet', {
         delete this.connectionStates[walletId];
         delete this.balances[walletId];
         delete this.walletInfos[walletId];
+        try { useExitKitStore().remove(walletId); } catch (e) { /* metadata only */ }
 
         // Clean up backup state if removing the last Spark wallet
         if (wallet.type === WALLET_TYPES.SPARK) {
@@ -3367,6 +3392,9 @@ export const useWalletStore = defineStore('wallet', {
       // Full reset also removes every Breez-engine database (fire-and-forget;
       // clearAll is sync by contract and the deletes are independent).
       deleteAllBreezStorage().catch(() => {});
+      // A full reset takes the exit kits, any exit in progress and the
+      // reachability record with it.
+      clearExitData().catch(() => {});
     },
 
     // ─── Kiosk Mode ───────────────────────────────────────────

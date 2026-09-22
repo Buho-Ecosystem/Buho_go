@@ -1,5 +1,6 @@
 import addressRequest from './addressRequest.js';
 import backup from './backup.js';
+import exit from './exit.js';
 export default {
   "Removing this voucher may permanently lose access to its remaining funds.": "Al eliminar este vale, podrías perder permanentemente el acceso a los fondos restantes.",
   "Edit note": "Editar nota",
@@ -15,6 +16,7 @@ export default {
   "There are no funds to redeem from this request.": "Esta solicitud no tiene fondos disponibles para canjear.",
   "This request cannot be redeemed in whole sats. Ask the service for a new one.": "Esta solicitud no se puede canjear en sats enteros. Pide una nueva al servicio.",
   ...backup,
+  ...exit,
   // Spend: Bitrefill door
   "Gift cards, mobile top-ups and more": "Tarjetas regalo, recargas móviles y más",
   "Bitrefill is on its way": "Bitrefill está en camino",

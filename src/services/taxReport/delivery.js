@@ -32,6 +32,7 @@ export const MIME = Object.freeze({
   csv: 'text/csv',
   xml: 'application/xml',
   pdf: 'application/pdf',
+  json: 'application/json',
 });
 
 /** Filesystem-safe, and still recognisable in a crowded Downloads folder. */

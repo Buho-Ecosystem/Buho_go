@@ -678,10 +678,18 @@
            anyone hunting for advanced controls is happy to scroll
            the extra row. -->
       <SettingsSection
+        id="settings-advanced"
         :title="$t('Advanced')"
         collapsible
-        :default-expanded="false"
+        :default-expanded="$route.query.section === 'advanced'"
       >
+        <SettingsRow
+          v-if="walletStore.sparkWallets.length"
+          icon="tabler:fire-extinguisher"
+          :label="$t('Emergency exit kit')"
+          :caption="$t('Move this wallet\'s money to plain Bitcoin without Spark\'s help.')"
+          @click="showKitSheet = true"
+        />
         <SettingsRow
           icon="tabler:chart-line"
           :label="$t('Exchange Rate Source')"
@@ -846,6 +854,15 @@
     </q-dialog>
 
     <TaxReportSheet v-model="showTaxReportSheet" />
+
+    <ExitKitSheet
+      v-model="showKitSheet"
+      @how="openKitAction('how')"
+      @cloud="openKitAction('cloud')"
+      @hide="onKitHidden"
+    />
+    <HowExitWorksSheet v-model="showHowExit" />
+    <CloudBackupSheet v-model="showKitCloudBackup" intent="backup" />
 
     <GetAppDialog v-model="showGetAppDialog" :message="getAppDialogMessage" />
 
@@ -2090,6 +2107,9 @@ import LNBitsLightningAddressDialog from '../components/LNBitsLightningAddressDi
 import SparkLightningAddressSheet from '../components/SparkLightningAddressSheet.vue'
 import GetAppDialog from '../components/GetAppDialog.vue'
 import TaxReportSheet from '../components/settings/TaxReportSheet.vue'
+import ExitKitSheet from '../components/exit/ExitKitSheet.vue'
+import HowExitWorksSheet from '../components/exit/HowExitWorksSheet.vue'
+import CloudBackupSheet from '../components/CloudBackupSheet.vue'
 import SettingsSection from '../components/settings/SettingsSection.vue'
 import SettingsRow from '../components/settings/SettingsRow.vue'
 import SettingsAttentionStrip from '../components/settings/SettingsAttentionStrip.vue'
@@ -2126,6 +2146,9 @@ export default {
     SparkLightningAddressSheet,
     GetAppDialog,
     TaxReportSheet,
+    ExitKitSheet,
+    HowExitWorksSheet,
+    CloudBackupSheet,
     SettingsSection,
     SettingsRow,
     SettingsAttentionStrip,
@@ -2138,6 +2161,10 @@ export default {
   data() {
     return {
       showWalletsDialog: false,
+      showKitSheet: false,
+      showHowExit: false,
+      showKitCloudBackup: false,
+      pendingKitAction: null,
       showSparkLnAddressSheet: false,
       showAddWalletDialog: false,
       // Per-wallet detail sheet (opened from a Manage Wallets row).
@@ -3003,6 +3030,19 @@ export default {
     }
   },
   methods: {
+    openKitAction(action) {
+      this.pendingKitAction = action;
+      this.showKitSheet = false;
+    },
+
+    onKitHidden() {
+      // Hand off only after the dialog closes, preserving focus and one sheet at a time.
+      const action = this.pendingKitAction;
+      this.pendingKitAction = null;
+      if (action === 'how') this.showHowExit = true;
+      else if (action === 'cloud') this.showKitCloudBackup = true;
+    },
+
     ...mapActions(useWalletStore, [
       'initialize',
       'addWallet',
@@ -3767,9 +3807,10 @@ export default {
 
       const count = this.sparkWallets.length;
       this.dangerConfirmTitle = this.$t('Delete Spark Wallets');
-      this.dangerConfirmMessage = count > 1
+      this.dangerConfirmMessage = (count > 1
         ? this.$t('This will permanently delete all {count} Spark wallets. Make sure you have backed up your seed phrases. This action cannot be undone.', { count })
-        : this.$t('This will permanently delete your Spark wallet. Make sure you have backed up your seed phrase. This action cannot be undone.');
+        : this.$t('This will permanently delete your Spark wallet. Make sure you have backed up your seed phrase. This action cannot be undone.'))
+        + ' ' + this.$t('The last saved exit kit stays on this phone in case you add the wallet again with the same words.');
       this.dangerConfirmButtonText = this.$t('Delete');
       this.dangerConfirmInput = '';
       this.dangerConfirmAction = 'deleteSparkWallet';

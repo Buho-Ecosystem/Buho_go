@@ -54,6 +54,7 @@ import {
 import { WALLET_TYPES } from '../providers/WalletFactory';
 import { useWalletStore } from './wallet.js';
 import { useIdentityStore } from './identity.js';
+import { exitKitService } from '../services/exitKit.js';
 
 const META_KEY = 'buhoGO_cloud_backup_meta_v1';
 const PAYLOAD_VERSION = 2;
@@ -203,6 +204,10 @@ export const useCloudBackupStore = defineStore('cloudBackup', {
      * exist only inside this function — they are passed straight into
      * encryptBackup() and dropped, never assigned to store state.
      */
+    _sparkWalletIds() {
+      return useWalletStore().wallets.filter((w) => w.type === WALLET_TYPES.SPARK).map((w) => w.id);
+    },
+
     async _gatherPayload() {
       const wallet = useWalletStore();
       const identity = useIdentityStore();
@@ -214,6 +219,10 @@ export const useCloudBackupStore = defineStore('cloudBackup', {
           mnemonic: await wallet.getSparkMnemonic(),
           network: wallet.sparkWallet?.connectionData?.network || 'MAINNET',
         };
+        // The emergency exit kits ride along: exit data, not keys, and the
+        // only thing that lets the money leave Spark without the operators.
+        const exitKits = await exitKitService().kitsForBackup(this._sparkWalletIds()).catch(() => []);
+        if (exitKits.length) payload.exitKits = exitKits;
       }
 
       if (wallet.hasArkadeWallet) {
@@ -301,6 +310,7 @@ export const useCloudBackupStore = defineStore('cloudBackup', {
 
         this.lastBackupAt = envelope.createdAt;
         this._persistMeta();
+        if (payload.exitKits?.length) exitKitService().markBackedUp(this._sparkWalletIds(), Date.now());
         // The upload response carries the written file's metadata, so the
         // remote state is known without a follow-up listing round trip.
         this.remoteBackup = {
@@ -425,6 +435,16 @@ export const useCloudBackupStore = defineStore('cloudBackup', {
           } catch (err) {
             failed.push({ label: 'spark', reason: err?.message || String(err) });
           }
+        }
+      }
+
+      // Exit kits are stored now and imported into the SDK at the wallet's
+      // next connect, so a restore never depends on the operators.
+      if (Array.isArray(payload.exitKits) && payload.exitKits.length) {
+        try {
+          await exitKitService().stashRestoredKits(payload.exitKits);
+        } catch (err) {
+          console.warn('exit kits not restored:', err?.message || err);
         }
       }
 
