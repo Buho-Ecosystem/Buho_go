@@ -1178,7 +1178,10 @@ export default {
         const cachedTransactions = localStorage.getItem('buhoGO_cached_transactions');
         if (cachedTransactions) {
           const transactions = JSON.parse(cachedTransactions);
-          this.transaction = transactions.find(tx => tx.id === txId);
+          // Old caches were not wallet-scoped. Never let the receiving leg
+          // of an internal transfer satisfy a link to the sending wallet.
+          const walletId = this.$route.query.wallet;
+          this.transaction = transactions.find(tx => tx.id === txId && (!walletId || tx.walletId === walletId));
         }
 
         // If not found locally, fetch from wallet
@@ -1212,15 +1215,15 @@ export default {
 
     /**
      * The wallet the tx list said this tx belongs to (?wallet= query
-     * param), resolved against the persisted wallet list. null when the
-     * param is absent or unknown — the caller then falls back to the
-     * active wallet, exactly as before the param existed.
+     * param), resolved against the current wallet list with a legacy-state
+     * fallback. Only links without a wallet use the active wallet.
      */
     getRouteWallet() {
       try {
         const walletId = this.$route.query.wallet;
         if (!walletId) return null;
-        return this.walletState.connectedWallets?.find(w => w.id === walletId) || null;
+        return this.walletStore?.wallets?.find(w => w.id === walletId)
+          || this.walletState.connectedWallets?.find(w => w.id === walletId) || null;
       } catch (error) {
         return null;
       }
@@ -1231,8 +1234,11 @@ export default {
         // Prefer the wallet named in the route: /transaction/:id alone is
         // ambiguous across wallets (both sides of an internal payment can
         // share an id), so the tx list passes the owning wallet along.
-        // Absent or unknown param -> the active wallet, as before.
+        // An absent wallet param still uses the active wallet.
         const routeWallet = this.getRouteWallet();
+        // An explicit wallet is authoritative. If it was removed, do not
+        // accidentally show a matching hash from a different active wallet.
+        if (this.$route.query.wallet && !routeWallet) return;
         const routeType = (routeWallet?.type || '').toLowerCase();
 
         if (routeWallet && routeType === 'spark') {
@@ -1267,8 +1273,9 @@ export default {
       // Spark at all.
       const provider = await this.walletStore.ensureSparkConnected(walletId);
 
-      const transactions = await provider.getTransactions({ limit: 100, offset: 0 });
-      const found = transactions.find(tx => tx.id === txId);
+      // Look up the exact SDK payment, including a just-completed transfer;
+      // it need not have appeared in a paginated history response yet.
+      const found = await provider.getTransaction(txId);
 
       if (found) {
         this.transaction = this.normalizeForDetails(found, 'spark');

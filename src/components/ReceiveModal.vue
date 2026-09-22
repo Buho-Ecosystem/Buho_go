@@ -1074,6 +1074,9 @@ export default {
      * Handle Bitcoin deposit claimed - show confirmation
      */
     handleBitcoinDepositClaimed(result) {
+      // A pending claim already has progress feedback in the claim sheet;
+      // do not cover it with a completed-payment confirmation.
+      if (result.processing) return;
       // Show success confirmation similar to Lightning payments
       this.confirmedAmount = result.amount;
       this.confirmedFiatAmount = this.calculateFiatAmount(result.amount);

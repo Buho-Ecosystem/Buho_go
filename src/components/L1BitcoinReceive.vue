@@ -897,17 +897,12 @@ export default {
 
         this.walletStore.markDepositClaimed(claimTxId);
         // An early claim settles asynchronously; keep the balance moving
-        // until the credit lands so the home screen agrees with the toast.
+        // until the credit lands so the home screen catches up.
         if (result && result.settled === false) {
           this.startBalancePolling();
         }
 
-        this.$q.notify({
-          type: 'positive',
-          message: this.$t('Bitcoin added to wallet'),
-          caption: `+${this.formatAmount(classification.creditSats)}`
-        });
-
+        // ReceiveModal presents the deposit confirmation via deposit-claimed.
         this.pendingDeposits = this.pendingDeposits.filter(d => d.txId !== claimTxId);
         if (this.walletStore.activeWalletId) {
           await this.walletStore.refreshWalletData(this.walletStore.activeWalletId);
@@ -998,13 +993,7 @@ export default {
           return;
         }
 
-        // Immediate success
-        this.$q.notify({
-          type: 'positive',
-          message: this.$t('Bitcoin added to wallet'),
-          caption: `+${this.formatAmount(result.amount)}`
-        });
-
+        // ReceiveModal presents the deposit confirmation via deposit-claimed.
         // Remove claimed deposit from list
         this.pendingDeposits = this.pendingDeposits.filter(
           d => d.txId !== this.claimingDeposit.txId

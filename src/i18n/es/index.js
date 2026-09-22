@@ -1154,6 +1154,7 @@ export default {
   "Are you sure you want to disable PIN protection?": "¿Está seguro de que desea desactivar la protección PIN?",
   "Disable Notifications": "Desactivar Notificaciones",
   "Are you sure you want to disable notifications?": "¿Está seguro de que desea desactivar las notificaciones?",
+  "TX Details": "Detalles",
   "Transaction Details": "Detalles de Transacción",
   "Hide": "Ocultar",
   "Show": "Mostrar",

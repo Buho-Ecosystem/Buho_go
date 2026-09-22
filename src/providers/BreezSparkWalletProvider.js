@@ -1120,6 +1120,12 @@ export class BreezSparkWalletProvider extends WalletProvider {
   // Transaction history
   // ==========================================
 
+  async getTransaction(paymentId) {
+    this._ensureConnected();
+    const response = await this._withTransportRetry(() => this.sdk.getPayment({ paymentId }));
+    return mapBreezPaymentsToTxList(response?.payment ? [response.payment] : [])[0] || null;
+  }
+
   async getTransactions({ limit = 50, offset = 0 } = {}) {
     this._ensureConnected();
 

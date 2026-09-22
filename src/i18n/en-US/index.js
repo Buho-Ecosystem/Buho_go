@@ -1093,6 +1093,7 @@ export default {
   "Are you sure you want to disable PIN protection?": "Are you sure you want to disable PIN protection?",
   "Disable Notifications": "Disable Notifications",
   "Are you sure you want to disable notifications?": "Are you sure you want to disable notifications?",
+  "TX Details": "TX Details",
   "Transaction Details": "Transaction Details",
   "Hide": "Hide",
   "Show": "Show",

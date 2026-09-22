@@ -3165,15 +3165,8 @@ export default {
     /**
      * Handle successful internal transfer
      */
-    onTransferComplete(result) {
-      this.$q.notify({
-        type: 'positive',
-        message: this.$t('Transfer complete'),
-        caption: `${result.amount.toLocaleString()} sats`,
-        timeout: 4000,
-      });
-
-      // Refresh wallet balance
+    onTransferComplete() {
+      // The transfer's completion screen is the confirmation.
       this.updateWalletBalance();
     },
 
