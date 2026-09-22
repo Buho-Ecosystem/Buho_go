@@ -135,7 +135,7 @@
                 <Icon icon="tabler:currency-bitcoin" width="18" height="18" />
               </span>
               <span class="rail-badge" :class="$q.dark.isActive ? 'rail-badge-dark rail-ring-dark' : 'rail-badge-light rail-ring-light'">
-                <img :src="$q.dark.isActive ? '/Arkade-Media-Kit/Logo/SVG/Logo Only/Logo Only + Purple.svg' : '/Arkade-Media-Kit/Logo/SVG/Logo Only/Logo Only + Orange.svg'" alt="" />
+                <ArkadeLogo :size="18" :color="$q.dark.isActive ? 'orange' : 'purple'" alt="" />
               </span>
               <span class="rail-badge" :class="$q.dark.isActive ? 'rail-badge-dark rail-ring-dark' : 'rail-badge-light rail-ring-light'">
                 <img :src="$q.dark.isActive ? '/Spark/Spark Asterisk White.svg' : '/Spark/Spark Asterisk Black.svg'" alt="" />
@@ -293,7 +293,6 @@
               :class="$q.dark.isActive ? 'address-box-dark' : 'address-box-light'"
               @click="copyLightningAddress"
             >
-              <Icon icon="tabler:at" width="18" height="18" class="address-icon" />
               <span class="address-text-value">{{ lightningAddress }}</span>
               <Icon icon="tabler:copy" width="14" height="14" class="copy-icon" />
             </div>
@@ -470,6 +469,7 @@
 
 <script>
 import VueQrcode from '@chenfengyuan/vue-qrcode';
+import ArkadeLogo from './ArkadeLogo.vue';
 import { NostrWebLNProvider } from "@getalby/sdk";
 import { Invoice } from "@getalby/lightning-tools";
 import { formatAmount } from '../utils/amountFormatting.js';
@@ -489,6 +489,7 @@ export default {
   name: 'ReceiveModal',
   components: {
     VueQrcode,
+    ArkadeLogo,
     PaymentConfirmation,
     L1BitcoinReceive,
     VoucherSheet
@@ -3000,11 +3001,6 @@ export default {
 
 .address-box-light:active {
   transform: scale(0.98);
-}
-
-.address-icon {
-  color: #15DE72;
-  flex-shrink: 0;
 }
 
 .address-text-value {

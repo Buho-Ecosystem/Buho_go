@@ -48,7 +48,7 @@
         <Icon icon="tabler:currency-bitcoin" width="18" height="18" />
       </span>
       <span class="rail-badge" :class="$q.dark.isActive ? 'rail-badge-dark rail-ring-dark' : 'rail-badge-light rail-ring-light'">
-        <img :src="$q.dark.isActive ? '/Arkade-Media-Kit/Logo/SVG/Logo Only/Logo Only + Purple.svg' : '/Arkade-Media-Kit/Logo/SVG/Logo Only/Logo Only + Orange.svg'" alt="" />
+        <ArkadeLogo :size="18" :color="$q.dark.isActive ? 'orange' : 'purple'" alt="" />
       </span>
       <span class="rail-badge" :class="$q.dark.isActive ? 'rail-badge-dark rail-ring-dark' : 'rail-badge-light rail-ring-light'">
         <img :src="$q.dark.isActive ? '/Spark/Spark Asterisk White.svg' : '/Spark/Spark Asterisk Black.svg'" alt="" />
@@ -65,7 +65,6 @@
       :class="$q.dark.isActive ? 'ln-address-dark' : 'ln-address-light'"
       @click="copyValue(lightningAddress, $t('Lightning address copied'))"
     >
-      <Icon icon="tabler:at" width="14" height="14" aria-hidden="true" />
       <span class="ln-address-text">{{ lightningAddress }}</span>
       <Icon icon="tabler:copy" width="13" height="13" class="ln-address-copy" aria-hidden="true" />
     </button>
@@ -427,6 +426,7 @@
 
 <script>
 import VueQrcode from '@chenfengyuan/vue-qrcode';
+import ArkadeLogo from './ArkadeLogo.vue';
 import { useWalletStore } from 'src/stores/wallet';
 import { useBitcoinDepositsStore } from 'src/stores/bitcoinDeposits';
 import { formatAmount as formatAmountUtil } from 'src/utils/amountFormatting';
@@ -441,7 +441,8 @@ export default {
   name: 'L1BitcoinReceive',
 
   components: {
-    VueQrcode
+    VueQrcode,
+    ArkadeLogo
   },
 
   props: {
