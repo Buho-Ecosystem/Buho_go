@@ -1330,30 +1330,6 @@ export class BreezSparkWalletProvider extends WalletProvider {
     return { category, quote, feeSats, feeRatio, classifiedAt: Date.now() };
   }
 
-  async refreshClassificationQuote(deposit, previousClassification) {
-    if (!previousClassification?.quote) return previousClassification;
-
-    try {
-      const quote = await this.getClaimFeeQuote(deposit.txId, deposit.outputIndex || 0);
-      const { feeSats, feeRatio } = classifyFromMatureQuote({
-        depositAmountSats: Number(deposit.amount || 0),
-        quote,
-        thresholds: AUTO_CLAIM_THRESHOLDS,
-      });
-
-      return {
-        ...previousClassification,
-        quote,
-        feeSats,
-        feeRatio,
-        classifiedAt: Date.now()
-      };
-    } catch (error) {
-      console.warn('Could not refresh claim quote, using prior:', error?.message || error);
-      return previousClassification;
-    }
-  }
-
   async classifyUnconfirmedDeposit(deposit) {
     if (!deposit?.txId || deposit.confirmed) {
       throw new Error('classifyUnconfirmedDeposit requires an unconfirmed deposit');

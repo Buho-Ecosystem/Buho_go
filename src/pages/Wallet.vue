@@ -46,7 +46,7 @@
           @click="openReceiveModalBitcoin"
         >
           <Icon icon="tabler:currency-bitcoin" width="20" height="20" class="q-mr-xs" />
-          {{ pendingBitcoinDeposits.some(d => d.confirmed) ? $t('Ready to claim') : $t('Incoming') }}
+          {{ $t(bitcoinDepositStatus) }}
         </q-chip>
       </transition>
 
@@ -951,10 +951,9 @@ import {LUD04_ERROR, parseLud04Input, looksLikeLud04} from '../utils/lud4.js';
 import {fingerprintToGradient as identityFingerprintToGradient} from '../utils/identityCrypto.js';
 import {
   useBitcoinPreferencesStore,
-  BITCOIN_DEPOSIT_POLL_MS,
-  CLASSIFICATION_FRESHNESS_MS
+  BITCOIN_DEPOSIT_POLL_MS
 } from '../stores/bitcoinPreferences';
-import { track as telemetryTrack } from '../utils/telemetry';
+import { useBitcoinDepositsStore } from '../stores/bitcoinDeposits';
 import {SA_RETAIL_SOURCE, parseZARFromMetadata} from '../utils/merchantQR.js';
 import {lookupBrantaVerification, BRANTA_LOOKUP_TIMEOUT_MS} from '../utils/branta.js';
 
@@ -1008,6 +1007,7 @@ export default {
     const withdrawVouchersStore = useWithdrawVouchersStore();
     const serviceImagesStore = useServiceImagesStore();
     return {
+      bitcoinDepositsStore: useBitcoinDepositsStore(),
       serviceImagesStore,
       walletStore,
       addressBookStore,
@@ -1129,6 +1129,7 @@ export default {
       saveContactData: emptySaveContactData(),
       // L1 Bitcoin pending deposits
       pendingBitcoinDeposits: [],
+      bitcoinDepositRead: 0,
       bitcoinDepositPollingInterval: null,
       // Internal transfer modal
       showTransferModal: false,
@@ -2076,6 +2077,11 @@ export default {
     storeActiveWalletId() {
       return this.walletStore.activeWalletId;
     },
+    bitcoinDepositStatus() {
+      return this.pendingBitcoinDeposits.some(deposit => this.bitcoinDepositsStore.needsManual(deposit))
+        ? 'Ready to claim' : 'Incoming';
+    },
+
     storeBalances() {
       return this.walletStore.balances || {};
     },
@@ -2247,6 +2253,12 @@ export default {
       if (!open) this.pendingWithdrawTargetSats = null;
     },
 
+    'walletStore.activeWalletId'() {
+      this.bitcoinDepositRead++;
+      this.pendingBitcoinDeposits = [];
+      this.checkPendingBitcoinDeposits();
+    },
+
     /**
      * When any deposit-claim flow finishes (auto-claim here, or the
      * manual sheet inside L1BitcoinReceive) the wallet store bumps
@@ -2255,7 +2267,10 @@ export default {
      * not 30s later on the next poll tick.
      */
     'walletStore.depositsRefreshSignal'() {
+      if (this.walletStore.lastDepositsRefreshWalletId !== this.walletStore.activeWalletId) return;
+      this.pendingBitcoinDeposits = this.pendingBitcoinDeposits.filter(d => !this.walletStore.isDepositClaimed(d.txId));
       this.checkPendingBitcoinDeposits();
+      this.updateWalletBalance();
     },
 
     /**
@@ -2817,11 +2832,15 @@ export default {
     async checkPendingBitcoinDeposits() {
       if (!this.isSparkWallet) return;
 
+      const walletId = this.walletStore.activeWalletId;
+      const read = ++this.bitcoinDepositRead;
+      const isCurrent = () => read === this.bitcoinDepositRead && walletId === this.walletStore.activeWalletId;
       try {
         const provider = await this.walletStore.ensureSparkConnected();
-        if (!provider?.getPendingDeposits) return;
+        if (!isCurrent() || !provider?.getPendingDeposits) return;
 
         const newDeposits = await provider.getPendingDeposits();
+        if (!isCurrent()) return;
 
         // An instantly-claimed deposit keeps showing in the SDK's pending
         // list until its confirmations catch up. Filter it everywhere so
@@ -2830,322 +2849,18 @@ export default {
           (d) => !this.walletStore.isDepositClaimed(d.txId)
         );
 
-        // Detect changes and show notifications
-        this.detectDepositChanges(unclaimed);
-
         this.pendingBitcoinDeposits = unclaimed;
+        void this.bitcoinDepositsStore.processDeposits(unclaimed, walletId);
       } catch (error) {
         // Silently ignore - wallet may be locked
       }
     },
 
     /**
-     * Detect deposit changes and trigger the right notification path.
-     *
-     * Three transitions matter:
-     *   1. Brand-new deposit appears (not seen before, any conf state).
-     *   2. A previously-pending deposit just crossed the SDK's
-     *      confirmation threshold (`confirmed` flipped from false → true).
-     *   3. A confirmed deposit was already on the list at boot — handled
-     *      separately on init (`processConfirmedDepositsForInit`) so the
-     *      user sees the auto-claim sweep when they open the app after
-     *      the deposit settled while offline.
-     *
-     * Cases 1 and 2 funnel through `handleConfirmedDeposit`, which in
-     * turn delegates to the auto-claim flow when the user has it on, or
-     * keeps the legacy "Ready to claim" toast when it's off.
-     */
-    detectDepositChanges(newDeposits) {
-      const previousTxIds = new Set(this.pendingBitcoinDeposits.map(d => d.txId));
-      const previousConfirmed = new Map(this.pendingBitcoinDeposits.map(d => [d.txId, d.confirmed]));
-
-      for (const deposit of newDeposits) {
-        const isNew = !previousTxIds.has(deposit.txId);
-
-        if (isNew) {
-          if (deposit.confirmed) {
-            // Already-confirmed first sighting (e.g. settled while the
-            // app was closed). Auto-claim sweeps it via the confirmed
-            // handler — no toast.
-            this.handleConfirmedDeposit(deposit);
-          }
-          // A brand-new unconfirmed deposit needs nothing from us: the
-          // header "Incoming" chip calls it out, auto-add claims it at
-          // three confirmations, and speeding up is the user's tap in the
-          // deposit sheet, never something taken on their behalf.
-        } else if (deposit.confirmed && !previousConfirmed.get(deposit.txId)) {
-          this.handleConfirmedDeposit(deposit);
-        }
-      }
-    },
-
-    /**
-     * Route a confirmed deposit through the auto-claim flow.
-     *
-     * When the user has "Auto-add Bitcoin deposits" off this
-     * keeps the legacy "Ready to claim" toast as a safety net so
-     * existing UX doesn't regress for people who deliberately opted
-     * out. When the toggle is on, the deposit is classified by the
-     * provider and the appropriate notification fires:
-     *
-     *   - eligible       → silent auto-claim + "Bitcoin received" toast
-     *   - needs_approval → notification with [Add to wallet] / [Send back]
-     *   - too_small      → notification with [Send back] / [Try anyway]
-     *   - quote_failed   → fall back to "Ready to claim" so the user can
-     *                       still drive the existing manual flow
-     *
-     * Designed to never throw — orchestration errors get logged and the
-     * legacy toast is shown as the safety net.
-     */
-    async handleConfirmedDeposit(deposit) {
-      // Already swept by the instant path (or a previous session): the
-      // pending list can lag behind reality, never claim twice.
-      if (this.walletStore.isDepositClaimed(deposit.txId)) return;
-
-      if (!this.bitcoinPrefsStore.autoAddIncomingBitcoin) {
-        this.notifyDepositReadyManual(deposit);
-        return;
-      }
-
-      let classification;
-      try {
-        const provider = await this.walletStore.ensureSparkConnected();
-        if (!provider?.classifyConfirmedDeposit) {
-          this.notifyDepositReadyManual(deposit);
-          return;
-        }
-        classification = await provider.classifyConfirmedDeposit(deposit);
-      } catch (error) {
-        console.warn('Auto-claim classification failed:', error?.message || error);
-        this.notifyDepositReadyManual(deposit);
-        return;
-      }
-
-      switch (classification.category) {
-        case 'eligible':
-          telemetryTrack('bitcoin.deposit.classified', {
-            category: 'eligible',
-            amount_sats: deposit.amount,
-            fee_sats: classification.feeSats,
-            fee_ratio: classification.feeRatio
-          });
-          await this.attemptAutoClaim(deposit, classification, { source: 'auto' });
-          break;
-        case 'needs_approval':
-          telemetryTrack('bitcoin.deposit.classified', {
-            category: 'needs_approval',
-            amount_sats: deposit.amount,
-            fee_sats: classification.feeSats,
-            fee_ratio: classification.feeRatio
-          });
-          // Same surface as the manual flow — a small "Ready to claim"
-          // toast, the chip in the receive sheet, and the high-fee
-          // warning inside the claim sheet itself. The big sticky
-          // banner that used to live here was too loud for what is
-          // ultimately a routine fee disclosure.
-          this.notifyDepositReadyManual(deposit);
-          break;
-        case 'too_small':
-          telemetryTrack('bitcoin.deposit.classified', {
-            category: 'too_small',
-            amount_sats: deposit.amount
-          });
-          this.notifyDepositTooSmall(deposit);
-          break;
-        case 'quote_failed':
-        default:
-          telemetryTrack('bitcoin.deposit.classified', {
-            category: 'quote_failed',
-            amount_sats: deposit.amount,
-            error: classification.error?.message || 'unknown'
-          });
-          this.notifyDepositReadyManual(deposit);
-          break;
-      }
-    },
-
-    /**
-     * Try the silent auto-claim path. Falls back to a manual prompt if
-     * the SSP rejects the claim (e.g. fee changed mid-flight).
-     *
-     * If the captured quote is older than CLASSIFICATION_FRESHNESS_MS we
-     * refetch before submitting — typical case is a `needs_approval`
-     * toast the user took a while to act on. The refresh is best-effort:
-     * on failure we proceed with the original quote and let the SSP
-     * reject if the fee has actually drifted.
-     *
-     * @param {Object} deposit
-     * @param {Object} classification
-     * @param {{source: 'auto' | 'user_approved' | 'try_anyway'}} options
-     */
-    async attemptAutoClaim(deposit, classification, options = { source: 'auto' }) {
-      const startedAt = Date.now();
-      let workingClassification = classification;
-
-      // Coordination guard: skip if the manual sheet (or another auto-claim
-      // tick) has already submitted this UTXO. Prevents the SSP from seeing
-      // a duplicate request and prevents the second one from receiving a
-      // misleading "needs more confirmations" error.
-      if (this.walletStore.isDepositClaimInFlight(deposit.txId)) {
-        telemetryTrack('bitcoin.deposit.claim_skipped', {
-          source: options.source,
-          reason: 'in_flight',
-          amount_sats: deposit.amount
-        });
-        return;
-      }
-
-      this.walletStore.markDepositClaimInFlight(deposit.txId);
-
-      try {
-        const provider = await this.walletStore.ensureSparkConnected();
-
-        const ageMs = Date.now() - (workingClassification.classifiedAt || 0);
-        if (ageMs > CLASSIFICATION_FRESHNESS_MS && typeof provider.refreshClassificationQuote === 'function') {
-          telemetryTrack('bitcoin.deposit.quote_refreshed', {
-            age_ms: ageMs,
-            source: options.source
-          });
-          workingClassification = await provider.refreshClassificationQuote(
-            deposit,
-            workingClassification
-          );
-        }
-
-        const result = await provider.claimDeposit(
-          deposit.txId,
-          workingClassification.quote,
-          deposit.outputIndex || 0
-        );
-        const credited = Number(
-          result?.amount ||
-          workingClassification.quote?.creditAmountSats ||
-          deposit.amount
-        );
-
-        telemetryTrack('bitcoin.deposit.claim_succeeded', {
-          source: options.source,
-          amount_sats: credited,
-          fee_sats: workingClassification.feeSats,
-          duration_ms: Date.now() - startedAt,
-          processing: !!result?.processing,
-          transfer_id: result?.transferId || null
-        });
-
-        // Durable double-claim guard — this UTXO must never be submitted
-        // again, in this session or the next.
-        this.walletStore.markDepositClaimed(deposit.txId);
-
-        this.notifyAutoClaimSucceeded(credited, workingClassification.feeSats);
-        if (this.walletStore.activeWalletId) {
-          this.walletStore.refreshWalletData(this.walletStore.activeWalletId);
-        }
-        // Drop the row from the receive-sheet list immediately instead of
-        // waiting for its 30s poll. Without this, the user can still see a
-        // "Claim" CTA for a UTXO that was already swept.
-        this.walletStore.signalDepositsRefresh();
-      } catch (error) {
-        telemetryTrack('bitcoin.deposit.claim_failed', {
-          source: options.source,
-          amount_sats: deposit.amount,
-          duration_ms: Date.now() - startedAt,
-          error: error?.message || 'unknown'
-        });
-        console.warn('Auto-claim attempt failed, surfacing manual prompt:', error?.message || error);
-        this.notifyDepositReadyManual(deposit);
-      } finally {
-        this.walletStore.clearDepositClaimInFlight(deposit.txId);
-      }
-    },
-
-    /**
-     * Silent-success toast for an auto-claimed deposit. We surface the
-     * fee inline (small footer) so transparency is preserved without
-     * making it the headline.
-     */
-    notifyAutoClaimSucceeded(amountSats, feeSats) {
-      const amountCopy = `${amountSats.toLocaleString()} ${this.$t('sats added to your wallet')}`;
-      const feeCopy = feeSats > 0
-        ? `${this.$t('Fee')}: ${feeSats.toLocaleString()} ${this.$t('sats')}`
-        : null;
-
-      this.$q.notify({
-        type: 'positive',
-        icon: 'currency_bitcoin',
-        message: this.$t('Bitcoin received'),
-        caption: feeCopy ? `${amountCopy} · ${feeCopy}` : amountCopy,
-        position: 'top',
-        timeout: 5000
-      });
-    },
-
-    /**
-     * Tiny-deposit prompt. The "Try anyway" path opens the existing
-     * manual claim list so the user can review the (likely large) fee
-     * before committing.
-     */
-    notifyDepositTooSmall(deposit) {
-      this.$q.notify({
-        type: 'info',
-        icon: 'currency_bitcoin',
-        message: this.$t('Tiny Bitcoin deposit'),
-        caption: this.$t('This {amount} sats is too small to bring in. Network fees would eat most of it.', { amount: deposit.amount.toLocaleString() }),
-        position: 'top',
-        timeout: 0,
-        actions: [
-          {
-            label: this.$t('Send back'),
-            color: 'white',
-            handler: () => {
-              telemetryTrack('bitcoin.deposit.user_action', {
-                source: 'too_small',
-                action: 'send_back'
-              });
-              this.openReceiveModalBitcoin();
-            }
-          },
-          {
-            label: this.$t('Try anyway'),
-            color: 'white',
-            handler: () => {
-              telemetryTrack('bitcoin.deposit.user_action', {
-                source: 'too_small',
-                action: 'try_anyway'
-              });
-              this.openReceiveModalBitcoin();
-            }
-          }
-        ]
-      });
-    },
-
-    /**
-     * Legacy manual-claim toast. Used when auto-claim is off, when
-     * classification fails, or when the optimistic claim path errors
-     * out. Identical UX to the pre-auto-claim behaviour so we always
-     * have a safe fallback.
-     */
-    notifyDepositReadyManual(deposit) {
-      this.$q.notify({
-        type: 'positive',
-        icon: 'check_circle',
-        message: this.$t('Ready to claim'),
-        caption: `${deposit.amount.toLocaleString()} sats`,
-        position: 'top',
-        timeout: 8000,
-        actions: [{
-          label: this.$t('Claim'),
-          color: 'white',
-          handler: () => this.openReceiveModalBitcoin()
-        }]
-      });
-    },
-
-    /**
      * Start polling for pending Bitcoin deposits
      */
     startBitcoinDepositPolling() {
-      if (!this.isSparkWallet) return;
+      this.stopBitcoinDepositPolling();
 
       // Initial check
       this.checkPendingBitcoinDeposits();
@@ -3161,6 +2876,7 @@ export default {
      * Stop Bitcoin deposit polling
      */
     stopBitcoinDepositPolling() {
+      this.bitcoinDepositRead++;
       if (this.bitcoinDepositPollingInterval) {
         clearInterval(this.bitcoinDepositPollingInterval);
         this.bitcoinDepositPollingInterval = null;
@@ -3171,7 +2887,7 @@ export default {
      * Handle deposits updated from ReceiveModal
      */
     handleBitcoinDepositsUpdated(deposits) {
-      this.pendingBitcoinDeposits = deposits;
+      this.pendingBitcoinDeposits = deposits.filter(d => !this.walletStore.isDepositClaimed(d.txId));
     },
 
     /**

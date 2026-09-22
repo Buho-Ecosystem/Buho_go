@@ -231,3 +231,78 @@ test('receipt note edits save explicitly; failures preserve the draft for retry'
   assert.equal(vm.savingNote, false);
   assert.equal(notices[0].message, 'Failed to save note');
 });
+
+
+test('deposit refresh signals update home immediately only for their owning wallet', () => {
+  const options = component();
+  const calls = [];
+  const vm = { walletStore: { activeWalletId: 'A', lastDepositsRefreshWalletId: 'B', isDepositClaimed: () => true },
+    pendingBitcoinDeposits: [{ txId: 'deposit' }], checkPendingBitcoinDeposits: () => calls.push('deposits'),
+    updateWalletBalance: () => calls.push('balance') };
+  options.watch['walletStore.depositsRefreshSignal'].call(vm);
+  assert.deepEqual(calls, []);
+  vm.walletStore.lastDepositsRefreshWalletId = 'A';
+  options.watch['walletStore.depositsRefreshSignal'].call(vm);
+  assert.deepEqual(calls, ['deposits', 'balance']);
+  assert.deepEqual(vm.pendingBitcoinDeposits, []);
+});
+
+test('overlapping deposit polls cannot restore an older list or show another wallet’s deposits', async () => {
+  const { vm, store } = balanceHarness();
+  const provider = {};
+  Object.assign(vm, { isSparkWallet: true, pendingBitcoinDeposits: [], bitcoinDepositRead: 0,
+    bitcoinDepositsStore: { processDeposits: async () => {} } });
+  store.ensureSparkConnected = async () => provider;
+  store.isDepositClaimed = () => false;
+  for (const switchWallet of [false, true]) {
+    const old = deferred(), reading = deferred();
+    provider.getPendingDeposits = () => { reading.resolve(); return old.promise; };
+    const pending = vm.checkPendingBitcoinDeposits();
+    await reading.promise;
+    if (switchWallet) store.activeWalletId = 'B';
+    else {
+      provider.getPendingDeposits = async () => [];
+      await vm.checkPendingBitcoinDeposits();
+    }
+    old.resolve([{ txId: 'deposit', confirmed: true }]);
+    await pending;
+    assert.deepEqual(vm.pendingBitcoinDeposits, []);
+  }
+});
+
+function depositSheetHarness(provider) {
+  const options = evaluate('../../components/L1BitcoinReceive.vue').default;
+  return { ...options.methods, claimQuoteRequest: 0, walletStore: { activeWalletId: 'A', ensureSparkConnected: async () => provider },
+    bitcoinDepositsStore: { needsManual: () => true, reconsiderQuote() {} } };
+}
+
+test('a deposit poll can replace the row object without stranding its manual fee loader', async () => {
+  const quote = deferred(), started = deferred();
+  const vm = depositSheetHarness({ getClaimFeeQuote: () => { started.resolve(); return quote.promise; } });
+  const deposit = { txId: 'deposit', confirmed: true };
+  const pending = vm.openDepositSheet(deposit);
+  await started.promise;
+  vm.claimingDeposit = { ...deposit, confirmations: 4 };
+  quote.resolve({ creditAmountSats: 1000 });
+  await pending;
+  assert.equal(vm.claimFeeQuote.creditAmountSats, 1000);
+  assert.equal(vm.isLoadingQuote, false);
+});
+
+test('a late manual quote cannot overwrite a different deposit sheet or clear its loader', async () => {
+  const old = deferred(), next = deferred(), started = deferred();
+  const vm = depositSheetHarness({ getClaimFeeQuote: id => { if (id === 'old') started.resolve(); return id === 'old' ? old.promise : next.promise; } });
+  const first = vm.openDepositSheet({ txId: 'old', confirmed: true });
+  await started.promise;
+  vm.cancelClaim();
+  const second = vm.openDepositSheet({ txId: 'next', confirmed: true });
+  old.resolve({ creditAmountSats: 1000 });
+  await first;
+  assert.equal(vm.claimingDeposit.txId, 'next');
+  assert.equal(vm.claimFeeQuote, null);
+  assert.equal(vm.isLoadingQuote, true);
+  next.resolve({ creditAmountSats: 2000 });
+  await second;
+  assert.equal(vm.claimFeeQuote.creditAmountSats, 2000);
+  assert.equal(vm.isLoadingQuote, false);
+});

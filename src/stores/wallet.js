@@ -218,6 +218,7 @@ export const useWalletStore = defineStore('wallet', {
     // instead of waiting for the next 30s poll tick. Counter, not boolean,
     // so each completion triggers a fresh watcher fire.
     depositsRefreshSignal: 0,
+    lastDepositsRefreshWalletId: null,
   }),
 
   getters: {
@@ -735,7 +736,8 @@ export const useWalletStore = defineStore('wallet', {
      * deposit list now instead of waiting for the next poll. Bump the
      * counter so a `watch` on `depositsRefreshSignal` fires every time.
      */
-    signalDepositsRefresh() {
+    signalDepositsRefresh(walletId = this.activeWalletId) {
+      this.lastDepositsRefreshWalletId = walletId;
       this.depositsRefreshSignal += 1;
     },
 
