@@ -94,9 +94,8 @@
         <!--
           LUD-09 successAction — the recipient's post-payment message. Shown as
           a distinct card (not the faint footer `description`) because it can
-          carry a link to open or a one-time secret to copy. Its presence also
-          widens the auto-close window (see `closeDelaySeconds`) so the user
-          has time to read or act on it.
+          carry a link to open or a one-time secret to copy. Opening the link
+          or copying the secret cancels automatic dismissal.
         -->
         <div
           v-if="successAction"
@@ -239,12 +238,9 @@ import SuccessCheckmark from './SuccessCheckmark.vue';
 import { openInAppBrowser } from '../utils/inAppBrowser.js';
 import { formatSuccessActionUrl } from '../utils/successAction.js';
 
-// A bare confirmation is glanceable: long enough to register the amount,
-// short enough that the screen leaves before it becomes a wall.
-const AUTO_CLOSE_SECONDS = 2.8;
-// Content windows (a recipient message, link, secret, or a save-contact
-// offer) stay long enough to read and act on; a tap closes sooner.
-const AUTO_CLOSE_LONG_SECONDS = 6;
+// The timer starts after the 700 ms entrance: 6.3 seconds here gives every
+// confirmation seven seconds from opening. A tap anywhere closes sooner.
+const AUTO_CLOSE_SECONDS = 6.3;
 
 export default {
   name: 'PaymentConfirmation',
@@ -294,8 +290,7 @@ export default {
       default: 'To '
     },
     /**
-     * Shows a "Save to Contacts" button below the amount and widens the
-     * auto-close window so the offer is actually reachable. The click is
+     * Shows a "Save to Contacts" button below the amount. The click is
      * forwarded via `save-contact-clicked` so the parent can run the save
      * flow. If the user dismisses the modal without tapping the button,
      * they've opted out — no dialog should pop afterwards.
@@ -312,8 +307,8 @@ export default {
     /**
      * LUD-09 successAction returned by the recipient, already resolved for
      * display: { tag:'message', message }, { tag:'url', description, url }, or
-     * { tag:'aes', description, secret, decryptError }. When present the modal
-     * stays open (no auto-close) so the user can read or act on it.
+     * { tag:'aes', description, secret, decryptError }. Opening a link or
+     * copying a secret cancels auto-close so the screen remains available.
      */
     successAction: {
       type: Object,
@@ -358,22 +353,10 @@ export default {
     /**
      * A fiat-payout delivery that is still confirming holds the screen open —
      * an in-flight process must never vanish mid-report. Everything else
-     * auto-closes; content only widens the window (see closeDelaySeconds).
+     * uses the shared auto-close timer; a tap anywhere closes sooner.
      */
     holdsOpen() {
       return !!this.deliveryStatus && !this.deliveryStatus.done
-    },
-    /**
-     * How long the screen stays before closing itself. A bare confirmation
-     * is glanceable and leaves quickly; a recipient message, link, secret,
-     * or a save-contact offer is content the user may want to read or act
-     * on, so it earns the long window. A tap anywhere closes sooner either
-     * way, and engaging with the content cancels the timer entirely.
-     */
-    closeDelaySeconds() {
-      return (this.successAction || this.showSaveContact)
-        ? AUTO_CLOSE_LONG_SECONDS
-        : AUTO_CLOSE_SECONDS
     },
     /**
      * The destination of a LUD-09 `url` action, shortened for the pill. Shown
@@ -433,7 +416,7 @@ export default {
 
     startCloseTimer() {
       this.clearCloseTimer()
-      this.closeTimer = setTimeout(() => this.closeNow(), this.closeDelaySeconds * 1000)
+      this.closeTimer = setTimeout(() => this.closeNow(), AUTO_CLOSE_SECONDS * 1000)
     },
 
     clearCloseTimer() {

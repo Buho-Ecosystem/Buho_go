@@ -753,7 +753,7 @@
       stay independent — a send completing and a withdraw landing
       should never share lifecycle. The Save Contact button only
       shows for new recipients (savable address not already in the
-      address book); when present it suppresses auto-close.
+      address book); tapping it opens the save-contact dialog.
     -->
     <PaymentConfirmation
       v-model="showSendSuccess"
