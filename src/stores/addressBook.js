@@ -1,3 +1,4 @@
+import { serviceIdentity } from '../utils/lnurlMetadata.js'
 import { isAddressRequest } from '../utils/lud23.js';
 import { defineStore } from 'pinia'
 import { verifyEvent, nip19 } from 'nostr-core'
@@ -62,6 +63,28 @@ const MAX_NOSTR_EVENT_CONTENT_BYTES = 64 * 1024
 // the address book only ever renders this known set, and the full
 // raw payload still lives verbatim in `nostr_event.content` for the
 // detail view, so nothing is actually lost.
+/**
+ * LUD-11 service metadata kept on an entry: what the service said about
+ * itself (LUD-06) when it was paid or added. Small and local; the shared
+ * contacts doc copies explicit fields only, so this never leaves the device.
+ * Its logo is not here either (see stores/serviceImages.js).
+ */
+function sanitizeService(service) {
+  if (!service || typeof service !== 'object') return null
+  const str = (value, max) => (typeof value === 'string' ? value.trim().slice(0, max) : '')
+  const name = str(service.name, 80)
+  const domain = str(service.domain, 253)
+  if (!name && !domain) return null
+  return {
+    name,
+    identifier: str(service.identifier, 256) || null,
+    payLink: serviceIdentity(service.payLink, null).payLink,
+    domain,
+    reusable: service.reusable === true ? true : (service.reusable === false ? false : null),
+    seenAt: Number.isFinite(service.seenAt) ? service.seenAt : Date.now(),
+  }
+}
+
 const PROFILE_FIELD_LIMITS = Object.freeze({
   name: 256,
   display_name: 256,
@@ -444,8 +467,15 @@ export const useAddressBookStore = defineStore('addressBook', {
     async addEntry(entryData) {
       await this.initialize()
       try {
-        const addressType = entryData.addressType || 'lightning'
-        const address = entryData.address || entryData.lightningAddress || ''
+        let addressType = entryData.addressType || 'lightning'
+        let address = entryData.address || entryData.lightningAddress || ''
+        let service = sanitizeService(entryData.service)
+        if (addressType === 'lnurl' && service) {
+          const identity = serviceIdentity(address, service)
+          address = identity.address || address
+          addressType = identity.addressType
+          service = { ...service, payLink: identity.payLink }
+        }
 
         const newEntry = {
           id: `addr-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
@@ -459,6 +489,8 @@ export const useAddressBookStore = defineStore('addressBook', {
           notes: entryData.notes?.trim() || '',
           isFavorite: entryData.isFavorite || false,
           lastUsedAt: entryData.lastUsedAt || null,
+          // LUD-11 service payees carry their LUD-06 self-description.
+          service,
           createdAt: Date.now(),
           updatedAt: Date.now()
         }
@@ -476,9 +508,8 @@ export const useAddressBookStore = defineStore('addressBook', {
         }
 
         // Check for duplicates
-        const existingEntry = this.entries.find(
-          entry => this.getEntryAddress(entry).toLowerCase() === newEntry.address.toLowerCase()
-        )
+        const existingEntry = this.findContactByAddress(newEntry.address)
+          || (service?.payLink && this.findContactByAddress(service.payLink))
 
         if (existingEntry) {
           throw new Error('This address already exists in your address book')
@@ -536,6 +567,10 @@ export const useAddressBookStore = defineStore('addressBook', {
             currentEntry.nostr_npub,
           )
           updatedEntry.name_locally_edited = updatedEntry.name.trim() !== derivedName
+        }
+
+        if (updateData.service !== undefined) {
+          updatedEntry.service = sanitizeService(updateData.service)
         }
 
         // If address is being updated, validate it
@@ -1894,6 +1929,8 @@ export const useAddressBookStore = defineStore('addressBook', {
       return this.entries.find(entry => {
         const entryAddress = (entry.address || entry.lightningAddress || '').toLowerCase().trim()
         return entryAddress === normalizedAddress
+          || entry.service?.identifier?.toLowerCase() === normalizedAddress
+          || entry.service?.payLink?.toLowerCase() === normalizedAddress
       }) || null
     },
 

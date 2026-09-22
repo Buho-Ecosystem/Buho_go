@@ -97,6 +97,28 @@
           </q-carousel-slide>
 
           <!-- 5: NFC / Bolt Card -->
+          <!-- Notifications. Placed right after Send/Receive: the wallet
+               exists, the user has just been told money can arrive, and this
+               is the moment that makes the ask make sense. Shown once, and in
+               the installed app only — on the web the Settings row is the way
+               in. The copy promises exactly what a local notification can do,
+               no more. -->
+          <q-carousel-slide v-if="showNotificationsSlide" name="notifications" class="wizard-slide">
+            <div class="slide-content">
+              <img src="/Onboarding wizard spark/storyset-money-income-bro.svg" class="slide-illustration" alt="" />
+              <h2 class="slide-title" :class="$q.dark.isActive ? 'text-white' : 'text-dark'">
+                {{ $t('Know when money arrives') }}
+              </h2>
+              <p class="slide-text" :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'">
+                {{ $t('Get a notification when a payment lands while you are in another app. It works while BuhoGO stays open in the background, not after it is closed.') }}
+              </p>
+              <p v-if="notificationsAnswered" class="slide-text wizard-notify-state" :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'">
+                <template v-if="notifications.canNotify">{{ $t('Notifications are on. You can change this in Settings.') }}</template>
+                <template v-else>{{ $t('No notifications. You can turn them on later in Settings.') }}</template>
+              </p>
+            </div>
+          </q-carousel-slide>
+
           <q-carousel-slide name="nfc" class="wizard-slide">
             <div class="slide-content">
               <img src="/Onboarding wizard spark/storyset-mobile-payments-bro.svg" class="slide-illustration" alt="" />
@@ -313,6 +335,28 @@
           />
         </template>
 
+        <!-- Notifications slide: our explanation is above, so this button is
+             the one that raises the OS dialog. Either answer moves on; nothing
+             else in the app depends on it. -->
+        <template v-else-if="currentSlide === 'notifications' && !notificationsAnswered">
+          <q-btn
+            unelevated
+            no-caps
+            :label="$t('Turn on')"
+            :loading="askingNotifications"
+            @click="turnOnNotifications"
+            class="wizard-btn"
+            :class="$q.dark.isActive ? 'dialog_add_btn_dark' : 'dialog_add_btn_light'"
+          />
+          <q-btn
+            flat
+            no-caps
+            :label="$t('Not now')"
+            @click="skipNotifications"
+            class="wizard-btn-secondary"
+          />
+        </template>
+
         <!-- Final extended slide -->
         <template v-else-if="currentSlide === lastSlide">
           <q-btn
@@ -354,30 +398,34 @@
  */
 
 import ArkadeLogo from '../components/ArkadeLogo.vue'
+import { useNotificationsStore } from '../stores/notifications'
 
 // Spark-only intro screens (Business wallet, Personal wallet, Savings)
 const SPARK_INTRO = ['personal', 'business', 'savings']
 
 // All feature screens (shown after Spark intro or standalone for NWC/LNbits)
 const ALL_FEATURES = [
-  'send-receive', 'nfc', 'transfer', 'auto-transfer', 'history',
+  'send-receive', 'notifications', 'nfc', 'transfer', 'auto-transfer', 'history',
   'contacts', 'identity', 'display', 'more-wallets', 'security', 'backup', 'kiosk', 'lessons', 'map', 'ready'
 ]
 
 // NWC/LNbits: only features that apply (no internal transfer, auto-transfer, or seed backup)
 const NWC_LNBITS_FEATURES = [
-  'send-receive', 'nfc', 'history', 'contacts', 'identity', 'display', 'more-wallets', 'security', 'lessons', 'map', 'ready'
+  'send-receive', 'notifications', 'nfc', 'history', 'contacts', 'identity', 'display', 'more-wallets', 'security', 'lessons', 'map', 'ready'
 ]
 
 // Arkade: single self-custodial wallet — seed-based (keep the backup reminder),
 // but no Business/Personal pair, so no internal-transfer / auto-transfer slides.
 const ARKADE_FEATURES = [
-  'send-receive', 'nfc', 'history', 'contacts', 'identity', 'display', 'more-wallets', 'security', 'backup', 'lessons', 'map', 'ready'
+  'send-receive', 'notifications', 'nfc', 'history', 'contacts', 'identity', 'display', 'more-wallets', 'security', 'backup', 'lessons', 'map', 'ready'
 ]
 
 export default {
   name: 'SparkSuccessWizard',
   components: { BackupKeyring, ArkadeLogo },
+  setup() {
+    return { notifications: useNotificationsStore() }
+  },
   data() {
     const mode = this.$route.query.mode || 'spark'
     const isArkadeMode = mode === 'arkade'
@@ -388,14 +436,31 @@ export default {
       // gates it behind "Tell me more" unless ?full=true.
       showExtended: !isSparkMode || this.$route.query.full === 'true',
       isSparkMode,
-      isArkadeMode
+      isArkadeMode,
+      // Decided once, in created(): the slide must not disappear from under
+      // the user the moment they answer (which is exactly what `canAsk`
+      // stops being true after).
+      showNotificationsSlide: false,
+      notificationsAnswered: false,
+      askingNotifications: false
     }
+  },
+
+  async created() {
+    await this.notifications.initialize()
+    // Native only — see canAskInSetup. On the web the Settings row carries it.
+    this.showNotificationsSlide = this.notifications.canAskInSetup
   },
   computed: {
     activeSlides() {
-      if (this.isArkadeMode) return ['arkade-intro', ...ARKADE_FEATURES]
-      if (!this.isSparkMode) return NWC_LNBITS_FEATURES
-      return this.showExtended ? [...SPARK_INTRO, ...ALL_FEATURES] : SPARK_INTRO
+      const slides = this.isArkadeMode
+        ? ['arkade-intro', ...ARKADE_FEATURES]
+        : (!this.isSparkMode
+          ? NWC_LNBITS_FEATURES
+          : (this.showExtended ? [...SPARK_INTRO, ...ALL_FEATURES] : SPARK_INTRO))
+      // Nothing to ask (web, already asked, or the OS has decided): the tour
+      // skips it entirely rather than showing a dead slide.
+      return this.showNotificationsSlide ? slides : slides.filter((slide) => slide !== 'notifications')
     },
     lastSlide() {
       return this.activeSlides[this.activeSlides.length - 1]
@@ -408,6 +473,24 @@ export default {
         this.currentSlide = this.activeSlides[idx + 1]
       }
     },
+    /** Our explanation has been read; this is the OS dialog. */
+    async turnOnNotifications() {
+      this.askingNotifications = true
+      try {
+        await this.notifications.enable()
+      } finally {
+        this.askingNotifications = false
+        this.notificationsAnswered = true
+      }
+    },
+
+    /** "Not now" is a real answer: we don't ask again on our own. */
+    skipNotifications() {
+      this.notifications.declineForNow()
+      this.notificationsAnswered = true
+      this.nextSlide()
+    },
+
     expandWizard() {
       this.showExtended = true
       this.$nextTick(() => {

@@ -6,7 +6,10 @@
   Platform split, hidden from callers:
     - iOS/Android: ScannerOverlay (MLKit live camera behind a transparent
       webview). body.barcode-scanner-active hides every other surface
-      while it runs, so exactly one UI is on screen at a time.
+      while it runs, so exactly one UI is on screen at a time. When the
+      native engine cannot start (no usable MLKit on the device, e.g.
+      GrapheneOS without Play services) the overlay falls back to the
+      qr-scanner web engine by itself — see docs/QR_SCANNER_FALLBACK.md.
     - Web/PWA: fullscreen dialog with a qr-scanner <video>, including the
       camera-permission error state and retry.
 

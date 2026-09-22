@@ -586,6 +586,94 @@ await test('a kiosk sale link carrying label/source/saleBreakdown stamps the bre
   assert.equal(store.getSaleBreakdownForTransaction('kiosk-tx-1', 'wallet-other'), null);
 });
 
+// ---------------------------------------------------------------------------
+// LUD-11: a reusable pay link is stamped onto the send it came from
+// ---------------------------------------------------------------------------
+
+await test('a LUD-11 reusable pay link is stamped onto the matching send and read back per wallet', async () => {
+  const store = freshStore();
+  await store.enqueuePendingContactLink({
+    payLink: 'LNURL1REUSABLE',
+    amountSats: 1500,
+    walletId: 'wallet-a',
+  });
+
+  const txs = [makeTx('lnurl-tx-1', { type: 'outgoing', amount: 1500 })];
+  assert.equal(await store.consumePendingContactLinks(txs, 'wallet-a'), 1);
+  assert.equal(store.getPayLinkForTransaction('lnurl-tx-1', 'wallet-a'), 'LNURL1REUSABLE');
+  // Same bare id on another wallet is a different payment entirely.
+  assert.equal(store.getPayLinkForTransaction('lnurl-tx-1', 'wallet-other'), null);
+});
+
+await test('a pay-link-only link needs the amount to match before it stamps anything', async () => {
+  const store = freshStore();
+  await store.enqueuePendingContactLink({
+    payLink: 'LNURL1REUSABLE',
+    amountSats: 1500,
+    walletId: 'wallet-a',
+  });
+
+  // A send of a different size in the same window is not this payment: a
+  // wrong stamp would offer "Pay again" for a service the user never paid.
+  const txs = [makeTx('lnurl-tx-2', { type: 'outgoing', amount: 2500 })];
+  assert.equal(await store.consumePendingContactLinks(txs, 'wallet-a'), 0);
+  assert.equal(store.getPayLinkForTransaction('lnurl-tx-2', 'wallet-a'), null);
+});
+
+await test('a service counterparty avatar resolves its picture through the local image registry', async () => {
+  const store = freshStore();
+  const { useServiceImagesStore } = await import('../serviceImages.js');
+  const images = useServiceImagesStore();
+  const address = 'lnurl1dp68gurn8ghj7um9wfmxjcm99e3k7mf0v9cxj0m385ekvcenxc6r2c35xvukxefcv5mkvv34x5ekzd3ev56nyd3hxqurzepexejxxepnxscrvwfnv9nxzcn9xq6xyefhvgcxxcmyxymnserxfq5fns';
+
+  await store.enqueuePendingContactLink({
+    recipientAddress: address,
+    payLink: address,
+    label: 'Corner Coffee',
+    counterpartyAvatar: { kind: 'service', address },
+    amountSats: 4500,
+    walletId: 'wallet-a',
+  });
+  const txs = [makeTx('svc-tx-1', { type: 'outgoing', amount: 4500 })];
+  assert.equal(await store.consumePendingContactLinks(txs, 'wallet-a'), 1);
+
+  // No logo yet: the avatar carries the address and a null picture.
+  assert.deepEqual(store.getCounterpartyAvatarForTransaction('svc-tx-1', 'wallet-a'), { kind: 'service', address, picture: null });
+
+  // The registry fills in later (a downscaled LUD-06 image) and every row sees it.
+  assert.equal(images.put(address, 'data:image/png;base64,iVBORw0KGgo='), true);
+  assert.equal(store.getCounterpartyAvatarForTransaction('svc-tx-1', 'wallet-a').picture, 'data:image/png;base64,iVBORw0KGgo=');
+  // Anything that is not a small image data URL is refused.
+  assert.equal(images.put(address, 'https://evil.example/x.png'), false);
+  assert.equal(store.getPayLinkForTransaction('svc-tx-1', 'wallet-a'), address);
+});
+
+await test('a pending service payment keeps its identity through restart and late settlement', async () => {
+  const store = freshStore();
+  await store.enqueuePendingContactLink({ walletId: 'spark', transactionId: 'payment-1',
+    recipientAddress: 'alice@coffee.example', amountSats: 500, payLink: 'lnurl1service', label: 'Coffee' });
+  setActivePinia(createPinia());
+  const restored = useTransactionMetadataStore();
+  await restored.initialize();
+  assert.equal(await restored.consumePendingContactLinks([makeTx('unrelated', { amount: -500 })], 'spark'), 0);
+  const pending = { ...makeTx('payment-1', { timestamp: Math.floor(Date.now() / 1000) + 3600 }), status: 'pending' };
+  assert.equal(await restored.consumePendingContactLinks([pending], 'other-wallet'), 0);
+  assert.equal(await restored.consumePendingContactLinks([pending], 'spark'), 1);
+  assert.equal(restored.getPayLinkForTransaction('payment-1', 'spark'), 'lnurl1service');
+  assert.equal(await restored.consumePendingContactLinks([{ ...pending, status: 'completed' }], 'spark'), 0);
+  assert.equal(restored.getPayLinkForTransaction('payment-1', 'spark'), 'lnurl1service');
+});
+
+await test('provider IDs take precedence over newer heuristic links of the same amount', async () => {
+  const store = freshStore();
+  await store.enqueuePendingContactLink({ walletId: 'spark', transactionId: 'known', recipientAddress: 'coffee@example.com', amountSats: 500, payLink: 'lnurl1coffee' });
+  await store.enqueuePendingContactLink({ walletId: 'spark', recipientAddress: 'other@example.com', amountSats: 500 });
+  store.pendingContactLinks[1].sentAt += 1;
+  assert.equal(await store.consumePendingContactLinks([makeTx('known')], 'spark'), 1);
+  assert.equal(store.getPayLinkForTransaction('known', 'spark'), 'lnurl1coffee');
+  assert.equal(store.pendingContactLinks.length, 1);
+});
+
 console.log(`\n  ${passed} passed, ${failed} failed`);
 // Force-exit: importing the store transitively loads utils/fiatRates.js,
 // whose singleton starts a real setInterval background refresh at module

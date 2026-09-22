@@ -7,6 +7,8 @@ import * as withdraw from '../../utils/lnurlWithdraw.js';
 import * as addresses from '../../utils/addressUtils.js';
 import * as bip21 from '../../utils/bip21.js';
 import * as lud4 from '../../utils/lud4.js';
+import * as lnurlMetadata from '../../utils/lnurlMetadata.js';
+import * as userErrors from '../../utils/userErrors.js';
 
 // Execute the production Options-API methods, replacing provider/UI imports
 // that these paths never use. IO is explicit so an accidental GET fails.
@@ -37,6 +39,8 @@ function harness(get = () => assert.fail('unexpected network request')) {
   const component = evaluate('../Wallet.vue', {
     '../utils/lnurlWithdraw.js': withdraw, '../utils/addressUtils.js': addresses,
     '../utils/lud23.js': addressRequests,
+    '../utils/lnurlMetadata.js': lnurlMetadata,
+    '../utils/userErrors.js': userErrors,
     '../services/addressRequestIntake.js': { offerAddressRequest: input => {
       assert.notEqual(addressRequests.isAddressRequest?.(input), true, 'withdrawal must not enter address-sharing consent');
       return false;
@@ -46,6 +50,10 @@ function harness(get = () => assert.fail('unexpected network request')) {
   }).default;
   const vm = { $t: text => text, ...component.methods, $refs: {},
     walletStore: { activeWalletType: 'spark' },
+    // LUD-14: the page hands every resolved withdrawRequest to the voucher
+    // store. Tracking is a side note to a withdrawal and must never be in its
+    // way, so the stub records instead of asserting.
+    withdrawVouchersStore: { tracked: [], track(info) { this.tracked.push(info); return Promise.resolve(null); } },
     preferNativeBip21Rail: data => data, runBrantaVerification() {}, runNostrRecipientEnrichment() {},
     resetWithdrawState() { this.lnurlWithdrawStatus = 'idle'; },
     failSendResolution() { assert.fail('valid withdrawal must reach review'); },
@@ -58,7 +66,8 @@ for (const [name, input] of Object.entries({ bech32: encoded(url), lightning: `l
   test(`${name} resolves inline with zero metadata GETs`, async () => {
     const { vm, calls } = harness();
     const result = await vm.fetchLNURLInfo(input);
-    assert.deepEqual(result, withdraw.withdrawInfo(metadata)); assert.equal(calls.length, 0);
+    // LUD-14: the decoded link travels with the answer as `sourceUrl`.
+    assert.deepEqual(result, withdraw.withdrawInfo(metadata, { sourceUrl: url })); assert.equal(calls.length, 0);
   });
 }
 
@@ -76,7 +85,9 @@ test('fallback preserves endpoint errors and normal payment metadata', async () 
   const h = harness(async () => ({ ok: true, data: { status: 'ERROR', reason: 'Expired voucher' } }));
   assert.deepEqual(await h.vm.fetchLNURLInfo('https://cash.example/ordinary'), { error: true, reason: 'Expired voucher' });
   const pay = harness(async () => ({ ok: true, data: { tag: 'payRequest', minSendable: 1000, maxSendable: 2000, callback: metadata.callback } }));
-  assert.equal((await pay.vm.fetchLNURLInfo('https://cash.example/pay')).lnurlType, 'payRequest');
+  const result = await pay.vm.fetchLNURLInfo('https://cash.example/pay');
+  assert.equal(result.lnurlType, 'payRequest');
+  assert.deepEqual(result.serviceMeta, lnurlMetadata.parsePayRequestMetadata(null));
 });
 
 test('all payment wallets open Redeem review without creating an invoice or submitting', async () => {
@@ -90,6 +101,31 @@ test('all payment wallets open Redeem review without creating an invoice or subm
     assert.equal(vm.pendingPayment.receiveAmount, 12); assert.equal(vm.pendingWithdrawTargetSats, null);
     assert.equal(calls.length, 0);
   }
+});
+
+test('a balanceCheck link is remembered as a voucher, an ordinary withdraw link is not', async () => {
+  const balanceCheck = 'https://cash.example/balance/abc';
+  const voucherUrl = `https://cash.example/withdraw?${new URLSearchParams({ ...metadata, balanceCheck })}`;
+
+  const voucher = harness();
+  await voucher.vm.onPaymentDetected({ type: 'lnurl', data: encoded(voucherUrl) });
+  assert.equal(voucher.vm.showWithdrawSheet, true);
+  assert.equal(voucher.vm.withdrawVouchersStore.tracked.length, 1);
+  assert.equal(voucher.vm.withdrawVouchersStore.tracked[0].balanceCheck, balanceCheck);
+
+  // No balanceCheck: a one-shot code, tracked nowhere.
+  const plain = harness();
+  await plain.vm.onPaymentDetected({ type: 'lnurl', data: encoded(url) });
+  assert.equal(plain.vm.showWithdrawSheet, true);
+  assert.equal(plain.vm.withdrawVouchersStore.tracked[0].balanceCheck, null);
+});
+
+test('a balanceCheck pointing at another host is never stored', async () => {
+  const foreign = `https://cash.example/withdraw?${new URLSearchParams({ ...metadata, balanceCheck: 'https://evil.example/balance/abc' })}`;
+  const h = harness();
+  await h.vm.onPaymentDetected({ type: 'lnurl', data: encoded(foreign) });
+  assert.equal(h.vm.showWithdrawSheet, true, 'the withdrawal itself still works');
+  assert.equal(h.vm.withdrawVouchersStore.tracked[0].balanceCheck, null);
 });
 
 test('zero and sub-satoshi-only bounds cannot pass the final confirmation guard', () => {
@@ -143,7 +179,8 @@ for (const file of ['deep-links.js', 'nfc.js']) {
       else {
         assert.equal(store.pendingDeepLink.type, 'lnurl');
         const { vm, calls } = harness();
-        assert.deepEqual(await vm.fetchLNURLInfo(store.pendingDeepLink.data), withdraw.withdrawInfo(metadata));
+        // The NFC carrier is the raw URL with a literal @, so that is the sourceUrl it keeps.
+        assert.deepEqual(await vm.fetchLNURLInfo(store.pendingDeepLink.data), withdraw.withdrawInfo(metadata, { sourceUrl: file === 'nfc.js' ? input : url }));
         assert.equal(calls.length, 0);
       }
     }

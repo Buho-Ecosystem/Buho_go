@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia'
 import { useAddressBookStore } from './addressBook.js'
+import { useServiceImagesStore } from './serviceImages.js'
 import { fiatRatesService } from '../utils/fiatRates.js'
 
 // A receive is only stamped with "today's rate" when it is genuinely fresh —
@@ -210,6 +211,21 @@ export const useTransactionMetadataStore = defineStore('transactionMetadata', {
     },
 
     /**
+     * Get the LUD-11 reusable LNURL stamped on a transaction, scoped to
+     * `walletId`. Present only when the service answered `disposable: false`
+     * at pay time, which is its permission to keep the link — so a non-null
+     * value here is exactly the set of payments that can be repeated without
+     * the original QR. null for every ordinary (single-use) link.
+     * @param {string} txId
+     * @param {string} [walletId]
+     * @returns {string|null}
+     */
+    getPayLinkForTransaction: (state) => (txId, walletId) => {
+      const metadata = _resolveMetadata(state, txId, walletId)
+      return metadata?.payLink || null
+    },
+
+    /**
      * Get the cached LUD-21 delivery status for a transaction (receipt +
      * recipient), scoped to `walletId`, stored once a poll confirmed
      * delivery so later views need no re-poll. null until confirmed.
@@ -273,7 +289,14 @@ export const useTransactionMetadataStore = defineStore('transactionMetadata', {
      */
     getCounterpartyAvatarForTransaction: (state) => (txId, walletId) => {
       const metadata = _resolveMetadata(state, txId, walletId)
-      return metadata?.counterpartyAvatar || null
+      const avatar = metadata?.counterpartyAvatar || null
+      // A LUD-11 service ({ kind: 'service', address }) keeps no picture on
+      // the tx: its logo lives in the local image registry, keyed by the
+      // address, so one payment refreshes it for every row at once.
+      if (avatar?.kind === 'service') {
+        return { ...avatar, picture: useServiceImagesStore().get(avatar.address) }
+      }
+      return avatar
     },
 
     /**
@@ -445,6 +468,7 @@ export const useTransactionMetadataStore = defineStore('transactionMetadata', {
       amountSats,
       successAction = null,
       verifyUrl = null,
+      payLink = null,
       label = null,
       source = null,
       counterpartyAvatar = null,
@@ -453,6 +477,7 @@ export const useTransactionMetadataStore = defineStore('transactionMetadata', {
       perPayment = false,
       direction = 'outgoing',
       walletId = null,
+      transactionId = null,
     }) {
       // A caller may run before the normal boot path initializes this store
       // (kiosk in particular). Load whatever is already on disk first so we
@@ -464,7 +489,7 @@ export const useTransactionMetadataStore = defineStore('transactionMetadata', {
       // recipient's post-payment message), a LUD-21 verify URL (so Tx Details
       // can re-confirm fiat delivery later), a label/source (batch, internal
       // transfer, kiosk), and/or a kiosk saleBreakdown.
-      if (!recipientAddress && !successAction && !verifyUrl && !label && !source && !counterpartyAvatar && !merchantVerification && !saleBreakdown) return
+      if (!recipientAddress && !successAction && !verifyUrl && !payLink && !label && !source && !counterpartyAvatar && !merchantVerification && !saleBreakdown) return
       const now = Date.now()
       const normalisedAddress = recipientAddress
         ? String(recipientAddress).toLowerCase().trim()
@@ -485,7 +510,7 @@ export const useTransactionMetadataStore = defineStore('transactionMetadata', {
       // merchant, or POS breakdown), so it must never be merged or collapsed.
       // This matters especially for batch/kiosk, where two unrelated payments
       // can easily share the same recipient + amount.
-      const isPerPayment = !!perPayment || !!successAction || !!verifyUrl || !!label || !!source || !!counterpartyAvatar || !!merchantVerification || !!saleBreakdown
+      const isPerPayment = !!transactionId || !!perPayment || !!successAction || !!verifyUrl || !!payLink || !!label || !!source || !!counterpartyAvatar || !!merchantVerification || !!saleBreakdown
       if (!isPerPayment) {
         // A plain link (recipient address, maybe a contactId) is either a
         // double-submit or a post-save "add the contactId" upgrade. Merge it
@@ -514,6 +539,7 @@ export const useTransactionMetadataStore = defineStore('transactionMetadata', {
         amountSats: amount,
         successAction: successAction || null,
         verifyUrl: verifyUrl || null,
+        payLink: payLink || null,
         label: label || null,
         source: source || null,
         counterpartyAvatar: counterpartyAvatar || null,
@@ -522,6 +548,7 @@ export const useTransactionMetadataStore = defineStore('transactionMetadata', {
         perPayment: !!perPayment,
         direction: normalisedDirection,
         walletId: normalisedWalletId,
+        transactionId: transactionId || null,
         sentAt: now,
       })
       // Bound the queue: with a long TTL, links for sends that never
@@ -597,7 +624,7 @@ export const useTransactionMetadataStore = defineStore('transactionMetadata', {
       // tx id is never consulted.
       const isStamped = (tx) => {
         const m = _resolveMetadata(this, tx.id, walletId)
-        return !!(m?.contactId || m?.recipientAddress || m?.successAction || m?.label || m?.source)
+        return !!(m?.contactId || m?.recipientAddress || m?.successAction || m?.payLink || m?.label || m?.source)
       }
 
       const isOutgoingTx = (tx) => {
@@ -632,7 +659,9 @@ export const useTransactionMetadataStore = defineStore('transactionMetadata', {
       // away from a more-recent send.
       const linksByRecency = [...remaining]
         .filter((link) => !link.walletId || link.walletId === walletId)
-        .sort((a, b) => (b.sentAt || 0) - (a.sentAt || 0))
+        // Provider IDs outrank heuristic time/amount matching.
+        .sort((a, b) => Number(!!b.transactionId) - Number(!!a.transactionId)
+          || (b.sentAt || 0) - (a.sentAt || 0))
 
       for (const link of linksByRecency) {
         const linkSentAt = link.sentAt || 0
@@ -640,6 +669,7 @@ export const useTransactionMetadataStore = defineStore('transactionMetadata', {
         // In-window candidates that nobody else has claimed yet.
         const eligible = pool.filter(({ tx, timeMs }) => {
           if (claimed.has(tx.id)) return false
+          if (link.transactionId) return tx.id === link.transactionId
           if (!timeMs) return true
           return Math.abs(timeMs - linkSentAt) <= PENDING_LINK_TIME_WINDOW_MS
         })
@@ -667,9 +697,13 @@ export const useTransactionMetadataStore = defineStore('transactionMetadata', {
         // looser newest-in-window fallback it always had: the address it
         // stamps is the thing the user cares about, and a send is far
         // more reliably the newest outgoing tx than a receive is.
-        const needsAmountProof = !link.recipientAddress && (link.label || link.source)
+        // A payLink-only link (a raw LUD-11 LNURL send: no address form to
+        // stamp) gets the same treatment as label/source — the amount is the
+        // only evidence tying it to a tx, and a mis-stamped reusable link
+        // would offer "Pay again" for a service the user never paid.
+        const needsAmountProof = !link.recipientAddress && (link.label || link.source || link.payLink)
         const exact = eligible.find(amountMatches)
-        if (needsAmountProof && !exact) continue
+        if (!link.transactionId && needsAmountProof && !exact) continue
 
         const pick = exact || eligible[0]
 
@@ -690,6 +724,9 @@ export const useTransactionMetadataStore = defineStore('transactionMetadata', {
           }
           if (link.verifyUrl) {
             await this.setVerifyUrlForTransaction(pick.tx.id, walletId, link.verifyUrl)
+          }
+          if (link.payLink) {
+            await this.setPayLinkForTransaction(pick.tx.id, walletId, link.payLink)
           }
           if (link.label) {
             await this.setLabelForTransaction(pick.tx.id, walletId, link.label)
@@ -1196,6 +1233,42 @@ export const useTransactionMetadataStore = defineStore('transactionMetadata', {
         return this.metadata[key]
       } catch (error) {
         console.error('Error setting verifyUrl for transaction:', error)
+        throw error
+      }
+    },
+
+    /**
+     * Persist a LUD-11 reusable LNURL on a transaction, scoped to `walletId`.
+     *
+     * Only ever called for a link the service itself marked storeable
+     * (`disposable: false`) — we never keep a single-use link, because
+     * offering "Pay again" on one would hand the user a dead end. Same
+     * on-device trust model as notes/successAction. Requires a walletId — a
+     * missing one warns and no-ops.
+     *
+     * @param {string} txId
+     * @param {string} walletId
+     * @param {string} payLink
+     * @returns {Promise<object|null>}
+     */
+    async setPayLinkForTransaction(txId, walletId, payLink) {
+      try {
+        if (!txId) throw new Error('Transaction ID is required')
+        if (!payLink) return _resolveMetadata(this, txId, walletId)
+        if (!walletId) {
+          console.warn('[txMetadata] setPayLinkForTransaction: missing walletId, skipping write', { txId })
+          return null
+        }
+        const key = _key(txId, walletId)
+        if (!this.metadata[key]) {
+          this.metadata[key] = { contactId: null, customNote: '', tags: [], updatedAt: Date.now() }
+        }
+        this.metadata[key].payLink = payLink
+        this.metadata[key].updatedAt = Date.now()
+        await this.persistMetadata()
+        return this.metadata[key]
+      } catch (error) {
+        console.error('Error setting payLink for transaction:', error)
         throw error
       }
     },

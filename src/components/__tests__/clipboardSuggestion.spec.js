@@ -88,12 +88,32 @@ function harness({ platform = 'android', storageFails = false } = {}) {
     }) },
   }).default;
   const apps = new Set();
+  const used = [];
+  // The strip under test, rendered by a stand-in parent so `busy` (the
+  // parent's "still resolving what you handed me") can be driven per mount.
+  const Child = { ...Component, render() { return Vue.h('div', this.offered); } };
   function mount() {
-    const app = renderer.createApp({ ...Component, render() { return Vue.h('div', this.offered); } });
+    const busy = Vue.ref(false);
+    const child = Vue.ref(null);
+    const app = renderer.createApp({
+      render() {
+        return Vue.h(Child, { busy: busy.value, ref: child, onUse: (value) => used.push(value) });
+      },
+    });
     app.provide('appLocked', locked);
-    const vm = app.mount({ children: [] });
+    app.mount({ children: [] });
     apps.add(app);
-    return { vm, unmount() { app.unmount(); apps.delete(app); } };
+    // Keep the last instance readable after unmount, the way a captured
+    // reference used to be: some tests assert on a strip that just left.
+    let latest = null;
+    return {
+      get vm() {
+        if (child.value) latest = child.value;
+        return latest;
+      },
+      busy,
+      unmount() { app.unmount(); apps.delete(app); },
+    };
   }
   async function resume(text = state.text) {
     state.listener({ isActive: false });
@@ -103,7 +123,7 @@ function harness({ platform = 'android', storageFails = false } = {}) {
     await settle();
   }
   return {
-    state, memory, locked, mount, resume,
+    state, memory, locked, mount, resume, used,
     async dialog(open) {
       state.dialog = open;
       for (const callback of observers) callback();
@@ -333,6 +353,49 @@ await test('the passive bridge distinguishes empty clipboard from unavailable ac
   platform = 'ios';
   read = () => assert.fail('iOS must not read automatically');
   assert.equal(await bridge.readClipboardForSuggestion(), null);
+});
+
+await test('Use hands the destination over and the strip carries the wait in place', async () => {
+  const h = harness();
+  const home = h.mount();
+  await settle();
+
+  home.vm.use();
+  await settle();
+  // No flicker between the tap and the confirm sheet: the strip stays put
+  // while the parent resolves, instead of a Send sheet opening to say so.
+  assert.deepEqual(h.used, ['alice@example.com']);
+  assert.equal(home.vm.offered, 'alice@example.com');
+
+  home.busy.value = true;
+  await settle();
+  home.vm.use();
+  home.vm.dismiss();
+  home.vm.onPointerMove({ clientY: 0 });
+  await settle();
+  // A resolve in flight owns the strip: no second hand-off, and neither the
+  // countdown nor a swipe can pull it out from under the wait.
+  assert.equal(h.used.length, 1);
+  assert.equal(home.vm.offered, 'alice@example.com');
+
+  home.busy.value = false;
+  await settle();
+  assert.equal(home.vm.offered, null);
+  h.close();
+});
+
+await test('a resolved offer is not offered again on the next return', async () => {
+  const h = harness();
+  const home = h.mount();
+  await settle();
+  home.vm.use();
+  home.busy.value = true;
+  await settle();
+  home.busy.value = false;
+  await settle();
+  await h.resume();
+  assert.equal(home.vm.offered, null);
+  h.close();
 });
 
 console.log('ClipboardSuggestion lifecycle: all assertions passed');
