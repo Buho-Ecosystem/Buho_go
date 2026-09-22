@@ -23,6 +23,7 @@
   <!-- Global payment-error dialog. Wired to walletStore.paymentError so
        any page or store can surface a failure via showPaymentError(). -->
   <PaymentErrorDialog />
+  <ToastHost />
 </template>
 
 <script>
@@ -34,6 +35,7 @@ import { authenticate as biometricAuth, isBiometricAvailable } from 'src/utils/b
 import { triggerWalletStoreHydration, readPersistedWalletState } from 'src/utils/walletHydration'
 import { useAddressBookSync } from 'src/composables/useAddressBookSync'
 import PaymentErrorDialog from 'src/components/PaymentErrorDialog.vue'
+import ToastHost from 'src/components/toasts/ToastHost.vue'
 import UpdateExperience from 'src/components/UpdateExperience.vue'
 import AddressRequestSheet from 'src/components/AddressRequestSheet.vue'
 import { useAddressRequestStore } from 'src/stores/addressRequest.js'
@@ -42,7 +44,7 @@ import { useNotificationsStore } from 'src/stores/notifications'
 export default defineComponent({
   name: 'App',
 
-  components: { PaymentErrorDialog, UpdateExperience, AddressRequestSheet },
+  components: { PaymentErrorDialog, UpdateExperience, AddressRequestSheet, ToastHost },
 
   setup () {
     const store = useWalletStore()

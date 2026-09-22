@@ -171,17 +171,26 @@
       </main>
 
       <!-- Footer -->
-      <footer class="modal-footer">
-        <q-btn v-if="state.currentStep > 1 && !state.transferComplete && !state.isTransferring" flat no-caps class="btn-back" @click="goBack">
+      <footer v-if="state.transferComplete" class="modal-footer completion-actions">
+        <q-btn v-if="detailsRoute" :to="detailsRoute" unelevated no-caps
+          class="completion-button completion-button--details" :loading="openingDetails"
+          :aria-label="$t('Transaction Details')" @click="openDetails">
+          {{ $t('TX Details') }}
+        </q-btn>
+        <q-btn unelevated no-caps class="completion-button completion-button--done" :disable="openingDetails" @click="close">
+          {{ $t('Done') }}
+        </q-btn>
+      </footer>
+      <footer v-else class="modal-footer">
+        <q-btn v-if="state.currentStep > 1 && !state.isTransferring" flat no-caps class="btn-back" @click="goBack">
           <Icon icon="tabler:arrow-left" width="16" height="16" />
           <span>{{ $t('Back') }}</span>
         </q-btn>
         <q-space />
-        <q-btn v-if="!state.transferComplete" unelevated no-caps class="btn-main" :disable="!canProceed" :loading="state.isTransferring" @click="goNext">
+        <q-btn unelevated no-caps class="btn-main" :disable="!canProceed" :loading="state.isTransferring" @click="goNext">
           <span>{{ state.currentStep < 3 ? $t('Continue') : $t('Transfer Now') }}</span>
           <Icon v-if="state.currentStep < 3" icon="tabler:arrow-right" width="16" height="16" />
         </q-btn>
-        <q-btn v-else unelevated no-caps class="btn-main" @click="close">{{ $t('Done') }}</q-btn>
       </footer>
     </q-card>
 
@@ -256,6 +265,7 @@ import { useWalletStore } from '../stores/wallet';
 import { haptics } from '../utils/haptics';
 import SuccessCheckmark from './SuccessCheckmark.vue';
 import ArkadeLogo from './ArkadeLogo.vue';
+import { internalTransferDetailsRoute } from '../utils/internalTransferDetails.js';
 
 // vue-i18n is configured in legacy mode (see src/boot/i18n.js), so
 // useI18n() throws "Not available in legacy mode". Reach $t through the
@@ -354,6 +364,7 @@ const STEPS = [
 // State
 // ─────────────────────────────────────────────────────────────
 const amountInputRef = ref(null);
+const openingDetails = ref(false);
 const connStatus = reactive({});
 
 const state = reactive({
@@ -366,6 +377,7 @@ const state = reactive({
   showToPicker: false,
   isTransferring: false,
   transferComplete: false,
+  transactionId: null,
   isReconnecting: false,
   isMaxAmount: false
 });
@@ -379,6 +391,7 @@ const isVisible = computed({
 });
 
 const themeClass = computed(() => $q.dark.isActive ? 'theme-dark' : 'theme-light');
+const detailsRoute = computed(() => internalTransferDetailsRoute(state.transactionId, state.fromWallet?.id));
 const wallets = computed(() => store.getTransferableWallets());
 const sameWalletSelected = computed(() => state.fromWallet && state.toWallet && state.fromWallet.id === state.toWallet.id);
 
@@ -513,7 +526,8 @@ async function doTransfer() {
   state.isTransferring = true;
   try {
     haptics.medium();
-    await store.transferBetweenWallets(state.fromWallet.id, state.toWallet.id, parseInt(state.amount));
+    const result = await store.transferBetweenWallets(state.fromWallet.id, state.toWallet.id, parseInt(state.amount));
+    state.transactionId = result.transactionId;
     state.transferComplete = true;
     haptics.success();
     emit('transfer-complete', { fromWallet: state.fromWallet, toWallet: state.toWallet, amount: parseInt(state.amount) });
@@ -544,6 +558,7 @@ function resetState() {
     amountError: '',
     isTransferring: false,
     transferComplete: false,
+    transactionId: null,
     isMaxAmount: false,
     isReconnecting: false
   });
@@ -552,6 +567,24 @@ function resetState() {
 
 function close() {
   isVisible.value = false;
+}
+
+async function openDetails(event, navigate) {
+  // Preserve the link's normal new-tab behavior. For in-app navigation, keep
+  // the sheet visible until the one destination route is ready: no History
+  // detour and no close-animation flash of the wallet underneath.
+  if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+  event.preventDefault();
+  if (openingDetails.value) return;
+  openingDetails.value = true;
+  try {
+    const failure = await navigate({ returnRouterError: true });
+    if (!failure) close();
+  } catch {
+    $q.notify({ type: 'negative', message: t("Couldn't load details") });
+  } finally {
+    openingDetails.value = false;
+  }
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -889,6 +922,15 @@ watch(() => props.modelValue, (open) => { if (open) init(); });
    Footer
    ════════════════════════════════════════════════════════════ */
 .modal-footer { display: flex; align-items: center; padding: 16px 20px; padding-bottom: max(16px, var(--safe-bottom, 16px)); border-top: 1px solid var(--c-border); gap: 12px; }
+.completion-actions { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); }
+.completion-button { min-height: 48px; min-width: 0; padding: 12px 8px; border-radius: 14px; font: 600 15px/1.3 'Manrope', sans-serif; letter-spacing: 0; }
+.completion-button :deep(.q-btn__content) { white-space: nowrap; }
+.completion-button--done { background: #15de72; color: #092515; }
+.completion-button--details { background: rgba(255,255,255,.07); color: var(--c-text); box-shadow: inset 0 0 0 1px var(--c-border); }
+.theme-light .completion-button--done { background: var(--btn-neutral-bg); color: var(--btn-neutral-fg); }
+.theme-light .completion-button--details { background: rgba(26,26,28,.05); }
+.completion-button:focus-visible { outline: 2px solid var(--c-text); outline-offset: 3px; }
+.completion-button:active { filter: brightness(.92); }
 .btn-back { display: flex; align-items: center; gap: 4px; padding: 10px 16px; font-size: 15px; font-weight: 500; color: var(--c-text2); }
 /* Primary CTA — tinted green, matches the Create Invoice / Continue
    pattern used across the app. */

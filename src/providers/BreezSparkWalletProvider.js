@@ -1120,6 +1120,12 @@ export class BreezSparkWalletProvider extends WalletProvider {
   // Transaction history
   // ==========================================
 
+  async getTransaction(paymentId) {
+    this._ensureConnected();
+    const response = await this._withTransportRetry(() => this.sdk.getPayment({ paymentId }));
+    return mapBreezPaymentsToTxList(response?.payment ? [response.payment] : [])[0] || null;
+  }
+
   async getTransactions({ limit = 50, offset = 0 } = {}) {
     this._ensureConnected();
 
@@ -1328,30 +1334,6 @@ export class BreezSparkWalletProvider extends WalletProvider {
     });
 
     return { category, quote, feeSats, feeRatio, classifiedAt: Date.now() };
-  }
-
-  async refreshClassificationQuote(deposit, previousClassification) {
-    if (!previousClassification?.quote) return previousClassification;
-
-    try {
-      const quote = await this.getClaimFeeQuote(deposit.txId, deposit.outputIndex || 0);
-      const { feeSats, feeRatio } = classifyFromMatureQuote({
-        depositAmountSats: Number(deposit.amount || 0),
-        quote,
-        thresholds: AUTO_CLAIM_THRESHOLDS,
-      });
-
-      return {
-        ...previousClassification,
-        quote,
-        feeSats,
-        feeRatio,
-        classifiedAt: Date.now()
-      };
-    } catch (error) {
-      console.warn('Could not refresh claim quote, using prior:', error?.message || error);
-      return previousClassification;
-    }
   }
 
   async classifyUnconfirmedDeposit(deposit) {

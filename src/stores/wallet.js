@@ -22,6 +22,7 @@ import {
 import { useAutoWithdrawStore } from './autoWithdraw';
 import { useNotificationsStore } from './notifications';
 import { formatAmount } from '../utils/amountFormatting.js';
+import { internalTransferTransactionId } from '../utils/internalTransferDetails.js';
 
 /** walletId → the last balance noticeIncomingPayment saw for it this session. */
 const observedBalance = new Map();
@@ -218,6 +219,7 @@ export const useWalletStore = defineStore('wallet', {
     // instead of waiting for the next 30s poll tick. Counter, not boolean,
     // so each completion triggers a fresh watcher fire.
     depositsRefreshSignal: 0,
+    lastDepositsRefreshWalletId: null,
   }),
 
   getters: {
@@ -735,7 +737,8 @@ export const useWalletStore = defineStore('wallet', {
      * deposit list now instead of waiting for the next poll. Bump the
      * counter so a `watch` on `depositsRefreshSignal` fires every time.
      */
-    signalDepositsRefresh() {
+    signalDepositsRefresh(walletId = this.activeWalletId) {
+      this.lastDepositsRefreshWalletId = walletId;
       this.depositsRefreshSignal += 1;
     },
 
@@ -3042,6 +3045,7 @@ export const useWalletStore = defineStore('wallet', {
       // Lightning invoice creation. Avoids the SO preimage-share round-trip
       // that can fail with transport errors under flaky network conditions.
       let paymentResult;
+      let invoice;
       if (fromType === 'spark' && toType === 'spark') {
         try {
           const sparkAddress = await toProvider.getSparkAddress();
@@ -3052,7 +3056,6 @@ export const useWalletStore = defineStore('wallet', {
         }
       } else {
         // Lightning path: create invoice on destination, pay from source
-        let invoice;
         try {
           if (toType === 'spark' || toType === 'lnbits' || toType === 'arkade') {
             // Spark, LNBits and Arkade all expose createInvoice({ amount,
@@ -3110,11 +3113,10 @@ export const useWalletStore = defineStore('wallet', {
         await this.connectAllSparkWallets();
       }
 
-      // Stamp both sides of the transfer once the tx ids surface. The
-      // pending-link queue is the same mechanism the main send flow uses
-      // to attach a recipient — here there's no address, only a plain
-      // label identifying it as an internal transfer, for both the
-      // outgoing (debit) and incoming (credit) tx.
+      // The source payment ID is already known: stamp it now so a direct
+      // details link has its transfer identity without opening History first.
+      // The receiving wallet may assign a different ID, so its link still
+      // waits for that wallet's history to reconcile it.
       //
       // This is the exact case that motivated wallet-scoping the metadata
       // store: both legs of an internal transfer can share a payment hash
@@ -3123,14 +3125,21 @@ export const useWalletStore = defineStore('wallet', {
       // it — the outgoing (debit) link carries fromWalletId, the incoming
       // (credit) link carries toWalletId — or the two legs could stamp (or
       // race to consume) each other's record.
+      const transactionId = internalTransferTransactionId(fromType, paymentResult, invoice);
       try {
         const transactionMetadataStore = useTransactionMetadataStore();
-        await transactionMetadataStore.enqueuePendingContactLink({
-          label: `Transfer to ${toWallet.name}`,
-          source: 'internal-transfer',
-          amountSats,
-          walletId: fromWalletId,
-        });
+        if (transactionId) {
+          if (!transactionMetadataStore.initialized) await transactionMetadataStore.initialize();
+          await transactionMetadataStore.setLabelForTransaction(transactionId, fromWalletId, `Transfer to ${toWallet.name}`);
+          await transactionMetadataStore.setSourceForTransaction(transactionId, fromWalletId, 'internal-transfer');
+        } else {
+          await transactionMetadataStore.enqueuePendingContactLink({
+            label: `Transfer to ${toWallet.name}`,
+            source: 'internal-transfer',
+            amountSats,
+            walletId: fromWalletId,
+          });
+        }
         await transactionMetadataStore.enqueuePendingContactLink({
           label: `Transfer from ${fromWallet.name}`,
           source: 'internal-transfer',
@@ -3147,6 +3156,7 @@ export const useWalletStore = defineStore('wallet', {
         fromWallet: fromWallet.name,
         toWallet: toWallet.name,
         amount: amountSats,
+        transactionId,
         paymentResult
       };
     },

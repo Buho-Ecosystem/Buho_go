@@ -48,7 +48,7 @@
         <Icon icon="tabler:currency-bitcoin" width="18" height="18" />
       </span>
       <span class="rail-badge" :class="$q.dark.isActive ? 'rail-badge-dark rail-ring-dark' : 'rail-badge-light rail-ring-light'">
-        <img :src="$q.dark.isActive ? '/Arkade-Media-Kit/Logo/SVG/Logo Only/Logo Only + Purple.svg' : '/Arkade-Media-Kit/Logo/SVG/Logo Only/Logo Only + Orange.svg'" alt="" />
+        <ArkadeLogo :size="18" :color="$q.dark.isActive ? 'orange' : 'purple'" alt="" />
       </span>
       <span class="rail-badge" :class="$q.dark.isActive ? 'rail-badge-dark rail-ring-dark' : 'rail-badge-light rail-ring-light'">
         <img :src="$q.dark.isActive ? '/Spark/Spark Asterisk White.svg' : '/Spark/Spark Asterisk Black.svg'" alt="" />
@@ -65,7 +65,6 @@
       :class="$q.dark.isActive ? 'ln-address-dark' : 'ln-address-light'"
       @click="copyValue(lightningAddress, $t('Lightning address copied'))"
     >
-      <Icon icon="tabler:at" width="14" height="14" aria-hidden="true" />
       <span class="ln-address-text">{{ lightningAddress }}</span>
       <Icon icon="tabler:copy" width="13" height="13" class="ln-address-copy" aria-hidden="true" />
     </button>
@@ -104,12 +103,12 @@
         <span
           class="chip-status"
           :class="[
-            deposit.confirmed ? 'chip-status-ready' : 'chip-status-pending',
+            manualClaimAllowed(deposit) ? 'chip-status-ready' : 'chip-status-pending',
             $q.dark.isActive ? 'chip-status-dark' : 'chip-status-light'
           ]"
         >
-          <span class="chip-dot" :class="deposit.confirmed ? 'chip-dot-ready' : 'chip-dot-pending'" aria-hidden="true"></span>
-          <span v-if="deposit.confirmed">{{ walletStore.isDepositClaimInFlight(deposit.txId) ? $t('Adding') : $t('Ready') }}</span>
+          <span class="chip-dot" :class="manualClaimAllowed(deposit) ? 'chip-dot-ready' : 'chip-dot-pending'" aria-hidden="true"></span>
+          <span v-if="deposit.confirmed">{{ $t(bitcoinDepositsStore.statusText(deposit)) }}</span>
           <span v-else>{{ deposit.confirmations }}/3</span>
         </span>
         <Icon icon="tabler:chevron-right" width="14" height="14" class="chip-chevron" />
@@ -348,6 +347,23 @@
           </div>
         </template>
 
+        <template v-else-if="automaticDeposit">
+          <div class="amount-hero" data-audit="deposit-automatic">
+            <div class="hero-eyebrow">{{ $t(bitcoinDepositsStore.statusText(claimingDeposit)) }}</div>
+            <div class="hero-value hero-value-pending">+{{ formatAmount(claimingDeposit.amount) }}</div>
+            <p class="hero-label" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-7'" role="status">
+              {{ bitcoinDepositsStore.status(claimingDeposit) === 'retrying'
+                ? $t('We will retry automatically. You can close this screen.')
+                : $t('This deposit will be added automatically. You can close this screen.') }}
+            </p>
+          </div>
+          <div class="sheet-actions">
+            <q-btn flat no-caps class="cancel-btn" :class="$q.dark.isActive ? 'cancel-dark' : 'cancel-light'" @click="cancelClaim">
+              {{ $t('Close') }}
+            </q-btn>
+          </div>
+        </template>
+
         <!-- ============================================================
              READY / CLAIMING STATE — deposit has 3+ confirmations.
              Quote fetch happens inline so the sheet can be opened at
@@ -356,11 +372,11 @@
         <template v-else-if="claimingDeposit">
           <div class="amount-hero">
             <div class="hero-value">
-              <q-spinner v-if="isLoadingQuote" size="32px" :color="$q.dark.isActive ? 'green-4' : 'green-8'" />
+              <q-spinner v-if="isLoadingQuote || !claimFeeQuote" size="32px" :color="$q.dark.isActive ? 'green-4' : 'green-8'" />
               <span v-else>+{{ formatAmount(netClaimAmount) }}</span>
             </div>
             <div class="hero-label" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-7'">
-              {{ isLoadingQuote ? $t('Calculating fee...') : $t('will be added to your wallet') }}
+              {{ isLoadingQuote || !claimFeeQuote ? $t('Calculating fee...') : $t('will be added to your wallet') }}
             </div>
           </div>
 
@@ -410,7 +426,9 @@
 
 <script>
 import VueQrcode from '@chenfengyuan/vue-qrcode';
+import ArkadeLogo from './ArkadeLogo.vue';
 import { useWalletStore } from 'src/stores/wallet';
+import { useBitcoinDepositsStore } from 'src/stores/bitcoinDeposits';
 import { formatAmount as formatAmountUtil } from 'src/utils/amountFormatting';
 import { shareContent } from 'src/utils/share';
 import { qrBlobFromRef } from 'src/utils/qrShare';
@@ -423,7 +441,8 @@ export default {
   name: 'L1BitcoinReceive',
 
   components: {
-    VueQrcode
+    VueQrcode,
+    ArkadeLogo
   },
 
   props: {
@@ -486,6 +505,7 @@ export default {
       speedUpOpen: false,
       isClaimingInstant: false,
       claimFeeQuote: null,
+      claimQuoteRequest: 0,
       isLoadingQuote: false,
       isClaimingDeposit: false,
       // Config
@@ -496,10 +516,13 @@ export default {
 
   setup() {
     const walletStore = useWalletStore();
-    return { walletStore };
+    return { walletStore, bitcoinDepositsStore: useBitcoinDepositsStore() };
   },
 
   computed: {
+    automaticDeposit() {
+      return this.claimingDeposit?.confirmed && !this.manualClaimAllowed(this.claimingDeposit);
+    },
     /** The wallet's static Spark address - the spark= rail of the QR. */
     sparkAddress() {
       return this.walletStore.activeSparkAddress || '';
@@ -603,11 +626,22 @@ export default {
     // manual, here or in Wallet.vue) lands. We re-fetch instead of trusting
     // the 30s poll so the row vanishes the instant the UTXO is gone.
     'walletStore.depositsRefreshSignal'() {
+      if (this.walletStore.lastDepositsRefreshWalletId !== this.walletStore.activeWalletId) return;
+      this.pendingDeposits = this.pendingDeposits.filter(d => !this.walletStore.isDepositClaimed(d.txId));
+      if (this.claimingDeposit && this.walletStore.isDepositClaimed(this.claimingDeposit.txId)) this.cancelClaim();
       this.checkDeposits();
+    },
+    automaticDeposit(automatic) {
+      if (!automatic && this.showClaimDialog && this.manualClaimAllowed(this.claimingDeposit) && !this.isLoadingQuote) {
+        this.openDepositSheet(this.claimingDeposit);
+      }
     }
   },
 
   methods: {
+    manualClaimAllowed(deposit) {
+      return this.bitcoinDepositsStore.needsManual(deposit);
+    },
     async loadDepositAddress() {
       this.isLoadingAddress = true;
       try {
@@ -645,16 +679,19 @@ export default {
     async checkDeposits() {
       if (this.isCheckingDeposits) return;
       this.isCheckingDeposits = true;
+      const walletId = this.walletStore.activeWalletId;
 
       try {
         // Ensure Spark is connected (auto-reconnects with session PIN if needed)
         const provider = await this.walletStore.ensureSparkConnected();
+        if (walletId !== this.walletStore.activeWalletId) return;
         if (provider?.getPendingDeposits) {
           // Instantly-claimed deposits linger in the SDK's pending list
           // until confirmations catch up — never show them as claimable.
-          this.pendingDeposits = (await provider.getPendingDeposits()).filter(
-            (d) => !this.walletStore.isDepositClaimed(d.txId)
-          );
+          const deposits = await provider.getPendingDeposits();
+          if (walletId !== this.walletStore.activeWalletId) return;
+          this.pendingDeposits = deposits.filter(d => !this.walletStore.isDepositClaimed(d.txId));
+          void this.bitcoinDepositsStore.processDeposits(this.pendingDeposits, walletId);
           this.$emit('deposits-updated', this.pendingDeposits);
 
           // If the sheet is open against a deposit that just promoted
@@ -724,26 +761,12 @@ export default {
       }, intervalMs);
     },
 
-    /**
-     * Open the deposit sheet for any deposit, confirmed or not.
-     *
-     * Not confirmed → just show the progress view; no quote, no
-     * SSP call. The sheet auto-promotes to the ready view once a
-     * poll tick mutates `deposit.confirmed` to true (handled in
-     * `checkDeposits`).
-     *
-     * Confirmed → flip `isLoadingQuote` BEFORE opening so the very
-     * first paint shows the spinner instead of `+₿ 0` (the ready
-     * view's amount is derived from `claimFeeQuote` which is null
-     * until the SSP responds). Then fetch the quote.
-     *
-     * If an auto-claim is already mid-flight for this UTXO we still
-     * fetch a quote — the SSP either returns one (we can race-recover
-     * if the user taps Add to Wallet too), or rejects with "not found"
-     * which we surface as a friendly "Deposit not available" toast.
-     * Better than opening an empty sheet the user can't act on.
-     */
+    /** Show progress immediately. Manual controls require a shared, explicit
+     * policy decision; fee loading must never expose an automatic claim CTA. */
     async openDepositSheet(deposit) {
+      const walletId = this.walletStore.activeWalletId;
+      const request = ++this.claimQuoteRequest;
+      const current = () => walletId === this.walletStore.activeWalletId && request === this.claimQuoteRequest && this.showClaimDialog;
       // Set the spinner flag first so the first render of the ready
       // view shows the spinner, never the 0-sat fallback amount.
       this.isLoadingQuote = !!deposit.confirmed;
@@ -764,13 +787,24 @@ export default {
         return;
       }
 
+      if (!this.manualClaimAllowed(deposit)) {
+        this.isLoadingQuote = false;
+        void this.bitcoinDepositsStore.processDeposit(deposit, this.walletStore.activeWalletId);
+        return;
+      }
+
       try {
         const provider = await this.walletStore.ensureSparkConnected();
+        if (!current() || !this.manualClaimAllowed(deposit)) return;
         if (!provider?.getClaimFeeQuote) {
           throw new Error('Claim not supported');
         }
-        this.claimFeeQuote = await provider.getClaimFeeQuote(deposit.txId, deposit.outputIndex);
+        const quote = await provider.getClaimFeeQuote(deposit.txId, deposit.outputIndex);
+        if (!current() || !this.manualClaimAllowed(deposit)) return;
+        this.bitcoinDepositsStore.reconsiderQuote(deposit, quote, walletId);
+        this.claimFeeQuote = quote;
       } catch (error) {
+        if (!current()) return;
         console.error('Failed to get claim fee quote:', error);
         const userMessage = this.getUserFriendlyError(error, 'claim');
         this.walletStore.showPaymentError(error, {
@@ -785,11 +819,12 @@ export default {
         this.showClaimDialog = false;
         this.claimingDeposit = null;
       } finally {
-        this.isLoadingQuote = false;
+        if (request === this.claimQuoteRequest) this.isLoadingQuote = false;
       }
     },
 
     cancelClaim() {
+      this.claimQuoteRequest++;
       this.showClaimDialog = false;
       this.claimingDeposit = null;
       this.claimFeeQuote = null;
@@ -862,17 +897,12 @@ export default {
 
         this.walletStore.markDepositClaimed(claimTxId);
         // An early claim settles asynchronously; keep the balance moving
-        // until the credit lands so the home screen agrees with the toast.
+        // until the credit lands so the home screen catches up.
         if (result && result.settled === false) {
           this.startBalancePolling();
         }
 
-        this.$q.notify({
-          type: 'positive',
-          message: this.$t('Bitcoin added to wallet'),
-          caption: `+${this.formatAmount(classification.creditSats)}`
-        });
-
+        // ReceiveModal presents the deposit confirmation via deposit-claimed.
         this.pendingDeposits = this.pendingDeposits.filter(d => d.txId !== claimTxId);
         if (this.walletStore.activeWalletId) {
           await this.walletStore.refreshWalletData(this.walletStore.activeWalletId);
@@ -904,7 +934,7 @@ export default {
     },
 
     async confirmClaim() {
-      if (!this.claimingDeposit || !this.claimFeeQuote) return;
+      if (!this.claimingDeposit || !this.claimFeeQuote || !this.manualClaimAllowed(this.claimingDeposit)) return;
 
       const claimTxId = this.claimingDeposit.txId;
 
@@ -963,13 +993,7 @@ export default {
           return;
         }
 
-        // Immediate success
-        this.$q.notify({
-          type: 'positive',
-          message: this.$t('Bitcoin added to wallet'),
-          caption: `+${this.formatAmount(result.amount)}`
-        });
-
+        // ReceiveModal presents the deposit confirmation via deposit-claimed.
         // Remove claimed deposit from list
         this.pendingDeposits = this.pendingDeposits.filter(
           d => d.txId !== this.claimingDeposit.txId

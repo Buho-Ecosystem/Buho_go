@@ -23,6 +23,7 @@ export default defineConfig((ctx) => {
       'theme',
       'axios',
       'i18n',
+      'toasts',
       'iconify',
       'safe-area',
       'kiosk',
@@ -151,10 +152,8 @@ export default defineConfig((ctx) => {
         notify: {
           position: 'bottom',
           timeout: 2500,
-          classes: 'buho-notify',
           textColor: 'white',
           progress: true,
-          actions: [{ icon: 'close', color: 'white', dense: true, flat: true, round: true, size: 'sm' }]
         }
       },
 

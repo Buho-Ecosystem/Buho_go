@@ -1093,6 +1093,7 @@ export default {
   "Are you sure you want to disable PIN protection?": "Are you sure you want to disable PIN protection?",
   "Disable Notifications": "Disable Notifications",
   "Are you sure you want to disable notifications?": "Are you sure you want to disable notifications?",
+  "TX Details": "TX Details",
   "Transaction Details": "Transaction Details",
   "Hide": "Hide",
   "Show": "Show",
@@ -3323,4 +3324,6 @@ export default {
   "Notifications are blocked for BuhoGO in your phone settings.": "Notifications are blocked for BuhoGO in your phone settings.",
   "Payment received": "Payment received",
   "{amount} · {wallet}": "{amount} · {wallet}",
+  "This deposit will be added automatically. You can close this screen.": "This deposit will be added automatically. You can close this screen.",
+  "We will retry automatically. You can close this screen.": "We will retry automatically. You can close this screen.",
 }

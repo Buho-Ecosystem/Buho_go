@@ -271,6 +271,14 @@ export const WALLET_TYPES = {
   ARKADE: 'arkade'
 };
 
+/** Provider names as shown in the UI; brand names, so they are not translated. */
+export const WALLET_TYPE_LABELS = {
+  [WALLET_TYPES.SPARK]: 'Spark',
+  [WALLET_TYPES.NWC]: 'NWC',
+  [WALLET_TYPES.LNBITS]: 'LNbits',
+  [WALLET_TYPES.ARKADE]: 'Arkade'
+};
+
 /**
  * Payment destination type constants
  */

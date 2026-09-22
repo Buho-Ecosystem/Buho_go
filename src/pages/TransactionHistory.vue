@@ -144,10 +144,10 @@
         class="tx-row"
         :class="[
           $q.dark.isActive ? 'tx-row-dark' : 'tx-row-light',
-          { 'tx-row-ready': deposit.confirmed }
+          { 'tx-row-ready': manualClaimAllowed(deposit) }
         ]"
-        :disabled="!deposit.confirmed && !claimingTxId"
-        @click="deposit.confirmed && initiateClaimDeposit(deposit)"
+        :disabled="!manualClaimAllowed(deposit) || !!claimingTxId"
+        @click="initiateClaimDeposit(deposit)"
       >
         <span class="tx-row-icon-wrap">
           <span
@@ -167,8 +167,7 @@
           </span>
           <span class="tx-row-sub" :class="$q.dark.isActive ? 'tx-row-muted-dark' : 'tx-row-muted-light'">
             <template v-if="deposit.confirmed">
-              <Icon icon="tabler:circle-check" width="13" height="13" class="tx-row-sub-icon tx-row-sub-icon-ready" />
-              {{ $t('Ready to claim') }}
+              {{ $t(bitcoinDepositsStore.statusText(deposit)) }}
             </template>
             <template v-else>
               <span class="tx-conf-dots" aria-hidden="true">
@@ -185,28 +184,18 @@
           <span class="tx-row-amount" :class="$q.dark.isActive ? 'tx-row-title-dark' : 'tx-row-title-light'">
             <HiddenAmount>+{{ formatAmount(deposit.amount) }}</HiddenAmount>
           </span>
-          <span v-if="deposit.confirmed" class="tx-deposit-action">
-            <q-btn
-              size="sm"
-              no-caps
-              unelevated
-              dense
-              class="tx-claim-btn"
-              :loading="claimingTxId === deposit.txId"
-              @click.stop="initiateClaimDeposit(deposit)"
-            >
-              {{ $t('Claim') }}
-            </q-btn>
+          <span v-if="manualClaimAllowed(deposit)" class="tx-deposit-action">
+            <span class="tx-claim-btn">{{ $t('Claim') }}</span>
           </span>
           <span v-else class="tx-row-fiat" :class="$q.dark.isActive ? 'tx-row-muted-dark' : 'tx-row-muted-light'">
-            {{ $t('Confirming...') }}
+            {{ deposit.confirmed ? '' : $t('Confirming...') }}
           </span>
         </span>
       </button>
     </div>
 
     <!-- Claim Confirmation - iOS Action Sheet Style -->
-    <q-dialog v-model="showClaimDialog" position="bottom" transition-show="slide-up" transition-hide="slide-down">
+    <q-dialog v-if="claimNeedsManual || isClaimingDeposit" v-model="showClaimDialog" position="bottom" transition-show="slide-up" transition-hide="slide-down">
       <q-card class="claim-action-sheet" :class="$q.dark.isActive ? 'sheet-dark' : 'sheet-light'">
         <!-- Handle Bar -->
         <div class="sheet-handle">
@@ -742,6 +731,8 @@ import HiddenAmount from '../components/HiddenAmount.vue';
 import { fiatRatesService } from '../utils/fiatRates.js';
 import { formatAmount as formatAmountUtil, formatAmountWithPrefix } from '../utils/amountFormatting.js';
 import { useWalletStore } from '../stores/wallet';
+import { useBitcoinDepositsStore } from '../stores/bitcoinDeposits';
+import { BITCOIN_DEPOSIT_POLL_MS, AUTO_CLAIM_THRESHOLDS } from '../stores/bitcoinPreferences';
 import { useAddressBookStore } from '../stores/addressBook';
 import { useTransactionMetadataStore } from '../stores/transactionMetadata';
 import { normalizeTx } from '../services/txNormalizer.js';
@@ -791,6 +782,9 @@ export default {
       transactions: [],
       walletState: {},
       walletStore: null,
+      bitcoinDepositsStore: null,
+      depositPollingInterval: null,
+      depositRead: 0,
       addressBookStore: null,
       metadataStore: null,
       expandedGroups: new Set(),
@@ -838,6 +832,9 @@ export default {
   CLAIMED_TX_STORAGE_LIMIT: 100,
   CLAIM_MATCH_TIME_WINDOW_SECONDS: 300,
   computed: {
+    claimNeedsManual() {
+      return this.manualClaimAllowed(this.claimingDeposit);
+    },
     /** BuhoGO mark shown on Learn & Earn reward rows. */
     earnBrandLogo() {
       return EARN_BRAND.logo;
@@ -998,11 +995,12 @@ export default {
 
     isHighClaimFee() {
       if (!this.claimingDeposit || !this.claimFeeQuote) return false;
-      return this.claimFeeAmount > (this.claimingDeposit.amount * 0.5);
+      return this.claimFeeAmount > AUTO_CLAIM_THRESHOLDS.MAX_FEE_SATS
+        || this.claimFeeAmount > this.claimingDeposit.amount * AUTO_CLAIM_THRESHOLDS.MAX_FEE_RATIO;
     },
 
     claimableDeposits() {
-      return this.pendingBitcoinDeposits.filter(d => d.confirmed);
+      return this.pendingBitcoinDeposits.filter(d => this.manualClaimAllowed(d));
     },
 
     activeWalletName() {
@@ -1011,6 +1009,7 @@ export default {
   },
   async created() {
     this.walletStore = useWalletStore();
+    this.bitcoinDepositsStore = useBitcoinDepositsStore();
     this.addressBookStore = useAddressBookStore();
     this.metadataStore = useTransactionMetadataStore();
 
@@ -1027,14 +1026,28 @@ export default {
     this.initializeTransactionHistory();
     this.loadFiatRates();
     this.loadPendingDeposits();
+    this.depositPollingInterval = setInterval(() => this.loadPendingDeposits(), BITCOIN_DEPOSIT_POLL_MS);
   },
 
   beforeUnmount() {
     // Abort any ongoing background fetch when component is destroyed
     this.backgroundFetchAborted = true;
+    this.depositRead++;
+    clearInterval(this.depositPollingInterval);
   },
 
   watch: {
+    claimNeedsManual(needed) {
+      if (!needed && !this.isClaimingDeposit) this.showClaimDialog = false;
+    },
+    'walletStore.depositsRefreshSignal'() {
+      const walletId = this.walletStore.activeWalletId;
+      if (this.walletStore.lastDepositsRefreshWalletId !== walletId) return;
+      this.pendingBitcoinDeposits = this.pendingBitcoinDeposits.filter(d => !this.walletStore.isDepositClaimed(d.txId));
+      this.loadPendingDeposits();
+      this.loadTransactions();
+      this.walletStore.refreshWalletData(walletId);
+    },
     'fiatRates': {
       handler() {
         this.$forceUpdate();
@@ -1043,6 +1056,9 @@ export default {
     }
   },
   methods: {
+    manualClaimAllowed(deposit) {
+      return !!this.bitcoinDepositsStore?.needsManual(deposit);
+    },
     /**
      * A Learn & Earn reward, recognised by the stable memo the earn store
      * bakes into every reward invoice (see services/earnBrand.js).
@@ -2411,34 +2427,33 @@ export default {
 
     async loadPendingDeposits() {
       if (!this.walletStore.isActiveWalletSpark) return;
-
+      const walletId = this.walletStore.activeWalletId;
+      const read = ++this.depositRead;
+      const current = () => read === this.depositRead && walletId === this.walletStore.activeWalletId;
       try {
         const provider = await this.walletStore.ensureSparkConnected();
-        if (provider?.getPendingDeposits) {
-          this.pendingBitcoinDeposits = await provider.getPendingDeposits();
-        }
+        if (!current() || !provider?.getPendingDeposits) return;
+        const deposits = await provider.getPendingDeposits();
+        if (!current()) return;
+        this.pendingBitcoinDeposits = deposits.filter(d => !this.walletStore.isDepositClaimed(d.txId));
+        void this.bitcoinDepositsStore.processDeposits(this.pendingBitcoinDeposits, walletId);
       } catch (error) {
         console.warn('Failed to load pending deposits:', error);
       }
     },
 
     async initiateClaimDeposit(deposit) {
-      // Validate deposit is confirmed before proceeding
-      if (!deposit || !deposit.confirmed) {
-        this.$q.notify({
-          type: 'warning',
-          message: this.$t('Deposit not ready'),
-          caption: this.$t('Please wait for more confirmations'),
-
-        });
-        return;
-      }
-
+      if (!this.manualClaimAllowed(deposit)) return;
+      const walletId = this.walletStore.activeWalletId;
       this.claimingTxId = deposit.txId;
       try {
         const provider = await this.walletStore.ensureSparkConnected();
+        if (walletId !== this.walletStore.activeWalletId || !this.manualClaimAllowed(deposit)) return;
         const quote = await provider.getClaimFeeQuote(deposit.txId, deposit.outputIndex);
+        if (walletId !== this.walletStore.activeWalletId || !this.manualClaimAllowed(deposit)) return;
 
+        this.bitcoinDepositsStore.reconsiderQuote(deposit, quote, walletId);
+        if (!this.manualClaimAllowed(deposit)) return;
         this.claimingDeposit = deposit;
         this.claimFeeQuote = quote;
         this.showClaimDialog = true;
@@ -2454,7 +2469,11 @@ export default {
     },
 
     async confirmClaimDeposit() {
-      if (!this.claimingDeposit || !this.claimFeeQuote) return;
+      if (!this.claimingDeposit || !this.claimFeeQuote || !this.manualClaimAllowed(this.claimingDeposit)) return;
+      const walletId = this.walletStore.activeWalletId;
+      const deposit = this.claimingDeposit;
+      const quote = this.claimFeeQuote;
+      let ownsClaim = false;
 
       this.isClaimingDeposit = true;
       const claimedAmount = this.claimFeeQuote.creditAmountSats || this.claimingDeposit.amount;
@@ -2462,11 +2481,18 @@ export default {
 
       try {
         const provider = await this.walletStore.ensureSparkConnected();
+        if (walletId !== this.walletStore.activeWalletId || !this.manualClaimAllowed(deposit)) return;
+        this.walletStore.markDepositClaimInFlight(deposit.txId);
+        ownsClaim = true;
         const result = await provider.claimDeposit(
-          this.claimingDeposit.txId,
-          this.claimFeeQuote, // Pass the full quote with creditAmountSats and signature
-          this.claimingDeposit.outputIndex
+          deposit.txId,
+          quote,
+          deposit.outputIndex
         );
+
+        this.walletStore.markDepositClaimed(deposit.txId);
+        this.walletStore.signalDepositsRefresh(walletId);
+        if (walletId !== this.walletStore.activeWalletId) return;
 
         // Close claim dialog first
         this.showClaimDialog = false;
@@ -2511,6 +2537,7 @@ export default {
           timeout: 3000
         });
       } finally {
+        if (ownsClaim) this.walletStore.clearDepositClaimInFlight(deposit.txId);
         this.isClaimingDeposit = false;
         this.claimingDeposit = null;
         this.claimFeeQuote = null;

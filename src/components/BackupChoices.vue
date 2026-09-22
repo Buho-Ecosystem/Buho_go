@@ -1,13 +1,16 @@
 <template>
   <div class="backup-choices">
     <!-- The split: one row per set of recovery words, each with its own
-         checked state. Tapping a row starts that backup straight away. -->
+         checked state. Tapping a row starts that backup straight away.
+         Wallet rows share one title, so the provider chip is what tells
+         them apart; the identity row keeps its text detail. -->
     <div class="backup-choices-list">
       <button v-for="choice in choices" :key="choice.key" type="button" class="backup-choice" @click="$emit('select', choice)">
         <span class="backup-choice-icon"><BackupSubjectIcon :kind="choice.kind" :size="28" /></span>
         <span class="backup-choice-copy">
-          <strong>{{ $t(choice.kind === 'wallet' ? 'Bitcoin backup' : 'Identity backup') }}</strong>
-          <span class="backup-choice-detail">{{ choice.detail }}</span>
+          <strong>{{ $t(choice.kind === 'wallet' ? 'Bitcoin Backup' : 'Identity backup') }}</strong>
+          <WalletTypeChip v-if="choice.kind === 'wallet'" :type="choice.type" />
+          <span v-else class="backup-choice-detail">{{ choice.detail }}</span>
           <span class="backup-choice-state" :class="{ 'is-saved': choice.saved }">
             <Icon v-if="choice.saved" icon="tabler:check" width="14" height="14" aria-hidden="true" />
             {{ $t(choice.saved ? 'Words checked' : 'Not checked yet') }}
@@ -53,7 +56,7 @@ import { computed, getCurrentInstance } from 'vue';
 import { Icon } from '@iconify/vue';
 import { useWalletStore } from '../stores/wallet';
 import { useIdentityStore } from '../stores/identity';
-import { bitcoinBackupName, walletBackupGroups } from '../utils/backupStatus.js';
+import { walletBackupGroups } from '../utils/backupStatus.js';
 import { isCloudBackupPlatform } from '../services/cloudStorage.js';
 import { useExitKitStore } from '../stores/exitKit';
 import { kitState, isSameDay } from '../utils/exitKit.js';
@@ -61,6 +64,7 @@ import { relativeDay } from '../composables/useExitFormat.js';
 import { WALLET_TYPES } from '../providers/WalletFactory';
 import BackupKeyring from './BackupKeyring.vue';
 import BackupSubjectIcon from './BackupSubjectIcon.vue';
+import WalletTypeChip from './WalletTypeChip.vue';
 
 /**
  * Emits `select` with one of these kinds:
@@ -89,12 +93,11 @@ const kitLine = computed(() => {
   if (isSameDay(oldest, Date.now())) return { ok: true, text: t('Exit kit checked today') };
   return { ok: true, text: t('Exit kit checked {date}', { date: relativeDay(oldest, t, proxy.$i18n.locale) }) };
 });
-// Each button names the backup first; wallet/provider details remain subordinate.
+// Each button names the backup first; the provider (chip) or scope (text) stays subordinate.
 const choices = computed(() => [
   ...groups.value.map(group => ({
     key: group.key, kind: 'wallet', type: group.type, walletId: group.walletId, saved: group.saved,
     mode: group.saved ? 'view' : 'backup',
-    detail: `${bitcoinBackupName(group, t)} · ${group.type === 'spark' ? 'Spark' : 'Arkade'}`,
   })),
   ...(identity.bootstrapped ? [{
     key: 'identity', kind: 'identity', saved: identity.backupConfirmed,
