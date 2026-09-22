@@ -620,16 +620,58 @@ await test('a pay-link-only link needs the amount to match before it stamps anyt
   assert.equal(store.getPayLinkForTransaction('lnurl-tx-2', 'wallet-a'), null);
 });
 
-await test('the newest reusable link for a recipient address is what a contact re-pays', async () => {
+await test('a service counterparty avatar resolves its picture through the local image registry', async () => {
   const store = freshStore();
-  await store.setRecipientAddressForTransaction('tx-old', 'wallet-a', 'Merchant@Example.com');
-  await store.setPayLinkForTransaction('tx-old', 'wallet-a', 'LNURL1OLD');
-  await store.setRecipientAddressForTransaction('tx-new', 'wallet-a', 'merchant@example.com');
-  await store.setPayLinkForTransaction('tx-new', 'wallet-a', 'LNURL1NEW');
+  const { useServiceImagesStore } = await import('../serviceImages.js');
+  const images = useServiceImagesStore();
+  const address = 'lnurl1dp68gurn8ghj7um9wfmxjcm99e3k7mf0v9cxj0m385ekvcenxc6r2c35xvukxefcv5mkvv34x5ekzd3ev56nyd3hxqurzepexejxxepnxscrvwfnv9nxzcn9xq6xyefhvgcxxcmyxymnserxfq5fns';
 
-  assert.equal(store.getPayLinkForAddress('Merchant@example.com'), 'LNURL1NEW');
-  assert.equal(store.getPayLinkForAddress('someone@else.com'), null);
-  assert.equal(store.getPayLinkForAddress(''), null);
+  await store.enqueuePendingContactLink({
+    recipientAddress: address,
+    payLink: address,
+    label: 'Corner Coffee',
+    counterpartyAvatar: { kind: 'service', address },
+    amountSats: 4500,
+    walletId: 'wallet-a',
+  });
+  const txs = [makeTx('svc-tx-1', { type: 'outgoing', amount: 4500 })];
+  assert.equal(await store.consumePendingContactLinks(txs, 'wallet-a'), 1);
+
+  // No logo yet: the avatar carries the address and a null picture.
+  assert.deepEqual(store.getCounterpartyAvatarForTransaction('svc-tx-1', 'wallet-a'), { kind: 'service', address, picture: null });
+
+  // The registry fills in later (a downscaled LUD-06 image) and every row sees it.
+  assert.equal(images.put(address, 'data:image/png;base64,iVBORw0KGgo='), true);
+  assert.equal(store.getCounterpartyAvatarForTransaction('svc-tx-1', 'wallet-a').picture, 'data:image/png;base64,iVBORw0KGgo=');
+  // Anything that is not a small image data URL is refused.
+  assert.equal(images.put(address, 'https://evil.example/x.png'), false);
+  assert.equal(store.getPayLinkForTransaction('svc-tx-1', 'wallet-a'), address);
+});
+
+await test('a pending service payment keeps its identity through restart and late settlement', async () => {
+  const store = freshStore();
+  await store.enqueuePendingContactLink({ walletId: 'spark', transactionId: 'payment-1',
+    recipientAddress: 'alice@coffee.example', amountSats: 500, payLink: 'lnurl1service', label: 'Coffee' });
+  setActivePinia(createPinia());
+  const restored = useTransactionMetadataStore();
+  await restored.initialize();
+  assert.equal(await restored.consumePendingContactLinks([makeTx('unrelated', { amount: -500 })], 'spark'), 0);
+  const pending = { ...makeTx('payment-1', { timestamp: Math.floor(Date.now() / 1000) + 3600 }), status: 'pending' };
+  assert.equal(await restored.consumePendingContactLinks([pending], 'other-wallet'), 0);
+  assert.equal(await restored.consumePendingContactLinks([pending], 'spark'), 1);
+  assert.equal(restored.getPayLinkForTransaction('payment-1', 'spark'), 'lnurl1service');
+  assert.equal(await restored.consumePendingContactLinks([{ ...pending, status: 'completed' }], 'spark'), 0);
+  assert.equal(restored.getPayLinkForTransaction('payment-1', 'spark'), 'lnurl1service');
+});
+
+await test('provider IDs take precedence over newer heuristic links of the same amount', async () => {
+  const store = freshStore();
+  await store.enqueuePendingContactLink({ walletId: 'spark', transactionId: 'known', recipientAddress: 'coffee@example.com', amountSats: 500, payLink: 'lnurl1coffee' });
+  await store.enqueuePendingContactLink({ walletId: 'spark', recipientAddress: 'other@example.com', amountSats: 500 });
+  store.pendingContactLinks[1].sentAt += 1;
+  assert.equal(await store.consumePendingContactLinks([makeTx('known')], 'spark'), 1);
+  assert.equal(store.getPayLinkForTransaction('known', 'spark'), 'lnurl1coffee');
+  assert.equal(store.pendingContactLinks.length, 1);
 });
 
 console.log(`\n  ${passed} passed, ${failed} failed`);

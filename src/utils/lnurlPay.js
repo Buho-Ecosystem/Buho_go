@@ -45,12 +45,10 @@ export function buildLnurlPayCallbackUrl({ callback, amountSats, payout = null, 
  * the only safe default (storing a one-shot link would offer the user a
  * "Pay again" that can only fail).
  *
- * The field belongs on the second callback (the one returning `pr`), but
- * some services also put it on the payRequest itself, so callers pass
- * whichever response they hold — either one saying `false` is the service
- * telling us the link is storeable.
+ * Only the invoice callback (the response returning `pr`) is authoritative.
+ * Earlier payRequest metadata must not override its disposable decision.
  *
- * @param {object|null|undefined} response  a payRequest or invoice response
+ * @param {object|null|undefined} response  the invoice callback response
  * @returns {boolean}
  */
 export function isStoreablePayLink(response) {

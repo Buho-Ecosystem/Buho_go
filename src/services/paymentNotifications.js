@@ -34,11 +34,12 @@ let _pluginPromise = null
 let _channelReady = false
 let _nextId = 0
 
-function loadPlugin() {
+function loadPluginModule() {
   if (!isSupported()) return Promise.resolve(null)
   if (!_pluginPromise) {
+    // Keep the module as the resolved value. Capacitor's plugin proxy
+    // exposes a synthetic `then` method and cannot itself resolve a promise.
     _pluginPromise = import('@capacitor/local-notifications')
-      .then((mod) => mod.LocalNotifications || null)
       .catch((err) => {
         console.warn('[notifications] plugin unavailable:', err?.message || err)
         return null
@@ -74,7 +75,7 @@ export function isNativeApp() {
  * 'prompt' means the system dialog has not been answered yet.
  */
 export async function permissionState() {
-  const plugin = await loadPlugin()
+  const plugin = (await loadPluginModule())?.LocalNotifications
   if (!plugin) return 'unsupported'
   try {
     const { display } = await plugin.checkPermissions()
@@ -93,7 +94,7 @@ export async function permissionState() {
  * (Android only asks once; after a denial the user has to go to Settings).
  */
 export async function requestPermission() {
-  const plugin = await loadPlugin()
+  const plugin = (await loadPluginModule())?.LocalNotifications
   if (!plugin) return 'unsupported'
   try {
     const { display } = await plugin.requestPermissions()
@@ -148,7 +149,7 @@ export async function isInBackground() {
  * @returns {Promise<boolean>} whether a notification was actually posted
  */
 export async function notify({ title, body, force = false }) {
-  const plugin = await loadPlugin()
+  const plugin = (await loadPluginModule())?.LocalNotifications
   if (!plugin || !title) return false
   if (!force && !(await isInBackground())) return false
 
@@ -162,7 +163,9 @@ export async function notify({ title, body, force = false }) {
         body: body || '',
         channelId: CHANNEL_ID,
         // No schedule block: post it now.
-        smallIcon: 'ic_stat_icon_config_sample',
+        // A monochrome status-bar mark (res/drawable/ic_stat_notification);
+        // Android tints it, so it must be white on transparent.
+        smallIcon: 'ic_stat_notification',
       }],
     })
     return true

@@ -78,25 +78,37 @@ export function parseFastWithdrawRequest(endpoint) {
 
 /** Both metadata sources feed the same existing Redeem flow. Whole-satoshi
  * invoices must stay within the advertised millisatoshi bounds. In particular,
- * zero is a balance, not a missing field to replace with a large default. */
-export function withdrawInfo(data) {
+ * zero is a balance, not a missing field to replace with a large default.
+ *
+ * `sourceUrl` is the URL this answer came from (the decoded LNURL, or the
+ * balanceCheck URL on a re-check). LUD-14 vouchers are identified by every
+ * URL that ever resolved to them, so the caller passes it along when known. */
+export function withdrawInfo(data, { sourceUrl = null } = {}) {
   const minWithdrawable = data.minWithdrawable ?? 1000;
   const maxWithdrawable = data.maxWithdrawable ?? 100000000000;
   const minSats = Math.max(1, Math.ceil(minWithdrawable / 1000));
   const maxSats = Math.floor(maxWithdrawable / 1000);
   const isFixedAmount = minWithdrawable === maxWithdrawable || minSats === maxSats;
+  const description = typeof data.defaultDescription === 'string' && data.defaultDescription.trim()
+    ? data.defaultDescription.trim()
+    : null;
   return {
     lnurlType: 'withdrawRequest', k1: data.k1, callback: data.callback,
     minWithdrawable, maxWithdrawable, minSats, maxSats, isFixedAmount,
     fixedAmountSats: isFixedAmount ? maxSats : null,
+    // The invoice memo keeps a fallback; the raw description (or null) is
+    // what a title should use, so a missing one can fall back to the domain.
     defaultDescription: data.defaultDescription || 'Withdrawal',
+    description,
     pinLimit: Number.isSafeInteger(data.pinLimit) && data.pinLimit > 0 ? data.pinLimit : null,
     // LUD-14: the handle on what is left after this withdrawal, and the
-    // balance the service claims right now (millisats, informational — the
-    // authoritative number is maxWithdrawable on the next fetch).
+    // balance the service claims right now (millisats). The spec says
+    // currentBalance takes priority over maxWithdrawable for display;
+    // maxWithdrawable stays the bound for what can be taken now.
     balanceCheck: validateBalanceCheckUrl(data.balanceCheck, data.callback),
     currentBalance: Number.isSafeInteger(data.currentBalance) && data.currentBalance >= 0
       ? data.currentBalance
       : null,
+    sourceUrl: typeof sourceUrl === 'string' && sourceUrl ? sourceUrl : null,
   };
 }

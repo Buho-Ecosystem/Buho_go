@@ -8,6 +8,7 @@
         dense
         @click="$router.back()"
         class="back-btn"
+        :aria-label="$t('Back')"
       >
         <Icon icon="tabler:chevron-left" width="18" height="18" />
       </q-btn>
@@ -21,25 +22,29 @@
           dense
           @click="shareTransaction"
           class="share-btn"
+          :aria-label="$t('Share')"
         >
           <Icon icon="tabler:share" width="20" height="20" style="color: var(--text-secondary)" />
           <q-tooltip>{{ $t('Share') }}</q-tooltip>
         </q-btn>
-        <q-btn
-          flat
-          round
-          dense
-          @click="toggleDeveloperMode"
-          :class="['dev-toggle', { 'dev-active': showDeveloperMode }]"
-        >
-          <Icon
-            icon="tabler:code"
-            width="20"
-            height="20"
-            :class="showDeveloperMode ? 'dev-icon-active' : 'dev-icon-muted'"
-          />
-          <div v-if="showDeveloperMode" class="dev-active-dot"></div>
-          <q-tooltip>{{ showDeveloperMode ? $t('Hide') : $t('Show') }} {{ $t('Developer Details') }}</q-tooltip>
+        <q-btn flat round class="receipt-more" :aria-label="$t('More options')" :disable="!transaction">
+          <Icon icon="tabler:dots-vertical" width="22" height="22" />
+          <q-menu anchor="bottom right" self="top right">
+            <q-list class="receipt-menu">
+              <q-item clickable v-close-popup @click="editNote">
+                <q-item-section>{{ $t('Edit note') }}</q-item-section>
+              </q-item>
+              <q-item clickable v-close-popup @click="openContactPicker">
+                <q-item-section>{{ assignedContact ? $t('Change contact') : $t('Assign Contact') }}</q-item-section>
+              </q-item>
+              <q-item v-if="assignedContact" clickable v-close-popup @click="removeContact">
+                <q-item-section>{{ $t('Remove Contact') }}</q-item-section>
+              </q-item>
+              <q-item clickable v-close-popup @click="toggleDeveloperMode">
+                <q-item-section>{{ showDeveloperMode ? $t('Hide technical details') : $t('Technical details') }}</q-item-section>
+              </q-item>
+            </q-list>
+          </q-menu>
         </q-btn>
       </div>
     </div>
@@ -154,7 +159,7 @@
         <div class="tx-table">
           <div v-if="getCounterpartyAddress()" class="tx-row">
             <div class="tx-row-label">{{ transaction.type === 'outgoing' ? $t('To') : $t('Paid to') }}</div>
-            <div class="tx-row-value">{{ getCounterpartyAddress() }}</div>
+            <div class="tx-row-value">{{ counterpartyAddressDisplay }}</div>
           </div>
 
           <!-- Branta merchant verification, carried over from the confirm
@@ -251,6 +256,20 @@
             <div class="tx-row-label">{{ $t('BTC price at settlement') }}</div>
             <div class="tx-row-value">{{ getSettlementRateDisplay() }}</div>
           </div>
+
+          <!-- LUD-11: the service that issued this LNURL said it is reusable
+               (disposable: false), so the link was kept. One action row at
+               the end of the details: paying the same merchant again must
+               not mean finding the QR again. -->
+          <button v-if="reusablePayLink" type="button" class="pay-again-row" @click="payAgain">
+            <span class="pay-again-icon" aria-hidden="true">
+              <Icon icon="tabler:repeat" width="18" height="18" />
+            </span>
+            <span class="pay-again-copy">
+              <strong class="pay-again-title">{{ $t('Pay again') }}</strong>
+            </span>
+            <Icon icon="tabler:chevron-right" width="18" height="18" class="pay-again-chevron" aria-hidden="true" />
+          </button>
         </div>
       </div>
 
@@ -292,25 +311,10 @@
         </div>
       </div>
 
-      <!-- Personal Note -->
-      <div class="details-section">
-        <div class="section-label">
-          {{ $t('NOTE') }}
-        </div>
+      <div v-if="currentNote" class="details-section">
+        <div class="section-label">{{ $t('NOTE') }}</div>
         <div class="settings-card detail-card">
-          <div class="note-content">
-            <q-input
-              :model-value="currentNote"
-              @update:model-value="debounceSaveNote"
-              :placeholder="$t('Add a personal note...')"
-              type="textarea"
-              autogrow
-              borderless
-              dense
-              input-class="note-input"
-              maxlength="500"
-            />
-          </div>
+          <p class="receipt-note">{{ currentNote }}</p>
         </div>
       </div>
 
@@ -363,27 +367,6 @@
                 <Icon icon="tabler:copy" width="16" height="16" />
               </div>
             </template>
-          </div>
-        </div>
-      </div>
-
-      <!-- LUD-11: the service that issued this LNURL said it is reusable
-           (disposable: false), so the link was kept. A raw LNURL-pay code has
-           no address form, which is exactly why this row exists: without it,
-           paying the same merchant again means finding the QR again. -->
-      <div v-if="reusablePayLink" class="details-section">
-        <div class="section-label">
-          {{ $t('Reusable link') }}
-        </div>
-        <div class="settings-card detail-card">
-          <div class="success-action-detail">
-            <div class="sa-detail-text">
-              {{ $t('This service keeps its payment link open, so you can pay it again without scanning.') }}
-            </div>
-            <button type="button" class="sa-detail-open" @click="payAgain">
-              <span class="sa-detail-open-label">{{ $t('Pay again') }}</span>
-              <Icon icon="tabler:repeat" width="16" height="16" class="sa-detail-open-icon" />
-            </button>
           </div>
         </div>
       </div>
@@ -455,79 +438,6 @@
             {{ $t('Save') }}
           </q-btn>
           <Icon v-else icon="tabler:user-check" class="external-icon" />
-        </div>
-      </div>
-
-      <!-- Contact Assignment Section -->
-      <div class="details-section">
-        <div class="section-label">
-          {{ $t('CONTACT') }}
-        </div>
-        <div class="settings-card detail-card">
-          <q-item v-if="!assignedContact" clickable v-ripple @click="openContactPicker">
-            <q-item-section avatar>
-              <Icon icon="tabler:user-plus" class="icon-muted" />
-            </q-item-section>
-            <q-item-section>
-              <q-item-label class="item-label">
-                {{ $t('Assign Contact') }}
-              </q-item-label>
-            </q-item-section>
-            <q-item-section side>
-              <Icon icon="tabler:chevron-right" class="chevron-icon" />
-            </q-item-section>
-          </q-item>
-
-          <q-item v-else>
-            <q-item-section avatar>
-              <ContactAvatar
-                class="contact-avatar-small"
-                :entry="assignedContact"
-                :initial-length="2"
-              />
-            </q-item-section>
-            <q-item-section>
-              <q-item-label class="item-label">
-                {{ assignedContact.name }}
-              </q-item-label>
-              <q-item-label caption class="item-caption">
-                {{ truncateAddress(assignedContact.address) }}
-              </q-item-label>
-            </q-item-section>
-            <q-item-section side>
-              <q-btn flat round dense @click="removeContact"
-                     class="icon-muted">
-                <Icon icon="tabler:x" width="20" height="20" />
-                <q-tooltip>{{ $t('Remove Contact') }}</q-tooltip>
-              </q-btn>
-            </q-item-section>
-          </q-item>
-        </div>
-      </div>
-
-      <!-- Tags Section -->
-      <div class="details-section">
-        <div class="section-label">
-          {{ $t('TAGS') }}
-        </div>
-        <div class="settings-card detail-card">
-          <div class="tags-content">
-            <div class="tag-selector">
-              <button
-                v-for="tag in availableTags"
-                :key="tag"
-                @click="toggleTag(tag)"
-                class="tag-option"
-                :class="{
-                  selected: isTagSelected(tag),
-                  disabled: currentTags.length >= 2 && !isTagSelected(tag)
-                }"
-                :disabled="currentTags.length >= 2 && !isTagSelected(tag)"
-              >
-                {{ tag }}
-              </button>
-            </div>
-          </div>
         </div>
       </div>
 
@@ -627,6 +537,22 @@
       />
     </div>
 
+    <q-dialog v-model="showNoteEditor" :persistent="savingNote" :aria-label="$t('Edit note')">
+      <q-card class="receipt-note-dialog">
+        <q-form @submit="saveNote">
+          <q-card-section>
+            <h2 class="receipt-note-title">{{ $t('Edit note') }}</h2>
+            <q-input v-model="noteDraft" :aria-label="$t('NOTE')" type="textarea" autogrow
+              autofocus maxlength="500" :disable="savingNote" />
+          </q-card-section>
+          <q-card-actions align="right">
+            <q-btn flat no-caps :label="$t('Cancel')" :disable="savingNote" v-close-popup />
+            <q-btn flat no-caps :label="$t('Save')" :loading="savingNote" type="submit" />
+          </q-card-actions>
+        </q-form>
+      </q-card>
+    </q-dialog>
+
     <!-- Contact Picker Modal -->
     <q-dialog v-model="showContactPicker">
       <q-card class="contact-picker-dialog" :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'">
@@ -683,7 +609,7 @@
                   {{ contact.name }}
                 </q-item-label>
                 <q-item-label caption class="contact-address-caption item-caption">
-                  {{ truncateAddress(contact.address) }}
+                  {{ contactAddressLine(contact) }}
                 </q-item-label>
               </q-item-section>
               <q-item-section side>
@@ -727,6 +653,8 @@ import { shareContent } from '../utils/share';
 import { copySensitive } from '../utils/sensitiveClipboard.js';
 import { openInAppBrowser } from '../utils/inAppBrowser.js';
 import { formatSuccessActionUrl } from '../utils/successAction.js';
+import { isLnurl } from '../utils/addressUtils.js';
+import { serviceAddressLine } from '../utils/lnurlMetadata.js';
 import { pollVerify } from '../utils/lnurlVerify.js';
 import { lnurlFetch } from '../utils/lnurlHttp.js';
 import { Icon } from '@iconify/vue';
@@ -756,6 +684,9 @@ export default {
     return {
       loading: true,
       showDeveloperMode: false,
+      showNoteEditor: false,
+      noteDraft: '',
+      savingNote: false,
       transaction: null,
       nostrProfile: null,
       // NIP-57 zap info for this tx (utils/zaps), null for non-zaps.
@@ -774,18 +705,7 @@ export default {
       // Contact picker
       showContactPicker: false,
       contactSearch: '',
-      // Available tags
-      availableTags: [
-        'Groceries',
-        'Business',
-        'Personal',
-        'Entertainment',
-        'Bills',
-        'Travel',
-        'Food & Drink',
-        'Shopping',
-        'Other'
-      ]
+
     }
   },
   async created() {
@@ -916,11 +836,6 @@ export default {
         : { icon: 'tabler:arrow-up-right', cls: 'tx-badge-out' };
     },
 
-    currentTags() {
-      if (!this.transaction || !this.metadataStore) return [];
-      return this.metadataStore.getTagsForTransaction(this.transaction.id, this.metadataWalletId);
-    },
-
     currentNote() {
       if (!this.transaction || !this.metadataStore) return '';
       return this.metadataStore.getNoteForTransaction(this.transaction.id, this.metadataWalletId);
@@ -950,7 +865,19 @@ export default {
     reusablePayLink() {
       if (!this.transaction || !this.metadataStore) return null;
       if (this.transaction.type !== 'outgoing') return null;
+      if ((this.transaction.status || 'completed') !== 'completed') return null;
       return this.metadataStore.getPayLinkForTransaction(this.transaction.id, this.metadataWalletId);
+    },
+
+    /**
+     * The "To" value. A service pay link (LUD-11, stored as canonical bech32)
+     * is unreadable, so the row says where it points and what it is, the way
+     * the address book does.
+     */
+    counterpartyAddressDisplay() {
+      const address = this.getCounterpartyAddress();
+      if (!address) return '';
+      return isLnurl(address) ? serviceAddressLine(address, this.$t) : address;
     },
 
     /**
@@ -1133,20 +1060,26 @@ export default {
   },
 
   methods: {
-    // Notes
-    debounceSaveNote(value) {
-      clearTimeout(this._noteTimer);
-      this._noteTimer = setTimeout(() => {
-        this.metadataStore.setNoteForTransaction(this.transaction.id, this.metadataWalletId, value);
-      }, 500);
+    editNote() {
+      this.noteDraft = this.currentNote;
+      this.showNoteEditor = true;
     },
 
-    // Contact and Tag methods
+    async saveNote() {
+      if (this.savingNote || !this.transaction) return;
+      this.savingNote = true;
+      try {
+        await this.metadataStore.setNoteForTransaction(this.transaction.id, this.metadataWalletId, this.noteDraft);
+        this.showNoteEditor = false;
+      } catch {
+        this.$q.notify({ type: 'negative', message: this.$t('Failed to save note') });
+      } finally {
+        this.savingNote = false;
+      }
+    },
+
     openContactPicker() {
-      console.log('Opening contact picker...');
-      console.log('Address book entries:', this.addressBookStore?.entries?.length || 0);
       this.showContactPicker = true;
-      console.log('showContactPicker set to:', this.showContactPicker);
     },
 
     async assignContact(contact) {
@@ -1190,36 +1123,6 @@ export default {
         this.$q.notify({
           type: 'negative',
           message: this.$t('Failed to remove contact'),
-          
-        });
-      }
-    },
-
-    isTagSelected(tag) {
-      return this.currentTags.includes(tag);
-    },
-
-    async toggleTag(tag) {
-      try {
-        const currentTags = this.currentTags;
-
-        // Check if tag is already selected
-        if (currentTags.includes(tag)) {
-          // Remove tag
-          const newTags = currentTags.filter(t => t !== tag);
-          await this.metadataStore.setTagsForTransaction(this.transaction.id, this.metadataWalletId, newTags);
-        } else {
-          if (currentTags.length >= 2) return;
-
-          // Add tag
-          const newTags = [...currentTags, tag];
-          await this.metadataStore.setTagsForTransaction(this.transaction.id, this.metadataWalletId, newTags);
-        }
-      } catch (error) {
-        console.error('Error toggling tag:', error);
-        this.$q.notify({
-          type: 'negative',
-          message: this.$t('Failed to update tags'),
           
         });
       }
@@ -1596,6 +1499,12 @@ export default {
      * send time; for receives, the Lightning address that was paid when
      * the backend reports one. Null hides the row.
      */
+    /** A contact's address for a caption: a service link by its domain, anything else truncated. */
+    contactAddressLine(entry) {
+      if (!entry?.address) return '';
+      return entry.addressType === 'lnurl' ? serviceAddressLine(entry.address, this.$t) : this.truncateAddress(entry.address);
+    },
+
     getCounterpartyAddress() {
       if (!this.transaction) return null;
       if (this.transaction.type === 'outgoing' && this.transaction.id && this.metadataStore) {
@@ -1918,6 +1827,8 @@ export default {
 }
 
 .header-title {
+  min-width: 0;
+  overflow-wrap: anywhere;
   color: var(--text-primary);
   font-size: 1.25rem;
   font-weight: 600;
@@ -1930,55 +1841,65 @@ export default {
   gap: 0.5rem;
 }
 
-.dev-toggle {
-  width: 40px;
-  height: 40px;
-  border-radius: 10px;
+
+/* ===== LUD-09 message from recipient ===== */
+/* LUD-11 pay again: one action row, the card's only content. */
+.pay-again-row {
   display: flex;
   align-items: center;
-  justify-content: center;
-  transition: all 0.15s ease;
+  gap: 12px;
+  width: 100%;
+  min-height: 56px;
+  padding: 10px 16px;
+  border: none;
+  background: transparent;
+  color: var(--text-primary);
+  text-align: left;
+  font-family: inherit;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
 }
 
-.dev-toggle:hover {
-  background: var(--bg-input);
+.pay-again-row:active {
+  opacity: 0.85;
 }
 
-.dev-toggle.dev-active {
-  background: rgba(21, 222, 114, 0.1);
+.pay-again-row:focus-visible {
+  outline: 2px solid var(--brand-accent);
+  outline-offset: -2px;
+  border-radius: inherit;
 }
 
-.dev-icon-active {
-  color: #15DE72;
+.pay-again-icon {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--brand-accent-soft);
+  color: var(--brand-accent-text);
 }
 
-.dev-icon-muted {
+.pay-again-copy {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.pay-again-title {
+  font: 700 0.9375rem/1.3 'Manrope', sans-serif;
+  color: var(--text-primary);
+}
+
+
+.pay-again-chevron {
+  flex-shrink: 0;
   color: var(--text-secondary);
 }
 
-.dev-active-dot {
-  position: absolute;
-  top: 6px;
-  right: 6px;
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: #15DE72;
-}
-
-/* ===== Note Field ===== */
-.note-content {
-  padding: 4px 12px;
-}
-
-.note-input {
-  font-family: 'Manrope', sans-serif;
-  font-size: 13px;
-  color: var(--text-primary);
-  line-height: 1.5;
-}
-
-/* ===== LUD-09 message from recipient ===== */
 .success-action-detail {
   padding: 8px 12px;
   display: flex;
@@ -2186,7 +2107,6 @@ export default {
   min-width: 56px;
   font-size: 20px;
   font-weight: 600;
-  color: #ffffff;
   font-family: 'Manrope', sans-serif;
   margin-bottom: 10px;
 }
@@ -2417,18 +2337,6 @@ export default {
   color: var(--text-muted);
 }
 
-.contact-avatar-small {
-  width: 40px;
-  height: 40px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 0.9rem;
-  font-weight: 600;
-  color: white;
-  font-family: 'Manrope', sans-serif;
-}
 
 /* ===== Transaction Table (key-value card) ===== */
 .tx-table {
@@ -2602,47 +2510,6 @@ body.body--dark .verified-row-icon {
   color: var(--text-muted);
 }
 
-/* ===== Tags Section ===== */
-.tags-content {
-  padding: 10px 14px;
-}
-
-.tag-selector {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.tag-option {
-  padding: 4px 12px;
-  border-radius: 999px;
-  font-size: 12px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.15s ease;
-  border: 1px solid transparent;
-  font-family: 'Manrope', sans-serif;
-  background: var(--bg-input);
-  color: var(--text-secondary);
-  border-color: var(--bg-input);
-}
-
-.tag-option:hover:not(.disabled) {
-  background: var(--bg-secondary);
-  border-color: var(--text-muted);
-}
-
-.tag-option.selected {
-  background: rgba(21, 222, 114, 0.15);
-  color: var(--color-green);
-  border-color: rgba(21, 222, 114, 0.3);
-}
-
-.tag-option.disabled {
-  opacity: 0.35;
-  cursor: default;
-}
-
 /* ===== Developer / Technical Section =====
    Rows share the unified .tx-table look above; this section only adds
    the caption spacing and the raw-JSON block underneath. */
@@ -2750,5 +2617,20 @@ body.body--dark .verified-row-icon {
     padding: 12px 14px;
     min-height: 44px;
   }
+}
+
+.back-btn, .share-btn, .receipt-more { min-width: 44px; min-height: 44px; color: var(--text-secondary); }
+.receipt-menu { width: min(16rem, calc(100vw - 32px)); max-width: 100%; font-size: 1rem; }
+.receipt-menu .q-item { min-height: 44px; overflow-wrap: anywhere; white-space: normal; }
+.receipt-note { margin: 0; padding: 14px 16px; font-size: 1rem; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }
+.receipt-note-dialog { width: 420px; max-width: 100%; border-radius: 20px; background: var(--bg-card); color: var(--text-primary); }
+.receipt-note-title { margin: 0 0 16px; font-size: 1.25rem; line-height: 1.3; font-weight: 700; }
+.receipt-note-dialog :deep(.q-field__control:after) { border-color: var(--brand-accent-text); }
+.receipt-note-dialog :deep(textarea) { font-size: 1rem; line-height: 1.5; }
+.receipt-note-dialog .q-btn { min-height: 44px; font-size: 1rem; color: var(--brand-accent-text); }
+.receipt-note-dialog .q-card__actions { gap: 8px; padding: 8px 16px 16px; }
+@media (max-width: 380px) {
+  .page-header { flex-wrap: wrap; gap: 8px; }
+  .header-title { order: 3; flex-basis: 100%; }
 }
 </style>

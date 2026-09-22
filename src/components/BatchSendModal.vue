@@ -1139,6 +1139,9 @@ function onBeforeHide() {
  * @returns {Promise<{pr: string, successAction: object|null}>}
  */
 async function fetchLightningAddressInvoice(address, amountSats) {
+  // LUD-11 (`disposable`) is ignored here on purpose: a batch fans out to
+  // addresses that are already durable, and there is no per-payment surface
+  // to offer a repeat from. The single-send path in Wallet.vue reads it.
   const [username, domain] = address.split('@')
   if (!username || !domain) {
     throw new Error('Invalid Lightning address')

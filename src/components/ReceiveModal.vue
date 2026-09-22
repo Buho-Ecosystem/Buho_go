@@ -5,9 +5,20 @@
     transition-show="slide-up"
     transition-hide="slide-down"
     class="receive-modal"
+    :aria-label="showVouchers ? $t('Vouchers') : $t('Receive')"
     @before-hide="stopPaymentMonitor();"
+    @hide="onHidden"
   >
-    <q-card class="receive-card" :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'">
+    <VoucherSheet
+      v-if="showVouchers"
+      :vouchers="vouchers"
+      :checking="voucherChecking"
+      :display-sats="voucherDisplaySats"
+      @back="backFromVouchers"
+      @redeem="selectVoucher"
+      @remove="$emit('remove-voucher', $event)"
+    />
+    <q-card v-else class="receive-card" :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'">
       <div class="sheet-grabber" aria-hidden="true"><div class="grabber-bar"></div></div>
       <!-- Header -->
       <q-card-section class="receive-header">
@@ -38,52 +49,29 @@
         </div>
       </q-card-section>
 
-      <!-- LUD-14: withdraw links that still hold money.
-           A voucher is the one thing on this sheet the user cannot produce
-           themselves — it came from an ATM slip or a gift card and would
-           otherwise be a paper QR to find again — so it sits above the
-           receive views rather than inside any one of them. Tapping a row
-           sweeps what is left; the circle re-checks with the service. -->
-      <div v-if="vouchers.length" class="voucher-strip">
-        <div class="voucher-strip-label">{{ $t('Vouchers') }}</div>
-        <div
-          v-for="voucher in vouchers"
-          :key="voucher.id"
-          class="voucher-row"
-          role="button"
-          tabindex="0"
-          @click="$emit('redeem-voucher', voucher)"
-          @keyup.enter="$emit('redeem-voucher', voucher)"
-        >
-          <span class="voucher-icon">
-            <Icon icon="tabler:ticket" width="18" height="18" />
-          </span>
-          <span class="voucher-copy">
-            <strong class="voucher-title">{{ voucher.description || voucher.domain }}</strong>
-            <small class="voucher-sub">
-              {{ $t('Still holds {amount}', { amount: formatInvoiceAmount(voucher.lastKnownSats) }) }}
-              <template v-if="voucher.lastError"> · {{ $t("Couldn't reach this service") }}</template>
-            </small>
-          </span>
-          <button
-            type="button"
-            class="voucher-btn"
-            :aria-label="$t('Check again')"
-            @click.stop="$emit('recheck-voucher', voucher)"
-          >
-            <q-spinner v-if="checkingVouchers[voucher.id]" size="16px" />
-            <Icon v-else icon="tabler:refresh" width="16" height="16" />
-          </button>
-          <button
-            type="button"
-            class="voucher-btn"
-            :aria-label="$t('Forget this voucher')"
-            @click.stop="$emit('forget-voucher', voucher)"
-          >
-            <Icon icon="tabler:x" width="16" height="16" />
-          </button>
-        </div>
-      </div>
+      <!-- LUD-14: one line, only while a saved voucher still holds money.
+           A voucher is money the user can pull in, so it belongs on the
+           receive sheet, but it is not a receive view: this single row with a
+           disclosure opens the Vouchers sheet, where the list and its
+           management live. Outside the content section so every receive view
+           shows it. One native button, nothing nested. -->
+      <button
+        v-if="vouchers.length"
+        type="button"
+        class="voucher-summary"
+        ref="voucherSummary"
+        :aria-label="voucherSummaryTitle + ', ' + voucherSummaryLeft"
+        @click="openVouchers"
+      >
+        <span class="voucher-summary-icon" aria-hidden="true">
+          <Icon icon="tabler:ticket" width="18" height="18" />
+        </span>
+        <span class="voucher-summary-copy" aria-hidden="true">
+          <strong class="voucher-summary-title">{{ voucherSummaryTitle }}</strong>
+          <small class="voucher-summary-sub">{{ voucherSummaryLeft }}</small>
+        </span>
+        <Icon icon="tabler:chevron-right" width="18" height="18" class="voucher-summary-chevron" aria-hidden="true" />
+      </button>
 
       <!-- Content -->
       <q-card-section class="receive-content">
@@ -495,41 +483,48 @@ import { getQrOptions } from '../utils/qrConfig';
 import { composeUnifiedBip21 } from '../utils/bip21';
 import PaymentConfirmation from './PaymentConfirmation.vue';
 import L1BitcoinReceive from './L1BitcoinReceive.vue';
+import VoucherSheet from './VoucherSheet.vue';
 
 export default {
   name: 'ReceiveModal',
   components: {
     VueQrcode,
     PaymentConfirmation,
-    L1BitcoinReceive
+    L1BitcoinReceive,
+    VoucherSheet
   },
   setup() {
     const walletStore = useWalletStore();
     return { walletStore };
   },
   props: {
+    voucherChecking: { type: Object, default: () => ({}) },
+    voucherDisplaySats: { type: Function, default: voucher => voucher?.maxSats || 0 },
     modelValue: {
       type: Boolean,
       default: false
     },
-    // LUD-14 vouchers with a balance left (withdrawVouchers store). Owned by
-    // the wallet page — this sheet only shows them and reports taps.
+    // LUD-14 vouchers with a balance left (withdrawVouchers store `active`).
+    // Owned by the wallet page; this sheet shows one summary line and
+    // owns the Vouchers subview in the same dialog.
     vouchers: {
       type: Array,
       default: () => []
     },
-    // id → true while that voucher is being re-checked.
-    checkingVouchers: {
-      type: Object,
-      default: () => ({})
+    // Sum of what those vouchers still hold (store `activeTotalSats`).
+    totalVoucherSats: {
+      type: Number,
+      default: 0
     }
   },
   emits: [
     'update:modelValue', 'invoice-created', 'bitcoin-deposits-updated', 'scan-withdraw',
-    'redeem-voucher', 'recheck-voucher', 'forget-voucher',
+    'open-vouchers', 'redeem-voucher', 'remove-voucher',
   ],
   data() {
     return {
+      showVouchers: false,
+      selectedVoucher: null,
       // In-app keypad state. `keypadValue` is the raw string the user has
       // typed in the *current* mode (digits + optional `.` in fiat mode;
       // digits only in sats mode). The actual sats amount is computed.
@@ -567,6 +562,15 @@ export default {
     }
   },
   computed: {
+    /** One voucher shows its own title; several show a count. */
+    voucherSummaryTitle() {
+      if (this.vouchers.length === 1) return this.vouchers[0].title || this.vouchers[0].domain || '';
+      return this.$t('{count} vouchers', { count: this.vouchers.length });
+    },
+    voucherSummaryLeft() {
+      return this.$t('{amount} left', { amount: this.formatInvoiceAmount(this.totalVoucherSats) });
+    },
+
     show: {
       get() {
         return this.modelValue;
@@ -844,6 +848,25 @@ export default {
     window.removeEventListener('resize', this.handleResize);
   },
   methods: {
+    openVouchers() {
+      this.showVouchers = true;
+      this.$emit('open-vouchers');
+    },
+    backFromVouchers() {
+      this.showVouchers = false;
+      this.$nextTick(() => this.$refs.voucherSummary?.focus());
+    },
+    selectVoucher(voucher) {
+      this.selectedVoucher = voucher;
+      this.show = false;
+    },
+    onHidden() {
+      this.showVouchers = false;
+      const voucher = this.selectedVoucher;
+      this.selectedVoucher = null;
+      // Present the withdrawal review only after this dialog has disappeared.
+      if (voucher) this.$emit('redeem-voucher', voucher);
+    },
     // ... (keeping all existing methods from the original component)
     loadWalletState() {
       const savedState = localStorage.getItem('buhoGO_wallet_state');
@@ -3362,50 +3385,47 @@ export default {
 }
 
 /* ─────────────────────────────────────────────────────────────
-   LUD-14 voucher strip — saved withdraw links with a balance left
+   LUD-14 voucher summary: one line while a saved voucher holds money
    ───────────────────────────────────────────────────────────── */
-.voucher-strip {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 0 16px 10px;
-}
-
-.voucher-strip-label {
-  font: 600 12px/1 'Manrope', sans-serif;
-  letter-spacing: 0.02em;
-  text-transform: uppercase;
-  color: var(--text-secondary);
-}
-
-.voucher-row {
+.voucher-summary {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 10px 12px;
+  gap: 12px;
+  width: calc(100% - 32px);
+  min-height: 52px;
+  margin: 0 16px 10px;
+  padding: 8px 12px;
   border: 1px solid var(--border-card);
-  border-radius: 14px;
+  border-radius: 16px;
   background: var(--bg-card);
+  color: var(--text-primary);
+  text-align: left;
+  font-family: inherit;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
 }
 
-.voucher-row:active {
+.voucher-summary:active {
   opacity: 0.85;
 }
 
-.voucher-icon {
+.voucher-summary:focus-visible {
+  outline: 2px solid var(--brand-accent);
+  outline-offset: 2px;
+}
+
+.voucher-summary-icon {
   display: grid;
   place-items: center;
   width: 32px;
   height: 32px;
   flex-shrink: 0;
   border-radius: 50%;
-  background: var(--bg-secondary);
-  color: var(--text-primary);
+  background: var(--brand-accent-soft);
+  color: var(--brand-accent);
 }
 
-.voucher-copy {
+.voucher-summary-copy {
   display: flex;
   flex: 1;
   min-width: 0;
@@ -3413,33 +3433,21 @@ export default {
   gap: 2px;
 }
 
-.voucher-title {
-  font: 650 13.5px/1.3 'Manrope', sans-serif;
+.voucher-summary-title {
+  font: 700 0.9375rem/1.3 'Manrope', sans-serif;
   color: var(--text-primary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.voucher-sub {
-  font: 12px/1.3 'Manrope', sans-serif;
+.voucher-summary-sub {
+  font: 0.8125rem/1.3 'Manrope', sans-serif;
   color: var(--text-secondary);
 }
 
-.voucher-btn {
-  display: grid;
-  place-items: center;
-  width: 32px;
-  height: 32px;
+.voucher-summary-chevron {
   flex-shrink: 0;
-  border: 0;
-  border-radius: 50%;
-  background: transparent;
   color: var(--text-secondary);
-  cursor: pointer;
-}
-
-.voucher-btn:active {
-  background: var(--bg-secondary);
 }
 </style>

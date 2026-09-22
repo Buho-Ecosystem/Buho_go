@@ -110,7 +110,7 @@
                 {{ $t('Know when money arrives') }}
               </h2>
               <p class="slide-text" :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'">
-                {{ $t('Get a notification when a payment lands while you are in another app. This works while BuhoGO is still running in the background — not once it is closed.') }}
+                {{ $t('Get a notification when a payment lands while you are in another app. It works while BuhoGO stays open in the background, not after it is closed.') }}
               </p>
               <p v-if="notificationsAnswered" class="slide-text wizard-notify-state" :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'">
                 <template v-if="notifications.canNotify">{{ $t('Notifications are on. You can change this in Settings.') }}</template>

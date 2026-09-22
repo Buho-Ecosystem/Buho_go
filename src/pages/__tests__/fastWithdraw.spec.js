@@ -7,6 +7,8 @@ import * as withdraw from '../../utils/lnurlWithdraw.js';
 import * as addresses from '../../utils/addressUtils.js';
 import * as bip21 from '../../utils/bip21.js';
 import * as lud4 from '../../utils/lud4.js';
+import * as lnurlMetadata from '../../utils/lnurlMetadata.js';
+import * as userErrors from '../../utils/userErrors.js';
 
 // Execute the production Options-API methods, replacing provider/UI imports
 // that these paths never use. IO is explicit so an accidental GET fails.
@@ -37,6 +39,8 @@ function harness(get = () => assert.fail('unexpected network request')) {
   const component = evaluate('../Wallet.vue', {
     '../utils/lnurlWithdraw.js': withdraw, '../utils/addressUtils.js': addresses,
     '../utils/lud23.js': addressRequests,
+    '../utils/lnurlMetadata.js': lnurlMetadata,
+    '../utils/userErrors.js': userErrors,
     '../services/addressRequestIntake.js': { offerAddressRequest: input => {
       assert.notEqual(addressRequests.isAddressRequest?.(input), true, 'withdrawal must not enter address-sharing consent');
       return false;
@@ -62,7 +66,8 @@ for (const [name, input] of Object.entries({ bech32: encoded(url), lightning: `l
   test(`${name} resolves inline with zero metadata GETs`, async () => {
     const { vm, calls } = harness();
     const result = await vm.fetchLNURLInfo(input);
-    assert.deepEqual(result, withdraw.withdrawInfo(metadata)); assert.equal(calls.length, 0);
+    // LUD-14: the decoded link travels with the answer as `sourceUrl`.
+    assert.deepEqual(result, withdraw.withdrawInfo(metadata, { sourceUrl: url })); assert.equal(calls.length, 0);
   });
 }
 
@@ -80,7 +85,9 @@ test('fallback preserves endpoint errors and normal payment metadata', async () 
   const h = harness(async () => ({ ok: true, data: { status: 'ERROR', reason: 'Expired voucher' } }));
   assert.deepEqual(await h.vm.fetchLNURLInfo('https://cash.example/ordinary'), { error: true, reason: 'Expired voucher' });
   const pay = harness(async () => ({ ok: true, data: { tag: 'payRequest', minSendable: 1000, maxSendable: 2000, callback: metadata.callback } }));
-  assert.equal((await pay.vm.fetchLNURLInfo('https://cash.example/pay')).lnurlType, 'payRequest');
+  const result = await pay.vm.fetchLNURLInfo('https://cash.example/pay');
+  assert.equal(result.lnurlType, 'payRequest');
+  assert.deepEqual(result.serviceMeta, lnurlMetadata.parsePayRequestMetadata(null));
 });
 
 test('all payment wallets open Redeem review without creating an invoice or submitting', async () => {
@@ -172,7 +179,8 @@ for (const file of ['deep-links.js', 'nfc.js']) {
       else {
         assert.equal(store.pendingDeepLink.type, 'lnurl');
         const { vm, calls } = harness();
-        assert.deepEqual(await vm.fetchLNURLInfo(store.pendingDeepLink.data), withdraw.withdrawInfo(metadata));
+        // The NFC carrier is the raw URL with a literal @, so that is the sourceUrl it keeps.
+        assert.deepEqual(await vm.fetchLNURLInfo(store.pendingDeepLink.data), withdraw.withdrawInfo(metadata, { sourceUrl: file === 'nfc.js' ? input : url }));
         assert.equal(calls.length, 0);
       }
     }
