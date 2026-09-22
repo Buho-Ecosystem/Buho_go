@@ -51,6 +51,8 @@ import {
   claimErrorKind,
   classifyFromMatureQuote,
   withdrawalStatusFromPayment,
+  instantClaimOutcome,
+  waitQuoteFromMature,
 } from '../utils/breezPayments.js';
 import { sparkHealth } from '../utils/sparkHealth.js';
 
@@ -1275,6 +1277,9 @@ export class BreezSparkWalletProvider extends WalletProvider {
       return {
         creditAmountSats: Number(mature.creditAmountSats || 0),
         feeSats: Number(mature.feeSats || 0),
+        // True while the service will not yet quote the deposit and the
+        // SDK priced it from current network fees instead.
+        isEstimate: mature.isEstimate === true,
         signature: null,
         transactionId: txId,
         outputIndex
@@ -1364,9 +1369,12 @@ export class BreezSparkWalletProvider extends WalletProvider {
       return { category: 'quote_failed', quote: null, plan: null, creditSats: 0, feeSats: 0, classifiedAt: Date.now(), error };
     }
 
+    // One call prices both ways of adding the deposit; the wait leg rides
+    // along so the sheet can show the two side by side.
+    const wait = waitQuoteFromMature(quote?.mature);
     const instant = quote?.instant;
     if (!instant) {
-      return { category: 'no_instant_plan', quote: null, plan: null, creditSats: 0, feeSats: 0, classifiedAt: Date.now() };
+      return { category: 'no_instant_plan', quote: null, plan: null, wait, creditSats: 0, feeSats: 0, classifiedAt: Date.now() };
     }
 
     const creditSats = Number(instant.creditAmountSats || 0);
@@ -1376,12 +1384,23 @@ export class BreezSparkWalletProvider extends WalletProvider {
       category: 'instant',
       quote: { transactionId: deposit.txId, outputIndex: deposit.outputIndex || 0, creditAmountSats: creditSats, feeSats },
       plan: instant,
+      wait,
       creditSats,
       feeSats,
       classifiedAt: Date.now(),
     };
   }
 
+  /**
+   * Add a deposit before it matures, at the fee the instant quote named.
+   *
+   * The SDK declines by throwing (fee ceiling, depth, no plan), so a call
+   * that resolves is an accepted claim. An early claim resolves WITHOUT a
+   * payment because it settles asynchronously; a deposit that matured in
+   * the meantime takes the normal claim and resolves WITH one. Callers mark
+   * the txid claimed on resolve either way. `settled` is false for the
+   * early case so the caller can nudge the balance until the credit lands.
+   */
   async claimInstantDeposit(txId, quote, plan, outputIndex = 0) {
     this._ensureConnected();
 
@@ -1393,14 +1412,8 @@ export class BreezSparkWalletProvider extends WalletProvider {
         vout: outputIndex,
         maxFee: { type: 'fixed', amount: feeSats },
       });
-      // The response's payment is optional; callers durably mark the txid
-      // claimed on our success, so a resolve WITHOUT an executed claim must
-      // fail loudly - the 0-conf path degrades to the 3-conf flow, never to
-      // a deposit silently excluded from every claim path.
-      if (!result?.payment) {
-        throw new Error('Instant claim was not accepted');
-      }
-      return { success: true, claimId: result.payment.id || null };
+      const { claimId, settled } = instantClaimOutcome(result);
+      return { success: true, claimId, settled };
     } finally {
       this.setSyncing(false);
     }

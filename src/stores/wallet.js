@@ -20,6 +20,13 @@ import {
   probeAccountActivity as probeSparkAccountActivity,
 } from '../services/breezSdk';
 import { useAutoWithdrawStore } from './autoWithdraw';
+import { useNotificationsStore } from './notifications';
+import { formatAmount } from '../utils/amountFormatting.js';
+
+/** walletId → the last balance noticeIncomingPayment saw for it this session. */
+const observedBalance = new Map();
+// Shared by page ticks and store refreshes; the newest request owns its result.
+const balanceReads = new Map();
 import { useTransactionMetadataStore } from './transactionMetadata';
 import { isLightningAddress } from '../utils/addressUtils.js';
 import { createClaimedDepositRegistry } from '../utils/claimedDeposits.js';
@@ -2339,9 +2346,20 @@ export const useWalletStore = defineStore('wallet', {
      * Refresh wallet balance and info
      * @param {string} walletId - The wallet ID to refresh
      */
+    beginBalanceRead(walletId) {
+      const read = { walletId };
+      balanceReads.set(walletId, read);
+      return read;
+    },
+
+    isBalanceReadCurrent(read) {
+      return !!read && balanceReads.get(read.walletId) === read;
+    },
+
     async refreshWalletData(walletId) {
       const wallet = this.wallets.find(w => w.id === walletId);
       if (!wallet) return;
+      const read = this.beginBalanceRead(walletId);
 
       try {
         if (wallet.type === WALLET_TYPES.SPARK) {
@@ -2356,6 +2374,7 @@ export const useWalletStore = defineStore('wallet', {
             provider.getInfo()
           ]);
 
+          if (!this.isBalanceReadCurrent(read)) return;
           this.balances[walletId] = balanceResult.balance;
           this.walletInfos[walletId] = info;
         } else if (wallet.type === WALLET_TYPES.LNBITS) {
@@ -2371,6 +2390,7 @@ export const useWalletStore = defineStore('wallet', {
             provider.getInfo()
           ]);
 
+          if (!this.isBalanceReadCurrent(read)) return;
           this.balances[walletId] = balanceResult.balance;
           this.walletInfos[walletId] = info;
         } else if (wallet.type === WALLET_TYPES.ARKADE) {
@@ -2386,6 +2406,7 @@ export const useWalletStore = defineStore('wallet', {
             provider.getInfo()
           ]);
 
+          if (!this.isBalanceReadCurrent(read)) return;
           this.balances[walletId] = balanceResult.balance;
           // Keep the unspendable remainder visible (see balanceDetails).
           this.balanceDetails[walletId] = {
@@ -2422,21 +2443,26 @@ export const useWalletStore = defineStore('wallet', {
             nwc.getInfo(),
           ]);
 
+          if (!this.isBalanceReadCurrent(read)) return;
           this.balances[walletId] = balanceResponse.balance;
           this.walletInfos[walletId] = info;
         }
 
         // Update last used
         wallet.lastUsed = Date.now();
+        const newBalance = this.balances[walletId];
+        this.noticeIncomingPayment(wallet, newBalance);
         await this.persistState();
+        if (!this.isBalanceReadCurrent(read)) return;
 
         // Auto-withdraw check
-        const newBalance = this.balances[walletId];
         if (newBalance > 0) {
           const autoWithdrawStore = useAutoWithdrawStore();
           autoWithdrawStore.checkAndExecute(walletId, newBalance, this);
         }
+
       } catch (error) {
+        if (!this.isBalanceReadCurrent(read)) return;
         console.error(`Refresh wallet ${walletId} failed:`, error);
         this.connectionStates[walletId] = {
           ...this.connectionStates[walletId],
@@ -2444,6 +2470,50 @@ export const useWalletStore = defineStore('wallet', {
           error: error.message,
         };
       }
+    },
+
+    /**
+     * Tell the user money arrived while they were looking at something else.
+     *
+     * A balance that went UP between two refreshes is the honest, rail-agnostic
+     * signal here: it covers a Lightning receive, an on-chain deposit landing
+     * and a transfer in, without this store having to understand any of them.
+     * A send lowers the balance and is never announced.
+     *
+     * Deliberately quiet in three cases: the first reading of a session (we
+     * have nothing to compare against, and "you received your whole balance"
+     * on launch would be a lie), while the app is on screen (the UI is already
+     * showing it — the service checks this), and when the user has not asked
+     * for notifications at all.
+     *
+     * Fire-and-forget: a notification is never worth failing a refresh over.
+     */
+    noticeIncomingPayment(wallet, balanceAfter) {
+      if (!wallet?.id || !Number.isFinite(balanceAfter) || balanceAfter < 0) return;
+
+      // The previous figure is what THIS method last saw for the wallet, not
+      // whatever the caller had on screen: the page's balance tick and this
+      // store's refresh both report here, so one map is what keeps them from
+      // announcing the same payment twice, and a wallet switch that resets
+      // the on-screen balance to 0 cannot read as "you received everything".
+      // The first reading of a session only seeds the map.
+      const previous = observedBalance.get(wallet.id);
+      observedBalance.set(wallet.id, balanceAfter);
+      if (previous === undefined) return;
+      const received = balanceAfter - previous;
+      if (received <= 0) return;
+
+      const notifications = useNotificationsStore();
+      if (!notifications.canNotify) return;
+
+      const t = i18n.global.t.bind(i18n.global);
+      notifications.notifyIfEnabled({
+        title: t('Payment received'),
+        body: t('{amount} · {wallet}', {
+          amount: formatAmount(received, this.useBip177Format),
+          wallet: wallet.name || t('your wallet'),
+        }),
+      }).catch((err) => console.warn('[notifications] receive notice failed:', err?.message || err));
     },
 
     /**

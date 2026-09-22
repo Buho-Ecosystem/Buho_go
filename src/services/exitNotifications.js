@@ -11,26 +11,21 @@ const UNLOCK_ID_BASE = 74_000;
 
 const LocalNotifications = Capacitor.isNativePlatform() ? registerPlugin('LocalNotifications') : null;
 
-async function plugin() {
+async function permissionState() {
   if (!LocalNotifications) return null;
   try {
     // A plugin that is not compiled in throws here; that is the "unavailable" answer.
-    await LocalNotifications.checkPermissions();
-    return LocalNotifications;
+    // Resolve a primitive, never the Capacitor proxy: its synthetic `then`
+    // method makes returning the proxy from an async function unsafe.
+    return (await LocalNotifications.checkPermissions())?.display || null;
   } catch {
     return null;
   }
 }
 
 export async function remindersAvailable() {
-  const notifications = await plugin();
-  if (!notifications) return false;
-  try {
-    const status = await notifications.checkPermissions();
-    return status?.display === 'granted' || status?.display === 'prompt';
-  } catch {
-    return false;
-  }
+  const permission = await permissionState();
+  return permission === 'granted' || permission === 'prompt';
 }
 
 function idFor(walletId) {
@@ -41,8 +36,8 @@ function idFor(walletId) {
 
 /** Schedule (or move) the unlock reminder. Returns true when a reminder exists. */
 export async function scheduleUnlockReminder({ walletId, at, title, body }) {
-  const notifications = await plugin();
-  if (!notifications || !at) return false;
+  if (!at || !(await permissionState())) return false;
+  const notifications = LocalNotifications;
   try {
     const permission = await notifications.requestPermissions();
     if (permission?.display !== 'granted') return false;
@@ -56,7 +51,7 @@ export async function scheduleUnlockReminder({ walletId, at, title, body }) {
 }
 
 export async function cancelUnlockReminder(walletId) {
-  const notifications = await plugin();
-  if (!notifications) return;
+  if (!(await permissionState())) return;
+  const notifications = LocalNotifications;
   await notifications.cancel({ notifications: [{ id: idFor(walletId) }] }).catch(() => {});
 }

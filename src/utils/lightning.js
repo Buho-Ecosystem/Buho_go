@@ -14,6 +14,7 @@ import { NostrWebLNProvider } from '@getalby/sdk';
 import { Invoice } from '@getalby/lightning-tools';
 import { bech32 } from 'bech32';
 import { parseSuccessAction } from './successAction.js';
+import { isStoreablePayLink } from './lnurlPay.js';
 import { lnurlGetJson } from './lnurlHttp.js';
 import {
   isLightningAddress as isLightningAddressShared,
@@ -463,10 +464,16 @@ export class LightningPaymentService {
       throw new Error('Amount is required for LNURL payments');
     }
 
-    // Handle raw LNURL that needs decoding
+    // Handle raw LNURL that needs decoding. Carry the original bech32 string
+    // along: it is the only thing worth storing if the service turns out to
+    // be LUD-11 storeable, and the decoded params don't contain it.
     if (!paymentData.callback && paymentData.data) {
       const decoded = await this.handleLNURL(paymentData.data);
-      return this.payLNURL(decoded, amount, comment);
+      return this.payLNURL(
+        { ...decoded, lnurl: paymentData.lnurl || paymentData.data },
+        amount,
+        comment,
+      );
     }
 
     this.validateAmount(amount, paymentData);
@@ -496,8 +503,15 @@ export class LightningPaymentService {
 
     const result = await this.nwc.sendPayment(data.pr);
     // Preserve the LUD-09 successAction (recipient's post-payment message) so
-    // the caller can show it once the payment settles.
-    return { ...result, successAction: parseSuccessAction(data.successAction, paymentData.callback) };
+    // the caller can show it once the payment settles, and the LUD-11 verdict
+    // on the link itself: `disposable: false` means this LNURL may be kept and
+    // paid again, which is what Transaction Details offers later.
+    const sourceLnurl = paymentData.lnurl || paymentData.data || null;
+    return {
+      ...result,
+      successAction: parseSuccessAction(data.successAction, paymentData.callback),
+      payLink: (isStoreablePayLink(data) && sourceLnurl) ? sourceLnurl : null,
+    };
   }
 
   // ============================================================================

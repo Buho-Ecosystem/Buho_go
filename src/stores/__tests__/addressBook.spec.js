@@ -2106,5 +2106,52 @@ await test('switchContactsIdentity (start fresh): a failed flush aborts BEFORE t
   assert.equal(store.syncDirty, true, 'still dirty, retryable');
 });
 
+// ---------------------------------------------------------------------------
+// LUD-11 services as payees
+// ---------------------------------------------------------------------------
+
+await test('a service pay link is stored canonically, resolved by findContactByAddress, and keeps its metadata', async () => {
+  const { canonicalLnurl } = await import('../../utils/addressUtils.js');
+  const store = freshStore();
+  const canonical = canonicalLnurl('lnurlp://coffee.example/Api/LNURLp/Corner');
+  assert.ok(canonical && canonical.startsWith('lnurl1'));
+
+  const entry = await store.addEntry({
+    name: 'Corner Coffee',
+    address: canonical,
+    addressType: 'lnurl',
+    service: { name: 'Corner Coffee', identifier: null, domain: 'coffee.example', reusable: true, seenAt: 1 },
+  });
+  assert.equal(entry.addressType, 'lnurl');
+  assert.equal(entry.address, canonical);
+  assert.deepEqual(entry.service, { name: 'Corner Coffee', identifier: null, domain: 'coffee.example', payLink: canonical, reusable: true, seenAt: 1 });
+
+  // The tx stamp is the same canonical string; the case-folding lookup finds it.
+  assert.equal(store.findContactByAddress(canonical)?.id, entry.id);
+  assert.equal(store.findContactByAddress(canonical.toUpperCase())?.id, entry.id);
+
+  // Junk metadata is dropped, not stored.
+  const plain = await store.addEntry({ name: 'Plain', address: 'plain@example.com', addressType: 'lightning', service: { seenAt: 'x' } });
+  assert.equal(plain.service, null);
+
+  // An update can attach or refresh the metadata.
+  const updated = await store.updateEntry(plain.id, { service: { name: 'Plain Shop', domain: 'example.com' } });
+  assert.equal(updated.service.name, 'Plain Shop');
+  assert.equal(updated.service.reusable, null);
+});
+
+await test('manual and post-payment service identities resolve to one contact', async () => {
+  const { canonicalLnurl } = await import('../../utils/addressUtils.js');
+  const store = freshStore();
+  const payLink = canonicalLnurl('https://coffee.example/Pay');
+  const entry = await store.addEntry({ name: 'Coffee', address: payLink, addressType: 'lnurl',
+    service: { name: 'Coffee', domain: 'coffee.example', identifier: 'alice@coffee.example' } });
+  assert.equal(entry.address, 'alice@coffee.example');
+  assert.equal(entry.addressType, 'lightning');
+  assert.equal(store.findContactByAddress(payLink)?.id, entry.id);
+  assert.equal(store.findContactByAddress('alice@coffee.example')?.id, entry.id);
+  await assert.rejects(store.addEntry({ name: 'Coffee again', address: 'alice@coffee.example', addressType: 'lightning' }), /already exists/);
+});
+
 console.log(`\n  ${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);

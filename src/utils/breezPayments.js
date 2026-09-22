@@ -180,6 +180,39 @@ export function claimErrorKind(message) {
 }
 
 /**
+ * Outcome of an SDK `claimDeposit` call on a deposit that has not matured.
+ *
+ * The SDK answers one of three ways: it throws when the service declines
+ * the early claim (fee ceiling, depth, no plan); it resolves WITHOUT a
+ * payment when the early claim was accepted, because that claim settles
+ * asynchronously; and it resolves WITH a payment when the deposit turned
+ * out to be mature and the normal claim ran instead. A resolved call is
+ * therefore always an accepted claim. `settled` tells the two apart for
+ * callers that want to nudge the balance along.
+ * @returns {{ claimId: string|null, settled: boolean }}
+ */
+export function instantClaimOutcome(result) {
+  const payment = result?.payment || null;
+  return { claimId: payment?.id || null, settled: !!payment };
+}
+
+/**
+ * The wait-for-confirmations leg of a claim quote, in the shape the deposit
+ * sheet prices next to the instant leg. The SDK marks this leg an estimate
+ * while the service will not yet quote the immature deposit; the sheet then
+ * shows it as approximate. Null when the quote carried no mature leg.
+ */
+export function waitQuoteFromMature(mature) {
+  if (!mature) return null;
+  return {
+    creditAmountSats: Number(mature.creditAmountSats || 0),
+    feeSats: Number(mature.feeSats || 0),
+    isEstimate: mature.isEstimate === true,
+    confirmationsRequired: Number(mature.confirmationsRequired || 0),
+  };
+}
+
+/**
  * Deposit classification from a mature claim quote — same thresholds and
  * categories the deposit flow acts on.
  */

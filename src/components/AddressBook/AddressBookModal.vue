@@ -212,9 +212,15 @@ import {
   isBitcoinAddress,
   isLightningAddress,
   isLnurl,
+  canonicalLnurl,
+  lnurlToUrl,
+  lnurlDomain,
   isArkadeAddress,
 } from '../../utils/addressUtils.js'
 import { isSparkPaymentRequest } from '../../utils/sparkPayment.js'
+import { lnurlGetJson } from '../../utils/lnurlHttp.js'
+import { parsePayRequestMetadata, serviceTitle, normalizeServiceImage, serviceIdentity } from '../../utils/lnurlMetadata.js'
+import { useServiceImagesStore } from '../../stores/serviceImages'
 import AddContactSearch from './AddContactSearch.vue'
 import AddContactScan from './AddContactScan.vue'
 import ArkadeLogo from '../ArkadeLogo.vue'
@@ -477,6 +483,18 @@ export default {
           notes: this.formData.notes?.trim() || ''
         }
 
+        // A pasted pay link (LUD-11 service) is stored in its one canonical
+        // form, and the service gets one chance to describe itself (LUD-06
+        // name and logo). Best effort: no answer means the domain is the
+        // name, and nothing here ever creates an invoice.
+        if (this.detectedType === 'lnurl') {
+          const canonical = canonicalLnurl(entryData.address)
+          if (canonical) entryData.address = canonical
+          if (!this.isEditing) {
+            entryData.service = await this.describeService(entryData.address)
+          }
+        }
+
         if (this.isEditing) {
           await this.updateEntry(this.entry.id, entryData)
           this.$q.notify({
@@ -503,6 +521,32 @@ export default {
         })
       } finally {
         this.isSaving = false
+      }
+    },
+
+    /**
+     * Ask a pay link who it is: one GET of the payRequest, its LUD-06
+     * metadata parsed, the logo kept in the local image registry. Whether
+     * the link is reusable (LUD-11) is only known after a payment, so
+     * `reusable` stays null here. Never throws; null when nothing useful
+     * came back.
+     */
+    async describeService(address) {
+      const url = lnurlToUrl(address)
+      if (!url) return null
+      const domain = lnurlDomain(address)
+      const service = { name: domain, identifier: null, domain, reusable: null, seenAt: Date.now() }
+      try {
+        const response = await lnurlGetJson(url, { timeoutMs: 10000 })
+        const data = response?.data
+        if (!response?.ok || !data || data.tag !== 'payRequest' || data.status === 'ERROR') return service
+        const meta = parsePayRequestMetadata(data.metadata)
+        normalizeServiceImage(meta.image)
+          .then((dataUrl) => { if (dataUrl) useServiceImagesStore().put(serviceIdentity(address, meta).address, dataUrl) })
+          .catch(() => {})
+        return { ...service, name: serviceTitle(meta, domain), identifier: meta.identifier }
+      } catch {
+        return service
       }
     },
 

@@ -7,6 +7,7 @@
       <div
         v-if="offered"
         class="clipboard-strip"
+        :class="{ 'is-busy': busy }"
         role="status"
         @pointerdown="onPointerDown"
         @pointermove="onPointerMove"
@@ -14,19 +15,27 @@
         @pointercancel="onPointerEnd"
       >
         <span class="clipboard-strip-copy">
-          <span class="clipboard-strip-label">{{ $t(labelKey) }}</span>
+          <!-- Once tapped, this strip IS the progress: the destination is
+               resolved behind it and the confirm sheet is the next thing
+               the user sees. No sheet opens in between to show a spinner. -->
+          <span class="clipboard-strip-label">{{ busy ? $t('Fetching…') : $t(labelKey) }}</span>
           <span class="clipboard-strip-value">{{ abbreviated }}</span>
         </span>
-        <button type="button" class="clipboard-strip-use" @click="use">{{ $t(actionKey) }}</button>
+        <button v-if="!busy" type="button" class="clipboard-strip-use" @click="use">{{ $t(actionKey) }}</button>
+        <span v-else class="clipboard-strip-spinner" aria-hidden="true"></span>
         <!-- The countdown is the dismissal: when the bar reaches zero the
-             strip leaves. A finger resting on the strip pauses it. -->
+             strip leaves. A finger resting on the strip pauses it. While
+             resolving it gives way to an indeterminate bar — the offer is
+             no longer expiring, it is working. -->
         <span
+          v-if="!busy"
           class="clipboard-strip-timer"
           :class="{ 'is-held': held }"
           :style="{ animationDuration: `${OFFER_MS}ms` }"
           aria-hidden="true"
           @animationend="dismiss"
         ></span>
+        <span v-else class="clipboard-strip-progress" aria-hidden="true"></span>
       </div>
     </transition>
   </div>
@@ -74,6 +83,12 @@ function ensureReturnListener() {
  * corresponding Send, Open, or Review action with a countdown. Use hands
  * the text to the matching flow; nothing advances on its own.
  *
+ * Use does not dismiss the strip — the parent resolves the destination
+ * with the sheet still down and holds `busy` while it does, so the strip
+ * shows the wait in place and the confirm sheet is the only surface that
+ * arrives. The strip leaves when that sheet opens (the dialog observer
+ * below) or when `busy` clears.
+ *
  * Android only: iOS uses explicit Paste to avoid unsolicited permission
  * prompts; on the web the Send sheet's own chip covers this. Reads happen
  * only on the home screen, while no sheet or dialog is in front, and never
@@ -87,6 +102,12 @@ export default {
   inject: {
     // Provided by the app shell while the lock overlay is up.
     appLocked: { default: () => ref(false) },
+  },
+
+  props: {
+    // True while the parent resolves the destination this strip handed it.
+    // Freezes the countdown and turns the strip into its own progress.
+    busy: { type: Boolean, default: false },
   },
 
   emits: ['use'],
@@ -114,6 +135,24 @@ export default {
     actionKey() { return offerActionKey(this.offered, this.wallet.activeWalletType); },
     labelKey() {
       return offerLabelKey(this.offered, this.wallet.activeWalletType);
+    },
+  },
+
+  watch: {
+    // Resolving takes the offer out of its countdown: it is no longer an
+    // expiring suggestion, it is work in progress. When the parent is done
+    // the strip has served its purpose either way — the confirm sheet is up
+    // (the dialog observer has already cleared it) or the Send sheet took
+    // the string over — so it leaves.
+    busy(now) {
+      if (now) {
+        clearTimeout(this.fallbackTimer);
+        this.fallbackTimer = null;
+        this.held = false;
+        this.pointerStartY = null;
+      } else {
+        this.clear();
+      }
     },
   },
 
@@ -174,13 +213,18 @@ export default {
       return true;
     },
 
+    // Hand the destination over and stay: the parent resolves it behind
+    // this strip and flips `busy`, so the wait is shown here instead of in
+    // a sheet that only exists to be left again.
     use() {
-      const value = this.offered;
-      this.clear();
-      this.$emit('use', value);
+      if (this.busy || !this.offered) return;
+      this.$emit('use', this.offered);
     },
 
+    // The countdown reaching zero, or a swipe. Never while resolving: the
+    // offer stopped being an offer the moment it was used.
     dismiss() {
+      if (this.busy) return;
       this.clear();
     },
 
@@ -193,12 +237,15 @@ export default {
     },
 
     onPointerDown(event) {
+      // A resolve in flight cannot be paused or swiped away — it owns the
+      // strip until it settles.
+      if (this.busy) return;
       this.held = true;
       this.pointerStartY = event.clientY;
     },
 
     onPointerMove(event) {
-      if (this.pointerStartY === null) return;
+      if (this.busy || this.pointerStartY === null) return;
       if (this.pointerStartY - event.clientY > SWIPE_DISMISS_PX) this.dismiss();
     },
 
@@ -235,6 +282,11 @@ export default {
   overflow: hidden;
   touch-action: none;
   -webkit-tap-highlight-color: transparent;
+}
+
+/* Nothing to tap while it resolves — the strip is a status line now. */
+.clipboard-strip.is-busy {
+  pointer-events: none;
 }
 
 .clipboard-strip-copy {
@@ -283,6 +335,52 @@ export default {
   outline-offset: 2px;
 }
 
+/* Resolving: the Use button's footprint, holding a spinner instead. Same
+   box, so nothing in the strip shifts when the tap lands. */
+.clipboard-strip-spinner {
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  margin: 11px 29px;
+  border-radius: 50%;
+  border: 2px solid var(--border-card);
+  border-top-color: var(--brand-accent);
+  animation: clipboard-strip-spin 0.7s linear infinite;
+}
+
+.body--light .clipboard-strip-spinner {
+  border-top-color: var(--btn-neutral-bg);
+}
+
+@keyframes clipboard-strip-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* Indeterminate stand-in for the countdown while the destination resolves:
+   the strip is working, not expiring. */
+.clipboard-strip-progress {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 100%;
+  height: 3px;
+  overflow: hidden;
+}
+
+.clipboard-strip-progress::after {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 40%;
+  background: var(--brand-accent);
+  animation: clipboard-strip-sweep 1.1s ease-in-out infinite;
+}
+
+@keyframes clipboard-strip-sweep {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(250%); }
+}
+
 .clipboard-strip-timer {
   position: absolute;
   left: 0;
@@ -318,6 +416,8 @@ export default {
    what ends the offer. */
 @media (prefers-reduced-motion: reduce) {
   .clipboard-strip-timer { animation: none; }
+  .clipboard-strip-spinner { animation-duration: 2s; }
+  .clipboard-strip-progress::after { animation: none; width: 100%; opacity: 0.5; }
   .clipboard-strip-enter-active,
   .clipboard-strip-leave-active { transition: none; }
 }

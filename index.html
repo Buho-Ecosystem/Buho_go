@@ -1,12 +1,32 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <!-- The Arkade SDK's descriptor dependency assigns to Node's `global` at
-         load time. The dev server's dependency optimizer (Rolldown, Vite 8) does
-         not honour a `define` for it, so the alias is provided before any module
-         runs. Harmless in the production bundle. -->
-    <script>if (typeof globalThis.global === 'undefined') { globalThis.global = globalThis; }</script>
     <meta charset="utf-8">
+
+    <!--
+      `global` shim — must run before any module script.
+
+      @bitcoinerlab/descriptors-core (pulled in by @arkade-os/sdk) patches a
+      missing process.version on startup. It computes a correct globalThis
+      fallback into a local `g`, then writes through the bare `global`
+      identifier anyway:
+
+          global.process.version = '';   // dist/index.js
+
+      In a browser that is an uncaught ReferenceError, and it takes the Arkade
+      SDK down with it. The guard above that line only passes when `process`
+      exists but has no `.version` — which is exactly the shape Vite's process
+      shim has, so it fires every time.
+
+      This lived in quasar.config.js as optimizeDeps define(global -> globalThis),
+      but that only ever covered the dev pre-bundle and stopped applying when
+      Vite 8 moved dep optimization from esbuild to Rolldown. A plain classic
+      script runs ahead of every (deferred) module script and is immune to which
+      bundler is underneath, so it holds for dev, the production build, and the
+      Android WebView alike. Remove when the upstream line uses `g`.
+    -->
+    <script>window.global = window.global || window;</script>
+
     <meta name="format-detection" content="telephone=no">
     <meta name="msapplication-tap-highlight" content="no">
     <meta name="viewport"
@@ -24,6 +44,10 @@
     <link rel="apple-touch-icon" sizes="167x167" href="/pwa/apple/apple-icon-167x167.png">
     <link rel="apple-touch-icon" sizes="152x152" href="/pwa/apple/apple-icon-152x152.png">
     <link rel="apple-touch-icon" sizes="120x120" href="/pwa/apple/apple-icon-120x120.png">
+    <!-- Both spellings on purpose: Chrome deprecated the apple-prefixed one and
+         logs a console warning without it, but iOS Safari still only honours
+         the apple- form for standalone launch. Keep the pair. -->
+    <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="BuhoGO">

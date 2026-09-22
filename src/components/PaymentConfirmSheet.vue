@@ -112,11 +112,11 @@
               class="recipient-avatar"
               :class="{
                 'has-logo': showRecipientLogo,
-                'recipient-avatar--silhouette': isSilhouetteRecipient
+                'recipient-avatar--silhouette': isSilhouetteRecipient || isServiceRecipient
               }"
               :style="showRecipientLogo
                 ? (recipientLogoBg ? { background: recipientLogoBg } : null)
-                : (isSilhouetteRecipient ? null : { background: recipientColor })"
+                : (isSilhouetteRecipient || isServiceRecipient ? null : { background: recipientColor })"
             >
               <img
                 v-if="showRecipientLogo"
@@ -129,8 +129,8 @@
                   : null"
                 @error="logoFailed = true"
               />
-              <!-- Picture-less contact: the app-wide filled-bust
-                   silhouette, never a colored initial. -->
+              <!-- A service keeps its storefront fallback if its logo fails. -->
+              <Icon v-else-if="isServiceRecipient" icon="tabler:building-store" width="24" height="24" aria-hidden="true" />
               <svg
                 v-else-if="isSilhouetteRecipient"
                 class="recipient-glyph"
@@ -158,7 +158,7 @@
                   <span>{{ formattedCountdown }}</span>
                 </div>
               </div>
-              <div v-if="recipientAddress" class="recipient-addr">{{ recipientAddress }}</div>
+              <div v-if="recipientAddressLabel" class="recipient-addr">{{ recipientAddressLabel }}</div>
             </div>
             <button
               v-if="addressNeedsDetails"
@@ -437,17 +437,16 @@ export default {
     recipientAddress() {
       return this.payment?.recipient?.address || ''
     },
-    /**
-     * Whether the destination earns the info glyph and its detail panel.
-     * The cell's identifier line shows about 35 mono characters before it
-     * truncates on the narrowest phones; anything at or under that is
-     * already fully readable in place (a Lightning address, typically),
-     * and repeating it in a panel would say the same thing twice. Long
-     * strings (invoices, LNURLs, on-chain addresses) truncate, so they
-     * keep the panel with the full value and copy.
-     */
+    recipientAddressLabel() {
+      return this.payment?.recipient?.addressLabel || this.recipientAddress
+    },
+    isServiceRecipient() {
+      return !!this.payment?.recipient?.service
+    },
+    // Keep the exact destination available when the row uses a friendly
+    // label, or when the address is too long to read in the row itself.
     addressNeedsDetails() {
-      return this.recipientAddress.length > 34
+      return this.recipientAddressLabel !== this.recipientAddress || this.recipientAddress.length > 34
     },
     // Branta merchant verification, present only when the parent's adapter
     // attached it after a positive lookup. Absent on every unverified
@@ -1085,7 +1084,7 @@ export default {
    so the confirm sheet and every list agree. */
 .recipient-avatar--silhouette {
   background: var(--bg-input);
-  color: var(--text-muted);
+  color: var(--text-secondary);
   text-shadow: none;
   box-shadow: none;
 }
@@ -1135,21 +1134,21 @@ export default {
 .recipient-addr {
   margin-top: 2px;
   font-family: var(--font-mono);
-  font-size: 10.5px;
-  color: var(--text-muted);
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .recipient-info {
-  width: 34px;
-  height: 34px;
+  width: 44px;
+  height: 44px;
   border-radius: 50%;
   border: 0;
   background: var(--bg-card);
   box-shadow: inset 0 0 0 1px var(--border-card);
-  color: var(--text-muted);
+  color: var(--text-secondary);
   display: grid;
   place-items: center;
   flex: 0 0 auto;

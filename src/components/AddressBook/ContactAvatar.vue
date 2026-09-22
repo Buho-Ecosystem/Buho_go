@@ -20,6 +20,25 @@
          placeholder language, both themes. One mark for everyone, no
          initials, no per-contact color. The glyph scales with whatever
          size the parent sets, so every surface keeps its rhythm. -->
+    <!-- A service (LUD-11 storeable pay link) without a logo: the storefront,
+         in the same grey disc. One glyph for services, one for people. -->
+    <svg
+      v-else-if="isService"
+      class="contact-avatar__glyph contact-avatar__glyph--service"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="1.8"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M3 21l18 0" />
+      <path d="M3 7v1a3 3 0 0 0 6 0v-1m0 1a3 3 0 0 0 6 0v-1m0 1a3 3 0 0 0 6 0v-1h-18l2 -4h14l2 4" />
+      <path d="M5 21l0 -10.15" />
+      <path d="M19 21l0 -10.15" />
+      <path d="M9 21v-4a2 2 0 0 1 2 -2h2a2 2 0 0 1 2 2v4" />
+    </svg>
     <svg
       v-else
       class="contact-avatar__glyph"
@@ -64,9 +83,14 @@
 
 import { matchLnAddressService } from '../../services/lnAddressServices'
 import { matchWalletBrandByAddress } from '../../services/walletBrands'
+import { useServiceImagesStore } from '../../stores/serviceImages'
 
 export default {
   name: 'ContactAvatar',
+
+  setup() {
+    return { serviceImages: useServiceImagesStore() }
+  },
 
   props: {
     entry: { type: Object, default: () => ({}) },
@@ -103,6 +127,10 @@ export default {
         const gated = this.gateUrl(raw.trim())
         if (gated) return gated
       }
+      // A service's own logo (LUD-06 image), kept locally by address. Below a
+      // person's own picture, above the bundled brand marks: what a service
+      // says about itself beats what we know about the wallet hosting it.
+      if (this.serviceImageUrl) return this.serviceImageUrl
       // Fiat-payout provider logo (Bitzed for Zambia, …), derived from the
       // contact's address so a saved mobile-money recipient reads clearly
       // everywhere it appears (tx list, tx detail, address book). It's a
@@ -138,6 +166,21 @@ export default {
 
     serviceLogoUrl() {
       return this.addressBrand?.logo || ''
+    },
+
+    /** The LUD-06 logo registered for this entry's address, if any. */
+    serviceImageUrl() {
+      const address = this.entry?.address || this.entry?.lightningAddress || ''
+      return address ? (this.serviceImages.get(address) || '') : ''
+    },
+
+    /**
+     * A payee that is a service, not a person: a LUD-11 storeable pay link
+     * (`addressType: 'lnurl'`) or an entry carrying service metadata. Its
+     * picture-less fallback is the storefront glyph, never the silhouette.
+     */
+    isService() {
+      return this.entry?.addressType === 'lnurl' || !!this.entry?.service
     },
 
     /**
@@ -233,7 +276,7 @@ export default {
    surface, themed by the tokens in both modes. */
 .contact-avatar--fallback {
   background: var(--bg-input);
-  color: var(--text-muted);
+  color: var(--text-secondary);
 }
 
 .body--dark .contact-avatar--fallback {
@@ -246,5 +289,12 @@ export default {
   width: 52%;
   height: 52%;
   display: block;
+}
+
+/* The storefront is a stroke mark; a touch smaller keeps its visual
+   weight level with the filled bust in the same disc. */
+.contact-avatar__glyph--service {
+  width: 48%;
+  height: 48%;
 }
 </style>

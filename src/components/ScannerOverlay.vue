@@ -1,15 +1,33 @@
 <!--
   ScannerOverlay
-  Full-screen NATIVE scanner (iOS/Android) built on MLKit's live `startScan`.
-  The camera feed renders behind a transparent webview (body.barcode-scanner-active,
-  see app.css); this overlay is the one element kept visible, so our own frame +
-  buttons sit on top of the camera — no Google branding, no covered UI.
+  Full-screen scanner for native builds (iOS/Android). One UI, two engines:
+
+    native  MLKit's live `startScan` (utils/nativeScanner.js). The camera feed
+            renders behind a transparent webview (body.barcode-scanner-active,
+            see app.css); this overlay is the one element kept visible, so our
+            own frame + buttons sit on top of the camera — no Google branding,
+            no covered UI. Preferred: fast, and the decoder is bundled into the
+            APK, so it does not need Google Play services.
+    web     qr-scanner on a <video> inside this overlay, fed by getUserMedia
+            (utils/qrScanner.js — the same engine the PWA uses). Used when the
+            native engine cannot start on this device: GrapheneOS without
+            Play services where the Google-side plumbing is missing, feature
+            phones, or any device where the camera never binds. The overlay
+            paints itself opaque and hosts the <video> behind the same frame,
+            so callers see one component either way.
+
+  Selection is capability-based and automatic (utils/scannerEngine.js): try
+  native, and on a non-permission failure — a rejected start, a start that
+  never settles, or a decoder that errors before it decodes anything — switch
+  to web and remember that on this device until the next app update.
+  Permission refusals are shown, never worked around: both engines need the
+  same OS camera permission.
 
   Teleported to <body> so it overlays whatever opened it (a page or a q-dialog)
   without inheriting an opaque ancestor that would paint over the camera.
 
   Web/PWA does NOT use this component — call sites keep their existing
-  qr-scanner (<video>) path there. Only mount this when isNativeScannerAvailable().
+  qr-scanner (<video>) path. Only mount this when isNativeScannerAvailable().
 
   Props:
     - active      controls the scan lifecycle (start on true, stop on false)
@@ -19,15 +37,29 @@
                   Default false: stop after the first code so the parent can close.
 
   Emits:
-    - scanned(value)  a decoded QR string
+    - scanned(value)  a decoded QR string — identical for both engines
     - close           user dismissed the scanner (X / back / camera error)
 -->
 <template>
   <teleport to="body">
     <div
       class="barcode-scanner-modal scanner-overlay"
-      :class="{ 'scanner-overlay--error': error }"
+      :class="{
+        'scanner-overlay--error': error,
+        'scanner-overlay--web': engine === 'web',
+      }"
     >
+      <!-- Web engine only: the camera stream lives inside the overlay. The
+           native engine paints its preview behind the (transparent) webview
+           instead, so nothing renders here for it. -->
+      <video
+        v-if="engine === 'web' && !error"
+        ref="video"
+        class="so-video"
+        playsinline
+        muted
+      />
+
       <!-- Top bar -->
       <div class="so-topbar">
         <button type="button" class="so-icon-btn" @click="$emit('close')">
@@ -83,7 +115,10 @@
 
 <script>
 import { Icon } from '@iconify/vue';
-import { startLiveScan } from '../utils/nativeScanner';
+import QrScanner from 'qr-scanner';
+import { createQrScanner } from '../utils/qrScanner';
+import { isNativeScannerAvailable, startLiveScan } from '../utils/nativeScanner';
+import { NATIVE_ERROR, getEngineMemory, shouldFallBackToWeb } from '../utils/scannerEngine';
 
 export default {
   name: 'ScannerOverlay',
@@ -101,7 +136,16 @@ export default {
 
   data() {
     return {
+      // Which engine is running: '' | 'native' | 'web'.
+      engine: '',
+      // Native controller (startLiveScan) — set only while engine === 'native'.
       controller: null,
+      // Web engine instance (qr-scanner) — set only while engine === 'web'.
+      qrScanner: null,
+      // Bumped on every start() and stop(). Every `await` in a start path
+      // re-checks it so an open→close→open burst, or an unmount mid-start,
+      // can never leave a stale camera running or a late error on screen.
+      startSeq: 0,
       torchAvailable: false,
       torchOn: false,
       error: '',
@@ -128,30 +172,154 @@ export default {
 
   methods: {
     async start() {
+      const seq = ++this.startSeq;
       this.error = '';
       this.detected = false;
+      this.engine = '';
+
+      if (isNativeScannerAvailable() && !getEngineMemory().isNativeDemoted()) {
+        const settled = await this.startNative(seq);
+        if (settled || seq !== this.startSeq) return;
+      }
+      await this.startWeb(seq);
+    },
+
+    /**
+     * Try the native engine. Resolves true when the matter is settled — the
+     * scan is running, a terminal error is on screen, or this start was
+     * superseded — and false when the caller should fall back to web.
+     */
+    async startNative(seq) {
+      let controller;
       try {
-        this.controller = await startLiveScan({
+        controller = await startLiveScan({
           onResult: (value) => this.onResult(value),
+          onEngineFailure: (err) => this.onNativeEngineFailure(seq, err),
         });
-        this.torchAvailable = await this.controller.isTorchAvailable();
       } catch (err) {
-        console.error('[ScannerOverlay] start failed:', err);
-        this.error = err?.code === 'PERMISSION_DENIED'
-          ? this.$t('Camera permission denied. Please allow camera access and try again.')
-          : this.$t('Unable to access the camera.');
-        // Make sure any half-started scan is torn down.
-        await this.stop();
+        if (seq !== this.startSeq) return true;
+        if (!shouldFallBackToWeb(err)) {
+          console.error('[ScannerOverlay] native scanner start failed:', err);
+          this.showError(err);
+          return true;
+        }
+        console.warn(
+          '[ScannerOverlay] native scanner unavailable, falling back to web engine:',
+          err?.code, err?.message,
+        );
+        getEngineMemory().demoteNative(err?.code || 'unknown');
+        return false;
+      }
+
+      if (seq !== this.startSeq) {
+        // Closed while the camera was binding — release it.
+        controller.stop().catch(() => { /* noop */ });
+        return true;
+      }
+
+      this.controller = controller;
+      this.engine = 'native';
+      // Native came up: any earlier demotion is stale.
+      getEngineMemory().restoreNative();
+      this.torchAvailable = await controller.isTorchAvailable();
+      return true;
+    },
+
+    /**
+     * The native decoder gave up after the preview was already running (the
+     * wrapper has torn it down). Switch engines in place, as long as this
+     * scan session is still the current one.
+     */
+    async onNativeEngineFailure(seq, err) {
+      if (seq !== this.startSeq) return;
+      console.warn('[ScannerOverlay] native decoder failed, switching to web engine:', err?.message);
+      this.controller = null;
+      this.torchAvailable = false;
+      this.torchOn = false;
+      getEngineMemory().demoteNative(err?.code || NATIVE_ERROR.DECODER_FAILED);
+      await this.startWeb(seq);
+    },
+
+    /** Start the in-webview qr-scanner engine on the overlay's own <video>. */
+    async startWeb(seq) {
+      if (this.qrScanner) return;
+      this.engine = 'web';
+      // Let the <video> mount before we hand it to the scanner.
+      await this.$nextTick();
+      if (seq !== this.startSeq) return;
+
+      try {
+        if (!(await QrScanner.hasCamera())) {
+          const err = new Error('No camera found on this device.');
+          err.name = 'NotFoundError';
+          throw err;
+        }
+        if (seq !== this.startSeq) return;
+
+        const video = this.$refs.video;
+        if (!video) throw new Error('Video element not found');
+
+        const scanner = createQrScanner(
+          video,
+          (result) => {
+            const value = typeof result === 'string' ? result : (result?.data || result?.text || '');
+            this.onResult(value);
+          },
+          {
+            returnDetailedScanResult: true,
+            // Our own corner frame is the scan-region affordance; the library's
+            // highlight boxes would double it up.
+            highlightScanRegion: false,
+            highlightCodeOutline: false,
+            preferredCamera: 'environment',
+          },
+        );
+        // Assign before awaiting start() so stop() can reach an in-flight start.
+        this.qrScanner = scanner;
+        await scanner.start();
+        if (seq !== this.startSeq) return;
+
+        this.torchAvailable = await scanner.hasFlash().catch(() => false);
+      } catch (err) {
+        if (seq !== this.startSeq) return;
+        console.error('[ScannerOverlay] web scanner start failed:', err);
+        this.destroyWebScanner();
+        this.showError(err);
       }
     },
 
     async stop() {
+      // Abort any start still in flight.
+      this.startSeq += 1;
       this.torchOn = false;
       this.torchAvailable = false;
       if (this.controller) {
         const c = this.controller;
         this.controller = null;
         try { await c.stop(); } catch { /* noop */ }
+      }
+      this.destroyWebScanner();
+      this.engine = '';
+    },
+
+    destroyWebScanner() {
+      const s = this.qrScanner;
+      if (!s) return;
+      this.qrScanner = null;
+      try { s.stop(); } catch { /* noop */ }
+      try { s.destroy(); } catch { /* noop */ }
+    },
+
+    showError(err) {
+      const code = err?.code;
+      const name = err?.name;
+      const text = typeof err === 'string' ? err : (err?.message || '');
+      if (code === NATIVE_ERROR.PERMISSION_DENIED || name === 'NotAllowedError') {
+        this.error = this.$t('Camera permission denied. Please allow camera access and try again.');
+      } else if (name === 'NotFoundError' || /camera not found|no camera/i.test(text)) {
+        this.error = this.$t('No camera found on this device.');
+      } else {
+        this.error = this.$t('Unable to access the camera.');
       }
     },
 
@@ -177,8 +345,18 @@ export default {
     },
 
     async onToggleTorch() {
-      if (!this.controller) return;
-      this.torchOn = await this.controller.toggleTorch();
+      if (this.controller) {
+        this.torchOn = await this.controller.toggleTorch();
+        return;
+      }
+      if (this.qrScanner) {
+        try {
+          await this.qrScanner.toggleFlash();
+          this.torchOn = this.qrScanner.isFlashOn();
+        } catch (err) {
+          console.warn('[ScannerOverlay] torch toggle failed:', err);
+        }
+      }
     },
   },
 };
@@ -195,6 +373,30 @@ export default {
   display: flex;
   flex-direction: column;
   color: #fff;
+}
+
+/* Web engine: the stream is our own <video>, so paint an opaque backdrop
+   (nothing should bleed through from the page underneath) and stack the UI
+   above the video. */
+.scanner-overlay--web {
+  background: #000;
+}
+
+.so-video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  z-index: 0;
+}
+
+.so-topbar,
+.so-frame-wrap,
+.so-bottom,
+.so-error {
+  position: relative;
+  z-index: 1;
 }
 
 /* When the camera can't start the feed is absent, so paint an opaque backdrop

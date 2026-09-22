@@ -4,7 +4,7 @@ Issue [#269](https://github.com/Buho-Ecosystem/Buho_go/issues/269). Research and
 
 ## What it does
 
-A Spark wallet's money can move to plain Bitcoin without Spark's operators, using only the Breez SDK's unilateral exit API (`@breeztech/breez-sdk-spark` 0.24.1) and public Esplora endpoints that proxy `submitpackage`. The feature has three layers, matching the research: an always-on kit, a door that appears only when it matters, and a resumable exit page.
+A Spark wallet's money can move to plain Bitcoin without Spark's operators, using only the Breez SDK's unilateral exit API (`@breeztech/breez-sdk-spark` 0.25.0) and public Esplora endpoints that proxy `submitpackage`. The feature has three layers, matching the research: an always-on kit, a door that appears only when it matters, and a resumable exit page.
 
 ### The kit (always on, quiet)
 
@@ -36,12 +36,12 @@ A Spark wallet's money can move to plain Bitcoin without Spark's operators, usin
 
 ## Validation
 
-- `npm test` runs 7 new spec files (39 tests): key derivation against the BIP-84 vectors, address validation, chain planning, ledger transitions, the Esplora client with failover and package rules, the kit life cycle, the exit driver end to end against fakes, and outage tracking.
+- `npm test` runs the emergency-exit specs: key derivation against the BIP-84 vectors, address validation, chain planning, ledger transitions, the Esplora client with failover and package rules, the kit life cycle, the exit driver end to end against fakes, outage tracking, and native reminder scheduling without awaiting a Capacitor proxy.
 - `node scripts/check-emergency-exit.mjs` against the dev server (`pnpm dev --port 9011`, or set `EXIT_BASE_URL` for another port): seeds public test words, stubs the SDK provider and every chain endpoint, and drives the real UI through Settings → Advanced, keyboard disclosure of kit details, start, destination validation, fee money, confirmation and safe dismissal, package broadcasting in dependency order, the timelock, the sweep, done with its receipt, cancel behind its confirmation, the outage banner, no progress chip on home, resume from Settings, German at 320px with 200% text, and the dark theme. Screenshots land in `output/emergency-exit/`.
 
 ## Limits and follow-ups
 
 - No live exit was performed. The SDK's signing and the Esplora package endpoints were exercised with fakes; a funded run on a throwaway wallet is the next gate.
-- Reminders need `@capacitor/local-notifications` added to both package files plus `npx cap sync` and the Android 13 notification permission. Until then the page says "Open BuhoGO on or after {date}".
+- The merged app includes and registers `@capacitor/local-notifications`. Reminders still require OS permission and on-device verification; when unavailable, the page says "Open BuhoGO on or after {date}".
 - The Breez export is not in Blink's bundle format; a way out without BuhoGO remains open research.
 - The Business half of a Spark pair refreshes its kit only while it is the connected wallet (single live Spark connection).

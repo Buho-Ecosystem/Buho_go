@@ -6,29 +6,30 @@
     row, no chevron — the capsule anchors the right edge. No badges,
     no action clusters.
   -->
-  <div
-    class="payee-row"
-    role="button"
-    tabindex="0"
-    :aria-label="entry.name"
-    @click="$emit('open', entry)"
-    @keydown.enter.prevent="$emit('open', entry)"
-  >
-    <!-- Avatar — real picture for nostr-sourced contacts, the
-         app-wide grey silhouette otherwise. -->
-    <ContactAvatar
-      class="payee-avatar"
-      :entry="entry"
-    />
+  <div class="payee-row">
+    <button
+      type="button"
+      class="payee-open"
+      :aria-label="entry.name"
+      @click="$emit('open', entry)"
+    >
+      <!-- Avatar — real picture for nostr-sourced contacts, the
+           app-wide grey silhouette otherwise. -->
+      <ContactAvatar
+        class="payee-avatar"
+        :entry="entry"
+      />
 
-    <span class="payee-copy">
-      <span class="payee-name">{{ entry.name }}</span>
-      <span v-if="isPayable" class="payee-addr">{{ truncatedAddress }}</span>
-      <!-- Identity-only Nostr contact: saved (or restored) without a
-           current address. Calm, not an error — their page explains
-           and re-checks. -->
-      <span v-else class="payee-addr payee-addr--plain">{{ $t('No address yet') }}</span>
-    </span>
+      <span class="payee-copy">
+        <span class="payee-name">{{ entry.name }}</span>
+        <span v-if="isPayable" class="payee-addr">{{ truncatedAddress }}</span>
+        <!-- Identity-only Nostr contact: saved (or restored) without a
+             current address. Calm, not an error — their page explains
+             and re-checks. -->
+        <span v-else class="payee-addr payee-addr--plain">{{ $t('No address yet') }}</span>
+      </span>
+
+    </button>
 
     <button
       v-if="isPayable"
@@ -44,6 +45,7 @@
 
 <script>
 import ContactAvatar from './ContactAvatar.vue'
+import { serviceAddressLine } from '../../utils/lnurlMetadata.js'
 
 export default {
   name: 'AddressBookEntry',
@@ -70,6 +72,9 @@ export default {
     truncatedAddress() {
       const address = this.displayAddress
       if (!address) return ''
+      // A service pay link (LUD-11) is a bech32 blob nobody reads: say
+      // where it points and what it is instead.
+      if (this.entry.addressType === 'lnurl') return serviceAddressLine(address, this.$t)
       // Short addresses (user@domain.com) show whole; long strings
       // (Spark, on-chain) truncate in the middle, domain-preserving.
       if (address.length <= 34) return address
@@ -87,6 +92,7 @@ export default {
   align-items: center;
   gap: 12px;
   width: 100%;
+  flex-wrap: wrap;
   min-height: 62px;
   padding: 10px 2px;
   border: 0;
@@ -96,6 +102,29 @@ export default {
   font-family: 'Manrope', sans-serif;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
+}
+
+.payee-open {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 1 1 10rem;
+  min-width: 0;
+  min-height: 44px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.payee-open:focus-visible,
+.payee-pay:focus-visible {
+  outline: 2px solid var(--brand-accent);
+  outline-offset: 2px;
+  border-radius: 8px;
 }
 
 .payee-row + .payee-row {
@@ -124,38 +153,35 @@ export default {
 }
 
 .payee-name {
-  font-size: 15px;
+  font-size: 0.9375rem;
   font-weight: 700;
   letter-spacing: -0.01em;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
 }
 
 .payee-addr {
   font-family: var(--font-mono);
-  font-size: 10.5px;
-  color: var(--text-muted);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
 }
 
 .payee-addr--plain {
   font-family: 'Manrope', sans-serif;
-  font-size: 11.5px;
+  font-size: 0.71875rem;
 }
 
 /* The capsule action: its own pressable target on the row's right
    edge, visually distinct from the navigation row. */
 .payee-pay {
   flex: 0 0 auto;
-  min-height: 34px;
+  margin-left: auto;
+  min-height: 44px;
   padding: 0 16px;
   border: 0;
   border-radius: 999px;
   font-family: 'Manrope', sans-serif;
-  font-size: 12px;
+  font-size: 0.75rem;
   font-weight: 750;
   letter-spacing: 0.04em;
   color: var(--brand-accent-text, var(--color-green));

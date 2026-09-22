@@ -14,7 +14,11 @@
 
 import { strict as assert } from 'node:assert';
 import { bech32m } from 'bech32';
+import * as bech32Module from 'bech32';
 import {
+  canonicalLnurl,
+  lnurlToUrl,
+  lnurlDomain,
   isSilentPaymentAddress,
   isSparkAddress,
   isArkadeAddress,
@@ -310,6 +314,56 @@ test('nativeRailsFromBip21: valid spark/ark params surface, junk is dropped', ()
   );
   assert.deepEqual(nativeRailsFromBip21({ params: {} }), { spark: null, ark: null });
   assert.deepEqual(nativeRailsFromBip21(null), { spark: null, ark: null });
+});
+
+// ---------------------------------------------------------------------------
+// LUD-11 services: one stored form for an LNURL
+// ---------------------------------------------------------------------------
+
+test('canonicalLnurl: every carrier of the same link canonicalizes to one lowercase bech32', () => {
+  const url = 'https://coffee.example/Api/LNURLp/Corner?ref=Menu';
+  const { bech32 } = bech32Module;
+  const encoded = bech32.encode('lnurl', bech32.toWords(new TextEncoder().encode(url)), 16384);
+  const canonical = canonicalLnurl(encoded);
+  assert.equal(canonical, encoded.toLowerCase());
+  assert.equal(canonicalLnurl(encoded.toUpperCase()), canonical);
+  assert.equal(canonicalLnurl(`lightning:${encoded.toUpperCase()}`), canonical);
+  assert.equal(canonicalLnurl(`lnurl:${encoded}`), canonical);
+  assert.equal(canonicalLnurl('lnurlp://coffee.example/Api/LNURLp/Corner?ref=Menu'), canonical);
+  assert.equal(canonicalLnurl(url), canonical);
+  // Idempotent, and the case-sensitive path survives the round trip.
+  assert.equal(canonicalLnurl(canonical), canonical);
+  assert.equal(lnurlToUrl(canonical), url);
+});
+
+test('canonicalLnurl: refuses what does not decode or is not a safe endpoint', () => {
+  assert.equal(canonicalLnurl(''), null);
+  assert.equal(canonicalLnurl(null), null);
+  assert.equal(canonicalLnurl('alice@example.com'), null);
+  assert.equal(canonicalLnurl('lnurl1notreallybech32'), null);
+  assert.equal(canonicalLnurl('http://coffee.example/pay'), null);
+  assert.equal(canonicalLnurl('https://user:pw@coffee.example/pay'), null);
+  assert.equal(canonicalLnurl('https://coffee.example/pay#frag'), null);
+  const { bech32 } = bech32Module;
+  const insecure = bech32.encode('lnurl', bech32.toWords(new TextEncoder().encode('http://coffee.example/pay')), 16384);
+  assert.equal(canonicalLnurl(insecure), null);
+  // A bad checksum is not "close enough".
+  const good = bech32.encode('lnurl', bech32.toWords(new TextEncoder().encode('https://coffee.example/pay')), 16384);
+  assert.equal(canonicalLnurl(good.slice(0, -1) + (good.endsWith('q') ? 'p' : 'q')), null);
+});
+
+test('lnurlToUrl: Tor hosts may use http, LUD-17 keeps the path and query', () => {
+  const onion = 'lnurlp://' + 'a'.repeat(56) + '.onion/pay?x=1';
+  assert.equal(lnurlToUrl(onion), 'http://' + 'a'.repeat(56) + '.onion/pay?x=1');
+  assert.equal(lnurlToUrl('lnurlw://cash.example/withdraw?k1=A%2BB'), 'https://cash.example/withdraw?k1=A%2BB');
+});
+
+test('lnurlDomain: the host behind any carrier, empty when it does not decode', () => {
+  const { bech32 } = bech32Module;
+  const encoded = bech32.encode('lnurl', bech32.toWords(new TextEncoder().encode('https://coffee.example/pay')), 16384);
+  assert.equal(lnurlDomain(encoded), 'coffee.example');
+  assert.equal(lnurlDomain('lnurlp://kiosk.example/x'), 'kiosk.example');
+  assert.equal(lnurlDomain('nope'), '');
 });
 
 console.log(`\n  ${passed} passed, ${failed} failed`);
