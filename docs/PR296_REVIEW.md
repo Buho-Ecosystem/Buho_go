@@ -1,8 +1,8 @@
 # PR #296 production review
 
-**Release decision: changes requested. Do not treat the passing application tests as proof that Spark synchronization is reliable yet. One critical SDK contract problem remains unresolved.**
+**Merge recommendation: merge these application corrections into Pratik's `fix_issues` branch. This is not production approval of PR #296: one critical SDK contract problem remains unresolved.**
 
-Reviewed Pratik's commits `9a4d184` and `aab60c7393906c7f0382edcd4ef68f753ab4e250`, against `dev` at `3d59d9df13dec177e648faba17c145369ecff60c`. Application corrections and regression tests are on the local `review/pr296` branch, in `/private/tmp/buhogo-pr296`. No real payment was made. Issues #270 and #276 were not implemented.
+Reviewed Pratik's commits `9a4d184` and `aab60c7393906c7f0382edcd4ef68f753ab4e250`, against `dev` at `3d59d9df13dec177e648faba17c145369ecff60c`. This follow-up contains the application corrections and regression tests. No real payment was made. Issues #270 and #276 were not implemented.
 
 ## One-by-one assessment
 
@@ -25,6 +25,10 @@ The pinned upstream implementation catches Spark wallet and wallet-state sync er
 Waiting for a public `synced` event does not repair this: after the first event, partial syncs can also produce that event. `getInfo({ensureSynced:true})` waits for initial readiness and then reads the local account cache; it cannot prove a later network refresh. [Upstream event emitter](https://github.com/breez/spark-sdk/blob/0.25.0/crates/breez-sdk/core/src/events.rs#L386), [upstream cached info read](https://github.com/breez/spark-sdk/blob/0.25.0/crates/breez-sdk/core/src/sdk/runtime/client.rs#L95).
 
 The local correction stops partial SDK events from clearing a known balance error or declaring a wallet healthy. It **does not claim to fix the remaining `syncWallet()` success assumption**. It is marked in the provider code. No speculative HTTP probe, balance comparison, or log-message parser was substituted for wallet synchronization.
+
+The official guide recommends rendering the cached balance and rereading it on SDK events; it explicitly describes `ensureSynced` as initial readiness, not a force-refresh operation. That supports the app-wide event owner and cached display, but cannot substantiate the stronger verified-network contract. [Balance guidance](https://sdk-doc-spark.breez.technology/guide/get_info.html), [event guidance](https://sdk-doc-spark.breez.technology/guide/events.html).
+
+The same swallowed-error behavior is present in the published 0.26.0 source, so an upgrade alone is not a fix. This follow-up retains the pinned dependency and existing payment availability; it does not hide the limitation by declaring every normal wallet offline or disabling all automatic withdrawals. [0.26.0 sync implementation](https://github.com/breez/spark-sdk/blob/0.26.0/crates/breez-sdk/core/src/sdk/sync.rs), [0.26.0 event emitter](https://github.com/breez/spark-sdk/blob/0.26.0/crates/breez-sdk/core/src/events.rs).
 
 Required resolution: a supported SDK result/event that proves both the wallet and account-state synchronization succeeded, or a narrow upstream SDK fix that propagates those failures into the public call. Test it with the device online but Spark operators unreachable, partial sync failure, and an empty local cache with an existing saved balance. Until then, “fresh”, auto-withdraw’s fresh-read guarantee, outage recovery, and receipt checkpoint advancement remain unproven. Cached history can appear complete even while the SDK has missed a payment.
 
@@ -57,10 +61,10 @@ Required resolution: a supported SDK result/event that proves both the wallet an
 ## Validation and remaining release checks
 
 - The pre-change full `npm test` passed. Additional failure-scenario tests then reproduced the defects; the original green suite did not cover them.
-- Final focused suite: 67 tests passed, plus 11 provider sync/receipt tests. The full `npm test` suite and `npm run build` also passed on the final application changes. The focused suite was rerun after adding the final cross-provider and late-event tests.
+- The full `npm test` suite and `npm run build` passed on the final application changes, including the provider sync/receipt tests. The final focused balance/lifecycle/application/receipt run passed all 52 tests. Two added assertions first reproduced partial SDK events replacing saved funds with zero and turning unknown into zero after a reported sync failure; both pass with the guard, and a successful refresh still accepts a real zero.
 - Browser check: `node scripts/check-pr296-review.mjs`. Actual Vue/Pinia home screen, scripted providers, mobile viewport; verified unknown balance, verified zero, stale funds, correct aggregate and six repeated wallet selections with both providers connected. External network calls are blocked or replaced with fixtures. No real wallet secret or payment is used. Screenshots are in `output/pr296-review/`.
 - Boot tests execute the real boot module with native bridges replaced by controllable fixtures and exercise repeated background/foreground cycles. Component tests execute the real SFC methods. These complement the service tests; they do not emulate OS suspension or the real WASM network.
-- No Android device was connected (`adb devices -l` returned an empty list). A native 30-minute background/foreground soak, incoming payments during background/suspension, airplane-mode and operator-only outages, process restart, both accounts receiving concurrently, and native QR camera/decoder recovery are **not verified on hardware**.
+- Android testing is delegated to the user and is not a gate for this follow-up PR. No hardware run is claimed here. Suggested device coverage: a native 30-minute background/foreground soak, incoming payments during background/suspension, airplane-mode and operator-only outages, process restart, both accounts receiving concurrently, and native QR camera/decoder recovery.
 - #276 remains separate: local JavaScript coordination cannot deliver a new notification while the OS has suspended the runtime. Reliable suspended-app delivery needs the deferred push/native work.
 
-The two original symptoms share application lifecycle/state ownership problems, but are not a single bug. Multiple-account ownership, stale/unknown presentation, catch-up correctness, SDK synchronization observability and OS-suspended delivery are distinct boundaries. The app-level corrections improve the first three; SDK observability and real-device validation remain release gates.
+The two original symptoms share application lifecycle/state ownership problems, but are not a single bug. Multiple-account ownership, stale/unknown presentation, catch-up correctness, SDK synchronization observability and OS-suspended delivery are distinct boundaries. The app-level corrections improve the first three. The SDK contract remains a blocker for claiming verified synchronization in the parent PR; Android validation is the user's follow-up. Merging this corrective PR into `fix_issues` does not close #291 or imply that #296 is ready for production.

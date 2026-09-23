@@ -59,6 +59,7 @@ try {
     const store = window.reviewStore;
     store.acceptBalance('business', 5000, { verified: true });
     store.markBalanceError('business', 'temporary network failure');
+    store.acceptBalance('business', 0, { source: 'event' });
     store.activeWalletId = 'business';
   });
   await page.getByText('Last known balance', { exact: true }).first().waitFor();

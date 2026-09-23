@@ -122,6 +122,20 @@ test('an unverified cache read cannot clear a failure or replace a saved balance
   store.acceptBalance('biz', 5000, { source: 'cache' });
   assert.equal(store.balanceView('biz').stale, true);
   assert.equal(store.balanceView('biz').error, 'offline');
+  store.acceptBalance('biz', 0, { source: 'event' });
+  assert.equal(store.balanceView('biz').value, 5000, 'a partial SDK event must not replace saved funds after a failed sync');
+  assert.equal(store.wallets[0].metadata.cachedBalance, 5000);
+  store.acceptBalance('biz', 0, { source: 'sync', verified: true });
+  assert.equal(store.balanceView('biz').value, 0, 'a successful retry can confirm an actual zero');
+  assert.equal(store.balanceView('biz').stale, false);
+});
+
+test('a partial cache event after failed initialization leaves an unknown balance unknown', () => {
+  const store = makeStore({ wallets: [spark('biz')] });
+  store.markBalanceError('biz', 'timeout');
+  store.acceptBalance('biz', 0, { source: 'event' });
+  assert.equal(store.balanceView('biz').known, false);
+  assert.equal(store.wallets[0].metadata.cachedBalance, undefined);
 });
 
 const deferred = () => {

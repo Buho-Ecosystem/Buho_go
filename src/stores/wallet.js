@@ -2541,8 +2541,11 @@ export const useWalletStore = defineStore('wallet', {
       }
       const now = Date.now();
       const previousMeta = this.balanceMeta[walletId] || {};
-      if (!verified && error) {
-        this.markBalanceError(walletId, error);
+      if (!verified && (error || previousMeta.error)) {
+        // Partial SDK events can still arrive after a failed sync. Their
+        // cache reads must not erase the last accepted balance (or turn
+        // unknown into zero) before a successful refresh recovers it.
+        this.markBalanceError(walletId, error || previousMeta.error);
         return false;
       }
       const previousValue = this.balances[walletId];
