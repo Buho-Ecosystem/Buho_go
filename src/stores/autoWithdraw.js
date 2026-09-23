@@ -154,7 +154,12 @@ export const useAutoWithdrawStore = defineStore('autoWithdraw', {
         if (wallet.type?.toLowerCase() === WALLET_TYPES.SPARK && !configKey.includes(':')) {
           const provider = walletStore.providers[baseWalletId]
           if (typeof provider?.getBalance !== 'function') throw new Error('Wallet provider not available')
+          const epoch = walletStore.walletEpoch?.(baseWalletId)
           const verified = await provider.getBalance({ requireFresh: true })
+          if (this.configs[configKey] !== config || !config.enabled
+            || !walletStore.wallets.includes(wallet)
+            || walletStore.walletEpoch?.(baseWalletId) !== epoch
+            || walletStore.providers[baseWalletId] !== provider) return
           spendable = Math.min(balance, Number(verified.balance))
           if (!Number.isFinite(spendable) || spendable <= threshold) return
         }

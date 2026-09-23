@@ -344,6 +344,9 @@ export class BreezSparkWalletProvider extends WalletProvider {
     this._eventUnsubscribers.clear();
     this._preparedSends.clear();
 
+    // Invalidate pending reads before awaiting registry teardown.
+    this.sdk = null;
+    this.isConnected = false;
     await breezSdk.release(this.walletId);
 
     this.sdk = null;
@@ -1171,23 +1174,40 @@ export class BreezSparkWalletProvider extends WalletProvider {
   }
 
   /**
-   * Raw settled receives since a point in time, newest first — the history
+   * Bitcoin receives for catch-up, newest first — completed since a point
+   * in time plus outstanding receives and previously pending IDs. The history
    * catch-up that finds payments whose live event was missed (app
    * suspended, stream down). Raw SDK shape on purpose: receipt detection
    * keys on the SDK's own payment id, status and amount.
    */
-  async listSettledReceivesSince(fromTimestamp, { limit = 100 } = {}) {
+  async listReceivesForCatchup(fromTimestamp, { limit = 100, pendingIds = [] } = {}) {
     this._ensureConnected();
-    const response = await this._withTransportRetry(() =>
-      this.sdk.listPayments({
-        typeFilter: ['receive'],
-        statusFilter: ['completed'],
-        fromTimestamp,
-        limit,
-        sortAscending: false,
-      })
-    );
-    return response?.payments || [];
+    const sdk = this.sdk;
+    const byId = new Map();
+    const toTimestamp = Math.floor(Date.now() / 1000);
+    const list = async (statusFilter, from) => {
+      for (let offset = 0; ; offset += limit) {
+        const response = await this._withTransportRetry(() => sdk.listPayments({
+          typeFilter: ['receive'], statusFilter, assetFilter: { type: 'bitcoin' },
+          fromTimestamp: from, toTimestamp, offset, limit, sortAscending: false,
+        }));
+        if (this.sdk !== sdk) throw new Error('Spark wallet changed during receipt catch-up');
+        const page = response?.payments || [];
+        for (const payment of page) byId.set(payment.id, payment);
+        if (page.length < limit) break;
+      }
+    };
+    await list(['completed'], fromTimestamp);
+    // A payment's timestamp is its creation time, not necessarily its
+    // settlement time. Remember outstanding receives across checkpoints.
+    await list(['pending'], undefined);
+    for (const paymentId of pendingIds) {
+      if (byId.has(paymentId)) continue;
+      const response = await sdk.getPayment({ paymentId });
+      if (this.sdk !== sdk) throw new Error('Spark wallet changed during receipt catch-up');
+      if (response?.payment) byId.set(paymentId, response.payment);
+    }
+    return [...byId.values()].sort((a, b) => Number(b.timestamp) - Number(a.timestamp));
   }
 
   // ==========================================
@@ -1285,8 +1305,7 @@ export class BreezSparkWalletProvider extends WalletProvider {
     }
 
     if (utxos === null) {
-      console.error('[L1 Deposit] Failed to fetch UTXOs from mempool API:', lastError?.message || 'Unknown error');
-      return [];
+      throw new Error('Bitcoin deposit lookup failed', { cause: lastError });
     }
 
     if (utxos.length === 0) {
@@ -1872,16 +1891,24 @@ export class BreezSparkWalletProvider extends WalletProvider {
    * outlives its provider (disconnect, rebuild) resolves into nothing — the
    * `sdk` check keeps a late completion from being recorded against a new
    * instance. Health is recorded here and only here: success means Spark
-   * answered; a failure only counts while the phone itself is online.
+   * completed the requested SDK round; a failure only counts while the
+   * phone itself is online. RELEASE BLOCKER: 0.25.0 can swallow internal
+   * sync failures (core/src/sdk/sync.rs). This return value does not yet
+   * establish complete balance freshness; see docs/PR296_REVIEW.md.
    */
   async syncNow({ timeoutMs = 20000 } = {}) {
     this._ensureConnected();
     if (this._syncInFlight) return this._syncInFlight;
 
     const sdk = this.sdk;
+    let sdkSettled = false;
+    let waiterSettled = false;
+    const synced = Promise.resolve().then(() => sdk.syncWallet({}));
+    const release = () => {
+      if (sdkSettled && waiterSettled && this._syncInFlight === run) this._syncInFlight = null;
+    };
+    synced.finally(() => { sdkSettled = true; release(); }).catch(() => {});
     const run = (async () => {
-      const synced = sdk.syncWallet({});
-      synced.catch(() => {});
       let timer;
       try {
         await Promise.race([
@@ -1890,13 +1917,13 @@ export class BreezSparkWalletProvider extends WalletProvider {
             timer = setTimeout(() => reject(new Error('breez sync timeout')), timeoutMs);
           }),
         ]);
-        if (this.sdk !== sdk) throw new Error('Spark wallet was reconnected during sync');
+        if (this.sdk !== sdk || !this.isConnected) throw new Error('Spark wallet was reconnected during sync');
         this.lastSyncedAt = Date.now();
         this.lastSyncError = null;
         sparkHealth().recordSuccess(this.walletId);
         return { syncedAt: this.lastSyncedAt };
       } catch (error) {
-        if (this.sdk === sdk) {
+        if (this.sdk === sdk && this.isConnected) {
           this.lastSyncError = error;
           if (typeof navigator === 'undefined' || navigator.onLine !== false) {
             sparkHealth().recordFailure(this.walletId);
@@ -1912,7 +1939,11 @@ export class BreezSparkWalletProvider extends WalletProvider {
     try {
       return await run;
     } finally {
-      if (this._syncInFlight === run) this._syncInFlight = null;
+      // Timing out the waiter does not cancel the SDK request. Retain the
+      // settled waiter until the underlying call ends, so polling cannot
+      // queue an unbounded series of syncs behind a hung operation.
+      waiterSettled = true;
+      release();
     }
   }
 

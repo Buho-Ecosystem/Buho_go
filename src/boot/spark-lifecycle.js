@@ -19,14 +19,14 @@ import { Notify } from 'quasar';
  *     notifications on and the OS permits (notifications store decides).
  *   - App on screen, payment seen live: nothing extra. The balance and the
  *     open screen already show it, and receive flows confirm their own.
- *   - App on screen, payment found by catch-up that settled while the app
+ *   - App on screen, payment found after resume that settled while the app
  *     was away: an in-app toast, so a payment missed during suspension is
  *     still announced once. Same user switch as notifications; no OS
  *     permission needed for a toast.
  *   - Kiosk (locked to POS): no in-app toast — the POS screen owns the
  *     customer-facing confirmation. Background notifications behave as
  *     before.
- *   - Own transfers between the user's wallets: never announced.
+ *   - Own transfers identified by receiving invoice hash: not announced.
  */
 export default boot(async () => {
   if (typeof window !== 'undefined' && window.__AUDIT__) return;
@@ -59,13 +59,16 @@ export default boot(async () => {
   const deposits = useBitcoinDepositsStore();
   const notifications = useNotificationsStore();
   // Idempotent (App.vue calls it too); this owner must not depend on a
-  // component having mounted first. Not awaited: it ends in an OS round-trip.
-  notifications.initialize().catch(() => {});
+  // component having mounted first. Delivery awaits this OS round-trip.
+  const notificationsReady = notifications.initialize().catch(() => {});
 
   let visibleSince = Date.now();
-  const isForeground = () => typeof document === 'undefined' || !document.hidden;
+  let nativeActive = true;
+  const isForeground = () => nativeActive && (typeof document === 'undefined' || !document.hidden);
+  let wasForeground = isForeground();
 
-  const deliver = async ({ walletId, amountSats, timestamp, source }) => {
+  const deliver = async ({ walletId, amountSats, timestamp }) => {
+    await notificationsReady;
     const w = wallet.wallets.find(x => x.id === walletId);
     const t = i18n.global.t.bind(i18n.global);
     const title = t('Payment received');
@@ -78,8 +81,10 @@ export default boot(async () => {
       await notifications.notifyIfEnabled({ title, body });
       return;
     }
-    const settledWhileAway = timestamp && timestamp * 1000 < visibleSince;
-    if (source !== 'catchup' || !settledWhileAway) return;
+    // A queued SDK event can win the race with history catch-up on resume.
+    // The receipt's origin must not decide whether a missed payment is announced.
+    const settledWhileAway = timestamp && timestamp < Math.floor(visibleSince / 1000);
+    if (!settledWhileAway) return;
     if (!notifications.enabled || wallet.isKioskRestricted) return;
     Notify.create({ type: 'positive', message: title, caption: body, position: 'top', timeout: 4000 });
   };
@@ -97,27 +102,23 @@ export default boot(async () => {
   });
   lifecycle.attach(wallet);
 
-  const onVisible = () => {
-    if (document.hidden) {
-      lifecycle.onVisibilityChanged();
-      return;
-    }
-    visibleSince = Date.now();
-    lifecycle.onWake('visible');
+  const visibilityChanged = (reason) => {
+    const foreground = isForeground();
+    if (foreground && !wasForeground) visibleSince = Date.now();
+    wasForeground = foreground;
+    if (foreground) lifecycle.onWake(reason);
+    else lifecycle.onVisibilityChanged();
   };
+  const onVisible = () => visibilityChanged('visible');
   document.addEventListener('visibilitychange', onVisible);
   window.addEventListener('online', () => lifecycle.onWake('online'));
   window.addEventListener('offline', () => lifecycle.onVisibilityChanged());
 
   try {
     const { App } = await import('@capacitor/app');
-    App.addListener('appStateChange', ({ isActive }) => {
-      if (isActive) {
-        visibleSince = Date.now();
-        lifecycle.onWake('resume');
-      } else {
-        lifecycle.onVisibilityChanged();
-      }
+    await App.addListener('appStateChange', ({ isActive }) => {
+      nativeActive = isActive;
+      visibilityChanged('resume');
     });
   } catch {
     // No app plugin (plain browser build): visibilitychange covers it.

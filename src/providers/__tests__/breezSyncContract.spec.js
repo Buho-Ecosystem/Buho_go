@@ -157,11 +157,48 @@ await test('a failed sync then a successful retry clears the outage streak', asy
   const p = providerWith(sdk);
   await p.getBalance({ timeoutMs: 5 });
   sdk.nextSync.resolve({});
+  await new Promise(r => setImmediate(r));
   sdk.nextSync = null;
   const result = await p.getBalance();
   assert.equal(result.fresh, true);
   assert.equal(sparkHealth().unreachableFor(p.walletId), 0);
   assert.equal(p.lastSyncError, null);
+});
+
+await test('receipt catch-up reads every page and excludes token units', async () => {
+  const sdk = scriptedSdk();
+  const requests = [];
+  const rows = Array.from({ length: 225 }, (_, i) => ({ id: `r${i}` }));
+  sdk.listPayments = async req => {
+    requests.push(req);
+    return { payments: req.statusFilter.includes('pending') ? [] : rows.slice(req.offset || 0, (req.offset || 0) + req.limit) };
+  };
+  const p = providerWith(sdk);
+  const result = await p.listReceivesForCatchup(123);
+  assert.equal(result.length, 225);
+  assert.ok(requests.every(r => r.assetFilter?.type === 'bitcoin'));
+});
+
+await test('catch-up resolves receipts whose creation time predates the cursor', async () => {
+  const sdk = scriptedSdk();
+  sdk.listPayments = async req => ({ payments: req.statusFilter.includes('pending')
+    ? [{ id: 'still-pending', status: 'pending', timestamp: 1 }] : [] });
+  sdk.getPayment = async ({ paymentId }) => ({ payment: { id: paymentId, status: 'completed', timestamp: 1 } });
+  const rows = await providerWith(sdk).listReceivesForCatchup(1000, { pendingIds: ['settled-late'] });
+  assert.deepEqual(rows.map(p => p.id).sort(), ['settled-late', 'still-pending']);
+});
+
+await test('a timeout does not queue another SDK sync behind a hung request', async () => {
+  const sdk = scriptedSdk(); sdk.nextSync = deferred();
+  const p = providerWith(sdk);
+  await p.getBalance({ timeoutMs: 5 });
+  await p.getBalance({ timeoutMs: 5 });
+  assert.equal(sdk.syncs, 1);
+  sdk.nextSync.resolve({});
+  await new Promise(r => setImmediate(r));
+  sdk.nextSync = null;
+  await p.getBalance();
+  assert.equal(sdk.syncs, 2);
 });
 
 console.log(`\n${passed} passed, ${failed} failed`);

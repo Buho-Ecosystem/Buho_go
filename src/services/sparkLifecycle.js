@@ -70,6 +70,7 @@ export function createSparkLifecycle(deps = {}) {
     now = () => Date.now(),
     setTimer = (fn, ms) => setTimeout(fn, ms),
     clearTimer = (t) => clearTimeout(t),
+    operationTimeoutMs = 30000,
   } = deps;
   let walletStore = deps.walletStore || null;
 
@@ -79,12 +80,26 @@ export function createSparkLifecycle(deps = {}) {
   const pending = new Set();
   const diagnostics = [];
   let cadenceTimer = null;
-  let allRunning = null;
-  let allRerun = null;
+  let stopped = false;
+  const suspended = new Set();
 
   function log(entry) {
-    diagnostics.push({ at: now(), ...entry });
+    // SDK errors can include payment requests and addresses. Diagnostics
+    // expose stages/timings, never arbitrary provider error payloads.
+    const { error, ...safe } = entry;
+    diagnostics.push({ at: now(), ...safe, ...(error ? { failed: true } : {}) });
     while (diagnostics.length > DIAGNOSTICS_MAX) diagnostics.shift();
+  }
+
+  async function bounded(work, step) {
+    let timer;
+    try {
+      return await Promise.race([work, new Promise((_, reject) => {
+        timer = setTimer(() => reject(new Error(`Spark ${step} timeout`)), operationTimeoutMs);
+      })]);
+    } finally {
+      clearTimer(timer);
+    }
   }
 
   const store = () => walletStore;
@@ -99,47 +114,49 @@ export function createSparkLifecycle(deps = {}) {
   }
 
   /** Publish the provider's local balance after the SDK itself synced or a payment settled. */
-  async function publishLocal(walletId, { verified, source }) {
+  async function publishLocal(walletId, { verified, source, current }) {
     const s = store();
     const provider = s?.providers?.[walletId];
     if (!provider?.isConnected || typeof provider.getCachedBalance !== 'function') return;
     const read = s.beginBalanceRead(walletId);
     try {
       const result = await provider.getCachedBalance();
+      if (!current()) return;
       s.acceptBalance(walletId, result.balance, { read, source, verified });
     } catch (err) {
       log({ walletId: shortId(walletId), step: 'publish', error: String(err?.message || err) });
     }
   }
 
-  async function handleEvent(walletId, epoch, event) {
-    if (epoch !== epochOf(walletId) || !event?.type) return;
+  async function handleEvent(walletId, owner, event) {
+    const current = () => !stopped && tracked.get(walletId) === owner
+      && owner.epoch === epochOf(walletId) && exists(walletId) && !suspended.has(walletId);
+    if (!current() || !event?.type) return;
     const type = event.type;
     log({ walletId: shortId(walletId), event: type });
     switch (type) {
       case 'synced':
-        // The SDK finished a sync round of its own: the local figure is now
-        // what Spark reported.
-        publishPhase(walletId, { phase: 'healthy', lastSyncAt: now(), lastError: null });
-        await publishLocal(walletId, { verified: true, source: 'event' });
+        // Breez 0.25 also emits this for partial syncs. It is a reason to
+        // reread the cache, not proof that a failed balance sync recovered.
+        await publishLocal(walletId, { verified: false, source: 'event', current });
         break;
       case 'paymentSucceeded':
         if (receipts && event.payment) {
           await receipts.observe(walletId, event.payment, { source: 'event' });
         }
-        await publishLocal(walletId, { verified: true, source: 'event' });
+        if (current()) await publishLocal(walletId, { verified: false, source: 'event', current });
         break;
       case 'paymentPending':
       case 'paymentFailed':
-        await publishLocal(walletId, { verified: false, source: 'event' });
+        await publishLocal(walletId, { verified: false, source: 'event', current });
         break;
       case 'newDeposits':
       case 'unclaimedDeposits':
-        await depositsStore()?.discover?.(walletId)?.catch?.(() => {});
+        await bounded(Promise.resolve(depositsStore()?.discover?.(walletId)), 'deposits').catch(() => {});
         break;
       case 'claimedDeposits':
         store()?.signalDepositsRefresh?.(walletId);
-        await publishLocal(walletId, { verified: true, source: 'event' });
+        await publishLocal(walletId, { verified: false, source: 'event', current });
         break;
       default:
         break;
@@ -148,32 +165,34 @@ export function createSparkLifecycle(deps = {}) {
 
   function attachWallet(walletId) {
     const s = store();
-    if (!s || !exists(walletId)) return;
+    if (stopped || !s || !exists(walletId)) return;
+    suspended.delete(walletId);
     const epoch = epochOf(walletId);
     const existing = tracked.get(walletId);
     if (existing && existing.epoch === epoch && existing.unsub) return;
-    if (existing) detachWallet(walletId, { keepState: true });
+    if (existing && existing.epoch !== epoch) detachWallet(walletId);
 
     // Fix the receipt baseline BEFORE events can flow: everything the SDK
     // replays from before this moment (a restore's initial sync) is history.
     receipts?.ensureBaseline(walletId);
 
-    const t = existing || { failures: 0, running: null, rerun: false, retryTimer: null, lastRebuildAt: 0 };
+    const t = tracked.get(walletId) || { failures: 0, running: null, rerun: false, retryTimer: null, lastRebuildAt: existing?.lastRebuildAt || 0 };
     t.epoch = epoch;
     t.unsub = subscribe(walletId, (event) => {
-      handleEvent(walletId, epoch, event).catch((err) =>
+      handleEvent(walletId, t, event).catch((err) =>
         log({ walletId: shortId(walletId), event: event?.type, error: String(err?.message || err) }));
     });
     tracked.set(walletId, t);
     log({ walletId: shortId(walletId), step: 'attach' });
-    // Catch up immediately: the connect published a balance, but receipts
-    // and deposits since the last run are still unknown.
+    // Catch up as soon as the provider is available. Its initial balance
+    // read shares syncNow with this pass; address setup must not delay events.
     reconcile(walletId, 'connect');
   }
 
   function detachWallet(walletId, { keepState = false } = {}) {
     const t = tracked.get(walletId);
     if (!t) return;
+    t.rerun = false;
     try { t.unsub?.(); } catch { /* already gone */ }
     t.unsub = null;
     if (t.retryTimer) { clearTimer(t.retryTimer); t.retryTimer = null; }
@@ -198,7 +217,7 @@ export function createSparkLifecycle(deps = {}) {
    */
   function reconcile(walletId, reason = 'manual') {
     const s = store();
-    if (!s || !exists(walletId)) return Promise.resolve();
+    if (stopped || suspended.has(walletId) || !s || !exists(walletId)) return Promise.resolve();
     let t = tracked.get(walletId);
     if (!t) {
       t = { epoch: epochOf(walletId), unsub: null, failures: 0, running: null, rerun: false, retryTimer: null, lastRebuildAt: 0 };
@@ -213,7 +232,7 @@ export function createSparkLifecycle(deps = {}) {
         do {
           t.rerun = false;
           await pass(walletId, t, reason);
-        } while (t.rerun && exists(walletId));
+        } while (t.rerun && !stopped && tracked.get(walletId) === t && !suspended.has(walletId) && exists(walletId));
       } finally {
         t.running = null;
       }
@@ -225,49 +244,57 @@ export function createSparkLifecycle(deps = {}) {
     const s = store();
     const started = now();
     const epoch = epochOf(walletId);
-    const stillCurrent = () => exists(walletId) && epochOf(walletId) === epoch;
+    const stillCurrent = () => !stopped && tracked.get(walletId) === t
+      && !suspended.has(walletId) && exists(walletId) && epochOf(walletId) === epoch;
     let provider = s.providers?.[walletId];
 
     try {
       if (!provider?.isConnected || !s.connectionStates?.[walletId]?.connected) {
         publishPhase(walletId, { phase: 'connecting' });
-        await s.connectSparkWallet(walletId);
+        await bounded(s.connectSparkWallet(walletId), 'connect');
         provider = s.providers?.[walletId];
-        if (!exists(walletId)) return;
+        if (!stillCurrent()) return;
       } else {
         publishPhase(walletId, { phase: 'syncing' });
-        await s.refreshWalletData(walletId);
+        await bounded(s.refreshWalletData(walletId), 'refresh');
         if (!stillCurrent()) return;
+        if (!s.connectionStates?.[walletId]?.connected || s.balanceMeta?.[walletId]?.error) {
+          throw new Error('Spark balance refresh failed');
+        }
       }
 
       const syncFailed = !!provider?.lastSyncError || !provider?.lastSyncedAt;
       if (syncFailed) throw provider?.lastSyncError || new Error('Spark did not confirm a sync');
 
       // Receipts the live stream may have missed while the app was away.
-      if (receipts && typeof provider?.listSettledReceivesSince === 'function') {
+      if (receipts && typeof provider?.listReceivesForCatchup === 'function') {
         const passStartS = Math.floor(started / 1000);
         const from = receipts.catchUpFrom(walletId);
-        const payments = await provider.listSettledReceivesSince(from);
+        const payments = await bounded(provider.listReceivesForCatchup(from, { pendingIds: receipts.pendingIds(walletId) }), 'receipts');
         if (!stillCurrent()) return;
         // Oldest first, so notifications arrive in the order money did.
         for (const payment of [...payments].reverse()) {
+          if (!stillCurrent()) return;
           await receipts.observe(walletId, payment, { source: 'catchup' });
         }
+        if (!stillCurrent()) return;
         receipts.markCaughtUp(walletId, passStartS);
       }
 
-      await depositsStore()?.discover?.(walletId)?.catch?.(() => {});
+      await bounded(Promise.resolve(depositsStore()?.discover?.(walletId)), 'deposits').catch(() => {});
       if (!stillCurrent()) return;
 
       if (reason !== 'tick') {
-        try { await refreshExitKit(walletId, { reason: 'catchup' }); } catch { /* the kit retries on its own */ }
+        try { await bounded(Promise.resolve(refreshExitKit(walletId, { reason: 'catchup' })), 'exit kit'); } catch { /* the kit retries on its own */ }
       }
 
+      if (!stillCurrent()) return;
+      if (t.retryTimer) { clearTimer(t.retryTimer); t.retryTimer = null; }
       t.failures = 0;
       publishPhase(walletId, { phase: 'healthy', lastSyncAt: provider?.lastSyncedAt || now(), lastError: null, failures: 0 });
       log({ walletId: shortId(walletId), step: 'reconciled', reason, ms: now() - started });
     } catch (err) {
-      if (!exists(walletId)) return;
+      if (!stillCurrent()) return;
       const online = isOnline();
       // An offline phone says nothing about Spark or the SDK instance.
       if (online) t.failures += 1;
@@ -279,51 +306,34 @@ export function createSparkLifecycle(deps = {}) {
         t.lastRebuildAt = now();
         log({ walletId: shortId(walletId), step: 'rebuild' });
         try {
-          await s.connectSparkWallet(walletId, { forceReinit: true });
+          await bounded(s.connectSparkWallet(walletId, { forceReinit: true }), 'rebuild');
         } catch (rebuildErr) {
           log({ walletId: shortId(walletId), step: 'rebuild-failed', error: String(rebuildErr?.message || rebuildErr) });
         }
       }
-      if (online) scheduleRetry(walletId, t.failures);
+      if (online && stillCurrent()) scheduleRetry(walletId, t.failures);
     }
   }
 
-  /** Reconcile every Spark wallet, one after another. Coalesced like reconcile(). */
+  /** Accounts reconcile independently; per-wallet calls coalesce above. */
   function reconcileAll(reason = 'manual') {
     const s = store();
-    if (!s) return Promise.resolve();
-    if (allRunning) {
-      allRerun = reason;
-      return allRunning;
-    }
-    allRunning = (async () => {
-      try {
-        let current = reason;
-        do {
-          allRerun = null;
-          const active = s.activeWalletId;
-          const ids = (s.sparkWallets || []).map(w => w.id)
-            .sort((a, b) => (a === active ? -1 : 0) - (b === active ? -1 : 0));
-          log({ step: 'reconcile-all', reason: current, wallets: ids.length });
-          for (const id of ids) await reconcile(id, current);
-          current = allRerun;
-        } while (current);
-      } finally {
-        allRunning = null;
-      }
-    })();
-    return allRunning;
+    if (stopped || !s) return Promise.resolve();
+    const ids = (s.sparkWallets || []).map(w => w.id);
+    log({ step: 'reconcile-all', reason, wallets: ids.length });
+    return Promise.all(ids.map(id => reconcile(id, reason)));
   }
 
   function scheduleCadence() {
+    if (stopped) return;
     if (cadenceTimer) clearTimer(cadenceTimer);
     const foreground = isForeground();
     // Hidden: only worth waking up if a notification can come of it; the OS
     // throttles or freezes these timers anyway.
     if (!foreground && !backgroundSyncWanted()) { cadenceTimer = null; return; }
-    cadenceTimer = setTimer(async () => {
+    cadenceTimer = setTimer(() => {
       cadenceTimer = null;
-      await reconcileAll(isForeground() ? 'tick' : 'background').catch(() => {});
+      reconcileAll(isForeground() ? 'tick' : 'background').catch(() => {});
       scheduleCadence();
     }, foreground ? FOREGROUND_SYNC_MS : BACKGROUND_SYNC_MS);
   }
@@ -341,19 +351,28 @@ export function createSparkLifecycle(deps = {}) {
       scheduleCadence();
     },
 
+    onSparkConnecting(walletId) {
+      if (stopped || !walletStore || !exists(walletId)) return;
+      receipts?.ensureBaseline(walletId);
+    },
+
     onSparkConnected(walletId) {
+      if (stopped) return;
+      suspended.delete(walletId);
       if (!walletStore) { pending.add(walletId); return; }
-      publishPhase(walletId, { phase: 'healthy' });
+      publishPhase(walletId, { phase: 'syncing' });
       attachWallet(walletId);
     },
 
     onSparkDisconnected(walletId) {
+      suspended.add(walletId);
       pending.delete(walletId);
-      detachWallet(walletId, { keepState: true });
+      detachWallet(walletId);
       publishPhase(walletId, { phase: 'disconnected' });
     },
 
     onSparkRemoved(walletId) {
+      suspended.add(walletId);
       pending.delete(walletId);
       detachWallet(walletId);
       if (walletStore?.sparkSync) delete walletStore.sparkSync[walletId];
@@ -387,6 +406,7 @@ export function createSparkLifecycle(deps = {}) {
     /** Redacted recent lifecycle history, for support and delay analysis. */
     diagnostics: () => diagnostics.map(d => ({ ...d })),
     stop() {
+      stopped = true;
       if (cadenceTimer) clearTimer(cadenceTimer);
       cadenceTimer = null;
       for (const id of [...tracked.keys()]) detachWallet(id);

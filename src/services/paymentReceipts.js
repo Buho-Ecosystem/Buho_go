@@ -13,7 +13,7 @@
  * seen — a live SDK event, the history catch-up after resume/reconnect, or a
  * replay after restart. State is persisted and bounded:
  *
- *   { [walletId]: { baselineAt, lastCatchupAt, seen: [paymentId, …] } }
+ *   { [walletId]: { baselineAt, lastCatchupAt, seen, seenAt, pending } }
  *
  *   baselineAt     unix seconds when this device started watching the
  *                  wallet. Anything that settled before it is history (a
@@ -21,16 +21,16 @@
  *                  none of it is news).
  *   lastCatchupAt  unix seconds of the last completed history catch-up; the
  *                  next one starts a little before it (overlap, deduped).
- *   seen           FIFO of announced/decided payment ids.
+ *   seen / seenAt  IDs retained throughout the timestamp overlap window.
+ *   pending        IDs to recheck even after their creation time leaves it.
  *
  * Detection is kept apart from delivery: `deliver` is injected, so the same
  * reconciliation can drive local notifications today and a push transport
  * later (#276) without re-deciding what is new.
  *
- * Own transfers: a transfer between the user's own wallets is not "money
- * received" — they just did it, and the transfer screen confirms it. The
- * transfer registers the receipt it expects (expectInternal) before paying;
- * the matching receive is recorded as seen and not delivered.
+ * Own transfers with a receiving invoice hash register that identity before
+ * paying. Matching receives are not announced. Unidentified Spark transfers
+ * are not suppressed: an amount is not a payment identity.
  */
 
 export const PAYMENT_RECEIPTS_STORAGE_KEY = 'buhoGO_payment_receipts_v1';
@@ -40,7 +40,7 @@ export const CATCHUP_OVERLAP_S = 10 * 60;
 /** How long an expected own-transfer receipt stays claimable. */
 export const INTERNAL_EXPECTATION_MS = 3 * 60 * 1000;
 
-const DEFAULT_MAX_SEEN = 300;
+
 
 /** SDK amounts are bigint; everything here is plain sats. */
 function toSats(value) {
@@ -63,10 +63,9 @@ export function createPaymentReceipts({
   now = () => Date.now(),
   paymentHashOf = () => null,
   deliver = () => {},
-  maxSeen = DEFAULT_MAX_SEEN,
 } = {}) {
   let state = read();
-  /** walletId -> [{ paymentHash, amountSats, expiresAt }] — memory only. */
+  /** walletId -> [{ paymentHash, expiresAt }] — memory only. */
   const expected = new Map();
 
   function read() {
@@ -87,22 +86,26 @@ export function createPaymentReceipts({
   function entry(walletId) {
     const e = state[walletId];
     if (!e || !Array.isArray(e.seen)) return null;
+    // Upgrade v1 in place. Old IDs stay through one overlap window.
+    e.seenAt ||= Object.fromEntries(e.seen.map(id => [id, nowS()]));
+    e.pending ||= [];
     return e;
   }
 
-  function markSeen(e, paymentId) {
+  const floorOf = e => Math.max(e.baselineAt, (e.lastCatchupAt || e.baselineAt) - CATCHUP_OVERLAP_S);
+
+  function markSeen(e, paymentId, timestamp) {
     e.seen.push(paymentId);
-    while (e.seen.length > maxSeen) e.seen.shift();
+    e.seenAt[paymentId] = timestamp || nowS();
   }
 
-  function takeInternal(walletId, payment, amountSats) {
+  function takeInternal(walletId, payment) {
     const list = expected.get(walletId);
     if (!list?.length) return false;
     const t = now();
     const live = list.filter(x => x.expiresAt > t);
     const hash = paymentHashOf(payment);
-    let index = hash ? live.findIndex(x => x.paymentHash && x.paymentHash === hash) : -1;
-    if (index === -1) index = live.findIndex(x => !x.paymentHash && x.amountSats === amountSats);
+    const index = hash ? live.findIndex(x => x.paymentHash && x.paymentHash === hash) : -1;
     if (index !== -1) live.splice(index, 1);
     if (live.length) expected.set(walletId, live); else expected.delete(walletId);
     return index !== -1;
@@ -116,7 +119,7 @@ export function createPaymentReceipts({
      */
     ensureBaseline(walletId) {
       if (!walletId || entry(walletId)) return false;
-      state[walletId] = { baselineAt: nowS(), lastCatchupAt: null, seen: [] };
+      state[walletId] = { baselineAt: nowS(), lastCatchupAt: null, seen: [], seenAt: {}, pending: [] };
       write();
       return true;
     },
@@ -134,18 +137,26 @@ export function createPaymentReceipts({
       const e = entry(walletId);
       if (!e) return;
       e.lastCatchupAt = Math.max(e.lastCatchupAt || 0, startedAtS);
+      // Never evict IDs still inside the query's overlap window. A fixed
+      // 300-ID FIFO re-announced a busy wallet's payments on every pass.
+      const floor = floorOf(e);
+      e.seen = e.seen.filter(id => {
+        if (e.seenAt[id] >= floor) return true;
+        delete e.seenAt[id];
+        return false;
+      });
       write();
     },
 
     /**
      * An own transfer is about to land in `walletId`. Match it by invoice
-     * hash when there is one, otherwise by exact amount within a short
-     * window (Spark-address transfers carry no hash).
+     * hash when there is one. An amount alone cannot identify a transfer
+     * and would hide unrelated payments of the same amount.
      */
-    expectInternal(walletId, { paymentHash = null, amountSats = null } = {}) {
-      if (!walletId || (!paymentHash && !Number.isFinite(amountSats))) return;
+    expectInternal(walletId, { paymentHash = null } = {}) {
+      if (!walletId || !paymentHash) return;
       const list = expected.get(walletId) || [];
-      list.push({ paymentHash, amountSats: Number.isFinite(amountSats) ? amountSats : null, expiresAt: now() + INTERNAL_EXPECTATION_MS });
+      list.push({ paymentHash, expiresAt: now() + INTERNAL_EXPECTATION_MS });
       expected.set(walletId, list);
     },
 
@@ -155,21 +166,31 @@ export function createPaymentReceipts({
      */
     async observe(walletId, payment, { source = 'event', context = null } = {}) {
       if (!walletId || !payment?.id) return 'ignored';
-      // Only a settled receive is money received. Pending ones may still
-      // settle and will be seen again then; they are not marked.
-      if (payment.paymentType !== 'receive' || payment.status !== 'completed') return 'ignored';
+      if (payment.paymentType !== 'receive' || payment.method === 'token' || payment.details?.type === 'token') return 'ignored';
       const e = entry(walletId);
       if (!e) return 'untracked';
       if (e.seen.includes(payment.id)) return 'duplicate';
-
+      const wasPending = e.pending.includes(payment.id);
+      if (payment.status === 'pending') {
+        if (!wasPending) { e.pending.push(payment.id); write(); }
+        return 'ignored';
+      }
+      if (payment.status !== 'completed') {
+        e.pending = e.pending.filter(id => id !== payment.id);
+        write();
+        return 'ignored';
+      }
       const timestamp = Number(payment.timestamp) || 0;
-      markSeen(e, payment.id);
+      e.pending = e.pending.filter(id => id !== payment.id);
+      if (!wasPending && timestamp && timestamp < floorOf(e)) {
+        write();
+        return 'historical';
+      }
+      markSeen(e, payment.id, wasPending ? nowS() : timestamp);
       write();
 
-      if (timestamp && timestamp < e.baselineAt) return 'historical';
-
       const amountSats = toSats(payment.amount);
-      if (takeInternal(walletId, payment, amountSats)) return 'internal';
+      if (takeInternal(walletId, payment)) return 'internal';
 
       try {
         await deliver({ walletId, paymentId: payment.id, amountSats, timestamp, source, context });
@@ -177,6 +198,10 @@ export function createPaymentReceipts({
         console.warn('[receipts] delivery failed:', err?.message || err);
       }
       return 'delivered';
+    },
+
+    pendingIds(walletId) {
+      return [...(entry(walletId)?.pending || [])];
     },
 
     forget(walletId) {
