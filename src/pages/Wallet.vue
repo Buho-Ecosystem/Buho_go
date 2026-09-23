@@ -586,7 +586,7 @@
                 </div>
                 <div class="switch-balance" :class="$q.dark.isActive ? 'switch-balance-dark' : 'switch-balance-light'">
                   <q-skeleton v-if="refreshingWalletIds[wallet.id]" type="text" width="80px" height="14px" />
-                  <HiddenAmount v-else>{{ formatBalance(storeBalances[wallet.id] || 0) }}</HiddenAmount>
+                  <HiddenAmount v-else :class="{ 'balance-stale': walletStore.balanceView(wallet.id).stale }">{{ walletStore.balanceView(wallet.id).known ? formatBalance(walletStore.balanceView(wallet.id).value) : '—' }}</HiddenAmount>
                 </div>
               </div>
 
@@ -2233,6 +2233,23 @@ export default {
     this.cancelBrantaLookup();
   },
   watch: {
+    /**
+     * The store is the balance owner: SDK events, the lifecycle's resume
+     * sync and other screens publish there. Mirror the active wallet's
+     * accepted value into the headline as soon as it lands, instead of
+     * waiting for this page's next tick.
+     */
+    'walletStore.balances': {
+      handler() {
+        const id = this.walletStore.activeWalletId;
+        const value = this.walletStore.balances[id];
+        if (id && id === this.walletState.activeWalletId && Number.isFinite(value) && value !== this.walletState.balance) {
+          this.walletState.balance = value;
+        }
+      },
+      deep: true,
+    },
+
     'walletState.balance': {
       handler() {
         this.updateSecondaryValue();
@@ -2255,8 +2272,17 @@ export default {
 
     'walletStore.activeWalletId'() {
       this.bitcoinDepositRead++;
-      this.pendingBitcoinDeposits = [];
+      this.pendingBitcoinDeposits = this.bitcoinDepositsStore.pendingByWallet[this.walletStore.activeWalletId] || [];
       this.checkPendingBitcoinDeposits();
+    },
+
+    /** Deposits the lifecycle discovered for the active wallet in the background. */
+    'bitcoinDepositsStore.pendingByWallet': {
+      handler(byWallet) {
+        const list = byWallet?.[this.walletStore.activeWalletId];
+        if (Array.isArray(list) && this.isSparkWallet) this.pendingBitcoinDeposits = list;
+      },
+      deep: true,
     },
 
     /**
@@ -2268,7 +2294,7 @@ export default {
      */
     'walletStore.depositsRefreshSignal'() {
       if (this.walletStore.lastDepositsRefreshWalletId !== this.walletStore.activeWalletId) return;
-      this.pendingBitcoinDeposits = this.pendingBitcoinDeposits.filter(d => !this.walletStore.isDepositClaimed(d.txId));
+      this.pendingBitcoinDeposits = this.pendingBitcoinDeposits.filter(d => !this.walletStore.isDepositClaimed(d.txId, d.outputIndex || 0));
       this.checkPendingBitcoinDeposits();
       this.updateWalletBalance();
     },
@@ -2722,17 +2748,10 @@ export default {
       await Promise.allSettled(
         wallets.map(async (w) => {
           try {
-            // Only live-refresh the active wallet. Refreshing an INACTIVE Spark
-            // wallet would reconnect it (refreshWalletData auto-connects on a
-            // miss), creating a second live Spark connection that corrupts the
-            // active wallet's SDK session (the SDK shares one gRPC channel +
-            // a global auth cache across instances). That's exactly what made
-            // the active wallet show "not connected" when this sheet opened.
-            // Inactive wallets render their cached balance via getDisplayBalance.
-            const inactiveSpark = w.type === 'spark' && w.id !== this.walletStore.activeWalletId;
-            if (!inactiveSpark) {
-              await this.walletStore.refreshWalletData(w.id);
-            }
+            // Every wallet, both Spark halves included: each has its own
+            // live instance, and every value lands in the store's shared
+            // balance state that this sheet, Settings and home all read.
+            await this.walletStore.refreshWalletData(w.id);
           } catch { /* ignore */ }
           this.refreshingWalletIds = { ...this.refreshingWalletIds, [w.id]: false };
         })
@@ -2836,21 +2855,13 @@ export default {
       const read = ++this.bitcoinDepositRead;
       const isCurrent = () => read === this.bitcoinDepositRead && walletId === this.walletStore.activeWalletId;
       try {
-        const provider = await this.walletStore.ensureSparkConnected();
-        if (!isCurrent() || !provider?.getPendingDeposits) return;
-
-        const newDeposits = await provider.getPendingDeposits();
-        if (!isCurrent()) return;
-
-        // An instantly-claimed deposit keeps showing in the SDK's pending
-        // list until its confirmations catch up. Filter it everywhere so
-        // no banner, chip, or handler ever acts on a UTXO we already swept.
-        const unclaimed = newDeposits.filter(
-          (d) => !this.walletStore.isDepositClaimed(d.txId)
-        );
-
+        // Discovery and processing belong to the deposits store, per wallet
+        // (the lifecycle runs the same call for every live Spark wallet).
+        // This page only mirrors the active wallet's list for its banner;
+        // a switch drops the display, never the processing.
+        const unclaimed = await this.bitcoinDepositsStore.discover(walletId);
+        if (!isCurrent() || !unclaimed) return;
         this.pendingBitcoinDeposits = unclaimed;
-        void this.bitcoinDepositsStore.processDeposits(unclaimed, walletId);
       } catch (error) {
         // Silently ignore - wallet may be locked
       }
@@ -2887,7 +2898,7 @@ export default {
      * Handle deposits updated from ReceiveModal
      */
     handleBitcoinDepositsUpdated(deposits) {
-      this.pendingBitcoinDeposits = deposits.filter(d => !this.walletStore.isDepositClaimed(d.txId));
+      this.pendingBitcoinDeposits = deposits.filter(d => !this.walletStore.isDepositClaimed(d.txId, d.outputIndex || 0));
     },
 
     /**
@@ -3299,15 +3310,25 @@ export default {
      * guarantee it runs for every wallet type, even when a branch throws.
      */
     /**
-     * The balance tick's one write. Reporting every reading to the wallet
-     * store is what lets it notice money that arrived while the app was in
-     * the background (every rail lands in this number every 30 s); the store
-     * keeps the previous figure itself and dedupes against its own refresh.
+     * The balance tick's one write — into the store's shared balance state,
+     * which home, both switchers, Settings and the total all read, and which
+     * persists the last-known value. `result` carries the provider's
+     * freshness (`fresh`/`error`) when it has one; rails without it
+     * (LNbits, NWC, Arkade) report a direct backend read.
+     * noticeIncomingPayment keeps the balance-movement notice for rails
+     * without a payment event stream; Spark receipts come from the
+     * lifecycle by payment id.
      */
-    applyTickBalance(next, read) {
-      if (!this.walletStore.isBalanceReadCurrent(read)
-        || this.activeWallet?.id !== read.walletId
-        || !Number.isFinite(next) || next < 0) return false;
+    applyTickBalance(next, read, result = null) {
+      if (this.activeWallet?.id !== read.walletId) return false;
+      const isSpark = this.activeWallet?.type === 'spark';
+      const accepted = this.walletStore.acceptBalance(read.walletId, next, {
+        read,
+        source: isSpark ? (result?.fresh ? 'sync' : 'cache') : 'provider',
+        verified: isSpark ? !!result?.fresh : true,
+        error: result?.error?.message || null,
+      });
+      if (!accepted) return false;
       this.walletState.balance = next;
       this.walletStore.noticeIncomingPayment(this.activeWallet, next);
       return true;
@@ -3346,7 +3367,7 @@ export default {
             if (preferCached && balanceResult.balance === 0 && this.walletState.balance > 0) {
               balanceResult = await provider.getBalance();
             }
-            if (!this.applyTickBalance(balanceResult.balance, read)) return;
+            if (!this.applyTickBalance(balanceResult.balance, read, balanceResult)) return;
             localStorage.setItem('buhoGO_wallet_state', JSON.stringify(this.walletState));
             this.exitHealthTick++;
 
@@ -4273,7 +4294,9 @@ export default {
         // We confirm via `lookupInvoice` and fall through silently if
         // the event doesn't correspond to our payment hash.
         try {
-          const provider = await this.walletStore.ensureSparkConnected();
+          // Bound to the wallet that minted the invoice: with both Spark
+          // halves live, a switch mid-withdraw must not move the monitor.
+          const provider = await this.walletStore.ensureSparkConnected(this.walletStore.activeWalletId);
           // Prefer the Spark receive request ID for getLightningReceiveRequest;
           // fall back to the payment hash, which lookupInvoice resolves via
           // the transfer-list scan.
@@ -8869,6 +8892,9 @@ export default {
   transform: translateX(-10px);
 }
 .withdraw-review-context { margin: 0; font-size: .9375rem; line-height: 1.5; overflow-wrap: anywhere; }
+.balance-stale {
+  opacity: 0.6;
+}
 </style>
 
 <style>

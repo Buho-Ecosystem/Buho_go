@@ -80,6 +80,13 @@ export class BreezSparkWalletProvider extends WalletProvider {
     this._eventUnsubscribers = new Set();
     // invoice -> { prepareResponse, at } (fee estimate reused by the send)
     this._preparedSends = new Map();
+    // One network sync at a time: concurrent callers (home tick, lifecycle
+    // resume, auto-withdraw) share the in-flight request instead of queueing
+    // a sync each. `lastSyncedAt` is the last time a REAL sync completed —
+    // never a cache read — so callers can tell fresh numbers from stale ones.
+    this._syncInFlight = null;
+    this.lastSyncedAt = null;
+    this.lastSyncError = null;
   }
 
   setSyncing(syncing, reason = null) {
@@ -345,6 +352,7 @@ export class BreezSparkWalletProvider extends WalletProvider {
     this._identityPubkey = null;
     this._lightningAddress = null;
     this._cachedL1Address = null;
+    this._syncInFlight = null;
     this.isConnected = false;
   }
 
@@ -363,28 +371,46 @@ export class BreezSparkWalletProvider extends WalletProvider {
   // ==========================================
 
   /**
-   * Authoritative balance — money decisions (auto-withdraw, Use-all, spend
-   * checks) read this. Asks the SDK to sync first, bounded so a slow sync
-   * degrades to the local number instead of hanging the caller.
+   * Balance with its freshness stated, never implied.
+   *
+   * Tries a real network sync first (syncNow). When that fails or times out
+   * the local number is still returned — a display should not go blank over
+   * a slow network — but labelled `fresh: false` with the error, so nothing
+   * downstream can mistake it for a verified figure. Money decisions
+   * (auto-withdraw, Use-all, spend checks) pass `requireFresh: true` and get
+   * the failure instead of a cached number.
+   *
+   * @returns {Promise<{balance:number, pending:number, tokenBalances:Array,
+   *   fresh:boolean, syncedAt:number|null, error:Error|null}>}
    */
-  async getBalance() {
+  async getBalance({ requireFresh = false, timeoutMs } = {}) {
     this._ensureConnected();
 
+    let syncError = null;
     try {
-      let info;
-      try {
-        info = await this._syncedInfo();
-      } catch (e) {
-        info = await this.sdk.getInfo({});
+      await this.syncNow({ timeoutMs });
+    } catch (e) {
+      syncError = e;
+      if (requireFresh) {
+        const err = new Error('Spark balance could not be verified: ' + (e?.message || e));
+        err.code = 'SPARK_BALANCE_UNVERIFIED';
+        err.cause = e;
+        throw err;
       }
+    }
 
+    try {
+      const info = await this.sdk.getInfo({});
       return {
         balance: Number(info?.balanceSats ?? 0),
         // Pending incoming Spark transfers have no separate figure here —
         // the SDK claims them automatically; deposits surface through the
         // dedicated deposit flow, not here.
         pending: 0,
-        tokenBalances: []
+        tokenBalances: [],
+        fresh: !syncError,
+        syncedAt: this.lastSyncedAt,
+        error: syncError,
       };
     } catch (error) {
       this.setError(error);
@@ -394,7 +420,8 @@ export class BreezSparkWalletProvider extends WalletProvider {
 
   /**
    * Local (unsynced) balance read — display use only; spend/max logic must
-   * keep reading getBalance(). Same shape.
+   * keep reading getBalance({ requireFresh: true }). Same shape; `fresh` is
+   * never claimed here, and a cache read never counts as Spark answering.
    */
   async getCachedBalance() {
     this._ensureConnected();
@@ -404,7 +431,10 @@ export class BreezSparkWalletProvider extends WalletProvider {
       return {
         balance: Number(info?.balanceSats ?? 0),
         pending: 0,
-        tokenBalances: []
+        tokenBalances: [],
+        fresh: false,
+        syncedAt: this.lastSyncedAt,
+        error: null,
       };
     } catch (error) {
       this.setError(error);
@@ -1140,6 +1170,26 @@ export class BreezSparkWalletProvider extends WalletProvider {
     }
   }
 
+  /**
+   * Raw settled receives since a point in time, newest first — the history
+   * catch-up that finds payments whose live event was missed (app
+   * suspended, stream down). Raw SDK shape on purpose: receipt detection
+   * keys on the SDK's own payment id, status and amount.
+   */
+  async listSettledReceivesSince(fromTimestamp, { limit = 100 } = {}) {
+    this._ensureConnected();
+    const response = await this._withTransportRetry(() =>
+      this.sdk.listPayments({
+        typeFilter: ['receive'],
+        statusFilter: ['completed'],
+        fromTimestamp,
+        limit,
+        sortAscending: false,
+      })
+    );
+    return response?.payments || [];
+  }
+
   // ==========================================
   // Events
   // ==========================================
@@ -1164,7 +1214,10 @@ export class BreezSparkWalletProvider extends WalletProvider {
             const info = await this.sdk.getInfo({});
             balance = Number(info?.balanceSats ?? 0);
           } catch (e) { /* balance is best-effort in the callback */ }
-          callback(payment.id, balance);
+          // The payment itself rides along so a listener can check the
+          // receipt is the one it is waiting for (invoice hash, wallet)
+          // instead of treating any receive as its confirmation.
+          callback(payment.id, balance, payment);
         })
         .catch((e) => console.warn('onPaymentReceived callback failed:', e?.message || e));
     });
@@ -1805,25 +1858,61 @@ export class BreezSparkWalletProvider extends WalletProvider {
   }
 
   /**
-   * One synced read, bounded so a slow sync degrades instead of hanging.
-   * The losing promise's rejection stays handled. A synced read is the one
-   * proof that Spark answered, so reachability is recorded here: the
-   * emergency exit door opens only after it keeps failing for hours. A phone
-   * that is itself offline says nothing about Spark.
+   * Ask Spark for a real synchronization now, bounded.
+   *
+   * `getInfo({ ensureSynced: true })` is NOT this: in the pinned SDK (0.25.0,
+   * runtime/client.rs) it only waits for the initial-sync signal and then
+   * reads the local cache, so after startup it returns immediately without
+   * touching the network. Treating it as a sync hid outages (a cache read
+   * cleared the failure streak) and passed stale balances off as fresh.
+   * `syncWallet` actually talks to the operators; with exit-chain collection
+   * enabled it also waits for that pass, hence the time bound.
+   *
+   * Coalesced: concurrent callers share the one in-flight sync. A sync that
+   * outlives its provider (disconnect, rebuild) resolves into nothing — the
+   * `sdk` check keeps a late completion from being recorded against a new
+   * instance. Health is recorded here and only here: success means Spark
+   * answered; a failure only counts while the phone itself is online.
    */
-  async _syncedInfo({ timeoutMs = 15000 } = {}) {
-    const synced = this.sdk.getInfo({ ensureSynced: true });
-    synced.catch(() => {});
+  async syncNow({ timeoutMs = 20000 } = {}) {
+    this._ensureConnected();
+    if (this._syncInFlight) return this._syncInFlight;
+
+    const sdk = this.sdk;
+    const run = (async () => {
+      const synced = sdk.syncWallet({});
+      synced.catch(() => {});
+      let timer;
+      try {
+        await Promise.race([
+          synced,
+          new Promise((_, reject) => {
+            timer = setTimeout(() => reject(new Error('breez sync timeout')), timeoutMs);
+          }),
+        ]);
+        if (this.sdk !== sdk) throw new Error('Spark wallet was reconnected during sync');
+        this.lastSyncedAt = Date.now();
+        this.lastSyncError = null;
+        sparkHealth().recordSuccess(this.walletId);
+        return { syncedAt: this.lastSyncedAt };
+      } catch (error) {
+        if (this.sdk === sdk) {
+          this.lastSyncError = error;
+          if (typeof navigator === 'undefined' || navigator.onLine !== false) {
+            sparkHealth().recordFailure(this.walletId);
+          }
+        }
+        throw error;
+      } finally {
+        clearTimeout(timer);
+      }
+    })();
+
+    this._syncInFlight = run;
     try {
-      const info = await Promise.race([
-        synced,
-        new Promise((_, reject) => setTimeout(() => reject(new Error('breez sync timeout')), timeoutMs)),
-      ]);
-      sparkHealth().recordSuccess(this.walletId);
-      return info;
-    } catch (error) {
-      if (typeof navigator === 'undefined' || navigator.onLine !== false) sparkHealth().recordFailure(this.walletId);
-      throw error;
+      return await run;
+    } finally {
+      if (this._syncInFlight === run) this._syncInFlight = null;
     }
   }
 
@@ -1831,7 +1920,7 @@ export class BreezSparkWalletProvider extends WalletProvider {
   async probeReachability({ timeoutMs } = {}) {
     if (!this.sdk || !this.isConnected) return false;
     try {
-      await this._syncedInfo({ timeoutMs });
+      await this.syncNow({ timeoutMs });
       return true;
     } catch {
       return false;

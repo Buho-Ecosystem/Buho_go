@@ -1043,7 +1043,7 @@ export default {
     'walletStore.depositsRefreshSignal'() {
       const walletId = this.walletStore.activeWalletId;
       if (this.walletStore.lastDepositsRefreshWalletId !== walletId) return;
-      this.pendingBitcoinDeposits = this.pendingBitcoinDeposits.filter(d => !this.walletStore.isDepositClaimed(d.txId));
+      this.pendingBitcoinDeposits = this.pendingBitcoinDeposits.filter(d => !this.walletStore.isDepositClaimed(d.txId, d.outputIndex || 0));
       this.loadPendingDeposits();
       this.loadTransactions();
       this.walletStore.refreshWalletData(walletId);
@@ -2435,7 +2435,7 @@ export default {
         if (!current() || !provider?.getPendingDeposits) return;
         const deposits = await provider.getPendingDeposits();
         if (!current()) return;
-        this.pendingBitcoinDeposits = deposits.filter(d => !this.walletStore.isDepositClaimed(d.txId));
+        this.pendingBitcoinDeposits = deposits.filter(d => !this.walletStore.isDepositClaimed(d.txId, d.outputIndex || 0));
         void this.bitcoinDepositsStore.processDeposits(this.pendingBitcoinDeposits, walletId);
       } catch (error) {
         console.warn('Failed to load pending deposits:', error);
@@ -2482,7 +2482,7 @@ export default {
       try {
         const provider = await this.walletStore.ensureSparkConnected();
         if (walletId !== this.walletStore.activeWalletId || !this.manualClaimAllowed(deposit)) return;
-        this.walletStore.markDepositClaimInFlight(deposit.txId);
+        this.walletStore.markDepositClaimInFlight(deposit.txId, deposit.outputIndex || 0);
         ownsClaim = true;
         const result = await provider.claimDeposit(
           deposit.txId,
@@ -2490,7 +2490,7 @@ export default {
           deposit.outputIndex
         );
 
-        this.walletStore.markDepositClaimed(deposit.txId);
+        this.walletStore.markDepositClaimed(deposit.txId, deposit.outputIndex || 0);
         this.walletStore.signalDepositsRefresh(walletId);
         if (walletId !== this.walletStore.activeWalletId) return;
 
@@ -2537,7 +2537,7 @@ export default {
           timeout: 3000
         });
       } finally {
-        if (ownsClaim) this.walletStore.clearDepositClaimInFlight(deposit.txId);
+        if (ownsClaim) this.walletStore.clearDepositClaimInFlight(deposit.txId, deposit.outputIndex || 0);
         this.isClaimingDeposit = false;
         this.claimingDeposit = null;
         this.claimFeeQuote = null;

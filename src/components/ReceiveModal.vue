@@ -473,6 +473,7 @@ import ArkadeLogo from './ArkadeLogo.vue';
 import { NostrWebLNProvider } from "@getalby/sdk";
 import { Invoice } from "@getalby/lightning-tools";
 import { formatAmount } from '../utils/amountFormatting.js';
+import { paymentHashOf } from '../utils/breezPayments.js';
 import { fiatSymbol as fiatSymbolFor } from '../utils/fiatCurrencies.js';
 import { useWalletStore } from '../stores/wallet';
 import { createPaymentMonitor, PaymentStatus, checkNWCPaymentStatus } from '../utils/paymentMonitor';
@@ -1218,9 +1219,15 @@ export default {
      * stall while the app is backgrounded.
      */
     async startSparkEventMonitor() {
+      // Bind the monitor to the wallet and invoice it was started for. Both
+      // Spark halves are live now, so "a receive happened" is not the same
+      // as "this invoice was paid": only a settled receive on THIS wallet
+      // whose payment hash is THIS invoice's confirms it.
+      const walletId = this.walletStore.activeWalletId;
+      const expectedHash = this.generatedInvoice?.payment_hash || null;
       let provider;
       try {
-        provider = await this.walletStore.ensureSparkConnected();
+        provider = await this.walletStore.ensureSparkConnected(walletId);
       } catch (error) {
         console.warn('Could not connect Spark provider for monitoring:', error);
         return;
@@ -1228,10 +1235,12 @@ export default {
 
       // Fast path: SDK event (best-effort — may not fire for Lightning)
       try {
-        this.sparkEventUnsubscribe = provider.onPaymentReceived((transferId, newBalance) => {
+        this.sparkEventUnsubscribe = provider.onPaymentReceived((transferId, newBalance, payment) => {
+          if (!expectedHash || this.generatedInvoice?.payment_hash !== expectedHash) return;
+          if (paymentHashOf(payment) !== expectedHash) return;
           this.handlePaymentStatus(PaymentStatus.CONFIRMED, {
             transferId,
-            amount: this.generatedInvoice?.amount,
+            amount: Number(payment?.amount ?? 0) || this.generatedInvoice?.amount,
             newBalance
           });
         });

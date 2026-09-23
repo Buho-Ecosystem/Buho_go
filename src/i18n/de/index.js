@@ -3350,4 +3350,9 @@ export default {
   "{amount} · {wallet}": "{amount} · {wallet}",
   "This deposit will be added automatically. You can close this screen.": "Diese Einzahlung wird automatisch hinzugefügt. Du kannst diese Ansicht schließen.",
   "We will retry automatically. You can close this screen.": "Wir versuchen es automatisch erneut. Du kannst diese Ansicht schließen.",
+  "Loading": "Wird geladen",
+  "incomplete": "unvollständig",
+  "last known": "zuletzt bekannt",
+  "Last known balance": "Zuletzt bekannter Kontostand",
+  "Balance not loaded yet": "Kontostand noch nicht geladen",
 }
