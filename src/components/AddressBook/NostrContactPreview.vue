@@ -37,9 +37,13 @@
           />
           <span class="preview-handle-text">{{ nip05Line }}</span>
         </div>
-        <div v-else class="preview-handle preview-handle--muted">
+        <div v-else-if="!showCopyIdentifier" class="preview-handle preview-handle--muted">
           <span class="preview-handle-text">{{ shortenedNpub }}</span>
         </div>
+        <button v-if="showCopyIdentifier" type="button" class="preview-copy-key" :aria-label="$t('Copy Nostr identifier')"
+          @click="$emit('copy-npub', npub)">
+          <span>{{ shortenedNpub }}</span><q-icon name="content_copy" size="14px" :aria-hidden="true" />
+        </button>
       </div>
     </div>
 
@@ -105,6 +109,7 @@
         </button>
         <button
           type="button"
+          v-if="!showCopyIdentifier"
           class="preview-cta preview-cta--secondary"
           @click="$emit('copy-npub', npub)"
         >
@@ -166,6 +171,7 @@ export default {
     existingEntry: { type: Object, default: null },
     /** Parent-controlled spinner on the save button. */
     saving: { type: Boolean, default: false },
+    showCopyIdentifier: { type: Boolean, default: false },
     /** Fallback initial-tile color when no avatar is available. */
     fallbackColor: { type: String, default: '#15DE72' },
   },
@@ -416,4 +422,8 @@ export default {
 .preview-cta--secondary:hover {
   background: rgba(120, 120, 120, 0.06);
 }
+.preview-copy-key { display: flex; align-items: center; gap: 8px; min-height: 44px; max-width: 100%; padding: 6px 0; border: 0; border-radius: 8px; background: transparent; color: var(--text-secondary); font: .8125rem 'Manrope', sans-serif; cursor: pointer; text-align: left; }
+.preview-copy-key span { overflow-wrap: anywhere; }
+.preview-copy-key:focus-visible { outline: 2px solid var(--text-primary); outline-offset: 2px; }
+.preview-copy-key:hover { color: var(--text-primary); }
 </style>

@@ -7,10 +7,15 @@
   >
     <q-card
       class="address-modal"
-      :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'"
+      :class="[$q.dark.isActive ? 'card_dark_style' : 'card_light_style', { 'address-modal--search': !isEditing && activeTab === 'search' }]"
     >
       <!-- Header -->
-      <q-card-section class="modal-header">
+      <q-card-section class="modal-header" :class="{ 'modal-header--back': activeTab === 'search' && searchNavigation.canGoBack }">
+        <button v-if="activeTab === 'search' && searchNavigation.canGoBack" ref="searchBack"
+          type="button" class="search-header-back" :aria-label="$t('Back to results')"
+          :disabled="searchNavigation.saving" @click="$refs.searchRef?.backToResults()">
+          <q-icon name="chevron_left" size="24px" :aria-hidden="true" />
+        </button>
         <div class="modal-title" :class="$q.dark.isActive ? 'dialog_title_dark' : 'dialog_title_light'">
           {{ isEditing ? $t('Edit contact') : $t('Add contact') }}
         </div>
@@ -66,6 +71,9 @@
         <AddContactSearch
           v-else-if="!isEditing && activeTab === 'search'"
           ref="searchRef"
+          @navigation-change="searchNavigation = $event"
+          @focus-back="$refs.searchBack?.focus()"
+          :active="show && activeTab === 'search'"
           @saved="onChildSaved"
           @open-existing="onOpenExisting"
         />
@@ -282,6 +290,7 @@ export default {
   data() {
     return {
       activeTab: 'manual',
+      searchNavigation: { canGoBack: false, saving: false },
       addressHandoff: false,
       tabs: TABS,
       formData: {
@@ -668,6 +677,15 @@ export default {
   padding: 0.75rem 1.5rem 0.5rem;
 }
 
+.address-modal--search { display: flex; flex-direction: column; max-height: calc(100dvh - 48px); }
+.address-modal--search .modal-header, .address-modal--search .modal-tabs { flex-shrink: 0; }
+.address-modal--search .modal-content { display: flex; overflow: hidden; min-height: 0; padding-bottom: 16px; }
+.search-header-back { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 44px; width: 44px; height: 44px; border: 0; border-radius: 50%; background: transparent; color: var(--text-primary); cursor: pointer; }
+.search-header-back:focus-visible { outline: 2px solid currentColor; }
+.modal-header--back .modal-title { flex: 1; text-align: center; }
+.address-modal--search .close-btn { min-width: 44px; min-height: 44px; }
+.address-modal--search .seg-tab { min-height: 44px; min-width: 0; }
+
 /* Avatar */
 .avatar-preview {
   display: flex;
@@ -902,6 +920,10 @@ export default {
 
 /* Responsive Design */
 @media (max-width: 480px) {
+  .address-modal.address-modal--search { margin: 0; }
+  .address-modal--search .modal-header { padding: 16px 16px 8px; }
+  .address-modal--search .modal-tabs { padding: 0 16px 8px; }
+  .address-modal--search .modal-content { padding: 8px 16px 16px; }
   .address-modal {
     max-width: 100%;
     margin: 1rem;
@@ -924,5 +946,9 @@ export default {
     padding: 0.75rem 1.25rem 1.25rem;
   }
 
+}
+@media (max-width: 360px) {
+  .address-modal--search .seg-tab { gap: 0; padding: 8px 2px; }
+  .address-modal--search .seg-tab :deep(svg) { display: none; }
 }
 </style>
