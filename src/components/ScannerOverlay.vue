@@ -19,7 +19,11 @@
   Selection is capability-based and automatic (utils/scannerEngine.js): try
   native, and on a non-permission failure — a rejected start, a start that
   never settles, or a decoder that errors before it decodes anything — switch
-  to web and remember that on this device until the next app update.
+  to web. The failure demotes native for the rest of the session, and across
+  restarts only when it is structural or keeps repeating, so a one-off
+  hiccup on a healthy phone does not cost it the fast engine. If native was
+  skipped because of that memory and the web engine then fails too, native
+  gets one last-resort attempt before an error is shown.
   Permission refusals are shown, never worked around: both engines need the
   same OS camera permission.
 
@@ -118,7 +122,12 @@ import { Icon } from '@iconify/vue';
 import QrScanner from 'qr-scanner';
 import { createQrScanner } from '../utils/qrScanner';
 import { isNativeScannerAvailable, startLiveScan } from '../utils/nativeScanner';
-import { NATIVE_ERROR, getEngineMemory, shouldFallBackToWeb } from '../utils/scannerEngine';
+import {
+  NATIVE_ERROR,
+  getEngineMemory,
+  shouldFallBackToWeb,
+  shouldRetryNativeAfterWebFailure,
+} from '../utils/scannerEngine';
 
 export default {
   name: 'ScannerOverlay',
@@ -177,11 +186,26 @@ export default {
       this.detected = false;
       this.engine = '';
 
-      if (isNativeScannerAvailable() && !getEngineMemory().isNativeDemoted()) {
+      const nativeAvailable = isNativeScannerAvailable();
+      const triedNative = nativeAvailable && !getEngineMemory().isNativeDemoted();
+      if (triedNative) {
         const settled = await this.startNative(seq);
         if (settled || seq !== this.startSeq) return;
       }
-      await this.startWeb(seq);
+
+      const webError = await this.startWeb(seq);
+      if (!webError || seq !== this.startSeq) return;
+
+      // Native was skipped on the strength of an earlier failure, and now the
+      // web engine cannot start either. Give native one more go before
+      // showing an error: the memory may simply be stale (the camera was
+      // busy last time), and a working native engine clears it.
+      if (shouldRetryNativeAfterWebFailure({ triedNative, nativeAvailable, webError })) {
+        console.warn('[ScannerOverlay] web scanner failed, retrying the native engine:', webError?.message);
+        const settled = await this.startNative(seq);
+        if (settled || seq !== this.startSeq) return;
+      }
+      this.showError(webError);
     },
 
     /**
@@ -207,7 +231,7 @@ export default {
           '[ScannerOverlay] native scanner unavailable, falling back to web engine:',
           err?.code, err?.message,
         );
-        getEngineMemory().demoteNative(err?.code || 'unknown');
+        getEngineMemory().recordNativeFailure(err?.code || 'unknown');
         return false;
       }
 
@@ -236,17 +260,23 @@ export default {
       this.controller = null;
       this.torchAvailable = false;
       this.torchOn = false;
-      getEngineMemory().demoteNative(err?.code || NATIVE_ERROR.DECODER_FAILED);
-      await this.startWeb(seq);
+      getEngineMemory().recordNativeFailure(err?.code || NATIVE_ERROR.DECODER_FAILED);
+      const webError = await this.startWeb(seq);
+      if (webError && seq === this.startSeq) this.showError(webError);
     },
 
-    /** Start the in-webview qr-scanner engine on the overlay's own <video>. */
+    /**
+     * Start the in-webview qr-scanner engine on the overlay's own <video>.
+     * Resolves null when it is running (or this start was superseded) and
+     * with the error when it could not start; the caller decides whether to
+     * show it or try native first. A failed start leaves nothing running.
+     */
     async startWeb(seq) {
-      if (this.qrScanner) return;
+      if (this.qrScanner) return null;
       this.engine = 'web';
       // Let the <video> mount before we hand it to the scanner.
       await this.$nextTick();
-      if (seq !== this.startSeq) return;
+      if (seq !== this.startSeq) return null;
 
       try {
         if (!(await QrScanner.hasCamera())) {
@@ -254,7 +284,7 @@ export default {
           err.name = 'NotFoundError';
           throw err;
         }
-        if (seq !== this.startSeq) return;
+        if (seq !== this.startSeq) return null;
 
         const video = this.$refs.video;
         if (!video) throw new Error('Video element not found');
@@ -277,14 +307,18 @@ export default {
         // Assign before awaiting start() so stop() can reach an in-flight start.
         this.qrScanner = scanner;
         await scanner.start();
-        if (seq !== this.startSeq) return;
+        if (seq !== this.startSeq) return null;
 
         this.torchAvailable = await scanner.hasFlash().catch(() => false);
+        return null;
       } catch (err) {
-        if (seq !== this.startSeq) return;
+        if (seq !== this.startSeq) return null;
         console.error('[ScannerOverlay] web scanner start failed:', err);
         this.destroyWebScanner();
-        this.showError(err);
+        // Back to "no engine" so a native retry starts from a clean overlay:
+        // transparent, with no <video> of our own.
+        this.engine = '';
+        return err || new Error('Web scanner failed to start.');
       }
     },
 
