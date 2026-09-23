@@ -41,7 +41,7 @@
             :interactive="false"
           >
             <template #caption>
-              <HiddenAmount>{{ formatBalance(balances[activeWalletId] || 0) }}</HiddenAmount>
+              <HiddenAmount :class="{ 'balance-stale': isBalanceStale(activeWalletId) }" :title="balanceTitle(activeWalletId)">{{ walletBalanceText(activeWalletId) }}</HiddenAmount>
             </template>
             <template #right>
               <Icon icon="tabler:circle-check-filled" width="18" height="18" style="color: #15DE72;" />
@@ -1068,10 +1068,10 @@
             <div class="stat-divider" :class="$q.dark.isActive ? 'divider-dark' : 'divider-light'"></div>
             <div class="stat-item">
               <div class="stat-value" :class="$q.dark.isActive ? 'balance_dark' : 'balance_light'">
-                <HiddenAmount>{{ formatBalance(totalBalance) }}</HiddenAmount>
+                <HiddenAmount :class="{ 'balance-stale': !totalBalanceView.complete || totalBalanceView.stale }">{{ formatBalance(totalBalanceView.total) }}</HiddenAmount>
               </div>
               <div class="stat-label" :class="$q.dark.isActive ? 'sats' : 'sats-light'">
-                {{ $t('Total') }}
+                {{ $t('Total') }}<template v-if="!totalBalanceView.complete"> · {{ $t('incomplete') }}</template><template v-else-if="totalBalanceView.stale"> · {{ $t('last known') }}</template>
               </div>
             </div>
             <div class="stat-divider" :class="$q.dark.isActive ? 'divider-dark' : 'divider-light'"></div>
@@ -1138,7 +1138,7 @@
 
                 <!-- Trailing value + disclosure -->
                 <div class="wallet-row-value" :class="$q.dark.isActive ? 'row-value-dark' : 'row-value-light'">
-                  <HiddenAmount>{{ formatBalance(balances[wallet.id] || 0) }}</HiddenAmount>
+                  <HiddenAmount :class="{ 'balance-stale': isBalanceStale(wallet.id) }" :title="balanceTitle(wallet.id)">{{ walletBalanceText(wallet.id) }}</HiddenAmount>
                 </div>
                 <Icon icon="tabler:chevron-right" width="16" height="16" class="wallet-row-chevron" />
               </div>
@@ -1217,7 +1217,7 @@
           </div>
 
           <div class="wallet-detail-balance" :class="$q.dark.isActive ? 'balance_dark' : 'balance_light'">
-            <HiddenAmount>{{ formatBalance(balances[detailWallet.id] || 0) }}</HiddenAmount>
+            <HiddenAmount :class="{ 'balance-stale': isBalanceStale(detailWallet.id) }" :title="balanceTitle(detailWallet.id)">{{ walletBalanceText(detailWallet.id) }}</HiddenAmount>
           </div>
 
           <div v-if="connectionStates[detailWallet.id]?.error" class="wallet-error-msg">
@@ -2405,6 +2405,8 @@ export default {
       'connectionStates',
       'sortedWallets',
       'totalBalance',
+      'totalBalanceView',
+      'balanceView',
       'connectedWallets',
       'preferredFiatCurrency',
       'defaultDisplayCurrency',
@@ -3526,6 +3528,25 @@ export default {
       return formatAmount(balance, this.useBip177Format)
     },
 
+    /**
+     * One wallet's balance from the store's shared state: the same value
+     * home and the switchers show. Unknown renders as a dash, never as 0.
+     */
+    walletBalanceText(walletId) {
+      const view = this.balanceView(walletId)
+      return view.known ? this.formatBalance(view.value) : '—'
+    },
+
+    isBalanceStale(walletId) {
+      return this.balanceView(walletId).stale
+    },
+
+    balanceTitle(walletId) {
+      const view = this.balanceView(walletId)
+      if (!view.known) return view.loading ? this.$t('Loading') : this.$t('Balance not loaded yet')
+      return view.stale ? this.$t('Last known balance') : null
+    },
+
     async checkBiometricAvailability() {
       const { available, biometryType } = await isBiometricAvailable()
       this.biometricsAvailable = available
@@ -3739,15 +3760,8 @@ export default {
       try {
         const wallet = this.wallets.find(w => w.id === walletId)
         if (wallet?.type === 'spark') {
-          // Preserve the single-live-Spark-connection invariant: drop every
-          // other Spark provider first, then connect this one fresh.
-          // Reconnecting a Spark wallet while another stays live re-creates the
-          // dual connection that corrupts the SDK's shared auth session.
-          for (const w of this.walletStore.sparkWallets) {
-            if (w.id !== walletId) {
-              await this.walletStore._disconnectSparkProvider(w.id)
-            }
-          }
+          // Rebuild just this wallet's SDK instance; the other half of the
+          // pair has its own instance and stays connected.
           await this.connectSparkWallet(walletId, { forceReinit: true })
         } else {
           await this.connectWallet(walletId)
@@ -7578,4 +7592,7 @@ body.body--light .kiosk-wallet-row-dot { background: #059573; }
   color: var(--text-muted);
 }
 
+.balance-stale {
+  opacity: 0.6;
+}
 </style>

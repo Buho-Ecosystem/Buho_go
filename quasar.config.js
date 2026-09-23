@@ -47,6 +47,10 @@ export default defineConfig((ctx) => {
       // 'emergency-exit' resumes any exit in progress: chain checks and the
       // next package broadcasts, independent of Spark being reachable.
       'emergency-exit',
+      // 'spark-lifecycle' owns Spark synchronization for every live wallet,
+      // independent of pages and selection: SDK events, scheduled sync,
+      // resume/network recovery, payment receipts and deposit discovery.
+      'spark-lifecycle',
       // Keep profile changes synced quietly; publishing is not a user task.
       'profile-sync',
       ctx.mode.capacitor ? 'deep-links' : '',

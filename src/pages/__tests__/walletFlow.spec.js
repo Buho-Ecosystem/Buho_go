@@ -42,7 +42,7 @@ function balanceHarness() {
     '../boot/i18n': { i18n: { global: { t } } },
   }).useWalletStore;
   const a = { id: 'A', name: 'Wallet A' }, b = { id: 'B', name: 'Wallet B' };
-  const store = { ...options.actions, activeWalletId: a.id, isActiveWalletSpark: true };
+  const store = { ...options.state(), ...options.actions, wallets: [a, b], activeWalletId: a.id, isActiveWalletSpark: true, persistState: async () => {} };
   store.noticeIncomingPayment(a, 1000);
   store.noticeIncomingPayment(b, 100);
   const vm = { ...component().methods, walletStore: store, activeWallet: a, walletState: { balance: 1000 }, loadLastTransaction() {} };
@@ -157,7 +157,7 @@ test('Pay again is unavailable until a payment completes, including failed payme
 });
 
 
-test('page ticks and store refreshes share ordering and notification history', async () => {
+test('page ticks and store refreshes share one ordering; Spark never notifies from balance movement', async () => {
   const { store, vm, a, notices } = balanceHarness();
   const old = deferred();
   a.type = 'spark';
@@ -165,13 +165,24 @@ test('page ticks and store refreshes share ordering and notification history', a
     connectionStates: { A: { connected: true } }, balances: { A: 1000 }, walletInfos: {}, persistState: async () => {} });
   const pending = store.refreshWalletData('A');
   const latest = store.beginBalanceRead('A');
-  vm.applyTickBalance(1200, latest);
-  old.resolve({ balance: 1000 });
+  vm.applyTickBalance(1200, latest, { fresh: true });
+  old.resolve({ balance: 1000, fresh: true });
   await pending;
-  assert.equal(notices.length, 1);
-  vm.applyTickBalance(1200, store.beginBalanceRead('A'));
-  assert.equal(notices.length, 1);
+  assert.equal(store.balances.A, 1200, 'the older refresh cannot overwrite the newer tick');
   assert.equal(vm.walletState.balance, 1200);
+  assert.equal(notices.length, 0, 'Spark receipts are detected by payment id, not balance deltas');
+  assert.equal(a.metadata.cachedBalance, 1200, 'the accepted value is the persisted last-known value');
+});
+
+test('a read that started before a disconnect or removal is dropped', () => {
+  const { store, a } = balanceHarness();
+  const read = store.beginBalanceRead(a.id);
+  store._bumpWalletEpoch(a.id);
+  assert.equal(store.acceptBalance(a.id, 5000, { read }), false);
+  const next = store.beginBalanceRead(a.id);
+  store.wallets = store.wallets.filter(w => w.id !== a.id);
+  assert.equal(store.acceptBalance(a.id, 5000, { read: next }), false);
+  assert.equal(store.balances[a.id], undefined);
 });
 
 test('a service profile groups payments to both its identifier and original pay link', async () => {
@@ -249,24 +260,23 @@ test('deposit refresh signals update home immediately only for their owning wall
 
 test('overlapping deposit polls cannot restore an older list or show another wallet’s deposits', async () => {
   const { vm, store } = balanceHarness();
-  const provider = {};
+  const lists = [];
   Object.assign(vm, { isSparkWallet: true, pendingBitcoinDeposits: [], bitcoinDepositRead: 0,
-    bitcoinDepositsStore: { processDeposits: async () => {} } });
-  store.ensureSparkConnected = async () => provider;
-  store.isDepositClaimed = () => false;
+    bitcoinDepositsStore: { discover: (walletId) => { const d = deferred(); lists.push({ walletId, d }); return d.promise; } } });
   for (const switchWallet of [false, true]) {
-    const old = deferred(), reading = deferred();
-    provider.getPendingDeposits = () => { reading.resolve(); return old.promise; };
+    lists.length = 0;
+    store.activeWalletId = 'A';
     const pending = vm.checkPendingBitcoinDeposits();
-    await reading.promise;
     if (switchWallet) store.activeWalletId = 'B';
     else {
-      provider.getPendingDeposits = async () => [];
-      await vm.checkPendingBitcoinDeposits();
+      const newer = vm.checkPendingBitcoinDeposits();
+      lists[1].d.resolve([]);
+      await newer;
     }
-    old.resolve([{ txId: 'deposit', confirmed: true }]);
+    lists[0].d.resolve([{ txId: 'deposit', confirmed: true }]);
     await pending;
     assert.deepEqual(vm.pendingBitcoinDeposits, []);
+    assert.equal(lists[0].walletId, 'A', 'discovery is asked for the wallet it was started for');
   }
 });
 

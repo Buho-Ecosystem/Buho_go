@@ -3349,4 +3349,9 @@ export default {
   "{amount} · {wallet}": "{amount} · {wallet}",
   "This deposit will be added automatically. You can close this screen.": "Este depósito se añadirá automáticamente. Puedes cerrar esta pantalla.",
   "We will retry automatically. You can close this screen.": "Lo intentaremos de nuevo automáticamente. Puedes cerrar esta pantalla.",
+  "Loading": "Cargando",
+  "incomplete": "incompleto",
+  "last known": "último conocido",
+  "Last known balance": "Último saldo conocido",
+  "Balance not loaded yet": "Saldo aún no cargado",
 }

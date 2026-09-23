@@ -293,14 +293,20 @@ function lazyEsplora() {
 }
 
 /**
- * One bounded synced read of the active Spark wallet, recording only whether
- * Spark answered. This is what lets the home screen notice a sustained outage
- * while the app sits open on cached balances.
+ * One bounded real sync per connected Spark wallet, recording only whether
+ * Spark answered. This is what lets the home screen notice a sustained
+ * outage while the app sits open on cached balances. Every live wallet, not
+ * just the selected one: both halves of the pair hold funds that may need
+ * the exit, and each keeps its own outage record.
  */
 async function probeSparkHealth() {
   const store = walletStore();
-  const provider = store.activeWalletId ? store.getSparkProvider(store.activeWalletId) : null;
-  if (provider?.isConnected && typeof provider.probeReachability === 'function') await provider.probeReachability({ timeoutMs: SYNC_TIMEOUT_MS });
+  for (const wallet of store.sparkWallets || []) {
+    const provider = store.getSparkProvider(wallet.id);
+    if (provider?.isConnected && typeof provider.probeReachability === 'function') {
+      await provider.probeReachability({ timeoutMs: SYNC_TIMEOUT_MS });
+    }
+  }
 }
 
 /** Keep every active exit moving and Spark's reachability known while the app is open. Safe to call repeatedly. */

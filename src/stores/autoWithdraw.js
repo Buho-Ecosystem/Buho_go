@@ -144,7 +144,22 @@ export const useAutoWithdrawStore = defineStore('autoWithdraw', {
         const wallet = walletStore.wallets.find(w => w.id === baseWalletId)
         if (!wallet) return
 
-        sendAmount = Math.floor(balance * 0.97)
+        // The figure that triggered us may be a display read (SDK cache, a
+        // persisted value from the last session, an event-driven refresh).
+        // Sending money needs a number Spark has just confirmed: re-read
+        // with a real sync and act on the smaller of the two. If Spark
+        // cannot be reached, this throws and the retry backoff below applies
+        // — a cached figure never authorizes a payout.
+        let spendable = balance
+        if (wallet.type?.toLowerCase() === WALLET_TYPES.SPARK && !configKey.includes(':')) {
+          const provider = walletStore.providers[baseWalletId]
+          if (typeof provider?.getBalance !== 'function') throw new Error('Wallet provider not available')
+          const verified = await provider.getBalance({ requireFresh: true })
+          spendable = Math.min(balance, Number(verified.balance))
+          if (!Number.isFinite(spendable) || spendable <= threshold) return
+        }
+
+        sendAmount = Math.floor(spendable * 0.97)
         if (sendAmount < MIN_SEND_SATS) return
 
         const walletType = wallet.type?.toLowerCase() || 'nwc'

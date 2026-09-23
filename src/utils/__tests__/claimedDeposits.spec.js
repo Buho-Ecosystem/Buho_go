@@ -41,6 +41,23 @@ function fakeStorage(initial = {}) {
   };
 }
 
+test('outputs of one transaction are claimed independently', () => {
+  const reg = createClaimedDepositRegistry();
+  reg.add('tx', 0);
+  assert.equal(reg.has('tx', 0), true);
+  assert.equal(reg.has('tx', 1), false, 'a second output (or the other wallet\'s deposit) is not suppressed');
+  reg.add('tx', 1);
+  assert.equal(reg.has('tx', 1), true);
+  assert.equal(reg.size(), 2);
+});
+
+test('a legacy txid-only entry still covers every output (never double-claims)', () => {
+  const storage = fakeStorage({ [CLAIMED_DEPOSITS_STORAGE_KEY]: JSON.stringify(['legacy']) });
+  const reg = createClaimedDepositRegistry({ storage });
+  assert.equal(reg.has('legacy', 0), true);
+  assert.equal(reg.has('legacy', 3), true);
+});
+
 test('add + has: a claimed txid stays claimed', () => {
   const reg = createClaimedDepositRegistry();
   assert.equal(reg.has('tx1'), false);
