@@ -17,7 +17,7 @@ import { collectTransactions, filterForReport } from './collect.js';
 import { txTimeMs } from './time.js';
 import { createRateLookup, rateFromSnapshot, supportsCurrency } from './rates.js';
 import { toReportRow, toCsv, toXml, summarise } from './rows.js';
-import { deliverReport } from './delivery.js';
+import { MIME } from '../fileExport.js';
 
 /** Where the report fonts and mark live. Shipped with the app rather than
  *  fetched from a CDN: a tax record is the last thing that should depend on
@@ -173,27 +173,26 @@ export async function buildReport({
 }
 
 /**
- * Turn a built report into one file and hand it over.
+ * Turn a built report into one file, ready to save or share.
+ *
+ * Kept apart from handing the file over, so the user can save and share the
+ * same document, or do either twice, without it being rendered again.
  *
  * @param {object} report from buildReport
  * @param {'pdf'|'csv'|'xml'} format
- * @returns {Promise<{ saved, shared, filename, path? }>}
+ * @returns {Promise<{ filename: string, data: string|Uint8Array, mimeType: string, title: string }>}
  */
-export async function exportReport(report, format) {
+export async function renderReport(report, format) {
   const meta = report?.meta || {};
   const filename = filenameFor(meta, format);
   const title = `BuhoGO report ${(meta.periodFromIso || meta.generatedIso || '').slice(0, 10)}`.trim();
 
   if (format === 'csv') {
-    const result = await deliverReport({ filename, data: toCsv(report.rows), kind: 'csv', title });
-    return { ...result, filename };
+    return { filename, data: toCsv(report.rows), mimeType: MIME.csv, title };
   }
 
   if (format === 'xml') {
-    const result = await deliverReport({
-      filename, data: toXml(report.rows, meta), kind: 'xml', title,
-    });
-    return { ...result, filename };
+    return { filename, data: toXml(report.rows, meta), mimeType: MIME.xml, title };
   }
 
   const { renderReportPdf } = await import('./pdf.js');
@@ -201,12 +200,11 @@ export async function exportReport(report, format) {
   const periodLabel = meta.periodFromIso
     ? `${meta.periodFromIso.slice(0, 10)} to ${(meta.periodToIso || meta.generatedIso).slice(0, 10)}`
     : 'All transactions';
-  const bytes = await renderReportPdf(
+  const data = await renderReportPdf(
     { ...report, meta: { ...meta, periodLabel } },
     { fonts, logo: logo || undefined },
   );
-  const result = await deliverReport({ filename, data: bytes, kind: 'pdf', title });
-  return { ...result, filename };
+  return { filename, data, mimeType: MIME.pdf, title };
 }
 
 export { standardPeriods } from './collect.js';

@@ -256,7 +256,13 @@ export function exitKitService() {
     // The tier an exit itself quotes at, so the receipt and the start figure agree.
     feeRate: async () => (await (await import('./esplora.js')).appEsploraClient().then(c => c.recommendedFees())).medium,
     encrypt: async (payload, passphrase) => (await import('../utils/backupCrypto.js')).encryptBackup(payload, passphrase, { hint: 'Spark emergency exit kit' }),
-    deliver: async (args) => (await import('./taxReport/delivery.js')).deliverReport({ ...args, kind: 'json' }),
+    // `saved` records that the kit left the phone, so a closed share sheet
+    // must not count as a copy the person holds.
+    deliver: async (args) => {
+      const { shareFile, MIME } = await import('./fileExport.js');
+      const { shared } = await shareFile({ ...args, mimeType: MIME.json });
+      return { saved: shared, shared };
+    },
   });
   return instance;
 }
