@@ -11,6 +11,7 @@
     "check:people-search": "node scripts/check-people-search.mjs",
     "check:transfer": "node scripts/check-transfer-completion.mjs",
     "check:toasts": "node scripts/check-toast-interactions.mjs",
+    "check:native-plugins": "node scripts/check-native-plugins.mjs",
     "dev": "quasar dev",
     "build": "quasar build",
     "postinstall": "quasar prepare",

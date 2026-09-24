@@ -16,8 +16,14 @@
  *     unwritable on Android 10 without legacy external storage and restricted
  *     from 11 onwards. `Cache` is app-scoped, always writable, and is what
  *     Capacitor's FileProvider is able to hand to another app.
- *   - On iOS, `Documents` IS the app's own sandbox, so the file persists and
- *     shows up in the Files app where a user would look for it.
+ *   - On iOS, `Documents` IS the app's own sandbox, so the file persists. It
+ *     is not browsable in the Files app (Info.plist does not set
+ *     UIFileSharingEnabled); the share sheet's "Save to Files" is the way out.
+ *
+ * Both platforms need the Filesystem and Share plugins installed in
+ * src-capacitor, not only in the root package.json; see
+ * scripts/check-native-plugins.mjs. Neither depends on Google Play services,
+ * so this works on devices without them (e.g. GrapheneOS).
  *
  * Sharing goes through `files:` rather than `url:`. `url` is for sharing a
  * link; `files` is the documented route for a file, and it is what makes
