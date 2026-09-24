@@ -25,7 +25,7 @@
         <span class="current-account-copy">
           <span class="current-account-kicker">{{ $t('This identity') }}</span>
           <strong>{{ currentAccountName }}</strong>
-          <span v-if="currentUsername">@{{ currentUsername }}</span>
+          <span v-if="currentUsername">{{ addressFor(currentUsername) }}</span>
         </span>
         <span class="current-account-chip">{{ $t('In use') }}</span>
       </section>
@@ -43,7 +43,7 @@
             icon=""
             tone="neutral"
             :label="identityName(row)"
-            :caption="row.username ? '@' + row.username : $t('Separate profile')"
+            :caption="row.username ? addressFor(row.username) : $t('Separate profile')"
             :interactive="!busy && !bucket.isSweeping"
             @click="onSwitch(row)"
           >
@@ -171,7 +171,7 @@
               </span>
               <span class="account-switch-copy">
                 <strong>{{ pendingName }}</strong>
-                <span v-if="pending.username">@{{ pending.username }}</span>
+                <span v-if="pending.username">{{ addressFor(pending.username) }}</span>
               </span>
             </div>
             <button type="button" class="account-confirm" @click="confirmSwitch">
@@ -228,6 +228,7 @@ import { useAddressBookStore } from '../../stores/addressBook';
 import { useSocialBucketStore } from '../../stores/socialBucket';
 import ProfileAvatarPickerSheet from '../../components/ProfileAvatarPickerSheet.vue';
 import { fetchProfiles, parseProfileContent } from '../../utils/nostrFetch.js';
+import { nip05AddressFor, ownUsernameFrom } from '../../services/nip05.js';
 
 export default {
   name: 'IdentityListPage',
@@ -287,7 +288,7 @@ export default {
     },
 
     currentUsername() {
-      return this.activeIdentity?.username || '';
+      return this.profile.username;
     },
 
     currentAccountName() {
@@ -317,7 +318,7 @@ export default {
     askBody() {
       return this.step === 'create'
         ? this.$t('Choose what comes with you. You can change the contact list later.')
-        : this.$t('Your card, your contacts and your username all change. Your wallets and your Bitcoin stay as they are.');
+        : this.$t('Your card and your contacts change to that identity. Your wallets and your Bitcoin stay as they are.');
     },
 
     busyTitle() {
@@ -371,7 +372,12 @@ export default {
         const rows = await this.identity.listNostrIdentities();
         const cachedRows = rows.map((row) => {
           const cached = this.readCachedProfile(row.pubkeyHex);
-          return { ...row, displayName: cached.displayName || cached.name || '', picture: cached.picture || '' };
+          return {
+            ...row,
+            displayName: cached.displayName || cached.name || '',
+            picture: cached.picture || '',
+            username: this.usernameFor(row),
+          };
         });
         this.identities = cachedRows;
         const pubkeys = rows.map((row) => row.pubkeyHex).filter(Boolean);
@@ -391,6 +397,11 @@ export default {
             ...row,
             displayName: content.display_name || content.name || cached.displayName || '',
             picture: content.picture || cached.picture || '',
+            // The published profile is the source of truth for a username;
+            // the saved copy covers an identity the relays did not return.
+            username: row.active
+              ? this.profile.username
+              : ownUsernameFrom(content.nip05) || this.usernameFor(row),
           };
         });
       } catch (err) {
@@ -417,8 +428,18 @@ export default {
     identityName(row) {
       if (row.displayName) return row.displayName;
       if (row.label) return row.label;
-      if (row.username) return `@${row.username}`;
+      if (row.username) return this.addressFor(row.username);
       return this.$t('Identity {n}', { n: row.account + 1 });
+    },
+
+    /** An identity's username from its saved profile (the active one: live). */
+    usernameFor(row) {
+      return row.active ? this.profile.username : this.profile.savedUsernameFor(row.pubkeyHex);
+    },
+
+    /** Full `maria@mybuho.de` for a username. */
+    addressFor(username) {
+      return nip05AddressFor(username) || '';
     },
 
     onSwitch(row) {
@@ -539,7 +560,7 @@ export default {
     },
 
     async finishProfileSetup() {
-      this.profile.setField('displayName', this.profileName.trim());
+      this.profile.setDisplayName(this.profileName);
       if (this.profile.isDirty) await this.profile.publish().catch(() => {});
       this.showProfileSetup = false;
       this.$q.notify({ type: 'positive', message: this.$t('New identity created'), timeout: 2200 });

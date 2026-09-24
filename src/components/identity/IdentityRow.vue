@@ -26,7 +26,7 @@
     <slot name="leading" />
 
     <span class="id-row-text">
-      <span class="id-row-label" :class="{ 'id-row-label--mono': monoLabel }">{{ label }}</span>
+      <span class="id-row-label" :class="{ 'id-row-label--mono': monoLabel }"><slot name="label">{{ label }}</slot></span>
       <span
         v-if="caption || $slots.caption"
         class="id-row-caption"

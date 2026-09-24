@@ -76,18 +76,23 @@
         </div>
       </div>
 
-      <IdentityGroup :title="$t('Username')" class="username-group">
+      <IdentityGroup
+        :title="$t('Username')"
+        :footer="$t('Optional. A short name people can type to find you.')"
+        class="username-group"
+      >
         <IdentityRow
-          icon="tabler:at"
-          :label="usernameLabel"
-          :mono-label="!!activeHandle"
+          :icon="usernameAddress ? 'tabler:rosette-discount-check-filled' : 'tabler:rosette-discount-check'"
+          :tone="usernameAddress ? 'accent' : 'neutral'"
+          :label="usernameAddress || $t('Choose a username')"
+          :caption="usernameCaption"
           @click="$router.push('/identity/username')"
-        />
+        >
+          <template v-if="usernameAddress" #label>
+            <NostrAddress :address="usernameAddress" />
+          </template>
+        </IdentityRow>
       </IdentityGroup>
-
-      <p class="id-foot">
-        {{ $t('Your unique username across the whole network.') }}
-      </p>
     </div>
 
     <ProfileAvatarPickerSheet
@@ -111,14 +116,29 @@ import IdentityRow from '../../components/identity/IdentityRow.vue';
 import ProfileAvatarPickerSheet from '../../components/ProfileAvatarPickerSheet.vue';
 import { useProfileStore } from '../../stores/profile';
 import { useIdentityStore } from '../../stores/identity';
+import NostrAddress from '../../components/identity/NostrAddress.vue';
+import { useUsernameSuggestion } from '../../composables/useUsernameSuggestion';
+import { nip05AddressFor } from '../../services/nip05';
 
 export default {
   name: 'IdentityProfilePage',
 
-  components: { SettingsHubNav, Icon, IdentityNav, IdentityGroup, IdentityRow, ProfileAvatarPickerSheet },
+  components: {
+    SettingsHubNav,
+    Icon,
+    IdentityNav,
+    IdentityGroup,
+    IdentityRow,
+    NostrAddress,
+    ProfileAvatarPickerSheet,
+  },
 
   setup() {
-    return { profile: useProfileStore(), identity: useIdentityStore() };
+    return {
+      profile: useProfileStore(),
+      identity: useIdentityStore(),
+      ...useUsernameSuggestion(),
+    };
   },
 
   data() {
@@ -146,13 +166,15 @@ export default {
       return dirty || this.profile.isDirty;
     },
 
-    activeHandle() {
-      return this.identity.nip05ActiveEntry?.handle || '';
+    /** The username IS the label; before one exists, the row is the invitation. */
+    usernameAddress() {
+      return nip05AddressFor(this.profile.username) || '';
     },
 
-    /** The handle IS the label; before one exists, the row is the invitation. */
-    usernameLabel() {
-      return this.activeHandle ? `@${this.activeHandle}` : this.$t('Choose a username');
+    usernameCaption() {
+      if (this.identity.pendingNip05Claim?.paidAt) return this.$t('Almost ready');
+      if (this.usernameAddress || !this.suggestedUsername) return '';
+      return this.$t('{name} is available', { name: nip05AddressFor(this.suggestedUsername) });
     },
   },
 
@@ -162,6 +184,7 @@ export default {
     if (!this.identity.bootstrapped) await this.identity.ensureIdentity();
     this.form.displayName = this.profile.displayName || '';
     this.form.about = this.profile.about || '';
+    this.refreshSuggestion();
   },
 
   watch: {
@@ -173,7 +196,7 @@ export default {
   methods: {
     async onSave() {
       this.publishError = null;
-      this.profile.setField('displayName', this.form.displayName.trim());
+      this.profile.setDisplayName(this.form.displayName);
       this.profile.setField('about', this.form.about.trim());
 
       let result = null;

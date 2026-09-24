@@ -1,45 +1,32 @@
 <template>
+  <!--
+    Get or change a username: `name@mybuho.de`, paid per year.
+
+    One sheet, one money tap. Type a name, read one result line, choose how
+    many years, tap "Get it for …". Paying from another wallet shows the
+    payment code in the same sheet and watches for the payment by asking the
+    name server, so it finishes by itself. Every end state has a way out and
+    the name is only written into the profile after the name server confirms
+    it points at this identity's key (services/usernameClaim.js).
+  -->
   <q-dialog
     v-model="open"
     position="bottom"
-    :persistent="step !== 'browse'"
+    :persistent="step === 'activating'"
     :class="$q.dark.isActive ? 'dialog_dark' : 'dialog_light'"
     @show="onShow"
     @hide="onHide"
   >
-    <q-card
-      class="market-sheet"
-      :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'"
-    >
-      <!-- Drag handle -->
-      <div class="sheet-handle" aria-hidden="true">
-        <span :class="$q.dark.isActive ? 'sheet-handle-bar-dark' : 'sheet-handle-bar-light'"></span>
-      </div>
+    <q-card class="claim-sheet" :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'">
+      <div class="sheet-handle" aria-hidden="true"><span></span></div>
 
-      <!-- Header: title (step-aware) + close -->
       <div class="sheet-header">
-        <div class="sheet-title" :class="$q.dark.isActive ? 'item-label-dark' : 'item-label-light'">
-          {{ headerTitle }}
-        </div>
-        <q-btn
-          v-if="step === 'browse'"
-          flat
-          round
-          dense
-          :aria-label="$t('View username pricing')"
-          class="sheet-price-btn"
-          :class="$q.dark.isActive ? 'back_btn_dark' : 'back_btn_light'"
-          @click="pricingOpen = !pricingOpen"
-        >
-          <Icon icon="tabler:receipt-2" width="18" height="18" />
-        </q-btn>
+        <div class="sheet-title">{{ headerTitle }}</div>
         <q-btn
           flat
           round
-          dense
+          class="sheet-close"
           :aria-label="$t('Close')"
-          class="sheet-close-btn"
-          :class="$q.dark.isActive ? 'back_btn_dark' : 'back_btn_light'"
           :disable="step === 'activating'"
           @click="open = false"
         >
@@ -48,361 +35,214 @@
       </div>
 
       <template v-if="pricingOpen">
-        <button
-          type="button"
-          class="pricing-dismiss"
-          :aria-label="$t('Close pricing')"
-          @click="pricingOpen = false"
-        ></button>
-        <section
-          class="pricing-popover"
-          :class="$q.dark.isActive ? 'pricing-popover-dark' : 'pricing-popover-light'"
-          role="dialog"
-          :aria-label="$t('Username pricing')"
-        >
-          <header class="pricing-popover-header">
-            <span class="pricing-popover-icon" aria-hidden="true">
-              <Icon icon="tabler:coins" width="19" height="19" />
-            </span>
-            <span>
-              <strong>{{ $t('Username pricing') }}</strong>
-              <small>{{ $t('Current mybuho.de prices') }}</small>
-            </span>
+        <button type="button" class="pricing-dismiss" :aria-label="$t('Close')" @click="pricingOpen = false"></button>
+        <section class="pricing-popover" role="dialog" :aria-label="$t('Prices')">
+          <header class="pricing-head">
+            <strong>{{ $t('Prices') }}</strong>
+            <small>{{ $t('Per year') }}</small>
           </header>
-
           <table class="pricing-table">
             <tbody>
               <tr v-for="tier in pricingRows" :key="tier.id">
-                <th scope="row">
-                  <span>{{ tier.label }}</span>
-                  <small v-if="tier.example">{{ tier.example }}</small>
-                </th>
-                <td :class="{ 'pricing-free': tier.priceSats === 0 }">
-                  {{ tier.priceSats === 0 ? $t('Free') : `${formatSats(tier.priceSats)} ${$t('sats')}` }}
-                </td>
+                <th scope="row">{{ tier.label }}</th>
+                <td>{{ formatSats(tier.priceSats) }} {{ $t('sats') }}</td>
               </tr>
             </tbody>
           </table>
-
           <p class="pricing-note">
-            {{ $t('The exact price is always shown before you continue.') }}
+            {{ $t('Prices are per year. Pay for up to 10 years at once. Shorter names are rarer, so they cost more.') }}
           </p>
         </section>
       </template>
 
-      <!-- Scrollable body. Each step renders into the same shell so the
-           sheet height feels intentional rather than jumping. -->
       <div class="sheet-scroll">
-        <!-- ─────────── STEP: browse ─────────── -->
+        <!-- ───────── Choosing ───────── -->
         <section v-if="step === 'browse'" class="step-body">
-          <!-- Hero zone — editorial composition. The live name itself is
-               the focal point in large display type; status + price sit
-               quietly beneath as metadata. The benefit footnote at the
-               bottom states the use case without leaning on marketing
-               headline patterns. -->
-          <header class="mkt-hero">
-            <div
-              class="mkt-hero-address"
-              :class="$q.dark.isActive ? 'item-label-dark' : 'item-label-light'"
-            >
-              <span
-                class="mkt-hero-name"
-                :class="{ 'mkt-hero-name--placeholder': isPlaceholderName }"
-              >{{ previewName }}</span><span
-                class="mkt-hero-suffix"
-                :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-6'"
-              >@{{ domain }}</span>
+          <header class="claim-hero">
+            <div class="claim-hero-address" :class="{ 'claim-hero-address--placeholder': !nameInput }">
+              <span class="claim-hero-name">{{ nameInput || $t('name') }}</span><span class="claim-hero-domain">@{{ domain }}</span>
             </div>
-            <div
-              class="mkt-hero-status"
-              :class="statusToneClass"
-              aria-live="polite"
-            >
-              <q-spinner v-if="searchInflight" size="13px" />
+            <div class="claim-status" :class="`claim-status--${statusTone}`" aria-live="polite">
+              <q-spinner v-if="lookup.status === 'checking'" size="13px" />
               <Icon v-else-if="statusIcon" :icon="statusIcon" width="14" height="14" />
               <span>{{ statusText }}</span>
             </div>
-            <p
-              class="mkt-hero-footnote"
-              :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'"
-            >
-              {{ $t('Used to find you across apps, and to pay you inside BuhoGO.') }}
-            </p>
           </header>
 
-          <!-- Name input. Functional affordance below the preview. -->
-          <label class="field">
-            <div
-              class="name-input-wrap"
-              :class="[
-                $q.dark.isActive ? 'field-input-wrap-dark' : 'field-input-wrap-light',
-                { 'field-input-wrap--error': hasLocalError },
-              ]"
-            >
+          <label class="claim-field">
+            <span class="sr-only">{{ $t('Username') }}</span>
+            <span class="claim-input-wrap" :class="{ 'claim-input-wrap--error': hasLocalError }">
               <input
                 ref="nameInputEl"
                 v-model="nameInput"
                 type="text"
-                :placeholder="$t('your-username')"
+                class="claim-input"
+                :placeholder="$t('name')"
                 spellcheck="false"
                 autocomplete="off"
                 autocapitalize="none"
                 maxlength="63"
-                class="field-input name-input"
-                :class="$q.dark.isActive ? 'field-input-dark' : 'field-input-light'"
+                :readonly="external.open"
                 @input="onNameInput"
               />
-              <span
-                class="name-suffix"
-                :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-6'"
-              >@{{ domain }}</span>
-            </div>
+              <span class="claim-input-domain" aria-hidden="true">@{{ domain }}</span>
+            </span>
           </label>
 
-          <!-- Free-fallback chip — appears when the typed name is taken
-               and the server has a `.NNNNNN` suggestion ready. One tap
-               and the user grabs that free variant instead. -->
-          <button
-            v-if="freeFallbackHandle"
-            type="button"
-            class="free-chip"
-            :class="$q.dark.isActive ? 'free-chip-dark' : 'free-chip-light'"
-            @click="adoptFreeFallback"
-          >
-            <Icon icon="tabler:sparkles" width="14" height="14" />
-            <span>{{ $t('Take {handle} for free', { handle: freeFallbackHandle }) }}</span>
-          </button>
-        </section>
+          <!-- Taken: up to two available names built from the display name. -->
+          <div v-if="lookup.status === 'taken' && suggestions.length" class="claim-suggestions">
+            <button
+              v-for="suggestion in suggestions"
+              :key="suggestion"
+              type="button"
+              class="claim-suggestion"
+              @click="pickSuggestion(suggestion)"
+            >
+              {{ suggestion }}@{{ domain }}
+            </button>
+          </div>
 
-        <!-- ─────────── STEP: paying ─────────── -->
-        <section v-else-if="step === 'paying'" class="step-body">
-          <!-- Summary card -->
-          <div
-            class="summary-card"
-            :class="$q.dark.isActive ? 'summary-card-dark' : 'summary-card-light'"
-          >
-            <div class="summary-handle">
-              <Icon icon="tabler:rosette-discount-check" width="18" height="18" class="summary-check" />
-              <span class="summary-handle-text">{{ invoice?.handle }}@{{ domain }}</span>
-            </div>
-            <div class="summary-price">
-              <span class="summary-price-amount">{{ formatSats(priceSats) }}</span>
-              <span class="summary-price-unit" :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-6'">
-                {{ $t('sats') }}
+          <!-- Available: how long, what it costs, until when, paid from where. -->
+          <template v-if="lookup.status === 'available'">
+            <div class="claim-years" role="group" :aria-label="$t('Years')">
+              <span class="claim-years-label">{{ $t('Years') }}</span>
+              <span class="claim-years-stepper">
+                <button
+                  type="button"
+                  class="claim-years-btn"
+                  :disabled="years <= 1 || external.open || busy"
+                  :aria-label="$t('Fewer years')"
+                  @click="stepYears(-1)"
+                >
+                  <Icon icon="tabler:minus" width="16" height="16" />
+                </button>
+                <span class="claim-years-value" aria-live="polite">{{ yearsLabel }}</span>
+                <button
+                  type="button"
+                  class="claim-years-btn"
+                  :disabled="years >= maxYears || external.open || busy"
+                  :aria-label="$t('More years')"
+                  @click="stepYears(1)"
+                >
+                  <Icon icon="tabler:plus" width="16" height="16" />
+                </button>
               </span>
             </div>
-          </div>
+            <p class="claim-summary">{{ summaryLine }}</p>
 
-          <!-- Pay source picker. Compact: single row when one ready
-               wallet, dropdown when more. Picking here only scopes the
-               payment — the global active wallet is left alone, so no
-               background re-init or NWC handshake is triggered. -->
-          <div class="pay-source">
-            <span
-              class="pay-source-label"
-              :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'"
-            >
-              {{ $t('Pay with') }}
-            </span>
-            <button
-              v-if="payableWallets.length > 1"
-              type="button"
-              class="pay-source-pill"
-              :class="$q.dark.isActive ? 'pay-source-pill-dark' : 'pay-source-pill-light'"
-              @click="walletMenuOpen = true"
-            >
-              <span class="pay-source-name">{{ selectedWalletLabel }}</span>
-              <Icon icon="tabler:chevron-down" width="14" height="14" class="pay-source-chev" />
-              <q-menu v-model="walletMenuOpen" anchor="bottom right" self="top right" :offset="[0, 6]">
-                <q-list class="wallet-menu-list" :class="$q.dark.isActive ? 'wallet-menu-list-dark' : 'wallet-menu-list-light'">
-                  <q-item
-                    v-for="w in payableWallets"
-                    :key="w.id"
-                    clickable
-                    v-close-popup
-                    @click="selectedWalletId = w.id"
-                  >
-                    <q-item-section>
-                      <q-item-label>{{ w.name }}</q-item-label>
-                      <q-item-label caption>{{ formatSats(w.balance) }} {{ $t('sats') }}</q-item-label>
-                    </q-item-section>
-                    <q-item-section v-if="w.id === selectedWalletId" side>
-                      <Icon icon="tabler:check" width="16" height="16" />
-                    </q-item-section>
-                  </q-item>
-                </q-list>
-              </q-menu>
-            </button>
-            <span
-              v-else-if="payableWallets.length === 1"
-              class="pay-source-static"
-              :class="$q.dark.isActive ? 'item-label-dark' : 'item-label-light'"
-            >
-              {{ payableWallets[0].name }}
-              <span class="pay-source-balance" :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-6'">
-                · {{ formatSats(payableWallets[0].balance) }} {{ $t('sats') }}
-              </span>
-            </span>
-            <span
-              v-else
-              class="pay-source-static"
-              :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-6'"
-            >
-              {{ $t('No wallet can cover this. Pay externally below.') }}
-            </span>
-          </div>
-
-          <!-- Pay error banner (inline, replaces nothing) -->
-          <div
-            v-if="payError"
-            class="pay-error"
-            :class="$q.dark.isActive ? 'pay-error-dark' : 'pay-error-light'"
-            role="alert"
-          >
-            <Icon icon="tabler:alert-circle" width="16" height="16" />
-            <span>{{ payError }}</span>
-          </div>
-
-          <!-- External-pay disclosure: collapsed by default. Compact row
-               with truncated bolt11, QR-expand affordance, and tap-to-
-               copy. Power users / shared devices can scan from another
-               wallet here. -->
-          <div class="external-pay">
-            <button
-              type="button"
-              class="external-pay-toggle"
-              :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'"
-              @click="showExternalPay = !showExternalPay"
-            >
-              <Icon
-                :icon="showExternalPay ? 'tabler:chevron-up' : 'tabler:chevron-down'"
-                width="14"
-                height="14"
-              />
-              <span>{{ $t('Or pay from another wallet') }}</span>
-            </button>
-
-            <div v-if="showExternalPay" class="invoice-row-wrap">
+            <div v-if="payableWallets.length && !external.open" class="claim-wallet">
+              <span class="claim-wallet-label">{{ $t('Pay with') }}</span>
               <button
+                v-if="payableWallets.length > 1"
                 type="button"
-                class="invoice-row"
-                :class="$q.dark.isActive ? 'invoice-row-dark' : 'invoice-row-light'"
-                :aria-label="$t('Copy invoice')"
-                @click="copyInvoice"
+                class="claim-wallet-pill"
+                @click="walletMenuOpen = true"
               >
-                <span class="invoice-row-text">
-                  {{ truncatedInvoice }}
-                </span>
-                <Icon
-                  :icon="invoiceCopied ? 'tabler:check' : 'tabler:copy'"
-                  width="14"
-                  height="14"
-                  class="invoice-row-icon"
-                />
+                <span>{{ selectedWalletLabel }}</span>
+                <Icon icon="tabler:chevron-down" width="14" height="14" />
+                <q-menu v-model="walletMenuOpen" anchor="bottom right" self="top right" :offset="[0, 6]">
+                  <q-list class="claim-wallet-menu">
+                    <q-item
+                      v-for="wallet in payableWallets"
+                      :key="wallet.id"
+                      v-close-popup
+                      clickable
+                      @click="selectedWalletId = wallet.id"
+                    >
+                      <q-item-section>
+                        <q-item-label>{{ wallet.name }}</q-item-label>
+                        <q-item-label caption>{{ formatSats(wallet.balance) }} {{ $t('sats') }}</q-item-label>
+                      </q-item-section>
+                      <q-item-section v-if="wallet.id === selectedWalletId" side>
+                        <Icon icon="tabler:check" width="16" height="16" />
+                      </q-item-section>
+                    </q-item>
+                  </q-list>
+                </q-menu>
               </button>
-              <button
-                type="button"
-                class="qr-icon-btn"
-                :class="$q.dark.isActive ? 'qr-icon-btn-dark' : 'qr-icon-btn-light'"
-                :aria-label="$t('Show QR code')"
-                @click="qrExpanded = !qrExpanded"
-              >
-                <Icon icon="tabler:qrcode" width="18" height="18" />
-              </button>
+              <span v-else class="claim-wallet-static">{{ selectedWalletLabel }}</span>
             </div>
 
-            <div v-if="showExternalPay && qrExpanded" class="qr-stage">
-              <vue-qrcode
-                v-if="invoice?.invoice"
-                :value="invoice.invoice.toUpperCase()"
-                :options="qrOptions"
-                class="qr-canvas"
-              />
-            </div>
-          </div>
-        </section>
-
-        <!-- ─────────── STEP: activating ─────────── -->
-        <section v-else-if="step === 'activating'" class="step-body step-body--centered">
-          <div class="centered-stage">
-            <q-spinner color="grey" size="36px" />
-            <div class="centered-title" :class="$q.dark.isActive ? 'item-label-dark' : 'item-label-light'">
-              {{ $t('Setting up your username…') }}
-            </div>
-            <div class="centered-caption" :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'">
-              {{ $t('Waiting for the payment to settle. This is usually quick.') }}
-            </div>
-          </div>
-        </section>
-
-        <!-- ─────────── STEP: success ─────────── -->
-        <section v-else-if="step === 'success'" class="step-body step-body--centered">
-          <div class="centered-stage">
-            <div class="success-check">
-              <Icon icon="tabler:rosette-discount-check" width="48" height="48" />
-            </div>
-            <div class="centered-title" :class="$q.dark.isActive ? 'item-label-dark' : 'item-label-light'">
-              {{ $t('Yours.') }}
-            </div>
-            <div class="centered-address" :class="$q.dark.isActive ? 'item-label-dark' : 'item-label-light'">
-              {{ purchasedAddress }}
-            </div>
-            <!-- Renewal feature disabled — extension doesn't enforce
-                 expiry. When the upstream gains a renewal endpoint,
-                 uncomment this paragraph and the computeds it relies on.
-            <p
-              v-if="ownershipLine"
-              class="centered-caption"
-              :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-6'"
-            >
-              {{ ownershipLine }}
+            <p v-if="hasName && currentAddress" class="claim-note">
+              {{ $t('{name} keeps working until its paid time ends.', { name: currentAddress }) }}
             </p>
-            -->
+          </template>
+
+          <!-- Paying from another wallet: the code, and the sheet watching for it. -->
+          <div v-if="external.open && invoice" class="claim-external">
+            <vue-qrcode :value="invoice.invoice.toUpperCase()" :options="qrOptions" class="claim-qr" />
+            <button type="button" class="claim-code" :aria-label="$t('Copy payment code')" @click="copyInvoice">
+              <span class="claim-code-text">{{ truncatedInvoice }}</span>
+              <Icon :icon="external.copied ? 'tabler:copy-check' : 'tabler:copy'" width="15" height="15" />
+            </button>
+            <div class="claim-waiting">
+              <q-spinner size="14px" />
+              <span>{{ $t('Waiting for the payment') }}</span>
+            </div>
+          </div>
+
+          <div v-if="notice" class="claim-notice" role="alert">
+            <Icon icon="tabler:alert-circle" width="16" height="16" />
+            <span>{{ notice }}</span>
+          </div>
+
+          <button type="button" class="claim-prices-link" @click="pricingOpen = true">{{ $t('Prices') }}</button>
+        </section>
+
+        <!-- ───────── After the tap ───────── -->
+        <section v-else class="step-body step-body--centered">
+          <div class="claim-end">
+            <q-spinner v-if="step === 'activating'" size="36px" class="claim-end-spinner" />
+            <Icon v-else :icon="endIcon" width="48" height="48" :class="`claim-end-mark claim-end-mark--${step}`" />
+            <div class="claim-end-title">{{ endTitle }}</div>
+            <div v-if="endCaption" class="claim-end-caption">{{ endCaption }}</div>
           </div>
         </section>
       </div>
 
-      <!-- Sticky action bar. The label + handler change per step. -->
-      <div
-        class="sheet-actions"
-        :class="$q.dark.isActive ? 'sheet-actions-dark' : 'sheet-actions-light'"
-      >
-        <!-- browse: Continue -->
-        <button
-          v-if="step === 'browse'"
-          type="button"
-          class="primary-cta"
-          :class="$q.dark.isActive ? 'dialog_add_btn_dark' : 'dialog_add_btn_light'"
-          :disabled="!canContinue || actionInflight"
-          @click="onContinue"
-        >
-          <q-spinner v-if="actionInflight" size="18px" />
-          <span>{{ continueLabel }}</span>
-        </button>
+      <div v-if="step !== 'activating'" class="sheet-actions">
+        <template v-if="step === 'browse'">
+          <button
+            v-if="primaryAction === 'use'"
+            type="button"
+            class="primary-cta"
+            :disabled="busy"
+            @click="useOwnedName"
+          >
+            {{ $t('Use this name') }}
+          </button>
+          <button
+            v-else-if="primaryAction === 'get'"
+            type="button"
+            class="primary-cta"
+            :disabled="busy"
+            @click="getWithWallet"
+          >
+            <q-spinner v-if="busy" size="18px" />
+            <span v-else>{{ $t('Get it for {sats} sats', { sats: formatSats(totalSats) }) }}</span>
+          </button>
+          <button
+            v-else-if="primaryAction === 'external'"
+            type="button"
+            class="primary-cta"
+            :disabled="busy"
+            @click="openExternal"
+          >
+            <q-spinner v-if="busy" size="18px" />
+            <span v-else>{{ $t('Pay from another wallet') }}</span>
+          </button>
+          <button v-else-if="!external.open" type="button" class="primary-cta" disabled>
+            {{ $t('Get username') }}
+          </button>
 
-        <!-- paying: Pay -->
-        <button
-          v-if="step === 'paying'"
-          type="button"
-          class="primary-cta"
-          :class="$q.dark.isActive ? 'dialog_add_btn_dark' : 'dialog_add_btn_light'"
-          :disabled="!canPay || actionInflight"
-          @click="onPay"
-        >
-          <q-spinner v-if="actionInflight" size="18px" />
-          <span>{{ payLabel }}</span>
-        </button>
-
-        <!-- success: Done -->
-        <button
-          v-if="step === 'success'"
-          type="button"
-          class="primary-cta"
-          :class="$q.dark.isActive ? 'dialog_add_btn_dark' : 'dialog_add_btn_light'"
-          @click="open = false"
-        >
-          <span>{{ $t('Done') }}</span>
-        </button>
+          <button v-if="secondaryAction === 'external'" type="button" class="below-link" :disabled="busy" @click="openExternal">
+            {{ $t('Pay from another wallet') }}
+          </button>
+          <button v-else-if="secondaryAction === 'back'" type="button" class="below-link" @click="closeExternal">
+            {{ payableWallets.length ? $t('Pay with {wallet} instead', { wallet: selectedWalletName }) : $t('Change name or years') }}
+          </button>
+        </template>
+        <button v-else type="button" class="primary-cta" @click="finishAndClose">{{ $t('Done') }}</button>
       </div>
     </q-card>
   </q-dialog>
@@ -414,22 +254,55 @@ import VueQrcode from '@chenfengyuan/vue-qrcode';
 import { useIdentityStore } from '../stores/identity';
 import { useProfileStore } from '../stores/profile';
 import { useWalletStore } from '../stores/wallet';
+import { useTransactionMetadataStore } from '../stores/transactionMetadata';
 import {
   NIP05_DOMAIN,
-  deriveNameSlug,
-  isLikelyAvailableLocalPart,
-  searchHandle,
-  registerFreeHandle,
-  registerExactFreeHandle,
-  requestPaidHandle,
-  waitForActivation,
+  NIP05_MAX_YEARS,
   NIP05_PRICE_TIERS,
+  clampYears,
+  deriveNameSlug,
+  expiresAtFor,
+  isFreeShapeHandle,
+  isLikelyAvailableLocalPart,
+  lookupOwner,
+  nip05AddressFor,
+  normaliseUsernameInput,
+  requestPaidHandle,
+  searchHandle,
+  suggestUsernames,
+  waitForActivation,
 } from '../services/nip05';
+import {
+  CLAIM_STATUS,
+  adoptOwnedUsername,
+  holdClaimInView,
+  settlePendingClaim,
+} from '../services/usernameClaim';
+import { invoiceAmountMsat } from '../utils/addressUtils';
+import { fiatRatesService } from '../utils/fiatRates';
+import { formatCalendarDate } from '../utils/timeFormatting';
 
 const SEARCH_DEBOUNCE_MS = 350;
-const SUCCESS_AUTO_CLOSE_MS = 2500;
-const INVOICE_TRUNCATE_HEAD = 16;
-const INVOICE_TRUNCATE_TAIL = 8;
+/** One uninterrupted wait for an in-app payment before "Almost ready". */
+const ACTIVATION_WAIT_MS = 90_000;
+/** Re-ask the server after the payment until the name points somewhere. */
+const SETTLE_INTERVAL_MS = 2_000;
+/**
+ * A payment code is reused for the same name and years for this long, then
+ * replaced. LNbits codes last an hour; this stays well inside that.
+ */
+const INVOICE_FRESH_MS = 50 * 60 * 1000;
+/** Keep a fee reserve so a wallet that "has exactly enough" is not offered. */
+const FEE_RESERVE_RATIO = 0.01;
+const FEE_RESERVE_MIN_SATS = 10;
+
+const delay = (ms, signal) => new Promise((resolve, reject) => {
+  const timer = setTimeout(resolve, ms);
+  signal?.addEventListener('abort', () => {
+    clearTimeout(timer);
+    reject(new DOMException('Aborted', 'AbortError'));
+  }, { once: true });
+});
 
 export default {
   name: 'Nip05MarketplaceSheet',
@@ -438,1443 +311,950 @@ export default {
 
   props: {
     modelValue: { type: Boolean, default: false },
+    /** True when the person already has a username and is changing it. */
+    hasName: { type: Boolean, default: false },
   },
 
   emits: ['update:modelValue', 'purchased'],
 
   setup() {
-    const identity = useIdentityStore();
-    const profile = useProfileStore();
-    const walletStore = useWalletStore();
-    return { identity, profile, walletStore };
+    return {
+      identity: useIdentityStore(),
+      profile: useProfileStore(),
+      walletStore: useWalletStore(),
+      txMetadata: useTransactionMetadataStore(),
+    };
   },
 
   data() {
     return {
-      // Step machine — single source of truth for the visible content,
-      // sticky-bar handler, and persistent-close behaviour. See computeds
-      // headerTitle / continueLabel / payLabel for the per-step labels.
+      /** 'browse' | 'activating' | 'success' | 'later' | 'failed' */
       step: 'browse',
-
-      // ── browse step ──
       nameInput: '',
-      // The search runs against this debounced value, not `nameInput`,
-      // so we don't fire one request per keystroke.
-      nameInputDebounced: '',
-      searchInflight: false,
-      searchResult: null,           // { available, priceSats, freeIdentifierNumber, ... }
-      searchError: null,            // 'network' | 'server' | null
-      lastSearchAt: 0,
-
-      // ── paying step ──
-      invoice: null,                // { handle, invoice, paymentHash, addressId, rotationSecret }
-      // Whether the next-step purchase is a free `.NNNNNN` handle (skips
-      // the invoice flow entirely) or a paid premium name.
-      pendingIsFree: false,
+      years: 1,
+      /**
+       * The server's answer for the typed name:
+       * status 'idle' | 'checking' | 'available' | 'taken' | 'mine' |
+       *        'unavailable' | 'invalid' | 'offline' | 'error'
+       */
+      lookup: { name: '', status: 'idle', pricePerYear: null },
+      suggestions: [],
+      /** The payment code in use: { handle, years, invoice, paymentHash, addressId, rotationSecret, amountSats, requestedAt } */
+      invoice: null,
+      external: { open: false, copied: false },
       selectedWalletId: null,
       walletMenuOpen: false,
-      payError: null,
-      showExternalPay: false,
-      qrExpanded: false,
-      invoiceCopied: false,
-
-      // ── activating + success ──
-      purchasedAddress: '',
-      // Renewal feature disabled — extension doesn't enforce expiry.
-      // purchasedExpiresAt: null,
-
-      // ── lifecycle ──
-      // True whenever an async action is in flight from the sticky CTA
-      // (search-then-create, pay-then-poll, etc.). Disables the button so
-      // the user can't double-tap their way into a duplicate registration.
-      actionInflight: false,
       pricingOpen: false,
-
-      // The poll abort handle so closing the sheet during activation can
-      // stop the network traffic and any unhandled rejections.
-      activationController: null,
-
-      // Debounce + auto-close timers (cleared on hide).
+      busy: false,
+      notice: '',
+      /** The name the end states talk about. */
+      resultHandle: '',
+      lookupSeq: 0,
       debounceTimer: null,
-      successTimer: null,
+      copyTimer: null,
+      watchController: null,
+      releaseClaimView: null,
     };
   },
 
   computed: {
     open: {
       get() { return this.modelValue; },
-      set(v) { this.$emit('update:modelValue', v); },
+      set(value) { this.$emit('update:modelValue', value); },
     },
 
     domain() { return NIP05_DOMAIN; },
-
-    pricingRows() {
-      return NIP05_PRICE_TIERS.map((tier) => {
-        switch (tier.id) {
-          case 'two-to-three':
-            return { ...tier, label: this.$t('2–3 characters') };
-          case 'four':
-            return { ...tier, label: this.$t('4 characters') };
-          case 'five-to-six':
-            return { ...tier, label: this.$t('5–6 characters') };
-          case 'seven-plus':
-            return { ...tier, label: this.$t('7+ characters') };
-          default:
-            return {
-              ...tier,
-              label: this.$t('Free name'),
-              example: this.$t('With a .123456 ending'),
-            };
-        }
-      });
-    },
+    maxYears() { return NIP05_MAX_YEARS; },
 
     headerTitle() {
-      switch (this.step) {
-        case 'paying':     return this.$t('Confirm purchase');
-        case 'activating': return this.$t('Activating');
-        case 'success':    return this.$t('Success');
-        default:           return this.$t('Choose a username');
+      if (this.step !== 'browse') return this.$t('Username');
+      return this.hasName ? this.$t('Change username') : this.$t('Choose a username');
+    },
+
+    currentAddress() {
+      return nip05AddressFor(this.profile.username) || '';
+    },
+
+    pricingRows() {
+      const labels = {
+        'two-to-three': this.$t('2–3 characters'),
+        four: this.$t('4 characters'),
+        'five-to-six': this.$t('5–6 characters'),
+        'seven-plus': this.$t('7+ characters'),
+      };
+      return NIP05_PRICE_TIERS.map((tier) => ({ ...tier, label: labels[tier.id] || tier.id }));
+    },
+
+    localValidation() {
+      return isLikelyAvailableLocalPart(this.nameInput);
+    },
+
+    hasLocalError() {
+      return !!this.nameInput && !this.localValidation.ok;
+    },
+
+    statusText() {
+      if (!this.nameInput) return this.$t('Type a name to check it.');
+      switch (this.lookup.status) {
+        case 'checking': return this.$t('Checking…');
+        case 'invalid': return this.localErrorMessage;
+        case 'offline': return this.$t("You're offline");
+        case 'error': return this.$t("Couldn't check. Try again.");
+        case 'taken': return this.$t('Taken');
+        case 'mine': return this.$t('Already yours');
+        case 'unavailable': return this.$t('Not available');
+        case 'available':
+          return this.$t('Available · {sats} sats a year', { sats: this.formatSats(this.lookup.pricePerYear) });
+        default: return this.$t('Type a name to check it.');
       }
     },
 
-    // QR rendering options. Cohesive with ProfileShareSheet's profile QR
-    // so the visual language across our QR surfaces matches.
+    statusTone() {
+      if (!this.nameInput) return 'muted';
+      if (['available', 'mine'].includes(this.lookup.status)) return 'ok';
+      if (['taken', 'unavailable', 'invalid', 'error', 'offline'].includes(this.lookup.status)) return 'warn';
+      return 'muted';
+    },
+
+    statusIcon() {
+      if (!this.nameInput) return '';
+      return {
+        available: 'tabler:circle-check',
+        mine: 'tabler:circle-check',
+        taken: 'tabler:circle-x',
+        unavailable: 'tabler:circle-x',
+        invalid: 'tabler:alert-circle',
+        error: 'tabler:cloud-off',
+        offline: 'tabler:cloud-off',
+      }[this.lookup.status] || '';
+    },
+
+    localErrorMessage() {
+      switch (this.localValidation.reason) {
+        case 'too-short': return this.$t('At least 2 characters');
+        case 'too-long': return this.$t('Too long');
+        default: return this.$t('Use a to z, 0 to 9, dot, hyphen or underscore');
+      }
+    },
+
+    totalSats() {
+      return (Number(this.lookup.pricePerYear) || 0) * this.years;
+    },
+
+    yearsLabel() {
+      return this.years === 1 ? this.$t('1 year') : this.$t('{n} years', { n: this.years });
+    },
+
+    /** "2 years, until 24 Sep 2028 · 2,000 sats · about €2.00" */
+    summaryLine() {
+      const until = formatCalendarDate(expiresAtFor(Date.now(), this.years), this.$i18n.locale);
+      const fiat = this.fiatFor(this.totalSats);
+      const total = fiat
+        ? this.$t('{sats} sats · about {fiat}', { sats: this.formatSats(this.totalSats), fiat })
+        : this.$t('{sats} sats', { sats: this.formatSats(this.totalSats) });
+      return this.$t('{years}, until {date} · {total}', { years: this.yearsLabel, date: until, total });
+    },
+
+    /**
+     * Wallets that can pay the total right now: connected, and holding the
+     * total plus a fee reserve. The active wallet comes first.
+     */
+    payableWallets() {
+      const total = this.totalSats;
+      if (!total) return [];
+      const reserve = Math.max(FEE_RESERVE_MIN_SATS, Math.ceil(total * FEE_RESERVE_RATIO));
+      const activeId = this.walletStore.activeWalletId;
+      return (this.walletStore.wallets || [])
+        .filter((wallet) => this.walletStore.connectionStates?.[wallet.id]?.connected)
+        .map((wallet) => ({
+          id: wallet.id,
+          name: wallet.name || this.$t('Wallet'),
+          type: wallet.type,
+          balance: this.walletStore.balances?.[wallet.id] || 0,
+        }))
+        .filter((wallet) => wallet.balance >= total + reserve)
+        .sort((a, b) => Number(b.id === activeId) - Number(a.id === activeId));
+    },
+
+    selectedWallet() {
+      return this.payableWallets.find((wallet) => wallet.id === this.selectedWalletId)
+        || this.payableWallets[0]
+        || null;
+    },
+
+    selectedWalletName() {
+      return this.selectedWallet?.name || '';
+    },
+
+    selectedWalletLabel() {
+      const wallet = this.selectedWallet;
+      return wallet ? `${wallet.name} · ${this.formatSats(wallet.balance)} ${this.$t('sats')}` : '';
+    },
+
+    /** 'use' | 'get' | 'external' | '' (disabled) */
+    primaryAction() {
+      if (this.external.open) return '';
+      if (this.lookup.status === 'mine' && this.lookup.name === this.nameInput) return 'use';
+      if (this.lookup.status !== 'available' || this.lookup.name !== this.nameInput) return '';
+      return this.payableWallets.length ? 'get' : 'external';
+    },
+
+    /** 'external' | 'back' | '' */
+    secondaryAction() {
+      if (this.external.open) return 'back';
+      return this.primaryAction === 'get' ? 'external' : '';
+    },
+
+    truncatedInvoice() {
+      const code = this.invoice?.invoice || '';
+      return code.length > 30 ? `${code.slice(0, 18)}…${code.slice(-8)}` : code;
+    },
+
     qrOptions() {
       const dark = this.$q.dark.isActive;
       return {
         errorCorrectionLevel: 'M',
         margin: 1,
         scale: 6,
-        color: {
-          dark: dark ? '#f8fafc' : '#0f172a',
-          light: dark ? '#0b0f17' : '#ffffff',
-        },
+        color: { dark: dark ? '#f8fafc' : '#0f172a', light: dark ? '#0b0f17' : '#ffffff' },
       };
     },
 
-    /** Result of the client-side shape check on the current input. */
-    localValidation() {
-      return isLikelyAvailableLocalPart(this.nameInput);
+    resultAddress() {
+      return nip05AddressFor(this.resultHandle) || '';
     },
 
-    hasLocalError() {
-      if (!this.nameInput) return false;
-      return !this.localValidation.ok;
+    endIcon() {
+      return {
+        success: 'tabler:circle-check',
+        later: 'tabler:clock',
+        failed: 'tabler:alert-circle',
+      }[this.step] || 'tabler:circle-check';
     },
 
-    /**
-     * The "live status" tone under the input — drives icon + colour.
-     * Order matters: local input errors take priority over server results
-     * so the user sees a fixable hint before any network noise.
-     */
-    statusToneClass() {
-      if (this.searchInflight) return 'status-row--muted';
-      if (this.hasLocalError) return 'status-row--warn';
-      if (!this.nameInput) return 'status-row--muted';
-      if (this.searchError) return 'status-row--warn';
-      if (!this.searchResult) return 'status-row--muted';
-      return this.searchResult.available ? 'status-row--ok' : 'status-row--warn';
-    },
-
-    /** Live `<name>@mybuho.de` preview — the user's typed input or a
-     *  faded placeholder while the field is empty. */
-    previewName() {
-      return this.nameInput.trim().toLowerCase() || this.$t('your-username');
-    },
-
-    /** True iff the preview is showing the placeholder text rather than
-     *  what the user actually typed. Drives the muted weight on the
-     *  hero name so the placeholder doesn't compete with real input. */
-    isPlaceholderName() {
-      return !this.nameInput.trim();
-    },
-
-    /** Icon shown in the preview card's tinted chip. Switches between
-     *  states (sparkle when empty, check when available, alert when
-     *  taken/error) so the chip visually carries the result alongside
-     *  the status pill below. */
-    previewIcon() {
-      if (this.searchInflight) return 'tabler:loader-2';
-      if (this.hasLocalError) return 'tabler:alert-triangle';
-      if (!this.nameInput) return 'tabler:sparkles';
-      if (this.searchError) return 'tabler:cloud-off';
-      if (!this.searchResult) return 'tabler:sparkles';
-      return this.searchResult.available
-        ? 'tabler:rosette-discount-check-filled'
-        : 'tabler:x';
-    },
-
-    previewIconToneClass() {
-      if (this.searchInflight) return 'preview-icon--muted';
-      if (this.hasLocalError || this.searchError) return 'preview-icon--warn';
-      if (!this.nameInput || !this.searchResult) return 'preview-icon--muted';
-      return this.searchResult.available
-        ? 'preview-icon--ok'
-        : 'preview-icon--warn';
-    },
-
-    statusIcon() {
-      if (this.searchInflight) return '';
-      if (this.hasLocalError) return 'tabler:alert-circle';
-      if (!this.nameInput) return 'tabler:circle-dashed';
-      if (this.searchError) return 'tabler:cloud-off';
-      if (!this.searchResult) return 'tabler:circle-dashed';
-      return this.searchResult.available ? 'tabler:circle-check' : 'tabler:circle-x';
-    },
-
-    statusText() {
-      if (this.searchInflight) return this.$t('Checking…');
-      if (!this.nameInput) return this.$t('Type a username to check availability.');
-      if (this.hasLocalError) return this.localErrorMessage;
-      if (this.searchError) return this.$t("Couldn't check that username. Try again.");
-      if (!this.searchResult) return this.$t('Type a username to check availability.');
-      if (!this.searchResult.available) return this.$t('Taken. Pick another username.');
-      const price = this.searchResult.priceSats;
-      if (!price) return this.$t('Available.');
-      return this.$t('Available · {sats} sats', { sats: this.formatSats(price) });
-    },
-
-    localErrorMessage() {
-      switch (this.localValidation.reason) {
-        case 'too-short':     return this.$t('A username needs at least 2 letters.');
-        case 'too-long':      return this.$t('Too long. Keep it under 64 characters.');
-        case 'invalid-chars': return this.$t('Letters, numbers, dot, hyphen and underscore only.');
-        default:              return this.$t('Pick a valid username.');
+    endTitle() {
+      switch (this.step) {
+        case 'activating': return this.$t('Making it yours');
+        case 'success': return this.$t('{name} is yours', { name: this.resultAddress });
+        case 'later': return this.$t('Almost ready');
+        case 'failed': return this.$t("We couldn't finish {name}", { name: this.resultAddress });
+        default: return '';
       }
     },
 
-    /**
-     * When the typed name is taken and the server included a `.NNNNNN`
-     * suggestion, surface it as a one-tap free fallback. Returns the full
-     * local part the user would adopt (e.g. `satoshi.482913`) or null.
-     */
-    freeFallbackHandle() {
-      const r = this.searchResult;
-      if (!r || r.available) return null;
-      if (!r.freeIdentifierNumber) return null;
-      const base = this.nameInput.trim().toLowerCase();
-      if (!base) return null;
-      return `${base}.${r.freeIdentifierNumber}`;
-    },
-
-    canContinue() {
-      if (!this.nameInput || this.hasLocalError) return false;
-      if (this.searchInflight) return false;
-      if (!this.searchResult) return false;
-      return this.searchResult.available;
-    },
-
-    continueLabel() {
-      if (!this.searchResult || !this.searchResult.available) return this.$t('Continue');
-      const price = this.searchResult.priceSats;
-      if (!price) return this.$t('Take the free username');
-      return this.$t('Buy · {sats} sats', { sats: this.formatSats(price) });
-    },
-
-    priceSats() {
-      return this.searchResult?.priceSats ?? null;
-    },
-
-    /**
-     * Wallets that can actually pay this invoice right now. A wallet is
-     * "payable" iff:
-     *   - it has a connected provider (no NWC handshake needed)
-     *   - it has enough balance to cover the price + a tiny fee buffer
-     * This is what makes "smart switching" safe — we never offer a wallet
-     * whose activation might fail in the background.
-     */
-    payableWallets() {
-      const price = this.priceSats || 0;
-      const out = [];
-      for (const w of this.walletStore.wallets || []) {
-        const connected = !!this.walletStore.connectionStates?.[w.id]?.connected;
-        const balance = this.walletStore.balances?.[w.id] || 0;
-        if (!connected) continue;
-        if (balance < price) continue;
-        out.push({ id: w.id, name: w.name || this.$t('Wallet'), type: w.type, balance });
+    endCaption() {
+      switch (this.step) {
+        case 'activating': return this.$t('Usually a few seconds.');
+        case 'success': return this.$t("It's on your card now.");
+        case 'later': return this.$t('Your payment went through. {name} will be ready in a moment.', { name: this.resultAddress });
+        case 'failed': return this.$t('Someone took this name a moment earlier.');
+        default: return '';
       }
-      // The current active wallet floats to the top so the default pick
-      // matches the user's expectation when they tap "Pay" without
-      // touching the picker.
-      const activeId = this.walletStore.activeWalletId;
-      out.sort((a, b) => (b.id === activeId ? 1 : 0) - (a.id === activeId ? 1 : 0));
-      return out;
     },
-
-    selectedWalletLabel() {
-      const w = this.payableWallets.find((x) => x.id === this.selectedWalletId);
-      if (!w) return this.$t('Pick a wallet');
-      return `${w.name} · ${this.formatSats(w.balance)} ${this.$t('sats')}`;
-    },
-
-    canPay() {
-      if (!this.invoice) return false;
-      if (this.payableWallets.length === 0) return false;
-      if (!this.selectedWalletId) return false;
-      return true;
-    },
-
-    payLabel() {
-      const price = this.priceSats;
-      if (!price) return this.$t('Pay');
-      return this.$t('Pay · {sats} sats', { sats: this.formatSats(price) });
-    },
-
-    truncatedInvoice() {
-      const inv = this.invoice?.invoice;
-      if (!inv) return '';
-      if (inv.length <= INVOICE_TRUNCATE_HEAD + INVOICE_TRUNCATE_TAIL + 1) return inv;
-      return `${inv.slice(0, INVOICE_TRUNCATE_HEAD)}…${inv.slice(-INVOICE_TRUNCATE_TAIL)}`;
-    },
-
-    /* Renewal feature disabled — extension doesn't enforce expiry.
-    ownershipLine() {
-      if (!Number.isFinite(this.purchasedExpiresAt)) return '';
-      const date = this.formatLongDate(this.purchasedExpiresAt);
-      if (!date) return '';
-      return this.$t("Yours for one year. Renew before {date} to keep it.", { date });
-    },
-    */
   },
 
   watch: {
     /**
-     * Reset everything when the parent toggles the sheet open. We reset
-     * here instead of in `mounted()` because the sheet is kept mounted
-     * across opens by Quasar — without this, a second-time-open would
-     * land on whatever state the previous flow last touched.
+     * Reset the moment the sheet is asked to open, before it renders:
+     * resetting when the opening animation ends would wipe anything typed
+     * during it. The dialog stays mounted between opens.
      */
-    open(isOpen) {
-      if (isOpen) this.resetForNewSession();
+    modelValue: {
+      immediate: true,
+      handler(isOpen) {
+        if (isOpen) this.onOpen();
+      },
     },
   },
 
   beforeUnmount() {
-    this.clearTimers();
-    this.activationController?.abort();
+    this.onHide();
   },
 
   methods: {
-    formatSats(n) {
-      if (n == null || !Number.isFinite(n)) return '';
-      try {
-        return new Intl.NumberFormat(this.$i18n?.locale || undefined).format(n);
-      } catch {
-        return String(n);
-      }
-    },
+    // ── Lifecycle ─────────────────────────────────────────────────────────
 
-    /* Renewal feature disabled — extension doesn't enforce expiry.
-    formatLongDate(ms) {
-      if (!Number.isFinite(ms)) return '';
-      try {
-        return new Intl.DateTimeFormat(this.$i18n?.locale || undefined, {
-          year: 'numeric',
-          month: 'long',
-          day: 'numeric',
-        }).format(new Date(ms));
-      } catch {
-        return new Date(ms).toDateString();
-      }
-    },
-    */
-
-    onShow() {
+    onOpen() {
+      this.releaseClaimView?.();
+      this.releaseClaimView = holdClaimInView();
       this.resetForNewSession();
-      // Focus the input once the slide-in finishes so the keyboard rises
-      // alongside the sheet rather than fighting the transition.
-      this.$nextTick(() => {
-        setTimeout(() => this.$refs.nameInputEl?.focus(), 80);
-      });
+
+      // A purchase paid earlier and not finished yet: finish it here.
+      const claim = this.identity.pendingNip05Claim;
+      if (claim?.failedAt) {
+        this.resultHandle = claim.handle;
+        this.step = 'failed';
+        return;
+      }
+      if (claim?.paidAt) {
+        this.resultHandle = claim.handle;
+        this.step = 'activating';
+        this.finishAfterPayment();
+      }
+    },
+
+    /** Once the sheet is up, the keyboard rises with it. */
+    onShow() {
+      if (this.step === 'browse') this.$refs.nameInputEl?.focus();
     },
 
     onHide() {
-      this.clearTimers();
-      this.activationController?.abort();
-      this.activationController = null;
+      clearTimeout(this.debounceTimer);
+      clearTimeout(this.copyTimer);
+      this.stopWatching();
+      this.releaseClaimView?.();
+      this.releaseClaimView = null;
       this.pricingOpen = false;
     },
 
     resetForNewSession() {
-      this.step = 'browse';
-      this.searchInflight = false;
-      this.searchResult = null;
-      this.searchError = null;
-      this.invoice = null;
-      this.pendingIsFree = false;
-      this.payError = null;
-      this.showExternalPay = false;
-      this.qrExpanded = false;
-      this.invoiceCopied = false;
-      this.actionInflight = false;
-      this.pricingOpen = false;
-      this.purchasedAddress = '';
-      this.walletMenuOpen = false;
-      this.selectedWalletId = this.walletStore.activeWalletId || null;
-      // Pre-fill the name input with a slugified guess from the profile name
-      // so the user can hit Continue immediately if they like it. When there's
-      // no real name yet, `deriveNameSlug` returns '' and we leave the field
-      // blank — the memorable free-handle fallback is intentionally NOT
-      // suggested here, since this picker is for a self-chosen (premium) name.
-      this.nameInput = deriveNameSlug({
-        name: this.profile.displayName || this.profile.name,
+      this.stopWatching();
+      clearTimeout(this.debounceTimer);
+      this.lookupSeq += 1; // any answer still in flight belongs to the last session
+      Object.assign(this, {
+        step: 'browse',
+        years: 1,
+        lookup: { name: '', status: 'idle', pricePerYear: null },
+        suggestions: [],
+        invoice: null,
+        external: { open: false, copied: false },
+        selectedWalletId: this.walletStore.activeWalletId || null,
+        walletMenuOpen: false,
+        pricingOpen: false,
+        busy: false,
+        notice: '',
+        resultHandle: '',
       });
-      this.nameInputDebounced = this.nameInput;
-      if (this.nameInput && this.localValidation.ok) {
-        // Kick off the first search so the CTA can light up without
-        // requiring the user to bump the field.
-        this.runSearch(this.nameInput);
-      }
+      // First username: start from the person's own name. Changing one:
+      // start empty, the current name is on the card already.
+      this.nameInput = this.hasName ? '' : deriveNameSlug({ name: this.profile.displayName });
+      if (this.nameInput) this.runLookup(this.nameInput);
     },
 
-    clearTimers() {
-      if (this.debounceTimer) {
-        clearTimeout(this.debounceTimer);
-        this.debounceTimer = null;
-      }
-      if (this.successTimer) {
-        clearTimeout(this.successTimer);
-        this.successTimer = null;
-      }
+    finishAndClose() {
+      if (this.step === 'failed') this.identity.clearPendingNip05Claim();
+      this.open = false;
     },
+
+    // ── Choosing a name ───────────────────────────────────────────────────
 
     onNameInput() {
-      // Always reset the previous search context — the result no longer
-      // matches what's in the input.
-      this.searchResult = null;
-      this.searchError = null;
-      if (this.debounceTimer) clearTimeout(this.debounceTimer);
-      const value = this.nameInput.trim().toLowerCase();
-      if (!value || !this.localValidation.ok) return;
-      this.debounceTimer = setTimeout(() => this.runSearch(value), SEARCH_DEBOUNCE_MS);
-    },
-
-    async runSearch(query) {
-      const stamp = ++this.lastSearchAt;
-      this.searchInflight = true;
-      this.searchError = null;
-      try {
-        const res = await searchHandle({ query });
-        // A later keystroke already raced past this one — drop the result.
-        if (stamp !== this.lastSearchAt) return;
-        this.searchResult = res;
-      } catch {
-        if (stamp !== this.lastSearchAt) return;
-        this.searchError = 'network';
-      } finally {
-        if (stamp === this.lastSearchAt) this.searchInflight = false;
-      }
-    },
-
-    adoptFreeFallback() {
-      const handle = this.freeFallbackHandle;
-      if (!handle) return;
-      // Fill the input with the free variant. The user can still edit
-      // before tapping Continue — but the common case is one tap.
-      this.nameInput = handle;
-      this.nameInputDebounced = handle;
-      // Drop the previous "taken" result and surface a synthetic
-      // "available — free" so the CTA enables without a server round-trip.
-      this.searchResult = {
-        identifier: handle,
-        available: true,
-        priceSats: null,
-        currency: null,
-        freeIdentifierNumber: null,
-        raw: {},
-      };
-    },
-
-    async onContinue() {
-      if (!this.canContinue) return;
-      const pubkeyHex = this.identity.nostrPubkeyHex;
-      if (!pubkeyHex) {
-        // Should be impossible (the marketplace is only reachable from a
-        // bootstrapped profile), but defend against it so a corrupted
-        // boot order doesn't silently mis-bind a handle to no key.
-        this.payError = this.$t('Identity not ready. Try again in a moment.');
+      const cleaned = normaliseUsernameInput(this.nameInput);
+      if (cleaned !== this.nameInput) this.nameInput = cleaned;
+      this.notice = '';
+      this.suggestions = [];
+      this.invoice = null;
+      clearTimeout(this.debounceTimer);
+      if (!this.nameInput) {
+        this.lookup = { name: '', status: 'idle', pricePerYear: null };
         return;
       }
+      if (!this.localValidation.ok) {
+        this.lookup = { name: this.nameInput, status: 'invalid', pricePerYear: null };
+        return;
+      }
+      this.lookup = { name: this.nameInput, status: 'checking', pricePerYear: null };
+      this.debounceTimer = setTimeout(() => this.runLookup(this.nameInput), SEARCH_DEBOUNCE_MS);
+    },
 
-      this.actionInflight = true;
+    async runLookup(name) {
+      const seq = ++this.lookupSeq;
+      const stillCurrent = () => seq === this.lookupSeq && name === this.nameInput;
+      if (!isLikelyAvailableLocalPart(name).ok) {
+        this.lookup = { name, status: 'invalid', pricePerYear: null };
+        return;
+      }
+      if (isFreeShapeHandle(name)) {
+        this.lookup = { name, status: 'unavailable', pricePerYear: null };
+        return;
+      }
+      this.lookup = { name, status: 'checking', pricePerYear: null };
       try {
-        const wantsFree = !this.searchResult?.priceSats;
-        if (wantsFree) {
-          // Free path: register straight away, skip paying entirely.
-          // Some users land here from the "Take <name>.NNNNNN for free"
-          // chip; others typed a `.NNNNNN` shape themselves and the
-          // server confirmed availability with no price.
-          const localPart = this.nameInput.trim().toLowerCase();
-          let result;
-          try {
-            // Two free shapes converge here:
-            //   1. The user adopted the "<base>.NNNNNN" fallback chip, so
-            //      the exact suffix matters — preserve it.
-            //   2. The user typed a base name that came back priceless
-            //      (rare; would only happen if the server returns a
-            //      no-charge tier for something base-shaped). Defer to
-            //      `registerFreeHandle` so a fresh suffix is generated.
-            if (/\.\d{6}$/.test(localPart)) {
-              result = await registerExactFreeHandle({ localPart, pubkeyHex });
-            } else {
-              result = await registerFreeHandle({ baseSlug: localPart, pubkeyHex });
-            }
-          } catch {
-            this.payError = this.$t("That username couldn't be created. Try a different one.");
-            return;
-          }
-          this.commitPurchase({
-            handle: result.handle,
-            rotationSecret: result.rotationSecret,
-            addressId: result.addressId,
-            isFree: true,
-            // Renewal feature disabled — extension doesn't enforce expiry.
-            // expiresAt: result.expiresAt,
-          });
+        const result = await searchHandle({ query: name });
+        if (!stillCurrent()) return;
+        if (result.available) {
+          const price = Number(result.priceSats) || 0;
+          this.lookup = { name, status: price > 0 ? 'available' : 'unavailable', pricePerYear: price || null };
           return;
         }
-
-        // Paid path: ask the extension for an invoice.
-        const localPart = this.nameInput.trim().toLowerCase();
-        try {
-          this.invoice = await requestPaidHandle({ localPart, pubkeyHex });
-        } catch (err) {
-          if (err?.status === 409 || err?.status === 400) {
-            this.payError = this.$t('That username was just taken. Pick another.');
-          } else {
-            this.payError = this.$t("Couldn't create the invoice. Try again.");
-          }
+        // Taken: it may be this person's own name (switching back, or a
+        // name bought on another phone).
+        const owner = await lookupOwner(name);
+        if (!stillCurrent()) return;
+        if (owner && owner === this.identity.nostrPubkeyHex) {
+          this.lookup = { name, status: 'mine', pricePerYear: null };
           return;
         }
-        this.pendingIsFree = false;
-        this.payError = null;
-        this.step = 'paying';
-      } finally {
-        this.actionInflight = false;
-      }
-    },
-
-    async copyInvoice() {
-      const inv = this.invoice?.invoice;
-      if (!inv) return;
-      try {
-        await navigator.clipboard.writeText(inv);
-        this.invoiceCopied = true;
-        setTimeout(() => { this.invoiceCopied = false; }, 1400);
+        this.lookup = { name, status: 'taken', pricePerYear: null };
+        this.loadSuggestions(name, seq);
       } catch {
-        // Clipboard denied — fall back silently; the QR is still usable.
+        if (!stillCurrent()) return;
+        const offline = typeof navigator !== 'undefined' && navigator.onLine === false;
+        this.lookup = { name, status: offline ? 'offline' : 'error', pricePerYear: null };
       }
     },
 
-    async onPay() {
-      if (!this.canPay) return;
-      const wallet = this.walletStore.wallets.find((w) => w.id === this.selectedWalletId);
-      const provider = this.walletStore.providers?.[this.selectedWalletId];
-      if (!wallet || !provider) {
-        this.payError = this.$t("Selected wallet isn't ready. Pick another or pay externally.");
-        return;
-      }
-
-      this.actionInflight = true;
-      this.payError = null;
-      try {
-        const invoiceStr = this.invoice.invoice;
-        // Same shape branching the wallet store uses for cross-wallet
-        // transfers: NWC providers take a bare string; Spark / LNbits
-        // take an object. Mirroring `wallet.js:2223-2228`.
-        if (wallet.type === 'nwc') {
-          await provider.sendPayment(invoiceStr);
-        } else {
-          await provider.payInvoice({ invoice: invoiceStr });
-        }
-      } catch (err) {
-        const msg = err?.message || '';
-        this.payError = msg
-          ? this.$t('Payment failed: {msg}', { msg })
-          : this.$t('Payment failed. Try again or pay externally.');
-        this.actionInflight = false;
-        return;
-      }
-
-      // Payment is on the wire; switch to the activating step and let
-      // the poller confirm server-side activation. We surface the
-      // success state from there.
-      this.step = 'activating';
-      this.actionInflight = false;
-      this.runActivationPoll();
+    /** Up to two available alternatives built from the display name. */
+    async loadSuggestions(takenName, seq) {
+      const candidates = suggestUsernames(this.profile.displayName, takenName);
+      if (!candidates.length) return;
+      const answers = await Promise.allSettled(
+        candidates.map((candidate) => searchHandle({ query: candidate })),
+      );
+      if (seq !== this.lookupSeq) return;
+      this.suggestions = candidates
+        .filter((_, i) => answers[i].status === 'fulfilled'
+          && answers[i].value.available
+          && Number(answers[i].value.priceSats) > 0)
+        .slice(0, 2);
     },
 
-    async runActivationPoll() {
-      this.activationController = new AbortController();
-      let paid = false;
-      try {
-        const r = await waitForActivation({
-          paymentHash: this.invoice.paymentHash,
-          signal: this.activationController.signal,
-        });
-        paid = r.paid;
-      } catch (err) {
-        if (err?.name === 'AbortError') return; // sheet closed
+    pickSuggestion(name) {
+      this.nameInput = name;
+      this.suggestions = [];
+      this.notice = '';
+      this.invoice = null;
+      this.runLookup(name);
+    },
+
+    stepYears(delta) {
+      this.years = clampYears(this.years + delta);
+      this.notice = '';
+    },
+
+    // ── Paying ────────────────────────────────────────────────────────────
+
+    /**
+     * A payment code for the typed name and years, with the price checked
+     * twice: the name is re-checked right before (so a name taken a moment
+     * ago never gets paid for), and the amount inside the code must be the
+     * total the sheet showed. Remembered as the pending claim, so closing
+     * the sheet or the app never loses it.
+     *
+     * @returns {Promise<object|null>} the invoice, or null when it stopped
+     *   with a message on screen
+     */
+    async prepareInvoice() {
+      const name = this.nameInput;
+      const { years } = this;
+      const fresh = this.invoice
+        && this.invoice.handle === name
+        && this.invoice.years === years
+        && Date.now() - this.invoice.requestedAt < INVOICE_FRESH_MS;
+      if (fresh) return this.invoice;
+
+      const check = await searchHandle({ query: name });
+      if (!check.available) {
+        this.lookup = { name, status: 'taken', pricePerYear: null };
+        this.notice = this.$t('That name was just taken. Pick another.');
+        return null;
+      }
+      if (Number(check.priceSats) !== Number(this.lookup.pricePerYear)) {
+        this.lookup = { name, status: 'available', pricePerYear: Number(check.priceSats) || null };
+        this.notice = this.$t('The price changed. Check the new total.');
+        return null;
       }
 
-      if (!paid) {
-        // Polling cap hit without confirmation. The payment may still
-        // settle — the server-side webhook activates whenever the
-        // invoice actually pays — but we shouldn't leave the user
-        // staring at a spinner. Drop back to paying with a hint.
-        this.step = 'paying';
-        this.payError = this.$t('Still waiting for the payment. The username is yours as soon as it settles.');
-        return;
-      }
-
-      this.commitPurchase({
-        handle: this.invoice.handle,
-        rotationSecret: this.invoice.rotationSecret,
-        addressId: this.invoice.addressId,
-        isFree: false,
-        // Renewal feature disabled — extension doesn't enforce expiry.
-        // expiresAt: this.invoice.expiresAt,
+      const request = await requestPaidHandle({
+        localPart: name,
+        pubkeyHex: this.identity.nostrPubkeyHex,
+        years,
       });
+      const chargedSats = (invoiceAmountMsat(request.invoice) ?? -1000) / 1000;
+      if (chargedSats !== this.totalSats) {
+        this.notice = this.$t('The price changed. Check the new total.');
+        this.runLookup(name);
+        return null;
+      }
+
+      this.invoice = { ...request, years, amountSats: this.totalSats, requestedAt: Date.now() };
+      this.identity.setPendingNip05Claim({
+        handle: request.handle,
+        paymentHash: request.paymentHash,
+        invoice: request.invoice,
+        addressId: request.addressId,
+        rotationSecret: request.rotationSecret,
+        years,
+        amountSats: this.totalSats,
+      });
+      return this.invoice;
+    },
+
+    async getWithWallet() {
+      const wallet = this.selectedWallet;
+      if (!wallet || this.busy) return;
+      const provider = this.walletStore.providers?.[wallet.id];
+      if (!provider) {
+        this.notice = this.$t("That wallet isn't ready. Pick another or pay from another wallet.");
+        return;
+      }
+
+      this.busy = true;
+      this.notice = '';
+      let invoice = null;
+      try {
+        invoice = await this.prepareInvoice();
+      } catch (err) {
+        console.warn('[username] could not start the payment:', err);
+        this.notice = err?.status === 409 || err?.status === 400
+          ? this.$t('That name was just taken. Pick another.')
+          : this.$t("Couldn't start the payment. Try again.");
+      }
+      if (!invoice) {
+        this.busy = false;
+        return;
+      }
+
+      try {
+        // NWC takes the bare code; Spark and LNbits take an object.
+        if (wallet.type === 'nwc') await provider.sendPayment(invoice.invoice);
+        else await provider.payInvoice({ invoice: invoice.invoice });
+      } catch (err) {
+        console.warn('[username] payment failed:', err);
+        this.notice = this.$t("Payment didn't go through. Try again or pay from another wallet.");
+        this.busy = false;
+        return;
+      }
+
+      this.identity.updatePendingNip05Claim({ paidAt: Date.now() });
+      this.labelPayment(wallet.id, invoice);
+      this.busy = false;
+      this.resultHandle = invoice.handle;
+      this.step = 'activating';
+      this.finishAfterPayment();
+    },
+
+    /** Name the payment in history instead of the server's invoice text. */
+    labelPayment(walletId, invoice) {
+      this.txMetadata.enqueuePendingContactLink({
+        amountSats: invoice.amountSats,
+        walletId,
+        label: this.$t('Username {name}', { name: nip05AddressFor(invoice.handle) }),
+        source: 'username',
+        perPayment: true,
+      }).catch((err) => console.warn('[username] could not label the payment:', err));
+    },
+
+    async openExternal() {
+      if (this.busy) return;
+      this.busy = true;
+      this.notice = '';
+      try {
+        const invoice = await this.prepareInvoice();
+        if (!invoice) return;
+        this.external = { open: true, copied: false };
+        this.watchExternalPayment();
+      } catch (err) {
+        console.warn('[username] could not create the payment code:', err);
+        this.notice = this.$t("Couldn't start the payment. Try again.");
+      } finally {
+        this.busy = false;
+      }
+    },
+
+    closeExternal() {
+      this.stopWatching();
+      this.external = { open: false, copied: false };
     },
 
     /**
-     * Persist the purchased handle, promote it to active so the user
-     * immediately sees their choice as their primary, and surface the
-     * success state. Emits `purchased` so the editor can refresh its
-     * Identity section without polling the store.
+     * Watch the shown payment code by asking the name server, which works
+     * for any wallet. A code about to go stale is replaced in place, so a
+     * person who takes their time still pays a live one.
      */
-    commitPurchase({ handle, rotationSecret, addressId, isFree /* , expiresAt */ }) {
-      this.identity.addNip05Handle({ handle, rotationSecret, addressId, isFree /* , expiresAt */ });
-      this.identity.setActiveNip05(handle);
-      this.profile.adoptNip05(this.identity.nip05Address);
-      this.purchasedAddress = this.identity.nip05Address || `${handle}@${this.domain}`;
-      // Renewal feature disabled — extension doesn't enforce expiry.
-      // this.purchasedExpiresAt = Number.isFinite(expiresAt) ? expiresAt : null;
-      this.$emit('purchased', { handle, isFree: !!isFree });
+    async watchExternalPayment() {
+      this.stopWatching();
+      const controller = new AbortController();
+      this.watchController = controller;
+      try {
+        while (!controller.signal.aborted && this.external.open) {
+          const invoice = this.invoice;
+          const remaining = INVOICE_FRESH_MS - (Date.now() - invoice.requestedAt);
+          const { paid } = await waitForActivation({
+            paymentHash: invoice.paymentHash,
+            signal: controller.signal,
+            maxMs: Math.max(0, remaining),
+          });
+          if (paid) {
+            this.identity.updatePendingNip05Claim({ paidAt: Date.now() });
+            this.external = { open: false, copied: false };
+            this.resultHandle = invoice.handle;
+            this.step = 'activating';
+            this.finishAfterPayment();
+            return;
+          }
+          // The code is getting old: get a fresh one for the same name.
+          this.invoice = null;
+          const renewed = await this.prepareInvoice().catch(() => null);
+          if (!renewed) {
+            this.closeExternal();
+            if (!this.notice) this.notice = this.$t("Couldn't start the payment. Try again.");
+            return;
+          }
+        }
+      } catch (err) {
+        if (err?.name !== 'AbortError') console.warn('[username] watching the payment failed:', err);
+      }
+    },
+
+    stopWatching() {
+      this.watchController?.abort();
+      this.watchController = null;
+    },
+
+    /**
+     * After a payment: ask until the name points at this key (success),
+     * at someone else's (failed), or the wait runs out (later). The
+     * background upkeep finishes a "later" on its own.
+     */
+    async finishAfterPayment() {
+      this.stopWatching();
+      const controller = new AbortController();
+      this.watchController = controller;
+      const startedAt = Date.now();
+      try {
+        while (Date.now() - startedAt < ACTIVATION_WAIT_MS) {
+          const result = await settlePendingClaim({ identity: this.identity, profile: this.profile });
+          if (controller.signal.aborted) return;
+          if (result.status === CLAIM_STATUS.DONE) {
+            this.step = 'success';
+            this.$emit('purchased', { handle: result.handle });
+            return;
+          }
+          if (result.status === CLAIM_STATUS.FAILED) {
+            this.step = 'failed';
+            return;
+          }
+          await delay(SETTLE_INTERVAL_MS, controller.signal);
+        }
+        this.step = 'later';
+      } catch (err) {
+        if (err?.name !== 'AbortError') {
+          console.warn('[username] finishing the purchase failed:', err);
+          this.step = 'later';
+        }
+      }
+    },
+
+    /** "Already yours": no payment, the name goes straight on the profile. */
+    useOwnedName() {
+      const handle = this.nameInput;
+      adoptOwnedUsername({
+        identity: this.identity,
+        profile: this.profile,
+        handle,
+        expiresAt: this.identity.usernameExpiresAt(handle),
+      });
+      this.resultHandle = handle;
       this.step = 'success';
-      this.successTimer = setTimeout(() => { this.open = false; }, SUCCESS_AUTO_CLOSE_MS);
+      this.$emit('purchased', { handle });
+    },
+
+    // ── Helpers ───────────────────────────────────────────────────────────
+
+    async copyInvoice() {
+      const code = this.invoice?.invoice;
+      if (!code) return;
+      try {
+        await navigator.clipboard.writeText(code);
+      } catch {
+        return; // the QR code is still there to scan
+      }
+      this.external = { ...this.external, copied: true };
+      clearTimeout(this.copyTimer);
+      this.copyTimer = setTimeout(() => { this.external = { ...this.external, copied: false }; }, 1600);
+    },
+
+    formatSats(value) {
+      if (value == null || !Number.isFinite(Number(value))) return '';
+      try {
+        return new Intl.NumberFormat(this.$i18n?.locale || undefined).format(Number(value));
+      } catch {
+        return String(value);
+      }
+    },
+
+    /** The total in the person's own currency, or '' without a rate. */
+    fiatFor(sats) {
+      const currency = this.walletStore.preferredFiatCurrency || 'USD';
+      const fiat = fiatRatesService.convertSatsToFiatSync(sats, currency);
+      return fiat ? fiatRatesService.formatFiatAmount(fiat, currency) : '';
     },
   },
 };
 </script>
 
 <style scoped>
-.market-sheet {
+.claim-sheet {
+  position: relative;
   width: 100%;
   max-width: 520px;
-  border-top-left-radius: 22px;
-  border-top-right-radius: 22px;
-  border-bottom-left-radius: 0;
-  border-bottom-right-radius: 0;
+  border-radius: 22px 22px 0 0 !important;
   overflow: hidden;
   padding-bottom: max(16px, env(safe-area-inset-bottom, 0px));
   display: flex;
   flex-direction: column;
-  max-height: 90vh;
-  max-height: 90dvh;
-}
-
-.sheet-handle {
-  display: flex;
-  justify-content: center;
-  padding: 8px 0 4px;
-  flex-shrink: 0;
-}
-
-.sheet-handle-bar-light,
-.sheet-handle-bar-dark {
-  width: 36px;
-  height: 4px;
-  border-radius: 999px;
-  display: block;
-}
-
-.sheet-handle-bar-light { background: rgba(15, 23, 42, 0.18); }
-.sheet-handle-bar-dark  { background: rgba(255, 255, 255, 0.22); }
-
-.sheet-header {
-  display: flex;
-  align-items: center;
-  padding: 4px 18px 8px;
-  gap: 8px;
-  flex-shrink: 0;
-}
-
-.sheet-title {
-  flex: 1 1 auto;
+  /* A steady height while the result line changes, so the button stays
+     where the thumb is instead of jumping with every keystroke. */
+  min-height: min(560px, 92vh);
+  min-height: min(560px, 92dvh);
+  max-height: 92vh;
+  max-height: 92dvh;
   font-family: 'Manrope', sans-serif;
-  font-size: 17px;
-  font-weight: 600;
-  letter-spacing: -0.005em;
+  color: var(--text-primary);
 }
 
-.sheet-close-btn { flex: 0 0 auto; }
-.sheet-price-btn { flex: 0 0 auto; color: var(--text-secondary); }
-
-.pricing-dismiss {
-  position: absolute !important;
-  inset: 0;
-  z-index: 4 !important;
-  width: 100%;
-  border: 0;
-  background: rgba(15, 23, 42, 0.12);
-  cursor: default;
-}
-
-body.body--dark .pricing-dismiss { background: rgba(0, 0, 0, 0.28); }
-
-.pricing-popover {
-  position: absolute !important;
-  top: 54px;
-  right: 16px;
-  z-index: 5 !important;
-  width: min(310px, calc(100% - 32px));
-  padding: 16px;
-  border: 1px solid rgba(15, 23, 42, 0.08);
-  border-radius: 18px;
-  box-shadow: 0 18px 50px rgba(15, 23, 42, 0.24);
-}
-
-.pricing-popover-light { background: #fffdf8; color: #171719; }
-.pricing-popover-dark { background: #202124; color: #f6f6f2; border-color: rgba(255, 255, 255, 0.1); }
-
-.pricing-popover-header {
-  display: flex;
-  align-items: center;
-  gap: 11px;
-  padding-bottom: 13px;
-}
-
-.pricing-popover-header > span:last-child {
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.pricing-popover-header strong {
-  font-family: 'Manrope', sans-serif;
-  font-size: 15px;
-  font-weight: 750;
-  letter-spacing: -0.015em;
-}
-
-.pricing-popover-header small {
-  color: var(--text-secondary);
-  font-size: 11.5px;
-}
-
-.pricing-popover-icon {
-  width: 36px;
-  height: 36px;
-  flex: 0 0 36px;
-  display: grid;
-  place-items: center;
-  border-radius: 12px;
-  color: #08783e;
-  background: rgba(21, 222, 114, 0.13);
-}
-
-body.body--dark .pricing-popover-icon {
-  color: #71e8a7;
-  background: rgba(21, 222, 114, 0.15);
-}
-
-.pricing-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-family: 'Manrope', sans-serif;
-}
-
-.pricing-table tr { border-top: 1px solid rgba(15, 23, 42, 0.075); }
-body.body--dark .pricing-table tr { border-top-color: rgba(255, 255, 255, 0.08); }
-
-.pricing-table th,
-.pricing-table td { padding: 10px 0; }
-
-.pricing-table th {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  color: inherit;
-  font-size: 12.5px;
-  font-weight: 600;
-  line-height: 1.3;
-  text-align: left;
-}
-
-.pricing-table th small {
-  color: var(--text-secondary);
-  font-size: 10.5px;
-  font-weight: 500;
-}
-
-.pricing-table td {
-  color: var(--text-secondary);
-  font-size: 12.5px;
-  font-weight: 650;
-  text-align: right;
-  white-space: nowrap;
-}
-
-.pricing-table td.pricing-free { color: #08783e; }
-body.body--dark .pricing-table td.pricing-free { color: #71e8a7; }
-
-.pricing-note {
-  margin: 10px 0 0;
-  color: var(--text-secondary);
-  font-size: 11px;
-  line-height: 1.4;
-}
-
-.sheet-scroll {
-  flex: 1 1 auto;
-  min-height: 0;
-  overflow-y: auto;
-  -webkit-overflow-scrolling: touch;
-  overscroll-behavior: contain;
-}
-
-/* ---------- Top-of-sheet tinted hero zone ----------
-   Same gradient-overlay pattern as the editor sheet: a soft brand-
-   green wash painted via ::before on the sheet card, fading from the
-   top. The header + marketplace hero block both sit on the tint so
-   the whole top of the sheet reads as one continuous hero zone (no
-   more thin banner strip). */
-.market-sheet {
-  position: relative;
-}
-
-.market-sheet::before {
+/* The brand wash at the top of the sheet, as before. */
+.claim-sheet::before {
   content: '';
   position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 280px;
-  background: linear-gradient(
-    to bottom,
-    rgba(21, 222, 114, 0.18) 0%,
-    rgba(21, 222, 114, 0.10) 50%,
-    transparent 100%
-  );
+  inset: 0 0 auto 0;
+  height: 260px;
+  background: linear-gradient(to bottom, rgba(21, 222, 114, 0.16) 0%, rgba(21, 222, 114, 0.08) 50%, transparent 100%);
   pointer-events: none;
-  z-index: 0;
-  border-top-left-radius: 22px;
-  border-top-right-radius: 22px;
 }
-
-body.body--dark .market-sheet::before {
-  background: linear-gradient(
-    to bottom,
-    rgba(21, 222, 114, 0.28) 0%,
-    rgba(21, 222, 114, 0.14) 50%,
-    transparent 100%
-  );
+body.body--dark .claim-sheet::before {
+  background: linear-gradient(to bottom, rgba(21, 222, 114, 0.26) 0%, rgba(21, 222, 114, 0.12) 50%, transparent 100%);
 }
+.claim-sheet > * { position: relative; z-index: 1; }
 
-.market-sheet > * {
-  position: relative;
-  z-index: 1;
-}
+.sheet-handle { display: flex; justify-content: center; padding: 8px 0 4px; flex-shrink: 0; }
+.sheet-handle span { width: 36px; height: 4px; border-radius: 999px; background: var(--border-card); display: block; }
 
-/* ---------- Editorial hero ----------
-   The live `<name>@mybuho.de` is the focal point in display type.
-   Status + price sit quietly underneath as metadata, then a single
-   benefit footnote states the use case. No badges, no glow, no
-   marketing headline — the name is the headline. */
+.sheet-header { display: flex; align-items: center; gap: 8px; padding: 4px 12px 6px 18px; flex-shrink: 0; }
+.sheet-title { flex: 1; font-size: 17px; font-weight: 700; letter-spacing: -0.015em; }
+.sheet-close { min-width: 44px; min-height: 44px; color: var(--text-secondary); }
 
-.mkt-hero {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 12px;
-  text-align: center;
-  padding: 14px 8px 16px;
-}
+.sheet-scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+.step-body { display: flex; flex-direction: column; gap: 14px; padding: 4px 18px 16px; }
+.step-body--centered { min-height: 220px; justify-content: center; }
 
-.mkt-hero-address {
-  font-family: 'Manrope', sans-serif;
-  /* Large enough to feel like product display type, not a form field.
-     `clamp` lets it scale gracefully on narrow phones without losing
-     legibility on tablet. */
-  font-size: clamp(24px, 6vw, 30px);
-  font-weight: 700;
-  letter-spacing: -0.02em;
-  line-height: 1.15;
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+
+/* ── Hero: the address itself is the headline ── */
+.claim-hero { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 10px 4px 4px; text-align: center; }
+.claim-hero-address {
   display: inline-flex;
-  align-items: baseline;
   flex-wrap: wrap;
   justify-content: center;
+  align-items: baseline;
   max-width: 100%;
+  font-size: clamp(22px, 6vw, 28px);
+  letter-spacing: -0.02em;
+  line-height: 1.15;
   word-break: break-word;
 }
+.claim-hero-name { font-weight: 600; }
+.claim-hero-domain { font-weight: 800; }
+.claim-hero-address--placeholder .claim-hero-name { opacity: 0.45; font-style: italic; }
 
-.mkt-hero-name {
-  /* Solid weight by default; muted when showing the placeholder so the
-     empty state reads as "preview, not real input." */
-  transition: opacity 0.15s ease;
-}
-
-.mkt-hero-name--placeholder {
-  opacity: 0.5;
-  font-weight: 600;
-  font-style: italic;
-}
-
-.mkt-hero-suffix {
-  font-weight: 600;
-  letter-spacing: -0.005em;
-}
-
-/* Status sits on its own line below the name, restrained to a small
-   pill. Tone classes flow through from the rest of the sheet. */
-.mkt-hero-status {
+.claim-status {
   display: inline-flex;
   align-items: center;
   gap: 6px;
   padding: 5px 11px;
   border-radius: 999px;
-  font-family: 'Manrope', sans-serif;
   font-size: 12.5px;
   font-weight: 600;
-  letter-spacing: -0.005em;
-}
-
-.mkt-hero-status.status-row--ok    { background: rgba(21, 222, 114, 0.14); color: #0e7b3f; }
-.mkt-hero-status.status-row--warn  { background: rgba(245, 158, 11, 0.14); color: #b45309; }
-.mkt-hero-status.status-row--muted { background: rgba(15, 23, 42, 0.05); color: #64748b; }
-
-body.body--dark .mkt-hero-status.status-row--ok    { color: #6ee7a8; }
-body.body--dark .mkt-hero-status.status-row--warn  { color: #fbbf24; }
-body.body--dark .mkt-hero-status.status-row--muted { background: rgba(255, 255, 255, 0.06); color: #94a3b8; }
-
-/* Benefit footnote — single calm sentence stating what the name does.
-   No headline above it; the name itself does that work. Reads as a
-   caption rather than a marketing line. */
-.mkt-hero-footnote {
-  margin: 4px 0 0 0;
-  font-family: 'Manrope', sans-serif;
-  font-size: 13px;
-  font-weight: 500;
-  line-height: 1.45;
-  letter-spacing: -0.003em;
-  max-width: 320px;
-}
-
-.preview-icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  /* Smaller chip now that the hero illustration above carries the
-     "what's the state of this name" visual. Here it's just a quick
-     glanceable tone marker. */
-  width: 32px;
-  height: 32px;
-  border-radius: 10px;
-  flex-shrink: 0;
-}
-
-.preview-icon--ok    { background: rgba(21, 222, 114, 0.14); color: #15a35b; }
-.preview-icon--warn  { background: rgba(245, 158, 11, 0.14); color: #b45309; }
-.preview-icon--muted { background: rgba(15, 23, 42, 0.06); color: #64748b; }
-
-body.body--dark .preview-icon--ok    { color: #2bd17f; }
-body.body--dark .preview-icon--warn  { color: #fbbf24; }
-body.body--dark .preview-icon--muted { background: rgba(255, 255, 255, 0.06); color: #94a3b8; }
-
-.preview-address {
-  font-family: 'Manrope', sans-serif;
-  font-size: 19px;
-  font-weight: 700;
-  letter-spacing: -0.015em;
-  line-height: 1.2;
-  display: inline-flex;
-  align-items: baseline;
-  flex-wrap: wrap;
-  justify-content: center;
   max-width: 100%;
-  word-break: break-word;
 }
+.claim-status--ok { background: rgba(21, 222, 114, 0.14); color: #0e7b3f; }
+.claim-status--warn { background: rgba(245, 158, 11, 0.14); color: #b45309; }
+.claim-status--muted { background: rgba(15, 23, 42, 0.05); color: #64748b; }
+body.body--dark .claim-status--ok { color: #6ee7a8; }
+body.body--dark .claim-status--warn { color: #fbbf24; }
+body.body--dark .claim-status--muted { background: rgba(255, 255, 255, 0.06); color: #94a3b8; }
 
-.preview-name {
-  /* No fade-on-empty here; the muted preview-icon and status pill
-     already signal the empty state, and a third tone would dilute
-     the lockstep. */
-}
-
-.preview-suffix {
-  font-weight: 600;
-  letter-spacing: -0.005em;
-}
-
-/* The status pill below the preview address. Picks up the same tone
-   classes the inline status row uses elsewhere so colour-coding stays
-   consistent across the sheet. */
-.preview-status {
-  display: inline-flex;
+/* ── Field: the name, then the domain, as the address reads ── */
+.claim-field { display: block; }
+.claim-input-wrap {
+  display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 6px 12px;
-  border-radius: 999px;
-  font-family: 'Manrope', sans-serif;
-  font-size: 12.5px;
-  font-weight: 600;
-  letter-spacing: -0.005em;
+  border-radius: 14px;
+  border: 1px solid var(--border-card);
+  background: var(--bg-input);
+  padding-right: 14px;
+  transition: border-color 0.18s ease;
 }
-
-.preview-status.status-row--ok    { background: rgba(21, 222, 114, 0.14); color: #0e7b3f; }
-.preview-status.status-row--warn  { background: rgba(245, 158, 11, 0.14); color: #b45309; }
-.preview-status.status-row--muted { background: rgba(15, 23, 42, 0.05); color: #64748b; }
-
-body.body--dark .preview-status.status-row--ok    { color: #6ee7a8; }
-body.body--dark .preview-status.status-row--warn  { color: #fbbf24; }
-body.body--dark .preview-status.status-row--muted { background: rgba(255, 255, 255, 0.06); color: #94a3b8; }
-
-.preview-status-text {
+.claim-input-wrap:focus-within { border-color: var(--text-secondary); }
+.claim-input-wrap--error { border-color: var(--color-red); }
+.claim-input {
+  flex: 1;
   min-width: 0;
-  word-break: break-word;
-}
-
-.step-body {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  padding: 6px 18px 18px;
-}
-
-.step-body--centered {
-  justify-content: center;
-  align-items: stretch;
-  min-height: 220px;
-}
-
-.step-lede {
-  font-family: 'Manrope', sans-serif;
-  font-size: 13.5px;
-  line-height: 1.45;
-  margin: 0 0 2px 0;
-}
-
-/* ---------- Name input ---------- */
-
-.field {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.field-label {
-  font-family: 'Manrope', sans-serif;
-  font-size: 12.5px;
-  font-weight: 600;
-  letter-spacing: -0.005em;
-}
-
-.name-input-wrap {
-  display: flex;
-  align-items: center;
-  border-radius: 12px;
-  border: 1px solid transparent;
-  transition: border-color 0.18s ease, background-color 0.18s ease;
-  padding-right: 12px;
-}
-
-.field-input-wrap-light {
-  background: rgba(15, 23, 42, 0.04);
-  border-color: rgba(15, 23, 42, 0.08);
-}
-
-.field-input-wrap-light:focus-within {
-  background: #ffffff;
-  border-color: rgba(15, 23, 42, 0.32);
-}
-
-.field-input-wrap-dark {
-  background: rgba(255, 255, 255, 0.04);
-  border-color: rgba(255, 255, 255, 0.06);
-}
-
-.field-input-wrap-dark:focus-within {
-  background: rgba(255, 255, 255, 0.06);
-  border-color: rgba(255, 255, 255, 0.28);
-}
-
-.field-input-wrap--error { border-color: #ef4444 !important; }
-
-.name-input {
-  flex: 1 1 auto;
-  width: 100%;
   border: 0;
   outline: none;
-  padding: 12px 0 12px 14px;
   background: transparent;
+  padding: 13px 0 13px 14px;
   font-family: 'Manrope', sans-serif;
-  font-size: 15px;
+  font-size: 16px; /* 16px keeps mobile browsers from zooming the page on focus */
   font-weight: 500;
-  letter-spacing: -0.005em;
+  color: var(--text-primary);
 }
+.claim-input-domain { font-size: 15px; font-weight: 700; color: var(--text-secondary); white-space: nowrap; }
 
-.field-input-light { color: #0f172a; }
-.field-input-dark  { color: #f8fafc; }
-
-.name-suffix {
-  font-family: 'Manrope', sans-serif;
-  font-size: 14px;
-  font-weight: 500;
-  white-space: nowrap;
-}
-
-/* ---------- Status row ---------- */
-
-.status-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-family: 'Manrope', sans-serif;
-  font-size: 13px;
-  line-height: 1.35;
-  min-height: 22px;
-}
-
-.status-text {
-  min-width: 0;
-  word-break: break-word;
-}
-
-.status-row--ok    { color: #15a35b; }
-.status-row--warn  { color: #b45309; }
-.status-row--muted { color: #64748b; }
-
-body.body--dark .status-row--muted { color: #94a3b8; }
-body.body--dark .status-row--warn  { color: #fbbf24; }
-
-/* ---------- Free fallback chip ---------- */
-
-.free-chip {
-  align-self: flex-start;
+.claim-suggestions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: -4px; }
+.claim-suggestion {
+  min-height: 36px;
+  padding: 0 14px;
   border: 0;
   border-radius: 999px;
-  padding: 8px 14px;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
+  background: var(--bg-input);
+  color: var(--text-primary);
   font-family: 'Manrope', sans-serif;
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
-  transition: background-color 0.15s ease;
 }
 
-.free-chip:active { transform: scale(0.98); }
-
-.free-chip-light {
-  background: rgba(21, 222, 114, 0.10);
-  color: #0e7b3f;
+/* ── Years: a stepper, the standard control for a small bounded number ── */
+.claim-years { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.claim-years-label { font-size: 14px; font-weight: 600; color: var(--text-secondary); }
+.claim-years-stepper {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 12px;
+  background: var(--bg-input);
+  border: 1px solid var(--border-card);
 }
-
-.free-chip-dark {
-  background: rgba(21, 222, 114, 0.16);
-  color: #6ee7a8;
+.claim-years-btn {
+  width: 44px;
+  height: 40px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  background: transparent;
+  color: var(--text-primary);
+  cursor: pointer;
 }
+.claim-years-btn:disabled { color: var(--text-muted); cursor: default; }
+.claim-years-value { min-width: 78px; text-align: center; font-size: 14.5px; font-weight: 700; }
 
-/* ---------- Summary card (paying step) ---------- */
+.claim-summary { margin: -4px 0 0; font-size: 13px; line-height: 1.45; color: var(--text-secondary); }
 
-.summary-card {
-  display: flex;
-  flex-direction: column;
+.claim-wallet { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.claim-wallet-label { font-size: 12.5px; font-weight: 600; color: var(--text-secondary); }
+.claim-wallet-pill {
+  display: inline-flex;
+  align-items: center;
   gap: 6px;
-  padding: 14px 16px;
-  border-radius: 16px;
+  min-height: 34px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--bg-input);
+  color: var(--text-primary);
+  font-family: 'Manrope', sans-serif;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
 }
+.claim-wallet-static { font-size: 13px; font-weight: 600; }
+.claim-wallet-menu { min-width: 200px; padding: 4px; }
 
-.summary-card-light {
-  background: rgba(15, 23, 42, 0.04);
-  box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.06);
-}
+.claim-note { margin: 0; font-size: 12.5px; line-height: 1.45; color: var(--text-secondary); }
 
-.summary-card-dark {
-  background: rgba(255, 255, 255, 0.04);
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06);
-}
-
-.summary-handle {
+/* ── Another wallet: the code, and a quiet sign that the sheet is watching ── */
+.claim-external { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+.claim-qr { width: min(100%, 220px) !important; height: auto !important; border-radius: 12px; }
+.claim-code {
+  width: 100%;
   display: flex;
   align-items: center;
   gap: 8px;
-  font-family: 'Manrope', sans-serif;
-  font-size: 15px;
-  font-weight: 600;
-  letter-spacing: -0.005em;
-}
-
-.summary-check { color: #15a35b; flex-shrink: 0; }
-
-.summary-handle-text {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.summary-price {
-  display: flex;
-  align-items: baseline;
-  gap: 6px;
-}
-
-.summary-price-amount {
-  font-family: 'Manrope', sans-serif;
-  font-size: 22px;
-  font-weight: 700;
-  letter-spacing: -0.01em;
-}
-
-.summary-price-unit {
-  font-size: 13px;
-  font-weight: 500;
-}
-
-/* ---------- Pay source picker ---------- */
-
-.pay-source {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
-  font-family: 'Manrope', sans-serif;
-}
-
-.pay-source-label {
+  padding: 10px 12px;
+  border: 0;
+  border-radius: 12px;
+  background: var(--bg-input);
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
   font-size: 12.5px;
-  font-weight: 600;
-  letter-spacing: -0.005em;
-}
-
-.pay-source-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  border: 0;
-  border-radius: 999px;
-  padding: 7px 12px;
-  font-family: 'Manrope', sans-serif;
-  font-size: 13px;
-  font-weight: 600;
+  text-align: left;
   cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
-  position: relative;
 }
+.claim-code-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.claim-waiting { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text-secondary); }
 
-.pay-source-pill-light {
-  background: rgba(15, 23, 42, 0.05);
-  color: #0f172a;
-}
-
-.pay-source-pill-dark {
-  background: rgba(255, 255, 255, 0.06);
-  color: #f8fafc;
-}
-
-.pay-source-pill:active { transform: scale(0.98); }
-
-.pay-source-static {
-  font-size: 13px;
-  font-weight: 500;
-}
-
-.pay-source-balance {
-  font-weight: 500;
-}
-
-.wallet-menu-list { padding: 4px; min-width: 200px; }
-.wallet-menu-list-light { background: #ffffff; }
-.wallet-menu-list-dark  { background: #1e293b; color: #f8fafc; }
-
-/* ---------- Pay error ---------- */
-
-.pay-error {
+.claim-notice {
   display: flex;
   align-items: flex-start;
   gap: 8px;
   padding: 10px 12px;
   border-radius: 12px;
-  font-family: 'Manrope', sans-serif;
+  background: rgba(239, 68, 68, 0.08);
+  color: #b91c1c;
   font-size: 13px;
   line-height: 1.4;
 }
+body.body--dark .claim-notice { background: rgba(239, 68, 68, 0.14); color: #fca5a5; }
 
-.pay-error-light {
-  background: rgba(239, 68, 68, 0.08);
-  color: #b91c1c;
-}
-
-.pay-error-dark {
-  background: rgba(239, 68, 68, 0.14);
-  color: #fca5a5;
-}
-
-/* ---------- External pay ---------- */
-
-.external-pay {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  margin-top: 4px;
-}
-
-.external-pay-toggle {
-  all: unset;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-family: 'Manrope', sans-serif;
-  font-size: 12.5px;
-  font-weight: 600;
-  letter-spacing: -0.005em;
-  cursor: pointer;
-  align-self: flex-start;
-  -webkit-tap-highlight-color: transparent;
-}
-
-.invoice-row-wrap {
-  display: flex;
-  align-items: stretch;
-  gap: 8px;
-}
-
-.invoice-row {
-  flex: 1 1 auto;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 12px;
+.claim-prices-link,
+.below-link {
   border: 0;
-  border-radius: 12px;
-  font-family: 'JetBrains Mono', 'SF Mono', ui-monospace, monospace;
-  font-size: 12.5px;
-  cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
-  text-align: left;
-}
-
-.invoice-row-light {
-  background: rgba(15, 23, 42, 0.05);
-  color: #334155;
-}
-
-.invoice-row-dark {
-  background: rgba(255, 255, 255, 0.06);
-  color: #cbd5e1;
-}
-
-.invoice-row-text {
-  flex: 1 1 auto;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.invoice-row-icon { flex-shrink: 0; opacity: 0.7; }
-
-.qr-icon-btn {
-  border: 0;
-  border-radius: 12px;
-  width: 42px;
-  flex: 0 0 42px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
-}
-
-.qr-icon-btn-light {
-  background: rgba(15, 23, 42, 0.05);
-  color: #0f172a;
-}
-
-.qr-icon-btn-dark {
-  background: rgba(255, 255, 255, 0.06);
-  color: #f8fafc;
-}
-
-.qr-stage {
-  display: flex;
-  justify-content: center;
-  padding: 10px 0 2px;
-}
-
-.qr-canvas {
-  width: min(100%, 240px) !important;
-  height: auto !important;
-  border-radius: 12px;
-}
-
-/* ---------- Centered stages (activating + success) ---------- */
-
-.centered-stage {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 12px;
-  padding: 24px 16px;
-  text-align: center;
-}
-
-.centered-title {
+  background: transparent;
+  color: var(--brand-accent-text);
   font-family: 'Manrope', sans-serif;
-  font-size: 17px;
   font-weight: 600;
-  letter-spacing: -0.005em;
+  cursor: pointer;
 }
+.claim-prices-link { align-self: flex-start; padding: 6px 2px; margin-top: -4px; font-size: 13px; min-height: 32px; }
+.below-link { display: block; width: 100%; min-height: 44px; margin-top: 4px; font-size: 13.5px; }
+.below-link:disabled { color: var(--text-muted); cursor: default; }
 
-.centered-caption {
-  font-family: 'Manrope', sans-serif;
-  font-size: 13px;
-  line-height: 1.45;
-  max-width: 280px;
-}
+/* ── End states ── */
+.claim-end { display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 20px 12px; text-align: center; }
+.claim-end-spinner { color: var(--text-muted); }
+.claim-end-mark--success { color: #15a35b; }
+.claim-end-mark--later { color: var(--text-muted); }
+.claim-end-mark--failed { color: #b45309; }
+body.body--dark .claim-end-mark--failed { color: #fbbf24; }
+.claim-end-title { font-size: 17px; font-weight: 700; letter-spacing: -0.01em; word-break: break-word; }
+.claim-end-caption { font-size: 13.5px; line-height: 1.45; max-width: 300px; color: var(--text-secondary); }
 
-.centered-address {
-  font-family: 'Manrope', sans-serif;
-  font-size: 14px;
-  font-weight: 500;
-}
-
-.success-check { color: #15a35b; }
-
-/* ---------- Sticky bottom action bar ---------- */
-
-.sheet-actions {
-  flex-shrink: 0;
-  padding: 12px 18px 6px;
-  border-top: 1px solid transparent;
-}
-
-.sheet-actions-light { border-top-color: rgba(15, 23, 42, 0.06); }
-.sheet-actions-dark  { border-top-color: rgba(255, 255, 255, 0.06); }
-
+/* ── Actions ── */
+.sheet-actions { flex-shrink: 0; padding: 12px 18px 4px; border-top: 1px solid var(--border-card); }
 .primary-cta {
   width: 100%;
-  height: 48px;
-  border-radius: 16px;
-  border: 0;
+  height: 50px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 8px;
+  border: 0;
+  border-radius: 16px;
+  background: var(--btn-neutral-bg);
+  color: var(--btn-neutral-fg);
   font-family: 'Manrope', sans-serif;
-  font-size: 15px;
-  font-weight: 600;
+  font-size: 15.5px;
+  font-weight: 650;
   cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
-  transition: filter 0.18s ease, transform 0.1s ease, opacity 0.18s ease;
 }
-
+body.body--dark .primary-cta { background: rgba(21, 222, 114, 0.14); color: #15de72; box-shadow: inset 0 0 0 1px rgba(21, 222, 114, 0.22); }
 .primary-cta:disabled { opacity: 0.45; cursor: default; }
-.primary-cta:not(:disabled):hover { filter: brightness(1.05); }
 .primary-cta:not(:disabled):active { transform: scale(0.98); }
+
+/* ── Prices ── */
+.pricing-dismiss { position: absolute; inset: 0; z-index: 4; border: 0; background: rgba(15, 23, 42, 0.12); cursor: default; }
+body.body--dark .pricing-dismiss { background: rgba(0, 0, 0, 0.3); }
+.pricing-popover {
+  position: absolute;
+  z-index: 5;
+  top: 56px;
+  right: 16px;
+  width: min(310px, calc(100% - 32px));
+  padding: 16px;
+  border-radius: 18px;
+  border: 1px solid var(--border-card);
+  background: var(--bg-card);
+  box-shadow: 0 18px 50px rgba(15, 23, 42, 0.24);
+}
+.pricing-head { display: flex; align-items: baseline; justify-content: space-between; padding-bottom: 10px; }
+.pricing-head strong { font-size: 15px; font-weight: 750; }
+.pricing-head small { font-size: 12px; color: var(--text-secondary); }
+.pricing-table { width: 100%; border-collapse: collapse; }
+.pricing-table tr { border-top: 1px solid var(--border-card); }
+.pricing-table th,
+.pricing-table td { padding: 10px 0; font-size: 13px; }
+.pricing-table th { text-align: left; font-weight: 600; }
+.pricing-table td { text-align: right; font-weight: 650; color: var(--text-secondary); white-space: nowrap; }
+.pricing-note { margin: 10px 0 0; font-size: 11.5px; line-height: 1.45; color: var(--text-secondary); }
 </style>

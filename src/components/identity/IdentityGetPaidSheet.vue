@@ -304,8 +304,8 @@ export default {
      */
     shareUrl() {
       return buildProfileLink({
-        username: this.identity.nip05ActiveEntry?.handle,
-        nip05: this.profile.nip05 || this.identity.nip05Address,
+        username: this.profile.username,
+        nip05: this.profile.nip05,
         npub: this.identity.nostrNpub,
       });
     },

@@ -34,6 +34,7 @@
         :progress="progress"
         :qr-value="qrValue"
         :npub="identity.nostrNpub"
+        :username="profile.username"
         :qr-caption="qrCaption"
         :can-switch="canSwitch"
         :needs-name="needsName"
@@ -66,8 +67,53 @@
       <!-- Setup, while it lasts. Gone for good once complete. -->
       <template v-if="!setupComplete">
         <SetupLadder :steps="steps" :done="stepsDone" :total="stepsTotal" />
-
       </template>
+
+      <!-- The one invitation to a username, in the ladder's place once the
+           name is set: calm, personal, no price, dismissible for good. The
+           same slot reports a purchase that is still finishing, so a person
+           who paid and closed the sheet never wonders whether it worked. -->
+      <IdentityGroup v-else-if="usernameSlot" class="id-block">
+        <div v-if="usernameSlot === 'suggest'" class="id-suggest">
+          <IdentityRow
+            icon="tabler:rosette-discount-check"
+            :label="$t('Choose a username')"
+            :caption="suggestionCaption"
+            :chevron="false"
+            @click="showClaimSheet = true"
+          />
+          <button
+            type="button"
+            class="id-suggest-dismiss"
+            :aria-label="$t('Not now')"
+            @click="profile.dismissUsernameSuggestion()"
+          >
+            <Icon icon="tabler:x" width="16" height="16" />
+          </button>
+        </div>
+        <IdentityRow
+          v-else-if="usernameSlot === 'pending'"
+          icon="tabler:rosette-discount-check"
+          tone="accent"
+          :label="$t('Almost ready')"
+          :caption="$t('{name} will be on your card in a moment', { name: claimAddress })"
+          :chevron="false"
+          :interactive="false"
+        >
+          <template #trailing>
+            <q-spinner size="16px" class="id-suggest-spinner" />
+          </template>
+        </IdentityRow>
+        <IdentityRow
+          v-else
+          icon="tabler:alert-circle"
+          tone="warn"
+          :label="$t('We couldn\'t finish this name')"
+          :caption="$t('Someone took it a moment earlier')"
+          :chevron="false"
+          @click="identity.clearPendingNip05Claim()"
+        />
+      </IdentityGroup>
 
       <!-- The one quiet door. Everything else the tab can do lives on the
            card or in the three verbs above; backing up lives in Security. -->
@@ -88,6 +134,10 @@
     <!-- Receiving is a quick action, so it stays over the card instead of
          navigating away from it. The legacy URL still opens this same sheet. -->
     <IdentityGetPaidSheet v-model="showGetPaidSheet" />
+
+    <!-- Getting a username is a short task over the card, like Get paid;
+         Done lands back here with the name already on the card. -->
+    <Nip05MarketplaceSheet v-model="showClaimSheet" />
 
     <!-- Website sign-in is a short, contextual task like Get paid. Keeping it
          in a sheet preserves the user's place on their card. -->
@@ -121,6 +171,9 @@ import { useIdentityHealth } from '../../composables/useIdentityHealth';
 import { useSocialBucketStore } from '../../stores/socialBucket';
 import { usePayContact } from '../../composables/usePayContact';
 import { buildNostrIdentityUri } from '../../utils/nostrLookup.js';
+import { useUsernameSuggestion } from '../../composables/useUsernameSuggestion';
+import { nip05AddressFor } from '../../services/nip05';
+import Nip05MarketplaceSheet from '../../components/Nip05MarketplaceSheet.vue';
 
 export default {
   name: 'IdentityHomePage',
@@ -136,12 +189,14 @@ export default {
     IdentityGetPaidSheet,
     IdentitySignInSheet,
     AddressBookModal,
+    Nip05MarketplaceSheet,
   },
 
   setup() {
     const health = useIdentityHealth();
     const bucket = useSocialBucketStore();
-    return { ...health, bucket };
+    const suggestion = useUsernameSuggestion();
+    return { ...health, bucket, ...suggestion };
   },
 
   data() {
@@ -150,6 +205,7 @@ export default {
       showGetPaidSheet: false,
       showSignInSheet: false,
       showScanSheet: false,
+      showClaimSheet: false,
       avatarBroken: false,
       canSwitch: false,
     };
@@ -178,6 +234,33 @@ export default {
     avatarUrl() {
       if (!this.profile.picture || this.avatarBroken) return '';
       return this.profile.picture;
+    },
+
+    /**
+     * What the slot below the verbs shows once setup is done:
+     *   'suggest' the invitation, until dismissed
+     *   'pending' a paid purchase still finishing
+     *   'failed'  a paid purchase that went to someone else first
+     *   ''        nothing (has a username, no name yet, or dismissed)
+     * An unpaid payment code is not "almost ready"; it shows the invitation,
+     * which reopens the sheet where the code is still waiting.
+     */
+    usernameSlot() {
+      if (!this.setupComplete || !this.profile.displayName || this.profile.username) return '';
+      const claim = this.identity.pendingNip05Claim;
+      if (claim?.failedAt) return 'failed';
+      if (claim?.paidAt) return 'pending';
+      return this.profile.usernameSuggestionDismissedAt ? '' : 'suggest';
+    },
+
+    suggestionCaption() {
+      return this.suggestedUsername
+        ? this.$t('{name} is available', { name: nip05AddressFor(this.suggestedUsername) })
+        : this.$t('A short name people can type to find you');
+    },
+
+    claimAddress() {
+      return nip05AddressFor(this.identity.pendingNip05Claim?.handle) || '';
     },
 
     /** The physical card exchange is identity-to-identity, not a web share. */
@@ -228,12 +311,13 @@ export default {
     await this.identity.hydrate();
     await this.profile.hydrate();
 
-    // The identity is created the first time someone opens this tab. That is
-    // still true, but it is no longer invisible: the card appears with the
-    // reserved username already on it, which is the moment it becomes real.
+    // The identity is created the first time someone opens this tab: the
+    // card appears with its public code, which is the moment it becomes real.
     if (!this.identity.bootstrapped) {
       await this.identity.ensureIdentity();
     }
+
+    this.refreshSuggestion();
 
     // The wallet-home badge leads here, so repeat the same live count on the
     // exact action that explains and moves those payments. Arriving counts
@@ -298,6 +382,28 @@ export default {
 </script>
 
 <style scoped>
+/* The suggestion's dismiss sits over the row's trailing edge as a sibling,
+   not inside it: the row is itself a button. 44pt target, quiet glyph. */
+.id-suggest { position: relative; }
+.id-suggest :deep(.id-row) { padding-right: 56px; }
+.id-suggest-dismiss {
+  position: absolute;
+  top: 50%;
+  right: 6px;
+  transform: translateY(-50%);
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: var(--radius-ms);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.id-suggest-dismiss:active { background: rgba(127, 127, 127, 0.12); }
+.id-suggest-spinner { color: var(--text-muted); flex: 0 0 auto; }
+
 /* The hub header is gone: this screen has a large title in the body instead,
    which is where a title belongs on a screen nobody pushed into. The page
    cancels the global q-page top padding because the top bar owns the inset. */

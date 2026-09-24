@@ -31,6 +31,7 @@ import {
   stripWrapperScheme,
   splitAddressForDisplay,
   nativeRailsFromBip21,
+  invoiceAmountMsat,
 } from '../addressUtils.js';
 
 // A real LNURL-withdraw voucher (LNbits) reported from the field. It must be
@@ -364,6 +365,24 @@ test('lnurlDomain: the host behind any carrier, empty when it does not decode', 
   assert.equal(lnurlDomain(encoded), 'coffee.example');
   assert.equal(lnurlDomain('lnurlp://kiosk.example/x'), 'kiosk.example');
   assert.equal(lnurlDomain('nope'), '');
+});
+
+test('invoiceAmountMsat: reads the amount from the human-readable part', () => {
+  assert.equal(invoiceAmountMsat('lnbc10u1pjabcdefgh'), 1_000_000);          // 1,000 sats
+  assert.equal(invoiceAmountMsat('LNBC20U1PJABCDEF'), 2_000_000);            // 2,000 sats
+  assert.equal(invoiceAmountMsat('lightning:lnbc100m1pjxyz'), 10_000_000_000); // 10,000,000 sats
+  assert.equal(invoiceAmountMsat('lnbc2500n1pjxyz'), 250_000);               // 250 sats
+  assert.equal(invoiceAmountMsat('lnbc10p1pjxyz'), 1);                       // 1 msat
+  assert.equal(invoiceAmountMsat('lnbcrt5u1pjxyz'), 500_000);
+  assert.equal(invoiceAmountMsat('lntbs3m1pjxyz'), 300_000_000);
+});
+
+test('invoiceAmountMsat: amountless, odd pico amounts and non-invoices are null', () => {
+  assert.equal(invoiceAmountMsat('lnbc1pjabcdefgh'), null);
+  assert.equal(invoiceAmountMsat('lnbc15p1pjxyz'), null);
+  assert.equal(invoiceAmountMsat('maria@mybuho.de'), null);
+  assert.equal(invoiceAmountMsat(''), null);
+  assert.equal(invoiceAmountMsat(null), null);
 });
 
 console.log(`\n  ${passed} passed, ${failed} failed`);

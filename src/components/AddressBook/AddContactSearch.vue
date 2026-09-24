@@ -22,7 +22,7 @@
         maxlength="512"
         @keydown.down.prevent="focusResult(0)"
         :class="$q.dark.isActive ? 'search-input-dark' : 'search-input-light'"
-        :placeholder="$t('Name, npub, or NIP-05')"
+        :placeholder="$t('Name or username')"
         autocapitalize="off"
         autocorrect="off"
         spellcheck="false"
@@ -87,8 +87,10 @@
           @keydown.up.prevent="focusResult(index - 1)" @keydown.esc.stop.prevent="focus">
           <ContactAvatar class="people-avatar" :picture="person.picture" />
           <span class="people-copy">
-            <span class="people-name">{{ person.name || person.nip05 || $t('Nostr profile') }}</span>
-            <span v-if="person.nip05 && person.name" class="people-handle">{{ person.nip05 }}</span>
+            <span class="people-name">{{ person.name || addressText(person.nip05) || $t('Nostr profile') }}</span>
+            <span v-if="person.name && addressText(person.nip05)" class="people-handle">
+              <NostrAddress :address="person.nip05" />
+            </span>
             <span v-if="person.about" class="people-bio">{{ person.about }}</span>
           </span>
           <q-icon name="chevron_right" size="20px" :aria-hidden="true" />
@@ -133,6 +135,8 @@ import { copyToClipboard } from 'quasar';
 import NostrContactPreview from './NostrContactPreview.vue';
 import ContactAvatar from './ContactAvatar.vue';
 import { classifyPeopleInput, searchProfiles, fetchPeopleProfile, PROFILE_SEARCH_DEBOUNCE_MS, PROFILE_SEARCH_TIMEOUT_MS } from '../../services/profileSearch.js';
+import { formatUsername, usernameAddressFromInput } from '../../services/nip05.js';
+import NostrAddress from '../identity/NostrAddress.vue';
 
 const DEBOUNCE_MS = PROFILE_SEARCH_DEBOUNCE_MS;
 
@@ -148,7 +152,7 @@ function shortenNpub(npub) {
 export default {
   name: 'AddContactSearch',
 
-  components: { NostrContactPreview, ContactAvatar },
+  components: { NostrContactPreview, ContactAvatar, NostrAddress },
 
   props: { active: { type: Boolean, default: true } },
 
@@ -285,7 +289,7 @@ export default {
         case 'npub':     return this.$t('Looks like a Nostr identifier (npub).');
         case 'nprofile': return this.$t('Nostr profile with relay hints.');
         case 'hex':      return this.$t('Looks like a Nostr pubkey.');
-        case 'nip05':    return this.$t('Looks like a NIP-05 identifier.');
+        case 'nip05':    return this.$t('Looks like a username.');
         default:         return this.$t('Search by name or public Nostr identifier.');
       }
     },
@@ -293,7 +297,7 @@ export default {
     resolvingText() {
       // While resolving, the same line shows progress copy specific
       // to the step we're on (handle lookup vs profile fetch).
-      if (this.kind === 'nip05' && !this.resolved) return this.$t('Resolving NIP-05 identifier…');
+      if (this.kind === 'nip05' && !this.resolved) return this.$t('Looking up this username…');
       return this.$t('Looking up the profile…');
     },
 
@@ -312,17 +316,15 @@ export default {
         case LOOKUP_ERROR.INVALID_HEX:
           return this.$t('Expected a 64-character pubkey.');
         case NIP05_ERROR.INVALID_FORMAT:
-          return this.$t("That doesn't look like a valid NIP-05 identifier.");
+          return this.$t("That doesn't look like a username.");
         case NIP05_ERROR.NETWORK:
-          return this.$t("We couldn't reach the server for this NIP-05 right now.");
-        case NIP05_ERROR.HTTP:
-          return this.$t("The server didn't answer with a NIP-05 record.");
-        case NIP05_ERROR.BAD_RESPONSE:
-          return this.$t('The NIP-05 server returned something we cannot read.');
+          return this.$t("Couldn't reach that username right now.");
         case NIP05_ERROR.NOT_FOUND:
-          return this.$t('No one with that NIP-05 is registered on that server.');
+          return this.$t('No one has that username.');
+        case NIP05_ERROR.HTTP:
+        case NIP05_ERROR.BAD_RESPONSE:
         case NIP05_ERROR.PUBKEY_INVALID:
-          return this.$t('The NIP-05 server returned an invalid pubkey.');
+          return this.$t("That username couldn't be checked.");
         default:
           return this.$t('Something went wrong. Please try again.');
       }
@@ -343,6 +345,16 @@ export default {
   },
 
   methods: {
+    /** What to resolve: `@maria` becomes `maria@mybuho.de`, the rest as typed. */
+    lookupQuery(input) {
+      return usernameAddressFromInput(input) || input;
+    },
+
+    /** A result's address as written on screen, or '' (a retired free handle). */
+    addressText(nip05) {
+      return formatUsername(nip05)?.text || '';
+    },
+
     ...mapActions(useAddressBookStore, ['addNostrContact']),
 
     focus() {
@@ -438,7 +450,7 @@ export default {
       this.profileEvent = null;
       this.errorCode = null;
       const trimmed = this.rawInput.trim();
-      this.kind = classifyIdentifier(trimmed);
+      this.kind = classifyIdentifier(this.lookupQuery(trimmed));
       const mode = classifyPeopleInput(trimmed);
       this.stage = mode === 'empty' ? 'idle' : mode;
       if (!this.active || !['name', 'identifier'].includes(mode)) return;
@@ -456,7 +468,7 @@ export default {
       if (!['name', 'identifier'].includes(mode)) return;
       this.cancelInFlight();
       const token = this.currentToken;
-      this.kind = classifyIdentifier(trimmed);
+      this.kind = classifyIdentifier(this.lookupQuery(trimmed));
       this.stage = mode === 'name' ? 'searching' : 'resolving';
       this.errorCode = null;
       this.resolved = null;
@@ -493,7 +505,7 @@ export default {
       // Step 1 — resolve the identifier to a pubkey.
       let resolved;
       try {
-        resolved = await lookupIdentifier(trimmed, {
+        resolved = await lookupIdentifier(this.lookupQuery(trimmed), {
           signal, timeoutMs: PROFILE_SEARCH_TIMEOUT_MS,
         });
       } catch (err) {

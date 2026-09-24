@@ -1,3 +1,4 @@
+import { formatUsername } from '../services/nip05.js'
 import { serviceIdentity } from '../utils/lnurlMetadata.js'
 import { isAddressRequest } from '../utils/lud23.js';
 import { defineStore } from 'pinia'
@@ -171,7 +172,8 @@ function pickDisplayNameFromProfile(profile, fallbackNpub) {
     profile?.display_name,
     profile?.displayName,
     profile?.name,
-    profile?.nip05,
+    // Written as on screen; a retired free BuhoGO handle is never a name.
+    formatUsername(profile?.nip05)?.text,
   ]
   for (const candidate of candidates) {
     if (typeof candidate === 'string' && candidate.trim()) {

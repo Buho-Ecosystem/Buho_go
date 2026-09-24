@@ -1086,5 +1086,134 @@ await test('adoptDefaultPaymentAddress is a no-op on the same value', async () =
   assert.equal(profile.isDirty, false);
 });
 
+// ---------------------------------------------------------------------------
+// Username: the profile's own-domain nip05 is the source of truth
+// ---------------------------------------------------------------------------
+
+await test('username: a paid name on our domain, nothing else', async () => {
+  const { profile } = await freshEnvWithIdentity();
+  profile.nip05 = 'Maria@mybuho.de';
+  assert.equal(profile.username, 'maria');
+  profile.nip05 = 'luckyowl.482913@mybuho.de';
+  assert.equal(profile.username, '');
+  profile.nip05 = 'maria@primal.net';
+  assert.equal(profile.username, '');
+  profile.nip05 = '';
+  assert.equal(profile.username, '');
+});
+
+await test('setUsername: writes the full address, marks dirty, clears not-mine', async () => {
+  const { profile } = await freshEnvWithIdentity();
+  profile.nip05 = 'maria@mybuho.de';
+  profile.markNip05NotMine();
+  assert.equal(profile.username, '');
+  profile.isDirty = false;
+  profile.setUsername('Maria2');
+  assert.equal(profile.nip05, 'maria2@mybuho.de');
+  assert.equal(profile.username, 'maria2');
+  assert.equal(profile.nip05NotMine, '');
+  assert.equal(profile.isDirty, true);
+});
+
+await test('setUsername: confirming the same address only clears not-mine, and saves it', async () => {
+  const { profile } = await freshEnvWithIdentity();
+  profile.nip05 = 'maria@mybuho.de';
+  profile.markNip05NotMine();
+  profile.isDirty = false;
+  profile.setUsername('maria');
+  assert.equal(profile.username, 'maria');
+  assert.equal(profile.isDirty, false);
+  await profile.hydrate({ force: true });
+  assert.equal(profile.username, 'maria');
+});
+
+await test('markNip05NotMine: hides the name without touching the profile, and persists', async () => {
+  const { profile } = await freshEnvWithIdentity();
+  profile.nip05 = 'maria@mybuho.de';
+  profile.markNip05NotMine();
+  assert.equal(profile.nip05, 'maria@mybuho.de');
+  assert.equal(profile.username, '');
+  await profile.hydrate({ force: true });
+  assert.equal(profile.username, '');
+  profile.setUsername('maria2');
+  assert.equal(profile.username, 'maria2');
+});
+
+await test('setDisplayName: display_name and name always carry the same value', async () => {
+  const { profile } = await freshEnvWithIdentity();
+  profile.setDisplayName('  Maria Schmidt ');
+  assert.equal(profile.displayName, 'Maria Schmidt');
+  assert.equal(profile.name, 'Maria Schmidt');
+  assert.equal(profile.publishablePayload.display_name, 'Maria Schmidt');
+  assert.equal(profile.publishablePayload.name, 'Maria Schmidt');
+  profile.setDisplayName('');
+  assert.equal(profile.name, '');
+});
+
+await test('dropFreeNip05: a published profile republishes without the free handle', async () => {
+  const { profile } = await freshEnvWithIdentity();
+  profile.nip05 = 'luckyowl.482913@mybuho.de';
+  profile.lastPublishedAt = 1;
+  profile.isDirty = false;
+  assert.equal(profile.dropFreeNip05(), true);
+  assert.equal(profile.nip05, '');
+  assert.equal(profile.isDirty, true);
+});
+
+await test('dropFreeNip05: a never-published profile is cleaned quietly', async () => {
+  const { profile } = await freshEnvWithIdentity();
+  profile.nip05 = 'luckyowl.482913@mybuho.de';
+  profile.isDirty = false;
+  assert.equal(profile.dropFreeNip05(), true);
+  assert.equal(profile.nip05, '');
+  assert.equal(profile.isDirty, false);
+});
+
+await test('dropFreeNip05: paid names and other domains are left alone', async () => {
+  const { profile } = await freshEnvWithIdentity();
+  profile.nip05 = 'maria@mybuho.de';
+  assert.equal(profile.dropFreeNip05(), false);
+  profile.nip05 = 'x.482913@other.net';
+  assert.equal(profile.dropFreeNip05(), false);
+  assert.equal(profile.nip05, 'x.482913@other.net');
+});
+
+await test('recoverFromNostr: a paid username comes back with the profile', async () => {
+  const { profile, identity } = await freshEnvWithIdentity();
+  const fetcher = async () => fakeKind0Event({ name: 'Maria', nip05: 'maria@mybuho.de' });
+  await profile.recoverFromNostr({ identityStore: identity, fetcher });
+  assert.equal(profile.username, 'maria');
+  assert.equal(profile.isDirty, false);
+});
+
+await test('recoverFromNostr: a free handle is dropped and the profile goes out again', async () => {
+  const { profile, identity } = await freshEnvWithIdentity();
+  const fetcher = async () => fakeKind0Event({ name: 'Maria', nip05: 'luckyowl.482913@mybuho.de' });
+  await profile.recoverFromNostr({ identityStore: identity, fetcher });
+  assert.equal(profile.nip05, '');
+  assert.equal(profile.username, '');
+  assert.equal(profile.isDirty, true);
+});
+
+await test('savedUsernameFor: reads another identity\'s saved profile', async () => {
+  const { profile, identity } = await freshEnvWithIdentity();
+  const other = 'cd'.repeat(32);
+  localStorage.setItem(`${STORAGE_KEY}_${other}`, JSON.stringify({ version: 1, nip05: 'bob@mybuho.de' }));
+  assert.equal(profile.savedUsernameFor(other), 'bob');
+  localStorage.setItem(`${STORAGE_KEY}_${other}`, JSON.stringify({ version: 1, nip05: 'bob.123456@mybuho.de' }));
+  assert.equal(profile.savedUsernameFor(other), '');
+  assert.equal(profile.savedUsernameFor('ef'.repeat(32)), '');
+  profile.nip05 = 'maria@mybuho.de';
+  assert.equal(profile.savedUsernameFor(identity.nostrPubkeyHex), 'maria');
+});
+
+await test('dismissUsernameSuggestion: persists per identity', async () => {
+  const { profile } = await freshEnvWithIdentity();
+  profile.dismissUsernameSuggestion();
+  assert.ok(Number.isFinite(profile.usernameSuggestionDismissedAt));
+  await profile.hydrate({ force: true });
+  assert.ok(Number.isFinite(profile.usernameSuggestionDismissedAt));
+});
+
 console.log(`\n  ${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);
