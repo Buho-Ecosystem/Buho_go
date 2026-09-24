@@ -135,3 +135,10 @@ test('grows relevance windows without timestamp cursors, merges revisions, and s
     previousEvents = result.events;
   }
 });
+
+test('classifyPeopleInput: @name is a BuhoGO username lookup, a bare word is a name search', () => {
+  assert.equal(classifyPeopleInput('@maria'), 'identifier');
+  assert.equal(classifyPeopleInput('maria@mybuho.de'), 'identifier');
+  assert.equal(classifyPeopleInput('maria'), 'name');
+  assert.equal(classifyPeopleInput('@'), 'incomplete');
+});

@@ -389,6 +389,7 @@ import {
   normalizeDestination,
 } from '../utils/clipboardSuggestion.js';
 import { resolveNostrLightningTarget, NOSTR_TARGET_ERROR } from '../services/nostrPaymentTarget';
+import { usernameAddressFromInput } from '../services/nip05';
 import ContactAvatar from './AddressBook/ContactAvatar.vue';
 import ArkadeLogo from './ArkadeLogo.vue';
 import ProgressCta from './ProgressCta.vue';
@@ -498,6 +499,10 @@ export default {
       // NOT matched here: it's indistinguishable from a Lightning Address, so
       // it stays on the Lightning-address rails (and is only Nostr-resolved as
       // a fallback if that lookup misses — see Wallet.onPaymentDetected).
+      // A BuhoGO username (`@maria`, `maria@mybuho.de`) is a person to look
+      // up, not a Lightning address: it resolves through their profile to
+      // where they get paid.
+      if (usernameAddressFromInput(cleaned)) return 'username';
       const nostrKind = classifyIdentifier(cleaned);
       if (nostrKind === 'npub' || nostrKind === 'nprofile') return 'nostr_identifier';
       if (isLightningAddress(cleaned)) return 'lightning_address';
@@ -537,7 +542,8 @@ export default {
         lnurl: this.$t('Bitcoin'),
         bitcoin_address: this.$t('Bitcoin'),
         bip21: this.$t('Bitcoin'),
-        nostr_identifier: this.$t('Nostr profile')
+        nostr_identifier: this.$t('Nostr profile'),
+        username: this.$t('Username')
       };
       return labels[this.detectedInputType] || '';
     },
@@ -557,7 +563,8 @@ export default {
         bitcoin_address: 'tabler:currency-bitcoin',
         bip21: 'tabler:currency-bitcoin',
         phone_number: 'tabler:device-mobile',
-        nostr_identifier: 'tabler:user'
+        nostr_identifier: 'tabler:user',
+        username: 'tabler:rosette-discount-check'
       };
       return icons[this.detectedInputType] || '';
     },
@@ -953,9 +960,10 @@ export default {
         // sheet shows who they are. The loading CTA is already up
         // (processManualInput / onQRDetect set isProcessing).
         const nostrKind = classifyIdentifier(cleanData);
-        if (nostrKind === 'npub' || nostrKind === 'nprofile') {
+        const usernameAddress = usernameAddressFromInput(cleanData);
+        if (usernameAddress || nostrKind === 'npub' || nostrKind === 'nprofile') {
           try {
-            const target = await resolveNostrLightningTarget(cleanData, { timeoutMs: 8000 });
+            const target = await resolveNostrLightningTarget(usernameAddress || cleanData, { timeoutMs: 8000 });
             this.$emit('payment-detected', {
               data: target.address,
               type: target.kind, // 'lightning_address' | 'lnurl'

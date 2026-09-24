@@ -1,5 +1,6 @@
 import { RelayPool, nip19, verifyEvent } from 'nostr-core';
 import { classifyIdentifier } from '../utils/nostrLookup.js';
+import { usernameAddressFromInput } from './nip05.js';
 import { compareEventFreshness, parseProfileContent } from '../utils/nostrFetch.js';
 import { DEFAULT_RELAYS } from '../utils/nostrRelays.js';
 
@@ -19,6 +20,8 @@ export function classifyPeopleInput(raw) {
   if (!value) return 'empty';
   if (/nsec1/i.test(value)) return 'private';
   if (classifyIdentifier(value)) return 'identifier';
+  // `@maria` is shorthand for a BuhoGO username, looked up in full.
+  if (usernameAddressFromInput(value)) return 'identifier';
   if (/^(nostr:|npub1|nprofile1)/i.test(value) || value.includes('@')) return 'incomplete';
   return [...value].length < 2 ? 'short' : 'name';
 }
