@@ -236,6 +236,29 @@ export function isLightningInvoice(invoice) {
   return LIGHTNING_INVOICE_HRPS.some(hrp => lower.startsWith(hrp));
 }
 
+/** Millisatoshis per unit of each BOLT11 amount multiplier (1 BTC = 1e11 msat). */
+const BOLT11_MULTIPLIER_MSAT = Object.freeze({ '': 100_000_000_000, m: 100_000_000, u: 100_000, n: 100, p: 0.1 });
+
+/**
+ * The amount a BOLT11 invoice asks for, in millisatoshis, read from its
+ * human-readable part (`lnbc10u1…` is 1,000 sats). No signature check: this
+ * answers "how much will this charge", not "is this invoice genuine".
+ *
+ * @param {unknown} invoice
+ * @returns {number|null} msat, or null for an amountless or unreadable invoice
+ */
+export function invoiceAmountMsat(invoice) {
+  const lower = stripWrapperScheme(invoice).toLowerCase();
+  const separator = lower.lastIndexOf('1');
+  if (separator < 0) return null;
+  const match = /^ln(?:bcrt|bc|tbs|tb)(\d+)([munp]?)$/.exec(lower.slice(0, separator));
+  if (!match) return null;
+  const [, digits, multiplier] = match;
+  if (multiplier === 'p' && !digits.endsWith('0')) return null; // not a whole msat
+  const msat = Number(digits) * BOLT11_MULTIPLIER_MSAT[multiplier];
+  return Number.isSafeInteger(Math.round(msat)) && msat > 0 ? Math.round(msat) : null;
+}
+
 /**
  * True if the input looks like a BOLT12 offer. BOLT12 offers are not payable
  * by BuhoGO yet, but recognizing them at every entry point lets the UI explain

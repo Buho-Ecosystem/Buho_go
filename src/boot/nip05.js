@@ -1,110 +1,109 @@
 import { boot } from 'quasar/wrappers';
+import { Notify } from 'quasar';
 
 /**
- * NIP-05 boot.
+ * Username upkeep.
  *
- * Silently ensures every BuhoGO identity has a verified `name@mybuho.de`
- * handle registered — the programmatic identifier the future clink feature
- * builds on. There is no prompt and no onboarding step: at first launch we
- * derive a handle, register the identity's Nostr pubkey under mybuho.de via
- * the keyless public endpoint, store the result on the identity store, and
- * seed the publishable `nip05` profile field. The user can later override it
- * from the profile editor.
+ * Nothing is registered here: a username is only ever bought in the claim
+ * sheet. This boot keeps the published one honest and finishes purchases
+ * that outlived the sheet, quietly, on launch, when the app comes back to
+ * the front, after identity changes and whenever the profile's `nip05`
+ * changes (a restore brings one in from the relays):
  *
- * Orchestrated here rather than inside a store so neither the identity nor
- * the profile store has to import the other (which would risk a circular
- * import).
- *
- * Idempotent and best-effort: once a handle exists we never re-register, and
- * a failed attempt (offline, server hiccup) simply retries on the next launch
- * or the next identity action.
+ *   1. Drop the retired free `name.123456` handle that older versions put in
+ *      every profile.
+ *   2. Check a username the profile carries but this phone never recorded,
+ *      such as one restored from the relays or written by another app.
+ *   3. Finish a purchase that was paid but not finished: the sheet was
+ *      closed, the app was killed, or it was paid from another wallet.
  */
+const IDENTITY_ACTIONS = new Set([
+  'ensureIdentity',
+  'importMnemonic',
+  'rotateNostrIdentity',
+  'createAnotherNostrIdentity',
+  'switchNostrIdentity',
+  'resolveActiveNostrAccount',
+]);
+
 export default boot(async () => {
-  // The screenshot harness seeds identities whose handles already exist in the
-  // fixture. Registering would mean writing a real record on mybuho.de for a
-  // throwaway test key on every audit run, so we never register under audit.
+  // The screenshot harness seeds its own identities and must never reach the
+  // real name server.
   if (typeof window !== 'undefined' && window.__AUDIT__) return;
 
-  const { useIdentityStore } = await import('../stores/identity.js');
-  const { useProfileStore } = await import('../stores/profile.js');
-  const { deriveBaseSlug, registerFreeHandle } = await import('../services/nip05.js');
+  const [
+    { useIdentityStore },
+    { useProfileStore },
+    { settlePendingClaim, reconcileProfileUsername, claimIsInView, CLAIM_STATUS },
+    { nip05AddressFor },
+    { i18n },
+  ] = await Promise.all([
+    import('../stores/identity.js'),
+    import('../stores/profile.js'),
+    import('../services/usernameClaim.js'),
+    import('../services/nip05.js'),
+    import('./i18n.js'),
+  ]);
 
   const identity = useIdentityStore();
   const profile = useProfileStore();
 
-  let inFlight = false;
-  async function ensureHandle() {
-    if (inFlight) return;
-    inFlight = true;
-    try {
-      await identity.hydrate();
-      if (!identity.bootstrapped) return; // no identity yet — nothing to bind
-      await profile.hydrate();
+  async function upkeep() {
+    await identity.hydrate();
+    if (!identity.bootstrapped) return;
+    if (!identity.nostrPubkeyHex) await identity.loadNostrIdentity();
+    if (!identity.nostrPubkeyHex) return;
+    await profile.hydrate();
 
-      // Already registered (at least one handle on file): just make sure
-      // the profile field reflects the active one. Covers existing users
-      // who registered before the marketplace landed, and the everyday
-      // "user already has handles" case.
-      if (identity.nip05Handles.length > 0) {
-        profile.adoptNip05(identity.nip05Address);
-        return;
-      }
+    profile.dropFreeNip05();
+    await reconcileProfileUsername({ identity, profile });
 
-      // Need the Nostr pubkey to register the handle against.
-      if (!identity.nostrPubkeyHex) await identity.loadNostrIdentity();
-      if (!identity.nostrPubkeyHex) return;
-
-      const baseSlug = deriveBaseSlug({
-        name: profile.displayName || profile.name,
-        npub: identity.nostrNpub,
+    const result = await settlePendingClaim({ identity, profile });
+    if (result.status === CLAIM_STATUS.DONE && !claimIsInView()) {
+      Notify.create({
+        type: 'positive',
+        message: i18n.global.t('{name} is yours', { name: nip05AddressFor(result.handle) }),
+        timeout: 2600,
       });
-
-      let result;
-      try {
-        result = await registerFreeHandle({
-          baseSlug,
-          pubkeyHex: identity.nostrPubkeyHex,
-        });
-      } catch (err) {
-        console.warn('[nip05] registration failed, will retry next launch:', err);
-        return;
-      }
-
-      identity.addNip05Handle({
-        handle: result.handle,
-        rotationSecret: result.rotationSecret,
-        addressId: result.addressId,
-        isFree: true,
-        // Renewal feature disabled — extension doesn't enforce expiry.
-        // expiresAt: result.expiresAt,
-      });
-      profile.adoptNip05(identity.nip05Address);
-    } finally {
-      inFlight = false;
     }
   }
 
-  // Catch-up for identities that already exist at startup.
-  ensureHandle();
+  // Single-flight with one trailing run, so a burst of triggers (launch,
+  // restore, profile update) costs one pass plus at most one more.
+  let running = null;
+  let runAgain = false;
+  function run() {
+    if (running) {
+      runAgain = true;
+      return;
+    }
+    running = upkeep()
+      .catch((err) => console.warn('[nip05] username upkeep failed:', err))
+      .finally(() => {
+        running = null;
+        if (runAgain) {
+          runAgain = false;
+          run();
+        }
+      });
+  }
 
-  // New / rotated / switched identities: re-run once a pubkey appears
-  // or changes. The multi-identity actions belong here too — a created
-  // or switched-to identity (and one adopted from the published
-  // pointer during restore) must get its free handle without waiting
-  // for an app relaunch. ensureHandle() is idempotent per pubkey, so
-  // over-firing is harmless.
+  run();
+
   identity.$onAction(({ name, after }) => {
-    after(() => {
-      if (
-        name === 'ensureIdentity' ||
-        name === 'importMnemonic' ||
-        name === 'rotateNostrIdentity' ||
-        name === 'createAnotherNostrIdentity' ||
-        name === 'switchNostrIdentity' ||
-        name === 'resolveActiveNostrAccount'
-      ) {
-        ensureHandle();
-      }
-    });
+    if (IDENTITY_ACTIONS.has(name)) after(() => run());
   });
+
+  let lastNip05 = profile.nip05;
+  profile.$subscribe((_mutation, state) => {
+    if (state.nip05 === lastNip05) return;
+    lastNip05 = state.nip05;
+    run();
+  });
+
+  if (typeof document !== 'undefined') {
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') run();
+    });
+  }
 });

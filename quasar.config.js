@@ -33,9 +33,10 @@ export default defineConfig((ctx) => {
       // forceSecure override guard. Safe to load everywhere — the
       // util layer no-ops on web.
       'secure-screen',
-      // 'nip05' silently registers/maintains the user's name@mybuho.de
-      // handle once an identity exists. Safe everywhere (a plain fetch);
-      // idempotent and best-effort.
+      // 'nip05' keeps the published username honest (drops the retired free
+      // handle, checks names this phone never recorded) and finishes paid
+      // purchases that outlived the claim sheet. Registers nothing.
+      // Best-effort and idempotent; safe everywhere (plain fetches).
       'nip05',
       // 'payment-address' gives every identity a payment address it did not
       // have to go and find: the first Spark wallet's Lightning address when

@@ -55,7 +55,7 @@ import {
   buildKind0Event,
   buildKind10002Event,
 } from '../utils/nostrProfile.js';
-import { NIP05_DOMAIN } from '../services/nip05.js';
+import { nip05AddressFor, ownUsernameFrom, splitNip05, isFreeShapeHandle } from '../services/nip05.js';
 import {
   fetchProfile as fetchProfileFromRelays,
   parseProfileContent,
@@ -164,6 +164,21 @@ function dropEmptyStringFields(obj) {
   return out;
 }
 
+/** True for a retired free `name.123456` handle on our own domain. */
+function isOwnFreeShape(nip05) {
+  const parts = splitNip05(nip05);
+  return !!parts && parts.ours && isFreeShapeHandle(parts.local);
+}
+
+/**
+ * The username a saved or live profile shows: its own-domain `nip05`
+ * unless that address was found to point at someone else's key.
+ */
+function usernameOf(nip05, notMine) {
+  if (notMine && nip05 === notMine) return '';
+  return ownUsernameFrom(nip05);
+}
+
 // ----------------------------------------------------------------------------
 // Store
 // ----------------------------------------------------------------------------
@@ -184,6 +199,16 @@ export const useProfileStore = defineStore('profile', {
     banner: '',
     lud16: '',
     nip05: '',
+
+    // ---- Username bookkeeping (persisted, never published) ----
+    /**
+     * A `nip05` on our domain that the name server says belongs to another
+     * key (only possible if another app wrote it). Remembered so it is not
+     * shown as this person's username; cleared when `nip05` changes.
+     */
+    nip05NotMine: '',
+    /** Epoch ms the home tab's username suggestion was dismissed, or null. */
+    usernameSuggestionDismissedAt: null,
 
     // ---- Editor / publish lifecycle (not all persisted) ----
     /** True after `setField` changes a value, until the next successful publish or reset. */
@@ -213,9 +238,19 @@ export const useProfileStore = defineStore('profile', {
   getters: {
     /** True iff every editable field is empty. Drives the "Set up your profile" empty state. */
     isEmpty(state) {
-      // nip05 is auto-populated by the system (boot/nip05.js), so a user who
-      // has only an auto handle still counts as not-yet-set-up.
+      // A username is optional and set on its own screen, not part of
+      // filling in the card, so nip05 alone does not count.
       return PROFILE_FIELDS.every((field) => field === 'nip05' || !state[field]);
+    },
+
+    /**
+     * The person's username: the local part of their published `nip05`
+     * when it is a paid name on our domain (`maria` for `maria@mybuho.de`),
+     * else ''. The one value every screen reads. The profile is the source
+     * of truth, so a restore or a second phone shows it with no extra step.
+     */
+    username(state) {
+      return usernameOf(state.nip05, state.nip05NotMine);
     },
 
     /**
@@ -258,6 +293,8 @@ export const useProfileStore = defineStore('profile', {
 
     _clearFields() {
       for (const field of PROFILE_FIELDS) this[field] = '';
+      this.nip05NotMine = '';
+      this.usernameSuggestionDismissedAt = null;
       this.isDirty = false;
       this.isPublishing = false;
       this.lastPublishedAt = null;
@@ -301,6 +338,12 @@ export const useProfileStore = defineStore('profile', {
               Number.isFinite(parsed.lastPublishedAt)
                 ? parsed.lastPublishedAt
                 : null;
+            this.nip05NotMine =
+              typeof parsed.nip05NotMine === 'string' ? parsed.nip05NotMine : '';
+            this.usernameSuggestionDismissedAt =
+              Number.isFinite(parsed.usernameSuggestionDismissedAt)
+                ? parsed.usernameSuggestionDismissedAt
+                : null;
           }
         }
       } catch (err) {
@@ -334,6 +377,10 @@ export const useProfileStore = defineStore('profile', {
       };
       if (this.lastPublishedAt !== null) {
         payload.lastPublishedAt = this.lastPublishedAt;
+      }
+      if (this.nip05NotMine) payload.nip05NotMine = this.nip05NotMine;
+      if (this.usernameSuggestionDismissedAt !== null) {
+        payload.usernameSuggestionDismissedAt = this.usernameSuggestionDismissedAt;
       }
       const encoded = JSON.stringify(payload);
       localStorage.setItem(this._profileStorageKey(), encoded);
@@ -373,23 +420,90 @@ export const useProfileStore = defineStore('profile', {
     },
 
     /**
-     * Adopt the BuhoGO-managed NIP-05 address (from the identity store) as
-     * the published handle. Called silently by `boot/nip05.js`, so unlike
-     * `setField` it does NOT mark the profile dirty — it isn't a user edit
-     * and must not light up the "unsaved changes" CTA. Overwrites an empty
-     * value or a previously-auto `…@mybuho.de` value, but never clobbers a
-     * custom NIP-05 the user set on another domain.
+     * The person's name, written the one way Nostr apps agree on:
+     * `display_name` and `name` carry the same value, so every client shows
+     * the same name once. The only writer of either field.
      *
-     * @param {string} address  e.g. `drs.482913@mybuho.de`
+     * @param {string} value
      */
-    adoptNip05(address) {
-      const value = normaliseFieldValue('nip05', address);
-      if (!value) return;
-      const current = this.nip05;
-      const oursOrEmpty = !current || current.endsWith(`@${NIP05_DOMAIN}`);
-      if (!oursOrEmpty || current === value) return;
-      this.nip05 = value;
+    setDisplayName(value) {
+      this.setField('displayName', value);
+      this.setField('name', this.displayName);
+    },
+
+    /**
+     * Make `localPart@mybuho.de` the published username. Callers run the
+     * ownership check first; this only writes. Marks the profile dirty, so
+     * the background sync (`boot/profile-sync.js`) publishes it and retries
+     * on its own when the phone is offline.
+     *
+     * @param {string} localPart e.g. `maria`
+     */
+    setUsername(localPart) {
+      const address = nip05AddressFor(String(localPart || '').trim().toLowerCase());
+      if (!address) return;
+      const clearedNotMine = !!this.nip05NotMine;
+      this.nip05NotMine = '';
+      if (this.nip05 !== address) this.setField('nip05', address);
+      else if (clearedNotMine) this._persistMetadata();
+    },
+
+    /**
+     * Remember that the current own-domain `nip05` points at someone else's
+     * key, so it is never shown as this person's username. The profile
+     * itself is left alone: it is theirs, and a claim replaces the value.
+     */
+    markNip05NotMine() {
+      if (!this.nip05 || this.nip05NotMine === this.nip05) return;
+      this.nip05NotMine = this.nip05;
       this._persistMetadata();
+    },
+
+    /** Hide the home tab's username suggestion for this identity, for good. */
+    dismissUsernameSuggestion() {
+      this.usernameSuggestionDismissedAt = Date.now();
+      this._persistMetadata();
+    },
+
+    /**
+     * Drop the retired free `name.123456` handle that older versions put in
+     * every profile. A profile that was published goes through `setField`
+     * so the background sync republishes it without the handle; one that
+     * never left the phone is cleaned quietly.
+     *
+     * @returns {boolean} true when something was dropped
+     */
+    dropFreeNip05() {
+      if (!isOwnFreeShape(this.nip05)) return false;
+      if (this.hasEverPublished) {
+        this.setField('nip05', '');
+      } else {
+        this.nip05 = '';
+        this._persistMetadata();
+      }
+      return true;
+    },
+
+    /**
+     * The username of another identity on this phone, read from that
+     * identity's saved profile (profiles are stored per key). Same rule as
+     * the `username` getter; '' when nothing is saved.
+     *
+     * @param {string} pubkeyHex
+     * @returns {string}
+     */
+    savedUsernameFor(pubkeyHex) {
+      const identity = useIdentityStore();
+      if (!pubkeyHex) return '';
+      if (pubkeyHex === identity.nostrPubkeyHex) return this.username;
+      try {
+        const raw = localStorage.getItem(`${STORAGE_KEY}_${pubkeyHex}`);
+        if (!raw) return '';
+        const parsed = JSON.parse(raw);
+        return usernameOf(parsed?.nip05, parsed?.nip05NotMine);
+      } catch {
+        return '';
+      }
     },
 
     /**
@@ -805,6 +919,11 @@ export const useProfileStore = defineStore('profile', {
         if (value) applied.push(field);
       }
 
+      // A retired free handle must not come back in through a restore. The
+      // relays still carry it, so the profile goes out again without it.
+      const droppedFreeName = isOwnFreeShape(patch.nip05);
+      if (droppedFreeName) patch.nip05 = '';
+
       this.applyEdits(patch);
 
       // The fields we just wrote came straight off a published
@@ -816,6 +935,7 @@ export const useProfileStore = defineStore('profile', {
         ? event.created_at * 1000
         : Date.now();
       this._persistMetadata();
+      if (droppedFreeName) this.isDirty = true;
 
       return {
         ok: true,
@@ -834,6 +954,8 @@ export const useProfileStore = defineStore('profile', {
       for (const field of PROFILE_FIELDS) {
         this[field] = '';
       }
+      this.nip05NotMine = '';
+      this.usernameSuggestionDismissedAt = null;
       this.isDirty = false;
       this.isPublishing = false;
       this.lastPublishedAt = null;
