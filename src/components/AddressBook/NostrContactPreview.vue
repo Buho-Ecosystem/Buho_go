@@ -17,25 +17,19 @@
           {{ displayName }}
         </div>
 
-        <!-- nip05 / npub secondary line. Verified nip05 wins the row;
-             we fall back to a shortened npub so the contact is never
-             without an identity hint. -->
+        <!-- The address, in full with the domain emphasised (Nostr Design
+             Guide). The guide's plain check only when it is confirmed to
+             point at this key; an address that points elsewhere is not
+             shown at all, and the shortened key stands in, so the contact
+             is never without an identity hint. No badge either way: an
+             address is a name, not proof of who someone is. -->
         <div v-if="nip05Line" class="preview-handle">
-          <Icon
-            v-if="nip05Verified === true"
-            icon="tabler:rosette-discount-check"
-            width="14"
-            height="14"
-            class="preview-handle-icon preview-handle-icon--verified"
+          <NostrAddress
+            :address="nip05Line"
+            :check="nip05Verified === true"
+            :icon-size="13"
+            class="preview-handle-text"
           />
-          <Icon
-            v-else-if="nip05Verified === false"
-            icon="tabler:alert-triangle"
-            width="14"
-            height="14"
-            class="preview-handle-icon preview-handle-icon--warn"
-          />
-          <span class="preview-handle-text">{{ nip05Line }}</span>
         </div>
         <div v-else-if="!showCopyIdentifier" class="preview-handle preview-handle--muted">
           <span class="preview-handle-text">{{ shortenedNpub }}</span>
@@ -141,11 +135,13 @@
  *                     refresh can promote the entry to payable
  */
 import ContactAvatar from './ContactAvatar.vue';
+import NostrAddress from '../identity/NostrAddress.vue';
+import { formatUsername } from '../../services/nip05';
 
 export default {
   name: 'NostrContactPreview',
 
-  components: { ContactAvatar },
+  components: { ContactAvatar, NostrAddress },
 
   props: {
     /** 64-char lowercase hex. */
@@ -207,14 +203,14 @@ export default {
       return typeof raw === 'string' && raw.trim() ? raw.trim() : '';
     },
 
+    /**
+     * The address worth showing: none for a retired free handle on our own
+     * domain, and none when the lookup said it points at a different key.
+     */
     nip05Line() {
+      if (this.nip05Verified === false) return '';
       const raw = this.profile?.nip05;
-      if (typeof raw !== 'string' || !raw.trim()) return '';
-      // NIP-05 spec: when the local part is `_` the identifier
-      // renders as just `<domain>`. Same rule as our resolver.
-      const trimmed = raw.trim();
-      if (trimmed.startsWith('_@')) return trimmed.slice(2);
-      return trimmed;
+      return formatUsername(raw) ? String(raw).trim() : '';
     },
 
     shortenedNpub() {
@@ -295,17 +291,6 @@ export default {
   text-overflow: ellipsis;
 }
 
-.preview-handle-icon {
-  flex-shrink: 0;
-}
-
-.preview-handle-icon--verified {
-  color: var(--color-green);
-}
-
-.preview-handle-icon--warn {
-  color: #C97A0F;
-}
 
 /* Bio */
 .preview-bio {

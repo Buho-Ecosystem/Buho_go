@@ -58,6 +58,42 @@
           />
         </IdentityGroup>
 
+        <!-- Both identifiers, each with its icon, each one tap to copy. The
+             card shows one of them; this is where both always are. -->
+        <IdentityGroup :title="$t('Copy')" class="share-identifiers">
+          <IdentityRow
+            v-if="usernameAddress"
+            icon="tabler:rosette-discount-check-filled"
+            tone="accent"
+            :label="usernameAddress"
+            :caption="$t('Username')"
+            :chevron="false"
+            @click="copyIdentifier('username', usernameAddress)"
+          >
+            <template #label>
+              <NostrAddress :address="usernameAddress" />
+            </template>
+            <template #trailing>
+              <Icon :icon="copiedIdentifier === 'username' ? 'tabler:copy-check' : 'tabler:copy'" width="17" height="17" class="share-copy-glyph" aria-hidden="true" />
+            </template>
+          </IdentityRow>
+          <IdentityRow
+            v-if="npub"
+            :label="shortNpub"
+            :caption="$t('Public code')"
+            mono-label
+            :chevron="false"
+            @click="copyIdentifier('npub', npub)"
+          >
+            <template #leading>
+              <span class="share-nostr-glyph"><Icon :icon="NOSTRICH_HEAD_ICON" width="18" height="18" /></span>
+            </template>
+            <template #trailing>
+              <Icon :icon="copiedIdentifier === 'npub' ? 'tabler:copy-check' : 'tabler:copy'" width="17" height="17" class="share-copy-glyph" aria-hidden="true" />
+            </template>
+          </IdentityRow>
+        </IdentityGroup>
+
         <p v-if="shareUrl" class="share-foot">
           {{ $t('Your link opens a page with your name, your photo and a way to pay you, even for someone who does not have BuhoGO yet.') }}
           <span class="share-url">{{ shareUrlDisplay }}</span>
@@ -78,11 +114,14 @@ import { getQrOptionsWithSize } from '../../utils/qrConfig.js';
 import { shareContent } from '../../utils/share.js';
 import { buildProfileLink } from '../../utils/profileLink.js';
 import { buildNostrIdentityUri } from '../../utils/nostrLookup.js';
+import { NOSTRICH_HEAD_ICON } from '../../utils/nostrIcon.js';
+import { nip05AddressFor } from '../../services/nip05.js';
+import NostrAddress from './NostrAddress.vue';
 
 export default {
   name: 'IdentityShareSheet',
 
-  components: { Icon, VueQrcode, IdentityGroup, IdentityRow },
+  components: { Icon, VueQrcode, IdentityGroup, IdentityRow, NostrAddress },
 
   props: {
     modelValue: { type: Boolean, required: true },
@@ -95,7 +134,14 @@ export default {
   },
 
   data() {
-    return { copied: false, avatarBroken: false, _copyTimer: null };
+    return {
+      copied: false,
+      copiedIdentifier: '',
+      avatarBroken: false,
+      _copyTimer: null,
+      _identifierTimer: null,
+      NOSTRICH_HEAD_ICON,
+    };
   },
 
   computed: {
@@ -118,7 +164,16 @@ export default {
      * saves the person. Payment has its own screen and its own code.
      */
     qrCaption() {
-      return this.$t('This QR contains your publicly shareable npub. Scan it to save you as a contact.');
+      return this.$t('Someone can scan this to save you as a contact');
+    },
+
+    usernameAddress() {
+      return nip05AddressFor(this.profile.username) || '';
+    },
+
+    shortNpub() {
+      const npub = this.npub;
+      return npub.length > 16 ? `${npub.slice(0, 8)}…${npub.slice(-4)}` : npub;
     },
 
     /**
@@ -133,8 +188,8 @@ export default {
      */
     shareUrl() {
       return buildProfileLink({
-        username: this.identity.nip05ActiveEntry?.handle,
-        nip05: this.profile.nip05 || this.identity.nip05Address,
+        username: this.profile.username,
+        nip05: this.profile.nip05,
         npub: this.npub,
       });
     },
@@ -166,6 +221,7 @@ export default {
 
   beforeUnmount() {
     if (this._copyTimer) clearTimeout(this._copyTimer);
+    if (this._identifierTimer) clearTimeout(this._identifierTimer);
   },
 
   methods: {
@@ -179,6 +235,24 @@ export default {
       } catch {
         this.$q.notify({ type: 'warning', message: this.$t("Couldn't copy"), timeout: 1800, position: 'top' });
       }
+    },
+
+    /** Copy the full value: the whole address, or the whole npub. */
+    async copyIdentifier(kind, value) {
+      try {
+        await navigator.clipboard.writeText(value);
+      } catch {
+        this.$q.notify({ type: 'warning', message: this.$t("Couldn't copy"), timeout: 1800, position: 'top' });
+        return;
+      }
+      this.copiedIdentifier = kind;
+      if (this._identifierTimer) clearTimeout(this._identifierTimer);
+      this._identifierTimer = setTimeout(() => { this.copiedIdentifier = ''; }, 2000);
+      this.$q.notify({
+        type: 'positive',
+        message: kind === 'username' ? this.$t('Username copied') : this.$t('Public code copied'),
+        timeout: 1600,
+      });
     },
 
     /** See the page a stranger would see: open the link in the browser. */
@@ -225,6 +299,20 @@ export default {
 </script>
 
 <style scoped>
+.share-identifiers { margin-top: 14px; }
+.share-copy-glyph { color: var(--text-muted); flex: 0 0 auto; }
+/* Same box as the row's own glyph, holding the guide's Nostr mark. */
+.share-nostr-glyph {
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-ms);
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  background: var(--bg-input);
+  color: var(--text-secondary);
+}
+
 .share-sheet {
   width: 100%;
   max-width: 520px;

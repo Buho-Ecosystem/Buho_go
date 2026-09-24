@@ -50,19 +50,12 @@ export function useIdentityHealth() {
   const cardWordsSaved = computed(() => identity.backupConfirmed);
 
   /**
-   * The setup ladder. Two steps: buying a username and adding an outside
-   * payment address are options, not setup, and backing up lives in
-   * Security. The first step is already done by the time the user ever sees
-   * this, which is deliberate. People finish a list that has started far
-   * more often than one that has not.
+   * The setup ladder: one step, the photo and the name. A username is an
+   * option, offered on its own once the name is set, and never a setup step;
+   * adding an outside payment address is an option too, and backing up
+   * lives in Security.
    */
   const steps = computed(() => [
-    {
-      id: 'username',
-      done: !!identity.nip05ActiveEntry,
-      label: 'Your username is ready',
-      route: '/identity/username',
-    },
     {
       id: 'profile',
       done: hasNameOrPhoto.value,

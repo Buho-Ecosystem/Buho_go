@@ -34,7 +34,9 @@
           </span>
           <div class="pp-top-copy">
             <div class="pp-top-name">{{ displayName }}</div>
-            <div v-if="trustLine" class="pp-top-nip">{{ trustLine }}</div>
+            <div v-if="showAddress" class="pp-top-nip">
+              <NostrAddress :address="profile.nip05" :check="addressCheck === true" :icon-size="12" />
+            </div>
           </div>
           <button
             v-if="insideBuhoGo"
@@ -146,6 +148,8 @@ import { lookupIdentifier } from '../utils/nostrLookup.js';
 import { fetchProfile, parseProfileContent } from '../utils/nostrFetch.js';
 import { profileDisplayName, sanitizeImageUrl, shortenNpub } from '../services/nostrRecipient.js';
 import { isLightningAddress } from '../utils/addressUtils.js';
+import { formatUsername, lookupOwner, splitNip05 } from '../services/nip05.js';
+import NostrAddress from '../components/identity/NostrAddress.vue';
 import { BUHOGO_HOME, expandProfileSlug, isKey, KEY_PARAM } from '../utils/profileLink.js';
 import { getQrOptionsWithSize } from '../utils/qrConfig.js';
 import { lnurlGetJson } from '../utils/lnurlHttp.js';
@@ -176,7 +180,7 @@ function guessVisitorCurrency() {
 export default {
   name: 'PublicProfilePage',
 
-  components: { Icon, VueQrcode },
+  components: { Icon, VueQrcode, NostrAddress },
 
   setup() {
     return { walletStore: useWalletStore(), addressBook: useAddressBookStore() };
@@ -192,6 +196,8 @@ export default {
       relayHints: [],
       profileEvent: null,
       profile: null,
+      /** Does the profile's address point at this key? true, false, or null (not known yet). */
+      addressCheck: null,
       avatarBroken: false,
       showCode: false,
       copied: false,
@@ -233,17 +239,15 @@ export default {
     },
 
     /**
-     * The trust line under the name: handle and domain, plainly, per the
-     * Nostr design guide. `_@domain` is the convention for "the domain
-     * itself" and prints as just the domain.
+     * The address line under the name: the full `name@domain`, domain
+     * emphasised, per the Nostr Design Guide. Hidden when it would repeat
+     * the name above it, for a retired free handle, and for an address that
+     * points at someone else's key.
      */
-    trustLine() {
-      const nip05 = String(this.profile?.nip05 || '').trim();
-      if (!nip05) return '';
-      if (!nip05.includes('@')) return nip05;
-      const [local, domain] = nip05.split('@');
-      if (!local || local === '_') return domain || '';
-      return `@${local} · ${domain}`;
+    showAddress() {
+      const parts = formatUsername(this.profile?.nip05);
+      if (!parts || this.addressCheck === false) return false;
+      return parts.text !== String(this.displayName).trim().toLowerCase();
     },
 
     /**
@@ -253,9 +257,7 @@ export default {
      */
     contactName() {
       if (this.hasName) return this.profile.name;
-      const nip05 = String(this.profile?.nip05 || '').trim();
-      const local = nip05.split('@')[0];
-      return (local && local !== '_' ? local : '') || this.$t('Unnamed');
+      return formatUsername(this.profile?.nip05)?.local || this.$t('Unnamed');
     },
 
     avatar() {
@@ -434,12 +436,33 @@ export default {
             nip05: typeof content.nip05 === 'string' ? content.nip05 : '',
             lud16: typeof content.lud16 === 'string' ? content.lud16.trim().toLowerCase() : '',
           };
+          this.checkAddress();
         }
       } catch (err) {
         console.warn('[public-profile] profile fetch failed:', err);
       }
 
       this.state = 'ready';
+    },
+
+    /**
+     * Confirm the profile's address points at this key before the check is
+     * shown. Our own domain is asked of the name server directly; any other
+     * domain through its NIP-05 file. Unknown stays unknown: the address is
+     * shown without the check rather than hidden.
+     */
+    async checkAddress() {
+      const parts = splitNip05(this.profile?.nip05);
+      if (!parts || !this.pubkey) return;
+      let owner = null;
+      if (parts.ours) {
+        owner = await lookupOwner(parts.local);
+      } else {
+        const resolved = await this.tryLookup(`${parts.local}@${parts.domain}`);
+        owner = resolved ? resolved.pubkey : null;
+      }
+      if (owner === null) return;
+      this.addressCheck = String(owner).toLowerCase() === String(this.pubkey).toLowerCase();
     },
 
     /**
@@ -759,8 +782,9 @@ export default {
 }
 
 .pp-top-nip {
-  font-family: var(--font-mono, 'JetBrains Mono', Menlo, monospace);
-  font-size: 10px;
+  display: flex;
+  min-width: 0;
+  font-size: 11.5px;
   color: #9A9488;
   overflow: hidden;
   text-overflow: ellipsis;
