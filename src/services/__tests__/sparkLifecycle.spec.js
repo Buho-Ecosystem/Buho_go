@@ -28,7 +28,7 @@ function harness({ online = true } = {}) {
     local: 1000,
     receives: [],
     async getCachedBalance() { return { balance: this.local, fresh: false }; },
-    async listSettledReceivesSince() { return this.receives; },
+    async listReceivesForCatchup() { return this.receives; },
   });
 
   const store = {
@@ -223,4 +223,88 @@ test('diagnostics are redacted to short wallet ids', async () => {
   const entries = h.lifecycle.diagnostics();
   assert.ok(entries.some(e => e.step === 'reconciled' && Number.isFinite(e.ms)));
   assert.ok(entries.every(e => !e.walletId || e.walletId.startsWith('…')));
+});
+
+
+test('a failed old pass cannot degrade a rebuilt wallet or schedule its retry', async () => {
+  const h = harness();
+  let reject;
+  h.store.providers.A.listReceivesForCatchup = () => new Promise((_, r) => { reject = r; });
+  const pending = h.lifecycle.reconcile('A', 'resume');
+  await tick();
+  h.epochs.A = (h.epochs.A || 0) + 1;
+  h.store.sparkSync.A = { phase: 'healthy', lastError: null };
+  reject(new Error('old connection failed'));
+  await pending;
+  assert.equal(h.store.sparkSync.A.phase, 'healthy');
+  assert.equal(h.timers.length, 0);
+});
+
+test('stop cancels queued follow-up work and prevents late publication', async () => {
+  const h = harness();
+  const gate = deferred();
+  h.store.refreshGate = gate.promise;
+  const pending = h.lifecycle.reconcile('A');
+  h.lifecycle.reconcile('A');
+  h.lifecycle.stop();
+  gate.resolve();
+  await pending;
+  assert.equal(h.calls.length, 1);
+  assert.equal(h.discovered.length, 0);
+  assert.equal(h.store.sparkSync.A.phase, 'syncing');
+});
+
+test('one slow account cannot prevent the other account from reconciling', async () => {
+  const h = harness();
+  const gate = deferred();
+  h.store.providers.A.listReceivesForCatchup = () => gate.promise;
+  const pending = h.lifecycle.onWake('resume');
+  await tick();
+  const bPhase = h.store.sparkSync.B?.phase;
+  gate.resolve([]);
+  await pending;
+  assert.equal(bPhase, 'healthy');
+});
+
+
+test('receipt timeouts release the pass, preserve the checkpoint, and recover on retry', async () => {
+  const h = harness();
+  h.receipts.ensureBaseline('A');
+  const gate = deferred();
+  h.store.providers.A.listReceivesForCatchup = () => gate.promise;
+  const pending = h.lifecycle.reconcile('A', 'resume');
+  await tick();
+  h.timers.find(t => t.ms === 30000).fn();
+  await pending;
+  assert.equal(h.store.sparkSync.A.phase, 'degraded');
+  assert.equal(h.receipts.snapshot('A').lastCatchupAt, null);
+  assert.equal(h.lifecycle._tracked.get('A').running, null);
+  h.store.providers.A.listReceivesForCatchup = async () => [];
+  await h.lifecycle.reconcile('A', 'retry');
+  assert.equal(h.store.sparkSync.A.phase, 'healthy');
+  assert.equal(h.timers.length, 0);
+  gate.resolve([]);
+});
+
+test('an explicit disconnect stays disconnected across wake signals', async () => {
+  const h = harness();
+  h.lifecycle.onSparkDisconnected('A');
+  await h.lifecycle.onWake('resume');
+  await h.lifecycle.onWake('online');
+  assert.equal(h.calls.some(c => c[1] === 'A'), false);
+  assert.equal(h.store.sparkSync.A.phase, 'disconnected');
+});
+
+test('a local event read completing after stop cannot publish into the store', async () => {
+  const h = harness();
+  h.lifecycle.onSparkConnected('A');
+  await tick();
+  const gate = deferred();
+  h.store.providers.A.getCachedBalance = () => gate.promise;
+  h.emit('A', { type: 'synced' });
+  await tick();
+  h.lifecycle.stop();
+  gate.resolve({ balance: 999 });
+  await tick();
+  assert.equal(h.store.balances.A, undefined);
 });

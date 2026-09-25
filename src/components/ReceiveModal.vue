@@ -550,6 +550,7 @@ export default {
       paymentMonitor: null,
       sparkEventUnsubscribe: null, // For Spark event-based monitoring
       nwcNotificationUnsubscribe: null, // For NWC notification-based monitoring
+      sparkMonitorGeneration: 0,
       sparkPollState: null, // { cancelled: boolean } cancellation token for Spark invoice polling
       sparkVisibilityHandler: null, // visibilitychange listener for mobile resume catch-up
       paymentStatus: PaymentStatus.PENDING,
@@ -1107,6 +1108,7 @@ export default {
      * Stop the payment monitor if running
      */
     stopPaymentMonitor() {
+      this.sparkMonitorGeneration = (this.sparkMonitorGeneration || 0) + 1;
       // Stop polling-based monitor (NWC)
       if (this.paymentMonitor) {
         this.paymentMonitor.stop();
@@ -1225,6 +1227,11 @@ export default {
       // whose payment hash is THIS invoice's confirms it.
       const walletId = this.walletStore.activeWalletId;
       const expectedHash = this.generatedInvoice?.payment_hash || null;
+      const invoiceId = this.generatedInvoice?.invoice_id;
+      const generation = this.sparkMonitorGeneration || 0;
+      const current = () => generation === (this.sparkMonitorGeneration || 0)
+        && walletId === this.walletStore.activeWalletId
+        && expectedHash === this.generatedInvoice?.payment_hash;
       let provider;
       try {
         provider = await this.walletStore.ensureSparkConnected(walletId);
@@ -1233,10 +1240,11 @@ export default {
         return;
       }
 
+      if (!current()) return;
       // Fast path: SDK event (best-effort — may not fire for Lightning)
       try {
         this.sparkEventUnsubscribe = provider.onPaymentReceived((transferId, newBalance, payment) => {
-          if (!expectedHash || this.generatedInvoice?.payment_hash !== expectedHash) return;
+          if (!current() || !expectedHash) return;
           if (paymentHashOf(payment) !== expectedHash) return;
           this.handlePaymentStatus(PaymentStatus.CONFIRMED, {
             transferId,
@@ -1249,13 +1257,12 @@ export default {
       }
 
       // Ground-truth poll
-      const invoiceId = this.generatedInvoice?.invoice_id;
       if (invoiceId && typeof provider.getLightningReceiveStatus === 'function') {
-        this.startSparkInvoicePolling(provider, invoiceId);
+        this.startSparkInvoicePolling(provider, invoiceId, walletId);
 
         this.sparkVisibilityHandler = () => {
           if (document.visibilityState === 'visible') {
-            this.checkSparkInvoiceOnce(provider, this.generatedInvoice?.invoice_id);
+            if (current()) this.checkSparkInvoiceOnce(provider, invoiceId, walletId);
           }
         };
         document.addEventListener('visibilitychange', this.sparkVisibilityHandler);
@@ -1268,7 +1275,7 @@ export default {
      * detect a settled payment wins (idempotency is enforced in
      * handlePaymentStatus).
      */
-    startSparkInvoicePolling(provider, invoiceId) {
+    startSparkInvoicePolling(provider, invoiceId, walletId) {
       const intervalMs = 3000;
       this.sparkPollState = { cancelled: false };
       const state = this.sparkPollState;
@@ -1276,8 +1283,10 @@ export default {
       const tick = async () => {
         if (state.cancelled || this.isPaymentConfirmed) return;
         try {
-          const status = await provider.getLightningReceiveStatus(invoiceId);
-          if (state.cancelled || this.isPaymentConfirmed) return;
+          const liveProvider = walletId ? await this.walletStore.ensureSparkConnected(walletId) : provider;
+          if (state.cancelled) return;
+          const status = await liveProvider.getLightningReceiveStatus(invoiceId);
+          if (state.cancelled || this.isPaymentConfirmed || this.generatedInvoice?.invoice_id !== invoiceId) return;
           if (status.isPaid) {
             // `amountReceived` is the actual paid amount — required for
             // zero-amount invoices where `status.amount` is 0.
@@ -1303,11 +1312,14 @@ export default {
       setTimeout(tick, intervalMs);
     },
 
-    async checkSparkInvoiceOnce(provider, invoiceId) {
+    async checkSparkInvoiceOnce(provider, invoiceId, walletId) {
       if (!invoiceId || this.isPaymentConfirmed) return;
+      const generation = this.sparkMonitorGeneration || 0;
       try {
-        const status = await provider.getLightningReceiveStatus(invoiceId);
-        if (this.isPaymentConfirmed) return;
+        const liveProvider = walletId ? await this.walletStore.ensureSparkConnected(walletId) : provider;
+        const status = await liveProvider.getLightningReceiveStatus(invoiceId);
+        if (this.isPaymentConfirmed || generation !== (this.sparkMonitorGeneration || 0)
+          || this.generatedInvoice?.invoice_id !== invoiceId) return;
         if (status.isPaid) {
           this.handlePaymentStatus(PaymentStatus.CONFIRMED, {
             amount: status.amountReceived

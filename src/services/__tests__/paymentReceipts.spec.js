@@ -90,28 +90,32 @@ test('two wallets are tracked independently', async () => {
   assert.deepEqual(h.delivered.map(d => d.walletId), ['A', 'B']);
 });
 
-test('own transfers are recorded but not announced, matched by hash or by amount once', async () => {
+test('identified own transfers are recorded but not announced', async () => {
   const h = harness();
   h.receipts.ensureBaseline('B');
   h.advance(1000);
   h.receipts.expectInternal('B', { paymentHash: 'h1', amountSats: 100 });
   h.receipts.expectInternal('B', { amountSats: 300 });
   assert.equal(await h.receipts.observe('B', receive('x', 100, h.nowS(), { hash: 'h1' })), 'internal');
-  assert.equal(await h.receipts.observe('B', receive('y', 300, h.nowS())), 'internal');
+  assert.equal(await h.receipts.observe('B', receive('y', 300, h.nowS())), 'delivered');
   assert.equal(await h.receipts.observe('B', receive('z', 300, h.nowS())), 'delivered', 'an expectation is consumed once');
   h.receipts.expectInternal('B', { amountSats: 50 });
   h.advance(10 * 60 * 1000);
   assert.equal(await h.receipts.observe('B', receive('w', 50, h.nowS())), 'delivered', 'expectations expire');
 });
 
-test('seen history is bounded and a broken storage degrades to memory', async () => {
+test('seen history is retained for the overlap window and broken storage degrades to memory', async () => {
   const broken = { getItem() { throw new Error('x'); }, setItem() { throw new Error('x'); } };
   let now = 1_700_000_000_000;
   const receipts = createPaymentReceipts({ storage: broken, now: () => now, maxSeen: 3, deliver() {} });
   receipts.ensureBaseline('A');
   now += 1000;
   for (let i = 0; i < 5; i++) await receipts.observe('A', receive(`r${i}`, 1, Math.floor(now / 1000)));
-  assert.deepEqual(receipts.snapshot('A').seen, ['r2', 'r3', 'r4']);
+  assert.equal(receipts.snapshot('A').seen.length, 5);
+  now += (CATCHUP_OVERLAP_S + 10) * 1000;
+  receipts.markCaughtUp('A');
+  assert.equal(receipts.snapshot('A').seen.length, 0);
+  assert.equal(await receipts.observe('A', receive('r0', 1, Math.floor(now / 1000) - CATCHUP_OVERLAP_S - 10)), 'historical');
 });
 
 test('forgetting a removed wallet drops its state', async () => {
@@ -120,4 +124,40 @@ test('forgetting a removed wallet drops its state', async () => {
   h.receipts.forget('A');
   assert.equal(h.receipts.snapshot('A'), null);
   assert.equal(await h.receipts.observe('A', receive('r', 1, h.nowS())), 'untracked');
+});
+
+
+test('more than 300 receipts inside the overlap window do not get re-announced', async () => {
+  const h = harness();
+  h.receipts.ensureBaseline('A'); h.advance(1000);
+  const batch = Array.from({ length: 350 }, (_, i) => receive(`p${i}`, 1, h.nowS()));
+  for (const p of batch) await h.receipts.observe('A', p);
+  h.receipts.markCaughtUp('A');
+  for (const p of batch) await h.receipts.observe('A', p, { source: 'catchup' });
+  assert.equal(h.delivered.length, 350);
+});
+
+test('a same-amount external payment cannot consume an unidentified own transfer', async () => {
+  const h = harness(); h.receipts.ensureBaseline('A'); h.advance(1000);
+  h.receipts.expectInternal('A', { amountSats: 100 });
+  assert.equal(await h.receipts.observe('A', receive('external', 100, h.nowS())), 'delivered');
+});
+
+test('token units are never announced as bitcoin sats', async () => {
+  const h = harness(); h.receipts.ensureBaseline('A'); h.advance(1000);
+  await h.receipts.observe('A', receive('token', 999, h.nowS(), { method: 'token', details: { type: 'token' } }));
+  assert.equal(h.delivered.length, 0);
+});
+
+
+test('pending receives survive the timestamp checkpoint and an app restart', async () => {
+  const h = harness(); h.receipts.ensureBaseline('A');
+  const pending = receive('slow', 400, h.nowS() - 1, { status: 'pending' });
+  await h.receipts.observe('A', pending);
+  h.advance(3600 * 1000); h.receipts.markCaughtUp('A');
+  const restarted = harness({ storage: h.storage, start: h.nowS() * 1000 });
+  assert.deepEqual(restarted.receipts.pendingIds('A'), ['slow']);
+  assert.equal(await restarted.receipts.observe('A', { ...pending, status: 'completed' }, { source: 'catchup' }), 'delivered');
+  assert.deepEqual(restarted.receipts.pendingIds('A'), []);
+  assert.equal(await restarted.receipts.observe('A', { ...pending, status: 'completed' }), 'duplicate');
 });

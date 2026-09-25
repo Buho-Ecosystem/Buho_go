@@ -232,3 +232,32 @@ test('a manual review returns to automatic handling when its fresh fee falls ins
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(h.counts().claims, 1);
 });
+
+
+test('an older discovery cannot replace a newer pending list', async () => {
+  const h = harness(), old = deferred();
+  h.prefs.autoAddIncomingBitcoin = false;
+  let n = 0;
+  h.provider.getPendingDeposits = () => ++n === 1 ? old.promise : Promise.resolve([]);
+  const a = h.store.discover('A');
+  await new Promise(r => setImmediate(r));
+  await h.store.discover('A');
+  old.resolve([h.deposit]);
+  await a;
+  assert.deepEqual(h.store.pendingByWallet.A, []);
+});
+
+test('a submitted claim completing after removal records the outpoint but cannot revive UI state', async () => {
+  const h = harness(), claim = deferred(), started = deferred();
+  h.provider.claimDeposit = () => { started.resolve(); return claim.promise; };
+  const pending = h.run();
+  await started.promise;
+  h.wallet.wallets = [];
+  h.epochs.A++;
+  h.store.forgetWallet('A');
+  claim.resolve({ processing: true });
+  await pending;
+  assert.ok(h.claimed.has(h.outpoint(h.deposit.txId, 1)));
+  assert.deepEqual(h.store.entries, {});
+  assert.deepEqual(h.signals, []);
+});

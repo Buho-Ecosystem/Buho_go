@@ -250,8 +250,10 @@
                 :class="$q.dark.isActive ? 'amount-number-dark' : 'amount-number-light'"
                 :aria-label="$t('Balance hidden')"
               >••••</span>
+              <span v-else-if="!activeBalanceView.known" class="amount-number" :aria-label="$t('Balance not loaded yet')">—</span>
               <NumberFlow
                 v-else
+                :key="walletStore.activeWalletId"
                 :value="balanceNumericValue"
                 :format="balanceNumberFormat"
                 :prefix="balancePrefix"
@@ -269,12 +271,16 @@
               <span v-if="walletStore.balanceHidden" class="secondary-amount-display">
                 <span class="secondary-value">••••</span>
               </span>
-              <span v-else-if="secondaryValue" class="secondary-amount-display">
+              <span v-else-if="activeBalanceView.known && secondaryValue" class="secondary-amount-display">
                 <span class="secondary-value">{{ secondaryValue }}</span>
               </span>
               <span v-else class="loading-secondary">&nbsp;</span>
             </div>
           </transition>
+        </div>
+
+        <div v-if="!walletStore.balanceHidden && (!activeBalanceView.known || activeBalanceView.stale)" class="balance-secondary" role="status">
+          {{ $t(activeBalanceView.known ? 'Last known balance' : 'Balance not loaded yet') }}
         </div>
 
         <!--
@@ -2086,8 +2092,12 @@ export default {
       return this.walletStore.balances || {};
     },
 
+    activeBalanceView() {
+      return this.walletStore.balanceView(this.walletStore.activeWalletId);
+    },
+
     balanceNumericValue() {
-      const balance = this.walletState.balance || 0;
+      const balance = this.activeBalanceView.value ?? 0;
       if (this.currentDisplayMode === 'fiat') {
         const btcAmount = balance / 100000000;
         const rate = this.walletState.exchangeRates?.[this.walletState.preferredFiatCurrency?.toLowerCase()];
@@ -2239,9 +2249,10 @@ export default {
      * accepted value into the headline as soon as it lands, instead of
      * waiting for this page's next tick.
      */
-    'walletStore.balances': {
+    activeBalanceView: {
       handler() {
         const id = this.walletStore.activeWalletId;
+        this.updateSecondaryValue();
         const value = this.walletStore.balances[id];
         if (id && id === this.walletState.activeWalletId && Number.isFinite(value) && value !== this.walletState.balance) {
           this.walletState.balance = value;
@@ -6454,9 +6465,11 @@ export default {
     },
 
     async updateSecondaryValue() {
-      if (this.walletState.balance !== undefined) {
-        this.secondaryValue = await this.getSecondaryValue(this.walletState.balance);
-      }
+      const id = this.walletStore.activeWalletId;
+      const value = this.activeBalanceView.value;
+      if (!this.activeBalanceView.known) { this.secondaryValue = ''; return; }
+      const secondary = await this.getSecondaryValue(value);
+      if (id === this.walletStore.activeWalletId && value === this.activeBalanceView.value) this.secondaryValue = secondary;
     },
 
     async updateFeeEstimate() {

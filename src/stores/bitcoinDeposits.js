@@ -4,6 +4,7 @@ import { useBitcoinPreferencesStore, BITCOIN_DEPOSIT_POLL_MS, CLASSIFICATION_FRE
 import { classifyFromMatureQuote } from '../utils/breezPayments.js';
 import { track } from '../utils/telemetry';
 
+const discoveryReads = new Map();
 const keyFor = (walletId, deposit) => `${walletId}:${deposit.txId}:${deposit.outputIndex || 0}`;
 
 /** Shared by home, Receive, History and the app-wide Spark lifecycle.
@@ -68,6 +69,8 @@ export const useBitcoinDepositsStore = defineStore('bitcoinDeposits', {
       const wallet = useWalletStore();
       if (!walletId) return null;
       const epoch = wallet.walletEpoch?.(walletId);
+      const read = {};
+      discoveryReads.set(walletId, read);
       let provider;
       try {
         provider = await wallet.ensureSparkConnected(walletId);
@@ -76,7 +79,8 @@ export const useBitcoinDepositsStore = defineStore('bitcoinDeposits', {
       }
       if (!provider?.getPendingDeposits) return null;
       const deposits = await provider.getPendingDeposits();
-      if (epoch !== wallet.walletEpoch?.(walletId) || !wallet.wallets?.some(w => w.id === walletId)) return null;
+      if (discoveryReads.get(walletId) !== read || epoch !== wallet.walletEpoch?.(walletId)
+        || !wallet.wallets?.some(w => w.id === walletId)) return null;
       // An instantly-claimed deposit keeps showing in the SDK's pending
       // list until its confirmations catch up. Filter it everywhere so no
       // banner, chip, or handler ever acts on an output we already swept.
@@ -145,6 +149,7 @@ export const useBitcoinDepositsStore = defineStore('bitcoinDeposits', {
         this.entries[key] = { walletId, phase: 'claiming' };
         const result = await provider.claimDeposit(deposit.txId, classification.quote, vout);
         wallet.markDepositClaimed(deposit.txId, vout);
+        if (!owned() || wallet.walletEpoch?.(walletId) !== epoch) return;
         this.entries[key] = { walletId, phase: 'accepted' };
         if (Array.isArray(this.pendingByWallet[walletId])) {
           this.pendingByWallet[walletId] = this.pendingByWallet[walletId]
@@ -171,6 +176,7 @@ export const useBitcoinDepositsStore = defineStore('bitcoinDeposits', {
 
     /** Forget everything for a removed wallet. */
     forgetWallet(walletId) {
+      discoveryReads.delete(walletId);
       delete this.pendingByWallet[walletId];
       for (const [key, entry] of Object.entries(this.entries)) {
         if (entry.walletId === walletId) delete this.entries[key];
