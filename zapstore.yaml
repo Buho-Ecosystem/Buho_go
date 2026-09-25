@@ -13,6 +13,9 @@ pubkey: npub17c2szua46mc8ndp4grvy4z5465x0qxjge8tqx7vyu0vkqr24y2hssuuy6f
 # screenshots below. Bump this filename on each release.
 release_source: ./output/BuhoGO_v1_9_3.apk
 
+# Release notes: zsp takes this version's "## [x.y.z]" section.
+release_notes: ./CHANGELOG.md
+
 # ---------------------------------------------------------------------------
 # App metadata
 # ---------------------------------------------------------------------------
