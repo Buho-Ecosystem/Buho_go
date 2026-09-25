@@ -23,6 +23,8 @@ import com.google.android.gms.auth.api.signin.GoogleSignInAccount;
 import com.google.android.gms.auth.api.signin.GoogleSignInClient;
 import com.google.android.gms.auth.api.signin.GoogleSignInOptions;
 import com.google.android.gms.auth.api.signin.GoogleSignInStatusCodes;
+import com.google.android.gms.common.ConnectionResult;
+import com.google.android.gms.common.GoogleApiAvailability;
 import com.google.android.gms.common.api.ApiException;
 import com.google.android.gms.common.api.Scope;
 import com.google.android.gms.tasks.Task;
@@ -94,12 +96,29 @@ public class CloudBackupPlugin extends Plugin {
 
     @PluginMethod
     public void isAvailable(PluginCall call) {
-        // Drive is effectively always available on Android with Play
-        // Services. Sign-in state is a separate question — probed by the JS
-        // layer through listBackups, which rejects with "auth-required".
+        // Sign-in and Drive tokens both come from Google Play services, so a
+        // phone without them (GrapheneOS without sandboxed Google Play, other
+        // de-Googled systems) is told up front instead of failing at the
+        // account chooser. Sign-in state is a separate question, probed by
+        // the JS layer through listBackups, which rejects with "auth-required".
+        int status = GoogleApiAvailability.getInstance().isGooglePlayServicesAvailable(getContext());
         JSObject ret = new JSObject();
-        ret.put("available", true);
+        ret.put("available", status == ConnectionResult.SUCCESS);
+        if (status != ConnectionResult.SUCCESS) {
+            ret.put("reason", playServicesReason(status));
+        }
         call.resolve(ret);
+    }
+
+    /**
+     * "play-services-missing" when Google Play services is not installed;
+     * "play-services-unavailable" when it is but cannot be used yet
+     * (disabled, outdated or updating), which the user can fix.
+     */
+    private static String playServicesReason(int status) {
+        return status == ConnectionResult.SERVICE_MISSING || status == ConnectionResult.SERVICE_INVALID
+            ? "play-services-missing"
+            : "play-services-unavailable";
     }
 
     @PluginMethod

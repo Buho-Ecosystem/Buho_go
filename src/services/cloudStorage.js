@@ -27,9 +27,12 @@
  *
  * Web and iOS have no native implementation and report
  * { available: false }; the UI renders that as "not available on this
- * platform". Availability is never faked with a local stub: a "backup"
- * that silently stays on the device it is meant to protect would be worse
- * than no backup at all.
+ * platform". An Android phone without Google Play services (GrapheneOS
+ * without sandboxed Google Play, de-Googled systems) reports it too, with
+ * the reason, since sign-in and Drive tokens both come from Play services.
+ * Availability is never faked with a local stub: a "backup" that silently
+ * stays on the device it is meant to protect would be worse than no
+ * backup at all.
  */
 import { Capacitor, registerPlugin } from '@capacitor/core';
 
@@ -48,7 +51,10 @@ export function isCloudBackupPlatform() {
 }
 
 /**
- * Whether cloud backup can work on this platform/build.
+ * Whether cloud backup can work on this device. When it cannot, `reason` is
+ * "platform-not-supported" (web, iOS), "play-services-missing" (Android
+ * without Google Play services), "play-services-unavailable" (installed
+ * but disabled, outdated or updating) or the plugin's own error.
  * @returns {Promise<{ available: boolean, reason?: string }>}
  */
 export async function isAvailable() {
