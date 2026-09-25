@@ -579,12 +579,7 @@ export default {
   "so nobody else can see your recovery phrase, even if they have your unlocked phone.": "so nobody else can see your recovery phrase, even if they have your unlocked phone.",
   // Biometrics / app lock
   "App lock": "App lock",
-  "Lock BuhoGO with": "Lock BuhoGO with",
   "Verify to turn on app lock": "Verify to turn on app lock",
-  "Private by design": "Private by design",
-  "Your device lock is used": "Your device lock is used",
-  "every time you open BuhoGO. Only someone who can unlock your phone can open your wallet.": "every time you open BuhoGO. Only someone who can unlock your phone can open your wallet.",
-  "You are seeing this because no fingerprint or face is set up on this device. Your phone will ask for your PIN, pattern, or password when the app opens.": "You are seeing this because no fingerprint or face is set up on this device. Your phone will ask for your PIN, pattern, or password when the app opens.",
   // Settings
   "Blocktrainer": "Blocktrainer",
   "Custom server": "Custom server",
@@ -718,14 +713,13 @@ export default {
   "Iris scan": "Iris scan",
   "Device PIN": "Device PIN",
   "Device unlock": "Device unlock",
-  "Use Face ID": "Use Face ID",
-  "Use Touch ID": "Use Touch ID",
-  "Use your fingerprint": "Use your fingerprint",
-  "Use your fingerprint or face": "Use your fingerprint or face",
-  "Use face recognition": "Use face recognition",
-  "Use iris unlock": "Use iris unlock",
-  "Use your device PIN, pattern, or password": "Use your device PIN, pattern, or password",
   "Turn on app lock": "Turn on app lock",
+  "We ask for your fingerprint whenever we need to be sure it's you.": "We ask for your fingerprint whenever we need to be sure it's you.",
+  "We ask for your face whenever we need to be sure it's you.": "We ask for your face whenever we need to be sure it's you.",
+  "We ask for an iris scan whenever we need to be sure it's you.": "We ask for an iris scan whenever we need to be sure it's you.",
+  "We ask for your face or fingerprint whenever we need to be sure it's you.": "We ask for your face or fingerprint whenever we need to be sure it's you.",
+  "We ask for your PIN, pattern or password whenever we need to be sure it's you.": "We ask for your PIN, pattern or password whenever we need to be sure it's you.",
+  "We ask you to unlock your phone whenever we need to be sure it's you.": "We ask you to unlock your phone whenever we need to be sure it's you.",
   // Settings
   "Add Spark Wallet": "Add Spark Wallet",
   "Spark transfers are instant and free": "Spark transfers are instant and free",
@@ -2307,8 +2301,6 @@ export default {
   "Verification was not completed": "Verification was not completed",
   "Try again, or check that your phone has a screen lock set up.": "Try again, or check that your phone has a screen lock set up.",
   "You are seeing this because no fingerprint or face is set up on this device. Your device lock is used instead.": "You are seeing this because no fingerprint or face is set up on this device. Your device lock is used instead.",
-  "Your biometric is processed by your phone, not by BuhoGO. We never see it.": "Your biometric is processed by your phone, not by BuhoGO. We never see it.",
-  "Your phone's PIN, pattern, or password also works.": "Your phone's PIN, pattern, or password also works.",
   "Please try again.": "Please try again.",
 
   // ----- Identity creation entry points (manage sheet rows for fresh users) -----

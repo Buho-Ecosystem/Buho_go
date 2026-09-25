@@ -585,12 +585,7 @@ export default {
   "so nobody else can see your recovery phrase, even if they have your unlocked phone.": "damit niemand sonst deine Seed-Phrase sehen kann, selbst mit deinem entsperrten Telefon.",
   // Biometrics / app lock
   "App lock": "App-Sperre",
-  "Lock BuhoGO with": "Sperre BuhoGO mit",
   "Verify to turn on app lock": "Bestätige, um die App-Sperre zu aktivieren",
-  "Private by design": "Privat von Grund auf",
-  "Your device lock is used": "Die Sperre deines Geräts wird verwendet",
-  "every time you open BuhoGO. Only someone who can unlock your phone can open your wallet.": "jedes Mal, wenn du BuhoGO öffnest. Nur wer dein Telefon entsperren kann, kann deine Wallet öffnen.",
-  "You are seeing this because no fingerprint or face is set up on this device. Your phone will ask for your PIN, pattern, or password when the app opens.": "Du siehst das, weil auf diesem Gerät kein Fingerabdruck oder Gesicht eingerichtet ist. Dein Telefon fragt nach deiner PIN, deinem Muster oder deinem Passwort, wenn die App geöffnet wird.",
   // Settings
   "Blocktrainer": "Blocktrainer",
   "Custom server": "Eigener Server",
@@ -754,14 +749,13 @@ export default {
   "Iris scan": "Iris-Scan",
   "Device PIN": "Geräte-PIN",
   "Device unlock": "Geräteentsperrung",
-  "Use Face ID": "Face ID verwenden",
-  "Use Touch ID": "Touch ID verwenden",
-  "Use your fingerprint": "Nutze deinen Fingerabdruck",
-  "Use your fingerprint or face": "Nutze deinen Fingerabdruck oder dein Gesicht",
-  "Use face recognition": "Gesichtserkennung verwenden",
-  "Use iris unlock": "Iris-Entsperrung verwenden",
-  "Use your device PIN, pattern, or password": "Nutze die PIN, das Muster oder das Passwort deines Geräts",
   "Turn on app lock": "App-Sperre aktivieren",
+  "We ask for your fingerprint whenever we need to be sure it's you.": "Wir fragen nach deinem Fingerabdruck, immer wenn wir sicher sein müssen, dass du es bist.",
+  "We ask for your face whenever we need to be sure it's you.": "Wir fragen nach deinem Gesicht, immer wenn wir sicher sein müssen, dass du es bist.",
+  "We ask for an iris scan whenever we need to be sure it's you.": "Wir fragen nach einem Iris-Scan, immer wenn wir sicher sein müssen, dass du es bist.",
+  "We ask for your face or fingerprint whenever we need to be sure it's you.": "Wir fragen nach deinem Gesicht oder Fingerabdruck, immer wenn wir sicher sein müssen, dass du es bist.",
+  "We ask for your PIN, pattern or password whenever we need to be sure it's you.": "Wir fragen nach deiner PIN, deinem Muster oder Passwort, immer wenn wir sicher sein müssen, dass du es bist.",
+  "We ask you to unlock your phone whenever we need to be sure it's you.": "Wir bitten dich, dein Handy zu entsperren, immer wenn wir sicher sein müssen, dass du es bist.",
   // Settings
   "Add Spark Wallet": "Spark Wallet hinzufügen",
   "Spark transfers are instant and free": "Spark-Übertragungen sind sofort und kostenlos",
@@ -2289,8 +2283,6 @@ export default {
   "Verification was not completed": "Bestätigung nicht abgeschlossen",
   "Try again, or check that your phone has a screen lock set up.": "Versuch es erneut, oder prüfe, ob auf deinem Handy eine Bildschirmsperre eingerichtet ist.",
   "You are seeing this because no fingerprint or face is set up on this device. Your device lock is used instead.": "Du siehst das, weil auf diesem Gerät kein Fingerabdruck und kein Gesicht eingerichtet ist. Stattdessen wird die Gerätesperre verwendet.",
-  "Your biometric is processed by your phone, not by BuhoGO. We never see it.": "Deine biometrischen Daten werden von deinem Handy verarbeitet, nicht von BuhoGO. Wir sehen sie nie.",
-  "Your phone's PIN, pattern, or password also works.": "Die PIN, das Muster oder das Passwort deines Handys funktionieren ebenfalls.",
   "Please try again.": "Bitte versuche es erneut.",
 
   // ----- Identity creation entry points (manage sheet rows for fresh users) -----

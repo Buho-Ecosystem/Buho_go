@@ -13,7 +13,7 @@
         <q-btn
           flat
           round
-          dense
+          class="auth-close"
           :disable="isAuthenticating"
           @click="close"
           :class="$q.dark.isActive ? 'close_btn_dark' : 'close_btn_light'"
@@ -23,7 +23,8 @@
         </q-btn>
       </q-card-section>
 
-      <!-- Body -->
+      <!-- Body: the method, named big and shown, and one line on when it
+           is asked for. The phone's own prompt explains the rest. -->
       <q-card-section class="auth-step-body">
         <img
           :src="copy.illustration"
@@ -33,22 +34,12 @@
         />
 
         <h2 class="auth-heading" :class="$q.dark.isActive ? 'main_page_title_dark' : 'main_page_title_light'">
-          {{ heading }}
+          {{ copy.title }}
         </h2>
 
         <p class="auth-lede" :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'">
-          {{ lede }}
+          {{ copy.line }}
         </p>
-
-        <div class="auth-callout" :class="$q.dark.isActive ? 'auth-callout-dark' : 'auth-callout-light'">
-          <div class="auth-callout-icon">
-            <Icon :icon="copy.isDevicePinOnly ? 'tabler:lock' : 'tabler:shield-check'" width="18" height="18" />
-          </div>
-          <div class="auth-callout-body">
-            <div class="auth-callout-heading">{{ privacyHeading }}</div>
-            <div class="auth-callout-text">{{ privacyText }}</div>
-          </div>
-        </div>
       </q-card-section>
 
       <!-- Actions -->
@@ -118,37 +109,6 @@ export default {
     copy() {
       return getBiometricMethodCopy(this.biometryType, this.$t.bind(this));
     },
-
-    heading() {
-      // "Lock BuhoGO with Touch ID" / "Lock BuhoGO with your fingerprint" etc.
-      // Concatenated rather than interpolated via vue-i18n because missing
-      // translation keys are returned verbatim and interpolation is not run
-      // on the fallback (see the project's i18n hygiene rules).
-      return `${this.$t('Lock BuhoGO with')} ${this.copy.methodLabel}`;
-    },
-
-    lede() {
-      // "Use Touch ID every time you open BuhoGO..." — same concatenation
-      // pattern so the leading phrase flexes per method/platform.
-      return `${this.copy.actionPhrase} ${this.$t('every time you open BuhoGO. Only someone who can unlock your phone can open your wallet.')}`;
-    },
-
-    privacyHeading() {
-      return this.copy.isDevicePinOnly
-        ? this.$t('Your device lock is used')
-        : this.$t('Private by design');
-    },
-
-    privacyText() {
-      if (this.copy.isDevicePinOnly) {
-        return this.$t('You are seeing this because no fingerprint or face is set up on this device. Your phone will ask for your PIN, pattern, or password when the app opens.');
-      }
-      // Biometrics are enrolled, but the OS sheet still offers a
-      // "Use PIN" fallback (we pass useFallback: true). Spell that out
-      // so users who would rather skip biometrics know the device PIN
-      // is an accepted path too.
-      return `${this.$t('Your biometric is processed by your phone, not by BuhoGO. We never see it.')} ${this.$t("Your phone's PIN, pattern, or password also works.")}`;
-    },
   },
 
   methods: {
@@ -191,7 +151,7 @@ export default {
 .auth-dialog {
   width: 100%;
   max-width: 460px;
-  border-radius: 20px;
+  border-radius: 24px;
   overflow: hidden;
 }
 
@@ -199,7 +159,12 @@ export default {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 16px 20px 8px;
+  padding: 14px 12px 4px 20px;
+}
+
+.auth-close {
+  width: 44px;
+  height: 44px;
 }
 
 .auth-dialog-title {
@@ -209,7 +174,7 @@ export default {
 }
 
 .auth-step-body {
-  padding: 12px 20px 20px;
+  padding: 4px 28px 24px;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -218,114 +183,61 @@ export default {
 }
 
 .auth-illustration {
-  width: 100%;
-  max-width: 180px;
+  width: 200px;
+  max-width: 100%;
   height: auto;
-  margin: 4px auto 8px;
+  margin-bottom: 4px;
   user-select: none;
   pointer-events: none;
 }
 
 .auth-heading {
   font-family: 'Manrope', sans-serif;
-  font-size: 20px;
-  font-weight: 700;
+  font-size: 30px;
+  font-weight: 800;
+  line-height: 1.1;
+  letter-spacing: -0.01em;
   margin: 0;
+  text-wrap: balance;
 }
 
 .auth-lede {
   font-family: 'Manrope', sans-serif;
-  font-size: 14px;
-  line-height: 1.5;
+  font-size: 15px;
+  line-height: 1.45;
   margin: 0;
-  max-width: 380px;
-}
-
-.auth-callout {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  margin-top: 4px;
-  padding: 12px 14px;
-  border-radius: 10px;
-  border-left: 2px solid #15DE72;
-  font-family: 'Manrope', sans-serif;
-  text-align: left;
-  width: 100%;
-}
-
-.auth-callout-light {
-  background: rgba(21, 222, 114, 0.06);
-  color: #0f172a;
-}
-
-.auth-callout-dark {
-  background: rgba(255, 255, 255, 0.04);
-  color: #e2e8f0;
-}
-
-.auth-callout-icon {
-  flex: 0 0 auto;
-  margin-top: 1px;
-  color: #15DE72;
-}
-
-.auth-callout-body {
-  flex: 1 1 auto;
-  font-size: 13px;
-  line-height: 1.5;
-}
-
-.auth-callout-heading {
-  font-weight: 600;
-  margin-bottom: 2px;
-}
-
-.auth-callout-text {
-  font-weight: 400;
-  opacity: 0.92;
+  max-width: 270px;
+  text-wrap: pretty;
 }
 
 .auth-dialog-actions {
-  padding: 0 20px 20px;
+  padding: 0 20px 18px;
   display: flex;
   flex-direction: column;
-  align-items: center;
+  align-items: stretch;
   gap: 4px;
 }
 
 .auth-primary-btn {
-  width: 100%;
-  max-width: 320px;
   height: 48px;
   border-radius: 24px;
+  font-family: 'Manrope', sans-serif;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.auth-secondary-btn {
+  height: 44px;
+  border-radius: 22px;
   font-family: 'Manrope', sans-serif;
   font-size: 14px;
   font-weight: 500;
 }
 
-.auth-secondary-btn {
-  width: 100%;
-  max-width: 320px;
-  height: 40px;
-  border-radius: 20px;
-  font-family: 'Manrope', sans-serif;
-  font-size: 13px;
-  font-weight: 500;
-}
-
-@media (max-width: 480px) {
-  .auth-step-body {
-    padding: 12px 16px 16px;
-  }
+/* Short phones: the picture gives way first, the words stay whole. */
+@media (max-height: 640px) {
   .auth-illustration {
-    max-width: 150px;
-  }
-  .auth-heading {
-    font-size: 18px;
-  }
-  .auth-lede {
-    font-size: 13px;
+    width: 150px;
   }
 }
 </style>
