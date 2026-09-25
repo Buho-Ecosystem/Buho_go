@@ -390,6 +390,7 @@ import {
 } from '../utils/clipboardSuggestion.js';
 import { resolveNostrLightningTarget, NOSTR_TARGET_ERROR } from '../services/nostrPaymentTarget';
 import { usernameAddressFromInput } from '../services/nip05';
+import { profileLinkRoute, SAVE_PARAM } from '../utils/profileLink';
 import ContactAvatar from './AddressBook/ContactAvatar.vue';
 import ArkadeLogo from './ArkadeLogo.vue';
 import ProgressCta from './ProgressCta.vue';
@@ -899,6 +900,20 @@ export default {
           this.show = false; this.isProcessing = false; return;
         }
         let trimmedData = inputData.trim();
+
+        // A BuhoGO card link names a person, not a payment request. It opens
+        // their card, where Pay and Save both are, instead of ending in
+        // "We don't recognize this code". Without its save flag: a code
+        // scanned to pay never edits the contacts on its own, so a planted
+        // card cannot slip in under a trusted name. Save stays one tap away.
+        const cardRoute = profileLinkRoute(trimmedData);
+        if (cardRoute) {
+          delete cardRoute.query[SAVE_PARAM];
+          this.show = false;
+          this.isProcessing = false;
+          this.$router.push(cardRoute).catch(() => { /* navigation rejection is non-fatal */ });
+          return;
+        }
 
         // A recognized Kenyan/Zambian phone number is a fiat-payout destination
         // — resolve it to its provider Lightning Address (Zambia → @bitzed.xyz,

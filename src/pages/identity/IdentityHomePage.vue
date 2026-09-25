@@ -170,7 +170,7 @@ import AddressBookModal from '../../components/AddressBook/AddressBookModal.vue'
 import { useIdentityHealth } from '../../composables/useIdentityHealth';
 import { useSocialBucketStore } from '../../stores/socialBucket';
 import { usePayContact } from '../../composables/usePayContact';
-import { buildNostrIdentityUri } from '../../utils/nostrLookup.js';
+import { buildSaveLink } from '../../utils/profileLink.js';
 import { useUsernameSuggestion } from '../../composables/useUsernameSuggestion';
 import { nip05AddressFor } from '../../services/nip05';
 import Nip05MarketplaceSheet from '../../components/Nip05MarketplaceSheet.vue';
@@ -263,9 +263,13 @@ export default {
       return nip05AddressFor(this.identity.pendingNip05Claim?.handle) || '';
     },
 
-    /** The physical card exchange is identity-to-identity, not a web share. */
+    /**
+     * The save link, not `nostr:npub`: BuhoGO reads a bare Nostr key as
+     * someone to pay, and this code's one job is saving you. A phone camera
+     * opens it in BuhoGO, or on the web card without the app.
+     */
     qrValue() {
-      return buildNostrIdentityUri(this.identity.nostrNpub);
+      return buildSaveLink(this.identity.nostrNpub);
     },
 
     /**

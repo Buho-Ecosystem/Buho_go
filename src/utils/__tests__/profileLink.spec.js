@@ -1,9 +1,10 @@
 /**
  * Profile links, both directions.
  *
- * `parseProfileLink` lets shared public links enter the same contact resolver
- * as the card's direct NIP-21 QR. The card no longer depends on this parser,
- * but pasted/scanned links and Android intents still do.
+ * `parseProfileLink` lets every card link (the shared link and the card's
+ * save code) enter the same contact resolver, whether it arrives by scan,
+ * paste or Android intent. The save link and the web card's Android Save are
+ * built here too.
  */
 
 import assert from 'node:assert/strict';
@@ -11,11 +12,16 @@ import test from 'node:test';
 
 import {
   buildProfileLink,
+  buildSaveLink,
+  buildAndroidSaveIntent,
   parseProfileLink,
   profileLinkRoute,
   profileSlug,
   expandProfileSlug,
   isKey,
+  isSaveFlag,
+  ANDROID_PACKAGE,
+  BUHOGO_HOME,
   PROFILE_PATH,
   PUBLIC_WEB_ORIGIN,
 } from '../profileLink.js';
@@ -170,4 +176,93 @@ await test('profileLinkRoute returns null for anything the payment parser owns',
   }
 });
 
-console.log('\n20 passed, 0 failed');
+// ── Save links ──────────────────────────────────────────────────────────────
+// `nostr:npub` means "pay" in BuhoGO, so the codes captioned "scan to save"
+// carry the card link with a save flag instead. The card saves on arrival
+// only for a key in the path, which is why these are only ever built on one.
+
+await test('buildSaveLink is the key-led card link with the save flag', () => {
+  assert.equal(buildSaveLink(NPUB), `${PUBLIC_WEB_ORIGIN}${PROFILE_PATH}${NPUB}?save=1`);
+});
+
+await test('buildSaveLink builds on a canonical npub only', () => {
+  for (const value of [
+    '',
+    null,
+    undefined,
+    'maria',
+    'maria@mybuho.de',
+    `nostr:${NPUB}`,
+    NPUB.toUpperCase(),
+    NPUB.slice(0, -1),
+    `${NPUB}x`,
+    'nprofile1qqsw3dy8cpumpanud9dwd3xz254y0uu2m739x0x9jf4a9sgzjshaedcpr4mhxue69uhkummnw3ez6ur4vgh8wetvd3hhyer9wghxuet5nxnepm',
+    'npub1;package=evil;end',
+  ]) {
+    assert.equal(buildSaveLink(value), '', `should not build: ${String(value)}`);
+  }
+});
+
+await test('a save link opens the card for that key, with the flag', () => {
+  const link = buildSaveLink(NPUB);
+  assert.equal(parseProfileLink(link), NPUB);
+  assert.deepEqual(profileLinkRoute(link), { path: `/p/${NPUB}`, query: { save: '1' } });
+});
+
+await test('profileLinkRoute keeps the save flag only in its one spelling', () => {
+  for (const flag of ['true', 'yes', '0', '', '1 ', '01', 'save']) {
+    const route = profileLinkRoute(`${PUBLIC_WEB_ORIGIN}/p/${NPUB}?save=${encodeURIComponent(flag)}`);
+    assert.deepEqual(route.query, {}, `flag "${flag}" should be dropped`);
+  }
+});
+
+await test('profileLinkRoute carries the fallback key and the save flag together', () => {
+  const route = profileLinkRoute(`${PUBLIC_WEB_ORIGIN}/p/maria?k=${NPUB}&save=1`);
+  assert.deepEqual(route, { path: '/p/maria', query: { k: NPUB, save: '1' } });
+});
+
+await test('isSaveFlag accepts exactly the string "1"', () => {
+  assert.equal(isSaveFlag('1'), true);
+  for (const value of [1, true, 'true', ['1'], '1 ', '', null, undefined]) {
+    assert.equal(isSaveFlag(value), false, `should not accept: ${JSON.stringify(value)}`);
+  }
+});
+
+// ── The web card's Save on Android ──────────────────────────────────────────
+
+await test('buildAndroidSaveIntent hands the save link to the BuhoGO package', () => {
+  assert.equal(
+    buildAndroidSaveIntent(NPUB),
+    `intent://go.mybuho.de/p/${NPUB}?save=1#Intent;scheme=https;package=${ANDROID_PACKAGE};`
+      + `S.browser_fallback_url=${encodeURIComponent(BUHOGO_HOME)};end`,
+  );
+});
+
+await test('the intent carries exactly scheme, package and an https fallback', () => {
+  const intent = buildAndroidSaveIntent(NPUB);
+  const [target, fields] = intent.split('#Intent;');
+  assert.equal(target, `intent://go.mybuho.de/p/${NPUB}?save=1`);
+  const parts = fields.split(';');
+  assert.deepEqual(parts.map((part) => part.split('=')[0]), [
+    'scheme',
+    'package',
+    'S.browser_fallback_url',
+    'end',
+  ]);
+  const fallback = decodeURIComponent(parts[2].slice('S.browser_fallback_url='.length));
+  assert.equal(new URL(fallback).protocol, 'https:');
+});
+
+await test('buildAndroidSaveIntent refuses anything that could add intent fields', () => {
+  for (const value of [
+    '',
+    'maria',
+    'npub1;package=evil;end',
+    `${NPUB}#Intent;component=evil;end`,
+    `${NPUB};S.browser_fallback_url=javascript:alert(1)`,
+  ]) {
+    assert.equal(buildAndroidSaveIntent(value), '', `should not build: ${value}`);
+  }
+});
+
+console.log('\n30 passed, 0 failed');

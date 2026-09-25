@@ -13,7 +13,8 @@
  *
  * Shape:
  *
- *     https://go.mybuho.de/p/npub1…
+ *     https://go.mybuho.de/p/npub1…          the shared link
+ *     https://go.mybuho.de/p/npub1…?save=1   the "scan to save" code
  *
  * The key leads (owner's decision, 2026-09-10): it resolves on the page with
  * no network call at all, so the link works even when the username's domain
@@ -41,6 +42,15 @@ export const PROFILE_PATH = '/p/';
 
 /** Query parameter carrying the fallback key. */
 export const KEY_PARAM = 'k';
+
+/** Query parameter asking BuhoGO to save the person on the card. */
+export const SAVE_PARAM = 'save';
+
+/** BuhoGO's Android application id, named by the web card's Save. */
+export const ANDROID_PACKAGE = 'mybuho.buhogo';
+
+/** A canonical npub: the prefix, then 58 characters of the bech32 alphabet. */
+const NPUB_RE = /^npub1[02-9ac-hj-np-z]{58}$/;
 
 /**
  * Build the shareable link for a card.
@@ -87,6 +97,54 @@ export function profileSlug({ username, nip05, npub } = {}) {
 }
 
 /**
+ * The code that saves a person, for everything captioned "scan to save".
+ *
+ * A `nostr:` URI already means "pay" in BuhoGO: Send resolves the key to
+ * where the person gets paid. Saving needs a signal of its own, so this is
+ * the card link with the save flag. BuhoGO opens it on the card, which saves
+ * the person; a phone without BuhoGO shows the web card instead.
+ *
+ * Always built on the key, never a name: the card saves on arrival only when
+ * the key is in the path, so the link itself decides who gets saved.
+ *
+ * @param {string} npub
+ * @returns {string} absolute URL, or '' for anything that is not an npub
+ */
+export function buildSaveLink(npub) {
+  const key = String(npub || '').trim();
+  if (!NPUB_RE.test(key)) return '';
+  return `${PUBLIC_WEB_ORIGIN}${PROFILE_PATH}${key}?${SAVE_PARAM}=1`;
+}
+
+/**
+ * The web card's Save on Android: hand the save link to BuhoGO.
+ *
+ * An `intent:` URL that names the package reaches the app whether or not its
+ * App Links are verified, since Android only applies domain verification to
+ * web intents that name no package. Without BuhoGO installed, the browser
+ * opens the download page instead.
+ *
+ * Built from a checked npub only. `#`, `;` and `=` are separators in this
+ * syntax, and none of them can appear in an npub, so nothing on a profile
+ * can add fields to the intent.
+ *
+ * @param {string} npub
+ * @returns {string} the intent URL, or '' for anything that is not an npub
+ */
+export function buildAndroidSaveIntent(npub) {
+  const link = buildSaveLink(npub);
+  if (!link) return '';
+  const target = link.slice('https://'.length);
+  const fallback = encodeURIComponent(BUHOGO_HOME);
+  return `intent://${target}#Intent;scheme=https;package=${ANDROID_PACKAGE};S.browser_fallback_url=${fallback};end`;
+}
+
+/** The save flag has one spelling. Anything else is not a request to save. */
+export function isSaveFlag(value) {
+  return value === '1';
+}
+
+/**
  * Inverse of the above, used by the page itself.
  *
  * Three shapes arrive here:
@@ -107,9 +165,9 @@ export function expandProfileSlug(raw) {
 
 /**
  * Read a BuhoGO profile link back into the identifier it points at. The card
- * QR uses a direct NIP-21 identity, but a public link can still reach the
- * scanner through paste, another QR, or an Android intent and should resolve
- * to the same add-contact flow.
+ * QR is one of these links (the save link), and a shared link can reach the
+ * scanner through paste or another QR too; all of them resolve to the same
+ * add-contact flow.
  *
  * Returns the identifier to resolve (username, NIP-05 address, npub) or ''
  * for anything that is not one of our profile links.
@@ -171,7 +229,8 @@ function safeDecode(segment) {
  *
  * The slug and the fallback key are passed through untouched: the page already
  * knows how to resolve either, and re-deriving one here would be a second
- * implementation of the thing that decides who this link is about.
+ * implementation of the thing that decides who this link is about. The save
+ * flag rides along only in its one valid spelling.
  *
  * @param {string} value  the incoming URL
  * @returns {{ path: string, query: Record<string, string> } | null}
@@ -183,10 +242,11 @@ export function profileLinkRoute(value) {
   const slug = safeDecode(url.pathname.slice(PROFILE_PATH.length)).trim();
   const key = String(url.searchParams.get(KEY_PARAM) || '').trim();
 
-  return {
-    path: `${PROFILE_PATH}${encodeURIComponent(slug)}`,
-    query: isKey(key) ? { [KEY_PARAM]: key } : {},
-  };
+  const query = {};
+  if (isKey(key)) query[KEY_PARAM] = key;
+  if (isSaveFlag(url.searchParams.get(SAVE_PARAM))) query[SAVE_PARAM] = '1';
+
+  return { path: `${PROFILE_PATH}${encodeURIComponent(slug)}`, query };
 }
 
 /** True for the identifier forms that resolve locally, with no server involved. */

@@ -8,6 +8,7 @@ import { classifyIdentifier } from '../utils/nostrLookup'
 import { triggerWalletStoreHydration } from '../utils/walletHydration'
 import { profileLinkRoute } from '../utils/profileLink'
 import { redactPaymentInput } from '../utils/logRedaction'
+import { createEchoGuard } from '../utils/echoGuard'
 
 /**
  * Deep link handler for Android intent filters.
@@ -28,8 +29,9 @@ import { redactPaymentInput } from '../utils/logRedaction'
  *      intent arrives before Wallet.vue has registered its handler.
  */
 
-// Track last handled URL to prevent duplicate processing on Activity resume
-let lastHandledUrl = null
+// A cold start delivers the launching link twice, a moment apart; handling
+// it once is enough. A later tap on the same link is new and goes through.
+const isEcho = createEchoGuard({ windowMs: 2000 })
 
 /**
  * Parse a deep link URI into the payment data shape expected by Wallet.vue's onPaymentDetected.
@@ -67,8 +69,7 @@ function parseDeepLinkURI(url) {
 
 function handleDeepLink(url, router, walletStore) {
   if (offerAddressRequest(url)) return
-  if (!url || url === lastHandledUrl) return
-  lastHandledUrl = url
+  if (!url || isEcho(url)) return
 
   // Scheme + length only: deep links carry invoices, LNURLs and one-time
   // card-authentication parameters that must never reach logcat.
@@ -86,8 +87,9 @@ function handleDeepLink(url, router, walletStore) {
 
   // A shared card is not a payment. It opens the same page the browser would
   // have shown, natively, where paying and saving the contact both work in
-  // app. Checked before the wallet guard below on purpose: someone with no
-  // wallet yet can still be handed a card and save the person.
+  // app, and a save link saves the person there. Checked before the wallet
+  // guard below on purpose: someone with no wallet yet can still be handed a
+  // card and save the person.
   const profileRoute = profileLinkRoute(url)
   if (profileRoute) {
     router.push(profileRoute).catch(() => { /* navigation rejection is non-fatal */ })

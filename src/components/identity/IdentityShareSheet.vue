@@ -30,8 +30,8 @@
               <img :src="avatarUrl" alt="" @error="avatarBroken = true" />
             </div>
           </div>
-          <!-- Same Nostr identity QR as the card. The actions below deliberately
-               share the public web link instead, for people outside BuhoGO. -->
+          <!-- Same save code as the back of the card. The actions below share
+               the plain link, which opens the card without saving anyone. -->
           <div class="share-qr-caption">{{ qrCaption }}</div>
         </div>
 
@@ -112,8 +112,7 @@ import { useIdentityStore } from '../../stores/identity';
 import { useProfileStore } from '../../stores/profile';
 import { getQrOptionsWithSize } from '../../utils/qrConfig.js';
 import { shareContent } from '../../utils/share.js';
-import { buildProfileLink } from '../../utils/profileLink.js';
-import { buildNostrIdentityUri } from '../../utils/nostrLookup.js';
+import { buildProfileLink, buildSaveLink } from '../../utils/profileLink.js';
 import { NOSTRICH_HEAD_ICON } from '../../utils/nostrIcon.js';
 import { nip05AddressFor } from '../../services/nip05.js';
 import NostrAddress from './NostrAddress.vue';
@@ -154,9 +153,12 @@ export default {
       return this.identity.nostrNpub || '';
     },
 
-    /** Nearby card exchange: BuhoGO scans the Nostr identity directly. */
+    /**
+     * The save link, not `nostr:npub`: BuhoGO reads a bare Nostr key as
+     * someone to pay, and this code's one job is saving you.
+     */
     qrValue() {
-      return buildNostrIdentityUri(this.npub);
+      return buildSaveLink(this.npub);
     },
 
     /**

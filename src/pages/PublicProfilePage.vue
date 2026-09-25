@@ -38,8 +38,9 @@
               <NostrAddress :address="profile.nip05" :check="addressCheck === true" :icon-size="12" />
             </div>
           </div>
+          <span v-if="isOwnCard" class="pp-self">{{ $t('This is you') }}</span>
           <button
-            v-if="insideBuhoGo"
+            v-else-if="insideBuhoGo"
             type="button"
             class="pp-save"
             :disabled="saved || saving"
@@ -49,7 +50,7 @@
             <Icon v-else :icon="saved ? 'tabler:check' : 'tabler:user-plus'" width="13" height="13" />
             {{ saved ? $t('Saved') : $t('Save') }}
           </button>
-          <a v-else class="pp-save" :href="nostrUri">
+          <a v-else class="pp-save" :href="webSaveHref">
             <Icon icon="tabler:user-plus" width="13" height="13" />
             {{ $t('Save') }}
           </a>
@@ -141,6 +142,7 @@
 </template>
 
 <script>
+import { ref } from 'vue';
 import { Icon } from '@iconify/vue';
 import VueQrcode from '@chenfengyuan/vue-qrcode';
 import { Capacitor } from '@capacitor/core';
@@ -150,13 +152,24 @@ import { profileDisplayName, sanitizeImageUrl, shortenNpub } from '../services/n
 import { isLightningAddress } from '../utils/addressUtils.js';
 import { formatUsername, lookupOwner, splitNip05 } from '../services/nip05.js';
 import NostrAddress from '../components/identity/NostrAddress.vue';
-import { BUHOGO_HOME, expandProfileSlug, isKey, KEY_PARAM } from '../utils/profileLink.js';
+import {
+  BUHOGO_HOME,
+  PROFILE_PATH,
+  KEY_PARAM,
+  SAVE_PARAM,
+  buildAndroidSaveIntent,
+  expandProfileSlug,
+  isKey,
+  isSaveFlag,
+} from '../utils/profileLink.js';
 import { getQrOptionsWithSize } from '../utils/qrConfig.js';
 import { lnurlGetJson } from '../utils/lnurlHttp.js';
 import { fiatRatesService } from '../utils/fiatRates.js';
 import { FIAT_SYMBOLS } from '../utils/fiatCurrencies.js';
 import { useWalletStore } from '../stores/wallet';
+import { triggerWalletStoreHydration } from '../utils/walletHydration';
 import { useAddressBookStore } from '../stores/addressBook';
+import { useIdentityStore } from '../stores/identity';
 
 /**
  * The visitor's currency, guessed from their locale region. Sats stay the
@@ -177,36 +190,68 @@ function guessVisitorCurrency() {
   }
 }
 
+/**
+ * Everything about the person on screen. A second card link can reuse this
+ * page, and starting over from here keeps one person's details, typed
+ * amount or saved state from carrying over to the next.
+ */
+function freshCard() {
+  return {
+    state: 'loading', // 'loading' | 'ready' | 'missing'
+    npub: '',
+    // Kept from the lookup so a save can go through the Nostr contact path,
+    // which is keyed on the pubkey and does not need a Lightning address.
+    pubkey: '',
+    relayHints: [],
+    profileEvent: null,
+    profile: null,
+    /** Does the profile's address point at this key? true, false, or null (not known yet). */
+    addressCheck: null,
+    /** True when the person on screen is the key in the link's own path. */
+    keyInPath: false,
+    /** The link asked BuhoGO to save this person. Handled once. */
+    saveRequested: false,
+    avatarBroken: false,
+    showCode: false,
+    copied: false,
+    saved: false,
+    saving: false,
+    paying: false,
+    displayAmount: '',
+    comment: '',
+    currency: 'sats', // 'sats' | the visitor's fiat code
+  };
+}
+
+/** Both routes name the same person: same slug, same fallback key. */
+function isSameCard(to, from) {
+  return to.params.id === from.params.id
+    && (to.query[KEY_PARAM] || '') === (from.query[KEY_PARAM] || '');
+}
+
 export default {
   name: 'PublicProfilePage',
 
   components: { Icon, VueQrcode, NostrAddress },
 
+  // App.vue's lock overlay. A save link waits under it for the owner.
+  inject: {
+    appLocked: { default: () => ref(false) },
+  },
+
   setup() {
-    return { walletStore: useWalletStore(), addressBook: useAddressBookStore() };
+    return {
+      walletStore: useWalletStore(),
+      addressBook: useAddressBookStore(),
+      identity: useIdentityStore(),
+    };
   },
 
   data() {
     return {
-      state: 'loading', // 'loading' | 'ready' | 'missing'
-      npub: '',
-      // Kept from the lookup so a save can go through the Nostr contact path,
-      // which is keyed on the pubkey and does not need a Lightning address.
-      pubkey: '',
-      relayHints: [],
-      profileEvent: null,
-      profile: null,
-      /** Does the profile's address point at this key? true, false, or null (not known yet). */
-      addressCheck: null,
-      avatarBroken: false,
-      showCode: false,
-      copied: false,
-      saved: false,
-      saving: false,
-      paying: false,
-      displayAmount: '',
-      comment: '',
-      currency: 'sats', // 'sats' | the visitor's fiat code
+      ...freshCard(),
+      // Bumped by every load, so only the newest one writes to the page.
+      loadSeq: 0,
       fiatCode: guessVisitorCurrency(),
       fiatRates: {},
       BUHOGO_HOME,
@@ -250,16 +295,6 @@ export default {
       return parts.text !== String(this.displayName).trim().toLowerCase();
     },
 
-    /**
-     * What this person gets filed under. The heading may fall back to a
-     * shortened key, which identifies them on screen but is not something to
-     * save an address book entry as.
-     */
-    contactName() {
-      if (this.hasName) return this.profile.name;
-      return formatUsername(this.profile?.nip05)?.local || this.$t('Unnamed');
-    },
-
     avatar() {
       if (this.avatarBroken) return '';
       return this.profile?.picture || '';
@@ -297,9 +332,22 @@ export default {
       return (this.walletStore.wallets || []).length > 0;
     },
 
-    /** Opens BuhoGO on Android, which already claims the nostr scheme. */
-    nostrUri() {
-      return this.npub ? `nostr:${this.npub}` : BUHOGO_HOME;
+    /** The viewer's own card. There is no one to save, so it says so instead. */
+    isOwnCard() {
+      const own = String(this.identity.nostrPubkeyHex || '').toLowerCase();
+      return !!own && own === String(this.pubkey).toLowerCase();
+    },
+
+    /**
+     * Save for a visitor outside BuhoGO. On Android the intent link opens
+     * this card in the app with the save flag, or the download page when
+     * BuhoGO is not installed. Anywhere else there is no app to hand it to.
+     *
+     * Not `nostr:npub`: BuhoGO reads a bare Nostr key as someone to pay.
+     */
+    webSaveHref() {
+      if (!this.$q.platform.is.android) return BUHOGO_HOME;
+      return buildAndroidSaveIntent(this.npub) || BUHOGO_HOME;
     },
 
     hasRates() {
@@ -374,8 +422,33 @@ export default {
     },
   },
 
+  watch: {
+    /**
+     * Another card link while this page is open (a new App Link, a scan
+     * from Send) reuses the page, and created() does not run again. Another
+     * person starts over; a save link for the person already here only asks
+     * for the save.
+     */
+    $route(to, from) {
+      if (!to.path.startsWith(PROFILE_PATH)) return;
+      if (!isSameCard(to, from)) {
+        Object.assign(this, freshCard());
+        this.load(to);
+        return;
+      }
+      if (isSaveFlag(to.query[SAVE_PARAM])) {
+        this.saveRequested = true;
+        this.honourSaveRequest();
+      }
+    },
+  },
+
   async created() {
-    await this.resolve();
+    // Load the wallet list before anything reads insideBuhoGo: a card opened
+    // straight from a link comes up before any page has loaded it, and the
+    // web wallet's owner would otherwise be treated as a stranger.
+    triggerWalletStoreHydration(this.walletStore);
+    await this.load(this.$route);
     // Rates power the fiat swap; the page works sats-only without them.
     fiatRatesService.ensureRatesLoaded()
       .then(() => fiatRatesService.getRates())
@@ -389,28 +462,35 @@ export default {
 
   methods: {
     /**
-     * Slug to profile.
+     * Route to card.
      *
      * The link leads with the key, which resolves with no network call. A
      * username slug goes through NIP-05 and can fail for reasons that have
      * nothing to do with the person, so `k` still works as the fallback for
      * older links. Only a link with nothing resolvable is missing.
+     *
+     * A second link can start another load before this one lands, so every
+     * step checks it is still the newest before writing to the page.
      */
-    async resolve() {
-      const identifier = expandProfileSlug(this.$route.params.id);
-      const fallbackKey = String(this.$route.query[KEY_PARAM] || '').trim();
+    async load(route) {
+      const seq = ++this.loadSeq;
+      const current = () => seq === this.loadSeq;
+      this.saveRequested = isSaveFlag(route.query[SAVE_PARAM]);
 
-      if (!identifier && !fallbackKey) {
-        this.state = 'missing';
-        return;
-      }
+      const identifier = expandProfileSlug(route.params.id);
+      const fallbackKey = String(route.query[KEY_PARAM] || '').trim();
 
       let resolved = identifier ? await this.tryLookup(identifier) : null;
+      // The person is pinned by the link only when its path is the key. The
+      // fallback key stands in for a name that did not resolve, which says
+      // nothing about whether that name belongs to the key.
+      const keyInPath = !!resolved && isKey(identifier);
 
       if (!resolved && fallbackKey && isKey(fallbackKey)) {
         console.warn('[public-profile] name lookup failed, falling back to the key');
         resolved = await this.tryLookup(fallbackKey);
       }
+      if (!current()) return;
 
       if (!resolved) {
         this.state = 'missing';
@@ -420,12 +500,14 @@ export default {
       this.npub = resolved.npub;
       this.pubkey = resolved.pubkey;
       this.relayHints = Array.isArray(resolved.relays) ? resolved.relays : [];
+      this.keyInPath = keyInPath;
 
       // The page renders either way. A key that resolves but has published
       // nothing is still a real person, and a relay round trip that fails is
       // not a reason to tell a visitor the link is broken.
       try {
         const event = await fetchProfile(resolved.pubkey, { relays: resolved.relays });
+        if (!current()) return;
         if (event) {
           this.profileEvent = event;
           const content = parseProfileContent(event);
@@ -436,13 +518,34 @@ export default {
             nip05: typeof content.nip05 === 'string' ? content.nip05 : '',
             lud16: typeof content.lud16 === 'string' ? content.lud16.trim().toLowerCase() : '',
           };
-          this.checkAddress();
+          this.checkAddress(seq);
         }
       } catch (err) {
         console.warn('[public-profile] profile fetch failed:', err);
       }
 
+      const alreadySaved = await this.isInContacts(resolved.pubkey);
+      if (!current()) return;
+      this.saved = alreadySaved;
+
       this.state = 'ready';
+      this.honourSaveRequest();
+    },
+
+    /**
+     * Whether the viewer already has this person, so Save starts as Saved.
+     * Asked inside BuhoGO only: a stranger's browser has no contacts. Also
+     * loads the viewer's own identity, which decides the own-card state.
+     */
+    async isInContacts(pubkey) {
+      if (!this.insideBuhoGo) return false;
+      try {
+        await Promise.all([this.identity.hydrate(), this.addressBook.initialize()]);
+        return !!this.addressBook.findContactByPubkey(pubkey);
+      } catch (err) {
+        console.warn('[public-profile] could not read contacts:', err);
+        return false;
+      }
     },
 
     /**
@@ -451,7 +554,7 @@ export default {
      * domain through its NIP-05 file. Unknown stays unknown: the address is
      * shown without the check rather than hidden.
      */
-    async checkAddress() {
+    async checkAddress(seq) {
       const parts = splitNip05(this.profile?.nip05);
       if (!parts || !this.pubkey) return;
       let owner = null;
@@ -461,7 +564,7 @@ export default {
         const resolved = await this.tryLookup(`${parts.local}@${parts.domain}`);
         owner = resolved ? resolved.pubkey : null;
       }
-      if (owner === null) return;
+      if (owner === null || seq !== this.loadSeq) return;
       this.addressCheck = String(owner).toLowerCase() === String(this.pubkey).toLowerCase();
     },
 
@@ -601,50 +704,103 @@ export default {
      * threw "Invalid Lightning address format": saving anyone whose card had
      * no Lightning address failed outright, which is exactly the person a
      * visitor most needs to keep.
+     *
+     * It is also the only path: the address book checks the profile's
+     * signature against the key before storing anything, so a card whose
+     * profile never arrived is not saved on a name and an address alone.
+     *
+     * @returns {Promise<'added'|'existing'|'failed'>}
      */
     async saveContact() {
-      if (this.saved || this.saving) return;
+      if (this.saving || this.isOwnCard) return 'failed';
+      if (this.saved) return 'existing';
+      if (!this.profileEvent) {
+        this.$q.notify({
+          type: 'warning',
+          message: this.$t("Couldn't load their card"),
+          caption: this.$t('Try again in a moment.'),
+          timeout: 3500,
+        });
+        return 'failed';
+      }
       this.saving = true;
       try {
-        if (this.profileEvent) {
-          await this.addressBook.addNostrContact({
-            pubkey: this.pubkey,
-            npub: this.npub,
-            event: this.profileEvent,
-            relayHints: this.relayHints,
-            allowWithoutLightningAddress: true,
-          });
-        } else if (this.lud16) {
-          // No card came back from the relays, so there is nothing to verify
-          // and nothing to key on. An address and a name is still a contact.
-          await this.addressBook.addEntry({
-            name: this.contactName,
-            address: this.lud16,
-            addressType: 'lightning',
-          });
-        } else {
-          this.$q.notify({
-            type: 'warning',
-            message: this.$t("Couldn't load their card"),
-            caption: this.$t('Try again in a moment.'),
-            timeout: 3500,
-          });
-          return;
-        }
+        await this.addressBook.addNostrContact({
+          pubkey: this.pubkey,
+          npub: this.npub,
+          event: this.profileEvent,
+          relayHints: this.relayHints,
+          allowWithoutLightningAddress: true,
+        });
         this.saved = true;
         this.$q.notify({ type: 'positive', message: this.$t('Contact added'), timeout: 2500 });
+        return 'added';
       } catch (err) {
         // Already having them is the outcome the button promises, not a
         // failure to report.
         if (/already/i.test(String(err?.message || ''))) {
           this.saved = true;
-          return;
+          return 'existing';
         }
         console.warn('[public-profile] save failed:', err);
         this.$q.notify({ type: 'negative', message: this.$t("Couldn't save the contact"), timeout: 3000 });
+        return 'failed';
       } finally {
         this.saving = false;
       }
+    },
+
+    /**
+     * Save because the link asked to, not because someone tapped Save.
+     *
+     * The link decides who, never a name: only a card whose key is in the
+     * link's own path saves this way. A name resolves through a server, so
+     * that card keeps its Save button for a deliberate tap. Inside BuhoGO
+     * only, never on your own card, and never under the app lock: a save
+     * link opened on a locked phone waits for its owner. The save itself is
+     * the button's path, so a link can never save more than a tap could.
+     */
+    async honourSaveRequest() {
+      if (!this.saveRequested || this.state !== 'ready') return;
+      this.saveRequested = false;
+      this.dropSaveFlag();
+      if (!this.insideBuhoGo || this.isOwnCard || !this.keyInPath) return;
+
+      const seq = this.loadSeq;
+      await this.untilUnlocked();
+      if (seq !== this.loadSeq) return;
+
+      const outcome = await this.saveContact();
+      if (outcome === 'existing') {
+        this.$q.notify({
+          type: 'info',
+          message: this.$t('{name} is already in your contacts', { name: this.spokenName }),
+          timeout: 2500,
+        });
+      }
+    },
+
+    /**
+     * A save link saves once. Coming back to this card later through the
+     * history, or reloading it, shows the card without asking again.
+     */
+    dropSaveFlag() {
+      if (!(SAVE_PARAM in this.$route.query)) return;
+      const query = { ...this.$route.query };
+      delete query[SAVE_PARAM];
+      this.$router.replace({ path: this.$route.path, query }).catch(() => { /* navigation rejection is non-fatal */ });
+    },
+
+    /** Resolves once the app lock is open, straight away when there is none. */
+    untilUnlocked() {
+      if (!this.appLocked) return Promise.resolve();
+      return new Promise((resolve) => {
+        const stop = this.$watch(() => this.appLocked, (locked) => {
+          if (locked) return;
+          stop();
+          resolve();
+        });
+      });
     },
   },
 };
@@ -812,6 +968,20 @@ export default {
 
 .pp-save:active { transform: scale(0.94); }
 .pp-save:disabled { cursor: default; }
+
+/* The own-card label: a statement where Save would be, not a control. */
+.pp-self {
+  display: inline-flex;
+  align-items: center;
+  min-height: 34px;
+  padding: 0 13px;
+  border-radius: 999px;
+  background: rgba(28, 27, 24, 0.06);
+  color: #6F6A60;
+  font-size: 12px;
+  font-weight: 750;
+  flex: 0 0 auto;
+}
 
 /* 2. The amount */
 .pp-mid {

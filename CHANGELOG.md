@@ -38,10 +38,12 @@ Installed BuhoGO from GitHub or Zapstore before version 1.9.1? That version was 
 - Descriptions containing @ no longer corrupt withdraw callback values.
 - Fixed scrolling on the map, the kiosk and the Spark setup success screen.
 - The cloud backup sheet's title no longer wraps under the close button.
+- Save on a shared card, and scanning a card's code, add the person to your contacts instead of opening a payment, with no wallet needed. Your own card says "This is you".
+- A card link opened a second time, or while another card is open, shows the right person.
 
 ### Code Quality
 
 - Breez SDK 0.24.1 to 0.25.0, and dependency security updates.
 - Deposit state lives in one store; toasts have one host and controller.
-- New browser checks for deposits, toasts, transfers, LUD-08, LUD-23, usernames, the balance pulse and the backup screens.
+- New browser checks for deposits, toasts, transfers, LUD-08, LUD-23, usernames, the balance pulse, the backup screens and card saving.
 - README credits Storyset for the illustrations.
