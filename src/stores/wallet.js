@@ -1,3 +1,4 @@
+import { preferredProfileLightningAddress as preferredProfileAddress } from '../utils/profilePaymentAddress.js';
 /**
  * Wallet Store
  *
@@ -8,6 +9,7 @@
 import { defineStore } from 'pinia';
 import { NostrWebLNProvider } from '@getalby/sdk';
 import { fiatRatesService } from '../utils/fiatRates.js';
+import { SELECTABLE_FIAT_CURRENCIES } from '../utils/fiatCurrencies.js';
 import { LNBitsWalletProvider } from '../providers/LNBitsWalletProvider';
 import { ArkadeWalletProvider } from '../providers/ArkadeWalletProvider';
 import { ARKADE_MAINNET_SERVER, ARKADE_DEFAULT_NETWORK } from '../utils/arkadeKeys';
@@ -18,9 +20,19 @@ import {
   probeAccountActivity as probeSparkAccountActivity,
 } from '../services/breezSdk';
 import { useAutoWithdrawStore } from './autoWithdraw';
+import { useNotificationsStore } from './notifications';
+import { formatAmount } from '../utils/amountFormatting.js';
+import { internalTransferTransactionId } from '../utils/internalTransferDetails.js';
+
+/** walletId → the last balance noticeIncomingPayment saw for it this session. */
+const observedBalance = new Map();
+// Shared by page ticks and store refreshes; the newest request owns its result.
+const balanceReads = new Map();
 import { useTransactionMetadataStore } from './transactionMetadata';
 import { isLightningAddress } from '../utils/addressUtils.js';
 import { createClaimedDepositRegistry } from '../utils/claimedDeposits.js';
+import { exitKitService, clearExitData } from '../services/exitKit.js';
+import { useExitKitStore } from './exitKit';
 import { isWalletBackedUp } from '../utils/backupStatus.js';
 import {
   buildPaymentError,
@@ -207,6 +219,7 @@ export const useWalletStore = defineStore('wallet', {
     // instead of waiting for the next 30s poll tick. Counter, not boolean,
     // so each completion triggers a fresh watcher fire.
     depositsRefreshSignal: 0,
+    lastDepositsRefreshWalletId: null,
   }),
 
   getters: {
@@ -533,11 +546,7 @@ export const useWalletStore = defineStore('wallet', {
      * is what sends the profile to its Social Bucket fallback.
      */
     preferredProfileLightningAddress() {
-      for (const wallet of [this.sparkBusinessWallet, this.sparkPersonalWallet]) {
-        const address = this.sparkLightningAddressOf(wallet);
-        if (address) return address;
-      }
-      return null;
+      return preferredProfileAddress(this);
     },
 
     /**
@@ -728,7 +737,8 @@ export const useWalletStore = defineStore('wallet', {
      * deposit list now instead of waiting for the next poll. Bump the
      * counter so a `watch` on `depositsRefreshSignal` fires every time.
      */
-    signalDepositsRefresh() {
+    signalDepositsRefresh(walletId = this.activeWalletId) {
+      this.lastDepositsRefreshWalletId = walletId;
       this.depositsRefreshSignal += 1;
     },
 
@@ -1320,6 +1330,15 @@ export const useWalletStore = defineStore('wallet', {
           }
         }
 
+        // Keep this wallet's emergency exit kit fresh: put a stored kit back
+        // if the SDK databases are new, then refresh after every settled
+        // payment. Non-fatal by design.
+        try {
+          exitKitService().onSparkConnected(walletId);
+        } catch (error) {
+          console.warn('exit kit sync skipped:', error?.message || error);
+        }
+
       } catch (error) {
         this.connectionStates[walletId] = {
           connected: false,
@@ -1479,6 +1498,7 @@ export const useWalletStore = defineStore('wallet', {
      * switchActiveWallet().
      */
     async _disconnectSparkProvider(walletId) {
+      try { exitKitService().onSparkDisconnected(walletId); } catch (e) { /* not attached yet */ }
       const provider = this.providers[walletId];
       if (provider) {
         try {
@@ -2069,6 +2089,17 @@ export const useWalletStore = defineStore('wallet', {
 
         const wallet = this.wallets[walletIndex];
 
+        // The wallet's databases are about to be deleted with its exit
+        // chains. Take one last export of the emergency exit kit while the
+        // SDK still holds them; the kit outlives the wallet in app storage.
+        if (wallet.type === WALLET_TYPES.SPARK) {
+          try {
+            await exitKitService().preserveBeforeRemoval(walletId);
+          } catch (error) {
+            console.warn('exit kit not preserved:', error?.message || error);
+          }
+        }
+
         // The profile may be pointing at a removed wallet's Lightning
         // address; remember every address leaving with this removal so the
         // profile can fall back to the next default afterwards.
@@ -2117,6 +2148,7 @@ export const useWalletStore = defineStore('wallet', {
             }
             const autoWithdrawStore = useAutoWithdrawStore();
             await autoWithdrawStore.removeConfig(member.id);
+            try { useExitKitStore().remove(member.id); } catch (e) { /* metadata only */ }
           }
         }
 
@@ -2125,6 +2157,7 @@ export const useWalletStore = defineStore('wallet', {
         delete this.connectionStates[walletId];
         delete this.balances[walletId];
         delete this.walletInfos[walletId];
+        try { useExitKitStore().remove(walletId); } catch (e) { /* metadata only */ }
 
         // Clean up backup state if removing the last Spark wallet
         if (wallet.type === WALLET_TYPES.SPARK) {
@@ -2316,9 +2349,20 @@ export const useWalletStore = defineStore('wallet', {
      * Refresh wallet balance and info
      * @param {string} walletId - The wallet ID to refresh
      */
+    beginBalanceRead(walletId) {
+      const read = { walletId };
+      balanceReads.set(walletId, read);
+      return read;
+    },
+
+    isBalanceReadCurrent(read) {
+      return !!read && balanceReads.get(read.walletId) === read;
+    },
+
     async refreshWalletData(walletId) {
       const wallet = this.wallets.find(w => w.id === walletId);
       if (!wallet) return;
+      const read = this.beginBalanceRead(walletId);
 
       try {
         if (wallet.type === WALLET_TYPES.SPARK) {
@@ -2333,6 +2377,7 @@ export const useWalletStore = defineStore('wallet', {
             provider.getInfo()
           ]);
 
+          if (!this.isBalanceReadCurrent(read)) return;
           this.balances[walletId] = balanceResult.balance;
           this.walletInfos[walletId] = info;
         } else if (wallet.type === WALLET_TYPES.LNBITS) {
@@ -2348,6 +2393,7 @@ export const useWalletStore = defineStore('wallet', {
             provider.getInfo()
           ]);
 
+          if (!this.isBalanceReadCurrent(read)) return;
           this.balances[walletId] = balanceResult.balance;
           this.walletInfos[walletId] = info;
         } else if (wallet.type === WALLET_TYPES.ARKADE) {
@@ -2363,6 +2409,7 @@ export const useWalletStore = defineStore('wallet', {
             provider.getInfo()
           ]);
 
+          if (!this.isBalanceReadCurrent(read)) return;
           this.balances[walletId] = balanceResult.balance;
           // Keep the unspendable remainder visible (see balanceDetails).
           this.balanceDetails[walletId] = {
@@ -2399,21 +2446,26 @@ export const useWalletStore = defineStore('wallet', {
             nwc.getInfo(),
           ]);
 
+          if (!this.isBalanceReadCurrent(read)) return;
           this.balances[walletId] = balanceResponse.balance;
           this.walletInfos[walletId] = info;
         }
 
         // Update last used
         wallet.lastUsed = Date.now();
+        const newBalance = this.balances[walletId];
+        this.noticeIncomingPayment(wallet, newBalance);
         await this.persistState();
+        if (!this.isBalanceReadCurrent(read)) return;
 
         // Auto-withdraw check
-        const newBalance = this.balances[walletId];
         if (newBalance > 0) {
           const autoWithdrawStore = useAutoWithdrawStore();
           autoWithdrawStore.checkAndExecute(walletId, newBalance, this);
         }
+
       } catch (error) {
+        if (!this.isBalanceReadCurrent(read)) return;
         console.error(`Refresh wallet ${walletId} failed:`, error);
         this.connectionStates[walletId] = {
           ...this.connectionStates[walletId],
@@ -2421,6 +2473,50 @@ export const useWalletStore = defineStore('wallet', {
           error: error.message,
         };
       }
+    },
+
+    /**
+     * Tell the user money arrived while they were looking at something else.
+     *
+     * A balance that went UP between two refreshes is the honest, rail-agnostic
+     * signal here: it covers a Lightning receive, an on-chain deposit landing
+     * and a transfer in, without this store having to understand any of them.
+     * A send lowers the balance and is never announced.
+     *
+     * Deliberately quiet in three cases: the first reading of a session (we
+     * have nothing to compare against, and "you received your whole balance"
+     * on launch would be a lie), while the app is on screen (the UI is already
+     * showing it — the service checks this), and when the user has not asked
+     * for notifications at all.
+     *
+     * Fire-and-forget: a notification is never worth failing a refresh over.
+     */
+    noticeIncomingPayment(wallet, balanceAfter) {
+      if (!wallet?.id || !Number.isFinite(balanceAfter) || balanceAfter < 0) return;
+
+      // The previous figure is what THIS method last saw for the wallet, not
+      // whatever the caller had on screen: the page's balance tick and this
+      // store's refresh both report here, so one map is what keeps them from
+      // announcing the same payment twice, and a wallet switch that resets
+      // the on-screen balance to 0 cannot read as "you received everything".
+      // The first reading of a session only seeds the map.
+      const previous = observedBalance.get(wallet.id);
+      observedBalance.set(wallet.id, balanceAfter);
+      if (previous === undefined) return;
+      const received = balanceAfter - previous;
+      if (received <= 0) return;
+
+      const notifications = useNotificationsStore();
+      if (!notifications.canNotify) return;
+
+      const t = i18n.global.t.bind(i18n.global);
+      notifications.notifyIfEnabled({
+        title: t('Payment received'),
+        body: t('{amount} · {wallet}', {
+          amount: formatAmount(received, this.useBip177Format),
+          wallet: wallet.name || t('your wallet'),
+        }),
+      }).catch((err) => console.warn('[notifications] receive notice failed:', err?.message || err));
     },
 
     /**
@@ -2949,6 +3045,7 @@ export const useWalletStore = defineStore('wallet', {
       // Lightning invoice creation. Avoids the SO preimage-share round-trip
       // that can fail with transport errors under flaky network conditions.
       let paymentResult;
+      let invoice;
       if (fromType === 'spark' && toType === 'spark') {
         try {
           const sparkAddress = await toProvider.getSparkAddress();
@@ -2959,7 +3056,6 @@ export const useWalletStore = defineStore('wallet', {
         }
       } else {
         // Lightning path: create invoice on destination, pay from source
-        let invoice;
         try {
           if (toType === 'spark' || toType === 'lnbits' || toType === 'arkade') {
             // Spark, LNBits and Arkade all expose createInvoice({ amount,
@@ -3017,11 +3113,10 @@ export const useWalletStore = defineStore('wallet', {
         await this.connectAllSparkWallets();
       }
 
-      // Stamp both sides of the transfer once the tx ids surface. The
-      // pending-link queue is the same mechanism the main send flow uses
-      // to attach a recipient — here there's no address, only a plain
-      // label identifying it as an internal transfer, for both the
-      // outgoing (debit) and incoming (credit) tx.
+      // The source payment ID is already known: stamp it now so a direct
+      // details link has its transfer identity without opening History first.
+      // The receiving wallet may assign a different ID, so its link still
+      // waits for that wallet's history to reconcile it.
       //
       // This is the exact case that motivated wallet-scoping the metadata
       // store: both legs of an internal transfer can share a payment hash
@@ -3030,14 +3125,21 @@ export const useWalletStore = defineStore('wallet', {
       // it — the outgoing (debit) link carries fromWalletId, the incoming
       // (credit) link carries toWalletId — or the two legs could stamp (or
       // race to consume) each other's record.
+      const transactionId = internalTransferTransactionId(fromType, paymentResult, invoice);
       try {
         const transactionMetadataStore = useTransactionMetadataStore();
-        await transactionMetadataStore.enqueuePendingContactLink({
-          label: `Transfer to ${toWallet.name}`,
-          source: 'internal-transfer',
-          amountSats,
-          walletId: fromWalletId,
-        });
+        if (transactionId) {
+          if (!transactionMetadataStore.initialized) await transactionMetadataStore.initialize();
+          await transactionMetadataStore.setLabelForTransaction(transactionId, fromWalletId, `Transfer to ${toWallet.name}`);
+          await transactionMetadataStore.setSourceForTransaction(transactionId, fromWalletId, 'internal-transfer');
+        } else {
+          await transactionMetadataStore.enqueuePendingContactLink({
+            label: `Transfer to ${toWallet.name}`,
+            source: 'internal-transfer',
+            amountSats,
+            walletId: fromWalletId,
+          });
+        }
         await transactionMetadataStore.enqueuePendingContactLink({
           label: `Transfer from ${fromWallet.name}`,
           source: 'internal-transfer',
@@ -3054,6 +3156,7 @@ export const useWalletStore = defineStore('wallet', {
         fromWallet: fromWallet.name,
         toWallet: toWallet.name,
         amount: amountSats,
+        transactionId,
         paymentResult
       };
     },
@@ -3068,18 +3171,11 @@ export const useWalletStore = defineStore('wallet', {
         const rates = await fiatRatesService.getRates();
 
         if (rates && fiatRatesService.areRatesAvailable()) {
-          this.exchangeRates = {
-            usd: rates.USD || 0,
-            eur: rates.EUR || 0,
-            gbp: rates.GBP || 0,
-            jpy: rates.JPY || 0,
-            chf: rates.CHF || 0,
-            cad: rates.CAD || 0,
-            aud: rates.AUD || 0,
-            zar: rates.ZAR || 0,
-            kes: rates.KES || 0,
-            zmw: rates.ZMW || 0,
-          };
+          // Keyed by lowercase code. Every selectable currency gets an
+          // entry so a rate the upstream failed to deliver reads as 0.
+          this.exchangeRates = Object.fromEntries(
+            SELECTABLE_FIAT_CURRENCIES.map((code) => [code.toLowerCase(), rates[code] || 0])
+          );
           this.exchangeRatesAvailable = true;
           this.exchangeRatesLastUpdate = new Date().toISOString();
           this.exchangeRatesError = null;
@@ -3306,6 +3402,9 @@ export const useWalletStore = defineStore('wallet', {
       // Full reset also removes every Breez-engine database (fire-and-forget;
       // clearAll is sync by contract and the deletes are independent).
       deleteAllBreezStorage().catch(() => {});
+      // A full reset takes the exit kits, any exit in progress and the
+      // reachability record with it.
+      clearExitData().catch(() => {});
     },
 
     // ─── Kiosk Mode ───────────────────────────────────────────

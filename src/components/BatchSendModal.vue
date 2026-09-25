@@ -632,10 +632,12 @@
 </template>
 
 <script setup>
+import { assertPaymentInput } from '../utils/lud23.js';
 import { ref, computed, watch, nextTick, getCurrentInstance } from 'vue'
 import { canWalletPay } from '../utils/walletCapabilities'
 import { useQuasar } from 'quasar'
 import { useWalletStore } from '../stores/wallet'
+import { fiatSymbol } from '../utils/fiatCurrencies.js'
 import { useAddressBookStore } from '../stores/addressBook'
 import { useTransactionMetadataStore } from '../stores/transactionMetadata'
 import LightningPaymentService, { resolveLUD17URL } from '../utils/lightning.js'
@@ -714,21 +716,6 @@ const exchangeRate = computed(() => {
   const currency = fiatCurrency.value.toLowerCase()
   return walletStore.exchangeRates?.[currency] || 0
 })
-
-// Currency symbols map
-const CURRENCY_SYMBOLS = {
-  USD: '$',
-  EUR: '€',
-  GBP: '£',
-  JPY: '¥',
-  CHF: 'CHF',
-  CAD: 'C$',
-  AUD: 'A$'
-}
-
-function getCurrencySymbol(currency) {
-  return CURRENCY_SYMBOLS[currency?.toUpperCase()] || currency || '$'
-}
 
 // ─────────────────────────────────────────────────────────────
 // Computed - Contacts
@@ -814,7 +801,7 @@ const canProceedFromAmount = computed(() => {
 const fiatEquivalent = computed(() => {
   if (!exchangeRate.value) return ''
   const fiatVal = (amountPerRecipient.value / 100000000) * exchangeRate.value
-  const symbol = getCurrencySymbol(fiatCurrency.value)
+  const symbol = fiatSymbol(fiatCurrency.value)
   return `~${symbol}${fiatVal.toFixed(2)}`
 })
 
@@ -939,7 +926,7 @@ function formatSats(sats) {
 function getFiatValue(sats) {
   if (!exchangeRate.value) return ''
   const fiat = (sats / 100000000) * exchangeRate.value
-  const symbol = getCurrencySymbol(fiatCurrency.value)
+  const symbol = fiatSymbol(fiatCurrency.value)
   return `${symbol}${fiat.toFixed(2)}`
 }
 
@@ -1152,6 +1139,9 @@ function onBeforeHide() {
  * @returns {Promise<{pr: string, successAction: object|null}>}
  */
 async function fetchLightningAddressInvoice(address, amountSats) {
+  // LUD-11 (`disposable`) is ignored here on purpose: a batch fans out to
+  // addresses that are already durable, and there is no per-payment surface
+  // to offer a repeat from. The single-send path in Wallet.vue reads it.
   const [username, domain] = address.split('@')
   if (!username || !domain) {
     throw new Error('Invalid Lightning address')
@@ -1166,7 +1156,7 @@ async function fetchLightningAddressInvoice(address, amountSats) {
   }
 
   const data = response.data
-  if (!data || data.status === 'ERROR') {
+  if (!data || data.tag !== 'payRequest' || !data.callback || data.status === 'ERROR') {
     throw new Error(data?.reason || 'Lightning address error')
   }
 
@@ -1209,6 +1199,7 @@ async function fetchLightningAddressInvoice(address, amountSats) {
 // Returns { pr, amountSats, successAction } so the caller can record the amount
 // actually sent and surface the recipient's LUD-09 message.
 async function fetchLnurlInvoice(lnurl, requestedSats) {
+  assertPaymentInput(lnurl);
   const clean = stripWrapperScheme(lnurl)
 
   // LUD-17 scheme (lnurlp://…) maps straight to https; otherwise bech32-decode.

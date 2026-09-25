@@ -1,13 +1,20 @@
 # Zapstore publish config (zsp schema) - https://zapstore.dev/docs/publish
 # Publish with:  SIGN_WITH=<nsec|bunker> zsp publish zapstore.yaml
-# The app id (mybuho.buhogo) and version (1.9.2) are read from the APK below.
+# The app id (mybuho.buhogo) and version (1.9.3) are read from the APK below.
 
 # Source code repository (shown in the app store)
 repository: https://github.com/Buho-Ecosystem/Buho_go
 
+# Publisher identity (Buho account). The relay reads this file from the repository
+# and only accepts releases signed with this key, so sign with exactly it.
+pubkey: npub12p5c90ekq4w5mxt52hcm38p6wjjacm8ufq9axsskp0cttw5dmx5s0y335h
+
 # Where to fetch the APK. A local path lets us ship the local icon and
 # screenshots below. Bump this filename on each release.
-release_source: ./output/BuhoGO_v1_9_2.apk
+release_source: ./output/BuhoGO_v1_9_3.apk
+
+# Release notes: zsp takes this version's "## [x.y.z]" section.
+release_notes: ./CHANGELOG.md
 
 # ---------------------------------------------------------------------------
 # App metadata

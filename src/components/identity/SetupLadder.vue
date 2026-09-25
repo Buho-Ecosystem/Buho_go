@@ -5,12 +5,10 @@
     Replaces the amber warning dot the old surface used. Three differences
     that matter:
 
-      - It starts with a step already done, because a list that has started
-        gets finished far more often than one that has not.
       - It retitles itself to "One thing left" on the last step, which is more
         persuasive than a counter.
-      - It disappears for good when complete, and the space it occupied
-        becomes the people you actually pay.
+      - It disappears for good when complete, and its place offers a
+        username instead, once and dismissible.
       - It is about the card only. Backing up is not a setup step; it lives
         in Security and on the home reminder.
 

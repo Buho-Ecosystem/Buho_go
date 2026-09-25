@@ -5,9 +5,20 @@
     transition-show="slide-up"
     transition-hide="slide-down"
     class="receive-modal"
+    :aria-label="showVouchers ? $t('Vouchers') : $t('Receive')"
     @before-hide="stopPaymentMonitor();"
+    @hide="onHidden"
   >
-    <q-card class="receive-card" :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'">
+    <VoucherSheet
+      v-if="showVouchers"
+      :vouchers="vouchers"
+      :checking="voucherChecking"
+      :display-sats="voucherDisplaySats"
+      @back="backFromVouchers"
+      @redeem="selectVoucher"
+      @remove="$emit('remove-voucher', $event)"
+    />
+    <q-card v-else class="receive-card" :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'">
       <div class="sheet-grabber" aria-hidden="true"><div class="grabber-bar"></div></div>
       <!-- Header -->
       <q-card-section class="receive-header">
@@ -37,6 +48,30 @@
           <div class="header-actions"></div>
         </div>
       </q-card-section>
+
+      <!-- LUD-14: one line, only while a saved voucher still holds money.
+           A voucher is money the user can pull in, so it belongs on the
+           receive sheet, but it is not a receive view: this single row with a
+           disclosure opens the Vouchers sheet, where the list and its
+           management live. Outside the content section so every receive view
+           shows it. One native button, nothing nested. -->
+      <button
+        v-if="vouchers.length"
+        type="button"
+        class="voucher-summary"
+        ref="voucherSummary"
+        :aria-label="voucherSummaryTitle + ', ' + voucherSummaryLeft"
+        @click="openVouchers"
+      >
+        <span class="voucher-summary-icon" aria-hidden="true">
+          <Icon icon="tabler:ticket" width="18" height="18" />
+        </span>
+        <span class="voucher-summary-copy" aria-hidden="true">
+          <strong class="voucher-summary-title">{{ voucherSummaryTitle }}</strong>
+          <small class="voucher-summary-sub">{{ voucherSummaryLeft }}</small>
+        </span>
+        <Icon icon="tabler:chevron-right" width="18" height="18" class="voucher-summary-chevron" aria-hidden="true" />
+      </button>
 
       <!-- Content -->
       <q-card-section class="receive-content">
@@ -100,7 +135,7 @@
                 <Icon icon="tabler:currency-bitcoin" width="18" height="18" />
               </span>
               <span class="rail-badge" :class="$q.dark.isActive ? 'rail-badge-dark rail-ring-dark' : 'rail-badge-light rail-ring-light'">
-                <img :src="$q.dark.isActive ? '/Arkade-Media-Kit/Logo/SVG/Logo Only/Logo Only + Purple.svg' : '/Arkade-Media-Kit/Logo/SVG/Logo Only/Logo Only + Orange.svg'" alt="" />
+                <ArkadeLogo :size="18" :color="$q.dark.isActive ? 'orange' : 'purple'" alt="" />
               </span>
               <span class="rail-badge" :class="$q.dark.isActive ? 'rail-badge-dark rail-ring-dark' : 'rail-badge-light rail-ring-light'">
                 <img :src="$q.dark.isActive ? '/Spark/Spark Asterisk White.svg' : '/Spark/Spark Asterisk Black.svg'" alt="" />
@@ -258,7 +293,6 @@
               :class="$q.dark.isActive ? 'address-box-dark' : 'address-box-light'"
               @click="copyLightningAddress"
             >
-              <Icon icon="tabler:at" width="18" height="18" class="address-icon" />
               <span class="address-text-value">{{ lightningAddress }}</span>
               <Icon icon="tabler:copy" width="14" height="14" class="copy-icon" />
             </div>
@@ -435,9 +469,11 @@
 
 <script>
 import VueQrcode from '@chenfengyuan/vue-qrcode';
+import ArkadeLogo from './ArkadeLogo.vue';
 import { NostrWebLNProvider } from "@getalby/sdk";
 import { Invoice } from "@getalby/lightning-tools";
 import { formatAmount } from '../utils/amountFormatting.js';
+import { fiatSymbol as fiatSymbolFor } from '../utils/fiatCurrencies.js';
 import { useWalletStore } from '../stores/wallet';
 import { createPaymentMonitor, PaymentStatus, checkNWCPaymentStatus } from '../utils/paymentMonitor';
 import { shareContent } from '../utils/share';
@@ -447,27 +483,49 @@ import { getQrOptions } from '../utils/qrConfig';
 import { composeUnifiedBip21 } from '../utils/bip21';
 import PaymentConfirmation from './PaymentConfirmation.vue';
 import L1BitcoinReceive from './L1BitcoinReceive.vue';
+import VoucherSheet from './VoucherSheet.vue';
 
 export default {
   name: 'ReceiveModal',
   components: {
     VueQrcode,
+    ArkadeLogo,
     PaymentConfirmation,
-    L1BitcoinReceive
+    L1BitcoinReceive,
+    VoucherSheet
   },
   setup() {
     const walletStore = useWalletStore();
     return { walletStore };
   },
   props: {
+    voucherChecking: { type: Object, default: () => ({}) },
+    voucherDisplaySats: { type: Function, default: voucher => voucher?.maxSats || 0 },
     modelValue: {
       type: Boolean,
       default: false
+    },
+    // LUD-14 vouchers with a balance left (withdrawVouchers store `active`).
+    // Owned by the wallet page; this sheet shows one summary line and
+    // owns the Vouchers subview in the same dialog.
+    vouchers: {
+      type: Array,
+      default: () => []
+    },
+    // Sum of what those vouchers still hold (store `activeTotalSats`).
+    totalVoucherSats: {
+      type: Number,
+      default: 0
     }
   },
-  emits: ['update:modelValue', 'invoice-created', 'bitcoin-deposits-updated', 'scan-withdraw'],
+  emits: [
+    'update:modelValue', 'invoice-created', 'bitcoin-deposits-updated', 'scan-withdraw',
+    'open-vouchers', 'redeem-voucher', 'remove-voucher',
+  ],
   data() {
     return {
+      showVouchers: false,
+      selectedVoucher: null,
       // In-app keypad state. `keypadValue` is the raw string the user has
       // typed in the *current* mode (digits + optional `.` in fiat mode;
       // digits only in sats mode). The actual sats amount is computed.
@@ -505,6 +563,15 @@ export default {
     }
   },
   computed: {
+    /** One voucher shows its own title; several show a count. */
+    voucherSummaryTitle() {
+      if (this.vouchers.length === 1) return this.vouchers[0].title || this.vouchers[0].domain || '';
+      return this.$t('{count} vouchers', { count: this.vouchers.length });
+    },
+    voucherSummaryLeft() {
+      return this.$t('{amount} left', { amount: this.formatInvoiceAmount(this.totalVoucherSats) });
+    },
+
     show: {
       get() {
         return this.modelValue;
@@ -550,13 +617,7 @@ export default {
       return this.walletState.exchangeRates?.[this.fiatCode] || 0;
     },
     fiatSymbol() {
-      switch (this.fiatCode) {
-        case 'usd': return '$';
-        case 'eur': return '€';
-        case 'gbp': return '£';
-        case 'jpy': return '¥';
-        default: return this.fiatCode.toUpperCase() + ' ';
-      }
+      return fiatSymbolFor(this.fiatCode);
     },
     /**
      * Keys for the 3x4 keypad grid. The bottom-left key swaps between
@@ -788,6 +849,25 @@ export default {
     window.removeEventListener('resize', this.handleResize);
   },
   methods: {
+    openVouchers() {
+      this.showVouchers = true;
+      this.$emit('open-vouchers');
+    },
+    backFromVouchers() {
+      this.showVouchers = false;
+      this.$nextTick(() => this.$refs.voucherSummary?.focus());
+    },
+    selectVoucher(voucher) {
+      this.selectedVoucher = voucher;
+      this.show = false;
+    },
+    onHidden() {
+      this.showVouchers = false;
+      const voucher = this.selectedVoucher;
+      this.selectedVoucher = null;
+      // Present the withdrawal review only after this dialog has disappeared.
+      if (voucher) this.$emit('redeem-voucher', voucher);
+    },
     // ... (keeping all existing methods from the original component)
     loadWalletState() {
       const savedState = localStorage.getItem('buhoGO_wallet_state');
@@ -994,6 +1074,9 @@ export default {
      * Handle Bitcoin deposit claimed - show confirmation
      */
     handleBitcoinDepositClaimed(result) {
+      // A pending claim already has progress feedback in the claim sheet;
+      // do not cover it with a completed-payment confirmation.
+      if (result.processing) return;
       // Show success confirmation similar to Lightning payments
       this.confirmedAmount = result.amount;
       this.confirmedFiatAmount = this.calculateFiatAmount(result.amount);
@@ -2923,11 +3006,6 @@ export default {
   transform: scale(0.98);
 }
 
-.address-icon {
-  color: #15DE72;
-  flex-shrink: 0;
-}
-
 .address-text-value {
   font-family: var(--font-mono);
   font-size: 13px;
@@ -3303,5 +3381,72 @@ export default {
   font-family: 'Manrope', sans-serif;
   font-size: 15px;
   font-weight: 600;
+}
+
+/* ─────────────────────────────────────────────────────────────
+   LUD-14 voucher summary: one line while a saved voucher holds money
+   ───────────────────────────────────────────────────────────── */
+.voucher-summary {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: calc(100% - 32px);
+  min-height: 52px;
+  margin: 0 16px 10px;
+  padding: 8px 12px;
+  border: 1px solid var(--border-card);
+  border-radius: 16px;
+  background: var(--bg-card);
+  color: var(--text-primary);
+  text-align: left;
+  font-family: inherit;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.voucher-summary:active {
+  opacity: 0.85;
+}
+
+.voucher-summary:focus-visible {
+  outline: 2px solid var(--brand-accent);
+  outline-offset: 2px;
+}
+
+.voucher-summary-icon {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--brand-accent-soft);
+  color: var(--brand-accent);
+}
+
+.voucher-summary-copy {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.voucher-summary-title {
+  font: 700 0.9375rem/1.3 'Manrope', sans-serif;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.voucher-summary-sub {
+  font: 0.8125rem/1.3 'Manrope', sans-serif;
+  color: var(--text-secondary);
+}
+
+.voucher-summary-chevron {
+  flex-shrink: 0;
+  color: var(--text-secondary);
 }
 </style>

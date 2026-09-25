@@ -136,7 +136,7 @@ export default {
       // PaymentConfirmSheet pre-filled). The store field is the contract.
       // For a Nostr seller this is framed as an optional tip; for a directory
       // shop that carries an address it is a direct payment.
-      this.walletStore.pendingDeepLink = { type: 'lightning_address', data: this.shop.lnAddress };
+      this.walletStore.pendingDeepLink = { type: 'lightning_address', data: this.shop.lnAddress, paymentOnly: true };
       this.open = false;
       this.$router.push('/wallet');
     },

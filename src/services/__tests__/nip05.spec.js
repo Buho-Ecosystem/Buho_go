@@ -1,11 +1,10 @@
 /**
- * NIP-05 marketplace service tests.
+ * Username service tests (paid NIP-05 names on mybuho.de).
  *
- * Covers the post-bootstrap surface the marketplace sheet talks to —
- * `searchHandle`, `requestPaidHandle`, `waitForActivation`, and the
- * client-side `isLikelyAvailableLocalPart` shape check. The free-handle
- * registration path is exercised indirectly by the boot orchestrator
- * tests + an end-to-end manual check; here we focus on the new branches.
+ * Covers name rules and display (free shape, full address, look-alike
+ * domains, input cleaning, slugs, suggestions), and the network calls the
+ * claim sheet and boot rely on: search, paid request, payment checks and
+ * the ownership check.
  *
  * Run directly with Node:
  *   node src/services/__tests__/nip05.spec.js
@@ -13,15 +12,30 @@
 
 import { strict as assert } from 'node:assert';
 import {
+  NIP05_DOMAIN,
+  NIP05_PRICE_TIERS,
+  NIP05_MAX_YEARS,
+  clampYears,
+  expiresAtFor,
+  isFreeShapeHandle,
+  splitNip05,
+  ownUsernameFrom,
+  formatUsername,
+  normaliseUsernameInput,
+  deriveNameSlug,
+  suggestUsernames,
+  expandUsername,
+  usernameAddressFromInput,
   isLikelyAvailableLocalPart,
   searchHandle,
   requestPaidHandle,
+  checkPaid,
   waitForActivation,
-  deriveNameSlug,
-  deriveBaseSlug,
-  NIP05_PRICE_TIERS,
+  isMine,
+  lookupOwner,
+  suggestUsernameFor,
+  clearSuggestionCache,
 } from '../nip05.js';
-import { deriveMemorableSlug, ADJECTIVES, ANIMALS } from '../nip05Names.js';
 
 let passed = 0;
 let failed = 0;
@@ -38,10 +52,7 @@ async function test(name, fn) {
   }
 }
 
-/**
- * Minimal fetch stub. Records every call, returns the next queued response.
- * Keeps each test self-contained — no global pollution between cases.
- */
+/** Minimal fetch stub: records calls, returns queued responses in order. */
 function makeFetchStub(queue = []) {
   const calls = [];
   const stub = async (url, init = {}) => {
@@ -58,380 +69,357 @@ function makeFetchStub(queue = []) {
   return { stub, calls };
 }
 
-console.log('nip05 marketplace service');
+const KEY = 'ab'.repeat(32);
 
-await test('NIP05_PRICE_TIERS is an immutable, ordered pricing snapshot', () => {
+console.log('username service');
+
+// ---------------------------------------------------------------------------
+// Pricing
+// ---------------------------------------------------------------------------
+
+await test('NIP05_PRICE_TIERS: frozen, paid tiers only', () => {
   assert.equal(Object.isFrozen(NIP05_PRICE_TIERS), true);
   assert.equal(NIP05_PRICE_TIERS.every(Object.isFrozen), true);
   assert.deepEqual(
     NIP05_PRICE_TIERS.map(({ id, priceSats }) => [id, priceSats]),
-    [
-      ['two-to-three', 10_000],
-      ['four', 4_000],
-      ['five-to-six', 2_000],
-      ['seven-plus', 1_000],
-      ['free-suffix', 0],
-    ],
+    [['two-to-three', 10_000], ['four', 4_000], ['five-to-six', 2_000], ['seven-plus', 1_000]],
   );
 });
 
+await test('clampYears: whole years from 1 to 10', () => {
+  assert.equal(NIP05_MAX_YEARS, 10);
+  assert.equal(clampYears(1), 1);
+  assert.equal(clampYears(10), 10);
+  assert.equal(clampYears(11), 10);
+  assert.equal(clampYears(0), 1);
+  assert.equal(clampYears(2.6), 3);
+  assert.equal(clampYears('4'), 4);
+  assert.equal(clampYears(undefined), 1);
+});
+
+await test('expiresAtFor: 365 days per year from the payment', () => {
+  const day = 24 * 60 * 60 * 1000;
+  assert.equal(expiresAtFor(0, 1), 365 * day);
+  assert.equal(expiresAtFor(1000, 2), 1000 + 730 * day);
+  assert.equal(expiresAtFor(0, 99), 3650 * day);
+});
+
 // ---------------------------------------------------------------------------
-// isLikelyAvailableLocalPart — client-side shape check
+// Names and display
 // ---------------------------------------------------------------------------
 
-await test('isLikelyAvailableLocalPart: accepts a normal lowercase name', () => {
+await test('isFreeShapeHandle: only the `.NNNNNN` ending', () => {
+  assert.equal(isFreeShapeHandle('luckyowl.482913'), true);
+  assert.equal(isFreeShapeHandle('maria'), false);
+  assert.equal(isFreeShapeHandle('maria.48291'), false);
+  assert.equal(isFreeShapeHandle('maria482913'), false);
+  assert.equal(isFreeShapeHandle(''), false);
+});
+
+await test('splitNip05: lowercases, marks our domain', () => {
+  assert.deepEqual(splitNip05('Maria@MyBuho.DE'), { local: 'maria', domain: 'mybuho.de', ours: true });
+  assert.deepEqual(splitNip05('bob@example.net'), { local: 'bob', domain: 'example.net', ours: false });
+  assert.equal(splitNip05('no-at-sign'), null);
+  assert.equal(splitNip05('@mybuho.de'), null);
+  assert.equal(splitNip05('maria@'), null);
+});
+
+await test('splitNip05: a look-alike letter never counts as our domain', () => {
+  const lookalike = splitNip05('maria@mybuhо.de'); // Cyrillic o
+  assert.ok(lookalike);
+  assert.equal(lookalike.ours, false);
+  assert.notEqual(lookalike.domain, NIP05_DOMAIN);
+});
+
+await test('ownUsernameFrom: paid names on our domain only', () => {
+  assert.equal(ownUsernameFrom('maria@mybuho.de'), 'maria');
+  assert.equal(ownUsernameFrom('Maria@MYBUHO.de'), 'maria');
+  assert.equal(ownUsernameFrom('luckyowl.482913@mybuho.de'), '');
+  assert.equal(ownUsernameFrom('maria@example.net'), '');
+  assert.equal(ownUsernameFrom('_@mybuho.de'), '');
+  assert.equal(ownUsernameFrom(''), '');
+  assert.equal(ownUsernameFrom(null), '');
+});
+
+await test('formatUsername: always the full address with the domain', () => {
+  assert.deepEqual(formatUsername('Maria@mybuho.de'), { text: 'maria@mybuho.de', local: 'maria', domain: 'mybuho.de' });
+  assert.deepEqual(formatUsername('bob@example.net'), { text: 'bob@example.net', local: 'bob', domain: 'example.net' });
+});
+
+await test('formatUsername: `_@domain` is the domain itself', () => {
+  assert.deepEqual(formatUsername('_@example.net'), { text: 'example.net', local: '', domain: 'example.net' });
+});
+
+await test('formatUsername: free-shape names on our domain are never shown', () => {
+  assert.equal(formatUsername('luckyowl.482913@mybuho.de'), null);
+  // Someone else's domain is not ours to judge.
+  assert.deepEqual(formatUsername('x.482913@other.net')?.text, 'x.482913@other.net');
+});
+
+await test('normaliseUsernameInput: quietly fixes what people type or paste', () => {
+  assert.equal(normaliseUsernameInput('  @Maria '), 'maria');
+  assert.equal(normaliseUsernameInput('maria@mybuho.de'), 'maria');
+  assert.equal(normaliseUsernameInput('María Schmidt'), 'mariaschmidt');
+  assert.equal(normaliseUsernameInput('Straße'), 'strasse');
+  // Characters that can never work are left for the validator to name.
+  assert.equal(normaliseUsernameInput('maria!'), 'maria!');
+});
+
+await test('deriveNameSlug: folds accents, strips the rest, caps at 20', () => {
+  assert.equal(deriveNameSlug({ name: 'Satoshi' }), 'satoshi');
+  assert.equal(deriveNameSlug({ name: 'José Müller' }), 'josemuller');
+  assert.equal(deriveNameSlug({ name: 'GROẞE Straße' }), 'grossestrasse');
+  assert.equal(deriveNameSlug({ name: 'Big Name!! 21' }), 'bigname21');
+  assert.equal(deriveNameSlug({ name: 'a'.repeat(30) }), 'a'.repeat(20));
+});
+
+await test('deriveNameSlug: nothing usable returns ""', () => {
+  assert.equal(deriveNameSlug({ name: '' }), '');
+  assert.equal(deriveNameSlug({ name: 'a' }), '');
+  assert.equal(deriveNameSlug({ name: 'Мария' }), '');
+  assert.equal(deriveNameSlug({}), '');
+  assert.equal(deriveNameSlug(), '');
+});
+
+await test('suggestUsernames: variants of a two-word name, minus the taken one', () => {
+  assert.deepEqual(suggestUsernames('Maria Schmidt', 'maria'), ['mariaschmidt', 'maria.s', 'maria_schmidt']);
+});
+
+await test('suggestUsernames: a single word has no invented variant', () => {
+  assert.deepEqual(suggestUsernames('Maria', 'maria'), []);
+  assert.deepEqual(suggestUsernames('', 'maria'), []);
+});
+
+await test('expandUsername: `@name` becomes the full address, nothing else changes', () => {
+  assert.equal(expandUsername('@Maria'), `maria@${NIP05_DOMAIN}`);
+  assert.equal(expandUsername('maria@example.net'), 'maria@example.net');
+  assert.equal(expandUsername('npub1abc'), 'npub1abc');
+  assert.equal(expandUsername('@'), '@');
+});
+
+await test('usernameAddressFromInput: our usernames only, in full', () => {
+  assert.equal(usernameAddressFromInput('@Maria'), 'maria@mybuho.de');
+  assert.equal(usernameAddressFromInput('maria@mybuho.de'), 'maria@mybuho.de');
+  assert.equal(usernameAddressFromInput(' Maria@MyBuho.de '), 'maria@mybuho.de');
+  assert.equal(usernameAddressFromInput('maria@example.net'), '');
+  assert.equal(usernameAddressFromInput('luckyowl.482913@mybuho.de'), '');
+  assert.equal(usernameAddressFromInput('maria'), '');
+  assert.equal(usernameAddressFromInput('lnbc10u1abc'), '');
+});
+
+await test('isLikelyAvailableLocalPart: the shape rules', () => {
   assert.deepEqual(isLikelyAvailableLocalPart('satoshi'), { ok: true });
-});
-
-await test('isLikelyAvailableLocalPart: trims + lowercases before checking', () => {
   assert.deepEqual(isLikelyAvailableLocalPart('  Satoshi  '), { ok: true });
-});
-
-await test('isLikelyAvailableLocalPart: empty input', () => {
+  assert.deepEqual(isLikelyAvailableLocalPart('foo-bar_baz.q'), { ok: true });
   assert.deepEqual(isLikelyAvailableLocalPart(''), { ok: false, reason: 'empty' });
-});
-
-await test('isLikelyAvailableLocalPart: single char rejected as too-short', () => {
   assert.deepEqual(isLikelyAvailableLocalPart('a'), { ok: false, reason: 'too-short' });
-});
-
-await test('isLikelyAvailableLocalPart: 64+ chars rejected as too-long', () => {
-  const long = 'a'.repeat(64);
-  assert.deepEqual(isLikelyAvailableLocalPart(long), { ok: false, reason: 'too-long' });
-});
-
-await test('isLikelyAvailableLocalPart: free-fallback shape (`base.NNNNNN`) is allowed', () => {
-  // The marketplace sheet routes these through the free registration
-  // path (see `onContinue`), so the validator deliberately accepts the
-  // `.NNNNNN` shape — typed directly or adopted via the suggestion chip.
-  assert.deepEqual(isLikelyAvailableLocalPart('satoshi.482913'), { ok: true });
-});
-
-await test('isLikelyAvailableLocalPart: leading dot rejected', () => {
+  assert.deepEqual(isLikelyAvailableLocalPart('a'.repeat(64)), { ok: false, reason: 'too-long' });
   assert.deepEqual(isLikelyAvailableLocalPart('.satoshi'), { ok: false, reason: 'invalid-chars' });
-});
-
-await test('isLikelyAvailableLocalPart: trailing dot rejected', () => {
   assert.deepEqual(isLikelyAvailableLocalPart('satoshi.'), { ok: false, reason: 'invalid-chars' });
-});
-
-await test('isLikelyAvailableLocalPart: spaces rejected', () => {
-  assert.deepEqual(isLikelyAvailableLocalPart('big name'), { ok: false, reason: 'invalid-chars' });
-});
-
-await test('isLikelyAvailableLocalPart: hyphen and underscore allowed', () => {
-  assert.deepEqual(isLikelyAvailableLocalPart('foo-bar_baz'), { ok: true });
+  assert.deepEqual(isLikelyAvailableLocalPart('maria!'), { ok: false, reason: 'invalid-chars' });
 });
 
 // ---------------------------------------------------------------------------
 // searchHandle
 // ---------------------------------------------------------------------------
 
-await test('searchHandle: empty query short-circuits with no fetch', async () => {
+await test('searchHandle: empty query makes no request', async () => {
   const { stub, calls } = makeFetchStub([]);
   globalThis.fetch = stub;
   const r = await searchHandle({ query: '' });
   assert.equal(calls.length, 0);
-  assert.equal(r.identifier, '');
   assert.equal(r.available, false);
   assert.equal(r.priceSats, null);
 });
 
-await test('searchHandle: hits the public search endpoint with the lowercased query', async () => {
+await test('searchHandle: hits the search endpoint with the lowercased query', async () => {
   const { stub, calls } = makeFetchStub([
-    {
-      ok: true,
-      body: {
-        identifier: 'satoshi',
-        available: true,
-        price_in_sats: 10000,
-        currency: 'sat',
-        free_identifier_number: '482913',
-      },
-    },
+    { body: { identifier: 'satoshi', available: true, price_in_sats: 10000, currency: 'sats' } },
   ]);
   globalThis.fetch = stub;
   const r = await searchHandle({ query: 'SatoSHI' });
-  assert.equal(calls.length, 1);
-  assert.match(
-    calls[0].url,
-    /\/nostrnip5\/api\/v1\/domain\/[A-Za-z0-9_-]+\/search\?q=satoshi&years=1$/,
-  );
-  assert.equal(r.identifier, 'satoshi');
+  assert.match(calls[0].url, /\/nostrnip5\/api\/v1\/domain\/[A-Za-z0-9_-]+\/search\?q=satoshi&years=1$/);
   assert.equal(r.available, true);
   assert.equal(r.priceSats, 10000);
-  assert.equal(r.currency, 'sat');
-  assert.equal(r.freeIdentifierNumber, '482913');
+  assert.equal(r.currency, 'sats');
 });
 
-await test('searchHandle: surfaces "taken" via available:false', async () => {
-  const { stub } = makeFetchStub([
-    { ok: true, body: { identifier: 'taken', available: false, free_identifier_number: '482913' } },
-  ]);
-  globalThis.fetch = stub;
-  const r = await searchHandle({ query: 'taken' });
-  assert.equal(r.available, false);
-  assert.equal(r.freeIdentifierNumber, '482913');
+await test('searchHandle: taken and reserved names are unavailable', async () => {
+  globalThis.fetch = makeFetchStub([
+    { body: { identifier: 'taken', available: false } },
+    { body: { identifier: 'admin', reserved: true } },
+  ]).stub;
+  assert.equal((await searchHandle({ query: 'taken' })).available, false);
+  assert.equal((await searchHandle({ query: 'admin' })).available, false);
 });
 
 await test('searchHandle: tolerates the legacy price.sats shape', async () => {
-  const { stub } = makeFetchStub([
-    { ok: true, body: { identifier: 'foo', available: true, price: { sats: 5000 } } },
-  ]);
-  globalThis.fetch = stub;
-  const r = await searchHandle({ query: 'foo' });
-  assert.equal(r.priceSats, 5000);
+  globalThis.fetch = makeFetchStub([{ body: { identifier: 'foo', available: true, price: { sats: 5000 } } }]).stub;
+  assert.equal((await searchHandle({ query: 'foo' })).priceSats, 5000);
 });
 
-await test('searchHandle: HTTP error surfaces with status code', async () => {
-  const { stub } = makeFetchStub([{ ok: false, status: 502, body: {} }]);
-  globalThis.fetch = stub;
-  await assert.rejects(
-    () => searchHandle({ query: 'satoshi' }),
-    (err) => err.status === 502,
-  );
+await test('searchHandle: HTTP errors carry the status', async () => {
+  globalThis.fetch = makeFetchStub([{ ok: false, status: 502 }]).stub;
+  await assert.rejects(() => searchHandle({ query: 'satoshi' }), (err) => err.status === 502);
 });
 
 // ---------------------------------------------------------------------------
 // requestPaidHandle
 // ---------------------------------------------------------------------------
 
-await test('requestPaidHandle: posts the right body and returns the invoice', async () => {
-  const { stub, calls } = makeFetchStub([
-    {
-      ok: true,
-      status: 201,
-      body: {
-        id: 'addr-id',
-        local_part: 'satoshi',
-        payment_request: 'lnbc1abc',
-        payment_hash: 'hash123',
-        rotation_secret: 'rot-secret',
-      },
-    },
-  ]);
+await test('requestPaidHandle: posts the body and returns the payment code', async () => {
+  const { stub, calls } = makeFetchStub([{
+    status: 201,
+    body: { id: 'addr-id', local_part: 'satoshi', payment_request: 'lnbc1abc', payment_hash: 'hash123', rotation_secret: 'rot' },
+  }]);
   globalThis.fetch = stub;
-  const r = await requestPaidHandle({
-    localPart: 'satoshi',
-    pubkeyHex: 'aa'.repeat(32),
-  });
+  const r = await requestPaidHandle({ localPart: 'satoshi', pubkeyHex: KEY });
   const body = JSON.parse(calls[0].init.body);
+  assert.equal(calls[0].init.method, 'POST');
   assert.equal(body.local_part, 'satoshi');
-  assert.equal(body.pubkey, 'aa'.repeat(32));
+  assert.equal(body.pubkey, KEY);
   assert.equal(body.create_invoice, true);
   assert.equal(body.years, 1);
-  assert.equal(calls[0].init.method, 'POST');
-  assert.equal(r.invoice, 'lnbc1abc');
-  assert.equal(r.paymentHash, 'hash123');
-  assert.equal(r.rotationSecret, 'rot-secret');
-  assert.equal(r.addressId, 'addr-id');
-  assert.equal(r.handle, 'satoshi');
+  assert.deepEqual(r, { addressId: 'addr-id', handle: 'satoshi', invoice: 'lnbc1abc', paymentHash: 'hash123', rotationSecret: 'rot' });
 });
 
-await test('requestPaidHandle: missing pubkey throws synchronously', async () => {
-  globalThis.fetch = makeFetchStub([]).stub;
-  await assert.rejects(
-    () => requestPaidHandle({ localPart: 'x', pubkeyHex: '' }),
-    /pubkey required/,
-  );
-});
-
-await test('requestPaidHandle: 409 (name taken) surfaces with status', async () => {
-  const { stub } = makeFetchStub([{ ok: false, status: 409, body: {} }]);
-  globalThis.fetch = stub;
-  await assert.rejects(
-    () => requestPaidHandle({ localPart: 'taken', pubkeyHex: 'aa'.repeat(32) }),
-    (err) => err.status === 409,
-  );
-});
-
-await test('requestPaidHandle: server returns no invoice → typed error', async () => {
-  const { stub } = makeFetchStub([
-    { ok: true, status: 201, body: { id: 'x', local_part: 'y', payment_request: null } },
-  ]);
-  globalThis.fetch = stub;
-  await assert.rejects(
-    () => requestPaidHandle({ localPart: 'y', pubkeyHex: 'aa'.repeat(32) }),
-    /did not return an invoice/,
-  );
-});
-
-// ---------------------------------------------------------------------------
-// waitForActivation
-// ---------------------------------------------------------------------------
-
-await test('waitForActivation: returns paid:true once the endpoint flips', async () => {
+await test('requestPaidHandle: asks for the chosen years, clamped to 1..10', async () => {
   const { stub, calls } = makeFetchStub([
-    { ok: true, body: { paid: false } },
-    { ok: true, body: { paid: false } },
-    { ok: true, body: { paid: true } },
+    { status: 201, body: { local_part: 'a', payment_request: 'lnbc1', payment_hash: 'h' } },
+    { status: 201, body: { local_part: 'a', payment_request: 'lnbc1', payment_hash: 'h' } },
   ]);
   globalThis.fetch = stub;
-  const r = await waitForActivation({
-    paymentHash: 'hash123',
-    intervalMs: 5,
-    maxMs: 1000,
-  });
+  await requestPaidHandle({ localPart: 'a', pubkeyHex: KEY, years: 3 });
+  await requestPaidHandle({ localPart: 'a', pubkeyHex: KEY, years: 40 });
+  assert.equal(JSON.parse(calls[0].init.body).years, 3);
+  assert.equal(JSON.parse(calls[1].init.body).years, 10);
+});
+
+await test('requestPaidHandle: missing pubkey is refused before any request', async () => {
+  globalThis.fetch = makeFetchStub([]).stub;
+  await assert.rejects(() => requestPaidHandle({ localPart: 'x', pubkeyHex: '' }), /pubkey required/);
+});
+
+await test('requestPaidHandle: 409 (just taken) carries the status', async () => {
+  globalThis.fetch = makeFetchStub([{ ok: false, status: 409 }]).stub;
+  await assert.rejects(() => requestPaidHandle({ localPart: 'taken', pubkeyHex: KEY }), (err) => err.status === 409);
+});
+
+await test('requestPaidHandle: no payment code in the answer is an error', async () => {
+  globalThis.fetch = makeFetchStub([{ status: 201, body: { id: 'x', local_part: 'y', payment_request: null } }]).stub;
+  await assert.rejects(() => requestPaidHandle({ localPart: 'y', pubkeyHex: KEY }), /did not return an invoice/);
+});
+
+// ---------------------------------------------------------------------------
+// checkPaid and waitForActivation
+// ---------------------------------------------------------------------------
+
+await test('checkPaid: true, false, and a fresh 404 counts as not paid yet', async () => {
+  globalThis.fetch = makeFetchStub([
+    { body: { paid: true } },
+    { body: { paid: false } },
+    { ok: false, status: 404 },
+    { ok: false, status: 500 },
+    new Error('offline'),
+  ]).stub;
+  assert.equal(await checkPaid({ paymentHash: 'h' }), true);
+  assert.equal(await checkPaid({ paymentHash: 'h' }), false);
+  assert.equal(await checkPaid({ paymentHash: 'h' }), false);
+  assert.equal(await checkPaid({ paymentHash: 'h' }), null);
+  assert.equal(await checkPaid({ paymentHash: 'h' }), null);
+});
+
+await test('waitForActivation: resolves paid once the server says so', async () => {
+  const { stub, calls } = makeFetchStub([{ body: { paid: false } }, { ok: false, status: 404 }, { body: { paid: true } }]);
+  globalThis.fetch = stub;
+  const r = await waitForActivation({ paymentHash: 'hash123', intervalMs: 5, maxMs: 1000 });
   assert.equal(r.paid, true);
   assert.equal(calls.length, 3);
   assert.match(calls[0].url, /\/payments\/hash123$/);
 });
 
 await test('waitForActivation: gives up with paid:false after maxMs', async () => {
-  // Stub returns "not yet" forever; the cap stops us first.
-  const { stub } = makeFetchStub(
-    Array.from({ length: 20 }, () => ({ ok: true, body: { paid: false } })),
-  );
-  globalThis.fetch = stub;
-  const r = await waitForActivation({
-    paymentHash: 'h',
-    intervalMs: 5,
-    maxMs: 25,
-  });
+  globalThis.fetch = makeFetchStub(Array.from({ length: 50 }, () => ({ body: { paid: false } }))).stub;
+  const r = await waitForActivation({ paymentHash: 'h', intervalMs: 5, maxMs: 25 });
   assert.equal(r.paid, false);
 });
 
-await test('waitForActivation: transient 404s are tolerated, paid:true still resolves', async () => {
-  const { stub } = makeFetchStub([
-    { ok: false, status: 404, body: {} },     // just-created invoice, row not visible yet
-    { ok: false, status: 404, body: {} },
-    { ok: true, body: { paid: true } },
-  ]);
-  globalThis.fetch = stub;
-  const r = await waitForActivation({
-    paymentHash: 'h',
-    intervalMs: 5,
-    maxMs: 1000,
-  });
-  assert.equal(r.paid, true);
-});
-
-await test('waitForActivation: respects an external AbortSignal', async () => {
-  const { stub } = makeFetchStub([
-    { ok: true, body: { paid: false } },
-  ]);
-  globalThis.fetch = stub;
+await test('waitForActivation: an external abort stops it with AbortError', async () => {
+  globalThis.fetch = makeFetchStub(Array.from({ length: 50 }, () => ({ body: { paid: false } }))).stub;
   const controller = new AbortController();
   setTimeout(() => controller.abort(), 10);
   await assert.rejects(
-    () => waitForActivation({
-      paymentHash: 'h',
-      signal: controller.signal,
-      intervalMs: 5,
-      maxMs: 1000,
-    }),
+    () => waitForActivation({ paymentHash: 'h', signal: controller.signal, intervalMs: 5, maxMs: 1000 }),
     (err) => err.name === 'AbortError',
   );
 });
 
 // ---------------------------------------------------------------------------
-// deriveNameSlug — profile name → safe base, or '' when unusable
+// isMine
 // ---------------------------------------------------------------------------
 
-await test('deriveNameSlug: slugifies a normal name', () => {
-  assert.equal(deriveNameSlug({ name: 'Satoshi' }), 'satoshi');
+await test('isMine: true only when the name points at this key', async () => {
+  const { stub, calls } = makeFetchStub([
+    { body: { names: { maria: KEY.toUpperCase() } } },
+    { body: { names: { maria: 'cd'.repeat(32) } } },
+    { body: { names: {} } },
+  ]);
+  assert.equal(await isMine('Maria', KEY, { fetch: stub }), true);
+  assert.equal(await isMine('maria', KEY, { fetch: stub }), false);
+  assert.equal(await isMine('maria', KEY, { fetch: stub }), false);
+  assert.match(calls[0].url, /\/nostrnip5\/api\/v1\/domain\/[A-Za-z0-9_-]+\/nostr\.json\?name=maria$/);
 });
 
-await test('deriveNameSlug: strips non-alphanumerics and lowercases', () => {
-  assert.equal(deriveNameSlug({ name: 'Big Name!! 21' }), 'bigname21');
+await test('isMine: an unanswerable check is null, never "not yours"', async () => {
+  const { stub } = makeFetchStub([{ ok: false, status: 502 }, new Error('offline'), { body: { nope: true } }]);
+  assert.equal(await isMine('maria', KEY, { fetch: stub }), null);
+  assert.equal(await isMine('maria', KEY, { fetch: stub }), null);
+  assert.equal(await isMine('maria', KEY, { fetch: stub }), null);
 });
 
-await test('deriveNameSlug: caps at 20 chars', () => {
-  assert.equal(deriveNameSlug({ name: 'a'.repeat(30) }), 'a'.repeat(20));
+await test('isMine: missing input is simply false, with no request', async () => {
+  const { stub, calls } = makeFetchStub([]);
+  assert.equal(await isMine('', KEY, { fetch: stub }), false);
+  assert.equal(await isMine('maria', '', { fetch: stub }), false);
+  assert.equal(calls.length, 0);
 });
 
-await test('deriveNameSlug: empty / sub-2-char input returns ""', () => {
-  assert.equal(deriveNameSlug({ name: '' }), '');
-  assert.equal(deriveNameSlug({ name: 'a' }), '');
-  assert.equal(deriveNameSlug({}), '');
-  assert.equal(deriveNameSlug(), '');
-});
-
-// ---------------------------------------------------------------------------
-// deriveMemorableSlug — deterministic {adjective}{animal} from npub
-// ---------------------------------------------------------------------------
-
-const SAMPLE_NPUB = 'npub1qqqsyqcyq5rqwzqfpg9scrgwpugpzysn';
-
-await test('deriveMemorableSlug: deterministic for the same npub', () => {
-  assert.equal(deriveMemorableSlug(SAMPLE_NPUB), deriveMemorableSlug(SAMPLE_NPUB));
-});
-
-await test('deriveMemorableSlug: built from a real adjective + animal', () => {
-  const slug = deriveMemorableSlug(SAMPLE_NPUB);
-  const match = ADJECTIVES.find((a) => slug.startsWith(a) && ANIMALS.includes(slug.slice(a.length)));
-  assert.ok(match, `"${slug}" should decompose into an adjective + animal`);
-});
-
-await test('deriveMemorableSlug: lowercase letters only, registerable length', () => {
-  const slug = deriveMemorableSlug(SAMPLE_NPUB);
-  assert.match(slug, /^[a-z]+$/);
-  assert.ok(slug.length >= 2 && slug.length <= 20, `unexpected length: ${slug.length}`);
-});
-
-await test('deriveMemorableSlug: different npubs generally differ', () => {
-  const a = deriveMemorableSlug('npub1aaaaaaaaaaaaaaaaaaaaaaaaaaaa');
-  const b = deriveMemorableSlug('npub1bbbbbbbbbbbbbbbbbbbbbbbbbbbb');
-  assert.notEqual(a, b);
-});
-
-await test('deriveMemorableSlug: empty npub falls back to "buho"', () => {
-  assert.equal(deriveMemorableSlug(''), 'buho');
-  assert.equal(deriveMemorableSlug(), 'buho');
+await test('lookupOwner: the owner, "no one yet", or unknown', async () => {
+  const { stub } = makeFetchStub([
+    { body: { names: { maria: KEY.toUpperCase() } } },
+    { body: { names: {}, relays: {} } },
+    { ok: false, status: 500 },
+  ]);
+  assert.equal(await lookupOwner('maria', { fetch: stub }), KEY);
+  assert.equal(await lookupOwner('maria', { fetch: stub }), '');
+  assert.equal(await lookupOwner('maria', { fetch: stub }), null);
 });
 
 // ---------------------------------------------------------------------------
-// deriveBaseSlug — name first, memorable fallback (always non-empty)
+// suggestUsernameFor
 // ---------------------------------------------------------------------------
 
-await test('deriveBaseSlug: prefers the profile name when usable', () => {
-  assert.equal(deriveBaseSlug({ name: 'Satoshi', npub: SAMPLE_NPUB }), 'satoshi');
+await test('suggestUsernameFor: one search per slug, then cached', async () => {
+  clearSuggestionCache();
+  let searches = 0;
+  const search = async () => { searches += 1; return { available: true, priceSats: 1000 }; };
+  const first = await suggestUsernameFor('María', { now: 1000, search });
+  const again = await suggestUsernameFor('Maria', { now: 2000, search });
+  assert.deepEqual(first, { slug: 'maria', available: true });
+  assert.deepEqual(again, first);
+  assert.equal(searches, 1);
 });
 
-await test('deriveBaseSlug: falls back to the memorable slug when no name', () => {
-  assert.equal(deriveBaseSlug({ npub: SAMPLE_NPUB }), deriveMemorableSlug(SAMPLE_NPUB));
+await test('suggestUsernameFor: stale after a day, unknown on errors, null without a slug', async () => {
+  clearSuggestionCache();
+  let searches = 0;
+  const ok = async () => { searches += 1; return { available: false, priceSats: null }; };
+  await suggestUsernameFor('maria', { now: 0, search: ok });
+  await suggestUsernameFor('maria', { now: 25 * 60 * 60 * 1000, search: ok });
+  assert.equal(searches, 2);
+  assert.equal(await suggestUsernameFor('bob', { search: async () => { throw new Error('offline'); } }), null);
+  assert.equal(await suggestUsernameFor('Мария', { search: ok }), null);
 });
 
-await test('deriveBaseSlug: no longer emits a buho<npub> machine slug', () => {
-  // The old fallback was `buho` + 8 npub chars; the new one is word-based.
-  const slug = deriveBaseSlug({ npub: SAMPLE_NPUB });
-  assert.match(slug, /^[a-z]+$/);
-  assert.notEqual(slug, `buho${SAMPLE_NPUB.replace(/^npub1/, '').slice(0, 8)}`);
-});
-
-console.log(`\n  ${passed} passed, ${failed} failed`);
+console.log(`\n${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);
-
-// The vocabulary is the product here: these guard the qualities the lists
-// were curated for, so a later "let's add more words" pass cannot quietly
-// reintroduce part-number names.
-await test('deriveMemorableSlug: the two words never collide at the seam', () => {
-  const longest = (slug) => ADJECTIVES
-    .filter((a) => slug.startsWith(a) && ANIMALS.includes(slug.slice(a.length)))
-    .sort((x, y) => y.length - x.length)[0];
-
-  for (let i = 0; i < 500; i += 1) {
-    const slug = deriveMemorableSlug(`npub1seamcheck${i}`);
-    const adjective = longest(slug);
-    assert.ok(adjective, `unparseable slug: ${slug}`);
-    const animal = slug.slice(adjective.length);
-    assert.notEqual(
-      adjective[adjective.length - 1],
-      animal[0],
-      `doubled letter at the seam: ${slug}`,
-    );
-  }
-});
-
-await test('name vocabulary: no duplicates, no word in both lists', () => {
-  assert.equal(new Set(ADJECTIVES).size, ADJECTIVES.length);
-  assert.equal(new Set(ANIMALS).size, ANIMALS.length);
-  assert.deepEqual(ADJECTIVES.filter((a) => ANIMALS.includes(a)), []);
-});
-
-await test('name vocabulary: every word is short and lowercase letters only', () => {
-  for (const word of [...ADJECTIVES, ...ANIMALS]) {
-    assert.match(word, /^[a-z]+$/, `not plain lowercase: ${word}`);
-    assert.ok(word.length >= 3 && word.length <= 9, `bad length: ${word}`);
-  }
-});

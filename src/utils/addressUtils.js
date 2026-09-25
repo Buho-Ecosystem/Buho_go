@@ -25,7 +25,7 @@
  * them as-is, and the regex uses the `/i` flag only for the bech32 arms.
  */
 
-import { bech32m } from 'bech32';
+import { bech32, bech32m } from 'bech32';
 import { extractLnFallbackParam } from './bip21.js';
 import { BOLT12_OFFER_HRP as BOLT12_OFFER_HRP_VALUE, isValidBolt12Offer } from './bolt12.js';
 
@@ -236,6 +236,29 @@ export function isLightningInvoice(invoice) {
   return LIGHTNING_INVOICE_HRPS.some(hrp => lower.startsWith(hrp));
 }
 
+/** Millisatoshis per unit of each BOLT11 amount multiplier (1 BTC = 1e11 msat). */
+const BOLT11_MULTIPLIER_MSAT = Object.freeze({ '': 100_000_000_000, m: 100_000_000, u: 100_000, n: 100, p: 0.1 });
+
+/**
+ * The amount a BOLT11 invoice asks for, in millisatoshis, read from its
+ * human-readable part (`lnbc10u1…` is 1,000 sats). No signature check: this
+ * answers "how much will this charge", not "is this invoice genuine".
+ *
+ * @param {unknown} invoice
+ * @returns {number|null} msat, or null for an amountless or unreadable invoice
+ */
+export function invoiceAmountMsat(invoice) {
+  const lower = stripWrapperScheme(invoice).toLowerCase();
+  const separator = lower.lastIndexOf('1');
+  if (separator < 0) return null;
+  const match = /^ln(?:bcrt|bc|tbs|tb)(\d+)([munp]?)$/.exec(lower.slice(0, separator));
+  if (!match) return null;
+  const [, digits, multiplier] = match;
+  if (multiplier === 'p' && !digits.endsWith('0')) return null; // not a whole msat
+  const msat = Number(digits) * BOLT11_MULTIPLIER_MSAT[multiplier];
+  return Number.isSafeInteger(Math.round(msat)) && msat > 0 ? Math.round(msat) : null;
+}
+
 /**
  * True if the input looks like a BOLT12 offer. BOLT12 offers are not payable
  * by BuhoGO yet, but recognizing them at every entry point lets the UI explain
@@ -259,6 +282,93 @@ export function isLnurl(lnurl) {
   const lower = stripWrapperScheme(lnurl).toLowerCase();
   if (!lower) return false;
   return LNURL_PREFIXES.some(prefix => lower.startsWith(prefix));
+}
+
+/** LNURL bech32 strings are long; the library's default limit is for addresses. */
+const LNURL_BECH32_LIMIT = 16384;
+const ONION_HOST_RE = /^(?:[a-z2-7]{16}|[a-z2-7]{56})\.onion$/i;
+
+/**
+ * Decode any LNURL carrier to the service URL it names, or null.
+ *
+ * Accepts a bech32 `lnurl1…` (any case), a `lightning:` or `lnurl:` wrapper
+ * around one, a LUD-17 `lnurlp://` / `lnurlw://` / `lnurlc://` / `keyauth://`
+ * link, and a plain https URL (http only for a .onion host). The bech32
+ * checksum is verified. Credentials, fragments and any other scheme fail.
+ *
+ * @param {unknown} input
+ * @returns {string|null}
+ */
+export function lnurlToUrl(input) {
+  const clean = stripWrapperScheme(input);
+  if (!clean) return null;
+  const lower = clean.toLowerCase();
+  let url = null;
+
+  if (/^https?:\/\//i.test(clean)) {
+    url = clean;
+  } else if (LNURL_PREFIXES.some(prefix => prefix.endsWith('://') && lower.startsWith(prefix))) {
+    // LUD-17: the scheme names the tag; the transport is https, or http for Tor.
+    const rest = clean.slice(clean.indexOf('://') + 3);
+    const host = rest.split(/[/?#]/)[0];
+    url = `${ONION_HOST_RE.test(host) ? 'http' : 'https'}://${rest}`;
+  } else if (lower.startsWith('lnurl1')) {
+    try {
+      const { prefix, words } = bech32.decode(lower, LNURL_BECH32_LIMIT);
+      if (prefix !== 'lnurl') return null;
+      url = new TextDecoder().decode(new Uint8Array(bech32.fromWords(words)));
+    } catch {
+      return null;
+    }
+  } else {
+    return null;
+  }
+
+  try {
+    const parsed = new URL(url);
+    if (parsed.username || parsed.password || parsed.hash) return null;
+    const onion = ONION_HOST_RE.test(parsed.hostname);
+    if (parsed.protocol !== 'https:' && !(parsed.protocol === 'http:' && onion)) return null;
+    return url;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The one form an LNURL is stored in: lowercase LUD-01 bech32 of the service
+ * URL. Every carrier of the same link canonicalizes to the same string, so
+ * the address book's case-folding lookups match it, and a LUD-17 link's
+ * case-sensitive path survives (bech32 is case-insensitive by design).
+ * Idempotent. Null for anything that does not decode.
+ *
+ * @param {unknown} input
+ * @returns {string|null}
+ */
+export function canonicalLnurl(input) {
+  const url = lnurlToUrl(input);
+  if (!url) return null;
+  try {
+    return bech32.encode('lnurl', bech32.toWords(new TextEncoder().encode(url)), LNURL_BECH32_LIMIT);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The host an LNURL points at, for showing a service instead of a bech32
+ * blob. '' when the input does not decode.
+ * @param {unknown} input
+ * @returns {string}
+ */
+export function lnurlDomain(input) {
+  const url = lnurlToUrl(input);
+  if (!url) return '';
+  try {
+    return new URL(url).hostname;
+  } catch {
+    return '';
+  }
 }
 
 /**

@@ -3,80 +3,106 @@
     <IdentityNav :back-to="$t(backNav.key)" :to="backNav.to" />
 
     <div class="id-sub-body">
-      <h1 class="id-large-title">{{ $t('Your usernames') }}</h1>
-      <p class="id-lede">
-        {{ $t('Choose which name appears on your public profile. Every username you add keeps working.') }}
+      <h1 class="id-large-title">{{ $t('Username') }}</h1>
+      <p v-if="!usernameAddress" class="id-lede">
+        {{ $t('A short name people can type to find you. Paid per year.') }}
       </p>
 
-      <button type="button" class="btn-primary" @click="showMarketplace = true">
-        <Icon icon="tabler:plus" width="18" height="18" />
-        {{ $t('Add another username') }}
-      </button>
-
       <IdentityGroup
-        v-if="usernames.length > 0"
-        class="username-list"
-        :title="$t('Your usernames')"
-        :footer="$t('The checked name appears on your public profile. Your other usernames still find you and receive payments.')"
+        v-if="usernameAddress || claimState"
+        :footer="footer"
       >
+        <!-- The username: the whole row copies the full address. -->
         <IdentityRow
-          v-for="entry in usernames"
-          :key="entry.handle"
-          icon="tabler:at"
-          :tone="entry.isActive ? 'accent' : 'neutral'"
-          :label="'@' + entry.handle"
-          :caption="entry.isActive ? $t('Shown on your public profile') : $t('Tap to make this your public username')"
-          :chip="entry.isActive ? $t('Current') : ''"
-          chip-tone="ok"
-          :chip-icon="entry.isActive ? 'tabler:check' : ''"
+          v-if="usernameAddress"
+          icon="tabler:rosette-discount-check-filled"
+          tone="accent"
+          :label="usernameAddress"
+          :caption="endDate ? $t('Until {date}', { date: endDate }) : $t('Tap to copy')"
           :chevron="false"
-          :interactive="!entry.isActive && !switchingHandle"
-          @click="selectUsername(entry)"
+          @click="copyUsername"
+        >
+          <template #label>
+            <NostrAddress :address="usernameAddress" />
+          </template>
+          <template #trailing>
+            <Icon
+              :icon="copied ? 'tabler:copy-check' : 'tabler:copy'"
+              width="17"
+              height="17"
+              class="username-copy"
+              aria-hidden="true"
+            />
+          </template>
+        </IdentityRow>
+
+        <!-- A purchase that is paid and finishing. -->
+        <IdentityRow
+          v-if="claimState === 'pending'"
+          icon="tabler:rosette-discount-check"
+          :label="$t('Almost ready')"
+          :caption="$t('{name} will be on your card in a moment', { name: claimAddress })"
+          :chevron="false"
+          :interactive="false"
+        >
+          <template #trailing>
+            <q-spinner size="16px" class="username-spinner" />
+          </template>
+        </IdentityRow>
+
+        <!-- A paid purchase that went to someone else first. Shown once. -->
+        <IdentityRow
+          v-else-if="claimState === 'failed'"
+          icon="tabler:alert-circle"
+          tone="warn"
+          :label="$t('We couldn\'t finish this name')"
+          :caption="$t('Someone took it a moment earlier')"
+          :chevron="false"
+          :interactive="false"
         />
       </IdentityGroup>
 
-      <div v-else class="username-empty">
-        <span class="username-empty-mark"><Icon icon="tabler:at" width="24" height="24" /></span>
-        <strong>{{ $t('No username yet') }}</strong>
-        <span>{{ $t('Add one so people can find you more easily.') }}</span>
-      </div>
+      <button
+        v-if="claimState !== 'pending'"
+        type="button"
+        class="btn-primary"
+        @click="showSheet = true"
+      >
+        {{ usernameAddress ? $t('Change username') : $t('Choose a username') }}
+      </button>
     </div>
 
-    <!--
-      The purchase itself is unchanged. Availability lookup, the free
-      fallback suggestion, the wallet picker, the invoice and the external
-      pay disclosure all still live in the marketplace sheet, because
-      reskinning a payment flow is where a redesign starts costing people
-      real money. The reframe of that sheet is the next piece of work.
-    -->
-    <Nip05MarketplaceSheet v-model="showMarketplace" @purchased="onPurchased" />
+    <Nip05MarketplaceSheet v-model="showSheet" :has-name="!!usernameAddress" />
 
-      <SettingsHubNav />
-
+    <SettingsHubNav />
   </q-page>
 </template>
 
 <script>
+import { copyToClipboard } from 'quasar';
 import { Icon } from '@iconify/vue';
 import IdentityNav from '../../components/identity/IdentityNav.vue';
 import SettingsHubNav from '../../components/settings/SettingsHubNav.vue';
 import { identityBack } from '../../composables/useIdentityBack';
 import IdentityGroup from '../../components/identity/IdentityGroup.vue';
 import IdentityRow from '../../components/identity/IdentityRow.vue';
+import NostrAddress from '../../components/identity/NostrAddress.vue';
 import Nip05MarketplaceSheet from '../../components/Nip05MarketplaceSheet.vue';
 import { useIdentityStore } from '../../stores/identity';
 import { useProfileStore } from '../../stores/profile';
 import { nip05AddressFor } from '../../services/nip05';
+import { formatCalendarDate } from '../../utils/timeFormatting';
 
 export default {
   name: 'IdentityUsernamePage',
 
   components: {
-    SettingsHubNav,
     Icon,
     IdentityNav,
+    SettingsHubNav,
     IdentityGroup,
     IdentityRow,
+    NostrAddress,
     Nip05MarketplaceSheet,
   },
 
@@ -85,18 +111,42 @@ export default {
   },
 
   data() {
-    return { showMarketplace: false, switchingHandle: '' };
+    return { showSheet: false, copied: false, copyTimer: null };
   },
 
   computed: {
     /** Back goes to whichever screen opened this one. */
     backNav() { return identityBack(this.$router, this.$route.path); },
 
-    usernames() {
-      return [...this.identity.nip05Handles].sort((a, b) => {
-        if (a.isActive !== b.isActive) return a.isActive ? -1 : 1;
-        return (b.createdAt || 0) - (a.createdAt || 0);
-      });
+    /** Full `maria@mybuho.de`, read from the published profile, or ''. */
+    usernameAddress() {
+      return nip05AddressFor(this.profile.username) || '';
+    },
+
+    /** End date this phone knows from the purchase; none rather than a guess. */
+    endDate() {
+      const expiresAt = this.identity.usernameExpiresAt(this.profile.username);
+      return formatCalendarDate(expiresAt, this.$i18n.locale);
+    },
+
+    /** 'pending' for a paid purchase still finishing, 'failed' when lost, else ''. */
+    claimState() {
+      const claim = this.identity.pendingNip05Claim;
+      if (claim?.failedAt) return 'failed';
+      if (claim?.paidAt) return 'pending';
+      return '';
+    },
+
+    claimAddress() {
+      return nip05AddressFor(this.identity.pendingNip05Claim?.handle) || '';
+    },
+
+    /** Only after a change: the old name is still paid for and still resolves. */
+    footer() {
+      const paidNames = this.identity.nip05Handles.filter((entry) => !entry.isFree);
+      return paidNames.length > 1 && this.usernameAddress
+        ? this.$t('Your old username keeps working until its paid time ends.')
+        : '';
     },
   },
 
@@ -105,81 +155,33 @@ export default {
     await this.profile.hydrate();
   },
 
+  beforeUnmount() {
+    clearTimeout(this.copyTimer);
+    // A lost purchase is reported once; leaving the page means it was seen.
+    if (this.claimState === 'failed') this.identity.clearPendingNip05Claim();
+  },
+
   methods: {
-    async publishUsername(handle, successMessage) {
-      this.profile.setField('nip05', nip05AddressFor(handle));
-      let result = null;
+    async copyUsername() {
       try {
-        result = await this.profile.publish();
-      } catch (err) {
-        console.warn('[identity-username] publish failed:', err);
+        await copyToClipboard(this.usernameAddress);
+      } catch {
+        this.$q.notify({ type: 'warning', message: this.$t("Couldn't copy"), timeout: 2000 });
+        return;
       }
-
-      if (result && result.ok) {
-        this.$q.notify({ type: 'positive', message: successMessage, timeout: 2200 });
-        return true;
-      }
-
-      this.$q.notify({
-        type: 'warning',
-        message: successMessage,
-        caption: this.$t('Your public profile will update once BuhoGO can reach the network.'),
-        timeout: 4000,
-      });
-      return false;
-    },
-
-    async selectUsername(entry) {
-      if (!entry || entry.isActive || this.switchingHandle) return;
-      this.switchingHandle = entry.handle;
-      try {
-        this.identity.setActiveNip05(entry.handle);
-        await this.publishUsername(
-          entry.handle,
-          this.$t('{name} is now on your profile', { name: '@' + entry.handle }),
-        );
-      } finally {
-        this.switchingHandle = '';
-      }
-    },
-
-    /**
-     * The sheet has already added the username and promoted it. All that is
-     * left is mirroring it onto the published card, which has no other save
-     * gesture on this screen.
-     */
-    async onPurchased() {
-      const handle = this.identity.nip05ActiveEntry?.handle;
-      if (!handle) return;
-      await this.publishUsername(
-        handle,
-        this.$t('{name} is yours', { name: '@' + handle }),
-      );
+      this.copied = true;
+      clearTimeout(this.copyTimer);
+      this.copyTimer = setTimeout(() => { this.copied = false; }, 2000);
+      this.$q.notify({ type: 'positive', message: this.$t('Username copied'), timeout: 1600 });
     },
   },
 };
 </script>
 
 <style scoped>
-
-.username-list { margin-top: 6px; }
-
-.username-empty {
-  min-height: 190px;
-  margin-top: 22px;
-  padding: 24px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  text-align: center;
-  border: 1px solid var(--border-card);
-  border-radius: var(--radius-xl);
-  background: var(--bg-card);
-  color: var(--text-secondary);
-  font-size: 13px;
+.username-copy,
+.username-spinner {
+  color: var(--text-muted);
+  flex: 0 0 auto;
 }
-
-.username-empty-mark { width: 48px; height: 48px; margin-bottom: 12px; border-radius: 50%; display: grid; place-items: center; background: var(--brand-accent-soft); color: var(--brand-accent-text); }
-.username-empty strong { color: var(--text-primary); font-size: 16px; margin-bottom: 4px; }
 </style>

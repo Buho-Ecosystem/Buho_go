@@ -113,11 +113,17 @@
                 <Icon icon="tabler:circle-check-filled" width="44" height="44" />
               </div>
               <div class="stage-title" :class="$q.dark.isActive ? 'item-label-dark' : 'item-label-light'">
-                {{ result.shared ? $t('Report created') : $t('Report saved') }}
+                {{ resultTitle }}
               </div>
               <span class="stage-text" :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'">
-                {{ resultDetail }}
+                {{ countLabel(result.count) }}
+                <span class="stage-file">{{ result.file.filename }}</span>
               </span>
+            </div>
+
+            <div v-if="error" class="notice notice--error" role="alert">
+              <Icon icon="tabler:alert-circle" width="16" height="16" />
+              <span>{{ error }}</span>
             </div>
 
             <!-- What each wallet actually gave. A single sentence covering
@@ -261,15 +267,40 @@
             <span>{{ $t('Cancel') }}</span>
           </button>
         </template>
-        <button
-          v-else-if="phase === 'done'"
-          type="button"
-          class="primary-cta"
-          :class="$q.dark.isActive ? 'dialog_add_btn_dark' : 'dialog_add_btn_light'"
-          @click="phase = 'choose'"
-        >
-          <span>{{ $t('Create another') }}</span>
-        </button>
+        <!-- The file is ready and nothing has happened to it yet: keeping it
+             is the primary action, sending it the secondary one, and starting
+             over the least prominent. -->
+        <div v-else-if="phase === 'done'" class="action-stack">
+          <button
+            type="button"
+            class="primary-cta"
+            :class="$q.dark.isActive ? 'dialog_add_btn_dark' : 'dialog_add_btn_light'"
+            :disabled="handing"
+            @click="save"
+          >
+            <Icon icon="tabler:download" width="18" height="18" />
+            <span>{{ saveLabel }}</span>
+          </button>
+          <button
+            v-if="canShare"
+            type="button"
+            class="primary-cta primary-cta--quiet"
+            :class="$q.dark.isActive ? 'quiet-dark' : 'quiet-light'"
+            :disabled="handing"
+            @click="share"
+          >
+            <Icon icon="tabler:share-2" width="18" height="18" />
+            <span>{{ $t('Share') }}</span>
+          </button>
+          <button
+            type="button"
+            class="text-cta"
+            :disabled="handing"
+            @click="startOver"
+          >
+            {{ $t('Create another') }}
+          </button>
+        </div>
         <button
           v-else
           type="button"
@@ -286,14 +317,17 @@
 </template>
 
 <script>
+import { markRaw } from 'vue';
+import { Capacitor } from '@capacitor/core';
 import { Icon } from '@iconify/vue';
 import { useWalletStore } from '../../stores/wallet';
 import { useTransactionMetadataStore } from '../../stores/transactionMetadata';
 import { normalizeTx } from '../../services/txNormalizer.js';
 import {
-  buildReport, exportReport, standardPeriods, supportsCurrency,
+  buildReport, renderReport, standardPeriods, supportsCurrency,
 } from '../../services/taxReport';
 import { createReportConnector } from '../../services/taxReport/connect.js';
+import { saveFile, shareFile, canShareFile } from '../../services/fileExport.js';
 
 /**
  * "Transaction report" — the tax-record export.
@@ -343,7 +377,15 @@ export default {
       format: 'pdf',
       progress: null,
       error: '',
+      /**
+       * The finished report: `{ file, count, outcome }`. `file` is held raw
+       * (markRaw) because Vue's proxy breaks typed-array methods on a PDF's
+       * bytes. `outcome` is the last thing done with it: null, 'saved' or
+       * 'shared'.
+       */
       result: null,
+      /** A save or share dialog is open; both actions wait for it to close. */
+      handing: false,
       warnings: [],
       /**
        * The report currently in flight, or null.
@@ -455,7 +497,6 @@ export default {
     headerTitle() {
       if (this.view === 'wallets') return this.$t('Wallets');
       if (this.phase === 'working') return this.$t('One moment');
-      if (this.phase === 'done') return this.$t('Done');
       return this.$t('Transaction report');
     },
 
@@ -475,13 +516,25 @@ export default {
       return this.$t('Building the file…');
     },
 
-    resultDetail() {
-      if (!this.result) return '';
-      const { filename, shared, count } = this.result;
-      const covered = this.countLabel(count);
-      return shared
-        ? `${covered} · ${filename}`
-        : this.$t('{covered}. Saved as {filename}.', { covered, filename });
+    resultTitle() {
+      switch (this.result?.outcome) {
+        case 'saved': return this.$t('Report saved');
+        case 'shared': return this.$t('Report shared');
+        default: return this.$t('Report ready');
+      }
+    },
+
+    /** Each platform's own words for keeping a file. */
+    saveLabel() {
+      switch (Capacitor.getPlatform()) {
+        case 'ios': return this.$t('Save to Files');
+        case 'android': return this.$t('Save to device');
+        default: return this.$t('Download');
+      }
+    },
+
+    canShare() {
+      return !!this.result && canShareFile(this.result.file);
     },
   },
 
@@ -510,6 +563,7 @@ export default {
       this.progress = null;
       this.error = '';
       this.result = null;
+      this.handing = false;
       this.warnings = [];
     },
 
@@ -528,6 +582,50 @@ export default {
       this.stopRun();
       this.phase = 'choose';
       this.progress = null;
+    },
+
+    /** Keep the finished file where the user chooses. */
+    save() {
+      return this.handOver(saveFile, 'saved', (err) => (err?.code === 'UNAVAILABLE'
+        ? this.$t('This device has no app for saving files. Use Share instead.')
+        : this.$t("The file couldn't be saved. Try again.")));
+    },
+
+    /** Offer the finished file to another app. */
+    share() {
+      return this.handOver(shareFile, 'shared', () => this.$t("The file couldn't be shared. Try again."));
+    },
+
+    /**
+     * Run one system dialog over the finished file.
+     *
+     * Closing the dialog is not an error and changes nothing on screen. The
+     * file stays in memory either way, so both actions can be repeated
+     * without building the report again.
+     *
+     * @param {(file: object) => Promise<object>} action saveFile or shareFile
+     * @param {'saved'|'shared'} outcome the result flag that action resolves true
+     * @param {(err: Error) => string} failureMessage
+     */
+    async handOver(action, outcome, failureMessage) {
+      if (this.handing || !this.result) return;
+      this.handing = true;
+      this.error = '';
+      try {
+        const done = await action(this.result.file);
+        if (done[outcome]) this.result.outcome = outcome;
+      } catch (err) {
+        console.error(`Report ${outcome === 'saved' ? 'save' : 'share'} failed:`, err);
+        this.error = failureMessage(err);
+      } finally {
+        this.handing = false;
+      }
+    },
+
+    startOver() {
+      this.result = null;
+      this.error = '';
+      this.phase = 'choose';
     },
 
     /**
@@ -658,7 +756,7 @@ export default {
         // partial record they had just asked us not to make.
         if (signal.aborted) return;
 
-        const out = await exportReport(report, this.format);
+        const file = await renderReport(report, this.format);
 
         this.walletResults = report.walletResults || [];
         this.warnings = [
@@ -667,7 +765,7 @@ export default {
           this.missingRatesNote(report.summary.missingRates),
         ].filter(Boolean);
 
-        this.result = { ...out, count: report.summary.count };
+        this.result = { file: markRaw(file), count: report.summary.count, outcome: null };
         this.phase = 'done';
       } catch (err) {
         if (signal.aborted) return;
@@ -765,6 +863,12 @@ body.body--dark .segment--on { background: rgba(255, 255, 255, 0.12); color: #f8
 .stage-title { font-family: 'Manrope', sans-serif; font-size: 18px; font-weight: 700; letter-spacing: -0.01em; }
 .stage-text { font-family: 'Manrope', sans-serif; font-size: 14px; line-height: 1.5; max-width: 320px; }
 .stage-check { color: #15a35b; }
+/* The filename on a line of its own, whole: a name broken at a hyphen reads
+   as two dates. */
+.stage-file {
+  display: block; max-width: 100%;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
 body.body--dark .stage-check { color: #2bd17f; }
 
 .notice { display: flex; align-items: flex-start; gap: 9px; padding: 11px 13px; border-radius: 12px; font-family: 'Manrope', sans-serif; font-size: 12.5px; line-height: 1.45; }
@@ -851,11 +955,23 @@ body.body--dark .tally-ok { color: #2bd17f; }
 .tally-warn { flex-shrink: 0; color: #b45309; }
 body.body--dark .tally-warn { color: #fbbf24; }
 
-/* Cancel: present and reachable, without competing with a primary action
-   that is not on screen while it is. */
+/* Secondary: Cancel while working, Share once done. Present and reachable
+   without competing with the primary action. */
 .primary-cta--quiet { font-weight: 600; }
 .quiet-light { background: rgba(15, 23, 42, 0.06); color: #334155; }
 .quiet-dark { background: rgba(255, 255, 255, 0.08); color: #e2e8f0; }
+
+/* Done: filled, tinted, then plain text, one step down in emphasis each. */
+.action-stack { display: flex; flex-direction: column; gap: 8px; }
+.text-cta {
+  all: unset; box-sizing: border-box;
+  display: flex; align-items: center; justify-content: center;
+  width: 100%; min-height: 44px;
+  font-family: 'Manrope', sans-serif; font-size: 15px; font-weight: 600; color: #15a35b;
+  cursor: pointer; -webkit-tap-highlight-color: transparent;
+}
+body.body--dark .text-cta { color: #2bd17f; }
+.text-cta:disabled { opacity: 0.45; cursor: default; }
 
 .item-label-light { color: #0f172a; }
 .item-label-dark  { color: #f8fafc; }

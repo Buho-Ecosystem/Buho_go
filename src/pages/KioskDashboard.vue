@@ -605,13 +605,19 @@ export default defineComponent({
 </script>
 
 <style scoped>
-.kiosk-page { min-height: 100vh; display: flex; justify-content: center; }
+/* padding-top: 0 cancels the global `.q-page { padding-top: var(--safe-top) }`
+   in app.css. The kiosk shell is exactly one viewport tall, so inheriting that
+   pad would make the page 100dvh + --safe-top — it scrolls, and the charge
+   button at the bottom of the shell is pushed behind the system nav bar. The
+   status-bar inset is taken by .kiosk-header instead (same pattern as
+   .shop-page / .shop-header in ShopPage.vue). */
+.kiosk-page { min-height: 100dvh; padding-top: 0; display: flex; justify-content: center; }
 .kiosk-shell { width: 100%; max-width: 448px; height: 100vh; height: 100dvh; display: flex; flex-direction: column; overflow: hidden; }
 .kiosk-dark { background: #0f0f14; color: #e8eaed; }
 .kiosk-light { background: var(--bg-primary); color: var(--text-primary); }
 
 /* Header */
-.kiosk-header { display: flex; align-items: center; justify-content: space-between; padding: 14px 16px; flex-shrink: 0; position: relative; }
+.kiosk-header { display: flex; align-items: center; justify-content: space-between; padding: calc(14px + var(--safe-top, 0px)) 16px 14px; flex-shrink: 0; position: relative; }
 .kiosk-logo { position: absolute; left: 50%; transform: translateX(-50%); display: flex; align-items: center; }
 .kiosk-wallet-badge { display: flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 600; font-family: 'Manrope', sans-serif; padding: 5px 10px; border-radius: 8px; background: rgba(255,255,255,0.05); color: #9ca3af; letter-spacing: 0.2px; }
 .kiosk-light .kiosk-wallet-badge { background: var(--bg-input); color: var(--text-secondary); }
@@ -739,7 +745,11 @@ export default defineComponent({
 /* 48px floor clears a 3-button Android nav bar even when the WebView
    reports zero bottom inset (edge-to-edge mode). var(--safe-bottom)
    wins on devices that report a larger inset (notch landscape, etc.). */
-.pos-actions { display: flex; gap: 10px; padding-bottom: max(48px, var(--safe-bottom, 16px)); }
+/* Additive, not max(): with max() a 3-button nav bar (--safe-bottom ≈ 48px)
+   yields exactly 48px, leaving the charge button flush against the bar. The
+   calc keeps the familiar 48px on gesture nav (16 + 32px floor) and grows to a
+   real gap on 3-button devices. */
+.pos-actions { display: flex; gap: 10px; padding-bottom: calc(16px + var(--safe-bottom, 16px)); }
 .pos-add-btn { display: flex; align-items: center; justify-content: center; width: 56px; height: 56px; flex-shrink: 0; background: rgba(5,149,115,0.08); color: #059573; border: 1.5px solid rgba(5,149,115,0.25); border-radius: 14px; cursor: pointer; transition: transform 0.08s ease, background 0.08s ease; -webkit-tap-highlight-color: transparent; }
 .pos-add-btn:active:not(:disabled) { transform: scale(0.94); background: rgba(5,149,115,0.15); }
 .kiosk-light .pos-add-btn { background: rgba(5,149,115,0.05); }

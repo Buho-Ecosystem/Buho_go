@@ -2,6 +2,12 @@
 // https://v2.quasar.dev/quasar-cli-vite/quasar-config-file
 
 import { defineConfig } from '#q-app/wrappers'
+import { createRequire } from 'node:module'
+
+// The app's own version, exposed to runtime code as process.env.APP_VERSION.
+// Used to key per-install memory to a build — e.g. the QR scanner engine
+// choice (src/utils/scannerEngine.js) is re-evaluated after every update.
+const { version: appVersion } = createRequire(import.meta.url)('./package.json')
 
 export default defineConfig((ctx) => {
   return {
@@ -17,6 +23,7 @@ export default defineConfig((ctx) => {
       'theme',
       'axios',
       'i18n',
+      'toasts',
       'iconify',
       'safe-area',
       'kiosk',
@@ -26,9 +33,10 @@ export default defineConfig((ctx) => {
       // forceSecure override guard. Safe to load everywhere — the
       // util layer no-ops on web.
       'secure-screen',
-      // 'nip05' silently registers/maintains the user's name@mybuho.de
-      // handle once an identity exists. Safe everywhere (a plain fetch);
-      // idempotent and best-effort.
+      // 'nip05' keeps the published username honest (drops the retired free
+      // handle, checks names this phone never recorded) and finishes paid
+      // purchases that outlived the claim sheet. Registers nothing.
+      // Best-effort and idempotent; safe everywhere (plain fetches).
       'nip05',
       // 'payment-address' gives every identity a payment address it did not
       // have to go and find: the first Spark wallet's Lightning address when
@@ -37,6 +45,9 @@ export default defineConfig((ctx) => {
       // username resolves to a profile with nothing to pay. Best-effort and
       // idempotent, same as 'nip05'.
       'payment-address',
+      // 'emergency-exit' resumes any exit in progress: chain checks and the
+      // next package broadcasts, independent of Spark being reachable.
+      'emergency-exit',
       // Keep profile changes synced quietly; publishing is not a user task.
       'profile-sync',
       ctx.mode.capacitor ? 'deep-links' : '',
@@ -83,7 +94,9 @@ export default defineConfig((ctx) => {
 
       // publicPath: '/',
       // analyze: true,
-      // env: {},
+      env: {
+        APP_VERSION: appVersion,
+      },
       // rawDefine: {}
       // ignorePublicFolder: true,
       // minify: false,
@@ -102,16 +115,12 @@ export default defineConfig((ctx) => {
         viteConf.optimizeDeps.exclude = viteConf.optimizeDeps.exclude || []
         viteConf.optimizeDeps.exclude.push('@breeztech/breez-sdk-spark')
 
-        // The Arkade SDK's descriptor dependency references Node's `global`;
-        // map it to globalThis in the dev pre-bundle (the production build
-        // resolves it on its own).
-        viteConf.optimizeDeps.esbuildOptions = {
-          ...(viteConf.optimizeDeps.esbuildOptions || {}),
-          define: {
-            ...((viteConf.optimizeDeps.esbuildOptions || {}).define || {}),
-            global: 'globalThis',
-          },
-        }
+        // The Arkade SDK's descriptor dependency writes through a bare `global`
+        // identifier. That used to be patched here with an optimizeDeps define
+        // (global -> globalThis), which only ever covered the dev pre-bundle and
+        // went silent when Vite 8 swapped esbuild for Rolldown. It is now a
+        // classic <script> shim at the top of index.html, which no bundler
+        // change can quietly drop — see the comment there.
       },
       // viteVuePluginOptions: {},
 
@@ -144,10 +153,8 @@ export default defineConfig((ctx) => {
         notify: {
           position: 'bottom',
           timeout: 2500,
-          classes: 'buho-notify',
           textColor: 'white',
           progress: true,
-          actions: [{ icon: 'close', color: 'white', dense: true, flat: true, round: true, size: 'sm' }]
         }
       },
 

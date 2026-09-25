@@ -122,6 +122,28 @@ export function formatDate(timestamp) {
 }
 
 /**
+ * A calendar date in the reader's own language, e.g. "24 Sep 2028" or
+ * "24. Sept. 2028". Unlike `formatDate` it follows the app's locale and
+ * takes milliseconds.
+ *
+ * @param {number} ms - epoch milliseconds
+ * @param {string} [locale] - BCP 47 tag; the runtime's own when omitted
+ * @returns {string} '' for a missing or invalid date
+ */
+export function formatCalendarDate(ms, locale) {
+  if (!Number.isFinite(ms)) return ''
+  try {
+    return new Intl.DateTimeFormat(locale || undefined, {
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric'
+    }).format(new Date(ms))
+  } catch {
+    return new Date(ms).toDateString()
+  }
+}
+
+/**
  * Check if timestamp is today
  * @param {number} timestamp - Unix timestamp in seconds
  * @returns {boolean} True if timestamp is today

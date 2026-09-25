@@ -296,6 +296,31 @@
         </SettingsRow>
 
         <!--
+          Payment notifications. A full peer of the setup wizard's slide, not a
+          read-out of it: someone who tapped "Not now" there turns them on
+          here, and the system dialog is raised from this row. The switch shows
+          `canNotify` (our switch AND the OS permission), so a permission
+          revoked in system settings reads as OFF without destroying the
+          user's own choice. After an OS-level denial Android never asks again,
+          so the caption says where to go instead of leaving a dead toggle.
+        -->
+        <SettingsRow
+          v-if="notificationsStore.supported"
+          icon="tabler:bell"
+          :label="$t('Payment notifications')"
+          :caption="notificationsCaption"
+          :interactive="false"
+        >
+          <template #right>
+            <q-toggle
+              :model-value="notificationsStore.canNotify"
+              @update:model-value="toggleNotifications"
+              :color="$q.dark.isActive ? 'brand-green' : 'brand-green-dark'"
+            />
+          </template>
+        </SettingsRow>
+
+        <!--
           Screen Privacy — Android FLAG_SECURE.
           On native: toggle mirrors the canonical persisted value
           owned by SecureScreenPlugin; toggling here flows through
@@ -653,10 +678,18 @@
            anyone hunting for advanced controls is happy to scroll
            the extra row. -->
       <SettingsSection
+        id="settings-advanced"
         :title="$t('Advanced')"
         collapsible
-        :default-expanded="false"
+        :default-expanded="$route.query.section === 'advanced'"
       >
+        <SettingsRow
+          v-if="walletStore.sparkWallets.length"
+          icon="tabler:fire-extinguisher"
+          :label="$t('Emergency exit kit')"
+          :caption="$t('Move this wallet\'s money to plain Bitcoin without Spark\'s help.')"
+          @click="showKitSheet = true"
+        />
         <SettingsRow
           icon="tabler:chart-line"
           :label="$t('Exchange Rate Source')"
@@ -821,6 +854,15 @@
     </q-dialog>
 
     <TaxReportSheet v-model="showTaxReportSheet" />
+
+    <ExitKitSheet
+      v-model="showKitSheet"
+      @how="openKitAction('how')"
+      @cloud="openKitAction('cloud')"
+      @hide="onKitHidden"
+    />
+    <HowExitWorksSheet v-model="showHowExit" />
+    <CloudBackupSheet v-model="showKitCloudBackup" intent="backup" />
 
     <GetAppDialog v-model="showGetAppDialog" :message="getAppDialogMessage" />
 
@@ -2043,6 +2085,7 @@ import {useAutoWithdrawStore} from '../stores/autoWithdraw'
 import {useBitcoinPreferencesStore} from '../stores/bitcoinPreferences'
 import {useIdentityStore} from '../stores/identity'
 import {useProfileStore} from '../stores/profile'
+import {useNotificationsStore} from '../stores/notifications'
 import {mapState, mapActions} from 'pinia'
 import {fiatRatesService} from '../utils/fiatRates.js'
 import {formatAmount} from '../utils/amountFormatting.js'
@@ -2064,6 +2107,9 @@ import LNBitsLightningAddressDialog from '../components/LNBitsLightningAddressDi
 import SparkLightningAddressSheet from '../components/SparkLightningAddressSheet.vue'
 import GetAppDialog from '../components/GetAppDialog.vue'
 import TaxReportSheet from '../components/settings/TaxReportSheet.vue'
+import ExitKitSheet from '../components/exit/ExitKitSheet.vue'
+import HowExitWorksSheet from '../components/exit/HowExitWorksSheet.vue'
+import CloudBackupSheet from '../components/CloudBackupSheet.vue'
 import SettingsSection from '../components/settings/SettingsSection.vue'
 import SettingsRow from '../components/settings/SettingsRow.vue'
 import SettingsAttentionStrip from '../components/settings/SettingsAttentionStrip.vue'
@@ -2100,6 +2146,9 @@ export default {
     SparkLightningAddressSheet,
     GetAppDialog,
     TaxReportSheet,
+    ExitKitSheet,
+    HowExitWorksSheet,
+    CloudBackupSheet,
     SettingsSection,
     SettingsRow,
     SettingsAttentionStrip,
@@ -2112,6 +2161,10 @@ export default {
   data() {
     return {
       showWalletsDialog: false,
+      showKitSheet: false,
+      showHowExit: false,
+      showKitCloudBackup: false,
+      pendingKitAction: null,
       showSparkLnAddressSheet: false,
       showAddWalletDialog: false,
       // Per-wallet detail sheet (opened from a Manage Wallets row).
@@ -2135,8 +2188,6 @@ export default {
       isReconnecting: {},
 
       // Settings
-      notificationsEnabled: true,
-      hasNotificationPermission: false,
       pinEnabled: false,
       hasPin: false,
       currentPin: '',
@@ -2416,6 +2467,28 @@ export default {
      */
     profileStore() {
       return useProfileStore();
+    },
+
+    /**
+     * Payment-notification store. Drives the row's visibility
+     * (`supported`), the toggle state (`canNotify`), and the enable /
+     * disable actions; `created()` calls `initialize()` so the row
+     * reflects the live OS permission on first paint.
+     */
+    notificationsStore() {
+      return useNotificationsStore();
+    },
+
+    /**
+     * Caption under the Payment notifications row. A denial is final on
+     * Android — the OS will not raise the dialog again — so once the
+     * permission is 'denied' the caption stops explaining the feature and
+     * points at the only place the user can still change it.
+     */
+    notificationsCaption() {
+      return this.notificationsStore.permission === 'denied'
+        ? this.$t('Notifications are blocked for BuhoGO in your phone settings.')
+        : this.$t('Get a notification when a payment lands while you are in another app.');
     },
 
     /**
@@ -2893,7 +2966,12 @@ export default {
   created() {
     this.initializeStore();
     this.loadPinState();
-    this.checkNotificationPermission();
+    // Load the user's switch, then re-read the OS permission: they may have
+    // changed it in system settings since the app started, and this row must
+    // never claim more than the OS allows.
+    this.notificationsStore.initialize()
+      .then(() => this.notificationsStore.syncPermission())
+      .catch(() => {});
     this.loadMempoolSettings();
     this.loadLanguagePreference();
     this.checkBiometricAvailability();
@@ -2952,6 +3030,19 @@ export default {
     }
   },
   methods: {
+    openKitAction(action) {
+      this.pendingKitAction = action;
+      this.showKitSheet = false;
+    },
+
+    onKitHidden() {
+      // Hand off only after the dialog closes, preserving focus and one sheet at a time.
+      const action = this.pendingKitAction;
+      this.pendingKitAction = null;
+      if (action === 'how') this.showHowExit = true;
+      else if (action === 'cloud') this.showKitCloudBackup = true;
+    },
+
     ...mapActions(useWalletStore, [
       'initialize',
       'addWallet',
@@ -3478,6 +3569,27 @@ export default {
     },
 
     /**
+     * The in-app switch. Turning it on asks the OS the first time; a denial is
+     * final on Android, so we say where the user can change their mind instead
+     * of pretending the toggle worked.
+     */
+    async toggleNotifications(value) {
+      if (!value) {
+        this.notificationsStore.disable();
+        return;
+      }
+      const on = await this.notificationsStore.enable();
+      if (on) return;
+      this.$q.notify({
+        message: this.notificationsStore.permission === 'denied'
+          ? this.$t('Notifications are blocked for BuhoGO in your phone settings.')
+          : this.$t('Notifications not available'),
+        color: 'warning',
+        timeout: 3500,
+      });
+    },
+
+    /**
      * Flip the Screen Privacy toggle.
      *
      * On web / PWA the underlying OS primitive doesn't exist, so
@@ -3695,9 +3807,10 @@ export default {
 
       const count = this.sparkWallets.length;
       this.dangerConfirmTitle = this.$t('Delete Spark Wallets');
-      this.dangerConfirmMessage = count > 1
+      this.dangerConfirmMessage = (count > 1
         ? this.$t('This will permanently delete all {count} Spark wallets. Make sure you have backed up your seed phrases. This action cannot be undone.', { count })
-        : this.$t('This will permanently delete your Spark wallet. Make sure you have backed up your seed phrase. This action cannot be undone.');
+        : this.$t('This will permanently delete your Spark wallet. Make sure you have backed up your seed phrase. This action cannot be undone.'))
+        + ' ' + this.$t('The last saved exit kit stays on this phone in case you add the wallet again with the same words.');
       this.dangerConfirmButtonText = this.$t('Delete');
       this.dangerConfirmInput = '';
       this.dangerConfirmAction = 'deleteSparkWallet';
@@ -3877,63 +3990,6 @@ export default {
           type: 'positive',
           message: this.$t('PIN updated'),
 
-        });
-      }
-    },
-
-    async checkNotificationPermission() {
-      if ('Notification' in window) {
-        this.hasNotificationPermission = Notification.permission === 'granted';
-        this.notificationsEnabled = this.hasNotificationPermission;
-      }
-    },
-
-    async requestNotificationPermission() {
-      try {
-        const permission = await Notification.requestPermission();
-        this.hasNotificationPermission = permission === 'granted';
-        this.notificationsEnabled = this.hasNotificationPermission;
-
-        if (this.hasNotificationPermission) {
-          if ('serviceWorker' in navigator) {
-            try {
-              const registration = await navigator.serviceWorker.register('/service-worker.js');
-              console.log('Service Worker registered:', registration);
-            } catch (error) {
-              console.error('Service Worker registration failed:', error);
-            }
-          }
-        }
-      } catch (error) {
-        console.error('Error requesting notification permission:', error);
-        this.$q.notify({
-          type: 'negative',
-          message: this.$t('Notifications not available'),
-
-        });
-      }
-    },
-
-    handleNotificationsToggle(enabled) {
-      if (enabled && !this.hasNotificationPermission) {
-        this.requestNotificationPermission();
-      } else if (!enabled) {
-        this.$q.dialog({
-          title: this.$t('Disable Notifications'),
-          message: this.$t('Are you sure you want to disable notifications?'),
-          cancel: true,
-          persistent: true
-        }).onOk(() => {
-          this.notificationsEnabled = false;
-          if ('serviceWorker' in navigator) {
-            navigator.serviceWorker.getRegistrations().then(registrations => {
-              registrations.forEach(registration => {
-                registration.unregister();
-              });
-            });
-          }
-        }).onCancel(() => {
-          this.notificationsEnabled = true;
         });
       }
     },

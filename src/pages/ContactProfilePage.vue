@@ -22,6 +22,12 @@
               </q-item-section>
               <q-item-section>{{ $t('Edit') }}</q-item-section>
             </q-item>
+            <q-item v-if="entry" clickable v-close-popup @click="onToggleFavorite">
+              <q-item-section avatar style="min-width: 32px;">
+                <Icon :icon="entry.isFavorite ? 'tabler:star-filled' : 'tabler:star'" width="18" height="18" />
+              </q-item-section>
+              <q-item-section>{{ entry.isFavorite ? $t('Remove from favorites') : $t('Add to favorites') }}</q-item-section>
+            </q-item>
             <q-separator />
             <q-item clickable v-close-popup @click="showRemoveConfirm = true">
               <q-item-section avatar style="min-width: 32px;">
@@ -35,19 +41,11 @@
     </div>
 
     <div v-if="entry" class="profile-content">
-      <!-- Identity: avatar with the favorite star riding it, then the name. -->
+      <!-- Identity and primary payment action. Management lives in More. -->
       <div class="profile-id">
         <span class="profile-avatar-wrap">
           <ContactAvatar class="profile-avatar" :entry="entry" />
-          <button
-            type="button"
-            class="profile-star"
-            :class="{ 'profile-star--on': entry.isFavorite }"
-            :aria-label="entry.isFavorite ? $t('Remove from favorites') : $t('Add to favorites')"
-            @click="onToggleFavorite"
-          >
-            <Icon :icon="entry.isFavorite ? 'tabler:star-filled' : 'tabler:star'" width="13" height="13" />
-          </button>
+
         </span>
         <strong class="profile-name">{{ entry.name }}</strong>
         <span v-if="entry.notes" class="profile-notes">{{ entry.notes }}</span>
@@ -56,7 +54,7 @@
       <!-- The address, copyable in place. Identity-only contacts show the
            calm no-address state instead; paying still explains + re-checks. -->
       <button v-if="entryAddress" type="button" class="profile-addr" @click="copyAddress">
-        <code>{{ entryAddress }}</code>
+        <code>{{ entryAddressDisplay }}</code>
         <Icon :icon="addressCopied ? 'tabler:check' : 'tabler:copy'" width="14" height="14" />
       </button>
       <div v-else class="profile-addr profile-addr--empty">
@@ -145,6 +143,7 @@ import { usePayContact } from '../composables/usePayContact'
 import { normalizeTx } from '../services/txNormalizer.js'
 import ContactAvatar from '../components/AddressBook/ContactAvatar.vue'
 import AddressBookModal from '../components/AddressBook/AddressBookModal.vue'
+import { serviceAddressLine } from '../utils/lnurlMetadata.js'
 
 /** How many payments the Between-you list shows. */
 const HISTORY_LIMIT = 8
@@ -167,11 +166,20 @@ export default {
       showEdit: false,
       showRemoveConfirm: false,
       addressCopied: false,
+      addressRevealed: false,
       history: [],
       historyLoading: false,
       _copyTimer: null,
       _historyToken: 0,
     }
+  },
+
+  watch: {
+    // The page instance is reused across contacts; a revealed link belongs
+    // to the contact it was revealed for.
+    '$route.params.id'() {
+      this.addressRevealed = false
+    },
   },
 
   computed: {
@@ -183,6 +191,20 @@ export default {
     entryAddress() {
       if (!this.entry) return ''
       return this.entry.address || this.entry.lightningAddress || ''
+    },
+
+    /**
+     * What the address line shows. A service pay link (LUD-11, stored as
+     * canonical bech32) is unreadable, so the line says where it points and
+     * what it is; a tap reveals the full link (and copies it, as for every
+     * other address).
+     */
+    entryAddressDisplay() {
+      if (!this.entryAddress) return ''
+      if (this.entry?.addressType === 'lnurl' && !this.addressRevealed) {
+        return serviceAddressLine(this.entryAddress, this.$t)
+      }
+      return this.entryAddress
     },
   },
 
@@ -214,6 +236,9 @@ export default {
 
     async copyAddress() {
       if (!this.entryAddress) return
+      // A service link shows its domain until tapped; the tap reveals the
+      // full link (it stays revealed) and copies it like any address.
+      if (this.entry?.addressType === 'lnurl') this.addressRevealed = true
       try {
         await navigator.clipboard.writeText(this.entryAddress)
         this.addressCopied = true
@@ -245,7 +270,9 @@ export default {
       const token = ++this._historyToken
       const contactId = this.entry?.id
       const address = this.entryAddress.trim().toLowerCase()
-      if (!contactId && !address) return
+      const aliases = new Set([address, this.entry?.service?.payLink, this.entry?.service?.identifier]
+        .filter(Boolean).map(value => value.trim().toLowerCase()))
+      if (!contactId && !aliases.size) return
 
       const sources = this.walletStore.wallets
         .map((wallet) => ({ wallet, provider: this.walletStore.providers?.[wallet.id] }))
@@ -264,7 +291,7 @@ export default {
               const txAddress = String(tx.lnaddress || '').trim().toLowerCase()
               const metaAddress = String(meta.recipientAddress || '').trim().toLowerCase()
               const matches =
-                (address && (txAddress === address || metaAddress === address))
+                (aliases.has(txAddress) || aliases.has(metaAddress))
                 || (contactId && meta.contactId === contactId)
               return {
                 ...tx,
@@ -345,14 +372,16 @@ export default {
 
 .header-title {
   color: var(--text-primary);
-  font-size: 16px;
+  font-size: 1rem;
   font-weight: 600;
   flex: 1;
   text-align: center;
 }
 
-.header-more {
-  width: 40px;
+.header-more,
+.back-btn {
+  min-width: 44px;
+  min-height: 44px;
   color: var(--text-secondary);
 }
 
@@ -382,46 +411,25 @@ export default {
   height: 76px;
   border-radius: 50%;
   overflow: hidden;
-  display: block;
-}
-
-/* The favorite control rides the avatar, neobank style. */
-.profile-star {
-  position: absolute;
-  right: -2px;
-  bottom: -2px;
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
-  border: 0;
-  background: var(--bg-card);
-  box-shadow: 0 1px 5px rgba(0, 0, 0, 0.22), inset 0 0 0 1px var(--border-card);
-  color: var(--text-muted);
-  display: grid;
-  place-items: center;
-  cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
-}
-
-.profile-star--on {
-  color: var(--brand-accent-text, var(--color-green));
+  display: inline-flex;
 }
 
 .profile-name {
-  font-size: 20px;
+  font-size: 1.25rem;
   font-weight: 780;
   letter-spacing: -0.01em;
   color: var(--text-primary);
 }
 
 .profile-notes {
-  font-size: 12.5px;
+  font-size: 0.78125rem;
   color: var(--text-secondary);
   max-width: 40ch;
   line-height: 1.45;
 }
 
 .profile-addr {
+  min-height: 44px;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -431,7 +439,7 @@ export default {
   border-radius: 12px;
   padding: 10px 12px;
   margin: 14px 0 10px;
-  color: var(--text-muted);
+  color: var(--text-secondary);
   cursor: pointer;
   text-align: left;
   -webkit-tap-highlight-color: transparent;
@@ -441,7 +449,7 @@ export default {
   flex: 1;
   min-width: 0;
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 0.8125rem;
   color: var(--text-primary);
   overflow-wrap: anywhere;
   line-height: 1.5;
@@ -449,18 +457,19 @@ export default {
 
 .profile-addr--empty {
   cursor: default;
-  font-size: 12.5px;
+  font-size: 0.78125rem;
 }
 
 .profile-pay {
   width: 100%;
-  height: 46px;
+  min-height: 46px;
+  padding: 10px 16px;
   border-radius: 23px;
   border: 0;
   background: #1A1A1C;
   color: #FAF7EF;
   font-family: 'Manrope', sans-serif;
-  font-size: 15px;
+  font-size: 0.9375rem;
   font-weight: 750;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
@@ -476,11 +485,11 @@ body.body--dark .profile-pay {
 }
 
 .profile-sec-label {
-  font-size: 10.5px;
+  font-size: 0.8125rem;
   font-weight: 750;
   letter-spacing: 0.12em;
   text-transform: uppercase;
-  color: var(--text-muted);
+  color: var(--text-secondary);
   margin: 22px 2px 6px;
 }
 
@@ -505,7 +514,7 @@ body.body--dark .profile-pay {
   height: 34px;
   border-radius: 50%;
   background: var(--bg-input);
-  color: var(--text-muted);
+  color: var(--text-secondary);
   display: grid;
   place-items: center;
   flex: 0 0 auto;
@@ -520,18 +529,18 @@ body.body--dark .profile-pay {
 }
 
 .profile-tx-copy strong {
-  font-size: 13.5px;
+  font-size: 0.84375rem;
   font-weight: 700;
   color: var(--text-primary);
 }
 
 .profile-tx-copy small {
-  font-size: 11px;
-  color: var(--text-muted);
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
 }
 
 .profile-tx-amt {
-  font-size: 13px;
+  font-size: 0.8125rem;
   font-weight: 750;
   color: var(--text-primary);
   font-variant-numeric: tabular-nums;
@@ -541,8 +550,8 @@ body.body--dark .profile-pay {
   display: flex;
   align-items: center;
   gap: 7px;
-  font-size: 11.5px;
-  color: var(--text-muted);
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
   line-height: 1.5;
   margin: 6px 2px 0;
 }

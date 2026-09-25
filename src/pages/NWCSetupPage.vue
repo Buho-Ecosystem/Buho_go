@@ -192,6 +192,7 @@
 </template>
 
 <script>
+import { isAddressRequest } from '../utils/lud23.js';
 import QrScanner from 'qr-scanner'
 import { createQrScanner } from '../utils/qrScanner'
 import { isNativeScannerAvailable } from '../utils/nativeScanner'
@@ -353,6 +354,11 @@ export default {
     },
 
     handleQrScan(qrData) {
+      if (isAddressRequest(qrData)) {
+        this.closeScanner();
+        this.$q.notify({ type: 'info', message: this.$t('This code asks for your Lightning address. Scan it from Home after setting up your wallet.') });
+        return;
+      }
       if (!qrData) return;
 
       // Use the same parser as the manual-input path so the two flows

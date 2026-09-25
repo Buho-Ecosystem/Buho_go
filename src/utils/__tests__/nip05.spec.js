@@ -380,5 +380,20 @@ await test('NIP05_ERROR is a frozen catalogue of stable string codes', () => {
   }
 });
 
+await test('resolveNip05: BuhoGO usernames are asked of the name server directly', async () => {
+  const key = 'ab'.repeat(32);
+  const fetch = fakeFetch({ body: { names: { maria: key } } });
+  const result = await resolveNip05('maria@mybuho.de', { fetch });
+  assert.equal(result.pubkey, key);
+  assert.match(fetch.calls[0].url, /\/nostrnip5\/api\/v1\/domain\/[A-Za-z0-9_-]+\/nostr\.json\?name=maria$/);
+});
+
+await test('resolveNip05: every other domain still uses its own well-known file', async () => {
+  const key = 'cd'.repeat(32);
+  const fetch = fakeFetch({ body: { names: { bob: key } } });
+  await resolveNip05('bob@example.com', { fetch });
+  assert.equal(fetch.calls[0].url, 'https://example.com/.well-known/nostr.json?name=bob');
+});
+
 console.log(`\n  ${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);

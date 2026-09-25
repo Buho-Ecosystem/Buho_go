@@ -46,7 +46,6 @@
 
 import { defineStore } from 'pinia';
 import { encryptString, decryptString } from '../utils/deviceCrypto.js';
-import { nip05AddressFor } from '../services/nip05.js';
 import {
   generateIdentityMnemonic,
   isValidIdentityMnemonic,
@@ -111,8 +110,7 @@ function sanitiseNip05Handles(raw) {
       isActive,
       addressId: typeof entry.addressId === 'string' ? entry.addressId : null,
       createdAt: Number.isFinite(entry.createdAt) ? entry.createdAt : 0,
-      // Renewal feature disabled — extension doesn't enforce expiry.
-      // expiresAt: Number.isFinite(entry.expiresAt) ? entry.expiresAt : null,
+      expiresAt: Number.isFinite(entry.expiresAt) ? entry.expiresAt : null,
     });
   }
   // If nothing was marked active but the user does have handles, promote
@@ -138,9 +136,40 @@ function legacyToHandleArray(parsed) {
     isActive: true,
     addressId: null,
     createdAt: 0,
-    // Renewal feature disabled — extension doesn't enforce expiry.
-    // expiresAt: null,
+    expiresAt: null,
   }];
+}
+
+/** A pending claim older than this is dropped on load: its invoice expired long ago. */
+const PENDING_CLAIM_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+
+/**
+ * Defensive parser for the persisted pending username claims, keyed by the
+ * pubkey each claim was bought for. Drops malformed and stale entries.
+ */
+function sanitisePendingClaims(raw, now = Date.now()) {
+  const out = {};
+  if (!raw || typeof raw !== 'object') return out;
+  for (const [pubkey, claim] of Object.entries(raw)) {
+    if (!/^[0-9a-f]{64}$/.test(pubkey)) continue;
+    if (!claim || typeof claim.handle !== 'string' || !claim.handle) continue;
+    if (typeof claim.paymentHash !== 'string' || !claim.paymentHash) continue;
+    const createdAt = Number.isFinite(claim.createdAt) ? claim.createdAt : 0;
+    if (now - createdAt > PENDING_CLAIM_MAX_AGE_MS) continue;
+    out[pubkey] = {
+      handle: claim.handle,
+      paymentHash: claim.paymentHash,
+      invoice: typeof claim.invoice === 'string' ? claim.invoice : null,
+      addressId: typeof claim.addressId === 'string' ? claim.addressId : null,
+      rotationSecret: typeof claim.rotationSecret === 'string' ? claim.rotationSecret : null,
+      years: Number.isInteger(claim.years) && claim.years > 0 ? claim.years : 1,
+      amountSats: Number.isFinite(claim.amountSats) ? claim.amountSats : null,
+      createdAt,
+      paidAt: Number.isFinite(claim.paidAt) ? claim.paidAt : null,
+      failedAt: Number.isFinite(claim.failedAt) ? claim.failedAt : null,
+    };
+  }
+  return out;
 }
 
 export const useIdentityStore = defineStore('identity', {
@@ -169,23 +198,16 @@ export const useIdentityStore = defineStore('identity', {
     /** Cached NIP-19 `npub1...` for the current account, or null. */
     nostrNpub: null,
     /**
-     * BuhoGO-managed NIP-05 handles for the current Nostr key, registered
-     * under `mybuho.de`. The first one is auto-registered as a free
-     * `.NNNNNN` identifier by `boot/nip05.js`; the user can later buy
-     * additional premium names from the profile editor's marketplace.
+     * This phone's record of usernames bought for the current Nostr key
+     * (`name@mybuho.de`): handle, rotation secret, address id, date bought,
+     * and the end date when this phone saw the payment (`expiresAt`, epoch
+     * ms, null when unknown).
      *
-     * Shape:
-     *   { handle, rotationSecret, isFree, isActive, addressId, createdAt }
-     *
-     * Invariants:
-     *   - At most one entry has `isActive: true`. That entry is the one
-     *     surfaced in the hero chip and published in the kind:0 `nip05`
-     *     field. All non-active entries still verify via the well-known
-     *     endpoint — they just aren't the "primary."
-     *   - Handles are unique by `handle` (local part).
-     *   - `rotationSecret` is the keyless management token the extension
-     *     returns and lets us manage/rotate the entry without an LNbits
-     *     account.
+     * A record only. The username a person uses lives in their published
+     * profile (`profile.username`), which is what every screen reads, so a
+     * restore or a second phone needs nothing from here. Older installs
+     * also hold the retired free `name.123456` handle; it stays as history
+     * and is never shown.
      *
      * Cleared on `rotateNostrIdentity` because every handle is bound to
      * the previous pubkey.
@@ -223,6 +245,15 @@ export const useIdentityStore = defineStore('identity', {
      */
     nostrAccountNip05: {},
     /**
+     * Username purchases still waiting to finish, keyed by the pubkey they
+     * were bought for: { [pubkeyHex]: { handle, paymentHash, invoice,
+     * addressId, rotationSecret, years, amountSats, createdAt, paidAt,
+     * failedAt } }. Keyed
+     * rather than single so a claim started on one identity waits, intact,
+     * while another identity is active.
+     */
+    pendingNip05Claims: {},
+    /**
      * In-flight pointer discovery, or null. Single-flight so the
      * restore flow can await the same lookup `importMnemonic`'s
      * caller kicked off. Never persisted.
@@ -248,10 +279,14 @@ export const useIdentityStore = defineStore('identity', {
       return state.nip05Handles.find((h) => h.isActive) || null;
     },
 
-    /** Full `name@mybuho.de` of the active handle, or null. */
-    nip05Address(state) {
-      const active = state.nip05Handles.find((h) => h.isActive);
-      return active ? nip05AddressFor(active.handle) : null;
+    /** End date (epoch ms) this phone knows for a bought name, or null. */
+    usernameExpiresAt(state) {
+      return (handle) => state.nip05Handles.find((h) => h.handle === handle)?.expiresAt ?? null;
+    },
+
+    /** The pending username claim for the active identity, or null. */
+    pendingNip05Claim(state) {
+      return (state.nostrPubkeyHex && state.pendingNip05Claims[state.nostrPubkeyHex]) || null;
     },
 
     /** True iff the backup banner should be shown right now. */
@@ -321,6 +356,7 @@ export const useIdentityStore = defineStore('identity', {
               this.nostrAccountIndex,
             );
             this.pointerDirty = !!parsed.pointerDirty;
+            this.pendingNip05Claims = sanitisePendingClaims(parsed.pendingNip05Claims);
             this.nostrAccountNip05 = {};
             if (parsed.nostrAccountNip05 && typeof parsed.nostrAccountNip05 === 'object') {
               for (const [key, value] of Object.entries(parsed.nostrAccountNip05)) {
@@ -361,6 +397,9 @@ export const useIdentityStore = defineStore('identity', {
         profileIntroSeenAt: this.profileIntroSeenAt,
         nostrKnownAccounts: this.nostrKnownAccounts.map((a) => ({ ...a })),
         pointerDirty: this.pointerDirty,
+        pendingNip05Claims: Object.fromEntries(
+          Object.entries(this.pendingNip05Claims).map(([key, claim]) => [key, { ...claim }]),
+        ),
         nostrAccountNip05: Object.fromEntries(
           Object.entries(this.nostrAccountNip05).map(
             ([i, handles]) => [i, handles.map((h) => ({ ...h }))],
@@ -476,6 +515,7 @@ export const useIdentityStore = defineStore('identity', {
       this.nostrKnownAccounts = [{ i: 0, createdAt: Date.now() }];
       this.pointerDirty = false;
       this.nostrAccountNip05 = {};
+      this.pendingNip05Claims = {};
       this._tryCacheNostrPublic(normalised);
       this._persistMetadata();
     },
@@ -547,87 +587,94 @@ export const useIdentityStore = defineStore('identity', {
       this.nostrKnownAccounts = [];
       this.pointerDirty = false;
       this.nostrAccountNip05 = {};
+      this.pendingNip05Claims = {};
       this._pointerResolve = null;
     },
 
     /**
-     * Append a newly-registered NIP-05 handle. The first handle added is
-     * marked active automatically; subsequent ones default to inactive so
-     * a background re-registration never reshuffles the user's published
-     * identity. The caller can promote later via `setActiveNip05`.
+     * Record a username this identity owns, after the ownership check has
+     * confirmed it: a new purchase, or a name the person already owned and
+     * switched back to. The record becomes the active entry; an existing
+     * entry keeps its rotation secret unless a new one is given.
      *
-     * Duplicate handles (same local part) are no-ops — the registration
-     * path retries with a fresh suffix on collision, so getting here with
-     * a duplicate means the boot orchestrator already added it.
+     * Bookkeeping only. The profile's `nip05` is what the app shows; the
+     * caller writes that separately (`profile.setUsername`).
      *
-     * @param {{
-     *   handle: string,
-     *   rotationSecret?: string|null,
-     *   isFree?: boolean,
-     *   addressId?: string|null,
-     * }} info
+     * @param {{ handle: string, rotationSecret?: string|null, addressId?: string|null, expiresAt?: number|null }} info
      */
-    addNip05Handle({ handle, rotationSecret = null, isFree = true, addressId = null /* , expiresAt = null */ }) {
-      if (!handle) return;
-      if (this.nip05Handles.some((h) => h.handle === handle)) return;
-      const isFirst = this.nip05Handles.length === 0;
-      this.nip05Handles.push({
-        handle,
-        rotationSecret,
-        isFree: !!isFree,
-        isActive: isFirst,
-        addressId: addressId || null,
-        createdAt: Date.now(),
-        // Renewal feature disabled — extension doesn't enforce expiry.
-        // expiresAt: Number.isFinite(expiresAt) ? expiresAt : null,
-      });
-      this._persistMetadata();
-    },
-
-    /**
-     * Make the given handle the active one — the address surfaced on the
-     * profile and published in the next kind:0. Republishing of the kind:0
-     * is NOT triggered here: the profile editor's "Save & Publish" stays
-     * the sole relay-broadcast gate, matching the rest of the publish
-     * contract.
-     *
-     * No-op if the handle isn't in the list or is already active.
-     *
-     * @param {string} handle
-     */
-    setActiveNip05(handle) {
-      if (!handle) return;
-      const target = this.nip05Handles.find((h) => h.handle === handle);
-      if (!target || target.isActive) return;
+    recordOwnedHandle({ handle, rotationSecret = null, addressId = null, expiresAt = null } = {}) {
+      const value = String(handle || '').trim().toLowerCase();
+      if (!value) return;
+      if (!this.nip05Handles.some((h) => h.handle === value)) {
+        this.nip05Handles.push({
+          handle: value,
+          rotationSecret: null,
+          isFree: false,
+          isActive: false,
+          addressId: null,
+          createdAt: Date.now(),
+          expiresAt: null,
+        });
+      }
+      // Match by handle, not identity: the array holds reactive proxies.
       for (const entry of this.nip05Handles) {
-        entry.isActive = entry.handle === handle;
+        entry.isActive = entry.handle === value;
+        if (!entry.isActive) continue;
+        if (rotationSecret) entry.rotationSecret = rotationSecret;
+        if (addressId) entry.addressId = addressId;
+        if (Number.isFinite(expiresAt)) entry.expiresAt = expiresAt;
       }
       this._persistMetadata();
     },
 
     /**
-     * Drop a handle from the list. If the removed handle was active, the
-     * remaining handle with the earliest `createdAt` is promoted so the
-     * user never ends up with a populated list and no active entry.
+     * Remember a username purchase that has a payment code but is not
+     * finished yet, for the active identity. Survives closing the sheet and
+     * restarting the app; `boot/nip05.js` finishes it.
      *
-     * Not exposed to the v1 UI — there is no keyless delete-by-rotation
-     * endpoint on the extension, so a "removed" handle would keep
-     * resolving via the well-known. Kept for tests and future server
-     * support.
-     *
-     * @param {string} handle
+     * @param {{ handle: string, paymentHash: string, invoice?: string, addressId?: string|null, rotationSecret?: string|null, years?: number, amountSats?: number }} claim
      */
-    removeNip05Handle(handle) {
-      if (!handle) return;
-      const before = this.nip05Handles.length;
-      this.nip05Handles = this.nip05Handles.filter((h) => h.handle !== handle);
-      if (this.nip05Handles.length === before) return;
-      if (!this.nip05Handles.some((h) => h.isActive) && this.nip05Handles.length > 0) {
-        const next = [...this.nip05Handles].sort(
-          (a, b) => (a.createdAt || 0) - (b.createdAt || 0),
-        )[0];
-        next.isActive = true;
-      }
+    setPendingNip05Claim(claim) {
+      if (!this.nostrPubkeyHex || !claim?.handle || !claim?.paymentHash) return;
+      this.pendingNip05Claims = {
+        ...this.pendingNip05Claims,
+        [this.nostrPubkeyHex]: {
+          handle: claim.handle,
+          paymentHash: claim.paymentHash,
+          invoice: claim.invoice || null,
+          addressId: claim.addressId || null,
+          rotationSecret: claim.rotationSecret || null,
+          years: Number.isInteger(claim.years) && claim.years > 0 ? claim.years : 1,
+          amountSats: Number.isFinite(claim.amountSats) ? claim.amountSats : null,
+          createdAt: Date.now(),
+          paidAt: null,
+          failedAt: null,
+        },
+      };
+      this._persistMetadata();
+    },
+
+    /**
+     * Update the active identity's pending claim (for example `paidAt` once
+     * the payment went through, or `failedAt` when the name went to someone
+     * else first). No-op without a pending claim.
+     */
+    updatePendingNip05Claim(patch) {
+      const current = this.pendingNip05Claim;
+      if (!current) return;
+      this.pendingNip05Claims = {
+        ...this.pendingNip05Claims,
+        [this.nostrPubkeyHex]: { ...current, ...patch },
+      };
+      this._persistMetadata();
+    },
+
+    /** Forget the active identity's pending claim. */
+    clearPendingNip05Claim() {
+      if (!this.pendingNip05Claim) return;
+      const next = { ...this.pendingNip05Claims };
+      delete next[this.nostrPubkeyHex];
+      this.pendingNip05Claims = next;
       this._persistMetadata();
     },
 
@@ -871,10 +918,9 @@ export const useIdentityStore = defineStore('identity', {
         this.nostrAccountIndex = nextAccount;
         this.nostrPubkeyHex = publicKeyHex;
         this.nostrNpub = npub;
-        // Every handle maps the *previous* pubkey; clear the list so the
-        // boot orchestrator registers a fresh free handle for the new key.
-        // Premium handles bought under the old key stay valid server-side
-        // but are no longer this app's to manage.
+        // Every handle maps the *previous* pubkey, so the new key starts
+        // with an empty record. Names bought under the old key stay valid
+        // server-side but are no longer this app's to manage.
         this.nip05Handles = [];
         // Rotation is the forget-my-key flow, but the account still
         // joins the roster: the index is in use, and the Change-identity
@@ -1081,7 +1127,8 @@ export const useIdentityStore = defineStore('identity', {
      * the Change-identity sheet calls this when it opens.
      *
      * @returns {Promise<Array<{
-     *   account: number, npub: string, label: string | null, active: boolean,
+     *   account: number, npub: string, pubkeyHex: string, label: string | null,
+     *   active: boolean,
      * }>>}
      */
     async listNostrIdentities() {
@@ -1097,21 +1144,11 @@ export const useIdentityStore = defineStore('identity', {
             pubkeyHex = derived.publicKeyHex;
           } catch { /* row renders without an npub rather than not at all */ }
 
-          // The username is how the owner recognises a card: "Card 2" names
-          // nothing, "@maria" names the person it is. The active account's
-          // handles live in nip05Handles; every other account's wait in the
-          // per-account stash, so no row needs the network to get its name.
-          const handles = entry.i === this.nostrAccountIndex
-            ? this.nip05Handles
-            : this.nostrAccountNip05[entry.i] || [];
-          const named = handles.find((h) => h.isActive) || handles[0] || null;
-
           return {
             account: entry.i,
             npub,
             pubkeyHex,
             label: entry.label || null,
-            username: named?.handle || null,
             active: entry.i === this.nostrAccountIndex,
           };
         });

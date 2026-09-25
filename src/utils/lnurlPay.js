@@ -34,3 +34,23 @@ export function buildLnurlPayCallbackUrl({ callback, amountSats, payout = null, 
   }
   return url
 }
+
+/**
+ * LUD-11 — may we keep the link this invoice came from?
+ *
+ * A payRequest callback can answer `disposable: false` to say its LNURL is
+ * reusable: the service intends the link to be stored and paid again without
+ * a new QR. Anything else — absent, null, or an explicit true — means
+ * single-use, which is what every link was before the field existed and is
+ * the only safe default (storing a one-shot link would offer the user a
+ * "Pay again" that can only fail).
+ *
+ * Only the invoice callback (the response returning `pr`) is authoritative.
+ * Earlier payRequest metadata must not override its disposable decision.
+ *
+ * @param {object|null|undefined} response  the invoice callback response
+ * @returns {boolean}
+ */
+export function isStoreablePayLink(response) {
+  return response?.disposable === false
+}

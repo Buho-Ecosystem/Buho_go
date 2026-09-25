@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
     <application
         android:allowBackup="true"
@@ -164,6 +165,26 @@
                 <data android:scheme="KEYAUTH" />
             </intent-filter>
         </activity>
+
+        <!-- Google's code-scanner activity (merged in from
+             play-services-code-scanner, which @capacitor-mlkit/barcode-scanning
+             depends on) declares android:screenOrientation="portrait". From
+             Android 16 the platform ignores orientation and resizability
+             restrictions on large screens, and Play reports the declaration as
+             a large-screen usability problem against this app even though the
+             activity belongs to a library.
+
+             BuhoGO scans with the plugin's own camera surface (startScan) and
+             never launches this activity: it belongs to the Google-branded
+             scan() flow, which needs Play services and which BuhoGO does not
+             use (the module availability/install probes that used to touch it
+             are gone as well — see src/utils/nativeScanner.js). It is only
+             here because the library merges it in, so relaxing the lock costs
+             us nothing and lets it follow the device on foldables and tablets. -->
+        <activity
+            android:name="com.google.mlkit.vision.codescanner.internal.GmsBarcodeScanningDelegateActivity"
+            android:screenOrientation="unspecified"
+            tools:replace="android:screenOrientation" />
 
         <provider
             android:name="androidx.core.content.FileProvider"

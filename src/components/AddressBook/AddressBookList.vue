@@ -244,7 +244,6 @@ export default {
   height: 56px;
   border-radius: 50%;
   overflow: hidden;
-  display: block;
   transition: transform 0.12s ease;
 }
 

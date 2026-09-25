@@ -1,6 +1,6 @@
 {
   "name": "buho-app",
-  "version": "1.9.2",
+  "version": "1.9.3",
   "description": "BuhoGO: the friendly self-custodial Bitcoin and Lightning wallet. Spark, Arkade, LNbits, and Nostr Wallet Connect in one app, on Android and the web.",
   "author": "pratikpatel <pratikpatelpp802@gmail.com> & drshift <keleeweb@tutanota.com>",
   "private": true,
@@ -11,7 +11,9 @@
     "@capacitor/cli": "^8.0.0",
     "@capacitor/clipboard": "^8.0.1",
     "@capacitor/core": "^8.3.0",
+    "@capacitor/filesystem": "^8.1.3",
     "@capacitor/ios": "^8.0.0",
+    "@capacitor/local-notifications": "^8.3.1",
     "@capacitor/share": "^8.0.1",
     "@capgo/capacitor-native-biometric": "^8.4.2"
   }

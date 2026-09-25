@@ -11,6 +11,7 @@
  * which already owns the relay pool and the async-enrich-after-render pattern
  * (see runBrantaVerification).
  */
+import { formatUsername } from './nip05.js'
 import { nip19 } from 'nostr-core'
 import { classifyIdentifier } from '../utils/nostrLookup.js'
 
@@ -60,11 +61,13 @@ export function shortenNpub(npub, head = 12, tail = 5) {
  */
 export function profileDisplayName(profile) {
   if (!profile || typeof profile !== 'object') return ''
-  for (const key of ['display_name', 'displayName', 'name', 'nip05']) {
+  for (const key of ['display_name', 'displayName', 'name']) {
     const value = profile[key]
     if (typeof value === 'string' && value.trim()) return value.trim()
   }
-  return ''
+  // The address as it is written on screen; a retired free BuhoGO handle
+  // (`name.123456@mybuho.de`) is never a name.
+  return formatUsername(profile.nip05)?.text || ''
 }
 
 /**

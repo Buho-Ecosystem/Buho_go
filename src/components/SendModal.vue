@@ -354,6 +354,8 @@
 </template>
 
 <script>
+import { isAddressRequest, parseAddressRequest } from '../utils/lud23.js';
+import { offerAddressRequest } from '../services/addressRequestIntake.js';
 import { Capacitor } from '@capacitor/core';
 import QrScanSheet from './QrScanSheet.vue';
 import { useAddressBookStore } from '../stores/addressBook';
@@ -387,6 +389,7 @@ import {
   normalizeDestination,
 } from '../utils/clipboardSuggestion.js';
 import { resolveNostrLightningTarget, NOSTR_TARGET_ERROR } from '../services/nostrPaymentTarget';
+import { usernameAddressFromInput } from '../services/nip05';
 import ContactAvatar from './AddressBook/ContactAvatar.vue';
 import ArkadeLogo from './ArkadeLogo.vue';
 import ProgressCta from './ProgressCta.vue';
@@ -468,6 +471,7 @@ export default {
     detectedInputType() {
       const raw = (this.manualInput || '').trim();
       if (!raw) return null;
+      if (isAddressRequest(raw)) return 'address_request';
       const lower = raw.toLowerCase();
 
       // BIP21 first — bitcoin:<addr>?... is structurally distinct and
@@ -484,6 +488,7 @@ export default {
       const lnFallback = extractLnFallbackParam(raw);
       const cleaned = lnFallback ? lnFallback : stripWrapperScheme(raw);
 
+      if (isAddressRequest(cleaned)) return 'address_request';
       if (isSparkAddress(cleaned)) return 'spark';
       if (isArkadeAddress(cleaned)) return 'arkade';
       if (isBolt12Offer(cleaned)) return 'bolt12_offer';
@@ -494,6 +499,10 @@ export default {
       // NOT matched here: it's indistinguishable from a Lightning Address, so
       // it stays on the Lightning-address rails (and is only Nostr-resolved as
       // a fallback if that lookup misses — see Wallet.onPaymentDetected).
+      // A BuhoGO username (`@maria`, `maria@mybuho.de`) is a person to look
+      // up, not a Lightning address: it resolves through their profile to
+      // where they get paid.
+      if (usernameAddressFromInput(cleaned)) return 'username';
       const nostrKind = classifyIdentifier(cleaned);
       if (nostrKind === 'npub' || nostrKind === 'nprofile') return 'nostr_identifier';
       if (isLightningAddress(cleaned)) return 'lightning_address';
@@ -524,6 +533,7 @@ export default {
       // non-rail identities (a Nostr person) and the one unsupported
       // format we must name (BOLT12, so its error makes sense) differ.
       const labels = {
+        address_request: this.$t('Address request'),
         spark: this.$t('Bitcoin'),
         bolt12_offer: this.$t('BOLT12 offer'),
         silent_payment: this.$t('Silent payment'),
@@ -532,7 +542,8 @@ export default {
         lnurl: this.$t('Bitcoin'),
         bitcoin_address: this.$t('Bitcoin'),
         bip21: this.$t('Bitcoin'),
-        nostr_identifier: this.$t('Nostr profile')
+        nostr_identifier: this.$t('Nostr profile'),
+        username: this.$t('Username')
       };
       return labels[this.detectedInputType] || '';
     },
@@ -543,6 +554,7 @@ export default {
       // mark, matching the unified "Bitcoin" label. LNURL keeps the link
       // glyph (it is a link), phone and Nostr keep their identities.
       const icons = {
+        address_request: 'tabler:address-book',
         bolt12_offer: 'tabler:bolt',
         silent_payment: 'tabler:eye-off',
         lightning_invoice: 'tabler:currency-bitcoin',
@@ -551,7 +563,8 @@ export default {
         bitcoin_address: 'tabler:currency-bitcoin',
         bip21: 'tabler:currency-bitcoin',
         phone_number: 'tabler:device-mobile',
-        nostr_identifier: 'tabler:user'
+        nostr_identifier: 'tabler:user',
+        username: 'tabler:rosette-discount-check'
       };
       return icons[this.detectedInputType] || '';
     },
@@ -566,7 +579,7 @@ export default {
     // CTA disables, and nothing is ever emitted — so a confirm sheet
     // that could only dead-end never opens.
     capabilityBlocked() {
-      if (!this.isValidManualInput) return '';
+      if (!this.isValidManualInput || this.detectedInputType === 'address_request') return '';
       const paymentType = this.determinePaymentType(this.manualInput.trim());
       if (canWalletPay(this.walletStore.activeWalletType, paymentType)) return '';
       return walletSwitchHint(paymentType, this.$t.bind(this));
@@ -769,9 +782,9 @@ export default {
      * Clipboard peek on open — web only. Native platforms surface a
      * system "app pasted from your clipboard" notice on every
      * programmatic read (Android 12+ toast, iOS paste banner/prompt);
-     * there the home screen offers the clipboard once per return to
-     * the app instead (ClipboardSuggestion), and the explicit Paste
-     * button remains this sheet's only clipboard access.
+     * Android's home screen offers new clipboard contents on app return
+     * (ClipboardSuggestion). iOS waits for explicit Paste, avoiding an
+     * unsolicited permission prompt. Paste is this sheet's only native read.
      *
      * The chip appears only for a string this wallet could actually
      * take further (recognized format, payable rail) — anything else
@@ -822,6 +835,27 @@ export default {
       this.pasteAdvanceTimer = setTimeout(() => this.autoAdvance(), 300);
     },
 
+    /**
+     * Open on a destination that already failed to resolve elsewhere.
+     *
+     * The home clipboard strip resolves without raising this sheet, so the
+     * sheet is not part of a successful send anymore — it appears only when
+     * that resolve failed, and then it must land exactly where the user
+     * would have typed: the string in the field, the reason under it,
+     * nothing auto-advancing (it has had its try). The error is applied on
+     * the next tick because the `manualInput` watcher clears a stale error
+     * on every edit, and this assignment counts as one.
+     */
+    revealFailed(value, message) {
+      this.manualInput = value;
+      this.$nextTick(() => {
+        clearTimeout(this.phoneAdvanceTimer);
+        clearTimeout(this.pasteAdvanceTimer);
+        this.isProcessing = false;
+        if (message) this.$emit('update:resolveError', message);
+      });
+    },
+
     openScanner() {
       if (this.ctaBusy) return;
       if (this.resolveError) this.$emit('update:resolveError', '');
@@ -861,6 +895,9 @@ export default {
           throw new Error(this.$t('Invalid payment data'));
         }
 
+        if (offerAddressRequest(inputData, { t: this.$t.bind(this) })) {
+          this.show = false; this.isProcessing = false; return;
+        }
         let trimmedData = inputData.trim();
 
         // A recognized Kenyan/Zambian phone number is a fiat-payout destination
@@ -908,9 +945,12 @@ export default {
         // (`bitcoin:<addr>?amount=...&lightning=lnbc...`) prefer the embedded
         // BOLT11 invoice over the on-chain address.
         const { cleaned: resolved, bip21 } = this.normalizePaymentInput(trimmedData);
+        if (offerAddressRequest(resolved, { t: this.$t.bind(this) })) {
+          this.show = false; this.isProcessing = false; return;
+        }
         let cleanData = resolved;
 
-        if (cleanData.includes('@') && cleanData.includes('.')) {
+        if (isLightningAddress(cleanData)) {
           cleanData = cleanData.toLowerCase();
         }
 
@@ -920,13 +960,15 @@ export default {
         // sheet shows who they are. The loading CTA is already up
         // (processManualInput / onQRDetect set isProcessing).
         const nostrKind = classifyIdentifier(cleanData);
-        if (nostrKind === 'npub' || nostrKind === 'nprofile') {
+        const usernameAddress = usernameAddressFromInput(cleanData);
+        if (usernameAddress || nostrKind === 'npub' || nostrKind === 'nprofile') {
           try {
-            const target = await resolveNostrLightningTarget(cleanData, { timeoutMs: 8000 });
+            const target = await resolveNostrLightningTarget(usernameAddress || cleanData, { timeoutMs: 8000 });
             this.$emit('payment-detected', {
               data: target.address,
               type: target.kind, // 'lightning_address' | 'lnurl'
               rawInput: trimmedData,
+              paymentOnly: true,
               nostrPubkey: target.pubkey,
               nostrNpub: target.npub,
               nostrProfile: target.profile,
@@ -1122,6 +1164,7 @@ export default {
       }
 
       const address = this.getContactAddress(contact);
+      if (offerAddressRequest(address, { t: this.$t.bind(this), paymentOnly: true })) return;
       const addressType = this.getContactAddressType(contact);
 
       // Defensive — block payment paths the active wallet can't satisfy,
@@ -1156,7 +1199,8 @@ export default {
       this.isProcessing = true;
       this.$emit('payment-detected', {
         data: address,
-        type: paymentType
+        type: paymentType,
+        paymentOnly: true
       });
       // Parent closes us on success / surfaces an inline error on failure.
     },
@@ -1223,6 +1267,11 @@ export default {
     // an ambiguous number still needs a KE/ZM choice, or a resolve already
     // failed for exactly this input (editing clears the error and re-arms).
     autoAdvance() {
+      // A person can pause while typing a URL. Only advance a complete
+      // request automatically; explicit Continue can explain malformed input.
+      if (this.detectedInputType === 'address_request') {
+        try { parseAddressRequest(this.manualInput); } catch { return; }
+      }
       if (this.show && !this.isProcessing && !this.resolveError && this.isValidManualInput
           && !this.phoneNeedsCountryChoice && !this.capabilityBlocked) {
         this.processManualInput();

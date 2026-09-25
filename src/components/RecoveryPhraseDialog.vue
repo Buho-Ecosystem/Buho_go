@@ -30,9 +30,11 @@
               <p>{{ $t('wosBackup.privatePlace') }}</p>
               <p>{{ $t('wosBackup.noPhoto') }} <strong>{{ $t('wosBackup.usePaper') }}</strong></p>
             </div>
-            <svg class="recovery-illustration" viewBox="0 0 96 96" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <path d="M12 8h34l18 18v62H12zM46 8v20h18M23 23h12M23 40h29M23 52h29M23 64h29M23 76h29M77 10h10v58l-5 18-5-18zM77 23h10M82 23v45M77 68h10" />
-            </svg>
+            <div class="recovery-art">
+              <svg class="recovery-illustration" viewBox="0 0 96 96" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M12 8h34l18 18v62H12zM46 8v20h18M23 23h12M23 40h29M23 52h29M23 64h29M23 76h29M77 10h10v58l-5 18-5-18zM77 23h10M82 23v45M77 68h10" />
+              </svg>
+            </div>
           </template>
 
           <template v-else-if="step === 'write'">

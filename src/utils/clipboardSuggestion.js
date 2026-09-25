@@ -1,3 +1,4 @@
+import { isAddressRequest } from './lud23.js';
 /**
  * What the clipboard can offer.
  *
@@ -70,8 +71,10 @@ export function normalizeDestination(input, walletType) {
  * @param {string|null} walletType
  */
 export function classifyDestination(input, walletType) {
+  if (isAddressRequest(input)) return 'address_request';
   const { cleaned } = normalizeDestination(input, walletType);
   if (!cleaned) return 'unknown';
+  if (isAddressRequest(cleaned)) return 'address_request';
 
   if (isSilentPaymentAddress(cleaned)) return 'silent_payment';
   if (isSparkAddress(cleaned)) return 'spark_address';
@@ -99,6 +102,7 @@ export function isSuggestibleDestination(text, walletType) {
   if (!trimmed || trimmed.length > MAX_CLIPBOARD_LENGTH) return false;
 
   const paymentType = classifyDestination(trimmed, walletType);
+  if (paymentType === 'address_request') return true;
   if (paymentType === 'bolt12_offer' || paymentType === 'silent_payment') return false;
   if (paymentType !== 'unknown') return canWalletPay(walletType, paymentType);
 
@@ -116,4 +120,96 @@ export function abbreviateDestination(text, { head = 14, tail = 10 } = {}) {
   const value = (text || '').trim();
   if (value.length <= head + tail + 1) return value;
   return `${value.slice(0, head)}…${value.slice(-tail)}`;
+}
+
+/**
+ * What to call the clipboard's contents on the offer strip, as an i18n key.
+ * Names the thing in the app's own words (address, payment request,
+ * Nostr profile, phone number), never the rail that carries it.
+ *
+ * @param {string} text
+ * @param {string|null} walletType
+ * @returns {string} i18n key
+ */
+export function offerLabelKey(text, walletType) {
+  const trimmed = (text || '').trim();
+  switch (classifyDestination(trimmed, walletType)) {
+    case 'address_request': return 'Copied address request';
+    case 'lnurl': return 'Copied link';
+    case 'lightning_invoice': return 'Copied payment request';
+    case 'unknown':
+      break;
+    default:
+      return 'Copied address';
+  }
+  const nostrKind = classifyIdentifier(stripWrapperScheme(trimmed));
+  if (nostrKind === 'npub' || nostrKind === 'nprofile') return 'Copied Nostr profile';
+  if (recognizePhoneNumber(trimmed)) return 'Copied phone number';
+  return 'Copied address';
+}
+
+/** Where the fingerprint of the last offered clipboard text lives. */
+export const OFFERED_STORAGE_KEY = 'buhoGO_clipboard_offered';
+
+/**
+ * A short, stable fingerprint of `text` (32-bit FNV-1a, as hex). Not
+ * cryptographic and not meant to be: it only has to tell "the same text
+ * again" from "something new", and it keeps the clipboard's own contents
+ * off the disk.
+ *
+ * @param {string} text
+ */
+export function fingerprint(text) {
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < text.length; i += 1) {
+    hash ^= text.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193) >>> 0;
+  }
+  return hash.toString(16).padStart(8, '0');
+}
+
+function defaultStorage() {
+  try {
+    return globalThis.localStorage || null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Offer memory shared by every Home instance. Disk seeds the session once;
+ * memory remains authoritative if later storage reads or writes fail.
+ * Only an offered destination's fingerprint is persisted, never other
+ * clipboard contents. A confirmed change (including empty text) clears it.
+ * `null` means an unreadable clipboard and must not clear the memory.
+ */
+export function createClipboardOfferMemory(storage = defaultStorage()) {
+  let offered = null;
+  try {
+    offered = storage?.getItem(OFFERED_STORAGE_KEY) || null;
+  } catch { /* Session memory still works without storage. */ }
+
+  function save(value) {
+    offered = value;
+    try {
+      storage?.setItem(OFFERED_STORAGE_KEY, value || '');
+    } catch { /* Keep the in-memory value even when persistence fails. */ }
+  }
+
+  return {
+    observe(text) {
+      if (typeof text === 'string' && offered && fingerprint(text.trim()) !== offered) save(null);
+    },
+    hasBeenOffered(text) {
+      return offered === fingerprint(text.trim());
+    },
+    rememberOffered(text) {
+      save(fingerprint(text.trim()));
+    },
+  };
+}
+
+export function offerActionKey(text, walletType) {
+  const kind = classifyDestination(text, walletType);
+  return kind === 'address_request' ? 'Review' : kind === 'lnurl' ? 'Open' : 'Send';
 }

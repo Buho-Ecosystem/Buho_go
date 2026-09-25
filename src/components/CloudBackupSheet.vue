@@ -40,6 +40,7 @@
           flat
           round
           dense
+          class="cb-close"
           :disable="store.isBackingUp || store.isRestoring"
           @click="close"
           :class="$q.dark.isActive ? 'close_btn_dark' : 'close_btn_light'"
@@ -57,15 +58,13 @@
         </div>
       </q-card-section>
 
-      <!-- Step: UNAVAILABLE — platform has no cloud backup implementation -->
+      <!-- Step: UNAVAILABLE: no cloud backup on this platform, or no Google Play services on this phone -->
       <q-card-section v-else-if="step === 'unavailable'" class="cb-body">
         <div class="cb-illustration cb-illustration--warn">
           <Icon icon="tabler:cloud-off" width="40" height="40" />
         </div>
         <h2 class="cb-heading">{{ $t('Cloud backup is not available here') }}</h2>
-        <p class="cb-lede">
-          {{ $t('Google Drive backup works in the BuhoGO Android app. Install it on your phone to back up there.') }}
-        </p>
+        <p class="cb-lede">{{ unavailableMessage }}</p>
       </q-card-section>
 
       <!-- Step: SIGN IN -->
@@ -277,6 +276,8 @@ export default {
       restoreError: '',
       backupError: '',
       signInError: '',
+      // Why the 'unavailable' step shows, from checkAvailability().
+      unavailableReason: null,
       // True when the last sign-in failure smells like an OAuth/consent
       // state worth escaping via revoke; shows "Sign out and retry".
       offerSignOutRetry: false,
@@ -327,6 +328,16 @@ export default {
     primaryEnabled() {
       return !this.busy;
     },
+
+    unavailableMessage() {
+      if (this.unavailableReason === 'play-services-missing') {
+        return this.$t('Google Drive backup needs Google Play services, which is not installed on this phone.');
+      }
+      if (this.unavailableReason === 'play-services-unavailable') {
+        return this.$t('Google Drive backup needs Google Play services. Turn it on or update it, then try again.');
+      }
+      return this.$t('Google Drive backup works in the BuhoGO Android app. Install it on your phone to back up there.');
+    },
   },
 
   watch: {
@@ -342,8 +353,9 @@ export default {
       this.step = 'checking';
       this.store.init();
       try {
-        const available = await this.store.checkAvailability();
+        const { available, reason } = await this.store.checkAvailability();
         if (!available) {
+          this.unavailableReason = reason;
           this.step = 'unavailable';
           return;
         }
@@ -384,6 +396,7 @@ export default {
       this.backupError = '';
       this.restoreError = '';
       this.signInError = '';
+      this.unavailableReason = null;
       this.offerSignOutRetry = false;
       this.doneTitle = '';
       this.doneSubtitle = '';
@@ -616,7 +629,10 @@ export default {
   align-items: center;
   padding: 10px 16px 8px;
 }
+/* Fixed columns: most steps have no back button, and auto-placement would
+   then squeeze the title into the first column and put close in the middle. */
 .cb-back {
+  grid-column: 1;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -629,10 +645,14 @@ export default {
   cursor: pointer;
 }
 .cb-title {
+  grid-column: 2;
   font-family: 'Manrope', sans-serif;
   font-size: 16px;
   font-weight: 600;
   text-align: center;
+}
+.cb-close {
+  grid-column: 3;
 }
 
 .cb-body {
@@ -808,7 +828,7 @@ export default {
   font-size: 13px;
 }
 
-.cb-title { display: flex; align-items: center; gap: 8px; }
+.cb-title { display: flex; align-items: center; justify-content: center; gap: 8px; }
 .cb-contents { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; padding: 0 24px 20px; }
 .cb-contents > div { display: flex; flex-direction: column; gap: 6px; padding: 14px; border: 1px solid var(--border-card); border-radius: 14px; }
 .cb-contents strong { color: var(--text-primary); font-size: 14px; }

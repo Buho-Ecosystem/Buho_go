@@ -1,16 +1,21 @@
 <template>
   <q-dialog
-    v-model="show"
+    v-model="dialogOpen"
     persistent
     :class="$q.dark.isActive ? 'dialog_dark' : 'dialog_light'"
     @hide="onHide"
   >
     <q-card
       class="address-modal"
-      :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'"
+      :class="[$q.dark.isActive ? 'card_dark_style' : 'card_light_style', { 'address-modal--search': !isEditing && activeTab === 'search' }]"
     >
       <!-- Header -->
-      <q-card-section class="modal-header">
+      <q-card-section class="modal-header" :class="{ 'modal-header--back': activeTab === 'search' && searchNavigation.canGoBack }">
+        <button v-if="activeTab === 'search' && searchNavigation.canGoBack" ref="searchBack"
+          type="button" class="search-header-back" :aria-label="$t('Back to results')"
+          :disabled="searchNavigation.saving" @click="$refs.searchRef?.backToResults()">
+          <q-icon name="chevron_left" size="24px" :aria-hidden="true" />
+        </button>
         <div class="modal-title" :class="$q.dark.isActive ? 'dialog_title_dark' : 'dialog_title_light'">
           {{ isEditing ? $t('Edit contact') : $t('Add contact') }}
         </div>
@@ -59,12 +64,16 @@
           @open-existing="onOpenExisting"
           @switch-to-search="switchTab('search')"
           @detected-address="onScanDetectedAddress"
+          @address-request="shareAddress"
         />
 
         <!-- SEARCH -->
         <AddContactSearch
           v-else-if="!isEditing && activeTab === 'search'"
           ref="searchRef"
+          @navigation-change="searchNavigation = $event"
+          @focus-back="$refs.searchBack?.focus()"
+          :active="show && activeTab === 'search'"
           @saved="onChildSaved"
           @open-existing="onOpenExisting"
         />
@@ -132,13 +141,16 @@
                   addressShowsError ? 'form-input--error' : ''
                 ]"
                 ref="addressInput"
-                maxlength="150"
+                maxlength="16384"
                 autocapitalize="off"
                 autocorrect="off"
                 spellcheck="false"
               />
               <div class="input-helper" :class="$q.dark.isActive ? 'helper-dark' : 'helper-light'">
-                <template v-if="addressShowsError">
+                <template v-if="addressIsRequest">
+                  <span>{{ $t('Review this request to share your Lightning address.') }}</span>
+                </template>
+                <template v-else-if="addressShowsError">
                   <Icon icon="tabler:alert-circle" width="13" height="13" />
                   <span v-if="addressIsSparkRequest">{{ $t('This is a one-time payment request, not a lasting address. Pay it and save the contact from the payment screen instead.') }}</span>
                   <span v-else>{{ $t("We don't recognize this as a Lightning, Spark, Bitcoin, or LNURL address") }}</span>
@@ -184,10 +196,10 @@
         />
         <q-btn
           unelevated
-          :label="isEditing ? $t('Update') : $t('Add')"
+          :label="addressIsRequest ? $t('Review request') : isEditing ? $t('Update') : $t('Add')"
           @click="saveEntry"
           :loading="isSaving"
-          :disable="!isFormValid"
+          :disable="!isFormValid && !addressIsRequest"
           class="save-btn"
           no-caps
         />
@@ -198,6 +210,9 @@
 </template>
 
 <script>
+import { isAddressRequest } from '../../utils/lud23.js';
+import { offerAddressRequest } from '../../services/addressRequestIntake.js';
+import { useAddressRequestStore } from '../../stores/addressRequest.js';
 import { useAddressBookStore } from '../../stores/addressBook'
 import { mapActions } from 'pinia'
 import {
@@ -205,9 +220,15 @@ import {
   isBitcoinAddress,
   isLightningAddress,
   isLnurl,
+  canonicalLnurl,
+  lnurlToUrl,
+  lnurlDomain,
   isArkadeAddress,
 } from '../../utils/addressUtils.js'
 import { isSparkPaymentRequest } from '../../utils/sparkPayment.js'
+import { lnurlGetJson } from '../../utils/lnurlHttp.js'
+import { parsePayRequestMetadata, serviceTitle, normalizeServiceImage, serviceIdentity } from '../../utils/lnurlMetadata.js'
+import { useServiceImagesStore } from '../../stores/serviceImages'
 import AddContactSearch from './AddContactSearch.vue'
 import AddContactScan from './AddContactScan.vue'
 import ArkadeLogo from '../ArkadeLogo.vue'
@@ -217,7 +238,7 @@ import ArkadeLogo from '../ArkadeLogo.vue'
 function detectType(address) {
   if (!address || typeof address !== 'string') return null
   const v = address.trim()
-  if (!v) return null
+  if (!v || isAddressRequest(v)) return null
   // A Spark invoice shares the spark1… prefix but is single-use — it must
   // never become a contact. The helper text below names it specifically.
   if (isSparkAddress(v)) return isSparkPaymentRequest(v) ? null : 'spark'
@@ -269,6 +290,8 @@ export default {
   data() {
     return {
       activeTab: 'manual',
+      searchNavigation: { canGoBack: false, saving: false },
+      addressHandoff: false,
       tabs: TABS,
       formData: {
         name: '',
@@ -278,7 +301,13 @@ export default {
       isSaving: false,
     }
   },
+  setup() { return { addressRequests: useAddressRequestStore() }; },
   computed: {
+    addressIsRequest() { return isAddressRequest(this.formData.address); },
+    dialogOpen: {
+      get() { return this.show && !this.addressHandoff; },
+      set(value) { if (!this.addressHandoff) this.show = value; }
+    },
 
     show: {
       get() {
@@ -336,7 +365,7 @@ export default {
     },
 
     addressShowsError() {
-      return this.formData.address.trim().length > 0 && !this.detectedType
+      return this.formData.address.trim().length > 0 && !this.detectedType && !this.addressIsRequest
     },
     addressIsSparkRequest() {
       const v = this.formData.address.trim()
@@ -348,6 +377,12 @@ export default {
     }
   },
   watch: {
+    'addressRequests.state.presented'(value) {
+      if (!value && this.addressRequests.state.stage === 'idle') this.addressHandoff = false;
+    },
+    'addressRequests.state.stage'(value) {
+      if (value === 'idle' && !this.addressRequests.state.presented) this.addressHandoff = false;
+    },
     show(newVal) {
       if (newVal) {
         this.initializeForm()
@@ -436,7 +471,15 @@ export default {
       this.switchTab('manual')
     },
 
+    shareAddress(value) {
+      if (offerAddressRequest(value, { t: this.$t.bind(this) })) {
+        this.addressHandoff = this.addressRequests.state.stage !== 'idle';
+        this.activeTab = 'manual';
+      }
+    },
+
     async saveEntry() {
+      if (this.addressIsRequest) { this.shareAddress(this.formData.address); return; }
       if (!this.isFormValid) return
 
       this.isSaving = true
@@ -447,6 +490,18 @@ export default {
           address: this.formData.address.trim(),
           addressType: this.detectedType,
           notes: this.formData.notes?.trim() || ''
+        }
+
+        // A pasted pay link (LUD-11 service) is stored in its one canonical
+        // form, and the service gets one chance to describe itself (LUD-06
+        // name and logo). Best effort: no answer means the domain is the
+        // name, and nothing here ever creates an invoice.
+        if (this.detectedType === 'lnurl') {
+          const canonical = canonicalLnurl(entryData.address)
+          if (canonical) entryData.address = canonical
+          if (!this.isEditing) {
+            entryData.service = await this.describeService(entryData.address)
+          }
         }
 
         if (this.isEditing) {
@@ -478,11 +533,38 @@ export default {
       }
     },
 
+    /**
+     * Ask a pay link who it is: one GET of the payRequest, its LUD-06
+     * metadata parsed, the logo kept in the local image registry. Whether
+     * the link is reusable (LUD-11) is only known after a payment, so
+     * `reusable` stays null here. Never throws; null when nothing useful
+     * came back.
+     */
+    async describeService(address) {
+      const url = lnurlToUrl(address)
+      if (!url) return null
+      const domain = lnurlDomain(address)
+      const service = { name: domain, identifier: null, domain, reusable: null, seenAt: Date.now() }
+      try {
+        const response = await lnurlGetJson(url, { timeoutMs: 10000 })
+        const data = response?.data
+        if (!response?.ok || !data || data.tag !== 'payRequest' || data.status === 'ERROR') return service
+        const meta = parsePayRequestMetadata(data.metadata)
+        normalizeServiceImage(meta.image)
+          .then((dataUrl) => { if (dataUrl) useServiceImagesStore().put(serviceIdentity(address, meta).address, dataUrl) })
+          .catch(() => {})
+        return { ...service, name: serviceTitle(meta, domain), identifier: meta.identifier }
+      } catch {
+        return service
+      }
+    },
+
     closeModal() {
       this.show = false
     },
 
     onHide() {
+      if (this.addressHandoff) return;
       // Final cleanup if the dialog was dismissed via escape or
       // backdrop (the `show` watcher handles regular closes).
       this.resetForm()
@@ -594,6 +676,15 @@ export default {
 .modal-content {
   padding: 0.75rem 1.5rem 0.5rem;
 }
+
+.address-modal--search { display: flex; flex-direction: column; max-height: calc(100dvh - 48px); }
+.address-modal--search .modal-header, .address-modal--search .modal-tabs { flex-shrink: 0; }
+.address-modal--search .modal-content { display: flex; overflow: hidden; min-height: 0; padding-bottom: 16px; }
+.search-header-back { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 44px; width: 44px; height: 44px; border: 0; border-radius: 50%; background: transparent; color: var(--text-primary); cursor: pointer; }
+.search-header-back:focus-visible { outline: 2px solid currentColor; }
+.modal-header--back .modal-title { flex: 1; text-align: center; }
+.address-modal--search .close-btn { min-width: 44px; min-height: 44px; }
+.address-modal--search .seg-tab { min-height: 44px; min-width: 0; }
 
 /* Avatar */
 .avatar-preview {
@@ -829,6 +920,10 @@ export default {
 
 /* Responsive Design */
 @media (max-width: 480px) {
+  .address-modal.address-modal--search { margin: 0; }
+  .address-modal--search .modal-header { padding: 16px 16px 8px; }
+  .address-modal--search .modal-tabs { padding: 0 16px 8px; }
+  .address-modal--search .modal-content { padding: 8px 16px 16px; }
   .address-modal {
     max-width: 100%;
     margin: 1rem;
@@ -851,5 +946,9 @@ export default {
     padding: 0.75rem 1.25rem 1.25rem;
   }
 
+}
+@media (max-width: 360px) {
+  .address-modal--search .seg-tab { gap: 0; padding: 8px 2px; }
+  .address-modal--search .seg-tab :deep(svg) { display: none; }
 }
 </style>

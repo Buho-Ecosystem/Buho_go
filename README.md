@@ -117,6 +117,10 @@ Want to build it yourself or run your own copy? The [Developer Guide](Developer.
 | [**Arkade wallet**](ARK_ME.md) | Understand the Arkade (Ark L2) backend in depth |
 | [**Contributing**](CONTRIBUTING.md) | Help out, from fixing a typo to shipping a feature |
 
+## Credits
+
+[Illustrations by Storyset](https://storyset.com/)
+
 ## License
 
 [AGPL-3.0](LICENSE). Built for Bitcoiners, by Bitcoiners. 🦉

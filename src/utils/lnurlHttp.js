@@ -1,7 +1,7 @@
 /**
  * HTTP transport for LNURL rails: lightning-address metadata
  * (.well-known/lnurlp), LNURL-pay invoice callbacks, LNURL-withdraw
- * callbacks, and LUD-21 verify polling.
+ * callbacks, LUD-21 verify polling, and LUD-23 address requests.
  *
  * Why this exists: a large share of LNURL services never send
  * `Access-Control-Allow-Origin`, and some (pay.wave.space) actively 403
@@ -60,7 +60,7 @@ function wrapNativeResponse(response) {
   };
 }
 
-async function nativeGet(CapacitorHttp, url, { signal, timeoutMs } = {}) {
+async function nativeGet(CapacitorHttp, url, { signal, timeoutMs, disableRedirects = false } = {}) {
   if (signal?.aborted) throw makeAbortError('The request was aborted');
 
   // Always bound the native socket: the plugin can't cancel an in-flight
@@ -75,6 +75,7 @@ async function nativeGet(CapacitorHttp, url, { signal, timeoutMs } = {}) {
     responseType: 'json',
     connectTimeout: socketTimeoutMs,
     readTimeout: socketTimeoutMs,
+    disableRedirects,
   };
 
   const request = CapacitorHttp.get(options);
@@ -82,7 +83,8 @@ async function nativeGet(CapacitorHttp, url, { signal, timeoutMs } = {}) {
 
   // The plugin can't cancel an in-flight native request, so honor the
   // signal by racing it: the caller gets a prompt AbortError and the
-  // idempotent GET is left to finish (or time out) on its own.
+  // native GET is left to finish (or time out) on its own. A caller that
+  // submits state must treat interruption as an uncertain outcome.
   let onAbort;
   const aborted = new Promise((_, reject) => {
     onAbort = () => reject(makeAbortError('The request was aborted'));
@@ -102,7 +104,7 @@ async function nativeGet(CapacitorHttp, url, { signal, timeoutMs } = {}) {
  * a `fetchImpl` for pollVerify.
  *
  * @param {string} url
- * @param {{ signal?: AbortSignal, timeoutMs?: number }} [opts]  timeoutMs
+ * @param {{ signal?: AbortSignal, timeoutMs?: number, disableRedirects?: boolean }} [opts]  timeoutMs
  *   only bounds the native socket; on web, timeouts belong to the caller's
  *   signal (see lnurlGetJson).
  */
@@ -115,6 +117,7 @@ export async function lnurlFetch(url, opts = {}) {
     method: 'GET',
     headers: { Accept: 'application/json' },
     ...(opts.signal ? { signal: opts.signal } : {}),
+    ...(opts.disableRedirects ? { redirect: 'error', credentials: 'omit', referrerPolicy: 'no-referrer' } : {}),
   });
 }
 
@@ -127,13 +130,16 @@ export async function lnurlFetch(url, opts = {}) {
  * `data: null` rather than a parse throw, so callers guard `!data`.
  *
  * @param {string} url
- * @param {{ timeoutMs?: number }} [opts]
+ * @param {{ timeoutMs?: number, disableRedirects?: boolean, signal?: AbortSignal }} [opts]
  * @returns {Promise<{ ok: boolean, status: number, data: object|null }>}
  * @throws {Error} network failure, or an AbortError-named 'The server did
  *   not respond in time' on timeout
  */
-export async function lnurlGetJson(url, { timeoutMs = 30000 } = {}) {
+export async function lnurlGetJson(url, { timeoutMs = 30000, disableRedirects = false, signal } = {}) {
   const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+  const onAbort = () => controller?.abort();
+  if (signal?.aborted) onAbort();
+  else signal?.addEventListener('abort', onAbort, { once: true });
   const timer = controller && timeoutMs > 0
     ? setTimeout(() => controller.abort(), timeoutMs)
     : null;
@@ -142,6 +148,7 @@ export async function lnurlGetJson(url, { timeoutMs = 30000 } = {}) {
     const response = await lnurlFetch(url, {
       ...(controller ? { signal: controller.signal } : {}),
       timeoutMs,
+      disableRedirects,
     });
     let data = null;
     try {
@@ -158,5 +165,6 @@ export async function lnurlGetJson(url, { timeoutMs = 30000 } = {}) {
     throw error;
   } finally {
     if (timer) clearTimeout(timer);
+    signal?.removeEventListener('abort', onAbort);
   }
 }

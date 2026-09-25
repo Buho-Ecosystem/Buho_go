@@ -34,6 +34,7 @@
  */
 
 import { nip19 } from 'nostr-core';
+import { NIP05_DOMAIN, ownDomainLookupUrl } from '../services/nip05.js';
 
 // ----------------------------------------------------------------------------
 // Error codes
@@ -191,7 +192,12 @@ export async function resolveNip05(address, opts = {}) {
     );
   }
 
-  const url = `https://${domain}/.well-known/nostr.json?name=${encodeURIComponent(local)}`;
+  // BuhoGO's own names are asked of the name server directly, the same
+  // endpoint the app's ownership checks use, so resolving them does not
+  // depend on the domain's front server.
+  const url = domain.toLowerCase() === NIP05_DOMAIN
+    ? ownDomainLookupUrl(local)
+    : `https://${domain}/.well-known/nostr.json?name=${encodeURIComponent(local)}`;
 
   // Wire up an internal timeout + the caller's AbortSignal under one
   // controller so a typeahead can `controller.abort()` from outside

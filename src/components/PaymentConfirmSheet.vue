@@ -21,18 +21,20 @@
 <template>
   <q-dialog
     v-model="show"
-    position="bottom"
-    persistent
+    :position="isRedeem && !$q.screen.lt.sm ? 'standard' : 'bottom'"
+    :persistent="!isRedeem || isSending || isComplete"
+    :aria-labelledby="titleId"
     :class="$q.dark.isActive ? 'dialog_dark' : 'dialog_light'"
   >
-    <q-card class="sheet-card" :class="$q.dark.isActive ? 'sheet-card-dark' : 'sheet-card-light'">
-      <div class="grab-bar"></div>
+    <q-card class="sheet-card" :class="[{ 'sheet-card--redeem': isRedeem }, $q.dark.isActive ? 'sheet-card-dark' : 'sheet-card-light']">
+      <div v-if="!isRedeem" class="grab-bar"></div>
 
-      <header class="top-row">
-        <q-btn flat round dense @click="onTopAction" class="top-btn glass-back-btn" :aria-label="$t('Back')">
-          <Icon icon="tabler:chevron-left" width="20" height="20" />
+      <header class="top-row" v-touch-swipe.mouse.down="onHeaderSwipe">
+        <q-btn flat round dense @click="onTopAction" class="top-btn glass-back-btn" :disable="isRedeem && (isSending || isComplete)" :aria-label="$t(isRedeem ? 'Cancel' : 'Back')">
+          <svg v-if="isRedeem" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="m6 6 12 12M6 18 18 6" /></svg>
+          <Icon v-else icon="tabler:chevron-left" width="20" height="20" />
         </q-btn>
-        <div class="top-title">{{ topTitle }}</div>
+        <h2 class="top-title" :id="titleId">{{ topTitle }}</h2>
         <!-- Verification sits in the top-right corner (Blitz-style): a single
              tappable seal, not an inline pill under the recipient name. -->
         <div class="top-action">
@@ -62,6 +64,7 @@
               @blur="onAmountBlur"
               type="text"
               inputmode="decimal"
+              :aria-label="$t('Amount')"
               class="amount-input"
               :class="{ 'amount-input--invalid': amountInvalidReason }"
               :placeholder="amountPlaceholder"
@@ -109,11 +112,11 @@
               class="recipient-avatar"
               :class="{
                 'has-logo': showRecipientLogo,
-                'recipient-avatar--silhouette': isSilhouetteRecipient
+                'recipient-avatar--silhouette': isSilhouetteRecipient || isServiceRecipient
               }"
               :style="showRecipientLogo
                 ? (recipientLogoBg ? { background: recipientLogoBg } : null)
-                : (isSilhouetteRecipient ? null : { background: recipientColor })"
+                : (isSilhouetteRecipient || isServiceRecipient ? null : { background: recipientColor })"
             >
               <img
                 v-if="showRecipientLogo"
@@ -126,8 +129,8 @@
                   : null"
                 @error="logoFailed = true"
               />
-              <!-- Picture-less contact: the app-wide filled-bust
-                   silhouette, never a colored initial. -->
+              <!-- A service keeps its storefront fallback if its logo fails. -->
+              <Icon v-else-if="isServiceRecipient" icon="tabler:building-store" width="24" height="24" aria-hidden="true" />
               <svg
                 v-else-if="isSilhouetteRecipient"
                 class="recipient-glyph"
@@ -155,7 +158,7 @@
                   <span>{{ formattedCountdown }}</span>
                 </div>
               </div>
-              <div v-if="recipientAddress" class="recipient-addr">{{ recipientAddress }}</div>
+              <div v-if="recipientAddressLabel" class="recipient-addr">{{ recipientAddressLabel }}</div>
             </div>
             <button
               v-if="addressNeedsDetails"
@@ -380,11 +383,15 @@ export default {
     }
   },
   computed: {
+    titleId() { return `payment-confirm-title-${this.$.uid}` },
     ...mapState(useWalletStore, ['preferredFiatCurrency', 'denominationCurrency', 'useBip177Format']),
 
     show: {
       get() { return this.modelValue },
-      set(v) { this.$emit('update:modelValue', v) }
+      set(v) {
+        this.$emit('update:modelValue', v)
+        if (!v && this.isRedeem) this.$emit('cancel')
+      }
     },
 
     // ───── Recipient ─────
@@ -430,17 +437,16 @@ export default {
     recipientAddress() {
       return this.payment?.recipient?.address || ''
     },
-    /**
-     * Whether the destination earns the info glyph and its detail panel.
-     * The cell's identifier line shows about 35 mono characters before it
-     * truncates on the narrowest phones; anything at or under that is
-     * already fully readable in place (a Lightning address, typically),
-     * and repeating it in a panel would say the same thing twice. Long
-     * strings (invoices, LNURLs, on-chain addresses) truncate, so they
-     * keep the panel with the full value and copy.
-     */
+    recipientAddressLabel() {
+      return this.payment?.recipient?.addressLabel || this.recipientAddress
+    },
+    isServiceRecipient() {
+      return !!this.payment?.recipient?.service
+    },
+    // Keep the exact destination available when the row uses a friendly
+    // label, or when the address is too long to read in the row itself.
     addressNeedsDetails() {
-      return this.recipientAddress.length > 34
+      return this.recipientAddressLabel !== this.recipientAddress || this.recipientAddress.length > 34
     },
     // Branta merchant verification, present only when the parent's adapter
     // attached it after a positive lookup. Absent on every unverified
@@ -865,8 +871,13 @@ export default {
     },
 
     onTopAction() {
+      if (this.isRedeem && (this.isSending || this.isComplete)) return
       this.show = false
-      this.$emit('cancel')
+      if (!this.isRedeem) this.$emit('cancel')
+    },
+
+    onHeaderSwipe() {
+      if (this.isRedeem) this.onTopAction()
     },
 
     onAmountChange() {
@@ -999,6 +1010,8 @@ export default {
 }
 .top-btn { /* size + glass come from .glass-back-btn (app.css) */ }
 .top-title {
+  margin: 0;
+  line-height: 1.4;
   flex: 1;
   text-align: center;
   font-size: 14px;
@@ -1071,7 +1084,7 @@ export default {
    so the confirm sheet and every list agree. */
 .recipient-avatar--silhouette {
   background: var(--bg-input);
-  color: var(--text-muted);
+  color: var(--text-secondary);
   text-shadow: none;
   box-shadow: none;
 }
@@ -1121,21 +1134,21 @@ export default {
 .recipient-addr {
   margin-top: 2px;
   font-family: var(--font-mono);
-  font-size: 10.5px;
-  color: var(--text-muted);
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .recipient-info {
-  width: 34px;
-  height: 34px;
+  width: 44px;
+  height: 44px;
   border-radius: 50%;
   border: 0;
   background: var(--bg-card);
   box-shadow: inset 0 0 0 1px var(--border-card);
-  color: var(--text-muted);
+  color: var(--text-secondary);
   display: grid;
   place-items: center;
   flex: 0 0 auto;
@@ -1472,4 +1485,15 @@ export default {
   .amount-input { font-size: 40px; }
   .primary-cta { height: 50px; font-size: 14.5px; }
 }
+/* Redeem keeps the familiar review surface and scales with larger text. */
+.sheet-card--redeem .top-title { font-size: 1rem; }
+.sheet-card--redeem .top-row { padding-top: 12px; user-select: none; touch-action: pan-x; }
+.sheet-card--redeem .top-btn { min-width: 44px; min-height: 44px; }
+.sheet-card--redeem .recipient-name { font-size: 1rem; white-space: normal; overflow-wrap: anywhere; }
+.sheet-card--redeem .recipient-addr,
+.sheet-card--redeem .amount-confirm-via,
+.sheet-card--redeem .amount-helper { font-size: .875rem; }
+.sheet-card--redeem .primary-cta { font-size: 1rem; min-height: 48px; height: auto; padding: 12px; }
+.sheet-card--redeem .unit-pill { min-height: 44px; font-size: .875rem; }
+@media (min-width: 600px) { .sheet-card--redeem { border-radius: var(--radius-xl); } }
 </style>

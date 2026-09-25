@@ -176,6 +176,10 @@ async function buildInstance(walletId, { mnemonic, accountNumber, network }) {
   // A fixed 0-sat bound declines every automatic claim; explicit
   // claimDeposit({maxFee}) calls are unaffected.
   config.maxDepositClaimFee = { type: 'fixed', amount: 0 };
+  // The emergency exit needs every leaf's pre-signed chain on this device.
+  // The SDK collects it in the background by default; stated explicitly so
+  // a future default change cannot silently remove the right to leave.
+  config.exitChainAutoFetchEnabled = true;
   if (BREEZ_LNURL_DOMAIN) {
     config.lnurlDomain = BREEZ_LNURL_DOMAIN;
   }
@@ -435,6 +439,15 @@ export async function deleteAllStorage() {
 // ==========================================
 // Churn-surviving caches
 // ==========================================
+
+/**
+ * The SDK's single-key CPFP signer for the emergency exit's fee money. The
+ * secret never enters this module's state: it is handed straight to WASM.
+ */
+export async function createCpfpSigner(secretKeyBytes) {
+  const mod = await ensureWasmInit();
+  return mod.singleKeyCpfpSigner(secretKeyBytes);
+}
 
 export function rememberInvoice(paymentHash, { expiresAt, createdAt }) {
   if (!paymentHash) return;

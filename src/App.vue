@@ -17,11 +17,13 @@
 
   <!-- Shared, channel-aware update UI. Soft updates stay nonmodal until the
        user opens them; required updates wait until biometric UI is gone. -->
-  <UpdateExperience :suspended="locked" />
+  <UpdateExperience :suspended="locked || addressRequest.state.stage !== 'idle'" />
+  <AddressRequestSheet :suspended="locked" />
 
   <!-- Global payment-error dialog. Wired to walletStore.paymentError so
        any page or store can surface a failure via showPaymentError(). -->
   <PaymentErrorDialog />
+  <ToastHost />
 </template>
 
 <script>
@@ -33,16 +35,22 @@ import { authenticate as biometricAuth, isBiometricAvailable } from 'src/utils/b
 import { triggerWalletStoreHydration, readPersistedWalletState } from 'src/utils/walletHydration'
 import { useAddressBookSync } from 'src/composables/useAddressBookSync'
 import PaymentErrorDialog from 'src/components/PaymentErrorDialog.vue'
+import ToastHost from 'src/components/toasts/ToastHost.vue'
 import UpdateExperience from 'src/components/UpdateExperience.vue'
+import AddressRequestSheet from 'src/components/AddressRequestSheet.vue'
+import { useAddressRequestStore } from 'src/stores/addressRequest.js'
+import { useNotificationsStore } from 'src/stores/notifications'
 
 export default defineComponent({
   name: 'App',
 
-  components: { PaymentErrorDialog, UpdateExperience },
+  components: { PaymentErrorDialog, UpdateExperience, AddressRequestSheet, ToastHost },
 
   setup () {
     const store = useWalletStore()
     const $q = useQuasar()
+    const addressRequest = useAddressRequestStore()
+    const notifications = useNotificationsStore()
 
     // Shared-contacts sync driver. App-level so contacts added from
     // any surface publish, whether or not the Address Book page is
@@ -54,6 +62,7 @@ export default defineComponent({
     provide('appLocked', locked)
     const isDark = ref($q.dark.isActive)
     let stateListener = null
+    let notificationsListener = null
     let isPrompting = false
     let lastPromptEnd = 0
 
@@ -110,7 +119,16 @@ export default defineComponent({
       }
     }
 
+    // Establish the lock before child consent UI can become available.
+    locked.value = Capacitor.isNativePlatform() && appLockActive()
+
     onMounted(async () => {
+      // Payment notifications: load the user's switch before anything can want
+      // to post one. Above the native gate on purpose — the browser posts
+      // through its own Notification API, and a receive on the web would
+      // otherwise stay silent until the user happened to open Settings.
+      notifications.initialize().catch(() => {})
+
       if (!Capacitor.isNativePlatform()) return
 
       // Dynamic import — @capacitor/app is only available in Capacitor builds.
@@ -122,6 +140,13 @@ export default defineComponent({
         locked.value = true
         setTimeout(() => promptUnlock(), 300)
       }
+
+      // Re-read the OS permission on every return to the front: it can be
+      // revoked in system settings while we are away, and a row that still
+      // claims "on" after that would be a lie.
+      notificationsListener = await CapApp.addListener('appStateChange', ({ isActive }) => {
+        if (isActive) notifications.syncPermission().catch(() => {})
+      })
 
       // Listen for background -> foreground transitions.
       // The biometric dialog itself causes a brief inactive->active cycle;
@@ -148,9 +173,12 @@ export default defineComponent({
       if (stateListener) {
         stateListener.remove()
       }
+      if (notificationsListener) {
+        notificationsListener.remove()
+      }
     })
 
-    return { locked, isDark, promptUnlock }
+    return { locked, isDark, promptUnlock, addressRequest }
   }
 })
 </script>

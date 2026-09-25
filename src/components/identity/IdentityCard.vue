@@ -92,11 +92,31 @@
               :class="{ 'id-card-name--action': needsName }"
               @click="needsName ? onAddName($event) : null"
             >{{ name }}</component>
-            <button v-if="npub" type="button" class="id-card-public-key" :aria-label="$t('Copy public key')" @click.stop="copyPublic">
-              <span class="id-card-public-preview" aria-hidden="true">{{ npub.slice(0, 8) }}…{{ npub.slice(-4) }}</span>
-              <Icon :icon="publicCopied ? 'tabler:check' : 'tabler:copy'" width="15" height="15" aria-hidden="true" />
-              <span class="id-card-copy-status" role="status">{{ publicCopied ? $t('Copied') : '' }}</span>
+            <!-- One identifier under the name, with its icon in front: the
+                 username when there is one, otherwise the public code. The
+                 whole line copies the full value. -->
+            <button
+              v-if="usernameAddress"
+              type="button"
+              class="id-card-ident"
+              :aria-label="$t('Copy username {name}', { name: usernameAddress })"
+              @click.stop="copy('username', usernameAddress)"
+            >
+              <NostrAddress :address="usernameAddress" check class="id-card-ident-value" />
+              <Icon :icon="copied === 'username' ? 'tabler:copy-check' : 'tabler:copy'" width="15" height="15" class="id-card-ident-copy" aria-hidden="true" />
             </button>
+            <button
+              v-else-if="npub"
+              type="button"
+              class="id-card-ident"
+              :aria-label="$t('Copy public code')"
+              @click.stop="copy('npub', npub)"
+            >
+              <Icon :icon="NOSTRICH_HEAD_ICON" width="15" height="15" class="id-card-ident-icon" aria-hidden="true" />
+              <span class="id-card-ident-code" aria-hidden="true">{{ npub.slice(0, 8) }}…{{ npub.slice(-4) }}</span>
+              <Icon :icon="copied === 'npub' ? 'tabler:copy-check' : 'tabler:copy'" width="15" height="15" class="id-card-ident-copy" aria-hidden="true" />
+            </button>
+            <span class="id-card-copy-status" role="status">{{ copied ? $t('Copied') : '' }}</span>
           </span>
         </span>
       </div>
@@ -133,6 +153,9 @@ import { copyToClipboard } from 'quasar';
 import { Icon } from '@iconify/vue';
 import VueQrcode from '@chenfengyuan/vue-qrcode';
 import { getQrOptionsWithSize } from '../../utils/qrConfig.js';
+import { NOSTRICH_HEAD_ICON } from '../../utils/nostrIcon.js';
+import { nip05AddressFor } from '../../services/nip05.js';
+import NostrAddress from './NostrAddress.vue';
 
 /** Circumference of the r=35 progress ring, rounded. */
 const RING_LENGTH = 220;
@@ -140,7 +163,7 @@ const RING_LENGTH = 220;
 export default {
   name: 'IdentityCard',
 
-  components: { Icon, VueQrcode },
+  components: { Icon, VueQrcode, NostrAddress },
 
   props: {
     name: { type: String, required: true },
@@ -150,6 +173,8 @@ export default {
     /** 0..1 setup progress. 1 turns the ring neutral. */
     progress: { type: Number, default: 1 },
     npub: { type: String, default: '' },
+    /** The person's username (`maria`), shown instead of the public code. */
+    username: { type: String, default: '' },
     qrValue: { type: String, default: '' },
     qrCaption: { type: String, default: '' },
     canSwitch: { type: Boolean, default: false },
@@ -160,19 +185,29 @@ export default {
   data() {
     return {
       flipped: false,
-      publicCopied: false,
+      /** Which value was just copied ('username' | 'npub'), for two seconds. */
+      copied: '',
       copyTimer: null,
       RING_LENGTH,
+      NOSTRICH_HEAD_ICON,
     };
   },
 
   beforeUnmount() { clearTimeout(this.copyTimer); },
 
-  watch: { npub() { this.publicCopied = false; } },
+  watch: {
+    npub() { this.copied = ''; },
+    username() { this.copied = ''; },
+  },
 
   computed: {
     complete() {
       return this.progress >= 1;
+    },
+
+    /** Full `maria@mybuho.de`, or '' without a username. */
+    usernameAddress() {
+      return nip05AddressFor(this.username) || '';
     },
 
     ringOffset() {
@@ -191,15 +226,25 @@ export default {
   },
 
   methods: {
-    async copyPublic() {
+    /**
+     * Copy the full value behind the identifier line: the whole address for
+     * the username, the whole npub for the public code.
+     */
+    async copy(kind, value) {
       try {
-        await copyToClipboard(this.npub);
-        this.publicCopied = true;
-        clearTimeout(this.copyTimer);
-        this.copyTimer = setTimeout(() => { this.publicCopied = false; }, 2000);
+        await copyToClipboard(value);
       } catch {
         this.$q.notify({ type: 'warning', message: this.$t("Couldn't copy"), timeout: 2000 });
+        return;
       }
+      this.copied = kind;
+      clearTimeout(this.copyTimer);
+      this.copyTimer = setTimeout(() => { this.copied = ''; }, 2000);
+      this.$q.notify({
+        type: 'positive',
+        message: kind === 'username' ? this.$t('Username copied') : this.$t('Public code copied'),
+        timeout: 1600,
+      });
     },
     onAddName(event) {
       event.stopPropagation();
@@ -215,11 +260,16 @@ export default {
 </script>
 
 <style scoped>
-/* Sits under the name where the handle used to be, so it keeps that line's
-   size and tone while staying a comfortable tap target. */
-.id-card-public-key { display: flex; align-items: center; gap: 6px; min-height: 40px; padding: 2px 0; margin: 0; border: 0; border-radius: 8px; background: transparent; color: #fff; font: inherit; cursor: pointer; }
-.id-card-public-key:focus-visible { outline: 2px solid #15de72; outline-offset: 3px; }
-.id-card-public-preview { opacity: .7; font-family: var(--font-mono); font-size: 13px; }
+/* The identifier line under the name: an icon, the value, a copy glyph. It
+   keeps the old public-code line's size and tone while staying a
+   comfortable tap target, and the value truncates before the glyphs do. */
+.id-card-ident { display: flex; align-items: center; gap: 7px; min-height: 40px; max-width: 100%; min-width: 0; padding: 2px 0; margin: 0; border: 0; border-radius: 8px; background: transparent; color: #fff; font: inherit; cursor: pointer; text-align: left; }
+.id-card-ident:focus-visible { outline: 2px solid #15de72; outline-offset: 3px; }
+.id-card-ident-icon { flex: 0 0 auto; opacity: .78; }
+.id-card-ident-value { font-size: 14.5px; letter-spacing: -0.01em; --nostr-address-badge: #15DE72; }
+.id-card-ident-value :deep(.nostr-address-text) { opacity: .92; }
+.id-card-ident-code { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-mono); font-size: 13px; opacity: .72; }
+.id-card-ident-copy { flex: 0 0 auto; opacity: .55; }
 .id-card-copy-status { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 /* The card is the one place in the identity surface with its own palette,
    and it follows the theme's own logic: light mode is black-on-cream

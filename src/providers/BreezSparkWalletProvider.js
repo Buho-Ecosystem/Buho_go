@@ -51,7 +51,10 @@ import {
   claimErrorKind,
   classifyFromMatureQuote,
   withdrawalStatusFromPayment,
+  instantClaimOutcome,
+  waitQuoteFromMature,
 } from '../utils/breezPayments.js';
+import { sparkHealth } from '../utils/sparkHealth.js';
 
 const BITCOIN_L1 = {
   REQUIRED_CONFIRMATIONS: 3,
@@ -370,17 +373,7 @@ export class BreezSparkWalletProvider extends WalletProvider {
     try {
       let info;
       try {
-        // The synced read can outlive the race on a slow sync; keep its
-        // rejection handled so losing the race never surfaces as an
-        // unhandled promise rejection.
-        const synced = this.sdk.getInfo({ ensureSynced: true });
-        synced.catch(() => {});
-        info = await Promise.race([
-          synced,
-          new Promise((_, reject) =>
-            setTimeout(() => reject(new Error('breez sync timeout')), 15000)
-          ),
-        ]);
+        info = await this._syncedInfo();
       } catch (e) {
         info = await this.sdk.getInfo({});
       }
@@ -922,7 +915,7 @@ export class BreezSparkWalletProvider extends WalletProvider {
       }
 
       const lnurlData = response.data;
-      if (!lnurlData || lnurlData.status === 'ERROR') {
+      if (!lnurlData || lnurlData.tag !== 'payRequest' || !lnurlData.callback || lnurlData.status === 'ERROR') {
         throw new Error(lnurlData?.reason || 'Failed to fetch Lightning address info');
       }
 
@@ -1127,6 +1120,12 @@ export class BreezSparkWalletProvider extends WalletProvider {
   // Transaction history
   // ==========================================
 
+  async getTransaction(paymentId) {
+    this._ensureConnected();
+    const response = await this._withTransportRetry(() => this.sdk.getPayment({ paymentId }));
+    return mapBreezPaymentsToTxList(response?.payment ? [response.payment] : [])[0] || null;
+  }
+
   async getTransactions({ limit = 50, offset = 0 } = {}) {
     this._ensureConnected();
 
@@ -1284,6 +1283,9 @@ export class BreezSparkWalletProvider extends WalletProvider {
       return {
         creditAmountSats: Number(mature.creditAmountSats || 0),
         feeSats: Number(mature.feeSats || 0),
+        // True while the service will not yet quote the deposit and the
+        // SDK priced it from current network fees instead.
+        isEstimate: mature.isEstimate === true,
         signature: null,
         transactionId: txId,
         outputIndex
@@ -1334,30 +1336,6 @@ export class BreezSparkWalletProvider extends WalletProvider {
     return { category, quote, feeSats, feeRatio, classifiedAt: Date.now() };
   }
 
-  async refreshClassificationQuote(deposit, previousClassification) {
-    if (!previousClassification?.quote) return previousClassification;
-
-    try {
-      const quote = await this.getClaimFeeQuote(deposit.txId, deposit.outputIndex || 0);
-      const { feeSats, feeRatio } = classifyFromMatureQuote({
-        depositAmountSats: Number(deposit.amount || 0),
-        quote,
-        thresholds: AUTO_CLAIM_THRESHOLDS,
-      });
-
-      return {
-        ...previousClassification,
-        quote,
-        feeSats,
-        feeRatio,
-        classifiedAt: Date.now()
-      };
-    } catch (error) {
-      console.warn('Could not refresh claim quote, using prior:', error?.message || error);
-      return previousClassification;
-    }
-  }
-
   async classifyUnconfirmedDeposit(deposit) {
     if (!deposit?.txId || deposit.confirmed) {
       throw new Error('classifyUnconfirmedDeposit requires an unconfirmed deposit');
@@ -1373,9 +1351,12 @@ export class BreezSparkWalletProvider extends WalletProvider {
       return { category: 'quote_failed', quote: null, plan: null, creditSats: 0, feeSats: 0, classifiedAt: Date.now(), error };
     }
 
+    // One call prices both ways of adding the deposit; the wait leg rides
+    // along so the sheet can show the two side by side.
+    const wait = waitQuoteFromMature(quote?.mature);
     const instant = quote?.instant;
     if (!instant) {
-      return { category: 'no_instant_plan', quote: null, plan: null, creditSats: 0, feeSats: 0, classifiedAt: Date.now() };
+      return { category: 'no_instant_plan', quote: null, plan: null, wait, creditSats: 0, feeSats: 0, classifiedAt: Date.now() };
     }
 
     const creditSats = Number(instant.creditAmountSats || 0);
@@ -1385,12 +1366,23 @@ export class BreezSparkWalletProvider extends WalletProvider {
       category: 'instant',
       quote: { transactionId: deposit.txId, outputIndex: deposit.outputIndex || 0, creditAmountSats: creditSats, feeSats },
       plan: instant,
+      wait,
       creditSats,
       feeSats,
       classifiedAt: Date.now(),
     };
   }
 
+  /**
+   * Add a deposit before it matures, at the fee the instant quote named.
+   *
+   * The SDK declines by throwing (fee ceiling, depth, no plan), so a call
+   * that resolves is an accepted claim. An early claim resolves WITHOUT a
+   * payment because it settles asynchronously; a deposit that matured in
+   * the meantime takes the normal claim and resolves WITH one. Callers mark
+   * the txid claimed on resolve either way. `settled` is false for the
+   * early case so the caller can nudge the balance until the credit lands.
+   */
   async claimInstantDeposit(txId, quote, plan, outputIndex = 0) {
     this._ensureConnected();
 
@@ -1402,14 +1394,8 @@ export class BreezSparkWalletProvider extends WalletProvider {
         vout: outputIndex,
         maxFee: { type: 'fixed', amount: feeSats },
       });
-      // The response's payment is optional; callers durably mark the txid
-      // claimed on our success, so a resolve WITHOUT an executed claim must
-      // fail loudly - the 0-conf path degrades to the 3-conf flow, never to
-      // a deposit silently excluded from every claim path.
-      if (!result?.payment) {
-        throw new Error('Instant claim was not accepted');
-      }
-      return { success: true, claimId: result.payment.id || null };
+      const { claimId, settled } = instantClaimOutcome(result);
+      return { success: true, claimId, settled };
     } finally {
       this.setSyncing(false);
     }
@@ -1782,4 +1768,100 @@ export class BreezSparkWalletProvider extends WalletProvider {
     const fallbackUrl = BITCOIN_L1.DEFAULT_MEMPOOL_API;
     return customUrl !== fallbackUrl ? [customUrl, fallbackUrl] : [fallbackUrl];
   }
+  // ==========================================
+  // Emergency exit (unilateral exit)
+  // ==========================================
+
+  /**
+   * Quote an exit from local exit data. Sends nothing, needs no funds, and
+   * works with the operators unreachable. `selection` defaults to the SDK's
+   * economic triage: only leaves worth more than their own exit cost.
+   */
+  async prepareUnilateralExit({ feeRateSatPerVbyte, destination, selection = { type: 'auto' }, fundingKind = { type: 'p2wpkh' } }) {
+    this._ensureConnected();
+    return this.sdk.prepareUnilateralExit({ feeRateSatPerVbyte, fundingKind, destination, selection });
+  }
+
+  /**
+   * Build and sign the whole exit set from a quote and real fee-money UTXOs.
+   * The SDK never broadcasts; the app owns package submission. Idempotent:
+   * re-running returns already-confirmed steps as confirmed.
+   */
+  async buildUnilateralExit({ prepared, fundingInputs, signer }) {
+    this._ensureConnected();
+    return this.sdk.unilateralExit({ prepared, fundingInputs }, signer);
+  }
+
+  /** The exit kit: everything needed to leave without the operators. Opaque, can be several MB. */
+  async exportUnilateralExitState() {
+    this._ensureConnected();
+    const { exitState } = await this.sdk.exportUnilateralExitState();
+    return exitState;
+  }
+
+  async importUnilateralExitState(exitState) {
+    this._ensureConnected();
+    await this.sdk.importUnilateralExitState({ exitState });
+  }
+
+  /**
+   * One synced read, bounded so a slow sync degrades instead of hanging.
+   * The losing promise's rejection stays handled. A synced read is the one
+   * proof that Spark answered, so reachability is recorded here: the
+   * emergency exit door opens only after it keeps failing for hours. A phone
+   * that is itself offline says nothing about Spark.
+   */
+  async _syncedInfo({ timeoutMs = 15000 } = {}) {
+    const synced = this.sdk.getInfo({ ensureSynced: true });
+    synced.catch(() => {});
+    try {
+      const info = await Promise.race([
+        synced,
+        new Promise((_, reject) => setTimeout(() => reject(new Error('breez sync timeout')), timeoutMs)),
+      ]);
+      sparkHealth().recordSuccess(this.walletId);
+      return info;
+    } catch (error) {
+      if (typeof navigator === 'undefined' || navigator.onLine !== false) sparkHealth().recordFailure(this.walletId);
+      throw error;
+    }
+  }
+
+  /** Reachability only, for the background monitor. Never throws. */
+  async probeReachability({ timeoutMs } = {}) {
+    if (!this.sdk || !this.isConnected) return false;
+    try {
+      await this._syncedInfo({ timeoutMs });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /** Local balance read, no sync: the number an offline quote should be compared against. */
+  async getBalanceSatsLocal() {
+    this._ensureConnected();
+    const info = await this.sdk.getInfo({});
+    return Number(info?.balanceSats ?? 0);
+  }
+
+  /**
+   * Fires whenever the exit kit may be stale: exit data changed, a payment
+   * settled in either direction, or a deposit was claimed.
+   */
+  onExitDataChanged(callback) {
+    this._ensureConnected();
+    const unsub = breezSdk.subscribe(this.walletId, (event) => {
+      const type = event?.type;
+      if (type === 'unilateralExitStateChanged' || type === 'paymentSucceeded' || type === 'claimedDeposits') {
+        try { callback(type); } catch (e) { console.warn('onExitDataChanged callback failed:', e?.message || e); }
+      }
+    });
+    this._eventUnsubscribers.add(unsub);
+    return () => {
+      this._eventUnsubscribers.delete(unsub);
+      unsub();
+    };
+  }
+
 }
