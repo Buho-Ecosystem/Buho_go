@@ -57,15 +57,13 @@
         </div>
       </q-card-section>
 
-      <!-- Step: UNAVAILABLE — platform has no cloud backup implementation -->
+      <!-- Step: UNAVAILABLE: no cloud backup on this platform, or no Google Play services on this phone -->
       <q-card-section v-else-if="step === 'unavailable'" class="cb-body">
         <div class="cb-illustration cb-illustration--warn">
           <Icon icon="tabler:cloud-off" width="40" height="40" />
         </div>
         <h2 class="cb-heading">{{ $t('Cloud backup is not available here') }}</h2>
-        <p class="cb-lede">
-          {{ $t('Google Drive backup works in the BuhoGO Android app. Install it on your phone to back up there.') }}
-        </p>
+        <p class="cb-lede">{{ unavailableMessage }}</p>
       </q-card-section>
 
       <!-- Step: SIGN IN -->
@@ -277,6 +275,8 @@ export default {
       restoreError: '',
       backupError: '',
       signInError: '',
+      // Why the 'unavailable' step shows, from checkAvailability().
+      unavailableReason: null,
       // True when the last sign-in failure smells like an OAuth/consent
       // state worth escaping via revoke; shows "Sign out and retry".
       offerSignOutRetry: false,
@@ -327,6 +327,16 @@ export default {
     primaryEnabled() {
       return !this.busy;
     },
+
+    unavailableMessage() {
+      if (this.unavailableReason === 'play-services-missing') {
+        return this.$t('Google Drive backup needs Google Play services, which is not installed on this phone.');
+      }
+      if (this.unavailableReason === 'play-services-unavailable') {
+        return this.$t('Google Drive backup needs Google Play services. Turn it on or update it, then try again.');
+      }
+      return this.$t('Google Drive backup works in the BuhoGO Android app. Install it on your phone to back up there.');
+    },
   },
 
   watch: {
@@ -342,8 +352,9 @@ export default {
       this.step = 'checking';
       this.store.init();
       try {
-        const available = await this.store.checkAvailability();
+        const { available, reason } = await this.store.checkAvailability();
         if (!available) {
+          this.unavailableReason = reason;
           this.step = 'unavailable';
           return;
         }
@@ -384,6 +395,7 @@ export default {
       this.backupError = '';
       this.restoreError = '';
       this.signInError = '';
+      this.unavailableReason = null;
       this.offerSignOutRetry = false;
       this.doneTitle = '';
       this.doneSubtitle = '';

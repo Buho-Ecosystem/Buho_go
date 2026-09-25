@@ -105,6 +105,8 @@ export default {
   "Checking Google Drive...": "Comprobando Google Drive...",
   "Cloud backup is not available here": "La copia de seguridad en la nube no está disponible aquí",
   "Google Drive backup works in the BuhoGO Android app. Install it on your phone to back up there.": "La copia de seguridad en Google Drive funciona en la app de BuhoGO para Android. Instálala en tu teléfono para hacer la copia allí.",
+  "Google Drive backup needs Google Play services, which is not installed on this phone.": "La copia de seguridad en Google Drive necesita los servicios de Google Play, que no están instalados en este teléfono.",
+  "Google Drive backup needs Google Play services. Turn it on or update it, then try again.": "La copia de seguridad en Google Drive necesita los servicios de Google Play. Actívalos o actualízalos e inténtalo de nuevo.",
   "Keeps a backup of your wallets and Nostr identity in your Google Drive, so you can bring them back on a new phone.": "Guarda una copia de tus wallets y tu identidad Nostr en tu Google Drive, para que puedas recuperarlos en un teléfono nuevo.",
   "BuhoGO only sees files it created itself. Your other Drive files stay private.": "BuhoGO solo ve los archivos que creó él mismo. Tus demás archivos de Drive siguen siendo privados.",
   "Sign out": "Cerrar sesión",

@@ -127,10 +127,13 @@ export const useCloudBackupStore = defineStore('cloudBackup', {
       writeMeta({ lastBackupAt: this.lastBackupAt, signedInEmail: this.signedInEmail });
     },
 
-    /** Probe platform availability. @returns {Promise<boolean>} */
+    /**
+     * Probe whether Drive backup can work on this device, and why not.
+     * @returns {Promise<{ available: boolean, reason: string|null }>}
+     */
     async checkAvailability() {
       const res = await cloudIsAvailable();
-      return Boolean(res?.available);
+      return { available: Boolean(res?.available), reason: res?.reason || null };
     },
 
     /**
