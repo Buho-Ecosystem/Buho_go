@@ -10,6 +10,17 @@
 .recovery-notice p { font: 500 15px/1.5 'Manrope', sans-serif; color: var(--text-secondary); margin: 0 0 16px; }
 .recovery-notice strong { font-weight: 750; color: var(--text-primary); }
 .recovery-illustration { display: block; width: 112px; height: 112px; max-width: 100%; margin: 24px auto 0; color: var(--brand-accent-text); }
+/* Preparation is one screen, never a scroll. Text follows the height left
+   between header and footer (cqh units against the body), the headline
+   stays bold, and the illustration only takes what is left over. Scrolling
+   remains only as the fallback for a phone held sideways. */
+.recovery-body--prepare { display: flex; flex-direction: column; container-type: size; }
+.recovery-body--prepare .recovery-intro { font-size: clamp(18px, 5.6cqh, 23px); margin-bottom: clamp(10px, 3.6cqh, 22px); }
+.recovery-body--prepare .recovery-notice p { font-size: clamp(12.5px, 3.5cqh, 15px); line-height: 1.4; margin-bottom: clamp(5px, 2.6cqh, 16px); }
+.recovery-body--prepare .recovery-notice p:last-child { margin-bottom: 0; }
+.recovery-body--prepare .recovery-art { flex: 0 1 112px; min-height: 0; margin-top: clamp(8px, 3cqh, 24px); container-type: size; }
+.recovery-body--prepare .recovery-illustration { width: 100%; height: 100%; margin: 0; }
+@container (max-height: 40px) { .recovery-illustration { display: none; } }
 .recovery-instruction { font-size: 16px; line-height: 1.45; text-align: center; margin: 4px 0 28px; }
 .recovery-paper-label { text-align: center; font-size: 12px; color: var(--text-secondary); margin: -16px 0 22px; overflow-wrap: anywhere; }
 .recovery-word-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px 14px; margin: 0; padding: 0; list-style: none; }
@@ -17,7 +28,8 @@
 .recovery-word-number { position: absolute; left: 12px; font-size: 13px; font-weight: 500; }
 .recovery-footnote { text-align: center; font-size: 15px; line-height: 1.45; margin: 34px 0 0; }
 .recovery-show { display: block; margin: 16px auto 0; min-height: 44px; padding: 8px 16px; color: var(--brand-accent-text); background: transparent; border: 1px solid currentColor; border-radius: 12px; cursor: pointer; }
-.recovery-footer { flex-shrink: 0; padding: 18px 22px max(24px, env(safe-area-inset-bottom)); }
+/* --safe-bottom, not env(): Android WebViews report a 0 inset over the navigation bar. */
+.recovery-footer { flex-shrink: 0; padding: 18px 22px max(24px, var(--safe-bottom, 0px)); }
 .recovery-primary { width: 100%; min-height: 54px; border-radius: 20px; background: var(--brand-accent); color: #061c12; font-weight: 650; font-size: 18px; }
 .body--light .recovery-primary { background: var(--btn-neutral-bg); color: var(--btn-neutral-fg); }
 /* WoS-style consent switch: native keyboard behavior and a generous label hit area. */
@@ -57,7 +69,13 @@
   .recovery-word-grid { row-gap: 10px; }
   .recovery-word-tile { min-height: 48px; padding-top: 10px; padding-bottom: 10px; }
   .recovery-footnote { margin-top: 20px; font-size: 14px; }
-  .recovery-footer { padding-top: 12px; padding-bottom: max(18px, env(safe-area-inset-bottom)); }
+  .recovery-footer { padding-top: 12px; padding-bottom: max(18px, var(--safe-bottom, 0px)); }
+}
+@media (max-height: 667px) {
+  .recovery-header { min-height: 56px; padding-top: max(6px, var(--safe-top, 0px)); padding-bottom: 6px; }
+  .recovery-acknowledgement { min-height: 44px; padding-top: 4px; padding-bottom: 4px; margin-bottom: 4px; }
+  .recovery-primary { min-height: 50px; }
+  .recovery-footer { padding-top: 8px; padding-bottom: max(14px, var(--safe-bottom, 0px)); }
 }
 
 @media (prefers-reduced-motion: reduce) { .recovery-consent-track, .recovery-consent-track > span { transition: none; } }
