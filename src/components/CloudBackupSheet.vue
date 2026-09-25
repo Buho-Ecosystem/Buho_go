@@ -40,6 +40,7 @@
           flat
           round
           dense
+          class="cb-close"
           :disable="store.isBackingUp || store.isRestoring"
           @click="close"
           :class="$q.dark.isActive ? 'close_btn_dark' : 'close_btn_light'"
@@ -628,7 +629,10 @@ export default {
   align-items: center;
   padding: 10px 16px 8px;
 }
+/* Fixed columns: most steps have no back button, and auto-placement would
+   then squeeze the title into the first column and put close in the middle. */
 .cb-back {
+  grid-column: 1;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -641,10 +645,14 @@ export default {
   cursor: pointer;
 }
 .cb-title {
+  grid-column: 2;
   font-family: 'Manrope', sans-serif;
   font-size: 16px;
   font-weight: 600;
   text-align: center;
+}
+.cb-close {
+  grid-column: 3;
 }
 
 .cb-body {
@@ -820,7 +828,7 @@ export default {
   font-size: 13px;
 }
 
-.cb-title { display: flex; align-items: center; gap: 8px; }
+.cb-title { display: flex; align-items: center; justify-content: center; gap: 8px; }
 .cb-contents { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; padding: 0 24px 20px; }
 .cb-contents > div { display: flex; flex-direction: column; gap: 6px; padding: 14px; border: 1px solid var(--border-card); border-radius: 14px; }
 .cb-contents strong { color: var(--text-primary); font-size: 14px; }
