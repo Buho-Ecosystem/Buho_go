@@ -1,71 +1,70 @@
 /**
- * Shared copy and illustrations for biometric / device-PIN auth flows.
+ * What the app-lock sheet says for each way the phone can check it's you.
  *
- * Used by any screen that needs to describe what will happen when the
- * native authentication sheet appears (e.g. the recovery-phrase reveal
- * dialog, the app-lock enable dialog). Keeping platform labels in one
- * place prevents iOS Touch ID / Face ID branding from drifting across
- * call sites as new flows are added.
- *
- * The device-PIN branch is treated distinctly: the user will see their
- * lockscreen, not a fingerprint prompt, so it gets its own illustration.
+ * The sheet names the method big, shows it, and adds one line on when it
+ * is asked for. The per-platform method names live here so they cannot
+ * drift apart once more screens describe the lock.
  */
 import { Capacitor } from '@capacitor/core';
 
-export const BIOMETRIC_ILLUSTRATION = '/Onboarding wizard spark/storyset-fingerprint-bro.svg';
-export const DEVICE_PIN_ILLUSTRATION = '/Onboarding wizard spark/storyset-secure-login-bro.svg';
+const ILLUSTRATIONS = {
+  devicePin: '/Onboarding wizard spark/storyset-secure-login-bro.svg',
+  fingerprint: '/Onboarding wizard spark/storyset-fingerprint-bro.svg',
+  face: '/Onboarding wizard spark/storyset-face-scan-bro.svg',
+};
 
 /**
- * Resolve the label and action phrase to display for a given biometry
- * type on the current platform.
+ * Resolve the sheet's title, line and illustration for a biometry type on
+ * the current platform.
  *
  * @param {string} biometryType  One of 'fingerprint' | 'face' | 'iris' |
  *                               'multiple' | 'device-pin' | 'none'.
  * @param {(key: string) => string} t  Translation function ($t bound).
  * @returns {{
- *   illustration: string,
- *   isDevicePinOnly: boolean,
- *   methodLabel: string,   // noun, e.g. "Touch ID", "Fingerprint"
- *   actionPhrase: string,  // sentence starter, e.g. "Use Touch ID"
+ *   title: string,         // the method, e.g. "Fingerprint", "Face ID"
+ *   line: string,          // when BuhoGO asks for it
+ *   illustration: string,  // public path of the picture above the title
  * }}
  */
 export function getBiometricMethodCopy(biometryType, t) {
-  const platform = Capacitor.getPlatform();
-  const isDevicePinOnly = biometryType === 'device-pin';
-
-  let methodLabel;
-  let actionPhrase;
+  const ios = Capacitor.getPlatform() === 'ios';
 
   switch (biometryType) {
     case 'fingerprint':
-      methodLabel = platform === 'ios' ? t('Touch ID') : t('Fingerprint');
-      actionPhrase = platform === 'ios' ? t('Use Touch ID') : t('Use your fingerprint');
-      break;
+      return {
+        title: ios ? t('Touch ID') : t('Fingerprint'),
+        line: t("We ask for your fingerprint whenever we need to be sure it's you."),
+        illustration: ILLUSTRATIONS.fingerprint,
+      };
     case 'face':
-      methodLabel = platform === 'ios' ? t('Face ID') : t('Face recognition');
-      actionPhrase = platform === 'ios' ? t('Use Face ID') : t('Use face recognition');
-      break;
+      return {
+        title: ios ? t('Face ID') : t('Face recognition'),
+        line: t("We ask for your face whenever we need to be sure it's you."),
+        illustration: ILLUSTRATIONS.face,
+      };
     case 'iris':
-      methodLabel = t('Iris scan');
-      actionPhrase = t('Use iris unlock');
-      break;
+      return {
+        title: t('Iris scan'),
+        line: t("We ask for an iris scan whenever we need to be sure it's you."),
+        illustration: ILLUSTRATIONS.face,
+      };
     case 'multiple':
-      methodLabel = t('Biometrics');
-      actionPhrase = t('Use your fingerprint or face');
-      break;
+      return {
+        title: t('Biometrics'),
+        line: t("We ask for your face or fingerprint whenever we need to be sure it's you."),
+        illustration: ILLUSTRATIONS.face,
+      };
     case 'device-pin':
-      methodLabel = t('Device PIN');
-      actionPhrase = t('Use your device PIN, pattern, or password');
-      break;
+      return {
+        title: t('Device PIN'),
+        line: t("We ask for your PIN, pattern or password whenever we need to be sure it's you."),
+        illustration: ILLUSTRATIONS.devicePin,
+      };
     default:
-      methodLabel = t('Device unlock');
-      actionPhrase = t('Verify it is you');
+      return {
+        title: t('Device unlock'),
+        line: t("We ask you to unlock your phone whenever we need to be sure it's you."),
+        illustration: ILLUSTRATIONS.devicePin,
+      };
   }
-
-  return {
-    illustration: isDevicePinOnly ? DEVICE_PIN_ILLUSTRATION : BIOMETRIC_ILLUSTRATION,
-    isDevicePinOnly,
-    methodLabel,
-    actionPhrase,
-  };
 }
