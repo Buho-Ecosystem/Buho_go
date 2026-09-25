@@ -510,8 +510,9 @@ body.body--dark .id-card-front::after {
 
 .id-card-qr-empty { width: 100%; height: 100%; display: grid; place-items: center; }
 
-/* Centre occlusion is safe at this size with error-correction level H, and
-   it avoids the three corner finder patterns scanners rely on most. */
+/* Centre occlusion stays clear of the three corner finder patterns scanners
+   rely on most, and the QR library's default level M carries it: the save
+   link decodes with this photo on top. */
 .id-card-qr-avatar {
   position: absolute;
   left: 50%;

@@ -111,7 +111,8 @@
         <div v-else class="pp-mid">
           <div class="pp-note-empty pp-in" style="--d: 90ms">
             <Icon icon="tabler:info-circle" width="17" height="17" />
-            <span>{{ $t('{name} has not set up payments yet, so there is nothing to send to.', { name: spokenName }) }}</span>
+            <span v-if="isOwnCard">{{ $t('You have not set up payments yet.') }}</span>
+            <span v-else>{{ $t('{name} has not set up payments yet, so there is nothing to send to.', { name: spokenName }) }}</span>
           </div>
         </div>
 
@@ -125,7 +126,7 @@
 
     <!-- The code sheet: everything secondary, one tap away. -->
     <q-dialog v-model="showCode" position="bottom">
-      <div class="pp-code-sheet">
+      <div class="pp-sheet">
         <div class="pp-grab" aria-hidden="true"></div>
         <div class="pp-qr">
           <vue-qrcode v-if="payUri" :value="payUri" :options="qrOptions" class="pp-qr-canvas" />
@@ -136,6 +137,31 @@
           <code>{{ lud16 }}</code>
           <Icon :icon="copied ? 'tabler:check' : 'tabler:copy'" width="14" height="14" />
         </button>
+      </div>
+    </q-dialog>
+
+    <!-- A save link asks before it saves. The link can come from anywhere,
+         so the person is shown and saving is always the viewer's own tap. -->
+    <q-dialog v-model="showSavePrompt" position="bottom">
+      <div class="pp-sheet pp-ask">
+        <div class="pp-grab" aria-hidden="true"></div>
+        <span class="pp-avatar pp-avatar--large">
+          <img v-if="avatar" :src="avatar" alt="" @error="avatarBroken = true" />
+          <Icon v-else icon="tabler:user" width="28" height="28" />
+        </span>
+        <h2 class="pp-ask-title">{{ saveQuestion }}</h2>
+        <div v-if="showAddress" class="pp-ask-line">
+          <NostrAddress :address="profile.nip05" :check="addressCheck === true" :icon-size="12" />
+        </div>
+        <div v-else-if="!hasName" class="pp-ask-line">{{ displayName }}</div>
+        <div class="pp-ask-actions">
+          <button type="button" class="pp-cta" :disabled="saving" @click="confirmSave">
+            <q-spinner v-if="saving" size="17px" />
+            <Icon v-else icon="tabler:user-plus" width="17" height="17" />
+            {{ $t('Save') }}
+          </button>
+          <button type="button" class="pp-ask-later" @click="showSavePrompt = false">{{ $t('Not now') }}</button>
+        </div>
       </div>
     </q-dialog>
   </q-page>
@@ -211,6 +237,7 @@ function freshCard() {
     keyInPath: false,
     /** The link asked BuhoGO to save this person. Handled once. */
     saveRequested: false,
+    showSavePrompt: false,
     avatarBroken: false,
     showCode: false,
     copied: false,
@@ -234,7 +261,7 @@ export default {
 
   components: { Icon, VueQrcode, NostrAddress },
 
-  // App.vue's lock overlay. A save link waits under it for the owner.
+  // App.vue's lock overlay. A save link's question waits under it for the owner.
   inject: {
     appLocked: { default: () => ref(false) },
   },
@@ -332,6 +359,13 @@ export default {
       return (this.walletStore.wallets || []).length > 0;
     },
 
+    /** The save sheet's question: the full name, as the person will be filed. */
+    saveQuestion() {
+      return this.hasName
+        ? this.$t('Save {name} to your contacts?', { name: this.profile.name })
+        : this.$t('Save this person to your contacts?');
+    },
+
     /** The viewer's own card. There is no one to save, so it says so instead. */
     isOwnCard() {
       const own = String(this.identity.nostrPubkeyHex || '').toLowerCase();
@@ -416,8 +450,8 @@ export default {
     },
 
     qrOptions() {
-      // 212 sits inside the 228 plate with its padding; H-level error
-      // correction (the app-wide default) tolerates the centered avatar.
+      // 212 sits inside the 228 plate with its padding; level-M error
+      // correction (the QR library's default) tolerates the centered avatar.
       return getQrOptionsWithSize(212);
     },
   },
@@ -427,7 +461,7 @@ export default {
      * Another card link while this page is open (a new App Link, a scan
      * from Send) reuses the page, and created() does not run again. Another
      * person starts over; a save link for the person already here only asks
-     * for the save.
+     * the question.
      */
     $route(to, from) {
       if (!to.path.startsWith(PROFILE_PATH)) return;
@@ -458,6 +492,9 @@ export default {
 
   beforeUnmount() {
     if (this._copyTimer) clearTimeout(this._copyTimer);
+    // A load still in flight belongs to a page nobody is looking at: it must
+    // not go on to ask about saving once the viewer has moved on.
+    this.loadSeq += 1;
   },
 
   methods: {
@@ -524,27 +561,25 @@ export default {
         console.warn('[public-profile] profile fetch failed:', err);
       }
 
-      const alreadySaved = await this.isInContacts(resolved.pubkey);
+      await this.loadViewer();
       if (!current()) return;
-      this.saved = alreadySaved;
+      this.saved = this.insideBuhoGo && !!this.addressBook.findContactByPubkey(resolved.pubkey);
 
       this.state = 'ready';
       this.honourSaveRequest();
     },
 
     /**
-     * Whether the viewer already has this person, so Save starts as Saved.
-     * Asked inside BuhoGO only: a stranger's browser has no contacts. Also
-     * loads the viewer's own identity, which decides the own-card state.
+     * The viewer's side of the card: their identity, which decides the
+     * own-card state, and their contacts, which decide whether Save starts
+     * as Saved. Only inside BuhoGO; a stranger's browser has neither.
      */
-    async isInContacts(pubkey) {
-      if (!this.insideBuhoGo) return false;
+    async loadViewer() {
+      if (!this.insideBuhoGo) return;
       try {
         await Promise.all([this.identity.hydrate(), this.addressBook.initialize()]);
-        return !!this.addressBook.findContactByPubkey(pubkey);
       } catch (err) {
-        console.warn('[public-profile] could not read contacts:', err);
-        return false;
+        console.warn('[public-profile] could not load contacts:', err);
       }
     },
 
@@ -715,12 +750,7 @@ export default {
       if (this.saving || this.isOwnCard) return 'failed';
       if (this.saved) return 'existing';
       if (!this.profileEvent) {
-        this.$q.notify({
-          type: 'warning',
-          message: this.$t("Couldn't load their card"),
-          caption: this.$t('Try again in a moment.'),
-          timeout: 3500,
-        });
+        this.notifyCardUnavailable();
         return 'failed';
       }
       this.saving = true;
@@ -751,44 +781,69 @@ export default {
     },
 
     /**
-     * Save because the link asked to, not because someone tapped Save.
+     * A save link asks; it never saves on its own.
      *
-     * The link decides who, never a name: only a card whose key is in the
-     * link's own path saves this way. A name resolves through a server, so
-     * that card keeps its Save button for a deliberate tap. Inside BuhoGO
-     * only, never on your own card, and never under the app lock: a save
-     * link opened on a locked phone waits for its owner. The save itself is
-     * the button's path, so a link can never save more than a tap could.
+     * Any website or app can hand BuhoGO a save link, so arriving through one
+     * says nothing about what the viewer wants. Saving silently would let a
+     * link file a stranger under a trusted name, next in line for a payment.
+     * The link only asks the question, and the answer is the viewer's tap.
+     *
+     * Asked inside BuhoGO only, never on your own card, and only for a card
+     * whose key is in the link's own path: a name resolves through a server,
+     * so that card keeps just its Save button. Never over the app lock either;
+     * a save link opened on a locked phone asks its owner after the unlock.
      */
     async honourSaveRequest() {
       if (!this.saveRequested || this.state !== 'ready') return;
       this.saveRequested = false;
-      this.dropSaveFlag();
+      const seq = this.loadSeq;
+      // Settled first: a dialog closes on any route change, this one included.
+      await this.dropSaveFlag();
       if (!this.insideBuhoGo || this.isOwnCard || !this.keyInPath) return;
 
-      const seq = this.loadSeq;
       await this.untilUnlocked();
       if (seq !== this.loadSeq) return;
 
+      if (this.saved) this.notifyAlreadySaved();
+      else if (!this.profileEvent) this.notifyCardUnavailable();
+      else this.showSavePrompt = true;
+    },
+
+    /** The save sheet's Save. It stays open, with the reason, if saving fails. */
+    async confirmSave() {
       const outcome = await this.saveContact();
-      if (outcome === 'existing') {
-        this.$q.notify({
-          type: 'info',
-          message: this.$t('{name} is already in your contacts', { name: this.spokenName }),
-          timeout: 2500,
-        });
-      }
+      if (outcome === 'existing') this.notifyAlreadySaved();
+      if (outcome !== 'failed') this.showSavePrompt = false;
+    },
+
+    notifyAlreadySaved() {
+      this.$q.notify({
+        type: 'info',
+        message: this.$t('{name} is already in your contacts', { name: this.spokenName }),
+        timeout: 2500,
+      });
+    },
+
+    notifyCardUnavailable() {
+      this.$q.notify({
+        type: 'warning',
+        message: this.$t("Couldn't load their card"),
+        caption: this.$t('Try again in a moment.'),
+        timeout: 3500,
+      });
     },
 
     /**
-     * A save link saves once. Coming back to this card later through the
+     * A save link asks once. Coming back to this card later through the
      * history, or reloading it, shows the card without asking again.
+     *
+     * @returns {Promise<void>} settles once the address no longer has the flag
      */
-    dropSaveFlag() {
+    async dropSaveFlag() {
       if (!(SAVE_PARAM in this.$route.query)) return;
       const query = { ...this.$route.query };
       delete query[SAVE_PARAM];
-      this.$router.replace({ path: this.$route.path, query }).catch(() => { /* navigation rejection is non-fatal */ });
+      await this.$router.replace({ path: this.$route.path, query }).catch(() => { /* navigation rejection is non-fatal */ });
     },
 
     /** Resolves once the app lock is open, straight away when there is none. */
@@ -1159,14 +1214,16 @@ export default {
   white-space: nowrap;
 }
 
-/* The code sheet */
-.pp-code-sheet {
+/* Sheets: the code and the save question share this base */
+.pp-sheet {
   width: 100%;
   max-width: 400px;
   background: #FAF7EF;
   color: #1C1B18;
   border-radius: 22px 22px 0 0;
-  padding: 10px 20px max(20px, env(safe-area-inset-bottom, 0px));
+  /* --safe-bottom like the page: raw env() is 0 in the Android app, which
+     would leave the save sheet's buttons under the navigation bar. */
+  padding: 10px 20px max(20px, var(--safe-bottom, 0px));
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -1196,8 +1253,8 @@ export default {
 .pp-qr :deep(canvas),
 .pp-qr-canvas { width: 100%; height: 100%; display: block; }
 
-/* Centered face on the code, same as the card's own: safe at level-H
-   error correction, clear of the three finder patterns. */
+/* Centered face on the code, same as the card's own: clear of the three
+   finder patterns, and small enough for level-M error correction. */
 .pp-qr-avatar {
   position: absolute;
   left: 50%;
@@ -1213,6 +1270,54 @@ export default {
 }
 
 .pp-qr-avatar img { width: 100%; height: 100%; object-fit: cover; display: block; }
+
+/* The save sheet */
+.pp-avatar--large {
+  width: 64px;
+  height: 64px;
+  margin-top: 4px;
+}
+
+.pp-ask-title {
+  margin: 14px 0 0;
+  max-width: 30ch;
+  text-align: center;
+  text-wrap: balance;
+  font-size: 19px;
+  font-weight: 800;
+  line-height: 1.3;
+  letter-spacing: -0.015em;
+}
+
+.pp-ask-line {
+  display: flex;
+  justify-content: center;
+  max-width: 100%;
+  margin-top: 6px;
+  font-size: 13px;
+  color: #9A9488;
+  overflow-wrap: anywhere;
+}
+
+.pp-ask-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+  margin-top: 22px;
+}
+
+.pp-ask-later {
+  min-height: 48px;
+  border: 0;
+  border-radius: 24px;
+  background: transparent;
+  color: #1C1B18;
+  font-family: 'Manrope', sans-serif;
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+}
 
 .pp-code-caption {
   text-align: center;

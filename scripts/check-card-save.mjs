@@ -4,6 +4,7 @@
 import { chromium } from '@playwright/test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
+import { bech32 } from 'bech32';
 import { mkdir } from 'node:fs/promises';
 import { finalizeEvent, getPublicKey, nip19 } from 'nostr-core';
 
@@ -29,10 +30,12 @@ const dave = person('dave', { name: 'Dave' });
 const erin = person('erin', { name: 'Erin' });
 const frank = person('frank', { name: 'Frank', lud16: 'frank@example.com' });
 const grace = person('grace', { name: 'Grace', lud16: 'grace@example.com' });
-const profiles = new Map([viewer, maria, bob, carol, dave, erin, frank, grace].map((p) => [p.pubkey, p.event]));
-// Frank's relays answer late, inside the fetch timeout: long enough for
-// another card to finish loading first.
-const slow = new Set([frank.pubkey]);
+const henry = person('henry', { name: 'Henry' });
+const ivy = person('ivy', { name: 'Ivy' });
+const profiles = new Map([viewer, maria, bob, carol, dave, erin, frank, grace, henry, ivy].map((p) => [p.pubkey, p.event]));
+// These relays answer late, inside the fetch timeout: long enough for another
+// card to finish loading, or for the viewer to leave, before they land.
+const slow = new Set([frank.pubkey, henry.pubkey]);
 
 const saveLink = (p) => `${base}/p/${p.npub}?save=1`;
 
@@ -97,73 +100,13 @@ const setLocked = (page, locked) => page.evaluate((locked) => { window.__audit.a
 const toast = (page, text) => page.getByText(text, { exact: true }).first().waitFor({ timeout: 10000 });
 const cardName = (page, name) => page.locator('.pp-top-name', { hasText: name }).waitFor({ timeout: 15000 });
 
-try {
-  // ── Inside BuhoGO (a wallet is set up) ────────────────────────────────────
-  const { context: inside, page } = await openContext({ withWallet: true });
-  await page.goto(`${base}/#/p/${maria.npub}?save=1`, { timeout: 90000 });
-  await page.waitForFunction(() => !!window.__audit?.app, null, { timeout: 90000 });
-  await cardName(page, 'Maria');
-  await toast(page, 'Contact added');
-  assert.deepEqual(await contactKeys(page), [maria.pubkey]);
-  await page.getByRole('button', { name: 'Saved' }).waitFor();
-  await page.waitForFunction(() => !location.hash.includes('save='));
-  await page.screenshot({ path: `${output}/saved-on-arrival.png` });
-  console.log('✓ a save link opened cold saves the verified person once, then drops its flag');
+const askTitle = (page) => page.locator('.pp-ask-title');
+const asking = (page, question) => page.locator('.pp-ask-title', { hasText: question }).waitFor({ timeout: 15000 });
+const notAsking = async (page) => assert.equal(await askTitle(page).isVisible(), false, 'no save question expected');
 
-  await push(page, `/p/${maria.npub}?save=1`);
-  await toast(page, 'Maria is already in your contacts');
-  assert.deepEqual(await contactKeys(page), [maria.pubkey]);
-  console.log('✓ the same save link again says so and adds nothing');
-
-  await push(page, `/p/${bob.npub}`);
-  await cardName(page, 'Bob');
-  await page.getByRole('button', { name: 'Save', exact: true }).waitFor();
-  assert.equal(await page.locator('.pp-top-name', { hasText: 'Maria' }).count(), 0);
-  assert.deepEqual(await contactKeys(page), [maria.pubkey]);
-  console.log('✓ another card link while a card is open shows the new person, and a plain link saves nobody');
-
-  await push(page, `/p/carol@example.com?k=${carol.npub}&save=1`);
-  await cardName(page, 'Carol');
-  await page.getByRole('button', { name: 'Save', exact: true }).waitFor();
-  await page.waitForTimeout(1500);
-  assert.deepEqual(await contactKeys(page), [maria.pubkey]);
-  console.log('✓ a save link whose path is a name waits for a tap, even when the name checks out');
-
-  await push(page, `/p/${viewer.npub}?save=1`);
-  await page.getByText('This is you', { exact: true }).waitFor();
-  assert.equal(await page.locator('button.pp-save').count(), 0);
-  await page.waitForTimeout(1000);
-  assert.deepEqual(await contactKeys(page), [maria.pubkey]);
-  await page.screenshot({ path: `${output}/own-card.png` });
-  console.log('✓ your own card says "This is you" and never saves');
-
-  await setLocked(page, true);
-  await push(page, `/p/${dave.npub}?save=1`);
-  await cardName(page, 'Dave');
-  await page.waitForTimeout(1500);
-  assert.deepEqual(await contactKeys(page), [maria.pubkey]);
-  await page.screenshot({ path: `${output}/locked-waits.png` });
-  await setLocked(page, false);
-  await toast(page, 'Contact added');
-  assert.deepEqual((await contactKeys(page)).sort(), [maria.pubkey, dave.pubkey].sort());
-  console.log('✓ a save link opened under the app lock waits for the unlock');
-
-  // A slow card overtaken by another link must never write over the newer one.
-  await push(page, `/p/${frank.npub}?save=1`);
-  await push(page, `/p/${grace.npub}`);
-  await cardName(page, 'Grace');
-  await page.waitForTimeout(3000);
-  assert.equal((await page.locator('.pp-top-name').innerText()).trim(), 'Grace');
-  await page.locator('.pp-micro').click();
-  await page.getByText('grace@example.com', { exact: true }).waitFor();
-  await page.keyboard.press('Escape');
-  assert.ok(!(await contactKeys(page)).includes(frank.pubkey));
-  console.log('✓ a slow card overtaken by another link never replaces the person on screen');
-
-  // Send's scanner: a scanned card code opens the card instead of "We don't recognize this code".
-  await push(page, '/wallet');
-  await page.waitForFunction(() => location.hash.startsWith('#/wallet'));
-  const found = await page.waitForFunction(() => {
+// Find the Send sheet's component, to feed it a scan or a typed value.
+async function sendSheet(page) {
+  await page.waitForFunction(() => {
     const seen = new Set();
     function walk(vnode) {
       if (!vnode || typeof vnode !== 'object' || seen.has(vnode)) return null;
@@ -190,14 +133,129 @@ try {
     window.__sendModal = send.proxy;
     return true;
   }, null, { timeout: 30000 });
-  assert.ok(found);
+}
+
+try {
+  // ── Inside BuhoGO (a wallet is set up) ────────────────────────────────────
+  const { context: inside, page } = await openContext({ withWallet: true });
+  await page.goto(`${base}/#/p/${maria.npub}?save=1`, { timeout: 90000 });
+  await page.waitForFunction(() => !!window.__audit?.app, null, { timeout: 90000 });
+  await cardName(page, 'Maria');
+  await asking(page, 'Save Maria to your contacts?');
+  assert.deepEqual(await contactKeys(page), [], 'nothing is saved before the tap');
+  await page.waitForFunction(() => !location.hash.includes('save='));
+  await page.waitForTimeout(400);
+  await page.screenshot({ path: `${output}/save-question.png` });
+  await page.locator('.pp-ask .pp-cta').click();
+  await toast(page, 'Contact added');
+  assert.deepEqual(await contactKeys(page), [maria.pubkey]);
+  await askTitle(page).waitFor({ state: 'hidden' });
+  await page.getByRole('button', { name: 'Saved' }).waitFor();
+  console.log('✓ a save link asks first, and saves the verified person only on the tap');
+
+  await push(page, `/p/${maria.npub}?save=1`);
+  await toast(page, 'Maria is already in your contacts');
+  await notAsking(page);
+  assert.deepEqual(await contactKeys(page), [maria.pubkey]);
+  console.log('✓ a save link for someone already saved says so and asks nothing');
+
+  await push(page, `/p/${bob.npub}`);
+  await cardName(page, 'Bob');
+  await page.getByRole('button', { name: 'Save', exact: true }).waitFor();
+  assert.equal(await page.locator('.pp-top-name', { hasText: 'Maria' }).count(), 0);
+  await notAsking(page);
+  console.log('✓ another card link while a card is open shows the new person; a plain link asks nothing');
+
+  await push(page, `/p/carol@example.com?k=${carol.npub}&save=1`);
+  await cardName(page, 'Carol');
+  await page.getByRole('button', { name: 'Save', exact: true }).waitFor();
+  await page.waitForTimeout(1500);
+  await notAsking(page);
+  assert.deepEqual(await contactKeys(page), [maria.pubkey]);
+  console.log('✓ a save link whose path is a name only offers the Save button, even when the name checks out');
+
+  await push(page, `/p/${viewer.npub}?save=1`);
+  await page.getByText('This is you', { exact: true }).waitFor();
+  await page.getByText('You have not set up payments yet.', { exact: true }).waitFor();
+  assert.equal(await page.locator('button.pp-save').count(), 0);
+  await page.waitForTimeout(1000);
+  await notAsking(page);
+  assert.deepEqual(await contactKeys(page), [maria.pubkey]);
+  await page.screenshot({ path: `${output}/own-card.png` });
+  console.log('✓ your own card says "This is you" and never asks');
+
+  await setLocked(page, true);
+  await push(page, `/p/${dave.npub}?save=1`);
+  await cardName(page, 'Dave');
+  await page.waitForTimeout(1500);
+  await notAsking(page);
+  await setLocked(page, false);
+  await asking(page, 'Save Dave to your contacts?');
+  await page.locator('.pp-ask-later').click();
+  await askTitle(page).waitFor({ state: 'hidden' });
+  await page.waitForTimeout(500);
+  assert.deepEqual(await contactKeys(page), [maria.pubkey]);
+  assert.equal(await hash(page), `#/p/${dave.npub}`);
+  console.log('✓ under the app lock the question waits for the unlock, and Not now saves nobody');
+
+  // A slow card overtaken by another link must never write over the newer one.
+  await push(page, `/p/${frank.npub}?save=1`);
+  await push(page, `/p/${grace.npub}`);
+  await cardName(page, 'Grace');
+  await page.waitForTimeout(3000);
+  assert.equal((await page.locator('.pp-top-name').innerText()).trim(), 'Grace');
+  await notAsking(page);
+  await page.locator('.pp-micro').click();
+  await page.getByText('grace@example.com', { exact: true }).waitFor();
+  await page.keyboard.press('Escape');
+  console.log('✓ a slow card overtaken by another link never replaces the person on screen');
+
+  // Leaving while a card still loads: it must not act on its save link later.
+  await page.evaluate(async (h) => {
+    await window.__audit.app.config.globalProperties.$pinia._s.get('addressBook')
+      .addNostrContact({ pubkey: h.pubkey, npub: h.npub, event: h.event, allowWithoutLightningAddress: true });
+  }, henry);
+  const errorsBefore = errors.length;
+  await push(page, `/p/${henry.npub}?save=1`);
+  await push(page, '/about');
+  await page.waitForTimeout(3500);
+  assert.equal(await page.getByText('Henry is already in your contacts', { exact: true }).count(), 0);
+  assert.deepEqual(errors.slice(errorsBefore), [], 'the left page must stay silent, not fail');
+  console.log('✓ a card left while loading never speaks up afterwards');
+
+  // Send: a scanned or a pasted card link opens the card, ready to pay.
+  await push(page, '/wallet');
+  await page.waitForFunction(() => location.hash.startsWith('#/wallet'));
+  await sendSheet(page);
   await page.evaluate((value) => window.__sendModal.onQRDetect(value), saveLink(erin));
   await cardName(page, 'Erin');
   await page.getByRole('button', { name: 'Save', exact: true }).waitFor();
   await page.waitForTimeout(1000);
+  await notAsking(page);
   assert.ok(!(await contactKeys(page)).includes(erin.pubkey));
   assert.equal(await hash(page), `#/p/${erin.npub}`);
-  console.log('✓ Send\'s scanner opens a scanned card code on the card, and a payment scan saves nobody');
+  console.log('✓ Send\'s scanner opens a scanned card code on the card, and asks nothing');
+
+  await push(page, '/wallet');
+  await page.waitForFunction(() => location.hash.startsWith('#/wallet'));
+  await sendSheet(page);
+  // An ATM-style web link whose path happens to start with /p/ but carries
+  // the payment in lightning= is a payment, never a card.
+  const lnurl = bech32.encode('lnurl', bech32.toWords(Buffer.from('https://atm.example/withdraw?k1=abc')), 1023).toUpperCase();
+  const atmType = await page.evaluate((value) => {
+    window.__sendModal.show = true;
+    window.__sendModal.manualInput = value;
+    const type = window.__sendModal.detectedInputType;
+    window.__sendModal.manualInput = '';
+    return type;
+  }, `https://atm.example/p/7?lightning=${lnurl}`);
+  assert.equal(atmType, 'lnurl');
+  await page.evaluate((value) => { window.__sendModal.manualInput = value; }, saveLink(ivy));
+  await page.locator('.detected-pill', { hasText: 'Public profile' }).waitFor({ timeout: 10000 });
+  await cardName(page, 'Ivy');
+  await notAsking(page);
+  assert.equal(await hash(page), `#/p/${ivy.npub}`);
+  console.log('✓ a card link pasted into Send opens the card like a scan; a /p/ payment link stays a payment');
   await inside.close();
 
   // ── A stranger's browser (no wallet, no identity) ─────────────────────────
@@ -213,6 +271,7 @@ try {
     `intent://go.mybuho.de/p/${maria.npub}?save=1#Intent;scheme=https;package=mybuho.buhogo;S.browser_fallback_url=${encodeURIComponent(HOME)};end`,
   );
   await android.page.waitForTimeout(1000);
+  await notAsking(android.page);
   assert.deepEqual(await contactKeys(android.page), []);
   await android.page.screenshot({ path: `${output}/web-android.png` });
   console.log('✓ on Android the web Save hands the save link to BuhoGO, with the download page as fallback');

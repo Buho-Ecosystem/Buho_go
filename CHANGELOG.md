@@ -38,8 +38,8 @@ Installed BuhoGO from GitHub or Zapstore before version 1.9.1? That version was 
 - Descriptions containing @ no longer corrupt withdraw callback values.
 - Fixed scrolling on the map, the kiosk and the Spark setup success screen.
 - The cloud backup sheet's title no longer wraps under the close button.
-- Save on a shared card, and scanning a card's code, add the person to your contacts instead of opening a payment, with no wallet needed. Your own card says "This is you".
-- A card link opened a second time, or while another card is open, shows the right person.
+- Save on a shared card, and scanning a card's code, open their card in BuhoGO and ask to save them, instead of opening a payment. No wallet needed, and nothing is saved without your tap. Your own card says "This is you".
+- A card link opened a second time, or while another card is open, shows the right person, and a card link pasted into Send opens the card like a scanned one.
 
 ### Code Quality
 

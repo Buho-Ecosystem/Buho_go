@@ -473,6 +473,9 @@ export default {
       const raw = (this.manualInput || '').trim();
       if (!raw) return null;
       if (isAddressRequest(raw)) return 'address_request';
+      // Someone's BuhoGO card link, pasted: it opens their card, the same
+      // as when it is scanned.
+      if (this.cardLinkRoute(raw)) return 'profile_link';
       const lower = raw.toLowerCase();
 
       // BIP21 first — bitcoin:<addr>?... is structurally distinct and
@@ -544,6 +547,7 @@ export default {
         bitcoin_address: this.$t('Bitcoin'),
         bip21: this.$t('Bitcoin'),
         nostr_identifier: this.$t('Nostr profile'),
+        profile_link: this.$t('Public profile'),
         username: this.$t('Username')
       };
       return labels[this.detectedInputType] || '';
@@ -565,6 +569,7 @@ export default {
         bip21: 'tabler:currency-bitcoin',
         phone_number: 'tabler:device-mobile',
         nostr_identifier: 'tabler:user',
+        profile_link: 'tabler:user',
         username: 'tabler:rosette-discount-check'
       };
       return icons[this.detectedInputType] || '';
@@ -580,7 +585,9 @@ export default {
     // CTA disables, and nothing is ever emitted — so a confirm sheet
     // that could only dead-end never opens.
     capabilityBlocked() {
-      if (!this.isValidManualInput || this.detectedInputType === 'address_request') return '';
+      // A sharing request and a card link move no money, so no wallet is
+      // ever the wrong one for them.
+      if (!this.isValidManualInput || ['address_request', 'profile_link'].includes(this.detectedInputType)) return '';
       const paymentType = this.determinePaymentType(this.manualInput.trim());
       if (canWalletPay(this.walletStore.activeWalletType, paymentType)) return '';
       return walletSwitchHint(paymentType, this.$t.bind(this));
@@ -903,10 +910,10 @@ export default {
 
         // A BuhoGO card link names a person, not a payment request. It opens
         // their card, where Pay and Save both are, instead of ending in
-        // "We don't recognize this code". Without its save flag: a code
-        // scanned to pay never edits the contacts on its own, so a planted
-        // card cannot slip in under a trusted name. Save stays one tap away.
-        const cardRoute = profileLinkRoute(trimmedData);
+        // "We don't recognize this code". Without its save flag: this sheet
+        // is for paying, so the card opens ready for that, with Save one tap
+        // away rather than a question in the way.
+        const cardRoute = this.cardLinkRoute(trimmedData);
         if (cardRoute) {
           delete cardRoute.query[SAVE_PARAM];
           this.show = false;
@@ -1075,6 +1082,17 @@ export default {
     /** Bare destination plus any BIP21 it came from; see normalizeDestination. */
     normalizePaymentInput(input) {
       return normalizeDestination(input, this.walletStore.activeWalletType);
+    },
+
+    /**
+     * The card route for a BuhoGO card link, or null. A link that carries a
+     * Lightning payment in `lightning=` is a payment, whatever its path says:
+     * card links are recognized on any host, and an ATM or payment page must
+     * never be taken for one.
+     */
+    cardLinkRoute(value) {
+      if (extractLnFallbackParam(value)) return null;
+      return profileLinkRoute(value);
     },
 
     determinePaymentType(data) {
@@ -1615,7 +1633,8 @@ export default {
 .detected-pill--lightning_invoice,
 .detected-pill--lnurl,
 .detected-pill--phone_number,
-.detected-pill--nostr_identifier {
+.detected-pill--nostr_identifier,
+.detected-pill--profile_link {
   background: rgba(17, 24, 39, 0.06);
   color: var(--text-primary);
   box-shadow: inset 0 0 0 1px rgba(17, 24, 39, 0.14);
@@ -1625,7 +1644,8 @@ export default {
 .body--dark .detected-pill--lightning_invoice,
 .body--dark .detected-pill--lnurl,
 .body--dark .detected-pill--phone_number,
-.body--dark .detected-pill--nostr_identifier {
+.body--dark .detected-pill--nostr_identifier,
+.body--dark .detected-pill--profile_link {
   background: rgba(21, 222, 114, 0.16);
   color: #15DE72;
   box-shadow: inset 0 0 0 1px rgba(21, 222, 114, 0.28);
