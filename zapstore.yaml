@@ -5,9 +5,9 @@
 # Source code repository (shown in the app store)
 repository: https://github.com/Buho-Ecosystem/Buho_go
 
-# Publisher identity (DrShift). The relay reads this file from the repository
+# Publisher identity (Buho account). The relay reads this file from the repository
 # and only accepts releases signed with this key, so sign with exactly it.
-pubkey: npub17c2szua46mc8ndp4grvy4z5465x0qxjge8tqx7vyu0vkqr24y2hssuuy6f
+pubkey: npub12p5c90ekq4w5mxt52hcm38p6wjjacm8ufq9axsskp0cttw5dmx5s0y335h
 
 # Where to fetch the APK. A local path lets us ship the local icon and
 # screenshots below. Bump this filename on each release.
