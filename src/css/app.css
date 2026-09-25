@@ -1306,3 +1306,16 @@ body.body--light .delete-confirm-card .cancel-btn {
 
 .delete-confirm-card .delete-action-btn:hover { background: #DC2626 !important; }
 .delete-confirm-card .delete-action-btn:active { transform: scale(0.98); }
+
+/* Stand-in for a balance that has not loaded yet, never a 0. Sized in em so
+   it matches the figure it replaces, and drawn in that figure's colour; the
+   element around it pulses (directives/balanceUpdating.js). */
+.balance-placeholder {
+  display: inline-block;
+  width: 5em;
+  height: 0.8em;
+  border-radius: 0.25em;
+  background: currentColor;
+  opacity: 0.2;
+  vertical-align: baseline;
+}

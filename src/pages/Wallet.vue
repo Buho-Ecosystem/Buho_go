@@ -238,6 +238,7 @@
           sync.
         -->
         <div
+          v-balance-updating="balanceUpdating"
           class="balance-container"
           :class="{ 'switching': isSwitchingCurrency }"
           @click="cycleBalanceDisplay"
@@ -584,8 +585,12 @@
                     <span>{{ getWalletTypeLabel(wallet.type) }}</span>
                   </div>
                 </div>
-                <div class="switch-balance" :class="$q.dark.isActive ? 'switch-balance-dark' : 'switch-balance-light'">
-                  <q-skeleton v-if="refreshingWalletIds[wallet.id]" type="text" width="80px" height="14px" />
+                <div
+                  v-balance-updating="refreshingWalletIds[wallet.id]"
+                  class="switch-balance"
+                  :class="$q.dark.isActive ? 'switch-balance-dark' : 'switch-balance-light'"
+                >
+                  <span v-if="refreshingWalletIds[wallet.id] && storeBalances[wallet.id] === undefined" class="balance-placeholder" aria-hidden="true" />
                   <HiddenAmount v-else>{{ formatBalance(storeBalances[wallet.id] || 0) }}</HiddenAmount>
                 </div>
               </div>
@@ -913,6 +918,7 @@ import {haptics} from '../utils/haptics.js';
 import {isNfcAvailable} from '../utils/nfc.js';
 import NumberFlow from '@number-flow/vue';
 import HiddenAmount from '../components/HiddenAmount.vue';
+import balanceUpdating from '../directives/balanceUpdating.js';
 import {createPaymentMonitor, PaymentStatus, checkNWCPaymentStatus} from '../utils/paymentMonitor.js';
 import PaymentConfirmation from '../components/PaymentConfirmation.vue';
 import PinEntryDialog from '../components/PinEntryDialog.vue';
@@ -996,6 +1002,7 @@ export default {
     ContactAvatar,
     PinEntryDialog,
   },
+  directives: { balanceUpdating },
   setup() {
     const walletStore = useWalletStore();
     const addressBookStore = useAddressBookStore();
@@ -1033,6 +1040,11 @@ export default {
 
       // Wallet switcher: per-wallet balance loading
       refreshingWalletIds: {},
+
+      // Home balance: the wallet whose balance has been read this session,
+      // and the refreshes the user is waiting on (see balanceUpdating).
+      balanceReadFor: null,
+      balanceRefreshes: 0,
 
       // PIN migration (one-time, for existing users)
       showMigrationDialog: false,
@@ -2086,6 +2098,15 @@ export default {
       return this.walletStore.balances || {};
     },
 
+    /**
+     * The home balance pulses while the active wallet's balance has not been
+     * read yet, and while a refresh the user is waiting on is under way. The
+     * routine 30 s tick stays quiet: its figure is already on screen.
+     */
+    balanceUpdating() {
+      return this.balanceReadFor !== this.walletStore.activeWalletId || this.balanceRefreshes > 0;
+    },
+
     balanceNumericValue() {
       const balance = this.walletState.balance || 0;
       if (this.currentDisplayMode === 'fiat') {
@@ -2710,29 +2731,26 @@ export default {
       if (this.showWalletSwitcher) return; // Prevent double-open
       this.showWalletSwitcher = true;
 
-      // Refresh balances for all wallets — track loading state per wallet
-      const wallets = this.walletStore.wallets;
+      // Refresh the wallets' balances; each one pulses while its refresh is
+      // under way, and a placeholder stands in for one never loaded.
+      //
+      // Only live-refresh the active wallet. Refreshing an INACTIVE Spark
+      // wallet would reconnect it (refreshWalletData auto-connects on a
+      // miss), creating a second live Spark connection that corrupts the
+      // active wallet's SDK session (the SDK shares one gRPC channel +
+      // a global auth cache across instances). That's exactly what made
+      // the active wallet show "not connected" when this sheet opened.
+      // Inactive wallets render their cached balance via getDisplayBalance.
+      const wallets = this.walletStore.wallets.filter(w =>
+        !(w.type === 'spark' && w.id !== this.walletStore.activeWalletId));
       for (const w of wallets) {
-        // Show skeleton for wallets without a cached balance
-        if (this.walletStore.balances[w.id] === undefined) {
-          this.refreshingWalletIds = { ...this.refreshingWalletIds, [w.id]: true };
-        }
+        this.refreshingWalletIds = { ...this.refreshingWalletIds, [w.id]: true };
       }
 
       await Promise.allSettled(
         wallets.map(async (w) => {
           try {
-            // Only live-refresh the active wallet. Refreshing an INACTIVE Spark
-            // wallet would reconnect it (refreshWalletData auto-connects on a
-            // miss), creating a second live Spark connection that corrupts the
-            // active wallet's SDK session (the SDK shares one gRPC channel +
-            // a global auth cache across instances). That's exactly what made
-            // the active wallet show "not connected" when this sheet opened.
-            // Inactive wallets render their cached balance via getDisplayBalance.
-            const inactiveSpark = w.type === 'spark' && w.id !== this.walletStore.activeWalletId;
-            if (!inactiveSpark) {
-              await this.walletStore.refreshWalletData(w.id);
-            }
+            await this.walletStore.refreshWalletData(w.id);
           } catch { /* ignore */ }
           this.refreshingWalletIds = { ...this.refreshingWalletIds, [w.id]: false };
         })
@@ -3309,6 +3327,7 @@ export default {
         || this.activeWallet?.id !== read.walletId
         || !Number.isFinite(next) || next < 0) return false;
       this.walletState.balance = next;
+      this.balanceReadFor = read.walletId;
       this.walletStore.noticeIncomingPayment(this.activeWallet, next);
       return true;
     },
@@ -3317,6 +3336,10 @@ export default {
       const activeWalletId = this.walletStore.activeWalletId;
       if (!activeWalletId) return;
       const read = this.walletStore.beginBalanceRead(activeWalletId);
+      // Every refresh but the routine tick is one the user is waiting on:
+      // the balance pulses until it lands.
+      const awaited = !opts.preferCached;
+      if (awaited) this.balanceRefreshes += 1;
       try {
         if (this.showLoadingScreen) {
           // still initializing
@@ -3466,6 +3489,7 @@ export default {
       } catch (error) {
         console.error('Failed to update balance:', error);
       } finally {
+        if (awaited) this.balanceRefreshes -= 1;
         // Runs for every wallet type, including the branches above that
         // `return` early after their balance fetch. Fire-and-forget — any
         // error inside is logged by loadLastTransaction itself.
