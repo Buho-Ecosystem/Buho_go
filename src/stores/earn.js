@@ -26,6 +26,7 @@ import quizDe from '../data/earn-quizzes.de.json'
 import quizEs from '../data/earn-quizzes.es.json'
 import { findEarnPayoutWallet } from '../utils/earnWallets'
 import { earnPayoutMemo } from '../services/earnBrand'
+import { isPayoutsPaused } from '../utils/earnPayoutErrors.js'
 
 // Locale-keyed quiz content. Structure (IDs, illustrations, ordering) is
 // identical across files; only user-facing strings differ. Resolved each
@@ -55,6 +56,8 @@ const CLAIM_COOLDOWN_MS = 30 * 60 * 1000 // 30 minutes
 // Payout service (holds the funding-wallet key, enforces claim rules)
 const EARN_API_URL = 'https://buhogo-earn-api.netlify.app'
 const DEVICE_ID_KEY = 'buhoGO_earn_device_id'
+
+export { isPayoutsPaused }
 
 /**
  * Stable per-install identifier for the payout service's rate limiting.
@@ -298,6 +301,14 @@ export const useEarnStore = defineStore('earn', {
         throw new Error('Learn & Earn payouts are only available in the native app')
       }
 
+      // Ask first whether the service pays at all. A paused service would
+      // otherwise cost the player an invoice and a failure dialog. An
+      // unreachable status endpoint does not block: the claim endpoint
+      // remains the authority and answers for itself.
+      if (await this._payoutsPaused()) {
+        return { success: false, error: 'payouts_paused' }
+      }
+
       const { invoice } = await this._createUserInvoice(amountSats, kind)
       if (!invoice) throw new Error('Failed to create invoice')
 
@@ -325,9 +336,28 @@ export const useEarnStore = defineStore('earn', {
         return { success: true, paymentHash: data.paymentHash || null }
       }
 
-      const result = { success: false, error: data?.error || 'payout_failed' }
+      // A gateway or server failure without a coded body is the service's
+      // problem, not the claim's: report it as paused so nothing is lost.
+      const error = data?.error || (response.status >= 500 ? 'service_unavailable' : 'payout_failed')
+      const result = { success: false, error }
       if (data?.minutesLeft) result.minutesLeft = data.minutesLeft
       return result
+    },
+
+    /** True only when the service positively says it is not paying out. */
+    async _payoutsPaused({ timeoutMs = 5000 } = {}) {
+      const controller = typeof AbortController === 'function' ? new AbortController() : null
+      const timer = controller ? setTimeout(() => controller.abort(), timeoutMs) : null
+      try {
+        const response = await fetch(`${EARN_API_URL}/api/status`, { signal: controller?.signal })
+        if (!response.ok) return false
+        const data = await response.json()
+        return data?.accepting === false
+      } catch {
+        return false
+      } finally {
+        if (timer) clearTimeout(timer)
+      }
     },
 
     /**

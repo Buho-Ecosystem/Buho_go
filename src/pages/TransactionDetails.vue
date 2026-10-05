@@ -643,6 +643,7 @@
 <script>
 import { NostrWebLNProvider } from "@getalby/sdk";
 import { fiatRatesService } from '../utils/fiatRates.js';
+import { fiatSymbol } from '../utils/fiatCurrencies.js';
 import { formatAmount, formatAmountWithPrefix } from '../utils/amountFormatting.js';
 import { useWalletStore } from '../stores/wallet';
 import { useAddressBookStore } from '../stores/addressBook';
@@ -1526,9 +1527,7 @@ export default {
 
     /** Currency-symbol formatting shared by the fiat rows. */
     formatFiatValue(amount, currency) {
-      const symbols = { USD: '$', EUR: '€', GBP: '£', CAD: 'C$', CHF: 'CHF', AUD: 'A$', JPY: '¥' };
-      const symbol = symbols[currency] || (currency ? `${currency} ` : '');
-      return `${symbol}${Number(amount).toFixed(2)}`;
+      return fiatRatesService.formatFiatAmount(Number(amount), currency || 'USD');
     },
 
     /**
@@ -1540,8 +1539,7 @@ export default {
       if (!snap || !Number.isFinite(Number(snap.rate))) return null;
       const locale = this.$i18n?.locale || 'en-US';
       const formatted = Number(snap.rate).toLocaleString(locale, { maximumFractionDigits: 0 });
-      const symbols = { USD: '$', EUR: '€', GBP: '£', CAD: 'C$', CHF: 'CHF', AUD: 'A$', JPY: '¥' };
-      const symbol = symbols[snap.currency] || snap.currency || '';
+      const symbol = snap.currency ? fiatSymbol(snap.currency) : '';
       return `${symbol}${formatted}`;
     },
 
@@ -1595,18 +1593,7 @@ export default {
           return '--';
         }
 
-        const symbols = {
-          USD: '$',
-          EUR: '€',
-          GBP: '£',
-          CAD: 'C$',
-          CHF: 'CHF',
-          AUD: 'A$',
-          JPY: '¥'
-        };
-
-        const symbol = symbols[currency] || currency;
-        return symbol + fiatValue.toFixed(2);
+        return fiatRatesService.formatFiatAmount(fiatValue, currency);
       } catch (error) {
         console.error('Error converting to fiat:', error);
         return '--';

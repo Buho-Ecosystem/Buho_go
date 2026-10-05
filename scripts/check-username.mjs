@@ -267,7 +267,7 @@ try {
   await go('/identity');
   await page.getByRole('button', { name: 'Share' }).click();
   await page.getByText('Public code', { exact: true }).waitFor();
-  await page.getByText('Someone can scan this to save you as a contact', { exact: true }).first().waitFor();
+  await page.getByText('Someone with BuhoGO can scan this to save you as a contact', { exact: true }).first().waitFor();
   await page.locator('.share-identifiers').scrollIntoViewIfNeeded();
   await shot('18-share-sheet');
   await page.keyboard.press('Escape');

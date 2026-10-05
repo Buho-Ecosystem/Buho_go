@@ -336,6 +336,7 @@
                 $q.dark.isActive ? 'text-white' : 'text-grey-9',
                 amountInSats === 0 ? 'keypad-amount-empty' : ''
               ]"
+              :style="{ fontSize: primaryFontSize }"
             >
               {{ primaryDisplay }}<span v-if="!isFiatMode" class="keypad-amount-suffix">sats</span>
             </div>
@@ -474,6 +475,20 @@ import { NostrWebLNProvider } from "@getalby/sdk";
 import { Invoice } from "@getalby/lightning-tools";
 import { formatAmount } from '../utils/amountFormatting.js';
 import { fiatSymbol as fiatSymbolFor } from '../utils/fiatCurrencies.js';
+import { fiatRatesService } from '../utils/fiatRates.js';
+import { paymentHashOf } from '../utils/breezPayments.js';
+
+/** Does this settled SDK payment pay the invoice with this payment hash? */
+export function invoiceMatchesPayment(expectedHash, payment) {
+  if (!expectedHash || !payment) return false;
+  const got = String(paymentHashOf(payment) || '').toLowerCase();
+  return !!got && got === expectedHash;
+}
+
+function receivedSats(payment) {
+  const n = Number(payment?.amount ?? 0);
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
 import { useWalletStore } from '../stores/wallet';
 import { createPaymentMonitor, PaymentStatus, checkNWCPaymentStatus } from '../utils/paymentMonitor';
 import { shareContent } from '../utils/share';
@@ -611,10 +626,23 @@ export default {
      * conversion. Falls back to USD if the user hasn't picked one.
      */
     fiatCode() {
-      return (this.walletState.preferredFiatCurrency || 'USD').toLowerCase();
+      return (this.walletStore.preferredFiatCurrency || this.walletState.preferredFiatCurrency || 'USD').toLowerCase();
     },
     fiatRate() {
-      return this.walletState.exchangeRates?.[this.fiatCode] || 0;
+      // The store table is canonical; the page cache can predate a currency.
+      return this.walletStore.exchangeRates?.[this.fiatCode]
+        || this.walletState.exchangeRates?.[this.fiatCode]
+        || 0;
+    },
+    /**
+     * The typed amount must always fit on one line. 44px holds about eleven
+     * characters on a 360px phone; past that the size steps down with the
+     * length shown, so 999,999,999,999 sats stays fully visible.
+     */
+    primaryFontSize() {
+      const chars = String(this.primaryDisplay).length + (this.isFiatMode ? 0 : 3);
+      if (chars <= 11) return '44px';
+      return `${Math.max(22, Math.floor(44 * 11 / chars))}px`;
     },
     fiatSymbol() {
       return fiatSymbolFor(this.fiatCode);
@@ -640,7 +668,7 @@ export default {
      */
     primaryDisplay() {
       if (this.isFiatMode) {
-        return `${this.fiatSymbol}${this.keypadValue || '0'}`;
+        return `${this.fiatSymbol}${this.groupedFiatInput(this.keypadValue)}`;
       }
       const formatted = this.keypadValue
         ? Number(this.keypadValue).toLocaleString('en-US')
@@ -656,9 +684,9 @@ export default {
         const sats = this.amountInSats;
         return sats > 0 ? `${sats.toLocaleString('en-US')} sats` : '0 sats';
       }
-      if (!this.fiatRate) return `${this.fiatSymbol}0.00`;
-      const fiat = this.satsToFiat(this.amountInSats);
-      return `${this.fiatSymbol}${fiat.toFixed(2)}`;
+      // No rate is "unknown", never a zero value.
+      if (!this.fiatRate) return '--';
+      return fiatRatesService.formatFiatAmount(this.satsToFiat(this.amountInSats), this.fiatCode);
     },
     hasLightningAddress() {
       return !!this.walletStore.activeWalletLightningAddress;
@@ -1047,6 +1075,8 @@ export default {
           payment_request: paymentRequest,
           payment_hash: paymentHash,
           invoice_id: result.id || null,
+          // The wallet that minted it: only that wallet's receipt confirms it.
+          walletId: this.walletStore.activeWalletId,
           amount: 0,
           description: 'BuhoGO Payment',
           expires_at: result.expiresAt,
@@ -1095,11 +1125,16 @@ export default {
      * Calculate fiat amount for confirmation display
      */
     calculateFiatAmount(sats) {
-      const rate = this.walletState.exchangeRates?.['usd'];
-      if (!rate) return '--';
-      const btc = sats / 100000000;
-      const fiat = btc * rate;
-      return `$${fiat.toFixed(2)}`;
+      if (!this.fiatRate) return '--';
+      return fiatRatesService.formatFiatAmount(this.satsToFiat(sats), this.fiatCode);
+    },
+
+    /** "1234567.5" -> "1,234,567.5": groups the whole part, keeps typed decimals. */
+    groupedFiatInput(value) {
+      if (!value) return '0';
+      const [whole, decimals] = String(value).split('.');
+      const grouped = Number(whole || 0).toLocaleString('en-US');
+      return decimals !== undefined ? `${grouped}.${decimals}` : grouped;
     },
 
     /**
@@ -1218,20 +1253,30 @@ export default {
      * stall while the app is backgrounded.
      */
     async startSparkEventMonitor() {
+      // Bound to the invoice's own wallet and payment hash. With both Spark
+      // accounts live, "some receive on the active provider" is not proof:
+      // a payment to the other account, or an unrelated receive on this one,
+      // must never confirm the invoice on screen.
+      const invoice = this.generatedInvoice;
+      const walletId = invoice?.walletId || this.walletStore.activeWalletId;
+      const expectedHash = String(invoice?.payment_hash || '').toLowerCase();
       let provider;
       try {
-        provider = await this.walletStore.ensureSparkConnected();
+        provider = await this.walletStore.ensureSparkConnected(walletId);
       } catch (error) {
         console.warn('Could not connect Spark provider for monitoring:', error);
         return;
       }
+      if (this.generatedInvoice !== invoice) return; // replaced while connecting
 
       // Fast path: SDK event (best-effort — may not fire for Lightning)
       try {
-        this.sparkEventUnsubscribe = provider.onPaymentReceived((transferId, newBalance) => {
+        this.sparkEventUnsubscribe = provider.onPaymentReceived((transferId, newBalance, payment) => {
+          if (this.generatedInvoice !== invoice) return;
+          if (!invoiceMatchesPayment(expectedHash, payment)) return;
           this.handlePaymentStatus(PaymentStatus.CONFIRMED, {
             transferId,
-            amount: this.generatedInvoice?.amount,
+            amount: receivedSats(payment) || invoice?.amount,
             newBalance
           });
         });
@@ -1740,6 +1785,7 @@ export default {
           payment_request: paymentRequest,
           payment_hash: paymentHash,
           invoice_id: invoice.invoice_id || invoice.id || null,
+          walletId: this.walletStore.activeWalletId,
           amount: invoice.amount || this.amountInSats,
           description: invoice.description || this.description || 'BuhoGO Payment',
           expires_at: invoice.expires_at || invoice.expiresAt,
@@ -3178,6 +3224,9 @@ export default {
   align-items: center;
   gap: 0.5rem;
   padding: 1rem 0 0.5rem;
+  width: 100%;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .keypad-amount-primary {
@@ -3188,7 +3237,15 @@ export default {
   line-height: 1;
   display: flex;
   align-items: baseline;
+  justify-content: center;
   gap: 0.4rem;
+  /* primaryFontSize keeps the number on one line; never spill off-screen. */
+  max-width: 100%;
+  padding: 0 1rem;
+  box-sizing: border-box;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  transition: font-size 0.12s ease;
 }
 
 .keypad-amount-primary.keypad-amount-empty {

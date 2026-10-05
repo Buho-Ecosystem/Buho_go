@@ -9,6 +9,7 @@ import * as bip21 from '../../utils/bip21.js';
 import * as lud4 from '../../utils/lud4.js';
 import * as lnurlMetadata from '../../utils/lnurlMetadata.js';
 import * as userErrors from '../../utils/userErrors.js';
+import * as deepLinkRouting from '../../utils/deepLinkRouting.js';
 
 // Execute the production Options-API methods, replacing provider/UI imports
 // that these paths never use. IO is explicit so an accidental GET fails.
@@ -168,6 +169,7 @@ for (const file of ['deep-links.js', 'nfc.js']) {
         '../stores/wallet': { useWalletStore: () => store }, '../providers/WalletFactory': factory,
         '../utils/walletHydration': { triggerWalletStoreHydration() {} },
         '../utils/nostrLookup': { classifyIdentifier: () => null }, '../utils/profileLink': { profileLinkRoute: () => null },
+        '../utils/deepLinkRouting': deepLinkRouting,
         '../utils/logRedaction': { redactPaymentInput: () => '(redacted)' },
         '../services/addressRequestIntake.js': { offerAddressRequest: input => addressRequests.isAddressRequest?.(input) || false },
         '../utils/nfc': { addNfcListener() {}, addNfcErrorListener() {}, isNfcAvailable: async () => true,

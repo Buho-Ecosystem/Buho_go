@@ -1,22 +1,20 @@
 /**
  * Opening the wallets a report covers, and putting them back afterwards.
  *
- * The app keeps exactly ONE wallet live at a time. At boot it connects the
- * active wallet and no others, and `connectAllSparkWallets()` tears down every
- * non-active Spark provider so a single Spark session holds the shared SDK
- * auth channel. A report over several wallets therefore has to open them
- * itself, one at a time, and leave the app as it found it.
+ * The app keeps every Spark wallet live (#285) and connects the active
+ * non-Spark wallet at boot. Other non-Spark wallets are opened on demand, so a
+ * report over several wallets opens those itself and leaves the app as it
+ * found it.
  *
  * Three rules this module exists to hold:
  *
- *   - SPARK IS EXCLUSIVE. Two live Spark providers is the state that costs the
- *     active wallet its session on Android. So before opening a Spark wallet
- *     that is not the active one, the live Spark provider is torn down first,
- *     and when the report is finished the app's own invariant is restored.
- *   - WHAT WE OPEN, WE CLOSE. Every connection this module makes is closed by
- *     `restore()`, with one deliberate exception: the wallet the user is
- *     actually on. Closing that would leave someone staring at a disconnected
- *     wallet because they generated a report.
+ *   - SPARK STAYS LIVE. Each Spark wallet has its own Breez instance; a Spark
+ *     wallet the report had to open is left connected, the way the app keeps
+ *     it anyway, and no other wallet is torn down to make room.
+ *   - WHAT WE OPEN, WE CLOSE. Every non-Spark connection this module makes is
+ *     closed by `restore()`, with one deliberate exception: the wallet the
+ *     user is actually on. Closing that would leave someone staring at a
+ *     disconnected wallet because they generated a report.
  *   - THE USER'S WALLET COMES BACK. `restore()` runs whether the report
  *     succeeded, failed or was cancelled.
  *
@@ -49,7 +47,7 @@ const defaultCreateProvider = async (wallet) => {
 /**
  * @param {object} store the wallet store. `providers`, `wallets`,
  *   `activeWalletId` and `connectWallet` are required. `disconnectWallet`,
- *   `_disconnectSparkProvider` and `connectAllSparkWallets` are called
+ *   `connectSparkWallet` (falls back to `connectWallet`) is called
  *   defensively: a store without them can still produce a report, it just
  *   cannot tidy up after one, and failing the report over that would be worse
  *   than the untidiness.
@@ -63,7 +61,6 @@ const defaultCreateProvider = async (wallet) => {
  */
 export function createReportConnector(store, { createProvider = defaultCreateProvider } = {}) {
   /** Whether we moved the Spark connection off where the user left it. */
-  let sparkMoved = false;
   /** Providers this report built itself and therefore has to close. */
   const borrowed = [];
   /** Wallet ids we asked the STORE to connect, so we can ask it to disconnect. */
@@ -106,17 +103,11 @@ export function createReportConnector(store, { createProvider = defaultCreatePro
 
     if (STORE_FILES_NO_PROVIDER.has(wallet.type)) return openOwnProvider(wallet);
 
-    // A Spark wallet that is not the live one can only be opened after the
-    // live one is closed; the SDK holds a single authenticated channel.
     if (wallet.type === SPARK) {
-      for (const key of Object.keys(store.providers || {})) {
-        if (key === id) continue;
-        const other = (store.wallets || []).find((w) => w.id === key);
-        if (other?.type === SPARK) {
-          await store._disconnectSparkProvider?.(key);
-        }
-      }
-      sparkMoved = true;
+      // Spark wallets coexist; open this one and keep it, like the app does.
+      await (store.connectSparkWallet ? store.connectSparkWallet(id) : store.connectWallet(id));
+      const filed = store.providers?.[id];
+      return typeof filed?.getTransactions === 'function' ? filed : null;
     }
 
     await store.connectWallet(id);
@@ -157,19 +148,6 @@ export function createReportConnector(store, { createProvider = defaultCreatePro
       }
     }
     opened.clear();
-
-    if (!sparkMoved) return;
-    sparkMoved = false;
-    try {
-      // The store's own way of asserting the single-session invariant, so the
-      // report restores the app exactly the way a wallet switch does rather
-      // than inventing a second way to do the same thing.
-      await store.connectAllSparkWallets?.();
-    } catch {
-      // The report is already written by this point. A failed restore is a
-      // reconnect the app does on its own next time the wallet is used, and
-      // is not worth failing a finished report over.
-    }
   }
 
   return { connect, restore, order };

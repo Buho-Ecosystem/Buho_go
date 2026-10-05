@@ -144,7 +144,27 @@ export const useAutoWithdrawStore = defineStore('autoWithdraw', {
         const wallet = walletStore.wallets.find(w => w.id === baseWalletId)
         if (!wallet) return
 
-        sendAmount = Math.floor(balance * 0.97)
+        // A Spark figure handed in may be a cached read. Moving money needs a
+        // balance the network just confirmed: re-read with requireFresh and
+        // decide on that number. A failed sync skips this trigger (the next
+        // accepted fresh balance retries) instead of sending from stale data.
+        let verifiedBalance = balance
+        if ((wallet.type || '').toLowerCase() === WALLET_TYPES.SPARK) {
+          const provider = walletStore.providers?.[baseWalletId]
+          if (typeof provider?.getBalance !== 'function') return
+          let fresh
+          try {
+            fresh = await provider.getBalance({ requireFresh: true })
+          } catch (error) {
+            console.warn('[Auto-withdraw] Skipped: balance could not be verified:', error?.message || error)
+            _lastTriggerTime.set(configKey, Date.now() - COOLDOWN_MS + FAILURE_RETRY_MS)
+            return
+          }
+          verifiedBalance = Number(fresh?.balance)
+          if (!Number.isFinite(verifiedBalance) || verifiedBalance <= threshold) return
+        }
+
+        sendAmount = Math.floor(verifiedBalance * 0.97)
         if (sendAmount < MIN_SEND_SATS) return
 
         const walletType = wallet.type?.toLowerCase() || 'nwc'

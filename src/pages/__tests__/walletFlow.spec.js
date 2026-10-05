@@ -5,6 +5,7 @@ import { transformSync } from 'esbuild';
 import * as addresses from '../../utils/addressUtils.js';
 import * as metadata from '../../utils/lnurlMetadata.js';
 import * as lnurlPay from '../../utils/lnurlPay.js';
+import * as balanceState from '../../utils/balanceState.js';
 
 // Run the production Options-API methods with controlled provider promises.
 function evaluate(file, dependencies = {}) {
@@ -40,13 +41,15 @@ function balanceHarness() {
     './notifications': { useNotificationsStore: () => ({ canNotify: true, notifyIfEnabled: async message => notices.push(message) }) },
     '../utils/amountFormatting.js': { formatAmount: n => `${n} sats` },
     '../boot/i18n': { i18n: { global: { t } } },
+    '../utils/balanceState.js': balanceState,
   }).useWalletStore;
   const a = { id: 'A', name: 'Wallet A' }, b = { id: 'B', name: 'Wallet B' };
-  const store = { ...options.actions, activeWalletId: a.id, isActiveWalletSpark: true };
+  const store = { ...options.actions, activeWalletId: a.id, isActiveWalletSpark: true, balanceStates: {}, balances: {}, wallets: [] };
+  store.balanceStateFor = options.getters.balanceStateFor(store);
   store.noticeIncomingPayment(a, 1000);
   store.noticeIncomingPayment(b, 100);
   const vm = { ...component().methods, walletStore: store, activeWallet: a, walletState: { balance: 1000 }, loadLastTransaction() {} };
-  globalThis.localStorage = { setItem() {} };
+  globalThis.localStorage = { setItem() {}, getItem: () => null };
   return { store, vm, a, b, notices };
 }
 
@@ -160,7 +163,7 @@ test('Pay again is unavailable until a payment completes, including failed payme
 test('page ticks and store refreshes share ordering and notification history', async () => {
   const { store, vm, a, notices } = balanceHarness();
   const old = deferred();
-  a.type = 'spark';
+  a.type = 'lnbits'; // balance-difference notices remain for non-Spark rails
   Object.assign(store, { wallets: [a], providers: { A: { getBalance: () => old.promise, getInfo: async () => ({}) } },
     connectionStates: { A: { connected: true } }, balances: { A: 1000 }, walletInfos: {}, persistState: async () => {} });
   const pending = store.refreshWalletData('A');
@@ -172,6 +175,23 @@ test('page ticks and store refreshes share ordering and notification history', a
   vm.applyTickBalance(1200, store.beginBalanceRead('A'));
   assert.equal(notices.length, 1);
   assert.equal(vm.walletState.balance, 1200);
+});
+
+test('page ticks publish to the canonical balance every surface reads', () => {
+  const { store, vm, a } = balanceHarness();
+  store.wallets = [a];
+  assert.equal(vm.applyTickBalance(4242, store.beginBalanceRead('A')), true);
+  assert.equal(store.balanceStateFor('A').value, 4242, 'Settings and switchers see the home figure');
+  assert.equal(store.balances.A, 4242);
+  assert.equal(a.metadata.cachedBalance, 4242, 'persisted last-known value maintained');
+});
+
+test('Spark wallets are never announced from a balance difference', () => {
+  const { store, notices } = balanceHarness();
+  const spark = { id: 'S', name: 'Business', type: 'spark' };
+  store.noticeIncomingPayment(spark, 1000);
+  store.noticeIncomingPayment(spark, 5000);
+  assert.equal(notices.length, 0, 'receipts come from the payment-id ledger instead');
 });
 
 test('a service profile groups payments to both its identifier and original pay link', async () => {

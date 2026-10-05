@@ -41,7 +41,7 @@
             :interactive="false"
           >
             <template #caption>
-              <HiddenAmount>{{ formatBalance(balances[activeWalletId] || 0) }}</HiddenAmount>
+              <HiddenAmount :class="{ 'balance-stale': walletStore.getDisplayBalance(activeWalletId).isCached }">{{ walletBalanceText(activeWalletId) }}</HiddenAmount>
             </template>
             <template #right>
               <Icon icon="tabler:circle-check-filled" width="18" height="18" style="color: #15DE72;" />
@@ -1068,10 +1068,12 @@
             <div class="stat-divider" :class="$q.dark.isActive ? 'divider-dark' : 'divider-light'"></div>
             <div class="stat-item">
               <div class="stat-value" :class="$q.dark.isActive ? 'balance_dark' : 'balance_light'">
-                <HiddenAmount>{{ formatBalance(totalBalance) }}</HiddenAmount>
+                <!-- Every configured wallet counts; a total built on missing
+                     or unverified figures says so instead of looking exact. -->
+                <HiddenAmount :class="{ 'balance-stale': walletStore.totalBalanceInfo.stale || !walletStore.totalBalanceInfo.complete }">{{ walletStore.totalBalanceInfo.complete ? '' : '≥ ' }}{{ formatBalance(totalBalance) }}</HiddenAmount>
               </div>
               <div class="stat-label" :class="$q.dark.isActive ? 'sats' : 'sats-light'">
-                {{ $t('Total') }}
+                {{ !walletStore.totalBalanceInfo.complete ? $t('Total (incomplete)') : (walletStore.totalBalanceInfo.stale ? $t('Total (not current)') : $t('Total')) }}
               </div>
             </div>
             <div class="stat-divider" :class="$q.dark.isActive ? 'divider-dark' : 'divider-light'"></div>
@@ -1138,7 +1140,7 @@
 
                 <!-- Trailing value + disclosure -->
                 <div class="wallet-row-value" :class="$q.dark.isActive ? 'row-value-dark' : 'row-value-light'">
-                  <HiddenAmount>{{ formatBalance(balances[wallet.id] || 0) }}</HiddenAmount>
+                  <HiddenAmount :class="{ 'balance-stale': walletStore.getDisplayBalance(wallet.id).isCached }">{{ walletBalanceText(wallet.id) }}</HiddenAmount>
                 </div>
                 <Icon icon="tabler:chevron-right" width="16" height="16" class="wallet-row-chevron" />
               </div>
@@ -1217,7 +1219,7 @@
           </div>
 
           <div class="wallet-detail-balance" :class="$q.dark.isActive ? 'balance_dark' : 'balance_light'">
-            <HiddenAmount>{{ formatBalance(balances[detailWallet.id] || 0) }}</HiddenAmount>
+            <HiddenAmount :class="{ 'balance-stale': walletStore.getDisplayBalance(detailWallet.id).isCached }">{{ walletBalanceText(detailWallet.id) }}</HiddenAmount>
           </div>
 
           <div v-if="connectionStates[detailWallet.id]?.error" class="wallet-error-msg">
@@ -1876,8 +1878,8 @@
                 <span class="aw-input-suffix" :class="$q.dark.isActive ? 'aw-suffix-dark' : 'aw-suffix-light'">sats</span>
               </template>
             </q-input>
-            <div v-if="awConfigForm.thresholdSats > 0 && exchangeRates[preferredFiatCurrency]" class="aw-fiat-hint" :class="$q.dark.isActive ? 'aw-hint-dark' : 'aw-hint-light'">
-              &asymp; {{ formatFiatValue(awConfigForm.thresholdSats) }} {{ preferredFiatCurrency }}
+            <div v-if="awConfigForm.thresholdSats > 0 && exchangeRates[String(preferredFiatCurrency).toLowerCase()]" class="aw-fiat-hint" :class="$q.dark.isActive ? 'aw-hint-dark' : 'aw-hint-light'">
+              &asymp; {{ formatFiatValue(awConfigForm.thresholdSats) }}
             </div>
           </div>
 
@@ -3739,16 +3741,9 @@ export default {
       try {
         const wallet = this.wallets.find(w => w.id === walletId)
         if (wallet?.type === 'spark') {
-          // Preserve the single-live-Spark-connection invariant: drop every
-          // other Spark provider first, then connect this one fresh.
-          // Reconnecting a Spark wallet while another stays live re-creates the
-          // dual connection that corrupts the SDK's shared auth session.
-          for (const w of this.walletStore.sparkWallets) {
-            if (w.id !== walletId) {
-              await this.walletStore._disconnectSparkProvider(w.id)
-            }
-          }
+          // Rebuild only this wallet; the other Spark wallet stays live (#285).
           await this.connectSparkWallet(walletId, { forceReinit: true })
+          void this.walletStore.reconcileSpark([walletId], 'user')
         } else {
           await this.connectWallet(walletId)
         }
@@ -4360,11 +4355,20 @@ export default {
       });
     },
 
+    /**
+     * A wallet row's balance from the store's canonical state (#293): the
+     * known value (stale ones are styled as such), or a dash while nothing
+     * is known yet — never a 0 standing in for "not loaded".
+     */
+    walletBalanceText(walletId) {
+      const d = this.walletStore.getDisplayBalance(walletId)
+      return d.known ? this.formatBalance(d.balance) : '—'
+    },
+
     formatFiatValue(sats) {
-      if (!sats || !this.exchangeRates[this.preferredFiatCurrency]) return '';
-      const btcAmount = sats / 100000000;
-      const fiatValue = btcAmount * this.exchangeRates[this.preferredFiatCurrency];
-      return fiatValue.toFixed(2);
+      const rate = this.exchangeRates[String(this.preferredFiatCurrency || 'USD').toLowerCase()];
+      if (!sats || !rate) return '';
+      return fiatRatesService.formatFiatAmount((sats / 100000000) * rate, this.preferredFiatCurrency || 'USD');
     }
   }
 }
