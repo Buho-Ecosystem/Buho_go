@@ -2505,6 +2505,7 @@ body.body--dark .verified-row-icon {
 
 .contact-picker-actions :deep(.q-btn__content) { white-space: normal; }
 .create-contact-btn { background: var(--brand-accent); color: #07130d; font-weight: 600; }
+.card_light_style .create-contact-btn { background: var(--btn-neutral-bg); color: var(--btn-neutral-fg); }
 .cancel-contact-btn { color: var(--text-secondary); }
 .contact-picker-dialog :deep(button:focus-visible) { outline: 2px solid var(--brand-accent-text); outline-offset: 2px; }
 

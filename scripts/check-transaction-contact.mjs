@@ -52,6 +52,10 @@ try {
     await page.locator('.receipt-more').click();
     await page.locator('.receipt-menu .q-item').nth(1).click();
     await picker.waitFor();
+    await picker.evaluate(async node => {
+      const dialog = node.closest('.q-dialog__inner');
+      await Promise.allSettled(dialog.getAnimations({ subtree: true }).map(animation => animation.finished));
+    });
   }
   await openPicker();
   await picker.getByText('No contacts found', { exact: true }).waitFor();
