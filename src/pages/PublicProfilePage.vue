@@ -19,21 +19,19 @@
       </div>
 
       <!--
-        The page: one screen, one verb.
-
-        Identity with a way to keep the person, the amount as the page,
-        a note, Pay in the thumb zone with the code one tap away, and the
-        recruiting line at the foot. Nothing scrolls.
+        Identity and contact actions stay on the card; ProfilePayment owns
+        amount entry, invoice creation and the visitor's choice of wallet.
       -->
       <template v-else>
         <!-- 1. Who this is, and Save riding the row. -->
-        <div class="pp-top pp-in" style="--d: 0ms">
+        <div class="pp-top pp-in" :class="{ 'pp-recipient': !isOwner && !invoiceReady }" style="--d: 0ms">
           <span class="pp-avatar">
             <img v-if="avatar" :src="avatar" alt="" @error="avatarBroken = true" />
             <Icon v-else icon="tabler:user" width="20" height="20" />
           </span>
           <div class="pp-top-copy">
-            <div class="pp-top-name">{{ displayName }}</div>
+            <p v-if="!isOwner" class="pp-recipient-label">{{ $t('Send to') }}</p>
+            <h1 class="pp-top-name">{{ displayName }}</h1>
             <div v-if="showAddress" class="pp-top-nip">
               <NostrAddress :address="profile.nip05" :check="addressCheck === true" :icon-size="12" />
             </div>
@@ -87,55 +85,7 @@
           </div>
         </div>
 
-        <!-- 2. The amount is the page. -->
-        <template v-else-if="lud16">
-          <div class="pp-mid">
-            <div class="pp-amount-wrap pp-in" style="--d: 90ms">
-              <input
-                v-model="displayAmount"
-                type="text"
-                inputmode="decimal"
-                class="pp-amount"
-                :class="{ 'pp-amount--long': displayAmount.length > 6 }"
-                :style="{ width: amountWidth }"
-                :placeholder="amountPlaceholder"
-                :aria-label="$t('Amount')"
-                maxlength="12"
-              />
-              <span class="pp-amount-unit">{{ unitShort }}</span>
-            </div>
-
-            <button v-if="hasRates" type="button" class="pp-unit pp-in" style="--d: 130ms" @click="toggleCurrency">
-              <span>{{ unitPillLabel }}</span>
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 16V4M7 4L3 8M7 4l4 4M17 8v12m0 0l4-4m-4 4l-4-4"/></svg>
-            </button>
-
-            <div class="pp-conv pp-in" style="--d: 160ms">{{ conversionLine || ' ' }}</div>
-          </div>
-
-          <!-- 3. The note rides along. -->
-          <label class="pp-note pp-in" style="--d: 210ms">
-            <Icon icon="tabler:message-circle" width="15" height="15" />
-            <input
-              v-model="comment"
-              type="text"
-              :placeholder="$t('Add a note')"
-              maxlength="150"
-            />
-          </label>
-
-          <!-- 4. The verb, and the code beside it. -->
-          <div class="pp-actions pp-in" style="--d: 250ms">
-            <button type="button" class="pp-cta" :disabled="paying" @click="onPay">
-              <q-spinner v-if="paying" size="17px" />
-              <Icon v-else icon="tabler:arrow-up-right" width="17" height="17" />
-              {{ ctaLabel }}
-            </button>
-            <button type="button" class="pp-micro" :aria-label="$t('Show the code')" @click="showCode = true">
-              <Icon icon="tabler:qrcode" width="20" height="20" />
-            </button>
-          </div>
-        </template>
+        <ProfilePayment v-else-if="lud16" :address="lud16" :name="displayName" @invoice-ready="invoiceReady = $event" />
 
         <!-- Nothing to pay yet. Stated once, quietly, where the amount
              would have been. -->
@@ -156,22 +106,6 @@
         </footer>
       </template>
     </div>
-
-    <!-- The code sheet: everything secondary, one tap away. -->
-    <q-dialog v-model="showCode" position="bottom">
-      <div class="pp-code-sheet">
-        <div class="pp-grab" aria-hidden="true"></div>
-        <div class="pp-qr">
-          <vue-qrcode v-if="payUri" :value="payUri" :options="qrOptions" class="pp-qr-canvas" />
-          <span v-if="avatar" class="pp-qr-avatar"><img :src="avatar" alt="" /></span>
-        </div>
-        <p class="pp-code-caption">{{ $t('Scan from another phone, or with a wallet app.') }}</p>
-        <button type="button" class="pp-code-addr" @click="copyAddress">
-          <code>{{ lud16 }}</code>
-          <Icon :icon="copied ? 'tabler:check' : 'tabler:copy'" width="14" height="14" />
-        </button>
-      </div>
-    </q-dialog>
 
     <!-- Save, where no app handoff exists (iPhone, desktop). Contacts live
          in BuhoGO, so say so and offer the two things that get there. -->
@@ -195,7 +129,7 @@
 
 <script>
 import { Icon } from '@iconify/vue';
-import VueQrcode from '@chenfengyuan/vue-qrcode';
+import ProfilePayment from '../components/profile/ProfilePayment.vue';
 import { Capacitor } from '@capacitor/core';
 import { lookupIdentifier } from '../utils/nostrLookup.js';
 import { fetchProfile, parseProfileContent } from '../utils/nostrFetch.js';
@@ -212,37 +146,14 @@ import {
   isAndroidBrowser,
   isOwnCard,
 } from '../utils/publicCard.js';
-import { getQrOptionsWithSize } from '../utils/qrConfig.js';
-import { lnurlGetJson } from '../utils/lnurlHttp.js';
-import { fiatRatesService } from '../utils/fiatRates.js';
-import { FIAT_SYMBOLS } from '../utils/fiatCurrencies.js';
 import { useWalletStore } from '../stores/wallet';
 import { useAddressBookStore } from '../stores/addressBook';
 import { useIdentityStore } from '../stores/identity';
 
-/**
- * The visitor's currency, guessed from their locale region. Sats stay the
- * source of truth; this only decides which fiat the swap offers. USD is the
- * fallback the world over.
- */
-const EURO_REGIONS = new Set(['AT', 'BE', 'CY', 'DE', 'EE', 'ES', 'FI', 'FR', 'GR', 'HR', 'IE', 'IT', 'LT', 'LU', 'LV', 'MT', 'NL', 'PT', 'SI', 'SK']);
-const REGION_CURRENCY = { US: 'USD', GB: 'GBP', CH: 'CHF', JP: 'JPY', CA: 'CAD', AU: 'AUD', SE: 'SEK', NO: 'NOK', DK: 'DKK', PL: 'PLN', CZ: 'CZK', MX: 'MXN', BR: 'BRL', KE: 'KES', ZM: 'ZMW', TZ: 'TZS', ZA: 'ZAR' };
-
-function guessVisitorCurrency() {
-  try {
-    const locale = new Intl.Locale(navigator.language || 'en-US');
-    const region = (locale.maximize?.().region || locale.region || 'US').toUpperCase();
-    if (EURO_REGIONS.has(region)) return 'EUR';
-    return REGION_CURRENCY[region] || 'USD';
-  } catch {
-    return 'USD';
-  }
-}
-
 export default {
   name: 'PublicProfilePage',
 
-  components: { Icon, VueQrcode, NostrAddress },
+  components: { Icon, ProfilePayment, NostrAddress },
 
   setup() {
     return { walletStore: useWalletStore(), addressBook: useAddressBookStore(), identity: useIdentityStore() };
@@ -261,20 +172,12 @@ export default {
       /** Does the profile's address point at this key? true, false, or null (not known yet). */
       addressCheck: null,
       avatarBroken: false,
-      showCode: false,
       showSaveHelp: false,
-      copied: false,
+      invoiceReady: false,
       linkCopied: false,
       saved: false,
       saving: false,
-      paying: false,
-      displayAmount: '',
-      comment: '',
-      currency: 'sats', // 'sats' | the visitor's fiat code
-      fiatCode: guessVisitorCurrency(),
-      fiatRates: {},
       BUHOGO_HOME,
-      _copyTimer: null,
       _linkTimer: null,
     };
   },
@@ -344,14 +247,6 @@ export default {
     },
 
     /**
-     * The code and the plain-link fallback hand over the same thing, and
-     * both carry the scheme so the receiving app knows what it is given.
-     */
-    payUri() {
-      return this.lud16 ? `lightning:${this.lud16}` : '';
-    },
-
-    /**
      * True when the page is being read by someone who already has BuhoGO:
      * the native app, or the web build with a wallet already set up. A
      * stranger opening the link in a browser has neither, and needs the
@@ -395,76 +290,6 @@ export default {
       return buildAppHandoffUrl(this.canonicalCardUrl, { fallbackUrl: BUHOGO_HOME });
     },
 
-    hasRates() {
-      return !!this.fiatRates[this.fiatCode];
-    },
-
-    isFiat() {
-      return this.currency !== 'sats';
-    },
-
-    fiatSymbol() {
-      return FIAT_SYMBOLS[this.fiatCode] || (this.fiatCode + ' ');
-    },
-
-    unitShort() {
-      return this.isFiat ? this.fiatSymbol.trim() : this.$t('sats');
-    },
-
-    unitPillLabel() {
-      return this.isFiat ? this.fiatCode : 'SATS';
-    },
-
-    amountPlaceholder() {
-      return this.isFiat ? '0.00' : '0';
-    },
-
-    /** The typed amount in sats, whatever the unit on screen. */
-    amountInSats() {
-      const n = parseFloat(String(this.displayAmount).replace(',', '.'));
-      if (!isFinite(n) || n <= 0) return 0;
-      if (!this.isFiat) return Math.floor(n);
-      const rate = this.fiatRates[this.fiatCode];
-      if (!rate) return 0;
-      return Math.floor((n / rate) * 100000000);
-    },
-
-    conversionLine() {
-      const sats = this.amountInSats;
-      if (!sats) return '';
-      if (this.isFiat) return `≈ ${sats.toLocaleString()} ${this.$t('sats')}`;
-      const fiat = fiatRatesService.convertSatsToFiatSync(sats, this.fiatCode);
-      if (fiat === null || !this.hasRates) return '';
-      return `≈ ${this.fiatSymbol}${fiat.toFixed(2)}`;
-    },
-
-    ctaLabel() {
-      const sats = this.amountInSats;
-      if (!sats) {
-        return this.hasName ? this.$t('Pay {name}', { name: this.firstName }) : this.$t('Pay');
-      }
-      if (this.isFiat) {
-        const n = parseFloat(String(this.displayAmount).replace(',', '.'));
-        return `${this.$t('Pay')} ${this.fiatSymbol}${n.toFixed(2)}`;
-      }
-      return `${this.$t('Pay')} ${sats.toLocaleString()} ${this.$t('sats')}`;
-    },
-
-    /**
-     * The input is exactly as wide as what it holds, so the figure and
-     * its unit center as one group. `ch` tracks the digit width closely
-     * enough under tabular numerals; the fraction covers the caret.
-     */
-    amountWidth() {
-      const shown = String(this.displayAmount || this.amountPlaceholder);
-      return `${Math.max(shown.length, 1) + 0.3}ch`;
-    },
-
-    qrOptions() {
-      // 212 sits inside the 228 plate with its padding; H-level error
-      // correction (the app-wide default) tolerates the centered avatar.
-      return getQrOptionsWithSize(212);
-    },
   },
 
   watch: {
@@ -482,11 +307,6 @@ export default {
     // Owner detection reads the identity from disk; hydrate is idempotent.
     Promise.resolve(this.identity.hydrate?.()).catch(() => {});
     await this.resolve();
-    // Rates power the fiat swap; the page works sats-only without them.
-    fiatRatesService.ensureRatesLoaded()
-      .then(() => fiatRatesService.getRates())
-      .then((rates) => { this.fiatRates = rates || {}; })
-      .catch(() => {});
   },
 
   mounted() {
@@ -500,7 +320,6 @@ export default {
 
   beforeUnmount() {
     this.restoreHashAddress();
-    if (this._copyTimer) clearTimeout(this._copyTimer);
     if (this._linkTimer) clearTimeout(this._linkTimer);
   },
 
@@ -547,8 +366,7 @@ export default {
         avatarBroken: false,
         saved: false,
         saving: false,
-        displayAmount: '',
-        comment: '',
+        invoiceReady: false,
       });
     },
 
@@ -691,120 +509,6 @@ export default {
       }
     },
 
-    toggleCurrency() {
-      this.currency = this.isFiat ? 'sats' : this.fiatCode;
-      this.displayAmount = '';
-    },
-
-    /**
-     * Pay.
-     *
-     * Inside the app this hands the address to the send flow. Outside, a
-     * typed amount is turned into a real invoice through the address's own
-     * pay endpoint so the wallet opens with the number inside; anything that
-     * fails on that path falls back to the plain lightning: link, which
-     * every wallet accepts. No amount, plain link straight away.
-     */
-    async onPay() {
-      if (!this.lud16 || this.paying) return;
-
-      if (this.insideBuhoGo) {
-        this.$router.push({
-          path: '/wallet',
-          query: {
-            action: 'pay_contact',
-            address: this.lud16,
-            addressType: 'lightning',
-            contactName: this.displayName,
-          },
-        });
-        return;
-      }
-
-      const sats = this.amountInSats;
-      if (sats > 0) {
-        this.paying = true;
-        try {
-          const invoice = await this.fetchInvoice(sats);
-          if (invoice) {
-            this.openInWallet(`lightning:${invoice}`);
-            return;
-          }
-        } catch (err) {
-          console.warn('[public-profile] invoice fetch failed, using the plain link:', err);
-        } finally {
-          this.paying = false;
-        }
-      }
-
-      this.openInWallet(this.payUri);
-    },
-
-    /**
-     * Amount to invoice, through the address's own LNURL-pay endpoint. The
-     * note rides along when the endpoint accepts comments. Returns '' when
-     * the amount is outside the endpoint's bounds (after telling the user)
-     * and throws on network trouble so the caller can fall back.
-     */
-    async fetchInvoice(sats) {
-      const [name, domain] = this.lud16.split('@');
-      const paramsResponse = await lnurlGetJson(`https://${domain}/.well-known/lnurlp/${name}`);
-      if (!paramsResponse.ok) throw new Error('lnurlp params unavailable');
-      const params = paramsResponse.data;
-      if (!params || params.tag !== 'payRequest' || params.status === 'ERROR' || !params.callback) throw new Error(params?.reason || 'lnurlp error');
-
-      const msat = sats * 1000;
-      if (params.minSendable && msat < params.minSendable) {
-        this.$q.notify({
-          type: 'warning',
-          message: this.$t('Minimum is {n} sats', { n: Math.ceil(params.minSendable / 1000).toLocaleString() }),
-          timeout: 3000,
-        });
-        return '';
-      }
-      if (params.maxSendable && msat > params.maxSendable) {
-        this.$q.notify({
-          type: 'warning',
-          message: this.$t('Maximum is {n} sats', { n: Math.floor(params.maxSendable / 1000).toLocaleString() }),
-          timeout: 3000,
-        });
-        return '';
-      }
-
-      const callback = new URL(params.callback);
-      callback.searchParams.set('amount', String(msat));
-      const note = this.comment.trim();
-      const allowed = Number(params.commentAllowed) || 0;
-      if (note && allowed > 0) {
-        callback.searchParams.set('comment', note.slice(0, allowed));
-      }
-
-      const invoiceResponse = await lnurlGetJson(callback.toString());
-      if (!invoiceResponse.ok) throw new Error('invoice unavailable');
-      const data = invoiceResponse.data;
-      if (!data || data.status === 'ERROR' || !data.pr) throw new Error(data?.reason || 'no invoice');
-      return data.pr;
-    },
-
-    openInWallet(uri) {
-      window.location.href = uri;
-      // Nothing handled the scheme, most likely a desktop browser. Open the
-      // code so the visit still ends somewhere useful.
-      setTimeout(() => { this.showCode = true; }, 1200);
-    },
-
-    async copyAddress() {
-      if (!this.lud16) return;
-      try {
-        await navigator.clipboard.writeText(this.lud16);
-        this.copied = true;
-        if (this._copyTimer) clearTimeout(this._copyTimer);
-        this._copyTimer = setTimeout(() => { this.copied = false; }, 1600);
-      } catch {
-        this.$q.notify({ type: 'warning', message: this.$t("Couldn't copy"), timeout: 1800, position: 'top' });
-      }
-    },
-
     /**
      * Saving goes through the Nostr contact path, not the plain address one.
      *
@@ -936,7 +640,7 @@ export default {
 
 .pp-state-text {
   font-size: 14px;
-  color: #9A9488;
+  color: #6B665C;
   line-height: 1.55;
   max-width: 32ch;
   margin: 0;
@@ -986,6 +690,8 @@ export default {
 .pp-top-copy { flex: 1; min-width: 0; }
 
 .pp-top-name {
+  margin: 0;
+  line-height: 1.4;
   font-size: 15px;
   font-weight: 780;
   letter-spacing: -0.01em;
@@ -998,7 +704,7 @@ export default {
   display: flex;
   min-width: 0;
   font-size: 11.5px;
-  color: #9A9488;
+  color: #6B665C;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1010,12 +716,12 @@ export default {
   gap: 5px;
   border: 0;
   background: rgba(5, 149, 115, 0.1);
-  color: #059573;
+  color: #08785C;
   font-family: 'Manrope', sans-serif;
   font-size: 12px;
   font-weight: 750;
   border-radius: 999px;
-  min-height: 34px;
+  min-height: 44px;
   padding: 0 13px;
   flex: 0 0 auto;
   text-decoration: none;
@@ -1025,6 +731,29 @@ export default {
 
 .pp-save:active { transform: scale(0.94); }
 .pp-save:disabled { cursor: default; }
+
+/* A shared payment page leads with the person, like a personal payment link.
+   Contact saving remains available without competing with the payment. */
+.pp-recipient {
+  position: relative;
+  flex-direction: column;
+  gap: 12px;
+  padding: 28px 0 12px;
+  text-align: center;
+}
+.pp-recipient .pp-avatar { width: 72px; height: 72px; }
+.pp-recipient .pp-avatar :deep(svg) { width: 30px; height: 30px; }
+.pp-recipient .pp-top-copy { width: 100%; }
+.pp-recipient .pp-top-name { font-size: 23px; white-space: normal; overflow-wrap: anywhere; }
+.pp-recipient .pp-top-nip { justify-content: center; color: #6b665c; margin-top: 4px; }
+.pp-recipient .pp-save { position: absolute; top: 0; right: 0; color: #08785c; }
+.pp-recipient-label { margin: 0 0 3px; font-size: 13px; color: #6b665c; }
+.pp-save:focus-visible, .pp-foot a:focus-visible { outline: 2px solid #08785c; outline-offset: 3px; }
+
+@media (min-width: 600px) {
+  .pp-page { padding: 40px 24px; background: #eeebe3; align-items: center; }
+  .pp-shell { max-width: 440px; min-height: 700px; padding: 24px; border-radius: 28px; background: #faf7ef; box-shadow: 0 12px 48px #1c1b180a; }
+}
 
 /* 2. The amount */
 .pp-mid {
@@ -1036,115 +765,17 @@ export default {
   min-height: 0;
 }
 
-.pp-amount-wrap {
-  display: flex;
-  align-items: baseline;
-  justify-content: center;
-  gap: 8px;
-  width: 100%;
-}
-
-.pp-amount {
-  max-width: 270px;
-  border: 0;
-  outline: none;
-  background: transparent;
-  text-align: center;
-  font-family: 'Manrope', sans-serif;
-  font-size: 56px;
-  font-weight: 800;
-  letter-spacing: -0.035em;
-  font-variant-numeric: tabular-nums;
-  color: #1C1B18;
-  caret-color: #059573;
-  padding: 0;
-  min-width: 0;
-}
-
-.pp-amount--long { font-size: 42px; }
-
-.pp-amount::placeholder { color: #C9C4B5; }
-
-.pp-amount-unit {
-  font-size: 18px;
-  font-weight: 700;
-  color: #9A9488;
-  flex: 0 0 auto;
-}
-
-.pp-unit {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  border: 0;
-  background: rgba(28, 27, 24, 0.06);
-  color: #1C1B18;
-  font-family: 'Manrope', sans-serif;
-  font-size: 12px;
-  font-weight: 750;
-  letter-spacing: 0.08em;
-  min-height: 34px;
-  padding: 0 14px;
-  border-radius: 999px;
-  margin-top: 12px;
-  cursor: pointer;
-  transition: transform 0.1s ease;
-}
-
-.pp-unit:active { transform: scale(0.94); }
-
-.pp-conv {
-  font-size: 13px;
-  color: #9A9488;
-  margin-top: 8px;
-  min-height: 18px;
-  font-variant-numeric: tabular-nums;
-}
-
-/* 3. The note */
-.pp-note {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  background: rgba(28, 27, 24, 0.06);
-  border-radius: 14px;
-  padding: 0 14px;
-  min-height: 46px;
-  color: #9A9488;
-  margin-bottom: 10px;
-  flex: 0 0 auto;
-}
-
-.pp-note input {
-  flex: 1;
-  min-width: 0;
-  border: 0;
-  outline: none;
-  background: transparent;
-  font-family: 'Manrope', sans-serif;
-  font-size: 13.5px;
-  color: #1C1B18;
-}
-
-.pp-note input::placeholder { color: #9A9488; }
-
 .pp-note-empty {
   display: flex;
   align-items: flex-start;
   gap: 8px;
   font-size: 13.5px;
-  color: #9A9488;
+  color: #6B665C;
   line-height: 1.5;
   max-width: 34ch;
 }
 
 /* 4. The verb */
-.pp-actions {
-  display: flex;
-  gap: 9px;
-  flex: 0 0 auto;
-}
-
 .pp-cta {
   flex: 1;
   min-height: 52px;
@@ -1166,22 +797,6 @@ export default {
 
 .pp-cta:active { transform: scale(0.97); }
 .pp-cta:disabled { opacity: 0.75; cursor: default; }
-
-.pp-micro {
-  width: 52px;
-  min-height: 52px;
-  border-radius: 26px;
-  border: 0;
-  background: rgba(28, 27, 24, 0.06);
-  color: #1C1B18;
-  display: grid;
-  place-items: center;
-  flex: 0 0 auto;
-  cursor: pointer;
-  transition: transform 0.1s ease;
-}
-
-.pp-micro:active { transform: scale(0.94); }
 
 /* 5. The foot */
 /* The owner's own card. */
@@ -1223,7 +838,7 @@ export default {
 }
 .pp-own-text {
   font-size: 14px;
-  color: #9A9488;
+  color: #6B665C;
   line-height: 1.55;
   max-width: 32ch;
   margin: 0;
@@ -1281,12 +896,12 @@ export default {
   gap: 7px;
   padding: 14px 0 4px;
   font-size: 12px;
-  color: #9A9488;
+  color: #6B665C;
   flex: 0 0 auto;
 }
 
 .pp-foot a {
-  color: #059573;
+  color: #08785C;
   font-weight: 800;
   text-decoration: none;
   white-space: nowrap;
@@ -1315,67 +930,4 @@ export default {
   margin: 0 auto 16px;
 }
 
-.pp-qr {
-  position: relative;
-  width: 228px;
-  height: 228px;
-  border-radius: 18px;
-  background: #FFFFFF;
-  padding: 8px;
-  box-shadow: 0 12px 26px -16px rgba(0, 0, 0, 0.4), inset 0 0 0 1px rgba(28, 27, 24, 0.1);
-}
-
-.pp-qr :deep(img),
-.pp-qr :deep(canvas),
-.pp-qr-canvas { width: 100%; height: 100%; display: block; }
-
-/* Centered face on the code, same as the card's own: safe at level-H
-   error correction, clear of the three finder patterns. */
-.pp-qr-avatar {
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  transform: translate(-50%, -50%);
-  width: 52px;
-  height: 52px;
-  border-radius: 14px;
-  overflow: hidden;
-  border: 4px solid #FFFFFF;
-  box-shadow: 0 0 0 1px rgba(28, 27, 24, 0.1);
-  display: block;
-}
-
-.pp-qr-avatar img { width: 100%; height: 100%; object-fit: cover; display: block; }
-
-.pp-code-caption {
-  text-align: center;
-  font-size: 12.5px;
-  color: #9A9488;
-  margin: 14px 0 0;
-}
-
-.pp-code-addr {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
-  border: 0;
-  background: rgba(28, 27, 24, 0.06);
-  border-radius: 12px;
-  padding: 11px 13px;
-  margin-top: 18px;
-  color: #9A9488;
-  cursor: pointer;
-  text-align: left;
-}
-
-.pp-code-addr code {
-  flex: 1;
-  min-width: 0;
-  font-family: var(--font-mono, 'JetBrains Mono', Menlo, monospace);
-  font-size: 11px;
-  color: #1C1B18;
-  overflow-wrap: anywhere;
-  line-height: 1.5;
-}
 </style>
