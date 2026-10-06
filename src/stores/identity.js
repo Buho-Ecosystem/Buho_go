@@ -140,14 +140,12 @@ function legacyToHandleArray(parsed) {
   }];
 }
 
-/** A pending claim older than this is dropped on load: its invoice expired long ago. */
-const PENDING_CLAIM_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
-
 /**
  * Defensive parser for the persisted pending username claims, keyed by the
- * pubkey each claim was bought for. Drops malformed and stale entries.
+ * pubkey each claim was bought for. Age alone cannot prove an invoice unpaid:
+ * payment may have completed while this device was offline.
  */
-function sanitisePendingClaims(raw, now = Date.now()) {
+function sanitisePendingClaims(raw) {
   const out = {};
   if (!raw || typeof raw !== 'object') return out;
   for (const [pubkey, claim] of Object.entries(raw)) {
@@ -155,7 +153,6 @@ function sanitisePendingClaims(raw, now = Date.now()) {
     if (!claim || typeof claim.handle !== 'string' || !claim.handle) continue;
     if (typeof claim.paymentHash !== 'string' || !claim.paymentHash) continue;
     const createdAt = Number.isFinite(claim.createdAt) ? claim.createdAt : 0;
-    if (now - createdAt > PENDING_CLAIM_MAX_AGE_MS) continue;
     out[pubkey] = {
       handle: claim.handle,
       paymentHash: claim.paymentHash,
@@ -167,6 +164,7 @@ function sanitisePendingClaims(raw, now = Date.now()) {
       createdAt,
       paidAt: Number.isFinite(claim.paidAt) ? claim.paidAt : null,
       failedAt: Number.isFinite(claim.failedAt) ? claim.failedAt : null,
+      usernameRevision: Number.isSafeInteger(claim.usernameRevision) ? claim.usernameRevision : null,
     };
   }
   return out;
@@ -630,12 +628,16 @@ export const useIdentityStore = defineStore('identity', {
     /**
      * Remember a username purchase that has a payment code but is not
      * finished yet, for the active identity. Survives closing the sheet and
-     * restarting the app; `boot/nip05.js` finishes it.
+     * restarting the app; the profile sync lifecycle finishes it.
      *
      * @param {{ handle: string, paymentHash: string, invoice?: string, addressId?: string|null, rotationSecret?: string|null, years?: number, amountSats?: number }} claim
      */
     setPendingNip05Claim(claim) {
       if (!this.nostrPubkeyHex || !claim?.handle || !claim?.paymentHash) return;
+      if (this.pendingNip05Claim) {
+        if (this.pendingNip05Claim.paymentHash !== claim.paymentHash) throw new Error('A username purchase is still pending');
+        return;
+      }
       this.pendingNip05Claims = {
         ...this.pendingNip05Claims,
         [this.nostrPubkeyHex]: {
@@ -649,6 +651,7 @@ export const useIdentityStore = defineStore('identity', {
           createdAt: Date.now(),
           paidAt: null,
           failedAt: null,
+          usernameRevision: Number.isSafeInteger(claim.usernameRevision) ? claim.usernameRevision : null,
         },
       };
       this._persistMetadata();
@@ -659,12 +662,12 @@ export const useIdentityStore = defineStore('identity', {
      * the payment went through, or `failedAt` when the name went to someone
      * else first). No-op without a pending claim.
      */
-    updatePendingNip05Claim(patch) {
-      const current = this.pendingNip05Claim;
-      if (!current) return;
+    updatePendingNip05Claim(patch, { pubkey = this.nostrPubkeyHex, paymentHash } = {}) {
+      const current = this.pendingNip05Claims[pubkey];
+      if (!current || paymentHash && current.paymentHash !== paymentHash) return;
       this.pendingNip05Claims = {
         ...this.pendingNip05Claims,
-        [this.nostrPubkeyHex]: { ...current, ...patch },
+        [pubkey]: { ...current, ...patch },
       };
       this._persistMetadata();
     },

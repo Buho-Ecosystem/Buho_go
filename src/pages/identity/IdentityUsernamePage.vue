@@ -66,13 +66,22 @@
         v-if="claimState !== 'pending'"
         type="button"
         class="btn-primary"
-        @click="showSheet = true"
+        @click="selectedName = ''; showSheet = true"
       >
         {{ usernameAddress ? $t('Change username') : $t('Choose a username') }}
       </button>
+      <IdentityGroup v-if="otherOwnedNames.length" :title="$t('Already yours')">
+        <IdentityRow
+          v-for="entry in otherOwnedNames" :key="entry.handle"
+          icon="tabler:rosette-discount-check"
+          :label="addressFor(entry.handle)"
+          :caption="$t('Use this name')"
+          @click="useOwnedName(entry.handle)"
+        />
+      </IdentityGroup>
     </div>
 
-    <Nip05MarketplaceSheet v-model="showSheet" :has-name="!!usernameAddress" />
+    <Nip05MarketplaceSheet v-model="showSheet" :has-name="!!usernameAddress" :initial-name="selectedName" />
 
     <SettingsHubNav />
   </q-page>
@@ -111,10 +120,13 @@ export default {
   },
 
   data() {
-    return { showSheet: false, copied: false, copyTimer: null };
+    return { showSheet: false, selectedName: '', copied: false, copyTimer: null };
   },
 
   computed: {
+    otherOwnedNames() {
+      return this.identity.nip05Handles.filter((entry) => !entry.isFree && entry.handle !== this.profile.username);
+    },
     /** Back goes to whichever screen opened this one. */
     backNav() { return identityBack(this.$router, this.$route.path); },
 
@@ -162,6 +174,11 @@ export default {
   },
 
   methods: {
+    addressFor: nip05AddressFor,
+    useOwnedName(handle) {
+      this.selectedName = handle;
+      this.showSheet = true;
+    },
     async copyUsername() {
       try {
         await copyToClipboard(this.usernameAddress);
