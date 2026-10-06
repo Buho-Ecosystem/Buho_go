@@ -13,6 +13,7 @@ Still on a BuhoGO from GitHub or Zapstore older than 1.9.1? It was signed with a
 - **Bolt Card payments in kiosk mode.** A locked kiosk now accepts NFC cards, before an amount is entered or against an open sale, through the same confirmation and PIN screens as the rest of the app.
 - **Spark stays in sync on its own.** Both Spark wallets reconnect and catch up when you return to the app, whichever wallet or screen is open, and a cached balance is no longer mistaken for a fresh one.
 - **Every received payment is noticed.** Receipts are matched by payment, not guessed from a balance change, so missed or wrong "payment received" notifications are caught up.
+- **Your username stays yours.** A purchased name@mybuho.de no longer disappears after a restart or a slow relay, activation finishes even if you close the sheet, and a name you already paid for can be recovered free of charge with "Already yours".
 - **A clearer app lock sheet.** It names the method (Device PIN, Fingerprint, Face and others), shows it, and says in one line when BuhoGO asks for it.
 
 ### Bug Fixes
