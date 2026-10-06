@@ -7,6 +7,23 @@ import {
 
 const NOW = 1_790_000_000_000;
 
+test('legacy hydration accepts an unambiguous value per wallet, including zero and missing metadata', () => {
+  const legacy = { activeWalletId: 'A', balance: 37, connectedWallets: [{ id: 'B', balance: 0 }] };
+  assert.equal(hydrateBalanceState({ id: 'A' }, legacy).value, 37);
+  assert.equal(hydrateBalanceState({ id: 'B' }, legacy).value, 0);
+  assert.equal(hydrateBalanceState({ id: 'C' }, legacy).value, null);
+  assert.equal(hydrateBalanceState({ id: 'A' }, { ...legacy, connectedWallets: {} }).value, 37);
+  assert.equal(hydrateBalanceState({ metadata: { cachedBalance: -1 } }).value, null);
+});
+
+test('conflicting old snapshots cannot be ranked by amount or metadata timestamp', () => {
+  for (const [cached, home] of [[1747, 37], [37, 1747], [37, 0]]) {
+    const wallet = { id: 'A', metadata: { cachedBalance: cached, balanceUpdatedAt: NOW } };
+    assert.equal(hydrateBalanceState(wallet, { activeWalletId: 'A', balance: home }).value, null);
+    assert.equal(hydrateBalanceState(wallet, { connectedWallets: [{ id: 'A', balance: home }] }).value, null);
+  }
+});
+
 test('cold hydration keeps saved funds, labelled stale — never an invented zero', () => {
   const s = hydrateBalanceState({ metadata: { cachedBalance: 25000, balanceUpdatedAt: NOW - 86400000 } });
   const d = describeBalance(s, { now: NOW });

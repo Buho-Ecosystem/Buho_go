@@ -65,11 +65,9 @@ try {
     store.ensureSparkConnected = async () => provider;
     store.connectSparkWallet = async () => { throw Error('unexpected real connection'); };
     store.$patch({ wallets: [wallet], activeWalletId: wallet.id, providers: { [wallet.id]: provider },
-      connectionStates: { [wallet.id]: { connected: true } }, balances: { [wallet.id]: 0 } });
-    vm.walletState.connectedWallets = [wallet];
-    vm.walletState.activeWalletId = wallet.id;
-    vm.walletState.balance = 0;
-    vm.walletState.exchangeRates = { usd: 85871 };
+      connectionStates: { [wallet.id]: { connected: true } }, exchangeRates: { usd: 85871 } });
+    store.applyBalance(wallet.id, 0);
+    store.reconcileSpark = async ids => Promise.all(ids.map(id => store.refreshBalance(id, { provider })));
     vm.showLoadingScreen = false;
     vm.bitcoinPrefsStore.autoAddIncomingBitcoin = true;
     await vm.$nextTick();
@@ -143,14 +141,14 @@ try {
   });
   await page.waitForFunction(() => !!window.depositFixture.balanceReady);
   assert.equal(await page.locator('.q-notification').count(), 0);
-  assert.equal(await page.evaluate(() => window.vm.walletState.balance), 0);
+  assert.equal(await page.evaluate(() => window.vm.activeCanonicalBalance), 0);
   await page.evaluate(() => {
     const fixture = window.depositFixture;
     fixture.balance = 66214;
     fixture.holdBalance = false;
     fixture.balanceReady({ balance: 66214 });
   });
-  await page.waitForFunction(() => window.vm.walletState.balance === 66214 && !!window.vm.lastTransaction);
+  await page.waitForFunction(() => window.vm.activeCanonicalBalance === 66214 && !!window.vm.lastTransaction);
   await page.locator('.btc-chip').waitFor({ state: 'detached' });
   assert.equal(await page.locator('.q-notification').count(), 0);
   assert.equal(await page.evaluate(() => window.depositFixture.calls), 1);
