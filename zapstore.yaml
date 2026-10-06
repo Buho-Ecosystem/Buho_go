@@ -25,7 +25,7 @@ summary: The friendly Bitcoin and Lightning wallet
 description: |
   BuhoGO is a friendly, open-source Bitcoin and Lightning wallet. Hold your own keys, pay anyone, and spend anywhere, all from one clean app.
 
-  Bring the wallets you already use through Nostr Wallet Connect (NWC) or LNbits, or create a self-custodial Spark wallet right inside BuhoGO. Switch between your Business and Personal balances with a tap.
+  Bring the wallets you already use through Nostr Wallet Connect (NWC) or LNbits, or create a self-custodial Spark wallet right inside BuhoGO. Switch between your Wallets with a tap.
 
   ## What you can do
   - Pay Lightning invoices, Lightning addresses, LNURL, and Spark addresses
@@ -34,11 +34,11 @@ description: |
   - Tap-toPay NFC 
   - Receive over Lightning, on-chain, and with Spark address QR codes
   - Discover Bitcoin-friendly places near you on the built-in map
-  - Buy eSIMs and VPNs, and browse online and Nostr shops without leaving the app
+  - Buy eSIMs and VPNs, and browse Vouchers without leaving the app
   - Pay many contacts at once with batch payments
   - Move funds automatically with Auto-Transfer, over Lightning or on-chain
   - Keep an address book for faster repeat payments
-  - Follow your history with live fiat conversion
+  - Follow your history with reports. PDF, xml, CSV
   - Switch between a polished dark and light theme, in your language
 
   ## Why BuhoGO?
@@ -61,6 +61,15 @@ tags:
   - spark
   - self-custody
   - ark
+  - bip32
+  - bip39
+  - bip85
+  - lnurl-auth
+  - lnurl-pay
+  - lnurl-withdraw
+  - nip06
+  - nip05
+  - nip57
 
 # ---------------------------------------------------------------------------
 # Media (local paths work because release_source is a local APK)
@@ -71,6 +80,7 @@ images:
   - ./public/Playstore/Playstore1.png    # Clean home, Business and Personal
   - ./public/Playstore/Playstore2.png    # Wallet overview
   - ./public/Playstore/Playstore2_1.png  # Wallet transactions
+  - ./public/Playstore/Playstore2_2.png  # Wallet Reports
   - ./public/Playstore/Playstore3.png    # Discover Bitcoin-friendly places (map)
   - ./public/Playstore/Playstore3_1.png  # Send to anyone over Lightning
   - ./public/Playstore/Playstore4.png    # Clean Auto-Transfer
