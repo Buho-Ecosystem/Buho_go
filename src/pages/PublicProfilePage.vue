@@ -38,8 +38,13 @@
               <NostrAddress :address="profile.nip05" :check="addressCheck === true" :icon-size="12" />
             </div>
           </div>
+          <!-- The owner cannot save themselves: say whose card this is. -->
+          <span v-if="isOwner" class="pp-own-badge">
+            <Icon icon="tabler:id-badge-2" width="13" height="13" />
+            {{ $t('You') }}
+          </span>
           <button
-            v-if="insideBuhoGo"
+            v-else-if="insideBuhoGo"
             type="button"
             class="pp-save"
             :disabled="saved || saving"
@@ -49,14 +54,41 @@
             <Icon v-else :icon="saved ? 'tabler:check' : 'tabler:user-plus'" width="13" height="13" />
             {{ saved ? $t('Saved') : $t('Save') }}
           </button>
-          <a v-else class="pp-save" :href="nostrUri">
+          <!-- Android browser: hand the card to BuhoGO, where Save works.
+               Falls back to the download page when BuhoGO is missing. -->
+          <a v-else-if="offerAppHandoff" class="pp-save" :href="appHandoffUrl" data-handoff="save">
             <Icon icon="tabler:user-plus" width="13" height="13" />
             {{ $t('Save') }}
           </a>
+          <!-- iPhone / desktop: no app to hand off to from here, so explain
+               where contacts live instead of a link that does nothing. -->
+          <button v-else type="button" class="pp-save" data-handoff="help" @click="showSaveHelp = true">
+            <Icon icon="tabler:user-plus" width="13" height="13" />
+            {{ $t('Save') }}
+          </button>
+        </div>
+
+        <!-- The owner's own link: no paying or saving yourself. -->
+        <div v-if="isOwner" class="pp-mid">
+          <div class="pp-own pp-in" style="--d: 90ms">
+            <span class="pp-own-mark"><Icon icon="tabler:id-badge-2" width="26" height="26" /></span>
+            <h1 class="pp-own-title">{{ $t('This is your card') }}</h1>
+            <p class="pp-own-text">{{ $t('This is what people see when they open your link.') }}</p>
+            <div class="pp-own-actions">
+              <button type="button" class="pp-cta" @click="shareOwnLink">
+                <Icon :icon="linkCopied ? 'tabler:check' : 'tabler:share'" width="17" height="17" />
+                {{ linkCopied ? $t('Link copied') : $t('Share link') }}
+              </button>
+              <button type="button" class="pp-ghost pp-own-edit" @click="editOwnCard">
+                <Icon icon="tabler:pencil" width="15" height="15" />
+                {{ $t('Edit card') }}
+              </button>
+            </div>
+          </div>
         </div>
 
         <!-- 2. The amount is the page. -->
-        <template v-if="lud16">
+        <template v-else-if="lud16">
           <div class="pp-mid">
             <div class="pp-amount-wrap pp-in" style="--d: 90ms">
               <input
@@ -115,9 +147,12 @@
         </div>
 
         <!-- 5. The foot: a question, answered by the product. -->
-        <footer class="pp-foot pp-in" style="--d: 300ms">
+        <footer v-if="!isOwner" class="pp-foot pp-in" style="--d: 300ms">
           <img src="/buho_logo.svg" alt="" width="16" height="16" />
-          <span>{{ $t('Want a page like this too?') }} <a :href="BUHOGO_HOME">{{ $t('Get BuhoGO') }}</a></span>
+          <span>
+            {{ $t('Want a page like this too?') }} <a :href="BUHOGO_HOME">{{ $t('Get BuhoGO') }}</a>
+            <template v-if="offerAppHandoff"> · <a :href="appHandoffUrl" data-handoff="open">{{ $t('Open in BuhoGO') }}</a></template>
+          </span>
         </footer>
       </template>
     </div>
@@ -137,6 +172,24 @@
         </button>
       </div>
     </q-dialog>
+
+    <!-- Save, where no app handoff exists (iPhone, desktop). Contacts live
+         in BuhoGO, so say so and offer the two things that get there. -->
+    <q-dialog v-model="showSaveHelp" position="bottom">
+      <div class="pp-code-sheet pp-save-help">
+        <div class="pp-grab" aria-hidden="true"></div>
+        <h2 class="pp-help-title">{{ $t('Save {name} in BuhoGO', { name: spokenName }) }}</h2>
+        <p class="pp-help-text">{{ $t('Contacts are kept in the BuhoGO app. Get it, then open this link on that phone and tap Save.') }}</p>
+        <a class="pp-cta pp-help-cta" :href="BUHOGO_HOME">
+          <Icon icon="tabler:download" width="17" height="17" />
+          {{ $t('Get BuhoGO') }}
+        </a>
+        <button type="button" class="pp-ghost pp-help-copy" @click="copyCardLink">
+          <Icon :icon="linkCopied ? 'tabler:check' : 'tabler:copy'" width="15" height="15" />
+          {{ linkCopied ? $t('Link copied') : $t('Copy link') }}
+        </button>
+      </div>
+    </q-dialog>
   </q-page>
 </template>
 
@@ -150,13 +203,22 @@ import { profileDisplayName, sanitizeImageUrl, shortenNpub } from '../services/n
 import { isLightningAddress } from '../utils/addressUtils.js';
 import { formatUsername, lookupOwner, splitNip05 } from '../services/nip05.js';
 import NostrAddress from '../components/identity/NostrAddress.vue';
-import { BUHOGO_HOME, expandProfileSlug, isKey, KEY_PARAM } from '../utils/profileLink.js';
+import { BUHOGO_HOME, buildProfileLink, expandProfileSlug, isKey, KEY_PARAM } from '../utils/profileLink.js';
+import {
+  buildAppHandoffUrl,
+  cardUrl,
+  cleanCardAddress,
+  hashCardAddress,
+  isAndroidBrowser,
+  isOwnCard,
+} from '../utils/publicCard.js';
 import { getQrOptionsWithSize } from '../utils/qrConfig.js';
 import { lnurlGetJson } from '../utils/lnurlHttp.js';
 import { fiatRatesService } from '../utils/fiatRates.js';
 import { FIAT_SYMBOLS } from '../utils/fiatCurrencies.js';
 import { useWalletStore } from '../stores/wallet';
 import { useAddressBookStore } from '../stores/addressBook';
+import { useIdentityStore } from '../stores/identity';
 
 /**
  * The visitor's currency, guessed from their locale region. Sats stay the
@@ -183,7 +245,7 @@ export default {
   components: { Icon, VueQrcode, NostrAddress },
 
   setup() {
-    return { walletStore: useWalletStore(), addressBook: useAddressBookStore() };
+    return { walletStore: useWalletStore(), addressBook: useAddressBookStore(), identity: useIdentityStore() };
   },
 
   data() {
@@ -200,7 +262,9 @@ export default {
       addressCheck: null,
       avatarBroken: false,
       showCode: false,
+      showSaveHelp: false,
       copied: false,
+      linkCopied: false,
       saved: false,
       saving: false,
       paying: false,
@@ -211,6 +275,7 @@ export default {
       fiatRates: {},
       BUHOGO_HOME,
       _copyTimer: null,
+      _linkTimer: null,
     };
   },
 
@@ -297,9 +362,37 @@ export default {
       return (this.walletStore.wallets || []).length > 0;
     },
 
-    /** Opens BuhoGO on Android, which already claims the nostr scheme. */
-    nostrUri() {
-      return this.npub ? `nostr:${this.npub}` : BUHOGO_HOME;
+    /**
+     * The visitor is the card's owner (their own identity on this device).
+     * They see a "This is your card" state instead of Save and Pay.
+     */
+    isOwner() {
+      if (this.state !== 'ready') return false;
+      return isOwnCard({ pubkey: this.pubkey, npub: this.npub }, this.identity);
+    },
+
+    /**
+     * The https link for this card on the production origin. Leads with the
+     * resolved key when there is one, so the app opens it with no lookup.
+     */
+    canonicalCardUrl() {
+      if (this.npub) return cardUrl(this.npub);
+      return cardUrl(String(this.$route.params.id || ''), String(this.$route.query[KEY_PARAM] || ''));
+    },
+
+    /**
+     * Android browsers get an intent link that opens this card in BuhoGO
+     * (Save works there) and falls back to the download page. A `nostr:`
+     * link used to be here: Android handed it to BuhoGO's payment handler,
+     * and iPhones and desktops did nothing at all.
+     */
+    offerAppHandoff() {
+      if (this.insideBuhoGo) return false;
+      return typeof navigator !== 'undefined' && isAndroidBrowser(navigator.userAgent);
+    },
+
+    appHandoffUrl() {
+      return buildAppHandoffUrl(this.canonicalCardUrl, { fallbackUrl: BUHOGO_HOME });
     },
 
     hasRates() {
@@ -374,7 +467,20 @@ export default {
     },
   },
 
+  watch: {
+    // The component is reused between cards (a nostr: deep link while a card
+    // is already open), so a new id has to resolve again.
+    '$route.params.id'(id, previous) {
+      if (!id || id === previous || !this.$route.path.startsWith('/p/')) return;
+      this.resetCard();
+      this.resolve();
+      this.$nextTick(() => this.useCleanAddress());
+    },
+  },
+
   async created() {
+    // Owner detection reads the identity from disk; hydrate is idempotent.
+    Promise.resolve(this.identity.hydrate?.()).catch(() => {});
     await this.resolve();
     // Rates power the fiat swap; the page works sats-only without them.
     fiatRatesService.ensureRatesLoaded()
@@ -383,11 +489,110 @@ export default {
       .catch(() => {});
   },
 
+  mounted() {
+    this.useCleanAddress();
+  },
+
+  beforeRouteLeave(to, from, next) {
+    this.restoreHashAddress();
+    next();
+  },
+
   beforeUnmount() {
+    this.restoreHashAddress();
     if (this._copyTimer) clearTimeout(this._copyTimer);
+    if (this._linkTimer) clearTimeout(this._linkTimer);
   },
 
   methods: {
+    /**
+     * Show `go.mybuho.de/p/…` in the address bar instead of `/#/p/…`.
+     *
+     * The copied address is what people pass on, and only the path form can
+     * match the Android App Link. The router keeps its own state, so it keeps
+     * working; the index.html shim puts the hash back on a reload or when the
+     * visitor comes back to this entry, and `restoreHashAddress` does before
+     * the router navigates away. Browser only: the packaged app has no
+     * address bar and its path must stay `/`.
+     */
+    useCleanAddress() {
+      if (Capacitor.isNativePlatform() || typeof window === 'undefined') return;
+      const clean = cleanCardAddress(window.location.hash);
+      if (!clean) return;
+      try {
+        window.history.replaceState(window.history.state, '', clean);
+      } catch { /* a browser that refuses keeps the hash form, which works */ }
+    },
+
+    /** Undo the above, so the router builds its next URL from `/#/…`. */
+    restoreHashAddress() {
+      if (Capacitor.isNativePlatform() || typeof window === 'undefined') return;
+      const { pathname, search, hash } = window.location;
+      const hashed = hashCardAddress(pathname, search, hash);
+      if (!hashed) return;
+      try {
+        window.history.replaceState(window.history.state, '', hashed);
+      } catch { /* nothing to restore */ }
+    },
+
+    resetCard() {
+      Object.assign(this, {
+        state: 'loading',
+        npub: '',
+        pubkey: '',
+        relayHints: [],
+        profileEvent: null,
+        profile: null,
+        addressCheck: null,
+        avatarBroken: false,
+        saved: false,
+        saving: false,
+        displayAmount: '',
+        comment: '',
+      });
+    },
+
+    async copyCardLink() {
+      const link = this.canonicalCardUrl;
+      if (!link) return;
+      try {
+        await navigator.clipboard.writeText(link);
+        this.flashLinkCopied();
+      } catch {
+        this.$q.notify({ type: 'warning', message: this.$t("Couldn't copy"), timeout: 1800, position: 'top' });
+      }
+    },
+
+    flashLinkCopied() {
+      this.linkCopied = true;
+      if (this._linkTimer) clearTimeout(this._linkTimer);
+      this._linkTimer = setTimeout(() => { this.linkCopied = false; }, 1600);
+    },
+
+    /** The owner's Share: the system sheet where there is one, else copy. */
+    async shareOwnLink() {
+      const link = buildProfileLink({ npub: this.npub }) || this.canonicalCardUrl;
+      if (!link) return;
+      if (typeof navigator !== 'undefined' && navigator.share) {
+        try {
+          await navigator.share({ url: link });
+          return;
+        } catch (err) {
+          if (err?.name === 'AbortError') return;
+        }
+      }
+      try {
+        await navigator.clipboard.writeText(link);
+        this.flashLinkCopied();
+      } catch {
+        this.$q.notify({ type: 'warning', message: this.$t("Couldn't copy"), timeout: 1800, position: 'top' });
+      }
+    },
+
+    editOwnCard() {
+      this.$router.push('/identity/profile').catch(() => {});
+    },
+
     /**
      * Slug to profile.
      *
@@ -397,6 +602,10 @@ export default {
      * older links. Only a link with nothing resolvable is missing.
      */
     async resolve() {
+      // A newer card (same component, new id) wins over a lookup in flight.
+      const run = (this._resolveRun = (this._resolveRun || 0) + 1);
+      const stale = () => run !== this._resolveRun;
+
       const identifier = expandProfileSlug(this.$route.params.id);
       const fallbackKey = String(this.$route.query[KEY_PARAM] || '').trim();
 
@@ -406,10 +615,12 @@ export default {
       }
 
       let resolved = identifier ? await this.tryLookup(identifier) : null;
+      if (stale()) return;
 
       if (!resolved && fallbackKey && isKey(fallbackKey)) {
         console.warn('[public-profile] name lookup failed, falling back to the key');
         resolved = await this.tryLookup(fallbackKey);
+        if (stale()) return;
       }
 
       if (!resolved) {
@@ -426,6 +637,7 @@ export default {
       // not a reason to tell a visitor the link is broken.
       try {
         const event = await fetchProfile(resolved.pubkey, { relays: resolved.relays });
+        if (stale()) return;
         if (event) {
           this.profileEvent = event;
           const content = parseProfileContent(event);
@@ -442,6 +654,7 @@ export default {
         console.warn('[public-profile] profile fetch failed:', err);
       }
 
+      if (stale()) return;
       this.state = 'ready';
     },
 
@@ -971,6 +1184,96 @@ export default {
 .pp-micro:active { transform: scale(0.94); }
 
 /* 5. The foot */
+/* The owner's own card. */
+.pp-own-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: rgba(28, 27, 24, 0.06);
+  color: #6B665C;
+  font-size: 12px;
+  font-weight: 750;
+  border-radius: 999px;
+  min-height: 34px;
+  padding: 0 13px;
+  flex: 0 0 auto;
+}
+.pp-own {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 10px;
+  width: 100%;
+}
+.pp-own-mark {
+  width: 58px;
+  height: 58px;
+  border-radius: 50%;
+  background: rgba(5, 149, 115, 0.1);
+  color: #059573;
+  display: grid;
+  place-items: center;
+}
+.pp-own-title {
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  margin: 0;
+}
+.pp-own-text {
+  font-size: 14px;
+  color: #9A9488;
+  line-height: 1.55;
+  max-width: 32ch;
+  margin: 0;
+}
+.pp-own-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+  width: 100%;
+  margin-top: 8px;
+}
+.pp-own-edit,
+.pp-help-copy {
+  justify-content: center;
+  gap: 6px;
+  border: 0;
+  font-family: 'Manrope', sans-serif;
+  cursor: pointer;
+}
+
+/* Save help (no app handoff on this device). */
+.pp-save-help {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.pp-help-title {
+  font-size: 18px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  margin: 4px 0 0;
+  text-align: center;
+}
+.pp-help-text {
+  font-size: 14px;
+  color: #6B665C;
+  line-height: 1.55;
+  margin: 0;
+  text-align: center;
+}
+.pp-help-cta {
+  flex: 0 0 auto;
+  text-decoration: none;
+}
+.pp-help-cta,
+.pp-help-copy {
+  align-self: stretch;
+}
+
 .pp-foot {
   display: flex;
   align-items: center;

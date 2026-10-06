@@ -5,6 +5,7 @@ import { transformSync } from 'esbuild';
 import { bech32 } from 'bech32';
 import { isAddressRequest } from '../../utils/lud23.js';
 import { addressRequestState, createAddressRequestSession } from '../../utils/addressRequestSession.js';
+import { createDeepLinkDeduper } from '../../utils/deepLinkRouting.js';
 
 const url = `https://game.example/request?tag=addressRequest&k1=${'a'.repeat(64)}`;
 const encoded = bech32.encode('lnurl', bech32.toWords(new TextEncoder().encode(url)), 4096);
@@ -36,7 +37,7 @@ function harness(file, launchInput, kiosk = false) {
     '../stores/wallet': { useWalletStore: () => ({ activeWallet: null, kioskEnabled: kiosk }) },
     '../utils/walletHydration': { triggerWalletStoreHydration: () => assert.fail('must not connect wallets for sharing') },
     '../utils/nostrLookup': { classifyIdentifier: () => null },
-    '../utils/profileLink': { profileLinkRoute: () => null },
+    '../utils/deepLinkRouting': { cardRouteForDeepLink: () => null, createDeepLinkDeduper },
     '../utils/logRedaction': { redactPaymentInput: () => '(redacted)' },
     '../utils/nfc': {
       addNfcListener: callback => { foregroundScan = callback; }, addNfcErrorListener: () => {}, isNfcAvailable: async () => true,

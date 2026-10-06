@@ -27,10 +27,11 @@ function harness() {
       claims++; return { amount: quote.creditAmountSats };
     },
   };
-  const wallet = { activeWalletId: 'A', ensureSparkConnected: async () => provider,
-    isDepositClaimed: id => claimed.has(id), markDepositClaimed: id => claimed.add(id),
-    isDepositClaimInFlight: id => inFlight.has(id), markDepositClaimInFlight: id => inFlight.add(id),
-    clearDepositClaimInFlight: id => inFlight.delete(id), signalDepositsRefresh: id => signals.push(id),
+  const k = (id, vout) => `${id}:${Number(vout) || 0}`;
+  const wallet = { activeWalletId: 'A', wallets: [{ id: 'A' }, { id: 'B' }], ensureSparkConnected: async () => provider,
+    isDepositClaimed: (id, vout) => claimed.has(k(id, vout)), markDepositClaimed: (id, vout) => claimed.add(k(id, vout)),
+    isDepositClaimInFlight: (id, vout) => inFlight.has(k(id, vout)), markDepositClaimInFlight: (id, vout) => inFlight.add(k(id, vout)),
+    clearDepositClaimInFlight: (id, vout) => inFlight.delete(k(id, vout)), signalDepositsRefresh: id => signals.push(id),
   };
   const deps = { pinia: { defineStore: (_, options) => options }, './wallet': { useWalletStore: () => wallet },
     './bitcoinPreferences': { useBitcoinPreferencesStore: () => prefs, BITCOIN_DEPOSIT_POLL_MS, CLASSIFICATION_FRESHNESS_MS: 30000, AUTO_CLAIM_THRESHOLDS }, '../utils/breezPayments.js': { classifyFromMatureQuote }, '../utils/telemetry': { track() {} } };
@@ -134,17 +135,45 @@ test('simultaneous home, receive and history checks submit only one claim', asyn
   assert.equal(h.counts().claims, 1);
 });
 
-test('a wallet or preference switch while classifying prevents automatic submission', async () => {
-  for (const switchWallet of [true, false]) {
+test('a selection change while classifying keeps valid work; removal or auto-add off cancels it', async () => {
+  for (const change of ['select-other', 'remove', 'auto-add-off']) {
     const h = harness(), quote = deferred(), started = deferred();
     h.provider.classifyConfirmedDeposit = () => { started.resolve(); return quote.promise; };
     const pending = h.run(); await started.promise;
-    if (switchWallet) h.wallet.activeWalletId = 'B'; else h.prefs.autoAddIncomingBitcoin = false;
+    if (change === 'select-other') h.wallet.activeWalletId = 'B';
+    if (change === 'remove') h.wallet.wallets = h.wallet.wallets.filter(w => w.id !== 'A');
+    if (change === 'auto-add-off') h.prefs.autoAddIncomingBitcoin = false;
     quote.resolve(h.classify()); await pending;
-    assert.equal(h.counts().claims, 0);
+    assert.equal(h.counts().claims, change === 'select-other' ? 1 : 0, change);
     assert.equal(h.inFlight.size, 0);
-    assert.deepEqual(h.store.entries, {}, 'no orphaned busy state');
+    if (change !== 'select-other') assert.deepEqual(h.store.entries, {}, 'no orphaned busy state');
   }
+});
+
+test('an unselected wallet processes its own deposit through its own provider', async () => {
+  const h = harness();
+  h.wallet.activeWalletId = 'B';
+  const asked = [];
+  h.wallet.ensureSparkConnected = async id => { asked.push(id); return h.provider; };
+  await h.run();
+  assert.deepEqual(asked, ['A'], 'provider resolved with the explicit wallet id');
+  assert.equal(h.counts().claims, 1);
+  assert.deepEqual(h.signals, ['A']);
+});
+
+test('several outputs of one transaction, and one per account, are each claimed once', async () => {
+  const h = harness();
+  const vouts = [];
+  h.provider.claimDeposit = async (txId, quote, vout) => { vouts.push(vout); return { amount: quote.creditAmountSats }; };
+  const out0 = { ...h.deposit, outputIndex: 0 }, out1 = { ...h.deposit, outputIndex: 1 };
+  await h.store.processDeposits([out0, out1], 'A');
+  // The same transaction also paid the other account.
+  await h.store.processDeposits([{ ...h.deposit, outputIndex: 2 }], 'B');
+  assert.deepEqual(vouts.sort(), [0, 1, 2]);
+  // Replays (events, polls, manual sheet) submit nothing more.
+  await h.store.processDeposits([out0, out1], 'A');
+  await h.store.processDeposits([{ ...h.deposit, outputIndex: 2 }], 'B');
+  assert.equal(vouts.length, 3);
 });
 
 test('a late accepted claim records its original wallet without refreshing another wallet', async () => {
@@ -153,7 +182,7 @@ test('a late accepted claim records its original wallet without refreshing anoth
   const pending = h.run(); await started.promise;
   h.wallet.activeWalletId = 'B'; claim.resolve({ processing: true }); await pending;
   assert.deepEqual(h.signals, ['A']);
-  assert.equal(h.claimed.has(h.deposit.txId), true);
+  assert.equal(h.claimed.has(`${h.deposit.txId}:${h.deposit.outputIndex}`), true);
 });
 
 

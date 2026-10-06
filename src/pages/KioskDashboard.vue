@@ -91,7 +91,7 @@
         </div>
         <div class="pos-top">
           <div class="pos-amount-area">
-            <div class="pos-amount-row"><span class="pos-currency-sym">{{ isFiatMode ? fiatSymbol : '' }}</span><span class="pos-amount-value" :class="{ 'pos-amount-sm': formattedDisplay.length > 7 }">{{ formattedDisplay }}</span><span v-if="!isFiatMode" class="pos-currency-suffix">sats</span></div>
+            <div class="pos-amount-row"><span class="pos-currency-sym">{{ isFiatMode ? fiatSymbol : '' }}</span><span class="pos-amount-value" :class="{ 'pos-amount-sm': formattedDisplay.length > 7 }" :style="amountFontStyle">{{ formattedDisplay }}</span><span v-if="!isFiatMode" class="pos-currency-suffix">sats</span></div>
           </div>
         </div>
         <div class="pos-bottom">
@@ -169,6 +169,7 @@ import { roundUpTargetSats } from 'src/utils/roundUp'
 import { useTransactionMetadataStore } from 'stores/transactionMetadata'
 import KioskPinPad from 'components/KioskPinPad.vue'
 import QRCode from 'qrcode'
+import { fiatSymbol as fiatSymbolFor } from 'src/utils/fiatCurrencies'
 
 export default defineComponent({
   name: 'KioskDashboard',
@@ -217,14 +218,17 @@ export default defineComponent({
       const currency = store.preferredFiatCurrency || 'USD'
       return store.exchangeRates[currency] || store.exchangeRates[currency.toLowerCase()] || 0
     })
-    const fiatSymbol = computed(() => {
-      const s = { EUR: '\u20AC', USD: '$', GBP: '\u00A3', CHF: 'CHF', CZK: 'K\u010D', JPY: '\u00A5', CAD: 'CA$', AUD: 'A$', BRL: 'R$', MXN: 'MX$', SEK: 'kr', NOK: 'kr', DKK: 'kr', PLN: 'z\u0142' }
-      return s[store.preferredFiatCurrency] || store.preferredFiatCurrency
-    })
+    const fiatSymbol = computed(() => fiatSymbolFor(store.preferredFiatCurrency || 'USD').trim())
     const formattedDisplay = computed(() => {
       if (rawInput.value === '0') return '0'
       if (isFiatMode.value) return rawInput.value
       return (parseInt(rawInput.value) || 0).toLocaleString()
+    })
+    // Past ten characters the amount shrinks with its length so the
+    // largest allowed entry (12 digits plus grouping) stays on screen.
+    const amountFontStyle = computed(() => {
+      const chars = formattedDisplay.value.length + (isFiatMode.value ? 1 : 3)
+      return chars > 10 ? { fontSize: `${Math.max(1.5, (3 * 10) / chars).toFixed(2)}rem` } : null
     })
     const amountSats = computed(() => {
       const num = parseFloat(rawInput.value) || 0
@@ -589,7 +593,7 @@ export default defineComponent({
     onUnmounted(() => { clearPolling(); clearTimeout(tapTimer); clearTimeout(successTimer) })
 
     return {
-      state, walletReady, rawInput, formattedDisplay, amountSats, isFiatMode, fiatSymbol, kioskWalletName,
+      state, walletReady, rawInput, formattedDisplay, amountFontStyle, amountSats, isFiatMode, fiatSymbol, kioskWalletName,
       accumulatedItems, accumulatedSats, totalSatsForCharge,
       handleNumpad, addToAccumulated, removeAccumulatedItem, clearAll, proceedToTipOrCharge,
       tipOptions, selectedTipPercent, selectedTipAmount, tipInteractive,

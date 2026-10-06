@@ -1319,3 +1319,10 @@ body.body--light .delete-confirm-card .cancel-btn {
   opacity: 0.2;
   vertical-align: baseline;
 }
+
+/* A last-known balance that has not been verified recently (cached, saved
+   from an earlier session, or a failed sync). Readable, but visibly not
+   live — never presented as a verified figure. */
+.balance-stale {
+  opacity: 0.6;
+}

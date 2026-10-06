@@ -23,6 +23,19 @@ import { useAutoWithdrawStore } from './autoWithdraw';
 import { useNotificationsStore } from './notifications';
 import { formatAmount } from '../utils/amountFormatting.js';
 import { internalTransferTransactionId } from '../utils/internalTransferDetails.js';
+import {
+  emptyBalanceState,
+  hydrateBalanceState,
+  nextBalanceState,
+  describeBalance,
+  summarizeTotal,
+} from '../utils/balanceState.js';
+import { sparkLifecycle, forgetSparkWallet } from '../services/sparkLifecycleApp.js';
+
+/** One output of one deposit transaction: `${txId}:${vout}` (vout defaults to 0). */
+export function depositClaimKey(txId, outputIndex) {
+  return `${txId}:${Number(outputIndex) || 0}`;
+}
 
 /** walletId → the last balance noticeIncomingPayment saw for it this session. */
 const observedBalance = new Map();
@@ -90,7 +103,21 @@ export const useWalletStore = defineStore('wallet', {
     providers: {},
 
     // Wallet data (keyed by wallet ID)
+    // `balances` is the plain-number mirror many views read; `balanceStates`
+    // is the canonical record behind it (value + provenance + freshness,
+    // utils/balanceState.js). Write both through applyBalance() only.
     balances: {},
+    balanceStates: {},
+    // Spark lifecycle health per wallet (services/sparkLifecycle.js):
+    // { health, lastSyncAt, error, failures }. Connection status stays in
+    // connectionStates; this is whether the connection is actually useful.
+    sparkHealthStates: {},
+    // Unclaimed on-chain deposits per Spark wallet, discovered by the
+    // lifecycle for every wallet regardless of selection.
+    pendingDepositsByWallet: {},
+    // The most recent detected receipt { walletId, amountSats, at }, for
+    // in-app surfaces; system notifications are posted by the lifecycle.
+    lastReceipt: null,
     // Funds the wallet holds but cannot spend yet, keyed by wallet ID:
     // { pending, recoverable }. Arkade is the only backend that reports a
     // split today (boarding UTXOs awaiting confirmation, and subdust or
@@ -234,15 +261,29 @@ export const useWalletStore = defineStore('wallet', {
      * Balance of the active wallet in sats
      */
     activeBalance: (state) => {
-      return state.balances[state.activeWalletId] || 0;
+      return state.balanceStates[state.activeWalletId]?.value ?? state.balances[state.activeWalletId] ?? 0;
     },
 
     /**
-     * Total balance across all wallets in sats
+     * Total of every configured wallet's known balance in sats (saved
+     * last-known values included). Whether that total is complete and
+     * verified is `totalBalanceInfo`; never present this alone as exact.
      */
     totalBalance: (state) => {
-      return Object.values(state.balances).reduce((sum, bal) => sum + (bal || 0), 0);
+      return summarizeTotal(state.wallets.map((w) => w.id), state.balanceStates).total;
     },
+
+    /** { total, complete, stale, unknownIds, staleIds } across all wallets. */
+    totalBalanceInfo: (state) => {
+      return summarizeTotal(state.wallets.map((w) => w.id), state.balanceStates);
+    },
+
+    /**
+     * What every surface shows for one wallet: { known, value, status
+     * ('unknown'|'loading'|'fresh'|'stale'|'error'), stale, refreshing,
+     * source, verifiedAt, error }.
+     */
+    balanceStateFor: (state) => (walletId) => describeBalance(state.balanceStates[walletId]),
 
     /**
      * List of currently connected wallets
@@ -416,7 +457,7 @@ export const useWalletStore = defineStore('wallet', {
         // Spark falls back to the legacy store-level flag for pre-migration
         // installs; Arkade (new) always uses its own per-wallet metadata flag.
         if (isWalletBackedUp(w, state.hasBackedUp)) return false;
-        const balance = state.balances[w.id] || 0;
+        const balance = state.balanceStates[w.id]?.value ?? state.balances[w.id] ?? 0;
         return balance > 0;
       });
     },
@@ -457,33 +498,21 @@ export const useWalletStore = defineStore('wallet', {
      */
     getDisplayBalance: (state) => (walletId) => {
       const wallet = state.wallets.find(w => w.id === walletId);
-      if (!wallet) return { balance: 0, isLocked: false, isCached: false };
+      if (!wallet) return { balance: 0, known: false, isLocked: false, isCached: false, status: 'unknown' };
 
-      // For Spark wallets
-      if (wallet.type === WALLET_TYPES.SPARK) {
-        const isConnected = state.connectionStates[walletId]?.connected;
-        const currentBalance = state.balances[walletId];
-
-        // If connected, use current balance
-        if (isConnected && currentBalance !== undefined) {
-          return { balance: currentBalance, isLocked: false, isCached: false };
-        }
-
-        // If not connected, try cached balance from metadata
-        const cachedBalance = wallet.metadata?.cachedBalance;
-        if (cachedBalance !== undefined) {
-          return { balance: cachedBalance, isLocked: true, isCached: true };
-        }
-
-        // No cached balance, wallet is locked
-        return { balance: 0, isLocked: true, isCached: false };
-      }
-
-      // For NWC wallets, use current balance
+      // Connection status and value freshness are separate questions: a
+      // connected wallet can hold a stale value, and a disconnected one
+      // can still show its last verified figure, labelled as such.
+      const d = describeBalance(state.balanceStates[walletId]);
+      const isLocked = wallet.type === WALLET_TYPES.SPARK && !state.connectionStates[walletId]?.connected;
       return {
-        balance: state.balances[walletId] || 0,
-        isLocked: false,
-        isCached: false
+        balance: d.known ? d.value : 0,
+        known: d.known,
+        isLocked,
+        isCached: d.known && d.status !== 'fresh',
+        status: d.status,
+        refreshing: d.refreshing,
+        verifiedAt: d.verifiedAt,
       };
     },
 
@@ -690,10 +719,11 @@ export const useWalletStore = defineStore('wallet', {
      * Called by both the auto-claim flow (Wallet.vue) and the manual sheet
      * (L1BitcoinReceive.vue) so neither submits a duplicate to the SSP.
      */
-    markDepositClaimInFlight(txId) {
+    markDepositClaimInFlight(txId, outputIndex) {
       if (!txId) return;
-      if (!this.inFlightDepositClaims[txId]) {
-        this.inFlightDepositClaims[txId] = true;
+      const key = depositClaimKey(txId, outputIndex);
+      if (!this.inFlightDepositClaims[key]) {
+        this.inFlightDepositClaims[key] = true;
       }
     },
 
@@ -701,10 +731,11 @@ export const useWalletStore = defineStore('wallet', {
      * Clear the in-flight marker for a txId. Always call from a `finally`
      * so a thrown error can't leave the UI permanently locked.
      */
-    clearDepositClaimInFlight(txId) {
+    clearDepositClaimInFlight(txId, outputIndex) {
       if (!txId) return;
-      if (this.inFlightDepositClaims[txId]) {
-        delete this.inFlightDepositClaims[txId];
+      const key = depositClaimKey(txId, outputIndex);
+      if (this.inFlightDepositClaims[key]) {
+        delete this.inFlightDepositClaims[key];
       }
     },
 
@@ -712,8 +743,14 @@ export const useWalletStore = defineStore('wallet', {
      * Reactive predicate: is this txId currently being claimed somewhere?
      * Use from templates as `walletStore.isDepositClaimInFlight(deposit.txId)`.
      */
-    isDepositClaimInFlight(txId) {
-      return !!this.inFlightDepositClaims[txId];
+    isDepositClaimInFlight(txId, outputIndex) {
+      if (!txId) return false;
+      // Without an output the question is about the whole transaction.
+      if (outputIndex === undefined || outputIndex === null) {
+        return Object.keys(this.inFlightDepositClaims).some((k) => k === txId || k.startsWith(`${txId}:`));
+      }
+      return !!this.inFlightDepositClaims[depositClaimKey(txId, outputIndex)]
+        || !!this.inFlightDepositClaims[txId];
     },
 
     /**
@@ -723,13 +760,21 @@ export const useWalletStore = defineStore('wallet', {
      * list until its confirmations catch up, and without this record the
      * confirmed handler would submit the same UTXO a second time.
      */
-    markDepositClaimed(txId) {
-      claimedDepositRegistry.add(txId);
+    markDepositClaimed(txId, outputIndex) {
+      if (!txId) return;
+      claimedDepositRegistry.add(depositClaimKey(txId, outputIndex));
     },
 
-    /** Has this deposit txId already been claimed by this device? */
-    isDepositClaimed(txId) {
-      return claimedDepositRegistry.has(txId);
+    /**
+     * Has this deposit output already been claimed by this device? Keyed by
+     * transaction AND output, so a second output of the same transaction
+     * (several deposits, or one to each account) is never suppressed by the
+     * first. A bare-txid record from an older build still counts as claimed.
+     */
+    isDepositClaimed(txId, outputIndex) {
+      if (!txId) return false;
+      return claimedDepositRegistry.has(depositClaimKey(txId, outputIndex))
+        || claimedDepositRegistry.has(txId);
     },
 
     /**
@@ -740,6 +785,160 @@ export const useWalletStore = defineStore('wallet', {
     signalDepositsRefresh(walletId = this.activeWalletId) {
       this.lastDepositsRefreshWalletId = walletId;
       this.depositsRefreshSignal += 1;
+    },
+
+    // ==========================================
+    // Canonical balance state (#293)
+    // ==========================================
+
+    /**
+     * The one write path for a wallet balance: canonical state, the plain
+     * `balances` mirror, and the persisted last-known value all move
+     * together. Late or invalid readings are dropped (see
+     * utils/balanceState.js); a read token from beginBalanceRead() that has
+     * been superseded is dropped too.
+     *
+     * @returns {boolean} whether the reading was accepted
+     */
+    applyBalance(walletId, value, { source = 'sync', fresh, read = null, error = null, at } = {}) {
+      if (!walletId) return false;
+      if (read && !this.isBalanceReadCurrent(read)) return false;
+      if (!this.balanceStates) this.balanceStates = {};
+      if (!this.balances) this.balances = {};
+      const prev = this.balanceStates[walletId] || emptyBalanceState();
+      const next = nextBalanceState(prev, {
+        value,
+        source,
+        fresh: fresh ?? source !== 'cache',
+        at: at ?? Date.now(),
+        error,
+      });
+      if (next.value === prev.value && next.verifiedAt === prev.verifiedAt && next.source === prev.source && next.error === prev.error) {
+        return next.value !== null;
+      }
+      this.balanceStates[walletId] = next;
+      if (next.value === null) return false;
+      this.balances[walletId] = next.value;
+
+      const wallet = (this.wallets || []).find((w) => w.id === walletId);
+      if (wallet && next.value !== prev.value) {
+        wallet.metadata = wallet.metadata || {};
+        wallet.metadata.cachedBalance = next.value;
+        wallet.metadata.balanceUpdatedAt = next.verifiedAt || next.updatedAt;
+        this._schedulePersist();
+      } else if (wallet && next.verifiedAt && next.verifiedAt !== prev.verifiedAt) {
+        wallet.metadata = wallet.metadata || {};
+        wallet.metadata.balanceUpdatedAt = next.verifiedAt;
+        this._schedulePersist();
+      }
+
+      // Money only moves on a network-verified figure. Auto-withdraw also
+      // re-verifies Spark itself before sending (stores/autoWithdraw.js).
+      if (wallet && next.source !== 'cache' && next.source !== 'persisted' && next.value > 0 && fresh !== false) {
+        try { useAutoWithdrawStore().checkAndExecute(walletId, next.value, this); } catch { /* harness/early boot */ }
+      }
+      return true;
+    },
+
+    markBalanceRefresh(walletId, refreshing) {
+      if (!walletId) return;
+      if (!this.balanceStates) this.balanceStates = {};
+      const prev = this.balanceStates[walletId] || emptyBalanceState();
+      if (prev.refreshing === !!refreshing) return;
+      this.balanceStates[walletId] = { ...prev, refreshing: !!refreshing };
+    },
+
+    markBalanceError(walletId, message) {
+      if (!walletId) return;
+      if (!this.balanceStates) this.balanceStates = {};
+      const prev = this.balanceStates[walletId] || emptyBalanceState();
+      this.balanceStates[walletId] = { ...prev, error: message || 'Balance could not be refreshed' };
+    },
+
+    /** Saved last-known values become stale state on load: never a zero. */
+    hydrateBalanceStates() {
+      const states = { ...(this.balanceStates || {}) };
+      for (const wallet of this.wallets) {
+        if (states[wallet.id]?.value != null) continue;
+        const hydrated = hydrateBalanceState(wallet);
+        states[wallet.id] = hydrated;
+        if (hydrated.value !== null && this.balances[wallet.id] === undefined) {
+          this.balances[wallet.id] = hydrated.value;
+        }
+      }
+      this.balanceStates = states;
+    },
+
+    forgetBalance(walletId) {
+      delete this.balances[walletId];
+      if (this.balanceStates) delete this.balanceStates[walletId];
+      if (this.sparkHealthStates) delete this.sparkHealthStates[walletId];
+      if (this.pendingDepositsByWallet) delete this.pendingDepositsByWallet[walletId];
+    },
+
+    /** Persist soon, once: balance ticks must not hammer localStorage. */
+    _schedulePersist() {
+      if (this._persistTimer) return;
+      this._persistTimer = setTimeout(() => {
+        this._persistTimer = null;
+        Promise.resolve(this.persistState?.()).catch(() => {});
+      }, 750);
+    },
+
+    // ==========================================
+    // Spark lifecycle hooks (services/sparkLifecycle.js)
+    // ==========================================
+
+    setSparkHealthState(walletId, health) {
+      if (!this.sparkHealthStates) this.sparkHealthStates = {};
+      this.sparkHealthStates[walletId] = { ...health };
+    },
+
+    noteSparkNetworkSync(walletId, at) {
+      if (!this.sparkHealthStates) this.sparkHealthStates = {};
+      const prev = this.sparkHealthStates[walletId] || {};
+      this.sparkHealthStates[walletId] = { ...prev, lastSyncAt: at };
+    },
+
+    setPendingDeposits(walletId, deposits) {
+      if (!this.pendingDepositsByWallet) this.pendingDepositsByWallet = {};
+      this.pendingDepositsByWallet[walletId] = deposits || [];
+    },
+
+    /** A deposit claim landed: catch the owning wallet up right away. */
+    onDepositClaimed(walletId) {
+      sparkLifecycle?.()?.reconcile(walletId, 'event');
+    },
+
+    /**
+     * Ask the lifecycle to reconcile Spark wallets now (user refresh,
+     * switch). Resolves when the run(s) settle; never throws.
+     */
+    async reconcileSpark(walletIds = null, reason = 'user') {
+      const lifecycle = sparkLifecycle?.();
+      if (!lifecycle) return;
+      const ids = walletIds || this.sparkWallets.map((w) => w.id);
+      await Promise.allSettled(ids.map((id) => lifecycle.reconcile(id, reason)));
+    },
+
+    /**
+     * Internal transfers in flight: { toWalletId, amountSats, until }. A
+     * receipt matching one is the user's own move, never announced as
+     * money arriving (services/paymentReceipts.js).
+     */
+    noteInternalTransfer(toWalletId, amountSats, { windowMs = 10 * 60 * 1000 } = {}) {
+      this._internalTransfers = (this._internalTransfers || []).filter((t) => t.until > Date.now());
+      this._internalTransfers.push({ toWalletId, amountSats: Number(amountSats) || 0, until: Date.now() + windowMs });
+    },
+
+    isInternalTransferReceipt(walletId, payment) {
+      const list = (this._internalTransfers || []).filter((t) => t.until > Date.now());
+      this._internalTransfers = list;
+      const amount = Number(payment?.amount ?? 0);
+      const idx = list.findIndex((t) => t.toWalletId === walletId && (!t.amountSats || t.amountSats === amount));
+      if (idx === -1) return false;
+      list.splice(idx, 1);
+      return true;
     },
 
     /**
@@ -917,6 +1116,9 @@ export const useWalletStore = defineStore('wallet', {
             });
           }
 
+          // Last-known balances, labelled stale until verified (#293).
+          this.hydrateBalanceStates();
+
           // Validate wallets
           await this.validateWallets();
 
@@ -957,6 +1159,11 @@ export const useWalletStore = defineStore('wallet', {
                 });
               }
             }
+          }
+          // Both Spark wallets are now owned by the app lifecycle, not by
+          // whichever page or wallet is on screen (#292).
+          if (this.sparkWallets.length > 0 && !(typeof window !== 'undefined' && window.__AUDIT__)) {
+            sparkLifecycle?.()?.start();
           }
         } catch (error) {
           console.error('Wallet store initialization error:', error);
@@ -1096,9 +1303,7 @@ export const useWalletStore = defineStore('wallet', {
         personalWallet.isDefault = true;
 
         // Both wallets were connected during creation (to validate them and
-        // cache balances). Enforce the single-live-connection invariant now so
-        // Business doesn't linger connected alongside the active Personal — two
-        // live Spark wallets corrupt each other's SDK auth session.
+        // cache balances) and both stay live.
         await this.connectAllSparkWallets();
 
         // The active wallet received its Lightning address during connect;
@@ -1114,6 +1319,8 @@ export const useWalletStore = defineStore('wallet', {
 
         onProgress('done');
         await this.persistState();
+        // A pair created after startup still needs its lifecycle (#292).
+        sparkLifecycle?.()?.start();
         return personalWallet;
       } catch (error) {
         // Atomic rollback. If Business succeeded and Personal failed
@@ -1148,7 +1355,7 @@ export const useWalletStore = defineStore('wallet', {
           delete this.providers[id];
         }
         delete this.walletInfos[id];
-        delete this.balances[id];
+        this.forgetBalance(id);
         delete this.connectionStates[id];
         const idx = this.wallets.findIndex(w => w.id === id);
         if (idx !== -1) this.wallets.splice(idx, 1);
@@ -1292,14 +1499,15 @@ export const useWalletStore = defineStore('wallet', {
           error: null,
         };
 
-        // Get balance
+        // First balance: a real sync when the network answers, otherwise the
+        // local figure labelled stale (never a connect failure by itself).
         const balanceResult = await provider.getBalance();
-        this.balances[walletId] = balanceResult.balance;
-
-        // Cache balance in wallet metadata for display when locked
         wallet.metadata = wallet.metadata || {};
-        wallet.metadata.cachedBalance = balanceResult.balance;
-        wallet.metadata.balanceUpdatedAt = Date.now();
+        this.applyBalance(walletId, balanceResult.balance, {
+          source: balanceResult.fresh === false ? 'cache' : 'connect',
+          fresh: balanceResult.fresh !== false,
+          error: balanceResult.syncError || null,
+        });
 
         // Get info
         const info = await provider.getInfo();
@@ -1436,6 +1644,9 @@ export const useWalletStore = defineStore('wallet', {
     async _assignAddressToInactiveSparkWallet(inactiveWallet, activeWallet) {
       if (!inactiveWallet || inactiveWallet.id === activeWallet?.id) return;
       if (inactiveWallet.metadata?.lud16) return;
+      // Both Spark wallets stay connected now; connecting runs the
+      // ensure-on-connect address assignment and the connection is kept.
+      if (this.connectionStates[inactiveWallet.id]?.connected) return;
       try {
         await this.connectSparkWallet(inactiveWallet.id);
       } catch (error) {
@@ -1443,17 +1654,13 @@ export const useWalletStore = defineStore('wallet', {
           `Deferred Lightning address for ${inactiveWallet.name}:`,
           error?.message || error
         );
-      } finally {
-        try {
-          await this.disconnectWallet(inactiveWallet.id);
-        } catch (e) { /* the active connection stays untouched either way */ }
       }
     },
 
     /**
-     * Bring Spark wallets into the correct connection state: exactly ONE live
-     * connection — the active wallet — with every other Spark wallet
-     * disconnected.
+     * Bring Spark wallets into the correct connection state: every Spark
+     * wallet connected (#285). The history below explains the rule this
+     * replaced; it applied to the removed direct Spark SDK, not Breez.
      *
      * Why single-connection: the Spark SDK shares a single gRPC channel
      * (ConnectionManager.channelCache is keyed by operator address, NOT by
@@ -1471,22 +1678,18 @@ export const useWalletStore = defineStore('wallet', {
      * checkSparkWalletUnlock).
      */
     async connectAllSparkWallets() {
-      const activeId = this.activeWalletId;
-
-      // Tear down every non-active Spark provider so only one stays live.
-      for (const wallet of this.sparkWallets) {
-        if (wallet.id !== activeId) {
-          await this._disconnectSparkProvider(wallet.id);
-        }
-      }
-
-      // Connect the active wallet if it's Spark and not already live.
-      const active = this.wallets.find(w => w.id === activeId);
-      if (active?.type === WALLET_TYPES.SPARK && !this.connectionStates[activeId]?.connected) {
+      // Every Spark wallet stays live (#285): each has its own Breez
+      // instance and storage, so the unselected half of the pair keeps its
+      // balance, events, deposits and exit kit current. The active wallet
+      // connects first; the registry serializes per wallet.
+      const ordered = [...this.sparkWallets].sort((a, b) =>
+        (a.id === this.activeWalletId ? -1 : 0) - (b.id === this.activeWalletId ? -1 : 0));
+      for (const wallet of ordered) {
+        if (this.connectionStates[wallet.id]?.connected && this.providers[wallet.id]?.isConnected) continue;
         try {
-          await this.connectSparkWallet(activeId);
+          await this.connectSparkWallet(wallet.id);
         } catch (err) {
-          console.warn(`Failed to connect active Spark wallet "${active.name}":`, err.message);
+          console.warn(`Failed to connect Spark wallet "${wallet.name}":`, err.message);
         }
       }
     },
@@ -1579,6 +1782,7 @@ export const useWalletStore = defineStore('wallet', {
 
       // Now connect with the new device key encryption
       await this.connectAllSparkWallets();
+      sparkLifecycle?.()?.start();
     },
 
     // ==========================================
@@ -1677,7 +1881,7 @@ export const useWalletStore = defineStore('wallet', {
             delete this.providers[addedWalletId];
           }
           delete this.walletInfos[addedWalletId];
-          delete this.balances[addedWalletId];
+          this.forgetBalance(addedWalletId);
           delete this.connectionStates[addedWalletId];
           const idx = this.wallets.findIndex((w) => w.id === addedWalletId);
           if (idx !== -1) this.wallets.splice(idx, 1);
@@ -1744,7 +1948,7 @@ export const useWalletStore = defineStore('wallet', {
         };
 
         const balanceResult = await provider.getBalance();
-        this.balances[walletId] = balanceResult.balance;
+        this.applyBalance(walletId, balanceResult.balance, { source: 'connect' });
 
         const info = await provider.getInfo();
         this.walletInfos[walletId] = info;
@@ -1917,7 +2121,7 @@ export const useWalletStore = defineStore('wallet', {
           nwcInstance: nwc,
           error: null,
         };
-        this.balances[wallet.id] = balanceResponse.balance;
+        this.applyBalance(wallet.id, balanceResponse.balance, { source: 'connect' });
         this.walletInfos[wallet.id] = info;
 
         // Activate the newly added wallet
@@ -2006,7 +2210,7 @@ export const useWalletStore = defineStore('wallet', {
 
         // Store wallet data
         this.wallets.push(wallet);
-        this.balances[wallet.id] = validation.walletInfo.balance;
+        this.applyBalance(wallet.id, validation.walletInfo.balance, { source: 'connect' });
 
         // Activate the newly added wallet
         this.activeWalletId = wallet.id;
@@ -2059,7 +2263,7 @@ export const useWalletStore = defineStore('wallet', {
 
         // Get balance
         const balanceResult = await provider.getBalance();
-        this.balances[walletId] = balanceResult.balance;
+        this.applyBalance(walletId, balanceResult.balance, { source: 'connect' });
 
         // Get info
         const info = await provider.getInfo();
@@ -2138,7 +2342,8 @@ export const useWalletStore = defineStore('wallet', {
               delete this.providers[member.id];
             }
             delete this.connectionStates[member.id];
-            delete this.balances[member.id];
+            this.forgetBalance(member.id);
+            forgetSparkWallet?.(member.id);
             delete this.walletInfos[member.id];
             const idx = this.wallets.indexOf(member);
             if (idx !== -1) this.wallets.splice(idx, 1);
@@ -2155,7 +2360,8 @@ export const useWalletStore = defineStore('wallet', {
         // Remove from state
         this.wallets.splice(walletIndex, 1);
         delete this.connectionStates[walletId];
-        delete this.balances[walletId];
+        this.forgetBalance(walletId);
+        forgetSparkWallet?.(walletId);
         delete this.walletInfos[walletId];
         try { useExitKitStore().remove(walletId); } catch (e) { /* metadata only */ }
 
@@ -2221,17 +2427,13 @@ export const useWalletStore = defineStore('wallet', {
 
         // Ensure connected.
         if (wallet.type === WALLET_TYPES.SPARK) {
-          // Single live Spark connection (see connectAllSparkWallets): tear down
-          // every other Spark provider first so the wallet we switch TO is the
-          // only one authenticating against the shared SDK channel/auth cache,
-          // then connect it fresh. This is what stops the active wallet from
-          // losing its session after a switch on Android.
-          for (const w of this.sparkWallets) {
-            if (w.id !== walletId) {
-              await this._disconnectSparkProvider(w.id);
-            }
+          // Switching is a pointer flip (#285): the other Spark wallet stays
+          // connected. Connect this one only if it is not live yet, then let
+          // the lifecycle refresh it without blocking the switch.
+          if (!this.connectionStates[walletId]?.connected || !this.providers[walletId]?.isConnected) {
+            await this.connectSparkWallet(walletId);
           }
-          await this.connectSparkWallet(walletId);
+          sparkLifecycle?.()?.reconcile(walletId, 'switch');
         } else if (!this.connectionStates[walletId]?.connected) {
           if (wallet.type === WALLET_TYPES.LNBITS) {
             await this.connectLNBitsWallet(walletId);
@@ -2378,7 +2580,11 @@ export const useWalletStore = defineStore('wallet', {
           ]);
 
           if (!this.isBalanceReadCurrent(read)) return;
-          this.balances[walletId] = balanceResult.balance;
+          this.applyBalance(walletId, balanceResult.balance, {
+            source: balanceResult.fresh === false ? 'cache' : 'sync',
+            fresh: balanceResult.fresh !== false,
+            error: balanceResult.syncError || null,
+          });
           this.walletInfos[walletId] = info;
         } else if (wallet.type === WALLET_TYPES.LNBITS) {
           let provider = this.providers[walletId];
@@ -2394,7 +2600,7 @@ export const useWalletStore = defineStore('wallet', {
           ]);
 
           if (!this.isBalanceReadCurrent(read)) return;
-          this.balances[walletId] = balanceResult.balance;
+          this.applyBalance(walletId, balanceResult.balance, { source: 'sync' });
           this.walletInfos[walletId] = info;
         } else if (wallet.type === WALLET_TYPES.ARKADE) {
           let provider = this.providers[walletId];
@@ -2410,7 +2616,7 @@ export const useWalletStore = defineStore('wallet', {
           ]);
 
           if (!this.isBalanceReadCurrent(read)) return;
-          this.balances[walletId] = balanceResult.balance;
+          this.applyBalance(walletId, balanceResult.balance, { source: 'sync' });
           // Keep the unspendable remainder visible (see balanceDetails).
           this.balanceDetails[walletId] = {
             pending: Number(balanceResult.pending || 0),
@@ -2447,7 +2653,7 @@ export const useWalletStore = defineStore('wallet', {
           ]);
 
           if (!this.isBalanceReadCurrent(read)) return;
-          this.balances[walletId] = balanceResponse.balance;
+          this.applyBalance(walletId, balanceResponse.balance, { source: 'sync' });
           this.walletInfos[walletId] = info;
         }
 
@@ -2457,12 +2663,7 @@ export const useWalletStore = defineStore('wallet', {
         this.noticeIncomingPayment(wallet, newBalance);
         await this.persistState();
         if (!this.isBalanceReadCurrent(read)) return;
-
-        // Auto-withdraw check
-        if (newBalance > 0) {
-          const autoWithdrawStore = useAutoWithdrawStore();
-          autoWithdrawStore.checkAndExecute(walletId, newBalance, this);
-        }
+        // Auto-withdraw runs from applyBalance on a verified figure.
 
       } catch (error) {
         if (!this.isBalanceReadCurrent(read)) return;
@@ -2493,6 +2694,10 @@ export const useWalletStore = defineStore('wallet', {
      */
     noticeIncomingPayment(wallet, balanceAfter) {
       if (!wallet?.id || !Number.isFinite(balanceAfter) || balanceAfter < 0) return;
+      // Spark receipts are detected per payment id by the lifecycle's
+      // receipt ledger (#295); a balance difference would double-announce
+      // them and miss a receive that overlaps a send.
+      if ((wallet.type || this.wallets?.find?.((w) => w.id === wallet.id)?.type) === WALLET_TYPES.SPARK) return;
 
       // The previous figure is what THIS method last saw for the wallet, not
       // whatever the caller had on screen: the page's balance tick and this
@@ -2795,7 +3000,11 @@ export const useWalletStore = defineStore('wallet', {
       this.wallets = [];
       this.activeWalletId = null;
       this.connectionStates = {};
+      for (const id of Object.keys(this.balanceStates || {})) forgetSparkWallet?.(id);
       this.balances = {};
+      this.balanceStates = {};
+      this.sparkHealthStates = {};
+      this.pendingDepositsByWallet = {};
       this.walletInfos = {};
       this.providers = {};
       this.hasBackedUp = false;
@@ -2820,7 +3029,7 @@ export const useWalletStore = defineStore('wallet', {
         await this.disconnectWallet(wallet.id);
         // Clean up state for this wallet
         delete this.connectionStates[wallet.id];
-        delete this.balances[wallet.id];
+        this.forgetBalance(wallet.id);
         delete this.walletInfos[wallet.id];
         delete this.providers[wallet.id];
       }
@@ -2848,7 +3057,7 @@ export const useWalletStore = defineStore('wallet', {
         await this.disconnectWallet(wallet.id);
         // Clean up state for this wallet
         delete this.connectionStates[wallet.id];
-        delete this.balances[wallet.id];
+        this.forgetBalance(wallet.id);
         delete this.walletInfos[wallet.id];
         delete this.providers[wallet.id];
       }
@@ -3046,6 +3255,9 @@ export const useWalletStore = defineStore('wallet', {
       // that can fail with transport errors under flaky network conditions.
       let paymentResult;
       let invoice;
+      // The destination's receipt is the user's own move, not money
+      // arriving: recorded silently by the receipt ledger.
+      if (toType === 'spark') this.noteInternalTransfer(toWalletId, amountSats);
       if (fromType === 'spark' && toType === 'spark') {
         try {
           const sparkAddress = await toProvider.getSparkAddress();
@@ -3105,13 +3317,7 @@ export const useWalletStore = defineStore('wallet', {
         this.refreshWalletData(toWalletId)
       ]);
 
-      // A transfer between two Spark wallets has to connect both for the
-      // duration of the transfer (ensureWalletConnectedForTransfer). Restore
-      // the single-live-connection invariant afterwards so the non-active
-      // wallet doesn't linger and degrade the active one's session.
-      if (fromType === 'spark' && toType === 'spark') {
-        await this.connectAllSparkWallets();
-      }
+      // Both Spark wallets stay connected after a transfer (#285).
 
       // The source payment ID is already known: stamp it now so a direct
       // details link has its transfer identity without opening History first.

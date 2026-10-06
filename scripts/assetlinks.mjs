@@ -17,6 +17,17 @@
  *   npm run assetlinks -- list
  *   npm run assetlinks -- verify                          # check what is deployed
  *
+ * Listed today (issue #301):
+ *   F7:3C:25:…:41:B8  debug key, for local builds
+ *   26:C7:82:…:C7:EC  release upload key: the APK on GitHub and Zapstore (1.9.2+)
+ *
+ * TODO(#301): the Google Play app-signing key is still missing. Play re-signs
+ * the installs it serves with its own key, so App Links stay unverified for
+ * every Play install until that fingerprint is listed. Copy it from Play
+ * Console → Test and release → App integrity → App signing → "App signing key
+ * certificate" and run `npm run assetlinks -- add --sha256 <it>`. Do not guess
+ * it or reuse the upload key's value.
+ *
  * The password is never taken as an argument or read by this script: keytool
  * prompts for it directly, so it stays out of shell history and out of the
  * process table.

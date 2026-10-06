@@ -590,8 +590,11 @@
                   class="switch-balance"
                   :class="$q.dark.isActive ? 'switch-balance-dark' : 'switch-balance-light'"
                 >
-                  <span v-if="refreshingWalletIds[wallet.id] && storeBalances[wallet.id] === undefined" class="balance-placeholder" aria-hidden="true" />
-                  <HiddenAmount v-else>{{ formatBalance(storeBalances[wallet.id] || 0) }}</HiddenAmount>
+                  <!-- Same canonical figure as Settings and the standalone
+                       switcher: a known value (stale ones marked), else a
+                       placeholder — never an invented 0. -->
+                  <span v-if="!walletStore.getDisplayBalance(wallet.id).known" class="balance-placeholder" :aria-label="$t('Balance not loaded yet')" />
+                  <HiddenAmount v-else :class="{ 'balance-stale': walletStore.getDisplayBalance(wallet.id).isCached }">{{ formatBalance(walletStore.getDisplayBalance(wallet.id).balance) }}</HiddenAmount>
                 </div>
               </div>
 
@@ -913,6 +916,7 @@ import {resolveNostrLightningTarget} from '../services/nostrPaymentTarget';
 import {Invoice} from '@getalby/lightning-tools';
 import {parseLightningInvoice} from '../utils/lightningInvoice.js';
 import {fiatRatesService} from '../utils/fiatRates.js';
+import {SELECTABLE_FIAT_CURRENCIES, fiatSymbol} from '../utils/fiatCurrencies.js';
 import {formatMainBalance as formatMainBalanceUtil, formatAmount} from '../utils/amountFormatting.js';
 import {haptics} from '../utils/haptics.js';
 import {isNfcAvailable} from '../utils/nfc.js';
@@ -2129,8 +2133,7 @@ export default {
 
     balancePrefix() {
       if (this.currentDisplayMode === 'fiat') {
-        const symbols = { USD: '$', EUR: '€', GBP: '£', CAD: 'C$', CHF: 'CHF ', AUD: 'A$', JPY: '¥' };
-        return symbols[this.walletState.preferredFiatCurrency] || '';
+        return fiatSymbol(this.preferredFiatCurrency);
       }
       if (this.walletStore.useBip177Format) return '₿';
       return '';
@@ -2146,6 +2149,11 @@ export default {
     },
     preferredFiatCurrency() {
       return (this.walletState.preferredFiatCurrency || 'USD').toUpperCase();
+    },
+    /** The active wallet's canonical balance value (null when unknown). */
+    activeCanonicalBalance() {
+      const id = this.walletStore.activeWalletId;
+      return id ? (this.walletStore.balanceStates?.[id]?.value ?? null) : null;
     },
     /**
      * Sats amount to withdraw. Two read paths feed into this:
@@ -2261,6 +2269,28 @@ export default {
       immediate: true
     },
 
+    // Background syncs, SDK events and other screens update the store's
+    // canonical balance; the home figure follows it without a page timer.
+    activeCanonicalBalance: {
+      handler(value) {
+        if (value === null || value === undefined) return;
+        if (this.walletState.balance !== value) this.walletState.balance = value;
+        this.mirrorActiveBalance();
+      },
+      immediate: true
+    },
+
+    // The store owns the currency choice; the page copy only mirrors it.
+    'walletStore.preferredFiatCurrency': {
+      handler(code) {
+        if (code && this.walletState.preferredFiatCurrency !== code) {
+          this.walletState.preferredFiatCurrency = code;
+          this.updateSecondaryValue();
+        }
+      },
+      immediate: true
+    },
+
     /**
      * The Receive modal's "Redeem" button stashes the user's intended amount
      * in `pendingWithdrawTargetSats` and opens the redeem scanner so the
@@ -2289,7 +2319,7 @@ export default {
      */
     'walletStore.depositsRefreshSignal'() {
       if (this.walletStore.lastDepositsRefreshWalletId !== this.walletStore.activeWalletId) return;
-      this.pendingBitcoinDeposits = this.pendingBitcoinDeposits.filter(d => !this.walletStore.isDepositClaimed(d.txId));
+      this.pendingBitcoinDeposits = this.pendingBitcoinDeposits.filter(d => !this.walletStore.isDepositClaimed(d.txId, d.outputIndex));
       this.checkPendingBitcoinDeposits();
       this.updateWalletBalance();
     },
@@ -2731,18 +2761,11 @@ export default {
       if (this.showWalletSwitcher) return; // Prevent double-open
       this.showWalletSwitcher = true;
 
-      // Refresh the wallets' balances; each one pulses while its refresh is
-      // under way, and a placeholder stands in for one never loaded.
-      //
-      // Only live-refresh the active wallet. Refreshing an INACTIVE Spark
-      // wallet would reconnect it (refreshWalletData auto-connects on a
-      // miss), creating a second live Spark connection that corrupts the
-      // active wallet's SDK session (the SDK shares one gRPC channel +
-      // a global auth cache across instances). That's exactly what made
-      // the active wallet show "not connected" when this sheet opened.
-      // Inactive wallets render their cached balance via getDisplayBalance.
-      const wallets = this.walletStore.wallets.filter(w =>
-        !(w.type === 'spark' && w.id !== this.walletStore.activeWalletId));
+      // Refresh every wallet's balance; each one pulses while its refresh
+      // is under way, and a placeholder stands in for one never loaded.
+      // Spark wallets all stay connected (#285), so both halves of the pair
+      // refresh through the lifecycle; other wallets through the store.
+      const wallets = this.walletStore.wallets;
       for (const w of wallets) {
         this.refreshingWalletIds = { ...this.refreshingWalletIds, [w.id]: true };
       }
@@ -2750,7 +2773,8 @@ export default {
       await Promise.allSettled(
         wallets.map(async (w) => {
           try {
-            await this.walletStore.refreshWalletData(w.id);
+            if (w.type === 'spark') await this.walletStore.reconcileSpark([w.id], 'user');
+            else await this.walletStore.refreshWalletData(w.id);
           } catch { /* ignore */ }
           this.refreshingWalletIds = { ...this.refreshingWalletIds, [w.id]: false };
         })
@@ -2864,7 +2888,7 @@ export default {
         // list until its confirmations catch up. Filter it everywhere so
         // no banner, chip, or handler ever acts on a UTXO we already swept.
         const unclaimed = newDeposits.filter(
-          (d) => !this.walletStore.isDepositClaimed(d.txId)
+          (d) => !this.walletStore.isDepositClaimed(d.txId, d.outputIndex)
         );
 
         this.pendingBitcoinDeposits = unclaimed;
@@ -2905,7 +2929,7 @@ export default {
      * Handle deposits updated from ReceiveModal
      */
     handleBitcoinDepositsUpdated(deposits) {
-      this.pendingBitcoinDeposits = deposits.filter(d => !this.walletStore.isDepositClaimed(d.txId));
+      this.pendingBitcoinDeposits = deposits.filter(d => !this.walletStore.isDepositClaimed(d.txId, d.outputIndex));
     },
 
     /**
@@ -3094,7 +3118,7 @@ export default {
       try {
         await this.walletStore.switchActiveWallet(walletId);
         this.walletState.activeWalletId = walletId;
-        this.walletState.balance = this.storeBalances[walletId] || 0;
+        this.walletState.balance = this.walletStore.balanceStateFor(walletId).value ?? 0;
         localStorage.setItem('buhoGO_wallet_state', JSON.stringify(this.walletState));
 
         // Hold the guard until the post-switch data load actually
@@ -3135,7 +3159,7 @@ export default {
         this.walletState.activeWalletId = walletId;
 
         // Get the new active wallet's balance from the store
-        this.walletState.balance = this.storeBalances[walletId] || 0;
+        this.walletState.balance = this.walletStore.balanceStateFor(walletId).value ?? 0;
 
         // Save state to localStorage
         localStorage.setItem('buhoGO_wallet_state', JSON.stringify(this.walletState));
@@ -3299,7 +3323,13 @@ export default {
       if (savedState) {
         try {
           const parsedState = JSON.parse(savedState);
-          this.walletState = {...this.walletState, ...parsedState};
+          this.walletState = {
+            ...this.walletState,
+            ...parsedState,
+            preferredFiatCurrency: this.walletStore.preferredFiatCurrency || parsedState.preferredFiatCurrency || 'USD',
+            // A cache written by an older build may hold only some currencies.
+            exchangeRates: { ...(parsedState.exchangeRates || {}), ...(this.walletStore.exchangeRates || {}) },
+          };
           await this.updateWalletBalance();
         } catch (error) {
           console.error('Failed to load wallet state:', error);
@@ -3322,13 +3352,26 @@ export default {
      * the background (every rail lands in this number every 30 s); the store
      * keeps the previous figure itself and dedupes against its own refresh.
      */
-    applyTickBalance(next, read) {
+    applyTickBalance(next, read, { source = 'sync', fresh = true } = {}) {
       if (!this.walletStore.isBalanceReadCurrent(read)
         || this.activeWallet?.id !== read.walletId
         || !Number.isFinite(next) || next < 0) return false;
+      // Published to the store's canonical state (#293) so Settings, both
+      // switchers and the total see the same figure; the page mirrors it.
+      this.walletStore.applyBalance?.(read.walletId, next, { source, fresh });
       this.walletState.balance = next;
       this.balanceReadFor = read.walletId;
       this.walletStore.noticeIncomingPayment(this.activeWallet, next);
+      return true;
+    },
+
+    /** Mirror the canonical state of the active wallet onto the page. */
+    mirrorActiveBalance() {
+      const id = this.walletStore.activeWalletId;
+      const state = id ? this.walletStore.balanceStateFor(id) : null;
+      if (!state?.known) return false;
+      this.walletState.balance = state.value;
+      if (state.status === 'fresh' || state.source !== 'persisted') this.balanceReadFor = id;
       return true;
     },
 
@@ -3353,56 +3396,19 @@ export default {
         const preferCached = Boolean(opts.preferCached)
           && !awStore.getConfig(activeWalletId)?.enabled;
 
-        // Check if active wallet is Spark
+        // Spark: the app lifecycle owns synchronization, recovery and
+        // self-healing for both accounts (services/sparkLifecycle.js). The
+        // routine tick only mirrors the canonical state; a refresh the user
+        // is waiting on asks the lifecycle to reconcile now.
         if (this.walletStore.isActiveWalletSpark) {
-          // Try to get connected provider, auto-reconnects if session PIN available
-          try {
-            const provider = await this.walletStore.ensureSparkConnected();
-            if (this.walletStore.activeWalletId !== activeWalletId) return;
-            let balanceResult = preferCached && typeof provider.getCachedBalance === 'function'
-              ? await provider.getCachedBalance()
-              : await provider.getBalance();
-            // The SDK cache starts empty until the event stream has synced;
-            // a cached zero while we are showing funds means "not warmed
-            // yet", not "empty wallet" — re-read authoritatively rather
-            // than flashing 0.
-            if (preferCached && balanceResult.balance === 0 && this.walletState.balance > 0) {
-              balanceResult = await provider.getBalance();
-            }
-            if (!this.applyTickBalance(balanceResult.balance, read)) return;
-            localStorage.setItem('buhoGO_wallet_state', JSON.stringify(this.walletState));
-            this.exitHealthTick++;
-
-            // Auto-withdraw check (never reachable from a cached read: an
-            // enabled config forces the authoritative branch above)
-            if (balanceResult.balance > 0 && activeWalletId) {
-              awStore.checkAndExecute(activeWalletId, balanceResult.balance, this.walletStore);
-            }
-          } catch (err) {
-            // Silently fail for background refresh - user will see locked state
-            // Don't spam console with expected "PIN required" messages
-            if (!err.message?.includes('PIN')) {
-              console.warn('Balance refresh skipped:', err.message);
-              // Self-heal a dropped Spark connection. The provider's
-              // isConnected flag stays true after an idle stream death on
-              // Android, so ensureSparkConnected hands back a stale provider
-              // and the wallet gets stuck showing "locked". A non-PIN failure
-              // means the wallet IS unlocked but its connection died — force a
-              // fresh reconnect so the next tick (or a user action) finds a
-              // live instance, instead of requiring a manual switch-and-back.
-              if (this.walletStore.activeWalletId === activeWalletId && this.walletStore.isBalanceReadCurrent(read)) {
-                try {
-                  // forceReinit: the cached SDK instance is alive-but-dead (its
-                  // stream dropped), so getOrCreateWallet would just hand the
-                  // same broken instance back. Force a clean teardown + rebuild.
-                  await this.walletStore.connectSparkWallet(activeWalletId, { forceReinit: true });
-                } catch (reconnectErr) {
-                  console.warn('Spark auto-reconnect failed:', reconnectErr.message);
-                  this.exitHealthTick++;
-                }
-              }
-            }
+          if (!preferCached) {
+            await this.walletStore.reconcileSpark([activeWalletId], 'user');
           }
+          if (this.walletStore.activeWalletId !== activeWalletId || !this.walletStore.isBalanceReadCurrent(read)) return;
+          if (this.mirrorActiveBalance()) {
+            localStorage.setItem('buhoGO_wallet_state', JSON.stringify(this.walletState));
+          }
+          this.exitHealthTick++;
           return;
         }
 
@@ -3424,10 +3430,7 @@ export default {
 
             localStorage.setItem('buhoGO_wallet_state', JSON.stringify(this.walletState));
 
-            // Auto-withdraw check
-            if (balanceResult.balance > 0 && activeWalletId) {
-              awStore.checkAndExecute(activeWalletId, balanceResult.balance, this.walletStore);
-            }
+            // Auto-withdraw runs from the store's applyBalance.
           } catch (err) {
             // Background refresh failures are non-fatal: cached balance
             // stays visible and the next tick will retry. We log so issues
@@ -3455,9 +3458,6 @@ export default {
 
             localStorage.setItem('buhoGO_wallet_state', JSON.stringify(this.walletState));
 
-            if (balanceResult.balance > 0 && activeWalletId) {
-              awStore.checkAndExecute(activeWalletId, balanceResult.balance, this.walletStore);
-            }
           } catch (err) {
             console.warn('Arkade balance refresh failed:', err.message);
           }
@@ -3481,10 +3481,7 @@ export default {
 
           localStorage.setItem('buhoGO_wallet_state', JSON.stringify(this.walletState));
 
-          // Auto-withdraw check
-          if (balance.balance > 0 && activeWalletId) {
-            awStore.checkAndExecute(activeWalletId, balance.balance, this.walletStore);
-          }
+          // Auto-withdraw runs from the store's applyBalance.
         }
       } catch (error) {
         console.error('Failed to update balance:', error);
@@ -3639,15 +3636,17 @@ export default {
     async loadFiatRates() {
       try {
         const rates = await fiatRatesService.getRates();
-        this.walletState.exchangeRates = {
-          usd: rates.USD || 100000,
-          eur: rates.EUR || 85000,
-          gbp: rates.GBP || 75000,
-          cad: rates.CAD || 135000,
-          chf: rates.CHF || 90000,
-          aud: rates.AUD || 150000,
-          jpy: rates.JPY || 15000000
-        };
+        // Every selectable currency, from the one shared list. A rate the
+        // upstream did not deliver stays missing (the UI shows "--"); an
+        // invented rate would show the user a wrong value for their money.
+        const next = {};
+        for (const code of SELECTABLE_FIAT_CURRENCIES) {
+          const rate = Number(rates?.[code]);
+          const key = code.toLowerCase();
+          if (Number.isFinite(rate) && rate > 0) next[key] = rate;
+          else if (this.walletState.exchangeRates?.[key] > 0) next[key] = this.walletState.exchangeRates[key];
+        }
+        this.walletState.exchangeRates = next;
         this.walletState.lastRateUpdate = new Date();
         this.fiatRatesLoaded = true;
 
@@ -3656,19 +3655,8 @@ export default {
 
         console.log('Fiat rates loaded:', this.walletState.exchangeRates);
       } catch (error) {
+        // Keep whatever real rates are already known; never substitute guesses.
         console.error('Error loading fiat rates:', error);
-        // Keep existing rates or use fallbacks
-        if (!this.fiatRatesLoaded) {
-          this.walletState.exchangeRates = {
-            usd: 100000,
-            eur: 85000,
-            gbp: 75000,
-            cad: 135000,
-            chf: 90000,
-            aud: 150000,
-            jpy: 15000000
-          };
-        }
       }
     },
 
@@ -3848,20 +3836,7 @@ export default {
           return '--';
         }
 
-        const fiatValue = btcAmount * rate;
-
-        const symbols = {
-          USD: '$',
-          EUR: '€',
-          GBP: '£',
-          CAD: 'C$',
-          CHF: 'CHF ',
-          AUD: 'A$',
-          JPY: '¥'
-        };
-
-        const symbol = symbols[currency] || currency;
-        return currency === 'JPY' ? symbol + Math.round(fiatValue).toLocaleString() : symbol + fiatValue.toFixed(2);
+        return fiatRatesService.formatFiatAmount(btcAmount * rate, currency);
       }
     },
 
@@ -4297,7 +4272,9 @@ export default {
         // We confirm via `lookupInvoice` and fall through silently if
         // the event doesn't correspond to our payment hash.
         try {
-          const provider = await this.walletStore.ensureSparkConnected();
+          // Pinned to the wallet that minted the invoice: a switch while the
+          // withdraw is in flight must not move the watch to another account.
+          const provider = await this.walletStore.ensureSparkConnected(invoice.walletId || this.walletStore.activeWalletId);
           // Prefer the Spark receive request ID for getLightningReceiveRequest;
           // fall back to the payment hash, which lookupInvoice resolves via
           // the transfer-list scan.
@@ -7099,12 +7076,21 @@ export default {
   gap: 10px;
   padding: 0 1.25rem;
   margin-bottom: 1.5rem;
+  /* Never size to the content: a long memo's unwrapped width would
+     otherwise widen the section, and the card with it, past the screen. */
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
 }
 
 /* ── Card ──────────────────────────────────────────────────────── */
 .last-tx-card {
   width: 100%;
   max-width: 440px;
+  min-width: 0;
+  box-sizing: border-box;
+  overflow: hidden;
   display: flex;
   align-items: center;
   gap: 12px;
@@ -7265,6 +7251,8 @@ export default {
   align-items: flex-end;
   gap: 2px;
   min-width: 0;
+  /* The memo yields first, but the amount column cannot take the row. */
+  max-width: 45%;
 }
 
 .last-tx-amount {
@@ -7273,6 +7261,9 @@ export default {
   line-height: 1.2;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* ── History link ─────────────────────────────────────────────── */

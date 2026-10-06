@@ -302,11 +302,13 @@ export class FiatRatesService {
     const code = currency.toUpperCase();
     const symbol = FIAT_SYMBOLS[code] || code + ' ';
 
-    // JPY has no minor unit, so render it without decimals.
-    if (code === 'JPY') {
-      return symbol + Math.round(amount).toLocaleString();
-    }
-    return symbol + amount.toFixed(2);
+    // JPY has no minor unit, so render it without decimals. Grouped in
+    // every currency: a large amount must stay readable, never 248640555.00.
+    const digits = code === 'JPY' ? 0 : 2;
+    return symbol + Number(amount || 0).toLocaleString('en-US', {
+      minimumFractionDigits: digits,
+      maximumFractionDigits: digits,
+    });
   }
 
   /**

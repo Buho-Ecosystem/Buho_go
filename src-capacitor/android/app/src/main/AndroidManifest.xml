@@ -56,8 +56,8 @@
 
             <!-- Deep link: nostr: (NIP-21). The profile-share QR encodes
                  nostr:npub…, so scanning it with the system camera must
-                 offer BuhoGO — the deep-link handler resolves the profile
-                 to its Lightning address and opens the pay flow. -->
+                 offer BuhoGO — the deep-link handler opens that person's
+                 card, which offers both Pay and Save (issue #301). -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />

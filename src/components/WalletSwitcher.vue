@@ -166,7 +166,7 @@
                     <HiddenAmount>{{ formatBalanceWithLock(wallet.id) }}</HiddenAmount>
                   </template>
                   <template v-else>
-                    <HiddenAmount>{{ formatBalance(balances[wallet.id] || 0) }}</HiddenAmount>
+                    <HiddenAmount :class="{ 'balance-stale': getDisplayBalance(wallet.id).isCached }">{{ walletBalanceText(wallet.id) }}</HiddenAmount>
                   </template>
                 </div>
                 <div v-if="connectionStates[wallet.id]?.error" class="option-error">
@@ -286,7 +286,7 @@ export default {
 
     activeWalletBalance() {
       if (!this.activeWallet) return 0
-      return this.balances[this.activeWallet.id] || 0
+      return this.getDisplayBalance(this.activeWallet.id).balance
     },
 
     activeWalletDisplayName() {
@@ -410,15 +410,21 @@ export default {
       }
     },
 
+    /** Canonical figure, or a dash while unknown — never an invented 0. */
+    walletBalanceText(walletId) {
+      const d = this.getDisplayBalance(walletId)
+      return d.known ? this.formatBalance(d.balance) : '—'
+    },
+
     formatBalanceWithLock(walletId) {
       const displayData = this.getDisplayBalance(walletId)
 
-      if (displayData.isCached && displayData.balance > 0) {
-        // Show cached balance with indicator
+      // A known last value (a verified zero included) stays visible behind
+      // the lock icon; only a wallet with no value at all reads "Locked".
+      if (displayData.known) {
         return this.formatBalance(displayData.balance)
       }
 
-      // No cached balance available
       return this.$t('Locked')
     }
   }
