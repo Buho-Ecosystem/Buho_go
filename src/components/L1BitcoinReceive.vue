@@ -700,6 +700,7 @@ export default {
           // until confirmations catch up — never show them as claimable.
           const deposits = await provider.getPendingDeposits();
           if (walletId !== this.walletStore.activeWalletId) return;
+          this.walletStore.reconcileDepositClaims(deposits);
           this.pendingDeposits = deposits.filter(d => !this.walletStore.isDepositClaimed(d.txId, d.outputIndex));
           void this.bitcoinDepositsStore.processDeposits(this.pendingDeposits, walletId);
           this.$emit('deposits-updated', this.pendingDeposits);

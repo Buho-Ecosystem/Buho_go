@@ -10,12 +10,14 @@ import { test } from 'node:test';
 import { readFileSync } from 'node:fs';
 import { transformSync } from 'esbuild';
 import * as balanceState from '../../utils/balanceState.js';
+import * as breezPayments from '../../utils/breezPayments.js';
+import { createClaimedDepositRegistry } from '../../utils/claimedDeposits.js';
 
 globalThis.localStorage = { getItem: () => null, setItem() {}, removeItem() {} };
 
 const deferred = () => { let resolve, reject; const promise = new Promise((a, b) => { resolve = a; reject = b; }); return { promise, resolve, reject }; };
 
-function load({ createProvider }) {
+function load({ createProvider, extraDeps = {} }) {
   const source = readFileSync(new URL('../wallet.js', import.meta.url), 'utf8');
   const { code } = transformSync(source, { format: 'cjs', supported: { 'dynamic-import': false } });
   const deps = {
@@ -31,6 +33,7 @@ function load({ createProvider }) {
     '../boot/i18n': { i18n: { global: { t: (k) => k } } },
     '../utils/claimedDeposits.js': { createClaimedDepositRegistry: () => ({ has: () => false, add() {} }) },
     '../utils/backupStatus.js': { isWalletBackedUp: () => true },
+    ...extraDeps,
   };
   const module = { exports: {} };
   new Function('require', 'module', 'exports', code)((name) => deps[name] || {}, module, module.exports);
@@ -114,4 +117,36 @@ test('removing a grouped wallet removes its group, never an unrelated wallet', a
   await store.removeWallet('P');
   assert.deepEqual(store.wallets.map((w) => w.id), ['N']);
   assert.equal(store.activeWalletId, 'N', 'a surviving wallet is selected even when a sibling was active');
+});
+
+test('a claimed mark the SDK proves wrong is released; a fresh or in-flight one is not', () => {
+  const registry = createClaimedDepositRegistry();
+  const store = load({
+    createProvider: () => scriptedProvider(),
+    extraDeps: {
+      '../utils/breezPayments.js': breezPayments,
+      '../utils/claimedDeposits.js': { createClaimedDepositRegistry: () => registry },
+    },
+  });
+  const failedRow = (txid) => ({ txid, vout: 0, amountSats: 132516, isMature: true, claimError: { type: 'maxDepositClaimFeeExceeded' } });
+  // Marks from an earlier session (the lock bug): one per-output, one legacy bare txid.
+  registry.add('stuck:0');
+  registry.add('legacy');
+  const deposits = breezPayments.mergePendingDeposits({
+    chain: [], sdkRows: [failedRow('stuck'), failedRow('legacy'), failedRow('fresh'), failedRow('busy')], requiredConfirmations: 3,
+  });
+  store.markDepositClaimed('fresh', 0); // this session, moments ago
+  registry.add('busy:0');
+  store.markDepositClaimInFlight('busy', 0);
+
+  assert.equal(store.reconcileDepositClaims(deposits), 2);
+  assert.equal(store.isDepositClaimed('stuck', 0), false);
+  assert.equal(store.isDepositClaimed('legacy', 0), false);
+  assert.equal(store.isDepositClaimed('fresh', 0), true, 'a claim just made may meet a stale SDK read');
+  assert.equal(store.isDepositClaimed('busy', 0), true, 'a claim in flight is left alone');
+
+  // Explorer-only deposits carry no SDK proof and never release a mark.
+  registry.add('chainonly:0');
+  assert.equal(store.reconcileDepositClaims([{ txId: 'chainonly', outputIndex: 0, confirmed: true }]), 0);
+  assert.equal(store.isDepositClaimed('chainonly', 0), true);
 });

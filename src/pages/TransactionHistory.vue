@@ -2413,6 +2413,7 @@ export default {
         if (!current() || !provider?.getPendingDeposits) return;
         const deposits = await provider.getPendingDeposits();
         if (!current()) return;
+        this.walletStore.reconcileDepositClaims(deposits);
         this.pendingBitcoinDeposits = deposits.filter(d => !this.walletStore.isDepositClaimed(d.txId, d.outputIndex));
         void this.bitcoinDepositsStore.processDeposits(this.pendingBitcoinDeposits, walletId);
       } catch (error) {

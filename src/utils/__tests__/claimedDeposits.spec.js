@@ -150,5 +150,19 @@ test('custom storage key is honored', () => {
   assert.equal(CLAIMED_DEPOSITS_STORAGE_KEY in storage.data, false);
 });
 
+test('delete forgets a record durably and reports whether it existed', () => {
+  const storage = fakeStorage();
+  const reg = createClaimedDepositRegistry({ storage });
+  reg.add('tx1:0');
+  reg.add('tx2:0');
+  assert.equal(reg.delete('tx1:0'), true);
+  assert.equal(reg.has('tx1:0'), false);
+  assert.equal(reg.delete('tx1:0'), false, 'already gone');
+  assert.equal(reg.delete(undefined), false);
+  const reloaded = createClaimedDepositRegistry({ storage });
+  assert.equal(reloaded.has('tx1:0'), false, 'survives restart');
+  assert.equal(reloaded.has('tx2:0'), true);
+});
+
 console.log(`\n${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);
