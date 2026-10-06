@@ -11,6 +11,8 @@
  */
 
 import { strict as assert } from 'node:assert';
+import { readFileSync } from 'node:fs';
+import { transformSync } from 'esbuild';
 
 // ---------------------------------------------------------------------------
 // Browser globals shim — must be installed before the module under test
@@ -197,6 +199,158 @@ await test('cancelPendingSensitiveClear() is a no-op when nothing is scheduled',
   cancelPendingSensitiveClear();
   // No throw is the assertion.
 });
+
+
+// Enforce the browser contract, rather than a permissive writeText mock.
+const deferred = () => {
+  let resolve;
+  let reject;
+  const promise = new Promise((yes, no) => { resolve = yes; reject = no; });
+  return { promise, resolve, reject };
+};
+let inClick = false;
+let requests = 0;
+globalThis.ClipboardItem = class {
+  constructor(data) { this.content = data['text/plain']; }
+};
+clipboard.write = function ([item]) {
+  requests++;
+  assert.ok(inClick, 'browser write must start before returning from the click');
+  return item.content.then(async blob => { this.writes.push(await blob.text()); });
+};
+function click(fn) {
+  inClick = true;
+  try { return fn(); } finally { inClick = false; }
+}
+
+await test('asynchronous secrets reserve clipboard access synchronously', async () => {
+  const source = deferred();
+  const before = requests;
+  const copy = click(() => copySensitive(() => source.promise));
+  assert.equal(requests, before + 1);
+  assert.deepEqual(clipboard.writes, []);
+  source.resolve('dummy secret');
+  await copy;
+  assert.deepEqual(clipboard.writes, ['dummy secret']);
+});
+
+await test('plain text also starts its write before the click returns', async () => {
+  const copy = copySensitive('dummy secret');
+  assert.deepEqual(clipboard.writes, ['dummy secret']);
+  await copy;
+});
+
+await test('a rejected secret is not copied and a retry works', async () => {
+  const copy = click(() => copySensitive(async () => { throw new Error('locked'); }));
+  await assert.rejects(copy, /locked/);
+  assert.deepEqual(clipboard.writes, []);
+  await click(() => copySensitive(async () => 'retry'));
+  assert.deepEqual(clipboard.writes, ['retry']);
+});
+
+await test('a superseded asynchronous secret is never supplied to the clipboard', async () => {
+  const source = deferred();
+  const first = click(() => copySensitive(() => source.promise));
+  const rejected = assert.rejects(first, { name: 'AbortError' });
+  await Promise.resolve();
+  await click(() => copySensitive(async () => 'newer'));
+  source.resolve('stale');
+  await rejected;
+  assert.deepEqual(clipboard.writes, ['newer']);
+});
+
+await test('permission rejection does not leave an unhandled source rejection', async () => {
+  const original = clipboard.write;
+  const source = deferred();
+  let content;
+  clipboard.write = ([item]) => {
+    content = item.content;
+    return Promise.reject(new DOMException('denied', 'NotAllowedError'));
+  };
+  try {
+    await assert.rejects(copySensitive(() => source.promise), { name: 'NotAllowedError' });
+    source.reject(new Error('locked later'));
+    await assert.rejects(content, /locked later/);
+    await wait(10);
+    assert.deepEqual(clipboard.writes, []);
+  } finally { clipboard.write = original; }
+});
+
+await test('unsupported async clipboard does not request the secret', async () => {
+  const Item = globalThis.ClipboardItem;
+  delete globalThis.ClipboardItem;
+  let requested = false;
+  try {
+    await assert.rejects(copySensitive(async () => { requested = true; return 'secret'; }), /unavailable/);
+    assert.equal(requested, false);
+  } finally { globalThis.ClipboardItem = Item; }
+});
+
+await test('an old acknowledgment cannot replace the newer clipboard-clear timer', async () => {
+  const original = clipboard.writeText;
+  const acknowledgment = deferred();
+  clipboard.writeText = function (text) {
+    this.writes.push(text);
+    return text === 'first' ? acknowledgment.promise : Promise.resolve();
+  };
+  try {
+    const first = copySensitive('first', { durationMs: 20 });
+    const rejected = assert.rejects(first, { name: 'AbortError' });
+    await copySensitive('second', { durationMs: 60 });
+    acknowledgment.resolve();
+    await rejected;
+    await wait(35);
+    assert.deepEqual(clipboard.writes, ['first', 'second']);
+    await wait(50);
+    assert.deepEqual(clipboard.writes, ['first', 'second', '']);
+  } finally { clipboard.writeText = original; }
+});
+
+// Load the actual helper with the native bridge stubbed, as in component tests.
+function nativeHelper(write) {
+  const source = readFileSync(new URL('../sensitiveClipboard.js', import.meta.url), 'utf8');
+  const { code } = transformSync(source, { format: 'cjs', supported: { 'dynamic-import': false } });
+  const module = { exports: {} };
+  const dependencies = {
+    '@capacitor/core': { Capacitor: { isNativePlatform: () => true } },
+    '@capacitor/clipboard': { Clipboard: { write } },
+  };
+  new Function('require', 'module', 'exports', code)(name => {
+    assert.ok(name in dependencies, `Unexpected dependency: ${name}`);
+    return dependencies[name];
+  }, module, module.exports);
+  return module.exports;
+}
+
+await test('native copy waits for the secret and clears through the native bridge', async () => {
+  const writes = [];
+  const native = nativeHelper(async ({ string }) => writes.push(string));
+  const source = deferred();
+  try {
+    const copy = native.copySensitive(() => source.promise, { durationMs: 20 });
+    assert.deepEqual(writes, []);
+    source.resolve('native dummy');
+    await copy;
+    assert.deepEqual(writes, ['native dummy']);
+    await wait(50);
+    assert.deepEqual(writes, ['native dummy', '']);
+    assert.deepEqual(clipboard.writes, []);
+  } finally { native.cancelPendingSensitiveClear(); }
+});
+
+await test('native source cancellation never reaches the clipboard bridge', async () => {
+  const native = nativeHelper(() => assert.fail('must not write'));
+  await assert.rejects(native.copySensitive(async () => { throw new Error('cancelled'); }), /cancelled/);
+  assert.deepEqual(clipboard.writes, []);
+});
+
+await test('native clipboard failure does not fall through to browser copying', async () => {
+  const native = nativeHelper(async () => { throw new Error('native denied'); });
+  await assert.rejects(native.copySensitive('native dummy'), /native denied/);
+  assert.deepEqual(clipboard.writes, []);
+});
+
+cancelPendingSensitiveClear();
 
 console.log(`\n  ${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);

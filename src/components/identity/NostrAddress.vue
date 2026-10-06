@@ -16,7 +16,7 @@
       :width="iconSize"
       :height="iconSize"
       class="nostr-address-check"
-      aria-hidden="true"
+      :aria-hidden="true"
     />
     <span class="nostr-address-text"><span
       v-if="parts.local"
