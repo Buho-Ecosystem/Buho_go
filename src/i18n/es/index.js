@@ -1,7 +1,9 @@
+import profilePayment from './profilePayment.js';
 import addressRequest from './addressRequest.js';
 import backup from './backup.js';
 import exit from './exit.js';
 export default {
+  ...profilePayment,
   "Charge card": "Cobrar a la tarjeta",
   "Charge": "Cobrar",
   "Slide to charge": "Desliza para cobrar",
