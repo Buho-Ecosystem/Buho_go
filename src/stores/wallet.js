@@ -1715,18 +1715,13 @@ export const useWalletStore = defineStore('wallet', {
         const previous = previousAddresses
           .filter(Boolean)
           .map((value) => String(value).toLowerCase());
-        const changed = profile.adoptDefaultPaymentAddress(preferred, {
+        profile.adoptDefaultPaymentAddress(preferred, {
           isReplaceable: (current) => {
             const value = String(current).toLowerCase();
             return isNpubCashAddress(value) || previous.includes(value);
           },
         });
-        if (!changed) return;
-
-        const result = await profile.publish().catch(() => null);
-        if (!result?.ok) {
-          console.warn('[wallet] profile address saved locally, publish will retry');
-        }
+        // The shared profile lifecycle publishes and retries this durable edit.
       } catch (err) {
         console.warn('[wallet] could not sync the profile payment address:', err);
       }

@@ -481,10 +481,9 @@ export default {
           const address = this.walletStore.preferredProfileLightningAddress
             || npubCashAddress(this.identity.nostrNpub);
           if (address) {
-            const changed = this.profile.adoptDefaultPaymentAddress(address, {
+            this.profile.adoptDefaultPaymentAddress(address, {
               isReplaceable: isNpubCashAddress,
             });
-            if (changed) this.profile.publish().catch(() => {});
           }
         }
 

@@ -33,23 +33,18 @@ export default defineConfig((ctx) => {
       // forceSecure override guard. Safe to load everywhere — the
       // util layer no-ops on web.
       'secure-screen',
-      // 'nip05' keeps the published username honest (drops the retired free
-      // handle, checks names this phone never recorded) and finishes paid
-      // purchases that outlived the claim sheet. Registers nothing.
-      // Best-effort and idempotent; safe everywhere (plain fetches).
-      'nip05',
+      // Durable profile recovery, username activation and publication.
+      'profile-sync',
       // 'payment-address' gives every identity a payment address it did not
       // have to go and find: the first Spark wallet's Lightning address when
       // one exists, the Social Bucket (<npub>@npub.cash) otherwise, adopted
       // as the profile's lud16 and published. Without this a new user's
       // username resolves to a profile with nothing to pay. Best-effort and
-      // idempotent, same as 'nip05'.
+      // idempotent. Profile synchronization publishes the resulting edits.
       'payment-address',
       // 'emergency-exit' resumes any exit in progress: chain checks and the
       // next package broadcasts, independent of Spark being reachable.
       'emergency-exit',
-      // Keep profile changes synced quietly; publishing is not a user task.
-      'profile-sync',
       ctx.mode.capacitor ? 'deep-links' : '',
       ctx.mode.capacitor ? 'nfc' : '',
       ctx.dev ? 'audit' : ''
