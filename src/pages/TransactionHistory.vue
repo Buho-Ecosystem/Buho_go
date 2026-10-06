@@ -778,7 +778,7 @@ export default {
     return {
       isLoading: true,
       isRefreshing: false,
-      activeFilter: 'week',
+      activeFilter: 'all',
       transactions: [],
       walletState: {},
       walletStore: null,
