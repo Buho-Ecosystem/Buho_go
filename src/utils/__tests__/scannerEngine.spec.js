@@ -15,10 +15,13 @@ import { test } from 'node:test';
 import {
   ENGINE_MEMORY_KEY,
   NATIVE_ERROR,
+  NATIVE_STRIKES_TO_PERSIST,
   createEngineMemory,
   createScanErrorGate,
   isFatalScanErrorMessage,
+  isStructuralNativeFailure,
   shouldFallBackToWeb,
+  shouldRetryNativeAfterWebFailure,
   withTimeout,
 } from '../scannerEngine.js';
 
@@ -96,39 +99,135 @@ test('withTimeout rejects with the coded error when the deadline fires first', a
   await assert.rejects(pending, (err) => err.code === NATIVE_ERROR.START_TIMEOUT && /6000/.test(err.message));
 });
 
+test('structural failures are the plugin or decoder being unusable; start failures are ambiguous', () => {
+  assert.equal(isStructuralNativeFailure(NATIVE_ERROR.UNAVAILABLE), true);
+  assert.equal(isStructuralNativeFailure(NATIVE_ERROR.DECODER_FAILED), true);
+  assert.equal(isStructuralNativeFailure(NATIVE_ERROR.START_FAILED), false);
+  assert.equal(isStructuralNativeFailure(NATIVE_ERROR.START_TIMEOUT), false);
+  assert.equal(isStructuralNativeFailure(NATIVE_ERROR.PERMISSION_DENIED), false);
+  assert.equal(isStructuralNativeFailure(undefined), false);
+});
+
+test('a failed web start retries native only when native was skipped and permission is not the problem', () => {
+  const busy = Object.assign(new Error('Could not start video source'), { name: 'NotReadableError' });
+  const denied = Object.assign(new Error('Permission denied'), { name: 'NotAllowedError' });
+  const insecure = Object.assign(new Error('insecure'), { name: 'SecurityError' });
+  assert.equal(shouldRetryNativeAfterWebFailure({ triedNative: false, nativeAvailable: true, webError: busy }), true);
+  assert.equal(shouldRetryNativeAfterWebFailure({ triedNative: false, nativeAvailable: true, webError: new Error('x') }), true);
+  assert.equal(shouldRetryNativeAfterWebFailure({ triedNative: true, nativeAvailable: true, webError: busy }), false);
+  assert.equal(shouldRetryNativeAfterWebFailure({ triedNative: false, nativeAvailable: false, webError: busy }), false);
+  assert.equal(shouldRetryNativeAfterWebFailure({ triedNative: false, nativeAvailable: true, webError: denied }), false);
+  assert.equal(shouldRetryNativeAfterWebFailure({ triedNative: false, nativeAvailable: true, webError: insecure }), false);
+});
+
 test('engine memory starts out trusting native', () => {
   const memory = createEngineMemory({ storage: memStorage(), appVersion: '1.9.2' });
   assert.equal(memory.isNativeDemoted(), false);
   assert.equal(memory.peek(), null);
 });
 
-test('a demotion is remembered with its reason and cleared by restore', () => {
-  const storage = memStorage();
-  const memory = createEngineMemory({ storage, now: () => 1000, appVersion: '1.9.2' });
-  memory.demoteNative(NATIVE_ERROR.START_TIMEOUT);
+test('any failure demotes native for the rest of the session', () => {
+  const memory = createEngineMemory({ storage: memStorage(), now: () => 1000, appVersion: '1.9.2' });
+  memory.recordNativeFailure(NATIVE_ERROR.START_FAILED);
   assert.equal(memory.isNativeDemoted(), true);
-  assert.deepEqual(memory.peek(), { at: 1000, version: '1.9.2', reason: NATIVE_ERROR.START_TIMEOUT });
+  assert.deepEqual(memory.peek(), { at: 1000, version: '1.9.2', reason: NATIVE_ERROR.START_FAILED, strikes: 1 });
+});
+
+test('a single ambiguous failure does not survive a restart', () => {
+  // The healthy-phone case: camera held by another app, or a slow cold start.
+  const storage = memStorage();
+  for (const code of [NATIVE_ERROR.START_FAILED, NATIVE_ERROR.START_TIMEOUT]) {
+    storage.map.clear();
+    createEngineMemory({ storage, now: () => 1000, appVersion: '1.9.2' }).recordNativeFailure(code);
+    const nextLaunch = createEngineMemory({ storage, now: () => 2000, appVersion: '1.9.2' });
+    assert.equal(nextLaunch.isNativeDemoted(), false, code);
+  }
+});
+
+test('repeated ambiguous failures across launches are remembered', () => {
+  const storage = memStorage();
+  createEngineMemory({ storage, now: () => 1000, appVersion: '1.9.2' }).recordNativeFailure(NATIVE_ERROR.START_TIMEOUT);
+  const second = createEngineMemory({ storage, now: () => 2000, appVersion: '1.9.2' });
+  assert.equal(second.isNativeDemoted(), false);
+  second.recordNativeFailure(NATIVE_ERROR.START_TIMEOUT);
+  const third = createEngineMemory({ storage, now: () => 3000, appVersion: '1.9.2' });
+  assert.equal(third.isNativeDemoted(), true);
+  assert.equal(third.peek().strikes, NATIVE_STRIKES_TO_PERSIST);
+});
+
+test('strikes count launches: repeated failures in one session add a single strike', () => {
+  const storage = memStorage();
+  const session = createEngineMemory({ storage, now: () => 1000, appVersion: '1.9.2' });
+  session.recordNativeFailure(NATIVE_ERROR.START_FAILED);
+  session.recordNativeFailure(NATIVE_ERROR.START_FAILED);
+  session.recordNativeFailure(NATIVE_ERROR.START_TIMEOUT);
+  assert.equal(session.peek().strikes, 1);
+  assert.equal(createEngineMemory({ storage, now: () => 2000, appVersion: '1.9.2' }).isNativeDemoted(), false);
+});
+
+test('a structural failure later in the same session still persists', () => {
+  const storage = memStorage();
+  const session = createEngineMemory({ storage, now: () => 1000, appVersion: '1.9.2' });
+  session.recordNativeFailure(NATIVE_ERROR.START_FAILED);
+  session.recordNativeFailure(NATIVE_ERROR.DECODER_FAILED);
+  assert.deepEqual(session.peek(), { at: 1000, version: '1.9.2', reason: NATIVE_ERROR.DECODER_FAILED, strikes: 1 });
+  assert.equal(createEngineMemory({ storage, now: () => 2000, appVersion: '1.9.2' }).isNativeDemoted(), true);
+  // …and a later ambiguous failure in that session does not downgrade it.
+  session.recordNativeFailure(NATIVE_ERROR.START_FAILED);
+  assert.equal(session.peek().reason, NATIVE_ERROR.DECODER_FAILED);
+});
+
+test('a structural failure is remembered across restarts at once', () => {
+  for (const code of [NATIVE_ERROR.DECODER_FAILED, NATIVE_ERROR.UNAVAILABLE]) {
+    const storage = memStorage();
+    createEngineMemory({ storage, now: () => 1000, appVersion: '1.9.2' }).recordNativeFailure(code);
+    assert.equal(createEngineMemory({ storage, now: () => 2000, appVersion: '1.9.2' }).isNativeDemoted(), true, code);
+  }
+});
+
+test('a native success clears both the session and the stored record', () => {
+  const storage = memStorage();
+  const memory = createEngineMemory({ storage, appVersion: '1.9.2' });
+  memory.recordNativeFailure(NATIVE_ERROR.DECODER_FAILED);
   memory.restoreNative();
   assert.equal(memory.isNativeDemoted(), false);
   assert.equal(storage.map.has(ENGINE_MEMORY_KEY), false);
+  // The strike count starts over after a success.
+  memory.recordNativeFailure(NATIVE_ERROR.START_FAILED);
+  assert.equal(memory.peek().strikes, 1);
 });
 
-test('an app update re-probes native', () => {
+test('an app update re-probes native and restarts the strike count', () => {
   const storage = memStorage();
-  createEngineMemory({ storage, now: () => 1000, appVersion: '1.9.2' }).demoteNative('x');
+  const old = createEngineMemory({ storage, now: () => 1000, appVersion: '1.9.2' });
+  old.recordNativeFailure(NATIVE_ERROR.DECODER_FAILED);
   assert.equal(createEngineMemory({ storage, now: () => 2000, appVersion: '1.9.2' }).isNativeDemoted(), true);
-  assert.equal(createEngineMemory({ storage, now: () => 2000, appVersion: '1.9.3' }).isNativeDemoted(), false);
+  const updated = createEngineMemory({ storage, now: () => 2000, appVersion: '1.9.3' });
+  assert.equal(updated.isNativeDemoted(), false);
+  updated.recordNativeFailure(NATIVE_ERROR.START_FAILED);
+  assert.deepEqual(updated.peek(), { at: 2000, version: '1.9.3', reason: NATIVE_ERROR.START_FAILED, strikes: 1 });
 });
 
 test('without a build version the memory still expires on its TTL', () => {
   const storage = memStorage();
   let now = 0;
-  const memory = createEngineMemory({ storage, now: () => now, ttlMs: 500 });
-  memory.demoteNative('x');
+  createEngineMemory({ storage, now: () => now, ttlMs: 500 }).recordNativeFailure(NATIVE_ERROR.DECODER_FAILED);
+  const later = createEngineMemory({ storage, now: () => now, ttlMs: 500 });
   now = 499;
-  assert.equal(memory.isNativeDemoted(), true);
+  assert.equal(later.isNativeDemoted(), true);
   now = 501;
+  assert.equal(later.isNativeDemoted(), false);
+});
+
+test('records from before strike counting are treated as a single strike', () => {
+  const legacy = JSON.stringify({ at: 1000, version: '1.9.2', reason: NATIVE_ERROR.START_TIMEOUT });
+  const storage = memStorage({ [ENGINE_MEMORY_KEY]: legacy });
+  const memory = createEngineMemory({ storage, now: () => 2000, appVersion: '1.9.2' });
   assert.equal(memory.isNativeDemoted(), false);
+  memory.recordNativeFailure(NATIVE_ERROR.START_TIMEOUT);
+  assert.equal(memory.peek().strikes, 2);
+  const structural = memStorage({ [ENGINE_MEMORY_KEY]: JSON.stringify({ at: 1000, version: '1.9.2', reason: NATIVE_ERROR.DECODER_FAILED }) });
+  assert.equal(createEngineMemory({ storage: structural, now: () => 2000, appVersion: '1.9.2' }).isNativeDemoted(), true);
 });
 
 test('corrupt or missing storage never blocks the native attempt or throws', () => {
@@ -137,12 +236,16 @@ test('corrupt or missing storage never blocks the native attempt or throws', () 
   const wrongShape = createEngineMemory({ storage: memStorage({ [ENGINE_MEMORY_KEY]: '"string"' }) });
   assert.equal(wrongShape.isNativeDemoted(), false);
   const none = createEngineMemory({ storage: null });
-  assert.doesNotThrow(() => none.demoteNative('x'));
+  assert.equal(none.isNativeDemoted(), false);
+  assert.doesNotThrow(() => none.recordNativeFailure('x'));
+  // No storage: the session layer still keeps the retry loop from repeating.
+  assert.equal(none.isNativeDemoted(), true);
   assert.doesNotThrow(() => none.restoreNative());
   assert.equal(none.isNativeDemoted(), false);
   const throwing = createEngineMemory({
     storage: { getItem() { throw new Error('blocked'); }, setItem() { throw new Error('blocked'); }, removeItem() { throw new Error('blocked'); } },
   });
-  assert.doesNotThrow(() => throwing.demoteNative('x'));
   assert.equal(throwing.isNativeDemoted(), false);
+  assert.doesNotThrow(() => throwing.recordNativeFailure('x'));
+  assert.doesNotThrow(() => throwing.restoreNative());
 });

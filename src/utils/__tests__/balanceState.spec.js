@@ -80,3 +80,31 @@ test('invalid numbers never replace a value', () => {
   const s = nextBalanceState(emptyBalanceState(), { value: 7, at: NOW });
   for (const bad of [NaN, -1, 'abc', null]) assert.equal(nextBalanceState(s, { value: bad, at: NOW + 1 }).value, 7);
 });
+
+test('after a failed sync, a cache read cannot replace saved funds or invent a zero (#297 review)', () => {
+  const saved = hydrateBalanceState({ metadata: { cachedBalance: 25000 } });
+  // Sync failed; the SDK cache is empty and reads 0.
+  const afterFail = nextBalanceState(saved, { value: 0, source: 'cache', fresh: false, at: NOW, error: 'Spark did not answer the sync' });
+  assert.equal(afterFail.value, 25000);
+  assert.equal(afterFail.error, 'Spark did not answer the sync');
+  // A later partial-event cache read neither replaces it nor clears the error.
+  const partial = nextBalanceState(afterFail, { value: 0, source: 'cache', fresh: false, at: NOW + 1000 });
+  assert.equal(partial.value, 25000);
+  assert.ok(partial.error);
+  // Unknown stays unknown after a failure.
+  const unknown = nextBalanceState(emptyBalanceState(), { value: 0, source: 'cache', fresh: false, at: NOW, error: 'timeout' });
+  assert.equal(unknown.value, null);
+  assert.equal(describeBalance(unknown, { now: NOW }).status, BALANCE_STATUS.ERROR);
+  // A verified refresh recovers, including a real zero.
+  const recovered = nextBalanceState(partial, { value: 0, source: 'sync', at: NOW + 2000 });
+  assert.equal(recovered.value, 0);
+  assert.equal(recovered.error, null);
+});
+
+test('a cache read that changes a verified value is not presented as verified', () => {
+  const verified = nextBalanceState(emptyBalanceState(), { value: 100, source: 'sync', at: NOW });
+  const changed = nextBalanceState(verified, { value: 150, source: 'cache', fresh: false, at: NOW + 1000 });
+  assert.equal(changed.value, 150);
+  assert.equal(changed.verifiedAt, null);
+  assert.equal(describeBalance(changed, { now: NOW + 1000 }).status, BALANCE_STATUS.STALE);
+});

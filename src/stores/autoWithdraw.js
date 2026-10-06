@@ -152,6 +152,7 @@ export const useAutoWithdrawStore = defineStore('autoWithdraw', {
         if ((wallet.type || '').toLowerCase() === WALLET_TYPES.SPARK) {
           const provider = walletStore.providers?.[baseWalletId]
           if (typeof provider?.getBalance !== 'function') return
+          const epoch = walletStore.walletEpoch?.(baseWalletId)
           let fresh
           try {
             fresh = await provider.getBalance({ requireFresh: true })
@@ -160,6 +161,13 @@ export const useAutoWithdrawStore = defineStore('autoWithdraw', {
             _lastTriggerTime.set(configKey, Date.now() - COOLDOWN_MS + FAILURE_RETRY_MS)
             return
           }
+          // The verified read can take seconds. The rule may have been turned
+          // off or edited, the wallet removed or its connection rebuilt in
+          // the meantime: re-check all of it before any money moves.
+          if (this.configs[configKey] !== config || !config.enabled
+            || !walletStore.wallets.includes(wallet)
+            || walletStore.walletEpoch?.(baseWalletId) !== epoch
+            || walletStore.providers?.[baseWalletId] !== provider) return
           verifiedBalance = Number(fresh?.balance)
           if (!Number.isFinite(verifiedBalance) || verifiedBalance <= threshold) return
         }

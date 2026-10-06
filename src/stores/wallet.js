@@ -23,6 +23,8 @@ import { useAutoWithdrawStore } from './autoWithdraw';
 import { useNotificationsStore } from './notifications';
 import { formatAmount } from '../utils/amountFormatting.js';
 import { internalTransferTransactionId } from '../utils/internalTransferDetails.js';
+import { paymentHashOf } from '../utils/breezPayments.js';
+import { Invoice } from '@getalby/lightning-tools';
 import {
   emptyBalanceState,
   hydrateBalanceState,
@@ -41,6 +43,12 @@ export function depositClaimKey(txId, outputIndex) {
 const observedBalance = new Map();
 // Shared by page ticks and store refreshes; the newest request owns its result.
 const balanceReads = new Map();
+// walletId -> { epoch, promise }: one store-level Spark connection attempt.
+const sparkConnects = new Map();
+// walletId -> bumped on disconnect, rebuild and removal. Work started under
+// an older epoch must not publish providers, balances or info afterwards.
+const walletEpochs = new Map();
+const epochOf = (walletId) => walletEpochs.get(walletId) || 0;
 import { useTransactionMetadataStore } from './transactionMetadata';
 import { isLightningAddress } from '../utils/addressUtils.js';
 import { createClaimedDepositRegistry } from '../utils/claimedDeposits.js';
@@ -926,16 +934,20 @@ export const useWalletStore = defineStore('wallet', {
      * receipt matching one is the user's own move, never announced as
      * money arriving (services/paymentReceipts.js).
      */
-    noteInternalTransfer(toWalletId, amountSats, { windowMs = 10 * 60 * 1000 } = {}) {
+    noteInternalTransfer(toWalletId, paymentHash, { windowMs = 10 * 60 * 1000 } = {}) {
+      // Identity only: an amount cannot identify a payment, and matching on
+      // it would hide an unrelated receipt of the same size (#297 review).
+      if (!toWalletId || !paymentHash) return;
       this._internalTransfers = (this._internalTransfers || []).filter((t) => t.until > Date.now());
-      this._internalTransfers.push({ toWalletId, amountSats: Number(amountSats) || 0, until: Date.now() + windowMs });
+      this._internalTransfers.push({ toWalletId, paymentHash: String(paymentHash).toLowerCase(), until: Date.now() + windowMs });
     },
 
     isInternalTransferReceipt(walletId, payment) {
       const list = (this._internalTransfers || []).filter((t) => t.until > Date.now());
       this._internalTransfers = list;
-      const amount = Number(payment?.amount ?? 0);
-      const idx = list.findIndex((t) => t.toWalletId === walletId && (!t.amountSats || t.amountSats === amount));
+      const hash = String(paymentHashOf(payment) || payment?.paymentHash || '').toLowerCase();
+      if (!hash) return false;
+      const idx = list.findIndex((t) => t.toWalletId === walletId && t.paymentHash === hash);
       if (idx === -1) return false;
       list.splice(idx, 1);
       return true;
@@ -1466,10 +1478,53 @@ export const useWalletStore = defineStore('wallet', {
      * @param {string} walletId - Wallet ID
      */
     async connectSparkWallet(walletId, { forceReinit = false } = {}) {
+      // Serialized per wallet: concurrent callers (startup, lifecycle,
+      // switch, transfer) share one attempt instead of building separate
+      // providers that race to publish.
+      const pending = sparkConnects.get(walletId);
+      if (pending) {
+        if (!forceReinit && pending.epoch === epochOf(walletId)) return pending.promise;
+        await pending.promise.catch(() => {});
+        return this.connectSparkWallet(walletId, { forceReinit });
+      }
+      if (!forceReinit && this.providers[walletId]?.isConnected && this.connectionStates[walletId]?.connected) {
+        return;
+      }
+      if (forceReinit || this.providers[walletId]) {
+        this._bumpWalletEpoch(walletId);
+        if (this.providers[walletId]) this.providers[walletId].isConnected = false;
+      }
+      const entry = { epoch: epochOf(walletId), promise: null };
+      entry.promise = this._initializeSparkWallet(walletId, { forceReinit, epoch: entry.epoch });
+      sparkConnects.set(walletId, entry);
+      try {
+        return await entry.promise;
+      } finally {
+        if (sparkConnects.get(walletId) === entry) sparkConnects.delete(walletId);
+      }
+    },
+
+    /** Invalidate in-flight work for a wallet (disconnect, rebuild, removal). */
+    _bumpWalletEpoch(walletId) {
+      walletEpochs.set(walletId, epochOf(walletId) + 1);
+    },
+
+    walletEpoch(walletId) {
+      return epochOf(walletId);
+    },
+
+    async _initializeSparkWallet(walletId, { forceReinit, epoch }) {
       const wallet = this.wallets.find(w => w.id === walletId);
       if (!wallet || wallet.type !== WALLET_TYPES.SPARK) {
         throw new Error('Spark wallet not found');
       }
+      // A removal or rebuild during any await below cancels this attempt:
+      // it must not resurrect a removed wallet or overwrite a newer state.
+      const current = () => epochOf(walletId) === epoch && this.wallets.includes(wallet);
+      const assertCurrent = () => {
+        if (!current()) throw new Error('Spark connection was cancelled');
+      };
+      let provider = null;
 
       try {
         // Decrypt mnemonic with device key
@@ -1480,7 +1535,8 @@ export const useWalletStore = defineStore('wallet', {
         // The full wallet object rides through the factory so the provider
         // can assert identity against the stored spark address before
         // going live.
-        const provider = createWalletProvider(wallet);
+        assertCurrent();
+        provider = createWalletProvider(wallet);
 
         // Initialize with mnemonic. The Breez instance registry dedupes
         // live SDKs per wallet, so calling connectSparkWallet repeatedly
@@ -1488,6 +1544,7 @@ export const useWalletStore = defineStore('wallet', {
         // duplicate event streams. Pass forceReinit only when recovering
         // from a confirmed-dead connection.
         await provider.initializeWithMnemonic(mnemonic, { forceReinit });
+        assertCurrent();
 
         // Store provider
         this.providers[walletId] = provider;
@@ -1502,6 +1559,7 @@ export const useWalletStore = defineStore('wallet', {
         // First balance: a real sync when the network answers, otherwise the
         // local figure labelled stale (never a connect failure by itself).
         const balanceResult = await provider.getBalance();
+        assertCurrent();
         wallet.metadata = wallet.metadata || {};
         this.applyBalance(walletId, balanceResult.balance, {
           source: balanceResult.fresh === false ? 'cache' : 'connect',
@@ -1511,6 +1569,7 @@ export const useWalletStore = defineStore('wallet', {
 
         // Get info
         const info = await provider.getInfo();
+        assertCurrent();
         this.walletInfos[walletId] = info;
 
         // Record the derived spark address the first time this wallet
@@ -1532,6 +1591,7 @@ export const useWalletStore = defineStore('wallet', {
             const address = await provider.ensureLightningAddress({
               previousAddress: wallet.metadata.lud16 || null,
             });
+            assertCurrent();
             await this.setSparkLightningAddress(walletId, address);
           } catch (error) {
             console.warn('Lightning address setup skipped:', error?.message || error);
@@ -1548,6 +1608,14 @@ export const useWalletStore = defineStore('wallet', {
         }
 
       } catch (error) {
+        if (!current()) {
+          // Superseded: release what this attempt built and leave the newer
+          // state alone. Attempts are serialized, so this cannot release a
+          // newer provider's registry entry.
+          if (provider) await Promise.resolve(provider.disconnect()).catch(() => {});
+          if (this.providers[walletId] === provider) delete this.providers[walletId];
+          throw error;
+        }
         this.connectionStates[walletId] = {
           connected: false,
           lastConnected: Date.now(),
@@ -1701,7 +1769,10 @@ export const useWalletStore = defineStore('wallet', {
      * switchActiveWallet().
      */
     async _disconnectSparkProvider(walletId) {
+      this._bumpWalletEpoch(walletId);
       try { exitKitService().onSparkDisconnected(walletId); } catch (e) { /* not attached yet */ }
+      const epoch = epochOf(walletId);
+      await sparkConnects.get(walletId)?.promise.catch(() => {});
       const provider = this.providers[walletId];
       if (provider) {
         try {
@@ -1709,8 +1780,9 @@ export const useWalletStore = defineStore('wallet', {
         } catch (err) {
           console.warn('Spark provider disconnect failed:', err.message);
         }
-        delete this.providers[walletId];
+        if (this.providers[walletId] === provider) delete this.providers[walletId];
       }
+      if (epoch !== epochOf(walletId) || !this.wallets.some(w => w.id === walletId)) return;
       this.connectionStates[walletId] = {
         connected: false,
         lastConnected: this.connectionStates[walletId]?.lastConnected,
@@ -2337,8 +2409,9 @@ export const useWalletStore = defineStore('wallet', {
         if (groupId) {
           const groupMembers = this.wallets.filter(w => w.connectionData?.walletGroupId === groupId && w.id !== walletId);
           for (const member of groupMembers) {
+            this._bumpWalletEpoch(member.id);
             if (this.providers[member.id]) {
-              try { this.providers[member.id].disconnect(); } catch (e) { /* ignore */ }
+              try { await this.providers[member.id].disconnect(); } catch (e) { /* ignore */ }
               delete this.providers[member.id];
             }
             delete this.connectionStates[member.id];
@@ -2357,8 +2430,12 @@ export const useWalletStore = defineStore('wallet', {
           }
         }
 
-        // Remove from state
-        this.wallets.splice(walletIndex, 1);
+        // Remove from state. Re-resolve the index: removing group members
+        // above shifted the array, and the old index could now point at an
+        // unrelated wallet while this one stayed behind.
+        this._bumpWalletEpoch(walletId);
+        const remainingIndex = this.wallets.findIndex(w => w.id === walletId);
+        if (remainingIndex !== -1) this.wallets.splice(remainingIndex, 1);
         delete this.connectionStates[walletId];
         this.forgetBalance(walletId);
         forgetSparkWallet?.(walletId);
@@ -2378,8 +2455,8 @@ export const useWalletStore = defineStore('wallet', {
         const autoWithdrawStore = useAutoWithdrawStore();
         await autoWithdrawStore.removeConfig(walletId);
 
-        // Handle active wallet removal
-        if (this.activeWalletId === walletId) {
+        // Handle active wallet removal (including a removed group sibling)
+        if (!this.wallets.some(w => w.id === this.activeWalletId)) {
           const newActive = this.defaultWallet || this.wallets[0];
           if (newActive) {
             await this.switchActiveWallet(newActive.id);
@@ -3255,9 +3332,8 @@ export const useWalletStore = defineStore('wallet', {
       // that can fail with transport errors under flaky network conditions.
       let paymentResult;
       let invoice;
-      // The destination's receipt is the user's own move, not money
-      // arriving: recorded silently by the receipt ledger.
-      if (toType === 'spark') this.noteInternalTransfer(toWalletId, amountSats);
+      // A direct Spark-to-Spark transfer exposes no receiving invoice hash,
+      // so its receipt cannot be identified and is not suppressed.
       if (fromType === 'spark' && toType === 'spark') {
         try {
           const sparkAddress = await toProvider.getSparkAddress();
@@ -3294,6 +3370,14 @@ export const useWalletStore = defineStore('wallet', {
 
         if (!invoice) {
           throw new Error('Failed to create invoice from destination wallet');
+        }
+
+        if (toType === 'spark') {
+          // The receiving half will settle this invoice: identify that
+          // receipt by its payment hash so it is not announced as income.
+          try {
+            this.noteInternalTransfer(toWalletId, new Invoice({ pr: String(invoice) }).paymentHash || null);
+          } catch { /* unidentified: not suppressed */ }
         }
 
         try {
@@ -3581,6 +3665,12 @@ export const useWalletStore = defineStore('wallet', {
      * Clear all wallet data
      */
     clearAll() {
+      // Everything in flight belongs to wallets that are about to vanish.
+      for (const wallet of this.wallets) {
+        this._bumpWalletEpoch(wallet.id);
+        if (wallet.type === WALLET_TYPES.SPARK) forgetSparkWallet?.(wallet.id);
+      }
+      if (this._persistTimer) { clearTimeout(this._persistTimer); this._persistTimer = null; }
       // Close all connections first
       Object.values(this.connectionStates).forEach((state) => {
         if (state?.nwcInstance?.close) {
@@ -3595,7 +3685,7 @@ export const useWalletStore = defineStore('wallet', {
       // Disconnect all Spark providers
       Object.values(this.providers).forEach((provider) => {
         try {
-          provider.disconnect();
+          Promise.resolve(provider.disconnect()).catch(() => {});
         } catch (e) {
           // Ignore errors
         }

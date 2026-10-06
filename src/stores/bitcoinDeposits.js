@@ -109,7 +109,10 @@ export const useBitcoinDepositsStore = defineStore('bitcoinDeposits', {
         ownsClaim = true;
         this.entries[key] = { walletId, phase: 'claiming' };
         const result = await provider.claimDeposit(deposit.txId, classification.quote, vout);
+        // Record the output durably even if the wallet was removed meanwhile,
+        // so nothing resubmits it — but do not revive the removed wallet's UI.
         wallet.markDepositClaimed(deposit.txId, vout);
+        if (!walletExists(wallet, walletId)) return;
         this.entries[key] = { walletId, phase: 'accepted' };
         track('bitcoin.deposit.claim_succeeded', {
           source: 'auto', processing: !!result?.processing,

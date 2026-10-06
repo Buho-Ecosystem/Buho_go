@@ -38,7 +38,12 @@ function harness({ wallets = ['Business', 'Personal'], active = 'Personal', sync
       return { balance: 1000, fresh: true, syncedAt: t.now() };
     },
     async getCachedBalance() { return { balance: behaviour[id]?.cached ?? 1000, fresh: false }; },
-    async getTransactions() { calls.history[id] = (calls.history[id] || 0) + 1; return behaviour[id]?.history || []; },
+    async getTransactions(offset = 0, limit = 50) {
+      calls.history[id] = (calls.history[id] || 0) + 1;
+      const h = behaviour[id]?.history;
+      if (typeof h === 'function') return h(offset, limit);
+      return (h || []).slice(offset, offset + limit);
+    },
     async getPendingDeposits() { calls.deposits[id] = (calls.deposits[id] || 0) + 1; return behaviour[id]?.deposits || []; },
   });
   const applied = [];
@@ -239,5 +244,55 @@ test('an SDK "synced" event counts only when Spark demonstrably answered', async
   answered = true;
   h.emit('Business', { type: 'synced' });
   assert.equal(h.lifecycle.status('Business').health, HEALTH.HEALTHY);
+  h.lifecycle.stop();
+});
+
+test('event cache reads publish as verified only with network evidence (#297 review)', async () => {
+  let answered = false;
+  const h = harness({ syncedEventVerified: () => answered });
+  await h.lifecycle.reconcile('Business', 'start');
+  h.applied.length = 0;
+  h.behaviour.Business = { cached: 0 };
+  h.emit('Business', { type: 'paymentSucceeded', payment: { id: 'x', paymentType: 'send', status: 'completed', amount: 1n } });
+  await tick();
+  assert.deepEqual(h.applied.map((a) => [a.source, a.fresh]), [['cache', false]], 'partial-sync events are cache readings');
+  answered = true;
+  h.emit('Business', { type: 'paymentSucceeded', payment: { id: 'y', paymentType: 'send', status: 'completed', amount: 1n } });
+  await tick();
+  assert.deepEqual(h.applied.at(-1).fresh, true);
+});
+
+test('catch-up pages past the first page until the checkpoint is covered', async () => {
+  const h = harness();
+  await h.lifecycle.reconcile('Business', 'start'); // primes
+  const nowS = Math.floor(h.t.now() / 1000);
+  h.t.advance(10 * 60 * 1000);
+  // 120 new receipts since the checkpoint, newest first.
+  const rows = Array.from({ length: 120 }, (_, i) => ({ id: `r${i}`, type: 'receive', status: 'completed', amount: 1, fee: 0, timestamp: nowS + 590 - i }));
+  h.behaviour.Business = { history: rows };
+  await h.lifecycle.reconcile('Business', 'resume');
+  assert.equal(h.receipts.length, 120, 'nothing beyond the first page is lost');
+  assert.ok(h.calls.history.Business >= 4);
+});
+
+test('a hung history read cannot stall the wallet', async () => {
+  const t0 = Date.now();
+  const h = harness();
+  await h.lifecycle.reconcile('Business', 'start');
+  h.behaviour.Business = { history: () => new Promise(() => {}) };
+  const run = h.lifecycle.reconcile('Business', 'timer');
+  await tick();
+  h.t.runAll(); // the deadline fires
+  await run;
+  assert.equal(h.lifecycle.status('Business').health, HEALTH.HEALTHY, 'sync result stands; history retries next pass');
+  assert.ok(Date.now() - t0 < 2000);
+  assert.ok(h.lifecycle.diagnostics().some((d) => d.event === 'catchup-failed' && d.error === 'DEADLINE'));
+});
+
+test('diagnostics never keep SDK error text', async () => {
+  const h = harness();
+  h.behaviour.Business = { balance: async () => { throw new Error('send to bc1qsecretaddress failed'); } };
+  await h.lifecycle.reconcile('Business', 'timer');
+  assert.ok(!JSON.stringify(h.lifecycle.diagnostics()).includes('bc1q'));
   h.lifecycle.stop();
 });

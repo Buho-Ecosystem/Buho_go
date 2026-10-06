@@ -108,6 +108,10 @@ function attachTriggers(lifecycle) {
     .then(({ App }) => Promise.all([
       App.addListener('pause', () => markHidden()),
       App.addListener('resume', () => { markVisible(); lifecycle.trigger('resume'); }),
+      // Some Android builds report foreground changes only here.
+      App.addListener('appStateChange', ({ isActive }) => {
+        if (isActive) { markVisible(); lifecycle.trigger('resume'); } else markHidden();
+      }),
     ]))
     .then((handles) => cleanups.push(() => handles.forEach((h) => h?.remove?.())))
     .catch(() => { /* web without the plugin: visibility covers it */ });
