@@ -1,3 +1,5 @@
+import * as withdrawService from '../../services/lnurlWithdraw.js';
+import * as kioskIntake from '../../services/kioskPaymentIntake.js';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { existsSync, readFileSync } from 'node:fs';
@@ -38,6 +40,7 @@ const encoded = value => bech32.encode('lnurl', bech32.toWords(new TextEncoder()
 function harness(get = () => assert.fail('unexpected network request')) {
   const calls = [];
   const component = evaluate('../Wallet.vue', {
+    '../services/lnurlWithdraw.js': { ...withdrawService, fetchLnurlRequest: input => withdrawService.fetchLnurlRequest(input, { get: async (...args) => { calls.push(args); return get(...args); } }) },
     '../utils/lnurlWithdraw.js': withdraw, '../utils/addressUtils.js': addresses,
     '../utils/lud23.js': addressRequests,
     '../utils/lnurlMetadata.js': lnurlMetadata,
@@ -59,7 +62,7 @@ function harness(get = () => assert.fail('unexpected network request')) {
     resetWithdrawState() { this.lnurlWithdrawStatus = 'idle'; },
     failSendResolution() { assert.fail('valid withdrawal must reach review'); },
   };
-  return { component, vm, calls };
+  return { component, vm, calls, get: async (...args) => { calls.push(args); return get(...args); } };
 }
 
 for (const [name, input] of Object.entries({ bech32: encoded(url), lightning: `lightning:${encoded(url).toUpperCase()}`,
@@ -147,8 +150,8 @@ test('LUD-17 requests containing @ retain case-sensitive values in dispatch', ()
 });
 
 test('callback still uses one 90-second request with the same challenge and invoice', async () => {
-  const { vm, calls } = harness(async () => ({ ok: true, data: { status: 'OK' } }));
-  await vm.submitWithdrawCallback(metadata, 'lnbc-fixture', null);
+  const { get, calls } = harness(async () => ({ ok: true, data: { status: 'OK' } }));
+  await withdrawService.submitWithdrawCallback(metadata, 'lnbc-fixture', null, { get });
   assert.equal(calls.length, 1); assert.equal(calls[0][1].timeoutMs, 90000);
   const callback = new URL(calls[0][0]);
   assert.equal(callback.searchParams.get('k1'), metadata.k1);
@@ -157,13 +160,14 @@ test('callback still uses one 90-second request with the same challenge and invo
 });
 
 for (const file of ['deep-links.js', 'nfc.js']) {
-  test(`${file}: cold delivery buffers the intact withdrawal; locked kiosk discards it`, async () => {
+  test(`${file}: cold delivery routes the intact withdrawal to its wallet or kiosk recipient`, async () => {
     for (const kiosk of [false, true]) {
       const input = file === 'nfc.js' ? url.replace('%40', '@') : `lightning:${encoded(url)}`;
       const store = { activeWallet: { type: 'spark' }, kioskEnabled: kiosk, kioskOwnerAccess: false };
       const listeners = {};
       const boot = evaluate(`../../boot/${file}`, {
-        'quasar/wrappers': { boot: fn => fn }, quasar: { Notify: { create: () => assert.fail('unexpected native intake warning') } },
+        '../services/kioskPaymentIntake.js': kioskIntake,
+    'quasar/wrappers': { boot: fn => fn }, quasar: { Notify: { create: () => assert.fail('unexpected native intake warning') } },
         '@capacitor/core': { Capacitor: { isNativePlatform: () => true } },
         '@capacitor/app': { App: { getLaunchUrl: async () => ({ url: input }), addListener: (name, fn) => { listeners[name] = fn; } } },
         '../stores/wallet': { useWalletStore: () => store }, '../providers/WalletFactory': factory,
@@ -177,7 +181,11 @@ for (const file of ['deep-links.js', 'nfc.js']) {
       }).default;
       await boot({ router: { currentRoute: { value: { path: '/wallet' } }, push: async () => {} } });
       await Promise.resolve();
-      if (kiosk) assert.equal(store.pendingDeepLink, undefined);
+      if (kiosk) {
+        assert.equal(store.pendingDeepLink.target, 'kiosk');
+        assert.equal(store.pendingDeepLink.type, 'lnurl');
+        assert.equal(addresses.lnurlToUrl(store.pendingDeepLink.data), file === 'nfc.js' ? input : url);
+      }
       else {
         assert.equal(store.pendingDeepLink.type, 'lnurl');
         const { vm, calls } = harness();

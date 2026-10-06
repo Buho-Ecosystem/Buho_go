@@ -344,6 +344,7 @@ export default {
     isComplete: { type: Boolean, default: false },
     /**
      * Verb mode. 'send' is the default outgoing-payment vocabulary;
+     * 'charge' uses the same incoming layout for a fixed kiosk sale.
      * 'redeem' switches every label to its incoming-withdrawal twin
      * ("Redeem from", "Slide to redeem", etc.) so LNURL-Withdraw can
      * use the same sheet without leaking send-specific copy.
@@ -351,7 +352,7 @@ export default {
     verb: {
       type: String,
       default: 'send',
-      validator: (v) => ['send', 'redeem'].includes(v)
+      validator: (v) => ['send', 'redeem', 'charge'].includes(v)
     },
     /**
      * Optional status text shown alongside the spinner while
@@ -762,19 +763,20 @@ export default {
     // Centralized so the rest of the template stays oblivious to the
     // send/redeem distinction. New verbs (e.g. 'pay-request') would land
     // here and ripple out cleanly.
-    isRedeem() { return this.verb === 'redeem' },
+    isRedeem() { return this.verb === 'redeem' || this.verb === 'charge' },
 
     topTitle() {
+      if (this.verb === 'charge') return this.$t('Charge card')
       return this.isRedeem ? this.$t('Redeem from') : this.$t('Send to')
     },
 
     confirmSendLabel() {
-      const verb = this.isRedeem ? this.$t('Redeem') : this.$t('Send')
+      const verb = this.verb === 'charge' ? this.$t('Charge') : this.isRedeem ? this.$t('Redeem') : this.$t('Send')
       return `${verb} ${this.formattedConfirmAmount}`
     },
 
     slideLabel() {
-      const phrase = this.isRedeem ? this.$t('Slide to redeem') : this.$t('Slide to send')
+      const phrase = this.verb === 'charge' ? this.$t('Slide to charge') : this.isRedeem ? this.$t('Slide to redeem') : this.$t('Slide to send')
       return `${phrase} ${this.formattedConfirmAmount}`
     },
 
