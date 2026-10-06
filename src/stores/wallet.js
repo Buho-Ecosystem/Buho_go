@@ -3740,6 +3740,7 @@ export const useWalletStore = defineStore('wallet', {
     },
 
     async disableKiosk() {
+      this.pendingDeepLink = null;
       this.kioskEnabled = false;
       this.kioskPin = '';
       this.kioskOwnerAccess = false;
@@ -3753,6 +3754,7 @@ export const useWalletStore = defineStore('wallet', {
 
     unlockToOwnerMode(pin) {
       if (pin === this.kioskPin) {
+        if (this.pendingDeepLink?.target === 'kiosk') this.pendingDeepLink = null;
         this.kioskOwnerAccess = true;
         return true;
       }
@@ -3760,10 +3762,12 @@ export const useWalletStore = defineStore('wallet', {
     },
 
     forceUnlockKiosk() {
+      this.pendingDeepLink = null;
       this.kioskOwnerAccess = true;
     },
 
     lockToKioskMode() {
+      this.pendingDeepLink = null;
       this.kioskOwnerAccess = false;
     },
 
@@ -3777,6 +3781,7 @@ export const useWalletStore = defineStore('wallet', {
     },
 
     async activateKioskMode() {
+      this.pendingDeepLink = null;
       this.kioskOwnerAccess = false;
       await this.persistState();
     },

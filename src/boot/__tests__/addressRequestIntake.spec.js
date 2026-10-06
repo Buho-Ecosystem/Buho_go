@@ -1,3 +1,4 @@
+import * as kioskIntake from '../../services/kioskPaymentIntake.js';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { readFileSync } from 'node:fs';
@@ -21,6 +22,7 @@ function harness(file, launchInput, kiosk = false) {
     resolve: async () => assert.fail('must wait for unlock'), submit: () => assert.fail('must await consent'),
   });
   const dependencies = {
+    '../services/kioskPaymentIntake.js': kioskIntake,
     'quasar/wrappers': { boot: callback => callback },
     quasar: { Notify: { create: () => assert.fail('sharing must not hit a payment error') } },
     '@capacitor/core': { Capacitor: { isNativePlatform: () => true } },

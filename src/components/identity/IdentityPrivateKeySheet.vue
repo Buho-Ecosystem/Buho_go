@@ -33,7 +33,7 @@ const busy = ref(false);
 const copied = ref(false);
 const error = ref('');
 let revision = 0;
-watch(() => [props.modelValue, props.account, identity.fingerprint], () => { revision++; copied.value = false; error.value = ''; });
+watch(() => [props.modelValue, props.account, identity.fingerprint], () => { revision++; copied.value = false; error.value = ''; }, { flush: 'sync' });
 onBeforeUnmount(() => { revision++; });
 function close() { if (!busy.value) emit('update:modelValue', false); }
 
@@ -43,23 +43,40 @@ async function copyKey() {
   const account = props.account;
   busy.value = true;
   error.value = '';
+  const isCurrent = () => request === revision && props.modelValue;
+  const assertCurrent = () => {
+    if (!isCurrent()) throw new DOMException('Identity copy cancelled', 'AbortError');
+  };
+  let failureMessage = 'Clipboard access failed. Please try copying again.';
   try {
-    if (wallet.biometricsEnabled) {
-      const { available } = await isBiometricAvailable();
-      if (available && !await authenticate({ reason: t('Copy private key'), title: 'BuhoGO', subtitle: props.name, useFallback: true })) {
-        error.value = t('Unlock was not completed. Try again when you are ready.');
-        return;
+    // Start clipboard access during the click; supply the key only after
+    // authentication and identity checks have completed.
+    await copySensitive(async () => {
+      assertCurrent();
+      if (wallet.biometricsEnabled) {
+        const { available } = await isBiometricAvailable();
+        assertCurrent();
+        if (available && !await authenticate({ reason: t('Copy private key'), title: 'BuhoGO', subtitle: props.name, useFallback: true })) {
+          failureMessage = 'Unlock was not completed. Try again when you are ready.';
+          throw new Error('Authentication cancelled');
+        }
       }
-    }
-    if (request !== revision || !props.modelValue) return;
-    // Only a local reference: never render or cache nsec in component/store state.
-    const { nsec } = await identity.revealNostrSecret(account);
-    if (request !== revision || !props.modelValue) return;
-    await copySensitive(nsec);
-    copied.value = true;
+      assertCurrent();
+      // Only a local reference: never render or cache nsec in component/store state.
+      let nsec;
+      try {
+        ({ nsec } = await identity.revealNostrSecret(account));
+      } catch (error) {
+        failureMessage = 'Private key could not be accessed. Please try again.';
+        throw error;
+      }
+      assertCurrent();
+      return nsec;
+    });
+    if (isCurrent()) copied.value = true;
     // The best-effort clipboard wipe intentionally survives closing this sheet.
   } catch {
-    if (request === revision) error.value = t('Private key could not be copied. Try again.');
+    if (isCurrent()) error.value = t(failureMessage);
   } finally {
     busy.value = false;
   }

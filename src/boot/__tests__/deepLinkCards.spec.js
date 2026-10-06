@@ -1,3 +1,4 @@
+import * as kioskIntake from '../../services/kioskPaymentIntake.js';
 /**
  * src/boot/deep-links.js wiring (issue #301).
  *
@@ -22,6 +23,7 @@ function harness({ activeWallet = null, kiosk = false } = {}) {
   let clock = 10_000;
   const walletStore = { activeWallet, kioskEnabled: kiosk, kioskOwnerAccess: false, pendingDeepLink: null };
   const dependencies = {
+    '../services/kioskPaymentIntake.js': kioskIntake,
     'quasar/wrappers': { boot: (callback) => callback },
     quasar: { Notify: { create: (n) => notices.push(n) } },
     '@capacitor/core': { Capacitor: { isNativePlatform: () => true } },

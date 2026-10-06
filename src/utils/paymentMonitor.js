@@ -42,6 +42,8 @@ export class PaymentMonitor {
     this.provider = null;
     this.onStatusChange = null;
     this.consecutiveErrors = 0;
+    this.revision = 0;
+    this.checking = false;
   }
 
   /**
@@ -53,9 +55,7 @@ export class PaymentMonitor {
    * @returns {Promise<void>}
    */
   async start({ invoice, provider, onStatusChange }) {
-    if (this.isMonitoring) {
-      this.stop();
-    }
+    this.stop();
 
     if (!invoice?.payment_hash) {
       throw new Error('Invoice must have a payment_hash');
@@ -87,6 +87,8 @@ export class PaymentMonitor {
    * Stop monitoring
    */
   stop() {
+    this.revision++;
+    this.checking = false;
     this.isMonitoring = false;
     if (this.timeoutId) {
       clearTimeout(this.timeoutId);
@@ -109,6 +111,7 @@ export class PaymentMonitor {
   _scheduleNextCheck() {
     if (!this.isMonitoring) return;
 
+    clearTimeout(this.timeoutId);
     this.timeoutId = setTimeout(() => {
       this._checkPayment();
     }, this.currentInterval);
@@ -118,19 +121,15 @@ export class PaymentMonitor {
    * Check payment status
    * @private
    */
+  checkNow() { return this._checkPayment(); }
+
   async _checkPayment() {
-    if (!this.isMonitoring) return;
+    if (!this.isMonitoring || this.checking) return;
+    clearTimeout(this.timeoutId);
+    const revision = this.revision;
+    const isCurrent = () => this.isMonitoring && revision === this.revision;
 
     this.attemptCount++;
-
-    // Check if invoice has expired
-    if (this._isExpired()) {
-      this._notifyStatus(PaymentStatus.EXPIRED, {
-        message: 'Invoice has expired'
-      });
-      this.stop();
-      return;
-    }
 
     // Check if max attempts reached
     if (this.attemptCount >= this.config.maxAttempts) {
@@ -142,6 +141,7 @@ export class PaymentMonitor {
       return;
     }
 
+    this.checking = true;
     try {
       // Prefer a backend-native invoice ID (e.g. Spark's receive request UUID)
       // when available, since it maps directly to getLightningReceiveRequest.
@@ -149,6 +149,7 @@ export class PaymentMonitor {
       // transfer-list scan.
       const lookupKey = this.invoice.invoice_id || this.invoice.payment_hash;
       const result = await this.provider.lookupInvoice(lookupKey);
+      if (!isCurrent()) return;
       this.consecutiveErrors = 0;
 
       if (result.paid) {
@@ -158,6 +159,16 @@ export class PaymentMonitor {
           preimage: result.preimage,
           amount: result.amount || this.invoice.amount,
           attempt: this.attemptCount
+        });
+        this.stop();
+        return;
+      }
+
+      // Expiry prevents new payments; it does not prove this invoice was
+      // unpaid. Always check settlement first, including after backgrounding.
+      if (this._isExpired()) {
+        this._notifyStatus(PaymentStatus.EXPIRED, {
+          message: 'Invoice has expired'
         });
         this.stop();
         return;
@@ -180,6 +191,7 @@ export class PaymentMonitor {
       this._scheduleNextCheck();
 
     } catch (error) {
+      if (!isCurrent()) return;
       console.warn('Payment check failed:', error.message);
       this.consecutiveErrors++;
 
@@ -209,6 +221,8 @@ export class PaymentMonitor {
       );
 
       this._scheduleNextCheck();
+    } finally {
+      if (revision === this.revision) this.checking = false;
     }
   }
 

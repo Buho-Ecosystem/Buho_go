@@ -103,7 +103,7 @@
               @click.stop="copy('username', usernameAddress)"
             >
               <NostrAddress :address="usernameAddress" check class="id-card-ident-value" />
-              <Icon :icon="copied === 'username' ? 'tabler:copy-check' : 'tabler:copy'" width="15" height="15" class="id-card-ident-copy" aria-hidden="true" />
+              <Icon :icon="copied === 'username' ? 'tabler:copy-check' : 'tabler:copy'" width="15" height="15" class="id-card-ident-copy" :aria-hidden="true" />
             </button>
             <button
               v-else-if="npub"
@@ -112,9 +112,9 @@
               :aria-label="$t('Copy public code')"
               @click.stop="copy('npub', npub)"
             >
-              <Icon :icon="NOSTRICH_HEAD_ICON" width="15" height="15" class="id-card-ident-icon" aria-hidden="true" />
+              <Icon :icon="NOSTRICH_HEAD_ICON" width="15" height="15" class="id-card-ident-icon" :aria-hidden="true" />
               <span class="id-card-ident-code" aria-hidden="true">{{ npub.slice(0, 8) }}…{{ npub.slice(-4) }}</span>
-              <Icon :icon="copied === 'npub' ? 'tabler:copy-check' : 'tabler:copy'" width="15" height="15" class="id-card-ident-copy" aria-hidden="true" />
+              <Icon :icon="copied === 'npub' ? 'tabler:copy-check' : 'tabler:copy'" width="15" height="15" class="id-card-ident-copy" :aria-hidden="true" />
             </button>
             <span class="id-card-copy-status" role="status">{{ copied ? $t('Copied') : '' }}</span>
           </span>
