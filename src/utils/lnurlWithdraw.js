@@ -112,3 +112,16 @@ export function withdrawInfo(data, { sourceUrl = null } = {}) {
     sourceUrl: typeof sourceUrl === 'string' && sourceUrl ? sourceUrl : null,
   };
 }
+
+/** The same source identity on wallet and kiosk confirmation screens. */
+export function withdrawRecipient(request, t = text => text) {
+  const isCard = request.pinLimit != null || /bolt\s*card/i.test(request.defaultDescription || '');
+  let host = '';
+  try { host = new URL(request.callback).host; } catch { /* invalid request stays unpayable */ }
+  return {
+    name: isCard ? 'Bolt Card' : (request.defaultDescription || t('LNURL Withdrawal')),
+    initial: '↓', color: '#3B82F6', addressType: 'lnurl',
+    viaOverride: t('Lightning · Withdrawal'), address: host,
+    ...(isCard ? { logoUrl: '/Social_Wallet_logos/BoltCard.png' } : {}),
+  };
+}

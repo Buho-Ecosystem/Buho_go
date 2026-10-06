@@ -2,6 +2,16 @@ import addressRequest from './addressRequest.js';
 import backup from './backup.js';
 import exit from './exit.js';
 export default {
+  "Charge card": "Karte belasten",
+  "Charge": "Belasten",
+  "Slide to charge": "Zum Belasten schieben",
+  "Card ready. Enter the sale amount to continue.": "Karte bereit. Gib den Verkaufsbetrag ein, um fortzufahren.",
+  "Reading card…": "Karte wird gelesen…",
+  "The sale amount is outside this card’s payment limits.": "Der Verkaufsbetrag liegt außerhalb des Zahlungslimits dieser Karte.",
+  "This card does not support withdrawals.": "Diese Karte unterstützt keine Auszahlungen.",
+  "Invalid withdrawal request": "Ungültige Auszahlungsanfrage",
+  "Check payment again": "Zahlung erneut prüfen",
+  "Could not check payment status. Please check again.": "Der Zahlungsstatus konnte nicht geprüft werden. Bitte erneut prüfen.",
   "Loading more people…": "Weitere Personen werden geladen…",
   "Load more people": "Weitere Personen laden",
   "All available results shown.": "Alle verfügbaren Ergebnisse werden angezeigt.",

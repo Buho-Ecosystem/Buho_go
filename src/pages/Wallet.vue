@@ -739,31 +739,7 @@
       @closed="onWithdrawSuccessClosed"
     />
 
-    <!--
-      Bolt Card PIN dialog — LUD-XX `pinLimit` gate.
-      Mounted at the wallet page level so the LNURL-withdraw flow
-      (NFC tap, QR scan, pasted lnurlw://) all funnel through the
-      same authorization surface. The dialog shows the invoice
-      amount as the spec requires, stays open through retries on
-      "Invalid PIN", and closes on success or "Card blocked".
-    -->
-    <PinEntryDialog
-      v-model="showBoltCardPinDialog"
-      :title="$t('Bolt Card PIN')"
-      :subtitle="$t('Enter your 4-digit PIN to confirm this withdrawal')"
-      :amount-display="boltCardPinAmountDisplay"
-      :fiat-amount="boltCardPinFiatAmount"
-      :pin-length="4"
-      mode="enter"
-      :show-back-button="true"
-      :error-message="boltCardPinError"
-      :loading="boltCardPinValidating"
-      :loading-text="$t('Authorizing…')"
-      :timeout-seconds="60"
-      @pin-complete="onBoltCardPinComplete"
-      @cancel="onBoltCardPinCancel"
-      @timeout="onBoltCardPinTimeout"
-    />
+    <WithdrawAuthorization ref="withdrawAuthorization" />
 
     <!--
       Send Success Screen.
@@ -893,7 +869,8 @@
 <script>
 import { offerAddressRequest } from '../services/addressRequestIntake.js';
 import { assertPaymentInput } from '../utils/lud23.js';
-import { parseFastWithdrawRequest, withdrawInfo } from '../utils/lnurlWithdraw.js';
+import { withdrawInfo, withdrawRecipient } from '../utils/lnurlWithdraw.js';
+import { fetchLnurlRequest, safeWithdrawError } from '../services/lnurlWithdraw.js';
 import { NostrWebLNProvider } from "@getalby/sdk";
 import {LightningPaymentService, resolveLUD17URL} from '../utils/lightning.js';
 import {parseSuccessAction, resolveSuccessAction} from '../utils/successAction.js';
@@ -935,7 +912,7 @@ import HiddenAmount from '../components/HiddenAmount.vue';
 import balanceUpdating from '../directives/balanceUpdating.js';
 import {createPaymentMonitor, PaymentStatus, checkNWCPaymentStatus} from '../utils/paymentMonitor.js';
 import PaymentConfirmation from '../components/PaymentConfirmation.vue';
-import PinEntryDialog from '../components/PinEntryDialog.vue';
+import WithdrawAuthorization from '../components/WithdrawAuthorization.vue';
 import {useWalletStore} from '../stores/wallet';
 import {useUpdateStore} from '../stores/update';
 import {useAddressBookStore} from '../stores/addressBook';
@@ -1014,7 +991,7 @@ export default {
     ClipboardSuggestion,
     IdentityAuthDialog,
     ContactAvatar,
-    PinEntryDialog,
+    WithdrawAuthorization,
   },
   directives: { balanceUpdating },
   setup() {
@@ -1168,22 +1145,6 @@ export default {
       lnurlWithdrawStatus: 'idle',
       lnurlWithdrawError: null,
       lnurlWithdrawInvoice: null,
-      // Bolt Card PIN dialog (LUD-XX pinLimit). The dialog stays open
-      // across "Invalid PIN" retries — only success, "Card blocked",
-      // an HTTPS guard failure, or a user cancel close it.
-      //  - amountDisplay/fiat: shown above the lock icon so the user
-      //    sees what they're authorizing (spec requires the invoice
-      //    amount on the PIN screen).
-      //  - validating: drives the dialog's loading state while the
-      //    callback round-trip is in flight.
-      //  - resolve: the awaited resolver for the current PIN attempt.
-      //    Replaced on each attempt; never carries over across closes.
-      showBoltCardPinDialog: false,
-      boltCardPinError: '',
-      boltCardPinResolve: null,
-      boltCardPinAmountDisplay: '',
-      boltCardPinFiatAmount: '',
-      boltCardPinValidating: false,
       withdrawPaymentMonitor: null,
       withdrawSparkUnsubscribe: null,
       showWithdrawSuccess: false,
@@ -2014,20 +1975,7 @@ export default {
       const p = this.pendingPayment;
       if (!p || p.type !== 'lnurl_withdraw') return null;
 
-      // A recognized Bolt Card gets its own mark + clean name instead of the
-      // generic blue ↓ and the technical "Boltcard (refund address …)" text.
-      const isBoltcard = this.isBoltcardWithdraw(p);
-      let serviceHost = '';
-      try { serviceHost = new URL(p.callback).host; } catch { /* legacy malformed metadata */ }
-      const recipient = {
-        name: isBoltcard ? 'Bolt Card' : (p.defaultDescription || this.$t('LNURL Withdrawal')),
-        initial: '↓',
-        color: '#3B82F6',
-        addressType: 'lnurl',
-        viaOverride: this.$t('Lightning · Withdrawal'),
-        address: serviceHost,
-        ...(isBoltcard ? { logoUrl: '/Social_Wallet_logos/BoltCard.png' } : {}),
-      };
+      const recipient = withdrawRecipient(p, this.$t.bind(this));
 
       let amount;
       if (p.isFixedAmount) {
@@ -2247,7 +2195,7 @@ export default {
     this.$watch(
       () => this.walletStore.pendingDeepLink,
       (paymentData) => {
-        if (!paymentData) return;
+        if (!paymentData || paymentData.target === 'kiosk') return;
         this.walletStore.pendingDeepLink = null;
         // Dispatch once wallet initialization settles — a cold-start intent
         // can arrive before providers are connected, and the NWC/LNbits
@@ -2848,21 +2796,6 @@ export default {
     // ==========================================
     // L1 Bitcoin Deposit Methods
     // ==========================================
-
-    /**
-     * Open receive modal with Bitcoin tab selected
-     */
-    /**
-     * Recognize a Bolt Card behind an LNURL-withdraw, so the Redeem sheet can
-     * show the Bolt Card mark instead of a generic ↓. Two signals:
-     *   - `pinLimit` is set only by Bolt Card issuers (LUD-XX), or
-     *   - LNbits' Boltcard extension names the withdraw "Boltcard (refund …)".
-     */
-    isBoltcardWithdraw(p) {
-      if (!p) return false;
-      if (p.pinLimit != null) return true;
-      return /bolt\s*card/i.test(p.defaultDescription || '');
-    },
 
     // One-line explainer for the NFC-ready badge.
     onNfcBadge() {
@@ -3934,70 +3867,10 @@ export default {
         const invoice = await this.createInvoiceForWithdraw(amountSats, description);
         this.lnurlWithdrawInvoice = invoice;
 
-        // Step 2: PIN check (LUD-XX pinLimit). Required when `amount × 1000
-        // >= pinLimit`. The dialog stays open across "Invalid PIN" retries
-        // so the user can re-enter without re-sliding the confirm sheet;
-        // it closes on success, on "Card blocked", on any non-PIN error,
-        // or on user cancel.
-        const pinLimit = this.pendingPayment.pinLimit;
-        const pinRequired = pinLimit && amountSats * 1000 >= pinLimit;
-
-        if (pinRequired) {
-          // LUD-XX: the service MUST invalidate the LNURL link after
-          // 3 consecutive PIN failures. We mirror the count locally so
-          // the user gets a fintech-style warning ladder as they
-          // approach the block — same UX pattern banking apps use
-          // for card PIN entry at an ATM.
-          let pinAttempts = 0;
-          const maxPinAttempts = 3;
-
-          // eslint-disable-next-line no-constant-condition
-          while (true) {
-            const pin = await this.requestBoltCardPin(amountSats);
-            if (!pin) {
-              this.resetWithdrawState();
-              return;
-            }
-
-            this.boltCardPinValidating = true;
-            this.lnurlWithdrawStatus = 'submitting';
-            try {
-              await this.submitWithdrawCallback(
-                this.pendingPayment,
-                invoice.payment_request,
-                pin
-              );
-              this.closeBoltCardPinDialog();
-              break;
-            } catch (error) {
-              this.boltCardPinValidating = false;
-              if (this.isInvalidPinError(error)) {
-                pinAttempts += 1;
-                // Re-trigger the dialog's shake-and-clear by toggling
-                // the error message (PinEntryDialog watches for value
-                // changes, so we clear then re-set on the next tick).
-                this.boltCardPinError = '';
-                await this.$nextTick();
-                this.boltCardPinError = this.formatPinAttemptError(
-                  pinAttempts,
-                  maxPinAttempts
-                );
-                continue;
-              }
-              // Card blocked or unrelated failure — close the dialog
-              // and let the outer catch surface the error to the sheet.
-              this.closeBoltCardPinDialog();
-              throw error;
-            }
-          }
-        } else {
-          this.lnurlWithdrawStatus = 'submitting';
-          await this.submitWithdrawCallback(
-            this.pendingPayment,
-            invoice.payment_request,
-            null
-          );
-        }
+        this.lnurlWithdrawStatus = 'submitting';
+        await this.$refs.withdrawAuthorization.submit(
+          this.pendingPayment, invoice.payment_request, amountSats,
+        );
 
         // Step 3: Monitor for incoming payment — the existing
         // PaymentConfirmation surface (SuccessCheckmark + amount)
@@ -4010,7 +3883,8 @@ export default {
         // could be in there via a platform-level network error stringifying
         // the callback URL, and we don't want it landing in console output
         // or the cross-app payment-error notification surface.
-        const safeMessage = this.redactPinFromString(error?.message || 'Something went wrong');
+        if (error?.name === 'AbortError') { this.resetWithdrawState(); return; }
+        const safeMessage = safeWithdrawError(error?.message);
         const safeError = new Error(safeMessage);
         safeError.name = error?.name || 'Error';
         // Carry the code: translateErrorCode keys on it (ARKADE_LN_UNAVAILABLE
@@ -4154,125 +4028,6 @@ export default {
         amount: amountSats,
         expires_at: result.expires_at || result.expiresAt || Math.floor(Date.now() / 1000) + 3600
       };
-    },
-
-    async submitWithdrawCallback(withdrawData, bolt11, pin = null) {
-      const callbackUrl = new URL(withdrawData.callback);
-
-      // LUD-XX: HTTPS is REQUIRED whenever a PIN is being transmitted.
-      // The PIN travels as a plaintext `pin=` query param, so a downgrade
-      // to http:// would expose it to any passive observer on the network
-      // path between the wallet and the service.
-      if (pin && callbackUrl.protocol !== 'https:') {
-        throw new Error(this.$t('PIN authorization requires a secure connection'));
-      }
-
-      callbackUrl.searchParams.set('k1', withdrawData.k1);
-      callbackUrl.searchParams.set('pr', bolt11);
-      if (pin) {
-        callbackUrl.searchParams.set('pin', pin);
-      }
-
-      // Wrap the request so any network-layer error (DNS, CORS, TLS,
-      // offline) gets its message scrubbed of `pin=` before it
-      // propagates to console.error, Sentry, or the notify surface.
-      // Some platforms include the full URL in fetch error strings.
-      let response;
-      try {
-        // Generous 90s bound: withdraw services can be slow to pay out,
-        // and a premature client-side timeout would show a failure for a
-        // withdraw that still completes (the k1 is single-use, so the
-        // user can't meaningfully retry). Only a genuinely hung server
-        // should trip this.
-        response = await lnurlGetJson(callbackUrl.toString(), { timeoutMs: 90000 });
-      } catch (networkError) {
-        const safeMessage = this.redactPinFromString(
-          networkError?.message || 'Network error contacting withdraw service'
-        );
-        throw new Error(safeMessage);
-      }
-
-      if (!response.ok) {
-        throw new Error(`Withdraw callback failed: ${response.status}`);
-      }
-
-      const data = response.data || {};
-      if (data.status === 'ERROR') {
-        // Translate the two spec-defined PIN error reasons so the
-        // sheet-level error surface shows them in the user's language.
-        // Unrecognised reasons pass through unchanged.
-        const reason = data.reason || 'Withdraw service rejected the request';
-        throw new Error(this.translateWithdrawErrorReason(reason));
-      }
-
-      // Some services return { status: "OK" }, others just return without error
-      return data;
-    },
-
-    /**
-     * Strip `pin=XXXX` query parameters out of any string. The PIN
-     * is transmitted as a plaintext query parameter per LUD-XX, so
-     * the callback URL is sensitive — we don't want it surviving
-     * verbatim in console output, crash reports, or notify toasts.
-     *
-     * Defensive against:
-     *   - `?pin=1234`         (first param)
-     *   - `&pin=1234`         (mid-string)
-     *   - case variants (`PIN=`, `Pin=`)
-     *   - bordered by `&`, whitespace, or end-of-string
-     */
-    redactPinFromString(str) {
-      if (typeof str !== 'string') return str;
-      return str.replace(/([?&])pin=[^&\s]*/gi, '$1pin=[REDACTED]');
-    },
-
-    /**
-     * Map the two spec-defined LUD-XX pinLimit error reasons to localized
-     * strings. Falls back to the original reason if no match — that way an
-     * unrelated LUD-03 error reason (e.g. an expired k1) is still surfaced
-     * verbatim rather than masked.
-     */
-    translateWithdrawErrorReason(reason) {
-      const r = (reason || '').trim();
-      if (r === 'Invalid PIN') return this.$t('Invalid PIN');
-      if (/card blocked/i.test(r) && /pin/i.test(r)) {
-        return this.$t('Card blocked: too many incorrect PIN attempts');
-      }
-      return r;
-    },
-
-    /**
-     * Build the in-dialog error string shown after a failed PIN
-     * attempt. Mirrors fintech-app PIN ladders: an initial wrong-PIN
-     * notice, a "last attempt" warning before the terminal block,
-     * and a plain fallback for any defensive over-count (shouldn't
-     * happen — server returns Card blocked at attempt 3 — but kept
-     * so the UI degrades gracefully).
-     */
-    formatPinAttemptError(attempt, maxAttempts) {
-      const remaining = maxAttempts - attempt;
-      if (remaining >= 2) {
-        return this.$t('Invalid PIN. {n} attempts left.', { n: remaining });
-      }
-      if (remaining === 1) {
-        return this.$t('Invalid PIN. Last attempt.');
-      }
-      return this.$t('Invalid PIN');
-    },
-
-    /**
-     * Recognise the "wrong PIN, attempts remaining" error so the PIN
-     * dialog can stay open for a retry instead of dismissing back to
-     * the confirm sheet. Card-blocked deliberately does NOT match —
-     * that's the terminal state and the dialog must close.
-     */
-    isInvalidPinError(error) {
-      if (!error?.message) return false;
-      const msg = error.message;
-      if (/card blocked/i.test(msg)) return false;
-      // Match both the English spec string and our translated forms.
-      const invalidPinTranslated = this.$t('Invalid PIN');
-      return msg === 'Invalid PIN' || msg === invalidPinTranslated;
     },
 
     async startWithdrawPaymentMonitor(invoice, amountSats) {
@@ -4501,101 +4256,6 @@ export default {
         });
       }
       return this.$t(voucher.exhausted ? 'This voucher is now empty.' : 'Find your voucher under Receive.');
-    },
-
-    // ========================================================================
-    // Bolt Card PIN helpers (LUD-XX pinLimit)
-    // ========================================================================
-
-    /**
-     * Open (or re-arm) the Bolt Card PIN dialog and await one PIN attempt.
-     *
-     * On first call: populates the amount strip, clears any prior error,
-     * and shows the dialog. On subsequent calls during the same retry
-     * cycle (after an "Invalid PIN" response): the dialog is already
-     * open, the error message and shake have already been triggered by
-     * the caller, and this just registers the next resolver.
-     *
-     * Resolves with the entered PIN string, or `null` if the user cancels.
-     */
-    async requestBoltCardPin(amountSats) {
-      if (!this.showBoltCardPinDialog) {
-        this.boltCardPinError = '';
-        this.boltCardPinValidating = false;
-        this.boltCardPinAmountDisplay = this.formatAmountInline(amountSats);
-        this.boltCardPinFiatAmount = await this.computeFiatStringForSats(amountSats);
-        this.showBoltCardPinDialog = true;
-      }
-      return new Promise((resolve) => {
-        this.boltCardPinResolve = resolve;
-      });
-    },
-
-    /**
-     * Compute a localized "≈ <fiat>" string for the PIN amount strip.
-     * Returns '' when rates aren't loaded, sats is falsy, or anything
-     * goes wrong — the dialog hides the fiat line on empty string.
-     */
-    async computeFiatStringForSats(sats) {
-      if (!sats || !this.fiatRatesLoaded) return '';
-      try {
-        const currency = this.preferredFiatCurrency;
-        const fiat = await fiatRatesService.convertSatsToFiat(sats, currency);
-        if (fiat === null || fiat === undefined || isNaN(fiat)) return '';
-        return '≈ ' + fiatRatesService.formatFiatAmount(fiat, currency);
-      } catch (e) {
-        return '';
-      }
-    },
-
-    /**
-     * Fully close and reset the Bolt Card PIN dialog. Called on success,
-     * on terminal failure (card blocked / network / HTTPS guard), and
-     * on cancel — anywhere the retry cycle ends.
-     */
-    closeBoltCardPinDialog() {
-      this.showBoltCardPinDialog = false;
-      this.boltCardPinResolve = null;
-      this.boltCardPinValidating = false;
-      this.boltCardPinError = '';
-      this.boltCardPinAmountDisplay = '';
-      this.boltCardPinFiatAmount = '';
-    },
-
-    onBoltCardPinComplete(pin) {
-      // Hand the PIN to the awaiting executeWithdraw() attempt. The
-      // dialog stays open: the caller decides whether to close it
-      // (success / card blocked) or keep it open (Invalid PIN retry).
-      if (this.boltCardPinResolve) {
-        const resolve = this.boltCardPinResolve;
-        this.boltCardPinResolve = null;
-        resolve(pin);
-      }
-    },
-
-    onBoltCardPinCancel() {
-      // User dismissed the dialog via the back button. Close fully and
-      // resolve null so executeWithdraw() exits the retry loop cleanly.
-      const resolve = this.boltCardPinResolve;
-      this.closeBoltCardPinDialog();
-      if (resolve) resolve(null);
-    },
-
-    onBoltCardPinTimeout() {
-      // Session timeout — user left the PIN dialog idle past the
-      // configured window. Surface a brief notification so the screen
-      // doesn't appear to dismiss itself for no reason, then route
-      // through the same teardown as a manual cancel: resolve the
-      // awaited PIN promise with null and reset the withdraw flow.
-      this.$q.notify({
-        type: 'info',
-        icon: 'tabler:clock-x',
-        message: this.$t('PIN entry timed out'),
-        caption: this.$t('Tap the card again to retry'),
-        timeout: 3500,
-        position: 'top'
-      });
-      this.onBoltCardPinCancel();
     },
 
     startMerchantCountdown() {
@@ -6268,30 +5928,7 @@ export default {
      */
     async fetchLNURLInfo(lnurl) {
       try {
-        const url = this.decodeLNURL(lnurl);
-        const inline = parseFastWithdrawRequest(url);
-        // `sourceUrl` is the LUD-14 identity hook: a voucher is known by every
-        // URL it was reached through, so the decoded link travels with the
-        // answer whether it was inline (LUD-08) or fetched.
-        if (inline) return withdrawInfo(inline, { sourceUrl: url });
-        const response = await lnurlGetJson(url, { timeoutMs: 10000 });
-
-        if (!response.ok) {
-          return { error: true, reason: `Server returned ${response.status}` };
-        }
-
-        const data = response.data;
-
-        if (!data) {
-          return {
-            error: true,
-            reason: this.$t('The server did not respond or the link is no longer valid'),
-          };
-        }
-
-        if (data.status === 'ERROR') {
-          return { error: true, reason: data.reason || 'This link is no longer valid' };
-        }
+        const { url, data } = await fetchLnurlRequest(lnurl);
 
         if (data.tag === 'withdrawRequest') {
           return withdrawInfo(data, { sourceUrl: url });
@@ -6322,7 +5959,7 @@ export default {
           serviceMeta: parsePayRequestMetadata(data.metadata),
         };
       } catch (error) {
-        console.warn('Failed to fetch LNURL info:', error.message);
+        console.warn('Failed to fetch LNURL info:', safeWithdrawError(error.message));
         // Surface the underlying failure so the send field / error dialog
         // shows what actually happened (timeout, offline) instead of a
         // misleading upstream-attributed message.
