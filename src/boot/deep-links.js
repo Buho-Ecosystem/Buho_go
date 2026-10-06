@@ -1,3 +1,4 @@
+import { offerKioskPayment } from '../services/kioskPaymentIntake.js';
 import { offerAddressRequest } from '../services/addressRequestIntake.js';
 import { boot } from 'quasar/wrappers'
 import { Notify } from 'quasar'
@@ -27,7 +28,9 @@ import { redactPaymentInput } from '../utils/logRedaction'
  *   4. We write the parsed payload to walletStore.pendingDeepLink
  *   5. Wallet.vue's watcher (immediate: true) drains it on mount and feeds
  *      onPaymentDetected(). This survives the cold-start race where the
- *      intent arrives before Wallet.vue has registered its handler.
+ *      intent arrives before Wallet.vue has registered its handler. Locked
+ *      kiosks instead consume withdrawals on KioskDashboard, using the same
+ *      inbox without opening the owner's wallet.
  */
 
 // Cold start can deliver one intent twice (getLaunchUrl + appUrlOpen). Drop a
@@ -81,11 +84,7 @@ function handleDeepLink(url, router, walletStore) {
   // activeWallet guard both read store state that is null until hydration runs.
   triggerWalletStoreHydration(walletStore)
 
-  // Block deep links while kiosk mode is locked
-  if (walletStore.kioskEnabled && !walletStore.kioskOwnerAccess) {
-    console.log('[deep-links] Blocked - kiosk mode active')
-    return
-  }
+  if (offerKioskPayment(url, walletStore, router)) return
 
   // A shared card is not a payment, and neither is a Nostr identity. Both
   // open the same page the browser would have shown, natively, where paying

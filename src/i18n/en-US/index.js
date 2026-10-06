@@ -2,6 +2,16 @@ import addressRequest from './addressRequest.js';
 import backup from './backup.js';
 import exit from './exit.js';
 export default {
+  "Charge card": "Charge card",
+  "Charge": "Charge",
+  "Slide to charge": "Slide to charge",
+  "Card ready. Enter the sale amount to continue.": "Card ready. Enter the sale amount to continue.",
+  "Reading card…": "Reading card…",
+  "The sale amount is outside this card’s payment limits.": "The sale amount is outside this card’s payment limits.",
+  "This card does not support withdrawals.": "This card does not support withdrawals.",
+  "Invalid withdrawal request": "Invalid withdrawal request",
+  "Check payment again": "Check payment again",
+  "Could not check payment status. Please check again.": "Could not check payment status. Please check again.",
   "Loading more people…": "Loading more people…",
   "Load more people": "Load more people",
   "All available results shown.": "All available results shown.",

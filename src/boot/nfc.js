@@ -1,3 +1,4 @@
+import { offerKioskPayment } from '../services/kioskPaymentIntake.js';
 import { offerAddressRequest } from '../services/addressRequestIntake.js';
 import { boot } from 'quasar/wrappers'
 import { Notify } from 'quasar'
@@ -23,8 +24,8 @@ import { redactPaymentInput } from '../utils/logRedaction'
  *    on every app resume for taps that arrived while backgrounded.
  *
  * Parsed payment data is buffered on walletStore.pendingDeepLink — the same
- * channel deep-links.js writes to — so Wallet.vue's watcher picks it up
- * without any additional wiring and without timing races.
+ * channel deep-links.js writes to. Ordinary inputs go to Wallet.vue; locked
+ * kiosk inputs are marked for KioskDashboard's receive-only card flow.
  *
  * Supported tag formats:
  *   - Bolt Card  → lnurlw:// URL (LNURL-withdraw with HMAC)
@@ -58,11 +59,7 @@ export default boot(async ({ router }) => {
     // store, so hydrate first — idempotent, synchronous prefix is enough.
     triggerWalletStoreHydration(walletStore)
 
-    // Block while kiosk mode is locked
-    if (walletStore.kioskEnabled && !walletStore.kioskOwnerAccess) {
-      console.log('[nfc] Blocked — kiosk mode active')
-      return
-    }
+    if (offerKioskPayment(raw, walletStore, router)) return
 
     // Parse the raw tag content using the same logic as QR scanner & deep links
     let parsed = parsePaymentDestination(raw)

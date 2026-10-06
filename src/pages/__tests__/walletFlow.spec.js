@@ -326,3 +326,36 @@ test('a late manual quote cannot overwrite a different deposit sheet or clear it
   assert.equal(vm.claimFeeQuote.creditAmountSats, 2000);
   assert.equal(vm.isLoadingQuote, false);
 });
+
+
+test('wallet redemption uses shared authorization before starting its existing receipt monitor', async () => {
+  const { methods } = component();
+  const calls = [];
+  const request = { type: 'lnurl_withdraw', defaultDescription: 'Bolt Card' };
+  const invoice = { payment_request: 'lnbc-wallet-invoice' };
+  const vm = {
+    ...methods, pendingPayment: request, canConfirmWithdraw: true, withdrawAmountSats: 100,
+    createInvoiceForWithdraw: async (amount, description) => {
+      assert.equal(amount, 100); assert.equal(description, 'Bolt Card'); return invoice;
+    },
+    $refs: { withdrawAuthorization: { submit: async (...args) => calls.push(args) } },
+    startWithdrawPaymentMonitor: async (...args) => calls.push(args),
+  };
+  await vm.executeWithdraw();
+  assert.deepEqual(calls, [[request, 'lnbc-wallet-invoice', 100], [invoice, 100]]);
+  assert.equal(vm.lnurlWithdrawStatus, 'monitoring');
+});
+
+test('wallet PIN cancellation does not start receipt monitoring', async () => {
+  const { methods } = component();
+  let reset = false;
+  const vm = {
+    ...methods, pendingPayment: { type: 'lnurl_withdraw' }, canConfirmWithdraw: true, withdrawAmountSats: 100,
+    createInvoiceForWithdraw: async () => ({ payment_request: 'lnbc-wallet-invoice' }),
+    $refs: { withdrawAuthorization: { submit: async () => { throw new DOMException('cancelled', 'AbortError'); } } },
+    startWithdrawPaymentMonitor: () => assert.fail('must not monitor a cancelled authorization'),
+    resetWithdrawState: () => { reset = true; },
+  };
+  await vm.executeWithdraw();
+  assert.equal(reset, true);
+});

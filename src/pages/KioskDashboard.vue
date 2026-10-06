@@ -9,7 +9,7 @@
             <q-icon name="point_of_sale" size="13px" />
             <span>{{ kioskWalletName }}</span>
           </div>
-          <button v-if="parkedInvoice" class="kiosk-park-btn" @click.stop="resumeParked">
+          <button v-if="parkedInvoice" :disabled="state !== 'input'" class="kiosk-park-btn" @click.stop="resumeParked">
             <q-icon name="pause_circle" size="15px" />
             <span>1</span>
           </button>
@@ -22,24 +22,40 @@
         </button>
       </header>
 
+      <p v-if="card.message.value && (card.phase.value !== 'ready' || state === 'input')" class="text-center" role="status">{{ card.message.value }}</p>
+      <PaymentConfirmSheet
+        :model-value="card.phase.value === 'review' || card.phase.value === 'submitting'"
+        :payment="card.payment.value"
+        verb="charge"
+        :is-sending="card.phase.value === 'submitting'"
+        :status-message="$t('Requesting funds...')"
+        @confirm="card.confirm"
+        @cancel="card.reset"
+      >
+        <template #extras><p>{{ $t('Receiving wallet: {wallet}', { wallet: kioskWalletName }) }}</p></template>
+      </PaymentConfirmSheet>
+      <WithdrawAuthorization ref="cardAuthorization" />
+
       <!-- ═══ Paid ═══ -->
       <div v-if="state === 'success'" class="pos-state-center">
         <div class="pos-paid-ring"><q-icon name="check" size="36px" /></div>
         <span class="pos-state-title mt-4">{{ $t('kiosk.paymentReceived') }}</span>
-        <div class="pos-amount-pill mt-2">{{ displaySats(finalAmountSats) }}</div>
+        <div class="pos-amount-pill mt-2">{{ displaySats(invoiceData?.amountSats ?? finalAmountSats) }}</div>
         <button class="pos-primary-btn mt-8" @click.stop="resetToInput">{{ $t('kiosk.newCharge') }}</button>
       </div>
 
       <!-- ═══ QR ═══ -->
       <div v-else-if="state === 'payment'" class="pos-state-center">
         <p class="pos-qr-label">{{ $t('kiosk.waitingForPayment') }}</p>
-        <div class="pos-qr-amount-lg">{{ displaySats(finalAmountSats) }}</div>
+        <div class="pos-qr-amount-lg">{{ displaySats(invoiceData?.amountSats ?? finalAmountSats) }}</div>
         <div class="pos-qr-area">
           <div class="pos-qr-card animate-pop">
             <q-spinner v-if="!invoiceData" size="36px" color="grey-6" />
             <img v-else :src="qrDataUrl" alt="QR" class="pos-qr-img" />
           </div>
         </div>
+        <p v-if="paymentProblem" role="status">{{ paymentProblem }}</p>
+        <button v-if="retryStatus" class="pos-text-btn" @click="startPolling">{{ $t('Check payment again') }}</button>
         <div class="pos-payment-actions">
           <button class="pos-text-btn" @click.stop="parkInvoice">{{ $t('kiosk.park') || 'Park' }}</button>
           <button class="pos-text-btn pos-cancel-btn" @click.stop="cancelPayment">{{ $t('Cancel') }}</button>
@@ -76,7 +92,7 @@
             <div class="tip-break-row"><span>{{ $t('kiosk.subtotal') || 'Subtotal' }}</span><span>{{ displaySats(baseAmountSats) }}</span></div>
             <div v-if="selectedTipAmount > 0 || useRoundUp" class="tip-break-row tip-break-tip"><span>{{ extraLabel }}</span><span class="tip-break-val">+{{ displaySats(finalAmountSats - baseAmountSats) }}</span></div>
             <div class="tip-break-divider"></div>
-            <div class="tip-break-row tip-break-total"><span>{{ $t('kiosk.total') }}</span><span>{{ displaySats(finalAmountSats) }}</span></div>
+            <div class="tip-break-row tip-break-total"><span>{{ $t('kiosk.total') }}</span><span>{{ displaySats(invoiceData?.amountSats ?? finalAmountSats) }}</span></div>
           </div>
           <button class="pos-primary-btn" :disabled="!tipInteractive" @click.stop="confirmTip"><span>{{ $t('Confirm') }}</span><q-icon name="arrow_forward" size="18px" /></button>
           <button class="pos-secondary-btn" @click.stop="state = 'input'">{{ $t('Back') }}</button>
@@ -162,25 +178,31 @@
 </template>
 
 <script>
-import { defineComponent, ref, computed, onMounted, onUnmounted, getCurrentInstance } from 'vue'
+import { defineComponent, ref, computed, onMounted, onUnmounted, getCurrentInstance, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useWalletStore } from 'stores/wallet'
 import { roundUpTargetSats } from 'src/utils/roundUp'
 import { useTransactionMetadataStore } from 'stores/transactionMetadata'
 import KioskPinPad from 'components/KioskPinPad.vue'
 import QRCode from 'qrcode'
+import { Invoice } from '@getalby/lightning-tools'
+import PaymentConfirmSheet from '../components/PaymentConfirmSheet.vue'
+import WithdrawAuthorization from '../components/WithdrawAuthorization.vue'
+import { useKioskCardPayment } from '../composables/useKioskCardPayment.js'
+import { createPaymentMonitor, PaymentStatus } from '../utils/paymentMonitor.js'
+import { safeWithdrawError } from '../services/lnurlWithdraw.js'
 import { fiatSymbol as fiatSymbolFor } from 'src/utils/fiatCurrencies'
 
 export default defineComponent({
   name: 'KioskDashboard',
-  components: { KioskPinPad },
+  components: { KioskPinPad, PaymentConfirmSheet, WithdrawAuthorization },
 
   setup() {
     const router = useRouter()
     const store = useWalletStore()
     const metadataStore = useTransactionMetadataStore()
     const { proxy } = getCurrentInstance()
-    const t = (key) => proxy.$t(key)
+    const t = (key, values) => proxy.$t(key, values)
 
     const state = ref('input')
     const walletReady = ref(false)
@@ -200,9 +222,19 @@ export default defineComponent({
     const tipInteractive = ref(false)
     const invoiceData = ref(null)
     const qrDataUrl = ref('')
-    let pollTimer = null
-    let sparkPollState = null // { cancelled: boolean } cancellation token for Spark invoice polling
-    let sparkVisHandler = null // visibilitychange listener for mobile resume catch-up
+    let paymentMonitor = null
+    let visibilityHandler = null
+    let saleRevision = 0
+    const paymentProblem = ref('')
+    const retryStatus = ref(false)
+    const cardAuthorization = ref(null)
+    const sale = computed(() => state.value === 'payment' && !paymentProblem.value ? invoiceData.value : null)
+    const card = useKioskCardPayment({
+      sale, t,
+      authorize: (...args) => cardAuthorization.value.submit(...args),
+      onError: error => store.showPaymentError(new Error(t(safeWithdrawError(error.message))), { context: 'kiosk', t }),
+    })
+
     let successTimer = null
     const showCartSheet = ref(false)
     const parkedInvoice = ref(null)
@@ -322,7 +354,7 @@ export default defineComponent({
     function clearAll() { rawInput.value = '0'; accumulatedItems.value = [] }
 
     function proceedToTipOrCharge() {
-      if (totalSatsForCharge.value <= 0) return
+      if (state.value !== 'input' || totalSatsForCharge.value <= 0) return
       baseAmountSats.value = totalSatsForCharge.value
       selectedTipPercent.value = 0; useRoundUp.value = false
       // Either setting alone is enough to earn the screen. Reading only
@@ -338,20 +370,35 @@ export default defineComponent({
     function confirmTip() { createCharge() }
 
     async function createCharge() {
+      if (state.value !== 'input' && state.value !== 'tipping') return
+      const revision = ++saleRevision
+      const walletId = store.kioskWalletId
+      const amountSats = finalAmountSats.value
+      if (!walletId || !Number.isSafeInteger(amountSats) || amountSats <= 0) return
+      const current = () => revision === saleRevision && walletId === store.kioskWalletId && store.kioskEnabled && !store.kioskOwnerAccess
+      captureSaleBreakdown()
       state.value = 'processing'; invoiceData.value = null; qrDataUrl.value = ''
+      paymentProblem.value = ''
       try {
         // `store.providers[id]` may hold a stale entry whose underlying SDK
         // wallet was released (hot reload, wallet switch, Spark disconnect
         // on lock). `ensureWalletConnectedForTransfer` is the same guard
         // the transfer/batch/auto-withdraw paths use — reconnect if the
         // provider isn't actually connected, then return a live one.
-        const provider = await store.ensureWalletConnectedForTransfer(store.kioskWalletId)
-        const result = await provider.createInvoice({ amount: finalAmountSats.value, description: 'Kiosk Payment' })
-        invoiceData.value = result
-        qrDataUrl.value = await QRCode.toDataURL(result.paymentRequest, { width: 300, margin: 2, color: { dark: '#000000', light: '#ffffff' } })
-        captureSaleBreakdown()
+        const provider = await store.ensureWalletConnectedForTransfer(walletId)
+        if (!current()) return
+        const result = await provider.createInvoice({ amount: amountSats, description: 'Kiosk Payment' })
+        if (!current()) return
+        const paymentHash = result.paymentHash || result.payment_hash || new Invoice({ pr: result.paymentRequest }).paymentHash
+        if (!paymentHash) throw new Error('Invoice must have a payment_hash')
+        invoiceData.value = { ...result, paymentHash, walletId, amountSats }
+        const qr = await QRCode.toDataURL(result.paymentRequest, { width: 300, margin: 2, color: { dark: '#000000', light: '#ffffff' } })
+        if (!current()) return
+        qrDataUrl.value = qr
         state.value = 'payment'; startPolling()
       } catch (err) {
+        if (!current()) return
+        card.reset()
         console.error('[kiosk] charge error:', err)
         // Unified dialog. Same modal users see across every other
         // payment failure in the app, so the kiosk operator gets a
@@ -363,93 +410,55 @@ export default defineComponent({
     }
     function startPolling() {
       clearPolling()
-      const provider = store.providers[store.kioskWalletId]
-      const isSpark = store.kioskWallet?.type === 'spark'
-      const invoiceId = invoiceData.value?.id
-
-      // Spark with a known invoice id: poll getLightningReceiveRequest by id.
-      // Balance-diff polling can mis-attribute a concurrent inbound payment
-      // to the kiosk charge; querying by invoice id is unambiguous and works
-      // for both Spark-native and Lightning receive paths.
-      if (isSpark && invoiceId && provider && typeof provider.getLightningReceiveStatus === 'function') {
-        sparkPollState = { cancelled: false, failures: 0 }
-        const state = sparkPollState
-        const intervalMs = 3000
-
-        const tick = async () => {
-          if (state.cancelled) return
-          // A visibility catch-up can call tick() while a timeout is armed;
-          // clear it so there is only ever ONE tick chain (an orphaned chain
-          // would survive clearPolling and could double-fire the success).
-          if (pollTimer) { clearTimeout(pollTimer); pollTimer = null }
+      const invoice = invoiceData.value
+      if (!invoice) return
+      paymentProblem.value = ''
+      retryStatus.value = false
+      const monitor = createPaymentMonitor({ maxAttempts: Number.MAX_SAFE_INTEGER, maxInterval: 3000, expiryBuffer: 0 })
+      paymentMonitor = monitor
+      let failures = 0
+      monitor.start({
+        invoice: { payment_hash: invoice.paymentHash, amount: invoice.amountSats, expires_at: invoice.expiresAt || invoice.expires_at },
+        provider: { lookupInvoice: async hash => {
           try {
-            // Re-resolve each tick: a reconnect below (or elsewhere in the
-            // app) replaces the provider object in the store.
-            const p = store.providers[store.kioskWalletId] || provider
-            const status = await p.getLightningReceiveStatus(invoiceId)
-            if (state.cancelled) return
-            state.failures = 0
-            if (status.isPaid) {
-              try {
-                const b = await p.getBalance()
-                store.balances[store.kioskWalletId] = Number(b?.balance ?? b ?? 0)
-              } catch (_) { /* balance refresh is best-effort */ }
-              clearPolling()
-              showSuccess()
-              return
+            const provider = await store.ensureWalletConnectedForTransfer(invoice.walletId)
+            const result = await provider.lookupInvoice(hash)
+            failures = 0
+            return result
+          } catch (error) {
+            if (++failures >= 5 && store.wallets.find(wallet => wallet.id === invoice.walletId)?.type === 'spark') {
+              failures = 0
+              await store.connectSparkWallet(invoice.walletId, { forceReinit: true })
             }
-            if (status.isExpired) { clearPolling(); return }
-          } catch (_) {
-            // Transient errors are expected; a streak means the SDK died
-            // while the kiosk was backgrounded (the wallet self-heal lives on
-            // a route the kiosk never mounts) — force a rebuild, since a
-            // plain reconnect would hand back the same dead instance.
-            state.failures += 1
-            if (state.failures >= 5) {
-              state.failures = 0
-              try { await store.connectSparkWallet(store.kioskWalletId, { forceReinit: true }) } catch (_) { /* retry next streak */ }
-            }
+            throw error
           }
-          if (!state.cancelled) pollTimer = setTimeout(tick, intervalMs)
-        }
-        pollTimer = setTimeout(tick, intervalMs)
-
-        sparkVisHandler = () => {
-          if (document.visibilityState === 'visible' && !state.cancelled) tick()
-        }
-        document.addEventListener('visibilitychange', sparkVisHandler)
-        return
-      }
-
-      // Non-Spark or no invoice id: legacy balance-diff polling. Provider
-      // getBalance() returns an object { balance, ... } for Spark/LNbits/Arkade
-      // (scalar for some NWC), so normalize to a number before comparing/storing
-      // — `{...} > number` is always false and would never detect the payment.
-      const ib = Number(store.balances[store.kioskWalletId] ?? 0)
-      pollTimer = setInterval(async () => {
-        try {
-          const p = store.providers[store.kioskWalletId]; if (!p) return
-          const res = await p.getBalance()
-          const bal = Number(res?.balance ?? res ?? 0)
-          if (bal > ib) { store.balances[store.kioskWalletId] = bal; clearPolling(); showSuccess() }
-        } catch (e) {}
-      }, 2000)
+        } },
+        onStatusChange(status) {
+          if (paymentMonitor !== monitor || invoiceData.value !== invoice) return
+          if (status === PaymentStatus.CONFIRMED) { clearPolling(); showSuccess() }
+          else if (status === PaymentStatus.EXPIRED || status === PaymentStatus.ERROR) {
+            paymentProblem.value = t(status === PaymentStatus.EXPIRED ? 'Payment expired' : 'Could not check payment status. Please check again.')
+            retryStatus.value = status === PaymentStatus.ERROR
+          }
+        },
+      })
+      visibilityHandler = () => { if (document.visibilityState === 'visible') monitor.checkNow() }
+      document.addEventListener('visibilitychange', visibilityHandler)
+      void monitor.checkNow()
     }
     function clearPolling() {
-      if (pollTimer) { clearInterval(pollTimer); clearTimeout(pollTimer); pollTimer = null }
-      if (sparkPollState) { sparkPollState.cancelled = true; sparkPollState = null }
-      if (sparkVisHandler) {
-        document.removeEventListener('visibilitychange', sparkVisHandler)
-        sparkVisHandler = null
-      }
+      paymentMonitor?.stop()
+      paymentMonitor = null
+      if (visibilityHandler) document.removeEventListener('visibilitychange', visibilityHandler)
+      visibilityHandler = null
     }
-    function cancelPayment() { clearPolling(); parkedInvoice.value = null; saleBreakdownSnapshot.value = null; state.value = 'input' }
+    function cancelPayment() { saleRevision++; clearPolling(); card.reset(); invoiceData.value = null; parkedInvoice.value = null; saleBreakdownSnapshot.value = null; state.value = 'input' }
 
     function parkInvoice() {
+      saleRevision++
       parkedInvoice.value = {
         invoiceData: invoiceData.value,
         qrDataUrl: qrDataUrl.value,
-        finalAmountSats: finalAmountSats.value,
         baseAmountSats: baseAmountSats.value,
         accumulatedItems: [...accumulatedItems.value],
         // Carried through park/resume as its own copy so a SECOND charge
@@ -470,7 +479,8 @@ export default defineComponent({
     }
 
     function resumeParked() {
-      if (!parkedInvoice.value) return
+      if (!parkedInvoice.value || state.value !== 'input') return
+      saleRevision++
       invoiceData.value = parkedInvoice.value.invoiceData
       qrDataUrl.value = parkedInvoice.value.qrDataUrl
       baseAmountSats.value = parkedInvoice.value.baseAmountSats
@@ -482,8 +492,8 @@ export default defineComponent({
     }
 
     /**
-     * Snapshot the sale breakdown right after the invoice for THIS charge
-     * is created: baseAmountSats/selectedTipPercent/useRoundUp/
+     * Snapshot the sale breakdown before creating this invoice, while
+     * baseAmountSats/selectedTipPercent/useRoundUp/
      * accumulatedItems are all settled by this point (nothing between here
      * and a paid invoice mutates them except a park or a reset, both of
      * which now carry/clear this same snapshot). Never fabricated — a
@@ -513,6 +523,13 @@ export default defineComponent({
       // Idempotent: overlapping poll chains or a race between the event and
       // the poll must not record the same sale twice.
       if (state.value === 'success') return
+      const walletId = invoiceData.value.walletId
+      const provider = store.providers[walletId]
+      Promise.resolve().then(() => provider?.getBalance()).then(balance => {
+        if (balance != null && store.wallets.some(wallet => wallet.id === walletId)) {
+          store.balances[walletId] = Number(balance?.balance ?? balance)
+        }
+      }).catch(() => {})
       // Stamp the sale onto the incoming tx once it surfaces in history.
       // Best-effort and non-blocking: the kiosk boots on its own path, so
       // the metadata store lazy-initializes itself, and a metadata failure
@@ -522,10 +539,10 @@ export default defineComponent({
           label: t('Kiosk sale'),
           source: 'kiosk',
           direction: 'incoming',
-          amountSats: finalAmountSats.value,
+          amountSats: invoiceData.value.amountSats,
           // The kiosk's destination wallet — the one whose tx list will
           // actually show the sale once it surfaces.
-          walletId: store.kioskWalletId || null,
+          walletId: invoiceData.value.walletId,
           // The curated subtotal/tip/round-up/total captured at invoice
           // creation (see captureSaleBreakdown) — null when there was
           // nothing meaningful to attach.
@@ -538,6 +555,7 @@ export default defineComponent({
     }
 
     function resetToInput() {
+      cancelPayment()
       clearTimeout(successTimer)
       rawInput.value = '0'
       accumulatedItems.value = []
@@ -562,6 +580,15 @@ export default defineComponent({
     function handleUnlockPin(pin) { if (store.unlockToOwnerMode(pin)) { showUnlockDialog.value = false; router.push('/wallet') } else { unlockError.value = t('kiosk.incorrectPin') } }
     function resetUnlock() { showPinStep.value = false; unlockError.value = ''; if (unlockPinRef.value) unlockPinRef.value.reset() }
     function handleScreenTap() { tapCount++; clearTimeout(tapTimer); tapTimer = setTimeout(() => { tapCount = 0 }, 5000); if (tapCount >= 13) { tapCount = 0; store.forceUnlockKiosk(); router.push('/wallet') } }
+
+    watch(() => store.pendingDeepLink, payment => {
+      if (payment?.target !== 'kiosk') return
+      store.pendingDeepLink = null
+      if (!store.kioskEnabled || store.kioskOwnerAccess || state.value === 'success') return
+      if (card.accept(payment) && state.value === 'input' && totalSatsForCharge.value > 0) proceedToTipOrCharge()
+    }, { immediate: true })
+
+    watch(() => [store.kioskWalletId, store.kioskEnabled, store.kioskOwnerAccess], () => cancelPayment(), { flush: 'sync' })
 
     onMounted(async () => {
       // Load persisted state if store hasn't initialized yet
@@ -590,7 +617,7 @@ export default defineComponent({
 
       walletReady.value = !!store.providers[store.kioskWalletId]
     })
-    onUnmounted(() => { clearPolling(); clearTimeout(tapTimer); clearTimeout(successTimer) })
+    onUnmounted(() => { saleRevision++; clearPolling(); clearTimeout(tapTimer); clearTimeout(successTimer) })
 
     return {
       state, walletReady, rawInput, formattedDisplay, amountFontStyle, amountSats, isFiatMode, fiatSymbol, kioskWalletName,
@@ -600,6 +627,7 @@ export default defineComponent({
       totalBeforeRoundUp, roundUpValue, useRoundUp, finalAmountSats,
       offersTip, offersRoundUp, extrasTitle, extrasSkipLabel, extraLabel,
       baseAmountSats, formatSats, displaySats, createCharge, confirmTip,
+      card, cardAuthorization, paymentProblem, retryStatus, startPolling,
       invoiceData, qrDataUrl, cancelPayment, parkInvoice, resumeParked, parkedInvoice, resetToInput,
       showCartSheet, showUnlockDialog, showPinStep, unlockPinRef, unlockError,
       handleUnlockPin, resetUnlock, handleScreenTap, store
