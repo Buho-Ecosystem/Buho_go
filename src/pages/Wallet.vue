@@ -709,7 +709,7 @@
         <OnchainFeePanel
           :amount-sats="sendSheetAmountSats"
           :address="l1DestinationAddress"
-          :available-balance="walletState.balance"
+          :available-balance="activeCanonicalBalance ?? 0"
           :disabled="isSendingPayment"
           @update:fee="l1Fee = $event"
           @use-max="$refs.sendSheetRef?.setAmountSats($event)"
@@ -912,7 +912,7 @@ import {resolveNostrLightningTarget} from '../services/nostrPaymentTarget';
 import {Invoice} from '@getalby/lightning-tools';
 import {parseLightningInvoice} from '../utils/lightningInvoice.js';
 import {fiatRatesService} from '../utils/fiatRates.js';
-import {SELECTABLE_FIAT_CURRENCIES, fiatSymbol} from '../utils/fiatCurrencies.js';
+import {fiatSymbol} from '../utils/fiatCurrencies.js';
 import {formatMainBalance as formatMainBalanceUtil, formatAmount} from '../utils/amountFormatting.js';
 import {haptics} from '../utils/haptics.js';
 import {isNfcAvailable} from '../utils/nfc.js';
@@ -1043,7 +1043,6 @@ export default {
 
       // Home balance: the wallet whose balance has been read this session,
       // and the refreshes the user is waiting on (see balanceUpdating).
-      balanceReadFor: null,
       balanceRefreshes: 0,
       balanceAwaitedSince: 0,
 
@@ -1053,18 +1052,6 @@ export default {
       migrationError: '',
       isMigrating: false,
 
-      walletState: {
-        balance: 0,
-        connectedWallets: [],
-        activeWalletId: null,
-        currency: 'sats',
-        currencies: ['sats', 'btc', 'usd'],
-        exchangeRates: {},
-        lastRateUpdate: null,
-        preferredFiatCurrency: 'USD',
-        denominationCurrency: 'bitcoin',
-        displayMode: 'bitcoin'
-      },
       // Last transaction preview shown above the History link.
       // `null` before the first fetch completes (we render a skeleton
       // instead while `isLoadingLastTransaction` is true). Populated
@@ -1208,9 +1195,8 @@ export default {
     },
 
     activeWallet() {
-      return this.walletState.connectedWallets.find(
-        w => w.id === this.walletState.activeWalletId
-      ) || null;
+      const wallet = this.walletStore.activeWallet;
+      return wallet ? { ...wallet, nwcString: wallet.nwcUrl } : null;
     },
 
     /**
@@ -1487,7 +1473,7 @@ export default {
       if (!this.lastTransaction) return '';
       const sats = this.lastTxDisplayAmountSats;
       if (sats === 0) return '';
-      const currency = this.walletState.preferredFiatCurrency || 'USD';
+      const currency = this.walletStore.preferredFiatCurrency || 'USD';
       const fiat = fiatRatesService.convertSatsToFiatSync(sats, currency);
       if (fiat === null || fiat === undefined) return '';
       // "about $0.02" matches the reference mock's softer tone vs an
@@ -2080,18 +2066,17 @@ export default {
      * up to a minute; the balance is already settled by then.
      */
     balanceUpdating() {
-      const id = this.walletStore.activeWalletId;
-      if (this.balanceReadFor !== id) return true;
+      if (!this.activeBalanceState?.known) return !!this.activeBalanceState?.refreshing || this.balanceRefreshes > 0;
       if (this.balanceRefreshes === 0) return false;
       const verifiedAt = this.activeBalanceVerifiedAt;
       return !(verifiedAt && verifiedAt >= this.balanceAwaitedSince);
     },
 
     balanceNumericValue() {
-      const balance = this.walletState.balance || 0;
+      const balance = this.activeCanonicalBalance || 0;
       if (this.currentDisplayMode === 'fiat') {
         const btcAmount = balance / 100000000;
-        const rate = this.walletState.exchangeRates?.[this.walletState.preferredFiatCurrency?.toLowerCase()];
+        const rate = this.walletStore.exchangeRates?.[this.walletStore.preferredFiatCurrency?.toLowerCase()];
         if (!rate) return 0;
         return btcAmount * rate;
       }
@@ -2101,7 +2086,7 @@ export default {
 
     fiatRateMissing() {
       if (this.currentDisplayMode !== 'fiat') return false;
-      const rate = this.walletState.exchangeRates?.[this.walletState.preferredFiatCurrency?.toLowerCase()];
+      const rate = this.walletStore.exchangeRates?.[this.walletStore.preferredFiatCurrency?.toLowerCase()];
       return !(rate > 0);
     },
 
@@ -2130,7 +2115,7 @@ export default {
       return this.walletStore.connectionStates || {};
     },
     preferredFiatCurrency() {
-      return (this.walletState.preferredFiatCurrency || 'USD').toUpperCase();
+      return (this.walletStore.preferredFiatCurrency || 'USD').toUpperCase();
     },
     /** Canonical state of the active wallet (known/stale/…), or null. */
     activeBalanceState() {
@@ -2254,40 +2239,12 @@ export default {
     this.cancelBrantaLookup();
   },
   watch: {
-    'walletState.balance': {
-      handler() {
-        this.updateSecondaryValue();
-      },
-      immediate: true
-    },
-
-    // Background syncs, SDK events and other screens update the store's
-    // canonical balance; the home figure follows it without a page timer.
     activeCanonicalBalance: {
-      handler(value) {
-        if (value === null || value === undefined) return;
-        if (this.walletState.balance !== value) this.walletState.balance = value;
-        this.mirrorActiveBalance();
-      },
+      handler: 'updateSecondaryValue',
       immediate: true
     },
-
-    // A verified reading of the same figure (a 0 confirmed as 0) changes no
-    // value, but it still means the balance has been read.
-    activeBalanceVerifiedAt() {
-      this.mirrorActiveBalance();
-    },
-
-    // The store owns the currency choice; the page copy only mirrors it.
-    'walletStore.preferredFiatCurrency': {
-      handler(code) {
-        if (code && this.walletState.preferredFiatCurrency !== code) {
-          this.walletState.preferredFiatCurrency = code;
-          this.updateSecondaryValue();
-        }
-      },
-      immediate: true
-    },
+    'walletStore.preferredFiatCurrency': 'updateSecondaryValue',
+    'walletStore.exchangeRates': 'updateSecondaryValue',
 
     /**
      * The Receive modal's "Redeem" button stashes the user's intended amount
@@ -2300,12 +2257,6 @@ export default {
      */
     showRedeemScanner(open) {
       if (!open) this.pendingWithdrawTargetSats = null;
-    },
-
-    'walletStore.activeWalletId'() {
-      this.bitcoinDepositRead++;
-      this.pendingBitcoinDeposits = [];
-      this.checkPendingBitcoinDeposits();
     },
 
     /**
@@ -2329,7 +2280,10 @@ export default {
      * Flip the skeleton back on briefly so the card feels responsive
      * to the switch rather than silently swapping its contents.
      */
-    'walletState.activeWalletId'(next, prev) {
+    'walletStore.activeWalletId'(next, prev) {
+      this.bitcoinDepositRead++;
+      this.pendingBitcoinDeposits = [];
+      this.checkPendingBitcoinDeposits();
       if (next === prev) return;
       this.isLoadingLastTransaction = true;
       this.lastTransaction = null;
@@ -3113,17 +3067,13 @@ export default {
 
       try {
         await this.walletStore.switchActiveWallet(walletId);
-        this.walletState.activeWalletId = walletId;
-        this.walletState.balance = this.walletStore.balanceStateFor(walletId).value ?? 0;
-        localStorage.setItem('buhoGO_wallet_state', JSON.stringify(this.walletState));
-
         // Hold the guard until the post-switch data load actually
         // settles. Previously we cleared it after `switchActiveWallet`
         // returned but kicked off `updateWalletBalance()` as
         // fire-and-forget, which let a second tap land while the SDK
         // was still fetching the balance for the new context.
         // `loadLastTransaction` is also driven by the
-        // `walletState.activeWalletId` watcher, which short-circuits
+        // `walletStore.activeWalletId` watcher, which short-circuits
         // while `sparkTabSwitching` is true to avoid a duplicate fetch.
         await Promise.allSettled([
           this.updateWalletBalance(),
@@ -3150,15 +3100,6 @@ export default {
       try {
         // Use the wallet store to switch - this keeps Settings in sync
         await this.walletStore.switchActiveWallet(walletId);
-
-        // Also update local walletState to stay in sync
-        this.walletState.activeWalletId = walletId;
-
-        // Get the new active wallet's balance from the store
-        this.walletState.balance = this.walletStore.balanceStateFor(walletId).value ?? 0;
-
-        // Save state to localStorage
-        localStorage.setItem('buhoGO_wallet_state', JSON.stringify(this.walletState));
 
         this.showWalletSwitcher = false;
 
@@ -3245,10 +3186,8 @@ export default {
     },
     async initializeWallet() {
       try {
-        await this.loadWalletState();
-
-        // Initialize wallet store
         await this.walletStore.initialize();
+        await this.updateWalletBalance();
 
         // Start L1 Bitcoin deposit polling for banner (after wallet store is ready)
         this.startBitcoinDepositPolling();
@@ -3314,181 +3253,25 @@ export default {
       }
     },
 
-    async loadWalletState() {
-      const savedState = localStorage.getItem('buhoGO_wallet_state');
-      if (savedState) {
-        try {
-          const parsedState = JSON.parse(savedState);
-          this.walletState = {
-            ...this.walletState,
-            ...parsedState,
-            preferredFiatCurrency: this.walletStore.preferredFiatCurrency || parsedState.preferredFiatCurrency || 'USD',
-            // A cache written by an older build may hold only some currencies.
-            exchangeRates: { ...(parsedState.exchangeRates || {}), ...(this.walletStore.exchangeRates || {}) },
-          };
-          await this.updateWalletBalance();
-        } catch (error) {
-          console.error('Failed to load wallet state:', error);
-        }
-      }
-    },
-
-    /**
-     * Refresh the active wallet's balance and the last-transaction preview.
-     *
-     * Called from the 30s periodic tick, after every send/receive, on wallet
-     * switch, and on app start. The balance-fetch logic branches per wallet
-     * type (Spark / LNbits / NWC) and each branch returns early after its
-     * own fetch — so the last-transaction refresh lives in `finally` to
-     * guarantee it runs for every wallet type, even when a branch throws.
-     */
-    /**
-     * The balance tick's one write. Reporting every reading to the wallet
-     * store is what lets it notice money that arrived while the app was in
-     * the background (every rail lands in this number every 30 s); the store
-     * keeps the previous figure itself and dedupes against its own refresh.
-     */
-    applyTickBalance(next, read, { source = 'sync', fresh = true } = {}) {
-      if (!this.walletStore.isBalanceReadCurrent(read)
-        || this.activeWallet?.id !== read.walletId
-        || !Number.isFinite(next) || next < 0) return false;
-      // Published to the store's canonical state (#293) so Settings, both
-      // switchers and the total see the same figure; the page mirrors it.
-      this.walletStore.applyBalance?.(read.walletId, next, { source, fresh });
-      this.walletState.balance = next;
-      this.balanceReadFor = read.walletId;
-      this.walletStore.noticeIncomingPayment(this.activeWallet, next);
-      return true;
-    },
-
-    /** Mirror the canonical state of the active wallet onto the page. */
-    mirrorActiveBalance() {
-      const id = this.walletStore.activeWalletId;
-      const state = id ? this.walletStore.balanceStateFor(id) : null;
-      if (!state?.known) return false;
-      this.walletState.balance = state.value;
-      if (state.status === 'fresh' || state.source !== 'persisted') this.balanceReadFor = id;
-      return true;
-    },
-
+    /** Refresh through the store; every screen reads the accepted result. */
     async updateWalletBalance(opts = {}) {
-      const activeWalletId = this.walletStore.activeWalletId;
-      if (!activeWalletId) return;
-      const read = this.walletStore.beginBalanceRead(activeWalletId);
-      // Every refresh but the routine tick is one the user is waiting on:
-      // the balance pulses until it lands.
+      const walletId = this.walletStore.activeWalletId;
+      if (!walletId) return;
       const awaited = !opts.preferCached;
       if (awaited) {
         this.balanceRefreshes += 1;
         this.balanceAwaitedSince = Date.now();
       }
       try {
-        if (this.showLoadingScreen) {
-          // still initializing
-        }
-
-        const awStore = useAutoWithdrawStore();
-
-        // The cached read is display-only by hard rule: it must never feed
-        // auto-withdraw (a money decision), so a wallet with auto-withdraw
-        // enabled keeps authoritative fetches even on the periodic tick.
-        const preferCached = Boolean(opts.preferCached)
-          && !awStore.getConfig(activeWalletId)?.enabled;
-
-        // Spark: the app lifecycle owns synchronization, recovery and
-        // self-healing for both accounts (services/sparkLifecycle.js). The
-        // routine tick only mirrors the canonical state; a refresh the user
-        // is waiting on asks the lifecycle to reconcile now.
         if (this.walletStore.isActiveWalletSpark) {
-          if (!preferCached) {
-            await this.walletStore.reconcileSpark([activeWalletId], 'user');
-          }
-          if (this.walletStore.activeWalletId !== activeWalletId || !this.walletStore.isBalanceReadCurrent(read)) return;
-          if (this.mirrorActiveBalance()) {
-            localStorage.setItem('buhoGO_wallet_state', JSON.stringify(this.walletState));
-          }
+          // The existing Spark lifecycle owns its periodic reads and events.
+          if (!opts.preferCached) await this.walletStore.reconcileSpark([walletId], 'user');
           this.exitHealthTick++;
-          return;
+        } else {
+          await this.walletStore.refreshBalance(walletId);
         }
-
-        // Check if active wallet is LNbits
-        if (this.walletStore.isActiveWalletLNBits) {
-          try {
-            const provider = await this.walletStore.ensureLNBitsConnected();
-            if (this.walletStore.activeWalletId !== activeWalletId) return;
-            const balanceResult = await provider.getBalance();
-            if (!this.applyTickBalance(balanceResult.balance, read)) return;
-
-            // Update wallet in store
-            const activeWallet = this.walletState.connectedWallets.find(
-              w => w.id === this.walletState.activeWalletId
-            );
-            if (activeWallet) {
-              activeWallet.balance = balanceResult.balance;
-            }
-
-            localStorage.setItem('buhoGO_wallet_state', JSON.stringify(this.walletState));
-
-            // Auto-withdraw runs from the store's applyBalance.
-          } catch (err) {
-            // Background refresh failures are non-fatal: cached balance
-            // stays visible and the next tick will retry. We log so issues
-            // are debuggable but don't surface a UI error for a transient
-            // blip.
-            console.warn('LNbits balance refresh failed:', err.message);
-          }
-          return;
-        }
-
-        // Arkade wallet flow (provider-based, like Spark/LNbits — never NWC)
-        if (this.walletStore.isActiveWalletArkade) {
-          try {
-            const provider = await this.walletStore.ensureArkadeConnected();
-            if (this.walletStore.activeWalletId !== activeWalletId) return;
-            const balanceResult = await provider.getBalance();
-            if (!this.applyTickBalance(balanceResult.balance, read)) return;
-
-            const activeWallet = this.walletState.connectedWallets.find(
-              w => w.id === this.walletState.activeWalletId
-            );
-            if (activeWallet) {
-              activeWallet.balance = balanceResult.balance;
-            }
-
-            localStorage.setItem('buhoGO_wallet_state', JSON.stringify(this.walletState));
-
-          } catch (err) {
-            console.warn('Arkade balance refresh failed:', err.message);
-          }
-          return;
-        }
-
-        // NWC wallet flow
-        const activeWallet = this.walletState.connectedWallets.find(
-          w => w.id === this.walletState.activeWalletId
-        );
-
-        if (activeWallet && activeWallet.nwcString) {
-          const nwc = new NostrWebLNProvider({
-            nostrWalletConnectUrl: activeWallet.nwcString,
-          });
-
-          await nwc.enable();
-          const balance = await nwc.getBalance();
-          if (!this.applyTickBalance(balance.balance, read)) return;
-          activeWallet.balance = balance.balance;
-
-          localStorage.setItem('buhoGO_wallet_state', JSON.stringify(this.walletState));
-
-          // Auto-withdraw runs from the store's applyBalance.
-        }
-      } catch (error) {
-        console.error('Failed to update balance:', error);
       } finally {
         if (awaited) this.balanceRefreshes -= 1;
-        // Runs for every wallet type, including the branches above that
-        // `return` early after their balance fetch. Fire-and-forget — any
-        // error inside is logged by loadLastTransaction itself.
         this.loadLastTransaction();
       }
     },
@@ -3548,7 +3331,7 @@ export default {
         // Capture the BTC rate for just-settled txs while it still
         // reflects the settlement moment (no-op for older rows).
         try {
-          const currency = this.walletState.preferredFiatCurrency || 'USD';
+          const currency = this.walletStore.preferredFiatCurrency || 'USD';
           await this.transactionMetadataStore.stampFreshTransactions(txs, walletId, currency);
         } catch (err) {
           console.warn('[wallet] fiat-at-settlement stamp failed:', err);
@@ -3633,30 +3416,8 @@ export default {
     },
 
     async loadFiatRates() {
-      try {
-        const rates = await fiatRatesService.getRates();
-        // Every selectable currency, from the one shared list. A rate the
-        // upstream did not deliver stays missing (the UI shows "--"); an
-        // invented rate would show the user a wrong value for their money.
-        const next = {};
-        for (const code of SELECTABLE_FIAT_CURRENCIES) {
-          const rate = Number(rates?.[code]);
-          const key = code.toLowerCase();
-          if (Number.isFinite(rate) && rate > 0) next[key] = rate;
-          else if (this.walletState.exchangeRates?.[key] > 0) next[key] = this.walletState.exchangeRates[key];
-        }
-        this.walletState.exchangeRates = next;
-        this.walletState.lastRateUpdate = new Date();
-        this.fiatRatesLoaded = true;
-
-        // Save updated state
-        localStorage.setItem('buhoGO_wallet_state', JSON.stringify(this.walletState));
-
-        console.log('Fiat rates loaded:', this.walletState.exchangeRates);
-      } catch (error) {
-        // Keep whatever real rates are already known; never substitute guesses.
-        console.error('Error loading fiat rates:', error);
-      }
+      await this.walletStore.loadExchangeRates();
+      this.fiatRatesLoaded = this.walletStore.exchangeRatesAvailable;
     },
 
     async toggleCurrency() {
@@ -3669,9 +3430,7 @@ export default {
       const currentIndex = modes.indexOf(this.currentDisplayMode);
       const nextIndex = (currentIndex + 1) % modes.length;
 
-      this.walletState.displayMode = modes[nextIndex];
       this.currentDisplayMode = modes[nextIndex];
-      localStorage.setItem('buhoGO_wallet_state', JSON.stringify(this.walletState));
 
       setTimeout(() => {
         this.isSwitchingCurrency = false;
@@ -3700,9 +3459,7 @@ export default {
       if (this.walletStore.balanceHidden) {
         this.walletStore.setBalanceHidden(false);
         if (this.currentDisplayMode !== 'bitcoin') {
-          this.walletState.displayMode = 'bitcoin';
           this.currentDisplayMode = 'bitcoin';
-          localStorage.setItem('buhoGO_wallet_state', JSON.stringify(this.walletState));
         }
         return;
       }
@@ -3726,7 +3483,7 @@ export default {
           return formatMainBalanceUtil(balance, this.walletStore.useBip177Format);
         case 'fiat':
           const btcAmount = balance / 100000000;
-          const rate = this.walletState.exchangeRates?.[this.walletState.preferredFiatCurrency?.toLowerCase()];
+          const rate = this.walletStore.exchangeRates?.[this.walletStore.preferredFiatCurrency?.toLowerCase()];
           if (!rate) return '--';
           const fiatValue = btcAmount * rate;
           return fiatValue.toFixed(2);
@@ -3736,7 +3493,7 @@ export default {
     },
 
     getFiatCurrencyIcon() {
-      const currency = this.walletState.preferredFiatCurrency || 'USD';
+      const currency = this.walletStore.preferredFiatCurrency || 'USD';
       const iconMap = {
         'USD': 'tabler:currency-dollar',
         'EUR': 'tabler:currency-euro',
@@ -3809,7 +3566,7 @@ export default {
 
     async getFiatValue(balance) {
       try {
-        const currency = this.walletState.preferredFiatCurrency || 'USD';
+        const currency = this.walletStore.preferredFiatCurrency || 'USD';
         const fiatAmount = await fiatRatesService.convertSatsToFiat(balance, currency);
 
         // Handle unavailable rates - return empty string instead of fake value
@@ -3822,14 +3579,14 @@ export default {
         console.error('Error getting fiat value:', error);
 
         // Check if we have valid stored rates (not guessed/fallback)
-        if (!this.walletState.exchangeRatesAvailable) {
+        if (!this.walletStore.exchangeRatesAvailable) {
           return '--';
         }
 
         // Use stored rates only if they're valid
         const btcAmount = balance / 100000000;
-        const currency = this.walletState.preferredFiatCurrency || 'USD';
-        const rate = this.walletState.exchangeRates[currency.toLowerCase()];
+        const currency = this.walletStore.preferredFiatCurrency || 'USD';
+        const rate = this.walletStore.exchangeRates[currency.toLowerCase()];
 
         if (!rate) {
           return '--';
@@ -3842,9 +3599,7 @@ export default {
     // Payment processing methods
 
     getActiveWallet() {
-      return this.walletState.connectedWallets.find(
-        w => w.id === this.walletState.activeWalletId
-      );
+      return this.activeWallet;
     },
 
     handleScanWithdraw() {
@@ -4260,7 +4015,7 @@ export default {
       }
 
       try {
-        const currency = this.walletState.preferredFiatCurrency || 'USD';
+        const currency = this.walletStore.preferredFiatCurrency || 'USD';
         const fiatAmount = await fiatRatesService.convertSatsToFiat(amount, currency);
         if (fiatAmount !== null) {
           this.withdrawConfirmedFiat = '≈ ' + fiatRatesService.formatFiatAmount(fiatAmount, currency);
@@ -4667,14 +4422,14 @@ export default {
               (this.pendingPayment.minSendable === this.pendingPayment.maxSendable
                 ? Math.floor(this.pendingPayment.minSendable / 1000)
                 : 0);
-            if (paymentSats > 0 && paymentSats > this.walletState.balance) {
+            if (paymentSats > 0 && paymentSats > this.activeCanonicalBalance) {
               resolved = false; // keep the sheet open; the notify explains why
               this.$q.notify({
                 type: 'negative',
                 message: this.$t('Insufficient balance'),
                 caption: this.$t('You need {amount} sats but only have {balance} sats', {
                   amount: paymentSats,
-                  balance: this.walletState.balance
+                  balance: this.activeCanonicalBalance
                 }),
               });
               return;
@@ -4716,7 +4471,7 @@ export default {
               return;
             }
 
-            if (dest.amountSats > 0 && dest.amountSats > this.walletState.balance) {
+            if (dest.amountSats > 0 && dest.amountSats > this.activeCanonicalBalance) {
               resolved = false;
               this.failSendResolution(this.$t('Insufficient balance'), fromField);
               return;
@@ -5615,7 +5370,7 @@ export default {
       // rate cache can never block the confirmation surface.
       if (this.sendSuccessAmount > 0) {
         try {
-          const currency = this.walletState.preferredFiatCurrency || 'USD';
+          const currency = this.walletStore.preferredFiatCurrency || 'USD';
           const fiat = await fiatRatesService.convertSatsToFiat(
             this.sendSuccessAmount,
             currency,
@@ -6135,9 +5890,10 @@ export default {
     },
 
     async updateSecondaryValue() {
-      if (this.walletState.balance !== undefined) {
-        this.secondaryValue = await this.getSecondaryValue(this.walletState.balance);
-      }
+      const walletId = this.walletStore.activeWalletId;
+      const balance = this.activeCanonicalBalance;
+      const value = balance == null ? '--' : await this.getSecondaryValue(balance);
+      if (walletId === this.walletStore.activeWalletId && balance === this.activeCanonicalBalance) this.secondaryValue = value;
     },
 
     async updateFeeEstimate() {

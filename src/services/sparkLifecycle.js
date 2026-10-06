@@ -180,12 +180,18 @@ export function createSparkLifecycle({
   async function publishCachedBalance(r, gen, source) {
     const provider = store.providers?.[r.walletId];
     if (!provider?.isConnected || typeof provider.getCachedBalance !== 'function') return;
+    const read = store.beginBalanceRead?.(r.walletId);
     try {
       const result = await provider.getCachedBalance();
       if (!isCurrent(r, gen)) return;
       const verified = !!syncedEventVerified();
-      store.applyBalance?.(r.walletId, result.balance, { source: verified ? source : 'cache', fresh: verified });
+      store.applyBalance?.(r.walletId, result.balance, { read, source: verified ? source : 'cache', fresh: verified });
     } catch { /* the next reconcile reads again */ }
+    finally {
+      if (isCurrent(r, gen) && (!read || store.isBalanceReadCurrent?.(read))) {
+        store.markBalanceRefresh?.(r.walletId, false);
+      }
+    }
   }
 
   /** Bound an ancillary read so one hung call cannot stall the wallet. */
@@ -248,6 +254,8 @@ export function createSparkLifecycle({
   async function runOnce(r, reason) {
     const gen = r.generation;
     const t0 = now();
+    let balanceRead = null;
+    const ownsBalance = () => !balanceRead || !store.isBalanceReadCurrent || store.isBalanceReadCurrent(balanceRead);
     diag(r.walletId, 'run', { reason });
     try {
       // 1. Connection.
@@ -266,9 +274,11 @@ export function createSparkLifecycle({
       setHealth(r, HEALTH.SYNCING);
       store.markBalanceRefresh?.(r.walletId, true);
       const before = store.balanceStates?.[r.walletId]?.value ?? null;
+      balanceRead = store.beginBalanceRead?.(r.walletId);
       const result = await provider.getBalance({ timeoutMs: syncTimeoutMs });
       if (!isCurrent(r, gen)) return;
       store.applyBalance?.(r.walletId, result.balance, {
+        read: balanceRead,
         source: result.fresh === false ? 'cache' : 'sync',
         fresh: result.fresh !== false,
         error: result.syncError || null,
@@ -293,12 +303,12 @@ export function createSparkLifecycle({
       if (!isCurrent(r, gen)) return;
       r.failures += 1;
       setHealth(r, HEALTH.DEGRADED, error?.message || String(error));
-      store.markBalanceError?.(r.walletId, error?.message || String(error));
+      if (ownsBalance()) store.markBalanceError?.(r.walletId, error?.message || String(error));
       diag(r.walletId, 'failed', { reason, ms: now() - t0, failures: r.failures, error: errClass(error) });
       await maybeRebuild(r, gen);
       scheduleRetry(r);
     } finally {
-      store.markBalanceRefresh?.(r.walletId, false);
+      if (isCurrent(r, gen) && ownsBalance()) store.markBalanceRefresh?.(r.walletId, false);
     }
   }
 

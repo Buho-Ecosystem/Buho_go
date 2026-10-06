@@ -34,10 +34,22 @@ export function emptyBalanceState() {
 }
 
 /** Saved last-known value from wallet metadata, always stale on load. */
-export function hydrateBalanceState(wallet) {
-  const cached = wallet?.metadata?.cachedBalance;
-  if (!Number.isFinite(Number(cached)) || cached === null || cached === undefined) return emptyBalanceState();
-  const at = Number(wallet.metadata.balanceUpdatedAt) || null;
+export function hydrateBalanceState(wallet, legacyState = null) {
+  let cached = wallet?.metadata?.cachedBalance;
+  const valid = value => value != null && Number.isFinite(Number(value)) && Number(value) >= 0;
+  // Old Home snapshots have no trustworthy balance timestamp. On migration
+  // we can reuse an unambiguous value, but cannot rank conflicting caches.
+  // Never choose the higher/lower figure or present either as verified.
+  if (legacyState) {
+    const wallets = Array.isArray(legacyState.connectedWallets) ? legacyState.connectedWallets : [];
+    const candidates = [cached, wallets.find(w => w?.id === wallet.id)?.balance];
+    if (legacyState.activeWalletId === wallet.id) candidates.push(legacyState.balance);
+    const values = [...new Set(candidates.filter(valid).map(Number))];
+    if (values.length > 1) return emptyBalanceState();
+    if (values.length === 1) cached = values[0];
+  }
+  if (!valid(cached)) return emptyBalanceState();
+  const at = Number(wallet.metadata?.balanceUpdatedAt) || null;
   return { value: Number(cached), source: 'persisted', verifiedAt: at, updatedAt: at, refreshing: false, error: null };
 }
 

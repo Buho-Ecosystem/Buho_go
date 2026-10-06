@@ -77,6 +77,7 @@ const STORAGE_KEYS = {
   LEGACY_STATE: 'buhoGO_wallet_state',
   DEVICE_KEY: 'buhoGO_device_key',
 };
+const BALANCE_SCHEMA_VERSION = 1;
 
 // Durable double-claim guard for L1 deposits. Module-level rather than
 // Pinia state: membership answers point-in-time questions and must
@@ -116,10 +117,8 @@ export const useWalletStore = defineStore('wallet', {
     providers: {},
 
     // Wallet data (keyed by wallet ID)
-    // `balances` is the plain-number mirror many views read; `balanceStates`
-    // is the canonical record behind it (value + provenance + freshness,
-    // utils/balanceState.js). Write both through applyBalance() only.
-    balances: {},
+    // The one balance record (value + provenance + freshness). Numeric
+    // compatibility getters and every screen derive from it.
     balanceStates: {},
     // Spark lifecycle health per wallet (services/sparkLifecycle.js):
     // { health, lastSyncAt, error, failures }. Connection status stays in
@@ -263,6 +262,11 @@ export const useWalletStore = defineStore('wallet', {
   }),
 
   getters: {
+    // Compatibility view for existing consumers, derived from the same state.
+    balances: (state) => Object.fromEntries(Object.entries(state.balanceStates)
+      .filter(([, balance]) => balance.value != null)
+      .map(([id, balance]) => [id, balance.value])),
+
     /**
      * Currently active wallet object
      */
@@ -274,7 +278,7 @@ export const useWalletStore = defineStore('wallet', {
      * Balance of the active wallet in sats
      */
     activeBalance: (state) => {
-      return state.balanceStates[state.activeWalletId]?.value ?? state.balances[state.activeWalletId] ?? 0;
+      return state.balanceStates[state.activeWalletId]?.value ?? 0;
     },
 
     /**
@@ -470,7 +474,7 @@ export const useWalletStore = defineStore('wallet', {
         // Spark falls back to the legacy store-level flag for pre-migration
         // installs; Arkade (new) always uses its own per-wallet metadata flag.
         if (isWalletBackedUp(w, state.hasBackedUp)) return false;
-        const balance = state.balanceStates[w.id]?.value ?? state.balances[w.id] ?? 0;
+        const balance = state.balanceStates[w.id]?.value ?? 0;
         return balance > 0;
       });
     },
@@ -831,44 +835,41 @@ export const useWalletStore = defineStore('wallet', {
     // ==========================================
 
     /**
-     * The one write path for a wallet balance: canonical state, the plain
-     * `balances` mirror, and the persisted last-known value all move
-     * together. Late or invalid readings are dropped (see
-     * utils/balanceState.js); a read token from beginBalanceRead() that has
+     * The one write path for a wallet balance: canonical state and the
+     * persisted last-known value move together. Late or invalid readings
+     * are dropped (see utils/balanceState.js); a read token that has
      * been superseded is dropped too.
      *
      * @returns {boolean} whether the reading was accepted
      */
     applyBalance(walletId, value, { source = 'sync', fresh, read = null, error = null, at } = {}) {
-      if (!walletId) return false;
-      if (read && !this.isBalanceReadCurrent(read)) return false;
+      const wallet = this.wallets.find(w => w.id === walletId);
+      if (!wallet || (read && (read.walletId !== walletId || !this.isBalanceReadCurrent(read)))) return false;
       if (!this.balanceStates) this.balanceStates = {};
-      if (!this.balances) this.balances = {};
       const prev = this.balanceStates[walletId] || emptyBalanceState();
+      const observedAt = at ?? Date.now();
       const next = nextBalanceState(prev, {
         value,
         source,
         fresh: fresh ?? source !== 'cache',
-        at: at ?? Date.now(),
+        at: observedAt,
         error,
       });
-      if (next.value === prev.value && next.verifiedAt === prev.verifiedAt && next.source === prev.source && next.error === prev.error) {
-        return next.value !== null;
-      }
-      this.balanceStates[walletId] = next;
-      if (next.value === null) return false;
-      this.balances[walletId] = next.value;
+      if (next !== prev) this.balanceStates[walletId] = next;
+      const accepted = value != null && Number.isFinite(Number(value)) && Number(value) >= 0
+        && next.value === Number(value) && next.updatedAt === observedAt;
+      if (!accepted) return false;
 
-      const wallet = (this.wallets || []).find((w) => w.id === walletId);
-      if (wallet && next.value !== prev.value) {
-        wallet.metadata = wallet.metadata || {};
-        wallet.metadata.cachedBalance = next.value;
-        wallet.metadata.balanceUpdatedAt = next.verifiedAt || next.updatedAt;
-        this._schedulePersist();
-      } else if (wallet && next.verifiedAt && next.verifiedAt !== prev.verifiedAt) {
-        wallet.metadata = wallet.metadata || {};
-        wallet.metadata.balanceUpdatedAt = next.verifiedAt;
-        this._schedulePersist();
+      // Reconcile the persisted projection even when the numerical balance
+      // did not change (e.g. recovery from an older, inconsistent cache).
+      const updatedAt = next.verifiedAt || next.updatedAt;
+      if (wallet.metadata?.cachedBalance !== next.value || wallet.metadata?.balanceUpdatedAt !== updatedAt) {
+        const valueChanged = wallet.metadata?.cachedBalance !== next.value;
+        wallet.metadata = { ...wallet.metadata, cachedBalance: next.value, balanceUpdatedAt: updatedAt };
+        // Changed funds must survive a restart immediately. Coalesce only
+        // verification timestamps for unchanged figures.
+        if (valueChanged) void this.persistState();
+        else this._schedulePersist();
       }
 
       // Money only moves on a network-verified figure. Auto-withdraw also
@@ -895,21 +896,21 @@ export const useWalletStore = defineStore('wallet', {
     },
 
     /** Saved last-known values become stale state on load: never a zero. */
-    hydrateBalanceStates() {
+    hydrateBalanceStates(legacyState = null) {
       const states = { ...(this.balanceStates || {}) };
       for (const wallet of this.wallets) {
         if (states[wallet.id]?.value != null) continue;
-        const hydrated = hydrateBalanceState(wallet);
+        const hydrated = hydrateBalanceState(wallet, legacyState);
         states[wallet.id] = hydrated;
-        if (hydrated.value !== null && this.balances[wallet.id] === undefined) {
-          this.balances[wallet.id] = hydrated.value;
+        if (legacyState) {
+          wallet.metadata = { ...wallet.metadata, cachedBalance: hydrated.value, balanceUpdatedAt: hydrated.updatedAt };
         }
       }
       this.balanceStates = states;
     },
 
     forgetBalance(walletId) {
-      delete this.balances[walletId];
+      balanceReads.delete(walletId);
       if (this.balanceStates) delete this.balanceStates[walletId];
       if (this.sparkHealthStates) delete this.sparkHealthStates[walletId];
       if (this.pendingDepositsByWallet) delete this.pendingDepositsByWallet[walletId];
@@ -1000,8 +1001,8 @@ export const useWalletStore = defineStore('wallet', {
         try {
           // Load saved state
           const savedState = localStorage.getItem(STORAGE_KEYS.WALLET_STORE);
-          if (savedState) {
-            const parsed = JSON.parse(savedState);
+          const parsed = savedState ? JSON.parse(savedState) : null;
+          if (parsed) {
 
             // Check if cached exchange rates are still valid (less than 1 hour old)
             let ratesStillValid = false;
@@ -1159,8 +1160,14 @@ export const useWalletStore = defineStore('wallet', {
             });
           }
 
-          // Last-known balances, labelled stale until verified (#293).
-          this.hydrateBalanceStates();
+          // Migrate the old Home snapshot once, before any persistence can
+          // overwrite it. Conflicting unversioned caches need verification.
+          let legacyBalances = null;
+          if (parsed && parsed.balanceSchemaVersion !== BALANCE_SCHEMA_VERSION) {
+            try { legacyBalances = JSON.parse(localStorage.getItem(STORAGE_KEYS.LEGACY_STATE)); } catch { /* unusable cache */ }
+          }
+          this.hydrateBalanceStates(legacyBalances);
+          if (legacyBalances) this._schedulePersist();
 
           // Validate wallets
           await this.validateWallets();
@@ -1589,14 +1596,8 @@ export const useWalletStore = defineStore('wallet', {
 
         // First balance: a real sync when the network answers, otherwise the
         // local figure labelled stale (never a connect failure by itself).
-        const balanceResult = await provider.getBalance();
+        await this.refreshBalance(walletId, { provider, source: 'connect' });
         assertCurrent();
-        wallet.metadata = wallet.metadata || {};
-        this.applyBalance(walletId, balanceResult.balance, {
-          source: balanceResult.fresh === false ? 'cache' : 'connect',
-          fresh: balanceResult.fresh !== false,
-          error: balanceResult.syncError || null,
-        });
 
         // Get info
         const info = await provider.getInfo();
@@ -2045,8 +2046,7 @@ export const useWalletStore = defineStore('wallet', {
           error: null,
         };
 
-        const balanceResult = await provider.getBalance();
-        this.applyBalance(walletId, balanceResult.balance, { source: 'connect' });
+        await this.refreshBalance(walletId, { provider, source: 'connect' });
 
         const info = await provider.getInfo();
         this.walletInfos[walletId] = info;
@@ -2360,8 +2360,7 @@ export const useWalletStore = defineStore('wallet', {
         };
 
         // Get balance
-        const balanceResult = await provider.getBalance();
-        this.applyBalance(walletId, balanceResult.balance, { source: 'connect' });
+        await this.refreshBalance(walletId, { provider, source: 'connect' });
 
         // Get info
         const info = await provider.getInfo();
@@ -2618,6 +2617,9 @@ export const useWalletStore = defineStore('wallet', {
      * @param {string} walletId - The wallet ID to disconnect
      */
     async disconnectWallet(walletId) {
+      balanceReads.delete(walletId);
+      this._bumpWalletEpoch(walletId);
+      this.markBalanceRefresh(walletId, false);
       const wallet = this.wallets.find(w => w.id === walletId);
       const state = this.connectionStates[walletId];
 
@@ -2650,132 +2652,70 @@ export const useWalletStore = defineStore('wallet', {
       };
     },
 
-    /**
-     * Refresh wallet balance and info
-     * @param {string} walletId - The wallet ID to refresh
-     */
+    /** A later read, disconnect or removal invalidates this read's result. */
     beginBalanceRead(walletId) {
-      const read = { walletId };
+      const read = { walletId, wallet: this.wallets.find(w => w.id === walletId), epoch: epochOf(walletId) };
       balanceReads.set(walletId, read);
       return read;
     },
 
     isBalanceReadCurrent(read) {
-      return !!read && balanceReads.get(read.walletId) === read;
+      return !!read?.wallet && balanceReads.get(read.walletId) === read
+        && this.wallets.includes(read.wallet) && epochOf(read.walletId) === read.epoch;
+    },
+
+    /** The shared balance read for every provider and screen. Wallet info
+     * and transaction history must never delay publication of fresh funds. */
+    async refreshBalance(walletId, { provider = null, source = 'sync' } = {}) {
+      const read = this.beginBalanceRead(walletId);
+      if (!this.isBalanceReadCurrent(read)) return false;
+      this.markBalanceRefresh(walletId, true);
+      try {
+        provider ||= await this.ensureWalletConnectedForTransfer(walletId);
+        // Connecting may already have published a newer reading.
+        if (!this.isBalanceReadCurrent(read)) return false;
+        const result = await provider.getBalance();
+        if (!this.isBalanceReadCurrent(read)) return false;
+        const accepted = this.applyBalance(walletId, result.balance, {
+          read, source: result.fresh === false ? 'cache' : source,
+          fresh: result.fresh !== false, error: result.syncError || null,
+        });
+        if (accepted) {
+          if (read.wallet.type === WALLET_TYPES.ARKADE) {
+            this.balanceDetails[walletId] = { pending: Number(result.pending || 0), recoverable: Number(result.recoverable || 0) };
+          }
+          this.noticeIncomingPayment(read.wallet, this.balanceStates[walletId].value);
+        }
+        return accepted;
+      } catch (error) {
+        if (this.isBalanceReadCurrent(read)) this.markBalanceError(walletId, error.message || 'Balance could not be refreshed');
+        return false;
+      } finally {
+        if (this.isBalanceReadCurrent(read)) this.markBalanceRefresh(walletId, false);
+      }
     },
 
     async refreshWalletData(walletId) {
       const wallet = this.wallets.find(w => w.id === walletId);
       if (!wallet) return;
-      const read = this.beginBalanceRead(walletId);
-
+      // Publish the balance independently of ancillary wallet information.
+      await this.refreshBalance(walletId);
+      const provider = this.getProvider(walletId);
+      const epoch = epochOf(walletId);
+      if (!provider || !this.wallets.includes(wallet)) return;
       try {
-        if (wallet.type === WALLET_TYPES.SPARK) {
-          const provider = this.providers[walletId];
-          if (!provider || !this.connectionStates[walletId]?.connected) {
-            await this.connectSparkWallet(walletId);
-            return;
-          }
-
-          const [balanceResult, info] = await Promise.all([
-            provider.getBalance(),
-            provider.getInfo()
-          ]);
-
-          if (!this.isBalanceReadCurrent(read)) return;
-          this.applyBalance(walletId, balanceResult.balance, {
-            source: balanceResult.fresh === false ? 'cache' : 'sync',
-            fresh: balanceResult.fresh !== false,
-            error: balanceResult.syncError || null,
-          });
-          this.walletInfos[walletId] = info;
-        } else if (wallet.type === WALLET_TYPES.LNBITS) {
-          let provider = this.providers[walletId];
-
-          if (!provider || !this.connectionStates[walletId]?.connected) {
-            await this.connectLNBitsWallet(walletId);
-            provider = this.providers[walletId];
-          }
-
-          const [balanceResult, info] = await Promise.all([
-            provider.getBalance(),
-            provider.getInfo()
-          ]);
-
-          if (!this.isBalanceReadCurrent(read)) return;
-          this.applyBalance(walletId, balanceResult.balance, { source: 'sync' });
-          this.walletInfos[walletId] = info;
-        } else if (wallet.type === WALLET_TYPES.ARKADE) {
-          let provider = this.providers[walletId];
-
-          if (!provider || !this.connectionStates[walletId]?.connected) {
-            await this.connectArkadeWallet(walletId);
-            provider = this.providers[walletId];
-          }
-
-          const [balanceResult, info] = await Promise.all([
-            provider.getBalance(),
-            provider.getInfo()
-          ]);
-
-          if (!this.isBalanceReadCurrent(read)) return;
-          this.applyBalance(walletId, balanceResult.balance, { source: 'sync' });
-          // Keep the unspendable remainder visible (see balanceDetails).
-          this.balanceDetails[walletId] = {
-            pending: Number(balanceResult.pending || 0),
-            recoverable: Number(balanceResult.recoverable || 0),
-          };
-          this.walletInfos[walletId] = info;
-
-          // Keep the locked-screen/offline fallback in step with HD receive
-          // rotation: the SDK advances the current address after funds
-          // arrive, and metadata.arkadeAddress is what renders before the
-          // provider reconnects.
-          if (info?.arkadeAddress) {
-            if (!wallet.metadata) wallet.metadata = {};
-            wallet.metadata.arkadeAddress = info.arkadeAddress;
-          }
-
-          // Reclaim swept/subdust VTXOs (renewal and boarding settlement are
-          // handled by the SDK's own background settlement). Throttled inside
-          // the provider, fire-and-forget so it never blocks the refresh.
-          provider.checkLiveness?.().catch((e) =>
-            console.warn('[arkade] recovery pass failed:', e?.message || e)
-          );
-        } else {
-          // NWC wallet
-          let nwc = this.connectionStates[walletId]?.nwcInstance;
-
-          if (!nwc || !this.connectionStates[walletId]?.connected) {
-            nwc = await this.connectWallet(walletId);
-          }
-
-          const [balanceResponse, info] = await Promise.all([
-            nwc.getBalance(),
-            nwc.getInfo(),
-          ]);
-
-          if (!this.isBalanceReadCurrent(read)) return;
-          this.applyBalance(walletId, balanceResponse.balance, { source: 'sync' });
-          this.walletInfos[walletId] = info;
+        const info = await provider.getInfo();
+        if (!this.wallets.includes(wallet) || epochOf(walletId) !== epoch || this.getProvider(walletId) !== provider) return;
+        this.walletInfos[walletId] = info;
+        if (wallet.type === WALLET_TYPES.ARKADE) {
+          if (info?.arkadeAddress) wallet.metadata = { ...wallet.metadata, arkadeAddress: info.arkadeAddress };
+          provider.checkLiveness?.().catch(e => console.warn('[arkade] recovery pass failed:', e?.message || e));
         }
-
-        // Update last used
         wallet.lastUsed = Date.now();
-        const newBalance = this.balances[walletId];
-        this.noticeIncomingPayment(wallet, newBalance);
         await this.persistState();
-        if (!this.isBalanceReadCurrent(read)) return;
-        // Auto-withdraw runs from applyBalance on a verified figure.
-
       } catch (error) {
-        if (!this.isBalanceReadCurrent(read)) return;
-        console.error(`Refresh wallet ${walletId} failed:`, error);
-        this.connectionStates[walletId] = {
-          ...this.connectionStates[walletId],
-          connected: false,
-          error: error.message,
-        };
+        // An info failure does not invalidate an independently verified balance.
+        console.warn('Wallet info refresh failed:', error.message);
       }
     },
 
@@ -2803,10 +2743,9 @@ export const useWalletStore = defineStore('wallet', {
       if ((wallet.type || this.wallets?.find?.((w) => w.id === wallet.id)?.type) === WALLET_TYPES.SPARK) return;
 
       // The previous figure is what THIS method last saw for the wallet, not
-      // whatever the caller had on screen: the page's balance tick and this
-      // store's refresh both report here, so one map is what keeps them from
-      // announcing the same payment twice, and a wallet switch that resets
-      // the on-screen balance to 0 cannot read as "you received everything".
+      // whatever a caller had on screen. Shared refreshes report here, so
+      // one map deduplicates notices and a wallet switch cannot read as
+      // "you received everything".
       // The first reading of a session only seeds the map.
       const previous = observedBalance.get(wallet.id);
       observedBalance.set(wallet.id, balanceAfter);
@@ -3104,7 +3043,6 @@ export const useWalletStore = defineStore('wallet', {
       this.activeWalletId = null;
       this.connectionStates = {};
       for (const id of Object.keys(this.balanceStates || {})) forgetSparkWallet?.(id);
-      this.balances = {};
       this.balanceStates = {};
       this.sparkHealthStates = {};
       this.pendingDepositsByWallet = {};
@@ -3488,9 +3426,9 @@ export const useWalletStore = defineStore('wallet', {
 
         if (rates && fiatRatesService.areRatesAvailable()) {
           // Keyed by lowercase code. Every selectable currency gets an
-          // entry so a rate the upstream failed to deliver reads as 0.
+          // entry; keep a previously known rate if the response omits it.
           this.exchangeRates = Object.fromEntries(
-            SELECTABLE_FIAT_CURRENCIES.map((code) => [code.toLowerCase(), rates[code] || 0])
+            SELECTABLE_FIAT_CURRENCIES.map((code) => [code.toLowerCase(), rates[code] || this.exchangeRates[code.toLowerCase()] || 0])
           );
           this.exchangeRatesAvailable = true;
           this.exchangeRatesLastUpdate = new Date().toISOString();
@@ -3633,6 +3571,7 @@ export const useWalletStore = defineStore('wallet', {
 
         // Save new format
         const stateToSave = {
+          balanceSchemaVersion: BALANCE_SCHEMA_VERSION,
           wallets: this.wallets,
           activeWalletId: this.activeWalletId,
           preferredFiatCurrency: this.preferredFiatCurrency,

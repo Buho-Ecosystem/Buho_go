@@ -121,7 +121,7 @@ async function seedWallet(balance) {
     wallet.wallets = [{ id: 'w1', name: 'Personal', type: 'spark' }];
     wallet.activeWalletId = 'w1';
     wallet.connectionStates = { w1: { connected: true } };
-    wallet.balances = { w1: amount };
+    wallet.applyBalance('w1', amount);
   }, balance);
 }
 

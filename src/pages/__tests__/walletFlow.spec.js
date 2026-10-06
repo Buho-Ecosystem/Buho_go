@@ -5,7 +5,6 @@ import { transformSync } from 'esbuild';
 import * as addresses from '../../utils/addressUtils.js';
 import * as metadata from '../../utils/lnurlMetadata.js';
 import * as lnurlPay from '../../utils/lnurlPay.js';
-import * as balanceState from '../../utils/balanceState.js';
 
 // Run the production Options-API methods with controlled provider promises.
 function evaluate(file, dependencies = {}) {
@@ -41,50 +40,20 @@ function balanceHarness() {
     './notifications': { useNotificationsStore: () => ({ canNotify: true, notifyIfEnabled: async message => notices.push(message) }) },
     '../utils/amountFormatting.js': { formatAmount: n => `${n} sats` },
     '../boot/i18n': { i18n: { global: { t } } },
-    '../utils/balanceState.js': balanceState,
   }).useWalletStore;
   const a = { id: 'A', name: 'Wallet A' }, b = { id: 'B', name: 'Wallet B' };
-  const store = { ...options.actions, activeWalletId: a.id, isActiveWalletSpark: true, balanceStates: {}, balances: {}, wallets: [] };
-  store.balanceStateFor = options.getters.balanceStateFor(store);
+  const store = { ...options.actions, activeWalletId: a.id, isActiveWalletSpark: true, wallets: [] };
   store.noticeIncomingPayment(a, 1000);
   store.noticeIncomingPayment(b, 100);
-  const vm = { ...component().methods, walletStore: store, activeWallet: a, walletState: { balance: 1000 }, loadLastTransaction() {} };
+  const vm = { ...component().methods, walletStore: store, activeWallet: a, loadLastTransaction() {} };
   globalThis.localStorage = { setItem() {}, getItem: () => null };
   return { store, vm, a, b, notices };
 }
 
-test('a delayed balance read cannot update or notify a newly selected wallet', async () => {
-  const { store, vm, b, notices } = balanceHarness();
-  const read = deferred();
-  store.ensureSparkConnected = async () => ({ getBalance: () => read.promise });
-  const pending = vm.updateWalletBalance();
-  await Promise.resolve();
-  store.activeWalletId = b.id;
-  vm.activeWallet = b;
-  vm.walletState.balance = 100;
-  read.resolve({ balance: 1000 });
-  await pending;
-  assert.equal(vm.walletState.balance, 100);
-  assert.deepEqual(notices, []);
-});
-
-test('older same-wallet reads cannot roll back the notification baseline', () => {
-  const { store, vm, a, notices } = balanceHarness();
-  const old = store.beginBalanceRead(a.id);
-  const latest = store.beginBalanceRead(a.id);
-  assert.equal(vm.applyTickBalance(1200, latest), true);
-  assert.equal(vm.applyTickBalance(1000, old), false);
-  const next = store.beginBalanceRead(a.id);
-  vm.applyTickBalance(1200, next);
-  assert.equal(vm.walletState.balance, 1200);
-  assert.equal(notices.length, 1);
-  assert.equal(notices[0].body, '200 sats · Wallet A');
-});
-
 test('confirmed withdrawal shows only the authoritative remaining balance', async () => {
   const refresh = deferred();
   const voucher = { id: 'v', maxSats: 25000 };
-  const vm = { ...component().methods, $t: t, walletStore: {}, walletState: {},
+  const vm = { ...component().methods, $t: t, walletStore: {},
     pendingPayment: { voucherId: 'v' }, lnurlWithdrawStatus: 'monitoring', withdrawReceiptVersion: 0,
     withdrawVouchersStore: { byId: () => voucher, displaySats: v => v.maxSats, refresh: () => refresh.promise },
     updateWalletBalance: async () => {},
@@ -159,32 +128,6 @@ test('Pay again is unavailable until a payment completes, including failed payme
   }
 });
 
-
-test('page ticks and store refreshes share ordering and notification history', async () => {
-  const { store, vm, a, notices } = balanceHarness();
-  const old = deferred();
-  a.type = 'lnbits'; // balance-difference notices remain for non-Spark rails
-  Object.assign(store, { wallets: [a], providers: { A: { getBalance: () => old.promise, getInfo: async () => ({}) } },
-    connectionStates: { A: { connected: true } }, balances: { A: 1000 }, walletInfos: {}, persistState: async () => {} });
-  const pending = store.refreshWalletData('A');
-  const latest = store.beginBalanceRead('A');
-  vm.applyTickBalance(1200, latest);
-  old.resolve({ balance: 1000 });
-  await pending;
-  assert.equal(notices.length, 1);
-  vm.applyTickBalance(1200, store.beginBalanceRead('A'));
-  assert.equal(notices.length, 1);
-  assert.equal(vm.walletState.balance, 1200);
-});
-
-test('page ticks publish to the canonical balance every surface reads', () => {
-  const { store, vm, a } = balanceHarness();
-  store.wallets = [a];
-  assert.equal(vm.applyTickBalance(4242, store.beginBalanceRead('A')), true);
-  assert.equal(store.balanceStateFor('A').value, 4242, 'Settings and switchers see the home figure');
-  assert.equal(store.balances.A, 4242);
-  assert.equal(a.metadata.cachedBalance, 4242, 'persisted last-known value maintained');
-});
 
 test('Spark wallets are never announced from a balance difference', () => {
   const { store, notices } = balanceHarness();

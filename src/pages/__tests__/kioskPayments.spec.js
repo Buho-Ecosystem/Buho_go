@@ -34,6 +34,7 @@ function harness(ctx, options = {}) {
     providers: { merchant: provider }, balances: { merchant: 0 }, pendingDeepLink: options.pending || null,
     async ensureWalletConnectedForTransfer(id) { assert.equal(id, 'merchant'); return provider; },
     showPaymentError: error => h.errors.push(error),
+    refreshBalance: async id => { assert.equal(id, 'merchant'); },
   });
   const dependencies = {
     vue: Vue, 'vue-router': { useRouter: () => ({ replace: () => assert.fail('unexpected navigation') }) },

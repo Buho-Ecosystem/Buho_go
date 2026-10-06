@@ -524,12 +524,7 @@ export default defineComponent({
       // the poll must not record the same sale twice.
       if (state.value === 'success') return
       const walletId = invoiceData.value.walletId
-      const provider = store.providers[walletId]
-      Promise.resolve().then(() => provider?.getBalance()).then(balance => {
-        if (balance != null && store.wallets.some(wallet => wallet.id === walletId)) {
-          store.balances[walletId] = Number(balance?.balance ?? balance)
-        }
-      }).catch(() => {})
+      void store.refreshBalance(walletId)
       // Stamp the sale onto the incoming tx once it surfaces in history.
       // Best-effort and non-blocking: the kiosk boots on its own path, so
       // the metadata store lazy-initializes itself, and a metadata failure

@@ -74,16 +74,14 @@ try {
     store.ensureSparkConnected = async () => provider;
     store.connectAllSparkWallets = async () => {};
     window.sheetRefreshes = [];
-    store.refreshWalletData = id => {
+    store.refreshWalletData = async id => {
       window.sheetRefreshes.push(id);
-      return held().then(() => { store.balances = { ...store.balances, [id]: 6000 }; });
+      await store.refreshBalance(id, { provider });
     };
-    store.balances = { business: 5000, personal: 3000 };
+    store.reconcileSpark = ids => Promise.all(ids.map(id => store.refreshWalletData(id)));
+    store.applyBalance('personal', 3000);
     store.activeWalletId = 'business';
-    vm.walletState.connectedWallets = store.wallets.map(w => ({ ...w }));
-    vm.walletState.activeWalletId = 'business';
-    vm.walletState.balance = 5000;
-    vm.balanceReadFor = null;
+    store.markBalanceRefresh('business', true);
     vm.showLoadingScreen = false;
     window.page = vm;
   });
@@ -95,7 +93,7 @@ try {
   const settled = selector => page.waitForFunction(sel => document.querySelector(sel)?.getAnimations().length === 0, selector);
   const home = '.balance-container';
 
-  // Not read yet this session: the saved figure pulses.
+  // Not read yet this session: the placeholder pulses during loading.
   await page.locator(home).waitFor();
   assert.ok(await pulsing(home), 'a balance not loaded yet pulses');
 
@@ -106,30 +104,30 @@ try {
   await page.waitForTimeout(900); // mid-pulse, for the screenshot
   await page.screenshot({ path: `${output}/home-refreshing.png` });
   await page.evaluate(() => window.release());
-  await page.waitForFunction(() => window.page.walletState.balance === 6000);
+  await page.waitForFunction(() => window.page.activeCanonicalBalance === 6000);
   await settled(home);
   assert.equal(await pulsing(home), false, 'a loaded balance is still');
   await page.waitForTimeout(800);
   await page.screenshot({ path: `${output}/home-loaded.png` });
 
-  // The routine tick reads a figure already on screen: no pulse.
+  // Spark's lifecycle owns routine reads; the page tick stays quiet.
   await page.evaluate(() => { window.page.updateWalletBalance({ preferCached: true }); });
-  await page.waitForFunction(() => window.pending.length === 1);
   await page.waitForTimeout(300);
+  assert.equal(await page.evaluate(() => window.pending.length), 0);
   assert.equal(await pulsing(home), false, 'the routine tick stays quiet');
   await page.evaluate(() => window.release());
 
   // Wallet sheet: each refreshed wallet pulses; one never loaded shows a placeholder.
-  await page.evaluate(() => { window.page.openWalletManagement(); });
-  await page.waitForFunction(() => window.sheetRefreshes.length === 2);
-  assert.deepEqual(await page.evaluate(() => window.sheetRefreshes.sort()), ['business', 'savings'], 'the active Spark wallet and the NWC wallet');
+  await page.evaluate(() => { window.sheetRefreshes = []; window.page.openWalletManagement(); });
+  await page.waitForFunction(() => window.sheetRefreshes.length === 3);
+  assert.deepEqual(await page.evaluate(() => window.sheetRefreshes.sort()), ['business', 'personal', 'savings'], 'both Spark accounts and the NWC wallet');
   const row = name => `.wallet-switch-card:has(.switch-name:text-is("${name}")) .switch-balance`;
   const rowPulsing = name => page.locator(row(name)).evaluate(el => el.getAnimations().some(a => a.effect.getComputedTiming().iterations === Infinity));
   await page.locator(row('Business')).waitFor();
   assert.ok(await rowPulsing('Business'), 'a refreshing wallet pulses in the sheet');
   assert.ok(await rowPulsing('Savings'));
   assert.equal(await page.locator(`${row('Savings')} .balance-placeholder`).count(), 1, 'never loaded: a placeholder, not a number');
-  assert.equal(await rowPulsing('Personal'), false, 'the inactive Spark wallet is not refreshed here, so it stays still');
+  assert.ok(await rowPulsing('Personal'), 'the inactive account also refreshes');
   await page.waitForTimeout(900);
   await page.screenshot({ path: `${output}/sheet-refreshing.png` });
   await page.evaluate(() => window.release());

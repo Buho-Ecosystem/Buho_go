@@ -35,7 +35,8 @@ async function openSuccess() {
     const wallets = [{ id: 'transfer-source', type: 'spark', name: 'Personal' }, { id: 'transfer-destination', type: 'spark', name: 'Business' }];
     store.wallets = wallets;
     store.activeWalletId = 'transfer-source';
-    store.balances = { 'transfer-source': 100, 'transfer-destination': 10 };
+    store.applyBalance('transfer-source', 100);
+    store.applyBalance('transfer-destination', 10);
     store.connectionStates = Object.fromEntries(wallets.map(w => [w.id, { connected: true }]));
     window.transferReads = [];
     window.transferSends = 0;
