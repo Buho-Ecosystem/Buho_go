@@ -1406,6 +1406,7 @@ export default {
   "Menu": "Menü",
   "Close menu": "Menü schließen",
   "Add Contact": "Kontakt hinzufügen",
+  "Create contact": "Kontakt erstellen",
   "Edit Contact": "Kontakt bearbeiten",
   "Delete Contact": "Kontakt löschen",
   "No contacts yet": "Noch keine Kontakte",

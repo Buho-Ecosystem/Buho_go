@@ -554,10 +554,10 @@
     </q-dialog>
 
     <!-- Contact Picker Modal -->
-    <q-dialog v-model="showContactPicker">
+    <q-dialog v-model="showContactPicker" aria-labelledby="contact-picker-title">
       <q-card class="contact-picker-dialog" :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'">
         <q-card-section class="dialog-header">
-          <div class="dialog-title">
+          <div id="contact-picker-title" class="dialog-title">
             {{ $t('Select Contact') }}
           </div>
           <q-btn
@@ -566,16 +566,18 @@
             dense
             v-close-popup
             class="close-btn"
+            :aria-label="$t('Cancel')"
             style="color: var(--text-muted)"
           >
             <Icon icon="tabler:x" width="20" height="20" />
           </q-btn>
         </q-card-section>
 
-        <q-card-section class="q-pt-none">
+        <q-card-section class="contact-picker-search">
           <q-input
             v-model="contactSearch"
             :placeholder="$t('Search contacts...')"
+            :aria-label="$t('Search contacts...')"
             dense
             borderless
             class="search-input"
@@ -587,7 +589,7 @@
           </q-input>
         </q-card-section>
 
-        <q-scroll-area style="height: 280px" class="q-px-md">
+        <q-scroll-area v-if="filteredContacts.length" class="contact-picker-results">
           <q-list class="contact-list">
             <q-item
               v-for="contact in filteredContacts"
@@ -617,22 +619,27 @@
               </q-item-section>
             </q-item>
 
-            <div v-if="filteredContacts.length === 0" class="empty-contacts-state">
-              <Icon icon="tabler:users" width="48" height="48" style="color: var(--text-muted)" />
-              <div class="empty-contacts-text">
-                {{ $t('No contacts found') }}
-              </div>
-            </div>
           </q-list>
         </q-scroll-area>
+        <div v-else class="empty-contacts-state" role="status">
+          <Icon icon="tabler:users" width="48" height="48" style="color: var(--text-muted)" />
+          <div class="empty-contacts-text">{{ $t('No contacts found') }}</div>
+        </div>
 
-        <q-card-actions class="dialog-actions q-px-md q-pb-md">
+        <q-card-actions class="contact-picker-actions">
+          <q-btn
+            unelevated
+            no-caps
+            :label="$t('Create contact')"
+            class="create-contact-btn"
+            @click="createContact"
+          />
           <q-btn
             flat
+            no-caps
             :label="$t('Cancel')"
             v-close-popup
-            class="full-width"
-            style="color: var(--text-secondary)"
+            class="cancel-contact-btn"
           />
         </q-card-actions>
       </q-card>
@@ -1081,6 +1088,17 @@ export default {
 
     openContactPicker() {
       this.showContactPicker = true;
+    },
+
+    createContact() {
+      if (!this.transaction?.id) return;
+      const wallet = this.$route.query.wallet || this.metadataWalletId;
+      const query = { action: 'create-contact', transaction: this.transaction.id, wallet };
+      // On a receive, lnaddress is our own receiving address, not the sender.
+      const address = this.transaction.type === 'outgoing' ? this.getCounterpartyAddress() : null;
+      if (address) query.address = address;
+      this.showContactPicker = false;
+      this.$router.push({ path: '/address-book', query });
     },
 
     async assignContact(contact) {
@@ -2425,13 +2443,17 @@ body.body--dark .verified-row-icon {
 
 /* ===== Contact Picker Dialog ===== */
 .contact-picker-dialog {
-  width: 100%;
-  max-width: 380px;
+  width: 420px;
+  max-width: calc(100vw - 32px);
+  max-height: calc(100dvh - 48px - var(--safe-top, 0px) - var(--safe-bottom, 0px));
+  display: flex;
+  flex-direction: column;
   border-radius: 24px;
 }
 
 .contact-picker-dialog .dialog-header {
-  padding: 20px 20px 16px;
+  padding: 16px 20px 12px;
+  flex-shrink: 0;
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -2441,16 +2463,54 @@ body.body--dark .verified-row-icon {
   flex: 1;
   color: var(--text-primary);
   font-family: 'Manrope', sans-serif;
+  font-size: 1.0625rem;
+  line-height: 1.4;
   font-weight: 600;
 }
 
 .contact-picker-dialog .close-btn {
-  width: 32px;
-  height: 32px;
+  width: 44px;
+  height: 44px;
   margin-right: -8px;
 }
 
+.contact-picker-search {
+  padding: 0 20px 12px;
+  flex-shrink: 0;
+}
+
+.contact-picker-results {
+  height: 280px;
+  min-height: 80px;
+  flex: 0 1 auto;
+  margin: 0 20px;
+}
+
+.contact-picker-actions {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 16px 20px 12px;
+  border-top: 1px solid var(--border-card);
+}
+
+.contact-picker-actions .q-btn {
+  width: 100%;
+  min-height: 44px;
+  margin: 0;
+  border-radius: 12px;
+  font-size: 1rem;
+}
+
+.contact-picker-actions :deep(.q-btn__content) { white-space: normal; }
+.create-contact-btn { background: var(--brand-accent); color: #07130d; font-weight: 600; }
+.card_light_style .create-contact-btn { background: var(--btn-neutral-bg); color: var(--btn-neutral-fg); }
+.cancel-contact-btn { color: var(--text-secondary); }
+.contact-picker-dialog :deep(button:focus-visible) { outline: 2px solid var(--brand-accent-text); outline-offset: 2px; }
+
 .search-input :deep(.q-field__control) {
+  min-height: 44px;
   background: var(--bg-input);
   border-radius: var(--radius-md);
   color: var(--text-primary);
@@ -2494,14 +2554,18 @@ body.body--dark .verified-row-icon {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 48px 24px;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 28px 16px;
   gap: 12px;
 }
 
 .empty-contacts-text {
   font-family: 'Manrope', sans-serif;
-  font-size: 14px;
-  color: var(--text-muted);
+  font-size: 0.9375rem;
+  line-height: 1.5;
+  text-align: center;
+  color: var(--text-secondary);
 }
 
 /* ===== Developer / Technical Section =====

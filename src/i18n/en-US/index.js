@@ -1348,6 +1348,7 @@ export default {
   "Menu": "Menu",
   "Close menu": "Close menu",
   "Add Contact": "Add Contact",
+  "Create contact": "Create contact",
   "Edit Contact": "Edit Contact",
   "Delete Contact": "Delete Contact",
   "No contacts yet": "No contacts yet",

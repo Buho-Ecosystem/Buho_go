@@ -113,6 +113,7 @@
     <AddressBookModal
       v-model="showModal"
       :entry="selectedEntry"
+      :initial-address="initialContactAddress"
       @saved="handleEntrySaved"
       @open-existing="handleOpenExisting"
     />
@@ -159,6 +160,7 @@
 import { useAddressBookStore } from '../stores/addressBook'
 import { usePayContact } from '../composables/usePayContact'
 import { useIdentityStore } from '../stores/identity'
+import { useTransactionMetadataStore } from '../stores/transactionMetadata'
 import { mapActions, mapState } from 'pinia'
 
 // Nostr contacts get a quiet re-sync the moment the user reaches for
@@ -186,6 +188,13 @@ export default {
     // Surfaced for the kebab's disabled state. `isSyncing` is read by
     // the status component directly off the store.
     ...mapState(useAddressBookStore, ['isRecovering', 'syncDirty', 'entries']),
+    creatingFromRoute() {
+      return this.$route.query.action === 'create-contact'
+    },
+    initialContactAddress() {
+      return this.creatingFromRoute && typeof this.$route.query.address === 'string'
+        ? this.$route.query.address : ''
+    },
   },
   // Automatic publishing is owned by the app-level driver
   // (useAddressBookSync) so contacts added from ANY surface sync,
@@ -193,6 +202,16 @@ export default {
   // explicit actions: manual sync and kebab restore.
   async created() {
     await this.initializeAddressBook()
+    if (this.creatingFromRoute) this.showAddModal()
+  },
+  watch: {
+    // Also supports opening the form while Address Book is already mounted.
+    creatingFromRoute(value) {
+      if (value) this.showAddModal()
+    },
+    showModal(value) {
+      if (!value) this.clearCreationRoute()
+    },
   },
   methods: {
     ...mapActions(useAddressBookStore, ['initialize', 'recoverFromNostr']),
@@ -305,9 +324,31 @@ export default {
       usePayContact(this).payContact(contact)
     },
 
-    handleEntrySaved() {
+    async handleEntrySaved(entry) {
       this.selectedEntry = null
-      // Modal will close automatically
+      if (!this.creatingFromRoute || !entry?.id) return
+      // Capture before the modal closes and consumes its route parameters.
+      // Never use the active wallet: it can change while creating a contact.
+      const { transaction, wallet } = this.$route.query
+      if (typeof transaction !== 'string' || !transaction || typeof wallet !== 'string' || !wallet) return
+      try {
+        const metadata = useTransactionMetadataStore()
+        await metadata.initialize()
+        await metadata.setContactForTransaction(transaction, wallet, entry.id)
+      } catch {
+        // The contact is already saved. Keep it; the receipt can assign it
+        // again without creating a duplicate or starting a payment.
+        this.$q.notify({ type: 'negative', message: this.$t('Failed to assign contact') })
+      }
+    },
+
+    clearCreationRoute() {
+      if (!this.creatingFromRoute) return
+      const query = { ...this.$route.query }
+      for (const key of ['action', 'address', 'transaction', 'wallet']) delete query[key]
+      // Consume on save OR cancel; a later ordinary add must not inherit the
+      // previous receipt's address or assignment. Back still opens the receipt.
+      this.$router.replace({ query })
     },
 
     /**
@@ -318,6 +359,7 @@ export default {
      */
     handleOpenExisting(entry) {
       if (!entry) return
+      if (this.creatingFromRoute) return this.handleEntrySaved(entry)
       this.payContact(entry)
     },
   }
