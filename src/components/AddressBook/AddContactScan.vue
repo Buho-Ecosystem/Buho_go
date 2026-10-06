@@ -412,7 +412,7 @@ export default {
       if (!this.resolved || !this.profileEvent || this.isSaving) return;
       this.isSaving = true;
       try {
-        await this.addNostrContact({
+        const entry = await this.addNostrContact({
           pubkey: this.resolved.pubkey,
           npub: this.resolved.npub,
           event: this.profileEvent,
@@ -426,7 +426,7 @@ export default {
           type: 'positive',
           message: this.$t('Contact added'),
         });
-        this.$emit('saved');
+        this.$emit('saved', entry);
         this.teardown();
       } catch (err) {
         const msg = err?.message || '';
