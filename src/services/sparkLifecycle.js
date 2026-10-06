@@ -239,6 +239,7 @@ export function createSparkLifecycle({
     if (typeof provider.getPendingDeposits !== 'function') return;
     const pending = await withDeadline(provider.getPendingDeposits(), ancillaryDeadlineMs, 'deposits');
     if (!isCurrent(r, gen)) return;
+    store.reconcileDepositClaims?.(pending);
     const unclaimed = (pending || []).filter((d) => !store.isDepositClaimed?.(d.txId, d.outputIndex));
     store.setPendingDeposits?.(r.walletId, unclaimed);
     if (unclaimed.length) await processDeposits(unclaimed, r.walletId);

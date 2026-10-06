@@ -2898,6 +2898,7 @@ export default {
 
         const newDeposits = await provider.getPendingDeposits();
         if (!isCurrent()) return;
+        this.walletStore.reconcileDepositClaims(newDeposits);
 
         // An instantly-claimed deposit keeps showing in the SDK's pending
         // list until its confirmations catch up. Filter it everywhere so

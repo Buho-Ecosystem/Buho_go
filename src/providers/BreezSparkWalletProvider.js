@@ -51,7 +51,10 @@ import {
   claimErrorKind,
   classifyFromMatureQuote,
   withdrawalStatusFromPayment,
-  instantClaimOutcome,
+  claimDepositOutcome,
+  deferredClaimError,
+  sdkDepositClaimed,
+  mergePendingDeposits,
   waitQuoteFromMature,
 } from '../utils/breezPayments.js';
 import { sparkHealth } from '../utils/sparkHealth.js';
@@ -1365,9 +1368,50 @@ export class BreezSparkWalletProvider extends WalletProvider {
     }
   }
 
+  /**
+   * Deposits not yet in the wallet: the explorer's UTXOs at the current
+   * deposit address (confirmations, unconfirmed arrivals) merged with the
+   * SDK's own deposit records (every address it issued; claim state).
+   * Throws only when neither source answered — unknown is not empty.
+   */
   async getPendingDeposits() {
     this._ensureConnected();
 
+    let chainError = null;
+    const [chain, sdkRows] = await Promise.all([
+      this._chainDeposits().catch((e) => { chainError = e; return null; }),
+      this.listSdkDeposits().catch(() => null),
+    ]);
+
+    if (chain === null && sdkRows === null) {
+      // An empty list would clear real deposits from every screen and prune
+      // their processing state. Callers keep their last list and retry.
+      const err = new Error('Could not check for incoming Bitcoin right now');
+      err.code = 'L1_EXPLORER_UNAVAILABLE';
+      err.cause = chainError || undefined;
+      throw err;
+    }
+
+    return mergePendingDeposits({
+      chain,
+      sdkRows,
+      requiredConfirmations: BITCOIN_L1.REQUIRED_CONFIRMATIONS,
+    });
+  }
+
+  /** The SDK's deposit records (unclaimed, or claimed early and settling). */
+  async listSdkDeposits() {
+    this._ensureConnected();
+    const response = await this.sdk.listUnclaimedDeposits({});
+    return Array.isArray(response?.deposits) ? response.deposits : [];
+  }
+
+  async _sdkDeposit(txId, outputIndex = 0) {
+    const rows = await this.listSdkDeposits();
+    return rows.find(d => d.txid === txId && (Number(d.vout) || 0) === (Number(outputIndex) || 0)) || null;
+  }
+
+  async _chainDeposits() {
     const address = await this.getL1DepositAddress();
 
     let utxos = null;
@@ -1388,13 +1432,7 @@ export class BreezSparkWalletProvider extends WalletProvider {
     }
 
     if (utxos === null) {
-      // Unknown is not empty: an empty list would clear real deposits from
-      // every screen and prune their processing state. Callers keep their
-      // last list and retry on the next poll.
-      const err = new Error('Could not check for incoming Bitcoin right now');
-      err.code = 'L1_EXPLORER_UNAVAILABLE';
-      err.cause = lastError || undefined;
-      throw err;
+      throw lastError || new Error('Block explorer unavailable');
     }
 
     if (utxos.length === 0) {
@@ -1537,12 +1575,12 @@ export class BreezSparkWalletProvider extends WalletProvider {
   /**
    * Add a deposit before it matures, at the fee the instant quote named.
    *
-   * The SDK declines by throwing (fee ceiling, depth, no plan), so a call
-   * that resolves is an accepted claim. An early claim resolves WITHOUT a
-   * payment because it settles asynchronously; a deposit that matured in
-   * the meantime takes the normal claim and resolves WITH one. Callers mark
-   * the txid claimed on resolve either way. `settled` is false for the
-   * early case so the caller can nudge the balance until the credit lands.
+   * The SDK throws on errors and resolves with an outcome: 'submitted'
+   * (accepted early claim, settles asynchronously), 'settled' (the deposit
+   * matured meanwhile and took the normal claim) or 'deferred' (nothing was
+   * claimed). Deferred throws here, so a resolve is always an accepted claim
+   * and callers mark the txid claimed. `settled` is false for the early case
+   * so the caller can nudge the balance until the credit lands.
    */
   async claimInstantDeposit(txId, quote, plan, outputIndex = 0) {
     this._ensureConnected();
@@ -1555,8 +1593,9 @@ export class BreezSparkWalletProvider extends WalletProvider {
         vout: outputIndex,
         maxFee: { type: 'fixed', amount: feeSats },
       });
-      const { claimId, settled } = instantClaimOutcome(result);
-      return { success: true, claimId, settled };
+      const outcome = claimDepositOutcome(result);
+      if (outcome.status === 'deferred') throw deferredClaimError(outcome.reason);
+      return { success: true, claimId: outcome.claimId, settled: outcome.status === 'settled' };
     } finally {
       this.setSyncing(false);
     }
@@ -1580,11 +1619,13 @@ export class BreezSparkWalletProvider extends WalletProvider {
       });
 
       this.setSyncing(false);
-      // A mature claim that resolves without a payment object is treated as
-      // still processing (the SDK finishes it on sync), mirroring the
-      // TRANSFER_LOCKED semantics - success either way, so the claimed
+      const outcome = claimDepositOutcome(result);
+      // Deferred claimed nothing: surface it as a retryable error so no
+      // caller records the deposit as claimed.
+      if (outcome.status === 'deferred') throw deferredClaimError(outcome.reason);
+      // Submitted settles asynchronously; still a claim, so the claimed
       // registry records the txid and the user isn't re-prompted.
-      if (!result?.payment) {
+      if (outcome.status === 'submitted') {
         return {
           success: true,
           processing: true,
@@ -1596,13 +1637,33 @@ export class BreezSparkWalletProvider extends WalletProvider {
       return {
         success: true,
         amount: creditAmountSats,
-        transferId: result.payment.id || null
+        transferId: outcome.claimId
       };
     } catch (error) {
       this.setSyncing(false);
+      if (error?.code === 'DEPOSIT_CLAIM_DEFERRED') throw error;
 
       const kind = claimErrorKind(error?.message);
-      // A claim already running (or already done) is a race, not a failure —
+      // The lock holder is usually the SDK's capped background attempt, which
+      // fails: retry later instead of recording the deposit as claimed —
+      // unless the SDK's own record shows an early claim already has it.
+      if (kind === 'in_progress') {
+        const row = await this._sdkDeposit(txId, outputIndex).catch(() => null);
+        if (sdkDepositClaimed(row)) {
+          return {
+            success: true,
+            processing: true,
+            message: 'Claim is being processed. Your balance will update shortly.',
+            amount: creditAmountSats,
+            transferId: null
+          };
+        }
+        const err = new Error('Deposit claim is busy. Retrying shortly.');
+        err.code = 'DEPOSIT_CLAIM_IN_PROGRESS';
+        err.cause = error;
+        throw err;
+      }
+      // A claim already done is a race, not a failure —
       // callers must still record the txid as claimed.
       if (kind === 'processing') {
         console.warn('Claim already in progress, will complete shortly');

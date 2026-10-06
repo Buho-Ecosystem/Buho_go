@@ -23,7 +23,7 @@ import { useAutoWithdrawStore } from './autoWithdraw';
 import { useNotificationsStore } from './notifications';
 import { formatAmount } from '../utils/amountFormatting.js';
 import { internalTransferTransactionId } from '../utils/internalTransferDetails.js';
-import { paymentHashOf } from '../utils/breezPayments.js';
+import { paymentHashOf, sdkProvesUnclaimed } from '../utils/breezPayments.js';
 import { Invoice } from '@getalby/lightning-tools';
 import {
   emptyBalanceState,
@@ -84,6 +84,11 @@ const STORAGE_KEYS = {
 const claimedDepositRegistry = createClaimedDepositRegistry({
   storage: typeof localStorage !== 'undefined' ? localStorage : null,
 });
+// When this session recorded each claim. A claim made moments ago can meet
+// an SDK record read just before the claim landed; such a mark is never
+// reconsidered until this window has passed.
+const recentDepositClaims = new Map();
+const CLAIM_MARK_SETTLE_MS = 10 * 60 * 1000;
 
 /**
  * Thin adapter exposing the device-key crypto under the historical
@@ -771,6 +776,32 @@ export const useWalletStore = defineStore('wallet', {
     markDepositClaimed(txId, outputIndex) {
       if (!txId) return;
       claimedDepositRegistry.add(depositClaimKey(txId, outputIndex));
+      recentDepositClaims.set(depositClaimKey(txId, outputIndex), Date.now());
+    },
+
+    /**
+     * Drop claimed records the SDK proves wrong, so those deposits surface
+     * and claim again. Builds before the claim-lock fix recorded a deposit as
+     * claimed when the SDK's own (failing) attempt merely held the lock,
+     * hiding confirmed deposits while their funds sat unclaimed on-chain.
+     * Call with a fresh `getPendingDeposits()` list before filtering it.
+     * @returns {number} how many records were released
+     */
+    reconcileDepositClaims(deposits) {
+      let released = 0;
+      for (const deposit of deposits || []) {
+        if (!deposit?.txId || !sdkProvesUnclaimed(deposit)) continue;
+        const key = depositClaimKey(deposit.txId, deposit.outputIndex);
+        if (this.isDepositClaimInFlight(deposit.txId, deposit.outputIndex)) continue;
+        if (Date.now() - (recentDepositClaims.get(key) || 0) < CLAIM_MARK_SETTLE_MS) continue;
+        const a = claimedDepositRegistry.delete(key);
+        const b = claimedDepositRegistry.delete(deposit.txId);
+        if (a || b) {
+          released += 1;
+          console.warn('[deposits] released a claimed mark the SDK shows unclaimed:', key);
+        }
+      }
+      return released;
     },
 
     /**

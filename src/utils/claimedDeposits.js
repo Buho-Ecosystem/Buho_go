@@ -26,7 +26,7 @@ const DEFAULT_MAX_ENTRIES = 200;
  * @param {number} [opts.maxEntries]  FIFO cap; oldest txids fall off first.
  *        Far above any realistic number of deposits still inside their
  *        confirmation window, so eviction can never resurrect a live claim.
- * @returns {{ has(txId:string):boolean, add(txId:string):void, size():number }}
+ * @returns {{ has(txId:string):boolean, add(txId:string):void, delete(txId:string):boolean, size():number }}
  */
 export function createClaimedDepositRegistry({
   storage = null,
@@ -78,6 +78,15 @@ export function createClaimedDepositRegistry({
         seen.delete(evicted);
       }
       persist();
+    },
+
+    /** Forget a record proven wrong (the deposit was never claimed). */
+    delete(txId) {
+      if (typeof txId !== 'string' || !seen.has(txId)) return false;
+      seen.delete(txId);
+      order = order.filter((entry) => entry !== txId);
+      persist();
+      return true;
     },
 
     size() {
