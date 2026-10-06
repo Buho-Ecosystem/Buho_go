@@ -2,6 +2,30 @@
 
 Notable changes to BuhoGO, newest first. Zapstore takes each release's notes from its section here (`release_notes` in `zapstore.yaml`). Releases up to 1.9.2 are described on [GitHub Releases](https://github.com/Buho-Ecosystem/Buho_go/releases).
 
+## [1.10.0]
+
+### Before you update
+
+Still on a BuhoGO from GitHub or Zapstore older than 1.9.1? It was signed with a different key, so Android will not install 1.10.0 over it. Back up your recovery phrases in Security, uninstall BuhoGO, then install 1.10.0. Updating from 1.9.1 or later works as usual.
+
+### Highlights
+
+- **Bolt Card payments in kiosk mode.** A locked kiosk now accepts NFC cards, before an amount is entered or against an open sale, through the same confirmation and PIN screens as the rest of the app.
+- **Spark stays in sync on its own.** Both Spark wallets reconnect and catch up when you return to the app, whichever wallet or screen is open, and a cached balance is no longer mistaken for a fresh one.
+- **Every received payment is noticed.** Receipts are matched by payment, not guessed from a balance change, so missed or wrong "payment received" notifications are caught up.
+- **A clearer app lock sheet.** It names the method (Device PIN, Fingerprint, Face and others), shows it, and says in one line when BuhoGO asks for it.
+
+### Bug Fixes
+
+- Confirmed on-chain deposits that were never claimed show up again and are claimed. Wallets already affected are unstuck.
+- Deposits to the Spark wallet you are not using are found and processed too.
+- Wallet totals no longer show a false zero in Manage Wallets, the switcher or Settings.
+- Copying a private key works again in Safari.
+- The QR scanner no longer stays on the slower in-app engine after a single camera hiccup.
+- Learn & Earn payouts no longer fail with "payout_failed".
+- The public card page opens the app, and Save saves the contact.
+- Fixed the Brazilian real (BRL) display, long memos in Home's last transaction, and large amounts in the Receive sheet.
+
 ## [1.9.3]
 
 ### Before you update
