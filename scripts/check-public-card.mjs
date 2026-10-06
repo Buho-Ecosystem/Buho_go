@@ -105,7 +105,7 @@ await check('android: Save and Open in BuhoGO hand off to the app; address bar i
   assert.equal(await save.getAttribute('href'), expectedIntent);
   assert.equal(await page.locator('a[data-handoff="open"]').getAttribute('href'), expectedIntent);
   assert.equal(await page.locator('a[href^="nostr:"]').count(), 0, 'no dead nostr: links');
-  assert.match(await page.locator('.pp-cta').innerText(), /Pay Maria/);
+  assert.match(await page.locator('.payment-primary').innerText(), /Create invoice/);
   await settle(page); await page.screenshot({ path: `${output}/android-visitor.png` });
 
   // Reload the clean address: the shim restores the hash and the card renders.
@@ -165,7 +165,7 @@ await check('owner: own link shows "This is your card", no Save and no Pay', asy
   await page.locator('.pp-own-title', { hasText: 'This is your card' }).waitFor();
   assert.equal(await page.locator('.pp-save').count(), 0, 'no Save for the owner');
   assert.equal(await page.locator('.pp-cta', { hasText: /Pay/ }).count(), 0, 'no Pay {own name}');
-  assert.equal(await page.locator('.pp-amount').count(), 0);
+  assert.equal(await page.locator('.payment-amount').count(), 0);
   assert.equal(await page.locator('.pp-own-badge').count(), 1);
   assert.equal(await page.locator('.pp-cta', { hasText: 'Share link' }).count(), 1);
   assert.equal(await page.locator('.pp-own-edit').count(), 1);

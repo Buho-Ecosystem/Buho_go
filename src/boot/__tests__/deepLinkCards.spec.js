@@ -12,11 +12,13 @@ import { test } from 'node:test';
 import { readFileSync } from 'node:fs';
 import { transformSync } from 'esbuild';
 import * as routing from '../../utils/deepLinkRouting.js';
+import { invoiceAppIntent } from '../../utils/publicProfilePayment.js';
+import { profileInvoiceFixture } from '../../../scripts/fixtures/profileInvoice.mjs';
 
 const NPUB = 'npub1az708q3kd9zy6z6f44zav5ygvdwelkzspf6mtusttx47lft2z38sghk0w7';
 const NPROFILE = 'nprofile1qqsw308nsgmxj3zdpdy663wk2zyx8mulmpgq5ad47g94n2l044dpgnchl3h4r';
 
-function harness({ activeWallet = null, kiosk = false } = {}) {
+function harness({ activeWallet = null, kiosk = false, launchUrl = null } = {}) {
   const listeners = {};
   const pushes = [];
   const notices = [];
@@ -29,12 +31,12 @@ function harness({ activeWallet = null, kiosk = false } = {}) {
     '@capacitor/core': { Capacitor: { isNativePlatform: () => true } },
     '@capacitor/app': { App: {
       addListener: (name, fn) => { listeners[name] = fn; },
-      getLaunchUrl: async () => null,
+      getLaunchUrl: async () => launchUrl ? { url: launchUrl } : null,
     } },
     '../services/addressRequestIntake.js': { offerAddressRequest: () => false },
     '../providers/WalletFactory': {
       parsePaymentDestination: (input) => (input.startsWith('lightning:')
-        ? { valid: true, type: 'lightning_address', data: input.slice('lightning:'.length) }
+        ? { valid: true, type: input.startsWith('lightning:ln') ? 'lightning_invoice' : 'lightning_address', data: input.slice('lightning:'.length) }
         : { valid: false, type: 'unknown' }),
     },
     '../stores/wallet': { useWalletStore: () => walletStore },
@@ -95,6 +97,19 @@ test('a lightning link still goes to the payment path', async () => {
   assert.deepEqual(h.walletStore.pendingDeepLink, { data: 'maria@mybuho.de', type: 'lightning_address' });
   assert.deepEqual(h.pushes, ['/wallet']);
 });
+
+for (const cold of [true, false]) {
+  test(`shared-profile invoice survives ${cold ? 'cold' : 'warm'} native app handoff`, async () => {
+    const invoice = profileInvoiceFixture();
+    const uri = invoiceAppIntent(invoice).split('#')[0].replace(/^intent:/, 'lightning:');
+    const h = harness({ activeWallet: { id: 'w' }, launchUrl: cold ? uri : null });
+    await h.start();
+    if (!cold) h.open(uri);
+    assert.deepEqual(h.walletStore.pendingDeepLink, { type: 'lightning_invoice', data: invoice });
+    assert.deepEqual(h.pushes, ['/wallet']);
+    assert.equal(h.notices.length, 0);
+  });
+}
 
 test('kiosk mode still blocks card links', async () => {
   const h = harness({ kiosk: true });
