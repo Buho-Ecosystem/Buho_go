@@ -259,6 +259,15 @@
                 :class="$q.dark.isActive ? 'amount-number-dark' : 'amount-number-light'"
                 :aria-label="$t('Balance not loaded yet')"
               ><span class="balance-placeholder" aria-hidden="true" /></span>
+              <!-- No rate for the chosen currency: never a 0,00 that reads
+                   as an empty wallet. -->
+              <span
+                v-else-if="fiatRateMissing"
+                class="amount-number"
+                :class="$q.dark.isActive ? 'amount-number-dark' : 'amount-number-light'"
+                :title="$t('Fiat rates unavailable')"
+                :aria-label="$t('Fiat rates unavailable')"
+              >{{ balancePrefix }}--</span>
               <NumberFlow
                 v-else
                 :key="walletStore.activeWalletId"
@@ -596,7 +605,7 @@
                   </div>
                 </div>
                 <div
-                  v-balance-updating="refreshingWalletIds[wallet.id]"
+                  v-balance-updating="isWalletRefreshPending(wallet.id)"
                   class="switch-balance"
                   :class="$q.dark.isActive ? 'switch-balance-dark' : 'switch-balance-light'"
                 >
@@ -1029,13 +1038,14 @@ export default {
       // Spark tab switching
       sparkTabSwitching: false,
 
-      // Wallet switcher: per-wallet balance loading
+      // Wallet switcher: per-wallet refresh start time (ms), 0 when idle
       refreshingWalletIds: {},
 
       // Home balance: the wallet whose balance has been read this session,
       // and the refreshes the user is waiting on (see balanceUpdating).
       balanceReadFor: null,
       balanceRefreshes: 0,
+      balanceAwaitedSince: 0,
 
       // PIN migration (one-time, for existing users)
       showMigrationDialog: false,
@@ -2064,9 +2074,17 @@ export default {
      * The home balance pulses while the active wallet's balance has not been
      * read yet, and while a refresh the user is waiting on is under way. The
      * routine 30 s tick stays quiet: its figure is already on screen.
+     *
+     * A refresh ends for the figure once the balance is verified after it
+     * began. A Spark reconcile goes on to catch up history and deposits for
+     * up to a minute; the balance is already settled by then.
      */
     balanceUpdating() {
-      return this.balanceReadFor !== this.walletStore.activeWalletId || this.balanceRefreshes > 0;
+      const id = this.walletStore.activeWalletId;
+      if (this.balanceReadFor !== id) return true;
+      if (this.balanceRefreshes === 0) return false;
+      const verifiedAt = this.activeBalanceVerifiedAt;
+      return !(verifiedAt && verifiedAt >= this.balanceAwaitedSince);
     },
 
     balanceNumericValue() {
@@ -2079,6 +2097,12 @@ export default {
       }
       // BIP-177: display sats as whole integers (1 bitcoin = 1 sat)
       return balance;
+    },
+
+    fiatRateMissing() {
+      if (this.currentDisplayMode !== 'fiat') return false;
+      const rate = this.walletState.exchangeRates?.[this.walletState.preferredFiatCurrency?.toLowerCase()];
+      return !(rate > 0);
     },
 
     balanceNumberFormat() {
@@ -2117,6 +2141,11 @@ export default {
     activeCanonicalBalance() {
       const id = this.walletStore.activeWalletId;
       return id ? (this.walletStore.balanceStates?.[id]?.value ?? null) : null;
+    },
+    /** When the active wallet's balance was last network-verified (ms). */
+    activeBalanceVerifiedAt() {
+      const id = this.walletStore.activeWalletId;
+      return id ? (this.walletStore.balanceStates?.[id]?.verifiedAt ?? null) : null;
     },
     /**
      * Sats amount to withdraw. Two read paths feed into this:
@@ -2241,6 +2270,12 @@ export default {
         this.mirrorActiveBalance();
       },
       immediate: true
+    },
+
+    // A verified reading of the same figure (a 0 confirmed as 0) changes no
+    // value, but it still means the balance has been read.
+    activeBalanceVerifiedAt() {
+      this.mirrorActiveBalance();
     },
 
     // The store owns the currency choice; the page copy only mirrors it.
@@ -2729,8 +2764,9 @@ export default {
       // Spark wallets all stay connected (#285), so both halves of the pair
       // refresh through the lifecycle; other wallets through the store.
       const wallets = this.walletStore.wallets;
+      const since = Date.now();
       for (const w of wallets) {
-        this.refreshingWalletIds = { ...this.refreshingWalletIds, [w.id]: true };
+        this.refreshingWalletIds = { ...this.refreshingWalletIds, [w.id]: since };
       }
 
       await Promise.allSettled(
@@ -2739,9 +2775,20 @@ export default {
             if (w.type === 'spark') await this.walletStore.reconcileSpark([w.id], 'user');
             else await this.walletStore.refreshWalletData(w.id);
           } catch { /* ignore */ }
-          this.refreshingWalletIds = { ...this.refreshingWalletIds, [w.id]: false };
+          this.refreshingWalletIds = { ...this.refreshingWalletIds, [w.id]: 0 };
         })
       );
+    },
+
+    /**
+     * A switcher row pulses until its balance is verified after the refresh
+     * began, not until the whole Spark reconcile (history, deposits) ends.
+     */
+    isWalletRefreshPending(walletId) {
+      const since = this.refreshingWalletIds[walletId];
+      if (!since) return false;
+      const verifiedAt = this.walletStore.balanceStates?.[walletId]?.verifiedAt;
+      return !(verifiedAt && verifiedAt >= since);
     },
 
     /**
@@ -3331,7 +3378,10 @@ export default {
       // Every refresh but the routine tick is one the user is waiting on:
       // the balance pulses until it lands.
       const awaited = !opts.preferCached;
-      if (awaited) this.balanceRefreshes += 1;
+      if (awaited) {
+        this.balanceRefreshes += 1;
+        this.balanceAwaitedSince = Date.now();
+      }
       try {
         if (this.showLoadingScreen) {
           // still initializing

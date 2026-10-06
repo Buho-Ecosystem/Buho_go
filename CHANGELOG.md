@@ -22,6 +22,8 @@ Still on a BuhoGO from GitHub or Zapstore older than 1.9.1? It was signed with a
 - Deposits to the Spark wallet you are not using are found and processed too.
 - Wallet totals no longer show a false zero in Manage Wallets, the switcher or Settings.
 - Copying a private key works again in Safari.
+- The balance stops pulsing as soon as it is confirmed, instead of while Spark finishes catching up on history and deposits, and a confirmed 0 no longer keeps it pulsing.
+- A missing exchange rate shows the fiat balance as "--" instead of 0,00, and a brief rate outage no longer drops BRL, ZAR, KES or ZMW.
 - The QR scanner no longer stays on the slower in-app engine after a single camera hiccup.
 - Learn & Earn payouts no longer fail with "payout_failed".
 - The public card page opens the app, and Save saves the contact.
