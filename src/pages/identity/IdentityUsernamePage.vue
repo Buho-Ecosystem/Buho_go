@@ -31,7 +31,7 @@
               width="17"
               height="17"
               class="username-copy"
-              aria-hidden="true"
+              :aria-hidden="true"
             />
           </template>
         </IdentityRow>
