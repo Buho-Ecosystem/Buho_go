@@ -251,14 +251,24 @@
                 :class="$q.dark.isActive ? 'amount-number-dark' : 'amount-number-light'"
                 :aria-label="$t('Balance hidden')"
               >••••</span>
+              <!-- Nothing known for this wallet yet: a placeholder, never a
+                   0 that reads as an empty wallet (#293). -->
+              <span
+                v-else-if="activeBalanceState && !activeBalanceState.known"
+                class="amount-number"
+                :class="$q.dark.isActive ? 'amount-number-dark' : 'amount-number-light'"
+                :aria-label="$t('Balance not loaded yet')"
+              ><span class="balance-placeholder" aria-hidden="true" /></span>
               <NumberFlow
                 v-else
+                :key="walletStore.activeWalletId"
                 :value="balanceNumericValue"
                 :format="balanceNumberFormat"
                 :prefix="balancePrefix"
                 :suffix="balanceSuffix"
                 class="amount-number"
-                :class="$q.dark.isActive ? 'amount-number-dark' : 'amount-number-light'"
+                :class="[$q.dark.isActive ? 'amount-number-dark' : 'amount-number-light', { 'balance-stale': activeBalanceState?.stale }]"
+                :title="activeBalanceState?.stale ? $t('Last known balance — not current') : null"
                 :spin-timing="{ duration: 750, easing: 'cubic-bezier(0.16, 1, 0.3, 1)' }"
                 :transform-timing="{ duration: 750, easing: 'cubic-bezier(0.16, 1, 0.3, 1)' }"
               />
@@ -2149,6 +2159,11 @@ export default {
     },
     preferredFiatCurrency() {
       return (this.walletState.preferredFiatCurrency || 'USD').toUpperCase();
+    },
+    /** Canonical state of the active wallet (known/stale/…), or null. */
+    activeBalanceState() {
+      const id = this.walletStore.activeWalletId;
+      return id && this.walletStore.balanceStateFor ? this.walletStore.balanceStateFor(id) : null;
     },
     /** The active wallet's canonical balance value (null when unknown). */
     activeCanonicalBalance() {

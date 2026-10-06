@@ -1388,8 +1388,13 @@ export class BreezSparkWalletProvider extends WalletProvider {
     }
 
     if (utxos === null) {
-      console.error('[L1 Deposit] Failed to fetch UTXOs from mempool API:', lastError?.message || 'Unknown error');
-      return [];
+      // Unknown is not empty: an empty list would clear real deposits from
+      // every screen and prune their processing state. Callers keep their
+      // last list and retry on the next poll.
+      const err = new Error('Could not check for incoming Bitcoin right now');
+      err.code = 'L1_EXPLORER_UNAVAILABLE';
+      err.cause = lastError || undefined;
+      throw err;
     }
 
     if (utxos.length === 0) {

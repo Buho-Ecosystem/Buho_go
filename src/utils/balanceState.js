@@ -55,15 +55,34 @@ export function nextBalanceState(prev, { value, source = 'sync', fresh = VERIFIE
   // Out of order: a reading taken before the value we already verified
   // (a slow read finishing late) cannot overwrite it.
   if (base.verifiedAt && base.source && VERIFIED_SOURCES.has(base.source) && base.verifiedAt > at) {
-    return fresh ? base : { ...base, error };
+    return fresh ? base : { ...base, error: error || base.error };
   }
+  if (fresh) {
+    return {
+      value: n,
+      source: VERIFIED_SOURCES.has(source) ? source : 'sync',
+      verifiedAt: at,
+      updatedAt: at,
+      refreshing: base.refreshing,
+      error: null,
+    };
+  }
+  // An unverified (local cache) reading. After a failed sync, or over a
+  // saved last-known value, the SDK cache may be partial or empty: it must
+  // not replace known funds, turn unknown into a zero, or clear the error.
+  // Only a verified reading does those things.
+  const known = base.value !== null && base.value !== undefined;
+  const failing = !!(error || base.error);
+  if (known && (failing || base.source === 'persisted')) return { ...base, error: error || base.error };
+  if (!known && failing) return { ...base, error: error || base.error };
   return {
     value: n,
-    source: fresh ? (VERIFIED_SOURCES.has(source) ? source : 'sync') : (source === 'persisted' ? 'persisted' : 'cache'),
-    verifiedAt: fresh ? at : base.verifiedAt,
+    source: source === 'persisted' ? 'persisted' : 'cache',
+    // A changed value inherits no verification time from the old one.
+    verifiedAt: n === base.value ? base.verifiedAt : null,
     updatedAt: at,
     refreshing: base.refreshing,
-    error: fresh ? null : error,
+    error: base.error,
   };
 }
 

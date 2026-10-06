@@ -64,6 +64,8 @@ export function createSparkLifecycle({
   /** Did Spark answer recently? Gate for the SDK's unconditional `synced`. */
   syncedEventVerified = () => true,
   historyLimit = 50,
+  maxHistoryPages = 10,
+  ancillaryDeadlineMs = 30000,
 } = {}) {
   /** walletId -> per-wallet record */
   const wallets = new Map();
@@ -169,15 +171,30 @@ export function createSparkLifecycle({
     }
   }
 
-  /** After an SDK event the local cache reflects the network; publish it. */
+  /**
+   * After an SDK event, publish the local cache. Breez emits events after
+   * partial syncs too, so the figure counts as verified only when Spark
+   * demonstrably answered just now; otherwise it is a cache reading, which
+   * the balance rules keep from replacing saved funds or clearing an error.
+   */
   async function publishCachedBalance(r, gen, source) {
     const provider = store.providers?.[r.walletId];
     if (!provider?.isConnected || typeof provider.getCachedBalance !== 'function') return;
     try {
       const result = await provider.getCachedBalance();
       if (!isCurrent(r, gen)) return;
-      store.applyBalance?.(r.walletId, result.balance, { source, fresh: true });
+      const verified = !!syncedEventVerified();
+      store.applyBalance?.(r.walletId, result.balance, { source: verified ? source : 'cache', fresh: verified });
     } catch { /* the next reconcile reads again */ }
+  }
+
+  /** Bound an ancillary read so one hung call cannot stall the wallet. */
+  function withDeadline(promise, ms, label) {
+    let timer = null;
+    return Promise.race([
+      promise,
+      new Promise((_, reject) => { timer = setTimer(() => reject(Object.assign(new Error(`${label} timed out`), { code: 'DEADLINE' })), ms); }),
+    ]).finally(() => clearTimer(timer));
   }
 
   // ---- Reconcile --------------------------------------------------------
@@ -185,8 +202,19 @@ export function createSparkLifecycle({
   async function catchUpHistory(r, gen, provider) {
     if (!ledger || typeof provider.getTransactions !== 'function') return;
     const startedAt = Math.floor(now() / 1000);
-    const history = await provider.getTransactions(0, historyLimit);
-    if (!isCurrent(r, gen)) return;
+    // Page back until the checkpoint is covered: a long absence on a busy
+    // wallet can hold more than one page of payments (bounded).
+    const floor = (ledger.checkpoint?.(r.walletId) ?? startedAt) - 120;
+    const history = [];
+    for (let page = 0; page < maxHistoryPages; page += 1) {
+      const batch = await withDeadline(provider.getTransactions(page * historyLimit, historyLimit), ancillaryDeadlineMs, 'history');
+      if (!isCurrent(r, gen)) return;
+      history.push(...(batch || []));
+      if (!ledger.isPrimed(r.walletId)) break;
+      const oldest = batch?.[batch.length - 1];
+      const ts = Number(oldest?.timestamp ?? oldest?.settled_at ?? 0);
+      if (!batch || batch.length < historyLimit || !ts || ts < floor) break;
+    }
     if (!ledger.isPrimed(r.walletId)) {
       ledger.prime(r.walletId, history);
       diag(r.walletId, 'receipts-primed', { n: history.length });
@@ -209,7 +237,7 @@ export function createSparkLifecycle({
 
   async function discoverDeposits(r, gen, provider) {
     if (typeof provider.getPendingDeposits !== 'function') return;
-    const pending = await provider.getPendingDeposits();
+    const pending = await withDeadline(provider.getPendingDeposits(), ancillaryDeadlineMs, 'deposits');
     if (!isCurrent(r, gen)) return;
     const unclaimed = (pending || []).filter((d) => !store.isDepositClaimed?.(d.txId, d.outputIndex));
     store.setPendingDeposits?.(r.walletId, unclaimed);
@@ -380,6 +408,12 @@ export function createSparkLifecycle({
   };
 }
 
+/**
+ * Diagnostics keep a failure class only: SDK error text can carry payment
+ * inputs or addresses, so it never enters the support history.
+ */
 function errClass(error) {
-  return error?.code || (error?.message ? String(error.message).slice(0, 60) : 'error');
+  if (error?.code) return String(error.code).slice(0, 40);
+  if (/timeout/i.test(String(error?.message || ''))) return 'timeout';
+  return 'error';
 }

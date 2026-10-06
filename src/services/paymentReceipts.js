@@ -29,6 +29,7 @@
 
 export const RECEIPTS_STORAGE_KEY = 'buhoGO_payment_receipts_v1';
 export const MAX_SEEN_PER_WALLET = 400;
+export const MAX_PENDING_PER_WALLET = 100;
 /** Clock skew tolerated between the device and payment timestamps. */
 export const CHECKPOINT_SLACK_S = 120;
 
@@ -38,6 +39,8 @@ export const CHECKPOINT_SLACK_S = 120;
  */
 export function receiptFromPayment(payment) {
   if (!payment || payment.id == null) return null;
+  // Token transfers are not sats; announcing their units as sats would lie.
+  if (payment.method === 'token' || payment.details?.type === 'token') return null;
   const kind = payment.paymentType ?? payment.type;
   const isReceive = kind === 'receive' || kind === 'incoming';
   // An SDK Payment carries the net amount; a mapped row carries gross
@@ -103,10 +106,13 @@ export function createReceiptLedger({
     prime(walletId, payments = []) {
       if (entry(walletId)) return false;
       const t = nowS();
-      const e = { primedAt: t, checkpoint: t, seen: [] };
+      const e = { primedAt: t, checkpoint: t, seen: [], pending: [] };
       for (const p of payments) {
         const r = receiptFromPayment(p);
-        if (r) remember(e, r.id);
+        if (!r) continue;
+        // A receive still pending at baseline is announced when it settles.
+        if (r.status === 'pending' && r.isReceive) e.pending.push(r.id);
+        else remember(e, r.id);
       }
       state[walletId] = e;
       write();
@@ -127,12 +133,24 @@ export function createReceiptLedger({
         // A live event can arrive before the first catch-up primed the
         // wallet. It is new by definition; history read later is older.
         const t = nowS();
-        e = state[walletId] = { primedAt: t, checkpoint: t, seen: [] };
+        e = state[walletId] = { primedAt: t, checkpoint: t, seen: [], pending: [] };
       }
-      // Not settled yet: neither announce nor remember, so the completion
-      // event (or the next catch-up) can still decide it.
-      if (r.status === 'pending') return null;
+      e.pending ||= [];
+      // Not settled yet: neither announce nor mark seen, so the completion
+      // event (or a later catch-up) can still decide it. Remembered as
+      // pending, persisted: a receive created before the checkpoint that
+      // settles much later (or after a restart) is still news then.
+      if (r.status === 'pending') {
+        if (r.isReceive && !e.pending.includes(r.id)) {
+          e.pending.push(r.id);
+          if (e.pending.length > MAX_PENDING_PER_WALLET) e.pending.splice(0, e.pending.length - MAX_PENDING_PER_WALLET);
+          write();
+        }
+        return null;
+      }
       if (e.seen.includes(r.id)) return null;
+      const wasPending = e.pending.includes(r.id);
+      if (wasPending) e.pending = e.pending.filter((id) => id !== r.id);
       // Settled sends and failed payments are remembered as decided (so a
       // catch-up can tell new activity from old) but never announced.
       if (!r.isReceive || r.status !== 'completed') {
@@ -146,7 +164,7 @@ export function createReceiptLedger({
       // a live event for a later payment must not hide an earlier one that
       // was missed while the app was away.
       const fromHistory = origin === 'catchup';
-      const tooOld = fromHistory && r.timestamp != null && r.timestamp < e.checkpoint - CHECKPOINT_SLACK_S;
+      const tooOld = fromHistory && !wasPending && r.timestamp != null && r.timestamp < e.checkpoint - CHECKPOINT_SLACK_S;
       write();
 
       if (tooOld || internal) return null;
@@ -162,6 +180,10 @@ export function createReceiptLedger({
       if (!e) return;
       if (at > e.checkpoint) e.checkpoint = at;
       write();
+    },
+
+    pendingIds(walletId) {
+      return [...(entry(walletId)?.pending || [])];
     },
 
     isSeen(walletId, paymentId) {

@@ -132,3 +132,29 @@ test('delivery: settled while hidden is posted even after returning; on screen i
   assert.deepEqual(receiptDelivery(receipt, { hiddenNow: false, hiddenIntervals: [[T0 + 300, null]] }), { system: false });
   assert.deepEqual(receiptDelivery(receipt, { hiddenNow: false, hiddenIntervals: [] }), { system: false });
 });
+
+test('token transfers are never announced as sats (#297 review)', () => {
+  const c = clock();
+  const ledger = createReceiptLedger({ storage: memory(), now: c.now });
+  ledger.prime('A', []);
+  c.advance(1);
+  assert.equal(ledger.ingest('A', { ...receive('tok', 5_000_000, c.s()), method: 'token' }), null);
+  assert.equal(ledger.ingest('A', { ...receive('tok2', 5, c.s()), details: { type: 'token' } }), null);
+});
+
+test('a receive pending at baseline or before a restart is announced when it settles', () => {
+  const c = clock();
+  const storage = memory();
+  let ledger = createReceiptLedger({ storage, now: c.now });
+  const created = c.s();
+  ledger.prime('A', [receive('slow', 700, created, 'pending')]);
+  ledger.markCaughtUp('A', c.s());
+  c.advance(3600); // settles an hour later, after a restart
+  ledger = createReceiptLedger({ storage, now: c.now });
+  assert.deepEqual(ledger.pendingIds('A'), ['slow']);
+  ledger.markCaughtUp('A', c.s());
+  const r = ledger.ingest('A', receive('slow', 700, created), { origin: 'catchup' });
+  assert.ok(r, 'old creation time, but it was pending: still news');
+  assert.equal(r.amountSats, 700);
+  assert.deepEqual(ledger.pendingIds('A'), []);
+});
