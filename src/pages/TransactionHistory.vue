@@ -745,6 +745,7 @@ import { zapperDisplayName, zapperPicture } from '../services/zapperProfiles';
 import { NOSTRICH_HEAD_ICON } from '../utils/nostrIcon.js';
 import { splitAddressForDisplay } from '../utils/addressUtils.js';
 import { getTxDescription, getTxMessage as resolveTxMessage, isPlaceholderDescription } from '../utils/txMessage.js';
+import { readCachedTransactions, mergeCachedTransactions } from '../utils/txCache.js';
 
 // Chip text per metadata source (i18n message keys, resolved through $t at
 // render time). Lookup map on purpose: later passes stamp more sources
@@ -780,6 +781,8 @@ export default {
       isRefreshing: false,
       activeFilter: 'all',
       transactions: [],
+      // Last known list, shown while the first fresh batch loads.
+      cachedTransactions: [],
       walletState: {},
       walletStore: null,
       bitcoinDepositsStore: null,
@@ -859,7 +862,12 @@ export default {
       const sevenDaysAgo = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
       const monthAgo = new Date(today.getTime() - 30 * 24 * 60 * 60 * 1000);
 
-      return this.transactions.filter(tx => {
+      // While the first fresh batch loads, the last known list stays on
+      // screen instead of a skeleton.
+      const source = this.transactions.length || !this.cachedTransactions.length
+        ? this.transactions
+        : this.cachedTransactions;
+      return source.filter(tx => {
         const txDate = new Date(tx.settled_at * 1000);
 
         switch (this.activeFilter) {
@@ -1018,7 +1026,15 @@ export default {
     // route) without ever passing through the wallet page that normally
     // hydrates it. initialize() is idempotent and returns immediately when
     // another caller already ran it, so the normal in-app navigation path
-    // pays nothing for this.
+    // pays nothing for this. The last known list paints as soon as the
+    // saved wallets are loaded, while the wallet may still be connecting.
+    await this.walletStore.whenHydrated();
+    try { this.walletState = JSON.parse(localStorage.getItem('buhoGO_wallet_state')) || {}; } catch { /* defaults */ }
+    this.cachedTransactions = readCachedTransactions(this.walletStore.activeWalletId);
+    if (this.cachedTransactions.length) {
+      this.isLoading = false;
+      this.showLoadingScreen = false;
+    }
     await this.walletStore.initialize();
     await this.addressBookStore.initialize();
     await this.metadataStore.initialize();
@@ -1668,7 +1684,13 @@ export default {
     },
 
     async loadTransactions() {
-      this.isLoading = true;
+      // Keep what is on screen (or the last known list) while this loads;
+      // the skeleton is only for a wallet with nothing to show yet.
+      const walletId = this.walletStore.activeWalletId;
+      const previous = this.transactions.length ? this.transactions.slice() : readCachedTransactions(walletId);
+      this.cachedTransactions = previous;
+      this.isLoading = previous.length === 0;
+      if (previous.length) this.showLoadingScreen = false;
 
       // Reset batching state
       this.resetBatchingState();
@@ -1684,6 +1706,8 @@ export default {
         await this.loadFirstBatch();
 
         this.transactions.sort((a, b) => b.settled_at - a.settled_at);
+        this.cachedTransactions = [];
+        if (this.walletStore.activeWalletId === walletId) mergeCachedTransactions(walletId, this.transactions);
 
         this.processZapTransactions();
 
@@ -1699,11 +1723,14 @@ export default {
 
       } catch (error) {
         console.error('Error loading transactions:', error);
+        // Keep the last known list rather than an empty screen.
+        if (!this.transactions.length && previous.length) this.transactions = previous;
         this.$q.notify({
           type: 'negative',
           message: this.$t('Couldn\'t load history'),
         });
       } finally {
+        this.cachedTransactions = [];
         this.isLoading = false;
       }
     },

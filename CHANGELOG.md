@@ -10,6 +10,7 @@ Still on a BuhoGO from GitHub or Zapstore older than 1.9.1? It was signed with a
 
 ### Highlights
 
+- **Balances and history appear at once.** BuhoGO opens on your last known balance and recent payments instead of a loading screen, and switching wallets or opening History shows them immediately. Fresh figures roll in as they arrive; the balance only pulses when there is nothing to show yet, and is dimmed only when an update actually failed.
 - **Bolt Card payments in kiosk mode.** A locked kiosk now accepts NFC cards, before an amount is entered or against an open sale, through the same confirmation and PIN screens as the rest of the app.
 - **Spark stays in sync on its own.** Both Spark wallets reconnect and catch up when you return to the app, whichever wallet or screen is open, and a cached balance is no longer mistaken for a fresh one.
 - **Every received payment is noticed.** Receipts are matched by payment, not guessed from a balance change, so missed or wrong "payment received" notifications are caught up.
@@ -22,7 +23,6 @@ Still on a BuhoGO from GitHub or Zapstore older than 1.9.1? It was signed with a
 - Deposits to the Spark wallet you are not using are found and processed too.
 - Wallet totals no longer show a false zero in Manage Wallets, the switcher or Settings.
 - Copying a private key works again in Safari.
-- The balance stops pulsing as soon as it is confirmed, instead of while Spark finishes catching up on history and deposits, and a confirmed 0 no longer keeps it pulsing.
 - A missing exchange rate shows the fiat balance as "--" instead of 0,00, and a brief rate outage no longer drops BRL, ZAR, KES or ZMW.
 - The QR scanner no longer stays on the slower in-app engine after a single camera hiccup.
 - Learn & Earn payouts no longer fail with "payout_failed".

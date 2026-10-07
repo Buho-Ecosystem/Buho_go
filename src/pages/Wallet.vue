@@ -276,8 +276,8 @@
                 :prefix="balancePrefix"
                 :suffix="balanceSuffix"
                 class="amount-number"
-                :class="[$q.dark.isActive ? 'amount-number-dark' : 'amount-number-light', { 'balance-stale': activeBalanceState?.stale }]"
-                :title="activeBalanceState?.stale ? $t('Last known balance — not current') : null"
+                :class="[$q.dark.isActive ? 'amount-number-dark' : 'amount-number-light', { 'balance-stale': activeBalanceOutdated }]"
+                :title="activeBalanceOutdated ? $t('Last known balance — not current') : null"
                 :spin-timing="{ duration: 750, easing: 'cubic-bezier(0.16, 1, 0.3, 1)' }"
                 :transform-timing="{ duration: 750, easing: 'cubic-bezier(0.16, 1, 0.3, 1)' }"
               />
@@ -613,7 +613,7 @@
                        switcher: a known value (stale ones marked), else a
                        placeholder — never an invented 0. -->
                   <span v-if="!walletStore.getDisplayBalance(wallet.id).known" class="balance-placeholder" :aria-label="$t('Balance not loaded yet')" />
-                  <HiddenAmount v-else :class="{ 'balance-stale': walletStore.getDisplayBalance(wallet.id).isCached }">{{ formatBalance(walletStore.getDisplayBalance(wallet.id).balance) }}</HiddenAmount>
+                  <HiddenAmount v-else :class="{ 'balance-stale': walletStore.getDisplayBalance(wallet.id).outdated }">{{ formatBalance(walletStore.getDisplayBalance(wallet.id).balance) }}</HiddenAmount>
                 </div>
               </div>
 
@@ -962,6 +962,7 @@ import {
 import { useBitcoinDepositsStore } from '../stores/bitcoinDeposits';
 import {SA_RETAIL_SOURCE, parseZARFromMetadata} from '../utils/merchantQR.js';
 import {lookupBrantaVerification, BRANTA_LOOKUP_TIMEOUT_MS} from '../utils/branta.js';
+import { readCachedTransactions, mergeCachedTransactions } from '../utils/txCache.js';
 
 function emptySaveContactData() {
   return {
@@ -1040,11 +1041,6 @@ export default {
 
       // Wallet switcher: per-wallet refresh start time (ms), 0 when idle
       refreshingWalletIds: {},
-
-      // Home balance: the wallet whose balance has been read this session,
-      // and the refreshes the user is waiting on (see balanceUpdating).
-      balanceRefreshes: 0,
-      balanceAwaitedSince: 0,
 
       // PIN migration (one-time, for existing users)
       showMigrationDialog: false,
@@ -2057,19 +2053,24 @@ export default {
     },
 
     /**
-     * The home balance pulses while the active wallet's balance has not been
-     * read yet, and while a refresh the user is waiting on is under way. The
-     * routine 30 s tick stays quiet: its figure is already on screen.
-     *
-     * A refresh ends for the figure once the balance is verified after it
-     * began. A Spark reconcile goes on to catch up history and deposits for
-     * up to a minute; the balance is already settled by then.
+     * The home balance pulses only while nothing is known for the active
+     * wallet yet (the placeholder). A figure already on screen (saved last
+     * time, read locally, or verified) is refreshed in place, without a
+     * pulse or dimming: the balance reads as there at once, and a newer
+     * figure rolls in when the refresh lands.
      */
     balanceUpdating() {
-      if (!this.activeBalanceState?.known) return !!this.activeBalanceState?.refreshing || this.balanceRefreshes > 0;
-      if (this.balanceRefreshes === 0) return false;
-      const verifiedAt = this.activeBalanceVerifiedAt;
-      return !(verifiedAt && verifiedAt >= this.balanceAwaitedSince);
+      return !!this.activeBalanceState && !this.activeBalanceState.known;
+    },
+
+    /**
+     * Dim the figure only when it is known to be out of date: the last
+     * refresh failed. A value that is still being re-verified reads as
+     * current.
+     */
+    activeBalanceOutdated() {
+      const state = this.activeBalanceState;
+      return !!(state?.stale && state.error && !state.refreshing);
     },
 
     balanceNumericValue() {
@@ -2126,11 +2127,6 @@ export default {
     activeCanonicalBalance() {
       const id = this.walletStore.activeWalletId;
       return id ? (this.walletStore.balanceStates?.[id]?.value ?? null) : null;
-    },
-    /** When the active wallet's balance was last network-verified (ms). */
-    activeBalanceVerifiedAt() {
-      const id = this.walletStore.activeWalletId;
-      return id ? (this.walletStore.balanceStates?.[id]?.verifiedAt ?? null) : null;
     },
     /**
      * Sats amount to withdraw. Two read paths feed into this:
@@ -2285,8 +2281,9 @@ export default {
       this.pendingBitcoinDeposits = [];
       this.checkPendingBitcoinDeposits();
       if (next === prev) return;
-      this.isLoadingLastTransaction = true;
-      this.lastTransaction = null;
+      // The new wallet's last known transaction paints at once; the read
+      // below replaces it.
+      this.showCachedLastTransaction(next);
       // `switchSparkTab` already awaits `loadLastTransaction` itself so
       // it can hold the tab-switch guard until data has actually
       // landed. Skipping here avoids a duplicate provider fetch when
@@ -2735,14 +2732,12 @@ export default {
     },
 
     /**
-     * A switcher row pulses until its balance is verified after the refresh
-     * began, not until the whole Spark reconcile (history, deposits) ends.
+     * A switcher row pulses only while its refresh runs for a wallet with
+     * no figure yet; a known balance is updated in place.
      */
     isWalletRefreshPending(walletId) {
-      const since = this.refreshingWalletIds[walletId];
-      if (!since) return false;
-      const verifiedAt = this.walletStore.balanceStates?.[walletId]?.verifiedAt;
-      return !(verifiedAt && verifiedAt >= since);
+      if (!this.refreshingWalletIds[walletId]) return false;
+      return !this.walletStore.getDisplayBalance(walletId).known;
     },
 
     /**
@@ -3067,18 +3062,15 @@ export default {
 
       try {
         await this.walletStore.switchActiveWallet(walletId);
-        // Hold the guard until the post-switch data load actually
-        // settles. Previously we cleared it after `switchActiveWallet`
-        // returned but kicked off `updateWalletBalance()` as
-        // fire-and-forget, which let a second tap land while the SDK
-        // was still fetching the balance for the new context.
-        // `loadLastTransaction` is also driven by the
-        // `walletStore.activeWalletId` watcher, which short-circuits
-        // while `sparkTabSwitching` is true to avoid a duplicate fetch.
-        await Promise.allSettled([
-          this.updateWalletBalance(),
-          this.loadLastTransaction()
-        ]);
+        // The guard covers the switch itself only. Both Spark accounts stay
+        // connected (#285) and the lifecycle coalesces their reconciles, so
+        // the refresh runs in the background: the saved balance and the
+        // cached last transaction are on screen at once, and the tabs are
+        // usable again instead of waiting for the sync, history catch-up
+        // and deposit discovery. `updateWalletBalance` also re-reads the
+        // last transaction (the activeWalletId watcher skips it while
+        // `sparkTabSwitching` is true).
+        this.updateWalletBalance();
       } catch (error) {
         console.error('Error switching Spark tab:', error);
         this.walletStore.showPaymentError(error, {
@@ -3098,10 +3090,12 @@ export default {
       }
 
       try {
-        // Use the wallet store to switch - this keeps Settings in sync
-        await this.walletStore.switchActiveWallet(walletId);
-
+        // Use the wallet store to switch - this keeps Settings in sync. The
+        // active wallet changes at once; the sheet closes onto its saved
+        // balance while a wallet that is not live yet connects.
+        const switching = this.walletStore.switchActiveWallet(walletId);
         this.showWalletSwitcher = false;
+        await switching;
 
         this.$q.notify({
           type: 'positive',
@@ -3186,7 +3180,14 @@ export default {
     },
     async initializeWallet() {
       try {
-        await this.walletStore.initialize();
+        // Paint the home screen as soon as the saved wallets and balances
+        // are loaded. Connecting the wallets, fresh rates and the Spark sync
+        // continue behind it and update the figures in place.
+        const ready = this.walletStore.initialize();
+        await this.walletStore.whenHydrated();
+        this.showCachedLastTransaction(this.walletStore.activeWalletId);
+        this.showLoadingScreen = false;
+        await ready;
         await this.updateWalletBalance();
 
         // Start L1 Bitcoin deposit polling for banner (after wallet store is ready)
@@ -3205,6 +3206,13 @@ export default {
         console.error('Error initializing wallet:', error);
         this.showLoadingScreen = false;
       }
+    },
+
+    /** The wallet's last known transaction, before any provider read. */
+    showCachedLastTransaction(walletId) {
+      const cached = walletId ? readCachedTransactions(walletId)[0] || null : null;
+      this.lastTransaction = cached;
+      this.isLoadingLastTransaction = !cached;
     },
 
     async checkSparkWalletUnlock() {
@@ -3257,11 +3265,10 @@ export default {
     async updateWalletBalance(opts = {}) {
       const walletId = this.walletStore.activeWalletId;
       if (!walletId) return;
-      const awaited = !opts.preferCached;
-      if (awaited) {
-        this.balanceRefreshes += 1;
-        this.balanceAwaitedSince = Date.now();
-      }
+      // A refresh the user is waiting on also re-reads the last transaction
+      // right away: it is a local read for Spark and must not wait for the
+      // sync, history catch-up and deposit discovery behind the balance.
+      if (!opts.preferCached) this.loadLastTransaction();
       try {
         if (this.walletStore.isActiveWalletSpark) {
           // The existing Spark lifecycle owns its periodic reads and events.
@@ -3271,7 +3278,6 @@ export default {
           await this.walletStore.refreshBalance(walletId);
         }
       } finally {
-        if (awaited) this.balanceRefreshes -= 1;
         this.loadLastTransaction();
       }
     },
@@ -3298,7 +3304,10 @@ export default {
 
       try {
         const provider = this.walletStore.providers?.[walletId];
-        if (!provider || typeof provider.getTransactions !== 'function') {
+        // Not connected yet: keep the cached card; the read after the
+        // connection replaces it.
+        if (!provider) return;
+        if (typeof provider.getTransactions !== 'function') {
           this.lastTransaction = null;
           return;
         }
@@ -3337,12 +3346,15 @@ export default {
           console.warn('[wallet] fiat-at-settlement stamp failed:', err);
         }
 
+        // The user may have switched wallets while this read ran.
+        if (this.activeWallet?.id !== walletId) return;
         this.lastTransaction = txs.length > 0 ? txs[0] : null;
+        mergeCachedTransactions(walletId, txs);
       } catch (err) {
+        // A failed read keeps what is on screen (the cached card).
         console.warn('Failed to load last transaction:', err);
-        this.lastTransaction = null;
       } finally {
-        this.isLoadingLastTransaction = false;
+        if (this.activeWallet?.id === walletId) this.isLoadingLastTransaction = false;
       }
     },
 

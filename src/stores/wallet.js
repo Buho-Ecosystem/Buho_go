@@ -63,6 +63,7 @@ import {
   getUserFriendlyErrorMessage,
 } from '../utils/userErrors';
 import * as deviceCrypto from '../utils/deviceCrypto';
+import { clearCachedTransactions } from '../utils/txCache.js';
 import { i18n } from '../boot/i18n';
 import {
   setScreenPrivacyEnabled as nativeSetScreenPrivacyEnabled,
@@ -235,6 +236,9 @@ export const useWalletStore = defineStore('wallet', {
     // prevent boot flows (deep links, Wallet.vue) from racing each other
     // into duplicate store hydration / auto-connect work on cold start.
     isInitialized: false,
+    // Saved wallets and their last-known balances are loaded: screens can
+    // paint while connections and syncs continue in the background.
+    hydrated: false,
     _initializePromise: null,
 
     // Bitcoin L1 deposit-claim coordination.
@@ -527,6 +531,9 @@ export const useWalletStore = defineStore('wallet', {
         known: d.known,
         isLocked,
         isCached: d.known && d.status !== 'fresh',
+        // Known to be out of date: the last refresh failed. Only this is
+        // shown dimmed; a value being re-verified reads as current.
+        outdated: d.known && d.stale && !!d.error && !d.refreshing,
         status: d.status,
         refreshing: d.refreshing,
         verifiedAt: d.verifiedAt,
@@ -988,6 +995,24 @@ export const useWalletStore = defineStore('wallet', {
     /**
      * Initialize the store from localStorage
      */
+    /**
+     * Resolves once the saved wallets and their last-known balances are
+     * loaded, which is early in initialize(): connections, rates and syncs
+     * may still be running. Screens await this to paint at once.
+     */
+    whenHydrated() {
+      if (this.hydrated) return Promise.resolve();
+      const init = this.initialize();
+      return new Promise((resolve) => {
+        const stop = this.$subscribe(() => {
+          if (!this.hydrated) return;
+          stop();
+          resolve();
+        });
+        init.finally(() => { stop(); resolve(); });
+      });
+    },
+
     async initialize() {
       if (this.isInitialized) {
         return;
@@ -1171,9 +1196,11 @@ export const useWalletStore = defineStore('wallet', {
 
           // Validate wallets
           await this.validateWallets();
+          this.hydrated = true;
 
-          // Load exchange rates
-          await this.loadExchangeRates();
+          // Load exchange rates. Saved rates are already restored above; the
+          // fresh ones arrive reactively instead of holding up startup.
+          this.loadExchangeRates().catch(() => {});
 
           // Initialize auto-withdraw store
           const autoWithdrawStore = useAutoWithdrawStore();
@@ -1219,6 +1246,7 @@ export const useWalletStore = defineStore('wallet', {
           console.error('Wallet store initialization error:', error);
           this.lastError = error.message;
         } finally {
+          this.hydrated = true;
           this.isInitialized = true;
           this._initializePromise = null;
         }
@@ -2428,6 +2456,8 @@ export const useWalletStore = defineStore('wallet', {
         if (wallet.type === WALLET_TYPES.SPARK) {
           try { await deleteBreezStorage(walletId); } catch (e) { /* best-effort */ }
         }
+        // Nor the display cache of its recent transactions.
+        clearCachedTransactions(walletId);
 
         // If this wallet is in a group, also remove all other group members
         const groupId = wallet.connectionData?.walletGroupId;
@@ -2441,6 +2471,7 @@ export const useWalletStore = defineStore('wallet', {
             }
             delete this.connectionStates[member.id];
             this.forgetBalance(member.id);
+            clearCachedTransactions(member.id);
             forgetSparkWallet?.(member.id);
             delete this.walletInfos[member.id];
             const idx = this.wallets.indexOf(member);
