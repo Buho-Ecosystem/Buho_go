@@ -74,7 +74,7 @@
               <NostrAddress :address="usernameAddress" />
             </template>
             <template #trailing>
-              <Icon :icon="copiedIdentifier === 'username' ? 'tabler:copy-check' : 'tabler:copy'" width="17" height="17" class="share-copy-glyph" aria-hidden="true" />
+              <Icon :icon="copiedIdentifier === 'username' ? 'tabler:copy-check' : 'tabler:copy'" width="17" height="17" class="share-copy-glyph" :aria-hidden="true" />
             </template>
           </IdentityRow>
           <IdentityRow
@@ -89,7 +89,7 @@
               <span class="share-nostr-glyph"><Icon :icon="NOSTRICH_HEAD_ICON" width="18" height="18" /></span>
             </template>
             <template #trailing>
-              <Icon :icon="copiedIdentifier === 'npub' ? 'tabler:copy-check' : 'tabler:copy'" width="17" height="17" class="share-copy-glyph" aria-hidden="true" />
+              <Icon :icon="copiedIdentifier === 'npub' ? 'tabler:copy-check' : 'tabler:copy'" width="17" height="17" class="share-copy-glyph" :aria-hidden="true" />
             </template>
           </IdentityRow>
         </IdentityGroup>
@@ -164,7 +164,7 @@ export default {
      * saves the person. Payment has its own screen and its own code.
      */
     qrCaption() {
-      return this.$t('Someone can scan this to save you as a contact');
+      return this.$t('Someone with BuhoGO can scan this to save you as a contact');
     },
 
     usernameAddress() {

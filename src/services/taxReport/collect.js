@@ -19,14 +19,11 @@
  *   - IT CAN BE STOPPED. Reading a long history is the slowest thing in the
  *     feature, so every loop honours an AbortSignal and reports progress.
  *
- * ONE WALLET IS LIVE AT A TIME. The app connects the active wallet and no
- * others (`stores/wallet.js` auto-connects the active wallet at boot, and
- * `connectAllSparkWallets` tears down every non-active Spark provider to keep
- * a single Spark session). So a report over several wallets cannot simply read
- * a map of providers: all but one would be missing. The caller passes a
- * `connect` function, this module calls it for each wallet in turn, and
- * because the loop is sequential a caller can safely connect wallets that
- * cannot coexist.
+ * NOT EVERY WALLET IS LIVE. Spark wallets all stay connected, but only the
+ * active non-Spark wallet is connected at boot. So a report over several
+ * wallets cannot simply read a map of providers: some would be missing. The
+ * caller passes a `connect` function and this module calls it for each wallet
+ * in turn.
  *
  * Pure of stores: providers, the connector and the normaliser are passed in,
  * so the paging logic is testable with fakes.

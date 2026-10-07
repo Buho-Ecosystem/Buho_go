@@ -32,6 +32,26 @@
  */
 
 import { BREEZ_API_KEY, BREEZ_LNURL_DOMAIN } from '../config/breez.js';
+import { createSparkNetworkObserver } from '../utils/sparkNetwork.js';
+
+/**
+ * Observes the SDK's own Spark traffic (the WASM uses the page's fetch).
+ * Breez 0.25 resolves syncWallet and emits `synced` even when every request
+ * failed, so this is the evidence a fresh sync and Spark health rest on.
+ */
+const networkObserver = createSparkNetworkObserver();
+let fetchObserved = false;
+
+function observeSparkFetch() {
+  if (fetchObserved || typeof globalThis.fetch !== 'function') return;
+  globalThis.fetch = networkObserver.wrap(globalThis.fetch);
+  fetchObserved = true;
+}
+
+/** The Spark network observer, or null before the SDK was ever loaded. */
+export function sparkNetwork() {
+  return fetchObserved ? networkObserver : null;
+}
 
 const DB_NAMES_KEY = 'buhoGO_breez_dbs';
 
@@ -91,6 +111,7 @@ async function loadSdkModule() {
  * Load the WASM module (once). Must complete before any other SDK call.
  */
 export async function ensureWasmInit() {
+  observeSparkFetch();
   const mod = await loadSdkModule();
   // Latch on the PROMISE, not a done-flag: the module's own init has no
   // in-flight guard, and a second concurrent instantiation would replace

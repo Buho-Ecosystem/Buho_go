@@ -274,7 +274,7 @@ export default {
      * is what stops the two reading as duplicates.
      */
     qrCaption() {
-      return this.$t('Someone can scan this to save you as a contact');
+      return this.$t('Someone with BuhoGO can scan this to save you as a contact');
     },
 
   },

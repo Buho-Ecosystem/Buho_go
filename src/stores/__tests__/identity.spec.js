@@ -710,7 +710,7 @@ await test('pending claim: belongs to the identity it was bought for', async () 
   assert.equal(s.pendingNip05Claim?.handle, 'owl', 'the original identity still has it');
 });
 
-await test('pending claim: malformed and week-old entries are dropped on load', async () => {
+await test('pending claim: malformed entries are dropped, old claims retained for payment verification', async () => {
   globalThis.localStorage = new MemoryStorage();
   const now = Date.now();
   globalThis.localStorage.setItem('buhoGO_identity_v1', JSON.stringify({
@@ -726,7 +726,7 @@ await test('pending claim: malformed and week-old entries are dropped on load', 
   setActivePinia(createPinia());
   const s = useIdentityStore();
   await s.hydrate();
-  assert.deepEqual(Object.keys(s.pendingNip05Claims), ['aa'.repeat(32)]);
+  assert.deepEqual(Object.keys(s.pendingNip05Claims), ['aa'.repeat(32), 'bb'.repeat(32)]);
   assert.equal(s.pendingNip05Claim.handle, 'fresh');
 });
 

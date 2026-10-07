@@ -49,16 +49,17 @@ export default boot(async () => {
   const walletStore = useWalletStore();
 
   let inFlight = false;
+  let runAgain = false;
 
   async function ensurePaymentAddress() {
-    if (inFlight) return;
+    if (inFlight) { runAgain = true; return; }
     inFlight = true;
     try {
       await identity.hydrate();
       if (!identity.bootstrapped) return;
-      await profile.hydrate();
-
       if (!identity.nostrNpub) await identity.loadNostrIdentity();
+      await profile.hydrate();
+      const scope = profile.captureSession();
 
       // The Spark address lives in persisted wallet metadata, so knowing it
       // only needs the store loaded, not the wallet connected. A wallet
@@ -68,29 +69,25 @@ export default boot(async () => {
       } catch (err) {
         console.warn('[payment-address] wallet init failed, using the bucket default:', err);
       }
+      if (!scope.current()) return;
 
       const preferred = walletStore.preferredProfileLightningAddress
         || npubCashAddress(identity.nostrNpub);
       if (!preferred) return;
 
-      const changed = profile.adoptDefaultPaymentAddress(preferred, {
+      profile.adoptDefaultPaymentAddress(preferred, {
         isReplaceable: isNpubCashAddress,
       });
 
-      // Publish when we just set it, and also when a previous attempt wrote it
-      // locally but never got it onto the relays. Both cases are the same
-      // question: does the published profile carry a way to pay this person?
-      const needsPublish = changed || (profile.isDirty && profile.lud16);
-      if (!needsPublish) return;
-
-      const result = await profile.publish();
-      if (!result?.ok) {
-        console.warn('[payment-address] address saved locally, publish will retry');
-      }
+      // The profile store persists the edit; the shared sync lifecycle publishes it.
     } catch (err) {
       console.warn('[payment-address] could not set up the address:', err);
     } finally {
       inFlight = false;
+      if (runAgain) {
+        runAgain = false;
+        ensurePaymentAddress();
+      }
     }
   }
 

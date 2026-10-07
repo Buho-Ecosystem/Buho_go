@@ -19,7 +19,7 @@
  */
 
 import { strict as assert } from 'node:assert'
-import { normalizeTx, computeAmounts, extractLnbitsFiatAtSettlement } from '../txNormalizer.js'
+import { normalizeTx, computeAmounts, extractLnbitsFiatAtSettlement, isInvoiceExpired } from '../txNormalizer.js'
 
 let passed = 0
 let failed = 0
@@ -390,6 +390,24 @@ test('pending incoming invoice with a past unix-seconds expires_at (NWC) resolve
     { walletType: 'nwc' },
   )
   assert.equal(tx.status, 'expired')
+})
+
+test('zone-less LNbits expiry is read as UTC, not device-local time', () => {
+  const now = Date.parse('2026-10-07T10:00:00Z')
+  const base = { type: 'incoming', status: 'pending' }
+  // One minute past in UTC — expired whatever zone the device is in.
+  assert.equal(isInvoiceExpired({ ...base, expiry: '2026-10-07T09:59:00' }, now), true)
+  // One minute ahead in UTC — still payable.
+  assert.equal(isInvoiceExpired({ ...base, expiry: '2026-10-07T10:01:00' }, now), false)
+})
+
+test('isInvoiceExpired re-judges an already-normalized pending invoice against the clock', () => {
+  const expiry = Math.floor(Date.parse('2026-10-07T10:00:00Z') / 1000)
+  const tx = { type: 'incoming', status: 'pending', expires_at: expiry }
+  assert.equal(isInvoiceExpired(tx, expiry * 1000 - 1000), false)
+  assert.equal(isInvoiceExpired(tx, expiry * 1000 + 1000), true)
+  assert.equal(isInvoiceExpired({ ...tx, status: 'completed' }, expiry * 1000 + 1000), false)
+  assert.equal(isInvoiceExpired({ ...tx, type: 'outgoing' }, expiry * 1000 + 1000), false)
 })
 
 test('completed transactions never become expired, whatever the expiry says', () => {

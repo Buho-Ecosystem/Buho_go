@@ -99,6 +99,18 @@
     -->
     <script>
       (function () {
+        // The card page shows the clean /p/… address once it has loaded
+        // (PublicProfilePage.vue, issue #301). Going back to that history
+        // entry must hand the router its hash again, before the router reads
+        // the location: a capturing listener on window runs first.
+        window.addEventListener('popstate', function () {
+          var p = window.location.pathname || '';
+          if (p.indexOf('/p/') !== 0 || window.location.hash) return;
+          try {
+            window.history.replaceState(window.history.state, '', '/#' + p + window.location.search);
+          } catch (e) { /* the router then shows its default route */ }
+        }, true);
+
         var path = window.location.pathname || '';
         if (path.indexOf('/p/') !== 0) return;
         if (window.location.hash) return;

@@ -153,15 +153,22 @@ export function pickBolt11Route({ sparkTransferFeeSats, lightningFeeSats, prefer
 
 /**
  * Triage a claimDeposit error message.
- * @returns {'processing'|'too_small'|'confirmations'|'fee_changed'|null}
- *   'processing' — the claim is already running or already done; callers
- *   must treat it as success and record the txid as claimed.
+ * @returns {'in_progress'|'processing'|'too_small'|'confirmations'|'fee_changed'|null}
+ *   'in_progress' — another attempt holds the SDK's claim lock, usually its
+ *   own background sync, whose auto-claim BuhoGO caps at 0 sats and which
+ *   therefore fails. NOT a success: recording it as claimed hid confirmed
+ *   deposits forever while their UTXO stayed unclaimed. Callers retry.
+ *   'processing' — the claim is already done; callers must treat it as
+ *   success and record the txid as claimed.
  */
 export function claimErrorKind(message) {
   const msg = String(message || '').toLowerCase();
+  if (msg.includes('claim already in progress')) {
+    return 'in_progress';
+  }
   if (
-    msg.includes('claim already in progress') ||
     msg.includes('already claimed') ||
+    msg.includes('already been claimed') ||
     msg.includes('transfer_locked') ||
     (msg.includes('leaf') && msg.includes('locked'))
   ) {
@@ -180,20 +187,39 @@ export function claimErrorKind(message) {
 }
 
 /**
- * Outcome of an SDK `claimDeposit` call on a deposit that has not matured.
- *
- * The SDK answers one of three ways: it throws when the service declines
- * the early claim (fee ceiling, depth, no plan); it resolves WITHOUT a
- * payment when the early claim was accepted, because that claim settles
- * asynchronously; and it resolves WITH a payment when the deposit turned
- * out to be mature and the normal claim ran instead. A resolved call is
- * therefore always an accepted claim. `settled` tells the two apart for
- * callers that want to nudge the balance along.
- * @returns {{ claimId: string|null, settled: boolean }}
+ * What an SDK `claimDeposit` call did (SDK >= 0.26). The SDK resolves with
+ * one of three outcomes and throws only on errors:
+ *   'settled'   — claimed at maturity; the payment rides along.
+ *   'submitted' — claimed ahead of maturity; it settles asynchronously.
+ *   'deferred'  — NOTHING was claimed (fee ceiling, too shallow, provider
+ *                 declined). The SDK keeps trying on its own under the
+ *                 recorded ceiling; callers must not record it as claimed.
+ * Only the first two are claims. A result without a recognised outcome
+ * counts as deferred: an unknown answer never marks a deposit claimed.
+ * @returns {{ status: 'settled'|'submitted'|'deferred', payment: object|null, claimId: string|null, reason: object|null }}
  */
-export function instantClaimOutcome(result) {
-  const payment = result?.payment || null;
-  return { claimId: payment?.id || null, settled: !!payment };
+export function claimDepositOutcome(result) {
+  const outcome = result?.outcome;
+  if (outcome?.type === 'settled' && outcome.payment) {
+    return { status: 'settled', payment: outcome.payment, claimId: outcome.payment.id || null, reason: null };
+  }
+  if (outcome?.type === 'submitted') {
+    return { status: 'submitted', payment: null, claimId: null, reason: null };
+  }
+  return { status: 'deferred', payment: null, claimId: null, reason: outcome?.reason || null };
+}
+
+/** The error a deferred claim surfaces as: retryable, never a claim. */
+export function deferredClaimError(reason) {
+  const detail = reason?.type === 'maxFeeExceeded'
+    ? `fee ${reason.requiredFeeSats} sats exceeds ${reason.maxFeeSats} sats`
+    : reason?.type === 'providerDeclined'
+      ? (reason.message || 'provider declined')
+      : 'no early claim available yet';
+  const err = new Error(`Deposit not claimed yet: ${detail}`);
+  err.code = 'DEPOSIT_CLAIM_DEFERRED';
+  err.reason = reason || null;
+  return err;
 }
 
 /**
@@ -269,4 +295,73 @@ export function withdrawalStatusFromPayment(payment, requestId) {
     isComplete: status === 'completed' || (status === 'broadcasting' && !!txId),
     isFailed: status === 'failed',
   };
+}
+
+/**
+ * Whether the SDK's own record of a deposit shows a claim already has it:
+ * an accepted early claim, or one the service reported as already claimed.
+ */
+export function sdkDepositClaimed(row) {
+  const type = row?.instantClaimStatus?.type;
+  return type === 'submitted' || type === 'claimed';
+}
+
+/**
+ * One pending-deposit list from the block explorer's UTXOs at the current
+ * deposit address (`chain`, already in app shape) and the SDK's deposit
+ * records (`sdkRows`, `listUnclaimedDeposits().deposits`). Either may be
+ * null when its source could not be read.
+ *
+ * The SDK watches every deposit address it ever issued and keeps a row
+ * until the deposit is claimed, so it finds deposits the explorer poll of
+ * one address misses. Each deposit the SDK knows carries `sdk`, the facts
+ * the claimed-registry reconciliation reads. SDK-only rows that a claim or
+ * a refund already has are left out: they are not pending.
+ */
+export function mergePendingDeposits({ chain, sdkRows, requiredConfirmations }) {
+  const key = (txId, vout) => `${txId}:${Number(vout) || 0}`;
+  const rows = new Map();
+  for (const row of sdkRows || []) {
+    if (row?.txid) rows.set(key(row.txid, row.vout), row);
+  }
+  const annotate = (row) => ({
+    isMature: row.isMature === true,
+    claimed: sdkDepositClaimed(row),
+    claimError: row.claimError?.type || null,
+    refunding: !!row.refundTxId,
+  });
+
+  const merged = [];
+  const seen = new Set();
+  for (const deposit of chain || []) {
+    const k = key(deposit.txId, deposit.outputIndex);
+    seen.add(k);
+    const row = rows.get(k);
+    merged.push(row ? { ...deposit, sdk: annotate(row) } : deposit);
+  }
+  for (const [k, row] of rows) {
+    if (seen.has(k) || sdkDepositClaimed(row) || row.refundTxId) continue;
+    const mature = row.isMature === true;
+    merged.push({
+      txId: row.txid,
+      outputIndex: Number(row.vout) || 0,
+      amount: Number(row.amountSats || 0),
+      confirmations: mature ? requiredConfirmations : 0,
+      confirmed: mature,
+      sdk: annotate(row),
+    });
+  }
+  return merged;
+}
+
+/**
+ * True when the SDK proves a deposit this device recorded as claimed is
+ * still unclaimed: it is mature, holds no claim or refund, and the SDK's
+ * own attempt on it failed (with BuhoGO's 0-sat automatic ceiling every
+ * sync pass fails and records why). A settled claim deletes the SDK row,
+ * so such a row cannot belong to a deposit that was claimed.
+ */
+export function sdkProvesUnclaimed(deposit) {
+  const sdk = deposit?.sdk;
+  return !!sdk && sdk.isMature && !sdk.claimed && !sdk.refunding && !!sdk.claimError;
 }

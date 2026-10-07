@@ -270,13 +270,10 @@ import {
   requestPaidHandle,
   searchHandle,
   suggestUsernames,
-  waitForActivation,
 } from '../services/nip05';
 import {
-  CLAIM_STATUS,
-  adoptOwnedUsername,
+  useOwnedUsername,
   holdClaimInView,
-  settlePendingClaim,
 } from '../services/usernameClaim';
 import { invoiceAmountMsat } from '../utils/addressUtils';
 import { fiatRatesService } from '../utils/fiatRates';
@@ -285,24 +282,9 @@ import { formatCalendarDate } from '../utils/timeFormatting';
 const SEARCH_DEBOUNCE_MS = 350;
 /** One uninterrupted wait for an in-app payment before "Almost ready". */
 const ACTIVATION_WAIT_MS = 90_000;
-/** Re-ask the server after the payment until the name points somewhere. */
-const SETTLE_INTERVAL_MS = 2_000;
-/**
- * A payment code is reused for the same name and years for this long, then
- * replaced. LNbits codes last an hour; this stays well inside that.
- */
-const INVOICE_FRESH_MS = 50 * 60 * 1000;
 /** Keep a fee reserve so a wallet that "has exactly enough" is not offered. */
 const FEE_RESERVE_RATIO = 0.01;
 const FEE_RESERVE_MIN_SATS = 10;
-
-const delay = (ms, signal) => new Promise((resolve, reject) => {
-  const timer = setTimeout(resolve, ms);
-  signal?.addEventListener('abort', () => {
-    clearTimeout(timer);
-    reject(new DOMException('Aborted', 'AbortError'));
-  }, { once: true });
-});
 
 export default {
   name: 'Nip05MarketplaceSheet',
@@ -313,6 +295,7 @@ export default {
     modelValue: { type: Boolean, default: false },
     /** True when the person already has a username and is changing it. */
     hasName: { type: Boolean, default: false },
+    initialName: { type: String, default: '' },
   },
 
   emits: ['update:modelValue', 'purchased'],
@@ -352,7 +335,7 @@ export default {
       lookupSeq: 0,
       debounceTimer: null,
       copyTimer: null,
-      watchController: null,
+      activationTimer: null,
       releaseClaimView: null,
     };
   },
@@ -545,7 +528,8 @@ export default {
     endCaption() {
       switch (this.step) {
         case 'activating': return this.$t('Usually a few seconds.');
-        case 'success': return this.$t("It's on your card now.");
+        case 'success': return this.profile.username === this.resultHandle
+          ? this.$t("It's on your card now.") : this.$t('Already yours');
         case 'later': return this.$t('Your payment went through. {name} will be ready in a moment.', { name: this.resultAddress });
         case 'failed': return this.$t('Someone took this name a moment earlier.');
         default: return '';
@@ -554,6 +538,9 @@ export default {
   },
 
   watch: {
+    'identity.pendingNip05Claim': { deep: true, handler() { this.observePurchase(); } },
+    'profile.lastUsernameClaim'() { this.observePurchase(); },
+    'identity.nostrPubkeyHex'() { this.onHide(); this.open = false; },
     /**
      * Reset the moment the sheet is asked to open, before it renders:
      * resetting when the opening animation ends would wipe anything typed
@@ -579,17 +566,14 @@ export default {
       this.releaseClaimView = holdClaimInView();
       this.resetForNewSession();
 
-      // A purchase paid earlier and not finished yet: finish it here.
       const claim = this.identity.pendingNip05Claim;
-      if (claim?.failedAt) {
+      if (claim) {
+        this.invoice = { ...claim, pubkey: this.identity.nostrPubkeyHex, requestedAt: claim.createdAt };
+        this.nameInput = claim.handle;
+        this.years = claim.years;
         this.resultHandle = claim.handle;
-        this.step = 'failed';
-        return;
-      }
-      if (claim?.paidAt) {
-        this.resultHandle = claim.handle;
-        this.step = 'activating';
-        this.finishAfterPayment();
+        if (!claim.paidAt && !claim.failedAt) this.external = { open: true, copied: false };
+        this.observePurchase();
       }
     },
 
@@ -627,7 +611,7 @@ export default {
       });
       // First username: start from the person's own name. Changing one:
       // start empty, the current name is on the card already.
-      this.nameInput = this.hasName ? '' : deriveNameSlug({ name: this.profile.displayName });
+      this.nameInput = this.initialName || (this.hasName ? '' : deriveNameSlug({ name: this.profile.displayName }));
       if (this.nameInput) this.runLookup(this.nameInput);
     },
 
@@ -737,13 +721,19 @@ export default {
     async prepareInvoice() {
       const name = this.nameInput;
       const { years } = this;
-      const fresh = this.invoice
-        && this.invoice.handle === name
-        && this.invoice.years === years
-        && Date.now() - this.invoice.requestedAt < INVOICE_FRESH_MS;
-      if (fresh) return this.invoice;
-
+      const scope = this.profile.captureSession();
+      const usernameRevision = this.profile.usernameRevision;
+      const pending = this.identity.pendingNip05Claim;
+      if (pending) {
+        this.invoice = { ...pending, pubkey: scope.pubkey, requestedAt: pending.createdAt };
+        this.external = { open: true, copied: false };
+        this.resultHandle = pending.handle;
+        this.observePurchase();
+        return !pending.paidAt && !pending.failedAt && pending.handle === name && pending.years === years
+          ? this.invoice : null;
+      }
       const check = await searchHandle({ query: name });
+      if (!scope.current()) return null;
       if (!check.available) {
         this.lookup = { name, status: 'taken', pricePerYear: null };
         this.notice = this.$t('That name was just taken. Pick another.');
@@ -757,9 +747,10 @@ export default {
 
       const request = await requestPaidHandle({
         localPart: name,
-        pubkeyHex: this.identity.nostrPubkeyHex,
+        pubkeyHex: scope.pubkey,
         years,
       });
+      if (!scope.current()) return null;
       const chargedSats = (invoiceAmountMsat(request.invoice) ?? -1000) / 1000;
       if (chargedSats !== this.totalSats) {
         this.notice = this.$t('The price changed. Check the new total.');
@@ -767,9 +758,10 @@ export default {
         return null;
       }
 
-      this.invoice = { ...request, years, amountSats: this.totalSats, requestedAt: Date.now() };
+      this.invoice = { ...request, pubkey: scope.pubkey, years, amountSats: this.totalSats, requestedAt: Date.now() };
       this.identity.setPendingNip05Claim({
         handle: request.handle,
+        usernameRevision,
         paymentHash: request.paymentHash,
         invoice: request.invoice,
         addressId: request.addressId,
@@ -816,12 +808,12 @@ export default {
         return;
       }
 
-      this.identity.updatePendingNip05Claim({ paidAt: Date.now() });
+      this.identity.updatePendingNip05Claim({ paidAt: Date.now() }, { pubkey: invoice.pubkey, paymentHash: invoice.paymentHash });
       this.labelPayment(wallet.id, invoice);
+      if (invoice.pubkey !== this.identity.nostrPubkeyHex) return;
       this.busy = false;
       this.resultHandle = invoice.handle;
-      this.step = 'activating';
-      this.finishAfterPayment();
+      this.observePurchase();
     },
 
     /** Name the payment in history instead of the server's invoice text. */
@@ -843,7 +835,7 @@ export default {
         const invoice = await this.prepareInvoice();
         if (!invoice) return;
         this.external = { open: true, copied: false };
-        this.watchExternalPayment();
+        this.observePurchase();
       } catch (err) {
         console.warn('[username] could not create the payment code:', err);
         this.notice = this.$t("Couldn't start the payment. Try again.");
@@ -857,97 +849,60 @@ export default {
       this.external = { open: false, copied: false };
     },
 
-    /**
-     * Watch the shown payment code by asking the name server, which works
-     * for any wallet. A code about to go stale is replaced in place, so a
-     * person who takes their time still pays a live one.
-     */
-    async watchExternalPayment() {
-      this.stopWatching();
-      const controller = new AbortController();
-      this.watchController = controller;
-      try {
-        while (!controller.signal.aborted && this.external.open) {
-          const invoice = this.invoice;
-          const remaining = INVOICE_FRESH_MS - (Date.now() - invoice.requestedAt);
-          const { paid } = await waitForActivation({
-            paymentHash: invoice.paymentHash,
-            signal: controller.signal,
-            maxMs: Math.max(0, remaining),
-          });
-          if (paid) {
-            this.identity.updatePendingNip05Claim({ paidAt: Date.now() });
-            this.external = { open: false, copied: false };
-            this.resultHandle = invoice.handle;
-            this.step = 'activating';
-            this.finishAfterPayment();
-            return;
-          }
-          // The code is getting old: get a fresh one for the same name.
-          this.invoice = null;
-          const renewed = await this.prepareInvoice().catch(() => null);
-          if (!renewed) {
-            this.closeExternal();
-            if (!this.notice) this.notice = this.$t("Couldn't start the payment. Try again.");
-            return;
-          }
+    /** Presentation only: the shared coordinator owns all network work. */
+    observePurchase() {
+      if (!this.modelValue || !this.invoice) return;
+      const claim = this.identity.pendingNip05Claim;
+      if (this.profile.lastUsernameClaim === this.invoice.paymentHash && this.step !== 'success') {
+        this.stopWatching();
+        this.external = { open: false, copied: false };
+        this.resultHandle = this.invoice.handle;
+        this.step = 'success';
+        this.$emit('purchased', { handle: this.invoice.handle });
+      } else if (claim?.paymentHash === this.invoice.paymentHash) {
+        this.resultHandle = claim.handle;
+        if (claim.failedAt) {
+          this.stopWatching();
+          this.step = 'failed';
+        } else if (claim.paidAt && this.step === 'browse') {
+          this.external = { open: false, copied: false };
+          this.step = 'activating';
+          this.activationTimer = setTimeout(() => {
+            this.activationTimer = null;
+            if (this.step === 'activating') this.step = 'later';
+          }, ACTIVATION_WAIT_MS);
         }
-      } catch (err) {
-        if (err?.name !== 'AbortError') console.warn('[username] watching the payment failed:', err);
+      } else if (!claim && this.step === 'browse') {
+        this.external = { open: false, copied: false };
+        this.invoice = null;
+        this.notice = this.$t('Invoice expired');
       }
     },
 
     stopWatching() {
-      this.watchController?.abort();
-      this.watchController = null;
-    },
-
-    /**
-     * After a payment: ask until the name points at this key (success),
-     * at someone else's (failed), or the wait runs out (later). The
-     * background upkeep finishes a "later" on its own.
-     */
-    async finishAfterPayment() {
-      this.stopWatching();
-      const controller = new AbortController();
-      this.watchController = controller;
-      const startedAt = Date.now();
-      try {
-        while (Date.now() - startedAt < ACTIVATION_WAIT_MS) {
-          const result = await settlePendingClaim({ identity: this.identity, profile: this.profile });
-          if (controller.signal.aborted) return;
-          if (result.status === CLAIM_STATUS.DONE) {
-            this.step = 'success';
-            this.$emit('purchased', { handle: result.handle });
-            return;
-          }
-          if (result.status === CLAIM_STATUS.FAILED) {
-            this.step = 'failed';
-            return;
-          }
-          await delay(SETTLE_INTERVAL_MS, controller.signal);
-        }
-        this.step = 'later';
-      } catch (err) {
-        if (err?.name !== 'AbortError') {
-          console.warn('[username] finishing the purchase failed:', err);
-          this.step = 'later';
-        }
-      }
+      clearTimeout(this.activationTimer);
+      this.activationTimer = null;
     },
 
     /** "Already yours": no payment, the name goes straight on the profile. */
-    useOwnedName() {
+    async useOwnedName() {
+      if (this.busy) return;
       const handle = this.nameInput;
-      adoptOwnedUsername({
-        identity: this.identity,
-        profile: this.profile,
-        handle,
-        expiresAt: this.identity.usernameExpiresAt(handle),
-      });
-      this.resultHandle = handle;
-      this.step = 'success';
-      this.$emit('purchased', { handle });
+      const scope = this.profile.captureSession();
+      this.busy = true;
+      try {
+        const selected = await useOwnedUsername({ identity: this.identity, profile: this.profile, handle });
+        if (selected === null) return;
+        if (!selected) {
+          this.notice = this.$t("Couldn't start the payment. Try again.");
+          return;
+        }
+        this.resultHandle = handle;
+        this.step = 'success';
+        this.$emit('purchased', { handle });
+      } finally {
+        if (scope.current()) this.busy = false;
+      }
     },
 
     // ── Helpers ───────────────────────────────────────────────────────────

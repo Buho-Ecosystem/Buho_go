@@ -162,6 +162,7 @@ export class FiatRatesService {
       }
 
       // Convert to our expected format (rates per BTC)
+      const previous = this.rates || {};
       this.rates = { time: data.time || Math.floor(Date.now() / 1000) };
       for (const code of MEMPOOL_RATE_CURRENCIES) {
         this.rates[code] = data[code] || 0;
@@ -170,7 +171,10 @@ export class FiatRatesService {
       // Currencies the Mempool /prices endpoint doesn't return come from
       // Alby's per-currency endpoint. Fetched in parallel; one failure never
       // blocks the others or the rest of the rates.
+      // A failed Alby call keeps the last real rate instead of dropping the
+      // currency until the next refresh (a BRL balance read R$0,00).
       await Promise.all(ALBY_RATE_CURRENCIES.map(async (code) => {
+        if (previous[code] > 0) this.rates[code] = previous[code];
         try {
           const res = await fetch(`https://getalby.com/api/rates/${code.toLowerCase()}.json`, {
             timeout: 5000
@@ -302,11 +306,13 @@ export class FiatRatesService {
     const code = currency.toUpperCase();
     const symbol = FIAT_SYMBOLS[code] || code + ' ';
 
-    // JPY has no minor unit, so render it without decimals.
-    if (code === 'JPY') {
-      return symbol + Math.round(amount).toLocaleString();
-    }
-    return symbol + amount.toFixed(2);
+    // JPY has no minor unit, so render it without decimals. Grouped in
+    // every currency: a large amount must stay readable, never 248640555.00.
+    const digits = code === 'JPY' ? 0 : 2;
+    return symbol + Number(amount || 0).toLocaleString('en-US', {
+      minimumFractionDigits: digits,
+      maximumFractionDigits: digits,
+    });
   }
 
   /**

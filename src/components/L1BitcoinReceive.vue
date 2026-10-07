@@ -320,7 +320,7 @@
               no-caps
               class="confirm-btn"
               :class="$q.dark.isActive ? 'confirm-btn-dark' : 'confirm-btn-light'"
-              :loading="isClaimingInstant || walletStore.isDepositClaimInFlight(claimingDeposit.txId)"
+              :loading="isClaimingInstant || walletStore.isDepositClaimInFlight(claimingDeposit.txId, claimingDeposit.outputIndex)"
               data-audit="deposit-add-now"
               @click="confirmInstantClaim"
             >
@@ -402,7 +402,7 @@
               no-caps
               class="confirm-btn"
               :class="$q.dark.isActive ? 'confirm-btn-dark' : 'confirm-btn-light'"
-              :loading="isClaimingDeposit || walletStore.isDepositClaimInFlight(claimingDeposit.txId)"
+              :loading="isClaimingDeposit || walletStore.isDepositClaimInFlight(claimingDeposit.txId, claimingDeposit.outputIndex)"
               :disable="isLoadingQuote || !claimFeeQuote"
               @click="confirmClaim"
             >
@@ -494,6 +494,7 @@ export default {
       // the SSP fee quote arrives.
       showClaimDialog: false,
       claimingDeposit: null,
+      claimWalletId: null,
       // Instant (0-conf) offer for the sheet's confirming view:
       // a classification from classifyUnconfirmedDeposit with
       // category 'instant', or null when the SSP offered none.
@@ -622,13 +623,19 @@ export default {
   },
 
   watch: {
+    'walletStore.activeWalletId'() {
+      this.cancelClaim();
+      this.pendingDeposits = [];
+      this.depositAddress = null;
+      this.loadDepositAddress();
+    },
     // The store bumps `depositsRefreshSignal` whenever a claim (auto or
     // manual, here or in Wallet.vue) lands. We re-fetch instead of trusting
     // the 30s poll so the row vanishes the instant the UTXO is gone.
     'walletStore.depositsRefreshSignal'() {
       if (this.walletStore.lastDepositsRefreshWalletId !== this.walletStore.activeWalletId) return;
-      this.pendingDeposits = this.pendingDeposits.filter(d => !this.walletStore.isDepositClaimed(d.txId));
-      if (this.claimingDeposit && this.walletStore.isDepositClaimed(this.claimingDeposit.txId)) this.cancelClaim();
+      this.pendingDeposits = this.pendingDeposits.filter(d => !this.walletStore.isDepositClaimed(d.txId, d.outputIndex));
+      if (this.claimingDeposit && this.walletStore.isDepositClaimed(this.claimingDeposit.txId, this.claimingDeposit.outputIndex)) this.cancelClaim();
       this.checkDeposits();
     },
     automaticDeposit(automatic) {
@@ -643,12 +650,15 @@ export default {
       return this.bitcoinDepositsStore.needsManual(deposit);
     },
     async loadDepositAddress() {
+      const walletId = this.walletStore.activeWalletId;
       this.isLoadingAddress = true;
       try {
         // Ensure Spark is connected (auto-reconnects with session PIN if needed)
-        const provider = await this.walletStore.ensureSparkConnected();
+        const provider = await this.walletStore.ensureSparkConnected(walletId);
         if (provider?.getL1DepositAddress) {
-          this.depositAddress = await provider.getL1DepositAddress();
+          const address = await provider.getL1DepositAddress();
+          if (walletId !== this.walletStore.activeWalletId) return;
+          this.depositAddress = address;
           // Initial deposit check
           await this.checkDeposits();
           // Start polling only after successful address load
@@ -690,7 +700,8 @@ export default {
           // until confirmations catch up — never show them as claimable.
           const deposits = await provider.getPendingDeposits();
           if (walletId !== this.walletStore.activeWalletId) return;
-          this.pendingDeposits = deposits.filter(d => !this.walletStore.isDepositClaimed(d.txId));
+          this.walletStore.reconcileDepositClaims(deposits);
+          this.pendingDeposits = deposits.filter(d => !this.walletStore.isDepositClaimed(d.txId, d.outputIndex));
           void this.bitcoinDepositsStore.processDeposits(this.pendingDeposits, walletId);
           this.$emit('deposits-updated', this.pendingDeposits);
 
@@ -765,6 +776,7 @@ export default {
      * policy decision; fee loading must never expose an automatic claim CTA. */
     async openDepositSheet(deposit) {
       const walletId = this.walletStore.activeWalletId;
+      this.claimWalletId = walletId;
       const request = ++this.claimQuoteRequest;
       const current = () => walletId === this.walletStore.activeWalletId && request === this.claimQuoteRequest && this.showClaimDialog;
       // Set the spinner flag first so the first render of the ready
@@ -825,6 +837,7 @@ export default {
 
     cancelClaim() {
       this.claimQuoteRequest++;
+      this.isClaimingDeposit = false;
       this.showClaimDialog = false;
       this.claimingDeposit = null;
       this.claimFeeQuote = null;
@@ -842,13 +855,17 @@ export default {
      * Best-effort: any failure leaves the plain confirming view.
      */
     async loadDepositOffers(deposit) {
+      const walletId = this.claimWalletId;
+      const request = this.claimQuoteRequest;
       try {
-        const provider = await this.walletStore.ensureSparkConnected();
+        const provider = await this.walletStore.ensureSparkConnected(walletId);
         if (!provider?.classifyUnconfirmedDeposit) return;
         const classification = await provider.classifyUnconfirmedDeposit(deposit);
         // The sheet may have moved on (closed, or promoted to confirmed)
         // while the quote was in flight.
-        if (this.claimingDeposit?.txId !== deposit.txId || this.claimingDeposit?.confirmed) return;
+        if (walletId !== this.walletStore.activeWalletId || request !== this.claimQuoteRequest
+          || this.claimingDeposit?.txId !== deposit.txId
+          || this.claimingDeposit?.outputIndex !== deposit.outputIndex || this.claimingDeposit?.confirmed) return;
         this.waitQuote = classification.wait || null;
         this.instantClassification = classification.category === 'instant' ? classification : null;
       } catch (error) {
@@ -868,12 +885,19 @@ export default {
      */
     async confirmInstantClaim() {
       const deposit = this.claimingDeposit;
+      const walletId = this.claimWalletId;
+      const epoch = this.walletStore.walletEpoch?.(walletId);
+      const current = () => !!walletId && walletId === this.walletStore.activeWalletId
+        && this.walletStore.walletEpoch?.(walletId) === epoch
+        && this.claimingDeposit === deposit;
+      if (!current()) return;
       const classification = this.instantClassification;
       if (!deposit || !classification) return;
 
       const claimTxId = deposit.txId;
-      if (this.walletStore.isDepositClaimInFlight(claimTxId)
-          || this.walletStore.isDepositClaimed(claimTxId)) {
+      const claimVout = deposit.outputIndex || 0;
+      if (this.walletStore.isDepositClaimInFlight(claimTxId, claimVout)
+          || this.walletStore.isDepositClaimed(claimTxId, claimVout)) {
         this.$q.notify({
           type: 'info',
           icon: 'sync',
@@ -884,10 +908,11 @@ export default {
         return;
       }
 
-      this.walletStore.markDepositClaimInFlight(claimTxId);
+      this.walletStore.markDepositClaimInFlight(claimTxId, claimVout);
       this.isClaimingInstant = true;
       try {
-        const provider = await this.walletStore.ensureSparkConnected();
+        const provider = await this.walletStore.ensureSparkConnected(walletId);
+        if (!current()) return;
         const result = await provider.claimInstantDeposit(
           claimTxId,
           classification.quote,
@@ -895,7 +920,9 @@ export default {
           deposit.outputIndex || 0
         );
 
-        this.walletStore.markDepositClaimed(claimTxId);
+        this.walletStore.markDepositClaimed(claimTxId, claimVout);
+        this.walletStore.signalDepositsRefresh(walletId);
+        if (!current()) return;
         // An early claim settles asynchronously; keep the balance moving
         // until the credit lands so the home screen catches up.
         if (result && result.settled === false) {
@@ -903,18 +930,20 @@ export default {
         }
 
         // ReceiveModal presents the deposit confirmation via deposit-claimed.
-        this.pendingDeposits = this.pendingDeposits.filter(d => d.txId !== claimTxId);
+        this.pendingDeposits = this.pendingDeposits.filter(d => !(d.txId === claimTxId && (d.outputIndex || 0) === claimVout));
         if (this.walletStore.activeWalletId) {
-          await this.walletStore.refreshWalletData(this.walletStore.activeWalletId);
+          await this.walletStore.refreshWalletData(walletId);
         }
+        if (!current()) return;
         this.$emit('deposit-claimed', { success: true, amount: classification.creditSats });
-        this.walletStore.signalDepositsRefresh();
+        this.walletStore.signalDepositsRefresh(walletId);
         this.showClaimDialog = false;
         this.claimingDeposit = null;
         this.instantClassification = null;
         this.waitQuote = null;
         this.speedUpOpen = false;
       } catch (error) {
+        if (!current()) return;
         console.error('Speed up failed:', error);
         // Rare: the service's price moved between quote and claim, or it
         // withdrew the offer. Nothing was charged. Say so in the user's
@@ -928,20 +957,29 @@ export default {
         this.instantClassification = null;
         this.speedUpOpen = false;
       } finally {
-        this.isClaimingInstant = false;
-        this.walletStore.clearDepositClaimInFlight(claimTxId);
+        if (this.claimingDeposit === deposit || !this.claimingDeposit) this.isClaimingInstant = false;
+        this.walletStore.clearDepositClaimInFlight(claimTxId, claimVout);
       }
     },
 
     async confirmClaim() {
+      const deposit = this.claimingDeposit;
+      const walletId = this.claimWalletId;
+      const epoch = this.walletStore.walletEpoch?.(walletId);
+      const current = () => !!walletId && walletId === this.walletStore.activeWalletId
+        && this.walletStore.walletEpoch?.(walletId) === epoch
+        && this.claimingDeposit === deposit;
+      if (!current()) return;
       if (!this.claimingDeposit || !this.claimFeeQuote || !this.manualClaimAllowed(this.claimingDeposit)) return;
 
-      const claimTxId = this.claimingDeposit.txId;
+      const quote = this.claimFeeQuote;
+      const claimTxId = deposit.txId;
+      const claimVout = this.claimingDeposit.outputIndex || 0;
 
       // Final coordination check: auto-claim may have grabbed the UTXO
       // between the user opening this sheet and tapping "Add to Wallet".
       // Bail with a friendly message instead of submitting a duplicate.
-      if (this.walletStore.isDepositClaimInFlight(claimTxId)) {
+      if (this.walletStore.isDepositClaimInFlight(claimTxId, claimVout)) {
         this.$q.notify({
           type: 'info',
           icon: 'sync',
@@ -952,20 +990,23 @@ export default {
         return;
       }
 
-      this.walletStore.markDepositClaimInFlight(claimTxId);
+      this.walletStore.markDepositClaimInFlight(claimTxId, claimVout);
       this.isClaimingDeposit = true;
       try {
         // Ensure Spark is connected (auto-reconnects with session PIN if needed)
-        const provider = await this.walletStore.ensureSparkConnected();
+        const provider = await this.walletStore.ensureSparkConnected(walletId);
+        if (!current()) return;
         const result = await provider.claimDeposit(
-          this.claimingDeposit.txId,
-          this.claimFeeQuote, // Pass the full quote with creditAmountSats and signature
-          this.claimingDeposit.outputIndex
+          claimTxId,
+          quote,
+          claimVout
         );
 
         // The claim was accepted (whether settled or still processing) —
         // record it durably so no path resubmits this UTXO.
-        this.walletStore.markDepositClaimed(claimTxId);
+        this.walletStore.markDepositClaimed(claimTxId, claimVout);
+        this.walletStore.signalDepositsRefresh(walletId);
+        if (!current()) return;
 
         // Handle processing state (TRANSFER_LOCKED - claim is being processed in background)
         if (result.processing) {
@@ -978,7 +1019,7 @@ export default {
 
           // Remove from pending list (it will complete in background)
           this.pendingDeposits = this.pendingDeposits.filter(
-            d => d.txId !== this.claimingDeposit.txId
+            d => d.txId !== claimTxId || (d.outputIndex || 0) !== claimVout
           );
 
           // Start polling for balance update
@@ -988,7 +1029,7 @@ export default {
           // Tell the parent banner to drop this deposit immediately so the
           // "Ready to claim" pill on the wallet home doesn't outlive the
           // sheet by 30 seconds.
-          this.walletStore.signalDepositsRefresh();
+          this.walletStore.signalDepositsRefresh(walletId);
           this.showClaimDialog = false;
           return;
         }
@@ -996,19 +1037,21 @@ export default {
         // ReceiveModal presents the deposit confirmation via deposit-claimed.
         // Remove claimed deposit from list
         this.pendingDeposits = this.pendingDeposits.filter(
-          d => d.txId !== this.claimingDeposit.txId
+          d => d.txId !== claimTxId || (d.outputIndex || 0) !== claimVout
         );
 
         // Refresh wallet balance
         if (this.walletStore.activeWalletId) {
-          await this.walletStore.refreshWalletData(this.walletStore.activeWalletId);
+          await this.walletStore.refreshWalletData(walletId);
         }
 
+        if (!current()) return;
         this.$emit('deposit-claimed', result);
-        this.walletStore.signalDepositsRefresh();
+        this.walletStore.signalDepositsRefresh(walletId);
         this.showClaimDialog = false;
 
       } catch (error) {
+        if (!current()) return;
         console.error('Failed to claim deposit:', error);
 
         // Race recovery: the auto-claim path in Wallet.vue may have already
@@ -1017,15 +1060,17 @@ export default {
         // even though the UTXO is gone. Re-check the pending list — if our
         // deposit is no longer there, treat it as a success and refresh the
         // balance instead of surfacing a scary error.
-        const claimedTxId = this.claimingDeposit?.txId;
+        const claimedTxId = claimTxId;
         let alreadyClaimed = false;
         try {
-          const provider = await this.walletStore.ensureSparkConnected();
+          const provider = await this.walletStore.ensureSparkConnected(walletId);
+          if (!current()) return;
           if (provider?.getPendingDeposits && claimedTxId) {
             const stillPending = (await provider.getPendingDeposits()).filter(
-              (d) => !this.walletStore.isDepositClaimed(d.txId)
+              (d) => !this.walletStore.isDepositClaimed(d.txId, d.outputIndex)
             );
-            alreadyClaimed = !stillPending.some(d => d.txId === claimedTxId);
+            if (!current()) return;
+            alreadyClaimed = this.walletStore.isDepositClaimed(claimedTxId, claimVout);
             if (alreadyClaimed) {
               this.pendingDeposits = stillPending;
               this.$emit('deposits-updated', this.pendingDeposits);
@@ -1041,7 +1086,7 @@ export default {
             message: this.$t('Bitcoin added to wallet'),
 
           });
-          this.walletStore.signalDepositsRefresh();
+          this.walletStore.signalDepositsRefresh(walletId);
         } else {
           const userMessage = this.getUserFriendlyError(error, 'claim');
           this.walletStore.showPaymentError(error, {
@@ -1057,7 +1102,7 @@ export default {
         // auto-claim may have settled in the background.
         if (this.walletStore.activeWalletId) {
           try {
-            await this.walletStore.refreshWalletData(this.walletStore.activeWalletId);
+            await this.walletStore.refreshWalletData(walletId);
           } catch (refreshError) {
             console.warn('Balance refresh failed:', refreshError?.message || refreshError);
           }
@@ -1067,10 +1112,12 @@ export default {
         // when we null the quote in `finally`.
         this.showClaimDialog = false;
       } finally {
-        this.walletStore.clearDepositClaimInFlight(claimTxId);
-        this.isClaimingDeposit = false;
-        this.claimingDeposit = null;
-        this.claimFeeQuote = null;
+        this.walletStore.clearDepositClaimInFlight(claimTxId, claimVout);
+        if (this.claimingDeposit === deposit) {
+          this.isClaimingDeposit = false;
+          this.claimingDeposit = null;
+          this.claimFeeQuote = null;
+        }
       }
     },
 

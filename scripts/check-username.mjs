@@ -20,6 +20,9 @@ const OTHER_KEY = 'cd'.repeat(32);
 const TAKEN = new Set(['maria', 'mariaold', 'drshift']);
 const pricePerYear = (name) => (name.length <= 3 ? 10000 : name.length === 4 ? 4000 : name.length <= 6 ? 2000 : 1000);
 let myKey = '';
+let paymentConfirmed = false;
+let activated = false;
+let invoiceRequests = 0;
 const paymentChecks = [];
 
 const browser = await chromium.launch({ headless: true });
@@ -44,14 +47,15 @@ await page.route('**/*', (route) => {
   }
   if (path.endsWith('/nostr.json')) {
     const name = url.searchParams.get('name');
-    const owner = name === 'maria' ? OTHER_KEY : name === 'mariaold' ? myKey : '';
+    const owner = name === 'maria' ? OTHER_KEY : name === 'mariaold' || activated && name === 'mariaschmidt' ? myKey : '';
     return json({ names: owner ? { [name]: owner } : {}, relays: {} });
   }
   if (path.includes('/payments/')) {
     paymentChecks.push(path);
-    return json({ paid: false });
+    return json({ paid: paymentConfirmed });
   }
   if (path.endsWith('/address') && route.request().method() === 'POST') {
+    invoiceRequests++;
     const body = JSON.parse(route.request().postData() || '{}');
     const sats = pricePerYear(body.local_part) * (body.years || 1);
     return json({
@@ -117,7 +121,7 @@ async function seedWallet(balance) {
     wallet.wallets = [{ id: 'w1', name: 'Personal', type: 'spark' }];
     wallet.activeWalletId = 'w1';
     wallet.connectionStates = { w1: { connected: true } };
-    wallet.balances = { w1: amount };
+    wallet.applyBalance('w1', amount);
   }, balance);
 }
 
@@ -215,11 +219,23 @@ try {
 
   await input.fill('mariaschmidt');
   await input.dispatchEvent('input');
+  // Audit mode skips production boots. Start the real coordinator with only
+  // relay I/O stubbed; name-server requests still exercise the HTTP mocks above.
+  await page.evaluate(async () => {
+    const [{ startProfileSync }, { useIdentityStore }, { useProfileStore }] = await Promise.all([
+      import('/src/services/profileSync.js'), import('/src/stores/identity.js'), import('/src/stores/profile.js'),
+    ]);
+    window.__usernameSync = startProfileSync({
+      identity: useIdentityStore(), profile: useProfileStore(),
+      recoveryOptions: { fetcher: async () => null },
+      publishOptions: { relays: ['wss://test.invalid'], pool: { ensureRelay: async () => ({ publish: async () => 'OK' }) } },
+    });
+  });
   await sheet.getByRole('button', { name: 'Pay from another wallet' }).click();
   await sheet.locator('.claim-qr').waitFor();
   await sheet.getByText('Waiting for the payment', { exact: true }).waitFor();
   await page.waitForTimeout(2600);
-  assert.ok(paymentChecks.length >= 1, 'the sheet watches an outside payment by asking the name server');
+  assert.ok(paymentChecks.length >= 1, 'the coordinator watches the outside payment');
   const pending = await page.evaluate(() => {
     const meta = JSON.parse(localStorage.getItem('buhoGO_identity_v1'));
     return meta.pendingNip05Claims[meta.nostrPubkeyHex];
@@ -230,6 +246,19 @@ try {
   await shot('12-sheet-other-wallet');
   console.log('✓ paying from another wallet shows the code, keeps the claim and watches for payment');
   await page.keyboard.press('Escape');
+  await sheet.waitFor({ state: 'hidden' });
+  paymentConfirmed = true;
+  activated = true;
+  await page.waitForFunction(() => {
+    const meta = JSON.parse(localStorage.getItem('buhoGO_identity_v1'));
+    const profile = JSON.parse(localStorage.getItem(`buhoGO_profile_v1_${meta.nostrPubkeyHex}`));
+    return profile.nip05 === 'mariaschmidt@mybuho.de' && Object.keys(profile.pendingFields).length === 0;
+  }, null, { timeout: 20_000 });
+  await page.getByText('mariaschmidt@mybuho.de', { exact: true }).waitFor();
+  await page.evaluate(() => { location.hash = '#/identity'; });
+  await page.locator('.id-card-ident').waitFor();
+  assert.equal(await page.locator('.id-card-ident').innerText(), 'mariaschmidt@mybuho.de');
+  console.log('✓ closing the sheet still completes activation, updates the card, and publishes');
 
   // ── After the tap ──────────────────────────────────────────────────────
   await seed({ displayName: 'Maria Schmidt', pending: { handle: 'mariaschmidt', paymentHash: 'ab'.repeat(32), years: 1, paidAt: Date.now() } });
@@ -267,7 +296,7 @@ try {
   await go('/identity');
   await page.getByRole('button', { name: 'Share' }).click();
   await page.getByText('Public code', { exact: true }).waitFor();
-  await page.getByText('Someone can scan this to save you as a contact', { exact: true }).first().waitFor();
+  await page.getByText('Someone with BuhoGO can scan this to save you as a contact', { exact: true }).first().waitFor();
   await page.locator('.share-identifiers').scrollIntoViewIfNeeded();
   await shot('18-share-sheet');
   await page.keyboard.press('Escape');
@@ -288,6 +317,27 @@ try {
   await sheet.getByText('Available · 2,000 sats a year', { exact: true }).waitFor();
   await shot('20-dark-sheet-change');
   console.log('✓ dark');
+
+  await page.keyboard.press('Escape');
+  await seed({ displayName: 'Maria Schmidt' });
+  await page.evaluate(() => {
+    const meta = JSON.parse(localStorage.getItem('buhoGO_identity_v1'));
+    meta.nip05Handles = [{ handle: 'mariaold', isFree: false, isActive: true, createdAt: 1 }];
+    localStorage.setItem('buhoGO_identity_v1', JSON.stringify(meta));
+  });
+  await go('/identity/username');
+  await page.getByRole('button', { name: /mariaold@mybuho.de.*Use this name/ }).waitFor();
+  await shot('21-owned-name-recovery');
+  const beforeRecovery = invoiceRequests;
+  await page.getByRole('button', { name: /mariaold@mybuho.de.*Use this name/ }).click();
+  await sheet.getByRole('button', { name: 'Use this name', exact: true }).click();
+  await sheet.getByText("It's on your card now.", { exact: true }).waitFor();
+  assert.equal(invoiceRequests, beforeRecovery, 'using an owned name never creates another invoice');
+  await sheet.getByRole('button', { name: 'Done', exact: true }).click();
+  await go('/identity');
+  assert.equal(await page.locator('.id-card-ident').innerText(), 'mariaold@mybuho.de');
+  await shot('22-recovered-name-after-reload');
+  console.log('✓ existing owned-name recovery verifies ownership, creates no invoice, and survives reload');
 
   assert.deepEqual(errors, [], `page errors: ${errors.join(' | ')}`);
   console.log('\nall username checks passed');

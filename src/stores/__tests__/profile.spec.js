@@ -218,7 +218,8 @@ await test('setField does not mark isDirty when the value is unchanged after nor
   s.setField('displayName', 'Satoshi');
   // Hand-resetting the flag — the second call should NOT flip it on
   // because the trimmed input equals the stored value.
-  s.isDirty = false;
+  s.pendingFields = {};
+  s._persistMetadata();
   s.setField('displayName', '  Satoshi  ');
   assert.equal(s.isDirty, false);
 });
@@ -254,7 +255,8 @@ await test('applyEdits ignores unknown keys silently (forward-compat for restore
 await test('applyEdits skips persist when nothing actually changes', () => {
   const s = freshEnv();
   s.setField('displayName', 'Satoshi');
-  s.isDirty = false;
+  s.pendingFields = {};
+  s._persistMetadata();
   const before = readPersisted();
   s.applyEdits({ displayName: 'Satoshi' });
   const after = readPersisted();
@@ -320,8 +322,8 @@ await test('hydrate round-trips a previously persisted blob', async () => {
   assert.equal(s2.about, 'Hi');
   assert.equal(s2.lud16, 'satoshi@x.test');
   assert.equal(s2.lastPublishedAt, 1700000000000);
-  // Editor flags reset on every boot:
-  assert.equal(s2.isDirty, false);
+  // Unsynchronized edits survive boot; network activity does not.
+  assert.equal(s2.isDirty, true);
   assert.equal(s2.isPublishing, false);
   assert.equal(s2.lastPublishResult, null);
 });
@@ -495,30 +497,23 @@ await test('publish: all relays accept → ok=true, acceptedRelay set, blob upda
 });
 
 await test('publish: one relay accepts → eager success (the other relays still pending)', async () => {
-  // Eager-success contract: the moment one relay accepts kind:0, the
-  // publish action resolves with `ok: true`. The other relays may
-  // still be in-flight (mid-WebSocket) when this fires; the spec
-  // uses non-zero delays so the difference is observable.
   const { profile } = await freshEnvWithIdentity();
   profile.applyEdits({ displayName: 'Satoshi' });
-  const pool = fakePool({}, {
-    delays: {
-      'wss://relay-a.test': 0,
-      'wss://relay-b.test': 80,
-      'wss://relay-c.test': 80,
-    },
-  });
-
-  const t0 = Date.now();
-  const result = await profile.publish({ pool, relays: TEST_RELAYS, timeoutMs: 500 });
-  const elapsed = Date.now() - t0;
+  const pending = [];
+  const pool = { ensureRelay: async (url) => ({ publish: async (event) => {
+    if (event.kind !== 0 || url === TEST_RELAYS[0]) return 'OK';
+    return new Promise((resolve) => pending.push(resolve));
+  } }) };
+  const result = await profile.publish({ pool, relays: TEST_RELAYS, timeoutMs: 5000 });
   assert.equal(result.ok, true);
-  assert.ok(elapsed < 60, `publish should resolve eagerly, took ${elapsed}ms`);
-
-  // Full settle still has to wait for the slow ones.
+  let settled = false;
+  result.settled.then(() => { settled = true; });
+  await Promise.resolve();
+  assert.equal(settled, false, 'success does not await the other relays');
+  assert.equal(pending.length, 2);
+  pending.forEach(resolve => resolve('OK'));
   await result.settled;
-  const elapsedFull = Date.now() - t0;
-  assert.ok(elapsedFull >= 80, `full settle takes longer, observed ${elapsedFull}ms`);
+  assert.equal(settled, true);
 });
 
 await test('publish: only ONE relay accepts → still ok=true (success-if-one rule)', async () => {
@@ -765,7 +760,8 @@ await test('uploadAvatar wipes the secret-key bytes after the upload', async () 
 await test('uploadAvatar failure: prior picture preserved, isDirty unchanged, typed result returned', async () => {
   const { profile } = await freshEnvWithIdentity();
   profile.setField('picture', 'https://old.test/avatar.png');
-  profile.isDirty = false;
+  profile.pendingFields = {};
+  profile._persistMetadata();
 
   const oversize = new Error('Image too large (max 5 MB)');
   oversize.code = 'AVATAR_TOO_LARGE';
@@ -820,7 +816,8 @@ await test('uploadAvatar: re-entrancy returns the prior result without re-callin
 await test('uploadAvatar: same URL → no redundant persist or dirty flip', async () => {
   const { profile } = await freshEnvWithIdentity();
   profile.setField('picture', 'https://blossom.test/avatar.png');
-  profile.isDirty = false;
+  profile.pendingFields = {};
+  profile._persistMetadata();
   const uploader = fakeUploader({
     result: {
       url: 'https://blossom.test/avatar.png',
@@ -936,7 +933,8 @@ await test('recoverFromNostr: full overwrite clears stale local fields not prese
     about: 'Old bio',
     lud16: 'old@example.com',
   });
-  profile.isDirty = false;
+  profile.pendingFields = {};
+  profile._persistMetadata();
   // Remote only carries `name`; everything else should be cleared.
   const fetcher = async () => fakeKind0Event({ name: 'new' });
   const r = await profile.recoverFromNostr({ identityStore: identity, fetcher });
@@ -1078,7 +1076,8 @@ await test('adoptDefaultPaymentAddress is a no-op on the same value', async () =
   const profile = freshEnv();
   await profile.hydrate();
   profile.lud16 = 'coolowl123@btc.mybuho.de';
-  profile.isDirty = false;
+  profile.pendingFields = {};
+  profile._persistMetadata();
   const changed = profile.adoptDefaultPaymentAddress('coolowl123@btc.mybuho.de', {
     isReplaceable: isBucket,
   });
@@ -1107,7 +1106,8 @@ await test('setUsername: writes the full address, marks dirty, clears not-mine',
   profile.nip05 = 'maria@mybuho.de';
   profile.markNip05NotMine();
   assert.equal(profile.username, '');
-  profile.isDirty = false;
+  profile.pendingFields = {};
+  profile._persistMetadata();
   profile.setUsername('Maria2');
   assert.equal(profile.nip05, 'maria2@mybuho.de');
   assert.equal(profile.username, 'maria2');
@@ -1119,7 +1119,8 @@ await test('setUsername: confirming the same address only clears not-mine, and s
   const { profile } = await freshEnvWithIdentity();
   profile.nip05 = 'maria@mybuho.de';
   profile.markNip05NotMine();
-  profile.isDirty = false;
+  profile.pendingFields = {};
+  profile._persistMetadata();
   profile.setUsername('maria');
   assert.equal(profile.username, 'maria');
   assert.equal(profile.isDirty, false);
@@ -1154,7 +1155,8 @@ await test('dropFreeNip05: a published profile republishes without the free hand
   const { profile } = await freshEnvWithIdentity();
   profile.nip05 = 'luckyowl.482913@mybuho.de';
   profile.lastPublishedAt = 1;
-  profile.isDirty = false;
+  profile.pendingFields = {};
+  profile._persistMetadata();
   assert.equal(profile.dropFreeNip05(), true);
   assert.equal(profile.nip05, '');
   assert.equal(profile.isDirty, true);
@@ -1163,7 +1165,8 @@ await test('dropFreeNip05: a published profile republishes without the free hand
 await test('dropFreeNip05: a never-published profile is cleaned quietly', async () => {
   const { profile } = await freshEnvWithIdentity();
   profile.nip05 = 'luckyowl.482913@mybuho.de';
-  profile.isDirty = false;
+  profile.pendingFields = {};
+  profile._persistMetadata();
   assert.equal(profile.dropFreeNip05(), true);
   assert.equal(profile.nip05, '');
   assert.equal(profile.isDirty, false);

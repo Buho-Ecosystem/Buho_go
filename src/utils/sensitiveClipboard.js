@@ -22,7 +22,10 @@
  *     on most platforms.
  */
 
+import { Capacitor } from '@capacitor/core';
+
 const DEFAULT_DURATION_MS = 30_000;
+let copyRevision = 0;
 
 /**
  * Active timer state. Tracked module-level so a second call replaces
@@ -43,34 +46,48 @@ let active = null;
  * Kept private; the only callers are `copySensitive` and the timer-
  * fired wipe.
  *
- * @param {string} text
+ * @param {string | (() => Promise<string>)} source
  */
-async function writeClipboard(text) {
-  try {
-    const cap = await import('@capacitor/core');
-    if (cap?.Capacitor?.isNativePlatform?.()) {
-      const { Clipboard } = await import('@capacitor/clipboard');
-      await Clipboard.write({ string: text });
-      return;
-    }
-  } catch {
-    // Not running inside Capacitor (or the plugin isn't installed in
-    // this build target) — fall through to the web Clipboard API.
+function writeClipboard(source) {
+  if (Capacitor.isNativePlatform()) return writeNativeClipboard(source);
+  if (typeof source !== 'function') return navigator.clipboard.writeText(source);
+
+  // Safari requires the write request inside the click, before any await.
+  // ClipboardItem lets the browser accept that request while the secret is
+  // unlocked/derived asynchronously, without putting it in the DOM or state.
+  if (!globalThis.ClipboardItem || !navigator.clipboard?.write) {
+    throw new Error('Asynchronous clipboard writes are unavailable');
   }
-  await navigator.clipboard.writeText(text);
+  const content = Promise.resolve().then(source)
+    .then(text => new Blob([text], { type: 'text/plain' }));
+  // A denied write may never consume the item. Still handle a later rejection
+  // from authentication or key access; never log the secret or its error.
+  content.catch(() => {});
+  return navigator.clipboard.write([new ClipboardItem({ 'text/plain': content })]);
+}
+
+async function writeNativeClipboard(source) {
+  const { Clipboard } = await import('@capacitor/clipboard');
+  const text = typeof source === 'function' ? await source() : source;
+  // Native errors must reach the caller, not fall through to the WebView.
+  await Clipboard.write({ string: text });
 }
 
 /**
  * Copy a secret to the clipboard and schedule its wipe.
  *
- * @param {string} text
+ * Call directly from the user event. For asynchronous secret access, pass a
+ * function rather than awaiting the secret before calling this helper.
+ *
+ * @param {string | (() => Promise<string>)} source
  * @param {{ durationMs?: number }} [opts]
  * @returns {Promise<{ durationMs: number, cancel: () => void }>}
  *   `cancel` cancels the wipe timer for *this* copy specifically. If
  *   another `copySensitive` call has already replaced the active timer,
  *   `cancel` is a no-op so we never wipe the newer secret accidentally.
  */
-export async function copySensitive(text, opts = {}) {
+export async function copySensitive(source, opts = {}) {
+  const revision = ++copyRevision;
   const durationMs = Number.isFinite(opts.durationMs)
     ? opts.durationMs
     : DEFAULT_DURATION_MS;
@@ -80,7 +97,25 @@ export async function copySensitive(text, opts = {}) {
   // value if it fired first.
   cancelPendingSensitiveClear();
 
-  await writeClipboard(text);
+  let failed = false;
+  function assertCurrent() {
+    if (failed || revision !== copyRevision) {
+      throw new DOMException('Copy superseded', 'AbortError');
+    }
+  }
+  const resolveText = async () => {
+    assertCurrent();
+    const text = await source();
+    assertCurrent();
+    return text;
+  };
+  try {
+    await writeClipboard(typeof source === 'function' ? resolveText : source);
+    assertCurrent();
+  } catch (error) {
+    failed = true;
+    throw error;
+  }
 
   const timeoutId = setTimeout(() => {
     // Best-effort wipe. Swallow errors: a permission failure here just

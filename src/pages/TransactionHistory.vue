@@ -475,8 +475,8 @@
                       class="tx-row-icon"
                       :class="[
                         $q.dark.isActive ? 'tx-row-icon-dark' : 'tx-row-icon-light',
-                        `tx-row-icon-${getTxDirection(tx)}`,
-                        { 'tx-row-icon-bitcoin': isBitcoinTransaction(tx) }
+                        `tx-row-icon-${getTxIconTone(tx)}`,
+                        { 'tx-row-icon-bitcoin': isBitcoinTransaction(tx) && tx.status !== 'expired' }
                       ]"
                     >
                       <Icon :icon="getTxIcon(tx)" width="18" height="18" />
@@ -578,7 +578,8 @@
                         $q.dark.isActive ? 'tx-row-title-dark' : 'tx-row-title-light',
                         {
                           'tx-row-amount-in': tx.type === 'incoming' && tx.status === 'completed',
-                          'tx-row-amount-out': tx.type === 'outgoing' && tx.status === 'completed'
+                          'tx-row-amount-out': tx.type === 'outgoing' && tx.status === 'completed',
+                          'tx-row-amount-expired': tx.status === 'expired'
                         }
                       ]"
                     >
@@ -735,7 +736,7 @@ import { useBitcoinDepositsStore } from '../stores/bitcoinDeposits';
 import { BITCOIN_DEPOSIT_POLL_MS, AUTO_CLAIM_THRESHOLDS } from '../stores/bitcoinPreferences';
 import { useAddressBookStore } from '../stores/addressBook';
 import { useTransactionMetadataStore } from '../stores/transactionMetadata';
-import { normalizeTx } from '../services/txNormalizer.js';
+import { normalizeTx, isInvoiceExpired } from '../services/txNormalizer.js';
 import { formatRelativeTime, formatShortTime, formatHumanDateTime } from '../utils/timeFormatting';
 import { groupMicropayments } from '../composables/useTransactionGrouping';
 import { matchLnAddressService } from '../services/lnAddressServices';
@@ -745,6 +746,10 @@ import { zapperDisplayName, zapperPicture } from '../services/zapperProfiles';
 import { NOSTRICH_HEAD_ICON } from '../utils/nostrIcon.js';
 import { splitAddressForDisplay } from '../utils/addressUtils.js';
 import { getTxDescription, getTxMessage as resolveTxMessage, isPlaceholderDescription } from '../utils/txMessage.js';
+import { readCachedTransactions, mergeCachedTransactions } from '../utils/txCache.js';
+
+// How often open history re-checks pending invoices against their expiry.
+const INVOICE_EXPIRY_CHECK_MS = 15000;
 
 // Chip text per metadata source (i18n message keys, resolved through $t at
 // render time). Lookup map on purpose: later passes stamp more sources
@@ -778,12 +783,15 @@ export default {
     return {
       isLoading: true,
       isRefreshing: false,
-      activeFilter: 'week',
+      activeFilter: 'all',
       transactions: [],
+      // Last known list, shown while the first fresh batch loads.
+      cachedTransactions: [],
       walletState: {},
       walletStore: null,
       bitcoinDepositsStore: null,
       depositPollingInterval: null,
+      invoiceExpiryInterval: null,
       depositRead: 0,
       addressBookStore: null,
       metadataStore: null,
@@ -859,7 +867,12 @@ export default {
       const sevenDaysAgo = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
       const monthAgo = new Date(today.getTime() - 30 * 24 * 60 * 60 * 1000);
 
-      return this.transactions.filter(tx => {
+      // While the first fresh batch loads, the last known list stays on
+      // screen instead of a skeleton.
+      const source = this.transactions.length || !this.cachedTransactions.length
+        ? this.transactions
+        : this.cachedTransactions;
+      return source.filter(tx => {
         const txDate = new Date(tx.settled_at * 1000);
 
         switch (this.activeFilter) {
@@ -1018,7 +1031,20 @@ export default {
     // route) without ever passing through the wallet page that normally
     // hydrates it. initialize() is idempotent and returns immediately when
     // another caller already ran it, so the normal in-app navigation path
-    // pays nothing for this.
+    // pays nothing for this. The last known list paints as soon as the
+    // saved wallets are loaded, while the wallet may still be connecting.
+    await this.walletStore.whenHydrated();
+    try { this.walletState = JSON.parse(localStorage.getItem('buhoGO_wallet_state')) || {}; } catch { /* defaults */ }
+    this.cachedTransactions = readCachedTransactions(this.walletStore.activeWalletId);
+    this.expireStaleInvoices();
+    // An invoice's deadline passes while the list sits open; re-judge
+    // pending ones against the clock so "Awaiting payment" flips to
+    // "Invoice expired" without waiting for a refetch.
+    this.invoiceExpiryInterval = setInterval(() => this.expireStaleInvoices(), INVOICE_EXPIRY_CHECK_MS);
+    if (this.cachedTransactions.length) {
+      this.isLoading = false;
+      this.showLoadingScreen = false;
+    }
     await this.walletStore.initialize();
     await this.addressBookStore.initialize();
     await this.metadataStore.initialize();
@@ -1034,6 +1060,7 @@ export default {
     this.backgroundFetchAborted = true;
     this.depositRead++;
     clearInterval(this.depositPollingInterval);
+    clearInterval(this.invoiceExpiryInterval);
   },
 
   watch: {
@@ -1043,7 +1070,7 @@ export default {
     'walletStore.depositsRefreshSignal'() {
       const walletId = this.walletStore.activeWalletId;
       if (this.walletStore.lastDepositsRefreshWalletId !== walletId) return;
-      this.pendingBitcoinDeposits = this.pendingBitcoinDeposits.filter(d => !this.walletStore.isDepositClaimed(d.txId));
+      this.pendingBitcoinDeposits = this.pendingBitcoinDeposits.filter(d => !this.walletStore.isDepositClaimed(d.txId, d.outputIndex));
       this.loadPendingDeposits();
       this.loadTransactions();
       this.walletStore.refreshWalletData(walletId);
@@ -1439,6 +1466,17 @@ export default {
     },
 
     /**
+     * Colour of the status icon circle. Pending and expired never take
+     * the incoming green — that green means money arrived, and neither
+     * an unpaid nor a dead invoice moved any.
+     */
+    getTxIconTone(tx) {
+      if (tx?.status === 'pending') return 'pending';
+      if (tx?.status === 'expired' || tx?.status === 'failed') return 'expired';
+      return this.getTxDirection(tx);
+    },
+
+    /**
      * The avatar-corner type badge: one small mark that says what kind
      * of movement this was, so direction survives even when the avatar
      * is a face or a brand logo. Exactly one badge per row; specificity
@@ -1668,7 +1706,13 @@ export default {
     },
 
     async loadTransactions() {
-      this.isLoading = true;
+      // Keep what is on screen (or the last known list) while this loads;
+      // the skeleton is only for a wallet with nothing to show yet.
+      const walletId = this.walletStore.activeWalletId;
+      const previous = this.transactions.length ? this.transactions.slice() : readCachedTransactions(walletId);
+      this.cachedTransactions = previous;
+      this.isLoading = previous.length === 0;
+      if (previous.length) this.showLoadingScreen = false;
 
       // Reset batching state
       this.resetBatchingState();
@@ -1684,6 +1728,8 @@ export default {
         await this.loadFirstBatch();
 
         this.transactions.sort((a, b) => b.settled_at - a.settled_at);
+        this.cachedTransactions = [];
+        if (this.walletStore.activeWalletId === walletId) mergeCachedTransactions(walletId, this.transactions);
 
         this.processZapTransactions();
 
@@ -1699,11 +1745,14 @@ export default {
 
       } catch (error) {
         console.error('Error loading transactions:', error);
+        // Keep the last known list rather than an empty screen.
+        if (!this.transactions.length && previous.length) this.transactions = previous;
         this.$q.notify({
           type: 'negative',
           message: this.$t('Couldn\'t load history'),
         });
       } finally {
+        this.cachedTransactions = [];
         this.isLoading = false;
       }
     },
@@ -2129,6 +2178,20 @@ export default {
       }
     },
 
+    /**
+     * Flip pending incoming invoices whose expiry has passed to 'expired',
+     * in place. Covers rows served from the cache (stamped pending when
+     * they were saved) and rows normalized before the deadline passed.
+     */
+    expireStaleInvoices() {
+      const now = Date.now();
+      for (const list of [this.transactions, this.cachedTransactions]) {
+        for (const tx of list || []) {
+          if (isInvoiceExpired(tx, now)) tx.status = 'expired';
+        }
+      }
+    },
+
     isPendingInvoice(tx) {
       return tx.status === 'pending' && tx.type === 'incoming';
     },
@@ -2355,18 +2418,7 @@ export default {
           return '--';
         }
 
-        const symbols = {
-          USD: '$',
-          EUR: '€',
-          GBP: '£',
-          CAD: 'C$',
-          CHF: 'CHF',
-          AUD: 'A$',
-          JPY: '¥'
-        };
-
-        const symbol = symbols[currency] || currency;
-        return symbol + fiatValue.toFixed(2);
+        return fiatRatesService.formatFiatAmount(fiatValue, currency);
       } catch (error) {
         console.error('Error converting to fiat:', error);
         return '--';
@@ -2387,18 +2439,7 @@ export default {
           return '--';
         }
 
-        const symbols = {
-          USD: '$',
-          EUR: '€',
-          GBP: '£',
-          CAD: 'C$',
-          CHF: 'CHF',
-          AUD: 'A$',
-          JPY: '¥'
-        };
-
-        const symbol = symbols[currency] || currency;
-        return symbol + fiatValue.toFixed(2);
+        return fiatRatesService.formatFiatAmount(fiatValue, currency);
       } catch (error) {
         console.error('Error converting to fiat:', error);
         return '--';
@@ -2435,7 +2476,8 @@ export default {
         if (!current() || !provider?.getPendingDeposits) return;
         const deposits = await provider.getPendingDeposits();
         if (!current()) return;
-        this.pendingBitcoinDeposits = deposits.filter(d => !this.walletStore.isDepositClaimed(d.txId));
+        this.walletStore.reconcileDepositClaims(deposits);
+        this.pendingBitcoinDeposits = deposits.filter(d => !this.walletStore.isDepositClaimed(d.txId, d.outputIndex));
         void this.bitcoinDepositsStore.processDeposits(this.pendingBitcoinDeposits, walletId);
       } catch (error) {
         console.warn('Failed to load pending deposits:', error);
@@ -2482,7 +2524,7 @@ export default {
       try {
         const provider = await this.walletStore.ensureSparkConnected();
         if (walletId !== this.walletStore.activeWalletId || !this.manualClaimAllowed(deposit)) return;
-        this.walletStore.markDepositClaimInFlight(deposit.txId);
+        this.walletStore.markDepositClaimInFlight(deposit.txId, deposit.outputIndex);
         ownsClaim = true;
         const result = await provider.claimDeposit(
           deposit.txId,
@@ -2490,7 +2532,7 @@ export default {
           deposit.outputIndex
         );
 
-        this.walletStore.markDepositClaimed(deposit.txId);
+        this.walletStore.markDepositClaimed(deposit.txId, deposit.outputIndex);
         this.walletStore.signalDepositsRefresh(walletId);
         if (walletId !== this.walletStore.activeWalletId) return;
 
@@ -2537,7 +2579,7 @@ export default {
           timeout: 3000
         });
       } finally {
-        if (ownsClaim) this.walletStore.clearDepositClaimInFlight(deposit.txId);
+        if (ownsClaim) this.walletStore.clearDepositClaimInFlight(deposit.txId, deposit.outputIndex);
         this.isClaimingDeposit = false;
         this.claimingDeposit = null;
         this.claimFeeQuote = null;
@@ -3100,7 +3142,7 @@ export default {
 /* Pending rows get a hairline accent on the left so scanning users
    can spot "still in motion" payments without visual shouting. */
 .tx-row-pending {
-  box-shadow: inset 2px 0 0 rgba(148, 163, 184, 0.5);
+  box-shadow: inset 2px 0 0 rgba(245, 166, 35, 0.6);
 }
 
 /* Ready-to-claim deposits: subtle green accent instead. Direction is
@@ -3200,6 +3242,29 @@ export default {
 .tx-row-icon-dark.tx-row-icon-in {
   background: rgba(21, 222, 114, 0.14);
   color: #15DE72;
+}
+
+/* Awaiting payment: amber, same as the details page's Pending chip. */
+.tx-row-icon-light.tx-row-icon-pending {
+  background: rgba(245, 166, 35, 0.12);
+  color: #B7791F;
+}
+
+.tx-row-icon-dark.tx-row-icon-pending {
+  background: rgba(245, 166, 35, 0.14);
+  color: #F5A623;
+}
+
+/* Expired / failed: soft red wash, muted red glyph — clearly dead,
+   without the alarm of an outgoing-red amount. */
+.tx-row-icon-light.tx-row-icon-expired {
+  background: rgba(239, 68, 68, 0.08);
+  color: #DC2626;
+}
+
+.tx-row-icon-dark.tx-row-icon-expired {
+  background: rgba(239, 68, 68, 0.12);
+  color: #F87171;
 }
 
 /* Bitcoin (L1) icon — overrides direction colours so L1 deposits AND
@@ -3413,6 +3478,13 @@ export default {
 
 .body--dark .tx-row-amount.tx-row-amount-out {
   color: #F16A6A;
+}
+
+/* An expired invoice was never paid: the amount is struck through and
+   muted so it can't be read as money that arrived. */
+.tx-row-amount.tx-row-amount-expired {
+  color: var(--text-muted);
+  text-decoration: line-through;
 }
 
 /* ── Confirmation dots (pending Bitcoin deposits) ────────────── */

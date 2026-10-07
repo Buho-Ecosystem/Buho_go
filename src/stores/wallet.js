@@ -23,11 +23,32 @@ import { useAutoWithdrawStore } from './autoWithdraw';
 import { useNotificationsStore } from './notifications';
 import { formatAmount } from '../utils/amountFormatting.js';
 import { internalTransferTransactionId } from '../utils/internalTransferDetails.js';
+import { paymentHashOf, sdkProvesUnclaimed } from '../utils/breezPayments.js';
+import { Invoice } from '@getalby/lightning-tools';
+import {
+  emptyBalanceState,
+  hydrateBalanceState,
+  nextBalanceState,
+  describeBalance,
+  summarizeTotal,
+} from '../utils/balanceState.js';
+import { sparkLifecycle, forgetSparkWallet } from '../services/sparkLifecycleApp.js';
+
+/** One output of one deposit transaction: `${txId}:${vout}` (vout defaults to 0). */
+export function depositClaimKey(txId, outputIndex) {
+  return `${txId}:${Number(outputIndex) || 0}`;
+}
 
 /** walletId → the last balance noticeIncomingPayment saw for it this session. */
 const observedBalance = new Map();
 // Shared by page ticks and store refreshes; the newest request owns its result.
 const balanceReads = new Map();
+// walletId -> { epoch, promise }: one store-level Spark connection attempt.
+const sparkConnects = new Map();
+// walletId -> bumped on disconnect, rebuild and removal. Work started under
+// an older epoch must not publish providers, balances or info afterwards.
+const walletEpochs = new Map();
+const epochOf = (walletId) => walletEpochs.get(walletId) || 0;
 import { useTransactionMetadataStore } from './transactionMetadata';
 import { isLightningAddress } from '../utils/addressUtils.js';
 import { createClaimedDepositRegistry } from '../utils/claimedDeposits.js';
@@ -42,6 +63,7 @@ import {
   getUserFriendlyErrorMessage,
 } from '../utils/userErrors';
 import * as deviceCrypto from '../utils/deviceCrypto';
+import { clearCachedTransactions } from '../utils/txCache.js';
 import { i18n } from '../boot/i18n';
 import {
   setScreenPrivacyEnabled as nativeSetScreenPrivacyEnabled,
@@ -56,6 +78,7 @@ const STORAGE_KEYS = {
   LEGACY_STATE: 'buhoGO_wallet_state',
   DEVICE_KEY: 'buhoGO_device_key',
 };
+const BALANCE_SCHEMA_VERSION = 1;
 
 // Durable double-claim guard for L1 deposits. Module-level rather than
 // Pinia state: membership answers point-in-time questions and must
@@ -63,6 +86,11 @@ const STORAGE_KEYS = {
 const claimedDepositRegistry = createClaimedDepositRegistry({
   storage: typeof localStorage !== 'undefined' ? localStorage : null,
 });
+// When this session recorded each claim. A claim made moments ago can meet
+// an SDK record read just before the claim landed; such a mark is never
+// reconsidered until this window has passed.
+const recentDepositClaims = new Map();
+const CLAIM_MARK_SETTLE_MS = 10 * 60 * 1000;
 
 /**
  * Thin adapter exposing the device-key crypto under the historical
@@ -90,7 +118,19 @@ export const useWalletStore = defineStore('wallet', {
     providers: {},
 
     // Wallet data (keyed by wallet ID)
-    balances: {},
+    // The one balance record (value + provenance + freshness). Numeric
+    // compatibility getters and every screen derive from it.
+    balanceStates: {},
+    // Spark lifecycle health per wallet (services/sparkLifecycle.js):
+    // { health, lastSyncAt, error, failures }. Connection status stays in
+    // connectionStates; this is whether the connection is actually useful.
+    sparkHealthStates: {},
+    // Unclaimed on-chain deposits per Spark wallet, discovered by the
+    // lifecycle for every wallet regardless of selection.
+    pendingDepositsByWallet: {},
+    // The most recent detected receipt { walletId, amountSats, at }, for
+    // in-app surfaces; system notifications are posted by the lifecycle.
+    lastReceipt: null,
     // Funds the wallet holds but cannot spend yet, keyed by wallet ID:
     // { pending, recoverable }. Arkade is the only backend that reports a
     // split today (boarding UTXOs awaiting confirmation, and subdust or
@@ -196,6 +236,9 @@ export const useWalletStore = defineStore('wallet', {
     // prevent boot flows (deep links, Wallet.vue) from racing each other
     // into duplicate store hydration / auto-connect work on cold start.
     isInitialized: false,
+    // Saved wallets and their last-known balances are loaded: screens can
+    // paint while connections and syncs continue in the background.
+    hydrated: false,
     _initializePromise: null,
 
     // Bitcoin L1 deposit-claim coordination.
@@ -223,6 +266,11 @@ export const useWalletStore = defineStore('wallet', {
   }),
 
   getters: {
+    // Compatibility view for existing consumers, derived from the same state.
+    balances: (state) => Object.fromEntries(Object.entries(state.balanceStates)
+      .filter(([, balance]) => balance.value != null)
+      .map(([id, balance]) => [id, balance.value])),
+
     /**
      * Currently active wallet object
      */
@@ -234,15 +282,29 @@ export const useWalletStore = defineStore('wallet', {
      * Balance of the active wallet in sats
      */
     activeBalance: (state) => {
-      return state.balances[state.activeWalletId] || 0;
+      return state.balanceStates[state.activeWalletId]?.value ?? 0;
     },
 
     /**
-     * Total balance across all wallets in sats
+     * Total of every configured wallet's known balance in sats (saved
+     * last-known values included). Whether that total is complete and
+     * verified is `totalBalanceInfo`; never present this alone as exact.
      */
     totalBalance: (state) => {
-      return Object.values(state.balances).reduce((sum, bal) => sum + (bal || 0), 0);
+      return summarizeTotal(state.wallets.map((w) => w.id), state.balanceStates).total;
     },
+
+    /** { total, complete, stale, unknownIds, staleIds } across all wallets. */
+    totalBalanceInfo: (state) => {
+      return summarizeTotal(state.wallets.map((w) => w.id), state.balanceStates);
+    },
+
+    /**
+     * What every surface shows for one wallet: { known, value, status
+     * ('unknown'|'loading'|'fresh'|'stale'|'error'), stale, refreshing,
+     * source, verifiedAt, error }.
+     */
+    balanceStateFor: (state) => (walletId) => describeBalance(state.balanceStates[walletId]),
 
     /**
      * List of currently connected wallets
@@ -416,7 +478,7 @@ export const useWalletStore = defineStore('wallet', {
         // Spark falls back to the legacy store-level flag for pre-migration
         // installs; Arkade (new) always uses its own per-wallet metadata flag.
         if (isWalletBackedUp(w, state.hasBackedUp)) return false;
-        const balance = state.balances[w.id] || 0;
+        const balance = state.balanceStates[w.id]?.value ?? 0;
         return balance > 0;
       });
     },
@@ -457,33 +519,24 @@ export const useWalletStore = defineStore('wallet', {
      */
     getDisplayBalance: (state) => (walletId) => {
       const wallet = state.wallets.find(w => w.id === walletId);
-      if (!wallet) return { balance: 0, isLocked: false, isCached: false };
+      if (!wallet) return { balance: 0, known: false, isLocked: false, isCached: false, status: 'unknown' };
 
-      // For Spark wallets
-      if (wallet.type === WALLET_TYPES.SPARK) {
-        const isConnected = state.connectionStates[walletId]?.connected;
-        const currentBalance = state.balances[walletId];
-
-        // If connected, use current balance
-        if (isConnected && currentBalance !== undefined) {
-          return { balance: currentBalance, isLocked: false, isCached: false };
-        }
-
-        // If not connected, try cached balance from metadata
-        const cachedBalance = wallet.metadata?.cachedBalance;
-        if (cachedBalance !== undefined) {
-          return { balance: cachedBalance, isLocked: true, isCached: true };
-        }
-
-        // No cached balance, wallet is locked
-        return { balance: 0, isLocked: true, isCached: false };
-      }
-
-      // For NWC wallets, use current balance
+      // Connection status and value freshness are separate questions: a
+      // connected wallet can hold a stale value, and a disconnected one
+      // can still show its last verified figure, labelled as such.
+      const d = describeBalance(state.balanceStates[walletId]);
+      const isLocked = wallet.type === WALLET_TYPES.SPARK && !state.connectionStates[walletId]?.connected;
       return {
-        balance: state.balances[walletId] || 0,
-        isLocked: false,
-        isCached: false
+        balance: d.known ? d.value : 0,
+        known: d.known,
+        isLocked,
+        isCached: d.known && d.status !== 'fresh',
+        // Known to be out of date: the last refresh failed. Only this is
+        // shown dimmed; a value being re-verified reads as current.
+        outdated: d.known && d.stale && !!d.error && !d.refreshing,
+        status: d.status,
+        refreshing: d.refreshing,
+        verifiedAt: d.verifiedAt,
       };
     },
 
@@ -690,10 +743,11 @@ export const useWalletStore = defineStore('wallet', {
      * Called by both the auto-claim flow (Wallet.vue) and the manual sheet
      * (L1BitcoinReceive.vue) so neither submits a duplicate to the SSP.
      */
-    markDepositClaimInFlight(txId) {
+    markDepositClaimInFlight(txId, outputIndex) {
       if (!txId) return;
-      if (!this.inFlightDepositClaims[txId]) {
-        this.inFlightDepositClaims[txId] = true;
+      const key = depositClaimKey(txId, outputIndex);
+      if (!this.inFlightDepositClaims[key]) {
+        this.inFlightDepositClaims[key] = true;
       }
     },
 
@@ -701,10 +755,11 @@ export const useWalletStore = defineStore('wallet', {
      * Clear the in-flight marker for a txId. Always call from a `finally`
      * so a thrown error can't leave the UI permanently locked.
      */
-    clearDepositClaimInFlight(txId) {
+    clearDepositClaimInFlight(txId, outputIndex) {
       if (!txId) return;
-      if (this.inFlightDepositClaims[txId]) {
-        delete this.inFlightDepositClaims[txId];
+      const key = depositClaimKey(txId, outputIndex);
+      if (this.inFlightDepositClaims[key]) {
+        delete this.inFlightDepositClaims[key];
       }
     },
 
@@ -712,8 +767,14 @@ export const useWalletStore = defineStore('wallet', {
      * Reactive predicate: is this txId currently being claimed somewhere?
      * Use from templates as `walletStore.isDepositClaimInFlight(deposit.txId)`.
      */
-    isDepositClaimInFlight(txId) {
-      return !!this.inFlightDepositClaims[txId];
+    isDepositClaimInFlight(txId, outputIndex) {
+      if (!txId) return false;
+      // Without an output the question is about the whole transaction.
+      if (outputIndex === undefined || outputIndex === null) {
+        return Object.keys(this.inFlightDepositClaims).some((k) => k === txId || k.startsWith(`${txId}:`));
+      }
+      return !!this.inFlightDepositClaims[depositClaimKey(txId, outputIndex)]
+        || !!this.inFlightDepositClaims[txId];
     },
 
     /**
@@ -723,13 +784,47 @@ export const useWalletStore = defineStore('wallet', {
      * list until its confirmations catch up, and without this record the
      * confirmed handler would submit the same UTXO a second time.
      */
-    markDepositClaimed(txId) {
-      claimedDepositRegistry.add(txId);
+    markDepositClaimed(txId, outputIndex) {
+      if (!txId) return;
+      claimedDepositRegistry.add(depositClaimKey(txId, outputIndex));
+      recentDepositClaims.set(depositClaimKey(txId, outputIndex), Date.now());
     },
 
-    /** Has this deposit txId already been claimed by this device? */
-    isDepositClaimed(txId) {
-      return claimedDepositRegistry.has(txId);
+    /**
+     * Drop claimed records the SDK proves wrong, so those deposits surface
+     * and claim again. Builds before the claim-lock fix recorded a deposit as
+     * claimed when the SDK's own (failing) attempt merely held the lock,
+     * hiding confirmed deposits while their funds sat unclaimed on-chain.
+     * Call with a fresh `getPendingDeposits()` list before filtering it.
+     * @returns {number} how many records were released
+     */
+    reconcileDepositClaims(deposits) {
+      let released = 0;
+      for (const deposit of deposits || []) {
+        if (!deposit?.txId || !sdkProvesUnclaimed(deposit)) continue;
+        const key = depositClaimKey(deposit.txId, deposit.outputIndex);
+        if (this.isDepositClaimInFlight(deposit.txId, deposit.outputIndex)) continue;
+        if (Date.now() - (recentDepositClaims.get(key) || 0) < CLAIM_MARK_SETTLE_MS) continue;
+        const a = claimedDepositRegistry.delete(key);
+        const b = claimedDepositRegistry.delete(deposit.txId);
+        if (a || b) {
+          released += 1;
+          console.warn('[deposits] released a claimed mark the SDK shows unclaimed:', key);
+        }
+      }
+      return released;
+    },
+
+    /**
+     * Has this deposit output already been claimed by this device? Keyed by
+     * transaction AND output, so a second output of the same transaction
+     * (several deposits, or one to each account) is never suppressed by the
+     * first. A bare-txid record from an older build still counts as claimed.
+     */
+    isDepositClaimed(txId, outputIndex) {
+      if (!txId) return false;
+      return claimedDepositRegistry.has(depositClaimKey(txId, outputIndex))
+        || claimedDepositRegistry.has(txId);
     },
 
     /**
@@ -742,9 +837,182 @@ export const useWalletStore = defineStore('wallet', {
       this.depositsRefreshSignal += 1;
     },
 
+    // ==========================================
+    // Canonical balance state (#293)
+    // ==========================================
+
+    /**
+     * The one write path for a wallet balance: canonical state and the
+     * persisted last-known value move together. Late or invalid readings
+     * are dropped (see utils/balanceState.js); a read token that has
+     * been superseded is dropped too.
+     *
+     * @returns {boolean} whether the reading was accepted
+     */
+    applyBalance(walletId, value, { source = 'sync', fresh, read = null, error = null, at } = {}) {
+      const wallet = this.wallets.find(w => w.id === walletId);
+      if (!wallet || (read && (read.walletId !== walletId || !this.isBalanceReadCurrent(read)))) return false;
+      if (!this.balanceStates) this.balanceStates = {};
+      const prev = this.balanceStates[walletId] || emptyBalanceState();
+      const observedAt = at ?? Date.now();
+      const next = nextBalanceState(prev, {
+        value,
+        source,
+        fresh: fresh ?? source !== 'cache',
+        at: observedAt,
+        error,
+      });
+      if (next !== prev) this.balanceStates[walletId] = next;
+      const accepted = value != null && Number.isFinite(Number(value)) && Number(value) >= 0
+        && next.value === Number(value) && next.updatedAt === observedAt;
+      if (!accepted) return false;
+
+      // Reconcile the persisted projection even when the numerical balance
+      // did not change (e.g. recovery from an older, inconsistent cache).
+      const updatedAt = next.verifiedAt || next.updatedAt;
+      if (wallet.metadata?.cachedBalance !== next.value || wallet.metadata?.balanceUpdatedAt !== updatedAt) {
+        const valueChanged = wallet.metadata?.cachedBalance !== next.value;
+        wallet.metadata = { ...wallet.metadata, cachedBalance: next.value, balanceUpdatedAt: updatedAt };
+        // Changed funds must survive a restart immediately. Coalesce only
+        // verification timestamps for unchanged figures.
+        if (valueChanged) void this.persistState();
+        else this._schedulePersist();
+      }
+
+      // Money only moves on a network-verified figure. Auto-withdraw also
+      // re-verifies Spark itself before sending (stores/autoWithdraw.js).
+      if (wallet && next.source !== 'cache' && next.source !== 'persisted' && next.value > 0 && fresh !== false) {
+        try { useAutoWithdrawStore().checkAndExecute(walletId, next.value, this); } catch { /* harness/early boot */ }
+      }
+      return true;
+    },
+
+    markBalanceRefresh(walletId, refreshing) {
+      if (!walletId) return;
+      if (!this.balanceStates) this.balanceStates = {};
+      const prev = this.balanceStates[walletId] || emptyBalanceState();
+      if (prev.refreshing === !!refreshing) return;
+      this.balanceStates[walletId] = { ...prev, refreshing: !!refreshing };
+    },
+
+    markBalanceError(walletId, message) {
+      if (!walletId) return;
+      if (!this.balanceStates) this.balanceStates = {};
+      const prev = this.balanceStates[walletId] || emptyBalanceState();
+      this.balanceStates[walletId] = { ...prev, error: message || 'Balance could not be refreshed' };
+    },
+
+    /** Saved last-known values become stale state on load: never a zero. */
+    hydrateBalanceStates(legacyState = null) {
+      const states = { ...(this.balanceStates || {}) };
+      for (const wallet of this.wallets) {
+        if (states[wallet.id]?.value != null) continue;
+        const hydrated = hydrateBalanceState(wallet, legacyState);
+        states[wallet.id] = hydrated;
+        if (legacyState) {
+          wallet.metadata = { ...wallet.metadata, cachedBalance: hydrated.value, balanceUpdatedAt: hydrated.updatedAt };
+        }
+      }
+      this.balanceStates = states;
+    },
+
+    forgetBalance(walletId) {
+      balanceReads.delete(walletId);
+      if (this.balanceStates) delete this.balanceStates[walletId];
+      if (this.sparkHealthStates) delete this.sparkHealthStates[walletId];
+      if (this.pendingDepositsByWallet) delete this.pendingDepositsByWallet[walletId];
+    },
+
+    /** Persist soon, once: balance ticks must not hammer localStorage. */
+    _schedulePersist() {
+      if (this._persistTimer) return;
+      this._persistTimer = setTimeout(() => {
+        this._persistTimer = null;
+        Promise.resolve(this.persistState?.()).catch(() => {});
+      }, 750);
+    },
+
+    // ==========================================
+    // Spark lifecycle hooks (services/sparkLifecycle.js)
+    // ==========================================
+
+    setSparkHealthState(walletId, health) {
+      if (!this.sparkHealthStates) this.sparkHealthStates = {};
+      this.sparkHealthStates[walletId] = { ...health };
+    },
+
+    noteSparkNetworkSync(walletId, at) {
+      if (!this.sparkHealthStates) this.sparkHealthStates = {};
+      const prev = this.sparkHealthStates[walletId] || {};
+      this.sparkHealthStates[walletId] = { ...prev, lastSyncAt: at };
+    },
+
+    setPendingDeposits(walletId, deposits) {
+      if (!this.pendingDepositsByWallet) this.pendingDepositsByWallet = {};
+      this.pendingDepositsByWallet[walletId] = deposits || [];
+    },
+
+    /** A deposit claim landed: catch the owning wallet up right away. */
+    onDepositClaimed(walletId) {
+      sparkLifecycle?.()?.reconcile(walletId, 'event');
+    },
+
+    /**
+     * Ask the lifecycle to reconcile Spark wallets now (user refresh,
+     * switch). Resolves when the run(s) settle; never throws.
+     */
+    async reconcileSpark(walletIds = null, reason = 'user') {
+      const lifecycle = sparkLifecycle?.();
+      if (!lifecycle) return;
+      const ids = walletIds || this.sparkWallets.map((w) => w.id);
+      await Promise.allSettled(ids.map((id) => lifecycle.reconcile(id, reason)));
+    },
+
+    /**
+     * Internal transfers in flight: { toWalletId, amountSats, until }. A
+     * receipt matching one is the user's own move, never announced as
+     * money arriving (services/paymentReceipts.js).
+     */
+    noteInternalTransfer(toWalletId, paymentHash, { windowMs = 10 * 60 * 1000 } = {}) {
+      // Identity only: an amount cannot identify a payment, and matching on
+      // it would hide an unrelated receipt of the same size (#297 review).
+      if (!toWalletId || !paymentHash) return;
+      this._internalTransfers = (this._internalTransfers || []).filter((t) => t.until > Date.now());
+      this._internalTransfers.push({ toWalletId, paymentHash: String(paymentHash).toLowerCase(), until: Date.now() + windowMs });
+    },
+
+    isInternalTransferReceipt(walletId, payment) {
+      const list = (this._internalTransfers || []).filter((t) => t.until > Date.now());
+      this._internalTransfers = list;
+      const hash = String(paymentHashOf(payment) || payment?.paymentHash || '').toLowerCase();
+      if (!hash) return false;
+      const idx = list.findIndex((t) => t.toWalletId === walletId && t.paymentHash === hash);
+      if (idx === -1) return false;
+      list.splice(idx, 1);
+      return true;
+    },
+
     /**
      * Initialize the store from localStorage
      */
+    /**
+     * Resolves once the saved wallets and their last-known balances are
+     * loaded, which is early in initialize(): connections, rates and syncs
+     * may still be running. Screens await this to paint at once.
+     */
+    whenHydrated() {
+      if (this.hydrated) return Promise.resolve();
+      const init = this.initialize();
+      return new Promise((resolve) => {
+        const stop = this.$subscribe(() => {
+          if (!this.hydrated) return;
+          stop();
+          resolve();
+        });
+        init.finally(() => { stop(); resolve(); });
+      });
+    },
+
     async initialize() {
       if (this.isInitialized) {
         return;
@@ -758,8 +1026,8 @@ export const useWalletStore = defineStore('wallet', {
         try {
           // Load saved state
           const savedState = localStorage.getItem(STORAGE_KEYS.WALLET_STORE);
-          if (savedState) {
-            const parsed = JSON.parse(savedState);
+          const parsed = savedState ? JSON.parse(savedState) : null;
+          if (parsed) {
 
             // Check if cached exchange rates are still valid (less than 1 hour old)
             let ratesStillValid = false;
@@ -917,11 +1185,22 @@ export const useWalletStore = defineStore('wallet', {
             });
           }
 
+          // Migrate the old Home snapshot once, before any persistence can
+          // overwrite it. Conflicting unversioned caches need verification.
+          let legacyBalances = null;
+          if (parsed && parsed.balanceSchemaVersion !== BALANCE_SCHEMA_VERSION) {
+            try { legacyBalances = JSON.parse(localStorage.getItem(STORAGE_KEYS.LEGACY_STATE)); } catch { /* unusable cache */ }
+          }
+          this.hydrateBalanceStates(legacyBalances);
+          if (legacyBalances) this._schedulePersist();
+
           // Validate wallets
           await this.validateWallets();
+          this.hydrated = true;
 
-          // Load exchange rates
-          await this.loadExchangeRates();
+          // Load exchange rates. Saved rates are already restored above; the
+          // fresh ones arrive reactively instead of holding up startup.
+          this.loadExchangeRates().catch(() => {});
 
           // Initialize auto-withdraw store
           const autoWithdrawStore = useAutoWithdrawStore();
@@ -958,10 +1237,16 @@ export const useWalletStore = defineStore('wallet', {
               }
             }
           }
+          // Both Spark wallets are now owned by the app lifecycle, not by
+          // whichever page or wallet is on screen (#292).
+          if (this.sparkWallets.length > 0 && !(typeof window !== 'undefined' && window.__AUDIT__)) {
+            sparkLifecycle?.()?.start();
+          }
         } catch (error) {
           console.error('Wallet store initialization error:', error);
           this.lastError = error.message;
         } finally {
+          this.hydrated = true;
           this.isInitialized = true;
           this._initializePromise = null;
         }
@@ -1096,9 +1381,7 @@ export const useWalletStore = defineStore('wallet', {
         personalWallet.isDefault = true;
 
         // Both wallets were connected during creation (to validate them and
-        // cache balances). Enforce the single-live-connection invariant now so
-        // Business doesn't linger connected alongside the active Personal — two
-        // live Spark wallets corrupt each other's SDK auth session.
+        // cache balances) and both stay live.
         await this.connectAllSparkWallets();
 
         // The active wallet received its Lightning address during connect;
@@ -1114,6 +1397,8 @@ export const useWalletStore = defineStore('wallet', {
 
         onProgress('done');
         await this.persistState();
+        // A pair created after startup still needs its lifecycle (#292).
+        sparkLifecycle?.()?.start();
         return personalWallet;
       } catch (error) {
         // Atomic rollback. If Business succeeded and Personal failed
@@ -1148,7 +1433,7 @@ export const useWalletStore = defineStore('wallet', {
           delete this.providers[id];
         }
         delete this.walletInfos[id];
-        delete this.balances[id];
+        this.forgetBalance(id);
         delete this.connectionStates[id];
         const idx = this.wallets.findIndex(w => w.id === id);
         if (idx !== -1) this.wallets.splice(idx, 1);
@@ -1259,10 +1544,53 @@ export const useWalletStore = defineStore('wallet', {
      * @param {string} walletId - Wallet ID
      */
     async connectSparkWallet(walletId, { forceReinit = false } = {}) {
+      // Serialized per wallet: concurrent callers (startup, lifecycle,
+      // switch, transfer) share one attempt instead of building separate
+      // providers that race to publish.
+      const pending = sparkConnects.get(walletId);
+      if (pending) {
+        if (!forceReinit && pending.epoch === epochOf(walletId)) return pending.promise;
+        await pending.promise.catch(() => {});
+        return this.connectSparkWallet(walletId, { forceReinit });
+      }
+      if (!forceReinit && this.providers[walletId]?.isConnected && this.connectionStates[walletId]?.connected) {
+        return;
+      }
+      if (forceReinit || this.providers[walletId]) {
+        this._bumpWalletEpoch(walletId);
+        if (this.providers[walletId]) this.providers[walletId].isConnected = false;
+      }
+      const entry = { epoch: epochOf(walletId), promise: null };
+      entry.promise = this._initializeSparkWallet(walletId, { forceReinit, epoch: entry.epoch });
+      sparkConnects.set(walletId, entry);
+      try {
+        return await entry.promise;
+      } finally {
+        if (sparkConnects.get(walletId) === entry) sparkConnects.delete(walletId);
+      }
+    },
+
+    /** Invalidate in-flight work for a wallet (disconnect, rebuild, removal). */
+    _bumpWalletEpoch(walletId) {
+      walletEpochs.set(walletId, epochOf(walletId) + 1);
+    },
+
+    walletEpoch(walletId) {
+      return epochOf(walletId);
+    },
+
+    async _initializeSparkWallet(walletId, { forceReinit, epoch }) {
       const wallet = this.wallets.find(w => w.id === walletId);
       if (!wallet || wallet.type !== WALLET_TYPES.SPARK) {
         throw new Error('Spark wallet not found');
       }
+      // A removal or rebuild during any await below cancels this attempt:
+      // it must not resurrect a removed wallet or overwrite a newer state.
+      const current = () => epochOf(walletId) === epoch && this.wallets.includes(wallet);
+      const assertCurrent = () => {
+        if (!current()) throw new Error('Spark connection was cancelled');
+      };
+      let provider = null;
 
       try {
         // Decrypt mnemonic with device key
@@ -1273,7 +1601,8 @@ export const useWalletStore = defineStore('wallet', {
         // The full wallet object rides through the factory so the provider
         // can assert identity against the stored spark address before
         // going live.
-        const provider = createWalletProvider(wallet);
+        assertCurrent();
+        provider = createWalletProvider(wallet);
 
         // Initialize with mnemonic. The Breez instance registry dedupes
         // live SDKs per wallet, so calling connectSparkWallet repeatedly
@@ -1281,6 +1610,7 @@ export const useWalletStore = defineStore('wallet', {
         // duplicate event streams. Pass forceReinit only when recovering
         // from a confirmed-dead connection.
         await provider.initializeWithMnemonic(mnemonic, { forceReinit });
+        assertCurrent();
 
         // Store provider
         this.providers[walletId] = provider;
@@ -1292,17 +1622,14 @@ export const useWalletStore = defineStore('wallet', {
           error: null,
         };
 
-        // Get balance
-        const balanceResult = await provider.getBalance();
-        this.balances[walletId] = balanceResult.balance;
-
-        // Cache balance in wallet metadata for display when locked
-        wallet.metadata = wallet.metadata || {};
-        wallet.metadata.cachedBalance = balanceResult.balance;
-        wallet.metadata.balanceUpdatedAt = Date.now();
+        // First balance: a real sync when the network answers, otherwise the
+        // local figure labelled stale (never a connect failure by itself).
+        await this.refreshBalance(walletId, { provider, source: 'connect' });
+        assertCurrent();
 
         // Get info
         const info = await provider.getInfo();
+        assertCurrent();
         this.walletInfos[walletId] = info;
 
         // Record the derived spark address the first time this wallet
@@ -1324,6 +1651,7 @@ export const useWalletStore = defineStore('wallet', {
             const address = await provider.ensureLightningAddress({
               previousAddress: wallet.metadata.lud16 || null,
             });
+            assertCurrent();
             await this.setSparkLightningAddress(walletId, address);
           } catch (error) {
             console.warn('Lightning address setup skipped:', error?.message || error);
@@ -1340,6 +1668,14 @@ export const useWalletStore = defineStore('wallet', {
         }
 
       } catch (error) {
+        if (!current()) {
+          // Superseded: release what this attempt built and leave the newer
+          // state alone. Attempts are serialized, so this cannot release a
+          // newer provider's registry entry.
+          if (provider) await Promise.resolve(provider.disconnect()).catch(() => {});
+          if (this.providers[walletId] === provider) delete this.providers[walletId];
+          throw error;
+        }
         this.connectionStates[walletId] = {
           connected: false,
           lastConnected: Date.now(),
@@ -1408,18 +1744,13 @@ export const useWalletStore = defineStore('wallet', {
         const previous = previousAddresses
           .filter(Boolean)
           .map((value) => String(value).toLowerCase());
-        const changed = profile.adoptDefaultPaymentAddress(preferred, {
+        profile.adoptDefaultPaymentAddress(preferred, {
           isReplaceable: (current) => {
             const value = String(current).toLowerCase();
             return isNpubCashAddress(value) || previous.includes(value);
           },
         });
-        if (!changed) return;
-
-        const result = await profile.publish().catch(() => null);
-        if (!result?.ok) {
-          console.warn('[wallet] profile address saved locally, publish will retry');
-        }
+        // The shared profile lifecycle publishes and retries this durable edit.
       } catch (err) {
         console.warn('[wallet] could not sync the profile payment address:', err);
       }
@@ -1436,6 +1767,9 @@ export const useWalletStore = defineStore('wallet', {
     async _assignAddressToInactiveSparkWallet(inactiveWallet, activeWallet) {
       if (!inactiveWallet || inactiveWallet.id === activeWallet?.id) return;
       if (inactiveWallet.metadata?.lud16) return;
+      // Both Spark wallets stay connected now; connecting runs the
+      // ensure-on-connect address assignment and the connection is kept.
+      if (this.connectionStates[inactiveWallet.id]?.connected) return;
       try {
         await this.connectSparkWallet(inactiveWallet.id);
       } catch (error) {
@@ -1443,17 +1777,13 @@ export const useWalletStore = defineStore('wallet', {
           `Deferred Lightning address for ${inactiveWallet.name}:`,
           error?.message || error
         );
-      } finally {
-        try {
-          await this.disconnectWallet(inactiveWallet.id);
-        } catch (e) { /* the active connection stays untouched either way */ }
       }
     },
 
     /**
-     * Bring Spark wallets into the correct connection state: exactly ONE live
-     * connection — the active wallet — with every other Spark wallet
-     * disconnected.
+     * Bring Spark wallets into the correct connection state: every Spark
+     * wallet connected (#285). The history below explains the rule this
+     * replaced; it applied to the removed direct Spark SDK, not Breez.
      *
      * Why single-connection: the Spark SDK shares a single gRPC channel
      * (ConnectionManager.channelCache is keyed by operator address, NOT by
@@ -1471,22 +1801,18 @@ export const useWalletStore = defineStore('wallet', {
      * checkSparkWalletUnlock).
      */
     async connectAllSparkWallets() {
-      const activeId = this.activeWalletId;
-
-      // Tear down every non-active Spark provider so only one stays live.
-      for (const wallet of this.sparkWallets) {
-        if (wallet.id !== activeId) {
-          await this._disconnectSparkProvider(wallet.id);
-        }
-      }
-
-      // Connect the active wallet if it's Spark and not already live.
-      const active = this.wallets.find(w => w.id === activeId);
-      if (active?.type === WALLET_TYPES.SPARK && !this.connectionStates[activeId]?.connected) {
+      // Every Spark wallet stays live (#285): each has its own Breez
+      // instance and storage, so the unselected half of the pair keeps its
+      // balance, events, deposits and exit kit current. The active wallet
+      // connects first; the registry serializes per wallet.
+      const ordered = [...this.sparkWallets].sort((a, b) =>
+        (a.id === this.activeWalletId ? -1 : 0) - (b.id === this.activeWalletId ? -1 : 0));
+      for (const wallet of ordered) {
+        if (this.connectionStates[wallet.id]?.connected && this.providers[wallet.id]?.isConnected) continue;
         try {
-          await this.connectSparkWallet(activeId);
+          await this.connectSparkWallet(wallet.id);
         } catch (err) {
-          console.warn(`Failed to connect active Spark wallet "${active.name}":`, err.message);
+          console.warn(`Failed to connect Spark wallet "${wallet.name}":`, err.message);
         }
       }
     },
@@ -1498,7 +1824,10 @@ export const useWalletStore = defineStore('wallet', {
      * switchActiveWallet().
      */
     async _disconnectSparkProvider(walletId) {
+      this._bumpWalletEpoch(walletId);
       try { exitKitService().onSparkDisconnected(walletId); } catch (e) { /* not attached yet */ }
+      const epoch = epochOf(walletId);
+      await sparkConnects.get(walletId)?.promise.catch(() => {});
       const provider = this.providers[walletId];
       if (provider) {
         try {
@@ -1506,8 +1835,9 @@ export const useWalletStore = defineStore('wallet', {
         } catch (err) {
           console.warn('Spark provider disconnect failed:', err.message);
         }
-        delete this.providers[walletId];
+        if (this.providers[walletId] === provider) delete this.providers[walletId];
       }
+      if (epoch !== epochOf(walletId) || !this.wallets.some(w => w.id === walletId)) return;
       this.connectionStates[walletId] = {
         connected: false,
         lastConnected: this.connectionStates[walletId]?.lastConnected,
@@ -1579,6 +1909,7 @@ export const useWalletStore = defineStore('wallet', {
 
       // Now connect with the new device key encryption
       await this.connectAllSparkWallets();
+      sparkLifecycle?.()?.start();
     },
 
     // ==========================================
@@ -1677,7 +2008,7 @@ export const useWalletStore = defineStore('wallet', {
             delete this.providers[addedWalletId];
           }
           delete this.walletInfos[addedWalletId];
-          delete this.balances[addedWalletId];
+          this.forgetBalance(addedWalletId);
           delete this.connectionStates[addedWalletId];
           const idx = this.wallets.findIndex((w) => w.id === addedWalletId);
           if (idx !== -1) this.wallets.splice(idx, 1);
@@ -1743,8 +2074,7 @@ export const useWalletStore = defineStore('wallet', {
           error: null,
         };
 
-        const balanceResult = await provider.getBalance();
-        this.balances[walletId] = balanceResult.balance;
+        await this.refreshBalance(walletId, { provider, source: 'connect' });
 
         const info = await provider.getInfo();
         this.walletInfos[walletId] = info;
@@ -1917,7 +2247,7 @@ export const useWalletStore = defineStore('wallet', {
           nwcInstance: nwc,
           error: null,
         };
-        this.balances[wallet.id] = balanceResponse.balance;
+        this.applyBalance(wallet.id, balanceResponse.balance, { source: 'connect' });
         this.walletInfos[wallet.id] = info;
 
         // Activate the newly added wallet
@@ -2006,7 +2336,7 @@ export const useWalletStore = defineStore('wallet', {
 
         // Store wallet data
         this.wallets.push(wallet);
-        this.balances[wallet.id] = validation.walletInfo.balance;
+        this.applyBalance(wallet.id, validation.walletInfo.balance, { source: 'connect' });
 
         // Activate the newly added wallet
         this.activeWalletId = wallet.id;
@@ -2058,8 +2388,7 @@ export const useWalletStore = defineStore('wallet', {
         };
 
         // Get balance
-        const balanceResult = await provider.getBalance();
-        this.balances[walletId] = balanceResult.balance;
+        await this.refreshBalance(walletId, { provider, source: 'connect' });
 
         // Get info
         const info = await provider.getInfo();
@@ -2127,18 +2456,23 @@ export const useWalletStore = defineStore('wallet', {
         if (wallet.type === WALLET_TYPES.SPARK) {
           try { await deleteBreezStorage(walletId); } catch (e) { /* best-effort */ }
         }
+        // Nor the display cache of its recent transactions.
+        clearCachedTransactions(walletId);
 
         // If this wallet is in a group, also remove all other group members
         const groupId = wallet.connectionData?.walletGroupId;
         if (groupId) {
           const groupMembers = this.wallets.filter(w => w.connectionData?.walletGroupId === groupId && w.id !== walletId);
           for (const member of groupMembers) {
+            this._bumpWalletEpoch(member.id);
             if (this.providers[member.id]) {
-              try { this.providers[member.id].disconnect(); } catch (e) { /* ignore */ }
+              try { await this.providers[member.id].disconnect(); } catch (e) { /* ignore */ }
               delete this.providers[member.id];
             }
             delete this.connectionStates[member.id];
-            delete this.balances[member.id];
+            this.forgetBalance(member.id);
+            clearCachedTransactions(member.id);
+            forgetSparkWallet?.(member.id);
             delete this.walletInfos[member.id];
             const idx = this.wallets.indexOf(member);
             if (idx !== -1) this.wallets.splice(idx, 1);
@@ -2152,10 +2486,15 @@ export const useWalletStore = defineStore('wallet', {
           }
         }
 
-        // Remove from state
-        this.wallets.splice(walletIndex, 1);
+        // Remove from state. Re-resolve the index: removing group members
+        // above shifted the array, and the old index could now point at an
+        // unrelated wallet while this one stayed behind.
+        this._bumpWalletEpoch(walletId);
+        const remainingIndex = this.wallets.findIndex(w => w.id === walletId);
+        if (remainingIndex !== -1) this.wallets.splice(remainingIndex, 1);
         delete this.connectionStates[walletId];
-        delete this.balances[walletId];
+        this.forgetBalance(walletId);
+        forgetSparkWallet?.(walletId);
         delete this.walletInfos[walletId];
         try { useExitKitStore().remove(walletId); } catch (e) { /* metadata only */ }
 
@@ -2172,8 +2511,8 @@ export const useWalletStore = defineStore('wallet', {
         const autoWithdrawStore = useAutoWithdrawStore();
         await autoWithdrawStore.removeConfig(walletId);
 
-        // Handle active wallet removal
-        if (this.activeWalletId === walletId) {
+        // Handle active wallet removal (including a removed group sibling)
+        if (!this.wallets.some(w => w.id === this.activeWalletId)) {
           const newActive = this.defaultWallet || this.wallets[0];
           if (newActive) {
             await this.switchActiveWallet(newActive.id);
@@ -2221,17 +2560,13 @@ export const useWalletStore = defineStore('wallet', {
 
         // Ensure connected.
         if (wallet.type === WALLET_TYPES.SPARK) {
-          // Single live Spark connection (see connectAllSparkWallets): tear down
-          // every other Spark provider first so the wallet we switch TO is the
-          // only one authenticating against the shared SDK channel/auth cache,
-          // then connect it fresh. This is what stops the active wallet from
-          // losing its session after a switch on Android.
-          for (const w of this.sparkWallets) {
-            if (w.id !== walletId) {
-              await this._disconnectSparkProvider(w.id);
-            }
+          // Switching is a pointer flip (#285): the other Spark wallet stays
+          // connected. Connect this one only if it is not live yet, then let
+          // the lifecycle refresh it without blocking the switch.
+          if (!this.connectionStates[walletId]?.connected || !this.providers[walletId]?.isConnected) {
+            await this.connectSparkWallet(walletId);
           }
-          await this.connectSparkWallet(walletId);
+          sparkLifecycle?.()?.reconcile(walletId, 'switch');
         } else if (!this.connectionStates[walletId]?.connected) {
           if (wallet.type === WALLET_TYPES.LNBITS) {
             await this.connectLNBitsWallet(walletId);
@@ -2313,6 +2648,9 @@ export const useWalletStore = defineStore('wallet', {
      * @param {string} walletId - The wallet ID to disconnect
      */
     async disconnectWallet(walletId) {
+      balanceReads.delete(walletId);
+      this._bumpWalletEpoch(walletId);
+      this.markBalanceRefresh(walletId, false);
       const wallet = this.wallets.find(w => w.id === walletId);
       const state = this.connectionStates[walletId];
 
@@ -2345,133 +2683,70 @@ export const useWalletStore = defineStore('wallet', {
       };
     },
 
-    /**
-     * Refresh wallet balance and info
-     * @param {string} walletId - The wallet ID to refresh
-     */
+    /** A later read, disconnect or removal invalidates this read's result. */
     beginBalanceRead(walletId) {
-      const read = { walletId };
+      const read = { walletId, wallet: this.wallets.find(w => w.id === walletId), epoch: epochOf(walletId) };
       balanceReads.set(walletId, read);
       return read;
     },
 
     isBalanceReadCurrent(read) {
-      return !!read && balanceReads.get(read.walletId) === read;
+      return !!read?.wallet && balanceReads.get(read.walletId) === read
+        && this.wallets.includes(read.wallet) && epochOf(read.walletId) === read.epoch;
+    },
+
+    /** The shared balance read for every provider and screen. Wallet info
+     * and transaction history must never delay publication of fresh funds. */
+    async refreshBalance(walletId, { provider = null, source = 'sync' } = {}) {
+      const read = this.beginBalanceRead(walletId);
+      if (!this.isBalanceReadCurrent(read)) return false;
+      this.markBalanceRefresh(walletId, true);
+      try {
+        provider ||= await this.ensureWalletConnectedForTransfer(walletId);
+        // Connecting may already have published a newer reading.
+        if (!this.isBalanceReadCurrent(read)) return false;
+        const result = await provider.getBalance();
+        if (!this.isBalanceReadCurrent(read)) return false;
+        const accepted = this.applyBalance(walletId, result.balance, {
+          read, source: result.fresh === false ? 'cache' : source,
+          fresh: result.fresh !== false, error: result.syncError || null,
+        });
+        if (accepted) {
+          if (read.wallet.type === WALLET_TYPES.ARKADE) {
+            this.balanceDetails[walletId] = { pending: Number(result.pending || 0), recoverable: Number(result.recoverable || 0) };
+          }
+          this.noticeIncomingPayment(read.wallet, this.balanceStates[walletId].value);
+        }
+        return accepted;
+      } catch (error) {
+        if (this.isBalanceReadCurrent(read)) this.markBalanceError(walletId, error.message || 'Balance could not be refreshed');
+        return false;
+      } finally {
+        if (this.isBalanceReadCurrent(read)) this.markBalanceRefresh(walletId, false);
+      }
     },
 
     async refreshWalletData(walletId) {
       const wallet = this.wallets.find(w => w.id === walletId);
       if (!wallet) return;
-      const read = this.beginBalanceRead(walletId);
-
+      // Publish the balance independently of ancillary wallet information.
+      await this.refreshBalance(walletId);
+      const provider = this.getProvider(walletId);
+      const epoch = epochOf(walletId);
+      if (!provider || !this.wallets.includes(wallet)) return;
       try {
-        if (wallet.type === WALLET_TYPES.SPARK) {
-          const provider = this.providers[walletId];
-          if (!provider || !this.connectionStates[walletId]?.connected) {
-            await this.connectSparkWallet(walletId);
-            return;
-          }
-
-          const [balanceResult, info] = await Promise.all([
-            provider.getBalance(),
-            provider.getInfo()
-          ]);
-
-          if (!this.isBalanceReadCurrent(read)) return;
-          this.balances[walletId] = balanceResult.balance;
-          this.walletInfos[walletId] = info;
-        } else if (wallet.type === WALLET_TYPES.LNBITS) {
-          let provider = this.providers[walletId];
-
-          if (!provider || !this.connectionStates[walletId]?.connected) {
-            await this.connectLNBitsWallet(walletId);
-            provider = this.providers[walletId];
-          }
-
-          const [balanceResult, info] = await Promise.all([
-            provider.getBalance(),
-            provider.getInfo()
-          ]);
-
-          if (!this.isBalanceReadCurrent(read)) return;
-          this.balances[walletId] = balanceResult.balance;
-          this.walletInfos[walletId] = info;
-        } else if (wallet.type === WALLET_TYPES.ARKADE) {
-          let provider = this.providers[walletId];
-
-          if (!provider || !this.connectionStates[walletId]?.connected) {
-            await this.connectArkadeWallet(walletId);
-            provider = this.providers[walletId];
-          }
-
-          const [balanceResult, info] = await Promise.all([
-            provider.getBalance(),
-            provider.getInfo()
-          ]);
-
-          if (!this.isBalanceReadCurrent(read)) return;
-          this.balances[walletId] = balanceResult.balance;
-          // Keep the unspendable remainder visible (see balanceDetails).
-          this.balanceDetails[walletId] = {
-            pending: Number(balanceResult.pending || 0),
-            recoverable: Number(balanceResult.recoverable || 0),
-          };
-          this.walletInfos[walletId] = info;
-
-          // Keep the locked-screen/offline fallback in step with HD receive
-          // rotation: the SDK advances the current address after funds
-          // arrive, and metadata.arkadeAddress is what renders before the
-          // provider reconnects.
-          if (info?.arkadeAddress) {
-            if (!wallet.metadata) wallet.metadata = {};
-            wallet.metadata.arkadeAddress = info.arkadeAddress;
-          }
-
-          // Reclaim swept/subdust VTXOs (renewal and boarding settlement are
-          // handled by the SDK's own background settlement). Throttled inside
-          // the provider, fire-and-forget so it never blocks the refresh.
-          provider.checkLiveness?.().catch((e) =>
-            console.warn('[arkade] recovery pass failed:', e?.message || e)
-          );
-        } else {
-          // NWC wallet
-          let nwc = this.connectionStates[walletId]?.nwcInstance;
-
-          if (!nwc || !this.connectionStates[walletId]?.connected) {
-            nwc = await this.connectWallet(walletId);
-          }
-
-          const [balanceResponse, info] = await Promise.all([
-            nwc.getBalance(),
-            nwc.getInfo(),
-          ]);
-
-          if (!this.isBalanceReadCurrent(read)) return;
-          this.balances[walletId] = balanceResponse.balance;
-          this.walletInfos[walletId] = info;
+        const info = await provider.getInfo();
+        if (!this.wallets.includes(wallet) || epochOf(walletId) !== epoch || this.getProvider(walletId) !== provider) return;
+        this.walletInfos[walletId] = info;
+        if (wallet.type === WALLET_TYPES.ARKADE) {
+          if (info?.arkadeAddress) wallet.metadata = { ...wallet.metadata, arkadeAddress: info.arkadeAddress };
+          provider.checkLiveness?.().catch(e => console.warn('[arkade] recovery pass failed:', e?.message || e));
         }
-
-        // Update last used
         wallet.lastUsed = Date.now();
-        const newBalance = this.balances[walletId];
-        this.noticeIncomingPayment(wallet, newBalance);
         await this.persistState();
-        if (!this.isBalanceReadCurrent(read)) return;
-
-        // Auto-withdraw check
-        if (newBalance > 0) {
-          const autoWithdrawStore = useAutoWithdrawStore();
-          autoWithdrawStore.checkAndExecute(walletId, newBalance, this);
-        }
-
       } catch (error) {
-        if (!this.isBalanceReadCurrent(read)) return;
-        console.error(`Refresh wallet ${walletId} failed:`, error);
-        this.connectionStates[walletId] = {
-          ...this.connectionStates[walletId],
-          connected: false,
-          error: error.message,
-        };
+        // An info failure does not invalidate an independently verified balance.
+        console.warn('Wallet info refresh failed:', error.message);
       }
     },
 
@@ -2493,12 +2768,15 @@ export const useWalletStore = defineStore('wallet', {
      */
     noticeIncomingPayment(wallet, balanceAfter) {
       if (!wallet?.id || !Number.isFinite(balanceAfter) || balanceAfter < 0) return;
+      // Spark receipts are detected per payment id by the lifecycle's
+      // receipt ledger (#295); a balance difference would double-announce
+      // them and miss a receive that overlaps a send.
+      if ((wallet.type || this.wallets?.find?.((w) => w.id === wallet.id)?.type) === WALLET_TYPES.SPARK) return;
 
       // The previous figure is what THIS method last saw for the wallet, not
-      // whatever the caller had on screen: the page's balance tick and this
-      // store's refresh both report here, so one map is what keeps them from
-      // announcing the same payment twice, and a wallet switch that resets
-      // the on-screen balance to 0 cannot read as "you received everything".
+      // whatever a caller had on screen. Shared refreshes report here, so
+      // one map deduplicates notices and a wallet switch cannot read as
+      // "you received everything".
       // The first reading of a session only seeds the map.
       const previous = observedBalance.get(wallet.id);
       observedBalance.set(wallet.id, balanceAfter);
@@ -2795,7 +3073,10 @@ export const useWalletStore = defineStore('wallet', {
       this.wallets = [];
       this.activeWalletId = null;
       this.connectionStates = {};
-      this.balances = {};
+      for (const id of Object.keys(this.balanceStates || {})) forgetSparkWallet?.(id);
+      this.balanceStates = {};
+      this.sparkHealthStates = {};
+      this.pendingDepositsByWallet = {};
       this.walletInfos = {};
       this.providers = {};
       this.hasBackedUp = false;
@@ -2820,7 +3101,7 @@ export const useWalletStore = defineStore('wallet', {
         await this.disconnectWallet(wallet.id);
         // Clean up state for this wallet
         delete this.connectionStates[wallet.id];
-        delete this.balances[wallet.id];
+        this.forgetBalance(wallet.id);
         delete this.walletInfos[wallet.id];
         delete this.providers[wallet.id];
       }
@@ -2848,7 +3129,7 @@ export const useWalletStore = defineStore('wallet', {
         await this.disconnectWallet(wallet.id);
         // Clean up state for this wallet
         delete this.connectionStates[wallet.id];
-        delete this.balances[wallet.id];
+        this.forgetBalance(wallet.id);
         delete this.walletInfos[wallet.id];
         delete this.providers[wallet.id];
       }
@@ -3046,6 +3327,8 @@ export const useWalletStore = defineStore('wallet', {
       // that can fail with transport errors under flaky network conditions.
       let paymentResult;
       let invoice;
+      // A direct Spark-to-Spark transfer exposes no receiving invoice hash,
+      // so its receipt cannot be identified and is not suppressed.
       if (fromType === 'spark' && toType === 'spark') {
         try {
           const sparkAddress = await toProvider.getSparkAddress();
@@ -3084,6 +3367,14 @@ export const useWalletStore = defineStore('wallet', {
           throw new Error('Failed to create invoice from destination wallet');
         }
 
+        if (toType === 'spark') {
+          // The receiving half will settle this invoice: identify that
+          // receipt by its payment hash so it is not announced as income.
+          try {
+            this.noteInternalTransfer(toWalletId, new Invoice({ pr: String(invoice) }).paymentHash || null);
+          } catch { /* unidentified: not suppressed */ }
+        }
+
         try {
           if (fromType === 'spark' || fromType === 'lnbits' || fromType === 'arkade') {
             // Spark, LNBits and Arkade all use payInvoice({ invoice }). For
@@ -3105,13 +3396,7 @@ export const useWalletStore = defineStore('wallet', {
         this.refreshWalletData(toWalletId)
       ]);
 
-      // A transfer between two Spark wallets has to connect both for the
-      // duration of the transfer (ensureWalletConnectedForTransfer). Restore
-      // the single-live-connection invariant afterwards so the non-active
-      // wallet doesn't linger and degrade the active one's session.
-      if (fromType === 'spark' && toType === 'spark') {
-        await this.connectAllSparkWallets();
-      }
+      // Both Spark wallets stay connected after a transfer (#285).
 
       // The source payment ID is already known: stamp it now so a direct
       // details link has its transfer identity without opening History first.
@@ -3172,9 +3457,9 @@ export const useWalletStore = defineStore('wallet', {
 
         if (rates && fiatRatesService.areRatesAvailable()) {
           // Keyed by lowercase code. Every selectable currency gets an
-          // entry so a rate the upstream failed to deliver reads as 0.
+          // entry; keep a previously known rate if the response omits it.
           this.exchangeRates = Object.fromEntries(
-            SELECTABLE_FIAT_CURRENCIES.map((code) => [code.toLowerCase(), rates[code] || 0])
+            SELECTABLE_FIAT_CURRENCIES.map((code) => [code.toLowerCase(), rates[code] || this.exchangeRates[code.toLowerCase()] || 0])
           );
           this.exchangeRatesAvailable = true;
           this.exchangeRatesLastUpdate = new Date().toISOString();
@@ -3317,6 +3602,7 @@ export const useWalletStore = defineStore('wallet', {
 
         // Save new format
         const stateToSave = {
+          balanceSchemaVersion: BALANCE_SCHEMA_VERSION,
           wallets: this.wallets,
           activeWalletId: this.activeWalletId,
           preferredFiatCurrency: this.preferredFiatCurrency,
@@ -3375,6 +3661,12 @@ export const useWalletStore = defineStore('wallet', {
      * Clear all wallet data
      */
     clearAll() {
+      // Everything in flight belongs to wallets that are about to vanish.
+      for (const wallet of this.wallets) {
+        this._bumpWalletEpoch(wallet.id);
+        if (wallet.type === WALLET_TYPES.SPARK) forgetSparkWallet?.(wallet.id);
+      }
+      if (this._persistTimer) { clearTimeout(this._persistTimer); this._persistTimer = null; }
       // Close all connections first
       Object.values(this.connectionStates).forEach((state) => {
         if (state?.nwcInstance?.close) {
@@ -3389,7 +3681,7 @@ export const useWalletStore = defineStore('wallet', {
       // Disconnect all Spark providers
       Object.values(this.providers).forEach((provider) => {
         try {
-          provider.disconnect();
+          Promise.resolve(provider.disconnect()).catch(() => {});
         } catch (e) {
           // Ignore errors
         }
@@ -3418,6 +3710,7 @@ export const useWalletStore = defineStore('wallet', {
     },
 
     async disableKiosk() {
+      this.pendingDeepLink = null;
       this.kioskEnabled = false;
       this.kioskPin = '';
       this.kioskOwnerAccess = false;
@@ -3431,6 +3724,7 @@ export const useWalletStore = defineStore('wallet', {
 
     unlockToOwnerMode(pin) {
       if (pin === this.kioskPin) {
+        if (this.pendingDeepLink?.target === 'kiosk') this.pendingDeepLink = null;
         this.kioskOwnerAccess = true;
         return true;
       }
@@ -3438,10 +3732,12 @@ export const useWalletStore = defineStore('wallet', {
     },
 
     forceUnlockKiosk() {
+      this.pendingDeepLink = null;
       this.kioskOwnerAccess = true;
     },
 
     lockToKioskMode() {
+      this.pendingDeepLink = null;
       this.kioskOwnerAccess = false;
     },
 
@@ -3455,6 +3751,7 @@ export const useWalletStore = defineStore('wallet', {
     },
 
     async activateKioskMode() {
+      this.pendingDeepLink = null;
       this.kioskOwnerAccess = false;
       await this.persistState();
     },

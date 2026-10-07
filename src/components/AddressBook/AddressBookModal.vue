@@ -274,6 +274,11 @@ export default {
       type: Object,
       default: null
     },
+    // A creation draft, never an entry: prefill must not select edit mode.
+    initialAddress: {
+      type: String,
+      default: ''
+    },
     /**
      * Which add-mode tab to land on when the sheet opens. Defaults to
      * 'manual' (see the tab-order comment above) — callers that want a
@@ -422,7 +427,7 @@ export default {
       } else {
         this.formData = {
           name: '',
-          address: '',
+          address: detectType(this.initialAddress) ? this.initialAddress.trim() : '',
           notes: ''
         }
       }
@@ -445,8 +450,8 @@ export default {
      * the list refreshes and the sheet dismisses with the same
      * `saved` semantics the manual flow uses.
      */
-    onChildSaved() {
-      this.$emit('saved')
+    onChildSaved(entry) {
+      this.$emit('saved', entry)
       this.closeModal()
     },
 
@@ -504,21 +509,22 @@ export default {
           }
         }
 
+        let savedEntry
         if (this.isEditing) {
-          await this.updateEntry(this.entry.id, entryData)
+          savedEntry = await this.updateEntry(this.entry.id, entryData)
           this.$q.notify({
             type: 'positive',
             message: this.$t('Contact saved'),
           })
         } else {
-          await this.addEntry(entryData)
+          savedEntry = await this.addEntry(entryData)
           this.$q.notify({
             type: 'positive',
             message: this.$t('Contact added'),
           })
         }
 
-        this.$emit('saved')
+        this.$emit('saved', savedEntry)
         this.closeModal()
       } catch (error) {
         const errorMessage = this.getErrorMessage(error)

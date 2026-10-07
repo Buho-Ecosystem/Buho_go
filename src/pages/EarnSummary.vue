@@ -224,7 +224,7 @@
 </template>
 
 <script>
-import { useEarnStore } from '../stores/earn'
+import { useEarnStore, isPayoutsPaused } from '../stores/earn'
 import { useWalletStore } from '../stores/wallet'
 import { findEarnPayoutWallet, getEarnPayoutWallets } from '../utils/earnWallets'
 import EarnBottomNav from '../components/EarnBottomNav.vue'
@@ -266,6 +266,15 @@ export default {
       this.showPayoutWalletPicker = false
     },
 
+    /** The reward wallet cannot pay right now; the earned sats stay saved. */
+    notifyPayoutsPaused() {
+      this.$q.notify({
+        type: 'warning',
+        timeout: 6000,
+        message: this.$t('Reward payouts are paused for now. Your earned sats are saved and you can claim them later.'),
+      })
+    },
+
     async claimSats() {
       this.isClaiming = true
       try {
@@ -290,6 +299,8 @@ export default {
             type: 'warning',
             message: this.$t('You have already received the maximum reward.'),
           })
+        } else if (isPayoutsPaused(result.error)) {
+          this.notifyPayoutsPaused()
         } else {
           // No exception was raised; the store returned a structured failure.
           // Prefer the original coded error when available, otherwise provide
@@ -340,6 +351,8 @@ export default {
             type: 'warning',
             message: this.$t('You have already received the maximum reward.'),
           })
+        } else if (isPayoutsPaused(result.error)) {
+          this.notifyPayoutsPaused()
         } else {
           this.walletStore.showPaymentError(result.cause || new Error(`bonus claim failed: ${result.error || 'unknown'}`), {
             context: 'earn',

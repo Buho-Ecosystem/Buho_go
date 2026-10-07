@@ -96,32 +96,22 @@ const W = {
   nwc: { id: 'nw', name: 'Alby', type: 'nwc' },
 }
 
-// ── the exclusivity rule ───────────────────────────────────────────────────
+// ── Spark wallets coexist (#285) ───────────────────────────────────────────
 
-await test('a second Spark wallet is opened only after the first is closed', async () => {
+await test('a second Spark wallet opens without closing the first, and stays open', async () => {
   const store = fakeStore([W.sparkA, W.sparkB], 'sA')
+  store.connectSparkWallet = async (id) => { store.log.push(`connect:${id}`); store.providers[id] = { getTransactions: async () => [] } }
   const c = createReportConnector(store, { createProvider: fakeOwnProvider([]) })
 
   await c.connect(W.sparkA)   // already live, must cost nothing
   await c.connect(W.sparkB)
-
-  assert.deepEqual(store.log, ['disconnect:sA', 'connect:sB'])
-  assert.equal(Object.keys(store.providers).length, 1, 'never two Spark providers at once')
-})
-
-await test('the wallet the user was on comes back', async () => {
-  const store = fakeStore([W.sparkA, W.sparkB], 'sA')
-  const c = createReportConnector(store, { createProvider: fakeOwnProvider([]) })
-
-  await c.connect(W.sparkB)
   await c.restore()
 
-  assert.equal(store.log.at(-1), 'restore')
-  assert.ok(store.providers.sA, 'the active wallet is live again')
-  assert.ok(!store.providers.sB, 'the one we borrowed is not')
+  assert.deepEqual(store.log, ['connect:sB'], 'nothing torn down, nothing re-asserted')
+  assert.ok(store.providers.sA && store.providers.sB, 'both Spark wallets live afterwards')
 })
 
-await test('restore does not reconnect Spark when Spark was never moved', async () => {
+await test('restore closes only the non-Spark wallets it opened', async () => {
   const store = fakeStore([W.sparkA, W.lnbits], 'sA')
   const c = createReportConnector(store, { createProvider: fakeOwnProvider([]) })
 
@@ -130,15 +120,6 @@ await test('restore does not reconnect Spark when Spark was never moved', async 
 
   assert.ok(!store.log.includes('restore'), 'no reconnect the user did not need')
   assert.ok(store.providers.sA, 'the active Spark wallet was never touched')
-})
-
-await test('restore survives a store that throws', async () => {
-  const store = fakeStore([W.sparkA, W.sparkB], 'sA')
-  store.connectAllSparkWallets = async () => { throw new Error('sdk down') }
-  const c = createReportConnector(store, { createProvider: fakeOwnProvider([]) })
-
-  await c.connect(W.sparkB)
-  await c.restore() // must not reject: the report is already written
 })
 
 // ── not paying for what is already open ────────────────────────────────────
@@ -258,19 +239,16 @@ await test('restore can be called twice without closing anything twice', async (
 
 // ── the Spark failure path, which is where restore matters most ────────────
 
-await test('a Spark wallet that will not open still hands the user theirs back', async () => {
-  // The live Spark provider has already been torn down by the time the open
-  // fails, so without a restore the user is left on no Spark wallet at all.
+await test('a Spark wallet that will not open leaves the user on theirs', async () => {
+  // Nothing is torn down before the open, so a failed open costs nothing.
   const broken = { ...W.sparkB, broken: true }
   const store = fakeStore([W.sparkA, broken], 'sA')
   const c = createReportConnector(store, { createProvider: fakeOwnProvider([]) })
 
   await assert.rejects(() => c.connect(broken))
-  assert.ok(!store.providers.sA, 'torn down, as the exclusivity rule requires')
-
+  assert.ok(store.providers.sA, 'the active Spark wallet was never closed')
   await c.restore()
-  assert.equal(store.log.at(-1), 'restore')
-  assert.ok(store.providers.sA, 'the user is back on their own wallet')
+  assert.ok(store.providers.sA)
 })
 
 console.log(`\n  ${passed} passed, ${failed} failed`)

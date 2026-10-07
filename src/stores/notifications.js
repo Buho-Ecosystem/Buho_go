@@ -142,9 +142,14 @@ export const useNotificationsStore = defineStore('notifications', {
      * Post a notification if the user asked for them. Copy comes in already
      * translated — this store decides *whether*, never *what*.
      */
-    async notifyIfEnabled({ title, body }) {
+    /**
+     * `force` posts even while the app is visible; the receipt ledger uses
+     * it for a payment that settled while the app was hidden and was only
+     * caught up after the user returned (services/paymentReceipts.js).
+     */
+    async notifyIfEnabled({ title, body, force = false }) {
       if (!this.canNotify) return false
-      return notify({ title, body })
+      return notify({ title, body, force })
     },
   },
 })

@@ -4,17 +4,18 @@
  * Coverage focus:
  *   - bolt11 route choice (embedded-spark rail vs Lightning) mirrors the
  *     cheapest-or-preferred rule the send path enforces the fee cap against
- *   - claim-error triage: an already-running/already-claimed claim is a
- *     race treated as success+processing (the claimed-registry must still
+ *   - claim-error triage: an already-claimed claim is a race treated as
+ *     success+processing; a claim lock held elsewhere is NOT (retry) (the claimed-registry must still
  *     record the txid); too-small comes from the "not enough to cover"
  *     wording, never from a raw `fee` match
  *   - deposit classification reproduces the app's claim thresholds
  *     (MAX_FEE_SATS 3000, MAX_FEE_RATIO 0.05) and category names verbatim
  *   - withdrawal status synthesis: only three SDK statuses exist;
  *     'broadcasting' = pending + txid and is terminal-for-UX
- *   - early (0-conf) claim outcome: the SDK resolves an ACCEPTED early
- *     claim with no payment (it settles asynchronously) and throws on a
- *     decline, so a resolve is never treated as a refusal
+ *   - claim outcome (SDK 0.26): settled/submitted are claims; deferred and
+ *     unrecognised answers never are, so nothing marks them claimed
+ *   - SDK deposit records: merged with the explorer list, and the only
+ *     proof that lets a wrong claimed mark be released
  *   - the wait leg of a claim quote keeps its estimate flag
  *
  * Run directly with Node:
@@ -27,7 +28,11 @@ import {
   claimErrorKind,
   classifyFromMatureQuote,
   withdrawalStatusFromPayment,
-  instantClaimOutcome,
+  claimDepositOutcome,
+  deferredClaimError,
+  sdkDepositClaimed,
+  mergePendingDeposits,
+  sdkProvesUnclaimed,
   waitQuoteFromMature,
 } from '../../utils/breezPayments.js';
 
@@ -89,7 +94,10 @@ test('no embedded spark rail: lightning regardless of preference', () => {
 // --- claim-error triage --------------------------------------------------
 
 test('already-running/claimed variants are a race, not a failure', () => {
-  assert.equal(claimErrorKind('Deposit claim already in progress: abc'), 'processing');
+  // The SDK's own (0-sat capped) sync attempt holds this lock and fails:
+  // never a success, or the deposit is hidden while still unclaimed.
+  assert.equal(claimErrorKind('Deposit claim already in progress: abc'), 'in_progress');
+  assert.equal(claimErrorKind('Static deposit has already been claimed'), 'processing');
   assert.equal(claimErrorKind('utxo already claimed'), 'processing');
   assert.equal(claimErrorKind('TRANSFER_LOCKED by concurrent stream'), 'processing');
   assert.equal(claimErrorKind('leaf is locked'), 'processing');
@@ -208,16 +216,74 @@ test('failed maps to failed; unknown payment reads as pending', () => {
 
 // --- early (0-conf) claim outcome ----------------------------------------
 
-test('an accepted early claim resolves with no payment and is NOT a refusal', () => {
-  assert.deepEqual(instantClaimOutcome({ payment: undefined }), { claimId: null, settled: false });
-  assert.deepEqual(instantClaimOutcome({}), { claimId: null, settled: false });
+test('settled and submitted outcomes are claims', () => {
+  const payment = { id: 'pay_1', status: 'completed' };
+  assert.deepEqual(claimDepositOutcome({ outcome: { type: 'settled', payment } }),
+    { status: 'settled', payment, claimId: 'pay_1', reason: null });
+  assert.deepEqual(claimDepositOutcome({ outcome: { type: 'submitted' } }),
+    { status: 'submitted', payment: null, claimId: null, reason: null });
 });
 
-test('a deposit that matured meanwhile settles in the same call', () => {
-  assert.deepEqual(
-    instantClaimOutcome({ payment: { id: 'pay_1', status: 'completed' } }),
-    { claimId: 'pay_1', settled: true }
-  );
+test('a deferred or unrecognised outcome is never a claim', () => {
+  const reason = { type: 'maxFeeExceeded', requiredFeeSats: 900, maxFeeSats: 500 };
+  assert.equal(claimDepositOutcome({ outcome: { type: 'deferred', reason } }).status, 'deferred');
+  assert.equal(claimDepositOutcome({ outcome: { type: 'deferred', reason } }).reason, reason);
+  // The pre-0.26 shape and empty answers do not authorize a claimed mark.
+  assert.equal(claimDepositOutcome({}).status, 'deferred');
+  assert.equal(claimDepositOutcome(undefined).status, 'deferred');
+  const err = deferredClaimError(reason);
+  assert.equal(err.code, 'DEPOSIT_CLAIM_DEFERRED');
+  assert.match(err.message, /900 sats exceeds 500 sats/);
+});
+
+// --- SDK deposit records ---------------------------------------------------
+
+const row = (over = {}) => ({ txid: 'tx1', vout: 0, amountSats: 132516, isMature: true, ...over });
+const failedClaim = { claimError: { type: 'maxDepositClaimFeeExceeded', tx: 'tx1', vout: 0, requiredFeeSats: 200, requiredFeeRateSatPerVbyte: 2 } };
+
+test('an early claim in flight or reported claimed counts as claimed', () => {
+  assert.equal(sdkDepositClaimed(row({ instantClaimStatus: { type: 'submitted', claimId: 'c' } })), true);
+  assert.equal(sdkDepositClaimed(row({ instantClaimStatus: { type: 'claimed' } })), true);
+  assert.equal(sdkDepositClaimed(row({ instantClaimStatus: { type: 'declined' } })), false);
+  assert.equal(sdkDepositClaimed(row()), false);
+});
+
+test('merge annotates explorer deposits with the SDK record', () => {
+  const chain = [{ txId: 'tx1', outputIndex: 0, amount: 132516, confirmations: 900, confirmed: true }];
+  const [d] = mergePendingDeposits({ chain, sdkRows: [row(failedClaim)], requiredConfirmations: 3 });
+  assert.equal(d.confirmations, 900);
+  assert.deepEqual(d.sdk, { isMature: true, claimed: false, claimError: 'maxDepositClaimFeeExceeded', refunding: false });
+});
+
+test('merge adds deposits only the SDK knows (an older deposit address)', () => {
+  const merged = mergePendingDeposits({ chain: [], sdkRows: [row(failedClaim), row({ txid: 'tx2', isMature: false })], requiredConfirmations: 3 });
+  assert.deepEqual(merged.map(d => [d.txId, d.amount, d.confirmed, d.confirmations]),
+    [['tx1', 132516, true, 3], ['tx2', 132516, false, 0]]);
+});
+
+test('merge leaves out SDK-only deposits a claim or refund already has', () => {
+  const merged = mergePendingDeposits({
+    chain: null,
+    sdkRows: [row({ instantClaimStatus: { type: 'submitted', claimId: 'c' } }), row({ txid: 'tx3', refundTxId: 'r' })],
+    requiredConfirmations: 3,
+  });
+  assert.deepEqual(merged, []);
+});
+
+test('merge keeps the explorer list as-is when the SDK cannot be read', () => {
+  const chain = [{ txId: 'tx1', outputIndex: 0, amount: 1, confirmations: 0, confirmed: false }];
+  assert.deepEqual(mergePendingDeposits({ chain, sdkRows: null, requiredConfirmations: 3 }), chain);
+});
+
+test('only a mature, failed, unclaimed SDK record proves a claimed mark wrong', () => {
+  const merged = (r) => mergePendingDeposits({ chain: [], sdkRows: [r], requiredConfirmations: 3 })[0]
+    || mergePendingDeposits({ chain: [{ txId: r.txid, outputIndex: 0 }], sdkRows: [r], requiredConfirmations: 3 })[0];
+  assert.equal(sdkProvesUnclaimed(merged(row(failedClaim))), true);
+  assert.equal(sdkProvesUnclaimed(merged(row())), false, 'no failed attempt recorded');
+  assert.equal(sdkProvesUnclaimed(merged(row({ ...failedClaim, isMature: false }))), false, 'immature');
+  assert.equal(sdkProvesUnclaimed(merged(row({ ...failedClaim, instantClaimStatus: { type: 'claimed' } }))), false, 'claimed');
+  assert.equal(sdkProvesUnclaimed(merged(row({ ...failedClaim, refundTxId: 'r' }))), false, 'refunding');
+  assert.equal(sdkProvesUnclaimed({ txId: 'tx1', confirmed: true }), false, 'explorer only');
 });
 
 // --- wait leg of a claim quote -------------------------------------------

@@ -251,14 +251,33 @@
                 :class="$q.dark.isActive ? 'amount-number-dark' : 'amount-number-light'"
                 :aria-label="$t('Balance hidden')"
               >••••</span>
+              <!-- Nothing known for this wallet yet: a placeholder, never a
+                   0 that reads as an empty wallet (#293). -->
+              <span
+                v-else-if="activeBalanceState && !activeBalanceState.known"
+                class="amount-number"
+                :class="$q.dark.isActive ? 'amount-number-dark' : 'amount-number-light'"
+                :aria-label="$t('Balance not loaded yet')"
+              ><span class="balance-placeholder" aria-hidden="true" /></span>
+              <!-- No rate for the chosen currency: never a 0,00 that reads
+                   as an empty wallet. -->
+              <span
+                v-else-if="fiatRateMissing"
+                class="amount-number"
+                :class="$q.dark.isActive ? 'amount-number-dark' : 'amount-number-light'"
+                :title="$t('Fiat rates unavailable')"
+                :aria-label="$t('Fiat rates unavailable')"
+              >{{ balancePrefix }}--</span>
               <NumberFlow
                 v-else
+                :key="walletStore.activeWalletId"
                 :value="balanceNumericValue"
                 :format="balanceNumberFormat"
                 :prefix="balancePrefix"
                 :suffix="balanceSuffix"
                 class="amount-number"
-                :class="$q.dark.isActive ? 'amount-number-dark' : 'amount-number-light'"
+                :class="[$q.dark.isActive ? 'amount-number-dark' : 'amount-number-light', { 'balance-stale': activeBalanceOutdated }]"
+                :title="activeBalanceOutdated ? $t('Last known balance — not current') : null"
                 :spin-timing="{ duration: 750, easing: 'cubic-bezier(0.16, 1, 0.3, 1)' }"
                 :transform-timing="{ duration: 750, easing: 'cubic-bezier(0.16, 1, 0.3, 1)' }"
               />
@@ -586,12 +605,15 @@
                   </div>
                 </div>
                 <div
-                  v-balance-updating="refreshingWalletIds[wallet.id]"
+                  v-balance-updating="isWalletRefreshPending(wallet.id)"
                   class="switch-balance"
                   :class="$q.dark.isActive ? 'switch-balance-dark' : 'switch-balance-light'"
                 >
-                  <span v-if="refreshingWalletIds[wallet.id] && storeBalances[wallet.id] === undefined" class="balance-placeholder" aria-hidden="true" />
-                  <HiddenAmount v-else>{{ formatBalance(storeBalances[wallet.id] || 0) }}</HiddenAmount>
+                  <!-- Same canonical figure as Settings and the standalone
+                       switcher: a known value (stale ones marked), else a
+                       placeholder — never an invented 0. -->
+                  <span v-if="!walletStore.getDisplayBalance(wallet.id).known" class="balance-placeholder" :aria-label="$t('Balance not loaded yet')" />
+                  <HiddenAmount v-else :class="{ 'balance-stale': walletStore.getDisplayBalance(wallet.id).outdated }">{{ formatBalance(walletStore.getDisplayBalance(wallet.id).balance) }}</HiddenAmount>
                 </div>
               </div>
 
@@ -687,7 +709,7 @@
         <OnchainFeePanel
           :amount-sats="sendSheetAmountSats"
           :address="l1DestinationAddress"
-          :available-balance="walletState.balance"
+          :available-balance="activeCanonicalBalance ?? 0"
           :disabled="isSendingPayment"
           @update:fee="l1Fee = $event"
           @use-max="$refs.sendSheetRef?.setAmountSats($event)"
@@ -726,31 +748,7 @@
       @closed="onWithdrawSuccessClosed"
     />
 
-    <!--
-      Bolt Card PIN dialog — LUD-XX `pinLimit` gate.
-      Mounted at the wallet page level so the LNURL-withdraw flow
-      (NFC tap, QR scan, pasted lnurlw://) all funnel through the
-      same authorization surface. The dialog shows the invoice
-      amount as the spec requires, stays open through retries on
-      "Invalid PIN", and closes on success or "Card blocked".
-    -->
-    <PinEntryDialog
-      v-model="showBoltCardPinDialog"
-      :title="$t('Bolt Card PIN')"
-      :subtitle="$t('Enter your 4-digit PIN to confirm this withdrawal')"
-      :amount-display="boltCardPinAmountDisplay"
-      :fiat-amount="boltCardPinFiatAmount"
-      :pin-length="4"
-      mode="enter"
-      :show-back-button="true"
-      :error-message="boltCardPinError"
-      :loading="boltCardPinValidating"
-      :loading-text="$t('Authorizing…')"
-      :timeout-seconds="60"
-      @pin-complete="onBoltCardPinComplete"
-      @cancel="onBoltCardPinCancel"
-      @timeout="onBoltCardPinTimeout"
-    />
+    <WithdrawAuthorization ref="withdrawAuthorization" />
 
     <!--
       Send Success Screen.
@@ -880,7 +878,8 @@
 <script>
 import { offerAddressRequest } from '../services/addressRequestIntake.js';
 import { assertPaymentInput } from '../utils/lud23.js';
-import { parseFastWithdrawRequest, withdrawInfo } from '../utils/lnurlWithdraw.js';
+import { withdrawInfo, withdrawRecipient } from '../utils/lnurlWithdraw.js';
+import { fetchLnurlRequest, safeWithdrawError } from '../services/lnurlWithdraw.js';
 import { NostrWebLNProvider } from "@getalby/sdk";
 import {LightningPaymentService, resolveLUD17URL} from '../utils/lightning.js';
 import {parseSuccessAction, resolveSuccessAction} from '../utils/successAction.js';
@@ -913,6 +912,7 @@ import {resolveNostrLightningTarget} from '../services/nostrPaymentTarget';
 import {Invoice} from '@getalby/lightning-tools';
 import {parseLightningInvoice} from '../utils/lightningInvoice.js';
 import {fiatRatesService} from '../utils/fiatRates.js';
+import {fiatSymbol} from '../utils/fiatCurrencies.js';
 import {formatMainBalance as formatMainBalanceUtil, formatAmount} from '../utils/amountFormatting.js';
 import {haptics} from '../utils/haptics.js';
 import {isNfcAvailable} from '../utils/nfc.js';
@@ -921,7 +921,7 @@ import HiddenAmount from '../components/HiddenAmount.vue';
 import balanceUpdating from '../directives/balanceUpdating.js';
 import {createPaymentMonitor, PaymentStatus, checkNWCPaymentStatus} from '../utils/paymentMonitor.js';
 import PaymentConfirmation from '../components/PaymentConfirmation.vue';
-import PinEntryDialog from '../components/PinEntryDialog.vue';
+import WithdrawAuthorization from '../components/WithdrawAuthorization.vue';
 import {useWalletStore} from '../stores/wallet';
 import {useUpdateStore} from '../stores/update';
 import {useAddressBookStore} from '../stores/addressBook';
@@ -962,6 +962,7 @@ import {
 import { useBitcoinDepositsStore } from '../stores/bitcoinDeposits';
 import {SA_RETAIL_SOURCE, parseZARFromMetadata} from '../utils/merchantQR.js';
 import {lookupBrantaVerification, BRANTA_LOOKUP_TIMEOUT_MS} from '../utils/branta.js';
+import { readCachedTransactions, mergeCachedTransactions } from '../utils/txCache.js';
 
 function emptySaveContactData() {
   return {
@@ -1000,7 +1001,7 @@ export default {
     ClipboardSuggestion,
     IdentityAuthDialog,
     ContactAvatar,
-    PinEntryDialog,
+    WithdrawAuthorization,
   },
   directives: { balanceUpdating },
   setup() {
@@ -1038,13 +1039,8 @@ export default {
       // Spark tab switching
       sparkTabSwitching: false,
 
-      // Wallet switcher: per-wallet balance loading
+      // Wallet switcher: per-wallet refresh start time (ms), 0 when idle
       refreshingWalletIds: {},
-
-      // Home balance: the wallet whose balance has been read this session,
-      // and the refreshes the user is waiting on (see balanceUpdating).
-      balanceReadFor: null,
-      balanceRefreshes: 0,
 
       // PIN migration (one-time, for existing users)
       showMigrationDialog: false,
@@ -1052,18 +1048,6 @@ export default {
       migrationError: '',
       isMigrating: false,
 
-      walletState: {
-        balance: 0,
-        connectedWallets: [],
-        activeWalletId: null,
-        currency: 'sats',
-        currencies: ['sats', 'btc', 'usd'],
-        exchangeRates: {},
-        lastRateUpdate: null,
-        preferredFiatCurrency: 'USD',
-        denominationCurrency: 'bitcoin',
-        displayMode: 'bitcoin'
-      },
       // Last transaction preview shown above the History link.
       // `null` before the first fetch completes (we render a skeleton
       // instead while `isLoadingLastTransaction` is true). Populated
@@ -1154,22 +1138,6 @@ export default {
       lnurlWithdrawStatus: 'idle',
       lnurlWithdrawError: null,
       lnurlWithdrawInvoice: null,
-      // Bolt Card PIN dialog (LUD-XX pinLimit). The dialog stays open
-      // across "Invalid PIN" retries — only success, "Card blocked",
-      // an HTTPS guard failure, or a user cancel close it.
-      //  - amountDisplay/fiat: shown above the lock icon so the user
-      //    sees what they're authorizing (spec requires the invoice
-      //    amount on the PIN screen).
-      //  - validating: drives the dialog's loading state while the
-      //    callback round-trip is in flight.
-      //  - resolve: the awaited resolver for the current PIN attempt.
-      //    Replaced on each attempt; never carries over across closes.
-      showBoltCardPinDialog: false,
-      boltCardPinError: '',
-      boltCardPinResolve: null,
-      boltCardPinAmountDisplay: '',
-      boltCardPinFiatAmount: '',
-      boltCardPinValidating: false,
       withdrawPaymentMonitor: null,
       withdrawSparkUnsubscribe: null,
       showWithdrawSuccess: false,
@@ -1223,9 +1191,8 @@ export default {
     },
 
     activeWallet() {
-      return this.walletState.connectedWallets.find(
-        w => w.id === this.walletState.activeWalletId
-      ) || null;
+      const wallet = this.walletStore.activeWallet;
+      return wallet ? { ...wallet, nwcString: wallet.nwcUrl } : null;
     },
 
     /**
@@ -1502,7 +1469,7 @@ export default {
       if (!this.lastTransaction) return '';
       const sats = this.lastTxDisplayAmountSats;
       if (sats === 0) return '';
-      const currency = this.walletState.preferredFiatCurrency || 'USD';
+      const currency = this.walletStore.preferredFiatCurrency || 'USD';
       const fiat = fiatRatesService.convertSatsToFiatSync(sats, currency);
       if (fiat === null || fiat === undefined) return '';
       // "about $0.02" matches the reference mock's softer tone vs an
@@ -2000,20 +1967,7 @@ export default {
       const p = this.pendingPayment;
       if (!p || p.type !== 'lnurl_withdraw') return null;
 
-      // A recognized Bolt Card gets its own mark + clean name instead of the
-      // generic blue ↓ and the technical "Boltcard (refund address …)" text.
-      const isBoltcard = this.isBoltcardWithdraw(p);
-      let serviceHost = '';
-      try { serviceHost = new URL(p.callback).host; } catch { /* legacy malformed metadata */ }
-      const recipient = {
-        name: isBoltcard ? 'Bolt Card' : (p.defaultDescription || this.$t('LNURL Withdrawal')),
-        initial: '↓',
-        color: '#3B82F6',
-        addressType: 'lnurl',
-        viaOverride: this.$t('Lightning · Withdrawal'),
-        address: serviceHost,
-        ...(isBoltcard ? { logoUrl: '/Social_Wallet_logos/BoltCard.png' } : {}),
-      };
+      const recipient = withdrawRecipient(p, this.$t.bind(this));
 
       let amount;
       if (p.isFixedAmount) {
@@ -2099,24 +2053,42 @@ export default {
     },
 
     /**
-     * The home balance pulses while the active wallet's balance has not been
-     * read yet, and while a refresh the user is waiting on is under way. The
-     * routine 30 s tick stays quiet: its figure is already on screen.
+     * The home balance pulses only while nothing is known for the active
+     * wallet yet (the placeholder). A figure already on screen (saved last
+     * time, read locally, or verified) is refreshed in place, without a
+     * pulse or dimming: the balance reads as there at once, and a newer
+     * figure rolls in when the refresh lands.
      */
     balanceUpdating() {
-      return this.balanceReadFor !== this.walletStore.activeWalletId || this.balanceRefreshes > 0;
+      return !!this.activeBalanceState && !this.activeBalanceState.known;
+    },
+
+    /**
+     * Dim the figure only when it is known to be out of date: the last
+     * refresh failed. A value that is still being re-verified reads as
+     * current.
+     */
+    activeBalanceOutdated() {
+      const state = this.activeBalanceState;
+      return !!(state?.stale && state.error && !state.refreshing);
     },
 
     balanceNumericValue() {
-      const balance = this.walletState.balance || 0;
+      const balance = this.activeCanonicalBalance || 0;
       if (this.currentDisplayMode === 'fiat') {
         const btcAmount = balance / 100000000;
-        const rate = this.walletState.exchangeRates?.[this.walletState.preferredFiatCurrency?.toLowerCase()];
+        const rate = this.walletStore.exchangeRates?.[this.walletStore.preferredFiatCurrency?.toLowerCase()];
         if (!rate) return 0;
         return btcAmount * rate;
       }
       // BIP-177: display sats as whole integers (1 bitcoin = 1 sat)
       return balance;
+    },
+
+    fiatRateMissing() {
+      if (this.currentDisplayMode !== 'fiat') return false;
+      const rate = this.walletStore.exchangeRates?.[this.walletStore.preferredFiatCurrency?.toLowerCase()];
+      return !(rate > 0);
     },
 
     balanceNumberFormat() {
@@ -2129,8 +2101,7 @@ export default {
 
     balancePrefix() {
       if (this.currentDisplayMode === 'fiat') {
-        const symbols = { USD: '$', EUR: '€', GBP: '£', CAD: 'C$', CHF: 'CHF ', AUD: 'A$', JPY: '¥' };
-        return symbols[this.walletState.preferredFiatCurrency] || '';
+        return fiatSymbol(this.preferredFiatCurrency);
       }
       if (this.walletStore.useBip177Format) return '₿';
       return '';
@@ -2145,7 +2116,17 @@ export default {
       return this.walletStore.connectionStates || {};
     },
     preferredFiatCurrency() {
-      return (this.walletState.preferredFiatCurrency || 'USD').toUpperCase();
+      return (this.walletStore.preferredFiatCurrency || 'USD').toUpperCase();
+    },
+    /** Canonical state of the active wallet (known/stale/…), or null. */
+    activeBalanceState() {
+      const id = this.walletStore.activeWalletId;
+      return id && this.walletStore.balanceStateFor ? this.walletStore.balanceStateFor(id) : null;
+    },
+    /** The active wallet's canonical balance value (null when unknown). */
+    activeCanonicalBalance() {
+      const id = this.walletStore.activeWalletId;
+      return id ? (this.walletStore.balanceStates?.[id]?.value ?? null) : null;
     },
     /**
      * Sats amount to withdraw. Two read paths feed into this:
@@ -2224,7 +2205,7 @@ export default {
     this.$watch(
       () => this.walletStore.pendingDeepLink,
       (paymentData) => {
-        if (!paymentData) return;
+        if (!paymentData || paymentData.target === 'kiosk') return;
         this.walletStore.pendingDeepLink = null;
         // Dispatch once wallet initialization settles — a cold-start intent
         // can arrive before providers are connected, and the NWC/LNbits
@@ -2254,12 +2235,12 @@ export default {
     this.cancelBrantaLookup();
   },
   watch: {
-    'walletState.balance': {
-      handler() {
-        this.updateSecondaryValue();
-      },
+    activeCanonicalBalance: {
+      handler: 'updateSecondaryValue',
       immediate: true
     },
+    'walletStore.preferredFiatCurrency': 'updateSecondaryValue',
+    'walletStore.exchangeRates': 'updateSecondaryValue',
 
     /**
      * The Receive modal's "Redeem" button stashes the user's intended amount
@@ -2274,12 +2255,6 @@ export default {
       if (!open) this.pendingWithdrawTargetSats = null;
     },
 
-    'walletStore.activeWalletId'() {
-      this.bitcoinDepositRead++;
-      this.pendingBitcoinDeposits = [];
-      this.checkPendingBitcoinDeposits();
-    },
-
     /**
      * When any deposit-claim flow finishes (auto-claim here, or the
      * manual sheet inside L1BitcoinReceive) the wallet store bumps
@@ -2289,7 +2264,7 @@ export default {
      */
     'walletStore.depositsRefreshSignal'() {
       if (this.walletStore.lastDepositsRefreshWalletId !== this.walletStore.activeWalletId) return;
-      this.pendingBitcoinDeposits = this.pendingBitcoinDeposits.filter(d => !this.walletStore.isDepositClaimed(d.txId));
+      this.pendingBitcoinDeposits = this.pendingBitcoinDeposits.filter(d => !this.walletStore.isDepositClaimed(d.txId, d.outputIndex));
       this.checkPendingBitcoinDeposits();
       this.updateWalletBalance();
     },
@@ -2301,10 +2276,14 @@ export default {
      * Flip the skeleton back on briefly so the card feels responsive
      * to the switch rather than silently swapping its contents.
      */
-    'walletState.activeWalletId'(next, prev) {
+    'walletStore.activeWalletId'(next, prev) {
+      this.bitcoinDepositRead++;
+      this.pendingBitcoinDeposits = [];
+      this.checkPendingBitcoinDeposits();
       if (next === prev) return;
-      this.isLoadingLastTransaction = true;
-      this.lastTransaction = null;
+      // The new wallet's last known transaction paints at once; the read
+      // below replaces it.
+      this.showCachedLastTransaction(next);
       // `switchSparkTab` already awaits `loadLastTransaction` itself so
       // it can hold the tab-switch guard until data has actually
       // landed. Skipping here avoids a duplicate provider fetch when
@@ -2731,30 +2710,34 @@ export default {
       if (this.showWalletSwitcher) return; // Prevent double-open
       this.showWalletSwitcher = true;
 
-      // Refresh the wallets' balances; each one pulses while its refresh is
-      // under way, and a placeholder stands in for one never loaded.
-      //
-      // Only live-refresh the active wallet. Refreshing an INACTIVE Spark
-      // wallet would reconnect it (refreshWalletData auto-connects on a
-      // miss), creating a second live Spark connection that corrupts the
-      // active wallet's SDK session (the SDK shares one gRPC channel +
-      // a global auth cache across instances). That's exactly what made
-      // the active wallet show "not connected" when this sheet opened.
-      // Inactive wallets render their cached balance via getDisplayBalance.
-      const wallets = this.walletStore.wallets.filter(w =>
-        !(w.type === 'spark' && w.id !== this.walletStore.activeWalletId));
+      // Refresh every wallet's balance; each one pulses while its refresh
+      // is under way, and a placeholder stands in for one never loaded.
+      // Spark wallets all stay connected (#285), so both halves of the pair
+      // refresh through the lifecycle; other wallets through the store.
+      const wallets = this.walletStore.wallets;
+      const since = Date.now();
       for (const w of wallets) {
-        this.refreshingWalletIds = { ...this.refreshingWalletIds, [w.id]: true };
+        this.refreshingWalletIds = { ...this.refreshingWalletIds, [w.id]: since };
       }
 
       await Promise.allSettled(
         wallets.map(async (w) => {
           try {
-            await this.walletStore.refreshWalletData(w.id);
+            if (w.type === 'spark') await this.walletStore.reconcileSpark([w.id], 'user');
+            else await this.walletStore.refreshWalletData(w.id);
           } catch { /* ignore */ }
-          this.refreshingWalletIds = { ...this.refreshingWalletIds, [w.id]: false };
+          this.refreshingWalletIds = { ...this.refreshingWalletIds, [w.id]: 0 };
         })
       );
+    },
+
+    /**
+     * A switcher row pulses only while its refresh runs for a wallet with
+     * no figure yet; a known balance is updated in place.
+     */
+    isWalletRefreshPending(walletId) {
+      if (!this.refreshingWalletIds[walletId]) return false;
+      return !this.walletStore.getDisplayBalance(walletId).known;
     },
 
     /**
@@ -2810,21 +2793,6 @@ export default {
     // L1 Bitcoin Deposit Methods
     // ==========================================
 
-    /**
-     * Open receive modal with Bitcoin tab selected
-     */
-    /**
-     * Recognize a Bolt Card behind an LNURL-withdraw, so the Redeem sheet can
-     * show the Bolt Card mark instead of a generic ↓. Two signals:
-     *   - `pinLimit` is set only by Bolt Card issuers (LUD-XX), or
-     *   - LNbits' Boltcard extension names the withdraw "Boltcard (refund …)".
-     */
-    isBoltcardWithdraw(p) {
-      if (!p) return false;
-      if (p.pinLimit != null) return true;
-      return /bolt\s*card/i.test(p.defaultDescription || '');
-    },
-
     // One-line explainer for the NFC-ready badge.
     onNfcBadge() {
       this.$q.notify({
@@ -2859,12 +2827,13 @@ export default {
 
         const newDeposits = await provider.getPendingDeposits();
         if (!isCurrent()) return;
+        this.walletStore.reconcileDepositClaims(newDeposits);
 
         // An instantly-claimed deposit keeps showing in the SDK's pending
         // list until its confirmations catch up. Filter it everywhere so
         // no banner, chip, or handler ever acts on a UTXO we already swept.
         const unclaimed = newDeposits.filter(
-          (d) => !this.walletStore.isDepositClaimed(d.txId)
+          (d) => !this.walletStore.isDepositClaimed(d.txId, d.outputIndex)
         );
 
         this.pendingBitcoinDeposits = unclaimed;
@@ -2905,7 +2874,7 @@ export default {
      * Handle deposits updated from ReceiveModal
      */
     handleBitcoinDepositsUpdated(deposits) {
-      this.pendingBitcoinDeposits = deposits.filter(d => !this.walletStore.isDepositClaimed(d.txId));
+      this.pendingBitcoinDeposits = deposits.filter(d => !this.walletStore.isDepositClaimed(d.txId, d.outputIndex));
     },
 
     /**
@@ -3093,22 +3062,15 @@ export default {
 
       try {
         await this.walletStore.switchActiveWallet(walletId);
-        this.walletState.activeWalletId = walletId;
-        this.walletState.balance = this.storeBalances[walletId] || 0;
-        localStorage.setItem('buhoGO_wallet_state', JSON.stringify(this.walletState));
-
-        // Hold the guard until the post-switch data load actually
-        // settles. Previously we cleared it after `switchActiveWallet`
-        // returned but kicked off `updateWalletBalance()` as
-        // fire-and-forget, which let a second tap land while the SDK
-        // was still fetching the balance for the new context.
-        // `loadLastTransaction` is also driven by the
-        // `walletState.activeWalletId` watcher, which short-circuits
-        // while `sparkTabSwitching` is true to avoid a duplicate fetch.
-        await Promise.allSettled([
-          this.updateWalletBalance(),
-          this.loadLastTransaction()
-        ]);
+        // The guard covers the switch itself only. Both Spark accounts stay
+        // connected (#285) and the lifecycle coalesces their reconciles, so
+        // the refresh runs in the background: the saved balance and the
+        // cached last transaction are on screen at once, and the tabs are
+        // usable again instead of waiting for the sync, history catch-up
+        // and deposit discovery. `updateWalletBalance` also re-reads the
+        // last transaction (the activeWalletId watcher skips it while
+        // `sparkTabSwitching` is true).
+        this.updateWalletBalance();
       } catch (error) {
         console.error('Error switching Spark tab:', error);
         this.walletStore.showPaymentError(error, {
@@ -3128,19 +3090,12 @@ export default {
       }
 
       try {
-        // Use the wallet store to switch - this keeps Settings in sync
-        await this.walletStore.switchActiveWallet(walletId);
-
-        // Also update local walletState to stay in sync
-        this.walletState.activeWalletId = walletId;
-
-        // Get the new active wallet's balance from the store
-        this.walletState.balance = this.storeBalances[walletId] || 0;
-
-        // Save state to localStorage
-        localStorage.setItem('buhoGO_wallet_state', JSON.stringify(this.walletState));
-
+        // Use the wallet store to switch - this keeps Settings in sync. The
+        // active wallet changes at once; the sheet closes onto its saved
+        // balance while a wallet that is not live yet connects.
+        const switching = this.walletStore.switchActiveWallet(walletId);
         this.showWalletSwitcher = false;
+        await switching;
 
         this.$q.notify({
           type: 'positive',
@@ -3225,10 +3180,15 @@ export default {
     },
     async initializeWallet() {
       try {
-        await this.loadWalletState();
-
-        // Initialize wallet store
-        await this.walletStore.initialize();
+        // Paint the home screen as soon as the saved wallets and balances
+        // are loaded. Connecting the wallets, fresh rates and the Spark sync
+        // continue behind it and update the figures in place.
+        const ready = this.walletStore.initialize();
+        await this.walletStore.whenHydrated();
+        this.showCachedLastTransaction(this.walletStore.activeWalletId);
+        this.showLoadingScreen = false;
+        await ready;
+        await this.updateWalletBalance();
 
         // Start L1 Bitcoin deposit polling for banner (after wallet store is ready)
         this.startBitcoinDepositPolling();
@@ -3246,6 +3206,13 @@ export default {
         console.error('Error initializing wallet:', error);
         this.showLoadingScreen = false;
       }
+    },
+
+    /** The wallet's last known transaction, before any provider read. */
+    showCachedLastTransaction(walletId) {
+      const cached = walletId ? readCachedTransactions(walletId)[0] || null : null;
+      this.lastTransaction = cached;
+      this.isLoadingLastTransaction = !cached;
     },
 
     async checkSparkWalletUnlock() {
@@ -3294,205 +3261,23 @@ export default {
       }
     },
 
-    async loadWalletState() {
-      const savedState = localStorage.getItem('buhoGO_wallet_state');
-      if (savedState) {
-        try {
-          const parsedState = JSON.parse(savedState);
-          this.walletState = {...this.walletState, ...parsedState};
-          await this.updateWalletBalance();
-        } catch (error) {
-          console.error('Failed to load wallet state:', error);
-        }
-      }
-    },
-
-    /**
-     * Refresh the active wallet's balance and the last-transaction preview.
-     *
-     * Called from the 30s periodic tick, after every send/receive, on wallet
-     * switch, and on app start. The balance-fetch logic branches per wallet
-     * type (Spark / LNbits / NWC) and each branch returns early after its
-     * own fetch — so the last-transaction refresh lives in `finally` to
-     * guarantee it runs for every wallet type, even when a branch throws.
-     */
-    /**
-     * The balance tick's one write. Reporting every reading to the wallet
-     * store is what lets it notice money that arrived while the app was in
-     * the background (every rail lands in this number every 30 s); the store
-     * keeps the previous figure itself and dedupes against its own refresh.
-     */
-    applyTickBalance(next, read) {
-      if (!this.walletStore.isBalanceReadCurrent(read)
-        || this.activeWallet?.id !== read.walletId
-        || !Number.isFinite(next) || next < 0) return false;
-      this.walletState.balance = next;
-      this.balanceReadFor = read.walletId;
-      this.walletStore.noticeIncomingPayment(this.activeWallet, next);
-      return true;
-    },
-
+    /** Refresh through the store; every screen reads the accepted result. */
     async updateWalletBalance(opts = {}) {
-      const activeWalletId = this.walletStore.activeWalletId;
-      if (!activeWalletId) return;
-      const read = this.walletStore.beginBalanceRead(activeWalletId);
-      // Every refresh but the routine tick is one the user is waiting on:
-      // the balance pulses until it lands.
-      const awaited = !opts.preferCached;
-      if (awaited) this.balanceRefreshes += 1;
+      const walletId = this.walletStore.activeWalletId;
+      if (!walletId) return;
+      // A refresh the user is waiting on also re-reads the last transaction
+      // right away: it is a local read for Spark and must not wait for the
+      // sync, history catch-up and deposit discovery behind the balance.
+      if (!opts.preferCached) this.loadLastTransaction();
       try {
-        if (this.showLoadingScreen) {
-          // still initializing
-        }
-
-        const awStore = useAutoWithdrawStore();
-
-        // The cached read is display-only by hard rule: it must never feed
-        // auto-withdraw (a money decision), so a wallet with auto-withdraw
-        // enabled keeps authoritative fetches even on the periodic tick.
-        const preferCached = Boolean(opts.preferCached)
-          && !awStore.getConfig(activeWalletId)?.enabled;
-
-        // Check if active wallet is Spark
         if (this.walletStore.isActiveWalletSpark) {
-          // Try to get connected provider, auto-reconnects if session PIN available
-          try {
-            const provider = await this.walletStore.ensureSparkConnected();
-            if (this.walletStore.activeWalletId !== activeWalletId) return;
-            let balanceResult = preferCached && typeof provider.getCachedBalance === 'function'
-              ? await provider.getCachedBalance()
-              : await provider.getBalance();
-            // The SDK cache starts empty until the event stream has synced;
-            // a cached zero while we are showing funds means "not warmed
-            // yet", not "empty wallet" — re-read authoritatively rather
-            // than flashing 0.
-            if (preferCached && balanceResult.balance === 0 && this.walletState.balance > 0) {
-              balanceResult = await provider.getBalance();
-            }
-            if (!this.applyTickBalance(balanceResult.balance, read)) return;
-            localStorage.setItem('buhoGO_wallet_state', JSON.stringify(this.walletState));
-            this.exitHealthTick++;
-
-            // Auto-withdraw check (never reachable from a cached read: an
-            // enabled config forces the authoritative branch above)
-            if (balanceResult.balance > 0 && activeWalletId) {
-              awStore.checkAndExecute(activeWalletId, balanceResult.balance, this.walletStore);
-            }
-          } catch (err) {
-            // Silently fail for background refresh - user will see locked state
-            // Don't spam console with expected "PIN required" messages
-            if (!err.message?.includes('PIN')) {
-              console.warn('Balance refresh skipped:', err.message);
-              // Self-heal a dropped Spark connection. The provider's
-              // isConnected flag stays true after an idle stream death on
-              // Android, so ensureSparkConnected hands back a stale provider
-              // and the wallet gets stuck showing "locked". A non-PIN failure
-              // means the wallet IS unlocked but its connection died — force a
-              // fresh reconnect so the next tick (or a user action) finds a
-              // live instance, instead of requiring a manual switch-and-back.
-              if (this.walletStore.activeWalletId === activeWalletId && this.walletStore.isBalanceReadCurrent(read)) {
-                try {
-                  // forceReinit: the cached SDK instance is alive-but-dead (its
-                  // stream dropped), so getOrCreateWallet would just hand the
-                  // same broken instance back. Force a clean teardown + rebuild.
-                  await this.walletStore.connectSparkWallet(activeWalletId, { forceReinit: true });
-                } catch (reconnectErr) {
-                  console.warn('Spark auto-reconnect failed:', reconnectErr.message);
-                  this.exitHealthTick++;
-                }
-              }
-            }
-          }
-          return;
+          // The existing Spark lifecycle owns its periodic reads and events.
+          if (!opts.preferCached) await this.walletStore.reconcileSpark([walletId], 'user');
+          this.exitHealthTick++;
+        } else {
+          await this.walletStore.refreshBalance(walletId);
         }
-
-        // Check if active wallet is LNbits
-        if (this.walletStore.isActiveWalletLNBits) {
-          try {
-            const provider = await this.walletStore.ensureLNBitsConnected();
-            if (this.walletStore.activeWalletId !== activeWalletId) return;
-            const balanceResult = await provider.getBalance();
-            if (!this.applyTickBalance(balanceResult.balance, read)) return;
-
-            // Update wallet in store
-            const activeWallet = this.walletState.connectedWallets.find(
-              w => w.id === this.walletState.activeWalletId
-            );
-            if (activeWallet) {
-              activeWallet.balance = balanceResult.balance;
-            }
-
-            localStorage.setItem('buhoGO_wallet_state', JSON.stringify(this.walletState));
-
-            // Auto-withdraw check
-            if (balanceResult.balance > 0 && activeWalletId) {
-              awStore.checkAndExecute(activeWalletId, balanceResult.balance, this.walletStore);
-            }
-          } catch (err) {
-            // Background refresh failures are non-fatal: cached balance
-            // stays visible and the next tick will retry. We log so issues
-            // are debuggable but don't surface a UI error for a transient
-            // blip.
-            console.warn('LNbits balance refresh failed:', err.message);
-          }
-          return;
-        }
-
-        // Arkade wallet flow (provider-based, like Spark/LNbits — never NWC)
-        if (this.walletStore.isActiveWalletArkade) {
-          try {
-            const provider = await this.walletStore.ensureArkadeConnected();
-            if (this.walletStore.activeWalletId !== activeWalletId) return;
-            const balanceResult = await provider.getBalance();
-            if (!this.applyTickBalance(balanceResult.balance, read)) return;
-
-            const activeWallet = this.walletState.connectedWallets.find(
-              w => w.id === this.walletState.activeWalletId
-            );
-            if (activeWallet) {
-              activeWallet.balance = balanceResult.balance;
-            }
-
-            localStorage.setItem('buhoGO_wallet_state', JSON.stringify(this.walletState));
-
-            if (balanceResult.balance > 0 && activeWalletId) {
-              awStore.checkAndExecute(activeWalletId, balanceResult.balance, this.walletStore);
-            }
-          } catch (err) {
-            console.warn('Arkade balance refresh failed:', err.message);
-          }
-          return;
-        }
-
-        // NWC wallet flow
-        const activeWallet = this.walletState.connectedWallets.find(
-          w => w.id === this.walletState.activeWalletId
-        );
-
-        if (activeWallet && activeWallet.nwcString) {
-          const nwc = new NostrWebLNProvider({
-            nostrWalletConnectUrl: activeWallet.nwcString,
-          });
-
-          await nwc.enable();
-          const balance = await nwc.getBalance();
-          if (!this.applyTickBalance(balance.balance, read)) return;
-          activeWallet.balance = balance.balance;
-
-          localStorage.setItem('buhoGO_wallet_state', JSON.stringify(this.walletState));
-
-          // Auto-withdraw check
-          if (balance.balance > 0 && activeWalletId) {
-            awStore.checkAndExecute(activeWalletId, balance.balance, this.walletStore);
-          }
-        }
-      } catch (error) {
-        console.error('Failed to update balance:', error);
       } finally {
-        if (awaited) this.balanceRefreshes -= 1;
-        // Runs for every wallet type, including the branches above that
-        // `return` early after their balance fetch. Fire-and-forget — any
-        // error inside is logged by loadLastTransaction itself.
         this.loadLastTransaction();
       }
     },
@@ -3519,7 +3304,10 @@ export default {
 
       try {
         const provider = this.walletStore.providers?.[walletId];
-        if (!provider || typeof provider.getTransactions !== 'function') {
+        // Not connected yet: keep the cached card; the read after the
+        // connection replaces it.
+        if (!provider) return;
+        if (typeof provider.getTransactions !== 'function') {
           this.lastTransaction = null;
           return;
         }
@@ -3552,18 +3340,21 @@ export default {
         // Capture the BTC rate for just-settled txs while it still
         // reflects the settlement moment (no-op for older rows).
         try {
-          const currency = this.walletState.preferredFiatCurrency || 'USD';
+          const currency = this.walletStore.preferredFiatCurrency || 'USD';
           await this.transactionMetadataStore.stampFreshTransactions(txs, walletId, currency);
         } catch (err) {
           console.warn('[wallet] fiat-at-settlement stamp failed:', err);
         }
 
+        // The user may have switched wallets while this read ran.
+        if (this.activeWallet?.id !== walletId) return;
         this.lastTransaction = txs.length > 0 ? txs[0] : null;
+        mergeCachedTransactions(walletId, txs);
       } catch (err) {
+        // A failed read keeps what is on screen (the cached card).
         console.warn('Failed to load last transaction:', err);
-        this.lastTransaction = null;
       } finally {
-        this.isLoadingLastTransaction = false;
+        if (this.activeWallet?.id === walletId) this.isLoadingLastTransaction = false;
       }
     },
 
@@ -3637,39 +3428,8 @@ export default {
     },
 
     async loadFiatRates() {
-      try {
-        const rates = await fiatRatesService.getRates();
-        this.walletState.exchangeRates = {
-          usd: rates.USD || 100000,
-          eur: rates.EUR || 85000,
-          gbp: rates.GBP || 75000,
-          cad: rates.CAD || 135000,
-          chf: rates.CHF || 90000,
-          aud: rates.AUD || 150000,
-          jpy: rates.JPY || 15000000
-        };
-        this.walletState.lastRateUpdate = new Date();
-        this.fiatRatesLoaded = true;
-
-        // Save updated state
-        localStorage.setItem('buhoGO_wallet_state', JSON.stringify(this.walletState));
-
-        console.log('Fiat rates loaded:', this.walletState.exchangeRates);
-      } catch (error) {
-        console.error('Error loading fiat rates:', error);
-        // Keep existing rates or use fallbacks
-        if (!this.fiatRatesLoaded) {
-          this.walletState.exchangeRates = {
-            usd: 100000,
-            eur: 85000,
-            gbp: 75000,
-            cad: 135000,
-            chf: 90000,
-            aud: 150000,
-            jpy: 15000000
-          };
-        }
-      }
+      await this.walletStore.loadExchangeRates();
+      this.fiatRatesLoaded = this.walletStore.exchangeRatesAvailable;
     },
 
     async toggleCurrency() {
@@ -3682,9 +3442,7 @@ export default {
       const currentIndex = modes.indexOf(this.currentDisplayMode);
       const nextIndex = (currentIndex + 1) % modes.length;
 
-      this.walletState.displayMode = modes[nextIndex];
       this.currentDisplayMode = modes[nextIndex];
-      localStorage.setItem('buhoGO_wallet_state', JSON.stringify(this.walletState));
 
       setTimeout(() => {
         this.isSwitchingCurrency = false;
@@ -3713,9 +3471,7 @@ export default {
       if (this.walletStore.balanceHidden) {
         this.walletStore.setBalanceHidden(false);
         if (this.currentDisplayMode !== 'bitcoin') {
-          this.walletState.displayMode = 'bitcoin';
           this.currentDisplayMode = 'bitcoin';
-          localStorage.setItem('buhoGO_wallet_state', JSON.stringify(this.walletState));
         }
         return;
       }
@@ -3739,7 +3495,7 @@ export default {
           return formatMainBalanceUtil(balance, this.walletStore.useBip177Format);
         case 'fiat':
           const btcAmount = balance / 100000000;
-          const rate = this.walletState.exchangeRates?.[this.walletState.preferredFiatCurrency?.toLowerCase()];
+          const rate = this.walletStore.exchangeRates?.[this.walletStore.preferredFiatCurrency?.toLowerCase()];
           if (!rate) return '--';
           const fiatValue = btcAmount * rate;
           return fiatValue.toFixed(2);
@@ -3749,7 +3505,7 @@ export default {
     },
 
     getFiatCurrencyIcon() {
-      const currency = this.walletState.preferredFiatCurrency || 'USD';
+      const currency = this.walletStore.preferredFiatCurrency || 'USD';
       const iconMap = {
         'USD': 'tabler:currency-dollar',
         'EUR': 'tabler:currency-euro',
@@ -3822,7 +3578,7 @@ export default {
 
     async getFiatValue(balance) {
       try {
-        const currency = this.walletState.preferredFiatCurrency || 'USD';
+        const currency = this.walletStore.preferredFiatCurrency || 'USD';
         const fiatAmount = await fiatRatesService.convertSatsToFiat(balance, currency);
 
         // Handle unavailable rates - return empty string instead of fake value
@@ -3835,42 +3591,27 @@ export default {
         console.error('Error getting fiat value:', error);
 
         // Check if we have valid stored rates (not guessed/fallback)
-        if (!this.walletState.exchangeRatesAvailable) {
+        if (!this.walletStore.exchangeRatesAvailable) {
           return '--';
         }
 
         // Use stored rates only if they're valid
         const btcAmount = balance / 100000000;
-        const currency = this.walletState.preferredFiatCurrency || 'USD';
-        const rate = this.walletState.exchangeRates[currency.toLowerCase()];
+        const currency = this.walletStore.preferredFiatCurrency || 'USD';
+        const rate = this.walletStore.exchangeRates[currency.toLowerCase()];
 
         if (!rate) {
           return '--';
         }
 
-        const fiatValue = btcAmount * rate;
-
-        const symbols = {
-          USD: '$',
-          EUR: '€',
-          GBP: '£',
-          CAD: 'C$',
-          CHF: 'CHF ',
-          AUD: 'A$',
-          JPY: '¥'
-        };
-
-        const symbol = symbols[currency] || currency;
-        return currency === 'JPY' ? symbol + Math.round(fiatValue).toLocaleString() : symbol + fiatValue.toFixed(2);
+        return fiatRatesService.formatFiatAmount(btcAmount * rate, currency);
       }
     },
 
     // Payment processing methods
 
     getActiveWallet() {
-      return this.walletState.connectedWallets.find(
-        w => w.id === this.walletState.activeWalletId
-      );
+      return this.activeWallet;
     },
 
     handleScanWithdraw() {
@@ -3943,70 +3684,10 @@ export default {
         const invoice = await this.createInvoiceForWithdraw(amountSats, description);
         this.lnurlWithdrawInvoice = invoice;
 
-        // Step 2: PIN check (LUD-XX pinLimit). Required when `amount × 1000
-        // >= pinLimit`. The dialog stays open across "Invalid PIN" retries
-        // so the user can re-enter without re-sliding the confirm sheet;
-        // it closes on success, on "Card blocked", on any non-PIN error,
-        // or on user cancel.
-        const pinLimit = this.pendingPayment.pinLimit;
-        const pinRequired = pinLimit && amountSats * 1000 >= pinLimit;
-
-        if (pinRequired) {
-          // LUD-XX: the service MUST invalidate the LNURL link after
-          // 3 consecutive PIN failures. We mirror the count locally so
-          // the user gets a fintech-style warning ladder as they
-          // approach the block — same UX pattern banking apps use
-          // for card PIN entry at an ATM.
-          let pinAttempts = 0;
-          const maxPinAttempts = 3;
-
-          // eslint-disable-next-line no-constant-condition
-          while (true) {
-            const pin = await this.requestBoltCardPin(amountSats);
-            if (!pin) {
-              this.resetWithdrawState();
-              return;
-            }
-
-            this.boltCardPinValidating = true;
-            this.lnurlWithdrawStatus = 'submitting';
-            try {
-              await this.submitWithdrawCallback(
-                this.pendingPayment,
-                invoice.payment_request,
-                pin
-              );
-              this.closeBoltCardPinDialog();
-              break;
-            } catch (error) {
-              this.boltCardPinValidating = false;
-              if (this.isInvalidPinError(error)) {
-                pinAttempts += 1;
-                // Re-trigger the dialog's shake-and-clear by toggling
-                // the error message (PinEntryDialog watches for value
-                // changes, so we clear then re-set on the next tick).
-                this.boltCardPinError = '';
-                await this.$nextTick();
-                this.boltCardPinError = this.formatPinAttemptError(
-                  pinAttempts,
-                  maxPinAttempts
-                );
-                continue;
-              }
-              // Card blocked or unrelated failure — close the dialog
-              // and let the outer catch surface the error to the sheet.
-              this.closeBoltCardPinDialog();
-              throw error;
-            }
-          }
-        } else {
-          this.lnurlWithdrawStatus = 'submitting';
-          await this.submitWithdrawCallback(
-            this.pendingPayment,
-            invoice.payment_request,
-            null
-          );
-        }
+        this.lnurlWithdrawStatus = 'submitting';
+        await this.$refs.withdrawAuthorization.submit(
+          this.pendingPayment, invoice.payment_request, amountSats,
+        );
 
         // Step 3: Monitor for incoming payment — the existing
         // PaymentConfirmation surface (SuccessCheckmark + amount)
@@ -4019,7 +3700,8 @@ export default {
         // could be in there via a platform-level network error stringifying
         // the callback URL, and we don't want it landing in console output
         // or the cross-app payment-error notification surface.
-        const safeMessage = this.redactPinFromString(error?.message || 'Something went wrong');
+        if (error?.name === 'AbortError') { this.resetWithdrawState(); return; }
+        const safeMessage = safeWithdrawError(error?.message);
         const safeError = new Error(safeMessage);
         safeError.name = error?.name || 'Error';
         // Carry the code: translateErrorCode keys on it (ARKADE_LN_UNAVAILABLE
@@ -4165,125 +3847,6 @@ export default {
       };
     },
 
-    async submitWithdrawCallback(withdrawData, bolt11, pin = null) {
-      const callbackUrl = new URL(withdrawData.callback);
-
-      // LUD-XX: HTTPS is REQUIRED whenever a PIN is being transmitted.
-      // The PIN travels as a plaintext `pin=` query param, so a downgrade
-      // to http:// would expose it to any passive observer on the network
-      // path between the wallet and the service.
-      if (pin && callbackUrl.protocol !== 'https:') {
-        throw new Error(this.$t('PIN authorization requires a secure connection'));
-      }
-
-      callbackUrl.searchParams.set('k1', withdrawData.k1);
-      callbackUrl.searchParams.set('pr', bolt11);
-      if (pin) {
-        callbackUrl.searchParams.set('pin', pin);
-      }
-
-      // Wrap the request so any network-layer error (DNS, CORS, TLS,
-      // offline) gets its message scrubbed of `pin=` before it
-      // propagates to console.error, Sentry, or the notify surface.
-      // Some platforms include the full URL in fetch error strings.
-      let response;
-      try {
-        // Generous 90s bound: withdraw services can be slow to pay out,
-        // and a premature client-side timeout would show a failure for a
-        // withdraw that still completes (the k1 is single-use, so the
-        // user can't meaningfully retry). Only a genuinely hung server
-        // should trip this.
-        response = await lnurlGetJson(callbackUrl.toString(), { timeoutMs: 90000 });
-      } catch (networkError) {
-        const safeMessage = this.redactPinFromString(
-          networkError?.message || 'Network error contacting withdraw service'
-        );
-        throw new Error(safeMessage);
-      }
-
-      if (!response.ok) {
-        throw new Error(`Withdraw callback failed: ${response.status}`);
-      }
-
-      const data = response.data || {};
-      if (data.status === 'ERROR') {
-        // Translate the two spec-defined PIN error reasons so the
-        // sheet-level error surface shows them in the user's language.
-        // Unrecognised reasons pass through unchanged.
-        const reason = data.reason || 'Withdraw service rejected the request';
-        throw new Error(this.translateWithdrawErrorReason(reason));
-      }
-
-      // Some services return { status: "OK" }, others just return without error
-      return data;
-    },
-
-    /**
-     * Strip `pin=XXXX` query parameters out of any string. The PIN
-     * is transmitted as a plaintext query parameter per LUD-XX, so
-     * the callback URL is sensitive — we don't want it surviving
-     * verbatim in console output, crash reports, or notify toasts.
-     *
-     * Defensive against:
-     *   - `?pin=1234`         (first param)
-     *   - `&pin=1234`         (mid-string)
-     *   - case variants (`PIN=`, `Pin=`)
-     *   - bordered by `&`, whitespace, or end-of-string
-     */
-    redactPinFromString(str) {
-      if (typeof str !== 'string') return str;
-      return str.replace(/([?&])pin=[^&\s]*/gi, '$1pin=[REDACTED]');
-    },
-
-    /**
-     * Map the two spec-defined LUD-XX pinLimit error reasons to localized
-     * strings. Falls back to the original reason if no match — that way an
-     * unrelated LUD-03 error reason (e.g. an expired k1) is still surfaced
-     * verbatim rather than masked.
-     */
-    translateWithdrawErrorReason(reason) {
-      const r = (reason || '').trim();
-      if (r === 'Invalid PIN') return this.$t('Invalid PIN');
-      if (/card blocked/i.test(r) && /pin/i.test(r)) {
-        return this.$t('Card blocked: too many incorrect PIN attempts');
-      }
-      return r;
-    },
-
-    /**
-     * Build the in-dialog error string shown after a failed PIN
-     * attempt. Mirrors fintech-app PIN ladders: an initial wrong-PIN
-     * notice, a "last attempt" warning before the terminal block,
-     * and a plain fallback for any defensive over-count (shouldn't
-     * happen — server returns Card blocked at attempt 3 — but kept
-     * so the UI degrades gracefully).
-     */
-    formatPinAttemptError(attempt, maxAttempts) {
-      const remaining = maxAttempts - attempt;
-      if (remaining >= 2) {
-        return this.$t('Invalid PIN. {n} attempts left.', { n: remaining });
-      }
-      if (remaining === 1) {
-        return this.$t('Invalid PIN. Last attempt.');
-      }
-      return this.$t('Invalid PIN');
-    },
-
-    /**
-     * Recognise the "wrong PIN, attempts remaining" error so the PIN
-     * dialog can stay open for a retry instead of dismissing back to
-     * the confirm sheet. Card-blocked deliberately does NOT match —
-     * that's the terminal state and the dialog must close.
-     */
-    isInvalidPinError(error) {
-      if (!error?.message) return false;
-      const msg = error.message;
-      if (/card blocked/i.test(msg)) return false;
-      // Match both the English spec string and our translated forms.
-      const invalidPinTranslated = this.$t('Invalid PIN');
-      return msg === 'Invalid PIN' || msg === invalidPinTranslated;
-    },
-
     async startWithdrawPaymentMonitor(invoice, amountSats) {
       const walletType = this.walletStore.activeWalletType;
 
@@ -4297,7 +3860,9 @@ export default {
         // We confirm via `lookupInvoice` and fall through silently if
         // the event doesn't correspond to our payment hash.
         try {
-          const provider = await this.walletStore.ensureSparkConnected();
+          // Pinned to the wallet that minted the invoice: a switch while the
+          // withdraw is in flight must not move the watch to another account.
+          const provider = await this.walletStore.ensureSparkConnected(invoice.walletId || this.walletStore.activeWalletId);
           // Prefer the Spark receive request ID for getLightningReceiveRequest;
           // fall back to the payment hash, which lookupInvoice resolves via
           // the transfer-list scan.
@@ -4462,7 +4027,7 @@ export default {
       }
 
       try {
-        const currency = this.walletState.preferredFiatCurrency || 'USD';
+        const currency = this.walletStore.preferredFiatCurrency || 'USD';
         const fiatAmount = await fiatRatesService.convertSatsToFiat(amount, currency);
         if (fiatAmount !== null) {
           this.withdrawConfirmedFiat = '≈ ' + fiatRatesService.formatFiatAmount(fiatAmount, currency);
@@ -4508,101 +4073,6 @@ export default {
         });
       }
       return this.$t(voucher.exhausted ? 'This voucher is now empty.' : 'Find your voucher under Receive.');
-    },
-
-    // ========================================================================
-    // Bolt Card PIN helpers (LUD-XX pinLimit)
-    // ========================================================================
-
-    /**
-     * Open (or re-arm) the Bolt Card PIN dialog and await one PIN attempt.
-     *
-     * On first call: populates the amount strip, clears any prior error,
-     * and shows the dialog. On subsequent calls during the same retry
-     * cycle (after an "Invalid PIN" response): the dialog is already
-     * open, the error message and shake have already been triggered by
-     * the caller, and this just registers the next resolver.
-     *
-     * Resolves with the entered PIN string, or `null` if the user cancels.
-     */
-    async requestBoltCardPin(amountSats) {
-      if (!this.showBoltCardPinDialog) {
-        this.boltCardPinError = '';
-        this.boltCardPinValidating = false;
-        this.boltCardPinAmountDisplay = this.formatAmountInline(amountSats);
-        this.boltCardPinFiatAmount = await this.computeFiatStringForSats(amountSats);
-        this.showBoltCardPinDialog = true;
-      }
-      return new Promise((resolve) => {
-        this.boltCardPinResolve = resolve;
-      });
-    },
-
-    /**
-     * Compute a localized "≈ <fiat>" string for the PIN amount strip.
-     * Returns '' when rates aren't loaded, sats is falsy, or anything
-     * goes wrong — the dialog hides the fiat line on empty string.
-     */
-    async computeFiatStringForSats(sats) {
-      if (!sats || !this.fiatRatesLoaded) return '';
-      try {
-        const currency = this.preferredFiatCurrency;
-        const fiat = await fiatRatesService.convertSatsToFiat(sats, currency);
-        if (fiat === null || fiat === undefined || isNaN(fiat)) return '';
-        return '≈ ' + fiatRatesService.formatFiatAmount(fiat, currency);
-      } catch (e) {
-        return '';
-      }
-    },
-
-    /**
-     * Fully close and reset the Bolt Card PIN dialog. Called on success,
-     * on terminal failure (card blocked / network / HTTPS guard), and
-     * on cancel — anywhere the retry cycle ends.
-     */
-    closeBoltCardPinDialog() {
-      this.showBoltCardPinDialog = false;
-      this.boltCardPinResolve = null;
-      this.boltCardPinValidating = false;
-      this.boltCardPinError = '';
-      this.boltCardPinAmountDisplay = '';
-      this.boltCardPinFiatAmount = '';
-    },
-
-    onBoltCardPinComplete(pin) {
-      // Hand the PIN to the awaiting executeWithdraw() attempt. The
-      // dialog stays open: the caller decides whether to close it
-      // (success / card blocked) or keep it open (Invalid PIN retry).
-      if (this.boltCardPinResolve) {
-        const resolve = this.boltCardPinResolve;
-        this.boltCardPinResolve = null;
-        resolve(pin);
-      }
-    },
-
-    onBoltCardPinCancel() {
-      // User dismissed the dialog via the back button. Close fully and
-      // resolve null so executeWithdraw() exits the retry loop cleanly.
-      const resolve = this.boltCardPinResolve;
-      this.closeBoltCardPinDialog();
-      if (resolve) resolve(null);
-    },
-
-    onBoltCardPinTimeout() {
-      // Session timeout — user left the PIN dialog idle past the
-      // configured window. Surface a brief notification so the screen
-      // doesn't appear to dismiss itself for no reason, then route
-      // through the same teardown as a manual cancel: resolve the
-      // awaited PIN promise with null and reset the withdraw flow.
-      this.$q.notify({
-        type: 'info',
-        icon: 'tabler:clock-x',
-        message: this.$t('PIN entry timed out'),
-        caption: this.$t('Tap the card again to retry'),
-        timeout: 3500,
-        position: 'top'
-      });
-      this.onBoltCardPinCancel();
     },
 
     startMerchantCountdown() {
@@ -4964,14 +4434,14 @@ export default {
               (this.pendingPayment.minSendable === this.pendingPayment.maxSendable
                 ? Math.floor(this.pendingPayment.minSendable / 1000)
                 : 0);
-            if (paymentSats > 0 && paymentSats > this.walletState.balance) {
+            if (paymentSats > 0 && paymentSats > this.activeCanonicalBalance) {
               resolved = false; // keep the sheet open; the notify explains why
               this.$q.notify({
                 type: 'negative',
                 message: this.$t('Insufficient balance'),
                 caption: this.$t('You need {amount} sats but only have {balance} sats', {
                   amount: paymentSats,
-                  balance: this.walletState.balance
+                  balance: this.activeCanonicalBalance
                 }),
               });
               return;
@@ -5013,7 +4483,7 @@ export default {
               return;
             }
 
-            if (dest.amountSats > 0 && dest.amountSats > this.walletState.balance) {
+            if (dest.amountSats > 0 && dest.amountSats > this.activeCanonicalBalance) {
               resolved = false;
               this.failSendResolution(this.$t('Insufficient balance'), fromField);
               return;
@@ -5912,7 +5382,7 @@ export default {
       // rate cache can never block the confirmation surface.
       if (this.sendSuccessAmount > 0) {
         try {
-          const currency = this.walletState.preferredFiatCurrency || 'USD';
+          const currency = this.walletStore.preferredFiatCurrency || 'USD';
           const fiat = await fiatRatesService.convertSatsToFiat(
             this.sendSuccessAmount,
             currency,
@@ -6275,30 +5745,7 @@ export default {
      */
     async fetchLNURLInfo(lnurl) {
       try {
-        const url = this.decodeLNURL(lnurl);
-        const inline = parseFastWithdrawRequest(url);
-        // `sourceUrl` is the LUD-14 identity hook: a voucher is known by every
-        // URL it was reached through, so the decoded link travels with the
-        // answer whether it was inline (LUD-08) or fetched.
-        if (inline) return withdrawInfo(inline, { sourceUrl: url });
-        const response = await lnurlGetJson(url, { timeoutMs: 10000 });
-
-        if (!response.ok) {
-          return { error: true, reason: `Server returned ${response.status}` };
-        }
-
-        const data = response.data;
-
-        if (!data) {
-          return {
-            error: true,
-            reason: this.$t('The server did not respond or the link is no longer valid'),
-          };
-        }
-
-        if (data.status === 'ERROR') {
-          return { error: true, reason: data.reason || 'This link is no longer valid' };
-        }
+        const { url, data } = await fetchLnurlRequest(lnurl);
 
         if (data.tag === 'withdrawRequest') {
           return withdrawInfo(data, { sourceUrl: url });
@@ -6329,7 +5776,7 @@ export default {
           serviceMeta: parsePayRequestMetadata(data.metadata),
         };
       } catch (error) {
-        console.warn('Failed to fetch LNURL info:', error.message);
+        console.warn('Failed to fetch LNURL info:', safeWithdrawError(error.message));
         // Surface the underlying failure so the send field / error dialog
         // shows what actually happened (timeout, offline) instead of a
         // misleading upstream-attributed message.
@@ -6455,9 +5902,10 @@ export default {
     },
 
     async updateSecondaryValue() {
-      if (this.walletState.balance !== undefined) {
-        this.secondaryValue = await this.getSecondaryValue(this.walletState.balance);
-      }
+      const walletId = this.walletStore.activeWalletId;
+      const balance = this.activeCanonicalBalance;
+      const value = balance == null ? '--' : await this.getSecondaryValue(balance);
+      if (walletId === this.walletStore.activeWalletId && balance === this.activeCanonicalBalance) this.secondaryValue = value;
     },
 
     async updateFeeEstimate() {
@@ -7099,12 +6547,21 @@ export default {
   gap: 10px;
   padding: 0 1.25rem;
   margin-bottom: 1.5rem;
+  /* Never size to the content: a long memo's unwrapped width would
+     otherwise widen the section, and the card with it, past the screen. */
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
 }
 
 /* ── Card ──────────────────────────────────────────────────────── */
 .last-tx-card {
   width: 100%;
   max-width: 440px;
+  min-width: 0;
+  box-sizing: border-box;
+  overflow: hidden;
   display: flex;
   align-items: center;
   gap: 12px;
@@ -7265,6 +6722,8 @@ export default {
   align-items: flex-end;
   gap: 2px;
   min-width: 0;
+  /* The memo yields first, but the amount column cannot take the row. */
+  max-width: 45%;
 }
 
 .last-tx-amount {
@@ -7273,6 +6732,9 @@ export default {
   line-height: 1.2;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* ── History link ─────────────────────────────────────────────── */

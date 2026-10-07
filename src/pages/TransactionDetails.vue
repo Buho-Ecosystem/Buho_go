@@ -99,6 +99,16 @@
                 :name="heroAvatar.name"
                 :initial-length="2"
               />
+              <!-- Awaiting / expired with no known identity: the status
+                   clock, same as the list row. A silhouette with a green
+                   "received" badge read as money that arrived. -->
+              <span
+                v-else-if="!isSettled"
+                class="hero-avatar hero-status-icon"
+                :class="getStatusClass()"
+              >
+                <Icon :icon="getStatusIcon()" width="26" height="26" />
+              </span>
               <!-- No known identity: the app-wide silhouette — the same
                    avatar-first anatomy as the transaction list, with the
                    movement-type badge carrying direction. -->
@@ -125,7 +135,7 @@
                  the fallback estimate. -->
             <div class="hero-fiat">
               <q-skeleton v-if="loadingFiatRates && !transaction.fiatAtSettlement" type="text" width="60px" height="14px" style="margin: 0 auto;" />
-              <template v-else-if="transaction.fiatAtSettlement">
+              <template v-else-if="transaction.fiatAtSettlement && isSettled">
                 {{ formatFiatValue(transaction.fiatAtSettlement.amount, transaction.fiatAtSettlement.currency) }} {{ $t('at settlement') }}
               </template>
               <template v-else>{{ getFiatAmount() }}</template>
@@ -252,7 +262,12 @@
             <div class="tx-row-value">{{ formatAmount(transaction.fee, walletStore.useBip177Format) }}</div>
           </div>
 
-          <div v-if="getSettlementRateDisplay()" class="tx-row">
+          <div v-if="invoiceExpiryMs" class="tx-row">
+            <div class="tx-row-label">{{ transaction.status === 'expired' ? $t('Expired') : $t('Expires at') }}</div>
+            <div class="tx-row-value">{{ formatDateTime(Math.floor(invoiceExpiryMs / 1000)) }}</div>
+          </div>
+
+          <div v-if="isSettled && getSettlementRateDisplay()" class="tx-row">
             <div class="tx-row-label">{{ $t('BTC price at settlement') }}</div>
             <div class="tx-row-value">{{ getSettlementRateDisplay() }}</div>
           </div>
@@ -554,10 +569,10 @@
     </q-dialog>
 
     <!-- Contact Picker Modal -->
-    <q-dialog v-model="showContactPicker">
+    <q-dialog v-model="showContactPicker" aria-labelledby="contact-picker-title">
       <q-card class="contact-picker-dialog" :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'">
         <q-card-section class="dialog-header">
-          <div class="dialog-title">
+          <div id="contact-picker-title" class="dialog-title">
             {{ $t('Select Contact') }}
           </div>
           <q-btn
@@ -566,16 +581,18 @@
             dense
             v-close-popup
             class="close-btn"
+            :aria-label="$t('Cancel')"
             style="color: var(--text-muted)"
           >
             <Icon icon="tabler:x" width="20" height="20" />
           </q-btn>
         </q-card-section>
 
-        <q-card-section class="q-pt-none">
+        <q-card-section class="contact-picker-search">
           <q-input
             v-model="contactSearch"
             :placeholder="$t('Search contacts...')"
+            :aria-label="$t('Search contacts...')"
             dense
             borderless
             class="search-input"
@@ -587,7 +604,7 @@
           </q-input>
         </q-card-section>
 
-        <q-scroll-area style="height: 280px" class="q-px-md">
+        <q-scroll-area v-if="filteredContacts.length" class="contact-picker-results">
           <q-list class="contact-list">
             <q-item
               v-for="contact in filteredContacts"
@@ -617,22 +634,27 @@
               </q-item-section>
             </q-item>
 
-            <div v-if="filteredContacts.length === 0" class="empty-contacts-state">
-              <Icon icon="tabler:users" width="48" height="48" style="color: var(--text-muted)" />
-              <div class="empty-contacts-text">
-                {{ $t('No contacts found') }}
-              </div>
-            </div>
           </q-list>
         </q-scroll-area>
+        <div v-else class="empty-contacts-state" role="status">
+          <Icon icon="tabler:users" width="48" height="48" style="color: var(--text-muted)" />
+          <div class="empty-contacts-text">{{ $t('No contacts found') }}</div>
+        </div>
 
-        <q-card-actions class="dialog-actions q-px-md q-pb-md">
+        <q-card-actions class="contact-picker-actions">
+          <q-btn
+            unelevated
+            no-caps
+            :label="$t('Create contact')"
+            class="create-contact-btn"
+            @click="createContact"
+          />
           <q-btn
             flat
+            no-caps
             :label="$t('Cancel')"
             v-close-popup
-            class="full-width"
-            style="color: var(--text-secondary)"
+            class="cancel-contact-btn"
           />
         </q-card-actions>
       </q-card>
@@ -643,11 +665,12 @@
 <script>
 import { NostrWebLNProvider } from "@getalby/sdk";
 import { fiatRatesService } from '../utils/fiatRates.js';
+import { fiatSymbol } from '../utils/fiatCurrencies.js';
 import { formatAmount, formatAmountWithPrefix } from '../utils/amountFormatting.js';
 import { useWalletStore } from '../stores/wallet';
 import { useAddressBookStore } from '../stores/addressBook';
 import { useTransactionMetadataStore } from '../stores/transactionMetadata';
-import { normalizeTx } from '../services/txNormalizer.js';
+import { normalizeTx, isInvoiceExpired, resolveExpiryMs } from '../services/txNormalizer.js';
 import { matchLnAddressService } from '../services/lnAddressServices';
 import { shareContent } from '../utils/share';
 import { copySensitive } from '../utils/sensitiveClipboard.js';
@@ -725,10 +748,16 @@ export default {
 
     this.initializeTransactionDetails();
     this.loadFiatRates();
+    // Keep an open "Awaiting payment" receipt honest: flip it to expired
+    // the moment its deadline passes rather than on the next reload.
+    this._invoiceExpiryTimer = setInterval(() => {
+      if (isInvoiceExpired(this.transaction)) this.transaction.status = 'expired';
+    }, 15000);
   },
 
   beforeUnmount() {
     if (this._zapProfileTimer) clearInterval(this._zapProfileTimer);
+    if (this._invoiceExpiryTimer) clearInterval(this._invoiceExpiryTimer);
   },
 
   watch: {
@@ -819,8 +848,27 @@ export default {
      * below the amount carries pending/expired; the badge only ever
      * names the movement.
      */
+    /** Money actually moved — false for awaiting, expired and failed. */
+    isSettled() {
+      return (this.transaction?.status || 'completed') === 'completed';
+    },
+
+    /**
+     * Deadline of an unpaid incoming invoice (ms), shown as its own row so
+     * "Awaiting payment" says until when. Null once paid or for sends.
+     */
+    invoiceExpiryMs() {
+      const tx = this.transaction;
+      if (!tx || tx.type !== 'incoming') return null;
+      if (tx.status !== 'pending' && tx.status !== 'expired') return null;
+      return resolveExpiryMs(tx);
+    },
+
     heroBadge() {
       if (!this.transaction) return null;
+      // Unsettled: the status icon/chip carry the state; a direction
+      // badge would claim a movement that hasn't happened.
+      if (!this.isSettled) return null;
       if (this.zapInfo || this.transaction.senderNpub) {
         return { icon: NOSTRICH_HEAD_ICON, cls: 'tx-badge-zap' };
       }
@@ -1080,6 +1128,17 @@ export default {
 
     openContactPicker() {
       this.showContactPicker = true;
+    },
+
+    createContact() {
+      if (!this.transaction?.id) return;
+      const wallet = this.$route.query.wallet || this.metadataWalletId;
+      const query = { action: 'create-contact', transaction: this.transaction.id, wallet };
+      // On a receive, lnaddress is our own receiving address, not the sender.
+      const address = this.transaction.type === 'outgoing' ? this.getCounterpartyAddress() : null;
+      if (address) query.address = address;
+      this.showContactPicker = false;
+      this.$router.push({ path: '/address-book', query });
     },
 
     async assignContact(contact) {
@@ -1479,25 +1538,31 @@ export default {
     getTransactionStatus() {
       if (this.transaction.status === 'expired') return this.$t('Expired');
       if (this.transaction.settled) return this.$t('Completed');
-      if (this.transaction.pending || this.transaction.status === 'pending') return this.$t('Pending');
+      if (this.transaction.pending || this.transaction.status === 'pending') {
+        return this.transaction.type === 'incoming' ? this.$t('Awaiting payment') : this.$t('Pending');
+      }
+      if (this.transaction.status === 'failed') return this.$t('Failed');
       return this.$t('Completed');
     },
 
     getStatusIcon() {
       if (this.transaction.status === 'expired') return 'tabler:clock-x';
+      if (this.transaction.status === 'failed') return 'tabler:circle-x';
       if (this.transaction.settled) return 'tabler:circle-check';
       if (this.transaction.pending || this.transaction.status === 'pending') return 'tabler:clock';
       return 'tabler:circle-check';
     },
 
     getStatusClass() {
-      if (this.transaction.status === 'expired') return 'status-expired';
+      if (this.transaction.status === 'expired' || this.transaction.status === 'failed') return 'status-expired';
       if (this.transaction.settled) return 'status-completed';
       if (this.transaction.pending || this.transaction.status === 'pending') return 'status-pending';
       return 'status-completed';
     },
 
     getAmountClass() {
+      if (this.transaction.status === 'pending') return 'amount-pending';
+      if (this.transaction.status === 'expired' || this.transaction.status === 'failed') return 'amount-expired';
       return this.transaction.type === 'incoming' ? 'amount-positive' : 'amount-negative';
     },
 
@@ -1526,9 +1591,7 @@ export default {
 
     /** Currency-symbol formatting shared by the fiat rows. */
     formatFiatValue(amount, currency) {
-      const symbols = { USD: '$', EUR: '€', GBP: '£', CAD: 'C$', CHF: 'CHF', AUD: 'A$', JPY: '¥' };
-      const symbol = symbols[currency] || (currency ? `${currency} ` : '');
-      return `${symbol}${Number(amount).toFixed(2)}`;
+      return fiatRatesService.formatFiatAmount(Number(amount), currency || 'USD');
     },
 
     /**
@@ -1540,8 +1603,7 @@ export default {
       if (!snap || !Number.isFinite(Number(snap.rate))) return null;
       const locale = this.$i18n?.locale || 'en-US';
       const formatted = Number(snap.rate).toLocaleString(locale, { maximumFractionDigits: 0 });
-      const symbols = { USD: '$', EUR: '€', GBP: '£', CAD: 'C$', CHF: 'CHF', AUD: 'A$', JPY: '¥' };
-      const symbol = symbols[snap.currency] || snap.currency || '';
+      const symbol = snap.currency ? fiatSymbol(snap.currency) : '';
       return `${symbol}${formatted}`;
     },
 
@@ -1595,18 +1657,7 @@ export default {
           return '--';
         }
 
-        const symbols = {
-          USD: '$',
-          EUR: '€',
-          GBP: '£',
-          CAD: 'C$',
-          CHF: 'CHF',
-          AUD: 'A$',
-          JPY: '¥'
-        };
-
-        const symbol = symbols[currency] || currency;
-        return symbol + fiatValue.toFixed(2);
+        return fiatRatesService.formatFiatAmount(fiatValue, currency);
       } catch (error) {
         console.error('Error converting to fiat:', error);
         return '--';
@@ -2165,6 +2216,35 @@ export default {
   color: var(--text-primary);
 }
 
+/* Unpaid invoice: neutral, not the received-green. */
+.hero-amount.amount-pending {
+  color: var(--text-primary);
+}
+
+/* Expired/failed: never arrived — muted and struck through. */
+.hero-amount.amount-expired {
+  color: var(--text-muted);
+  text-decoration: line-through;
+}
+
+/* Status clock in place of the avatar for awaiting/expired receipts. */
+.hero-status-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+}
+
+.hero-status-icon.status-pending {
+  background: rgba(245, 166, 35, 0.14);
+  color: #F5A623;
+}
+
+.hero-status-icon.status-expired {
+  background: rgba(239, 68, 68, 0.10);
+  color: #EF4444;
+}
+
 .hero-fiat {
   font-family: 'Manrope', sans-serif;
   font-size: 15px;
@@ -2438,13 +2518,17 @@ body.body--dark .verified-row-icon {
 
 /* ===== Contact Picker Dialog ===== */
 .contact-picker-dialog {
-  width: 100%;
-  max-width: 380px;
+  width: 420px;
+  max-width: calc(100vw - 32px);
+  max-height: calc(100dvh - 48px - var(--safe-top, 0px) - var(--safe-bottom, 0px));
+  display: flex;
+  flex-direction: column;
   border-radius: 24px;
 }
 
 .contact-picker-dialog .dialog-header {
-  padding: 20px 20px 16px;
+  padding: 16px 20px 12px;
+  flex-shrink: 0;
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -2454,16 +2538,54 @@ body.body--dark .verified-row-icon {
   flex: 1;
   color: var(--text-primary);
   font-family: 'Manrope', sans-serif;
+  font-size: 1.0625rem;
+  line-height: 1.4;
   font-weight: 600;
 }
 
 .contact-picker-dialog .close-btn {
-  width: 32px;
-  height: 32px;
+  width: 44px;
+  height: 44px;
   margin-right: -8px;
 }
 
+.contact-picker-search {
+  padding: 0 20px 12px;
+  flex-shrink: 0;
+}
+
+.contact-picker-results {
+  height: 280px;
+  min-height: 80px;
+  flex: 0 1 auto;
+  margin: 0 20px;
+}
+
+.contact-picker-actions {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 16px 20px 12px;
+  border-top: 1px solid var(--border-card);
+}
+
+.contact-picker-actions .q-btn {
+  width: 100%;
+  min-height: 44px;
+  margin: 0;
+  border-radius: 12px;
+  font-size: 1rem;
+}
+
+.contact-picker-actions :deep(.q-btn__content) { white-space: normal; }
+.create-contact-btn { background: var(--brand-accent); color: #07130d; font-weight: 600; }
+.card_light_style .create-contact-btn { background: var(--btn-neutral-bg); color: var(--btn-neutral-fg); }
+.cancel-contact-btn { color: var(--text-secondary); }
+.contact-picker-dialog :deep(button:focus-visible) { outline: 2px solid var(--brand-accent-text); outline-offset: 2px; }
+
 .search-input :deep(.q-field__control) {
+  min-height: 44px;
   background: var(--bg-input);
   border-radius: var(--radius-md);
   color: var(--text-primary);
@@ -2507,14 +2629,18 @@ body.body--dark .verified-row-icon {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 48px 24px;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 28px 16px;
   gap: 12px;
 }
 
 .empty-contacts-text {
   font-family: 'Manrope', sans-serif;
-  font-size: 14px;
-  color: var(--text-muted);
+  font-size: 0.9375rem;
+  line-height: 1.5;
+  text-align: center;
+  color: var(--text-secondary);
 }
 
 /* ===== Developer / Technical Section =====

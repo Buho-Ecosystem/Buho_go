@@ -5,17 +5,21 @@ import { classifyFromMatureQuote } from '../utils/breezPayments.js';
 import { track } from '../utils/telemetry';
 
 const keyFor = (walletId, deposit) => `${walletId}:${deposit.txId}:${deposit.outputIndex || 0}`;
+// Harnesses without a wallet list cannot express removal; treat as present.
+const walletExists = (wallet, walletId) => !Array.isArray(wallet.wallets) || wallet.wallets.some(w => w.id === walletId);
 
-/** Shared by home, Receive and History. Unknown fees never authorize a
- * manual action or an automatic claim. Temporary failures retry on polling. */
+/** Shared by home, Receive, History and the Spark lifecycle (which discovers
+ * deposits for every Spark wallet, selected or not). Unknown fees never
+ * authorize a manual action or an automatic claim. Temporary failures retry
+ * on polling. */
 export const useBitcoinDepositsStore = defineStore('bitcoinDeposits', {
   state: () => ({ entries: {} }),
   actions: {
     status(deposit, walletId = useWalletStore().activeWalletId) {
       if (!deposit) return 'confirming';
       const wallet = useWalletStore();
-      if (wallet.isDepositClaimed(deposit.txId)) return 'accepted';
-      if (wallet.isDepositClaimInFlight(deposit.txId)) return 'claiming';
+      if (wallet.isDepositClaimed(deposit.txId, deposit.outputIndex)) return 'accepted';
+      if (wallet.isDepositClaimInFlight(deposit.txId, deposit.outputIndex)) return 'claiming';
       if (!deposit.confirmed) return 'confirming';
       if (!useBitcoinPreferencesStore().autoAddIncomingBitcoin) return 'manual';
       return this.entries[keyFor(walletId, deposit)]?.phase || 'checking';
@@ -54,22 +58,32 @@ export const useBitcoinDepositsStore = defineStore('bitcoinDeposits', {
       await Promise.all(deposits.filter(deposit => deposit.confirmed).map(deposit => this.processDeposit(deposit, walletId)));
     },
 
+    /**
+     * Classify and, when allowed, claim one confirmed deposit for the wallet
+     * that owns it — whichever wallet is selected. The work is bound to that
+     * wallet: its own provider (explicit wallet id), its own result signal.
+     * Selecting another wallet or page never cancels it; removing the wallet,
+     * turning auto-add off, or another claim of the same output does.
+     */
     async processDeposit(deposit, walletId) {
       const wallet = useWalletStore();
       const prefs = useBitcoinPreferencesStore();
-      if (!walletId || wallet.activeWalletId !== walletId || !deposit.confirmed
-        || wallet.isDepositClaimed(deposit.txId) || wallet.isDepositClaimInFlight(deposit.txId)) return;
+      const vout = deposit?.outputIndex || 0;
+      if (!walletId || !deposit?.confirmed || !walletExists(wallet, walletId)
+        || wallet.isDepositClaimed(deposit.txId, vout) || wallet.isDepositClaimInFlight(deposit.txId, vout)) return;
       const key = keyFor(walletId, deposit);
       const previous = this.entries[key];
       if (previous && (['checking', 'claiming'].includes(previous.phase) || previous.retryAt > Date.now())) return;
       if (!prefs.autoAddIncomingBitcoin) return;
 
-      const current = () => wallet.activeWalletId === walletId && !wallet.isDepositClaimed(deposit.txId);
+      // Operation guard: valid while the wallet exists, auto-add stays on and
+      // nobody else claimed this output — independent of selection.
+      const current = () => walletExists(wallet, walletId) && !wallet.isDepositClaimed(deposit.txId, vout);
       // Set before the first await: concurrent polls cannot classify/claim twice.
       this.entries[key] = { walletId, phase: 'checking' };
       let ownsClaim = false;
       try {
-        const provider = await wallet.ensureSparkConnected();
+        const provider = await wallet.ensureSparkConnected(walletId);
         if (!current()) return;
         let classification = await provider.classifyConfirmedDeposit(deposit);
         if (!current()) return;
@@ -90,12 +104,15 @@ export const useBitcoinDepositsStore = defineStore('bitcoinDeposits', {
           || Date.now() - classification.classifiedAt > CLASSIFICATION_FRESHNESS_MS) {
           throw new Error('Deposit fee quote unavailable');
         }
-        if (wallet.isDepositClaimInFlight(deposit.txId)) return;
-        wallet.markDepositClaimInFlight(deposit.txId);
+        if (wallet.isDepositClaimInFlight(deposit.txId, vout)) return;
+        wallet.markDepositClaimInFlight(deposit.txId, vout);
         ownsClaim = true;
         this.entries[key] = { walletId, phase: 'claiming' };
-        const result = await provider.claimDeposit(deposit.txId, classification.quote, deposit.outputIndex || 0);
-        wallet.markDepositClaimed(deposit.txId);
+        const result = await provider.claimDeposit(deposit.txId, classification.quote, vout);
+        // Record the output durably even if the wallet was removed meanwhile,
+        // so nothing resubmits it — but do not revive the removed wallet's UI.
+        wallet.markDepositClaimed(deposit.txId, vout);
+        if (!walletExists(wallet, walletId)) return;
         this.entries[key] = { walletId, phase: 'accepted' };
         track('bitcoin.deposit.claim_succeeded', {
           source: 'auto', processing: !!result?.processing,
@@ -103,15 +120,25 @@ export const useBitcoinDepositsStore = defineStore('bitcoinDeposits', {
           fee_sats: classification.feeSats,
         });
         wallet.signalDepositsRefresh(walletId);
+        // The owning wallet's balance and receipts catch up now, not on the
+        // next page tick (lifecycle reconcile; absent in unit harnesses).
+        wallet.onDepositClaimed?.(walletId, deposit);
       } catch (error) {
         if (current()) {
           this.entries[key] = { walletId, phase: 'retrying', retryAt: Date.now() + BITCOIN_DEPOSIT_POLL_MS };
           console.warn('Bitcoin deposit will retry automatically:', error?.message || error);
         }
       } finally {
-        if (ownsClaim) wallet.clearDepositClaimInFlight(deposit.txId);
-        // A wallet/preference switch must not leave a permanent busy entry.
+        if (ownsClaim) wallet.clearDepositClaimInFlight(deposit.txId, vout);
+        // A removal/preference change must not leave a permanent busy entry.
         if (['checking', 'claiming'].includes(this.entries[key]?.phase)) delete this.entries[key];
+      }
+    },
+
+    /** Drop every entry of a removed wallet; in-flight work sees it gone. */
+    forgetWallet(walletId) {
+      for (const [key, entry] of Object.entries(this.entries)) {
+        if (entry.walletId === walletId) delete this.entries[key];
       }
     },
   },

@@ -3,8 +3,13 @@ import { onMounted, onBeforeUnmount, ref, watch } from 'vue'
 // Namespace import, not a default one: maplibre-gl v6 ships named exports only
 // (the v5 default export is gone), and the call sites below read `maplibregl.X`.
 import * as maplibregl from 'maplibre-gl'
+import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import { loadEinundzwanzigPinImage } from '../../services/map/meetupPin.js'
+
+// v6 no longer embeds its worker. Let Vite bundle the worker and its imports;
+// the default URL points at a missing /assets/maplibre-gl-worker.mjs in builds.
+maplibregl.setWorkerUrl(workerUrl)
 
 /**
  * MapView — the MapLibre GL surface for the Bitcoin map.
@@ -446,13 +451,12 @@ onBeforeUnmount(() => {
   if (map) { map.remove(); map = null }
 })
 
-watch(() => props.data, () => {
-  if (map && map.isStyleLoaded()) pushData()
-})
-
-watch(() => props.meetups, () => {
-  if (map && map.isStyleLoaded()) pushMeetupData()
-})
+// setData is safe while a source is loading. Gating on isStyleLoaded() drops
+// fast API/cache results while the initial empty GeoJSON is still processing.
+// These helpers guard missing sources; addLayers reads the latest props when
+// a source is first created or recreated after a basemap swap.
+watch(() => props.data, pushData)
+watch(() => props.meetups, pushMeetupData)
 
 // Re-style whenever the user picks a different basemap. The chosen tile URL is
 // owned by the basemap store and resolved in the page.

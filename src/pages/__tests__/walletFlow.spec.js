@@ -42,46 +42,18 @@ function balanceHarness() {
     '../boot/i18n': { i18n: { global: { t } } },
   }).useWalletStore;
   const a = { id: 'A', name: 'Wallet A' }, b = { id: 'B', name: 'Wallet B' };
-  const store = { ...options.actions, activeWalletId: a.id, isActiveWalletSpark: true };
+  const store = { ...options.actions, activeWalletId: a.id, isActiveWalletSpark: true, wallets: [] };
   store.noticeIncomingPayment(a, 1000);
   store.noticeIncomingPayment(b, 100);
-  const vm = { ...component().methods, walletStore: store, activeWallet: a, walletState: { balance: 1000 }, loadLastTransaction() {} };
-  globalThis.localStorage = { setItem() {} };
+  const vm = { ...component().methods, walletStore: store, activeWallet: a, loadLastTransaction() {} };
+  globalThis.localStorage = { setItem() {}, getItem: () => null };
   return { store, vm, a, b, notices };
 }
-
-test('a delayed balance read cannot update or notify a newly selected wallet', async () => {
-  const { store, vm, b, notices } = balanceHarness();
-  const read = deferred();
-  store.ensureSparkConnected = async () => ({ getBalance: () => read.promise });
-  const pending = vm.updateWalletBalance();
-  await Promise.resolve();
-  store.activeWalletId = b.id;
-  vm.activeWallet = b;
-  vm.walletState.balance = 100;
-  read.resolve({ balance: 1000 });
-  await pending;
-  assert.equal(vm.walletState.balance, 100);
-  assert.deepEqual(notices, []);
-});
-
-test('older same-wallet reads cannot roll back the notification baseline', () => {
-  const { store, vm, a, notices } = balanceHarness();
-  const old = store.beginBalanceRead(a.id);
-  const latest = store.beginBalanceRead(a.id);
-  assert.equal(vm.applyTickBalance(1200, latest), true);
-  assert.equal(vm.applyTickBalance(1000, old), false);
-  const next = store.beginBalanceRead(a.id);
-  vm.applyTickBalance(1200, next);
-  assert.equal(vm.walletState.balance, 1200);
-  assert.equal(notices.length, 1);
-  assert.equal(notices[0].body, '200 sats · Wallet A');
-});
 
 test('confirmed withdrawal shows only the authoritative remaining balance', async () => {
   const refresh = deferred();
   const voucher = { id: 'v', maxSats: 25000 };
-  const vm = { ...component().methods, $t: t, walletStore: {}, walletState: {},
+  const vm = { ...component().methods, $t: t, walletStore: {},
     pendingPayment: { voucherId: 'v' }, lnurlWithdrawStatus: 'monitoring', withdrawReceiptVersion: 0,
     withdrawVouchersStore: { byId: () => voucher, displaySats: v => v.maxSats, refresh: () => refresh.promise },
     updateWalletBalance: async () => {},
@@ -157,21 +129,12 @@ test('Pay again is unavailable until a payment completes, including failed payme
 });
 
 
-test('page ticks and store refreshes share ordering and notification history', async () => {
-  const { store, vm, a, notices } = balanceHarness();
-  const old = deferred();
-  a.type = 'spark';
-  Object.assign(store, { wallets: [a], providers: { A: { getBalance: () => old.promise, getInfo: async () => ({}) } },
-    connectionStates: { A: { connected: true } }, balances: { A: 1000 }, walletInfos: {}, persistState: async () => {} });
-  const pending = store.refreshWalletData('A');
-  const latest = store.beginBalanceRead('A');
-  vm.applyTickBalance(1200, latest);
-  old.resolve({ balance: 1000 });
-  await pending;
-  assert.equal(notices.length, 1);
-  vm.applyTickBalance(1200, store.beginBalanceRead('A'));
-  assert.equal(notices.length, 1);
-  assert.equal(vm.walletState.balance, 1200);
+test('Spark wallets are never announced from a balance difference', () => {
+  const { store, notices } = balanceHarness();
+  const spark = { id: 'S', name: 'Business', type: 'spark' };
+  store.noticeIncomingPayment(spark, 1000);
+  store.noticeIncomingPayment(spark, 5000);
+  assert.equal(notices.length, 0, 'receipts come from the payment-id ledger instead');
 });
 
 test('a service profile groups payments to both its identifier and original pay link', async () => {
@@ -305,4 +268,37 @@ test('a late manual quote cannot overwrite a different deposit sheet or clear it
   await second;
   assert.equal(vm.claimFeeQuote.creditAmountSats, 2000);
   assert.equal(vm.isLoadingQuote, false);
+});
+
+
+test('wallet redemption uses shared authorization before starting its existing receipt monitor', async () => {
+  const { methods } = component();
+  const calls = [];
+  const request = { type: 'lnurl_withdraw', defaultDescription: 'Bolt Card' };
+  const invoice = { payment_request: 'lnbc-wallet-invoice' };
+  const vm = {
+    ...methods, pendingPayment: request, canConfirmWithdraw: true, withdrawAmountSats: 100,
+    createInvoiceForWithdraw: async (amount, description) => {
+      assert.equal(amount, 100); assert.equal(description, 'Bolt Card'); return invoice;
+    },
+    $refs: { withdrawAuthorization: { submit: async (...args) => calls.push(args) } },
+    startWithdrawPaymentMonitor: async (...args) => calls.push(args),
+  };
+  await vm.executeWithdraw();
+  assert.deepEqual(calls, [[request, 'lnbc-wallet-invoice', 100], [invoice, 100]]);
+  assert.equal(vm.lnurlWithdrawStatus, 'monitoring');
+});
+
+test('wallet PIN cancellation does not start receipt monitoring', async () => {
+  const { methods } = component();
+  let reset = false;
+  const vm = {
+    ...methods, pendingPayment: { type: 'lnurl_withdraw' }, canConfirmWithdraw: true, withdrawAmountSats: 100,
+    createInvoiceForWithdraw: async () => ({ payment_request: 'lnbc-wallet-invoice' }),
+    $refs: { withdrawAuthorization: { submit: async () => { throw new DOMException('cancelled', 'AbortError'); } } },
+    startWithdrawPaymentMonitor: () => assert.fail('must not monitor a cancelled authorization'),
+    resetWithdrawState: () => { reset = true; },
+  };
+  await vm.executeWithdraw();
+  assert.equal(reset, true);
 });

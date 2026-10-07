@@ -1,3 +1,4 @@
+import { offerKioskPayment } from '../services/kioskPaymentIntake.js';
 import { offerAddressRequest } from '../services/addressRequestIntake.js';
 import { boot } from 'quasar/wrappers'
 import { Notify } from 'quasar'
@@ -6,7 +7,7 @@ import { App } from '@capacitor/app'
 import { parsePaymentDestination } from '../providers/WalletFactory'
 import { classifyIdentifier } from '../utils/nostrLookup'
 import { triggerWalletStoreHydration } from '../utils/walletHydration'
-import { profileLinkRoute } from '../utils/profileLink'
+import { cardRouteForDeepLink, createDeepLinkDeduper } from '../utils/deepLinkRouting'
 import { redactPaymentInput } from '../utils/logRedaction'
 
 /**
@@ -16,7 +17,9 @@ import { redactPaymentInput } from '../utils/logRedaction'
  * Registers BuhoGO as a handler for lightning:, bitcoin:, lnurlp://, lnurlw://
  * URI schemes so it appears in the Android app chooser alongside other Lightning wallets,
  * and as an App Link handler for https://go.mybuho.de/p/… so a shared card opens
- * the card instead of the browser.
+ * the card instead of the browser. NIP-21 identities (nostr:npub… /
+ * nostr:nprofile…, e.g. the card QR scanned with the system camera) open the
+ * same card screen, which offers both Pay and Save (issue #301).
  *
  * The flow:
  *   1. Android receives an intent matching our URI schemes (AndroidManifest.xml)
@@ -25,11 +28,15 @@ import { redactPaymentInput } from '../utils/logRedaction'
  *   4. We write the parsed payload to walletStore.pendingDeepLink
  *   5. Wallet.vue's watcher (immediate: true) drains it on mount and feeds
  *      onPaymentDetected(). This survives the cold-start race where the
- *      intent arrives before Wallet.vue has registered its handler.
+ *      intent arrives before Wallet.vue has registered its handler. Locked
+ *      kiosks instead consume withdrawals on KioskDashboard, using the same
+ *      inbox without opening the owner's wallet.
  */
 
-// Track last handled URL to prevent duplicate processing on Activity resume
-let lastHandledUrl = null
+// Cold start can deliver one intent twice (getLaunchUrl + appUrlOpen). Drop a
+// repeat only inside a short window: remembering the last URL forever meant a
+// second tap on the same link, minutes later, silently did nothing.
+const shouldHandle = createDeepLinkDeduper()
 
 /**
  * Parse a deep link URI into the payment data shape expected by Wallet.vue's onPaymentDetected.
@@ -40,10 +47,10 @@ function parseDeepLinkURI(url) {
 
   const input = url.trim()
 
-  // NIP-21 identity links (nostr:npub… / nostr:nprofile…) — the identity-card
-  // QR and Nostr clients hand these over. Not a payment shape, so
-  // parsePaymentDestination can't classify them; Wallet.onPaymentDetected
-  // resolves the profile to its Lightning target and re-dispatches.
+  // NIP-21 identity links (nostr:npub… / nostr:nprofile…) never get here:
+  // handleDeepLink opens the card for them first (cardRouteForDeepLink). This
+  // stays as a fallback for an identifier the card route could not take, so
+  // it still resolves to a payment rather than "Unsupported link format".
   const nostrKind = classifyIdentifier(input)
   if (nostrKind === 'npub' || nostrKind === 'nprofile') {
     return { data: input, type: 'nostr_identifier' }
@@ -67,8 +74,7 @@ function parseDeepLinkURI(url) {
 
 function handleDeepLink(url, router, walletStore) {
   if (offerAddressRequest(url)) return
-  if (!url || url === lastHandledUrl) return
-  lastHandledUrl = url
+  if (!url || !shouldHandle(url)) return
 
   // Scheme + length only: deep links carry invoices, LNURLs and one-time
   // card-authentication parameters that must never reach logcat.
@@ -78,17 +84,14 @@ function handleDeepLink(url, router, walletStore) {
   // activeWallet guard both read store state that is null until hydration runs.
   triggerWalletStoreHydration(walletStore)
 
-  // Block deep links while kiosk mode is locked
-  if (walletStore.kioskEnabled && !walletStore.kioskOwnerAccess) {
-    console.log('[deep-links] Blocked - kiosk mode active')
-    return
-  }
+  if (offerKioskPayment(url, walletStore, router)) return
 
-  // A shared card is not a payment. It opens the same page the browser would
-  // have shown, natively, where paying and saving the contact both work in
-  // app. Checked before the wallet guard below on purpose: someone with no
-  // wallet yet can still be handed a card and save the person.
-  const profileRoute = profileLinkRoute(url)
+  // A shared card is not a payment, and neither is a Nostr identity. Both
+  // open the same page the browser would have shown, natively, where paying
+  // and saving the contact both work in app. Checked before the wallet guard
+  // below on purpose: someone with no wallet yet can still be handed a card
+  // and save the person.
+  const profileRoute = cardRouteForDeepLink(url)
   if (profileRoute) {
     router.push(profileRoute).catch(() => { /* navigation rejection is non-fatal */ })
     return

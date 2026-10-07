@@ -97,6 +97,8 @@ export default {
   "Copy private key": "Copiar clave privada",
   "Private key copied": "Clave privada copiada",
   "Private key could not be copied. Try again.": "No se pudo copiar la clave privada. Inténtalo de nuevo.",
+  "Clipboard access failed. Please try copying again.": "No se pudo acceder al portapapeles. Intenta copiar de nuevo.",
+  "Private key could not be accessed. Please try again.": "No se pudo acceder a la clave privada. Inténtalo de nuevo.",
   "Kept hidden for your privacy. Anyone with this key can use this identity.": "Se mantiene oculta por tu privacidad. Cualquiera con esta clave puede usar esta identidad.",
   "Copy only to an app you trust. Never send it in a message.": "Cópiala solo en una app de confianza. Nunca la envíes en un mensaje.",
   "Your bitcoin": "Tus bitcoin",
