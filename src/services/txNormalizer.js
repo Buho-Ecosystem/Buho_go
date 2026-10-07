@@ -52,7 +52,7 @@ function resolveDirection(rawType, amount) {
  * list endpoint we consume sends — ignore it rather than misread it as a
  * 1970 timestamp and mark every pending invoice expired.
  */
-function resolveExpiryMs(tx) {
+export function resolveExpiryMs(tx) {
   const raw = tx.expiry ?? tx.expires_at ?? null;
   if (raw == null) return null;
   if (typeof raw === 'number') {
@@ -61,8 +61,31 @@ function resolveExpiryMs(tx) {
     if (raw >= 1e9) return raw * 1000;
     return null;
   }
-  const t = Date.parse(raw);
+  const str = String(raw).trim();
+  // LNbits stores expiry in UTC, but some versions serialise it without a
+  // zone ("2026-07-13T13:41:07"). Date.parse reads a zone-less datetime as
+  // device-local time, which shifts the deadline by the UTC offset and
+  // flips the invoice to expired hours too early or too late.
+  const zoneless = /^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(:\d{2}(\.\d+)?)?$/.test(str);
+  const t = Date.parse(zoneless ? `${str.replace(' ', 'T')}Z` : str);
   return Number.isFinite(t) ? t : null;
+}
+
+/**
+ * Re-judge a normalized pending incoming invoice against the clock.
+ *
+ * normalizeTx() only decides 'expired' at the moment it runs, so a list
+ * left open (or served from cache) keeps showing "Awaiting payment" long
+ * after the invoice died. Pages call this on a timer to flip it in place.
+ *
+ * @param {object} tx - a normalized transaction
+ * @param {number} [now]
+ * @returns {boolean} true when the invoice is pending and past its expiry
+ */
+export function isInvoiceExpired(tx, now = Date.now()) {
+  if (!tx || tx.status !== 'pending' || tx.type !== 'incoming') return false;
+  const expiryMs = resolveExpiryMs(tx);
+  return !!expiryMs && expiryMs < now;
 }
 
 /**
@@ -217,10 +240,7 @@ export function normalizeTx(rawTx, options = {}) {
   // and an outgoing payment's expiry says nothing about ITS state (the
   // invoice we paid expiring later doesn't unsettle the payment).
   let status = tx.status || 'completed';
-  if (status === 'pending' && type === 'incoming') {
-    const expiryMs = resolveExpiryMs(tx);
-    if (expiryMs && expiryMs < Date.now()) status = 'expired';
-  }
+  if (isInvoiceExpired({ ...tx, status, type })) status = 'expired';
 
   return {
     // Preserve anything a provider already attached (expiry, tag, webhook,

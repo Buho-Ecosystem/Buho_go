@@ -99,6 +99,16 @@
                 :name="heroAvatar.name"
                 :initial-length="2"
               />
+              <!-- Awaiting / expired with no known identity: the status
+                   clock, same as the list row. A silhouette with a green
+                   "received" badge read as money that arrived. -->
+              <span
+                v-else-if="!isSettled"
+                class="hero-avatar hero-status-icon"
+                :class="getStatusClass()"
+              >
+                <Icon :icon="getStatusIcon()" width="26" height="26" />
+              </span>
               <!-- No known identity: the app-wide silhouette — the same
                    avatar-first anatomy as the transaction list, with the
                    movement-type badge carrying direction. -->
@@ -125,7 +135,7 @@
                  the fallback estimate. -->
             <div class="hero-fiat">
               <q-skeleton v-if="loadingFiatRates && !transaction.fiatAtSettlement" type="text" width="60px" height="14px" style="margin: 0 auto;" />
-              <template v-else-if="transaction.fiatAtSettlement">
+              <template v-else-if="transaction.fiatAtSettlement && isSettled">
                 {{ formatFiatValue(transaction.fiatAtSettlement.amount, transaction.fiatAtSettlement.currency) }} {{ $t('at settlement') }}
               </template>
               <template v-else>{{ getFiatAmount() }}</template>
@@ -252,7 +262,12 @@
             <div class="tx-row-value">{{ formatAmount(transaction.fee, walletStore.useBip177Format) }}</div>
           </div>
 
-          <div v-if="getSettlementRateDisplay()" class="tx-row">
+          <div v-if="invoiceExpiryMs" class="tx-row">
+            <div class="tx-row-label">{{ transaction.status === 'expired' ? $t('Expired') : $t('Expires at') }}</div>
+            <div class="tx-row-value">{{ formatDateTime(Math.floor(invoiceExpiryMs / 1000)) }}</div>
+          </div>
+
+          <div v-if="isSettled && getSettlementRateDisplay()" class="tx-row">
             <div class="tx-row-label">{{ $t('BTC price at settlement') }}</div>
             <div class="tx-row-value">{{ getSettlementRateDisplay() }}</div>
           </div>
@@ -655,7 +670,7 @@ import { formatAmount, formatAmountWithPrefix } from '../utils/amountFormatting.
 import { useWalletStore } from '../stores/wallet';
 import { useAddressBookStore } from '../stores/addressBook';
 import { useTransactionMetadataStore } from '../stores/transactionMetadata';
-import { normalizeTx } from '../services/txNormalizer.js';
+import { normalizeTx, isInvoiceExpired, resolveExpiryMs } from '../services/txNormalizer.js';
 import { matchLnAddressService } from '../services/lnAddressServices';
 import { shareContent } from '../utils/share';
 import { copySensitive } from '../utils/sensitiveClipboard.js';
@@ -733,10 +748,16 @@ export default {
 
     this.initializeTransactionDetails();
     this.loadFiatRates();
+    // Keep an open "Awaiting payment" receipt honest: flip it to expired
+    // the moment its deadline passes rather than on the next reload.
+    this._invoiceExpiryTimer = setInterval(() => {
+      if (isInvoiceExpired(this.transaction)) this.transaction.status = 'expired';
+    }, 15000);
   },
 
   beforeUnmount() {
     if (this._zapProfileTimer) clearInterval(this._zapProfileTimer);
+    if (this._invoiceExpiryTimer) clearInterval(this._invoiceExpiryTimer);
   },
 
   watch: {
@@ -827,8 +848,27 @@ export default {
      * below the amount carries pending/expired; the badge only ever
      * names the movement.
      */
+    /** Money actually moved — false for awaiting, expired and failed. */
+    isSettled() {
+      return (this.transaction?.status || 'completed') === 'completed';
+    },
+
+    /**
+     * Deadline of an unpaid incoming invoice (ms), shown as its own row so
+     * "Awaiting payment" says until when. Null once paid or for sends.
+     */
+    invoiceExpiryMs() {
+      const tx = this.transaction;
+      if (!tx || tx.type !== 'incoming') return null;
+      if (tx.status !== 'pending' && tx.status !== 'expired') return null;
+      return resolveExpiryMs(tx);
+    },
+
     heroBadge() {
       if (!this.transaction) return null;
+      // Unsettled: the status icon/chip carry the state; a direction
+      // badge would claim a movement that hasn't happened.
+      if (!this.isSettled) return null;
       if (this.zapInfo || this.transaction.senderNpub) {
         return { icon: NOSTRICH_HEAD_ICON, cls: 'tx-badge-zap' };
       }
@@ -1498,25 +1538,31 @@ export default {
     getTransactionStatus() {
       if (this.transaction.status === 'expired') return this.$t('Expired');
       if (this.transaction.settled) return this.$t('Completed');
-      if (this.transaction.pending || this.transaction.status === 'pending') return this.$t('Pending');
+      if (this.transaction.pending || this.transaction.status === 'pending') {
+        return this.transaction.type === 'incoming' ? this.$t('Awaiting payment') : this.$t('Pending');
+      }
+      if (this.transaction.status === 'failed') return this.$t('Failed');
       return this.$t('Completed');
     },
 
     getStatusIcon() {
       if (this.transaction.status === 'expired') return 'tabler:clock-x';
+      if (this.transaction.status === 'failed') return 'tabler:circle-x';
       if (this.transaction.settled) return 'tabler:circle-check';
       if (this.transaction.pending || this.transaction.status === 'pending') return 'tabler:clock';
       return 'tabler:circle-check';
     },
 
     getStatusClass() {
-      if (this.transaction.status === 'expired') return 'status-expired';
+      if (this.transaction.status === 'expired' || this.transaction.status === 'failed') return 'status-expired';
       if (this.transaction.settled) return 'status-completed';
       if (this.transaction.pending || this.transaction.status === 'pending') return 'status-pending';
       return 'status-completed';
     },
 
     getAmountClass() {
+      if (this.transaction.status === 'pending') return 'amount-pending';
+      if (this.transaction.status === 'expired' || this.transaction.status === 'failed') return 'amount-expired';
       return this.transaction.type === 'incoming' ? 'amount-positive' : 'amount-negative';
     },
 
@@ -2168,6 +2214,35 @@ export default {
 
 .hero-amount.amount-negative {
   color: var(--text-primary);
+}
+
+/* Unpaid invoice: neutral, not the received-green. */
+.hero-amount.amount-pending {
+  color: var(--text-primary);
+}
+
+/* Expired/failed: never arrived — muted and struck through. */
+.hero-amount.amount-expired {
+  color: var(--text-muted);
+  text-decoration: line-through;
+}
+
+/* Status clock in place of the avatar for awaiting/expired receipts. */
+.hero-status-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+}
+
+.hero-status-icon.status-pending {
+  background: rgba(245, 166, 35, 0.14);
+  color: #F5A623;
+}
+
+.hero-status-icon.status-expired {
+  background: rgba(239, 68, 68, 0.10);
+  color: #EF4444;
 }
 
 .hero-fiat {

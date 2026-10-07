@@ -1156,6 +1156,7 @@ export default {
   "Nostr payment": "Nostr payment",
   "Phone payment": "Phone payment",
   "Expired": "Expired",
+  "Failed": "Failed",
   "BTC price at settlement": "BTC price at settlement",
   "at settlement": "at settlement",
   "Today": "Today",

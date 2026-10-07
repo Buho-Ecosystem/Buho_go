@@ -1217,6 +1217,7 @@ export default {
   "Nostr payment": "Pago Nostr",
   "Phone payment": "Pago por teléfono",
   "Expired": "Vencida",
+  "Failed": "Fallida",
   "BTC price at settlement": "Precio de BTC al liquidar",
   "at settlement": "al liquidar",
   "Today": "Hoy",

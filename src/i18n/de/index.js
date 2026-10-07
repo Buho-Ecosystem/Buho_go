@@ -1216,6 +1216,7 @@ export default {
   "Nostr payment": "Nostr-Zahlung",
   "Phone payment": "Telefonzahlung",
   "Expired": "Abgelaufen",
+  "Failed": "Fehlgeschlagen",
   "BTC price at settlement": "BTC-Kurs bei Abwicklung",
   "at settlement": "bei Abwicklung",
   "Today": "Heute",

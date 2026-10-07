@@ -475,8 +475,8 @@
                       class="tx-row-icon"
                       :class="[
                         $q.dark.isActive ? 'tx-row-icon-dark' : 'tx-row-icon-light',
-                        `tx-row-icon-${getTxDirection(tx)}`,
-                        { 'tx-row-icon-bitcoin': isBitcoinTransaction(tx) }
+                        `tx-row-icon-${getTxIconTone(tx)}`,
+                        { 'tx-row-icon-bitcoin': isBitcoinTransaction(tx) && tx.status !== 'expired' }
                       ]"
                     >
                       <Icon :icon="getTxIcon(tx)" width="18" height="18" />
@@ -578,7 +578,8 @@
                         $q.dark.isActive ? 'tx-row-title-dark' : 'tx-row-title-light',
                         {
                           'tx-row-amount-in': tx.type === 'incoming' && tx.status === 'completed',
-                          'tx-row-amount-out': tx.type === 'outgoing' && tx.status === 'completed'
+                          'tx-row-amount-out': tx.type === 'outgoing' && tx.status === 'completed',
+                          'tx-row-amount-expired': tx.status === 'expired'
                         }
                       ]"
                     >
@@ -735,7 +736,7 @@ import { useBitcoinDepositsStore } from '../stores/bitcoinDeposits';
 import { BITCOIN_DEPOSIT_POLL_MS, AUTO_CLAIM_THRESHOLDS } from '../stores/bitcoinPreferences';
 import { useAddressBookStore } from '../stores/addressBook';
 import { useTransactionMetadataStore } from '../stores/transactionMetadata';
-import { normalizeTx } from '../services/txNormalizer.js';
+import { normalizeTx, isInvoiceExpired } from '../services/txNormalizer.js';
 import { formatRelativeTime, formatShortTime, formatHumanDateTime } from '../utils/timeFormatting';
 import { groupMicropayments } from '../composables/useTransactionGrouping';
 import { matchLnAddressService } from '../services/lnAddressServices';
@@ -746,6 +747,9 @@ import { NOSTRICH_HEAD_ICON } from '../utils/nostrIcon.js';
 import { splitAddressForDisplay } from '../utils/addressUtils.js';
 import { getTxDescription, getTxMessage as resolveTxMessage, isPlaceholderDescription } from '../utils/txMessage.js';
 import { readCachedTransactions, mergeCachedTransactions } from '../utils/txCache.js';
+
+// How often open history re-checks pending invoices against their expiry.
+const INVOICE_EXPIRY_CHECK_MS = 15000;
 
 // Chip text per metadata source (i18n message keys, resolved through $t at
 // render time). Lookup map on purpose: later passes stamp more sources
@@ -787,6 +791,7 @@ export default {
       walletStore: null,
       bitcoinDepositsStore: null,
       depositPollingInterval: null,
+      invoiceExpiryInterval: null,
       depositRead: 0,
       addressBookStore: null,
       metadataStore: null,
@@ -1031,6 +1036,11 @@ export default {
     await this.walletStore.whenHydrated();
     try { this.walletState = JSON.parse(localStorage.getItem('buhoGO_wallet_state')) || {}; } catch { /* defaults */ }
     this.cachedTransactions = readCachedTransactions(this.walletStore.activeWalletId);
+    this.expireStaleInvoices();
+    // An invoice's deadline passes while the list sits open; re-judge
+    // pending ones against the clock so "Awaiting payment" flips to
+    // "Invoice expired" without waiting for a refetch.
+    this.invoiceExpiryInterval = setInterval(() => this.expireStaleInvoices(), INVOICE_EXPIRY_CHECK_MS);
     if (this.cachedTransactions.length) {
       this.isLoading = false;
       this.showLoadingScreen = false;
@@ -1050,6 +1060,7 @@ export default {
     this.backgroundFetchAborted = true;
     this.depositRead++;
     clearInterval(this.depositPollingInterval);
+    clearInterval(this.invoiceExpiryInterval);
   },
 
   watch: {
@@ -1452,6 +1463,17 @@ export default {
      */
     getTxDirection(tx) {
       return tx?.type === 'incoming' ? 'in' : 'out';
+    },
+
+    /**
+     * Colour of the status icon circle. Pending and expired never take
+     * the incoming green — that green means money arrived, and neither
+     * an unpaid nor a dead invoice moved any.
+     */
+    getTxIconTone(tx) {
+      if (tx?.status === 'pending') return 'pending';
+      if (tx?.status === 'expired' || tx?.status === 'failed') return 'expired';
+      return this.getTxDirection(tx);
     },
 
     /**
@@ -2153,6 +2175,20 @@ export default {
       const group = this.groupedTransactions.find(g => g.date === dateKey);
       if (group) {
         group.expanded = this.expandedGroups.has(dateKey);
+      }
+    },
+
+    /**
+     * Flip pending incoming invoices whose expiry has passed to 'expired',
+     * in place. Covers rows served from the cache (stamped pending when
+     * they were saved) and rows normalized before the deadline passed.
+     */
+    expireStaleInvoices() {
+      const now = Date.now();
+      for (const list of [this.transactions, this.cachedTransactions]) {
+        for (const tx of list || []) {
+          if (isInvoiceExpired(tx, now)) tx.status = 'expired';
+        }
       }
     },
 
@@ -3106,7 +3142,7 @@ export default {
 /* Pending rows get a hairline accent on the left so scanning users
    can spot "still in motion" payments without visual shouting. */
 .tx-row-pending {
-  box-shadow: inset 2px 0 0 rgba(148, 163, 184, 0.5);
+  box-shadow: inset 2px 0 0 rgba(245, 166, 35, 0.6);
 }
 
 /* Ready-to-claim deposits: subtle green accent instead. Direction is
@@ -3206,6 +3242,29 @@ export default {
 .tx-row-icon-dark.tx-row-icon-in {
   background: rgba(21, 222, 114, 0.14);
   color: #15DE72;
+}
+
+/* Awaiting payment: amber, same as the details page's Pending chip. */
+.tx-row-icon-light.tx-row-icon-pending {
+  background: rgba(245, 166, 35, 0.12);
+  color: #B7791F;
+}
+
+.tx-row-icon-dark.tx-row-icon-pending {
+  background: rgba(245, 166, 35, 0.14);
+  color: #F5A623;
+}
+
+/* Expired / failed: soft red wash, muted red glyph — clearly dead,
+   without the alarm of an outgoing-red amount. */
+.tx-row-icon-light.tx-row-icon-expired {
+  background: rgba(239, 68, 68, 0.08);
+  color: #DC2626;
+}
+
+.tx-row-icon-dark.tx-row-icon-expired {
+  background: rgba(239, 68, 68, 0.12);
+  color: #F87171;
 }
 
 /* Bitcoin (L1) icon — overrides direction colours so L1 deposits AND
@@ -3419,6 +3478,13 @@ export default {
 
 .body--dark .tx-row-amount.tx-row-amount-out {
   color: #F16A6A;
+}
+
+/* An expired invoice was never paid: the amount is struck through and
+   muted so it can't be read as money that arrived. */
+.tx-row-amount.tx-row-amount-expired {
+  color: var(--text-muted);
+  text-decoration: line-through;
 }
 
 /* ── Confirmation dots (pending Bitcoin deposits) ────────────── */
