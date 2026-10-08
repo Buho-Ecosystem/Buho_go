@@ -34,13 +34,29 @@ android {
             // methods reflectively from JavaScript. proguard-rules.pro keeps
             // exactly those surfaces - read it before touching this flag.
             //
-            // Resource shrinking stays off on purpose: the web app lives in
-            // assets/ (which it never touches), so it would buy nothing here
-            // while risking resources the GMS scanner UI loads dynamically.
+            // Resource shrinking drops the unused resources the libraries
+            // bring in (Play: "Resource shrinking isn't enabled"). The web
+            // app lives in assets/, which it never touches. Resources looked
+            // up only by name (the notification icon named from JavaScript)
+            // are kept in res/raw/keep.xml - add any new ones there.
             minifyEnabled true
+            shrinkResources true
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
     }
+}
+
+// Material Components is not part of the app: nothing BuhoGO runs uses it.
+// It only arrived as a declared dependency (@capgo/capacitor-native-biometric,
+// whose code and layouts are plain AppCompat, and androidx navigation-ui,
+// which that plugin never starts). Every Material release up to 1.14.0 still
+// calls Window.setStatusBarColor / setNavigationBarColor (EdgeToEdgeUtils,
+// the bottom/side sheet dialogs, the date picker), which Android 15
+// deprecated and Play reports against this app. Excluding it removes those
+// calls from the APK. proguard-rules.pro tells R8 about navigation-ui's
+// unused references to it.
+configurations.configureEach {
+    exclude group: 'com.google.android.material', module: 'material'
 }
 
 repositories {
@@ -57,13 +73,6 @@ dependencies {
     implementation "androidx.coordinatorlayout:coordinatorlayout:$androidxCoordinatorLayoutVersion"
     implementation "androidx.core:core-splashscreen:$coreSplashScreenVersion"
     implementation "com.google.android.gms:play-services-base:$playServicesVersion"
-    // Pinned above what play-services-code-scanner drags in: Material's
-    // bottom-sheet / side-sheet dialogs called Window.setStatusBarColor and
-    // setNavigationBarColor unconditionally, which Android 15 deprecated and
-    // Play reports against this app. 1.13.x goes edge-to-edge without them.
-    // Nothing in BuhoGO's own UI is built on Material - this only raises the
-    // version the scanner's dialogs resolve to.
-    implementation "com.google.android.material:material:$materialVersion"
     // Cloud backup — Google sign-in + on-demand Drive tokens (CloudBackupPlugin).
     // No google-services.json needed: the OAuth Android client is registered
     // server-side by package name + signing SHA-1.

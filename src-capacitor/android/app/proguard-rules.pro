@@ -44,6 +44,12 @@
 -keepattributes SourceFile,LineNumberTable
 -renamesourcefileattribute SourceFile
 
+# ── Material Components (excluded) ────────────────────────────────────────
+# app/build.gradle excludes Material. androidx navigation-ui (pulled in by
+# @capgo/capacitor-native-biometric, never used at runtime) still references
+# its views (BottomNavigationView, NavigationView) in helpers nothing calls.
+-dontwarn com.google.android.material.**
+
 # ── Notes ─────────────────────────────────────────────────────────────────
 # ML Kit, play-services, androidx and the Play in-app-update library all ship
 # their own consumer rules; they need nothing here. If a release build stops

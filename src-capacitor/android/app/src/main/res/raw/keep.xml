@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Resources the release resource shrinker (shrinkResources) must keep
+  although no code references them by R.* id. They are looked up by NAME at
+  runtime, so the shrinker cannot see them:
+
+  - ic_stat_notification: the payment notification's small icon, named from
+    JavaScript (src/services/paymentNotifications.js) and capacitor.config.json
+    and resolved by Capacitor's AssetUtil.getResourceID.
+
+  Add a resource here whenever JavaScript or config refers to one by name.
+-->
+<resources xmlns:tools="http://schemas.android.com/tools"
+    tools:keep="@drawable/ic_stat_notification" />
