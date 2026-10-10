@@ -2357,7 +2357,7 @@ export default {
   "Choose profile picture": "Profilbild wählen",
   "Display name": "Anzeigename",
   "Your name": "Dein Name",
-  "About": "Über dich",
+  "About": "Über uns",
   "A short bio (optional)": "Eine kurze Vorstellung (optional)",
   "Lightning address": "Lightning-Adresse",
   "Save & Publish": "Speichern & Veröffentlichen",
