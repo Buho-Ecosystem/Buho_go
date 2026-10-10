@@ -26,7 +26,7 @@ Last update: 2026-10-11.
 
 ## Open
 
-### 1. Chat UI components (in progress, uncommitted)
+### 1. Chat UI components — DONE (cbeca21)
 `src/components/chat/*` (ChatHeader, MessageBubble, MessageMenu, RequestCard,
 PaymentLine, MoneyBar, Composer, RequestSheet, ReceiveWalletField,
 DaySeparator, UnknownSenderBanner, ChatThread, chatFormat.js, chatTokens.css)
@@ -80,7 +80,87 @@ Collected so far (literal `@` must be written `{'@'}`):
 | Withdrew a request | Hat eine Anfrage zurückgezogen | Retiró una solicitud |
 | Reminder: a request is still open | Erinnerung: eine Anfrage ist noch offen | Recordatorio: una solicitud sigue abierta |
 
-Plus: the chat UI component keys (from the UI agent report), copy for the
+
+Chat UI component keys (cbeca21; some may already exist — reuse, don't duplicate):
+
+| en-US | de | es |
+|---|---|---|
+| Back | Zurück | Atrás |
+| More options | Weitere Optionen | Más opciones |
+| Open contact: {name} | Kontakt öffnen: {name} | Abrir contacto: {name} |
+| End-to-end encrypted | Ende-zu-Ende-verschlüsselt | Cifrado de extremo a extremo |
+| Payments only | Nur Zahlungen | Solo pagos |
+| Not in your contacts | Nicht in deinen Kontakten | No está en tus contactos |
+| Today | Heute | Hoy |
+| Yesterday | Gestern | Ayer |
+| You sent {amount} | Du hast {amount} gesendet | Enviaste {amount} |
+| Received {amount} | {amount} erhalten | Recibiste {amount} |
+| Message actions | Nachrichtenaktionen | Acciones del mensaje |
+| React | Reagieren | Reaccionar |
+| React with {emoji} | Mit {emoji} reagieren | Reaccionar con {emoji} |
+| Reply | Antworten | Responder |
+| Copy text | Text kopieren | Copiar texto |
+| Send again | Erneut senden | Enviar de nuevo |
+| Cancel | Abbrechen | Cancelar |
+| Shown as plain text | Als Text angezeigt | Mostrado como texto |
+| Reactions | Reaktionen | Reacciones |
+| {emoji} {count} reactions | {emoji} {count} Reaktionen | {emoji} {count} reacciones |
+| Waiting to send | Wartet auf Senden | Esperando para enviar |
+| Sending | Wird gesendet | Enviando |
+| Sent | Gesendet | Enviado |
+| Not sent | Nicht gesendet | No enviado |
+| You | Du | Tú |
+| Them | Gegenüber | Contacto |
+| Reply to {name} | Antwort an {name} | Respuesta a {name} |
+| You requested | Du hast angefragt | Solicitaste |
+| {name} requests | {name} fordert an | {name} solicita |
+| Payment request | Zahlungsanfrage | Solicitud de pago |
+| Valid until {when} | Gültig bis {when} | Válido hasta {when} |
+| Reported paid, not verified | Als bezahlt gemeldet, nicht verifiziert | Informado como pagado, sin verificar |
+| Paid | Bezahlt | Pagado |
+| Declined | Abgelehnt | Rechazado |
+| Withdrawn | Zurückgezogen | Retirado |
+| Expired | Abgelaufen | Vencido |
+| open | offen | abierta |
+| This wallet cannot confirm the payment automatically. | Diese Wallet kann die Zahlung nicht automatisch bestätigen. | Esta wallet no puede confirmar el pago automáticamente. |
+| This request is invalid and cannot be paid. | Diese Anfrage ist ungültig und kann nicht bezahlt werden. | Esta solicitud no es válida y no se puede pagar. |
+| This request has expired. | Diese Anfrage ist abgelaufen. | Esta solicitud ha vencido. |
+| This wallet cannot pay this request. Choose another wallet. | Diese Wallet kann die Anfrage nicht bezahlen. Wähle eine andere Wallet. | Esta wallet no puede pagar esta solicitud. Elige otra wallet. |
+| Decline | Ablehnen | Rechazar |
+| Pay | Zahlen | Pagar |
+| Remind | Erinnern | Recordar |
+| Withdraw | Zurückziehen | Retirar |
+| Request | Anfordern | Solicitar |
+| Send | Senden | Enviar |
+| Write a message | Nachricht schreiben | Escribir un mensaje |
+| Back to payments | Zurück zu Zahlungen | Volver a pagos |
+| Message | Nachricht | Mensaje |
+| Send message | Nachricht senden | Enviar mensaje |
+| Cancel reply | Antwort abbrechen | Cancelar respuesta |
+| This looks like a secret key | Das sieht wie ein geheimer Schlüssel aus | Esto parece una clave secreta |
+| Never share it. Sending is blocked. | Teile ihn nie. Senden ist gesperrt. | No la compartas nunca. El envío está bloqueado. |
+| {count} characters left | noch {count} Zeichen | quedan {count} caracteres |
+| {count} characters too long | {count} Zeichen zu lang | {count} caracteres de más |
+| Receive in | Empfangen in | Recibir en |
+| Request from {name} | Anfrage an {name} | Solicitar a {name} |
+| Request money | Geld anfordern | Solicitar dinero |
+| Close | Schließen | Cerrar |
+| Amount in sats | Betrag in Sats | Importe en sats |
+| Note (optional) | Notiz (optional) | Nota (opcional) |
+| What is it for? | Wofür ist das? | ¿Para qué es? |
+| The smallest request is {amount} | Die kleinste Anfrage ist {amount} | La solicitud mínima es {amount} |
+| The largest request is {amount} | Die größte Anfrage ist {amount} | La solicitud máxima es {amount} |
+| Request {amount} | {amount} anfordern | Solicitar {amount} |
+| Creating request | Anfrage wird erstellt | Creando solicitud |
+| Only pay if you are sure who this is. | Zahle nur, wenn du sicher bist, wer das ist. | Paga solo si estás seguro de quién es. |
+| The name looks like your contact {name}, but this is a different profile. Only pay if you are sure. | Der Name gleicht deinem Kontakt {name}, aber das Profil ist ein anderes. Zahle nur, wenn du sicher bist. | El nombre se parece a tu contacto {name}, pero es otro perfil. Paga solo si estás seguro. |
+| Profile | Profil | Perfil |
+| Add contact | Kontakt hinzufügen | Añadir contacto |
+| Block | Blockieren | Bloquear |
+| Nothing here yet. Request or send money to get started. | Noch nichts hier. Fordere Geld an oder sende welches. | Aún no hay nada. Solicita o envía dinero para empezar. |
+| New messages | Neue Nachrichten | Mensajes nuevos |
+
+Plus: copy for the
 DM_ERROR codes the UI shows (WALLET_CANNOT_INVOICE, INVALID_INVOICE,
 WALLET_CANNOT_PAY, INVOICE_EXPIRED, NO_INBOX_RELAYS, NO_RELAY_ACCEPTED,
 SECRET_KEY_IN_TEXT), "Receive in", "money lands in {wallet}" (Arkade
