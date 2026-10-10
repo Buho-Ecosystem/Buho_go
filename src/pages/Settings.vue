@@ -1060,6 +1060,7 @@
           :wallet="detailWallet"
           :type-label="getWalletTypeLabel(detailWallet)"
           :balance="walletBalanceText(detailWallet.id)"
+          :balance-known="walletStore.getDisplayBalance(detailWallet.id).known"
           :active="detailWallet.id === activeWalletId"
           :connected="!!connectionStates[detailWallet.id]?.connected"
           :switching="walletSwitching"
@@ -1135,6 +1136,12 @@
                 {{ $t('Tap "Add Wallet" to get started') }}
               </div>
             </div>
+
+            <!-- A restore keeps finding the phrase's other wallets for a while. -->
+            <p v-if="walletStore.sparkDiscoveryRunning" class="wallets-discovery" role="status">
+              <q-spinner size="14px" :aria-hidden="true" />
+              {{ $t('Looking for more wallets from your recovery phrase') }}
+            </p>
 
             <div class="wallets-list-scroll" :class="$q.dark.isActive ? 'wallets-group-dark' : 'wallets-group-light'">
               <div
@@ -1231,18 +1238,20 @@
         <q-card-section class="dialog-content">
           <!-- Spark: create or restore the first wallet; afterwards, more
                wallets come from the same recovery phrase until the limit. -->
-          <div v-if="hasAnySparkWallet && walletStore.canAddSparkWallet" class="wallet-type-section">
+          <div v-if="hasAnySparkWallet" class="wallet-type-section">
             <div class="section-label" :class="$q.dark.isActive ? 'table_col_dark' : 'table_col_light'">
               {{ $t('Self-Custodial Wallet') }}
             </div>
+            <!-- At the limit the row stays, disabled, and says why. -->
             <div
               class="wallet-type-option"
-              :class="$q.dark.isActive ? 'option-dark' : 'option-light'"
+              :class="[$q.dark.isActive ? 'option-dark' : 'option-light', { 'option-disabled': !walletStore.canAddSparkWallet }]"
               role="button"
-              tabindex="0"
+              :tabindex="walletStore.canAddSparkWallet ? 0 : -1"
+              :aria-disabled="walletStore.canAddSparkWallet ? null : 'true'"
               data-audit="add-spark-wallet"
-              @click="openAddSparkWallet"
-              @keydown.enter.prevent="openAddSparkWallet"
+              @click="walletStore.canAddSparkWallet && openAddSparkWallet()"
+              @keydown.enter.prevent="walletStore.canAddSparkWallet && openAddSparkWallet()"
             >
               <div class="option-icon spark-option-icon">
                 <WalletBrandMark type="spark" :size="22" color="currentColor" />
@@ -1252,10 +1261,12 @@
                   {{ $t('New Spark wallet') }}
                 </div>
                 <div class="option-subtitle" :class="$q.dark.isActive ? 'table_col_dark' : 'table_col_light'">
-                  {{ $t('From your recovery phrase · {count} of {max} left', { count: walletStore.remainingSparkSlots, max: walletStore.maxSparkWallets }) }}
+                  {{ walletStore.canAddSparkWallet
+                    ? $t('From your recovery phrase · {count} of {max} left', { count: walletStore.remainingSparkSlots, max: walletStore.maxSparkWallets })
+                    : $t('All {max} Spark wallets are in use', { max: walletStore.maxSparkWallets }) }}
                 </div>
               </div>
-              <Icon icon="tabler:chevron-right" width="18" height="18" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'" />
+              <Icon v-if="walletStore.canAddSparkWallet" icon="tabler:chevron-right" width="18" height="18" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'" />
             </div>
             <q-separator class="q-my-md" :class="$q.dark.isActive ? 'bg-grey-8' : 'bg-grey-3'"/>
           </div>
@@ -3796,9 +3807,9 @@ export default {
       const count = this.sparkWallets.length;
       this.dangerConfirmTitle = this.$t('Delete Spark Wallets');
       this.dangerConfirmMessage = (count > 1
-        ? this.$t('This will permanently delete all {count} Spark wallets. Make sure you have backed up your seed phrases. This action cannot be undone.', { count })
-        : this.$t('This will permanently delete your Spark wallet. Make sure you have backed up your seed phrase. This action cannot be undone.'))
-        + ' ' + this.$t('The last saved exit kit stays on this phone in case you add the wallet again with the same words.');
+        ? this.$t('This removes all {count} Spark wallets and their recovery phrase from this phone. You can restore them any time with your recovery phrase.', { count })
+        : this.$t('This removes your last Spark wallet and its recovery phrase from this phone. You can restore it any time with your recovery phrase.'))
+        + ' ' + this.$t('The last saved exit kit stays on this phone in case you add the wallet again with the same recovery phrase.');
       this.dangerConfirmButtonText = this.$t('Delete');
       this.dangerConfirmInput = '';
       this.dangerConfirmAction = 'deleteSparkWallet';
@@ -3911,6 +3922,34 @@ export default {
       })
       if (copy.blocked) {
         this.showRemovalBlocked(copy, walletId)
+        return
+      }
+
+      // A Spark wallet that is not the last one can come back from the
+      // recovery phrase: a plain destructive alert is enough. Removals that
+      // cannot be undone keep the typed confirmation below.
+      const check = this.walletStore.removalCheckFor(walletId)
+      if (wallet.type === 'spark' && !check.notes.includes('last_spark_wallet')) {
+        this.$q.dialog({
+          title: copy.title,
+          message: copy.message,
+          cancel: { label: this.$t('Cancel'), flat: true, noCaps: true },
+          ok: { label: copy.confirmLabel, color: 'negative', flat: true, noCaps: true },
+          class: this.$q.dark.isActive ? 'card_dark_style' : 'card_light_style',
+          dark: this.$q.dark.isActive,
+        }).onOk(async () => {
+          try {
+            await this.removeWallet(walletId)
+            this.$q.notify({ type: 'positive', message: this.$t('Wallet removed'), position: 'top' })
+          } catch (error) {
+            if (error?.code === 'WALLET_REMOVAL_BLOCKED') {
+              // The situation changed since the check (money arrived): explain it.
+              this.confirmRemoveWallet(walletId)
+              return
+            }
+            this.walletStore.showPaymentError(error, { route: 'Remove wallet', t: this.$t.bind(this) })
+          }
+        })
         return
       }
 
@@ -4192,7 +4231,7 @@ export default {
 
     /** The new wallet is the active one now: say so, by name. */
     onSparkWalletCreated(wallet) {
-      this.$q.notify({ type: 'positive', message: this.$t('Switched to {name}', { name: wallet.name }) });
+      this.$q.notify({ type: 'positive', message: this.$t('Switched to {name}', { name: wallet.name }), position: 'top' });
     },
 
     openMoveAddress(walletId) {
@@ -4201,7 +4240,7 @@ export default {
     },
 
     onAddressMoved({ moved, target }) {
-      this.$q.notify({ type: 'positive', message: this.$t('{address} now receives into {name}', { address: moved, name: target.name }) });
+      this.$q.notify({ type: 'positive', message: this.$t('{address} now receives into {name}', { address: moved, name: target.name }), position: 'top' });
     },
 
     /** Change the Lightning address of any Spark wallet, not only the active one. */
@@ -6286,6 +6325,20 @@ export default {
   cursor: pointer;
   transition: all 0.2s ease;
   border: 1px solid transparent;
+}
+
+.wallets-discovery {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 4px 10px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.option-disabled {
+  cursor: default;
+  opacity: 0.55;
 }
 
 .option-dark {

@@ -10,14 +10,16 @@
  *   - a wallet holding money is emptied first (Move funds), unless it is the
  *     last Spark wallet;
  *   - the last Spark wallet takes the phrase off this device, so it may only
- *     go once the phrase is backed up, unless it is known to be empty.
+ *     go once the phrase is backed up, unless the network has just confirmed
+ *     it empty (a saved zero proves nothing: money may have arrived since).
  */
 
 /**
  * @param {object} input
  * @param {object} input.wallet             the wallet entry
  * @param {number} input.sparkWalletCount   Spark wallets on the device, this one included
- * @param {{known: boolean, value: number}} input.balance
+ * @param {{known: boolean, value: number, fresh?: boolean}} input.balance
+ *   `fresh`: the value was verified with the network moments ago
  * @param {boolean} input.hasPendingDeposit an on-chain deposit is waiting to be claimed
  * @param {boolean} input.hasActiveExit     an emergency exit is under way
  * @param {boolean} input.backedUp          the recovery phrase is confirmed backed up
@@ -31,7 +33,7 @@ export function removalCheck({ wallet, sparkWalletCount = 0, balance = { known: 
   if (wallet?.type !== 'spark') return { allowed: true, blockers, notes };
 
   const last = sparkWalletCount <= 1;
-  const empty = balance.known && !(balance.value > 0);
+  const empty = balance.known && balance.fresh === true && !(balance.value > 0);
   if (last) notes.push('last_spark_wallet');
   if (!balance.known) notes.push('balance_unknown');
 
@@ -81,7 +83,7 @@ export function removalCopy({ check, wallet, t, formatAmount = (sats) => `${sats
   if (wallet?.type !== 'spark') {
     return { blocked: false, title: t('Remove Wallet'), confirmLabel: t('Remove Wallet'), message: t('Are you sure you want to remove "{name}"? This action cannot be undone.', { name }) };
   }
-  const kitNote = t('The last saved exit kit stays on this phone in case you add the wallet again with the same words.');
+  const kitNote = t('The last saved exit kit stays on this phone in case you add the wallet again with the same recovery phrase.');
   if (check.notes.includes('last_spark_wallet')) {
     return {
       blocked: false,
@@ -97,6 +99,6 @@ export function removalCopy({ check, wallet, t, formatAmount = (sats) => `${sats
     blocked: false,
     title: t('Remove {name}?', { name }),
     confirmLabel: t('Remove'),
-    message: `${t('It disappears from this phone. Your recovery phrase still covers it, so it can come back when you add wallets again.')}${unknown}`,
+    message: `${t('{name} disappears from this phone. It stays part of your recovery phrase, so adding a Spark wallet later brings it back.', { name })}${unknown}`,
   };
 }

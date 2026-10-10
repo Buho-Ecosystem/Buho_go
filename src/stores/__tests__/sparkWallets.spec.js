@@ -117,9 +117,12 @@ test('an account that could not be checked stays queued across restarts, then is
 });
 
 test('a restore that lists wallets creates them with their names, then looks for the rest', async () => {
-  const { store } = createHarness({ evidence: { 5: used() } });
+  const { store, calls } = createHarness({ evidence: { 5: used() } });
   const { added } = await store.restoreSparkWallets({ mnemonic: PHRASE, accounts: [{ accountNumber: 3, name: 'Shop' }, { accountNumber: 1, name: 'Main' }, { accountNumber: 9, name: 'Bad' }] });
   assert.deepEqual(added.map((w) => [w.connectionData.accountNumber, w.name]), [[1, 'Main'], [3, 'Shop']]);
+  assert.equal(store.connectionStates[added[0].id]?.connected, true, 'the first wallet proves the phrase before the restore returns');
+  assert.equal(store.connectionStates[added[1].id], undefined, 'the others do not hold up the restore');
+  assert.ok(calls.reconciled.includes(added[1].id), 'the lifecycle connects them in the background');
   await store.discoverSparkAccounts();
   assert.deepEqual(accounts(store), [1, 3, 5]);
 });
@@ -150,6 +153,32 @@ test('discovery started for one phrase never adds wallets after that phrase left
   release();
   assert.deepEqual(await running, []);
   assert.deepEqual(accounts(h.store), [1], 'nothing of the old phrase joined the new one');
+});
+
+test('a cloud restore does not count as having written the phrase down', async () => {
+  const { store } = createHarness({ evidence: { 2: used() } });
+  const { wallet } = await store.restoreSparkWallets({ mnemonic: PHRASE, phraseConfirmed: false, accounts: [{ accountNumber: 1 }, { accountNumber: 2 }] });
+  assert.equal(wallet.metadata.hasBackedUp, false);
+  assert.equal(store.hasBackedUp, false);
+  assert.ok(store.sparkWallets.every((w) => !w.metadata.hasBackedUp));
+});
+
+test('accounts queued while a discovery run is scanning are not lost when it finishes', async () => {
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  const h = createHarness({ evidence: { 2: async () => { await gate; return used({ paymentCount: 0 }); }, 4: used() } });
+  await h.store.createSparkWallet({ mnemonic: PHRASE });
+  h.store.sparkDiscovery = { pending: [2], attempts: 0, names: {} };
+  const running = h.store.discoverSparkAccounts();
+  await tick();
+  // A merge restore re-plans meanwhile.
+  await h.store.restoreSparkWallets({ mnemonic: PHRASE });
+  assert.deepEqual(h.store.sparkDiscovery.pending, [2, 3, 4, 5, 0]);
+  release();
+  await running;
+  await tick();
+  await h.store.discoverSparkAccounts();
+  assert.deepEqual(accounts(h.store), [1, 4], 'the newer plan was scanned too');
 });
 
 // ---- Removal --------------------------------------------------------------
@@ -266,6 +295,10 @@ test('every change to the wallet list asks the Drive backup to refresh', async (
 async function startWith(wallets, extra = {}) {
   const h = createHarness({ storage: { buhoGO_wallet_store: JSON.stringify({ wallets, activeWalletId: extra.active ?? wallets[0]?.id ?? null, hasBackedUp: true, ...extra.state }) } });
   await h.store.initialize();
+  // Wallets beyond the selected one connect in the background after
+  // initialize resolves; let them settle so they never write into the next
+  // test's storage.
+  await new Promise((resolve) => setTimeout(resolve, 20));
   return h;
 }
 
@@ -310,6 +343,32 @@ test('when a phrase cannot be read yet, nothing is set aside and the migration w
   assert.equal(h.local.getItem('buhoGO_spark_set_aside_v1'), null);
   assert.equal(h.saved().sparkModelVersion, 1, 'runs again on the next start');
   assert.ok(h.saved().wallets.every((w) => w.connectionData.walletGroupId === undefined), 'grouping is dropped regardless');
+});
+
+test('a migration that sets the selected or kiosk wallet aside leaves both pointing at a real wallet', async () => {
+  const other = await savedSpark('X', 2, { phrase: OTHER_PHRASE, group: 'group-2' });
+  const h = await startWith([other, await savedSpark('B', 1), await savedSpark('P', 3)], { active: 'X', state: { kioskWalletId: 'X' } });
+  assert.deepEqual(h.store.wallets.map((w) => w.id), ['B', 'P'], 'the other phrase was set aside');
+  assert.ok(h.store.wallets.some((w) => w.id === h.store.activeWalletId), 'a wallet is selected');
+  assert.notEqual(h.store.activeWalletId, 'X');
+  assert.equal(h.store.kioskWalletId, null);
+});
+
+test('at start only the wallets on screen hold up loading; the rest connect behind', async () => {
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  const wallets = [await savedSpark('A', 1, { group: null }), await savedSpark('B', 2, { group: null }), await savedSpark('C', 3, { group: null })];
+  const h = createHarness({
+    connect: async (wallet) => { if (wallet.id !== 'A' && wallet.id !== 'C') await gate; },
+    storage: { buhoGO_wallet_store: JSON.stringify({ wallets, activeWalletId: 'A', kioskWalletId: 'C', sparkModelVersion: 2 }) },
+  });
+  await h.store.initialize();
+  assert.equal(h.store.connectionStates.A?.connected, true);
+  assert.equal(h.store.connectionStates.C?.connected, true, 'the kiosk wallet is ready with the active one');
+  assert.notEqual(h.store.connectionStates.B?.connected, true, 'B is still connecting in the background');
+  release();
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.equal(h.store.connectionStates.B?.connected, true);
 });
 
 test('pockets from the oldest model become wallets on the same phrase', async () => {

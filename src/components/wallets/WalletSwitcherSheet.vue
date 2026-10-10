@@ -22,16 +22,21 @@
         <div class="switcher-title" :class="$q.dark.isActive ? 'dialog_title_dark' : 'dialog_title_light'">
           {{ $t('Switch Wallet') }}
         </div>
-        <!-- With several wallets, the one figure people look for first. A total
-             built on missing or outdated figures says so instead of looking exact. -->
+        <!-- With several wallets, the one figure people look for first. While
+             wallets refresh it pulses; built on missing figures it reads "at
+             least" and is dimmed, like every other balance. -->
         <div v-if="wallets.length > 1" class="switcher-total">
-          <span class="switcher-total-label">{{ totalLabel }}</span>
-          <HiddenAmount class="switcher-total-value" :class="{ 'balance-stale': !totalInfo.complete || totalInfo.stale }">{{ totalInfo.complete ? '' : '≥ ' }}{{ formatBalance(totalInfo.total) }}</HiddenAmount>
+          <span class="switcher-total-label">{{ $t('Total') }}</span>
+          <HiddenAmount
+            v-balance-updating="anyRefreshing"
+            class="switcher-total-value"
+            :class="{ 'balance-stale': !totalInfo.complete }"
+          >{{ totalInfo.complete ? '' : '≥ ' }}{{ formatBalance(totalInfo.total) }}</HiddenAmount>
         </div>
       </q-card-section>
 
       <q-card-section class="switcher-content">
-        <div class="wallet-switch-list" :class="$q.dark.isActive ? 'switch-list-dark' : 'switch-list-light'" role="list">
+        <div class="wallet-switch-list" :class="$q.dark.isActive ? 'switch-list-dark' : 'switch-list-light'">
           <div
             v-for="wallet in wallets"
             :key="wallet.id"
@@ -57,7 +62,10 @@
             </div>
 
             <div class="switch-details">
-              <div class="switch-name" :class="$q.dark.isActive ? 'switch-name-dark' : 'switch-name-light'">{{ wallet.name }}</div>
+              <div class="switch-name" :class="$q.dark.isActive ? 'switch-name-dark' : 'switch-name-light'">
+                {{ wallet.name }}
+                <span class="switch-sr-only">{{ connected(wallet.id) ? $t('Online') : $t('Offline') }}</span>
+              </div>
               <WalletTypeChip :type="wallet.type" class="switch-type-chip" />
               <div
                 v-balance-updating="isRefreshPending(wallet.id)"
@@ -65,7 +73,7 @@
                 :class="$q.dark.isActive ? 'switch-balance-dark' : 'switch-balance-light'"
               >
                 <!-- A known value (outdated ones marked), else a placeholder: never an invented 0. -->
-                <span v-if="!display(wallet.id).known" class="balance-placeholder" :aria-label="$t('Balance not loaded yet')" />
+                <span v-if="!display(wallet.id).known" class="balance-placeholder" role="img" :aria-label="$t('Balance not loaded yet')" />
                 <HiddenAmount v-else :class="{ 'balance-stale': display(wallet.id).outdated }">{{ formatBalance(display(wallet.id).balance) }}</HiddenAmount>
               </div>
             </div>
@@ -77,7 +85,7 @@
               height="20"
               class="switch-check-icon"
               :class="$q.dark.isActive ? 'check-accent-dark' : 'check-accent-light'"
-              :aria-label="$t('Active')"
+              :aria-hidden="true"
             />
           </div>
         </div>
@@ -118,7 +126,7 @@
 </template>
 
 <script setup>
-import { computed, getCurrentInstance } from 'vue';
+import { computed } from 'vue';
 import { Icon } from '@iconify/vue';
 import { useWalletStore } from '../../stores/wallet';
 import { formatMainBalance } from '../../utils/amountFormatting.js';
@@ -138,20 +146,13 @@ const props = defineProps({
 const emit = defineEmits(['update:modelValue', 'switch', 'transfer', 'manage']);
 
 const store = useWalletStore();
-// vue-i18n runs in legacy mode (src/boot/i18n.js), so useI18n() throws.
-// Reach $t through the component proxy, the app's established pattern.
-const { proxy } = getCurrentInstance();
-const t = (key, params) => proxy.$t(key, params);
 
 const open = computed({ get: () => props.modelValue, set: (value) => emit('update:modelValue', value) });
 const wallets = computed(() => store.wallets);
 const activeWalletId = computed(() => store.activeWalletId);
 const totalInfo = computed(() => store.totalBalanceInfo);
 const discovering = computed(() => store.sparkDiscoveryRunning);
-const totalLabel = computed(() => {
-  if (!totalInfo.value.complete) return t('Total (incomplete)');
-  return totalInfo.value.stale ? t('Total (not current)') : t('Total');
-});
+const anyRefreshing = computed(() => Object.values(props.refreshingWalletIds).some(Boolean));
 
 const connected = (walletId) => !!store.connectionStates[walletId]?.connected;
 const display = (walletId) => store.getDisplayBalance(walletId);
@@ -488,6 +489,14 @@ const isRefreshPending = (walletId) => !!props.refreshingWalletIds[walletId] && 
   font-size: 14px;
   font-weight: 600;
   color: var(--text-primary);
+}
+.switch-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
 }
 .switch-type-chip {
   margin: 2px 0 4px;

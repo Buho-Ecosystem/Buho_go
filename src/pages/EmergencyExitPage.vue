@@ -449,6 +449,7 @@ export default {
         case 'DESTINATION_WRONG_NETWORK': return this.$t('This address belongs to another network.');
         case 'DESTINATION_SPARK_DEPOSIT': return this.$t('This is a Spark deposit address. It would send the money back into Spark.');
         case 'DESTINATION_EXIT_FUNDING': return this.$t('This address holds fee money for an emergency exit. Choose another address.');
+        case 'FUNDING_IN_USE': return this.$t('An earlier emergency exit is still using this fee money address. Start this one once that exit has finished.');
         case 'KEY_MISMATCH': return this.$t('This phone\'s keys do not match the fee money address. Restore the wallet from its words and try again.');
         case 'UNREACHABLE': return this.$t('Could not reach the Bitcoin network.');
         case 'REJECTED': return this.$t('The Bitcoin network refused a transaction: {reason}', { reason });

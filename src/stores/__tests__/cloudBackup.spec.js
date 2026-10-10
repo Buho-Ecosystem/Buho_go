@@ -8,12 +8,14 @@ import { test, mock } from 'node:test';
 import { readFileSync } from 'node:fs';
 import { transformSync } from 'esbuild';
 import * as sparkBackup from '../../utils/sparkBackup.js';
+import * as backupSecrets from '../../utils/backupSecrets.js';
 import { memoryStorage } from './sparkWalletHarness.js';
 
 function harness({ wallets = [], meta = null, remote = null, platform = true, restoreResult = null, restoreError = null } = {}) {
   globalThis.localStorage = memoryStorage(meta ? { buhoGO_cloud_backup_meta_v1: JSON.stringify(meta) } : {});
   const log = [];
-  const drive = { remote, uploads: [], listError: null };
+  const hooks = {};
+  const drive = { remote, uploads: [], listError: null, clock: 0 };
   const wallet = {
     wallets,
     isInitialized: true,
@@ -23,6 +25,7 @@ function harness({ wallets = [], meta = null, remote = null, platform = true, re
     async getSparkMnemonic() { return 'phrase words'; },
     async restoreSparkWallets(args) {
       log.push(['restoreSpark', args]);
+      hooks.duringRestore?.();
       if (restoreError) throw restoreError;
       return restoreResult || { merged: false, added: [{ id: 'w' }] };
     },
@@ -34,7 +37,14 @@ function harness({ wallets = [], meta = null, remote = null, platform = true, re
     '../services/cloudStorage.js': {
       isAvailable: async () => ({ available: true }),
       isCloudBackupPlatform: () => platform,
-      uploadBackup: async (json) => { drive.uploads.push(JSON.parse(json).payload); return { modifiedAt: new Date().toISOString() }; },
+      uploadBackup: async (json) => {
+        const payload = JSON.parse(json).payload;
+        drive.uploads.push(payload);
+        drive.payload = payload;
+        drive.clock += 1;
+        drive.remote = { modifiedAt: `2026-10-0${drive.clock}T00:00:00.000Z` };
+        return drive.remote;
+      },
       downloadBackup: async () => JSON.stringify({ payload: drive.payload }),
       uploadBackupKey: async () => {},
       downloadBackupKey: async () => JSON.stringify({ v: 1, k: 'key' }),
@@ -50,6 +60,7 @@ function harness({ wallets = [], meta = null, remote = null, platform = true, re
       markBackedUp() {},
     }) },
     '../utils/sparkBackup.js': sparkBackup,
+    '../utils/backupSecrets.js': backupSecrets,
   };
   const source = readFileSync(new URL('../cloudBackup.js', import.meta.url), 'utf8');
   const { code } = transformSync(source, { format: 'cjs' });
@@ -62,7 +73,7 @@ function harness({ wallets = [], meta = null, remote = null, platform = true, re
     Object.defineProperty(store, name, { get: () => getter.call(store, store), configurable: true });
   }
   store.init();
-  return { store, drive, log, wallet };
+  return { store, drive, log, wallet, hooks };
 }
 
 const spark = (id, accountNumber, name) => ({ id, type: 'spark', name, connectionData: { accountNumber, network: 'MAINNET' }, metadata: { lud16: `${id}@btc.example.com`, sparkAddress: `spark1${id}` } });
@@ -170,4 +181,55 @@ test('an expired sign-in turns into a quiet note, never a prompt', async (t) => 
   assert.equal(store.autoBackupBlocked, 'auth');
   assert.equal(store.signedIn, false);
   assert.equal(drive.uploads.length, 0);
+});
+
+const flush = async () => { for (let i = 0; i < 4; i += 1) await new Promise((resolve) => setImmediate(resolve)); };
+
+test('an automatic upload never removes a recovery phrase the backup on Drive holds', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  // Spark left this phone; only a connected wallet is left to back up.
+  const h = harness({ wallets: [{ id: 'n', type: 'nwc', name: 'Alby', nwcUrl: 'nostr+walletconnect://x' }], meta: { lastBackupAt: '2026-10-01T10:00:00.000Z', signedInEmail: 'me@example.com', remoteAtLastBackup: '2026-10-01T10:00:01.000Z' }, remote: { modifiedAt: '2026-10-01T10:00:01.000Z' } });
+  h.drive.payload = { v: 2, spark: { mnemonic: 'phrase words' } };
+  h.store.noteWalletsChanged();
+  t.mock.timers.tick(4000);
+  await flush();
+  assert.equal(h.drive.uploads.length, 0);
+  assert.equal(h.store.autoBackupBlocked, 'would_drop_secret');
+  assert.equal(await h.store.backupDropsSecrets(), true, 'the backup sheet warns before a manual backup');
+  await h.store.backup();
+  assert.equal(h.store.autoBackupBlocked, null, 'the person decided');
+});
+
+test('the backup on Drive is replaced only while it is still the one this phone wrote', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const h = harness({ wallets: [spark('a', 1, 'Main')], meta: { lastBackupAt: '2026-10-09T10:00:00.000Z', signedInEmail: 'me@example.com', remoteAtLastBackup: '2026-10-01T00:00:00.000Z' } });
+  // Another phone uploaded since; its clock says nothing about ours.
+  h.drive.remote = { modifiedAt: '2026-09-30T00:00:00.000Z' };
+  h.drive.payload = { v: 2, spark: { mnemonic: 'phrase words' } };
+  h.store.noteWalletsChanged();
+  t.mock.timers.tick(4000);
+  await flush();
+  assert.equal(h.store.autoBackupBlocked, 'remote_newer');
+  assert.equal(h.drive.uploads.length, 0);
+
+  const same = harness({ wallets: [spark('a', 1, 'Main')], meta: { lastBackupAt: '2026-10-09T10:00:00.000Z', signedInEmail: 'me@example.com', remoteAtLastBackup: '2026-10-01T00:00:00.000Z' } });
+  same.drive.remote = { modifiedAt: '2026-10-01T00:00:00.000Z' };
+  same.drive.payload = { v: 2, spark: { mnemonic: 'phrase words' } };
+  same.store.noteWalletsChanged();
+  t.mock.timers.tick(4000);
+  await flush();
+  assert.equal(same.drive.uploads.length, 1);
+  assert.equal(same.store.remoteAtLastBackup, same.drive.remote.modifiedAt, 'the new upload is remembered by Drive\'s time');
+});
+
+test('a change noticed during a restore that ends incomplete never uploads', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const h = harness(configured());
+  h.hooks.duringRestore = () => h.store.noteWalletsChanged();
+  h.drive.payload = { v: 2, spark: { mnemonic: 'phrase words' }, nwc: [{ name: 'Alby', nwcUrl: 'nostr+walletconnect://x' }] };
+  await h.store.restore();
+  t.mock.timers.tick(10000);
+  await flush();
+  assert.equal(h.store.autoBackupBlocked, 'restore_incomplete');
+  assert.equal(h.drive.uploads.length, 0);
 });

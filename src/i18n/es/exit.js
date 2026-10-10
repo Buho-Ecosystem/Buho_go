@@ -35,7 +35,6 @@ export default {
   "Switch to this wallet on the home screen to connect it.": "Cambia a esta billetera en la pantalla de inicio para conectarla.",
   "Move this wallet's money to plain Bitcoin without Spark's help.": "Mover el dinero de esta billetera a Bitcoin normal sin la ayuda de Spark.",
   "The kit is what lets this wallet's money move to plain Bitcoin without Spark. It refreshes after each payment, is encrypted, and travels with the Google Drive backup. Recovery words alone cannot do this.": "El kit es lo que permite mover el dinero de esta billetera a Bitcoin normal sin Spark. Se actualiza tras cada pago, está cifrado y viaja con la copia de seguridad de Google Drive. Las palabras de recuperación por sí solas no pueden hacerlo.",
-  "The last saved exit kit stays on this phone in case you add the wallet again with the same words.": "El último kit de salida guardado se queda en este teléfono por si vuelves a añadir la billetera con las mismas palabras.",
   "How the emergency exit works": "Cómo funciona la salida de emergencia",
   "The kit is the key": "El kit es la llave",
   "BuhoGO keeps an encrypted kit for each Spark wallet and refreshes it after every payment. With the kit, the money can move to plain Bitcoin without Spark.": "BuhoGO guarda un kit cifrado por cada billetera Spark y lo actualiza tras cada pago. Con el kit, el dinero puede moverse a Bitcoin normal sin Spark.",

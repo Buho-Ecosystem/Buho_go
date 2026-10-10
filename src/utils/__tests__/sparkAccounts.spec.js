@@ -71,7 +71,7 @@ test('names are trimmed, at most 32 characters and unique regardless of case', (
 });
 
 const check = (overrides = {}) => removalCheck({
-  wallet: { type: 'spark' }, sparkWalletCount: 2, balance: { known: true, value: 0 }, hasPendingDeposit: false, hasActiveExit: false, backedUp: false, ...overrides,
+  wallet: { type: 'spark' }, sparkWalletCount: 2, balance: { known: true, value: 0, fresh: true }, hasPendingDeposit: false, hasActiveExit: false, backedUp: false, ...overrides,
 });
 
 test('removal rules: money, deposits, exits and the last wallet', () => {
@@ -82,7 +82,8 @@ test('removal rules: money, deposits, exits and the last wallet', () => {
   assert.deepEqual(check({ sparkWalletCount: 1, balance: { known: true, value: 5 } }).blockers, ['needs_backup'], 'the last wallet may hold money only with a backup');
   assert.equal(check({ sparkWalletCount: 1, balance: { known: true, value: 5 }, backedUp: true }).allowed, true);
   assert.deepEqual(check({ sparkWalletCount: 1, balance: { known: false, value: 0 } }).blockers, ['needs_backup'], 'unknown counts as maybe funded');
-  assert.equal(check({ sparkWalletCount: 1 }).allowed, true, 'known empty and never backed up may go');
+  assert.equal(check({ sparkWalletCount: 1 }).allowed, true, 'confirmed empty and never backed up may go');
+  assert.deepEqual(check({ sparkWalletCount: 1, balance: { known: true, value: 0, fresh: false } }).blockers, ['needs_backup'], 'a saved zero proves nothing: money may have arrived since');
   assert.deepEqual(removalCheck({ wallet: { type: 'nwc' }, balance: { known: true, value: 9 } }), { allowed: true, blockers: [], notes: [] });
 });
 

@@ -86,6 +86,10 @@ export function createExitDriver({
       if (isActive(ledger.exitFor(walletId))) return ledger.exitFor(walletId);
       const provider = requireProvider(walletId);
       const derived = await addressesFor(wallet);
+      // An exit begun under the shared layout may still be collecting fee
+      // money on what is now this wallet's address: never count it twice.
+      const sharing = ledger.activeExits.find(other => other.walletId !== walletId && other.funding?.address === derived.funding.address);
+      if (sharing) throw new ExitError('FUNDING_IN_USE', 'Another exit uses this fee money address');
       const guard = await protectedAddresses(wallet, excluded);
       const target = destination
         ? { address: assertDestination(destination, guard), source: 'custom' }

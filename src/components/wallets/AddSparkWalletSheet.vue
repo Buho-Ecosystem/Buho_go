@@ -45,7 +45,7 @@
         <p v-if="error" id="add-spark-error" class="add-spark-error" role="alert">{{ error }}</p>
         <p id="add-spark-note" class="add-spark-note">
           {{ $t('Made from your recovery phrase, so the backup you have already covers it.') }}
-          {{ remainingAfter === 0 ? $t('This is your last free Spark wallet slot.') : $t('{count} more can be added after this one.', { count: remainingAfter }) }}
+          {{ remainingAfter === 0 ? $t("After this one, you can't add more Spark wallets.") : $t('You can add {count} more after this one.', { count: remainingAfter }) }}
         </p>
 
         <button type="submit" class="add-spark-primary" :disabled="creating || !name.trim()">

@@ -34,7 +34,7 @@
                 {{ $t('Your Spark wallet') }}
               </h2>
               <p class="slide-text" :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'">
-                {{ $t('Send and receive Bitcoin in seconds. Your recovery words are the key, so the money stays yours.') }}
+                {{ $t('Send and receive Bitcoin in seconds. Your recovery phrase is the key, so the money stays yours.') }}
               </p>
             </div>
           </q-carousel-slide>
@@ -44,10 +44,10 @@
             <div class="slide-content">
               <img src="/Onboarding wizard spark/storyset-ewallet-bro.svg" class="slide-illustration" alt="" />
               <h2 class="slide-title" :class="$q.dark.isActive ? 'text-white' : 'text-dark'">
-                {{ $t('Up to six wallets') }}
+                {{ $t('Up to six Spark wallets') }}
               </h2>
               <p class="slide-text" :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'">
-                {{ $t('Keep money apart for savings, a shop or the family. Every Spark wallet comes from the same recovery words, so one backup covers them all.') }}
+                {{ $t('Keep money apart for savings, a shop or the family. Every Spark wallet comes from the same recovery phrase, so one backup covers them all.') }}
               </p>
             </div>
           </q-carousel-slide>

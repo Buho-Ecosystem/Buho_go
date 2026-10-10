@@ -3,7 +3,7 @@
     @keydown.esc.stop.prevent @keyup.esc.stop.prevent="goBack">
     <header class="detail-header">
       <button ref="backButton" type="button" class="detail-icon-button" :aria-label="$t('Back')" :disabled="saving" @click="goBack">
-        <q-icon name="chevron_left" size="22px" :aria-hidden="true" />
+        <Icon icon="tabler:chevron-left" width="22" height="22" :aria-hidden="true" />
       </button>
       <span>{{ $t('Wallet') }}</span>
       <span class="header-spacer" aria-hidden="true" />
@@ -21,7 +21,7 @@
           </div>
         </div>
         <button v-if="!editing" ref="editButton" type="button" class="detail-icon-button detail-edit" :aria-label="$t('Rename wallet')" @click="startEditing">
-          <q-icon name="edit" size="20px" :aria-hidden="true" />
+          <Icon icon="tabler:pencil" width="20" height="20" :aria-hidden="true" />
         </button>
       </div>
 
@@ -42,9 +42,13 @@
       <div class="detail-balance-card">
         <div class="detail-balance-heading">
           <span>{{ $t('Balance') }}</span>
-          <span v-if="active" class="detail-active"><q-icon name="check" size="14px" :aria-hidden="true" />{{ $t('Active') }}</span>
+          <span v-if="active" class="detail-active"><Icon icon="tabler:check" width="14" height="14" :aria-hidden="true" />{{ $t('Active') }}</span>
         </div>
-        <div class="detail-balance"><HiddenAmount>{{ balance }}</HiddenAmount></div>
+        <div class="detail-balance">
+          <!-- Never a stand-in number or dash: a placeholder until the first figure arrives. -->
+          <span v-if="!balanceKnown" class="balance-placeholder" role="img" :aria-label="$t('Balance not loaded yet')" />
+          <HiddenAmount v-else>{{ balance }}</HiddenAmount>
+        </div>
       </div>
 
       <p v-if="connectionError" class="detail-error detail-connection-error" role="status">{{ connectionError }}</p>
@@ -58,7 +62,7 @@
             <span class="detail-group-value" :class="{ 'is-placeholder': !lightningAddress }">{{ lightningAddress || $t('Assigned when the wallet connects') }}</span>
           </span>
           <button v-if="lightningAddress" type="button" class="detail-icon-button" :aria-label="$t('Copy address')" @click="$emit('copy-address', lightningAddress)">
-            <q-icon name="content_copy" size="18px" :aria-hidden="true" />
+            <Icon icon="tabler:copy" width="18" height="18" :aria-hidden="true" />
           </button>
         </div>
         <button type="button" class="detail-group-action" :disabled="!connected" @click="$emit('change-address', wallet.id)">
@@ -68,24 +72,25 @@
           {{ $t('Move to another wallet') }}
         </button>
         <p v-if="!connected" class="detail-group-note">{{ $t('Available once this wallet is connected.') }}</p>
+        <p v-else-if="canMoveAddress && !lightningAddress" class="detail-group-note">{{ $t('This wallet has no address to move right now.') }}</p>
       </section>
 
       <div v-if="!active || canReconnect" class="detail-actions">
         <button v-if="!active" type="button" class="detail-button detail-primary" :disabled="switching || reconnecting || saving" @click="$emit('switch', wallet.id)">
           <q-spinner v-if="switching" size="20px" :aria-hidden="true" />
-          <q-icon v-else name="check_circle_outline" size="20px" :aria-hidden="true" />
+          <Icon icon="tabler:circle-check" width="20" height="20" v-else :aria-hidden="true" />
           {{ $t('Use this wallet') }}
         </button>
         <button v-if="canReconnect" type="button" class="detail-button detail-secondary" :disabled="reconnecting || switching || saving" @click="$emit('reconnect', wallet.id)">
           <q-spinner v-if="reconnecting" size="20px" :aria-hidden="true" />
-          <q-icon v-else name="refresh" size="20px" :aria-hidden="true" />
+          <Icon icon="tabler:refresh" width="20" height="20" v-else :aria-hidden="true" />
           {{ reconnecting ? $t('Reconnecting...') : $t('Reconnect') }}
         </button>
       </div>
 
       <div class="detail-danger-section">
         <button type="button" class="detail-button detail-danger" :disabled="saving || switching || reconnecting" @click="$emit('remove', wallet.id)">
-          <q-icon name="delete_outline" size="20px" :aria-hidden="true" />{{ $t('Remove Wallet') }}
+          <Icon icon="tabler:trash" width="20" height="20" :aria-hidden="true" />{{ $t('Remove Wallet') }}
         </button>
       </div>
     </div>
@@ -94,6 +99,7 @@
 
 <script setup>
 import { computed, getCurrentInstance, nextTick, onMounted, ref } from 'vue';
+import { Icon } from '@iconify/vue';
 import WalletBrandMark from '../WalletBrandMark.vue';
 import HiddenAmount from '../HiddenAmount.vue';
 import { MAX_WALLET_NAME_LENGTH, walletNameCopy } from '../../utils/walletNames.js';
@@ -102,6 +108,8 @@ const props = defineProps({
   wallet: { type: Object, required: true },
   typeLabel: { type: String, required: true },
   balance: { type: String, required: true },
+  /** False until the wallet has a first balance figure. */
+  balanceKnown: { type: Boolean, default: true },
   active: Boolean,
   connected: Boolean,
   switching: Boolean,

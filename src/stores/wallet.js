@@ -48,6 +48,7 @@ import {
 import { migrateSparkWallets as migrateToSparkModel, SPARK_MODEL_VERSION } from '../utils/sparkWalletMigration.js';
 import { normalizeWalletName, walletNameProblem, WalletNameError } from '../utils/walletNames.js';
 import { removalCheck, WalletRemovalError } from '../utils/walletRemoval.js';
+import { registerRandomLightningAddress } from '../utils/lightningAddressNames.js';
 
 /** One output of one deposit transaction: `${txId}:${vout}` (vout defaults to 0). */
 export function depositClaimKey(txId, outputIndex) {
@@ -77,6 +78,7 @@ function serializeSparkMembership(task) {
 // for one phrase must not add wallets after another phrase arrived.
 let sparkPhraseEpoch = 0;
 let sparkDiscoveryRun = null;
+let sparkDiscoveryRerun = false;
 // walletId -> in-flight Lightning address assignment: one at a time per
 // wallet, so two registrations can never race to different names.
 const lnAddressEnsures = new Map();
@@ -1202,6 +1204,14 @@ export const useWalletStore = defineStore('wallet', {
               sparkModelVersion,
               sparkDiscovery: validDiscoveryPlan(parsed.sparkDiscovery),
             });
+            // A migration that set the selected or kiosk wallet aside must not
+            // leave either pointing at nothing.
+            if (!this.wallets.some((w) => w.id === this.activeWalletId) && this.wallets.length) {
+              this.activeWalletId = (this.wallets.find((w) => w.isDefault) || this.wallets[0]).id;
+            }
+            if (this.kioskWalletId && !this.wallets.some((w) => w.id === this.kioskWalletId)) {
+              this.kioskWalletId = null;
+            }
           }
 
           // Migrate the old Home snapshot once, before any persistence can
@@ -1239,7 +1249,7 @@ export const useWalletStore = defineStore('wallet', {
                 this.needsPinMigration = true;
                 console.log('[wallet] PIN migration required — waiting for user to enter PIN one last time');
               } else {
-                await this.connectAllSparkWallets();
+                await this.connectAllSparkWallets({ waitFor: [this.activeWalletId, this.kioskWalletId] });
               }
             }
           }
@@ -1370,10 +1380,14 @@ export const useWalletStore = defineStore('wallet', {
      * @param {string} options.mnemonic
      * @param {string} [options.network]
      * @param {{accountNumber: number, name?: string}[]} [options.accounts]  wallets a backup listed
+     * @param {boolean} [options.phraseConfirmed] the person typed the phrase in,
+     *   which proves they hold it. A cloud restore does not: the backup state
+     *   then stays as it was, so the write-it-down prompt survives (as for the
+     *   identity) and removing Spark still asks for a real backup first.
      * @param {Function} [options.onProgress]
      * @returns {Promise<{ wallet: object|null, added: object[], merged: boolean }>}
      */
-    async restoreSparkWallets({ mnemonic, network = 'MAINNET', accounts = null, onProgress = () => {} } = {}) {
+    async restoreSparkWallets({ mnemonic, network = 'MAINNET', accounts = null, phraseConfirmed = true, onProgress = () => {} } = {}) {
       const result = await this._runSparkSetup(async () => {
         requireMnemonic(mnemonic);
         const listed = normalizeListedAccounts(accounts);
@@ -1384,15 +1398,16 @@ export const useWalletStore = defineStore('wallet', {
             throw codedError('SPARK_OTHER_PHRASE', 'A different Spark recovery phrase is already on this device');
           }
           const added = [];
+          const backedUp = phraseConfirmed || this._sparkPhraseBackedUp();
           for (const { accountNumber, name } of listed) {
             if (usedSparkAccounts(this.wallets).has(accountNumber) || !sparkSlotAvailable(this.wallets)) continue;
             added.push(await this._createSparkWalletEntry({
               mnemonic, network: this._sparkNetwork(), accountNumber,
-              name: this._freshSparkName(name), hasBackedUp: true, connect: 'best-effort',
+              name: this._freshSparkName(name), hasBackedUp: backedUp, connect: 'deferred',
             }));
           }
           this._queueSparkDiscovery(names);
-          this._markSparkBackedUp();
+          if (phraseConfirmed) this._markSparkBackedUp();
           await this.persistState();
           for (const wallet of added) this._startSparkLifecycle(wallet.id);
           return { wallet: added[0] || null, added, merged: true };
@@ -1404,20 +1419,20 @@ export const useWalletStore = defineStore('wallet', {
         const [first, ...rest] = initial;
         const wallet = await this._createSparkWalletEntry({
           mnemonic, network, accountNumber: first.accountNumber,
-          name: this._freshSparkName(first.name), hasBackedUp: true, connect: 'required', onProgress,
+          name: this._freshSparkName(first.name), hasBackedUp: phraseConfirmed, connect: 'required', onProgress,
         });
         const added = [wallet];
         for (const { accountNumber, name } of rest) {
           if (!sparkSlotAvailable(this.wallets)) break;
-          // Known to exist: kept even when it cannot connect right now.
+          // Known to exist: listed at once, connected in the background.
           added.push(await this._createSparkWalletEntry({
-            mnemonic, network, accountNumber, name: this._freshSparkName(name), hasBackedUp: true, connect: 'best-effort',
+            mnemonic, network, accountNumber, name: this._freshSparkName(name), hasBackedUp: phraseConfirmed, connect: 'deferred',
           }));
         }
         const landing = added.find(w => sparkAccountNumberOf(w) === SPARK_ACCOUNT_ORDER[0]) || wallet;
         this._landOnNewWallet(landing);
         this._queueSparkDiscovery(names);
-        this.hasBackedUp = true;
+        if (phraseConfirmed) this.hasBackedUp = true;
         onProgress('done');
         await this.persistState();
         for (const entry of added) this._startSparkLifecycle(entry.id);
@@ -1474,10 +1489,12 @@ export const useWalletStore = defineStore('wallet', {
     },
 
     /**
-     * Create one Spark wallet entry for `accountNumber` and connect it.
-     * `connect: 'required'` undoes the entry when the connect fails (the
-     * caller needs a working wallet); `'best-effort'` keeps it (the account
-     * is known to exist and connects later).
+     * Create one Spark wallet entry for `accountNumber`.
+     *   connect: 'required'  connect now; a failure undoes the entry (the
+     *                        caller needs a working wallet)
+     *            'deferred'  do not wait: the account is known to exist and
+     *                        the lifecycle connects it in the background
+     *                        (the caller calls _startSparkLifecycle)
      */
     async _createSparkWalletEntry({ mnemonic, network, accountNumber, name, hasBackedUp, connect = 'required', onProgress = () => {} }) {
       if (!isSparkAccountNumber(accountNumber)) throw codedError('SPARK_ACCOUNT_INVALID', `Unsupported Spark account ${accountNumber}`);
@@ -1506,14 +1523,11 @@ export const useWalletStore = defineStore('wallet', {
       };
       this.wallets.push(wallet);
 
+      if (connect === 'deferred') return wallet;
       onProgress('connecting');
       try {
         await this.connectSparkWallet(wallet.id);
       } catch (error) {
-        if (connect !== 'required') {
-          console.warn(`Spark account ${accountNumber} added, connecting later:`, error?.message || error);
-          return wallet;
-        }
         await this._discardSparkEntry(wallet.id);
         throw error;
       }
@@ -1631,7 +1645,15 @@ export const useWalletStore = defineStore('wallet', {
      */
     discoverSparkAccounts() {
       if (sparkDiscoveryRun) return sparkDiscoveryRun;
-      sparkDiscoveryRun = this._discoverSparkAccounts().finally(() => { sparkDiscoveryRun = null; });
+      sparkDiscoveryRun = this._discoverSparkAccounts().finally(() => {
+        sparkDiscoveryRun = null;
+        // The plan changed while this run was scanning (another restore or a
+        // new phrase queued accounts): look at the newer plan as well.
+        if (sparkDiscoveryRerun) {
+          sparkDiscoveryRerun = false;
+          this._resumeSparkDiscovery();
+        }
+      });
       return sparkDiscoveryRun;
     },
 
@@ -1663,7 +1685,7 @@ export const useWalletStore = defineStore('wallet', {
               return this._createSparkWalletEntry({
                 mnemonic, network, accountNumber: result.accountNumber,
                 name: this._freshSparkName(plan.names?.[result.accountNumber]),
-                hasBackedUp: this._sparkPhraseBackedUp(), connect: 'best-effort',
+                hasBackedUp: this._sparkPhraseBackedUp(), connect: 'deferred',
               });
             });
             if (wallet) {
@@ -1676,10 +1698,24 @@ export const useWalletStore = defineStore('wallet', {
           }
         }
 
-        const attempts = (plan.attempts || 0) + 1;
-        this.sparkDiscovery = this.hasAnySparkWallet && unresolved.length && attempts < MAX_DISCOVERY_ATTEMPTS
-          ? { ...plan, pending: unresolved, attempts }
-          : null;
+        if (phraseEpoch !== sparkPhraseEpoch) {
+          // Another phrase arrived meanwhile: its plan is not this run's to write.
+          sparkDiscoveryRerun = !!this.sparkDiscovery?.pending?.length;
+          return [];
+        }
+        if (this.sparkDiscovery === plan) {
+          const attempts = (plan.attempts || 0) + 1;
+          this.sparkDiscovery = this.hasAnySparkWallet && unresolved.length && attempts < MAX_DISCOVERY_ATTEMPTS
+            ? { ...plan, pending: unresolved, attempts }
+            : null;
+        } else if (this.sparkDiscovery) {
+          // Re-planned during the scan: keep the newer plan, minus what this
+          // run settled, and look at the rest next.
+          const settled = new Set(results.filter(r => r.conclusive && !unresolved.includes(r.accountNumber)).map(r => r.accountNumber));
+          const pending = this.sparkDiscovery.pending.filter(account => !settled.has(account));
+          this.sparkDiscovery = pending.length ? { ...this.sparkDiscovery, pending } : null;
+          sparkDiscoveryRerun = pending.length > 0;
+        }
         await this.persistState();
         if (added.length) {
           this.sparkDiscoveryFound = { count: added.length, at: Date.now() };
@@ -1844,6 +1880,13 @@ export const useWalletStore = defineStore('wallet', {
       if (!address) return;
       const wallet = this.wallets.find(w => w.id === walletId);
       if (!wallet) return;
+      // One address, one wallet: a stale read that hands back an address
+      // another Spark wallet holds (right after a move) is not recorded.
+      const lower = String(address).toLowerCase();
+      if (this.sparkWallets.some(w => w.id !== walletId && this.sparkLightningAddressOf(w) === lower)) {
+        console.warn('[wallet] ignored a Lightning address that another wallet holds');
+        return;
+      }
       const previousAddress = wallet.metadata?.lud16 || null;
       if (this.walletInfos[walletId]) {
         this.walletInfos[walletId].lightningAddress = address;
@@ -1960,17 +2003,25 @@ export const useWalletStore = defineStore('wallet', {
         }
         const movedAddress = claimed?.lightningAddress || moving;
 
-        // Recorded on the target first; setSparkLightningAddress moves a
-        // profile that pointed at the target's old address to the default.
-        await this.setSparkLightningAddress(to.id, movedAddress);
-        // The source no longer holds it: never try to reclaim it, mint a new one.
+        // The source no longer holds it: forgotten first, so it is never
+        // reclaimed and never recorded on two wallets at once.
         await this._forgetSparkLightningAddress(from.id);
+        // setSparkLightningAddress also moves a profile that pointed at the
+        // target's old address to the default.
+        await this.setSparkLightningAddress(to.id, movedAddress);
         let sourceAddress = null;
         try {
           sourceAddress = await this._ensureSparkLightningAddress(from.id, { previousAddress: null });
+          if (sourceAddress && sourceAddress.toLowerCase() === movedAddress.toLowerCase()) {
+            // The source's SDK still reported the moved name from its cache.
+            const fresh = await registerRandomLightningAddress(source);
+            await this.setSparkLightningAddress(from.id, fresh);
+            sourceAddress = fresh;
+          }
         } catch (error) {
           // Assigned on its next connect instead.
           console.warn('[wallet] new address for the source wallet deferred:', error?.message || error);
+          sourceAddress = null;
         }
         this._noteWalletsChanged();
         return { moved: movedAddress, sourceAddress };
@@ -2031,17 +2082,25 @@ export const useWalletStore = defineStore('wallet', {
      * kits stay current whichever wallet is on screen (#285). The active
      * wallet connects first; the registry serializes per wallet.
      */
-    async connectAllSparkWallets() {
-      const ordered = [...this.sparkWallets].sort((a, b) =>
-        (a.id === this.activeWalletId ? -1 : 0) - (b.id === this.activeWalletId ? -1 : 0));
-      for (const wallet of ordered) {
-        if (this.connectionStates[wallet.id]?.connected && this.providers[wallet.id]?.isConnected) continue;
-        try {
-          await this.connectSparkWallet(wallet.id);
-        } catch (err) {
-          console.warn(`Failed to connect Spark wallet "${wallet.name}":`, err.message);
+    async connectAllSparkWallets({ waitFor = null } = {}) {
+      const first = new Set((waitFor || [this.activeWalletId]).filter(Boolean));
+      const ordered = [...this.sparkWallets].sort((a, b) => (first.has(a.id) ? 0 : 1) - (first.has(b.id) ? 0 : 1));
+      const connectEach = async (wallets) => {
+        for (const wallet of wallets) {
+          if (this.connectionStates[wallet.id]?.connected && this.providers[wallet.id]?.isConnected) continue;
+          try {
+            await this.connectSparkWallet(wallet.id);
+          } catch (err) {
+            console.warn(`Failed to connect Spark wallet "${wallet.name}":`, err.message);
+          }
         }
-      }
+      };
+      if (!waitFor) return connectEach(ordered);
+      // Startup: the wallets on screen (active, kiosk) first and awaited;
+      // the others follow one at a time in the background, so up to six
+      // connects never hold up Home or the kiosk.
+      await connectEach(ordered.filter(w => first.has(w.id)));
+      connectEach(ordered.filter(w => !first.has(w.id))).catch(() => {});
     },
 
     /**
@@ -2602,7 +2661,7 @@ export const useWalletStore = defineStore('wallet', {
       return removalCheck({
         wallet,
         sparkWalletCount: this.sparkWallets.length,
-        balance: { known: balance.known, value: balance.value },
+        balance: { known: balance.known, value: balance.value, fresh: balance.status === 'fresh' },
         hasPendingDeposit: (this.pendingDepositsByWallet?.[walletId] || []).length > 0,
         hasActiveExit: isActiveExit(useEmergencyExitStore().exitFor(walletId)),
         backedUp: this._sparkPhraseBackedUp(),
@@ -2622,6 +2681,7 @@ export const useWalletStore = defineStore('wallet', {
         balance: {
           known: balances.every((b) => b.known),
           value: balances.reduce((sum, b) => sum + (b.known ? b.value : 0), 0),
+          fresh: balances.every((b) => b.status === 'fresh'),
         },
         hasPendingDeposit: this.sparkWallets.some((w) => (this.pendingDepositsByWallet?.[w.id] || []).length > 0),
         hasActiveExit: this.sparkWallets.some((w) => isActiveExit(exits.exitFor(w.id))),
@@ -2635,7 +2695,7 @@ export const useWalletStore = defineStore('wallet', {
      * @param {string} walletId - The wallet ID to remove
      */
     async removeWallet(walletId) {
-      return serializeSparkMembership(async () => {
+      const remove = async () => {
         try {
           const wallet = this.wallets.find((w) => w.id === walletId);
           if (!wallet) throw new Error('Wallet not found');
@@ -2649,7 +2709,11 @@ export const useWalletStore = defineStore('wallet', {
           this.lastError = error.message;
           throw error;
         }
-      });
+      };
+      // Only Spark removals take part in the Spark membership order; other
+      // wallets never wait behind a Spark add or restore.
+      const isSpark = this.wallets.find((w) => w.id === walletId)?.type === WALLET_TYPES.SPARK;
+      return isSpark ? serializeSparkMembership(remove) : remove();
     },
 
     /**

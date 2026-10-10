@@ -169,6 +169,8 @@
         class="wallet-chip"
         :class="$q.dark.isActive ? 'wallet-chip-dark' : 'wallet-chip-light'"
         data-audit="wallet-switcher"
+        aria-haspopup="dialog"
+        :aria-label="`${$t('Switch Wallet')}, ${walletDisplayName}`"
         @click="openWalletManagement"
       >
         <!-- Spark mark -->
@@ -188,6 +190,7 @@
         <Icon v-else icon="tabler:wallet" width="12" height="12" class="wallet-chip-icon" />
         {{ walletDisplayName }}
         <Icon v-if="isAutoTransferActive" icon="tabler:send" width="10" height="10" class="aw-indicator-icon" />
+        <Icon icon="tabler:chevron-down" width="10" height="10" class="wallet-chip-disclosure" :aria-hidden="true" />
       </q-chip>
 
       <!-- Subtle background-maintenance indicator (Arkade VTXO renew/recover) -->
@@ -5977,12 +5980,25 @@ export default {
 /* ===== Spark Tab Bar ===== */
 
 .wallet-chip {
+  position: relative;
   margin-bottom: 1rem;
   font-size: 12px;
   font-weight: 600;
   font-family: 'Manrope', sans-serif;
   letter-spacing: -0.01em;
   transition: all 0.2s ease;
+}
+
+/* The chip reads small; its tap target is the full 44pt. */
+.wallet-chip::after {
+  content: '';
+  position: absolute;
+  inset: -10px -6px;
+}
+
+.wallet-chip-disclosure {
+  margin-left: 4px;
+  opacity: 0.7;
 }
 
 .wallet-chip-dark {

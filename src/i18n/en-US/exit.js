@@ -35,7 +35,6 @@ export default {
   "Switch to this wallet on the home screen to connect it.": "Switch to this wallet on the home screen to connect it.",
   "Move this wallet's money to plain Bitcoin without Spark's help.": "Move this wallet's money to plain Bitcoin without Spark's help.",
   "The kit is what lets this wallet's money move to plain Bitcoin without Spark. It refreshes after each payment, is encrypted, and travels with the Google Drive backup. Recovery words alone cannot do this.": "The kit is what lets this wallet's money move to plain Bitcoin without Spark. It refreshes after each payment, is encrypted, and travels with the Google Drive backup. Recovery words alone cannot do this.",
-  "The last saved exit kit stays on this phone in case you add the wallet again with the same words.": "The last saved exit kit stays on this phone in case you add the wallet again with the same words.",
   "How the emergency exit works": "How the emergency exit works",
   "The kit is the key": "The kit is the key",
   "BuhoGO keeps an encrypted kit for each Spark wallet and refreshes it after every payment. With the kit, the money can move to plain Bitcoin without Spark.": "BuhoGO keeps an encrypted kit for each Spark wallet and refreshes it after every payment. With the kit, the money can move to plain Bitcoin without Spark.",

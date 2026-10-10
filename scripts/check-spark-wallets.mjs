@@ -184,6 +184,30 @@ try {
   assert.equal(await page.evaluate(async () => (await import('/src/stores/wallet.js')).useWalletStore().wallets.length), 3, 'nothing was removed');
   console.log('PASS: removing a funded Spark wallet explains why and offers Move funds');
 
+  // ---- Removal: an empty wallet that can come back gets a plain alert -------
+  page = await open(three);
+  await page.goto(`${base}/#/settings`);
+  await page.locator('.settings-page').waitFor();
+  await scriptStore(page);
+  await page.evaluate(async () => {
+    const store = (await import('/src/stores/wallet.js')).useWalletStore();
+    store.balanceStates.shop = { value: 0, source: 'sync', verifiedAt: Date.now(), updatedAt: Date.now(), refreshing: false, error: null };
+    store.removeWallet = async (id) => { window.removed = id; store.wallets.splice(store.wallets.findIndex((w) => w.id === id), 1); };
+  });
+  await page.locator('.settings-page').getByText('Manage Wallets', { exact: true }).click();
+  await page.locator('.wallets-dialog-card [data-wallet-id="shop"]').click();
+  await page.locator('.wallet-detail-panel').getByRole('button', { name: 'Remove Wallet' }).click();
+  const alert = page.locator('.q-dialog').filter({ hasText: 'Remove Shop?' });
+  await alert.waitFor();
+  assert.match(await alert.textContent(), /stays part of your recovery phrase/);
+  assert.equal(await page.locator('.danger-confirm-card').count(), 0, 'no typed confirmation for a wallet that can come back');
+  await page.waitForTimeout(300);
+  await shot(page, 'p6-remove-empty-alert');
+  await alert.getByRole('button', { name: 'Remove' }).click();
+  await toast(page, 'Wallet removed');
+  assert.equal(await page.evaluate(() => window.removed), 'shop');
+  console.log('PASS: an empty Spark wallet that can come back is removed after one plain alert');
+
   // ---- Limit: the seventh is not offered ----------------------------------
   page = await open(six, { dark: true });
   await page.goto(`${base}/#/settings`);
@@ -191,9 +215,14 @@ try {
   await page.locator('.settings-page').getByText('Manage Wallets', { exact: true }).click();
   await page.getByRole('button', { name: 'Add Wallet' }).click();
   await page.getByText('Add New Wallet', { exact: true }).waitFor();
-  assert.equal(await page.locator('[data-audit="add-spark-wallet"]').count(), 0, 'no add row at six Spark wallets');
+  const limitRow = page.locator('[data-audit="add-spark-wallet"]');
+  assert.equal(await limitRow.getAttribute('aria-disabled'), 'true', 'the row stays, disabled');
+  assert.match(await limitRow.textContent(), /All 6 Spark wallets are in use/);
+  await limitRow.click({ force: true });
+  await page.waitForTimeout(300);
+  assert.equal(await page.locator('.add-spark-card').count(), 0, 'nothing opens at the limit');
   await shot(page, 'p4-add-dialog-at-limit-dark');
-  console.log('PASS: at six Spark wallets the add row is not offered');
+  console.log('PASS: at six Spark wallets the add row is disabled and says why');
 
   // ---- German, dark, 320px: switcher and add sheet --------------------------
   page = await open(three, { dark: true, locale: 'de', width: 320, height: 640 });

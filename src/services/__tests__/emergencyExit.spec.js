@@ -282,3 +282,13 @@ test('fee money left at an earlier address is summed for the exit screen', async
   assert.equal(await h.driver.legacyFundingSat('w1', FUNDING), 4600);
   assert.equal(await h.driver.legacyFundingSat('w1', null), 0);
 });
+
+test('an exit begun under the shared layout keeps its fee money to itself', async () => {
+  const h = harness({ wallets: twoWallets() });
+  await h.driver.start('w2');
+  // A Personal exit from before per-account keys, still collecting fee money at /0/1.
+  h.exits.w2 = { ...h.exits.w2, funding: { ...h.exits.w2.funding, address: FUNDING } };
+  await assert.rejects(() => h.driver.start('w1'), error => error.code === 'FUNDING_IN_USE');
+  await h.driver.cancel('w2');
+  assert.equal((await h.driver.start('w1')).funding.address, FUNDING, 'free again once that exit is gone');
+});

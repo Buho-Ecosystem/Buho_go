@@ -12,6 +12,7 @@ Implementation record for the move from a fixed Business/Personal pair to equal 
 - Wallets have no roles. Kiosk has its own wallet picker (`kioskWalletId`).
 - Each wallet entry holds its own device-key envelope of the same phrase (`connectionData.encryptedMnemonic`). There is no shared seed record.
 - All Spark wallets stay connected (#285). Each has its own Breez instance and IndexedDB (`breez-<walletId>`), and its own lifecycle coordinator (`src/services/sparkLifecycle.js`).
+- At start only the active and kiosk wallets are awaited. The others connect one after another in the background.
 
 ## Rules (where they live)
 
@@ -35,8 +36,10 @@ The store (`src/stores/wallet.js`) applies these rules. Membership changes run o
   - Switches to the new wallet.
   - The new wallet inherits the phrase's backup state.
   - Errors: `SPARK_WALLET_LIMIT`, `WALLET_NAME_*`.
-- `restoreSparkWallets({ mnemonic, accounts? })`:
+- `restoreSparkWallets({ mnemonic, accounts?, phraseConfirmed })`:
   - Creates the listed accounts now, or account 1 when none are listed, and queues every other account for discovery.
+  - Only the first wallet connects before the call returns, which proves the phrase works. The rest connect in the background through the lifecycle.
+  - `phraseConfirmed: false` (Drive restore) leaves the backup state as it was, so the write-it-down prompt survives.
   - On a device that already holds this phrase, it only adds what is missing.
   - A different phrase is refused (`SPARK_OTHER_PHRASE`).
 - `discoverSparkAccounts()`:
@@ -47,7 +50,8 @@ The store (`src/stores/wallet.js`) applies these rules. Membership changes run o
 - `removeWallet(id)` removes exactly one wallet, after `removalCheckFor(id)`:
   - no removal while an emergency exit or an incoming deposit is under way;
   - a funded wallet is emptied first (Settings offers Move funds);
-  - the last Spark wallet goes only with a backed-up phrase, unless it is empty.
+  - the last Spark wallet goes only with a backed-up phrase, unless the network has just confirmed it empty (a saved zero does not count).
+  - A Spark wallet that is not the last one is confirmed with one plain destructive alert. The last wallet and other wallet types keep the typed confirmation.
 - `removeSparkFromDevice()` removes every Spark wallet under the last-wallet rules. One cleanup path (`_removeWalletEntry`) handles:
   - engine storage, caches and lifecycle work;
   - exit kit metadata (the kit itself is kept);
@@ -81,10 +85,11 @@ Runs in `initialize()` until it completes once (`sparkModelVersion` 2):
   - Finds any other account by discovery.
 - Wallet changes notify `cloudBackup.noteWalletsChanged()`. The device that wrote the current backup uploads a fresh one silently. It never does so:
   - after a restore that could not bring everything back;
-  - over a backup another phone wrote in the meantime;
+  - over a backup another phone wrote in the meantime, judged by Drive's own `modifiedAt` of this device's last upload rather than any device clock;
+  - when the new backup would lose a recovery phrase the backup on Drive holds. It decrypts the current backup and compares phrase fingerprints (`src/utils/backupSecrets.js`);
   - without a signed-in account.
 
-  A manual backup clears any pause. The Drive sheet says when the copy no longer matches this phone.
+  A manual backup clears any pause. Before a manual backup that would drop a phrase, the sheet warns. The Drive sheet says when the copy no longer matches this phone.
 - Phrase-only restore checks accounts 1, 2 and 0 to tell Spark from Arkade, then discovers the rest.
 
 ## UI

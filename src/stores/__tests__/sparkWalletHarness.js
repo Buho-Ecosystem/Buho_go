@@ -13,6 +13,8 @@ import * as walletNames from '../../utils/walletNames.js';
 import * as walletRemoval from '../../utils/walletRemoval.js';
 import * as exitLedger from '../../utils/exitLedger.js';
 import * as sparkAccountScan from '../../services/sparkAccountScan.js';
+import * as addressUtils from '../../utils/addressUtils.js';
+import * as lightningAddressNames from '../../utils/lightningAddressNames.js';
 
 export const PHRASE = 'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about';
 export const OTHER_PHRASE = 'zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo wrong';
@@ -119,6 +121,8 @@ export function createHarness({ evidence = {}, connect = null, storage = {}, exi
     '../utils/walletRemoval.js': walletRemoval,
     '../utils/exitLedger.js': exitLedger,
     '../services/sparkAccountScan.js': sparkAccountScan,
+    '../utils/addressUtils.js': addressUtils,
+    '../utils/lightningAddressNames.js': lightningAddressNames,
     '../services/breezSdk': {
       deleteWalletStorage: async (id) => { calls.deletedStorage.push(id); },
       deleteAllStorage: async () => {},

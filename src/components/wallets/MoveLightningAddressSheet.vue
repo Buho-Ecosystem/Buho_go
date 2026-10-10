@@ -41,13 +41,16 @@
             <span class="move-option-mark" aria-hidden="true"><WalletBrandMark type="spark" :size="16" /></span>
             <span class="move-option-copy">
               <span class="move-option-name">{{ wallet.name }}</span>
-              <span class="move-option-sub">{{ connected(wallet.id) ? (addressOf(wallet) || $t('No address yet')) : $t('Not connected') }}</span>
+              <span class="move-option-sub" :class="{ 'is-placeholder': !connected(wallet.id) || !addressOf(wallet) }">{{ connected(wallet.id) ? (addressOf(wallet) || $t('No address yet')) : $t('Offline') }}</span>
             </span>
             <q-icon v-if="wallet.id === targetId" name="check" size="20px" class="move-option-check" :aria-hidden="true" />
           </button>
         </div>
 
-        <p v-if="target" class="move-consequence" role="status">
+        <p v-if="targets.length && targets.every((w) => !connected(w.id))" class="move-consequence" role="status">
+          {{ $t('Both wallets need to be connected. Check your connection and try again.') }}
+        </p>
+        <p v-if="target" class="move-consequence" :class="{ 'is-destructive': !!addressOf(target) }" role="status">
           {{ addressOf(target)
             ? $t('{target} receives at {address} instead of {old}, which stops working. {source} gets a new address, which you can change later.', { target: target.name, address, old: addressOf(target), source: source.name })
             : $t('{target} receives at {address}. {source} gets a new address, which you can change later.', { target: target.name, address, source: source.name }) }}
@@ -144,6 +147,8 @@ async function move() {
 .move-option-sub { color: var(--text-secondary); font-family: var(--font-mono, monospace); font-size: 12px; overflow-wrap: anywhere; }
 .move-option-check { flex-shrink: 0; color: var(--brand-accent-text, #15DE72); }
 .move-consequence { margin: 14px 0 0; color: var(--text-secondary); font-size: 13px; line-height: 1.5; }
+.move-consequence.is-destructive { color: var(--color-negative, #b42332); }
+.move-option-sub.is-placeholder { font-family: inherit; }
 .move-error { margin: 10px 0 0; color: var(--color-negative, #b42332); font-size: 13px; line-height: 1.45; }
 .move-primary { display: inline-flex; align-items: center; justify-content: center; gap: 10px; min-height: 50px; margin-top: 20px; border: 0; border-radius: 14px; background: #1a1a1c; color: #faf7ef; font: 650 16px/1.3 'Manrope', sans-serif; cursor: pointer; }
 body.body--dark .move-primary { background: #e9e9ec; color: #1c1c1e; }
