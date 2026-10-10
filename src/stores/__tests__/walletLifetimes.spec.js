@@ -33,6 +33,7 @@ function load({ createProvider, extraDeps = {} }) {
     '../boot/i18n': { i18n: { global: { t: (k) => k } } },
     '../utils/claimedDeposits.js': { createClaimedDepositRegistry: () => ({ has: () => false, add() {} }) },
     '../utils/backupStatus.js': { isWalletBackedUp: () => true },
+    '../utils/txCache.js': { clearCachedTransactions: async () => {} },
     ...extraDeps,
   };
   const module = { exports: {} };
