@@ -36,7 +36,7 @@ UnknownSenderBanner. To do: finish, review against
 `prototypes/chat-c-review/index.html` (light/dark screenshots), commit.
 Product rule: the pay-request card/sheet has **no** "amount in invoice" row.
 
-### 2. Chat page and routes
+### 2. Chat page and routes — DONE (5626a3a)
 - `pages/ContactChatPage.vue` on `/address-book/:id/chat`: header (tap name →
   `/address-book/:id`), thread, money bar. Uses only `useChatRuntime()` and
   `useMessagesStore()`.
@@ -51,7 +51,7 @@ Product rule: the pay-request card/sheet has **no** "amount in invoice" row.
 - Unknown senders: route `/messages/:pubkey` (used by notifications) →
   chat with UnknownSenderBanner (add contact / block).
 
-### 3. Small additions to existing screens (no layout changes) — built, uncommitted until the chat route exists (AddressBook, AddressBookList/Entry, MenuOverlay, IdentityHomePage, Settings, chat/MessagesSheet.vue, chat/threadRows.js, chatEntryPoints.spec.js)
+### 3. Small additions to existing screens — DONE (76a4a04) (AddressBook, AddressBookList/Entry, MenuOverlay, IdentityHomePage, Settings, chat/MessagesSheet.vue, chat/threadRows.js, chatEntryPoints.spec.js)
 - AddressBook: tap contact → chat; unread badges; "Unknown" section.
 - MenuOverlay: unread badge.
 - IdentityHomePage: "Messages" row + sheet (thread list).
@@ -175,6 +175,33 @@ Entry point keys (uncommitted work, see section 3):
 | Get a notification when someone writes to you. | Erhalte eine Benachrichtigung, wenn dir jemand schreibt. | Recibe una notificación cuando alguien te escriba. |
 | Turn on payment notifications first. | Aktiviere zuerst die Zahlungsbenachrichtigungen. | Activa primero las notificaciones de pagos. |
 
+Chat page keys (5626a3a):
+
+| en-US | de | es |
+|---|---|---|
+| Set up your identity to use the chat. | Richte deine Identität ein, um den Chat zu nutzen. | Configura tu identidad para usar el chat. |
+| {name} has no Nostr profile, so there is no chat. You can still pay them. | {name} hat kein Nostr-Profil, deshalb gibt es keinen Chat. Du kannst trotzdem bezahlen. | {name} no tiene perfil de Nostr, así que no hay chat. Aun así puedes pagarle. |
+| View profile | Profil ansehen | Ver perfil |
+| Mute | Stummschalten | Silenciar |
+| Unmute | Stummschaltung aufheben | Dejar de silenciar |
+| {name} can't receive messages yet. You can still send money. | {name} kann noch keine Nachrichten empfangen. Du kannst trotzdem Geld senden. | {name} aún no puede recibir mensajes. Aun así puedes enviar dinero. |
+| {name} can't receive requests in the chat yet. | {name} kann im Chat noch keine Anfragen empfangen. | {name} aún no puede recibir solicitudes en el chat. |
+| This contact can't receive requests in the chat yet. | Diese Person kann im Chat noch keine Anfragen empfangen. | Este contacto aún no puede recibir solicitudes en el chat. |
+| Share your payment link instead. They can pay it from any wallet. | Teile stattdessen deinen Zahlungslink. Er funktioniert mit jeder Wallet. | Comparte tu enlace de pago. Se puede pagar desde cualquier wallet. |
+| Share payment link | Zahlungslink teilen | Compartir enlace de pago |
+| Block {name}? | {name} blockieren? | ¿Bloquear a {name}? |
+| You will no longer receive messages or requests from them. | Du erhältst keine Nachrichten oder Anfragen mehr von dieser Person. | Ya no recibirás mensajes ni solicitudes de esta persona. |
+| Blocked {name} | {name} blockiert | {name} bloqueado |
+| Reminder sent | Erinnerung gesendet | Recordatorio enviado |
+| Cannot create invoices | Kann keine Rechnungen erstellen | No puede crear facturas |
+| {wallet} cannot create invoices. The request is paid to your profile address, which lands in {target}. | {wallet} kann keine Rechnungen erstellen. Die Anfrage wird an deine Profiladresse bezahlt und landet in {target}. | {wallet} no puede crear facturas. La solicitud se paga a tu dirección de perfil y llega a {target}. |
+| {wallet} cannot create invoices. The request is paid to your profile address. | {wallet} kann keine Rechnungen erstellen. Die Anfrage wird an deine Profiladresse bezahlt. | {wallet} no puede crear facturas. La solicitud se paga a tu dirección de perfil. |
+| This wallet can't create an invoice right now. Choose another wallet to receive in. | Diese Wallet kann gerade keine Rechnung erstellen. Wähle eine andere Wallet zum Empfangen. | Esta wallet no puede crear una factura ahora. Elige otra wallet para recibir. |
+| The wallet returned an invalid invoice. Please try again. | Die Wallet hat eine ungültige Rechnung geliefert. Bitte versuche es erneut. | La wallet devolvió una factura no válida. Inténtalo de nuevo. |
+| That message is too long. | Die Nachricht ist zu lang. | El mensaje es demasiado largo. |
+| Unlock the app, then try again. | Entsperre die App und versuche es erneut. | Desbloquea la app e inténtalo de nuevo. |
+| Couldn't send right now. Please try again in a moment. | Senden gerade nicht möglich. Bitte versuche es gleich noch einmal. | No se pudo enviar ahora. Inténtalo de nuevo en un momento. |
+
 Plus: copy for the
 DM_ERROR codes the UI shows (WALLET_CANNOT_INVOICE, INVALID_INVOICE,
 WALLET_CANNOT_PAY, INVOICE_EXPIRED, NO_INBOX_RELAYS, NO_RELAY_ACCEPTED,
@@ -193,6 +220,14 @@ Remove the now-unused key "Payments you made to this contact." (en-US/de/es).
 - Production build (`quasar build`) and an Android device run.
 
 ### 6. Known limitations / follow-ups
+- A request paid from the chat is not linked to the contact in
+  `transactionMetadata` (invoice has no address), so it is missing under
+  "Between you" — fix in progress.
+- A Spark send still pending after 60 s is not announced in the chat.
+- Unknown-sender banner has no lookalike warning (needs a kind 0 fetch).
+- No unblock UI yet (block only from the chat menu).
+- `boot/dm-inbox.js` has its own visibility code; could reuse
+  `utils/appVisibility.js`.
 - Android cold start: a notification tap after the process was killed
   probably opens the start screen (plugin only handles `onNewIntent`); verify
   on a device, fix natively if confirmed.
