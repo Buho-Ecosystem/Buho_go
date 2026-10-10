@@ -76,6 +76,14 @@ async function scriptStore(page) {
       store.activeWalletId = wallet.id;
       return wallet;
     };
+    store.moveSparkLightningAddress = async (fromId, toId) => {
+      const from = store.wallets.find((w) => w.id === fromId);
+      const to = store.wallets.find((w) => w.id === toId);
+      const moved = from.metadata.lud16;
+      to.metadata.lud16 = moved;
+      from.metadata.lud16 = 'fresh123@btc.mybuho.de';
+      return { moved, sourceAddress: from.metadata.lud16 };
+    };
   });
 }
 
@@ -139,6 +147,24 @@ try {
   await page.waitForFunction(() => [...document.querySelectorAll('.q-dialog')].some((d) => /Lightning address/i.test(d.textContent || '')));
   await page.keyboard.press('Escape');
   console.log('PASS: Spark detail shows its own address; Change address opens for that wallet');
+
+  // ---- Move the address to another wallet ---------------------------------
+  await page.waitForTimeout(400);
+  await panel.getByRole('button', { name: 'Move to another wallet' }).click();
+  const move = page.locator('.move-card');
+  await move.waitFor();
+  assert.equal(await move.locator('.move-address').textContent(), 'savings@btc.mybuho.de');
+  assert.equal(await move.locator('[role="radio"]').count(), 3, 'every other Spark wallet is offered');
+  assert.equal(await move.getByRole('button', { name: 'Move address' }).isDisabled(), true, 'nothing moves before a choice');
+  await move.locator('[data-wallet-id="main"]').click();
+  await move.locator('.move-consequence').waitFor();
+  assert.match(await move.locator('.move-consequence').textContent(), /main@btc\.mybuho\.de, which stops working/);
+  await page.waitForTimeout(300);
+  await shot(page, 'p5-move-address');
+  await move.getByRole('button', { name: 'Move address' }).click();
+  await toast(page, 'savings@btc.mybuho.de now receives into Main');
+  await panel.getByText('fresh123@btc.mybuho.de', { exact: true }).waitFor();
+  console.log('PASS: moving an address names the consequence first, confirms, and shows the source\'s new address');
 
   // ---- Removal: a funded wallet is emptied first ---------------------------
   page = await open(three);

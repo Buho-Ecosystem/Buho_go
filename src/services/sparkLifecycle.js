@@ -166,6 +166,10 @@ export function createSparkLifecycle({
       case 'unclaimedDeposits':
         trigger('event', [r.walletId]);
         break;
+      case 'lightningAddressChanged':
+        // The address changed server-side (another device, a transfer).
+        Promise.resolve(store.noteSparkLightningAddress?.(r.walletId, event.lightningAddress?.lightningAddress || null)).catch(() => {});
+        break;
       default:
         break;
     }

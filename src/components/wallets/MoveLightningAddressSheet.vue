@@ -1,0 +1,153 @@
+<!--
+  MoveLightningAddressSheet: hand one Spark wallet's Lightning address to
+  another of the person's Spark wallets. Choose where payments to the name
+  should arrive, read what changes, confirm. The consequence that cannot be
+  undone in one tap (the receiving wallet's current address stops working)
+  is stated before the button, not after.
+-->
+<template>
+  <q-dialog
+    v-model="open"
+    position="bottom"
+    transition-show="slide-up"
+    transition-hide="slide-down"
+    :persistent="moving"
+    :class="$q.dark.isActive ? 'dialog_dark' : 'dialog_light'"
+  >
+    <q-card class="move-card" :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'">
+      <div class="sheet-grabber" aria-hidden="true"><div class="grabber-bar"></div></div>
+      <header class="move-header">
+        <button type="button" class="move-text-button" :disabled="moving" @click="open = false">{{ $t('Cancel') }}</button>
+        <h2 class="move-title">{{ $t('Move address') }}</h2>
+        <span aria-hidden="true"></span>
+      </header>
+
+      <div v-if="source" class="move-body">
+        <p class="move-address">{{ address }}</p>
+        <p class="move-lead">{{ $t('Choose the wallet that should receive payments sent to this address.') }}</p>
+
+        <div class="move-list" role="radiogroup" :aria-label="$t('Receiving wallet')">
+          <button
+            v-for="wallet in targets"
+            :key="wallet.id"
+            type="button"
+            role="radio"
+            class="move-option"
+            :aria-checked="wallet.id === targetId ? 'true' : 'false'"
+            :disabled="moving || !connected(wallet.id)"
+            :data-wallet-id="wallet.id"
+            @click="targetId = wallet.id"
+          >
+            <span class="move-option-mark" aria-hidden="true"><WalletBrandMark type="spark" :size="16" /></span>
+            <span class="move-option-copy">
+              <span class="move-option-name">{{ wallet.name }}</span>
+              <span class="move-option-sub">{{ connected(wallet.id) ? (addressOf(wallet) || $t('No address yet')) : $t('Not connected') }}</span>
+            </span>
+            <q-icon v-if="wallet.id === targetId" name="check" size="20px" class="move-option-check" :aria-hidden="true" />
+          </button>
+        </div>
+
+        <p v-if="target" class="move-consequence" role="status">
+          {{ addressOf(target)
+            ? $t('{target} receives at {address} instead of {old}, which stops working. {source} gets a new address, which you can change later.', { target: target.name, address, old: addressOf(target), source: source.name })
+            : $t('{target} receives at {address}. {source} gets a new address, which you can change later.', { target: target.name, address, source: source.name }) }}
+        </p>
+        <p v-if="error" class="move-error" role="alert">{{ error }}</p>
+
+        <button type="button" class="move-primary" :disabled="!target || moving" @click="move">
+          <q-spinner v-if="moving" size="18px" :aria-hidden="true" />
+          {{ moving ? $t('Moving address...') : $t('Move address') }}
+        </button>
+      </div>
+    </q-card>
+  </q-dialog>
+</template>
+
+<script setup>
+import { computed, getCurrentInstance, ref, watch } from 'vue';
+import { useWalletStore } from '../../stores/wallet';
+import WalletBrandMark from '../WalletBrandMark.vue';
+
+const props = defineProps({
+  modelValue: { type: Boolean, default: false },
+  /** The Spark wallet whose address moves. */
+  fromWalletId: { type: String, default: null },
+});
+const emit = defineEmits(['update:modelValue', 'moved']);
+
+// vue-i18n runs in legacy mode (src/boot/i18n.js), so useI18n() throws.
+// Reach $t through the component proxy, the app's established pattern.
+const { proxy } = getCurrentInstance();
+const t = (key, params) => proxy.$t(key, params);
+const store = useWalletStore();
+const targetId = ref(null);
+const moving = ref(false);
+const error = ref('');
+
+const open = computed({ get: () => props.modelValue, set: (value) => emit('update:modelValue', value) });
+const source = computed(() => store.sparkWallets.find((w) => w.id === props.fromWalletId) || null);
+const targets = computed(() => store.sparkWallets.filter((w) => w.id !== props.fromWalletId));
+const target = computed(() => targets.value.find((w) => w.id === targetId.value) || null);
+const addressOf = (wallet) => store.walletInfos[wallet.id]?.lightningAddress || wallet.metadata?.lud16 || '';
+const address = computed(() => (source.value ? addressOf(source.value) : ''));
+const connected = (walletId) => !!store.connectionStates[walletId]?.connected;
+
+watch(() => props.modelValue, (visible) => {
+  if (!visible) return;
+  error.value = '';
+  // One other wallet: nothing to choose.
+  targetId.value = targets.value.length === 1 && connected(targets.value[0].id) ? targets.value[0].id : null;
+});
+
+function describe(failure) {
+  switch (failure?.code) {
+    case 'LN_ADDRESS_NOT_CONNECTED': return t('Both wallets need to be connected. Check your connection and try again.');
+    case 'LN_ADDRESS_NONE': return t('This wallet has no address to move right now.');
+    default: return t('The address could not be moved. Nothing changed, so you can try again.');
+  }
+}
+
+async function move() {
+  if (!target.value || moving.value) return;
+  moving.value = true;
+  error.value = '';
+  try {
+    const result = await store.moveSparkLightningAddress(props.fromWalletId, target.value.id);
+    emit('moved', { ...result, target: target.value });
+    open.value = false;
+  } catch (failure) {
+    console.warn('[move-address] not moved:', failure?.code || failure?.message || failure);
+    error.value = describe(failure);
+  } finally {
+    moving.value = false;
+  }
+}
+</script>
+
+<style scoped>
+.move-card { width: 100%; max-width: 560px; margin: 0 auto; border-radius: 24px 24px 0 0; padding-bottom: max(20px, var(--safe-bottom, 0px)); max-height: 92dvh; overflow-y: auto; }
+.sheet-grabber { display: flex; justify-content: center; padding: 10px 0 2px; }
+.grabber-bar { width: 36px; height: 5px; border-radius: 3px; background: var(--text-muted); opacity: .4; }
+.move-header { display: grid; grid-template-columns: minmax(64px, 1fr) auto minmax(64px, 1fr); align-items: center; gap: 8px; padding: 6px 16px 4px; }
+.move-title { margin: 0; font-family: 'Manrope', sans-serif; font-size: 17px; font-weight: 650; line-height: 1.3; text-align: center; color: var(--text-primary); }
+.move-text-button { justify-self: start; min-height: 44px; padding: 0 4px; border: 0; background: transparent; color: var(--brand-accent-text, var(--text-primary)); font: 500 16px/1.3 'Manrope', sans-serif; cursor: pointer; }
+.move-body { display: flex; flex-direction: column; padding: 8px 20px 0; }
+.move-address { margin: 4px 0 0; font-family: var(--font-mono, monospace); font-size: 15px; font-weight: 600; text-align: center; overflow-wrap: anywhere; color: var(--text-primary); }
+.move-lead { margin: 12px 0 16px; color: var(--text-secondary); font-size: 14px; line-height: 1.5; text-align: center; }
+.move-list { display: flex; flex-direction: column; border: 1px solid var(--border-card); border-radius: 16px; overflow: hidden; background: var(--bg-input); }
+.move-option { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 60px; padding: 10px 14px; border: 0; background: transparent; color: var(--text-primary); text-align: start; font: inherit; cursor: pointer; }
+.move-option + .move-option { border-top: 1px solid var(--border-card); }
+.move-option:disabled { opacity: .5; cursor: default; }
+.move-option-mark { display: grid; place-items: center; flex-shrink: 0; width: 34px; height: 34px; border-radius: 50%; background: #1a1a1c; }
+.move-option-copy { display: flex; flex: 1; min-width: 0; flex-direction: column; gap: 2px; }
+.move-option-name { font-size: 15px; font-weight: 600; overflow-wrap: anywhere; }
+.move-option-sub { color: var(--text-secondary); font-family: var(--font-mono, monospace); font-size: 12px; overflow-wrap: anywhere; }
+.move-option-check { flex-shrink: 0; color: var(--brand-accent-text, #15DE72); }
+.move-consequence { margin: 14px 0 0; color: var(--text-secondary); font-size: 13px; line-height: 1.5; }
+.move-error { margin: 10px 0 0; color: var(--color-negative, #b42332); font-size: 13px; line-height: 1.45; }
+.move-primary { display: inline-flex; align-items: center; justify-content: center; gap: 10px; min-height: 50px; margin-top: 20px; border: 0; border-radius: 14px; background: #1a1a1c; color: #faf7ef; font: 650 16px/1.3 'Manrope', sans-serif; cursor: pointer; }
+body.body--dark .move-primary { background: #e9e9ec; color: #1c1c1e; }
+body.body--dark .move-option-mark { background: rgba(255, 255, 255, 0.1); }
+.move-primary:disabled { opacity: .5; cursor: default; }
+button:focus-visible { outline: 2px solid currentColor; outline-offset: 3px; }
+</style>

@@ -255,6 +255,9 @@
       <!-- One more Spark wallet from the recovery phrase on this device. -->
       <AddSparkWalletSheet v-model="showAddSparkSheet" @created="onSparkWalletCreated" />
 
+      <!-- Hand a Spark wallet's Lightning address to another Spark wallet. -->
+      <MoveLightningAddressSheet v-model="showMoveAddressSheet" :from-wallet-id="moveAddressWalletId" @moved="onAddressMoved" />
+
       <!-- "Move funds" before removing a wallet that still holds money. -->
       <InternalTransferModal
         v-model="showTransferModal"
@@ -1064,13 +1067,14 @@
           :connection-error="connectionStates[detailWallet.id]?.error ? $t('This wallet is offline right now. Check your connection, then tap Reconnect.') : ''"
           :rename-wallet="walletStore.updateWalletName"
           :lightning-address="detailWallet.type === 'spark' ? (walletInfos[detailWallet.id]?.lightningAddress || detailWallet.metadata?.lud16 || '') : ''"
-          :can-move-address="false"
+          :can-move-address="sparkWallets.length > 1"
           @back="closeWalletDetail"
           @switch="handleSwitchWallet"
           @reconnect="reconnectWallet"
           @remove="confirmRemoveWallet"
           @copy-address="copyToClipboard($event, $t('Lightning address copied'))"
           @change-address="openLightningAddressSheet"
+          @move-address="openMoveAddress"
         />
         <template v-else>
         <div class="sheet-grabber" aria-hidden="true"><div class="grabber-bar"></div></div>
@@ -2077,6 +2081,7 @@ import SparkLightningAddressSheet from '../components/SparkLightningAddressSheet
 import InternalTransferModal from '../components/InternalTransferModal.vue'
 import WalletDetailPanel from '../components/settings/WalletDetailPanel.vue'
 import AddSparkWalletSheet from '../components/wallets/AddSparkWalletSheet.vue'
+import MoveLightningAddressSheet from '../components/wallets/MoveLightningAddressSheet.vue'
 import { removalCopy } from '../utils/walletRemoval.js'
 import GetAppDialog from '../components/GetAppDialog.vue'
 import TaxReportSheet from '../components/settings/TaxReportSheet.vue'
@@ -2120,6 +2125,7 @@ export default {
     InternalTransferModal,
     WalletDetailPanel,
     AddSparkWalletSheet,
+    MoveLightningAddressSheet,
     GetAppDialog,
     TaxReportSheet,
     ExitKitSheet,
@@ -2147,6 +2153,8 @@ export default {
       detailWalletId: null,
       showAddSparkSheet: false,
       lnAddressWalletId: null,
+      showMoveAddressSheet: false,
+      moveAddressWalletId: null,
       showTransferModal: false,
       transferFromWalletId: null,
       showCurrencyDialog: false,
@@ -4189,6 +4197,15 @@ export default {
     /** The new wallet is the active one now: say so, by name. */
     onSparkWalletCreated(wallet) {
       this.$q.notify({ type: 'positive', message: this.$t('Switched to {name}', { name: wallet.name }) });
+    },
+
+    openMoveAddress(walletId) {
+      this.moveAddressWalletId = walletId;
+      this.showMoveAddressSheet = true;
+    },
+
+    onAddressMoved({ moved, target }) {
+      this.$q.notify({ type: 'positive', message: this.$t('{address} now receives into {name}', { address: moved, name: target.name }) });
     },
 
     /** Change the Lightning address of any Spark wallet, not only the active one. */

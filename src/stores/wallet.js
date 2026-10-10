@@ -77,6 +77,12 @@ function serializeSparkMembership(task) {
 // for one phrase must not add wallets after another phrase arrived.
 let sparkPhraseEpoch = 0;
 let sparkDiscoveryRun = null;
+// walletId -> in-flight Lightning address assignment: one at a time per
+// wallet, so two registrations can never race to different names.
+const lnAddressEnsures = new Map();
+// Wallets whose Lightning address is being moved right now: the SDK's own
+// change events for them are expected and must not trigger a reassignment.
+const lnAddressMoves = new Set();
 // Starts on which a restore keeps looking for unchecked accounts.
 const MAX_DISCOVERY_ATTEMPTS = 5;
 // Spark entries the multi-wallet migration could not keep (another phrase,
@@ -1794,11 +1800,8 @@ export const useWalletStore = defineStore('wallet', {
         // failed lookup or registration retries on the next connect.
         if (typeof provider.ensureLightningAddress === 'function') {
           try {
-            const address = await provider.ensureLightningAddress({
-              previousAddress: wallet.metadata.lud16 || null,
-            });
             assertCurrent();
-            await this.setSparkLightningAddress(walletId, address);
+            await this._ensureSparkLightningAddress(walletId);
           } catch (error) {
             console.warn('Lightning address setup skipped:', error?.message || error);
           }
@@ -1854,6 +1857,126 @@ export const useWalletStore = defineStore('wallet', {
         // being asked. A custom address is never touched (see the helper).
         this._syncProfilePaymentAddress({ previousAddresses: [previousAddress] })
           .catch(() => {});
+      }
+    },
+
+    /**
+     * Give a Spark wallet its Lightning address: the server's, the one it
+     * last held, or a fresh random name. One assignment per wallet at a time.
+     * @param {string} walletId
+     * @param {{ previousAddress?: string|null }} [options] the address to try
+     *   reclaiming; defaults to the remembered one, null skips reclaiming
+     * @returns {Promise<string|null>}
+     */
+    _ensureSparkLightningAddress(walletId, { previousAddress } = {}) {
+      const pending = lnAddressEnsures.get(walletId);
+      if (pending) return pending;
+      const run = (async () => {
+        const provider = this.providers[walletId];
+        if (typeof provider?.ensureLightningAddress !== 'function') return null;
+        const wallet = this.wallets.find(w => w.id === walletId);
+        const address = await provider.ensureLightningAddress({
+          previousAddress: previousAddress === undefined ? (wallet?.metadata?.lud16 || null) : previousAddress,
+        });
+        await this.setSparkLightningAddress(walletId, address);
+        return address;
+      })().finally(() => lnAddressEnsures.delete(walletId));
+      lnAddressEnsures.set(walletId, run);
+      return run;
+    },
+
+    /** The wallet no longer holds the address it remembered (moved away, or released elsewhere). */
+    async _forgetSparkLightningAddress(walletId) {
+      const wallet = this.wallets.find(w => w.id === walletId);
+      if (!wallet) return;
+      if (this.walletInfos[walletId]) this.walletInfos[walletId].lightningAddress = null;
+      if (wallet.metadata?.lud16) {
+        wallet.metadata = { ...wallet.metadata };
+        delete wallet.metadata.lud16;
+        await this.persistState();
+      }
+    },
+
+    /**
+     * The SDK reported a new (or no) Lightning address for a wallet, for
+     * example after a change on another device. An address is recorded; a
+     * wallet left without one gets a fresh name, since every Spark wallet
+     * keeps one. Changes made by a move in progress are already handled.
+     */
+    async noteSparkLightningAddress(walletId, address) {
+      if (lnAddressMoves.has(walletId) || !this.wallets.some(w => w.id === walletId)) return;
+      if (address) {
+        await this.setSparkLightningAddress(walletId, address);
+        return;
+      }
+      await this._forgetSparkLightningAddress(walletId);
+      await this._ensureSparkLightningAddress(walletId, { previousAddress: null }).catch((error) => {
+        console.warn('Lightning address not reassigned yet:', error?.message || error);
+      });
+    },
+
+    /**
+     * Hand a Spark wallet's Lightning address to another of the person's
+     * Spark wallets (Breez address transfer: the source authorises the
+     * target's identity key, the target claims). The target's own address
+     * is replaced; the source gets a fresh random name it can change later.
+     * A profile pointing at the target's old address moves to the current
+     * default; one pointing at the moved address keeps working as it is.
+     *
+     * @returns {Promise<{ moved: string, sourceAddress: string|null }>}
+     * Errors carry `code`: LN_ADDRESS_INVALID_TARGET, LN_ADDRESS_NOT_CONNECTED,
+     * LN_ADDRESS_NONE, LN_ADDRESS_TRANSFER_FAILED (nothing changed).
+     */
+    async moveSparkLightningAddress(fromWalletId, toWalletId) {
+      const from = this.wallets.find(w => w.id === fromWalletId && w.type === WALLET_TYPES.SPARK);
+      const to = this.wallets.find(w => w.id === toWalletId && w.type === WALLET_TYPES.SPARK);
+      if (!from || !to || from.id === to.id) throw codedError('LN_ADDRESS_INVALID_TARGET', 'Choose another Spark wallet');
+      if (lnAddressMoves.has(from.id) || lnAddressMoves.has(to.id)) throw codedError('LN_ADDRESS_BUSY', 'An address is already moving');
+
+      lnAddressMoves.add(from.id);
+      lnAddressMoves.add(to.id);
+      try {
+        for (const wallet of [from, to]) {
+          if (!this.providers[wallet.id]?.isConnected) {
+            await this.connectSparkWallet(wallet.id).catch(() => {});
+          }
+          if (!this.providers[wallet.id]?.isConnected) throw codedError('LN_ADDRESS_NOT_CONNECTED', `${wallet.name} is not connected`);
+        }
+        const source = this.providers[from.id];
+        const target = this.providers[to.id];
+        // The server's word, not the cache: only a held address can move.
+        const moving = (await source.getLightningAddress())?.lightningAddress;
+        if (!moving) throw codedError('LN_ADDRESS_NONE', `${from.name} has no Lightning address to move`);
+        const targetPubkey = target.identityPubkey?.();
+        if (!targetPubkey) throw codedError('LN_ADDRESS_NOT_CONNECTED', `${to.name} is not ready yet`);
+
+        let claimed;
+        try {
+          const authorization = await source.authorizeLightningAddressTransfer(targetPubkey);
+          claimed = await target.claimLightningAddressTransfer(authorization);
+        } catch (error) {
+          console.warn('[wallet] Lightning address transfer refused:', error?.message || error);
+          throw codedError('LN_ADDRESS_TRANSFER_FAILED', 'The address could not be moved; nothing changed');
+        }
+        const movedAddress = claimed?.lightningAddress || moving;
+
+        // Recorded on the target first; setSparkLightningAddress moves a
+        // profile that pointed at the target's old address to the default.
+        await this.setSparkLightningAddress(to.id, movedAddress);
+        // The source no longer holds it: never try to reclaim it, mint a new one.
+        await this._forgetSparkLightningAddress(from.id);
+        let sourceAddress = null;
+        try {
+          sourceAddress = await this._ensureSparkLightningAddress(from.id, { previousAddress: null });
+        } catch (error) {
+          // Assigned on its next connect instead.
+          console.warn('[wallet] new address for the source wallet deferred:', error?.message || error);
+        }
+        this._noteWalletsChanged();
+        return { moved: movedAddress, sourceAddress };
+      } finally {
+        lnAddressMoves.delete(from.id);
+        lnAddressMoves.delete(to.id);
       }
     },
 

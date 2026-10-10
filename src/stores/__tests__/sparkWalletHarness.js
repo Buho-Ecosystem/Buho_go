@@ -48,18 +48,55 @@ export function createHarness({ evidence = {}, connect = null, storage = {}, exi
   globalThis.localStorage = local;
   const calls = { probes: [], deletedStorage: [], reconciled: [], removedConfigs: [], kitsRemoved: [], preserved: [], backupNotes: 0 };
   const balances = {};
+  // A stand-in for the Lightning address server: one address per identity key.
+  const server = { byPubkey: new Map(), random: 0, ensures: 0, failClaim: false };
+  const holder = (username) => [...server.byPubkey].find(([, name]) => name === username)?.[0];
+  const domain = 'btc.example.com';
 
-  const createWalletProvider = (wallet) => ({
-    isConnected: false,
-    async initializeWithMnemonic(mnemonic) {
-      if (connect) await connect(wallet, mnemonic);
-      this.isConnected = true;
-    },
-    async getBalance() { return { balance: balances[wallet.id] ?? 0, fresh: true }; },
-    async getInfo() { return { sparkAddress: `spark-${wallet.connectionData.accountNumber}` }; },
-    async ensureLightningAddress({ previousAddress } = {}) { return previousAddress || `user${wallet.connectionData.accountNumber}@example.com`; },
-    async disconnect() { this.isConnected = false; },
-  });
+  const createWalletProvider = (wallet) => {
+    const pubkey = `pk-${wallet.connectionData.accountNumber}`;
+    return {
+      isConnected: false,
+      async initializeWithMnemonic(mnemonic) {
+        if (connect) await connect(wallet, mnemonic);
+        this.isConnected = true;
+      },
+      async getBalance() { return { balance: balances[wallet.id] ?? 0, fresh: true }; },
+      async getInfo() { return { sparkAddress: `spark-${wallet.connectionData.accountNumber}` }; },
+      identityPubkey: () => pubkey,
+      async getLightningAddress() {
+        const name = server.byPubkey.get(pubkey);
+        return name ? { lightningAddress: `${name}@${domain}`, username: name } : null;
+      },
+      async ensureLightningAddress({ previousAddress } = {}) {
+        server.ensures += 1;
+        await tick();
+        if (server.offlineFor === pubkey) throw new Error('lookup failed');
+        const held = server.byPubkey.get(pubkey);
+        if (held) return `${held}@${domain}`;
+        const previous = previousAddress ? String(previousAddress).split('@')[0] : '';
+        if (previous && !holder(previous)) { server.byPubkey.set(pubkey, previous); return `${previous}@${domain}`; }
+        server.random += 1;
+        const name = `random${server.random}`;
+        server.byPubkey.set(pubkey, name);
+        return `${name}@${domain}`;
+      },
+      async authorizeLightningAddressTransfer(transfereePubkey) {
+        const username = server.byPubkey.get(pubkey);
+        if (!username) throw new Error('no address');
+        return { username, pubkey: transfereePubkey, signature: `sig-${pubkey}`, domain, timestamp: 1 };
+      },
+      async claimLightningAddressTransfer(authorization) {
+        if (server.claimGate) await server.claimGate;
+        if (server.failClaim) throw new Error('claim rejected');
+        if (authorization.pubkey !== pubkey) throw new Error('not for this wallet');
+        server.byPubkey.delete(holder(authorization.username));
+        server.byPubkey.set(pubkey, authorization.username);
+        return { lightningAddress: `${authorization.username}@${domain}`, username: authorization.username };
+      },
+      async disconnect() { this.isConnected = false; },
+    };
+  };
 
   const probeAccountActivity = async (mnemonic, { accountNumber }) => {
     calls.probes.push(accountNumber);
@@ -127,6 +164,7 @@ export function createHarness({ evidence = {}, connect = null, storage = {}, exi
     calls,
     local,
     exits,
+    server,
     setBalance(walletId, sats) {
       balances[walletId] = sats;
       const at = Date.now();
