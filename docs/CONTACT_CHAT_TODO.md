@@ -234,6 +234,15 @@ an LNURL fetch). Still to do: Android device run.
   sensitive under load).
 - Production build (`quasar build`) and an Android device run.
 
+### 5a. In progress: request lifetime root fix (docs/CONTACT_CHAT.md 8a)
+Today a request dead-ends after its 24 h invoice expires. Fix: request
+lives 30 days (user decision 2026-10-11), payer pulls a fresh invoice from
+the request's signed lud16 at "Pay", requester verifies late payments
+against its own ledger, every state keeps a next action (Send anyway /
+Request again / Ask for a new request). Touches protocol, requests,
+runtime, messages store, useContactChat, RequestCard, ContactChatPage,
+i18n, e2e.
+
 ### 6. Known limitations / follow-ups
 - Muted 12px text contrast (`--text-muted`, ~3.1–3.8:1) is an app-wide
   token, below WCAG AA for small text.
