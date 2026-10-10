@@ -78,10 +78,15 @@ NIP-17 clients (0xchat, Amethyst, …) show something sensible.
 | Type | Rumor kind | Tags | Fallback content |
 |---|---|---|---|
 | text | 14 | `["p", recipient]`, optional `["e", replyToId, "", "reply"]` | the text |
-| request | 14 | `["p", recipient]`, `["buho", "request", "1"]`, `["amount", "<msat>"]`, `["bolt11", "<invoice>"]`, optional `["lud16", "<address>"]`, `["expiration", "<unix>"]` | `💸 Payment request: 12,000 sats – Pizza\nlightning:<invoice>` |
-| status | 14 | `["p", recipient]`, `["e", requestId, "", "reply"]`, `["buho", "status", "<paid\|declined\|cancelled\|reminder>", "1"]`, optional `["preimage", "<hex>"]` | `✅ Paid: 12,000 sats` / `Declined` / `Withdrawn` / `Reminder` |
-| payment | 14 | `["p", recipient]`, `["buho", "payment", "1"]`, `["amount", "<msat>"]`, optional `["preimage", "<hex>"]`, optional `["e", requestId, "", "reply"]` | `↗ Sent 5,000 sats – Coffee` |
-| reaction | 7 | `["e", targetId]`, `["p", targetAuthor]`, `["k", "14"]` | the emoji |
+| request | 14 | `["p", recipient]`, `["buho", "request", "1"]`, `["amount", "<msat>"]`, `["bolt11", "<invoice>"]`, optional `["note", "<text>"]`, `["lud16", "<address>"]` | `💸 Payment request: 12,000 sats – Pizza\nlightning:<invoice>` |
+| status | 14 | `["p", recipient]`, `["e", requestId, "", "reply"]`, `["buho", "status", "<paid\|declined\|cancelled\|reminder>", "1"]`, optional `["preimage", "<hex>"]` | `✅ Paid: 12,000 sats` (or `✅ Paid`) / `✖️ Declined the payment request` / `↩️ Withdrew the payment request` / `🔔 Reminder: payment request still open` |
+| payment | 14 | `["p", recipient]`, `["buho", "payment", "1"]`, `["amount", "<msat>"]`, optional `["note", "<text>"]`, `["preimage", "<hex>"]`, `["e", requestId, "", "reply"]` | `↗ Sent 5,000 sats – Coffee` |
+| reaction | 7 | `["e", targetId]`, `["p", partner]`, `["k", "14"]` | the emoji |
+
+No NIP-40 `expiration` tag on rumors or wraps: other clients and relays would
+delete the history. A request expires with its invoice (`expiresAt`). In a
+reaction the `p` tag names the conversation partner (NIP-17 room
+membership), also when reacting to one's own message.
 
 Parsing rules (`protocol.parseRumor`):
 - Unknown or invalid `buho` payloads degrade to a plain text message (the
@@ -104,10 +109,21 @@ Parsing rules (`protocol.parseRumor`):
 
 | Purpose | Relays |
 |---|---|
-| Own DM inbox (kind 10050) | `wss://auth.nostr1.com`, `wss://relay.damus.io`, `wss://relay.nostr.net` (all serve kind 1059 only after NIP-42 AUTH; measured 2026-10-09) |
+| Own DM inbox (kind 10050) | `wss://auth.nostr1.com`, `wss://nos.lol`, `wss://relay.primal.net` (see measurement below) |
 | Publish own 10050 / discover others' 10050 | `DEFAULT_RELAYS` + `wss://purplepag.es` (+ contact relay hints) |
 | Send to a contact | every relay in **their** 10050; delivered when ≥ 1 relay accepts |
 | Contact without 10050 | no message (NIP-17); a request is shared as a payment link |
+
+Inbox relay choice (measured 2026-10-10 with a test wrap on 29 relays):
+`auth.nostr1.com` was the only free relay that hides kind 1059 from strangers
+and serves it after NIP-42 AUTH; it accepts writes after AUTH with any key.
+`relay.damus.io` and `relay.nostr.net` refuse 1059 reads but their AUTH is
+broken server-side ("relay needs serviceUrl to be configured"), so nothing
+can be read there; they also nest the prefix (`ERROR: auth-required: …`).
+`nos.lol` and `relay.primal.net` accept and serve wraps without AUTH (content
+stays encrypted; only "this pubkey receives wraps" is public). Three
+operators keep a single outage from cutting off money requests. Revisit when
+damus/nostr.net fix AUTH.
 
 Inbox subscription: `{ kinds: [1059], '#p': [me], since: lastSync - 2 days }`
 (gift wrap timestamps are randomised up to two days into the past; duplicates
@@ -118,11 +134,16 @@ AUTH must be invisible:
 - `transport.js` uses its own `nostr-core` `Relay` instances (separate from the
   shared public pool, so the identity never authenticates public queries) and
   sets `onauth` **before** `connect()`.
+- Two roles, never mixed, so a relay in both sets gets two sockets:
+  **read** connections (own inbox only) answer a challenge at once with the
+  identity; **write** connections (every publish, self copies included)
+  answer at once with an **ephemeral** key per connection, so no relay learns
+  who writes.
 - On `CLOSED "auth-required:…"` it authenticates and re-subscribes; on
   `OK false "auth-required:…"` it authenticates and re-sends once; after a
-  reconnect it re-authenticates and restores subscriptions.
-- Foreign inbox relays that require AUTH for writing get an **ephemeral** key per
-  connection, so they never learn who writes.
+  reconnect it re-authenticates and restores subscriptions. A failed AUTH
+  marks that relay `auth-failed` and it is not retried until the next
+  connection; the other relays carry on.
 - The identity key is loaded once per session (`sessionKey.js`) and kept only in
   memory. It is wiped (bytes zeroed) on app lock, identity change, identity
   reset and after 10 minutes in the background.
@@ -133,7 +154,8 @@ All functions are pure or take their collaborators as arguments (pool, wallet
 store, clock) so they can be unit tested without network or Pinia.
 
 - `constants.js` — `KIND` (`DM: 14, REACTION: 7, SEAL: 13, GIFT_WRAP: 1059,
-  DM_RELAYS: 10050, MUTE_LIST: 10000, AUTH: 22242`), `DM_INBOX_RELAYS`,
+  DM_RELAYS: 10050, MUTE_LIST: 10000, AUTH: 22242`), `DM_INBOX_RELAYS`
+  (auth.nostr1.com, nos.lol, relay.primal.net; section 5),
   `DM_DISCOVERY_RELAYS`, `PROTOCOL_VERSION = '1'`, `MAX_TEXT_LENGTH` (2,000),
   `MAX_NOTE_LENGTH` (200), `MAX_RUMOR_BYTES` (40,000), `SINCE_SLACK_SECONDS`
   (2 days), `INBOX_RELAY_CACHE_TTL_MS` (24 h), `MAX_INBOX_RELAYS_PER_CONTACT`
@@ -143,35 +165,75 @@ store, clock) so they can be unit tested without network or Pinia.
   `DM_ERROR` map (`INVALID_ARGUMENT`, `MESSAGE_TOO_LARGE`, `NO_IDENTITY`,
   `KEY_WIPED`, `NO_INBOX_RELAYS`, `NO_RELAY_ACCEPTED`, `RELAY_UNAVAILABLE`,
   `AUTH_FAILED`, `TIMEOUT`, `INVALID_INVOICE`, `WALLET_CANNOT_INVOICE`,
-  `WALLET_CANNOT_PAY`); an unknown code throws a `TypeError`. `message` is
+  `WALLET_CANNOT_PAY`, `SECRET_KEY_IN_TEXT`); an unknown code throws a `TypeError`. `message` is
   developer text, never shown; `details` holds small non-secret facts (relay
   URL, counts). Catch with `DmError.is(err, code?)`. Relay replies:
   `RELAY_REASON` (the NIP-01 prefixes `duplicate`, `pow`, `blocked`,
   `rate-limited`, `invalid`, `restricted`, `mute`, `error` and NIP-42
   `auth-required`), `parseRelayReason(reason) → { prefix | null, message }`
-  (never throws), `isAuthRequired(reason | parsed)`,
+  (never throws), `isAuthRequired(reason | parsed)` (also one nested
+  level under `error:`, as relay.damus.io and relay.nostr.net send it),
   `isRetryableRelayReason(prefix)` (`rate-limited`, `error`, `auth-required`)
   and `isDeliveredRelayReason({ ok, reason })` (accepted or `duplicate`).
 - `protocol.js` — `MESSAGE_TYPE`, `REQUEST_STATUS`, template builders
   (`buildTextTemplate`, `buildRequestTemplate`, `buildStatusTemplate`,
-  `buildPaymentTemplate`, `buildReactionTemplate`) returning `EventTemplate`s,
-  and `parseRumor(rumor, { me }) → ChatMessage`.
+  `buildPaymentTemplate`, `buildReactionTemplate`) returning `EventTemplate`s
+  (they validate and throw `DmError`), `containsSecretKey(text)` (an `nsec1…`
+  or `ncryptsec1…` in the text; `buildTextTemplate` refuses it with
+  `SECRET_KEY_IN_TEXT`), and `parseRumor(rumor, { me }) → ChatMessage | null`
+  (never throws; `null` for kinds other than 14/7, group messages, notes to
+  self, malformed rumors, incoming rumors not addressed to `me` and invalid
+  reactions). Builders and parser share one set of validators; an invalid
+  `buho` payload degrades to text. A payment's preimage is optional (Spark
+  transfers, Arkade and some NWC wallets have none).
+  Lengths are counted in Unicode code points.
 - `giftWrap.js` — `sealAndWrap({ template, senderSecretKey, recipients,
-  selfCopy = true }) → { rumor, wraps: [{ recipient, event }] }`.
+  selfCopy = true }) → { rumor, wraps: [{ recipient, self, event }] }`: one
+  rumor (one id), sealed and wrapped per recipient, self copy last; rumor JSON
+  over `MAX_RUMOR_BYTES` → `MESSAGE_TOO_LARGE`.
 - `openWrap.js` — `openGiftWrap(event, recipientSecretKey, { me }) →
   { ok: true, rumor, sender } | { ok: false, reason }` (reasons:
-  `not-gift-wrap`, `undecryptable`, `invalid-seal`, `impersonation`,
-  `id-mismatch`, `not-addressed`).
-- `inboundPolicy.js` — `createWrapGate()` (before unwrap) and
-  `createRumorGate({ isBlocked, ratePerMinute })` (after unwrap) on top of
-  `nostr-core` `policy`.
-- `inboxRelays.js` — `buildInboxRelayListEvent(relays, secretKey)`,
-  `parseInboxRelayList(event)`, `createInboxRelayResolver({ pool,
-  discoveryRelays, ttlMs, now })`.
-- `sessionKey.js` — `createSessionKey({ load, now, idleWipeMs })` →
-  `{ get(), peekPubkey(), wipe(reason), touch() }`.
-- `transport.js` — `createDmTransport({ getIdentityKey, WebSocket, reconnect,
-  publishTimeoutMs, onStatus })` → `{ subscribe, publish, status, close }`.
+  `not-gift-wrap`, `not-addressed`, `undecryptable`, `invalid-seal`,
+  `impersonation`, `invalid-rumor`, `id-mismatch`). Built on `nip44`
+  primitives (not `nip59.unwrap`) so every failure has a precise reason;
+  never throws.
+- `inboundPolicy.js` — `createWrapGate()` (before unwrap: kind 1059, content
+  ≤ 87,472 chars = largest NIP-44 payload, ≤ 1 h in the future, not expired,
+  no duplicate wrap id) and `createRumorGate({ me, isBlocked, rate })` (after
+  unwrap: kind 14/7, sender not blocked, not expired, no duplicate rumor id,
+  optional per-sender `rate: { max, windowMs }` that never applies to `me`;
+  the inbox uses a rate only for live events, not for backfill). Both on
+  `nostr-core` `policy.pipe`, returning `PolicyResult`.
+- `inboxRelays.js` — `buildInboxRelayListTemplate(relays, { now })`,
+  `parseInboxRelayList(event) → string[]` (normalised `wss://` URLs, deduped,
+  capped at `MAX_INBOX_RELAYS_PER_CONTACT`), `createInboxRelayResolver({
+  ensureRelay, discoveryRelays, ttlMs, missingTtlMs, timeoutMs, now })` →
+  `{ resolve(pubkey, { hints, force }), peek, invalidate, snapshot, hydrate }`
+  (URLs pass `normalizeInboxRelayUrl`, which refuses loopback, private,
+  link-local, `.local` and `.onion` hosts so a hostile list cannot probe the
+  user's network)
+  resolving to `{ status: 'found' | 'missing' | 'unknown', relays, checkedAt }`
+  (`missing` = at least one relay answered and none had a usable list;
+  `unknown` = no relay answered, not cached; concurrent lookups share one
+  query; newest event wins).
+- `sessionKey.js` — `createSessionKey({ load, pubkey, setTimer, clearTimer, onWipe })`
+  → `{ use(fn), wipe(reason), wipeAfter(ms), cancelWipe(), isLoaded(),
+  dispose() }`. Key bytes never leave it: `use(fn)` loads once (concurrent
+  calls share the load), checks the bytes belong to `pubkey`, and calls the
+  **synchronous** `fn(secretKey)`. A wipe during a load discards the loaded
+  bytes and rejects with `KEY_WIPED`; load failures become `NO_IDENTITY`.
+  One instance per identity; the boot calls `wipeAfter(KEY_IDLE_WIPE_MS)`
+  when the app is hidden and `wipe('lock')` on `app:locked`.
+- `transport.js` — `createDmTransport({ signAuth, WebSocket, … , onStatus })`
+  → `{ subscribe, publish, warmUp, status, resetIdentity, close }`.
+  `signAuth({ relay, challenge })` signs the identity's kind 22242 (the
+  inbox wires it to `sessionKey.use`). `subscribe(relays, filters, {
+  onevent(event, relay), oneose(relay), onclosed(relay, reason) })` is a
+  logical subscription over read connections that survives AUTH and
+  reconnects until `close()`. `publish(relays, event)` returns `{
+  firstAccept, allSettled }` like `publishToRelaysEager`, never rejecting;
+  each result is `{ relay, ok, prefix, message, code, attempts }` (`ok` =
+  delivered, `duplicate` included).
 - `inbox.js`, `requests.js` — see sections 7 and 8.
 
 `ChatMessage` (normalised, what the store keeps):
@@ -180,12 +242,13 @@ store, clock) so they can be unit tested without network or Pinia.
 {
   id, kind, type,            // 'text' | 'request' | 'status' | 'payment' | 'reaction'
   sender, recipient,         // hex pubkeys
+  partner, outgoing,         // the contact's pubkey; sender === me
   createdAt,                 // unix seconds (rumor created_at)
   text,                      // display text (fallback for degraded messages)
   replyTo,                   // rumor id or null
   request,                   // { amountSats, note, bolt11, paymentHash, lud16, expiresAt } | null
   status,                    // { requestId, value, preimage } | null
-  payment,                   // { amountSats, note, preimage, requestId } | null
+  payment,                   // { amountSats, note, preimage (or null), requestId } | null
   reaction,                  // { targetId, emoji } | null
   degraded,                  // true when a buho payload was invalid
 }

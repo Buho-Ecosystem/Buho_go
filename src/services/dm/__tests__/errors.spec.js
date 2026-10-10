@@ -39,6 +39,7 @@ const REQUIRED_CODES = [
   'AUTH_FAILED',
   'TIMEOUT',
   'INVALID_INVOICE',
+  'SECRET_KEY_IN_TEXT',
   'WALLET_CANNOT_INVOICE',
   'WALLET_CANNOT_PAY',
 ];
@@ -398,6 +399,13 @@ const AUTH_REQUIRED_INPUTS = [
   { prefix: 'auth-required', message: '' },
   { prefix: 'auth-required', message: 'sign in' },
   parseRelayReason('auth-required: we only accept events from registered users'),
+  // Seen live on relay.damus.io and relay.nostr.net (2026-10-10): one nested level.
+  'ERROR: auth-required: requested filter requires authentication',
+  'error: auth-required: x',
+  '  Error:  Auth-Required  ',
+  'error:auth-required',
+  { prefix: 'error', message: 'auth-required: requested filter requires authentication' },
+  parseRelayReason('ERROR: auth-required: requested filter requires authentication'),
 ];
 
 for (const input of AUTH_REQUIRED_INPUTS) {
@@ -417,6 +425,16 @@ const NOT_AUTH_REQUIRED_INPUTS = [
   null,
   { prefix: 'restricted', message: '' },
   { prefix: null, message: 'auth-required: x' },
+  // Only `error` may wrap the prefix, and only once.
+  'blocked: auth-required: x',
+  'restricted: auth-required',
+  'error: error: auth-required: x',
+  'error: please auth-required: x',
+  'error: authenticated users only',
+  'error:',
+  { prefix: 'error', message: 'error: auth-required' },
+  { prefix: 'error', message: 42 },
+  { prefix: 'error' },
   { prefix: 'Auth-Required', message: '' },
   {},
   [],
@@ -532,6 +550,7 @@ for (const [result, label] of NOT_DELIVERED) {
 // [raw reason of a refused publish, authenticate?, retry later?, already delivered?]
 const DECISIONS = [
   ['auth-required: log in first', true, true, false],
+  ['ERROR: auth-required: requested filter requires authentication', true, true, false],
   ['rate-limited: slow down', false, true, false],
   ['error: database unavailable', false, true, false],
   ['duplicate: already have this event', false, false, true],

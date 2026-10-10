@@ -121,12 +121,17 @@ test('KIND is frozen: nothing can be changed, added or removed', () => {
 // Relays
 // ---------------------------------------------------------------------------
 
-test('DM_INBOX_RELAYS are the three AUTH-gated inbox relays', () => {
+test('DM_INBOX_RELAYS are the three inbox relays measured on 2026-10-10', () => {
   assert.deepEqual(DM_INBOX_RELAYS, [
     'wss://auth.nostr1.com',
-    'wss://relay.damus.io',
-    'wss://relay.nostr.net',
+    'wss://nos.lol',
+    'wss://relay.primal.net',
   ]);
+});
+
+test('DM_INBOX_RELAYS leave out the relays whose AUTH is broken server-side', () => {
+  assert.ok(!DM_INBOX_RELAYS.includes('wss://relay.damus.io'));
+  assert.ok(!DM_INBOX_RELAYS.includes('wss://relay.nostr.net'));
 });
 
 test('DM_INBOX_RELAYS are plain wss origins on three different hosts', () => {

@@ -43,16 +43,25 @@ export const KIND = Object.freeze({
 /**
  * Relays that hold our own NIP-17 inbox, published as our kind 10050 list.
  *
- * All three serve kind 1059 gift wraps only to a client that completed NIP-42
- * AUTH (measured 2026-10-09), so nobody can scrape the wraps addressed to us,
- * and they belong to three different operators, so one outage or policy change
- * cannot cut off incoming messages. `relay.damus.io` also appears in
- * `DEFAULT_RELAYS`; the two lists serve different purposes and stay separate.
+ * Inbox relay choice (measured 2026-10-10 with a test wrap on 29 relays):
+ * - `auth.nostr1.com` was the only free relay that hides kind 1059 from
+ *   strangers and serves it after NIP-42 AUTH; it accepts writes after AUTH
+ *   with any key.
+ * - `nos.lol` and `relay.primal.net` accept and serve wraps without AUTH. The
+ *   content stays encrypted; only "this pubkey receives wraps" is public.
+ * - `relay.damus.io` and `relay.nostr.net` refuse 1059 reads but their AUTH is
+ *   broken server-side ("relay needs serviceUrl to be configured"), so nothing
+ *   can be read there. They also nest the prefix (`ERROR: auth-required: ...`).
+ *   Revisit when they fix AUTH.
+ *
+ * Three different operators keep a single outage or policy change from cutting
+ * off incoming money requests. These relays are separate from `DEFAULT_RELAYS`:
+ * the two lists serve different purposes.
  */
 export const DM_INBOX_RELAYS = Object.freeze([
   'wss://auth.nostr1.com',
-  'wss://relay.damus.io',
-  'wss://relay.nostr.net',
+  'wss://nos.lol',
+  'wss://relay.primal.net',
 ]);
 
 /**

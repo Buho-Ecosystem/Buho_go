@@ -40,6 +40,8 @@ export const DM_ERROR = Object.freeze({
   TIMEOUT: 'TIMEOUT',
   /** A request's invoice failed the checks (undecodable, amount mismatch, wrong network). */
   INVALID_INVOICE: 'INVALID_INVOICE',
+  /** The text contains an `nsec1...` or `ncryptsec1...` key, so it is never sent. */
+  SECRET_KEY_IN_TEXT: 'SECRET_KEY_IN_TEXT',
   /** The chosen wallet cannot create invoices, so it cannot receive a request. */
   WALLET_CANNOT_INVOICE: 'WALLET_CANNOT_INVOICE',
   /** The chosen wallet cannot pay Lightning invoices. */
@@ -182,13 +184,24 @@ export function parseRelayReason(reason) {
  * has the `auth-required` prefix. The transport answers by authenticating and
  * then repeating the subscription or publish once.
  *
+ * Exactly one nested level also counts: `error: auth-required: ...`. Seen live
+ * on 2026-10-10 on relay.damus.io and relay.nostr.net, which answer
+ * `ERROR: auth-required: requested filter requires authentication`. It is
+ * still a request to authenticate, and treating it as a plain `error` would
+ * retry without AUTH. Only `error` may wrap the prefix, and only once: other
+ * nestings (`blocked: auth-required: ...`, `error: error: auth-required`) are
+ * not requests to authenticate. `parseRelayReason` itself stays strict and
+ * reports the outer prefix.
+ *
  * @param {string | ParsedRelayReason | null | undefined} reason The raw reason
  *   text, or the result of `parseRelayReason`, which is not parsed again.
  * @returns {boolean}
  */
 export function isAuthRequired(reason) {
   const parsed = typeof reason === 'string' ? parseRelayReason(reason) : reason;
-  return parsed?.prefix === RELAY_REASON.AUTH_REQUIRED;
+  if (parsed?.prefix === RELAY_REASON.AUTH_REQUIRED) return true;
+  if (parsed?.prefix !== RELAY_REASON.ERROR || typeof parsed.message !== 'string') return false;
+  return parseRelayReason(parsed.message).prefix === RELAY_REASON.AUTH_REQUIRED;
 }
 
 /**
