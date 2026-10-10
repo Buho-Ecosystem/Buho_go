@@ -694,22 +694,28 @@
       :payment="paymentSheetProps"
       :wallet-can-pay="paymentSheetWalletCanPay"
       :wallet-hint="paymentSheetWalletHint"
+      :paying-wallets="payingWalletEntries"
+      :sending-wallet-id="sendingWalletId"
+      :paying-destination-type="pendingDestinationType"
       :is-sending="isSendingPayment"
       :is-complete="sendDidSucceed"
       :commit-gate="sendSheetCommitGate"
       @amount-changed="sendSheetAmountSats = $event"
+      @update:sending-wallet-id="onSendingWalletChange"
       @confirm="onSendSheetConfirm"
       @cancel="onSendSheetCancel"
     >
       <!-- Spark on-chain rides the shared sheet with the L1 fee machinery
            in the extras slot: balance + Use all, per-speed SDK fee quote,
            and the breakdown. The panel's gate blocks the slide until a
-           quote is selected and the total fits the balance. -->
+           quote is selected and the total fits the balance. Balance and
+           quote belong to the wallet that pays, not necessarily the active one. -->
       <template v-if="isSparkL1Payment" #extras>
         <OnchainFeePanel
           :amount-sats="sendSheetAmountSats"
           :address="l1DestinationAddress"
-          :available-balance="activeCanonicalBalance ?? 0"
+          :available-balance="sendingWalletBalance ?? 0"
+          :wallet-id="payerWalletId"
           :disabled="isSendingPayment"
           @update:fee="l1Fee = $event"
           @use-max="$refs.sendSheetRef?.setAmountSats($event)"
@@ -895,6 +901,13 @@ import {classifyDestination, normalizeDestination} from '../utils/clipboardSugge
 import {classifyIdentifier} from '../utils/nostrLookup.js';
 import {canWalletPay, walletSwitchHint} from '../utils/walletCapabilities.js';
 import {
+  PAYING_REASON,
+  listPayingWallets,
+  pickDefaultPayingWallet,
+  knownFeeReserveSats,
+  payingWalletHint,
+} from '../utils/payingWallets.js';
+import {
   decodeSparkDestination,
   sparkInvoiceProblem,
   identityPublicKeyFromSparkAddress,
@@ -976,6 +989,10 @@ function emptySaveContactData() {
     nostrIdentity: null,
     // Present only for a LUD-11 storeable service (name, identifier, domain).
     service: null,
+    // The wallet that sent the payment this contact follows, so the pending
+    // link is stamped on that wallet's history (not whichever is active when
+    // the user finally taps Save).
+    walletId: null,
   };
 }
 
@@ -1088,6 +1105,12 @@ export default {
       // commit gate + the withdrawToL1 parameters).
       sendSheetAmountSats: 0,
       l1Fee: null,
+      // "Pay with": the wallet that pays the payment on screen. null means no
+      // choice was made, which is the active wallet - the pipeline's behaviour
+      // before the field existed. Set when a payment is detected (a caller's
+      // pick, else the default pick) and changed only by the field; it never
+      // changes which wallet is active.
+      sendingWalletId: null,
       pendingPayment: null,
       merchantCountdown: 0,
       merchantCountdownTimer: null,
@@ -1578,6 +1601,9 @@ export default {
     },
     canConfirmPayment() {
       if (!this.pendingPayment) return false;
+      // The sheet disables the slide for a wallet that cannot pay; the
+      // pipeline refuses it too, so no stray event can send from one.
+      if (this.sendingWalletBlock) return false;
       if (this.needsAmountInput) {
         const sats = this.sendAmountSats;
         if (sats <= 0) return false;
@@ -1855,8 +1881,11 @@ export default {
       // Only Spark wallets expose pre-call fee data. NWC/LNbits omit the
       // object entirely so the sheet renders nothing — better than
       // showing an empty "—" row that implies missing information.
+      // The fee is the paying wallet's: "Pay with" can differ from the
+      // active wallet.
       let feeEstimate = null;
-      if (this.walletStore.isActiveWalletSpark) {
+      const payerType = this.getSendingWalletType();
+      if (payerType === 'spark') {
         if (p.sparkAddress) {
           // Instant internal transfer — free. Named by outcome, not rail.
           feeEstimate = { sats: 0, isEstimating: false, label: this.$t('Free · instant') };
@@ -1865,7 +1894,7 @@ export default {
         } else if (this.estimatedFee !== null && this.estimatedFee !== undefined) {
           feeEstimate = { sats: this.estimatedFee, isEstimating: false };
         }
-      } else if (this.walletStore.isActiveWalletArkade) {
+      } else if (payerType === 'arkade') {
         if (p.arkadeAddress) {
           // Instant internal transfer — free. Named by outcome, not rail.
           feeEstimate = { sats: 0, isEstimating: false, label: this.$t('Free · instant') };
@@ -1922,15 +1951,77 @@ export default {
       return p.type || 'lightning';
     },
 
+    // ───── "Pay with" ─────
+    // The wallet that pays is `sendingWalletId` (the active wallet until a
+    // choice is made). Everything below reads that one id, so capability,
+    // balance, fee estimate and the actual send can never disagree about who
+    // is paying.
+
+    /** Id of the wallet that pays the payment on screen. */
+    payerWalletId() {
+      return this.getSendingWallet()?.id || null;
+    },
+
+    /** The paying wallet's known balance in sats; null while unknown. */
+    sendingWalletBalance() {
+      return this.walletBalanceOf(this.payerWalletId);
+    },
+
+    /**
+     * Sats the payment moves, as far as they are known: the amount live in
+     * the sheet, else the fixed amount the payment carries. 0 before the user
+     * has typed one (an amountless invoice) - the list then skips its balance
+     * check instead of calling every wallet empty.
+     */
+    payingAmountSats() {
+      const live = Number(this.sendSheetAmountSats) || 0;
+      return live > 0 ? live : this.getFixedPaymentSats();
+    },
+
+    /**
+     * Every wallet ranked for the payment on screen (active first), the
+     * entries the sheet's "Pay with" field renders. The fee reserve is what is
+     * KNOWN to be charged (see knownFeeReserveSats), so the list never refuses
+     * a wallet the provider would accept. Empty when there is nothing to pay
+     * (a redeem is a receive: no wallet "pays" it).
+     */
+    payingWalletEntries() {
+      const p = this.pendingPayment;
+      if (!p || p.type === 'lnurl_withdraw') return [];
+      return this.rankPayingWallets(this.pendingDestinationType, this.payingAmountSats, this.estimatedFee);
+    },
+
+    /**
+     * Why the wallet that pays cannot pay this payment - its list entry
+     * ({ name, reason, ... }) - or null when nothing stands in the way.
+     * Both the commit gate and the warning banner read this one verdict.
+     */
+    sendingWalletBlock() {
+      if (!this.pendingPayment) return null;
+      const wallet = this.getSendingWallet();
+      // The rail check every surface shares, now asked of the wallet that pays.
+      if (!canWalletPay(this.getSendingWalletType(), this.pendingDestinationType)) {
+        return { name: wallet?.name || '', reason: PAYING_REASON.UNSUPPORTED_DESTINATION };
+      }
+      // Balance and availability only matter when there is a choice to make.
+      // With a single wallet nothing could be offered instead, so the provider
+      // keeps reporting a real shortfall the way it always has.
+      const entries = this.payingWalletEntries;
+      if (entries.length < 2) return null;
+      const entry = entries.find((w) => w.id === wallet?.id);
+      return entry && !entry.usable ? entry : null;
+    },
+
     paymentSheetWalletCanPay() {
       if (!this.pendingPayment) return true;
-      return canWalletPay(this.walletStore.activeWalletType, this.pendingDestinationType);
+      return !this.sendingWalletBlock;
     },
 
     // Spark on-chain send: mounts the L1 fee panel in the sheet's extras
-    // slot and reroutes confirm to the withdrawal executor.
+    // slot and reroutes confirm to the withdrawal executor. It is the
+    // paying wallet that must be Spark, not necessarily the active one.
     isSparkL1Payment() {
-      return this.walletStore.isActiveWalletSpark && !!this.pendingPayment?.bitcoinAddress;
+      return this.getSendingWalletType() === 'spark' && !!this.pendingPayment?.bitcoinAddress;
     },
 
     // Bare on-chain destination for the fee quote + withdrawal. The send
@@ -1950,9 +2041,12 @@ export default {
       return !!(this.l1Fee?.ready && !this.l1Fee.insufficient);
     },
 
+    // A rail problem keeps the shared switch-wallet words; a balance or
+    // availability problem names the wallet (payingWalletHint).
     paymentSheetWalletHint() {
-      if (this.paymentSheetWalletCanPay) return '';
-      return walletSwitchHint(this.pendingDestinationType, this.$t.bind(this));
+      const block = this.sendingWalletBlock;
+      if (!block) return '';
+      return payingWalletHint(block, this.pendingDestinationType, this.$t.bind(this));
     },
 
     /**
@@ -2330,6 +2424,13 @@ export default {
       handler: 'updateFeeEstimate',
       immediate: true
     },
+
+    /**
+     * "Pay with": another paying wallet has its own fee story (only Spark
+     * wallets can estimate), so the estimate is redone for it. Capability and
+     * balance need no watcher - they are computed from the same id.
+     */
+    sendingWalletId: 'updateFeeEstimate',
 
     autoWithdrawResult(result) {
       if (!result) return
@@ -2749,11 +2850,18 @@ export default {
      * a scanned address gets: real LNURL metadata (amount bounds,
      * commentAllowed, LUD-21 payout currency), Branta verification,
      * wallet/Nostr branding, and fee estimates.
+     *
+     * `sendingWalletId` preselects the wallet that pays ("Pay with"); without
+     * it the default pick applies (the active wallet when it can pay this
+     * rail). The capability gate is asked of that wallet, so a contact the
+     * active wallet cannot pay is still payable from another wallet that can.
+     * The active wallet is never switched.
      */
-    payContactDestination({ address, addressType, name }) {
+    payContactDestination({ address, addressType, name, sendingWalletId = null }) {
       if (!address) return;
       if (offerAddressRequest(address, { t: this.$t.bind(this), paymentOnly: true })) return;
-      if (!canWalletPay(this.walletStore.activeWalletType, addressType)) {
+      const payerId = this.chooseSendingWalletId(addressType, sendingWalletId);
+      if (!canWalletPay(this.walletTypeOf(payerId), addressType)) {
         this.$q.notify({
           type: 'warning',
           message: this.$t('Cannot pay this contact'),
@@ -2774,6 +2882,7 @@ export default {
         data: address,
         contactName: name || null,
         paymentOnly: true,
+        sendingWalletId: payerId,
       });
     },
 
@@ -2916,9 +3025,13 @@ export default {
         return;
       }
 
+      // Bound to the wallet that pays before anything is awaited, so a later
+      // wallet switch cannot move a withdrawal that is already under way.
+      const walletId = this.getSendingWallet()?.id || null;
+
       this.isSendingPayment = true;
       try {
-        const provider = await this.walletStore.ensureSparkConnected();
+        const provider = await this.walletStore.ensureSparkConnected(walletId);
         if (!provider?.withdrawToL1) throw new Error('Withdrawal not supported');
 
         const result = await provider.withdrawToL1({
@@ -2936,10 +3049,11 @@ export default {
         // tears the sheet down.
         this.showSendSheet = false;
         this.pendingPayment = null;
+        this.sendingWalletId = null;
         this.l1Fee = null;
         this.sendSheetAmountSats = 0;
-        this.updateWalletBalance();
-        this._monitorL1Withdrawal(result.requestId);
+        this.refreshPayerBalance(walletId);
+        this._monitorL1Withdrawal(result.requestId, walletId);
       } catch (error) {
         console.error('Withdrawal failed:', error);
         const msg = describeL1WithdrawError(error, this.$t.bind(this));
@@ -2962,10 +3076,14 @@ export default {
      * state. Notification handles update in place: persistent "submitted"
      * → success-with-mempool-link or a clear failure message.
      */
-    async _monitorL1Withdrawal(requestId) {
-      const provider = this.walletStore.getActiveProvider();
+    async _monitorL1Withdrawal(requestId, walletId = null) {
+      // The wallet that submitted the withdrawal watches it; the active wallet
+      // only when no other was named.
+      const provider = walletId
+        ? this.walletStore.getProvider(walletId)
+        : this.walletStore.getActiveProvider();
       if (!provider?.waitForWithdrawalCompletion) {
-        console.warn('Active provider cannot monitor L1 withdrawals');
+        console.warn('Paying provider cannot monitor L1 withdrawals');
         return;
       }
 
@@ -2988,7 +3106,7 @@ export default {
             caption: this.$t('Your funds remain in your wallet.'),
             timeout: 6000
           });
-          this.updateWalletBalance();
+          this.refreshPayerBalance(walletId);
           return;
         }
 
@@ -3007,7 +3125,7 @@ export default {
           }] : []
         });
 
-        this.updateWalletBalance();
+        this.refreshPayerBalance(walletId);
       } catch (error) {
         console.warn('L1 withdrawal monitor stopped:', error.message);
         dismissProcessing();
@@ -3022,15 +3140,18 @@ export default {
 
     /**
      * Handle a payment handed over via route query (Address Book page →
-     * wallet). `pay_contact` carries any contact rail; the legacy
-     * `bitcoin_withdrawal` action is still accepted so nothing that
-     * linked against it breaks.
+     * wallet). `pay_contact` carries any contact rail, and optionally the
+     * wallet that should pay as `walletId` ("Pay with" preselection; an
+     * unknown id is ignored); the legacy `bitcoin_withdrawal` action is
+     * still accepted so nothing that linked against it breaks.
      */
     handlePaymentFromQuery() {
       const query = this.$route.query;
       const isPayContact = query.action === 'pay_contact' && query.address;
       const isLegacyBitcoin = query.action === 'bitcoin_withdrawal' && query.address;
       if (!isPayContact && !isLegacyBitcoin) return;
+      // A repeated param arrives as an array; only a single id means anything.
+      const walletId = isPayContact && typeof query.walletId === 'string' ? query.walletId : null;
 
       // Dispatch once wallet initialization settles (success or failure —
       // a failed init still gets the proper payment-error surface), then
@@ -3043,6 +3164,7 @@ export default {
             address: query.address,
             addressType: isLegacyBitcoin ? 'bitcoin' : (query.addressType || 'lightning'),
             name: query.contactName || null,
+            sendingWalletId: walletId,
           });
 
           // Clear query params
@@ -3614,6 +3736,160 @@ export default {
       return this.activeWallet;
     },
 
+    // ========================================================================
+    // "Pay with": the wallet that pays
+    //
+    // Every payment is bound to ONE wallet id (`sendingWalletId`, the active
+    // wallet until the user or a caller chooses another). The helpers below
+    // are the only place that turns that id into a wallet, a type, a
+    // balance or an NWC string; the send pipeline asks them instead of
+    // reading the active wallet. Nothing here ever switches the active wallet.
+    // ========================================================================
+
+    /** The configured wallet with this id, or null. */
+    getWalletById(walletId) {
+      if (!walletId) return null;
+      return (this.walletStore.wallets || []).find((w) => w.id === walletId) || null;
+    },
+
+    /**
+     * Type of a configured wallet ('spark' | 'nwc' | 'lnbits' | 'arkade').
+     * The active wallet answers from the store's own getter, so a payment
+     * from it is typed exactly as it was before "Pay with" existed; an
+     * unknown id falls back to the active wallet's type.
+     */
+    walletTypeOf(walletId) {
+      const wallet = this.getWalletById(walletId);
+      if (!wallet || wallet.id === this.walletStore.activeWalletId) return this.walletStore.activeWalletType;
+      return wallet.type || 'nwc';
+    },
+
+    /** A wallet's known balance in sats (the canonical balance state); null while unknown. */
+    walletBalanceOf(walletId) {
+      return walletId ? (this.walletStore.balanceStates?.[walletId]?.value ?? null) : null;
+    },
+
+    /** NWC connection string of a configured wallet; '' when it has none. */
+    getNwcUrl(walletId) {
+      return this.getWalletById(walletId)?.nwcUrl || '';
+    },
+
+    /**
+     * The wallet that pays the payment on screen: the "Pay with" choice, else
+     * the active wallet. A stale id (the wallet was removed while the sheet
+     * was open) falls back to the active wallet rather than to nothing.
+     */
+    getSendingWallet() {
+      return this.getWalletById(this.sendingWalletId) || this.walletStore.activeWallet || null;
+    },
+
+    getSendingWalletType() {
+      const wallet = this.getSendingWallet();
+      return wallet ? this.walletTypeOf(wallet.id) : this.walletStore.activeWalletType;
+    },
+
+    /**
+     * All wallets ranked for a payment to `destinationType` (active first;
+     * see utils/payingWallets). The one place that feeds the store's facts
+     * into that list, for the sheet, the commit gate and the default pick.
+     * @param {string} destinationType payment type or addressType
+     * @param {number} [amountSats] 0 while unknown: no balance check then
+     * @param {number|null} [knownFeeSats] the provider's own fee estimate, if any
+     */
+    rankPayingWallets(destinationType, amountSats = 0, knownFeeSats = null) {
+      return listPayingWallets({
+        wallets: this.walletStore.wallets || [],
+        activeWalletId: this.walletStore.activeWalletId,
+        balances: this.walletStore.balances || {},
+        connectionStates: this.walletStore.connectionStates || {},
+        destinationType,
+        amountSats,
+        feeReserve: knownFeeReserveSats(destinationType, knownFeeSats),
+      });
+    },
+
+    /**
+     * Which wallet pays a payment to `destinationType`.
+     *
+     * A caller's explicit choice wins when it names a configured wallet; an
+     * unknown id is ignored. A chosen wallet that cannot pay stays chosen:
+     * the sheet then says why and lets the user pick another, instead of the
+     * payment silently going out from a wallet nobody asked for. Without a
+     * choice: the default pick (the active wallet when it can pay, else the
+     * first wallet that can, else the active wallet so the sheet can explain).
+     */
+    chooseSendingWalletId(destinationType, requestedId = null, amountSats = 0) {
+      if (requestedId && this.getWalletById(requestedId)) return requestedId;
+      const entries = this.rankPayingWallets(destinationType, amountSats);
+      return pickDefaultPayingWallet(entries)?.id || this.walletStore.activeWalletId || null;
+    },
+
+    /**
+     * The amount the payment itself fixes (an invoice's, a fixed LNURL's);
+     * 0 when the user still has to type one.
+     */
+    getFixedPaymentSats() {
+      const p = this.pendingPayment;
+      if (!p) return 0;
+      if (p.fixedAmountSats) return p.fixedAmountSats;
+      if (p.amount > 0) return p.amount;
+      if (p.minSendable && p.minSendable === p.maxSendable) return Math.floor(p.minSendable / 1000);
+      return 0;
+    },
+
+    /**
+     * The amount (sats) a BOLT11 payload carries; 0 for an amountless
+     * invoice or any other payload. Never throws: a malformed invoice is the
+     * invoice branch's to report, this only lets the default pick see the
+     * amount early.
+     */
+    invoiceAmountOf(paymentData) {
+      if (paymentData?.type !== 'lightning_invoice' || !paymentData.data) return 0;
+      try {
+        return Number(parseLightningInvoice(paymentData.data).amount) || 0;
+      } catch {
+        return 0;
+      }
+    },
+
+    /**
+     * The user picked another wallet in "Pay with". Only the payment's wallet
+     * changes - the active wallet stays exactly as it is. Capability, balance
+     * and the fee estimate follow from the new id (computeds + the
+     * sendingWalletId watcher).
+     */
+    onSendingWalletChange(walletId) {
+      // The field is frozen mid-send; this covers a stray event all the same.
+      if (this.isSendingPayment || !this.pendingPayment) return;
+      if (walletId === this.payerWalletId) return;
+      const entry = this.payingWalletEntries.find((w) => w.id === walletId);
+      // A wallet that cannot pay is listed with its reason but never selectable.
+      if (!entry?.usable) return;
+      this.sendingWalletId = walletId;
+      // An on-chain fee quote was priced for the previous wallet.
+      this.l1Fee = null;
+    },
+
+    /**
+     * Refresh the balance of the wallet that just paid. The active wallet gets
+     * the full home refresh (balance + last-transaction card) as ever. Any other
+     * wallet only has its own balance re-read - the home screen shows a
+     * different wallet - and, the money having left already, a failure here is
+     * only worth a warning.
+     */
+    async refreshPayerBalance(walletId) {
+      if (!walletId || walletId === this.activeWallet?.id) {
+        await this.updateWalletBalance();
+        return;
+      }
+      try {
+        if (this.walletTypeOf(walletId) === 'spark') await this.walletStore.reconcileSpark([walletId], 'user');
+        else await this.walletStore.refreshBalance(walletId);
+      } catch (error) {
+        console.warn('Could not refresh the balance of the wallet that paid:', error?.message || error);
+      }
+    },
+
     handleScanWithdraw() {
       // Carry whatever amount the user already set — a created invoice or the
       // value typed on the keypad — into the redeem scan, mirroring the
@@ -4084,6 +4360,7 @@ export default {
           this.stopMerchantCountdown();
           this.showSendSheet = false;
           this.pendingPayment = null;
+          this.sendingWalletId = null;
           this.$q.notify({
             type: 'warning',
             message: this.$t('Payment expired'),
@@ -4110,8 +4387,9 @@ export default {
     },
 
     /**
-     * Re-route a BIP21-resolved destination onto a native rail the active
+     * Re-route a BIP21-resolved destination onto a native rail the paying
      * wallet can settle for free (Spark transfer) or near-free (ark1 → ark1).
+     * `payerType` is that wallet's type (the active wallet's when omitted).
      *
      * Only destinations that came out of the URI itself are re-routed
      * (lightning_invoice / bitcoin_address / bolt12_offer); a payload that is
@@ -4122,7 +4400,7 @@ export default {
      * Main send flow only, on purpose: batch send, auto-withdraw, internal
      * transfer and kiosk keep their existing rails.
      */
-    preferNativeBip21Rail(paymentData) {
+    preferNativeBip21Rail(paymentData, payerType = this.walletStore.activeWalletType) {
       const bip21 = paymentData?.bip21;
       if (!bip21) return paymentData;
       const reroutable = paymentData.type === 'lightning_invoice'
@@ -4134,10 +4412,10 @@ export default {
       const amountSats = bip21AmountToSats(bip21.amount);
       const withAmount = amountSats ? { fixedAmountSats: amountSats } : {};
 
-      if (this.walletStore.isActiveWalletSpark && rails.spark) {
+      if (payerType === 'spark' && rails.spark) {
         return { ...paymentData, type: 'spark_address', data: rails.spark, ...withAmount };
       }
-      if (this.walletStore.isActiveWalletArkade && rails.ark) {
+      if (payerType === 'arkade' && rails.ark) {
         return { ...paymentData, type: 'arkade_address', data: rails.ark, ...withAmount };
       }
       return paymentData;
@@ -4169,14 +4447,41 @@ export default {
       const deferredWithdrawTargetSats = this.pendingWithdrawTargetSats;
       this.pendingWithdrawTargetSats = null;
 
+      // "Pay with": a caller (a contact tap, a chat request) may name the
+      // wallet that should pay. That is a request about WHO pays, not part of
+      // WHAT is paid, so it leaves the payload here - pendingPayment never
+      // carries it - and rides along explicitly when this call re-dispatches
+      // itself.
+      const { sendingWalletId: requestedWalletId = null, ...payload } = paymentData;
+      paymentData = payload;
+
+      // The wallet that pays. Decided on first use - a withdrawal (a receive)
+      // never needs one - and decided again when a branch learns the amount,
+      // because the default pick passes over a wallet that cannot cover it.
+      // The wallet-specific rails below (native BIP21 rail, NWC payload
+      // shape, balance checks) follow this wallet, not the active one.
+      let payerId = null;
+      let payerAmount = null;
+      const payerFor = (amountSats = 0) => {
+        if (payerId === null || payerAmount !== amountSats) {
+          payerId = this.chooseSendingWalletId(paymentData.type, requestedWalletId, amountSats);
+          payerAmount = amountSats;
+        }
+        return payerId;
+      };
+
       try {
         // A unified receive QR (bitcoin:addr?lightning=...&spark=...&ark=...)
         // may offer a rail this wallet speaks natively at zero / near-zero
         // fee. Take that road before anything else: the resolved Lightning /
         // on-chain destination is swapped for the native address from the
         // same URI, and a BIP21 amount= carries over as the fixed amount so
-        // every rail asks the payer for the same number.
-        paymentData = this.preferNativeBip21Rail(paymentData);
+        // every rail asks the payer for the same number. "This wallet" is
+        // the one that will pay.
+        paymentData = this.preferNativeBip21Rail(
+          paymentData,
+          paymentData?.bip21 ? this.walletTypeOf(payerFor(this.invoiceAmountOf(paymentData))) : undefined,
+        );
 
         // Transform the payment data to match expected structure
         if (paymentData.type === 'silent_payment' && paymentData.data) {
@@ -4225,6 +4530,7 @@ export default {
             nostrProfile: target.profile,
             nostrProfileEvent: target.profileEvent,
             nostrRelayHints: target.relayHints,
+            sendingWalletId: requestedWalletId,
           });
         }
 
@@ -4300,8 +4606,12 @@ export default {
               receiveAmount
             };
           } else {
-            // LNURL-pay: existing flow
-            const walletType = this.walletStore.activeWalletType;
+            // LNURL-pay: existing flow. The payload takes the shape the
+            // paying wallet's backend wants (the active wallet's, unless
+            // "Pay with" says otherwise); sendNWCPayment bridges the shapes
+            // if the user later picks a wallet of the other kind.
+            const payerWalletId = payerFor(lnurlInfo.fixedAmountSats || 0);
+            const walletType = this.walletTypeOf(payerWalletId);
             if (walletType === 'spark' || walletType === 'lnbits' || walletType === 'arkade') {
               this.pendingPayment = {
                 ...paymentData,
@@ -4310,11 +4620,11 @@ export default {
               };
             } else {
               // Process LNURL for NWC wallets
-              const activeWallet = this.getActiveWallet();
-              if (!activeWallet?.nwcString) {
+              const nwcUrl = this.getNwcUrl(payerWalletId);
+              if (!nwcUrl) {
                 throw new Error('No active wallet found');
               }
-              const lightningService = new LightningPaymentService(activeWallet.nwcString);
+              const lightningService = new LightningPaymentService(nwcUrl);
               const processedLnurl = await lightningService.processPaymentInput(paymentData.data);
               console.log('LNURL processed:', processedLnurl);
               // The SDK result only contains payment mechanics. Preserve the
@@ -4353,6 +4663,7 @@ export default {
                 nostrProfile: rescued.profile,
                 nostrProfileEvent: rescued.profileEvent,
                 nostrRelayHints: rescued.relayHints,
+                sendingWalletId: requestedWalletId,
               });
             }
           }
@@ -4380,7 +4691,10 @@ export default {
             delete lnurlInfo.reason;
           }
 
-          const walletType = this.walletStore.activeWalletType;
+          // The payload takes the shape the paying wallet's backend wants (see
+          // the LNURL branch above for how a later "Pay with" change is bridged).
+          const payerWalletId = payerFor(lnurlInfo.fixedAmountSats || 0);
+          const walletType = this.walletTypeOf(payerWalletId);
 
           if (walletType === 'spark' || walletType === 'lnbits' || walletType === 'arkade') {
             // For Spark, LNbits and Arkade, include LNURL info for amount handling
@@ -4392,11 +4706,11 @@ export default {
             };
           } else {
             // Process Lightning Address for NWC wallets
-            const activeWallet = this.getActiveWallet();
-            if (!activeWallet?.nwcString) {
+            const nwcUrl = this.getNwcUrl(payerWalletId);
+            if (!nwcUrl) {
               throw new Error('No active wallet found');
             }
-            const lightningService = new LightningPaymentService(activeWallet.nwcString);
+            const lightningService = new LightningPaymentService(nwcUrl);
             const processedAddress = await lightningService.processPaymentInput(paymentData.data);
             // Keep the lightning address + any carried Nostr identity on the
             // payload (processedAddress only exposes `address`), so the confirm
@@ -4434,14 +4748,17 @@ export default {
               (this.pendingPayment.minSendable === this.pendingPayment.maxSendable
                 ? Math.floor(this.pendingPayment.minSendable / 1000)
                 : 0);
-            if (paymentSats > 0 && paymentSats > this.activeCanonicalBalance) {
+            // It is the paying wallet that has to cover it: with several
+            // wallets the default pick passes over one that cannot.
+            const payerBalance = this.walletBalanceOf(payerFor(paymentSats));
+            if (paymentSats > 0 && paymentSats > payerBalance) {
               resolved = false; // keep the sheet open; the notify explains why
               this.$q.notify({
                 type: 'negative',
                 message: this.$t('Insufficient balance'),
                 caption: this.$t('You need {amount} sats but only have {balance} sats', {
                   amount: paymentSats,
-                  balance: this.activeCanonicalBalance
+                  balance: payerBalance
                 }),
               });
               return;
@@ -4470,8 +4787,10 @@ export default {
             // Refuse what can never be paid before the sheet opens. Sender
             // pinning is only decided here when we know our own identity
             // key; otherwise the check runs again at pay time against the
-            // connected wallet.
-            const ownAddress = this.walletStore.activeSparkAddress;
+            // connected wallet. "Own" is the paying wallet's: the active
+            // wallet's unless "Pay with" says otherwise.
+            const payerWalletId = payerFor(dest.amountSats || 0);
+            const ownAddress = this.walletStore.getSparkAddress(payerWalletId);
             const problem = sparkInvoiceProblem(dest, {
               ownIdentityPublicKey: ownAddress
                 ? identityPublicKeyFromSparkAddress(ownAddress)
@@ -4483,7 +4802,7 @@ export default {
               return;
             }
 
-            if (dest.amountSats > 0 && dest.amountSats > this.activeCanonicalBalance) {
+            if (dest.amountSats > 0 && dest.amountSats > this.walletBalanceOf(payerWalletId)) {
               resolved = false;
               this.failSendResolution(this.$t('Insufficient balance'), fromField);
               return;
@@ -4509,7 +4828,9 @@ export default {
           };
         } else if (paymentData.type === 'bitcoin_address' && paymentData.data) {
           // Bitcoin on-chain: Spark (L1 withdraw) or Arkade (Ramps offboard).
-          if (!this.walletStore.isActiveWalletSpark && !this.walletStore.isActiveWalletArkade) {
+          // The paying wallet must be one of them, not necessarily the active one.
+          const payerType = this.walletTypeOf(payerFor(Number(paymentData.fixedAmountSats) || 0));
+          if (payerType !== 'spark' && payerType !== 'arkade') {
             throw new Error('Bitcoin withdrawals require a Spark or Arkade wallet');
           }
           this.pendingPayment = {
@@ -4537,8 +4858,15 @@ export default {
         //     sheet's extras slot, Arkade offboards via Ramps — one
         //     confirm surface regardless of backend)
         if (this.pendingPayment?.type === 'lnurl_withdraw') {
+          // A redeem is a receive: no wallet "pays" it.
+          this.sendingWalletId = null;
           this.showWithdrawSheet = true;
         } else {
+          // The payload is final: bind the paying wallet to it (a caller's
+          // choice, else the default pick for the amount it fixes) in the same
+          // tick it becomes visible, so nothing ever reads a payment whose
+          // payer is still the previous one's.
+          this.sendingWalletId = payerFor(this.getPaymentAmountForFee());
           this.showSendSheet = true;
         }
       } catch (error) {
@@ -4549,7 +4877,7 @@ export default {
         } else {
           this.walletStore.showPaymentError(error, {
             context: 'payment',
-            walletType: this.walletStore.activeWalletType,
+            walletType: payerId !== null ? this.walletTypeOf(payerId) : this.walletStore.activeWalletType,
             route: 'Payment dispatch',
             t: this.$t.bind(this),
           });
@@ -4697,7 +5025,11 @@ export default {
       if (!this.canConfirmPayment) return;
 
       this.isSendingPayment = true;
-      const sendingWalletId = this.activeWallet?.id || null;
+      // The wallet that pays - the "Pay with" choice, else the active wallet -
+      // read once, up front: from here to the metadata writes the payment is
+      // bound to it, whatever the UI does meanwhile. It is never made active.
+      const sendingWalletId = this.getSendingWallet()?.id || this.activeWallet?.id || null;
+      const walletType = this.walletTypeOf(sendingWalletId);
 
       // Lifted out of the try block so the catch can hand the
       // attempted amount to the payment-error dialog (used by the
@@ -4731,16 +5063,17 @@ export default {
 
         let result;
 
-        // Route payment based on wallet type
-        const walletType = this.walletStore.activeWalletType;
+        // Route the payment by the type of the wallet that pays, and hand each
+        // executor that wallet's id: it connects that wallet on demand and
+        // sends through its provider, so the active wallet is never involved.
         if (walletType === 'spark') {
-          result = await this.sendSparkPayment(amount, comment, this.sendPayout);
+          result = await this.sendSparkPayment(amount, comment, this.sendPayout, sendingWalletId);
         } else if (walletType === 'arkade') {
-          result = await this.sendArkadePayment(amount, comment, this.sendPayout);
+          result = await this.sendArkadePayment(amount, comment, this.sendPayout, sendingWalletId);
         } else if (walletType === 'lnbits') {
-          result = await this.sendLNBitsPayment(amount, comment, this.sendPayout);
+          result = await this.sendLNBitsPayment(amount, comment, this.sendPayout, sendingWalletId);
         } else {
-          result = await this.sendNWCPayment(amount, comment);
+          result = await this.sendNWCPayment(amount, comment, sendingWalletId);
         }
 
         console.log('Payment sent:', result);
@@ -4943,6 +5276,9 @@ export default {
             // existing-contact path uses.
             amountSats: amount,
             nostrIdentity,
+            // ... and the wallet that sent it: that is the history the link
+            // belongs to, whichever wallet is active by the time Save is tapped.
+            walletId: sendingWalletId,
           };
         }
 
@@ -4969,6 +5305,7 @@ export default {
 
         this.showSendSheet = false;
         this.pendingPayment = null;
+        this.sendingWalletId = null;
         this.paymentAmount = '';
         this.paymentComment = '';
         this.sendPayout = null;
@@ -4976,14 +5313,15 @@ export default {
         this.isEstimatingFee = false;
         this.sendDidSucceed = false;
 
-        // Refresh the balance behind the now-visible success screen.
-        await this.updateWalletBalance();
+        // Refresh the balance behind the now-visible success screen: the
+        // paying wallet's, which is the active one unless "Pay with" said so.
+        await this.refreshPayerBalance(sendingWalletId);
 
       } catch (error) {
         console.error('Payment failed:', error);
         this.walletStore.showPaymentError(error, {
           context: 'payment',
-          walletType: this.walletStore.activeWalletType,
+          walletType,
           route: this.routeLabelForPendingPayment(),
           amountSats: typeof amount === 'number' ? amount : undefined,
           t: this.$t.bind(this),
@@ -5051,6 +5389,8 @@ export default {
       this.showSendSheet = false;
       this.sendDidSucceed = false;
       this.pendingPayment = null;
+      // The next payment starts from its own default pick, not this one's choice.
+      this.sendingWalletId = null;
       this.paymentAmount = '';
       this.paymentComment = '';
       this.sendPayout = null;
@@ -5091,9 +5431,16 @@ export default {
       this.paymentAmount = '';
     },
 
-    async sendSparkPayment(amount, comment, payout = null) {
+    /**
+     * Send executors (Spark / Arkade / NWC / LNbits). Each takes the id of
+     * the wallet that pays and connects THAT wallet on demand - the same
+     * ensure*Connected path the active wallet always took - so paying from
+     * another wallet never needs the active wallet to change. Without an id
+     * they pay from the active wallet, as before "Pay with" existed.
+     */
+    async sendSparkPayment(amount, comment, payout = null, walletId = null) {
       // Ensure Spark wallet is connected (auto-connects if session PIN available)
-      const provider = await this.walletStore.ensureSparkConnected();
+      const provider = await this.walletStore.ensureSparkConnected(walletId);
 
       // Spark invoice — must go through fulfill; transfer() rejects invoice
       // strings. Checked before the plain-address branch because invoice
@@ -5169,8 +5516,8 @@ export default {
      * fetch exactly like the LNbits path: the swap pays whatever bolt11 the
      * provider returned, and the metadata is threaded onto the result.
      */
-    async sendArkadePayment(amount, comment, payout = null) {
-      const provider = await this.walletStore.ensureArkadeConnected();
+    async sendArkadePayment(amount, comment, payout = null, walletId = null) {
+      const provider = await this.walletStore.ensureArkadeConnected(walletId);
 
       // Native ark1 → ark1: instant, near-zero fee fast path.
       if (this.pendingPayment.arkadeAddress) {
@@ -5215,21 +5562,39 @@ export default {
       throw new Error('Unsupported payment type for Arkade wallet');
     },
 
-    async sendNWCPayment(amount, comment) {
-      const activeWallet = this.getActiveWallet();
-      if (!activeWallet?.nwcString) {
+    async sendNWCPayment(amount, comment, walletId = null) {
+      // NWC has no shared provider object to ask: the service connects with
+      // the wallet's own NWC string.
+      const nwcUrl = walletId ? this.getNwcUrl(walletId) : this.getActiveWallet()?.nwcString;
+      if (!nwcUrl) {
         throw new Error('No active NWC wallet found');
       }
 
-      const lightningService = new LightningPaymentService(activeWallet.nwcString);
-      return await lightningService.sendPayment(this.pendingPayment, amount, comment);
+      const lightningService = new LightningPaymentService(nwcUrl);
+      return await lightningService.sendPayment(this.getNwcPaymentData(), amount, comment);
     },
 
-    async sendLNBitsPayment(amount, comment, payout = null) {
+    /**
+     * The pending payment in the shape LightningPaymentService.sendPayment
+     * reads. A payment resolved for another kind of wallet (the default pick
+     * was a Spark wallet, the user then chose an NWC wallet in "Pay with")
+     * carries `lightningAddress` but no `address`, which the service needs to
+     * re-resolve a Lightning address. A payment resolved for an NWC wallet
+     * already has it and passes through untouched.
+     */
+    getNwcPaymentData() {
+      const p = this.pendingPayment;
+      if (p?.type === 'lightning_address' && !p.address && p.lightningAddress) {
+        return { ...p, address: p.lightningAddress };
+      }
+      return p;
+    },
+
+    async sendLNBitsPayment(amount, comment, payout = null, walletId = null) {
       // Route through ensureLNBitsConnected so a stale `isConnected` flag
       // (e.g. cleared by a prior 401) self-heals before the send rather than
       // failing with "wallet is not connected" until app restart.
-      const provider = await this.walletStore.ensureLNBitsConnected();
+      const provider = await this.walletStore.ensureLNBitsConnected(walletId);
 
       // Lightning invoice payment
       if (this.pendingPayment.invoice) {
@@ -5509,11 +5874,11 @@ export default {
               contactId: newContact.id,
               recipientAddress: data.address,
               amountSats: data.amountSats,
-              // Same active-wallet assumption as the rest of this page: the
-              // send this dialog follows happened on the wallet active right
-              // now (the post-send "save as contact" dialog is shown before
-              // any wallet switch in the normal flow).
-              walletId: this.activeWallet?.id || null,
+              // The wallet that sent the payment this dialog follows (carried
+              // from the send: "Pay with" may have used a wallet other than the
+              // active one). Without it - a dialog staged some other way - the
+              // active wallet, which was the only possibility before.
+              walletId: data.walletId || this.activeWallet?.id || null,
             });
           } catch (err) {
             console.warn('[wallet] could not queue contact link for new contact:', err);
@@ -5909,7 +6274,10 @@ export default {
     },
 
     async updateFeeEstimate() {
-      // Reset fee state
+      // Reset fee state. Bumping the run number also orphans any estimate
+      // still in flight for the previous payment or paying wallet: the last
+      // call wins.
+      this._feeEstimateRun = (this._feeEstimateRun || 0) + 1;
       this.estimatedFee = null;
       this.isEstimatingFee = false;
 
@@ -5917,22 +6285,26 @@ export default {
         return;
       }
 
+      // The wallet that pays decides who can estimate: the active wallet,
+      // unless "Pay with" chose another.
+      const walletType = this.getSendingWalletType();
+
       // === SPARK WALLET: Use SDK fee estimation ===
-      if (this.walletStore.isActiveWalletSpark) {
+      if (walletType === 'spark') {
         await this.updateSparkFeeEstimate();
         return;
       }
 
       // === NWC WALLET: No fee estimation available ===
       // Alby SDK / NIP-47 does not provide fee estimation
-      if (this.walletStore.isActiveWalletNWC) {
+      if (walletType === 'nwc') {
         this.estimatedFee = null;
         return;
       }
 
       // === LNBITS WALLET: No fee estimation available ===
       // LNbits API does not provide routing fee estimation
-      if (this.walletStore.isActiveWalletLNBits) {
+      if (walletType === 'lnbits') {
         this.estimatedFee = null;
         return;
       }
@@ -5951,17 +6323,24 @@ export default {
 
       // For Lightning invoices, get fee estimate from Spark SDK
       if (this.pendingPayment.invoice) {
+        // Read before the first await: by the time the SDK answers, the sheet
+        // may show another payment or another paying wallet.
+        const run = this._feeEstimateRun;
+        const invoice = this.pendingPayment.invoice;
+        const walletId = this.getSendingWallet()?.id || null;
         this.isEstimatingFee = true;
         try {
-          const provider = await this.walletStore.ensureSparkConnected();
-          const estimate = await provider.getLightningSendFeeEstimate(this.pendingPayment.invoice);
+          const provider = await this.walletStore.ensureSparkConnected(walletId);
+          const estimate = await provider.getLightningSendFeeEstimate(invoice);
+          if (run !== this._feeEstimateRun) return;
           this.estimatedFee = estimate.estimatedFeeSats;
         } catch (error) {
+          if (run !== this._feeEstimateRun) return;
           console.warn('Spark fee estimation failed:', error.message);
           // No fallback - don't show estimated fee if SDK fails
           this.estimatedFee = null;
         } finally {
-          this.isEstimatingFee = false;
+          if (run === this._feeEstimateRun) this.isEstimatingFee = false;
         }
         return;
       }
@@ -5976,16 +6355,7 @@ export default {
       if (this.paymentAmount && parseInt(this.paymentAmount) > 0) {
         return parseInt(this.paymentAmount);
       }
-      if (this.pendingPayment.fixedAmountSats) {
-        return this.pendingPayment.fixedAmountSats;
-      }
-      if (this.pendingPayment.amount > 0) {
-        return this.pendingPayment.amount;
-      }
-      if (this.pendingPayment.minSendable === this.pendingPayment.maxSendable && this.pendingPayment.minSendable) {
-        return Math.floor(this.pendingPayment.minSendable / 1000);
-      }
-      return 0;
+      return this.getFixedPaymentSats();
     },
 
   }
