@@ -34,6 +34,7 @@ import {
   mergePendingDeposits,
   sdkProvesUnclaimed,
   waitQuoteFromMature,
+  bolt11ReceiveMethod,
 } from '../../utils/breezPayments.js';
 
 let passed = 0;
@@ -56,6 +57,23 @@ function test(name, fn) {
 const THRESHOLDS = { MAX_FEE_SATS: 3000, MAX_FEE_RATIO: 0.05, MIN_DEPOSIT_SATS: 1000 };
 
 console.log('breezPayments provider-contract behaviors');
+
+// --- bolt11 receive method -----------------------------------------------
+
+test('receive method without an expiry is byte-identical to the old payload', () => {
+  for (const expiry of [undefined, null, 0, -5, 1.5, NaN, '3600']) {
+    const method = bolt11ReceiveMethod({ description: 'Pizza', amountSats: 100, expiry });
+    assert.equal(JSON.stringify(method), JSON.stringify({ type: 'bolt11Invoice', description: 'Pizza', amountSats: 100 }));
+    assert.equal('expirySecs' in method, false);
+  }
+});
+
+test('a positive integer expiry is forwarded as expirySecs', () => {
+  assert.deepEqual(
+    bolt11ReceiveMethod({ description: '', amountSats: undefined, expiry: 86400 }),
+    { type: 'bolt11Invoice', description: '', amountSats: undefined, expirySecs: 86400 }
+  );
+});
 
 // --- bolt11 route choice -------------------------------------------------
 

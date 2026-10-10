@@ -365,3 +365,14 @@ export function sdkProvesUnclaimed(deposit) {
   const sdk = deposit?.sdk;
   return !!sdk && sdk.isMature && !sdk.claimed && !sdk.refunding && !!sdk.claimError;
 }
+
+/**
+ * The `bolt11Invoice` receive method for `sdk.receivePayment`. `expirySecs` is
+ * sent only for a positive integer, so a caller that passes no expiry gets the
+ * exact payload it always got (the SDK then applies its own default).
+ */
+export function bolt11ReceiveMethod({ description, amountSats, expiry }) {
+  const method = { type: 'bolt11Invoice', description, amountSats };
+  if (Number.isInteger(expiry) && expiry > 0) method.expirySecs = expiry;
+  return method;
+}
