@@ -243,6 +243,16 @@ await test('a pending link queued for wallet A is not consumed by wallet B, and 
   );
 });
 
+await test('an address-less contact link (a paid invoice) is queued and stamps the contact on the amount-matching tx only', async () => {
+  const store = freshStore();
+  await store.enqueuePendingContactLink({ contactId: 'c1', amountSats: 1000, perPayment: true, walletId: 'w' });
+  await store.enqueuePendingContactLink({ contactId: 'c1', amountSats: 0, perPayment: true, walletId: 'w' });
+  assert.equal(store.pendingContactLinks.length, 1);
+  assert.equal(await store.consumePendingContactLinks([makeTx('other', { amount: -400 })], 'w'), 0);
+  assert.equal(await store.consumePendingContactLinks([makeTx('paid', { amount: -1000 })], 'w'), 1);
+  assert.equal(store.getMetadataForTransaction('paid', 'w').contactId, 'c1');
+});
+
 await test('a contact payment link resolves the saved contact after its outgoing transaction appears', async () => {
   const store = freshStore();
   const addressBook = useAddressBookStore();

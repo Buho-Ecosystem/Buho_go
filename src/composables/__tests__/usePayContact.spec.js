@@ -75,6 +75,14 @@ test('payInvoice: a request\'s invoice is the destination, with the wallet and c
   }]);
 });
 
+test('payInvoice: names the contact for the history link, only as a non-empty string', () => {
+  const { pay, pushed } = harness();
+  pay.payInvoice({ bolt11: 'lnbc1x' }, { contactId: 'c1' });
+  pay.payInvoice({ bolt11: 'lnbc1x' }, { contactId: '' });
+  assert.equal(pushed[0].query.contactId, 'c1');
+  assert.equal('contactId' in pushed[1].query, false);
+});
+
 test('payInvoice: needs no contact address and ignores an empty invoice', () => {
   const { pay, pushed } = harness();
   pay.payInvoice({ bolt11: 'lnbc1x' });

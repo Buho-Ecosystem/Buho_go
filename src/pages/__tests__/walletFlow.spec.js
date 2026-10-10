@@ -387,7 +387,7 @@ function payingHarness({ wallets = PAY_WALLETS, active = 'biz', funds = PAY_FUND
     ...options.methods, ...options.data.call({}),
     $t: t, $refs: {}, walletStore: store,
     $q: { dark: { isActive: false }, notify: notice => notices.push(notice) },
-    addressBookStore: { findContactByAddress: () => null, findContactByPubkey: () => null },
+    addressBookStore: { findContactByAddress: () => null, findContactByPubkey: () => null, getEntryById: id => (id === 'c1' ? { id: 'c1' } : undefined) },
     transactionMetadataStore: { enqueuePendingContactLink: async link => { (sent.links ||= []).push(link); } },
     serviceImagesStore: { get: () => '' },
     runBrantaVerification() {}, runNostrRecipientEnrichment() {}, rememberServiceImage() {},
@@ -983,4 +983,49 @@ test('payment context: a failed payment announces nothing', async () => {
   try { await quietly(() => vm.confirmPayment()); } finally { console.error = error; }
   assert.equal(failures, 1, 'the payment really failed');
   assert.deepEqual(events, []);
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// A chat request paid by invoice is linked to the contact (no address to find them by).
+// ─────────────────────────────────────────────────────────────────────────
+
+test('invoice contact: the route query hands over the contact id for an invoice only, a repeated param is ignored', async () => {
+  for (const [addressType, contactId, expected] of [['invoice', 'c1', 'c1'], ['invoice', ['a', 'b'], undefined],
+    ['invoice', '', undefined], ['lightning', 'c1', undefined]]) {
+    const { vm } = payingHarness();
+    const handed = [];
+    Object.assign(vm, { $route: { query: { action: 'pay_contact', address: 'inv-1000', addressType, contactId } },
+      $router: { replace() {} }, _walletInitPromise: Promise.resolve(), payContactDestination: value => handed.push(value) });
+    vm.handlePaymentFromQuery();
+    await new Promise(resolve => setTimeout(resolve, 0));
+    assert.equal(handed[0].contactId, expected, JSON.stringify([addressType, contactId]));
+  }
+});
+
+test('invoice contact: only an existing contact is kept on the payment, and only for an invoice', () => {
+  const { vm } = payingHarness();
+  const dispatched = [];
+  vm.onPaymentDetected = async payload => { dispatched.push(payload); };
+  vm.payContactDestination({ address: 'inv-1000', addressType: 'invoice', sendingWalletId: 'lnb', contactId: 'c1' });
+  vm.payContactDestination({ address: 'inv-1000', addressType: 'invoice', sendingWalletId: 'lnb', contactId: 'gone' });
+  vm.payContactDestination({ address: 'bob@example.com', addressType: 'lightning', sendingWalletId: 'lnb', contactId: 'c1' });
+  assert.equal(dispatched[0].paymentContactId, 'c1');
+  assert.equal('paymentContactId' in dispatched[1], false);
+  assert.equal('paymentContactId' in dispatched[2], false);
+});
+
+test('invoice contact: a paid invoice queues a contact link by amount on the paying wallet', async () => {
+  const events = [];
+  const { vm, sent } = payingHarness({ bus: { emit: (name, data) => events.push([name, data]) } });
+  await vm.onPaymentDetected({ type: 'lightning_invoice', data: 'inv-1000', sendingWalletId: 'lnb', paymentContactId: 'c1' });
+  await quietly(() => vm.confirmPayment());
+  assert.deepEqual(sent.links, [{ contactId: 'c1', amountSats: 1000, perPayment: true, walletId: 'lnb' }]);
+  assert.equal(events[0][1].contactId, 'c1');
+});
+
+test('invoice contact: an invoice without a contact queues nothing', async () => {
+  const { vm, sent } = payingHarness();
+  await vm.onPaymentDetected({ type: 'lightning_invoice', data: 'inv-1000', sendingWalletId: 'lnb' });
+  await quietly(() => vm.confirmPayment());
+  assert.equal(sent.links, undefined);
 });

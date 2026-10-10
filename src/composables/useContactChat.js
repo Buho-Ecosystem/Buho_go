@@ -622,6 +622,8 @@ export function useContactChat(options) {
         // An unusable pick is not forced on the wallet page: its own sheet explains and offers the others.
         walletId: payer?.usable ? payer.id : undefined,
         context: buildChatPaymentContext(partner(), message.id),
+        // The invoice has no address, so the contact is named for the history link.
+        contactId: contact()?.id,
       },
     );
     return { ok: true };

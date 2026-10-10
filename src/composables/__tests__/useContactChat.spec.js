@@ -573,13 +573,14 @@ test('pay a request: the existing pipeline gets the invoice, the paying wallet a
   const theirs = request({ createdAt: seconds() - 10 });
   theirs.request.expiresAt = seconds() + 3600;
   ingest(theirs);
-  const { chat, pay } = setup();
+  const { chat, pay } = setup({ contact: { id: 'c1', name: 'Anna' } });
   assert.deepEqual(chat.payRequest(theirs.id), { ok: true });
   assert.equal(pay.calls.length, 1);
   const [name, invoice, options] = pay.calls[0];
   assert.equal(name, 'payInvoice');
   assert.deepEqual(invoice, { bolt11: 'lnbc1', name: 'Anna' });
   assert.equal(options.walletId, 'biz');
+  assert.equal(options.contactId, 'c1');
   assert.deepEqual(parseChatPaymentContext(options.context), { partner: ANNA, requestId: theirs.id });
 });
 

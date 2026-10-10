@@ -2863,7 +2863,7 @@ export default {
      * of the caller; it is returned unchanged in the `payment:sent` event once
      * the payment succeeded (see `emitPaymentSent`).
      */
-    payContactDestination({ address, addressType, name, sendingWalletId = null, context = null }) {
+    payContactDestination({ address, addressType, name, sendingWalletId = null, context = null, contactId = null }) {
       if (!address) return;
       if (offerAddressRequest(address, { t: this.$t.bind(this), paymentOnly: true })) return;
       const payerId = this.chooseSendingWalletId(addressType, sendingWalletId);
@@ -2891,6 +2891,9 @@ export default {
         paymentOnly: true,
         sendingWalletId: payerId,
         ...(context ? { paymentContext: context } : {}),
+        // Only an invoice needs it, and only a contact that exists is kept.
+        ...(addressType === 'invoice' && contactId && this.addressBookStore.getEntryById(contactId)
+          ? { paymentContactId: contactId } : {}),
       });
     },
 
@@ -3163,6 +3166,9 @@ export default {
       // Opaque caller context, handed back in `payment:sent`. A repeated
       // param is ignored, like walletId.
       const context = isPayContact && typeof query.context === 'string' && query.context ? query.context : null;
+      // Address-book id of the contact an invoice is paid to (a chat request).
+      const contactId = isPayContact && query.addressType === 'invoice'
+        && typeof query.contactId === 'string' && query.contactId ? query.contactId : null;
 
       // Dispatch once wallet initialization settles (success or failure —
       // a failed init still gets the proper payment-error surface), then
@@ -3177,6 +3183,7 @@ export default {
             name: query.contactName || null,
             sendingWalletId: walletId,
             ...(context ? { context } : {}),
+            ...(contactId ? { contactId } : {}),
           });
 
           // Clear query params
@@ -5163,6 +5170,10 @@ export default {
             ? this.addressBookStore.findContactByPubkey(recipientNostrPubkey)
             : null
         );
+        // A paid invoice has no address to find the contact by: the chat names it.
+        const invoiceContactId = this.pendingPayment?.type === 'lightning_invoice' && this.pendingPayment.paymentContactId
+          && this.addressBookStore.getEntryById(this.pendingPayment.paymentContactId)
+          ? this.pendingPayment.paymentContactId : null;
         const shouldOfferSave = isCompletedSend && !!(recipientAddress && !existingContact);
         const recipientLabel = isServiceSend && !existingContact
           ? serviceName
@@ -5205,7 +5216,18 @@ export default {
           ? { name: bv.name || '', logoUrl: bv.logoUrl || '', logoLightUrl: bv.logoLightUrl || '', verifyUrl: bv.verifyUrl || '' }
           : null;
 
-        if (recipientAddress || successAction || verifyUrl || paymentSource || merchantVerification || payLink) {
+        if (invoiceContactId && !existingContact) {
+          try {
+            await this.transactionMetadataStore.enqueuePendingContactLink({
+              contactId: invoiceContactId,
+              amountSats: amount,
+              perPayment: true,
+              walletId: sendingWalletId,
+            });
+          } catch (err) {
+            console.warn('[wallet] could not queue contact link:', err);
+          }
+        } else if (recipientAddress || successAction || verifyUrl || paymentSource || merchantVerification || payLink) {
           try {
             // A resolved Nostr send carries the person's avatar + display
             // name so the tx row/hero show who was actually paid instead of
@@ -5318,7 +5340,7 @@ export default {
         // went through. Only for a settled send: a pending one may still fail.
         if (isCompletedSend) {
           this.emitPaymentSent({
-            contactId: existingContact?.id || null,
+            contactId: existingContact?.id || invoiceContactId,
             destination: recipientAddress || this.pendingPayment?.invoice || null,
             amountSats: amount,
             preimage: result?.preimage || null,

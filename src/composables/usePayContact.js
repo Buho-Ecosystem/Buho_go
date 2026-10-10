@@ -23,6 +23,8 @@ const RESYNC_COOLDOWN_MS = 60 * 1000;
  * @property {string} [walletId]  The wallet that should pay ("Pay with" preselection).
  * @property {string} [context]   Opaque string returned in the `payment:sent` event
  *   once the payment succeeded (the contact chat uses it to announce the payment).
+ * @property {string} [contactId]  Address-book id the payment belongs to. Only an invoice
+ *   needs it (it carries no address to find the contact by).
  */
 
 /** The optional query parameters of a hand-over. Empty values are left out. */
@@ -122,6 +124,7 @@ export function usePayContact(ctx) {
         address: bolt11.trim(),
         addressType: 'invoice',
         ...(name ? { contactName: name } : {}),
+        ...(typeof options.contactId === 'string' && options.contactId ? { contactId: options.contactId } : {}),
         ...extraQuery(options),
       },
     });
