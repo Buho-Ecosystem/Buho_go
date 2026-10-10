@@ -84,7 +84,9 @@ NIP-17 clients (0xchat, Amethyst, …) show something sensible.
 | reaction | 7 | `["e", targetId]`, `["p", partner]`, `["k", "14"]` | the emoji |
 
 No NIP-40 `expiration` tag on rumors or wraps: other clients and relays would
-delete the history. A request expires with its invoice (`expiresAt`). In a
+delete the history. A request's lifetime is **not** its invoice's: see
+section 8a. Requests carry `["valid_until", "<unix>"]` (BuhoGO: created_at +
+30 days) and, always when the requester has one, `["lud16", …]`. In a
 reaction the `p` tag names the conversation partner (NIP-17 room
 membership), also when reacting to one's own message.
 
@@ -299,6 +301,45 @@ Paying a request / sending:
 | Request | ✓ direct | ✓ with `make_invoice`, else fallback | ✓ direct | fallback (profile address) |
 | Pay / send | ✓ | ✓ with `pay_invoice` | ✓ | disabled: Lightning unavailable |
 | Detect paid | event | notification / polling | polling | – |
+
+## 8a. Request lifetime vs. invoice expiry (no dead ends)
+
+A request is an intent ("Anna asks 3,000 sats for pizza"); the invoice is
+only the current means to pay it. Invoices expire (24 h); requests do not
+end with them.
+
+- **Request lifetime:** open until paid, declined or withdrawn, or until
+  `valid_until` (created_at + `REQUEST_LIFETIME_SECONDS` = 30 days). Without
+  `valid_until` (other clients): the invoice expiry, unless a `lud16` is
+  present, then 30 days from created_at. `expired` means the request
+  lifetime ended, never just the invoice.
+- **Payer pulls a fresh invoice:** if the request's invoice has expired (or
+  expires within 60 s), "Pay" fetches a new invoice from the request's signed
+  `lud16` via LNURL-pay for exactly the requested amount (LUD-12 comment
+  `buho:req:<reference>` when allowed), validates it (decodes, mainnet, exact
+  amount, not expired, within min/maxSendable) and hands it to the normal
+  pipeline with "Pay with". The user sees no difference. Out-of-range or
+  LNURL failure → clear error with the next action ("Ask for a new request").
+- **Requester confirms late payments:** the payer's `payment` message
+  (requestId, preimage if any) is matched against the requester's own wallet
+  ledger (preimage hash, else amount + time window, one tx per claim) → the
+  request becomes `paid` (verified), the tx is linked to the contact and the
+  card says where it was received. Without a ledger match it stays
+  "Reported paid, not verified". The original-invoice watcher stops at the
+  invoice expiry as before; reconcile on resume also checks claims.
+- **Next action in every state:**
+
+  | State | Payer | Requester |
+  |---|---|---|
+  | pending (invoice valid or not) | Decline · Pay | Remind · Withdraw |
+  | expired (lifetime over) | Send anyway (amount + note prefilled, linked to the request) | Request again (one tap, same amount + note) |
+  | pending, invoice expired, no `lud16` | Decline · Ask for a new request (prefilled message) | Remind · Withdraw |
+
+  A late "Send anyway" payment linked to an expired request marks it paid
+  (paid is final and wins over expired).
+- Trade-off: a pulled payment lands in the wallet behind the requester's
+  Lightning address (normally Spark Business), not necessarily the wallet
+  chosen for the original invoice; the paid card names the wallet.
 
 ## 9. Notifications
 
