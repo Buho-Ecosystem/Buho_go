@@ -27,7 +27,8 @@
 </template>
 
 <script>
-import { defineComponent, ref, provide, onMounted, onUnmounted } from 'vue'
+import { defineComponent, ref, provide, watch, onMounted, onUnmounted } from 'vue'
+import { useRouter } from 'vue-router'
 import { Capacitor } from '@capacitor/core'
 import { useQuasar } from 'quasar'
 import { useWalletStore } from 'src/stores/wallet'
@@ -40,6 +41,8 @@ import UpdateExperience from 'src/components/UpdateExperience.vue'
 import AddressRequestSheet from 'src/components/AddressRequestSheet.vue'
 import { useAddressRequestStore } from 'src/stores/addressRequest.js'
 import { useNotificationsStore } from 'src/stores/notifications'
+import { isInternalRoute, onNotificationTap } from 'src/services/paymentNotifications'
+import { EventBus } from 'src/utils/eventBus'
 
 export default defineComponent({
   name: 'App',
@@ -49,6 +52,7 @@ export default defineComponent({
   setup () {
     const store = useWalletStore()
     const $q = useQuasar()
+    const router = useRouter()
     const addressRequest = useAddressRequestStore()
     const notifications = useNotificationsStore()
 
@@ -63,6 +67,7 @@ export default defineComponent({
     const isDark = ref($q.dark.isActive)
     let stateListener = null
     let notificationsListener = null
+    let stopNotificationTap = null
     let isPrompting = false
     let lastPromptEnd = 0
 
@@ -122,12 +127,41 @@ export default defineComponent({
     // Establish the lock before child consent UI can become available.
     locked.value = Capacitor.isNativePlatform() && appLockActive()
 
+    // Event 'app:locked' (no payload): emitted on the EventBus every time the
+    // lock engages, i.e. whenever `locked` turns true — the app going to the
+    // background with the lock on included. Anything that keeps a secret only
+    // in memory drops it here: the contact chat wipes its cached identity key
+    // (docs/CONTACT_CHAT.md, section 5). It reports a change, not the state:
+    // registered after the initial value above, so launching straight into
+    // the lock is not announced. Sync flush: the listeners run in the same
+    // turn as the change, not on the next tick.
+    watch(locked, (isLocked) => {
+      if (isLocked) EventBus.emit('app:locked')
+    }, { flush: 'sync' })
+
+    // Tapping a notification opens the screen it was posted for (a contact
+    // chat, say). The route comes out of notification data, which is not a
+    // trusted destination, so only an in-app path is followed.
+    function openNotificationRoute ({ route }) {
+      if (!isInternalRoute(route)) return
+      // A tap that launched the app arrives while the first navigation is
+      // still settling; wait for it, or the start route wins.
+      router.isReady()
+        .then(() => router.push(route))
+        .catch(() => { /* navigation rejection is non-fatal */ })
+    }
+
     onMounted(async () => {
       // Payment notifications: load the user's switch before anything can want
       // to post one. Above the native gate on purpose — the browser posts
       // through its own Notification API, and a receive on the web would
       // otherwise stay silent until the user happened to open Settings.
       notifications.initialize().catch(() => {})
+
+      // Taps on a notification. Registered once, here and early: the plugin
+      // hands a tap that came before any listener to the first one, and the
+      // browser fires its click on web notifications through the same event.
+      stopNotificationTap = onNotificationTap(openNotificationRoute)
 
       if (!Capacitor.isNativePlatform()) return
 
@@ -175,6 +209,10 @@ export default defineComponent({
       }
       if (notificationsListener) {
         notificationsListener.remove()
+      }
+      if (stopNotificationTap) {
+        stopNotificationTap()
+        stopNotificationTap = null
       }
     })
 
