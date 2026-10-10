@@ -1,0 +1,945 @@
+/**
+ * Contact chat components (src/components/chat/*).
+ *
+ * Same approach as payWithField.spec.js: the real templates are compiled (SSR)
+ * and rendered, the real scripts run with their imports stubbed, so these
+ * tests read the actual markup and the actual component logic:
+ *   - chatFormat helpers: day separators, initials, npub fragment, counting
+ *   - header: three real buttons, the honest second line
+ *   - bubble: delivery states, retry, degraded, reactions, long press
+ *   - request card: states, actions by side, disabled reason, no invoice row
+ *   - money bar, composer, request sheet, wallet field, banner, thread
+ *   - style contract: 44 pt targets and the reduced-motion rule
+ */
+
+import assert from 'node:assert/strict'
+import { test } from 'node:test'
+import { readFileSync } from 'node:fs'
+import { createRequire } from 'node:module'
+import { transformSync } from 'esbuild'
+import * as Vue from 'vue'
+import * as ServerRenderer from 'vue/server-renderer'
+import * as amountFormatting from '../../utils/amountFormatting.js'
+
+const sfc = createRequire(import.meta.url)('@vue/compiler-sfc')
+
+// ── harness ──────────────────────────────────────────────────────────
+
+const t = (key, values = {}) => key.replace(/\{(\w+)\}/g, (_, name) => values[name] ?? name)
+const n = (value) => value.toLocaleString()
+
+const Icon = { props: ['icon'], render() { return Vue.h('i', { 'data-icon': this.icon }) } }
+
+function run(code, extra = {}, deps = {}) {
+  const { code: cjs } = transformSync(code, { format: 'cjs', supported: { 'dynamic-import': false } })
+  const module = { exports: {} }
+  new Function('require', 'module', 'exports', cjs)(name => (name in extra ? extra[name] : deps[name] || {}), module, module.exports)
+  return module.exports
+}
+
+const read = (file) => readFileSync(new URL(`../chat/${file}`, import.meta.url), 'utf8')
+
+/** A plain module of the chat folder, with its imports stubbed. */
+function loadJs(file, deps = {}) {
+  return run(read(file), {}, deps)
+}
+
+/** Script options, plus an SSR render function compiled from the real template. */
+function loadSfc(file, deps = {}) {
+  const { descriptor } = sfc.parse(read(file))
+  const component = run(descriptor.script.content, {}, deps).default
+  const { code, errors } = sfc.compileTemplate({ source: descriptor.template.content, filename: file, id: file, ssr: true })
+  assert.deepEqual(errors, [])
+  component.ssrRender = run(code, { vue: Vue, 'vue/server-renderer': ServerRenderer }).ssrRender
+  return component
+}
+
+const chatFormat = loadJs('chatFormat.js', { '../../utils/amountFormatting.js': amountFormatting })
+const base = { '@iconify/vue': { Icon }, './chatFormat.js': chatFormat }
+const constants = { MAX_TEXT_LENGTH: 2000, MAX_NOTE_LENGTH: 200 }
+
+const ChatHeader = loadSfc('ChatHeader.vue', base)
+const DaySeparator = loadSfc('DaySeparator.vue', base)
+const PaymentLine = loadSfc('PaymentLine.vue', base)
+const MessageMenu = loadSfc('MessageMenu.vue', base)
+const MessageBubble = loadSfc('MessageBubble.vue', { ...base, './MessageMenu.vue': MessageMenu })
+const RequestCard = loadSfc('RequestCard.vue', base)
+const MoneyBar = loadSfc('MoneyBar.vue', base)
+const Composer = loadSfc('Composer.vue', { ...base, '../../services/dm/constants.js': constants })
+const ReceiveWalletField = loadSfc('ReceiveWalletField.vue', base)
+const RequestSheet = loadSfc('RequestSheet.vue', { ...base, './ReceiveWalletField.vue': ReceiveWalletField, '../../services/dm/constants.js': constants })
+const UnknownSenderBanner = loadSfc('UnknownSenderBanner.vue', base)
+const ChatThread = loadSfc('ChatThread.vue', {
+  ...base, './DaySeparator.vue': DaySeparator, './MessageBubble.vue': MessageBubble, './PaymentLine.vue': PaymentLine, './RequestCard.vue': RequestCard,
+})
+
+async function render(component, props = {}, { slots, data } = {}) {
+  const options = data ? { ...component, data: () => ({ ...(component.data?.() || {}), ...data }) } : component
+  const app = Vue.createSSRApp({ render: () => Vue.h(options, props, slots) })
+  app.config.globalProperties.$t = t
+  app.config.warnHandler = () => {}
+  const shell = (tag) => ({ inheritAttrs: false, render() { return Vue.h(tag, {}, this.$slots.default?.()) } })
+  app.component('q-dialog', shell('div'))
+  return ServerRenderer.renderToString(app)
+}
+
+/**
+ * A component instance stand-in for logic tests: props, data, methods and
+ * computeds as plain properties, `$emit` recorded.
+ */
+function vmOf(component, props = {}, extra = {}) {
+  const emitted = []
+  const defaults = Object.fromEntries(
+    Object.entries(component.props || {}).map(([key, spec]) => {
+      const d = spec?.default
+      return [key, typeof d === 'function' && spec.type !== Function ? d() : d]
+    }),
+  )
+  const vm = {
+    ...defaults, ...(component.data?.call({}) || {}), ...component.methods, ...props,
+    $t: t, $: { uid: 1 }, $emit: (...args) => emitted.push(args), $nextTick: (fn) => fn?.(), $refs: {},
+    ...extra,
+  }
+  for (const [name, getter] of Object.entries(component.computed || {})) {
+    Object.defineProperty(vm, name, { get: () => getter.call(vm), configurable: true })
+  }
+  return { vm, emitted }
+}
+
+const tags = (html, selector) => html.match(new RegExp(`<[a-z]+[^>]*${selector}[^>]*>`, 'g')) || []
+const NOW = Math.floor(Date.now() / 1000)
+
+// ── chatFormat ───────────────────────────────────────────────────────
+
+test('initials: first and last word, whole code points, never empty', () => {
+  assert.equal(chatFormat.initialsOf('Anna'), 'A')
+  assert.equal(chatFormat.initialsOf('anna muster'), 'AM')
+  assert.equal(chatFormat.initialsOf('Hans Peter Meier'), 'HM')
+  assert.equal(chatFormat.initialsOf('  '), '?')
+  assert.equal(chatFormat.initialsOf(undefined), '?')
+  assert.equal(chatFormat.initialsOf('🦉 Owl'), '🦉O')
+})
+
+test('an npub is shortened to a fragment, never shown whole', () => {
+  const npub = `npub1${'q'.repeat(58)}`
+  const short = chatFormat.shortNpub(npub)
+  assert.match(short, /^npub1qqqqqq….{5}$/)
+  assert.ok(short.length < npub.length / 2)
+  assert.equal(chatFormat.shortNpub('npub1short'), 'npub1short')
+})
+
+test('lengths are counted in code points', () => {
+  assert.equal(chatFormat.countChars('abc'), 3)
+  assert.equal(chatFormat.countChars('😀😀'), 2)
+  assert.equal(chatFormat.countChars(''), 0)
+})
+
+test('amounts follow the BIP-177 setting', () => {
+  assert.equal(chatFormat.formatSats(5000, true), `₿ ${n(5000)}`)
+  assert.equal(chatFormat.formatSats(5000, false), `${n(5000)} sats`)
+  assert.equal(chatFormat.formatSats(NaN, true), '₿ 0')
+})
+
+test('day separators open every calendar day once and are idempotent', () => {
+  const day = 86400
+  const noon = Math.floor(new Date().setHours(12, 0, 0, 0) / 1000)
+  const items = [
+    { key: 'a', type: 'message', ts: noon - day },
+    { key: 'b', type: 'message', ts: noon - day + 60 },
+    { key: 'c', type: 'message', ts: noon },
+  ]
+  const out = chatFormat.insertDaySeparators(items)
+  assert.deepEqual(out.map((i) => i.type), ['day', 'message', 'message', 'day', 'message'])
+  assert.deepEqual(chatFormat.insertDaySeparators(out).map((i) => i.key), out.map((i) => i.key))
+  assert.deepEqual(chatFormat.insertDaySeparators([]), [])
+})
+
+test('"valid until" is a clock time today and a date otherwise', () => {
+  const today = chatFormat.formatWhen(NOW + 60)
+  assert.equal(today, chatFormat.formatClock(NOW + 60))
+  assert.notEqual(chatFormat.formatWhen(NOW + 5 * 86400), chatFormat.formatClock(NOW + 5 * 86400))
+  assert.equal(chatFormat.formatWhen(NaN), '')
+})
+
+// ── ChatHeader ───────────────────────────────────────────────────────
+
+test('header: back, one name button, menu; each a real, labelled 44 pt button', async () => {
+  const html = await render(ChatHeader, { name: 'Anna' })
+  const buttons = html.match(/<button[^>]*>/g)
+  assert.equal(buttons.length, 3)
+  assert.ok(buttons.every((b) => b.includes('type="button"')))
+  assert.match(html, /aria-label="Back"/)
+  assert.match(html, /aria-label="Open contact: Anna"/)
+  assert.match(html, /aria-label="More options"/)
+  assert.match(html, /aria-haspopup="menu"/)
+  assert.match(html, /chat-header__initials">A</, 'no picture: initials')
+})
+
+test('header: the second line is honest about the thread', async () => {
+  const secure = await render(ChatHeader, { name: 'Anna' })
+  assert.match(secure, /End-to-end encrypted/)
+  assert.match(secure, /data-icon="tabler:lock"/)
+  const payOnly = await render(ChatHeader, { name: 'Anna', paymentsOnly: true })
+  assert.match(payOnly, /Payments only/)
+  assert.doesNotMatch(payOnly, /End-to-end/)
+  const unknown = await render(ChatHeader, { name: 'Anna', paymentsOnly: true, unknown: true })
+  assert.match(unknown, /Not in your contacts/)
+  assert.match(unknown, /chat-header__sub--danger/)
+})
+
+test('header: a picture replaces the initials, and the avatar slot replaces both', async () => {
+  const withImage = await render(ChatHeader, { name: 'Anna', avatarUrl: 'https://x/y.png' })
+  assert.match(withImage, /<img src="https:\/\/x\/y.png" alt=""/)
+  const slotted = await render(ChatHeader, { name: 'Anna' }, { slots: { avatar: () => Vue.h('b', 'SLOT') } })
+  assert.match(slotted, /<b>SLOT<\/b>/)
+  assert.doesNotMatch(slotted, /chat-header__initials/)
+})
+
+test('header: the buttons report back, profile and menu', () => {
+  const { emitted } = vmOf(ChatHeader, { name: 'Anna' })
+  assert.deepEqual(ChatHeader.emits, ['back', 'open-profile', 'menu'])
+  assert.deepEqual(emitted, [])
+})
+
+// ── DaySeparator / PaymentLine ───────────────────────────────────────
+
+test('day separator: Today, Yesterday, then a date; a named separator', async () => {
+  const today = await render(DaySeparator, { ts: NOW })
+  assert.match(today, /role="separator" aria-label="Today"/)
+  const yesterday = await render(DaySeparator, { ts: NOW - 86400 })
+  assert.match(yesterday, /aria-label="Yesterday"/)
+  const old = await render(DaySeparator, { ts: NOW - 40 * 86400 })
+  assert.doesNotMatch(old, /Today|Yesterday/)
+  assert.match(old, /aria-label="[^"]+"/)
+})
+
+test('payment line: direction, amount, note, one button that opens the details', async () => {
+  const out = await render(PaymentLine, { outgoing: true, amountSats: 5000, note: 'Coffee' })
+  assert.match(out, /<button type="button"[^>]*class="payment-line"/)
+  assert.ok(out.includes(`You sent ₿ ${n(5000)} · Coffee`))
+  assert.match(out, /data-icon="tabler:arrow-up-right"/)
+  const inc = await render(PaymentLine, { outgoing: false, amountSats: 8000, bip177: false })
+  assert.ok(inc.includes(`Received ${n(8000)} sats`))
+  assert.doesNotMatch(inc, / · /, 'no note, no separator')
+  assert.match(inc, /data-icon="tabler:arrow-down-left"/)
+  assert.deepEqual(PaymentLine.emits, ['open'])
+})
+
+// ── MessageBubble / MessageMenu ──────────────────────────────────────
+
+test('bubble: incoming and outgoing sit on their own side', async () => {
+  const inc = await render(MessageBubble, { text: 'Hi', outgoing: false })
+  assert.match(inc, /bubble-row--in/)
+  assert.match(inc, /bubble--in/)
+  assert.doesNotMatch(inc, /bubble__delivery/, 'incoming messages show no delivery state')
+  const out = await render(MessageBubble, { text: 'Hi', outgoing: true })
+  assert.match(out, /bubble-row--out/)
+  assert.match(out, /bubble--out/)
+})
+
+test('bubble: honest delivery states, and no "delivered" or "read"', async () => {
+  const states = { queued: 'Waiting to send', sending: 'Sending', sent: 'Sent', failed: 'Not sent' }
+  for (const [delivery, text] of Object.entries(states)) {
+    const html = await render(MessageBubble, { text: 'Hi', outgoing: true, delivery })
+    assert.match(html, new RegExp(`bubble__delivery--${delivery}[^>]*role="status"`), delivery)
+    assert.ok(html.includes(text), delivery)
+    assert.doesNotMatch(html, /Delivered|Read/i, delivery)
+  }
+})
+
+test('bubble: only a failed message offers Send again', async () => {
+  const failed = await render(MessageBubble, { text: 'Hi', outgoing: true, delivery: 'failed' })
+  assert.match(failed, /<button type="button" class="bubble__retry">\s*Send again/)
+  assert.match(failed, /bubble--failed/)
+  for (const delivery of ['queued', 'sending', 'sent']) {
+    assert.doesNotMatch(await render(MessageBubble, { text: 'Hi', outgoing: true, delivery }), /bubble__retry/)
+  }
+})
+
+test('bubble: a degraded message is plain text with a note and a dashed outline', async () => {
+  const html = await render(MessageBubble, { text: '💸 fallback', degraded: true })
+  assert.match(html, /bubble--degraded/)
+  assert.match(html, /Shown as plain text/)
+  assert.doesNotMatch(await render(MessageBubble, { text: 'x' }), /Shown as plain text/)
+})
+
+test('bubble: reply quote, reactions as pressed-state buttons, a spoken label', async () => {
+  const html = await render(MessageBubble, {
+    text: 'Perfect',
+    reply: { author: 'You', text: 'Sounds good' },
+    reactions: [{ emoji: '❤️', count: 2, mine: true }, { emoji: '👍', count: 1, mine: false }],
+  })
+  assert.match(html, /<strong>You<\/strong><span>Sounds good<\/span>/)
+  assert.match(html, /role="group" aria-label="Reactions"/)
+  const chips = tags(html, 'bubble__reaction"')
+  assert.equal(chips.length, 2)
+  assert.match(chips[0], /aria-pressed="true"/)
+  assert.match(chips[1], /aria-pressed="false"/)
+  assert.match(html, /bubble__reaction-count[^>]*>2</)
+  assert.match(html, /role="button"[^>]*aria-label="Them: Reply to You: Sounds good. Perfect"/)
+  assert.match(await render(MessageBubble, { text: 'Hi', outgoing: true }), /aria-label="You: Hi"/)
+})
+
+test('bubble: strangers get no reactions, but may see existing ones', async () => {
+  const html = await render(MessageBubble, { text: 'Hi', canReact: false, reactions: [{ emoji: '👍', count: 1, mine: false }] })
+  assert.match(html, /bubble__reaction"[^>]*disabled/)
+})
+
+test('bubble: long press opens the menu for touch, never for a mouse, and scrolling cancels it', () => {
+  const timers = []
+  const realSet = globalThis.setTimeout
+  const realClear = globalThis.clearTimeout
+  globalThis.setTimeout = (fn, ms) => { timers.push({ fn, ms }); return timers.length }
+  globalThis.clearTimeout = (id) => { timers[id - 1].cleared = true }
+  try {
+    const { vm } = vmOf(MessageBubble, { text: 'Hi' })
+    vm.onPointerDown({ pointerType: 'mouse', clientX: 0, clientY: 0 })
+    assert.equal(timers.length, 0, 'a mouse uses the context menu')
+
+    vm.onPointerDown({ pointerType: 'touch', clientX: 10, clientY: 10 })
+    assert.equal(timers.length, 1)
+    assert.ok(timers[0].ms >= 350 && timers[0].ms <= 600)
+    vm.onPointerMove({ clientX: 12, clientY: 11 })
+    assert.notEqual(timers[0].cleared, true, 'a small wobble keeps the press')
+    vm.onPointerMove({ clientX: 10, clientY: 60 })
+    assert.equal(timers[0].cleared, true, 'moving is scrolling')
+    assert.equal(vm.menuOpen, false)
+
+    vm.onPointerDown({ pointerType: 'pen', clientX: 0, clientY: 0 })
+    timers[1].fn()
+    assert.equal(vm.menuOpen, true)
+    assert.equal(vm.menuMounted, true)
+  } finally {
+    globalThis.setTimeout = realSet
+    globalThis.clearTimeout = realClear
+  }
+})
+
+test('bubble: the menu forwards react, reply, copy (with the text) and retry', () => {
+  assert.deepEqual(MessageBubble.emits, ['react', 'reply', 'copy', 'retry'])
+  const source = read('MessageBubble.vue')
+  assert.match(source, /@copy="\$emit\('copy', text\)"/)
+  assert.match(source, /:can-retry="outgoing && delivery === 'failed'"/)
+})
+
+test('menu: reactions as a pressed-state group, then Reply and Copy; Send again only when failed', async () => {
+  const html = await render(MessageMenu, { modelValue: true, myReaction: '❤️' })
+  assert.match(html, /role="menu"/)
+  const emoji = tags(html, 'message-menu__emoji')
+  assert.equal(emoji.length, 5)
+  assert.equal(emoji.filter((e) => e.includes('aria-pressed="true"')).length, 1)
+  assert.match(html, />\s*Reply|<span>Reply<\/span>/)
+  assert.match(html, /<span>Copy text<\/span>/)
+  assert.doesNotMatch(html, /Send again/)
+  assert.match(await render(MessageMenu, { modelValue: true, canRetry: true }), /<span>Send again<\/span>/)
+  assert.doesNotMatch(await render(MessageMenu, { modelValue: true, canReact: false }), /message-menu__emoji/)
+})
+
+test('menu: a pick closes the menu first, then reports', () => {
+  const { vm, emitted } = vmOf(MessageMenu)
+  vm.pick('react', '🙏')
+  vm.pick('reply')
+  vm.pick('copy')
+  assert.deepEqual(emitted, [
+    ['update:modelValue', false], ['react', '🙏'],
+    ['update:modelValue', false], ['reply'],
+    ['update:modelValue', false], ['copy'],
+  ])
+})
+
+// ── RequestCard ──────────────────────────────────────────────────────
+
+const card = (props, opts) => render(RequestCard, { amountSats: 25000, ...props }, opts)
+
+test('request card: the payer sees Decline and a filled Pay', async () => {
+  const html = await card({ partnerName: 'Anna', note: 'Pizza', fiatText: '≈ $15.00' })
+  assert.ok(html.includes(`₿ ${n(25000)}`))
+  assert.match(html, /Anna requests/)
+  assert.match(html, /Pizza/)
+  assert.match(html, /≈ \$15.00/)
+  const buttons = tags(html, 'request-btn')
+  assert.equal(buttons.length, 2)
+  assert.match(buttons[0], /request-btn--quiet/)
+  assert.match(buttons[1], /request-btn--pay/)
+  assert.match(html, />\s*Decline\s*</)
+  assert.match(html, />\s*Pay\s*</)
+  assert.doesNotMatch(html, /Remind|Withdraw/)
+})
+
+test('request card: the requester sees Remind and Withdraw, never Pay', async () => {
+  const html = await card({ outgoing: true })
+  assert.match(html, /You requested/)
+  assert.match(html, />\s*Remind\s*</)
+  assert.match(html, />\s*Withdraw\s*</)
+  assert.doesNotMatch(html, />\s*Pay\s*<|Decline/)
+})
+
+test('request card: only a pending request has actions; every end state says so', async () => {
+  const lines = { paid: 'Paid', declined: 'Declined', cancelled: 'Withdrawn', expired: 'Expired' }
+  for (const [state, text] of Object.entries(lines)) {
+    for (const outgoing of [false, true]) {
+      const html = await card({ state, outgoing })
+      assert.equal(tags(html, 'request-btn').length, 0, `${state} ${outgoing}`)
+      assert.match(html, new RegExp(`request-card__state[^>]*>[\\s\\S]*${text}`), state)
+      assert.match(html, new RegExp(`request-card--${state}`))
+    }
+  }
+  assert.doesNotMatch(await card({}), /request-card__state/)
+})
+
+test('request card: no "amount in invoice" row, ever', async () => {
+  for (const props of [{}, { outgoing: true }, { state: 'paid' }, { disabledReason: 'x' }, { unconfirmed: true }]) {
+    assert.doesNotMatch(await card(props), /invoice/i, JSON.stringify(props))
+  }
+  assert.doesNotMatch(read('RequestCard.vue').replace(/<!--[\s\S]*?-->/, ''), /in invoice|Amount in/i)
+})
+
+test('request card: a reason keeps Pay visible but aria-disabled, and is linked to it', async () => {
+  const html = await card({ disabledReason: 'Lightning is unavailable on Arkade' })
+  assert.match(html, /<p id="request-reason-[^"]*" class="request-card__reason" role="status">/)
+  assert.match(html, /Lightning is unavailable on Arkade/)
+  const pay = tags(html, 'request-btn--pay')[0]
+  assert.match(pay, /aria-disabled="true"/)
+  assert.match(pay, /aria-describedby="request-reason-/)
+  assert.doesNotMatch(pay, /\sdisabled(=|\s|>)/, 'stays focusable so the reason is reachable')
+  assert.doesNotMatch(await card({}), /request-card__reason/)
+  assert.doesNotMatch(await card({ outgoing: true, disabledReason: 'x' }), /request-card__reason/, 'the requester never pays')
+})
+
+test('request card: runtime error codes are worded; an invalid or expired invoice has no Pay', async () => {
+  const wallet = await card({ disabledReason: 'WALLET_CANNOT_PAY' })
+  assert.match(wallet, /This wallet cannot pay this request\. Choose another wallet\./)
+  assert.match(tags(wallet, 'request-btn--pay')[0], /aria-disabled="true"/)
+  for (const [code, text] of [['INVALID_INVOICE', 'invalid and cannot be paid'], ['INVOICE_EXPIRED', 'has expired']]) {
+    const html = await card({ disabledReason: code })
+    assert.match(html, new RegExp(text), code)
+    assert.equal(tags(html, 'request-btn--pay').length, 0, code)
+    assert.match(html, />\s*Decline\s*</, code)
+  }
+})
+
+test('request card: Pay does nothing while blocked or busy', () => {
+  const blocked = vmOf(RequestCard, { amountSats: 1, disabledReason: 'no' })
+  blocked.vm.onPay()
+  assert.deepEqual(blocked.emitted, [])
+  const busy = vmOf(RequestCard, { amountSats: 1, busy: true })
+  busy.vm.onPay()
+  assert.deepEqual(busy.emitted, [])
+  const free = vmOf(RequestCard, { amountSats: 1 })
+  free.vm.onPay()
+  assert.deepEqual(free.emitted, [['pay']])
+  assert.deepEqual(RequestCard.emits, ['pay', 'decline', 'remind', 'withdraw'])
+})
+
+test('request card: busy disables the quiet actions', async () => {
+  const html = await card({ busy: true })
+  assert.match(tags(html, 'request-btn--quiet')[0], /disabled/)
+})
+
+test('request card: unconfirmed is stated plainly, for the requester only', async () => {
+  const pending = await card({ outgoing: true, unconfirmed: true })
+  assert.match(pending, /This wallet cannot confirm the payment automatically\./)
+  const reported = await card({ outgoing: true, unconfirmed: true, state: 'paid' })
+  assert.match(reported, /Reported paid, not verified/)
+  assert.doesNotMatch(await card({ outgoing: true }), /cannot confirm/)
+  assert.doesNotMatch(await card({ unconfirmed: true }), /cannot confirm/, 'the payer has nothing to detect')
+})
+
+test('request card: a stranger\'s request is marked and Pay is no longer the filled button', async () => {
+  const html = await card({ untrusted: true })
+  assert.match(html, /request-card--untrusted/)
+  assert.match(html, /request-btn--outline/)
+  assert.doesNotMatch(html, /request-btn--pay/)
+  assert.doesNotMatch(await card({ untrusted: true, state: 'expired' }), /request-card--untrusted/, 'finished requests are quiet')
+})
+
+test('request card: it is a named group and says valid-until only while pending', async () => {
+  const html = await card({ partnerName: 'Anna', expiresAt: NOW + 300 })
+  assert.match(html, /role="group" aria-label="Anna requests, ₿ [^"]*, open"/)
+  assert.match(html, /Valid until/)
+  assert.doesNotMatch(await card({ expiresAt: NOW + 300, state: 'paid' }), /Valid until/)
+  assert.match(await card({}), /Payment request/, 'no name: a neutral label')
+})
+
+// ── MoneyBar ─────────────────────────────────────────────────────────
+
+test('money bar: Request, Send and the message switch', async () => {
+  const html = await render(MoneyBar, {})
+  assert.match(html, /money-btn--request[\s\S]*Request/)
+  assert.match(html, /money-btn--send[\s\S]*Send/)
+  assert.match(html, /aria-label="Write a message"/)
+  assert.match(html, /data-icon="tabler:message"/)
+})
+
+test('money bar: a partner who cannot receive messages gets money buttons only', async () => {
+  const html = await render(MoneyBar, { canMessage: false })
+  assert.doesNotMatch(html, /Write a message/)
+  const text = await render(MoneyBar, { canMessage: false, modelValue: 'text' }, { slots: { default: () => Vue.h('i', 'COMPOSER') } })
+  assert.doesNotMatch(text, /COMPOSER/, 'text mode is not honoured without an inbox')
+  assert.match(text, /money-btn--request/)
+})
+
+test('money bar: text mode swaps the buttons for the slot and a way back', async () => {
+  const html = await render(MoneyBar, { modelValue: 'text' }, { slots: { default: () => Vue.h('i', 'COMPOSER') } })
+  assert.match(html, /<i>COMPOSER<\/i>/)
+  assert.match(html, /aria-label="Back to payments"/)
+  assert.match(html, /data-icon="tabler:currency-bitcoin"/)
+  assert.doesNotMatch(html, /money-btn/)
+})
+
+test('money bar: the switches write the mode', () => {
+  const { vm, emitted } = vmOf(MoneyBar)
+  vm.setMode('text')
+  vm.setMode('money')
+  assert.deepEqual(emitted, [['update:modelValue', 'text'], ['update:modelValue', 'money']])
+  assert.equal(MoneyBar.props.modelValue.validator('text'), true)
+  assert.equal(MoneyBar.props.modelValue.validator('chat'), false)
+})
+
+test('money bar: disabled buttons are real disabled buttons', async () => {
+  const html = await render(MoneyBar, { requestDisabled: true, sendDisabled: true })
+  assert.ok(tags(html, 'money-btn').every((b) => b.includes('disabled')))
+})
+
+// ── Composer ─────────────────────────────────────────────────────────
+
+test('composer: a labelled field and a labelled send button, disabled while empty', async () => {
+  const html = await render(Composer, {})
+  assert.match(html, /<input[^>]*aria-label="Message"/)
+  assert.match(html, /enterkeyhint="send"/)
+  assert.match(tags(html, 'composer__send')[0], /aria-label="Send message"/)
+  assert.match(tags(html, 'composer__send')[0], /disabled/)
+  assert.doesNotMatch(await render(Composer, { modelValue: 'Hi' }), /composer__send"[^>]*disabled/)
+  assert.doesNotMatch(html, /composer__counter/)
+})
+
+test('composer: the counter appears near the limit and turns into an error above it', async () => {
+  const far = await render(Composer, { modelValue: 'x'.repeat(1700) })
+  assert.doesNotMatch(far, /composer__counter/)
+  const near = await render(Composer, { modelValue: 'x'.repeat(1900) })
+  assert.match(near, /composer__counter[^>]*role="status"[^>]*>\s*100 characters left/)
+  assert.match(near, /aria-describedby="composer-counter-/)
+  const over = await render(Composer, { modelValue: 'x'.repeat(2005) })
+  assert.match(over, /composer__counter--over[^>]*>\s*5 characters too long/)
+  assert.match(over, /aria-invalid="true"/)
+  assert.match(tags(over, 'composer__send')[0], /disabled/)
+})
+
+test('composer: sending is blocked over the limit, without text or with a secret key', () => {
+  const can = (props) => vmOf(Composer, props).vm.canSend
+  assert.equal(can({ modelValue: 'Hi' }), true)
+  assert.equal(can({ modelValue: '   ' }), false)
+  assert.equal(can({ modelValue: '' }), false)
+  assert.equal(can({ modelValue: 'x'.repeat(2001) }), false)
+  assert.equal(can({ modelValue: '😀'.repeat(2000) }), true, 'emoji count once')
+  assert.equal(can({ modelValue: 'nsec1abc', secretKeyWarning: true }), false)
+  assert.equal(can({ modelValue: 'Hi', disabled: true }), false)
+})
+
+test('composer: the secret key warning is an alert that says what and why', async () => {
+  const html = await render(Composer, { modelValue: 'nsec1x', secretKeyWarning: true })
+  assert.match(html, /role="alert"/)
+  assert.match(html, /This looks like a secret key/)
+  assert.match(html, /Sending is blocked/)
+  assert.doesNotMatch(await render(Composer, { modelValue: 'Hi' }), /role="alert"/)
+})
+
+test('composer: the reply preview names the author and can be cancelled', async () => {
+  const html = await render(Composer, { reply: { author: 'Anna', text: 'See you at 7' } })
+  assert.match(html, /Reply to Anna/)
+  assert.match(html, /See you at 7/)
+  assert.match(html, /aria-label="Cancel reply"/)
+  assert.deepEqual(Composer.emits, ['update:modelValue', 'send', 'cancel-reply'])
+})
+
+test('composer: Enter sends, except while an IME is composing; it never clears the text itself', () => {
+  const press = (props, event) => {
+    const { vm, emitted } = vmOf(Composer, props)
+    let prevented = false
+    vm.onEnter({ preventDefault() { prevented = true }, ...event })
+    return { emitted, prevented }
+  }
+  assert.deepEqual(press({ modelValue: 'Hi' }, {}).emitted, [['send']])
+  assert.deepEqual(press({ modelValue: '' }, {}).emitted, [])
+  const ime = press({ modelValue: 'こん' }, { isComposing: true })
+  assert.deepEqual(ime.emitted, [])
+  assert.equal(ime.prevented, false)
+  assert.deepEqual(press({ modelValue: 'こん' }, { keyCode: 229 }).emitted, [])
+  assert.deepEqual(press({ modelValue: 'Hi', secretKeyWarning: true }, {}).emitted, [], 'blocked')
+})
+
+// ── ReceiveWalletField ───────────────────────────────────────────────
+
+const WALLETS = [
+  { id: 'biz', name: 'Business', type: 'spark', detail: 'Spark · ₿ 1,200', usable: true, reason: '' },
+  { id: 'alby', name: 'Alby Hub', type: 'nwc', detail: 'NWC', usable: true, reason: '' },
+  { id: 'ark', name: 'Arkade', type: 'arkade', detail: 'Arkade', usable: false, reason: 'Cannot create invoices' },
+]
+
+test('wallet field: nothing without wallets, a static row for one, a listbox button for several', async () => {
+  assert.equal((await render(ReceiveWalletField, { entries: [] })).replace(/<!--.*?-->/g, ''), '')
+  const single = await render(ReceiveWalletField, { entries: [WALLETS[0]] })
+  assert.match(single, /Receive in/)
+  assert.match(single, /receive-field__cell--static/)
+  assert.doesNotMatch(single, /<button|aria-haspopup/)
+  const many = await render(ReceiveWalletField, { entries: WALLETS, modelValue: 'alby' })
+  assert.match(many, /aria-haspopup="listbox"/)
+  assert.match(many, /aria-expanded="false"/)
+  assert.match(many, /<strong>Alby Hub<\/strong>/)
+  assert.doesNotMatch(many, /role="listbox"/)
+})
+
+test('wallet field: open list has options, one selected, unusable ones aria-disabled with their reason', async () => {
+  const html = await render(ReceiveWalletField, { entries: WALLETS, modelValue: 'alby' }, { data: { open: true } })
+  assert.match(html, /role="listbox"/)
+  const options = html.match(/<button[^>]*role="option"[^>]*>/g)
+  assert.equal(options.length, 3)
+  assert.equal(options.filter((o) => o.includes('aria-selected="true"')).length, 1)
+  assert.match(options[2], /aria-disabled="true"/)
+  assert.match(html, /<small class="receive-field__reason">Cannot create invoices<\/small>/)
+})
+
+test('wallet field: only a usable, different wallet is reported; a stale id falls back', () => {
+  const { vm, emitted } = vmOf(ReceiveWalletField, { entries: WALLETS, modelValue: 'biz', open: true })
+  vm.choose(WALLETS[2])
+  assert.deepEqual(emitted, [])
+  assert.equal(vm.open, true, 'the list stays open')
+  vm.choose(WALLETS[0])
+  assert.deepEqual(emitted, [], 're-picking the selected one is not a change')
+  assert.equal(vm.open, false)
+  vm.open = true
+  vm.choose(WALLETS[1])
+  assert.deepEqual(emitted, [['update:modelValue', 'alby']])
+  assert.equal(vmOf(ReceiveWalletField, { entries: WALLETS, modelValue: 'gone' }).vm.selected.id, 'biz')
+  assert.equal(vmOf(ReceiveWalletField, { entries: [WALLETS[2], WALLETS[0]], modelValue: null }).vm.selected.id, 'biz', 'prefers one that can receive')
+})
+
+test('wallet field: Escape closes the list and keeps the sheet open', () => {
+  const { vm } = vmOf(ReceiveWalletField, { entries: WALLETS, open: true })
+  let stopped = false
+  vm.onListKeydown({ key: 'Escape', preventDefault() {}, stopPropagation() { stopped = true } })
+  assert.equal(vm.open, false)
+  assert.equal(stopped, true)
+})
+
+// ── RequestSheet ─────────────────────────────────────────────────────
+
+test('request sheet: title, labelled amount and note, receive-in field, CTA', async () => {
+  const html = await render(RequestSheet, { modelValue: true, partnerName: 'Anna', wallets: WALLETS, walletId: 'biz' })
+  assert.match(html, /<section[^>]*aria-labelledby="request-title-/)
+  assert.match(html, /Request from Anna/)
+  assert.match(html, /<label for="request-amount-[^"]*"[^>]*>Amount in sats<\/label>/)
+  assert.match(html, /inputmode="numeric"/)
+  assert.match(html, /Note \(optional\)/)
+  assert.match(html, /maxlength="200"/)
+  assert.match(html, /Receive in/)
+  assert.match(tags(html, 'request-sheet__cta')[0], /disabled/)
+  assert.match(html, /request-sheet__unit[^>]*>₿</)
+})
+
+test('request sheet: info about the landing wallet and a failure are shown as such', async () => {
+  const html = await render(RequestSheet, { modelValue: true, wallets: WALLETS, landingInfo: 'Paid to your profile address', error: 'No relay accepted' })
+  assert.match(html, /request-sheet__info[\s\S]*Paid to your profile address/)
+  assert.match(html, /role="alert"[^>]*>[\s\S]*No relay accepted/)
+  assert.doesNotMatch(await render(RequestSheet, { modelValue: true, wallets: WALLETS }), /request-sheet__info|request-sheet__failure/)
+})
+
+test('request sheet: amount input keeps digits only, groups them, and validates the range', () => {
+  const { vm } = vmOf(RequestSheet, { wallets: WALLETS, walletId: 'biz', minSats: 10, maxSats: 1_000_000 })
+  const type = (value) => { const event = { target: { value } }; vm.onAmountInput(event); return event.target.value }
+  assert.equal(type('2a5,0.00'), n(25000))
+  assert.equal(vm.amountText, '25000')
+  assert.equal(vm.amountSats, 25000)
+  assert.equal(vm.canSubmit, true)
+  assert.equal(type('00012'), n(12))
+  assert.equal(type('1'.repeat(30)), n(Number('1'.repeat(12))), 'digits are capped')
+  type('5')
+  assert.match(vm.amountError, /The smallest request is/)
+  assert.equal(vm.canSubmit, false)
+  type('9999999')
+  assert.match(vm.amountError, /The largest request is/)
+  assert.equal(vm.canSubmit, false)
+  type('')
+  assert.equal(vm.amountError, '', 'an empty field is not an error yet')
+  assert.equal(vm.canSubmit, false)
+})
+
+test('request sheet: submit reports amount, trimmed note and the receiving wallet', () => {
+  const { vm, emitted } = vmOf(RequestSheet, { wallets: WALLETS, walletId: 'alby' })
+  vm.submit()
+  assert.deepEqual(emitted, [], 'nothing to submit yet')
+  vm.onAmountInput({ target: { value: '12000' } })
+  vm.note = '  Pizza  '
+  vm.submit()
+  assert.deepEqual(emitted, [['submit', { amountSats: 12000, note: 'Pizza', walletId: 'alby' }]])
+})
+
+test('request sheet: no submit while sending, or when the wallet cannot receive', () => {
+  const sending = vmOf(RequestSheet, { wallets: WALLETS, walletId: 'biz', submitting: true, amountText: '100' })
+  sending.vm.submit()
+  assert.deepEqual(sending.emitted, [])
+  const blocked = vmOf(RequestSheet, { wallets: [WALLETS[2]], walletId: 'ark', amountText: '100' })
+  assert.equal(blocked.vm.canSubmit, false)
+  const none = vmOf(RequestSheet, { wallets: [], walletId: null, amountText: '100' })
+  assert.equal(none.vm.canSubmit, false)
+})
+
+test('request sheet: fiat comes from the page, the CTA names the amount, a fresh sheet starts empty', () => {
+  const { vm } = vmOf(RequestSheet, { wallets: WALLETS, walletId: 'biz', formatFiat: (s) => `≈ ${s / 100}` })
+  assert.equal(vm.fiat, '')
+  vm.amountText = '1500'
+  assert.equal(vm.fiat, '≈ 15')
+  assert.ok(vm.ctaText.includes(`₿ ${n(1500)}`))
+  vm.note = 'old'
+  RequestSheet.watch.modelValue.call(vm, true)
+  assert.equal(vm.amountText, '')
+  assert.equal(vm.note, '')
+  const busy = vmOf(RequestSheet, { wallets: WALLETS, submitting: true, amountText: '5' })
+  assert.equal(busy.vm.ctaText, 'Creating request')
+})
+
+// ── UnknownSenderBanner ──────────────────────────────────────────────
+
+test('unknown sender: warns, shows a fragment of the npub and offers Add contact and Block', async () => {
+  const npub = `npub1${'k'.repeat(58)}`
+  const html = await render(UnknownSenderBanner, { npub })
+  assert.match(html, /Not in your contacts/)
+  assert.match(html, /Only pay if you are sure who this is\./)
+  assert.match(html, /<code title="[^"]*">npub1k{6}….{5}<\/code>/)
+  assert.ok(!html.includes(`>${npub}<`), 'the full key is not drawn')
+  const buttons = tags(html, 'unknown-btn')
+  assert.equal(buttons.length, 2)
+  assert.match(html, />\s*Add contact\s*</)
+  assert.match(html, />\s*Block\s*</)
+  assert.deepEqual(UnknownSenderBanner.emits, ['add-contact', 'block'])
+})
+
+test('unknown sender: a lookalike name is called out, and nothing is ever verified', async () => {
+  const html = await render(UnknownSenderBanner, { npub: `npub1${'k'.repeat(58)}`, lookalikeName: 'Anna' })
+  assert.match(html, /The name looks like your contact Anna, but this is a different profile/)
+  assert.doesNotMatch(html, /verified|check/i)
+  assert.doesNotMatch(read('UnknownSenderBanner.vue'), /nip05|circle-check|rosette/i)
+})
+
+// ── ChatThread ───────────────────────────────────────────────────────
+
+const items = () => [
+  { key: 'd1', type: 'day', ts: NOW },
+  { key: 'm1', type: 'message', ts: NOW, message: { id: 'm1', text: 'Hi there', outgoing: false } },
+  { key: 'm2', type: 'message', ts: NOW, message: { id: 'm2', text: 'Hello', outgoing: false } },
+  { key: 'm3', type: 'message', ts: NOW, message: { id: 'm3', text: 'Hey', outgoing: true, delivery: 'queued' } },
+  { key: 'r1', type: 'request', ts: NOW, request: { id: 'r1', amountSats: 5000, outgoing: false, state: 'pending' } },
+  { key: 'r2', type: 'request', ts: NOW, request: { id: 'r2', amountSats: 7000, outgoing: true, state: 'paid' } },
+  { key: 'p1', type: 'payment', ts: NOW, payment: { id: 'p1', outgoing: true, amountSats: 1000, note: 'Tip' } },
+]
+
+test('thread: a polite log region with a name and a keyboard-scrollable body', async () => {
+  const html = await render(ChatThread, { items: items() })
+  assert.match(html, /role="log"/)
+  assert.match(html, /aria-live="polite"/)
+  assert.match(html, /aria-label="Messages"/)
+  assert.match(html, /role="log"[^>]*tabindex="0"|tabindex="0"[^>]*role="log"/)
+})
+
+test('thread: every item type is drawn by its component, in order', async () => {
+  const html = await render(ChatThread, { items: items(), partnerName: 'Anna' })
+  const order = [...html.matchAll(/class="day-separator"|class="bubble--(?:in|out) bubble"|class="request-card |class="payment-line"/g)].map((m) => m[0].replace(/^class="/, '').split(/[ "]/)[0])
+  assert.deepEqual(order, ['day-separator', 'bubble--in', 'bubble--in', 'bubble--out', 'request-card', 'request-card', 'payment-line'])
+  assert.match(html, /Anna requests/)
+  assert.match(html, /You requested/)
+  assert.match(html, /You sent/)
+  assert.match(html, /Waiting to send/)
+})
+
+test('thread: requests sit on their side; consecutive bubbles of one side are tight', async () => {
+  const html = await render(ChatThread, { items: items() })
+  assert.match(html, /chat-thread__row--in chat-thread__row chat-thread__row--card/)
+  assert.match(html, /chat-thread__row--out chat-thread__row chat-thread__row--card/)
+  const rows = tags(html, 'chat-thread__row--message')
+  assert.equal(rows.length, 3)
+  assert.doesNotMatch(rows[0], /--tight/)
+  assert.match(rows[1], /--tight/, 'second incoming bubble')
+  assert.doesNotMatch(rows[2], /--tight/, 'the side changed')
+})
+
+test('thread: item fields reach the components', async () => {
+  const html = await render(ChatThread, {
+    items: [
+      { key: 'm', type: 'message', ts: NOW, message: { id: 'm', text: 'x', outgoing: false, degraded: true, canReact: false, reactions: [{ emoji: '👍', count: 1, mine: false }] } },
+      { key: 'r', type: 'request', ts: NOW, request: { id: 'r', amountSats: 100, outgoing: false, state: 'pending', disabledReason: 'Blocked', untrusted: true } },
+    ],
+  })
+  assert.match(html, /bubble--degraded/)
+  assert.match(html, /bubble__reaction"[^>]*disabled/)
+  assert.match(html, /request-card--untrusted/)
+  assert.match(html, /Blocked/)
+})
+
+test('thread: empty shows the text, or the empty slot, and the header slot scrolls with the thread', async () => {
+  assert.match(await render(ChatThread, { items: [] }), /Nothing here yet\. Request or send money to get started\./)
+  const slotted = await render(ChatThread, { items: [] }, { slots: { empty: () => Vue.h('b', 'EMPTY'), header: () => Vue.h('b', 'HEAD') } })
+  assert.match(slotted, /<b>EMPTY<\/b>/)
+  assert.doesNotMatch(slotted, /Nothing here yet/)
+  assert.ok(slotted.indexOf('HEAD') < slotted.indexOf('EMPTY'))
+})
+
+test('thread: events carry the id of the item they come from', () => {
+  const { vm, emitted } = vmOf(ChatThread)
+  vm.forward('pay-request', 'r1')
+  vm.forward('react', 'm1', { emoji: '👍' })
+  vm.forward('copy', 'm1', { text: 'Hi' })
+  assert.deepEqual(emitted, [
+    ['pay-request', { id: 'r1' }],
+    ['react', { id: 'm1', emoji: '👍' }],
+    ['copy', { id: 'm1', text: 'Hi' }],
+  ])
+  for (const name of ['react', 'reply', 'copy', 'retry', 'pay-request', 'decline-request', 'remind-request', 'withdraw-request', 'open-payment']) {
+    assert.ok(ChatThread.emits.includes(name), name)
+  }
+})
+
+/** A thread instance with a scroller of the given geometry. */
+function threadVm(geometry = {}) {
+  const scroller = { scrollHeight: 2000, scrollTop: 1500, clientHeight: 500, scrollTo(options) { this.last = options }, ...geometry }
+  const ctx = vmOf(ChatThread, {}, { $refs: { scroller } })
+  return { ...ctx, scroller }
+}
+
+test('thread: "at the bottom" has a little slack, and reaching it clears the pill', () => {
+  const near = threadVm({ scrollTop: 1450 })
+  near.vm.hasUnseen = true
+  near.vm.onScroll()
+  assert.equal(near.vm.atBottom, true)
+  assert.equal(near.vm.hasUnseen, false)
+  const up = threadVm({ scrollTop: 300 })
+  up.vm.hasUnseen = true
+  up.vm.onScroll()
+  assert.equal(up.vm.atBottom, false)
+  assert.equal(up.vm.hasUnseen, true)
+})
+
+test('thread: a new item keeps a reader at the bottom there, smoothly', () => {
+  const { vm, scroller } = threadVm()
+  const before = items()
+  const after = [...before, { key: 'm9', type: 'message', ts: NOW, message: { id: 'm9', text: 'new', outgoing: false } }]
+  ChatThread.watch.items.call(vm, after, before)
+  assert.equal(scroller.last.top, 2000)
+  assert.equal(vm.hasUnseen, false)
+})
+
+test('thread: a reader who scrolled up is not yanked down: a pill appears instead', () => {
+  const { vm, scroller } = threadVm({ scrollTop: 100 })
+  vm.atBottom = false
+  const before = items()
+  const after = [...before, { key: 'm9', type: 'message', ts: NOW, message: { id: 'm9', text: 'new', outgoing: false } }]
+  ChatThread.watch.items.call(vm, after, before)
+  assert.equal(scroller.last, undefined)
+  assert.equal(vm.hasUnseen, true)
+})
+
+test('thread: the user\'s own item always scrolls into view; a new day line alone is no news', () => {
+  const own = threadVm({ scrollTop: 100 })
+  own.vm.atBottom = false
+  const before = items()
+  ChatThread.watch.items.call(own.vm, [...before, { key: 'o', type: 'message', ts: NOW, message: { id: 'o', text: 'mine', outgoing: true } }], before)
+  assert.equal(own.scroller.last.top, 2000)
+  assert.equal(own.vm.hasUnseen, false)
+
+  const day = threadVm({ scrollTop: 100 })
+  day.vm.atBottom = false
+  ChatThread.watch.items.call(day.vm, [...before, { key: 'd2', type: 'day', ts: NOW }], before)
+  assert.equal(day.vm.hasUnseen, false)
+})
+
+test('thread: history older than the last item, or an unchanged list, does not move the view', () => {
+  const { vm, scroller } = threadVm({ scrollTop: 100 })
+  vm.atBottom = false
+  const before = items()
+  const older = [{ key: 'old', type: 'message', ts: NOW - 99, message: { id: 'old', text: 'old', outgoing: false } }, ...before]
+  ChatThread.watch.items.call(vm, older, before)
+  assert.equal(scroller.last, undefined)
+  assert.equal(vm.hasUnseen, false)
+})
+
+test('thread: reduced motion jumps instead of gliding', () => {
+  const realWindow = globalThis.window
+  try {
+    globalThis.window = { matchMedia: () => ({ matches: true }) }
+    const reduced = threadVm()
+    reduced.vm.scrollToBottom({ smooth: true })
+    assert.equal(reduced.scroller.last.behavior, 'auto')
+    globalThis.window = { matchMedia: () => ({ matches: false }) }
+    const normal = threadVm()
+    normal.vm.scrollToBottom({ smooth: true })
+    assert.equal(normal.scroller.last.behavior, 'smooth')
+    normal.vm.scrollToBottom({ smooth: false })
+    assert.equal(normal.scroller.last.behavior, 'auto')
+  } finally {
+    if (realWindow === undefined) delete globalThis.window
+    else globalThis.window = realWindow
+  }
+})
+
+// ── style contract ───────────────────────────────────────────────────
+
+const strip = (source) => source.replace(/<!--[\s\S]*?-->/g, '')
+
+test('touch targets: every control is at least 44 pt', () => {
+  const rule = (file, selector) => {
+    const source = read(file)
+    const match = source.match(new RegExp(`${selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} \\{[^}]*\\}`))
+    assert.ok(match, `${file} ${selector}`)
+    return match[0]
+  }
+  const at44 = (file, selector) => assert.match(rule(file, selector), /(min-)?(height|width): (4[4-9]|[5-9]\d)px/, `${file} ${selector}`)
+  at44('ChatHeader.vue', '.chat-header__icon-btn')
+  at44('ChatHeader.vue', '.chat-header__person')
+  at44('PaymentLine.vue', '.payment-line')
+  at44('RequestCard.vue', '.request-btn')
+  at44('MoneyBar.vue', '.money-btn')
+  at44('MoneyBar.vue', '.money-switch')
+  at44('Composer.vue', '.composer__input')
+  at44('Composer.vue', '.composer__send')
+  at44('Composer.vue', '.composer__icon-btn')
+  at44('MessageBubble.vue', '.bubble__retry')
+  at44('MessageMenu.vue', '.message-menu__emoji')
+  at44('MessageMenu.vue', '.message-menu__item')
+  at44('UnknownSenderBanner.vue', '.unknown-btn')
+  at44('RequestSheet.vue', '.request-sheet__close')
+  at44('RequestSheet.vue', '.request-sheet__cta')
+  at44('ReceiveWalletField.vue', '.receive-field__option')
+  at44('ChatThread.vue', '.chat-thread__pill')
+})
+
+test('motion: every component that animates honours prefers-reduced-motion', () => {
+  for (const file of ['MessageBubble.vue', 'RequestCard.vue', 'MoneyBar.vue', 'RequestSheet.vue', 'ReceiveWalletField.vue', 'ChatThread.vue']) {
+    assert.match(read(file), /@media \(prefers-reduced-motion: reduce\)/, file)
+  }
+})
+
+test('theming: colours come from the app tokens, never a hard-coded palette', () => {
+  const tokens = read('chatTokens.css')
+  assert.match(tokens, /body\.body--light/)
+  for (const file of ['ChatHeader.vue', 'MessageBubble.vue', 'RequestCard.vue', 'MoneyBar.vue', 'Composer.vue', 'ChatThread.vue', 'RequestSheet.vue']) {
+    const css = read(file).split('<style')[1]
+    assert.doesNotMatch(css, /#[0-9a-fA-F]{3,8}\b(?![^{]*\{)/, `${file}: hex outside a rule`)
+    assert.doesNotMatch(css.replace(/var\([^)]*\)/g, ''), /(color|background)[^;]*#[0-9a-fA-F]{3,8}/, `${file}: hard-coded colour`)
+  }
+  for (const token of ['--bg-input', '--bg-card', '--border-card', '--text-primary', '--text-secondary', '--text-muted', '--brand-accent', '--color-warn']) {
+    assert.ok(Object.values({ a: read('RequestCard.vue') + read('MessageBubble.vue') + read('ChatHeader.vue') }).join('').includes(`var(${token}`), token)
+  }
+})
+
+test('presentational: no store, router, network or runtime imports', () => {
+  for (const file of ['ChatHeader.vue', 'MessageBubble.vue', 'MessageMenu.vue', 'RequestCard.vue', 'PaymentLine.vue', 'MoneyBar.vue', 'Composer.vue',
+    'RequestSheet.vue', 'ReceiveWalletField.vue', 'DaySeparator.vue', 'UnknownSenderBanner.vue', 'ChatThread.vue', 'chatFormat.js']) {
+    const imports = [...strip(read(file)).matchAll(/^import .* from '([^']+)'/gm)].map((m) => m[1])
+    for (const spec of imports) {
+      assert.ok(
+        spec === '@iconify/vue' || spec.startsWith('./') || spec === '../../utils/amountFormatting.js' || spec === '../../services/dm/constants.js',
+        `${file} imports ${spec}`,
+      )
+    }
+    assert.doesNotMatch(strip(read(file)), /\bfetch\(|WebSocket|useRouter|\$router|\$route\b/, file)
+  }
+})
