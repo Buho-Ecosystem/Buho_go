@@ -13,6 +13,11 @@
       slide-to-confirm above the high-value threshold, a tap button below it.
     - Validates the entered amount against the supplied constraints before
       emitting `confirm`.
+    - "Pay with": draws the wallet choice (PayWithField) from the entries the
+      parent supplies and reports the pick. The verdict on the picked wallet
+      arrives through the same `walletCanPay` / `walletHint` pair the rail
+      check always used, so a wallet that cannot pay disables the commit
+      control and shows its reason in the existing banner.
 
   It does NOT route to Spark / LNbits / NWC, fetch LNURL data, or talk to
   fiat-rate services beyond the small util import — the parent owns the
@@ -258,6 +263,20 @@
             </span>
           </div>
 
+          <!-- Pay with: which connected wallet pays. Last in the scroll
+               region, directly above the pinned commit control, so the
+               choice is made right before the slide. Only the send verb
+               has one (redeem / charge never pass wallets), and the field
+               itself renders nothing for fewer than two wallets. -->
+          <PayWithField
+            v-if="verb === 'send' && payingWallets.length > 1"
+            :wallets="payingWallets"
+            :model-value="sendingWalletId"
+            :destination-type="payingDestinationType"
+            :disabled="isSending || isComplete"
+            @update:model-value="onPayWithPick"
+          />
+
         </div>
 
         <!-- Commit control — pinned OUTSIDE the scroll region so the commit
@@ -318,6 +337,7 @@ import { FIAT_SYMBOLS } from '../utils/fiatCurrencies.js'
 import SlideToSend from './SlideToSend.vue'
 import BrantaVerifiedBadge from './BrantaVerifiedBadge.vue'
 import ProgressCta from './ProgressCta.vue'
+import PayWithField from './PayWithField.vue'
 
 // Below this, a tap "Send" button; above it, slide-to-confirm. Both morph into
 // the same filling ProgressCta once committed.
@@ -325,7 +345,7 @@ const SLIDE_THRESHOLD_SATS = 10000
 
 export default {
   name: 'PaymentConfirmSheet',
-  components: { SlideToSend, BrantaVerifiedBadge, ProgressCta },
+  components: { SlideToSend, BrantaVerifiedBadge, ProgressCta, PayWithField },
   props: {
     modelValue: { type: Boolean, default: false },
     /**
@@ -333,8 +353,26 @@ export default {
      * The component is presentational — the parent owns this object.
      */
     payment: { type: Object, default: null },
+    /**
+     * Whether the wallet that pays can pay this payment. The parent derives it
+     * from the SELECTED wallet (`sendingWalletId`), so picking a wallet that
+     * cannot pay disables the commit control; `walletHint` says why.
+     */
     walletCanPay: { type: Boolean, default: true },
     walletHint: { type: String, default: '' },
+    /**
+     * "Pay with": the user's wallets for this payment, as built by
+     * utils/payingWallets.listPayingWallets (active wallet first). Empty by
+     * default, which hides the field — redeem / charge never pass it.
+     */
+    payingWallets: { type: Array, default: () => [] },
+    /** Id of the wallet that pays; null before a payment is set. */
+    sendingWalletId: { type: String, default: null },
+    /**
+     * Rail of the destination (payment type or addressType). Only words the
+     * "cannot pay this" reason in the wallet list.
+     */
+    payingDestinationType: { type: String, default: 'lightning' },
     isSending: { type: Boolean, default: false },
     /**
      * Flips true the moment the payment SUCCEEDS, so the CTA can snap its
@@ -370,7 +408,7 @@ export default {
      */
     commitGate: { type: Boolean, default: true }
   },
-  emits: ['update:modelValue', 'confirm', 'cancel', 'amount-changed'],
+  emits: ['update:modelValue', 'confirm', 'cancel', 'amount-changed', 'update:sendingWalletId'],
   data() {
     return {
       showAddress: false,
@@ -870,6 +908,17 @@ export default {
       } else {
         this.displayAmount = ''
       }
+    },
+
+    /**
+     * The user picked another wallet in "Pay with". The parent owns the
+     * selection (it re-evaluates capability, balance and fees for it), so this
+     * only reports the id. A pick can never arrive mid-send: the field is
+     * disabled then, and this guard covers a stray event all the same.
+     */
+    onPayWithPick(walletId) {
+      if (this.isSending || this.isComplete) return
+      this.$emit('update:sendingWalletId', walletId)
     },
 
     onTopAction() {

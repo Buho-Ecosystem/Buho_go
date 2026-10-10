@@ -130,6 +130,11 @@ export default {
     /** Bare on-chain destination (BIP21 already unwrapped upstream). */
     address: { type: String, required: true },
     availableBalance: { type: Number, default: 0 },
+    /**
+     * The Spark wallet that pays ("Pay with"); the quote is requested from
+     * and priced for that wallet. null = the active wallet, as ever.
+     */
+    walletId: { type: String, default: null },
     /** True while the parent is submitting — freezes the controls. */
     disabled: { type: Boolean, default: false },
   },
@@ -224,6 +229,15 @@ export default {
       this.emitFeeGate();
     },
 
+    // A quote belongs to the wallet it was requested from. Another paying
+    // wallet invalidates it at once (the gate closes) and asks again.
+    walletId() {
+      if (this.feeQuoteDebounceTimer) clearTimeout(this.feeQuoteDebounceTimer);
+      this.feeQuote = null;
+      this.emitFeeGate();
+      if (this.amountSats > 0) this.fetchFeeQuote();
+    },
+
     // Balance changes (mid-typing refresh) can flip sufficiency.
     insufficientBalance() {
       this.emitFeeGate();
@@ -257,13 +271,19 @@ export default {
     async fetchFeeQuote() {
       if (this.amountSats <= 0) return;
 
+      // The request this answer belongs to. A quote for another wallet or
+      // amount (the user moved on while it was in flight) must never gate -
+      // or price - the payment now on screen.
+      const { walletId, amountSats } = this;
       this.isLoadingFeeQuote = true;
       try {
-        const provider = await this.walletStore.ensureSparkConnected();
+        const provider = await this.walletStore.ensureSparkConnected(walletId);
         if (!provider?.getWithdrawalFeeQuote) {
           throw new Error('Withdrawal not supported');
         }
-        this.feeQuote = await provider.getWithdrawalFeeQuote(this.amountSats, this.address);
+        const quote = await provider.getWithdrawalFeeQuote(amountSats, this.address);
+        if (walletId !== this.walletId || amountSats !== this.amountSats) return;
+        this.feeQuote = quote;
         this.emitFeeGate();
       } catch (error) {
         console.error('Failed to fetch fee quote:', error);
