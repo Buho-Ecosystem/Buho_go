@@ -40,6 +40,8 @@ export const DM_ERROR = Object.freeze({
   TIMEOUT: 'TIMEOUT',
   /** A request's invoice failed the checks (undecodable, amount mismatch, wrong network). */
   INVALID_INVOICE: 'INVALID_INVOICE',
+  /** A request's invoice has expired, so it can no longer be paid. */
+  INVOICE_EXPIRED: 'INVOICE_EXPIRED',
   /** The text contains an `nsec1...` or `ncryptsec1...` key, so it is never sent. */
   SECRET_KEY_IN_TEXT: 'SECRET_KEY_IN_TEXT',
   /** The chosen wallet cannot create invoices, so it cannot receive a request. */
