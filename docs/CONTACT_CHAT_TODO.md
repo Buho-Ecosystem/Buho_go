@@ -51,7 +51,7 @@ Product rule: the pay-request card/sheet has **no** "amount in invoice" row.
 - Unknown senders: route `/messages/:pubkey` (used by notifications) →
   chat with UnknownSenderBanner (add contact / block).
 
-### 3. Small additions to existing screens (no layout changes)
+### 3. Small additions to existing screens (no layout changes) — built, uncommitted until the chat route exists (AddressBook, AddressBookList/Entry, MenuOverlay, IdentityHomePage, Settings, chat/MessagesSheet.vue, chat/threadRows.js, chatEntryPoints.spec.js)
 - AddressBook: tap contact → chat; unread badges; "Unknown" section.
 - MenuOverlay: unread badge.
 - IdentityHomePage: "Messages" row + sheet (thread list).
@@ -159,6 +159,21 @@ Chat UI component keys (cbeca21; some may already exist — reuse, don't duplica
 | Block | Blockieren | Bloquear |
 | Nothing here yet. Request or send money to get started. | Noch nichts hier. Fordere Geld an oder sende welches. | Aún no hay nada. Solicita o envía dinero para empezar. |
 | New messages | Neue Nachrichten | Mensajes nuevos |
+
+Entry point keys (uncommitted work, see section 3):
+
+| en-US | de | es |
+|---|---|---|
+| Message requests | Nachrichtenanfragen | Solicitudes de mensajes |
+| No messages yet | Noch keine Nachrichten | Aún no hay mensajes |
+| You requested {amount} | Du hast {amount} angefordert | Solicitaste {amount} |
+| You paid the request | Du hast die Anfrage bezahlt | Pagaste la solicitud |
+| You declined the request | Du hast die Anfrage abgelehnt | Rechazaste la solicitud |
+| You withdrew a request | Du hast eine Anfrage zurückgezogen | Retiraste una solicitud |
+| You sent a reminder | Du hast erinnert | Enviaste un recordatorio |
+| Chat messages | Chat-Nachrichten | Mensajes del chat |
+| Get a notification when someone writes to you. | Erhalte eine Benachrichtigung, wenn dir jemand schreibt. | Recibe una notificación cuando alguien te escriba. |
+| Turn on payment notifications first. | Aktiviere zuerst die Zahlungsbenachrichtigungen. | Activa primero las notificaciones de pagos. |
 
 Plus: copy for the
 DM_ERROR codes the UI shows (WALLET_CANNOT_INVOICE, INVALID_INVOICE,
