@@ -16,7 +16,7 @@
  *    every reconnect would leak an SDK instance, duplicate its event stream,
  *    and open a second handle on the same IndexedDB database — which the SDK
  *    forbids. Multiple *different* wallets may be live at once (internal
- *    transfer connects both halves; kiosk can pin a non-active wallet); each
+ *    every Spark wallet stays connected; kiosk can pin a non-active wallet); each
  *    gets its own storage database.
  *
  *  - One SDK event listener per instance, fanned out to any number of

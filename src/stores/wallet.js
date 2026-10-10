@@ -1226,7 +1226,7 @@ export const useWalletStore = defineStore('wallet', {
 
           // Initialize auto-withdraw store
           const autoWithdrawStore = useAutoWithdrawStore();
-          await autoWithdrawStore.initialize();
+          await autoWithdrawStore.initialize({ wallets: this.wallets });
 
           // Auto-connect Spark wallets — detect if migration from PIN is needed
           if (this.sparkWallets.length > 0) {
@@ -1259,7 +1259,7 @@ export const useWalletStore = defineStore('wallet', {
               }
             }
           }
-          // Both Spark wallets are now owned by the app lifecycle, not by
+          // Every Spark wallet is owned by the app lifecycle, not by
           // whichever page or wallet is on screen (#292).
           if (this.sparkWallets.length > 0 && !(typeof window !== 'undefined' && window.__AUDIT__)) {
             sparkLifecycle?.()?.start();
@@ -3636,7 +3636,7 @@ export const useWalletStore = defineStore('wallet', {
         this.refreshWalletData(toWalletId)
       ]);
 
-      // Both Spark wallets stay connected after a transfer (#285).
+      // Every Spark wallet stays connected after a transfer (#285).
 
       // The source payment ID is already known: stamp it now so a direct
       // details link has its transfer identity without opening History first.

@@ -2578,10 +2578,6 @@ export default {
         || this.lnAddressRowState === 'unsetReady';
     },
 
-    activeSparkWalletName() {
-      return this.sparkWallet?.name || 'Spark Wallet';
-    },
-
     activeSparkBackedUp() {
       return this.sparkWallet?.metadata?.hasBackedUp ?? this.hasBackedUp;
     },

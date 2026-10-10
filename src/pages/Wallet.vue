@@ -2549,8 +2549,8 @@ export default {
 
       // Refresh every wallet's balance; each one pulses while its refresh
       // is under way, and a placeholder stands in for one never loaded.
-      // Spark wallets all stay connected (#285), so both halves of the pair
-      // refresh through the lifecycle; other wallets through the store.
+      // Spark wallets all stay connected (#285), so each refreshes through
+      // the lifecycle; other wallets through the store.
       const wallets = this.walletStore.wallets;
       const since = Date.now();
       for (const w of wallets) {

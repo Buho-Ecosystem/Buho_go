@@ -57,8 +57,8 @@ await page.addInitScript(({ key, seed }) => {
   localStorage.setItem('buhoGO_device_key', key);
   localStorage.setItem('buhoGO_wallet_store', JSON.stringify({
     wallets: [
-      { id: 'spark-personal-1', name: 'Personal', type: 'spark', balance: 0, metadata: { hasBackedUp: true, sparkAddress: 'spark1personaltestaddress' }, connectionData: { accountNumber: 2, walletGroupId: 'test', network: 'MAINNET', encryptedMnemonic: seed } },
-      { id: 'spark-business-1', name: 'Business', type: 'spark', balance: 0, metadata: { hasBackedUp: true, sparkAddress: 'spark1businesstestaddress' }, connectionData: { accountNumber: 1, walletGroupId: 'test', network: 'MAINNET', encryptedMnemonic: seed } },
+      { id: 'spark-personal-1', name: 'Personal', type: 'spark', balance: 0, metadata: { hasBackedUp: true, sparkAddress: 'spark1personaltestaddress' }, connectionData: { accountNumber: 2, network: 'MAINNET', encryptedMnemonic: seed } },
+      { id: 'spark-business-1', name: 'Business', type: 'spark', balance: 0, metadata: { hasBackedUp: true, sparkAddress: 'spark1businesstestaddress' }, connectionData: { accountNumber: 1, network: 'MAINNET', encryptedMnemonic: seed } },
     ],
     activeWalletId: 'spark-personal-1', preferredFiatCurrency: 'USD', defaultDisplayCurrency: 'sats', denominationCurrency: 'sats',
     exchangeRates: { USD: 95000 }, exchangeRatesAvailable: true, exchangeRatesLastUpdate: Date.now(), hasBackedUp: true, biometricsEnabled: false,

@@ -1255,9 +1255,9 @@ export default {
      * stall while the app is backgrounded.
      */
     async startSparkEventMonitor() {
-      // Bound to the invoice's own wallet and payment hash. With both Spark
-      // accounts live, "some receive on the active provider" is not proof:
-      // a payment to the other account, or an unrelated receive on this one,
+      // Bound to the invoice's own wallet and payment hash. With every Spark
+      // account live, "some receive on the active provider" is not proof:
+      // a payment to another account, or an unrelated receive on this one,
       // must never confirm the invoice on screen.
       const invoice = this.generatedInvoice;
       const walletId = invoice?.walletId || this.walletStore.activeWalletId;

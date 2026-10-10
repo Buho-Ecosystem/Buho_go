@@ -54,10 +54,6 @@ function fakeStore(wallets, activeWalletId) {
       store.log.push(`close:${id}`)
       delete store.providers[id]
     },
-    async _disconnectSparkProvider(id) {
-      store.log.push(`disconnect:${id}`)
-      delete store.providers[id]
-    },
     async connectAllSparkWallets() {
       store.log.push('restore')
       for (const w of wallets) {
