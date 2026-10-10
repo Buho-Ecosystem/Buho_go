@@ -188,14 +188,23 @@ export default {
 }
 .chat-header__sub {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 4px;
   min-width: 0;
   font-size: 0.75rem;
   line-height: 1.3;
   color: var(--text-muted);
 }
-.chat-header__sub > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chat-header__sub > svg { flex: 0 0 auto; margin-top: 0.2em; }
+/* Wraps to two lines at large text sizes; the name stays on one line. */
+.chat-header__sub > span {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
 .chat-header__sub--secure { color: var(--brand-accent-text); }
 .chat-header__sub--danger { color: var(--chat-danger); font-weight: 650; }
 

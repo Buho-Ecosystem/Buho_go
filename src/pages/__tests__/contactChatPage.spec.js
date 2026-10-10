@@ -104,16 +104,19 @@ function fakeChat(extra = {}) {
   }
 }
 
-function pageOf({ route = { params: { id: 'addr-1' } }, available = true, scope = ME, bookReady = true, chat = fakeChat(), muted = false, wallets = [] } = {}) {
+function pageOf({ route = { params: { id: 'addr-1' } }, available = true, scope = ME, bookReady = true, chat = fakeChat(), muted = false, wallets = [], isBlocked = false } = {}) {
   const notices = []
   const replaced = []
   const pushed = []
   const blocked = []
+  const unblocked = []
   const muteCalls = []
   const store = {
     scope,
     thread: () => ({ muted }),
     block: (key) => blocked.push(key),
+    unblock: (key) => unblocked.push(key),
+    isBlocked: () => isBlocked,
     mute: (key, value) => muteCalls.push([key, value]),
   }
   const addressBook = {
@@ -149,7 +152,7 @@ function pageOf({ route = { params: { id: 'addr-1' } }, available = true, scope 
   for (const [name, getter] of Object.entries(page.computed)) {
     Object.defineProperty(vm, name, { get: () => getter.call(vm), configurable: true })
   }
-  return { vm, notices, replaced, pushed, blocked, muteCalls, store, chat }
+  return { vm, notices, replaced, pushed, blocked, unblocked, muteCalls, store, chat }
 }
 
 const flush = () => new Promise((resolve) => setImmediate(resolve))
@@ -439,6 +442,32 @@ test('block: needs the confirmation; confirming blocks the partner and leaves th
   } finally {
     globalThis.window = previous
   }
+})
+
+test('unblock: lifts the block, stays in the chat and says so', () => {
+  const { vm, unblocked, pushed, notices } = pageOf({ isBlocked: true })
+  assert.equal(vm.blocked, true)
+  vm.unblock()
+  assert.deepEqual(unblocked, [ANNA])
+  assert.deepEqual(pushed, [])
+  assert.equal(notices[0].message, 'Unblocked Anna')
+  assert.equal(pageOf().vm.blocked, false)
+})
+
+test('markup: a blocked partner shows the notice with Unblock instead of the money bar; the menu offers Unblock', async () => {
+  const blocked = await markupOf({ isBlocked: true })
+  assert.match(blocked, /class="chat-blocked" role="status"/)
+  assert.match(blocked, /You blocked Anna\./)
+  assert.match(blocked, /chat-blocked__action[^>]*>Unblock</)
+  assert.doesNotMatch(blocked, /stub-MoneyBar/)
+  const bans = (html) => html.split('data-icon="tabler:ban"').length - 1
+  assert.match(blocked, /data-icon="tabler:circle-check"[^>]*><\/i><\/div><div>Unblock</)
+  assert.equal(bans(blocked), 1, 'only the confirm dialog keeps the ban icon: the menu offers no Block')
+  const open = await markupOf()
+  assert.match(open, /stub-MoneyBar/)
+  assert.doesNotMatch(open, /chat-blocked/)
+  assert.equal(bans(open), 2, 'menu Block item plus the confirm dialog')
+  assert.doesNotMatch(open, /data-icon="tabler:circle-check"/)
 })
 
 test('add contact: opens the existing add flow; saving closes it', () => {

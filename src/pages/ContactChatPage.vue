@@ -90,7 +90,13 @@
             <q-item-section>{{ muted ? $t('Unmute') : $t('Mute') }}</q-item-section>
           </q-item>
           <q-separator />
-          <q-item v-close-popup clickable @click="blockOpen = true">
+          <q-item v-if="blocked" v-close-popup clickable @click="unblock">
+            <q-item-section avatar class="chat-menu__icon">
+              <Icon icon="tabler:circle-check" width="18" height="18" />
+            </q-item-section>
+            <q-item-section>{{ $t('Unblock') }}</q-item-section>
+          </q-item>
+          <q-item v-else v-close-popup clickable @click="blockOpen = true">
             <q-item-section avatar class="chat-menu__icon chat-menu__icon--danger">
               <Icon icon="tabler:ban" width="18" height="18" />
             </q-item-section>
@@ -131,7 +137,12 @@
         </template>
       </ChatThread>
 
+      <div v-if="blocked" class="chat-blocked" role="status">
+        <span class="chat-blocked__text">{{ $t('You blocked {name}.', { name: displayName }) }}</span>
+        <button type="button" class="chat-blocked__action" @click="unblock">{{ $t('Unblock') }}</button>
+      </div>
       <MoneyBar
+        v-else
         v-model="mode"
         :can-message="!paymentsOnly"
         :send-disabled="unknown"
@@ -382,6 +393,9 @@ export default {
     },
     bip177() {
       return this.walletStore.useBip177Format !== false
+    },
+    blocked() {
+      return this.partnerKey ? this.store.isBlocked(this.partnerKey) : false
     },
     muted() {
       return this.partnerKey ? this.store.thread(this.partnerKey).muted : false
@@ -686,6 +700,12 @@ export default {
       this.goBack()
     },
 
+    unblock() {
+      if (!this.partnerKey) return
+      this.store.unblock(this.partnerKey)
+      this.toast(this.t('Unblocked {name}', { name: this.displayName }))
+    },
+
     addContact() {
       this.addOpen = true
     },
@@ -860,6 +880,33 @@ function shortNpubOf(pubkey) {
 }
 .chat-dialog__primary { background: var(--chat-pay-bg); color: var(--chat-pay-fg); }
 .chat-dialog__danger { background: var(--chat-danger); color: #fff; }
+.chat-blocked {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0.5rem 1rem max(0.5rem, var(--safe-bottom, 0px));
+  border-top: 1px solid var(--border-card);
+  background: var(--bg-primary);
+  font-family: 'Manrope', sans-serif;
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+}
+.chat-blocked__text { min-width: 0; overflow-wrap: anywhere; }
+.chat-blocked__action {
+  flex: 0 0 auto;
+  min-height: 44px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 22px;
+  background: transparent;
+  color: var(--brand-accent-text);
+  font-family: inherit;
+  font-size: 0.9375rem;
+  font-weight: 750;
+  cursor: pointer;
+}
+.chat-blocked__action:focus-visible { outline: 2px solid var(--chat-focus); outline-offset: 2px; }
 .chat-dialog__quiet { background: transparent; color: var(--text-secondary); }
 .chat-dialog__primary:focus-visible,
 .chat-dialog__danger:focus-visible,

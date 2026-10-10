@@ -238,7 +238,7 @@ test('bubble: incoming and outgoing sit on their own side', async () => {
 })
 
 test('bubble: honest delivery states, and no "delivered" or "read"', async () => {
-  const states = { queued: 'Waiting to send', sending: 'Sending', sent: 'Sent', failed: 'Not sent' }
+  const states = { queued: 'Waiting to send', sending: 'Sending…', sent: 'Sent', failed: 'Not sent' }
   for (const [delivery, text] of Object.entries(states)) {
     const html = await render(MessageBubble, { text: 'Hi', outgoing: true, delivery })
     assert.match(html, new RegExp(`bubble__delivery--${delivery}[^>]*role="status"`), delivery)
@@ -278,6 +278,19 @@ test('bubble: reply quote, reactions as pressed-state buttons, a spoken label', 
   assert.match(html, /bubble__reaction-count[^>]*>2</)
   assert.match(html, /role="button"[^>]*aria-label="Them: Reply to You: Sounds good. Perfect"/)
   assert.match(await render(MessageBubble, { text: 'Hi', outgoing: true }), /aria-label="You: Hi"/)
+})
+
+test('bubble: the spoken reaction label is singular for one, plural otherwise', () => {
+  const label = (count) => MessageBubble.methods.reactionLabel.call({ $t: t }, { emoji: '👍', count })
+  assert.equal(label(1), '👍 1 reaction')
+  assert.equal(label(2), '👍 2 reactions')
+  assert.equal(label(undefined), '👍 1 reaction')
+})
+
+test('header: the second line may wrap to two lines, the name stays on one', () => {
+  const css = read('ChatHeader.vue')
+  assert.match(css, /\.chat-header__sub > span \{[^}]*-webkit-line-clamp: 2/)
+  assert.match(css, /\.chat-header__name \{[^}]*white-space: nowrap/)
 })
 
 test('bubble: strangers get no reactions, but may see existing ones', async () => {

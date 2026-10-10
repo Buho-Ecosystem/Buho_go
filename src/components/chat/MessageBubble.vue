@@ -148,7 +148,7 @@ export default {
     deliveryText() {
       return {
         queued: this.$t('Waiting to send'),
-        sending: this.$t('Sending'),
+        sending: this.$t('Sending…'),
         sent: this.$t('Sent'),
         failed: this.$t('Not sent')
       }[this.delivery] || this.$t('Sent')
@@ -170,7 +170,9 @@ export default {
       this.menuOpen = true
     },
     reactionLabel(reaction) {
-      return this.$t('{emoji} {count} reactions', { emoji: reaction.emoji, count: reaction.count || 1 })
+      // Two keys rather than a plural rule: legacy-mode vue-i18n, no pipe plurals in this app.
+      const count = reaction.count || 1
+      return this.$t(count === 1 ? '{emoji} {count} reaction' : '{emoji} {count} reactions', { emoji: reaction.emoji, count })
     },
 
     // Touch and pen: a long press. A mouse uses the contextmenu event instead,
