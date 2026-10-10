@@ -143,7 +143,6 @@ export default {
   "Paste": "Pegar",
   "Use this address": "Usar esta dirección",
   "Not a Bitcoin address": "No es una dirección de Bitcoin",
-  "This is the wallet's own deposit address. It would send the money back into Spark.": "Esta es la dirección de depósito de la propia billetera. Devolvería el dinero a Spark.",
   "This address belongs to another network.": "Esta dirección pertenece a otra red.",
   "Spark is not responding": "Spark no responde",
   "Your money is still yours. You can wait, or move it to plain Bitcoin on your own.": "Tu dinero sigue siendo tuyo. Puedes esperar o moverlo a Bitcoin normal por tu cuenta.",
@@ -158,4 +157,8 @@ export default {
   "{hours} hours": "{hours} horas",
   "1 day": "1 día",
   "{days} days": "{days} días",
+  "This is a Spark deposit address. It would send the money back into Spark.": "Esta es una dirección de depósito de Spark. Devolvería el dinero a Spark.",
+  "This address holds fee money for an emergency exit. Choose another address.": "Esta dirección guarda el dinero para comisiones de una salida de emergencia. Elige otra dirección.",
+  "{amount} sats of fee money from an earlier exit are at {address}. That address now pays for the emergency exit of {wallet}, and any Bitcoin wallet restoring your recovery words finds the money.": "{amount} sats de dinero para comisiones de una salida anterior están en {address}. Esa dirección ahora paga la salida de emergencia de {wallet}, y cualquier billetera Bitcoin que restaure tus palabras de recuperación encuentra el dinero.",
+  "{amount} sats of fee money from an earlier exit are at {address}. Any Bitcoin wallet restoring your recovery words finds the money.": "{amount} sats de dinero para comisiones de una salida anterior están en {address}. Cualquier billetera Bitcoin que restaure tus palabras de recuperación encuentra el dinero.",
 };

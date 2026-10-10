@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { createExitDriver, ExitError } from '../emergencyExit.js';
 import { isActive } from '../../utils/exitLedger.js';
+import { deriveExitAddresses, deriveAllFundingAddresses, exitKeyPath } from '../../utils/exitKeys.js';
 
 const MNEMONIC = 'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about';
 const DESTINATION = 'bc1qcr8te4kr609gcawutmrza0j4xv80jy8z306fyu';
@@ -14,7 +15,7 @@ const CHAIN = [
   { kind: 'sweep', txid: 'S', txHex: 's', dependsOn: ['R'], status: 'unconfirmed' },
 ];
 
-function harness({ recoverable = 89700, fundingSat = 8500 } = {}) {
+function harness({ recoverable = 89700, fundingSat = 8500, wallets = { w1: { id: 'w1', name: 'Personal', connectionData: { network: 'MAINNET' } } }, deposits = [] } = {}) {
   const chain = { tip: 1000, statuses: {}, utxos: [], broadcasts: [], fees: { medium: 4, slow: 2 } };
   const provider = {
     isConnected: true, calls: { prepare: [], build: [] },
@@ -39,9 +40,10 @@ function harness({ recoverable = 89700, fundingSat = 8500 } = {}) {
   let clock = 1_700_000_000_000;
   const signers = [];
   const driver = createExitDriver({
-    getWallet: id => (id === 'w1' ? { id: 'w1', name: 'Personal', connectionData: { network: 'MAINNET' } } : null),
-    getProvider: id => (id === 'w1' ? provider : null),
+    getWallet: id => wallets[id] || null,
+    getProvider: id => (wallets[id] ? provider : null),
     getMnemonic: async () => MNEMONIC,
+    getDepositAddresses: () => deposits,
     ledger, esplora, reminders,
     createSigner: async key => { signers.push(key); return { signPsbt: async b => b }; },
     now: () => clock,
@@ -207,4 +209,76 @@ test('the wallet\'s own deposit address is refused as a destination', async () =
   const deposit = 'bc1p5cyxnuxmeuwuvkwfem96lqzszd02n6xdcjrs20cac6yqjjwudpxqkedrcr';
   await assert.rejects(() => h.driver.start('w1', { destination: deposit, excluded: [deposit] }), error => error.code === 'DESTINATION_SPARK_DEPOSIT');
   assert.equal(h.ledger.exitFor('w1'), null);
+});
+
+const twoWallets = () => ({
+  w1: { id: 'w1', name: 'Shop', connectionData: { network: 'MAINNET', accountNumber: 1 } },
+  w2: { id: 'w2', name: 'Savings', connectionData: { network: 'MAINNET', accountNumber: 2 } },
+});
+
+test('two wallets on one phrase exit with separate fee money and destinations', async () => {
+  const h = harness({ wallets: twoWallets() });
+  const first = await h.driver.start('w1');
+  const second = await h.driver.start('w2');
+  assert.equal(first.funding.address, FUNDING, 'account 1 keeps the original fee money address');
+  assert.equal(first.destination.address, DESTINATION);
+  assert.equal(second.funding.address, deriveExitAddresses(MNEMONIC, { accountNumber: 2 }).funding.address);
+  assert.equal(second.funding.path, exitKeyPath('mainnet', 3));
+  assert.notEqual(second.funding.address, first.funding.address);
+  assert.notEqual(second.destination.address, first.destination.address);
+});
+
+test('no exit pays into fee money or into any Spark wallet\'s deposit address', async () => {
+  const deposit = 'bc1p5cyxnuxmeuwuvkwfem96lqzszd02n6xdcjrs20cac6yqjjwudpxqkedrcr';
+  const h = harness({ wallets: twoWallets(), deposits: [deposit] });
+  const siblingFee = deriveExitAddresses(MNEMONIC, { accountNumber: 2 }).funding.address;
+  await assert.rejects(() => h.driver.start('w1', { destination: siblingFee }), error => error.code === 'DESTINATION_EXIT_FUNDING');
+  await assert.rejects(() => h.driver.start('w1', { destination: deposit }), error => error.code === 'DESTINATION_SPARK_DEPOSIT');
+  assert.equal(h.ledger.exitFor('w1'), null);
+  await h.driver.start('w1');
+  await assert.rejects(() => h.driver.setDestination('w1', FUNDING), error => error.code === 'DESTINATION_EXIT_FUNDING');
+  for (const address of deriveAllFundingAddresses(MNEMONIC)) {
+    assert.deepEqual(await h.driver.checkDestination('w2', address), { ok: false, reason: 'exit_funding' });
+  }
+  assert.equal((await h.driver.checkDestination('w2', DESTINATION)).ok, true);
+});
+
+test('an exit started under the shared layout still signs with the key it recorded', async () => {
+  const h = harness({ wallets: twoWallets() });
+  await h.driver.start('w2');
+  // What an account-2 exit looked like before per-account keys.
+  const legacy = deriveExitAddresses(MNEMONIC, { accountNumber: 1 }).funding;
+  h.exits.w2 = { ...h.exits.w2, funding: { ...h.exits.w2.funding, address: legacy.address, path: legacy.path, publicKeyHex: legacy.publicKeyHex } };
+  h.chain.utxos = [{ txid: 'fee', vout: 0, value: 9000, confirmed: true }];
+  await h.driver.tick('w2');
+  const exit = await h.driver.confirmSend('w2');
+  assert.equal(exit.stage, 'send');
+  assert.equal(h.signers.length, 1);
+  assert.equal(h.provider.calls.build[0].fundingInputs[0].pubkey, legacy.publicKeyHex);
+
+  // A record from before paths were stored signs on the original index.
+  const older = harness();
+  await older.driver.start('w1');
+  delete older.exits.w1.funding.path;
+  older.chain.utxos = [{ txid: 'fee', vout: 0, value: 9000, confirmed: true }];
+  await older.driver.tick('w1');
+  assert.equal((await older.driver.confirmSend('w1')).stage, 'send');
+});
+
+test('a damaged fee money path never reaches a signer', async () => {
+  const h = harness();
+  await h.driver.start('w1');
+  h.exits.w1.funding.path = "m/84'/0'/0'/0/0";
+  h.chain.utxos = [{ txid: 'fee', vout: 0, value: 9000, confirmed: true }];
+  await h.driver.tick('w1');
+  await assert.rejects(() => h.driver.confirmSend('w1'), /Unknown fee money path/);
+  assert.equal(h.signers.length, 0);
+  assert.equal(h.ledger.exitFor('w1').stage, 'ready', 'nothing was signed or sent');
+});
+
+test('fee money left at an earlier address is summed for the exit screen', async () => {
+  const h = harness();
+  h.chain.utxos = [{ txid: 'a', vout: 0, value: 4000, confirmed: true }, { txid: 'b', vout: 1, value: 600, confirmed: false }];
+  assert.equal(await h.driver.legacyFundingSat('w1', FUNDING), 4600);
+  assert.equal(await h.driver.legacyFundingSat('w1', null), 0);
 });
