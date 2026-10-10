@@ -108,6 +108,12 @@
           <span>{{ $t('Last backup:') }} {{ formatDate(store.newestBackupAt) }}</span>
         </div>
 
+        <!-- Only when the backup no longer matches this phone: what happened, and the one action. -->
+        <div v-if="staleNote" class="cb-callout cb-callout--warn" role="status">
+          <Icon icon="tabler:alert-triangle" width="18" height="18" class="cb-callout-icon" />
+          <div class="cb-callout-text">{{ staleNote }}</div>
+        </div>
+
         <button
           class="cb-menu-row"
           :class="$q.dark.isActive ? 'cb-menu-row-dark' : 'cb-menu-row-light'"
@@ -294,6 +300,19 @@ export default {
 
     busy() {
       return this.store.isAuthing || this.store.isBackingUp || this.store.isRestoring || this.store.isListing;
+    },
+
+    /**
+     * Why the Drive copy may not match this phone. Silent uploads keep it
+     * current after wallet changes; this explains the cases they skip.
+     */
+    staleNote() {
+      if (!this.store.hasRemoteBackup) return '';
+      switch (this.store.autoBackupBlocked) {
+        case 'remote_newer': return this.$t('The backup on Drive was made on another phone. Back up again to replace it with the wallets on this phone.');
+        case 'restore_incomplete': return this.$t('Some wallets from this backup could not be restored here. Back up again only once you no longer need them in the backup.');
+        default: return this.store.backupOutOfDate ? this.$t('Your wallets changed after this backup. Back up again to include the changes.') : '';
+      }
     },
 
     canGoBack() {

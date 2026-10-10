@@ -240,6 +240,27 @@ test('a rename is validated, saved at once, and rolled back when it cannot be sa
   assert.equal(first.name, 'EVERYDAY');
 });
 
+test('every change to the wallet list asks the Drive backup to refresh', async () => {
+  const h = createHarness({ evidence: { 3: used() } });
+  const notes = () => h.calls.backupNotes;
+  await h.store.createSparkWallet({ mnemonic: PHRASE });
+  await tick();
+  assert.equal(notes(), 1, 'create');
+  const savings = await h.store.addSparkWallet({ name: 'Savings' });
+  await tick();
+  assert.equal(notes(), 2, 'add');
+  await h.store.updateWalletName(savings.id, 'Rainy day');
+  await tick();
+  assert.equal(notes(), 3, 'rename');
+  await h.store.restoreSparkWallets({ mnemonic: PHRASE });
+  await h.store.discoverSparkAccounts();
+  await tick();
+  assert.equal(notes(), 4, 'a wallet found by discovery');
+  await h.store.removeWallet(savings.id);
+  await tick();
+  assert.equal(notes(), 5, 'remove');
+});
+
 // ---- Migration of saved installs ------------------------------------------
 
 async function startWith(wallets, extra = {}) {

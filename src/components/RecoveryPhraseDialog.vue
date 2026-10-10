@@ -106,10 +106,14 @@ const heading = ref(null);
 const body = ref(null);
 const isIdentity = computed(() => props.kind === 'identity');
 const title = computed(() => t(isIdentity.value ? 'wosBackup.identityTitle' : 'wosBackup.walletTitle'));
+const sparkNames = computed(() => walletBackupGroups(wallet.wallets, wallet.hasBackedUp).find(group => group.type === 'spark')?.names || []);
+// One phrase covers every Spark wallet, so with several the count stands in for a list of names.
 const detail = computed(() => isIdentity.value ? t('Identity')
-  : target.value?.type === 'spark' ? `${walletBackupGroups(wallet.wallets, wallet.hasBackedUp).find(group => group.type === 'spark')?.names.join(' · ') || t('Wallet')} · Spark`
+  : target.value?.type === 'spark'
+    ? (sparkNames.value.length > 1 ? t('{count} Spark wallets', { count: sparkNames.value.length }) : `${sparkNames.value[0] || t('Wallet')} · Spark`)
     : `${target.value?.name || t('Wallet')} · Arkade`);
-const paperLabel = computed(() => `BuhoGO · ${detail.value}`);
+// What gets written next to the words: it must stay true when wallets are added or renamed later.
+const paperLabel = computed(() => (target.value?.type === 'spark' && !isIdentity.value ? 'BuhoGO · Spark' : `BuhoGO · ${detail.value}`));
 
 const flow = useRecoveryPhraseFlow({
   async authorize() {

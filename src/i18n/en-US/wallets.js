@@ -23,4 +23,9 @@ export default {
   "Its balance could not be checked right now. Any money in it stays with your recovery phrase.": "Its balance could not be checked right now. Any money in it stays with your recovery phrase.",
   "Remove {name}?": "Remove {name}?",
   "It disappears from this phone. Your recovery phrase still covers it, so it can come back when you add wallets again.": "It disappears from this phone. Your recovery phrase still covers it, so it can come back when you add wallets again.",
+  "Covers all {count} Spark wallets": "Covers all {count} Spark wallets",
+  "{count} Spark wallets": "{count} Spark wallets",
+  "The backup on Drive was made on another phone. Back up again to replace it with the wallets on this phone.": "The backup on Drive was made on another phone. Back up again to replace it with the wallets on this phone.",
+  "Some wallets from this backup could not be restored here. Back up again only once you no longer need them in the backup.": "Some wallets from this backup could not be restored here. Back up again only once you no longer need them in the backup.",
+  "Your wallets changed after this backup. Back up again to include the changes.": "Your wallets changed after this backup. Back up again to include the changes.",
 };

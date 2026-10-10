@@ -1346,6 +1346,7 @@ export const useWalletStore = defineStore('wallet', {
         onProgress('done');
         await this.persistState();
         this._startSparkLifecycle(wallet.id);
+        this._noteWalletsChanged();
         return wallet;
       });
     },
@@ -1417,6 +1418,7 @@ export const useWalletStore = defineStore('wallet', {
         return { wallet: landing, added, merged: false };
       });
       // After the setup lock is released: discovery takes it per wallet it adds.
+      if (result.added.length) this._noteWalletsChanged();
       this._resumeSparkDiscovery();
       return result;
     },
@@ -1445,6 +1447,7 @@ export const useWalletStore = defineStore('wallet', {
         this._forgetQueuedSparkAccount(sparkAccountNumberOf(wallet));
         await this.persistState();
         this._startSparkLifecycle(wallet.id);
+        this._noteWalletsChanged();
         await this.switchActiveWallet(wallet.id);
         return wallet;
       });
@@ -1540,6 +1543,17 @@ export const useWalletStore = defineStore('wallet', {
       if (!lifecycle) return;
       lifecycle.start();
       lifecycle.reconcile(walletId, 'start');
+    },
+
+    /**
+     * Wallets were added, removed, renamed or restored: the Drive backup may
+     * need refreshing (stores/cloudBackup.js decides). Loaded lazily so the
+     * wallet store keeps no static dependency on the backup store.
+     */
+    _noteWalletsChanged() {
+      import('./cloudBackup.js')
+        .then(({ useCloudBackupStore }) => useCloudBackupStore().noteWalletsChanged())
+        .catch((error) => console.warn('[wallet] backup refresh not scheduled:', error?.message || error));
     },
 
     /** The network every Spark wallet on this device uses. */
@@ -1661,7 +1675,10 @@ export const useWalletStore = defineStore('wallet', {
           ? { ...plan, pending: unresolved, attempts }
           : null;
         await this.persistState();
-        if (added.length) this.sparkDiscoveryFound = { count: added.length, at: Date.now() };
+        if (added.length) {
+          this.sparkDiscoveryFound = { count: added.length, at: Date.now() };
+          this._noteWalletsChanged();
+        }
         return added;
       } finally {
         this.sparkDiscoveryRunning = false;
@@ -2039,6 +2056,7 @@ export const useWalletStore = defineStore('wallet', {
 
         onProgress('done');
         await this.persistState();
+        this._noteWalletsChanged();
         return wallet;
       } catch (error) {
         // Atomic rollback — never leave a half-added Arkade wallet in memory or
@@ -2297,6 +2315,7 @@ export const useWalletStore = defineStore('wallet', {
         wallet.isActive = true;
 
         await this.persistState();
+        this._noteWalletsChanged();
         return wallet;
       } catch (error) {
         this.lastError = error.message;
@@ -2388,6 +2407,7 @@ export const useWalletStore = defineStore('wallet', {
         await this.connectLNBitsWallet(wallet.id);
 
         await this.persistState();
+        this._noteWalletsChanged();
         return wallet;
       } catch (error) {
         this.lastError = error.message;
@@ -2616,6 +2636,7 @@ export const useWalletStore = defineStore('wallet', {
 
       this._walletRemovalInProgress = true;
       await this.persistState();
+      this._noteWalletsChanged();
 
       // A profile pointing at a removed address falls back to the next
       // default (oldest remaining Spark wallet, then the bucket).
@@ -2918,6 +2939,7 @@ export const useWalletStore = defineStore('wallet', {
         wallet.name = previous;
         throw error;
       }
+      this._noteWalletsChanged();
     },
 
     /**

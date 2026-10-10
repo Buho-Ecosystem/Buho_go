@@ -10,6 +10,8 @@
         <span class="backup-choice-copy">
           <strong>{{ $t(choice.kind === 'wallet' ? 'Bitcoin Backup' : 'Identity backup') }}</strong>
           <WalletTypeChip v-if="choice.kind === 'wallet'" :type="choice.type" />
+          <!-- One phrase restores every Spark wallet: say so once there is more than one. -->
+          <span v-if="choice.kind === 'wallet' && choice.covers > 1" class="backup-choice-detail">{{ $t('Covers all {count} Spark wallets', { count: choice.covers }) }}</span>
           <span v-else class="backup-choice-detail">{{ choice.detail }}</span>
           <span class="backup-choice-state" :class="{ 'is-saved': choice.saved }">
             <Icon v-if="choice.saved" icon="tabler:check" width="14" height="14" aria-hidden="true" />
@@ -82,7 +84,7 @@ const { proxy } = getCurrentInstance();
 const t = (key, params) => proxy.$t(key, params);
 const kits = useExitKitStore();
 const sparkWallets = computed(() => wallet.wallets.filter(w => w.type === WALLET_TYPES.SPARK));
-// One line for the pair: the weakest kit decides what it says.
+// One line for all Spark wallets: the weakest kit decides what it says.
 const kitLine = computed(() => {
   const metas = sparkWallets.value.map(w => kits.kitFor(w.id));
   if (!metas.length) return null;
@@ -97,7 +99,7 @@ const kitLine = computed(() => {
 const choices = computed(() => [
   ...groups.value.map(group => ({
     key: group.key, kind: 'wallet', type: group.type, walletId: group.walletId, saved: group.saved,
-    mode: group.saved ? 'view' : 'backup',
+    mode: group.saved ? 'view' : 'backup', covers: group.type === 'spark' ? group.names.length : 1,
   })),
   ...(identity.bootstrapped ? [{
     key: 'identity', kind: 'identity', saved: identity.backupConfirmed,

@@ -46,7 +46,7 @@ export const decrypt = async (envelope) => {
 export function createHarness({ evidence = {}, connect = null, storage = {}, exits = {} } = {}) {
   const local = memoryStorage(storage);
   globalThis.localStorage = local;
-  const calls = { probes: [], deletedStorage: [], reconciled: [], removedConfigs: [], kitsRemoved: [], preserved: [] };
+  const calls = { probes: [], deletedStorage: [], reconciled: [], removedConfigs: [], kitsRemoved: [], preserved: [], backupNotes: 0 };
   const balances = {};
 
   const createWalletProvider = (wallet) => ({
@@ -101,6 +101,7 @@ export function createHarness({ evidence = {}, connect = null, storage = {}, exi
     '../boot/i18n': { i18n: { global: { t: (key, values = {}) => key.replace(/\{(\w+)\}/g, (_, name) => values[name] ?? name) } } },
     '../utils/claimedDeposits.js': { createClaimedDepositRegistry: () => ({ has: () => false, add() {} }) },
     '../utils/txCache.js': { clearCachedTransactions: () => {} },
+    './cloudBackup.js': { useCloudBackupStore: () => ({ noteWalletsChanged: () => { calls.backupNotes += 1; } }) },
   };
 
   const source = readFileSync(new URL('../wallet.js', import.meta.url), 'utf8');
