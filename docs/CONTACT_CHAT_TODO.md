@@ -4,7 +4,7 @@ Working list for `feat/contact-chat`. The contract is `docs/CONTACT_CHAT.md`;
 this file only tracks what is still to do. Update it with every commit that
 closes or adds an item.
 
-Last update: 2026-10-11.
+Last update: 2026-10-11 (after a03f696).
 
 ## Done (committed on this branch)
 
@@ -23,6 +23,11 @@ Last update: 2026-10-11.
 | ae3b120 | Request invoices and payment detection for all four wallet types |
 | b339bea | Inbox coordinator (receive, send, outbox, own 10050 list) |
 | 8488c75 | Chat runtime + boot lifecycle (`useChatRuntime()`, `boot/dm-inbox.js`, `utils/appLock.js`) |
+| cbeca21 | Chat screen components |
+| 5626a3a | Contact chat page, pay seam (`payment:sent`), routes |
+| 76a4a04 | Entry points: address book, menu badge, identity Messages sheet, Settings switch |
+| 1090ebf | Requests paid from the chat appear under "Between you" |
+| a03f696 | Translations en/de/es |
 
 ## Open
 
@@ -57,7 +62,12 @@ Product rule: the pay-request card/sheet has **no** "amount in invoice" row.
 - IdentityHomePage: "Messages" row + sheet (thread list).
 - Settings → notifications: messages switch (`setMessagesEnabled`).
 
-### 4. i18n (en-US, de, es) — add all keys in one pass
+### 4. i18n (en-US, de, es) — DONE (a03f696)
+Existing translations kept where a key already existed; check in the app:
+de "Sending" = "Senden" (reads like the verb in the delivery state),
+de "Pay" = "Bezahlen", es "Expired" = "Vencida".
+
+Keys as added:
 Collected so far (literal `@` must be written `{'@'}`):
 
 | en-US | de | es |
@@ -210,7 +220,7 @@ requests settle in the Spark wallet behind the profile address),
 "unconfirmed" (foreign address without LUD-21 verify).
 Remove the now-unused key "Payments you made to this contact." (en-US/de/es).
 
-### 5. QA
+### 5. QA — full test run = baseline (2026-10-11), `quasar build` OK; e2e script in progress
 - Playwright script `scripts/check-contact-chat.mjs`: simulated relays, all
   four wallet types, light/dark, de/en/es, large text.
 - Full `npm test` against the baseline (known pre-existing failures on main:
@@ -220,9 +230,6 @@ Remove the now-unused key "Payments you made to this contact." (en-US/de/es).
 - Production build (`quasar build`) and an Android device run.
 
 ### 6. Known limitations / follow-ups
-- A request paid from the chat is not linked to the contact in
-  `transactionMetadata` (invoice has no address), so it is missing under
-  "Between you" — fix in progress.
 - A Spark send still pending after 60 s is not announced in the chat.
 - Unknown-sender banner has no lookalike warning (needs a kind 0 fetch).
 - No unblock UI yet (block only from the chat menu).
