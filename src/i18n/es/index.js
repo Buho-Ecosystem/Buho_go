@@ -2,6 +2,7 @@ import profilePayment from './profilePayment.js';
 import addressRequest from './addressRequest.js';
 import backup from './backup.js';
 import exit from './exit.js';
+import wallets from './wallets.js';
 export default {
   ...profilePayment,
   "Charge card": "Cobrar a la tarjeta",
@@ -46,6 +47,7 @@ export default {
   "This request cannot be redeemed in whole sats. Ask the service for a new one.": "Esta solicitud no se puede canjear en sats enteros. Pide una nueva al servicio.",
   ...backup,
   ...exit,
+  ...wallets,
   // Spend: Bitrefill door
   "Gift cards, mobile top-ups and more": "Tarjetas regalo, recargas móviles y más",
   "Bitrefill is on its way": "Bitrefill está en camino",
@@ -675,8 +677,6 @@ export default {
   "One or more words don't add up. Please double-check each word, including the last one, and try again.": "Una o más palabras no cuadran. Revisa bien cada palabra, incluida la última, e inténtalo de nuevo.",
   "Word {n} doesn't match the official recovery word list. Check the spelling and try again.": "La palabra {n} no coincide con la lista oficial de palabras de recuperación. Comprueba la ortografía e inténtalo de nuevo.",
   "Words {n} don't match the official recovery word list. Check the spelling and try again.": "Las palabras {n} no coinciden con la lista oficial de palabras de recuperación. Comprueba la ortografía e inténtalo de nuevo.",
-  "Your Spark wallets are already set up": "Tus carteras Spark ya están configuradas",
-  "Your Business and Personal Spark wallets are already on this device. Remove them from Settings before restoring a different recovery phrase.": "Tus carteras Spark de Negocio y Personal ya están en este dispositivo. Elimínalas desde Ajustes antes de restaurar una frase de recuperación distinta.",
   // Relative time
   "just now": "justo ahora",
   "min ago": "hace 1 min",
@@ -1985,11 +1985,8 @@ export default {
   "Restoring Spark Wallet": "Restaurando cartera Spark",
   "Step": "Paso",
   "Enter your 12-word seed phrase to restore your Spark wallet. This is only for Spark wallets.": "Ingresa tus 12 palabras de recuperación para restaurar tu cartera Spark. Solo para carteras Spark.",
-  "Checking for an existing wallet...": "Buscando una cartera existente...",
   "Creating Your Wallet": "Creando tu cartera",
   "Encrypting wallet...": "Cifrando cartera...",
-  "Setting up Business wallet...": "Configurando Cartera de Negocio...",
-  "Setting up Personal wallet...": "Configurando Cartera Personal...",
   "Almost done...": "Casi listo...",
   "Wallet created!": "¡Cartera creada!",
   "We couldn't restore your wallet": "No pudimos restaurar tu cartera",

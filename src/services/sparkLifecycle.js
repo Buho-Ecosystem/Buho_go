@@ -3,8 +3,8 @@
  *
  * Synchronization used to belong to whichever page was mounted (the home
  * screen's 30 s tick, the Receive sheet's invoice watcher) and to whichever
- * wallet was selected. A wallet on another page, the unselected half of the
- * Business/Personal pair, or any wallet after a background/network blip
+ * wallet was selected. A wallet on another page, any Spark wallet that is
+ * not on screen, or any wallet after a background/network blip
  * waited for a page timer — and a provider could stay "connected" while its
  * stream was dead. This coordinator owns, per Spark wallet:
  *

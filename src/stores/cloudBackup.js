@@ -421,23 +421,21 @@ export const useCloudBackupStore = defineStore('cloudBackup', {
         }
       }
 
-      // Seed-based wallets next. addSparkWallet(isRestore) probes the
-      // legacy account-0 derivation itself, so restored pre-v1.6.0 funds
-      // stay reachable.
+      // Seed-based wallets next. The Spark restore brings back the first
+      // wallet now and finds the phrase's other accounts in the background;
+      // on a device that already holds this phrase it only adds what is
+      // missing, and a different phrase is left alone.
       if (payload.spark?.mnemonic) {
-        if (wallet.hasAnySparkWallet) {
-          skipped.push('spark');
-        } else {
-          try {
-            await wallet.addSparkWallet({
-              mnemonic: payload.spark.mnemonic,
-              network: payload.spark.network || 'MAINNET',
-              isRestore: true,
-            });
-            restored.push('spark');
-          } catch (err) {
-            failed.push({ label: 'spark', reason: err?.message || String(err) });
-          }
+        try {
+          const { merged, added } = await wallet.restoreSparkWallets({
+            mnemonic: payload.spark.mnemonic,
+            network: payload.spark.network || 'MAINNET',
+          });
+          if (merged && !added.length) skipped.push('spark');
+          else restored.push('spark');
+        } catch (err) {
+          if (err?.code === 'SPARK_OTHER_PHRASE') skipped.push('spark');
+          else failed.push({ label: 'spark', reason: err?.message || String(err) });
         }
       }
 

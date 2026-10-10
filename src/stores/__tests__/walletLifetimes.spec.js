@@ -3,7 +3,7 @@
  *
  * Runs the real store actions with scripted providers: concurrent Spark
  * connects share one attempt, a removal during a connect cannot resurrect
- * the wallet, and removing a grouped wallet removes exactly its group.
+ * the wallet, and removing a Spark wallet removes exactly that wallet.
  */
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
@@ -12,6 +12,9 @@ import { transformSync } from 'esbuild';
 import * as balanceState from '../../utils/balanceState.js';
 import * as breezPayments from '../../utils/breezPayments.js';
 import { createClaimedDepositRegistry } from '../../utils/claimedDeposits.js';
+import * as sparkAccounts from '../../utils/sparkAccounts.js';
+import * as walletRemoval from '../../utils/walletRemoval.js';
+import * as exitLedger from '../../utils/exitLedger.js';
 
 globalThis.localStorage = { getItem: () => null, setItem() {}, removeItem() {} };
 
@@ -34,6 +37,10 @@ function load({ createProvider, extraDeps = {} }) {
     '../utils/claimedDeposits.js': { createClaimedDepositRegistry: () => ({ has: () => false, add() {} }) },
     '../utils/backupStatus.js': { isWalletBackedUp: () => true },
     '../utils/txCache.js': { clearCachedTransactions: async () => {} },
+    '../utils/sparkAccounts.js': sparkAccounts,
+    '../utils/walletRemoval.js': walletRemoval,
+    '../utils/exitLedger.js': exitLedger,
+    './emergencyExit': { useEmergencyExitStore: () => ({ exitFor: () => null }) },
     ...extraDeps,
   };
   const module = { exports: {} };
@@ -48,8 +55,8 @@ function load({ createProvider, extraDeps = {} }) {
   return store;
 }
 
-function sparkWallet(id, group = 'g') {
-  return { id, type: 'spark', name: id, connectionData: { encryptedMnemonic: 'x', accountNumber: id === 'B' ? 1 : 2, walletGroupId: group }, metadata: {} };
+function sparkWallet(id) {
+  return { id, type: 'spark', name: id, connectionData: { encryptedMnemonic: 'x', accountNumber: id === 'B' ? 1 : 2 }, metadata: {} };
 }
 
 function scriptedProvider(init) {
@@ -106,18 +113,18 @@ test('a rebuild supersedes an older attempt without letting it publish', async (
   assert.equal(store.providers.B, built[built.length - 1], 'the newest provider owns the wallet');
 });
 
-test('removing a grouped wallet removes its group, never an unrelated wallet', async () => {
+test('removing a Spark wallet removes exactly that wallet, never a sibling or an unrelated one', async () => {
   const store = load({ createProvider: () => scriptedProvider() });
   const other = { id: 'N', type: 'nwc', name: 'Alby', connectionData: {}, metadata: {} };
-  // Personal first, then Business, then an unrelated wallet: removing
-  // Personal used to splice by a stale index and drop the wrong wallet.
+  // Removing the first entry used to splice by a stale index and drop the
+  // wrong wallet; removing one Spark account used to take its sibling too.
   store.wallets = [sparkWallet('P'), sparkWallet('B'), other];
-  store.activeWalletId = 'B';
+  store.activeWalletId = 'P';
   store.disconnectWallet = async () => {};
   store.switchActiveWallet = async (id) => { store.activeWalletId = id; };
   await store.removeWallet('P');
-  assert.deepEqual(store.wallets.map((w) => w.id), ['N']);
-  assert.equal(store.activeWalletId, 'N', 'a surviving wallet is selected even when a sibling was active');
+  assert.deepEqual(store.wallets.map((w) => w.id), ['B', 'N']);
+  assert.equal(store.activeWalletId, 'B', 'selection moves to the remaining Spark wallet');
 });
 
 test('a claimed mark the SDK proves wrong is released; a fresh or in-flight one is not', () => {

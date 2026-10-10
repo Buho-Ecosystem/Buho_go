@@ -30,13 +30,12 @@
       <SettingsSection :title="$t('Wallet')">
         <!-- Active wallet info — adapts to wallet type. -->
 
-        <!-- Spark Wallet: only the ACTIVE half of the Business/Personal
-             pair - both rows here duplicated the home switcher and Manage
-             Wallets, and doubled the section for every Spark user. -->
+        <!-- Spark Wallet: only the ACTIVE one; every Spark wallet is listed
+             in the home switcher and Manage Wallets. -->
         <template v-if="isActiveWalletSpark && hasSparkWallet">
           <SettingsRow
-            :icon="activeWalletId === sparkBusinessWallet?.id ? 'tabler:building-store' : 'tabler:user'"
-            :label="activeWallet?.name || (activeWalletId === sparkBusinessWallet?.id ? 'Business' : 'Personal')"
+            icon="tabler:wallet"
+            :label="activeWallet?.name || $t('Wallet')"
             :show-chevron="false"
             :interactive="false"
           >
@@ -251,6 +250,12 @@
         v-if="activeWalletId"
         v-model="showSparkLnAddressSheet"
         :wallet-id="activeWalletId"
+      />
+
+      <!-- "Move funds" before removing a wallet that still holds money. -->
+      <InternalTransferModal
+        v-model="showTransferModal"
+        :from-wallet-id="transferFromWalletId"
       />
 
       <!-- ─────────────── PREFERENCES ───────────────
@@ -1199,13 +1204,18 @@
           </div>
 
           <q-input
-            v-model="detailWallet.name"
+            v-model="detailNameDraft"
             dense
             borderless
             :label="$t('Wallet Name')"
+            :error="!!detailNameError"
+            :error-message="detailNameError"
+            :maxlength="maxWalletNameLength"
             class="wallet-detail-name"
             :class="$q.dark.isActive ? 'detail-name-dark' : 'detail-name-light'"
             input-class="wallet-detail-name-inner"
+            @blur="saveDetailName"
+            @keyup.enter="saveDetailName"
           >
             <template #append>
               <Icon icon="tabler:edit" width="16" height="16" class="wallet-detail-name-pen" />
@@ -2107,6 +2117,9 @@ import WalletBrandMark from '../components/WalletBrandMark.vue'
 import BiometricEnableDialog from '../components/BiometricEnableDialog.vue'
 import LNBitsLightningAddressDialog from '../components/LNBitsLightningAddressDialog.vue'
 import SparkLightningAddressSheet from '../components/SparkLightningAddressSheet.vue'
+import InternalTransferModal from '../components/InternalTransferModal.vue'
+import { removalCopy } from '../utils/walletRemoval.js'
+import { MAX_WALLET_NAME_LENGTH, walletNameCopy } from '../utils/walletNames.js'
 import GetAppDialog from '../components/GetAppDialog.vue'
 import TaxReportSheet from '../components/settings/TaxReportSheet.vue'
 import ExitKitSheet from '../components/exit/ExitKitSheet.vue'
@@ -2146,6 +2159,7 @@ export default {
     KioskPinPad,
     LNBitsLightningAddressDialog,
     SparkLightningAddressSheet,
+    InternalTransferModal,
     GetAppDialog,
     TaxReportSheet,
     ExitKitSheet,
@@ -2172,6 +2186,11 @@ export default {
       // Per-wallet detail sheet (opened from a Manage Wallets row).
       showWalletDetail: false,
       detailWalletId: null,
+      detailNameDraft: '',
+      detailNameError: '',
+      maxWalletNameLength: MAX_WALLET_NAME_LENGTH,
+      showTransferModal: false,
+      transferFromWalletId: null,
       showCurrencyDialog: false,
       showLanguageDialog: false,
       showMissingLanguageDialog: false,
@@ -2423,8 +2442,6 @@ export default {
       'activeArkadeAddress',
       'useBip177Format',
       'hasBackedUp',
-      'sparkBusinessWallet',
-      'sparkPersonalWallet',
       'walletSwitching',
       'isActiveWalletNWC',
       'isActiveWalletLNBits',
@@ -3800,6 +3817,16 @@ export default {
     confirmDeleteSparkWallet() {
       if (!this.sparkWallets.length) return;
 
+      // All Spark wallets leave together with their phrase: the rules for
+      // the last wallet apply across all of them.
+      const check = this.walletStore.sparkRemovalCheck();
+      const total = this.sparkWallets.reduce((sum, w) => sum + (this.walletStore.getDisplayBalance(w.id).balance || 0), 0);
+      const copy = removalCopy({ check, wallet: { type: 'spark', name: this.$t('Spark') }, t: this.$t.bind(this), formatAmount: this.formatSats, balanceSats: total });
+      if (copy.blocked) {
+        this.showRemovalBlocked(copy, null);
+        return;
+      }
+
       const count = this.sparkWallets.length;
       this.dangerConfirmTitle = this.$t('Delete Spark Wallets');
       this.dangerConfirmMessage = (count > 1
@@ -3846,11 +3873,7 @@ export default {
           });
           this.showDangerConfirmDialog = false;
         } else if (this.dangerConfirmAction === 'deleteSparkWallet') {
-          // removeWallet handles the entire wallet group, so one call is enough
-          const firstSpark = this.sparkWallets[0];
-          if (firstSpark) {
-            await this.removeWallet(firstSpark.id);
-          }
+          await this.walletStore.removeSparkFromDevice();
           this.$q.notify({
             type: 'positive',
             message: this.$t('Spark wallets deleted'),
@@ -3913,10 +3936,22 @@ export default {
       const wallet = this.wallets.find(w => w.id === walletId)
       if (!wallet) return
 
+      const copy = removalCopy({
+        check: this.walletStore.removalCheckFor(walletId),
+        wallet,
+        t: this.$t.bind(this),
+        formatAmount: this.formatSats,
+        balanceSats: this.walletStore.getDisplayBalance(walletId).balance,
+      })
+      if (copy.blocked) {
+        this.showRemovalBlocked(copy, walletId)
+        return
+      }
+
       this.walletToRemove = wallet
-      this.dangerConfirmTitle = this.$t('Remove Wallet')
-      this.dangerConfirmMessage = this.$t('Are you sure you want to remove "{name}"? This action cannot be undone.', { name: wallet.name })
-      this.dangerConfirmButtonText = this.$t('Remove Wallet')
+      this.dangerConfirmTitle = copy.title
+      this.dangerConfirmMessage = copy.message
+      this.dangerConfirmButtonText = copy.confirmLabel
       this.dangerConfirmInput = ''
       this.dangerConfirmAction = 'removeWallet'
       this.showDangerConfirmDialog = true
@@ -4173,7 +4208,47 @@ export default {
 
     openWalletDetail(walletId) {
       this.detailWalletId = walletId;
+      this.detailNameDraft = this.wallets.find((w) => w.id === walletId)?.name || '';
+      this.detailNameError = '';
       this.showWalletDetail = true;
+    },
+
+    /** Rename from the detail sheet: saved on blur or Return, checked by the store. */
+    async saveDetailName() {
+      const wallet = this.detailWallet;
+      if (!wallet || this.detailNameDraft === wallet.name) {
+        this.detailNameError = '';
+        return;
+      }
+      try {
+        await this.walletStore.updateWalletName(wallet.id, this.detailNameDraft);
+        this.detailNameDraft = wallet.name;
+        this.detailNameError = '';
+      } catch (error) {
+        this.detailNameError = error?.problem
+          ? walletNameCopy(error.problem, this.$t.bind(this))
+          : this.$t("Couldn't save wallet name");
+      }
+    },
+
+    /** A removal the rules refuse: say why, and offer the one step that unblocks it. */
+    showRemovalBlocked(copy, walletId) {
+      this.$q.dialog({
+        title: copy.title,
+        message: copy.message,
+        ok: copy.action ? { label: copy.actionLabel, flat: true, noCaps: true } : { label: this.$t('OK'), flat: true, noCaps: true },
+        cancel: copy.action ? { label: this.$t('Not now'), flat: true, noCaps: true } : false,
+        class: this.$q.dark.isActive ? 'card_dark_style' : 'card_light_style',
+        dark: this.$q.dark.isActive,
+      }).onOk(() => {
+        if (copy.action === 'backup') {
+          this.showWalletDetail = false;
+          this.$router.push('/security');
+        } else if (copy.action === 'move_funds') {
+          this.transferFromWalletId = walletId;
+          this.showTransferModal = true;
+        }
+      });
     },
 
     async refreshSparkLightningAddress() {

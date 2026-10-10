@@ -257,16 +257,23 @@ async function teardownEntry(entry) {
 }
 
 /**
- * Probe whether a mnemonic has Spark activity on a given account number,
- * without touching any real wallet state. Used by restore flows to pick
- * account pairs (legacy account-0 detection) and to auto-detect the wallet
- * type behind a recovery phrase.
+ * Look at one Spark account of a recovery phrase without touching any real
+ * wallet state: restore uses it to find the accounts a phrase has used and
+ * to tell a Spark phrase from an Arkade one.
  *
  * Builds a throwaway instance in its own storage, waits for a bounded sync
- * so a funded wallet reports real numbers, reads balance + one payment,
- * then disconnects and deletes the probe storage.
+ * so a funded account reports real numbers, then reads everything that
+ * proves the account was used: balance, one payment, unclaimed on-chain
+ * deposits and a registered Lightning address. Disconnects and deletes the
+ * probe storage afterwards. Each secondary read is best effort; only the
+ * build itself can fail the probe.
  *
- * @returns {Promise<{hasActivity: boolean, balance: number, transferCount: number}>}
+ * @returns {Promise<{
+ *   hasActivity: boolean, balance: number, transferCount: number,
+ *   balanceSats: number, paymentCount: number, hasUnclaimedDeposit: boolean,
+ *   lightningAddress: string|null, synced: boolean,
+ * }>} `hasActivity`/`balance`/`transferCount` describe money movement only;
+ *   the other fields are the evidence `isRestorableAccount` weighs.
  */
 export async function probeAccountActivity(mnemonic, { accountNumber, network = 'MAINNET', syncTimeoutMs = 30000 } = {}) {
   const mod = await ensureWasmInit();
@@ -277,6 +284,8 @@ export async function probeAccountActivity(mnemonic, { accountNumber, network = 
   }
   config.apiKey = BREEZ_API_KEY;
   config.maxDepositClaimFee = { type: 'fixed', amount: 0 };
+  // The Lightning address lookup asks the same domain the wallets register on.
+  if (BREEZ_LNURL_DOMAIN) config.lnurlDomain = BREEZ_LNURL_DOMAIN;
 
   // Unique per call: restore runs probes for several accounts in parallel,
   // and two instances must never share a storage database.
@@ -293,26 +302,38 @@ export async function probeAccountActivity(mnemonic, { accountNumber, network = 
 
   try {
     let info;
+    let synced = true;
     try {
-      const synced = sdk.getInfo({ ensureSynced: true });
-      synced.catch(() => {});
+      const pending = sdk.getInfo({ ensureSynced: true });
+      pending.catch(() => {});
       info = await Promise.race([
-        synced,
+        pending,
         new Promise((_, reject) =>
           setTimeout(() => reject(new Error('probe sync timeout')), syncTimeoutMs)
         ),
       ]);
     } catch (e) {
+      synced = false;
       info = await sdk.getInfo({});
     }
-    const payments = await sdk.listPayments({ limit: 1, sortAscending: false });
+    const FAILED = Symbol('read failed');
+    const payments = await sdk.listPayments({ limit: 1, sortAscending: false }).catch(() => FAILED);
+    const deposits = await sdk.listUnclaimedDeposits({}).catch(() => FAILED);
+    const address = await sdk.getLightningAddress().catch(() => FAILED);
+    const read = (value) => (value === FAILED ? null : value);
 
     const balance = Number(info?.balanceSats ?? 0);
-    const transferCount = payments?.payments?.length || 0;
+    const transferCount = read(payments)?.payments?.length || 0;
     return {
       hasActivity: balance > 0 || transferCount > 0,
       balance,
       transferCount,
+      balanceSats: balance,
+      paymentCount: transferCount,
+      hasUnclaimedDeposit: (read(deposits)?.deposits?.length || 0) > 0,
+      lightningAddress: read(address)?.lightningAddress || null,
+      // A read that failed is not a read that found nothing.
+      synced: synced && ![payments, deposits, address].includes(FAILED),
     };
   } finally {
     try { await sdk.disconnect(); } catch (e) { /* probe teardown is best-effort */ }

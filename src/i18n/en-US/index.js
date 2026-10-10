@@ -2,6 +2,7 @@ import profilePayment from './profilePayment.js';
 import addressRequest from './addressRequest.js';
 import backup from './backup.js';
 import exit from './exit.js';
+import wallets from './wallets.js';
 export default {
   ...profilePayment,
   "Charge card": "Charge card",
@@ -46,6 +47,7 @@ export default {
   "This request cannot be redeemed in whole sats. Ask the service for a new one.": "This request cannot be redeemed in whole sats. Ask the service for a new one.",
   ...backup,
   ...exit,
+  ...wallets,
   // Spend: Bitrefill door
   "Gift cards, mobile top-ups and more": "Gift cards, mobile top-ups and more",
   "Bitrefill is on its way": "Bitrefill is on its way",
@@ -669,8 +671,6 @@ export default {
   "One or more words don't add up. Please double-check each word, including the last one, and try again.": "One or more words don't add up. Please double-check each word, including the last one, and try again.",
   "Word {n} doesn't match the official recovery word list. Check the spelling and try again.": "Word {n} doesn't match the official recovery word list. Check the spelling and try again.",
   "Words {n} don't match the official recovery word list. Check the spelling and try again.": "Words {n} don't match the official recovery word list. Check the spelling and try again.",
-  "Your Spark wallets are already set up": "Your Spark wallets are already set up",
-  "Your Business and Personal Spark wallets are already on this device. Remove them from Settings before restoring a different recovery phrase.": "Your Business and Personal Spark wallets are already on this device. Remove them from Settings before restoring a different recovery phrase.",
   // Relative time
   "just now": "just now",
   "min ago": "min ago",
@@ -1976,11 +1976,8 @@ export default {
   "Restoring Spark Wallet": "Restoring Spark Wallet",
   "Step": "Step",
   "Enter your 12-word seed phrase to restore your Spark wallet. This is only for Spark wallets.": "Enter your 12-word seed phrase to restore your Spark wallet. This is only for Spark wallets.",
-  "Checking for an existing wallet...": "Checking for an existing wallet...",
   "Creating Your Wallet": "Creating Your Wallet",
   "Encrypting wallet...": "Encrypting wallet...",
-  "Setting up Business wallet...": "Setting up Business wallet...",
-  "Setting up Personal wallet...": "Setting up Personal wallet...",
   "Almost done...": "Almost done...",
   "Wallet created!": "Wallet created!",
   "We couldn't restore your wallet": "We couldn't restore your wallet",

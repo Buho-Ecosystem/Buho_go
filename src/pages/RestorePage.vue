@@ -218,11 +218,13 @@ export default {
       if (path.includes('spark-restore')) return 'spark';
       return null;
     },
-    /** Wallet types the user could plausibly restore on this device. */
+    /**
+     * Wallet types the user could plausibly restore on this device. Spark is
+     * always possible: the same phrase adds any wallets this device lacks.
+     */
     availableTypes() {
       if (this.lockedType) return [this.lockedType];
-      const types = [];
-      if (!this.walletStore.hasSparkWallet) types.push('spark');
+      const types = ['spark'];
       if (!this.walletStore.hasArkadeWallet) types.push('arkade');
       // Both already present (unusual): still let the user try either so they're
       // never dead-ended — the store rejects a duplicate with a clear message.
@@ -375,11 +377,8 @@ export default {
       this.restoringStatus = this.$t('Securing your wallet...');
       const onProgress = (step) => {
         const messages = {
-          legacyCheck: this.$t('Checking for an existing wallet...'),
           encrypting: this.$t('Securing your wallet...'),
           connecting: this.$t('Connecting...'),
-          business: this.$t('Setting up Business wallet...'),
-          personal: this.$t('Setting up Personal wallet...'),
           done: this.$t('Almost done...'),
         };
         this.restoringStatus = messages[step] || this.restoringStatus;
@@ -393,12 +392,21 @@ export default {
             onProgress,
           });
         } else {
-          await this.walletStore.addSparkWallet({
+          // The first wallet now; every other wallet of this phrase is
+          // found in the background and appears on its own.
+          const { merged } = await this.walletStore.restoreSparkWallets({
             mnemonic: this.mnemonic,
             network: 'MAINNET',
-            isRestore: true,
             onProgress,
           });
+          if (merged) {
+            this.$q.notify({
+              type: 'info',
+              message: this.$t('This recovery phrase is already on this device'),
+              caption: this.$t('Any of its wallets that are missing here will appear in your wallet list.'),
+              timeout: 4500,
+            });
+          }
         }
 
         this.restoringStatus = this.$t('Wallet restored!');
@@ -424,8 +432,9 @@ export default {
     /**
      * Ask the chains which backend this recovery phrase belongs to, by deriving
      * each wallet and checking for real activity (balance or transaction
-     * history). Probes run concurrently; Spark covers both the modern (account
-     * 1) and legacy (account 0) derivations.
+     * history). Probes run concurrently. Spark checks the accounts any earlier
+     * version created first: 1 and 2 (the former Business/Personal pair) and
+     * the legacy account 0. Accounts 3 to 5 only exist beside account 1.
      *
      * Returns 'spark' | 'arkade' when exactly one shows activity. Returns null
      * when both are unused (nothing to lose — honour the manual pick), when
@@ -433,12 +442,11 @@ export default {
      * caller then keeps the user's selected type.
      */
     async _detectFundedType(mnemonic) {
-      const [sparkModern, sparkLegacy, arkade] = await Promise.allSettled([
-        probeSparkAccountActivity(mnemonic, { accountNumber: 1, network: 'MAINNET' }),
-        probeSparkAccountActivity(mnemonic, { accountNumber: 0, network: 'MAINNET' }),
+      const [arkade, ...spark] = await Promise.allSettled([
         ArkadeWalletProvider.probeActivity(mnemonic, { network: 'bitcoin' }),
+        ...[1, 2, 0].map(accountNumber => probeSparkAccountActivity(mnemonic, { accountNumber, network: 'MAINNET' })),
       ]);
-      const sparkActive = !!(sparkModern.value?.hasActivity || sparkLegacy.value?.hasActivity);
+      const sparkActive = spark.some(result => result.value?.hasActivity);
       const arkadeActive = !!arkade.value?.hasActivity;
       if (arkadeActive && !sparkActive) return 'arkade';
       if (sparkActive && !arkadeActive) return 'spark';
@@ -450,11 +458,11 @@ export default {
      * logged; the user sees only what they can act on.
      */
     _userFacingRestoreError(error) {
-      if (error?.code === 'SPARK_WALLET_EXISTS') {
+      if (error?.code === 'SPARK_OTHER_PHRASE') {
         return {
-          message: this.$t('Your Spark wallets are already set up'),
+          message: this.$t('Another recovery phrase is in use'),
           caption: this.$t(
-            'Your Business and Personal Spark wallets are already on this device. Remove them from Settings before restoring a different recovery phrase.'
+            'All Spark wallets on this device share one recovery phrase. To restore a different one, back up the current phrase and remove its wallets in Settings first.'
           ),
         };
       }

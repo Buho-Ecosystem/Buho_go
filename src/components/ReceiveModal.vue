@@ -3113,8 +3113,7 @@ export default {
 /* Spark/Lightning Toggle */
 
 /* Spark / Lightning / Bitcoin segmented control — compact row of
-   tabs matching the Wallet page's Business/Personal spark-tabs
-   grammar: tight padding, icons tucked left of each label. Active
+   tabs: tight padding, icons tucked left of each label. Active
    segment keeps the green tinted fill that matches the rest of the
    receive flow. */
 
