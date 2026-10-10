@@ -12,8 +12,10 @@ await mkdir(output, { recursive: true });
 const AUDIT_DEVICE_KEY = 'DRQbIikwNz5FTFNaYWhvdn2Ei5KZoKeutbzDytHY3+Y=';
 const AUDIT_SEED_ENVELOPE = 'AQIDBAUGBwgJCgsM5oeZavUf7bRrnLvfrRnjlmYhzZU1ngV33uyJHLa6BRi0XiXABbXW2piRbwX6+3otDTRGQaMsYbx7QIHyaSfxKE7Qpac/6BPd+mj7Cl3m4ODzaCnB384XShC+E5DD5KnMaTm2DzlNtXmT8dL23g==';
 const PERSONAL = 'spark-personal-1';
-const DESTINATION = 'bc1qcr8te4kr609gcawutmrza0j4xv80jy8z306fyu'; // m/84'/0'/0'/0/0 of the test words
-const FUNDING = 'bc1qnjg0jd8228aq7egyzacy8cys3knf9xvrerkf9g';     // m/84'/0'/0'/0/1
+const DESTINATION = 'bc1qcr8te4kr609gcawutmrza0j4xv80jy8z306fyu'; // m/84'/0'/0'/0/0 of the test words, chosen as a custom destination
+// The exit runs on the Personal wallet, Spark account 2: its own fee money
+// address (utils/exitKeys.js), never the one account 1 uses.
+const FUNDING = 'bc1qgl5vlg0zdl7yvprgxj9fevsc6q6x5dmcyk3cn3';     // m/84'/0'/0'/0/3
 
 const chain = { tip: 900000, statuses: {}, utxos: [], broadcasts: [], fees: { fastestFee: 6, halfHourFee: 4, hourFee: 3, economyFee: 2, minimumFee: 1 } };
 const browser = await chromium.launch({ headless: true });

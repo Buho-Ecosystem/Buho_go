@@ -10,7 +10,7 @@
  *
  * Single source of truth for the Arkade mark across the app, so the (space-
  * containing) media-kit paths and the light/dark colour swap live in one place
- * — reuse this in WalletSwitcher / Settings rather than inlining <img>.
+ * — reuse this in the wallet switcher / Settings rather than inlining <img>.
  *
  * Brand rule: orange (#F14317) in light mode, purple (#351791) in dark.
  * Assets: public/Arkade-Media-Kit/Logo/SVG/Logo Only/ (transparent variants).

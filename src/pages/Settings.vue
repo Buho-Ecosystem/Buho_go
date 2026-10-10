@@ -58,7 +58,7 @@
             :caption-mono="!!activeWalletLightningAddress"
             :interactive="true"
             :show-chevron="true"
-            @click="showSparkLnAddressSheet = true"
+            @click="openLightningAddressSheet(activeWalletId)"
           >
             <template #caption>
               <template v-if="activeWalletLightningAddress">{{ activeWalletLightningAddress }}</template>
@@ -247,10 +247,13 @@
 
       <!-- Breez-engine Spark Lightning address: claim / copy / remove -->
       <SparkLightningAddressSheet
-        v-if="activeWalletId"
+        v-if="lnAddressWalletId || activeWalletId"
         v-model="showSparkLnAddressSheet"
-        :wallet-id="activeWalletId"
+        :wallet-id="lnAddressWalletId || activeWalletId"
       />
+
+      <!-- One more Spark wallet from the recovery phrase on this device. -->
+      <AddSparkWalletSheet v-model="showAddSparkSheet" @created="onSparkWalletCreated" />
 
       <!-- "Move funds" before removing a wallet that still holds money. -->
       <InternalTransferModal
@@ -1046,6 +1049,30 @@
       :class="$q.dark.isActive ? 'dialog_dark' : 'dialog_light'"
     >
       <q-card class="wallets-dialog-card" :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'">
+        <!-- One sheet, pushed navigation: a wallet's details replace the list
+             and Back returns to it, focus on the row that opened them. -->
+        <WalletDetailPanel
+          v-if="detailWallet"
+          :key="detailWallet.id"
+          :wallet="detailWallet"
+          :type-label="getWalletTypeLabel(detailWallet)"
+          :balance="walletBalanceText(detailWallet.id)"
+          :active="detailWallet.id === activeWalletId"
+          :connected="!!connectionStates[detailWallet.id]?.connected"
+          :switching="walletSwitching"
+          :reconnecting="!!isReconnecting[detailWallet.id]"
+          :connection-error="connectionStates[detailWallet.id]?.error ? $t('This wallet is offline right now. Check your connection, then tap Reconnect.') : ''"
+          :rename-wallet="walletStore.updateWalletName"
+          :lightning-address="detailWallet.type === 'spark' ? (walletInfos[detailWallet.id]?.lightningAddress || detailWallet.metadata?.lud16 || '') : ''"
+          :can-move-address="false"
+          @back="closeWalletDetail"
+          @switch="handleSwitchWallet"
+          @reconnect="reconnectWallet"
+          @remove="confirmRemoveWallet"
+          @copy-address="copyToClipboard($event, $t('Lightning address copied'))"
+          @change-address="openLightningAddressSheet"
+        />
+        <template v-else>
         <div class="sheet-grabber" aria-hidden="true"><div class="grabber-bar"></div></div>
         <!-- Fixed Header -->
         <q-card-section class="dialog-header wallets-dialog-header">
@@ -1118,7 +1145,12 @@
                   'wallet-card-dark': $q.dark.isActive,
                   'wallet-card-light': !$q.dark.isActive
                 }"
+                role="button"
+                tabindex="0"
+                :data-wallet-id="wallet.id"
                 @click="openWalletDetail(wallet.id)"
+                @keydown.enter.prevent="openWalletDetail(wallet.id)"
+                @keydown.space.prevent="openWalletDetail(wallet.id)"
               >
                 <!-- Wallet Avatar -->
                 <div class="wallet-avatar">
@@ -1168,112 +1200,7 @@
             {{ $t('Add Wallet') }}
           </q-btn>
         </q-card-section>
-      </q-card>
-    </q-dialog>
-
-    <!-- Wallet Detail Sheet: everything a row used to cram into icon
-         buttons, behind one tap - identity + rename up top, plainly
-         labeled actions below, the destructive one last and alone. -->
-    <q-dialog
-      v-model="showWalletDetail"
-      position="bottom"
-      transition-show="slide-up"
-      transition-hide="slide-down"
-      :class="$q.dark.isActive ? 'dialog_dark' : 'dialog_light'"
-    >
-      <q-card v-if="detailWallet" class="wallet-detail-card" :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'">
-        <div class="sheet-grabber" aria-hidden="true"><div class="grabber-bar"></div></div>
-        <q-btn
-          flat round dense
-          class="glass-back-btn wallet-detail-back"
-          :aria-label="$t('Back')"
-          @click="showWalletDetail = false"
-        >
-          <Icon icon="tabler:chevron-left" width="20" height="20" />
-        </q-btn>
-
-        <q-card-section class="wallet-detail-hero">
-          <div class="wallet-avatar">
-            <div class="wallet-avatar-circle wallet-avatar-black wallet-detail-avatar">
-              <WalletBrandMark :type="detailWallet.type" :size="26" />
-            </div>
-            <div
-              class="wallet-status-dot"
-              :class="connectionStates[detailWallet.id]?.connected ? 'status-connected' : 'status-disconnected'"
-            ></div>
-          </div>
-
-          <q-input
-            v-model="detailNameDraft"
-            dense
-            borderless
-            :label="$t('Wallet Name')"
-            :error="!!detailNameError"
-            :error-message="detailNameError"
-            :maxlength="maxWalletNameLength"
-            class="wallet-detail-name"
-            :class="$q.dark.isActive ? 'detail-name-dark' : 'detail-name-light'"
-            input-class="wallet-detail-name-inner"
-            @blur="saveDetailName"
-            @keyup.enter="saveDetailName"
-          >
-            <template #append>
-              <Icon icon="tabler:edit" width="16" height="16" class="wallet-detail-name-pen" />
-            </template>
-          </q-input>
-
-          <div class="wallet-detail-sub" :class="$q.dark.isActive ? 'row-sub-dark' : 'row-sub-light'">
-            {{ getWalletTypeLabel(detailWallet) }}
-            · {{ connectionStates[detailWallet.id]?.connected ? $t('Online') : $t('Offline') }}
-            <template v-if="detailWallet.id === activeWalletId"> · {{ $t('Active') }}</template>
-          </div>
-
-          <div class="wallet-detail-balance" :class="$q.dark.isActive ? 'balance_dark' : 'balance_light'">
-            <HiddenAmount :class="{ 'balance-stale': walletStore.getDisplayBalance(detailWallet.id).isCached }">{{ walletBalanceText(detailWallet.id) }}</HiddenAmount>
-          </div>
-
-          <div v-if="connectionStates[detailWallet.id]?.error" class="wallet-error-msg">
-            {{ connectionStates[detailWallet.id].error }}
-          </div>
-        </q-card-section>
-
-        <q-card-section class="wallet-detail-actions">
-          <div class="wallet-detail-group" :class="$q.dark.isActive ? 'wallets-group-dark' : 'wallets-group-light'">
-            <button
-              v-if="detailWallet.id !== activeWalletId"
-              type="button"
-              class="wallet-detail-action"
-              :class="$q.dark.isActive ? 'detail-action-dark' : 'detail-action-light'"
-              :disabled="walletSwitching"
-              @click="handleSwitchWallet(detailWallet.id)"
-            >
-              <Icon icon="tabler:circle-check" width="20" height="20" />
-              <span>{{ $t('Use this wallet') }}</span>
-            </button>
-            <button
-              v-if="!connectionStates[detailWallet.id]?.connected && (detailWallet.type !== 'spark' || detailWallet.id === activeWalletId)"
-              type="button"
-              class="wallet-detail-action"
-              :class="$q.dark.isActive ? 'detail-action-dark' : 'detail-action-light'"
-              :disabled="isReconnecting[detailWallet.id]"
-              @click="reconnectWallet(detailWallet.id)"
-            >
-              <Icon icon="tabler:refresh" width="20" height="20" />
-              <span>{{ isReconnecting[detailWallet.id] ? $t('Reconnecting...') : $t('Reconnect') }}</span>
-            </button>
-          </div>
-
-          <div class="wallet-detail-group wallet-detail-danger-group" :class="$q.dark.isActive ? 'wallets-group-dark' : 'wallets-group-light'">
-            <button
-              type="button"
-              class="wallet-detail-action wallet-detail-danger"
-              @click="confirmRemoveWallet(detailWallet.id)"
-            >
-              <Icon icon="tabler:trash" width="20" height="20" />
-              <span>{{ $t('Remove Wallet') }}</span>
-            </button>
-          </div>
-        </q-card-section>
+        </template>
       </q-card>
     </q-dialog>
 
@@ -1298,7 +1225,37 @@
         </q-card-section>
 
         <q-card-section class="dialog-content">
-          <!-- Spark Wallet Options (only if no Spark wallet exists) -->
+          <!-- Spark: create or restore the first wallet; afterwards, more
+               wallets come from the same recovery phrase until the limit. -->
+          <div v-if="hasAnySparkWallet && walletStore.canAddSparkWallet" class="wallet-type-section">
+            <div class="section-label" :class="$q.dark.isActive ? 'table_col_dark' : 'table_col_light'">
+              {{ $t('Self-Custodial Wallet') }}
+            </div>
+            <div
+              class="wallet-type-option"
+              :class="$q.dark.isActive ? 'option-dark' : 'option-light'"
+              role="button"
+              tabindex="0"
+              data-audit="add-spark-wallet"
+              @click="openAddSparkWallet"
+              @keydown.enter.prevent="openAddSparkWallet"
+            >
+              <div class="option-icon spark-option-icon">
+                <WalletBrandMark type="spark" :size="22" color="currentColor" />
+              </div>
+              <div class="option-content">
+                <div class="option-title" :class="$q.dark.isActive ? 'wallet_name_dark' : 'wallet_name_light'">
+                  {{ $t('New Spark wallet') }}
+                </div>
+                <div class="option-subtitle" :class="$q.dark.isActive ? 'table_col_dark' : 'table_col_light'">
+                  {{ $t('From your recovery phrase · {count} of {max} left', { count: walletStore.remainingSparkSlots, max: walletStore.maxSparkWallets }) }}
+                </div>
+              </div>
+              <Icon icon="tabler:chevron-right" width="18" height="18" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'" />
+            </div>
+            <q-separator class="q-my-md" :class="$q.dark.isActive ? 'bg-grey-8' : 'bg-grey-3'"/>
+          </div>
+
           <div v-if="!hasAnySparkWallet" class="wallet-type-section">
             <div class="section-label" :class="$q.dark.isActive ? 'table_col_dark' : 'table_col_light'">
               {{ $t('Self-Custodial Wallet') }}
@@ -1316,7 +1273,7 @@
               </div>
               <div class="option-content">
                 <div class="option-title" :class="$q.dark.isActive ? 'wallet_name_dark' : 'wallet_name_light'">
-                  {{ hasAnySparkWallet ? $t('Add Spark Wallet') : $t('Create Spark Wallet') }}
+                  {{ $t('Create Spark Wallet') }}
                 </div>
                 <div class="option-subtitle" :class="$q.dark.isActive ? 'table_col_dark' : 'table_col_light'">
                   {{ $t('Generate a new seed phrase') }}
@@ -2118,8 +2075,9 @@ import BiometricEnableDialog from '../components/BiometricEnableDialog.vue'
 import LNBitsLightningAddressDialog from '../components/LNBitsLightningAddressDialog.vue'
 import SparkLightningAddressSheet from '../components/SparkLightningAddressSheet.vue'
 import InternalTransferModal from '../components/InternalTransferModal.vue'
+import WalletDetailPanel from '../components/settings/WalletDetailPanel.vue'
+import AddSparkWalletSheet from '../components/wallets/AddSparkWalletSheet.vue'
 import { removalCopy } from '../utils/walletRemoval.js'
-import { MAX_WALLET_NAME_LENGTH, walletNameCopy } from '../utils/walletNames.js'
 import GetAppDialog from '../components/GetAppDialog.vue'
 import TaxReportSheet from '../components/settings/TaxReportSheet.vue'
 import ExitKitSheet from '../components/exit/ExitKitSheet.vue'
@@ -2160,6 +2118,8 @@ export default {
     LNBitsLightningAddressDialog,
     SparkLightningAddressSheet,
     InternalTransferModal,
+    WalletDetailPanel,
+    AddSparkWalletSheet,
     GetAppDialog,
     TaxReportSheet,
     ExitKitSheet,
@@ -2183,12 +2143,10 @@ export default {
       pendingKitAction: null,
       showSparkLnAddressSheet: false,
       showAddWalletDialog: false,
-      // Per-wallet detail sheet (opened from a Manage Wallets row).
-      showWalletDetail: false,
+      // A wallet's details, pushed inside the Manage Wallets sheet.
       detailWalletId: null,
-      detailNameDraft: '',
-      detailNameError: '',
-      maxWalletNameLength: MAX_WALLET_NAME_LENGTH,
+      showAddSparkSheet: false,
+      lnAddressWalletId: null,
       showTransferModal: false,
       transferFromWalletId: null,
       showCurrencyDialog: false,
@@ -2921,8 +2879,12 @@ export default {
     }
   },
   watch: {
+    // A removed wallet's details close; the sheet always reopens on the list.
     detailWallet(wallet) {
-      if (!wallet && this.showWalletDetail) this.showWalletDetail = false;
+      if (!wallet && this.detailWalletId) this.detailWalletId = null;
+    },
+    showWalletsDialog(open) {
+      if (!open) this.detailWalletId = null;
     },
 
     /**
@@ -4208,27 +4170,31 @@ export default {
 
     openWalletDetail(walletId) {
       this.detailWalletId = walletId;
-      this.detailNameDraft = this.wallets.find((w) => w.id === walletId)?.name || '';
-      this.detailNameError = '';
-      this.showWalletDetail = true;
     },
 
-    /** Rename from the detail sheet: saved on blur or Return, checked by the store. */
-    async saveDetailName() {
-      const wallet = this.detailWallet;
-      if (!wallet || this.detailNameDraft === wallet.name) {
-        this.detailNameError = '';
-        return;
-      }
-      try {
-        await this.walletStore.updateWalletName(wallet.id, this.detailNameDraft);
-        this.detailNameDraft = wallet.name;
-        this.detailNameError = '';
-      } catch (error) {
-        this.detailNameError = error?.problem
-          ? walletNameCopy(error.problem, this.$t.bind(this))
-          : this.$t("Couldn't save wallet name");
-      }
+    /** Back from a wallet's details to the list, focus on the row that opened them. */
+    closeWalletDetail() {
+      const walletId = this.detailWalletId;
+      this.detailWalletId = null;
+      this.$nextTick(() => {
+        document.querySelector(`.wallets-dialog-card [data-wallet-id="${CSS.escape(walletId || '')}"]`)?.focus();
+      });
+    },
+
+    openAddSparkWallet() {
+      this.showAddWalletDialog = false;
+      this.showAddSparkSheet = true;
+    },
+
+    /** The new wallet is the active one now: say so, by name. */
+    onSparkWalletCreated(wallet) {
+      this.$q.notify({ type: 'positive', message: this.$t('Switched to {name}', { name: wallet.name }) });
+    },
+
+    /** Change the Lightning address of any Spark wallet, not only the active one. */
+    openLightningAddressSheet(walletId) {
+      this.lnAddressWalletId = walletId || this.activeWalletId;
+      this.showSparkLnAddressSheet = true;
     },
 
     /** A removal the rules refuse: say why, and offer the one step that unblocks it. */
@@ -4242,7 +4208,7 @@ export default {
         dark: this.$q.dark.isActive,
       }).onOk(() => {
         if (copy.action === 'backup') {
-          this.showWalletDetail = false;
+          this.showWalletsDialog = false;
           this.$router.push('/security');
         } else if (copy.action === 'move_funds') {
           this.transferFromWalletId = walletId;
@@ -5318,7 +5284,9 @@ export default {
 /* Wallets Dialog - Scrollable Layout */
 .wallets-dialog-card {
   width: 100%;
-  max-width: 100%;
+  /* A sheet, not a page: bounded on tablets and desktop, full width on phones. */
+  max-width: 560px;
+  margin: 0 auto;
   max-height: 92dvh;
   border-radius: 24px 24px 0 0;
   overflow: hidden;
@@ -5509,142 +5477,6 @@ export default {
   flex-shrink: 0;
   opacity: 0.35;
 }
-
-/* ── Wallet detail sheet ── */
-.wallet-detail-card {
-  width: 100%;
-  max-width: 100%;
-  border-radius: 24px 24px 0 0;
-  overflow: hidden;
-}
-
-.wallet-detail-card .sheet-grabber {
-  display: flex;
-  justify-content: center;
-  padding: 10px 0 2px;
-}
-
-.wallet-detail-card .grabber-bar {
-  width: 36px;
-  height: 5px;
-  border-radius: 3px;
-  background: rgba(128, 128, 128, 0.35);
-}
-
-.wallet-detail-back {
-  position: absolute;
-  top: 14px;
-  left: 14px;
-  z-index: 2;
-}
-
-.wallet-detail-hero {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  padding: 0.5rem 1.5rem 0.75rem;
-  text-align: center;
-}
-
-.wallet-detail-avatar {
-  width: 56px;
-  height: 56px;
-}
-
-.wallet-detail-name {
-  width: min(280px, 100%);
-  margin-top: 0.25rem;
-}
-
-.wallet-detail-name :deep(.q-field__native) {
-  font-family: 'Manrope', sans-serif;
-  font-size: 17px;
-  font-weight: 600;
-  text-align: center;
-}
-
-.detail-name-dark :deep(.q-field__native) { color: #F6F6F6; }
-.detail-name-light :deep(.q-field__native) { color: #212121; }
-
-.wallet-detail-name-pen {
-  opacity: 0.4;
-}
-
-.wallet-detail-sub {
-  font-family: 'Manrope', sans-serif;
-  font-size: 12px;
-  margin-top: 2px;
-}
-
-.wallet-detail-balance {
-  font-family: var(--font-mono);
-  font-size: 22px;
-  font-weight: 600;
-  margin-top: 0.75rem;
-}
-
-.wallet-detail-actions {
-  padding: 0.25rem 1rem;
-  padding-bottom: max(1rem, var(--safe-bottom, 0px));
-}
-
-.wallet-detail-group {
-  border-radius: 16px;
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
-}
-
-.wallet-detail-group:empty {
-  display: none;
-}
-
-.wallet-detail-danger-group {
-  margin-top: 0.75rem;
-}
-
-.wallet-detail-action {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  width: 100%;
-  min-height: 52px;
-  padding: 0 1rem;
-  border: 0;
-  background: transparent;
-  cursor: pointer;
-  font-family: 'Manrope', sans-serif;
-  font-size: 15px;
-  font-weight: 500;
-  text-align: left;
-  -webkit-tap-highlight-color: transparent;
-}
-
-.wallet-detail-action + .wallet-detail-action {
-  position: relative;
-}
-
-.wallet-detail-action + .wallet-detail-action::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 48px;
-  right: 0;
-  height: 1px;
-  background: rgba(128, 128, 128, 0.18);
-}
-
-.wallet-detail-action:disabled {
-  opacity: 0.5;
-}
-
-.detail-action-light { color: #1A1A1A; }
-.detail-action-light:hover { background: rgba(0, 0, 0, 0.045); }
-.detail-action-dark { color: #F6F6F6; }
-.detail-action-dark:hover { background: rgba(255, 255, 255, 0.06); }
-
-.wallet-detail-danger { color: #E5484D; }
-.wallet-detail-danger:hover { background: rgba(229, 72, 77, 0.08); }
 
 .no-wallets {
   text-align: center;

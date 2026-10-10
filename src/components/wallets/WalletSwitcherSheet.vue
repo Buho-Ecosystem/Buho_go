@@ -1,0 +1,505 @@
+<!--
+  WalletSwitcherSheet: the home screen's wallet switcher, for every wallet
+  type alike (Spark wallets are ordinary rows, however many there are).
+
+  The sheet switches; Settings configures. Rows show each wallet's last
+  known balance (live for Spark, which stays connected), a placeholder for
+  one never loaded, and the total across wallets when there is more than
+  one. Opening the sheet asks the page to refresh every row
+  (`refreshingWalletIds` marks the rows still waiting for a first figure).
+-->
+<template>
+  <q-dialog
+    v-model="open"
+    position="bottom"
+    transition-show="slide-up"
+    transition-hide="slide-down"
+    :class="$q.dark.isActive ? 'dialog_dark' : 'dialog_light'"
+  >
+    <q-card class="wallet-switcher-card" :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'">
+      <div class="sheet-grabber" aria-hidden="true"><div class="grabber-bar"></div></div>
+      <q-card-section class="switcher-header">
+        <div class="switcher-title" :class="$q.dark.isActive ? 'dialog_title_dark' : 'dialog_title_light'">
+          {{ $t('Switch Wallet') }}
+        </div>
+        <!-- With several wallets, the one figure people look for first. A total
+             built on missing or outdated figures says so instead of looking exact. -->
+        <div v-if="wallets.length > 1" class="switcher-total">
+          <span class="switcher-total-label">{{ totalLabel }}</span>
+          <HiddenAmount class="switcher-total-value" :class="{ 'balance-stale': !totalInfo.complete || totalInfo.stale }">{{ totalInfo.complete ? '' : '≥ ' }}{{ formatBalance(totalInfo.total) }}</HiddenAmount>
+        </div>
+      </q-card-section>
+
+      <q-card-section class="switcher-content">
+        <div class="wallet-switch-list" :class="$q.dark.isActive ? 'switch-list-dark' : 'switch-list-light'" role="list">
+          <div
+            v-for="wallet in wallets"
+            :key="wallet.id"
+            class="wallet-switch-card"
+            :class="{
+              'wallet-switch-card-active': wallet.id === activeWalletId,
+              'wallet-switch-card-dark': $q.dark.isActive,
+              'wallet-switch-card-light': !$q.dark.isActive
+            }"
+            role="button"
+            tabindex="0"
+            :aria-current="wallet.id === activeWalletId ? 'true' : null"
+            :data-wallet-id="wallet.id"
+            @click="$emit('switch', wallet.id)"
+            @keydown.enter.prevent="$emit('switch', wallet.id)"
+            @keydown.space.prevent="$emit('switch', wallet.id)"
+          >
+            <div class="switch-avatar" aria-hidden="true">
+              <div class="switch-avatar-circle switch-avatar-black">
+                <WalletBrandMark :type="wallet.type" :size="20" />
+              </div>
+              <div class="switch-status-dot" :class="connected(wallet.id) ? 'status-connected' : 'status-disconnected'"></div>
+            </div>
+
+            <div class="switch-details">
+              <div class="switch-name" :class="$q.dark.isActive ? 'switch-name-dark' : 'switch-name-light'">{{ wallet.name }}</div>
+              <WalletTypeChip :type="wallet.type" class="switch-type-chip" />
+              <div
+                v-balance-updating="isRefreshPending(wallet.id)"
+                class="switch-balance"
+                :class="$q.dark.isActive ? 'switch-balance-dark' : 'switch-balance-light'"
+              >
+                <!-- A known value (outdated ones marked), else a placeholder: never an invented 0. -->
+                <span v-if="!display(wallet.id).known" class="balance-placeholder" :aria-label="$t('Balance not loaded yet')" />
+                <HiddenAmount v-else :class="{ 'balance-stale': display(wallet.id).outdated }">{{ formatBalance(display(wallet.id).balance) }}</HiddenAmount>
+              </div>
+            </div>
+
+            <Icon
+              v-if="wallet.id === activeWalletId"
+              icon="tabler:circle-check"
+              width="20"
+              height="20"
+              class="switch-check-icon"
+              :class="$q.dark.isActive ? 'check-accent-dark' : 'check-accent-light'"
+              :aria-label="$t('Active')"
+            />
+          </div>
+        </div>
+        <!-- A restore keeps finding the phrase's other wallets for a while. -->
+        <p v-if="discovering" class="switcher-discovery" role="status">
+          <q-spinner size="14px" :aria-hidden="true" />
+          {{ $t('Looking for more wallets from your recovery phrase') }}
+        </p>
+      </q-card-section>
+
+      <q-card-section class="switcher-footer" :class="$q.dark.isActive ? 'switcher-footer-dark' : 'switcher-footer-light'">
+        <q-btn
+          v-if="wallets.length >= 2"
+          flat
+          no-caps
+          class="transfer-funds-btn"
+          :class="$q.dark.isActive ? 'transfer-btn-dark' : 'transfer-btn-light'"
+          @click="$emit('transfer')"
+        >
+          <Icon icon="tabler:arrows-exchange" width="20" height="20" class="q-mr-sm" />
+          {{ $t('Transfer Funds') }}
+        </q-btn>
+        <q-btn
+          flat
+          no-caps
+          class="manage-wallets-btn"
+          :class="$q.dark.isActive ? 'manage-btn-dark' : 'manage-btn-light'"
+          @click="$emit('manage')"
+        >
+          <Icon icon="tabler:settings" width="20" height="20" class="q-mr-sm" />
+          <!-- Short verb on purpose: the wallets are listed right above, and it
+               pairs with "Transfer Funds" ("Umbuchen") without wrapping. -->
+          {{ $t('Manage') }}
+        </q-btn>
+      </q-card-section>
+    </q-card>
+  </q-dialog>
+</template>
+
+<script setup>
+import { computed, getCurrentInstance } from 'vue';
+import { Icon } from '@iconify/vue';
+import { useWalletStore } from '../../stores/wallet';
+import { formatMainBalance } from '../../utils/amountFormatting.js';
+import WalletBrandMark from '../WalletBrandMark.vue';
+import WalletTypeChip from '../WalletTypeChip.vue';
+import HiddenAmount from '../HiddenAmount.vue';
+import balanceUpdating from '../../directives/balanceUpdating.js';
+
+// <script setup> registers a directive by its `v`-prefixed local name.
+const vBalanceUpdating = balanceUpdating;
+
+const props = defineProps({
+  modelValue: { type: Boolean, default: false },
+  /** walletId -> timestamp while that wallet's refresh runs (from the page). */
+  refreshingWalletIds: { type: Object, default: () => ({}) },
+});
+const emit = defineEmits(['update:modelValue', 'switch', 'transfer', 'manage']);
+
+const store = useWalletStore();
+// vue-i18n runs in legacy mode (src/boot/i18n.js), so useI18n() throws.
+// Reach $t through the component proxy, the app's established pattern.
+const { proxy } = getCurrentInstance();
+const t = (key, params) => proxy.$t(key, params);
+
+const open = computed({ get: () => props.modelValue, set: (value) => emit('update:modelValue', value) });
+const wallets = computed(() => store.wallets);
+const activeWalletId = computed(() => store.activeWalletId);
+const totalInfo = computed(() => store.totalBalanceInfo);
+const discovering = computed(() => store.sparkDiscoveryRunning);
+const totalLabel = computed(() => {
+  if (!totalInfo.value.complete) return t('Total (incomplete)');
+  return totalInfo.value.stale ? t('Total (not current)') : t('Total');
+});
+
+const connected = (walletId) => !!store.connectionStates[walletId]?.connected;
+const display = (walletId) => store.getDisplayBalance(walletId);
+const formatBalance = (sats) => formatMainBalance(sats, store.useBip177Format);
+/** A row pulses only while its first figure is on the way; a known one updates in place. */
+const isRefreshPending = (walletId) => !!props.refreshingWalletIds[walletId] && !display(walletId).known;
+</script>
+
+<style scoped>
+/* Wallet Switcher Dialog */
+/* Bottom sheet: full width, rounded top, sized to its content with the
+   list scrolling inside and the CTAs pinned hard at the bottom. */
+.wallet-switcher-card {
+  width: 100%;
+  max-width: 560px;
+  margin: 0 auto;
+  max-height: 78dvh;
+  display: flex;
+  flex-direction: column;
+  border-radius: 24px 24px 0 0;
+  overflow: hidden;
+}
+
+.wallet-switcher-card .sheet-grabber {
+  display: flex;
+  justify-content: center;
+  padding: 10px 0 2px;
+  flex-shrink: 0;
+}
+
+.wallet-switcher-card .grabber-bar {
+  width: 36px;
+  height: 5px;
+  border-radius: 3px;
+  background: rgba(128, 128, 128, 0.35);
+}
+
+.switcher-header {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  padding: 0.25rem 1.25rem 0.5rem;
+  flex-shrink: 0;
+}
+
+.switcher-title {
+  font-family: 'Manrope', sans-serif;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.switcher-content {
+  flex: 1;
+  min-height: 0;
+  padding: 0.25rem 0.75rem 0.5rem;
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+
+.switcher-content::-webkit-scrollbar {
+  display: none;
+}
+
+/* Inset grouped list: one rounded surface, hairline separators inset past
+   the leading mark, rows that highlight on press - selection is the
+   trailing checkmark, the platform-native reading. */
+.wallet-switch-list {
+  display: flex;
+  flex-direction: column;
+  border-radius: 16px;
+  overflow: hidden;
+}
+
+.switch-list-light { background: #FFFFFF; }
+.switch-list-dark  { background: #2C2C2E; }
+
+/* Wallet row */
+.wallet-switch-card {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0.875rem;
+  padding: 0.875rem 1rem;
+  cursor: pointer;
+  transition: background 0.12s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.wallet-switch-card:not(:first-child)::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 74px;
+  right: 0;
+  height: 1px;
+  background: rgba(128, 128, 128, 0.18);
+}
+
+.wallet-switch-card-light:hover,
+.wallet-switch-card-light:active {
+  background: rgba(0, 0, 0, 0.045);
+}
+
+.wallet-switch-card-dark:hover,
+.wallet-switch-card-dark:active {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+/* Switch Avatar */
+.switch-avatar {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.switch-avatar-circle {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+}
+
+.switch-avatar-black {
+  background: linear-gradient(135deg, #2A2A2A, #1A1A1A);
+}
+
+.wallet-green {
+  background: linear-gradient(135deg, #15DE72, #059573);
+}
+
+.wallet-blue {
+  background: linear-gradient(135deg, #3B82F6, #2563EB);
+}
+
+.wallet-purple {
+  background: linear-gradient(135deg, #8B5CF6, #7C3AED);
+}
+
+.wallet-orange {
+  background: linear-gradient(135deg, #F59E0B, #D97706);
+}
+
+.wallet-red {
+  background: linear-gradient(135deg, #EF4444, #DC2626);
+}
+
+.switch-status-dot {
+  position: absolute;
+  bottom: 0;
+  right: 0;
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  border: 2px solid;
+}
+
+.wallet-switch-card-dark .switch-status-dot {
+  border-color: #2C2C2E;
+}
+
+.wallet-switch-card-light .switch-status-dot {
+  border-color: #FFF;
+}
+
+.status-connected {
+  background: #15DE72;
+}
+
+.status-disconnected {
+  background: #EF4444;
+}
+
+/* Switch Details */
+.switch-details {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.switch-name {
+  font-family: 'Manrope', sans-serif;
+  font-size: 15px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-bottom: 0.125rem;
+}
+
+.switch-name-dark {
+  color: #F6F6F6;
+}
+
+.switch-name-light {
+  color: #212121;
+}
+
+
+
+
+
+
+
+
+
+/* Switch Balance */
+.switch-balance {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.switch-balance-dark {
+  color: #777;
+}
+
+.switch-balance-light {
+  color: var(--text-muted);
+}
+
+/* Check Icon */
+.switch-check-icon {
+  flex-shrink: 0;
+}
+
+.check-accent-light { color: #1A1A1A; }
+.check-accent-dark  { color: #15DE72; }
+
+/* Switcher Footer - pinned hard at the sheet's bottom edge. */
+.switcher-footer {
+  flex-shrink: 0;
+  padding: 0.75rem 1rem;
+  padding-bottom: max(0.875rem, var(--safe-bottom, 0px));
+  border-top: 1px solid;
+  display: flex;
+  flex-wrap: nowrap;
+  justify-content: center;
+  gap: 10px;
+}
+
+.switcher-footer-dark {
+  border-top-color: #222;
+  background: #171717;
+}
+
+.switcher-footer-light {
+  border-top-color: var(--border-card);
+  background: var(--bg-primary);
+}
+
+/* Transfer Funds - the primary CTA: dark ink in light mode, the app's
+   credit green in dark mode. */
+.transfer-funds-btn {
+  font-family: 'Manrope', sans-serif;
+  font-size: 14px;
+  font-weight: 600;
+  border-radius: 12px;
+  min-height: 48px;
+  padding: 0.5rem 1rem;
+  flex: 1;
+  transition: all 0.15s ease;
+}
+
+.transfer-btn-dark {
+  color: #FFFFFF;
+  background: linear-gradient(135deg, #15DE72, #0DBB5F);
+}
+
+.transfer-btn-dark:hover {
+  filter: brightness(1.05);
+}
+
+.transfer-btn-light {
+  color: #FFFFFF;
+  background: #1A1A1A;
+}
+
+.transfer-btn-light:hover {
+  background: #2A2A2A;
+}
+
+.manage-wallets-btn {
+  font-family: 'Manrope', sans-serif;
+  font-size: 14px;
+  font-weight: 600;
+  border-radius: 12px;
+  min-height: 48px;
+  padding: 0.5rem 1rem;
+  flex: 1;
+  transition: all 0.15s ease;
+}
+
+.manage-btn-dark {
+  color: rgba(255, 255, 255, 0.75);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.manage-btn-light {
+  color: rgba(0, 0, 0, 0.7);
+  background: rgba(0, 0, 0, 0.05);
+}
+
+.manage-wallets-btn:hover {
+  background: rgba(107, 114, 128, 0.1);
+}
+
+.manage-btn-dark:hover {
+  color: #F6F6F6;
+}
+
+.manage-btn-light:hover {
+  color: var(--text-primary);
+}
+
+/* Total across wallets, under the title. */
+.switcher-total {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 2px 8px;
+  margin-top: 4px;
+  font-family: 'Manrope', sans-serif;
+}
+.switcher-total-label {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+.switcher-total-value {
+  font-family: var(--font-mono);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.switch-type-chip {
+  margin: 2px 0 4px;
+}
+.switcher-discovery {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin: 12px 0 0;
+  font-family: 'Manrope', sans-serif;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+</style>
