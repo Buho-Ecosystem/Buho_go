@@ -235,15 +235,12 @@ an LNURL fetch). Still to do: Android device run.
 - Production build (`quasar build`) and an Android device run.
 
 ### 6. Known limitations / follow-ups
-- Polish in progress: reaction plural, header subtitle at large text,
-  delivery-state wording (de), unblock in the chat.
 - Muted 12px text contrast (`--text-muted`, ~3.1–3.8:1) is an app-wide
   token, below WCAG AA for small text.
 - The confirm sheet calls a Lightning invoice "Bitcoin payment" (existing
   pipeline wording).
 - A Spark send still pending after 60 s is not announced in the chat.
 - Unknown-sender banner has no lookalike warning (needs a kind 0 fetch).
-- No unblock UI yet (block only from the chat menu).
 - `boot/dm-inbox.js` has its own visibility code; could reuse
   `utils/appVisibility.js`.
 - Android cold start: a notification tap after the process was killed
