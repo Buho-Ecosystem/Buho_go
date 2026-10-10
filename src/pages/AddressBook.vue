@@ -159,6 +159,8 @@
 <script>
 import { useAddressBookStore } from '../stores/addressBook'
 import { usePayContact } from '../composables/usePayContact'
+import { useChatRuntime } from '../composables/useChatRuntime'
+import { contactTapPath } from '../components/chat/threadRows.js'
 import { useIdentityStore } from '../stores/identity'
 import { useTransactionMetadataStore } from '../stores/transactionMetadata'
 import { mapActions, mapState } from 'pinia'
@@ -183,6 +185,9 @@ export default {
       selectedEntry: null,
       showClearAllConfirmDialog: false,
     }
+  },
+  setup() {
+    return { chatAvailable: useChatRuntime().available }
   },
   computed: {
     // Surfaced for the kebab's disabled state. `isSyncing` is read by
@@ -302,7 +307,9 @@ export default {
 
     /** A row tap: push the contact's own page. */
     openContact(entry) {
-      this.$router.push(`/address-book/${entry.id}`)
+      // A contact with a Nostr identity opens the chat; the contact page
+      // is one tap away from its header. Everyone else opens it directly.
+      this.$router.push(contactTapPath(entry, this.chatAvailable))
     },
 
     async executeClearAll() {

@@ -31,6 +31,19 @@
                screen edge so the next bubble peeks, which is the swipe
                affordance. Hidden while searching: the search is about
                the list below. -->
+          <!-- Strangers who wrote to you: one quiet row, only while there
+               are any. The requests live in the Messages sheet. -->
+          <button
+            v-if="requestCount > 0 && !searchQuery"
+            type="button"
+            class="msg-requests"
+            @click="openRequests"
+          >
+            <span class="msg-requests-label">{{ $t('Message requests') }}</span>
+            <span class="msg-requests-count" aria-hidden="true">{{ requestCount }}</span>
+            <Icon icon="tabler:chevron-right" width="16" height="16" class="msg-requests-chev" />
+          </button>
+
           <template v-if="!searchQuery && recentlyPaidEntries.length > 0">
             <div class="sec-label">{{ $t('Quick pay') }}</div>
             <div class="quickpay-shelf">
@@ -54,6 +67,7 @@
               v-for="entry in sortedEntries"
               :key="entry.id"
               :entry="entry"
+              :unread="unreadOf(entry)"
               @pay="payContact"
               @open="openContact"
             />
@@ -119,15 +133,27 @@ import { useAddressBookStore } from '../../stores/addressBook'
 import { mapState, mapActions } from 'pinia'
 import AddressBookEntry from './AddressBookEntry.vue'
 import ContactAvatar from './ContactAvatar.vue'
+import { Icon } from '@iconify/vue'
+import { useChatRuntime } from '../../composables/useChatRuntime'
+import { useMessagesStore } from '../../stores/messages'
 
 export default {
   name: 'AddressBookList',
   components: {
     AddressBookEntry,
-    ContactAvatar
+    ContactAvatar,
+    Icon
   },
   emits: ['add-contact', 'pay-contact', 'open-contact'],
+  setup() {
+    return { chatAvailable: useChatRuntime().available, messages: useMessagesStore() }
+  },
   computed: {
+    /** Threads from people who are not contacts; 0 while the chat is off. */
+    requestCount() {
+      return this.chatAvailable ? this.messages.unknownThreads.length : 0
+    },
+
     ...mapState(useAddressBookStore, [
       'entries',
       'filteredEntries',
@@ -147,6 +173,15 @@ export default {
       'setSearchQuery',
       'clearSearch'
     ]),
+
+    /** Unread chat messages of a contact; only Nostr contacts have a chat. */
+    unreadOf(entry) {
+      return this.chatAvailable && entry.nostr_pubkey ? this.messages.unreadFor(entry.nostr_pubkey) : 0
+    },
+
+    openRequests() {
+      this.$router.push({ path: '/identity', query: { sheet: 'messages' } })
+    },
 
     payContact(entry) {
       this.$emit('pay-contact', entry)
@@ -254,6 +289,41 @@ export default {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.msg-requests {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 44px;
+  margin-top: 10px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 12px;
+  background: var(--bg-input);
+  color: var(--text-secondary);
+  font-family: 'Manrope', sans-serif;
+  font-size: 0.8125rem;
+  font-weight: 650;
+  text-align: left;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.msg-requests-label { flex: 1; min-width: 0; }
+
+.msg-requests-count {
+  min-width: 20px;
+  height: 18px;
+  padding: 0 6px;
+  display: grid;
+  place-items: center;
+  box-sizing: border-box;
+  border-radius: 999px;
+  background: var(--text-muted);
+  color: var(--bg-primary);
+  font: 800 10px/1 'Manrope', sans-serif;
 }
 
 .payee-rows {

@@ -118,6 +118,19 @@
       <!-- The one quiet door. Everything else the tab can do lives on the
            card or in the three verbs above; backing up lives in Security. -->
       <IdentityGroup class="id-block">
+        <!-- Contact chat: hidden until there is an identity to chat as. -->
+        <IdentityRow
+          v-if="chatAvailable"
+          icon="tabler:messages"
+          data-audit="identity-messages"
+          :label="$t('Messages')"
+          :caption="$t('End-to-end encrypted')"
+          @click="showMessagesSheet = true"
+        >
+          <template v-if="messagesUnread > 0" #trailing>
+            <span class="id-messages-pill" aria-hidden="true">{{ messagesUnreadBadge }}</span>
+          </template>
+        </IdentityRow>
         <IdentityRow
           icon="tabler:users"
           :label="$t('Identities')"
@@ -143,6 +156,8 @@
          in a sheet preserves the user's place on their card. -->
     <IdentitySignInSheet v-model="showSignInSheet" />
 
+    <MessagesSheet v-if="chatAvailable" v-model="showMessagesSheet" />
+
     <!-- Scan someone else's card. Same add-contact flow the address book
          uses, landed on its scan tab. -->
     <AddressBookModal
@@ -166,6 +181,10 @@ import IdentityRow from '../../components/identity/IdentityRow.vue';
 import IdentityShareSheet from '../../components/identity/IdentityShareSheet.vue';
 import IdentityGetPaidSheet from '../../components/identity/IdentityGetPaidSheet.vue';
 import IdentitySignInSheet from '../../components/identity/IdentitySignInSheet.vue';
+import MessagesSheet from '../../components/chat/MessagesSheet.vue';
+import { badgeText } from '../../components/chat/threadRows.js';
+import { useChatRuntime } from '../../composables/useChatRuntime';
+import { useMessagesStore } from '../../stores/messages';
 import AddressBookModal from '../../components/AddressBook/AddressBookModal.vue';
 import { useIdentityHealth } from '../../composables/useIdentityHealth';
 import { useSocialBucketStore } from '../../stores/socialBucket';
@@ -189,6 +208,7 @@ export default {
     IdentityGetPaidSheet,
     IdentitySignInSheet,
     AddressBookModal,
+    MessagesSheet,
     Nip05MarketplaceSheet,
   },
 
@@ -196,7 +216,9 @@ export default {
     const health = useIdentityHealth();
     const bucket = useSocialBucketStore();
     const suggestion = useUsernameSuggestion();
-    return { ...health, bucket, ...suggestion };
+    const chatAvailable = useChatRuntime().available;
+    const messages = useMessagesStore();
+    return { ...health, bucket, ...suggestion, chatAvailable, messages };
   },
 
   data() {
@@ -205,6 +227,7 @@ export default {
       showGetPaidSheet: false,
       showSignInSheet: false,
       showScanSheet: false,
+      showMessagesSheet: false,
       showClaimSheet: false,
       avatarBroken: false,
       canSwitch: false,
@@ -212,6 +235,14 @@ export default {
   },
 
   computed: {
+    messagesUnread() {
+      return this.messages.totalUnread;
+    },
+
+    messagesUnreadBadge() {
+      return badgeText(this.messagesUnread);
+    },
+
     bucketPaymentBadge() {
       const count = this.bucket.paymentCount;
       return count > 99 ? '99+' : `+${count}`;
@@ -285,7 +316,15 @@ export default {
       handler(sheet, previousSheet) {
         this.showGetPaidSheet = sheet === 'get-paid';
         this.showSignInSheet = sheet === 'sign-in';
+        this.showMessagesSheet = sheet === 'messages' && this.chatAvailable;
       },
+    },
+
+    showMessagesSheet(isOpen) {
+      if (isOpen || this.$route.query.sheet !== 'messages') return;
+      const query = { ...this.$route.query };
+      delete query.sheet;
+      this.$router.replace({ path: '/identity', query });
     },
 
     showGetPaidSheet(isOpen) {
@@ -493,6 +532,20 @@ export default {
   font: 800 9px/1 'Manrope', sans-serif;
   letter-spacing: -0.02em;
   pointer-events: none;
+}
+
+/* Unread count on the Messages row: the accent pill the verbs already use. */
+.id-messages-pill {
+  min-width: 20px;
+  height: 18px;
+  padding: 0 6px;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  box-sizing: border-box;
+  background: var(--brand-accent);
+  color: #04150b;
+  font: 800 10px/1 'Manrope', sans-serif;
 }
 
 .id-verb:active { background: rgba(127, 127, 127, 0.06); }

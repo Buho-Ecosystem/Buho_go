@@ -85,9 +85,17 @@
           type="button"
           class="menu-door"
           style="--d: 280ms"
+          :aria-label="addressBookDoorLabel"
           @click.stop="go('/address-book')"
         >
-          <span class="menu-door-word">{{ $t('Address Book') }}</span>
+          <span class="menu-door-word">
+            {{ $t('Address Book') }}
+            <span
+              v-if="unreadMessages > 0"
+              class="menu-door-pill menu-door-pill--money"
+              aria-hidden="true"
+            >{{ unreadBadge }}</span>
+          </span>
         </button>
 
         <button
@@ -119,6 +127,8 @@
 import { version } from '../../package.json';
 import { useUpdateStore } from '../stores/update';
 import { useSocialBucketStore } from '../stores/socialBucket';
+import { useMessagesStore } from '../stores/messages';
+import { useChatRuntime } from '../composables/useChatRuntime';
 
 /* Timing of the exit, mirrored from the CSS below: every door takes
    DOOR_MS to leave, the last door to arrive is the first to go, and the
@@ -154,6 +164,8 @@ export default {
     return {
       updateStore: useUpdateStore(),
       socialBucketStore: useSocialBucketStore(),
+      messagesStore: useMessagesStore(),
+      chatAvailable: useChatRuntime().available,
     };
   },
   computed: {
@@ -177,6 +189,20 @@ export default {
     bucketBadge() {
       const count = this.socialBucketStore.paymentCount;
       return count > 99 ? '99+' : `+${count}`;
+    },
+
+    /** Unread chat messages; the chat lives behind the Address Book door. */
+    unreadMessages() {
+      return this.chatAvailable ? this.messagesStore.totalUnread : 0;
+    },
+
+    unreadBadge() {
+      return this.unreadMessages > 99 ? '99+' : `${this.unreadMessages}`;
+    },
+
+    addressBookDoorLabel() {
+      if (this.unreadMessages <= 0) return this.$t('Address Book');
+      return `${this.$t('Address Book')}, ${this.$t('New messages')}: ${this.unreadMessages}`;
     },
 
     profileDoorLabel() {
