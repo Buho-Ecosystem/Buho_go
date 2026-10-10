@@ -18,8 +18,27 @@ import { useAddressBookStore } from '../stores/addressBook';
 const RESYNC_COOLDOWN_MS = 60 * 1000;
 
 /**
+ * What a caller may add to a payment it hands to the wallet page.
+ * @typedef {object} PayOptions
+ * @property {string} [walletId]  The wallet that should pay ("Pay with" preselection).
+ * @property {string} [context]   Opaque string returned in the `payment:sent` event
+ *   once the payment succeeded (the contact chat uses it to announce the payment).
+ */
+
+/** The optional query parameters of a hand-over. Empty values are left out. */
+function extraQuery({ walletId, context } = {}) {
+  return {
+    ...(typeof walletId === 'string' && walletId ? { walletId } : {}),
+    ...(typeof context === 'string' && context ? { context } : {}),
+  };
+}
+
+/**
  * @param {{ $q: any, $t: Function, $router: any }} ctx  Component instance.
- * @returns {{ payContact: (contact: object) => void }}
+ * @returns {{
+ *   payContact: (contact: object, options?: PayOptions) => void,
+ *   payInvoice: (invoice: { bolt11: string, name?: string }, options?: PayOptions) => void,
+ * }}
  */
 export function usePayContact(ctx) {
   const store = useAddressBookStore();
@@ -39,7 +58,7 @@ export function usePayContact(ctx) {
     });
   }
 
-  function payContact(contact) {
+  function payContact(contact, options = {}) {
     if (!contact) return;
 
     // Fire the refresh before deciding anything, so it never blocks the tap.
@@ -82,9 +101,31 @@ export function usePayContact(ctx) {
         address,
         addressType: contact.addressType || 'lightning',
         contactName: contact.name,
+        ...extraQuery(options),
       },
     });
   }
 
-  return { payContact };
+  /**
+   * Pay a BOLT-11 invoice somebody handed over (a payment request in the
+   * contact chat) through the same pipeline. There is no contact address to
+   * guard here: the invoice IS the destination, so the identity-only checks of
+   * `payContact` do not apply. The wallet page decodes it, checks it and shows
+   * the confirm sheet.
+   */
+  function payInvoice({ bolt11, name = '' } = {}, options = {}) {
+    if (typeof bolt11 !== 'string' || !bolt11.trim()) return;
+    ctx.$router.push({
+      path: '/wallet',
+      query: {
+        action: 'pay_contact',
+        address: bolt11.trim(),
+        addressType: 'invoice',
+        ...(name ? { contactName: name } : {}),
+        ...extraQuery(options),
+      },
+    });
+  }
+
+  return { payContact, payInvoice };
 }

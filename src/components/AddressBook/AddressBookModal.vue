@@ -71,6 +71,7 @@
         <AddContactSearch
           v-else-if="!isEditing && activeTab === 'search'"
           ref="searchRef"
+          :initial-query="initialQuery"
           @navigation-change="searchNavigation = $event"
           @focus-back="$refs.searchBack?.focus()"
           :active="show && activeTab === 'search'"
@@ -289,6 +290,12 @@ export default {
     initialTab: {
       type: String,
       default: 'manual'
+    },
+    // Text the Search tab starts with (the chat's "Add contact" hands over the
+    // sender's npub, so the preview is one tap away). Ignored by other tabs.
+    initialQuery: {
+      type: String,
+      default: ''
     }
   },
   emits: ['update:modelValue', 'saved', 'open-existing'],

@@ -68,7 +68,8 @@ export default boot(async () => {
   const [
     { useIdentityStore }, { useMessagesStore }, { useWalletStore }, { useProfileStore },
     { useAddressBookStore }, { useNotificationsStore }, { useTransactionMetadataStore },
-    { createAppRuntimeFactory }, { createNotificationFormatter }, { publishChatRuntime },
+    { createAppRuntimeFactory }, { createNotificationFormatter }, { publishChatRuntime, useChatRuntime },
+    { createPaymentAnnouncer },
     { getRelayPool }, { formatAmount }, { i18n }, { readPersistedWalletState },
     { visibilitySnapshot }, nostrCore,
   ] = await Promise.all([
@@ -76,6 +77,7 @@ export default boot(async () => {
     import('../stores/profile.js'), import('../stores/addressBook.js'), import('../stores/notifications.js'),
     import('../stores/transactionMetadata.js'), import('../services/dm/appRuntime.js'),
     import('../services/dm/notificationCopy.js'), import('../composables/useChatRuntime.js'),
+    import('../services/dm/paymentAnnouncer.js'),
     import('../utils/nostrRelays.js'), import('../utils/amountFormatting.js'), import('./i18n.js'),
     import('../utils/walletHydration.js'), import('../services/sparkLifecycleApp.js'), import('nostr-core'),
   ]);
@@ -128,5 +130,25 @@ export default boot(async () => {
       : readPersistedWalletState()?.kioskEnabled === true),
   });
 
-  if (import.meta.hot) import.meta.hot.dispose(() => lifecycle.stop());
+  // Payments made from a chat are announced to the partner from here, not from
+  // the chat page: the confirm sheet lives on the wallet page, so the page is
+  // usually gone when the payment succeeds (services/dm/paymentAnnouncer.js).
+  const announcer = createPaymentAnnouncer({
+    bus: EventBus,
+    runtime: useChatRuntime(),
+    // A request the user paid: its own note stands in for a comment they did not type.
+    noteFor: (partner, requestId) => (requestId
+      ? messages.thread(partner).messages.find((entry) => entry.id === requestId)?.request?.note || undefined
+      : undefined),
+    // The money is gone either way; an announcement that cannot be sent is not shown to the user.
+    onError: (code) => console.warn('[chat] could not announce a payment', code),
+  });
+  announcer.start();
+
+  if (import.meta.hot) {
+    import.meta.hot.dispose(() => {
+      announcer.stop();
+      lifecycle.stop();
+    });
+  }
 });

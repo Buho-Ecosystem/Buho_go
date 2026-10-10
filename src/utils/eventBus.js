@@ -18,6 +18,16 @@
  *                  at launch is not announced. The current state is
  *                  `isAppLocked()` in utils/appLock.js, which App.vue updates
  *                  just before it emits.
+ *
+ *   'payment:sent' Wallet.vue, after a payment was sent and settled (not for a
+ *                  pending one). Payload: { contactId, destination, amountSats,
+ *                  preimage, sendingWalletId, note, context }. `context` is the
+ *                  opaque string the caller attached when it handed the payment
+ *                  over (usePayContact `context` option), or null. The contact
+ *                  chat's always-on announcer reads it (services/dm/
+ *                  paymentAnnouncer.js); every other flow can ignore the event.
+ *                  Listeners must not throw and must not log the payload: it
+ *                  carries the destination and the preimage.
  */
 const listeners = {}
 

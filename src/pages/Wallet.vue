@@ -976,6 +976,7 @@ import { useBitcoinDepositsStore } from '../stores/bitcoinDeposits';
 import {SA_RETAIL_SOURCE, parseZARFromMetadata} from '../utils/merchantQR.js';
 import {lookupBrantaVerification, BRANTA_LOOKUP_TIMEOUT_MS} from '../utils/branta.js';
 import { readCachedTransactions, mergeCachedTransactions } from '../utils/txCache.js';
+import { EventBus } from '../utils/eventBus.js';
 
 function emptySaveContactData() {
   return {
@@ -2856,8 +2857,13 @@ export default {
      * rail). The capability gate is asked of that wallet, so a contact the
      * active wallet cannot pay is still payable from another wallet that can.
      * The active wallet is never switched.
+     *
+     * `addressType: 'invoice'` pays a BOLT-11 invoice handed over as `address`
+     * (a payment request from the contact chat). `context` is an opaque string
+     * of the caller; it is returned unchanged in the `payment:sent` event once
+     * the payment succeeded (see `emitPaymentSent`).
      */
-    payContactDestination({ address, addressType, name, sendingWalletId = null }) {
+    payContactDestination({ address, addressType, name, sendingWalletId = null, context = null }) {
       if (!address) return;
       if (offerAddressRequest(address, { t: this.$t.bind(this), paymentOnly: true })) return;
       const payerId = this.chooseSendingWalletId(addressType, sendingWalletId);
@@ -2876,6 +2882,7 @@ export default {
         bitcoin: 'bitcoin_address',
         lightning: 'lightning_address',
         lnurl: 'lnurl',
+        invoice: 'lightning_invoice',
       };
       void this.onPaymentDetected({
         type: typeMap[addressType] || 'lightning_address',
@@ -2883,6 +2890,7 @@ export default {
         contactName: name || null,
         paymentOnly: true,
         sendingWalletId: payerId,
+        ...(context ? { paymentContext: context } : {}),
       });
     },
 
@@ -3152,6 +3160,9 @@ export default {
       if (!isPayContact && !isLegacyBitcoin) return;
       // A repeated param arrives as an array; only a single id means anything.
       const walletId = isPayContact && typeof query.walletId === 'string' ? query.walletId : null;
+      // Opaque caller context, handed back in `payment:sent`. A repeated
+      // param is ignored, like walletId.
+      const context = isPayContact && typeof query.context === 'string' && query.context ? query.context : null;
 
       // Dispatch once wallet initialization settles (success or failure —
       // a failed init still gets the proper payment-error surface), then
@@ -3165,6 +3176,7 @@ export default {
             addressType: isLegacyBitcoin ? 'bitcoin' : (query.addressType || 'lightning'),
             name: query.contactName || null,
             sendingWalletId: walletId,
+            ...(context ? { context } : {}),
           });
 
           // Clear query params
@@ -4979,6 +4991,22 @@ export default {
     },
 
     /**
+     * Announce a completed payment on the EventBus (`payment:sent`).
+     *
+     * The wallet page does not know who asked for the payment; listeners that
+     * do (the contact chat's announcer) recognise their own `context`. A
+     * listener that throws must never turn a payment that went through into an
+     * error screen, so this swallows everything.
+     */
+    emitPaymentSent(payload) {
+      try {
+        EventBus.emit('payment:sent', payload);
+      } catch (error) {
+        console.warn('[wallet] a payment:sent listener failed:', error?.name || 'Error');
+      }
+    },
+
+    /**
      * Abort and clear any in-flight Branta lookup. Called when a payment is
      * abandoned (sheet cancelled, component unmounted) so a request for a
      * payment the user dropped does not linger.
@@ -5286,6 +5314,20 @@ export default {
         // recipient payload is still intact, and let that brief micro-
         // interaction play. This is the bridge from the send CTA to the
         // confirmation screen.
+        // Tell whoever handed this payment over (the contact chat) that it
+        // went through. Only for a settled send: a pending one may still fail.
+        if (isCompletedSend) {
+          this.emitPaymentSent({
+            contactId: existingContact?.id || null,
+            destination: recipientAddress || this.pendingPayment?.invoice || null,
+            amountSats: amount,
+            preimage: result?.preimage || null,
+            sendingWalletId,
+            note: comment,
+            context: this.pendingPayment?.paymentContext || null,
+          });
+        }
+
         this.sendDidSucceed = true;
         await new Promise((resolve) => setTimeout(resolve, 450)); // CTA completion beat
 
