@@ -159,13 +159,16 @@ test('messages sheet: no unknown heading without unknown senders, empty state wi
   assert.match(await renderSheet(loadSheet(s)), /No messages yet/)
 })
 
-test('messages sheet: tapping a row closes the sheet and navigates', () => {
+test('messages sheet: tapping a row navigates first, then closes the sheet', async () => {
   const component = loadSheet(state())
-  const emitted = []
-  const pushed = []
-  component.methods.open.call({ $emit: (...a) => emitted.push(a), $router: { push: (p) => pushed.push(p) } }, { to: '/address-book/c1/chat' })
-  assert.deepEqual(emitted, [['update:modelValue', false]])
-  assert.deepEqual(pushed, ['/address-book/c1/chat'])
+  const calls = []
+  await component.methods.open.call({
+    $emit: (...a) => calls.push(['emit', ...a]),
+    $router: { push: async (p) => { calls.push(['push', p]); await Promise.resolve() } },
+  }, { to: '/address-book/c1/chat' })
+  // Closing under /identity?sheet=messages makes the page replace the route, which would cancel a
+  // push still in flight; the sheet must only close once the navigation has settled.
+  assert.deepEqual(calls, [['push', '/address-book/c1/chat'], ['emit', 'update:modelValue', false]])
 })
 
 // ── contract of the small additions ──────────────────────────────────

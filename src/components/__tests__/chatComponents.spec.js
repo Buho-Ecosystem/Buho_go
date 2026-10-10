@@ -911,6 +911,15 @@ test('touch targets: every control is at least 44 pt', () => {
   at44('ChatThread.vue', '.chat-thread__pill')
 })
 
+test('dialog roots: a bottom sheet whose root is not a <div> still receives taps', () => {
+  // Quasar sets `pointer-events: all` only on a dialog's direct child <div>; a <section> root
+  // lets every tap fall through to the backdrop, which closes the sheet (found by check:contact-chat).
+  for (const [file, root] of [['RequestSheet.vue', 'request-sheet'], ['MessagesSheet.vue', 'messages-sheet']]) {
+    assert.match(read(file), new RegExp(`<section class="${root}"`), file)
+    assert.match(read(file).split('<style')[1], new RegExp(`\\.${root} \\{[^}]*pointer-events: all;`), file)
+  }
+})
+
 test('motion: every component that animates honours prefers-reduced-motion', () => {
   for (const file of ['MessageBubble.vue', 'RequestCard.vue', 'MoneyBar.vue', 'RequestSheet.vue', 'ReceiveWalletField.vue', 'ChatThread.vue']) {
     assert.match(read(file), /@media \(prefers-reduced-motion: reduce\)/, file)

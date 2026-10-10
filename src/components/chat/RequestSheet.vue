@@ -238,6 +238,8 @@ export default {
 
 <style scoped>
 .request-sheet {
+  /* Quasar only makes a dialog's direct child <div> tappable; this root is a <section>. */
+  pointer-events: all;
   width: 100%;
   max-width: 520px;
   max-height: min(94vh, calc(100vh - var(--safe-top, 0px) - 8px));

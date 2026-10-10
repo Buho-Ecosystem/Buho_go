@@ -123,9 +123,11 @@ export default {
     rowLabel(row) {
       return row.unread > 0 ? `${row.name}, ${this.$t('New messages')}: ${row.unread}` : row.name
     },
-    open(row) {
+    async open(row) {
+      // Navigate first, close after. Opened from /identity?sheet=messages, closing makes that page
+      // replace the route to drop the query, which cancels a push still loading the chat page.
+      await this.$router.push(row.to)
       this.$emit('update:modelValue', false)
-      this.$router.push(row.to)
     }
   }
 }
@@ -133,6 +135,8 @@ export default {
 
 <style scoped>
 .messages-sheet {
+  /* Quasar only makes a dialog's direct child <div> tappable; this root is a <section>. */
+  pointer-events: all;
   width: 100%;
   max-width: 520px;
   max-height: min(86vh, calc(100vh - var(--safe-top, 0px) - 8px));
