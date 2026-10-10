@@ -1,0 +1,146 @@
+/**
+ * Contact chat constants.
+ *
+ * Every number and relay list shared by the `services/dm/` modules lives here,
+ * so a protocol or product decision changes in exactly one place and each
+ * value keeps the reason it exists right next to it. Pure data: no state, no
+ * side effects, and the only import is the app's shared relay set.
+ *
+ * Contract: docs/CONTACT_CHAT.md sections 4 to 6.
+ */
+
+import { DEFAULT_RELAYS } from '../../utils/nostrRelays.js';
+
+// ---------------------------------------------------------------------------
+// Event kinds
+// ---------------------------------------------------------------------------
+
+/**
+ * Nostr event kinds the contact chat reads or writes. Frozen so a typo like
+ * `KIND.DM = 15` fails loudly instead of silently changing the wire format.
+ */
+export const KIND = Object.freeze({
+  /** NIP-17 chat message. Only ever a rumor: never signed, never published as is. */
+  DM: 14,
+  /** NIP-25 reaction, also carried as a rumor so reactions are as private as messages. */
+  REACTION: 7,
+  /** NIP-59 seal: the rumor encrypted to the recipient and signed by the real author. */
+  SEAL: 13,
+  /** NIP-59 gift wrap: what relays see, signed by a throwaway key so the author stays hidden. */
+  GIFT_WRAP: 1059,
+  /** NIP-17 list of the relays where a person wants to receive messages. */
+  DM_RELAYS: 10050,
+  /** NIP-51 mute list: the private home of our blocked pubkeys. */
+  MUTE_LIST: 10000,
+  /** NIP-42 client authentication event, our answer to a relay's AUTH challenge. */
+  AUTH: 22242,
+});
+
+// ---------------------------------------------------------------------------
+// Relays
+// ---------------------------------------------------------------------------
+
+/**
+ * Relays that hold our own NIP-17 inbox, published as our kind 10050 list.
+ *
+ * All three serve kind 1059 gift wraps only to a client that completed NIP-42
+ * AUTH (measured 2026-10-09), so nobody can scrape the wraps addressed to us,
+ * and they belong to three different operators, so one outage or policy change
+ * cannot cut off incoming messages. `relay.damus.io` also appears in
+ * `DEFAULT_RELAYS`; the two lists serve different purposes and stay separate.
+ */
+export const DM_INBOX_RELAYS = Object.freeze([
+  'wss://auth.nostr1.com',
+  'wss://relay.damus.io',
+  'wss://relay.nostr.net',
+]);
+
+/**
+ * Relays used to publish our kind 10050 list and to look up other people's.
+ *
+ * The shared `DEFAULT_RELAYS` already carry our profile and relay metadata, so
+ * contacts' lists are often found there too. `purplepag.es` is added because
+ * it is a dedicated profile and relay-list index: a stranger's list is likely
+ * to be there even when it is on none of our default relays. Deduplicated, so
+ * a relay named by both sources is queried once.
+ */
+export const DM_DISCOVERY_RELAYS = Object.freeze([
+  ...new Set([...DEFAULT_RELAYS, 'wss://purplepag.es']),
+]);
+
+// ---------------------------------------------------------------------------
+// Protocol and size limits
+// ---------------------------------------------------------------------------
+
+/**
+ * Version of the BuhoGO convention, the last element of the `["buho", ...]`
+ * tags. A string because tag values are always strings. Bumped only for a
+ * change old clients cannot read; they then show the plain-text fallback.
+ */
+export const PROTOCOL_VERSION = '1';
+
+/**
+ * Longest text message, in characters. A chat note is a few sentences, not a
+ * document (the wallet must not turn into a messenger, docs section 1), and
+ * even at four bytes per character it stays far below `MAX_RUMOR_BYTES`.
+ */
+export const MAX_TEXT_LENGTH = 2_000;
+
+/**
+ * Longest note on a payment request or payment, in characters. A note is a
+ * label ("Pizza"), not a message: it rides in the fallback line other NIP-17
+ * clients show and, on a request, is also the invoice description.
+ */
+export const MAX_NOTE_LENGTH = 200;
+
+/**
+ * Largest rumor, as UTF-8 bytes of its JSON, that may be sealed and wrapped.
+ *
+ * NIP-44 encrypts at most 65,535 bytes of plaintext, but the limit that binds
+ * is the gift wrap's: it encrypts the seal JSON, and the seal carries the
+ * NIP-44 ciphertext of the rumor in base64 (a third larger, after NIP-44 pads
+ * the rumor in coarse steps). Measured with nostr-core 1.0.4, the largest
+ * rumor that still fits is 40,960 bytes; the next padding step (49,152) pushes
+ * the seal past 65,535 bytes, and a 60,000-byte rumor cannot be wrapped at
+ * all. 40,000 keeps about 1 kB of headroom for the id and pubkey a template
+ * gains when it becomes a rumor. Relays may enforce smaller event sizes; they
+ * answer with a per-relay rejection, not through this cap.
+ */
+export const MAX_RUMOR_BYTES = 40_000;
+
+// ---------------------------------------------------------------------------
+// Timing and caching
+// ---------------------------------------------------------------------------
+
+/**
+ * How far before the last sync an inbox subscription starts. NIP-59
+ * randomises a wrap's `created_at` up to two days into the past so relays
+ * cannot match it to the real send time; a plain `since: lastSync` would miss
+ * every wrap whose random timestamp predates it. The overlap re-delivers
+ * events we already hold, which are dropped by rumor id.
+ */
+export const SINCE_SLACK_SECONDS = 2 * 24 * 60 * 60;
+
+/**
+ * How long a contact's resolved inbox relay list is trusted. Lists change
+ * rarely, so a day-old answer is almost always still right, and reusing it
+ * keeps the lookup off the send path: a message goes out without waiting for
+ * a relay round trip.
+ */
+export const INBOX_RELAY_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Most inbox relays used for one contact. Inbox lists are expected to name one
+ * to three relays (NIP-17 guidance); a contact, or a hostile list, naming
+ * dozens would make every send open that many connections, so any beyond this
+ * cap are ignored.
+ */
+export const MAX_INBOX_RELAYS_PER_CONTACT = 5;
+
+/**
+ * How long the app may sit in the background before the in-memory identity key
+ * is wiped. Long enough that a quick trip to another app does not force an
+ * unlock, short enough that key bytes do not linger in memory for hours while
+ * the app is out of sight.
+ */
+export const KEY_IDLE_WIPE_MS = 10 * 60 * 1000;
