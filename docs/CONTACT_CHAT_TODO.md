@@ -220,7 +220,12 @@ requests settle in the Spark wallet behind the profile address),
 "unconfirmed" (foreign address without LUD-21 verify).
 Remove the now-unused key "Payments you made to this contact." (en-US/de/es).
 
-### 5. QA — full test run = baseline (2026-10-11), `quasar build` OK; e2e script in progress
+### 5. QA — full test run = baseline, `quasar build` OK, e2e green (b85f817)
+`pnpm dev --port 9012` then `pnpm check:contact-chat` (two users, simulated
+NIP-01/42 relay, all scenarios, en/de/es, light/dark, 125% text).
+Not covered end-to-end yet: NWC payment execution (Wallet.vue builds its own
+LightningPaymentService, no stub hook), a plain "Send" payment line (needs
+an LNURL fetch). Still to do: Android device run.
 - Playwright script `scripts/check-contact-chat.mjs`: simulated relays, all
   four wallet types, light/dark, de/en/es, large text.
 - Full `npm test` against the baseline (known pre-existing failures on main:
@@ -230,6 +235,12 @@ Remove the now-unused key "Payments you made to this contact." (en-US/de/es).
 - Production build (`quasar build`) and an Android device run.
 
 ### 6. Known limitations / follow-ups
+- Polish in progress: reaction plural, header subtitle at large text,
+  delivery-state wording (de), unblock in the chat.
+- Muted 12px text contrast (`--text-muted`, ~3.1–3.8:1) is an app-wide
+  token, below WCAG AA for small text.
+- The confirm sheet calls a Lightning invoice "Bitcoin payment" (existing
+  pipeline wording).
 - A Spark send still pending after 60 s is not announced in the chat.
 - Unknown-sender banner has no lookalike warning (needs a kind 0 fetch).
 - No unblock UI yet (block only from the chat menu).
