@@ -781,3 +781,38 @@ test('saving on a scope switch does not leak the old state into the new key', as
   assert.deepEqual(Object.keys(mine.threads), [ALICE])
   assert.deepEqual(Object.keys(theirs.threads), [BOB])
 })
+
+test('request sources are stored per request, survive a restart and stay out of other scopes', async () => {
+  const store = await scoped(ME)
+  const req = requestMsg(ALICE, { outgoing: true })
+  store.addOutgoing(req)
+  assert.equal(store.requestSource(req.id), null)
+  assert.equal(store.setRequestSource(req.id, { walletId: 'w1', method: 'direct' }), true)
+  assert.deepEqual(store.requestSource(req.id), { walletId: 'w1', method: 'direct' })
+  assert.equal(store.setRequestSource('nope', { a: 1 }), false)
+  assert.throws(() => store.setRequestSource(req.id, 'x'), TypeError)
+  await store.flush()
+
+  const again = await scoped(ME)
+  assert.deepEqual(again.requestSource(req.id), { walletId: 'w1', method: 'direct' })
+  await again.setScope(OTHER_ME)
+  assert.equal(again.requestSource(req.id), null)
+
+  await again.setScope(ME)
+  assert.equal(again.clearRequestSource(req.id), true)
+  assert.equal(again.clearRequestSource(req.id), false)
+  assert.equal(again.requestSource(req.id), null)
+})
+
+test('prune drops request sources whose request is gone and without a scope nothing is stored', async () => {
+  const bare = freshStore()
+  assert.equal(bare.setRequestSource(rid(5), { a: 1 }), false)
+
+  const store = await scoped(ME)
+  const req = requestMsg(ALICE, { outgoing: true })
+  store.addOutgoing(req)
+  store.setRequestSource(req.id, { walletId: 'w1' })
+  store.setRequestSource(rid(777), { walletId: 'w2' })
+  store.prune()
+  assert.deepEqual(Object.keys(store.receiving), [req.id])
+})

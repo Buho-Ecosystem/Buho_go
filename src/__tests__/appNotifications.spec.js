@@ -1,8 +1,10 @@
 /**
  * App.vue's two notification-related duties, run against its real script:
  *
- *   - 'app:locked': announced on the EventBus whenever the lock engages, so the
- *     contact chat can wipe the identity key it keeps in memory.
+ *   - 'app:locked' / 'app:unlocked': announced on the EventBus whenever the lock
+ *     engages or releases, so the contact chat can wipe the identity key it
+ *     keeps in memory and pick its work up again. The readable state
+ *     (utils/appLock.js) is reported before each event, and once at launch.
  *   - Taps: a tapped notification opens its in-app route, and nothing else.
  *
  * There is no component harness in this repo, so the <script> block is cut out
@@ -75,6 +77,7 @@ function mountApp({ native = false, lockEnabled = false } = {}) {
   const listeners = [];
   const pushes = [];
   const lockEvents = [];
+  const lockStates = [];
   const router = { isReadyCalls: 0 };
   let routerReady;
   const ready = new Promise(resolve => { routerReady = resolve; });
@@ -98,13 +101,17 @@ function mountApp({ native = false, lockEnabled = false } = {}) {
     'src/utils/biometric': { authenticate: async () => true, isBiometricAvailable: async () => ({ available: true }) },
     'src/utils/walletHydration': { triggerWalletStoreHydration() {}, readPersistedWalletState: () => null },
     'src/utils/eventBus': { EventBus },
+    // Records the state at the moment each event goes out, to prove the order.
+    'src/utils/appLock': { setAppLocked: value => lockStates.push(value) },
     'src/services/paymentNotifications': loadService(listeners),
   };
   const module = { exports: {} };
   new Function('require', 'module', 'exports', appScript)(name => stubs[name] || inert(), module, module.exports);
 
-  const onLocked = () => lockEvents.push('app:locked');
+  const onLocked = () => lockEvents.push(`app:locked@${lockStates.length}`);
+  const onUnlocked = () => lockEvents.push(`app:unlocked@${lockStates.length}`);
   EventBus.on('app:locked', onLocked);
+  EventBus.on('app:unlocked', onUnlocked);
 
   const app = module.exports.default.setup();
   return {
@@ -112,6 +119,7 @@ function mountApp({ native = false, lockEnabled = false } = {}) {
     listeners,
     pushes,
     lockEvents,
+    lockStates,
     router,
     routerReady,
     mount: async () => { for (const hook of hooks.mounted) await hook(); },
@@ -122,38 +130,44 @@ function mountApp({ native = false, lockEnabled = false } = {}) {
         if (event === 'localNotificationActionPerformed') fn({ actionId, notification });
       }
     },
-    dispose: () => EventBus.off('app:locked', onLocked),
+    dispose: () => {
+      EventBus.off('app:locked', onLocked);
+      EventBus.off('app:unlocked', onUnlocked);
+    },
   };
 }
 
-test('app:locked is announced in the same turn the lock engages, once per change', () => {
+test('app:locked and app:unlocked are announced in the same turn the lock changes, once per change', () => {
   const app = mountApp();
   try {
     assert.equal(app.locked.value, false);
+    assert.deepEqual(app.lockStates, [false], 'the launch state is reported');
     assert.deepEqual(app.lockEvents, []);
 
     app.locked.value = true;
-    assert.deepEqual(app.lockEvents, ['app:locked'], 'no waiting for the next tick');
+    assert.deepEqual(app.lockEvents, ['app:locked@2'], 'no waiting for the next tick, state reported first');
 
     app.locked.value = true;
     assert.equal(app.lockEvents.length, 1, 'not repeated while it stays locked');
 
     app.locked.value = false;
-    assert.equal(app.lockEvents.length, 1, 'unlocking is not announced');
+    assert.deepEqual(app.lockEvents, ['app:locked@2', 'app:unlocked@3'], 'unlocking is announced too');
 
     app.locked.value = true;
-    assert.equal(app.lockEvents.length, 2, 'locking again is');
+    assert.equal(app.lockEvents.length, 3, 'locking again is');
+    assert.deepEqual(app.lockStates, [false, true, false, true]);
   } finally {
     app.dispose();
   }
 });
 
-test('a lock that was already on at launch is not announced', async () => {
+test('a lock that was already on at launch is a state, not an event', async () => {
   const app = mountApp({ native: true, lockEnabled: true });
   try {
     assert.equal(app.locked.value, true, 'the lock engages while the app is being set up');
     await settle();
-    assert.deepEqual(app.lockEvents, [], 'launching into the lock is a state, not a change');
+    assert.deepEqual(app.lockStates, [true], 'reported as the launch state');
+    assert.deepEqual(app.lockEvents, [], 'launching into the lock is not announced');
   } finally {
     app.dispose();
   }

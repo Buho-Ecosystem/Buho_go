@@ -20,6 +20,7 @@
  *   syncCursor   unix seconds of the last completed inbox sync, or null
  *   outbox       items waiting to be (re)sent, see `enqueueOutbox`
  *   inboxRelays  the inbox relay resolver's `snapshot()`, or null
+ *   receiving    where the user's own open requests get paid, by request id (see `setRequestSource`)
  *
  * Time units: message times and `now` arguments are unix SECONDS (rumor
  * `created_at`, invoice `expiresAt`); only the debounce works in milliseconds.
@@ -166,7 +167,7 @@ function emptyThread() {
 }
 
 function emptyState() {
-  return { threads: {}, blocked: [], syncCursor: null, outbox: [], inboxRelays: null }
+  return { threads: {}, blocked: [], syncCursor: null, outbox: [], inboxRelays: null, receiving: {} }
 }
 
 /**
@@ -336,6 +337,11 @@ function restoreState(raw, me) {
   state.blocked = [...new Set((Array.isArray(raw.blocked) ? raw.blocked : []).map(hexKey).filter(Boolean))]
   state.syncCursor = isCount(raw.syncCursor) ? raw.syncCursor : null
   state.inboxRelays = isPlainObject(raw.inboxRelays) ? raw.inboxRelays : null
+  if (isPlainObject(raw.receiving)) {
+    for (const [requestId, source] of Object.entries(raw.receiving)) {
+      if (hexKey(requestId) && isPlainObject(source)) state.receiving[requestId] = { ...source }
+    }
+  }
   return state
 }
 
@@ -417,6 +423,9 @@ export const useMessagesStore = defineStore('messages', {
     totalUnread: state => Object.values(state.threads).reduce((sum, t) => sum + (t.muted ? 0 : t.unread), 0),
 
     unreadFor: state => (partner) => state.threads[hexKey(partner)]?.unread ?? 0,
+
+    /** `requestSource(id)` -> the record `setRequestSource` stored for one of the user's own requests, or null. */
+    requestSource: state => requestId => state.receiving[requestId] ?? null,
 
     isBlocked: state => pubkey => state.blocked.includes(hexKey(pubkey)),
 
@@ -543,6 +552,7 @@ export const useMessagesStore = defineStore('messages', {
         syncCursor: this.syncCursor,
         outbox: this.outbox,
         inboxRelays: this.inboxRelays,
+        receiving: this.receiving,
       }))
     },
 
@@ -810,6 +820,32 @@ export const useMessagesStore = defineStore('messages', {
       return true
     },
 
+    /**
+     * Remember where one of the user's own requests gets paid (which wallet,
+     * how the invoice was made, the LUD-21 verify URL) so a restart can keep
+     * watching it. The store treats the record as opaque JSON; it replaces any
+     * earlier one for the id. Records of requests that no longer exist are
+     * dropped by `prune`.
+     * @param {string} requestId Rumor id of the request.
+     * @param {object} source JSON data; never an invoice's secrets (a payment hash is fine).
+     */
+    setRequestSource(requestId, source) {
+      const id = hexKey(requestId)
+      if (!this.scope || !id) return false
+      if (!isPlainObject(source)) throw new TypeError('messages: request source must be an object')
+      this.receiving[id] = JSON.parse(JSON.stringify(source))
+      this._markDirty()
+      return true
+    },
+
+    clearRequestSource(requestId) {
+      const id = hexKey(requestId)
+      if (!this.scope || !id || !(id in this.receiving)) return false
+      delete this.receiving[id]
+      this._markDirty()
+      return true
+    },
+
     // ----- pruning ---------------------------------------------------------
 
     _autoPrune(thread) {
@@ -829,7 +865,16 @@ export const useMessagesStore = defineStore('messages', {
         if (n > 0) thread.unread = Math.min(thread.unread, thread.messages.length)
         dropped += n
       }
-      if (dropped > 0) this._markDirty()
+      // A source record without its request (pruned, or never stored) is dead weight.
+      const requestIds = new Set()
+      for (const thread of Object.values(this.threads)) {
+        for (const m of thread.messages) if (m.type === MESSAGE_TYPE.REQUEST) requestIds.add(m.id)
+      }
+      let orphans = 0
+      for (const id of Object.keys(this.receiving)) {
+        if (!requestIds.has(id)) { delete this.receiving[id]; orphans += 1 }
+      }
+      if (dropped > 0 || orphans > 0) this._markDirty()
       return dropped
     },
   },

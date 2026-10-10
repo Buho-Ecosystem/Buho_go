@@ -43,6 +43,7 @@ import { useAddressRequestStore } from 'src/stores/addressRequest.js'
 import { useNotificationsStore } from 'src/stores/notifications'
 import { isInternalRoute, onNotificationTap } from 'src/services/paymentNotifications'
 import { EventBus } from 'src/utils/eventBus'
+import { setAppLocked } from 'src/utils/appLock'
 
 export default defineComponent({
   name: 'App',
@@ -127,16 +128,24 @@ export default defineComponent({
     // Establish the lock before child consent UI can become available.
     locked.value = Capacitor.isNativePlatform() && appLockActive()
 
-    // Event 'app:locked' (no payload): emitted on the EventBus every time the
-    // lock engages, i.e. whenever `locked` turns true — the app going to the
-    // background with the lock on included. Anything that keeps a secret only
-    // in memory drops it here: the contact chat wipes its cached identity key
-    // (docs/CONTACT_CHAT.md, section 5). It reports a change, not the state:
-    // registered after the initial value above, so launching straight into
-    // the lock is not announced. Sync flush: the listeners run in the same
-    // turn as the change, not on the next tick.
+    // The lock as a readable state (src/utils/appLock.js): the launch value
+    // is reported silently, because launching into the lock is a state, not a
+    // change. Boot files that must not start while the app is locked wait for it.
+    setAppLocked(locked.value)
+
+    // Events 'app:locked' and 'app:unlocked' (no payload): emitted on the
+    // EventBus every time the lock engages or releases, i.e. whenever `locked`
+    // changes — the app going to the background with the lock on included.
+    // Anything that keeps a secret only in memory drops it on 'app:locked' (the
+    // contact chat wipes its cached identity key, docs/CONTACT_CHAT.md section 5)
+    // and picks its work up again on 'app:unlocked'. They report a change, not
+    // the state: registered after the initial value above, so launching
+    // straight into the lock is not announced (read it with `isAppLocked`).
+    // Sync flush: the listeners run in the same turn as the change, not on the
+    // next tick, and the state in `appLock` is updated before they run.
     watch(locked, (isLocked) => {
-      if (isLocked) EventBus.emit('app:locked')
+      setAppLocked(isLocked)
+      EventBus.emit(isLocked ? 'app:locked' : 'app:unlocked')
     }, { flush: 'sync' })
 
     // Tapping a notification opens the screen it was posted for (a contact

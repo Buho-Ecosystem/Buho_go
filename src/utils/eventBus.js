@@ -9,9 +9,15 @@
  *                  app goes to the background with the lock on. Whatever holds
  *                  a secret only in memory drops it on this event; the contact
  *                  chat wipes its cached identity key (docs/CONTACT_CHAT.md,
- *                  section 5). It reports a change, not a state: it is not
- *                  repeated while the app stays locked, and a lock that was
- *                  already on at launch is not announced.
+ *                  section 5).
+ *   'app:unlocked' No payload. The lock released (`locked` turned false).
+ *                  The contact chat picks up what waited for its key.
+ *
+ *                  Both report a change, not a state: they are not repeated
+ *                  while the app stays locked, and a lock that was already on
+ *                  at launch is not announced. The current state is
+ *                  `isAppLocked()` in utils/appLock.js, which App.vue updates
+ *                  just before it emits.
  */
 const listeners = {}
 

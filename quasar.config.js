@@ -42,6 +42,12 @@ export default defineConfig((ctx) => {
       // username resolves to a profile with nothing to pay. Best-effort and
       // idempotent. Profile synchronization publishes the resulting edits.
       'payment-address',
+      // 'dm-inbox' runs the contact chat's lifecycle (docs/CONTACT_CHAT.md):
+      // one runtime per identity, started once the app is unlocked, its key
+      // wiped on lock and after ten minutes in the background. It reads the
+      // identity and the profile address, so it comes after the two boots that
+      // settle them. Does nothing on a kiosk device.
+      'dm-inbox',
       // 'emergency-exit' resumes any exit in progress: chain checks and the
       // next package broadcasts, independent of Spark being reachable.
       'emergency-exit',
