@@ -842,6 +842,22 @@ await test('removeNostrIdentityFromDevice hides an identity without touching the
   assert.deepEqual(reloaded.nostrRemovedAccounts, [1]);
 });
 
+await test('restoreNostrIdentityToDevice undoes a removal and survives a reload', async () => {
+  const s = freshEnv();
+  await s.ensureIdentity();
+  const stub = pointerStub();
+  await s.createAnotherNostrIdentity({ pointer: stub.opts });
+  await s.switchNostrIdentity(0, { pointer: stub.opts });
+  s.removeNostrIdentityFromDevice(1);
+  s.restoreNostrIdentityToDevice(1);
+  s.restoreNostrIdentityToDevice(1);
+  assert.deepEqual((await s.listNostrIdentities()).map((r) => r.account), [0, 1]);
+  setActivePinia(createPinia());
+  const reloaded = useIdentityStore();
+  await reloaded.hydrate();
+  assert.deepEqual(reloaded.nostrRemovedAccounts, []);
+});
+
 await test('removeNostrIdentityFromDevice refuses the identity in use and unknown accounts', async () => {
   const s = freshEnv();
   await s.ensureIdentity();

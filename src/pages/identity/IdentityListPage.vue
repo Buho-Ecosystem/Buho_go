@@ -50,7 +50,7 @@
       </IdentityGroup>
     </div>
 
-    <NewIdentitySheet v-model="showCreate" @created="refresh" />
+    <NewIdentitySheet v-model="showCreate" />
     <IdentitySwitchingDialog :target="switching" />
     <SettingsHubNav />
   </q-page>
@@ -95,7 +95,6 @@ function onSelect(row) {
   switchTo(
     { account: row.account, name: nameOf(row), picture: row.picture },
     { account: current.account, name: nameOf(current), picture: current.picture },
-    refresh,
   );
 }
 

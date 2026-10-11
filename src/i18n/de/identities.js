@@ -5,7 +5,6 @@ export default {
   "Add identity": "Identität hinzufügen",
   "Erase all identities": "Alle Identitäten löschen",
   "Removes every identity on this phone and starts a fresh card. Your wallets and your Bitcoin are not affected.": "Entfernt jede Identität auf diesem Telefon und startet eine neue Karte. Deine Wallets und deine Bitcoin sind nicht betroffen.",
-  "All {n} identities on this phone are erased": "Alle {n} Identitäten auf diesem Telefon werden gelöscht",
   "Details for {name}": "Details zu {name}",
   "Switching to {name}": "Wechsle zu {name}",
   "Updating your card and contacts across BuhoGO.": "Deine Karte und Kontakte werden in BuhoGO aktualisiert.",
@@ -26,4 +25,8 @@ export default {
   "Secret key could not be accessed. Please try again.": "Auf den geheimen Schlüssel konnte nicht zugegriffen werden. Bitte versuche es erneut.",
   "Clipboard access failed. Please try copying again.": "Zugriff auf die Zwischenablage fehlgeschlagen. Bitte kopiere erneut.",
   "Unlock was not completed. Try again when you are ready.": "Entsperren wurde nicht abgeschlossen. Versuche es erneut, wenn du bereit bist.",
+  "All {n} identities from these 12 words are erased": "Alle {n} Identitäten aus diesen 12 Wörtern werden gelöscht",
+  "Connect to the internet to remove this identity": "Verbinde dich mit dem Internet, um diese Identität zu entfernen",
+  "Your 12 words can only bring it back once this phone has been online.": "Deine 12 Wörter können sie erst zurückholen, wenn dieses Telefon online war.",
+  "Your contacts load once you are back online.": "Deine Kontakte laden, sobald du wieder online bist.",
 }

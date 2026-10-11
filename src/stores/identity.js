@@ -1187,6 +1187,24 @@ export const useIdentityStore = defineStore('identity', {
     },
 
     /**
+     * Put a removed identity back on this phone's list (the Undo of a
+     * removal). Idempotent; persist-then-commit.
+     *
+     * @param {number} account
+     */
+    restoreNostrIdentityToDevice(account) {
+      if (!this.nostrRemovedAccounts.includes(account)) return;
+      const prev = this.nostrRemovedAccounts;
+      this.nostrRemovedAccounts = prev.filter((i) => i !== account);
+      try {
+        this._persistMetadata();
+      } catch (persistErr) {
+        this.nostrRemovedAccounts = prev;
+        throw persistErr;
+      }
+    },
+
+    /**
      * Derive the display material for every roster identity in one
      * mnemonic decrypt. Read-only — nothing is cached or persisted;
      * the Change-identity sheet calls this when it opens.

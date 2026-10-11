@@ -142,7 +142,7 @@ await test('authentication cancellation prevents key access and permits retry', 
 await test('key-access failure remains distinct even if the browser masks its error', async h => {
   h.reveal = async () => { throw new Error('decryption failed'); };
   await h.click();
-  assert.equal(h.state.error, 'Private key could not be accessed. Please try again.');
+  assert.equal(h.state.error, 'Secret key could not be accessed. Please try again.');
   assert.deepEqual(h.writes, []);
   assert.equal(h.state.copied, false);
 });

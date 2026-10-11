@@ -4,9 +4,10 @@
  * Rows come from the identity store's roster (removed identities excluded),
  * named and pictured from each identity's saved profile first, then from the
  * profiles the relays return. The identity in use reads the live profile
- * store, so an edit shows here at once.
+ * store, so an edit shows here at once, and the list refreshes itself after
+ * every roster change.
  */
-import { ref } from 'vue';
+import { computed, ref } from 'vue';
 import { useIdentityStore } from '../stores/identity';
 import { useProfileStore } from '../stores/profile';
 import { fetchProfiles, parseProfileContent } from '../utils/nostrFetch.js';
@@ -36,16 +37,27 @@ function readCachedProfile(pubkeyHex) {
   }
 }
 
+/** Identity store actions after which the list is stale. */
+const ROSTER_ACTIONS = new Set([
+  'switchNostrIdentity',
+  'createAnotherNostrIdentity',
+  'removeNostrIdentityFromDevice',
+  'restoreNostrIdentityToDevice',
+]);
+
 /**
  * @param {(key: string, params?: object) => string} t  the caller's $t
  */
 export function useIdentities(t) {
   const identity = useIdentityStore();
   const profile = useProfileStore();
-  const identities = ref([]);
+  /** Roster rows with the profile content the relays returned for each. */
+  const rows = ref([]);
+  let generation = 0;
 
   /** The live profile owns the identity in use; saved data covers the rest. */
-  function decorate(row, fetched = {}) {
+  function decorate(row) {
+    const fetched = row.fetched || {};
     const cached = readCachedProfile(row.pubkeyHex);
     if (row.active) {
       return {
@@ -65,29 +77,40 @@ export function useIdentities(t) {
     };
   }
 
+  const identities = computed(() => rows.value.map(decorate));
+
   async function refresh() {
-    let rows;
+    const mine = ++generation;
+    let listed;
     try {
-      rows = await identity.listNostrIdentities();
+      listed = await identity.listNostrIdentities();
     } catch (err) {
       console.warn('[identities] listing failed:', err);
-      identities.value = [];
-      return;
+      listed = [];
     }
-    identities.value = rows.map((row) => decorate(row));
+    // A newer refresh started meanwhile: its answer wins.
+    if (mine !== generation) return;
+    rows.value = listed;
 
-    const pubkeys = rows.map((row) => row.pubkeyHex).filter(Boolean);
+    const pubkeys = listed.map((row) => row.pubkeyHex).filter(Boolean);
     if (!pubkeys.length) return;
     try {
       const profiles = await fetchProfiles(pubkeys);
-      identities.value = rows.map((row) => decorate(
-        row,
-        parseProfileContent(profiles.get((row.pubkeyHex || '').toLowerCase())),
-      ));
+      if (mine !== generation) return;
+      rows.value = listed.map((row) => ({
+        ...row,
+        fetched: parseProfileContent(profiles.get((row.pubkeyHex || '').toLowerCase())),
+      }));
     } catch (err) {
       console.warn('[identities] profile fetch failed:', err);
     }
   }
+
+  // Any page showing identities follows every change, wherever it started
+  // (an Undo from a toast, another page). Unsubscribes with the component.
+  identity.$onAction(({ name, after }) => {
+    if (ROSTER_ACTIONS.has(name)) after(() => { refresh(); });
+  });
 
   /** A display name, then a label, then the username, then a numbered fallback. */
   function nameOf(row) {

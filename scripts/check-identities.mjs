@@ -128,7 +128,18 @@ try {
   await page.screenshot({ path: `${output}/remove-confirm-light.png` });
   await page.getByRole('button', { name: 'Remove', exact: true }).click();
   await page.waitForURL(/#\/identity\/identities$/);
-  await page.locator('.acct-row').nth(1).waitFor();
+  await page.waitForTimeout(400);
+  assert.deepEqual(await rowNames(page), ['Gundula Gause', 'Market stall']);
+
+  // Undo in the toast puts it back; then remove it for good.
+  await page.getByText('Book club removed from this phone').waitFor();
+  await page.getByRole('button', { name: 'Undo' }).last().click();
+  await page.locator('.acct-row').nth(2).waitFor();
+  assert.deepEqual(await rowNames(page), ['Gundula Gause', 'Market stall', 'Book club']);
+  await page.getByRole('button', { name: 'Details for Book club' }).click();
+  await page.getByRole('button', { name: 'Remove from this phone' }).click();
+  await page.getByRole('button', { name: 'Remove', exact: true }).click();
+  await page.waitForURL(/#\/identity\/identities$/);
   await page.waitForTimeout(400);
   assert.deepEqual(await rowNames(page), ['Gundula Gause', 'Market stall']);
 

@@ -27,7 +27,7 @@
           v-if="identityCount > 1"
           icon="tabler:x"
           tone="danger"
-          :label="$t('All {n} identities on this phone are erased', { n: identityCount })"
+          :label="$t('All {n} identities from these 12 words are erased', { n: identityCount })"
           :interactive="false"
         />
         <IdentityRow

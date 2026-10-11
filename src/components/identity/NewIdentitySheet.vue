@@ -113,7 +113,7 @@ import { useProfileStore } from '../../stores/profile';
 import { useIdentityChange } from '../../composables/useIdentityChange';
 
 defineProps({ modelValue: { type: Boolean, default: false } });
-const emit = defineEmits(['update:modelValue', 'created']);
+const emit = defineEmits(['update:modelValue']);
 
 // vue-i18n runs in legacy mode, so useI18n() throws; reach $t via the proxy.
 const { proxy } = getCurrentInstance();
@@ -138,7 +138,6 @@ function close() {
 async function onCreate(keep) {
   keepContacts.value = keep;
   if (!await create(keep)) return;
-  emit('created');
   profileName.value = '';
   profileSetupNext = true;
   emit('update:modelValue', false);
@@ -165,7 +164,6 @@ async function finishProfileSetup() {
   profile.setDisplayName(profileName.value);
   if (profile.isDirty) await profile.publish().catch(() => {});
   showProfileSetup.value = false;
-  emit('created');
   $q.notify({ type: 'positive', message: t('New identity created'), timeout: 2200 });
 }
 </script>

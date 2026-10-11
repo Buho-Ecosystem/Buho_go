@@ -5,7 +5,6 @@ export default {
   "Add identity": "Add identity",
   "Erase all identities": "Erase all identities",
   "Removes every identity on this phone and starts a fresh card. Your wallets and your Bitcoin are not affected.": "Removes every identity on this phone and starts a fresh card. Your wallets and your Bitcoin are not affected.",
-  "All {n} identities on this phone are erased": "All {n} identities on this phone are erased",
   "Details for {name}": "Details for {name}",
   "Switching to {name}": "Switching to {name}",
   "Updating your card and contacts across BuhoGO.": "Updating your card and contacts across BuhoGO.",
@@ -26,4 +25,8 @@ export default {
   "Secret key could not be accessed. Please try again.": "Secret key could not be accessed. Please try again.",
   "Clipboard access failed. Please try copying again.": "Clipboard access failed. Please try copying again.",
   "Unlock was not completed. Try again when you are ready.": "Unlock was not completed. Try again when you are ready.",
+  "All {n} identities from these 12 words are erased": "All {n} identities from these 12 words are erased",
+  "Connect to the internet to remove this identity": "Connect to the internet to remove this identity",
+  "Your 12 words can only bring it back once this phone has been online.": "Your 12 words can only bring it back once this phone has been online.",
+  "Your contacts load once you are back online.": "Your contacts load once you are back online.",
 }

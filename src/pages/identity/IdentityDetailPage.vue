@@ -41,7 +41,7 @@
         <IdentityRow icon="tabler:id" :label="$t('Public code')" :caption="row.npub" mono :chevron="false" @click="copyPublicCode">
           <template #trailing><span class="row-action">{{ $t('Copy') }}</span></template>
         </IdentityRow>
-        <IdentityRow icon="tabler:lock" :label="$t('Secret key')" @click="showSecretKey = true" />
+        <IdentityRow icon="tabler:lock-password" :label="$t('Secret key')" @click="showSecretKey = true" />
       </IdentityGroup>
 
       <IdentityGroup
@@ -115,7 +115,6 @@ async function onUse() {
   await switchTo(
     { account: row.value.account, name: name.value, picture: row.value.picture },
     { account: current.account, name: nameOf(current), picture: current.picture },
-    refresh,
   );
 }
 
@@ -129,18 +128,29 @@ async function copyPublicCode() {
   $q.notify({ type: 'positive', message: t('Public code copied'), timeout: 1600 });
 }
 
-function onRemove() {
-  const removedName = name.value;
+async function onRemove() {
+  const removed = { account: account.value, name: name.value };
+  showRemove.value = false;
+  // "Restoring your 12 words brings it back" holds only once the restore
+  // pointer lists this identity, which a creation made offline may not have
+  // published yet.
+  if (identity.pointerDirty) await identity.republishNostrPointer().catch(() => {});
+  if (identity.pointerDirty) {
+    $q.notify({ type: 'warning', message: t('Connect to the internet to remove this identity'), caption: t('Your 12 words can only bring it back once this phone has been online.'), timeout: 4500 });
+    return;
+  }
   try {
-    identity.removeNostrIdentityFromDevice(account.value);
+    identity.removeNostrIdentityFromDevice(removed.account);
   } catch (err) {
     console.warn('[identity-detail] remove failed:', err?.code || err);
-    showRemove.value = false;
     $q.notify({ type: 'negative', message: t("Couldn't remove the identity"), caption: t('Please try again.'), timeout: 3500 });
     return;
   }
-  showRemove.value = false;
-  $q.notify({ type: 'positive', message: t('{name} removed from this phone', { name: removedName }), timeout: 2500 });
+  $q.notify({
+    message: t('{name} removed from this phone', { name: removed.name }),
+    timeout: 5000,
+    actions: [{ label: t('Undo'), color: 'white', handler: () => identity.restoreNostrIdentityToDevice(removed.account) }],
+  });
   router.replace(LIST_PATH);
 }
 
