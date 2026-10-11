@@ -140,8 +140,8 @@ export default {
       return row.unread > 0 ? `${row.name}, ${this.$t('New messages')}: ${row.unread}` : row.name
     },
     async open(row) {
-      // Navigate first, close after. Opened from /identity?sheet=messages, closing makes that page
-      // replace the route to drop the query, which cancels a push still loading the chat page.
+      // Navigate first, close after: the list stays until the chat page is there, so nothing
+      // flashes back to the address book in between.
       await this.$router.push(row.to)
       this.$emit('update:modelValue', false)
     }

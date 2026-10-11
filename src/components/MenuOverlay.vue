@@ -191,9 +191,9 @@ export default {
       return count > 99 ? '99+' : `+${count}`;
     },
 
-    /** Unread chat messages; the chat lives behind the Address Book door. */
+    /** Unread messages from contacts; the chat lives behind the Address Book door. Strangers light no badge. */
     unreadMessages() {
-      return this.chatAvailable ? this.messagesStore.totalUnread : 0;
+      return this.chatAvailable ? this.messagesStore.knownUnread : 0;
     },
 
     unreadBadge() {

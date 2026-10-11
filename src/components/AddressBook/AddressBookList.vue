@@ -31,17 +31,20 @@
                screen edge so the next bubble peeks, which is the swipe
                affordance. Hidden while searching: the search is about
                the list below. -->
-          <!-- Strangers who wrote to you: one quiet row, only while there
-               are any. The requests live in the Messages sheet. -->
+          <!-- Every conversation, newest first, opened right here: the
+               address book is where messages live (and where the menu's
+               badge points). Strangers' threads are a section inside. -->
           <button
-            v-if="requestCount > 0 && !searchQuery"
+            v-if="hasConversations && !searchQuery"
             type="button"
-            class="msg-requests"
-            @click="openRequests"
+            class="msg-row"
+            :aria-label="unreadAll > 0 ? `${$t('Messages')}, ${$t('New messages')}: ${unreadAll}` : $t('Messages')"
+            @click="messagesOpen = true"
           >
-            <span class="msg-requests-label">{{ $t('Message requests') }}</span>
-            <span class="msg-requests-count" aria-hidden="true">{{ requestCount }}</span>
-            <Icon icon="tabler:chevron-right" width="16" height="16" class="msg-requests-chev" />
+            <Icon icon="tabler:messages" width="18" height="18" aria-hidden="true" />
+            <span class="msg-row-label">{{ $t('Messages') }}</span>
+            <span v-if="unreadAll > 0" class="msg-row-count" aria-hidden="true">{{ unreadBadge }}</span>
+            <Icon icon="tabler:chevron-right" width="16" height="16" class="msg-row-chev" aria-hidden="true" />
           </button>
 
           <template v-if="!searchQuery && recentlyPaidEntries.length > 0">
@@ -125,6 +128,8 @@
         {{ $t('Add Contact') }}
       </q-btn>
     </div>
+
+    <MessagesSheet v-if="chatAvailable" v-model="messagesOpen" />
   </div>
 </template>
 
@@ -136,22 +141,37 @@ import ContactAvatar from './ContactAvatar.vue'
 import { Icon } from '@iconify/vue'
 import { useChatRuntime } from '../../composables/useChatRuntime'
 import { useMessagesStore } from '../../stores/messages'
+import MessagesSheet from '../chat/MessagesSheet.vue'
+import { badgeText } from '../chat/threadRows.js'
 
 export default {
   name: 'AddressBookList',
   components: {
     AddressBookEntry,
     ContactAvatar,
-    Icon
+    Icon,
+    MessagesSheet
   },
   emits: ['add-contact', 'pay-contact', 'open-contact'],
+  data() {
+    return { messagesOpen: false }
+  },
   setup() {
     return { chatAvailable: useChatRuntime().available, messages: useMessagesStore() }
   },
   computed: {
-    /** Threads from people who are not contacts; 0 while the chat is off. */
-    requestCount() {
-      return this.chatAvailable ? this.messages.unknownThreads.length : 0
+    /** Any conversation at all (with contacts or strangers); none while the chat is off. */
+    hasConversations() {
+      return this.chatAvailable && this.messages.threadsSorted.length > 0
+    },
+
+    /** Unread messages of every conversation, strangers included: this row is where they are. */
+    unreadAll() {
+      return this.chatAvailable ? this.messages.totalUnread : 0
+    },
+
+    unreadBadge() {
+      return badgeText(this.unreadAll)
     },
 
     ...mapState(useAddressBookStore, [
@@ -177,10 +197,6 @@ export default {
     /** Unread chat messages of a contact; only Nostr contacts have a chat. */
     unreadOf(entry) {
       return this.chatAvailable && entry.nostr_pubkey ? this.messages.unreadFor(entry.nostr_pubkey) : 0
-    },
-
-    openRequests() {
-      this.$router.push({ path: '/identity', query: { sheet: 'messages' } })
     },
 
     payContact(entry) {
@@ -291,10 +307,10 @@ export default {
   white-space: nowrap;
 }
 
-.msg-requests {
+.msg-row {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   width: 100%;
   min-height: 44px;
   margin-top: 10px;
@@ -302,18 +318,19 @@ export default {
   border: 0;
   border-radius: 12px;
   background: var(--bg-input);
-  color: var(--text-secondary);
+  color: var(--text-primary);
   font-family: 'Manrope', sans-serif;
-  font-size: 0.8125rem;
+  font-size: 0.9375rem;
   font-weight: 650;
   text-align: left;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
 }
 
-.msg-requests-label { flex: 1; min-width: 0; }
+.msg-row-label { flex: 1; min-width: 0; }
+.msg-row-chev { color: var(--text-muted); }
 
-.msg-requests-count {
+.msg-row-count {
   min-width: 20px;
   height: 18px;
   padding: 0 6px;
@@ -321,8 +338,8 @@ export default {
   place-items: center;
   box-sizing: border-box;
   border-radius: 999px;
-  background: var(--text-muted);
-  color: var(--bg-primary);
+  background: var(--brand-accent);
+  color: #04150b;
   font: 800 10px/1 'Manrope', sans-serif;
 }
 

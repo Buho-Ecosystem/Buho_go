@@ -869,3 +869,11 @@ test('strangers cannot grow the store without bound: the least recently active s
   store.ingest(msg(stranger(999), { id: rid(20_001), createdAt: 5_000 }))
   assert.equal(store.thread(ALICE).messages.length, 1)
 })
+
+test('the app badge counts unread messages of contacts only; Messages counts everyone', async () => {
+  const store = await scoped(ME)
+  store.ingest(msg(ALICE, { id: rid(30_001) }))
+  store.ingest(msg('e'.repeat(64), { id: rid(30_002) }))
+  assert.equal(store.totalUnread, 2)
+  assert.equal(store.knownUnread, 1, 'a stranger lights no badge')
+})

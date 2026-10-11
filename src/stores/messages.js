@@ -478,8 +478,18 @@ export const useMessagesStore = defineStore('messages', {
       return this.threadsSorted.filter(row => deps.isKnownContact(row.partner))
     },
 
-    /** Unread messages for the app badge. Muted chats are left out; `unreadFor` still counts them. */
+    /** Unread messages of every conversation (the address book's Messages row). Muted chats are left out; `unreadFor` still counts them. */
     totalUnread: state => Object.values(state.threads).reduce((sum, t) => sum + (t.muted ? 0 : t.unread), 0),
+
+    /**
+     * Unread messages from contacts only: the app badge. A stranger (spam with
+     * ever new keys) must not light a badge; their threads wait in Messages.
+     */
+    knownUnread(state) {
+      return Object.entries(state.threads)
+        .filter(([partner, t]) => !t.muted && deps.isKnownContact(partner))
+        .reduce((sum, [, t]) => sum + t.unread, 0)
+    },
 
     unreadFor: state => (partner) => state.threads[hexKey(partner)]?.unread ?? 0,
 

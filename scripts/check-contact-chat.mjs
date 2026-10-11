@@ -539,7 +539,8 @@ try {
     await deliverFromCarol(buildTextTemplate({ recipient: ALICE.pubkey, text: 'Hey, it is Carol' }));
     await deliverFromCarol(buildRequestTemplate({ recipient: ALICE.pubkey, amountSats: 2100, lud16: 'carol@btc.mybuho.de', note: 'Rent' }));
     await navigate(alice.page, '/address-book');
-    await alice.page.getByRole('button', { name: /Message requests/ }).click();
+    // Messages live in the address book; strangers are a section of the list.
+    await alice.page.getByRole('button', { name: /^Messages/ }).click();
     await alice.page.getByRole('region', { name: 'Messages' }).getByRole('button', { name: /^npub1.*New messages/ }).click();
     await alice.page.getByRole('group', { name: 'Not in your contacts' }).waitFor();
     await alice.page.getByText('Only pay if you are sure who this is.').waitFor();

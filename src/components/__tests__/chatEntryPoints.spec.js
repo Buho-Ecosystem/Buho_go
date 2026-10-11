@@ -171,20 +171,21 @@ test('messages sheet: tapping a row navigates first, then closes the sheet', asy
     $emit: (...a) => calls.push(['emit', ...a]),
     $router: { push: async (p) => { calls.push(['push', p]); await Promise.resolve() } },
   }, { to: '/address-book/c1/chat' })
-  // Closing under /identity?sheet=messages makes the page replace the route, which would cancel a
-  // push still in flight; the sheet must only close once the navigation has settled.
+  // The sheet closes only once the navigation has settled, so the list never flashes back in between.
   assert.deepEqual(calls, [['push', '/address-book/c1/chat'], ['emit', 'update:modelValue', false]])
 })
 
 // ── contract of the small additions ──────────────────────────────────
 
-test('entry points hide themselves behind the runtime availability', () => {
-  const identityPage = readSrc('pages/identity/IdentityHomePage.vue')
-  assert.match(identityPage, /v-if="chatAvailable"\s+icon="tabler:messages"/)
-  assert.match(identityPage, /<MessagesSheet v-if="chatAvailable"/)
+test('entry points hide themselves behind the runtime availability; messages live in the address book', () => {
+  const book = readSrc('components/AddressBook/AddressBookList.vue')
+  assert.match(book, /<MessagesSheet v-if="chatAvailable"/)
+  assert.match(book, /this\.chatAvailable && this\.messages\.threadsSorted\.length > 0/)
+  assert.match(book, /this\.chatAvailable && entry\.nostr_pubkey/)
+  assert.doesNotMatch(readSrc('pages/identity/IdentityHomePage.vue'), /MessagesSheet/, 'one home for messages')
   assert.match(readSrc('pages/Settings.vue'), /v-if="notificationsStore\.supported && chatAvailable"/)
-  assert.match(readSrc('components/MenuOverlay.vue'), /this\.chatAvailable \? this\.messagesStore\.totalUnread : 0/)
-  assert.match(readSrc('components/AddressBook/AddressBookList.vue'), /this\.chatAvailable && entry\.nostr_pubkey/)
+  // The app badge counts contacts only: strangers wait inside Messages.
+  assert.match(readSrc('components/MenuOverlay.vue'), /this\.chatAvailable \? this\.messagesStore\.knownUnread : 0/)
 })
 
 test('chat-messages switch is bound to the store and disabled without notifications', () => {
