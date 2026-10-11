@@ -13,6 +13,7 @@ import * as Vue from 'vue'
 import * as ServerRenderer from 'vue/server-renderer'
 import * as amountFormatting from '../../utils/amountFormatting.js'
 import * as constants from '../../services/dm/constants.js'
+import * as routes from '../../services/dm/routes.js'
 
 const sfc = createRequire(import.meta.url)('@vue/compiler-sfc')
 const t = (key, values = {}) => key.replace(/\{(\w+)\}/g, (_, name) => values[name] ?? name)
@@ -35,6 +36,7 @@ const notificationCopy = run(readSrc('services/dm/notificationCopy.js'), { './pr
 const rows = run(readSrc('components/chat/threadRows.js'), {
   '../../services/dm/notificationCopy.js': notificationCopy,
   '../../services/dm/protocol.js': protocol,
+  '../../services/dm/routes.js': routes,
   './chatFormat.js': chatFormat,
 })
 

@@ -40,6 +40,7 @@
 
 import { nip19 } from 'nostr-core';
 import { stableNotificationId } from '../paymentNotifications.js';
+import { contactChatRoute, unknownChatRoute } from './routes.js';
 import { DM_DISCOVERY_RELAYS, KEY_IDLE_WIPE_MS, REMIND_INTERVAL_SECONDS } from './constants.js';
 import { DM_ERROR, DmError } from './errors.js';
 import { createInbox, createSignAuth } from './inbox.js';
@@ -67,15 +68,8 @@ import { createDmTransport } from './transport.js';
 /** What `partnerReachability` answers; the same three values as the resolver. */
 export const REACHABILITY = INBOX_STATUS;
 
-/** Route of a chat with a saved contact. */
-export const contactChatRoute = (contactId) => `/address-book/${encodeURIComponent(contactId)}/chat`;
-
-/**
- * Route of a chat with a sender who is not in the address book. The route does
- * not exist yet: the UI decides what it shows (the "Unknown" section of the
- * messages list, most likely). A notification tap on it must be handled there.
- */
-export const unknownChatRoute = (pubkey) => `/messages/${pubkey}`;
+// The chat's routes, re-exported for the callers that already reach them here.
+export { contactChatRoute, unknownChatRoute };
 
 const HEX_64 = /^[0-9a-f]{64}$/;
 

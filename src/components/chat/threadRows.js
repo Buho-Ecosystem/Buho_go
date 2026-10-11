@@ -6,6 +6,7 @@
  * the sheet and its tests. Strings are English keys, like the rest of the app.
  */
 
+import { contactChatRoute, contactPageRoute, unknownChatRoute } from '../../services/dm/routes.js'
 import { createNotificationFormatter, PREVIEW_LENGTH } from '../../services/dm/notificationCopy.js'
 import { MESSAGE_TYPE, REQUEST_STATUS } from '../../services/dm/protocol.js'
 import { isSameDay, shortNpub } from './chatFormat.js'
@@ -102,7 +103,7 @@ export function buildThreadRows(threads, env) {
       unread: thread.unread,
       badge: badgeText(thread.unread),
       muted: Boolean(thread.muted),
-      to: known ? `/address-book/${contact.id}/chat` : `/messages/${thread.partner}`,
+      to: known ? contactChatRoute(contact.id) : unknownChatRoute(thread.partner),
     }
   })
 }
@@ -114,7 +115,5 @@ export function buildThreadRows(threads, env) {
  * @param {boolean} chatAvailable
  */
 export function contactTapPath(entry, chatAvailable) {
-  return chatAvailable && entry?.nostr_pubkey
-    ? `/address-book/${entry.id}/chat`
-    : `/address-book/${entry.id}`
+  return chatAvailable && entry?.nostr_pubkey ? contactChatRoute(entry.id) : contactPageRoute(entry.id)
 }

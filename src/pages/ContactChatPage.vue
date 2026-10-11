@@ -248,7 +248,7 @@ import { usePayContact } from '../composables/usePayContact.js'
 import { useContactChat } from '../composables/useContactChat.js'
 import { useSignerAppNotice } from '../composables/useSignerAppNotice.js'
 import { containsSecretKey } from '../services/dm/protocol.js'
-import { contactChatRoute } from '../services/dm/runtime.js'
+import { contactChatRoute, contactPageRoute } from '../services/dm/routes.js'
 import { loadIncomingTransactions } from '../services/dm/incomingTransactions.js'
 import { normalizeTx } from '../services/txNormalizer.js'
 import { fiatRatesService } from '../utils/fiatRates.js'
@@ -545,7 +545,7 @@ export default {
       // a removed Nostr key) lands here; it goes on to that page.
       if (this.view === 'no-nostr') {
         const entry = this.contact()
-        this.$router.replace(entry ? `/address-book/${encodeURIComponent(entry.id)}` : '/address-book')
+        this.$router.replace(entry ? contactPageRoute(entry.id) : '/address-book')
         return
       }
       if (this.view !== 'chat' || !this.partnerKey || this.activeKey === this.partnerKey) return
@@ -567,7 +567,7 @@ export default {
 
     openProfile() {
       const entry = this.contact()
-      if (entry) this.$router.push(`/address-book/${encodeURIComponent(entry.id)}`)
+      if (entry) this.$router.push(contactPageRoute(entry.id))
     },
 
     openMenu() {

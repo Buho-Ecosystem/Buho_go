@@ -18,6 +18,7 @@ import * as Vue from 'vue'
 import * as ServerRenderer from 'vue/server-renderer'
 import * as amountFormatting from '../../utils/amountFormatting.js'
 import * as constants from '../../services/dm/constants.js'
+import * as routes from '../../services/dm/routes.js'
 
 const sfc = createRequire(import.meta.url)('@vue/compiler-sfc')
 
@@ -61,7 +62,7 @@ const page = run(descriptor.script.content, {
   '../components/AddressBook/AddressBookModal.vue': stub('AddressBookModal'),
   '../components/identity/IdentityGetPaidSheet.vue': stub('IdentityGetPaidSheet'),
   '../services/dm/protocol.js': { containsSecretKey: (text) => /nsec1/.test(text) },
-  '../services/dm/runtime.js': { contactChatRoute: (id) => `/address-book/${id}/chat` },
+  '../services/dm/routes.js': routes,
 }).default
 
 const compiled = sfc.compileTemplate({ source: descriptor.template.content, filename: 'ContactChatPage.vue', id: 'page', ssr: true })
