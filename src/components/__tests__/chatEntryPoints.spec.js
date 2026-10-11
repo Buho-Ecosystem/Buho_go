@@ -31,6 +31,7 @@ const chatFormat = run(readSrc('components/chat/chatFormat.js'), { '../../utils/
 const protocol = {
   MESSAGE_TYPE: { TEXT: 'text', REQUEST: 'request', STATUS: 'status', PAYMENT: 'payment', REACTION: 'reaction' },
   REQUEST_STATUS: { PAID: 'paid', DECLINED: 'declined', CANCELLED: 'cancelled', REMINDER: 'reminder' },
+  isFileMessage: (message) => message?.kind === 15,
 }
 const notificationCopy = run(readSrc('services/dm/notificationCopy.js'), { './protocol.js': protocol })
 const rows = run(readSrc('components/chat/threadRows.js'), {

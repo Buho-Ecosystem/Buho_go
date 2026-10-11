@@ -20,6 +20,7 @@ import { MAX_NOTE_LENGTH, MAX_TEXT_LENGTH, MAX_VERIFY_URL_LENGTH, REQUEST_LIFETI
 import { DM_ERROR, DmError } from '../errors.js';
 import {
   MESSAGE_TYPE,
+  isFileMessage,
   REQUEST_STATUS,
   buildPaymentTemplate,
   buildReactionTemplate,
@@ -618,10 +619,19 @@ test('round trip: my own message (self copy) is outgoing and names the contact a
 // parseRumor: not part of a one-to-one conversation
 // ---------------------------------------------------------------------------
 
-test('parseRumor returns null for kinds other than 14 and 7', () => {
-  for (const kind of [0, 1, 13, 15, 1059, 10050]) {
+test('parseRumor returns null for kinds other than 14, 15 and 7', () => {
+  for (const kind of [0, 1, 13, 1059, 10050]) {
     assert.equal(parseRumor({ ...toRumor(buildTextTemplate({ recipient: ME, text: 'x', now })), kind }, { me: ME }), null);
   }
+});
+
+test('parseRumor: a file message from another app is kept as "a file", never its link', () => {
+  const file = toRumor({ kind: 15, tags: [['p', ME], ['file-type', 'image/jpeg'], ['decryption-key', 'k']], content: 'https://files.example/abc', created_at: NOW }, PEER);
+  const message = parseRumor(file, { me: ME });
+  assert.equal(message.type, MESSAGE_TYPE.TEXT);
+  assert.equal(message.text, '', 'the link is not shown');
+  assert.equal(isFileMessage(message), true);
+  assert.equal(isFileMessage(parseRumor(toRumor(buildTextTemplate({ recipient: ME, text: 'x', now }), PEER), { me: ME })), false);
 });
 
 test('parseRumor returns null for a group message in either direction', () => {

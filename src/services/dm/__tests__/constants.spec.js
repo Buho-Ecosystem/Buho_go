@@ -78,6 +78,7 @@ function rumorOfBytes(size, authorPubkey, recipientPubkey) {
 test('KIND carries the kinds NIP-17, NIP-25, NIP-42, NIP-51 and NIP-59 define', () => {
   assert.deepEqual(KIND, {
     DM: 14,
+    FILE: 15,
     REACTION: 7,
     SEAL: 13,
     GIFT_WRAP: 1059,

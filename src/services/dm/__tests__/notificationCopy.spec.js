@@ -20,6 +20,10 @@ test('texts show a flattened preview, long ones are cut on a character boundary'
   assert.ok(out.endsWith('…'));
 });
 
+test('a file from another app says so, never its link', () => {
+  assert.equal(format({ type: 'text', kind: 15, text: '' }), 'Sent a file');
+});
+
 test('money messages say what they are, with the amount, never the invoice', () => {
   assert.equal(format({ type: 'request', request: { amountSats: 12_000, bolt11: 'lnbc1secret' } }), 'Requested 12000 sats');
   // Only the sender's word until the wallet shows it: the lock screen never confirms money.

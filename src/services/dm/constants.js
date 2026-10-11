@@ -22,6 +22,12 @@ import { DEFAULT_RELAYS } from '../../utils/nostrRelays.js';
 export const KIND = Object.freeze({
   /** NIP-17 chat message. Only ever a rumor: never signed, never published as is. */
   DM: 14,
+  /**
+   * NIP-17 file message (other apps send photos this way). Read only: shown as
+   * "sent a file" instead of vanishing; its content is a link to a file
+   * encrypted with keys this app does not handle.
+   */
+  FILE: 15,
   /** NIP-25 reaction, also carried as a rumor so reactions are as private as messages. */
   REACTION: 7,
   /** NIP-59 seal: the rumor encrypted to the recipient and signed by the real author. */

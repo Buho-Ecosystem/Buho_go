@@ -47,7 +47,7 @@ import { REMIND_INTERVAL_SECONDS } from '../services/dm/constants.js';
 import { DM_ERROR, DmError } from '../services/dm/errors.js';
 import { confirmIncomingPayments } from '../services/dm/paymentConfirmation.js';
 import { buildChatPaymentContext } from '../services/dm/paymentContext.js';
-import { MESSAGE_TYPE, REQUEST_STATUS } from '../services/dm/protocol.js';
+import { MESSAGE_TYPE, REQUEST_STATUS, isFileMessage } from '../services/dm/protocol.js';
 import { PAYING_REASON, payingWalletReasonText } from '../utils/payingWallets.js';
 
 /** Characters of a replied-to message kept in the preview. */
@@ -115,9 +115,12 @@ export function buildThreadItems(input) {
     if (!message.replyTo) return null;
     const original = byId.get(message.replyTo);
     if (!original) return null;
-    const text = original.type === MESSAGE_TYPE.REQUEST ? t('Payment request') : original.text;
+    const text = original.type === MESSAGE_TYPE.REQUEST ? t('Payment request') : textOf(original);
     return { author: authorOf(original), text: clip(text) };
   };
+
+  /** What a message says; a file from another app is one plain sentence instead of its link. */
+  const textOf = (message) => (isFileMessage(message) ? t("Sent a file. This app can't show files yet.") : message.text);
 
   const messageItem = (message, overrides = {}) => ({
     key: message.id,
@@ -125,7 +128,7 @@ export function buildThreadItems(input) {
     ts: message.createdAt,
     message: {
       id: message.id,
-      text: message.text,
+      text: textOf(message),
       outgoing: message.outgoing,
       delivery: message.outgoing ? (message.delivery || 'sent') : 'sent',
       degraded: message.degraded === true,

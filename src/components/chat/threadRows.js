@@ -8,7 +8,7 @@
 
 import { contactChatRoute, contactPageRoute, unknownChatRoute } from '../../services/dm/routes.js'
 import { createNotificationFormatter, PREVIEW_LENGTH } from '../../services/dm/notificationCopy.js'
-import { MESSAGE_TYPE, REQUEST_STATUS } from '../../services/dm/protocol.js'
+import { MESSAGE_TYPE, REQUEST_STATUS, isFileMessage } from '../../services/dm/protocol.js'
 import { isSameDay, shortNpub } from './chatFormat.js'
 
 const MAX_BADGE = 99
@@ -51,7 +51,7 @@ export function previewLine(message, { t, formatAmount }) {
       }
       break
     case MESSAGE_TYPE.TEXT: {
-      const text = flatten(message.text)
+      const text = isFileMessage(message) ? t('Sent a file') : flatten(message.text)
       if (text) return `${t('You')}: ${text}`
       break
     }

@@ -18,7 +18,7 @@ or a reply, never the point. The wallet must not turn into a messenger.
 - Library: `nostr-core` (already a dependency). Gaps are wrapped locally and filed
   upstream (see section 11).
 
-Non-goals: group chats, file messages (kind 15), read receipts, typing
+Non-goals: group chats, sending files, read receipts, typing
 indicators, push while the app is closed.
 
 ## 2. Product rules (from the reviewed design)
@@ -265,7 +265,7 @@ store, clock) so they can be unit tested without network or Pinia.
 - `inboundPolicy.js` — `createWrapGate()` (before unwrap: kind 1059, content
   ≤ 87,472 chars = largest NIP-44 payload, ≤ 1 h in the future, not expired,
   no duplicate wrap id) and `createRumorGate({ me, isBlocked, rate })` (after
-  unwrap: kind 14/7, sender not blocked, not expired, no duplicate rumor id,
+  unwrap: kind 14/7 (and 15, a file from another app, shown as "Sent a file" without its link), sender not blocked, not expired, no duplicate rumor id,
   optional per-sender `rate: { max, windowMs }` that never applies to `me`;
   the inbox uses a rate only for live events, not for backfill). Both on
   `nostr-core` `policy.pipe`, returning `PolicyResult`.

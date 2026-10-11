@@ -632,7 +632,7 @@ function readBuhoPayload(tags, createdAt) {
 export function parseRumor(rumor, context) {
   const me = context?.me;
   if (typeof me !== 'string' || !HEX_64.test(me) || !isReadableRumor(rumor)) return null;
-  if (rumor.kind !== KIND.DM && rumor.kind !== KIND.REACTION) return null;
+  if (rumor.kind !== KIND.DM && rumor.kind !== KIND.REACTION && rumor.kind !== KIND.FILE) return null;
   const partner = resolvePartner(rumor, me);
   if (partner === null) return null;
 
@@ -656,6 +656,8 @@ export function parseRumor(rumor, context) {
   };
 
   if (rumor.kind === KIND.REACTION) return parseReaction(rumor, message);
+  // A file from another app: one line saying so, never its link or payload.
+  if (rumor.kind === KIND.FILE) return { ...message, text: '', replyTo: replyTarget(rumor.tags, { unmarked: true }) };
 
   message.replyTo = replyTarget(rumor.tags, { unmarked: true });
   try {
@@ -665,6 +667,11 @@ export function parseRumor(rumor, context) {
     message.degraded = true;
   }
   return message;
+}
+
+/** A file message (kind 15) from another app: the views say "sent a file" instead of showing text. */
+export function isFileMessage(message) {
+  return message?.kind === KIND.FILE;
 }
 
 /** The reaction part of `parseRumor`; null when there is no target or no usable emoji. */

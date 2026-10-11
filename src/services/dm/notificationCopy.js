@@ -26,7 +26,7 @@
  *   'Reminder: a request is still open'
  */
 
-import { MESSAGE_TYPE, REQUEST_STATUS } from './protocol.js';
+import { MESSAGE_TYPE, REQUEST_STATUS, isFileMessage } from './protocol.js';
 
 /** Longest text preview, in characters (not code units). */
 export const PREVIEW_LENGTH = 100;
@@ -64,6 +64,7 @@ export function createNotificationFormatter({ t, formatAmount }) {
         }
         break;
       case MESSAGE_TYPE.TEXT: {
+        if (isFileMessage(message)) return t('Sent a file');
         const text = preview(message.text);
         if (text) return text;
         break;

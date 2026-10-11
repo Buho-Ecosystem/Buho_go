@@ -90,6 +90,14 @@ test('items: a text message carries delivery, reactions, degraded flag and a rep
   assert.equal(items[1].ts, reply.createdAt);
 });
 
+test('items: a file from another app is one plain sentence, also when answered', () => {
+  const file = msg({ text: '', kind: 15 });
+  const reply = msg({ text: 'Nice photo', replyTo: file.id, outgoing: true, delivery: 'sent' });
+  const [a, b] = build([file, reply]).map((item) => item.message);
+  assert.equal(a.text, "Sent a file. This app can't show files yet.");
+  assert.equal(b.reply.text, "Sent a file. This app can't show files yet.");
+});
+
 test('items: a reply to a request says "Payment request"; a missing original gives no preview; long text is clipped', () => {
   const req = request();
   const toRequest = msg({ replyTo: req.id });

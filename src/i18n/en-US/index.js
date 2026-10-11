@@ -3346,6 +3346,8 @@ export default {
   "Cancelled a request": "Cancelled a request",
   "Cancel request": "Cancel request",
   "Message copied": "Message copied",
+  "Sent a file": "Sent a file",
+  "Sent a file. This app can't show files yet.": "Sent a file. This app can't show files yet.",
   "Muted": "Muted",
   "Notifications off for {name}": "Notifications off for {name}",
   "Notifications on for {name}": "Notifications on for {name}",

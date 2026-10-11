@@ -3351,6 +3351,8 @@ export default {
   "Cancelled a request": "Canceló una solicitud",
   "Cancel request": "Cancelar solicitud",
   "Message copied": "Mensaje copiado",
+  "Sent a file": "Envió un archivo",
+  "Sent a file. This app can't show files yet.": "Envió un archivo. Esta app aún no puede mostrar archivos.",
   "Muted": "Silenciado",
   "Notifications off for {name}": "Notificaciones desactivadas para {name}",
   "Notifications on for {name}": "Notificaciones activadas para {name}",
