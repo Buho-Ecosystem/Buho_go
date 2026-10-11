@@ -179,6 +179,7 @@ import {
 import * as deviceCrypto from '../utils/deviceCrypto';
 import { clearCachedTransactions } from '../utils/txCache.js';
 import { i18n } from '../boot/i18n';
+import { canWalletPay } from '../utils/walletCapabilities.js';
 import {
   setScreenPrivacyEnabled as nativeSetScreenPrivacyEnabled,
   isScreenPrivacyEnabled as nativeIsScreenPrivacyEnabled,
@@ -642,6 +643,14 @@ export const useWalletStore = defineStore('wallet', {
       if (!activeWallet) return null;
       return activeWallet.type || inferWalletType(activeWallet);
     },
+
+    /**
+     * Can any of the user's wallets pay this destination type? With "Pay
+     * with" the paying wallet is chosen on the confirm sheet, so the gates
+     * before it ask this, not whether the active wallet can.
+     */
+    canAnyWalletPay: (state) => (destinationType) =>
+      state.wallets.some((w) => canWalletPay(w.type || inferWalletType(w), destinationType)),
 
     /**
      * Check if Spark wallet needs connection (no PIN required — auto-connects)

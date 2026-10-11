@@ -164,40 +164,28 @@ test('expanded: a listbox of options, the selected one checked, unusable ones di
   assert.match(options[2], /aria-selected="true"/, 'Alby Hub is the selected row')
   assert.match(options[4], /aria-disabled="true"/, 'Arkade cannot pay a Lightning payment')
   assert.equal(options.filter((o) => o.includes('aria-disabled')).length, 1)
-  assert.match(html, /<small class="pay-with-reason">Lightning unavailable<\/small>/)
+  assert.match(html, /<small class="pay-with-reason">Can&#39;t pay this<\/small>/)
   assert.equal((html.match(/data-icon="tabler:check"/g) || []).length, 1, 'one check mark, on the selected row')
   // 44 pt: the rows are real buttons, the sheet sizes them in CSS (asserted below)
   assert.ok(options.every((o) => o.includes('type="button"')))
 })
 
-test('the reason names the rail of the payment', async () => {
+test('reasons are plain words, never the payment rail', async () => {
   const wallets = [
     entry({ id: 'biz' }),
     entry({ id: 'alby', name: 'Alby Hub', type: 'nwc', isActive: false, usable: false, reason: 'unsupported-destination' }),
-  ]
-  const render1 = (destinationType) => render(PayWithField, { wallets, modelValue: 'biz', destinationType }, { data: { open: true } })
-  assert.match(await render1('lightning_invoice'), /Lightning unavailable/)
-  assert.match(await render1('spark_address'), /Spark wallets only/)
-  assert.match(await render1('arkade_address'), /Arkade wallets only/)
-  assert.match(await render1('bitcoin_address'), /Spark or Arkade only/)
-  assert.match(await render1(undefined), /Lightning unavailable/)
-})
-
-test('balance and availability reasons are worded too', async () => {
-  const wallets = [
-    entry({ id: 'biz' }),
     entry({ id: 'p', name: 'Personal', isActive: false, usable: false, reason: 'insufficient-balance' }),
-    entry({ id: 'n', name: 'Alby', type: 'nwc', isActive: false, usable: false, reason: 'unavailable' }),
   ]
   const html = await render(PayWithField, { wallets, modelValue: 'biz' }, { data: { open: true } })
-  assert.match(html, /Not enough balance/)
-  assert.match(html, /<small class="pay-with-reason">Unavailable<\/small>/)
+  assert.match(html, /<small class="pay-with-reason">Can&#39;t pay this<\/small>/)
+  assert.match(html, /<small class="pay-with-reason">Not enough balance<\/small>/)
+  assert.doesNotMatch(html, /Lightning|Spark wallets only/)
 })
 
 test('a selected wallet that cannot pay shows its reason in the collapsed field', async () => {
   const html = await render(PayWithField, { wallets: WALLETS, modelValue: 'ark' })
   assert.match(html, /class="[^"]*pay-with-field--blocked[^"]*"/)
-  assert.match(html, /<small class="pay-with-reason">Lightning unavailable<\/small>/)
+  assert.match(html, /<small class="pay-with-reason">Can&#39;t pay this<\/small>/)
 })
 
 test('a stale or missing selection falls back to the active wallet', async () => {
@@ -228,7 +216,7 @@ function fieldVm(props = {}) {
   const emitted = []
   const vm = {
     ...PayWithField.methods,
-    wallets: WALLETS, modelValue: 'biz', disabled: false, destinationType: 'lightning_invoice', open: false,
+    wallets: WALLETS, modelValue: 'biz', disabled: false, open: false,
     useBip177Format: true,
     $t: t, $emit: (...args) => emitted.push(args), $nextTick: (fn) => fn?.(), $refs: { field: { focus() {} } },
     $el: { querySelector: () => ({ focus() {} }) },
@@ -331,7 +319,6 @@ const sheetProps = (over = {}) => ({
   payment: { recipient: { name: 'Alice', address: 'alice@example.com' }, amount: { mode: 'fixed', fixedSats: 1000 } },
   payingWallets: WALLETS.slice(0, 3),
   sendingWalletId: 'biz',
-  payingDestinationType: 'lightning_address',
   ...over,
 })
 const sheetDirectives = ['touch-swipe']

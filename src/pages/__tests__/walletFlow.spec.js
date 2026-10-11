@@ -505,7 +505,8 @@ test('Pay with: a contact is payable from another wallet when the active one can
   vm.onPaymentDetected = async payload => { dispatched.push(payload); };
   vm.payContactDestination({ address: 'bob@example.com', addressType: 'lightning', name: 'Bob' });
   assert.deepEqual(notices, []);
-  assert.deepEqual(dispatched, [{ type: 'lightning_address', data: 'bob@example.com', contactName: 'Bob', paymentOnly: true, sendingWalletId: 'biz' }]);
+  // No wallet is forced: the default pick runs once the amount is known (and finds Business).
+  assert.deepEqual(dispatched, [{ type: 'lightning_address', data: 'bob@example.com', contactName: 'Bob', paymentOnly: true, sendingWalletId: null }]);
 });
 
 test('Pay with: a contact payment carries the caller\'s wallet and is gated on THAT wallet', () => {
@@ -520,15 +521,15 @@ test('Pay with: a contact payment carries the caller\'s wallet and is gated on T
   assert.equal(notices.length, 1);
   assert.equal(notices[0].message, 'Cannot pay this contact');
   assert.equal(notices[0].caption, 'Lightning is temporarily unavailable on Arkade - switch to another wallet');
-  // An unknown id falls back to the default pick instead of failing.
+  // An unknown id is dropped: the default pick decides instead of failing.
   vm.payContactDestination({ address: 'bob@example.com', addressType: 'lightning', sendingWalletId: 'gone' });
-  assert.equal(dispatched[1].sendingWalletId, 'biz');
+  assert.equal(dispatched[1].sendingWalletId, null);
   // A Spark contact from an NWC-active user is payable from a Spark wallet.
   const nwcActive = payingHarness({ active: 'alby' });
   nwcActive.vm.onPaymentDetected = async payload => { nwcActive.dispatched.push(payload); };
   nwcActive.vm.payContactDestination({ address: 'spark1abc', addressType: 'spark', name: 'Sam' });
   assert.equal(nwcActive.dispatched[0].type, 'spark_address');
-  assert.equal(nwcActive.dispatched[0].sendingWalletId, 'biz');
+  assert.equal(nwcActive.dispatched[0].sendingWalletId, null);
 });
 
 test('Pay with: a contact nobody can pay keeps the original warning', () => {
@@ -603,7 +604,7 @@ test('Pay with: choosing another wallet moves the verdict, the hint and the comm
   // A larger amount outgrows the selected wallet: the gate closes, the hint names it.
   vm.sendSheetAmountSats = 45000;
   assert.equal(vm.paymentSheetWalletCanPay, false);
-  assert.equal(vm.paymentSheetWalletHint, 'Not enough balance in Alby Hub - choose another wallet or send less');
+  assert.equal(vm.paymentSheetWalletHint, 'Not enough balance in Alby Hub. Choose another wallet or send less.');
   assert.equal(vm.canConfirmPayment, false);
 
   // Mid-send the choice is frozen.
@@ -623,14 +624,11 @@ test('Pay with: an unusable selection blocks the commit, in the sheet and in the
   assert.deepEqual(lightning, []);
   assert.equal(vm.isSendingPayment, false);
 
-  // Unavailable (its last connection failed) blocks as well; not connected yet does not.
+  // A wallet whose last connection failed is not blocked: paying reconnects it, as before Pay with.
   const down = payingHarness({ connectionStates: { alby: { connected: false, error: 'relay unreachable' } } });
   await down.vm.onPaymentDetected({ type: 'lightning_invoice', data: 'inv-1000', sendingWalletId: 'alby' });
-  assert.equal(down.vm.paymentSheetWalletCanPay, false);
-  assert.equal(down.vm.paymentSheetWalletHint, 'Alby Hub is unavailable right now - choose another wallet');
-  const idle = payingHarness({ connectionStates: { alby: { connected: false, error: null }, lnb: undefined } });
-  await idle.vm.onPaymentDetected({ type: 'lightning_invoice', data: 'inv-1000', sendingWalletId: 'alby' });
-  assert.equal(idle.vm.paymentSheetWalletCanPay, true);
+  assert.equal(down.vm.paymentSheetWalletCanPay, true);
+  assert.equal(down.vm.paymentSheetWalletHint, '');
 });
 
 test('Pay with: single-wallet users keep the old gate - the rail only, never the balance', async () => {
@@ -884,7 +882,7 @@ test('Pay with: the entries the sheet renders are the store\'s wallets, active f
   assert.deepEqual(entries.map(w => w.id), ['lnb', 'biz', 'personal', 'alby', 'ark']);
   assert.deepEqual(entries.map(w => w.balanceSats), [20000, 50000, 40000, 30000, 10000]);
   assert.equal(entries[0].isActive, true);
-  assert.deepEqual(Object.keys(entries[0]).sort(), ['balanceSats', 'id', 'isActive', 'name', 'reason', 'type', 'usable']);
+  assert.deepEqual(Object.keys(entries[0]).sort(), ['balanceSats', 'connectionFailed', 'id', 'isActive', 'name', 'reason', 'type', 'usable']);
   // Nothing pending: nothing to choose.
   vm.pendingPayment = null;
   assert.deepEqual(vm.payingWalletEntries, []);

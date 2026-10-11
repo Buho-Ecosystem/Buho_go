@@ -548,7 +548,6 @@
       :wallet-hint="paymentSheetWalletHint"
       :paying-wallets="payingWalletEntries"
       :sending-wallet-id="sendingWalletId"
-      :paying-destination-type="pendingDestinationType"
       :is-sending="isSendingPayment"
       :is-complete="sendDidSucceed"
       :commit-gate="sendSheetCommitGate"
@@ -1843,7 +1842,7 @@ export default {
       if (!canWalletPay(this.getSendingWalletType(), this.pendingDestinationType)) {
         return { name: wallet?.name || '', reason: PAYING_REASON.UNSUPPORTED_DESTINATION };
       }
-      // Balance and availability only matter when there is a choice to make.
+      // The balance only matters when there is a choice to make.
       // With a single wallet nothing could be offered instead, so the provider
       // keeps reporting a real shortfall the way it always has.
       const entries = this.payingWalletEntries;
@@ -1881,12 +1880,13 @@ export default {
       return !!(this.l1Fee?.ready && !this.l1Fee.insufficient);
     },
 
-    // A rail problem keeps the shared switch-wallet words; a balance or
-    // availability problem names the wallet (payingWalletHint).
+    // A rail problem keeps the shared switch-wallet words; a balance problem
+    // names the wallet and suggests another only when one can pay.
     paymentSheetWalletHint() {
       const block = this.sendingWalletBlock;
       if (!block) return '';
-      return payingWalletHint(block, this.pendingDestinationType, this.$t.bind(this));
+      const hasAlternative = this.payingWalletEntries.some((w) => w.usable && w.id !== block.id);
+      return payingWalletHint(block, this.pendingDestinationType, this.$t.bind(this), { hasAlternative });
     },
 
     /**
@@ -2278,6 +2278,20 @@ export default {
      * balance need no watcher - they are computed from the same id.
      */
     sendingWalletId: 'updateFeeEstimate',
+
+    /**
+     * "Pay with" judges every wallet by its balance, so the other wallets'
+     * figures are refreshed once when a payment opens: only those not known
+     * to be current, and never the one already being read.
+     */
+    'payingWalletEntries.length'(count, before) {
+      if (count < 2 || before >= 2) return;
+      for (const { id } of this.payingWalletEntries) {
+        const shown = this.walletStore.getDisplayBalance(id);
+        if (shown.refreshing || (shown.known && !shown.isCached)) continue;
+        this.walletStore.refreshBalance(id).catch(() => {});
+      }
+    },
 
     autoWithdrawResult(result) {
       if (!result) return
@@ -2710,7 +2724,10 @@ export default {
         data: address,
         contactName: name || null,
         paymentOnly: true,
-        sendingWalletId: payerId,
+        // Only the caller's own (known) choice travels on: without one, the
+        // default pick runs again once the amount is known and may choose a
+        // wallet that can cover it. `payerId` above only gates the rail.
+        sendingWalletId: payerId === sendingWalletId ? sendingWalletId : null,
       });
     },
 
@@ -4386,7 +4403,6 @@ export default {
               }
               const lightningService = new LightningPaymentService(nwcUrl);
               const processedLnurl = await lightningService.processPaymentInput(paymentData.data);
-              console.log('LNURL processed:', processedLnurl);
               // The SDK result only contains payment mechanics. Preserve the
               // source payload so resolved identity metadata is not dropped.
               this.pendingPayment = {
@@ -4510,8 +4526,9 @@ export default {
                 : 0);
             // It is the paying wallet that has to cover it: with several
             // wallets the default pick passes over one that cannot.
+            // Only a known balance can say no (an unknown one is not 0).
             const payerBalance = this.walletBalanceOf(payerFor(paymentSats));
-            if (paymentSats > 0 && paymentSats > payerBalance) {
+            if (paymentSats > 0 && payerBalance !== null && paymentSats > payerBalance) {
               resolved = false; // keep the sheet open; the notify explains why
               this.$q.notify({
                 type: 'negative',
@@ -4562,7 +4579,8 @@ export default {
               return;
             }
 
-            if (dest.amountSats > 0 && dest.amountSats > this.walletBalanceOf(payerWalletId)) {
+            const payerBalance = this.walletBalanceOf(payerWalletId);
+            if (dest.amountSats > 0 && payerBalance !== null && dest.amountSats > payerBalance) {
               resolved = false;
               this.failSendResolution(this.$t('Insufficient balance'), fromField);
               return;
@@ -4818,8 +4836,6 @@ export default {
 
         const comment = this.paymentComment || null;
 
-        console.log('Sending payment:', this.pendingPayment);
-        console.log('Amount:', amount, 'Comment:', comment);
 
         let result;
 
@@ -4836,7 +4852,6 @@ export default {
           result = await this.sendNWCPayment(amount, comment, sendingWalletId);
         }
 
-        console.log('Payment sent:', result);
 
         // LUD-09: the recipient may have returned a successAction alongside the
         // invoice (a post-payment message, link, or AES-encrypted secret).

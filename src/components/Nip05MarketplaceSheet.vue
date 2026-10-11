@@ -278,13 +278,11 @@ import {
 import { invoiceAmountMsat } from '../utils/addressUtils';
 import { fiatRatesService } from '../utils/fiatRates';
 import { formatCalendarDate } from '../utils/timeFormatting';
+import { feeReserveSats } from '../utils/payingWallets.js';
 
 const SEARCH_DEBOUNCE_MS = 350;
 /** One uninterrupted wait for an in-app payment before "Almost ready". */
 const ACTIVATION_WAIT_MS = 90_000;
-/** Keep a fee reserve so a wallet that "has exactly enough" is not offered. */
-const FEE_RESERVE_RATIO = 0.01;
-const FEE_RESERVE_MIN_SATS = 10;
 
 export default {
   name: 'Nip05MarketplaceSheet',
@@ -445,7 +443,8 @@ export default {
     payableWallets() {
       const total = this.totalSats;
       if (!total) return [];
-      const reserve = Math.max(FEE_RESERVE_MIN_SATS, Math.ceil(total * FEE_RESERVE_RATIO));
+      // A wallet that "has exactly enough" is not offered (shared reserve rule).
+      const reserve = feeReserveSats(total);
       const activeId = this.walletStore.activeWalletId;
       return (this.walletStore.wallets || [])
         .filter((wallet) => this.walletStore.connectionStates?.[wallet.id]?.connected)
