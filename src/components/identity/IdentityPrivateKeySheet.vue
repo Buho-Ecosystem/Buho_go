@@ -1,16 +1,16 @@
 <template>
-  <q-dialog :model-value="modelValue" position="bottom" :persistent="busy" :aria-label="$t('Private key')" @update:model-value="close">
+  <q-dialog :model-value="modelValue" position="bottom" :persistent="busy" :aria-label="$t('Secret key')" @update:model-value="close">
     <q-card class="private-key-sheet">
       <header>
-        <div><span class="private-key-kicker">{{ $t('Private key') }}</span><h2>{{ name }}</h2></div>
+        <div><span class="private-key-kicker">{{ $t('Secret key') }}</span><h2>{{ name }}</h2></div>
         <q-btn flat round :disable="busy" :aria-label="$t('Close')" @click="close"><Icon icon="tabler:x" width="20" /></q-btn>
       </header>
       <p class="private-key-public">{{ npub.slice(0, 16) }}…{{ npub.slice(-8) }}</p>
       <div class="private-key-note"><Icon icon="tabler:lock" width="24" /><p>{{ $t('Kept hidden for your privacy. Anyone with this key can use this identity.') }}</p></div>
       <p>{{ $t('Copy only to an app you trust. Never send it in a message.') }}</p>
       <p v-if="error" role="alert" class="private-key-error">{{ error }}</p>
-      <p v-if="copied" role="status">{{ $t('Private key copied') }}</p>
-      <q-btn unelevated no-caps class="private-key-copy" :loading="busy" :label="copied ? $t('Done') : $t('Copy private key')" @click="copied ? close() : copyKey()" />
+      <p v-if="copied" role="status">{{ $t('Secret key copied') }}</p>
+      <q-btn unelevated no-caps class="private-key-copy" :loading="busy" :label="copied ? $t('Done') : $t('Copy secret key')" @click="copied ? close() : copyKey()" />
     </q-card>
   </q-dialog>
 </template>
@@ -56,7 +56,7 @@ async function copyKey() {
       if (wallet.biometricsEnabled) {
         const { available } = await isBiometricAvailable();
         assertCurrent();
-        if (available && !await authenticate({ reason: t('Copy private key'), title: 'BuhoGO', subtitle: props.name, useFallback: true })) {
+        if (available && !await authenticate({ reason: t('Copy secret key'), title: 'BuhoGO', subtitle: props.name, useFallback: true })) {
           failureMessage = 'Unlock was not completed. Try again when you are ready.';
           throw new Error('Authentication cancelled');
         }
@@ -67,7 +67,7 @@ async function copyKey() {
       try {
         ({ nsec } = await identity.revealNostrSecret(account));
       } catch (error) {
-        failureMessage = 'Private key could not be accessed. Please try again.';
+        failureMessage = 'Secret key could not be accessed. Please try again.';
         throw error;
       }
       assertCurrent();
