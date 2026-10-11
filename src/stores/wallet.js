@@ -449,6 +449,19 @@ export const useWalletStore = defineStore('wallet', {
     },
 
     /**
+     * An amount in the person's fiat currency, formatted ('' while no rate is
+     * known). Every wallet list shows it next to the Bitcoin figure, so the
+     * conversion is always in view.
+     */
+    fiatValueOf: (state) => (sats) => {
+      const currency = state.preferredFiatCurrency || 'USD';
+      const rate = Number(state.exchangeRates?.[currency.toLowerCase()]);
+      const amount = Number(sats);
+      if (!(rate > 0) || !Number.isFinite(amount)) return '';
+      return fiatRatesService.formatFiatAmount((amount / 100000000) * rate, currency);
+    },
+
+    /**
      * Check if fiat conversion is available
      */
     canShowFiat: (state) => {

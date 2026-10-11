@@ -1065,6 +1065,7 @@
           :type-label="getWalletTypeLabel(detailWallet)"
           :balance="walletBalanceText(detailWallet.id)"
           :balance-known="walletStore.getDisplayBalance(detailWallet.id).known"
+          :fiat="walletStore.fiatValueOf(walletStore.getDisplayBalance(detailWallet.id).balance)"
           :active="detailWallet.id === activeWalletId"
           :connected="!!connectionStates[detailWallet.id]?.connected"
           :switching="walletSwitching"
@@ -1113,6 +1114,7 @@
                      figure reads "at least" and is dimmed (same as the switcher). -->
                 <HiddenAmount :class="{ 'balance-stale': !walletStore.totalBalanceInfo.complete }">{{ walletStore.totalBalanceInfo.complete ? '' : '≥ ' }}{{ formatBalance(totalBalance) }}</HiddenAmount>
               </div>
+              <HiddenAmount v-if="walletStore.fiatValueOf(totalBalance)" class="stat-fiat">{{ walletStore.totalBalanceInfo.complete ? '' : '≥ ' }}{{ walletStore.fiatValueOf(totalBalance) }}</HiddenAmount>
               <div class="stat-label" :class="$q.dark.isActive ? 'sats' : 'sats-light'">
                 {{ $t('Total') }}
               </div>
@@ -1169,8 +1171,8 @@
               >
                 <!-- Wallet Avatar -->
                 <div class="wallet-avatar">
-                  <div class="wallet-avatar-circle" :class="wallet.type === 'arkade' ? 'wallet-avatar-arkade' : 'wallet-avatar-black'">
-                    <WalletBrandMark :type="wallet.type" :size="20" />
+                  <div class="wallet-avatar-circle wallet-avatar-black">
+                    <WalletBrandMark :type="wallet.type" :size="20" on-dark />
                   </div>
                   <div
                     class="wallet-status-dot"
@@ -1195,7 +1197,10 @@
                   <!-- Same rule as the home switcher: a placeholder until the first
                        figure, dimmed only when known to be out of date. -->
                   <span v-if="!walletStore.getDisplayBalance(wallet.id).known" class="balance-placeholder" role="img" :aria-label="$t('Balance not loaded yet')" />
-                  <HiddenAmount v-else :class="{ 'balance-stale': walletStore.getDisplayBalance(wallet.id).outdated }">{{ walletBalanceText(wallet.id) }}</HiddenAmount>
+                  <template v-else>
+                    <HiddenAmount :class="{ 'balance-stale': walletStore.getDisplayBalance(wallet.id).outdated }">{{ walletBalanceText(wallet.id) }}</HiddenAmount>
+                    <HiddenAmount v-if="walletStore.fiatValueOf(walletStore.getDisplayBalance(wallet.id).balance)" class="wallet-row-fiat">{{ walletStore.fiatValueOf(walletStore.getDisplayBalance(wallet.id).balance) }}</HiddenAmount>
+                  </template>
                 </div>
                 <Icon icon="tabler:chevron-right" width="16" height="16" class="wallet-row-chevron" />
               </div>
@@ -1340,7 +1345,8 @@
               @click="navigateToCreateArkade"
             >
               <div class="option-icon arkade-option-icon">
-                <ArkadeLogo variant="mark" :size="26" />
+                <!-- A dark tile like its neighbours: the mark takes Arkade's dark-surface red. -->
+                <ArkadeLogo variant="mark" color="orange" :size="26" />
               </div>
               <div class="option-content">
                 <div class="option-title" :class="$q.dark.isActive ? 'wallet_name_dark' : 'wallet_name_light'">
@@ -1359,7 +1365,7 @@
               @click="navigateToRestoreArkade"
             >
               <div class="option-icon arkade-option-icon">
-                <ArkadeLogo variant="mark" :size="26" />
+                <ArkadeLogo variant="mark" color="orange" :size="26" />
               </div>
               <div class="option-content">
                 <div class="option-title" :class="$q.dark.isActive ? 'wallet_name_dark' : 'wallet_name_light'">
@@ -4467,9 +4473,8 @@ export default {
     },
 
     formatFiatValue(sats) {
-      const rate = this.exchangeRates[String(this.preferredFiatCurrency || 'USD').toLowerCase()];
-      if (!sats || !rate) return '';
-      return fiatRatesService.formatFiatAmount((sats / 100000000) * rate, this.preferredFiatCurrency || 'USD');
+      if (!sats) return '';
+      return this.walletStore.fiatValueOf(sats);
     }
   }
 }
@@ -5528,10 +5533,26 @@ export default {
   font-weight: 500;
   flex-shrink: 0;
   margin-left: auto;
+  text-align: right;
 }
 
 .row-value-dark { color: rgba(255, 255, 255, 0.75); }
 .row-value-light { color: rgba(0, 0, 0, 0.65); }
+
+.wallet-row-fiat {
+  display: block;
+  margin-top: 2px;
+  font-family: 'Manrope', sans-serif;
+  font-size: 12px;
+  font-weight: 500;
+  opacity: 0.7;
+}
+
+.stat-fiat {
+  display: block;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
 
 .wallet-row-chevron {
   flex-shrink: 0;
@@ -5635,10 +5656,6 @@ export default {
 
 .wallet-avatar-black {
   background: linear-gradient(135deg, #2A2A2A, #1A1A1A);
-}
-
-.wallet-avatar-arkade {
-  background: var(--arkade-tile);
 }
 
 .wallet-status-dot {
@@ -6394,7 +6411,7 @@ export default {
 }
 
 .arkade-option-icon {
-  background: var(--arkade-tile);
+  background: linear-gradient(135deg, #2A2A2A, #1A1A1A);
 }
 
 .option-content {

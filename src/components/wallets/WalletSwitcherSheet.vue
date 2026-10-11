@@ -32,6 +32,7 @@
             class="switcher-total-value"
             :class="{ 'balance-stale': !totalInfo.complete }"
           >{{ totalInfo.complete ? '' : '≥ ' }}{{ formatBalance(totalInfo.total) }}</HiddenAmount>
+          <HiddenAmount v-if="fiatOf(totalInfo.total)" class="switcher-total-fiat">{{ totalInfo.complete ? '' : '≥ ' }}{{ fiatOf(totalInfo.total) }}</HiddenAmount>
         </div>
       </q-card-section>
 
@@ -55,8 +56,8 @@
             @keydown.space.prevent="$emit('switch', wallet.id)"
           >
             <div class="switch-avatar" aria-hidden="true">
-              <div class="switch-avatar-circle" :class="wallet.type === 'arkade' ? 'switch-avatar-arkade' : 'switch-avatar-black'">
-                <WalletBrandMark :type="wallet.type" :size="20" />
+              <div class="switch-avatar-circle switch-avatar-black">
+                <WalletBrandMark :type="wallet.type" :size="20" on-dark />
               </div>
               <div class="switch-status-dot" :class="connected(wallet.id) ? 'status-connected' : 'status-disconnected'"></div>
             </div>
@@ -74,7 +75,11 @@
               >
                 <!-- A known value (outdated ones marked), else a placeholder: never an invented 0. -->
                 <span v-if="!display(wallet.id).known" class="balance-placeholder" role="img" :aria-label="$t('Balance not loaded yet')" />
-                <HiddenAmount v-else :class="{ 'balance-stale': display(wallet.id).outdated }">{{ formatBalance(display(wallet.id).balance) }}</HiddenAmount>
+                <template v-else>
+                  <HiddenAmount :class="{ 'balance-stale': display(wallet.id).outdated }">{{ formatBalance(display(wallet.id).balance) }}</HiddenAmount>
+                  <!-- The conversion is always in view, not only the Bitcoin figure. -->
+                  <HiddenAmount v-if="fiatOf(display(wallet.id).balance)" class="switch-fiat" :class="{ 'balance-stale': display(wallet.id).outdated }">{{ fiatOf(display(wallet.id).balance) }}</HiddenAmount>
+                </template>
               </div>
             </div>
 
@@ -157,6 +162,7 @@ const anyRefreshing = computed(() => Object.values(props.refreshingWalletIds).so
 const connected = (walletId) => !!store.connectionStates[walletId]?.connected;
 const display = (walletId) => store.getDisplayBalance(walletId);
 const formatBalance = (sats) => formatMainBalance(sats, store.useBip177Format);
+const fiatOf = (sats) => store.fiatValueOf(sats);
 /** A row pulses only while its first figure is on the way; a known one updates in place. */
 const isRefreshPending = (walletId) => !!props.refreshingWalletIds[walletId] && !display(walletId).known;
 </script>
@@ -280,10 +286,6 @@ const isRefreshPending = (walletId) => !!props.refreshingWalletIds[walletId] && 
 
 .switch-avatar-black {
   background: linear-gradient(135deg, #2A2A2A, #1A1A1A);
-}
-
-.switch-avatar-arkade {
-  background: var(--arkade-tile);
 }
 
 
@@ -472,6 +474,17 @@ const isRefreshPending = (walletId) => !!props.refreshingWalletIds[walletId] && 
 .switcher-total-label {
   font-size: 12px;
   color: var(--text-secondary);
+}
+.switcher-total-fiat {
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+.switch-fiat {
+  font-family: 'Manrope', sans-serif;
+}
+.switch-fiat::before {
+  content: '·';
+  margin: 0 6px;
 }
 .switcher-total-value {
   font-family: var(--font-mono);
