@@ -969,8 +969,6 @@ export default {
   "Got it": "Got it",
   "Please wait {mins} minutes before claiming again": "Please wait {mins} minutes before claiming again",
   "The daily reward budget is used up. Please try again tomorrow.": "The daily reward budget is used up. Please try again tomorrow.",
-  "Total (incomplete)": "Total (incomplete)",
-  "Total (not current)": "Total (not current)",
   "Last known balance — not current": "Last known balance — not current",
   "Balance not loaded yet": "Balance not loaded yet",
   "Reward payouts are paused for now. Your earned sats are saved and you can claim them later.": "Reward payouts are paused for now. Your earned sats are saved and you can claim them later.",

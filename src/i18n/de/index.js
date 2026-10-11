@@ -1029,8 +1029,6 @@ export default {
   "Got it": "Verstanden",
   "Please wait {mins} minutes before claiming again": "Bitte warte {mins} Minuten, bevor du deine Sats erneut abholen kannst",
   "The daily reward budget is used up. Please try again tomorrow.": "Das tägliche Belohnungsbudget ist aufgebraucht. Bitte versuche es morgen erneut.",
-  "Total (incomplete)": "Gesamt (unvollständig)",
-  "Total (not current)": "Gesamt (nicht aktuell)",
   "Last known balance — not current": "Letztes bekanntes Guthaben – nicht aktuell",
   "Balance not loaded yet": "Guthaben noch nicht geladen",
   "Reward payouts are paused for now. Your earned sats are saved and you can claim them later.": "Auszahlungen der Belohnungen sind gerade pausiert. Deine verdienten Sats bleiben gespeichert und du kannst sie später abholen.",

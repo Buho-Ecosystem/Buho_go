@@ -34,13 +34,17 @@
              in the home switcher and Manage Wallets. -->
         <template v-if="isActiveWalletSpark && hasSparkWallet">
           <SettingsRow
-            icon="tabler:wallet"
             :label="activeWallet?.name || $t('Wallet')"
             :show-chevron="false"
             :interactive="false"
           >
+            <!-- The wallet's own mark: the wallet glyph means "Manage Wallets" below. -->
+            <template #icon>
+              <WalletBrandMark type="spark" :size="18" color="currentColor" />
+            </template>
             <template #caption>
-              <HiddenAmount :class="{ 'balance-stale': walletStore.getDisplayBalance(activeWalletId).isCached }">{{ walletBalanceText(activeWalletId) }}</HiddenAmount>
+              <span v-if="!walletStore.getDisplayBalance(activeWalletId).known" class="balance-placeholder" role="img" :aria-label="$t('Balance not loaded yet')" />
+              <HiddenAmount v-else :class="{ 'balance-stale': walletStore.getDisplayBalance(activeWalletId).outdated }">{{ walletBalanceText(activeWalletId) }}</HiddenAmount>
             </template>
             <template #right>
               <Icon icon="tabler:circle-check-filled" width="18" height="18" style="color: #15DE72;" />
@@ -1105,12 +1109,12 @@
             <div class="stat-divider" :class="$q.dark.isActive ? 'divider-dark' : 'divider-light'"></div>
             <div class="stat-item">
               <div class="stat-value" :class="$q.dark.isActive ? 'balance_dark' : 'balance_light'">
-                <!-- Every configured wallet counts; a total built on missing
-                     or unverified figures says so instead of looking exact. -->
-                <HiddenAmount :class="{ 'balance-stale': walletStore.totalBalanceInfo.stale || !walletStore.totalBalanceInfo.complete }">{{ walletStore.totalBalanceInfo.complete ? '' : '≥ ' }}{{ formatBalance(totalBalance) }}</HiddenAmount>
+                <!-- Every configured wallet counts; a total missing a wallet's
+                     figure reads "at least" and is dimmed (same as the switcher). -->
+                <HiddenAmount :class="{ 'balance-stale': !walletStore.totalBalanceInfo.complete }">{{ walletStore.totalBalanceInfo.complete ? '' : '≥ ' }}{{ formatBalance(totalBalance) }}</HiddenAmount>
               </div>
               <div class="stat-label" :class="$q.dark.isActive ? 'sats' : 'sats-light'">
-                {{ !walletStore.totalBalanceInfo.complete ? $t('Total (incomplete)') : (walletStore.totalBalanceInfo.stale ? $t('Total (not current)') : $t('Total')) }}
+                {{ $t('Total') }}
               </div>
             </div>
             <div class="stat-divider" :class="$q.dark.isActive ? 'divider-dark' : 'divider-light'"></div>
@@ -1188,7 +1192,10 @@
 
                 <!-- Trailing value + disclosure -->
                 <div class="wallet-row-value" :class="$q.dark.isActive ? 'row-value-dark' : 'row-value-light'">
-                  <HiddenAmount :class="{ 'balance-stale': walletStore.getDisplayBalance(wallet.id).isCached }">{{ walletBalanceText(wallet.id) }}</HiddenAmount>
+                  <!-- Same rule as the home switcher: a placeholder until the first
+                       figure, dimmed only when known to be out of date. -->
+                  <span v-if="!walletStore.getDisplayBalance(wallet.id).known" class="balance-placeholder" role="img" :aria-label="$t('Balance not loaded yet')" />
+                  <HiddenAmount v-else :class="{ 'balance-stale': walletStore.getDisplayBalance(wallet.id).outdated }">{{ walletBalanceText(wallet.id) }}</HiddenAmount>
                 </div>
                 <Icon icon="tabler:chevron-right" width="16" height="16" class="wallet-row-chevron" />
               </div>

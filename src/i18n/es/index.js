@@ -1030,8 +1030,6 @@ export default {
   "Got it": "Entendido",
   "Please wait {mins} minutes before claiming again": "Por favor espera {mins} minutos antes de reclamar de nuevo",
   "The daily reward budget is used up. Please try again tomorrow.": "El presupuesto diario de recompensas se ha agotado. Por favor inténtalo de nuevo mañana.",
-  "Total (incomplete)": "Total (incompleto)",
-  "Total (not current)": "Total (no actualizado)",
   "Last known balance — not current": "Último saldo conocido — no actualizado",
   "Balance not loaded yet": "Saldo aún no cargado",
   "Reward payouts are paused for now. Your earned sats are saved and you can claim them later.": "Los pagos de recompensas están en pausa por ahora. Tus sats ganados quedan guardados y podrás reclamarlos más tarde.",

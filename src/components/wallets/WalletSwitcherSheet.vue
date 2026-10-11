@@ -282,25 +282,10 @@ const isRefreshPending = (walletId) => !!props.refreshingWalletIds[walletId] && 
   background: linear-gradient(135deg, #2A2A2A, #1A1A1A);
 }
 
-.wallet-green {
-  background: linear-gradient(135deg, #15DE72, #059573);
-}
 
-.wallet-blue {
-  background: linear-gradient(135deg, #3B82F6, #2563EB);
-}
 
-.wallet-purple {
-  background: linear-gradient(135deg, #8B5CF6, #7C3AED);
-}
 
-.wallet-orange {
-  background: linear-gradient(135deg, #F59E0B, #D97706);
-}
 
-.wallet-red {
-  background: linear-gradient(135deg, #EF4444, #DC2626);
-}
 
 .switch-status-dot {
   position: absolute;

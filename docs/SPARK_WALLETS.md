@@ -94,10 +94,14 @@ Runs in `initialize()` until it completes once (`sparkModelVersion` 2):
 
 ## UI
 
-- **Home:** the name chip with the wallet's mark opens `WalletSwitcherSheet`. It shows the total across wallets, one row per wallet, Transfer and Manage. While a restore keeps looking for wallets it says so, and Home announces wallets the restore found.
+- **Home:** the name chip with the wallet's mark and a disclosure chevron opens `WalletSwitcherSheet`. It shows the total across wallets, one row per wallet, Transfer and Manage. While a restore keeps looking for wallets it says so, and Home announces wallets the restore found.
 - **Settings > Manage Wallets:**
-  - Add Wallet offers "New Spark wallet" with how many of six are left. The row is hidden at the limit. The sheet is `AddSparkWalletSheet`.
+  - Add Wallet offers "New Spark wallet" with how many of six are left. At the limit the row stays, disabled, and says all six are in use. The sheet is `AddSparkWalletSheet`.
   - A row pushes `WalletDetailPanel`: rename, balance, use, reconnect and remove. For Spark it also shows the wallet's Lightning address, with change and "Move to another wallet" (`MoveLightningAddressSheet`).
+- **Balances follow one rule everywhere** (switcher, Manage Wallets, detail):
+  - an unknown figure is a placeholder, never a dash or a zero;
+  - a figure known to be out of date is dimmed;
+  - the total is labelled "Total", reads "at least" while a wallet's figure is missing, and pulses while wallets refresh.
 - Every user-facing string is in en-US, de and es. The multi-wallet strings live in `src/i18n/<lang>/wallets.js`.
 
 ## Validation
