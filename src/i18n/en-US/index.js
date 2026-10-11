@@ -3423,7 +3423,6 @@ export default {
   "Get a notification when someone writes to you.": "Get a notification when someone writes to you.",
   "Turn on payment notifications first.": "Turn on payment notifications first.",
   "Set up your identity to use the chat.": "Set up your identity to use the chat.",
-  "{name} has no Nostr profile, so there is no chat. You can still pay them.": "{name} has no Nostr profile, so there is no chat. You can still pay them.",
   "View profile": "View profile",
   "Mute": "Mute",
   "Unmute": "Unmute",

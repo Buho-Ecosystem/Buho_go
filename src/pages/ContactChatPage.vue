@@ -25,13 +25,14 @@
 -->
 <template>
   <q-page class="contact-chat-page" :style-fn="pageStyle">
-    <!-- Not ready: loading, no identity, or a contact without a Nostr profile. -->
+    <!-- Not ready: loading or no identity (a contact without a Nostr profile is on its way to its page). -->
     <div v-if="view !== 'chat'" class="chat-state" :style="viewportStyle">
       <button type="button" class="chat-state__back" :aria-label="$t('Back')" @click="goBack">
         <Icon icon="tabler:chevron-left" width="22" height="22" />
       </button>
 
-      <div v-if="view === 'loading'" class="chat-state__body" role="status">
+      <!-- 'no-nostr' only shows for the moment it takes to go to the contact page (see watch.view). -->
+      <div v-if="view === 'loading' || view === 'no-nostr'" class="chat-state__body" role="status">
         <q-spinner size="28px" color="grey-6" />
       </div>
 
@@ -40,16 +41,6 @@
         <p class="chat-state__text">{{ $t('Set up your identity to use the chat.') }}</p>
         <button type="button" class="chat-state__action" @click="$router.push('/identity')">
           {{ $t('Set up identity') }}
-        </button>
-      </div>
-
-      <div v-else class="chat-state__body">
-        <span class="chat-state__icon"><Icon icon="tabler:message-off" width="26" height="26" /></span>
-        <p class="chat-state__text">
-          {{ $t("{name} has no Nostr profile, so there is no chat. You can still pay them.", { name: displayName }) }}
-        </p>
-        <button type="button" class="chat-state__action" @click="openProfile">
-          {{ $t('Profile') }}
         </button>
       </div>
     </div>
@@ -187,7 +178,8 @@
     <!-- The contact has no inbox: a request cannot be delivered. Offer the payment link instead. -->
     <q-dialog v-model="linkOpen">
       <div class="chat-dialog" role="alertdialog" :aria-label="$t('Payment request')">
-        <span class="chat-dialog__icon"><Icon icon="tabler:link" width="26" height="26" /></span>
+        <!-- The app's Get paid icon: a payment link is how you get paid ("link" means a signer app). -->
+        <span class="chat-dialog__icon"><Icon icon="tabler:arrow-bar-to-down" width="26" height="26" /></span>
         <p class="chat-dialog__title">{{ $t("{name} can't receive requests in the chat yet.", { name: displayName }) }}</p>
         <p class="chat-dialog__text">
           {{ $t('Share your payment link instead. They can pay it from any wallet.') }}
@@ -202,7 +194,6 @@
     </q-dialog>
     <IdentityGetPaidSheet v-model="getPaidOpen" />
 
-    <!-- Block: confirm first, it cannot be done by accident. -->
     <!-- One confirmation for every action the partner sees and that cannot be
          taken back (HIG: destructive actions are confirmed): block, decline, cancel a request. -->
     <q-dialog :model-value="confirm !== null" @update:model-value="(open) => { if (!open) confirm = null }">
@@ -439,9 +430,10 @@ export default {
 
     /** 'loading' | 'no-identity' | 'no-nostr' | 'chat' */
     view() {
+      // First: a contact without Nostr goes to its own page, identity or not.
+      if (this.bookReady && !this.partnerKey) return 'no-nostr'
       if (!this.runtime.available.value) return 'no-identity'
       if (!this.bookReady) return 'loading'
-      if (!this.partnerKey) return 'no-nostr'
       if (this.store.scope !== this.runtime.me.value) return 'loading'
       return 'chat'
     },
@@ -545,7 +537,16 @@ export default {
     },
 
     /** The chat is ready and on screen: read it, look up the partner's inbox. */
+    /** The view settled (mount, or it changed): open the chat, or leave a page that has none. */
     activate() {
+      // A contact without a Nostr profile keeps the address book as it was
+      // before the chat: its own page. Only a stale link (an old notification,
+      // a removed Nostr key) lands here; it goes on to that page.
+      if (this.view === 'no-nostr') {
+        const entry = this.contact()
+        this.$router.replace(entry ? `/address-book/${encodeURIComponent(entry.id)}` : '/address-book')
+        return
+      }
       if (this.view !== 'chat' || !this.partnerKey || this.activeKey === this.partnerKey) return
       this.activeKey = this.partnerKey
       this.chat.open()

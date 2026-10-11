@@ -167,8 +167,19 @@ test('view: no runtime means no identity; waiting for the address book or the st
   assert.equal(pageOf().vm.view, 'chat')
 })
 
-test('view: a contact without a Nostr profile has no chat; an unknown sender does', () => {
-  assert.equal(pageOf({ route: { params: { id: 'addr-2' } } }).vm.view, 'no-nostr')
+test('view: a contact without a Nostr profile keeps its page from before the chat', () => {
+  const plain = pageOf({ route: { params: { id: 'addr-2' } } })
+  assert.equal(plain.vm.view, 'no-nostr')
+  plain.vm.activate()
+  assert.deepEqual(plain.replaced, ['/address-book/addr-2'], 'a stale chat link goes on to the contact page')
+  const noIdentity = pageOf({ route: { params: { id: 'addr-2' } }, available: false })
+  assert.equal(noIdentity.vm.view, 'no-nostr', 'identity or not')
+  const chat = pageOf()
+  chat.vm.activate()
+  assert.deepEqual(chat.replaced, [])
+})
+
+test('view: an unknown sender has a chat', () => {
   const stranger = pageOf({ route: { params: { pubkey: STRANGER } } })
   assert.equal(stranger.vm.view, 'chat')
   assert.equal(stranger.vm.unknown, true)
@@ -552,10 +563,6 @@ test('markup: loading shows a spinner and no header', async () => {
   assert.doesNotMatch(html, /stub-ChatHeader/)
 })
 
-test('markup: a contact without a Nostr profile says there is no chat and links to the profile', async () => {
-  const html = await markupOf({ route: { params: { id: 'addr-2' } } })
-  assert.match(html, /Manual Mike has no Nostr profile, so there is no chat\. You can still pay them\./)
-})
 
 test('markup: the chat has header, thread, money bar and dialogs; a stranger gets the banner', async () => {
   const known = await markupOf()

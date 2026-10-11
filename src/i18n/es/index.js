@@ -3428,7 +3428,6 @@ export default {
   "Get a notification when someone writes to you.": "Recibe una notificación cuando alguien te escriba.",
   "Turn on payment notifications first.": "Activa primero las notificaciones de pagos.",
   "Set up your identity to use the chat.": "Configura tu identidad para usar el chat.",
-  "{name} has no Nostr profile, so there is no chat. You can still pay them.": "{name} no tiene perfil de Nostr, así que no hay chat. Aun así puedes pagarle.",
   "View profile": "Ver perfil",
   "Mute": "Silenciar",
   "Unmute": "Dejar de silenciar",
