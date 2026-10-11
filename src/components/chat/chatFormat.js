@@ -4,15 +4,13 @@
  */
 
 import { formatAmount } from '../../utils/amountFormatting.js'
+import { REQUEST_STATE } from '../../services/dm/constants.js'
 
 /** Emoji offered in the message menu, in display order. */
 export const REACTION_EMOJIS = Object.freeze(['👍', '❤️', '😂', '🙏', '🎉'])
 
-/** Local-send states of an outgoing message (mirrors stores/messages.js DELIVERY). */
-export const DELIVERY_STATES = Object.freeze(['queued', 'sending', 'sent', 'failed'])
-
-/** Derived request states (mirrors stores/messages.js REQUEST_STATE). */
-export const REQUEST_STATES = Object.freeze(['pending', 'paying', 'paid', 'declined', 'cancelled', 'expired'])
+/** Every state a request card can show (one definition: services/dm/constants.js). */
+export const REQUEST_STATES = Object.freeze(Object.values(REQUEST_STATE))
 
 const toMs = (unixSeconds) => unixSeconds * 1000
 

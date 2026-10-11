@@ -170,3 +170,22 @@ export const MAX_INBOX_RELAYS_PER_CONTACT = 5;
  * the app is out of sight.
  */
 export const KEY_IDLE_WIPE_MS = 10 * 60 * 1000;
+
+/** Local send state of an outgoing message. */
+export const DELIVERY = Object.freeze({
+  QUEUED: 'queued',
+  SENDING: 'sending',
+  SENT: 'sent',
+  FAILED: 'failed',
+});
+
+/** Derived state of a payment request (stores/messages.js derives it, RequestCard draws it). */
+export const REQUEST_STATE = Object.freeze({
+  PENDING: 'pending',
+  /** The user paid it and the payment is still on its way (payer side only). */
+  PAYING: 'paying',
+  PAID: 'paid',
+  DECLINED: 'declined',
+  CANCELLED: 'cancelled',
+  EXPIRED: 'expired',
+});

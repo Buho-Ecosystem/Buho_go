@@ -17,6 +17,7 @@ import { transformSync } from 'esbuild'
 import * as Vue from 'vue'
 import * as ServerRenderer from 'vue/server-renderer'
 import * as amountFormatting from '../../utils/amountFormatting.js'
+import * as constants from '../../services/dm/constants.js'
 
 const sfc = createRequire(import.meta.url)('@vue/compiler-sfc')
 
@@ -34,7 +35,7 @@ function run(code, deps = {}) {
 }
 const readSrc = (path) => readFileSync(new URL(`../../${path}`, import.meta.url), 'utf8')
 
-const chatFormat = run(readSrc('components/chat/chatFormat.js'), { '../../utils/amountFormatting.js': amountFormatting })
+const chatFormat = run(readSrc('components/chat/chatFormat.js'), { '../../utils/amountFormatting.js': amountFormatting, '../../services/dm/constants.js': constants })
 
 // ── the page, with its imports stubbed ───────────────────────────────
 

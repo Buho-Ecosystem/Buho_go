@@ -20,6 +20,7 @@ import { transformSync } from 'esbuild'
 import * as Vue from 'vue'
 import * as ServerRenderer from 'vue/server-renderer'
 import * as amountFormatting from '../../utils/amountFormatting.js'
+import * as constants from '../../services/dm/constants.js'
 
 const sfc = createRequire(import.meta.url)('@vue/compiler-sfc')
 
@@ -54,9 +55,8 @@ function loadSfc(file, deps = {}) {
   return component
 }
 
-const chatFormat = loadJs('chatFormat.js', { '../../utils/amountFormatting.js': amountFormatting })
+const chatFormat = loadJs('chatFormat.js', { '../../utils/amountFormatting.js': amountFormatting, '../../services/dm/constants.js': constants })
 const base = { '@iconify/vue': { Icon }, './chatFormat.js': chatFormat }
-const constants = { MAX_TEXT_LENGTH: 2000, MAX_NOTE_LENGTH: 200 }
 
 const ChatHeader = loadSfc('ChatHeader.vue', base)
 const DaySeparator = loadSfc('DaySeparator.vue', base)

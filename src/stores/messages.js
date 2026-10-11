@@ -36,7 +36,7 @@
  */
 
 import { defineStore } from 'pinia'
-import { SINCE_SLACK_SECONDS } from '../services/dm/constants.js'
+import { DELIVERY, REQUEST_STATE, SINCE_SLACK_SECONDS } from '../services/dm/constants.js'
 import { MESSAGE_TYPE, REQUEST_STATUS } from '../services/dm/protocol.js'
 import { loadChatState, saveChatState, deleteChatState, deleteAllChatStates } from '../utils/dmStorage.js'
 import { useAddressBookStore } from './addressBook.js'
@@ -63,25 +63,11 @@ const PRUNE_SLACK = 100
 export const SAVE_DEBOUNCE_MS = 400
 export const SAVE_MAX_WAIT_MS = 5000
 
-/** Local send state of an outgoing message. */
-export const DELIVERY = Object.freeze({
-  QUEUED: 'queued',
-  SENDING: 'sending',
-  SENT: 'sent',
-  FAILED: 'failed',
-})
+// Defined with the other chat constants, so components read the same values without the store.
+export { DELIVERY, REQUEST_STATE }
+
 const DELIVERY_VALUES = new Set(Object.values(DELIVERY))
 
-/** Derived state of a payment request. */
-export const REQUEST_STATE = Object.freeze({
-  PENDING: 'pending',
-  /** The user paid it and the payment is still on its way (payer side only). */
-  PAYING: 'paying',
-  PAID: 'paid',
-  DECLINED: 'declined',
-  CANCELLED: 'cancelled',
-  EXPIRED: 'expired',
-})
 
 const MESSAGE_TYPES = new Set(Object.values(MESSAGE_TYPE))
 const OWN_PAYMENT_STATUSES = new Set(['pending', 'sent'])
