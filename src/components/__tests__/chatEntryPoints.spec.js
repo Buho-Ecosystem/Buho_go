@@ -117,6 +117,11 @@ function loadSheet(storeState) {
     './chatFormat.js': chatFormat,
     './threadRows.js': rows,
     './chatTokens.css': {},
+    // A BuhoGO identity: no signer app, so no notice.
+    './SignerAppNotice.vue': { render: () => null },
+    '../../composables/useSignerAppNotice.js': {
+      useSignerAppNotice: () => ({ state: Vue.ref(null), kind: Vue.ref('derived'), busy: Vue.ref(false), turnOn: () => {}, retry: () => {} }),
+    },
   }).default
   const { code, errors } = sfc.compileTemplate({ source: descriptor.template.content, filename: 'MessagesSheet.vue', id: 'ms', ssr: true })
   assert.deepEqual(errors, [])

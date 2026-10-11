@@ -4,7 +4,7 @@
  *
  * `createChatRuntime(deps)` wires
  *
- *   key holder (sessionKey)  ->  relay transport  ->  inbox coordinator
+ *   chat signer (dmSigner)   ->  relay transport  ->  inbox coordinator
  *                                 inbox relay resolver ----^
  *   profile / LNURL           ->  request service
  *   messages store            ->  `InboxStore` port (`createInboxStoreAdapter`)
@@ -56,6 +56,7 @@ import {
   buildTextTemplate,
 } from './protocol.js';
 import { createRequestService } from './requests.js';
+import { createExternalDmSigner, createLocalDmSigner } from './dmSigner.js';
 import { createSessionKey } from './sessionKey.js';
 import { createDmTransport } from './transport.js';
 
@@ -168,6 +169,8 @@ export function createInboxStoreAdapter(store, me) {
       return false;
     },
     ingest: (message, options) => active() && store.ingest(message, options) === true,
+    hasHandledWrap: (wrapId) => active() && store.hasHandledWrap(wrapId),
+    rememberHandledWrap: (wrapId, createdAt) => active() && store.rememberHandledWrap(wrapId, createdAt),
     addOutgoing: (message, options) => active() && store.addOutgoing(message, options),
     setDelivery: (id, delivery) => active() && store.setDelivery(id, delivery),
     isBlocked: (pubkey) => active() && store.isBlocked(pubkey),
@@ -202,8 +205,12 @@ export function createInboxStoreAdapter(store, me) {
 /**
  * @typedef {object} ChatRuntimeDeps
  * @property {string} me Own pubkey (64 lowercase hex).
- * @property {() => Promise<Uint8Array>} loadSecretKey Fresh key bytes (`identity.getNostrSecretKeyBytes`).
- * @property {() => boolean} [isLocked] True while the app lock is on: the key is then never loaded.
+ * @property {() => Promise<Uint8Array>} [loadSecretKey] Fresh key bytes (`identity.getNostrSecretKeyBytes`),
+ *   for an identity whose key is on this phone.
+ * @property {{ acquire: () => Promise<{ signer: import('nostr-core').Signer, release?: () => void }>, maxParallel: number }} [signerApp]
+ *   For an identity that signs in another app (extension, remote signer):
+ *   its signer, pinned to `me`. Exactly one of `loadSecretKey` and `signerApp`.
+ * @property {() => boolean} [isLocked] True while the app lock is on: nothing is signed or decrypted.
  * @property {object} store The messages store, already scoped to `me`.
  * @property {() => string | null | undefined} getProfileAddress The profile's `lud16`.
  * @property {(pubkey: string, options: { timeoutMs: number }) => Promise<object | null>} fetchProfile
@@ -244,6 +251,7 @@ export function createInboxStoreAdapter(store, me) {
 export function createChatRuntime(deps = {}) {
   const {
     loadSecretKey,
+    signerApp,
     isLocked = () => false,
      store,
     getProfileAddress,
@@ -265,7 +273,10 @@ export function createChatRuntime(deps = {}) {
     factories = {},
   } = deps;
   const me = normalizePubkey(deps.me, 'me');
-  const required = { loadSecretKey, getProfileAddress, fetchProfile, formatNotification, ensureRelay };
+  if ((typeof loadSecretKey === 'function') === (typeof signerApp?.acquire === 'function')) {
+    throw invalid('exactly one of loadSecretKey and signerApp is required');
+  }
+  const required = { getProfileAddress, fetchProfile, formatNotification, ensureRelay };
   for (const [name, value] of Object.entries(required)) {
     if (typeof value !== 'function') throw invalid(`${name} is required`);
   }
@@ -277,21 +288,26 @@ export function createChatRuntime(deps = {}) {
 
   // ----- composition -----------------------------------------------------
 
-  const sessionKey = createSessionKey({
-    pubkey: me,
-    load: async () => {
-      // While the app is locked the key must stay out of memory, whatever asks
-      // for it (a live wrap, an AUTH challenge, a retry timer). KEY_WIPED makes
-      // the inbox keep the work until the key is available again.
-      if (isLocked()) throw new DmError(DM_ERROR.KEY_WIPED, 'the app is locked');
-      return loadSecretKey();
-    },
-    setTimer,
-    clearTimer,
-  });
+  // While the app is locked nothing is signed or decrypted, whatever asks (a
+  // live wrap, an AUTH challenge, a retry timer). KEY_WIPED makes the inbox
+  // keep the work until the app is unlocked again.
+  const signer = signerApp
+    ? createExternalDmSigner({ pubkey: me, acquire: signerApp.acquire, maxParallel: signerApp.maxParallel, isLocked, isHidden })
+    : createLocalDmSigner({
+      pubkey: me,
+      sessionKey: createSessionKey({
+        pubkey: me,
+        load: async () => {
+          if (isLocked()) throw new DmError(DM_ERROR.KEY_WIPED, 'the app is locked');
+          return loadSecretKey();
+        },
+        setTimer,
+        clearTimer,
+      }),
+    });
 
   const transport = (factories.createTransport ?? createDmTransport)({
-    signAuth: createSignAuth(sessionKey),
+    signAuth: createSignAuth(signer),
     WebSocket,
   });
 
@@ -314,7 +330,7 @@ export function createChatRuntime(deps = {}) {
 
   const inbox = createInbox({
     me,
-    sessionKey,
+    signer,
     transport,
     resolver,
     store: storePort,
@@ -322,6 +338,10 @@ export function createChatRuntime(deps = {}) {
     setTimer,
     clearTimer,
     onIncoming: (message) => onIncoming(message),
+    // Only a signer app makes the person act; a locked app is handled by the lock screen.
+    onSignerHold: (code) => {
+      if (signer.external && store.scope === me) store.setSignerHold(code);
+    },
     ...inboxOptions,
   });
 
@@ -356,6 +376,9 @@ export function createChatRuntime(deps = {}) {
 
   async function sendTemplate(partner, template) {
     assertUsable();
+    // Every send is the person's own action (or the payment they just made):
+    // their signer app may ask them, even after it declined background work.
+    signer.allowAgain();
     return inbox.send({ partner, template });
   }
 
@@ -792,17 +815,32 @@ export function createChatRuntime(deps = {}) {
    * Connect, subscribe, flush the outbox and check the payment claims.
    * @throws {DmError} NO_IDENTITY when the store is not scoped to this identity or the runtime was disposed.
    */
+  /**
+   * Whether messages are received. With a signer app every message asks that
+   * app, so receiving waits until the person turned it on (`turnOnMessages`).
+   */
+  const receives = () => !signer.external || (store.scope === me && store.signerAppMessages === true);
+
   async function start() {
     assertUsable();
     if (started) return;
     started = true;
     try {
-      await inbox.start();
+      if (receives()) await inbox.start();
     } catch (error) {
       started = false;
       throw error;
     }
     void checkClaimsSoon();
+  }
+
+  /** The person turned messages on for their signer app: receiving starts now. */
+  async function turnOnMessages() {
+    assertUsable();
+    if (store.scope !== me) return;
+    store.turnOnSignerAppMessages();
+    signer.allowAgain();
+    if (started) await inbox.start();
   }
 
   /** Close the subscription and the claim timers; the key is left as it is. `start()` may run again. */
@@ -817,7 +855,7 @@ export function createChatRuntime(deps = {}) {
     if (disposed) return;
     stop();
     disposed = true;
-    sessionKey.dispose();
+    signer.dispose();
     try {
       transport.resetIdentity?.();
       transport.close?.();
@@ -849,13 +887,28 @@ export function createChatRuntime(deps = {}) {
     dispose,
     isStarted: () => started && !disposed,
     isDisposed: () => disposed,
-    /** Zero the key now (`WIPE_REASON` value); it loads again on the next use. */
-    wipeKey: (reason) => sessionKey.wipe(reason),
+    /** Zero the key now (`WIPE_REASON` value); it loads again on the next use. A signer app only drops waiting requests. */
+    wipeKey: (reason) => signer.wipe(reason),
     /** Zero the key `ms` from now (app hidden). */
-    wipeKeyAfter: (ms) => sessionKey.wipeAfter(ms),
-    /** Cancel a scheduled wipe (app visible again). */
-    cancelKeyWipe: () => sessionKey.cancelWipe(),
-    isKeyLoaded: () => sessionKey.isLoaded(),
+    wipeKeyAfter: (ms) => signer.wipeAfter(ms),
+    /** Cancel a scheduled wipe (app visible again); messages that waited meanwhile are opened. */
+    cancelKeyWipe: () => {
+      signer.cancelWipe();
+      if (!disposed) inbox.retryWaiting();
+    },
+    isKeyLoaded: () => signer.isLoaded(),
+    /** True when the identity signs in another app (extension, remote signer). */
+    usesSignerApp: () => signer.external,
+    turnOnMessages,
+    /**
+     * The person asked to try again after their signer app refused: requests
+     * may go out again and the waiting messages are opened.
+     */
+    retrySigner: () => {
+      if (disposed) return;
+      signer.allowAgain();
+      inbox.retryWaiting();
+    },
     retryOutbox: (options) => (disposed ? Promise.resolve({ attempted: 0 }) : inbox.retryOutbox(options)),
     status: () => inbox.status(),
     whenIdle: () => inbox.whenIdle(),

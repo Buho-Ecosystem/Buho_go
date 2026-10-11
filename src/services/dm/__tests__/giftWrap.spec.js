@@ -19,15 +19,16 @@ import { MAX_RUMOR_BYTES } from '../constants.js';
 import { DM_ERROR, DmError } from '../errors.js';
 import { sealAndWrap } from '../giftWrap.js';
 import { openGiftWrap } from '../openWrap.js';
+import { keySigner } from './testSigner.js';
 
 const NOW = 1_760_000_000;
 const encoder = new TextEncoder();
 const jsonBytes = (value) => encoder.encode(JSON.stringify(value)).length;
 
-/** A person: secret key and pubkey. */
+/** A person: secret key, pubkey and chat signer. */
 function person() {
   const secretKey = generateSecretKey();
-  return { secretKey, pubkey: getPublicKey(secretKey) };
+  return { secretKey, pubkey: getPublicKey(secretKey), signer: keySigner(secretKey) };
 }
 
 const template = (recipients, content = 'hello') => ({
@@ -37,9 +38,9 @@ const template = (recipients, content = 'hello') => ({
   created_at: NOW,
 });
 
-function throwsDm(fn, code) {
+async function throwsDm(fn, code) {
   try {
-    fn();
+    await fn();
   } catch (err) {
     assert.ok(DmError.is(err, code), `expected DmError ${code}, got ${inspect(err)}`);
     return err;
@@ -51,20 +52,20 @@ function throwsDm(fn, code) {
 // Result
 // ---------------------------------------------------------------------------
 
-test('every wrap opens, with its recipient\'s key, to the same rumor', () => {
+test('every wrap opens, with its recipient\'s key, to the same rumor', async () => {
   const alice = person();
   const bob = person();
   const carol = person();
-  const { rumor, wraps } = sealAndWrap({
+  const { rumor, wraps } = await sealAndWrap({
     template: template([bob.pubkey, carol.pubkey]),
-    senderSecretKey: alice.secretKey,
+    signer: alice.signer,
     recipients: [bob.pubkey, carol.pubkey],
   });
 
   assert.equal(wraps.length, 3);
   const keys = { [alice.pubkey]: alice, [bob.pubkey]: bob, [carol.pubkey]: carol };
   for (const { recipient, event } of wraps) {
-    const opened = openGiftWrap(event, keys[recipient].secretKey, { me: recipient });
+    const opened = await openGiftWrap(event, keySigner(keys[recipient].secretKey), { me: recipient });
     assert.equal(opened.ok, true, `${recipient.slice(0, 6)} can open its wrap`);
     assert.equal(opened.rumor.id, rumor.id);
     assert.equal(opened.sender, alice.pubkey);
@@ -72,21 +73,21 @@ test('every wrap opens, with its recipient\'s key, to the same rumor', () => {
   }
 });
 
-test('the rumor is the template authored by the sender, with its id', () => {
+test('the rumor is the template authored by the sender, with its id', async () => {
   const alice = person();
   const bob = person();
   const input = template([bob.pubkey], 'hi');
-  const { rumor } = sealAndWrap({ template: input, senderSecretKey: alice.secretKey, recipients: [bob.pubkey] });
+  const { rumor } = await sealAndWrap({ template: input, signer: alice.signer, recipients: [bob.pubkey] });
   assert.deepEqual(rumor, createRumor(input, alice.pubkey));
 });
 
-test('the self copy comes last, is flagged and is addressed to the sender', () => {
+test('the self copy comes last, is flagged and is addressed to the sender', async () => {
   const alice = person();
   const bob = person();
   const carol = person();
-  const { wraps } = sealAndWrap({
+  const { wraps } = await sealAndWrap({
     template: template([bob.pubkey, carol.pubkey]),
-    senderSecretKey: alice.secretKey,
+    signer: alice.signer,
     recipients: [bob.pubkey, carol.pubkey],
   });
   assert.deepEqual(wraps.map((w) => [w.recipient, w.self]), [
@@ -96,27 +97,27 @@ test('the self copy comes last, is flagged and is addressed to the sender', () =
   ]);
   const selfWrap = wraps.at(-1).event;
   assert.deepEqual(selfWrap.tags, [['p', alice.pubkey]]);
-  assert.equal(openGiftWrap(selfWrap, alice.secretKey, { me: alice.pubkey }).ok, true);
+  assert.equal((await openGiftWrap(selfWrap, keySigner(alice.secretKey), { me: alice.pubkey })).ok, true);
 });
 
-test('selfCopy: false leaves out the copy for the sender', () => {
+test('selfCopy: false leaves out the copy for the sender', async () => {
   const alice = person();
   const bob = person();
-  const { wraps } = sealAndWrap({
+  const { wraps } = await sealAndWrap({
     template: template([bob.pubkey]),
-    senderSecretKey: alice.secretKey,
+    signer: alice.signer,
     recipients: [bob.pubkey],
     selfCopy: false,
   });
   assert.deepEqual(wraps.map((w) => [w.recipient, w.self]), [[bob.pubkey, false]]);
 });
 
-test('recipients are deduplicated and the sender is dropped from them', () => {
+test('recipients are deduplicated and the sender is dropped from them', async () => {
   const alice = person();
   const bob = person();
-  const { wraps } = sealAndWrap({
+  const { wraps } = await sealAndWrap({
     template: template([bob.pubkey]),
-    senderSecretKey: alice.secretKey,
+    signer: alice.signer,
     recipients: [bob.pubkey, alice.pubkey, bob.pubkey, alice.pubkey],
   });
   assert.deepEqual(wraps.map((w) => [w.recipient, w.self]), [
@@ -125,21 +126,21 @@ test('recipients are deduplicated and the sender is dropped from them', () => {
   ]);
 });
 
-test('addressing only yourself yields just the self copy, or nothing to wrap without it', () => {
+test('addressing only yourself yields just the self copy, or nothing to wrap without it', async () => {
   const alice = person();
-  const only = sealAndWrap({ template: template([alice.pubkey]), senderSecretKey: alice.secretKey, recipients: [alice.pubkey] });
+  const only = await sealAndWrap({ template: template([alice.pubkey]), signer: alice.signer, recipients: [alice.pubkey] });
   assert.equal(only.wraps.length, 1);
   assert.equal(only.wraps[0].self, true);
-  throwsDm(
-    () => sealAndWrap({ template: template([]), senderSecretKey: alice.secretKey, recipients: [alice.pubkey], selfCopy: false }),
+  await throwsDm(
+    () => sealAndWrap({ template: template([]), signer: alice.signer, recipients: [alice.pubkey], selfCopy: false }),
     DM_ERROR.INVALID_ARGUMENT,
   );
 });
 
-test('what a relay sees: kind 1059, one p tag with the recipient, a throwaway author', () => {
+test('what a relay sees: kind 1059, one p tag with the recipient, a throwaway author', async () => {
   const alice = person();
   const bob = person();
-  const { wraps } = sealAndWrap({ template: template([bob.pubkey]), senderSecretKey: alice.secretKey, recipients: [bob.pubkey] });
+  const { wraps } = await sealAndWrap({ template: template([bob.pubkey]), signer: alice.signer, recipients: [bob.pubkey] });
   for (const { recipient, event } of wraps) {
     assert.equal(event.kind, 1059);
     assert.deepEqual(event.tags, [['p', recipient]]);
@@ -149,36 +150,36 @@ test('what a relay sees: kind 1059, one p tag with the recipient, a throwaway au
   }
 });
 
-test('every wrap has its own ephemeral pubkey, id and ciphertext', () => {
+test('every wrap has its own ephemeral pubkey, id and ciphertext', async () => {
   const alice = person();
   const peers = [person(), person(), person()];
-  const { wraps } = sealAndWrap({
+  const { wraps } = await sealAndWrap({
     template: template(peers.map((p) => p.pubkey)),
-    senderSecretKey: alice.secretKey,
+    signer: alice.signer,
     recipients: peers.map((p) => p.pubkey),
   });
   for (const field of ['pubkey', 'id', 'content']) {
     assert.equal(new Set(wraps.map((w) => w.event[field])).size, wraps.length, `${field} differs per wrap`);
   }
-  const again = sealAndWrap({ template: template([peers[0].pubkey]), senderSecretKey: alice.secretKey, recipients: [peers[0].pubkey] });
+  const again = await sealAndWrap({ template: template([peers[0].pubkey]), signer: alice.signer, recipients: [peers[0].pubkey] });
   assert.notEqual(again.wraps[0].event.pubkey, wraps[0].event.pubkey, 'and per call');
 });
 
-test('a wrap cannot be opened by anyone but its recipient', () => {
+test('a wrap cannot be opened by anyone but its recipient', async () => {
   const alice = person();
   const bob = person();
   const mallory = person();
-  const { wraps } = sealAndWrap({ template: template([bob.pubkey]), senderSecretKey: alice.secretKey, recipients: [bob.pubkey] });
-  const opened = openGiftWrap(wraps[0].event, mallory.secretKey, { me: bob.pubkey });
+  const { wraps } = await sealAndWrap({ template: template([bob.pubkey]), signer: alice.signer, recipients: [bob.pubkey] });
+  const opened = await openGiftWrap(wraps[0].event, keySigner(mallory.secretKey), { me: bob.pubkey });
   assert.deepEqual(opened, { ok: false, reason: 'undecryptable' });
 });
 
-test('the input template is neither changed nor leaked beyond its four fields', () => {
+test('the input template is neither changed nor leaked beyond its four fields', async () => {
   const alice = person();
   const bob = person();
   const input = { ...template([bob.pubkey]), sig: 'f'.repeat(128), pubkey: 'e'.repeat(64), extra: true };
   const snapshot = structuredClone(input);
-  const { rumor } = sealAndWrap({ template: input, senderSecretKey: alice.secretKey, recipients: [bob.pubkey] });
+  const { rumor } = await sealAndWrap({ template: input, signer: alice.signer, recipients: [bob.pubkey] });
   assert.deepEqual(input, snapshot);
   assert.deepEqual(Object.keys(rumor).sort(), ['content', 'created_at', 'id', 'kind', 'pubkey', 'tags']);
   assert.equal(rumor.pubkey, alice.pubkey);
@@ -195,38 +196,38 @@ function templateOfBytes(size, authorPubkey, recipient) {
   return { ...base, content: 'a'.repeat(size - empty) };
 }
 
-test('a rumor of exactly MAX_RUMOR_BYTES is wrapped', () => {
+test('a rumor of exactly MAX_RUMOR_BYTES is wrapped', async () => {
   const alice = person();
   const bob = person();
   const input = templateOfBytes(MAX_RUMOR_BYTES, alice.pubkey, bob.pubkey);
-  const { rumor, wraps } = sealAndWrap({ template: input, senderSecretKey: alice.secretKey, recipients: [bob.pubkey] });
+  const { rumor, wraps } = await sealAndWrap({ template: input, signer: alice.signer, recipients: [bob.pubkey] });
   assert.equal(jsonBytes(rumor), MAX_RUMOR_BYTES);
-  assert.equal(openGiftWrap(wraps[0].event, bob.secretKey, { me: bob.pubkey }).rumor.id, rumor.id);
+  assert.equal((await openGiftWrap(wraps[0].event, keySigner(bob.secretKey), { me: bob.pubkey })).rumor.id, rumor.id);
 });
 
-test('one byte over MAX_RUMOR_BYTES is MESSAGE_TOO_LARGE, with the sizes as details', () => {
+test('one byte over MAX_RUMOR_BYTES is MESSAGE_TOO_LARGE, with the sizes as details', async () => {
   const alice = person();
   const bob = person();
   const input = templateOfBytes(MAX_RUMOR_BYTES + 1, alice.pubkey, bob.pubkey);
-  const err = throwsDm(
-    () => sealAndWrap({ template: input, senderSecretKey: alice.secretKey, recipients: [bob.pubkey] }),
+  const err = await throwsDm(
+    () => sealAndWrap({ template: input, signer: alice.signer, recipients: [bob.pubkey] }),
     DM_ERROR.MESSAGE_TOO_LARGE,
   );
   assert.deepEqual(err.details, { bytes: MAX_RUMOR_BYTES + 1, max: MAX_RUMOR_BYTES });
 });
 
-test('the size is counted in UTF-8 bytes of the JSON, not in characters', () => {
+test('the size is counted in UTF-8 bytes of the JSON, not in characters', async () => {
   const alice = person();
   const bob = person();
   // 12,000 four-byte emoji are 12,000 code points (24,000 UTF-16 units) but 48,000 bytes.
   const input = template([bob.pubkey], '\u{1F989}'.repeat(12_000));
-  throwsDm(
-    () => sealAndWrap({ template: input, senderSecretKey: alice.secretKey, recipients: [bob.pubkey] }),
+  await throwsDm(
+    () => sealAndWrap({ template: input, signer: alice.signer, recipients: [bob.pubkey] }),
     DM_ERROR.MESSAGE_TOO_LARGE,
   );
   // Characters that JSON escapes grow as well: 7,000 control characters are 42,000 bytes.
-  throwsDm(
-    () => sealAndWrap({ template: template([bob.pubkey], '\u0000'.repeat(7_000)), senderSecretKey: alice.secretKey, recipients: [bob.pubkey] }),
+  await throwsDm(
+    () => sealAndWrap({ template: template([bob.pubkey], '\u0000'.repeat(7_000)), signer: alice.signer, recipients: [bob.pubkey] }),
     DM_ERROR.MESSAGE_TOO_LARGE,
   );
 });
@@ -238,7 +239,7 @@ test('the size is counted in UTF-8 bytes of the JSON, not in characters', () => 
 const alice = person();
 const bobPubkey = person().pubkey;
 const wrapWith = (overrides) =>
-  sealAndWrap({ template: template([bobPubkey]), senderSecretKey: alice.secretKey, recipients: [bobPubkey], ...overrides });
+  sealAndWrap({ template: template([bobPubkey]), signer: alice.signer, recipients: [bobPubkey], ...overrides });
 
 const BAD_TEMPLATES = [
   undefined,
@@ -260,18 +261,40 @@ const BAD_TEMPLATES = [
 ];
 
 for (const bad of BAD_TEMPLATES) {
-  test(`sealAndWrap refuses the template ${inspect(bad, { breakLength: 200 }).slice(0, 60)}`, () => {
-    throwsDm(() => wrapWith({ template: bad }), DM_ERROR.INVALID_ARGUMENT);
+  test(`sealAndWrap refuses the template ${inspect(bad, { breakLength: 200 }).slice(0, 60)}`, async () => {
+    await throwsDm(() => wrapWith({ template: bad }), DM_ERROR.INVALID_ARGUMENT);
   });
 }
 
-const BAD_KEYS = [undefined, null, 'f'.repeat(64), [], new Uint8Array(31), new Uint8Array(33), new Uint8Array(32)];
+const BAD_SIGNERS = [
+  undefined,
+  null,
+  new Uint8Array(32),
+  { pubkey: alice.pubkey },
+  { ...alice.signer, pubkey: 'abc' },
+  { ...alice.signer, nip44Encrypt: undefined },
+  { ...alice.signer, signEvent: undefined },
+];
 
-for (const key of BAD_KEYS) {
-  test(`sealAndWrap refuses the sender key ${inspect(key).slice(0, 50)}`, () => {
-    throwsDm(() => wrapWith({ senderSecretKey: key }), DM_ERROR.INVALID_ARGUMENT);
+for (const signer of BAD_SIGNERS) {
+  test(`sealAndWrap refuses the signer ${inspect(signer, { depth: 0 }).slice(0, 50)}`, async () => {
+    await throwsDm(() => wrapWith({ signer }), DM_ERROR.INVALID_ARGUMENT);
   });
 }
+
+test('a signer that cannot answer keeps its code, so the caller can wait for it', async () => {
+  const signer = {
+    ...alice.signer,
+    nip44Encrypt: async () => { throw new DmError(DM_ERROR.SIGNER_UNAVAILABLE); },
+  };
+  await throwsDm(() => wrapWith({ signer }), DM_ERROR.SIGNER_UNAVAILABLE);
+});
+
+test('a seal signed by another key is refused: the wrap would carry the wrong author', async () => {
+  const mallory = person();
+  const signer = { ...alice.signer, signEvent: mallory.signer.signEvent };
+  await throwsDm(() => wrapWith({ signer }), DM_ERROR.NO_IDENTITY);
+});
 
 const BAD_RECIPIENT_LISTS = [
   undefined,
@@ -286,17 +309,17 @@ const BAD_RECIPIENT_LISTS = [
 ];
 
 for (const recipients of BAD_RECIPIENT_LISTS) {
-  test(`sealAndWrap refuses the recipients ${inspect(recipients).slice(0, 60)}`, () => {
-    throwsDm(() => wrapWith({ recipients }), DM_ERROR.INVALID_ARGUMENT);
+  test(`sealAndWrap refuses the recipients ${inspect(recipients).slice(0, 60)}`, async () => {
+    await throwsDm(() => wrapWith({ recipients }), DM_ERROR.INVALID_ARGUMENT);
   });
 }
 
-test('sealAndWrap refuses a pubkey that is no curve point, keeping the cause, and wraps nothing', () => {
-  const err = throwsDm(() => wrapWith({ recipients: ['f'.repeat(64)] }), DM_ERROR.INVALID_ARGUMENT);
+test('sealAndWrap refuses a pubkey that is no curve point, keeping the cause, and wraps nothing', async () => {
+  const err = await throwsDm(() => wrapWith({ recipients: ['f'.repeat(64)] }), DM_ERROR.INVALID_ARGUMENT);
   assert.ok(err.cause instanceof Error);
   assert.deepEqual(err.details, { recipient: 'f'.repeat(64) });
 });
 
-test('sealAndWrap with no arguments is an INVALID_ARGUMENT, not a TypeError', () => {
-  throwsDm(() => sealAndWrap(), DM_ERROR.INVALID_ARGUMENT);
+test('sealAndWrap with no arguments is an INVALID_ARGUMENT, not a TypeError', async () => {
+  await throwsDm(() => sealAndWrap(), DM_ERROR.INVALID_ARGUMENT);
 });

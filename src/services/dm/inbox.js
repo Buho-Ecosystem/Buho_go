@@ -29,9 +29,9 @@
  * rumors, keys and invoices are private.
  */
 
-import { createAuthEvent, finalizeEvent } from 'nostr-core';
+import { createAuthEventTemplate } from 'nostr-core';
 import { DM_DISCOVERY_RELAYS, DM_INBOX_RELAYS, KIND, SINCE_SLACK_SECONDS } from './constants.js';
-import { DM_ERROR, DmError, isRetryableRelayReason } from './errors.js';
+import { DM_ERROR, DmError, isRetryableRelayReason, isSignerWait } from './errors.js';
 import { createRumorGate, createWrapGate } from './inboundPolicy.js';
 import { INBOX_STATUS, buildInboxRelayListTemplate, normalizeInboxRelayUrl } from './inboxRelays.js';
 import { openGiftWrap } from './openWrap.js';
@@ -126,7 +126,8 @@ export const MAX_PENDING_WRAPS = 200;
  * @property {boolean} synced At least one relay finished its stored events in this run.
  * @property {number} syncedRelays How many relays did.
  * @property {number | null} cursor The persisted sync cursor.
- * @property {number} pendingWraps Wraps waiting for the identity key.
+ * @property {number} pendingWraps Wraps waiting for the signer (locked app, signer app offline or refusing).
+ * @property {string | null} signerHold Why they wait: the signer's DmError code, null when nothing waits.
  * @property {number} outbox Messages in the outbox.
  * @property {number} exhausted Of those, how many ran out of retries.
  * @property {number} sending Deliveries in progress.
@@ -154,20 +155,18 @@ function safeCall(fn, ...args) {
   }
 }
 
-/** The key is gone for now (wipe, lock, not loadable): the work can wait for it. */
-const isKeyUnavailable = (err) => DmError.is(err, DM_ERROR.KEY_WIPED) || DmError.is(err, DM_ERROR.NO_IDENTITY);
 
 const sameSet = (a, b) => a.length === b.length && a.every((value) => b.includes(value));
 
 /**
- * The AUTH signer for the transport: answers a relay's NIP-42 challenge with
- * the identity key, which stays inside the session key holder.
+ * The AUTH signer for the transport: answers a relay's NIP-42 challenge
+ * through the chat signer (the key on this phone or the signer app).
  *
- * @param {{ use: <T>(fn: (secretKey: Uint8Array) => T) => Promise<T> }} sessionKey
+ * @param {Pick<import('./dmSigner.js').DmSigner, 'signEvent'>} signer
  * @returns {(request: { relay: string, challenge: string }) => Promise<NostrEvent>}
  */
-export function createSignAuth(sessionKey) {
-  return ({ relay, challenge }) => sessionKey.use((secretKey) => createAuthEvent({ relay, challenge }, secretKey));
+export function createSignAuth(signer) {
+  return ({ relay, challenge }) => signer.signEvent(createAuthEventTemplate({ relay, challenge }));
 }
 
 // ---------------------------------------------------------------------------
@@ -179,8 +178,7 @@ export function createSignAuth(sessionKey) {
  *
  * @param {object} options
  * @param {string} options.me Own pubkey (64 lowercase hex).
- * @param {{ use: <T>(fn: (secretKey: Uint8Array) => T) => Promise<T> }} options.sessionKey
- *   The identity key holder (`sessionKey.js`).
+ * @param {import('./dmSigner.js').DmSigner} options.signer The chat signer (`dmSigner.js`).
  * @param {{
  *   subscribe: Function, publish: Function, warmUp: Function,
  * }} options.transport The relay transport (`transport.js`).
@@ -194,6 +192,8 @@ export function createSignAuth(sessionKey) {
  * @param {readonly string[]} [options.discoveryRelays] Where our kind 10050 list is published.
  * @param {(message: ChatMessage, info: { live: boolean }) => void} [options.onIncoming] Called for a new,
  *   incoming, live message that is not a reaction (the hook for notifications).
+ * @param {(code: string | null) => void} [options.onSignerHold] Called when received
+ *   wraps start or stop waiting for the signer (the code says why).
  * @param {Partial<typeof OUTBOX_DEFAULTS>} [options.outbox] Overrides of `OUTBOX_DEFAULTS`.
  * @param {{ max: number, windowMs: number }} [options.liveRate] Overrides `LIVE_RATE`.
  * @param {() => number} [options.random] Uniform in [0, 1), for backoff jitter.
@@ -202,6 +202,7 @@ export function createSignAuth(sessionKey) {
  *   stop: () => void,
  *   send: (request: { partner: string, template: import('nostr-core').EventTemplate, hints?: string[] }) => Promise<ChatMessage>,
  *   retryOutbox: (options?: { ignoreBackoff?: boolean }) => Promise<{ attempted: number }>,
+ *   retryWaiting: () => void,
  *   retry: (id: string) => Promise<boolean>,
  *   ensureOwnRelayList: () => Promise<{ status: OwnRelayListStatus }>,
  *   status: () => InboxStatus,
@@ -211,7 +212,7 @@ export function createSignAuth(sessionKey) {
  */
 export function createInbox({
   me,
-  sessionKey,
+  signer,
   transport,
   resolver,
   store,
@@ -221,13 +222,16 @@ export function createInbox({
   inboxRelays = DM_INBOX_RELAYS,
   discoveryRelays = DM_DISCOVERY_RELAYS,
   onIncoming,
+  onSignerHold,
   outbox: outboxOptions,
   liveRate = LIVE_RATE,
   random = Math.random,
 } = {}) {
   const invalid = (message) => new DmError(DM_ERROR.INVALID_ARGUMENT, message);
   if (typeof me !== 'string' || !HEX_64.test(me)) throw invalid('me must be 64 lowercase hex characters');
-  if (typeof sessionKey?.use !== 'function') throw invalid('sessionKey is required');
+  if (typeof signer?.signEvent !== 'function' || typeof signer.nip44Decrypt !== 'function') {
+    throw invalid('signer is required');
+  }
   if (typeof transport?.subscribe !== 'function' || typeof transport.publish !== 'function') {
     throw invalid('transport is required');
   }
@@ -254,6 +258,8 @@ export function createInbox({
   let liveGate = null;
   /** Wraps that waited for the key: `{ event, live }`. */
   let pending = [];
+  /** Why received wraps wait (the signer's DmError code), or null: the chat says so. */
+  let signerHold = null;
   /** Set when the pending queue overflowed: the cursor must then never advance this run. */
   let cursorBlocked = false;
   let draining = false;
@@ -282,11 +288,18 @@ export function createInbox({
     });
   }
 
-  // ----- identity key ----------------------------------------------------
+  // ----- identity --------------------------------------------------------
 
-  /** `sessionKey.use`, plus: after a success, wraps that waited for the key are processed. */
-  async function useKey(fn) {
-    const result = await sessionKey.use(fn);
+  /** Run signer work; after a success, wraps that waited for the signer are processed. */
+  function setSignerHold(code) {
+    if (signerHold === code) return;
+    signerHold = code;
+    safeCall(onSignerHold, code);
+  }
+
+  async function withSigner(work) {
+    const result = await work();
+    setSignerHold(null);
     if (pending.length > 0 && !draining && !drainQueued) {
       drainQueued = true;
       enqueue(async () => {
@@ -302,39 +315,61 @@ export function createInbox({
   /**
    * Open and store one wrap that passed the wrap gate.
    *
-   * @returns {Promise<'done' | 'deferred'>} `deferred`: the key is unavailable, keep the wrap.
+   * @returns {Promise<'done' | 'deferred'>} `deferred`: the signer cannot answer now, keep the wrap.
    */
   async function openAndIngest(event, live, mine) {
     let opened;
     try {
-      opened = await useKey((secretKey) => openGiftWrap(event, secretKey, { me }));
+      opened = await withSigner(() => openGiftWrap(event, signer, { me }));
     } catch (err) {
-      if (isKeyUnavailable(err)) return 'deferred';
+      if (!isSignerWait(err)) return 'done';
+      setSignerHold(err.code);
+      return 'deferred';
+    }
+    if (mine !== epoch) return 'done';
+    if (!opened.ok) {
+      remember(event);
       return 'done';
     }
-    if (mine !== epoch || !opened.ok) return 'done';
 
     const { rumor, sender } = opened;
     // Cheap and before the rate limit: a re-delivered message must not cost the sender's budget.
     // Our own messages still pass, because their self copy confirms delivery.
-    if (sender !== me && store.hasMessage(rumor.id)) return 'done';
+    if (sender !== me && store.hasMessage(rumor.id)) {
+      remember(event);
+      return 'done';
+    }
 
     const verdict = await (live ? liveGate : backfillGate).check(rumor);
-    if (mine !== epoch || !verdict.accepted) return 'done';
+    if (mine !== epoch) return 'done';
+    // A live message over the sender's rate limit stays unhandled: a later
+    // backfill (no rate limit) may still take it. Every other verdict is final.
+    if (!verdict.accepted) {
+      if (!String(verdict.reason ?? '').startsWith('rate-limited')) remember(event);
+      return 'done';
+    }
 
     const message = parseRumor(rumor, { me });
+    const isNew = message ? store.ingest(message, { live }) === true : false;
+    remember(event);
     if (!message) return 'done';
-    const isNew = store.ingest(message, { live }) === true;
     if (isNew && live && !message.outgoing && message.type !== MESSAGE_TYPE.REACTION) {
       safeCall(onIncoming, message, { live });
     }
     return 'done';
   }
 
+  /** A wrap that was opened and dealt with: the next start does not open it again. */
+  function remember(event) {
+    store.rememberHandledWrap?.(event.id, event.created_at);
+  }
+
   /** The live path for one wrap from the subscription. */
   async function processWrap(event, live, mine) {
     const verdict = await wrapGate.check(event);
     if (mine !== epoch || !verdict.accepted) return;
+    // Handled before (an earlier start): nothing to decrypt, nothing new to store.
+    if (store.hasHandledWrap?.(event.id)) return;
     if ((await openAndIngest(event, live, mine)) === 'deferred') queuePending(event, live);
   }
 
@@ -455,8 +490,8 @@ export function createInbox({
    *
    * @throws {DmError} NO_INBOX_RELAYS when the partner publishes no inbox list
    *   (nothing is stored); INVALID_ARGUMENT for a bad partner or a template
-   *   that does not address the partner; KEY_WIPED / NO_IDENTITY when the key
-   *   is unavailable; MESSAGE_TOO_LARGE from sealing.
+   *   that does not address the partner; the signer's codes (`isSignerWait`)
+   *   when it cannot seal now; MESSAGE_TOO_LARGE from sealing.
    */
   async function send({ partner, template, hints } = {}) {
     if (typeof partner !== 'string' || !HEX_64.test(partner) || partner === me) {
@@ -469,7 +504,7 @@ export function createInbox({
       throw new DmError(DM_ERROR.NO_INBOX_RELAYS, 'the contact has no inbox relay list');
     }
 
-    const sealed = await useKey((secretKey) => sealAndWrap({ template, senderSecretKey: secretKey, recipients: [partner] }));
+    const sealed = await withSigner(() => sealAndWrap({ template, signer, recipients: [partner] }));
     const message = parseRumor(sealed.rumor, { me });
     if (!message || !message.outgoing || message.partner !== partner) {
       throw invalid('the template does not address this partner');
@@ -746,7 +781,7 @@ export function createInbox({
         if (lookup.status === INBOX_STATUS.FOUND && sameSet(lookup.relays, ownInbox)) return { status: 'unchanged' };
 
         const template = buildInboxRelayListTemplate(ownInbox, { now: nowSeconds() });
-        const event = await useKey((secretKey) => finalizeEvent(template, secretKey));
+        const event = await withSigner(() => signer.signEvent(template));
         const { firstAccept } = transport.publish(discovery, event);
         const accepted = await firstAccept;
         resolver.invalidate?.(me);
@@ -771,6 +806,7 @@ export function createInbox({
       syncedRelays: eosed.size,
       cursor: store.getSyncCursor() ?? null,
       pendingWraps: pending.length,
+      signerHold: pending.length > 0 ? signerHold : null,
       outbox: items.length,
       exhausted: items.filter((item) => item.exhausted).length,
       sending: active.size,
@@ -787,5 +823,10 @@ export function createInbox({
     }
   }
 
-  return Object.freeze({ start, stop, send, retryOutbox, retry, ensureOwnRelayList, status, whenIdle });
+  /** Open the wraps that waited for the signer again (the person asked to retry). */
+  function retryWaiting() {
+    if (running && pending.length > 0) enqueue(() => drainPending());
+  }
+
+  return Object.freeze({ start, stop, send, retryOutbox, retry, retryWaiting, ensureOwnRelayList, status, whenIdle });
 }

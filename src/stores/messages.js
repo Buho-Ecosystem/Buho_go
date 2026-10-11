@@ -21,12 +21,19 @@
  *   outbox       items waiting to be (re)sent, see `enqueueOutbox`
  *   inboxRelays  the inbox relay resolver's `snapshot()`, or null
  *   settlements  own requests whose payment a wallet of the user confirmed, by request id (see `setSettlement`)
+ *   signerAppMessages  true once the person turned messages on for an identity
+ *                that signs in another app (each message asks that app; see
+ *                services/dm/dmSigner.js), so receiving never starts unasked
+ *   handledWraps gift wrap id -> its created_at, for wraps already opened and
+ *                dealt with: a restart re-reads two days of wraps and must not
+ *                decrypt them again (a signer app would be asked each time)
  *
  * Time units: message times and `now` arguments are unix SECONDS (rumor
  * `created_at`, request `validUntil`); only the debounce works in milliseconds.
  */
 
 import { defineStore } from 'pinia'
+import { SINCE_SLACK_SECONDS } from '../services/dm/constants.js'
 import { MESSAGE_TYPE, REQUEST_STATUS } from '../services/dm/protocol.js'
 import { loadChatState, saveChatState, deleteChatState } from '../utils/dmStorage.js'
 import { useAddressBookStore } from './addressBook.js'
@@ -36,6 +43,9 @@ import { useAddressBookStore } from './addressBook.js'
 // ---------------------------------------------------------------------------
 
 export const STATE_VERSION = 1
+
+/** Wrap ids remembered as handled at most (the oldest go first). */
+export const MAX_HANDLED_WRAPS = 5000
 
 /** Messages kept per thread by `prune` (pending requests are kept on top). */
 export const MAX_MESSAGES_PER_THREAD = 500
@@ -167,7 +177,12 @@ function emptyThread() {
 }
 
 function emptyState() {
-  return { threads: {}, blocked: [], syncCursor: null, outbox: [], inboxRelays: null, settlements: {} }
+  return {
+    threads: {}, blocked: [], syncCursor: null, outbox: [], inboxRelays: null, settlements: {}, handledWraps: {},
+    signerAppMessages: false,
+    // Not persisted: why received messages wait for the signer app (a DmError code), or null.
+    signerHold: null,
+  }
 }
 
 /**
@@ -340,6 +355,12 @@ function restoreState(raw, me) {
   if (isPlainObject(raw.settlements)) {
     for (const [requestId, settlement] of Object.entries(raw.settlements)) {
       if (hexKey(requestId) && isPlainObject(settlement)) state.settlements[requestId] = { ...settlement }
+    }
+  }
+  state.signerAppMessages = raw.signerAppMessages === true
+  if (isPlainObject(raw.handledWraps)) {
+    for (const [wrapId, createdAt] of Object.entries(raw.handledWraps)) {
+      if (hexKey(wrapId) && isCount(createdAt)) state.handledWraps[wrapId] = createdAt
     }
   }
   return state
@@ -553,6 +574,8 @@ export const useMessagesStore = defineStore('messages', {
         outbox: this.outbox,
         inboxRelays: this.inboxRelays,
         settlements: this.settlements,
+        handledWraps: this.handledWraps,
+        signerAppMessages: this.signerAppMessages,
       }))
     },
 
@@ -785,6 +808,33 @@ export const useMessagesStore = defineStore('messages', {
       return true
     },
 
+    /** The person turned messages on for this identity's signer app. */
+    turnOnSignerAppMessages() {
+      if (!this.scope || this.signerAppMessages) return false
+      this.signerAppMessages = true
+      this._markDirty()
+      return true
+    },
+
+    /** Why received messages wait for the signer app (a DmError code), or null. */
+    setSignerHold(code) {
+      if (!this.scope) return
+      this.signerHold = typeof code === 'string' ? code : null
+    },
+
+    /** Whether the gift wrap `wrapId` was already opened and dealt with. */
+    hasHandledWrap(wrapId) {
+      return Boolean(this.scope && hexKey(wrapId) && this.handledWraps[wrapId] !== undefined)
+    },
+
+    /** Remember a gift wrap as dealt with (`createdAt`: the wrap's own unix seconds). */
+    rememberHandledWrap(wrapId, createdAt) {
+      if (!this.scope || !hexKey(wrapId) || !isCount(createdAt) || this.handledWraps[wrapId] !== undefined) return false
+      this.handledWraps[wrapId] = createdAt
+      this._markDirty()
+      return true
+    },
+
     /**
      * Queue something to (re)send. `item` is JSON data the inbox understands
      * (typically the sealed wraps per relay); the store only needs `id` (the
@@ -866,8 +916,26 @@ export const useMessagesStore = defineStore('messages', {
       for (const id of Object.keys(this.settlements)) {
         if (!requestIds.has(id)) { delete this.settlements[id]; orphans += 1 }
       }
-      if (dropped > 0 || orphans > 0) this._markDirty()
+      const forgotten = this._pruneHandledWraps()
+      if (dropped > 0 || orphans > 0 || forgotten > 0) this._markDirty()
       return dropped
+    },
+
+    /**
+     * Forget handled wraps the inbox can no longer fetch: older than its
+     * window (sync cursor minus the two-day slack, plus a day of margin), and
+     * beyond MAX_HANDLED_WRAPS the oldest.
+     */
+    _pruneHandledWraps() {
+      const entries = Object.entries(this.handledWraps)
+      const floor = this.syncCursor === null ? 0 : this.syncCursor - SINCE_SLACK_SECONDS - 24 * 60 * 60
+      let keep = entries.filter(([, createdAt]) => createdAt >= floor)
+      if (keep.length > MAX_HANDLED_WRAPS) {
+        keep = keep.sort((a, b) => b[1] - a[1]).slice(0, MAX_HANDLED_WRAPS)
+      }
+      if (keep.length === entries.length) return 0
+      this.handledWraps = Object.fromEntries(keep)
+      return entries.length - keep.length
     },
   },
 })

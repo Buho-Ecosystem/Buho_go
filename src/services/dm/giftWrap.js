@@ -10,14 +10,21 @@
  * Every wrap is independent: its own seal, its own ephemeral wrap key, its own
  * randomised timestamps, so relays cannot link the copies. Nothing is logged;
  * the rumor is private.
+ *
+ * The seal is the identity's part (NIP-44 to the recipient, then signed), so
+ * it goes through the chat signer (`dmSigner.js`): the key on this phone or
+ * the person's signer app. The wrap around it uses a fresh throwaway key and
+ * never needs the identity.
  */
 
-import { createRumor, createSeal, createWrap, getPublicKey } from 'nostr-core';
-import { MAX_RUMOR_BYTES } from './constants.js';
+import { createRumor, createWrap } from 'nostr-core';
+import { KIND, MAX_RUMOR_BYTES } from './constants.js';
 import { DM_ERROR, DmError } from './errors.js';
 
 const HEX_64 = /^[0-9a-f]{64}$/;
 const encoder = new TextEncoder();
+/** NIP-59: seal timestamps are randomised up to two days into the past. */
+const SEAL_TIME_SPREAD_SECONDS = 2 * 24 * 60 * 60;
 
 /**
  * @typedef {object} WrapResult
@@ -40,17 +47,19 @@ const encoder = new TextEncoder();
  * @param {object} params
  * @param {import('nostr-core').EventTemplate} params.template What to send
  *   (from `protocol.js`): kind, tags, content and created_at.
- * @param {Uint8Array} params.senderSecretKey Identity key; read, never kept.
+ * @param {Pick<import('./dmSigner.js').DmSigner, 'pubkey' | 'nip44Encrypt' | 'signEvent'>} params.signer
+ *   The sender's chat signer.
  * @param {string[]} params.recipients Pubkeys, 64 lowercase hex; not empty.
  * @param {boolean} [params.selfCopy=true] Also wrap for the sender.
- * @returns {{ rumor: import('nostr-core').Rumor, wraps: WrapResult[] }}
- * @throws {DmError} `INVALID_ARGUMENT` for a bad template, key or pubkey, or a
+ * @returns {Promise<{ rumor: import('nostr-core').Rumor, wraps: WrapResult[] }>}
+ * @throws {DmError} `INVALID_ARGUMENT` for a bad template, signer or pubkey, or a
  *   pubkey nothing can be encrypted for; `MESSAGE_TOO_LARGE` when the rumor
- *   exceeds `MAX_RUMOR_BYTES`.
+ *   exceeds `MAX_RUMOR_BYTES`; the signer's own codes (`KEY_WIPED`,
+ *   `SIGNER_UNAVAILABLE`, ...) unchanged.
  */
-export function sealAndWrap({ template, senderSecretKey, recipients, selfCopy = true } = {}) {
+export async function sealAndWrap({ template, signer, recipients, selfCopy = true } = {}) {
   const fields = readTemplate(template);
-  const sender = readSenderKey(senderSecretKey);
+  const sender = readSigner(signer);
   const targets = readRecipients(recipients, sender);
   if (targets.length === 0 && !selfCopy) {
     throw new DmError(DM_ERROR.INVALID_ARGUMENT, 'nothing to wrap: only the sender is addressed and selfCopy is off');
@@ -64,22 +73,20 @@ export function sealAndWrap({ template, senderSecretKey, recipients, selfCopy = 
     });
   }
 
-  const wraps = targets.map((recipient) => ({
-    recipient,
-    self: false,
-    event: wrapFor(rumor, senderSecretKey, recipient),
-  }));
-  if (selfCopy) {
-    wraps.push({ recipient: sender, self: true, event: wrapFor(rumor, senderSecretKey, sender) });
-  }
-  return { rumor, wraps };
+  const copies = targets.map((recipient) => ({ recipient, self: false }));
+  if (selfCopy) copies.push({ recipient: sender, self: true });
+  // In parallel: a signer app answers several requests faster than one by one.
+  const events = await Promise.all(copies.map(({ recipient }) => wrapFor(rumor, signer, recipient)));
+  return { rumor, wraps: copies.map((copy, i) => ({ ...copy, event: events[i] })) };
 }
 
-/** One seal and one wrap of `rumor` for `recipient`. */
-function wrapFor(rumor, senderSecretKey, recipient) {
+/** One seal (by the signer) and one wrap (throwaway key) of `rumor` for `recipient`. */
+async function wrapFor(rumor, signer, recipient) {
+  let content;
   try {
-    return createWrap(createSeal(rumor, senderSecretKey, recipient), recipient);
+    content = await signer.nip44Encrypt(recipient, JSON.stringify(rumor));
   } catch (cause) {
+    if (cause instanceof DmError) throw cause;
     // A 64-hex string that is not a point on the curve passes the shape check
     // but cannot be encrypted for.
     throw new DmError(DM_ERROR.INVALID_ARGUMENT, 'cannot encrypt for this recipient', {
@@ -87,6 +94,13 @@ function wrapFor(rumor, senderSecretKey, recipient) {
       details: { recipient },
     });
   }
+  const seal = await signer.signEvent({ kind: KIND.SEAL, tags: [], content, created_at: sealTimestamp() });
+  if (seal?.pubkey !== signer.pubkey) throw new DmError(DM_ERROR.NO_IDENTITY, 'the seal is not signed by the sender');
+  return createWrap(seal, recipient);
+}
+
+function sealTimestamp() {
+  return Math.floor(Date.now() / 1000) - Math.floor(Math.random() * SEAL_TIME_SPREAD_SECONDS);
 }
 
 /** The template's four fields, copied so extra properties never reach the rumor. */
@@ -108,16 +122,14 @@ function readTemplate(template) {
   };
 }
 
-/** The sender's pubkey, derived from the key (which must be 32 bytes). */
-function readSenderKey(secretKey) {
-  if (!(secretKey instanceof Uint8Array) || secretKey.length !== 32) {
-    throw new DmError(DM_ERROR.INVALID_ARGUMENT, 'senderSecretKey must be 32 bytes');
-  }
-  try {
-    return getPublicKey(secretKey);
-  } catch (cause) {
-    throw new DmError(DM_ERROR.INVALID_ARGUMENT, 'senderSecretKey is not a valid key', { cause });
-  }
+/** The sender's pubkey, from a signer that can seal. */
+function readSigner(signer) {
+  const usable =
+    typeof signer?.pubkey === 'string' && HEX_64.test(signer.pubkey) &&
+    typeof signer.nip44Encrypt === 'function' &&
+    typeof signer.signEvent === 'function';
+  if (!usable) throw new DmError(DM_ERROR.INVALID_ARGUMENT, 'signer must have a pubkey, nip44Encrypt and signEvent');
+  return signer.pubkey;
 }
 
 /** Validated, deduplicated recipients without the sender. */

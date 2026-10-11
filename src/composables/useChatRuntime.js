@@ -59,6 +59,10 @@ const facade = Object.freeze({
   fetchRequestInvoice: forward('fetchRequestInvoice'),
   settleClaims: forward('settleClaims'),
   partnerReachability: forward('partnerReachability'),
+  /** Signer-app identities: start receiving once the person turned messages on. */
+  turnOnMessages: forward('turnOnMessages'),
+  /** Signer-app identities: ask the signer app again after it refused or was away. */
+  retrySigner: () => current.value?.retrySigner(),
 
   requestState: requestId => (current.value ? current.value.requestState(requestId) : null),
   requestSettlement: requestId => (current.value ? current.value.requestSettlement(requestId) : null),

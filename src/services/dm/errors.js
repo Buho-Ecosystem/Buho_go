@@ -56,7 +56,29 @@ export const DM_ERROR = Object.freeze({
   INVOICE_FETCH_FAILED: 'INVOICE_FETCH_FAILED',
   /** The amount lies outside what the Lightning address accepts (LUD-06 min/max). */
   AMOUNT_OUT_OF_RANGE: 'AMOUNT_OUT_OF_RANGE',
+  /** The identity's signer app (browser extension or remote signer) did not answer: missing, offline or too slow. */
+  SIGNER_UNAVAILABLE: 'SIGNER_UNAVAILABLE',
+  /** The signer app refused: the person declined, or its permissions do not allow the request. */
+  SIGNER_DENIED: 'SIGNER_DENIED',
+  /** The signer app cannot encrypt with NIP-44, which every chat message needs. */
+  SIGNER_UNSUPPORTED: 'SIGNER_UNSUPPORTED',
 });
+
+/**
+ * The identity cannot sign or decrypt right now, though the work itself is
+ * fine (locked app, signer app offline, approval missing, an extension that
+ * needs an update): work that hits one of these is kept, never dropped.
+ */
+const SIGNER_WAIT_CODES = new Set([
+  DM_ERROR.KEY_WIPED,
+  DM_ERROR.NO_IDENTITY,
+  DM_ERROR.SIGNER_UNAVAILABLE,
+  DM_ERROR.SIGNER_DENIED,
+  DM_ERROR.SIGNER_UNSUPPORTED,
+]);
+
+/** Whether `err` means "the identity cannot sign or decrypt right now" (see SIGNER_WAIT_CODES). */
+export const isSignerWait = (err) => err instanceof DmError && SIGNER_WAIT_CODES.has(err.code);
 
 /** @typedef {keyof typeof DM_ERROR} DmErrorCode */
 

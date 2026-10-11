@@ -258,6 +258,15 @@ export function describeDmError(error, { t, name = '' }) {
     case DM_ERROR.NO_IDENTITY:
       message = t('Set up your identity to use the chat.');
       break;
+    case DM_ERROR.SIGNER_DENIED:
+      message = t('Your signer app declined. Allow it there, then try again.');
+      break;
+    case DM_ERROR.SIGNER_UNAVAILABLE:
+      message = t("Your signer app didn't answer. Check that it is open, then try again.");
+      break;
+    case DM_ERROR.SIGNER_UNSUPPORTED:
+      message = t("Your signer app can't encrypt messages. Update it or use another signer app.");
+      break;
     case DM_ERROR.NO_RELAY_ACCEPTED:
     case DM_ERROR.RELAY_UNAVAILABLE:
     case DM_ERROR.AUTH_FAILED:

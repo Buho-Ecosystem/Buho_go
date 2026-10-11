@@ -30,6 +30,14 @@
       </header>
 
       <div class="messages-sheet__body">
+        <SignerAppNotice
+          v-if="signerState"
+          :state="signerState"
+          :kind="signerKind"
+          :busy="signerBusy"
+          @turn-on="turnOnMessages"
+          @retry="retrySigner"
+        />
         <p v-if="!knownRows.length && !unknownRows.length" class="messages-sheet__empty">
           {{ $t('No messages yet') }}
         </p>
@@ -73,19 +81,27 @@ import { useAddressBookStore } from '../../stores/addressBook.js'
 import { useWalletStore } from '../../stores/wallet.js'
 import { formatSats } from './chatFormat.js'
 import { buildThreadRows } from './threadRows.js'
+import SignerAppNotice from './SignerAppNotice.vue'
+import { useSignerAppNotice } from '../../composables/useSignerAppNotice.js'
 import './chatTokens.css'
 
 let sheetCount = 0
 
 export default {
   name: 'MessagesSheet',
-  components: { Icon, ContactAvatar },
+  components: { Icon, ContactAvatar, SignerAppNotice },
   props: {
     modelValue: { type: Boolean, default: false }
   },
   emits: ['update:modelValue'],
   setup() {
+    const signerNotice = useSignerAppNotice()
     return {
+      signerState: signerNotice.state,
+      signerKind: signerNotice.kind,
+      signerBusy: signerNotice.busy,
+      turnOnMessages: signerNotice.turnOn,
+      retrySigner: signerNotice.retry,
       messages: useMessagesStore(),
       addressBook: useAddressBookStore(),
       wallet: useWalletStore(),

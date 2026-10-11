@@ -8,7 +8,8 @@
  *
  *   runtime need                  provided by
  *   ----------------------------  ------------------------------------------------
- *   key bytes                     identity.getNostrSecretKeyBytes
+ *   key bytes (key on this phone) identity.getNostrSecretKeyBytes
+ *   signer app (extension, NIP-46)identity.acquireSigner, pinned to the runtime's identity
  *   threads, outbox, status       messages store (scoped to the identity)
  *   profile Lightning address     profile.lud16
  *   requester's current profile   services.fetchProfile (signed kind 0)
@@ -19,11 +20,37 @@
  *   relay connections for lookups getRelayPool().ensureRelay
  */
 
+import { DM_ERROR, DmError } from './errors.js';
 import { loadIncomingTransactions } from './incomingTransactions.js';
 import { createChatRuntime } from './runtime.js';
 
 /** `source` stamped on the incoming transaction of a paid chat request. */
 export const CHAT_REQUEST_SOURCE = 'chat-request';
+
+/**
+ * Requests a signer app gets at once. An extension asks the person for each
+ * one, so they come one by one; a remote signer answers a few in parallel.
+ */
+const SIGNER_APP_PARALLEL = Object.freeze({ nip07: 1, nip46: 3 });
+
+/**
+ * How the runtime for `pubkey` signs: the key on this phone (a BuhoGO
+ * identity or an imported secret key) or the identity's signer app. The
+ * signer is pinned: once another identity is in use it is never asked for.
+ */
+function signingFor(identity, pubkey) {
+  const { rawKey, kind } = identity.identityCapabilities;
+  if (rawKey) return { loadSecretKey: () => identity.getNostrSecretKeyBytes() };
+  return {
+    signerApp: {
+      acquire: async () => {
+        if (identity.nostrPubkeyHex !== pubkey) throw new DmError(DM_ERROR.NO_IDENTITY, 'another identity is in use');
+        return identity.acquireSigner();
+      },
+      maxParallel: SIGNER_APP_PARALLEL[kind] ?? 1,
+    },
+  };
+}
 
 /**
  * @param {object} stores
@@ -56,7 +83,7 @@ export function createAppRuntimeFactory(stores, services) {
   return function createRuntimeFor(pubkey) {
     return (services.createChatRuntime ?? createChatRuntime)({
       me: pubkey,
-      loadSecretKey: () => identity.getNostrSecretKeyBytes(),
+      ...signingFor(identity, pubkey),
       isLocked: services.isLocked,
       store: stores.messages(),
       getProfileAddress: () => profile.lud16,

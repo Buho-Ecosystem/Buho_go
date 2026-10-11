@@ -289,3 +289,8 @@ preimage matching, hash not used before: the card reads "Received at
 - Re-check relay.damus.io / relay.nostr.net AUTH (broken server-side on
   2026-10-10) and add them back to `DM_INBOX_RELAYS` once fixed.
 - Replace local workarounds when nostr-core #72–#75 ship.
+- Signer apps (section 5a of the contract): bump nostr-core to 1.0.5 for the
+  NIP-46 `connect` fix (#76/#77); ask nostr-core for requested permissions in
+  `connect` so a remote signer can grant the chat's calls at pairing; a NIP-46
+  `auth_url` is treated as "approve in your signer app", the link itself is
+  not opened yet; check on a device with nsec.app and Amber (NIP-46).

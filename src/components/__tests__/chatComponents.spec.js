@@ -68,6 +68,7 @@ const MoneyBar = loadSfc('MoneyBar.vue', base)
 const Composer = loadSfc('Composer.vue', { ...base, '../../services/dm/constants.js': constants })
 const RequestSheet = loadSfc('RequestSheet.vue', { ...base, '../../services/dm/constants.js': constants })
 const UnknownSenderBanner = loadSfc('UnknownSenderBanner.vue', base)
+const SignerAppNotice = loadSfc('SignerAppNotice.vue', base)
 const ChatThread = loadSfc('ChatThread.vue', {
   ...base, './DaySeparator.vue': DaySeparator, './MessageBubble.vue': MessageBubble, './PaymentLine.vue': PaymentLine, './RequestCard.vue': RequestCard,
 })
@@ -680,6 +681,27 @@ test('request sheet: fiat comes from the page, the CTA names the amount, a fresh
   assert.equal(busy.vm.ctaText, 'Creating request')
 })
 
+// ── SignerAppNotice ──────────────────────────────────────────────────
+
+test('signer app notice: one plain sentence per state and the one action it needs', async () => {
+  const off = await render(SignerAppNotice, { state: 'off' })
+  assert.match(off, /Messages are off for this identity/)
+  assert.match(off, /Choose to always allow, so it asks only once\./)
+  assert.match(off, />\s*Turn on messages\s*</)
+
+  for (const state of ['approval', 'away']) {
+    const html = await render(SignerAppNotice, { state })
+    assert.match(html, />\s*Try again\s*</, state)
+  }
+  assert.match(await render(SignerAppNotice, { state: 'approval' }), /Approve messages in your signer app/)
+  assert.match(await render(SignerAppNotice, { state: 'away' }), /isn&#39;t answering|isn't answering/)
+
+  const unsupported = await render(SignerAppNotice, { state: 'unsupported' })
+  assert.match(unsupported, /can&#39;t open messages|can't open messages/)
+  assert.equal(tags(unsupported, 'signer-notice__btn').length, 0, 'nothing to tap: the app has to change')
+  assert.deepEqual(SignerAppNotice.emits, ['turn-on', 'retry'])
+})
+
 // ── UnknownSenderBanner ──────────────────────────────────────────────
 
 test('unknown sender: warns, shows a fragment of the npub and offers Add contact and Block', async () => {
@@ -887,6 +909,7 @@ test('touch targets: every control is at least 44 pt', () => {
   at44('MessageMenu.vue', '.message-menu__emoji')
   at44('MessageMenu.vue', '.message-menu__item')
   at44('UnknownSenderBanner.vue', '.unknown-btn')
+  at44('SignerAppNotice.vue', '.signer-notice__btn')
   at44('ChatThread.vue', '.chat-thread__pill')
 })
 

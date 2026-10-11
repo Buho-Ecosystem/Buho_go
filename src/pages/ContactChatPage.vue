@@ -123,6 +123,14 @@
         @open-payment="openProfile"
       >
         <template #header>
+          <SignerAppNotice
+            v-if="signerState"
+            :state="signerState"
+            :kind="signerKind"
+            :busy="signerBusy"
+            @turn-on="turnOnMessages"
+            @retry="retrySigner"
+          />
           <UnknownSenderBanner
             v-if="unknown"
             :npub="npub"
@@ -230,6 +238,7 @@ import MoneyBar from '../components/chat/MoneyBar.vue'
 import Composer from '../components/chat/Composer.vue'
 import RequestSheet from '../components/chat/RequestSheet.vue'
 import UnknownSenderBanner from '../components/chat/UnknownSenderBanner.vue'
+import SignerAppNotice from '../components/chat/SignerAppNotice.vue'
 import ContactAvatar from '../components/AddressBook/ContactAvatar.vue'
 import AddressBookModal from '../components/AddressBook/AddressBookModal.vue'
 import IdentityGetPaidSheet from '../components/identity/IdentityGetPaidSheet.vue'
@@ -241,6 +250,7 @@ import { useProfileStore } from '../stores/profile.js'
 import { useChatRuntime } from '../composables/useChatRuntime.js'
 import { usePayContact } from '../composables/usePayContact.js'
 import { useContactChat } from '../composables/useContactChat.js'
+import { useSignerAppNotice } from '../composables/useSignerAppNotice.js'
 import { containsSecretKey } from '../services/dm/protocol.js'
 import { contactChatRoute } from '../services/dm/runtime.js'
 import { loadIncomingTransactions } from '../services/dm/incomingTransactions.js'
@@ -260,7 +270,7 @@ export default {
   name: 'ContactChatPage',
 
   components: {
-    Icon, ChatHeader, ChatThread, MoneyBar, Composer, RequestSheet, UnknownSenderBanner,
+    Icon, ChatHeader, ChatThread, MoneyBar, Composer, RequestSheet, UnknownSenderBanner, SignerAppNotice,
     ContactAvatar, AddressBookModal, IdentityGetPaidSheet,
   },
 
@@ -345,7 +355,16 @@ export default {
       formatFiat,
     })
 
-    return { t, router, store, addressBook, walletStore, profile, runtime, chat, partner, contact, partnerName: displayName, formatFiat }
+    const signerNotice = useSignerAppNotice()
+
+    return {
+      t, router, store, addressBook, walletStore, profile, runtime, chat, partner, contact, partnerName: displayName, formatFiat,
+      signerState: signerNotice.state,
+      signerKind: signerNotice.kind,
+      signerBusy: signerNotice.busy,
+      turnOnMessages: signerNotice.turnOn,
+      retrySigner: signerNotice.retry,
+    }
   },
 
   data() {

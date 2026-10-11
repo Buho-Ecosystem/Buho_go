@@ -9,11 +9,17 @@
  * a message not meant for us from a forgery. Every check runs on data a
  * stranger chose, and none of it may throw: the result is always a value.
  *
+ * Both decryptions go through the chat signer (`dmSigner.js`). The one
+ * failure that is not about the wrap is the signer's: locked app, signer app
+ * offline, refused. Those are thrown (`isSignerWait`) so the inbox keeps the
+ * wrap for later instead of losing the message.
+ *
  * Nothing is logged; the decrypted rumor is private.
  */
 
-import { getEventHash, nip44, verifyEventSignature } from 'nostr-core';
+import { getEventHash, verifyEventSignature } from 'nostr-core';
 import { KIND } from './constants.js';
+import { isSignerWait } from './errors.js';
 
 const HEX_64 = /^[0-9a-f]{64}$/;
 const HEX_128 = /^[0-9a-f]{128}$/;
@@ -53,10 +59,19 @@ function isTagList(tags) {
 /** Whether some `p` tag names `pubkey`. */
 const addresses = (tags, pubkey) => tags.some((tag) => tag[0] === 'p' && tag[1] === pubkey);
 
-/** Decrypt NIP-44 `payload` from `peerPubkey` and parse the JSON; null on any failure. */
-function decryptJson(payload, secretKey, peerPubkey) {
+/**
+ * Decrypt NIP-44 `payload` from `peerPubkey` and parse the JSON; null when the
+ * payload is no object for us. A signer that cannot answer now throws.
+ */
+async function decryptJson(payload, signer, peerPubkey) {
+  let plaintext;
   try {
-    const plaintext = nip44.decrypt(payload, nip44.getConversationKey(secretKey, peerPubkey));
+    plaintext = await signer.nip44Decrypt(peerPubkey, payload);
+  } catch (err) {
+    if (isSignerWait(err)) throw err;
+    return null;
+  }
+  try {
     const value = JSON.parse(plaintext);
     return typeof value === 'object' && value !== null && !Array.isArray(value) ? value : null;
   } catch {
@@ -110,14 +125,16 @@ function isRumorShape(rumor) {
  * 9. the rumor addresses `me`, or `me` wrote it (`not-addressed`).
  *
  * @param {unknown} event The kind 1059 event as received from a relay.
- * @param {Uint8Array} recipientSecretKey Our identity key; read, never kept.
+ * @param {Pick<import('./dmSigner.js').DmSigner, 'nip44Decrypt'>} signer Our chat signer.
  * @param {object} context
  * @param {string} context.me Our pubkey, 64 lowercase hex.
- * @returns {{ ok: true, rumor: import('nostr-core').Rumor, sender: string }
- *   | { ok: false, reason: OpenFailureReason }} `sender` is the verified author
- *   of the rumor. Never throws.
+ * @returns {Promise<{ ok: true, rumor: import('nostr-core').Rumor, sender: string }
+ *   | { ok: false, reason: OpenFailureReason }>} `sender` is the verified author
+ *   of the rumor.
+ * @throws {DmError} Only when the signer cannot answer now (`isSignerWait`):
+ *   the wrap is fine and must be kept. Anything about the wrap is a result.
  */
-export function openGiftWrap(event, recipientSecretKey, context) {
+export async function openGiftWrap(event, signer, context) {
   try {
     const me = context?.me;
     if (typeof event !== 'object' || event === null || event.kind !== KIND.GIFT_WRAP) {
@@ -128,12 +145,12 @@ export function openGiftWrap(event, recipientSecretKey, context) {
     }
 
     const seal = typeof event.pubkey === 'string' && typeof event.content === 'string'
-      ? decryptJson(event.content, recipientSecretKey, event.pubkey)
+      ? await decryptJson(event.content, signer, event.pubkey)
       : null;
     if (seal === null) return failure(OPEN_FAILURE.UNDECRYPTABLE);
     if (!isValidSeal(seal)) return failure(OPEN_FAILURE.INVALID_SEAL);
 
-    const rumor = decryptJson(seal.content, recipientSecretKey, seal.pubkey);
+    const rumor = await decryptJson(seal.content, signer, seal.pubkey);
     if (rumor === null) return failure(OPEN_FAILURE.UNDECRYPTABLE);
     if (!isRumorShape(rumor)) return failure(OPEN_FAILURE.INVALID_RUMOR);
     if (rumor.pubkey !== seal.pubkey) return failure(OPEN_FAILURE.IMPERSONATION);
@@ -152,7 +169,8 @@ export function openGiftWrap(event, recipientSecretKey, context) {
       },
       sender: rumor.pubkey,
     };
-  } catch {
+  } catch (err) {
+    if (isSignerWait(err)) throw err;
     // Unreachable for well-typed input, kept so a hostile event can never throw
     // out of the inbox loop. The safest reading of an unforeseen failure is
     // that the wrap cannot be opened.

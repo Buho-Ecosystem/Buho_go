@@ -19,6 +19,7 @@ import { DM_ERROR, DmError } from '../errors.js';
 import { OUTBOX_DEFAULTS, createInbox, createSignAuth } from '../inbox.js';
 import { parseInboxRelayList } from '../inboxRelays.js';
 import { buildReactionTemplate, buildTextTemplate } from '../protocol.js';
+import { createLocalDmSigner } from '../dmSigner.js';
 import { createSessionKey } from '../sessionKey.js';
 
 const flush = () => new Promise((resolve) => setImmediate(resolve));
@@ -138,6 +139,11 @@ function createFakeStore({ cursor = null, blocked = [] } = {}) {
       store.cursor = seconds;
     },
     hasMessage: (id) => messages.has(id),
+    handled: new Map(),
+    hasHandledWrap: (wrapId) => store.handled.has(wrapId),
+    rememberHandledWrap(wrapId, createdAt) {
+      store.handled.set(wrapId, createdAt);
+    },
     ingest(message, options) {
       store.ingestCalls.push({ message, options });
       if (!message.outgoing && store.blocked.has(message.sender)) return false;
@@ -241,12 +247,13 @@ function makePerson(network, clock, options = {}) {
       return Uint8Array.from(secretKey);
     },
   });
+  const signer = (options.wrapSigner ?? ((local) => local))(createLocalDmSigner({ pubkey, sessionKey }));
   const store = createFakeStore(options.store);
   const resolver = createFakeResolver();
   const incoming = [];
   const inbox = createInbox({
     me: pubkey,
-    sessionKey,
+    signer,
     transport: network.transport(),
     resolver,
     store,
@@ -259,7 +266,7 @@ function makePerson(network, clock, options = {}) {
     random: () => 0.5,
     ...options.inbox,
   });
-  return { secretKey, pubkey, keyState, sessionKey, store, resolver, inbox, incoming, inboxRelays: options.inboxRelays ?? ['wss://inbox.one.example', 'wss://inbox.two.example'] };
+  return { secretKey, pubkey, keyState, sessionKey, signer, store, resolver, inbox, incoming, inboxRelays: options.inboxRelays ?? ['wss://inbox.one.example', 'wss://inbox.two.example'] };
 }
 
 /** Tell `from` where `to` receives. */
@@ -297,7 +304,7 @@ test('createInbox: rejects missing collaborators and bad relays', () => {
   const person = makePerson(network, clock);
   const base = {
     me: person.pubkey,
-    sessionKey: person.sessionKey,
+    signer: person.signer,
     transport: network.transport(),
     resolver: person.resolver,
     store: person.store,
@@ -305,7 +312,7 @@ test('createInbox: rejects missing collaborators and bad relays', () => {
   assert.doesNotThrow(() => createInbox(base));
   for (const patch of [
     { me: 'nope' },
-    { sessionKey: null },
+    { signer: null },
     { transport: {} },
     { resolver: null },
     { store: null },
@@ -316,9 +323,9 @@ test('createInbox: rejects missing collaborators and bad relays', () => {
   }
 });
 
-test('createSignAuth: signs the NIP-42 answer with the session key', async () => {
+test('createSignAuth: signs the NIP-42 answer through the chat signer', async () => {
   const { alice } = await pair();
-  const signAuth = createSignAuth(alice.sessionKey);
+  const signAuth = createSignAuth(alice.signer);
   const event = await signAuth({ relay: 'wss://relay.example.com', challenge: 'abc' });
   assert.equal(event.kind, KIND.AUTH);
   assert.equal(event.pubkey, alice.pubkey);
@@ -404,7 +411,7 @@ test('self copy from another device is ingested and not announced', async () => 
   other.sessionKey.dispose();
   const { sealAndWrap } = await import('../giftWrap.js');
   const template = textTo(bob, 'from my other device');
-  const sealed = sealAndWrap({ template, senderSecretKey: alice.secretKey, recipients: [bob.pubkey] });
+  const sealed = await sealAndWrap({ template, signer: alice.signer, recipients: [bob.pubkey] });
   const self = sealed.wraps.find((w) => w.self);
   network.inject('wss://inbox.alice.example', self.event);
 
@@ -443,7 +450,7 @@ test('a second wrap of a stored message is dropped before the rate limit sees it
   // Same rumor, freshly wrapped (e.g. another sender device): known id, so no rate charge, no second ingest.
   const { sealAndWrap } = await import('../giftWrap.js');
   assert.ok(first);
-  const rewrap = sealAndWrap({ template: textTo(bob, 'one'), senderSecretKey: alice.secretKey, recipients: [bob.pubkey], selfCopy: false });
+  const rewrap = await sealAndWrap({ template: textTo(bob, 'one'), signer: alice.signer, recipients: [bob.pubkey], selfCopy: false });
   assert.equal(rewrap.rumor.id, first.id);
   network.inject('wss://inbox.bob.example', rewrap.wraps[0].event);
   await settle(bob);
@@ -470,7 +477,7 @@ test('garbage wraps (wrong recipient key, forged content) are ignored', async ()
   const stranger = makePerson(network, createClock());
   const other = makePerson(network, createClock());
   // Wrap tagged for Bob but encrypted to someone else.
-  const wrongKey = sealAndWrap({ template: textTo(other), senderSecretKey: stranger.secretKey, recipients: [other.pubkey], selfCopy: false });
+  const wrongKey = await sealAndWrap({ template: textTo(other), signer: stranger.signer, recipients: [other.pubkey], selfCopy: false });
   const tampered = { ...wrongKey.wraps[0].event, tags: [['p', bob.pubkey]] };
   network.inject('wss://inbox.bob.example', tampered);
   await settle(bob);
@@ -587,7 +594,7 @@ test('default relay sets are the shared constants', async () => {
   const person = makePerson(network, clock);
   const inbox = createInbox({
     me: person.pubkey,
-    sessionKey: person.sessionKey,
+    signer: person.signer,
     transport: network.transport(),
     resolver: person.resolver,
     store: person.store,
@@ -626,6 +633,51 @@ test('wiped key: wraps wait in a queue, the cursor stays, and they are opened af
   assert.equal(bob.inbox.status().pendingWraps, 0);
   assert.equal(bob.store.raw.setCursorCalls.length, 1);
   assert.ok(network);
+});
+
+test('a wrap handled in one run is not opened again after a restart', async () => {
+  let decrypts = 0;
+  const { alice, bob } = await pair({
+    bobOptions: { wrapSigner: (local) => ({ ...local, nip44Decrypt: (...args) => { decrypts += 1; return local.nip44Decrypt(...args); } }) },
+  });
+  await bob.inbox.start();
+  await alice.inbox.send({ partner: bob.pubkey, template: textTo(bob, 'once') });
+  await settle(alice, bob);
+  assert.equal(decrypts, 2, 'wrap and seal, opened once');
+  assert.equal(bob.store.raw.handled.size, 1);
+
+  bob.inbox.stop();
+  await bob.inbox.start();
+  await settle(bob);
+  assert.equal(decrypts, 2, 'the restart re-reads the wrap but does not decrypt it again');
+  assert.equal([...bob.store.raw.messages.values()].filter((m) => m.text === 'once').length, 1);
+});
+
+test('a signer app that is offline keeps wraps waiting, says why, and they open on retry', async () => {
+  let online = false;
+  const { alice, bob } = await pair({
+    bobOptions: {
+      wrapSigner: (local) => ({
+        ...local,
+        nip44Decrypt: (...args) => (online ? local.nip44Decrypt(...args) : Promise.reject(new DmError(DM_ERROR.SIGNER_UNAVAILABLE))),
+      }),
+    },
+  });
+  await bob.inbox.start();
+  await settle(bob);
+  const sent = await alice.inbox.send({ partner: bob.pubkey, template: textTo(bob, 'held') });
+  await settle(alice, bob);
+  assert.equal(bob.store.raw.messages.has(sent.id), false);
+  assert.equal(bob.store.raw.handled.size, 0, 'a held wrap is not handled');
+  assert.equal(bob.inbox.status().pendingWraps, 1);
+  assert.equal(bob.inbox.status().signerHold, DM_ERROR.SIGNER_UNAVAILABLE);
+
+  online = true;
+  bob.inbox.retryWaiting();
+  await settle(bob);
+  assert.equal(bob.store.raw.messages.get(sent.id).text, 'held');
+  assert.equal(bob.inbox.status().pendingWraps, 0);
+  assert.equal(bob.inbox.status().signerHold, null);
 });
 
 test('wiped key: a successful use by an incoming wrap also drains the queue, in order', async () => {
@@ -671,7 +723,7 @@ test('wiped key: an overflowing queue keeps the newest wraps and blocks the curs
   await settle(bob);
   const { sealAndWrap } = await import('../giftWrap.js');
   for (let i = 0; i < MAX_PENDING_WRAPS + 2; i += 1) {
-    const sealed = sealAndWrap({ template: { ...textTo(bob, `m${i}`), created_at: START_S + i }, senderSecretKey: alice.secretKey, recipients: [bob.pubkey], selfCopy: false });
+    const sealed = await sealAndWrap({ template: { ...textTo(bob, `m${i}`), created_at: START_S + i }, signer: alice.signer, recipients: [bob.pubkey], selfCopy: false });
     network.inject('wss://inbox.bob.example', sealed.wraps[0].event);
   }
   await settle(bob);
@@ -910,7 +962,7 @@ test('outbox: concurrency is bounded', async () => {
   assert.ok(original);
   const inbox = createInbox({
     me: alice.pubkey,
-    sessionKey: alice.sessionKey,
+    signer: alice.signer,
     transport: {
       ...transport,
       publish(relays, event) {
@@ -960,7 +1012,7 @@ test('stop: closes the subscription, ignores later events, clears timers, keeps 
   assert.equal(alice.store.raw.outboxMap.size, 1, 'the store stays intact');
 
   const { sealAndWrap } = await import('../giftWrap.js');
-  const later = sealAndWrap({ template: textTo(bob, 'late'), senderSecretKey: alice.secretKey, recipients: [bob.pubkey], selfCopy: false });
+  const later = await sealAndWrap({ template: textTo(bob, 'late'), signer: alice.signer, recipients: [bob.pubkey], selfCopy: false });
   network.inject('wss://inbox.bob.example', later.wraps[0].event);
   await settle(bob);
   assert.equal(bob.store.raw.ingestCalls.length, 0);
@@ -1081,7 +1133,7 @@ test('a throwing onIncoming or a store that throws on one wrap does not stall th
 test('status: reports sync, queue and outbox', async () => {
   const { network, alice, bob } = await pair();
   assert.deepEqual(alice.inbox.status(), {
-    running: false, synced: false, syncedRelays: 0, cursor: null, pendingWraps: 0, outbox: 0, exhausted: 0, sending: 0,
+    running: false, synced: false, syncedRelays: 0, cursor: null, pendingWraps: 0, signerHold: null, outbox: 0, exhausted: 0, sending: 0,
   });
   await alice.inbox.start();
   await settle(alice);

@@ -831,3 +831,26 @@ test('prune drops settlements whose request is gone and without a scope nothing 
   store.prune()
   assert.deepEqual(Object.keys(store.settlements), [req.id])
 })
+
+test('handled wraps survive a restart, stay per identity, and are forgotten once out of the inbox window', async () => {
+  const store = await scoped(ME)
+  const wrap = rid(901)
+  assert.equal(store.hasHandledWrap(wrap), false)
+  assert.equal(store.rememberHandledWrap(wrap, 5_000_000), true)
+  assert.equal(store.rememberHandledWrap(wrap, 5_000_000), false, 'once is enough')
+  assert.equal(store.rememberHandledWrap('nope', 1), false)
+  store.rememberHandledWrap(rid(902), 1_000)
+  await store.flush()
+
+  const again = await scoped(ME)
+  assert.equal(again.hasHandledWrap(wrap), true)
+  await again.setScope(OTHER_ME)
+  assert.equal(again.hasHandledWrap(wrap), false)
+
+  // The inbox re-reads from (cursor - 2 days); older wraps can never come back.
+  const back = await scoped(ME)
+  back.setSyncCursor(5_000_000)
+  back.prune()
+  assert.equal(back.hasHandledWrap(wrap), true)
+  assert.equal(back.hasHandledWrap(rid(902)), false)
+})

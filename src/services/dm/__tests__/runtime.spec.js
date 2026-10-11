@@ -15,7 +15,7 @@ import assert from 'node:assert/strict';
 import { sha256 } from '@noble/hashes/sha2.js';
 import { bytesToHex } from '@noble/hashes/utils.js';
 import { test, beforeEach } from 'node:test';
-import { generateSecretKey, getPublicKey } from 'nostr-core';
+import { createSecretKeySigner, generateSecretKey, getPublicKey } from 'nostr-core';
 import { createPinia, setActivePinia } from 'pinia';
 import { configureMessages, resetMessagesConfig, useMessagesStore } from '../../../stores/messages.js';
 import { createDmStorage, createMemoryBackend } from '../../../utils/dmStorage.js';
@@ -23,6 +23,7 @@ import { stableNotificationId } from '../../paymentNotifications.js';
 import { DM_INBOX_RELAYS, REQUEST_LIFETIME_SECONDS } from '../constants.js';
 import { DM_ERROR, DmError } from '../errors.js';
 import { sealAndWrap } from '../giftWrap.js';
+import { keySigner } from './testSigner.js';
 import {
   CHAT_ACTIONS,
   REACHABILITY,
@@ -210,6 +211,7 @@ async function setup({
   notifyThrows = false,
   lnurl = createLnurlServer(),
   profiles = new Map(),
+  signerApp = null,
 } = {}) {
   setActivePinia(createPinia());
   const store = useMessagesStore();
@@ -235,10 +237,14 @@ async function setup({
 
   env.runtime = createChatRuntime({
     me: ME,
-    loadSecretKey: async () => {
-      env.keyLoads += 1;
-      return Uint8Array.from(meKey);
-    },
+    ...(signerApp
+      ? { signerApp }
+      : {
+        loadSecretKey: async () => {
+          env.keyLoads += 1;
+          return Uint8Array.from(meKey);
+        },
+      }),
     isLocked: () => env.locked,
     store,
     getProfileAddress: () => env.profileAddress,
@@ -278,15 +284,15 @@ async function publishedMessages(env, secretKey, pubkey) {
   const out = [];
   for (const { event } of env.transport.published) {
     if (!event.tags.some((tag) => tag[0] === 'p' && tag[1] === pubkey)) continue;
-    const opened = openGiftWrap(event, secretKey, { me: pubkey });
+    const opened = await openGiftWrap(event, keySigner(secretKey), { me: pubkey });
     if (opened.ok) out.push(parseRumor(opened.rumor, { me: pubkey }));
   }
   return out;
 }
 
 /** A wrap from `senderKey` to ME carrying `template`. */
-function wrapFor(senderKey, template) {
-  return sealAndWrap({ template, senderSecretKey: senderKey, recipients: [ME], selfCopy: false }).wraps[0].event;
+async function wrapFor(senderKey, template) {
+  return (await sealAndWrap({ template, signer: keySigner(senderKey), recipients: [ME], selfCopy: false })).wraps[0].event;
 }
 
 const textFrom = (senderKey, text) => wrapFor(senderKey, buildTextTemplate({ recipient: ME, text }));
@@ -507,7 +513,7 @@ test('remindRequest sends a reminder for an open request of the user only', asyn
 test('declineRequest answers a request the partner sent, and one past its lifetime cannot be declined', async () => {
   const env = await setup();
   await env.runtime.start();
-  await env.transport.deliver(wrapFor(aliceKey, buildRequestTemplate({
+  await env.transport.deliver(await wrapFor(aliceKey, buildRequestTemplate({
     recipient: ME, amountSats: 800, lud16: ALICE_ADDRESS, now: () => NOW,
   })));
   const [request] = env.store.pendingRequestsFrom(ALICE, NOW);
@@ -517,7 +523,7 @@ test('declineRequest answers a request the partner sent, and one past its lifeti
   assert.equal(declined.status.value, 'declined');
   assert.equal(env.store.requestStatus(request.id), 'declined');
 
-  await env.transport.deliver(wrapFor(aliceKey, buildRequestTemplate({
+  await env.transport.deliver(await wrapFor(aliceKey, buildRequestTemplate({
     recipient: ME, amountSats: 900, lud16: ALICE_ADDRESS, validUntil: NOW + 600, now: () => NOW + 1,
   })));
   const lateRequest = env.store.thread(ALICE).messages.find((m) => m.request?.amountSats === 900);
@@ -543,7 +549,7 @@ test('announcePayment sends a payment message', async () => {
 test('announcePayment for a request sends the payment and the paid status; a failing status is returned, not thrown', async () => {
   const env = await setup();
   await env.runtime.start();
-  await env.transport.deliver(wrapFor(aliceKey, buildRequestTemplate({
+  await env.transport.deliver(await wrapFor(aliceKey, buildRequestTemplate({
     recipient: ME, amountSats: 800, lud16: ALICE_ADDRESS, now: () => NOW,
   })));
   const [request] = env.store.pendingRequestsFrom(ALICE, NOW);
@@ -558,7 +564,7 @@ test('announcePayment for a request sends the payment and the paid status; a fai
 
   // The partner's relay list disappears between the two messages: the money
   // is out, the follow-up fails, and that is reported, not thrown.
-  await env.transport.deliver(wrapFor(aliceKey, buildRequestTemplate({
+  await env.transport.deliver(await wrapFor(aliceKey, buildRequestTemplate({
     recipient: ME, amountSats: 900, lud16: ALICE_ADDRESS, now: () => NOW + 1,
   })));
   const second = env.store.pendingRequestsFrom(ALICE, NOW + 1).find((m) => m.request.amountSats === 900);
@@ -594,7 +600,7 @@ test('announcePayment throws when the payment message itself cannot be sent', as
 test('a new message from a contact posts one notification for that chat, routed to the contact', async () => {
   const env = await setup();
   await env.runtime.start();
-  await env.transport.deliver(textFrom(aliceKey, 'hello'));
+  await env.transport.deliver(await textFrom(aliceKey, 'hello'));
 
   assert.equal(env.notifications.length, 1);
   assert.deepEqual(env.notifications[0], {
@@ -612,7 +618,7 @@ test('a new message from a contact posts one notification for that chat, routed 
 test('an unknown sender is shown by a short npub and routed to the unknown-sender route', async () => {
   const env = await setup();
   await env.runtime.start();
-  await env.transport.deliver(textFrom(bobKey, 'who am I'));
+  await env.transport.deliver(await textFrom(bobKey, 'who am I'));
 
   assert.equal(env.notifications.length, 1);
   assert.match(env.notifications[0].title, /^npub1[a-z0-9]{7}…$/);
@@ -623,8 +629,8 @@ test('an unknown sender is shown by a short npub and routed to the unknown-sende
 test('the same chat reuses one notification id', async () => {
   const env = await setup();
   await env.runtime.start();
-  await env.transport.deliver(textFrom(aliceKey, 'one'));
-  await env.transport.deliver(textFrom(aliceKey, 'two'));
+  await env.transport.deliver(await textFrom(aliceKey, 'one'));
+  await env.transport.deliver(await textFrom(aliceKey, 'two'));
   assert.equal(env.notifications.length, 2);
   assert.equal(env.notifications[0].id, env.notifications[1].id);
 });
@@ -634,18 +640,18 @@ test('muted chats, blocked senders, reactions, own self copies and the open chat
   await env.runtime.start();
 
   env.store.mute(ALICE, true);
-  await env.transport.deliver(textFrom(aliceKey, 'muted'));
+  await env.transport.deliver(await textFrom(aliceKey, 'muted'));
   env.store.mute(ALICE, false);
 
   env.store.block(BOB);
-  await env.transport.deliver(textFrom(bobKey, 'blocked'));
+  await env.transport.deliver(await textFrom(bobKey, 'blocked'));
 
   const target = await env.runtime.sendText(ALICE, 'mine');
   await env.runtime.whenIdle();
-  await env.transport.deliver(wrapFor(aliceKey, buildReactionTemplate({ recipient: ME, targetId: target.id, emoji: '👍' })));
+  await env.transport.deliver(await wrapFor(aliceKey, buildReactionTemplate({ recipient: ME, targetId: target.id, emoji: '👍' })));
 
   env.store.setOpenThread(ALICE);
-  await env.transport.deliver(textFrom(aliceKey, 'on screen'));
+  await env.transport.deliver(await textFrom(aliceKey, 'on screen'));
   env.store.setOpenThread(null);
 
   // The self copy of our own message comes back through the subscription.
@@ -658,22 +664,22 @@ test('muted chats, blocked senders, reactions, own self copies and the open chat
 test('a message that arrives while the app is hidden is forced, even for the open chat', async () => {
   const env = await setup({ hidden: true });
   await env.runtime.start();
-  await env.transport.deliver(textFrom(aliceKey, 'psst'));
+  await env.transport.deliver(await textFrom(aliceKey, 'psst'));
   assert.equal(env.notifications.length, 1);
   assert.equal(env.notifications[0].force, true);
 
   env.store.setOpenThread(ALICE);
-  await env.transport.deliver(textFrom(aliceKey, 'still hidden'));
+  await env.transport.deliver(await textFrom(aliceKey, 'still hidden'));
   assert.equal(env.notifications.length, 2, 'an open chat does not count while nobody is looking');
 });
 
 test('a notification failure never disturbs the receive loop', async () => {
   const env = await setup({ notifyThrows: true });
   await env.runtime.start();
-  await env.transport.deliver(textFrom(aliceKey, 'kept anyway'));
+  await env.transport.deliver(await textFrom(aliceKey, 'kept anyway'));
   assert.equal(env.notifications.length, 1, 'it was attempted');
   assert.equal(env.store.thread(ALICE).messages.some((m) => m.text === 'kept anyway'), true);
-  await env.transport.deliver(textFrom(aliceKey, 'and the next one'));
+  await env.transport.deliver(await textFrom(aliceKey, 'and the next one'));
   assert.equal(env.store.thread(ALICE).messages.length, 2);
 });
 
@@ -684,7 +690,7 @@ test('a notification failure never disturbs the receive loop', async () => {
 test('while the app is locked the key is never loaded; the wrap waits and is opened after unlock', async () => {
   const env = await setup({ locked: true });
   await env.runtime.start();
-  await env.transport.deliver(textFrom(aliceKey, 'while locked'));
+  await env.transport.deliver(await textFrom(aliceKey, 'while locked'));
   assert.equal(env.keyLoads, 0, 'no key in memory while locked');
   assert.equal(env.store.thread(ALICE).messages.length, 0);
   assert.equal(env.runtime.status().pendingWraps, 1);
@@ -744,7 +750,7 @@ test('a runtime refuses to act once the store holds another identity, and never 
   await env.runtime.start();
   await env.store.setScope(OTHER_ME);
   await assert.rejects(env.runtime.sendText(ALICE, 'wrong scope'), (e) => DmError.is(e, DM_ERROR.NO_IDENTITY));
-  await env.transport.deliver(textFrom(aliceKey, 'for the old identity'));
+  await env.transport.deliver(await textFrom(aliceKey, 'for the old identity'));
   assert.deepEqual(env.store.threads, {});
   assert.deepEqual(env.notifications, []);
 });
@@ -768,7 +774,7 @@ test('start is idempotent, stop closes the subscription and start can run again'
 
 /** A request from ALICE to ME that names her signed address. */
 async function deliverAliceRequest(env, { sats = 800, lud16 = ALICE_ADDRESS, validUntil } = {}) {
-  await env.transport.deliver(wrapFor(aliceKey, buildRequestTemplate({
+  await env.transport.deliver(await wrapFor(aliceKey, buildRequestTemplate({
     recipient: ME, amountSats: sats, lud16, note: 'Pizza', validUntil, now: () => NOW,
   })));
   return env.store.thread(ALICE).messages.find((m) => m.type === 'request' && m.request.amountSats === sats);
@@ -853,10 +859,10 @@ test('the request stays open for 30 days, then expires; it can be reminded meanw
 
 /** The payer's two messages for a request: the payment and the paid status. */
 async function deliverClaim(env, requestId, { sats = 12_000, preimage = PREIMAGE, at = NOW + 7_300, verifyUrl } = {}) {
-  await env.transport.deliver(wrapFor(aliceKey, buildPaymentTemplate({
+  await env.transport.deliver(await wrapFor(aliceKey, buildPaymentTemplate({
     recipient: ME, amountSats: sats, preimage, requestId, verifyUrl, now: () => at,
   })));
-  await env.transport.deliver(wrapFor(aliceKey, buildStatusTemplate({
+  await env.transport.deliver(await wrapFor(aliceKey, buildStatusTemplate({
     recipient: ME, requestId, value: 'paid', preimage, amountSats: sats, now: () => at + 1,
   })));
   await flush();
@@ -903,7 +909,7 @@ test('without a preimage the amount and the time window decide; a wrong amount o
   const message = await env.runtime.requestMoney(ALICE, { amountSats: 12_000 });
   await env.runtime.whenIdle();
   await env.runtime.start();
-  await env.transport.deliver(wrapFor(aliceKey, buildStatusTemplate({
+  await env.transport.deliver(await wrapFor(aliceKey, buildStatusTemplate({
     recipient: ME, requestId: message.id, value: 'paid', amountSats: 12_000, now: () => NOW + 7_300,
   })));
   await flush();
@@ -939,7 +945,7 @@ test('one transaction verifies one claim, and claims about requests of the partn
   await env.runtime.start();
   const theirs = await deliverAliceRequest(env);
   for (const id of [first.id, second.id, theirs.id]) {
-    await env.transport.deliver(wrapFor(aliceKey, buildStatusTemplate({
+    await env.transport.deliver(await wrapFor(aliceKey, buildStatusTemplate({
       recipient: ME, requestId: id, value: 'paid', amountSats: 12_000, now: () => NOW + 7_300,
     })));
   }
@@ -955,7 +961,7 @@ test('settleClaims on resume verifies a claim that arrived while the wallet hist
   const message = await env.runtime.requestMoney(ALICE, { amountSats: 12_000 });
   await env.runtime.whenIdle();
   await env.runtime.start();
-  await env.transport.deliver(wrapFor(aliceKey, buildStatusTemplate({
+  await env.transport.deliver(await wrapFor(aliceKey, buildStatusTemplate({
     recipient: ME, requestId: message.id, value: 'paid', preimage: PREIMAGE, now: () => NOW + 7_300,
   })));
   await flush();
@@ -1126,4 +1132,58 @@ test('LUD-21: a service that never answers is given up on after the timeout', as
   env.lnurl.verifyPayment = async () => settledAnswer();
   await clock.advance(20_000);
   assert.equal(env.runtime.requestSettlement(message.id).verified, true);
+});
+
+// ---------------------------------------------------------------------------
+// An identity that signs in another app
+// ---------------------------------------------------------------------------
+
+/** ME's signer app: nostr-core's secret-key Signer, switchable offline. */
+function signerAppFor(state) {
+  const app = createSecretKeySigner(meKey);
+  const answer = (fn) => async (...args) => {
+    if (!state.online) throw Object.assign(new Error('timeout'), { name: 'Nip46TimeoutError' });
+    return fn(...args);
+  };
+  return {
+    acquire: async () => ({
+      signer: {
+        signEvent: answer((t) => app.signEvent(t)),
+        nip44: { encrypt: answer((p, x) => app.nip44.encrypt(p, x)), decrypt: answer((p, x) => app.nip44.decrypt(p, x)) },
+      },
+    }),
+    maxParallel: 3,
+  };
+}
+
+test('with a signer app, receiving waits until the person turns messages on', async () => {
+  const state = { online: true };
+  const env = await setup({ signerApp: signerAppFor(state) });
+  await env.runtime.start();
+  assert.equal(env.runtime.usesSignerApp(), true);
+  assert.equal(env.transport.subscriptions.length, 0, 'no subscription, so the signer app is not asked');
+
+  await env.runtime.turnOnMessages();
+  assert.equal(env.store.signerAppMessages, true);
+  assert.equal(env.transport.subscriptions.length, 1);
+  await env.transport.deliver(await textFrom(aliceKey, 'through the app'));
+  await env.runtime.whenIdle();
+  assert.equal(env.store.thread(ALICE).messages.at(-1).text, 'through the app');
+});
+
+test('with a signer app that is away, messages wait, the store says why, and a retry opens them', async () => {
+  const state = { online: false };
+  const env = await setup({ signerApp: signerAppFor(state) });
+  env.store.turnOnSignerAppMessages();
+  await env.runtime.start();
+  await env.transport.deliver(await textFrom(aliceKey, 'waiting'));
+  await env.runtime.whenIdle();
+  assert.equal(env.store.thread(ALICE).messages.length, 0);
+  assert.equal(env.store.signerHold, DM_ERROR.SIGNER_UNAVAILABLE);
+
+  state.online = true;
+  env.runtime.retrySigner();
+  await env.runtime.whenIdle();
+  assert.equal(env.store.thread(ALICE).messages.at(-1).text, 'waiting');
+  assert.equal(env.store.signerHold, null);
 });

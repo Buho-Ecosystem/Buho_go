@@ -11,9 +11,11 @@ short **end-to-end encrypted messages**. Money first: text is a note on a paymen
 or a reply, never the point. The wallet must not turn into a messenger.
 
 - Transport: Nostr NIP-17 private direct messages (NIP-59 gift wrap, NIP-44 v2).
-- Identity: the existing BuhoGO identity (`stores/identity.js`, NIP-06 key). The
-  identity is independent from wallets, so Spark (Breez), Arkade, NWC and LNbits
-  users get the same feature set.
+- Identity: the identity in use (`stores/identity.js`): a BuhoGO identity
+  (NIP-06 key), an imported secret key, or one that signs in another app (NIP-07
+  extension, NIP-46 remote signer; section 5a). The identity is independent
+  from wallets, so Spark (Breez), Arkade, NWC and LNbits users get the same
+  feature set.
 - Library: `nostr-core` (already a dependency). Gaps are wrapped locally and filed
   upstream (see section 11).
 
@@ -57,7 +59,8 @@ Services  services/dm/                  pure modules, no Pinia, unit tested
   openWrap.js       unwrap + integrity checks
   inboundPolicy.js  spam / abuse gates around unwrap
   inboxRelays.js    kind 10050: build own list, resolve others' lists (cached)
-  sessionKey.js     in-memory identity key cache with wipe rules
+  dmSigner.js       the chat signer: key on this phone or a signer app, one async interface
+  sessionKey.js     in-memory identity key cache with wipe rules (local signer)
   transport.js      relay connections with automatic NIP-42 AUTH
   inbox.js          coordinator: subscribe, sync, outbox, retries
   requests.js       profile-address preflight, payer-side address lookup and invoice pull
@@ -153,9 +156,36 @@ AUTH must be invisible:
   reconnect it re-authenticates and restores subscriptions. A failed AUTH
   marks that relay `auth-failed` and it is not retried until the next
   connection; the other relays carry on.
-- The identity key is loaded once per session (`sessionKey.js`) and kept only in
-  memory. It is wiped (bytes zeroed) on app lock, identity change, identity
-  reset and after 10 minutes in the background.
+- A key on this phone is loaded once per session (`sessionKey.js`) and kept
+  only in memory. It is wiped (bytes zeroed) on app lock, identity change,
+  identity reset and after 10 minutes in the background.
+
+## 5a. Identities that sign in another app (NIP-07, NIP-46)
+
+Every seal, decrypt and AUTH goes through `dmSigner.js`, so the chat works the
+same for a key on this phone and for a signer app. What changes with a signer
+app (patterns from Lotus, Coracle/welshman, Amethyst, NDK, noStrudel):
+
+- Opt-in: receiving starts only after the person taps "Turn on messages"
+  (`signerAppMessages`, per identity). The notice asks them to choose "always
+  allow", so the app asks once, not per message. Sending works without it.
+- Calls: a message costs 2 signer calls per copy (NIP-44 encrypt + seal
+  signature; recipient and self copy), opening one costs 2 decrypts. The wrap
+  itself always uses a throwaway local key.
+- At most 1 request at a time for an extension (each may prompt), 3 for a
+  remote signer; 30 s per request (`SIGNER_TIMEOUT_MS`).
+- Nothing is lost: a locked or hidden app, a signer that is away
+  (`SIGNER_UNAVAILABLE`), declines (`SIGNER_DENIED`, also a NIP-46 `auth_url`)
+  or lacks NIP-44 (`SIGNER_UNSUPPORTED`) keeps the wrap waiting and the cursor
+  in place. The store's `signerHold` tells the notice why; "Try again" or
+  coming back to the app opens the waiting wraps.
+- After a refusal no background request goes out until the person retries or
+  sends something themselves (no prompt loop).
+- Nothing is asked while the app is in the background.
+- Each wrap is decrypted once: `handledWraps` remembers wraps already dealt
+  with across restarts (the inbox re-reads two days on every start).
+- The runtime's signer is pinned to its identity: after a switch it is never
+  asked again.
 
 ## 6. Module contracts (`src/services/dm/`)
 
@@ -197,16 +227,23 @@ store, clock) so they can be unit tested without network or Pinia.
   `buho` payload degrades to text. A payment's preimage is optional (Spark
   transfers, Arkade and some NWC wallets have none).
   Lengths are counted in Unicode code points.
-- `giftWrap.js` — `sealAndWrap({ template, senderSecretKey, recipients,
+- `dmSigner.js` — `createLocalDmSigner({ pubkey, sessionKey })` and
+  `createExternalDmSigner({ pubkey, acquire, isLocked, isHidden, maxParallel,
+  timeoutMs })` → `{ pubkey, external, nip44Encrypt(peer, text),
+  nip44Decrypt(peer, payload), signEvent(template), allowAgain, wipe,
+  wipeAfter, cancelWipe, isLoaded, dispose }`; `toDmError(err)` maps signer
+  app errors (section 5a).
+- `giftWrap.js` — `async sealAndWrap({ template, signer, recipients,
   selfCopy = true }) → { rumor, wraps: [{ recipient, self, event }] }`: one
-  rumor (one id), sealed and wrapped per recipient, self copy last; rumor JSON
-  over `MAX_RUMOR_BYTES` → `MESSAGE_TOO_LARGE`.
-- `openWrap.js` — `openGiftWrap(event, recipientSecretKey, { me }) →
+  rumor (one id), sealed by the signer and wrapped per recipient, self copy
+  last; rumor JSON over `MAX_RUMOR_BYTES` → `MESSAGE_TOO_LARGE`; a seal not
+  signed by the sender → `NO_IDENTITY`.
+- `openWrap.js` — `async openGiftWrap(event, signer, { me }) →
   { ok: true, rumor, sender } | { ok: false, reason }` (reasons:
   `not-gift-wrap`, `not-addressed`, `undecryptable`, `invalid-seal`,
-  `impersonation`, `invalid-rumor`, `id-mismatch`). Built on `nip44`
-  primitives (not `nip59.unwrap`) so every failure has a precise reason;
-  never throws.
+  `impersonation`, `invalid-rumor`, `id-mismatch`). Built on the signer's
+  NIP-44 decrypt (not `nip59.unwrap`) so every failure has a precise reason;
+  throws only when the signer cannot answer now (`isSignerWait`).
 - `inboundPolicy.js` — `createWrapGate()` (before unwrap: kind 1059, content
   ≤ 87,472 chars = largest NIP-44 payload, ≤ 1 h in the future, not expired,
   no duplicate wrap id) and `createRumorGate({ me, isBlocked, rate })` (after
@@ -237,7 +274,7 @@ store, clock) so they can be unit tested without network or Pinia.
 - `transport.js` — `createDmTransport({ signAuth, WebSocket, … , onStatus })`
   → `{ subscribe, publish, warmUp, status, resetIdentity, close }`.
   `signAuth({ relay, challenge })` signs the identity's kind 22242 (the
-  inbox wires it to `sessionKey.use`). `subscribe(relays, filters, {
+  inbox wires it to the chat signer). `subscribe(relays, filters, {
   onevent(event, relay), oneose(relay), onclosed(relay, reason) })` is a
   logical subscription over read connections that survives AUTH and
   reconnects until `close()`. `publish(relays, event)` returns `{
@@ -276,6 +313,10 @@ store, clock) so they can be unit tested without network or Pinia.
 - Outbox for messages written offline; flushed by `inbox.js` when online.
 - Sync cursor (`lastSyncAt`), blocked pubkeys (mirrored to a private NIP-51
   kind 10000 list), per-contact mute flags.
+- Handled wraps (`handledWraps`, wrap id → created_at): never decrypted
+  twice; pruned once older than the inbox window, at most 5,000.
+- Signer apps: `signerAppMessages` (opt-in, persisted) and `signerHold` (why
+  messages wait, not persisted).
 - Persistence: encrypted with `utils/deviceCrypto.encryptString`, stored in
   IndexedDB (same pattern as `utils/kitStorage.js`), debounced writes, pruning
   of old messages.
@@ -386,7 +427,9 @@ on screen.
 ## 10. Security rules
 
 - Never log decrypted content, keys or invoices (`utils/logRedaction.js`).
-- Identity key bytes are zeroed on wipe and never stored by this feature.
+- Identity key bytes are zeroed on wipe and never stored by this feature. A
+  signer app is asked only for the identity the runtime belongs to, and every
+  event it signs must carry that identity's pubkey.
 - Reject rumors whose id does not hash to their content (upstream #73).
 - Unknown senders go to an "Unknown" section; lookalike names get an impostor
   warning (nostrdesign.org guidance). Blocked senders are dropped after unwrap.
@@ -401,6 +444,8 @@ on screen.
 | [#73](https://github.com/nostr-core-org/nostr-core/issues/73) `unwrap` trusts a forged rumor id | `openWrap.js` recomputes the id |
 | [#74](https://github.com/nostr-core-org/nostr-core/issues/74) nip17 helpers: no self copy / multi-recipient / kind 7 | `giftWrap.js` + `openWrap.js` on nip59 primitives |
 | [#75](https://github.com/nostr-core-org/nostr-core/issues/75) per-relay publish results, NIP-01 reason parser | `transport.js` + `errors.js` |
+| [#76](https://github.com/nostr-core-org/nostr-core/issues/76) NIP-46 `connect` sends the client pubkey (fix: [#77](https://github.com/nostr-core-org/nostr-core/pull/77), 1.0.5) | none: strict remote signers time out until the bump |
+| NIP-46 `connect` cannot send requested permissions (`nip44_encrypt,nip44_decrypt,sign_event:13,sign_event:22242`) | none: the opt-in notice asks the person to always allow |
 
 Replace the workaround when the upstream fix ships.
 

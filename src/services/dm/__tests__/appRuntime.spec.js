@@ -21,7 +21,7 @@ test('the factory maps every runtime dependency onto the right store call', asyn
   };
   let captured;
   const factory = createAppRuntimeFactory({
-    identity: { getNostrSecretKeyBytes: async () => new Uint8Array(32).fill(7) },
+    identity: { identityCapabilities: { kind: 'derived', rawKey: true }, getNostrSecretKeyBytes: async () => new Uint8Array(32).fill(7) },
     messages: () => messagesStore,
     wallet,
     profile: { lud16: 'me@buho.example' },
@@ -66,4 +66,42 @@ test('the factory maps every runtime dependency onto the right store call', asyn
     }],
     ['relay', 'wss://r.example', { connectionTimeout: 1 }],
   ]);
+});
+
+test('an identity that signs in another app gets its signer app, pinned to that identity', async () => {
+  const me = 'a'.repeat(64);
+  const lease = { signer: 'remote signer' };
+  const identity = {
+    identityCapabilities: { kind: 'nip46', rawKey: false, needsApproval: true },
+    nostrPubkeyHex: me,
+    acquireSigner: async () => lease,
+    getNostrSecretKeyBytes: async () => { throw new Error('no key on this phone'); },
+  };
+  let captured;
+  const factory = createAppRuntimeFactory({
+    identity,
+    messages: () => ({ scope: me }),
+    wallet: { wallets: [] },
+    profile: {},
+    addressBook: { findContactByPubkey: () => null },
+    notifications: {},
+    transactionMetadata: {},
+  }, {
+    getRelayPool: () => ({}),
+    lnurl: {},
+    createChatRuntime: (deps) => { captured = deps; return {}; },
+  });
+
+  factory(me);
+  assert.equal(captured.loadSecretKey, undefined, 'never asks for key bytes');
+  assert.equal(captured.signerApp.maxParallel, 3);
+  assert.equal(await captured.signerApp.acquire(), lease);
+
+  // Another identity is in use now: this runtime's signer must not be asked.
+  identity.nostrPubkeyHex = 'b'.repeat(64);
+  await assert.rejects(captured.signerApp.acquire(), (err) => err.code === 'NO_IDENTITY');
+
+  identity.identityCapabilities = { kind: 'nip07', rawKey: false, needsApproval: true };
+  factory(me);
+  assert.equal(captured.signerApp.maxParallel, 1, 'an extension asks the person per request: one at a time');
 });

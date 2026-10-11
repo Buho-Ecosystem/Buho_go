@@ -21,14 +21,16 @@ import {
   getPublicKey,
   nip44,
 } from 'nostr-core';
+import { DM_ERROR, DmError } from '../errors.js';
 import { sealAndWrap } from '../giftWrap.js';
 import { OPEN_FAILURE, openGiftWrap } from '../openWrap.js';
+import { keySigner } from './testSigner.js';
 
 const NOW = 1_760_000_000;
 
 function person() {
   const secretKey = generateSecretKey();
-  return { secretKey, pubkey: getPublicKey(secretKey) };
+  return { secretKey, pubkey: getPublicKey(secretKey), signer: keySigner(secretKey) };
 }
 
 const encryptTo = (value, fromSecretKey, toPubkey) =>
@@ -73,9 +75,9 @@ function craft({ author, to, rumor, sealer = author, seal = {}, sealPayload, rum
 const alice = person();
 const bob = person();
 const carol = person();
-const open = (event, recipient = bob) => openGiftWrap(event, recipient.secretKey, { me: recipient.pubkey });
-const reasonOf = (event, recipient) => {
-  const result = open(event, recipient);
+const open = (event, recipient = bob) => openGiftWrap(event, recipient.signer, { me: recipient.pubkey });
+const reasonOf = async (event, recipient) => {
+  const result = await open(event, recipient);
   assert.equal(result.ok, false, 'the wrap must not open');
   return result.reason;
 };
@@ -84,47 +86,47 @@ const reasonOf = (event, recipient) => {
 // Success
 // ---------------------------------------------------------------------------
 
-test('a wrap made by sealAndWrap opens to the rumor and its verified sender', () => {
-  const { rumor, wraps } = sealAndWrap({
+test('a wrap made by sealAndWrap opens to the rumor and its verified sender', async () => {
+  const { rumor, wraps } = await sealAndWrap({
     template: { kind: 14, tags: [['p', bob.pubkey]], content: 'hi bob', created_at: NOW },
-    senderSecretKey: alice.secretKey,
+    signer: alice.signer,
     recipients: [bob.pubkey],
   });
-  const result = open(wraps[0].event);
+  const result = await open(wraps[0].event);
   assert.deepEqual(result, { ok: true, rumor, sender: alice.pubkey });
 });
 
-test('the sender can open its own self copy', () => {
-  const { rumor, wraps } = sealAndWrap({
+test('the sender can open its own self copy', async () => {
+  const { rumor, wraps } = await sealAndWrap({
     template: { kind: 14, tags: [['p', bob.pubkey]], content: 'sent', created_at: NOW },
-    senderSecretKey: alice.secretKey,
+    signer: alice.signer,
     recipients: [bob.pubkey],
   });
-  const result = open(wraps.at(-1).event, alice);
+  const result = await open(wraps.at(-1).event, alice);
   assert.equal(result.ok, true);
   assert.equal(result.rumor.id, rumor.id);
   assert.equal(result.sender, alice.pubkey);
 });
 
-test('a crafted valid wrap opens, and kind 7 reactions open like messages', () => {
+test('a crafted valid wrap opens, and kind 7 reactions open like messages', async () => {
   const reaction = createRumor(
     { kind: 7, tags: [['e', 'a'.repeat(64)], ['p', bob.pubkey]], content: '+', created_at: NOW },
     alice.pubkey,
   );
-  const result = open(craft({ author: alice, to: bob, rumor: reaction }));
+  const result = await open(craft({ author: alice, to: bob, rumor: reaction }));
   assert.equal(result.ok, true);
   assert.equal(result.rumor.kind, 7);
 });
 
-test('the returned rumor has only the unsigned-event fields, even if the sender added more', () => {
+test('the returned rumor has only the unsigned-event fields, even if the sender added more', async () => {
   const rumor = { ...createRumor({ kind: 14, tags: [['p', bob.pubkey]], content: 'x', created_at: NOW }, alice.pubkey) };
   const padded = { ...rumor, sig: 'f'.repeat(128), extra: { deep: true } };
-  const result = open(craft({ author: alice, to: bob, rumor: padded }));
+  const result = await open(craft({ author: alice, to: bob, rumor: padded }));
   assert.equal(result.ok, true);
   assert.deepEqual(Object.keys(result.rumor).sort(), ['content', 'created_at', 'id', 'kind', 'pubkey', 'tags']);
 });
 
-test('OPEN_FAILURE lists the seven reasons of the contract and is frozen', () => {
+test('OPEN_FAILURE lists the seven reasons of the contract and is frozen', async () => {
   assert.deepEqual(Object.values(OPEN_FAILURE).sort(), [
     'id-mismatch',
     'impersonation',
@@ -144,22 +146,22 @@ test('OPEN_FAILURE lists the seven reasons of the contract and is frozen', () =>
 const NOT_WRAPS = [undefined, null, 'wrap', 7, [], {}, { kind: '1059' }, { kind: 1 }, { kind: 13 }, { kind: 14 }];
 
 for (const event of NOT_WRAPS) {
-  test(`${inspect(event)} is not-gift-wrap`, () => {
-    assert.equal(reasonOf(event), 'not-gift-wrap');
+  test(`${inspect(event)} is not-gift-wrap`, async () => {
+    assert.equal(await reasonOf(event), 'not-gift-wrap');
   });
 }
 
-test('a signed event of another kind is not-gift-wrap even when its content is a valid wrap', () => {
+test('a signed event of another kind is not-gift-wrap even when its content is a valid wrap', async () => {
   const wrap = craft({ author: alice, to: bob });
-  assert.equal(reasonOf({ ...wrap, kind: 1 }), 'not-gift-wrap');
+  assert.equal(await reasonOf({ ...wrap, kind: 1 }), 'not-gift-wrap');
 });
 
 // ---------------------------------------------------------------------------
 // not-addressed
 // ---------------------------------------------------------------------------
 
-test('a wrap whose p tag names someone else is not-addressed', () => {
-  assert.equal(reasonOf(craft({ author: alice, to: bob, wrap: { tags: [['p', carol.pubkey]] } })), 'not-addressed');
+test('a wrap whose p tag names someone else is not-addressed', async () => {
+  assert.equal(await reasonOf(craft({ author: alice, to: bob, wrap: { tags: [['p', carol.pubkey]] } })), 'not-addressed');
 });
 
 const BAD_WRAP_TAGS = [
@@ -175,26 +177,26 @@ const BAD_WRAP_TAGS = [
 ];
 
 for (const tags of BAD_WRAP_TAGS) {
-  test(`a wrap with tags ${inspect(tags)} is not-addressed`, () => {
-    assert.equal(reasonOf({ ...craft({ author: alice, to: bob }), tags }), 'not-addressed');
+  test(`a wrap with tags ${inspect(tags)} is not-addressed`, async () => {
+    assert.equal(await reasonOf({ ...craft({ author: alice, to: bob }), tags }), 'not-addressed');
   });
 }
 
-test('a wrap tagged for us that carries a rumor addressed to a third person is not-addressed', () => {
+test('a wrap tagged for us that carries a rumor addressed to a third person is not-addressed', async () => {
   const rumor = createRumor({ kind: 14, tags: [['p', carol.pubkey]], content: 'for carol', created_at: NOW }, alice.pubkey);
-  assert.equal(reasonOf(craft({ author: alice, to: bob, rumor })), 'not-addressed');
+  assert.equal(await reasonOf(craft({ author: alice, to: bob, rumor })), 'not-addressed');
 });
 
-test('a rumor without any p tag from a stranger is not-addressed, but our own is accepted', () => {
+test('a rumor without any p tag from a stranger is not-addressed, but our own is accepted', async () => {
   const stranger = createRumor({ kind: 14, tags: [], content: 'x', created_at: NOW }, alice.pubkey);
-  assert.equal(reasonOf(craft({ author: alice, to: bob, rumor: stranger })), 'not-addressed');
+  assert.equal(await reasonOf(craft({ author: alice, to: bob, rumor: stranger })), 'not-addressed');
   const mine = createRumor({ kind: 14, tags: [], content: 'x', created_at: NOW }, bob.pubkey);
-  assert.equal(open(craft({ author: bob, to: bob, rumor: mine })).ok, true);
+  assert.equal((await open(craft({ author: bob, to: bob, rumor: mine }))).ok, true);
 });
 
-test('the reason is not-addressed before any decryption is attempted', () => {
+test('the reason is not-addressed before any decryption is attempted', async () => {
   const wrap = { ...craft({ author: alice, to: bob }), tags: [['p', carol.pubkey]], content: 'garbage' };
-  assert.equal(reasonOf(wrap), 'not-addressed');
+  assert.equal(await reasonOf(wrap), 'not-addressed');
 });
 
 // ---------------------------------------------------------------------------
@@ -207,53 +209,53 @@ function tamper(payload) {
   return `${payload.slice(0, i)}${payload[i] === 'A' ? 'B' : 'A'}${payload.slice(i + 1)}`;
 }
 
-test('tampered wrap ciphertext is undecryptable', () => {
+test('tampered wrap ciphertext is undecryptable', async () => {
   const wrap = craft({ author: alice, to: bob });
-  assert.equal(reasonOf({ ...wrap, content: tamper(wrap.content) }), 'undecryptable');
+  assert.equal(await reasonOf({ ...wrap, content: tamper(wrap.content) }), 'undecryptable');
 });
 
 const BAD_WRAP_CONTENT = ['', 'not base64 !!', '#', 'A'.repeat(100), 'AA==', undefined, null, 5, {}];
 
 for (const content of BAD_WRAP_CONTENT) {
-  test(`wrap content ${inspect(content)} is undecryptable`, () => {
-    assert.equal(reasonOf({ ...craft({ author: alice, to: bob }), content }), 'undecryptable');
+  test(`wrap content ${inspect(content)} is undecryptable`, async () => {
+    assert.equal(await reasonOf({ ...craft({ author: alice, to: bob }), content }), 'undecryptable');
   });
 }
 
-test('a wrap encrypted to someone else but tagged for us is undecryptable', () => {
-  assert.equal(reasonOf(craft({ author: alice, to: carol, wrap: { tags: [['p', bob.pubkey]] } })), 'undecryptable');
+test('a wrap encrypted to someone else but tagged for us is undecryptable', async () => {
+  assert.equal(await reasonOf(craft({ author: alice, to: carol, wrap: { tags: [['p', bob.pubkey]] } })), 'undecryptable');
 });
 
-test('a wrap from a malformed wrap pubkey is undecryptable', () => {
-  assert.equal(reasonOf({ ...craft({ author: alice, to: bob }), pubkey: 'zz' }), 'undecryptable');
-  assert.equal(reasonOf({ ...craft({ author: alice, to: bob }), pubkey: undefined }), 'undecryptable');
+test('a wrap from a malformed wrap pubkey is undecryptable', async () => {
+  assert.equal(await reasonOf({ ...craft({ author: alice, to: bob }), pubkey: 'zz' }), 'undecryptable');
+  assert.equal(await reasonOf({ ...craft({ author: alice, to: bob }), pubkey: undefined }), 'undecryptable');
 });
 
-test('a wrap whose plaintext is not JSON, or JSON but not an object, is undecryptable', () => {
+test('a wrap whose plaintext is not JSON, or JSON but not an object, is undecryptable', async () => {
   for (const sealPayload of ['not json', '[]', 'null', '42', '"seal"']) {
-    assert.equal(reasonOf(craft({ author: alice, to: bob, sealPayload })), 'undecryptable', sealPayload);
+    assert.equal(await reasonOf(craft({ author: alice, to: bob, sealPayload })), 'undecryptable', sealPayload);
   }
 });
 
-test('a seal whose rumor is encrypted to someone else is undecryptable', () => {
+test('a seal whose rumor is encrypted to someone else is undecryptable', async () => {
   const rumor = createRumor({ kind: 14, tags: [['p', bob.pubkey]], content: 'x', created_at: NOW }, alice.pubkey);
   const seal = finalizeEvent(
     { kind: 13, tags: [], content: encryptTo(rumor, alice.secretKey, carol.pubkey), created_at: NOW },
     alice.secretKey,
   );
-  assert.equal(reasonOf(craft({ author: alice, to: bob, sealPayload: seal })), 'undecryptable');
+  assert.equal(await reasonOf(craft({ author: alice, to: bob, sealPayload: seal })), 'undecryptable');
 });
 
-test('a seal with tampered ciphertext (re-signed, so the seal itself is valid) is undecryptable', () => {
+test('a seal with tampered ciphertext (re-signed, so the seal itself is valid) is undecryptable', async () => {
   const rumor = createRumor({ kind: 14, tags: [['p', bob.pubkey]], content: 'x', created_at: NOW }, alice.pubkey);
   const content = tamper(encryptTo(rumor, alice.secretKey, bob.pubkey));
   const seal = finalizeEvent({ kind: 13, tags: [], content, created_at: NOW }, alice.secretKey);
-  assert.equal(reasonOf(craft({ author: alice, to: bob, sealPayload: seal })), 'undecryptable');
+  assert.equal(await reasonOf(craft({ author: alice, to: bob, sealPayload: seal })), 'undecryptable');
 });
 
-test('a rumor that decrypts to non-JSON, or JSON but not an object, is undecryptable', () => {
+test('a rumor that decrypts to non-JSON, or JSON but not an object, is undecryptable', async () => {
   for (const rumorPayload of ['not json', '[]', 'null', '7']) {
-    assert.equal(reasonOf(craft({ author: alice, to: bob, rumorPayload })), 'undecryptable', rumorPayload);
+    assert.equal(await reasonOf(craft({ author: alice, to: bob, rumorPayload })), 'undecryptable', rumorPayload);
   }
 });
 
@@ -271,13 +273,13 @@ function sealWith(override) {
   return { ...seal, ...override };
 }
 
-test('a seal of the wrong kind is invalid-seal', () => {
-  assert.equal(reasonOf(craft({ author: alice, to: bob, seal: { kind: 14 } })), 'invalid-seal');
-  assert.equal(reasonOf(craft({ author: alice, to: bob, seal: { kind: 1059 } })), 'invalid-seal');
+test('a seal of the wrong kind is invalid-seal', async () => {
+  assert.equal(await reasonOf(craft({ author: alice, to: bob, seal: { kind: 14 } })), 'invalid-seal');
+  assert.equal(await reasonOf(craft({ author: alice, to: bob, seal: { kind: 1059 } })), 'invalid-seal');
 });
 
-test('a seal with tags is invalid-seal', () => {
-  assert.equal(reasonOf(craft({ author: alice, to: bob, seal: { tags: [['p', bob.pubkey]] } })), 'invalid-seal');
+test('a seal with tags is invalid-seal', async () => {
+  assert.equal(await reasonOf(craft({ author: alice, to: bob, seal: { tags: [['p', bob.pubkey]] } })), 'invalid-seal');
 });
 
 // [description, field overrides applied to a correctly signed seal]
@@ -295,18 +297,18 @@ const TAMPERED_SEALS = [
 ];
 
 for (const [description, override] of TAMPERED_SEALS) {
-  test(`a seal with ${description} is invalid-seal`, () => {
-    assert.equal(reasonOf(craft({ author: alice, to: bob, sealPayload: sealWith(override) })), 'invalid-seal');
+  test(`a seal with ${description} is invalid-seal`, async () => {
+    assert.equal(await reasonOf(craft({ author: alice, to: bob, sealPayload: sealWith(override) })), 'invalid-seal');
   });
 }
 
-test('a seal whose content was changed after signing is invalid-seal', () => {
+test('a seal whose content was changed after signing is invalid-seal', async () => {
   const other = encryptTo({ forged: true }, alice.secretKey, bob.pubkey);
-  assert.equal(reasonOf(craft({ author: alice, to: bob, sealPayload: sealWith({ content: other }) })), 'invalid-seal');
+  assert.equal(await reasonOf(craft({ author: alice, to: bob, sealPayload: sealWith({ content: other }) })), 'invalid-seal');
 });
 
-test('a seal that is an empty object is invalid-seal', () => {
-  assert.equal(reasonOf(craft({ author: alice, to: bob, sealPayload: {} })), 'invalid-seal');
+test('a seal that is an empty object is invalid-seal', async () => {
+  assert.equal(await reasonOf(craft({ author: alice, to: bob, sealPayload: {} })), 'invalid-seal');
 });
 
 // ---------------------------------------------------------------------------
@@ -337,8 +339,8 @@ const BAD_RUMORS = [
 ];
 
 for (const [description, override] of BAD_RUMORS) {
-  test(`a rumor with ${description} is invalid-rumor`, () => {
-    assert.equal(reasonOf(craft({ author: alice, to: bob, rumor: { ...goodRumor(), ...override } })), 'invalid-rumor');
+  test(`a rumor with ${description} is invalid-rumor`, async () => {
+    assert.equal(await reasonOf(craft({ author: alice, to: bob, rumor: { ...goodRumor(), ...override } })), 'invalid-rumor');
   });
 }
 
@@ -346,38 +348,38 @@ for (const [description, override] of BAD_RUMORS) {
 // impersonation
 // ---------------------------------------------------------------------------
 
-test('a rumor claiming Alice inside a seal signed by Mallory is impersonation', () => {
+test('a rumor claiming Alice inside a seal signed by Mallory is impersonation', async () => {
   const mallory = person();
   // The id is correct: only the seal signer disagrees with the rumor author.
   const rumor = createRumor({ kind: 14, tags: [['p', bob.pubkey]], content: 'send me money', created_at: NOW }, alice.pubkey);
-  assert.equal(reasonOf(craft({ author: alice, sealer: mallory, to: bob, rumor })), 'impersonation');
+  assert.equal(await reasonOf(craft({ author: alice, sealer: mallory, to: bob, rumor })), 'impersonation');
 });
 
-test('a rumor claiming to be written by us, sealed by a stranger, is impersonation', () => {
+test('a rumor claiming to be written by us, sealed by a stranger, is impersonation', async () => {
   const mallory = person();
   const rumor = createRumor({ kind: 14, tags: [['p', alice.pubkey]], content: 'x', created_at: NOW }, bob.pubkey);
-  assert.equal(reasonOf(craft({ author: bob, sealer: mallory, to: bob, rumor })), 'impersonation');
+  assert.equal(await reasonOf(craft({ author: bob, sealer: mallory, to: bob, rumor })), 'impersonation');
 });
 
 // ---------------------------------------------------------------------------
 // id-mismatch (upstream nostr-core issue #73)
 // ---------------------------------------------------------------------------
 
-test('a rumor whose id is not the hash of its content is id-mismatch', () => {
+test('a rumor whose id is not the hash of its content is id-mismatch', async () => {
   const forged = { ...goodRumor(), id: 'f'.repeat(64) };
-  assert.equal(reasonOf(craft({ author: alice, to: bob, rumor: forged })), 'id-mismatch');
+  assert.equal(await reasonOf(craft({ author: alice, to: bob, rumor: forged })), 'id-mismatch');
 });
 
-test('a rumor re-using the id of another message with different content is id-mismatch', () => {
+test('a rumor re-using the id of another message with different content is id-mismatch', async () => {
   const original = goodRumor();
   const swapped = { ...original, content: 'a different message' };
-  assert.equal(reasonOf(craft({ author: alice, to: bob, rumor: swapped })), 'id-mismatch');
+  assert.equal(await reasonOf(craft({ author: alice, to: bob, rumor: swapped })), 'id-mismatch');
 });
 
-test('changing any rumor field without recomputing the id is id-mismatch', () => {
+test('changing any rumor field without recomputing the id is id-mismatch', async () => {
   const rumor = goodRumor();
   for (const change of [{ created_at: NOW + 1 }, { kind: 7 }, { tags: [['p', bob.pubkey], ['x', 'y']] }]) {
-    assert.equal(reasonOf(craft({ author: alice, to: bob, rumor: { ...rumor, ...change } })), 'id-mismatch', inspect(change));
+    assert.equal(await reasonOf(craft({ author: alice, to: bob, rumor: { ...rumor, ...change } })), 'id-mismatch', inspect(change));
   }
 });
 
@@ -385,30 +387,50 @@ test('changing any rumor field without recomputing the id is id-mismatch', () =>
 // Never throws
 // ---------------------------------------------------------------------------
 
-test('hostile arguments are reported, never thrown', () => {
+test('hostile arguments are reported, never thrown', async () => {
   const wrap = craft({ author: alice, to: bob });
   const attempts = [
     () => openGiftWrap(wrap, undefined, { me: bob.pubkey }),
     () => openGiftWrap(wrap, 'secret', { me: bob.pubkey }),
     () => openGiftWrap(wrap, new Uint8Array(0), { me: bob.pubkey }),
-    () => openGiftWrap(wrap, bob.secretKey),
-    () => openGiftWrap(wrap, bob.secretKey, {}),
-    () => openGiftWrap(wrap, bob.secretKey, { me: 5 }),
-    () => openGiftWrap(wrap, bob.secretKey, null),
+    () => openGiftWrap(wrap, {}, { me: bob.pubkey }),
+    () => openGiftWrap(wrap, bob.signer),
+    () => openGiftWrap(wrap, bob.signer, {}),
+    () => openGiftWrap(wrap, bob.signer, { me: 5 }),
+    () => openGiftWrap(wrap, bob.signer, null),
     () => openGiftWrap(),
   ];
   for (const attempt of attempts) {
-    const result = attempt();
+    const result = await attempt();
     assert.equal(result.ok, false);
     assert.ok(Object.values(OPEN_FAILURE).includes(result.reason));
   }
 });
 
-test('opening with the wrong key reports undecryptable and does not leak', () => {
-  const result = openGiftWrap(craft({ author: alice, to: bob }), carol.secretKey, { me: bob.pubkey });
+test('opening with the wrong key reports undecryptable and does not leak', async () => {
+  const result = await openGiftWrap(craft({ author: alice, to: bob }), carol.signer, { me: bob.pubkey });
   assert.deepEqual(result, { ok: false, reason: 'undecryptable' });
 });
 
-test('the failure result is just { ok, reason }', () => {
-  assert.deepEqual(Object.keys(open({ kind: 1 })).sort(), ['ok', 'reason']);
+// ---------------------------------------------------------------------------
+// A signer that cannot answer
+// ---------------------------------------------------------------------------
+
+const failingSigner = (error) => ({ ...bob.signer, nip44Decrypt: async () => { throw error; } });
+
+test('a signer that cannot answer now throws its code: the wrap is kept, not judged', async () => {
+  const wrap = craft({ author: alice, to: bob });
+  for (const code of [DM_ERROR.KEY_WIPED, DM_ERROR.SIGNER_UNAVAILABLE, DM_ERROR.SIGNER_DENIED, DM_ERROR.SIGNER_UNSUPPORTED]) {
+    await assert.rejects(openGiftWrap(wrap, failingSigner(new DmError(code)), { me: bob.pubkey }), (err) => DmError.is(err, code), code);
+  }
+});
+
+test('a signer that fails on the payload itself reports undecryptable', async () => {
+  const wrap = craft({ author: alice, to: bob });
+  const result = await openGiftWrap(wrap, failingSigner(new Error('invalid MAC')), { me: bob.pubkey });
+  assert.deepEqual(result, { ok: false, reason: 'undecryptable' });
+});
+
+test('the failure result is just { ok, reason }', async () => {
+  assert.deepEqual(Object.keys(await open({ kind: 1 })).sort(), ['ok', 'reason']);
 });
