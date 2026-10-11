@@ -13,6 +13,8 @@
  * Pure: providers and the normaliser are passed in.
  */
 
+import { decodeBolt11 } from 'nostr-core';
+
 const SECONDS_BOUNDARY = 1e12;
 
 /** A transaction time as unix seconds, whether the wallet reports seconds, milliseconds or a date string. */
@@ -87,4 +89,30 @@ export async function loadOutgoingTransactions({ wallets, getProvider, normalize
     }
   }));
   return batches.flat();
+}
+
+/**
+ * The Social Bucket's paid npub.cash quotes as incoming payments. Money sent
+ * to the bucket address waits at npub.cash until it is claimed into a wallet,
+ * so no wallet history shows it yet; the quotes do (amount, time, invoice).
+ *
+ * @param {Array<{ quoteId?: string, amount?: number, paidAt?: number | string, request?: string }>} receipts
+ * @param {string} address The bucket's Lightning address (`<npub>@npub.cash`).
+ * @returns {import('./paymentConfirmation.js').IncomingTransaction[]}
+ */
+export function bucketReceiptsAsIncoming(receipts, address) {
+  const found = [];
+  for (const quote of receipts ?? []) {
+    const amountSats = Number(quote?.amount);
+    const settledAt = toSeconds({ settled_at: quote?.paidAt });
+    if (!Number.isSafeInteger(amountSats) || amountSats <= 0 || settledAt === null) continue;
+    let paymentHash = null;
+    try {
+      paymentHash = quote.request ? decodeBolt11(quote.request).paymentHash ?? null : null;
+    } catch {
+      // A quote without a readable invoice still matches by amount and time.
+    }
+    found.push({ amountSats, settledAt, paymentHash, walletId: null, id: quote.quoteId ?? null, address });
+  }
+  return found;
 }

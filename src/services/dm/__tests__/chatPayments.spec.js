@@ -15,6 +15,7 @@ import { DM_ERROR, DmError } from '../errors.js';
 import { buildChatPaymentContext, parseChatPaymentContext } from '../paymentContext.js';
 import { PAYMENT_SENT_EVENT, createPaymentAnnouncer } from '../paymentAnnouncer.js';
 import { CONFIRMATION_WINDOW_SECONDS, confirmIncomingPayments } from '../paymentConfirmation.js';
+import { makeInvoice } from './invoiceFixture.js';
 
 const PARTNER = 'a'.repeat(64);
 const REQUEST = 'b'.repeat(64);
@@ -216,7 +217,7 @@ test('confirmation: bad input is an empty answer', () => {
 // incomingTransactions
 // ---------------------------------------------------------------------------
 
-const { loadIncomingTransactions } = await import('../incomingTransactions.js');
+const { bucketReceiptsAsIncoming, loadIncomingTransactions } = await import('../incomingTransactions.js');
 
 test('incoming transactions: settled incoming rows of every wallet, times in seconds, failures skipped', async () => {
   const rows = {
@@ -248,4 +249,19 @@ test('incoming transactions: settled incoming rows of every wallet, times in sec
     { amountSats: 11, settledAt: 1_700_000_000, paymentHash: null, walletId: 'b', id: null },
   ]);
   assert.deepEqual(await loadIncomingTransactions({ wallets: undefined, getProvider: () => null, normalizeTx: () => ({}) }), []);
+});
+
+test('bucket receipts: paid npub.cash quotes become incoming money at the bucket address', () => {
+  const invoice = makeInvoice({ sats: 2_100, hash: 7 });
+  const address = 'npub1abc@npub.cash';
+  const rows = bucketReceiptsAsIncoming([
+    { quoteId: 'q1', amount: 2_100, paidAt: 1_700_000_000, request: invoice.bolt11 },
+    { quoteId: 'q2', amount: 500, paidAt: 1_700_000_000_000 },
+    { quoteId: 'q3', amount: 0, paidAt: 1_700_000_000 },
+    { quoteId: 'q4', amount: 10 },
+  ], address);
+  assert.deepEqual(rows, [
+    { amountSats: 2_100, settledAt: 1_700_000_000, paymentHash: invoice.paymentHash, walletId: null, id: 'q1', address },
+    { amountSats: 500, settledAt: 1_700_000_000, paymentHash: null, walletId: null, id: 'q2', address },
+  ]);
 });

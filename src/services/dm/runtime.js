@@ -200,6 +200,7 @@ export function createInboxStoreAdapter(store, me) {
  * @typedef {object} ChatContact
  * @property {string} id Address book entry id (used in the chat route).
  * @property {string} name Display name.
+ * @property {string[]} [relayHints] Relays the contact's profile named, searched first for their inbox list.
  */
 
 /**
@@ -388,7 +389,7 @@ export function createChatRuntime(deps = {}) {
     // Every send is the person's own action (or the payment they just made):
     // their signer app may ask them, even after it declined background work.
     signer.allowAgain();
-    const message = await inbox.send({ partner, template });
+    const message = await inbox.send({ partner, template, hints: contacts.find(partner)?.relayHints });
     // On disk before anything else: the app may be closed right after Send.
     store.flush?.().catch(() => {});
     return message;
@@ -851,6 +852,8 @@ export function createChatRuntime(deps = {}) {
       paidAt: tx.settledAt ?? nowSeconds(),
       ...(tx.paymentHash ? { paymentHash: tx.paymentHash.toLowerCase() } : {}),
       ...(key && !tx.paymentHash ? { transactionKey: key } : {}),
+      // Arrived at an address outside the wallets (the npub.cash bucket): named like a LUD-21 proof.
+      ...(tx.address ? { address: tx.address } : {}),
     });
     if (linkPayment && tx.walletId) {
       try {

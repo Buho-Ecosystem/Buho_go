@@ -21,7 +21,8 @@
  */
 
 import { DM_ERROR, DmError } from './errors.js';
-import { loadIncomingTransactions, loadOutgoingTransactions } from './incomingTransactions.js';
+import { npubCashAddress } from '../npubCash.js';
+import { bucketReceiptsAsIncoming, loadIncomingTransactions, loadOutgoingTransactions } from './incomingTransactions.js';
 import { createChatRuntime } from './runtime.js';
 
 /** `source` stamped on the incoming transaction of a paid chat request. */
@@ -61,6 +62,7 @@ function signingFor(identity, pubkey) {
  * @param {object} stores.addressBook
  * @param {object} stores.notifications
  * @param {object} stores.transactionMetadata
+ * @param {object} [stores.socialBucket] Its paid npub.cash quotes count as incoming money.
  * @param {object} services
  * @param {() => { ensureRelay: Function }} services.getRelayPool
  * @param {{ fetchPayRequest: Function, requestLnurlInvoice: Function, verifyPayment?: Function }} services.lnurl nostr-core's functions.
@@ -96,7 +98,10 @@ export function createAppRuntimeFactory(stores, services) {
       contacts: {
         find(contactPubkey) {
           const entry = addressBook.findContactByPubkey(contactPubkey);
-          return entry ? { id: entry.id, name: entry.name || '' } : null;
+          if (!entry) return null;
+          // Relays the contact's profile named: where to look for their inbox list first.
+          const relayHints = Array.isArray(entry.nostr_relay_hints) ? entry.nostr_relay_hints : [];
+          return { id: entry.id, name: entry.name || '', relayHints };
         },
       },
       notifications: { message: (notification) => notifications.notifyMessageIfEnabled(notification) },
@@ -120,11 +125,17 @@ export function createAppRuntimeFactory(stores, services) {
       }),
       ...(services.normalizeTx
         ? {
-          loadIncomingTransactions: () => loadIncomingTransactions({
-            wallets: wallet.wallets,
-            getProvider: (walletId) => wallet.getProvider(walletId),
-            normalizeTx: services.normalizeTx,
-          }),
+          loadIncomingTransactions: async () => [
+            ...await loadIncomingTransactions({
+              wallets: wallet.wallets,
+              getProvider: (walletId) => wallet.getProvider(walletId),
+              normalizeTx: services.normalizeTx,
+            }),
+            // Money paid to the profile's npub.cash address waits there until it is claimed.
+            ...(stores.socialBucket?.ownerPubkey === pubkey
+              ? bucketReceiptsAsIncoming(stores.socialBucket.recentReceipts, npubCashAddress(identity.nostrNpub))
+              : []),
+          ],
           loadOutgoingTransactions: () => loadOutgoingTransactions({
             wallets: wallet.wallets,
             getProvider: (walletId) => wallet.getProvider(walletId),

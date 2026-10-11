@@ -51,7 +51,7 @@ test('the factory maps every runtime dependency onto the right store call', asyn
   assert.equal(captured.fetchProfile, 'P');
   assert.deepEqual(captured.lnurl, { fetchPayRequest: 'F', requestInvoice: 'R', verifyPayment: 'V' });
   assert.deepEqual(await captured.loadIncomingTransactions(), []);
-  assert.deepEqual(captured.contacts.find(partner), { id: 'c1', name: 'Pat' });
+  assert.deepEqual(captured.contacts.find(partner), { id: 'c1', name: 'Pat', relayHints: [] });
   assert.equal(captured.contacts.find('c'.repeat(64)), null);
   assert.equal(await captured.notifications.message({ title: 'T' }), true);
   await captured.linkPayment({ contactId: 'c1', walletId: 's', transactionId: 'tx-9', amountSats: 500, note: 'Pizza' });
@@ -104,4 +104,31 @@ test('an identity that signs in another app gets its signer app, pinned to that 
   identity.identityCapabilities = { kind: 'nip07', rawKey: false, needsApproval: true };
   factory(me);
   assert.equal(captured.signerApp.maxParallel, 1, 'an extension asks the person per request: one at a time');
+});
+
+test('the npub.cash bucket of this identity counts as incoming money; another identity\'s does not', async () => {
+  const me = 'a'.repeat(64);
+  const receipts = [{ quoteId: 'q1', amount: 2_100, paidAt: 1_700_000_000 }];
+  let captured;
+  const build = (ownerPubkey) => createAppRuntimeFactory({
+    identity: { identityCapabilities: { kind: 'derived', rawKey: true }, nostrNpub: 'npub1me', getNostrSecretKeyBytes: async () => new Uint8Array(32) },
+    messages: () => ({ scope: me }),
+    wallet: { wallets: [], getProvider: () => null },
+    profile: {},
+    addressBook: { findContactByPubkey: () => null },
+    notifications: {},
+    transactionMetadata: {},
+    socialBucket: { ownerPubkey, recentReceipts: receipts },
+  }, {
+    getRelayPool: () => ({}),
+    lnurl: {},
+    normalizeTx: (raw) => raw,
+    createChatRuntime: (deps) => { captured = deps; return {}; },
+  })(me);
+
+  build(me);
+  const ours = await captured.loadIncomingTransactions();
+  assert.deepEqual(ours.map((tx) => [tx.amountSats, tx.address]), [[2_100, 'npub1me@npub.cash']]);
+  build('b'.repeat(64));
+  assert.deepEqual(await captured.loadIncomingTransactions(), []);
 });

@@ -40,7 +40,7 @@ export default boot(async () => {
 
   const [
     { useIdentityStore }, { useMessagesStore }, { useWalletStore }, { useProfileStore },
-    { useAddressBookStore }, { useNotificationsStore }, { useTransactionMetadataStore },
+    { useAddressBookStore }, { useNotificationsStore }, { useTransactionMetadataStore }, { useSocialBucketStore },
     { createAppRuntimeFactory }, { createNotificationFormatter }, { publishChatRuntime, useChatRuntime },
     { createPaymentAnnouncer },
     { getRelayPool }, { formatAmount }, { i18n }, { readPersistedWalletState },
@@ -48,7 +48,7 @@ export default boot(async () => {
   ] = await Promise.all([
     import('../stores/identity.js'), import('../stores/messages.js'), import('../stores/wallet.js'),
     import('../stores/profile.js'), import('../stores/addressBook.js'), import('../stores/notifications.js'),
-    import('../stores/transactionMetadata.js'), import('../services/dm/appRuntime.js'),
+    import('../stores/transactionMetadata.js'), import('../stores/socialBucket.js'), import('../services/dm/appRuntime.js'),
     import('../services/dm/notificationCopy.js'), import('../composables/useChatRuntime.js'),
     import('../services/dm/paymentAnnouncer.js'),
     import('../utils/nostrRelays.js'), import('../utils/amountFormatting.js'), import('./i18n.js'),
@@ -69,6 +69,7 @@ export default boot(async () => {
     addressBook: useAddressBookStore(),
     notifications: useNotificationsStore(),
     transactionMetadata: useTransactionMetadataStore(),
+    socialBucket: useSocialBucketStore(),
   }, {
     getRelayPool,
     lnurl: nostrCore,
