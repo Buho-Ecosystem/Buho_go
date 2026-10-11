@@ -30,7 +30,12 @@
  *     card of their request.
  *   - requests are `request` items. The user's own request reads its state
  *     from `runtime.requestState` (own wallet certainty), the partner's from
- *     `store.requestStatus`. Expiry follows a live clock (`now`).
+ *     `store.requestStatus`. Expiry follows a live clock (`now`) and is the
+ *     request's LIFETIME (`valid_until`), not its invoice's: an expired invoice
+ *     is replaced at Pay time, an expired request offers "Send anyway" /
+ *     "Request again" (docs section 8a).
+ *   - a paid request of the user's own says where the money arrived, or that
+ *     it is only reported by the payer (`settlement`).
  *   - an outgoing payment is a `payment` line. An INCOMING payment is a line
  *     only when one of the user's wallets confirms it
  *     (services/dm/paymentConfirmation.js); otherwise it is the partner's
@@ -43,7 +48,7 @@ import { insertDaySeparators } from '../components/chat/chatFormat.js';
 import { DM_ERROR, DmError } from '../services/dm/errors.js';
 import { confirmIncomingPayments } from '../services/dm/paymentConfirmation.js';
 import { buildChatPaymentContext } from '../services/dm/paymentContext.js';
-import { MESSAGE_TYPE, REQUEST_STATUS } from '../services/dm/protocol.js';
+import { MESSAGE_TYPE, REQUEST_STATUS, requestLifetimeEnd } from '../services/dm/protocol.js';
 import { REQUEST_METHOD, pickReceivingWallet } from '../services/dm/requests.js';
 import { PAYING_REASON, payingWalletReasonText } from '../utils/payingWallets.js';
 
@@ -77,6 +82,10 @@ function clip(text, max = REPLY_PREVIEW_CHARS) {
  * @property {(message: object) => string | null} requestStateOf State of a request message.
  * @property {(message: object) => boolean} unconfirmedOf The wallet cannot detect this own request's payment.
  * @property {(message: object) => string} disabledReasonOf Why a pending incoming request cannot be paid ('' = can).
+ * @property {(message: object) => ({ verified: boolean, walletId: string | null } | null)} [settlementOf]
+ *   How sure the user is that their own request is paid, and where it arrived.
+ * @property {(walletId: string | null) => string} [walletNameOf] Display name of a wallet ('' when unknown).
+ * @property {(message: object) => boolean} [canSendAnywayOf] Money can be sent for an expired incoming request.
  * @property {Set<string>} [confirmedPayments] Ids of incoming payment messages a wallet confirmed.
  * @property {Set<string> | string[]} [busyIds] Ids with an action in flight.
  * @property {(sats: number) => string} [formatFiat]
@@ -92,7 +101,8 @@ function clip(text, max = REPLY_PREVIEW_CHARS) {
 export function buildThreadItems(input) {
   const {
     messages, partnerName, unknown = false, now, reactionsFor, requestStateOf, unconfirmedOf,
-    disabledReasonOf, confirmedPayments = new Set(), busyIds = new Set(), formatFiat = () => '', t,
+    disabledReasonOf, settlementOf = () => null, walletNameOf = () => '', canSendAnywayOf = () => false,
+    confirmedPayments = new Set(), busyIds = new Set(), formatFiat = () => '', t,
   } = input;
   const busy = busyIds instanceof Set ? busyIds : new Set(busyIds);
   const byId = new Map(messages.map((message) => [message.id, message]));
@@ -134,6 +144,11 @@ export function buildThreadItems(input) {
         const request = message.request;
         const state = requestStateOf(message) || 'pending';
         const pendingToPay = state === 'pending' && !message.outgoing;
+        const lifetimeEnd = requestLifetimeEnd(message);
+        const found = state === 'paid' && message.outgoing ? settlementOf(message) : null;
+        const settlement = state === 'paid' && message.outgoing
+          ? { verified: found?.verified === true, walletName: found?.verified ? walletNameOf(found.walletId) : '' }
+          : null;
         items.push({
           key: message.id,
           type: 'request',
@@ -145,8 +160,11 @@ export function buildThreadItems(input) {
             note: request.note || '',
             outgoing: message.outgoing,
             state,
-            expiresAt: Number.isFinite(request.expiresAt) ? request.expiresAt : null,
+            validUntil: lifetimeEnd,
+            invoiceExpiresAt: Number.isFinite(request.expiresAt) ? request.expiresAt : null,
             unconfirmed: message.outgoing && unconfirmedOf(message),
+            settlement,
+            canSendAnyway: state === 'expired' && !message.outgoing && canSendAnywayOf(message),
             disabledReason: pendingToPay ? disabledReasonOf(message) : '',
             untrusted: unknown && !message.outgoing,
             busy: busy.has(message.id),
@@ -266,11 +284,13 @@ export function buildReceivingWallets({
 
 /**
  * Words for a failed action. `kind: 'no-inbox'` is the one case the page does
- * more than show text for (it offers a payment link instead).
+ * more than show text for (it offers a payment link instead). `next: 'ask-new'`
+ * marks a failure of paying a request whose way forward is asking the
+ * requester for a new one (the page offers that action next to the words).
  *
  * @param {unknown} error
  * @param {{ t: (key: string, params?: object) => string, name?: string }} context
- * @returns {{ code: string, kind: 'no-inbox' | 'general', message: string }}
+ * @returns {{ code: string, kind: 'no-inbox' | 'general', message: string, next?: 'ask-new' }}
  */
 export function describeDmError(error, { t, name = '' }) {
   const code = DmError.is(error) ? error.code : 'UNKNOWN';
@@ -294,8 +314,26 @@ export function describeDmError(error, { t, name = '' }) {
       message = t('This wallet cannot pay this request. Choose another wallet.');
       break;
     case DM_ERROR.INVOICE_EXPIRED:
-      message = t('This request has expired.');
-      break;
+      return {
+        code,
+        kind: 'general',
+        next: 'ask-new',
+        message: t('The invoice has expired. Ask for a new request.'),
+      };
+    case DM_ERROR.INVOICE_REFRESH_FAILED:
+      return {
+        code,
+        kind: 'general',
+        next: 'ask-new',
+        message: t("Couldn't get a fresh invoice. Try again, or ask for a new request."),
+      };
+    case DM_ERROR.AMOUNT_OUT_OF_RANGE:
+      return {
+        code,
+        kind: 'general',
+        next: 'ask-new',
+        message: t("The amount is outside what their address accepts. Ask for a new request."),
+      };
     case DM_ERROR.SECRET_KEY_IN_TEXT:
       message = t('Never share it. Sending is blocked.');
       break;
@@ -335,6 +373,7 @@ export function describeDmError(error, { t, name = '' }) {
  * @property {{ payContact: Function, payInvoice: Function }} pay `usePayContact(ctx)`.
  * @property {(sats: number, destinationType?: string) => ({ id: string, usable: boolean, reason: string | null } | null)} payingWalletFor
  *   The wallet that would pay `sats` (the default pick of the "Pay with" field).
+ * @property {(walletId: string | null) => string} [walletNameOf] Display name of one of the user's wallets.
  * @property {() => Promise<import('../services/dm/paymentConfirmation.js').IncomingTransaction[]>} [loadIncomingTransactions]
  * @property {(key: string, params?: object) => string} t
  * @property {(sats: number) => string} [formatFiat] "≈ $4.20" or ''.
@@ -349,6 +388,7 @@ export function describeDmError(error, { t, name = '' }) {
 export function useContactChat(options) {
   const {
     store, runtime, pay, payingWalletFor, t, formatFiat,
+    walletNameOf = () => '',
     loadIncomingTransactions = async () => [],
     now: clock = Date.now,
     setTimer = (fn, ms) => setTimeout(fn, ms),
@@ -392,7 +432,7 @@ export function useContactChat(options) {
     const payer = payingWalletFor(request.amountSats, 'lightning');
     if (!payer) return DM_ERROR.WALLET_CANNOT_PAY;
     const check = runtime.checkPayable(
-      { bolt11: request.bolt11, amountSats: request.amountSats, expiresAt: request.expiresAt },
+      { bolt11: request.bolt11, amountSats: request.amountSats, expiresAt: request.expiresAt, lud16: request.lud16 },
       payer.id,
     );
     if (!check.ok) return check.reason;
@@ -401,6 +441,21 @@ export function useContactChat(options) {
       ? DM_ERROR.WALLET_CANNOT_PAY
       : payingWalletReasonText(payer.reason, 'lightning', t);
   };
+
+  const settlementOf = (message) => runtime.requestSettlement(message.id);
+
+  /**
+   * Where money for an expired request of the partner can go: the Lightning
+   * address inside that request (signed by the requester), else the saved
+   * contact's address. Null when there is none (the card then offers
+   * "Ask for a new request").
+   */
+  function sendAnywayTarget(message) {
+    if (message.request.lud16) return { kind: 'address', address: message.request.lud16 };
+    const entry = contact();
+    if (entry && (entry.address || entry.lightningAddress)) return { kind: 'contact', entry };
+    return null;
+  }
 
   const items = computed(() => buildThreadItems({
     messages: messages.value,
@@ -411,6 +466,9 @@ export function useContactChat(options) {
     requestStateOf,
     unconfirmedOf,
     disabledReasonOf,
+    settlementOf,
+    walletNameOf,
+    canSendAnywayOf: (message) => sendAnywayTarget(message) !== null,
     confirmedPayments: confirmedPayments.value,
     busyIds: busyIds.value,
     formatFiat,
@@ -430,9 +488,13 @@ export function useContactChat(options) {
   function nextWakeMs() {
     let wake = MAX_TICK_MS;
     for (const item of items.value) {
-      if (item.type !== 'request' || item.request.state !== 'pending' || item.request.expiresAt === null) continue;
-      const until = item.request.expiresAt * 1000 - clock() + 500;
-      if (until > 0) wake = Math.min(wake, until);
+      if (item.type !== 'request' || item.request.state !== 'pending') continue;
+      // The request's lifetime ends the card; the invoice's end changes what Pay does.
+      for (const end of [item.request.validUntil, item.request.invoiceExpiresAt]) {
+        if (end === null) continue;
+        const until = end * 1000 - clock() + 500;
+        if (until > 0) wake = Math.min(wake, until);
+      }
     }
     return Math.max(MIN_TICK_MS, wake);
   }
@@ -497,6 +559,7 @@ export function useContactChat(options) {
     now.value = nowSeconds();
     scheduleTick();
     void confirmPayments();
+    void settleClaims();
     await refreshReachability();
   }
 
@@ -515,6 +578,16 @@ export function useContactChat(options) {
     now.value = nowSeconds();
     scheduleTick();
     void confirmPayments();
+    void settleClaims();
+  }
+
+  /** Check the partner's payment claims for the user's own requests against their wallets (runtime). */
+  async function settleClaims() {
+    try {
+      await runtime.settleClaims();
+    } catch {
+      // No runtime yet or a wallet that cannot answer: the claim stays unverified until the next look.
+    }
   }
 
   async function refreshReachability() {
@@ -605,19 +678,32 @@ export function useContactChat(options) {
 
   /**
    * Pay a request of the partner through the existing send pipeline. The
-   * announcement after a successful payment is not made here (the page is gone
-   * by then): the context string below makes the always-on announcer do it.
+   * announcement after a successful payment is not made here (the page is
+   * gone by then): the context string below makes the always-on announcer do it.
+   *
+   * When the invoice in the request has expired (or is about to), a fresh one
+   * is pulled first from the request's own Lightning address, for exactly the
+   * requested amount, and handed to the same pipeline: the user sees no
+   * difference (docs section 8a). A failed pull is an error with a next action
+   * (`error.next === 'ask-new'`).
    */
-  function payRequest(id) {
+  async function payRequest(id) {
     const message = messageById(id);
     if (!message || message.type !== MESSAGE_TYPE.REQUEST || message.outgoing) return { ok: false, error: null };
     const reason = disabledReasonOf(message);
     if (reason === DM_ERROR.INVALID_INVOICE || reason === DM_ERROR.INVOICE_EXPIRED) {
       return failure(new DmError(reason, 'request cannot be paid'));
     }
-    const payer = payingWalletFor(message.request.amountSats, 'lightning');
+    const { request } = message;
+    let { bolt11 } = request;
+    if (request.lud16 && runtime.needsFreshInvoice(request)) {
+      const fresh = await guarded(id, () => runtime.refreshInvoice(partner(), id));
+      if (!fresh.ok) return fresh;
+      bolt11 = fresh.value.bolt11;
+    }
+    const payer = payingWalletFor(request.amountSats, 'lightning');
     pay.payInvoice(
-      { bolt11: message.request.bolt11, name: partnerName() },
+      { bolt11, name: partnerName() },
       {
         // An unusable pick is not forced on the wallet page: its own sheet explains and offers the others.
         walletId: payer?.usable ? payer.id : undefined,
@@ -627,6 +713,52 @@ export function useContactChat(options) {
       },
     );
     return { ok: true };
+  }
+
+  /**
+   * The request is over (its lifetime ended) but the payer wants to pay anyway:
+   * the ordinary send flow, with the amount and the note of the request filled
+   * in and the request named in the context, so the payment is announced as
+   * the payment of that request and marks it paid (paid wins over expired).
+   */
+  function sendAnyway(id) {
+    const message = messageById(id);
+    if (!message || message.type !== MESSAGE_TYPE.REQUEST || message.outgoing) return { ok: false, error: null };
+    const target = sendAnywayTarget(message);
+    if (!target) return { ok: false, error: null };
+    const { amountSats, note } = message.request;
+    const payer = payingWalletFor(amountSats, 'lightning');
+    const options = {
+      walletId: payer?.usable ? payer.id : undefined,
+      context: buildChatPaymentContext(partner(), message.id),
+      amountSats,
+      note: note || undefined,
+    };
+    if (target.kind === 'address') {
+      pay.payAddress({ address: target.address, addressType: 'lightning', name: partnerName() }, options);
+    } else {
+      pay.payContact(target.entry, options);
+    }
+    return { ok: true };
+  }
+
+  /** The user's own request is over: the same amount and note, one new request. */
+  function requestAgain(id) {
+    const message = messageById(id);
+    if (!message || message.type !== MESSAGE_TYPE.REQUEST || !message.outgoing) return Promise.resolve({ ok: false, error: null });
+    const { amountSats, note } = message.request;
+    return guarded(id, () => runtime.requestMoney(partner(), { amountSats, note: note || undefined }));
+  }
+
+  /**
+   * The payer cannot pay a request any more: what the page puts in the
+   * composer to ask for a new one.
+   * @returns {{ ok: boolean, value?: { amountSats: number, note: string } }}
+   */
+  function askNewRequest(id) {
+    const message = messageById(id);
+    if (!message || message.type !== MESSAGE_TYPE.REQUEST || message.outgoing) return { ok: false, error: null };
+    return { ok: true, value: { amountSats: message.request.amountSats, note: message.request.note || '' } };
   }
 
   /** Send money to the contact (their address, not an invoice). */
@@ -663,6 +795,9 @@ export function useContactChat(options) {
     remind,
     requestMoney,
     payRequest,
+    sendAnyway,
+    requestAgain,
+    askNewRequest,
     sendMoney,
     // for tests and the page
     messageById,

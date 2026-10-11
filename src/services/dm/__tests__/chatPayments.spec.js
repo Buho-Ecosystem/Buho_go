@@ -215,9 +215,9 @@ test('incoming transactions: settled incoming rows of every wallet, times in sec
     normalizeTx: (row) => ({ ...row }),
   });
   assert.deepEqual(result, [
-    { amountSats: 700, settledAt: 1_700_000_000, paymentHash: 'h1' },
-    { amountSats: 300, settledAt: 1_700_000_000, paymentHash: null },
-    { amountSats: 11, settledAt: 1_700_000_000, paymentHash: null },
+    { amountSats: 700, settledAt: 1_700_000_000, paymentHash: 'h1', walletId: 'a' },
+    { amountSats: 300, settledAt: 1_700_000_000, paymentHash: null, walletId: 'a' },
+    { amountSats: 11, settledAt: 1_700_000_000, paymentHash: null, walletId: 'b' },
   ]);
   assert.deepEqual(await loadIncomingTransactions({ wallets: undefined, getProvider: () => null, normalizeTx: () => ({}) }), []);
 });

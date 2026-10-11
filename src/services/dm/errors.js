@@ -48,6 +48,14 @@ export const DM_ERROR = Object.freeze({
   WALLET_CANNOT_INVOICE: 'WALLET_CANNOT_INVOICE',
   /** The chosen wallet cannot pay Lightning invoices. */
   WALLET_CANNOT_PAY: 'WALLET_CANNOT_PAY',
+  /**
+   * The requester's Lightning address (`lud16` of the request) did not hand out
+   * a usable fresh invoice: unreachable, an LNURL error, or an invoice that is
+   * not for exactly the requested amount. Next action: ask for a new request.
+   */
+  INVOICE_REFRESH_FAILED: 'INVOICE_REFRESH_FAILED',
+  /** The requested amount lies outside what the requester's Lightning address accepts (LUD-06 min/max). */
+  AMOUNT_OUT_OF_RANGE: 'AMOUNT_OUT_OF_RANGE',
 });
 
 /** @typedef {keyof typeof DM_ERROR} DmErrorCode */

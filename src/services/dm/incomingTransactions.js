@@ -45,7 +45,7 @@ export async function loadIncomingTransactions({ wallets, getProvider, normalize
         const settledAt = toSeconds(tx);
         const amountSats = tx.recipientSats || Math.abs(Number(tx.amount) || 0);
         if (settledAt === null || !Number.isSafeInteger(amountSats) || amountSats <= 0) continue;
-        found.push({ amountSats, settledAt, paymentHash: tx.paymentHash || null });
+        found.push({ amountSats, settledAt, paymentHash: tx.paymentHash || null, walletId: wallet.id });
       }
       return found;
     } catch {

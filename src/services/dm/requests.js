@@ -52,6 +52,13 @@ export const REQUEST_METHOD = Object.freeze({
 /** Lifetime asked of an invoice. Spark (`expirySecs`), LNbits and NWCWalletProvider take it; the WebLN provider cannot send one. */
 export const REQUEST_INVOICE_EXPIRY_SECONDS = 24 * 60 * 60;
 
+/**
+ * An invoice that runs out within this many seconds counts as expired when the
+ * payer taps Pay: confirming and sliding to send takes a while, and an invoice
+ * that dies in between would fail the payment at the worst moment.
+ */
+export const INVOICE_REFRESH_MARGIN_SECONDS = 60;
+
 /** Prefix of the LUD-12 comment that ties an LNURL invoice to a request. */
 export const REQUEST_COMMENT_PREFIX = 'buho:req:';
 
@@ -249,10 +256,33 @@ function validateIssuedInvoice(bolt11, amountSats, nowSec) {
 }
 
 /**
+ * Whether the payer needs a fresh invoice to pay this request: the invoice in
+ * it has expired or is about to (`INVOICE_REFRESH_MARGIN_SECONDS`).
+ *
+ * @param {{ expiresAt?: number, bolt11?: string }} request
+ * @param {number} nowSec Unix seconds.
+ */
+export function invoiceNeedsRefresh(request, nowSec) {
+  let expiresAt = request?.expiresAt;
+  if (!Number.isFinite(expiresAt)) {
+    try {
+      expiresAt = decodeBolt11(String(request?.bolt11 ?? '').trim()).expiresAt;
+    } catch {
+      return false; // an undecodable invoice is a different problem (INVALID_INVOICE)
+    }
+  }
+  return expiresAt <= nowSec + INVOICE_REFRESH_MARGIN_SECONDS;
+}
+
+/**
  * Payer side: may this wallet pay this request? Runs silently; the result only
  * ever shows as an error state on the card (docs section 2, rule 5).
  *
- * @param {{ bolt11: string, amountSats: number, expiresAt?: number }} request
+ * An expired invoice only blocks a request that names no `lud16`: with one,
+ * Pay pulls a fresh invoice from it (`pullInvoice`), so the old one expiring is
+ * not an obstacle (docs section 8a).
+ *
+ * @param {{ bolt11: string, amountSats: number, expiresAt?: number, lud16?: string | null }} request
  * @param {{ type: string } | null | undefined} wallet  The wallet that would pay.
  * @param {{ now?: number }} [options]  `now` in unix seconds (default: the clock).
  * @returns {{ ok: true } | { ok: false, reason: string }}  `reason` is `INVALID_INVOICE`,
@@ -275,7 +305,7 @@ export function checkPayable(request, wallet, { now = Math.floor(Date.now() / 10
   const expiresAt = Number.isFinite(request.expiresAt)
     ? Math.min(request.expiresAt, invoice.expiresAt)
     : invoice.expiresAt;
-  if (expiresAt <= now) return { ok: false, reason: DM_ERROR.INVOICE_EXPIRED };
+  if (expiresAt <= now && !request.lud16) return { ok: false, reason: DM_ERROR.INVOICE_EXPIRED };
   if (!wallet || !canWalletPay(wallet.type, 'lightning')) {
     return { ok: false, reason: DM_ERROR.WALLET_CANNOT_PAY };
   }
@@ -492,6 +522,63 @@ export function createRequestService({
     if (issued.verifyUrl) result.verifyUrl = issued.verifyUrl;
     if (settlementWalletId) result.settlementWalletId = settlementWalletId;
     return result;
+  }
+
+  /**
+   * Payer side: a fresh invoice for a request whose own invoice has expired,
+   * pulled from the requester's Lightning address (LNURL-pay) for exactly the
+   * requested amount. The address is the `lud16` INSIDE the request (it came
+   * through the authenticated seal), never one taken from contact data: a
+   * contact's saved address could have been edited or point elsewhere.
+   *
+   * Validated before it is handed on: the amount lies within the address's
+   * min/maxSendable, the invoice decodes, is mainnet, is for exactly
+   * `amountSats` and is not yet expired. When the server allows a comment
+   * (LUD-12) it carries `buho:req:<reference>`, the same tag as a requester's own
+   * LNURL invoices.
+   *
+   * @param {object} options
+   * @param {string} options.lud16 The request's Lightning address.
+   * @param {number} options.amountSats The requested amount, whole sats.
+   * @param {string} [options.reference] LUD-12 reference (default: random).
+   * @returns {Promise<{ bolt11: string, paymentHash: string, expiresAt: number }>}
+   * @throws {DmError} INVALID_ARGUMENT, AMOUNT_OUT_OF_RANGE, INVOICE_REFRESH_FAILED
+   */
+  async function pullInvoice({ lud16, amountSats, reference = randomReference() } = {}) {
+    if (!Number.isSafeInteger(amountSats) || amountSats <= 0) {
+      fail(DM_ERROR.INVALID_ARGUMENT, 'amountSats must be a positive integer');
+    }
+    let parsed;
+    try {
+      parsed = parseLightningAddress(lud16);
+    } catch (cause) {
+      return fail(DM_ERROR.INVOICE_REFRESH_FAILED, 'the request has no usable Lightning address', { cause });
+    }
+    const url = `https://${parsed.domain}/.well-known/lnurlp/${encodeURIComponent(parsed.name)}`;
+    let payRequest;
+    try {
+      payRequest = await lnurl.fetchPayRequest(url);
+    } catch (cause) {
+      return fail(DM_ERROR.INVOICE_REFRESH_FAILED, 'the Lightning address did not answer', { cause });
+    }
+    const amountMsat = amountSats * MSAT_PER_SAT;
+    if (!(amountMsat >= payRequest?.minSendable && amountMsat <= payRequest?.maxSendable)) {
+      fail(DM_ERROR.AMOUNT_OUT_OF_RANGE, 'the amount is outside what the Lightning address accepts');
+    }
+    let response;
+    try {
+      const comment = `${REQUEST_COMMENT_PREFIX}${reference}`;
+      const options = payRequest.commentAllowed >= comment.length ? { comment } : undefined;
+      response = await lnurl.requestInvoice(payRequest, amountMsat, options);
+    } catch (cause) {
+      return fail(DM_ERROR.INVOICE_REFRESH_FAILED, 'the Lightning address did not issue an invoice', { cause });
+    }
+    try {
+      const { bolt11, paymentHash, expiresAt } = validateIssuedInvoice(response?.pr, amountSats, nowSec());
+      return { bolt11, paymentHash, expiresAt };
+    } catch (cause) {
+      return fail(DM_ERROR.INVOICE_REFRESH_FAILED, 'the Lightning address issued an invalid invoice', { cause });
+    }
   }
 
   // ----- detecting ---------------------------------------------------------
@@ -718,6 +805,8 @@ export function createRequestService({
 
   return {
     createRequestInvoice,
+    pullInvoice,
+    invoiceNeedsRefresh: (request) => invoiceNeedsRefresh(request, nowSec()),
     watchRequest,
     reconcileRequests,
     pickReceivingWallet: (options) => pickReceivingWallet(wallets(), options),

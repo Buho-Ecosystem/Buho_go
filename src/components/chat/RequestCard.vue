@@ -3,10 +3,19 @@
   A payment request in the thread, from either side.
 
     Header   direction: "You requested" / "{name} requests"
-    Body     amount (+ optional fiat), note, "valid until"
-    Footer   state line, or the actions of YOUR side while it is pending:
-               payer      [Decline] [Pay]        (Pay is the one filled button)
-               requester  [Remind]  [Withdraw]
+    Body     amount (+ optional fiat), note, "valid until" (the REQUEST's
+             lifetime, 30 days; its invoice is replaced when it runs out)
+    Footer   state line, and the next action of YOUR side in every state that
+             has one (docs section 8a, there is no dead end):
+               pending, payer      [Decline] [Pay]    (Pay is the one filled button)
+               pending, payer, invoice expired and nowhere to get a new one
+                                   [Decline] [Ask for a new request]
+               pending, requester  [Remind]  [Withdraw]
+               expired, payer      [Send anyway]  (or [Ask for a new request]
+                                   when there is no address to send to)
+               expired, requester  [Request again]
+               paid                says where it arrived, or that it is only
+                                   reported by the payer (`paidVerified`)
 
   Honest states (nostrdesign.org: no silent failure):
     - disabledReason   Pay stays visible but is aria-disabled and says why
@@ -19,7 +28,8 @@
   There is NO "amount in invoice" row: invoice checks are silent and surface
   only as `disabledReason` / an expired state (product rule, docs section 2).
 
-  Presentational: events `pay`, `decline`, `remind`, `withdraw`.
+  Presentational: events `pay`, `decline`, `remind`, `withdraw`, `send-anyway`,
+  `request-again`, `ask-new`.
 -->
 <template>
   <section
@@ -40,14 +50,19 @@
 
     <p v-if="note" class="request-card__note">{{ note }}</p>
 
-    <p v-if="state === 'pending' && validUntil" class="request-card__meta">
+    <p v-if="state === 'pending' && validUntilText" class="request-card__meta">
       <Icon icon="tabler:clock" width="13" height="13" />
-      {{ $t('Valid until {when}', { when: validUntil }) }}
+      {{ $t('Valid until {when}', { when: validUntilText }) }}
     </p>
 
     <p v-if="stateLine" class="request-card__state" :class="`request-card__state--${stateTone}`">
       <Icon :icon="stateIcon" width="15" height="15" />
       {{ stateLine }}
+    </p>
+
+    <p v-if="receivedText" class="request-card__hint">
+      <Icon icon="tabler:wallet" width="14" height="14" />
+      {{ receivedText }}
     </p>
 
     <p v-if="unconfirmedText" class="request-card__hint">
@@ -65,7 +80,16 @@
         {{ $t('Decline') }}
       </button>
       <button
-        v-if="!payHidden"
+        v-if="payHidden"
+        type="button"
+        class="request-btn request-btn--outline"
+        :disabled="busy"
+        @click="$emit('ask-new')"
+      >
+        {{ $t('Ask for a new request') }}
+      </button>
+      <button
+        v-else
         type="button"
         class="request-btn"
         :class="untrusted ? 'request-btn--outline' : 'request-btn--pay'"
@@ -84,6 +108,31 @@
       </button>
       <button type="button" class="request-btn request-btn--quiet" :disabled="busy" @click="$emit('withdraw')">
         {{ $t('Withdraw') }}
+      </button>
+    </div>
+
+    <!-- The request ran out: the payer can still send the money, the requester can ask again. -->
+    <div v-else-if="state === 'expired'" class="request-card__actions request-card__actions--single">
+      <button
+        v-if="outgoing"
+        type="button"
+        class="request-btn request-btn--quiet"
+        :disabled="busy"
+        @click="$emit('request-again')"
+      >
+        {{ $t('Request again') }}
+      </button>
+      <button
+        v-else-if="canSendAnyway"
+        type="button"
+        class="request-btn request-btn--pay"
+        :disabled="busy"
+        @click="$emit('send-anyway')"
+      >
+        {{ $t('Send anyway') }}
+      </button>
+      <button v-else type="button" class="request-btn request-btn--quiet" :disabled="busy" @click="$emit('ask-new')">
+        {{ $t('Ask for a new request') }}
       </button>
     </div>
   </section>
@@ -112,8 +161,8 @@ export default {
     },
     /** Name of the other person, for "{name} requests". */
     partnerName: { type: String, default: '' },
-    /** Invoice expiry, unix seconds. */
-    expiresAt: { type: Number, default: null },
+    /** When the request itself stops being open (its lifetime, not its invoice's), unix seconds. */
+    validUntil: { type: Number, default: null },
     /** This wallet cannot detect the payment itself (Arkade, NWC without notifications). */
     unconfirmed: { type: Boolean, default: false },
     /**
@@ -122,6 +171,15 @@ export default {
      * or ready, translated text. Empty = can pay.
      */
     disabledReason: { type: String, default: '' },
+    /**
+     * Own request that is paid: did the user's own wallet show the money
+     * (true), or is it only what the payer says (false: "Reported paid, not verified")?
+     */
+    paidVerified: { type: Boolean, default: true },
+    /** Own request, paid and verified: name of the wallet it arrived in ("Received in {wallet}"). */
+    receivedIn: { type: String, default: '' },
+    /** Expired incoming request: there is an address to send the money to ("Send anyway"). */
+    canSendAnyway: { type: Boolean, default: true },
     /** A stranger sent this: no primary Pay, danger styling. */
     untrusted: { type: Boolean, default: false },
     /** An action is in flight: all buttons wait. */
@@ -129,7 +187,7 @@ export default {
     /** ₿ 1,234 (true) or 1,234 sats (false). */
     bip177: { type: Boolean, default: true }
   },
-  emits: ['pay', 'decline', 'remind', 'withdraw'],
+  emits: ['pay', 'decline', 'remind', 'withdraw', 'send-anyway', 'request-again', 'ask-new'],
   computed: {
     reasonId() { return `request-reason-${this.$.uid}` },
     amount() {
@@ -141,8 +199,8 @@ export default {
         ? this.$t('{name} requests', { name: this.partnerName })
         : this.$t('Payment request')
     },
-    validUntil() {
-      return this.expiresAt === null ? '' : formatWhen(this.expiresAt)
+    validUntilText() {
+      return this.validUntil === null ? '' : formatWhen(this.validUntil)
     },
     payBlocked() {
       return !!this.disabledReason
@@ -151,7 +209,7 @@ export default {
     reasonText() {
       return {
         INVALID_INVOICE: this.$t('This request is invalid and cannot be paid.'),
-        INVOICE_EXPIRED: this.$t('This request has expired.'),
+        INVOICE_EXPIRED: this.$t('The invoice has expired. Ask for a new request.'),
         WALLET_CANNOT_PAY: this.$t('This wallet cannot pay this request. Choose another wallet.')
       }[this.disabledReason] || this.disabledReason
     },
@@ -164,9 +222,8 @@ export default {
     },
     stateLine() {
       if (this.state === 'paid') {
-        return this.unconfirmed && this.outgoing
-          ? this.$t('Reported paid, not verified')
-          : this.$t('Paid')
+        if (this.outgoing && !this.paidVerified) return this.$t('Reported paid, not verified')
+        return this.$t('Paid')
       }
       return {
         declined: this.$t('Declined'),
@@ -184,6 +241,11 @@ export default {
         cancelled: 'tabler:arrow-back-up',
         expired: 'tabler:clock-off'
       }[this.state] || 'tabler:circle'
+    },
+    /** Where a verified payment of the user's own request arrived. */
+    receivedText() {
+      if (this.state !== 'paid' || !this.outgoing || !this.paidVerified || !this.receivedIn) return ''
+      return this.$t('Received in {wallet}', { wallet: this.receivedIn })
     },
     unconfirmedText() {
       if (!this.unconfirmed || !this.outgoing || this.state !== 'pending') return ''
@@ -294,6 +356,8 @@ export default {
 }
 /* Requester side: two equal quiet buttons. */
 .request-card__actions--even { grid-template-columns: 1fr 1fr; }
+/* An expired request has one way forward. */
+.request-card__actions--single { grid-template-columns: 1fr; }
 
 .request-btn {
   min-height: 44px;

@@ -71,7 +71,7 @@ export default boot(async () => {
     { createAppRuntimeFactory }, { createNotificationFormatter }, { publishChatRuntime, useChatRuntime },
     { createPaymentAnnouncer },
     { getRelayPool }, { formatAmount }, { i18n }, { readPersistedWalletState },
-    { visibilitySnapshot }, nostrCore,
+    { visibilitySnapshot }, nostrCore, { normalizeTx },
   ] = await Promise.all([
     import('../stores/identity.js'), import('../stores/messages.js'), import('../stores/wallet.js'),
     import('../stores/profile.js'), import('../stores/addressBook.js'), import('../stores/notifications.js'),
@@ -80,6 +80,7 @@ export default boot(async () => {
     import('../services/dm/paymentAnnouncer.js'),
     import('../utils/nostrRelays.js'), import('../utils/amountFormatting.js'), import('./i18n.js'),
     import('../utils/walletHydration.js'), import('../services/sparkLifecycleApp.js'), import('nostr-core'),
+    import('../services/txNormalizer.js'),
   ]);
 
   const identity = useIdentityStore();
@@ -98,6 +99,7 @@ export default boot(async () => {
   }, {
     getRelayPool,
     lnurl: nostrCore,
+    normalizeTx,
     isLocked: isAppLocked,
     // "Out of sight right now", including a native pause the DOM did not report.
     isHidden: () => visibilitySnapshot().hiddenNow,

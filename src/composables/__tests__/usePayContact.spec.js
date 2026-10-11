@@ -92,3 +92,27 @@ test('payInvoice: needs no contact address and ignores an empty invoice', () => 
   assert.equal(pushed.length, 1);
   assert.equal('contactName' in pushed[0].query, false);
 });
+
+test('payContact: a prefilled amount and note ride along as query parameters, invalid ones do not', () => {
+  const { pay, pushed, contact } = harness();
+  pay.payContact(contact, { amountSats: 25000, note: 'Pizza' });
+  pay.payContact(contact, { amountSats: -5, note: '' });
+  assert.equal(pushed[0].query.prefillAmount, '25000');
+  assert.equal(pushed[0].query.prefillNote, 'Pizza');
+  assert.equal('prefillAmount' in pushed[1].query, false);
+  assert.equal('prefillNote' in pushed[1].query, false);
+});
+
+test('payAddress: pays an address that is no saved contact, with wallet, context and prefill', () => {
+  const { pay, pushed } = harness();
+  pay.payAddress({ address: ' anna@x.org ', name: 'Anna' }, { walletId: 'lnb', context: 'chat:abc', amountSats: 100, note: 'Hi' });
+  pay.payAddress({ address: '  ' });
+  assert.equal(pushed.length, 1);
+  assert.deepEqual(pushed[0], {
+    path: '/wallet',
+    query: {
+      action: 'pay_contact', address: 'anna@x.org', addressType: 'lightning', contactName: 'Anna',
+      walletId: 'lnb', context: 'chat:abc', prefillAmount: '100', prefillNote: 'Hi',
+    },
+  });
+});

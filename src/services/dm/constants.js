@@ -103,6 +103,20 @@ export const MAX_TEXT_LENGTH = 2_000;
 export const MAX_NOTE_LENGTH = 200;
 
 /**
+ * How long a payment request stays open (30 days), counted from its
+ * `created_at`; sent as the request's `valid_until` tag.
+ *
+ * A request is an intent ("pay me for the pizza"), the invoice inside it only
+ * the current way to pay. Invoices live 24 hours (`REQUEST_INVOICE_EXPIRY_SECONDS`
+ * in requests.js), but people answer in days: ending the request with the
+ * invoice left both sides with an "Expired" card and no way forward. Thirty
+ * days outlasts a normal payday or weekend away yet stops an old, forgotten
+ * request from looking payable for ever. The payer fetches a fresh invoice
+ * from the request's `lud16` within this window (docs section 8a).
+ */
+export const REQUEST_LIFETIME_SECONDS = 30 * 24 * 60 * 60;
+
+/**
  * Largest rumor, as UTF-8 bytes of its JSON, that may be sealed and wrapped.
  *
  * NIP-44 encrypts at most 65,535 bytes of plaintext, but the limit that binds

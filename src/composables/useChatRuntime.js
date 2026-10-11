@@ -18,9 +18,9 @@ import { DM_ERROR, DmError } from '../services/dm/errors.js'
  *   chat.available.value          // false until an identity (and its runtime) exists
  *
  * Actions return promises and reject with a `DmError` (`NO_IDENTITY` when
- * there is no runtime). The two synchronous ones answer harmlessly without a
- * runtime: `requestState` gives `null`, `checkPayable` gives
- * `{ ok: false, reason: 'NO_IDENTITY' }`.
+ * there is no runtime). The synchronous ones answer harmlessly without a
+ * runtime: `requestState` and `requestSettlement` give `null`, `needsFreshInvoice`
+ * gives `false`, `checkPayable` gives `{ ok: false, reason: 'NO_IDENTITY' }`.
  *
  * The runtime's own contract: services/dm/runtime.js.
  */
@@ -56,12 +56,16 @@ const facade = Object.freeze({
   announcePayment: forward('announcePayment'),
   react: forward('react'),
   retry: forward('retry'),
+  refreshInvoice: forward('refreshInvoice'),
+  settleClaims: forward('settleClaims'),
   partnerReachability: forward('partnerReachability'),
 
   checkPayable: (request, walletId) => (
     current.value ? current.value.checkPayable(request, walletId) : { ok: false, reason: DM_ERROR.NO_IDENTITY }
   ),
+  needsFreshInvoice: request => (current.value ? current.value.needsFreshInvoice(request) : false),
   requestState: requestId => (current.value ? current.value.requestState(requestId) : null),
+  requestSettlement: requestId => (current.value ? current.value.requestSettlement(requestId) : null),
 })
 
 export function useChatRuntime() {

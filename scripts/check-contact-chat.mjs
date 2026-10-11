@@ -6,6 +6,8 @@
 //   - wallets are scripted at the wallet-store level (the way check-transfer-completion does);
 //     invoices come from a shared InvoiceLedger so Bob "paying" Alice's invoice is visible to her
 //   - all HTTP except the app itself, the price API stub and the icon CDN is aborted
+//   - Alice's Lightning address (alice@btc.mybuho.de) is served by LnurlServer: the payer's
+//     "pull a fresh invoice" and "Send anyway" paths go through it
 // Screenshots (light and dark per step, de/es/large text at the end): CONTACT_CHAT_OUTPUT.
 import { chromium } from '@playwright/test';
 import { finalizeEvent } from 'nostr-core';
@@ -15,7 +17,7 @@ import { deriveNostrIdentity } from '../src/utils/identityCrypto.js';
 import { DM_INBOX_RELAYS } from '../src/services/dm/constants.js';
 import { buildRequestTemplate, buildTextTemplate } from '../src/services/dm/protocol.js';
 import { sealAndWrap } from '../src/services/dm/giftWrap.js';
-import { InvoiceLedger, SimRelay } from './fixtures/contactChat.mjs';
+import { InvoiceLedger, LnurlServer, SimRelay } from './fixtures/contactChat.mjs';
 
 const base = process.env.CONTACT_CHAT_BASE_URL || 'http://localhost:9012';
 const output = process.env.CONTACT_CHAT_OUTPUT || 'output/contact-chat';
@@ -43,6 +45,8 @@ const profileOf = (who) => finalizeEvent(
 
 const relay = new SimRelay();
 const ledger = new InvoiceLedger();
+const ALICE_ADDRESS = 'alice@btc.mybuho.de';
+const lnurl = new LnurlServer({ ledger, domain: 'btc.mybuho.de', receivingWalletId: 'alice-spark' });
 
 // Wallets, described once and built inside the page (see `seedWallets`).
 const ALICE_WALLETS = [
@@ -93,6 +97,15 @@ async function launchUser(browser, who) {
       return route.fulfill({ contentType: 'application/json', body: '{"USD":85000,"EUR":78000}' });
     }
     if (url.origin === base || url.hostname === 'api.iconify.design') return route.continue();
+    if (lnurl.owns(url.hostname)) {
+      const { status, body } = lnurl.handle(url);
+      return route.fulfill({
+        status,
+        contentType: 'application/json',
+        headers: { 'access-control-allow-origin': '*' },
+        body: JSON.stringify(body),
+      });
+    }
     return route.abort();
   });
   await context.routeWebSocket(/.*/, (socket) => {
@@ -103,7 +116,14 @@ async function launchUser(browser, who) {
   });
 
   // The wallets' network edge: what the stubbed providers call (see `seedWallets`).
-  await context.exposeFunction('__e2eMintInvoice', (amountSats) => ledger.mint({ amountSats }));
+  await context.exposeFunction('__e2eMintInvoice', (amountSats) => ledger.mintForApp(amountSats));
+  // A Spark wallet paying a Lightning address resolves and pays it itself: here the LNURL server mints, the ledger pays.
+  await context.exposeFunction('__e2ePayAddress', (address, amountSats, comment) => {
+    const [name] = address.split('@');
+    const { bolt11 } = lnurl.issue({ name, amountSats, comment: comment || null });
+    return { bolt11, preimage: ledger.pay(bolt11) };
+  });
+  await context.exposeFunction('__e2eIncoming', (walletId) => lnurl.incomingFor(walletId));
   await context.exposeFunction('__e2eLookupInvoice', (hash) => ledger.lookup(hash));
   await context.exposeFunction('__e2ePayInvoice', (bolt11) => ledger.pay(bolt11));
 
@@ -119,18 +139,23 @@ async function launchUser(browser, who) {
 }
 
 /** Identity, address-book contacts and wallets, written through the app's own stores. */
-async function seedUser(actor, { contacts, wallets }) {
+async function seedUser(actor, { contacts, wallets, profileAddress = null }) {
   const { page, who } = actor;
   await page.goto(`${base}/#/address-book`);
   await page.locator('.add-contact-btn').waitFor();
-  await page.evaluate(async ({ mnemonic, contactData }) => {
+  await page.evaluate(async ({ mnemonic, contactData, address }) => {
     const { useIdentityStore } = await import('/src/stores/identity.js');
     const { useAddressBookStore } = await import('/src/stores/addressBook.js');
     await useIdentityStore().importMnemonic(mnemonic, true);
     const book = useAddressBookStore();
     await book.initialize();
     for (const contact of contactData) await book.addNostrContact({ ...contact, allowWithoutLightningAddress: true });
+    if (address) {
+      const { useProfileStore } = await import('/src/stores/profile.js');
+      useProfileStore().$patch({ lud16: address });
+    }
   }, {
+    address: profileAddress,
     mnemonic: who.mnemonic,
     contactData: contacts.map((c) => ({ pubkey: c.pubkey, npub: c.npub, event: profileOf(c) })),
   });
@@ -148,7 +173,7 @@ async function seedWallets({ page }, wallets) {
     const makeProvider = (spec) => ({
       isConnected: true,
       getBalance: async () => spec.balance,
-      getTransactions: async () => [],
+      getTransactions: async () => window.__e2eIncoming(spec.id),
       getSparkAddress: async () => `${spec.id}-spark-address`,
       createInvoice: async ({ amount }) => {
         const { bolt11, paymentHash } = await window.__e2eMintInvoice(amount);
@@ -157,6 +182,11 @@ async function seedWallets({ page }, wallets) {
       lookupInvoice: async (hash) => window.__e2eLookupInvoice(hash),
       onPaymentReceived: () => () => {},
       getLightningSendFeeEstimate: async () => 0,
+      payLightningAddress: async (address, amount, comment) => {
+        const { bolt11, preimage } = await window.__e2ePayAddress(address, amount, comment);
+        window.__e2ePayments = [...(window.__e2ePayments || []), { walletId: spec.id, invoice: bolt11, address, comment }];
+        return { id: `payment-${spec.id}`, preimage, status: 'completed', fee: 0 };
+      },
       payInvoice: async ({ invoice }) => {
         const preimage = await window.__e2ePayInvoice(invoice);
         window.__e2ePayments = [...(window.__e2ePayments || []), { walletId: spec.id, invoice }];
@@ -238,7 +268,7 @@ try {
 
   console.log('1. Start, inbox lists, open the chat');
   await step('both users start with each other as Nostr contact', async () => {
-    await seedUser(alice, { contacts: [BOB, DAVE], wallets: ALICE_WALLETS });
+    await seedUser(alice, { contacts: [BOB, DAVE], wallets: ALICE_WALLETS, profileAddress: ALICE_ADDRESS });
     await seedUser(bob, { contacts: [ALICE], wallets: BOB_WALLETS });
   });
 
@@ -338,6 +368,85 @@ try {
     await chatCard(alice.page, /^You requested.*Beer/).getByText('Paid', { exact: true }).waitFor();
     await openChatFromAddressBook(bob, 'Alice');
     await chatCard(bob.page, /^Alice requests.*Beer/).getByText('Paid', { exact: true }).waitFor();
+  });
+
+  console.log('3b. Request lifetime: an expired invoice does not end the request (docs 8a)');
+  await step('the 24 h invoice runs out; Bob taps Pay, a fresh invoice is pulled from Alice\'s address, both see Paid', async () => {
+    ledger.nextExpirySeconds = 6; // stands in for the 24 h of a real invoice
+    await requestMoney(alice.page, '500', 'Late coffee');
+    const card = chatCard(bob.page, /^Alice requests.*Late coffee/);
+    await card.waitFor();
+    await alice.page.waitForTimeout(7500);
+    await openChatFromAddressBook(bob, 'Alice');
+    assert.equal(await card.getByText('Expired', { exact: true }).count(), 0, 'the request outlives its invoice');
+    assert.equal(await chatCard(alice.page, /^You requested.*Late coffee/).getByText('Expired', { exact: true }).count(), 0);
+    await chatCard(alice.page, /^You requested.*Late coffee/).getByRole('button', { name: 'Withdraw' }).waitFor();
+    await snap(bob, '13-invoice-expired-still-payable');
+    assert.equal(lnurl.issued.length, 0);
+    await payRequestFromChat(bob, /^Alice requests.*Late coffee/);
+    assert.equal(lnurl.issued.length, 1, 'one fresh invoice was pulled');
+    assert.equal(lnurl.issued[0].amountSats, 500, 'for exactly the requested amount');
+    assert.match(lnurl.issued[0].comment ?? '', /^buho:req:/, 'tied to the request with the LUD-12 comment');
+    await confirmPayment(bob.page);
+    await expectPaidFrom(bob, 'bob-spark', 3);
+    assert.equal((await bob.page.evaluate(() => window.__e2ePayments)).at(-1).invoice, lnurl.issued[0].bolt11, 'the pulled invoice was paid');
+    await openChatFromAddressBook(bob, 'Alice');
+    await chatCard(bob.page, /^Alice requests.*Late coffee/).getByText('Paid', { exact: true }).waitFor();
+    const own = chatCard(alice.page, /^You requested.*Late coffee/);
+    await own.getByText('Paid', { exact: true }).waitFor();
+    await own.getByText('Received in Business').waitFor();
+    assert.equal(await own.getByText('Reported paid, not verified').count(), 0);
+    await snap(alice, '14-late-payment-verified');
+  });
+
+  await step('a request past its lifetime: Alice sees "Request again", Bob "Send anyway"', async () => {
+    const past = Math.floor(Date.now() / 1000) - 40 * 24 * 3600;
+    const old = ledger.mint({ amountSats: 1000, now: past });
+    const template = buildRequestTemplate({
+      recipient: BOB.pubkey, amountSats: 1000, bolt11: old.bolt11, note: 'Old pizza', lud16: ALICE_ADDRESS, now: () => past,
+    });
+    const { wraps } = sealAndWrap({ template, senderSecretKey: ALICE.secretKey, recipients: [BOB.pubkey], selfCopy: true });
+    for (const { event } of wraps) relay.inject(event);
+    const ownCard = chatCard(alice.page, /^You requested.*Old pizza/);
+    const theirs = chatCard(bob.page, /^Alice requests.*Old pizza/);
+    await ownCard.waitFor();
+    await theirs.waitFor();
+    await ownCard.getByText('Expired', { exact: true }).waitFor();
+    await theirs.getByText('Expired', { exact: true }).waitFor();
+    await ownCard.getByRole('button', { name: 'Request again' }).waitFor();
+    await theirs.getByRole('button', { name: 'Send anyway' }).waitFor();
+    assert.equal(await theirs.getByRole('button', { name: 'Pay', exact: true }).count(), 0);
+    await theirs.scrollIntoViewIfNeeded();
+    await snap(bob, '15-request-expired-send-anyway');
+    await ownCard.scrollIntoViewIfNeeded();
+    await snap(alice, '16-request-expired-request-again');
+  });
+
+  await step('Alice taps "Request again"; one new pending request with the same amount and note', async () => {
+    await chatCard(alice.page, /^You requested.*Old pizza/).filter({ hasText: 'Expired' }).getByRole('button', { name: 'Request again' }).click();
+    const fresh = chatCard(alice.page, /^You requested.*Old pizza/).filter({ has: alice.page.getByRole('button', { name: 'Withdraw' }) });
+    await fresh.waitFor();
+    assert.match(await fresh.innerText(), /1[.,]000/);
+    await chatCard(bob.page, /^Alice requests.*Old pizza/).filter({ has: bob.page.getByRole('button', { name: 'Pay', exact: true }) }).waitFor();
+    // Leave the new one as it is; it is withdrawn so that it does not confuse the rest of the run.
+    await fresh.getByRole('button', { name: 'Withdraw' }).click();
+    await chatCard(alice.page, /^You requested.*Old pizza/).filter({ hasText: 'Withdrawn' }).waitFor();
+  });
+
+  await step('Bob taps "Send anyway": the send flow with amount and note, linked to the request; both see Paid', async () => {
+    await chatCard(bob.page, /^Alice requests.*Old pizza/).filter({ hasText: 'Expired' }).getByRole('button', { name: 'Send anyway' }).click();
+    await bob.page.getByText('Pay with', { exact: true }).waitFor();
+    await snap(bob, '17-send-anyway-prefilled');
+    await confirmPayment(bob.page);
+    await expectPaidFrom(bob, 'bob-spark', 4);
+    assert.equal(lnurl.issued.at(-1).amountSats, 1000, 'the amount of the request was prefilled');
+    assert.equal(lnurl.issued.at(-1).comment, 'Old pizza', 'and its note');
+    await openChatFromAddressBook(bob, 'Alice');
+    const paid = chatCard(bob.page, /^Alice requests.*Old pizza/).filter({ hasText: 'Paid' });
+    await paid.waitFor();
+    const own = chatCard(alice.page, /^You requested.*Old pizza/).filter({ hasText: 'Paid' });
+    await own.getByText('Received in Business').waitFor();
+    await snap(alice, '18-send-anyway-paid');
   });
 
   console.log('4. Payments only');

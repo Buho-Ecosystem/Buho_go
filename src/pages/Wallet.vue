@@ -1856,8 +1856,13 @@ export default {
           minSats: Math.ceil(p.minSendable / 1000),
           maxSats: Math.floor(p.maxSendable / 1000)
         };
+        // A payment made for a request arrives with its amount (the sender
+        // still confirms it); outside the range it would only mislead.
+        const wanted = p.prefill?.amountSats;
+        if (wanted >= amount.minSats && wanted <= amount.maxSats) amount.defaultAmount = wanted;
       } else {
         amount = { mode: 'free' };
+        if (p.prefill?.amountSats > 0) amount.defaultAmount = p.prefill.amountSats;
       }
 
       // ── Payout currency (LUD-21 currency extension #207) ──────
@@ -1927,6 +1932,7 @@ export default {
         description: (walletBrand || nostrPubkey || p.description === recipient.name) ? '' : (p.description || p.defaultDescription || (bv && bv.description) || ''),
         commentAllowed: !!p.commentAllowed,
         commentMaxLength: p.commentAllowed || 100,
+        ...(p.prefill?.note ? { defaultComment: p.prefill.note } : {}),
         // Merchant-driven extras — countdown, ZAR fallback, stale rates.
         // The sheet hides each of these when the corresponding field is
         // absent, so we can wire them unconditionally here.
@@ -2861,9 +2867,11 @@ export default {
      * `addressType: 'invoice'` pays a BOLT-11 invoice handed over as `address`
      * (a payment request from the contact chat). `context` is an opaque string
      * of the caller; it is returned unchanged in the `payment:sent` event once
-     * the payment succeeded (see `emitPaymentSent`).
+     * the payment succeeded (see `emitPaymentSent`). `prefill` ({ amountSats,
+     * note }) fills the confirm sheet for a payment made for a request that has
+     * no invoice any more; the sender still reviews and confirms it.
      */
-    payContactDestination({ address, addressType, name, sendingWalletId = null, context = null, contactId = null }) {
+    payContactDestination({ address, addressType, name, sendingWalletId = null, context = null, contactId = null, prefill = null }) {
       if (!address) return;
       if (offerAddressRequest(address, { t: this.$t.bind(this), paymentOnly: true })) return;
       const payerId = this.chooseSendingWalletId(addressType, sendingWalletId);
@@ -2891,6 +2899,7 @@ export default {
         paymentOnly: true,
         sendingWalletId: payerId,
         ...(context ? { paymentContext: context } : {}),
+        ...(prefill ? { prefill } : {}),
         // Only an invoice needs it, and only a contact that exists is kept.
         ...(addressType === 'invoice' && contactId && this.addressBookStore.getEntryById(contactId)
           ? { paymentContactId: contactId } : {}),
@@ -3166,6 +3175,12 @@ export default {
       // Opaque caller context, handed back in `payment:sent`. A repeated
       // param is ignored, like walletId.
       const context = isPayContact && typeof query.context === 'string' && query.context ? query.context : null;
+      // Amount and note to fill into the confirm sheet (Send anyway on an
+      // expired chat request). Only a clean positive integer counts.
+      const prefillSats = isPayContact && typeof query.prefillAmount === 'string' && /^[1-9][0-9]{0,14}$/.test(query.prefillAmount)
+        ? Number(query.prefillAmount) : null;
+      const prefillNote = isPayContact && typeof query.prefillNote === 'string' ? query.prefillNote : '';
+      const prefill = prefillSats || prefillNote ? { amountSats: prefillSats, note: prefillNote } : null;
       // Address-book id of the contact an invoice is paid to (a chat request).
       const contactId = isPayContact && query.addressType === 'invoice'
         && typeof query.contactId === 'string' && query.contactId ? query.contactId : null;
@@ -3184,6 +3199,7 @@ export default {
             sendingWalletId: walletId,
             ...(context ? { context } : {}),
             ...(contactId ? { contactId } : {}),
+            ...(prefill ? { prefill } : {}),
           });
 
           // Clear query params

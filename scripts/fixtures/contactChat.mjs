@@ -169,6 +169,16 @@ export class InvoiceLedger {
     this._counter = 0;
   }
 
+  /** Expiry of the NEXT invoice minted through the app's wallet stub only (consumed by `mintForApp`). */
+  nextExpirySeconds = null;
+
+  /** What the stubbed wallets call: honours (and clears) `nextExpirySeconds`. */
+  mintForApp(amountSats) {
+    const expirySeconds = this.nextExpirySeconds ?? 3600;
+    this.nextExpirySeconds = null;
+    return this.mint({ amountSats, expirySeconds });
+  }
+
   mint({ amountSats, expirySeconds = 3600, now = Math.floor(Date.now() / 1000) }) {
     const preimage = Buffer.alloc(32);
     preimage.writeUInt32BE(++this._counter, 28);
@@ -194,12 +204,105 @@ export class InvoiceLedger {
   pay(bolt11) {
     const entry = this.byInvoice(bolt11);
     if (!entry) return null;
-    this._byHash.get(entry.hash).paid = true;
+    const stored = this._byHash.get(entry.hash);
+    stored.paid = true;
+    stored.paidAt = Math.floor(Date.now() / 1000);
     return entry.preimage;
   }
 
   lookup(paymentHash) {
     const entry = this._byHash.get(paymentHash);
     return entry ? { paid: entry.paid, preimage: entry.paid ? entry.preimage : null } : { paid: false, preimage: null };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// LNURL-pay server behind a Lightning address
+// ---------------------------------------------------------------------------
+
+/**
+ * The LNURL-pay endpoint of one domain (Alice's `alice@btc.mybuho.de`): the pay request, and
+ * the callback that mints an invoice from the shared ledger for exactly the asked amount.
+ * Every invoice it issues is remembered with the comment it was asked with, and the receiving
+ * wallet's history (`incomingFor`) lists those that have been paid, so Alice's stubbed wallet
+ * can show the payment she did not expect on her original invoice.
+ */
+export class LnurlServer {
+  constructor({ ledger, domain, receivingWalletId, minSendable = 1_000, maxSendable = 100_000_000_000 }) {
+    this.ledger = ledger;
+    this.domain = domain;
+    this.receivingWalletId = receivingWalletId;
+    this.minSendable = minSendable;
+    this.maxSendable = maxSendable;
+    /** Invoices handed out: { name, amountSats, comment, bolt11, paymentHash }. */
+    this.issued = [];
+    /** Pay requests served (the well-known lookups), for assertions. */
+    this.lookups = [];
+    /** Set to an LNURL error reason to make the next callback fail once. */
+    this.failNext = null;
+  }
+
+  owns(hostname) {
+    return hostname === this.domain;
+  }
+
+  /** @returns {{ status: number, body: object }} */
+  handle(url) {
+    const known = url.pathname.match(/^\/\.well-known\/lnurlp\/([^/]+)$/);
+    if (known) {
+      this.lookups.push(known[1]);
+      return {
+        status: 200,
+        body: {
+          tag: 'payRequest',
+          callback: `https://${this.domain}/lnurlp/callback/${known[1]}`,
+          minSendable: this.minSendable,
+          maxSendable: this.maxSendable,
+          metadata: JSON.stringify([['text/plain', `Pay ${known[1]}`]]),
+          commentAllowed: 255,
+        },
+      };
+    }
+    const callback = url.pathname.match(/^\/lnurlp\/callback\/([^/]+)$/);
+    if (callback) {
+      if (this.failNext) {
+        const reason = this.failNext;
+        this.failNext = null;
+        return { status: 200, body: { status: 'ERROR', reason } };
+      }
+      const amountMsat = Number(url.searchParams.get('amount'));
+      if (!Number.isSafeInteger(amountMsat) || amountMsat < this.minSendable || amountMsat > this.maxSendable) {
+        return { status: 200, body: { status: 'ERROR', reason: 'Amount out of range' } };
+      }
+      const { bolt11 } = this.issue({ name: callback[1], amountSats: Math.floor(amountMsat / 1000), comment: url.searchParams.get('comment') });
+      return { status: 200, body: { pr: bolt11, routes: [] } };
+    }
+    return { status: 404, body: { status: 'ERROR', reason: 'not found' } };
+  }
+
+  /** Mint and remember one invoice (the callback, or a wallet that pays an address directly). */
+  issue({ name, amountSats, comment = null }) {
+    const { bolt11, paymentHash } = this.ledger.mint({ amountSats });
+    this.issued.push({ name, amountSats, comment, bolt11, paymentHash });
+    return { bolt11, paymentHash };
+  }
+
+  /** The paid invoices as the receiving wallet's history rows (what Alice's Spark SDK would list). */
+  incomingFor(walletId) {
+    if (walletId !== this.receivingWalletId) return [];
+    return this.issued.flatMap((entry) => {
+      const found = this.ledger.byInvoice(entry.bolt11);
+      if (!found?.paid) return [];
+      return [{
+        id: `lnurl-${entry.paymentHash.slice(0, 8)}`,
+        type: 'incoming',
+        amount: entry.amountSats,
+        fee: 0,
+        status: 'completed',
+        settled_at: found.paidAt,
+        paymentHash: entry.paymentHash,
+        description: entry.comment || '',
+      }];
+    });
   }
 }

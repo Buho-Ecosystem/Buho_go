@@ -118,6 +118,9 @@
         @decline-request="onDecline"
         @remind-request="onRemind"
         @withdraw-request="onWithdraw"
+        @send-anyway-request="onSendAnyway"
+        @request-again="onRequestAgain"
+        @ask-new-request="onAskNew"
         @open-payment="openProfile"
       >
         <template #header>
@@ -338,6 +341,10 @@ export default {
         getProvider: (id) => walletStore.providers?.[id],
         normalizeTx,
       }),
+      walletNameOf: (walletId) => {
+        const wallet = (walletStore.wallets || []).find((entry) => entry.id === walletId)
+        return wallet?.name || ''
+      },
       t,
       formatFiat,
     })
@@ -656,8 +663,46 @@ export default {
       this.requestError = result.error?.message || ''
     },
 
-    onPayRequest({ id }) {
-      this.report(this.chat.payRequest(id))
+    async onPayRequest({ id }) {
+      const result = await this.chat.payRequest(id)
+      if (result?.ok || result?.error?.next !== 'ask-new') {
+        this.report(result)
+        return
+      }
+      // Paying cannot work (no fresh invoice to be had): say so and offer the way forward.
+      this.$q.notify({
+        type: 'negative',
+        message: result.error.message,
+        timeout: TOAST_ERROR_MS,
+        actions: [{
+          label: this.t('Ask for a new request'),
+          color: 'white',
+          handler: () => this.onAskNew({ id }),
+        }],
+      })
+    },
+
+    /** The request is over; the money goes through the ordinary send flow, linked to the request. */
+    onSendAnyway({ id }) {
+      this.report(this.chat.sendAnyway(id))
+    },
+
+    /** One tap: the same amount and note as a new request. */
+    async onRequestAgain({ id }) {
+      this.report(await this.chat.requestAgain(id))
+    },
+
+    /** The payer cannot pay this request any more: a message to the requester is prepared, not sent. */
+    onAskNew({ id }) {
+      const result = this.chat.askNewRequest(id)
+      if (!result.ok) return
+      const { amountSats, note } = result.value
+      const amount = formatAmount(amountSats, this.bip177)
+      this.draft = note
+        ? this.t('Could you send me a new payment request for {amount} ({note})?', { amount, note })
+        : this.t('Could you send me a new payment request for {amount}?', { amount })
+      this.mode = 'text'
+      this.$nextTick(() => this.$refs.composer?.focus?.())
     },
 
     async onDecline({ id }) {

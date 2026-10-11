@@ -28,6 +28,7 @@ import {
   MAX_NOTE_LENGTH,
   MAX_TEXT_LENGTH,
   PROTOCOL_VERSION,
+  REQUEST_LIFETIME_SECONDS,
 } from './constants.js';
 import { DM_ERROR, DmError } from './errors.js';
 
@@ -163,6 +164,22 @@ function normalizeLud16(address) {
   return address;
 }
 
+/** A `valid_until` in unix seconds: absent becomes null (a request from a client that does not send it). */
+function normalizeValidUntil(seconds) {
+  if (seconds === undefined || seconds === null) return null;
+  if (!Number.isSafeInteger(seconds) || seconds <= 0) {
+    fail(DM_ERROR.INVALID_ARGUMENT, 'valid_until must be a unix timestamp in seconds');
+  }
+  return seconds;
+}
+
+/** Inverse for the tag: a plain decimal string of seconds, or an error. */
+function validUntilFromTag(tagValue) {
+  if (tagValue === undefined) return undefined;
+  if (!/^[1-9][0-9]{0,15}$/.test(tagValue)) fail(DM_ERROR.INVALID_ARGUMENT, 'valid_until tag must be unix seconds');
+  return Number(tagValue);
+}
+
 /**
  * The invoice checks of docs section 4: it decodes, it is a mainnet invoice and
  * its amount equals the requested amount to the msat (a zero-amount invoice has
@@ -193,7 +210,7 @@ function checkInvoice(bolt11, amountSats) {
 }
 
 /** The payload of a payment request, validated and normalised. */
-function normalizeRequest({ amountSats, bolt11, note, lud16 }) {
+function normalizeRequest({ amountSats, bolt11, note, lud16, validUntil }) {
   const sats = requireSats(amountSats);
   const invoice = checkInvoice(bolt11, sats);
   return {
@@ -203,6 +220,7 @@ function normalizeRequest({ amountSats, bolt11, note, lud16 }) {
     paymentHash: invoice.paymentHash,
     lud16: normalizeLud16(lud16),
     expiresAt: invoice.expiresAt,
+    validUntil: normalizeValidUntil(validUntil),
   };
 }
 
@@ -329,14 +347,22 @@ export function buildTextTemplate({ recipient, text, replyTo, now = unixNow } = 
  * @param {number} options.amountSats Positive safe integer; sent as msat.
  * @param {string} options.bolt11 The invoice the contact pays.
  * @param {string} [options.note] At most `MAX_NOTE_LENGTH` code points.
- * @param {string} [options.lud16] Lightning address of the requester.
+ * @param {string} [options.lud16] Lightning address of the requester. It is how
+ *   the payer gets a fresh invoice once this one has expired (docs section 8a).
+ * @param {number} [options.validUntil] Unix seconds the request itself stays
+ *   open; defaults to `created_at` + `REQUEST_LIFETIME_SECONDS`.
  * @param {() => number} [options.now] Clock in unix seconds.
  * @returns {EventTemplate}
  * @throws {DmError} `INVALID_ARGUMENT`, `MESSAGE_TOO_LARGE` or `INVALID_INVOICE`.
  */
-export function buildRequestTemplate({ recipient, amountSats, bolt11, note, lud16, now = unixNow } = {}) {
+export function buildRequestTemplate({ recipient, amountSats, bolt11, note, lud16, validUntil, now = unixNow } = {}) {
   const { to, createdAt } = begin(recipient, now);
-  const request = normalizeRequest({ amountSats, bolt11, note, lud16 });
+  const request = normalizeRequest({
+    amountSats, bolt11, note, lud16, validUntil: validUntil ?? createdAt + REQUEST_LIFETIME_SECONDS,
+  });
+  if (request.validUntil <= createdAt) {
+    fail(DM_ERROR.INVALID_ARGUMENT, 'valid_until must lie after the request was created');
+  }
   const tags = [
     ['p', to],
     ['buho', MESSAGE_TYPE.REQUEST, PROTOCOL_VERSION],
@@ -345,6 +371,7 @@ export function buildRequestTemplate({ recipient, amountSats, bolt11, note, lud1
   ];
   if (request.note) tags.push(['note', request.note]);
   if (request.lud16) tags.push(['lud16', request.lud16]);
+  tags.push(['valid_until', String(request.validUntil)]);
   const content =
     `\u{1F4B8} Payment request: ${formatSats(request.amountSats)} sats${noteSuffix(request.note)}` +
     `\nlightning:${request.bolt11}`;
@@ -445,6 +472,33 @@ export function buildReactionTemplate({ recipient, targetId, emoji, now = unixNo
 }
 
 // ---------------------------------------------------------------------------
+// Request lifetime
+// ---------------------------------------------------------------------------
+
+/**
+ * When a payment request stops being open, in unix seconds (docs section 8a).
+ * The request's lifetime, not its invoice's: an expired invoice does not end
+ * the request, because the payer can pull a fresh one from the request's `lud16`.
+ *
+ * - `valid_until` when the sender gave one (BuhoGO: created_at + 30 days).
+ * - Otherwise (other clients, messages stored before the tag existed) the
+ *   same 30 days from `created_at` if the request names a `lud16`, because
+ *   then a fresh invoice can be had; without one, the invoice expiry is all
+ *   there is.
+ *
+ * @param {{ createdAt: number, request: { validUntil?: number | null, lud16?: string | null,
+ *   expiresAt?: number } | null }} message A parsed (or stored) request message.
+ * @returns {number | null} Null when it cannot be told (not a request).
+ */
+export function requestLifetimeEnd(message) {
+  const request = message?.request;
+  if (!request) return null;
+  if (Number.isSafeInteger(request.validUntil)) return request.validUntil;
+  if (request.lud16 && Number.isSafeInteger(message.createdAt)) return message.createdAt + REQUEST_LIFETIME_SECONDS;
+  return Number.isFinite(request.expiresAt) ? request.expiresAt : null;
+}
+
+// ---------------------------------------------------------------------------
 // Parser
 // ---------------------------------------------------------------------------
 
@@ -502,12 +556,20 @@ function resolvePartner(rumor, me) {
   return members.size === 0 ? rumor.pubkey : null;
 }
 
+/** A request whose `valid_until` is not after its own creation was never open: invalid. */
+function requireLiveWindow(request, createdAt) {
+  if (request.validUntil !== null && request.validUntil <= createdAt) {
+    fail(DM_ERROR.INVALID_ARGUMENT, 'valid_until must lie after the request was created');
+  }
+  return request;
+}
+
 /**
  * Read the `buho` payload of a kind 14 rumor with the builders' validators.
  * Returns null when the rumor has no `buho` tag (a plain message) and throws a
  * DmError for anything unknown or invalid.
  */
-function readBuhoPayload(tags) {
+function readBuhoPayload(tags, createdAt) {
   const buhoTags = tags.filter((tag) => tag[0] === 'buho');
   if (buhoTags.length === 0) return null;
   if (buhoTags.length > 1) fail(DM_ERROR.INVALID_ARGUMENT, 'more than one buho tag');
@@ -521,12 +583,13 @@ function readBuhoPayload(tags) {
       if (tag.length !== 3) fail(DM_ERROR.INVALID_ARGUMENT, 'malformed buho tag');
       return {
         type: MESSAGE_TYPE.REQUEST,
-        request: normalizeRequest({
+        request: requireLiveWindow(normalizeRequest({
           amountSats: msatTagToSats(singleTagValue(tags, 'amount')),
           bolt11: singleTagValue(tags, 'bolt11'),
           note: singleTagValue(tags, 'note'),
           lud16: singleTagValue(tags, 'lud16'),
-        }),
+          validUntil: validUntilFromTag(singleTagValue(tags, 'valid_until')),
+        }), createdAt),
       };
     case MESSAGE_TYPE.STATUS:
       if (tag.length !== 4) fail(DM_ERROR.INVALID_ARGUMENT, 'malformed buho tag');
@@ -567,7 +630,7 @@ function readBuhoPayload(tags) {
  * @property {string} text Display text; the fallback content for typed and degraded messages.
  * @property {string | null} replyTo Rumor id answered, or null.
  * @property {{ amountSats: number, note: string | null, bolt11: string, paymentHash: string,
- *   lud16: string | null, expiresAt: number } | null} request
+ *   lud16: string | null, expiresAt: number, validUntil: number | null } | null} request
  * @property {{ requestId: string, value: string, preimage: string | null } | null} status
  * @property {{ amountSats: number, note: string | null, preimage: string | null, requestId: string | null } | null} payment
  * @property {{ targetId: string, emoji: string } | null} reaction
@@ -622,7 +685,7 @@ export function parseRumor(rumor, context) {
 
   message.replyTo = replyTarget(rumor.tags);
   try {
-    const payload = readBuhoPayload(rumor.tags);
+    const payload = readBuhoPayload(rumor.tags, rumor.created_at);
     if (payload) Object.assign(message, payload);
   } catch {
     message.degraded = true;

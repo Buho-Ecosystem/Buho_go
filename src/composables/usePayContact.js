@@ -25,13 +25,18 @@ const RESYNC_COOLDOWN_MS = 60 * 1000;
  *   once the payment succeeded (the contact chat uses it to announce the payment).
  * @property {string} [contactId]  Address-book id the payment belongs to. Only an invoice
  *   needs it (it carries no address to find the contact by).
+ * @property {number} [amountSats]  Amount to fill into the confirm sheet (the user still confirms it).
+ *   Used when a payment is made for a request that has no invoice any more.
+ * @property {string} [note]  Note to fill into the confirm sheet, where the recipient accepts one.
  */
 
 /** The optional query parameters of a hand-over. Empty values are left out. */
-function extraQuery({ walletId, context } = {}) {
+function extraQuery({ walletId, context, amountSats, note } = {}) {
   return {
     ...(typeof walletId === 'string' && walletId ? { walletId } : {}),
     ...(typeof context === 'string' && context ? { context } : {}),
+    ...(Number.isSafeInteger(amountSats) && amountSats > 0 ? { prefillAmount: String(amountSats) } : {}),
+    ...(typeof note === 'string' && note ? { prefillNote: note } : {}),
   };
 }
 
@@ -40,6 +45,7 @@ function extraQuery({ walletId, context } = {}) {
  * @returns {{
  *   payContact: (contact: object, options?: PayOptions) => void,
  *   payInvoice: (invoice: { bolt11: string, name?: string }, options?: PayOptions) => void,
+ *   payAddress: (target: { address: string, addressType?: string, name?: string }, options?: PayOptions) => void,
  * }}
  */
 export function usePayContact(ctx) {
@@ -130,5 +136,24 @@ export function usePayContact(ctx) {
     });
   }
 
-  return { payContact, payInvoice };
+  /**
+   * Pay an address that is not (or not yet) a saved contact's: the Lightning
+   * address a payment request names. Same pipeline and capability gate as
+   * `payContact`, without its contact-only guards and bookkeeping.
+   */
+  function payAddress({ address, addressType = 'lightning', name = '' } = {}, options = {}) {
+    if (typeof address !== 'string' || !address.trim()) return;
+    ctx.$router.push({
+      path: '/wallet',
+      query: {
+        action: 'pay_contact',
+        address: address.trim(),
+        addressType,
+        ...(name ? { contactName: name } : {}),
+        ...extraQuery(options),
+      },
+    });
+  }
+
+  return { payContact, payInvoice, payAddress };
 }

@@ -443,6 +443,29 @@ test('a status for a request in another thread does not apply', async () => {
   assert.equal(store.requestStatus(req.id, 1500), REQUEST_STATE.PENDING)
 })
 
+test('a request ends with its lifetime (valid_until), not with its invoice; paid wins over expired', async () => {
+  const store = await scoped()
+  const base = { amountSats: 1000, note: null, bolt11: 'lnbc1', paymentHash: hex('c'), lud16: 'bob@x.org', expiresAt: 2000 }
+  const tagged = IN({ createdAt: 1000, request: { ...base, validUntil: 9000 } })
+  const legacyAddress = IN({ createdAt: 1001, request: { ...base } })
+  const legacyBare = IN({ createdAt: 1002, request: { ...base, lud16: null } })
+  const late = IN({ createdAt: 1003, request: { ...base, validUntil: 3000 } })
+  for (const m of [tagged, legacyAddress, legacyBare, late]) store.ingest(m)
+  // the invoices are over at 2001: only the request without a way to a new invoice expires
+  assert.equal(store.requestStatus(tagged.id, 2500), REQUEST_STATE.PENDING)
+  assert.equal(store.requestStatus(legacyAddress.id, 2500), REQUEST_STATE.PENDING)
+  assert.equal(store.requestStatus(legacyBare.id, 2500), REQUEST_STATE.EXPIRED)
+  assert.equal(store.requestStatus(tagged.id, 9000), REQUEST_STATE.PENDING)
+  assert.equal(store.requestStatus(tagged.id, 9001), REQUEST_STATE.EXPIRED)
+  assert.equal(store.requestStatus(legacyAddress.id, 1001 + 30 * 86400 + 1), REQUEST_STATE.EXPIRED)
+  // a payment after the lifetime still turns it paid; declined stays declined
+  assert.equal(store.requestStatus(late.id, 4000), REQUEST_STATE.EXPIRED)
+  store.ingest(statusMsg(ALICE, late.id, 'paid', { outgoing: true, createdAt: 3500 }))
+  assert.equal(store.requestStatus(late.id, 4000), REQUEST_STATE.PAID)
+  store.ingest(statusMsg(ALICE, tagged.id, 'declined', { outgoing: true, createdAt: 1500 }))
+  assert.equal(store.requestStatus(tagged.id, 9999), REQUEST_STATE.DECLINED)
+})
+
 test('pendingRequestsFrom lists only open incoming requests', async () => {
   const store = await scoped()
   const open = IN({ createdAt: 1000 })

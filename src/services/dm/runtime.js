@@ -34,7 +34,12 @@
  *      transaction is linked to the contact, and a `paid` status message goes
  *      to the partner. The store only derives `paid` from the PAYER's status,
  *      so the requester's own certainty lives in the source record and is
- *      read through `requestState(id)`.
+ *      read through `requestState(id)` / `requestSettlement(id)`.
+ *   4. The invoice watcher ends with the 24 h invoice, the request does not
+ *      (docs section 8a). A payment that comes later (the payer pulled a
+ *      fresh invoice with `refreshInvoice`, or sent money anyway) is announced
+ *      by the payer; `settleClaims` checks that announcement against the
+ *      user's own wallet ledger and only then records the request as paid.
  */
 
 import { nip19 } from 'nostr-core';
@@ -43,6 +48,7 @@ import { DM_DISCOVERY_RELAYS } from './constants.js';
 import { DM_ERROR, DmError } from './errors.js';
 import { createInbox, createSignAuth } from './inbox.js';
 import { INBOX_STATUS, createInboxRelayResolver } from './inboxRelays.js';
+import { matchIncomingPayments } from './paymentConfirmation.js';
 import {
   MESSAGE_TYPE,
   REQUEST_STATUS,
@@ -91,9 +97,20 @@ export const CHAT_ACTIONS = Object.freeze([
   'react',
   'retry',
   'checkPayable',
+  'needsFreshInvoice',
+  'refreshInvoice',
   'partnerReachability',
   'requestState',
+  'requestSettlement',
+  'settleClaims',
 ]);
+
+/**
+ * When the ledger is looked at again for a payment claim that no wallet shows
+ * yet (a wallet's history lags a payment by seconds). Then the claim stays
+ * "reported, not verified" until the next resume.
+ */
+const CLAIM_RETRY_MS = Object.freeze([5_000, 20_000, 60_000]);
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -218,6 +235,9 @@ export function createInboxStoreAdapter(store, me) {
  * @property {() => boolean} [isHidden] True while the app is out of sight (default: never).
  * @property {(link: { contactId: string | null, walletId: string, amountSats: number, note: string | null }) => unknown} [linkPayment]
  *   Links the incoming transaction of a paid request to the contact (best effort).
+ * @property {() => Promise<import('./paymentConfirmation.js').IncomingTransaction[]>} [loadIncomingTransactions]
+ *   The settled incoming transactions of the user's wallets, each with its `walletId`. Without it a
+ *   payment the partner reports after the invoice expired can never be verified.
  * @property {(url: string, options: { connectionTimeout: number }) => Promise<object>} ensureRelay
  *   The shared relay pool's `ensureRelay` (used by the relay list resolver).
  * @property {typeof WebSocket} [WebSocket]
@@ -250,6 +270,7 @@ export function createChatRuntime(deps = {}) {
     channelName,
     isHidden = () => false,
     linkPayment,
+    loadIncomingTransactions,
     ensureRelay,
     WebSocket,
     now = Date.now,
@@ -530,6 +551,44 @@ export function createChatRuntime(deps = {}) {
   }
 
   /**
+   * Has the invoice of this request expired (or does it within a minute), so
+   * that paying it needs a fresh one (`refreshInvoice`)?
+   *
+   * @param {{ bolt11: string, expiresAt?: number }} request
+   * @returns {boolean}
+   */
+  function needsFreshInvoice(request) {
+    return requests.invoiceNeedsRefresh(request);
+  }
+
+  /**
+   * Pull a fresh invoice for a request of the partner that is still open, from
+   * the Lightning address (`lud16`) inside that request, for exactly the
+   * requested amount (docs section 8a). The address comes from the request
+   * the partner signed, never from the address book.
+   *
+   * @param {string} partner
+   * @param {string} requestId Rumor id of the partner's request.
+   * @returns {Promise<{ bolt11: string, expiresAt: number }>}
+   * @throws {DmError} INVALID_ARGUMENT (no such open request), INVOICE_EXPIRED (the
+   *   request names no address to ask), AMOUNT_OUT_OF_RANGE, INVOICE_REFRESH_FAILED
+   */
+  async function refreshInvoice(partner, requestId) {
+    const recipient = normalizePubkey(partner);
+    assertUsable();
+    const message = requireRequest(recipient, requestId, { outgoing: false });
+    const { lud16, amountSats } = message.request;
+    if (!lud16) throw new DmError(DM_ERROR.INVOICE_EXPIRED, 'the request names no Lightning address to ask');
+    const { bolt11, expiresAt } = await requests.pullInvoice({
+      lud16,
+      amountSats,
+      // Ties the invoice to the request in the requester's LNURL log (LUD-12).
+      reference: message.id.slice(0, 12),
+    });
+    return { bolt11, expiresAt };
+  }
+
+  /**
    * Can the partner receive messages? `found`: they publish an inbox relay
    * list. `missing`: they do not (no message possible; share a payment link).
    * `unknown`: no relay answered (offline), so nothing is known.
@@ -559,6 +618,20 @@ export function createChatRuntime(deps = {}) {
     const id = normalizePubkey(requestId, 'requestId');
     if (store.requestSource(id)?.paidAt) return 'paid';
     return store.requestStatus(id, nowSeconds());
+  }
+
+  /**
+   * How sure the user is that a request of theirs is paid, and where the money
+   * arrived. `verified`: their own wallet showed it (the invoice watcher, or
+   * `settleClaims` for a late payment). Unverified: only the payer says so.
+   *
+   * @returns {{ verified: boolean, walletId: string | null } | null} Null while the request is not paid.
+   */
+  function requestSettlement(requestId) {
+    const id = normalizePubkey(requestId, 'requestId');
+    const source = store.requestSource(id);
+    if (source?.paidAt) return { verified: true, walletId: ledgerWalletOf(source) };
+    return store.requestStatus(id, nowSeconds()) === 'paid' ? { verified: false, walletId: null } : null;
   }
 
   // ----- watching the user's own requests -------------------------------
@@ -665,6 +738,155 @@ export function createChatRuntime(deps = {}) {
     }
   }
 
+  // ----- late payments: the payer's claim against the user's own ledger ---
+
+  let claimRun = null;
+  const claimTimers = new Set();
+
+  /**
+   * The payment claims of one thread: every incoming `payment` message, plus a
+   * synthetic claim for each request the partner marked `paid` without a
+   * payment message (a payer on another client). Oldest first, as
+   * `matchIncomingPayments` wants them.
+   */
+  function claimsOf(thread, requestsById) {
+    const claims = [];
+    const withPayment = new Set();
+    for (const message of thread.messages) {
+      if (message.type !== MESSAGE_TYPE.PAYMENT || message.outgoing) continue;
+      claims.push({
+        id: message.id,
+        requestId: message.payment.requestId,
+        createdAt: message.createdAt,
+        payment: { amountSats: message.payment.amountSats, preimage: message.payment.preimage },
+      });
+      if (message.payment.requestId) withPayment.add(message.payment.requestId);
+    }
+    for (const message of thread.messages) {
+      if (message.type !== MESSAGE_TYPE.STATUS || message.outgoing) continue;
+      const { requestId, value, preimage } = message.status;
+      const request = requestsById.get(requestId);
+      if (value !== REQUEST_STATUS.PAID || !request || withPayment.has(requestId)) continue;
+      claims.push({
+        id: message.id,
+        requestId,
+        createdAt: message.createdAt,
+        payment: { amountSats: request.request.amountSats, preimage },
+      });
+    }
+    return claims.sort((a, b) => a.createdAt - b.createdAt || (a.id < b.id ? -1 : 1));
+  }
+
+  /**
+   * Check the partners' payment claims for the user's OWN requests against the
+   * user's own wallets (docs section 8a). A claim that a wallet confirms (the
+   * preimage hashes to an incoming payment, else amount and time window; one
+   * transaction per claim) makes the request `paid`, verified, links the
+   * transaction to the contact and records where it landed. A claim no wallet
+   * shows stays what the payer said: "Reported paid, not verified".
+   *
+   * Requests the invoice watcher already settled are skipped, so a payment is
+   * never linked twice. Never rejects.
+   *
+   * @returns {Promise<{ settled: number, pending: number }>} `pending`: claims still without a ledger match.
+   */
+  function settleClaims() {
+    if (disposed || store.scope !== me || typeof loadIncomingTransactions !== 'function') {
+      return Promise.resolve({ settled: 0, pending: 0 });
+    }
+    claimRun ??= (async () => {
+      let settled = 0;
+      let pending = 0;
+      try {
+        const work = [];
+        for (const [partner, thread] of Object.entries(store.threads)) {
+          const own = new Map(thread.messages
+            .filter((m) => m.type === MESSAGE_TYPE.REQUEST && m.outgoing)
+            .map((m) => [m.id, m]));
+          if (own.size === 0) continue;
+          const isSettled = (claim) => Boolean(store.requestSource(claim.requestId)?.paidAt);
+          // Claims of requests that are settled already go first: their transaction is spent,
+          // so it cannot vouch for a second request in a later run.
+          const claims = claimsOf(thread, own);
+          claims.sort((a, b) => Number(isSettled(b)) - Number(isSettled(a)));
+          if (claims.some((claim) => own.has(claim.requestId) && !isSettled(claim))) work.push({ partner, own, claims });
+        }
+        if (work.length === 0) return { settled, pending };
+
+        const transactions = await loadIncomingTransactions();
+        for (const { partner, own, claims } of work) {
+          const matches = matchIncomingPayments(claims, transactions);
+          const done = new Set();
+          for (const claim of claims) {
+            const request = own.get(claim.requestId);
+            if (!request || done.has(request.id) || store.requestSource(request.id)?.paidAt) continue;
+            const tx = matches.get(claim.id);
+            // Money that came in but less than was asked is not the request paid.
+            if (!tx || tx.amountSats < request.request.amountSats) { pending += 1; continue; }
+            if (disposed) break;
+            done.add(request.id);
+            await recordVerifiedPayment(partner, request, claim, tx);
+            settled += 1;
+          }
+        }
+      } catch {
+        // The ledger could not be read: the claims stay unverified until the next trigger.
+      }
+      return { settled, pending };
+    })().finally(() => {
+      claimRun = null;
+    });
+    return claimRun;
+  }
+
+  /** The user's wallet showed the payment of one of their requests: record it and link the transaction. */
+  async function recordVerifiedPayment(partner, request, claim, tx) {
+    stopWatching(request.id);
+    store.setRequestSource(request.id, {
+      walletId: tx.walletId ?? null,
+      method: 'direct',
+      paymentHash: tx.paymentHash ?? null,
+      expiresAt: request.request.expiresAt,
+      amountSats: request.request.amountSats,
+      note: request.request.note ?? null,
+      paidAt: tx.settledAt ?? nowSeconds(),
+      preimage: claim.payment.preimage ?? null,
+      // The payer announced it themselves: there is nothing to tell them.
+      announced: true,
+      late: true,
+    });
+    if (linkPayment && tx.walletId) {
+      try {
+        await linkPayment({
+          contactId: contacts.find(partner)?.id ?? null,
+          walletId: tx.walletId,
+          amountSats: tx.amountSats,
+          note: request.request.note ?? null,
+        });
+      } catch {
+        // The link is a convenience; the payment itself is settled.
+      }
+    }
+  }
+
+  /** `settleClaims` now and again while a claim still waits for the wallet's history to show it. */
+  function checkClaimsSoon(attempt = 0) {
+    if (disposed) return;
+    void settleClaims().then(({ pending }) => {
+      if (pending === 0 || disposed || attempt >= CLAIM_RETRY_MS.length) return;
+      const handle = (setTimer ?? setTimeout)(() => {
+        claimTimers.delete(handle);
+        checkClaimsSoon(attempt + 1);
+      }, CLAIM_RETRY_MS[attempt]);
+      claimTimers.add(handle);
+    });
+  }
+
+  function clearClaimTimers() {
+    for (const handle of claimTimers) (clearTimer ?? clearTimeout)(handle);
+    claimTimers.clear();
+  }
+
   /**
    * Drop what no longer needs watching (declined, cancelled, expired or
    * vanished requests) and return the still-open ones.
@@ -718,6 +940,8 @@ export function createChatRuntime(deps = {}) {
           paid += 1;
         }
         for (const entry of waiting) watch(entry.requestId);
+        // Payments that came after an invoice ran out are checked on every resume too.
+        await settleClaims();
       } catch {
         // The next trigger tries again.
       }
@@ -738,6 +962,9 @@ export function createChatRuntime(deps = {}) {
   function onIncoming(message) {
     if (disposed) return;
     if (message.type === MESSAGE_TYPE.STATUS) settleDeadSources();
+    const claimsPayment = message.type === MESSAGE_TYPE.PAYMENT
+      || (message.type === MESSAGE_TYPE.STATUS && message.status?.value === REQUEST_STATUS.PAID);
+    if (claimsPayment) checkClaimsSoon();
     try {
       void notifyIncoming(message).catch(noop);
     } catch {
@@ -792,6 +1019,7 @@ export function createChatRuntime(deps = {}) {
   function stop() {
     started = false;
     stopAllWatchers();
+    clearClaimTimers();
     inbox.stop();
   }
 
@@ -821,8 +1049,12 @@ export function createChatRuntime(deps = {}) {
     react,
     retry,
     checkPayable,
+    needsFreshInvoice,
+    refreshInvoice,
     partnerReachability,
     requestState,
+    requestSettlement,
+    settleClaims,
     // --- lifecycle (boot)
     start,
     stop,

@@ -19,8 +19,10 @@ import { DM_ERROR, DmError } from '../errors.js';
 import {
   REQUEST_METHOD,
   WATCH_TIMING,
+  INVOICE_REFRESH_MARGIN_SECONDS,
   checkPayable,
   createRequestService,
+  invoiceNeedsRefresh,
   pickReceivingWallet,
 } from '../requests.js';
 
@@ -1140,4 +1142,87 @@ test('service.checkPayable uses the injected clock', () => {
 test('vocabulary is frozen', () => {
   assert.throws(() => { 'use strict'; REQUEST_METHOD.DIRECT = 'x'; }, TypeError);
   assert.throws(() => { 'use strict'; WATCH_TIMING.BACKOFF = 9; }, TypeError);
+});
+
+// ---------------------------------------------------------------------------
+// Pulling a fresh invoice for an expired request (docs section 8a)
+// ---------------------------------------------------------------------------
+
+test('pullInvoice: asks the request\'s address for exactly the amount, with the LUD-12 reference', async () => {
+  const fresh = makeInvoice({ sats: 5_000, hash: 9, expiry: 3_600 });
+  const { service, lnurl } = setup({ lnurl: fakeLnurl({ invoice: fresh }) });
+  const result = await service.pullInvoice({ lud16: 'anna@btc.mybuho.de', amountSats: 5_000, reference: 'abc123' });
+  assert.equal(result.bolt11, fresh.bolt11);
+  assert.equal(result.paymentHash, fresh.paymentHash);
+  assert.equal(result.expiresAt, NOW + 3_600);
+  assert.deepEqual(lnurl.fetched, ['https://btc.mybuho.de/.well-known/lnurlp/anna']);
+  assert.equal(lnurl.requested[0].msats, 5_000_000);
+  assert.deepEqual(lnurl.requested[0].options, { comment: 'buho:req:abc123' });
+});
+
+test('pullInvoice: no comment when the server allows none or too few characters', async () => {
+  for (const commentAllowed of [0, 5]) {
+    const { service, lnurl } = setup({ lnurl: fakeLnurl({ invoice: makeInvoice({ sats: 5_000 }), commentAllowed }) });
+    await service.pullInvoice({ lud16: 'anna@btc.mybuho.de', amountSats: 5_000, reference: 'abc123' });
+    assert.equal(lnurl.requested[0].options, undefined, String(commentAllowed));
+  }
+});
+
+test('pullInvoice: an amount outside min/maxSendable is AMOUNT_OUT_OF_RANGE and no invoice is requested', async () => {
+  for (const sats of [5_000, 1]) {
+    const { service, lnurl } = setup({ lnurl: fakeLnurl({ invoice: makeInvoice({ sats }), min: 10_000_000, max: 20_000_000 }) });
+    await assert.rejects(service.pullInvoice({ lud16: 'anna@btc.mybuho.de', amountSats: sats }), rejectsWith(DM_ERROR.AMOUNT_OUT_OF_RANGE));
+    assert.equal(lnurl.requested.length, 0);
+  }
+});
+
+test('pullInvoice: LNURL failures, unusable addresses and arguments map to codes', async () => {
+  const down = setup({ lnurl: fakeLnurl({ invoice: makeInvoice({ sats: 5_000 }) }) });
+  down.lnurl.failFetch = true;
+  await assert.rejects(down.service.pullInvoice({ lud16: 'anna@btc.mybuho.de', amountSats: 5_000 }), rejectsWith(DM_ERROR.INVOICE_REFRESH_FAILED));
+
+  const broken = setup({ lnurl: fakeLnurl({ invoice: makeInvoice({ sats: 5_000 }) }) });
+  broken.lnurl.requestInvoice = async () => { throw new Error('server error'); };
+  await assert.rejects(broken.service.pullInvoice({ lud16: 'anna@btc.mybuho.de', amountSats: 5_000 }), rejectsWith(DM_ERROR.INVOICE_REFRESH_FAILED));
+
+  const { service } = setup();
+  for (const lud16 of ['', 'no-at-sign', null, undefined]) {
+    await assert.rejects(service.pullInvoice({ lud16, amountSats: 5_000 }), rejectsWith(DM_ERROR.INVOICE_REFRESH_FAILED), String(lud16));
+  }
+  for (const amountSats of [0, -1, 1.5, '5000', undefined]) {
+    await assert.rejects(service.pullInvoice({ lud16: 'anna@btc.mybuho.de', amountSats }), rejectsWith(DM_ERROR.INVALID_ARGUMENT), String(amountSats));
+  }
+});
+
+test('pullInvoice: an invoice that is not exactly the amount, not mainnet, expired or garbage is rejected', async () => {
+  const bad = {
+    'wrong amount': makeInvoice({ sats: 4_999 }),
+    'zero amount': makeInvoice({}),
+    testnet: makeInvoice({ sats: 5_000, network: 'tb' }),
+    expired: makeInvoice({ sats: 5_000, timestamp: NOW - 7_200, expiry: 3_600 }),
+  };
+  for (const [name, invoice] of Object.entries(bad)) {
+    const { service } = setup({ lnurl: fakeLnurl({ invoice }) });
+    await assert.rejects(service.pullInvoice({ lud16: 'anna@btc.mybuho.de', amountSats: 5_000 }), rejectsWith(DM_ERROR.INVOICE_REFRESH_FAILED), name);
+  }
+  const garbage = setup({ lnurl: fakeLnurl({ invoice: { bolt11: 'not-an-invoice' } }) });
+  await assert.rejects(garbage.service.pullInvoice({ lud16: 'anna@btc.mybuho.de', amountSats: 5_000 }), rejectsWith(DM_ERROR.INVOICE_REFRESH_FAILED));
+});
+
+test('invoiceNeedsRefresh: valid yes-no, within the margin or expired yes; undecodable is not a refresh case', () => {
+  const invoice = makeInvoice({ sats: 5_000, expiry: 3_600 });
+  assert.equal(invoiceNeedsRefresh({ bolt11: invoice.bolt11, expiresAt: NOW + 3_600 }, NOW), false);
+  assert.equal(invoiceNeedsRefresh({ expiresAt: NOW + INVOICE_REFRESH_MARGIN_SECONDS }, NOW), true);
+  assert.equal(invoiceNeedsRefresh({ expiresAt: NOW + INVOICE_REFRESH_MARGIN_SECONDS + 1 }, NOW), false);
+  assert.equal(invoiceNeedsRefresh({ expiresAt: NOW - 1 }, NOW), true);
+  assert.equal(invoiceNeedsRefresh({ bolt11: invoice.bolt11 }, NOW + 3_590), true, 'falls back to the decoded invoice');
+  assert.equal(invoiceNeedsRefresh({ bolt11: 'garbage' }, NOW), false);
+});
+
+test('checkPayable: an expired invoice blocks only a request without an address to ask', () => {
+  const invoice = makeInvoice({ sats: 5_000, expiry: 60 });
+  const wallet = { type: 'spark' };
+  const later = NOW + 600;
+  assert.deepEqual(checkPayable({ bolt11: invoice.bolt11, amountSats: 5_000 }, wallet, { now: later }), { ok: false, reason: DM_ERROR.INVOICE_EXPIRED });
+  assert.deepEqual(checkPayable({ bolt11: invoice.bolt11, amountSats: 5_000, lud16: 'anna@btc.mybuho.de' }, wallet, { now: later }), { ok: true });
 });

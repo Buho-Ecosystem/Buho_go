@@ -35,17 +35,20 @@ function hashOfPreimage(preimage) {
  * @property {number} amountSats
  * @property {number} settledAt Unix seconds.
  * @property {string | null} [paymentHash]
+ * @property {string | null} [walletId] The wallet whose history shows it.
  */
 
 /**
+ * Which transaction confirms which claim.
+ *
  * @param {Array<{ id: string, createdAt: number, payment: { amountSats: number, preimage: string | null } }>} payments
- *   Incoming `payment` messages, oldest first.
+ *   Incoming payment claims, oldest first.
  * @param {IncomingTransaction[]} transactions Completed incoming transactions of the user's wallets.
  * @param {{ windowSeconds?: number }} [options]
- * @returns {Set<string>} Ids of the messages the wallets confirm.
+ * @returns {Map<string, IncomingTransaction>} Claim id -> the transaction that confirms it.
  */
-export function confirmIncomingPayments(payments, transactions, { windowSeconds = CONFIRMATION_WINDOW_SECONDS } = {}) {
-  const confirmed = new Set();
+export function matchIncomingPayments(payments, transactions, { windowSeconds = CONFIRMATION_WINDOW_SECONDS } = {}) {
+  const confirmed = new Map();
   const used = new Set();
   const txs = Array.isArray(transactions) ? transactions : [];
 
@@ -62,7 +65,7 @@ export function confirmIncomingPayments(payments, transactions, { windowSeconds 
 
   for (const { message, hash } of withProof) {
     const index = txs.findIndex((tx, i) => !used.has(i) && tx.paymentHash?.toLowerCase() === hash);
-    if (index !== -1 && claim(index)) confirmed.add(message.id);
+    if (index !== -1 && claim(index)) confirmed.set(message.id, txs[index]);
   }
 
   for (const { message } of withoutProof) {
@@ -73,7 +76,17 @@ export function confirmIncomingPayments(payments, transactions, { windowSeconds 
       && Number.isFinite(tx.settledAt)
       && Math.abs(tx.settledAt - message.createdAt) <= windowSeconds
     ));
-    if (index !== -1 && claim(index)) confirmed.add(message.id);
+    if (index !== -1 && claim(index)) confirmed.set(message.id, txs[index]);
   }
   return confirmed;
+}
+
+/**
+ * @param {Parameters<typeof matchIncomingPayments>[0]} payments
+ * @param {IncomingTransaction[]} transactions
+ * @param {{ windowSeconds?: number }} [options]
+ * @returns {Set<string>} Ids of the messages the wallets confirm.
+ */
+export function confirmIncomingPayments(payments, transactions, options) {
+  return new Set(matchIncomingPayments(payments, transactions, options).keys());
 }

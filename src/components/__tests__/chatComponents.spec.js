@@ -387,17 +387,53 @@ test('request card: the requester sees Remind and Withdraw, never Pay', async ()
   assert.doesNotMatch(html, />\s*Pay\s*<|Decline/)
 })
 
-test('request card: only a pending request has actions; every end state says so', async () => {
+test('request card: every end state says so; only pending and expired have actions', async () => {
   const lines = { paid: 'Paid', declined: 'Declined', cancelled: 'Withdrawn', expired: 'Expired' }
   for (const [state, text] of Object.entries(lines)) {
     for (const outgoing of [false, true]) {
       const html = await card({ state, outgoing })
-      assert.equal(tags(html, 'request-btn').length, 0, `${state} ${outgoing}`)
+      assert.equal(tags(html, 'request-btn').length, state === 'expired' ? 1 : 0, `${state} ${outgoing}`)
       assert.match(html, new RegExp(`request-card__state[^>]*>[\\s\\S]*${text}`), state)
       assert.match(html, new RegExp(`request-card--${state}`))
     }
   }
   assert.doesNotMatch(await card({}), /request-card__state/)
+})
+
+test('request card: an expired request always has a next action (docs 8a)', async () => {
+  const payer = await card({ state: 'expired' })
+  assert.match(payer, />\s*Send anyway\s*</)
+  assert.match(tags(payer, 'request-btn')[0], /request-btn--pay/)
+  assert.doesNotMatch(payer, /Request again|Decline/)
+  const requester = await card({ state: 'expired', outgoing: true })
+  assert.match(requester, />\s*Request again\s*</)
+  assert.doesNotMatch(requester, /Send anyway|Pay/)
+  const nowhere = await card({ state: 'expired', canSendAnyway: false })
+  assert.match(nowhere, />\s*Ask for a new request\s*</)
+  assert.doesNotMatch(nowhere, /Send anyway/)
+  assert.deepEqual(RequestCard.emits, ['pay', 'decline', 'remind', 'withdraw', 'send-anyway', 'request-again', 'ask-new'])
+})
+
+test('request card: a pending request whose invoice expired and has no address: Decline and Ask for a new request', async () => {
+  const html = await card({ disabledReason: 'INVOICE_EXPIRED' })
+  assert.match(html, />\s*Decline\s*</)
+  assert.match(html, />\s*Ask for a new request\s*</)
+  assert.equal(tags(html, 'request-btn--pay').length, 0)
+  assert.match(html, /The invoice has expired\. Ask for a new request\./)
+  const ownPending = await card({ outgoing: true, disabledReason: 'INVOICE_EXPIRED' })
+  assert.match(ownPending, /Remind/)
+  assert.doesNotMatch(ownPending, /Ask for a new request/)
+})
+
+test('request card: a paid request of the requester says where it arrived or that it is only reported', async () => {
+  const verified = await card({ outgoing: true, state: 'paid', paidVerified: true, receivedIn: 'Spark Business' })
+  assert.match(verified, />\s*Paid\s*</)
+  assert.match(verified, /Received in Spark Business/)
+  const reported = await card({ outgoing: true, state: 'paid', paidVerified: false, receivedIn: 'Spark Business' })
+  assert.match(reported, /Reported paid, not verified/)
+  assert.doesNotMatch(reported, /Received in/)
+  assert.doesNotMatch(await card({ outgoing: true, state: 'paid' }), /Received in/, 'unknown wallet: no claim')
+  assert.doesNotMatch(await card({ state: 'paid', receivedIn: 'Spark' }), /Received in/, 'the payer has nothing received')
 })
 
 test('request card: no "amount in invoice" row, ever', async () => {
@@ -423,7 +459,7 @@ test('request card: runtime error codes are worded; an invalid or expired invoic
   const wallet = await card({ disabledReason: 'WALLET_CANNOT_PAY' })
   assert.match(wallet, /This wallet cannot pay this request\. Choose another wallet\./)
   assert.match(tags(wallet, 'request-btn--pay')[0], /aria-disabled="true"/)
-  for (const [code, text] of [['INVALID_INVOICE', 'invalid and cannot be paid'], ['INVOICE_EXPIRED', 'has expired']]) {
+  for (const [code, text] of [['INVALID_INVOICE', 'invalid and cannot be paid'], ['INVOICE_EXPIRED', 'invoice has expired']]) {
     const html = await card({ disabledReason: code })
     assert.match(html, new RegExp(text), code)
     assert.equal(tags(html, 'request-btn--pay').length, 0, code)
@@ -441,7 +477,6 @@ test('request card: Pay does nothing while blocked or busy', () => {
   const free = vmOf(RequestCard, { amountSats: 1 })
   free.vm.onPay()
   assert.deepEqual(free.emitted, [['pay']])
-  assert.deepEqual(RequestCard.emits, ['pay', 'decline', 'remind', 'withdraw'])
 })
 
 test('request card: busy disables the quiet actions', async () => {
@@ -452,8 +487,6 @@ test('request card: busy disables the quiet actions', async () => {
 test('request card: unconfirmed is stated plainly, for the requester only', async () => {
   const pending = await card({ outgoing: true, unconfirmed: true })
   assert.match(pending, /This wallet cannot confirm the payment automatically\./)
-  const reported = await card({ outgoing: true, unconfirmed: true, state: 'paid' })
-  assert.match(reported, /Reported paid, not verified/)
   assert.doesNotMatch(await card({ outgoing: true }), /cannot confirm/)
   assert.doesNotMatch(await card({ unconfirmed: true }), /cannot confirm/, 'the payer has nothing to detect')
 })
@@ -467,10 +500,10 @@ test('request card: a stranger\'s request is marked and Pay is no longer the fil
 })
 
 test('request card: it is a named group and says valid-until only while pending', async () => {
-  const html = await card({ partnerName: 'Anna', expiresAt: NOW + 300 })
+  const html = await card({ partnerName: 'Anna', validUntil: NOW + 300 })
   assert.match(html, /role="group" aria-label="Anna requests, ₿ [^"]*, open"/)
   assert.match(html, /Valid until/)
-  assert.doesNotMatch(await card({ expiresAt: NOW + 300, state: 'paid' }), /Valid until/)
+  assert.doesNotMatch(await card({ validUntil: NOW + 300, state: 'paid' }), /Valid until/)
   assert.match(await card({}), /Payment request/, 'no name: a neutral label')
 })
 
@@ -806,7 +839,7 @@ test('thread: events carry the id of the item they come from', () => {
     ['react', { id: 'm1', emoji: '👍' }],
     ['copy', { id: 'm1', text: 'Hi' }],
   ])
-  for (const name of ['react', 'reply', 'copy', 'retry', 'pay-request', 'decline-request', 'remind-request', 'withdraw-request', 'open-payment']) {
+  for (const name of ['react', 'reply', 'copy', 'retry', 'pay-request', 'decline-request', 'remind-request', 'withdraw-request', 'send-anyway-request', 'request-again', 'ask-new-request', 'open-payment']) {
     assert.ok(ChatThread.emits.includes(name), name)
   }
 })

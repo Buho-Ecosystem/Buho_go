@@ -125,7 +125,8 @@ test('items: a request card carries state, expiry, note, fiat and only pending i
   });
   assert.deepEqual(items[0].request, {
     id: incoming.id, amountSats: 25_000, fiatText: '≈ $25', note: 'Pizza', outgoing: false, state: 'pending',
-    expiresAt: 2_000_000, unconfirmed: false, disabledReason: 'WALLET_CANNOT_PAY', untrusted: false, busy: false,
+    validUntil: 2_000_000, invoiceExpiresAt: 2_000_000, unconfirmed: false, settlement: null, canSendAnyway: false,
+    disabledReason: 'WALLET_CANNOT_PAY', untrusted: false, busy: false,
   });
   assert.equal(items[1].request.state, 'paid');
   assert.equal(items[1].request.disabledReason, '', 'a paid request has nothing to disable');
@@ -139,7 +140,40 @@ test('items: a request without a known state is pending, without an expiry has n
   noExpiry.request.expiresAt = null;
   const items = build([noExpiry], { requestStateOf: () => null });
   assert.equal(items[0].request.state, 'pending');
-  assert.equal(items[0].request.expiresAt, null);
+  assert.equal(items[0].request.invoiceExpiresAt, null);
+  assert.equal(items[0].request.validUntil, null);
+});
+
+test('items: the card shows the request lifetime (valid_until), not the invoice expiry; legacy rules apply', () => {
+  const withTag = request();
+  withTag.request.validUntil = 1_900_000;
+  const legacyWithAddress = request({ createdAt: 1_000_000 });
+  legacyWithAddress.request.lud16 = 'anna@x.org';
+  const legacyBare = request();
+  const items = build([withTag, legacyWithAddress, legacyBare]);
+  assert.equal(items[0].request.validUntil, 1_900_000);
+  assert.equal(items[0].request.invoiceExpiresAt, 2_000_000);
+  assert.equal(items[1].request.validUntil, 1_000_000 + 30 * 24 * 3600, 'lud16 but no tag: 30 days from created_at');
+  assert.equal(items[2].request.validUntil, 2_000_000, 'neither: the invoice is all there is');
+});
+
+test('items: a paid own request says where it arrived only when the wallet showed it; an expired one offers Send anyway only with a target', () => {
+  const own = request({ outgoing: true });
+  const unverified = request({ outgoing: true });
+  const expiredIncoming = request();
+  const expiredOwn = request({ outgoing: true });
+  const items = build([own, unverified, expiredIncoming, expiredOwn], {
+    requestStateOf: (m) => (m === own || m === unverified ? 'paid' : 'expired'),
+    settlementOf: (m) => (m === own ? { verified: true, walletId: 'biz' } : { verified: false, walletId: null }),
+    walletNameOf: (id) => (id === 'biz' ? 'Spark Business' : ''),
+    canSendAnywayOf: () => true,
+  });
+  assert.deepEqual(items[0].request.settlement, { verified: true, walletName: 'Spark Business' });
+  assert.deepEqual(items[1].request.settlement, { verified: false, walletName: '' });
+  assert.equal(items[2].request.canSendAnyway, true);
+  assert.equal(items[2].request.settlement, null);
+  assert.equal(items[3].request.canSendAnyway, false, 'only the payer sends');
+  assert.equal(build([expiredIncoming], { requestStateOf: () => 'expired' })[0].request.canSendAnyway, false);
 });
 
 test('items: status messages are not rows, except the partner\'s reminder', () => {
@@ -337,13 +371,17 @@ function fakeRuntime(overrides = {}) {
     partnerReachability: async () => 'found',
     checkPayable: () => ({ ok: true }),
     requestState: () => null,
+    requestSettlement: () => null,
+    settleClaims: async () => ({ settled: 0, pending: 0 }),
+    needsFreshInvoice: () => false,
+    refreshInvoice: async () => ({ bolt11: 'lnbc-fresh', expiresAt: Math.floor(clock.ms / 1000) + 86_400 }),
     ...overrides,
   };
   return runtime;
 }
 
 function setup({ runtime = fakeRuntime(), payer = { id: 'biz', usable: true, reason: null }, loadIncomingTransactions, unknown = false, contact } = {}) {
-  const pay = { calls: [], payInvoice(...args) { this.calls.push(['payInvoice', ...args]); }, payContact(...args) { this.calls.push(['payContact', ...args]); } };
+  const pay = { calls: [], payInvoice(...args) { this.calls.push(['payInvoice', ...args]); }, payContact(...args) { this.calls.push(['payContact', ...args]); }, payAddress(...args) { this.calls.push(['payAddress', ...args]); } };
   const payers = [];
   const chat = useContactChat({
     partner: ANNA,
@@ -569,12 +607,12 @@ test('react: an emoji already chosen changes nothing, a stranger cannot be react
   assert.equal(stranger.runtime.calls.length, 0);
 });
 
-test('pay a request: the existing pipeline gets the invoice, the paying wallet and a chat context', () => {
+test('pay a request: the existing pipeline gets the invoice, the paying wallet and a chat context', async () => {
   const theirs = request({ createdAt: seconds() - 10 });
   theirs.request.expiresAt = seconds() + 3600;
   ingest(theirs);
   const { chat, pay } = setup({ contact: { id: 'c1', name: 'Anna' } });
-  assert.deepEqual(chat.payRequest(theirs.id), { ok: true });
+  assert.deepEqual(await chat.payRequest(theirs.id), { ok: true });
   assert.equal(pay.calls.length, 1);
   const [name, invoice, options] = pay.calls[0];
   assert.equal(name, 'payInvoice');
@@ -584,17 +622,17 @@ test('pay a request: the existing pipeline gets the invoice, the paying wallet a
   assert.deepEqual(parseChatPaymentContext(options.context), { partner: ANNA, requestId: theirs.id });
 });
 
-test('pay a request: an unusable pick is left to the wallet page, an invalid or expired invoice never leaves the chat', () => {
+test('pay a request: an unusable pick is left to the wallet page, an invalid or expired invoice never leaves the chat', async () => {
   const theirs = request({ createdAt: seconds() - 10 });
   theirs.request.expiresAt = seconds() + 3600;
   ingest(theirs);
   const unusable = setup({ payer: { id: 'x', usable: false, reason: 'insufficient-balance' } });
-  unusable.chat.payRequest(theirs.id);
+  await unusable.chat.payRequest(theirs.id);
   assert.equal(unusable.pay.calls[0][2].walletId, undefined);
 
   for (const reason of [DM_ERROR.INVALID_INVOICE, DM_ERROR.INVOICE_EXPIRED]) {
     const refused = setup({ runtime: fakeRuntime({ checkPayable: () => ({ ok: false, reason }) }) });
-    const result = refused.chat.payRequest(theirs.id);
+    const result = await refused.chat.payRequest(theirs.id);
     assert.equal(result.ok, false);
     assert.equal(result.error.code, reason);
     assert.equal(refused.pay.calls.length, 0);
@@ -603,8 +641,8 @@ test('pay a request: an unusable pick is left to the wallet page, an invalid or 
   const mine = request({ outgoing: true, createdAt: seconds() - 5 });
   ingest(mine);
   const none = setup();
-  assert.equal(none.chat.payRequest(mine.id).ok, false, 'a request you sent is not payable by you');
-  assert.equal(none.chat.payRequest(rid(42)).ok, false);
+  assert.equal((await none.chat.payRequest(mine.id)).ok, false, 'a request you sent is not payable by you');
+  assert.equal((await none.chat.payRequest(rid(42))).ok, false);
   assert.equal(none.pay.calls.length, 0);
 });
 
@@ -663,6 +701,158 @@ test('incoming payment claims: lookups stop after the retries and a failing wall
   assert.equal(loads, 3);
   assert.equal(chat.items.value.find((i) => i.type !== 'day').type, 'message');
   chat.dispose();
+});
+
+test('pay a request: an expired invoice with an address is replaced by a fresh one, transparently', async () => {
+  const theirs = request({ createdAt: seconds() - 100_000 });
+  theirs.request.expiresAt = seconds() - 10;
+  theirs.request.lud16 = 'anna@x.org';
+  ingest(theirs);
+  const refreshed = [];
+  const runtime = fakeRuntime({
+    needsFreshInvoice: () => true,
+    refreshInvoice: async (partner, id) => { refreshed.push([partner, id]); return { bolt11: 'lnbc-fresh', expiresAt: seconds() + 3600 }; },
+  });
+  const { chat, pay } = setup({ runtime, contact: { id: 'c1', name: 'Anna' } });
+  assert.equal(chat.items.value.find((i) => i.type === 'request').request.disabledReason, '', 'Pay stays available');
+  assert.deepEqual(await chat.payRequest(theirs.id), { ok: true });
+  assert.deepEqual(refreshed, [[ANNA, theirs.id]]);
+  const [name, invoice, options] = pay.calls[0];
+  assert.equal(name, 'payInvoice');
+  assert.deepEqual(invoice, { bolt11: 'lnbc-fresh', name: 'Anna' }, 'the fresh invoice, not the old one');
+  assert.equal(options.walletId, 'biz');
+  assert.equal(options.contactId, 'c1');
+  assert.deepEqual(parseChatPaymentContext(options.context), { partner: ANNA, requestId: theirs.id });
+});
+
+test('pay a request: a valid invoice is paid as is; a request without an address never pulls', async () => {
+  const theirs = request({ createdAt: seconds() - 10 });
+  theirs.request.lud16 = 'anna@x.org';
+  theirs.request.expiresAt = seconds() + 3600;
+  ingest(theirs);
+  const runtime = fakeRuntime({ refreshInvoice: async () => { throw new Error('must not pull'); } });
+  const valid = setup({ runtime });
+  await valid.chat.payRequest(theirs.id);
+  assert.equal(valid.pay.calls[0][1].bolt11, 'lnbc1');
+
+  const bare = request({ createdAt: seconds() - 5 });
+  bare.request.expiresAt = seconds() + 30;
+  ingest(bare);
+  const noAddress = setup({ runtime: fakeRuntime({ needsFreshInvoice: () => true, refreshInvoice: async () => { throw new Error('must not pull'); } }) });
+  await noAddress.chat.payRequest(bare.id);
+  assert.equal(noAddress.pay.calls[0][1].bolt11, 'lnbc1');
+});
+
+test('pay a request: a failed pull is an error with the next action and nothing is paid', async () => {
+  const theirs = request({ createdAt: seconds() - 100_000 });
+  theirs.request.expiresAt = seconds() - 10;
+  theirs.request.lud16 = 'anna@x.org';
+  ingest(theirs);
+  for (const code of [DM_ERROR.INVOICE_REFRESH_FAILED, DM_ERROR.AMOUNT_OUT_OF_RANGE]) {
+    const runtime = fakeRuntime({ needsFreshInvoice: () => true, refreshInvoice: async () => { throw new DmError(code, 'no'); } });
+    const { chat, pay } = setup({ runtime });
+    const result = await chat.payRequest(theirs.id);
+    assert.equal(result.ok, false);
+    assert.equal(result.error.code, code);
+    assert.equal(result.error.next, 'ask-new');
+    assert.equal(pay.calls.length, 0);
+    assert.equal(chat.busyIds?.value?.size ?? 0, 0, 'the card is free again');
+  }
+});
+
+test('send anyway: the ordinary send flow with amount and note prefilled and the request in the context', async () => {
+  const theirs = request({ createdAt: seconds() - 100 });
+  theirs.request.lud16 = 'anna@x.org';
+  theirs.request.validUntil = seconds() - 5;
+  ingest(theirs);
+  const { chat, pay } = setup({ contact: { id: 'c1', name: 'Anna', address: 'saved@x.org' } });
+  assert.equal(chat.items.value.find((i) => i.type === 'request').request.state, 'expired');
+  assert.deepEqual(chat.sendAnyway(theirs.id), { ok: true });
+  const [name, target, options] = pay.calls[0];
+  assert.equal(name, 'payAddress');
+  assert.equal(target.address, 'anna@x.org', 'the address Anna signed into the request, not the saved contact');
+  assert.equal(options.amountSats, 25_000);
+  assert.equal(options.note, 'Pizza');
+  assert.equal(options.walletId, 'biz');
+  assert.deepEqual(parseChatPaymentContext(options.context), { partner: ANNA, requestId: theirs.id });
+});
+
+test('send anyway: without an address in the request the saved contact is used, without any there is no target', () => {
+  const noAddress = request({ createdAt: seconds() - 100 });
+  noAddress.request.expiresAt = seconds() - 5;
+  ingest(noAddress);
+  const withContact = setup({ contact: { id: 'c1', name: 'Anna', address: 'saved@x.org', addressType: 'lightning' } });
+  assert.equal(withContact.chat.items.value.find((i) => i.type === 'request').request.canSendAnyway, true);
+  assert.deepEqual(withContact.chat.sendAnyway(noAddress.id), { ok: true });
+  assert.equal(withContact.pay.calls[0][0], 'payContact');
+  assert.equal(withContact.pay.calls[0][2].amountSats, 25_000);
+
+  const nothing = setup();
+  assert.equal(nothing.chat.items.value.find((i) => i.type === 'request').request.canSendAnyway, false);
+  assert.equal(nothing.chat.sendAnyway(noAddress.id).ok, false);
+  assert.equal(nothing.pay.calls.length, 0);
+
+  const mine = request({ outgoing: true });
+  ingest(mine);
+  assert.equal(withContact.chat.sendAnyway(mine.id).ok, false, 'only the payer sends');
+});
+
+test('request again: one call with the same amount and note, only for the own request', async () => {
+  const mine = request({ outgoing: true, createdAt: seconds() - 100 });
+  mine.request.expiresAt = seconds() - 5;
+  const theirs = request({ createdAt: seconds() - 100 });
+  ingest(mine);
+  ingest(theirs);
+  const { chat, runtime } = setup();
+  assert.equal((await chat.requestAgain(mine.id)).ok, true);
+  assert.deepEqual(runtime.calls.at(-1), ['requestMoney', ANNA, { amountSats: 25_000, note: 'Pizza' }]);
+  assert.equal((await chat.requestAgain(theirs.id)).ok, false);
+  assert.equal((await chat.requestAgain(rid(3))).ok, false);
+  assert.equal(runtime.calls.filter((c) => c[0] === 'requestMoney').length, 1);
+});
+
+test('ask for a new request: the amount and note go back for the composer, never sent by itself', () => {
+  const theirs = request({ createdAt: seconds() - 10 });
+  const mine = request({ outgoing: true });
+  ingest(theirs);
+  ingest(mine);
+  const { chat, runtime } = setup();
+  assert.deepEqual(chat.askNewRequest(theirs.id), { ok: true, value: { amountSats: 25_000, note: 'Pizza' } });
+  assert.equal(chat.askNewRequest(mine.id).ok, false);
+  assert.equal(runtime.calls.length, 0);
+});
+
+test('a paid own request names the wallet it arrived in only when the runtime verified it', () => {
+  const mine = request({ outgoing: true, createdAt: seconds() - 10 });
+  mine.request.expiresAt = seconds() + 3600;
+  ingest(mine);
+  const card = (settlement) => {
+    const { chat } = setup({ runtime: fakeRuntime({ requestState: () => 'paid', requestSettlement: () => settlement }) });
+    return chat.items.value.find((i) => i.type === 'request').request;
+  };
+  assert.deepEqual(card({ verified: false, walletId: null }).settlement, { verified: false, walletName: '' });
+  assert.equal(card({ verified: true, walletId: 'biz' }).settlement.verified, true);
+});
+
+test('opening the chat and every resume ask the runtime to check payment claims', async () => {
+  let checks = 0;
+  const { chat } = setup({ runtime: fakeRuntime({ settleClaims: async () => { checks += 1; return { settled: 0, pending: 0 }; } }) });
+  await chat.open();
+  chat.resume();
+  assert.ok(checks >= 2, String(checks));
+  chat.dispose();
+  const broken = setup({ runtime: fakeRuntime({ settleClaims: async () => { throw new Error('boom'); } }) });
+  await broken.chat.open();
+  broken.chat.dispose();
+});
+
+test('describeDmError: a dead end always names the way forward', () => {
+  for (const code of [DM_ERROR.INVOICE_EXPIRED, DM_ERROR.INVOICE_REFRESH_FAILED, DM_ERROR.AMOUNT_OUT_OF_RANGE]) {
+    const described = describeDmError(new DmError(code, 'x'), { t });
+    assert.equal(described.next, 'ask-new', code);
+    assert.match(described.message, /new request/i, code);
+  }
+  assert.equal(describeDmError(new DmError(DM_ERROR.WALLET_CANNOT_PAY, 'x'), { t }).next, undefined);
 });
 
 test('the same view-model reused for another chat lets go of the first one', async () => {

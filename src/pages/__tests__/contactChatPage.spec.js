@@ -98,7 +98,10 @@ function fakeChat(extra = {}) {
     withdraw: result('withdraw'),
     remind: result('remind'),
     requestMoney: result('requestMoney'),
-    payRequest: (id) => { calls.push(['payRequest', id]); return { ok: true } },
+    payRequest: async (id) => { calls.push(['payRequest', id]); return { ok: true } },
+    sendAnyway: (id) => { calls.push(['sendAnyway', id]); return { ok: true } },
+    requestAgain: result('requestAgain'),
+    askNewRequest: (id) => { calls.push(['askNewRequest', id]); return { ok: true, value: { amountSats: 3000, note: 'Pizza' } } },
     sendMoney: () => { calls.push(['sendMoney']); return { ok: true } },
     ...extra,
   }
@@ -339,10 +342,51 @@ test('react, retry and the request card actions go to the view-model; a reminder
   await vm.onDecline({ id: 'r' })
   await vm.onWithdraw({ id: 'r' })
   await vm.onRemind({ id: 'r' })
-  vm.onPayRequest({ id: 'r' })
+  await vm.onPayRequest({ id: 'r' })
   vm.onSend()
   assert.deepEqual(chat.calls, [['react', 'm', '👍'], ['retry', 'm'], ['decline', 'r'], ['withdraw', 'r'], ['remind', 'r'], ['payRequest', 'r'], ['sendMoney']])
   assert.deepEqual(notices.map((notice) => notice.message), ['Reminder sent'])
+})
+
+test('expired request: Send anyway and Request again go to the view-model, one tap each', async () => {
+  const { vm, chat, notices } = pageOf()
+  vm.onSendAnyway({ id: 'r' })
+  await vm.onRequestAgain({ id: 'r' })
+  assert.deepEqual(chat.calls, [['sendAnyway', 'r'], ['requestAgain', 'r']])
+  assert.deepEqual(notices, [])
+})
+
+test('ask for a new request: the composer gets a prefilled message that is not sent', () => {
+  const { vm, chat } = pageOf()
+  vm.onAskNew({ id: 'r' })
+  assert.equal(vm.mode, 'text')
+  assert.match(vm.draft, /Could you send me a new payment request for .*3.*\(Pizza\)\?/)
+  assert.equal(chat.calls.some((call) => call[0] === 'sendText'), false)
+  const plain = pageOf({ chat: fakeChat({ askNewRequest: () => ({ ok: true, value: { amountSats: 3000, note: '' } }) }) })
+  plain.vm.onAskNew({ id: 'r' })
+  assert.doesNotMatch(plain.vm.draft, /\(/)
+  const none = pageOf({ chat: fakeChat({ askNewRequest: () => ({ ok: false }) }) })
+  none.vm.draft = 'keep'
+  none.vm.onAskNew({ id: 'r' })
+  assert.equal(none.vm.draft, 'keep')
+})
+
+test('pay: a failure whose next step is a new request shows the words and an action that prepares it', async () => {
+  const error = { code: 'INVOICE_REFRESH_FAILED', next: 'ask-new', message: 'Could not get a fresh invoice' }
+  const { vm, notices } = pageOf({ chat: fakeChat({ payRequest: async () => ({ ok: false, error }) }) })
+  await vm.onPayRequest({ id: 'r' })
+  assert.equal(notices.length, 1)
+  assert.equal(notices[0].message, error.message)
+  assert.equal(notices[0].type, 'negative')
+  assert.equal(notices[0].actions.length, 1)
+  assert.equal(notices[0].actions[0].label, 'Ask for a new request')
+  notices[0].actions[0].handler()
+  assert.match(vm.draft, /new payment request/)
+
+  const other = pageOf({ chat: fakeChat({ payRequest: async () => ({ ok: false, error: { code: 'X', kind: 'general', message: 'Nope' } }) }) })
+  await other.vm.onPayRequest({ id: 'r' })
+  assert.equal(other.notices[0].message, 'Nope')
+  assert.equal(other.notices[0].actions, undefined)
 })
 
 // ── requests ─────────────────────────────────────────────────────────

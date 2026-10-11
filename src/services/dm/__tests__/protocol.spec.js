@@ -19,7 +19,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { inspect } from 'node:util';
 import { createRumor, generateSecretKey, nip19 } from 'nostr-core';
-import { MAX_NOTE_LENGTH, MAX_TEXT_LENGTH } from '../constants.js';
+import { MAX_NOTE_LENGTH, MAX_TEXT_LENGTH, REQUEST_LIFETIME_SECONDS } from '../constants.js';
 import { DM_ERROR, DmError } from '../errors.js';
 import {
   MESSAGE_TYPE,
@@ -31,6 +31,7 @@ import {
   buildTextTemplate,
   containsSecretKey,
   parseRumor,
+  requestLifetimeEnd,
 } from '../protocol.js';
 
 const ME = 'a'.repeat(64);
@@ -308,6 +309,7 @@ test('buildRequestTemplate writes the tags and the fallback of docs section 4', 
       ['bolt11', INVOICE_12K],
       ['note', 'Pizza'],
       ['lud16', 'me@buho.example'],
+      ['valid_until', String(NOW + REQUEST_LIFETIME_SECONDS)],
     ],
     content: `\u{1F4B8} Payment request: 12,000 sats – Pizza\nlightning:${INVOICE_12K}`,
     created_at: NOW,
@@ -318,7 +320,7 @@ test('buildRequestTemplate leaves out ` - note` and the note and lud16 tags when
   for (const note of [undefined, null, '', '   ']) {
     const template = requestTemplate({ note });
     assert.equal(template.content, `\u{1F4B8} Payment request: 12,000 sats\nlightning:${INVOICE_12K}`);
-    assert.deepEqual(template.tags.map((tag) => tag[0]), ['p', 'buho', 'amount', 'bolt11']);
+    assert.deepEqual(template.tags.map((tag) => tag[0]), ['p', 'buho', 'amount', 'bolt11', 'valid_until']);
   }
 });
 
@@ -561,10 +563,60 @@ test('round trip: a payment request', () => {
     paymentHash: message.request.paymentHash,
     lud16: 'me@buho.example',
     expiresAt: NOW + 3_600,
+    validUntil: NOW + REQUEST_LIFETIME_SECONDS,
   });
   assert.match(message.request.paymentHash, /^[0-9a-f]{64}$/);
   assert.equal(message.status, null);
   assert.equal(message.payment, null);
+});
+
+// ---------------------------------------------------------------------------
+// Request lifetime (docs section 8a)
+// ---------------------------------------------------------------------------
+
+test('a request carries valid_until = created_at + 30 days unless the caller names one', () => {
+  const tag = (template) => template.tags.find((t) => t[0] === 'valid_until');
+  assert.deepEqual(tag(requestTemplate()), ['valid_until', String(NOW + 30 * 24 * 60 * 60)]);
+  assert.deepEqual(tag(requestTemplate({ validUntil: NOW + 600 })), ['valid_until', String(NOW + 600)]);
+});
+
+test('round trip: valid_until survives and a request without the tag parses with null', () => {
+  assert.equal(received(requestTemplate({ validUntil: NOW + 600 })).request.validUntil, NOW + 600);
+  const legacy = received(withTags(requestTemplate(), swapTag('valid_until', null)));
+  assert.equal(legacy.degraded, false);
+  assert.equal(legacy.type, 'request');
+  assert.equal(legacy.request.validUntil, null);
+});
+
+test('builders refuse a valid_until that is not after the request was created', () => {
+  for (const validUntil of [NOW, NOW - 1, 0, -5, 1.5, '1760000100', Number.NaN]) {
+    assert.throws(
+      () => requestTemplate({ validUntil }),
+      (e) => DmError.is(e, DM_ERROR.INVALID_ARGUMENT),
+      String(validUntil),
+    );
+  }
+});
+
+test('a malformed or already-over valid_until degrades the request to text (no pay action)', () => {
+  for (const value of ['soon', '', '-1', '0', '1.5', '17600000000000000', String(NOW), String(NOW - 10)]) {
+    const message = received(withTags(requestTemplate(), swapTag('valid_until', ['valid_until', value])));
+    assert.equal(message.degraded, true, value);
+    assert.equal(message.type, 'text', value);
+    assert.equal(message.request, null, value);
+  }
+  const twice = withTags(requestTemplate(), (tags) => [...tags, ['valid_until', String(NOW + 5)]]);
+  assert.equal(received(twice).degraded, true);
+});
+
+test('requestLifetimeEnd: valid_until, else 30 days with a lud16, else the invoice expiry', () => {
+  const at = 1_000;
+  assert.equal(requestLifetimeEnd({ createdAt: at, request: { validUntil: 5_000, lud16: 'a@b.c', expiresAt: 2_000 } }), 5_000);
+  assert.equal(requestLifetimeEnd({ createdAt: at, request: { validUntil: null, lud16: 'a@b.c', expiresAt: 2_000 } }), at + REQUEST_LIFETIME_SECONDS);
+  assert.equal(requestLifetimeEnd({ createdAt: at, request: { lud16: 'a@b.c', expiresAt: 2_000 } }), at + REQUEST_LIFETIME_SECONDS, 'a stored legacy message');
+  assert.equal(requestLifetimeEnd({ createdAt: at, request: { validUntil: null, lud16: null, expiresAt: 2_000 } }), 2_000);
+  assert.equal(requestLifetimeEnd({ createdAt: at, request: null }), null);
+  assert.equal(requestLifetimeEnd(null), null);
 });
 
 test('round trip: a request without note and address has null for both', () => {

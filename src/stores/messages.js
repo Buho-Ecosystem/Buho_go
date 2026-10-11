@@ -27,7 +27,7 @@
  */
 
 import { defineStore } from 'pinia'
-import { MESSAGE_TYPE, REQUEST_STATUS } from '../services/dm/protocol.js'
+import { MESSAGE_TYPE, REQUEST_STATUS, requestLifetimeEnd } from '../services/dm/protocol.js'
 import { loadChatState, saveChatState, deleteChatState } from '../utils/dmStorage.js'
 import { useAddressBookStore } from './addressBook.js'
 
@@ -176,8 +176,10 @@ function emptyState() {
  * A status counts only from the right party: `paid` and `declined` from the
  * payer (the request's recipient), `cancelled` from the requester (its sender).
  * `reminder` never changes a state. The latest valid status wins, `paid` is
- * final, and an unanswered request whose invoice has run out is `expired`.
- * A declined or cancelled request stays so after its invoice expires.
+ * final, and an unanswered request whose LIFETIME has run out is `expired`
+ * (`requestLifetimeEnd`: `valid_until`, not the invoice, which the payer can
+ * replace; docs section 8a). A declined or cancelled request stays so after
+ * its lifetime ends, and a payment that comes late still turns it `paid`.
  *
  * @param {object[]} messages Sorted thread messages.
  * @param {number} now Unix seconds.
@@ -206,8 +208,8 @@ export function deriveRequestStates(messages, now) {
   }
 
   for (const [id, request] of requests) {
-    const expiresAt = request.request?.expiresAt
-    if (states.get(id) === REQUEST_STATE.PENDING && Number.isFinite(expiresAt) && expiresAt < now) {
+    const endsAt = requestLifetimeEnd(request)
+    if (states.get(id) === REQUEST_STATE.PENDING && Number.isFinite(endsAt) && endsAt < now) {
       states.set(id, REQUEST_STATE.EXPIRED)
     }
   }

@@ -16,9 +16,11 @@
  *   contact name and route id     addressBook.findContactByPubkey
  *   notification                  notifications.notifyMessageIfEnabled
  *   tx <-> contact link           transactionMetadata.enqueuePendingContactLink
+ *   incoming ledger (late claims) wallet.wallets + wallet.getProvider + services.normalizeTx
  *   relay connections for lookups getRelayPool().ensureRelay
  */
 
+import { loadIncomingTransactions } from './incomingTransactions.js';
 import { createChatRuntime } from './runtime.js';
 
 /** `source` stamped on the incoming transaction of a paid chat request. */
@@ -58,6 +60,9 @@ export function describeWallet(wallet, sparkAddressOf) {
  * @param {() => boolean} services.isHidden
  * @param {(message: object) => string} services.formatNotification
  * @param {string | (() => string)} [services.channelName] Translated name of the `messages` channel.
+ * @param {(raw: object, options: { walletType: string }) => object} [services.normalizeTx]
+ *   The transaction normaliser; with it the runtime can check a payment the partner reports
+ *   against the user's wallets after the request's invoice expired.
  * @param {typeof WebSocket} [services.WebSocket]
  * @param {typeof createChatRuntime} [services.createChatRuntime] Replacement constructor, for tests.
  * @returns {(pubkey: string) => ReturnType<typeof createChatRuntime>} Builds the runtime for one identity.
@@ -107,6 +112,15 @@ export function createAppRuntimeFactory(stores, services) {
         label: note,
         perPayment: true,
       }),
+      ...(services.normalizeTx
+        ? {
+          loadIncomingTransactions: () => loadIncomingTransactions({
+            wallets: wallet.wallets,
+            getProvider: (walletId) => wallet.getProvider(walletId),
+            normalizeTx: services.normalizeTx,
+          }),
+        }
+        : {}),
       ensureRelay: (url, options) => services.getRelayPool().ensureRelay(url, options),
       WebSocket: services.WebSocket,
     });
