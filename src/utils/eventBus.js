@@ -30,6 +30,9 @@
  *                  Listeners must not throw and must not log the payload: it
  *                  carries the destination and the preimage.
  */
+/** The 'payment:sent' event above, by name, for the emitter and its listeners. */
+export const PAYMENT_SENT = 'payment:sent'
+
 const listeners = {}
 
 export const EventBus = {

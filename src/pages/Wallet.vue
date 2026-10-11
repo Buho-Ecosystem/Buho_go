@@ -829,7 +829,7 @@ import { useBitcoinDepositsStore } from '../stores/bitcoinDeposits';
 import {SA_RETAIL_SOURCE, parseZARFromMetadata} from '../utils/merchantQR.js';
 import {lookupBrantaVerification, BRANTA_LOOKUP_TIMEOUT_MS} from '../utils/branta.js';
 import { readCachedTransactions, mergeCachedTransactions } from '../utils/txCache.js';
-import { EventBus } from '../utils/eventBus.js';
+import { EventBus, PAYMENT_SENT } from '../utils/eventBus.js';
 
 function emptySaveContactData() {
   return {
@@ -4822,7 +4822,7 @@ export default {
 
     emitPaymentSent(payload) {
       try {
-        EventBus.emit('payment:sent', payload);
+        EventBus.emit(PAYMENT_SENT, payload);
       } catch (error) {
         console.warn('[wallet] a payment:sent listener failed:', error?.name || 'Error');
       }

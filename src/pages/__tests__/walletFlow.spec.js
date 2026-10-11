@@ -370,7 +370,7 @@ function payingHarness({ wallets = PAY_WALLETS, active = 'biz', funds = PAY_FUND
   const options = component({
     '../utils/payingWallets.js': payingWallets,
     '../utils/walletCapabilities.js': walletCapabilities,
-    '../utils/eventBus.js': { EventBus: bus },
+    '../utils/eventBus.js': { EventBus: bus, PAYMENT_SENT: 'payment:sent' },
     '../utils/lightning.js': { LightningPaymentService: FakeLightningService },
     '../utils/lightningInvoice.js': { parseLightningInvoice: input => ({ invoice: input, amount: INVOICE_SATS[input] ?? 0, description: 'memo' }) },
     '../services/addressRequestIntake.js': { offerAddressRequest: () => false },

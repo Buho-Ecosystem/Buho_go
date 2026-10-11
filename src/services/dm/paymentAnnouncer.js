@@ -25,9 +25,10 @@
 
 import { DmError } from './errors.js';
 import { parseChatPaymentContext } from './paymentContext.js';
+import { PAYMENT_SENT } from '../../utils/eventBus.js';
 
-/** The EventBus event Wallet.vue emits after a completed payment. */
-export const PAYMENT_SENT_EVENT = 'payment:sent';
+/** The EventBus event Wallet.vue emits after a payment (utils/eventBus.js documents its payload). */
+export const PAYMENT_SENT_EVENT = PAYMENT_SENT;
 
 /**
  * @typedef {object} PaymentSentEvent
