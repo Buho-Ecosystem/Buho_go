@@ -37,7 +37,7 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const isCode = (code) => (err) => DmError.is(err, code);
 
 /** Poll until `condition()` holds; fail loudly (with `label`) instead of hanging. */
-async function waitFor(condition, label = 'condition', timeoutMs = 2_000) {
+async function waitFor(condition, label = 'condition', timeoutMs = 5_000) {
   const deadline = Date.now() + timeoutMs;
   while (!condition()) {
     if (Date.now() > deadline) assert.fail(`timed out waiting for ${label}`);
@@ -53,6 +53,16 @@ const settle = (ms = 40) => sleep(ms);
  * records its calls, ephemeral keys that record their public keys, and timers
  * that remember what is still outstanding.
  */
+/**
+ * Time budgets. The harness runs on real timers, so its default must leave room
+ * for a busy machine (Schnorr signing, a loaded CI): a handshake that would
+ * succeed must never time out. It only bounds a hang; a passing test resolves
+ * on events, not on these. A test ABOUT a timeout opts into SHORT explicitly.
+ */
+const RELAXED_MS = 1_500;
+const SHORT_MS = 60;
+const SHORT_TIMEOUTS = Object.freeze({ connectTimeoutMs: SHORT_MS, publishTimeoutMs: SHORT_MS, authTimeoutMs: SHORT_MS });
+
 function createHarness(overrides = {}) {
   const network = createFakeNetwork();
   const identity = generateSecretKey();
@@ -83,11 +93,11 @@ function createHarness(overrides = {}) {
   const transport = createDmTransport({
     signAuth,
     WebSocket: network.WebSocket,
-    connectTimeoutMs: 60,
-    publishTimeoutMs: 60,
-    authTimeoutMs: 60,
+    connectTimeoutMs: RELAXED_MS,
+    publishTimeoutMs: RELAXED_MS,
+    authTimeoutMs: RELAXED_MS,
     connectRetry: { initialDelay: 5, maxDelay: 20, factor: 2, jitter: 0 },
-    reconnect: { initialDelay: 5, maxDelay: 20, factor: 2, jitter: 0, connectionTimeout: 60 },
+    reconnect: { initialDelay: 5, maxDelay: 20, factor: 2, jitter: 0, connectionTimeout: RELAXED_MS },
     writeIdleMs: 5_000,
     readIdleMs: 5_000,
     authRetryCooldownMs: 1_000,
@@ -399,7 +409,7 @@ test('read: a signer that returns something other than a kind 22242 event fails 
 });
 
 test('read: an AUTH the relay never answers times out into auth-failed', async () => {
-  await withHarness({}, async (h) => {
+  await withHarness({ options: SHORT_TIMEOUTS }, async (h) => {
     h.network.addRelay(NOSTR1, { ...PROFILES.nostr1, authResult: 'silent' });
     const c = collector();
     h.transport.subscribe([NOSTR1], inboxFilter(h.identityPubkey), c.handlers);
@@ -410,7 +420,7 @@ test('read: an AUTH the relay never answers times out into auth-failed', async (
 });
 
 test('read: a relay that demands auth but never sends a challenge fails after authTimeoutMs', async () => {
-  await withHarness({}, async (h) => {
+  await withHarness({ options: SHORT_TIMEOUTS }, async (h) => {
     const relay = h.network.addRelay(NOSTR1, { requireAuthToRead: true });
     const c = collector();
     h.transport.subscribe([NOSTR1], inboxFilter(h.identityPubkey), c.handlers);
@@ -962,7 +972,7 @@ test('publish: a relay that demands auth, then refuses again after it, ends in A
 });
 
 test('publish: a relay that wants auth and never challenges fails after authTimeoutMs', async () => {
-  await withHarness({}, async (h) => {
+  await withHarness({ options: SHORT_TIMEOUTS }, async (h) => {
     h.network.addRelay(OPEN, { requireAuthToWrite: true });
     const [outcome] = await h.transport.publish([OPEN], makeEvent(generateSecretKey())).allSettled;
     assert.equal(outcome.ok, false);
@@ -1020,7 +1030,7 @@ test('publish: blocked / invalid / restricted / unknown refusals are final at on
 });
 
 test('publish: a relay that never answers yields TIMEOUT', async () => {
-  await withHarness({}, async (h) => {
+  await withHarness({ options: SHORT_TIMEOUTS }, async (h) => {
     const relay = h.network.addRelay(OPEN, PROFILES.open);
     relay.eventReplies.push(null);
     const [outcome] = await h.transport.publish([OPEN], makeEvent(generateSecretKey())).allSettled;
@@ -1031,7 +1041,7 @@ test('publish: a relay that never answers yields TIMEOUT', async () => {
 });
 
 test('publish: a relay that is silent from the start also yields TIMEOUT', async () => {
-  await withHarness({}, async (h) => {
+  await withHarness({ options: SHORT_TIMEOUTS }, async (h) => {
     h.network.addRelay(OPEN, { silent: true });
     const [outcome] = await h.transport.publish([OPEN], makeEvent(generateSecretKey())).allSettled;
     assert.equal(outcome.code, DM_ERROR.TIMEOUT);
