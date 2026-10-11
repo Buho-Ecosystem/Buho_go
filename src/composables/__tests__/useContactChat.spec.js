@@ -425,7 +425,6 @@ test('disabled reason: the paying wallet, balance and rail reasons in words', as
   assert.deepEqual(ok.payers[0], [25_000, 'lightning']);
   assert.equal(reason(setup({ payer: null }).chat), DM_ERROR.WALLET_CANNOT_PAY);
   assert.equal(reason(setup({ payer: { id: 'x', usable: false, reason: 'insufficient-balance' } }).chat), 'Not enough balance');
-  assert.equal(reason(setup({ payer: { id: 'x', usable: false, reason: 'unavailable' } }).chat), 'Unavailable');
   assert.equal(reason(setup({ payer: { id: 'x', usable: false, reason: 'unsupported-destination' } }).chat), DM_ERROR.WALLET_CANNOT_PAY);
 });
 

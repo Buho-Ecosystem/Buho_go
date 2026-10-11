@@ -348,7 +348,7 @@ export function useContactChat(options) {
     if (payer.usable) return '';
     return payer.reason === PAYING_REASON.UNSUPPORTED_DESTINATION
       ? DM_ERROR.WALLET_CANNOT_PAY
-      : payingWalletReasonText(payer.reason, 'lightning', t);
+      : payingWalletReasonText(payer.reason, t);
   };
 
   const settlementOf = (message) => runtime.requestSettlement(message.id);
