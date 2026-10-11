@@ -667,7 +667,7 @@ async function payWithOptionsMatrix(page) {
     assert.notEqual(await option(name).getAttribute('aria-disabled'), 'true', `${name} can pay`);
   }
   assert.equal(await option('Ark').getAttribute('aria-disabled'), 'true', 'Arkade cannot pay Lightning');
-  await option('Ark').getByText('Lightning unavailable').waitFor();
+  await option('Ark').getByText("Can't pay this").waitFor();
   await option('Personal').click();
 }
 

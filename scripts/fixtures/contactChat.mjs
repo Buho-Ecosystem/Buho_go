@@ -173,7 +173,8 @@ export class InvoiceLedger {
     this._counter = 0;
   }
 
-  mint({ amountSats }) {
+  /** `descriptionHash` (hex): the `h` field, sha256 of the LNURL metadata (LUD-06). */
+  mint({ amountSats, descriptionHash = null }) {
     const now = Math.floor(Date.now() / 1000);
     const preimage = Buffer.alloc(32);
     preimage.writeUInt32BE(++this._counter, 28);
@@ -183,6 +184,7 @@ export class InvoiceLedger {
       ...toWords(now, 7),
       ...tagged(1, hashWords),
       ...tagged(6, toWords(3600, 3)),
+      ...(descriptionHash ? tagged(23, bech32.toWords(Buffer.from(descriptionHash, 'hex'))) : []),
       ...bech32.toWords(Uint8Array.from({ length: 65 }, (_, i) => (i + 1) % 251)),
     ];
     const bolt11 = bech32.encode(`lnbc${amountSats * 10}n`, words, 4096);
@@ -250,7 +252,7 @@ export class LnurlServer {
           callback: `https://${this.domain}/lnurlp/callback/${known[1]}`,
           minSendable: this.minSendable,
           maxSendable: this.maxSendable,
-          metadata: JSON.stringify([['text/plain', `Pay ${known[1]}`]]),
+          metadata: this.metadataOf(known[1]),
           commentAllowed: 255,
         },
       };
@@ -281,9 +283,15 @@ export class LnurlServer {
     return { status: 404, body: { status: 'ERROR', reason: 'not found' } };
   }
 
+  /** The LUD-06 metadata of one address; every invoice commits to it by its description hash. */
+  metadataOf(name) {
+    return JSON.stringify([['text/plain', `Pay ${name}`]]);
+  }
+
   /** Mint and remember one invoice (the callback, or a wallet that pays an address directly). */
   issue({ name, amountSats, comment = null }) {
-    const { bolt11, paymentHash } = this.ledger.mint({ amountSats });
+    const descriptionHash = sha256Hex(Buffer.from(this.metadataOf(name), 'utf8'));
+    const { bolt11, paymentHash } = this.ledger.mint({ amountSats, descriptionHash });
     this.issued.push({ name, amountSats, comment, bolt11, paymentHash });
     return { bolt11, paymentHash };
   }
