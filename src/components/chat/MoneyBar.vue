@@ -9,16 +9,31 @@
   nothing about it. Without it ("Payments only") the bar is the two money
   buttons. Request / Send are the quiet pair: a filled button on the screen
   belongs to the one thing waiting for the person (a request's Pay).
+  A disabled money button never stands there unexplained: `disabledHint`
+  says why, right above the buttons, and the buttons point to it.
 -->
 <template>
   <div class="money-bar">
     <div v-if="canMessage" class="money-bar__composer"><slot /></div>
+    <p v-if="disabledHint" :id="hintId" class="money-bar__hint">{{ disabledHint }}</p>
     <div class="money-bar__actions">
-      <button type="button" class="money-btn money-btn--request" :disabled="requestDisabled" @click="$emit('request')">
+      <button
+        type="button"
+        class="money-btn money-btn--request"
+        :disabled="requestDisabled"
+        :aria-describedby="requestDisabled && disabledHint ? hintId : undefined"
+        @click="$emit('request')"
+      >
         <Icon icon="tabler:arrow-down-left" width="20" height="20" />
         <span>{{ $t('Request') }}</span>
       </button>
-      <button type="button" class="money-btn money-btn--send" :disabled="sendDisabled" @click="$emit('send')">
+      <button
+        type="button"
+        class="money-btn money-btn--send"
+        :disabled="sendDisabled"
+        :aria-describedby="sendDisabled && disabledHint ? hintId : undefined"
+        @click="$emit('send')"
+      >
         <Icon icon="tabler:arrow-up-right" width="20" height="20" />
         <span>{{ $t('Send') }}</span>
       </button>
@@ -37,9 +52,14 @@ export default {
     /** False when the partner has no DM inbox: no message field, just the money buttons. */
     canMessage: { type: Boolean, default: true },
     requestDisabled: { type: Boolean, default: false },
-    sendDisabled: { type: Boolean, default: false }
+    sendDisabled: { type: Boolean, default: false },
+    /** Why a money button is disabled, already translated. */
+    disabledHint: { type: String, default: '' }
   },
-  emits: ['request', 'send']
+  emits: ['request', 'send'],
+  computed: {
+    hintId() { return `money-bar-hint-${this.$.uid}` }
+  }
 }
 </script>
 
@@ -52,6 +72,15 @@ export default {
   background: var(--bg-primary);
   border-top: 1px solid var(--border-card);
   font-family: 'Manrope', sans-serif;
+}
+
+.money-bar__hint {
+  margin: 0;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  line-height: 1.35;
+  color: var(--text-secondary);
+  text-align: center;
 }
 
 .money-bar__actions {

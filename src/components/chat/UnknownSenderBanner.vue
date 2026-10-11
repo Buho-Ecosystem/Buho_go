@@ -5,8 +5,8 @@
 
     - Always: "Not in your contacts" and a fragment of the npub, which is the
       only thing that cannot be faked.
-    - lookalikeName: the claimed name resembles one of the user's contacts;
-      the banner says so, in plain words, and that this is another profile.
+    - A stranger's claimed name is never shown (the thread names them by the
+      npub fragment), so there is no name to impersonate a contact with.
     - No verification mark, ever (NIP-05 is not proof of who someone is).
     - Actions: Add contact · Block (44 pt each).
 -->
@@ -15,14 +15,7 @@
     <Icon icon="tabler:alert-triangle" width="20" height="20" class="unknown-banner__icon" />
     <div class="unknown-banner__body">
       <h3 class="unknown-banner__title">{{ $t('Not in your contacts') }}</h3>
-      <p class="unknown-banner__text">
-        <template v-if="lookalikeName">
-          {{ $t('The name looks like your contact {name}, but this is a different profile. Only pay if you are sure.', { name: lookalikeName }) }}
-        </template>
-        <template v-else>
-          {{ $t('Only pay if you are sure who this is.') }}
-        </template>
-      </p>
+      <p class="unknown-banner__text">{{ $t('Only pay if you are sure who this is.') }}</p>
       <p class="unknown-banner__npub">
         <span class="unknown-banner__npub-label">{{ $t('Profile') }}</span>
         <code :title="npub">{{ fragment }}</code>
@@ -50,8 +43,6 @@ export default {
   props: {
     /** The sender's full npub. Only a fragment is drawn. */
     npub: { type: String, required: true },
-    /** Name of an existing contact the sender's claimed name resembles. */
-    lookalikeName: { type: String, default: '' },
     busy: { type: Boolean, default: false }
   },
   emits: ['add-contact', 'block'],

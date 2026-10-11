@@ -388,7 +388,7 @@ try {
     const own = chatCard(alice.page, /^You requested.*Pizza again/);
     await own.getByText('Paid', { exact: true }).waitFor();
     await own.getByText('Received in Business').waitFor();
-    assert.equal(await own.getByText('Reported paid, not verified').count(), 0);
+    assert.equal(await own.getByText(/says it's paid/).count(), 0);
     await openChatFromAddressBook(bob, 'Alice');
     await chatCard(bob.page, /^Alice requests.*Pizza again/).getByText('Paid', { exact: true }).waitFor();
     await snap(alice, '06-request-paid');
@@ -437,7 +437,7 @@ try {
     const own = chatCard(alice.page, /^You requested.*Late coffee/);
     await own.getByText('Paid', { exact: true }).waitFor();
     await own.getByText('Received in Shop').waitFor();
-    assert.equal(await own.getByText('Reported paid, not verified').count(), 0);
+    assert.equal(await own.getByText(/says it's paid/).count(), 0);
     await snap(alice, '14-late-payment-verified');
   });
 
@@ -513,7 +513,7 @@ try {
     await expectPaidFrom(bob, 'bob-spark', 5);
     const own = chatCard(alice.page, /^You requested.*External tip/);
     await own.getByText(`Received at ${ALICE_EXTERNAL_ADDRESS}`).waitFor();
-    assert.equal(await own.getByText('Reported paid, not verified').count(), 0);
+    assert.equal(await own.getByText(/says it's paid/).count(), 0);
     assert.ok(lnurlExternal.verifications.includes(lnurlExternal.issued[0].paymentHash), 'her client asked the verify URL of her own address');
     assert.equal(lnurl.verifications.length + lnurlNew.verifications.length, 0, 'ledger matches never need the verify URL');
     await snap(alice, '18b-external-address-verified');

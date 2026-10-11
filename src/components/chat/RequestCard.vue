@@ -8,11 +8,15 @@
     Footer   state line, and the next action of YOUR side in every state that
              has one (docs section 8a, there is no dead end):
                pending, payer      [Decline] [Pay]    (Pay is the one filled button)
-               pending, requester  [Remind]  [Withdraw]
-               expired, payer      [Send anyway]
+               pending, requester  [Remind]  [Cancel request]
+               paying              "Payment on its way", nothing to tap
+               expired, payer      [Send anyway]      (quiet: it no longer asks)
                expired, requester  [Request again]
-               paid                says where it arrived, or that it is only
-                                   reported by the payer (`paidVerified`)
+               paid                says where it arrived, or, while only the
+                                   payer says so (`paidVerified` false), says
+                                   exactly that without the green check. The
+                                   chat re-checks on open, on resume and on a
+                                   retry schedule; there is no button for it.
 
   Honest states (nostrdesign.org: no silent failure):
     - disabledReason   Pay stays visible but is aria-disabled and says why
@@ -152,7 +156,7 @@ export default {
     disabledReason: { type: String, default: '' },
     /**
      * Own request that is paid: did the user's own wallet show the money
-     * (true), or is it only what the payer says (false: "Reported paid, not verified")?
+     * (true), or is it only what the payer says (false: "{name} says it's paid")?
      */
     paidVerified: { type: Boolean, default: true },
     /** Own request, paid and verified: name of the wallet it arrived in ("Received in {wallet}"). */
@@ -197,7 +201,9 @@ export default {
     },
     stateLine() {
       if (this.state === 'paid') {
-        if (this.outgoing && !this.paidVerified) return this.$t('Reported paid, not verified')
+        if (this.claimOnly) {
+          return this.partnerName ? this.$t("{name} says it's paid", { name: this.partnerName }) : this.$t("They say it's paid")
+        }
         return this.$t('Paid')
       }
       return {
@@ -208,10 +214,15 @@ export default {
         expired: this.$t('Expired')
       }[this.state] || ''
     },
+    /** Own request the payer calls paid, while the money has not shown up: never the green check. */
+    claimOnly() {
+      return this.state === 'paid' && this.outgoing && !this.paidVerified
+    },
     stateTone() {
-      return this.state === 'paid' ? 'ok' : 'muted'
+      return this.state === 'paid' && !this.claimOnly ? 'ok' : 'muted'
     },
     stateIcon() {
+      if (this.claimOnly) return 'tabler:clock-question'
       return {
         paid: 'tabler:circle-check',
         paying: 'tabler:hourglass',

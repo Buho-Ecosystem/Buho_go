@@ -146,6 +146,7 @@ function pageOf({ route = { params: { id: 'addr-1' } }, available = true, scope 
     formatFiat: () => '',
     fiatToSats: () => null,
     requestFiatCode: () => '',
+    copyText: async () => {},
   }
   vm.bookReady = bookReady
   for (const [name, getter] of Object.entries(page.computed)) {
@@ -314,21 +315,16 @@ test('reply: previews the answered message above the field', () => {
 })
 
 test('copy: puts the text on the clipboard and says so, or says it failed', async () => {
-  const previous = globalThis.navigator
+  const ok = pageOf()
   const written = []
-  try {
-    Object.defineProperty(globalThis, 'navigator', { value: { clipboard: { writeText: async (text) => { written.push(text) } } }, configurable: true })
-    const ok = pageOf()
-    await ok.vm.onCopy({ text: 'hi' })
-    assert.deepEqual(written, ['hi'])
-    assert.equal(ok.notices[0].message, 'Copied')
-    Object.defineProperty(globalThis, 'navigator', { value: { clipboard: { writeText: async () => { throw new Error('denied') } } }, configurable: true })
-    const failed = pageOf()
-    await failed.vm.onCopy({ text: 'hi' })
-    assert.equal(failed.notices[0].type, 'negative')
-  } finally {
-    Object.defineProperty(globalThis, 'navigator', { value: previous, configurable: true })
-  }
+  ok.vm.copyText = async (text) => { written.push(text) }
+  await ok.vm.onCopy({ text: 'hi' })
+  assert.deepEqual(written, ['hi'])
+  assert.equal(ok.notices[0].message, 'Message copied')
+  const failed = pageOf()
+  failed.vm.copyText = async () => { throw new Error('denied') }
+  await failed.vm.onCopy({ text: 'hi' })
+  assert.equal(failed.notices[0].type, 'negative')
 })
 
 test('react, retry and the request card actions go to the view-model; a reminder confirms itself', async () => {

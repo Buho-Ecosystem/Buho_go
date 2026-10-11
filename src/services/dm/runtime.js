@@ -768,7 +768,7 @@ export function createChatRuntime(deps = {}) {
    * transaction to the contact and records where it landed. A claim no wallet
    * shows can still be confirmed by the requester's own Lightning address (LUD-21,
    * `paymentVerification.js`) when the payment message carries a verify URL; else it stays
-   * what the payer said: "Reported paid, not verified".
+   * what the payer said: "{name} says it's paid".
    *
    * Requests already settled are skipped, so a payment is never linked twice.
    * Never rejects.

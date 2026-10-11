@@ -426,9 +426,11 @@ test('request card: a paid request of the requester says where it arrived or tha
   const verified = await card({ outgoing: true, state: 'paid', paidVerified: true, receivedIn: 'Spark Business' })
   assert.match(verified, />\s*Paid\s*</)
   assert.match(verified, /Received in Spark Business/)
-  const reported = await card({ outgoing: true, state: 'paid', paidVerified: false, receivedIn: 'Spark Business' })
-  assert.match(reported, /Reported paid, not verified/)
-  assert.doesNotMatch(reported, /Received in/)
+  const reported = await card({ outgoing: true, state: 'paid', paidVerified: false, receivedIn: 'Spark Business', partnerName: 'Anna' })
+  assert.match(reported, /Anna says it(&#39;|')s paid/)
+  assert.match(reported, /data-icon="tabler:clock-question"/)
+  assert.match(reported, /request-card__state--muted/, 'only the payer says so: no green check')
+  assert.doesNotMatch(reported, /circle-check|Received in/)
   assert.doesNotMatch(await card({ outgoing: true, state: 'paid' }), /Received in/, 'unknown wallet: no claim')
   assert.doesNotMatch(await card({ state: 'paid', receivedIn: 'Spark' }), /Received in/, 'the payer has nothing received')
 
@@ -512,6 +514,15 @@ test('money bar: a partner who cannot receive messages gets money buttons only',
   const html = await render(MoneyBar, { canMessage: false }, { slots: { default: () => Vue.h('i', 'COMPOSER') } })
   assert.doesNotMatch(html, /COMPOSER/)
   assert.match(html, /money-btn--request/)
+})
+
+test('money bar: a disabled button says why, right above it', async () => {
+  const html = await render(MoneyBar, { sendDisabled: true, disabledHint: 'Add them to your contacts to send money.' })
+  const [hint] = tags(html, 'money-bar__hint')
+  const id = hint.match(/id="([^"]+)"/)[1]
+  assert.match(html, /Add them to your contacts to send money\./)
+  assert.match(tags(html, 'money-btn--send')[0], new RegExp(`aria-describedby="${id}"`))
+  assert.doesNotMatch(tags(html, 'money-btn--request')[0], /aria-describedby/, 'Request is not disabled')
 })
 
 test('money bar: disabled buttons are real disabled buttons', async () => {
@@ -735,10 +746,10 @@ test('unknown sender: warns, shows a fragment of the npub and offers Add contact
   assert.deepEqual(UnknownSenderBanner.emits, ['add-contact', 'block'])
 })
 
-test('unknown sender: a lookalike name is called out, and nothing is ever verified', async () => {
-  const html = await render(UnknownSenderBanner, { npub: `npub1${'k'.repeat(58)}`, lookalikeName: 'Anna' })
-  assert.match(html, /The name looks like your contact Anna, but this is a different profile/)
+test('unknown sender: nothing is ever verified, no claimed name is shown', async () => {
+  const html = await render(UnknownSenderBanner, { npub: `npub1${'k'.repeat(58)}` })
   assert.doesNotMatch(html, /verified|check/i)
+  assert.ok(!('lookalikeName' in UnknownSenderBanner.props), 'the name is never shown, so nothing to compare')
   assert.doesNotMatch(read('UnknownSenderBanner.vue'), /nip05|circle-check|rosette/i)
 })
 

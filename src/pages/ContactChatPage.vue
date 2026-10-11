@@ -155,6 +155,7 @@
         v-else
         :can-message="!paymentsOnly"
         :send-disabled="unknown"
+        :disabled-hint="unknown ? $t('Add them to your contacts to send money.') : ''"
         @request="onRequest"
         @send="onSend"
       >
@@ -232,7 +233,7 @@
 <script>
 import { getCurrentInstance } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { useQuasar } from 'quasar'
+import { copyToClipboard, useQuasar } from 'quasar'
 import { Icon } from '@iconify/vue'
 import { nip19 } from 'nostr-core'
 import ChatHeader from '../components/chat/ChatHeader.vue'
@@ -371,6 +372,8 @@ export default {
 
     return {
       t, router, store, addressBook, walletStore, profile, runtime, chat, partner, contact, partnerName: displayName, formatFiat, fiatToSats, requestFiatCode,
+      /** The app's clipboard (falls back where the WebView has no clipboard API). */
+      copyText: copyToClipboard,
       signerState: signerNotice.state,
       signerKind: signerNotice.kind,
       signerBusy: signerNotice.busy,
@@ -620,8 +623,8 @@ export default {
 
     async onCopy({ text }) {
       try {
-        await navigator.clipboard.writeText(text)
-        this.toast(this.t('Copied'))
+        await this.copyText(text)
+        this.toast(this.t('Message copied'))
       } catch {
         this.toast(this.t("Couldn't copy"), { error: true })
       }
