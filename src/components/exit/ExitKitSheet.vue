@@ -55,7 +55,7 @@
               />
               <IdentityRow
                 :label="refreshing(entry) ? $t('Refreshing') : $t('Refresh kit')"
-                :caption="connected(entry) ? '' : $t('Switch to this wallet on the home screen to connect it.')"
+                :caption="connected(entry) ? '' : $t('This wallet is offline. Reconnect it in Manage Wallets to save its kit.')"
                 icon="tabler:refresh"
                 :interactive="connected(entry) && !refreshing(entry)"
                 :chevron="false"
@@ -143,7 +143,7 @@ export default {
         return this.$t('Could not refresh since {date}. Payments after that date are not covered yet.', { date: this.day(meta.failedSince) });
       }
       if (state === 'none') {
-        return this.connected(entry) ? this.$t('No kit saved yet') : this.$t('Switch to this wallet on the home screen to connect it.');
+        return this.connected(entry) ? this.$t('No kit saved yet') : this.$t('This wallet is offline. Reconnect it in Manage Wallets to save its kit.');
       }
       if (!meta.driveAt && !meta.sharedAt) return this.$t('This phone only');
       if (Math.max(meta.driveAt || 0, meta.sharedAt || 0) < meta.exportedAt) {
@@ -159,7 +159,7 @@ export default {
         return this.$t('Could not refresh since {date}. Payments after that date are not covered yet.', { date: this.day(meta.failedSince) }) + reason;
       }
       if (state === 'checked') return this.$t('{amount} sats could leave without Spark', { amount: formatSats(meta.recoverableSat, this.$i18n.locale) });
-      if (state === 'none' && !this.connected(entry)) return this.$t('Switch to this wallet on the home screen to connect it.');
+      if (state === 'none' && !this.connected(entry)) return this.$t('This wallet is offline. Reconnect it in Manage Wallets to save its kit.');
       return '';
     },
     hasDriveCopy(entry) { return !!this.meta(entry)?.driveAt; },

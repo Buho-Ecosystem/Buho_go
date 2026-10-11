@@ -15,10 +15,10 @@
     :class="$q.dark.isActive ? 'dialog_dark' : 'dialog_light'"
   >
     <q-card class="move-card" :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'">
-      <div class="sheet-grabber" aria-hidden="true"><div class="grabber-bar"></div></div>
-      <header class="move-header">
-        <button type="button" class="move-text-button" :disabled="moving" @click="open = false">{{ $t('Cancel') }}</button>
-        <h2 class="move-title">{{ $t('Move address') }}</h2>
+      <div class="form-sheet-grabber" aria-hidden="true"></div>
+      <header class="form-sheet-header">
+        <button type="button" class="form-sheet-cancel" :disabled="moving" @click="open = false">{{ $t('Cancel') }}</button>
+        <h2 class="form-sheet-title">{{ $t('Move address') }}</h2>
         <span aria-hidden="true"></span>
       </header>
 
@@ -48,16 +48,16 @@
         </div>
 
         <p v-if="targets.length && targets.every((w) => !connected(w.id))" class="move-consequence" role="status">
-          {{ $t('Both wallets need to be connected. Check your connection and try again.') }}
+          {{ notConnectedCopy }}
         </p>
         <p v-if="target" class="move-consequence" :class="{ 'is-destructive': !!addressOf(target) }" role="status">
           {{ addressOf(target)
             ? $t('{target} receives at {address} instead of {old}, which stops working. {source} gets a new address, which you can change later.', { target: target.name, address, old: addressOf(target), source: source.name })
             : $t('{target} receives at {address}. {source} gets a new address, which you can change later.', { target: target.name, address, source: source.name }) }}
         </p>
-        <p v-if="error" class="move-error" role="alert">{{ error }}</p>
+        <p v-if="error" class="form-sheet-error move-error" role="alert">{{ error }}</p>
 
-        <button type="button" class="move-primary" :disabled="!target || moving" @click="move">
+        <button type="button" class="form-sheet-primary move-primary" :disabled="!target || moving" @click="move">
           <q-spinner v-if="moving" size="18px" :aria-hidden="true" />
           {{ moving ? $t('Moving address...') : $t('Move address') }}
         </button>
@@ -94,6 +94,10 @@ const target = computed(() => targets.value.find((w) => w.id === targetId.value)
 const addressOf = (wallet) => store.walletInfos[wallet.id]?.lightningAddress || wallet.metadata?.lud16 || '';
 const address = computed(() => (source.value ? addressOf(source.value) : ''));
 const connected = (walletId) => !!store.connectionStates[walletId]?.connected;
+/** Every possible receiving wallet is offline: name them right for one or several. */
+const notConnectedCopy = computed(() => (targets.value.length > 1
+  ? t('Your other wallets need to be connected to receive the address. Check your connection and try again.')
+  : t('Both wallets need to be connected. Check your connection and try again.')));
 
 watch(() => props.modelValue, (visible) => {
   if (!visible) return;
@@ -129,11 +133,6 @@ async function move() {
 
 <style scoped>
 .move-card { width: 100%; max-width: 560px; margin: 0 auto; border-radius: 24px 24px 0 0; padding-bottom: max(20px, var(--safe-bottom, 0px)); max-height: 92dvh; overflow-y: auto; }
-.sheet-grabber { display: flex; justify-content: center; padding: 10px 0 2px; }
-.grabber-bar { width: 36px; height: 5px; border-radius: 3px; background: var(--text-muted); opacity: .4; }
-.move-header { display: grid; grid-template-columns: minmax(64px, 1fr) auto minmax(64px, 1fr); align-items: center; gap: 8px; padding: 6px 16px 4px; }
-.move-title { margin: 0; font-family: 'Manrope', sans-serif; font-size: 17px; font-weight: 650; line-height: 1.3; text-align: center; color: var(--text-primary); }
-.move-text-button { justify-self: start; min-height: 44px; padding: 0 4px; border: 0; background: transparent; color: var(--brand-accent-text, var(--text-primary)); font: 500 16px/1.3 'Manrope', sans-serif; cursor: pointer; }
 .move-body { display: flex; flex-direction: column; padding: 8px 20px 0; }
 .move-address { margin: 4px 0 0; font-family: var(--font-mono, monospace); font-size: 15px; font-weight: 600; text-align: center; overflow-wrap: anywhere; color: var(--text-primary); }
 .move-lead { margin: 12px 0 16px; color: var(--text-secondary); font-size: 14px; line-height: 1.5; text-align: center; }
@@ -147,12 +146,10 @@ async function move() {
 .move-option-sub { color: var(--text-secondary); font-family: var(--font-mono, monospace); font-size: 12px; overflow-wrap: anywhere; }
 .move-option-check { flex-shrink: 0; color: var(--brand-accent-text, #15DE72); }
 .move-consequence { margin: 14px 0 0; color: var(--text-secondary); font-size: 13px; line-height: 1.5; }
-.move-consequence.is-destructive { color: var(--color-negative, #b42332); }
+.move-consequence.is-destructive { color: var(--color-negative); }
 .move-option-sub.is-placeholder { font-family: inherit; }
-.move-error { margin: 10px 0 0; color: var(--color-negative, #b42332); font-size: 13px; line-height: 1.45; }
-.move-primary { display: inline-flex; align-items: center; justify-content: center; gap: 10px; min-height: 50px; margin-top: 20px; border: 0; border-radius: 14px; background: #1a1a1c; color: #faf7ef; font: 650 16px/1.3 'Manrope', sans-serif; cursor: pointer; }
-body.body--dark .move-primary { background: #e9e9ec; color: #1c1c1e; }
+.move-error { margin: 10px 0 0; }
+.move-primary { margin-top: 20px; }
 body.body--dark .move-option-mark { background: rgba(255, 255, 255, 0.1); }
-.move-primary:disabled { opacity: .5; cursor: default; }
-button:focus-visible { outline: 2px solid currentColor; outline-offset: 3px; }
+.move-option:focus-visible { outline: 2px solid currentColor; outline-offset: -2px; }
 </style>

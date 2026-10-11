@@ -64,6 +64,9 @@ const sparkConnects = new Map();
 // walletId -> bumped on disconnect, rebuild and removal. Work started under
 // an older epoch must not publish providers, balances or info afterwards.
 const walletEpochs = new Map();
+// Wallets being removed right now: nothing may connect them meanwhile, or a
+// reconnect could publish a live engine over the storage being deleted.
+const removingWallets = new Set();
 const epochOf = (walletId) => walletEpochs.get(walletId) || 0;
 
 // Spark membership changes (create, restore, add, discover, remove) run one
@@ -88,8 +91,22 @@ const lnAddressMoves = new Set();
 // Starts on which a restore keeps looking for unchecked accounts.
 const MAX_DISCOVERY_ATTEMPTS = 5;
 // Spark entries the multi-wallet migration could not keep (another phrase,
-// a duplicate account). Kept, never shown: nothing is ever deleted silently.
+// a duplicate account). Nothing is ever deleted silently: a wallet on
+// another phrase stays reachable in Manage Wallets, where its words can be
+// shown and written down (a duplicate account needs nothing: its account is
+// already on the list).
 const SPARK_SET_ASIDE_KEY = 'buhoGO_spark_set_aside_v1';
+
+/** Set-aside wallets on another recovery phrase: [{ id, name, encryptedMnemonic }]. */
+function setAsideOtherPhrases() {
+  try {
+    return JSON.parse(localStorage.getItem(SPARK_SET_ASIDE_KEY) || '[]')
+      .filter((entry) => entry?.reason === 'other_phrase' && entry.wallet?.connectionData?.encryptedMnemonic)
+      .map(({ wallet }) => ({ id: wallet.id, name: wallet.name || '', encryptedMnemonic: wallet.connectionData.encryptedMnemonic }));
+  } catch {
+    return [];
+  }
+}
 
 /** Store entries the migration could not keep. False when they could not be stored. */
 function setAsideSparkWallets(entries) {
@@ -298,7 +315,8 @@ export const useWalletStore = defineStore('wallet', {
     // restore resumes. { pending: number[], attempts, names: {account: name} }
     sparkDiscovery: null,
     // Runtime only: a discovery pass is running / what the last pass found
-    // ({ count, at }), for the in-app notice.
+    // ({ count, unchecked, at }: wallets added, accounts given up on), for
+    // the in-app notice.
     sparkDiscoveryRunning: false,
     sparkDiscoveryFound: null,
 
@@ -402,7 +420,7 @@ export const useWalletStore = defineStore('wallet', {
       return summarizeTotal(state.wallets.map((w) => w.id), state.balanceStates).total;
     },
 
-    /** { total, complete, stale, unknownIds, staleIds } across all wallets. */
+    /** { total, complete, stale, outdated, refreshing, unknownIds, staleIds } across all wallets. */
     totalBalanceInfo: (state) => {
       return summarizeTotal(state.wallets.map((w) => w.id), state.balanceStates);
     },
@@ -635,8 +653,10 @@ export const useWalletStore = defineStore('wallet', {
     },
 
     /**
-     * Get display balance for a wallet (uses cached balance for locked Spark)
-     * @returns {Function} (walletId) => { balance: number, isLocked: boolean, isCached: boolean }
+     * What every surface shows for one wallet's balance.
+     * @returns {Function} (walletId) => { balance, known, outdated, refreshing,
+     *   status, isLocked, isCached }: `known` false means a placeholder, never
+     *   a dash or zero; `outdated` (the last refresh failed) means dimmed.
      */
     getDisplayBalance: (state) => (walletId) => {
       const wallet = state.wallets.find(w => w.id === walletId);
@@ -1547,7 +1567,11 @@ export const useWalletStore = defineStore('wallet', {
       return wallet;
     },
 
-    /** Undo a Spark entry that never became a working wallet. */
+    /**
+     * Undo a Spark entry that never became a working wallet. A balance read
+     * during the failed connect may already have saved it, so the shorter
+     * list is saved too.
+     */
     async _discardSparkEntry(walletId) {
       this._bumpWalletEpoch(walletId);
       const provider = this.providers[walletId];
@@ -1560,6 +1584,8 @@ export const useWalletStore = defineStore('wallet', {
       const index = this.wallets.findIndex(w => w.id === walletId);
       if (index !== -1) this.wallets.splice(index, 1);
       await deleteBreezStorage(walletId).catch(() => {});
+      this._walletRemovalInProgress = true;
+      await this.persistState();
     },
 
     /** A wallet just set up becomes the one on screen (and the default when none is). */
@@ -1622,8 +1648,10 @@ export const useWalletStore = defineStore('wallet', {
     // The accounts still to check are persisted in `sparkDiscovery`, so a
     // restore interrupted by a closed app or a dead network resumes on the
     // next start. An account is dropped from the list once a check is
-    // conclusive; after MAX_DISCOVERY_ATTEMPTS starts the rest is left to
-    // the person (adding a wallet opens the next account and finds it).
+    // conclusive. Only passes that reached the network count as attempts, so
+    // being offline never uses them up; after MAX_DISCOVERY_ATTEMPTS the rest
+    // is left to the person, who is told (adding a wallet opens the next
+    // account and finds it).
 
     /** Queue every account without a wallet for checking. */
     _queueSparkDiscovery(names = {}) {
@@ -1716,11 +1744,13 @@ export const useWalletStore = defineStore('wallet', {
           sparkDiscoveryRerun = !!this.sparkDiscovery?.pending?.length;
           return [];
         }
+        let givenUp = 0;
         if (this.sparkDiscovery === plan) {
-          const attempts = (plan.attempts || 0) + 1;
-          this.sparkDiscovery = this.hasAnySparkWallet && unresolved.length && attempts < MAX_DISCOVERY_ATTEMPTS
-            ? { ...plan, pending: unresolved, attempts }
-            : null;
+          const reachedNetwork = results.some(r => r.evidence);
+          const attempts = (plan.attempts || 0) + (reachedNetwork ? 1 : 0);
+          const keepLooking = this.hasAnySparkWallet && unresolved.length && attempts < MAX_DISCOVERY_ATTEMPTS;
+          if (!keepLooking && this.hasAnySparkWallet) givenUp = unresolved.length;
+          this.sparkDiscovery = keepLooking ? { ...plan, pending: unresolved, attempts } : null;
         } else if (this.sparkDiscovery) {
           // Re-planned during the scan: keep the newer plan, minus what this
           // run settled, and look at the rest next.
@@ -1730,10 +1760,10 @@ export const useWalletStore = defineStore('wallet', {
           sparkDiscoveryRerun = pending.length > 0;
         }
         await this.persistState();
-        if (added.length) {
-          this.sparkDiscoveryFound = { count: added.length, at: Date.now() };
-          this._noteWalletsChanged();
+        if (added.length || givenUp) {
+          this.sparkDiscoveryFound = { count: added.length, unchecked: givenUp, at: Date.now() };
         }
+        if (added.length) this._noteWalletsChanged();
         return added;
       } finally {
         this.sparkDiscoveryRunning = false;
@@ -1745,6 +1775,7 @@ export const useWalletStore = defineStore('wallet', {
      * @param {string} walletId - Wallet ID
      */
     async connectSparkWallet(walletId, { forceReinit = false } = {}) {
+      if (removingWallets.has(walletId)) throw new Error('Spark connection was cancelled');
       // Serialized per wallet: concurrent callers (startup, lifecycle,
       // switch, transfer) share one attempt instead of building separate
       // providers that race to publish.
@@ -1787,7 +1818,7 @@ export const useWalletStore = defineStore('wallet', {
       }
       // A removal or rebuild during any await below cancels this attempt:
       // it must not resurrect a removed wallet or overwrite a newer state.
-      const current = () => epochOf(walletId) === epoch && this.wallets.includes(wallet);
+      const current = () => epochOf(walletId) === epoch && this.wallets.includes(wallet) && !removingWallets.has(walletId);
       const assertCurrent = () => {
         if (!current()) throw new Error('Spark connection was cancelled');
       };
@@ -2373,10 +2404,17 @@ export const useWalletStore = defineStore('wallet', {
      * @param {string} [walletId]
      * @returns {Promise<string>}
      */
+    /** Wallets set aside on another recovery phrase, for Manage Wallets: [{ id, name }]. */
+    setAsideSparkWallets() {
+      return setAsideOtherPhrases().map(({ id, name }) => ({ id, name }));
+    },
+
     async getMnemonicForWallet(walletId) {
       let wallet;
       if (walletId) {
         wallet = this.wallets.find((w) => w.id === walletId);
+        const setAside = !wallet && setAsideOtherPhrases().find((entry) => entry.id === walletId);
+        if (setAside) return CryptoUtils.decryptMnemonic(setAside.encryptedMnemonic);
       } else if (this.activeWallet?.connectionData?.encryptedMnemonic) {
         wallet = this.activeWallet;
       } else {
@@ -2687,15 +2725,9 @@ export const useWalletStore = defineStore('wallet', {
      */
     sparkRemovalCheck() {
       const exits = useEmergencyExitStore();
-      const balances = this.sparkWallets.map((w) => describeBalance(this.balanceStates[w.id]));
       return removalCheck({
         wallet: { type: WALLET_TYPES.SPARK },
         sparkWalletCount: 1,
-        balance: {
-          known: balances.every((b) => b.known),
-          value: balances.reduce((sum, b) => sum + (b.known ? b.value : 0), 0),
-          fresh: balances.every((b) => b.status === 'fresh'),
-        },
         hasPendingDeposit: this.sparkWallets.some((w) => (this.pendingDepositsByWallet?.[w.id] || []).length > 0),
         hasActiveExit: this.sparkWallets.some((w) => isActiveExit(exits.exitFor(w.id))),
         backedUp: this._sparkPhraseBackedUp(),
@@ -2732,7 +2764,7 @@ export const useWalletStore = defineStore('wallet', {
     /**
      * Take every Spark wallet, and with them the recovery phrase, off this
      * device (Settings, Danger Zone). Refused while an exit or a deposit is
-     * under way, and unless the phrase is backed up or the wallets are empty.
+     * under way, and unless the phrase is backed up.
      */
     async removeSparkFromDevice() {
       return serializeSparkMembership(async () => {
@@ -2759,7 +2791,18 @@ export const useWalletStore = defineStore('wallet', {
      */
     async _removeWalletEntry(wallet) {
       const walletId = wallet.id;
+      removingWallets.add(walletId);
+      try {
+        return await this._dropWalletEntry(wallet);
+      } finally {
+        removingWallets.delete(walletId);
+      }
+    },
+
+    async _dropWalletEntry(wallet) {
+      const walletId = wallet.id;
       this._walletRemovalInProgress = true;
+      this._bumpWalletEpoch(walletId);
 
       if (wallet.type === WALLET_TYPES.SPARK) {
         // The databases are about to be deleted with their exit chains: take

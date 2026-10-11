@@ -122,9 +122,27 @@ test('removing a Spark wallet removes exactly that wallet, never a sibling or an
   store.activeWalletId = 'P';
   store.disconnectWallet = async () => {};
   store.switchActiveWallet = async (id) => { store.activeWalletId = id; };
+  store.applyBalance('P', 0, { source: 'sync' });
   await store.removeWallet('P');
   assert.deepEqual(store.wallets.map((w) => w.id), ['B', 'N']);
   assert.equal(store.activeWalletId, 'B', 'selection moves to the remaining Spark wallet');
+});
+
+test('a wallet being removed cannot be connected meanwhile', async () => {
+  const store = load({ createProvider: () => scriptedProvider() });
+  store.wallets = [sparkWallet('P'), sparkWallet('B')];
+  store.activeWalletId = 'B';
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  store.disconnectWallet = async () => { await gate; };
+  store.applyBalance('P', 0, { source: 'sync' });
+  const removal = store.removeWallet('P');
+  await new Promise((resolve) => setImmediate(resolve));
+  await assert.rejects(() => store.connectSparkWallet('P'), /cancelled/);
+  release();
+  await removal;
+  assert.deepEqual(store.wallets.map((w) => w.id), ['B']);
+  assert.equal(store.providers.P, undefined, 'no engine outlives the removal');
 });
 
 test('a claimed mark the SDK proves wrong is released; a fresh or in-flight one is not', () => {

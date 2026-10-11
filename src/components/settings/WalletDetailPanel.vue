@@ -46,10 +46,10 @@
         </div>
         <div class="detail-balance">
           <!-- Never a stand-in number or dash: a placeholder until the first figure arrives. -->
-          <span v-if="!balanceKnown" class="balance-placeholder" role="img" :aria-label="$t('Balance not loaded yet')" />
-          <HiddenAmount v-else>{{ balance }}</HiddenAmount>
+          <span v-if="!balanceKnown" v-balance-updating="balanceRefreshing" class="balance-placeholder" role="img" :aria-label="$t('Balance not loaded yet')" />
+          <HiddenAmount v-else :class="{ 'balance-stale': balanceOutdated }">{{ balance }}</HiddenAmount>
         </div>
-        <HiddenAmount v-if="balanceKnown && fiat" class="detail-fiat">{{ fiat }}</HiddenAmount>
+        <HiddenAmount v-if="balanceKnown && fiat" class="detail-fiat" :class="{ 'balance-stale': balanceOutdated }">{{ fiat }}</HiddenAmount>
       </div>
 
       <p v-if="connectionError" class="detail-error detail-connection-error" role="status">{{ connectionError }}</p>
@@ -103,7 +103,10 @@ import { computed, getCurrentInstance, nextTick, onMounted, ref } from 'vue';
 import { Icon } from '@iconify/vue';
 import WalletBrandMark from '../WalletBrandMark.vue';
 import HiddenAmount from '../HiddenAmount.vue';
+import balanceUpdating from '../../directives/balanceUpdating.js';
 import { MAX_WALLET_NAME_LENGTH, walletNameCopy } from '../../utils/walletNames.js';
+
+const vBalanceUpdating = balanceUpdating;
 
 const props = defineProps({
   wallet: { type: Object, required: true },
@@ -111,6 +114,10 @@ const props = defineProps({
   balance: { type: String, required: true },
   /** False until the wallet has a first balance figure. */
   balanceKnown: { type: Boolean, default: true },
+  /** The figure is known to be out of date (its last refresh failed): dimmed. */
+  balanceOutdated: { type: Boolean, default: false },
+  /** A refresh is under way: the placeholder pulses until the first figure. */
+  balanceRefreshing: { type: Boolean, default: false },
   /** The balance in the person's fiat currency ('' while no rate is known). */
   fiat: { type: String, default: '' },
   active: Boolean,
@@ -176,8 +183,8 @@ onMounted(() => backButton.value?.focus({ preventScroll: true }));
 </script>
 
 <style scoped>
-.wallet-detail-panel { --detail-surface: #fffdf8; --detail-line: #ddd8cb; --detail-secondary: #5f5b52; --detail-active: #006b50; --detail-active-bg: #e1f2e8; --detail-danger: #b42332; display: flex; flex-direction: column; min-height: 0; color: var(--text-primary); background: var(--bg-card); }
-.wallet-detail-panel--dark { --detail-surface: #272729; --detail-line: #444447; --detail-secondary: #b9b9c0; --detail-active: #80e8b6; --detail-active-bg: #204432; --detail-danger: #ff939b; }
+.wallet-detail-panel { --detail-surface: #fffdf8; --detail-line: #ddd8cb; --detail-secondary: #5f5b52; --detail-active: #006b50; --detail-active-bg: #e1f2e8; --detail-danger: var(--color-negative); display: flex; flex-direction: column; min-height: 0; color: var(--text-primary); background: var(--bg-card); }
+.wallet-detail-panel--dark { --detail-surface: #272729; --detail-line: #444447; --detail-secondary: #b9b9c0; --detail-active: #80e8b6; --detail-active-bg: #204432; }
 .detail-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-shrink: 0; padding: 12px 16px 8px; font-size: 1rem; font-weight: 600; }
 .header-spacer { width: 44px; }
 .detail-icon-button { width: 44px; min-width: 44px; height: 44px; display: inline-flex; align-items: center; justify-content: center; border: 0; border-radius: 50%; color: inherit; background: transparent; cursor: pointer; }
@@ -198,8 +205,7 @@ onMounted(() => backButton.value?.focus({ preventScroll: true }));
 .detail-actions { display: flex; flex-direction: column; gap: 10px; margin-top: 20px; }
 .detail-button { display: inline-flex; align-items: center; justify-content: center; gap: 10px; width: 100%; min-height: 48px; border-radius: 14px; border: 1px solid transparent; padding: 12px 16px; font: 600 .9375rem/1.4 'Manrope', sans-serif; color: inherit; cursor: pointer; }
 .detail-button > svg, .detail-button > .q-icon { flex-shrink: 0; }
-.detail-primary { background: #1a1a1c; color: #faf7ef; }
-.wallet-detail-panel--dark .detail-primary { background: #e9e9ec; color: #1c1c1e; }
+.detail-primary { background: var(--btn-primary-bg); color: var(--btn-primary-fg); }
 .detail-secondary { background: var(--detail-surface); border-color: var(--detail-line); }
 .detail-danger-section { border-top: 1px solid var(--detail-line); padding-top: 16px; margin-top: 24px; }
 .detail-danger { background: transparent; color: var(--detail-danger); justify-content: flex-start; font-weight: 500; }
@@ -228,5 +234,4 @@ button:not(:disabled):active { filter: brightness(.9); }
   .detail-edit { grid-column: 2; grid-row: 1; }
   .detail-identity-copy { grid-column: 1 / -1; grid-row: 2; }
 }
-@media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto; } }
 </style>

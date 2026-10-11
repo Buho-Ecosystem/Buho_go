@@ -142,6 +142,7 @@ export function createHarness({ evidence = {}, connect = null, storage = {}, exi
     '../boot/i18n': { i18n: { global: { t: (key, values = {}) => key.replace(/\{(\w+)\}/g, (_, name) => values[name] ?? name) } } },
     '../utils/claimedDeposits.js': { createClaimedDepositRegistry: () => ({ has: () => false, add() {} }) },
     '../utils/txCache.js': { clearCachedTransactions: () => {} },
+    '../utils/fiatRates.js': { fiatRatesService: { formatFiatAmount: (amount, currency) => `${currency} ${amount.toFixed(2)}` } },
     './cloudBackup.js': { useCloudBackupStore: () => ({ noteWalletsChanged: () => { calls.backupNotes += 1; } }) },
   };
 

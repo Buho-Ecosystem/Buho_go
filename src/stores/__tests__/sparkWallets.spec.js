@@ -114,6 +114,20 @@ test('an account that could not be checked stays queued across restarts, then is
   assert.deepEqual(h.store.sparkDiscovery.pending, [3]);
   for (let i = 0; i < 5; i += 1) await h.store.discoverSparkAccounts();
   assert.equal(h.store.sparkDiscovery, null, 'after the attempt limit the rest is left to Add wallet');
+  assert.equal(h.store.sparkDiscoveryFound.unchecked, 1, 'and the person is told');
+});
+
+test('being offline never uses up discovery attempts', async () => {
+  const offline = new Error('offline');
+  const evidence = { 2: offline, 3: offline, 4: offline, 5: offline, 0: offline };
+  const h = createHarness({ evidence });
+  await h.store.restoreSparkWallets({ mnemonic: PHRASE });
+  for (let i = 0; i < 8; i += 1) await h.store.discoverSparkAccounts();
+  assert.deepEqual(h.store.sparkDiscovery.pending, [2, 3, 4, 5, 0], 'still queued for when the network is back');
+  assert.equal(h.store.sparkDiscovery.attempts, 0);
+  evidence[0] = used();
+  await h.store.discoverSparkAccounts();
+  assert.ok(accounts(h.store).includes(0), 'the pre-1.6 account is found once online');
 });
 
 test('a restore that lists wallets creates them with their names, then looks for the rest', async () => {
@@ -148,6 +162,7 @@ test('discovery started for one phrase never adds wallets after that phrase left
   const running = h.store.discoverSparkAccounts();
   await tick();
   // While the probe for account 2 is in flight, the phrase goes and another arrives.
+  await h.store.confirmBackup(h.store.sparkWallets[0].id);
   await h.store.removeSparkFromDevice();
   await h.store.createSparkWallet({ mnemonic: OTHER_PHRASE });
   release();
@@ -220,7 +235,7 @@ test('a wallet holding money, receiving a deposit or exiting is not removed', as
   assert.equal(h.store.sparkWallets.length, 2);
 });
 
-test('the last Spark wallet goes only with a backed-up phrase, unless it is empty', async () => {
+test('the last Spark wallet goes only with a backed-up phrase, whatever its balance', async () => {
   const h = createHarness();
   const wallet = await h.store.createSparkWallet({ mnemonic: PHRASE });
   h.setBalance(wallet.id, 900);
@@ -235,7 +250,21 @@ test('the last Spark wallet goes only with a backed-up phrase, unless it is empt
 
   const empty = createHarness();
   const fresh = await empty.store.createSparkWallet({ mnemonic: PHRASE });
-  assert.equal(empty.store.removalCheckFor(fresh.id).allowed, true, 'an empty, never backed up wallet may go');
+  empty.setBalance(fresh.id, 0);
+  assert.deepEqual(empty.store.removalCheckFor(fresh.id).blockers, ['needs_backup'], 'an empty wallet still takes the phrase off the device');
+});
+
+test('a wallet that is not the last goes only once the network has just shown it empty', async () => {
+  const h = createHarness();
+  await h.store.createSparkWallet({ mnemonic: PHRASE });
+  const savings = await h.store.addSparkWallet({ name: 'Savings' });
+  h.store.applyBalance(savings.id, 0, { source: 'cache' });
+  assert.deepEqual(h.store.removalCheckFor(savings.id).blockers, ['balance_unverified'], 'a saved zero');
+  h.store.forgetBalance(savings.id);
+  assert.deepEqual(h.store.removalCheckFor(savings.id).blockers, ['balance_unverified'], 'no balance yet');
+  await assert.rejects(() => h.store.removeWallet(savings.id), (e) => e.blockers.includes('balance_unverified'));
+  h.setBalance(savings.id, 0);
+  assert.equal(h.store.removalCheckFor(savings.id).allowed, true);
 });
 
 test('Spark leaves the device in one step under the last-wallet rules', async () => {
@@ -250,6 +279,20 @@ test('Spark leaves the device in one step under the last-wallet rules', async ()
   assert.equal(h.store.sparkWallets.length, 0);
   assert.equal(h.store.sparkDiscovery, null);
   assert.equal(h.saved().wallets.length, 0);
+});
+
+// ---- Fiat -----------------------------------------------------------------
+
+test('every balance converts to the person\'s currency, and nothing shows without a rate', () => {
+  const { store } = createHarness();
+  store.preferredFiatCurrency = 'EUR';
+  store.exchangeRates = { eur: 80000 };
+  assert.equal(store.fiatValueOf(250000), 'EUR 200.00');
+  assert.equal(store.fiatValueOf(0), 'EUR 0.00', 'a known zero is a value');
+  store.exchangeRates = {};
+  assert.equal(store.fiatValueOf(250000), '', 'no rate, no made-up figure');
+  store.exchangeRates = { eur: 80000 };
+  assert.equal(store.fiatValueOf(undefined), '');
 });
 
 // ---- Rename ---------------------------------------------------------------
@@ -334,6 +377,8 @@ test('entries on another phrase or duplicating an account are set aside, never d
   assert.equal(aside.find((entry) => entry.wallet.id === 'X').wallet.connectionData.encryptedMnemonic, other.connectionData.encryptedMnemonic, 'the phrase envelope is kept');
   assert.equal(h.saved().wallets.length, 3, 'the shorter list was allowed through the persist guard');
   assert.notEqual(h.store.activeWalletId, 'X');
+  assert.deepEqual(h.store.setAsideSparkWallets().map((w) => w.id), ['X'], 'the other phrase stays reachable');
+  assert.equal(await h.store.getMnemonicForWallet('X'), OTHER_PHRASE, 'and its words can be shown');
 });
 
 test('when a phrase cannot be read yet, nothing is set aside and the migration waits', async () => {

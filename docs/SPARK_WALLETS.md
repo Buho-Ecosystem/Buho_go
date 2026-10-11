@@ -45,14 +45,14 @@ The store (`src/stores/wallet.js`) applies these rules. Membership changes run o
 - `discoverSparkAccounts()`:
   - Checks the queued accounts with throwaway SDK probes (`src/services/sparkAccountScan.js`, two at a time).
   - Adds a wallet only on evidence of use: a balance, a payment, an unclaimed deposit, or a registered Lightning address.
-  - An account whose probe failed, or was unsynced and empty, stays queued in `sparkDiscovery` (persisted). It resumes on the next start and is given up after five starts.
+  - An account whose probe failed, or was unsynced and empty, stays queued in `sparkDiscovery` (persisted). It resumes on the next start. Only passes that reached the network count, so being offline never uses up attempts; after five, the rest is given up and Home says so (adding a wallet looks again).
   - Discovery started for one phrase never adds wallets after that phrase left the device (`sparkPhraseEpoch`).
 - `removeWallet(id)` removes exactly one wallet, after `removalCheckFor(id)`:
   - no removal while an emergency exit or an incoming deposit is under way;
-  - a funded wallet is emptied first (Settings offers Move funds);
-  - the last Spark wallet goes only with a backed-up phrase, unless the network has just confirmed it empty (a saved zero does not count).
+  - a wallet that is not the last goes only once a balance read just now shows it empty (a saved or unknown balance never counts; Settings reads it before asking, and offers Move funds when it holds money);
+  - the last Spark wallet goes only with a backed-up phrase, whatever its balance: the phrase leaves with it, and so does every removed account.
   - A Spark wallet that is not the last one is confirmed with one plain destructive alert. The last wallet and other wallet types keep the typed confirmation.
-- `removeSparkFromDevice()` removes every Spark wallet under the last-wallet rules. One cleanup path (`_removeWalletEntry`) handles:
+- `removeSparkFromDevice()` removes every Spark wallet under the last-wallet rules. While a wallet is being removed nothing may connect it. One cleanup path (`_removeWalletEntry`) handles:
   - engine storage, caches and lifecycle work;
   - exit kit metadata (the kit itself is kept);
   - the auto-transfer rule;
@@ -71,7 +71,8 @@ Runs in `initialize()` until it completes once (`sparkModelVersion` 2):
 - Former pairs become two ordinary wallets that keep their names. No Personal is created, nothing is renamed, nothing is purged.
 - Pockets (the pre-1.6 model) become wallets on the same phrase.
 - `walletGroupId` is dropped.
-- Entries on another phrase, or a second entry for the same account, are set aside in `buhoGO_spark_set_aside_v1`. They are never deleted. The kept list then passes the store's persist guard explicitly.
+- Entries on another phrase, or a second entry for the same account, are set aside in `buhoGO_spark_set_aside_v1`. They are never deleted. The kept list then passes the store's persist guard explicitly. A wallet on another phrase stays reachable: Manage Wallets lists it under "Other recovery phrase" and shows its words.
+- Auto-transfer rules from former pockets move to the wallet that now holds the account, switched off.
 - When a phrase cannot be read yet (an install still on the old PIN encryption), nothing is set aside and the migration waits for a later start.
 
 ## Backup and restore
@@ -86,7 +87,8 @@ Runs in `initialize()` until it completes once (`sparkModelVersion` 2):
 - Wallet changes notify `cloudBackup.noteWalletsChanged()`. The device that wrote the current backup uploads a fresh one silently. It never does so:
   - after a restore that could not bring everything back;
   - over a backup another phone wrote in the meantime, judged by Drive's own `modifiedAt` of this device's last upload rather than any device clock;
-  - when the new backup would lose a recovery phrase the backup on Drive holds. It decrypts the current backup and compares phrase fingerprints (`src/utils/backupSecrets.js`);
+  - after the backup was deleted on Drive, or over one this phone cannot open;
+  - when the new backup would lose a secret the backup on Drive holds (a recovery phrase, an NWC connection, an LNbits key). It decrypts the current backup and compares fingerprints (`src/utils/backupSecrets.js`);
   - without a signed-in account.
 
   A manual backup clears any pause. Before a manual backup that would drop a phrase, the sheet warns. The Drive sheet says when the copy no longer matches this phone.
@@ -100,10 +102,12 @@ Runs in `initialize()` until it completes once (`sparkModelVersion` 2):
   - A row pushes `WalletDetailPanel`: rename, balance, use, reconnect and remove. For Spark it also shows the wallet's Lightning address, with change and "Move to another wallet" (`MoveLightningAddressSheet`).
 - **Balances follow one rule everywhere** (switcher, Manage Wallets, detail):
   - an unknown figure is a placeholder, never a dash or a zero;
-  - a figure known to be out of date is dimmed;
-  - the total is labelled "Total", reads "at least" while a wallet's figure is missing, and pulses while wallets refresh.
+  - a figure known to be out of date (its last refresh failed) is dimmed, its fiat line too;
+  - a placeholder pulses while its first figure loads;
+  - the total is labelled "Total", reads "at least" while a wallet's figure is missing, is dimmed when one of its figures is out of date, and pulses while wallets refresh.
   - every figure shows its fiat value next to the Bitcoin amount (`walletStore.fiatValueOf`).
-- **Arkade** follows the same patterns as the other wallets: the shared dark avatar circle and the shared neutral type chip. Its mark always follows the brand rule by theme: purple in light mode, red/orange in dark mode (`--arkade-*` tokens in `app.css`).
+- **Arkade** follows the same patterns as the other wallets: the shared dark avatar circle and the shared neutral type chip. Its mark always follows the brand rule by theme: purple in light mode, red/orange in dark mode (`--arkade-*` tokens in `app.css`), on the dark circle too (an owner decision).
+- **Form sheets** (Add Spark wallet, Move address) share one layout in `app.css` (`.form-sheet-*`); primary buttons and error text read `--btn-primary-*` and `--color-negative`, which have light and dark values.
 - Every user-facing string is in en-US, de and es. The multi-wallet strings live in `src/i18n/<lang>/wallets.js`.
 
 ## Validation

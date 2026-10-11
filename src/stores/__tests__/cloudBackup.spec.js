@@ -15,7 +15,8 @@ function harness({ wallets = [], meta = null, remote = null, platform = true, re
   globalThis.localStorage = memoryStorage(meta ? { buhoGO_cloud_backup_meta_v1: JSON.stringify(meta) } : {});
   const log = [];
   const hooks = {};
-  const drive = { remote, uploads: [], listError: null, clock: 0 };
+  // A backup on Drive always has content and a key; tests take them away.
+  const drive = { remote, payload: remote ? { v: 2 } : undefined, key: 'key', uploads: [], listError: null, clock: 0 };
   const wallet = {
     wallets,
     isInitialized: true,
@@ -47,7 +48,7 @@ function harness({ wallets = [], meta = null, remote = null, platform = true, re
       },
       downloadBackup: async () => JSON.stringify({ payload: drive.payload }),
       uploadBackupKey: async () => {},
-      downloadBackupKey: async () => JSON.stringify({ v: 1, k: 'key' }),
+      downloadBackupKey: async () => (drive.key ? JSON.stringify({ v: 1, k: drive.key }) : null),
       getRemoteBackupInfo: async () => { if (drive.listError) throw drive.listError; return drive.remote; },
       deleteBackup: async () => {},
     },
@@ -198,6 +199,35 @@ test('an automatic upload never removes a recovery phrase the backup on Drive ho
   assert.equal(await h.store.backupDropsSecrets(), true, 'the backup sheet warns before a manual backup');
   await h.store.backup();
   assert.equal(h.store.autoBackupBlocked, null, 'the person decided');
+});
+
+test('an automatic upload never removes a wallet connection the backup on Drive holds', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const h = harness(configured({ remote: { modifiedAt: '2026-10-01T10:00:30.000Z' } }));
+  h.drive.payload = { v: 2, nwc: [{ name: 'Alby', nwcUrl: 'nostr+walletconnect://only-on-drive' }], lnbits: [{ name: 'Shop', serverUrl: 'https://lnbits.example', adminKey: 'k' }] };
+  h.store.noteWalletsChanged();
+  t.mock.timers.tick(4000);
+  await flush();
+  assert.equal(h.drive.uploads.length, 0);
+  assert.equal(h.store.autoBackupBlocked, 'would_drop_secret');
+});
+
+test('a backup deleted on Drive, or one this phone cannot open, is never replaced silently', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const deleted = harness(configured());
+  deleted.store.noteWalletsChanged();
+  t.mock.timers.tick(4000);
+  await flush();
+  assert.equal(deleted.drive.uploads.length, 0);
+  assert.equal(deleted.store.autoBackupBlocked, 'remote_missing');
+
+  const unreadable = harness(configured({ remote: { modifiedAt: '2026-10-01T10:00:30.000Z' } }));
+  unreadable.drive.key = null;
+  unreadable.store.noteWalletsChanged();
+  t.mock.timers.tick(4000);
+  await flush();
+  assert.equal(unreadable.drive.uploads.length, 0, 'no new key replaces the backup');
+  assert.equal(unreadable.store.autoBackupBlocked, 'remote_unreadable');
 });
 
 test('the backup on Drive is replaced only while it is still the one this phone wrote', async (t) => {

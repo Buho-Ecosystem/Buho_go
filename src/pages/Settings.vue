@@ -791,7 +791,7 @@
         <SettingsRow
           v-if="hasSparkWallet"
           destructive
-          :label="$t('Delete Spark Wallets')"
+          :label="sparkWallets.length > 1 ? $t('Remove Spark wallets') : $t('Remove Spark wallet')"
           @click="confirmDeleteSparkWallet"
         />
         <SettingsRow
@@ -1065,6 +1065,8 @@
           :type-label="getWalletTypeLabel(detailWallet)"
           :balance="walletBalanceText(detailWallet.id)"
           :balance-known="walletStore.getDisplayBalance(detailWallet.id).known"
+          :balance-outdated="walletStore.getDisplayBalance(detailWallet.id).outdated"
+          :balance-refreshing="walletStore.getDisplayBalance(detailWallet.id).refreshing"
           :fiat="walletStore.fiatValueOf(walletStore.getDisplayBalance(detailWallet.id).balance)"
           :active="detailWallet.id === activeWalletId"
           :connected="!!connectionStates[detailWallet.id]?.connected"
@@ -1112,9 +1114,9 @@
               <div class="stat-value" :class="$q.dark.isActive ? 'balance_dark' : 'balance_light'">
                 <!-- Every configured wallet counts; a total missing a wallet's
                      figure reads "at least" and is dimmed (same as the switcher). -->
-                <HiddenAmount :class="{ 'balance-stale': !walletStore.totalBalanceInfo.complete }">{{ walletStore.totalBalanceInfo.complete ? '' : '≥ ' }}{{ formatBalance(totalBalance) }}</HiddenAmount>
+                <HiddenAmount v-balance-updating="walletStore.totalBalanceInfo.refreshing" :class="{ 'balance-stale': walletStore.totalBalanceInfo.outdated }">{{ walletStore.totalBalanceInfo.complete ? '' : '≥ ' }}{{ formatBalance(totalBalance) }}</HiddenAmount>
               </div>
-              <HiddenAmount v-if="walletStore.fiatValueOf(totalBalance)" class="stat-fiat">{{ walletStore.totalBalanceInfo.complete ? '' : '≥ ' }}{{ walletStore.fiatValueOf(totalBalance) }}</HiddenAmount>
+              <HiddenAmount v-if="walletStore.fiatValueOf(totalBalance)" class="stat-fiat" :class="{ 'balance-stale': walletStore.totalBalanceInfo.outdated }">{{ walletStore.totalBalanceInfo.complete ? '' : '≥ ' }}{{ walletStore.fiatValueOf(totalBalance) }}</HiddenAmount>
               <div class="stat-label" :class="$q.dark.isActive ? 'sats' : 'sats-light'">
                 {{ $t('Total') }}
               </div>
@@ -1196,10 +1198,10 @@
                 <div class="wallet-row-value" :class="$q.dark.isActive ? 'row-value-dark' : 'row-value-light'">
                   <!-- Same rule as the home switcher: a placeholder until the first
                        figure, dimmed only when known to be out of date. -->
-                  <span v-if="!walletStore.getDisplayBalance(wallet.id).known" class="balance-placeholder" role="img" :aria-label="$t('Balance not loaded yet')" />
+                  <span v-if="!walletStore.getDisplayBalance(wallet.id).known" v-balance-updating="walletStore.getDisplayBalance(wallet.id).refreshing" class="balance-placeholder" role="img" :aria-label="$t('Balance not loaded yet')" />
                   <template v-else>
                     <HiddenAmount :class="{ 'balance-stale': walletStore.getDisplayBalance(wallet.id).outdated }">{{ walletBalanceText(wallet.id) }}</HiddenAmount>
-                    <HiddenAmount v-if="walletStore.fiatValueOf(walletStore.getDisplayBalance(wallet.id).balance)" class="wallet-row-fiat">{{ walletStore.fiatValueOf(walletStore.getDisplayBalance(wallet.id).balance) }}</HiddenAmount>
+                    <HiddenAmount v-if="walletStore.fiatValueOf(walletStore.getDisplayBalance(wallet.id).balance)" class="wallet-row-fiat" :class="{ 'balance-stale': walletStore.getDisplayBalance(wallet.id).outdated }">{{ walletStore.fiatValueOf(walletStore.getDisplayBalance(wallet.id).balance) }}</HiddenAmount>
                   </template>
                 </div>
                 <Icon icon="tabler:chevron-right" width="16" height="16" class="wallet-row-chevron" />
@@ -1207,6 +1209,19 @@
 
               </div>
           </div>
+
+            <!-- Wallets an earlier version kept on another recovery phrase:
+                 off the list (one phrase per device), never out of reach. -->
+            <section v-if="setAsideWallets.length" class="set-aside" :aria-label="$t('Other recovery phrase')">
+              <h3 class="set-aside-title">{{ $t('Other recovery phrase') }}</h3>
+              <div class="set-aside-group" :class="$q.dark.isActive ? 'wallets-group-dark' : 'wallets-group-light'">
+                <button v-for="entry in setAsideWallets" :key="entry.id" type="button" class="set-aside-row" @click="openSeedPhraseDialog('view', entry.id)">
+                  <span class="set-aside-name">{{ entry.name || $t('Wallet') }}</span>
+                  <span class="set-aside-action">{{ $t('Show recovery phrase') }}</span>
+                </button>
+              </div>
+              <p class="set-aside-footer">{{ $t('These wallets use a different recovery phrase than this phone. Write their words down to keep their money: they open the wallet in any Spark wallet app.') }}</p>
+            </section>
           </div>
         </q-card-section>
 
@@ -2097,6 +2112,7 @@ import { parseNwcConnection, NWC_REASON_I18N_KEYS } from '../utils/nwcConnection
 import { loadDismissedWarnings, saveDismissedWarnings } from '../utils/attentionWarnings.js'
 import KioskPinPad from '../components/KioskPinPad.vue'
 import SparkSeedPhraseDialog from '../components/SparkSeedPhraseDialog.vue'
+import balanceUpdating from '../directives/balanceUpdating.js'
 import ArkadeLogo from '../components/ArkadeLogo.vue'
 import WalletBrandMark from '../components/WalletBrandMark.vue'
 import BiometricEnableDialog from '../components/BiometricEnableDialog.vue'
@@ -2138,6 +2154,7 @@ const MEMPOOL_PRESET_URLS = [MEMPOOL_DEFAULT_URL, MEMPOOL_BLOCKTRAINER_URL];
 
 export default {
   name: 'SettingsPage',
+  directives: { balanceUpdating },
   components: {
     ArkadeLogo,
     WalletBrandMark,
@@ -2375,6 +2392,10 @@ export default {
     }
   },
   computed: {
+    /** Wallets set aside on another recovery phrase (see the wallet store). */
+    setAsideWallets() {
+      return this.showWalletsDialog ? this.walletStore.setAsideSparkWallets() : [];
+    },
     /**
      * An Arkade wallet's auto-withdraw cannot ride Lightning while the rail
      * is out of service (Boltz retired) - the pill is disabled and existing
@@ -2850,10 +2871,7 @@ export default {
         entries.push({
           configKey: wallet.id,
           wallet,
-          account: null,
           name: wallet.name,
-          parentName: null,
-          isPocket: false,
           type: wallet.type,
         });
       }
@@ -3089,9 +3107,9 @@ export default {
      */
     openSeedPhraseDialog(mode, walletId = null) {
       this.seedPhraseMode = mode;
-      // This page's own rows act on the active wallet; only the identity
-      // deep link names one, and it sets the field before calling.
-      if (walletId !== null) this.seedPhraseWalletId = walletId;
+      // No id: the active wallet. An id names a wallet set aside on another
+      // phrase; it never carries over to the next opening.
+      this.seedPhraseWalletId = walletId;
       this.showSeedPhraseDialog = true;
     },
 
@@ -3818,12 +3836,12 @@ export default {
       }
 
       const count = this.sparkWallets.length;
-      this.dangerConfirmTitle = this.$t('Delete Spark Wallets');
+      this.dangerConfirmTitle = this.$t('Remove Spark from this phone?');
       this.dangerConfirmMessage = (count > 1
         ? this.$t('This removes all {count} Spark wallets and their recovery phrase from this phone. You can restore them any time with your recovery phrase.', { count })
         : this.$t('This removes your last Spark wallet and its recovery phrase from this phone. You can restore it any time with your recovery phrase.'))
         + ' ' + this.$t('The last saved exit kit stays on this phone in case you add the wallet again with the same recovery phrase.');
-      this.dangerConfirmButtonText = this.$t('Delete');
+      this.dangerConfirmButtonText = this.$t('Remove');
       this.dangerConfirmInput = '';
       this.dangerConfirmAction = 'deleteSparkWallet';
       this.showDangerConfirmDialog = true;
@@ -3866,7 +3884,7 @@ export default {
           await this.walletStore.removeSparkFromDevice();
           this.$q.notify({
             type: 'positive',
-            message: this.$t('Spark wallets deleted'),
+            message: this.$t('Spark removed from this phone'),
           });
           this.showDangerConfirmDialog = false;
         } else if (this.dangerConfirmAction === 'deleteArkadeWallet') {
@@ -3922,12 +3940,15 @@ export default {
       return formatAmount(amount, this.useBip177Format);
     },
 
-    confirmRemoveWallet(walletId) {
+    async confirmRemoveWallet(walletId) {
       const wallet = this.wallets.find(w => w.id === walletId)
       if (!wallet) return
 
+      // Only a balance read just now can show a Spark wallet is empty.
+      if (wallet.type === 'spark') await this.walletStore.refreshBalance(walletId)
+      const check = this.walletStore.removalCheckFor(walletId)
       const copy = removalCopy({
-        check: this.walletStore.removalCheckFor(walletId),
+        check,
         wallet,
         t: this.$t.bind(this),
         formatAmount: this.formatSats,
@@ -3941,7 +3962,6 @@ export default {
       // A Spark wallet that is not the last one can come back from the
       // recovery phrase: a plain destructive alert is enough. Removals that
       // cannot be undone keep the typed confirmation below.
-      const check = this.walletStore.removalCheckFor(walletId)
       if (wallet.type === 'spark' && !check.notes.includes('last_spark_wallet')) {
         this.$q.dialog({
           title: copy.title,
@@ -4468,7 +4488,8 @@ export default {
      */
     walletBalanceText(walletId) {
       const d = this.walletStore.getDisplayBalance(walletId)
-      return d.known ? this.formatBalance(d.balance) : '—'
+      // Callers show a placeholder for an unknown balance; never a dash.
+      return d.known ? this.formatBalance(d.balance) : ''
     },
 
     formatFiatValue(sats) {
@@ -4614,7 +4635,6 @@ export default {
   color: var(--text-muted);
 }
 
-
 /* Compact layout helpers introduced by the refactor */
 .kiosk-tip-input-row {
   display: flex;
@@ -4629,7 +4649,6 @@ export default {
 .kiosk-activate-row {
   padding: 12px 16px 14px;
 }
-
 
 .donation-portal-link .q-icon {
   color: #ff6b9d;
@@ -5422,8 +5441,8 @@ export default {
 }
 
 .add-wallet-btn-dark {
-  color: #FFFFFF;
-  background: linear-gradient(135deg, #15DE72, #0DBB5F);
+  color: var(--btn-primary-fg);
+  background: var(--btn-primary-bg);
 }
 
 .add-wallet-btn-dark:hover {
@@ -5437,30 +5456,6 @@ export default {
 
 .add-wallet-btn-light:hover {
   background: #2A2A2A;
-}
-
-.add-pocket-btn-dark {
-  color: #15DE72;
-  border: 1px dashed #2A342A;
-  background: transparent;
-  border-radius: 12px;
-}
-
-.add-pocket-btn-dark:hover {
-  border-color: #15DE72;
-  background: rgba(21, 222, 114, 0.1);
-}
-
-.add-pocket-btn-light {
-  color: #059573;
-  border: 1px dashed var(--border-card);
-  background: transparent;
-  border-radius: 12px;
-}
-
-.add-pocket-btn-light:hover {
-  border-color: #15DE72;
-  background: rgba(21, 222, 114, 0.08);
 }
 
 .wallets-dialog-content {
@@ -5537,6 +5532,15 @@ export default {
 
 .row-value-dark { color: rgba(255, 255, 255, 0.75); }
 .row-value-light { color: rgba(0, 0, 0, 0.65); }
+
+.set-aside { margin-top: 24px; }
+.set-aside-title { margin: 0 4px 8px; color: var(--text-secondary); font-size: 13px; font-weight: 600; }
+.set-aside-group { border-radius: 16px; overflow: hidden; }
+.set-aside-row { width: 100%; min-height: 52px; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 0 16px; border: 0; background: transparent; color: var(--text-primary); font: 600 15px/1.3 'Manrope', sans-serif; text-align: left; cursor: pointer; }
+.set-aside-row + .set-aside-row { border-top: 1px solid var(--border-card); }
+.set-aside-name { min-width: 0; overflow-wrap: anywhere; }
+.set-aside-action { flex: 0 0 auto; color: var(--brand-accent-text); font-size: 14px; }
+.set-aside-footer { margin: 8px 6px 0; color: var(--text-secondary); font-size: 12.5px; line-height: 1.45; }
 
 .wallet-row-fiat {
   display: block;
@@ -5699,7 +5703,6 @@ export default {
 }
 
 /* Wallet Card Actions */
-
 
 .connect-wallet-btn {
   width: 100%;
@@ -6562,319 +6565,6 @@ export default {
   color: #F59E0B;
 }
 
-/* Accounts Dialog */
-.accounts-list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.account-item {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 10px 12px;
-  border-radius: 12px;
-  border: 1px solid transparent;
-  cursor: pointer;
-  transition: all 0.15s ease;
-}
-
-.account-item-dark {
-  background: var(--bg-input);
-}
-
-.account-item-dark:hover {
-  background: rgba(255, 255, 255, 0.08);
-}
-
-.account-item-light {
-  background: var(--bg-input);
-}
-
-.account-item-light:hover {
-  background: var(--border-card);
-}
-
-.account-item-active.account-item-dark {
-  background: rgba(21, 222, 114, 0.08);
-  border: 1px solid rgba(21, 222, 114, 0.2);
-}
-
-.account-item-active.account-item-light {
-  background: rgba(5, 149, 115, 0.06);
-  border: 1px solid rgba(5, 149, 115, 0.15);
-}
-
-.account-active-indicator {
-  flex-shrink: 0;
-  color: #15DE72;
-  display: flex;
-  align-items: center;
-}
-
-.account-inactive-indicator {
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  opacity: 0.4;
-}
-
-.account-item-info {
-  flex: 1;
-  min-width: 0;
-}
-
-.account-item-actions {
-  display: flex;
-  gap: 2px;
-  flex-shrink: 0;
-}
-
-.account-edit-row {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.account-name-input {
-  flex: 1;
-}
-
-.account-item-name {
-  font-family: 'Manrope', sans-serif;
-  font-size: 14px;
-  font-weight: 600;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.account-primary-badge {
-  font-size: 10px;
-  font-weight: 600;
-  padding: 1px 6px;
-  border-radius: 4px;
-  background: rgba(21, 222, 114, 0.12);
-  color: #15DE72;
-}
-
-.account-item-address {
-  font-size: 11px;
-  margin-top: 2px;
-}
-
-/* Accounts dialog subtitle */
-.accounts-dialog-subtitle {
-  font-family: 'Manrope', sans-serif;
-  font-size: 12px;
-  margin-top: 2px;
-}
-
-/* Pockets compact info banner */
-.pockets-compact-info {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-family: 'Manrope', sans-serif;
-  font-size: 11.5px;
-  padding: 8px 12px;
-  border-radius: 10px;
-}
-
-.pockets-compact-info-dark {
-  background: rgba(255, 255, 255, 0.03);
-}
-
-.pockets-compact-info-light {
-  background: rgba(0, 0, 0, 0.02);
-}
-
-.pockets-max-info {
-  font-family: 'Manrope', sans-serif;
-  font-size: 12px;
-  text-align: center;
-  padding: 4px 0;
-}
-
-/* Pockets visual explainer */
-.pockets-explainer {
-  border-radius: 14px;
-  padding: 16px 12px 14px;
-}
-
-.pockets-explainer-dark {
-  background: rgba(255, 255, 255, 0.03);
-}
-
-.pockets-explainer-light {
-  background: rgba(0, 0, 0, 0.02);
-}
-
-.pockets-illustration {
-  width: 100%;
-  height: auto;
-  margin-bottom: 14px;
-}
-
-.pockets-explainer-features {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.pockets-feature-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-family: 'Manrope', sans-serif;
-  font-size: 12.5px;
-  line-height: 1.4;
-}
-
-.pockets-feature-row svg {
-  flex-shrink: 0;
-}
-
-/* Account balance in dialog */
-.account-item-balance {
-  font-family: 'Manrope', sans-serif;
-  font-size: 12px;
-  margin-top: 2px;
-}
-
-/* Add Account confirm dialog */
-.add-account-confirm-section {
-  text-align: center;
-  padding-bottom: 8px !important;
-}
-
-.add-account-confirm-icon-wrap {
-  width: 52px;
-  height: 52px;
-  border-radius: 50%;
-  background: rgba(21, 222, 114, 0.1);
-  color: #15DE72;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  margin: 0 auto 16px;
-}
-
-.add-account-confirm-text {
-  font-family: 'Manrope', sans-serif;
-  font-size: 14px;
-  line-height: 1.6;
-  margin-bottom: 14px;
-}
-
-.add-account-confirm-info {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  padding: 12px;
-  border-radius: 10px;
-  font-family: 'Manrope', sans-serif;
-  font-size: 13px;
-  line-height: 1.5;
-  text-align: left;
-}
-
-.add-account-confirm-info-icon {
-  flex-shrink: 0;
-  margin-top: 1px;
-}
-
-.add-account-confirm-info-dark {
-  background: rgba(21, 222, 114, 0.06);
-  color: rgba(21, 222, 114, 0.8);
-}
-
-.add-account-confirm-info-light {
-  background: rgba(5, 149, 115, 0.06);
-  color: rgba(5, 149, 115, 0.8);
-}
-
-/* Wallet tag for accounts badge in Manage Wallets */
-.tag-accounts {
-  font-size: 10px;
-  font-weight: 600;
-  padding: 1px 6px;
-  border-radius: 4px;
-  background: rgba(59, 130, 246, 0.12);
-  color: #3B82F6;
-}
-
-/* Manage Wallets — Account rows under Spark wallets */
-.manage-wallet-accounts {
-  padding: 4px 8px 0 52px;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.manage-account-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 10px;
-  cursor: pointer;
-  border-radius: 8px;
-  border: 1px solid transparent;
-  transition: all 0.15s ease;
-  border-radius: 8px;
-  font-family: 'Manrope', sans-serif;
-  font-size: 13px;
-}
-
-.manage-account-row-dark {
-  background: rgba(255, 255, 255, 0.03);
-}
-
-.manage-account-row-dark:hover {
-  background: rgba(255, 255, 255, 0.07);
-}
-
-.manage-account-row-light {
-  background: rgba(0, 0, 0, 0.02);
-}
-
-.manage-account-row-light:hover {
-  background: rgba(0, 0, 0, 0.05);
-}
-
-.manage-account-row-active.manage-account-row-dark {
-  background: rgba(21, 222, 114, 0.06);
-  border-color: rgba(21, 222, 114, 0.15);
-}
-
-.manage-account-row-active.manage-account-row-light {
-  background: rgba(5, 149, 115, 0.04);
-  border-color: rgba(5, 149, 115, 0.12);
-}
-
-.manage-account-check {
-  color: #15DE72;
-  flex-shrink: 0;
-}
-
-.manage-account-info {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-}
-
-.manage-account-name {
-  font-weight: 500;
-}
-
-.manage-account-balance {
-  font-size: 12px;
-  flex-shrink: 0;
-}
-
 /* Backup Dialog */
 /* ==========================================
    Auto-Withdraw — Neobank Style
@@ -6994,25 +6684,6 @@ export default {
 }
 .aw-name-dark { color: rgba(255, 255, 255, 0.9); }
 .aw-name-light { color: rgba(0, 0, 0, 0.85); }
-
-.aw-pocket-label {
-  font-size: 10px;
-  font-weight: 600;
-  padding: 1px 6px;
-  border-radius: 4px;
-}
-.aw-pocket-label-dark {
-  background: rgba(255, 255, 255, 0.06);
-  color: rgba(255, 255, 255, 0.4);
-}
-.aw-pocket-label-light {
-  background: rgba(0, 0, 0, 0.04);
-  color: rgba(0, 0, 0, 0.35);
-}
-
-.aw-pocket-card {
-  margin-left: 12px;
-}
 
 .aw-wallet-summary {
   font-family: 'Manrope', sans-serif;

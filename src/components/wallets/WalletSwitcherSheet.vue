@@ -5,8 +5,8 @@
   The sheet switches; Settings configures. Rows show each wallet's last
   known balance (live for Spark, which stays connected), a placeholder for
   one never loaded, and the total across wallets when there is more than
-  one. Opening the sheet asks the page to refresh every row
-  (`refreshingWalletIds` marks the rows still waiting for a first figure).
+  one. Opening the sheet asks the page to refresh every row; a row pulses
+  only while waiting for its first figure, the total while any row refreshes.
 -->
 <template>
   <q-dialog
@@ -30,9 +30,9 @@
           <HiddenAmount
             v-balance-updating="anyRefreshing"
             class="switcher-total-value"
-            :class="{ 'balance-stale': !totalInfo.complete }"
+            :class="{ 'balance-stale': totalInfo.outdated }"
           >{{ totalInfo.complete ? '' : '≥ ' }}{{ formatBalance(totalInfo.total) }}</HiddenAmount>
-          <HiddenAmount v-if="fiatOf(totalInfo.total)" class="switcher-total-fiat">{{ totalInfo.complete ? '' : '≥ ' }}{{ fiatOf(totalInfo.total) }}</HiddenAmount>
+          <HiddenAmount v-if="fiatOf(totalInfo.total)" class="switcher-total-fiat" :class="{ 'balance-stale': totalInfo.outdated }">{{ totalInfo.complete ? '' : '≥ ' }}{{ fiatOf(totalInfo.total) }}</HiddenAmount>
         </div>
       </q-card-section>
 
@@ -146,7 +146,6 @@ const vBalanceUpdating = balanceUpdating;
 const props = defineProps({
   modelValue: { type: Boolean, default: false },
   /** walletId -> timestamp while that wallet's refresh runs (from the page). */
-  refreshingWalletIds: { type: Object, default: () => ({}) },
 });
 const emit = defineEmits(['update:modelValue', 'switch', 'transfer', 'manage']);
 
@@ -157,14 +156,14 @@ const wallets = computed(() => store.wallets);
 const activeWalletId = computed(() => store.activeWalletId);
 const totalInfo = computed(() => store.totalBalanceInfo);
 const discovering = computed(() => store.sparkDiscoveryRunning);
-const anyRefreshing = computed(() => Object.values(props.refreshingWalletIds).some(Boolean));
+const anyRefreshing = computed(() => totalInfo.value.refreshing);
 
 const connected = (walletId) => !!store.connectionStates[walletId]?.connected;
 const display = (walletId) => store.getDisplayBalance(walletId);
 const formatBalance = (sats) => formatMainBalance(sats, store.useBip177Format);
 const fiatOf = (sats) => store.fiatValueOf(sats);
 /** A row pulses only while its first figure is on the way; a known one updates in place. */
-const isRefreshPending = (walletId) => !!props.refreshingWalletIds[walletId] && !display(walletId).known;
+const isRefreshPending = (walletId) => display(walletId).refreshing && !display(walletId).known;
 </script>
 
 <style scoped>
@@ -288,11 +287,6 @@ const isRefreshPending = (walletId) => !!props.refreshingWalletIds[walletId] && 
   background: linear-gradient(135deg, #2A2A2A, #1A1A1A);
 }
 
-
-
-
-
-
 .switch-status-dot {
   position: absolute;
   bottom: 0;
@@ -343,14 +337,6 @@ const isRefreshPending = (walletId) => !!props.refreshingWalletIds[walletId] && 
 .switch-name-light {
   color: #212121;
 }
-
-
-
-
-
-
-
-
 
 /* Switch Balance */
 .switch-balance {
@@ -411,8 +397,8 @@ const isRefreshPending = (walletId) => !!props.refreshingWalletIds[walletId] && 
 }
 
 .transfer-btn-dark {
-  color: #FFFFFF;
-  background: linear-gradient(135deg, #15DE72, #0DBB5F);
+  color: var(--btn-primary-fg);
+  background: var(--btn-primary-bg);
 }
 
 .transfer-btn-dark:hover {

@@ -192,6 +192,8 @@ try {
   await page.evaluate(async () => {
     const store = (await import('/src/stores/wallet.js')).useWalletStore();
     store.balanceStates.shop = { value: 0, source: 'sync', verifiedAt: Date.now(), updatedAt: Date.now(), refreshing: false, error: null };
+    // Settings reads the balance from the network before asking: the network says empty.
+    store.refreshBalance = async (id) => { store.applyBalance(id, 0, { source: 'sync' }); return true; };
     store.removeWallet = async (id) => { window.removed = id; store.wallets.splice(store.wallets.findIndex((w) => w.id === id), 1); };
   });
   await page.locator('.settings-page').getByText('Manage Wallets', { exact: true }).click();

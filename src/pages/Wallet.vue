@@ -516,7 +516,6 @@
     <!-- Wallet Switcher Dialog -->
     <WalletSwitcherSheet
       v-model="showWalletSwitcher"
-      :refreshing-wallet-ids="refreshingWalletIds"
       @switch="switchToWallet"
       @transfer="openTransferModal"
       @manage="goToSettings"
@@ -894,7 +893,6 @@ export default {
       // Spark tab switching
 
       // Wallet switcher: per-wallet refresh start time (ms), 0 when idle
-      refreshingWalletIds: {},
 
       // PIN migration (one-time, for existing users)
       showMigrationDialog: false,
@@ -2112,13 +2110,22 @@ export default {
      */
     /** A restore found more of the phrase's wallets in the background: say so once. */
     'walletStore.sparkDiscoveryFound'(found) {
-      if (!found?.count) return;
-      this.$q.notify({
-        type: 'positive',
-        message: found.count === 1
-          ? this.$t('Found 1 more wallet from your recovery phrase')
-          : this.$t('Found {count} more wallets from your recovery phrase', { count: found.count }),
-      });
+      if (found?.count) {
+        this.$q.notify({
+          type: 'positive',
+          message: found.count === 1
+            ? this.$t('Found 1 more wallet from your recovery phrase')
+            : this.$t('Found {count} more wallets from your recovery phrase', { count: found.count }),
+        });
+      }
+      if (found?.unchecked) {
+        this.$q.notify({
+          type: 'warning',
+          message: this.$t('Some wallets from your recovery phrase could not be checked'),
+          caption: this.$t('Adding a Spark wallet in Settings looks for them again.'),
+          timeout: 7000,
+        });
+      }
     },
 
     'walletStore.activeWalletId'(next, prev) {
@@ -2550,24 +2557,14 @@ export default {
       if (this.showWalletSwitcher) return; // Prevent double-open
       this.showWalletSwitcher = true;
 
-      // Refresh every wallet's balance; each one pulses while its refresh
-      // is under way, and a placeholder stands in for one never loaded.
-      // Spark wallets all stay connected (#285), so each refreshes through
-      // the lifecycle; other wallets through the store.
-      const wallets = this.walletStore.wallets;
-      const since = Date.now();
-      for (const w of wallets) {
-        this.refreshingWalletIds = { ...this.refreshingWalletIds, [w.id]: since };
-      }
-
+      // Refresh every wallet's balance; the store marks each refresh, which
+      // the sheet shows (utils/balanceState.js). Spark wallets all stay
+      // connected (#285), so each refreshes through the lifecycle; other
+      // wallets through the store.
       await Promise.allSettled(
-        wallets.map(async (w) => {
-          try {
-            if (w.type === 'spark') await this.walletStore.reconcileSpark([w.id], 'user');
-            else await this.walletStore.refreshWalletData(w.id);
-          } catch { /* ignore */ }
-          this.refreshingWalletIds = { ...this.refreshingWalletIds, [w.id]: 0 };
-        })
+        this.walletStore.wallets.map((w) => (w.type === 'spark'
+          ? this.walletStore.reconcileSpark([w.id], 'user')
+          : this.walletStore.refreshWalletData(w.id))),
       );
     },
 

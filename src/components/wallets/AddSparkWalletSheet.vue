@@ -16,11 +16,11 @@
     @show="focusName"
   >
     <q-card class="add-spark-card" :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'">
-      <div class="sheet-grabber" aria-hidden="true"><div class="grabber-bar"></div></div>
-      <header class="add-spark-header">
-        <button type="button" class="add-spark-text-button" :disabled="creating" @click="open = false">{{ $t('Cancel') }}</button>
-        <h2 class="add-spark-title">{{ $t('New Spark wallet') }}</h2>
-        <span class="add-spark-header-spacer" aria-hidden="true"></span>
+      <div class="form-sheet-grabber" aria-hidden="true"></div>
+      <header class="form-sheet-header">
+        <button type="button" class="form-sheet-cancel" :disabled="creating" @click="open = false">{{ $t('Cancel') }}</button>
+        <h2 class="form-sheet-title">{{ $t('New Spark wallet') }}</h2>
+        <span aria-hidden="true"></span>
       </header>
 
       <form class="add-spark-body" novalidate @submit.prevent="create">
@@ -42,13 +42,13 @@
           :aria-describedby="error ? 'add-spark-error' : 'add-spark-note'"
           @input="error = ''"
         />
-        <p v-if="error" id="add-spark-error" class="add-spark-error" role="alert">{{ error }}</p>
+        <p v-if="error" id="add-spark-error" class="form-sheet-error add-spark-error" role="alert">{{ error }}</p>
         <p id="add-spark-note" class="add-spark-note">
           {{ $t('Made from your recovery phrase, so the backup you have already covers it.') }}
           {{ remainingAfter === 0 ? $t("After this one, you can't add more Spark wallets.") : $t('You can add {count} more after this one.', { count: remainingAfter }) }}
         </p>
 
-        <button type="submit" class="add-spark-primary" :disabled="creating || !name.trim()">
+        <button type="submit" class="form-sheet-primary add-spark-primary" :disabled="creating || !name.trim()">
           <q-spinner v-if="creating" size="18px" :aria-hidden="true" />
           {{ creating ? $t('Creating wallet...') : $t('Create wallet') }}
         </button>
@@ -119,22 +119,14 @@ async function create() {
 
 <style scoped>
 .add-spark-card { width: 100%; max-width: 560px; margin: 0 auto; border-radius: 24px 24px 0 0; padding-bottom: max(20px, var(--safe-bottom, 0px)); }
-.sheet-grabber { display: flex; justify-content: center; padding: 10px 0 2px; }
-.grabber-bar { width: 36px; height: 5px; border-radius: 3px; background: var(--text-muted); opacity: .4; }
-.add-spark-header { display: grid; grid-template-columns: minmax(64px, 1fr) auto minmax(64px, 1fr); align-items: center; gap: 8px; padding: 6px 16px 4px; }
-.add-spark-title { margin: 0; font-family: 'Manrope', sans-serif; font-size: 17px; font-weight: 650; line-height: 1.3; text-align: center; color: var(--text-primary); }
-.add-spark-text-button { justify-self: start; min-height: 44px; padding: 0 4px; border: 0; background: transparent; color: var(--brand-accent-text, var(--text-primary)); font: 500 16px/1.3 'Manrope', sans-serif; cursor: pointer; }
-.add-spark-header-spacer { justify-self: end; }
 .add-spark-body { display: flex; flex-direction: column; padding: 12px 20px 0; }
 .add-spark-mark { align-self: center; display: grid; place-items: center; width: 56px; height: 56px; margin-bottom: 20px; border-radius: 16px; background: #1a1a1c; }
 .add-spark-label { margin-bottom: 8px; color: var(--text-secondary); font-size: 13px; font-weight: 500; }
 .add-spark-input { width: 100%; min-height: 48px; padding: 10px 12px; border: 1px solid var(--border-card); border-radius: 12px; background: var(--bg-input); color: var(--text-primary); font: 500 16px/1.4 'Manrope', sans-serif; }
-.add-spark-input[aria-invalid="true"] { border-color: var(--color-negative, #b42332); }
-.add-spark-error { margin: 8px 0 0; color: var(--color-negative, #b42332); font-size: 13px; line-height: 1.45; }
+.add-spark-input[aria-invalid="true"] { border-color: var(--color-negative); }
+.add-spark-error { margin: 8px 0 0; }
 .add-spark-note { margin: 10px 0 0; color: var(--text-secondary); font-size: 13px; line-height: 1.5; }
-.add-spark-primary { display: inline-flex; align-items: center; justify-content: center; gap: 10px; min-height: 50px; margin-top: 24px; border: 0; border-radius: 14px; background: #1a1a1c; color: #faf7ef; font: 650 16px/1.3 'Manrope', sans-serif; cursor: pointer; }
-body.body--dark .add-spark-primary { background: #e9e9ec; color: #1c1c1e; }
+.add-spark-primary { margin-top: 24px; }
 body.body--dark .add-spark-mark { background: rgba(255, 255, 255, 0.1); }
-.add-spark-primary:disabled { opacity: .5; cursor: default; }
-button:focus-visible, input:focus-visible { outline: 2px solid currentColor; outline-offset: 3px; }
+input:focus-visible { outline: 2px solid currentColor; outline-offset: 3px; }
 </style>

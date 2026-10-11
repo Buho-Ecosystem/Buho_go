@@ -2,16 +2,18 @@
  * Whether a wallet may be removed from this device, and what the person has
  * to hear first. Pure: the store enforces the verdict, the UI words it.
  *
- * Spark wallets share one recovery phrase, so removing one that is not the
- * last never loses money: adding a wallet again opens the same account. The
- * rules still keep money visible:
+ * Spark wallets share one recovery phrase, so a removed wallet's account
+ * comes back when a wallet is added again, but only while the phrase is on
+ * this device or backed up. The rules:
  *   - nothing is removed while an emergency exit or an incoming on-chain
  *     deposit is under way (both need this wallet's databases);
- *   - a wallet holding money is emptied first (Move funds), unless it is the
- *     last Spark wallet;
- *   - the last Spark wallet takes the phrase off this device, so it may only
- *     go once the phrase is backed up, unless the network has just confirmed
- *     it empty (a saved zero proves nothing: money may have arrived since).
+ *   - a wallet that is not the last one goes only once the network has just
+ *     confirmed it empty. A saved or unknown balance proves nothing: money
+ *     may have arrived since, and once the phrase leaves the device no other
+ *     check would ever look at this account again;
+ *   - the last Spark wallet takes the phrase off this device, so it goes
+ *     only once the phrase is backed up, whatever its balance. Its address
+ *     keeps receiving, and every removed account still belongs to the phrase.
  */
 
 /**
@@ -24,8 +26,8 @@
  * @param {boolean} input.hasActiveExit     an emergency exit is under way
  * @param {boolean} input.backedUp          the recovery phrase is confirmed backed up
  * @returns {{ allowed: boolean, blockers: string[], notes: string[] }}
- *   blockers: 'exit_in_progress' | 'deposit_pending' | 'has_balance' | 'needs_backup'
- *   notes:    'last_spark_wallet' | 'balance_unknown'
+ *   blockers: 'exit_in_progress' | 'deposit_pending' | 'has_balance' | 'balance_unverified' | 'needs_backup'
+ *   notes:    'last_spark_wallet'
  */
 export function removalCheck({ wallet, sparkWalletCount = 0, balance = { known: false, value: 0 }, hasPendingDeposit = false, hasActiveExit = false, backedUp = false }) {
   const blockers = [];
@@ -33,14 +35,17 @@ export function removalCheck({ wallet, sparkWalletCount = 0, balance = { known: 
   if (wallet?.type !== 'spark') return { allowed: true, blockers, notes };
 
   const last = sparkWalletCount <= 1;
-  const empty = balance.known && balance.fresh === true && !(balance.value > 0);
   if (last) notes.push('last_spark_wallet');
-  if (!balance.known) notes.push('balance_unknown');
 
   if (hasActiveExit) blockers.push('exit_in_progress');
   if (hasPendingDeposit) blockers.push('deposit_pending');
-  if (!last && balance.known && balance.value > 0) blockers.push('has_balance');
-  if (last && !empty && !backedUp) blockers.push('needs_backup');
+  if (last) {
+    if (!backedUp) blockers.push('needs_backup');
+  } else if (balance.known && balance.value > 0) {
+    blockers.push('has_balance');
+  } else if (!(balance.known && balance.fresh === true)) {
+    blockers.push('balance_unverified');
+  }
 
   return { allowed: blockers.length === 0, blockers, notes };
 }
@@ -55,7 +60,7 @@ export class WalletRemovalError extends Error {
 }
 
 // Most pressing first: one reason is shown at a time.
-const BLOCKER_ORDER = ['exit_in_progress', 'deposit_pending', 'needs_backup', 'has_balance'];
+const BLOCKER_ORDER = ['exit_in_progress', 'deposit_pending', 'needs_backup', 'has_balance', 'balance_unverified'];
 
 /**
  * What to tell the person about removing `wallet`, from a removalCheck
@@ -76,6 +81,8 @@ export function removalCopy({ check, wallet, t, formatAmount = (sats) => `${sats
       return { blocked: true, action: 'backup', actionLabel: t('Back up now'), title: t('Back up your recovery phrase first'), message: t('This is your last Spark wallet. Removing it takes the recovery phrase off this phone, and only the phrase can bring the money back.') };
     case 'has_balance':
       return { blocked: true, action: 'move_funds', actionLabel: t('Move funds'), title: t('Move the money first'), message: t('{name} still holds {amount}. Move it to another wallet first, then remove this one.', { name, amount: formatAmount(balanceSats) }) };
+    case 'balance_unverified':
+      return { blocked: true, action: null, title: t('Balance not checked'), message: t('{name} can be removed once its balance shows it is empty. Check your connection and try again.', { name }) };
     default:
       break;
   }
@@ -92,13 +99,10 @@ export function removalCopy({ check, wallet, t, formatAmount = (sats) => `${sats
       message: `${t('This removes your last Spark wallet and its recovery phrase from this phone. You can restore it any time with your recovery phrase.')} ${kitNote}`,
     };
   }
-  const unknown = check.notes.includes('balance_unknown')
-    ? ` ${t('Its balance could not be checked right now. Any money in it stays with your recovery phrase.')}`
-    : '';
   return {
     blocked: false,
     title: t('Remove {name}?', { name }),
     confirmLabel: t('Remove'),
-    message: `${t('{name} disappears from this phone. It stays part of your recovery phrase, so adding a Spark wallet later brings it back.', { name })}${unknown}`,
+    message: t('{name} disappears from this phone. It stays part of your recovery phrase, so adding a Spark wallet later brings it back.', { name }),
   };
 }

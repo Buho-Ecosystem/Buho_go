@@ -4,12 +4,13 @@ import { migratePocketConfigKeys } from '../autoWithdrawKeys.js';
 
 const spark = (id, accountNumber, envelope = 'env-1') => ({ id, type: 'spark', connectionData: { accountNumber, encryptedMnemonic: envelope } });
 
-test('a rule saved for a former pocket moves to the wallet holding that account now', () => {
+test('a rule saved for a former pocket moves to the wallet holding that account now, switched off', () => {
   const wallets = [spark('parent', 1), spark('pocket-wallet', 2), spark('other-phrase', 2, 'env-2'), { id: 'nwc', type: 'nwc' }];
   const rule = { enabled: true, thresholdSats: 5000 };
   const { configs, moved, dropped } = migratePocketConfigKeys({ 'parent:2': rule, parent: { enabled: false }, nwc: { enabled: true } }, wallets);
   assert.deepEqual(Object.keys(configs).sort(), ['nwc', 'parent', 'pocket-wallet']);
-  assert.equal(configs['pocket-wallet'], rule);
+  assert.deepEqual(configs['pocket-wallet'], { enabled: false, thresholdSats: 5000 }, 'a dormant rule never starts sending by itself');
+  assert.equal(rule.enabled, true, 'the saved rule is not mutated');
   assert.deepEqual(moved, ['parent:2']);
   assert.deepEqual(dropped, []);
 });

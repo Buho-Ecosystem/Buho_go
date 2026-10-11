@@ -77,13 +77,13 @@ const check = (overrides = {}) => removalCheck({
 test('removal rules: money, deposits, exits and the last wallet', () => {
   assert.deepEqual(check(), { allowed: true, blockers: [], notes: [] });
   assert.deepEqual(check({ balance: { known: true, value: 1 } }).blockers, ['has_balance']);
-  assert.deepEqual(check({ balance: { known: false, value: 0 } }), { allowed: true, blockers: [], notes: ['balance_unknown'] });
+  assert.deepEqual(check({ balance: { known: false, value: 0 } }).blockers, ['balance_unverified'], 'an unknown balance may hide money');
+  assert.deepEqual(check({ balance: { known: true, value: 0, fresh: false } }).blockers, ['balance_unverified'], 'a saved zero proves nothing: money may have arrived since');
   assert.deepEqual(check({ hasPendingDeposit: true, hasActiveExit: true }).blockers, ['exit_in_progress', 'deposit_pending']);
   assert.deepEqual(check({ sparkWalletCount: 1, balance: { known: true, value: 5 } }).blockers, ['needs_backup'], 'the last wallet may hold money only with a backup');
   assert.equal(check({ sparkWalletCount: 1, balance: { known: true, value: 5 }, backedUp: true }).allowed, true);
-  assert.deepEqual(check({ sparkWalletCount: 1, balance: { known: false, value: 0 } }).blockers, ['needs_backup'], 'unknown counts as maybe funded');
-  assert.equal(check({ sparkWalletCount: 1 }).allowed, true, 'confirmed empty and never backed up may go');
-  assert.deepEqual(check({ sparkWalletCount: 1, balance: { known: true, value: 0, fresh: false } }).blockers, ['needs_backup'], 'a saved zero proves nothing: money may have arrived since');
+  assert.deepEqual(check({ sparkWalletCount: 1 }).blockers, ['needs_backup'], 'even an empty last wallet takes the phrase, and every removed account with it');
+  assert.equal(check({ sparkWalletCount: 1, balance: { known: false, value: 0 }, backedUp: true }).allowed, true);
   assert.deepEqual(removalCheck({ wallet: { type: 'nwc' }, balance: { known: true, value: 9 } }), { allowed: true, blockers: [], notes: [] });
 });
 
@@ -95,12 +95,12 @@ test('removal copy names one reason at a time and offers the step that unblocks 
   const both = removalCopy({ check: check({ hasActiveExit: true, balance: { known: true, value: 7 } }), wallet, t });
   assert.equal(both.title, 'Emergency exit in progress');
   assert.equal(removalCopy({ check: check({ sparkWalletCount: 1, balance: { known: false, value: 0 } }), wallet, t }).action, 'backup');
-  const last = removalCopy({ check: check({ sparkWalletCount: 1 }), wallet, t });
+  const last = removalCopy({ check: check({ sparkWalletCount: 1, backedUp: true }), wallet, t });
   assert.equal(last.blocked, false);
   assert.match(last.title, /Remove Spark from this phone/);
   assert.match(last.message, /exit kit stays/);
   const unknown = removalCopy({ check: check({ balance: { known: false, value: 0 } }), wallet, t });
-  assert.match(unknown.message, /could not be checked/);
+  assert.deepEqual([unknown.blocked, unknown.title], [true, 'Balance not checked']);
   assert.equal(removalCopy({ check: removalCheck({ wallet: { type: 'nwc' } }), wallet: { type: 'nwc', name: 'Alby' }, t }).title, 'Remove Wallet');
   for (const copy of [funded, both, last, unknown]) assert.ok(!/—/.test(copy.title + copy.message), 'no em dashes in copy');
 });

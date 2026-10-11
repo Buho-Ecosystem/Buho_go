@@ -202,7 +202,7 @@ export const useCloudBackupStore = defineStore('cloudBackup', {
 
     /** A block only a backup the person starts lifts. */
     _autoBackupPaused() {
-      return ['remote_newer', 'restore_incomplete', 'would_drop_secret'].includes(this.autoBackupBlocked);
+      return ['remote_newer', 'remote_missing', 'remote_unreadable', 'restore_incomplete', 'would_drop_secret'].includes(this.autoBackupBlocked);
     },
 
     /** The silent upload behind noteWalletsChanged. Never throws, never prompts. */
@@ -218,8 +218,20 @@ export const useCloudBackupStore = defineStore('cloudBackup', {
           this.autoBackupBlocked = 'remote_newer';
           return;
         }
+        // Deleted on Drive (by the person, maybe from another phone) after
+        // this device uploaded: putting every secret back is their call.
+        if (!remote && this.lastBackupAt) {
+          this.autoBackupBlocked = 'remote_missing';
+          return;
+        }
         const next = await this._gatherPayload();
         const current = remote ? await this._readRemotePayload() : null;
+        // A backup this phone cannot open (its key is gone) is never
+        // replaced silently: nothing could prove the upload keeps its secrets.
+        if (remote && !current) {
+          this.autoBackupBlocked = 'remote_unreadable';
+          return;
+        }
         if (current && droppedSecrets(current, next).length) {
           this.autoBackupBlocked = 'would_drop_secret';
           return;
@@ -419,9 +431,9 @@ export const useCloudBackupStore = defineStore('cloudBackup', {
     },
 
     /**
-     * Whether a backup now would remove a recovery phrase the backup on Drive
-     * holds (Spark or Arkade removed, or a different identity). The backup
-     * sheet says so before the person confirms. False when unknown.
+     * Whether a backup now would remove a secret the backup on Drive holds (a
+     * recovery phrase, an NWC connection or an LNbits key). The backup sheet
+     * says so before the person confirms. False when unknown.
      */
     async backupDropsSecrets() {
       try {

@@ -32,7 +32,7 @@ export default {
   "Kit refreshed": "Kit refreshed",
   "Could not share the kit": "Could not share the kit",
   "Could not refresh the kit": "Could not refresh the kit",
-  "Switch to this wallet on the home screen to connect it.": "Switch to this wallet on the home screen to connect it.",
+  "This wallet is offline. Reconnect it in Manage Wallets to save its kit.": "This wallet is offline. Reconnect it in Manage Wallets to save its kit.",
   "Move this wallet's money to plain Bitcoin without Spark's help.": "Move this wallet's money to plain Bitcoin without Spark's help.",
   "The kit is what lets this wallet's money move to plain Bitcoin without Spark. It refreshes after each payment, is encrypted, and travels with the Google Drive backup. Recovery words alone cannot do this.": "The kit is what lets this wallet's money move to plain Bitcoin without Spark. It refreshes after each payment, is encrypted, and travels with the Google Drive backup. Recovery words alone cannot do this.",
   "How the emergency exit works": "How the emergency exit works",
