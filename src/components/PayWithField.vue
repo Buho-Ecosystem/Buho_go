@@ -124,13 +124,7 @@ export default {
     /** Id of the selected wallet. */
     modelValue: { type: String, default: null },
     /** Freezes the field while the payment is in flight. */
-    disabled: { type: Boolean, default: false },
-    /**
-     * Rail of the destination (payment type or addressType). Only used to
-     * word the "cannot pay this" reason: "Lightning unavailable" would be
-     * wrong for a Spark-address payment.
-     */
-    destinationType: { type: String, default: 'lightning' }
+    disabled: { type: Boolean, default: false }
   },
   emits: ['update:modelValue'],
   data() {
@@ -198,7 +192,7 @@ export default {
     },
 
     reasonText(wallet) {
-      return payingWalletReasonText(wallet.reason, this.destinationType, this.$t.bind(this))
+      return payingWalletReasonText(wallet.reason, this.$t.bind(this))
     },
 
     toggle() {
@@ -262,7 +256,7 @@ export default {
 
 .pay-with-label {
   padding: 0 4px;
-  font-size: 12px;
+  font-size: 0.75rem;
   font-weight: 600;
   letter-spacing: 0.01em;
   color: var(--text-secondary);
@@ -315,13 +309,13 @@ body.body--light .pay-with-tile--arkade {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 14.5px;
+  font-size: 0.90625rem;
   font-weight: 650;
   color: var(--text-primary);
 }
 .pay-with-copy small {
   margin-top: 2px;
-  font-size: 12px;
+  font-size: 0.75rem;
   line-height: 1.35;
   color: var(--text-secondary);
 }

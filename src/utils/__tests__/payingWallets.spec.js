@@ -52,10 +52,10 @@ const t = (key, values = {}) => key.replace(/\{(\w+)\}/g, (_, name) => values[na
 
 test('every entry carries exactly the documented fields', () => {
   const [first] = list()
-  assert.deepEqual(Object.keys(first).sort(), ['balanceSats', 'id', 'isActive', 'name', 'reason', 'type', 'usable'])
+  assert.deepEqual(Object.keys(first).sort(), ['balanceSats', 'connectionFailed', 'id', 'isActive', 'name', 'reason', 'type', 'usable'])
   assert.deepEqual(first, {
     id: 'spark-biz', name: 'Business', type: 'spark', balanceSats: 50_000,
-    isActive: true, usable: true, reason: null,
+    isActive: true, usable: true, reason: null, connectionFailed: false,
   })
 })
 
@@ -213,15 +213,16 @@ test('an unknown balance is shown as null and never counts as insufficient', () 
   assert.equal(listPayingWallets({ wallets: WALLETS, balances: undefined })[0].balanceSats, null)
 })
 
-test('a wallet whose connection failed is unavailable', () => {
+test('a wallet whose last connection failed stays usable: every send path reconnects', () => {
   const connectionStates = { nwc: { connected: false, error: 'relay unreachable' } }
   const entries = list({ connectionStates })
-  assert.equal(byId(entries, 'nwc').reason, PAYING_REASON.UNAVAILABLE)
-  assert.equal(byId(entries, 'nwc').usable, false)
-  assert.equal(byId(entries, 'lnbits').usable, true)
+  assert.equal(byId(entries, 'nwc').usable, true)
+  assert.equal(byId(entries, 'nwc').reason, null)
+  assert.equal(byId(entries, 'nwc').connectionFailed, true)
+  assert.equal(byId(entries, 'lnbits').connectionFailed, false)
 })
 
-test('not connected yet is NOT unavailable - it connects on demand', () => {
+test('not connected yet is not a failed connection: it connects on demand', () => {
   const connectionStates = {
     nwc: undefined,                                                   // never tried
     lnbits: { connected: false, error: null },                        // locked / disconnected without a failure
@@ -229,29 +230,35 @@ test('not connected yet is NOT unavailable - it connects on demand', () => {
     'spark-personal': { connected: true, error: null },
   }
   const entries = list({ connectionStates })
-  assert.equal(byId(entries, 'nwc').usable, true)
-  assert.equal(byId(entries, 'lnbits').usable, true)
-  assert.equal(byId(entries, 'spark-personal').usable, true)
+  for (const id of ['nwc', 'lnbits', 'spark-personal']) {
+    assert.equal(byId(entries, id).usable, true, id)
+    assert.equal(byId(entries, id).connectionFailed, false, id)
+  }
   assert.equal(byId(list({ connectionStates, destinationType: 'arkade_address' }), 'arkade').usable, true)
 })
 
-test('a connected wallet is never unavailable, even with a leftover error text', () => {
+test('a connected wallet is never a failed connection, even with a leftover error text', () => {
   const entries = list({ connectionStates: { nwc: { connected: true, error: 'old' } } })
-  assert.equal(byId(entries, 'nwc').usable, true)
+  assert.equal(byId(entries, 'nwc').connectionFailed, false)
 })
 
-test('reason precedence: rail first, then unavailable, then balance', () => {
-  const broken = { arkade: { connected: false, error: 'x' }, nwc: { connected: false, error: 'x' } }
-  const entries = list({
-    connectionStates: broken,
-    balances: { ...RICH, arkade: 0, nwc: 0 },
-    amountSats: 500,
-  })
-  // Arkade cannot pay Lightning at all: that outranks its failed connection and empty balance.
+test('reason precedence: rail first, then balance', () => {
+  const entries = list({ balances: { ...RICH, arkade: 0, nwc: 0 }, amountSats: 500 })
+  // Arkade cannot pay Lightning at all: that outranks its empty balance.
   assert.equal(byId(entries, 'arkade').reason, 'unsupported-destination')
-  // NWC can pay Lightning: the failed connection outranks the empty balance.
-  assert.equal(byId(entries, 'nwc').reason, 'unavailable')
-  assert.equal(byId(list({ balances: { ...RICH, nwc: 0 }, amountSats: 500 }), 'nwc').reason, 'insufficient-balance')
+  assert.equal(byId(entries, 'nwc').reason, 'insufficient-balance')
+})
+
+test('default pick: a wallet whose connection failed is passed over while another can pay', () => {
+  const failed = { lnbits: { connected: false, error: 'down' } }
+  assert.notEqual(pickDefaultPayingWallet(list({ activeWalletId: 'lnbits', connectionStates: failed })).id, 'lnbits')
+  // ...and still taken when it is the only one that can pay.
+  const only = listPayingWallets({
+    wallets: [{ id: 'lnb', type: 'lnbits' }, { id: 'ark', type: 'arkade' }],
+    activeWalletId: 'lnb',
+    connectionStates: { lnb: { connected: false, error: 'down' } },
+  })
+  assert.equal(pickDefaultPayingWallet(only).id, 'lnb')
 })
 
 test('default pick: the active wallet when it can pay', () => {
@@ -321,17 +328,11 @@ test('known-fee reserve: zero-fee rails hold nothing back, others only the known
   assert.equal(knownFeeReserveSats('lightning_invoice', NaN), 0)
 })
 
-test('reason text names the rail for unsupported destinations', () => {
-  assert.equal(payingWalletReasonText('unsupported-destination', 'lightning_invoice', t), 'Lightning unavailable')
-  assert.equal(payingWalletReasonText('unsupported-destination', 'phone_number', t), 'Lightning unavailable')
-  assert.equal(payingWalletReasonText('unsupported-destination', 'spark_address', t), 'Spark wallets only')
-  assert.equal(payingWalletReasonText('unsupported-destination', 'spark', t), 'Spark wallets only')
-  assert.equal(payingWalletReasonText('unsupported-destination', 'arkade_address', t), 'Arkade wallets only')
-  assert.equal(payingWalletReasonText('unsupported-destination', 'bitcoin_address', t), 'Spark or Arkade only')
-  assert.equal(payingWalletReasonText('insufficient-balance', 'lightning_invoice', t), 'Not enough balance')
-  assert.equal(payingWalletReasonText('unavailable', 'lightning_invoice', t), 'Unavailable')
-  assert.equal(payingWalletReasonText(null, 'lightning_invoice', t), '')
-  assert.equal(payingWalletReasonText(undefined, 'lightning_invoice', t), '')
+test('reason text is plain: the payment screen never names the rail', () => {
+  assert.equal(payingWalletReasonText('unsupported-destination', t), "Can't pay this")
+  assert.equal(payingWalletReasonText('insufficient-balance', t), 'Not enough balance')
+  assert.equal(payingWalletReasonText(null, t), '')
+  assert.equal(payingWalletReasonText(undefined, t), '')
 })
 
 test('the banner hint keeps the shared switch words for rail problems', () => {
@@ -341,11 +342,10 @@ test('the banner hint keeps the shared switch words for rail problems', () => {
   assert.equal(payingWalletHint({ name: 'Alby', reason: 'unsupported-destination' }, 'spark_address', t),
     'Switch to your Spark wallet to pay this address')
   assert.equal(payingWalletHint({ name: 'Business', reason: 'insufficient-balance' }, 'lightning_invoice', t),
-    'Not enough balance in Business - choose another wallet or send less')
-  assert.equal(payingWalletHint({ name: 'Alby', reason: 'unavailable' }, 'lightning_invoice', t),
-    'Alby is unavailable right now - choose another wallet')
-  assert.equal(payingWalletHint({ name: '', reason: 'unavailable' }, 'lightning_invoice', t),
-    'Wallet is unavailable right now - choose another wallet')
+    'Not enough balance in Business. Choose another wallet or send less.')
+  // No other wallet can pay: no suggestion that leads nowhere.
+  assert.equal(payingWalletHint({ name: '', reason: 'insufficient-balance' }, 'lightning_invoice', t, { hasAlternative: false }),
+    'Not enough balance in Wallet.')
   assert.equal(payingWalletHint({ name: 'Alby', reason: null }, 'lightning_invoice', t), '')
   assert.equal(payingWalletHint(null, 'lightning_invoice', t), '')
 })

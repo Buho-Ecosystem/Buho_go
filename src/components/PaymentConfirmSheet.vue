@@ -272,7 +272,6 @@
             v-if="verb === 'send' && payingWallets.length > 1"
             :wallets="payingWallets"
             :model-value="sendingWalletId"
-            :destination-type="payingDestinationType"
             :disabled="isSending || isComplete"
             @update:model-value="onPayWithPick"
           />
@@ -368,11 +367,6 @@ export default {
     payingWallets: { type: Array, default: () => [] },
     /** Id of the wallet that pays; null before a payment is set. */
     sendingWalletId: { type: String, default: null },
-    /**
-     * Rail of the destination (payment type or addressType). Only words the
-     * "cannot pay this" reason in the wallet list.
-     */
-    payingDestinationType: { type: String, default: 'lightning' },
     isSending: { type: Boolean, default: false },
     /**
      * Flips true the moment the payment SUCCEEDS, so the CTA can snap its

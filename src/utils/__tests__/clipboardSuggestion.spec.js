@@ -89,4 +89,10 @@ assert.equal(failingWrites.hasBeenOffered('alice@example.com'), false);
 failingWrites.rememberOffered('bob@example.com');
 assert.equal(failingWrites.hasBeenOffered('bob@example.com'), true);
 
+// "Pay with": a destination the active wallet cannot pay is still suggested
+// when another of the user's wallets can (the confirm sheet picks it).
+assert.equal(isSuggestibleDestination('alice@example.com', 'arkade'), false);
+assert.equal(isSuggestibleDestination('alice@example.com', 'arkade', (type) => type === 'lightning_address'), true);
+assert.equal(isSuggestibleDestination('alice@example.com', 'spark', () => false), false);
+
 console.log('clipboardSuggestion: all assertions passed');

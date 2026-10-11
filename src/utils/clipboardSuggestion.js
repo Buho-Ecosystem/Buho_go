@@ -95,16 +95,18 @@ export function classifyDestination(input, walletType) {
  * capability check the field enforces.
  *
  * @param {string} text
- * @param {string|null} walletType
+ * @param {string|null} walletType  the active wallet's, which picks the rail of a BIP-21 URI
+ * @param {(paymentType: string) => boolean} [canPay]  can any wallet pay this type;
+ *   defaults to the active wallet alone
  */
-export function isSuggestibleDestination(text, walletType) {
+export function isSuggestibleDestination(text, walletType, canPay = (type) => canWalletPay(walletType, type)) {
   const trimmed = (text || '').trim();
   if (!trimmed || trimmed.length > MAX_CLIPBOARD_LENGTH) return false;
 
   const paymentType = classifyDestination(trimmed, walletType);
   if (paymentType === 'address_request') return true;
   if (paymentType === 'bolt12_offer' || paymentType === 'silent_payment') return false;
-  if (paymentType !== 'unknown') return canWalletPay(walletType, paymentType);
+  if (paymentType !== 'unknown') return canPay(paymentType);
 
   const nostrKind = classifyIdentifier(stripWrapperScheme(trimmed));
   if (nostrKind === 'npub' || nostrKind === 'nprofile') return true;
