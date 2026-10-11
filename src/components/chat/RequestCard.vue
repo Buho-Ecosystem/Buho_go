@@ -128,7 +128,7 @@ export default {
     note: { type: String, default: '' },
     /** True when the user is the requester. */
     outgoing: { type: Boolean, default: false },
-    /** 'pending' | 'paid' | 'declined' | 'cancelled' | 'expired' (REQUEST_STATE). */
+    /** 'pending' | 'paying' | 'paid' | 'declined' | 'cancelled' | 'expired' (REQUEST_STATE). */
     state: {
       type: String,
       default: 'pending',
@@ -192,6 +192,8 @@ export default {
         return this.$t('Paid')
       }
       return {
+        // The user paid it and the payment is still routing: nothing to tap, nothing to pay again.
+        paying: this.$t('Payment on its way'),
         declined: this.$t('Declined'),
         cancelled: this.$t('Withdrawn'),
         expired: this.$t('Expired')
@@ -203,6 +205,7 @@ export default {
     stateIcon() {
       return {
         paid: 'tabler:circle-check',
+        paying: 'tabler:hourglass',
         declined: 'tabler:circle-x',
         cancelled: 'tabler:arrow-back-up',
         expired: 'tabler:clock-off'

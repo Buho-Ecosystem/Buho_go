@@ -50,8 +50,11 @@ function bytesToWords(bytes) {
 
 const hexToBytes = (hex) => Uint8Array.from(hex.match(/../g), (pair) => parseInt(pair, 16));
 
-/** A structurally valid BOLT-11 invoice (unsigned; the decoder tolerates that). */
-function makeInvoice({ sats, network = 'bc', timestamp = NOW, expiry = 3_600, hash = 1 } = {}) {
+/**
+ * A structurally valid BOLT-11 invoice (unsigned; the decoder tolerates that).
+ * `descriptionHash` (hex) adds the `h` field an LNURL-pay invoice commits to its metadata with.
+ */
+function makeInvoice({ sats, network = 'bc', timestamp = NOW, expiry = 3_600, hash = 1, descriptionHash = null } = {}) {
   const amount = sats === undefined ? '' : `${sats * 10}n`;
   const paymentHash = typeof hash === 'string'
     ? hexToBytes(hash)
@@ -61,6 +64,7 @@ function makeInvoice({ sats, network = 'bc', timestamp = NOW, expiry = 3_600, ha
     ...numberToWords(timestamp, 7),
     ...tag(1, bytesToWords(paymentHash)),
     ...tag(6, numberToWords(expiry, 3)),
+    ...(descriptionHash ? tag(23, bytesToWords(hexToBytes(descriptionHash))) : []),
     ...bytesToWords(Uint8Array.from({ length: 65 }, (_, i) => (i + 1) % 251)),
   ];
   return { bolt11: bech32Encode(`ln${network}${amount}`, words), paymentHash: bytesToHex(paymentHash) };

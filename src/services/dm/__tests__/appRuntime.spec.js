@@ -54,14 +54,14 @@ test('the factory maps every runtime dependency onto the right store call', asyn
   assert.deepEqual(captured.contacts.find(partner), { id: 'c1', name: 'Pat' });
   assert.equal(captured.contacts.find('c'.repeat(64)), null);
   assert.equal(await captured.notifications.message({ title: 'T' }), true);
-  await captured.linkPayment({ contactId: 'c1', walletId: 's', amountSats: 500, note: 'Pizza' });
+  await captured.linkPayment({ contactId: 'c1', walletId: 's', transactionId: 'tx-9', amountSats: 500, note: 'Pizza' });
   await captured.ensureRelay('wss://r.example', { connectionTimeout: 1 });
 
   assert.deepEqual(calls, [
     ['getProvider', 's'],
     ['notify', { title: 'T' }],
     ['link', {
-      contactId: 'c1', amountSats: 500, walletId: 's', direction: 'incoming',
+      contactId: 'c1', amountSats: 500, walletId: 's', transactionId: 'tx-9', direction: 'incoming',
       source: CHAT_REQUEST_SOURCE, label: 'Pizza', perPayment: true,
     }],
     ['relay', 'wss://r.example', { connectionTimeout: 1 }],

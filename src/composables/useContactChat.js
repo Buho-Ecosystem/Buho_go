@@ -521,6 +521,19 @@ export function useContactChat(options) {
 
   const failure = (error) => ({ ok: false, error: describeDmError(error, { t, name: partnerName() }) });
 
+  /**
+   * A request the user already paid (or whose payment is still routing) is
+   * never paid again: the card offers no Pay, and this answers a stale tap.
+   */
+  const alreadyPaid = (id) => {
+    const own = store.ownPayment(id);
+    if (!own) return null;
+    const message = own.status === 'pending'
+      ? t('Your payment for this request is on its way.')
+      : t('You already paid this request.');
+    return { ok: false, error: { code: 'ALREADY_PAID', kind: 'general', message } };
+  };
+
   /** Run `task` with `id` marked busy; errors become `{ ok: false, error }`. */
   async function guarded(id, task) {
     if (id) {
@@ -576,6 +589,8 @@ export function useContactChat(options) {
   async function payRequest(id) {
     const message = messageById(id);
     if (!message || message.type !== MESSAGE_TYPE.REQUEST || message.outgoing) return { ok: false, error: null };
+    const paid = alreadyPaid(id);
+    if (paid) return paid;
     const fetched = await guarded(id, () => runtime.fetchRequestInvoice(partner(), id));
     if (!fetched.ok) return fetched;
     const payer = payingWalletFor(message.request.amountSats, 'lightning');
@@ -603,6 +618,8 @@ export function useContactChat(options) {
   async function sendAnyway(id) {
     const message = messageById(id);
     if (!message || message.type !== MESSAGE_TYPE.REQUEST || message.outgoing) return { ok: false, error: null };
+    const paid = alreadyPaid(id);
+    if (paid) return paid;
     const resolved = await guarded(id, () => runtime.requestAddress(partner(), id));
     if (!resolved.ok) return resolved;
     const { amountSats, note } = message.request;

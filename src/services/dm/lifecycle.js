@@ -194,6 +194,7 @@ export function startChatLifecycle({
         await entry.runtime.retryOutbox();
       }
       await entry.runtime.settleClaims();
+      await entry.runtime.reconcileOwnPayments();
     });
   }
 
@@ -224,6 +225,7 @@ export function startChatLifecycle({
     entry.runtime.resubscribe();
     await entry.runtime.retryOutbox({ ignoreBackoff: true });
     await entry.runtime.settleClaims();
+    await entry.runtime.reconcileOwnPayments();
   }
 
   function onVisible(visible) {

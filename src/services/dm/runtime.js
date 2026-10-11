@@ -44,7 +44,7 @@ import { DM_DISCOVERY_RELAYS, KEY_IDLE_WIPE_MS } from './constants.js';
 import { DM_ERROR, DmError } from './errors.js';
 import { createInbox, createSignAuth } from './inbox.js';
 import { INBOX_STATUS, createInboxRelayResolver } from './inboxRelays.js';
-import { matchIncomingPayments } from './paymentConfirmation.js';
+import { matchIncomingPayments, transactionKey } from './paymentConfirmation.js';
 import { verifyPaymentViaAddress } from './paymentVerification.js';
 import {
   MESSAGE_TYPE,
@@ -227,6 +227,9 @@ export function createInboxStoreAdapter(store, me) {
  * @property {() => boolean} [isHidden] True while the app is out of sight (default: never).
  * @property {(link: { contactId: string | null, walletId: string, amountSats: number, note: string | null }) => unknown} [linkPayment]
  *   Links the incoming transaction of a paid request to the contact (best effort).
+ * @property {() => Promise<Array<{ amountSats: number, settledAt: number | null, paymentHash: string | null,
+ *   status: 'completed' | 'pending' | 'failed' }>>} [loadOutgoingTransactions] The user's own sends: what became
+ *   of a payment for a request that was still routing.
  * @property {() => Promise<import('./paymentConfirmation.js').IncomingTransaction[]>} [loadIncomingTransactions]
  *   The settled incoming transactions of the user's wallets, each with its `walletId`. Without it a
  *   payment the partner reports can never be verified.
@@ -264,6 +267,7 @@ export function createChatRuntime(deps = {}) {
     isHidden = () => false,
     linkPayment,
     loadIncomingTransactions,
+    loadOutgoingTransactions,
     ensureRelay,
     WebSocket,
     now = Date.now,
@@ -482,7 +486,8 @@ export function createChatRuntime(deps = {}) {
     const sent = await sendTemplate(recipient, buildPaymentTemplate({
       recipient, amountSats, preimage: cleanPreimage, note: cleanNote, requestId: reference, verifyUrl, now: nowSeconds,
     }));
-    if (!reference) return { payment: sent, status: null, statusError: null };
+    // Less than was asked ("Send anyway" with a smaller amount) is a payment, not the request paid.
+    if (!reference || !coversRequest(recipient, reference, amountSats)) return { payment: sent, status: null, statusError: null };
 
     try {
       const status = await sendTemplate(recipient, buildStatusTemplate({
@@ -497,6 +502,101 @@ export function createChatRuntime(deps = {}) {
     } catch (error) {
       return { payment: sent, status: null, statusError: DmError.is(error) ? error.code : DM_ERROR.RELAY_UNAVAILABLE };
     }
+  }
+
+  /** Whether `amountSats` is at least what the partner's request `requestId` asked. */
+  function coversRequest(partner, requestId, amountSats) {
+    const request = findMessage(partner, requestId);
+    return request?.type === MESSAGE_TYPE.REQUEST && amountSats >= request.request.amountSats;
+  }
+
+  /**
+   * The wallet sent a payment the chat handed over (`payment:sent`). Paying a
+   * partner's request is recorded at once, before any message goes out, so
+   * the request is never offered for paying again even when the announcement
+   * cannot go out now (signer app away, partner unreachable) or the payment
+   * is still routing. A completed payment is then announced; a pending one
+   * waits for `reconcileOwnPayments`.
+   *
+   * @param {string} partner
+   * @param {{ status?: 'completed' | 'pending', amountSats: number, note?: string, preimage?: string,
+   *   requestId?: string, verifyUrl?: string, paymentHash?: string, walletId?: string }} payment
+   * @returns {Promise<boolean>} True when the partner was told now.
+   */
+  async function reportPayment(partner, payment) {
+    const recipient = normalizePubkey(partner);
+    assertUsable();
+    const pending = payment.status === 'pending';
+    const { requestId } = payment;
+    const settlesRequest = Boolean(requestId) && coversRequest(recipient, requestId, payment.amountSats);
+    if (settlesRequest && store.scope === me) {
+      store.setOwnPayment(requestId, {
+        status: pending ? 'pending' : 'sent',
+        announced: false,
+        partner: recipient,
+        amountSats: payment.amountSats,
+        note: payment.note ?? null,
+        preimage: payment.preimage ?? null,
+        verifyUrl: payment.verifyUrl ?? null,
+        paymentHash: payment.paymentHash?.toLowerCase() ?? null,
+        walletId: payment.walletId ?? null,
+        at: nowSeconds(),
+      });
+    }
+    if (pending) return false;
+    await announceOwnPayment(recipient, payment);
+    return true;
+  }
+
+  /** Tell the partner, and remember that they were told. */
+  async function announceOwnPayment(partner, { amountSats, note, preimage, requestId, verifyUrl }) {
+    await announcePayment(partner, {
+      amountSats, note: note ?? undefined, preimage: preimage ?? undefined, requestId: requestId ?? undefined, verifyUrl: verifyUrl ?? undefined,
+    });
+    if (requestId && store.ownPayment(requestId)) store.setOwnPayment(requestId, { status: 'sent', announced: true });
+  }
+
+  /**
+   * Finish what `reportPayment` could not: announce payments the partner was
+   * not told about yet, and settle the ones that were still routing (the
+   * wallet's history says completed: announce; failed: forget the record, so
+   * the request can be paid again). Runs on start and resume. Never throws.
+   *
+   * @returns {Promise<{ announced: number, settled: number, failed: number }>}
+   */
+  async function reconcileOwnPayments() {
+    const result = { announced: 0, settled: 0, failed: 0 };
+    if (disposed || store.scope !== me) return result;
+    const records = Object.entries(store.ownPayments ?? {});
+    if (records.length === 0) return result;
+    let outgoing = null;
+    for (const [requestId, record] of records) {
+      if (disposed) break;
+      try {
+        if (record.status === 'pending') {
+          outgoing ??= await (loadOutgoingTransactions?.() ?? []);
+          const tx = outgoing.find((candidate) => (record.paymentHash
+            ? candidate.paymentHash?.toLowerCase() === record.paymentHash
+            : candidate.amountSats === record.amountSats && candidate.walletId === record.walletId
+              && Number.isFinite(candidate.settledAt) && candidate.settledAt >= record.at - 60));
+          if (!tx || tx.status === 'pending') continue;
+          if (tx.status === 'failed') {
+            store.clearOwnPayment(requestId);
+            result.failed += 1;
+            continue;
+          }
+          store.setOwnPayment(requestId, { status: 'sent' });
+          result.settled += 1;
+        }
+        if (!store.ownPayment(requestId)?.announced) {
+          await announceOwnPayment(record.partner, { ...record, requestId });
+          result.announced += 1;
+        }
+      } catch {
+        // The partner cannot be told right now: the next start or resume tries again.
+      }
+    }
+    return result;
   }
 
   /** React to a message with an emoji (`+`, `-` or an emoji). */
@@ -669,47 +769,43 @@ export function createChatRuntime(deps = {}) {
       let settled = 0;
       let pending = 0;
       try {
-        const work = [];
+        // Every open claim of every chat, matched in one pass: one transaction
+        // settles at most one request, across chats and across runs.
+        const open = [];
         for (const [partner, thread] of Object.entries(store.threads)) {
           const own = new Map(thread.messages
             .filter((m) => m.type === MESSAGE_TYPE.REQUEST && m.outgoing)
             .map((m) => [m.id, m]));
           if (own.size === 0) continue;
-          const isSettled = (claim) => Boolean(store.settlement(claim.requestId));
-          // Claims of requests that are settled already go first: their transaction is spent,
-          // so it cannot vouch for a second request in a later run.
-          const claims = claimsOf(thread, own);
-          claims.sort((a, b) => Number(isSettled(b)) - Number(isSettled(a)));
-          if (claims.some((claim) => own.has(claim.requestId) && !isSettled(claim))) work.push({ partner, own, claims });
+          for (const claim of claimsOf(thread, own)) {
+            const request = own.get(claim.requestId);
+            if (!request || store.settlement(request.id)) continue;
+            // The amount and the time come from the request, never from the claim.
+            const payment = { ...claim.payment, amountSats: request.request.amountSats };
+            open.push({ partner, request, claim: { ...claim, payment, notBefore: request.createdAt } });
+          }
         }
-        if (work.length === 0) return { settled, pending };
+        if (open.length === 0) return { settled, pending };
 
         const transactions = await (loadIncomingTransactions?.() ?? []);
-        const usedHashes = new Set(Object.values(store.settlements ?? {}).map((entry) => entry.paymentHash).filter(Boolean));
-        for (const { partner, own, claims } of work) {
-          const matches = matchIncomingPayments(claims, transactions);
-          const done = new Set();
-          for (const claim of claims) {
-            const request = own.get(claim.requestId);
-            if (!request || done.has(request.id) || store.settlement(request.id)) continue;
-            const tx = matches.get(claim.id);
-            // Money that came in but less than was asked is not the request paid.
-            if (tx && tx.amountSats >= request.request.amountSats) {
-              if (disposed) break;
-              done.add(request.id);
-              await recordVerifiedPayment(partner, request, tx);
-              if (tx.paymentHash) usedHashes.add(tx.paymentHash.toLowerCase());
-              settled += 1;
-              continue;
-            }
-            const proof = claim.verifyUrl && await verifyViaAddress(claim.verifyUrl, request, usedHashes);
-            if (!proof) { pending += 1; continue; }
-            if (disposed) break;
-            done.add(request.id);
-            usedHashes.add(proof.paymentHash);
-            store.setSettlement(request.id, { ...proof, paidAt: nowSeconds() });
+        const consumed = settledTransactionKeys();
+        const matches = matchIncomingPayments(open.map((entry) => entry.claim), transactions, { consumed, nowSeconds: nowSeconds() });
+        for (const { partner, request, claim } of open) {
+          // A request with several claims (payment and status): the first that holds settles it.
+          if (store.settlement(request.id)) continue;
+          if (disposed) break;
+          const tx = matches.get(claim.id);
+          // Money that came in but less than was asked is not the request paid.
+          if (tx && tx.amountSats >= request.request.amountSats) {
+            await recordVerifiedPayment(partner, request, tx);
             settled += 1;
+            continue;
           }
+          const proof = claim.verifyUrl && await verifyViaAddress(claim.verifyUrl, request, settledTransactionKeys());
+          if (!proof) { pending += 1; continue; }
+          if (disposed) break;
+          store.setSettlement(request.id, { ...proof, paidAt: nowSeconds() });
+          settled += 1;
         }
       } catch {
         // The ledger could not be read: the claims stay unverified until the next trigger.
@@ -721,6 +817,16 @@ export function createChatRuntime(deps = {}) {
     return claimRun;
   }
 
+  /** Keys of every transaction that settled a request already (`transactionKey`): spent for good. */
+  function settledTransactionKeys() {
+    const keys = new Set();
+    for (const entry of Object.values(store.settlements ?? {})) {
+      if (entry.paymentHash) keys.add(entry.paymentHash);
+      if (entry.transactionKey) keys.add(entry.transactionKey);
+    }
+    return keys;
+  }
+
   /** The payer's LUD-21 claim for one request, checked against the addresses the user named (see `paymentVerification.js`). */
   function verifyViaAddress(verifyUrl, request, usedHashes) {
     if (typeof lnurl?.verifyPayment !== 'function') return null;
@@ -728,8 +834,10 @@ export function createChatRuntime(deps = {}) {
       verifyUrl,
       addresses: [request.request.lud16, getProfileAddress()],
       amountSats: request.request.amountSats,
+      notBefore: request.createdAt,
       usedHashes,
       verifyPayment: lnurl.verifyPayment,
+      fetchPayRequest: lnurl.fetchPayRequest,
       setTimer,
       clearTimer,
     });
@@ -737,16 +845,19 @@ export function createChatRuntime(deps = {}) {
 
   /** The user's wallet showed the payment of one of their requests: record it and link the transaction. */
   async function recordVerifiedPayment(partner, request, tx) {
+    const key = transactionKey(tx);
     store.setSettlement(request.id, {
       walletId: tx.walletId ?? null,
       paidAt: tx.settledAt ?? nowSeconds(),
       ...(tx.paymentHash ? { paymentHash: tx.paymentHash.toLowerCase() } : {}),
+      ...(key && !tx.paymentHash ? { transactionKey: key } : {}),
     });
     if (linkPayment && tx.walletId) {
       try {
         await linkPayment({
           contactId: contacts.find(partner)?.id ?? null,
           walletId: tx.walletId,
+          transactionId: tx.id ?? null,
           amountSats: tx.amountSats,
           note: request.request.note ?? null,
         });
@@ -807,7 +918,7 @@ export function createChatRuntime(deps = {}) {
     const channel = typeof channelName === 'function' ? channelName() : channelName;
     await notifications.message({
       title: contact?.name || shortNpub(partner),
-      body: formatNotification(message),
+      body: formatNotification(message, { known: Boolean(contact) }),
       id: stableNotificationId(key),
       group: key,
       route: contact ? contactChatRoute(contact.id) : unknownChatRoute(partner),
@@ -841,6 +952,7 @@ export function createChatRuntime(deps = {}) {
       throw error;
     }
     void checkClaimsSoon();
+    void reconcileOwnPayments();
   }
 
   /** The person turned messages on for their signer app: receiving starts now. */
@@ -882,6 +994,7 @@ export function createChatRuntime(deps = {}) {
     cancelRequest,
     remindRequest,
     announcePayment,
+    reportPayment,
     react,
     retry,
     requestAddress,
@@ -919,6 +1032,7 @@ export function createChatRuntime(deps = {}) {
       inbox.retryWaiting();
     },
     retryOutbox: (options) => (disposed ? Promise.resolve({ attempted: 0 }) : inbox.retryOutbox(options)),
+    reconcileOwnPayments,
     /** Read again from relays the transport gave up on (resume, unlock). */
     resubscribe: () => {
       if (!disposed) inbox.resubscribe();

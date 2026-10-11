@@ -19,9 +19,10 @@
  *                  `isAppLocked()` in utils/appLock.js, which App.vue updates
  *                  just before it emits.
  *
- *   'payment:sent' Wallet.vue, after a payment was sent and settled (not for a
- *                  pending one). Payload: { contactId, destination, amountSats,
- *                  preimage, sendingWalletId, note, context }. `context` is the
+ *   'payment:sent' Wallet.vue, after a payment was sent: `status` 'completed',
+ *                  or 'pending' while it is still routing (it may still fail).
+ *                  Payload: { contactId, destination, amountSats, preimage,
+ *                  sendingWalletId, note, context, status, paymentHash }. `context` is the
  *                  opaque string the caller attached when it handed the payment
  *                  over (usePayContact `context` option), or null. The contact
  *                  chat's always-on announcer reads it (services/dm/
@@ -44,6 +45,13 @@ export const EventBus = {
 
   emit(event, data) {
     if (!listeners[event]) return
-    listeners[event].forEach(cb => cb(data))
+    // One listener failing must not keep the event from the others.
+    for (const cb of [...listeners[event]]) {
+      try {
+        cb(data)
+      } catch (error) {
+        console.warn(`[EventBus] a '${event}' listener failed:`, error?.name || 'Error')
+      }
+    }
   }
 }

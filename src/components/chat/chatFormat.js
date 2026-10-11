@@ -12,7 +12,7 @@ export const REACTION_EMOJIS = Object.freeze(['👍', '❤️', '😂', '🙏', 
 export const DELIVERY_STATES = Object.freeze(['queued', 'sending', 'sent', 'failed'])
 
 /** Derived request states (mirrors stores/messages.js REQUEST_STATE). */
-export const REQUEST_STATES = Object.freeze(['pending', 'paid', 'declined', 'cancelled', 'expired'])
+export const REQUEST_STATES = Object.freeze(['pending', 'paying', 'paid', 'declined', 'cancelled', 'expired'])
 
 const toMs = (unixSeconds) => unixSeconds * 1000
 

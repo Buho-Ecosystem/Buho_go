@@ -21,6 +21,9 @@
  *   outbox       items waiting to be (re)sent, see `enqueueOutbox`
  *   inboxRelays  the inbox relay resolver's `snapshot()`, or null
  *   settlements  own requests whose payment a wallet of the user confirmed, by request id (see `setSettlement`)
+ *   ownPayments  payments the user made for a partner's request, by request id:
+ *                { status: 'pending' | 'sent', announced, amountSats, ... }; a
+ *                request paid here is never offered for paying again
  *   signerAppMessages  true once the person turned messages on for an identity
  *                that signs in another app (each message asks that app; see
  *                services/dm/dmSigner.js), so receiving never starts unasked
@@ -72,6 +75,8 @@ const DELIVERY_VALUES = new Set(Object.values(DELIVERY))
 /** Derived state of a payment request. */
 export const REQUEST_STATE = Object.freeze({
   PENDING: 'pending',
+  /** The user paid it and the payment is still on its way (payer side only). */
+  PAYING: 'paying',
   PAID: 'paid',
   DECLINED: 'declined',
   CANCELLED: 'cancelled',
@@ -79,6 +84,7 @@ export const REQUEST_STATE = Object.freeze({
 })
 
 const MESSAGE_TYPES = new Set(Object.values(MESSAGE_TYPE))
+const OWN_PAYMENT_STATUSES = new Set(['pending', 'sent'])
 const HEX_64 = /^[0-9a-f]{64}$/
 
 // ---------------------------------------------------------------------------
@@ -183,6 +189,7 @@ function emptyState() {
   return {
     threads: {}, blocked: [], syncCursor: null, outbox: [], inboxRelays: null, settlements: {}, handledWraps: {},
     signerAppMessages: false,
+    ownPayments: {},
     // Not persisted: why received messages wait for the signer app (a DmError code), or null.
     signerHold: null,
   }
@@ -198,17 +205,33 @@ function emptyState() {
  * (docs section 8a). A declined or cancelled request stays so after
  * its lifetime ends, and a payment that comes late still turns it `paid`.
  *
+ * The payer's own side counts too, so a request they paid is never offered
+ * for paying again: their own `payment` message for it, and their own record
+ * of the payment (`ownPayments`, kept when the wallet sent it, even if the
+ * announcement could not go out yet): sent is `paid`, still routing is
+ * `paying`.
+ *
  * @param {object[]} messages Sorted thread messages.
  * @param {number} now Unix seconds.
+ * @param {Record<string, { status: 'pending' | 'sent' }>} [ownPayments] By request id.
  * @returns {Map<string, string>} request id -> REQUEST_STATE
  */
-export function deriveRequestStates(messages, now) {
+export function deriveRequestStates(messages, now, ownPayments = {}) {
   const requests = new Map()
   for (const m of messages) {
     if (m.type === MESSAGE_TYPE.REQUEST) requests.set(m.id, m)
   }
   const states = new Map()
   for (const id of requests.keys()) states.set(id, REQUEST_STATE.PENDING)
+
+  for (const m of messages) {
+    if (m.type !== MESSAGE_TYPE.PAYMENT || !m.payment.requestId) continue
+    const request = requests.get(m.payment.requestId)
+    // Less than was asked (an underpaid "Send anyway") does not pay the request.
+    if (request && m.outgoing && m.sender === request.recipient && m.payment.amountSats >= request.request.amountSats) {
+      states.set(request.id, REQUEST_STATE.PAID)
+    }
+  }
 
   for (const m of messages) {
     if (m.type !== MESSAGE_TYPE.STATUS) continue
@@ -222,6 +245,13 @@ export function deriveRequestStates(messages, now) {
     } else if (value === REQUEST_STATUS.CANCELLED && m.sender === request.sender) {
       states.set(request.id, REQUEST_STATE.CANCELLED)
     }
+  }
+
+  for (const [id, request] of requests) {
+    if (request.outgoing || states.get(id) === REQUEST_STATE.PAID) continue
+    const own = ownPayments[id]?.status
+    if (own === 'sent') states.set(id, REQUEST_STATE.PAID)
+    else if (own === 'pending') states.set(id, REQUEST_STATE.PAYING)
   }
 
   for (const [id, request] of requests) {
@@ -361,6 +391,11 @@ function restoreState(raw, me) {
     }
   }
   state.signerAppMessages = raw.signerAppMessages === true
+  if (isPlainObject(raw.ownPayments)) {
+    for (const [requestId, record] of Object.entries(raw.ownPayments)) {
+      if (hexKey(requestId) && isPlainObject(record) && OWN_PAYMENT_STATUSES.has(record.status)) state.ownPayments[requestId] = { ...record }
+    }
+  }
   if (isPlainObject(raw.handledWraps)) {
     for (const [wrapId, createdAt] of Object.entries(raw.handledWraps)) {
       if (hexKey(wrapId) && isCount(createdAt)) state.handledWraps[wrapId] = createdAt
@@ -472,13 +507,13 @@ export const useMessagesStore = defineStore('messages', {
     },
 
     /**
-     * `requestStatus(id, now)` -> 'pending' | 'paid' | 'declined' | 'cancelled' | 'expired',
+     * `requestStatus(id, now)` -> 'pending' | 'paying' | 'paid' | 'declined' | 'cancelled' | 'expired',
      * or null for an unknown request. `now` is unix seconds and defaults to the clock.
      */
     requestStatus: state => (requestId, now = deps.now()) => {
       for (const thread of Object.values(state.threads)) {
         if (thread.messages.some(m => m.type === MESSAGE_TYPE.REQUEST && m.id === requestId)) {
-          return deriveRequestStates(thread.messages, now).get(requestId) ?? null
+          return deriveRequestStates(thread.messages, now, state.ownPayments).get(requestId) ?? null
         }
       }
       return null
@@ -488,7 +523,7 @@ export const useMessagesStore = defineStore('messages', {
     pendingRequestsFrom: state => (partner, now = deps.now()) => {
       const thread = state.threads[hexKey(partner)]
       if (!thread) return []
-      const states = deriveRequestStates(thread.messages, now)
+      const states = deriveRequestStates(thread.messages, now, state.ownPayments)
       return thread.messages.filter(
         m => m.type === MESSAGE_TYPE.REQUEST && !m.outgoing && states.get(m.id) === REQUEST_STATE.PENDING,
       )
@@ -579,6 +614,7 @@ export const useMessagesStore = defineStore('messages', {
         settlements: this.settlements,
         handledWraps: this.handledWraps,
         signerAppMessages: this.signerAppMessages,
+        ownPayments: this.ownPayments,
       }))
     },
 
@@ -824,6 +860,31 @@ export const useMessagesStore = defineStore('messages', {
         if (this.syncCursor !== null && seconds <= this.syncCursor) return false
         this.syncCursor = seconds
       }
+      this._markDirty()
+      return true
+    },
+
+    /** The user's own payment for a partner's request, or null. */
+    ownPayment(requestId) {
+      return (this.scope && this.ownPayments[requestId]) || null
+    },
+
+    /**
+     * Record (or update) the user's own payment for a partner's request: the
+     * wallet sent it (`sent`) or it is still routing (`pending`). `announced`
+     * says whether the partner was told.
+     */
+    setOwnPayment(requestId, record) {
+      if (!this.scope || !hexKey(requestId) || !OWN_PAYMENT_STATUSES.has(record?.status)) return false
+      this.ownPayments[requestId] = { ...this.ownPayments[requestId], ...JSON.parse(JSON.stringify(record)) }
+      this._markDirty()
+      return true
+    },
+
+    /** Forget an own payment that failed: the request can be paid again. */
+    clearOwnPayment(requestId) {
+      if (!this.scope || !(requestId in this.ownPayments)) return false
+      delete this.ownPayments[requestId]
       this._markDirty()
       return true
     },

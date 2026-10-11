@@ -53,6 +53,7 @@ const facade = Object.freeze({
   cancelRequest: forward('cancelRequest'),
   remindRequest: forward('remindRequest'),
   announcePayment: forward('announcePayment'),
+  reportPayment: forward('reportPayment'),
   react: forward('react'),
   retry: forward('retry'),
   requestAddress: forward('requestAddress'),

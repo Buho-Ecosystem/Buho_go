@@ -63,10 +63,10 @@ function harness({ fail } = {}) {
   const calls = [];
   const errors = [];
   const runtime = {
-    announcePayment: async (partner, payment) => {
+    reportPayment: async (partner, payment) => {
       calls.push({ partner, payment });
       if (fail) throw fail;
-      return { payment: {}, status: null, statusError: null };
+      return payment.status !== 'pending';
     },
   };
   const announcer = createPaymentAnnouncer({
@@ -88,10 +88,23 @@ test('announcer: a chat payment is announced to the partner, with the request id
   assert.deepEqual(calls, [{
     partner: PARTNER,
     payment: {
-      amountSats: 25_000, note: 'Pizza', preimage: 'c'.repeat(64), requestId: REQUEST,
-      verifyUrl: 'https://getalby.com/verify/abc',
+      status: 'completed', amountSats: 25_000, note: 'Pizza', preimage: 'c'.repeat(64), requestId: REQUEST,
+      verifyUrl: 'https://getalby.com/verify/abc', paymentHash: undefined, walletId: undefined,
     },
   }]);
+});
+
+test('announcer: a payment still routing is reported as pending, with its hash and wallet', async () => {
+  const { bus, calls, announcer } = harness();
+  announcer.start();
+  bus.emit(PAYMENT_SENT_EVENT, {
+    context: buildChatPaymentContext(PARTNER, REQUEST), amountSats: 25_000,
+    status: 'pending', paymentHash: 'd'.repeat(64), sendingWalletId: 'spark-1',
+  });
+  await flush();
+  assert.equal(calls[0].payment.status, 'pending');
+  assert.equal(calls[0].payment.paymentHash, 'd'.repeat(64));
+  assert.equal(calls[0].payment.walletId, 'spark-1');
 });
 
 test('announcer: a plain send carries the comment as the note and no request id', async () => {
@@ -99,7 +112,10 @@ test('announcer: a plain send carries the comment as the note and no request id'
   announcer.start();
   bus.emit(PAYMENT_SENT_EVENT, { context: buildChatPaymentContext(PARTNER), amountSats: 5000, note: 'Coffee' });
   await flush();
-  assert.deepEqual(calls[0].payment, { amountSats: 5000, note: 'Coffee', preimage: undefined, requestId: undefined, verifyUrl: undefined });
+  assert.deepEqual(calls[0].payment, {
+    status: 'completed', amountSats: 5000, note: 'Coffee', preimage: undefined, requestId: undefined,
+    verifyUrl: undefined, paymentHash: undefined, walletId: undefined,
+  });
 });
 
 test('announcer: payments without a chat context, or without an amount, are ignored', async () => {
@@ -140,7 +156,7 @@ test('announcer: a failing announcement reports only the error code and never th
 });
 
 test('announcer: refuses to be built without its collaborators', () => {
-  assert.throws(() => createPaymentAnnouncer({ runtime: { announcePayment() {} } }), TypeError);
+  assert.throws(() => createPaymentAnnouncer({ runtime: { reportPayment() {} } }), TypeError);
   assert.throws(() => createPaymentAnnouncer({ bus: { on() {}, off() {} }, runtime: {} }), TypeError);
 });
 
@@ -227,9 +243,9 @@ test('incoming transactions: settled incoming rows of every wallet, times in sec
     normalizeTx: (row) => ({ ...row }),
   });
   assert.deepEqual(result, [
-    { amountSats: 700, settledAt: 1_700_000_000, paymentHash: 'h1', walletId: 'a' },
-    { amountSats: 300, settledAt: 1_700_000_000, paymentHash: null, walletId: 'a' },
-    { amountSats: 11, settledAt: 1_700_000_000, paymentHash: null, walletId: 'b' },
+    { amountSats: 700, settledAt: 1_700_000_000, paymentHash: 'h1', walletId: 'a', id: null },
+    { amountSats: 300, settledAt: 1_700_000_000, paymentHash: null, walletId: 'a', id: null },
+    { amountSats: 11, settledAt: 1_700_000_000, paymentHash: null, walletId: 'b', id: null },
   ]);
   assert.deepEqual(await loadIncomingTransactions({ wallets: undefined, getProvider: () => null, normalizeTx: () => ({}) }), []);
 });

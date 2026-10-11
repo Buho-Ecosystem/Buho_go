@@ -4792,13 +4792,23 @@ export default {
     },
 
     /**
-     * Announce a completed payment on the EventBus (`payment:sent`).
+     * Announce a sent payment on the EventBus (`payment:sent`, see utils/eventBus.js).
      *
      * The wallet page does not know who asked for the payment; listeners that
      * do (the contact chat's announcer) recognise their own `context`. A
      * listener that throws must never turn a payment that went through into an
      * error screen, so this swallows everything.
      */
+    /** The payment hash of a BOLT-11 invoice; null when there is none or it does not decode. */
+    paymentHashOf(invoice) {
+      if (!invoice) return null;
+      try {
+        return new Invoice({ pr: invoice }).paymentHash || null;
+      } catch {
+        return null;
+      }
+    },
+
     emitPaymentSent(payload) {
       try {
         EventBus.emit('payment:sent', payload);
@@ -5127,19 +5137,20 @@ export default {
         // recipient payload is still intact, and let that brief micro-
         // interaction play. This is the bridge from the send CTA to the
         // confirmation screen.
-        // Tell whoever handed this payment over (the contact chat) that it
-        // went through. Only for a settled send: a pending one may still fail.
-        if (isCompletedSend) {
-          this.emitPaymentSent({
-            contactId: existingContact?.id || invoiceContactId,
-            destination: recipientAddress || this.pendingPayment?.invoice || null,
-            amountSats: amount,
-            preimage: result?.preimage || null,
-            sendingWalletId,
-            note: comment,
-            context: this.pendingPayment?.paymentContext || null,
-          });
-        }
+        // Tell whoever handed this payment over (the contact chat): a settled
+        // one is announced, one still routing is only recorded (it may fail),
+        // so a request it pays is never offered for paying twice.
+        this.emitPaymentSent({
+          contactId: existingContact?.id || invoiceContactId,
+          destination: recipientAddress || this.pendingPayment?.invoice || null,
+          amountSats: amount,
+          preimage: result?.preimage || null,
+          sendingWalletId,
+          note: comment,
+          context: this.pendingPayment?.paymentContext || null,
+          status: isCompletedSend ? 'completed' : 'pending',
+          paymentHash: result?.paymentHash || result?.payment_hash || this.paymentHashOf(this.pendingPayment?.invoice),
+        });
 
         this.sendDidSucceed = true;
         await new Promise((resolve) => setTimeout(resolve, 450)); // CTA completion beat

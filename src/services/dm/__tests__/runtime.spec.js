@@ -166,7 +166,7 @@ function createLnurlServer(answer = null, { minSendable = 1_000, maxSendable = 1
     async fetchPayRequest(url) {
       server.fetched.push(url);
       if (server.failFetch) throw new Error('lnurl down');
-      return { tag: 'payRequest', callback: 'https://buho.example/cb', minSendable, maxSendable, commentAllowed };
+      return { tag: 'payRequest', callback: 'https://buho.example/cb', minSendable, maxSendable, commentAllowed, metadata: metadataOf(url) };
     },
     async requestInvoice(payRequest, amountMsat, options) {
       server.requested.push({ amountMsat, comment: options?.comment });
@@ -233,6 +233,8 @@ async function setup({
     profileAddress,
     /** What the user's wallets show as settled incoming money (payment-claim verification). */
     incoming: [],
+    /** The user's own sends (what became of a payment that was still routing). */
+    outgoing: [],
   };
 
   env.runtime = createChatRuntime({
@@ -253,6 +255,7 @@ async function setup({
       : null),
     lnurl,
     loadIncomingTransactions: async () => env.incoming,
+    loadOutgoingTransactions: async () => env.outgoing,
     contacts: { find: (pubkey) => env.contactsById.get(pubkey) ?? null },
     notifications: {
       message: async (payload) => {
@@ -858,7 +861,18 @@ test('the request stays open for 30 days, then expires; it can be reminded meanw
 // ---------------------------------------------------------------------------
 
 /** The payer's two messages for a request: the payment and the paid status. */
+/**
+ * The time of a claim the partner writes: a claim is written after the payment
+ * and read after it is written, so the requester's clock moves past it (a
+ * claim from the future is ignored).
+ */
+function claimAt(seconds) {
+  clock.ms = Math.max(clock.ms, (seconds + 2) * 1_000);
+  return () => seconds;
+}
+
 async function deliverClaim(env, requestId, { sats = 12_000, preimage = PREIMAGE, at = NOW + 7_300, verifyUrl } = {}) {
+  claimAt(at + 1);
   await env.transport.deliver(await wrapFor(aliceKey, buildPaymentTemplate({
     recipient: ME, amountSats: sats, preimage, requestId, verifyUrl, now: () => at,
   })));
@@ -879,7 +893,7 @@ test('a payment the partner reports is verified against the own ledger: paid, li
 
   assert.deepEqual(env.runtime.requestSettlement(message.id), { verified: true, walletId: 'w1', address: null });
   assert.equal(env.runtime.requestState(message.id), 'paid');
-  assert.deepEqual(env.links, [{ contactId: 'contact-alice', walletId: 'w1', amountSats: 12_000, note: 'Pizza' }]);
+  assert.deepEqual(env.links, [{ contactId: 'contact-alice', walletId: 'w1', transactionId: null, amountSats: 12_000, note: 'Pizza' }]);
   const before = env.transport.published.length;
   await env.runtime.settleClaims();
   assert.equal(env.links.length, 1, 'never linked twice');
@@ -910,7 +924,7 @@ test('without a preimage the amount and the time window decide; a wrong amount o
   await env.runtime.whenIdle();
   await env.runtime.start();
   await env.transport.deliver(await wrapFor(aliceKey, buildStatusTemplate({
-    recipient: ME, requestId: message.id, value: 'paid', amountSats: 12_000, now: () => NOW + 7_300,
+    recipient: ME, requestId: message.id, value: 'paid', amountSats: 12_000, now: claimAt(NOW + 7_300),
   })));
   await flush();
 
@@ -946,7 +960,7 @@ test('one transaction verifies one claim, and claims about requests of the partn
   const theirs = await deliverAliceRequest(env);
   for (const id of [first.id, second.id, theirs.id]) {
     await env.transport.deliver(await wrapFor(aliceKey, buildStatusTemplate({
-      recipient: ME, requestId: id, value: 'paid', amountSats: 12_000, now: () => NOW + 7_300,
+      recipient: ME, requestId: id, value: 'paid', amountSats: 12_000, now: claimAt(NOW + 7_300),
     })));
   }
   env.incoming = [{ amountSats: 12_000, settledAt: NOW + 7_300, walletId: 'w1' }];
@@ -962,7 +976,7 @@ test('settleClaims on resume verifies a claim that arrived while the wallet hist
   await env.runtime.whenIdle();
   await env.runtime.start();
   await env.transport.deliver(await wrapFor(aliceKey, buildStatusTemplate({
-    recipient: ME, requestId: message.id, value: 'paid', preimage: PREIMAGE, now: () => NOW + 7_300,
+    recipient: ME, requestId: message.id, value: 'paid', preimage: PREIMAGE, now: claimAt(NOW + 7_300),
   })));
   await flush();
   assert.equal(env.runtime.requestSettlement(message.id).verified, false);
@@ -995,8 +1009,18 @@ test('a verified settlement survives a restart', async () => {
 const VERIFY_URL = 'https://buho.example/verify/abc';
 
 /** What an LNURL service answers for a settled invoice (the hash of PREIMAGE unless told otherwise). */
-function settledAnswer({ sats = 12_000, hash = HASH_OF_PREIMAGE, preimage = PREIMAGE, settled = true, network } = {}) {
-  return { settled, preimage, pr: makeInvoice({ sats, hash, network }).bolt11 };
+/** The LNURL-pay metadata each address serves: it names the address, so it differs per account. */
+function metadataOf(url) {
+  return JSON.stringify([['text/plain', 'Pay me'], ['text/identifier', String(url).split('/').pop()]]);
+}
+
+const descriptionHashOf = (endpoint) => bytesToHex(sha256(new TextEncoder().encode(metadataOf(endpoint))));
+
+/** The profile address's endpoint: whose invoice a verify answer is, by default. */
+const OWN_ENDPOINT = `https://${PROFILE_ADDRESS.split('@')[1]}/.well-known/lnurlp/${PROFILE_ADDRESS.split('@')[0]}`;
+
+function settledAnswer({ sats = 12_000, hash = HASH_OF_PREIMAGE, preimage = PREIMAGE, settled = true, network, endpoint = OWN_ENDPOINT } = {}) {
+  return { settled, preimage, pr: makeInvoice({ sats, hash, network, descriptionHash: descriptionHashOf(endpoint) }).bolt11 };
 }
 
 async function setupExternal({ sats = 12_000 } = {}) {
@@ -1186,4 +1210,108 @@ test('with a signer app that is away, messages wait, the store says why, and a r
   await env.runtime.whenIdle();
   assert.equal(env.store.thread(ALICE).messages.at(-1).text, 'waiting');
   assert.equal(env.store.signerHold, null);
+});
+
+// ---------------------------------------------------------------------------
+// Forged and recycled payment claims (security review)
+// ---------------------------------------------------------------------------
+
+test('LUD-21: an invoice of another account on the same service is never "verified"', async () => {
+  const { env, message } = await setupExternal();
+  // The payer paid an invoice of their OWN account on buho.example and sends its verify URL.
+  env.lnurl.verifyAnswer = settledAnswer({ endpoint: 'https://buho.example/.well-known/lnurlp/mallory' });
+  await deliverClaim(env, message.id, { verifyUrl: VERIFY_URL });
+  await env.runtime.settleClaims();
+  assert.equal(env.runtime.requestSettlement(message.id).verified, false);
+});
+
+test('LUD-21: an invoice older than the request is never "verified"', async () => {
+  const { env, message } = await setupExternal();
+  const old = makeInvoice({ sats: 12_000, hash: HASH_OF_PREIMAGE, timestamp: NOW - 86_400, descriptionHash: descriptionHashOf(OWN_ENDPOINT) });
+  env.lnurl.verifyAnswer = { settled: true, preimage: PREIMAGE, pr: old.bolt11 };
+  await deliverClaim(env, message.id, { verifyUrl: VERIFY_URL });
+  await env.runtime.settleClaims();
+  assert.equal(env.runtime.requestSettlement(message.id).verified, false);
+});
+
+test('one payment confirms one request across chats, and money from before the request confirms none', async () => {
+  const partners = new Map([
+    [ALICE, { status: 'found', relays: ALICE_RELAYS, checkedAt: 0 }],
+    [BOB, { status: 'found', relays: ['wss://bob.example'], checkedAt: 0 }],
+  ]);
+  const env = await setup({ partners });
+  const fromAlice = await env.runtime.requestMoney(ALICE, { amountSats: 10_000, note: 'split' });
+  const fromBob = await env.runtime.requestMoney(BOB, { amountSats: 10_000, note: 'split' });
+  await env.runtime.whenIdle();
+  await env.runtime.start();
+  for (const [key, id] of [[aliceKey, fromAlice.id], [bobKey, fromBob.id]]) {
+    await env.transport.deliver(await wrapFor(key, buildStatusTemplate({
+      recipient: ME, requestId: id, value: 'paid', amountSats: 10_000, now: claimAt(NOW + 600),
+    })));
+  }
+  // Only one of them paid; the other only says so.
+  env.incoming = [
+    { amountSats: 10_000, settledAt: NOW + 590, walletId: 'w1', id: 'tx-1' },
+    // An older payment of the same amount, from before both requests.
+    { amountSats: 10_000, settledAt: NOW - 3_600, walletId: 'w1', id: 'tx-0' },
+  ];
+  await env.runtime.settleClaims();
+  const verified = [fromAlice.id, fromBob.id].filter((id) => env.runtime.requestSettlement(id).verified);
+  assert.equal(verified.length, 1, 'a single payment cannot vouch for two chats');
+
+  // A later run does not reuse the spent transaction either.
+  await env.runtime.settleClaims();
+  assert.equal([fromAlice.id, fromBob.id].filter((id) => env.runtime.requestSettlement(id).verified).length, 1);
+});
+
+// ---------------------------------------------------------------------------
+// The payer's own payment of a request: never paid twice
+// ---------------------------------------------------------------------------
+
+test('a paid request is paid on the payer\'s side at once, even when the partner cannot be told yet', async () => {
+  const env = await setup();
+  await env.runtime.start();
+  const request = await deliverAliceRequest(env);
+  // Alice cannot be reached right now: the announcement fails...
+  env.resolver.table.set(ALICE, { status: 'missing', relays: [], checkedAt: 0 });
+  await assert.rejects(env.runtime.reportPayment(ALICE, { amountSats: 800, requestId: request.id, preimage: PREIMAGE }));
+  // ...but the request is paid here, and paying it again is refused.
+  assert.equal(env.store.requestStatus(request.id), 'paid');
+  await assert.rejects(env.runtime.fetchRequestInvoice(ALICE, request.id), (err) => DmError.is(err, DM_ERROR.INVALID_ARGUMENT));
+
+  // Reachable again: the next reconcile tells her, once.
+  env.resolver.table.set(ALICE, { status: 'found', relays: ALICE_RELAYS, checkedAt: 0 });
+  assert.equal((await env.runtime.reconcileOwnPayments()).announced, 1);
+  assert.equal((await env.runtime.reconcileOwnPayments()).announced, 0);
+  assert.equal(env.store.ownPayment(request.id).announced, true);
+});
+
+test('a payment still routing shows "paying"; the wallet history settles it, or frees the request when it failed', async () => {
+  const env = await setup();
+  await env.runtime.start();
+  const request = await deliverAliceRequest(env);
+  const hash = 'f'.repeat(64);
+  assert.equal(await env.runtime.reportPayment(ALICE, { status: 'pending', amountSats: 800, requestId: request.id, paymentHash: hash }), false);
+  assert.equal(env.store.requestStatus(request.id), 'paying');
+
+  env.outgoing = [{ amountSats: 800, settledAt: NOW, paymentHash: hash, walletId: 'w1', status: 'completed' }];
+  assert.deepEqual(await env.runtime.reconcileOwnPayments(), { announced: 1, settled: 1, failed: 0 });
+  assert.equal(env.store.requestStatus(request.id), 'paid');
+
+  const other = await deliverAliceRequest(env, { sats: 900 });
+  await env.runtime.reportPayment(ALICE, { status: 'pending', amountSats: 900, requestId: other.id, paymentHash: 'e'.repeat(64) });
+  env.outgoing = [{ amountSats: 900, settledAt: NOW, paymentHash: 'e'.repeat(64), walletId: 'w1', status: 'failed' }];
+  assert.equal((await env.runtime.reconcileOwnPayments()).failed, 1);
+  assert.equal(env.store.requestStatus(other.id), 'pending', 'a failed payment leaves the request payable');
+});
+
+test('paying less than a request asked is a payment, not the request paid', async () => {
+  const env = await setup();
+  await env.runtime.start();
+  const request = await deliverAliceRequest(env);
+  await env.runtime.reportPayment(ALICE, { amountSats: 100, requestId: request.id });
+  assert.equal(env.store.ownPayment(request.id), null);
+  assert.equal(env.store.requestStatus(request.id), 'pending');
+  const sentStatus = env.store.thread(ALICE).messages.some((m) => m.type === 'status' && m.outgoing);
+  assert.equal(sentStatus, false, 'no "paid" status for an underpayment');
 });

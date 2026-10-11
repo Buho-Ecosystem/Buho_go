@@ -21,7 +21,7 @@
  */
 
 import { DM_ERROR, DmError } from './errors.js';
-import { loadIncomingTransactions } from './incomingTransactions.js';
+import { loadIncomingTransactions, loadOutgoingTransactions } from './incomingTransactions.js';
 import { createChatRuntime } from './runtime.js';
 
 /** `source` stamped on the incoming transaction of a paid chat request. */
@@ -107,10 +107,12 @@ export function createAppRuntimeFactory(stores, services) {
       // note as its label) once the wallet lists the transaction. The amount is
       // the proof the link needs, which the queue already demands for a link
       // that carries no address.
-      linkPayment: ({ contactId, walletId, amountSats, note }) => transactionMetadata.enqueuePendingContactLink({
+      linkPayment: ({ contactId, walletId, transactionId, amountSats, note }) => transactionMetadata.enqueuePendingContactLink({
         contactId,
         amountSats,
         walletId,
+        // The exact transaction when the wallet named it: no guessing by amount and time.
+        transactionId,
         direction: 'incoming',
         source: CHAT_REQUEST_SOURCE,
         label: note,
@@ -119,6 +121,11 @@ export function createAppRuntimeFactory(stores, services) {
       ...(services.normalizeTx
         ? {
           loadIncomingTransactions: () => loadIncomingTransactions({
+            wallets: wallet.wallets,
+            getProvider: (walletId) => wallet.getProvider(walletId),
+            normalizeTx: services.normalizeTx,
+          }),
+          loadOutgoingTransactions: () => loadOutgoingTransactions({
             wallets: wallet.wallets,
             getProvider: (walletId) => wallet.getProvider(walletId),
             normalizeTx: services.normalizeTx,

@@ -1,6 +1,8 @@
 /**
- * The incoming payments of the user's wallets, reduced to what the chat needs
- * to check a payment claim (`paymentConfirmation.js`).
+ * The payments of the user's wallets, reduced to what the chat needs: the
+ * incoming ones to check a partner's payment claim (`paymentConfirmation.js`),
+ * the outgoing ones to learn what became of a payment of the user's own that
+ * was still routing when the send sheet closed.
  *
  * Reads each connected wallet's own history (`provider.getTransactions`), the
  * same source the contact page's "Between you" list uses, and keeps settled
@@ -45,9 +47,41 @@ export async function loadIncomingTransactions({ wallets, getProvider, normalize
         const settledAt = toSeconds(tx);
         const amountSats = tx.recipientSats || Math.abs(Number(tx.amount) || 0);
         if (settledAt === null || !Number.isSafeInteger(amountSats) || amountSats <= 0) continue;
-        found.push({ amountSats, settledAt, paymentHash: tx.paymentHash || null, walletId: wallet.id });
+        found.push({ amountSats, settledAt, paymentHash: tx.paymentHash || null, walletId: wallet.id, id: tx.id ?? null });
       }
       return found;
+    } catch {
+      return [];
+    }
+  }));
+  return batches.flat();
+}
+
+/**
+ * The user's outgoing payments, any status, newest wallet rows first.
+ *
+ * @param {Parameters<typeof loadIncomingTransactions>[0]} input
+ * @returns {Promise<Array<{ amountSats: number, settledAt: number | null, paymentHash: string | null,
+ *   walletId: string, id: string | null, status: 'completed' | 'pending' | 'failed' }>>}
+ */
+export async function loadOutgoingTransactions({ wallets, getProvider, normalizeTx, limit = 50 }) {
+  const batches = await Promise.all((wallets ?? []).map(async (wallet) => {
+    const provider = getProvider(wallet.id);
+    if (typeof provider?.getTransactions !== 'function') return [];
+    try {
+      const result = await provider.getTransactions({ limit, offset: 0 });
+      const rows = Array.isArray(result) ? result : (result?.transactions ?? []);
+      return rows
+        .map((row) => normalizeTx(row, { walletType: wallet.type }))
+        .filter((tx) => tx.type === 'outgoing')
+        .map((tx) => ({
+          amountSats: Math.abs(Number(tx.amount) || 0),
+          settledAt: toSeconds(tx),
+          paymentHash: tx.paymentHash || null,
+          walletId: wallet.id,
+          id: tx.id ?? null,
+          status: ['failed', 'expired'].includes(tx.status) ? 'failed' : (tx.status === 'pending' ? 'pending' : 'completed'),
+        }));
     } catch {
       return [];
     }

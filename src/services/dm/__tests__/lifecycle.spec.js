@@ -84,6 +84,7 @@ function setup({ pubkey = A, locked = false, hidden = false, suspended = false, 
       resubscribe: () => { runtime.calls.push('resubscribe'); },
       stop: () => { runtime.calls.push('stop'); },
       settleClaims: async () => { runtime.calls.push('settleClaims'); return { settled: 0, pending: 0 }; },
+      reconcileOwnPayments: async () => { runtime.calls.push('reconcile'); return { announced: 0, settled: 0, failed: 0 }; },
     };
     env.runtimes.push(runtime);
     return runtime;
@@ -158,7 +159,7 @@ test('launched while locked: the runtime exists for the UI but does not start un
 
   env.setLocked(false);
   await flush();
-  assert.deepEqual(env.callsOf(), ['start', 'settleClaims']);
+  assert.deepEqual(env.callsOf(), ['start', 'settleClaims', 'reconcile']);
 });
 
 test('nothing starts before App.vue reports the lock state', async () => {
@@ -234,7 +235,7 @@ test('unlock after a lock: the outbox is retried (backoff respected) and payment
   env.setLocked(true);
   env.setLocked(false);
   await flush();
-  assert.deepEqual(env.callsOf(), ['start', 'wipeKey:lock', 'resubscribe', 'retry:{}', 'settleClaims']);
+  assert.deepEqual(env.callsOf(), ['start', 'wipeKey:lock', 'resubscribe', 'retry:{}', 'settleClaims', 'reconcile']);
 });
 
 test('hidden: the key wipe is scheduled and the store flushed; visible cancels it', async () => {

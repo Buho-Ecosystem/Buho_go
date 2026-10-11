@@ -2,10 +2,11 @@
  * Announces payments made from the chat.
  *
  * The chat hands a payment to the app's normal send pipeline and leaves the
- * screen (the confirm sheet lives on the wallet page). When that payment
- * succeeds, Wallet.vue emits `payment:sent` on the EventBus with the context
- * string the chat attached (`paymentContext.js`). This module is the always-on
- * listener that turns such an event into `runtime.announcePayment(...)`: it is
+ * screen (the confirm sheet lives on the wallet page). When the wallet sent
+ * it (or it is still routing), Wallet.vue emits `payment:sent` on the EventBus
+ * with the context string the chat attached (`paymentContext.js`). This module
+ * is the always-on listener that turns such an event into
+ * `runtime.reportPayment(...)` (record, then announce): it is
  * registered once at boot, so the announcement happens whether or not the chat
  * page is still mounted, and for payments that finish after the user went
  * somewhere else.
@@ -37,12 +38,14 @@ export const PAYMENT_SENT_EVENT = 'payment:sent';
  * @property {string | null} [sendingWalletId]
  * @property {string | null} [note] The comment sent with the payment.
  * @property {string | null} [context] Opaque string of the caller (see paymentContext.js).
+ * @property {'completed' | 'pending'} [status] A pending payment is still routing.
+ * @property {string | null} [paymentHash] Of the paid invoice, when known.
  */
 
 /**
  * @param {object} deps
  * @param {{ on: Function, off: Function }} deps.bus The EventBus.
- * @param {{ announcePayment: (partner: string, payment: object) => Promise<unknown> }} deps.runtime
+ * @param {{ reportPayment: (partner: string, payment: object) => Promise<boolean> }} deps.runtime
  *   The `useChatRuntime()` facade (always the current runtime).
  * @param {(partner: string, requestId: string | null) => string | undefined} [deps.noteFor]
  *   Note to use when the event carries none (the request's own note).
@@ -51,9 +54,9 @@ export const PAYMENT_SENT_EVENT = 'payment:sent';
  */
 export function createPaymentAnnouncer({ bus, runtime, noteFor, onError = () => {} }) {
   if (!bus || typeof bus.on !== 'function') throw new TypeError('announcer: a bus is required');
-  if (!runtime || typeof runtime.announcePayment !== 'function') throw new TypeError('announcer: a runtime is required');
+  if (!runtime || typeof runtime.reportPayment !== 'function') throw new TypeError('announcer: a runtime is required');
 
-  /** @returns {Promise<boolean>} True when an announcement was sent. */
+  /** @returns {Promise<boolean>} True when the partner was told now (a pending payment is only recorded). */
   async function handle(event) {
     const target = parseChatPaymentContext(event?.context);
     if (!target) return false;
@@ -64,14 +67,16 @@ export function createPaymentAnnouncer({ bus, runtime, noteFor, onError = () => 
       ? event.note
       : noteFor?.(target.partner, target.requestId);
     try {
-      await runtime.announcePayment(target.partner, {
+      return await runtime.reportPayment(target.partner, {
+        status: event.status === 'pending' ? 'pending' : 'completed',
         amountSats,
         note: note || undefined,
         preimage: event.preimage || undefined,
         requestId: target.requestId ?? undefined,
         verifyUrl: target.verifyUrl ?? undefined,
+        paymentHash: event.paymentHash || undefined,
+        walletId: event.sendingWalletId || undefined,
       });
-      return true;
     } catch (error) {
       onError(DmError.is(error) ? error.code : 'UNKNOWN');
       return false;
