@@ -816,6 +816,86 @@ await test('switchNostrIdentity validates roster membership and re-caches the ke
   );
 });
 
+await test('removeNostrIdentityFromDevice hides an identity without touching the roster or pointer', async () => {
+  const s = freshEnv();
+  await s.ensureIdentity();
+  const stub = pointerStub();
+  await s.createAnotherNostrIdentity({ pointer: stub.opts });
+  await s.createAnotherNostrIdentity({ pointer: stub.opts });
+  await s.switchNostrIdentity(0, { pointer: stub.opts });
+  const published = stub.calls.published.length;
+
+  s.removeNostrIdentityFromDevice(1);
+  assert.deepEqual((await s.listNostrIdentities()).map((r) => r.account), [0, 2]);
+  assert.deepEqual(s.nostrKnownAccounts.map((a) => a.i), [0, 1, 2], 'the roster keeps the account');
+  assert.equal(stub.calls.published.length, published, 'nothing is published');
+
+  // Its index is never handed out again.
+  const next = await s.createAnotherNostrIdentity({ pointer: stub.opts });
+  assert.equal(next.account, 3);
+
+  // The removal survives a reload; idempotent.
+  s.removeNostrIdentityFromDevice(1);
+  setActivePinia(createPinia());
+  const reloaded = useIdentityStore();
+  await reloaded.hydrate();
+  assert.deepEqual(reloaded.nostrRemovedAccounts, [1]);
+});
+
+await test('restoreNostrIdentityToDevice undoes a removal and survives a reload', async () => {
+  const s = freshEnv();
+  await s.ensureIdentity();
+  const stub = pointerStub();
+  await s.createAnotherNostrIdentity({ pointer: stub.opts });
+  await s.switchNostrIdentity(0, { pointer: stub.opts });
+  s.removeNostrIdentityFromDevice(1);
+  s.restoreNostrIdentityToDevice(1);
+  s.restoreNostrIdentityToDevice(1);
+  assert.deepEqual((await s.listNostrIdentities()).map((r) => r.account), [0, 1]);
+  setActivePinia(createPinia());
+  const reloaded = useIdentityStore();
+  await reloaded.hydrate();
+  assert.deepEqual(reloaded.nostrRemovedAccounts, []);
+});
+
+await test('removeNostrIdentityFromDevice refuses the identity in use and unknown accounts', async () => {
+  const s = freshEnv();
+  await s.ensureIdentity();
+  const stub = pointerStub();
+  await s.createAnotherNostrIdentity({ pointer: stub.opts });
+  assert.throws(() => s.removeNostrIdentityFromDevice(1), (err) => err.code === 'NOSTR_ACCOUNT_ACTIVE');
+  assert.throws(() => s.removeNostrIdentityFromDevice(7), (err) => err.code === 'NOSTR_ACCOUNT_UNKNOWN');
+  assert.deepEqual(s.nostrRemovedAccounts, []);
+});
+
+await test('a removed identity made active again still lists, and a new phrase clears removals', async () => {
+  const s = freshEnv();
+  await s.ensureIdentity();
+  const stub = pointerStub();
+  await s.createAnotherNostrIdentity({ pointer: stub.opts });
+  await s.switchNostrIdentity(0, { pointer: stub.opts });
+  s.removeNostrIdentityFromDevice(1);
+  await s.switchNostrIdentity(1, { pointer: stub.opts });
+  assert.deepEqual((await s.listNostrIdentities()).map((r) => r.account), [0, 1]);
+
+  await s.importMnemonic(FIXED_SEED);
+  assert.deepEqual(s.nostrRemovedAccounts, []);
+});
+
+await test('a corrupt removed list can only show identities, never hide unknown ones', async () => {
+  const s = freshEnv();
+  await s.ensureIdentity();
+  const stub = pointerStub();
+  await s.createAnotherNostrIdentity({ pointer: stub.opts });
+  const raw = JSON.parse(globalThis.localStorage.getItem('buhoGO_identity_v1'));
+  raw.nostrRemovedAccounts = [1, 1, 'x', 9, -2, 0.5];
+  globalThis.localStorage.setItem('buhoGO_identity_v1', JSON.stringify(raw));
+  setActivePinia(createPinia());
+  const reloaded = useIdentityStore();
+  await reloaded.hydrate();
+  assert.deepEqual(reloaded.nostrRemovedAccounts, [1]);
+});
+
 await test('per-account NIP-05 handles survive a switch round-trip', async () => {
   const s = freshEnv();
   await s.ensureIdentity();

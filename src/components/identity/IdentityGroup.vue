@@ -6,7 +6,8 @@
     than left to each caller:
 
       - A group can carry a `footer`, and the footer is where explanation
-        lives. No row gets a help icon and no screen gets an info button.
+        lives. No row gets a help icon. (A row's detail button opens that
+        item's own page; it is navigation, not help.)
       - A `title` renders as plain sentence-case text, not an uppercase
         micro-label, because the surface is trying to read like sentences.
   -->

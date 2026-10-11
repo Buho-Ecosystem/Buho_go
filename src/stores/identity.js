@@ -170,6 +170,21 @@ function sanitisePendingClaims(raw) {
   return out;
 }
 
+/**
+ * Removed-account indices from storage: integers that are still roster
+ * members, deduped and sorted. Anything else is dropped, so a corrupt entry
+ * can only ever show an identity, never hide one that does not exist.
+ *
+ * @param {unknown} value
+ * @param {Array<{ i: number }>} roster
+ * @returns {number[]}
+ */
+function sanitizeRemovedAccounts(value, roster) {
+  if (!Array.isArray(value)) return [];
+  const known = new Set(roster.map((a) => a.i));
+  return [...new Set(value.filter((i) => Number.isInteger(i) && known.has(i)))].sort((a, b) => a - b);
+}
+
 export const useIdentityStore = defineStore('identity', {
   state: () => ({
     /** True once we've loaded any persisted state from disk. */
@@ -242,6 +257,14 @@ export const useIdentityStore = defineStore('identity', {
      * inactive accounts' handles wait here for the switch back.
      */
     nostrAccountNip05: {},
+    /**
+     * Roster accounts removed from this phone's list, sorted. A removal
+     * hides an identity, it never deletes one: the account stays in the
+     * roster (so its index is never handed out again) and in the published
+     * pointer (so a restore of the 12 words brings it back), and its keys,
+     * usernames and contacts are untouched. Local to this phone.
+     */
+    nostrRemovedAccounts: [],
     /**
      * Username purchases still waiting to finish, keyed by the pubkey they
      * were bought for: { [pubkeyHex]: { handle, paymentHash, invoice,
@@ -353,6 +376,10 @@ export const useIdentityStore = defineStore('identity', {
               parsed.nostrKnownAccounts,
               this.nostrAccountIndex,
             );
+            this.nostrRemovedAccounts = sanitizeRemovedAccounts(
+              parsed.nostrRemovedAccounts,
+              this.nostrKnownAccounts,
+            );
             this.pointerDirty = !!parsed.pointerDirty;
             this.pendingNip05Claims = sanitisePendingClaims(parsed.pendingNip05Claims);
             this.nostrAccountNip05 = {};
@@ -394,6 +421,7 @@ export const useIdentityStore = defineStore('identity', {
         nip05Handles: this.nip05Handles.map((h) => ({ ...h })),
         profileIntroSeenAt: this.profileIntroSeenAt,
         nostrKnownAccounts: this.nostrKnownAccounts.map((a) => ({ ...a })),
+        nostrRemovedAccounts: [...this.nostrRemovedAccounts],
         pointerDirty: this.pointerDirty,
         pendingNip05Claims: Object.fromEntries(
           Object.entries(this.pendingNip05Claims).map(([key, claim]) => [key, { ...claim }]),
@@ -468,6 +496,7 @@ export const useIdentityStore = defineStore('identity', {
       this.fingerprint = computeIdentityFingerprint(mnemonic);
       this.nostrAccountIndex = 0;
       this.nostrKnownAccounts = [{ i: 0, createdAt: Date.now() }];
+      this.nostrRemovedAccounts = [];
       this.pointerDirty = false;
       this.nostrAccountNip05 = {};
       // Nostr cache is best-effort here: a derivation failure must not
@@ -511,6 +540,7 @@ export const useIdentityStore = defineStore('identity', {
       // Best-effort cache: a derivation failure must not block the restore.
       this.nostrAccountIndex = 0;
       this.nostrKnownAccounts = [{ i: 0, createdAt: Date.now() }];
+      this.nostrRemovedAccounts = [];
       this.pointerDirty = false;
       this.nostrAccountNip05 = {};
       this.pendingNip05Claims = {};
@@ -583,6 +613,7 @@ export const useIdentityStore = defineStore('identity', {
       this.nip05Handles = [];
       this.profileIntroSeenAt = null;
       this.nostrKnownAccounts = [];
+      this.nostrRemovedAccounts = [];
       this.pointerDirty = false;
       this.nostrAccountNip05 = {};
       this.pendingNip05Claims = {};
@@ -1125,6 +1156,55 @@ export const useIdentityStore = defineStore('identity', {
     },
 
     /**
+     * Remove an identity from this phone's list. Nothing is deleted (see
+     * `nostrRemovedAccounts`), so the identity in use cannot be removed:
+     * switch away first. Idempotent; persist-then-commit like the other
+     * roster actions.
+     *
+     * @param {number} account  a roster index other than the active one
+     */
+    removeNostrIdentityFromDevice(account) {
+      if (!this.nostrKnownAccounts.some((a) => a.i === account)) {
+        const err = new Error('Unknown identity account');
+        err.code = 'NOSTR_ACCOUNT_UNKNOWN';
+        throw err;
+      }
+      if (account === this.nostrAccountIndex) {
+        const err = new Error('The identity in use cannot be removed');
+        err.code = 'NOSTR_ACCOUNT_ACTIVE';
+        throw err;
+      }
+      if (this.nostrRemovedAccounts.includes(account)) return;
+
+      const prev = this.nostrRemovedAccounts;
+      this.nostrRemovedAccounts = [...prev, account].sort((a, b) => a - b);
+      try {
+        this._persistMetadata();
+      } catch (persistErr) {
+        this.nostrRemovedAccounts = prev;
+        throw persistErr;
+      }
+    },
+
+    /**
+     * Put a removed identity back on this phone's list (the Undo of a
+     * removal). Idempotent; persist-then-commit.
+     *
+     * @param {number} account
+     */
+    restoreNostrIdentityToDevice(account) {
+      if (!this.nostrRemovedAccounts.includes(account)) return;
+      const prev = this.nostrRemovedAccounts;
+      this.nostrRemovedAccounts = prev.filter((i) => i !== account);
+      try {
+        this._persistMetadata();
+      } catch (persistErr) {
+        this.nostrRemovedAccounts = prev;
+        throw persistErr;
+      }
+    },
+
+    /**
      * Derive the display material for every roster identity in one
      * mnemonic decrypt. Read-only — nothing is cached or persisted;
      * the Change-identity sheet calls this when it opens.
@@ -1138,7 +1218,12 @@ export const useIdentityStore = defineStore('identity', {
       if (!this.bootstrapped) return [];
       const mnemonic = await this.getMnemonic();
       try {
-        return this.nostrKnownAccounts.map((entry) => {
+        // The identity in use always lists, even one removed earlier and
+        // made active again by a restore.
+        const listed = this.nostrKnownAccounts.filter(
+          (entry) => entry.i === this.nostrAccountIndex || !this.nostrRemovedAccounts.includes(entry.i),
+        );
+        return listed.map((entry) => {
           let npub = '';
           let pubkeyHex = '';
           try {

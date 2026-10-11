@@ -24,6 +24,13 @@
           :interactive="false"
         />
         <IdentityRow
+          v-if="identityCount > 1"
+          icon="tabler:x"
+          tone="danger"
+          :label="$t('All {n} identities from these 12 words are erased', { n: identityCount })"
+          :interactive="false"
+        />
+        <IdentityRow
           icon="tabler:x"
           tone="danger"
           :label="lossLine"
@@ -138,6 +145,14 @@ export default {
 
     siteCount() {
       return this.identity.connectedSites.length;
+    },
+
+    /**
+     * Every identity comes from the one seed this screen throws away, so all
+     * of them go, removed ones included.
+     */
+    identityCount() {
+      return this.identity.nostrKnownAccounts.length;
     },
 
     bucketSats() {
