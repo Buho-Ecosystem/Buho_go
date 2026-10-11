@@ -2,9 +2,9 @@
  * "Is the app in front of the user?" as a subscription.
  *
  * The WebView's `visibilitychange` alone is not reliable on every Android
- * build, so Capacitor's app state events are listened to as well (the same two
- * sources `boot/dm-inbox.js` combines for the chat lifecycle). In a browser
- * there is no Capacitor plugin and the DOM event covers it.
+ * build, so Capacitor's app state events are listened to as well. The chat
+ * lifecycle (`boot/dm-inbox.js`) and other screens subscribe here. In a
+ * browser there is no Capacitor plugin and the DOM event covers it.
  *
  *   const stop = onAppVisibility((visible) => { ... })
  *   stop()

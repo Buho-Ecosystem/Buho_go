@@ -606,8 +606,8 @@ test('a new message from a contact posts one notification for that chat, routed 
   assert.deepEqual(env.notifications[0], {
     title: 'Alice',
     body: 'body:text',
-    id: stableNotificationId(`chat:${ALICE}`),
-    group: `chat:${ALICE}`,
+    id: stableNotificationId(`chat:${ME}:${ALICE}`),
+    group: `chat:${ME}:${ALICE}`,
     route: contactChatRoute('contact-alice'),
     force: false,
     channelName: 'Messages',
@@ -623,7 +623,7 @@ test('an unknown sender is shown by a short npub and routed to the unknown-sende
   assert.equal(env.notifications.length, 1);
   assert.match(env.notifications[0].title, /^npub1[a-z0-9]{7}…$/);
   assert.equal(env.notifications[0].route, unknownChatRoute(BOB));
-  assert.equal(env.notifications[0].id, stableNotificationId(`chat:${BOB}`));
+  assert.equal(env.notifications[0].id, stableNotificationId(`chat:${ME}:${BOB}`));
 });
 
 test('the same chat reuses one notification id', async () => {

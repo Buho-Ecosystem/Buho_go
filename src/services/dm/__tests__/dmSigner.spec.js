@@ -223,3 +223,17 @@ test('while the app is in the background nothing reaches the signer app; the wor
   hidden = false;
   assert.equal((await signer.signEvent({ kind: 1, tags: [], content: '', created_at: NOW })).pubkey, alice.pubkey);
 });
+
+test('a decrypt error that does not blame the ciphertext waits; one that does is final', async () => {
+  const alice = person();
+  const failing = (message) => createExternalDmSigner({
+    pubkey: alice.pubkey,
+    acquire: async () => ({ signer: { signEvent: async () => ({}), nip44: { encrypt: async () => '', decrypt: async () => { throw Object.assign(new Error(message), { name: 'Nip46Error' }); } } } }),
+  });
+  for (const message of ['Connection closed', 'Failed to publish nip44_decrypt', 'Prompt was closed']) {
+    const err = await failing(message).nip44Decrypt(alice.pubkey, 'x').catch((e) => e);
+    assert.ok(DmError.is(err, DM_ERROR.SIGNER_UNAVAILABLE), message);
+  }
+  const bad = await failing('invalid MAC').nip44Decrypt(alice.pubkey, 'x').catch((e) => e);
+  assert.equal(bad instanceof DmError, false, 'a bad ciphertext is the wrap\'s problem, not the signer\'s');
+});

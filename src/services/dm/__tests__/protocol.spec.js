@@ -862,3 +862,33 @@ test('parseRumor leaves its input untouched and returns fresh objects', () => {
   assert.deepEqual(rumor, snapshot);
   assert.equal(parseRumor(rumor, { me: ME }).request.note, 'Pizza');
 });
+
+test('parseRumor: a received request stays open at most the request lifetime', () => {
+  const template = buildRequestTemplate({ recipient: ME, amountSats: 1_000, lud16: ADDRESS, now, validUntil: NOW + 10 * REQUEST_LIFETIME_SECONDS });
+  assert.equal(received(template).request.validUntil, NOW + REQUEST_LIFETIME_SECONDS);
+});
+
+test('parseRumor: received text is cut to MAX_TEXT_LENGTH characters', () => {
+  const long = { kind: 14, tags: [['p', ME]], content: 'x'.repeat(MAX_TEXT_LENGTH + 500), created_at: NOW };
+  const text = received(long).text;
+  assert.equal([...text].length, MAX_TEXT_LENGTH + 1);
+  assert.ok(text.endsWith('…'));
+});
+
+test('containsSecretKey: a recovery phrase counts as a secret, ordinary words do not', () => {
+  const phrase = 'abandon ability able about above absent absorb abstract absurd abuse access accident';
+  assert.equal(containsSecretKey(phrase), true);
+  assert.equal(containsSecretKey(`Support here, please send ${phrase.toUpperCase()} to verify`), true);
+  assert.equal(containsSecretKey('can you pay me back for the pizza we had last week with the others'), false);
+});
+
+test('a request or payment note with a secret is refused like a message text', () => {
+  const nsec = nip19.nsecEncode(generateSecretKey());
+  throwsCode(DM_ERROR.SECRET_KEY_IN_TEXT, () => buildRequestTemplate({ recipient: ME, amountSats: 1_000, lud16: ADDRESS, now, note: nsec }));
+  throwsCode(DM_ERROR.SECRET_KEY_IN_TEXT, () => buildPaymentTemplate({ recipient: ME, amountSats: 1_000, now, note: `my key ${nsec}` }));
+});
+
+test('parseRumor: a text reply from another NIP-17 client (no marker) keeps its quote', () => {
+  const reply = { kind: 14, tags: [['p', ME], ['e', REQUEST_ID, 'wss://relay.example.com']], content: 'sure', created_at: NOW };
+  assert.equal(received(reply).replyTo, REQUEST_ID);
+});

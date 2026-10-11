@@ -23,6 +23,7 @@
  */
 
 import { validateLightningAddress } from 'nostr-core';
+import { wordlist as BIP39_WORDS } from '@scure/bip39/wordlists/english';
 import {
   KIND,
   MAX_NOTE_LENGTH,
@@ -156,6 +157,12 @@ function requireLud16(address) {
   return address;
 }
 
+/** Received text, cut to `MAX_TEXT_LENGTH` code points: a peer cannot store a 40 KB message. */
+function capText(content) {
+  if (codePointLength(content) <= MAX_TEXT_LENGTH) return content;
+  return `${[...content].slice(0, MAX_TEXT_LENGTH).join('')}…`;
+}
+
 /** A `valid_until` in unix seconds: required, and after the request was created. */
 function requireValidUntil(seconds, createdAt) {
   if (!Number.isSafeInteger(seconds) || seconds <= createdAt) {
@@ -235,18 +242,39 @@ function normalizeEmoji(emoji) {
 // Secret keys
 // ---------------------------------------------------------------------------
 
+const RECOVERY_WORDS = new Set(BIP39_WORDS);
+/** The shortest recovery phrase: 12 words. */
+const RECOVERY_PHRASE_WORDS = 12;
+
+/** Whether `text` holds a run of at least 12 recovery-phrase (BIP-39) words. */
+function containsRecoveryPhrase(text) {
+  let run = 0;
+  for (const word of text.toLowerCase().match(/[a-z]+/g) ?? []) {
+    run = RECOVERY_WORDS.has(word) ? run + 1 : 0;
+    if (run >= RECOVERY_PHRASE_WORDS) return true;
+  }
+  return false;
+}
+
 /**
- * Whether `text` contains a Nostr secret key: a bech32 `nsec1...` (58 data
- * characters) or an encrypted `ncryptsec1...`, in any letter case and anywhere
- * in the text. The composer blocks sending when this is true, so a key pasted
- * by mistake never leaves the device. No checksum is verified: a lookalike is
- * refused too, which costs nothing.
+ * Whether `text` contains a secret: a Nostr secret key (a bech32 `nsec1...`
+ * of 58 data characters or an encrypted `ncryptsec1...`, in any letter case,
+ * anywhere in the text) or a recovery phrase (12 or more BIP-39 words in a
+ * row: "support" asking for the 12 words is the classic scam). Sending is
+ * blocked when this is true, so a secret pasted by mistake never leaves the
+ * device. No checksum is verified: a lookalike is refused too, which costs
+ * nothing.
  *
  * @param {unknown} text
  * @returns {boolean} False for anything that is not a string.
  */
 export function containsSecretKey(text) {
-  return typeof text === 'string' && SECRET_KEY.test(text);
+  return typeof text === 'string' && (SECRET_KEY.test(text) || containsRecoveryPhrase(text));
+}
+
+/** Refuse a note that carries a secret, like a message text. */
+function refuseSecretNote(note) {
+  if (containsSecretKey(note)) fail(DM_ERROR.SECRET_KEY_IN_TEXT, 'the note contains a secret');
 }
 
 // ---------------------------------------------------------------------------
@@ -330,6 +358,7 @@ export function buildTextTemplate({ recipient, text, replyTo, now = unixNow } = 
  */
 export function buildRequestTemplate({ recipient, amountSats, lud16, note, validUntil, now = unixNow } = {}) {
   const { to, createdAt } = begin(recipient, now);
+  refuseSecretNote(note);
   const request = normalizeRequest(
     { amountSats, note, lud16, validUntil: validUntil ?? createdAt + REQUEST_LIFETIME_SECONDS },
     createdAt,
@@ -404,6 +433,7 @@ export function buildStatusTemplate({ recipient, requestId, value, preimage, amo
  */
 export function buildPaymentTemplate({ recipient, amountSats, preimage, note, requestId, verifyUrl, now = unixNow } = {}) {
   const { to, createdAt } = begin(recipient, now);
+  refuseSecretNote(note);
   const payment = normalizePayment({ amountSats, note, preimage, requestId, verifyUrl });
   const tags = [
     ['p', to],
@@ -476,8 +506,14 @@ function singleTagValue(tags, name) {
 }
 
 /** Id of the message a rumor answers: its `e` tag marked `reply`. */
-function replyTarget(tags) {
-  const tag = tags.find((t) => t[0] === 'e' && t[3] === 'reply' && HEX_64.test(t[1] ?? ''));
+/**
+ * The rumor an `e` tag answers. Requests and payments name theirs with the
+ * explicit `reply` marker; a text reply from another NIP-17 client may carry
+ * no marker at all (`["e", id, relay]`), which `unmarked` accepts.
+ */
+function replyTarget(tags, { unmarked = false } = {}) {
+  const tag = tags.find((t) => t[0] === 'e' && HEX_64.test(t[1] ?? '')
+    && (t[3] === 'reply' || (unmarked && !t[3])));
   return tag ? tag[1] : null;
 }
 
@@ -524,7 +560,9 @@ function readBuhoPayload(tags, createdAt) {
           amountSats: msatTagToSats(singleTagValue(tags, 'amount')),
           note: singleTagValue(tags, 'note'),
           lud16: singleTagValue(tags, 'lud16'),
-          validUntil: validUntilFromTag(singleTagValue(tags, 'valid_until')),
+          // A sender cannot keep a request open longer than the lifetime every
+          // request has (or pin it forever: open requests are never pruned).
+          validUntil: Math.min(validUntilFromTag(singleTagValue(tags, 'valid_until')), createdAt + REQUEST_LIFETIME_SECONDS),
         }, createdAt),
       };
     case MESSAGE_TYPE.STATUS:
@@ -608,7 +646,7 @@ export function parseRumor(rumor, context) {
     partner,
     outgoing,
     createdAt: rumor.created_at,
-    text: rumor.content,
+    text: capText(rumor.content),
     replyTo: null,
     request: null,
     status: null,
@@ -619,7 +657,7 @@ export function parseRumor(rumor, context) {
 
   if (rumor.kind === KIND.REACTION) return parseReaction(rumor, message);
 
-  message.replyTo = replyTarget(rumor.tags);
+  message.replyTo = replyTarget(rumor.tags, { unmarked: true });
   try {
     const payload = readBuhoPayload(rumor.tags, rumor.created_at);
     if (payload) Object.assign(message, payload);

@@ -28,7 +28,9 @@
  *     said no must not get the same prompt again a second later),
  *   - and turns the signer's errors into DmError codes the inbox understands:
  *     SIGNER_UNAVAILABLE and SIGNER_DENIED keep the work for later
- *     (`isSignerWait`), SIGNER_UNSUPPORTED says the app cannot do NIP-44.
+ *     (`isSignerWait`), SIGNER_UNSUPPORTED says the app cannot do NIP-44. A
+ *     decrypt only counts as unreadable when the error blames the ciphertext;
+ *     anything else (a dropped connection, a closed prompt) waits.
  *
  * No Vue, Pinia or i18n. Keys, plaintexts and payloads are never logged.
  */
@@ -134,17 +136,21 @@ export function createExternalDmSigner({
     }
   }
 
-  /** Queue one request to the signer app; `ask(signer)` performs it. */
-  function request(ask) {
+  /**
+   * Queue one request to the signer app; `ask(signer)` performs it.
+   * `decrypting`: an error that does not blame the ciphertext means the app
+   * could not answer, so the message waits instead of being judged unreadable.
+   */
+  function request(ask, { decrypting = false } = {}) {
     const stop = blocked();
     if (stop) return Promise.reject(stop);
     return new Promise((resolve, reject) => {
-      waiting.push({ run: () => attempt(ask), resolve, reject });
+      waiting.push({ run: () => attempt(ask, decrypting), resolve, reject });
       pump();
     });
   }
 
-  async function attempt(ask) {
+  async function attempt(ask, decrypting) {
     let lease;
     let timer;
     try {
@@ -154,7 +160,10 @@ export function createExternalDmSigner({
       lease = await Promise.race([acquire(), timeout]);
       return await Promise.race([ask(lease.signer), timeout]);
     } catch (err) {
-      const mapped = toDmError(err);
+      let mapped = toDmError(err);
+      if (decrypting && !(mapped instanceof DmError) && !PAYLOAD_PROBLEM.test(String(err?.message ?? ''))) {
+        mapped = new DmError(DM_ERROR.SIGNER_UNAVAILABLE, 'the signer app could not decrypt right now', { cause: err });
+      }
       if (DmError.is(mapped, DM_ERROR.SIGNER_DENIED)) refused = true;
       throw mapped;
     } finally {
@@ -176,7 +185,7 @@ export function createExternalDmSigner({
     pubkey,
     external: true,
     nip44Encrypt: (peer, plaintext) => request((signer) => nip44Of(signer).encrypt(peer, plaintext)),
-    nip44Decrypt: (peer, payload) => request((signer) => nip44Of(signer).decrypt(peer, payload)),
+    nip44Decrypt: (peer, payload) => request((signer) => nip44Of(signer).decrypt(peer, payload), { decrypting: true }),
     signEvent: (template) => request(async (signer) => {
       const event = await signer.signEvent(template);
       if (event?.pubkey !== pubkey) throw new DmError(DM_ERROR.NO_IDENTITY, 'the signer answered for another identity');
@@ -205,6 +214,9 @@ function nip44Of(signer) {
   }
   return signer.nip44;
 }
+
+/** Words a signer app uses when the ciphertext itself is bad (the only reason a wrap is unreadable). */
+const PAYLOAD_PROBLEM = /(invalid|mac|padding|payload|base64|ciphertext|version)/i;
 
 /** Words signer apps use when the person (or a permission rule) said no. */
 const REFUSAL = /(denied|declined|rejected|refused|not allowed|unauthori[sz]ed|permission|cancel)/i;

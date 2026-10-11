@@ -35,7 +35,7 @@
 import { defineStore } from 'pinia'
 import { SINCE_SLACK_SECONDS } from '../services/dm/constants.js'
 import { MESSAGE_TYPE, REQUEST_STATUS } from '../services/dm/protocol.js'
-import { loadChatState, saveChatState, deleteChatState } from '../utils/dmStorage.js'
+import { loadChatState, saveChatState, deleteChatState, deleteAllChatStates } from '../utils/dmStorage.js'
 import { useAddressBookStore } from './addressBook.js'
 
 // ---------------------------------------------------------------------------
@@ -43,6 +43,9 @@ import { useAddressBookStore } from './addressBook.js'
 // ---------------------------------------------------------------------------
 
 export const STATE_VERSION = 1
+
+/** Threads with people outside the address book kept at most: the least recently active one goes first. */
+export const MAX_UNKNOWN_THREADS = 50
 
 /** Wrap ids remembered as handled at most (the oldest go first). */
 export const MAX_HANDLED_WRAPS = 5000
@@ -83,7 +86,7 @@ const HEX_64 = /^[0-9a-f]{64}$/
 // ---------------------------------------------------------------------------
 
 const defaultDeps = () => ({
-  storage: { loadChatState, saveChatState, deleteChatState },
+  storage: { loadChatState, saveChatState, deleteChatState, deleteAllChatStates },
   /** Unix seconds. */
   now: () => Math.floor(Date.now() / 1000),
   /** Milliseconds, for the debounce only. */
@@ -613,24 +616,45 @@ export const useMessagesStore = defineStore('messages', {
       return true
     },
 
-    /** Delete an identity's stored history (identity reset); clears memory when it is the active one. */
+    /** Delete an identity's stored history; clears memory when it is the active one. */
     async deleteHistory(pubkey = this.scope) {
       const key = hexKey(pubkey)
       if (!key) return
       const r = runtime(this)
-      if (key === this.scope) {
-        r.generation += 1
-        if (r.timer !== null) { deps.clearTimer(r.timer); r.timer = null }
-        r.dirty = false
-        r.firstDirtyAt = null
-        this.scope = null
-        this.openThread = null
-        Object.assign(this, emptyState())
-      }
+      if (key === this.scope) this._forgetInMemory()
       await enqueue(r, () => deps.storage.deleteChatState(key))
     },
 
+    /**
+     * Delete every identity's stored history (erase: the seed, the other
+     * accounts and the imported identities are all gone, while the device key
+     * that could still read their records survives).
+     */
+    async deleteAllHistory() {
+      const r = runtime(this)
+      this._forgetInMemory()
+      await enqueue(r, () => deps.storage.deleteAllChatStates())
+    },
+
+    /** Drop the scope and everything in memory, with no save pending. */
+    _forgetInMemory() {
+      const r = runtime(this)
+      r.generation += 1
+      if (r.timer !== null) { deps.clearTimer(r.timer); r.timer = null }
+      r.dirty = false
+      r.firstDirtyAt = null
+      this.scope = null
+      this.openThread = null
+      Object.assign(this, emptyState())
+    },
+
     // ----- messages --------------------------------------------------------
+
+    /** Drop the least recently active stranger threads until a new one fits under MAX_UNKNOWN_THREADS. */
+    _makeRoomForStranger() {
+      const strangers = this.unknownThreads
+      for (const row of strangers.slice(MAX_UNKNOWN_THREADS - 1)) delete this.threads[row.partner]
+    },
 
     _threadFor(partner) {
       return (this.threads[partner] ||= emptyThread())
@@ -656,6 +680,8 @@ export const useMessagesStore = defineStore('messages', {
       const message = normalizeMessage(chatMessage, this.scope)
       if (!message) return false
       if (!message.outgoing && this.isBlocked(message.sender)) return false
+      // Strangers can come with ever new keys: their threads are capped.
+      if (!this.threads[message.partner] && !deps.isKnownContact(message.partner)) this._makeRoomForStranger()
 
       const thread = this._threadFor(message.partner)
 
@@ -665,15 +691,9 @@ export const useMessagesStore = defineStore('messages', {
         return true
       }
 
-      const existing = thread.messages.find(m => m.id === message.id)
-      if (existing) {
-        // Our own message coming back from a relay proves it was delivered.
-        if (existing.outgoing && existing.delivery !== DELIVERY.SENT) {
-          existing.delivery = DELIVERY.SENT
-          this._markDirty()
-        }
-        return false
-      }
+      // Already stored. Our own self copy coming back proves nothing about the
+      // partner's relays; only the inbox's delivery (setDelivery) moves the state.
+      if (thread.messages.some(m => m.id === message.id)) return false
 
       if (message.outgoing) {
         message.delivery = DELIVERY.SENT

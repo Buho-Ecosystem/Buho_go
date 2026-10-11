@@ -3388,7 +3388,7 @@ export default {
   "Back to payments": "Volver a pagos",
   "Send message": "Enviar mensaje",
   "Cancel reply": "Cancelar respuesta",
-  "This looks like a secret key": "Esto parece una clave secreta",
+  "This looks like a secret key or recovery phrase": "Esto parece una clave secreta o una frase de recuperación",
   "Never share it. Sending is blocked.": "No la compartas nunca. El envío está bloqueado.",
   "{count} characters left": "quedan {count} caracteres",
   "{count} characters too long": "{count} caracteres de más",

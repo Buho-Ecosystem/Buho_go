@@ -21,7 +21,7 @@ const { createPinia, setActivePinia } = await import('pinia')
 const { createDmStorage, createMemoryBackend } = await import('../../utils/dmStorage.js')
 const {
   useMessagesStore, configureMessages, resetMessagesConfig,
-  DELIVERY, REQUEST_STATE, MAX_MESSAGES_PER_THREAD, SAVE_DEBOUNCE_MS, SAVE_MAX_WAIT_MS, STATE_VERSION,
+  DELIVERY, REQUEST_STATE, MAX_MESSAGES_PER_THREAD, MAX_UNKNOWN_THREADS, SAVE_DEBOUNCE_MS, SAVE_MAX_WAIT_MS, STATE_VERSION,
 } = await import('../messages.js')
 
 const hex = ch => ch.repeat(64)
@@ -286,12 +286,12 @@ test('addOutgoing honours the delivery option and rejects bad input', async () =
   assert.throws(() => store.setDelivery(m.id, 'maybe'), TypeError)
 })
 
-test('the self copy coming back marks an outgoing message sent', async () => {
+test('the self copy coming back changes nothing: only the partner relay accepting it makes it sent', async () => {
   const store = await scoped()
   const m = msg(ALICE, { outgoing: true })
   store.addOutgoing(m, { delivery: DELIVERY.FAILED })
   assert.equal(store.ingest({ ...m }), false)
-  assert.equal(store.thread(ALICE).messages[0].delivery, DELIVERY.SENT)
+  assert.equal(store.thread(ALICE).messages[0].delivery, DELIVERY.FAILED)
 })
 
 test('an outgoing message from another device arrives as sent', async () => {
@@ -853,4 +853,19 @@ test('handled wraps survive a restart, stay per identity, and are forgotten once
   back.prune()
   assert.equal(back.hasHandledWrap(wrap), true)
   assert.equal(back.hasHandledWrap(rid(902)), false)
+})
+
+test('strangers cannot grow the store without bound: the least recently active stranger thread makes room', async () => {
+  const store = await scoped(ME)
+  const stranger = (n) => n.toString(16).padStart(64, 'f')
+  for (let n = 0; n < MAX_UNKNOWN_THREADS + 3; n += 1) {
+    store.ingest(msg(stranger(n), { id: rid(10_000 + n), createdAt: 1_000 + n }))
+  }
+  assert.equal(store.unknownThreads.length, MAX_UNKNOWN_THREADS)
+  assert.equal(store.thread(stranger(0)).messages.length, 0, 'the oldest stranger thread went first')
+  assert.equal(store.thread(stranger(MAX_UNKNOWN_THREADS + 2)).messages.length, 1)
+  // A contact's thread is never evicted for a stranger.
+  store.ingest(msg(ALICE, { id: rid(20_000), createdAt: 1 }))
+  store.ingest(msg(stranger(999), { id: rid(20_001), createdAt: 5_000 }))
+  assert.equal(store.thread(ALICE).messages.length, 1)
 })

@@ -3389,7 +3389,7 @@ export default {
   "Back to payments": "Zurück zu Zahlungen",
   "Send message": "Nachricht senden",
   "Cancel reply": "Antwort abbrechen",
-  "This looks like a secret key": "Das sieht wie ein geheimer Schlüssel aus",
+  "This looks like a secret key or recovery phrase": "Das sieht wie ein geheimer Schlüssel oder eine Wiederherstellungsphrase aus",
   "Never share it. Sending is blocked.": "Teile ihn nie. Senden ist gesperrt.",
   "{count} characters left": "noch {count} Zeichen",
   "{count} characters too long": "{count} Zeichen zu lang",

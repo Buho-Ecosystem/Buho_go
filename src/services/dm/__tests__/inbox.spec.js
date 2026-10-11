@@ -43,7 +43,7 @@ function createNetwork() {
     behavior: new Map(),
     /** Every publish call: { relay, event }. */
     published: [],
-    /** Every subscribe call: { relays, filter }. */
+    /** Every subscribe call: { relays, filter, handlers }. */
     subscribed: [],
     /** When true, EOSE is withheld until `releaseEose()`. */
     holdEose: false,
@@ -70,7 +70,7 @@ function createNetwork() {
       return {
         warmUp: async () => {},
         subscribe(relays, filter, handlers) {
-          network.subscribed.push({ relays, filter });
+          network.subscribed.push({ relays, filter, handlers });
           const sub = { relays, filter, handlers };
           subs.add(sub);
           Promise.resolve().then(() => {
@@ -370,9 +370,11 @@ test('end to end: Alice sends, Bob receives live, Alice sees her self copy', asy
   assert.deepEqual(bob.incoming[0].info, { live: true });
   assert.equal(bob.incoming[0].message.id, sent.id);
 
-  // Alice's own self copy came back through her subscription: no announcement.
+  // Alice's own self copy came back through her subscription: no announcement,
+  // and no news for the store (only Bob's relay accepting it made it "sent").
   assert.equal(alice.incoming.length, 0);
-  assert.ok(alice.store.raw.ingestCalls.some((c) => c.message.id === sent.id && c.message.outgoing));
+  assert.equal(alice.store.raw.ingestCalls.some((c) => c.message.id === sent.id), false);
+  assert.ok(alice.store.raw.handled.has(toAlice[0].event.id), 'the self copy is remembered as handled');
 });
 
 test('end to end: Bob answers and the conversation flows both ways', async () => {
@@ -873,12 +875,17 @@ test('send: gives up after maxAttempts, keeps the item for a manual retry', asyn
   assert.equal(clock.pendingTimers().length, 0, 'no timer for an exhausted item');
   assert.equal(alice.inbox.status().exhausted, 1);
 
-  // Not touched by an ordinary run...
+  // Not touched by a scheduled run...
   const before = network.published.length;
-  await alice.inbox.retryOutbox({ ignoreBackoff: true });
+  await alice.inbox.retryOutbox();
   assert.equal(network.published.length, before);
 
-  // ...but the user can retry it.
+  // ...but the network coming back gives a message that failed only on reachability a fresh try.
+  await alice.inbox.retryOutbox({ ignoreBackoff: true });
+  assert.equal(network.published.length, before + 1);
+  await settle(alice);
+
+  // And the user can retry it.
   network.behavior.delete('wss://inbox.bob.example');
   assert.equal(await alice.inbox.retry(sent.id), true);
   await settle(alice);
@@ -887,13 +894,18 @@ test('send: gives up after maxAttempts, keeps the item for a manual retry', asyn
   assert.equal(await alice.inbox.retry(sent.id), false);
 });
 
-test('send: a refusal that cannot change (blocked) fails at once and leaves the outbox', async () => {
+test('send: a refusal that cannot change (blocked) fails at once; only the person sends it again', async () => {
   const { network, alice, bob } = await pair();
   network.behavior.set('wss://inbox.bob.example', { prefix: 'blocked' });
   const sent = await alice.inbox.send({ partner: bob.pubkey, template: textTo(bob) });
   await settle(alice);
   assert.equal(alice.store.raw.messages.get(sent.id).delivery, 'failed');
-  assert.equal(alice.store.raw.outboxMap.size, 0);
+  // Kept for "Send again", but the network coming back does not resend a refusal.
+  assert.equal(alice.store.raw.outboxMap.get(sent.id).exhausted, true);
+  const before = network.published.length;
+  await alice.inbox.retryOutbox({ ignoreBackoff: true });
+  assert.equal(network.published.length, before);
+  assert.equal(await alice.inbox.retry(sent.id), true);
 });
 
 test('send: a transient refusal (rate-limited) is retried', async () => {
@@ -933,7 +945,7 @@ test('send: partial relay failure still counts as sent (first accept decides)', 
   assert.equal(alice.store.raw.outboxMap.size, 0);
 });
 
-test('send: a stale list that turns into "missing" fails the message for good', async () => {
+test('send: a stale list that turns into "missing" fails the message, kept for Send again', async () => {
   const { network, clock, alice, bob } = await pair();
   network.behavior.set('wss://inbox.bob.example', 'fail');
   const sent = await alice.inbox.send({ partner: bob.pubkey, template: textTo(bob) });
@@ -942,7 +954,7 @@ test('send: a stale list that turns into "missing" fails the message for good', 
   await clock.advance(OUTBOX_DEFAULTS.baseDelayMs);
   await settle(alice);
   assert.equal(alice.store.raw.messages.get(sent.id).delivery, 'failed');
-  assert.equal(alice.store.raw.outboxMap.size, 0);
+  assert.equal(alice.store.raw.outboxMap.get(sent.id).lastCode, DM_ERROR.NO_INBOX_RELAYS);
 });
 
 test('outbox: concurrency is bounded', async () => {
@@ -1069,11 +1081,45 @@ test('ensureOwnRelayList: does nothing when the published list already matches (
   assert.equal(network.published.length, 0);
 });
 
-test('ensureOwnRelayList: republishes when the list differs', async () => {
+test('cursor: it moves only once every relay we read has sent its stored events', async () => {
   const { network, alice } = await pair();
-  alice.resolver.table.set(alice.pubkey, { status: 'found', relays: ['wss://old.example.com/'], checkedAt: START_MS });
-  assert.deepEqual(await alice.inbox.ensureOwnRelayList(), { status: 'published' });
-  assert.equal(network.published.length, 1);
+  network.holdEose = true;
+  await alice.inbox.start();
+  await settle(alice);
+  const { relays, handlers } = network.subscribed.at(-1);
+  assert.equal(relays.length, 2);
+  handlers.oneose(relays[0]);
+  await settle(alice);
+  assert.equal(alice.store.raw.setCursorCalls.length, 0, 'a message only the slower relay holds must not be skipped');
+  handlers.oneose(relays[1]);
+  await settle(alice);
+  assert.equal(alice.store.raw.setCursorCalls.length, 1);
+});
+
+test('resubscribe: relays the transport gave up on are read again on resume, and only then', async () => {
+  const { network, alice } = await pair();
+  await alice.inbox.start();
+  await settle(alice);
+  const before = network.subscribed.length;
+  alice.inbox.resubscribe();
+  assert.equal(network.subscribed.length, before, 'nothing was closed: nothing to do');
+  network.subscribed.at(-1).handlers.onclosed(network.subscribed.at(-1).relays[0], 'auth-required: locked');
+  alice.inbox.resubscribe();
+  assert.equal(network.subscribed.length, before + 1);
+  assert.equal(network.closedSubs, 1, 'the old subscription was closed');
+});
+
+test('ensureOwnRelayList: a list the person already has is kept and read as well', async () => {
+  const { network, alice } = await pair();
+  await alice.inbox.start();
+  await settle(alice);
+  const published = network.published.length;
+  alice.resolver.table.set(alice.pubkey, { status: 'found', relays: ['wss://theirs.example.com/'], checkedAt: START_MS });
+  assert.deepEqual(await alice.inbox.ensureOwnRelayList(), { status: 'kept' });
+  assert.equal(network.published.length, published, 'nothing was replaced');
+  const latest = network.subscribed.at(-1);
+  assert.ok(latest.relays.includes('wss://theirs.example.com/'), 'their inbox relay is read too');
+  assert.ok(latest.relays.includes('wss://inbox.alice.example/'), 'ours still are');
 });
 
 test('ensureOwnRelayList: offline (nobody answered) publishes nothing; a refusing relay reports failed', async () => {

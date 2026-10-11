@@ -18,7 +18,7 @@
     <p v-if="secretKeyWarning" class="composer__warning" role="alert">
       <Icon icon="tabler:alert-triangle" width="18" height="18" />
       <span>
-        <strong>{{ $t('This looks like a secret key') }}</strong>
+        <strong>{{ $t('This looks like a secret key or recovery phrase') }}</strong>
         {{ $t('Never share it. Sending is blocked.') }}
       </span>
     </p>

@@ -45,6 +45,7 @@ import {
   isAuthRequired,
   isDeliveredRelayReason,
   isRetryableRelayReason,
+  isSignerWait,
   parseRelayReason,
 } from './errors.js';
 
@@ -579,7 +580,9 @@ class RelayLink {
 
   _failAuth(err) {
     this._clearChallengeTimer();
-    this.authFailedAt = this.ctx.options.now();
+    // A signer that could not answer (app locked or hidden, signer app away)
+    // says nothing about the relay: no cooldown, the next subscribe tries again.
+    this.authFailedAt = isSignerWait(err) ? -Infinity : this.ctx.options.now();
     const reason = `auth-failed: ${describeError(err)}`;
     this._update({ state: RELAY_STATE.AUTH_FAILED, authenticated: false, lastReason: reason });
     this._resolveWaiters({ ok: false, reason: 'auth-failed', detail: reason });

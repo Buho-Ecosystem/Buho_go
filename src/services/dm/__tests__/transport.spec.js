@@ -768,6 +768,30 @@ test('auth-failed read sockets are only retried by a later subscribe, after the 
   });
 });
 
+test('an AUTH the signer could not answer (app locked) is retried by the next subscribe, without cooldown', async () => {
+  const identity = generateSecretKey();
+  const pubkey = getPublicKey(identity);
+  let locked = true;
+  const signAuth = async ({ relay, challenge }) => {
+    if (locked) throw new DmError(DM_ERROR.KEY_WIPED, 'the app is locked');
+    return createAuthEvent({ relay, challenge }, identity);
+  };
+  await withHarness({ signAuth }, async (h) => {
+    h.network.addRelay(NOSTR1, PROFILES.nostr1);
+    const first = collector();
+    h.transport.subscribe([NOSTR1], inboxFilter(pubkey), first.handlers);
+    await waitFor(() => first.closed.length === 1, 'refused while locked');
+
+    // Unlocked a moment later, well inside the 1 s cooldown: the next subscribe authenticates.
+    locked = false;
+    h.setClock(10);
+    const second = collector();
+    h.transport.subscribe([NOSTR1], inboxFilter(pubkey), second.handlers);
+    await waitFor(() => second.eoses.length === 1, 'served after AUTH');
+    assert.equal(second.closed.length, 0);
+  });
+});
+
 // ---------------------------------------------------------------------------
 // Roles: identity vs ephemeral key
 // ---------------------------------------------------------------------------

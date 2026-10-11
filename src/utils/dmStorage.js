@@ -134,6 +134,12 @@ export function createDmStorage({
     async deleteChatState(pubkey) {
       await backend.delete(recordKey(pubkey))
     },
+
+    /** Remove every identity's chat history (the identities themselves were erased). */
+    async deleteAllChatStates() {
+      const keys = await backend.keys()
+      await Promise.all(keys.filter(key => String(key).startsWith(KEY_PREFIX)).map(key => backend.delete(key)))
+    },
   }
 }
 
@@ -143,3 +149,4 @@ const app = () => (shared ||= createDmStorage())
 export const loadChatState = pubkey => app().loadChatState(pubkey)
 export const saveChatState = (pubkey, state) => app().saveChatState(pubkey, state)
 export const deleteChatState = pubkey => app().deleteChatState(pubkey)
+export const deleteAllChatStates = () => app().deleteAllChatStates()

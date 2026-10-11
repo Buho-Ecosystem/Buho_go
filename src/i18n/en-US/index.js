@@ -3383,7 +3383,7 @@ export default {
   "Back to payments": "Back to payments",
   "Send message": "Send message",
   "Cancel reply": "Cancel reply",
-  "This looks like a secret key": "This looks like a secret key",
+  "This looks like a secret key or recovery phrase": "This looks like a secret key or recovery phrase",
   "Never share it. Sending is blocked.": "Never share it. Sending is blocked.",
   "{count} characters left": "{count} characters left",
   "{count} characters too long": "{count} characters too long",

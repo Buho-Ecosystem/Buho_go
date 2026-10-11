@@ -40,7 +40,7 @@
 
 import { nip19 } from 'nostr-core';
 import { stableNotificationId } from '../paymentNotifications.js';
-import { DM_DISCOVERY_RELAYS } from './constants.js';
+import { DM_DISCOVERY_RELAYS, KEY_IDLE_WIPE_MS } from './constants.js';
 import { DM_ERROR, DmError } from './errors.js';
 import { createInbox, createSignAuth } from './inbox.js';
 import { INBOX_STATUS, createInboxRelayResolver } from './inboxRelays.js';
@@ -288,6 +288,7 @@ export function createChatRuntime(deps = {}) {
 
   // ----- composition -----------------------------------------------------
 
+  let sessionKey = null;
   // While the app is locked nothing is signed or decrypted, whatever asks (a
   // live wrap, an AUTH challenge, a retry timer). KEY_WIPED makes the inbox
   // keep the work until the app is unlocked again.
@@ -295,15 +296,19 @@ export function createChatRuntime(deps = {}) {
     ? createExternalDmSigner({ pubkey: me, acquire: signerApp.acquire, maxParallel: signerApp.maxParallel, isLocked, isHidden })
     : createLocalDmSigner({
       pubkey: me,
-      sessionKey: createSessionKey({
+      sessionKey: (sessionKey = createSessionKey({
         pubkey: me,
         load: async () => {
           if (isLocked()) throw new DmError(DM_ERROR.KEY_WIPED, 'the app is locked');
-          return loadSecretKey();
+          const key = await loadSecretKey();
+          // Loaded in the background (a message woke us): it goes again after
+          // the idle time, as if the app had just been hidden.
+          if (isHidden()) Promise.resolve().then(() => sessionKey.wipeAfter(KEY_IDLE_WIPE_MS));
+          return key;
         },
         setTimer,
         clearTimer,
-      }),
+      })),
     });
 
   const transport = (factories.createTransport ?? createDmTransport)({
@@ -379,7 +384,10 @@ export function createChatRuntime(deps = {}) {
     // Every send is the person's own action (or the payment they just made):
     // their signer app may ask them, even after it declined background work.
     signer.allowAgain();
-    return inbox.send({ partner, template });
+    const message = await inbox.send({ partner, template });
+    // On disk before anything else: the app may be closed right after Send.
+    store.flush?.().catch(() => {});
+    return message;
   }
 
   // ----- UI actions ------------------------------------------------------
@@ -794,7 +802,8 @@ export function createChatRuntime(deps = {}) {
     if (store.openThread === partner && !hidden) return;
 
     const contact = contacts.find(partner);
-    const key = `chat:${partner}`;
+    // Per identity: after a switch, an old notification must not open this chat under the other one.
+    const key = `chat:${me}:${partner}`;
     const channel = typeof channelName === 'function' ? channelName() : channelName;
     await notifications.message({
       title: contact?.name || shortNpub(partner),
@@ -910,6 +919,10 @@ export function createChatRuntime(deps = {}) {
       inbox.retryWaiting();
     },
     retryOutbox: (options) => (disposed ? Promise.resolve({ attempted: 0 }) : inbox.retryOutbox(options)),
+    /** Read again from relays the transport gave up on (resume, unlock). */
+    resubscribe: () => {
+      if (!disposed) inbox.resubscribe();
+    },
     status: () => inbox.status(),
     whenIdle: () => inbox.whenIdle(),
   });

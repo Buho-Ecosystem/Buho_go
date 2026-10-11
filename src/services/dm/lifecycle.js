@@ -57,7 +57,7 @@ function quietly(fn) {
  * @property {(onChange: (pubkey: string | null) => void) => () => void} watchIdentity
  *   Calls back (synchronously, in the turn of the change) when `identity.nostrPubkeyHex` changes.
  * @property {{ setScope: (pubkey: string | null) => Promise<unknown>, flush: () => Promise<unknown>,
- *   deleteHistory: (pubkey: string) => Promise<unknown> }} messages The messages store.
+ *   deleteAllHistory: () => Promise<unknown> }} messages The messages store.
  * @property {(pubkey: string) => ReturnType<import('./runtime.js').createChatRuntime>} createRuntime
  * @property {(runtime: object | null) => void} publish Hands the current runtime to the UI accessor.
  * @property {{ isLocked: () => boolean, whenKnown: () => Promise<unknown> }} lock
@@ -67,6 +67,8 @@ function quietly(fn) {
  * @property {(listener: () => void) => () => void} onOnline
  * @property {() => boolean} [isHidden] Is the app out of sight right now?
  * @property {() => boolean} [isSuspended] True where the chat must not run (kiosk).
+ * @property {(listener: (suspended: boolean) => void) => () => void} [onSuspendChange]
+ *   Reports `isSuspended` changing while the app runs (kiosk mode turned on or off).
  * @property {() => number} [now] Milliseconds.
  * @property {number} [resumeIntervalMs]
  * @property {number} [keyIdleWipeMs]
@@ -90,6 +92,7 @@ export function startChatLifecycle({
   onOnline,
   isHidden = () => false,
   isSuspended = () => false,
+  onSuspendChange = () => noop,
   now = Date.now,
   resumeIntervalMs = RESUME_MIN_INTERVAL_MS,
   keyIdleWipeMs = KEY_IDLE_WIPE_MS,
@@ -140,9 +143,9 @@ export function startChatLifecycle({
     }
 
     try {
-      // Reset (not a switch): the seed is gone, so is the chat history of that identity.
+      // Reset (not a switch): the seed and every identity are gone, so is every chat history.
       if (previous && pubkey === null && identity.bootstrapped === false) {
-        await messages.deleteHistory(previous.pubkey);
+        await messages.deleteAllHistory();
       }
       await messages.setScope(pubkey);
     } catch {
@@ -185,9 +188,27 @@ export function startChatLifecycle({
       if (current !== entry) return;
       // The key is available again: wraps that waited for it get their chance,
       // and what is due goes out. Backoff is respected (nothing just failed).
-      if (!startedNow) await entry.runtime.retryOutbox();
+      if (!startedNow) {
+        // Relays whose AUTH failed while locked are read again.
+        entry.runtime.resubscribe();
+        await entry.runtime.retryOutbox();
+      }
       await entry.runtime.settleClaims();
     });
+  }
+
+  /** Kiosk mode turned on: the chat stops (no subscription, no notifications on a till); off: it starts. */
+  function onSuspend(suspended) {
+    const entry = current;
+    if (!entry) return;
+    if (!suspended) {
+      quietly(ensureStarted);
+      return;
+    }
+    if (!entry.started) return;
+    entry.started = false;
+    quietly(() => entry.runtime.stop());
+    quietly(() => messages.flush());
   }
 
   /** At most one resume per `resumeIntervalMs`: each `ignoreBackoff` retry costs an attempt. */
@@ -199,6 +220,8 @@ export function startChatLifecycle({
     const at = now();
     if (lastResumeAt !== null && at - lastResumeAt < resumeIntervalMs) return;
     lastResumeAt = at;
+    // Relays the transport gave up on (an AUTH that failed in the background) are read again.
+    entry.runtime.resubscribe();
     await entry.runtime.retryOutbox({ ignoreBackoff: true });
     await entry.runtime.settleClaims();
   }
@@ -225,6 +248,7 @@ export function startChatLifecycle({
     onLockChange(onLock),
     onVisibility(onVisible),
     onOnline(() => quietly(resume)),
+    onSuspendChange(onSuspend),
   ];
 
   // The identity that is there at launch (the watch only reports changes).

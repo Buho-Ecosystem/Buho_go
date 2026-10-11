@@ -318,3 +318,10 @@ test('a blocked sender does not use up the rate limit of anyone', async (t) => {
   for (let i = 0; i < 10; i += 1) assert.equal((await verdict(gate, rumor({ pubkey: ALICE }))).policy, 'notBlocked');
   for (let i = 0; i < 3; i += 1) assert.equal((await verdict(gate, rumor({ pubkey: BOB }))).accepted, true);
 });
+
+test('rumor gate: a message dated more than an hour ahead is refused; clock skew within it passes', async () => {
+  const nowSeconds = Math.floor(Date.now() / 1000);
+  const gate = createRumorGate({ me: ME });
+  assert.equal((await verdict(gate, rumor({ created_at: nowSeconds + 2 * 60 * 60 }))).accepted, false);
+  assert.equal((await verdict(gate, rumor({ created_at: nowSeconds + 60 }))).accepted, true);
+});

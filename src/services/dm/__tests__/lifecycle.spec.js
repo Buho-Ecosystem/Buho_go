@@ -42,6 +42,7 @@ function setup({ pubkey = A, locked = false, hidden = false, suspended = false, 
   const lockWatchers = new Set();
   const visibilityWatchers = new Set();
   const onlineWatchers = new Set();
+  const suspendWatchers = new Set();
   let unlockKnown;
   const lockKnown = new Promise((resolve) => { unlockKnown = resolve; });
   env.lockKnown = () => unlockKnown();
@@ -62,7 +63,7 @@ function setup({ pubkey = A, locked = false, hidden = false, suspended = false, 
   env.messages = {
     setScope: async (next) => { log.push(`scope:${next === null ? 'none' : next[0]}`); env.scopes.push(next); },
     flush: async () => { log.push('flush'); env.flushes += 1; },
-    deleteHistory: async (pk) => { log.push(`delete:${pk[0]}`); env.deleted.push(pk); },
+    deleteAllHistory: async () => { log.push('delete:all'); env.deleted.push('all'); },
   };
 
   env.createRuntime = (pk) => {
@@ -80,6 +81,8 @@ function setup({ pubkey = A, locked = false, hidden = false, suspended = false, 
       wipeKeyAfter: (ms) => { runtime.calls.push(`wipeKeyAfter:${ms}`); },
       cancelKeyWipe: () => { runtime.calls.push('cancelKeyWipe'); },
       retryOutbox: async (options) => { runtime.calls.push(`retry:${JSON.stringify(options ?? {})}`); return { attempted: 0 }; },
+      resubscribe: () => { runtime.calls.push('resubscribe'); },
+      stop: () => { runtime.calls.push('stop'); },
       settleClaims: async () => { runtime.calls.push('settleClaims'); return { settled: 0, pending: 0 }; },
     };
     env.runtimes.push(runtime);
@@ -98,12 +101,14 @@ function setup({ pubkey = A, locked = false, hidden = false, suspended = false, 
     onOnline: (cb) => { onlineWatchers.add(cb); return () => onlineWatchers.delete(cb); },
     isHidden: () => env.hidden,
     isSuspended: () => env.suspended,
+    onSuspendChange: (cb) => { suspendWatchers.add(cb); return () => suspendWatchers.delete(cb); },
     now: () => env.ms,
   });
 
   env.setLocked = (value) => { env.locked = value; for (const cb of lockWatchers) cb(value); };
   env.setVisible = (visible) => { for (const cb of visibilityWatchers) cb(visible); };
   env.goOnline = () => { for (const cb of onlineWatchers) cb(); };
+  env.setSuspended = (value) => { env.suspended = value; for (const cb of suspendWatchers) cb(value); };
   env.current = () => env.runtimes[env.runtimes.length - 1];
   env.callsOf = (runtime = env.current()) => runtime.calls;
   return env;
@@ -199,12 +204,12 @@ test('the same identity reported twice does not rebuild the runtime', async () =
   assert.equal(env.runtimes.length, 1);
 });
 
-test('identity reset: runtime disposed, history deleted, no runtime until a new identity exists', async () => {
+test('identity reset: runtime disposed, every chat history deleted, no runtime until a new identity exists', async () => {
   const env = await launched();
   env.log.length = 0;
   env.identity.change(null, { reset: true });
   await env.lifecycle.whenSettled();
-  assert.deepEqual(env.log, ['dispose:a', 'publish:null', 'delete:a', 'scope:none']);
+  assert.deepEqual(env.log, ['dispose:a', 'publish:null', 'delete:all', 'scope:none']);
   assert.equal(env.runtimes.length, 1);
   assert.equal(env.published[env.published.length - 1], null);
 });
@@ -229,7 +234,7 @@ test('unlock after a lock: the outbox is retried (backoff respected) and payment
   env.setLocked(true);
   env.setLocked(false);
   await flush();
-  assert.deepEqual(env.callsOf(), ['start', 'wipeKey:lock', 'retry:{}', 'settleClaims']);
+  assert.deepEqual(env.callsOf(), ['start', 'wipeKey:lock', 'resubscribe', 'retry:{}', 'settleClaims']);
 });
 
 test('hidden: the key wipe is scheduled and the store flushed; visible cancels it', async () => {
@@ -243,6 +248,7 @@ test('hidden: the key wipe is scheduled and the store flushed; visible cancels i
   env.setVisible(true);
   await flush();
   assert.ok(env.callsOf().includes('cancelKeyWipe'));
+  assert.ok(env.callsOf().includes('resubscribe'), 'relays given up on in the background are read again');
   assert.deepEqual(retries(env.current()), ['retry:{"ignoreBackoff":true}']);
   assert.ok(env.callsOf().includes('settleClaims'));
 });
@@ -322,6 +328,18 @@ test('a suspended device (kiosk) never starts the chat', async () => {
   env.goOnline();
   await flush();
   assert.equal(env.callsOf().includes('start'), true);
+});
+
+test('kiosk mode turned on while running stops the chat; turned off starts it again', async () => {
+  const env = await launched();
+  assert.ok(env.callsOf().includes('start'));
+  env.setSuspended(true);
+  await flush();
+  assert.ok(env.callsOf().includes('stop'), 'no subscription and no notifications on a till');
+  assert.equal(env.flushes, 1);
+  env.setSuspended(false);
+  await flush();
+  assert.equal(env.callsOf().filter((c) => c === 'start').length, 2);
 });
 
 test('stop disposes the runtime, unpublishes it and stops reacting', async () => {

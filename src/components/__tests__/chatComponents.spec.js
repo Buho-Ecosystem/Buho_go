@@ -567,7 +567,7 @@ test('composer: sending is blocked over the limit, without text or with a secret
 test('composer: the secret key warning is an alert that says what and why', async () => {
   const html = await render(Composer, { modelValue: 'nsec1x', secretKeyWarning: true })
   assert.match(html, /role="alert"/)
-  assert.match(html, /This looks like a secret key/)
+  assert.match(html, /This looks like a secret key or recovery phrase/)
   assert.match(html, /Sending is blocked/)
   assert.doesNotMatch(await render(Composer, { modelValue: 'Hi' }), /role="alert"/)
 })

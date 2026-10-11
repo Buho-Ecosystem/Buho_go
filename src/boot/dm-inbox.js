@@ -3,6 +3,7 @@ import { watch } from 'vue';
 import { EventBus } from '../utils/eventBus.js';
 import { isAppLocked, whenAppLockKnown } from '../utils/appLock.js';
 import { startChatLifecycle } from '../services/dm/lifecycle.js';
+import { onAppVisibility } from '../utils/appVisibility.js';
 
 /**
  * Contact chat boot (docs/CONTACT_CHAT.md section 3).
@@ -19,34 +20,6 @@ import { startChatLifecycle } from '../services/dm/lifecycle.js';
  * it reads, and does nothing on a kiosk device (the owner's contacts must not
  * open relay connections on a till).
  */
-
-/** Visibility from the DOM and, in the app, from Capacitor (the WebView alone is not reliable on every Android build). */
-function visibilitySource() {
-  return (listener) => {
-    const cleanups = [];
-    const onChange = () => listener(document.visibilityState !== 'hidden');
-    document.addEventListener('visibilitychange', onChange);
-    cleanups.push(() => document.removeEventListener('visibilitychange', onChange));
-
-    let removed = false;
-    import('@capacitor/app')
-      .then(({ App }) => Promise.all([
-        App.addListener('appStateChange', ({ isActive }) => listener(isActive !== false)),
-        App.addListener('pause', () => listener(false)),
-        App.addListener('resume', () => listener(true)),
-      ]))
-      .then((handles) => {
-        if (removed) handles.forEach((handle) => handle?.remove?.());
-        else cleanups.push(() => handles.forEach((handle) => handle?.remove?.()));
-      })
-      .catch(() => { /* the browser has no plugin: the DOM event covers it */ });
-
-    return () => {
-      removed = true;
-      cleanups.forEach((cleanup) => cleanup());
-    };
-  };
-}
 
 function lockSource() {
   return (listener) => {
@@ -112,6 +85,12 @@ export default boot(async () => {
     channelName: () => t('Messages'),
   });
 
+  // A kiosk device boots into the cashier; the wallet store hydrates lazily,
+  // so the persisted snapshot answers until it has (like App.vue and boot/kiosk.js).
+  const isSuspended = () => (wallet.kioskEnabled
+    ? !wallet.kioskOwnerAccess
+    : readPersistedWalletState()?.kioskEnabled === true);
+
   const lifecycle = startChatLifecycle({
     identity,
     watchIdentity: (onChange) => watch(() => identity.nostrPubkeyHex, onChange, { flush: 'sync' }),
@@ -120,17 +99,16 @@ export default boot(async () => {
     publish: publishChatRuntime,
     lock: { isLocked: isAppLocked, whenKnown: whenAppLockKnown },
     onLockChange: lockSource(),
-    onVisibility: visibilitySource(),
+    onVisibility: onAppVisibility,
     onOnline: (listener) => {
       window.addEventListener('online', listener);
       return () => window.removeEventListener('online', listener);
     },
-    isHidden: () => document.visibilityState === 'hidden',
-    // A kiosk device boots into the cashier; the wallet store hydrates lazily,
-    // so the persisted snapshot answers until it has (like App.vue and boot/kiosk.js).
-    isSuspended: () => (wallet.kioskEnabled
-      ? !wallet.kioskOwnerAccess
-      : readPersistedWalletState()?.kioskEnabled === true),
+    // One answer to "hidden?" for the runtime and the lifecycle (it knows the native pause).
+    isHidden: () => visibilitySnapshot().hiddenNow,
+    isSuspended,
+    // Kiosk mode turned on (or off) while the app runs stops (or starts) the chat.
+    onSuspendChange: (listener) => watch(isSuspended, listener),
   });
 
   // Payments made from a chat are announced to the partner from here, not from

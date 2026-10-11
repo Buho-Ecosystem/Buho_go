@@ -106,7 +106,8 @@ function createSenderRate({ me, max, windowMs }) {
 
 /**
  * The gate for an opened rumor: kind 14 or 7, sender not blocked, not past an
- * expiration, within the sender's rate limit (if one is given), and not seen
+ * expiration, not more than an hour in the future, within the sender's rate
+ * limit (if one is given), and not seen
  * before (by rumor id). `noDuplicates` is last so an event refused earlier is
  * not remembered and can still be accepted if it arrives again later.
  *
@@ -126,6 +127,9 @@ export function createRumorGate({ me, isBlocked = () => false, rate } = {}) {
     policy.kindAllowList([KIND.DM, KIND.REACTION]),
     policy.customPolicy('notBlocked', (event) => event.pubkey === me || !isBlocked(event.pubkey), 'blocked: sender is blocked'),
     policy.notExpired(),
+    // A message dated in the future would pin its thread to the top and hide
+    // later messages from the unread count; clock skew gets an hour.
+    policy.createdAtPolicy({ maxFutureSeconds: MAX_WRAP_FUTURE_SECONDS }),
   ];
   if (rate) policies.push(createSenderRate({ me, max: rate.max, windowMs: rate.windowMs }));
   policies.push(policy.noDuplicates());

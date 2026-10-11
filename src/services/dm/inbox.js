@@ -134,7 +134,7 @@ export const MAX_PENDING_WRAPS = 200;
  */
 
 /**
- * @typedef {'published' | 'unchanged' | 'unknown' | 'failed'} OwnRelayListStatus
+ * @typedef {'published' | 'unchanged' | 'kept' | 'unknown' | 'failed'} OwnRelayListStatus
  */
 
 // ---------------------------------------------------------------------------
@@ -144,6 +144,12 @@ export const MAX_PENDING_WRAPS = 200;
 const HEX_64 = /^[0-9a-f]{64}$/;
 
 const noop = () => {};
+
+/** The cursor may move without every relay's answer once it lags this far behind. */
+const MAX_CURSOR_LAG_SECONDS = 7 * 24 * 60 * 60;
+
+/** Failures that only mean "no relay could be reached": the network coming back is worth a new try. */
+const NETWORK_CODES = new Set([DM_ERROR.RELAY_UNAVAILABLE, DM_ERROR.TIMEOUT]);
 
 /** Run a consumer callback; its failure must never break the receive loop. */
 function safeCall(fn, ...args) {
@@ -203,6 +209,7 @@ export function createSignAuth(signer) {
  *   send: (request: { partner: string, template: import('nostr-core').EventTemplate, hints?: string[] }) => Promise<ChatMessage>,
  *   retryOutbox: (options?: { ignoreBackoff?: boolean }) => Promise<{ attempted: number }>,
  *   retryWaiting: () => void,
+ *   resubscribe: () => void,
  *   retry: (id: string) => Promise<boolean>,
  *   ensureOwnRelayList: () => Promise<{ status: OwnRelayListStatus }>,
  *   status: () => InboxStatus,
@@ -253,6 +260,10 @@ export function createInbox({
   let startedAtSeconds = 0;
   /** Relays that finished their stored events: what they send from now on is live. */
   let eosed = new Set();
+  /** Relays whose subscription the transport gave up on (AUTH failed, ...): read again on resume. */
+  let closedRelays = new Set();
+  /** Relays of a kind 10050 list the person already had, read besides our own inbox relays. */
+  let listedRelays = [];
   let wrapGate = null;
   let backfillGate = null;
   let liveGate = null;
@@ -333,9 +344,10 @@ export function createInbox({
     }
 
     const { rumor, sender } = opened;
-    // Cheap and before the rate limit: a re-delivered message must not cost the sender's budget.
-    // Our own messages still pass, because their self copy confirms delivery.
-    if (sender !== me && store.hasMessage(rumor.id)) {
+    // Cheap and before the rate limit: a re-delivered message must not cost the
+    // sender's budget. Our own self copy coming back says nothing about the
+    // partner having it (only their relay's acceptance does), so it is no news either.
+    if (store.hasMessage(rumor.id)) {
       remember(event);
       return 'done';
     }
@@ -400,12 +412,19 @@ export function createInbox({
     if (mine === epoch) advanceCursor();
   }
 
-  /** Move the cursor to the start of this run's subscription, if that is safe. */
+  /**
+   * Move the cursor to the start of this run's subscription, if that is safe:
+   * every relay we read answered (a message held by one slow relay must not be
+   * skipped next time), or the cursor already lags far behind (one dead relay
+   * must not make every start re-read weeks of history).
+   */
   function advanceCursor() {
     if (!running || eosed.size === 0 || pending.length > 0 || cursorBlocked) return;
     const current = store.getSyncCursor();
     if (Number.isFinite(current) && current >= startedAtSeconds) return;
-    store.setSyncCursor(startedAtSeconds);
+    const allAnswered = readRelays().every((relay) => eosed.has(relay));
+    const farBehind = Number.isFinite(current) && startedAtSeconds - current > MAX_CURSOR_LAG_SECONDS;
+    if (allAnswered || farBehind) store.setSyncCursor(startedAtSeconds);
   }
 
   const handlers = {
@@ -418,8 +437,40 @@ export function createInbox({
       // After everything received so far was processed, never before.
       enqueue(() => advanceCursor());
     },
-    onclosed: noop,
+    onclosed(relay) {
+      closedRelays.add(relay);
+    },
   };
+
+  /** Everything we read from: our inbox relays and the person's own listed ones. */
+  function readRelays() {
+    return [...new Set([...ownInbox, ...listedRelays])];
+  }
+
+  /** (Re)open the one inbox subscription over every relay we read. */
+  function subscribeInbox() {
+    try {
+      subscription?.close();
+    } catch {
+      // A dead subscription has nothing left to tell us.
+    }
+    eosed = new Set();
+    closedRelays = new Set();
+    const cursor = store.getSyncCursor();
+    const filter = { kinds: [KIND.GIFT_WRAP], '#p': [me] };
+    // The first sync has no lower bound; later ones overlap by the wrap timestamp randomisation.
+    if (Number.isFinite(cursor)) filter.since = Math.max(0, cursor - SINCE_SLACK_SECONDS);
+    subscription = transport.subscribe(readRelays(), filter, handlers);
+  }
+
+  /**
+   * Read again from relays the transport gave up on (an AUTH that failed while
+   * the app was locked or hidden). The resume calls it; wraps already handled
+   * are skipped without opening them.
+   */
+  function resubscribe() {
+    if (running && closedRelays.size > 0) subscribeInbox();
+  }
 
   // ----- start and stop --------------------------------------------------
 
@@ -438,11 +489,7 @@ export function createInbox({
       Promise.resolve(transport.warmUp?.(ownInbox)).catch(noop);
 
       startedAtSeconds = nowSeconds();
-      const cursor = store.getSyncCursor();
-      const filter = { kinds: [KIND.GIFT_WRAP], '#p': [me] };
-      // The first sync has no lower bound; later ones overlap by the wrap timestamp randomisation.
-      if (Number.isFinite(cursor)) filter.since = Math.max(0, cursor - SINCE_SLACK_SECONDS);
-      subscription = transport.subscribe(ownInbox, filter, handlers);
+      subscribeInbox();
     } catch (err) {
       running = false;
       throw err;
@@ -463,6 +510,7 @@ export function createInbox({
       // Closing a dead subscription has nothing left to tell us.
     }
     subscription = null;
+    closedRelays = new Set();
     disarmTimer();
     pending = [];
     draining = false;
@@ -579,16 +627,15 @@ export function createInbox({
     return Math.round(base * (1 + policy.jitter * (2 * random() - 1)));
   }
 
-  /** Give up on an item for good (the relays refuse it) and tell the store. */
-  function fail(item, code, { keep }) {
+  /**
+   * Stop trying on our own and tell the store. The item stays in the outbox,
+   * so "Send again" (`retry`) always has something to send.
+   */
+  function fail(item, code) {
     item.lastCode = code;
+    item.exhausted = true;
     store.setDelivery(item.id, DELIVERY.FAILED);
-    if (keep) {
-      item.exhausted = true;
-      store.outbox.put(item);
-    } else {
-      store.outbox.remove(item.id);
-    }
+    store.outbox.put(item);
   }
 
   /** Record one failed round: wait for the next attempt, or give up when attempts ran out. */
@@ -600,7 +647,7 @@ export function createInbox({
         // Only the self copy is missing: the message is out, so there is nothing to show or keep.
         store.outbox.remove(item.id);
       } else {
-        fail(item, code, { keep: true });
+        fail(item, code);
       }
       return;
     }
@@ -630,7 +677,7 @@ export function createInbox({
         item.relays = lookup.relays;
         item.stale = false;
       } else if (lookup?.status === INBOX_STATUS.MISSING) {
-        fail(item, DM_ERROR.NO_INBOX_RELAYS, { keep: false });
+        fail(item, DM_ERROR.NO_INBOX_RELAYS);
         return;
       } else if (item.relays === null) {
         failRound(item, DM_ERROR.RELAY_UNAVAILABLE, { recipientDone: false });
@@ -666,7 +713,7 @@ export function createInbox({
 
     if (!item.delivered.recipient) {
       if (!recipient.retryable) {
-        fail(item, recipient.code, { keep: false });
+        fail(item, recipient.code);
         return;
       }
       // A relay list we trusted may be out of date: look it up again before the next try.
@@ -717,7 +764,8 @@ export function createInbox({
    *
    * @param {object} [options]
    * @param {boolean} [options.ignoreBackoff=false] Also try items whose wait is not over (the network
-   *   just came back, so waiting longer has no point). Exhausted items are never sent here.
+   *   just came back, so waiting longer has no point). Then items that ran out of tries only because
+   *   no relay could be reached start over too; others wait for `retry(id)`.
    * @returns {Promise<{ attempted: number }>}
    */
   async function retryOutbox({ ignoreBackoff = false } = {}) {
@@ -729,15 +777,24 @@ export function createInbox({
       });
     }
     const clock = now();
-    const due = store.outbox
-      .list()
-      .filter((item) => !item.exhausted && !active.has(item.id) && (ignoreBackoff || !(item.nextAttemptAt > clock)));
+    const due = store.outbox.list().filter((item) => {
+      if (active.has(item.id)) return false;
+      // The network is back (the caller says so): a message that ran out of
+      // tries only because no relay could be reached gets a fresh budget.
+      if (item.exhausted && ignoreBackoff && NETWORK_CODES.has(item.lastCode)) {
+        item.exhausted = false;
+        item.attempts = 0;
+        return true;
+      }
+      return !item.exhausted && (ignoreBackoff || !(item.nextAttemptAt > clock));
+    });
     let next = 0;
     const worker = async () => {
       while (next < due.length && mine === epoch) {
         const item = due[next];
         next += 1;
-        await track(item.id, deliver(item, mine));
+        // A manual retry may have started it meanwhile.
+        if (!active.has(item.id)) await track(item.id, deliver(item, mine));
       }
     };
     const workers = Array.from({ length: Math.min(policy.concurrency, due.length) }, worker);
@@ -758,6 +815,8 @@ export function createInbox({
     item.exhausted = false;
     item.attempts = 0;
     item.nextAttemptAt = 0;
+    // The person asks again: look the partner's relays up again too.
+    item.stale = true;
     store.outbox.put(item);
     if (!active.has(id)) await track(id, deliver(item, epoch));
     return true;
@@ -767,18 +826,25 @@ export function createInbox({
 
   /**
    * Make sure our kind 10050 list on the discovery relays names our inbox
-   * relays; publish it if it is missing or different. Never throws and never
-   * publishes when no relay answered (offline). Concurrent calls share one run.
+   * relays; publish ours only when there is none. A list the person already
+   * has (from another Nostr app) is never replaced: its relays are read as
+   * well, so messages sent there arrive. Never throws and never publishes
+   * when no relay answered (offline). Concurrent calls share one run.
    *
    * @returns {Promise<{ status: OwnRelayListStatus }>} `published`, `unchanged`,
-   *   `unknown` (no relay answered, nothing done) or `failed`.
+   *   `kept` (another list exists and is read too), `unknown` (no relay
+   *   answered, nothing done) or `failed`.
    */
   function ensureOwnRelayList() {
     ownListRun ??= (async () => {
       try {
         const lookup = await resolver.resolve(me, { force: true });
         if (lookup.status === INBOX_STATUS.UNKNOWN) return { status: 'unknown' };
-        if (lookup.status === INBOX_STATUS.FOUND && sameSet(lookup.relays, ownInbox)) return { status: 'unchanged' };
+        if (lookup.status === INBOX_STATUS.FOUND) {
+          if (sameSet(lookup.relays, ownInbox)) return { status: 'unchanged' };
+          readListedRelays(lookup.relays);
+          return { status: 'kept' };
+        }
 
         const template = buildInboxRelayListTemplate(ownInbox, { now: nowSeconds() });
         const event = await withSigner(() => signer.signEvent(template));
@@ -793,6 +859,14 @@ export function createInbox({
       ownListRun = null;
     });
     return ownListRun;
+  }
+
+  /** Read the relays of the person's own list too (once per new set). */
+  function readListedRelays(relays) {
+    const extra = relays.filter((relay) => !ownInbox.includes(relay));
+    if (sameSet(extra, listedRelays)) return;
+    listedRelays = extra;
+    if (running) subscribeInbox();
   }
 
   // ----- status ----------------------------------------------------------
@@ -828,5 +902,5 @@ export function createInbox({
     if (running && pending.length > 0) enqueue(() => drainPending());
   }
 
-  return Object.freeze({ start, stop, send, retryOutbox, retry, retryWaiting, ensureOwnRelayList, status, whenIdle });
+  return Object.freeze({ start, stop, send, retryOutbox, retry, retryWaiting, resubscribe, ensureOwnRelayList, status, whenIdle });
 }

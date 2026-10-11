@@ -121,3 +121,14 @@ test('invalid pubkeys and states are refused', async () => {
   await assert.rejects(() => storage.loadChatState(undefined), TypeError)
   await assert.rejects(() => storage.deleteChatState(''), TypeError)
 })
+
+test('deleteAllChatStates removes every identity\'s record and nothing else', async () => {
+  const { storage, backend } = setup()
+  await storage.saveChatState('a'.repeat(64), { threads: {} })
+  await storage.saveChatState('b'.repeat(64), { threads: {} })
+  await backend.set('unrelated', 'keep me')
+  await storage.deleteAllChatStates()
+  assert.equal(await storage.loadChatState('a'.repeat(64)), null)
+  assert.equal(await storage.loadChatState('b'.repeat(64)), null)
+  assert.equal(await backend.get('unrelated'), 'keep me')
+})
