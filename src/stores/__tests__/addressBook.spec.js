@@ -21,6 +21,7 @@
  */
 
 import { strict as assert } from 'node:assert';
+import { createSecretKeySigner } from 'nostr-core';
 
 // ---------------------------------------------------------------------------
 // Browser-storage shim — must be set up BEFORE the store imports load,
@@ -826,6 +827,10 @@ function fakeIdentity({ pubkey, secret }) {
     bootstrapped: true,
     nostrPubkeyHex: pubkey,
     async getNostrSecretKeyBytes() { return new Uint8Array(secret); },
+    async acquireSigner() {
+      const key = await this.getNostrSecretKeyBytes();
+      return { signer: createSecretKeySigner(key), release: () => key.fill(0) };
+    },
   };
 }
 
@@ -1959,6 +1964,10 @@ function mutableIdentity({ pubkey, secret }) {
     nostrPubkeyHex: pubkey,
     _secret: secret,
     async getNostrSecretKeyBytes() { return new Uint8Array(this._secret); },
+    async acquireSigner() {
+      const key = await this.getNostrSecretKeyBytes();
+      return { signer: createSecretKeySigner(key), release: () => key.fill(0) };
+    },
     switchTo({ pubkey: p, secret: s }) {
       this.nostrPubkeyHex = p;
       this._secret = s;

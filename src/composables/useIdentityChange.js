@@ -1,5 +1,8 @@
 /**
- * Changing the identity in use: switching to another one, creating a new one.
+ * Changing the identity in use: switching to another one, creating a new one,
+ * using one brought from another app. Identities are named by `key`: the
+ * account number of one derived from the 12 words, or the id of an
+ * external one.
  *
  * Both go through the address book, which saves the outgoing identity's
  * contacts, changes the key, then loads the incoming identity's contacts;
@@ -101,16 +104,29 @@ export function useIdentityChange(t) {
     }
   }
 
-  /** @param {{ account: number, name: string, picture?: string }} target */
-  async function switchAccount(target) {
+  /** The store change that makes `key` the identity in use. */
+  function changeTo(key) {
+    return typeof key === 'number'
+      ? () => identity.switchNostrIdentity(key)
+      : () => identity.switchToExternalIdentity(key);
+  }
+
+  /** The identity is still on this phone's list (not removed or deleted meanwhile). */
+  function stillListed(key) {
+    return typeof key === 'number'
+      ? !identity.nostrRemovedAccounts.includes(key)
+      : identity.externalIdentities.some((e) => e.id === key);
+  }
+
+  /** @param {{ key: number|string, name: string, picture?: string }} target */
+  async function switchAccount(target, { keepContacts = false } = {}) {
     switching.value = { name: target.name, picture: target.picture || '' };
     try {
-      const outcome = await run({
-        change: () => identity.switchNostrIdentity(target.account),
-        keepContacts: false,
+      return await run({
+        change: changeTo(target.key),
+        keepContacts,
         failMessage: t("Couldn't switch identity"),
       });
-      return outcome;
     } finally {
       switching.value = null;
     }
@@ -128,11 +144,12 @@ export function useIdentityChange(t) {
   /**
    * Switch to `target`, then offer Undo back to the identity that was in use.
    *
-   * @param {{ account: number, name: string, picture?: string }} target
-   * @param {{ account: number, name: string, picture?: string }} previous
+   * @param {{ key: number|string, name: string, picture?: string }} target
+   * @param {{ key: number|string, name: string, picture?: string }} previous
+   * @param {{ keepContacts?: boolean }} [opts]  copy the current contacts along
    */
-  async function switchTo(target, previous) {
-    const outcome = await switchAccount(target);
+  async function switchTo(target, previous, opts = {}) {
+    const outcome = await switchAccount(target, opts);
     if (!outcome.changed) return false;
     nowUsing(target.name, outcome.contactsLoaded, {
       timeout: 5000,
@@ -142,7 +159,7 @@ export function useIdentityChange(t) {
         handler: async () => {
           // Removed from this phone after the switch: going back would undo
           // that decision too.
-          if (identity.nostrRemovedAccounts.includes(previous.account)) return;
+          if (!stillListed(previous.key)) return;
           const back = await switchAccount(previous);
           if (back.changed) nowUsing(previous.name, back.contactsLoaded, { timeout: 2500 });
         },

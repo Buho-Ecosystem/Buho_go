@@ -1076,5 +1076,121 @@ await test('resolveActiveNostrAccount finds a pointer that lives only on the NIP
   assert.equal(s.nostrAccountIndex, 1);
 });
 
+
+// ---------------------------------------------------------------------------
+// Identities from another app
+// ---------------------------------------------------------------------------
+
+const { generateSecretKey: genKey, getPublicKey: pubOf, finalizeEvent: signWith } = await import('nostr-core');
+
+await test('an imported secret key is kept, used, and signs as that key', async () => {
+  const s = freshEnv();
+  await s.ensureIdentity();
+  const derivedPubkey = s.nostrPubkeyHex;
+  const imported = genKey();
+  const { key, added } = await s.addExternalIdentity({ kind: 'secretKey', pubkeyHex: pubOf(imported), secretKey: imported });
+  assert.equal(added, true);
+  assert.equal(s.nostrPubkeyHex, derivedPubkey, 'adding does not switch');
+  assert.ok(!JSON.stringify(JSON.parse(globalThis.localStorage.getItem('buhoGO_identity_v1'))).includes(Buffer.from(imported).toString('hex')), 'the key never sits in metadata');
+
+  s.switchToExternalIdentity(key);
+  assert.equal(s.nostrPubkeyHex, pubOf(imported));
+  assert.deepEqual(s.identityCapabilities, { kind: 'secretKey', rawKey: true, needsApproval: false });
+  const { signer, release } = await s.acquireSigner();
+  const event = await signer.signEvent({ kind: 1, tags: [], content: 'hi', created_at: 1 });
+  release();
+  assert.equal(event.pubkey, pubOf(imported));
+  assert.equal((await s.listNostrIdentities()).some((row) => row.active), false, 'no derived row is in use');
+  assert.match((await s.revealExternalSecret(key)).nsec, /^nsec1/);
+
+  // Back to the derived identity, then a reload keeps the import.
+  await s.switchNostrIdentity(0, { pointer: pointerStub().opts });
+  assert.equal(s.nostrPubkeyHex, derivedPubkey);
+  assert.equal(s.activeExternalId, null);
+  s.switchToExternalIdentity(key);
+  setActivePinia(createPinia());
+  const reloaded = useIdentityStore();
+  await reloaded.hydrate();
+  assert.equal(reloaded.activeExternalId, key);
+  assert.equal(reloaded.nostrPubkeyHex, pubOf(imported));
+});
+
+await test('a key already on this phone is never added twice', async () => {
+  const s = freshEnv();
+  await s.ensureIdentity();
+  const own = await s.addExternalIdentity({ kind: 'nip07', pubkeyHex: s.nostrPubkeyHex });
+  assert.deepEqual(own, { key: 0, added: false }, 'the derived identity is named instead');
+  const imported = genKey();
+  const first = await s.addExternalIdentity({ kind: 'secretKey', pubkeyHex: pubOf(imported), secretKey: imported });
+  const again = await s.addExternalIdentity({ kind: 'nip07', pubkeyHex: pubOf(imported) });
+  assert.deepEqual(again, { key: first.key, added: false });
+  assert.equal(s.externalIdentities.length, 1);
+});
+
+await test('usernames stay with the identity they belong to across external switches', async () => {
+  const s = freshEnv();
+  await s.ensureIdentity();
+  s.recordOwnedHandle({ handle: 'owl-zero' });
+  const imported = genKey();
+  const { key } = await s.addExternalIdentity({ kind: 'secretKey', pubkeyHex: pubOf(imported), secretKey: imported });
+  s.switchToExternalIdentity(key);
+  assert.equal(s.nip05Handles.length, 0);
+  s.recordOwnedHandle({ handle: 'imported-name' });
+  await s.switchNostrIdentity(0, { pointer: pointerStub().opts });
+  assert.equal(s.nip05Handles[0].handle, 'owl-zero');
+  s.switchToExternalIdentity(key);
+  assert.equal(s.nip05Handles[0].handle, 'imported-name');
+});
+
+await test('a signer app identity never hands out a raw key, and a wrong answer is refused', async () => {
+  const s = freshEnv();
+  await s.ensureIdentity();
+  const theirs = genKey();
+  const someoneElse = genKey();
+  globalThis.window = { nostr: { getPublicKey: async () => pubOf(theirs), signEvent: async (t) => signWith(t, theirs) } };
+  try {
+    const { key } = await s.addExternalIdentity({ kind: 'nip07', pubkeyHex: pubOf(theirs) });
+    s.switchToExternalIdentity(key);
+    assert.deepEqual(s.identityCapabilities, { kind: 'nip07', rawKey: false, needsApproval: true });
+    await assert.rejects(() => s.getNostrSecretKeyBytes(), (err) => err.code === 'IDENTITY_NO_RAW_KEY');
+    const { signer } = await s.acquireSigner();
+    assert.equal((await signer.signEvent({ kind: 1, tags: [], content: 'x', created_at: 1 })).pubkey, pubOf(theirs));
+
+    globalThis.window.nostr.signEvent = async (t) => signWith(t, someoneElse);
+    const { signer: switched } = await s.acquireSigner();
+    await assert.rejects(() => switched.signEvent({ kind: 1, tags: [], content: 'x', created_at: 1 }), (err) => err.code === 'SIGNER_MISMATCH');
+  } finally {
+    delete globalThis.window;
+  }
+});
+
+await test('deleting an import removes its stored key; never the identity in use', async () => {
+  const s = freshEnv();
+  await s.ensureIdentity();
+  const imported = genKey();
+  const { key } = await s.addExternalIdentity({ kind: 'secretKey', pubkeyHex: pubOf(imported), secretKey: imported });
+  s.switchToExternalIdentity(key);
+  assert.throws(() => s.deleteExternalIdentity(key), (err) => err.code === 'NOSTR_ACCOUNT_ACTIVE');
+  await s.switchNostrIdentity(0, { pointer: pointerStub().opts });
+  s.deleteExternalIdentity(key);
+  assert.equal(s.externalIdentities.length, 0);
+  assert.equal(globalThis.localStorage.getItem(`buhoGO_identity_external_${key}`), null);
+});
+
+await test('erasing everything removes imports too; a restored phrase leaves them but takes over', async () => {
+  const s = freshEnv();
+  await s.ensureIdentity();
+  const imported = genKey();
+  const { key } = await s.addExternalIdentity({ kind: 'secretKey', pubkeyHex: pubOf(imported), secretKey: imported });
+  s.switchToExternalIdentity(key);
+  await s.importMnemonic(FIXED_SEED);
+  assert.equal(s.activeExternalId, null, 'the restored phrase is in use');
+  assert.equal(s.externalIdentities.length, 1, 'the import stays');
+
+  await s.regenerate();
+  assert.equal(s.externalIdentities.length, 0);
+  assert.equal(globalThis.localStorage.getItem(`buhoGO_identity_external_${key}`), null);
+});
+
 console.log(`\n  ${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);

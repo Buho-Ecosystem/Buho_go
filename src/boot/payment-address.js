@@ -57,6 +57,10 @@ export default boot(async () => {
     try {
       await identity.hydrate();
       if (!identity.bootstrapped) return;
+      // A profile brought from another app is the person's own: it may
+      // already carry their address, and an automatic edit published before
+      // it was fetched would replace it. BuhoGO never edits it by itself.
+      if (identity.activeExternalId) return;
       if (!identity.nostrNpub) await identity.loadNostrIdentity();
       await profile.hydrate();
       const scope = profile.captureSession();

@@ -12,7 +12,7 @@
  */
 
 import { strict as assert } from 'node:assert';
-import { verifyEvent, getPublicKey } from 'nostr-core';
+import { verifyEvent, getPublicKey, createSecretKeySigner } from 'nostr-core';
 import {
   ALLOWED_AVATAR_MIMES,
   AUTH_EXPIRATION_SECONDS,
@@ -160,10 +160,10 @@ await test('sha256Hex is deterministic', async () => {
 // Auth-header shape
 // ---------------------------------------------------------------------------
 
-await test('buildAuthHeader produces a valid signed kind:24242 event', () => {
-  const header = __testing.buildAuthHeader(
+await test('buildAuthHeader produces a valid signed kind:24242 event', async () => {
+  const header = await __testing.buildAuthHeader(
     { action: 'upload', hash: 'a'.repeat(64), server: 'https://blossom.test', expiration: 1700000300 },
-    SECRET_KEY,
+    createSecretKeySigner(SECRET_KEY),
   );
   const event = decodeAuthHeader(header);
   assert.equal(event.kind, 24242);
@@ -172,10 +172,10 @@ await test('buildAuthHeader produces a valid signed kind:24242 event', () => {
   assert.equal(verifyEvent(event), true);
 });
 
-await test('buildAuthHeader emits t / expiration / x / server tags in that order', () => {
-  const header = __testing.buildAuthHeader(
+await test('buildAuthHeader emits t / expiration / x / server tags in that order', async () => {
+  const header = await __testing.buildAuthHeader(
     { action: 'upload', hash: 'a'.repeat(64), server: 'https://blossom.test', expiration: 1700000300 },
-    SECRET_KEY,
+    createSecretKeySigner(SECRET_KEY),
   );
   const event = decodeAuthHeader(header);
   assert.deepEqual(event.tags, [
@@ -186,10 +186,10 @@ await test('buildAuthHeader emits t / expiration / x / server tags in that order
   ]);
 });
 
-await test('buildAuthHeader omits the x tag when no hash is supplied', () => {
-  const header = __testing.buildAuthHeader(
+await test('buildAuthHeader omits the x tag when no hash is supplied', async () => {
+  const header = await __testing.buildAuthHeader(
     { action: 'list', hash: null, server: 'https://blossom.test', expiration: 1700000300 },
-    SECRET_KEY,
+    createSecretKeySigner(SECRET_KEY),
   );
   const event = decodeAuthHeader(header);
   assert.ok(event.tags.every((t) => t[0] !== 'x'));
@@ -209,7 +209,7 @@ await test('uploadAvatar rejects a non-File argument', async () => {
 await test('uploadAvatar rejects a non-32-byte secret key', async () => {
   await assert.rejects(
     () => uploadAvatar(fakeFile(new Uint8Array([1])), new Uint8Array(31), { fetch: makeFetchMock() }),
-    /32-byte Uint8Array/,
+    /a Signer or a 32-byte secret key/,
   );
 });
 

@@ -40,6 +40,7 @@
  */
 
 import {
+  createSecretKeySigner,
   finalizeEvent,
   nip44,
   verifyEvent,
@@ -473,13 +474,14 @@ export function publishAddressBook({ pool, relays, event, timeoutMs }) {
  *
  * @throws Error('ADDRESS_BOOK_DECRYPT_FAILED')  ciphertext wasn't for us
  */
-export async function fetchAddressBook({ pool, relays, pubkey, secretKey, timeoutMs }) {
+export async function fetchAddressBook({ pool, relays, pubkey, signer, secretKey, timeoutMs }) {
   if (typeof pubkey !== 'string' || !/^[0-9a-f]{64}$/i.test(pubkey)) {
     throw new TypeError('pubkey must be a 64-char hex string');
   }
-  if (!(secretKey instanceof Uint8Array) || secretKey.length !== 32) {
-    throw new TypeError('secretKey must be a 32-byte Uint8Array');
-  }
+  const activeSigner = signer && typeof signer.nip44?.decrypt === 'function'
+    ? signer
+    : (secretKey instanceof Uint8Array && secretKey.length === 32 ? createSecretKeySigner(secretKey) : null);
+  if (!activeSigner) throw new TypeError('a Signer or a 32-byte secret key is required');
 
   const activePool = pool ?? getRelayPool();
   if (!activePool || typeof activePool.querySync !== 'function') {
@@ -531,8 +533,16 @@ export async function fetchAddressBook({ pool, relays, pubkey, secretKey, timeou
   valid.sort(compareEventFreshness);
   const winner = valid[0];
 
-  const conversationKey = deriveSelfConversationKey(secretKey, pubkeyHex);
-  const contacts = decryptAddressBookContent(winner.content, conversationKey);
+  let plaintext;
+  try {
+    plaintext = await activeSigner.nip44.decrypt(pubkeyHex, winner.content);
+  } catch (err) {
+    const wrapped = new Error('address book ciphertext could not be decrypted');
+    wrapped.code = 'ADDRESS_BOOK_DECRYPT_FAILED';
+    wrapped.cause = err;
+    throw wrapped;
+  }
+  const contacts = deserializeContactPayload(plaintext);
 
   return {
     contacts,

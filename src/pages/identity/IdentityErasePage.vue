@@ -27,7 +27,7 @@
           v-if="identityCount > 1"
           icon="tabler:x"
           tone="danger"
-          :label="$t('All {n} identities from these 12 words are erased', { n: identityCount })"
+          :label="$t('All {n} identities on this phone are erased', { n: identityCount })"
           :interactive="false"
         />
         <IdentityRow
@@ -148,11 +148,12 @@ export default {
     },
 
     /**
-     * Every identity comes from the one seed this screen throws away, so all
-     * of them go, removed ones included.
+     * Every identity on this phone goes: those from the 12 words this screen
+     * throws away, and the ones brought from other apps.
      */
     identityCount() {
-      return this.identity.nostrKnownAccounts.length;
+      const listed = this.identity.nostrKnownAccounts.filter((a) => !this.identity.nostrRemovedAccounts.includes(a.i));
+      return listed.length + this.identity.externalIdentities.length;
     },
 
     bucketSats() {

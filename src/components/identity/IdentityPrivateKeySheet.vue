@@ -23,7 +23,8 @@ import { useWalletStore } from '../../stores/wallet';
 import { isBiometricAvailable, authenticate } from '../../utils/biometric';
 import { copySensitive } from '../../utils/sensitiveClipboard';
 
-const props = defineProps({ modelValue: Boolean, account: { type: Number, default: null }, name: { type: String, default: '' }, npub: { type: String, default: '' } });
+// The key to copy: a derived `account`, or an imported identity's `externalId`.
+const props = defineProps({ modelValue: Boolean, account: { type: Number, default: null }, externalId: { type: String, default: null }, name: { type: String, default: '' }, npub: { type: String, default: '' } });
 const emit = defineEmits(['update:modelValue']);
 const { proxy } = getCurrentInstance();
 const t = key => proxy.$t(key);
@@ -33,14 +34,14 @@ const busy = ref(false);
 const copied = ref(false);
 const error = ref('');
 let revision = 0;
-watch(() => [props.modelValue, props.account, identity.fingerprint], () => { revision++; copied.value = false; error.value = ''; }, { flush: 'sync' });
+watch(() => [props.modelValue, props.account, props.externalId, identity.fingerprint], () => { revision++; copied.value = false; error.value = ''; }, { flush: 'sync' });
 onBeforeUnmount(() => { revision++; });
 function close() { if (!busy.value) emit('update:modelValue', false); }
 
 async function copyKey() {
-  if (busy.value || props.account === null) return;
+  if (busy.value || (props.account === null && !props.externalId)) return;
   const request = revision;
-  const account = props.account;
+  const { account, externalId } = props;
   busy.value = true;
   error.value = '';
   const isCurrent = () => request === revision && props.modelValue;
@@ -65,7 +66,7 @@ async function copyKey() {
       // Only a local reference: never render or cache nsec in component/store state.
       let nsec;
       try {
-        ({ nsec } = await identity.revealNostrSecret(account));
+        ({ nsec } = externalId ? await identity.revealExternalSecret(externalId) : await identity.revealNostrSecret(account));
       } catch (error) {
         failureMessage = 'Secret key could not be accessed. Please try again.';
         throw error;

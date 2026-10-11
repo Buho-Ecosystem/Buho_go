@@ -1,11 +1,14 @@
 <!--
   One identity's own page, opened from the detail button on its row in
-  Identities: use it, copy its public code, copy its secret key, or remove
-  it from this phone.
+  Identities: use it, copy its public code, copy its secret key, or take it
+  off this phone. Never offered for the identity in use.
 
-  Removal hides the identity, nothing more (see the identity store's
-  `nostrRemovedAccounts`), so it is offered for every identity except the
-  one in use and confirmed with a plain action sheet, not a typed phrase.
+  How it leaves depends on where it came from:
+    - made here (from the 12 words): Remove hides it, nothing more (the
+      identity store's `nostrRemovedAccounts`): a plain action sheet;
+    - an imported secret key: Delete erases the only copy on this phone,
+      so an alert says so first;
+    - a signer app: Disconnect ends the pairing; connecting again undoes it.
 -->
 <template>
   <q-page class="id-sub-page identity-surface" :class="$q.dark.isActive ? 'bg-dark' : 'bg-light'">
@@ -41,11 +44,27 @@
         <IdentityRow icon="tabler:id" :label="$t('Public code')" :caption="row.npub" mono :chevron="false" @click="copyPublicCode">
           <template #trailing><span class="row-action">{{ $t('Copy') }}</span></template>
         </IdentityRow>
-        <IdentityRow icon="tabler:lock-password" :label="$t('Secret key')" @click="showSecretKey = true" />
+        <IdentityRow v-if="hasSecretKey" icon="tabler:lock-password" :label="$t('Secret key')" @click="showSecretKey = true" />
       </IdentityGroup>
 
       <IdentityGroup
-        v-if="!row.active"
+        v-if="signerApp"
+        :title="$t('Signer')"
+        :footer="$t('Your key stays in your signer app; it is asked for every signature. Social Bucket needs a secret key on this phone.')"
+      >
+        <IdentityRow :icon="row.kind === 'nip07' ? 'tabler:puzzle' : 'tabler:link'" :label="originOf(row)" :interactive="false" />
+      </IdentityGroup>
+
+      <IdentityGroup
+        v-if="!row.active && row.external"
+        class="remove-group"
+        :footer="signerApp ? $t('Ends the pairing with your signer app. You can connect again any time.') : $t('Deletes the secret key stored on this phone. Make sure you have it saved somewhere else.')"
+      >
+        <IdentityRow danger :icon="signerApp ? 'tabler:plug-connected-x' : 'tabler:trash'" :label="signerApp ? $t('Disconnect') : $t('Delete from this phone')" :chevron="false" @click="showRemove = true" />
+      </IdentityGroup>
+
+      <IdentityGroup
+        v-if="!row.active && !row.external"
         class="remove-group"
         :footer="$t('Hides {name} on this phone. Nothing is deleted: its keys, username and contacts stay, and restoring your 12 words brings it back.', { name })"
       >
@@ -54,13 +73,15 @@
     </div>
 
     <IdentitySwitchingDialog :target="switching" />
-    <IdentityPrivateKeySheet v-if="row" v-model="showSecretKey" :account="row.account" :name="name" :npub="row.npub" />
+    <IdentityPrivateKeySheet v-if="row && hasSecretKey" v-model="showSecretKey" :account="row.external ? null : row.account" :external-id="row.external ? row.id : null" :name="name" :npub="row.npub" />
 
-    <q-dialog v-model="showRemove" position="bottom" :class="$q.dark.isActive ? 'dialog_dark' : 'dialog_light'">
-      <q-card class="remove-sheet" role="alertdialog" aria-labelledby="remove-title">
-        <h2 id="remove-title" class="remove-title">{{ $t('Remove {name} from this phone?', { name }) }}</h2>
-        <p class="remove-body">{{ $t('Restoring your 12 words brings it back.') }}</p>
-        <button type="button" class="remove-confirm" @click="onRemove">{{ $t('Remove') }}</button>
+    <!-- An alert when the loss is final (a stored secret key), an action
+         sheet when the step can be undone (hide, disconnect). -->
+    <q-dialog v-if="row" v-model="showRemove" :position="removal.alert ? 'standard' : 'bottom'" :class="$q.dark.isActive ? 'dialog_dark' : 'dialog_light'">
+      <q-card class="remove-sheet" :class="{ 'remove-sheet--alert': removal.alert }" role="alertdialog" aria-labelledby="remove-title" aria-describedby="remove-body">
+        <h2 id="remove-title" class="remove-title">{{ removal.title }}</h2>
+        <p id="remove-body" class="remove-body">{{ removal.body }}</p>
+        <button type="button" class="remove-confirm" @click="onRemove">{{ removal.confirm }}</button>
         <button type="button" class="remove-cancel" @click="showRemove = false">{{ $t('Cancel') }}</button>
       </q-card>
     </q-dialog>
@@ -97,11 +118,24 @@ const router = useRouter();
 const identity = useIdentityStore();
 const profile = useProfileStore();
 const bucket = useSocialBucketStore();
-const { identities, refresh, nameOf, captionOf } = useIdentities(t);
+const { identities, refresh, nameOf, captionOf, originOf } = useIdentities(t);
 const { busy, switching, switchTo } = useIdentityChange(t);
 
-const account = computed(() => Number.parseInt(route.params.account, 10));
-const row = computed(() => identities.value.find((r) => r.account === account.value) || null);
+/** The route names a derived account by number, an imported identity by id. */
+const key = computed(() => (/^\d+$/.test(route.params.key) ? Number(route.params.key) : String(route.params.key)));
+const row = computed(() => identities.value.find((r) => r.key === key.value) || null);
+/** A secret key this phone can copy: made here, or imported as a key. */
+const hasSecretKey = computed(() => !!row.value && (!row.value.external || row.value.kind === 'secretKey'));
+const signerApp = computed(() => !!row.value?.external && row.value.kind !== 'secretKey');
+const removal = computed(() => {
+  if (row.value?.external && !signerApp.value) {
+    return { alert: true, title: t('Delete {name} from this phone?', { name: name.value }), body: t('This phone\'s copy of the secret key is deleted. Make sure it is saved somewhere else.'), confirm: t('Delete') };
+  }
+  if (signerApp.value) {
+    return { alert: false, title: t('Disconnect {name}?', { name: name.value }), body: t('You can connect again any time.'), confirm: t('Disconnect') };
+  }
+  return { alert: false, title: t('Remove {name} from this phone?', { name: name.value }), body: t('Restoring your 12 words brings it back.'), confirm: t('Remove') };
+});
 const name = computed(() => nameOf(row.value));
 const caption = computed(() => captionOf(row.value));
 const showSecretKey = ref(false);
@@ -113,8 +147,8 @@ async function onUse() {
   const current = identities.value.find((r) => r.active);
   if (!row.value || row.value.active || !current) return;
   await switchTo(
-    { account: row.value.account, name: name.value, picture: row.value.picture },
-    { account: current.account, name: nameOf(current), picture: current.picture },
+    { key: row.value.key, name: name.value, picture: row.value.picture },
+    { key: current.key, name: nameOf(current), picture: current.picture },
   );
 }
 
@@ -129,8 +163,21 @@ async function copyPublicCode() {
 }
 
 async function onRemove() {
-  const removed = { account: account.value, name: name.value };
   showRemove.value = false;
+  if (row.value?.external) {
+    const removedName = name.value;
+    try {
+      identity.deleteExternalIdentity(row.value.id);
+    } catch (err) {
+      console.warn('[identity-detail] delete failed:', err?.code || err);
+      $q.notify({ type: 'negative', message: t("Couldn't remove the identity"), caption: t('Please try again.'), timeout: 3500 });
+      return;
+    }
+    $q.notify({ type: 'positive', message: t('{name} removed from this phone', { name: removedName }), timeout: 2500 });
+    router.replace(LIST_PATH);
+    return;
+  }
+  const removed = { account: row.value.account, name: name.value };
   // "Restoring your 12 words brings it back" holds only once the restore
   // pointer lists this identity, which a creation made offline may not have
   // published yet.
@@ -182,4 +229,5 @@ onMounted(async () => {
 .remove-confirm, .remove-cancel { width: 100%; min-height: 50px; border: 0; border-radius: 14px; font-family: 'Manrope', sans-serif; font-size: 16px; font-weight: 700; cursor: pointer; }
 .remove-confirm { background: rgba(255, 68, 68, 0.12); color: var(--color-red); }
 .remove-cancel { margin-top: 8px; background: transparent; color: var(--text-primary); }
+.remove-sheet--alert { width: min(320px, calc(100vw - 48px)); border-radius: 20px; padding-bottom: 16px; }
 </style>

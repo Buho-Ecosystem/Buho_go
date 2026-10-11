@@ -30,13 +30,13 @@
  * fan-out). Multi-server support can land later under Plan 09's
  * Phase 3 path without changing this signature.
  *
- * Secret-key handling: this module signs once and never retains the
- * key bytes. The caller owns the lifecycle of the `secretKey`
- * argument and SHOULD `secretKey.fill(0)` once `uploadAvatar`
- * resolves.
+ * Signing: the upload is authorised by one signed event, from any
+ * NostrCore Signer (the identity's own key, a browser extension or a
+ * remote signer). Given raw key bytes instead, this module signs once and
+ * never retains them; the caller wipes them once `uploadAvatar` resolves.
  */
 
-import { finalizeEvent } from 'nostr-core';
+import { createSecretKeySigner } from 'nostr-core';
 import { DEFAULT_BLOSSOM_SERVER } from './nostrRelays.js';
 
 // ----------------------------------------------------------------------------
@@ -110,10 +110,10 @@ async function sha256Hex(bytes) {
  *   expiration: number,       // unix seconds
  *   createdAt?: number,       // override for tests
  * }} args
- * @param {Uint8Array} secretKey
- * @returns {string}  full Authorization header value
+ * @param {import('nostr-core').Signer} signer
+ * @returns {Promise<string>}  full Authorization header value
  */
-function buildAuthHeader(args, secretKey) {
+async function buildAuthHeader(args, signer) {
   const tags = [
     ['t', args.action],
     ['expiration', String(args.expiration)],
@@ -129,7 +129,7 @@ function buildAuthHeader(args, secretKey) {
       ? args.createdAt
       : Math.floor(Date.now() / 1000),
   };
-  const signed = finalizeEvent(template, secretKey);
+  const signed = await signer.signEvent(template);
   // base64-encode the JSON. `btoa` is universal in browsers; the
   // `Buffer` fallback keeps Node-only tests working.
   const json = JSON.stringify(signed);
@@ -158,7 +158,7 @@ function buildAuthHeader(args, secretKey) {
  *   7. verify server-reported hash matches what we sent
  *
  * @param {{ size: number, type: string, arrayBuffer: () => Promise<ArrayBuffer> }} file
- * @param {Uint8Array} secretKey  32-byte schnorr secret key
+ * @param {import('nostr-core').Signer | Uint8Array} signer  a Signer, or the 32-byte secret key
  * @param {{
  *   server?:   string,
  *   maxBytes?: number,
@@ -173,14 +173,17 @@ function buildAuthHeader(args, secretKey) {
  *   server: string,
  * }>}
  */
-export async function uploadAvatar(file, secretKey, opts = {}) {
+export async function uploadAvatar(file, signerOrKey, opts = {}) {
   // ---- 1. file shape ----
   if (!file || typeof file.arrayBuffer !== 'function'
       || typeof file.size !== 'number' || typeof file.type !== 'string') {
     throw new TypeError('file must be a Blob/File-like object');
   }
-  if (!(secretKey instanceof Uint8Array) || secretKey.length !== 32) {
-    throw new TypeError('secretKey must be a 32-byte Uint8Array');
+  const signer = signerOrKey instanceof Uint8Array && signerOrKey.length === 32
+    ? createSecretKeySigner(signerOrKey)
+    : signerOrKey;
+  if (typeof signer?.signEvent !== 'function') {
+    throw new TypeError('a Signer or a 32-byte secret key is required');
   }
 
   const server = (opts.server ?? DEFAULT_BLOSSOM_SERVER).replace(/\/+$/, '');
@@ -215,9 +218,9 @@ export async function uploadAvatar(file, secretKey, opts = {}) {
 
   // ---- 5. sign auth event ----
   const expiration = Math.floor(nowMs() / 1000) + AUTH_EXPIRATION_SECONDS;
-  const authorization = buildAuthHeader(
+  const authorization = await buildAuthHeader(
     { action: 'upload', hash, server, expiration },
-    secretKey,
+    signer,
   );
 
   // ---- 6. PUT to server ----
