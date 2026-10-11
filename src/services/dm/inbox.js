@@ -87,6 +87,12 @@ export const LIVE_RATE = Object.freeze({ max: 30, windowMs: 60_000 });
 /** Wraps held while the identity key is unavailable; more than this stops the cursor for good. */
 export const MAX_PENDING_WRAPS = 200;
 
+/** Wraps asked for per request; relays cap a batch at their own limit anyway (often 500). */
+export const HISTORY_PAGE_LIMIT = 500;
+
+/** Older pages one relay may serve per sync: a relay minting endless "new" wraps cannot keep the walk going. */
+export const MAX_HISTORY_PAGES = 20;
+
 /**
  * @typedef {import('./protocol.js').ChatMessage} ChatMessage
  * @typedef {import('nostr-core').NostrEvent} NostrEvent
@@ -272,6 +278,10 @@ export function createInbox({
   let startedAtSeconds = 0;
   /** Relays that finished their stored events: what they send from now on is live. */
   let eosed = new Set();
+  /** Relays whose whole history was read (first batch plus every older page): the cursor may pass them. */
+  let caughtUp = new Set();
+  /** Per relay, until it is caught up: the wrap ids it sent, its oldest wrap, its open page and page count. */
+  let history = new Map();
   /** Relays whose subscription the transport gave up on (AUTH failed, ...): read again on resume. */
   let closedRelays = new Set();
   /** Relays of a kind 10050 list the person already had, read besides our own inbox relays. */
@@ -469,10 +479,10 @@ export function createInbox({
    * must not make every start re-read weeks of history).
    */
   function advanceCursor() {
-    if (!running || eosed.size === 0 || pending.length > 0 || cursorBlocked) return;
+    if (!running || caughtUp.size === 0 || pending.length > 0 || cursorBlocked) return;
     const current = store.getSyncCursor();
     if (Number.isFinite(current) && current >= startedAtSeconds) return;
-    const allAnswered = readRelays().every((relay) => eosed.has(relay));
+    const allAnswered = readRelays().every((relay) => caughtUp.has(relay));
     const farBehind = Number.isFinite(current) && startedAtSeconds - current > MAX_CURSOR_LAG_SECONDS;
     if (allAnswered || farBehind) store.setSyncCursor(startedAtSeconds);
   }
@@ -480,21 +490,103 @@ export function createInbox({
   const handlers = {
     onevent(event, relay) {
       const live = eosed.has(relay);
+      if (!live) noteHistory(relay, event);
       enqueue((mine) => processWrap(event, live, mine));
     },
     oneose(relay) {
       eosed.add(relay);
-      // After everything received so far was processed, never before.
-      enqueue(() => advanceCursor());
+      walkHistory(relay);
     },
     onclosed(relay) {
       closedRelays.add(relay);
     },
   };
 
+  // ----- history ---------------------------------------------------------
+
+  /** Record a stored wrap a relay sent; returns true when this relay had not sent it before. */
+  function noteHistory(relay, event) {
+    let entry = history.get(relay);
+    if (!entry) {
+      entry = { ids: new Set(), oldest: Infinity, page: null, pages: 0 };
+      history.set(relay, entry);
+    }
+    if (event.created_at < entry.oldest) entry.oldest = event.created_at;
+    if (entry.ids.has(event.id)) return false;
+    entry.ids.add(event.id);
+    return true;
+  }
+
+  /**
+   * A relay answers one batch, capped at its own limit, so a new device or a
+   * long absence would miss older messages. After a relay's batch, page back:
+   * `until` is the oldest wrap seen (inclusive, so nothing at the boundary is
+   * skipped), and the walk ends when a page brings no wrap this relay had not
+   * sent already. A page that fails leaves the relay not caught up, so the
+   * cursor stays and the next start reads again.
+   */
+  function walkHistory(relay) {
+    const entry = history.get(relay);
+    if (!entry || entry.pages >= MAX_HISTORY_PAGES) {
+      finishHistory(relay);
+      return;
+    }
+    entry.pages += 1;
+    let fresh = 0;
+    const current = () => history.get(relay) === entry;
+    entry.page = transport.subscribe([relay], { ...inboxFilter(), until: entry.oldest }, {
+      onevent(event) {
+        if (!current()) return;
+        if (noteHistory(relay, event)) fresh += 1;
+        enqueue((mine) => processWrap(event, false, mine));
+      },
+      oneose() {
+        if (!current()) return;
+        closePage(entry);
+        if (fresh > 0) walkHistory(relay);
+        else finishHistory(relay);
+      },
+      onclosed() {
+        if (current()) closePage(entry);
+      },
+    });
+  }
+
+  function finishHistory(relay) {
+    history.delete(relay);
+    caughtUp.add(relay);
+    // After everything received so far was processed, never before.
+    enqueue(() => advanceCursor());
+  }
+
+  function closePage(entry) {
+    try {
+      entry.page?.close();
+    } catch {
+      // A dead page has nothing left to tell us.
+    }
+    entry.page = null;
+  }
+
+  /** Forget the history state of the previous subscription, closing its open pages. */
+  function resetHistory() {
+    for (const entry of history.values()) closePage(entry);
+    history = new Map();
+    caughtUp = new Set();
+  }
+
   /** Everything we read from: our inbox relays and the person's own listed ones. */
   function readRelays() {
     return [...new Set([...ownInbox, ...listedRelays])];
+  }
+
+  /** Our gift wraps since the cursor, one page at a time. */
+  function inboxFilter() {
+    const filter = { kinds: [KIND.GIFT_WRAP], '#p': [me], limit: HISTORY_PAGE_LIMIT };
+    const cursor = store.getSyncCursor();
+    // The first sync has no lower bound; later ones overlap by the wrap timestamp randomisation.
+    if (Number.isFinite(cursor)) filter.since = Math.max(0, cursor - SINCE_SLACK_SECONDS);
+    return filter;
   }
 
   /** (Re)open the one inbox subscription over every relay we read. */
@@ -505,12 +597,9 @@ export function createInbox({
       // A dead subscription has nothing left to tell us.
     }
     eosed = new Set();
+    resetHistory();
     closedRelays = new Set();
-    const cursor = store.getSyncCursor();
-    const filter = { kinds: [KIND.GIFT_WRAP], '#p': [me] };
-    // The first sync has no lower bound; later ones overlap by the wrap timestamp randomisation.
-    if (Number.isFinite(cursor)) filter.since = Math.max(0, cursor - SINCE_SLACK_SECONDS);
-    subscription = transport.subscribe(readRelays(), filter, handlers);
+    subscription = transport.subscribe(readRelays(), inboxFilter(), handlers);
   }
 
   /**
@@ -528,6 +617,7 @@ export function createInbox({
     if (running) return;
     running = true;
     eosed = new Set();
+    resetHistory();
     pending = [];
     strikes.clear();
     cursorBlocked = false;
@@ -568,6 +658,7 @@ export function createInbox({
     draining = false;
     drainQueued = false;
     eosed = new Set();
+    resetHistory();
     // The store is left untouched: messages, outbox and cursor stay as they are.
   }
 

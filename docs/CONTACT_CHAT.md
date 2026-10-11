@@ -341,6 +341,12 @@ store, clock) so they can be unit tested without network or Pinia.
 - A partner's inbox list is looked up on the discovery relays and contact
   hints, then, if they answered without one, on the partner's NIP-65 write
   relays.
+- History is paged: a relay answers one batch (we ask for
+  `HISTORY_PAGE_LIMIT`, 500; relays cap it at their own limit), so after a
+  relay's batch the inbox asks for older pages with `until` = the oldest wrap
+  seen (inclusive) until a page brings nothing new, at most
+  `MAX_HISTORY_PAGES` (20). The cursor passes a relay only once its walk is
+  done; a failed page leaves the cursor where it was.
 - Sync cursor (`lastSyncAt`), blocked pubkeys (on this device only; not
   published as a NIP-51 list), per-contact mute flags.
 - Handled wraps (`handledWraps`, wrap id → created_at): never decrypted
@@ -518,8 +524,6 @@ Replace the workaround when the upstream fix ships.
   inbox relays that only accept gift wraps from known senders; a relay that
   refuses with `restricted:` would need one retry on an identity-authenticated
   link. Not seen on the default inbox relays yet.
-- The first sync has no lower bound and no paging, so a relay's result cap can
-  cut off old history (Lotus pages to 1000).
 - A thread the user started with a stranger stays under "Not in your
   contacts" (other clients count a chat you wrote to as known).
 - Replace the local workarounds when nostr-core #72 to #75 ship (section 11).

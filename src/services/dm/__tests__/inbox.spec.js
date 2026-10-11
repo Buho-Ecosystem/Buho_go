@@ -16,7 +16,7 @@ import { test } from 'node:test';
 import { generateSecretKey, getPublicKey, verifyEventSignature, verifyAuthEvent } from 'nostr-core';
 import { DM_DISCOVERY_RELAYS, DM_INBOX_RELAYS, KIND, SINCE_SLACK_SECONDS } from '../constants.js';
 import { DM_ERROR, DmError } from '../errors.js';
-import { MAX_WRAP_STRIKES, OUTBOX_DEFAULTS, createInbox, createSignAuth } from '../inbox.js';
+import { HISTORY_PAGE_LIMIT, MAX_HISTORY_PAGES, MAX_WRAP_STRIKES, OUTBOX_DEFAULTS, createInbox, createSignAuth } from '../inbox.js';
 import { parseInboxRelayList } from '../inboxRelays.js';
 import { buildReactionTemplate, buildTextTemplate } from '../protocol.js';
 import { createLocalDmSigner } from '../dmSigner.js';
@@ -41,6 +41,8 @@ function createNetwork() {
   const network = {
     /** Relay URL -> 'ok' | 'fail' | { prefix } ; default 'ok'. */
     behavior: new Map(),
+    /** Relay URL -> the most stored events it returns per request (its own limit); default unlimited. */
+    caps: new Map(),
     /** Every publish call: { relay, event }. */
     published: [],
     /** Every subscribe call: { relays, filter, handlers }. */
@@ -76,9 +78,13 @@ function createNetwork() {
           Promise.resolve().then(() => {
             if (!subs.has(sub)) return;
             for (const relay of relays) {
-              for (const event of stored.get(key(relay)) ?? []) {
-                if (matches(filter, event)) handlers.onevent?.(event, relay);
-              }
+              // Like a real relay: the newest matching events first, at most min(limit, its own cap).
+              const max = Math.min(filter.limit ?? Infinity, network.caps.get(key(relay)) ?? Infinity);
+              const batch = (stored.get(key(relay)) ?? [])
+                .filter((event) => matches(filter, event))
+                .sort((a, b) => b.created_at - a.created_at)
+                .slice(0, max);
+              for (const event of batch) handlers.onevent?.(event, relay);
               if (!network.holdEose) handlers.oneose?.(relay);
             }
           });
@@ -114,6 +120,8 @@ function createNetwork() {
 
 function matches(filter, event) {
   if (filter.kinds && !filter.kinds.includes(event.kind)) return false;
+  if (filter.since !== undefined && event.created_at < filter.since) return false;
+  if (filter.until !== undefined && event.created_at > filter.until) return false;
   const p = filter['#p'];
   if (p && !event.tags.some((t) => t[0] === 'p' && p.includes(t[1]))) return false;
   return true;
@@ -556,6 +564,105 @@ test('cursor: not advanced without EOSE, not for a closed relay', async () => {
   network.releaseEose();
   await settle(bob);
   assert.equal(bob.store.raw.setCursorCalls.length, 1);
+});
+
+// ---------------------------------------------------------------------------
+// History paging
+// ---------------------------------------------------------------------------
+
+/** Bob's transport with the older-page requests (those carrying `until`) handled by `page`. */
+function withPages(network, page) {
+  const inner = network.transport();
+  return {
+    ...inner,
+    subscribe(relays, filter, handlers) {
+      if (filter.until === undefined) return inner.subscribe(relays, filter, handlers);
+      network.subscribed.push({ relays, filter, handlers });
+      return page(relays, filter, handlers, inner);
+    },
+  };
+}
+
+const isPage = (sub) => sub.filter.until !== undefined;
+
+test('history: a relay that caps its batch is paged back until every message is in, then the cursor moves', async () => {
+  const { network, clock, alice, bob } = await pair();
+  const sent = [];
+  for (let i = 0; i < 8; i += 1) sent.push(await alice.inbox.send({ partner: bob.pubkey, template: textTo(bob, `old ${i}`) }));
+  await settle(alice);
+  network.caps.set('wss://inbox.bob.example', 3);
+  clock.ms += 5_000;
+  await bob.inbox.start();
+  await settle(bob);
+  for (const message of sent) assert.ok(bob.store.raw.messages.has(message.id), 'every message arrived');
+  const pages = network.subscribed.filter(isPage);
+  assert.ok(pages.length >= 3, 'older pages were asked for');
+  assert.ok(pages.every((page) => page.relays.length === 1 && page.filter.limit === HISTORY_PAGE_LIMIT));
+  assert.deepEqual(bob.store.raw.setCursorCalls, [START_S + 5], 'the cursor moves once the walk is done');
+  assert.equal(network.subscribed.filter((sub) => !isPage(sub)).at(-1).filter.limit, HISTORY_PAGE_LIMIT);
+});
+
+test('history: a relay that ignores until ends the walk after one page instead of looping', async () => {
+  const network = createNetwork();
+  const clock = createClock();
+  const alice = makePerson(network, clock, { inboxRelays: ['wss://inbox.alice.example'] });
+  const bob = makePerson(network, clock, {
+    inboxRelays: ['wss://inbox.bob.example'],
+    inbox: { transport: withPages(network, (relays, filter, handlers, inner) => inner.subscribe(relays, { ...filter, until: undefined }, handlers)) },
+  });
+  knows(alice, bob);
+  for (let i = 0; i < 3; i += 1) await alice.inbox.send({ partner: bob.pubkey, template: textTo(bob, `m ${i}`) });
+  await settle(alice);
+  await bob.inbox.start();
+  await settle(bob);
+  assert.equal(network.subscribed.filter(isPage).length, 1, 'one page, nothing new, done');
+  assert.equal(bob.store.raw.setCursorCalls.length, 1);
+});
+
+test('history: a page that fails leaves the relay not caught up, so the cursor stays', async () => {
+  const network = createNetwork();
+  const clock = createClock();
+  const alice = makePerson(network, clock, { inboxRelays: ['wss://inbox.alice.example'] });
+  const bob = makePerson(network, clock, {
+    inboxRelays: ['wss://inbox.bob.example'],
+    inbox: { transport: withPages(network, (relays, filter, handlers) => {
+      Promise.resolve().then(() => handlers.onclosed?.(relays[0], 'error: shutting down'));
+      return { close() {} };
+    }) },
+  });
+  knows(alice, bob);
+  const sent = await alice.inbox.send({ partner: bob.pubkey, template: textTo(bob, 'kept') });
+  await settle(alice);
+  await bob.inbox.start();
+  await settle(bob);
+  assert.ok(bob.store.raw.messages.has(sent.id), 'the first batch still arrives');
+  assert.equal(bob.store.raw.setCursorCalls.length, 0, 'the next start reads again');
+});
+
+test('history: a relay minting endless new wraps stops at the page cap', async () => {
+  const network = createNetwork();
+  const clock = createClock();
+  const alice = makePerson(network, clock, { inboxRelays: ['wss://inbox.alice.example'] });
+  let minted = 0;
+  const bob = makePerson(network, clock, {
+    inboxRelays: ['wss://inbox.bob.example'],
+    inbox: { transport: withPages(network, (relays, filter, handlers) => {
+      Promise.resolve().then(() => {
+        // Always one wrap nobody has seen, a little older: the walk would never end on its own.
+        minted += 1;
+        handlers.onevent?.({ id: minted.toString(16).padStart(64, '0'), kind: KIND.GIFT_WRAP, created_at: filter.until - 1, tags: [['p', bob.pubkey]], content: '', pubkey: 'f'.repeat(64), sig: '0'.repeat(128) }, relays[0]);
+        handlers.oneose?.(relays[0]);
+      });
+      return { close() {} };
+    }) },
+  });
+  knows(alice, bob);
+  await alice.inbox.send({ partner: bob.pubkey, template: textTo(bob, 'real') });
+  await settle(alice);
+  await bob.inbox.start();
+  await settle(bob);
+  assert.equal(network.subscribed.filter(isPage).length, MAX_HISTORY_PAGES);
+  assert.equal(bob.store.raw.setCursorCalls.length, 1, 'the walk ends and the cursor moves');
 });
 
 test('cursor: later syncs overlap by the slack and the cursor never moves back', async () => {
