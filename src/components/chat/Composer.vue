@@ -1,8 +1,10 @@
 <!--
   Composer
-  The text field of text mode (it lives in MoneyBar's slot).
+  The message field (it lives in MoneyBar's slot, above Request and Send).
 
-    - Single-line field + 44 pt send button; Enter sends (not during IME input).
+    - A field that grows with the text up to five lines, then scrolls, and a
+      44 pt send button. Enter sends (not during IME input); Shift+Enter is a
+      new line.
     - Counter appears only near the limit and turns red above it. Over the
       limit is blocked, never silently truncated.
     - secretKeyWarning: the text contains an nsec / ncryptsec. Sending is
@@ -34,10 +36,10 @@
     </div>
 
     <div class="composer__row">
-      <input
+      <textarea
         ref="input"
         class="composer__input"
-        type="text"
+        rows="1"
         enterkeyhint="send"
         autocomplete="off"
         autocapitalize="sentences"
@@ -49,7 +51,7 @@
         :disabled="disabled"
         @input="$emit('update:modelValue', $event.target.value)"
         @keydown.enter="onEnter"
-      >
+      />
       <button
         type="button"
         class="composer__send"
@@ -87,8 +89,8 @@ export default {
     /** { author, text } of the message being answered. */
     reply: { type: Object, default: null },
     disabled: { type: Boolean, default: false },
-    /** Focus the field when it appears (text mode was chosen on purpose). */
-    autofocus: { type: Boolean, default: true }
+    /** Focus the field when it appears. Off by default: opening a chat must not raise the keyboard over the money buttons. */
+    autofocus: { type: Boolean, default: false }
   },
   emits: ['update:modelValue', 'send', 'cancel-reply'],
   computed: {
@@ -102,7 +104,14 @@ export default {
       return !this.disabled && !this.invalid && this.modelValue.trim().length > 0
     }
   },
+  watch: {
+    // Typing, a draft restored, the field cleared after sending: the height follows the text.
+    modelValue() {
+      this.$nextTick(this.fitHeight)
+    }
+  },
   mounted() {
+    this.fitHeight()
     if (this.autofocus) this.focus()
   },
   methods: {
@@ -112,9 +121,16 @@ export default {
     submit() {
       if (this.canSend) this.$emit('send')
     },
+    /** Grow with the text; the CSS max-height caps it at five lines, then it scrolls. */
+    fitHeight() {
+      const field = this.$refs.input
+      if (!field?.style) return
+      field.style.height = 'auto'
+      field.style.height = `${field.scrollHeight}px`
+    },
     onEnter(event) {
-      // Enter that confirms an IME composition (CJK, emoji pickers) is not a send.
-      if (event.isComposing || event.keyCode === 229) return
+      // Enter that confirms an IME composition (CJK, emoji pickers) is not a send; Shift+Enter is a new line.
+      if (event.isComposing || event.keyCode === 229 || event.shiftKey) return
       event.preventDefault()
       this.submit()
     }
@@ -177,15 +193,21 @@ export default {
   cursor: pointer;
 }
 
-.composer__row { display: flex; align-items: center; gap: 8px; }
+.composer__row { display: flex; align-items: flex-end; gap: 8px; }
 
 .composer__input {
   flex: 1;
   min-width: 0;
   min-height: 44px;
-  padding: 0 16px;
+  /* Five lines, then it scrolls: (11 + 11) padding + 2 border + 5 x 22 line. */
+  max-height: 134px;
+  box-sizing: border-box;
+  padding: 11px 16px;
   border: 1px solid var(--border-card);
   border-radius: 22px;
+  line-height: 22px;
+  resize: none;
+  overflow-y: auto;
   background: var(--bg-input);
   color: var(--text-primary);
   font-family: inherit;

@@ -545,7 +545,7 @@ test('money bar: disabled buttons are real disabled buttons', async () => {
 
 test('composer: a labelled field and a labelled send button, disabled while empty', async () => {
   const html = await render(Composer, {})
-  assert.match(html, /<input[^>]*aria-label="Message"/)
+  assert.match(html, /<textarea[^>]*rows="1"[^>]*aria-label="Message"/, 'one line that grows with the text')
   assert.match(html, /enterkeyhint="send"/)
   assert.match(tags(html, 'composer__send')[0], /aria-label="Send message"/)
   assert.match(tags(html, 'composer__send')[0], /disabled/)
@@ -592,7 +592,7 @@ test('composer: the reply preview names the author and can be cancelled', async 
   assert.deepEqual(Composer.emits, ['update:modelValue', 'send', 'cancel-reply'])
 })
 
-test('composer: Enter sends, except while an IME is composing; it never clears the text itself', () => {
+test('composer: Enter sends, except while an IME is composing or with Shift (a new line); it never clears the text itself', () => {
   const press = (props, event) => {
     const { vm, emitted } = vmOf(Composer, props)
     let prevented = false
@@ -606,6 +606,19 @@ test('composer: Enter sends, except while an IME is composing; it never clears t
   assert.equal(ime.prevented, false)
   assert.deepEqual(press({ modelValue: 'こん' }, { keyCode: 229 }).emitted, [])
   assert.deepEqual(press({ modelValue: 'Hi', secretKeyWarning: true }, {}).emitted, [], 'blocked')
+  const newLine = press({ modelValue: 'Hi' }, { shiftKey: true })
+  assert.deepEqual(newLine.emitted, [])
+  assert.equal(newLine.prevented, false, 'the field gets its new line')
+})
+
+test('composer: opening a chat does not raise the keyboard; the field grows up to five lines', () => {
+  assert.equal(Composer.props.autofocus.default, false)
+  const field = { style: {}, scrollHeight: 88 }
+  const { vm } = vmOf(Composer, {})
+  vm.$refs = { input: field }
+  vm.fitHeight()
+  assert.equal(field.style.height, '88px')
+  assert.match(read('Composer.vue'), /max-height: 134px/)
 })
 
 const ADDRESS = 'me@btc.mybuho.de'
