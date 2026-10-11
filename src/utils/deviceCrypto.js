@@ -18,6 +18,22 @@
 
 const STORAGE_KEY_DEVICE = 'buhoGO_device_key';
 
+/** Bytes per `String.fromCharCode` call: far below every engine's argument limit. */
+const BASE64_CHUNK = 0x8000;
+
+/**
+ * Base64 of any number of bytes. Spreading a large array into one
+ * `fromCharCode` call throws once it passes the engine's argument limit
+ * (about 64K in Safari), so the bytes go through in chunks.
+ */
+function bytesToBase64(bytes) {
+  let binary = '';
+  for (let i = 0; i < bytes.length; i += BASE64_CHUNK) {
+    binary += String.fromCharCode.apply(null, bytes.subarray(i, i + BASE64_CHUNK));
+  }
+  return btoa(binary);
+}
+
 /**
  * Get or create the device encryption key. Idempotent.
  */
@@ -36,7 +52,7 @@ export async function getDeviceKey() {
 
   if (!keyB64) {
     const raw = crypto.getRandomValues(new Uint8Array(32));
-    keyB64 = btoa(String.fromCharCode(...raw));
+    keyB64 = bytesToBase64(raw);
     localStorage.setItem(STORAGE_KEY_DEVICE, keyB64);
   }
 
@@ -68,7 +84,7 @@ export async function encryptString(plaintext) {
   result.set(iv, 0);
   result.set(new Uint8Array(encrypted), iv.length);
 
-  return btoa(String.fromCharCode(...result));
+  return bytesToBase64(result);
 }
 
 /**
