@@ -6,7 +6,9 @@
 //   InvoiceLedger   mints structurally valid BOLT-11 invoices and remembers which are paid, so
 //                   the receiver's stubbed wallet and the payer's stubbed wallet agree.
 //   LnurlServer     the LNURL-pay endpoint behind a Lightning address: the only place an invoice
-//                   for a chat request is ever created (when the payer taps Pay).
+//                   for a chat request is ever created (when the payer taps Pay). It also answers
+//                   LUD-21 verify calls. With no `receivingWalletId` the money lands in a wallet
+//                   that is not in the requester's app (Alby, Wallet of Satoshi...).
 import { createHash } from 'node:crypto';
 import { bech32 } from 'bech32';
 import { matchFilters, verifyAuthEvent, verifyEvent } from 'nostr-core';
@@ -216,7 +218,7 @@ export class InvoiceLedger {
  * app checks the payer's claim against.
  */
 export class LnurlServer {
-  constructor({ ledger, domain, receivingWalletId, minSendable = 1_000, maxSendable = 100_000_000_000 }) {
+  constructor({ ledger, domain, receivingWalletId = null, minSendable = 1_000, maxSendable = 100_000_000_000 }) {
     this.ledger = ledger;
     this.domain = domain;
     this.receivingWalletId = receivingWalletId;
@@ -226,6 +228,8 @@ export class LnurlServer {
     this.issued = [];
     /** Pay requests served (the well-known lookups), for assertions. */
     this.lookups = [];
+    /** Payment hashes asked through the LUD-21 verify URL, for assertions. */
+    this.verifications = [];
     /** Set to an LNURL error reason to make the next callback fail once. */
     this.failNext = null;
   }
@@ -262,8 +266,17 @@ export class LnurlServer {
       if (!Number.isSafeInteger(amountMsat) || amountMsat < this.minSendable || amountMsat > this.maxSendable) {
         return { status: 200, body: { status: 'ERROR', reason: 'Amount out of range' } };
       }
-      const { bolt11 } = this.issue({ name: callback[1], amountSats: Math.floor(amountMsat / 1000), comment: url.searchParams.get('comment') });
-      return { status: 200, body: { pr: bolt11, routes: [] } };
+      const { bolt11, paymentHash } = this.issue({ name: callback[1], amountSats: Math.floor(amountMsat / 1000), comment: url.searchParams.get('comment') });
+      return { status: 200, body: { pr: bolt11, routes: [], verify: `https://${this.domain}/lnurlp/verify/${paymentHash}` } };
+    }
+    // LUD-21: is this invoice settled? Answers with the preimage once the ledger shows it paid.
+    const verify = url.pathname.match(/^\/lnurlp\/verify\/([0-9a-f]{64})$/);
+    if (verify) {
+      this.verifications.push(verify[1]);
+      const entry = this.issued.find((issued) => issued.paymentHash === verify[1]);
+      const found = entry && this.ledger.byInvoice(entry.bolt11);
+      if (!found) return { status: 404, body: { status: 'ERROR', reason: 'Not found' } };
+      return { status: 200, body: { status: 'OK', settled: Boolean(found.paid), preimage: found.paid ? found.preimage : null, pr: found.bolt11 } };
     }
     return { status: 404, body: { status: 'ERROR', reason: 'not found' } };
   }

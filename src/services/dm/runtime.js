@@ -45,6 +45,7 @@ import { DM_ERROR, DmError } from './errors.js';
 import { createInbox, createSignAuth } from './inbox.js';
 import { INBOX_STATUS, createInboxRelayResolver } from './inboxRelays.js';
 import { matchIncomingPayments } from './paymentConfirmation.js';
+import { verifyPaymentViaAddress } from './paymentVerification.js';
 import {
   MESSAGE_TYPE,
   REQUEST_STATUS,
@@ -207,7 +208,8 @@ export function createInboxStoreAdapter(store, me) {
  * @property {() => string | null | undefined} getProfileAddress The profile's `lud16`.
  * @property {(pubkey: string, options: { timeoutMs: number }) => Promise<object | null>} fetchProfile
  *   The signed kind 0 of a person (`nostrFetch.fetchProfile`).
- * @property {{ fetchPayRequest: Function, requestInvoice: Function }} lnurl nostr-core's LNURL functions.
+ * @property {{ fetchPayRequest: Function, requestInvoice: Function, verifyPayment?: Function }} lnurl
+ *   nostr-core's LNURL functions. `verifyPayment` (LUD-21) lets a payment to an address outside the app be verified.
  * @property {{ find: (pubkey: string) => ChatContact | null }} contacts
  * @property {{ message: (notification: object) => Promise<boolean> | boolean }} notifications
  *   Posts a chat notification (`notifyMessageIfEnabled`); decides on settings and permission.
@@ -433,13 +435,13 @@ export function createChatRuntime(deps = {}) {
    * follow-up `paid` status is returned, not thrown.
    *
    * @param {string} partner
-   * @param {{ amountSats: number, note?: string, preimage?: string, requestId?: string }} payment
+   * @param {{ amountSats: number, note?: string, preimage?: string, requestId?: string, verifyUrl?: string }} payment
    * @returns {Promise<{ payment: import('./protocol.js').ChatMessage,
    *   status: import('./protocol.js').ChatMessage | null, statusError: string | null }>}
    * @throws {DmError} when the payment message itself cannot be written or sent
    *   (NO_INBOX_RELAYS, INVALID_ARGUMENT, KEY_WIPED, ...).
    */
-  async function announcePayment(partner, { amountSats, note, preimage, requestId } = {}) {
+  async function announcePayment(partner, { amountSats, note, preimage, requestId, verifyUrl } = {}) {
     const recipient = normalizePubkey(partner);
     assertUsable();
     const reference = requestId === undefined || requestId === null ? undefined : normalizePubkey(requestId, 'requestId');
@@ -447,7 +449,7 @@ export function createChatRuntime(deps = {}) {
     const cleanPreimage = typeof preimage === 'string' && preimage ? preimage.toLowerCase() : undefined;
 
     const sent = await sendTemplate(recipient, buildPaymentTemplate({
-      recipient, amountSats, preimage: cleanPreimage, note: cleanNote, requestId: reference, now: nowSeconds,
+      recipient, amountSats, preimage: cleanPreimage, note: cleanNote, requestId: reference, verifyUrl, now: nowSeconds,
     }));
     if (!reference) return { payment: sent, status: null, statusError: null };
 
@@ -511,7 +513,7 @@ export function createChatRuntime(deps = {}) {
    *
    * @param {string} partner
    * @param {string} requestId Rumor id of the partner's request.
-   * @returns {Promise<string>} The BOLT-11 invoice.
+   * @returns {Promise<{ bolt11: string, verifyUrl: string | null }>} The BOLT-11 invoice and its LUD-21 verify URL.
    * @throws {DmError} INVALID_ARGUMENT (no such open request), AMOUNT_OUT_OF_RANGE, INVOICE_FETCH_FAILED
    */
   async function fetchRequestInvoice(partner, requestId) {
@@ -560,16 +562,17 @@ export function createChatRuntime(deps = {}) {
 
   /**
    * How sure the user is that a request of theirs is paid, and where the money
-   * arrived. `verified`: their own wallet showed it (`settleClaims`).
-   * Unverified: only the payer says so.
+   * arrived. `verified`: their own wallet showed it, or their address confirmed
+   * it by LUD-21 (`settleClaims`). Unverified: only the payer says so.
    *
-   * @returns {{ verified: boolean, walletId: string | null } | null} Null while the request is not paid.
+   * @returns {{ verified: boolean, walletId: string | null, address: string | null } | null}
+   *   Null while the request is not paid. `address`: set when the address, not a wallet, confirmed it.
    */
   function requestSettlement(requestId) {
     const id = normalizePubkey(requestId, 'requestId');
     const settled = store.settlement(id);
-    if (settled) return { verified: true, walletId: settled.walletId };
-    return store.requestStatus(id, nowSeconds()) === 'paid' ? { verified: false, walletId: null } : null;
+    if (settled) return { verified: true, walletId: settled.walletId ?? null, address: settled.address ?? null };
+    return store.requestStatus(id, nowSeconds()) === 'paid' ? { verified: false, walletId: null, address: null } : null;
   }
 
   // ----- the payer's claim against the user's own ledger ------------------
@@ -593,6 +596,7 @@ export function createChatRuntime(deps = {}) {
         requestId: message.payment.requestId,
         createdAt: message.createdAt,
         payment: { amountSats: message.payment.amountSats, preimage: message.payment.preimage },
+        verifyUrl: message.payment.verifyUrl,
       });
       if (message.payment.requestId) withPayment.add(message.payment.requestId);
     }
@@ -617,15 +621,17 @@ export function createChatRuntime(deps = {}) {
    * (the preimage hashes to an incoming payment, else amount and time window;
    * one transaction per claim) makes the request `paid`, verified, links the
    * transaction to the contact and records where it landed. A claim no wallet
-   * shows stays what the payer said: "Reported paid, not verified".
+   * shows can still be confirmed by the requester's own Lightning address (LUD-21,
+   * `paymentVerification.js`) when the payment message carries a verify URL; else it stays
+   * what the payer said: "Reported paid, not verified".
    *
    * Requests already settled are skipped, so a payment is never linked twice.
    * Never rejects.
    *
-   * @returns {Promise<{ settled: number, pending: number }>} `pending`: claims still without a ledger match.
+   * @returns {Promise<{ settled: number, pending: number }>} `pending`: claims still unverified.
    */
   function settleClaims() {
-    if (disposed || store.scope !== me || typeof loadIncomingTransactions !== 'function') {
+    if (disposed || store.scope !== me || (typeof loadIncomingTransactions !== 'function' && typeof lnurl?.verifyPayment !== 'function')) {
       return Promise.resolve({ settled: 0, pending: 0 });
     }
     claimRun ??= (async () => {
@@ -647,7 +653,8 @@ export function createChatRuntime(deps = {}) {
         }
         if (work.length === 0) return { settled, pending };
 
-        const transactions = await loadIncomingTransactions();
+        const transactions = await (loadIncomingTransactions?.() ?? []);
+        const usedHashes = new Set(Object.values(store.settlements ?? {}).map((entry) => entry.paymentHash).filter(Boolean));
         for (const { partner, own, claims } of work) {
           const matches = matchIncomingPayments(claims, transactions);
           const done = new Set();
@@ -656,10 +663,20 @@ export function createChatRuntime(deps = {}) {
             if (!request || done.has(request.id) || store.settlement(request.id)) continue;
             const tx = matches.get(claim.id);
             // Money that came in but less than was asked is not the request paid.
-            if (!tx || tx.amountSats < request.request.amountSats) { pending += 1; continue; }
+            if (tx && tx.amountSats >= request.request.amountSats) {
+              if (disposed) break;
+              done.add(request.id);
+              await recordVerifiedPayment(partner, request, tx);
+              if (tx.paymentHash) usedHashes.add(tx.paymentHash.toLowerCase());
+              settled += 1;
+              continue;
+            }
+            const proof = claim.verifyUrl && await verifyViaAddress(claim.verifyUrl, request, usedHashes);
+            if (!proof) { pending += 1; continue; }
             if (disposed) break;
             done.add(request.id);
-            await recordVerifiedPayment(partner, request, tx);
+            usedHashes.add(proof.paymentHash);
+            store.setSettlement(request.id, { ...proof, paidAt: nowSeconds() });
             settled += 1;
           }
         }
@@ -673,9 +690,27 @@ export function createChatRuntime(deps = {}) {
     return claimRun;
   }
 
+  /** The payer's LUD-21 claim for one request, checked against the addresses the user named (see `paymentVerification.js`). */
+  function verifyViaAddress(verifyUrl, request, usedHashes) {
+    if (typeof lnurl?.verifyPayment !== 'function') return null;
+    return verifyPaymentViaAddress({
+      verifyUrl,
+      addresses: [request.request.lud16, getProfileAddress()],
+      amountSats: request.request.amountSats,
+      usedHashes,
+      verifyPayment: lnurl.verifyPayment,
+      setTimer,
+      clearTimer,
+    });
+  }
+
   /** The user's wallet showed the payment of one of their requests: record it and link the transaction. */
   async function recordVerifiedPayment(partner, request, tx) {
-    store.setSettlement(request.id, { walletId: tx.walletId ?? null, paidAt: tx.settledAt ?? nowSeconds() });
+    store.setSettlement(request.id, {
+      walletId: tx.walletId ?? null,
+      paidAt: tx.settledAt ?? nowSeconds(),
+      ...(tx.paymentHash ? { paymentHash: tx.paymentHash.toLowerCase() } : {}),
+    });
     if (linkPayment && tx.walletId) {
       try {
         await linkPayment({

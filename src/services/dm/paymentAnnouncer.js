@@ -69,6 +69,7 @@ export function createPaymentAnnouncer({ bus, runtime, noteFor, onError = () => 
         note: note || undefined,
         preimage: event.preimage || undefined,
         requestId: target.requestId ?? undefined,
+        verifyUrl: target.verifyUrl ?? undefined,
       });
       return true;
     } catch (error) {

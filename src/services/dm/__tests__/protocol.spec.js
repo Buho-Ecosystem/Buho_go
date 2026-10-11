@@ -16,7 +16,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { inspect } from 'node:util';
 import { createRumor, generateSecretKey, nip19 } from 'nostr-core';
-import { MAX_NOTE_LENGTH, MAX_TEXT_LENGTH, REQUEST_LIFETIME_SECONDS } from '../constants.js';
+import { MAX_NOTE_LENGTH, MAX_TEXT_LENGTH, MAX_VERIFY_URL_LENGTH, REQUEST_LIFETIME_SECONDS } from '../constants.js';
 import { DM_ERROR, DmError } from '../errors.js';
 import {
   MESSAGE_TYPE,
@@ -540,15 +540,41 @@ test('round trip: a payment, with and without request and note', () => {
   assert.equal(full.type, 'payment');
   assert.equal(full.degraded, false);
   assert.equal(full.text, '↗ Sent 5,000 sats – Coffee');
-  assert.deepEqual(full.payment, { amountSats: 5_000, note: 'Coffee', preimage: PREIMAGE, requestId: REQUEST_ID });
+  assert.deepEqual(full.payment, { amountSats: 5_000, note: 'Coffee', preimage: PREIMAGE, requestId: REQUEST_ID, verifyUrl: null });
 
   const bare = received(buildPaymentTemplate({ recipient: ME, amountSats: 1, preimage: PREIMAGE, now }));
-  assert.deepEqual(bare.payment, { amountSats: 1, note: null, preimage: PREIMAGE, requestId: null });
+  assert.deepEqual(bare.payment, { amountSats: 1, note: null, preimage: PREIMAGE, requestId: null, verifyUrl: null });
 
   const noProof = received(buildPaymentTemplate({ recipient: ME, amountSats: 7, now }));
   assert.equal(noProof.type, 'payment');
   assert.equal(noProof.degraded, false);
-  assert.deepEqual(noProof.payment, { amountSats: 7, note: null, preimage: null, requestId: null });
+  assert.deepEqual(noProof.payment, { amountSats: 7, note: null, preimage: null, requestId: null, verifyUrl: null });
+});
+
+test('payment: the optional LUD-21 verify tag round-trips', () => {
+  const url = 'https://getalby.com/lnurlp/alice/verify/abc';
+  const template = buildPaymentTemplate({ recipient: ME, amountSats: 5_000, requestId: REQUEST_ID, verifyUrl: url, now });
+  assert.deepEqual(template.tags.filter((t) => t[0] === 'verify'), [['verify', url]]);
+  assert.equal(received(template).payment.verifyUrl, url);
+  assert.equal(buildPaymentTemplate({ recipient: ME, amountSats: 5_000, now }).tags.some((t) => t[0] === 'verify'), false);
+});
+
+test('payment: a verify URL that is not https, too long or junk is dropped, never an error', () => {
+  const tooLong = `https://getalby.com/${'a'.repeat(MAX_VERIFY_URL_LENGTH)}`;
+  for (const bad of ['http://getalby.com/verify', 'javascript:alert(1)', 'not a url', tooLong, 42, '']) {
+    const built = buildPaymentTemplate({ recipient: ME, amountSats: 5_000, verifyUrl: bad, now });
+    assert.equal(built.tags.some((t) => t[0] === 'verify'), false, String(bad).slice(0, 30));
+    assert.equal(received(built).payment.verifyUrl, null);
+  }
+  // A foreign client's tag is dropped the same way when parsed; the payment itself stays intact.
+  for (const bad of ['http://getalby.com/verify', 'ftp://x/y', 'junk', tooLong]) {
+    const template = buildPaymentTemplate({ recipient: ME, amountSats: 5_000, now });
+    template.tags.push(['verify', bad]);
+    const message = received(template);
+    assert.equal(message.degraded, false);
+    assert.equal(message.payment.verifyUrl, null);
+    assert.equal(message.payment.amountSats, 5_000);
+  }
 });
 
 // [content, expected emoji]

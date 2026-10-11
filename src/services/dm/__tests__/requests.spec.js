@@ -23,7 +23,7 @@ const PARTNER = 'b'.repeat(64);
 const rejectsWith = (code) => (error) => DmError.is(error, code);
 
 /** LNURL server behind a Lightning address (Breez at btc.mybuho.de). */
-function fakeLnurl({ invoice = null, commentAllowed = 255, min = 1_000, max = 1_000_000_000 } = {}) {
+function fakeLnurl({ invoice = null, commentAllowed = 255, min = 1_000, max = 1_000_000_000, verify } = {}) {
   const server = {
     fetched: [],
     requested: [],
@@ -43,7 +43,7 @@ function fakeLnurl({ invoice = null, commentAllowed = 255, min = 1_000, max = 1_
     },
     async requestInvoice(payRequest, msats, options) {
       server.requested.push({ payRequest, msats, options });
-      return { pr: invoice.bolt11, routes: [] };
+      return { pr: invoice.bolt11, routes: [], verify };
     },
   };
   return server;
@@ -164,11 +164,30 @@ test('resolveRequesterAddress: without a usable profile address the signed one i
 test('pullInvoice: asks the address for exactly the amount, with the LUD-12 reference', async () => {
   const fresh = makeInvoice({ sats: 5_000, hash: 9 });
   const { service, lnurl } = setup({ lnurl: fakeLnurl({ invoice: fresh }) });
-  const bolt11 = await service.pullInvoice({ lud16: ADDRESS, amountSats: 5_000, reference: 'abc123' });
-  assert.equal(bolt11, fresh.bolt11);
+  const pulled = await service.pullInvoice({ lud16: ADDRESS, amountSats: 5_000, reference: 'abc123' });
+  assert.deepEqual(pulled, { bolt11: fresh.bolt11, verifyUrl: null });
   assert.deepEqual(lnurl.fetched, ['https://btc.mybuho.de/.well-known/lnurlp/anna']);
   assert.equal(lnurl.requested[0].msats, 5_000_000);
   assert.deepEqual(lnurl.requested[0].options, { comment: 'buho:req:abc123' });
+});
+
+test('pullInvoice: hands on the LUD-21 verify URL only when it is https on the callback host', async () => {
+  const cases = [
+    ['https://btc.mybuho.de/lnurlp/verify/abc', 'https://btc.mybuho.de/lnurlp/verify/abc'],
+    ['https://BTC.mybuho.de:8443/verify/abc', 'https://btc.mybuho.de:8443/verify/abc'],
+    ['http://btc.mybuho.de/verify/abc', null],
+    ['https://evil.example/verify/abc', null],
+    ['https://btc.mybuho.de.evil.example/verify/abc', null],
+    ['javascript:alert(1)', null],
+    ['not a url', null],
+    [42, null],
+    [undefined, null],
+  ];
+  for (const [verify, expected] of cases) {
+    const { service } = setup({ lnurl: fakeLnurl({ invoice: makeInvoice({ sats: 5_000 }), verify }) });
+    const pulled = await service.pullInvoice({ lud16: ADDRESS, amountSats: 5_000 });
+    assert.equal(pulled.verifyUrl, expected, String(verify));
+  }
 });
 
 test('pullInvoice: no comment when the server allows none or too few characters', async () => {

@@ -80,7 +80,7 @@ NIP-17 clients (0xchat, Amethyst, …) show something sensible.
 | text | 14 | `["p", recipient]`, optional `["e", replyToId, "", "reply"]` | the text |
 | request | 14 | `["p", recipient]`, `["buho", "request", "1"]`, `["amount", "<msat>"]`, `["lud16", "<address>"]`, `["valid_until", "<unix>"]`, optional `["note", "<text>"]` | `💸 Payment request: 12,000 sats – Pizza\nPay to: anna@btc.mybuho.de` |
 | status | 14 | `["p", recipient]`, `["e", requestId, "", "reply"]`, `["buho", "status", "<paid\|declined\|cancelled\|reminder>", "1"]`, optional `["preimage", "<hex>"]` | `✅ Paid: 12,000 sats` (or `✅ Paid`) / `✖️ Declined the payment request` / `↩️ Withdrew the payment request` / `🔔 Reminder: payment request still open` |
-| payment | 14 | `["p", recipient]`, `["buho", "payment", "1"]`, `["amount", "<msat>"]`, optional `["note", "<text>"]`, `["preimage", "<hex>"]`, `["e", requestId, "", "reply"]` | `↗ Sent 5,000 sats – Coffee` |
+| payment | 14 | `["p", recipient]`, `["buho", "payment", "1"]`, `["amount", "<msat>"]`, optional `["note", "<text>"]`, `["preimage", "<hex>"]`, `["e", requestId, "", "reply"]`, optional `["verify", "<url>"]` | `↗ Sent 5,000 sats – Coffee` |
 | reaction | 7 | `["e", targetId]`, `["p", partner]`, `["k", "14"]` | the emoji |
 
 No NIP-40 `expiration` tag on rumors or wraps: other clients and relays would
@@ -102,6 +102,12 @@ Parsing rules (`protocol.parseRumor`):
   incoming payment line only when the own wallet confirms it
   (`sha256(preimage) === paymentHash` of an incoming transaction, otherwise
   amount + time window). Without a match it renders as a normal message.
+- The optional `verify` tag of a `payment` carries the LUD-21 verify URL of the
+  invoice that was paid (section 8a). It must be `https:` and at most
+  `MAX_VERIFY_URL_LENGTH` (1,000) characters; anything else is dropped (the
+  payment itself stays intact, it is just not verifiable that way). The URL is
+  untrusted: the receiver fetches it only on the host of its own Lightning
+  address.
 - Text length is capped at `MAX_TEXT_LENGTH` (2,000 chars). The rumor JSON is
   capped at `MAX_RUMOR_BYTES` (40,000). NIP-44 encrypts at most 65,535 bytes,
   but the binding limit is the gift wrap's: it encrypts the seal, which already
@@ -252,7 +258,7 @@ store, clock) so they can be unit tested without network or Pinia.
   replyTo,                   // rumor id or null
   request,                   // { amountSats, note, lud16, validUntil } | null
   status,                    // { requestId, value, preimage } | null
-  payment,                   // { amountSats, note, preimage (or null), requestId } | null
+  payment,                   // { amountSats, note, preimage (or null), requestId, verifyUrl (or null) } | null
   reaction,                  // { targetId, emoji } | null
   degraded,                  // true when a buho payload was invalid
 }
@@ -289,8 +295,9 @@ Requesting (a notice, no invoice):
   `PAYMENT_ADDRESS_UNREACHABLE`, `AMOUNT_OUT_OF_RANGE`. Only then is the request
   sent; nothing is created or watched.
 - **Detect paid:** the payer's `payment` message (requestId, optional preimage)
-  and `paid` status are matched against the requester's own wallet ledger
-  (section 8a). This is the only detection path.
+  and `paid` status are matched against the requester's own wallet ledger;
+  when no wallet of theirs shows the money, the LUD-21 verify URL of the payment
+  is asked on the domain of their own address (section 8a).
 
 Paying a request / sending:
 - When the payer taps Pay, the app creates the invoice: it fetches the
@@ -306,7 +313,7 @@ Paying a request / sending:
 | Messages | ✓ | ✓ | ✓ | ✓ |
 | Request | ✓ via profile address | ✓ via profile address | ✓ via profile address | ✓ via profile address |
 | Pay / send | ✓ | ✓ with `pay_invoice` | ✓ | disabled: Lightning unavailable |
-| Detect paid | ledger match of the payer's claim | ledger match | ledger match | ledger match (if the wallet lists incoming payments) |
+| Detect paid | ledger match of the payer's claim, else LUD-21 on the address | same | same | same (ledger if the wallet lists incoming payments) |
 
 ## 8a. Paying a request (no dead ends)
 
@@ -323,16 +330,29 @@ the invoice does not exist until the payer taps Pay.
   request is used. It then pulls an invoice via LNURL-pay for exactly the
   requested amount (LUD-12 comment `buho:req:<reference>` when allowed),
   validates it (decodes, mainnet, exact amount, not expired, within
-  min/maxSendable) and hands it to the normal pipeline with "Pay with". A failed
+  min/maxSendable) and hands it to the normal pipeline with "Pay with". The
+  LUD-21 `verify` URL of the LNURL answer is kept when it is `https:` on the
+  callback's host and rides along in the payment context, so the `payment`
+  message carries it. A failed
   fetch is a clear error (`INVOICE_FETCH_FAILED`, `AMOUNT_OUT_OF_RANGE`) and
   nothing is paid. Never an address from contact data.
 - **Requester confirms payment:** the payer's `payment` message (requestId,
   preimage if any) is matched against the requester's own wallet ledger
   (preimage hash, else amount + time window, one tx per claim) → the request
   becomes `paid` (verified), the tx is linked to the contact and the card says
-  where it was received. Without a ledger match it stays "Reported paid, not
-  verified". Claim re-checks run at 5 s, 20 s, 60 s, on chat open and on every
-  resume.
+  where it was received. The ledger match is always preferred.
+- **LUD-21 for addresses outside the app** (Alby, Wallet of Satoshi, ...): when
+  no ledger match exists and the payment message has a `verify` URL, the
+  requester asks it, but only if it is `https:` and its host equals the domain
+  of the request's signed `lud16` or of their current profile `lud16`
+  (SSRF guard: no other host is ever fetched; 5 s timeout). It counts only when
+  the answer is `settled: true`, the returned `pr` decodes as a mainnet invoice
+  for at least the requested amount, a returned `preimage` hashes to the
+  invoice's payment hash, and that payment hash has not settled another request.
+  The settlement is then recorded as `{ address, paymentHash, paidAt }` (no
+  wallet) and the card says "Received at <address>". Otherwise it stays
+  "Reported paid, not verified". Claim re-checks (ledger and LUD-21) run at 5 s,
+  20 s, 60 s, on chat open and on every resume.
 - **Next action in every state:**
 
   | State | Payer | Requester |
@@ -346,9 +366,12 @@ the invoice does not exist until the payer taps Pay.
   stays "not verified"; a payer's `paid` status without a payment message
   counts as a claim.
 - Trade-off: the money lands in the wallet behind the requester's profile
-  address; the paid card names the wallet. A payment to an address whose
-  receipts the app cannot list (npub.cash bucket until claimed) stays "Reported
-  paid, not verified".
+  address; the paid card names the wallet, or the address when LUD-21 verified
+  it. A payment to an address whose receipts the app can neither list nor verify
+  by LUD-21 (a service without LUD-21, npub.cash bucket until claimed) stays
+  "Reported paid, not verified". "Send anyway" goes through the generic send
+  flow, which does not carry the verify URL: such a late payment is verified by
+  the ledger only.
 
 ## 9. Notifications
 

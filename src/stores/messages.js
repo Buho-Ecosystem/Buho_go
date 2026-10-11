@@ -424,7 +424,7 @@ export const useMessagesStore = defineStore('messages', {
 
     unreadFor: state => (partner) => state.threads[hexKey(partner)]?.unread ?? 0,
 
-    /** `settlement(id)` -> `{ walletId, paidAt }` once a wallet of the user confirmed the payment of an own request, or null. */
+    /** `settlement(id)` -> `{ walletId?, address?, paymentHash?, paidAt }` once a wallet of the user confirmed the payment of an own request, or null. */
     settlement: state => requestId => state.settlements[requestId] ?? null,
 
     isBlocked: state => pubkey => state.blocked.includes(hexKey(pubkey)),
@@ -825,7 +825,9 @@ export const useMessagesStore = defineStore('messages', {
      * wallet confirmed (which wallet, when). Records of requests that no
      * longer exist are dropped by `prune`.
      * @param {string} requestId Rumor id of the request.
-     * @param {{ walletId: string | null, paidAt: number }} settlement
+     * @param {{ walletId?: string | null, address?: string, paymentHash?: string, paidAt: number }} settlement
+     *   `walletId`: a wallet of the user showed the money. `address`: the user's Lightning address
+     *   confirmed it by LUD-21 (no wallet). `paymentHash` keeps one payment from settling two requests.
      */
     setSettlement(requestId, settlement) {
       const id = hexKey(requestId)

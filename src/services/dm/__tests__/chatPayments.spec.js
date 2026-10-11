@@ -25,17 +25,25 @@ const REQUEST = 'b'.repeat(64);
 
 test('context: a plain send and a request payment round-trip', () => {
   assert.equal(buildChatPaymentContext(PARTNER), `chat:${PARTNER}`);
-  assert.deepEqual(parseChatPaymentContext(`chat:${PARTNER}`), { partner: PARTNER, requestId: null });
+  assert.deepEqual(parseChatPaymentContext(`chat:${PARTNER}`), { partner: PARTNER, requestId: null, verifyUrl: null });
   const withRequest = buildChatPaymentContext(PARTNER.toUpperCase(), REQUEST.toUpperCase());
   assert.equal(withRequest, `chat:${PARTNER}:${REQUEST}`);
-  assert.deepEqual(parseChatPaymentContext(withRequest), { partner: PARTNER, requestId: REQUEST });
+  assert.deepEqual(parseChatPaymentContext(withRequest), { partner: PARTNER, requestId: REQUEST, verifyUrl: null });
+});
+
+test('context: the verify URL rides along, colons and all, and needs a request', () => {
+  const url = 'https://getalby.com:8443/lnurlp/alice/verify/abc';
+  const context = buildChatPaymentContext(PARTNER, REQUEST, url);
+  assert.equal(context, `chat:${PARTNER}:${REQUEST}:${url}`);
+  assert.deepEqual(parseChatPaymentContext(context), { partner: PARTNER, requestId: REQUEST, verifyUrl: url });
+  assert.equal(buildChatPaymentContext(PARTNER, undefined, url), `chat:${PARTNER}`);
 });
 
 test('context: builders refuse malformed ids, the parser refuses everything that is not exactly a chat context', () => {
   assert.throws(() => buildChatPaymentContext('nope'), TypeError);
   assert.throws(() => buildChatPaymentContext(PARTNER, 'short'), TypeError);
   for (const bad of [null, undefined, 42, '', 'chat', 'chat:', `chat:${PARTNER}:`, `chat:${PARTNER}:zz`,
-    `chat:xyz`, `other:${PARTNER}`, `chat:${PARTNER}:${REQUEST}:extra`, `CHAT:${PARTNER}`]) {
+    `chat:xyz`, `other:${PARTNER}`, `CHAT:${PARTNER}`]) {
     assert.equal(parseChatPaymentContext(bad), null, String(bad));
   }
 });
@@ -73,12 +81,16 @@ test('announcer: a chat payment is announced to the partner, with the request id
   const { bus, calls, announcer } = harness();
   announcer.start();
   bus.emit(PAYMENT_SENT_EVENT, {
-    context: buildChatPaymentContext(PARTNER, REQUEST), amountSats: 25_000, preimage: 'c'.repeat(64), note: null,
+    context: buildChatPaymentContext(PARTNER, REQUEST, 'https://getalby.com/verify/abc'),
+    amountSats: 25_000, preimage: 'c'.repeat(64), note: null,
   });
   await flush();
   assert.deepEqual(calls, [{
     partner: PARTNER,
-    payment: { amountSats: 25_000, note: 'Pizza', preimage: 'c'.repeat(64), requestId: REQUEST },
+    payment: {
+      amountSats: 25_000, note: 'Pizza', preimage: 'c'.repeat(64), requestId: REQUEST,
+      verifyUrl: 'https://getalby.com/verify/abc',
+    },
   }]);
 });
 
@@ -87,7 +99,7 @@ test('announcer: a plain send carries the comment as the note and no request id'
   announcer.start();
   bus.emit(PAYMENT_SENT_EVENT, { context: buildChatPaymentContext(PARTNER), amountSats: 5000, note: 'Coffee' });
   await flush();
-  assert.deepEqual(calls[0].payment, { amountSats: 5000, note: 'Coffee', preimage: undefined, requestId: undefined });
+  assert.deepEqual(calls[0].payment, { amountSats: 5000, note: 'Coffee', preimage: undefined, requestId: undefined, verifyUrl: undefined });
 });
 
 test('announcer: payments without a chat context, or without an amount, are ignored', async () => {

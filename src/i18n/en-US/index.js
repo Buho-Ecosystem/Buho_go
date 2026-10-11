@@ -3405,6 +3405,7 @@ export default {
   "Request again": "Request again",
   "Send anyway": "Send anyway",
   "Received in {wallet}": "Received in {wallet}",
+  "Received at {address}": "Received at {address}",
   "This wallet cannot pay this request. Choose another wallet.": "This wallet cannot pay this request. Choose another wallet.",
   "Decline": "Decline",
   "Remind": "Remind",

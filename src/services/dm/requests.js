@@ -82,6 +82,23 @@ function validateInvoice(bolt11, amountSats, nowSec) {
 }
 
 /**
+ * The LUD-21 `verify` URL of an LNURL-pay answer, only when it is `https:` and on
+ * the callback's host (nostr-core `validateVerifyUrl` rule). Else null: the
+ * payment is then simply not verifiable by the requester.
+ */
+function sameHostVerifyUrl(verifyUrl, callbackUrl) {
+  if (typeof verifyUrl !== 'string' || typeof callbackUrl !== 'string') return null;
+  try {
+    const verify = new URL(verifyUrl);
+    const callback = new URL(callbackUrl);
+    const sameHost = verify.hostname.toLowerCase() === callback.hostname.toLowerCase();
+    return verify.protocol === 'https:' && sameHost ? verify.toString() : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * @param {object} deps
  * @param {() => string|null|undefined} deps.getProfileAddress  The user's profile `lud16`.
  * @param {(pubkey: string, options: { timeoutMs: number }) => Promise<object|null>} deps.fetchProfile
@@ -168,14 +185,15 @@ export function createRequestService({
    *
    * Validated before it is handed on: the amount lies within the address's
    * min/maxSendable, the invoice decodes, is mainnet, is for exactly
-   * `amountSats` and is not yet expired. When the server allows a comment
+   * `amountSats` and is not yet expired. The LUD-21 verify URL comes along when
+   * it is `https:` on the callback's host. When the server allows a comment
    * (LUD-12) it carries `buho:req:<reference>`.
    *
    * @param {object} options
    * @param {string} options.lud16 Where to ask (`resolveRequesterAddress`).
    * @param {number} options.amountSats The requested amount, whole sats.
    * @param {string} [options.reference] LUD-12 reference (default: random).
-   * @returns {Promise<string>} The BOLT-11 invoice.
+   * @returns {Promise<{ bolt11: string, verifyUrl: string | null }>} The BOLT-11 invoice and its LUD-21 verify URL.
    * @throws {DmError} INVALID_ARGUMENT, AMOUNT_OUT_OF_RANGE, INVOICE_FETCH_FAILED
    */
   async function pullInvoice({ lud16, amountSats, reference = randomReference() } = {}) {
@@ -189,7 +207,8 @@ export function createRequestService({
       return fail(DM_ERROR.INVOICE_FETCH_FAILED, 'the Lightning address did not issue an invoice', { cause });
     }
     try {
-      return validateInvoice(response?.pr, amountSats, Math.floor(now() / 1000));
+      const bolt11 = validateInvoice(response?.pr, amountSats, Math.floor(now() / 1000));
+      return { bolt11, verifyUrl: sameHostVerifyUrl(response.verify, payRequest.callback) };
     } catch (cause) {
       return fail(DM_ERROR.INVOICE_FETCH_FAILED, 'the Lightning address issued an invalid invoice', { cause });
     }

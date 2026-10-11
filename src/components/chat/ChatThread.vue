@@ -27,7 +27,7 @@
         outgoing,         // true = the user requested
         state,            // 'pending' | 'paid' | 'declined' | 'cancelled' | 'expired' (derived)
         validUntil,       // unix seconds: when the request stops being open
-        settlement,       // own paid request: { verified, walletName } | null
+        settlement,       // own paid request: { verified, walletName, address } | null
         disabledReason,   // why the user cannot pay now (translated) | ''
         untrusted,        // sender is a stranger
         busy              // an action is in flight
@@ -111,6 +111,7 @@
               :valid-until="row.item.request.validUntil ?? null"
               :paid-verified="row.item.request.settlement ? row.item.request.settlement.verified : true"
               :received-in="row.item.request.settlement?.walletName || ''"
+              :received-at="row.item.request.settlement?.address || ''"
               :disabled-reason="row.item.request.disabledReason || ''"
               :untrusted="!!row.item.request.untrusted"
               :busy="!!row.item.request.busy"

@@ -419,6 +419,14 @@ test('request card: a paid request of the requester says where it arrived or tha
   assert.doesNotMatch(reported, /Received in/)
   assert.doesNotMatch(await card({ outgoing: true, state: 'paid' }), /Received in/, 'unknown wallet: no claim')
   assert.doesNotMatch(await card({ state: 'paid', receivedIn: 'Spark' }), /Received in/, 'the payer has nothing received')
+
+  const byAddress = await card({ outgoing: true, state: 'paid', paidVerified: true, receivedAt: 'alice@getalby.com' })
+  assert.match(byAddress, /Received at alice@getalby\.com/)
+  assert.doesNotMatch(byAddress, /Received in/)
+  const both = await card({ outgoing: true, state: 'paid', paidVerified: true, receivedIn: 'Spark', receivedAt: 'alice@getalby.com' })
+  assert.match(both, /Received in Spark/, 'a wallet of the user wins')
+  assert.doesNotMatch(await card({ outgoing: true, state: 'paid', paidVerified: false, receivedAt: 'alice@getalby.com' }), /Received at/)
+  assert.doesNotMatch(await card({ state: 'paid', receivedAt: 'alice@getalby.com' }), /Received at/, 'the payer has nothing received')
 })
 
 test('request card: no "amount in invoice" row, ever', async () => {

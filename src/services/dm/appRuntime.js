@@ -36,7 +36,7 @@ export const CHAT_REQUEST_SOURCE = 'chat-request';
  * @param {object} stores.transactionMetadata
  * @param {object} services
  * @param {() => { ensureRelay: Function }} services.getRelayPool
- * @param {{ fetchPayRequest: Function, requestLnurlInvoice: Function }} services.lnurl nostr-core's functions.
+ * @param {{ fetchPayRequest: Function, requestLnurlInvoice: Function, verifyPayment?: Function }} services.lnurl nostr-core's functions.
  * @param {(pubkey: string, options: { timeoutMs: number }) => Promise<object | null>} services.fetchProfile
  *   `nostrFetch.fetchProfile`: how a payer finds the requester's current Lightning address.
  * @param {() => boolean} services.isLocked
@@ -64,6 +64,7 @@ export function createAppRuntimeFactory(stores, services) {
       lnurl: {
         fetchPayRequest: services.lnurl.fetchPayRequest,
         requestInvoice: services.lnurl.requestLnurlInvoice,
+        verifyPayment: services.lnurl.verifyPayment,
       },
       contacts: {
         find(contactPubkey) {

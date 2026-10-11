@@ -30,7 +30,7 @@ test('the factory maps every runtime dependency onto the right store call', asyn
     transactionMetadata: { enqueuePendingContactLink: async (link) => { calls.push(['link', link]); } },
   }, {
     getRelayPool: () => ({ ensureRelay: async (url, options) => { calls.push(['relay', url, options]); return {}; } }),
-    lnurl: { fetchPayRequest: 'F', requestLnurlInvoice: 'R' },
+    lnurl: { fetchPayRequest: 'F', requestLnurlInvoice: 'R', verifyPayment: 'V' },
     fetchProfile: 'P',
     normalizeTx: (raw) => ({ type: 'incoming', status: 'completed', amount: raw.amount, paymentHash: raw.hash, settled_at: raw.at }),
     isLocked: () => true,
@@ -49,7 +49,7 @@ test('the factory maps every runtime dependency onto the right store call', asyn
   assert.equal((await captured.loadSecretKey())[0], 7);
   assert.equal(captured.getProfileAddress(), 'me@buho.example');
   assert.equal(captured.fetchProfile, 'P');
-  assert.deepEqual(captured.lnurl, { fetchPayRequest: 'F', requestInvoice: 'R' });
+  assert.deepEqual(captured.lnurl, { fetchPayRequest: 'F', requestInvoice: 'R', verifyPayment: 'V' });
   assert.deepEqual(await captured.loadIncomingTransactions(), []);
   assert.deepEqual(captured.contacts.find(partner), { id: 'c1', name: 'Pat' });
   assert.equal(captured.contacts.find('c'.repeat(64)), null);

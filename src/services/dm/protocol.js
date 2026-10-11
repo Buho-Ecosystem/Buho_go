@@ -27,6 +27,7 @@ import {
   KIND,
   MAX_NOTE_LENGTH,
   MAX_TEXT_LENGTH,
+  MAX_VERIFY_URL_LENGTH,
   PROTOCOL_VERSION,
   REQUEST_LIFETIME_SECONDS,
 } from './constants.js';
@@ -194,13 +195,29 @@ function normalizeStatus({ requestId, value, preimage }) {
 }
 
 /** The payload of a payment, validated and normalised. */
-function normalizePayment({ amountSats, note, preimage, requestId }) {
+function normalizePayment({ amountSats, note, preimage, requestId, verifyUrl }) {
   return {
     amountSats: requireSats(amountSats),
     note: normalizeNote(note),
     preimage: preimage === undefined || preimage === null ? null : requireHex(preimage, 'preimage'),
     requestId: requestId === undefined || requestId === null ? null : requireHex(requestId, 'requestId'),
+    verifyUrl: normalizeVerifyUrl(verifyUrl),
   };
+}
+
+/**
+ * The LUD-21 verify URL of a payment: `https:` and at most `MAX_VERIFY_URL_LENGTH`
+ * characters, or null. Anything else is dropped (the claim then stays unverified),
+ * never an error.
+ */
+export function normalizeVerifyUrl(url) {
+  if (typeof url !== 'string' || url.length > MAX_VERIFY_URL_LENGTH) return null;
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === 'https:' ? parsed.toString() : null;
+  } catch {
+    return null;
+  }
 }
 
 /** A reaction's emoji: `+` and `-` expand to thumbs, anything else must be short and non-blank. */
@@ -380,13 +397,14 @@ export function buildStatusTemplate({ recipient, requestId, value, preimage, amo
  * @param {string} [options.preimage] 64 hex, when the wallet returned one.
  * @param {string} [options.note] At most `MAX_NOTE_LENGTH` code points.
  * @param {string} [options.requestId] Rumor id of the request this pays.
+ * @param {string} [options.verifyUrl] LUD-21 verify URL of the invoice that was paid (`https:` only, else dropped).
  * @param {() => number} [options.now] Clock in unix seconds.
  * @returns {EventTemplate}
  * @throws {DmError} `INVALID_ARGUMENT` or `MESSAGE_TOO_LARGE`.
  */
-export function buildPaymentTemplate({ recipient, amountSats, preimage, note, requestId, now = unixNow } = {}) {
+export function buildPaymentTemplate({ recipient, amountSats, preimage, note, requestId, verifyUrl, now = unixNow } = {}) {
   const { to, createdAt } = begin(recipient, now);
-  const payment = normalizePayment({ amountSats, note, preimage, requestId });
+  const payment = normalizePayment({ amountSats, note, preimage, requestId, verifyUrl });
   const tags = [
     ['p', to],
     ['buho', MESSAGE_TYPE.PAYMENT, PROTOCOL_VERSION],
@@ -395,6 +413,7 @@ export function buildPaymentTemplate({ recipient, amountSats, preimage, note, re
   if (payment.note) tags.push(['note', payment.note]);
   if (payment.preimage) tags.push(['preimage', payment.preimage]);
   if (payment.requestId) tags.push(replyTag(payment.requestId));
+  if (payment.verifyUrl) tags.push(['verify', payment.verifyUrl]);
   const content = `↗ Sent ${formatSats(payment.amountSats)} sats${noteSuffix(payment.note)}`;
   return { kind: KIND.DM, tags, content, created_at: createdAt };
 }
@@ -527,6 +546,7 @@ function readBuhoPayload(tags, createdAt) {
           note: singleTagValue(tags, 'note'),
           preimage: singleTagValue(tags, 'preimage'),
           requestId: replyTarget(tags),
+          verifyUrl: singleTagValue(tags, 'verify'),
         }),
       };
     default:
@@ -548,7 +568,7 @@ function readBuhoPayload(tags, createdAt) {
  * @property {string | null} replyTo Rumor id answered, or null.
  * @property {{ amountSats: number, note: string | null, lud16: string, validUntil: number } | null} request
  * @property {{ requestId: string, value: string, preimage: string | null } | null} status
- * @property {{ amountSats: number, note: string | null, preimage: string | null, requestId: string | null } | null} payment
+ * @property {{ amountSats: number, note: string | null, preimage: string | null, requestId: string | null, verifyUrl: string | null } | null} payment
  * @property {{ targetId: string, emoji: string } | null} reaction
  * @property {boolean} degraded True when a `buho` payload was unknown or invalid.
  */

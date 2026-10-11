@@ -26,6 +26,7 @@ const { buildThreadItems, describeDmError, useContactChat } = await import('../u
 const hex = (ch) => ch.repeat(64);
 const ME = hex('1');
 const ANNA = hex('a');
+const VERIFY = 'https://getalby.com/lnurlp/anna/verify/abc';
 const rid = (n) => n.toString(16).padStart(64, '0');
 const t = (key, params = {}) => key.replace(/\{(\w+)\}/g, (_, name) => params[name] ?? name);
 
@@ -146,8 +147,8 @@ test('items: a paid own request says where it arrived only when the wallet showe
     settlementOf: (m) => (m === own ? { verified: true, walletId: 'biz' } : { verified: false, walletId: null }),
     walletNameOf: (id) => (id === 'biz' ? 'Spark Business' : ''),
   });
-  assert.deepEqual(items[0].request.settlement, { verified: true, walletName: 'Spark Business' });
-  assert.deepEqual(items[1].request.settlement, { verified: false, walletName: '' });
+  assert.deepEqual(items[0].request.settlement, { verified: true, walletName: 'Spark Business', address: '' });
+  assert.deepEqual(items[1].request.settlement, { verified: false, walletName: '', address: '' });
 });
 
 test('items: status messages are not rows, except the partner\'s reminder', () => {
@@ -288,7 +289,7 @@ function fakeRuntime(overrides = {}) {
     requestState: () => null,
     requestSettlement: () => null,
     settleClaims: async () => ({ settled: 0, pending: 0 }),
-    fetchRequestInvoice: async () => 'lnbc-fresh',
+    fetchRequestInvoice: async () => ({ bolt11: 'lnbc-fresh', verifyUrl: null }),
     requestAddress: async () => 'anna@current.example',
     ...overrides,
   };
@@ -502,7 +503,7 @@ test('pay a request: the invoice is fetched now and the existing pipeline gets i
   const theirs = request({ createdAt: seconds() - 10 });
   ingest(theirs);
   const fetched = [];
-  const runtime = fakeRuntime({ fetchRequestInvoice: async (partner, id) => { fetched.push([partner, id]); return 'lnbc-fresh'; } });
+  const runtime = fakeRuntime({ fetchRequestInvoice: async (partner, id) => { fetched.push([partner, id]); return { bolt11: 'lnbc-fresh', verifyUrl: VERIFY }; } });
   const { chat, pay } = setup({ runtime, contact: { id: 'c1', name: 'Anna' } });
   assert.deepEqual(await chat.payRequest(theirs.id), { ok: true });
   assert.deepEqual(fetched, [[ANNA, theirs.id]]);
@@ -512,7 +513,7 @@ test('pay a request: the invoice is fetched now and the existing pipeline gets i
   assert.deepEqual(invoice, { bolt11: 'lnbc-fresh', name: 'Anna' });
   assert.equal(options.walletId, 'biz');
   assert.equal(options.contactId, 'c1');
-  assert.deepEqual(parseChatPaymentContext(options.context), { partner: ANNA, requestId: theirs.id });
+  assert.deepEqual(parseChatPaymentContext(options.context), { partner: ANNA, requestId: theirs.id, verifyUrl: VERIFY });
 });
 
 test('pay a request: an unusable pick is left to the wallet page, requests of your own are not payable', async () => {
@@ -554,7 +555,7 @@ test('send money: the contact\'s address goes through payContact with the chat c
   assert.equal(name, 'payContact');
   assert.equal(entry, contact);
   assert.equal(options.walletId, 'biz');
-  assert.deepEqual(parseChatPaymentContext(options.context), { partner: ANNA, requestId: null });
+  assert.deepEqual(parseChatPaymentContext(options.context), { partner: ANNA, requestId: null, verifyUrl: null });
 
   const spark = setup({ contact: { ...contact, addressType: 'spark' } });
   spark.chat.sendMoney();
@@ -618,7 +619,7 @@ test('send anyway: the ordinary send flow to the current address with amount and
   assert.equal(options.amountSats, 25_000);
   assert.equal(options.note, 'Pizza');
   assert.equal(options.walletId, 'biz');
-  assert.deepEqual(parseChatPaymentContext(options.context), { partner: ANNA, requestId: theirs.id });
+  assert.deepEqual(parseChatPaymentContext(options.context), { partner: ANNA, requestId: theirs.id, verifyUrl: null });
 });
 
 test('send anyway: only the payer sends, and a failing lookup pays nothing', async () => {
@@ -657,8 +658,13 @@ test('a paid own request names the wallet it arrived in only when the runtime ve
     const { chat } = setup({ runtime: fakeRuntime({ requestState: () => 'paid', requestSettlement: () => settlement }) });
     return chat.items.value.find((i) => i.type === 'request').request;
   };
-  assert.deepEqual(card({ verified: false, walletId: null }).settlement, { verified: false, walletName: '' });
+  assert.deepEqual(card({ verified: false, walletId: null }).settlement, { verified: false, walletName: '', address: '' });
   assert.equal(card({ verified: true, walletId: 'biz' }).settlement.verified, true);
+  assert.deepEqual(
+    card({ verified: true, walletId: null, address: 'anna@getalby.com' }).settlement,
+    { verified: true, walletName: '', address: 'anna@getalby.com' },
+    'confirmed by the address: no wallet, the address is named',
+  );
 });
 
 test('opening the chat and every resume ask the runtime to check payment claims', async () => {

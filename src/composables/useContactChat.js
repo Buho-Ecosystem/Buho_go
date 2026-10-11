@@ -78,7 +78,7 @@ function clip(text, max = REPLY_PREVIEW_CHARS) {
  * @property {(id: string) => Array<{ emoji: string, count: number, mine: boolean }>} reactionsFor
  * @property {(message: object) => string | null} requestStateOf State of a request message.
  * @property {(message: object) => string} disabledReasonOf Why a pending incoming request cannot be paid ('' = can).
- * @property {(message: object) => ({ verified: boolean, walletId: string | null } | null)} [settlementOf]
+ * @property {(message: object) => ({ verified: boolean, walletId: string | null, address?: string | null } | null)} [settlementOf]
  *   How sure the user is that their own request is paid, and where it arrived.
  * @property {(walletId: string | null) => string} [walletNameOf] Display name of a wallet ('' when unknown).
  * @property {Set<string>} [confirmedPayments] Ids of incoming payment messages a wallet confirmed.
@@ -141,7 +141,11 @@ export function buildThreadItems(input) {
         const pendingToPay = state === 'pending' && !message.outgoing;
         const found = state === 'paid' && message.outgoing ? settlementOf(message) : null;
         const settlement = state === 'paid' && message.outgoing
-          ? { verified: found?.verified === true, walletName: found?.verified ? walletNameOf(found.walletId) : '' }
+          ? {
+            verified: found?.verified === true,
+            walletName: found?.verified && found.walletId ? walletNameOf(found.walletId) : '',
+            address: found?.verified ? found.address || '' : '',
+          }
           : null;
         items.push({
           key: message.id,
@@ -567,11 +571,12 @@ export function useContactChat(options) {
     if (!fetched.ok) return fetched;
     const payer = payingWalletFor(message.request.amountSats, 'lightning');
     pay.payInvoice(
-      { bolt11: fetched.value, name: partnerName() },
+      { bolt11: fetched.value.bolt11, name: partnerName() },
       {
         // An unusable pick is not forced on the wallet page: its own sheet explains and offers the others.
         walletId: payer?.usable ? payer.id : undefined,
-        context: buildChatPaymentContext(partner(), message.id),
+        // The verify URL (LUD-21) rides along so the announcement can carry it.
+        context: buildChatPaymentContext(partner(), message.id, fetched.value.verifyUrl),
         // The invoice has no address, so the contact is named for the history link.
         contactId: contact()?.id,
       },

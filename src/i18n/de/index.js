@@ -3411,6 +3411,7 @@ export default {
   "Request again": "Erneut anfordern",
   "Send anyway": "Trotzdem senden",
   "Received in {wallet}": "Empfangen in {wallet}",
+  "Received at {address}": "Empfangen bei {address}",
   "This wallet cannot pay this request. Choose another wallet.": "Diese Wallet kann die Anfrage nicht bezahlen. Wähle eine andere Wallet.",
   "Decline": "Ablehnen",
   "Remind": "Erinnern",

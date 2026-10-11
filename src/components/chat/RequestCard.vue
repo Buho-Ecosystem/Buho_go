@@ -150,6 +150,8 @@ export default {
     paidVerified: { type: Boolean, default: true },
     /** Own request, paid and verified: name of the wallet it arrived in ("Received in {wallet}"). */
     receivedIn: { type: String, default: '' },
+    /** Paid and verified through the user's Lightning address, not a wallet of theirs ("Received at {address}"). */
+    receivedAt: { type: String, default: '' },
     /** A stranger sent this: no primary Pay, danger styling. */
     untrusted: { type: Boolean, default: false },
     /** An action is in flight: all buttons wait. */
@@ -208,8 +210,9 @@ export default {
     },
     /** Where a verified payment of the user's own request arrived. */
     receivedText() {
-      if (this.state !== 'paid' || !this.outgoing || !this.paidVerified || !this.receivedIn) return ''
-      return this.$t('Received in {wallet}', { wallet: this.receivedIn })
+      if (this.state !== 'paid' || !this.outgoing || !this.paidVerified) return ''
+      if (this.receivedIn) return this.$t('Received in {wallet}', { wallet: this.receivedIn })
+      return this.receivedAt ? this.$t('Received at {address}', { address: this.receivedAt }) : ''
     },
     /** What a screen reader hears when it lands on the card. */
     spoken() {

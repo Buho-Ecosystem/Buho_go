@@ -51,7 +51,10 @@ const ALICE_ADDRESS = 'alice@btc.mybuho.de';
 const ALICE_NEW_ADDRESS = 'alice@wallet.example';
 const lnurl = new LnurlServer({ ledger, domain: 'btc.mybuho.de', receivingWalletId: 'alice-spark' });
 const lnurlNew = new LnurlServer({ ledger, domain: 'wallet.example', receivingWalletId: 'alice-lnbits' });
-const lnurlServers = [lnurl, lnurlNew];
+// An address whose wallet is not in Alice's app: only LUD-21 can tell her the money arrived.
+const ALICE_EXTERNAL_ADDRESS = 'alice@getalby.example';
+const lnurlExternal = new LnurlServer({ ledger, domain: 'getalby.example' });
+const lnurlServers = [lnurl, lnurlNew, lnurlExternal];
 
 // Wallets, described once and built inside the page (see `seedWallets`).
 const ALICE_WALLETS = [
@@ -482,6 +485,33 @@ try {
     const own = chatCard(alice.page, /^You requested.*Old pizza/).filter({ hasText: 'Paid' });
     await own.getByText('Received in Shop').waitFor();
     await snap(alice, '18-send-anyway-paid');
+  });
+
+  console.log('3c. External address: no wallet of Alice shows the money, the address confirms it (LUD-21)');
+  await step('Alice moves to an address outside her app; Bob pays; her card ends verified "Received at <address>"', async () => {
+    await alice.page.evaluate(async (address) => {
+      const { useProfileStore } = await import('/src/stores/profile.js');
+      useProfileStore().$patch({ lud16: address });
+    }, ALICE_EXTERNAL_ADDRESS);
+    relay.inject(finalizeEvent({
+      kind: 0,
+      created_at: Math.floor(Date.now() / 1000) + 60,
+      tags: [],
+      content: JSON.stringify({ name: ALICE.name, lud16: ALICE_EXTERNAL_ADDRESS }),
+    }, ALICE.secretKey));
+    await requestMoney(alice.page, '300', 'External tip');
+    await chatCard(bob.page, /^Alice requests.*External tip/).waitFor();
+    await openChatFromAddressBook(bob, 'Alice');
+    await payRequestFromChat(bob, /^Alice requests.*External tip/);
+    assert.equal(lnurlExternal.issued.length, 1, 'the invoice came from the external address');
+    await confirmPayment(bob.page);
+    await expectPaidFrom(bob, 'bob-spark', 5);
+    const own = chatCard(alice.page, /^You requested.*External tip/);
+    await own.getByText(`Received at ${ALICE_EXTERNAL_ADDRESS}`).waitFor();
+    assert.equal(await own.getByText('Reported paid, not verified').count(), 0);
+    assert.ok(lnurlExternal.verifications.includes(lnurlExternal.issued[0].paymentHash), 'her client asked the verify URL of her own address');
+    assert.equal(lnurl.verifications.length + lnurlNew.verifications.length, 0, 'ledger matches never need the verify URL');
+    await snap(alice, '18b-external-address-verified');
   });
 
   console.log('4. Payments only');

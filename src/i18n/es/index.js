@@ -3410,6 +3410,7 @@ export default {
   "Request again": "Solicitar de nuevo",
   "Send anyway": "Enviar de todos modos",
   "Received in {wallet}": "Recibido en {wallet}",
+  "Received at {address}": "Recibido en {address}",
   "This wallet cannot pay this request. Choose another wallet.": "Esta wallet no puede pagar esta solicitud. Elige otra wallet.",
   "Decline": "Rechazar",
   "Remind": "Recordar",

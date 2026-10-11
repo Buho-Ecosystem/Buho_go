@@ -24,7 +24,7 @@ export const CONFIRMATION_WINDOW_SECONDS = 15 * 60;
 
 const HEX_64 = /^[0-9a-f]{64}$/i;
 
-function hashOfPreimage(preimage) {
+export function hashOfPreimage(preimage) {
   if (typeof preimage !== 'string' || !HEX_64.test(preimage)) return null;
   const bytes = Uint8Array.from(preimage.match(/../g), (pair) => Number.parseInt(pair, 16));
   return bytesToHex(sha256(bytes));

@@ -102,6 +102,9 @@ export const MAX_TEXT_LENGTH = 2_000;
  */
 export const MAX_NOTE_LENGTH = 200;
 
+/** Longest LUD-21 verify URL a payment message may carry, in characters. Longer ones are dropped. */
+export const MAX_VERIFY_URL_LENGTH = 1_000;
+
 /**
  * How long a payment request stays open (30 days), counted from its
  * `created_at`; sent as the request's `valid_until` tag.

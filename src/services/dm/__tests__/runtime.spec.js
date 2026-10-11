@@ -154,6 +154,14 @@ function createLnurlServer(answer = null, { minSendable = 1_000, maxSendable = 1
     requested: [],
     answer,
     failFetch: false,
+    /** LUD-21: the URLs asked, and what the service answers (an Error is thrown). */
+    verified: [],
+    verifyAnswer: null,
+    async verifyPayment(url, callback) {
+      server.verified.push({ url, callback });
+      if (server.verifyAnswer instanceof Error) throw server.verifyAnswer;
+      return server.verifyAnswer;
+    },
     async fetchPayRequest(url) {
       server.fetched.push(url);
       if (server.failFetch) throw new Error('lnurl down');
@@ -161,7 +169,7 @@ function createLnurlServer(answer = null, { minSendable = 1_000, maxSendable = 1
     },
     async requestInvoice(payRequest, amountMsat, options) {
       server.requested.push({ amountMsat, comment: options?.comment });
-      return { pr: server.answer.bolt11, routes: [] };
+      return { pr: server.answer.bolt11, routes: [], verify: server.answer.verify };
     },
   };
   return server;
@@ -775,7 +783,7 @@ test('fetchRequestInvoice pulls the invoice from the signed address, for exactly
   // A saved address for Alice in the address book must play no part.
   env.contactsById.set(ALICE, { id: 'contact-alice', name: 'Alice', address: 'evil@evil.example' });
 
-  assert.equal(await env.runtime.fetchRequestInvoice(ALICE, request.id), fresh.bolt11);
+  assert.deepEqual(await env.runtime.fetchRequestInvoice(ALICE, request.id), { bolt11: fresh.bolt11, verifyUrl: null });
   assert.deepEqual(server.fetched, ['https://alice.example/.well-known/lnurlp/Alice']);
   assert.deepEqual(server.requested, [{ amountMsat: 800_000, comment: `buho:req:${request.id.slice(0, 12)}` }]);
 });
@@ -844,9 +852,9 @@ test('the request stays open for 30 days, then expires; it can be reminded meanw
 // ---------------------------------------------------------------------------
 
 /** The payer's two messages for a request: the payment and the paid status. */
-async function deliverClaim(env, requestId, { sats = 12_000, preimage = PREIMAGE, at = NOW + 7_300 } = {}) {
+async function deliverClaim(env, requestId, { sats = 12_000, preimage = PREIMAGE, at = NOW + 7_300, verifyUrl } = {}) {
   await env.transport.deliver(wrapFor(aliceKey, buildPaymentTemplate({
-    recipient: ME, amountSats: sats, preimage, requestId, now: () => at,
+    recipient: ME, amountSats: sats, preimage, requestId, verifyUrl, now: () => at,
   })));
   await env.transport.deliver(wrapFor(aliceKey, buildStatusTemplate({
     recipient: ME, requestId, value: 'paid', preimage, amountSats: sats, now: () => at + 1,
@@ -863,7 +871,7 @@ test('a payment the partner reports is verified against the own ledger: paid, li
   env.incoming = [{ amountSats: 12_000, settledAt: NOW + 7_300, paymentHash: HASH_OF_PREIMAGE, walletId: 'w1' }];
   await deliverClaim(env, message.id);
 
-  assert.deepEqual(env.runtime.requestSettlement(message.id), { verified: true, walletId: 'w1' });
+  assert.deepEqual(env.runtime.requestSettlement(message.id), { verified: true, walletId: 'w1', address: null });
   assert.equal(env.runtime.requestState(message.id), 'paid');
   assert.deepEqual(env.links, [{ contactId: 'contact-alice', walletId: 'w1', amountSats: 12_000, note: 'Pizza' }]);
   const before = env.transport.published.length;
@@ -880,13 +888,13 @@ test('a claim no wallet shows stays "reported, not verified" and is checked agai
 
   await deliverClaim(env, message.id);
   assert.equal(env.runtime.requestState(message.id), 'paid', 'the store follows the payer');
-  assert.deepEqual(env.runtime.requestSettlement(message.id), { verified: false, walletId: null });
+  assert.deepEqual(env.runtime.requestSettlement(message.id), { verified: false, walletId: null, address: null });
   assert.equal(env.links.length, 0);
 
   // The wallet history catches up: the retry finds it.
   env.incoming = [{ amountSats: 12_000, settledAt: NOW + 7_310, paymentHash: HASH_OF_PREIMAGE, walletId: 'w1' }];
   await clock.advance(5_000);
-  assert.deepEqual(env.runtime.requestSettlement(message.id), { verified: true, walletId: 'w1' });
+  assert.deepEqual(env.runtime.requestSettlement(message.id), { verified: true, walletId: 'w1', address: null });
   assert.equal(env.links.length, 1);
 });
 
@@ -909,7 +917,7 @@ test('without a preimage the amount and the time window decide; a wrong amount o
 
   env.incoming.push({ amountSats: 12_000, settledAt: NOW + 7_320, walletId: 'w1' });
   await env.runtime.settleClaims();
-  assert.deepEqual(env.runtime.requestSettlement(message.id), { verified: true, walletId: 'w1' });
+  assert.deepEqual(env.runtime.requestSettlement(message.id), { verified: true, walletId: 'w1', address: null });
 });
 
 test('a claim below the requested amount is not verified', async () => {
@@ -970,5 +978,152 @@ test('a verified settlement survives a restart', async () => {
   const again = await setup();
   await again.store.setScope(null);
   await again.store.setScope(ME);
-  assert.deepEqual(again.runtime.requestSettlement(message.id), { verified: true, walletId: 'w1' });
+  assert.deepEqual(again.runtime.requestSettlement(message.id), { verified: true, walletId: 'w1', address: null });
+});
+
+// ---------------------------------------------------------------------------
+// Detecting paid: the requester's own address vouches (LUD-21)
+// ---------------------------------------------------------------------------
+
+// The user's own requests name PROFILE_ADDRESS, so its domain is the one verify URLs may point to.
+const VERIFY_URL = 'https://buho.example/verify/abc';
+
+/** What an LNURL service answers for a settled invoice (the hash of PREIMAGE unless told otherwise). */
+function settledAnswer({ sats = 12_000, hash = HASH_OF_PREIMAGE, preimage = PREIMAGE, settled = true, network } = {}) {
+  return { settled, preimage, pr: makeInvoice({ sats, hash, network }).bolt11 };
+}
+
+async function setupExternal({ sats = 12_000 } = {}) {
+  const env = await setup();
+  const message = await env.runtime.requestMoney(ALICE, { amountSats: sats });
+  await env.runtime.whenIdle();
+  await env.runtime.start();
+  return { env, message };
+}
+
+test('LUD-21: a payment no wallet shows is verified by the own address, recorded without a wallet', async () => {
+  const { env, message } = await setupExternal();
+  env.lnurl.verifyAnswer = settledAnswer();
+  await deliverClaim(env, message.id, { verifyUrl: VERIFY_URL });
+
+  assert.deepEqual(env.lnurl.verified, [{ url: VERIFY_URL, callback: 'https://buho.example/' }]);
+  assert.deepEqual(env.runtime.requestSettlement(message.id), { verified: true, walletId: null, address: PROFILE_ADDRESS });
+  assert.equal(env.runtime.requestState(message.id), 'paid');
+  assert.equal(env.store.settlement(message.id).paymentHash, HASH_OF_PREIMAGE);
+  assert.equal(env.links.length, 0, 'no wallet of the user, so nothing to link');
+  await env.runtime.settleClaims();
+  assert.equal(env.lnurl.verified.length, 1, 'a settled request is not asked again');
+});
+
+test('LUD-21: a verify URL on a foreign host is never fetched; the signed address of the request counts too', async () => {
+  const { env, message } = await setupExternal();
+  env.lnurl.verifyAnswer = settledAnswer();
+  for (const url of ['https://evil.example/verify/abc', 'https://buho.example.evil.example/v', 'http://buho.example/verify/abc',
+    'https://127.0.0.1/verify', 'ftp://buho.example/x']) {
+    await deliverClaim(env, message.id, { verifyUrl: url });
+  }
+  await env.runtime.settleClaims();
+  assert.deepEqual(env.lnurl.verified, [], 'nothing was fetched');
+  assert.equal(env.runtime.requestSettlement(message.id).verified, false);
+
+  // The profile address may have changed since: the one signed into the request still counts.
+  env.profileAddress = 'me@moved.example';
+  await deliverClaim(env, message.id, { verifyUrl: VERIFY_URL });
+  assert.equal(env.lnurl.verified.length, 1);
+  assert.equal(env.runtime.requestSettlement(message.id).verified, true);
+});
+
+test('LUD-21: the current profile address counts as well', async () => {
+  const { env, message } = await setupExternal();
+  env.profileAddress = 'me@moved.example';
+  env.lnurl.verifyAnswer = settledAnswer();
+  await deliverClaim(env, message.id, { verifyUrl: 'https://moved.example/verify/abc' });
+  assert.deepEqual(env.runtime.requestSettlement(message.id), { verified: true, walletId: null, address: 'me@moved.example' });
+});
+
+test('LUD-21: unsettled, failing, too low, wrong network or a preimage that does not match stays "not verified"', async () => {
+  const { env, message } = await setupExternal();
+  await deliverClaim(env, message.id, { verifyUrl: VERIFY_URL });
+  const answers = [
+    settledAnswer({ settled: false }),
+    new Error('verify down'),
+    { ...settledAnswer(), settled: 'true' },
+    settledAnswer({ sats: 11_999 }),
+    settledAnswer({ network: 'tb' }),
+    settledAnswer({ preimage: 'cd'.repeat(32) }),
+    { settled: true, preimage: null, pr: 'garbage' },
+    null,
+  ];
+  const asked = env.lnurl.verified.length;
+  for (const answer of answers) {
+    env.lnurl.verifyAnswer = answer;
+    await env.runtime.settleClaims();
+    assert.equal(env.runtime.requestSettlement(message.id).verified, false, String(answer && (answer.message ?? answer.settled)));
+  }
+  assert.equal(env.lnurl.verified.length - asked, answers.length);
+  assert.equal(env.runtime.requestState(message.id), 'paid', 'the payer said so');
+
+  // More than asked is fine, and no preimage in the answer is fine.
+  env.lnurl.verifyAnswer = { ...settledAnswer({ sats: 15_000 }), preimage: null };
+  await env.runtime.settleClaims();
+  assert.equal(env.runtime.requestSettlement(message.id).verified, true);
+});
+
+test('LUD-21: an unsettled invoice is asked again on the retry schedule and ends verified', async () => {
+  const { env, message } = await setupExternal();
+  env.lnurl.verifyAnswer = settledAnswer({ settled: false });
+  await deliverClaim(env, message.id, { verifyUrl: VERIFY_URL });
+  assert.equal(env.runtime.requestSettlement(message.id).verified, false);
+  env.lnurl.verifyAnswer = settledAnswer();
+  await clock.advance(5_000);
+  assert.equal(env.runtime.requestSettlement(message.id).verified, true);
+});
+
+test('LUD-21: one payment hash settles only one request', async () => {
+  const env = await setup();
+  const first = await env.runtime.requestMoney(ALICE, { amountSats: 12_000, note: 'one' });
+  const second = await env.runtime.requestMoney(ALICE, { amountSats: 12_000, note: 'two' });
+  await env.runtime.whenIdle();
+  await env.runtime.start();
+  env.lnurl.verifyAnswer = settledAnswer();
+  await deliverClaim(env, first.id, { verifyUrl: VERIFY_URL });
+  await deliverClaim(env, second.id, { verifyUrl: VERIFY_URL });
+  await env.runtime.settleClaims();
+  const verified = [first.id, second.id].filter((id) => env.runtime.requestSettlement(id).verified);
+  assert.deepEqual(verified, [first.id]);
+});
+
+test('LUD-21: a payment the ledger already vouched for cannot settle a second request through its verify URL', async () => {
+  const env = await setup();
+  const first = await env.runtime.requestMoney(ALICE, { amountSats: 12_000, note: 'one' });
+  const second = await env.runtime.requestMoney(ALICE, { amountSats: 12_000, note: 'two' });
+  await env.runtime.whenIdle();
+  await env.runtime.start();
+  env.incoming = [{ amountSats: 12_000, settledAt: NOW + 7_300, paymentHash: HASH_OF_PREIMAGE, walletId: 'w1' }];
+  await deliverClaim(env, first.id);
+  assert.equal(env.runtime.requestSettlement(first.id).walletId, 'w1');
+  env.lnurl.verifyAnswer = settledAnswer();
+  await deliverClaim(env, second.id, { verifyUrl: VERIFY_URL });
+  assert.equal(env.runtime.requestSettlement(second.id).verified, false);
+});
+
+test('LUD-21: a ledger match stays preferred and the verify URL is not even asked', async () => {
+  const { env, message } = await setupExternal();
+  env.lnurl.verifyAnswer = settledAnswer();
+  env.incoming = [{ amountSats: 12_000, settledAt: NOW + 7_300, paymentHash: HASH_OF_PREIMAGE, walletId: 'w1' }];
+  await deliverClaim(env, message.id, { verifyUrl: VERIFY_URL });
+  assert.deepEqual(env.runtime.requestSettlement(message.id), { verified: true, walletId: 'w1', address: null });
+  assert.deepEqual(env.lnurl.verified, []);
+  assert.equal(env.links.length, 1);
+});
+
+test('LUD-21: a service that never answers is given up on after the timeout', async () => {
+  const { env, message } = await setupExternal();
+  env.lnurl.verifyPayment = () => new Promise(() => {});
+  await deliverClaim(env, message.id, { verifyUrl: VERIFY_URL });
+  await clock.advance(6_000);
+  assert.equal(env.runtime.requestSettlement(message.id).verified, false);
+  env.lnurl.verifyPayment = async () => settledAnswer();
+  await clock.advance(20_000);
+  assert.equal(env.runtime.requestSettlement(message.id).verified, true);
 });

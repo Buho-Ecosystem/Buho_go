@@ -249,11 +249,23 @@ only by matching the payer's claim against the requester's own wallet ledger.
 Removed: receiving-wallet choice, direct minting, invoice watchers, 24 h
 invoice expiry, "Ask for a new request".
 
+### 5c. LUD-21 verification for external addresses — DONE (see docs/CONTACT_CHAT.md 4, 8 and 8a)
+
+The payer's `payment` message carries an optional `verify` tag (the LUD-21 URL
+of the pulled invoice, https and same host only). When no wallet of the
+requester shows the money, `settleClaims` asks that URL, but only on the domain
+of the request's signed `lud16` or the current profile `lud16`
+(`paymentVerification.js`). Settled, mainnet, amount at least the request,
+preimage matching, hash not used before: the card reads "Received at
+<address>". E2E step 3c covers it.
+
 ### 6. Known limitations / follow-ups
-- LUD-21 `verify` is not used for external addresses: a payment to an address
-  the app cannot read the receipts of is only "Reported paid, not verified".
-- Payments to an npub.cash bucket address show "not verified" until the bucket
-  is claimed into a wallet (the ledger only lists it then).
+- Addresses whose service does not support LUD-21 stay "Reported paid, not
+  verified" when their wallet is not in the app. So do payments to an npub.cash
+  bucket address until the bucket is claimed into a wallet (the ledger only
+  lists it then), unless npub.cash supports LUD-21 (not checked).
+- "Send anyway" (generic send flow) does not carry the LUD-21 verify URL, so a
+  late payment to an address outside the app is not verified.
 - Muted 12px text contrast (`--text-muted`, ~3.1–3.8:1) is an app-wide
   token, below WCAG AA for small text.
 - The confirm sheet calls a Lightning invoice "Bitcoin payment" (existing
