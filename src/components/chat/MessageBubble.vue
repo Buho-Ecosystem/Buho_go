@@ -276,8 +276,10 @@ export default {
 .bubble__reaction {
   position: relative;
   min-height: 26px;
+  min-width: 36px;
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 3px;
   padding: 1px 8px;
   border: 1px solid var(--border-card);
@@ -288,7 +290,7 @@ export default {
   font-size: 0.75rem;
   cursor: pointer;
 }
-/* The chip is small; the touch area is not. */
+/* The chip is small; the touch area is not: 26 + 2 x 9 tall, 36 + 2 x 4 wide = 44 pt. */
 .bubble__reaction::after { content: ''; position: absolute; inset: -9px -4px; }
 .bubble__reaction:disabled { cursor: default; }
 .bubble__reaction--mine { border-color: var(--brand-accent); background: var(--brand-accent-soft); }
