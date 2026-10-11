@@ -252,10 +252,11 @@ store, clock) so they can be unit tested without network or Pinia.
   wipeAfter, cancelWipe, isLoaded, dispose }`; `toDmError(err)` maps signer
   app errors (section 5a).
 - `giftWrap.js` — `async sealAndWrap({ template, signer, recipients,
-  selfCopy = true }) → { rumor, wraps: [{ recipient, self, event }] }`: one
-  rumor (one id), sealed by the signer and wrapped per recipient, self copy
-  last; rumor JSON over `MAX_RUMOR_BYTES` → `MESSAGE_TOO_LARGE`; a seal not
-  signed by the sender → `NO_IDENTITY`.
+  selfCopy = true }) → { rumor, wraps: [{ recipient, self, event, seal }] }`:
+  one rumor (one id), sealed by the signer and wrapped per recipient, self
+  copy last; rumor JSON over `MAX_RUMOR_BYTES` → `MESSAGE_TOO_LARGE`; a seal
+  not signed by the sender → `NO_IDENTITY`. `rewrap(seal, recipient)` makes a
+  fresh wrap (new throwaway key and timestamp) without the signer.
 - `openWrap.js` — `async openGiftWrap(event, signer, { me }) →
   { ok: true, rumor, sender } | { ok: false, reason }` (reasons:
   `not-gift-wrap`, `not-addressed`, `undecryptable`, `invalid-seal`,
@@ -328,7 +329,18 @@ store, clock) so they can be unit tested without network or Pinia.
   failed`, reactions).
 - Requests indexed by id with derived status (`pending | paid | declined |
   cancelled | expired`).
-- Outbox for messages written offline; flushed by `inbox.js` when online.
+- Outbox for messages written offline; flushed by `inbox.js` when online. It
+  keeps the signed seals: a delivery more than `rewrapAfterMs` (5 min) after
+  the wraps were made goes out in fresh wraps, because an old wrap's
+  randomised timestamp can lie before what the recipient reads (their last
+  sync minus two days) and relays would never serve it. The self copy goes to
+  every relay we read, including a list the person has from another app.
+- Receiving through a signer app: a wrap the signer fails on while it answers
+  other work gets a strike; after `MAX_WRAP_STRIKES` (3) it counts as
+  unreadable, so it never holds back later messages.
+- A partner's inbox list is looked up on the discovery relays and contact
+  hints, then, if they answered without one, on the partner's NIP-65 write
+  relays.
 - Sync cursor (`lastSyncAt`), blocked pubkeys (on this device only; not
   published as a NIP-51 list), per-contact mute flags.
 - Handled wraps (`handledWraps`, wrap id → created_at): never decrypted
@@ -497,9 +509,24 @@ Replace the workaround when the upstream fix ships.
   device, fix natively if confirmed.
 - relay.damus.io and relay.nostr.net AUTH was broken server-side on
   2026-10-10; add them back to `DM_INBOX_RELAYS` once fixed.
-- Blocked pubkeys stay on the device (no NIP-51 mute list yet).
+- Blocked pubkeys stay on the device. Other apps keep blocks in a NIP-51 mute
+  list (kind 10000, private NIP-44 tags; Lotus and 0xchat do): reading it
+  first, then writing new blocks there, would make blocks follow the person.
+  Reading the private part asks a signer app for one more decryption.
+- Write connections answer AUTH with a throwaway key. NIP-59 (spam section)
+  now says clients SHOULD be able to authenticate with the real identity to
+  inbox relays that only accept gift wraps from known senders; a relay that
+  refuses with `restricted:` would need one retry on an identity-authenticated
+  link. Not seen on the default inbox relays yet.
+- The first sync has no lower bound and no paging, so a relay's result cap can
+  cut off old history (Lotus pages to 1000).
+- A thread the user started with a stranger stays under "Not in your
+  contacts" (other clients count a chat you wrote to as known).
 - Replace the local workarounds when nostr-core #72 to #75 ship (section 11).
 - Signer apps (section 5a): bump nostr-core to 1.0.5 for the NIP-46 `connect`
-  fix (#76, #77); ask nostr-core for requested permissions in `connect`; a
-  NIP-46 `auth_url` is treated as "approve in your signer app", the link
-  itself is not opened yet; check on a device with nsec.app and Amber.
+  fix (#76, #77); ask nostr-core for requested permissions in `connect` (the
+  chat needs `nip44_encrypt`, `nip44_decrypt`, `sign_event:13`,
+  `sign_event:22242` and `sign_event:10050`); nostr-core rejects a request
+  whose answer is `auth_url` and forgets it, so the answer a signer sends
+  after approval is lost (NIP-46 says keep waiting on the same id); check on
+  a device with nsec.app and Amber.
