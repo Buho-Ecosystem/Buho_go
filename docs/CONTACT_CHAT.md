@@ -337,6 +337,12 @@ end with them.
 
   A late "Send anyway" payment linked to an expired request marks it paid
   (paid is final and wins over expired).
+- Implementation notes: the 60 s margin applies only to the Pay-time pull,
+  one pull per tap; a claim below the requested amount stays "not
+  verified"; a payer's `paid` status without a payment message counts as a
+  claim; "Send anyway" pays the request's signed `lud16`, falling back to the
+  saved contact's address. Claim re-checks run at 5 s, 20 s, 60 s and on
+  every resume.
 - Trade-off: a pulled payment lands in the wallet behind the requester's
   Lightning address (normally Spark Business), not necessarily the wallet
   chosen for the original invoice; the paid card names the wallet.
