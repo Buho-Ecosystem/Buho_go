@@ -569,7 +569,7 @@ try {
         await alice.page.waitForTimeout(300);
         await assertFits(alice.page, `request sheet ${label}`);
         await snap(alice, `10-request-sheet-${label}`);
-        await alice.page.getByRole('button', { name: /^(Close|Schlie\u00dfen|Cerrar)$/ }).click();
+        await alice.page.getByRole('button', { name: /^(Cancel|Abbrechen|Cancelar)$/ }).click();
 
         // The stranger's chat: banner, an untrusted request, then its confirm sheet.
         await navigate(alice.page, `/messages/${CAROL.pubkey}`);

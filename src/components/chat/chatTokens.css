@@ -4,8 +4,8 @@
   The app's own tokens (--bg-*, --text-*, --border-card, --brand-accent*,
   --color-warn*, --radius-*) carry almost everything. These few are the chat's
   additions: message bubbles, the "pay" pill, the Send blue (the Send button on
-  the home screen), and a danger colour that stays readable on the cream paper
-  (--color-red is tuned for black).
+  the home screen). The danger colour is the app's --color-negative, readable
+  on both papers.
 
   Dark is the default, exactly like app.css; Quasar's body.body--light
   overrides them. Imported by every chat component, so Vite emits it once.
@@ -27,7 +27,7 @@
   --chat-send-fg: #3B82F6;
   --chat-send-border: rgba(59, 130, 246, 0.22);
 
-  --chat-danger: #FF5A5A;
+  --chat-danger: var(--color-negative);
   --chat-danger-soft: rgba(255, 68, 68, 0.09);
   --chat-danger-line: rgba(255, 68, 68, 0.32);
   --chat-warn-line: rgba(232, 196, 104, 0.38);
@@ -50,7 +50,7 @@ body.body--light {
   --chat-send-fg: var(--btn-neutral-fg);
   --chat-send-border: var(--btn-neutral-border);
 
-  --chat-danger: #C62828;
+  --chat-danger: var(--color-negative);
   --chat-danger-soft: rgba(198, 40, 40, 0.07);
   --chat-danger-line: rgba(198, 40, 40, 0.28);
   --chat-warn-line: rgba(138, 95, 0, 0.32);

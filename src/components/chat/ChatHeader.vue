@@ -95,7 +95,7 @@ export default {
     },
     subtitleIcon() {
       if (this.unknown) return 'tabler:alert-triangle'
-      return this.paymentsOnly ? 'tabler:bolt' : 'tabler:lock'
+      return this.paymentsOnly ? 'tabler:message-off' : 'tabler:lock'
     }
   },
   watch: {

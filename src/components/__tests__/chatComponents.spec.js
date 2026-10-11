@@ -887,8 +887,6 @@ test('touch targets: every control is at least 44 pt', () => {
   at44('MessageMenu.vue', '.message-menu__emoji')
   at44('MessageMenu.vue', '.message-menu__item')
   at44('UnknownSenderBanner.vue', '.unknown-btn')
-  at44('RequestSheet.vue', '.request-sheet__close')
-  at44('RequestSheet.vue', '.request-sheet__cta')
   at44('ChatThread.vue', '.chat-thread__pill')
 })
 

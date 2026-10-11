@@ -7,7 +7,7 @@
   component only draws them and reports which row was picked. It never
   switches the active wallet and never reads a balance itself.
 
-    - Collapsed: icon tile, wallet name, "type · balance", chevron. A selected
+    - Collapsed: brand mark, wallet name, "type · balance · fiat", chevron. A selected
       wallet that cannot pay shows its reason in the warning colour.
     - Expanded (tap): an inline listbox, active wallet first. The selected row
       carries a check; rows that cannot pay are aria-disabled, dimmed, ignore
@@ -32,12 +32,14 @@
       @click="toggle"
       @keydown.down.prevent="openList"
     >
-      <span class="pay-with-tile" aria-hidden="true">
-        <Icon :icon="walletIcon(selected.type)" width="20" height="20" />
+      <span class="pay-with-tile" :class="{ 'pay-with-tile--arkade': selected.type === 'arkade' }" aria-hidden="true">
+        <WalletBrandMark :type="selected.type" :size="18" />
       </span>
       <span :id="valueId" class="pay-with-copy">
         <strong>{{ walletName(selected) }}</strong>
-        <small>{{ detailLine(selected) }}</small>
+        <small v-balance-updating="isRefreshPending(selected)">
+          {{ typeLabel(selected) }}<template v-if="balanceOf(selected).known"> · <HiddenAmount :class="{ 'balance-stale': balanceOf(selected).outdated }">{{ formatBalance(selected) }}</HiddenAmount><template v-if="fiatOf(selected)"> · <HiddenAmount :class="{ 'balance-stale': balanceOf(selected).outdated }">{{ fiatOf(selected) }}</HiddenAmount></template></template>
+        </small>
         <small v-if="selected.reason" class="pay-with-reason">{{ reasonText(selected) }}</small>
       </span>
       <Icon
@@ -74,12 +76,14 @@
           tabindex="-1"
           @click="choose(wallet)"
         >
-          <span class="pay-with-tile" aria-hidden="true">
-            <Icon :icon="walletIcon(wallet.type)" width="18" height="18" />
+          <span class="pay-with-tile" :class="{ 'pay-with-tile--arkade': wallet.type === 'arkade' }" aria-hidden="true">
+            <WalletBrandMark :type="wallet.type" :size="16" />
           </span>
           <span class="pay-with-copy">
             <strong>{{ walletName(wallet) }}</strong>
-            <small>{{ detailLine(wallet) }}</small>
+            <small v-balance-updating="isRefreshPending(wallet)">
+              {{ typeLabel(wallet) }}<template v-if="balanceOf(wallet).known"> · <HiddenAmount :class="{ 'balance-stale': balanceOf(wallet).outdated }">{{ formatBalance(wallet) }}</HiddenAmount><template v-if="fiatOf(wallet)"> · <HiddenAmount :class="{ 'balance-stale': balanceOf(wallet).outdated }">{{ fiatOf(wallet) }}</HiddenAmount></template></template>
+            </small>
             <small v-if="wallet.reason" class="pay-with-reason">{{ reasonText(wallet) }}</small>
           </span>
           <Icon
@@ -103,10 +107,14 @@ import { useWalletStore } from '../stores/wallet'
 import { WALLET_TYPE_LABELS } from '../providers/WalletFactory'
 import { formatAmount } from '../utils/amountFormatting.js'
 import { payingWalletReasonText } from '../utils/payingWallets.js'
+import balanceUpdating from '../directives/balanceUpdating.js'
+import WalletBrandMark from './WalletBrandMark.vue'
+import HiddenAmount from './HiddenAmount.vue'
 
 export default {
   name: 'PayWithField',
-  components: { Icon },
+  components: { Icon, WalletBrandMark, HiddenAmount },
+  directives: { balanceUpdating },
   props: {
     /**
      * Entries from utils/payingWallets.listPayingWallets, active wallet first:
@@ -129,7 +137,7 @@ export default {
     return { open: false }
   },
   computed: {
-    ...mapState(useWalletStore, ['useBip177Format']),
+    ...mapState(useWalletStore, ['useBip177Format', 'getDisplayBalance', 'fiatValueOf']),
 
     labelId() { return `pay-with-label-${this.$.uid}` },
     listId() { return `pay-with-list-${this.$.uid}` },
@@ -158,23 +166,35 @@ export default {
     }
   },
   methods: {
-    walletIcon(type) {
-      if (type === 'nwc') return 'tabler:plug-connected'
-      if (type === 'lnbits') return 'tabler:server'
-      return 'tabler:wallet'
-    },
-
     walletName(wallet) {
       return wallet.name || this.$t('Wallet')
     },
 
-    /** "Spark · ₿ 1,234"; just the type while the balance is not known. */
-    detailLine(wallet) {
-      const parts = [WALLET_TYPE_LABELS[wallet.type] || wallet.type]
-      if (typeof wallet.balanceSats === 'number') {
-        parts.push(formatAmount(wallet.balanceSats, this.useBip177Format))
-      }
-      return parts.join(' · ')
+    typeLabel(wallet) {
+      return WALLET_TYPE_LABELS[wallet.type] || wallet.type
+    },
+
+    /**
+     * The one balance rule of every wallet list: a known figure (dimmed when
+     * outdated) with its fiat value, nothing while unknown, a pulse while the
+     * first figure is on the way. The entry's balanceSats stays the input of
+     * the "can it pay" verdict only.
+     */
+    balanceOf(wallet) {
+      return this.getDisplayBalance(wallet.id)
+    },
+
+    isRefreshPending(wallet) {
+      const shown = this.balanceOf(wallet)
+      return shown.refreshing && !shown.known
+    },
+
+    formatBalance(wallet) {
+      return formatAmount(this.balanceOf(wallet).balance, this.useBip177Format)
+    },
+
+    fiatOf(wallet) {
+      return this.fiatValueOf(this.balanceOf(wallet).balance)
     },
 
     reasonText(wallet) {
@@ -277,12 +297,16 @@ export default {
   flex: 0 0 36px;
   display: grid;
   place-items: center;
-  border-radius: 12px;
-  color: var(--brand-accent-text);
-  background: var(--brand-accent-soft);
+  border-radius: 50%;
+  color: white;
+  /* The dark wallet circle every wallet list uses. */
+  background: linear-gradient(135deg, #2A2A2A, #1A1A1A);
 }
-.pay-with--open .pay-with-field .pay-with-tile,
-.pay-with-option--selected .pay-with-tile { background: var(--bg-card); }
+/* Arkade's purple mark needs a light tile on cream (brand rule). */
+body.body--light .pay-with-tile--arkade {
+  background: var(--arkade-tile);
+  box-shadow: inset 0 0 0 1px var(--arkade-tint-border);
+}
 
 .pay-with-copy { min-width: 0; flex: 1; }
 .pay-with-copy strong,

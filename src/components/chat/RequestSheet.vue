@@ -12,7 +12,8 @@
       parent opens the sheet where the profile address is changed).
     - No profile address: the sheet explains it and offers one button that
       emits `open-address` instead of the amount form, so there is no dead end.
--->
+    - The shared form-sheet pieces (app.css): grabber, Cancel + title header,
+      primary button, error colour.
 -->
 <template>
   <q-dialog
@@ -22,21 +23,21 @@
     @update:model-value="$emit('update:modelValue', $event)"
   >
     <section class="request-sheet" :aria-labelledby="titleId">
-      <div class="request-sheet__grab" aria-hidden="true" />
+      <div class="form-sheet-grabber" aria-hidden="true" />
 
-      <header class="request-sheet__top">
-        <h2 :id="titleId" class="request-sheet__title">
-          {{ partnerName ? $t('Request from {name}', { name: partnerName }) : $t('Request money') }}
-        </h2>
+      <header class="form-sheet-header">
         <button
           type="button"
-          class="request-sheet__close"
+          class="form-sheet-cancel"
           :disabled="submitting"
-          :aria-label="$t('Close')"
           @click="$emit('update:modelValue', false)"
         >
-          <Icon icon="tabler:x" width="20" height="20" />
+          {{ $t('Cancel') }}
         </button>
+        <h2 :id="titleId" class="form-sheet-title request-sheet__title">
+          {{ partnerName ? $t('Request from {name}', { name: partnerName }) : $t('Request money') }}
+        </h2>
+        <span aria-hidden="true" />
       </header>
 
       <div v-if="!address" class="request-sheet__body request-sheet__body--empty">
@@ -69,7 +70,7 @@
             <span v-if="!bip177" class="request-sheet__unit" aria-hidden="true">sats</span>
           </div>
           <p v-if="fiat" class="request-sheet__fiat">{{ fiat }}</p>
-          <p v-if="amountError" :id="errorId" class="request-sheet__error" role="alert">
+          <p v-if="amountError" :id="errorId" class="form-sheet-error request-sheet__error" role="alert">
             <Icon icon="tabler:alert-circle" width="14" height="14" />
             {{ amountError }}
           </p>
@@ -104,13 +105,13 @@
       </div>
 
       <footer class="request-sheet__foot">
-        <button v-if="!address" type="button" class="request-sheet__cta" @click="$emit('open-address')">
+        <button v-if="!address" type="button" class="form-sheet-primary request-sheet__cta" @click="$emit('open-address')">
           {{ $t('Set up Lightning address') }}
         </button>
         <button
           v-else
           type="button"
-          class="request-sheet__cta"
+          class="form-sheet-primary request-sheet__cta"
           :disabled="!canSubmit"
           :aria-busy="submitting ? 'true' : undefined"
           @click="submit"
@@ -240,36 +241,9 @@ export default {
   padding-bottom: max(1rem, var(--safe-bottom, 0px));
 }
 
-.request-sheet__grab {
-  flex: 0 0 auto;
-  width: 36px;
-  height: 4px;
-  margin: 8px auto 4px;
-  border-radius: 999px;
-  background: var(--text-muted);
-  opacity: 0.45;
-}
-
-.request-sheet__top {
-  flex: 0 0 auto;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 2px 8px 4px 20px;
-}
-.request-sheet__title { flex: 1; min-width: 0; margin: 0; font-size: 1.125rem; font-weight: 750; line-height: 1.3; letter-spacing: normal; overflow-wrap: anywhere; }
-.request-sheet__close {
-  width: 44px;
-  height: 44px;
-  display: grid;
-  place-items: center;
-  border: 0;
-  border-radius: 50%;
-  background: transparent;
-  color: var(--text-secondary);
-  cursor: pointer;
-}
-.request-sheet__close:disabled { opacity: 0.4; cursor: default; }
+/* A long contact name wraps instead of pushing Cancel off the sheet. */
+.request-sheet__title { min-width: 0; overflow-wrap: anywhere; }
+.form-sheet-cancel:disabled { opacity: 0.4; cursor: default; }
 
 .request-sheet__body {
   flex: 1 1 auto;
@@ -321,9 +295,7 @@ export default {
   justify-content: center;
   gap: 6px;
   margin: 6px 0 0;
-  font-size: 0.78125rem;
   font-weight: 650;
-  color: var(--chat-danger);
 }
 
 .request-sheet__label {
@@ -394,30 +366,10 @@ export default {
 .request-sheet__failure :deep(svg) { color: var(--chat-danger); }
 
 .request-sheet__foot { flex: 0 0 auto; padding: 4px 18px 8px; }
-.request-sheet__cta {
-  width: 100%;
-  min-height: 52px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  padding: 0 18px;
-  border: 0;
-  border-radius: 26px;
-  background: var(--chat-pay-bg);
-  color: var(--chat-pay-fg);
-  font-family: inherit;
-  font-size: 1rem;
-  font-weight: 800;
-  cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
-}
-.request-sheet__cta:disabled { opacity: 0.38; cursor: default; }
+.request-sheet__cta { width: 100%; padding: 0 18px; -webkit-tap-highlight-color: transparent; }
 .request-sheet__spin { animation: request-spin 1s linear infinite; }
 @keyframes request-spin { to { transform: rotate(360deg); } }
 
-.request-sheet__close:focus-visible,
-.request-sheet__cta:focus-visible { outline: 2px solid var(--chat-focus); outline-offset: 2px; }
 
 @media (prefers-reduced-motion: reduce) {
   .request-sheet__spin { animation: none; }
