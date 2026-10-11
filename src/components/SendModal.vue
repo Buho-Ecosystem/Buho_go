@@ -574,14 +574,15 @@ export default {
     },
 
     // Live capability gate, computed off the same normalization the emit
-    // uses. Non-empty = the active wallet can't ride this rail; the hint
+    // uses. Non-empty = none of the user's wallets can ride this rail (the
+    // confirm sheet's "Pay with" picks among those that can); the hint
     // shows in the field the moment the destination is recognized, the
     // CTA disables, and nothing is ever emitted — so a confirm sheet
     // that could only dead-end never opens.
     capabilityBlocked() {
       if (!this.isValidManualInput || this.detectedInputType === 'address_request') return '';
       const paymentType = this.determinePaymentType(this.manualInput.trim());
-      if (canWalletPay(this.walletStore.activeWalletType, paymentType)) return '';
+      if (this.walletStore.canAnyWalletPay(paymentType)) return '';
       return walletSwitchHint(paymentType, this.$t.bind(this));
     },
 
@@ -809,7 +810,7 @@ export default {
 
     /** Would this string get somewhere if the user pasted it? One rule, shared with the home strip. */
     isSuggestibleDestination(text) {
-      return isSuggestibleDestination(text, this.walletStore.activeWalletType);
+      return isSuggestibleDestination(text, this.walletStore.activeWalletType, this.walletStore.canAnyWalletPay);
     },
 
     applyClipboardSuggestion() {
@@ -1000,11 +1001,11 @@ export default {
         }
 
         // Capability backstop for payloads that bypass the field guards
-        // (scans land here directly): never emit a destination the active
-        // wallet can't pay — the parent could only dead-end on it. The
+        // (scans land here directly): never emit a destination no wallet
+        // can pay — the parent could only dead-end on it. The
         // scanned string is in the field, so the reactive capability hint
         // (capabilityBlocked) is already explaining the switch.
-        if (!canWalletPay(this.walletStore.activeWalletType, paymentType)) {
+        if (!this.walletStore.canAnyWalletPay(paymentType)) {
           this.isProcessing = false;
           return;
         }
@@ -1167,9 +1168,9 @@ export default {
       if (offerAddressRequest(address, { t: this.$t.bind(this), paymentOnly: true })) return;
       const addressType = this.getContactAddressType(contact);
 
-      // Defensive — block payment paths the active wallet can't satisfy,
-      // with the same switch hint every other surface shows.
-      if (!canWalletPay(this.walletStore.activeWalletType, addressType)) {
+      // Defensive: block payment paths no wallet can satisfy, with the same
+      // switch hint every other surface shows.
+      if (!this.walletStore.canAnyWalletPay(addressType)) {
         this.$q.notify({
           type: 'warning',
           message: this.$t('Cannot pay this contact'),
@@ -1229,11 +1230,11 @@ export default {
     },
 
     // Payable = has a resolvable address (identity-only Nostr contacts
-    // don't yet) AND rides a rail the active wallet can pay. Drives the
+    // don't yet) AND rides a rail one of the user's wallets can pay. Drives the
     // dimmed row state; the tap guards in onContactPicked explain why.
     isContactPayable(contact) {
       if (contact.source === 'nostr' && !this.addressBookStore.isEntryPayable(contact)) return false;
-      return canWalletPay(this.walletStore.activeWalletType, this.getContactAddressType(contact));
+      return this.walletStore.canAnyWalletPay(this.getContactAddressType(contact));
     },
 
     countryName(code) {

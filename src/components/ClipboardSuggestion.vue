@@ -198,7 +198,7 @@ export default {
       memory.observe(value);
       if (this.offered && this.offered !== value) this.clear();
       if (!value || memory.hasBeenOffered(value)
-        || !isSuggestibleDestination(value, this.wallet.activeWalletType)) return true;
+        || !isSuggestibleDestination(value, this.wallet.activeWalletType, this.wallet.canAnyWalletPay)) return true;
 
       this.clear();
       this.offered = value;
