@@ -185,7 +185,9 @@ const SEED_WORD_COUNT = 12;
 // restored. Arkade orange replaces the official mark until those assets land.
 const ACCENTS = {
   spark: { accent: '#15DE72', strong: '#059573' },
+  // Arkade brand rule: orange in dark mode, purple in light mode.
   arkade: { accent: '#F14317', strong: '#C0360F' },
+  arkadeLight: { accent: '#5B3BC4', strong: '#351791' },
 };
 
 export default {
@@ -233,11 +235,16 @@ export default {
     showTypeSwitch() {
       return !this.lockedType && this.availableTypes.length > 1;
     },
+    /** The accent set for the type being restored, in this theme. */
+    accentSet() {
+      if (this.selectedType === 'arkade' && !this.$q.dark.isActive) return ACCENTS.arkadeLight;
+      return ACCENTS[this.selectedType] || ACCENTS.spark;
+    },
     accent() {
-      return (ACCENTS[this.selectedType] || ACCENTS.spark).accent;
+      return this.accentSet.accent;
     },
     accentStrong() {
-      return (ACCENTS[this.selectedType] || ACCENTS.spark).strong;
+      return this.accentSet.strong;
     },
     titleCopy() {
       return this.selectedType === 'arkade'

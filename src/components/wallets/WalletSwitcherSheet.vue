@@ -55,7 +55,7 @@
             @keydown.space.prevent="$emit('switch', wallet.id)"
           >
             <div class="switch-avatar" aria-hidden="true">
-              <div class="switch-avatar-circle switch-avatar-black">
+              <div class="switch-avatar-circle" :class="wallet.type === 'arkade' ? 'switch-avatar-arkade' : 'switch-avatar-black'">
                 <WalletBrandMark :type="wallet.type" :size="20" />
               </div>
               <div class="switch-status-dot" :class="connected(wallet.id) ? 'status-connected' : 'status-disconnected'"></div>
@@ -280,6 +280,10 @@ const isRefreshPending = (walletId) => !!props.refreshingWalletIds[walletId] && 
 
 .switch-avatar-black {
   background: linear-gradient(135deg, #2A2A2A, #1A1A1A);
+}
+
+.switch-avatar-arkade {
+  background: var(--arkade-tile);
 }
 
 

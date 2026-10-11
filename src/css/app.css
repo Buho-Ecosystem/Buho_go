@@ -223,6 +223,15 @@ body.platform-android {
        text needs 4.5:1 against the page. On the dark paper the bright brand
        green already clears it, so the two coincide here. */
     --brand-accent-text:  #15DE72;
+    /* ─── Arkade brand (core rule) ─────────────────────────
+       Red/orange in dark mode, purple in light mode, always on a
+       background that fits. Every Arkade mark, tint, tile, badge and
+       accent reads these; never hard-code an Arkade colour. */
+    --arkade-ink:         #F14317;
+    --arkade-ink-text:    #FF8A66;
+    --arkade-tint:        rgba(241, 67, 23, 0.16);
+    --arkade-tint-border: rgba(241, 67, 23, 0.34);
+    --arkade-tile:        linear-gradient(135deg, #3A1C9C, #24105F);
     --btn-neutral-bg:     #1A1A1A;
     --btn-neutral-fg:     #FFFFFF;
     --btn-neutral-border: transparent;
@@ -296,6 +305,12 @@ body.body--light {
     --brand-accent-soft:  rgba(5, 149, 115, 0.08);
     /* 6.07:1 on cream, where the decorative #059573 manages only 3.53:1. */
     --brand-accent-text:  #046B53;
+    /* Arkade on cream: the purple mark, a soft lavender tile and tint. */
+    --arkade-ink:         #351791;
+    --arkade-ink-text:    #351791;
+    --arkade-tint:        rgba(53, 23, 145, 0.09);
+    --arkade-tint-border: rgba(53, 23, 145, 0.22);
+    --arkade-tile:        linear-gradient(135deg, #EFEAFC, #E0D7F7);
 
     /* Neutral primary CTA — single dark pill on cream. Gives one
        visual weight to any "primary action" button regardless of

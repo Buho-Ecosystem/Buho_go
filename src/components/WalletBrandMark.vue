@@ -6,7 +6,9 @@
   detail sheet); three copies of a 2KB path string is how they drift apart.
   Renders at `size` px inside whatever circle the caller draws. Spark and
   the fallback glyph take `color` (white by default, for dark circles);
-  NWC, LNbits and Arkade keep their brand colours.
+  NWC and LNbits keep their brand colours. Arkade follows the theme (purple
+  in light mode, orange in dark): callers give it var(--arkade-tile)
+  instead of their dark circle.
 -->
 <template>
   <svg v-if="type === 'spark'" :width="size" :height="Math.round(size * 0.95)" viewBox="0 0 135 128" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -25,7 +27,7 @@
   <svg v-else-if="type === 'lnbits'" :width="Math.round(size * 0.9)" :height="size" viewBox="0 0 502 902" fill="none" xmlns="http://www.w3.org/2000/svg">
     <path d="M158.566 493.857L1 901L450.49 355.202H264.831L501.791 1H187.881L36.4218 493.857H158.566Z" fill="#FF1FE1"/>
   </svg>
-  <ArkadeLogo v-else-if="type === 'arkade'" variant="mark" color="orange" :size="size" />
+  <ArkadeLogo v-else-if="type === 'arkade'" variant="mark" :size="size" />
   <Icon v-else icon="tabler:wallet" :width="size" :height="size" :style="{ color }" />
 </template>
 

@@ -1222,7 +1222,8 @@ export default {
     contactRailDot(contact) {
       const type = this.getContactAddressType(contact);
       if (type === 'spark') return { kind: 'spark', color: '#000' };
-      if (type === 'arkade') return { kind: 'arkade', color: '#F14317' };
+      // Arkade: purple in light mode, orange in dark (app.css tokens).
+      if (type === 'arkade') return { kind: 'arkade', color: 'var(--arkade-ink)' };
       if (type === 'bitcoin') return { kind: 'bitcoin', color: '#F7931A' };
       return null;
     },

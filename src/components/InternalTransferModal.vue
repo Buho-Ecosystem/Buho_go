@@ -279,7 +279,7 @@ const t = (key, params) => proxy.$t(key, params);
 const WalletAvatar = {
   props: { type: String, walletId: String, size: { type: String, default: 'md' } },
   setup(props) {
-    const cls = computed(() => ['avatar', props.size === 'sm' && 'avatar--sm'].filter(Boolean));
+    const cls = computed(() => ['avatar', props.size === 'sm' && 'avatar--sm', props.type === 'arkade' && 'avatar--arkade'].filter(Boolean));
     return () => h('div', { class: cls.value }, [
       // Spark - white fill
       props.type === 'spark' && h('svg', { width: '20', height: '19', viewBox: '0 0 135 128', fill: 'none', xmlns: 'http://www.w3.org/2000/svg' }, [
@@ -314,8 +314,8 @@ const WalletAvatar = {
           fill: '#FF1FE1'
         })
       ]),
-      // Arkade brand mark — forced orange (sits on an always-dark avatar circle)
-      props.type === 'arkade' && h(ArkadeLogo, { variant: 'mark', color: 'orange', size: 20 }),
+      // Arkade brand mark: theme-aware on its own tile (purple light, orange dark)
+      props.type === 'arkade' && h(ArkadeLogo, { variant: 'mark', size: 20 }),
       // Default wallet icon
       !['spark', 'nwc', 'lnbits', 'arkade'].includes(props.type) && h('svg', { width: '18', height: '18', viewBox: '0 0 24 24', fill: 'none', xmlns: 'http://www.w3.org/2000/svg' }, [
         h('path', {
@@ -729,6 +729,7 @@ watch(() => props.modelValue, (open) => { if (open) init(); });
   background: #000;
 }
 .avatar--sm { width: 32px; height: 32px; }
+.avatar--arkade { background: var(--arkade-tile) !important; }
 .avatar--sm svg { width: 16px !important; height: 15px !important; }
 
 /* ════════════════════════════════════════════════════════════

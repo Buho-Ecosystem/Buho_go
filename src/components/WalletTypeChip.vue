@@ -50,7 +50,6 @@ const label = computed(() => WALLET_TYPE_LABELS[props.type] || props.type);
    Neutral tint for providers that render in the text colour; Arkade keeps
    its orange, darkened for small text on the light paper. */
 .wallet-type-chip { --chip-bg: rgba(255, 255, 255, 0.1); --chip-text: var(--text-primary); }
-.wallet-type-chip--arkade { --chip-bg: rgba(241, 67, 23, 0.18); --chip-text: #FF8A66; }
+.wallet-type-chip--arkade { --chip-bg: var(--arkade-tint); --chip-text: var(--arkade-ink-text); }
 body.body--light .wallet-type-chip { --chip-bg: rgba(26, 26, 28, 0.07); }
-body.body--light .wallet-type-chip--arkade { --chip-bg: rgba(241, 67, 23, 0.11); --chip-text: #C0360F; }
 </style>

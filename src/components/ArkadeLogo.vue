@@ -12,7 +12,8 @@
  * containing) media-kit paths and the light/dark colour swap live in one place
  * — reuse this in the wallet switcher / Settings rather than inlining <img>.
  *
- * Brand rule: orange (#F14317) in light mode, purple (#351791) in dark.
+ * Brand rule (core): red/orange (#F14317) in dark mode, purple (#351791) in
+ * light mode, each on a background that fits (app.css --arkade-* tokens).
  * Assets: public/Arkade-Media-Kit/Logo/SVG/Logo Only/ (transparent variants).
  *
  * Sizing: the media-kit mark sits in the centre 49.5% of its 94×94 canvas with
@@ -46,12 +47,12 @@ export default {
       type: String,
       default: 'Arkade',
     },
-    // Force a brand color regardless of theme. Use 'orange' when the mark sits
-    // on an always-dark surface (icon box / dark avatar circle) so it stays
-    // high-contrast in both light and dark app themes. Use 'white' when the
-    // mark sits on a SOLID brand-color surface (e.g. the orange type-badge pill)
-    // so it matches the white label. Null = theme-aware (orange in light, purple
-    // in dark) for marks on the app background.
+    // Null (the default) = theme-aware: purple in light mode, orange in dark,
+    // the brand rule. Give the mark a fitting surface (var(--arkade-tile) or
+    // the page) rather than forcing a colour. 'white' is for a mark on a solid
+    // brand-colour surface (a filled dot or pill) so it matches a white label;
+    // 'orange'/'purple' force one colour for the rare surface that is the same
+    // in both themes.
     color: {
       type: String,
       default: null,
@@ -65,7 +66,7 @@ export default {
       const color = this.color === 'orange' ? 'Orange'
         : this.color === 'purple' ? 'Purple'
         : this.color === 'white' ? 'Black'
-        : (this.$q.dark.isActive ? 'Purple' : 'Orange');
+        : (this.$q.dark.isActive ? 'Orange' : 'Purple');
       const file = this.variant === 'full'
         ? `Logo + text - ${color}.svg`
         : `Logo Only + ${color}.svg`;

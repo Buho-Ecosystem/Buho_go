@@ -1169,7 +1169,7 @@
               >
                 <!-- Wallet Avatar -->
                 <div class="wallet-avatar">
-                  <div class="wallet-avatar-circle wallet-avatar-black">
+                  <div class="wallet-avatar-circle" :class="wallet.type === 'arkade' ? 'wallet-avatar-arkade' : 'wallet-avatar-black'">
                     <WalletBrandMark :type="wallet.type" :size="20" />
                   </div>
                   <div
@@ -1340,7 +1340,7 @@
               @click="navigateToCreateArkade"
             >
               <div class="option-icon arkade-option-icon">
-                <ArkadeLogo variant="mark" color="orange" :size="26" />
+                <ArkadeLogo variant="mark" :size="26" />
               </div>
               <div class="option-content">
                 <div class="option-title" :class="$q.dark.isActive ? 'wallet_name_dark' : 'wallet_name_light'">
@@ -1359,7 +1359,7 @@
               @click="navigateToRestoreArkade"
             >
               <div class="option-icon arkade-option-icon">
-                <ArkadeLogo variant="mark" color="orange" :size="26" />
+                <ArkadeLogo variant="mark" :size="26" />
               </div>
               <div class="option-content">
                 <div class="option-title" :class="$q.dark.isActive ? 'wallet_name_dark' : 'wallet_name_light'">
@@ -1774,7 +1774,7 @@
               :class="$q.dark.isActive ? 'aw-dialog-item-dark' : 'aw-dialog-item-light'"
               @click="openAutoWithdrawFromDialog(entry.wallet, entry.configKey, entry.name)"
             >
-              <div class="aw-wallet-avatar" :class="['aw-avatar-' + (entry.type || 'nwc'), { 'aw-avatar-on-dark': $q.dark.isActive }]">
+              <div class="aw-wallet-avatar" :class="'aw-avatar-' + (entry.type || 'nwc')">
                 <!-- Spark -->
                 <svg v-if="entry.type === 'spark'" width="16" height="15" viewBox="0 0 135 128" fill="none" xmlns="http://www.w3.org/2000/svg">
                   <path fill-rule="evenodd" clip-rule="evenodd" d="M79.4319 49.3554L81.7454 0H52.8438L55.1573 49.356L8.9311 31.9035L0 59.3906L47.6565 72.4425L16.7743 111.012L40.1562 128L67.2966 86.7083L94.4358 127.998L117.818 111.01L86.9359 72.4412L134.587 59.3907L125.656 31.9036L79.4319 49.3554Z" fill="white"/>
@@ -1790,7 +1790,7 @@
                 </svg>
                 <!-- Arkade -->
                 <!-- Arkade's two brand colours: purple on a light tile, orange on a deep purple one. -->
-                <ArkadeLogo v-else-if="entry.type === 'arkade'" variant="mark" :color="$q.dark.isActive ? 'orange' : 'purple'" :size="16" />
+                <ArkadeLogo v-else-if="entry.type === 'arkade'" variant="mark" :size="16" />
                 <Icon v-else icon="tabler:wallet" width="16" height="16" style="color: white;" />
               </div>
               <div class="aw-dialog-item-info">
@@ -5637,6 +5637,10 @@ export default {
   background: linear-gradient(135deg, #2A2A2A, #1A1A1A);
 }
 
+.wallet-avatar-arkade {
+  background: var(--arkade-tile);
+}
+
 .wallet-status-dot {
   position: absolute;
   bottom: 0;
@@ -6390,7 +6394,7 @@ export default {
 }
 
 .arkade-option-icon {
-  background: linear-gradient(135deg, #2A2A2A, #1A1A1A);
+  background: var(--arkade-tile);
 }
 
 .option-content {
@@ -6953,10 +6957,7 @@ export default {
   background: linear-gradient(135deg, #FFCA4A, #F7931A);
 }
 .aw-avatar-arkade {
-  background: linear-gradient(135deg, #EFEAFC, #E0D7F7);
-}
-.aw-avatar-arkade.aw-avatar-on-dark {
-  background: linear-gradient(135deg, #3A1C9C, #24105F);
+  background: var(--arkade-tile);
 }
 
 .aw-wallet-info {
@@ -7140,8 +7141,8 @@ export default {
   color: #F7931A;
 }
 .aw-icon-wrap-arkade {
-  background: rgba(241, 67, 23, 0.1);
-  color: #F14317;
+  background: var(--arkade-tint);
+  color: var(--arkade-ink);
 }
 
 .aw-dialog-title {
@@ -7355,8 +7356,8 @@ export default {
 .aw-save-lnbits:hover { background: rgba(255, 31, 225, 0.25); }
 .aw-save-nwc { background: rgba(247, 147, 26, 0.15); color: #D97706; }
 .aw-save-nwc:hover { background: rgba(247, 147, 26, 0.25); }
-.aw-save-arkade { background: rgba(241, 67, 23, 0.15); color: #F14317; }
-.aw-save-arkade:hover { background: rgba(241, 67, 23, 0.25); }
+.aw-save-arkade { background: var(--arkade-tint); color: var(--arkade-ink-text); }
+.aw-save-arkade:hover { box-shadow: inset 0 0 0 1px var(--arkade-tint-border); }
 
 .aw-remove-btn {
   width: 100%;
