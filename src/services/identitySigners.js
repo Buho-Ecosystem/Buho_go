@@ -27,6 +27,9 @@ export function extensionSigner() {
   return new Nip07Signer();
 }
 
+// TODO(nostr-core 1.0.5): bump nostr-core. 1.0.4 sends this app's key instead
+// of the signer's as the first NIP-46 `connect` param, so signers that check it
+// never answer (nostr-core-org/nostr-core#76, fixed in #77). No code change here.
 function openBunker({ remotePubkey, relays, clientKey, secret }) {
   const connection = new NostrConnect({ remotePubkey, relayUrls: relays, secretKey: clientKey, secret });
   connection.timeout = BUNKER_REQUEST_TIMEOUT_MS;

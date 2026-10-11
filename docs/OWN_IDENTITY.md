@@ -57,3 +57,4 @@ Imported secret keys are not in the Drive backup: the person brought them from e
 - `src/utils/__tests__/externalIdentity.spec.js`, `src/stores/__tests__/identity.spec.js` (imports), `profile.spec.js` (kept fields, relay list), `socialBucket.spec.js` (foreign wallet), `nostrContactsDoc.spec.js`, `addressBook.spec.js`.
 - `node scripts/check-own-identity.mjs`: secret key and extension import, "Is this you?", switching, detail pages, delete alert, a wrong remote signer link, dark mode.
 - Needs a device: a real remote signer (nsec.app, Amber over NIP-46) and a real extension (Alby, nos2x).
+- Needs nostr-core 1.0.5: 1.0.4 sends the wrong first `connect` param, so remote signers that check it time out (nostr-core-org/nostr-core#76). Bump the dependency once it is released; marked with `TODO(nostr-core 1.0.5)` in `src/services/identitySigners.js`.
