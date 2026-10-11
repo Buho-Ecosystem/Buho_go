@@ -12,7 +12,7 @@
 //     LnurlServer (alice@wallet.example) is where the next payment goes
 // Screenshots (light and dark per step, de/es/large text at the end): CONTACT_CHAT_OUTPUT.
 import { chromium } from '@playwright/test';
-import { finalizeEvent } from 'nostr-core';
+import { createSecretKeySigner, finalizeEvent, getPublicKey } from 'nostr-core';
 import assert from 'node:assert/strict';
 import { mkdir } from 'node:fs/promises';
 import { deriveNostrIdentity } from '../src/utils/identityCrypto.js';
@@ -160,8 +160,12 @@ async function seedUser(actor, { contacts, wallets, profileAddress = null }) {
     await book.initialize();
     for (const contact of contactData) await book.addNostrContact({ ...contact, allowWithoutLightningAddress: true });
     if (address) {
+      // As the profile editor does: the address is set and published, so a
+      // payer who reads the current profile (docs 8a) finds it too.
       const { useProfileStore } = await import('/src/stores/profile.js');
-      useProfileStore().$patch({ lud16: address });
+      const profile = useProfileStore();
+      profile.setField('lud16', address);
+      await profile.publish();
     }
   }, {
     address: profileAddress,
@@ -442,7 +446,7 @@ try {
     const template = buildRequestTemplate({
       recipient: BOB.pubkey, amountSats: 1000, note: 'Old pizza', lud16: ALICE_ADDRESS, now: () => past,
     });
-    const { wraps } = sealAndWrap({ template, senderSecretKey: ALICE.secretKey, recipients: [BOB.pubkey], selfCopy: true });
+    const { wraps } = await sealAndWrap({ template, signer: chatSigner(ALICE.secretKey), recipients: [BOB.pubkey], selfCopy: true });
     for (const { event } of wraps) relay.inject(event);
     const ownCard = chatCard(alice.page, /^You requested.*Old pizza/);
     const theirs = chatCard(bob.page, /^Alice requests.*Old pizza/);
@@ -592,6 +596,7 @@ try {
   console.log('PASS: contact chat end to end');
 } catch (error) {
   console.error(`FAIL at step "${currentStep}"`);
+  if (pageErrors.length) console.error(`Page errors:\n${pageErrors.join('\n')}`);
   await saveFailureShots();
   console.error(error);
   process.exitCode = 1;
@@ -676,8 +681,18 @@ async function confirmPayment(page) {
 }
 
 async function deliverFromCarol(template) {
-  const { wraps } = sealAndWrap({ template, senderSecretKey: CAROL.secretKey, recipients: [ALICE.pubkey], selfCopy: false });
+  const { wraps } = await sealAndWrap({ template, signer: chatSigner(CAROL.secretKey), recipients: [ALICE.pubkey], selfCopy: false });
   for (const { event } of wraps) relay.inject(event);
+}
+
+/** A chat signer (services/dm/dmSigner.js shape) for a key the test holds. */
+function chatSigner(secretKey) {
+  const signer = createSecretKeySigner(secretKey);
+  return {
+    pubkey: getPublicKey(secretKey),
+    nip44Encrypt: (peer, text) => signer.nip44.encrypt(peer, text),
+    signEvent: (template) => signer.signEvent(template),
+  };
 }
 
 /** Nothing of the screen (or an open sheet) sticks out sideways, and the page does not scroll sideways. */
