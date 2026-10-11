@@ -99,6 +99,11 @@ function fakePool(behaviour = {}, options = {}) {
   const calls = [];
   return {
     calls,
+    // The relay-list check before a publish: none by default.
+    async querySync() {
+      if (options.relayListQueryFails) throw new Error('offline');
+      return options.relayList || [];
+    },
     ensureRelay(url) {
       if (options.ensureRelayFails === true || options.ensureRelayFails === url) {
         return Promise.reject(new Error('connection refused'));
@@ -444,6 +449,37 @@ await test('publish: kind:0 content is the profile payload as JSON', async () =>
   });
 });
 
+await test('publish never replaces a relay list the key already has, or one it could not check', async () => {
+  const existing = await freshEnvWithIdentity();
+  existing.profile.applyEdits({ displayName: 'Satoshi' });
+  const listed = fakePool({}, { relayList: [{ kind: 10002, pubkey: existing.identity.nostrPubkeyHex, tags: [['r', 'wss://mine.test']] }] });
+  await (await existing.profile.publish({ pool: listed, relays: TEST_RELAYS })).settled;
+  assert.deepEqual([...new Set(listed.calls.map((c) => c.kind))], [0], 'their own relay list stays');
+
+  const offline = await freshEnvWithIdentity();
+  offline.profile.applyEdits({ displayName: 'Satoshi' });
+  const unknown = fakePool({}, { relayListQueryFails: true });
+  await (await offline.profile.publish({ pool: unknown, relays: TEST_RELAYS })).settled;
+  assert.deepEqual([...new Set(unknown.calls.map((c) => c.kind))], [0], 'unknown is never treated as none');
+});
+
+await test('publish keeps the profile fields other apps set', async () => {
+  const { profile, identity } = await freshEnvWithIdentity();
+  await profile.recoverFromNostr({ identityStore: identity, fetcher: async () => fakeKind0Event({ display_name: 'Satoshi', lud06: 'lnurl1abc', pronouns: 'they/them', bot: false }) });
+  profile.applyEdits({ about: 'New here' });
+  const pool = fakePool();
+  await (await profile.publish({ pool, relays: TEST_RELAYS })).settled;
+  const content = JSON.parse(pool.calls.find((c) => c.kind === 0).event.content);
+  assert.deepEqual(content, { lud06: 'lnurl1abc', pronouns: 'they/them', bot: false, display_name: 'Satoshi', about: 'New here' });
+
+  // The kept fields survive a reload.
+  setActivePinia(createPinia());
+  await useIdentityStore().hydrate();
+  const reloaded = useProfileStore();
+  await reloaded.hydrate();
+  assert.deepEqual(reloaded.extraContent, { lud06: 'lnurl1abc', pronouns: 'they/them', bot: false });
+});
+
 await test('publish: kind:10002 carries an r tag per relay in input order', async () => {
   const { profile } = await freshEnvWithIdentity();
   profile.applyEdits({ displayName: 'Satoshi' });
@@ -683,8 +719,8 @@ function fakeFile(bytes = new Uint8Array([1, 2, 3]), type = 'image/png') {
  */
 function fakeUploader(behaviour = {}) {
   const calls = [];
-  const fn = (file, secretKey, opts) => {
-    calls.push({ file, secretKey, opts });
+  const fn = (file, signer, opts) => {
+    calls.push({ file, signer, opts });
     if (behaviour.throwError) return Promise.reject(behaviour.throwError);
     return Promise.resolve(behaviour.result ?? {
       url: 'https://blossom.test/avatar.png',
@@ -731,24 +767,21 @@ await test('uploadAvatar passes server/maxBytes opts straight through to the hel
   assert.equal(opts.maxBytes, 1024);
 });
 
-await test('uploadAvatar hands the uploader a 32-byte secret key', async () => {
-  const { profile } = await freshEnvWithIdentity();
+await test('uploadAvatar hands the uploader a signer for the identity in use', async () => {
+  const { profile, identity } = await freshEnvWithIdentity();
   const uploader = fakeUploader();
   await profile.uploadAvatar(fakeFile(), { uploader });
-  const [{ secretKey }] = uploader.calls;
-  assert.ok(secretKey instanceof Uint8Array);
-  assert.equal(secretKey.length, 32);
+  const [{ signer }] = uploader.calls;
+  assert.equal(typeof signer.signEvent, 'function');
+  assert.equal(await signer.getPublicKey(), identity.nostrPubkeyHex);
 });
 
 await test('uploadAvatar wipes the secret-key bytes after the upload', async () => {
-  const { profile } = await freshEnvWithIdentity();
+  const { profile, identity } = await freshEnvWithIdentity();
   let capturedSk = null;
-  const uploader = (file, sk) => {
-    capturedSk = sk;
-    return Promise.resolve({
-      url: 'x', hash: 'h', mime: 'image/png', size: 1, server: 's',
-    });
-  };
+  const original = identity.getNostrSecretKeyBytes.bind(identity);
+  identity.getNostrSecretKeyBytes = async () => { capturedSk = await original(); return capturedSk; };
+  const uploader = () => Promise.resolve({ url: 'x', hash: 'h', mime: 'image/png', size: 1, server: 's' });
   await profile.uploadAvatar(fakeFile(), { uploader });
   assert.ok(capturedSk instanceof Uint8Array);
   // Every byte zeroed after the call returned.

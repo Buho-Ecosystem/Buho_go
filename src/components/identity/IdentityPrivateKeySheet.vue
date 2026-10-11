@@ -1,16 +1,16 @@
 <template>
-  <q-dialog :model-value="modelValue" position="bottom" :persistent="busy" :aria-label="$t('Private key')" @update:model-value="close">
+  <q-dialog :model-value="modelValue" position="bottom" :persistent="busy" :aria-label="$t('Secret key')" @update:model-value="close">
     <q-card class="private-key-sheet">
       <header>
-        <div><span class="private-key-kicker">{{ $t('Private key') }}</span><h2>{{ name }}</h2></div>
+        <div><span class="private-key-kicker">{{ $t('Secret key') }}</span><h2>{{ name }}</h2></div>
         <q-btn flat round :disable="busy" :aria-label="$t('Close')" @click="close"><Icon icon="tabler:x" width="20" /></q-btn>
       </header>
       <p class="private-key-public">{{ npub.slice(0, 16) }}…{{ npub.slice(-8) }}</p>
       <div class="private-key-note"><Icon icon="tabler:lock" width="24" /><p>{{ $t('Kept hidden for your privacy. Anyone with this key can use this identity.') }}</p></div>
       <p>{{ $t('Copy only to an app you trust. Never send it in a message.') }}</p>
       <p v-if="error" role="alert" class="private-key-error">{{ error }}</p>
-      <p v-if="copied" role="status">{{ $t('Private key copied') }}</p>
-      <q-btn unelevated no-caps class="private-key-copy" :loading="busy" :label="copied ? $t('Done') : $t('Copy private key')" @click="copied ? close() : copyKey()" />
+      <p v-if="copied" role="status">{{ $t('Secret key copied') }}</p>
+      <q-btn unelevated no-caps class="private-key-copy" :loading="busy" :label="copied ? $t('Done') : $t('Copy secret key')" @click="copied ? close() : copyKey()" />
     </q-card>
   </q-dialog>
 </template>
@@ -23,7 +23,8 @@ import { useWalletStore } from '../../stores/wallet';
 import { isBiometricAvailable, authenticate } from '../../utils/biometric';
 import { copySensitive } from '../../utils/sensitiveClipboard';
 
-const props = defineProps({ modelValue: Boolean, account: { type: Number, default: null }, name: { type: String, default: '' }, npub: { type: String, default: '' } });
+// The key to copy: a derived `account`, or an imported identity's `externalId`.
+const props = defineProps({ modelValue: Boolean, account: { type: Number, default: null }, externalId: { type: String, default: null }, name: { type: String, default: '' }, npub: { type: String, default: '' } });
 const emit = defineEmits(['update:modelValue']);
 const { proxy } = getCurrentInstance();
 const t = key => proxy.$t(key);
@@ -33,14 +34,14 @@ const busy = ref(false);
 const copied = ref(false);
 const error = ref('');
 let revision = 0;
-watch(() => [props.modelValue, props.account, identity.fingerprint], () => { revision++; copied.value = false; error.value = ''; }, { flush: 'sync' });
+watch(() => [props.modelValue, props.account, props.externalId, identity.fingerprint], () => { revision++; copied.value = false; error.value = ''; }, { flush: 'sync' });
 onBeforeUnmount(() => { revision++; });
 function close() { if (!busy.value) emit('update:modelValue', false); }
 
 async function copyKey() {
-  if (busy.value || props.account === null) return;
+  if (busy.value || (props.account === null && !props.externalId)) return;
   const request = revision;
-  const account = props.account;
+  const { account, externalId } = props;
   busy.value = true;
   error.value = '';
   const isCurrent = () => request === revision && props.modelValue;
@@ -56,7 +57,7 @@ async function copyKey() {
       if (wallet.biometricsEnabled) {
         const { available } = await isBiometricAvailable();
         assertCurrent();
-        if (available && !await authenticate({ reason: t('Copy private key'), title: 'BuhoGO', subtitle: props.name, useFallback: true })) {
+        if (available && !await authenticate({ reason: t('Copy secret key'), title: 'BuhoGO', subtitle: props.name, useFallback: true })) {
           failureMessage = 'Unlock was not completed. Try again when you are ready.';
           throw new Error('Authentication cancelled');
         }
@@ -65,9 +66,9 @@ async function copyKey() {
       // Only a local reference: never render or cache nsec in component/store state.
       let nsec;
       try {
-        ({ nsec } = await identity.revealNostrSecret(account));
+        ({ nsec } = externalId ? await identity.revealExternalSecret(externalId) : await identity.revealNostrSecret(account));
       } catch (error) {
-        failureMessage = 'Private key could not be accessed. Please try again.';
+        failureMessage = 'Secret key could not be accessed. Please try again.';
         throw error;
       }
       assertCurrent();

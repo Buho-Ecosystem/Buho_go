@@ -24,6 +24,13 @@
           :interactive="false"
         />
         <IdentityRow
+          v-if="identityCount > 1"
+          icon="tabler:x"
+          tone="danger"
+          :label="$t('All {n} identities on this phone are erased', { n: identityCount })"
+          :interactive="false"
+        />
+        <IdentityRow
           icon="tabler:x"
           tone="danger"
           :label="lossLine"
@@ -138,6 +145,15 @@ export default {
 
     siteCount() {
       return this.identity.connectedSites.length;
+    },
+
+    /**
+     * Every identity on this phone goes: those from the 12 words this screen
+     * throws away, and the ones brought from other apps.
+     */
+    identityCount() {
+      const listed = this.identity.nostrKnownAccounts.filter((a) => !this.identity.nostrRemovedAccounts.includes(a.i));
+      return listed.length + this.identity.externalIdentities.length;
     },
 
     bucketSats() {

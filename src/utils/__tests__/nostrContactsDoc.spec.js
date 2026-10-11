@@ -309,9 +309,9 @@ await test('extractDocContacts: an undecodable npub is treated as foreign', () =
   assert.equal(manual.length, 0);
 });
 
-await test('buildContactsDocEvent: signs kind 30078 with the frozen d tag', () => {
+await test('buildContactsDocEvent: signs kind 30078 with the frozen d tag', async () => {
   const doc = mergeEntriesIntoDoc({ doc: emptyDoc(), entries: [nostrEntry()] }).doc;
-  const event = buildContactsDocEvent({
+  const event = await buildContactsDocEvent({
     secretKey: ALICE_SECRET,
     pubkey: ALICE_PUBKEY,
     doc,
@@ -329,10 +329,10 @@ await test('buildContactsDocEvent: signs kind 30078 with the frozen d tag', () =
   assert.deepEqual(roundTripped, doc);
 });
 
-await test('buildContactsDocEvent: refuses an over-sized doc instead of truncating', () => {
+await test('buildContactsDocEvent: refuses an over-sized doc instead of truncating', async () => {
   const doc = emptyDoc();
   doc.contacts.push({ id: 'c-big', name: 'x'.repeat(MAX_DOC_PLAINTEXT_BYTES), npub: BOB_NPUB, updatedAt: 1 });
-  assert.throws(
+  await assert.rejects(
     () => buildContactsDocEvent({ secretKey: BOB_SECRET, pubkey: BOB_PUBKEY, doc }),
     (err) => err.code === 'CONTACTS_DOC_TOO_LARGE',
   );

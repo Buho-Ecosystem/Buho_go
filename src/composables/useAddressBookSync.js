@@ -53,6 +53,9 @@ export function useAddressBookSync() {
   // the kiosk route guard in boot/kiosk.js).
   const blocked = () => {
     if (walletStore.kioskEnabled) return true
+    // A signer app would ask for approval at random moments: contacts of
+    // such an identity sync when the person acts, never in the background.
+    if (identityStore.identityCapabilities?.needsApproval) return true
     try {
       const saved = localStorage.getItem('buhoGO_wallet_store')
       if (saved && JSON.parse(saved).kioskEnabled) return true

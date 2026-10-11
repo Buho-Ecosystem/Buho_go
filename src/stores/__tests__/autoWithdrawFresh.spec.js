@@ -17,6 +17,7 @@ function load() {
     './transactionMetadata': { useTransactionMetadataStore: () => ({ addTagToTransaction: async () => {}, setNoteForTransaction: async () => {} }) },
     '../providers/WalletFactory': { WALLET_TYPES: { SPARK: 'spark', ARKADE: 'arkade', NWC: 'nwc', LNBITS: 'lnbits' } },
     '../utils/lnurlHttp.js': {},
+    '../utils/autoWithdrawKeys.js': { migratePocketConfigKeys: (configs) => ({ configs, moved: [], dropped: [] }) },
   };
   const module = { exports: {} };
   new Function('require', 'module', 'exports', code)((n) => deps[n] || {}, module, module.exports);

@@ -34,8 +34,7 @@
  */
 
 import {
-  finalizeEvent,
-  nip44,
+  createSecretKeySigner,
   nip19,
   verifyEvent,
 } from 'nostr-core';
@@ -44,7 +43,6 @@ import {
   publishToRelaysEager,
   getRelayPool,
 } from './nostrRelays.js';
-import { deriveSelfConversationKey } from './nostrAddressBook.js';
 import { compareEventFreshness } from './nostrFetch.js';
 
 // ----------------------------------------------------------------------------
@@ -464,19 +462,34 @@ export function extractDocContacts(doc) {
 // ----------------------------------------------------------------------------
 
 /**
+ * The identity's signer: a NostrCore Signer, or raw key bytes (tests,
+ * older callers) wrapped into one. Self-encryption through a signer
+ * (`nip44.encrypt(ownPubkey, …)`) is the same conversation key as the
+ * raw-key path, so every existing doc stays readable.
+ */
+export function asSigner(signer, secretKey) {
+  if (signer && typeof signer.signEvent === 'function') return signer;
+  if (secretKey instanceof Uint8Array && secretKey.length === 32) return createSecretKeySigner(secretKey);
+  throw new TypeError('a Signer or a 32-byte secret key is required');
+}
+
+/**
  * Build and sign the kind:30078 event carrying the encrypted doc.
  *
  * @param {{
- *   secretKey:  Uint8Array,
+ *   signer?:    import('nostr-core').Signer,
+ *   secretKey?: Uint8Array,  // instead of a signer
  *   pubkey:     string,
  *   doc:        object,
- *   createdAt?: number,     // seconds; the caller owns the replaceable clock
+ *   createdAt?: number,      // seconds; the caller owns the replaceable clock
  * }} args
+ * @returns {Promise<import('nostr-core').VerifiedEvent>}
  * @throws Error with code 'CONTACTS_DOC_TOO_LARGE' when the plaintext
  *         exceeds MAX_DOC_PLAINTEXT_BYTES — the caller keeps its dirty
  *         state and retries later; nothing is truncated.
  */
-export function buildContactsDocEvent({ secretKey, pubkey, doc, createdAt }) {
+export async function buildContactsDocEvent({ signer, secretKey, pubkey, doc, createdAt }) {
+  const activeSigner = asSigner(signer, secretKey);
   const plaintext = JSON.stringify(doc);
   const bytes = new TextEncoder().encode(plaintext).length;
   if (bytes > MAX_DOC_PLAINTEXT_BYTES) {
@@ -484,9 +497,8 @@ export function buildContactsDocEvent({ secretKey, pubkey, doc, createdAt }) {
     err.code = 'CONTACTS_DOC_TOO_LARGE';
     throw err;
   }
-  const conversationKey = deriveSelfConversationKey(secretKey, pubkey);
-  const content = nip44.encrypt(plaintext, conversationKey);
-  return finalizeEvent({
+  const content = await activeSigner.nip44.encrypt(pubkey.toLowerCase(), plaintext);
+  return activeSigner.signEvent({
     kind: CONTACTS_DOC_KIND,
     created_at: Number.isFinite(createdAt) ? createdAt : Math.floor(Date.now() / 1000),
     tags: [
@@ -495,7 +507,7 @@ export function buildContactsDocEvent({ secretKey, pubkey, doc, createdAt }) {
       ['encrypted', 'nip44'],
     ],
     content,
-  }, secretKey);
+  });
 }
 
 /**
@@ -562,7 +574,8 @@ async function queryOneRelay(pool, url, filter, maxWait) {
  *   pool?:      any,
  *   relays?:    readonly string[],
  *   pubkey:     string,
- *   secretKey:  Uint8Array,
+ *   signer?:    import('nostr-core').Signer,
+ *   secretKey?: Uint8Array,  // instead of a signer
  *   timeoutMs?: number,
  * }} args
  * @returns {Promise<{
@@ -575,13 +588,11 @@ async function queryOneRelay(pool, url, filter, maxWait) {
  *         newest valid event cannot be decrypted or parsed — the
  *         caller must NOT publish over a doc it cannot read.
  */
-export async function fetchContactsDoc({ pool, relays, pubkey, secretKey, timeoutMs }) {
+export async function fetchContactsDoc({ pool, relays, pubkey, signer, secretKey, timeoutMs }) {
   if (typeof pubkey !== 'string' || !HEX_PUBKEY_RE.test(pubkey.toLowerCase())) {
     throw new TypeError('pubkey must be a 64-char hex string');
   }
-  if (!(secretKey instanceof Uint8Array) || secretKey.length !== 32) {
-    throw new TypeError('secretKey must be a 32-byte Uint8Array');
-  }
+  const activeSigner = asSigner(signer, secretKey);
   const activePool = pool ?? getRelayPool();
   const urls = Array.isArray(relays) && relays.length > 0 ? [...relays] : [...DEFAULT_RELAYS];
   const maxWait = Number.isFinite(timeoutMs) ? timeoutMs : DEFAULT_DOC_TIMEOUT_MS;
@@ -629,8 +640,7 @@ export async function fetchContactsDoc({ pool, relays, pubkey, secretKey, timeou
 
   let doc;
   try {
-    const conversationKey = deriveSelfConversationKey(secretKey, pubkeyHex);
-    doc = normalizeDoc(JSON.parse(nip44.decrypt(winner.content, conversationKey)));
+    doc = normalizeDoc(JSON.parse(await activeSigner.nip44.decrypt(pubkeyHex, winner.content)));
   } catch (err) {
     const wrapped = new Error('contacts doc could not be decrypted');
     wrapped.code = 'CONTACTS_DOC_DECRYPT_FAILED';
@@ -639,6 +649,30 @@ export async function fetchContactsDoc({ pool, relays, pubkey, secretKey, timeou
   }
 
   return { found: true, doc, event: winner, reachedRelays };
+}
+
+/**
+ * Whether this key already has a relay list (NIP-65) on the relays: true,
+ * false, or null when that could not be checked. Publishing a relay list
+ * replaces the person's own, so callers publish only on a definite false.
+ *
+ * @returns {Promise<boolean|null>}
+ */
+export async function hasRelayList({ pool, relays, pubkey, timeoutMs } = {}) {
+  try {
+    if (typeof pubkey !== 'string' || !HEX_PUBKEY_RE.test(pubkey.toLowerCase())) return null;
+    const activePool = pool ?? getRelayPool();
+    const urls = Array.isArray(relays) && relays.length > 0 ? [...relays] : [...DEFAULT_RELAYS];
+    const events = await activePool.querySync(urls, {
+      kinds: [RELAY_LIST_KIND],
+      authors: [pubkey.toLowerCase()],
+      limit: 1,
+    }, { maxWait: Number.isFinite(timeoutMs) ? timeoutMs : DEFAULT_DOC_TIMEOUT_MS });
+    if (!Array.isArray(events)) return null;
+    return events.some((event) => event?.kind === RELAY_LIST_KIND && event.pubkey === pubkey.toLowerCase());
+  } catch {
+    return null;
+  }
 }
 
 /**

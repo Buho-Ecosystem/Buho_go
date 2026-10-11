@@ -4,12 +4,20 @@
  * Bitcoin wallet that restores the same words finds this money without
  * BuhoGO, which is the whole point of an exit.
  *
- * Two addresses live under the words, both on the receive chain so a
- * standard gap-limit scan discovers them:
- *   - destination  m/84'/{coin}'/0'/0/0   where the final sweep pays out
- *   - fee money    m/84'/{coin}'/0'/0/1   where the person sends the small
- *                  on-chain amount that pays the exit's mining fees; its key
- *                  signs the fee-paying child transactions (CPFP)
+ * Each Spark wallet (one Breez account under the shared words) owns two
+ * addresses, both on the receive chain so a standard gap-limit scan
+ * discovers them:
+ *   - destination  where the final sweep pays out
+ *   - fee money    where the person sends the small on-chain amount that
+ *                  pays the exit's mining fees; its key signs the
+ *                  fee-paying child transactions (CPFP)
+ *
+ * Per account, so two wallets exiting at once never mistake each other's
+ * fee money or fan-out outputs for their own:
+ *   account 1      m/84'/{coin}'/0'/0/0  and  /0/1   (unchanged since launch)
+ *   account n>=2   /0/(2n-2)             and  /0/(2n-1)
+ *   account 0      /0/10                 and  /0/11
+ * All twelve indices sit well inside the usual gap limit of 20.
  *
  * The private key leaves this module only for the fee money, and only at
  * signing time. Nothing here is logged or persisted.
@@ -21,14 +29,15 @@ import { sha256 } from '@noble/hashes/sha2.js';
 import { ripemd160 } from '@noble/hashes/legacy.js';
 import { bytesToHex } from '@noble/hashes/utils.js';
 import { bech32, bech32m } from 'bech32';
+import { SPARK_ACCOUNT_ORDER, isSparkAccountNumber } from './sparkAccounts.js';
 
 const NETWORKS = Object.freeze({
   mainnet: { coinType: 0, hrp: 'bc', p2pkh: 0x00, p2sh: 0x05 },
   regtest: { coinType: 1, hrp: 'bcrt', p2pkh: 0x6f, p2sh: 0xc4 },
 });
 
-export const EXIT_DESTINATION_INDEX = 0;
-export const EXIT_FUNDING_INDEX = 1;
+/** Account 0 came last to the slot table, so its pair sits after account 5's. */
+const ACCOUNT_ZERO_INDICES = Object.freeze({ destination: 10, funding: 11 });
 
 function networkParams(network) {
   const params = NETWORKS[network];
@@ -36,8 +45,30 @@ function networkParams(network) {
   return params;
 }
 
+/** The receive-chain indices one Spark account's exit uses. */
+export function exitKeyIndices(accountNumber) {
+  if (!isSparkAccountNumber(accountNumber)) throw new Error(`Unsupported Spark account: ${accountNumber}`);
+  if (accountNumber === 0) return ACCOUNT_ZERO_INDICES;
+  return Object.freeze({ destination: 2 * accountNumber - 2, funding: 2 * accountNumber - 1 });
+}
+
 export function exitKeyPath(network, index) {
   return `m/84'/${networkParams(network).coinType}'/0'/0/${index}`;
+}
+
+/** Both paths of one account's exit, no key material. */
+export function exitKeyPaths(network, accountNumber) {
+  const indices = exitKeyIndices(accountNumber);
+  return { destination: exitKeyPath(network, indices.destination), funding: exitKeyPath(network, indices.funding) };
+}
+
+/**
+ * Every fee money path the app can ever have handed out on a network. A
+ * stored path outside this set never reaches the deriver, so a damaged or
+ * edited ledger cannot make signing use some other key under the words.
+ */
+function knownFundingPaths(network) {
+  return new Set(SPARK_ACCOUNT_ORDER.map(account => exitKeyPaths(network, account).funding));
 }
 
 function hash160(bytes) {
@@ -53,31 +84,47 @@ export function p2wpkhAddress(publicKey, network = 'mainnet') {
   return bech32.encode(hrp, [0, ...bech32.toWords(hash160(publicKey))]);
 }
 
-function deriveNode(mnemonic, network, index) {
-  const root = HDKey.fromMasterSeed(mnemonicToSeedSync(mnemonic));
-  const path = exitKeyPath(network, index);
+function deriveNode(root, path) {
   const node = root.derive(path);
   if (!node.publicKey || !node.privateKey) throw new Error('Key derivation failed');
-  return { node, path };
+  return node;
 }
 
-/** Both exit addresses, no private material. */
-export function deriveExitAddresses(mnemonic, { network = 'mainnet' } = {}) {
-  const destination = deriveNode(mnemonic, network, EXIT_DESTINATION_INDEX);
-  const funding = deriveNode(mnemonic, network, EXIT_FUNDING_INDEX);
+/** One account's two exit addresses, no private material. */
+export function deriveExitAddresses(mnemonic, { network = 'mainnet', accountNumber } = {}) {
+  const paths = exitKeyPaths(network, accountNumber);
+  const root = HDKey.fromMasterSeed(mnemonicToSeedSync(mnemonic));
+  const destination = deriveNode(root, paths.destination);
+  const funding = deriveNode(root, paths.funding);
   return {
-    destination: { address: p2wpkhAddress(destination.node.publicKey, network), path: destination.path },
+    destination: { address: p2wpkhAddress(destination.publicKey, network), path: paths.destination },
     funding: {
-      address: p2wpkhAddress(funding.node.publicKey, network),
-      path: funding.path,
-      publicKeyHex: bytesToHex(funding.node.publicKey),
+      address: p2wpkhAddress(funding.publicKey, network),
+      path: paths.funding,
+      publicKeyHex: bytesToHex(funding.publicKey),
     },
   };
 }
 
-/** The fee money key, for the SDK's single-key CPFP signer. Call at signing time only. */
-export function deriveFundingKey(mnemonic, { network = 'mainnet' } = {}) {
-  const { node, path } = deriveNode(mnemonic, network, EXIT_FUNDING_INDEX);
+/**
+ * The fee money address of every account under the words. An exit must never
+ * pay into one of these: the sweep would land on money another exit counts
+ * as its own fee money.
+ */
+export function deriveAllFundingAddresses(mnemonic, { network = 'mainnet' } = {}) {
+  const root = HDKey.fromMasterSeed(mnemonicToSeedSync(mnemonic));
+  return SPARK_ACCOUNT_ORDER.map(account => p2wpkhAddress(deriveNode(root, exitKeyPaths(network, account).funding).publicKey, network));
+}
+
+/**
+ * The fee money key at the path an exit recorded when it started, for the
+ * SDK's single-key CPFP signer. Signing from the recorded path, not today's
+ * mapping, lets an exit begun under an older layout finish on its own key.
+ * Call at signing time only.
+ */
+export function deriveFundingKey(mnemonic, { network = 'mainnet', path } = {}) {
+  if (!knownFundingPaths(network).has(path)) throw new Error('Unknown fee money path');
+  const node = deriveNode(HDKey.fromMasterSeed(mnemonicToSeedSync(mnemonic)), path);
   return {
     path,
     address: p2wpkhAddress(node.publicKey, network),
@@ -150,16 +197,17 @@ export function parseBitcoinAddress(input) {
 }
 
 /**
- * Decide whether an address may receive the exit. `excluded` carries the
- * wallet's own Spark deposit addresses: paying those would send the money
- * straight back into Spark.
+ * Decide whether an address may receive the exit. `excluded` carries Spark
+ * deposit addresses: paying those would send the money straight back into
+ * Spark. `feeAddresses` carries every exit's fee money address: the sweep
+ * would be counted, and maybe spent, as fee money by another exit.
  */
-export function classifyDestination(input, { network = 'mainnet', excluded = [] } = {}) {
+export function classifyDestination(input, { network = 'mainnet', excluded = [], feeAddresses = [] } = {}) {
   const parsed = parseBitcoinAddress(input);
   if (!parsed) return { ok: false, reason: 'not_onchain' };
   if (parsed.network !== network) return { ok: false, reason: 'wrong_network' };
-  if (excluded.some(candidate => String(candidate).toLowerCase() === parsed.address.toLowerCase())) {
-    return { ok: false, reason: 'spark_deposit' };
-  }
+  const matches = candidate => String(candidate).toLowerCase() === parsed.address.toLowerCase();
+  if (excluded.some(matches)) return { ok: false, reason: 'spark_deposit' };
+  if (feeAddresses.some(matches)) return { ok: false, reason: 'exit_funding' };
   return { ok: true, address: parsed.address, type: parsed.type };
 }

@@ -24,9 +24,14 @@ import {
   publishToRelaysEager,
 } from '../utils/nostrRelays.js';
 import {
-  buildKind0Event,
-  buildKind10002Event,
+  kind0Template,
+  kind10002Template,
+  foreignProfileFields,
 } from '../utils/nostrProfile.js';
+import { hasRelayList } from '../utils/nostrContactsDoc.js';
+
+/** Keys known to have a relay list this session: no need to ask again. */
+const keysWithRelayList = new Set();
 import { nip05AddressFor, ownUsernameFrom, splitNip05, isFreeShapeHandle } from '../services/nip05.js';
 import {
   fetchProfile as fetchProfileFromRelays,
@@ -193,6 +198,12 @@ export const useProfileStore = defineStore('profile', {
     eventVersion: null,
     /** Signed outbox entry. Retries send the same event until the content changes. */
     pendingEvent: null,
+    /**
+     * Fields of the published profile that BuhoGO does not edit (set by
+     * other apps), published back unchanged so an edit here never deletes
+     * them (utils/nostrProfile.js, foreignProfileFields).
+     */
+    extraContent: {},
     /** Receipt written atomically with a claimed username; closes interrupted handoffs. */
     lastUsernameClaim: '',
     /** Invalidates asynchronous work when this store loads a different session. */
@@ -290,6 +301,7 @@ export const useProfileStore = defineStore('profile', {
       this.pendingFields = {};
       this.eventVersion = null;
       this.pendingEvent = null;
+      this.extraContent = {};
       this.lastUsernameClaim = '';
       this.session += 1;
       this.isPublishing = false;
@@ -362,6 +374,7 @@ export const useProfileStore = defineStore('profile', {
               this.pendingEvent = pending;
             }
             this.lastUsernameClaim = typeof parsed.lastUsernameClaim === 'string' ? parsed.lastUsernameClaim : '';
+            this.extraContent = foreignProfileFields(parsed.extraContent);
           }
         }
       } catch (err) {
@@ -397,6 +410,7 @@ export const useProfileStore = defineStore('profile', {
         pendingEvent: this.pendingEvent,
         lastUsernameClaim: this.lastUsernameClaim,
       };
+      if (Object.keys(this.extraContent).length) payload.extraContent = this.extraContent;
       if (this.lastPublishedAt !== null) {
         payload.lastPublishedAt = this.lastPublishedAt;
       }
@@ -676,17 +690,15 @@ export const useProfileStore = defineStore('profile', {
 
       this.isUploadingAvatar = true;
       try {
-        const secretKey = await identity.getNostrSecretKeyBytes();
+        const { signer, release } = await identity.acquireSigner();
         let upshot;
         try {
           if (!scope.current()) return { ok: false, code: 'IDENTITY_CHANGED' };
-          upshot = await upload(file, secretKey, uploadOpts);
+          upshot = await upload(file, signer, uploadOpts);
         } finally {
-          // Wipe the key bytes regardless of whether the upload
-          // succeeded — the helper signs once before any network I/O
-          // so the key is no longer needed by the time we hit this
-          // line.
-          secretKey.fill(0);
+          // Wipes any key bytes the signer holds, whether or not the
+          // upload succeeded: it signs once before any network I/O.
+          release();
         }
 
         // Success: commit the new URL into `picture` and mark dirty
@@ -790,12 +802,17 @@ export const useProfileStore = defineStore('profile', {
 
       this.isPublishing = true;
       try {
-        // Sign first, publish second — keep the secret-key window as
-        // narrow as we can. The finally below wipes the buffer even
-        // if signing throws (which the builders don't for valid input).
-        const secretKey = await identity.getNostrSecretKeyBytes();
+        // Sign first, publish second, keeping the signer's window as
+        // narrow as we can. A relay list is published only when this key
+        // has none yet: publishing one replaces the person's own list,
+        // which their other apps rely on to find them.
+        const listed = keysWithRelayList.has(scope.pubkey)
+          || await hasRelayList({ pool, relays, pubkey: scope.pubkey, timeoutMs: opts.timeoutMs });
+        if (listed === true) keysWithRelayList.add(scope.pubkey);
+        const publishRelayList = listed === false;
+        const { signer, release } = await identity.acquireSigner();
         let profileEvent;
-        let relayListEvent;
+        let relayListEvent = null;
         try {
           if (!scope.current() || this.revision !== revision) return null;
           const createdAt = Math.max(
@@ -804,32 +821,29 @@ export const useProfileStore = defineStore('profile', {
           );
           profileEvent = this.pendingEvent?.revision === revision
             ? this.pendingEvent.event
-            : buildKind0Event(payload, secretKey, { createdAt });
-          if (profileEvent.pubkey !== scope.pubkey) return null;
-          relayListEvent = buildKind10002Event(relays, secretKey, {
-            createdAt: profileEvent.created_at,
-          });
+            : await signer.signEvent(kind0Template(payload, { createdAt, extra: this.extraContent }));
+          if (profileEvent.pubkey !== scope.pubkey || !scope.current()) return null;
+          if (publishRelayList) {
+            relayListEvent = await signer.signEvent(kind10002Template(relays, { createdAt: profileEvent.created_at }));
+            keysWithRelayList.add(scope.pubkey);
+          }
           this.eventVersion = { created_at: profileEvent.created_at, id: profileEvent.id };
           this.pendingEvent = { revision, event: profileEvent };
           this._persistMetadata();
         } finally {
-          // Best-effort wipe. V8 may still hold finalised copies of
-          // the buffer, but our reference is gone and the array
-          // itself is zeroed before falling out of scope.
-          secretKey.fill(0);
+          release();
         }
 
         // Fire both events in parallel. kind:10002 is genuinely
         // background — we log its outcome but never gate the UI on
         // it. kind:0 drives the success/failure decision.
         const profileFanout = publishToRelaysEager(pool, relays, profileEvent, publishOpts);
-        const relayListFanout = publishToRelaysEager(pool, relays, relayListEvent, publishOpts);
-
-        // Background log for the relay-list fan-out so we have
-        // visibility without making the user wait.
-        relayListFanout.allSettled.then((results) => {
-          console.info('[profile] relay list publish settled:', results);
-        }).catch(() => { /* allSettled never rejects */ });
+        if (relayListEvent) {
+          // Background: logged for visibility, never awaited by the UI.
+          publishToRelaysEager(pool, relays, relayListEvent, publishOpts).allSettled.then((results) => {
+            console.info('[profile] relay list publish settled:', results);
+          }).catch(() => { /* allSettled never rejects */ });
+        }
 
         // Combined "settle" promise: resolves with the full kind:0
         // per-relay results AND updates `lastPublishResult` as a
@@ -977,6 +991,7 @@ export const useProfileStore = defineStore('profile', {
       // Remote omissions clear synchronized fields. Pending local edits,
       // including explicit removals, survive and are published on top.
       const content = parseProfileContent(event);
+      this.extraContent = foreignProfileFields(content);
       const patch = {};
       const applied = [];
       for (const field of PROFILE_FIELDS) {

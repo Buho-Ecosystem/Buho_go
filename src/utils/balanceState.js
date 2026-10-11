@@ -122,21 +122,29 @@ export function describeBalance(state, { now = Date.now(), freshForMs = FRESH_FO
  * Total across every configured wallet. Unknown wallets contribute nothing
  * but make the total incomplete; stale inputs make it stale. A verified
  * zero is a complete zero; an unknown is never presented as one.
+ * `outdated` (some figure is known to be out of date: its last refresh
+ * failed) and `refreshing` follow the same rule as one wallet's figure.
  */
 export function summarizeTotal(walletIds, states, { now = Date.now(), freshForMs = FRESH_FOR_MS } = {}) {
   let total = 0;
+  let outdated = false;
+  let refreshing = false;
   const unknownIds = [];
   const staleIds = [];
   for (const id of walletIds) {
     const d = describeBalance(states?.[id], { now, freshForMs });
+    refreshing ||= d.refreshing;
     if (!d.known) { unknownIds.push(id); continue; }
     total += d.value;
     if (d.status !== BALANCE_STATUS.FRESH) staleIds.push(id);
+    outdated ||= d.stale && !!d.error && !d.refreshing;
   }
   return {
     total,
     complete: unknownIds.length === 0,
     stale: staleIds.length > 0,
+    outdated,
+    refreshing,
     unknownIds,
     staleIds,
   };

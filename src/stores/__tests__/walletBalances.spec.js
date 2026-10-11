@@ -112,7 +112,7 @@ test('conflicting legacy caches need verification; migration cannot downgrade an
   const legacy = { activeWalletId: 'A', balance: 37, connectedWallets: [{ id: 'A', balance: 1747 }] };
   h.store.hydrateBalanceStates(legacy);
   h.fail(); await h.vm.updateWalletBalance();
-  assert.equal(h.vm.activeCanonicalBalance, null); assert.equal(h.row(), '—');
+  assert.equal(h.vm.activeCanonicalBalance, null); assert.equal(h.row(), '', 'unknown shows a placeholder, never a dash');
   assert.equal(h.store.totalBalanceInfo.complete, false);
   await h.store.persistState();
   assert.equal(JSON.parse(h.saved.get('buhoGO_wallet_store')).wallets[0].metadata.cachedBalance, null);
@@ -129,7 +129,7 @@ test('upgrade clears conflicting saved balances durably, then recovers from the 
   h.saved.set('buhoGO_wallet_state', JSON.stringify({ activeWalletId: 'A', balance: 37, connectedWallets: [{ id: 'A', balance: 1747 }] }));
   h.fail();
   const migrated = await h.restart();
-  assert.equal(h.vm.activeCanonicalBalance, null); assert.equal(h.row(), '—');
+  assert.equal(h.vm.activeCanonicalBalance, null); assert.equal(h.row(), '', 'unknown shows a placeholder, never a dash');
   assert.equal(migrated.totalBalanceInfo.complete, false);
   await migrated.persistState();
   const offline = await h.restart();

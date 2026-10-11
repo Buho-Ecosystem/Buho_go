@@ -92,6 +92,31 @@ export function normaliseProfileContent(profile) {
   return out;
 }
 
+/** Cap for fields kept from other apps, so a hostile profile cannot bloat storage. */
+const MAX_FOREIGN_FIELDS_BYTES = 8 * 1024;
+
+/**
+ * The fields of a kind:0 content that BuhoGO does not edit (lud06,
+ * pronouns, bot, anything another app set), kept so a publish from here
+ * never deletes them. {} when there are none or they are too large.
+ *
+ * @param {unknown} content  parsed kind:0 content
+ * @returns {Record<string, unknown>}
+ */
+export function foreignProfileFields(content) {
+  if (!content || typeof content !== 'object' || Array.isArray(content)) return {};
+  const out = {};
+  for (const [key, value] of Object.entries(content)) {
+    if (PROFILE_CONTENT_FIELDS.includes(key) || value === undefined || typeof value === 'function') continue;
+    out[key] = value;
+  }
+  try {
+    return JSON.stringify(out).length <= MAX_FOREIGN_FIELDS_BYTES ? out : {};
+  } catch {
+    return {};
+  }
+}
+
 function assertSecretKey(bytes) {
   if (!(bytes instanceof Uint8Array) || bytes.length !== 32) {
     throw new TypeError('secretKey must be a 32-byte Uint8Array');
@@ -107,28 +132,26 @@ function nowSeconds() {
 // ----------------------------------------------------------------------------
 
 /**
- * Build a signed kind:0 profile metadata event.
+ * The unsigned kind:0 profile metadata event, for any signer.
  *
  * @param {Record<string, unknown>} profile  - Object with any subset of
  *   `PROFILE_CONTENT_FIELDS`. Empty / whitespace-only fields are dropped.
- * @param {Uint8Array} secretKey - 32-byte schnorr secret key (NIP-06).
- * @param {{ createdAt?: number }} [opts]    - Override the event timestamp.
- * @returns {import('nostr-core').VerifiedEvent}
+ * @param {{ createdAt?: number, extra?: Record<string, unknown> }} [opts]
+ *   `extra`: fields BuhoGO does not edit, published unchanged
+ *   (`foreignProfileFields`).
+ * @returns {import('nostr-core').EventTemplate}
  */
-export function buildKind0Event(profile, secretKey, opts = {}) {
-  assertSecretKey(secretKey);
-  const content = JSON.stringify(normaliseProfileContent(profile));
-  const template = {
+export function kind0Template(profile, opts = {}) {
+  return {
     kind: PROFILE_KIND,
     tags: [],
-    content,
+    content: JSON.stringify({ ...foreignProfileFields(opts.extra), ...normaliseProfileContent(profile) }),
     created_at: Number.isFinite(opts.createdAt) ? opts.createdAt : nowSeconds(),
   };
-  return finalizeEvent(template, secretKey);
 }
 
 /**
- * Build a signed kind:10002 relay list event (NIP-65).
+ * The unsigned kind:10002 relay list event (NIP-65), for any signer.
  *
  * Every URL in `relayUrls` is published as a bidirectional `r` tag.
  * The product uses one unified relay set so we never emit a one-way
@@ -136,12 +159,10 @@ export function buildKind0Event(profile, secretKey, opts = {}) {
  * for every entry.
  *
  * @param {readonly string[]} relayUrls
- * @param {Uint8Array} secretKey
  * @param {{ createdAt?: number }} [opts]
- * @returns {import('nostr-core').VerifiedEvent}
+ * @returns {import('nostr-core').EventTemplate}
  */
-export function buildKind10002Event(relayUrls, secretKey, opts = {}) {
-  assertSecretKey(secretKey);
+export function kind10002Template(relayUrls, opts = {}) {
   if (!Array.isArray(relayUrls) || relayUrls.length === 0) {
     throw new TypeError('relayUrls must be a non-empty array');
   }
@@ -150,5 +171,31 @@ export function buildKind10002Event(relayUrls, secretKey, opts = {}) {
   if (Number.isFinite(opts.createdAt)) {
     template.created_at = opts.createdAt;
   }
-  return finalizeEvent(template, secretKey);
+  return template;
+}
+
+/**
+ * Build a signed kind:0 profile metadata event with a secret key.
+ *
+ * @param {Record<string, unknown>} profile
+ * @param {Uint8Array} secretKey - 32-byte schnorr secret key (NIP-06).
+ * @param {{ createdAt?: number }} [opts]
+ * @returns {import('nostr-core').VerifiedEvent}
+ */
+export function buildKind0Event(profile, secretKey, opts = {}) {
+  assertSecretKey(secretKey);
+  return finalizeEvent(kind0Template(profile, opts), secretKey);
+}
+
+/**
+ * Build a signed kind:10002 relay list event (NIP-65) with a secret key.
+ *
+ * @param {readonly string[]} relayUrls
+ * @param {Uint8Array} secretKey
+ * @param {{ createdAt?: number }} [opts]
+ * @returns {import('nostr-core').VerifiedEvent}
+ */
+export function buildKind10002Event(relayUrls, secretKey, opts = {}) {
+  assertSecretKey(secretKey);
+  return finalizeEvent(kind10002Template(relayUrls, opts), secretKey);
 }

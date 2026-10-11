@@ -1255,9 +1255,9 @@ export default {
      * stall while the app is backgrounded.
      */
     async startSparkEventMonitor() {
-      // Bound to the invoice's own wallet and payment hash. With both Spark
-      // accounts live, "some receive on the active provider" is not proof:
-      // a payment to the other account, or an unrelated receive on this one,
+      // Bound to the invoice's own wallet and payment hash. With every Spark
+      // account live, "some receive on the active provider" is not proof:
+      // a payment to another account, or an unrelated receive on this one,
       // must never confirm the invoice on screen.
       const invoice = this.generatedInvoice;
       const walletId = invoice?.walletId || this.walletStore.activeWalletId;
@@ -3113,8 +3113,7 @@ export default {
 /* Spark/Lightning Toggle */
 
 /* Spark / Lightning / Bitcoin segmented control — compact row of
-   tabs matching the Wallet page's Business/Personal spark-tabs
-   grammar: tight padding, icons tucked left of each label. Active
+   tabs: tight padding, icons tucked left of each label. Active
    segment keeps the green tinted fill that matches the rest of the
    receive flow. */
 
