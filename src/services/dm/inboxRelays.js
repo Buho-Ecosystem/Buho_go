@@ -264,6 +264,23 @@ export function parseInboxRelayList(event) {
 // Resolver
 // ---------------------------------------------------------------------------
 
+/**
+ * The write relays of a NIP-65 list (kind 10002): `r` tags without a marker or
+ * marked `write`, through the same URL checks as an inbox list, capped.
+ * Malformed input gives [].
+ */
+export function parseWriteRelays(event) {
+  try {
+    if (!event || typeof event !== 'object' || event.kind !== KIND.RELAY_LIST || !Array.isArray(event.tags)) return [];
+    const candidates = event.tags
+      .filter((tag) => Array.isArray(tag) && tag[0] === 'r' && (tag[2] === undefined || tag[2] === 'write'))
+      .map((tag) => tag[1]);
+    return normalizeUnique(candidates).slice(0, MAX_INBOX_RELAYS_PER_CONTACT);
+  } catch {
+    return [];
+  }
+}
+
 /** True when `candidate` should replace `best`: newer, or same age and lower id. */
 function isBetter(candidate, best) {
   if (!best) return true;
@@ -281,7 +298,7 @@ function isBetter(candidate, best) {
  *
  * @returns {Promise<{ answered: boolean, event: object | null }>}
  */
-function queryRelay({ ensureRelay, url, pubkey, timeoutMs, setTimer, clearTimer }) {
+function queryRelay({ ensureRelay, url, pubkey, kind = KIND.DM_RELAYS, timeoutMs, setTimer, clearTimer }) {
   return new Promise((resolve) => {
     let settled = false;
     let timer;
@@ -307,7 +324,7 @@ function queryRelay({ ensureRelay, url, pubkey, timeoutMs, setTimer, clearTimer 
     };
     const onevent = (event) => {
       if (settled || !event || typeof event !== 'object') return;
-      if (event.kind !== KIND.DM_RELAYS || event.pubkey !== pubkey) return;
+      if (event.kind !== kind || event.pubkey !== pubkey) return;
       if (!isBetter(event, best)) return;
       // Verify only a candidate that could win: the signature is the costly part.
       if (!Number.isSafeInteger(event.created_at) || typeof event.id !== 'string') return;
@@ -333,7 +350,9 @@ function queryRelay({ ensureRelay, url, pubkey, timeoutMs, setTimer, clearTimer 
       (relay) => {
         if (settled) return;
         try {
-          const filter = { ...getDeliveryRelayFilter([pubkey]), limit: 1 };
+          const filter = kind === KIND.DM_RELAYS
+            ? { ...getDeliveryRelayFilter([pubkey]), limit: 1 }
+            : { kinds: [kind], authors: [pubkey], limit: 1 };
           sub = relay.subscribe([filter], {
             onevent,
             oneose: () => finish(true),
@@ -426,12 +445,10 @@ export function createInboxRelayResolver({
     return null;
   }
 
-  async function lookup(pubkey, hints) {
-    // Hints come from a contact's own data, so they are capped like a list.
-    const hinted = normalizeUnique(hints).slice(0, MAX_INBOX_RELAYS_PER_CONTACT);
-    const urls = [...new Set([...discovery, ...hinted])];
+  /** Ask every relay in `urls` for the newest `kind` event of `pubkey`. */
+  async function ask(urls, pubkey, kind) {
     const answers = await Promise.all(
-      urls.map((url) => queryRelay({ ensureRelay, url, pubkey, timeoutMs, setTimer, clearTimer })),
+      urls.map((url) => queryRelay({ ensureRelay, url, pubkey, kind, timeoutMs, setTimer, clearTimer })),
     );
     let best = null;
     let anyAnswered = false;
@@ -439,6 +456,28 @@ export function createInboxRelayResolver({
       if (answer.answered) anyAnswered = true;
       if (answer.event && isBetter(answer.event, best)) best = answer.event;
     }
+    return { best, anyAnswered };
+  }
+
+  async function lookup(pubkey, hints) {
+    // Hints come from a contact's own data, so they are capped like a list.
+    const hinted = normalizeUnique(hints).slice(0, MAX_INBOX_RELAYS_PER_CONTACT);
+    const urls = [...new Set([...discovery, ...hinted])];
+    let { best, anyAnswered } = await ask(urls, pubkey, KIND.DM_RELAYS);
+
+    // Relays answered without a list: it may live only where the person
+    // publishes (NIP-65, the outbox model). Ask their write relays for it.
+    // Nobody answering (offline) is not worth a second round.
+    if (anyAnswered && (!best || parseInboxRelayList(best).length === 0)) {
+      const own = await ask(urls, pubkey, KIND.RELAY_LIST);
+      const writes = parseWriteRelays(own.best).filter((url) => !urls.includes(url));
+      if (writes.length > 0) {
+        const there = await ask(writes, pubkey, KIND.DM_RELAYS);
+        if (there.best && isBetter(there.best, best)) best = there.best;
+        anyAnswered = anyAnswered || there.anyAnswered;
+      }
+    }
+
     const relays = best ? parseInboxRelayList(best) : [];
     const checkedAt = now();
     if (relays.length > 0) return { status: INBOX_STATUS.FOUND, relays, checkedAt };

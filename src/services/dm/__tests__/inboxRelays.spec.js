@@ -23,9 +23,25 @@ import {
   isPublicRelayHost,
   normalizeInboxRelayUrl,
   parseInboxRelayList,
+  parseWriteRelays,
 } from '../inboxRelays.js';
 
 const flush = () => new Promise((resolve) => setImmediate(resolve));
+
+/**
+ * Fire the manual timeouts until `promise` settles. A lookup that finds no
+ * list may ask a second round (the person's NIP-65 write relays), with
+ * timeouts of its own.
+ */
+async function fireUntilSettled(promise, timers) {
+  let settled = false;
+  promise.then(() => { settled = true; }, () => { settled = true; });
+  for (let round = 0; round < 5 && !settled; round += 1) {
+    await flush();
+    timers.fire();
+  }
+  await flush();
+}
 
 const sk = generateSecretKey();
 const PUBKEY = getPublicKey(sk);
@@ -129,7 +145,7 @@ test('blocked hosts are skipped among good ones in a list, and never queried as 
   assert.deepEqual(parseInboxRelayList({ kind: 10050, tags }), ['wss://ok.example.com/']);
   const { resolver, net } = createHarness({ discoveryRelays: [] });
   await resolver.resolve(PUBKEY, { hints: ['wss://localhost', 'wss://[::1]', 'wss://10.0.0.5', 'wss://ok.example.com'] });
-  assert.deepEqual(net.calls.map((c) => c.url), ['wss://ok.example.com/']);
+  assert.deepEqual([...new Set(net.calls.map((c) => c.url))], ['wss://ok.example.com/']);
 });
 
 test('a hostile list on a relay cannot make the resolver return a LAN relay', async () => {
@@ -356,6 +372,9 @@ function createFakeNetwork(behaviours = {}) {
   return { ensureRelay, calls, subs, behaviours };
 }
 
+/** The relays asked for an inbox list (kind 10050); a NIP-65 question (10002) is a separate step. */
+const listQueries = (net) => net.subs.filter((sub) => sub.filters[0].kinds[0] === 10050).map((sub) => sub.url);
+
 function createHarness({ behaviours = {}, discoveryRelays = ['wss://d1.example.com/', 'wss://d2.example.com/'], ...options } = {}) {
   const net = createFakeNetwork(behaviours);
   const timers = createTimers();
@@ -407,8 +426,7 @@ test('resolve returns unknown when every relay fails, refuses or stays silent', 
     },
   });
   const pending = resolver.resolve(PUBKEY, { hints: ['wss://hint.example.com'] });
-  await flush();
-  timers.fire();
+  await fireUntilSettled(pending, timers);
   assert.deepEqual(await pending, { status: 'unknown', relays: [], checkedAt: 1_000_000 });
 });
 
@@ -425,8 +443,7 @@ test('a silent relay times out and the others still decide the result', async ()
     behaviours: { [D1]: { never: true }, [D2]: { events: [event] } },
   });
   const pending = resolver.resolve(PUBKEY);
-  await flush();
-  timers.fire();
+  await fireUntilSettled(pending, timers);
   assert.equal((await pending).status, 'found');
 });
 
@@ -436,8 +453,7 @@ test('a relay that never connects times out', async () => {
     behaviours: { [D1]: { slowConnect: hang }, [D2]: { events: [] } },
   });
   const pending = resolver.resolve(PUBKEY);
-  await flush();
-  timers.fire();
+  await fireUntilSettled(pending, timers);
   assert.equal((await pending).status, 'missing');
   assert.equal(net.subs.filter((s) => s.url === D1).length, 0);
 });
@@ -449,8 +465,7 @@ test('a relay that connects after its timeout is not subscribed to', async () =>
     behaviours: { [D1]: { slowConnect: slow }, [D2]: { events: [] } },
   });
   const pending = resolver.resolve(PUBKEY);
-  await flush();
-  timers.fire();
+  await fireUntilSettled(pending, timers);
   await pending;
   release();
   await flush();
@@ -471,8 +486,7 @@ test('an event without EOSE counts when the relay later times out', async () => 
     behaviours: { [D1]: { events: [event], eose: false }, [D2]: { connectFail: true } },
   });
   const pending = resolver.resolve(PUBKEY);
-  await flush();
-  timers.fire();
+  await fireUntilSettled(pending, timers);
   assert.equal((await pending).status, 'found');
 });
 
@@ -599,27 +613,37 @@ test('the query asks for the contact\'s kind 10050 on discovery relays and valid
   await resolver.resolve(PUBKEY, {
     hints: ['wss://hint.example.com', 'ws://insecure.example.com', 'junk', 42, D1],
   });
-  assert.deepEqual(
-    net.calls.map((c) => c.url).sort(),
-    [D1, D2, 'wss://hint.example.com/'].sort(),
-  );
+  assert.deepEqual(listQueries(net).sort(), [D1, D2, 'wss://hint.example.com/'].sort());
   for (const call of net.calls) assert.deepEqual(call.opts, { connectionTimeout: 100 });
-  for (const sub of net.subs) {
+  for (const sub of net.subs.filter((s) => listQueries(net).includes(s.url) && s.filters[0].kinds[0] === 10050)) {
     assert.deepEqual(sub.filters, [{ kinds: [10050], authors: [PUBKEY], limit: 1 }]);
   }
+});
+
+test('no list on the relays we know: the person\'s NIP-65 write relays are asked for it', async () => {
+  const list = listEvent(['wss://inbox.theirs.example.com']);
+  const relayList = listEvent([], { kind: 10002, tags: [['r', 'wss://home.example.com'], ['r', 'wss://readonly.example.com', 'read'], ['r', 'wss://10.0.0.1']] });
+  const { resolver, net } = createHarness({
+    behaviours: { [D1]: { events: [relayList] }, 'wss://home.example.com/': { events: [list] } },
+  });
+  const result = await resolver.resolve(PUBKEY);
+  assert.equal(result.status, 'found');
+  assert.deepEqual(result.relays, ['wss://inbox.theirs.example.com/']);
+  assert.ok(!net.calls.some((c) => c.url.includes('readonly') || c.url.includes('10.0.0.1')), 'only write relays, never a LAN host');
+  assert.deepEqual(parseWriteRelays(relayList), ['wss://home.example.com/']);
 });
 
 test('hints are capped', async () => {
   const hints = Array.from({ length: 50 }, (_, i) => `wss://h${i}.example.com`);
   const { resolver, net } = createHarness({ discoveryRelays: [] });
   await resolver.resolve(PUBKEY, { hints });
-  assert.equal(net.calls.length, MAX_INBOX_RELAYS_PER_CONTACT);
+  assert.equal(listQueries(net).length, MAX_INBOX_RELAYS_PER_CONTACT);
 });
 
 test('a hostile hints value is ignored', async () => {
   const { resolver, net } = createHarness();
   await resolver.resolve(PUBKEY, { hints: 'wss://hint.example.com' });
-  assert.equal(net.calls.length, 2);
+  assert.equal(listQueries(net).length, 2);
 });
 
 test('relays are queried in parallel, not one after the other', async () => {
@@ -627,9 +651,8 @@ test('relays are queried in parallel, not one after the other', async () => {
     behaviours: { [D1]: { never: true }, [D2]: { never: true } },
   });
   const pending = resolver.resolve(PUBKEY);
-  await flush();
   assert.equal(net.calls.length, 2);
-  timers.fire();
+  await fireUntilSettled(pending, timers);
   await pending;
 });
 
@@ -643,8 +666,7 @@ test('every subscription is closed and every timer cleared', async () => {
     },
   });
   const pending = resolver.resolve(PUBKEY, { hints: ['wss://hint.example.com'] });
-  await flush();
-  timers.fire();
+  await fireUntilSettled(pending, timers);
   await pending;
   assert.equal(net.subs.length, 3);
   assert.ok(net.subs.every((s) => s.closed));
@@ -795,14 +817,14 @@ test('concurrent resolves for one pubkey share a single query', async () => {
 test('force during an in-flight lookup shares it', async () => {
   const { resolver, net } = createHarness();
   const [a, b] = await Promise.all([resolver.resolve(PUBKEY), resolver.resolve(PUBKEY, { force: true })]);
-  assert.equal(net.calls.length, 2);
+  assert.equal(listQueries(net).length, 2);
   assert.deepEqual(a, b);
 });
 
 test('different pubkeys are looked up separately', async () => {
   const { resolver, net } = createHarness();
   await Promise.all([resolver.resolve(PUBKEY), resolver.resolve(OTHER_PUBKEY)]);
-  assert.equal(net.calls.length, 4);
+  assert.equal(listQueries(net).length, 4);
 });
 
 test('a lookup after the previous one finished starts a new query (no stale in-flight)', async () => {
