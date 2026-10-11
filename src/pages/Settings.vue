@@ -1774,7 +1774,7 @@
               :class="$q.dark.isActive ? 'aw-dialog-item-dark' : 'aw-dialog-item-light'"
               @click="openAutoWithdrawFromDialog(entry.wallet, entry.configKey, entry.name)"
             >
-              <div class="aw-wallet-avatar" :class="'aw-avatar-' + (entry.type || 'nwc')">
+              <div class="aw-wallet-avatar" :class="['aw-avatar-' + (entry.type || 'nwc'), { 'aw-avatar-on-dark': $q.dark.isActive }]">
                 <!-- Spark -->
                 <svg v-if="entry.type === 'spark'" width="16" height="15" viewBox="0 0 135 128" fill="none" xmlns="http://www.w3.org/2000/svg">
                   <path fill-rule="evenodd" clip-rule="evenodd" d="M79.4319 49.3554L81.7454 0H52.8438L55.1573 49.356L8.9311 31.9035L0 59.3906L47.6565 72.4425L16.7743 111.012L40.1562 128L67.2966 86.7083L94.4358 127.998L117.818 111.01L86.9359 72.4412L134.587 59.3907L125.656 31.9036L79.4319 49.3554Z" fill="white"/>
@@ -1789,7 +1789,8 @@
                   <path d="M158.566 493.857L1 901L450.49 355.202H264.831L501.791 1H187.881L36.4218 493.857H158.566Z" fill="white"/>
                 </svg>
                 <!-- Arkade -->
-                <ArkadeLogo v-else-if="entry.type === 'arkade'" variant="mark" color="orange" :size="16" />
+                <!-- Arkade's two brand colours: purple on a light tile, orange on a deep purple one. -->
+                <ArkadeLogo v-else-if="entry.type === 'arkade'" variant="mark" :color="$q.dark.isActive ? 'orange' : 'purple'" :size="16" />
                 <Icon v-else icon="tabler:wallet" width="16" height="16" style="color: white;" />
               </div>
               <div class="aw-dialog-item-info">
@@ -6952,7 +6953,10 @@ export default {
   background: linear-gradient(135deg, #FFCA4A, #F7931A);
 }
 .aw-avatar-arkade {
-  background: linear-gradient(135deg, #F14317, #C0360F);
+  background: linear-gradient(135deg, #EFEAFC, #E0D7F7);
+}
+.aw-avatar-arkade.aw-avatar-on-dark {
+  background: linear-gradient(135deg, #3A1C9C, #24105F);
 }
 
 .aw-wallet-info {
