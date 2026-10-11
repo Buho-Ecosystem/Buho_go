@@ -915,6 +915,33 @@ test('publish: auth.nostr1.com refuses anonymous writes, so the write socket aut
   });
 });
 
+test('publish asIdentity: a relay that refused an anonymous write is answered with the identity, on its own socket', async () => {
+  await withHarness({}, async (h) => {
+    const relay = h.network.addRelay(NOSTR1, PROFILES.nostr1);
+    const anonymous = makeEvent(generateSecretKey());
+    const known = makeEvent(generateSecretKey());
+    assert.equal((await h.transport.publish([NOSTR1], anonymous).allSettled)[0].ok, true);
+    const [outcome] = await h.transport.publish([NOSTR1], known, { asIdentity: true }).allSettled;
+
+    assert.equal(outcome.ok, true);
+    assert.deepEqual(relay.authLog.map((auth) => auth.pubkey), [h.ephemeralPubkeys[0], h.identityPubkey]);
+    assert.equal(h.signCalls.length, 1, 'the identity signed exactly one AUTH, for the identity write');
+    assert.equal(h.stateOf(NOSTR1, RELAY_ROLE.WRITE).authenticated, true, 'the anonymous socket stays anonymous');
+    assert.equal(h.stateOf(NOSTR1, RELAY_ROLE.IDENTITY_WRITE).authenticated, true);
+  });
+});
+
+test('resetIdentity also closes the identity write sockets; anonymous ones stay', async () => {
+  await withHarness({}, async (h) => {
+    h.network.addRelay(NOSTR1, PROFILES.nostr1);
+    await h.transport.publish([NOSTR1], makeEvent(generateSecretKey())).allSettled;
+    await h.transport.publish([NOSTR1], makeEvent(generateSecretKey()), { asIdentity: true }).allSettled;
+    assert.deepEqual(h.transport.status().map((s) => s.role).sort(), [RELAY_ROLE.IDENTITY_WRITE, RELAY_ROLE.WRITE].sort());
+    h.transport.resetIdentity();
+    assert.deepEqual(h.transport.status().map((s) => s.role), [RELAY_ROLE.WRITE]);
+  });
+});
+
 test('publish: a challenge that only comes with the refusal (damus-like) is answered and the event re-sent once', async () => {
   await withHarness({}, async (h) => {
     const relay = h.network.addRelay(DAMUS, {

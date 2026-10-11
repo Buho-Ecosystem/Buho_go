@@ -39,7 +39,7 @@ function createNetwork() {
   const stored = new Map();
   const subs = new Set();
   const network = {
-    /** Relay URL -> 'ok' | 'fail' | { prefix } ; default 'ok'. */
+    /** Relay URL -> 'ok' | 'fail' | { prefix } | 'known-senders' (refuses anonymous writes as restricted); default 'ok'. */
     behavior: new Map(),
     /** Relay URL -> the most stored events it returns per request (its own limit); default unlimited. */
     caps: new Map(),
@@ -94,11 +94,14 @@ function createNetwork() {
             },
           };
         },
-        publish(relays, event) {
+        publish(relays, event, { asIdentity = false } = {}) {
           const results = relays.map((raw) => {
             const relay = key(raw);
-            network.published.push({ relay, event });
+            network.published.push({ relay, event, asIdentity });
             const behavior = network.behavior.get(relay) ?? 'ok';
+            if (behavior === 'known-senders' && !asIdentity) {
+              return { relay, ok: false, prefix: 'restricted', message: 'known senders only', code: DM_ERROR.NO_RELAY_ACCEPTED, attempts: 1 };
+            }
             if (behavior === 'fail') {
               return { relay, ok: false, prefix: null, message: 'down', code: DM_ERROR.RELAY_UNAVAILABLE, attempts: 1 };
             }
@@ -993,6 +996,27 @@ test('send: the self copy also goes to a relay list the person already had from 
   const selfRelays = network.published.filter((p) => p.relay.includes('theirs') || p.relay.includes('alice')).map((p) => p.relay);
   assert.ok(selfRelays.some((relay) => relay.includes('theirs.example.com')), 'their other app reads this relay');
   assert.ok(selfRelays.some((relay) => relay.includes('inbox.alice')), 'ours still get it');
+});
+
+test('send: an inbox relay that takes gift wraps from known senders only gets the copy once more, as the identity', async () => {
+  const { network, alice, bob } = await pair();
+  network.behavior.set('wss://inbox.bob.example', 'known-senders');
+  const sent = await alice.inbox.send({ partner: bob.pubkey, template: textTo(bob, 'from someone it knows') });
+  await bob.inbox.start();
+  await settle(alice, bob);
+  const toBob = network.published.filter((p) => p.relay.includes('bob'));
+  assert.deepEqual(toBob.map((p) => p.asIdentity), [false, true], 'anonymous first, then the identity');
+  assert.equal(alice.store.raw.messages.get(sent.id).delivery, 'sent');
+  assert.equal(bob.store.raw.messages.get(sent.id).text, 'from someone it knows');
+  assert.ok(network.published.filter((p) => p.relay.includes('alice')).every((p) => !p.asIdentity), 'the self copy needed no identity');
+});
+
+test('send: a refusal that is not about the writer is not retried as the identity', async () => {
+  const { network, alice, bob } = await pair();
+  network.behavior.set('wss://inbox.bob.example', { prefix: 'blocked' });
+  await alice.inbox.send({ partner: bob.pubkey, template: textTo(bob) });
+  await settle(alice);
+  assert.ok(network.published.every((p) => !p.asIdentity));
 });
 
 test('send: all relays failing keeps the wraps in the outbox and retries with exponential backoff', async () => {
