@@ -414,7 +414,7 @@ test('request card: every end state says so; only pending and expired have actio
 test('request card: an expired request always has a next action (docs 8a)', async () => {
   const payer = await card({ state: 'expired' })
   assert.match(payer, />\s*Send anyway\s*</)
-  assert.match(tags(payer, 'request-btn')[0], /request-btn--pay/)
+  assert.match(tags(payer, 'request-btn')[0], /request-btn--quiet/, 'an expired request no longer asks: the button is quiet')
   assert.doesNotMatch(payer, /Request again|Decline/)
   const requester = await card({ state: 'expired', outgoing: true })
   assert.match(requester, />\s*Request again\s*</)
@@ -502,37 +502,16 @@ test('request card: it is a named group and says valid-until only while pending'
 
 // ── MoneyBar ─────────────────────────────────────────────────────────
 
-test('money bar: Request, Send and the message switch', async () => {
-  const html = await render(MoneyBar, {})
-  assert.match(html, /money-btn--request[\s\S]*Request/)
-  assert.match(html, /money-btn--send[\s\S]*Send/)
-  assert.match(html, /aria-label="Write a message"/)
-  assert.match(html, /data-icon="tabler:message"/)
+test('money bar: no modes; the message field sits above Request and Send', async () => {
+  const html = await render(MoneyBar, {}, { slots: { default: () => Vue.h('i', 'COMPOSER') } })
+  assert.match(html, /<i>COMPOSER<\/i>[\s\S]*money-btn--request[\s\S]*Request[\s\S]*money-btn--send[\s\S]*Send/)
+  assert.doesNotMatch(html, /currency-bitcoin|Back to payments/, 'no hidden mode behind a glyph')
 })
 
 test('money bar: a partner who cannot receive messages gets money buttons only', async () => {
-  const html = await render(MoneyBar, { canMessage: false })
-  assert.doesNotMatch(html, /Write a message/)
-  const text = await render(MoneyBar, { canMessage: false, modelValue: 'text' }, { slots: { default: () => Vue.h('i', 'COMPOSER') } })
-  assert.doesNotMatch(text, /COMPOSER/, 'text mode is not honoured without an inbox')
-  assert.match(text, /money-btn--request/)
-})
-
-test('money bar: text mode swaps the buttons for the slot and a way back', async () => {
-  const html = await render(MoneyBar, { modelValue: 'text' }, { slots: { default: () => Vue.h('i', 'COMPOSER') } })
-  assert.match(html, /<i>COMPOSER<\/i>/)
-  assert.match(html, /aria-label="Back to payments"/)
-  assert.match(html, /data-icon="tabler:currency-bitcoin"/)
-  assert.doesNotMatch(html, /money-btn/)
-})
-
-test('money bar: the switches write the mode', () => {
-  const { vm, emitted } = vmOf(MoneyBar)
-  vm.setMode('text')
-  vm.setMode('money')
-  assert.deepEqual(emitted, [['update:modelValue', 'text'], ['update:modelValue', 'money']])
-  assert.equal(MoneyBar.props.modelValue.validator('text'), true)
-  assert.equal(MoneyBar.props.modelValue.validator('chat'), false)
+  const html = await render(MoneyBar, { canMessage: false }, { slots: { default: () => Vue.h('i', 'COMPOSER') } })
+  assert.doesNotMatch(html, /COMPOSER/)
+  assert.match(html, /money-btn--request/)
 })
 
 test('money bar: disabled buttons are real disabled buttons', async () => {
@@ -912,7 +891,6 @@ test('touch targets: every control is at least 44 pt', () => {
   at44('PaymentLine.vue', '.payment-line')
   at44('RequestCard.vue', '.request-btn')
   at44('MoneyBar.vue', '.money-btn')
-  at44('MoneyBar.vue', '.money-switch')
   at44('Composer.vue', '.composer__input')
   at44('Composer.vue', '.composer__send')
   at44('Composer.vue', '.composer__icon-btn')

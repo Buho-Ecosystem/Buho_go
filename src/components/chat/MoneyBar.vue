@@ -1,21 +1,19 @@
 <!--
   MoneyBar
-  The bottom bar of the thread. Money first, text second:
+  The bottom of the thread. Money first, text second, and no modes (HIG):
 
-      money mode   [ ↙ Request ] [ ↗ Send ] [ 💬 ]
-      text mode    [ ₿ ] <default slot: the Composer>
+      [ message field                       ]   only while the partner can receive messages
+      [ ↙ Request ]  [ ↗ Send ]                 always
 
-  `v-model` is the mode ('money' | 'text'). The 💬 button only exists while the
-  partner can receive messages (`canMessage`); without it the bar is just the
-  two money buttons ("Payments only"). The text-mode content is a slot, so the
-  bar knows nothing about the composer.
-
-  Request / Send keep the home screen's colours in dark mode (green / blue
-  tint) and the neutral pair in light mode (see Wallet.vue).
+  The message field is the default slot (the Composer), so the bar knows
+  nothing about it. Without it ("Payments only") the bar is the two money
+  buttons. Request / Send are the quiet pair: a filled button on the screen
+  belongs to the one thing waiting for the person (a request's Pay).
 -->
 <template>
-  <div class="money-bar" :class="{ 'money-bar--text': isText }">
-    <template v-if="!isText">
+  <div class="money-bar">
+    <div v-if="canMessage" class="money-bar__composer"><slot /></div>
+    <div class="money-bar__actions">
       <button type="button" class="money-btn money-btn--request" :disabled="requestDisabled" @click="$emit('request')">
         <Icon icon="tabler:arrow-down-left" width="20" height="20" />
         <span>{{ $t('Request') }}</span>
@@ -24,23 +22,7 @@
         <Icon icon="tabler:arrow-up-right" width="20" height="20" />
         <span>{{ $t('Send') }}</span>
       </button>
-      <button
-        v-if="canMessage"
-        type="button"
-        class="money-switch"
-        :aria-label="$t('Write a message')"
-        @click="setMode('text')"
-      >
-        <Icon icon="tabler:message" width="22" height="22" />
-      </button>
-    </template>
-
-    <template v-else>
-      <button type="button" class="money-switch" :aria-label="$t('Back to payments')" @click="setMode('money')">
-        <Icon icon="tabler:currency-bitcoin" width="22" height="22" />
-      </button>
-      <div class="money-bar__slot"><slot /></div>
-    </template>
+    </div>
   </div>
 </template>
 
@@ -52,46 +34,34 @@ export default {
   name: 'MoneyBar',
   components: { Icon },
   props: {
-    /** 'money' | 'text' */
-    modelValue: {
-      type: String,
-      default: 'money',
-      validator: (value) => value === 'money' || value === 'text'
-    },
-    /** False when the partner has no DM inbox: no way to switch to text. */
+    /** False when the partner has no DM inbox: no message field, just the money buttons. */
     canMessage: { type: Boolean, default: true },
     requestDisabled: { type: Boolean, default: false },
     sendDisabled: { type: Boolean, default: false }
   },
-  emits: ['update:modelValue', 'request', 'send'],
-  computed: {
-    /** Text mode is only honoured while messaging is possible. */
-    isText() {
-      return this.modelValue === 'text' && this.canMessage
-    }
-  },
-  methods: {
-    setMode(mode) {
-      this.$emit('update:modelValue', mode)
-    }
-  }
+  emits: ['request', 'send']
 }
 </script>
 
 <style scoped>
 .money-bar {
   display: flex;
-  align-items: center;
+  flex-direction: column;
   gap: 8px;
-  padding: 10px 12px max(14px, var(--safe-bottom, 0px));
+  padding: 8px 12px max(14px, var(--safe-bottom, 0px));
   background: var(--bg-primary);
   border-top: 1px solid var(--border-card);
   font-family: 'Manrope', sans-serif;
 }
 
+.money-bar__actions {
+  display: flex;
+  gap: 8px;
+}
+
 .money-btn {
   flex: 1;
-  min-height: 50px;
+  min-height: 48px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -117,29 +87,7 @@ export default {
   color: var(--chat-send-fg);
   border: 1px solid var(--chat-send-border);
 }
-
-/* Text mode: the composer can grow upward (reply preview, warning), the switch stays on the field's row. */
-.money-bar--text { align-items: flex-end; }
-.money-bar--text .money-switch { width: 44px; height: 44px; border-radius: 22px; }
-
-.money-switch {
-  flex: 0 0 auto;
-  width: 50px;
-  height: 50px;
-  display: grid;
-  place-items: center;
-  border: 1px solid var(--border-card);
-  border-radius: var(--radius-md);
-  background: var(--bg-input);
-  color: var(--text-secondary);
-  cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
-}
-
-.money-bar__slot { flex: 1; min-width: 0; }
-
-.money-btn:focus-visible,
-.money-switch:focus-visible { outline: 2px solid var(--chat-focus); outline-offset: 2px; }
+.money-btn:focus-visible { outline: 2px solid var(--chat-focus); outline-offset: 2px; }
 
 @media (prefers-reduced-motion: reduce) {
   .money-btn { transition: none; }

@@ -106,10 +106,11 @@
       >
         {{ $t('Request again') }}
       </button>
+      <!-- Quiet: an expired request is no longer asking; paying it is the person's own idea. -->
       <button
         v-else
         type="button"
-        class="request-btn request-btn--pay"
+        class="request-btn request-btn--quiet"
         :disabled="busy"
         @click="$emit('send-anyway')"
       >

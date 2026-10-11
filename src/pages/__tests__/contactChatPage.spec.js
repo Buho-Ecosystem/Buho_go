@@ -260,9 +260,9 @@ test('activate: opens the chat once per partner, only when it is ready', () => {
 
 test('a new partner on the same page starts from a clean conversation state', () => {
   const { vm } = pageOf()
-  Object.assign(vm, { mode: 'text', draft: 'half a thought', replyToId: 'x', requestOpen: true, menuOpen: true, activeKey: ANNA })
+  Object.assign(vm, { draft: 'half a thought', replyToId: 'x', requestOpen: true, menuOpen: true, activeKey: ANNA })
   page.watch.partnerKey.call(vm)
-  assert.deepEqual([vm.mode, vm.draft, vm.replyToId, vm.requestOpen, vm.menuOpen], ['money', '', null, false, false])
+  assert.deepEqual([vm.draft, vm.replyToId, vm.requestOpen, vm.menuOpen], ['', null, false, false])
   assert.equal(vm.activeKey, ANNA, 'and the new chat was opened')
 })
 
@@ -299,11 +299,11 @@ test('send text: a secret key blocks sending, empty text sends nothing', async (
   assert.deepEqual(chat.calls, [])
 })
 
-test('reply: switches to text mode and previews the answered message', () => {
+test('reply: previews the answered message above the field', () => {
   const { vm } = pageOf()
   vm.chat.items.value = [{ key: 'm1', type: 'message', message: { id: 'm1', text: 'Dinner   on Friday?', outgoing: true } }]
   vm.onReply({ id: 'm1' })
-  assert.equal(vm.mode, 'text')
+  assert.equal(vm.replyToId, 'm1')
   assert.deepEqual(vm.replyPreview, { author: 'You', text: 'Dinner on Friday?' })
   vm.chat.items.value = [{ key: 'm1', type: 'message', message: { id: 'm1', text: 'x', outgoing: false } }]
   assert.equal(vm.replyPreview.author, 'Anna')

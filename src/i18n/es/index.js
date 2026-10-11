@@ -3395,8 +3395,6 @@ export default {
   "Decline": "Rechazar",
   "Remind": "Recordar",
   "Request": "Solicitar",
-  "Write a message": "Escribir un mensaje",
-  "Back to payments": "Volver a pagos",
   "Send message": "Enviar mensaje",
   "Cancel reply": "Cancelar respuesta",
   "This looks like a secret key or recovery phrase": "Esto parece una clave secreta o una frase de recuperación",

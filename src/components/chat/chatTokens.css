@@ -42,13 +42,14 @@ body.body--light {
   --chat-pay-fg: #FAF7EF;
   --chat-on-accent: #FFFFFF;
 
-  /* Light mode drops the green / blue story: two peer dark pills (see Wallet.vue). */
-  --chat-request-bg: var(--btn-neutral-bg);
-  --chat-request-fg: var(--btn-neutral-fg);
-  --chat-request-border: var(--btn-neutral-border);
-  --chat-send-bg: var(--btn-neutral-bg);
-  --chat-send-fg: var(--btn-neutral-fg);
-  --chat-send-border: var(--btn-neutral-border);
+  /* Light mode drops the green / blue story: two quiet peers, so the one
+     filled button on screen is whatever waits for the person (a request's Pay). */
+  --chat-request-bg: var(--bg-input);
+  --chat-request-fg: var(--text-primary);
+  --chat-request-border: var(--border-card);
+  --chat-send-bg: var(--bg-input);
+  --chat-send-fg: var(--text-primary);
+  --chat-send-border: var(--border-card);
 
   --chat-danger: var(--color-negative);
   --chat-danger-soft: rgba(198, 40, 40, 0.07);

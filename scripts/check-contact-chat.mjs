@@ -290,7 +290,7 @@ try {
   await step('Alice opens the chat from the address book; header says encrypted', async () => {
     await openChatFromAddressBook(alice, 'Bob');
     await alice.page.getByText('End-to-end encrypted', { exact: true }).waitFor();
-    await alice.page.getByRole('button', { name: 'Write a message' }).waitFor();
+    await alice.page.getByRole('textbox', { name: 'Message' }).waitFor();
     assert.equal(await alice.page.getByText('Payments only', { exact: true }).count(), 0);
     await snap(alice, '01-chat-empty');
   });
@@ -303,7 +303,6 @@ try {
 
   console.log('2. Text, badges, delivery, reply, reaction');
   await step('Alice sends a text; it shows "Sent"', async () => {
-    await alice.page.getByRole('button', { name: 'Write a message' }).click();
     await alice.page.getByRole('textbox', { name: 'Message' }).fill('Hello Bob');
     await alice.page.getByRole('button', { name: 'Send message' }).click();
     await messageBubble(alice.page, 'Hello Bob').getByRole('status').filter({ hasText: 'Sent' }).waitFor();
@@ -323,7 +322,6 @@ try {
   });
 
   await step('Bob replies and reacts; Alice sees both', async () => {
-    await bob.page.getByRole('button', { name: 'Write a message' }).click();
     await bob.page.getByRole('textbox', { name: 'Message' }).fill('Hi Alice');
     await bob.page.getByRole('button', { name: 'Send message' }).click();
     await messageBubble(alice.page, 'Hi Alice').waitFor();
@@ -525,7 +523,7 @@ try {
   await step('a contact without a 10050 shows "Payments only" and the share-link dialog', async () => {
     await openChatFromAddressBook(alice, 'Dave');
     await alice.page.getByText('Payments only', { exact: true }).waitFor();
-    assert.equal(await alice.page.getByRole('button', { name: 'Write a message' }).count(), 0);
+    assert.equal(await alice.page.getByRole('textbox', { name: 'Message' }).count(), 0);
     await alice.page.getByRole('button', { name: 'Request' }).click();
     const dialog = alice.page.getByRole('alertdialog', { name: 'Payment request' });
     await dialog.getByText("Dave can't receive requests in the chat yet.").waitFor();
@@ -617,15 +615,8 @@ function expectAuth(who) {
   assert.ok(match, `${who.name} answered the AUTH challenge of ${AUTH_HOST} with the identity key`);
 }
 
-/** The bottom bar is either the money buttons or the composer; get back to the money buttons. */
-async function showMoneyBar(page) {
-  const back = page.getByRole('button', { name: 'Back to payments' });
-  if (await back.count()) await back.click();
-}
-
 /** Alice's request sheet: amount and note; it names the profile address it pays to and offers no wallet choice. */
 async function requestMoney(page, sats, note) {
-  await showMoneyBar(page);
   await page.getByRole('button', { name: 'Request', exact: true }).click();
   const sheet = page.getByRole('region', { name: /^Request from/ });
   await sheet.getByRole('textbox', { name: 'Amount in sats' }).fill(sats);

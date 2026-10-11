@@ -153,7 +153,6 @@
       </div>
       <MoneyBar
         v-else
-        v-model="mode"
         :can-message="!paymentsOnly"
         :send-disabled="unknown"
         @request="onRequest"
@@ -374,7 +373,6 @@ export default {
       /** Address book loaded (contact lookups are meaningful). */
       bookReady: false,
       /** 'money' | 'text' (MoneyBar). */
-      mode: 'money',
       draft: '',
       replyToId: null,
       requestOpen: false,
@@ -479,9 +477,6 @@ export default {
       this.requestError = ''
       this.requestSubmitting = false
     },
-    mode() {
-      this.$nextTick(() => this.$refs.thread?.scrollToBottom?.())
-    },
   },
 
   async created() {
@@ -543,7 +538,6 @@ export default {
     },
 
     resetConversationState() {
-      this.mode = 'money'
       this.draft = ''
       this.replyToId = null
       this.requestOpen = false
@@ -610,7 +604,6 @@ export default {
 
     onReply({ id }) {
       this.replyToId = id
-      this.mode = 'text'
       this.$nextTick(() => this.$refs.composer?.focus?.())
     },
 

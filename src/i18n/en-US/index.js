@@ -3390,8 +3390,6 @@ export default {
   "Decline": "Decline",
   "Remind": "Remind",
   "Request": "Request",
-  "Write a message": "Write a message",
-  "Back to payments": "Back to payments",
   "Send message": "Send message",
   "Cancel reply": "Cancel reply",
   "This looks like a secret key or recovery phrase": "This looks like a secret key or recovery phrase",
