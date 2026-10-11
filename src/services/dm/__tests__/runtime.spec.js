@@ -4,9 +4,8 @@
  * Real: the messages store (Pinia, in-memory encrypted storage), the inbox,
  * the request service, the key holder, the gift wrap crypto and the protocol.
  * Fake: the relay transport (scripted, records every publish and lets a test
- * push wraps in), the inbox relay resolver (a table), wallets (a Spark
- * provider with the real method shapes), the notification poster and a manual
- * clock with manual timers.
+ * push wraps in), the inbox relay resolver (a table), the LNURL server and the
+ * profile lookup, the notification poster and a manual clock with manual timers.
  *
  * Run directly with Node:
  *   node --test src/services/dm/__tests__/runtime.spec.js
@@ -60,6 +59,7 @@ const OTHER_ME = getPublicKey(generateSecretKey());
 
 const ALICE_RELAYS = ['wss://alice.one.example', 'wss://alice.two.example'];
 const PROFILE_ADDRESS = 'me@buho.example';
+const ALICE_ADDRESS = 'alice@alice.example';
 
 // ---------------------------------------------------------------------------
 // Fakes
@@ -145,40 +145,27 @@ function createFakeResolver(table) {
 }
 
 const PREIMAGE = 'ab'.repeat(32);
+const HASH_OF_PREIMAGE = bytesToHex(sha256(Uint8Array.from(PREIMAGE.match(/../g), (pair) => parseInt(pair, 16))));
 
-/** A Spark provider with the real method shapes. */
-function createFakeSpark(invoice) {
-  const spark = {
-    isConnected: true,
-    created: [],
-    listeners: new Set(),
-    ledger: new Map(),
-    async createInvoice(params) {
-      spark.created.push(params);
-      return { paymentRequest: invoice.bolt11, paymentHash: invoice.paymentHash };
+/** A fake LNURL-pay server for every address: records the calls, hands out `answer`. */
+function createLnurlServer(answer = null, { minSendable = 1_000, maxSendable = 100_000_000_000, commentAllowed = 255 } = {}) {
+  const server = {
+    fetched: [],
+    requested: [],
+    answer,
+    failFetch: false,
+    async fetchPayRequest(url) {
+      server.fetched.push(url);
+      if (server.failFetch) throw new Error('lnurl down');
+      return { tag: 'payRequest', callback: 'https://buho.example/cb', minSendable, maxSendable, commentAllowed };
     },
-    async lookupInvoice(hash) {
-      const hit = spark.ledger.get(hash);
-      return hit ? { paid: true, preimage: hit } : { paid: false, preimage: null };
-    },
-    onPaymentReceived(callback) {
-      spark.listeners.add(callback);
-      return () => spark.listeners.delete(callback);
-    },
-    pay(hash, preimage = PREIMAGE) {
-      spark.ledger.set(hash, preimage);
-      const payment = { id: 'p1', timestamp: NOW + 5, details: { type: 'lightning', htlcDetails: { paymentHash: hash, preimage } } };
-      for (const listener of [...spark.listeners]) listener('p1', 0, payment);
+    async requestInvoice(payRequest, amountMsat, options) {
+      server.requested.push({ amountMsat, comment: options?.comment });
+      return { pr: server.answer.bolt11, routes: [] };
     },
   };
-  return spark;
+  return server;
 }
-
-const noLnurl = {
-  fetchPayRequest: async () => { throw new Error('unexpected lnurl'); },
-  requestInvoice: async () => { throw new Error('unexpected lnurl'); },
-  verifyPayment: async () => { throw new Error('unexpected lnurl'); },
-};
 
 // ---------------------------------------------------------------------------
 // Harness
@@ -207,14 +194,14 @@ beforeEach(() => {
 });
 
 async function setup({
-  invoice = makeInvoice({ sats: 12_000 }),
   partners = new Map([[ALICE, { status: 'found', relays: ALICE_RELAYS, checkedAt: 0 }]]),
   locked = false,
   hidden = false,
   profileAddress = PROFILE_ADDRESS,
   notifyResult = true,
   notifyThrows = false,
-  lnurl = noLnurl,
+  lnurl = createLnurlServer(),
+  profiles = new Map(),
 } = {}) {
   setActivePinia(createPinia());
   const store = useMessagesStore();
@@ -226,19 +213,17 @@ async function setup({
     hidden,
     transport: createFakeTransport(),
     resolver: createFakeResolver(partners),
-    spark: createFakeSpark(invoice),
-    invoice,
+    lnurl,
+    /** pubkey -> kind 0 content, what `fetchProfile` finds. */
+    profiles,
     keyLoads: 0,
     notifications: [],
     links: [],
-    connectCalls: [],
     contactsById: new Map([[ALICE, { id: 'contact-alice', name: 'Alice' }]]),
     profileAddress,
-    /** What the user's wallets show as settled incoming money (late-payment verification). */
+    /** What the user's wallets show as settled incoming money (payment-claim verification). */
     incoming: [],
   };
-  const wallets = [{ id: 'w1', type: 'spark', accountNumber: 1, lightningAddress: PROFILE_ADDRESS }];
-  env.wallets = wallets;
 
   env.runtime = createChatRuntime({
     me: ME,
@@ -248,15 +233,10 @@ async function setup({
     },
     isLocked: () => env.locked,
     store,
-    wallets: {
-      list: () => env.wallets,
-      getProvider: (id) => (id === 'w1' ? env.spark : null),
-      ensureConnected: async (id) => {
-        env.connectCalls.push(id);
-        return env.spark;
-      },
-    },
     getProfileAddress: () => env.profileAddress,
+    fetchProfile: async (pubkey) => (env.profiles.has(pubkey)
+      ? { kind: 0, pubkey, content: JSON.stringify(env.profiles.get(pubkey)) }
+      : null),
     lnurl,
     loadIncomingTransactions: async () => env.incoming,
     contacts: { find: (pubkey) => env.contactsById.get(pubkey) ?? null },
@@ -446,129 +426,62 @@ test('react sends a reaction that lands in the thread, and retry resends a faile
 // Requesting money
 // ---------------------------------------------------------------------------
 
-test('requestMoney mints one invoice, sends a request with the profile address and records where it is paid', async () => {
+test('requestMoney checks the profile address, then sends a request that is only a notice', async () => {
   const env = await setup();
-  const message = await env.runtime.requestMoney(ALICE, { amountSats: 12_000, note: ' Pizza ', walletId: 'w1' });
+  const message = await env.runtime.requestMoney(ALICE, { amountSats: 12_000, note: ' Pizza ' });
   await env.runtime.whenIdle();
 
-  assert.equal(env.spark.created.length, 1);
+  assert.deepEqual(env.lnurl.fetched, ['https://buho.example/.well-known/lnurlp/me']);
+  assert.equal(env.lnurl.requested.length, 0, 'no invoice is created for a request');
   assert.equal(message.type, 'request');
-  assert.equal(message.request.amountSats, 12_000);
-  assert.equal(message.request.note, 'Pizza');
-  assert.equal(message.request.lud16, PROFILE_ADDRESS);
-  assert.equal(message.request.bolt11, env.invoice.bolt11);
-  const source = env.store.requestSource(message.id);
-  assert.equal(source.walletId, 'w1');
-  assert.equal(source.method, 'direct');
-  assert.equal(source.paymentHash, env.invoice.paymentHash);
-  assert.equal(source.paidAt, null);
+  assert.deepEqual(message.request, {
+    amountSats: 12_000, note: 'Pizza', lud16: PROFILE_ADDRESS, validUntil: NOW + REQUEST_LIFETIME_SECONDS,
+  });
   assert.equal(env.runtime.requestState(message.id), 'pending');
-  assert.equal((await publishedMessages(env, aliceKey, ALICE))[0].type, 'request');
+  assert.equal(env.runtime.requestSettlement(message.id), null);
+  const sent = (await publishedMessages(env, aliceKey, ALICE))[0];
+  assert.equal(sent.type, 'request');
+  assert.equal(sent.request.lud16, PROFILE_ADDRESS);
 });
 
-test('requestMoney to a partner who cannot receive messages mints no invoice', async () => {
+test('requestMoney to a partner who cannot receive messages asks nothing of the address', async () => {
   const env = await setup({ partners: new Map([[ALICE, { status: 'missing', relays: [], checkedAt: 0 }]]) });
   await assert.rejects(
     env.runtime.requestMoney(ALICE, { amountSats: 1_000 }),
     (e) => DmError.is(e, DM_ERROR.NO_INBOX_RELAYS),
   );
-  assert.equal(env.spark.created.length, 0);
+  assert.deepEqual(env.lnurl.fetched, []);
 });
 
-test('requestMoney surfaces wallet problems as DmErrors and stores nothing', async () => {
+test('requestMoney sends nothing when the preflight fails: no address, address down, amount out of range', async () => {
+  const none = await setup({ profileAddress: null });
+  await assert.rejects(none.runtime.requestMoney(ALICE, { amountSats: 1_000 }), (e) => DmError.is(e, DM_ERROR.NO_PAYMENT_ADDRESS));
+  assert.deepEqual(none.transport.published, []);
+  assert.equal(none.store.thread(ALICE).messages.length, 0);
+
+  const down = await setup();
+  down.lnurl.failFetch = true;
+  await assert.rejects(down.runtime.requestMoney(ALICE, { amountSats: 1_000 }), (e) => DmError.is(e, DM_ERROR.PAYMENT_ADDRESS_UNREACHABLE));
+  assert.equal(down.store.thread(ALICE).messages.length, 0);
+
+  const narrow = await setup({ lnurl: createLnurlServer(null, { minSendable: 5_000_000, maxSendable: 6_000_000 }) });
+  await assert.rejects(narrow.runtime.requestMoney(ALICE, { amountSats: 1_000 }), (e) => DmError.is(e, DM_ERROR.AMOUNT_OUT_OF_RANGE));
+  assert.equal(narrow.store.thread(ALICE).messages.length, 0);
+
   const env = await setup();
-  env.wallets = [];
-  await assert.rejects(
-    env.runtime.requestMoney(ALICE, { amountSats: 1_000 }),
-    (e) => DmError.is(e, DM_ERROR.WALLET_CANNOT_INVOICE),
-  );
-  await assert.rejects(
-    env.runtime.requestMoney(ALICE, { amountSats: 0 }),
-    (e) => DmError.is(e, DM_ERROR.INVALID_ARGUMENT),
-  );
+  await assert.rejects(env.runtime.requestMoney(ALICE, { amountSats: 0 }), (e) => DmError.is(e, DM_ERROR.INVALID_ARGUMENT));
   assert.equal(env.store.thread(ALICE).messages.length, 0);
 });
 
-test('a paid request is settled once: source marked, transaction linked, paid status sent', async () => {
+test('cancelRequest withdraws an open request of the user only once', async () => {
   const env = await setup();
-  const message = await env.runtime.requestMoney(ALICE, { amountSats: 12_000, note: 'Pizza', walletId: 'w1' });
+  const message = await env.runtime.requestMoney(ALICE, { amountSats: 12_000 });
   await env.runtime.whenIdle();
-  const before = env.transport.published.length;
-
-  env.spark.pay(env.invoice.paymentHash);
-  await flush();
-  await env.runtime.whenIdle();
-
-  const source = env.store.requestSource(message.id);
-  assert.ok(source.paidAt);
-  assert.equal(source.preimage, PREIMAGE);
-  assert.equal(source.announced, true);
-  assert.equal(env.runtime.requestState(message.id), 'paid');
-  assert.equal(env.store.requestStatus(message.id), 'pending', 'the store derives paid from the payer only');
-  assert.deepEqual(env.links, [{ contactId: 'contact-alice', walletId: 'w1', amountSats: 12_000, note: 'Pizza' }]);
-  assert.ok(env.transport.published.length > before);
-  const status = (await publishedMessages(env, aliceKey, ALICE)).find((m) => m.type === 'status');
-  assert.equal(status.status.value, 'paid');
-  assert.equal(status.status.requestId, message.id);
-  assert.equal(status.status.preimage, PREIMAGE);
-
-  // A second event for the same payment changes nothing.
-  const count = env.transport.published.length;
-  env.spark.pay(env.invoice.paymentHash);
-  await flush();
-  await env.runtime.whenIdle();
-  assert.equal(env.transport.published.length, count);
-  assert.equal(env.links.length, 1);
-});
-
-test('a payment found while the app was away is settled by reconcile, and an owed paid status is resent', async () => {
-  const env = await setup();
-  const message = await env.runtime.requestMoney(ALICE, { amountSats: 12_000, walletId: 'w1' });
-  await env.runtime.whenIdle();
-  env.spark.listeners.clear(); // no push: only the ledger knows
-  env.spark.ledger.set(env.invoice.paymentHash, PREIMAGE);
-
-  env.transport.failPublishes = true;
-  const result = await env.runtime.reconcile();
-  await env.runtime.whenIdle();
-  assert.equal(result.paid, 1);
-  assert.equal(env.store.requestSource(message.id).paidAt > 0, true);
-  assert.equal(env.store.requestSource(message.id).announced, true, 'the self copy and the status were queued, the record is done');
-  assert.equal(env.runtime.requestState(message.id), 'paid');
-  assert.equal(env.links.length, 1);
-});
-
-test('when the payer already said paid, no second paid status is sent', async () => {
-  const env = await setup();
-  const message = await env.runtime.requestMoney(ALICE, { amountSats: 12_000, walletId: 'w1' });
-  await env.runtime.whenIdle();
-  await env.runtime.start();
-  await env.transport.deliver(wrapFor(aliceKey, buildStatusTemplate({
-    recipient: ME, requestId: message.id, value: 'paid', preimage: PREIMAGE, amountSats: 12_000,
-  })));
-  assert.equal(env.store.requestStatus(message.id), 'paid');
-
-  const before = env.transport.published.length;
-  env.spark.pay(env.invoice.paymentHash);
-  await flush();
-  await env.runtime.whenIdle();
-  assert.equal(env.transport.published.length, before, 'nothing to add');
-  assert.equal(env.store.requestSource(message.id).announced, true);
-  assert.equal(env.links.length, 1, 'the transaction is still linked');
-});
-
-test('cancelRequest withdraws an open request and stops watching its invoice', async () => {
-  const env = await setup();
-  const message = await env.runtime.requestMoney(ALICE, { amountSats: 12_000, walletId: 'w1' });
-  await env.runtime.whenIdle();
-  assert.equal(env.spark.listeners.size, 1);
 
   const cancel = await env.runtime.cancelRequest(ALICE, message.id);
   await env.runtime.whenIdle();
   assert.equal(cancel.status.value, 'cancelled');
   assert.equal(env.store.requestStatus(message.id), 'cancelled');
-  assert.equal(env.store.requestSource(message.id), null);
-  assert.equal(env.spark.listeners.size, 0);
 
   await assert.rejects(env.runtime.cancelRequest(ALICE, message.id), (e) => DmError.is(e, DM_ERROR.INVALID_ARGUMENT));
   await assert.rejects(env.runtime.remindRequest(ALICE, message.id), (e) => DmError.is(e, DM_ERROR.INVALID_ARGUMENT));
@@ -576,7 +489,7 @@ test('cancelRequest withdraws an open request and stops watching its invoice', a
 
 test('remindRequest sends a reminder for an open request of the user only', async () => {
   const env = await setup();
-  const message = await env.runtime.requestMoney(ALICE, { amountSats: 12_000, walletId: 'w1' });
+  const message = await env.runtime.requestMoney(ALICE, { amountSats: 12_000 });
   const reminder = await env.runtime.remindRequest(ALICE, message.id);
   assert.equal(reminder.status.value, 'reminder');
   assert.equal(env.store.requestStatus(message.id), 'pending');
@@ -586,9 +499,8 @@ test('remindRequest sends a reminder for an open request of the user only', asyn
 test('declineRequest answers a request the partner sent, and one past its lifetime cannot be declined', async () => {
   const env = await setup();
   await env.runtime.start();
-  const invoice = makeInvoice({ sats: 800, hash: 5 });
   await env.transport.deliver(wrapFor(aliceKey, buildRequestTemplate({
-    recipient: ME, amountSats: 800, bolt11: invoice.bolt11, now: () => NOW,
+    recipient: ME, amountSats: 800, lud16: ALICE_ADDRESS, now: () => NOW,
   })));
   const [request] = env.store.pendingRequestsFrom(ALICE, NOW);
   assert.ok(request);
@@ -597,9 +509,8 @@ test('declineRequest answers a request the partner sent, and one past its lifeti
   assert.equal(declined.status.value, 'declined');
   assert.equal(env.store.requestStatus(request.id), 'declined');
 
-  const late = makeInvoice({ sats: 900, hash: 6, expiry: 60 });
   await env.transport.deliver(wrapFor(aliceKey, buildRequestTemplate({
-    recipient: ME, amountSats: 900, bolt11: late.bolt11, validUntil: NOW + 600, now: () => NOW + 1,
+    recipient: ME, amountSats: 900, lud16: ALICE_ADDRESS, validUntil: NOW + 600, now: () => NOW + 1,
   })));
   const lateRequest = env.store.thread(ALICE).messages.find((m) => m.request?.amountSats === 900);
   await clock.advance(3_600_000);
@@ -624,9 +535,8 @@ test('announcePayment sends a payment message', async () => {
 test('announcePayment for a request sends the payment and the paid status; a failing status is returned, not thrown', async () => {
   const env = await setup();
   await env.runtime.start();
-  const invoice = makeInvoice({ sats: 800, hash: 7 });
   await env.transport.deliver(wrapFor(aliceKey, buildRequestTemplate({
-    recipient: ME, amountSats: 800, bolt11: invoice.bolt11, now: () => NOW,
+    recipient: ME, amountSats: 800, lud16: ALICE_ADDRESS, now: () => NOW,
   })));
   const [request] = env.store.pendingRequestsFrom(ALICE, NOW);
 
@@ -640,9 +550,8 @@ test('announcePayment for a request sends the payment and the paid status; a fai
 
   // The partner's relay list disappears between the two messages: the money
   // is out, the follow-up fails, and that is reported, not thrown.
-  const other = makeInvoice({ sats: 900, hash: 9 });
   await env.transport.deliver(wrapFor(aliceKey, buildRequestTemplate({
-    recipient: ME, amountSats: 900, bolt11: other.bolt11, now: () => NOW + 1,
+    recipient: ME, amountSats: 900, lud16: ALICE_ADDRESS, now: () => NOW + 1,
   })));
   const second = env.store.pendingRequestsFrom(ALICE, NOW + 1).find((m) => m.request.amountSats === 900);
   let calls = 0;
@@ -668,28 +577,6 @@ test('announcePayment throws when the payment message itself cannot be sent', as
     env.runtime.announcePayment(ALICE, { amountSats: -1 }),
     (e) => DmError.is(e, DM_ERROR.INVALID_ARGUMENT),
   );
-});
-
-// ---------------------------------------------------------------------------
-// Paying: checkPayable
-// ---------------------------------------------------------------------------
-
-test('checkPayable judges a request against the wallet that would pay it', async () => {
-  const env = await setup();
-  env.wallets = [
-    { id: 'w1', type: 'spark' },
-    { id: 'ark', type: 'arkade' },
-    { id: 'n1', type: 'nwc' },
-  ];
-  const invoice = makeInvoice({ sats: 800, hash: 8 });
-  const request = { bolt11: invoice.bolt11, amountSats: 800, expiresAt: NOW + 3_600 };
-  assert.deepEqual(env.runtime.checkPayable(request, 'w1'), { ok: true });
-  assert.deepEqual(env.runtime.checkPayable(request, 'n1'), { ok: true });
-  assert.equal(env.runtime.checkPayable(request, 'ark').reason, DM_ERROR.WALLET_CANNOT_PAY);
-  assert.equal(env.runtime.checkPayable(request, 'ghost').reason, DM_ERROR.WALLET_CANNOT_PAY);
-  assert.equal(env.runtime.checkPayable({ ...request, amountSats: 799 }, 'w1').reason, DM_ERROR.INVALID_INVOICE);
-  await clock.advance(7_200_000);
-  assert.equal(env.runtime.checkPayable(request, 'w1').reason, DM_ERROR.INVOICE_EXPIRED);
 });
 
 // ---------------------------------------------------------------------------
@@ -867,172 +754,131 @@ test('start is idempotent, stop closes the subscription and start can run again'
   assert.equal(env.runtime.isStarted(), true);
 });
 
-test('a request that is still open after a restart is watched again', async () => {
-  const env = await setup();
-  const message = await env.runtime.requestMoney(ALICE, { amountSats: 12_000, walletId: 'w1' });
-  await env.runtime.whenIdle();
-  await env.store.flush();
-  env.runtime.dispose();
-
-  // A new runtime over the same persisted store state.
-  const again = await setup({ invoice: env.invoice });
-  await again.store.setScope(null);
-  await again.store.setScope(ME);
-  assert.ok(again.store.requestSource(message.id), 'the source survived the restart');
-  await again.runtime.start();
-  await flush();
-  assert.equal(again.spark.listeners.size, 1, 'the invoice is watched again');
-  again.spark.pay(again.invoice.paymentHash);
-  await flush();
-  await again.runtime.whenIdle();
-  assert.equal(again.runtime.requestState(message.id), 'paid');
-});
-
 // ---------------------------------------------------------------------------
-// Request lifetime vs. invoice expiry (docs section 8a)
+// Paying a request: the invoice is created now (docs section 8a)
 // ---------------------------------------------------------------------------
 
-const HASH_OF_PREIMAGE = bytesToHex(sha256(Uint8Array.from(PREIMAGE.match(/../g), (pair) => parseInt(pair, 16))));
-const DAY_MS = 24 * 60 * 60 * 1000;
-
-/** A fake LNURL-pay server for one address: records the calls, hands out `invoice`. */
-function createLnurlServer(invoice, { minSendable = 1_000, maxSendable = 100_000_000_000, commentAllowed = 255 } = {}) {
-  const server = {
-    fetched: [],
-    requested: [],
-    answer: invoice,
-    async fetchPayRequest(url) {
-      server.fetched.push(url);
-      return { tag: 'payRequest', callback: 'https://buho.example/cb', minSendable, maxSendable, commentAllowed };
-    },
-    async requestInvoice(payRequest, amountMsat, options) {
-      server.requested.push({ amountMsat, comment: options?.comment });
-      return { pr: server.answer.bolt11, routes: [] };
-    },
-    verifyPayment: noLnurl.verifyPayment,
-  };
-  return server;
-}
-
-/** A request from ALICE to ME that names her address; its invoice (1 h) is long gone after `advance`. */
-async function deliverAliceRequest(env, { sats = 800, hash = 5, lud16 = 'alice@alice.example', validUntil } = {}) {
-  const invoice = makeInvoice({ sats, hash, expiry: 3_600 });
+/** A request from ALICE to ME that names her signed address. */
+async function deliverAliceRequest(env, { sats = 800, lud16 = ALICE_ADDRESS, validUntil } = {}) {
   await env.transport.deliver(wrapFor(aliceKey, buildRequestTemplate({
-    recipient: ME, amountSats: sats, bolt11: invoice.bolt11, note: 'Pizza', lud16, validUntil, now: () => NOW,
+    recipient: ME, amountSats: sats, lud16, note: 'Pizza', validUntil, now: () => NOW,
   })));
-  return env.store.thread(ALICE).messages.find((m) => m.type === 'request' && m.request.bolt11 === invoice.bolt11);
+  return env.store.thread(ALICE).messages.find((m) => m.type === 'request' && m.request.amountSats === sats);
 }
 
-test('requestMoney always names the profile address and the request lifetime of 30 days', async () => {
-  const env = await setup();
-  const message = await env.runtime.requestMoney(ALICE, { amountSats: 12_000, walletId: 'w1' });
-  assert.equal(message.request.lud16, PROFILE_ADDRESS);
-  assert.equal(message.request.validUntil, NOW + REQUEST_LIFETIME_SECONDS);
-
-  const bare = await setup({ profileAddress: null });
-  const without = await bare.runtime.requestMoney(ALICE, { amountSats: 12_000, walletId: 'w1' });
-  assert.equal(without.request.lud16, null, 'no profile address, no lud16');
-  assert.equal(without.request.validUntil, NOW + REQUEST_LIFETIME_SECONDS);
-});
-
-test('the request ends with its lifetime, not with its 24 h invoice', async () => {
-  const env = await setup();
-  const message = await env.runtime.requestMoney(ALICE, { amountSats: 12_000, walletId: 'w1' });
-  await env.runtime.whenIdle();
-  await clock.advance(2 * 24 * 60 * 60 * 1000);
-  assert.equal(env.runtime.requestState(message.id), 'pending', 'invoice long expired, request still open');
-  assert.ok(env.runtime.remindRequest, 'and it can still be reminded');
-  await env.runtime.remindRequest(ALICE, message.id);
-  await clock.advance(REQUEST_LIFETIME_SECONDS * 1000);
-  assert.equal(env.runtime.requestState(message.id), 'expired');
-});
-
-test('refreshInvoice pulls a fresh invoice from the lud16 INSIDE the request, for exactly the amount', async () => {
-  const fresh = makeInvoice({ sats: 800, hash: 21, timestamp: NOW + 7_200, expiry: 86_400 });
+test('fetchRequestInvoice pulls the invoice from the signed address, for exactly the amount', async () => {
+  const fresh = makeInvoice({ sats: 800, hash: 21 });
   const server = createLnurlServer(fresh);
   const env = await setup({ lnurl: server });
   await env.runtime.start();
   const request = await deliverAliceRequest(env, { lud16: 'Alice@alice.example' });
   // A saved address for Alice in the address book must play no part.
   env.contactsById.set(ALICE, { id: 'contact-alice', name: 'Alice', address: 'evil@evil.example' });
-  await clock.advance(2 * 3_600_000);
-  assert.equal(env.runtime.needsFreshInvoice(request.request), true);
 
-  const result = await env.runtime.refreshInvoice(ALICE, request.id);
-  assert.equal(result.bolt11, fresh.bolt11);
+  assert.equal(await env.runtime.fetchRequestInvoice(ALICE, request.id), fresh.bolt11);
   assert.deepEqual(server.fetched, ['https://alice.example/.well-known/lnurlp/Alice']);
   assert.deepEqual(server.requested, [{ amountMsat: 800_000, comment: `buho:req:${request.id.slice(0, 12)}` }]);
 });
 
-test('needsFreshInvoice: valid invoice no, about to expire yes, expired yes', async () => {
-  const env = await setup();
-  const invoice = makeInvoice({ sats: 800, hash: 22, expiry: 3_600 });
-  const request = { bolt11: invoice.bolt11, expiresAt: NOW + 3_600 };
-  assert.equal(env.runtime.needsFreshInvoice(request), false);
-  await clock.advance(3_600_000 - 30_000);
-  assert.equal(env.runtime.needsFreshInvoice(request), true, 'within 60 s of expiry');
-  await clock.advance(3_600_000);
-  assert.equal(env.runtime.needsFreshInvoice(request), true);
-});
-
-test('refreshInvoice refuses what it cannot serve: no address, a request past its lifetime, an own or unknown request', async () => {
-  const server = createLnurlServer(makeInvoice({ sats: 800, hash: 23, timestamp: NOW + 100 }));
+test('fetchRequestInvoice follows the requester\'s current profile address over the signed one', async () => {
+  const server = createLnurlServer(makeInvoice({ sats: 800, hash: 22 }));
   const env = await setup({ lnurl: server });
   await env.runtime.start();
-  const noAddress = await deliverAliceRequest(env, { lud16: null });
-  await assert.rejects(env.runtime.refreshInvoice(ALICE, noAddress.id), (e) => DmError.is(e, DM_ERROR.INVOICE_EXPIRED));
-  assert.deepEqual(server.fetched, [], 'nothing was asked of any server');
+  const request = await deliverAliceRequest(env);
+  env.profiles.set(ALICE, { lud16: 'Alice@new-wallet.example' });
 
-  const own = await env.runtime.requestMoney(ALICE, { amountSats: 12_000, walletId: 'w1' });
-  await assert.rejects(env.runtime.refreshInvoice(ALICE, own.id), (e) => DmError.is(e, DM_ERROR.INVALID_ARGUMENT));
-  await assert.rejects(env.runtime.refreshInvoice(ALICE, 'f'.repeat(64)), (e) => DmError.is(e, DM_ERROR.INVALID_ARGUMENT));
+  await env.runtime.fetchRequestInvoice(ALICE, request.id);
+  assert.deepEqual(server.fetched, ['https://new-wallet.example/.well-known/lnurlp/alice']);
+  assert.equal(await env.runtime.requestAddress(ALICE, request.id), 'alice@new-wallet.example');
 
-  const short = await deliverAliceRequest(env, { sats: 900, hash: 24, validUntil: NOW + 600 });
-  await clock.advance(3_600_000);
-  await assert.rejects(env.runtime.refreshInvoice(ALICE, short.id), (e) => DmError.is(e, DM_ERROR.INVALID_ARGUMENT));
+  // A profile with no usable address falls back to the one signed in the request.
+  env.profiles.set(ALICE, { name: 'Alice' });
+  assert.equal(await env.runtime.requestAddress(ALICE, request.id), ALICE_ADDRESS);
 });
 
-test('a payment reported after the invoice expired is verified against the own ledger: paid, linked once', async () => {
-  const env = await setup();
-  const message = await env.runtime.requestMoney(ALICE, { amountSats: 12_000, note: 'Pizza', walletId: 'w1' });
-  await env.runtime.whenIdle();
+test('fetchRequestInvoice reports a failing address and creates nothing', async () => {
+  const server = createLnurlServer(makeInvoice({ sats: 800, hash: 23 }));
+  const env = await setup({ lnurl: server });
   await env.runtime.start();
-  await clock.advance(2 * 3_600_000); // the invoice (and its watcher) are over
-  assert.equal(env.spark.listeners.size, 0);
+  const request = await deliverAliceRequest(env);
+  server.failFetch = true;
+  await assert.rejects(env.runtime.fetchRequestInvoice(ALICE, request.id), (e) => DmError.is(e, DM_ERROR.INVOICE_FETCH_FAILED));
+  assert.deepEqual(server.requested, []);
+});
 
-  env.incoming = [{ amountSats: 12_000, settledAt: NOW + 7_300, paymentHash: HASH_OF_PREIMAGE, walletId: 'w1' }];
+test('fetchRequestInvoice refuses what it cannot serve: a request past its lifetime, an own or unknown request', async () => {
+  const server = createLnurlServer(makeInvoice({ sats: 800, hash: 24 }));
+  const env = await setup({ lnurl: server });
+  await env.runtime.start();
+
+  const own = await env.runtime.requestMoney(ALICE, { amountSats: 12_000 });
+  server.fetched.length = 0;
+  await assert.rejects(env.runtime.fetchRequestInvoice(ALICE, own.id), (e) => DmError.is(e, DM_ERROR.INVALID_ARGUMENT));
+  await assert.rejects(env.runtime.fetchRequestInvoice(ALICE, 'f'.repeat(64)), (e) => DmError.is(e, DM_ERROR.INVALID_ARGUMENT));
+  await assert.rejects(env.runtime.requestAddress(ALICE, own.id), (e) => DmError.is(e, DM_ERROR.INVALID_ARGUMENT));
+
+  const short = await deliverAliceRequest(env, { sats: 900, validUntil: NOW + 600 });
+  await clock.advance(3_600_000);
+  await assert.rejects(env.runtime.fetchRequestInvoice(ALICE, short.id), (e) => DmError.is(e, DM_ERROR.INVALID_ARGUMENT));
+  assert.deepEqual(server.fetched, [], 'nothing was asked of any server');
+  assert.equal(await env.runtime.requestAddress(ALICE, short.id), ALICE_ADDRESS, '"Send anyway" still finds the address');
+});
+
+// ---------------------------------------------------------------------------
+// Request lifetime (docs section 8a)
+// ---------------------------------------------------------------------------
+
+test('the request stays open for 30 days, then expires; it can be reminded meanwhile', async () => {
+  const env = await setup();
+  const message = await env.runtime.requestMoney(ALICE, { amountSats: 12_000 });
+  await env.runtime.whenIdle();
+  await clock.advance(2 * 24 * 60 * 60 * 1000);
+  assert.equal(env.runtime.requestState(message.id), 'pending');
+  await env.runtime.remindRequest(ALICE, message.id);
+  await clock.advance(REQUEST_LIFETIME_SECONDS * 1000);
+  assert.equal(env.runtime.requestState(message.id), 'expired');
+});
+
+// ---------------------------------------------------------------------------
+// Detecting paid: the payer's claim against the own ledger
+// ---------------------------------------------------------------------------
+
+/** The payer's two messages for a request: the payment and the paid status. */
+async function deliverClaim(env, requestId, { sats = 12_000, preimage = PREIMAGE, at = NOW + 7_300 } = {}) {
   await env.transport.deliver(wrapFor(aliceKey, buildPaymentTemplate({
-    recipient: ME, amountSats: 12_000, preimage: PREIMAGE, requestId: message.id, now: () => NOW + 7_300,
+    recipient: ME, amountSats: sats, preimage, requestId, now: () => at,
   })));
   await env.transport.deliver(wrapFor(aliceKey, buildStatusTemplate({
-    recipient: ME, requestId: message.id, value: 'paid', preimage: PREIMAGE, amountSats: 12_000, now: () => NOW + 7_301,
+    recipient: ME, requestId, value: 'paid', preimage, amountSats: sats, now: () => at + 1,
   })));
   await flush();
+}
+
+test('a payment the partner reports is verified against the own ledger: paid, linked once, no status sent back', async () => {
+  const env = await setup();
+  const message = await env.runtime.requestMoney(ALICE, { amountSats: 12_000, note: 'Pizza' });
+  await env.runtime.whenIdle();
+  await env.runtime.start();
+
+  env.incoming = [{ amountSats: 12_000, settledAt: NOW + 7_300, paymentHash: HASH_OF_PREIMAGE, walletId: 'w1' }];
+  await deliverClaim(env, message.id);
 
   assert.deepEqual(env.runtime.requestSettlement(message.id), { verified: true, walletId: 'w1' });
   assert.equal(env.runtime.requestState(message.id), 'paid');
   assert.deepEqual(env.links, [{ contactId: 'contact-alice', walletId: 'w1', amountSats: 12_000, note: 'Pizza' }]);
   const before = env.transport.published.length;
   await env.runtime.settleClaims();
-  await env.runtime.reconcile();
   assert.equal(env.links.length, 1, 'never linked twice');
   assert.equal(env.transport.published.length, before, 'the payer needs no paid status back');
 });
 
 test('a claim no wallet shows stays "reported, not verified" and is checked again later', async () => {
   const env = await setup();
-  const message = await env.runtime.requestMoney(ALICE, { amountSats: 12_000, walletId: 'w1' });
+  const message = await env.runtime.requestMoney(ALICE, { amountSats: 12_000 });
   await env.runtime.whenIdle();
   await env.runtime.start();
-  await clock.advance(2 * 3_600_000);
 
-  await env.transport.deliver(wrapFor(aliceKey, buildPaymentTemplate({
-    recipient: ME, amountSats: 12_000, preimage: PREIMAGE, requestId: message.id, now: () => NOW + 7_300,
-  })));
-  await env.transport.deliver(wrapFor(aliceKey, buildStatusTemplate({
-    recipient: ME, requestId: message.id, value: 'paid', preimage: PREIMAGE, now: () => NOW + 7_301,
-  })));
-  await flush();
+  await deliverClaim(env, message.id);
   assert.equal(env.runtime.requestState(message.id), 'paid', 'the store follows the payer');
   assert.deepEqual(env.runtime.requestSettlement(message.id), { verified: false, walletId: null });
   assert.equal(env.links.length, 0);
@@ -1046,10 +892,9 @@ test('a claim no wallet shows stays "reported, not verified" and is checked agai
 
 test('without a preimage the amount and the time window decide; a wrong amount or a stale payment does not', async () => {
   const env = await setup();
-  const message = await env.runtime.requestMoney(ALICE, { amountSats: 12_000, walletId: 'w1' });
+  const message = await env.runtime.requestMoney(ALICE, { amountSats: 12_000 });
   await env.runtime.whenIdle();
   await env.runtime.start();
-  await clock.advance(2 * 3_600_000);
   await env.transport.deliver(wrapFor(aliceKey, buildStatusTemplate({
     recipient: ME, requestId: message.id, value: 'paid', amountSats: 12_000, now: () => NOW + 7_300,
   })));
@@ -1067,13 +912,23 @@ test('without a preimage the amount and the time window decide; a wrong amount o
   assert.deepEqual(env.runtime.requestSettlement(message.id), { verified: true, walletId: 'w1' });
 });
 
-test('one transaction verifies one claim, and claims about requests of the partner are ignored', async () => {
+test('a claim below the requested amount is not verified', async () => {
   const env = await setup();
-  const first = await env.runtime.requestMoney(ALICE, { amountSats: 12_000, note: 'one', walletId: 'w1' });
-  const second = await env.runtime.requestMoney(ALICE, { amountSats: 12_000, note: 'two', walletId: 'w1' });
+  const message = await env.runtime.requestMoney(ALICE, { amountSats: 12_000 });
   await env.runtime.whenIdle();
   await env.runtime.start();
-  await clock.advance(2 * 3_600_000);
+  await deliverClaim(env, message.id, { sats: 5_000 });
+  env.incoming = [{ amountSats: 5_000, settledAt: NOW + 7_300, paymentHash: HASH_OF_PREIMAGE, walletId: 'w1' }];
+  await env.runtime.settleClaims();
+  assert.equal(env.runtime.requestSettlement(message.id).verified, false);
+});
+
+test('one transaction verifies one claim, and claims about requests of the partner are ignored', async () => {
+  const env = await setup();
+  const first = await env.runtime.requestMoney(ALICE, { amountSats: 12_000, note: 'one' });
+  const second = await env.runtime.requestMoney(ALICE, { amountSats: 12_000, note: 'two' });
+  await env.runtime.whenIdle();
+  await env.runtime.start();
   const theirs = await deliverAliceRequest(env);
   for (const id of [first.id, second.id, theirs.id]) {
     await env.transport.deliver(wrapFor(aliceKey, buildStatusTemplate({
@@ -1087,37 +942,33 @@ test('one transaction verifies one claim, and claims about requests of the partn
   assert.equal(env.links.length, 1);
 });
 
-test('a request the invoice watcher already settled is not linked again by a later claim', async () => {
+test('settleClaims on resume verifies a claim that arrived while the wallet history was behind', async () => {
   const env = await setup();
-  const message = await env.runtime.requestMoney(ALICE, { amountSats: 12_000, note: 'Pizza', walletId: 'w1' });
+  const message = await env.runtime.requestMoney(ALICE, { amountSats: 12_000 });
   await env.runtime.whenIdle();
   await env.runtime.start();
-  env.spark.pay(env.invoice.paymentHash);
-  await flush();
-  await env.runtime.whenIdle();
-  assert.equal(env.links.length, 1);
-
-  env.incoming = [{ amountSats: 12_000, settledAt: NOW + 5, paymentHash: HASH_OF_PREIMAGE, walletId: 'w1' }];
-  await env.transport.deliver(wrapFor(aliceKey, buildPaymentTemplate({
-    recipient: ME, amountSats: 12_000, preimage: PREIMAGE, requestId: message.id, now: () => NOW + 6,
-  })));
-  await flush();
-  assert.equal(env.links.length, 1, 'no duplicate link');
-  assert.deepEqual(env.runtime.requestSettlement(message.id), { verified: true, walletId: 'w1' });
-});
-
-test('reconcile also checks the payment claims (app resume)', async () => {
-  const env = await setup();
-  const message = await env.runtime.requestMoney(ALICE, { amountSats: 12_000, walletId: 'w1' });
-  await env.runtime.whenIdle();
-  await env.runtime.start();
-  await clock.advance(2 * 3_600_000);
   await env.transport.deliver(wrapFor(aliceKey, buildStatusTemplate({
     recipient: ME, requestId: message.id, value: 'paid', preimage: PREIMAGE, now: () => NOW + 7_300,
   })));
   await flush();
   assert.equal(env.runtime.requestSettlement(message.id).verified, false);
   env.incoming = [{ amountSats: 12_000, settledAt: NOW + 7_300, paymentHash: HASH_OF_PREIMAGE, walletId: 'w1' }];
-  await env.runtime.reconcile();
+  await env.runtime.settleClaims();
   assert.equal(env.runtime.requestSettlement(message.id).verified, true);
+});
+
+test('a verified settlement survives a restart', async () => {
+  const env = await setup();
+  const message = await env.runtime.requestMoney(ALICE, { amountSats: 12_000 });
+  await env.runtime.whenIdle();
+  await env.runtime.start();
+  env.incoming = [{ amountSats: 12_000, settledAt: NOW + 7_300, paymentHash: HASH_OF_PREIMAGE, walletId: 'w1' }];
+  await deliverClaim(env, message.id);
+  await env.store.flush();
+  env.runtime.dispose();
+
+  const again = await setup();
+  await again.store.setScope(null);
+  await again.store.setScope(ME);
+  assert.deepEqual(again.runtime.requestSettlement(message.id), { verified: true, walletId: 'w1' });
 });

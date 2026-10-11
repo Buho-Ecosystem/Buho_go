@@ -236,40 +236,24 @@ an LNURL fetch). Still to do: Android device run.
 
 ### 5a. Request lifetime root fix — DONE (see docs/CONTACT_CHAT.md 8a)
 
-### 5b. Simplify how a request gets paid — OPEN (blocks merge)
+### 5b. Simplify how a request gets paid — DONE (see docs/CONTACT_CHAT.md 8 and 8a)
 
-The current request flow works, but it assumes a setup most BuhoGO users
-do not have: how a request is paid depends on the wallet type, on NWC
-permissions and on whether the profile has a Lightning address. That is too
-complicated. BuhoGO users must be able to request money natively, with no
-prior setup.
-
-Today:
-- Without a profile Lightning address, a wallet mints a 24 h invoice when the
-  request is sent: Spark and LNbits yes, NWC only with `make_invoice`,
-  Arkade not at all (error). After 24 h the request can no longer be paid; the
-  payer can only ask for a new request.
-- With a profile address, the request also carries a signed `lud16`, and the
-  payer pulls a fresh invoice from it after expiry (30-day lifetime, §8a).
-- Gap: `lud16` comes only from the profile. A Spark wallet's own Lightning
-  address is not used when the profile has none.
-
-Goal: one simple model that works for every user and all four wallet types
-without setup. To decide:
-- A request is only a notice (amount, note, where to pay), and the invoice is
-  created when the payer taps Pay. Needs something that can issue invoices
-  while the requester is offline: a Lightning address, or Spark/Arkade static
-  addresses.
-- Give every BuhoGO identity a receive address automatically (e.g. the
-  Spark/Buho Lightning address), so the profile-setup step goes away.
-- Fallback without any address (e.g. NWC-only): ask for an invoice over the
-  chat and have the requester's app answer when it is online. Note: the payer
-  waits while that app is closed.
-- Matching payments to requests stays required: `buho:req` comment
-  (LUD-12), verify URL (LUD-21), check against the requester's own wallet
-  history.
+A request is only a notice (amount, signed `lud16`, `valid_until`, optional
+note) with no invoice. Requesting needs only the profile Lightning address
+(`boot/payment-address.js` fills it), so it works the same for Spark, NWC,
+LNbits and Arkade: a preflight checks that the address answers LNURL-pay and
+accepts the amount, the sheet shows "To: <address>" or a set-up state when
+there is none. The payer creates the invoice when tapping Pay, from the
+requester's current kind 0 `lud16` (fallback: the signed one). Paid is detected
+only by matching the payer's claim against the requester's own wallet ledger.
+Removed: receiving-wallet choice, direct minting, invoice watchers, 24 h
+invoice expiry, "Ask for a new request".
 
 ### 6. Known limitations / follow-ups
+- LUD-21 `verify` is not used for external addresses: a payment to an address
+  the app cannot read the receipts of is only "Reported paid, not verified".
+- Payments to an npub.cash bucket address show "not verified" until the bucket
+  is claimed into a wallet (the ledger only lists it then).
 - Muted 12px text contrast (`--text-muted`, ~3.1–3.8:1) is an app-wide
   token, below WCAG AA for small text.
 - The confirm sheet calls a Lightning invoice "Bitcoin payment" (existing

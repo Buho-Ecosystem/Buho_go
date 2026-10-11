@@ -26,7 +26,7 @@ const RESYNC_COOLDOWN_MS = 60 * 1000;
  * @property {string} [contactId]  Address-book id the payment belongs to. Only an invoice
  *   needs it (it carries no address to find the contact by).
  * @property {number} [amountSats]  Amount to fill into the confirm sheet (the user still confirms it).
- *   Used when a payment is made for a request that has no invoice any more.
+ *   Used when a payment is made for an expired request.
  * @property {string} [note]  Note to fill into the confirm sheet, where the recipient accepts one.
  */
 
@@ -115,8 +115,8 @@ export function usePayContact(ctx) {
   }
 
   /**
-   * Pay a BOLT-11 invoice somebody handed over (a payment request in the
-   * contact chat) through the same pipeline. There is no contact address to
+   * Pay a BOLT-11 invoice (fetched for a payment request in the contact chat)
+   * through the same pipeline. There is no contact address to
    * guard here: the invoice IS the destination, so the identity-only checks of
    * `payContact` do not apply. The wallet page decodes it, checks it and shows
    * the confirm sheet.
@@ -138,7 +138,7 @@ export function usePayContact(ctx) {
 
   /**
    * Pay an address that is not (or not yet) a saved contact's: the Lightning
-   * address a payment request names. Same pipeline and capability gate as
+   * address of an expired payment request. Same pipeline and capability gate as
    * `payContact`, without its contact-only guards and bookkeeping.
    */
   function payAddress({ address, addressType = 'lightning', name = '' } = {}, options = {}) {

@@ -10,13 +10,12 @@
  *   ----------------------------  ------------------------------------------------
  *   key bytes                     identity.getNostrSecretKeyBytes
  *   threads, outbox, status       messages store (scoped to the identity)
- *   wallet descriptors            wallet.wallets (+ sparkLightningAddressOf)
- *   provider / silent connect     wallet.getProvider / ensureWalletConnectedForTransfer
  *   profile Lightning address     profile.lud16
+ *   requester's current profile   services.fetchProfile (signed kind 0)
  *   contact name and route id     addressBook.findContactByPubkey
  *   notification                  notifications.notifyMessageIfEnabled
  *   tx <-> contact link           transactionMetadata.enqueuePendingContactLink
- *   incoming ledger (late claims) wallet.wallets + wallet.getProvider + services.normalizeTx
+ *   incoming ledger (payment claims)wallet.wallets + wallet.getProvider + services.normalizeTx
  *   relay connections for lookups getRelayPool().ensureRelay
  */
 
@@ -25,24 +24,6 @@ import { createChatRuntime } from './runtime.js';
 
 /** `source` stamped on the incoming transaction of a paid chat request. */
 export const CHAT_REQUEST_SOURCE = 'chat-request';
-
-/**
- * The request service's view of a wallet: type, Lightning address, Spark
- * account and NWC methods, taken from wherever the store keeps them.
- *
- * @param {object} wallet An entry of `wallet.wallets`.
- * @param {(wallet: object) => string | null} sparkAddressOf `wallet.sparkLightningAddressOf`.
- * @returns {import('./requests.js').WalletDescriptor}
- */
-export function describeWallet(wallet, sparkAddressOf) {
-  const lud16 = wallet.type === 'spark' ? sparkAddressOf(wallet) : wallet.metadata?.lud16;
-  const descriptor = { id: wallet.id, type: wallet.type };
-  if (typeof lud16 === 'string' && lud16.includes('@')) descriptor.lightningAddress = lud16.toLowerCase();
-  const account = wallet.connectionData?.accountNumber;
-  if (Number.isInteger(account)) descriptor.accountNumber = account;
-  if (Array.isArray(wallet.metadata?.methods)) descriptor.methods = [...wallet.metadata.methods];
-  return descriptor;
-}
 
 /**
  * @param {object} stores
@@ -55,14 +36,16 @@ export function describeWallet(wallet, sparkAddressOf) {
  * @param {object} stores.transactionMetadata
  * @param {object} services
  * @param {() => { ensureRelay: Function }} services.getRelayPool
- * @param {{ fetchPayRequest: Function, requestLnurlInvoice: Function, verifyPayment: Function }} services.lnurl nostr-core's functions.
+ * @param {{ fetchPayRequest: Function, requestLnurlInvoice: Function }} services.lnurl nostr-core's functions.
+ * @param {(pubkey: string, options: { timeoutMs: number }) => Promise<object | null>} services.fetchProfile
+ *   `nostrFetch.fetchProfile`: how a payer finds the requester's current Lightning address.
  * @param {() => boolean} services.isLocked
  * @param {() => boolean} services.isHidden
  * @param {(message: object) => string} services.formatNotification
  * @param {string | (() => string)} [services.channelName] Translated name of the `messages` channel.
  * @param {(raw: object, options: { walletType: string }) => object} [services.normalizeTx]
  *   The transaction normaliser; with it the runtime can check a payment the partner reports
- *   against the user's wallets after the request's invoice expired.
+ *   against the user's wallets.
  * @param {typeof WebSocket} [services.WebSocket]
  * @param {typeof createChatRuntime} [services.createChatRuntime] Replacement constructor, for tests.
  * @returns {(pubkey: string) => ReturnType<typeof createChatRuntime>} Builds the runtime for one identity.
@@ -76,18 +59,11 @@ export function createAppRuntimeFactory(stores, services) {
       loadSecretKey: () => identity.getNostrSecretKeyBytes(),
       isLocked: services.isLocked,
       store: stores.messages(),
-      wallets: {
-        list: () => wallet.wallets.map((entry) => describeWallet(entry, (w) => wallet.sparkLightningAddressOf(w))),
-        getProvider: (walletId) => wallet.getProvider(walletId),
-        // Connects without asking the user for anything; a wallet that needs
-        // a PIN (or is unreachable) fails and the action reports it.
-        ensureConnected: (walletId) => wallet.ensureWalletConnectedForTransfer(walletId),
-      },
       getProfileAddress: () => profile.lud16,
+      fetchProfile: services.fetchProfile,
       lnurl: {
         fetchPayRequest: services.lnurl.fetchPayRequest,
         requestInvoice: services.lnurl.requestLnurlInvoice,
-        verifyPayment: services.lnurl.verifyPayment,
       },
       contacts: {
         find(contactPubkey) {

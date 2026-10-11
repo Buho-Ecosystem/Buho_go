@@ -17,12 +17,12 @@
  * - `parseRumor` never throws. Rumors come from strangers, so every field is
  *   checked before it is read.
  *
- * Pure module: no I/O, no state, nothing logged (invoices and message text are
- * private, docs section 10). Lengths count Unicode code points, so an emoji is
+ * Pure module: no I/O, no state, nothing logged (message text is private, docs
+ * section 10). Lengths count Unicode code points, so an emoji is
  * one character, as the user sees it.
  */
 
-import { decodeBolt11 } from 'nostr-core';
+import { validateLightningAddress } from 'nostr-core';
 import {
   KIND,
   MAX_NOTE_LENGTH,
@@ -68,13 +68,6 @@ const MAX_EMOJI_LENGTH = 64;
 /** Longest `lud16` address (the RFC 5321 limit for an address). */
 const MAX_LUD16_LENGTH = 320;
 
-/**
- * Longest invoice string we hand to the decoder. A BOLT-11 invoice with many
- * route hints stays well below this; anything longer is not a payable invoice
- * and must not cost the decoder time.
- */
-const MAX_BOLT11_LENGTH = 4_096;
-
 /** One satoshi is 1,000 millisatoshis; a request or payment is in whole sats. */
 const MSAT_PER_SAT = 1_000;
 
@@ -83,7 +76,6 @@ const MAX_SATS = Math.floor(Number.MAX_SAFE_INTEGER / MSAT_PER_SAT);
 
 const HEX_64 = /^[0-9a-f]{64}$/;
 const MSAT_TAG = /^[1-9][0-9]{0,15}$/;
-const LUD16 = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 // bech32 data characters (no "1", "b", "i", "o"). An nsec is "nsec1" plus 58 of
 // them (32 key bytes and the checksum). A NIP-49 ncryptsec is 91 bytes, 162
@@ -155,72 +147,37 @@ function normalizeNote(note) {
   return trimmed;
 }
 
-/** A Lightning address (`user@host`): absent becomes null. */
-function normalizeLud16(address) {
-  if (address === undefined || address === null) return null;
-  if (typeof address !== 'string' || address.length > MAX_LUD16_LENGTH || !LUD16.test(address)) {
+/** A Lightning address (`user@host`): required, a request without one cannot be paid. */
+function requireLud16(address) {
+  if (typeof address !== 'string' || address.length > MAX_LUD16_LENGTH || !validateLightningAddress(address)) {
     fail(DM_ERROR.INVALID_ARGUMENT, 'lud16 must be a Lightning address');
   }
   return address;
 }
 
-/** A `valid_until` in unix seconds: absent becomes null (a request from a client that does not send it). */
-function normalizeValidUntil(seconds) {
-  if (seconds === undefined || seconds === null) return null;
-  if (!Number.isSafeInteger(seconds) || seconds <= 0) {
-    fail(DM_ERROR.INVALID_ARGUMENT, 'valid_until must be a unix timestamp in seconds');
+/** A `valid_until` in unix seconds: required, and after the request was created. */
+function requireValidUntil(seconds, createdAt) {
+  if (!Number.isSafeInteger(seconds) || seconds <= createdAt) {
+    fail(DM_ERROR.INVALID_ARGUMENT, 'valid_until must be a unix timestamp after the request was created');
   }
   return seconds;
 }
 
 /** Inverse for the tag: a plain decimal string of seconds, or an error. */
 function validUntilFromTag(tagValue) {
-  if (tagValue === undefined) return undefined;
-  if (!/^[1-9][0-9]{0,15}$/.test(tagValue)) fail(DM_ERROR.INVALID_ARGUMENT, 'valid_until tag must be unix seconds');
+  if (tagValue === undefined || !/^[1-9][0-9]{0,15}$/.test(tagValue)) {
+    fail(DM_ERROR.INVALID_ARGUMENT, 'valid_until tag must be unix seconds');
+  }
   return Number(tagValue);
 }
 
-/**
- * The invoice checks of docs section 4: it decodes, it is a mainnet invoice and
- * its amount equals the requested amount to the msat (a zero-amount invoice has
- * no amount and fails too, so the payer can never be made to pick a number).
- * Expiry is judged at render time, not here.
- */
-function checkInvoice(bolt11, amountSats) {
-  if (typeof bolt11 !== 'string' || bolt11.trim() === '' || bolt11.length > MAX_BOLT11_LENGTH) {
-    fail(DM_ERROR.INVALID_INVOICE, 'invoice is missing or too long');
-  }
-  let invoice;
-  try {
-    invoice = decodeBolt11(bolt11.trim());
-  } catch (cause) {
-    return fail(DM_ERROR.INVALID_INVOICE, 'invoice does not decode', { cause });
-  }
-  if (invoice.network !== 'mainnet') {
-    fail(DM_ERROR.INVALID_INVOICE, 'invoice is not a mainnet invoice');
-  }
-  if (invoice.amountMsat !== amountSats * MSAT_PER_SAT) {
-    fail(DM_ERROR.INVALID_INVOICE, 'invoice amount does not match the requested amount');
-  }
-  return {
-    bolt11: invoice.paymentRequest,
-    paymentHash: invoice.paymentHash,
-    expiresAt: invoice.expiresAt,
-  };
-}
-
 /** The payload of a payment request, validated and normalised. */
-function normalizeRequest({ amountSats, bolt11, note, lud16, validUntil }) {
-  const sats = requireSats(amountSats);
-  const invoice = checkInvoice(bolt11, sats);
+function normalizeRequest({ amountSats, note, lud16, validUntil }, createdAt) {
   return {
-    amountSats: sats,
+    amountSats: requireSats(amountSats),
     note: normalizeNote(note),
-    bolt11: invoice.bolt11,
-    paymentHash: invoice.paymentHash,
-    lud16: normalizeLud16(lud16),
-    expiresAt: invoice.expiresAt,
-    validUntil: normalizeValidUntil(validUntil),
+    lud16: requireLud16(lud16),
+    validUntil: requireValidUntil(validUntil, createdAt),
   };
 }
 
@@ -339,42 +296,38 @@ export function buildTextTemplate({ recipient, text, replyTo, now = unixNow } = 
 }
 
 /**
- * Build a payment request. The invoice must decode, be a mainnet invoice and
- * carry exactly the requested amount.
+ * Build a payment request: a notice, not an invoice. It names the amount and
+ * the Lightning address to pay; the payer's app fetches the invoice when they
+ * tap Pay (docs section 8a).
  *
  * @param {object} options
  * @param {string} options.recipient Contact pubkey, 64 lowercase hex.
  * @param {number} options.amountSats Positive safe integer; sent as msat.
- * @param {string} options.bolt11 The invoice the contact pays.
+ * @param {string} options.lud16 Lightning address of the requester (required).
  * @param {string} [options.note] At most `MAX_NOTE_LENGTH` code points.
- * @param {string} [options.lud16] Lightning address of the requester. It is how
- *   the payer gets a fresh invoice once this one has expired (docs section 8a).
- * @param {number} [options.validUntil] Unix seconds the request itself stays
- *   open; defaults to `created_at` + `REQUEST_LIFETIME_SECONDS`.
+ * @param {number} [options.validUntil] Unix seconds the request stays open;
+ *   defaults to `created_at` + `REQUEST_LIFETIME_SECONDS`.
  * @param {() => number} [options.now] Clock in unix seconds.
  * @returns {EventTemplate}
- * @throws {DmError} `INVALID_ARGUMENT`, `MESSAGE_TOO_LARGE` or `INVALID_INVOICE`.
+ * @throws {DmError} `INVALID_ARGUMENT` or `MESSAGE_TOO_LARGE`.
  */
-export function buildRequestTemplate({ recipient, amountSats, bolt11, note, lud16, validUntil, now = unixNow } = {}) {
+export function buildRequestTemplate({ recipient, amountSats, lud16, note, validUntil, now = unixNow } = {}) {
   const { to, createdAt } = begin(recipient, now);
-  const request = normalizeRequest({
-    amountSats, bolt11, note, lud16, validUntil: validUntil ?? createdAt + REQUEST_LIFETIME_SECONDS,
-  });
-  if (request.validUntil <= createdAt) {
-    fail(DM_ERROR.INVALID_ARGUMENT, 'valid_until must lie after the request was created');
-  }
+  const request = normalizeRequest(
+    { amountSats, note, lud16, validUntil: validUntil ?? createdAt + REQUEST_LIFETIME_SECONDS },
+    createdAt,
+  );
   const tags = [
     ['p', to],
     ['buho', MESSAGE_TYPE.REQUEST, PROTOCOL_VERSION],
     ['amount', satsToMsatTag(request.amountSats)],
-    ['bolt11', request.bolt11],
+    ['lud16', request.lud16],
+    ['valid_until', String(request.validUntil)],
   ];
   if (request.note) tags.push(['note', request.note]);
-  if (request.lud16) tags.push(['lud16', request.lud16]);
-  tags.push(['valid_until', String(request.validUntil)]);
   const content =
     `\u{1F4B8} Payment request: ${formatSats(request.amountSats)} sats${noteSuffix(request.note)}` +
-    `\nlightning:${request.bolt11}`;
+    `\nPay to: ${request.lud16}`;
   return { kind: KIND.DM, tags, content, created_at: createdAt };
 }
 
@@ -472,33 +425,6 @@ export function buildReactionTemplate({ recipient, targetId, emoji, now = unixNo
 }
 
 // ---------------------------------------------------------------------------
-// Request lifetime
-// ---------------------------------------------------------------------------
-
-/**
- * When a payment request stops being open, in unix seconds (docs section 8a).
- * The request's lifetime, not its invoice's: an expired invoice does not end
- * the request, because the payer can pull a fresh one from the request's `lud16`.
- *
- * - `valid_until` when the sender gave one (BuhoGO: created_at + 30 days).
- * - Otherwise (other clients, messages stored before the tag existed) the
- *   same 30 days from `created_at` if the request names a `lud16`, because
- *   then a fresh invoice can be had; without one, the invoice expiry is all
- *   there is.
- *
- * @param {{ createdAt: number, request: { validUntil?: number | null, lud16?: string | null,
- *   expiresAt?: number } | null }} message A parsed (or stored) request message.
- * @returns {number | null} Null when it cannot be told (not a request).
- */
-export function requestLifetimeEnd(message) {
-  const request = message?.request;
-  if (!request) return null;
-  if (Number.isSafeInteger(request.validUntil)) return request.validUntil;
-  if (request.lud16 && Number.isSafeInteger(message.createdAt)) return message.createdAt + REQUEST_LIFETIME_SECONDS;
-  return Number.isFinite(request.expiresAt) ? request.expiresAt : null;
-}
-
-// ---------------------------------------------------------------------------
 // Parser
 // ---------------------------------------------------------------------------
 
@@ -556,14 +482,6 @@ function resolvePartner(rumor, me) {
   return members.size === 0 ? rumor.pubkey : null;
 }
 
-/** A request whose `valid_until` is not after its own creation was never open: invalid. */
-function requireLiveWindow(request, createdAt) {
-  if (request.validUntil !== null && request.validUntil <= createdAt) {
-    fail(DM_ERROR.INVALID_ARGUMENT, 'valid_until must lie after the request was created');
-  }
-  return request;
-}
-
 /**
  * Read the `buho` payload of a kind 14 rumor with the builders' validators.
  * Returns null when the rumor has no `buho` tag (a plain message) and throws a
@@ -583,13 +501,12 @@ function readBuhoPayload(tags, createdAt) {
       if (tag.length !== 3) fail(DM_ERROR.INVALID_ARGUMENT, 'malformed buho tag');
       return {
         type: MESSAGE_TYPE.REQUEST,
-        request: requireLiveWindow(normalizeRequest({
+        request: normalizeRequest({
           amountSats: msatTagToSats(singleTagValue(tags, 'amount')),
-          bolt11: singleTagValue(tags, 'bolt11'),
           note: singleTagValue(tags, 'note'),
           lud16: singleTagValue(tags, 'lud16'),
           validUntil: validUntilFromTag(singleTagValue(tags, 'valid_until')),
-        }), createdAt),
+        }, createdAt),
       };
     case MESSAGE_TYPE.STATUS:
       if (tag.length !== 4) fail(DM_ERROR.INVALID_ARGUMENT, 'malformed buho tag');
@@ -629,8 +546,7 @@ function readBuhoPayload(tags, createdAt) {
  * @property {number} createdAt Unix seconds (rumor `created_at`).
  * @property {string} text Display text; the fallback content for typed and degraded messages.
  * @property {string | null} replyTo Rumor id answered, or null.
- * @property {{ amountSats: number, note: string | null, bolt11: string, paymentHash: string,
- *   lud16: string | null, expiresAt: number, validUntil: number | null } | null} request
+ * @property {{ amountSats: number, note: string | null, lud16: string, validUntil: number } | null} request
  * @property {{ requestId: string, value: string, preimage: string | null } | null} status
  * @property {{ amountSats: number, note: string | null, preimage: string | null, requestId: string | null } | null} payment
  * @property {{ targetId: string, emoji: string } | null} reaction
@@ -645,7 +561,7 @@ function readBuhoPayload(tags, createdAt) {
  *   than one other participant), notes to self, rumors that do not address
  *   `me`, and reactions without a target.
  * - A `buho` tag with an unknown type or version, or an invalid payload (bad
- *   amount, invoice that does not match, ...), degrades to a plain `text`
+ *   amount, no Lightning address, ...), degrades to a plain `text`
  *   message with `degraded: true` and no request, status or payment data, so
  *   it never offers a pay action.
  *

@@ -11,7 +11,7 @@ import { CHAT_ACTIONS } from '../../services/dm/runtime.js';
 import { DM_ERROR, DmError } from '../../services/dm/errors.js';
 import { publishChatRuntime, useChatRuntime } from '../useChatRuntime.js';
 
-const SYNC = new Set(['checkPayable', 'requestState', 'requestSettlement', 'needsFreshInvoice']);
+const SYNC = new Set(['requestState', 'requestSettlement']);
 
 const fakeRuntime = (me) => {
   const calls = [];
@@ -39,10 +39,9 @@ test('without a runtime nothing is available and actions reject with NO_IDENTITY
   await assert.rejects(chat.partnerReachability('a'), (e) => DmError.is(e, DM_ERROR.NO_IDENTITY));
   assert.equal(chat.requestState('x'), null);
   assert.equal(chat.requestSettlement('x'), null);
-  assert.equal(chat.needsFreshInvoice({}), false);
-  await assert.rejects(chat.refreshInvoice('a', 'b'), (e) => DmError.is(e, DM_ERROR.NO_IDENTITY));
+  await assert.rejects(chat.fetchRequestInvoice('a', 'b'), (e) => DmError.is(e, DM_ERROR.NO_IDENTITY));
+  await assert.rejects(chat.requestAddress('a', 'b'), (e) => DmError.is(e, DM_ERROR.NO_IDENTITY));
   await assert.rejects(chat.settleClaims(), (e) => DmError.is(e, DM_ERROR.NO_IDENTITY));
-  assert.deepEqual(chat.checkPayable({}, 'w'), { ok: false, reason: DM_ERROR.NO_IDENTITY });
 });
 
 test('calls go to the CURRENT runtime, also after it was replaced', async () => {
@@ -58,11 +57,10 @@ test('calls go to the CURRENT runtime, also after it was replaced', async () => 
 
   publishChatRuntime(second);
   assert.equal(await chat.requestMoney('p', { amountSats: 1 }), 'second:requestMoney');
-  assert.equal(chat.checkPayable({}, 'w'), 'second:checkPayable');
   assert.equal(chat.requestState('x'), 'second:requestState');
   assert.equal(chat.requestSettlement('x'), 'second:requestSettlement');
-  assert.equal(chat.needsFreshInvoice({}), 'second:needsFreshInvoice');
-  assert.equal(await chat.refreshInvoice('p', 'r'), 'second:refreshInvoice');
+  assert.equal(await chat.fetchRequestInvoice('p', 'r'), 'second:fetchRequestInvoice');
+  assert.equal(await chat.requestAddress('p', 'r'), 'second:requestAddress');
   assert.equal(first.calls.length, 1, 'the replaced runtime is not called again');
 
   publishChatRuntime(null);

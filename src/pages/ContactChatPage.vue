@@ -120,7 +120,6 @@
         @withdraw-request="onWithdraw"
         @send-anyway-request="onSendAnyway"
         @request-again="onRequestAgain"
-        @ask-new-request="onAskNew"
         @open-payment="openProfile"
       >
         <template #header>
@@ -165,14 +164,13 @@
 
     <RequestSheet
       v-model="requestOpen"
-      v-model:wallet-id="requestWalletId"
       :partner-name="displayName"
-      :wallets="receiving.entries"
-      :landing-info="receiving.landingInfo"
+      :address="profile.lud16 || ''"
       :format-fiat="formatFiat"
       :submitting="requestSubmitting"
       :error="requestError"
       :bip177="bip177"
+      @open-address="getPaidOpen = true"
       @submit="onSubmitRequest"
     />
 
@@ -242,14 +240,12 @@ import { useWalletStore } from '../stores/wallet.js'
 import { useProfileStore } from '../stores/profile.js'
 import { useChatRuntime } from '../composables/useChatRuntime.js'
 import { usePayContact } from '../composables/usePayContact.js'
-import { buildReceivingWallets, useContactChat } from '../composables/useContactChat.js'
+import { useContactChat } from '../composables/useContactChat.js'
 import { containsSecretKey } from '../services/dm/protocol.js'
-import { describeWallet } from '../services/dm/appRuntime.js'
 import { contactChatRoute } from '../services/dm/runtime.js'
 import { loadIncomingTransactions } from '../services/dm/incomingTransactions.js'
 import { normalizeTx } from '../services/txNormalizer.js'
 import { fiatRatesService } from '../utils/fiatRates.js'
-import { formatAmount } from '../utils/amountFormatting.js'
 import { onAppVisibility } from '../utils/appVisibility.js'
 import { shareContent } from '../utils/share.js'
 import { knownFeeReserveSats, listPayingWallets, pickDefaultPayingWallet } from '../utils/payingWallets.js'
@@ -361,7 +357,6 @@ export default {
       draft: '',
       replyToId: null,
       requestOpen: false,
-      requestWalletId: null,
       requestSubmitting: false,
       requestError: '',
       linkOpen: false,
@@ -434,24 +429,6 @@ export default {
       if (!item) return null
       const text = [...item.message.text.replace(/\s+/g, ' ').trim()].slice(0, 140).join('')
       return { author: item.message.outgoing ? this.t('You') : this.displayName, text }
-    },
-
-    /** Wallet rows, default and the "money lands elsewhere" note for the request sheet. */
-    receiving() {
-      return buildReceivingWallets({
-        wallets: (this.walletStore.wallets || []).map((wallet) => ({
-          ...describeWallet(wallet, (entry) => this.walletStore.sparkLightningAddressOf(entry)),
-          name: wallet.name || '',
-        })),
-        profileAddress: this.profile.lud16 || null,
-        selectedId: this.requestWalletId,
-        balanceOf: (id) => {
-          const balance = this.walletStore.getDisplayBalance(id)
-          return balance.known ? balance.balance : null
-        },
-        formatAmount: (sats) => formatAmount(sats, this.bip177),
-        t: this.t,
-      })
     },
 
     viewportStyle() {
@@ -640,15 +617,14 @@ export default {
         this.linkOpen = true
         return
       }
-      this.requestWalletId = this.receiving.defaultId
       this.requestError = ''
       this.requestOpen = true
     },
 
-    async onSubmitRequest({ amountSats, note, walletId }) {
+    async onSubmitRequest({ amountSats, note }) {
       this.requestSubmitting = true
       this.requestError = ''
-      const result = await this.chat.requestMoney({ amountSats, note, walletId })
+      const result = await this.chat.requestMoney({ amountSats, note })
       this.requestSubmitting = false
       if (result.ok) {
         this.requestOpen = false
@@ -664,45 +640,17 @@ export default {
     },
 
     async onPayRequest({ id }) {
-      const result = await this.chat.payRequest(id)
-      if (result?.ok || result?.error?.next !== 'ask-new') {
-        this.report(result)
-        return
-      }
-      // Paying cannot work (no fresh invoice to be had): say so and offer the way forward.
-      this.$q.notify({
-        type: 'negative',
-        message: result.error.message,
-        timeout: TOAST_ERROR_MS,
-        actions: [{
-          label: this.t('Ask for a new request'),
-          color: 'white',
-          handler: () => this.onAskNew({ id }),
-        }],
-      })
+      this.report(await this.chat.payRequest(id))
     },
 
     /** The request is over; the money goes through the ordinary send flow, linked to the request. */
-    onSendAnyway({ id }) {
-      this.report(this.chat.sendAnyway(id))
+    async onSendAnyway({ id }) {
+      this.report(await this.chat.sendAnyway(id))
     },
 
     /** One tap: the same amount and note as a new request. */
     async onRequestAgain({ id }) {
       this.report(await this.chat.requestAgain(id))
-    },
-
-    /** The payer cannot pay this request any more: a message to the requester is prepared, not sent. */
-    onAskNew({ id }) {
-      const result = this.chat.askNewRequest(id)
-      if (!result.ok) return
-      const { amountSats, note } = result.value
-      const amount = formatAmount(amountSats, this.bip177)
-      this.draft = note
-        ? this.t('Could you send me a new payment request for {amount} ({note})?', { amount, note })
-        : this.t('Could you send me a new payment request for {amount}?', { amount })
-      this.mode = 'text'
-      this.$nextTick(() => this.$refs.composer?.focus?.())
     },
 
     async onDecline({ id }) {

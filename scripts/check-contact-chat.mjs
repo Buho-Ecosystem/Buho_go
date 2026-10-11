@@ -4,10 +4,12 @@
 //   - every wss:// connection goes to SimRelay (scripts/fixtures/contactChat.mjs); the
 //     `auth.nostr1.com` URL demands NIP-42 AUTH for kind 1059 like the real relay
 //   - wallets are scripted at the wallet-store level (the way check-transfer-completion does);
-//     invoices come from a shared InvoiceLedger so Bob "paying" Alice's invoice is visible to her
+//     invoices come from a shared InvoiceLedger so Bob "paying" an invoice is visible to Alice
 //   - all HTTP except the app itself, the price API stub and the icon CDN is aborted
-//   - Alice's Lightning address (alice@btc.mybuho.de) is served by LnurlServer: the payer's
-//     "pull a fresh invoice" and "Send anyway" paths go through it
+//   - a request is only a notice: Alice's profile Lightning address (alice@btc.mybuho.de) is
+//     served by LnurlServer, which checks it before the request is sent and mints the invoice
+//     when Bob taps Pay (or "Send anyway"); when Alice changes her address, the second
+//     LnurlServer (alice@wallet.example) is where the next payment goes
 // Screenshots (light and dark per step, de/es/large text at the end): CONTACT_CHAT_OUTPUT.
 import { chromium } from '@playwright/test';
 import { finalizeEvent } from 'nostr-core';
@@ -46,7 +48,10 @@ const profileOf = (who) => finalizeEvent(
 const relay = new SimRelay();
 const ledger = new InvoiceLedger();
 const ALICE_ADDRESS = 'alice@btc.mybuho.de';
+const ALICE_NEW_ADDRESS = 'alice@wallet.example';
 const lnurl = new LnurlServer({ ledger, domain: 'btc.mybuho.de', receivingWalletId: 'alice-spark' });
+const lnurlNew = new LnurlServer({ ledger, domain: 'wallet.example', receivingWalletId: 'alice-lnbits' });
+const lnurlServers = [lnurl, lnurlNew];
 
 // Wallets, described once and built inside the page (see `seedWallets`).
 const ALICE_WALLETS = [
@@ -97,8 +102,9 @@ async function launchUser(browser, who) {
       return route.fulfill({ contentType: 'application/json', body: '{"USD":85000,"EUR":78000}' });
     }
     if (url.origin === base || url.hostname === 'api.iconify.design') return route.continue();
-    if (lnurl.owns(url.hostname)) {
-      const { status, body } = lnurl.handle(url);
+    const server = lnurlServers.find((candidate) => candidate.owns(url.hostname));
+    if (server) {
+      const { status, body } = server.handle(url);
       return route.fulfill({
         status,
         contentType: 'application/json',
@@ -116,15 +122,15 @@ async function launchUser(browser, who) {
   });
 
   // The wallets' network edge: what the stubbed providers call (see `seedWallets`).
-  await context.exposeFunction('__e2eMintInvoice', (amountSats) => ledger.mintForApp(amountSats));
   // A Spark wallet paying a Lightning address resolves and pays it itself: here the LNURL server mints, the ledger pays.
   await context.exposeFunction('__e2ePayAddress', (address, amountSats, comment) => {
-    const [name] = address.split('@');
-    const { bolt11 } = lnurl.issue({ name, amountSats, comment: comment || null });
+    const [name, domain] = address.split('@');
+    const server = lnurlServers.find((candidate) => candidate.owns(domain));
+    const { bolt11 } = server.issue({ name, amountSats, comment: comment || null });
     return { bolt11, preimage: ledger.pay(bolt11) };
   });
-  await context.exposeFunction('__e2eIncoming', (walletId) => lnurl.incomingFor(walletId));
-  await context.exposeFunction('__e2eLookupInvoice', (hash) => ledger.lookup(hash));
+  // What a wallet's history shows: the paid invoices of the address that wallet receives.
+  await context.exposeFunction('__e2eIncoming', (walletId) => lnurlServers.flatMap((server) => server.incomingFor(walletId)));
   await context.exposeFunction('__e2ePayInvoice', (bolt11) => ledger.pay(bolt11));
 
   await context.addInitScript(() => {
@@ -163,8 +169,8 @@ async function seedUser(actor, { contacts, wallets, profileAddress = null }) {
 }
 
 /**
- * Scripted wallets at the store level: connected providers whose invoices come from the shared
- * ledger. `payInvoice` marks the ledger so the receiver's `lookupInvoice` reports it paid.
+ * Scripted wallets at the store level: connected providers that can pay an invoice or an address
+ * and list what came in. `payInvoice` marks the ledger so the receiver's history shows it paid.
  */
 async function seedWallets({ page }, wallets) {
   await page.evaluate(async (specs) => {
@@ -175,12 +181,6 @@ async function seedWallets({ page }, wallets) {
       getBalance: async () => spec.balance,
       getTransactions: async () => window.__e2eIncoming(spec.id),
       getSparkAddress: async () => `${spec.id}-spark-address`,
-      createInvoice: async ({ amount }) => {
-        const { bolt11, paymentHash } = await window.__e2eMintInvoice(amount);
-        return { paymentRequest: bolt11, paymentHash };
-      },
-      lookupInvoice: async (hash) => window.__e2eLookupInvoice(hash),
-      onPaymentReceived: () => () => {},
       getLightningSendFeeEstimate: async () => 0,
       payLightningAddress: async (address, amount, comment) => {
         const { bolt11, preimage } = await window.__e2ePayAddress(address, amount, comment);
@@ -328,8 +328,29 @@ try {
   });
 
   console.log('3 + 6. Requests, payments and the paying-wallet matrix');
-  await step('Alice requests 1,000 sats "Pizza"; Bob sees a card without an invoice-amount row', async () => {
+  await step('without a profile address the request sheet only offers to set one up', async () => {
+    // The app fills the profile address on its own (Spark address, else npub.cash); take it away.
+    await bob.page.evaluate(async () => {
+      const { useProfileStore } = await import('/src/stores/profile.js');
+      useProfileStore().$patch({ lud16: '' });
+    });
+    await openChatFromAddressBook(bob, 'Alice');
+    await bob.page.getByRole('button', { name: 'Request', exact: true }).click();
+    const sheet = bob.page.getByRole('region', { name: /^Request from/ });
+    await sheet.getByText('To request money you need a Lightning address in your profile.').waitFor();
+    assert.equal(await sheet.getByRole('textbox', { name: 'Amount in sats' }).count(), 0, 'no amount form');
+    await snap(bob, '04-request-no-address');
+    await sheet.getByRole('button', { name: 'Set up Lightning address' }).click();
+    await bob.page.getByText('Get paid', { exact: true }).waitFor();
+    await bob.page.keyboard.press('Escape');
+    await bob.page.keyboard.press('Escape');
+    await sheet.waitFor({ state: 'hidden' });
+  });
+
+  await step('Alice requests 1,000 sats "Pizza"; her address was checked, Bob sees a card without an invoice', async () => {
     await requestMoney(alice.page, '1000', 'Pizza');
+    assert.deepEqual(lnurl.lookups, ['alice'], 'the profile address answered the LNURL-pay lookup before sending');
+    assert.equal(lnurl.issued.length, 0, 'a request creates no invoice');
     await chatCard(alice.page, /^You requested/).getByRole('button', { name: 'Withdraw' }).waitFor();
     const card = chatCard(bob.page, /^Alice requests/);
     await card.waitFor();
@@ -346,21 +367,28 @@ try {
     await chatCard(bob.page, /^Alice requests/).getByText('Declined', { exact: true }).waitFor();
   });
 
-  await step('Alice receives in Spark; Bob pays from his Spark wallet; both see Paid', async () => {
-    await requestMoney(alice.page, '1000', 'Pizza again', { receiveMatrix: true });
+  await step('Bob pays from his Spark wallet: the invoice is pulled from the request\'s address; both see Paid', async () => {
+    await requestMoney(alice.page, '1000', 'Pizza again');
     await payRequestFromChat(bob, /^Alice requests.*Pizza again/);
+    assert.equal(lnurl.issued.length, 1, 'one invoice, created when Bob tapped Pay');
+    assert.equal(lnurl.issued[0].amountSats, 1000, 'for exactly the requested amount');
+    assert.match(lnurl.issued[0].comment ?? '', /^buho:req:/, 'tied to the request with the LUD-12 comment');
     await payWithOptionsMatrix(bob.page);
     await snap(bob, '05-pay-with');
     await confirmPayment(bob.page);
     await expectPaidFrom(bob, 'bob-spark', 1);
-    await chatCard(alice.page, /^You requested.*Pizza again/).getByText('Paid', { exact: true }).waitFor();
+    assert.equal((await bob.page.evaluate(() => window.__e2ePayments)).at(-1).invoice, lnurl.issued[0].bolt11, 'the pulled invoice was paid');
+    const own = chatCard(alice.page, /^You requested.*Pizza again/);
+    await own.getByText('Paid', { exact: true }).waitFor();
+    await own.getByText('Received in Business').waitFor();
+    assert.equal(await own.getByText('Reported paid, not verified').count(), 0);
     await openChatFromAddressBook(bob, 'Alice');
     await chatCard(bob.page, /^Alice requests.*Pizza again/).getByText('Paid', { exact: true }).waitFor();
     await snap(alice, '06-request-paid');
   });
 
-  await step('Alice receives in LNbits; Bob chooses his LNbits wallet in "Pay with"', async () => {
-    await requestMoney(alice.page, '2100', 'Beer', { receiveIn: 'Shop' });
+  await step('Bob chooses his LNbits wallet in "Pay with"', async () => {
+    await requestMoney(alice.page, '2100', 'Beer');
     await payRequestFromChat(bob, /^Alice requests.*Beer/);
     await payWith(bob.page, 'Shop');
     await confirmPayment(bob.page);
@@ -370,40 +398,46 @@ try {
     await chatCard(bob.page, /^Alice requests.*Beer/).getByText('Paid', { exact: true }).waitFor();
   });
 
-  console.log('3b. Request lifetime: an expired invoice does not end the request (docs 8a)');
-  await step('the 24 h invoice runs out; Bob taps Pay, a fresh invoice is pulled from Alice\'s address, both see Paid', async () => {
-    ledger.nextExpirySeconds = 6; // stands in for the 24 h of a real invoice
+  console.log('3b. Address changed: the payer follows the requester\'s current profile (docs 8a)');
+  await step('Alice changes her profile address after the request; Bob taps Pay and the invoice comes from the new address', async () => {
     await requestMoney(alice.page, '500', 'Late coffee');
     const card = chatCard(bob.page, /^Alice requests.*Late coffee/);
     await card.waitFor();
-    await alice.page.waitForTimeout(7500);
+    const issuedBefore = lnurl.issued.length;
+    // Her client saves the new address in the profile and publishes it in her signed kind 0.
+    await alice.page.evaluate(async (address) => {
+      const { useProfileStore } = await import('/src/stores/profile.js');
+      useProfileStore().$patch({ lud16: address });
+    }, ALICE_NEW_ADDRESS);
+    relay.inject(finalizeEvent({
+      kind: 0,
+      created_at: Math.floor(Date.now() / 1000) + 5,
+      tags: [],
+      content: JSON.stringify({ name: ALICE.name, lud16: ALICE_NEW_ADDRESS }),
+    }, ALICE.secretKey));
     await openChatFromAddressBook(bob, 'Alice');
-    assert.equal(await card.getByText('Expired', { exact: true }).count(), 0, 'the request outlives its invoice');
-    assert.equal(await chatCard(alice.page, /^You requested.*Late coffee/).getByText('Expired', { exact: true }).count(), 0);
-    await chatCard(alice.page, /^You requested.*Late coffee/).getByRole('button', { name: 'Withdraw' }).waitFor();
-    await snap(bob, '13-invoice-expired-still-payable');
-    assert.equal(lnurl.issued.length, 0);
+    await snap(bob, '13-address-changed-still-payable');
     await payRequestFromChat(bob, /^Alice requests.*Late coffee/);
-    assert.equal(lnurl.issued.length, 1, 'one fresh invoice was pulled');
-    assert.equal(lnurl.issued[0].amountSats, 500, 'for exactly the requested amount');
-    assert.match(lnurl.issued[0].comment ?? '', /^buho:req:/, 'tied to the request with the LUD-12 comment');
+    assert.equal(lnurl.issued.length, issuedBefore, 'nothing was asked of the old address');
+    assert.equal(lnurlNew.issued.length, 1, 'one invoice came from the new address');
+    assert.equal(lnurlNew.issued[0].amountSats, 500, 'for exactly the requested amount');
+    assert.match(lnurlNew.issued[0].comment ?? '', /^buho:req:/);
     await confirmPayment(bob.page);
     await expectPaidFrom(bob, 'bob-spark', 3);
-    assert.equal((await bob.page.evaluate(() => window.__e2ePayments)).at(-1).invoice, lnurl.issued[0].bolt11, 'the pulled invoice was paid');
+    assert.equal((await bob.page.evaluate(() => window.__e2ePayments)).at(-1).invoice, lnurlNew.issued[0].bolt11, 'the pulled invoice was paid');
     await openChatFromAddressBook(bob, 'Alice');
     await chatCard(bob.page, /^Alice requests.*Late coffee/).getByText('Paid', { exact: true }).waitFor();
     const own = chatCard(alice.page, /^You requested.*Late coffee/);
     await own.getByText('Paid', { exact: true }).waitFor();
-    await own.getByText('Received in Business').waitFor();
+    await own.getByText('Received in Shop').waitFor();
     assert.equal(await own.getByText('Reported paid, not verified').count(), 0);
     await snap(alice, '14-late-payment-verified');
   });
 
   await step('a request past its lifetime: Alice sees "Request again", Bob "Send anyway"', async () => {
     const past = Math.floor(Date.now() / 1000) - 40 * 24 * 3600;
-    const old = ledger.mint({ amountSats: 1000, now: past });
     const template = buildRequestTemplate({
-      recipient: BOB.pubkey, amountSats: 1000, bolt11: old.bolt11, note: 'Old pizza', lud16: ALICE_ADDRESS, now: () => past,
+      recipient: BOB.pubkey, amountSats: 1000, note: 'Old pizza', lud16: ALICE_ADDRESS, now: () => past,
     });
     const { wraps } = sealAndWrap({ template, senderSecretKey: ALICE.secretKey, recipients: [BOB.pubkey], selfCopy: true });
     for (const { event } of wraps) relay.inject(event);
@@ -439,13 +473,14 @@ try {
     await snap(bob, '17-send-anyway-prefilled');
     await confirmPayment(bob.page);
     await expectPaidFrom(bob, 'bob-spark', 4);
-    assert.equal(lnurl.issued.at(-1).amountSats, 1000, 'the amount of the request was prefilled');
-    assert.equal(lnurl.issued.at(-1).comment, 'Old pizza', 'and its note');
+    // The request names the old address; Bob's app sends to Alice's current one.
+    assert.equal(lnurlNew.issued.at(-1).amountSats, 1000, 'the amount of the request was prefilled');
+    assert.equal(lnurlNew.issued.at(-1).comment, 'Old pizza', 'and its note');
     await openChatFromAddressBook(bob, 'Alice');
     const paid = chatCard(bob.page, /^Alice requests.*Old pizza/).filter({ hasText: 'Paid' });
     await paid.waitFor();
     const own = chatCard(alice.page, /^You requested.*Old pizza/).filter({ hasText: 'Paid' });
-    await own.getByText('Received in Business').waitFor();
+    await own.getByText('Received in Shop').waitFor();
     await snap(alice, '18-send-anyway-paid');
   });
 
@@ -464,9 +499,8 @@ try {
 
   console.log('5. Unknown sender');
   await step('Carol, not a contact, messages Alice and asks for money', async () => {
-    const request = ledger.mint({ amountSats: 2100 });
     await deliverFromCarol(buildTextTemplate({ recipient: ALICE.pubkey, text: 'Hey, it is Carol' }));
-    await deliverFromCarol(buildRequestTemplate({ recipient: ALICE.pubkey, amountSats: 2100, bolt11: request.bolt11, note: 'Rent' }));
+    await deliverFromCarol(buildRequestTemplate({ recipient: ALICE.pubkey, amountSats: 2100, lud16: 'carol@btc.mybuho.de', note: 'Rent' }));
     await navigate(alice.page, '/address-book');
     await alice.page.getByRole('button', { name: /Message requests/ }).click();
     await alice.page.getByRole('region', { name: 'Messages' }).getByRole('button', { name: /^npub1.*New messages/ }).click();
@@ -498,10 +532,10 @@ try {
         await assertFits(bob.page, `thread ${label}`);
         await snap(bob, `09-thread-${label}`);
 
-        // Alice's request sheet with the wallet list open.
+        // Alice's request sheet, with the address it pays to.
         await openChatFromAddressBook(alice, 'Bob');
         await alice.page.getByRole('button', { name: /^(Request|Anfordern|Solicitar)$/ }).click();
-        await alice.page.getByRole('button', { name: /^(Receive in|Empfangen in|Recibir en)/ }).click();
+        await alice.page.locator('.request-sheet__to').waitFor();
         await alice.page.waitForTimeout(300);
         await assertFits(alice.page, `request sheet ${label}`);
         await snap(alice, `10-request-sheet-${label}`);
@@ -550,32 +584,15 @@ async function showMoneyBar(page) {
   if (await back.count()) await back.click();
 }
 
-/**
- * Alice's request sheet. `receiveIn` picks a wallet by name; `receiveMatrix` asserts which of her
- * four wallet types can receive a request (Arkade cannot create invoices).
- */
-async function requestMoney(page, sats, note, { receiveIn, receiveMatrix = false } = {}) {
+/** Alice's request sheet: amount and note; it names the profile address it pays to and offers no wallet choice. */
+async function requestMoney(page, sats, note) {
   await showMoneyBar(page);
   await page.getByRole('button', { name: 'Request', exact: true }).click();
   const sheet = page.getByRole('region', { name: /^Request from/ });
   await sheet.getByRole('textbox', { name: 'Amount in sats' }).fill(sats);
   await sheet.getByRole('textbox', { name: 'Note (optional)' }).fill(note);
-  if (receiveIn || receiveMatrix) {
-    await sheet.getByRole('button', { name: /Receive in/ }).click();
-    const option = (name) => sheet.getByRole('option', { name: new RegExp(name) });
-    if (receiveMatrix) {
-      // Every type can receive a request; Arkade has no invoices of its own, so it falls back to
-      // the profile address and says where the money lands.
-      assert.equal(await sheet.getByRole('option').count(), 4);
-      for (const name of ['Business', 'Shop', 'Alby Hub', 'Ark']) assert.notEqual(await option(name).getAttribute('aria-disabled'), 'true', `${name} can receive`);
-      assert.equal(await option('Business').getAttribute('aria-selected'), 'true', 'the Spark wallet is the default');
-      await option('Ark').click();
-      await sheet.getByText(/Ark cannot create invoices\. The request is paid to your profile address/).waitFor();
-      await snap(actors.alice, '04-receive-in-arkade');
-      await sheet.getByRole('button', { name: /Receive in/ }).click();
-    }
-    await option(receiveIn || 'Business').click();
-  }
+  await sheet.getByRole('button', { name: /^To / }).waitFor();
+  assert.equal(await sheet.getByText('Receive in').count(), 0, 'the money always goes to the profile address');
   await sheet.getByRole('button', { name: /^Request .*\d/ }).click();
   await sheet.waitFor({ state: 'hidden' });
 }

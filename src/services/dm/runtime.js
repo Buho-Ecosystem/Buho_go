@@ -6,12 +6,12 @@
  *
  *   key holder (sessionKey)  ->  relay transport  ->  inbox coordinator
  *                                 inbox relay resolver ----^
- *   wallets / LNURL           ->  request service
+ *   profile / LNURL           ->  request service
  *   messages store            ->  `InboxStore` port (`createInboxStoreAdapter`)
  *
  * and exposes the small set of actions the chat screen uses (section "UI
  * actions" of the returned object) plus the lifecycle hooks the boot file
- * drives (`start`, `stop`, `dispose`, `wipeKey*`, `retryOutbox`, `reconcile`).
+ * drives (`start`, `stop`, `dispose`, `wipeKey*`, `retryOutbox`, `settleClaims`).
  *
  * No Vue, Pinia or i18n is imported. Every app collaborator comes in through
  * `deps` as a plain function or object, so the runtime is tested with fakes
@@ -24,22 +24,18 @@
  * disposes it (the key is zeroed, connections authenticated as the old
  * identity are closed) and builds a new one.
  *
- * Money flow of a request the user sends (docs/CONTACT_CHAT.md section 8):
- *   1. `requestMoney` checks the partner can receive messages, mints ONE
- *      invoice (`requests.createRequestInvoice`), sends the request message
- *      and records where it gets paid (`store.setRequestSource`).
- *   2. The request service watches the invoice (push where the wallet has it,
- *      polling otherwise, `reconcile()` on resume).
- *   3. When it is paid: the source record is marked paid, the incoming
- *      transaction is linked to the contact, and a `paid` status message goes
- *      to the partner. The store only derives `paid` from the PAYER's status,
- *      so the requester's own certainty lives in the source record and is
- *      read through `requestState(id)` / `requestSettlement(id)`.
- *   4. The invoice watcher ends with the 24 h invoice, the request does not
- *      (docs section 8a). A payment that comes later (the payer pulled a
- *      fresh invoice with `refreshInvoice`, or sent money anyway) is announced
- *      by the payer; `settleClaims` checks that announcement against the
- *      user's own wallet ledger and only then records the request as paid.
+ * Money flow of a request (docs/CONTACT_CHAT.md sections 8 and 8a):
+ *   1. `requestMoney` checks the partner can receive messages and that the
+ *      profile Lightning address answers (`requests.checkOwnAddress`), then
+ *      sends the request: a notice naming the amount and that address.
+ *   2. The payer's app fetches the invoice when they tap Pay
+ *      (`fetchRequestInvoice`), from the requester's current profile address.
+ *   3. The payer announces the payment (`payment` message, `paid` status).
+ *      `settleClaims` checks that announcement against the user's own wallet
+ *      ledger and only then records the request as paid, verified. The store
+ *      derives `paid` from the PAYER's status alone, so the requester's own
+ *      certainty lives in a settlement record, read through `requestState(id)`
+ *      / `requestSettlement(id)`.
  */
 
 import { nip19 } from 'nostr-core';
@@ -81,9 +77,6 @@ export const unknownChatRoute = (pubkey) => `/messages/${pubkey}`;
 
 const HEX_64 = /^[0-9a-f]{64}$/;
 
-/** Request states in which the user's own request is over (nothing left to watch). */
-const OVER_STATES = new Set(['declined', 'cancelled', 'expired']);
-
 const noop = () => {};
 
 /** The names of the UI-facing actions, shared with `useChatRuntime`. */
@@ -96,9 +89,8 @@ export const CHAT_ACTIONS = Object.freeze([
   'announcePayment',
   'react',
   'retry',
-  'checkPayable',
-  'needsFreshInvoice',
-  'refreshInvoice',
+  'requestAddress',
+  'fetchRequestInvoice',
   'partnerReachability',
   'requestState',
   'requestSettlement',
@@ -122,12 +114,6 @@ function normalizePubkey(value, label = 'partner') {
   const hex = typeof value === 'string' ? value.trim().toLowerCase() : '';
   if (!HEX_64.test(hex)) throw invalid(`${label} must be a 64-character hex pubkey`);
   return hex;
-}
-
-function normalizeAddress(address) {
-  if (typeof address !== 'string') return undefined;
-  const trimmed = address.trim().toLowerCase();
-  return trimmed.includes('@') ? trimmed : undefined;
 }
 
 const plain = (value) => JSON.parse(JSON.stringify(value));
@@ -218,13 +204,10 @@ export function createInboxStoreAdapter(store, me) {
  * @property {() => Promise<Uint8Array>} loadSecretKey Fresh key bytes (`identity.getNostrSecretKeyBytes`).
  * @property {() => boolean} [isLocked] True while the app lock is on: the key is then never loaded.
  * @property {object} store The messages store, already scoped to `me`.
- * @property {{
- *   list: () => import('./requests.js').WalletDescriptor[],
- *   getProvider: (walletId: string) => object | null,
- *   ensureConnected: (walletId: string) => Promise<object>,
- * }} wallets Wallet access for the request service. `ensureConnected` must connect silently.
  * @property {() => string | null | undefined} getProfileAddress The profile's `lud16`.
- * @property {{ fetchPayRequest: Function, requestInvoice: Function, verifyPayment: Function }} lnurl
+ * @property {(pubkey: string, options: { timeoutMs: number }) => Promise<object | null>} fetchProfile
+ *   The signed kind 0 of a person (`nostrFetch.fetchProfile`).
+ * @property {{ fetchPayRequest: Function, requestInvoice: Function }} lnurl nostr-core's LNURL functions.
  * @property {{ find: (pubkey: string) => ChatContact | null }} contacts
  * @property {{ message: (notification: object) => Promise<boolean> | boolean }} notifications
  *   Posts a chat notification (`notifyMessageIfEnabled`); decides on settings and permission.
@@ -237,7 +220,7 @@ export function createInboxStoreAdapter(store, me) {
  *   Links the incoming transaction of a paid request to the contact (best effort).
  * @property {() => Promise<import('./paymentConfirmation.js').IncomingTransaction[]>} [loadIncomingTransactions]
  *   The settled incoming transactions of the user's wallets, each with its `walletId`. Without it a
- *   payment the partner reports after the invoice expired can never be verified.
+ *   payment the partner reports can never be verified.
  * @property {(url: string, options: { connectionTimeout: number }) => Promise<object>} ensureRelay
  *   The shared relay pool's `ensureRelay` (used by the relay list resolver).
  * @property {typeof WebSocket} [WebSocket]
@@ -260,9 +243,9 @@ export function createChatRuntime(deps = {}) {
   const {
     loadSecretKey,
     isLocked = () => false,
-    store,
-    wallets,
+     store,
     getProfileAddress,
+    fetchProfile,
     lnurl,
     contacts,
     notifications,
@@ -280,12 +263,11 @@ export function createChatRuntime(deps = {}) {
     factories = {},
   } = deps;
   const me = normalizePubkey(deps.me, 'me');
-  const required = { loadSecretKey, getProfileAddress, formatNotification, ensureRelay };
+  const required = { loadSecretKey, getProfileAddress, fetchProfile, formatNotification, ensureRelay };
   for (const [name, value] of Object.entries(required)) {
     if (typeof value !== 'function') throw invalid(`${name} is required`);
   }
   if (!store || typeof store.ingest !== 'function') throw invalid('store is required');
-  if (typeof wallets?.list !== 'function') throw invalid('wallets is required');
   if (typeof contacts?.find !== 'function') throw invalid('contacts is required');
   if (typeof notifications?.message !== 'function') throw invalid('notifications is required');
 
@@ -320,14 +302,10 @@ export function createChatRuntime(deps = {}) {
   });
 
   const requests = (factories.createRequests ?? createRequestService)({
-    getWallets: () => wallets.list(),
-    getProvider: (walletId) => wallets.getProvider(walletId),
-    ensureConnected: (walletId) => wallets.ensureConnected(walletId),
     getProfileAddress,
+    fetchProfile,
     lnurl,
     now,
-    setTimer,
-    clearTimer,
   });
 
   const storePort = createInboxStoreAdapter(store, me);
@@ -349,9 +327,6 @@ export function createChatRuntime(deps = {}) {
 
   let started = false;
   let disposed = false;
-  /** @type {Map<string, () => void>} request id -> stop of its payment watcher */
-  const watchers = new Map();
-  let reconcileRun = null;
 
   function assertUsable() {
     if (disposed) throw new DmError(DM_ERROR.NO_IDENTITY, 'the chat runtime was disposed');
@@ -399,51 +374,27 @@ export function createChatRuntime(deps = {}) {
   }
 
   /**
-   * Ask the partner for money: mint an invoice, send the request and watch it.
+   * Ask the partner for money: check the profile address, then send the request.
    *
    * @param {string} partner
-   * @param {{ amountSats: number, note?: string, walletId?: string }} options
-   *   `walletId` is the wallet the user chose to receive in (default: the wallet behind the profile address).
+   * @param {{ amountSats: number, note?: string }} options
    * @returns {Promise<import('./protocol.js').ChatMessage>} The request message.
-   * @throws {DmError} NO_INBOX_RELAYS (nothing is minted then), WALLET_CANNOT_INVOICE, INVALID_INVOICE,
-   *   INVALID_ARGUMENT, MESSAGE_TOO_LARGE, KEY_WIPED, NO_IDENTITY
+   * @throws {DmError} NO_INBOX_RELAYS, NO_PAYMENT_ADDRESS, PAYMENT_ADDRESS_UNREACHABLE,
+   *   AMOUNT_OUT_OF_RANGE, INVALID_ARGUMENT, MESSAGE_TOO_LARGE, KEY_WIPED, NO_IDENTITY
    */
-  async function requestMoney(partner, { amountSats, note, walletId } = {}) {
+  async function requestMoney(partner, { amountSats, note } = {}) {
     const recipient = normalizePubkey(partner);
     assertUsable();
     // A partner without an inbox list cannot receive a message (NIP-17): fail
-    // before an invoice exists that nobody could ever pay.
+    // before anything else is checked for a request nobody could ever see.
     if ((await partnerReachability(recipient)) === REACHABILITY.MISSING) {
       throw new DmError(DM_ERROR.NO_INBOX_RELAYS, 'the contact has no inbox relay list');
     }
+    const lud16 = await requests.checkOwnAddress(amountSats);
     const cleanNote = typeof note === 'string' && note.trim() ? note.trim() : undefined;
-    const invoice = await requests.createRequestInvoice({ walletId, amountSats, note: cleanNote });
-    const template = buildRequestTemplate({
-      recipient,
-      amountSats,
-      bolt11: invoice.bolt11,
-      note: cleanNote,
-      lud16: normalizeAddress(getProfileAddress()),
-      now: nowSeconds,
-    });
-    const message = await sendTemplate(recipient, template);
-
-    const source = {
-      walletId: invoice.walletId,
-      method: invoice.method,
-      paymentHash: invoice.paymentHash,
-      expiresAt: invoice.expiresAt,
-      amountSats,
-      note: cleanNote ?? null,
-      paidAt: null,
-      preimage: null,
-      announced: false,
-    };
-    if (invoice.verifyUrl) source.verifyUrl = invoice.verifyUrl;
-    if (invoice.settlementWalletId) source.settlementWalletId = invoice.settlementWalletId;
-    store.setRequestSource(message.id, source);
-    watch(message.id);
-    return message;
+    return sendTemplate(recipient, buildRequestTemplate({
+      recipient, amountSats, lud16, note: cleanNote, now: nowSeconds,
+    }));
   }
 
   /** Decline a request the partner sent. */
@@ -456,17 +407,14 @@ export function createChatRuntime(deps = {}) {
     }));
   }
 
-  /** Withdraw a request the user sent; its invoice is no longer watched. */
+  /** Withdraw a request the user sent. */
   async function cancelRequest(partner, requestId) {
     const recipient = normalizePubkey(partner);
     assertUsable();
     const request = requireRequest(recipient, requestId, { outgoing: true });
-    const sent = await sendTemplate(recipient, buildStatusTemplate({
+    return sendTemplate(recipient, buildStatusTemplate({
       recipient, requestId: request.id, value: REQUEST_STATUS.CANCELLED, now: nowSeconds,
     }));
-    stopWatching(request.id);
-    store.clearRequestSource(request.id);
-    return sent;
   }
 
   /** Nudge the partner about a request the user sent and that is still open. */
@@ -537,55 +485,45 @@ export function createChatRuntime(deps = {}) {
   }
 
   /**
-   * May this wallet pay this request? Silent: the UI shows the answer as the
-   * state of the card.
-   *
-   * @param {{ bolt11: string, amountSats: number, expiresAt?: number }} request
-   * @param {string} walletId
-   * @returns {{ ok: true } | { ok: false, reason: string }} `reason` is `INVALID_INVOICE`,
-   *   `INVOICE_EXPIRED` or `WALLET_CANNOT_PAY`.
-   */
-  function checkPayable(request, walletId) {
-    const wallet = wallets.list().find((entry) => entry.id === walletId) ?? null;
-    return requests.checkPayable(request, wallet);
-  }
-
-  /**
-   * Has the invoice of this request expired (or does it within a minute), so
-   * that paying it needs a fresh one (`refreshInvoice`)?
-   *
-   * @param {{ bolt11: string, expiresAt?: number }} request
-   * @returns {boolean}
-   */
-  function needsFreshInvoice(request) {
-    return requests.invoiceNeedsRefresh(request);
-  }
-
-  /**
-   * Pull a fresh invoice for a request of the partner that is still open, from
-   * the Lightning address (`lud16`) inside that request, for exactly the
-   * requested amount (docs section 8a). The address comes from the request
-   * the partner signed, never from the address book.
+   * Where the partner of a request gets paid today: the Lightning address in
+   * their current signed profile, else the one signed inside the request
+   * (docs section 8a). Works for an expired request too ("Send anyway").
    *
    * @param {string} partner
    * @param {string} requestId Rumor id of the partner's request.
-   * @returns {Promise<{ bolt11: string, expiresAt: number }>}
-   * @throws {DmError} INVALID_ARGUMENT (no such open request), INVOICE_EXPIRED (the
-   *   request names no address to ask), AMOUNT_OUT_OF_RANGE, INVOICE_REFRESH_FAILED
+   * @returns {Promise<string>}
+   * @throws {DmError} INVALID_ARGUMENT (no such request from the partner)
    */
-  async function refreshInvoice(partner, requestId) {
-    const recipient = normalizePubkey(partner);
+  async function requestAddress(partner, requestId) {
+    const sender = normalizePubkey(partner);
     assertUsable();
-    const message = requireRequest(recipient, requestId, { outgoing: false });
-    const { lud16, amountSats } = message.request;
-    if (!lud16) throw new DmError(DM_ERROR.INVOICE_EXPIRED, 'the request names no Lightning address to ask');
-    const { bolt11, expiresAt } = await requests.pullInvoice({
-      lud16,
-      amountSats,
+    const message = findMessage(sender, normalizePubkey(requestId, 'requestId'));
+    if (!message || message.type !== MESSAGE_TYPE.REQUEST || message.outgoing) {
+      throw invalid('no such request in this conversation');
+    }
+    return requests.resolveRequesterAddress(sender, message.request.lud16);
+  }
+
+  /**
+   * The invoice for a request of the partner that is still open, pulled from
+   * their Lightning address for exactly the requested amount. Created now, at
+   * the moment of paying, so it cannot have expired.
+   *
+   * @param {string} partner
+   * @param {string} requestId Rumor id of the partner's request.
+   * @returns {Promise<string>} The BOLT-11 invoice.
+   * @throws {DmError} INVALID_ARGUMENT (no such open request), AMOUNT_OUT_OF_RANGE, INVOICE_FETCH_FAILED
+   */
+  async function fetchRequestInvoice(partner, requestId) {
+    const sender = normalizePubkey(partner);
+    assertUsable();
+    const message = requireRequest(sender, requestId, { outgoing: false });
+    return requests.pullInvoice({
+      lud16: await requestAddress(sender, message.id),
+      amountSats: message.request.amountSats,
       // Ties the invoice to the request in the requester's LNURL log (LUD-12).
       reference: message.id.slice(0, 12),
     });
-    return { bolt11, expiresAt };
   }
 
   /**
@@ -616,129 +554,25 @@ export function createChatRuntime(deps = {}) {
    */
   function requestState(requestId) {
     const id = normalizePubkey(requestId, 'requestId');
-    if (store.requestSource(id)?.paidAt) return 'paid';
+    if (store.settlement(id)) return 'paid';
     return store.requestStatus(id, nowSeconds());
   }
 
   /**
    * How sure the user is that a request of theirs is paid, and where the money
-   * arrived. `verified`: their own wallet showed it (the invoice watcher, or
-   * `settleClaims` for a late payment). Unverified: only the payer says so.
+   * arrived. `verified`: their own wallet showed it (`settleClaims`).
+   * Unverified: only the payer says so.
    *
    * @returns {{ verified: boolean, walletId: string | null } | null} Null while the request is not paid.
    */
   function requestSettlement(requestId) {
     const id = normalizePubkey(requestId, 'requestId');
-    const source = store.requestSource(id);
-    if (source?.paidAt) return { verified: true, walletId: ledgerWalletOf(source) };
+    const settled = store.settlement(id);
+    if (settled) return { verified: true, walletId: settled.walletId };
     return store.requestStatus(id, nowSeconds()) === 'paid' ? { verified: false, walletId: null } : null;
   }
 
-  // ----- watching the user's own requests -------------------------------
-
-  function stopWatching(requestId) {
-    const stop = watchers.get(requestId);
-    watchers.delete(requestId);
-    if (stop) stop();
-  }
-
-  function stopAllWatchers() {
-    for (const id of [...watchers.keys()]) stopWatching(id);
-  }
-
-  /** The record in the shape the request service watches. */
-  function openRequestOf(requestId, source) {
-    return {
-      id: requestId,
-      walletId: source.walletId,
-      method: source.method,
-      paymentHash: source.paymentHash,
-      expiresAt: source.expiresAt,
-      ...(source.settlementWalletId ? { settlementWalletId: source.settlementWalletId } : {}),
-      ...(source.verifyUrl ? { verifyUrl: source.verifyUrl } : {}),
-    };
-  }
-
-  function watch(requestId) {
-    if (disposed || watchers.has(requestId)) return;
-    const source = store.requestSource(requestId);
-    if (!source || source.paidAt) return;
-    try {
-      const stop = requests.watchRequest(openRequestOf(requestId, plain(source)), {
-        onPaid: (result) => {
-          watchers.delete(requestId);
-          void handlePaid(requestId, result);
-        },
-        onError: noop,
-      });
-      watchers.set(requestId, stop);
-    } catch {
-      // A source record that cannot be watched is dropped on the next reconcile.
-    }
-  }
-
-  /** The wallet whose ledger shows the payment (where the incoming transaction appears). */
-  const ledgerWalletOf = (source) => (source.method === 'direct' ? source.walletId : source.settlementWalletId ?? null);
-
-  /** A request of the user is paid, as their own wallet (or the LNURL server) confirmed it. */
-  async function handlePaid(requestId, result) {
-    const found = store.requestSource(requestId);
-    if (disposed || !found || found.paidAt) return;
-    const source = { ...plain(found), paidAt: result.settledAt ?? nowSeconds(), preimage: result.preimage ?? null };
-    store.setRequestSource(requestId, source);
-
-    const ledgerWalletId = ledgerWalletOf(source);
-    const request = findRequestEverywhere(requestId);
-    if (linkPayment && ledgerWalletId && request) {
-      try {
-        await linkPayment({
-          contactId: contacts.find(request.partner)?.id ?? null,
-          walletId: ledgerWalletId,
-          amountSats: source.amountSats,
-          note: source.note,
-        });
-      } catch {
-        // The link is a convenience; the payment itself is settled.
-      }
-    }
-    await announcePaid(requestId);
-  }
-
-  function findRequestEverywhere(requestId) {
-    for (const [partner, thread] of Object.entries(store.threads)) {
-      const message = thread.messages.find((entry) => entry.id === requestId && entry.type === MESSAGE_TYPE.REQUEST);
-      if (message) return { partner, message };
-    }
-    return null;
-  }
-
-  /** Send the `paid` status of a settled request, once. Failures are retried by the next `reconcile`. */
-  async function announcePaid(requestId) {
-    const source = store.requestSource(requestId);
-    const request = findRequestEverywhere(requestId);
-    if (!source?.paidAt || source.announced || !request || disposed) return;
-    const mark = () => store.setRequestSource(requestId, { ...plain(source), announced: true });
-    // The payer already said so (they paid with BuhoGO): nothing to add.
-    if (store.requestStatus(requestId, nowSeconds()) === 'paid') {
-      mark();
-      return;
-    }
-    try {
-      await sendTemplate(request.partner, buildStatusTemplate({
-        recipient: request.partner,
-        requestId,
-        value: REQUEST_STATUS.PAID,
-        preimage: source.preimage ?? undefined,
-        amountSats: source.amountSats,
-        now: nowSeconds,
-      }));
-      mark();
-    } catch {
-      // No relay list, key unavailable, offline: the record keeps `announced: false`.
-    }
-  }
-
-  // ----- late payments: the payer's claim against the user's own ledger ---
+  // ----- the payer's claim against the user's own ledger ------------------
 
   let claimRun = null;
   const claimTimers = new Set();
@@ -779,14 +613,14 @@ export function createChatRuntime(deps = {}) {
 
   /**
    * Check the partners' payment claims for the user's OWN requests against the
-   * user's own wallets (docs section 8a). A claim that a wallet confirms (the
-   * preimage hashes to an incoming payment, else amount and time window; one
-   * transaction per claim) makes the request `paid`, verified, links the
+   * user's own wallets (docs sections 8 and 8a). A claim that a wallet confirms
+   * (the preimage hashes to an incoming payment, else amount and time window;
+   * one transaction per claim) makes the request `paid`, verified, links the
    * transaction to the contact and records where it landed. A claim no wallet
    * shows stays what the payer said: "Reported paid, not verified".
    *
-   * Requests the invoice watcher already settled are skipped, so a payment is
-   * never linked twice. Never rejects.
+   * Requests already settled are skipped, so a payment is never linked twice.
+   * Never rejects.
    *
    * @returns {Promise<{ settled: number, pending: number }>} `pending`: claims still without a ledger match.
    */
@@ -804,7 +638,7 @@ export function createChatRuntime(deps = {}) {
             .filter((m) => m.type === MESSAGE_TYPE.REQUEST && m.outgoing)
             .map((m) => [m.id, m]));
           if (own.size === 0) continue;
-          const isSettled = (claim) => Boolean(store.requestSource(claim.requestId)?.paidAt);
+          const isSettled = (claim) => Boolean(store.settlement(claim.requestId));
           // Claims of requests that are settled already go first: their transaction is spent,
           // so it cannot vouch for a second request in a later run.
           const claims = claimsOf(thread, own);
@@ -819,13 +653,13 @@ export function createChatRuntime(deps = {}) {
           const done = new Set();
           for (const claim of claims) {
             const request = own.get(claim.requestId);
-            if (!request || done.has(request.id) || store.requestSource(request.id)?.paidAt) continue;
+            if (!request || done.has(request.id) || store.settlement(request.id)) continue;
             const tx = matches.get(claim.id);
             // Money that came in but less than was asked is not the request paid.
             if (!tx || tx.amountSats < request.request.amountSats) { pending += 1; continue; }
             if (disposed) break;
             done.add(request.id);
-            await recordVerifiedPayment(partner, request, claim, tx);
+            await recordVerifiedPayment(partner, request, tx);
             settled += 1;
           }
         }
@@ -840,21 +674,8 @@ export function createChatRuntime(deps = {}) {
   }
 
   /** The user's wallet showed the payment of one of their requests: record it and link the transaction. */
-  async function recordVerifiedPayment(partner, request, claim, tx) {
-    stopWatching(request.id);
-    store.setRequestSource(request.id, {
-      walletId: tx.walletId ?? null,
-      method: 'direct',
-      paymentHash: tx.paymentHash ?? null,
-      expiresAt: request.request.expiresAt,
-      amountSats: request.request.amountSats,
-      note: request.request.note ?? null,
-      paidAt: tx.settledAt ?? nowSeconds(),
-      preimage: claim.payment.preimage ?? null,
-      // The payer announced it themselves: there is nothing to tell them.
-      announced: true,
-      late: true,
-    });
+  async function recordVerifiedPayment(partner, request, tx) {
+    store.setSettlement(request.id, { walletId: tx.walletId ?? null, paidAt: tx.settledAt ?? nowSeconds() });
     if (linkPayment && tx.walletId) {
       try {
         await linkPayment({
@@ -887,71 +708,6 @@ export function createChatRuntime(deps = {}) {
     claimTimers.clear();
   }
 
-  /**
-   * Drop what no longer needs watching (declined, cancelled, expired or
-   * vanished requests) and return the still-open ones.
-   */
-  function settleDeadSources() {
-    const open = [];
-    for (const [requestId, stored] of Object.entries(store.receiving)) {
-      const source = plain(stored);
-      if (!findRequestEverywhere(requestId)) {
-        stopWatching(requestId);
-        store.clearRequestSource(requestId);
-        continue;
-      }
-      if (source.paidAt) {
-        // The record stays: it is the requester's proof that the request is paid (`requestState`).
-        if (!source.announced) open.push({ requestId, source, paid: true });
-        continue;
-      }
-      const state = store.requestStatus(requestId, nowSeconds());
-      if (OVER_STATES.has(state) || source.expiresAt * 1000 < now()) {
-        stopWatching(requestId);
-        store.clearRequestSource(requestId);
-        continue;
-      }
-      open.push({ requestId, source, paid: false });
-    }
-    return open;
-  }
-
-  /**
-   * Check the user's open requests once (app resume, unlock, start): settle
-   * the paid ones, send the `paid` statuses that are still owed and make sure
-   * every open request is watched. Concurrent calls share one run. Never rejects.
-   *
-   * @returns {Promise<{ paid: number }>} How many requests turned out paid.
-   */
-  function reconcile() {
-    if (disposed || store.scope !== me) return Promise.resolve({ paid: 0 });
-    reconcileRun ??= (async () => {
-      let paid = 0;
-      try {
-        const open = settleDeadSources();
-        for (const entry of open.filter((item) => item.paid)) await announcePaid(entry.requestId);
-        const waiting = open.filter((item) => !item.paid);
-        const results = await requests.reconcileRequests(
-          waiting.map((item) => openRequestOf(item.requestId, item.source)),
-        );
-        for (const result of results) {
-          stopWatching(result.id);
-          await handlePaid(result.id, result);
-          paid += 1;
-        }
-        for (const entry of waiting) watch(entry.requestId);
-        // Payments that came after an invoice ran out are checked on every resume too.
-        await settleClaims();
-      } catch {
-        // The next trigger tries again.
-      }
-      return { paid };
-    })().finally(() => {
-      reconcileRun = null;
-    });
-    return reconcileRun;
-  }
-
   // ----- incoming messages -> notification -------------------------------
 
   /**
@@ -961,7 +717,6 @@ export function createChatRuntime(deps = {}) {
    */
   function onIncoming(message) {
     if (disposed) return;
-    if (message.type === MESSAGE_TYPE.STATUS) settleDeadSources();
     const claimsPayment = message.type === MESSAGE_TYPE.PAYMENT
       || (message.type === MESSAGE_TYPE.STATUS && message.status?.value === REQUEST_STATUS.PAID);
     if (claimsPayment) checkClaimsSoon();
@@ -999,7 +754,7 @@ export function createChatRuntime(deps = {}) {
   // ----- lifecycle -------------------------------------------------------
 
   /**
-   * Connect, subscribe, flush the outbox and check the open requests.
+   * Connect, subscribe, flush the outbox and check the payment claims.
    * @throws {DmError} NO_IDENTITY when the store is not scoped to this identity or the runtime was disposed.
    */
   async function start() {
@@ -1012,13 +767,12 @@ export function createChatRuntime(deps = {}) {
       started = false;
       throw error;
     }
-    void reconcile();
+    void checkClaimsSoon();
   }
 
-  /** Close the subscription and the watchers; the key is left as it is. `start()` may run again. */
+  /** Close the subscription and the claim timers; the key is left as it is. `start()` may run again. */
   function stop() {
     started = false;
-    stopAllWatchers();
     clearClaimTimers();
     inbox.stop();
   }
@@ -1048,9 +802,8 @@ export function createChatRuntime(deps = {}) {
     announcePayment,
     react,
     retry,
-    checkPayable,
-    needsFreshInvoice,
-    refreshInvoice,
+    requestAddress,
+    fetchRequestInvoice,
     partnerReachability,
     requestState,
     requestSettlement,
@@ -1069,7 +822,6 @@ export function createChatRuntime(deps = {}) {
     cancelKeyWipe: () => sessionKey.cancelWipe(),
     isKeyLoaded: () => sessionKey.isLoaded(),
     retryOutbox: (options) => (disposed ? Promise.resolve({ attempted: 0 }) : inbox.retryOutbox(options)),
-    reconcile,
     status: () => inbox.status(),
     whenIdle: () => inbox.whenIdle(),
   });

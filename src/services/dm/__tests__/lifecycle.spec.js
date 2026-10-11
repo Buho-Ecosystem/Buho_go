@@ -80,7 +80,7 @@ function setup({ pubkey = A, locked = false, hidden = false, suspended = false, 
       wipeKeyAfter: (ms) => { runtime.calls.push(`wipeKeyAfter:${ms}`); },
       cancelKeyWipe: () => { runtime.calls.push('cancelKeyWipe'); },
       retryOutbox: async (options) => { runtime.calls.push(`retry:${JSON.stringify(options ?? {})}`); return { attempted: 0 }; },
-      reconcile: async () => { runtime.calls.push('reconcile'); return { paid: 0 }; },
+      settleClaims: async () => { runtime.calls.push('settleClaims'); return { settled: 0, pending: 0 }; },
     };
     env.runtimes.push(runtime);
     return runtime;
@@ -153,7 +153,7 @@ test('launched while locked: the runtime exists for the UI but does not start un
 
   env.setLocked(false);
   await flush();
-  assert.deepEqual(env.callsOf(), ['start', 'reconcile']);
+  assert.deepEqual(env.callsOf(), ['start', 'settleClaims']);
 });
 
 test('nothing starts before App.vue reports the lock state', async () => {
@@ -224,12 +224,12 @@ test('lock: the key is wiped and the store flushed, in that order', async () => 
   assert.deepEqual(env.log, ['wipe:lock', 'flush']);
 });
 
-test('unlock after a lock: the outbox is retried (backoff respected) and requests reconciled, no restart', async () => {
+test('unlock after a lock: the outbox is retried (backoff respected) and payment claims checked, no restart', async () => {
   const env = await launched();
   env.setLocked(true);
   env.setLocked(false);
   await flush();
-  assert.deepEqual(env.callsOf(), ['start', 'wipeKey:lock', 'retry:{}', 'reconcile']);
+  assert.deepEqual(env.callsOf(), ['start', 'wipeKey:lock', 'retry:{}', 'settleClaims']);
 });
 
 test('hidden: the key wipe is scheduled and the store flushed; visible cancels it', async () => {
@@ -244,7 +244,7 @@ test('hidden: the key wipe is scheduled and the store flushed; visible cancels i
   await flush();
   assert.ok(env.callsOf().includes('cancelKeyWipe'));
   assert.deepEqual(retries(env.current()), ['retry:{"ignoreBackoff":true}']);
-  assert.ok(env.callsOf().includes('reconcile'));
+  assert.ok(env.callsOf().includes('settleClaims'));
 });
 
 test('repeated visibility reports of the same state are ignored', async () => {

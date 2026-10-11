@@ -26,11 +26,8 @@
         id, amountSats, fiatText, note,
         outgoing,         // true = the user requested
         state,            // 'pending' | 'paid' | 'declined' | 'cancelled' | 'expired' (derived)
-        validUntil,       // unix seconds | null: when the REQUEST stops being open (not its invoice)
-        invoiceExpiresAt, // unix seconds | null: its current invoice
-        unconfirmed,      // payment cannot be detected automatically
+        validUntil,       // unix seconds: when the request stops being open
         settlement,       // own paid request: { verified, walletName } | null
-        canSendAnyway,    // expired incoming request: there is an address to send to
         disabledReason,   // why the user cannot pay now (translated) | ''
         untrusted,        // sender is a stranger
         busy              // an action is in flight
@@ -43,7 +40,7 @@
   ── Events (all carry the item's id) ───────────────────────────────────────
   react {id, emoji} · reply {id} · copy {id, text} · retry {id}
   pay-request / decline-request / remind-request / withdraw-request {id}
-  send-anyway-request / request-again / ask-new-request {id}
+  send-anyway-request / request-again {id}
   open-payment {id}
 
   ── Scrolling ──────────────────────────────────────────────────────────────
@@ -112,10 +109,8 @@
               :state="row.item.request.state"
               :partner-name="partnerName"
               :valid-until="row.item.request.validUntil ?? null"
-              :unconfirmed="!!row.item.request.unconfirmed"
               :paid-verified="row.item.request.settlement ? row.item.request.settlement.verified : true"
               :received-in="row.item.request.settlement?.walletName || ''"
-              :can-send-anyway="row.item.request.canSendAnyway !== false"
               :disabled-reason="row.item.request.disabledReason || ''"
               :untrusted="!!row.item.request.untrusted"
               :busy="!!row.item.request.busy"
@@ -126,7 +121,6 @@
               @withdraw="forward('withdraw-request', row.item.request.id)"
               @send-anyway="forward('send-anyway-request', row.item.request.id)"
               @request-again="forward('request-again', row.item.request.id)"
-              @ask-new="forward('ask-new-request', row.item.request.id)"
             />
           </div>
 
@@ -182,7 +176,7 @@ export default {
   emits: [
     'react', 'reply', 'copy', 'retry',
     'pay-request', 'decline-request', 'remind-request', 'withdraw-request',
-    'send-anyway-request', 'request-again', 'ask-new-request',
+    'send-anyway-request', 'request-again',
     'open-payment'
   ],
   data() {

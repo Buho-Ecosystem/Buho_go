@@ -16,11 +16,11 @@
  *                             stored history is deleted
  *   app locked                `runtime.wipeKey('lock')`, `messages.flush()`
  *   app unlocked              start if it never started, retry the outbox (backoff
- *                             respected), reconcile requests
+ *                             respected), check payment claims
  *   app hidden                `runtime.wipeKeyAfter(KEY_IDLE_WIPE_MS)`, flush
  *   app visible               cancel the wipe, start if needed, then at most once
  *                             per `resumeIntervalMs`: `retryOutbox({ ignoreBackoff })`
- *                             and reconcile
+ *                             and check payment claims
  *   network online            the same throttled resume
  *
  * A runtime is created as soon as an identity is known (so the UI always has
@@ -114,7 +114,7 @@ export function startChatLifecycle({
     entry.started = true;
     try {
       await entry.runtime.start();
-      // `start()` retries the outbox and reconciles: that counts as a resume.
+      // `start()` retries the outbox and checks payment claims: that counts as a resume.
       lastResumeAt = now();
       return true;
     } catch {
@@ -186,7 +186,7 @@ export function startChatLifecycle({
       // The key is available again: wraps that waited for it get their chance,
       // and what is due goes out. Backoff is respected (nothing just failed).
       if (!startedNow) await entry.runtime.retryOutbox();
-      await entry.runtime.reconcile();
+      await entry.runtime.settleClaims();
     });
   }
 
@@ -200,7 +200,7 @@ export function startChatLifecycle({
     if (lastResumeAt !== null && at - lastResumeAt < resumeIntervalMs) return;
     lastResumeAt = at;
     await entry.runtime.retryOutbox({ ignoreBackoff: true });
-    await entry.runtime.reconcile();
+    await entry.runtime.settleClaims();
   }
 
   function onVisible(visible) {

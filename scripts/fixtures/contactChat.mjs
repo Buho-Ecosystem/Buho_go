@@ -5,6 +5,8 @@
 //                   AUTH challenge on connect and requires AUTH to read or write kind 1059.
 //   InvoiceLedger   mints structurally valid BOLT-11 invoices and remembers which are paid, so
 //                   the receiver's stubbed wallet and the payer's stubbed wallet agree.
+//   LnurlServer     the LNURL-pay endpoint behind a Lightning address: the only place an invoice
+//                   for a chat request is ever created (when the payer taps Pay).
 import { createHash } from 'node:crypto';
 import { bech32 } from 'bech32';
 import { matchFilters, verifyAuthEvent, verifyEvent } from 'nostr-core';
@@ -169,17 +171,8 @@ export class InvoiceLedger {
     this._counter = 0;
   }
 
-  /** Expiry of the NEXT invoice minted through the app's wallet stub only (consumed by `mintForApp`). */
-  nextExpirySeconds = null;
-
-  /** What the stubbed wallets call: honours (and clears) `nextExpirySeconds`. */
-  mintForApp(amountSats) {
-    const expirySeconds = this.nextExpirySeconds ?? 3600;
-    this.nextExpirySeconds = null;
-    return this.mint({ amountSats, expirySeconds });
-  }
-
-  mint({ amountSats, expirySeconds = 3600, now = Math.floor(Date.now() / 1000) }) {
+  mint({ amountSats }) {
+    const now = Math.floor(Date.now() / 1000);
     const preimage = Buffer.alloc(32);
     preimage.writeUInt32BE(++this._counter, 28);
     const paymentHash = sha256Hex(preimage);
@@ -187,7 +180,7 @@ export class InvoiceLedger {
     const words = [
       ...toWords(now, 7),
       ...tagged(1, hashWords),
-      ...tagged(6, toWords(expirySeconds, 3)),
+      ...tagged(6, toWords(3600, 3)),
       ...bech32.toWords(Uint8Array.from({ length: 65 }, (_, i) => (i + 1) % 251)),
     ];
     const bolt11 = bech32.encode(`lnbc${amountSats * 10}n`, words, 4096);
@@ -209,11 +202,6 @@ export class InvoiceLedger {
     stored.paidAt = Math.floor(Date.now() / 1000);
     return entry.preimage;
   }
-
-  lookup(paymentHash) {
-    const entry = this._byHash.get(paymentHash);
-    return entry ? { paid: entry.paid, preimage: entry.paid ? entry.preimage : null } : { paid: false, preimage: null };
-  }
 }
 
 // ---------------------------------------------------------------------------
@@ -224,8 +212,8 @@ export class InvoiceLedger {
  * The LNURL-pay endpoint of one domain (Alice's `alice@btc.mybuho.de`): the pay request, and
  * the callback that mints an invoice from the shared ledger for exactly the asked amount.
  * Every invoice it issues is remembered with the comment it was asked with, and the receiving
- * wallet's history (`incomingFor`) lists those that have been paid, so Alice's stubbed wallet
- * can show the payment she did not expect on her original invoice.
+ * wallet's history (`incomingFor`) lists those that have been paid, which is what the requester's
+ * app checks the payer's claim against.
  */
 export class LnurlServer {
   constructor({ ledger, domain, receivingWalletId, minSendable = 1_000, maxSendable = 100_000_000_000 }) {

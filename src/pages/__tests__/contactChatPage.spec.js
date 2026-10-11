@@ -35,7 +35,6 @@ function run(code, deps = {}) {
 const readSrc = (path) => readFileSync(new URL(`../../${path}`, import.meta.url), 'utf8')
 
 const chatFormat = run(readSrc('components/chat/chatFormat.js'), { '../../utils/amountFormatting.js': amountFormatting })
-const requests = run(readSrc('services/dm/requests.js'), {})
 
 // ── the page, with its imports stubbed ───────────────────────────────
 
@@ -60,12 +59,8 @@ const page = run(descriptor.script.content, {
   '../components/AddressBook/ContactAvatar.vue': stub('ContactAvatar'),
   '../components/AddressBook/AddressBookModal.vue': stub('AddressBookModal'),
   '../components/identity/IdentityGetPaidSheet.vue': stub('IdentityGetPaidSheet'),
-  '../composables/useContactChat.js': { buildReceivingWallets: (input) => ({ received: input, entries: [], defaultId: 'biz', landingInfo: '' }) },
   '../services/dm/protocol.js': { containsSecretKey: (text) => /nsec1/.test(text) },
   '../services/dm/runtime.js': { contactChatRoute: (id) => `/address-book/${id}/chat` },
-  '../services/dm/appRuntime.js': { describeWallet: (wallet) => ({ id: wallet.id, type: wallet.type }) },
-  '../utils/amountFormatting.js': amountFormatting,
-  '../services/dm/requests.js': requests,
 }).default
 
 const compiled = sfc.compileTemplate({ source: descriptor.template.content, filename: 'ContactChatPage.vue', id: 'page', ssr: true })
@@ -99,9 +94,8 @@ function fakeChat(extra = {}) {
     remind: result('remind'),
     requestMoney: result('requestMoney'),
     payRequest: async (id) => { calls.push(['payRequest', id]); return { ok: true } },
-    sendAnyway: (id) => { calls.push(['sendAnyway', id]); return { ok: true } },
+    sendAnyway: async (id) => { calls.push(['sendAnyway', id]); return { ok: true } },
     requestAgain: result('requestAgain'),
-    askNewRequest: (id) => { calls.push(['askNewRequest', id]); return { ok: true, value: { amountSats: 3000, note: 'Pizza' } } },
     sendMoney: () => { calls.push(['sendMoney']); return { ok: true } },
     ...extra,
   }
@@ -350,53 +344,30 @@ test('react, retry and the request card actions go to the view-model; a reminder
 
 test('expired request: Send anyway and Request again go to the view-model, one tap each', async () => {
   const { vm, chat, notices } = pageOf()
-  vm.onSendAnyway({ id: 'r' })
+  await vm.onSendAnyway({ id: 'r' })
   await vm.onRequestAgain({ id: 'r' })
   assert.deepEqual(chat.calls, [['sendAnyway', 'r'], ['requestAgain', 'r']])
   assert.deepEqual(notices, [])
 })
 
-test('ask for a new request: the composer gets a prefilled message that is not sent', () => {
-  const { vm, chat } = pageOf()
-  vm.onAskNew({ id: 'r' })
-  assert.equal(vm.mode, 'text')
-  assert.match(vm.draft, /Could you send me a new payment request for .*3.*\(Pizza\)\?/)
-  assert.equal(chat.calls.some((call) => call[0] === 'sendText'), false)
-  const plain = pageOf({ chat: fakeChat({ askNewRequest: () => ({ ok: true, value: { amountSats: 3000, note: '' } }) }) })
-  plain.vm.onAskNew({ id: 'r' })
-  assert.doesNotMatch(plain.vm.draft, /\(/)
-  const none = pageOf({ chat: fakeChat({ askNewRequest: () => ({ ok: false }) }) })
-  none.vm.draft = 'keep'
-  none.vm.onAskNew({ id: 'r' })
-  assert.equal(none.vm.draft, 'keep')
-})
-
-test('pay: a failure whose next step is a new request shows the words and an action that prepares it', async () => {
-  const error = { code: 'INVOICE_REFRESH_FAILED', next: 'ask-new', message: 'Could not get a fresh invoice' }
+test('pay: a failure shows its words and nothing else', async () => {
+  const error = { code: 'INVOICE_FETCH_FAILED', kind: 'general', message: 'Could not get an invoice' }
   const { vm, notices } = pageOf({ chat: fakeChat({ payRequest: async () => ({ ok: false, error }) }) })
   await vm.onPayRequest({ id: 'r' })
   assert.equal(notices.length, 1)
   assert.equal(notices[0].message, error.message)
   assert.equal(notices[0].type, 'negative')
-  assert.equal(notices[0].actions.length, 1)
-  assert.equal(notices[0].actions[0].label, 'Ask for a new request')
-  notices[0].actions[0].handler()
-  assert.match(vm.draft, /new payment request/)
-
-  const other = pageOf({ chat: fakeChat({ payRequest: async () => ({ ok: false, error: { code: 'X', kind: 'general', message: 'Nope' } }) }) })
-  await other.vm.onPayRequest({ id: 'r' })
-  assert.equal(other.notices[0].message, 'Nope')
-  assert.equal(other.notices[0].actions, undefined)
+  assert.equal(notices[0].actions, undefined)
+  assert.equal(vm.draft, '')
 })
 
 // ── requests ─────────────────────────────────────────────────────────
 
-test('request: opens the sheet on the default receiving wallet', () => {
+test('request: opens the sheet', () => {
   const { vm } = pageOf()
   vm.requestError = 'old'
   vm.onRequest()
   assert.equal(vm.requestOpen, true)
-  assert.equal(vm.requestWalletId, 'biz')
   assert.equal(vm.requestError, '')
   assert.equal(vm.linkOpen, false)
 })
@@ -411,8 +382,8 @@ test('request: a contact who cannot receive messages gets the payment-link expla
 test('request submit: success closes the sheet', async () => {
   const { vm, chat } = pageOf()
   vm.requestOpen = true
-  await vm.onSubmitRequest({ amountSats: 100, note: 'x', walletId: 'biz' })
-  assert.deepEqual(chat.calls, [['requestMoney', { amountSats: 100, note: 'x', walletId: 'biz' }]])
+  await vm.onSubmitRequest({ amountSats: 100, note: 'x' })
+  assert.deepEqual(chat.calls, [['requestMoney', { amountSats: 100, note: 'x' }]])
   assert.equal(vm.requestOpen, false)
   assert.equal(vm.requestSubmitting, false)
 })
@@ -425,11 +396,11 @@ test('request submit: NO_INBOX_RELAYS closes the sheet and offers the payment li
   assert.equal(noInbox.vm.linkOpen, true)
   assert.deepEqual(noInbox.chat.calls.at(-1), ['refreshReachability'])
 
-  const failing = pageOf({ chat: fakeChat({ requestMoney: async () => ({ ok: false, error: { code: 'WALLET_CANNOT_INVOICE', kind: 'general', message: 'Pick another wallet.' } }) }) })
+  const failing = pageOf({ chat: fakeChat({ requestMoney: async () => ({ ok: false, error: { code: 'PAYMENT_ADDRESS_UNREACHABLE', kind: 'general', message: 'Check your address.' } }) }) })
   failing.vm.requestOpen = true
   await failing.vm.onSubmitRequest({ amountSats: 1 })
   assert.equal(failing.vm.requestOpen, true)
-  assert.equal(failing.vm.requestError, 'Pick another wallet.')
+  assert.equal(failing.vm.requestError, 'Check your address.')
   assert.equal(failing.vm.requestSubmitting, false)
 })
 
@@ -450,15 +421,10 @@ test('share link: closes the explanation and opens the existing payment-link she
   assert.deepEqual([vm.linkOpen, vm.getPaidOpen], [false, true])
 })
 
-test('receiving wallets: built from the wallet store with the profile address and the picked wallet', () => {
-  const { vm } = pageOf({ wallets: [{ id: 'biz', type: 'spark', name: 'Business' }] })
-  vm.requestWalletId = 'biz'
-  const input = vm.receiving.received
-  assert.deepEqual(input.wallets, [{ id: 'biz', type: 'spark', name: 'Business' }])
-  assert.equal(input.profileAddress, 'me@example.com')
-  assert.equal(input.selectedId, 'biz')
-  assert.equal(input.balanceOf('biz'), null)
-  assert.equal(input.formatAmount(5), `₿ ${(5).toLocaleString()}`)
+test('request sheet: gets the profile address and opens the address sheet from its row and its set-up button', () => {
+  const template = descriptor.template.content
+  assert.match(template, /<RequestSheet[\s\S]*:address="profile\.lud16 \|\| ''"[\s\S]*@open-address="getPaidOpen = true"/)
+  assert.doesNotMatch(template, /wallet-id|landing-info|ask-new/)
 })
 
 // ── menu: mute, block, add ───────────────────────────────────────────

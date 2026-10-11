@@ -60,7 +60,7 @@ Services  services/dm/                  pure modules, no Pinia, unit tested
   sessionKey.js     in-memory identity key cache with wipe rules
   transport.js      relay connections with automatic NIP-42 AUTH
   inbox.js          coordinator: subscribe, sync, outbox, retries
-  requests.js       invoices for requests, payment watching, status messages
+  requests.js       profile-address preflight, payer-side address lookup and invoice pull
 Existing  identity · profile · addressBook · transactionMetadata · wallet providers
           · notifications (local notifications + toasts)
 ```
@@ -78,25 +78,26 @@ NIP-17 clients (0xchat, Amethyst, …) show something sensible.
 | Type | Rumor kind | Tags | Fallback content |
 |---|---|---|---|
 | text | 14 | `["p", recipient]`, optional `["e", replyToId, "", "reply"]` | the text |
-| request | 14 | `["p", recipient]`, `["buho", "request", "1"]`, `["amount", "<msat>"]`, `["bolt11", "<invoice>"]`, optional `["note", "<text>"]`, `["lud16", "<address>"]` | `💸 Payment request: 12,000 sats – Pizza\nlightning:<invoice>` |
+| request | 14 | `["p", recipient]`, `["buho", "request", "1"]`, `["amount", "<msat>"]`, `["lud16", "<address>"]`, `["valid_until", "<unix>"]`, optional `["note", "<text>"]` | `💸 Payment request: 12,000 sats – Pizza\nPay to: anna@btc.mybuho.de` |
 | status | 14 | `["p", recipient]`, `["e", requestId, "", "reply"]`, `["buho", "status", "<paid\|declined\|cancelled\|reminder>", "1"]`, optional `["preimage", "<hex>"]` | `✅ Paid: 12,000 sats` (or `✅ Paid`) / `✖️ Declined the payment request` / `↩️ Withdrew the payment request` / `🔔 Reminder: payment request still open` |
 | payment | 14 | `["p", recipient]`, `["buho", "payment", "1"]`, `["amount", "<msat>"]`, optional `["note", "<text>"]`, `["preimage", "<hex>"]`, `["e", requestId, "", "reply"]` | `↗ Sent 5,000 sats – Coffee` |
 | reaction | 7 | `["e", targetId]`, `["p", partner]`, `["k", "14"]` | the emoji |
 
 No NIP-40 `expiration` tag on rumors or wraps: other clients and relays would
-delete the history. A request's lifetime is **not** its invoice's: see
-section 8a. Requests carry `["valid_until", "<unix>"]` (BuhoGO: created_at +
-30 days) and, always when the requester has one, `["lud16", …]`. In a
-reaction the `p` tag names the conversation partner (NIP-17 room
-membership), also when reacting to one's own message.
+delete the history. A request is only a notice: it carries no invoice, but the
+amount, the requester's Lightning address (`lud16`, required) and
+`["valid_until", "<unix>"]` (created_at + 30 days). The fallback line lets a
+person in another NIP-17 client pay the address by hand. In a reaction the `p`
+tag names the conversation partner (NIP-17 room membership), also when
+reacting to one's own message.
 
 Parsing rules (`protocol.parseRumor`):
 - Unknown or invalid `buho` payloads degrade to a plain text message (the
   fallback content) and are flagged `degraded: true`. They never get a pay action.
-- A request is valid only if: `amount` is a positive integer msat value; `bolt11`
-  decodes with `nostr-core` `bolt11.decode`; the invoice amount equals `amount`;
-  the invoice network is mainnet. Expiry is evaluated at render time
-  (`invoice.expiresAt`, `expiration` tag); an expired request is shown as expired.
+- A request is valid only if: `amount` is a positive whole-sat msat value,
+  `lud16` is a Lightning address and `valid_until` is a unix time after the
+  request's `created_at`. Otherwise it degrades to text. Expiry (`valid_until`
+  passed) is evaluated at render time.
 - An incoming `payment` message never proves a payment. The chat shows an
   incoming payment line only when the own wallet confirms it
   (`sha256(preimage) === paymentHash` of an incoming transaction, otherwise
@@ -159,15 +160,16 @@ store, clock) so they can be unit tested without network or Pinia.
   DM_RELAYS: 10050, MUTE_LIST: 10000, AUTH: 22242`), `DM_INBOX_RELAYS`
   (auth.nostr1.com, nos.lol, relay.primal.net; section 5),
   `DM_DISCOVERY_RELAYS`, `PROTOCOL_VERSION = '1'`, `MAX_TEXT_LENGTH` (2,000),
-  `MAX_NOTE_LENGTH` (200), `MAX_RUMOR_BYTES` (40,000), `SINCE_SLACK_SECONDS`
+  `MAX_NOTE_LENGTH` (200), `REQUEST_LIFETIME_SECONDS` (30 days), `MAX_RUMOR_BYTES` (40,000), `SINCE_SLACK_SECONDS`
   (2 days), `INBOX_RELAY_CACHE_TTL_MS` (24 h), `MAX_INBOX_RELAYS_PER_CONTACT`
   (5), `KEY_IDLE_WIPE_MS` (10 min). All frozen.
 - `errors.js` — the only error type services throw:
   `new DmError(code, message?, { cause?, details? })` with `code` from the frozen
   `DM_ERROR` map (`INVALID_ARGUMENT`, `MESSAGE_TOO_LARGE`, `NO_IDENTITY`,
   `KEY_WIPED`, `NO_INBOX_RELAYS`, `NO_RELAY_ACCEPTED`, `RELAY_UNAVAILABLE`,
-  `AUTH_FAILED`, `TIMEOUT`, `INVALID_INVOICE`, `WALLET_CANNOT_INVOICE`,
-  `WALLET_CANNOT_PAY`, `SECRET_KEY_IN_TEXT`); an unknown code throws a `TypeError`. `message` is
+  `AUTH_FAILED`, `TIMEOUT`, `INVALID_INVOICE`, `WALLET_CANNOT_PAY`,
+  `SECRET_KEY_IN_TEXT`, `NO_PAYMENT_ADDRESS`, `PAYMENT_ADDRESS_UNREACHABLE`,
+  `INVOICE_FETCH_FAILED`, `AMOUNT_OUT_OF_RANGE`); an unknown code throws a `TypeError`. `message` is
   developer text, never shown; `details` holds small non-secret facts (relay
   URL, counts). Catch with `DmError.is(err, code?)`. Relay replies:
   `RELAY_REASON` (the NIP-01 prefixes `duplicate`, `pow`, `blocked`,
@@ -248,7 +250,7 @@ store, clock) so they can be unit tested without network or Pinia.
   createdAt,                 // unix seconds (rumor created_at)
   text,                      // display text (fallback for degraded messages)
   replyTo,                   // rumor id or null
-  request,                   // { amountSats, note, bolt11, paymentHash, lud16, expiresAt } | null
+  request,                   // { amountSats, note, lud16, validUntil } | null
   status,                    // { requestId, value, preimage } | null
   payment,                   // { amountSats, note, preimage (or null), requestId } | null
   reaction,                  // { targetId, emoji } | null
@@ -274,23 +276,27 @@ store, clock) so they can be unit tested without network or Pinia.
 
 ## 8. Money
 
-Requesting (one invoice per request):
-- Destination wallet defaults to the wallet behind the profile Lightning address
-  (`preferredProfileLightningAddress`, normally Spark Business), otherwise the
-  first wallet that can create invoices. The user can change it in the sheet.
-- `provider.createInvoice({ amount, description, expiry })`; Spark (Breez) adds
-  `includeSparkAddress: true` so Spark payers pay without fees. NWC only when
-  `supportsMethod('make_invoice')`.
-- Fallback (Arkade, NWC without `make_invoice`): invoice from the profile
-  address via LNURL-pay with comment `buho:req:<id>` (LUD-12) and LUD-21
-  `verify` (supported by the Breez LNURL server behind `btc.mybuho.de`).
-- Detecting payment: Breez `onPaymentReceived`, NWC
-  `subscribeToPaymentNotifications`, LNbits `lookupInvoice` polling, and a
-  reconcile on app resume. When paid: send `status: paid`, link the transaction
-  in `transactionMetadata` (contact, note, label).
+Requesting (a notice, no invoice):
+- The request names the **profile Lightning address** (`stores/profile.js`,
+  `lud16`; `boot/payment-address.js` fills it with the Spark address or an
+  npub.cash bucket). There is no receiving-wallet choice: Spark, NWC, LNbits
+  and Arkade users all request the same way, and the sheet shows a quiet
+  "To: <address>" row that opens the sheet where the address is changed. Without
+  an address the sheet explains it and offers to set one up.
+- **Preflight** before sending (`requests.checkOwnAddress`): the address must
+  answer LNURL-pay (`https://<domain>/.well-known/lnurlp/<name>`) and accept the
+  amount (min/maxSendable). Errors: `NO_PAYMENT_ADDRESS`,
+  `PAYMENT_ADDRESS_UNREACHABLE`, `AMOUNT_OUT_OF_RANGE`. Only then is the request
+  sent; nothing is created or watched.
+- **Detect paid:** the payer's `payment` message (requestId, optional preimage)
+  and `paid` status are matched against the requester's own wallet ledger
+  (section 8a). This is the only detection path.
 
 Paying a request / sending:
-- Decode and check the invoice silently (`bolt11.decode`).
+- When the payer taps Pay, the app creates the invoice: it fetches the
+  requester's current kind 0 profile and takes its `lud16` (else the one signed
+  in the request), pulls an invoice via LNURL-pay for exactly the amount and
+  checks it silently (`bolt11.decode`, section 8a).
 - Hand over to the existing pipeline (`payContactDestination` →
   `onPaymentDetected` → `PaymentConfirmSheet` → slide to send) with the chosen
   `sendingWalletId`.
@@ -298,54 +304,51 @@ Paying a request / sending:
 | | Spark (Breez) | NWC | LNbits | Arkade |
 |---|---|---|---|---|
 | Messages | ✓ | ✓ | ✓ | ✓ |
-| Request | ✓ direct | ✓ with `make_invoice`, else fallback | ✓ direct | fallback (profile address) |
+| Request | ✓ via profile address | ✓ via profile address | ✓ via profile address | ✓ via profile address |
 | Pay / send | ✓ | ✓ with `pay_invoice` | ✓ | disabled: Lightning unavailable |
-| Detect paid | event | notification / polling | polling | – |
+| Detect paid | ledger match of the payer's claim | ledger match | ledger match | ledger match (if the wallet lists incoming payments) |
 
-## 8a. Request lifetime vs. invoice expiry (no dead ends)
+## 8a. Paying a request (no dead ends)
 
-A request is an intent ("Anna asks 3,000 sats for pizza"); the invoice is
-only the current means to pay it. Invoices expire (24 h); requests do not
-end with them.
+A request is an intent ("Anna asks 3,000 sats for pizza") and only a notice:
+the invoice does not exist until the payer taps Pay.
 
 - **Request lifetime:** open until paid, declined or withdrawn, or until
-  `valid_until` (created_at + `REQUEST_LIFETIME_SECONDS` = 30 days). Without
-  `valid_until` (other clients): the invoice expiry, unless a `lud16` is
-  present, then 30 days from created_at. `expired` means the request
-  lifetime ended, never just the invoice.
-- **Payer pulls a fresh invoice:** if the request's invoice has expired (or
-  expires within 60 s), "Pay" fetches a new invoice from the request's signed
-  `lud16` via LNURL-pay for exactly the requested amount (LUD-12 comment
-  `buho:req:<reference>` when allowed), validates it (decodes, mainnet, exact
-  amount, not expired, within min/maxSendable) and hands it to the normal
-  pipeline with "Pay with". The user sees no difference. Out-of-range or
-  LNURL failure → clear error with the next action ("Ask for a new request").
-- **Requester confirms late payments:** the payer's `payment` message
-  (requestId, preimage if any) is matched against the requester's own wallet
-  ledger (preimage hash, else amount + time window, one tx per claim) → the
-  request becomes `paid` (verified), the tx is linked to the contact and the
-  card says where it was received. Without a ledger match it stays
-  "Reported paid, not verified". The original-invoice watcher stops at the
-  invoice expiry as before; reconcile on resume also checks claims.
+  `valid_until` (created_at + `REQUEST_LIFETIME_SECONDS` = 30 days).
+- **Payer creates the invoice:** "Pay" fetches the requester's CURRENT signed
+  kind 0 (`nostrFetch.fetchProfile`, short timeout) and uses its `lud16` when it
+  is a valid Lightning address, so an address the requester changed after
+  sending is followed by new and old open requests alike. When the profile
+  cannot be fetched or has no valid `lud16`, the `lud16` signed inside the
+  request is used. It then pulls an invoice via LNURL-pay for exactly the
+  requested amount (LUD-12 comment `buho:req:<reference>` when allowed),
+  validates it (decodes, mainnet, exact amount, not expired, within
+  min/maxSendable) and hands it to the normal pipeline with "Pay with". A failed
+  fetch is a clear error (`INVOICE_FETCH_FAILED`, `AMOUNT_OUT_OF_RANGE`) and
+  nothing is paid. Never an address from contact data.
+- **Requester confirms payment:** the payer's `payment` message (requestId,
+  preimage if any) is matched against the requester's own wallet ledger
+  (preimage hash, else amount + time window, one tx per claim) → the request
+  becomes `paid` (verified), the tx is linked to the contact and the card says
+  where it was received. Without a ledger match it stays "Reported paid, not
+  verified". Claim re-checks run at 5 s, 20 s, 60 s, on chat open and on every
+  resume.
 - **Next action in every state:**
 
   | State | Payer | Requester |
   |---|---|---|
-  | pending (invoice valid or not) | Decline · Pay | Remind · Withdraw |
-  | expired (lifetime over) | Send anyway (amount + note prefilled, linked to the request) | Request again (one tap, same amount + note) |
-  | pending, invoice expired, no `lud16` | Decline · Ask for a new request (prefilled message) | Remind · Withdraw |
+  | pending | Decline · Pay | Remind · Withdraw |
+  | expired (`valid_until` passed) | Send anyway (amount + note prefilled, linked to the request) | Request again (one tap, same amount + note) |
 
-  A late "Send anyway" payment linked to an expired request marks it paid
-  (paid is final and wins over expired).
-- Implementation notes: the 60 s margin applies only to the Pay-time pull,
-  one pull per tap; a claim below the requested amount stays "not
-  verified"; a payer's `paid` status without a payment message counts as a
-  claim; "Send anyway" pays the request's signed `lud16`, falling back to the
-  saved contact's address. Claim re-checks run at 5 s, 20 s, 60 s and on
-  every resume.
-- Trade-off: a pulled payment lands in the wallet behind the requester's
-  Lightning address (normally Spark Business), not necessarily the wallet
-  chosen for the original invoice; the paid card names the wallet.
+  "Send anyway" pays the address resolved the same way (current profile, else
+  the signed `lud16`). A late payment linked to an expired request marks it paid
+  (paid is final and wins over expired); a claim below the requested amount
+  stays "not verified"; a payer's `paid` status without a payment message
+  counts as a claim.
+- Trade-off: the money lands in the wallet behind the requester's profile
+  address; the paid card names the wallet. A payment to an address whose
+  receipts the app cannot list (npub.cash bucket until claimed) stays "Reported
+  paid, not verified".
 
 ## 9. Notifications
 
@@ -386,6 +389,6 @@ Replace the workaround when the upstream fix ships.
 - Transport tests use an in-memory fake WebSocket relay (AUTH challenge, CLOSED
   auth-required, OK false, drops and reconnects).
 - A Playwright check script (`scripts/check-contact-chat.mjs`) drives the UI with
-  simulated relays, all four wallet types, dark and light, de / en / es and large
+  simulated relays and LNURL servers, scripted wallets, dark and light, de / en / es and large
   text.
 - Requires Node ≥ 22.22 (`@quasar/app-vite`).

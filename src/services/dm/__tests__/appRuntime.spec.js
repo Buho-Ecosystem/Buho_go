@@ -8,22 +8,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { generateSecretKey, getPublicKey } from 'nostr-core';
-import { CHAT_REQUEST_SOURCE, createAppRuntimeFactory, describeWallet } from '../appRuntime.js';
-
-test('wallet descriptors carry type, address, Spark account and NWC methods from wherever the store keeps them', () => {
-  const spark = { id: 's', type: 'spark', connectionData: { accountNumber: 1 }, metadata: { lud16: 'stale@x.io' } };
-  assert.deepEqual(describeWallet(spark, () => 'Me@Buho.example'), {
-    id: 's', type: 'spark', lightningAddress: 'me@buho.example', accountNumber: 1,
-  });
-  assert.deepEqual(describeWallet(spark, () => null), { id: 's', type: 'spark', accountNumber: 1 });
-
-  const nwc = { id: 'n', type: 'nwc', metadata: { lud16: 'Nwc@Host.io', methods: ['pay_invoice', 'make_invoice'] } };
-  assert.deepEqual(describeWallet(nwc, () => 'ignored@x.io'), {
-    id: 'n', type: 'nwc', lightningAddress: 'nwc@host.io', methods: ['pay_invoice', 'make_invoice'],
-  });
-  assert.deepEqual(describeWallet({ id: 'a', type: 'arkade', metadata: {} }, () => null), { id: 'a', type: 'arkade' });
-  assert.deepEqual(describeWallet({ id: 'l', type: 'lnbits' }, () => null), { id: 'l', type: 'lnbits' });
-});
+import { CHAT_REQUEST_SOURCE, createAppRuntimeFactory } from '../appRuntime.js';
 
 test('the factory maps every runtime dependency onto the right store call', async () => {
   const me = 'a'.repeat(64);
@@ -31,13 +16,8 @@ test('the factory maps every runtime dependency onto the right store call', asyn
   const calls = [];
   const messagesStore = { scope: me };
   const wallet = {
-    wallets: [
-      { id: 's', type: 'spark', connectionData: { accountNumber: 1 } },
-      { id: 'n', type: 'nwc', metadata: { methods: ['make_invoice'] } },
-    ],
-    sparkLightningAddressOf: () => 'me@buho.example',
-    getProvider: (id) => { calls.push(['getProvider', id]); return { id }; },
-    ensureWalletConnectedForTransfer: async (id) => { calls.push(['connect', id]); return { id }; },
+    wallets: [{ id: 's', type: 'spark' }],
+    getProvider: (id) => { calls.push(['getProvider', id]); return { getTransactions: async () => [] }; },
   };
   let captured;
   const factory = createAppRuntimeFactory({
@@ -50,7 +30,9 @@ test('the factory maps every runtime dependency onto the right store call', asyn
     transactionMetadata: { enqueuePendingContactLink: async (link) => { calls.push(['link', link]); } },
   }, {
     getRelayPool: () => ({ ensureRelay: async (url, options) => { calls.push(['relay', url, options]); return {}; } }),
-    lnurl: { fetchPayRequest: 'F', requestLnurlInvoice: 'R', verifyPayment: 'V' },
+    lnurl: { fetchPayRequest: 'F', requestLnurlInvoice: 'R' },
+    fetchProfile: 'P',
+    normalizeTx: (raw) => ({ type: 'incoming', status: 'completed', amount: raw.amount, paymentHash: raw.hash, settled_at: raw.at }),
     isLocked: () => true,
     isHidden: () => true,
     formatNotification: () => 'x',
@@ -66,12 +48,9 @@ test('the factory maps every runtime dependency onto the right store call', asyn
   assert.equal(captured.channelName, 'Messages');
   assert.equal((await captured.loadSecretKey())[0], 7);
   assert.equal(captured.getProfileAddress(), 'me@buho.example');
-  assert.deepEqual(captured.lnurl, { fetchPayRequest: 'F', requestInvoice: 'R', verifyPayment: 'V' });
-  assert.deepEqual(captured.wallets.list().map((w) => w.id), ['s', 'n']);
-  assert.equal(captured.wallets.list()[0].lightningAddress, 'me@buho.example');
-  assert.deepEqual(captured.wallets.list()[1].methods, ['make_invoice']);
-  assert.deepEqual(captured.wallets.getProvider('s'), { id: 's' });
-  await captured.wallets.ensureConnected('n');
+  assert.equal(captured.fetchProfile, 'P');
+  assert.deepEqual(captured.lnurl, { fetchPayRequest: 'F', requestInvoice: 'R' });
+  assert.deepEqual(await captured.loadIncomingTransactions(), []);
   assert.deepEqual(captured.contacts.find(partner), { id: 'c1', name: 'Pat' });
   assert.equal(captured.contacts.find('c'.repeat(64)), null);
   assert.equal(await captured.notifications.message({ title: 'T' }), true);
@@ -80,7 +59,6 @@ test('the factory maps every runtime dependency onto the right store call', asyn
 
   assert.deepEqual(calls, [
     ['getProvider', 's'],
-    ['connect', 'n'],
     ['notify', { title: 'T' }],
     ['link', {
       contactId: 'c1', amountSats: 500, walletId: 's', direction: 'incoming',

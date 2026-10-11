@@ -47,7 +47,7 @@ function msg(partner, overrides = {}) {
 
 const requestMsg = (partner, o = {}) => msg(partner, {
   type: 'request', text: 'request',
-  request: { amountSats: 1000, note: null, bolt11: 'lnbc1', paymentHash: hex('c'), lud16: null, expiresAt: 5000 },
+  request: { amountSats: 1000, note: null, lud16: 'bob@x.org', validUntil: 5000 },
   ...o,
 })
 const statusMsg = (partner, requestId, value, o = {}) => msg(partner, {
@@ -354,7 +354,7 @@ test('a reaction may arrive before its target', async () => {
 const IN = (o = {}) => requestMsg(ALICE, { createdAt: 1000, ...o }) // alice asks me
 const OUT = (o = {}) => requestMsg(ALICE, { outgoing: true, createdAt: 1000, ...o }) // I ask alice
 
-test('a request is pending, then expires with its invoice', async () => {
+test('a request is pending, then expires with its valid_until', async () => {
   const store = await scoped()
   const req = IN()
   store.ingest(req)
@@ -427,7 +427,7 @@ test('a status that arrives before its request still applies', async () => {
   assert.equal(store.requestStatus(req.id, 1500), REQUEST_STATE.PAID)
 })
 
-test('declined or cancelled requests stay so after the invoice expires', async () => {
+test('declined or cancelled requests stay so after the request expires', async () => {
   const store = await scoped()
   const req = IN()
   store.ingest(req)
@@ -443,34 +443,27 @@ test('a status for a request in another thread does not apply', async () => {
   assert.equal(store.requestStatus(req.id, 1500), REQUEST_STATE.PENDING)
 })
 
-test('a request ends with its lifetime (valid_until), not with its invoice; paid wins over expired', async () => {
+test('a request ends with its valid_until; paid wins over expired', async () => {
   const store = await scoped()
-  const base = { amountSats: 1000, note: null, bolt11: 'lnbc1', paymentHash: hex('c'), lud16: 'bob@x.org', expiresAt: 2000 }
-  const tagged = IN({ createdAt: 1000, request: { ...base, validUntil: 9000 } })
-  const legacyAddress = IN({ createdAt: 1001, request: { ...base } })
-  const legacyBare = IN({ createdAt: 1002, request: { ...base, lud16: null } })
+  const base = { amountSats: 1000, note: null, lud16: 'bob@x.org' }
+  const open = IN({ createdAt: 1000, request: { ...base, validUntil: 9000 } })
   const late = IN({ createdAt: 1003, request: { ...base, validUntil: 3000 } })
-  for (const m of [tagged, legacyAddress, legacyBare, late]) store.ingest(m)
-  // the invoices are over at 2001: only the request without a way to a new invoice expires
-  assert.equal(store.requestStatus(tagged.id, 2500), REQUEST_STATE.PENDING)
-  assert.equal(store.requestStatus(legacyAddress.id, 2500), REQUEST_STATE.PENDING)
-  assert.equal(store.requestStatus(legacyBare.id, 2500), REQUEST_STATE.EXPIRED)
-  assert.equal(store.requestStatus(tagged.id, 9000), REQUEST_STATE.PENDING)
-  assert.equal(store.requestStatus(tagged.id, 9001), REQUEST_STATE.EXPIRED)
-  assert.equal(store.requestStatus(legacyAddress.id, 1001 + 30 * 86400 + 1), REQUEST_STATE.EXPIRED)
+  for (const m of [open, late]) store.ingest(m)
+  assert.equal(store.requestStatus(open.id, 9000), REQUEST_STATE.PENDING)
+  assert.equal(store.requestStatus(open.id, 9001), REQUEST_STATE.EXPIRED)
   // a payment after the lifetime still turns it paid; declined stays declined
   assert.equal(store.requestStatus(late.id, 4000), REQUEST_STATE.EXPIRED)
   store.ingest(statusMsg(ALICE, late.id, 'paid', { outgoing: true, createdAt: 3500 }))
   assert.equal(store.requestStatus(late.id, 4000), REQUEST_STATE.PAID)
-  store.ingest(statusMsg(ALICE, tagged.id, 'declined', { outgoing: true, createdAt: 1500 }))
-  assert.equal(store.requestStatus(tagged.id, 9999), REQUEST_STATE.DECLINED)
+  store.ingest(statusMsg(ALICE, open.id, 'declined', { outgoing: true, createdAt: 1500 }))
+  assert.equal(store.requestStatus(open.id, 9999), REQUEST_STATE.DECLINED)
 })
 
 test('pendingRequestsFrom lists only open incoming requests', async () => {
   const store = await scoped()
   const open = IN({ createdAt: 1000 })
   const paid = IN({ createdAt: 1001 })
-  const expired = IN({ createdAt: 1002, request: { amountSats: 1, note: null, bolt11: 'x', paymentHash: hex('d'), lud16: null, expiresAt: 1500 } })
+  const expired = IN({ createdAt: 1002, request: { amountSats: 1, note: null, lud16: 'bob@x.org', validUntil: 1500 } })
   const mine = OUT({ createdAt: 1003 })
   for (const m of [open, paid, expired, mine]) store.ingest(m)
   store.ingest(statusMsg(ALICE, paid.id, 'cancelled', { createdAt: 1010 }))
@@ -590,7 +583,7 @@ test('prune never drops a pending request or the status that settles a kept one'
 
 test('a long-expired unanswered request is not protected', async () => {
   const store = await scoped()
-  const stale = IN({ id: rid(1), createdAt: 10, request: { amountSats: 1, note: null, bolt11: 'x', paymentHash: hex('d'), lud16: null, expiresAt: 100 } })
+  const stale = IN({ id: rid(1), createdAt: 10, request: { amountSats: 1, note: null, lud16: 'bob@x.org', validUntil: 100 } })
   store.ingest(stale)
   for (let i = 0; i < MAX_MESSAGES_PER_THREAD; i += 1) store.ingest(msg(ALICE, { id: rid(100 + i), createdAt: 100 + i }))
   store.prune()
@@ -805,37 +798,32 @@ test('saving on a scope switch does not leak the old state into the new key', as
   assert.deepEqual(Object.keys(theirs.threads), [BOB])
 })
 
-test('request sources are stored per request, survive a restart and stay out of other scopes', async () => {
+test('settlements are stored per request, survive a restart and stay out of other scopes', async () => {
   const store = await scoped(ME)
   const req = requestMsg(ALICE, { outgoing: true })
   store.addOutgoing(req)
-  assert.equal(store.requestSource(req.id), null)
-  assert.equal(store.setRequestSource(req.id, { walletId: 'w1', method: 'direct' }), true)
-  assert.deepEqual(store.requestSource(req.id), { walletId: 'w1', method: 'direct' })
-  assert.equal(store.setRequestSource('nope', { a: 1 }), false)
-  assert.throws(() => store.setRequestSource(req.id, 'x'), TypeError)
+  assert.equal(store.settlement(req.id), null)
+  assert.equal(store.setSettlement(req.id, { walletId: 'w1', paidAt: 1234 }), true)
+  assert.deepEqual(store.settlement(req.id), { walletId: 'w1', paidAt: 1234 })
+  assert.equal(store.setSettlement('nope', { a: 1 }), false)
+  assert.throws(() => store.setSettlement(req.id, 'x'), TypeError)
   await store.flush()
 
   const again = await scoped(ME)
-  assert.deepEqual(again.requestSource(req.id), { walletId: 'w1', method: 'direct' })
+  assert.deepEqual(again.settlement(req.id), { walletId: 'w1', paidAt: 1234 })
   await again.setScope(OTHER_ME)
-  assert.equal(again.requestSource(req.id), null)
-
-  await again.setScope(ME)
-  assert.equal(again.clearRequestSource(req.id), true)
-  assert.equal(again.clearRequestSource(req.id), false)
-  assert.equal(again.requestSource(req.id), null)
+  assert.equal(again.settlement(req.id), null)
 })
 
-test('prune drops request sources whose request is gone and without a scope nothing is stored', async () => {
+test('prune drops settlements whose request is gone and without a scope nothing is stored', async () => {
   const bare = freshStore()
-  assert.equal(bare.setRequestSource(rid(5), { a: 1 }), false)
+  assert.equal(bare.setSettlement(rid(5), { a: 1 }), false)
 
   const store = await scoped(ME)
   const req = requestMsg(ALICE, { outgoing: true })
   store.addOutgoing(req)
-  store.setRequestSource(req.id, { walletId: 'w1' })
-  store.setRequestSource(rid(777), { walletId: 'w2' })
+  store.setSettlement(req.id, { walletId: 'w1', paidAt: 1 })
+  store.setSettlement(rid(777), { walletId: 'w2', paidAt: 2 })
   store.prune()
-  assert.deepEqual(Object.keys(store.receiving), [req.id])
+  assert.deepEqual(Object.keys(store.settlements), [req.id])
 })

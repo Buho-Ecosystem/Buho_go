@@ -7,7 +7,7 @@
  * data in, string out.
  *
  * Money first: a request, a payment or an answer to a request is announced
- * with what it is (and the amount), never with the invoice. A text shows a
+ * with what it is (and the amount). A text shows a
  * short preview, the way every chat app does; the Settings switch for message
  * notifications is the user's way to turn that off.
  *

@@ -98,7 +98,7 @@ export const MAX_TEXT_LENGTH = 2_000;
 /**
  * Longest note on a payment request or payment, in characters. A note is a
  * label ("Pizza"), not a message: it rides in the fallback line other NIP-17
- * clients show and, on a request, is also the invoice description.
+ * clients show.
  */
 export const MAX_NOTE_LENGTH = 200;
 
@@ -106,13 +106,10 @@ export const MAX_NOTE_LENGTH = 200;
  * How long a payment request stays open (30 days), counted from its
  * `created_at`; sent as the request's `valid_until` tag.
  *
- * A request is an intent ("pay me for the pizza"), the invoice inside it only
- * the current way to pay. Invoices live 24 hours (`REQUEST_INVOICE_EXPIRY_SECONDS`
- * in requests.js), but people answer in days: ending the request with the
- * invoice left both sides with an "Expired" card and no way forward. Thirty
- * days outlasts a normal payday or weekend away yet stops an old, forgotten
- * request from looking payable for ever. The payer fetches a fresh invoice
- * from the request's `lud16` within this window (docs section 8a).
+ * A request is only a notice ("pay me for the pizza"): the payer's app fetches
+ * the invoice when they tap Pay, so nothing in it runs out sooner. Thirty days
+ * outlasts a normal payday or weekend away yet stops an old, forgotten request
+ * from looking payable for ever (docs section 8a).
  */
 export const REQUEST_LIFETIME_SECONDS = 30 * 24 * 60 * 60;
 

@@ -3,16 +3,13 @@
   A payment request in the thread, from either side.
 
     Header   direction: "You requested" / "{name} requests"
-    Body     amount (+ optional fiat), note, "valid until" (the REQUEST's
-             lifetime, 30 days; its invoice is replaced when it runs out)
+    Body     amount (+ optional fiat), note, "valid until" (the request's
+             lifetime, 30 days)
     Footer   state line, and the next action of YOUR side in every state that
              has one (docs section 8a, there is no dead end):
                pending, payer      [Decline] [Pay]    (Pay is the one filled button)
-               pending, payer, invoice expired and nowhere to get a new one
-                                   [Decline] [Ask for a new request]
                pending, requester  [Remind]  [Withdraw]
-               expired, payer      [Send anyway]  (or [Ask for a new request]
-                                   when there is no address to send to)
+               expired, payer      [Send anyway]
                expired, requester  [Request again]
                paid                says where it arrived, or that it is only
                                    reported by the payer (`paidVerified`)
@@ -20,16 +17,12 @@
   Honest states (nostrdesign.org: no silent failure):
     - disabledReason   Pay stays visible but is aria-disabled and says why
                        inline ("Lightning is unavailable on Arkade").
-    - unconfirmed      this wallet cannot detect the payment itself. While
-                       pending the card says so; if it is marked paid it says
-                       the wallet has not verified it.
     - untrusted        the sender is a stranger: danger styling, Pay is no
                        longer the filled primary action.
-  There is NO "amount in invoice" row: invoice checks are silent and surface
-  only as `disabledReason` / an expired state (product rule, docs section 2).
+  The request carries no invoice: it is fetched when the payer taps Pay.
 
   Presentational: events `pay`, `decline`, `remind`, `withdraw`, `send-anyway`,
-  `request-again`, `ask-new`.
+  `request-again`.
 -->
 <template>
   <section
@@ -65,31 +58,16 @@
       {{ receivedText }}
     </p>
 
-    <p v-if="unconfirmedText" class="request-card__hint">
-      <Icon icon="tabler:info-circle" width="14" height="14" />
-      {{ unconfirmedText }}
-    </p>
-
     <p v-if="showReason" :id="reasonId" class="request-card__reason" role="status">
       <Icon icon="tabler:alert-triangle" width="14" height="14" />
       {{ reasonText }}
     </p>
 
-    <div v-if="state === 'pending' && !outgoing" class="request-card__actions" :class="{ 'request-card__actions--even': payHidden }">
+    <div v-if="state === 'pending' && !outgoing" class="request-card__actions">
       <button type="button" class="request-btn request-btn--quiet" :disabled="busy" @click="$emit('decline')">
         {{ $t('Decline') }}
       </button>
       <button
-        v-if="payHidden"
-        type="button"
-        class="request-btn request-btn--outline"
-        :disabled="busy"
-        @click="$emit('ask-new')"
-      >
-        {{ $t('Ask for a new request') }}
-      </button>
-      <button
-        v-else
         type="button"
         class="request-btn"
         :class="untrusted ? 'request-btn--outline' : 'request-btn--pay'"
@@ -123,16 +101,13 @@
         {{ $t('Request again') }}
       </button>
       <button
-        v-else-if="canSendAnyway"
+        v-else
         type="button"
         class="request-btn request-btn--pay"
         :disabled="busy"
         @click="$emit('send-anyway')"
       >
         {{ $t('Send anyway') }}
-      </button>
-      <button v-else type="button" class="request-btn request-btn--quiet" :disabled="busy" @click="$emit('ask-new')">
-        {{ $t('Ask for a new request') }}
       </button>
     </div>
   </section>
@@ -163,12 +138,9 @@ export default {
     partnerName: { type: String, default: '' },
     /** When the request itself stops being open (its lifetime, not its invoice's), unix seconds. */
     validUntil: { type: Number, default: null },
-    /** This wallet cannot detect the payment itself (Arkade, NWC without notifications). */
-    unconfirmed: { type: Boolean, default: false },
     /**
-     * Why the user cannot pay right now. Either a DM_ERROR code from
-     * runtime.checkPayable (INVALID_INVOICE, INVOICE_EXPIRED, WALLET_CANNOT_PAY)
-     * or ready, translated text. Empty = can pay.
+     * Why the user cannot pay right now. Either the DM_ERROR code
+     * WALLET_CANNOT_PAY or ready, translated text. Empty = can pay.
      */
     disabledReason: { type: String, default: '' },
     /**
@@ -178,8 +150,6 @@ export default {
     paidVerified: { type: Boolean, default: true },
     /** Own request, paid and verified: name of the wallet it arrived in ("Received in {wallet}"). */
     receivedIn: { type: String, default: '' },
-    /** Expired incoming request: there is an address to send the money to ("Send anyway"). */
-    canSendAnyway: { type: Boolean, default: true },
     /** A stranger sent this: no primary Pay, danger styling. */
     untrusted: { type: Boolean, default: false },
     /** An action is in flight: all buttons wait. */
@@ -187,7 +157,7 @@ export default {
     /** ₿ 1,234 (true) or 1,234 sats (false). */
     bip177: { type: Boolean, default: true }
   },
-  emits: ['pay', 'decline', 'remind', 'withdraw', 'send-anyway', 'request-again', 'ask-new'],
+  emits: ['pay', 'decline', 'remind', 'withdraw', 'send-anyway', 'request-again'],
   computed: {
     reasonId() { return `request-reason-${this.$.uid}` },
     amount() {
@@ -207,15 +177,9 @@ export default {
     },
     /** The reason as a sentence: a known code is worded here, other text passes through. */
     reasonText() {
-      return {
-        INVALID_INVOICE: this.$t('This request is invalid and cannot be paid.'),
-        INVOICE_EXPIRED: this.$t('The invoice has expired. Ask for a new request.'),
-        WALLET_CANNOT_PAY: this.$t('This wallet cannot pay this request. Choose another wallet.')
-      }[this.disabledReason] || this.disabledReason
-    },
-    /** An invalid or expired invoice can never be paid: no Pay button at all. */
-    payHidden() {
-      return this.disabledReason === 'INVALID_INVOICE' || this.disabledReason === 'INVOICE_EXPIRED'
+      return this.disabledReason === 'WALLET_CANNOT_PAY'
+        ? this.$t('This wallet cannot pay this request. Choose another wallet.')
+        : this.disabledReason
     },
     showReason() {
       return this.state === 'pending' && !this.outgoing && this.payBlocked
@@ -246,10 +210,6 @@ export default {
     receivedText() {
       if (this.state !== 'paid' || !this.outgoing || !this.paidVerified || !this.receivedIn) return ''
       return this.$t('Received in {wallet}', { wallet: this.receivedIn })
-    },
-    unconfirmedText() {
-      if (!this.unconfirmed || !this.outgoing || this.state !== 'pending') return ''
-      return this.$t('This wallet cannot confirm the payment automatically.')
     },
     /** What a screen reader hears when it lands on the card. */
     spoken() {

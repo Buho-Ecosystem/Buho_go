@@ -1,20 +1,18 @@
 <!--
   RequestSheet
   Bottom sheet to ask a contact for money: amount, optional note, and the
-  wallet the money lands in.
+  Lightning address of the user's profile the money is paid to.
 
-  Presentational. Everything the sheet shows about wallets arrives as props
-  (`wallets`, `landingInfo`); it creates no invoice and reads no store. On
-  submit it emits `submit({ amountSats, note, walletId })` and waits: the
-  parent sets `submitting` while it works and `error` if it fails.
+  Presentational. It creates nothing and reads no store. On submit it emits
+  `submit({ amountSats, note })` and waits: the parent sets `submitting` while
+  it works and `error` if it fails.
 
-    - Amount in whole sats (the Lightning invoice carries sats), optional fiat
-      line from `formatFiat(sats)`.
-    - "Receive in" is ReceiveWalletField: always shown, so the user knows where
-      the money lands; a choice only when there are several wallets.
-    - landingInfo: plain-language note when the money does NOT land in the
-      wallet the user would expect (Arkade cannot create invoices, so the
-      request is paid to the profile address instead).
+    - Amount in whole sats, optional fiat line from `formatFiat(sats)`.
+    - "To: <address>" is a quiet row; tapping it emits `open-address` (the
+      parent opens the sheet where the profile address is changed).
+    - No profile address: the sheet explains it and offers one button that
+      emits `open-address` instead of the amount form, so there is no dead end.
+-->
 -->
 <template>
   <q-dialog
@@ -41,7 +39,12 @@
         </button>
       </header>
 
-      <div class="request-sheet__body">
+      <div v-if="!address" class="request-sheet__body request-sheet__body--empty">
+        <span class="request-sheet__empty-icon"><Icon icon="tabler:at" width="26" height="26" /></span>
+        <p class="request-sheet__empty-text">{{ $t('To request money you need a Lightning address in your profile.') }}</p>
+      </div>
+
+      <div v-else class="request-sheet__body">
         <div class="request-sheet__amount">
           <label :for="amountId" class="request-sheet__sr">{{ $t('Amount in sats') }}</label>
           <div class="request-sheet__amount-line">
@@ -88,17 +91,11 @@
           >
         </div>
 
-        <ReceiveWalletField
-          :entries="wallets"
-          :model-value="walletId"
-          :disabled="submitting"
-          @update:model-value="$emit('update:walletId', $event)"
-        />
-
-        <p v-if="landingInfo" class="request-sheet__info">
-          <Icon icon="tabler:info-circle" width="16" height="16" />
-          <span>{{ landingInfo }}</span>
-        </p>
+        <button type="button" class="request-sheet__to" :disabled="submitting" @click="$emit('open-address')">
+          <span class="request-sheet__to-label">{{ $t('To') }}</span>
+          <span class="request-sheet__to-address">{{ address }}</span>
+          <Icon icon="tabler:chevron-right" width="16" height="16" />
+        </button>
 
         <p v-if="error" class="request-sheet__failure" role="alert">
           <Icon icon="tabler:alert-triangle" width="16" height="16" />
@@ -107,7 +104,11 @@
       </div>
 
       <footer class="request-sheet__foot">
+        <button v-if="!address" type="button" class="request-sheet__cta" @click="$emit('open-address')">
+          {{ $t('Set up Lightning address') }}
+        </button>
         <button
+          v-else
           type="button"
           class="request-sheet__cta"
           :disabled="!canSubmit"
@@ -124,7 +125,6 @@
 
 <script>
 import { Icon } from '@iconify/vue'
-import ReceiveWalletField from './ReceiveWalletField.vue'
 import { MAX_NOTE_LENGTH } from '../../services/dm/constants.js'
 import { formatSats } from './chatFormat.js'
 import './chatTokens.css'
@@ -134,29 +134,25 @@ const MAX_DIGITS = 12
 
 export default {
   name: 'RequestSheet',
-  components: { Icon, ReceiveWalletField },
+  components: { Icon },
   props: {
     /** Sheet open (v-model). */
     modelValue: { type: Boolean, default: false },
     partnerName: { type: String, default: '' },
-    /** ReceiveWalletField entries: { id, name, type, detail, usable, reason }. */
-    wallets: { type: Array, default: () => [] },
-    /** Id of the wallet the money lands in (v-model:wallet-id). */
-    walletId: { type: String, default: null },
-    /** Plain-language note when the money lands somewhere unexpected. */
-    landingInfo: { type: String, default: '' },
+    /** The profile Lightning address the money is paid to; empty = none set up yet. */
+    address: { type: String, default: '' },
     minSats: { type: Number, default: 1 },
     maxSats: { type: Number, default: null },
     maxNoteLength: { type: Number, default: MAX_NOTE_LENGTH },
     /** sats -> "≈ $4.20" (empty string for none). Supplied by the page. */
     formatFiat: { type: Function, default: null },
-    /** The parent is creating the invoice. */
+    /** The parent is checking the address and sending the request. */
     submitting: { type: Boolean, default: false },
     /** Why creating the request failed, already translated. */
     error: { type: String, default: '' },
     bip177: { type: Boolean, default: true }
   },
-  emits: ['update:modelValue', 'update:walletId', 'submit'],
+  emits: ['update:modelValue', 'open-address', 'submit'],
   data() {
     return { amountText: '', note: '' }
   },
@@ -191,14 +187,8 @@ export default {
       }
       return ''
     },
-    selectedWallet() {
-      return this.wallets.find((w) => w.id === this.walletId) || this.wallets.find((w) => w.usable) || null
-    },
     canSubmit() {
-      return !this.submitting
-        && this.amountSats >= this.minSats
-        && !this.amountError
-        && !!this.selectedWallet?.usable
+      return !this.submitting && this.amountSats >= this.minSats && !this.amountError
     },
     ctaText() {
       if (this.submitting) return this.$t('Creating request')
@@ -226,11 +216,7 @@ export default {
     },
     submit() {
       if (!this.canSubmit) return
-      this.$emit('submit', {
-        amountSats: this.amountSats,
-        note: this.note.trim(),
-        walletId: this.selectedWallet.id
-      })
+      this.$emit('submit', { amountSats: this.amountSats, note: this.note.trim() })
     }
   }
 }
@@ -363,7 +349,37 @@ export default {
 .request-sheet__note-input::placeholder { color: var(--text-muted); }
 .request-sheet__note-input:focus-visible { box-shadow: 0 0 0 2px var(--chat-focus); }
 
-.request-sheet__info,
+.request-sheet__body--empty { align-items: center; gap: 12px; padding: 24px 28px 20px; text-align: center; }
+.request-sheet__empty-icon {
+  width: 56px;
+  height: 56px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--bg-input);
+  color: var(--text-secondary);
+}
+.request-sheet__empty-text { margin: 0; font-size: 0.9375rem; line-height: 1.5; color: var(--text-secondary); }
+
+.request-sheet__to {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 0 4px;
+  border: 0;
+  background: transparent;
+  color: var(--text-secondary);
+  font-family: inherit;
+  font-size: 0.8125rem;
+  cursor: pointer;
+  text-align: left;
+}
+.request-sheet__to:disabled { opacity: 0.5; cursor: default; }
+.request-sheet__to-label { font-weight: 600; }
+.request-sheet__to-address { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-primary); }
+.request-sheet__to:focus-visible { outline: 2px solid var(--chat-focus); outline-offset: 2px; }
+
 .request-sheet__failure {
   display: flex;
   gap: 10px;
@@ -373,9 +389,7 @@ export default {
   font-size: 0.8125rem;
   line-height: 1.45;
 }
-.request-sheet__info { background: var(--bg-input); color: var(--text-secondary); }
 .request-sheet__failure { border: 1px solid var(--chat-danger-line); background: var(--chat-danger-soft); color: var(--text-primary); }
-.request-sheet__info :deep(svg),
 .request-sheet__failure :deep(svg) { flex: 0 0 auto; margin-top: 1px; }
 .request-sheet__failure :deep(svg) { color: var(--chat-danger); }
 

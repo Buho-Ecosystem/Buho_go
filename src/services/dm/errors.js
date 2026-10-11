@@ -38,23 +38,23 @@ export const DM_ERROR = Object.freeze({
   AUTH_FAILED: 'AUTH_FAILED',
   /** A relay or lookup did not answer within its time budget. */
   TIMEOUT: 'TIMEOUT',
-  /** A request's invoice failed the checks (undecodable, amount mismatch, wrong network). */
+  /** The invoice a payer pulled for a request failed the checks (undecodable, amount mismatch, wrong network, expired). */
   INVALID_INVOICE: 'INVALID_INVOICE',
-  /** A request's invoice has expired, so it can no longer be paid. */
-  INVOICE_EXPIRED: 'INVOICE_EXPIRED',
   /** The text contains an `nsec1...` or `ncryptsec1...` key, so it is never sent. */
   SECRET_KEY_IN_TEXT: 'SECRET_KEY_IN_TEXT',
-  /** The chosen wallet cannot create invoices, so it cannot receive a request. */
-  WALLET_CANNOT_INVOICE: 'WALLET_CANNOT_INVOICE',
   /** The chosen wallet cannot pay Lightning invoices. */
   WALLET_CANNOT_PAY: 'WALLET_CANNOT_PAY',
+  /** The profile has no Lightning address, so there is nowhere to ask money to be sent. */
+  NO_PAYMENT_ADDRESS: 'NO_PAYMENT_ADDRESS',
+  /** The profile's Lightning address did not answer the LNURL-pay lookup, or answered nonsense. */
+  PAYMENT_ADDRESS_UNREACHABLE: 'PAYMENT_ADDRESS_UNREACHABLE',
   /**
-   * The requester's Lightning address (`lud16` of the request) did not hand out
-   * a usable fresh invoice: unreachable, an LNURL error, or an invoice that is
-   * not for exactly the requested amount. Next action: ask for a new request.
+   * The payer could not get an invoice from the requester's Lightning address:
+   * unreachable, an LNURL error, or an invoice that is not for exactly the
+   * requested amount. Nothing was paid.
    */
-  INVOICE_REFRESH_FAILED: 'INVOICE_REFRESH_FAILED',
-  /** The requested amount lies outside what the requester's Lightning address accepts (LUD-06 min/max). */
+  INVOICE_FETCH_FAILED: 'INVOICE_FETCH_FAILED',
+  /** The amount lies outside what the Lightning address accepts (LUD-06 min/max). */
   AMOUNT_OUT_OF_RANGE: 'AMOUNT_OUT_OF_RANGE',
 });
 
