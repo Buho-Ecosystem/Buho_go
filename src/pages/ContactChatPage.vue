@@ -174,6 +174,8 @@
       :partner-name="displayName"
       :address="profile.lud16 || ''"
       :format-fiat="formatFiat"
+      :fiat-code="requestFiatCode()"
+      :fiat-to-sats="fiatToSats"
       :submitting="requestSubmitting"
       :error="requestError"
       :bip177="bip177"
@@ -322,6 +324,15 @@ export default {
         return ''
       }
     }
+    const fiatToSats = (value) => {
+      try {
+        return fiatRatesService.convertFiatToSatsSync(value, fiatCode())
+      } catch {
+        return null
+      }
+    }
+    /** The currency a request can be typed in; '' while there is no rate (sats only then). */
+    const requestFiatCode = () => (fiatToSats(1) === null ? '' : fiatCode())
 
     /** The wallet "Pay with" starts with for a payment of `amountSats` over `destinationType`. */
     const payingWalletFor = (amountSats, destinationType = 'lightning') => pickDefaultPayingWallet(listPayingWallets({
@@ -359,7 +370,7 @@ export default {
     const signerNotice = useSignerAppNotice()
 
     return {
-      t, router, store, addressBook, walletStore, profile, runtime, chat, partner, contact, partnerName: displayName, formatFiat,
+      t, router, store, addressBook, walletStore, profile, runtime, chat, partner, contact, partnerName: displayName, formatFiat, fiatToSats, requestFiatCode,
       signerState: signerNotice.state,
       signerKind: signerNotice.kind,
       signerBusy: signerNotice.busy,

@@ -144,6 +144,8 @@ function pageOf({ route = { params: { id: 'addr-1' } }, available = true, scope 
     walletStore: { wallets, useBip177Format: true, getDisplayBalance: () => ({ known: false }), sparkLightningAddressOf: () => null },
     profile: { lud16: 'me@example.com' },
     formatFiat: () => '',
+    fiatToSats: () => null,
+    requestFiatCode: () => '',
   }
   vm.bookReady = bookReady
   for (const [name, getter] of Object.entries(page.computed)) {

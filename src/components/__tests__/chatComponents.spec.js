@@ -659,9 +659,9 @@ test('request sheet: no submit while sending', () => {
 
 test('request sheet: fiat comes from the page, the CTA names the amount, a fresh sheet starts empty', () => {
   const { vm } = vmOf(RequestSheet, { address: ADDRESS, formatFiat: (s) => `≈ ${s / 100}` })
-  assert.equal(vm.fiat, '')
+  assert.equal(vm.conversion, '')
   vm.amountText = '1500'
-  assert.equal(vm.fiat, '≈ 15')
+  assert.equal(vm.conversion, '≈ 15')
   assert.ok(vm.ctaText.includes(`₿ ${n(1500)}`))
   vm.note = 'old'
   RequestSheet.watch.modelValue.call(vm, true)
@@ -669,6 +669,33 @@ test('request sheet: fiat comes from the page, the CTA names the amount, a fresh
   assert.equal(vm.note, '')
   const busy = vmOf(RequestSheet, { address: ADDRESS, submitting: true, amountText: '5' })
   assert.equal(busy.vm.ctaText, 'Creating request')
+})
+
+test('request sheet: without a rate there is no unit switch, the amount is in sats', async () => {
+  const html = await render(RequestSheet, { modelValue: true, address: ADDRESS })
+  assert.doesNotMatch(html, /request-sheet__unit-pill/)
+})
+
+test('request sheet: the amount can be typed in fiat; the request is still in sats', async () => {
+  const fiat = { address: ADDRESS, fiatCode: 'USD', fiatToSats: (usd) => Math.floor(usd * 1000), formatFiat: (s) => `≈ $${s / 1000}` }
+  const html = await render(RequestSheet, { modelValue: true, ...fiat })
+  assert.match(html, /aria-label="Enter the amount in USD"/)
+  const { vm, emitted } = vmOf(RequestSheet, fiat)
+  const type = (value) => { const event = { target: { value } }; vm.onAmountInput(event); return event.target.value }
+  type('25')
+  vm.switchUnit()
+  assert.equal(vm.amountText, '', 'switching clears the field: no half-converted number')
+  assert.equal(vm.unitLabel, 'USD')
+  assert.equal(vm.amountLabel, 'Amount in USD')
+  assert.equal(type('4,2a59'), '4.25', 'a comma is a decimal point, two decimals at most')
+  assert.equal(vm.amountSats, 4250)
+  assert.equal(vm.conversion, `≈ ₿ ${n(4250)}`)
+  assert.equal(type('007.5'), '7.5')
+  assert.equal(type('.5'), '0.5')
+  vm.submit()
+  assert.deepEqual(emitted, [['submit', { amountSats: 500, note: '' }]])
+  RequestSheet.watch.modelValue.call(vm, true)
+  assert.equal(vm.unit, 'sats', 'a fresh sheet starts in sats')
 })
 
 // ── SignerAppNotice ──────────────────────────────────────────────────
@@ -900,6 +927,8 @@ test('touch targets: every control is at least 44 pt', () => {
   at44('UnknownSenderBanner.vue', '.unknown-btn')
   at44('SignerAppNotice.vue', '.signer-notice__btn')
   at44('ChatThread.vue', '.chat-thread__pill')
+  at44('RequestSheet.vue', '.request-sheet__unit-pill')
+  at44('RequestSheet.vue', '.request-sheet__to')
 })
 
 test('dialog roots: a bottom sheet whose root is not a <div> still receives taps', () => {

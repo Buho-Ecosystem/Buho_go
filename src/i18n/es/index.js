@@ -867,6 +867,8 @@ export default {
   // Already in en-US (es catch-up)
   "Add Description": "Agregar descripción",
   "Amount in sats": "Monto en sats",
+  "Amount in {unit}": "Monto en {unit}",
+  "Enter the amount in {unit}": "Ingresar el monto en {unit}",
   "Back up your wallet": "Respalda tu cartera",
   "Backup Seed Phrase": "Respaldar frase semilla",
   "Connect Wallet": "Conectar cartera",

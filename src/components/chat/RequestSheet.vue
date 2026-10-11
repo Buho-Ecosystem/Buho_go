@@ -7,7 +7,11 @@
   `submit({ amountSats, note })` and waits: the parent sets `submitting` while
   it works and `error` if it fails.
 
-    - Amount in whole sats, optional fiat line from `formatFiat(sats)`.
+    - Amount in whole sats, or in the preferred fiat currency: the unit pill
+      switches (the confirm sheet's pattern) and clears the field, so no
+      half-converted number is left behind. The line underneath shows the
+      other unit. The request itself is always in sats: that is what the
+      partner is asked for.
     - "To: <address>" is a quiet row; tapping it emits `open-address` (the
       parent opens the sheet where the profile address is changed).
     - No profile address: the sheet explains it and offers one button that
@@ -47,18 +51,17 @@
 
       <div v-else class="request-sheet__body">
         <div class="request-sheet__amount">
-          <label :for="amountId" class="request-sheet__sr">{{ $t('Amount in sats') }}</label>
+          <label :for="amountId" class="request-sheet__sr">{{ amountLabel }}</label>
           <div class="request-sheet__amount-line">
-            <span v-if="bip177" class="request-sheet__unit" aria-hidden="true">₿</span>
+            <span v-if="!inFiat && bip177" class="request-sheet__unit" aria-hidden="true">₿</span>
             <input
               :id="amountId"
               ref="amount"
               class="request-sheet__amount-input"
               type="text"
-              inputmode="numeric"
-              pattern="[0-9]*"
+              :inputmode="inFiat ? 'decimal' : 'numeric'"
               autocomplete="off"
-              placeholder="0"
+              :placeholder="inFiat ? '0.00' : '0'"
               :value="amountDisplay"
               :style="{ width: amountWidth }"
               :aria-invalid="amountError ? 'true' : undefined"
@@ -67,9 +70,22 @@
               @input="onAmountInput"
               @keydown.enter.prevent="submit"
             >
-            <span v-if="!bip177" class="request-sheet__unit" aria-hidden="true">sats</span>
+            <span v-if="!inFiat && !bip177" class="request-sheet__unit" aria-hidden="true">sats</span>
           </div>
-          <p v-if="fiat" class="request-sheet__fiat">{{ fiat }}</p>
+          <button
+            v-if="fiatCode"
+            type="button"
+            class="request-sheet__unit-pill"
+            :aria-label="$t('Enter the amount in {unit}', { unit: otherUnitLabel })"
+            :disabled="submitting"
+            @click="switchUnit"
+          >
+            <span class="request-sheet__unit-chip">
+              {{ unitLabel }}
+              <Icon icon="tabler:arrows-up-down" width="12" height="12" aria-hidden="true" />
+            </span>
+          </button>
+          <p v-if="conversion" class="request-sheet__fiat">{{ conversion }}</p>
           <p v-if="amountError" :id="errorId" class="form-sheet-error request-sheet__error" role="alert">
             <Icon icon="tabler:alert-circle" width="14" height="14" />
             {{ amountError }}
@@ -133,6 +149,16 @@ import './chatTokens.css'
 /** A sat amount never needs more digits; also keeps Number exact. */
 const MAX_DIGITS = 12
 
+/** Whole sats: digits only, no leading zeros. */
+const satsText = (raw) => raw.replace(/\D/g, '').replace(/^0+(?=\d)/, '').slice(0, MAX_DIGITS)
+
+/** A fiat amount: digits and one decimal point (a comma counts as one), two decimals at most. */
+function fiatText(raw) {
+  const [whole, ...rest] = raw.replace(/,/g, '.').replace(/[^\d.]/g, '').split('.')
+  const integer = whole.replace(/^0+(?=\d)/, '').slice(0, MAX_DIGITS)
+  return rest.length ? `${integer || '0'}.${rest.join('').slice(0, 2)}` : integer
+}
+
 export default {
   name: 'RequestSheet',
   components: { Icon },
@@ -147,6 +173,10 @@ export default {
     maxNoteLength: { type: Number, default: MAX_NOTE_LENGTH },
     /** sats -> "≈ $4.20" (empty string for none). Supplied by the page. */
     formatFiat: { type: Function, default: null },
+    /** The preferred fiat currency ("USD") when there is a rate to enter it in; '' = sats only. */
+    fiatCode: { type: String, default: '' },
+    /** fiat amount -> whole sats (null without a rate). Supplied by the page with `fiatCode`. */
+    fiatToSats: { type: Function, default: null },
     /** The parent is checking the address and sending the request. */
     submitting: { type: Boolean, default: false },
     /** Why creating the request failed, already translated. */
@@ -155,7 +185,7 @@ export default {
   },
   emits: ['update:modelValue', 'open-address', 'submit'],
   data() {
-    return { amountText: '', note: '' }
+    return { amountText: '', note: '', unit: 'sats' }
   },
   computed: {
     titleId() { return `request-title-${this.$.uid}` },
@@ -167,16 +197,31 @@ export default {
     amountWidth() {
       return `${Math.max(this.amountDisplay.length, 1) + 0.6}ch`
     },
-    /** Digit groups while typing: 25,000. The raw digits stay in `amountText`. */
+    inFiat() {
+      return this.unit === 'fiat' && Boolean(this.fiatCode) && typeof this.fiatToSats === 'function'
+    },
+    satsLabel() { return this.bip177 ? '₿' : 'sats' },
+    unitLabel() { return this.inFiat ? this.fiatCode : this.satsLabel },
+    otherUnitLabel() { return this.inFiat ? this.satsLabel : this.fiatCode },
+    amountLabel() {
+      return this.inFiat ? this.$t('Amount in {unit}', { unit: this.fiatCode }) : this.$t('Amount in sats')
+    },
+    /** Digit groups while typing sats: 25,000. A fiat amount is shown as typed. The raw text stays in `amountText`. */
     amountDisplay() {
-      return this.amountText ? this.amountSats.toLocaleString() : ''
+      if (!this.amountText) return ''
+      return this.inFiat ? this.amountText : Number.parseInt(this.amountText, 10).toLocaleString()
     },
     amountSats() {
-      return this.amountText ? Number.parseInt(this.amountText, 10) : 0
+      if (!this.amountText) return 0
+      if (!this.inFiat) return Number.parseInt(this.amountText, 10)
+      const value = Number.parseFloat(this.amountText)
+      return value > 0 ? (this.fiatToSats(value) || 0) : 0
     },
-    fiat() {
-      if (!this.amountSats || typeof this.formatFiat !== 'function') return ''
-      return this.formatFiat(this.amountSats) || ''
+    /** The amount in the other unit: "≈ $4.20" under sats, "≈ ₿ 4,200" under fiat. */
+    conversion() {
+      if (!this.amountSats) return ''
+      if (this.inFiat) return `≈ ${formatSats(this.amountSats, this.bip177)}`
+      return typeof this.formatFiat === 'function' ? this.formatFiat(this.amountSats) || '' : ''
     },
     amountError() {
       if (!this.amountSats) return ''
@@ -204,16 +249,20 @@ export default {
       if (!open) return
       this.amountText = ''
       this.note = ''
+      this.unit = 'sats'
       this.$nextTick(() => this.$refs.amount?.focus?.())
     }
   },
   methods: {
     onAmountInput(event) {
-      const digits = event.target.value.replace(/\D/g, '').replace(/^0+(?=\d)/, '').slice(0, MAX_DIGITS)
-      this.amountText = digits
+      this.amountText = this.inFiat ? fiatText(event.target.value) : satsText(event.target.value)
       // Keep the field in step when characters were stripped or grouped.
-      const shown = digits ? Number.parseInt(digits, 10).toLocaleString() : ''
-      if (event.target.value !== shown) event.target.value = shown
+      if (event.target.value !== this.amountDisplay) event.target.value = this.amountDisplay
+    },
+    switchUnit() {
+      this.unit = this.inFiat ? 'sats' : 'fiat'
+      this.amountText = ''
+      this.$nextTick(() => this.$refs.amount?.focus?.())
     },
     submit() {
       if (!this.canSubmit) return
@@ -288,6 +337,34 @@ export default {
 }
 .request-sheet__amount-input::placeholder { color: var(--text-muted); }
 .request-sheet__amount-input:focus-visible { box-shadow: 0 2px 0 0 var(--chat-focus); }
+/* A 44 pt hit area around a small chip, like the confirm sheet's unit pill. */
+.request-sheet__unit-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  margin: 2px auto 0;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-family: inherit;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.request-sheet__unit-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: var(--bg-input);
+}
+.request-sheet__unit-pill:focus-visible { outline: 2px solid var(--chat-focus); outline-offset: 2px; }
+.request-sheet__unit-pill:disabled { opacity: 0.45; cursor: default; }
 .request-sheet__fiat { margin: 0; font-size: 0.875rem; font-weight: 600; color: var(--text-secondary); }
 .request-sheet__error {
   display: flex;

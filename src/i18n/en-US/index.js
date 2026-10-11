@@ -1842,6 +1842,8 @@ export default {
   "Move funds automatically when your balance grows past a threshold": "Move funds automatically when your balance grows past a threshold",
   "Threshold": "Threshold",
   "Amount in sats": "Amount in sats",
+  "Amount in {unit}": "Amount in {unit}",
+  "Enter the amount in {unit}": "Enter the amount in {unit}",
   "Transfer via": "Transfer via",
   "On-chain": "On-chain",
   "Lightning address": "Lightning address",
