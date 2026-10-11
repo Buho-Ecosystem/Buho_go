@@ -443,13 +443,15 @@ test('request sheet: gets the profile address and opens the address sheet from i
 
 // ── menu: mute, block, add ───────────────────────────────────────────
 
-test('mute: toggles the thread\'s flag', () => {
+test('mute: toggles the thread\'s flag and says so', () => {
   const off = pageOf()
   off.vm.toggleMute()
   assert.deepEqual(off.muteCalls, [[ANNA, true]])
+  assert.deepEqual(off.notices.map((n) => n.message), ['Notifications off for Anna'])
   const on = pageOf({ muted: true })
   on.vm.toggleMute()
   assert.deepEqual(on.muteCalls, [[ANNA, false]])
+  assert.deepEqual(on.notices.map((n) => n.message), ['Notifications on for Anna'])
 })
 
 test('block: needs the confirmation; confirming blocks the partner and leaves the chat', async () => {

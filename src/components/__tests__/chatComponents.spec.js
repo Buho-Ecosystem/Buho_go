@@ -507,6 +507,12 @@ test('request card: it is a named group and says valid-until only while pending'
   assert.match(await card({}), /Payment request/, 'no name: a neutral label')
 })
 
+test('header: a muted chat says so next to the name', async () => {
+  assert.doesNotMatch(await render(ChatHeader, { name: 'Anna' }), /bell-off/)
+  const muted = await render(ChatHeader, { name: 'Anna', muted: true })
+  assert.match(muted, /chat-header__name[^>]*>Anna<\/span><i[^>]*data-icon="tabler:bell-off"/)
+})
+
 // ── MoneyBar ─────────────────────────────────────────────────────────
 
 test('money bar: no modes; the message field sits above Request and Send', async () => {

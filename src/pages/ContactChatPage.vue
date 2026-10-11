@@ -51,6 +51,7 @@
         :name="displayName"
         :payments-only="paymentsOnly"
         :unknown="unknown"
+        :muted="muted"
         @back="goBack"
         @open-profile="openProfile"
         @menu="openMenu"
@@ -739,7 +740,9 @@ export default {
 
     toggleMute() {
       if (!this.partnerKey) return
-      this.store.mute(this.partnerKey, !this.muted)
+      const mute = !this.muted
+      this.store.mute(this.partnerKey, mute)
+      this.toast(mute ? this.t('Notifications off for {name}', { name: this.displayName }) : this.t('Notifications on for {name}', { name: this.displayName }))
     },
 
     askBlock() {

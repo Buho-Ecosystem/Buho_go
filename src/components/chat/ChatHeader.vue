@@ -10,6 +10,9 @@
     - paymentsOnly       "Payments only"         (the partner cannot receive messages)
     - unknown            "Not in your contacts"  (nostrdesign.org: no borrowed trust)
 
+  A muted chat shows a small bell-off after the name, so the menu is not the
+  only place that knows.
+
   The avatar slot lets the page drop in the app's ContactAvatar; without it the
   header draws the picture or the initials itself.
 
@@ -39,7 +42,10 @@
         </slot>
       </span>
       <span class="chat-header__copy">
-        <span class="chat-header__name">{{ name }}</span>
+        <span class="chat-header__title">
+          <span class="chat-header__name">{{ name }}</span>
+          <Icon v-if="muted" icon="tabler:bell-off" width="14" height="14" class="chat-header__muted" :aria-label="$t('Muted')" role="img" />
+        </span>
         <span class="chat-header__sub" :class="`chat-header__sub--${tone}`">
           <Icon :icon="subtitleIcon" width="12" height="12" />
           <span>{{ subtitle }}</span>
@@ -75,7 +81,9 @@ export default {
     /** The partner cannot receive messages (no DM inbox): money only. */
     paymentsOnly: { type: Boolean, default: false },
     /** The partner is not in the address book. Takes precedence over the lines above. */
-    unknown: { type: Boolean, default: false }
+    unknown: { type: Boolean, default: false },
+    /** Notifications for this chat are off. */
+    muted: { type: Boolean, default: false }
   },
   emits: ['back', 'open-profile', 'menu'],
   data() {
@@ -178,7 +186,15 @@ export default {
   display: flex;
   flex-direction: column;
 }
+.chat-header__title {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+}
+.chat-header__muted { flex: 0 0 auto; color: var(--text-muted); }
 .chat-header__name {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
