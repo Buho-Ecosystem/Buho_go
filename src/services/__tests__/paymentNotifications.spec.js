@@ -131,7 +131,7 @@ test('a payment notification keeps exactly the shape it always had', async () =>
   const { service, state } = harness();
   assert.equal(await service.notify({ title: 'Payment received', body: '100 sats' }), true);
   assert.equal(await service.notify({ title: 'Payment received', body: '200 sats' }), true);
-  const base = { title: 'Payment received', channelId: 'payments', smallIcon: 'ic_stat_notification' };
+  const base = { title: 'Payment received', channelId: 'payments', smallIcon: 'ic_stat_notification', isExactNotification: false };
   assert.deepEqual(state.posted, [
     { notifications: [{ ...base, id: 41001, body: '100 sats' }] },
     { notifications: [{ ...base, id: 41002, body: '200 sats' }] },
@@ -303,6 +303,7 @@ test('id, group and route reach the plugin, and a stable id leaves the rolling i
       body: 'Lunch?',
       channelId: 'messages',
       smallIcon: 'ic_stat_notification',
+      isExactNotification: false,
       group: 'chat:abc',
       extra: { route: '/address-book/abc/chat' },
     }],

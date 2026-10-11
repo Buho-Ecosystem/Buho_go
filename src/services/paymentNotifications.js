@@ -282,6 +282,12 @@ export async function notify({ title, body, force = false, channel, channelName,
     // A monochrome status-bar mark (res/drawable/ic_stat_notification);
     // Android tints it, so it must be white on transparent.
     smallIcon: 'ic_stat_notification',
+    // Posted now, so no alarm is involved. The plugin (8.3+) treats every
+    // notification as an exact alarm unless told otherwise, and without that
+    // permission (denied by default on Android 14+) it opens the "Alarms &
+    // reminders" settings screen and waits: in the background that screen is
+    // blocked and the notification is never posted.
+    isExactNotification: false,
   }
   if (typeof group === 'string' && group) notification.group = group
   if (typeof route === 'string' && route) notification.extra = { route }
