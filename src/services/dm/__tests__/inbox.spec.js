@@ -16,7 +16,7 @@ import { test } from 'node:test';
 import { generateSecretKey, getPublicKey, verifyEventSignature, verifyAuthEvent } from 'nostr-core';
 import { DM_DISCOVERY_RELAYS, DM_INBOX_RELAYS, KIND, SINCE_SLACK_SECONDS } from '../constants.js';
 import { DM_ERROR, DmError } from '../errors.js';
-import { OUTBOX_DEFAULTS, createInbox, createSignAuth } from '../inbox.js';
+import { MAX_WRAP_STRIKES, OUTBOX_DEFAULTS, createInbox, createSignAuth } from '../inbox.js';
 import { parseInboxRelayList } from '../inboxRelays.js';
 import { buildReactionTemplate, buildTextTemplate } from '../protocol.js';
 import { createLocalDmSigner } from '../dmSigner.js';
@@ -680,6 +680,49 @@ test('a signer app that is offline keeps wraps waiting, says why, and they open 
   assert.equal(bob.store.raw.messages.get(sent.id).text, 'held');
   assert.equal(bob.inbox.status().pendingWraps, 0);
   assert.equal(bob.inbox.status().signerHold, null);
+});
+
+test('one wrap the signer never reads does not hold back the rest, and is given up after a few drains', async () => {
+  let online = false;
+  let poisonPeer = null;
+  const { network, alice, bob } = await pair({
+    bobOptions: {
+      wrapSigner: (local) => ({
+        ...local,
+        nip44Decrypt: (peer, payload) => (online && peer !== poisonPeer
+          ? local.nip44Decrypt(peer, payload)
+          : Promise.reject(new DmError(DM_ERROR.SIGNER_UNAVAILABLE))),
+      }),
+    },
+  });
+  await bob.inbox.start();
+  await settle(bob);
+  await alice.inbox.send({ partner: bob.pubkey, template: { ...textTo(bob, 'unreadable'), created_at: START_S } });
+  const after = await alice.inbox.send({ partner: bob.pubkey, template: { ...textTo(bob, 'after'), created_at: START_S + 1 } });
+  await settle(alice, bob);
+  assert.equal(bob.inbox.status().pendingWraps, 2, 'signer away: both wait');
+  const poison = network.published.find((p) => p.relay.includes('bob')).event;
+  poisonPeer = poison.pubkey;
+
+  online = true;
+  bob.inbox.retryWaiting();
+  await settle(bob);
+  assert.equal(bob.store.raw.messages.get(after.id).text, 'after', 'the next message is not held back');
+  assert.equal(bob.inbox.status().pendingWraps, 1);
+
+  for (let i = 1; i < MAX_WRAP_STRIKES; i += 1) {
+    bob.inbox.retryWaiting();
+    await settle(bob);
+  }
+  assert.equal(bob.inbox.status().pendingWraps, 1, 'alone it proves nothing: the signer may just be away');
+
+  // A strike needs evidence the signer works: another wrap opening in the same drain.
+  for (let i = 0; i < MAX_WRAP_STRIKES; i += 1) {
+    await alice.inbox.send({ partner: bob.pubkey, template: textTo(bob, `more ${i}`) });
+    await settle(alice, bob);
+  }
+  assert.equal(bob.inbox.status().pendingWraps, 0, 'given up as unreadable');
+  assert.ok(bob.store.raw.handled.has(poison.id), 'and remembered, so it is never asked again');
 });
 
 test('wiped key: a successful use by an incoming wrap also drains the queue, in order', async () => {

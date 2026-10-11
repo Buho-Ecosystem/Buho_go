@@ -55,6 +55,9 @@ export const DELIVERY = Object.freeze({
  * are quick and later ones back off to minutes; after `maxAttempts` the
  * message shows as failed and waits for a manual retry.
  */
+/** Times a signer answers other work but not this wrap, before the wrap counts as unreadable. */
+export const MAX_WRAP_STRIKES = 3;
+
 export const OUTBOX_DEFAULTS = Object.freeze({
   /** Delivery attempts (each one a publish round) before the inbox gives up. */
   maxAttempts: 6,
@@ -278,6 +281,10 @@ export function createInbox({
   let liveGate = null;
   /** Wraps that waited for the key: `{ event, live }`. */
   let pending = [];
+  /** Wrap id -> times the signer answered other work but not this wrap (see drainPending). */
+  const strikes = new Map();
+  /** Signer calls that succeeded this run: the evidence that a deferred wrap, not the signer, is the problem. */
+  let signerSuccesses = 0;
   /** Why received wraps wait (the signer's DmError code), or null: the chat says so. */
   let signerHold = null;
   /** Set when the pending queue overflowed: the cursor must then never advance this run. */
@@ -319,6 +326,7 @@ export function createInbox({
 
   async function withSigner(work) {
     const result = await work();
+    signerSuccesses += 1;
     setSignerHold(null);
     if (pending.length > 0 && !draining && !drainQueued) {
       drainQueued = true;
@@ -401,24 +409,57 @@ export function createInbox({
       pending.shift();
       cursorBlocked = true;
     }
-    pending.push({ event, live });
+    pending.push({ event, live, successesAtDefer: signerSuccesses });
   }
 
-  /** Process the waiting wraps in order until one finds the key unavailable again. */
+  /**
+   * Open the wraps that waited for the signer, oldest first. One wrap the
+   * signer cannot answer must not hold back the rest:
+   *   - two deferrals in a row with nothing opened: the signer is away (app
+   *     closed, locked); stop and wait, nothing is lost.
+   *   - otherwise a deferred wrap stays waiting and the drain moves on. When
+   *     the signer has answered other work since this wrap last failed, the
+   *     wrap is the problem: it gets a strike, and after MAX_WRAP_STRIKES it
+   *     counts as unreadable (like one that fails to decrypt), so it never
+   *     blocks the cursor or re-prompts for ever.
+   */
   async function drainPending() {
     if (draining) return;
     draining = true;
     const mine = epoch;
     try {
-      while (pending.length > 0 && mine === epoch) {
-        const { event, live } = pending[0];
-        if ((await openAndIngest(event, live, mine)) === 'deferred') break;
-        if (mine === epoch) pending.shift();
+      let opened = false;
+      let inARow = 0;
+      for (const entry of [...pending]) {
+        const result = await openAndIngest(entry.event, entry.live, mine);
+        if (mine !== epoch) return;
+        if (result !== 'deferred') {
+          pending = pending.filter((other) => other !== entry);
+          strikes.delete(entry.event.id);
+          opened = true;
+          inARow = 0;
+          continue;
+        }
+        if (signerSuccesses > entry.successesAtDefer) strike(entry);
+        entry.successesAtDefer = signerSuccesses;
+        inARow += 1;
+        if (!opened && inARow >= 2) break;
       }
     } finally {
       draining = false;
     }
     if (mine === epoch) advanceCursor();
+  }
+
+  function strike(entry) {
+    const count = (strikes.get(entry.event.id) ?? 0) + 1;
+    if (count < MAX_WRAP_STRIKES) {
+      strikes.set(entry.event.id, count);
+      return;
+    }
+    strikes.delete(entry.event.id);
+    remember(entry.event);
+    pending = pending.filter((other) => other !== entry);
   }
 
   /**
@@ -488,6 +529,7 @@ export function createInbox({
     running = true;
     eosed = new Set();
     pending = [];
+    strikes.clear();
     cursorBlocked = false;
     wrapGate = createWrapGate();
     backfillGate = createRumorGate({ me, isBlocked: (pubkey) => store.isBlocked(pubkey) });
@@ -522,6 +564,7 @@ export function createInbox({
     closedRelays = new Set();
     disarmTimer();
     pending = [];
+    strikes.clear();
     draining = false;
     drainQueued = false;
     eosed = new Set();
