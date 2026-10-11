@@ -112,6 +112,7 @@ export default {
     env() {
       return {
         t: (key, params) => this.$t(key, params),
+        locale: this.$i18n?.locale,
         formatAmount: sats => formatSats(sats, this.wallet.useBip177Format),
         findContact: pubkey => this.addressBook.findContactByPubkey(pubkey),
         toNpub: pubkey => {

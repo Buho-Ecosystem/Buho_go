@@ -132,7 +132,7 @@ export default {
   },
   computed: {
     time() {
-      return this.createdAt === null ? '' : formatClock(this.createdAt)
+      return this.createdAt === null ? '' : formatClock(this.createdAt, this.$i18n?.locale)
     },
     myReaction() {
       return this.reactions.find((r) => r.mine)?.emoji || ''

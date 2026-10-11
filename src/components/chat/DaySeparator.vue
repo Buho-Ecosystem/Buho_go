@@ -27,7 +27,7 @@ export default {
       if (isSameDay(this.ts, this.now - 86400)) return this.$t('Yesterday')
       const date = new Date(this.ts * 1000)
       const sameYear = date.getFullYear() === new Date(this.now * 1000).getFullYear()
-      return date.toLocaleDateString([], {
+      return date.toLocaleDateString(this.$i18n?.locale, {
         day: 'numeric', month: 'long', ...(sameYear ? {} : { year: 'numeric' })
       })
     }

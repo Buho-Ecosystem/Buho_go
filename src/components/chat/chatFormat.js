@@ -16,10 +16,14 @@ export const REQUEST_STATES = Object.freeze(['pending', 'paying', 'paid', 'decli
 
 const toMs = (unixSeconds) => unixSeconds * 1000
 
-/** "14:05" in the device's locale. Empty for a missing or invalid time. */
-export function formatClock(unixSeconds) {
+/**
+ * "14:05". Dates and times follow the app's language (`locale`, the
+ * vue-i18n locale), not the device's: a German screen never says "Oct".
+ * Empty for a missing or invalid time.
+ */
+export function formatClock(unixSeconds, locale) {
   if (!Number.isFinite(unixSeconds)) return ''
-  return new Date(toMs(unixSeconds)).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+  return new Date(toMs(unixSeconds)).toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' })
 }
 
 /** True when two unix-second timestamps fall on the same local calendar day. */
@@ -35,11 +39,12 @@ export function isSameDay(a, b) {
  * "14:05" for today, "12 Oct, 14:05" otherwise. Used for "valid until".
  * @param {number} unixSeconds
  * @param {number} [nowMs]
+ * @param {string} [locale] the app's language
  */
-export function formatWhen(unixSeconds, nowMs = Date.now()) {
+export function formatWhen(unixSeconds, nowMs = Date.now(), locale) {
   if (!Number.isFinite(unixSeconds)) return ''
-  if (isSameDay(unixSeconds, nowMs / 1000)) return formatClock(unixSeconds)
-  return new Date(toMs(unixSeconds)).toLocaleString([], {
+  if (isSameDay(unixSeconds, nowMs / 1000)) return formatClock(unixSeconds, locale)
+  return new Date(toMs(unixSeconds)).toLocaleString(locale, {
     day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit',
   })
 }

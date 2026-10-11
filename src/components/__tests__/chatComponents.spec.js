@@ -159,6 +159,11 @@ test('"valid until" is a clock time today and a date otherwise', () => {
   assert.equal(today, chatFormat.formatClock(NOW + 60))
   assert.notEqual(chatFormat.formatWhen(NOW + 5 * 86400), chatFormat.formatClock(NOW + 5 * 86400))
   assert.equal(chatFormat.formatWhen(NaN), '')
+  // The app's language decides, not the device's.
+  const march = Date.UTC(2026, 2, 12, 12) / 1000
+  assert.match(chatFormat.formatWhen(march, NOW * 1000, 'de'), /März/)
+  assert.match(chatFormat.formatWhen(march, NOW * 1000, 'es'), /mar/)
+  assert.match(chatFormat.formatWhen(march, NOW * 1000, 'en-US'), /Mar/)
 })
 
 // ── ChatHeader ───────────────────────────────────────────────────────

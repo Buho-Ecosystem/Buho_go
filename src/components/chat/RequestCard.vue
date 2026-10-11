@@ -185,7 +185,7 @@ export default {
         : this.$t('Payment request')
     },
     validUntilText() {
-      return this.validUntil === null ? '' : formatWhen(this.validUntil)
+      return this.validUntil === null ? '' : formatWhen(this.validUntil, Date.now(), this.$i18n?.locale)
     },
     payBlocked() {
       return !!this.disabledReason

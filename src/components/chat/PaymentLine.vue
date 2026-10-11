@@ -51,7 +51,7 @@ export default {
       return this.note ? `${head} · ${this.note}` : head
     },
     time() {
-      return this.createdAt === null ? '' : formatClock(this.createdAt)
+      return this.createdAt === null ? '' : formatClock(this.createdAt, this.$i18n?.locale)
     },
     spoken() {
       return this.time ? `${this.text}, ${this.time}` : this.text
