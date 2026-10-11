@@ -371,6 +371,28 @@ function queryRelay({ ensureRelay, url, pubkey, kind = KIND.DM_RELAYS, timeoutMs
 }
 
 /**
+ * Ask every relay in `urls`, each on its own, for the newest valid `kind`
+ * event of `pubkey` (a replaceable list). Never rejects.
+ *
+ * `anyAnswered` tells "no relay holds it" (some relay sent EOSE) apart from
+ * "nobody answered" (offline): only the first is a fact about the list.
+ *
+ * @returns {Promise<{ best: object | null, anyAnswered: boolean }>}
+ */
+export async function queryNewest({ ensureRelay, urls, pubkey, kind, timeoutMs, setTimer = setTimeout, clearTimer = clearTimeout }) {
+  const answers = await Promise.all(
+    urls.map((url) => queryRelay({ ensureRelay, url, pubkey, kind, timeoutMs, setTimer, clearTimer })),
+  );
+  let best = null;
+  let anyAnswered = false;
+  for (const answer of answers) {
+    if (answer.answered) anyAnswered = true;
+    if (answer.event && isBetter(answer.event, best)) best = answer.event;
+  }
+  return { best, anyAnswered };
+}
+
+/**
  * @typedef {object} InboxRelayResult
  * @property {'found' | 'missing' | 'unknown'} status
  * @property {string[]} relays Inbox relays; empty unless `status` is `found`.
@@ -445,19 +467,7 @@ export function createInboxRelayResolver({
     return null;
   }
 
-  /** Ask every relay in `urls` for the newest `kind` event of `pubkey`. */
-  async function ask(urls, pubkey, kind) {
-    const answers = await Promise.all(
-      urls.map((url) => queryRelay({ ensureRelay, url, pubkey, kind, timeoutMs, setTimer, clearTimer })),
-    );
-    let best = null;
-    let anyAnswered = false;
-    for (const answer of answers) {
-      if (answer.answered) anyAnswered = true;
-      if (answer.event && isBetter(answer.event, best)) best = answer.event;
-    }
-    return { best, anyAnswered };
-  }
+  const ask = (urls, pubkey, kind) => queryNewest({ ensureRelay, urls, pubkey, kind, timeoutMs, setTimer, clearTimer });
 
   async function lookup(pubkey, hints) {
     // Hints come from a contact's own data, so they are capped like a list.

@@ -12,7 +12,7 @@
 //     LnurlServer (alice@wallet.example) is where the next payment goes
 // Screenshots (light and dark per step, de/es/large text at the end): CONTACT_CHAT_OUTPUT.
 import { chromium } from '@playwright/test';
-import { createSecretKeySigner, finalizeEvent, getPublicKey } from 'nostr-core';
+import { createSecretKeySigner, finalizeEvent, getPublicKey, nip44 } from 'nostr-core';
 import assert from 'node:assert/strict';
 import { mkdir } from 'node:fs/promises';
 import { deriveNostrIdentity } from '../src/utils/identityCrypto.js';
@@ -593,6 +593,17 @@ try {
   }
   await setLocale(bob.page, 'en-US');
   await setLocale(alice.page, 'en-US');
+
+  console.log('8. Blocks follow the person');
+  await step('Alice blocks Carol; the block lands in her NIP-51 mute list, privately', async () => {
+    await navigate(alice.page, `/messages/${CAROL.pubkey}`);
+    await alice.page.locator('.unknown-banner .unknown-btn--danger').click();
+    await alice.page.getByRole('alertdialog').getByRole('button', { name: 'Block' }).click();
+    const list = await relay.waitFor({ kind: 10000, pubkey: ALICE.pubkey }, 'mute list of Alice');
+    assert.equal(list.tags.some((tag) => tag[0] === 'p'), false, 'nobody is blocked publicly');
+    const key = nip44.getConversationKey(ALICE.secretKey, ALICE.pubkey);
+    assert.deepEqual(JSON.parse(nip44.decrypt(list.content, key)), [['p', CAROL.pubkey]]);
+  });
 
   assert.deepEqual(pageErrors, [], 'uncaught page errors');
   console.log('PASS: contact chat end to end');

@@ -110,6 +110,7 @@ function pageOf({ route = { params: { id: 'addr-1' } }, available = true, scope 
   const blocked = []
   const unblocked = []
   const muteCalls = []
+  const blockSyncs = []
   const store = {
     scope,
     thread: () => ({ muted }),
@@ -142,7 +143,7 @@ function pageOf({ route = { params: { id: 'addr-1' } }, available = true, scope 
     $refs: {},
     store, addressBook, chat, contact, partner,
     partnerName: () => contact()?.name || `npub1${(partner() || '').slice(0, 8)}…`,
-    runtime: { available: { value: available }, me: { value: ME } },
+    runtime: { available: { value: available }, me: { value: ME }, syncBlockList: () => { blockSyncs.push(true) } },
     walletStore: { wallets, useBip177Format: true, getDisplayBalance: () => ({ known: false }), sparkLightningAddressOf: () => null },
     profile: { lud16: 'me@example.com' },
     formatFiat: () => '',
@@ -154,7 +155,7 @@ function pageOf({ route = { params: { id: 'addr-1' } }, available = true, scope 
   for (const [name, getter] of Object.entries(page.computed)) {
     Object.defineProperty(vm, name, { get: () => getter.call(vm), configurable: true })
   }
-  return { vm, notices, replaced, pushed, blocked, unblocked, muteCalls, store, chat }
+  return { vm, notices, replaced, pushed, blocked, unblocked, muteCalls, blockSyncs, store, chat }
 }
 
 const flush = () => new Promise((resolve) => setImmediate(resolve))
@@ -460,13 +461,14 @@ test('block: needs the confirmation; confirming blocks the partner and leaves th
   const previous = globalThis.window
   globalThis.window = { history: { state: { back: '/x' } } }
   try {
-    const { vm, blocked, pushed, notices } = pageOf({ route: { params: { pubkey: STRANGER } } })
+    const { vm, blocked, blockSyncs, pushed, notices } = pageOf({ route: { params: { pubkey: STRANGER } } })
     vm.askBlock()
     assert.equal(blocked.length, 0, 'nothing happens before the confirmation')
     assert.match(vm.confirm.title, /^Block npub1/)
     await vm.runConfirm()
     assert.equal(vm.confirm, null)
     assert.deepEqual(blocked, [STRANGER])
+    assert.equal(blockSyncs.length, 1, 'the mute list follows')
     assert.deepEqual(pushed, ['BACK'])
     assert.match(notices[0].message, /^Blocked npub1/)
   } finally {
@@ -475,10 +477,11 @@ test('block: needs the confirmation; confirming blocks the partner and leaves th
 })
 
 test('unblock: lifts the block, stays in the chat and says so', () => {
-  const { vm, unblocked, pushed, notices } = pageOf({ isBlocked: true })
+  const { vm, unblocked, blockSyncs, pushed, notices } = pageOf({ isBlocked: true })
   assert.equal(vm.blocked, true)
   vm.unblock()
   assert.deepEqual(unblocked, [ANNA])
+  assert.equal(blockSyncs.length, 1, 'the mute list follows')
   assert.deepEqual(pushed, [])
   assert.equal(notices[0].message, 'Unblocked Anna')
   assert.equal(pageOf().vm.blocked, false)
