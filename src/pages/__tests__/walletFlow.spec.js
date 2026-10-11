@@ -29,6 +29,7 @@ const component = (dependencies = {}) => evaluate('../Wallet.vue', {
   '../utils/amountFormatting.js': { formatAmount: n => `${n} sats` },
   '../stores/autoWithdraw': { useAutoWithdrawStore: () => ({ getConfig: () => null, checkAndExecute() {} }) },
   '../utils/fiatRates': { fiatRatesService: { convertSatsToFiat: async () => null } },
+  '../services/paymentNotifications.js': { isInternalRoute: (route) => typeof route === 'string' && route.startsWith('/') && !route.startsWith('//') },
   ...dependencies,
 }).default;
 
@@ -381,7 +382,7 @@ function payingHarness({ wallets = PAY_WALLETS, active = 'biz', funds = PAY_FUND
     '../utils/bip21.js': { parseBip21: () => null, bip21AmountToSats: () => 0 },
     '../utils/l1WithdrawErrors.js': { describeL1WithdrawError: error => ({ title: 'error', description: error.message }) },
   });
-  globalThis.localStorage ??= { getItem: () => null, setItem() {} };
+  globalThis.localStorage = { getItem: () => null, setItem() {} };
   const dispatched = [];
   const vm = {
     ...options.methods, ...options.data.call({}),
@@ -558,6 +559,26 @@ test('Pay with: the route query hands over the wallet', async () => {
     assert.equal(handed.length, 1);
     assert.equal(handed[0].sendingWalletId, expected, JSON.stringify(query));
     assert.deepEqual(replaced, { query: {} });
+  }
+});
+
+test('a handed-over payment returns to the screen that handed it over, when cancelled or done', async () => {
+  for (const [returnTo, expected] of [['/address-book/c1/chat', '/address-book/c1/chat'], ['https://evil.example', null], ['//evil.example', null]]) {
+    const { vm } = payingHarness();
+    const replaced = [];
+    Object.assign(vm, {
+      $route: { query: { action: 'pay_contact', address: 'bob@example.com', returnTo } },
+      $router: { replace: (value) => replaced.push(value) },
+      _walletInitPromise: Promise.resolve(),
+      payContactDestination: () => {},
+      cancelBrantaLookup: () => {},
+    });
+    vm.handlePaymentFromQuery();
+    await new Promise(resolve => setTimeout(resolve, 0));
+    assert.equal(vm.payReturnTo, expected, returnTo);
+    vm.onSendSheetCancel();
+    assert.deepEqual(replaced.slice(1), expected ? [expected] : [], 'only an in-app path is followed');
+    assert.equal(vm.payReturnTo, null, 'used once');
   }
 });
 
@@ -947,6 +968,7 @@ test('payment context: a successful payment announces itself with the context, t
   assert.equal(events[0][0], 'payment:sent');
   assert.deepEqual(events[0][1], {
     contactId: null, destination: 'inv-1000', amountSats: 1000, preimage: null, sendingWalletId: 'lnb', note: null, context: 'chat:abc',
+    status: 'completed', paymentHash: null,
   });
 });
 

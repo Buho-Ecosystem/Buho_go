@@ -603,6 +603,9 @@ export function useContactChat(options) {
         context: buildChatPaymentContext(partner(), message.id, fetched.value.verifyUrl),
         // The invoice has no address, so the contact is named for the history link.
         contactId: contact()?.id,
+        // What the money is for, shown on the confirm sheet (an LNURL invoice carries no memo).
+        note: message.request.note || undefined,
+        returnHere: true,
       },
     );
     return { ok: true };
@@ -629,6 +632,7 @@ export function useContactChat(options) {
       context: buildChatPaymentContext(partner(), message.id),
       amountSats,
       note: note || undefined,
+      returnHere: true,
     });
     return { ok: true };
   }
@@ -649,6 +653,7 @@ export function useContactChat(options) {
     pay.payContact(entry, {
       walletId: payer?.usable ? payer.id : undefined,
       context: buildChatPaymentContext(partner()),
+      returnHere: true,
     });
     return { ok: true };
   }

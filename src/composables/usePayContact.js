@@ -27,12 +27,16 @@ const RESYNC_COOLDOWN_MS = 60 * 1000;
  *   needs it (it carries no address to find the contact by).
  * @property {number} [amountSats]  Amount to fill into the confirm sheet (the user still confirms it).
  *   Used when a payment is made for an expired request.
- * @property {string} [note]  Note to fill into the confirm sheet, where the recipient accepts one.
+ * @property {string} [note]  Note to fill into the confirm sheet, where the recipient accepts one
+ *   (for an invoice: shown as what the payment is for).
+ * @property {boolean} [returnHere]  Come back to the current screen when the payment is done or
+ *   cancelled (the contact chat), instead of staying on the wallet page.
  */
 
 /** The optional query parameters of a hand-over. Empty values are left out. */
-function extraQuery({ walletId, context, amountSats, note } = {}) {
+function extraQuery({ walletId, context, amountSats, note, returnHere } = {}, router) {
   return {
+    ...(returnHere && router?.currentRoute?.value?.fullPath ? { returnTo: router.currentRoute.value.fullPath } : {}),
     ...(typeof walletId === 'string' && walletId ? { walletId } : {}),
     ...(typeof context === 'string' && context ? { context } : {}),
     ...(Number.isSafeInteger(amountSats) && amountSats > 0 ? { prefillAmount: String(amountSats) } : {}),
@@ -109,7 +113,7 @@ export function usePayContact(ctx) {
         address,
         addressType: contact.addressType || 'lightning',
         contactName: contact.name,
-        ...extraQuery(options),
+        ...extraQuery(options, ctx.$router),
       },
     });
   }
@@ -131,7 +135,7 @@ export function usePayContact(ctx) {
         addressType: 'invoice',
         ...(name ? { contactName: name } : {}),
         ...(typeof options.contactId === 'string' && options.contactId ? { contactId: options.contactId } : {}),
-        ...extraQuery(options),
+        ...extraQuery(options, ctx.$router),
       },
     });
   }
@@ -150,7 +154,7 @@ export function usePayContact(ctx) {
         address: address.trim(),
         addressType,
         ...(name ? { contactName: name } : {}),
-        ...extraQuery(options),
+        ...extraQuery(options, ctx.$router),
       },
     });
   }

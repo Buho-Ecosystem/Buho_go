@@ -774,6 +774,7 @@ import {npubFromLightningAddress, shortenNpub, profileDisplayName, sanitizeImage
 import {fetchProfile, parseProfileContent, DEFAULT_FETCH_TIMEOUT_MS} from '../utils/nostrFetch.js';
 import {resolveNostrLightningTarget} from '../services/nostrPaymentTarget';
 import {Invoice} from '@getalby/lightning-tools';
+import {isInternalRoute} from '../services/paymentNotifications.js';
 import {parseLightningInvoice} from '../utils/lightningInvoice.js';
 import {fiatRatesService} from '../utils/fiatRates.js';
 import {fiatSymbol} from '../utils/fiatCurrencies.js';
@@ -900,6 +901,9 @@ export default {
   },
   data() {
     return {
+      // Where a handed-over payment returns to when it is done or cancelled
+      // (the contact chat); null: stay on the wallet page.
+      payReturnTo: null,
       // Emergency exit door state: re-evaluated on each balance tick.
       exitHealthTick: 0,
       exitBannerDismissedUntil: Number(localStorage.getItem('buhoGO_exit_banner_dismissed_until') || 0),
@@ -1637,15 +1641,18 @@ export default {
         // identity with the ₿ mark, never a stray letter. The memo (when
         // the invoice carries one) shows exactly once, in the payment-
         // indicator row below the hero; the raw BOLT11 stays one tap away.
-        recipient = {
-          name: this.$t('Bitcoin payment'),
-          color: '#F7931A',
-          initial: '₿',
+        // A request paid from the chat names who it is for: the contact (or
+        // the name the chat knows), since the invoice itself names nobody.
+        const contact = p.paymentContactId ? this.addressBookStore.getEntryById(p.paymentContactId) : null;
+        recipient = this.recipientFromContact(contact, {
+          fallbackName: p.contactName || this.$t('Bitcoin payment'),
+          fallbackColor: '#F7931A',
+          fallbackInitial: p.contactName ? undefined : '₿',
           addressType: 'invoice',
           // The raw destination for invoices is the BOLT11 itself, surfaced
           // (folded) under the payment indicator for manual verification.
           address: p.invoice || p.data || ''
-        };
+        });
       }
 
       // ── Branta merchant verification ──────────────────────────
@@ -1768,7 +1775,9 @@ export default {
         // "memo" is just boilerplate metadata ("Pay to Wallet of Satoshi user:
         // …"), already conveyed by the logo + name + brand hint, so we drop it
         // rather than repeat it.
-        description: (walletBrand || nostrPubkey || p.description === recipient.name) ? '' : (p.description || p.defaultDescription || (bv && bv.description) || ''),
+        description: (walletBrand || nostrPubkey || p.description === recipient.name) ? '' : (p.description || p.defaultDescription || (bv && bv.description)
+          // A chat request's note: what the payment is for (an LNURL invoice carries no memo).
+          || (recipient.addressType === 'invoice' ? p.prefill?.note : '') || ''),
         commentAllowed: !!p.commentAllowed,
         commentMaxLength: p.commentAllowed || 100,
         ...(p.prefill?.note ? { defaultComment: p.prefill.note } : {}),
@@ -3026,6 +3035,8 @@ export default {
         ? Number(query.prefillAmount) : null;
       const prefillNote = isPayContact && typeof query.prefillNote === 'string' ? query.prefillNote : '';
       const prefill = prefillSats || prefillNote ? { amountSats: prefillSats, note: prefillNote } : null;
+      // The screen that handed the payment over, to return to (an in-app path only).
+      this.payReturnTo = isPayContact && isInternalRoute(query.returnTo) ? query.returnTo : null;
       // Address-book id of the contact an invoice is paid to (a chat request).
       const contactId = isPayContact && query.addressType === 'invoice'
         && typeof query.contactId === 'string' && query.contactId ? query.contactId : null;
@@ -5250,7 +5261,15 @@ export default {
       }
     },
 
+    /** Back to the screen that handed the payment over, if one did (HIG: a modal task returns where it began). */
+    returnAfterPayment() {
+      const to = this.payReturnTo;
+      this.payReturnTo = null;
+      if (to) this.$router.replace(to);
+    },
+
     onSendSheetCancel() {
+      this.returnAfterPayment();
       this.cancelBrantaLookup();
       this.showSendSheet = false;
       this.sendDidSucceed = false;
@@ -5636,6 +5655,7 @@ export default {
      */
     onSendSuccessClosed() {
       this.showSendSuccess = false;
+      this.returnAfterPayment();
       // Stop any in-flight delivery poll (abort the request + ignore late
       // results) and clear the status so the next send starts clean.
       this._stopDeliveryPoll();
