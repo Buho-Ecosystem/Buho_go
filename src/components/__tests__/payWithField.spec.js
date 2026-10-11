@@ -26,14 +26,28 @@ import * as payingWallets from '../../utils/payingWallets.js'
 const sfc = createRequire(import.meta.url)('@vue/compiler-sfc')
 
 const t = (key, values = {}) => key.replace(/\{(\w+)\}/g, (_, name) => values[name] ?? name)
-const walletState = { useBip177Format: true }
+// Display balances by wallet id, as the store's getDisplayBalance reports them.
+const shownBalances = { biz: 1200, personal: 50, alby: 9000, ark: 700 }
+const walletState = {
+  useBip177Format: true,
+  getDisplayBalance: (id) => (id in shownBalances
+    ? { known: true, balance: shownBalances[id], outdated: false, refreshing: false }
+    : { known: false, balance: null, outdated: false, refreshing: true }),
+  fiatValueOf: (sats) => (sats ? `$${(sats / 1000).toFixed(2)}` : null),
+}
 // The app groups digits by the device locale; so does this machine.
 const n = (value) => value.toLocaleString()
 
 // Icon stand-in: shows which glyph was asked for.
 const Icon = { props: ['icon'], render() { return Vue.h('i', { 'data-icon': this.icon }) } }
+// Brand mark stand-in: shows which wallet type was drawn.
+const WalletBrandMark = { props: ['type'], render() { return Vue.h('i', { 'data-mark': this.type }) } }
+const HiddenAmount = { render() { return Vue.h('span', {}, this.$slots.default?.()) } }
 const baseDeps = {
   '@iconify/vue': { Icon },
+  './WalletBrandMark.vue': WalletBrandMark,
+  './HiddenAmount.vue': HiddenAmount,
+  '../directives/balanceUpdating.js': {},
   // mapState(store, keys) -> { key() { ... } } computeds, read from walletState
   pinia: { mapState: (_store, keys) => Object.fromEntries(keys.map((key) => [key, function () { return walletState[key] }])) },
   '../stores/wallet': { useWalletStore: () => walletState },
@@ -83,6 +97,9 @@ async function render(component, props, { data, directives = [] } = {}) {
   return ServerRenderer.renderToString(app)
 }
 
+/** The text of the first "type · balance · fiat" line, markup removed. */
+const detail = (html) => html.match(/<small[^>]*>([\s\S]*?)<\/small>/)[1].replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim()
+
 const entry = (over) => ({
   id: 'a', name: 'Business', type: 'spark', balanceSats: 1200, isActive: true, usable: true, reason: null, ...over,
 })
@@ -111,7 +128,7 @@ test('collapsed: label, selected wallet, "type · balance" and a closed state', 
   assert.match(html, /aria-expanded="false"/)
   assert.match(html, /aria-haspopup="listbox"/)
   assert.match(html, /<strong>Business<\/strong>/)
-  assert.ok(html.includes(`<small>Spark · ₿ ${n(1200)}</small>`))
+  assert.equal(detail(html), `Spark · ₿ ${n(1200)} · $1.20`)
   assert.match(html, /data-icon="tabler:chevron-down"/)
   assert.doesNotMatch(html, /role="listbox"/)
   assert.doesNotMatch(html, /pay-with-reason/)
@@ -121,21 +138,20 @@ test('the legacy sats format and an unknown balance read correctly', async () =>
   walletState.useBip177Format = false
   try {
     const html = await render(PayWithField, { wallets: WALLETS, modelValue: 'lnb' })
-    assert.match(html, /<small>LNbits<\/small>/, 'no balance known: just the type')
+    assert.equal(detail(html), 'LNbits', 'no balance known: just the type, never an invented 0')
     const biz = await render(PayWithField, { wallets: WALLETS, modelValue: 'biz' })
-    assert.ok(biz.includes(`<small>Spark · ${n(1200)} sats</small>`))
+    assert.equal(detail(biz), `Spark · ${n(1200)} sats · $1.20`)
   } finally {
     walletState.useBip177Format = true
   }
 })
 
-test('the wallet type picks the icon tile', async () => {
+test('every wallet shows its brand mark, Arkade on its own tile', async () => {
   const html = await render(PayWithField, { wallets: WALLETS, modelValue: 'biz' }, { data: { open: true } })
-  const icons = [...html.matchAll(/data-icon="(tabler:[a-z-]+)"/g)].map((m) => m[1])
-  // field tile + chevron, then one tile per row (spark, spark, nwc, lnbits, arkade) and the check
-  assert.ok(icons.includes('tabler:plug-connected'), 'nwc')
-  assert.ok(icons.includes('tabler:server'), 'lnbits')
-  assert.ok(icons.filter((i) => i === 'tabler:wallet').length >= 4, 'spark + arkade use the wallet glyph')
+  const marks = [...html.matchAll(/data-mark="([a-z]+)"/g)].map((m) => m[1])
+  // the field's mark, then one per row
+  assert.deepEqual(marks, ['spark', 'spark', 'spark', 'nwc', 'lnbits', 'arkade'])
+  assert.equal((html.match(/pay-with-tile--arkade/g) || []).length, 1)
 })
 
 test('expanded: a listbox of options, the selected one checked, unusable ones disabled with their reason', async () => {
