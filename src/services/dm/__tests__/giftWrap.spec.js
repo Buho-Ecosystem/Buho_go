@@ -17,7 +17,7 @@ import { inspect } from 'node:util';
 import { createRumor, generateSecretKey, getPublicKey } from 'nostr-core';
 import { MAX_RUMOR_BYTES } from '../constants.js';
 import { DM_ERROR, DmError } from '../errors.js';
-import { sealAndWrap } from '../giftWrap.js';
+import { rewrap, sealAndWrap } from '../giftWrap.js';
 import { openGiftWrap } from '../openWrap.js';
 import { keySigner } from './testSigner.js';
 
@@ -71,6 +71,21 @@ test('every wrap opens, with its recipient\'s key, to the same rumor', async () 
     assert.equal(opened.sender, alice.pubkey);
     assert.deepEqual(opened.rumor, rumor);
   }
+});
+
+test('rewrap: a kept seal becomes a fresh wrap of the same message, without the signer', async () => {
+  const alice = person();
+  const bob = person();
+  const { rumor, wraps } = await sealAndWrap({ template: template([bob.pubkey]), signer: alice.signer, recipients: [bob.pubkey] });
+  const [copy] = wraps;
+  assert.equal(copy.seal.kind, 13);
+  assert.equal(copy.seal.pubkey, alice.pubkey);
+  const fresh = rewrap(copy.seal, bob.pubkey);
+  assert.notEqual(fresh.id, copy.event.id);
+  assert.notEqual(fresh.pubkey, copy.event.pubkey, 'its own throwaway key');
+  const opened = await openGiftWrap(fresh, keySigner(bob.secretKey), { me: bob.pubkey });
+  assert.equal(opened.ok, true);
+  assert.equal(opened.rumor.id, rumor.id, 'one message, whichever wrap arrives');
 });
 
 test('the rumor is the template authored by the sender, with its id', async () => {

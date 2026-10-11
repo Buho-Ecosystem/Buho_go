@@ -35,7 +35,7 @@ import { DM_ERROR, DmError, isRetryableRelayReason, isSignerWait } from './error
 import { createRumorGate, createWrapGate } from './inboundPolicy.js';
 import { INBOX_STATUS, buildInboxRelayListTemplate, normalizeInboxRelayUrl } from './inboxRelays.js';
 import { openGiftWrap } from './openWrap.js';
-import { sealAndWrap } from './giftWrap.js';
+import { rewrap, sealAndWrap } from './giftWrap.js';
 import { MESSAGE_TYPE, parseRumor } from './protocol.js';
 
 // ---------------------------------------------------------------------------
@@ -66,6 +66,12 @@ export const OUTBOX_DEFAULTS = Object.freeze({
   concurrency: 3,
   /** Random spread of a wait, as a fraction of it (0.2 = plus or minus 20%). */
   jitter: 0.2,
+  /**
+   * A wrap older than this (since it was made) is replaced by a fresh one
+   * around the same seal before it is sent again: its randomised timestamp
+   * could already lie before what the recipient reads (giftWrap.rewrap).
+   */
+  rewrapAfterMs: 5 * 60 * 1000,
 });
 
 /**
@@ -90,7 +96,10 @@ export const MAX_PENDING_WRAPS = 200;
  * @property {string} id Rumor id (the message id); the store's key.
  * @property {string} partner Contact pubkey (64 lowercase hex).
  * @property {string[] | null} relays The partner's inbox relays, or null while they are still unknown.
- * @property {{ recipient: NostrEvent, self: NostrEvent }} wraps The sealed events, reused on every retry.
+ * @property {{ recipient: NostrEvent, self: NostrEvent }} wraps The gift wraps to publish; reused by quick retries.
+ * @property {{ recipient: NostrEvent, self: NostrEvent }} [seals] The signed seals inside them (items written
+ *   before seals were kept have none and keep their wraps).
+ * @property {number} [wrappedAt] Clock time (ms) the wraps were made; older than `rewrapAfterMs` means fresh wraps.
  * @property {{ recipient: boolean, self: boolean }} delivered Which copy a relay already holds.
  * @property {number} attempts Failed delivery rounds so far.
  * @property {number} nextAttemptAt Clock time (ms) before which the timer does not retry.
@@ -558,15 +567,17 @@ export function createInbox({
       throw invalid('the template does not address this partner');
     }
     const found = lookup.status === INBOX_STATUS.FOUND;
-    const recipientWrap = sealed.wraps.find((wrap) => !wrap.self).event;
-    const selfWrap = sealed.wraps.find((wrap) => wrap.self).event;
+    const recipientCopy = sealed.wraps.find((wrap) => !wrap.self);
+    const selfCopy = sealed.wraps.find((wrap) => wrap.self);
 
     /** @type {OutboxItem} */
     const item = {
       id: message.id,
       partner,
       relays: found ? lookup.relays : null,
-      wraps: { recipient: recipientWrap, self: selfWrap },
+      wraps: { recipient: recipientCopy.event, self: selfCopy.event },
+      seals: { recipient: recipientCopy.seal, self: selfCopy.seal },
+      wrappedAt: now(),
       delivered: { recipient: false, self: false },
       attempts: 0,
       nextAttemptAt: found ? 0 : now() + policy.baseDelayMs,
@@ -584,6 +595,21 @@ export function createInbox({
       armTimer();
     }
     return message;
+  }
+
+  /**
+   * A late delivery (a retry, a message queued while the partner's relays were
+   * unknown, an outbox restored after a restart) goes out in fresh wraps around
+   * the same seals, so its timestamp falls inside what the recipient reads.
+   */
+  function refreshWraps(item) {
+    if (!item.seals || now() - (item.wrappedAt ?? 0) < policy.rewrapAfterMs) return;
+    item.wraps = {
+      recipient: item.delivered.recipient ? item.wraps.recipient : rewrap(item.seals.recipient, item.partner),
+      self: item.delivered.self ? item.wraps.self : rewrap(item.seals.self, me),
+    };
+    item.wrappedAt = now();
+    store.outbox.put(item);
   }
 
   /** Remember a running delivery so it is not started twice and `whenIdle()` can wait for it. */
@@ -686,6 +712,7 @@ export function createInbox({
     }
 
     if (!item.delivered.recipient) store.setDelivery(item.id, DELIVERY.SENDING);
+    refreshWraps(item);
 
     const sendRecipient = async () => {
       if (item.delivered.recipient) return null;
@@ -699,7 +726,8 @@ export function createInbox({
     };
     const sendSelf = async () => {
       if (item.delivered.self) return null;
-      const outcome = await publishCopy(ownInbox, item.wraps.self);
+      // Every relay we read, a list from another app included: the person's other apps see what was sent here.
+      const outcome = await publishCopy(readRelays(), item.wraps.self);
       if (alive() && outcome.accepted) item.delivered.self = true;
       return outcome;
     };

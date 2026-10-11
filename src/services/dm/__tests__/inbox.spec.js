@@ -810,6 +810,41 @@ test('send: an unknown partner relay list queues the message and the timer deliv
   assert.equal(bob.store.raw.messages.get(sent.id).text, 'later');
 });
 
+test('send: a delivery long after the wraps were made goes out in a fresh wrap around the same seal', async () => {
+  // A wrap's timestamp is randomised up to two days back when it is made; republished
+  // much later it could lie before what the recipient reads, and no relay would serve it.
+  const { network, clock, alice, bob } = await pair();
+  alice.resolver.table.delete(bob.pubkey);
+  const sent = await alice.inbox.send({ partner: bob.pubkey, template: textTo(bob, 'late') });
+  const first = alice.store.raw.outboxMap.get(sent.id).wraps.recipient;
+
+  await clock.advance(OUTBOX_DEFAULTS.rewrapAfterMs + 1);
+  knows(alice, bob);
+  await bob.inbox.start();
+  await alice.inbox.retry(sent.id);
+  await settle(alice, bob);
+
+  const toBob = network.published.filter((p) => p.relay.includes('bob')).map((p) => p.event);
+  assert.equal(toBob.length, 1);
+  assert.notEqual(toBob[0].id, first.id, 'a fresh wrap, not the one made before the wait');
+  assert.ok(toBob[0].created_at >= Math.floor(Date.now() / 1000) - SINCE_SLACK_SECONDS - 5, 'its timestamp is fresh');
+  assert.equal(alice.store.raw.messages.get(sent.id).delivery, 'sent');
+  assert.equal(bob.store.raw.messages.get(sent.id).text, 'late', 'the same message (one rumor id) arrives');
+});
+
+test('send: the self copy also goes to a relay list the person already had from another app', async () => {
+  const { network, alice, bob } = await pair();
+  await alice.inbox.start();
+  await settle(alice);
+  alice.resolver.table.set(alice.pubkey, { status: 'found', relays: ['wss://theirs.example.com/'], checkedAt: START_MS });
+  await alice.inbox.ensureOwnRelayList();
+  await alice.inbox.send({ partner: bob.pubkey, template: textTo(bob, 'seen elsewhere') });
+  await settle(alice);
+  const selfRelays = network.published.filter((p) => p.relay.includes('theirs') || p.relay.includes('alice')).map((p) => p.relay);
+  assert.ok(selfRelays.some((relay) => relay.includes('theirs.example.com')), 'their other app reads this relay');
+  assert.ok(selfRelays.some((relay) => relay.includes('inbox.alice')), 'ours still get it');
+});
+
 test('send: all relays failing keeps the wraps in the outbox and retries with exponential backoff', async () => {
   const { network, clock, alice, bob } = await pair();
   network.behavior.set('wss://inbox.bob.example', 'fail');
@@ -844,7 +879,7 @@ test('send: all relays failing keeps the wraps in the outbox and retries with ex
   assert.equal(alice.store.raw.messages.get(sent.id).delivery, 'sent');
   assert.equal(alice.store.raw.outboxMap.size, 0);
   const publishedIds = new Set(network.published.filter((p) => p.relay.includes('bob')).map((p) => p.event.id));
-  assert.equal(publishedIds.size, 1, 'every retry re-sends the same sealed wrap');
+  assert.equal(publishedIds.size, 1, 'quick retries re-send the same wrap');
   assert.equal(bob.store.raw.messages.get(sent.id).text, 'hello');
 });
 

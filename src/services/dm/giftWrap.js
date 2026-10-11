@@ -31,6 +31,8 @@ const SEAL_TIME_SPREAD_SECONDS = 2 * 24 * 60 * 60;
  * @property {string} recipient Pubkey the wrap is encrypted for (our own for the self copy).
  * @property {boolean} self True for the copy addressed to ourselves.
  * @property {import('nostr-core').NostrEvent} event The signed kind 1059 event to publish.
+ * @property {import('nostr-core').NostrEvent} seal The signed kind 13 seal inside it; `rewrap` turns it
+ *   into a fresh wrap later without the identity.
  */
 
 /**
@@ -76,8 +78,22 @@ export async function sealAndWrap({ template, signer, recipients, selfCopy = tru
   const copies = targets.map((recipient) => ({ recipient, self: false }));
   if (selfCopy) copies.push({ recipient: sender, self: true });
   // In parallel: a signer app answers several requests faster than one by one.
-  const events = await Promise.all(copies.map(({ recipient }) => wrapFor(rumor, signer, recipient)));
-  return { rumor, wraps: copies.map((copy, i) => ({ ...copy, event: events[i] })) };
+  const sealed = await Promise.all(copies.map(({ recipient }) => wrapFor(rumor, signer, recipient)));
+  return { rumor, wraps: copies.map((copy, i) => ({ ...copy, ...sealed[i] })) };
+}
+
+/**
+ * A fresh gift wrap around a seal made earlier: new throwaway key, new
+ * randomised timestamp, same message. Needs no signer. A wrap published long
+ * after it was made can carry a timestamp older than what the recipient reads
+ * (their last sync minus the two-day spread), and relays would never serve it;
+ * a late delivery therefore goes out in a fresh wrap (inbox.js, outbox).
+ *
+ * @param {import('nostr-core').NostrEvent} seal
+ * @param {string} recipient Pubkey the seal is encrypted for.
+ */
+export function rewrap(seal, recipient) {
+  return createWrap(seal, recipient);
 }
 
 /** One seal (by the signer) and one wrap (throwaway key) of `rumor` for `recipient`. */
@@ -96,7 +112,7 @@ async function wrapFor(rumor, signer, recipient) {
   }
   const seal = await signer.signEvent({ kind: KIND.SEAL, tags: [], content, created_at: sealTimestamp() });
   if (seal?.pubkey !== signer.pubkey) throw new DmError(DM_ERROR.NO_IDENTITY, 'the seal is not signed by the sender');
-  return createWrap(seal, recipient);
+  return { seal, event: createWrap(seal, recipient) };
 }
 
 function sealTimestamp() {
