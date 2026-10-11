@@ -15,7 +15,7 @@
     @update:model-value="$emit('update:modelValue', $event)"
   >
     <section class="messages-sheet" :aria-labelledby="titleId">
-      <div class="messages-sheet__grab" aria-hidden="true" />
+      <div class="form-sheet-grabber" aria-hidden="true" />
 
       <header class="messages-sheet__top">
         <h2 :id="titleId" class="messages-sheet__title">{{ $t('Messages') }}</h2>
@@ -168,15 +168,6 @@ export default {
   padding-bottom: max(1rem, var(--safe-bottom, 0px));
 }
 
-.messages-sheet__grab {
-  flex: 0 0 auto;
-  width: 36px;
-  height: 4px;
-  margin: 8px auto 4px;
-  border-radius: 999px;
-  background: var(--text-muted);
-  opacity: 0.45;
-}
 
 .messages-sheet__top {
   flex: 0 0 auto;
