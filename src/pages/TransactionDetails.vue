@@ -1325,8 +1325,8 @@ export default {
 
     async fetchSparkTransaction(txId, walletId = null) {
       // Ensure the Spark wallet is connected (auto-connects if a session PIN
-      // is available). Spark's Business and Personal wallets are separate
-      // accounts with separate providers, so a deep link that names one must
+      // is available). Each Spark wallet is a separate account with its own
+      // provider, so a deep link that names one must
       // target it explicitly: without the id we would read whichever Spark
       // wallet is active, or throw outright when the active wallet is not
       // Spark at all.

@@ -788,15 +788,9 @@ export default {
 }
 
 .detected-pill--arkade {
-  background: rgba(241, 67, 23, 0.12);
-  color: #C0360F;
-  box-shadow: inset 0 0 0 1px rgba(241, 67, 23, 0.24);
-}
-
-.body--dark .detected-pill--arkade,
-.q-dark .detected-pill--arkade {
-  color: #F14317;
-  box-shadow: inset 0 0 0 1px rgba(241, 67, 23, 0.34);
+  background: var(--arkade-tint);
+  color: var(--arkade-ink-text);
+  box-shadow: inset 0 0 0 1px var(--arkade-tint-border);
 }
 
 .detected-pill--bitcoin {

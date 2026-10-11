@@ -23,8 +23,8 @@ await page.addInitScript(()=>{
  window.__AUDIT__={theme:'light'};
  localStorage.setItem('buho-theme-mode','light');
  localStorage.setItem('buhoGO_wallet_store',JSON.stringify({
-  wallets:[{id:'spark-personal-1',name:'Personal',type:'spark',balance:0,metadata:{},connectionData:{accountNumber:1,walletGroupId:'test'}},
-    {id:'spark-business-1',name:'Business',type:'spark',balance:0,metadata:{},connectionData:{accountNumber:2,walletGroupId:'test'}}],
+  wallets:[{id:'spark-personal-1',name:'Personal',type:'spark',balance:0,metadata:{},connectionData:{accountNumber:1}},
+    {id:'spark-business-1',name:'Business',type:'spark',balance:0,metadata:{},connectionData:{accountNumber:2}}],
   activeWalletId:'spark-personal-1', preferredFiatCurrency:'USD', defaultDisplayCurrency:'sats', denominationCurrency:'sats',
   exchangeRates:{USD:95000},exchangeRatesAvailable:true,exchangeRatesLastUpdate:Date.now(),hasBackedUp:false,biometricsEnabled:false,
  }));

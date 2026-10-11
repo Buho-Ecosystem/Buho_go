@@ -26,28 +26,28 @@
       >
         <!-- Spark-specific screens -->
         <template v-if="isSparkMode">
-          <!-- 1: Personal Wallet -->
-          <q-carousel-slide name="personal" class="wizard-slide">
+          <!-- 1: The wallet -->
+          <q-carousel-slide name="spark-wallet" class="wizard-slide">
             <div class="slide-content">
               <img src="/Onboarding wizard spark/storyset-piggy-bank-bro.svg" class="slide-illustration" alt="" />
               <h2 class="slide-title" :class="$q.dark.isActive ? 'text-white' : 'text-dark'">
-                {{ $t('Your Personal Wallet') }}
+                {{ $t('Your Spark wallet') }}
               </h2>
               <p class="slide-text" :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'">
-                {{ $t('Your private funds stay separate here. Both wallets share the same recovery words, but each has its own balance.') }}
+                {{ $t('Send and receive Bitcoin in seconds. Your recovery phrase is the key, so the money stays yours.') }}
               </p>
             </div>
           </q-carousel-slide>
 
-          <!-- 2: Business Wallet -->
-          <q-carousel-slide name="business" class="wizard-slide">
+          <!-- 2: More Spark wallets -->
+          <q-carousel-slide name="spark-wallets" class="wizard-slide">
             <div class="slide-content">
               <img src="/Onboarding wizard spark/storyset-ewallet-bro.svg" class="slide-illustration" alt="" />
               <h2 class="slide-title" :class="$q.dark.isActive ? 'text-white' : 'text-dark'">
-                {{ $t('Your Business Wallet') }}
+                {{ $t('Up to six Spark wallets') }}
               </h2>
               <p class="slide-text" :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'">
-                {{ $t('Accept payments from customers, manage your sales, and keep your business funds in one place.') }}
+                {{ $t('Keep money apart for savings, a shop or the family. Every Spark wallet comes from the same recovery phrase, so one backup covers them all.') }}
               </p>
             </div>
           </q-carousel-slide>
@@ -139,7 +139,7 @@
                 {{ $t('Move Between Wallets') }}
               </h2>
               <p class="slide-text" :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'">
-                {{ $t('Move money between your Business and Personal wallet anytime. It happens instantly and costs nothing.') }}
+                {{ $t('Move money between your wallets anytime. Between Spark wallets it happens instantly and costs nothing.') }}
               </p>
             </div>
           </q-carousel-slide>
@@ -398,10 +398,11 @@
  */
 
 import ArkadeLogo from '../components/ArkadeLogo.vue'
+import BackupKeyring from '../components/BackupKeyring.vue'
 import { useNotificationsStore } from '../stores/notifications'
 
-// Spark-only intro screens (Business wallet, Personal wallet, Savings)
-const SPARK_INTRO = ['personal', 'business', 'savings']
+// Spark-only intro screens (the wallet, more wallets, savings)
+const SPARK_INTRO = ['spark-wallet', 'spark-wallets', 'savings']
 
 // All feature screens (shown after Spark intro or standalone for NWC/LNbits)
 const ALL_FEATURES = [
@@ -414,8 +415,8 @@ const NWC_LNBITS_FEATURES = [
   'send-receive', 'notifications', 'nfc', 'history', 'contacts', 'identity', 'display', 'more-wallets', 'security', 'lessons', 'map', 'ready'
 ]
 
-// Arkade: single self-custodial wallet — seed-based (keep the backup reminder),
-// but no Business/Personal pair, so no internal-transfer / auto-transfer slides.
+// Arkade: single self-custodial wallet, seed-based (keep the backup reminder),
+// but no internal-transfer / auto-transfer slides.
 const ARKADE_FEATURES = [
   'send-receive', 'notifications', 'nfc', 'history', 'contacts', 'identity', 'display', 'more-wallets', 'security', 'backup', 'lessons', 'map', 'ready'
 ]
@@ -431,7 +432,7 @@ export default {
     const isArkadeMode = mode === 'arkade'
     const isSparkMode = mode === 'spark'
     return {
-      currentSlide: isArkadeMode ? 'arkade-intro' : (isSparkMode ? 'personal' : 'send-receive'),
+      currentSlide: isArkadeMode ? 'arkade-intro' : (isSparkMode ? 'spark-wallet' : 'send-receive'),
       // Arkade & NWC/LNbits show the full feature tour straight away; Spark
       // gates it behind "Tell me more" unless ?full=true.
       showExtended: !isSparkMode || this.$route.query.full === 'true',

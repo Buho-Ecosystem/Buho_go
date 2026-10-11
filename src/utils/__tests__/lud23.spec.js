@@ -13,16 +13,26 @@ const initial = `https://game.example/share?tag=addressRequest&k1=${k1}`;
 const encoded = value => bech32.encode('lnurl', bech32.toWords(new TextEncoder().encode(value)), 16384);
 const code = value => error => error.code === value;
 
-test('profile defaults keep Business before Personal regardless of the spending wallet', () => {
-  const personal = { id: 'personal', type: 'spark', connectionData: { accountNumber: 2 }, metadata: { lud16: 'personal@example.com' } };
-  const business = { id: 'business', type: 'spark', connectionData: { accountNumber: 1 }, metadata: { lud16: 'business@example.com' } };
+test('the profile default is the oldest Spark wallet with an address, whichever wallet is spending', () => {
+  const business = { id: 'business', type: 'spark', createdAt: 100, connectionData: { accountNumber: 1 }, metadata: { lud16: 'business@example.com' } };
+  const personal = { id: 'personal', type: 'spark', createdAt: 101, connectionData: { accountNumber: 2 }, metadata: { lud16: 'personal@example.com' } };
   const state = { wallets: [personal, business], activeWalletId: 'personal' };
-  assert.equal(preferredProfileLightningAddress(state), 'business@example.com');
+  assert.equal(preferredProfileLightningAddress(state), 'business@example.com', 'a former pair keeps answering with Business');
   assert.equal(preferredProfileLightningAddress({ ...state, walletInfos: { business: { lightningAddress: 'Updated@Example.com' } } }), 'updated@example.com');
   assert.equal(preferredProfileLightningAddress({ wallets: [personal] }), 'personal@example.com');
   assert.equal(preferredProfileLightningAddress({ wallets: [null, { type: 'arkade' }] }), null);
   assert.equal(preferredProfileLightningAddress({ wallets: null }), null);
   assert.equal(preferredProfileLightningAddress({ wallets: [business], walletInfos: null }), 'business@example.com');
+});
+
+test('the profile default reaches every account, legacy account 0 and accounts 3 to 5 included', () => {
+  const legacy = { id: 'legacy', type: 'spark', createdAt: 50, connectionData: { accountNumber: 0 }, metadata: { lud16: 'legacy@example.com' } };
+  const fifth = { id: 'fifth', type: 'spark', createdAt: 10, connectionData: { accountNumber: 5 }, metadata: {} };
+  const third = { id: 'third', type: 'spark', createdAt: 60, connectionData: { accountNumber: 3 }, metadata: { lud16: 'third@example.com' } };
+  assert.equal(preferredProfileLightningAddress({ wallets: [third, legacy, fifth] }), 'legacy@example.com', 'the oldest wallet without an address is skipped');
+  const sameAge = { id: 'two', type: 'spark', connectionData: { accountNumber: 2 }, metadata: { lud16: 'two@example.com' } };
+  const sameAgeFirst = { id: 'one', type: 'spark', connectionData: { accountNumber: 1 }, metadata: { lud16: 'one@example.com' } };
+  assert.equal(preferredProfileLightningAddress({ wallets: [sameAge, sameAgeFirst] }), 'one@example.com', 'equal age falls back to account order');
 });
 
 for (const [name, input] of Object.entries({ url: inline, lnurl: encoded(inline), uppercase: encoded(inline).toUpperCase(),

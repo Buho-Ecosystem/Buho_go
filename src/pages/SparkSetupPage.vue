@@ -43,7 +43,7 @@ export default {
       currentStep: 1,
       isProcessing: false,
       mnemonic: '',
-      creatingStatus: 'Initializing...',
+      creatingStatus: this.$t('Getting things ready...'),
     }
   },
   async mounted() {
@@ -58,7 +58,7 @@ export default {
     async generateAndCreate() {
       try {
         // A fresh 12-word BIP-39 phrase; the wallet itself is derived and
-        // validated by the SDK during addSparkWallet's connect.
+        // validated by the SDK during createSparkWallet's connect.
         this.mnemonic = generateMnemonic(wordlist, 128);
       } catch (error) {
         console.error('Failed to generate wallet:', error);
@@ -75,14 +75,14 @@ export default {
       this.creatingStatus = this.$t('Encrypting wallet...');
 
       try {
-        await this.walletStore.addSparkWallet({
+        // One wallet to start with; more can be added later in Settings.
+        await this.walletStore.createSparkWallet({
           mnemonic: this.mnemonic,
           network: 'MAINNET',
           onProgress: (step) => {
             const messages = {
               encrypting: this.$t('Encrypting wallet...'),
-              business: this.$t('Setting up Business wallet...'),
-              personal: this.$t('Setting up Personal wallet...'),
+              connecting: this.$t('Setting up your wallet...'),
               done: this.$t('Almost done...'),
             };
             this.creatingStatus = messages[step] || this.creatingStatus;

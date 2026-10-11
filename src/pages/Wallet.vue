@@ -160,48 +160,23 @@
 
     <!-- Main Content -->
     <div v-else class="main-content">
-      <!-- Spark Tab Bar: [Business | Personal | Wallet icon] -->
-      <div v-if="showSparkTabs" class="spark-tabs-wrap">
-        <div class="spark-tabs" :class="$q.dark.isActive ? 'spark-tabs-dark' : 'spark-tabs-light'">
-          <div class="spark-tabs-slider" :class="{ 'spark-tabs-slider--right': isPersonalActive }"></div>
-          <button
-            class="spark-tab"
-            :class="{ 'spark-tab--active': !isPersonalActive }"
-            :disabled="sparkTabSwitching"
-            @click="switchSparkTab(sparkWalletPair[0]?.id)"
-          >
-            <Icon icon="tabler:building-store" width="14" height="14" />
-            <span>{{ sparkWalletPair[0]?.name }}</span>
-          </button>
-          <div class="spark-tab-divider"></div>
-          <button class="spark-tab spark-tab-center" data-audit="wallet-switcher" @click="openWalletManagement">
-            <Icon icon="tabler:wallet" width="16" height="16" />
-          </button>
-          <div class="spark-tab-divider"></div>
-          <button
-            class="spark-tab"
-            :class="{ 'spark-tab--active': isPersonalActive }"
-            :disabled="sparkTabSwitching"
-            @click="switchSparkTab(sparkWalletPair[1]?.id)"
-          >
-            <Icon icon="tabler:user" width="14" height="14" />
-            <span>{{ sparkWalletPair[1]?.name }}</span>
-          </button>
-        </div>
-      </div>
-
-      <!-- Non-Spark: Original chip -->
+      <!-- The active wallet's name, for every wallet type; opens the switcher. -->
       <q-chip
-        v-else-if="activeWallet"
+        v-if="activeWallet"
         clickable
         outline
         :ripple="false"
         class="wallet-chip"
         :class="$q.dark.isActive ? 'wallet-chip-dark' : 'wallet-chip-light'"
+        data-audit="wallet-switcher"
+        aria-haspopup="dialog"
+        :aria-label="`${$t('Switch Wallet')}, ${walletDisplayName}`"
         @click="openWalletManagement"
       >
+        <!-- Spark mark -->
+        <WalletBrandMark v-if="activeWallet.type === 'spark'" type="spark" :size="12" color="currentColor" class="wallet-chip-icon" />
         <!-- NWC Logo -->
-        <svg v-if="activeWallet.type === 'nwc'" width="12" height="12" viewBox="0 0 257 256" fill="none" xmlns="http://www.w3.org/2000/svg" class="wallet-chip-icon">
+        <svg v-else-if="activeWallet.type === 'nwc'" width="12" height="12" viewBox="0 0 257 256" fill="none" xmlns="http://www.w3.org/2000/svg" class="wallet-chip-icon">
           <path d="M110.938 31.0639C100.704 20.8691 84.0846 20.9782 73.8873 31.2091L7.91341 97.4141C-2.28517 107.646 -2.15541 123.974 8.07554 134.17L116.246 242.34C126.479 252.534 143.066 252.449 153.263 242.218L185.415 210.066C176.038 219.443 168.322 212.701 159.178 203.595L141.244 185.662C127.63 191.051 111.718 188.374 100.688 177.365L87.0221 163.699C86.5623 163.243 86.2075 162.767 85.9582 162.17C85.7089 161.572 85.5803 160.931 85.5797 160.284C85.5792 159.637 85.7067 158.995 85.955 158.398C86.2033 157.8 86.5923 157.293 87.0513 156.837L94.7848 149.103L77.9497 132.268C75.3144 129.638 74.8841 125.391 77.2407 122.522C79.9345 119.228 84.8188 119.053 87.7741 122.002L104.837 139.051L116.394 127.494L99.5187 110.661C96.8822 108.03 96.4531 103.784 98.8298 100.895C99.4602 100.128 100.244 99.5006 101.131 99.0542C102.019 98.6077 102.989 98.3518 103.981 98.3028C104.973 98.2538 105.964 98.4129 106.891 98.7697C107.818 99.1266 108.66 99.6733 109.363 100.375L126.495 117.393L133.755 110.132C134.211 109.673 134.66 109.259 135.258 109.01C135.855 108.761 136.496 108.632 137.144 108.632C137.791 108.631 138.432 108.758 139.03 109.006C139.628 109.254 140.171 109.618 140.628 110.077L154.316 123.738C165.208 134.609 168.056 150.431 162.964 163.943L180.901 181.88C190.045 190.985 197.696 197.785 207.074 188.408L247.645 147.836C237.893 157.588 229.881 150.075 220.244 140.446L110.938 31.0639Z" fill="currentColor"/>
           <path d="M187.641 13.0273L153.153 47.4873L229.781 124.116C237.116 131.419 243.491 137.239 250.565 134.417C254.654 132.787 257.461 128.351 255.894 124.238C219.227 28.0253 219.212 28.0238 214.348 17.507C209.484 6.99014 195.804 4.76016 187.641 13.0273Z" fill="currentColor"/>
         </svg>
@@ -215,6 +190,7 @@
         <Icon v-else icon="tabler:wallet" width="12" height="12" class="wallet-chip-icon" />
         {{ walletDisplayName }}
         <Icon v-if="isAutoTransferActive" icon="tabler:send" width="10" height="10" class="aw-indicator-icon" />
+        <Icon icon="tabler:chevron-down" width="10" height="10" class="wallet-chip-disclosure" :aria-hidden="true" />
       </q-chip>
 
       <!-- Subtle background-maintenance indicator (Arkade VTXO renew/recover) -->
@@ -538,136 +514,12 @@
     </q-dialog>
 
     <!-- Wallet Switcher Dialog -->
-    <q-dialog
+    <WalletSwitcherSheet
       v-model="showWalletSwitcher"
-      position="bottom"
-      transition-show="slide-up"
-      transition-hide="slide-down"
-      :class="$q.dark.isActive ? 'dialog_dark' : 'dialog_light'"
-    >
-      <q-card class="wallet-switcher-card" :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'">
-        <div class="sheet-grabber" aria-hidden="true"><div class="grabber-bar"></div></div>
-        <q-card-section class="switcher-header">
-          <div class="switcher-title" :class="$q.dark.isActive ? 'dialog_title_dark' : 'dialog_title_light'">
-            {{ $t('Switch Wallet') }}
-          </div>
-        </q-card-section>
-
-        <q-card-section class="switcher-content">
-          <div class="wallet-switch-list" :class="$q.dark.isActive ? 'switch-list-dark' : 'switch-list-light'">
-            <template
-              v-for="wallet in storeWallets"
-              :key="wallet.id"
-            >
-            <div
-              class="wallet-switch-card"
-              :class="{
-                'wallet-switch-card-active': wallet.id === storeActiveWalletId,
-                'wallet-switch-card-dark': $q.dark.isActive,
-                'wallet-switch-card-light': !$q.dark.isActive
-              }"
-              @click="switchToWallet(wallet.id)"
-            >
-              <!-- Avatar -->
-              <div class="switch-avatar">
-                <div class="switch-avatar-circle switch-avatar-black">
-                  <WalletBrandMark :type="wallet.type" :size="20" />
-                </div>
-                <div
-                  class="switch-status-dot"
-                  :class="storeConnectionStates[wallet.id]?.connected ? 'status-connected' : 'status-disconnected'"
-                ></div>
-              </div>
-
-              <!-- Details -->
-              <div class="switch-details">
-                <div class="switch-name" :class="$q.dark.isActive ? 'switch-name-dark' : 'switch-name-light'">
-                  {{ wallet.name }}
-                </div>
-                <div class="switch-meta-row">
-                  <div class="switch-type-badge" :class="getWalletTypeBadgeClass(wallet.type)">
-                    <!-- Spark mini logo -->
-                    <svg v-if="wallet.type === 'spark'" width="9" height="9" viewBox="0 0 135 128" fill="none" xmlns="http://www.w3.org/2000/svg">
-                      <path fill-rule="evenodd" clip-rule="evenodd" d="M79.4319 49.3554L81.7454 0H52.8438L55.1573 49.356L8.9311 31.9035L0 59.3906L47.6565 72.4425L16.7743 111.012L40.1562 128L67.2966 86.7083L94.4358 127.998L117.818 111.01L86.9359 72.4412L134.587 59.3907L125.656 31.9036L79.4319 49.3554Z" fill="currentColor"/>
-                    </svg>
-                    <!-- NWC mini logo -->
-                    <svg v-else-if="wallet.type === 'nwc'" width="9" height="9" viewBox="0 0 257 256" fill="none" xmlns="http://www.w3.org/2000/svg">
-                      <path d="M110.938 31.0639C100.704 20.8691 84.0846 20.9782 73.8873 31.2091L7.91341 97.4141C-2.28517 107.646 -2.15541 123.974 8.07554 134.17L116.246 242.34C126.479 252.534 143.066 252.449 153.263 242.218L185.415 210.066C176.038 219.443 168.322 212.701 159.178 203.595L141.244 185.662C127.63 191.051 111.718 188.374 100.688 177.365L87.0221 163.699C86.5623 163.243 86.2075 162.767 85.9582 162.17C85.7089 161.572 85.5803 160.931 85.5797 160.284C85.5792 159.637 85.7067 158.995 85.955 158.398C86.2033 157.8 86.5923 157.293 87.0513 156.837L94.7848 149.103L77.9497 132.268C75.3144 129.638 74.8841 125.391 77.2407 122.522C79.9345 119.228 84.8188 119.053 87.7741 122.002L104.837 139.051L116.394 127.494L99.5187 110.661C96.8822 108.03 96.4531 103.784 98.8298 100.895C99.4602 100.128 100.244 99.5006 101.131 99.0542C102.019 98.6077 102.989 98.3518 103.981 98.3028C104.973 98.2538 105.964 98.4129 106.891 98.7697C107.818 99.1266 108.66 99.6733 109.363 100.375L126.495 117.393L133.755 110.132C134.211 109.673 134.66 109.259 135.258 109.01C135.855 108.761 136.496 108.632 137.144 108.632C137.791 108.631 138.432 108.758 139.03 109.006C139.628 109.254 140.171 109.618 140.628 110.077L154.316 123.738C165.208 134.609 168.056 150.431 162.964 163.943L180.901 181.88C190.045 190.985 197.696 197.785 207.074 188.408L247.645 147.836C237.893 157.588 229.881 150.075 220.244 140.446L110.938 31.0639Z" fill="currentColor"/>
-                      <path d="M187.641 13.0273L153.153 47.4873L229.781 124.116C237.116 131.419 243.491 137.239 250.565 134.417C254.654 132.787 257.461 128.351 255.894 124.238C219.227 28.0253 219.212 28.0238 214.348 17.507C209.484 6.99014 195.804 4.76016 187.641 13.0273Z" fill="currentColor"/>
-                    </svg>
-                    <!-- LNbits mini logo -->
-                    <svg v-else-if="wallet.type === 'lnbits'" width="8" height="9" viewBox="0 0 502 902" fill="none" xmlns="http://www.w3.org/2000/svg">
-                      <path d="M158.566 493.857L1 901L450.49 355.202H264.831L501.791 1H187.881L36.4218 493.857H158.566Z" fill="currentColor"/>
-                    </svg>
-                    <ArkadeLogo v-else-if="wallet.type === 'arkade'" variant="mark" color="white" :size="9" />
-                    <Icon v-else icon="tabler:wallet" width="9" height="9" />
-                    <span>{{ getWalletTypeLabel(wallet.type) }}</span>
-                  </div>
-                </div>
-                <div
-                  v-balance-updating="isWalletRefreshPending(wallet.id)"
-                  class="switch-balance"
-                  :class="$q.dark.isActive ? 'switch-balance-dark' : 'switch-balance-light'"
-                >
-                  <!-- Same canonical figure as Settings and the standalone
-                       switcher: a known value (stale ones marked), else a
-                       placeholder — never an invented 0. -->
-                  <span v-if="!walletStore.getDisplayBalance(wallet.id).known" class="balance-placeholder" :aria-label="$t('Balance not loaded yet')" />
-                  <HiddenAmount v-else :class="{ 'balance-stale': walletStore.getDisplayBalance(wallet.id).outdated }">{{ formatBalance(walletStore.getDisplayBalance(wallet.id).balance) }}</HiddenAmount>
-                </div>
-              </div>
-
-              <!-- Check Icon -->
-              <Icon
-                v-if="wallet.id === storeActiveWalletId"
-                icon="tabler:circle-check"
-                width="20"
-                height="20"
-                class="switch-check-icon"
-                :class="$q.dark.isActive ? 'check-accent-dark' : 'check-accent-light'"
-              />
-            </div>
-
-            </template>
-          </div>
-        </q-card-section>
-
-        <q-card-section class="switcher-footer" :class="$q.dark.isActive ? 'switcher-footer-dark' : 'switcher-footer-light'">
-          <!-- Transfer Funds Button (only show if 2+ wallets) -->
-          <q-btn
-            v-if="storeWallets.length >= 2"
-            flat
-            no-caps
-            class="transfer-funds-btn"
-            :class="$q.dark.isActive ? 'transfer-btn-dark' : 'transfer-btn-light'"
-            @click="openTransferModal"
-          >
-            <Icon icon="tabler:arrows-exchange" width="20" height="20" class="q-mr-sm" />
-            {{ $t('Transfer Funds') }}
-          </q-btn>
-          <q-btn
-            flat
-            no-caps
-            class="manage-wallets-btn"
-            :class="$q.dark.isActive ? 'manage-btn-dark' : 'manage-btn-light'"
-            @click="goToSettings"
-          >
-            <Icon icon="tabler:settings" width="20" height="20" class="q-mr-sm" />
-            <!--
-              Short verb on purpose. The WalletSwitcher already shows
-              your wallets directly above this button, so the noun is
-              implicit. Pairs visually with the equally-short
-              "Transfer Funds" → "Umbuchen" in German, preventing the
-              right-button label from wrapping to 2 lines on phones
-              where the modal is ~340px wide. The longer
-              "Manage Wallets" form is still used in Settings where
-              the noun is needed to disambiguate.
-            -->
-            {{ $t('Manage') }}
-          </q-btn>
-        </q-card-section>
-      </q-card>
-    </q-dialog>
+      @switch="switchToWallet"
+      @transfer="openTransferModal"
+      @manage="goToSettings"
+    />
 
     <!-- Internal Transfer Modal -->
     <InternalTransferModal
@@ -938,6 +790,7 @@ import InternalTransferModal from '../components/InternalTransferModal.vue';
 import MenuOverlay from '../components/MenuOverlay.vue';
 import ArkadeLogo from '../components/ArkadeLogo.vue';
 import WalletBrandMark from '../components/WalletBrandMark.vue';
+import WalletSwitcherSheet from '../components/wallets/WalletSwitcherSheet.vue';
 import PaymentConfirmSheet from '../components/PaymentConfirmSheet.vue';
 import ContactAvatar from '../components/AddressBook/ContactAvatar.vue';
 import BatchSendModal from '../components/BatchSendModal.vue';
@@ -983,6 +836,7 @@ export default {
   name: 'WalletPage',
   components: {
     WalletBrandMark,
+    WalletSwitcherSheet,
     ReceiveModal,
     SendModal,
     QrScanSheet,
@@ -1037,10 +891,8 @@ export default {
       nfcReady: false,
 
       // Spark tab switching
-      sparkTabSwitching: false,
 
       // Wallet switcher: per-wallet refresh start time (ms), 0 when idle
-      refreshingWalletIds: {},
 
       // PIN migration (one-time, for existing users)
       showMigrationDialog: false,
@@ -1496,18 +1348,6 @@ export default {
     },
     isSparkWallet() {
       return this.walletStore.isActiveWalletSpark;
-    },
-    sparkWalletPair() {
-      return this.walletStore.sparkWallets.sort(
-        (a, b) => (a.connectionData?.accountNumber || 0) - (b.connectionData?.accountNumber || 0)
-      );
-    },
-    showSparkTabs() {
-      return this.walletStore.isActiveWalletSpark && this.sparkWalletPair.length === 2;
-    },
-    isPersonalActive() {
-      const active = this.walletStore.activeWallet;
-      return active?.type === 'spark' && active?.connectionData?.accountNumber === 2;
     },
     isAutoTransferActive() {
       if (!this.activeWallet) return false;
@@ -2036,10 +1876,6 @@ export default {
       // Don't show empty row when fee is null (e.g., LNURL before invoice is fetched)
       return this.isEstimatingFee || this.estimatedFee !== null;
     },
-    // Computed properties from Pinia store for wallet switcher
-    storeWallets() {
-      return this.walletStore.wallets || [];
-    },
     storeActiveWalletId() {
       return this.walletStore.activeWalletId;
     },
@@ -2111,9 +1947,6 @@ export default {
       if (this.currentDisplayMode === 'fiat') return '';
       if (this.walletStore.useBip177Format) return '';
       return ' sats';
-    },
-    storeConnectionStates() {
-      return this.walletStore.connectionStates || {};
     },
     preferredFiatCurrency() {
       return (this.walletStore.preferredFiatCurrency || 'USD').toUpperCase();
@@ -2271,11 +2104,30 @@ export default {
 
     /**
      * Refresh the last-transaction card whenever the active wallet
-     * changes (e.g. user switches between Business and Personal via
-     * the Spark tab bar, or picks a different connected wallet).
+     * changes (the switcher sheet, a removal, a newly added wallet).
      * Flip the skeleton back on briefly so the card feels responsive
      * to the switch rather than silently swapping its contents.
      */
+    /** A restore found more of the phrase's wallets in the background: say so once. */
+    'walletStore.sparkDiscoveryFound'(found) {
+      if (found?.count) {
+        this.$q.notify({
+          type: 'positive',
+          message: found.count === 1
+            ? this.$t('Found 1 more wallet from your recovery phrase')
+            : this.$t('Found {count} more wallets from your recovery phrase', { count: found.count }),
+        });
+      }
+      if (found?.unchecked) {
+        this.$q.notify({
+          type: 'warning',
+          message: this.$t('Some wallets from your recovery phrase could not be checked'),
+          caption: this.$t('Adding a Spark wallet in Settings looks for them again.'),
+          timeout: 7000,
+        });
+      }
+    },
+
     'walletStore.activeWalletId'(next, prev) {
       this.bitcoinDepositRead++;
       this.pendingBitcoinDeposits = [];
@@ -2284,11 +2136,6 @@ export default {
       // The new wallet's last known transaction paints at once; the read
       // below replaces it.
       this.showCachedLastTransaction(next);
-      // `switchSparkTab` already awaits `loadLastTransaction` itself so
-      // it can hold the tab-switch guard until data has actually
-      // landed. Skipping here avoids a duplicate provider fetch when
-      // the user moves between Business and Personal.
-      if (this.sparkTabSwitching) return;
       this.loadLastTransaction();
     },
 
@@ -2710,34 +2557,15 @@ export default {
       if (this.showWalletSwitcher) return; // Prevent double-open
       this.showWalletSwitcher = true;
 
-      // Refresh every wallet's balance; each one pulses while its refresh
-      // is under way, and a placeholder stands in for one never loaded.
-      // Spark wallets all stay connected (#285), so both halves of the pair
-      // refresh through the lifecycle; other wallets through the store.
-      const wallets = this.walletStore.wallets;
-      const since = Date.now();
-      for (const w of wallets) {
-        this.refreshingWalletIds = { ...this.refreshingWalletIds, [w.id]: since };
-      }
-
+      // Refresh every wallet's balance; the store marks each refresh, which
+      // the sheet shows (utils/balanceState.js). Spark wallets all stay
+      // connected (#285), so each refreshes through the lifecycle; other
+      // wallets through the store.
       await Promise.allSettled(
-        wallets.map(async (w) => {
-          try {
-            if (w.type === 'spark') await this.walletStore.reconcileSpark([w.id], 'user');
-            else await this.walletStore.refreshWalletData(w.id);
-          } catch { /* ignore */ }
-          this.refreshingWalletIds = { ...this.refreshingWalletIds, [w.id]: 0 };
-        })
+        this.walletStore.wallets.map((w) => (w.type === 'spark'
+          ? this.walletStore.reconcileSpark([w.id], 'user')
+          : this.walletStore.refreshWalletData(w.id))),
       );
-    },
-
-    /**
-     * A switcher row pulses only while its refresh runs for a wallet with
-     * no figure yet; a known balance is updated in place.
-     */
-    isWalletRefreshPending(walletId) {
-      if (!this.refreshingWalletIds[walletId]) return false;
-      return !this.walletStore.getDisplayBalance(walletId).known;
     },
 
     /**
@@ -3050,39 +2878,6 @@ export default {
         });
     },
 
-    async switchSparkTab(walletId) {
-      // Hard guard: ignore taps while a switch is already mid-flight.
-      // The Spark SDK doesn't tolerate two concurrent context changes
-      // and a fast double-tap on Business/Personal would otherwise race
-      // its key derivation, leaving the UI on one wallet but the SDK on
-      // another. The button is also visually disabled via `:disabled`
-      // — this is the belt-and-braces back-stop.
-      if (walletId === this.storeActiveWalletId || this.sparkTabSwitching) return;
-      this.sparkTabSwitching = true;
-
-      try {
-        await this.walletStore.switchActiveWallet(walletId);
-        // The guard covers the switch itself only. Both Spark accounts stay
-        // connected (#285) and the lifecycle coalesces their reconciles, so
-        // the refresh runs in the background: the saved balance and the
-        // cached last transaction are on screen at once, and the tabs are
-        // usable again instead of waiting for the sync, history catch-up
-        // and deposit discovery. `updateWalletBalance` also re-reads the
-        // last transaction (the activeWalletId watcher skips it while
-        // `sparkTabSwitching` is true).
-        this.updateWalletBalance();
-      } catch (error) {
-        console.error('Error switching Spark tab:', error);
-        this.walletStore.showPaymentError(error, {
-          context: 'connect',
-          route: 'Switch Spark tab',
-          t: this.$t.bind(this),
-        });
-      } finally {
-        this.sparkTabSwitching = false;
-      }
-    },
-
     async switchToWallet(walletId) {
       if (walletId === this.storeActiveWalletId) {
         this.showWalletSwitcher = false;
@@ -3143,41 +2938,6 @@ export default {
       this.updateWalletBalance();
     },
 
-    getWalletColorClass(wallet) {
-      const colors = ['wallet-green', 'wallet-blue', 'wallet-purple', 'wallet-orange', 'wallet-red'];
-      const index = wallet.id.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0) % colors.length;
-      return colors[index];
-    },
-    getWalletIcon(type) {
-      switch (type) {
-        case 'spark': return 'tabler:flame';
-        case 'lnbits': return 'tabler:server';
-        default: return 'tabler:wallet';
-      }
-    },
-    getWalletBadgeIcon(type) {
-      switch (type) {
-        case 'spark': return 'tabler:flame';
-        case 'lnbits': return 'tabler:server';
-        default: return 'tabler:plug';
-      }
-    },
-    getWalletTypeLabel(type) {
-      switch (type) {
-        case 'spark': return 'Spark';
-        case 'arkade': return 'Arkade';
-        case 'lnbits': return 'LNbits';
-        default: return 'NWC';
-      }
-    },
-    getWalletTypeBadgeClass(type) {
-      switch (type) {
-        case 'spark': return 'type-spark';
-        case 'arkade': return 'type-arkade';
-        case 'lnbits': return 'type-lnbits';
-        default: return 'type-nwc';
-      }
-    },
     async initializeWallet() {
       try {
         // Paint the home screen as soon as the saved wallets and balances
@@ -6215,120 +5975,27 @@ export default {
 
 /* Wallet Chip (q-chip) */
 /* ===== Spark Tab Bar ===== */
-.spark-tabs-wrap {
-  margin-bottom: 1rem;
-  padding: 0 1rem;
-  width: 100%;
-  max-width: 320px;
-}
-
-.spark-tabs {
-  position: relative;
-  display: flex;
-  align-items: center;
-  border-radius: 12px;
-  padding: 3px;
-  gap: 0;
-}
-
-.spark-tabs-dark {
-  background: #1A1A1A;
-}
-
-.spark-tabs-light {
-  background: var(--bg-input);
-}
-
-.spark-tabs-slider {
-  position: absolute;
-  top: 3px;
-  left: 3px;
-  width: calc(50% - 24px);
-  height: calc(100% - 6px);
-  border-radius: 10px;
-  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  z-index: 0;
-}
-
-.spark-tabs-slider--right {
-  transform: translateX(calc(100% + 46px));
-}
-
-.spark-tabs-dark .spark-tabs-slider {
-  background: #2A2A2A;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
-}
-
-.spark-tabs-light .spark-tabs-slider {
-  background: #FFFFFF;
-  box-shadow: 0 1px 3px rgba(40, 34, 20, 0.08), 0 1px 2px rgba(40, 34, 20, 0.04);
-  border: 1px solid var(--border-card);
-}
-
-.spark-tab {
-  flex: 1;
-  position: relative;
-  z-index: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 5px;
-  padding: 8px 0;
-  border: none;
-  background: transparent;
-  border-radius: 10px;
-  font-family: 'Manrope', sans-serif;
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--text-muted);
-  cursor: pointer;
-  transition: color 0.25s ease;
-  -webkit-tap-highlight-color: transparent;
-  user-select: none;
-}
-
-.spark-tab--active {
-  color: var(--text-primary);
-  font-weight: 600;
-}
-
-.spark-tab:disabled {
-  cursor: default;
-  opacity: 0.5;
-}
-
-.spark-tab-divider {
-  width: 1px;
-  height: 16px;
-  flex-shrink: 0;
-  z-index: 2;
-}
-
-.spark-tabs-dark .spark-tab-divider {
-  background: rgba(255, 255, 255, 0.08);
-}
-
-.spark-tabs-light .spark-tab-divider {
-  background: rgba(0, 0, 0, 0.1);
-}
-
-.spark-tab-center {
-  flex: 0 0 40px;
-  padding: 8px 0;
-  color: var(--text-muted);
-}
-
-.spark-tab-center:hover {
-  color: var(--text-primary);
-}
 
 .wallet-chip {
+  position: relative;
   margin-bottom: 1rem;
   font-size: 12px;
   font-weight: 600;
   font-family: 'Manrope', sans-serif;
   letter-spacing: -0.01em;
   transition: all 0.2s ease;
+}
+
+/* The chip reads small; its tap target is the full 44pt. */
+.wallet-chip::after {
+  content: '';
+  position: absolute;
+  inset: -10px -6px;
+}
+
+.wallet-chip-disclosure {
+  margin-left: 4px;
+  opacity: 0.7;
 }
 
 .wallet-chip-dark {
@@ -7827,226 +7494,7 @@ export default {
   }
 }
 
-/* Wallet Switcher Dialog */
-/* Bottom sheet: full width, rounded top, sized to its content with the
-   list scrolling inside and the CTAs pinned hard at the bottom. */
-.wallet-switcher-card {
-  width: 100%;
-  max-width: 100%;
-  max-height: 78dvh;
-  display: flex;
-  flex-direction: column;
-  border-radius: 24px 24px 0 0;
-  overflow: hidden;
-}
-
-.wallet-switcher-card .sheet-grabber {
-  display: flex;
-  justify-content: center;
-  padding: 10px 0 2px;
-  flex-shrink: 0;
-}
-
-.wallet-switcher-card .grabber-bar {
-  width: 36px;
-  height: 5px;
-  border-radius: 3px;
-  background: rgba(128, 128, 128, 0.35);
-}
-
-.switcher-header {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  padding: 0.25rem 1.25rem 0.5rem;
-  flex-shrink: 0;
-}
-
-.switcher-title {
-  font-family: 'Manrope', sans-serif;
-  font-size: 16px;
-  font-weight: 600;
-}
-
-.switcher-content {
-  flex: 1;
-  min-height: 0;
-  padding: 0.25rem 0.75rem 0.5rem;
-  overflow-y: auto;
-  scrollbar-width: none;
-}
-
-.switcher-content::-webkit-scrollbar {
-  display: none;
-}
-
-/* Inset grouped list: one rounded surface, hairline separators inset past
-   the leading mark, rows that highlight on press - selection is the
-   trailing checkmark, the platform-native reading. */
-.wallet-switch-list {
-  display: flex;
-  flex-direction: column;
-  border-radius: 16px;
-  overflow: hidden;
-}
-
-.switch-list-light { background: #FFFFFF; }
-.switch-list-dark  { background: #2C2C2E; }
-
-/* Wallet row */
-.wallet-switch-card {
-  position: relative;
-  display: flex;
-  align-items: center;
-  gap: 0.875rem;
-  padding: 0.875rem 1rem;
-  cursor: pointer;
-  transition: background 0.12s ease;
-  -webkit-tap-highlight-color: transparent;
-}
-
-.wallet-switch-card:not(:first-child)::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 74px;
-  right: 0;
-  height: 1px;
-  background: rgba(128, 128, 128, 0.18);
-}
-
-.wallet-switch-card-light:hover,
-.wallet-switch-card-light:active {
-  background: rgba(0, 0, 0, 0.045);
-}
-
-.wallet-switch-card-dark:hover,
-.wallet-switch-card-dark:active {
-  background: rgba(255, 255, 255, 0.06);
-}
-
-/* Switch Avatar */
-.switch-avatar {
-  position: relative;
-  flex-shrink: 0;
-}
-
-.switch-avatar-circle {
-  width: 44px;
-  height: 44px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: white;
-}
-
-.switch-avatar-black {
-  background: linear-gradient(135deg, #2A2A2A, #1A1A1A);
-}
-
-.wallet-green {
-  background: linear-gradient(135deg, #15DE72, #059573);
-}
-
-.wallet-blue {
-  background: linear-gradient(135deg, #3B82F6, #2563EB);
-}
-
-.wallet-purple {
-  background: linear-gradient(135deg, #8B5CF6, #7C3AED);
-}
-
-.wallet-orange {
-  background: linear-gradient(135deg, #F59E0B, #D97706);
-}
-
-.wallet-red {
-  background: linear-gradient(135deg, #EF4444, #DC2626);
-}
-
-.switch-status-dot {
-  position: absolute;
-  bottom: 0;
-  right: 0;
-  width: 11px;
-  height: 11px;
-  border-radius: 50%;
-  border: 2px solid;
-}
-
-.wallet-switch-card-dark .switch-status-dot {
-  border-color: #2C2C2E;
-}
-
-.wallet-switch-card-light .switch-status-dot {
-  border-color: #FFF;
-}
-
-.status-connected {
-  background: #15DE72;
-}
-
-.status-disconnected {
-  background: #EF4444;
-}
-
-/* Switch Details */
-.switch-details {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-}
-
-.switch-name {
-  font-family: 'Manrope', sans-serif;
-  font-size: 15px;
-  font-weight: 600;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  margin-bottom: 0.125rem;
-}
-
-.switch-name-dark {
-  color: #F6F6F6;
-}
-
-.switch-name-light {
-  color: #212121;
-}
-
-/* Meta Row with Badges */
-.switch-meta-row {
-  display: flex;
-  align-items: center;
-  gap: 0.375rem;
-  margin-bottom: 0.25rem;
-  flex-wrap: wrap;
-}
-
-.switch-type-badge {
-  display: flex;
-  align-items: center;
-  gap: 0.15rem;
-  padding: 0.1rem 0.35rem;
-  border-radius: 5px;
-  font-family: 'Manrope', sans-serif;
-  font-size: 8px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.02em;
-  color: white;
-}
-
-.type-spark {
-  background: linear-gradient(135deg, #3A3A3A, #1A1A1A);
-}
-
-.type-arkade {
-  background: linear-gradient(135deg, #F14317, #C0360F);
-}
-
+/* Arkade background maintenance (VTXO renew/recover) */
 .arkade-maintenance {
   display: flex;
   align-items: center;
@@ -8056,133 +7504,6 @@ export default {
   font-size: 12px;
   color: var(--text-muted);
   margin: 2px 0 -4px;
-}
-
-.type-nwc {
-  background: linear-gradient(135deg, #FFCA4A, #F7931A);
-}
-
-.type-lnbits {
-  background: linear-gradient(135deg, #FF1FE1, #C919B0);
-}
-
-.switch-tag {
-  font-family: 'Manrope', sans-serif;
-  font-size: 8px;
-  font-weight: 600;
-  padding: 0.1rem 0.3rem;
-  border-radius: 4px;
-  text-transform: capitalize;
-  letter-spacing: 0.02em;
-}
-
-/* Switch Balance */
-.switch-balance {
-  font-family: var(--font-mono);
-  font-size: 12px;
-  font-weight: 500;
-}
-
-.switch-balance-dark {
-  color: #777;
-}
-
-.switch-balance-light {
-  color: var(--text-muted);
-}
-
-/* Check Icon */
-.switch-check-icon {
-  flex-shrink: 0;
-}
-
-.check-accent-light { color: #1A1A1A; }
-.check-accent-dark  { color: #15DE72; }
-
-/* Switcher Footer - pinned hard at the sheet's bottom edge. */
-.switcher-footer {
-  flex-shrink: 0;
-  padding: 0.75rem 1rem;
-  padding-bottom: max(0.875rem, var(--safe-bottom, 0px));
-  border-top: 1px solid;
-  display: flex;
-  flex-wrap: nowrap;
-  justify-content: center;
-  gap: 10px;
-}
-
-.switcher-footer-dark {
-  border-top-color: #222;
-  background: #171717;
-}
-
-.switcher-footer-light {
-  border-top-color: var(--border-card);
-  background: var(--bg-primary);
-}
-
-/* Transfer Funds - the primary CTA: dark ink in light mode, the app's
-   credit green in dark mode. */
-.transfer-funds-btn {
-  font-family: 'Manrope', sans-serif;
-  font-size: 14px;
-  font-weight: 600;
-  border-radius: 12px;
-  min-height: 48px;
-  padding: 0.5rem 1rem;
-  flex: 1;
-  transition: all 0.15s ease;
-}
-
-.transfer-btn-dark {
-  color: #FFFFFF;
-  background: linear-gradient(135deg, #15DE72, #0DBB5F);
-}
-
-.transfer-btn-dark:hover {
-  filter: brightness(1.05);
-}
-
-.transfer-btn-light {
-  color: #FFFFFF;
-  background: #1A1A1A;
-}
-
-.transfer-btn-light:hover {
-  background: #2A2A2A;
-}
-
-.manage-wallets-btn {
-  font-family: 'Manrope', sans-serif;
-  font-size: 14px;
-  font-weight: 600;
-  border-radius: 12px;
-  min-height: 48px;
-  padding: 0.5rem 1rem;
-  flex: 1;
-  transition: all 0.15s ease;
-}
-
-.manage-btn-dark {
-  color: rgba(255, 255, 255, 0.75);
-  background: rgba(255, 255, 255, 0.08);
-}
-
-.manage-btn-light {
-  color: rgba(0, 0, 0, 0.7);
-  background: rgba(0, 0, 0, 0.05);
-}
-
-.manage-wallets-btn:hover {
-  background: rgba(107, 114, 128, 0.1);
-}
-
-.manage-btn-dark:hover {
-  color: #F6F6F6;
-}
-
-.manage-btn-light:hover {
-  color: var(--text-primary);
 }
 
 /* Save Contact Dialog */

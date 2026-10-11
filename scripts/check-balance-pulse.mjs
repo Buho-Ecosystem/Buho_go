@@ -141,7 +141,7 @@ try {
   await page.waitForTimeout(900);
   await page.screenshot({ path: `${output}/sheet-refreshing.png` });
   await page.evaluate(() => window.release());
-  await page.waitForFunction(() => Object.values(window.page.refreshingWalletIds).every(v => !v));
+  await page.waitForFunction(() => !window.page.walletStore.totalBalanceInfo.refreshing);
   await page.locator(row('Savings')).evaluate(el => new Promise(resolve => {
     const done = () => (el.getAnimations().length === 0 ? resolve() : requestAnimationFrame(done));
     done();
