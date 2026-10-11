@@ -1,8 +1,7 @@
 # Contact chat (money requests + encrypted messages)
 
-Status: in implementation on `feat/contact-chat`. This document is the technical
-contract every part of the feature is built against. Keep it current when a
-contract changes.
+This document is the technical contract every part of the feature is built
+against. Keep it current when a contract changes; open work is in section 13.
 
 ## 1. What it is
 
@@ -25,14 +24,33 @@ indicators, push while the app is closed.
 ## 2. Product rules (from the reviewed design)
 
 1. Build **on top of** existing UI. Existing screens keep their layout. New:
-   the chat screen, badges, one identity row, the "Pay with" field.
+   the chat screen, unread badges, one "Messages" row in the address book.
 2. Chat screen (`/address-book/:id/chat`):
-   - Header: back · avatar · name · "🔒 End-to-end encrypted" (or "Payments only")
-     · ⋮. Tapping the name opens the existing contact page (`/address-book/:id`),
-     whose "Between you" section is the payment history (now both directions).
+   - Header: back · avatar · name (a bell-off when muted) · "End-to-end
+     encrypted" (or "Payments only") · menu. Tapping the name opens the existing
+     contact page (`/address-book/:id`), whose "Between you" section is the
+     payment history (both directions).
    - Body: messages, request cards, and payments as a subtle grey line.
-   - Bottom bar: `[↙ Request] [↗ Send] [💬]`. 💬 swaps to a text field, ₿ swaps back.
-3. Tapping a contact in the address book opens the chat.
+   - Bottom bar, no modes: the message field (grows to five lines) above
+     `[↙ Request] [↗ Send]`. A partner without an inbox gets the two buttons
+     only. A disabled button says why, right above it.
+   - One filled button per screen: a pending request's Pay. Request and Send
+     are the quiet pair in light mode; an expired request's "Send anyway" is
+     quiet too.
+3. Contacts with a Nostr profile: tapping the row opens the chat. Contacts saved
+   with only a name and an address keep the address book as it was before the
+   chat (row opens their page, Pay pays); a stale chat link to one goes on to
+   their page.
+3a. Messages live in the address book: one "Messages" row at the top lists every
+   conversation (contacts first, then "Not in your contacts"). The menu badge
+   counts unread messages from contacts only, so strangers cannot raise it; the
+   Messages row counts everyone.
+3b. What the partner sees is confirmed first (HIG, destructive actions): Block,
+   Decline ("Decline ₿ 1,000 for Pizza?") and "Cancel request" share one
+   confirmation dialog. Remind works once a day, then reads "Reminded".
+3c. A request can be typed in sats or the preferred fiat currency (the confirm
+   sheet's unit pill); the request itself is always in sats. Dates follow the
+   app's language, not the device's.
 4. Every payment surface gets a **"Pay with"** field listing all connected wallets
    (active first, balance shown, unusable ones disabled with a reason). The
    paying wallet is threaded through the send pipeline; the active wallet is
@@ -311,8 +329,8 @@ store, clock) so they can be unit tested without network or Pinia.
 - Requests indexed by id with derived status (`pending | paid | declined |
   cancelled | expired`).
 - Outbox for messages written offline; flushed by `inbox.js` when online.
-- Sync cursor (`lastSyncAt`), blocked pubkeys (mirrored to a private NIP-51
-  kind 10000 list), per-contact mute flags.
+- Sync cursor (`lastSyncAt`), blocked pubkeys (on this device only; not
+  published as a NIP-51 list), per-contact mute flags.
 - Handled wraps (`handledWraps`, wrap id → created_at): never decrypted
   twice; pruned once older than the inbox window, at most 5,000.
 - Signer apps: `signerAppMessages` (opt-in, persisted) and `signerHold` (why
@@ -391,14 +409,15 @@ the invoice does not exist until the payer taps Pay.
   for at least the requested amount, a returned `preimage` hashes to the
   invoice's payment hash, and that payment hash has not settled another request.
   The settlement is then recorded as `{ address, paymentHash, paidAt }` (no
-  wallet) and the card says "Received at <address>". Otherwise it stays
-  "Reported paid, not verified". Claim re-checks (ledger and LUD-21) run at 5 s,
+  wallet) and the card says "Received at <address>". Otherwise the card says
+  "{name} says it's paid", muted and without the green check. Claim re-checks (ledger and LUD-21) run at 5 s,
   20 s, 60 s, on chat open and on every resume.
 - **Next action in every state:**
 
   | State | Payer | Requester |
   |---|---|---|
-  | pending | Decline · Pay | Remind · Withdraw |
+  | pending | Decline · Pay | Remind · Cancel request |
+  | paying (the user paid, still routing) | "Payment on its way", nothing to tap | |
   | expired (`valid_until` passed) | Send anyway (amount + note prefilled, linked to the request) | Request again (one tap, same amount + note) |
 
   "Send anyway" pays the address resolved the same way (current profile, else
@@ -410,7 +429,7 @@ the invoice does not exist until the payer taps Pay.
   address; the paid card names the wallet, or the address when LUD-21 verified
   it. A payment to an address whose receipts the app can neither list nor verify
   by LUD-21 (a service without LUD-21, npub.cash bucket until claimed) stays
-  "Reported paid, not verified". "Send anyway" goes through the generic send
+  "{name} says it's paid". "Send anyway" goes through the generic send
   flow, which does not carry the verify URL: such a late payment is verified by
   the ledger only.
 
@@ -431,8 +450,10 @@ on screen.
   signer app is asked only for the identity the runtime belongs to, and every
   event it signs must carry that identity's pubkey.
 - Reject rumors whose id does not hash to their content (upstream #73).
-- Unknown senders go to an "Unknown" section; lookalike names get an impostor
-  warning (nostrdesign.org guidance). Blocked senders are dropped after unwrap.
+- Unknown senders go to the "Not in your contacts" section and are named by
+  their npub fragment only: a claimed name is never shown, so it cannot
+  impersonate a contact (nostrdesign.org guidance). Blocked senders are dropped
+  after unwrap.
 - Per-sender rate limit after unwrap; size limits before unwrap.
 - A pasted `nsec` in the composer blocks sending.
 
@@ -460,3 +481,25 @@ Replace the workaround when the upstream fix ships.
   simulated relays and LNURL servers, scripted wallets, dark and light, de / en / es and large
   text.
 - Requires Node ≥ 22.22 (`@quasar/app-vite`).
+
+## 13. Known limitations
+
+- Addresses whose service does not support LUD-21 stay "{name} says it's paid"
+  when their wallet is not in the app. So do payments to an npub.cash bucket
+  address until the bucket is claimed into a wallet (the ledger only lists it
+  then).
+- "Send anyway" (generic send flow) does not carry the LUD-21 verify URL, so a
+  late payment to an address outside the app is verified by the ledger only.
+- Muted 12px text (`--text-muted`, about 3.1 to 3.8:1) is an app-wide token,
+  below WCAG AA for small text.
+- Android cold start: a notification tap after the process was killed probably
+  opens the start screen (the plugin only handles `onNewIntent`); verify on a
+  device, fix natively if confirmed.
+- relay.damus.io and relay.nostr.net AUTH was broken server-side on
+  2026-10-10; add them back to `DM_INBOX_RELAYS` once fixed.
+- Blocked pubkeys stay on the device (no NIP-51 mute list yet).
+- Replace the local workarounds when nostr-core #72 to #75 ship (section 11).
+- Signer apps (section 5a): bump nostr-core to 1.0.5 for the NIP-46 `connect`
+  fix (#76, #77); ask nostr-core for requested permissions in `connect`; a
+  NIP-46 `auth_url` is treated as "approve in your signer app", the link
+  itself is not opened yet; check on a device with nsec.app and Amber.

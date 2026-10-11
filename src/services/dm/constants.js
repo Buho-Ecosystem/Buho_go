@@ -30,8 +30,6 @@ export const KIND = Object.freeze({
   GIFT_WRAP: 1059,
   /** NIP-17 list of the relays where a person wants to receive messages. */
   DM_RELAYS: 10050,
-  /** NIP-51 mute list: the private home of our blocked pubkeys. */
-  MUTE_LIST: 10000,
   /** NIP-42 client authentication event, our answer to a relay's AUTH challenge. */
   AUTH: 22242,
 });

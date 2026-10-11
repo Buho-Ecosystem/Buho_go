@@ -82,7 +82,6 @@ test('KIND carries the kinds NIP-17, NIP-25, NIP-42, NIP-51 and NIP-59 define', 
     SEAL: 13,
     GIFT_WRAP: 1059,
     DM_RELAYS: 10050,
-    MUTE_LIST: 10000,
     AUTH: 22242,
   });
 });
