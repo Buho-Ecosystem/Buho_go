@@ -1172,7 +1172,7 @@
                 <!-- Wallet Avatar -->
                 <div class="wallet-avatar">
                   <div class="wallet-avatar-circle wallet-avatar-black">
-                    <WalletBrandMark :type="wallet.type" :size="20" on-dark />
+                    <WalletBrandMark :type="wallet.type" :size="20" />
                   </div>
                   <div
                     class="wallet-status-dot"
@@ -1345,8 +1345,7 @@
               @click="navigateToCreateArkade"
             >
               <div class="option-icon arkade-option-icon">
-                <!-- A dark tile like its neighbours: the mark takes Arkade's dark-surface red. -->
-                <ArkadeLogo variant="mark" color="orange" :size="26" />
+                <ArkadeLogo variant="mark" :size="26" />
               </div>
               <div class="option-content">
                 <div class="option-title" :class="$q.dark.isActive ? 'wallet_name_dark' : 'wallet_name_light'">
@@ -1365,7 +1364,7 @@
               @click="navigateToRestoreArkade"
             >
               <div class="option-icon arkade-option-icon">
-                <ArkadeLogo variant="mark" color="orange" :size="26" />
+                <ArkadeLogo variant="mark" :size="26" />
               </div>
               <div class="option-content">
                 <div class="option-title" :class="$q.dark.isActive ? 'wallet_name_dark' : 'wallet_name_light'">

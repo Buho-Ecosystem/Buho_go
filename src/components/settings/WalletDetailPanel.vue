@@ -11,7 +11,7 @@
 
     <div class="detail-content">
       <div class="detail-identity">
-        <div class="detail-avatar" aria-hidden="true"><WalletBrandMark :type="wallet.type" :size="28" on-dark /></div>
+        <div class="detail-avatar" aria-hidden="true"><WalletBrandMark :type="wallet.type" :size="28" /></div>
         <div class="detail-identity-copy">
           <h2>{{ wallet.name }}</h2>
           <div class="detail-status">

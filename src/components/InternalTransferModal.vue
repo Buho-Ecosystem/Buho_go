@@ -314,8 +314,8 @@ const WalletAvatar = {
           fill: '#FF1FE1'
         })
       ]),
-      // Arkade brand mark: red on the dark avatar circle, like every dark surface
-      props.type === 'arkade' && h(ArkadeLogo, { variant: 'mark', color: 'orange', size: 20 }),
+      // Arkade brand mark: follows the theme (purple light, red dark)
+      props.type === 'arkade' && h(ArkadeLogo, { variant: 'mark', size: 20 }),
       // Default wallet icon
       !['spark', 'nwc', 'lnbits', 'arkade'].includes(props.type) && h('svg', { width: '18', height: '18', viewBox: '0 0 24 24', fill: 'none', xmlns: 'http://www.w3.org/2000/svg' }, [
         h('path', {

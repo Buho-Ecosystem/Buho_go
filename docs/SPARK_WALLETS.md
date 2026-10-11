@@ -103,7 +103,7 @@ Runs in `initialize()` until it completes once (`sparkModelVersion` 2):
   - a figure known to be out of date is dimmed;
   - the total is labelled "Total", reads "at least" while a wallet's figure is missing, and pulses while wallets refresh.
   - every figure shows its fiat value next to the Bitcoin amount (`walletStore.fiatValueOf`).
-- **Arkade** follows the same patterns as the other wallets: the shared dark avatar circle (its mark red on that dark surface) and the shared neutral type chip. Its mark follows the brand rule elsewhere: purple in light mode, red/orange in dark mode (`--arkade-*` tokens in `app.css`).
+- **Arkade** follows the same patterns as the other wallets: the shared dark avatar circle and the shared neutral type chip. Its mark always follows the brand rule by theme: purple in light mode, red/orange in dark mode (`--arkade-*` tokens in `app.css`).
 - Every user-facing string is in en-US, de and es. The multi-wallet strings live in `src/i18n/<lang>/wallets.js`.
 
 ## Validation

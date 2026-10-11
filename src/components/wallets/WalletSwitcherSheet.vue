@@ -57,7 +57,7 @@
           >
             <div class="switch-avatar" aria-hidden="true">
               <div class="switch-avatar-circle switch-avatar-black">
-                <WalletBrandMark :type="wallet.type" :size="20" on-dark />
+                <WalletBrandMark :type="wallet.type" :size="20" />
               </div>
               <div class="switch-status-dot" :class="connected(wallet.id) ? 'status-connected' : 'status-disconnected'"></div>
             </div>
