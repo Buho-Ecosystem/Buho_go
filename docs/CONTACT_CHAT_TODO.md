@@ -236,6 +236,39 @@ an LNURL fetch). Still to do: Android device run.
 
 ### 5a. Request lifetime root fix — DONE (see docs/CONTACT_CHAT.md 8a)
 
+### 5b. Simplify how a request gets paid — OPEN (blocks merge)
+
+The current request flow works, but it assumes a setup most BuhoGO users
+do not have: how a request is paid depends on the wallet type, on NWC
+permissions and on whether the profile has a Lightning address. That is too
+complicated. BuhoGO users must be able to request money natively, with no
+prior setup.
+
+Today:
+- Without a profile Lightning address, a wallet mints a 24 h invoice when the
+  request is sent: Spark and LNbits yes, NWC only with `make_invoice`,
+  Arkade not at all (error). After 24 h the request can no longer be paid; the
+  payer can only ask for a new request.
+- With a profile address, the request also carries a signed `lud16`, and the
+  payer pulls a fresh invoice from it after expiry (30-day lifetime, §8a).
+- Gap: `lud16` comes only from the profile. A Spark wallet's own Lightning
+  address is not used when the profile has none.
+
+Goal: one simple model that works for every user and all four wallet types
+without setup. To decide:
+- A request is only a notice (amount, note, where to pay), and the invoice is
+  created when the payer taps Pay. Needs something that can issue invoices
+  while the requester is offline: a Lightning address, or Spark/Arkade static
+  addresses.
+- Give every BuhoGO identity a receive address automatically (e.g. the
+  Spark/Buho Lightning address), so the profile-setup step goes away.
+- Fallback without any address (e.g. NWC-only): ask for an invoice over the
+  chat and have the requester's app answer when it is online. Note: the payer
+  waits while that app is closed.
+- Matching payments to requests stays required: `buho:req` comment
+  (LUD-12), verify URL (LUD-21), check against the requester's own wallet
+  history.
+
 ### 6. Known limitations / follow-ups
 - Muted 12px text contrast (`--text-muted`, ~3.1–3.8:1) is an app-wide
   token, below WCAG AA for small text.
