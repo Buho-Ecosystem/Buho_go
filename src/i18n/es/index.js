@@ -2,6 +2,7 @@ import profilePayment from './profilePayment.js';
 import addressRequest from './addressRequest.js';
 import backup from './backup.js';
 import exit from './exit.js';
+import wallets from './wallets.js';
 import identities from './identities.js';
 export default {
   ...profilePayment,
@@ -47,6 +48,7 @@ export default {
   "This request cannot be redeemed in whole sats. Ask the service for a new one.": "Esta solicitud no se puede canjear en sats enteros. Pide una nueva al servicio.",
   ...backup,
   ...exit,
+  ...wallets,
   ...identities,
   // Spend: Bitrefill door
   "Gift cards, mobile top-ups and more": "Tarjetas regalo, recargas móviles y más",
@@ -677,8 +679,6 @@ export default {
   "One or more words don't add up. Please double-check each word, including the last one, and try again.": "Una o más palabras no cuadran. Revisa bien cada palabra, incluida la última, e inténtalo de nuevo.",
   "Word {n} doesn't match the official recovery word list. Check the spelling and try again.": "La palabra {n} no coincide con la lista oficial de palabras de recuperación. Comprueba la ortografía e inténtalo de nuevo.",
   "Words {n} don't match the official recovery word list. Check the spelling and try again.": "Las palabras {n} no coinciden con la lista oficial de palabras de recuperación. Comprueba la ortografía e inténtalo de nuevo.",
-  "Your Spark wallets are already set up": "Tus carteras Spark ya están configuradas",
-  "Your Business and Personal Spark wallets are already on this device. Remove them from Settings before restoring a different recovery phrase.": "Tus carteras Spark de Negocio y Personal ya están en este dispositivo. Elimínalas desde Ajustes antes de restaurar una frase de recuperación distinta.",
   // Relative time
   "just now": "justo ahora",
   "min ago": "hace 1 min",
@@ -771,7 +771,6 @@ export default {
   "We ask for your PIN, pattern or password whenever we need to be sure it's you.": "Te pedimos tu PIN, patrón o contraseña cuando necesitamos asegurarnos de que eres tú.",
   "We ask you to unlock your phone whenever we need to be sure it's you.": "Te pedimos que desbloquees tu teléfono cuando necesitamos asegurarnos de que eres tú.",
   // Settings
-  "Add Spark Wallet": "Agregar Cartera Spark",
   "Spark transfers are instant and free": "Las transferencias Spark son instantáneas y gratis",
   "Show your recovery phrase": "Muestra tu frase de recuperación",
   "Tap \"Add Wallet\" to get started": "Toca \"Agregar Cartera\" para empezar",
@@ -890,10 +889,6 @@ export default {
   "Transfer via": "Transferir vía",
   "Verified": "Verificado",
   "bc1q...": "bc1q...",
-  "Your Business Wallet": "Tu Cartera de Negocio",
-  "Accept payments from customers, manage your sales, and keep your business funds in one place.": "Acepta pagos de clientes, gestiona tus ventas y mantén los fondos de tu negocio en un solo lugar.",
-  "Your Personal Wallet": "Tu Cartera Personal",
-  "Your private funds stay separate here. Both wallets share the same recovery words, but each has its own balance.": "Tus fondos privados se mantienen separados aquí. Ambas carteras comparten las mismas palabras de recuperación, pero cada una tiene su propio saldo.",
   "Save for the Future": "Ahorra para el Futuro",
   "Ready to save? You can send your Bitcoin to a hardware wallet or any Bitcoin address for long-term storage.": "¿Listo para ahorrar? Puedes enviar tu Bitcoin a una hardware wallet o cualquier dirección Bitcoin para guardarlos a largo plazo.",
   "Let's go!": "¡Vamos!",
@@ -905,7 +900,6 @@ export default {
   "Tap to Pay with NFC": "Paga con un Toque NFC",
   "Accept Bolt Card payments with a single tap. Customers hold their card to your phone and pay instantly.": "Acepta pagos con Bolt Card en un solo toque. Tus clientes acercan su tarjeta al teléfono y pagan al instante.",
   "Move Between Wallets": "Mover entre Carteras",
-  "Move money between your Business and Personal wallet anytime. It happens instantly and costs nothing.": "Mueve dinero entre tu cartera de Negocio y Personal en cualquier momento. Es instantáneo y no cuesta nada.",
   "Auto-Transfer": "Auto-Transferencia",
   "Set a rule and your funds move automatically when your balance grows past a certain amount. Set it and forget it.": "Configura una regla y tus fondos se mueven automáticamente cuando tu saldo supera cierta cantidad.",
   "Your Transaction History": "Tu Historial de Transacciones",
@@ -1038,8 +1032,6 @@ export default {
   "Got it": "Entendido",
   "Please wait {mins} minutes before claiming again": "Por favor espera {mins} minutos antes de reclamar de nuevo",
   "The daily reward budget is used up. Please try again tomorrow.": "El presupuesto diario de recompensas se ha agotado. Por favor inténtalo de nuevo mañana.",
-  "Total (incomplete)": "Total (incompleto)",
-  "Total (not current)": "Total (no actualizado)",
   "Last known balance — not current": "Último saldo conocido — no actualizado",
   "Balance not loaded yet": "Saldo aún no cargado",
   "Reward payouts are paused for now. Your earned sats are saved and you can claim them later.": "Los pagos de recompensas están en pausa por ahora. Tus sats ganados quedan guardados y podrás reclamarlos más tarde.",
@@ -1053,13 +1045,10 @@ export default {
   "Amazing!": "¡Increíble!",
   "Verify your recovery phrase": "Verifica tu frase de recuperación",
   "Not verified": "No verificado",
-  "This will permanently delete all {count} Spark wallets. Make sure you have backed up your seed phrases. This action cannot be undone.": "Esto eliminará permanentemente todas las {count} carteras Spark. Asegúrate de haber respaldado tus palabras de recuperación. Esta acción no se puede deshacer.",
-  "Spark wallets deleted": "Carteras Spark eliminadas",
   "Arkade wallet deleted": "Cartera Arkade eliminada",
   "Spark wallet deleted": "Cartera Spark eliminada",
   "Danger Zone": "Zona de peligro",
   "Features": "Funciones",
-  "Delete Spark Wallets": "Eliminar carteras Spark",
   "Delete Arkade Wallet": "Eliminar cartera Arkade",
   "Manage Wallets": "Gestionar Carteras",
   "wallet": "cartera",
@@ -1167,7 +1156,6 @@ export default {
   "https://your-mempool-instance.com/api/v1": "https://tu-instancia-mempool.com/api/v1",
   "to confirm": "para confirmar",
   "Delete Wallet": "Eliminar cartera",
-  "This will permanently delete your Spark wallet. Make sure you have backed up your seed phrase. This action cannot be undone.": "Esto eliminará permanentemente tu cartera Spark. Asegúrate de haber respaldado tu frase semilla. Esta acción no se puede deshacer.",
   "This will permanently delete your Arkade wallet. Make sure you have backed up your recovery phrase. This action cannot be undone.": "Esto eliminará permanentemente tu cartera Arkade. Asegúrate de haber respaldado tu frase de recuperación. Esta acción no se puede deshacer.",
   "This will remove all NWC wallet connections. Your Spark wallet will not be affected. You can reconnect NWC wallets later using your connection strings.": "Esto eliminará todas las conexiones de carteras NWC. Tu cartera Spark no se verá afectada. Puedes volver a conectar carteras NWC más tarde usando tus cadenas de conexión.",
   "Remove NWC": "Eliminar NWC",
@@ -1491,7 +1479,6 @@ export default {
   "View Seed Phrase": "Ver Frase Semilla",
   "Change PIN": "Cambiar PIN",
   "Language": "Idioma",
-  "Delete Spark Wallet": "Eliminar Cartera Spark",
   "Remove NWC Connections": "Eliminar Conexiones NWC",
   "CONTACT": "CONTACTO",
   "Select Contact": "Seleccionar Contacto",
@@ -1987,11 +1974,8 @@ export default {
   "Restoring Spark Wallet": "Restaurando cartera Spark",
   "Step": "Paso",
   "Enter your 12-word seed phrase to restore your Spark wallet. This is only for Spark wallets.": "Ingresa tus 12 palabras de recuperación para restaurar tu cartera Spark. Solo para carteras Spark.",
-  "Checking for an existing wallet...": "Buscando una cartera existente...",
   "Creating Your Wallet": "Creando tu cartera",
   "Encrypting wallet...": "Cifrando cartera...",
-  "Setting up Business wallet...": "Configurando Cartera de Negocio...",
-  "Setting up Personal wallet...": "Configurando Cartera Personal...",
   "Almost done...": "Casi listo...",
   "Wallet created!": "¡Cartera creada!",
   "We couldn't restore your wallet": "No pudimos restaurar tu cartera",

@@ -120,7 +120,7 @@
 
         <button class="bgo-srow" type="button" @click="goToArkadeSetup">
           <span class="bgo-tile bgo-tile-ark">
-            <svg viewBox="0 0 94 94" fill="#F14317" aria-hidden="true">
+            <svg viewBox="0 0 94 94" fill="currentColor" aria-hidden="true">
               <rect x="46.55" y="23.28" width="11.64" height="11.64"/>
               <rect x="34.92" y="23.28" width="11.64" height="11.64"/>
               <rect x="58.19" y="34.92" width="11.64" height="11.64"/>
@@ -701,7 +701,7 @@ export default {
   color: #2A2620;
 }
 .bgo-srow .bgo-tile svg { width: 18px; height: 18px; }
-.bgo-srow .bgo-tile-ark { background: rgba(241, 67, 23, 0.12); }
+.bgo-srow .bgo-tile-ark { background: var(--arkade-tint); color: var(--arkade-ink); }
 .bgo-srow .bgo-tile-ark svg { width: 25px; height: 25px; }
 .bgo-srow .bgo-tile-nwc svg { width: 23px; height: 23px; }
 .bgo-srow .bgo-tile-lnb svg { width: 20px; height: 24px; }

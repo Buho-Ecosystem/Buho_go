@@ -43,6 +43,8 @@
           <span>{{ $t('While Spark is running, a normal withdrawal is faster and cheaper.') }}</span>
         </div>
 
+        <p v-if="legacyFundingNote" class="exit-note">{{ legacyFundingNote }}</p>
+
         <p v-if="triage.fundingSat > 0" class="exit-note exit-note--center">{{ $t('You will need about {amount} sats of on-chain Bitcoin from another wallet to pay the fees.', { amount: num(triage.fundingSat) }) }}</p>
         <p v-if="startError" class="exit-error" role="alert">{{ startError }}</p>
         <button type="button" class="btn-primary" :disabled="!canStart" @click="start">{{ $t('Start emergency exit') }}</button>
@@ -190,8 +192,8 @@ import { exitKitService } from '../services/exitKit.js';
 import { remindersAvailable } from '../services/exitNotifications.js';
 import { sparkHealth } from '../utils/sparkHealth.js';
 import { canCancel, canChangeDestination, needsAttention, isActive, arrivedSat, sweepFeeSat, selectFundingInputs } from '../utils/exitLedger.js';
-import { classifyDestination } from '../utils/exitKeys.js';
 import { kitState } from '../utils/exitKit.js';
+import { sparkAccountNumberOf } from '../utils/sparkAccounts.js';
 import { readClipboardCrossPlatform } from '../utils/shopClipboard.js';
 import { fiatRatesService } from '../utils/fiatRates';
 import { formatSats, formatDay, formatTime, relativeDay, durationText, shortAddress } from '../composables/useExitFormat.js';
@@ -225,6 +227,7 @@ export default {
       savingDestination: false,
       showHow: false,
       remindersOn: false,
+      legacyFundingSat: 0,
       timer: null,
     };
   },
@@ -273,6 +276,20 @@ export default {
       if (!exit?.unlock) return '';
       if (this.remindersOn && exit.reminderAt) return this.$t('You get a notification on the day. Nothing to do until then.');
       return this.$t('Open BuhoGO on or after {date}. Nothing to do until then.', { date: this.day(exit.unlock.estimatedAt) });
+    },
+    /**
+     * Fee money sent to this wallet's exit before every wallet had its own
+     * fee money address. Nothing is lost: it sits under the recovery words,
+     * on the address that is now the first wallet's.
+     */
+    legacyFundingNote() {
+      if (!(this.legacyFundingSat > 0) || !this.kit?.legacyFundingAddress) return '';
+      const amount = this.num(this.legacyFundingSat);
+      const address = shortAddress(this.kit.legacyFundingAddress);
+      const owner = this.wallet.sparkWallets.find(w => w.id !== this.walletId && sparkAccountNumberOf(w) === 1);
+      return owner
+        ? this.$t('{amount} sats of fee money from an earlier exit are at {address}. That address now pays for the emergency exit of {wallet}, and any Bitcoin wallet restoring your recovery words finds the money.', { amount, address, wallet: owner.name })
+        : this.$t('{amount} sats of fee money from an earlier exit are at {address}. Any Bitcoin wallet restoring your recovery words finds the money.', { amount, address });
     },
     quoteFooter() {
       const when = this.kit?.checkedAt ? this.relativeDay(this.kit.checkedAt) : '';
@@ -381,6 +398,12 @@ export default {
       return items.map((item, i) => ({ ...item, state: exit.stage === 'done' ? 'done' : i < index ? 'done' : i === index ? 'current' : 'upcoming' }));
     },
   },
+  watch: {
+    'kit.legacyFundingAddress': {
+      immediate: true,
+      handler(address) { this.loadLegacyFunding(address); },
+    },
+  },
   async mounted() {
     if (!this.wallet.isInitialized) await this.wallet.initialize();
     this.remindersOn = await remindersAvailable().catch(() => false);
@@ -405,6 +428,16 @@ export default {
     async tick() {
       if (isActive(this.exit)) await exitDriver().tick(this.walletId).catch(() => {});
     },
+    async loadLegacyFunding(address) {
+      this.legacyFundingSat = 0;
+      if (!address) return;
+      try {
+        this.legacyFundingSat = await exitDriver().legacyFundingSat(this.walletId, address);
+      } catch (error) {
+        // Informational only: offline simply means no note this time.
+        console.warn('legacy fee money lookup skipped:', error?.message || error);
+      }
+    },
     describeError(error) {
       const code = error?.code || '';
       const reason = String(error?.message || error || '').slice(0, 80);
@@ -414,7 +447,9 @@ export default {
         case 'MORE_FEE_MONEY': return this.$t('Fees rose. {amount} sats more fee money is needed.', { amount: this.num(this.exit?.funding?.shortfallSat || 0) });
         case 'DESTINATION_NOT_ONCHAIN': return this.$t('Not a Bitcoin address');
         case 'DESTINATION_WRONG_NETWORK': return this.$t('This address belongs to another network.');
-        case 'DESTINATION_SPARK_DEPOSIT': return this.$t('This is the wallet\'s own deposit address. It would send the money back into Spark.');
+        case 'DESTINATION_SPARK_DEPOSIT': return this.$t('This is a Spark deposit address. It would send the money back into Spark.');
+        case 'DESTINATION_EXIT_FUNDING': return this.$t('This address holds fee money for an emergency exit. Choose another address.');
+        case 'FUNDING_IN_USE': return this.$t('An earlier emergency exit is still using this fee money address. Start this one once that exit has finished.');
         case 'KEY_MISMATCH': return this.$t('This phone\'s keys do not match the fee money address. Restore the wallet from its words and try again.');
         case 'UNREACHABLE': return this.$t('Could not reach the Bitcoin network.');
         case 'REJECTED': return this.$t('The Bitcoin network refused a transaction: {reason}', { reason });
@@ -425,10 +460,7 @@ export default {
       this.starting = true;
       this.startError = '';
       try {
-        await exitDriver().start(this.walletId, {
-          destination: this.kit?.customDestination || null,
-          excluded: [this.kit?.depositAddress].filter(Boolean),
-        });
+        await exitDriver().start(this.walletId, { destination: this.kit?.customDestination || null });
         await this.tick();
       } catch (error) {
         this.startError = this.describeError(error);
@@ -503,9 +535,9 @@ export default {
       this.destinationError = '';
       try {
         if (this.exit) {
-          await exitDriver().setDestination(this.walletId, this.destinationInput, { excluded: [this.kit?.depositAddress].filter(Boolean) });
+          await exitDriver().setDestination(this.walletId, this.destinationInput);
         } else {
-          const verdict = classifyDestination(this.destinationInput, { network: this.kit?.network || 'mainnet', excluded: [this.kit?.depositAddress].filter(Boolean) });
+          const verdict = await exitDriver().checkDestination(this.walletId, this.destinationInput);
           if (!verdict.ok) throw Object.assign(new Error(verdict.reason), { code: `DESTINATION_${verdict.reason.toUpperCase()}` });
           // Remembered with the kit, so the choice survives leaving the page.
           this.kits.upsert(this.walletId, { customDestination: verdict.address === this.derivedDestination ? null : verdict.address });

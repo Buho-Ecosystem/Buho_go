@@ -93,6 +93,17 @@ test('totals cover every configured wallet and say when they are incomplete or s
   assert.deepEqual([verifiedZero.total, verifiedZero.complete, verifiedZero.stale], [0, true, false]);
 });
 
+test('a total is outdated only when a figure in it failed to refresh, and refreshing while any wallet is', () => {
+  const ok = nextBalanceState(emptyBalanceState(), { value: 1000, source: 'sync', at: NOW });
+  const failed = { ...hydrateBalanceState({ metadata: { cachedBalance: 500 } }), error: 'offline' };
+  const loading = { ...emptyBalanceState(), refreshing: true };
+  assert.equal(summarizeTotal(['A', 'C'], { A: ok, C: emptyBalanceState() }, { now: NOW }).outdated, false, 'incomplete is not outdated');
+  assert.equal(summarizeTotal(['A', 'F'], { A: ok, F: failed }, { now: NOW }).outdated, true);
+  assert.equal(summarizeTotal(['F'], { F: { ...failed, refreshing: true } }, { now: NOW }).outdated, false, 'a retry under way is not dimmed');
+  assert.equal(summarizeTotal(['A', 'L'], { A: ok, L: loading }, { now: NOW }).refreshing, true);
+  assert.equal(summarizeTotal(['A'], { A: ok }, { now: NOW }).refreshing, false);
+});
+
 test('invalid numbers never replace a value', () => {
   const s = nextBalanceState(emptyBalanceState(), { value: 7, at: NOW });
   for (const bad of [NaN, -1, 'abc', null]) assert.equal(nextBalanceState(s, { value: bad, at: NOW + 1 }).value, 7);

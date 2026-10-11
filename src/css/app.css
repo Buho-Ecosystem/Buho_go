@@ -223,9 +223,24 @@ body.platform-android {
        text needs 4.5:1 against the page. On the dark paper the bright brand
        green already clears it, so the two coincide here. */
     --brand-accent-text:  #15DE72;
+    /* ─── Arkade brand (core rule) ─────────────────────────
+       Red/orange in dark mode, purple in light mode, always on a
+       background that fits. Every Arkade mark, tint, tile, badge and
+       accent reads these; never hard-code an Arkade colour. */
+    --arkade-ink:         #F14317;
+    --arkade-ink-text:    #FF8A66;
+    --arkade-tint:        rgba(241, 67, 23, 0.16);
+    --arkade-tint-border: rgba(241, 67, 23, 0.34);
+    --arkade-tile:        linear-gradient(135deg, #3A1C9C, #24105F);
     --btn-neutral-bg:     #1A1A1A;
     --btn-neutral-fg:     #FFFFFF;
     --btn-neutral-border: transparent;
+    /* A sheet's one primary action: the brand green on dark paper, with
+       dark text so the label clears 4.5:1. */
+    --btn-primary-bg:     linear-gradient(135deg, #15DE72, #0DBB5F);
+    --btn-primary-fg:     #04140B;
+    /* Error text and destructive consequences, readable on the dark card. */
+    --color-negative:     #FF939B;
 
     /* ─── Bitcoin Map accents ──────────────────────────────────
        Map UI leans on green in dark mode (it pops on the dark
@@ -296,6 +311,12 @@ body.body--light {
     --brand-accent-soft:  rgba(5, 149, 115, 0.08);
     /* 6.07:1 on cream, where the decorative #059573 manages only 3.53:1. */
     --brand-accent-text:  #046B53;
+    /* Arkade on cream: the purple mark, a soft lavender tile and tint. */
+    --arkade-ink:         #351791;
+    --arkade-ink-text:    #351791;
+    --arkade-tint:        rgba(53, 23, 145, 0.09);
+    --arkade-tint-border: rgba(53, 23, 145, 0.22);
+    --arkade-tile:        linear-gradient(135deg, #EFEAFC, #E0D7F7);
 
     /* Neutral primary CTA — single dark pill on cream. Gives one
        visual weight to any "primary action" button regardless of
@@ -304,6 +325,9 @@ body.body--light {
     --btn-neutral-bg:     #1A1A1C;
     --btn-neutral-fg:     #FAF7EF;
     --btn-neutral-border: transparent;
+    --btn-primary-bg:     #1A1A1C;
+    --btn-primary-fg:     #FAF7EF;
+    --color-negative:     #B42332;
 
     /* Legacy token alignment — anything still reading
        var(--color-green) will now get the muted accent instead of
@@ -1326,3 +1350,18 @@ body.body--light .delete-confirm-card .cancel-btn {
 .balance-stale {
   opacity: 0.6;
 }
+
+/* ─── Form sheets ─────────────────────────────────────────────
+   A bottom sheet with Cancel, a centred title and one primary
+   action (Add Spark wallet, Move address): the iOS form-sheet
+   layout. One definition, so every such sheet looks the same. */
+.form-sheet-grabber { display: flex; justify-content: center; padding: 10px 0 2px; }
+.form-sheet-grabber::before { content: ''; width: 36px; height: 5px; border-radius: 3px; background: var(--text-muted); opacity: .4; }
+.form-sheet-header { display: grid; grid-template-columns: minmax(64px, 1fr) auto minmax(64px, 1fr); align-items: center; gap: 8px; padding: 6px 16px 4px; }
+.form-sheet-title { margin: 0; font-family: 'Manrope', sans-serif; font-size: 17px; font-weight: 650; line-height: 1.3; text-align: center; color: var(--text-primary); }
+.form-sheet-cancel { justify-self: start; min-height: 44px; padding: 0 4px; border: 0; background: transparent; color: var(--brand-accent-text); font: 500 16px/1.3 'Manrope', sans-serif; cursor: pointer; }
+.form-sheet-primary { display: inline-flex; align-items: center; justify-content: center; gap: 10px; min-height: 50px; border: 0; border-radius: 14px; background: var(--btn-primary-bg); color: var(--btn-primary-fg); font: 650 16px/1.3 'Manrope', sans-serif; cursor: pointer; }
+.form-sheet-primary:disabled { opacity: .5; cursor: default; }
+.form-sheet-error { color: var(--color-negative); font-size: 13px; line-height: 1.45; }
+.form-sheet-cancel:focus-visible,
+.form-sheet-primary:focus-visible { outline: 2px solid currentColor; outline-offset: 3px; }

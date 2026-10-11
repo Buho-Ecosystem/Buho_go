@@ -33,11 +33,11 @@ function fakeProvider(overrides = {}) {
   };
 }
 
-function harness({ provider = fakeProvider(), connected = true } = {}) {
+function harness({ provider = fakeProvider(), connected = true, accountNumber = 1 } = {}) {
   let clock = 1_000_000;
   const storage = openKitStorage({ indexedDB: undefined });
   const meta = memoryMeta();
-  const wallet = { id: 'w1', name: 'Personal', connectionData: { network: 'MAINNET', accountNumber: 2 }, metadata: { sparkAddress: SPARK } };
+  const wallet = { id: 'w1', name: 'Personal', connectionData: { network: 'MAINNET', accountNumber }, metadata: { sparkAddress: SPARK } };
   const delivered = [];
   const service = createExitKitService({
     getWallet: id => (id === wallet.id ? wallet : null),
@@ -70,6 +70,37 @@ test('refresh exports the kit under the Spark address, checks it with an offline
   h.tick(61_000);
   assert.deepEqual(await h.service.refresh('w1'), { ok: true });
   assert.equal(h.provider.calls.export, 2);
+});
+
+test('each account checks its kit against its own exit addresses', async () => {
+  const h = harness({ accountNumber: 2 });
+  await h.service.refresh('w1');
+  const kit = h.meta.kitFor('w1');
+  assert.equal(kit.fundingPath, "m/84'/0'/0'/0/3");
+  assert.equal(kit.destinationPath, "m/84'/0'/0'/0/2");
+  assert.notEqual(kit.fundingAddress, 'bc1qnjg0jd8228aq7egyzacy8cys3knf9xvrerkf9g');
+  assert.equal(h.provider.calls.prepare[0].destination, kit.destinationAddress);
+  assert.equal(kit.legacyFundingAddress, undefined, 'a first kit has no earlier address');
+});
+
+test('a kit cached before per-account keys is derived again and remembers the old fee money address', async () => {
+  const shared = { destinationAddress: 'bc1qcr8te4kr609gcawutmrza0j4xv80jy8z306fyu', fundingAddress: 'bc1qnjg0jd8228aq7egyzacy8cys3knf9xvrerkf9g', fundingPublicKeyHex: '02aa', network: 'mainnet', customDestination: 'bc1qcustom' };
+  const second = harness({ accountNumber: 2 });
+  second.meta.upsert('w1', shared);
+  await second.service.refresh('w1');
+  const moved = second.meta.kitFor('w1');
+  assert.equal(moved.fundingPath, "m/84'/0'/0'/0/3");
+  assert.notEqual(moved.fundingAddress, shared.fundingAddress);
+  assert.equal(moved.legacyFundingAddress, shared.fundingAddress);
+  assert.equal(moved.customDestination, 'bc1qcustom', 'a chosen destination survives');
+
+  const first = harness({ accountNumber: 1 });
+  first.meta.upsert('w1', shared);
+  await first.service.refresh('w1');
+  const kept = first.meta.kitFor('w1');
+  assert.equal(kept.fundingAddress, shared.fundingAddress, 'account 1 keeps its addresses');
+  assert.equal(kept.fundingPath, "m/84'/0'/0'/0/1");
+  assert.equal(kept.legacyFundingAddress, undefined);
 });
 
 test('an export failure is recorded and cleared by the next success; a quote failure keeps the kit', async () => {

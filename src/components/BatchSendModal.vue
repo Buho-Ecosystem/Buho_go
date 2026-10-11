@@ -962,7 +962,7 @@ function getTypeColor(type) {
     lightning: '#F7931A',  // Orange
     spark: '#000',         // Black
     bitcoin: '#F7931A',    // Orange
-    arkade: '#F14317'      // Arkade brand orange
+    arkade: 'var(--arkade-ink)' // Arkade: purple in light mode, orange in dark
   }
   return colors[type] || colors.lightning
 }

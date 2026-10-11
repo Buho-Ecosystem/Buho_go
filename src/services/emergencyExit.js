@@ -8,8 +8,9 @@
  * runs under test; `exitDriver()` is the app-wired instance.
  */
 
-import { deriveExitAddresses, deriveFundingKey, classifyDestination } from '../utils/exitKeys.js';
+import { deriveExitAddresses, deriveAllFundingAddresses, deriveFundingKey, classifyDestination, exitKeyPath } from '../utils/exitKeys.js';
 import { toExitNetwork } from '../utils/exitKit.js';
+import { sparkAccountNumberOf } from '../utils/sparkAccounts.js';
 import { packageFor } from '../utils/exitPlan.js';
 import {
   newExit, withQuote, withDestination, withFunding, withBuild, withChain, withError, withoutError, canCancel, canChangeDestination, isActive, selectFundingInputs,
@@ -23,8 +24,13 @@ export class ExitError extends Error {
   constructor(code, message) { super(message || code); this.code = code; }
 }
 
+// Every exit before per-account keys used this index for its fee money.
+const LEGACY_FUNDING_INDEX = 1;
+
 export function createExitDriver({
   getWallet, getProvider, getMnemonic, ledger, esplora, createSigner,
+  // walletId -> Spark deposit addresses an exit must not pay (every wallet's, not only its own).
+  getDepositAddresses = () => [],
   reminders = { schedule: async () => false, cancel: async () => {} },
   now = () => Date.now(),
 }) {
@@ -46,7 +52,30 @@ export function createExitDriver({
 
   async function addressesFor(wallet) {
     const network = toExitNetwork(wallet.connectionData?.network);
-    return { network, ...deriveExitAddresses(await getMnemonic(wallet.id), { network }) };
+    const mnemonic = await getMnemonic(wallet.id);
+    return {
+      network,
+      ...deriveExitAddresses(mnemonic, { network, accountNumber: sparkAccountNumberOf(wallet) }),
+      feeAddresses: deriveAllFundingAddresses(mnemonic, { network }),
+    };
+  }
+
+  /** Where this wallet's exit may not pay: Spark deposit addresses and every exit's fee money. */
+  async function protectedAddresses(wallet, excluded = []) {
+    const network = toExitNetwork(wallet.connectionData?.network);
+    return {
+      network,
+      excluded: [...excluded, ...(getDepositAddresses(wallet.id) || [])].filter(Boolean),
+      feeAddresses: deriveAllFundingAddresses(await getMnemonic(wallet.id), { network }),
+    };
+  }
+
+  /** The same verdict start and setDestination apply, for checking an address before any exit exists. */
+  async function checkDestination(walletId, address, { excluded = [] } = {}) {
+    const wallet = getWallet(walletId);
+    if (!wallet) throw new ExitError('NO_WALLET', 'Wallet not found');
+    const guard = await protectedAddresses(wallet, excluded);
+    return classifyDestination(address, guard);
   }
 
   /** Quote and open the ledger record. Free, offline-capable, cancellable. */
@@ -57,8 +86,13 @@ export function createExitDriver({
       if (isActive(ledger.exitFor(walletId))) return ledger.exitFor(walletId);
       const provider = requireProvider(walletId);
       const derived = await addressesFor(wallet);
+      // An exit begun under the shared layout may still be collecting fee
+      // money on what is now this wallet's address: never count it twice.
+      const sharing = ledger.activeExits.find(other => other.walletId !== walletId && other.funding?.address === derived.funding.address);
+      if (sharing) throw new ExitError('FUNDING_IN_USE', 'Another exit uses this fee money address');
+      const guard = await protectedAddresses(wallet, excluded);
       const target = destination
-        ? { address: assertDestination(destination, derived.network, excluded), source: 'custom' }
+        ? { address: assertDestination(destination, guard), source: 'custom' }
         : { address: derived.destination.address, source: 'derived' };
       const feeRateSatPerVbyte = (await esplora.recommendedFees()).medium;
       const quote = await provider.prepareUnilateralExit({ feeRateSatPerVbyte, destination: target.address });
@@ -71,8 +105,8 @@ export function createExitDriver({
     });
   }
 
-  function assertDestination(address, network, excluded = []) {
-    const verdict = classifyDestination(address, { network, excluded });
+  function assertDestination(address, guard) {
+    const verdict = classifyDestination(address, guard);
     if (!verdict.ok) throw new ExitError(`DESTINATION_${verdict.reason.toUpperCase()}`, 'Not a usable Bitcoin address');
     return verdict.address;
   }
@@ -83,7 +117,9 @@ export function createExitDriver({
       const exit = ledger.exitFor(walletId);
       if (!exit || !canChangeDestination(exit)) throw new ExitError('LOCKED', 'Destination cannot change now');
       const provider = requireProvider(walletId);
-      const clean = assertDestination(address, exit.network, excluded);
+      const wallet = getWallet(walletId);
+      if (!wallet) throw new ExitError('NO_WALLET', 'Wallet not found');
+      const clean = assertDestination(address, { ...(await protectedAddresses(wallet, excluded)), network: exit.network });
       const quote = await provider.prepareUnilateralExit({ feeRateSatPerVbyte: exit.quote.feeRateSatPerVbyte, destination: clean });
       return ledger.set(withQuote(withDestination(exit, clean, 'custom', now()), quote, exit.balanceSat, now()));
     });
@@ -139,7 +175,10 @@ export function createExitDriver({
       // is left alone rather than handed to the fee-paying children.
       const fundingInputs = selectFundingInputs(exit.funding.utxos, exit.funding.requiredSat).inputs
         .map(u => ({ type: 'p2wpkh', txid: u.txid, vout: u.vout, value: u.value, pubkey: exit.funding.publicKeyHex }));
-      const key = deriveFundingKey(await getMnemonic(wallet.id), { network: exit.network });
+      // The path the exit recorded at start; records from before paths were
+      // stored all used the original fee money index.
+      const path = exit.funding.path || exitKeyPath(exit.network, LEGACY_FUNDING_INDEX);
+      const key = deriveFundingKey(await getMnemonic(wallet.id), { network: exit.network, path });
       if (key.address !== exit.funding.address) throw new ExitError('KEY_MISMATCH', 'Fee money key does not match');
       let response;
       const signer = await createSigner(key.privateKey);
@@ -219,7 +258,18 @@ export function createExitDriver({
     return results;
   }
 
-  return { start, setDestination, refreshFunding, cancel, confirmSend, tick, tickAll };
+  /**
+   * Fee money still waiting at the address a wallet used before per-account
+   * keys, when that address now belongs to another account's exit. It stays
+   * under the words; the person only needs to know where it went.
+   */
+  async function legacyFundingSat(walletId, legacyAddress) {
+    if (!legacyAddress) return 0;
+    const utxos = await esplora.utxos(legacyAddress);
+    return (utxos || []).reduce((sum, utxo) => sum + (Number(utxo.value) || 0), 0);
+  }
+
+  return { start, setDestination, checkDestination, refreshFunding, cancel, confirmSend, tick, tickAll, legacyFundingSat };
 }
 
 // ---- App wiring ------------------------------------------------------------
@@ -227,15 +277,20 @@ export function createExitDriver({
 let instance = null;
 let walletStoreFactory = null;
 let exitStoreFactory = null;
+let exitKitStoreFactory = null;
 let monitor = null;
 
-/** The boot file registers both Pinia store factories, so this module imports no store. */
+/** The boot file registers the Pinia store factories, so this module imports no store. */
 export function attachExitWalletStore(factory) {
   walletStoreFactory = factory;
 }
 
 export function attachEmergencyExitStore(factory) {
   exitStoreFactory = factory;
+}
+
+export function attachExitKitStore(factory) {
+  exitKitStoreFactory = factory;
 }
 
 function walletStore() {
@@ -246,6 +301,11 @@ function walletStore() {
 function exitStore() {
   if (!exitStoreFactory) throw new Error('exit driver used before the exit store attached');
   return exitStoreFactory();
+}
+
+/** Kit metadata is optional context (remembered deposit addresses), never required. */
+function exitKitStore() {
+  return exitKitStoreFactory ? exitKitStoreFactory() : null;
 }
 
 /** The persisted ledger, seen through the store. */
@@ -262,6 +322,9 @@ export function exitDriver() {
     getWallet: (walletId) => walletStore().wallets.find(w => w.id === walletId) || null,
     getProvider: (walletId) => walletStore().getSparkProvider(walletId),
     getMnemonic: (walletId) => walletStore().getSparkMnemonic(walletId),
+    getDepositAddresses: () => walletStore().sparkWallets
+      .map(w => exitKitStore()?.kitFor(w.id)?.depositAddress)
+      .filter(Boolean),
     ledger,
     esplora: lazyEsplora(),
     createSigner: async (privateKey) => (await import('./breezSdk.js')).createCpfpSigner(privateKey),

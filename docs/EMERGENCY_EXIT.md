@@ -4,7 +4,7 @@ Issue [#269](https://github.com/Buho-Ecosystem/Buho_go/issues/269). Research and
 
 ## What it does
 
-A Spark wallet's money can move to plain Bitcoin without Spark's operators, using only the Breez SDK's unilateral exit API (`@breeztech/breez-sdk-spark` 0.25.0) and public Esplora endpoints that proxy `submitpackage`. The feature has three layers, matching the research: an always-on kit, a door that appears only when it matters, and a resumable exit page.
+A Spark wallet's money can move to plain Bitcoin without Spark's operators, using only the Breez SDK's unilateral exit API (`@breeztech/breez-sdk-spark`, 0.26.1 at the time of the per-wallet key change) and public Esplora endpoints that proxy `submitpackage`. The feature has three layers, matching the research: an always-on kit, a door that appears only when it matters, and a resumable exit page.
 
 ### The kit (always on, quiet)
 
@@ -28,15 +28,27 @@ A Spark wallet's money can move to plain Bitcoin without Spark's operators, usin
 
 `src/pages/EmergencyExitPage.vue` at `/security/exit/:walletId`, driven by `src/services/emergencyExit.js` over a persisted ledger (`src/stores/emergencyExit.js`, transitions in `src/utils/exitLedger.js`, chain planning in `src/utils/exitPlan.js`).
 
-1. Start: quote at the medium fee tier with auto leaf triage. The page shows three figures with one vocabulary: fee money you send (`singleUtxoFundingSat`), taken from the amount (the sweep's own fee), and what arrives. Destination defaults to `m/84'/0'/0'/0/0` of the wallet's own words (any Bitcoin wallet restoring the words finds it) and can be changed to any plain Bitcoin address; the wallet's own deposit address is refused. Free, and cancellable behind a confirmation that says where the fee money stays.
-2. Fee money: the person sends the quoted amount to `m/84'/0'/0'/0/1` of the same words. The page polls the address; confirmed value moves the stage forward.
+1. Start: quote at the medium fee tier with auto leaf triage. The page shows three figures with one vocabulary: fee money you send (`singleUtxoFundingSat`), taken from the amount (the sweep's own fee), and what arrives. Destination defaults to the wallet's own BIP-84 destination address (see "Keys per wallet"; any Bitcoin wallet restoring the words finds it) and can be changed to any plain Bitcoin address; every Spark wallet's deposit address and every exit's fee money address are refused. Free, and cancellable behind a confirmation that says where the fee money stays.
+2. Fee money: the person sends the quoted amount to the wallet's own fee money address under the same words. The page polls the address; confirmed value moves the stage forward.
 3. Send: a review sheet with labelled amount, full destination and fee rows, followed by the irreversible warning, two-week timing and the duty to keep this phone. This follows [Apple HIG's advice to keep alerts brief](https://developer.apple.com/design/human-interface-guidelines/alerts): transaction details use a structured sheet instead of a long alert message. Cancel gets initial keyboard focus; both actions stay reachable when enlarged text makes the details scroll. The exit re-quotes for the same leaves at today's fees, signs with `unilateralExit` and the SDK's `singleKeyCpfpSigner` over the fee money key (only the inputs the requirement needs; the signer is released and the key bytes wiped afterwards), and broadcasts the first package. If fees rose, it asks for more fee money instead.
 4. On its way, unlock, sweep, done: every pass reads tip height and transaction statuses (re-reading anything confirmed without a known height, since timelocks count from the parent's height), broadcasts whatever has its dependencies confirmed and its timelock matured (tree transactions as parent plus fee child packages, fan-out and sweep alone), and derives the stage. Esplora calls honour the person's configured mempool instance first, fail over across public instances, and treat a node without the package route as unavailable rather than as a rejection. A boot file keeps this running every five minutes whenever the app is open, without a Spark connection. Done keeps the receipt (full address, copy, explorer link, how to spend it) until acknowledged.
 5. A reminder is scheduled for the unlock date when the LocalNotifications native plugin is present; otherwise the copy says to open the app on the day.
 
+### Keys per wallet
+
+All Spark wallets share one recovery phrase and differ by Breez account number (`src/utils/sparkAccounts.js`). The Breez and Spark docs leave the CPFP funding key to the app, so `src/utils/exitKeys.js` gives every account its own pair on the BIP-84 account-0 receive chain, all inside the usual gap limit of 20:
+
+| Spark account | Destination | Fee money |
+|---|---|---|
+| 1 | `m/84'/0'/0'/0/0` | `m/84'/0'/0'/0/1` |
+| n = 2..5 | `/0/(2n-2)` | `/0/(2n-1)` |
+| 0 | `/0/10` | `/0/11` |
+
+Account 1 keeps the addresses every exit used before. A shared fee money address let one wallet's exit count, and spend, another exit's fan-out outputs and CPFP change (both pay the funding script), so each account now has its own. Signing derives from the path the ledger recorded at start, restricted to the six known fee money paths, so an exit begun under the shared layout finishes on its own key. A kit cache from before is derived again on its next refresh; when the fee money address moved, the old one is kept as `legacyFundingAddress` and the exit page says how much fee money still sits there (it now belongs to account 1's exit and stays under the words).
+
 ## Validation
 
-- `npm test` runs the emergency-exit specs: key derivation against the BIP-84 vectors, address validation, chain planning, ledger transitions, the Esplora client with failover and package rules, the kit life cycle, the exit driver end to end against fakes, outage tracking, and native reminder scheduling without awaiting a Capacitor proxy.
+- `npm test` runs the emergency-exit specs: key derivation against the BIP-84 vectors and the per-account layout, signing only from known fee money paths, address validation, chain planning, ledger transitions, the Esplora client with failover and package rules, the kit life cycle, the exit driver end to end against fakes, outage tracking, and native reminder scheduling without awaiting a Capacitor proxy.
 - `node scripts/check-emergency-exit.mjs` against the dev server (`pnpm dev --port 9011`, or set `EXIT_BASE_URL` for another port): seeds public test words, stubs the SDK provider and every chain endpoint, and drives the real UI through Settings → Advanced, keyboard disclosure of kit details, start, destination validation, fee money, confirmation and safe dismissal, package broadcasting in dependency order, the timelock, the sweep, done with its receipt, cancel behind its confirmation, the outage banner, no progress chip on home, resume from Settings, German at 320px with 200% text, and the dark theme. Screenshots land in `output/emergency-exit/`.
 
 ## Limits and follow-ups
@@ -44,4 +56,3 @@ A Spark wallet's money can move to plain Bitcoin without Spark's operators, usin
 - No live exit was performed. The SDK's signing and the Esplora package endpoints were exercised with fakes; a funded run on a throwaway wallet is the next gate.
 - The merged app includes and registers `@capacitor/local-notifications`. Reminders still require OS permission and on-device verification; when unavailable, the page says "Open BuhoGO on or after {date}".
 - The Breez export is not in Blink's bundle format; a way out without BuhoGO remains open research.
-- The Business half of a Spark pair refreshes its kit only while it is the connected wallet (single live Spark connection).

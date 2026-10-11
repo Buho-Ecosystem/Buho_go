@@ -108,6 +108,17 @@
           <span>{{ $t('Last backup:') }} {{ formatDate(store.newestBackupAt) }}</span>
         </div>
 
+        <!-- Only when the backup no longer matches this phone: what happened, and the one action. -->
+        <div
+          v-if="staleNote"
+          class="cb-callout"
+          :class="staleNote.warn ? 'cb-callout--warn' : ($q.dark.isActive ? 'cb-callout-dark' : 'cb-callout-light')"
+          role="status"
+        >
+          <Icon :icon="staleNote.warn ? 'tabler:alert-triangle' : 'tabler:info-circle'" width="18" height="18" class="cb-callout-icon" />
+          <div class="cb-callout-text">{{ staleNote.text }}</div>
+        </div>
+
         <button
           class="cb-menu-row"
           :class="$q.dark.isActive ? 'cb-menu-row-dark' : 'cb-menu-row-light'"
@@ -168,7 +179,14 @@
       <q-card-section v-else-if="step === 'backup'" class="cb-body">
         <p class="cb-lede">{{ $t('Recovery words can still be checked separately.') }}</p>
         <div v-if="backupError" class="cb-callout cb-callout--warn" role="alert">{{ backupError }}</div>
-        <div v-if="store.hasRemoteBackup" class="cb-callout cb-callout--warn">
+        <!-- The one backup that can lose something: say it before the person confirms. -->
+        <div v-if="dropsSecrets" class="cb-callout cb-callout--warn" role="alert">
+          <Icon icon="tabler:alert-triangle" width="18" height="18" class="cb-callout-icon" />
+          <div class="cb-callout-text">
+            {{ $t('The backup in your Drive holds a recovery phrase this phone no longer has. Backing up now removes it from Drive, so make sure it is written down first.') }}
+          </div>
+        </div>
+        <div v-else-if="store.hasRemoteBackup" class="cb-callout cb-callout--warn">
           <Icon icon="tabler:alert-triangle" width="18" height="18" class="cb-callout-icon" />
           <div class="cb-callout-text">
             {{ $t('This replaces the existing backup in your Drive.') }}
@@ -283,6 +301,7 @@ export default {
       offerSignOutRetry: false,
       doneTitle: '',
       doneSubtitle: '',
+      dropsSecrets: false,
     };
   },
 
@@ -294,6 +313,21 @@ export default {
 
     busy() {
       return this.store.isAuthing || this.store.isBackingUp || this.store.isRestoring || this.store.isListing;
+    },
+
+    /**
+     * Why the Drive copy may not match this phone. Silent uploads keep it
+     * current after wallet changes; this explains the cases they skip.
+     */
+    staleNote() {
+      if (!this.store.hasRemoteBackup) return null;
+      switch (this.store.autoBackupBlocked) {
+        case 'remote_newer': return { warn: true, text: this.$t('The backup on Drive was made on another phone. Back up again to replace it with the wallets on this phone.') };
+        case 'restore_incomplete': return { warn: true, text: this.$t("Some wallets in this backup aren't on this phone. Backing up again replaces the backup without them.") };
+        case 'would_drop_secret': return { warn: true, text: this.$t('The backup in your Drive holds a recovery phrase or wallet connection this phone no longer has, so it is not updated automatically.') };
+        case 'remote_unreadable': return { warn: true, text: this.$t("This phone can't open the backup on Drive, so it is not updated automatically. Back up again to replace it.") };
+        default: return this.store.backupOutOfDate ? { warn: false, text: this.$t('Your wallets changed after this backup. Back up again to include the changes.') } : null;
+      }
     },
 
     canGoBack() {
@@ -345,6 +379,12 @@ export default {
       if (!isOpen) return;
       this.resetLocalState();
       this.bootstrap();
+    },
+    async step(next) {
+      this.dropsSecrets = false;
+      if (next === 'backup' && this.store.hasRemoteBackup) {
+        this.dropsSecrets = await this.store.backupDropsSecrets();
+      }
     },
   },
 

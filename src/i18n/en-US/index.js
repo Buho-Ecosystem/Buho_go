@@ -2,6 +2,7 @@ import profilePayment from './profilePayment.js';
 import addressRequest from './addressRequest.js';
 import backup from './backup.js';
 import exit from './exit.js';
+import wallets from './wallets.js';
 import identities from './identities.js';
 export default {
   ...profilePayment,
@@ -47,6 +48,7 @@ export default {
   "This request cannot be redeemed in whole sats. Ask the service for a new one.": "This request cannot be redeemed in whole sats. Ask the service for a new one.",
   ...backup,
   ...exit,
+  ...wallets,
   ...identities,
   // Spend: Bitrefill door
   "Gift cards, mobile top-ups and more": "Gift cards, mobile top-ups and more",
@@ -671,8 +673,6 @@ export default {
   "One or more words don't add up. Please double-check each word, including the last one, and try again.": "One or more words don't add up. Please double-check each word, including the last one, and try again.",
   "Word {n} doesn't match the official recovery word list. Check the spelling and try again.": "Word {n} doesn't match the official recovery word list. Check the spelling and try again.",
   "Words {n} don't match the official recovery word list. Check the spelling and try again.": "Words {n} don't match the official recovery word list. Check the spelling and try again.",
-  "Your Spark wallets are already set up": "Your Spark wallets are already set up",
-  "Your Business and Personal Spark wallets are already on this device. Remove them from Settings before restoring a different recovery phrase.": "Your Business and Personal Spark wallets are already on this device. Remove them from Settings before restoring a different recovery phrase.",
   // Relative time
   "just now": "just now",
   "min ago": "min ago",
@@ -735,7 +735,6 @@ export default {
   "We ask for your PIN, pattern or password whenever we need to be sure it's you.": "We ask for your PIN, pattern or password whenever we need to be sure it's you.",
   "We ask you to unlock your phone whenever we need to be sure it's you.": "We ask you to unlock your phone whenever we need to be sure it's you.",
   // Settings
-  "Add Spark Wallet": "Add Spark Wallet",
   "Spark transfers are instant and free": "Spark transfers are instant and free",
   "Show your recovery phrase": "Show your recovery phrase",
   "Tap \"Add Wallet\" to get started": "Tap \"Add Wallet\" to get started",
@@ -829,10 +828,6 @@ export default {
   "Spend": "Spend",
   "Hide address": "Hide address",
   "kiosk.connecting": "Connecting...",
-  "Your Business Wallet": "Your Business Wallet",
-  "Accept payments from customers, manage your sales, and keep your business funds in one place.": "Accept payments from customers, manage your sales, and keep your business funds in one place.",
-  "Your Personal Wallet": "Your Personal Wallet",
-  "Your private funds stay separate here. Both wallets share the same recovery words, but each has its own balance.": "Your private funds stay separate here. Both wallets share the same recovery words, but each has its own balance.",
   "Save for the Future": "Save for the Future",
   "Ready to save? You can send your Bitcoin to a hardware wallet or any Bitcoin address for long-term storage.": "Ready to save? You can send your Bitcoin to a hardware wallet or any Bitcoin address for long-term storage.",
   "Let's go!": "Let's go!",
@@ -844,7 +839,6 @@ export default {
   "Tap to Pay with NFC": "Tap to Pay with NFC",
   "Accept Bolt Card payments with a single tap. Customers hold their card to your phone and pay instantly.": "Accept Bolt Card payments with a single tap. Customers hold their card to your phone and pay instantly.",
   "Move Between Wallets": "Move Between Wallets",
-  "Move money between your Business and Personal wallet anytime. It happens instantly and costs nothing.": "Move money between your Business and Personal wallet anytime. It happens instantly and costs nothing.",
   "Auto-Transfer": "Auto-Transfer",
   "Set a rule and your funds move automatically when your balance grows past a certain amount. Set it and forget it.": "Set a rule and your funds move automatically when your balance grows past a certain amount. Set it and forget it.",
   "Your Transaction History": "Your Transaction History",
@@ -977,8 +971,6 @@ export default {
   "Got it": "Got it",
   "Please wait {mins} minutes before claiming again": "Please wait {mins} minutes before claiming again",
   "The daily reward budget is used up. Please try again tomorrow.": "The daily reward budget is used up. Please try again tomorrow.",
-  "Total (incomplete)": "Total (incomplete)",
-  "Total (not current)": "Total (not current)",
   "Last known balance — not current": "Last known balance — not current",
   "Balance not loaded yet": "Balance not loaded yet",
   "Reward payouts are paused for now. Your earned sats are saved and you can claim them later.": "Reward payouts are paused for now. Your earned sats are saved and you can claim them later.",
@@ -992,13 +984,10 @@ export default {
   "Amazing!": "Amazing!",
   "Verify your recovery phrase": "Verify your recovery phrase",
   "Not verified": "Not verified",
-  "This will permanently delete all {count} Spark wallets. Make sure you have backed up your seed phrases. This action cannot be undone.": "This will permanently delete all {count} Spark wallets. Make sure you have backed up your seed phrases. This action cannot be undone.",
-  "Spark wallets deleted": "Spark wallets deleted",
   "Arkade wallet deleted": "Arkade wallet deleted",
   "Spark wallet deleted": "Spark wallet deleted",
   "Danger Zone": "Danger Zone",
   "Features": "Features",
-  "Delete Spark Wallets": "Delete Spark Wallets",
   "Delete Arkade Wallet": "Delete Arkade Wallet",
   "Manage Wallets": "Manage Wallets",
   "wallet": "wallet",
@@ -1106,7 +1095,6 @@ export default {
   "https://your-mempool-instance.com/api/v1": "https://your-mempool-instance.com/api/v1",
   "to confirm": "to confirm",
   "Delete Wallet": "Delete Wallet",
-  "This will permanently delete your Spark wallet. Make sure you have backed up your seed phrase. This action cannot be undone.": "This will permanently delete your Spark wallet. Make sure you have backed up your seed phrase. This action cannot be undone.",
   "This will permanently delete your Arkade wallet. Make sure you have backed up your recovery phrase. This action cannot be undone.": "This will permanently delete your Arkade wallet. Make sure you have backed up your recovery phrase. This action cannot be undone.",
   "This will remove all NWC wallet connections. Your Spark wallet will not be affected. You can reconnect NWC wallets later using your connection strings.": "This will remove all NWC wallet connections. Your Spark wallet will not be affected. You can reconnect NWC wallets later using your connection strings.",
   "Remove NWC": "Remove NWC",
@@ -1435,7 +1423,6 @@ export default {
   "View Seed Phrase": "View Seed Phrase",
   "Change PIN": "Change PIN",
   "Language": "Language",
-  "Delete Spark Wallet": "Delete Spark Wallet",
   "Remove NWC Connections": "Remove NWC Connections",
   "CONTACT": "CONTACT",
   "Select Contact": "Select Contact",
@@ -1978,11 +1965,8 @@ export default {
   "Restoring Spark Wallet": "Restoring Spark Wallet",
   "Step": "Step",
   "Enter your 12-word seed phrase to restore your Spark wallet. This is only for Spark wallets.": "Enter your 12-word seed phrase to restore your Spark wallet. This is only for Spark wallets.",
-  "Checking for an existing wallet...": "Checking for an existing wallet...",
   "Creating Your Wallet": "Creating Your Wallet",
   "Encrypting wallet...": "Encrypting wallet...",
-  "Setting up Business wallet...": "Setting up Business wallet...",
-  "Setting up Personal wallet...": "Setting up Personal wallet...",
   "Almost done...": "Almost done...",
   "Wallet created!": "Wallet created!",
   "We couldn't restore your wallet": "We couldn't restore your wallet",

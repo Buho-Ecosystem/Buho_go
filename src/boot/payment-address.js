@@ -9,8 +9,8 @@ import { boot } from 'quasar/wrappers';
  * profile for a `lud16` to actually send to. The app fills that field with
  * its best default:
  *
- *   1. The first Spark wallet's own Lightning address (Business, then
- *      Personal) — payments land straight in the wallet, no extra hop.
+ *   1. The oldest Spark wallet's own Lightning address: payments land
+ *      straight in the wallet, no extra hop.
  *   2. The identity's Social Bucket address (`<npub>@npub.cash`) when no
  *      Spark wallet has an address — payable the moment the key exists,
  *      no registration call needed.

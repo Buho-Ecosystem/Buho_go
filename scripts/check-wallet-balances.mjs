@@ -63,7 +63,12 @@ try {
     await dialog.waitFor();
     const text = await dialog.innerText();
     assert.match(text, new RegExp(`\\b${total}\\b`));
-    assert.match(text, balance === null ? /—/ : new RegExp(`\\b${balance}\\b`));
+    if (balance === null) {
+      // Unknown: a placeholder, never a dash or an invented 0.
+      assert.equal(await dialog.locator('[data-wallet-id="personal"] .balance-placeholder').count(), 1);
+    } else {
+      assert.match(text, new RegExp(`\\b${balance}\\b`));
+    }
     assert.doesNotMatch(text, /1[,. ]?747|1[,. ]?763/);
     await page.keyboard.press('Escape');
     await dialog.waitFor({ state: 'hidden' });

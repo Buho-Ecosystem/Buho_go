@@ -18,7 +18,8 @@
  *   version 2 (current):
  *     {
  *       v: 2,
- *       spark:    { mnemonic, network },                    // iff present
+ *       spark:    { mnemonic, network, accounts },          // iff present
+ *       exitKits: [{ sparkAddress, network, accountNumber, exitState, exportedAt }],
  *       arkade:   { mnemonic, arkServerUrl, network },      // iff present
  *       nwc:      [{ name, nwcUrl }, ...],                  // iff present
  *       lnbits:   [{ name, serverUrl, adminKey }, ...],     // iff present
@@ -28,10 +29,26 @@
  *   version 1 (accepted on restore): { v: 1, spark?, identity? } — the
  *   same shapes, before connected-wallet coverage was added.
  *
+ *   `spark.accounts` lists the Spark wallets the phrase covers
+ *   ([{ accountNumber, name, lud16, sparkAddress }], utils/sparkBackup.js);
+ *   it was added within version 2, so older apps still restore the phrase.
+ *
  * Restore is strictly additive: it fills whatever is missing on this
  * device and never overwrites an existing wallet or identity. Restoring
  * on top of a freshly-generated wallet the user meant to keep must not
  * destroy it — to replace, wipe first.
+ *
+ * Keeping the backup current: after wallets change, the device that wrote
+ * the current backup uploads a fresh one by itself (noteWalletsChanged).
+ * An automatic upload never:
+ *   - runs on a device that only restored (it never wrote the backup);
+ *   - replaces a backup another phone wrote since (Drive's own timestamp of
+ *     our last upload must still match);
+ *   - loses a recovery phrase the backup on Drive holds (it decrypts the
+ *     current backup and compares, utils/backupSecrets.js);
+ *   - runs after a restore that could not bring everything back.
+ * Each of those leaves a sticky block that only a backup the person starts
+ * clears.
  *
  * The envelope itself (salt, IV, KDF params, ciphertext) is handled by
  * utils/backupCrypto. Transport is services/cloudStorage. This store is
@@ -50,14 +67,22 @@ import {
   downloadBackupKey,
   getRemoteBackupInfo,
   deleteBackup,
+  isCloudBackupPlatform,
 } from '../services/cloudStorage.js';
 import { WALLET_TYPES } from '../providers/WalletFactory';
 import { useWalletStore } from './wallet.js';
 import { useIdentityStore } from './identity.js';
 import { exitKitService } from '../services/exitKit.js';
+import { sparkAccountsForBackup, sparkAccountsFromBackup, sparkNetworkFromBackup } from '../utils/sparkBackup.js';
+import { droppedSecrets } from '../utils/backupSecrets.js';
 
 const META_KEY = 'buhoGO_cloud_backup_meta_v1';
 const PAYLOAD_VERSION = 2;
+// Several changes in a row (restore discovery, a rename typed in steps) make one upload.
+const AUTO_BACKUP_DELAY_MS = 4000;
+// Clocks of two uploads from the same phone can differ by the upload time.
+const REMOTE_NEWER_SLACK_MS = 2 * 60 * 1000;
+let autoBackupTimer = null;
 
 function readMeta() {
   try {
@@ -96,10 +121,30 @@ export const useCloudBackupStore = defineStore('cloudBackup', {
     isBackingUp: false,
     isRestoring: false,
     isListing: false,
+    /** ISO timestamp of the last wallet change on this device (persisted). */
+    changedAt: null,
+    /**
+     * Why automatic uploads are not happening, or null:
+     *   'remote_newer'       another phone wrote the backup since
+     *   'restore_incomplete' a restore could not bring everything back; an
+     *                        upload now would drop it from the backup
+     *   'would_drop_secret'  this phone no longer has a recovery phrase the
+     *                        backup on Drive holds
+     *   'auth'               sign in again
+     *   'failed'             the last attempt failed (retried on the next change)
+     * Cleared by a backup the person starts.
+     */
+    autoBackupBlocked: null,
+    /** Drive's modifiedAt of this device's last upload: proves nobody wrote since. */
+    remoteAtLastBackup: null,
   }),
 
   getters: {
     hasRemoteBackup: (state) => Boolean(state.remoteBackup),
+
+    /** Wallets changed after the last backup this device made. */
+    backupOutOfDate: (state) => Boolean(state.lastBackupAt && state.changedAt
+      && Date.parse(state.changedAt) > Date.parse(state.lastBackupAt)),
 
     /** Best-known time of the newest backup: remote truth beats local memory. */
     newestBackupAt: (state) => state.remoteBackup?.modifiedAt || state.lastBackupAt,
@@ -119,12 +164,87 @@ export const useCloudBackupStore = defineStore('cloudBackup', {
       if (meta) {
         this.lastBackupAt = meta.lastBackupAt || null;
         this.signedInEmail = meta.signedInEmail || null;
+        this.changedAt = meta.changedAt || null;
+        this.autoBackupBlocked = meta.autoBackupBlocked || null;
+        this.remoteAtLastBackup = meta.remoteAtLastBackup || null;
       }
     },
 
     /** Persist the non-secret bookkeeping that survives restarts. */
     _persistMeta() {
-      writeMeta({ lastBackupAt: this.lastBackupAt, signedInEmail: this.signedInEmail });
+      writeMeta({
+        lastBackupAt: this.lastBackupAt,
+        signedInEmail: this.signedInEmail,
+        changedAt: this.changedAt,
+        autoBackupBlocked: this.autoBackupBlocked,
+        remoteAtLastBackup: this.remoteAtLastBackup,
+      });
+    },
+
+    /**
+     * Wallets were added, removed, renamed or restored on this device. When
+     * this device wrote the current Drive backup, a fresh one follows a few
+     * seconds later, silently; otherwise the change is only remembered, so
+     * the backup sheet can say the backup is out of date.
+     */
+    noteWalletsChanged() {
+      if (!this.lastBackupAt && !this.signedInEmail) this.init();
+      this.changedAt = new Date().toISOString();
+      this._persistMeta();
+      if (!this.lastBackupAt || !this.signedInEmail || !isCloudBackupPlatform()) return;
+      if (this._autoBackupPaused()) return;
+      clearTimeout(autoBackupTimer);
+      autoBackupTimer = setTimeout(() => {
+        autoBackupTimer = null;
+        this._autoBackup().catch(() => {});
+      }, AUTO_BACKUP_DELAY_MS);
+    },
+
+    /** A block only a backup the person starts lifts. */
+    _autoBackupPaused() {
+      return ['remote_newer', 'remote_missing', 'remote_unreadable', 'restore_incomplete', 'would_drop_secret'].includes(this.autoBackupBlocked);
+    },
+
+    /** The silent upload behind noteWalletsChanged. Never throws, never prompts. */
+    async _autoBackup() {
+      // Re-checked here: a restore may have started, or ended incomplete,
+      // while the timer was waiting.
+      if (this.isBackingUp || this.isRestoring || this._autoBackupPaused()) return;
+      try {
+        const remote = await getRemoteBackupInfo();
+        this.signedIn = true;
+        this.remoteBackup = remote;
+        if (this._remoteChangedSinceOurUpload(remote)) {
+          this.autoBackupBlocked = 'remote_newer';
+          return;
+        }
+        // Deleted on Drive (by the person, maybe from another phone) after
+        // this device uploaded: putting every secret back is their call.
+        if (!remote && this.lastBackupAt) {
+          this.autoBackupBlocked = 'remote_missing';
+          return;
+        }
+        const next = await this._gatherPayload();
+        const current = remote ? await this._readRemotePayload() : null;
+        // A backup this phone cannot open (its key is gone) is never
+        // replaced silently: nothing could prove the upload keeps its secrets.
+        if (remote && !current) {
+          this.autoBackupBlocked = 'remote_unreadable';
+          return;
+        }
+        if (current && droppedSecrets(current, next).length) {
+          this.autoBackupBlocked = 'would_drop_secret';
+          return;
+        }
+        if (this.isRestoring || this._autoBackupPaused()) return;
+        await this._upload(next);
+      } catch (err) {
+        this.autoBackupBlocked = isAuthRequired(err) ? 'auth' : 'failed';
+        if (isAuthRequired(err)) this.signedIn = false;
+        console.warn('[cloudBackup] automatic backup skipped:', err?.code || err?.message || err);
+      } finally {
+        this._persistMeta();
+      }
     },
 
     /**
@@ -221,6 +341,9 @@ export const useCloudBackupStore = defineStore('cloudBackup', {
         payload.spark = {
           mnemonic: await wallet.getSparkMnemonic(),
           network: wallet.sparkWallet?.connectionData?.network || 'MAINNET',
+          // Which wallets the phrase covers here, so a restore brings back
+          // exactly these, with their names.
+          accounts: sparkAccountsForBackup(wallet.wallets),
         };
         // The emergency exit kits ride along: exit data, not keys, and the
         // only thing that lets the money leave Spark without the operators.
@@ -304,14 +427,54 @@ export const useCloudBackupStore = defineStore('cloudBackup', {
      * envelope, overwriting the previous one.
      */
     async backup() {
+      return this._upload(await this._gatherPayload());
+    },
+
+    /**
+     * Whether a backup now would remove a secret the backup on Drive holds (a
+     * recovery phrase, an NWC connection or an LNbits key). The backup sheet
+     * says so before the person confirms. False when unknown.
+     */
+    async backupDropsSecrets() {
+      try {
+        const current = await this._readRemotePayload();
+        return !!current && droppedSecrets(current, await this._gatherPayload()).length > 0;
+      } catch {
+        return false;
+      }
+    },
+
+    /**
+     * True when the file on Drive is not the one this device uploaded last.
+     * Compares Drive's own timestamps; an install from before that was
+     * recorded falls back to its clock with a margin.
+     */
+    _remoteChangedSinceOurUpload(remote) {
+      if (!remote?.modifiedAt) return false;
+      if (this.remoteAtLastBackup) return remote.modifiedAt !== this.remoteAtLastBackup;
+      const remoteAt = Date.parse(remote.modifiedAt);
+      return Number.isFinite(remoteAt) && remoteAt > Date.parse(this.lastBackupAt) + REMOTE_NEWER_SLACK_MS;
+    },
+
+    /** The decrypted payload on Drive, or null when there is none. Never writes. */
+    async _readRemotePayload() {
+      const envelopeJson = await downloadBackup();
+      if (!envelopeJson) return null;
+      const key = await this._loadKey();
+      if (!key) return null;
+      return decryptBackup(envelopeJson, key);
+    },
+
+    async _upload(payload) {
       this.isBackingUp = true;
       try {
-        const payload = await this._gatherPayload();
         const key = await this._loadOrCreateKey();
         const envelope = await encryptBackup(payload, key);
         const uploaded = await uploadBackup(JSON.stringify(envelope));
 
         this.lastBackupAt = envelope.createdAt;
+        this.remoteAtLastBackup = uploaded?.modifiedAt || null;
+        this.autoBackupBlocked = null;
         this._persistMeta();
         if (payload.exitKits?.length) exitKitService().markBackedUp(this._sparkWalletIds(), Date.now());
         // The upload response carries the written file's metadata, so the
@@ -340,6 +503,9 @@ export const useCloudBackupStore = defineStore('cloudBackup', {
      */
     async restore() {
       this.isRestoring = true;
+      // A pending silent upload must not run against a half-restored phone.
+      clearTimeout(autoBackupTimer);
+      autoBackupTimer = null;
       try {
         const envelopeJson = await downloadBackup();
         if (!envelopeJson) {
@@ -362,7 +528,13 @@ export const useCloudBackupStore = defineStore('cloudBackup', {
           err.code = 'UNSUPPORTED_PAYLOAD';
           throw err;
         }
-        return await this._applyPayload(payload);
+        const result = await this._applyPayload(payload);
+        if (result.failed.length) {
+          // Uploading from this phone now would drop what did not come back.
+          this.autoBackupBlocked = 'restore_incomplete';
+          this._persistMeta();
+        }
+        return result;
       } catch (err) {
         if (isAuthRequired(err)) this.signedIn = false;
         throw err;
@@ -421,33 +593,37 @@ export const useCloudBackupStore = defineStore('cloudBackup', {
         }
       }
 
-      // Seed-based wallets next. addSparkWallet(isRestore) probes the
-      // legacy account-0 derivation itself, so restored pre-v1.6.0 funds
-      // stay reachable.
-      if (payload.spark?.mnemonic) {
-        if (wallet.hasAnySparkWallet) {
-          skipped.push('spark');
-        } else {
-          try {
-            await wallet.addSparkWallet({
-              mnemonic: payload.spark.mnemonic,
-              network: payload.spark.network || 'MAINNET',
-              isRestore: true,
-            });
-            restored.push('spark');
-          } catch (err) {
-            failed.push({ label: 'spark', reason: err?.message || String(err) });
-          }
-        }
-      }
-
-      // Exit kits are stored now and imported into the SDK at the wallet's
-      // next connect, so a restore never depends on the operators.
+      // Exit kits first: stored now, they are imported into each Spark
+      // wallet's SDK on its first connect below, so a restore never depends
+      // on the operators.
       if (Array.isArray(payload.exitKits) && payload.exitKits.length) {
         try {
           await exitKitService().stashRestoredKits(payload.exitKits);
         } catch (err) {
           console.warn('exit kits not restored:', err?.message || err);
+        }
+      }
+
+      // Seed-based wallets next. The Spark restore brings back the wallets
+      // the backup lists (or the first one) now and finds any other account
+      // of the phrase in the background; on a device that already holds this
+      // phrase it only adds what is missing, and a different phrase is left
+      // alone.
+      if (payload.spark?.mnemonic) {
+        try {
+          const { merged, added } = await wallet.restoreSparkWallets({
+            mnemonic: payload.spark.mnemonic,
+            network: sparkNetworkFromBackup(payload.spark),
+            accounts: sparkAccountsFromBackup(payload),
+            // Restoring from Drive proves nothing about the 12 words being
+            // written down (same rule as the identity import above).
+            phraseConfirmed: false,
+          });
+          if (merged && !added.length) skipped.push('spark');
+          else restored.push('spark');
+        } catch (err) {
+          if (err?.code === 'SPARK_OTHER_PHRASE') skipped.push('spark');
+          else failed.push({ label: 'spark', reason: err?.message || String(err) });
         }
       }
 
@@ -525,6 +701,7 @@ export const useCloudBackupStore = defineStore('cloudBackup', {
       await deleteBackup();
       this.remoteBackup = null;
       this.lastBackupAt = null;
+      this.autoBackupBlocked = null;
       this._persistMeta();
     },
   },
