@@ -44,7 +44,7 @@ export function previewLine(message, { t, formatAmount }) {
       switch (message.status?.value) {
         case REQUEST_STATUS.PAID: return t('You paid the request')
         case REQUEST_STATUS.DECLINED: return t('You declined the request')
-        case REQUEST_STATUS.CANCELLED: return t('You withdrew a request')
+        case REQUEST_STATUS.CANCELLED: return t('You cancelled a request')
         case REQUEST_STATUS.REMINDER: return t('You sent a reminder')
         default: break
       }

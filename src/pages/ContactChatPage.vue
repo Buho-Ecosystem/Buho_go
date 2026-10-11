@@ -96,7 +96,7 @@
             </q-item-section>
             <q-item-section>{{ $t('Unblock') }}</q-item-section>
           </q-item>
-          <q-item v-else v-close-popup clickable @click="blockOpen = true">
+          <q-item v-else v-close-popup clickable @click="askBlock">
             <q-item-section avatar class="chat-menu__icon chat-menu__icon--danger">
               <Icon icon="tabler:ban" width="18" height="18" />
             </q-item-section>
@@ -135,7 +135,7 @@
             v-if="unknown"
             :npub="npub"
             @add-contact="addContact"
-            @block="blockOpen = true"
+            @block="askBlock"
           />
         </template>
         <template #empty>
@@ -201,16 +201,18 @@
     <IdentityGetPaidSheet v-model="getPaidOpen" />
 
     <!-- Block: confirm first, it cannot be done by accident. -->
-    <q-dialog v-model="blockOpen">
-      <div class="chat-dialog" role="alertdialog" :aria-label="$t('Block')">
-        <span class="chat-dialog__icon chat-dialog__icon--danger"><Icon icon="tabler:ban" width="26" height="26" /></span>
-        <p class="chat-dialog__title">{{ $t('Block {name}?', { name: displayName }) }}</p>
-        <p class="chat-dialog__text">{{ $t('You will no longer receive messages or requests from them.') }}</p>
-        <button type="button" class="chat-dialog__danger" @click="confirmBlock">
-          {{ $t('Block') }}
+    <!-- One confirmation for every action the partner sees and that cannot be
+         taken back (HIG: destructive actions are confirmed): block, decline, cancel a request. -->
+    <q-dialog :model-value="confirm !== null" @update:model-value="(open) => { if (!open) confirm = null }">
+      <div v-if="confirm" class="chat-dialog" role="alertdialog" :aria-label="confirm.title">
+        <span class="chat-dialog__icon chat-dialog__icon--danger"><Icon :icon="confirm.icon" width="26" height="26" /></span>
+        <p class="chat-dialog__title">{{ confirm.title }}</p>
+        <p class="chat-dialog__text">{{ confirm.text }}</p>
+        <button type="button" class="chat-dialog__danger" @click="runConfirm">
+          {{ confirm.action }}
         </button>
-        <button type="button" class="chat-dialog__quiet" @click="blockOpen = false">
-          {{ $t('Cancel') }}
+        <button type="button" class="chat-dialog__quiet" @click="confirm = null">
+          {{ confirm.keep }}
         </button>
       </div>
     </q-dialog>
@@ -242,7 +244,7 @@ import SignerAppNotice from '../components/chat/SignerAppNotice.vue'
 import ContactAvatar from '../components/AddressBook/ContactAvatar.vue'
 import AddressBookModal from '../components/AddressBook/AddressBookModal.vue'
 import IdentityGetPaidSheet from '../components/identity/IdentityGetPaidSheet.vue'
-import { shortNpub } from '../components/chat/chatFormat.js'
+import { formatSats, shortNpub } from '../components/chat/chatFormat.js'
 import { useMessagesStore } from '../stores/messages.js'
 import { useAddressBookStore } from '../stores/addressBook.js'
 import { useWalletStore } from '../stores/wallet.js'
@@ -380,7 +382,8 @@ export default {
       requestError: '',
       linkOpen: false,
       getPaidOpen: false,
-      blockOpen: false,
+      /** The open confirmation: { icon, title, text, action, keep, run } or null. */
+      confirm: null,
       addOpen: false,
       menuOpen: false,
       /** The header's ⋮ button while the menu is open; `false` = no anchor yet. */
@@ -672,16 +675,44 @@ export default {
       this.report(await this.chat.requestAgain(id))
     },
 
-    async onDecline({ id }) {
-      this.report(await this.chat.decline(id))
+    /** The amount (and note) of a request in the thread, for a confirmation's words. */
+    requestWords(id) {
+      const request = this.items.find((item) => item.type === 'request' && item.request.id === id)?.request
+      return request ? { amount: formatSats(request.amountSats, this.bip177), note: request.note } : { amount: '', note: '' }
+    },
+
+    onDecline({ id }) {
+      const { amount, note } = this.requestWords(id)
+      this.confirm = {
+        icon: 'tabler:circle-x',
+        title: note ? this.t('Decline {amount} for {note}?', { amount, note }) : this.t('Decline {amount}?', { amount }),
+        text: this.t('{name} will see that you declined.', { name: this.displayName }),
+        action: this.t('Decline'),
+        keep: this.t('Cancel'),
+        run: async () => this.report(await this.chat.decline(id)),
+      }
     },
 
     async onRemind({ id }) {
       if (this.report(await this.chat.remind(id))) this.toast(this.t('Reminder sent'))
     },
 
-    async onWithdraw({ id }) {
-      this.report(await this.chat.withdraw(id))
+    onWithdraw({ id }) {
+      const { amount } = this.requestWords(id)
+      this.confirm = {
+        icon: 'tabler:circle-minus',
+        title: this.t('Cancel this request for {amount}?', { amount }),
+        text: this.t('{name} will see that you cancelled it.', { name: this.displayName }),
+        action: this.t('Cancel request'),
+        keep: this.t('Keep request'),
+        run: async () => this.report(await this.chat.withdraw(id)),
+      }
+    },
+
+    async runConfirm() {
+      const { run } = this.confirm
+      this.confirm = null
+      await run()
     },
 
     /** No inbox: the payment link (the user's address as a QR and link) is the way to ask. */
@@ -703,8 +734,18 @@ export default {
       this.store.mute(this.partnerKey, !this.muted)
     },
 
+    askBlock() {
+      this.confirm = {
+        icon: 'tabler:ban',
+        title: this.t('Block {name}?', { name: this.displayName }),
+        text: this.t('You will no longer receive messages or requests from them.'),
+        action: this.t('Block'),
+        keep: this.t('Cancel'),
+        run: () => this.confirmBlock(),
+      }
+    },
+
     confirmBlock() {
-      this.blockOpen = false
       if (!this.partnerKey) return
       const name = this.displayName
       this.store.block(this.partnerKey)

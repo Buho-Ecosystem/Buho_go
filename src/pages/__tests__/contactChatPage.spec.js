@@ -333,8 +333,13 @@ test('react, retry and the request card actions go to the view-model; a reminder
   const { vm, chat, notices } = pageOf()
   await vm.onReact({ id: 'm', emoji: '👍' })
   await vm.onRetry({ id: 'm' })
-  await vm.onDecline({ id: 'r' })
-  await vm.onWithdraw({ id: 'r' })
+  // Decline and cancel are seen by the partner: each waits for its confirmation.
+  vm.onDecline({ id: 'r' })
+  assert.equal(chat.calls.length, 2, 'nothing declined before the confirmation')
+  await vm.runConfirm()
+  vm.onWithdraw({ id: 'r' })
+  assert.equal(vm.confirm.keep, 'Keep request')
+  await vm.runConfirm()
   await vm.onRemind({ id: 'r' })
   await vm.onPayRequest({ id: 'r' })
   vm.onSend()
@@ -438,14 +443,16 @@ test('mute: toggles the thread\'s flag', () => {
   assert.deepEqual(on.muteCalls, [[ANNA, false]])
 })
 
-test('block: needs the confirmation; confirming blocks the partner and leaves the chat', () => {
+test('block: needs the confirmation; confirming blocks the partner and leaves the chat', async () => {
   const previous = globalThis.window
   globalThis.window = { history: { state: { back: '/x' } } }
   try {
     const { vm, blocked, pushed, notices } = pageOf({ route: { params: { pubkey: STRANGER } } })
-    vm.blockOpen = true
-    vm.confirmBlock()
-    assert.equal(vm.blockOpen, false)
+    vm.askBlock()
+    assert.equal(blocked.length, 0, 'nothing happens before the confirmation')
+    assert.match(vm.confirm.title, /^Block npub1/)
+    await vm.runConfirm()
+    assert.equal(vm.confirm, null)
     assert.deepEqual(blocked, [STRANGER])
     assert.deepEqual(pushed, ['BACK'])
     assert.match(notices[0].message, /^Blocked npub1/)
@@ -472,11 +479,11 @@ test('markup: a blocked partner shows the notice with Unblock instead of the mon
   assert.doesNotMatch(blocked, /stub-MoneyBar/)
   const bans = (html) => html.split('data-icon="tabler:ban"').length - 1
   assert.match(blocked, /data-icon="tabler:circle-check"[^>]*><\/i><\/div><div>Unblock</)
-  assert.equal(bans(blocked), 1, 'only the confirm dialog keeps the ban icon: the menu offers no Block')
+  assert.equal(bans(blocked), 0, 'the menu offers no Block (the confirmation draws its icon only when open)')
   const open = await markupOf()
   assert.match(open, /stub-MoneyBar/)
   assert.doesNotMatch(open, /chat-blocked/)
-  assert.equal(bans(open), 2, 'menu Block item plus the confirm dialog')
+  assert.equal(bans(open), 1, 'the menu Block item')
   assert.doesNotMatch(open, /data-icon="tabler:circle-check"/)
 })
 

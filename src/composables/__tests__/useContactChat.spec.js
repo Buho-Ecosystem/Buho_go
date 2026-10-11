@@ -125,7 +125,7 @@ test('items: a request card carries state, valid_until, note, fiat and only pend
   assert.deepEqual(items[0].request, {
     id: incoming.id, amountSats: 25_000, fiatText: '≈ $25', note: 'Pizza', outgoing: false, state: 'pending',
     validUntil: 2_000_000, settlement: null,
-    disabledReason: 'WALLET_CANNOT_PAY', untrusted: false, busy: false,
+    disabledReason: 'WALLET_CANNOT_PAY', untrusted: false, busy: false, remindedRecently: false,
   });
   assert.equal(items[1].request.state, 'paid');
   assert.equal(items[1].request.disabledReason, '', 'a paid request has nothing to disable');

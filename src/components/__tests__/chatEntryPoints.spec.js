@@ -65,7 +65,7 @@ test('preview: money is spelled out, from the right side', () => {
   assert.equal(p(msg({ type: 'status', status: { value: 'paid' } })), 'Says they paid your request')
   assert.equal(p(msg({ outgoing: true, type: 'request', request: { amountSats: 5000 } })), 'You requested 5000 sats')
   assert.equal(p(msg({ outgoing: true, type: 'payment', payment: { amountSats: 800 } })), 'You sent 800 sats')
-  assert.equal(p(msg({ outgoing: true, type: 'status', status: { value: 'cancelled' } })), 'You withdrew a request')
+  assert.equal(p(msg({ outgoing: true, type: 'status', status: { value: 'cancelled' } })), 'You cancelled a request')
   assert.equal(p(msg({ outgoing: true, type: 'status', status: { value: 'reminder' } })), 'You sent a reminder')
   assert.equal(p(msg({ type: 'text', text: 'hello' })), 'hello')
   assert.equal(p(msg({ outgoing: true, type: 'text', text: 'hi\n there' })), 'You: hi there')

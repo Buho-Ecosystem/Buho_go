@@ -115,6 +115,7 @@
               :disabled-reason="row.item.request.disabledReason || ''"
               :untrusted="!!row.item.request.untrusted"
               :busy="!!row.item.request.busy"
+              :reminded-recently="!!row.item.request.remindedRecently"
               :bip177="bip177"
               @pay="forward('pay-request', row.item.request.id)"
               @decline="forward('decline-request', row.item.request.id)"

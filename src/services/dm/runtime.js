@@ -40,7 +40,7 @@
 
 import { nip19 } from 'nostr-core';
 import { stableNotificationId } from '../paymentNotifications.js';
-import { DM_DISCOVERY_RELAYS, KEY_IDLE_WIPE_MS } from './constants.js';
+import { DM_DISCOVERY_RELAYS, KEY_IDLE_WIPE_MS, REMIND_INTERVAL_SECONDS } from './constants.js';
 import { DM_ERROR, DmError } from './errors.js';
 import { createInbox, createSignAuth } from './inbox.js';
 import { INBOX_STATUS, createInboxRelayResolver } from './inboxRelays.js';
@@ -460,9 +460,22 @@ export function createChatRuntime(deps = {}) {
     const recipient = normalizePubkey(partner);
     assertUsable();
     const request = requireRequest(recipient, requestId, { outgoing: true });
+    if (lastReminderAt(recipient, request.id) > nowSeconds() - REMIND_INTERVAL_SECONDS) {
+      throw invalid('this request was reminded about less than a day ago');
+    }
     return sendTemplate(recipient, buildStatusTemplate({
       recipient, requestId: request.id, value: REQUEST_STATUS.REMINDER, now: nowSeconds,
     }));
+  }
+
+  /** When the user last reminded the partner of `requestId` (unix seconds), or -Infinity. */
+  function lastReminderAt(partner, requestId) {
+    let last = -Infinity;
+    for (const m of store.thread(partner).messages) {
+      if (m.type === MESSAGE_TYPE.STATUS && m.outgoing && m.status?.requestId === requestId
+        && m.status.value === REQUEST_STATUS.REMINDER) last = Math.max(last, m.createdAt);
+    }
+    return last;
   }
 
   /**

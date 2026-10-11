@@ -376,19 +376,30 @@ test('request card: the payer sees Decline and a filled Pay', async () => {
   assert.match(buttons[1], /request-btn--pay/)
   assert.match(html, />\s*Decline\s*</)
   assert.match(html, />\s*Pay\s*</)
-  assert.doesNotMatch(html, /Remind|Withdraw/)
+  assert.doesNotMatch(html, /Remind|Cancel request/)
 })
 
-test('request card: the requester sees Remind and Withdraw, never Pay', async () => {
+test('request card: the requester sees Remind and Cancel request, never Pay', async () => {
   const html = await card({ outgoing: true })
   assert.match(html, /You requested/)
   assert.match(html, />\s*Remind\s*</)
-  assert.match(html, />\s*Withdraw\s*</)
+  assert.match(html, />\s*Cancel request\s*</)
+  assert.doesNotMatch(html, />\s*Pay\s*<|Decline/)
+})
+
+test('request card: after a reminder the button says so and waits a day', async () => {
+  const html = await card({ outgoing: true, remindedRecently: true })
+  assert.match(html, /<button[^>]*disabled[^>]*>\s*Reminded\s*</)
+})
+
+test('request card: a payment still on its way shows that, with nothing to tap', async () => {
+  const html = await card({ state: 'paying' })
+  assert.match(html, /Payment on its way/)
   assert.doesNotMatch(html, />\s*Pay\s*<|Decline/)
 })
 
 test('request card: every end state says so; only pending and expired have actions', async () => {
-  const lines = { paid: 'Paid', declined: 'Declined', cancelled: 'Withdrawn', expired: 'Expired' }
+  const lines = { paid: 'Paid', declined: 'Declined', cancelled: 'Request cancelled', expired: 'Expired' }
   for (const [state, text] of Object.entries(lines)) {
     for (const outgoing of [false, true]) {
       const html = await card({ state, outgoing })

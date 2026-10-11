@@ -1315,3 +1315,13 @@ test('paying less than a request asked is a payment, not the request paid', asyn
   const sentStatus = env.store.thread(ALICE).messages.some((m) => m.type === 'status' && m.outgoing);
   assert.equal(sentStatus, false, 'no "paid" status for an underpayment');
 });
+
+test('a request is reminded about at most once a day', async () => {
+  const env = await setup();
+  await env.runtime.start();
+  const request = await env.runtime.requestMoney(ALICE, { amountSats: 1_000 });
+  await env.runtime.remindRequest(ALICE, request.id);
+  await assert.rejects(env.runtime.remindRequest(ALICE, request.id), (err) => DmError.is(err, DM_ERROR.INVALID_ARGUMENT));
+  await clock.advance(24 * 60 * 60 * 1_000 + 1_000);
+  await env.runtime.remindRequest(ALICE, request.id);
+});

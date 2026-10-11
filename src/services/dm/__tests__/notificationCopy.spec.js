@@ -30,7 +30,7 @@ test('answers to a request', () => {
   const status = (value) => format({ type: 'status', status: { value } });
   assert.equal(status('paid'), 'Says they paid your request');
   assert.equal(status('declined'), 'Declined your request');
-  assert.equal(status('cancelled'), 'Withdrew a request');
+  assert.equal(status('cancelled'), 'Cancelled a request');
   assert.equal(status('reminder'), 'Reminder: a request is still open');
 });
 

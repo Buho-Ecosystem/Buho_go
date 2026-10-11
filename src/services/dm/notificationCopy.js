@@ -22,7 +22,7 @@
  *   'Says they sent you {amount}'
  *   'Says they paid your request'
  *   'Declined your request'
- *   'Withdrew a request'
+ *   'Cancelled a request'
  *   'Reminder: a request is still open'
  */
 
@@ -58,7 +58,7 @@ export function createNotificationFormatter({ t, formatAmount }) {
         switch (message.status?.value) {
           case REQUEST_STATUS.PAID: return t('Says they paid your request');
           case REQUEST_STATUS.DECLINED: return t('Declined your request');
-          case REQUEST_STATUS.CANCELLED: return t('Withdrew a request');
+          case REQUEST_STATUS.CANCELLED: return t('Cancelled a request');
           case REQUEST_STATUS.REMINDER: return t('Reminder: a request is still open');
           default: break;
         }

@@ -358,7 +358,7 @@ try {
     await requestMoney(alice.page, '1000', 'Pizza');
     assert.deepEqual(lnurl.lookups, ['alice'], 'the profile address answered the LNURL-pay lookup before sending');
     assert.equal(lnurl.issued.length, 0, 'a request creates no invoice');
-    await chatCard(alice.page, /^You requested/).getByRole('button', { name: 'Withdraw' }).waitFor();
+    await chatCard(alice.page, /^You requested/).getByRole('button', { name: 'Cancel request' }).waitFor();
     const card = chatCard(bob.page, /^Alice requests/);
     await card.waitFor();
     await card.getByText('Pizza').waitFor();
@@ -370,6 +370,8 @@ try {
 
   await step('Bob declines; Alice sees Declined', async () => {
     await chatCard(bob.page, /^Alice requests/).getByRole('button', { name: 'Decline' }).click();
+    // The partner sees a decline: it is confirmed first.
+    await bob.page.getByRole('alertdialog').getByRole('button', { name: 'Decline' }).click();
     await chatCard(alice.page, /^You requested/).getByText('Declined', { exact: true }).waitFor();
     await chatCard(bob.page, /^Alice requests/).getByText('Declined', { exact: true }).waitFor();
   });
@@ -465,13 +467,14 @@ try {
 
   await step('Alice taps "Request again"; one new pending request with the same amount and note', async () => {
     await chatCard(alice.page, /^You requested.*Old pizza/).filter({ hasText: 'Expired' }).getByRole('button', { name: 'Request again' }).click();
-    const fresh = chatCard(alice.page, /^You requested.*Old pizza/).filter({ has: alice.page.getByRole('button', { name: 'Withdraw' }) });
+    const fresh = chatCard(alice.page, /^You requested.*Old pizza/).filter({ has: alice.page.getByRole('button', { name: 'Cancel request' }) });
     await fresh.waitFor();
     assert.match(await fresh.innerText(), /1[.,]000/);
     await chatCard(bob.page, /^Alice requests.*Old pizza/).filter({ has: bob.page.getByRole('button', { name: 'Pay', exact: true }) }).waitFor();
     // Leave the new one as it is; it is withdrawn so that it does not confuse the rest of the run.
-    await fresh.getByRole('button', { name: 'Withdraw' }).click();
-    await chatCard(alice.page, /^You requested.*Old pizza/).filter({ hasText: 'Withdrawn' }).waitFor();
+    await fresh.getByRole('button', { name: 'Cancel request' }).click();
+    await alice.page.getByRole('alertdialog').getByRole('button', { name: 'Cancel request' }).click();
+    await chatCard(alice.page, /^You requested.*Old pizza/).filter({ hasText: 'Request cancelled' }).waitFor();
   });
 
   await step('Bob taps "Send anyway": the send flow with amount and note, linked to the request; both see Paid', async () => {

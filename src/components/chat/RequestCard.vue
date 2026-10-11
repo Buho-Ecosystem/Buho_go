@@ -81,11 +81,17 @@
     </div>
 
     <div v-else-if="state === 'pending' && outgoing" class="request-card__actions request-card__actions--even">
-      <button type="button" class="request-btn request-btn--quiet" :disabled="busy" @click="$emit('remind')">
-        {{ $t('Remind') }}
+      <!-- One reminder a day: after it, the button says so instead of nagging. -->
+      <button
+        type="button"
+        class="request-btn request-btn--quiet"
+        :disabled="busy || remindedRecently"
+        @click="$emit('remind')"
+      >
+        {{ remindedRecently ? $t('Reminded') : $t('Remind') }}
       </button>
       <button type="button" class="request-btn request-btn--quiet" :disabled="busy" @click="$emit('withdraw')">
-        {{ $t('Withdraw') }}
+        {{ $t('Cancel request') }}
       </button>
     </div>
 
@@ -156,6 +162,8 @@ export default {
     untrusted: { type: Boolean, default: false },
     /** An action is in flight: all buttons wait. */
     busy: { type: Boolean, default: false },
+    /** The user reminded the partner less than a day ago. */
+    remindedRecently: { type: Boolean, default: false },
     /** ₿ 1,234 (true) or 1,234 sats (false). */
     bip177: { type: Boolean, default: true }
   },
@@ -195,7 +203,7 @@ export default {
         // The user paid it and the payment is still routing: nothing to tap, nothing to pay again.
         paying: this.$t('Payment on its way'),
         declined: this.$t('Declined'),
-        cancelled: this.$t('Withdrawn'),
+        cancelled: this.$t('Request cancelled'),
         expired: this.$t('Expired')
       }[this.state] || ''
     },
@@ -207,7 +215,7 @@ export default {
         paid: 'tabler:circle-check',
         paying: 'tabler:hourglass',
         declined: 'tabler:circle-x',
-        cancelled: 'tabler:arrow-back-up',
+        cancelled: 'tabler:circle-minus',
         expired: 'tabler:clock-off'
       }[this.state] || 'tabler:circle'
     },

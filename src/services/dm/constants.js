@@ -116,6 +116,9 @@ export const MAX_VERIFY_URL_LENGTH = 1_000;
  */
 export const REQUEST_LIFETIME_SECONDS = 30 * 24 * 60 * 60;
 
+/** A request can be reminded about once per day: a reminder is a nudge, not a stream of them. */
+export const REMIND_INTERVAL_SECONDS = 24 * 60 * 60;
+
 /**
  * Largest rumor, as UTF-8 bytes of its JSON, that may be sealed and wrapped.
  *

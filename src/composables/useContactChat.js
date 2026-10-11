@@ -43,6 +43,7 @@
 
 import { computed, ref, shallowRef, toValue, watch } from 'vue';
 import { insertDaySeparators } from '../components/chat/chatFormat.js';
+import { REMIND_INTERVAL_SECONDS } from '../services/dm/constants.js';
 import { DM_ERROR, DmError } from '../services/dm/errors.js';
 import { confirmIncomingPayments } from '../services/dm/paymentConfirmation.js';
 import { buildChatPaymentContext } from '../services/dm/paymentContext.js';
@@ -101,6 +102,13 @@ export function buildThreadItems(input) {
   } = input;
   const busy = busyIds instanceof Set ? busyIds : new Set(busyIds);
   const byId = new Map(messages.map((message) => [message.id, message]));
+  // When the user last reminded the partner of each request: once a day is enough.
+  const remindedAt = new Map();
+  for (const m of messages) {
+    if (m.type === MESSAGE_TYPE.STATUS && m.outgoing && m.status?.value === REQUEST_STATUS.REMINDER) {
+      remindedAt.set(m.status.requestId, Math.max(remindedAt.get(m.status.requestId) ?? 0, m.createdAt));
+    }
+  }
   const authorOf = (message) => (message.outgoing ? t('You') : (partnerName || t('Them')));
 
   const replyOf = (message) => {
@@ -163,6 +171,7 @@ export function buildThreadItems(input) {
             disabledReason: pendingToPay ? disabledReasonOf(message) : '',
             untrusted: unknown && !message.outgoing,
             busy: busy.has(message.id),
+            remindedRecently: now - (remindedAt.get(message.id) ?? -Infinity) < REMIND_INTERVAL_SECONDS,
           },
         });
         break;
