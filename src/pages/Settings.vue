@@ -1173,7 +1173,7 @@
               >
                 <!-- Wallet Avatar -->
                 <div class="wallet-avatar">
-                  <div class="wallet-avatar-circle wallet-avatar-black">
+                  <div class="wallet-avatar-circle wallet-avatar-black" :class="{ 'wallet-avatar-arkade': wallet.type === 'arkade' }">
                     <WalletBrandMark :type="wallet.type" :size="20" />
                   </div>
                   <div
@@ -5659,6 +5659,12 @@ export default {
 
 .wallet-avatar-black {
   background: linear-gradient(135deg, #2A2A2A, #1A1A1A);
+}
+
+/* Arkade's purple mark needs a light tile on cream (brand rule). */
+body.body--light .wallet-avatar-arkade {
+  background: var(--arkade-tile);
+  box-shadow: inset 0 0 0 1px var(--arkade-tint-border);
 }
 
 .wallet-status-dot {

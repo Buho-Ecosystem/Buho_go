@@ -11,7 +11,7 @@
 
     <div class="detail-content">
       <div class="detail-identity">
-        <div class="detail-avatar" aria-hidden="true"><WalletBrandMark :type="wallet.type" :size="28" /></div>
+        <div class="detail-avatar" :class="{ 'detail-avatar--arkade': wallet.type === 'arkade' }" aria-hidden="true"><WalletBrandMark :type="wallet.type" :size="28" /></div>
         <div class="detail-identity-copy">
           <h2>{{ wallet.name }}</h2>
           <div class="detail-status">
@@ -191,6 +191,8 @@ onMounted(() => backButton.value?.focus({ preventScroll: true }));
 .detail-content { padding: 12px 20px max(20px, var(--safe-bottom, 0px)); overflow-y: auto; min-height: 0; }
 .detail-identity { display: flex; align-items: center; gap: 14px; margin-bottom: 24px; }
 .detail-avatar { flex: 0 0 52px; width: 52px; height: 52px; display: flex; align-items: center; justify-content: center; border-radius: 16px; background: #252527; }
+/* Arkade's purple mark needs a light tile on cream (brand rule). */
+body.body--light .detail-avatar--arkade { background: var(--arkade-tile); box-shadow: inset 0 0 0 1px var(--arkade-tint-border); }
 .detail-identity-copy { flex: 1; min-width: 0; }
 .detail-identity h2 { margin: 0; font-size: 1.375rem; font-weight: 700; line-height: 1.3; letter-spacing: -.02em; overflow-wrap: anywhere; }
 .detail-status { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; color: var(--detail-secondary); font-size: .8125rem; margin-top: 5px; }

@@ -56,7 +56,7 @@
             @keydown.space.prevent="$emit('switch', wallet.id)"
           >
             <div class="switch-avatar" aria-hidden="true">
-              <div class="switch-avatar-circle switch-avatar-black">
+              <div class="switch-avatar-circle switch-avatar-black" :class="{ 'switch-avatar-arkade': wallet.type === 'arkade' }">
                 <WalletBrandMark :type="wallet.type" :size="20" />
               </div>
               <div class="switch-status-dot" :class="connected(wallet.id) ? 'status-connected' : 'status-disconnected'"></div>
@@ -285,6 +285,12 @@ const isRefreshPending = (walletId) => display(walletId).refreshing && !display(
 
 .switch-avatar-black {
   background: linear-gradient(135deg, #2A2A2A, #1A1A1A);
+}
+
+/* Arkade's purple mark needs a light tile on cream (brand rule). */
+body.body--light .switch-avatar-arkade {
+  background: var(--arkade-tile);
+  box-shadow: inset 0 0 0 1px var(--arkade-tint-border);
 }
 
 .switch-status-dot {
