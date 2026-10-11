@@ -47,10 +47,8 @@ const label = computed(() => WALLET_TYPE_LABELS[props.type] || props.type);
 .wallet-type-chip__mark { display: inline-flex; line-height: 0; }
 
 /* Dark is the app default; light follows the body class, as in app.css.
-   Neutral tint for providers that render in the text colour; Arkade keeps
-   its orange, darkened for small text on the light paper. */
+   One neutral chip for every provider; only the mark carries the brand
+   (Arkade's follows the theme: purple on the light chip, red on the dark). */
 .wallet-type-chip { --chip-bg: rgba(255, 255, 255, 0.1); --chip-text: var(--text-primary); }
-.wallet-type-chip--arkade { --chip-bg: rgba(241, 67, 23, 0.18); --chip-text: #FF8A66; }
 body.body--light .wallet-type-chip { --chip-bg: rgba(26, 26, 28, 0.07); }
-body.body--light .wallet-type-chip--arkade { --chip-bg: rgba(241, 67, 23, 0.11); --chip-text: #C0360F; }
 </style>

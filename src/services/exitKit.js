@@ -12,7 +12,8 @@
  * app-wired instance.
  */
 
-import { deriveExitAddresses } from '../utils/exitKeys.js';
+import { deriveExitAddresses, exitKeyPaths } from '../utils/exitKeys.js';
+import { sparkAccountNumberOf } from '../utils/sparkAccounts.js';
 import { triageFromQuote } from '../utils/exitPlan.js';
 import { deriveKitPassphrase, kitFilePayload, kitFilename, toExitNetwork } from '../utils/exitKit.js';
 import { kitKey } from '../utils/kitStorage.js';
@@ -51,16 +52,29 @@ export function createExitKitService({
     };
   }
 
+  /**
+   * The wallet's exit addresses, cached with the path they came from. A cache
+   * written before per-account keys (no path, or another account's path) is
+   * derived again; the fee money address it pointed at is kept as
+   * `legacyFundingAddress` so the exit screen can say where earlier fee money
+   * went. An exit already under way is unaffected: it signs from its ledger.
+   */
   async function ensureAddresses(wallet) {
     const existing = meta.kitFor(wallet.id);
-    if (existing?.destinationAddress && existing?.fundingAddress) return existing;
     const { network } = identity(wallet);
-    const addresses = deriveExitAddresses(await getMnemonic(wallet.id), { network });
+    const accountNumber = sparkAccountNumberOf(wallet);
+    const expected = exitKeyPaths(network, accountNumber);
+    if (existing?.destinationAddress && existing?.fundingAddress && existing.fundingPath === expected.funding) return existing;
+    const addresses = deriveExitAddresses(await getMnemonic(wallet.id), { network, accountNumber });
+    const moved = existing?.fundingAddress && existing.fundingAddress !== addresses.funding.address;
     return meta.upsert(wallet.id, {
       destinationAddress: addresses.destination.address,
+      destinationPath: addresses.destination.path,
       fundingAddress: addresses.funding.address,
+      fundingPath: addresses.funding.path,
       fundingPublicKeyHex: addresses.funding.publicKeyHex,
       network,
+      ...(moved ? { legacyFundingAddress: existing.fundingAddress } : {}),
     });
   }
 

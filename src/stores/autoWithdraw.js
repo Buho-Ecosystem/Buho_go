@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { useTransactionMetadataStore } from './transactionMetadata'
 import { WALLET_TYPES } from '../providers/WalletFactory'
 import { lnurlGetJson } from '../utils/lnurlHttp.js'
+import { migratePocketConfigKeys } from '../utils/autoWithdrawKeys.js'
 
 const STORAGE_KEY = 'buhoGO_auto_withdraw'
 const SPEED_LABELS = { low: 'Economy', medium: 'Standard', high: 'Priority' }
@@ -51,7 +52,12 @@ export const useAutoWithdrawStore = defineStore('autoWithdraw', {
   },
 
   actions: {
-    async initialize() {
+    /**
+     * Load the saved rules. With the device's wallets, rules saved for a
+     * former Spark "pocket" (`walletId:accountNumber`) move to the wallet
+     * that holds that account now (utils/autoWithdrawKeys.js).
+     */
+    async initialize({ wallets = null } = {}) {
       try {
         const saved = localStorage.getItem(STORAGE_KEY)
         if (saved) {
@@ -61,6 +67,14 @@ export const useAutoWithdrawStore = defineStore('autoWithdraw', {
       } catch (error) {
         console.error('[Auto-withdraw] Init error:', error)
         this.configs = {}
+      }
+      if (wallets) {
+        const { configs, moved, dropped } = migratePocketConfigKeys(this.configs, wallets)
+        if (moved.length || dropped.length) {
+          this.configs = configs
+          if (dropped.length) console.warn(`[Auto-withdraw] ${dropped.length} rule(s) for removed accounts dropped`)
+          await this.persistConfigs()
+        }
       }
     },
 
@@ -131,8 +145,7 @@ export const useAutoWithdrawStore = defineStore('autoWithdraw', {
       _activeWithdrawals.add(configKey)
       _lastTriggerTime.set(configKey, Date.now())
 
-      // Resolve base walletId from composite key (e.g. 'walletId:2' → 'walletId')
-      const baseWalletId = configKey.includes(':') ? configKey.split(':').slice(0, -1).join(':') : configKey
+      const walletId = configKey
 
       // Declared in the action scope (not inside `try`) so the `catch` block
       // can report the attempted amount — a `const` inside `try` would be a
@@ -141,7 +154,7 @@ export const useAutoWithdrawStore = defineStore('autoWithdraw', {
       let sendAmount = 0
 
       try {
-        const wallet = walletStore.wallets.find(w => w.id === baseWalletId)
+        const wallet = walletStore.wallets.find(w => w.id === walletId)
         if (!wallet) return
 
         // A Spark figure handed in may be a cached read. Moving money needs a
@@ -150,9 +163,9 @@ export const useAutoWithdrawStore = defineStore('autoWithdraw', {
         // accepted fresh balance retries) instead of sending from stale data.
         let verifiedBalance = balance
         if ((wallet.type || '').toLowerCase() === WALLET_TYPES.SPARK) {
-          const provider = walletStore.providers?.[baseWalletId]
+          const provider = walletStore.providers?.[walletId]
           if (typeof provider?.getBalance !== 'function') return
-          const epoch = walletStore.walletEpoch?.(baseWalletId)
+          const epoch = walletStore.walletEpoch?.(walletId)
           let fresh
           try {
             fresh = await provider.getBalance({ requireFresh: true })
@@ -166,8 +179,8 @@ export const useAutoWithdrawStore = defineStore('autoWithdraw', {
           // the meantime: re-check all of it before any money moves.
           if (this.configs[configKey] !== config || !config.enabled
             || !walletStore.wallets.includes(wallet)
-            || walletStore.walletEpoch?.(baseWalletId) !== epoch
-            || walletStore.providers?.[baseWalletId] !== provider) return
+            || walletStore.walletEpoch?.(walletId) !== epoch
+            || walletStore.providers?.[walletId] !== provider) return
           verifiedBalance = Number(fresh?.balance)
           if (!Number.isFinite(verifiedBalance) || verifiedBalance <= threshold) return
         }
@@ -209,12 +222,8 @@ export const useAutoWithdrawStore = defineStore('autoWithdraw', {
           const note = `Automatic transfer \u00b7 ${sendAmount.toLocaleString()} sats sent to ${this._truncateDestination(destination)}${feeLabel}`
 
           try {
-            // baseWalletId is the wallet actually being withdrawn FROM (a
-            // pocket/sub-account configKey like 'walletId:2' resolves to its
-            // parent wallet id above) — the tag/note must land on that
-            // wallet's record, not a composite pocket key.
-            await metaStore.addTagToTransaction(result.id, baseWalletId, 'auto-withdraw')
-            await metaStore.setNoteForTransaction(result.id, baseWalletId, note)
+            await metaStore.addTagToTransaction(result.id, walletId, 'auto-withdraw')
+            await metaStore.setNoteForTransaction(result.id, walletId, note)
           } catch {
             // Non-critical — tagging failure doesn't affect the transfer
           }
@@ -246,8 +255,7 @@ export const useAutoWithdrawStore = defineStore('autoWithdraw', {
         // every user-initiated failure). Keeping the raw Error here
         // means the watcher can pass it to buildPaymentError with
         // $t and an enriched context (wallet type, route, amount).
-        const baseId = configKey.includes(':') ? configKey.split(':').slice(0, -1).join(':') : configKey
-        const wallet = walletStore.wallets.find(w => w.id === baseId)
+        const wallet = walletStore.wallets.find(w => w.id === walletId)
         this.lastResult = {
           type: 'error',
           error,
@@ -262,13 +270,10 @@ export const useAutoWithdrawStore = defineStore('autoWithdraw', {
 
     /**
      * Execute payout from Spark wallet (lightning or on-chain)
-     * @param {string} configKey - walletId or walletId:accountNumber for pockets
+     * @param {string} configKey - the wallet id
      */
     async _executeSparkPayout(configKey, sendAmount, config, walletStore) {
-      // For composite keys (pockets), get provider directly; for plain walletIds, use getProvider
-      const provider = configKey.includes(':')
-        ? walletStore.providers[configKey]
-        : walletStore.getProvider(configKey)
+      const provider = walletStore.getProvider(configKey)
       if (!provider) throw new Error('Wallet provider not available')
 
       if (config.payoutType === 'spark') {
@@ -309,9 +314,7 @@ export const useAutoWithdrawStore = defineStore('autoWithdraw', {
      */
     async _executeArkadePayout(configKey, sendAmount, config, walletStore) {
       if (config.payoutType === 'arkade') {
-        const provider = configKey.includes(':')
-          ? walletStore.providers[configKey]
-          : walletStore.getProvider(configKey)
+        const provider = walletStore.getProvider(configKey)
         if (!provider) throw new Error('Wallet provider not available')
         if (!config.arkadeAddress) throw new Error('No Arkade address configured')
 

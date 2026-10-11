@@ -314,8 +314,8 @@ const WalletAvatar = {
           fill: '#FF1FE1'
         })
       ]),
-      // Arkade brand mark — forced orange (sits on an always-dark avatar circle)
-      props.type === 'arkade' && h(ArkadeLogo, { variant: 'mark', color: 'orange', size: 20 }),
+      // Arkade brand mark: follows the theme (purple light, red dark)
+      props.type === 'arkade' && h(ArkadeLogo, { variant: 'mark', size: 20 }),
       // Default wallet icon
       !['spark', 'nwc', 'lnbits', 'arkade'].includes(props.type) && h('svg', { width: '18', height: '18', viewBox: '0 0 24 24', fill: 'none', xmlns: 'http://www.w3.org/2000/svg' }, [
         h('path', {
@@ -342,7 +342,12 @@ const StatusDot = {
 // ─────────────────────────────────────────────────────────────
 // Props / Emits
 // ─────────────────────────────────────────────────────────────
-const props = defineProps({ modelValue: { type: Boolean, default: false } });
+const props = defineProps({
+  modelValue: { type: Boolean, default: false },
+  // Preselects the source (Settings' "Move funds" before removing a wallet);
+  // the active wallet otherwise.
+  fromWalletId: { type: String, default: null },
+});
 const emit = defineEmits(['update:modelValue', 'transfer-complete']);
 
 // ─────────────────────────────────────────────────────────────
@@ -420,8 +425,9 @@ const fmt = (sats) => sats ? `${sats.toLocaleString()} sats` : '0 sats';
 // Methods
 // ─────────────────────────────────────────────────────────────
 async function init() {
-  const active = wallets.value.find(w => w.id === store.activeWalletId);
-  if (active?.canSend) state.fromWallet = active;
+  const preferred = wallets.value.find(w => w.id === (props.fromWalletId || store.activeWalletId));
+  if (preferred?.canSend) state.fromWallet = preferred;
+  if (state.toWallet?.id === state.fromWallet?.id) state.toWallet = null;
   await reconnectAll();
 }
 

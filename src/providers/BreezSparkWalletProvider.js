@@ -633,6 +633,30 @@ export class BreezSparkWalletProvider extends WalletProvider {
     this._lightningAddress = null;
   }
 
+  /** The wallet's identity public key (known once connected): where an address transfer is addressed. */
+  identityPubkey() {
+    return this._identityPubkey || null;
+  }
+
+  /**
+   * Sign over this wallet's Lightning address to another wallet's identity
+   * key. Nothing moves until the other wallet claims it.
+   * @returns {Promise<{username, pubkey, signature, domain, timestamp}>}
+   */
+  async authorizeLightningAddressTransfer(transfereePubkey) {
+    this._ensureConnected();
+    if (!transfereePubkey) throw new Error('A transfer needs the receiving wallet\'s identity key');
+    return this.sdk.authorizeLightningAddressTransfer({ transfereePubkey });
+  }
+
+  /** Take over an address another wallet authorised for this one; it replaces this wallet's own. */
+  async claimLightningAddressTransfer(authorization) {
+    this._ensureConnected();
+    const info = await this.sdk.claimLightningAddressTransfer({ authorization });
+    this._lightningAddress = info?.lightningAddress || null;
+    return info;
+  }
+
   // ==========================================
   // Lightning receive
   // ==========================================
