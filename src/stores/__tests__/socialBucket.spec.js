@@ -293,3 +293,32 @@ test('money arriving after a drain badges again despite equal counts', async () 
   store.collectedQuoteIds = ['zap-1', 'zap-2'];
   assert.equal(store.hasUnseenPayments, true);
 });
+
+test('an ecash wallet another app wrote is never published over', async () => {
+  const store = freshStore();
+  await store.hydrate({ pubkey: PROFILE_A });
+  store.mintUrl = MINT;
+  store.heldProofs = [proof(21, 'x')];
+  const secretKey = new Uint8Array(32).fill(7);
+
+  const unreadable = await store._backupNip60(secretKey, {}, { fetcher: async () => ({ wallet: null, walletUnreadable: true, tokensByMint: [] }) });
+  assert.equal(unreadable.reason, 'NIP60_FOREIGN_WALLET');
+  assert.equal(store.nip60Blocked, true);
+  assert.equal((await store._backupNip60(secretKey)).reason, 'NIP60_FOREIGN_WALLET', 'and stays blocked');
+
+  setActivePinia(createPinia());
+  const reloaded = useSocialBucketStore();
+  await reloaded.hydrate({ pubkey: PROFILE_A });
+  assert.equal(reloaded.nip60Blocked, true, 'across a restart');
+});
+
+test('a backup reads the current wallet first and keeps its key', async () => {
+  const store = freshStore();
+  await store.hydrate({ pubkey: PROFILE_B });
+  store.mintUrl = MINT;
+  const secretKey = new Uint8Array(32).fill(9);
+  const unchecked = await store._backupNip60(secretKey, {}, { fetcher: async () => { throw new Error('offline'); } });
+  assert.equal(unchecked.reason, 'NIP60_UNCHECKED', 'no blind write while the current wallet is unknown');
+  assert.equal(store.nip60BackupPending, true);
+  assert.equal(store.nip60Wallet, null);
+});

@@ -180,6 +180,9 @@ export async function fetchNip60WalletState({
   return {
     wallet,
     walletEvent,
+    // A wallet event exists that this key cannot read (another app's
+    // format): never publish over it, its key would be lost.
+    walletUnreadable: validWallets.length > 0 && !wallet,
     tokensByMint: [...byMint.values()],
     removedEventIds: [...removedIds],
   };

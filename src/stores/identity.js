@@ -55,6 +55,7 @@ import {
   signLud04Challenge,
   computeIdentityFingerprint,
   bytesToHex,
+  hexToBytes,
 } from '../utils/identityCrypto.js';
 import {
   buildPointerEvent,
@@ -64,11 +65,22 @@ import {
 } from '../utils/nostrIdentityPointer.js';
 import { fetchOwnWriteRelays } from '../utils/nostrContactsDoc.js';
 import { DEFAULT_RELAYS } from '../utils/nostrRelays.js';
+import { createSecretKeySigner, nip19 } from 'nostr-core';
+import { sanitizeExternalIdentities, verifiedSigner } from '../utils/externalIdentity.js';
+import { adoptBunker, bunkerSigner, closeSigner, extensionSigner } from '../services/identitySigners.js';
 
 const STORAGE_KEYS = Object.freeze({
   METADATA: 'buhoGO_identity_v1',
   SEED_ENVELOPE: 'buhoGO_identity_seed_v1',
+  /** + identity id: an imported secret key, or a remote signer pairing key, encrypted. */
+  EXTERNAL_ENVELOPE_PREFIX: 'buhoGO_identity_external_',
 });
+
+function noRawKeyError() {
+  const err = new Error('This identity signs through another app');
+  err.code = 'IDENTITY_NO_RAW_KEY';
+  return err;
+}
 
 /** Schema version for the metadata blob. Bump on breaking change. */
 const METADATA_VERSION = 1;
@@ -266,6 +278,16 @@ export const useIdentityStore = defineStore('identity', {
      */
     nostrRemovedAccounts: [],
     /**
+     * Identities brought from another app (utils/externalIdentity.js):
+     * [{ id, kind: 'secretKey'|'nip07'|'nip46', pubkeyHex, npub, label,
+     * createdAt, nip05Handles, bunker? }]. Not derived from the 12 words,
+     * so never in the roster or the restore pointer. Secrets live in their
+     * own encrypted envelopes, never here.
+     */
+    externalIdentities: [],
+    /** The external identity in use, or null when a derived one is. */
+    activeExternalId: null,
+    /**
      * Username purchases still waiting to finish, keyed by the pubkey they
      * were bought for: { [pubkeyHex]: { handle, paymentHash, invoice,
      * addressId, rotationSecret, years, amountSats, createdAt, paidAt,
@@ -283,6 +305,22 @@ export const useIdentityStore = defineStore('identity', {
   }),
 
   getters: {
+    /** The external identity in use, or null. */
+    activeExternal(state) {
+      return state.externalIdentities.find((e) => e.id === state.activeExternalId) || null;
+    },
+
+    /**
+     * What the identity in use can do. `rawKey`: its secret key is on this
+     * phone (the Social Bucket needs it). `needsApproval`: every signature
+     * asks another app, so nothing signs in the background.
+     */
+    identityCapabilities(state) {
+      const kind = state.externalIdentities.find((e) => e.id === state.activeExternalId)?.kind || 'derived';
+      const signerApp = kind === 'nip07' || kind === 'nip46';
+      return { kind, rawKey: !signerApp, needsApproval: signerApp };
+    },
+
     /** True if there's an identity *and* the user has confirmed backup. */
     isReady(state) {
       return state.bootstrapped && state.backupConfirmed;
@@ -380,6 +418,18 @@ export const useIdentityStore = defineStore('identity', {
               parsed.nostrRemovedAccounts,
               this.nostrKnownAccounts,
             );
+            this.externalIdentities = sanitizeExternalIdentities(parsed.externalIdentities);
+            const active = this.externalIdentities.find((e) => e.id === parsed.activeExternalId);
+            this.activeExternalId = active ? active.id : null;
+            if (parsed.activeExternalId && !active) {
+              // The identity in use is gone: fall back to the derived one,
+              // re-derived on demand by loadNostrIdentity().
+              this.nostrPubkeyHex = null;
+              this.nostrNpub = null;
+            } else if (active) {
+              this.nostrPubkeyHex = active.pubkeyHex;
+              this.nostrNpub = active.npub;
+            }
             this.pointerDirty = !!parsed.pointerDirty;
             this.pendingNip05Claims = sanitisePendingClaims(parsed.pendingNip05Claims);
             this.nostrAccountNip05 = {};
@@ -422,6 +472,12 @@ export const useIdentityStore = defineStore('identity', {
         profileIntroSeenAt: this.profileIntroSeenAt,
         nostrKnownAccounts: this.nostrKnownAccounts.map((a) => ({ ...a })),
         nostrRemovedAccounts: [...this.nostrRemovedAccounts],
+        externalIdentities: this.externalIdentities.map((e) => ({
+          ...e,
+          nip05Handles: e.nip05Handles.map((h) => ({ ...h })),
+          ...(e.bunker ? { bunker: { ...e.bunker, relays: [...e.bunker.relays] } } : {}),
+        })),
+        activeExternalId: this.activeExternalId,
         pointerDirty: this.pointerDirty,
         pendingNip05Claims: Object.fromEntries(
           Object.entries(this.pendingNip05Claims).map(([key, claim]) => [key, { ...claim }]),
@@ -526,6 +582,13 @@ export const useIdentityStore = defineStore('identity', {
       const envelope = await encryptString(normalised);
       localStorage.setItem(STORAGE_KEYS.SEED_ENVELOPE, envelope);
 
+      // Imported identities are independent of the phrase and stay; the
+      // restored phrase's first identity becomes the one in use.
+      if (this.activeExternalId) {
+        this._stashActiveHandles();
+        this.activeExternalId = null;
+        this.nip05Handles = [];
+      }
       this.bootstrapped = true;
       this.backupConfirmed = !!markBackedUp;
       this.fingerprint = computeIdentityFingerprint(normalised);
@@ -600,6 +663,12 @@ export const useIdentityStore = defineStore('identity', {
      * that's shared with the wallet store and must outlive identity.
      */
     async reset() {
+      for (const external of this.externalIdentities) {
+        closeSigner(external.id);
+        localStorage.removeItem(STORAGE_KEYS.EXTERNAL_ENVELOPE_PREFIX + external.id);
+      }
+      this.externalIdentities = [];
+      this.activeExternalId = null;
       localStorage.removeItem(STORAGE_KEYS.SEED_ENVELOPE);
       localStorage.removeItem(STORAGE_KEYS.METADATA);
       this.bootstrapped = false;
@@ -884,6 +953,11 @@ export const useIdentityStore = defineStore('identity', {
      * @returns {Promise<Uint8Array>}  32 bytes
      */
     async getNostrSecretKeyBytes() {
+      const external = this.activeExternal;
+      if (external) {
+        if (external.kind !== 'secretKey') throw noRawKeyError();
+        return this._readExternalSecret(external.id);
+      }
       if (!this.bootstrapped) {
         const err = new Error('No identity seed');
         err.code = 'IDENTITY_NOT_BOOTSTRAPPED';
@@ -1004,9 +1078,17 @@ export const useIdentityStore = defineStore('identity', {
      * travel across a switch, and they must still be there when the
      * user switches back.
      */
-    _stashAndLoadNip05(fromAccount, toAccount) {
-      this.nostrAccountNip05[fromAccount] = this.nip05Handles.map((h) => ({ ...h }));
+    _stashAndLoadNip05(toAccount) {
+      this._stashActiveHandles();
       this.nip05Handles = (this.nostrAccountNip05[toAccount] || []).map((h) => ({ ...h }));
+    },
+
+    /** Park the identity in use's handles with it: a derived account or an external record. */
+    _stashActiveHandles() {
+      const handles = this.nip05Handles.map((h) => ({ ...h }));
+      const external = this.activeExternal;
+      if (external) external.nip05Handles = handles;
+      else this.nostrAccountNip05[this.nostrAccountIndex] = handles;
     },
 
     /**
@@ -1058,8 +1140,10 @@ export const useIdentityStore = defineStore('identity', {
           nip05Handles: this.nip05Handles.map((h) => ({ ...h })),
           knownAccounts: this.nostrKnownAccounts.map((a) => ({ ...a })),
           accountNip05: { ...this.nostrAccountNip05 },
+          activeExternalId: this.activeExternalId,
         };
-        this._stashAndLoadNip05(this.nostrAccountIndex, nextAccount);
+        this._stashAndLoadNip05(nextAccount);
+        this.activeExternalId = null;
         this.nostrAccountIndex = nextAccount;
         this.nostrPubkeyHex = publicKeyHex;
         this.nostrNpub = npub;
@@ -1082,6 +1166,7 @@ export const useIdentityStore = defineStore('identity', {
           this.nip05Handles = prev.nip05Handles;
           this.nostrKnownAccounts = prev.knownAccounts;
           this.nostrAccountNip05 = prev.accountNip05;
+          this.activeExternalId = prev.activeExternalId;
           throw persistErr;
         }
 
@@ -1112,7 +1197,7 @@ export const useIdentityStore = defineStore('identity', {
         err.code = 'NOSTR_ACCOUNT_UNKNOWN';
         throw err;
       }
-      if (account === this.nostrAccountIndex) {
+      if (account === this.nostrAccountIndex && !this.activeExternalId) {
         return {
           pubkeyHex: this.nostrPubkeyHex,
           npub: this.nostrNpub,
@@ -1124,14 +1209,18 @@ export const useIdentityStore = defineStore('identity', {
       try {
         const { publicKeyHex, npub } = deriveNostrIdentity(mnemonic, account);
 
+        const external = this.activeExternal;
         const prev = {
           account: this.nostrAccountIndex,
           pubkey: this.nostrPubkeyHex,
           npub: this.nostrNpub,
           nip05Handles: this.nip05Handles.map((h) => ({ ...h })),
           accountNip05: { ...this.nostrAccountNip05 },
+          activeExternalId: this.activeExternalId,
+          externalHandles: external?.nip05Handles,
         };
-        this._stashAndLoadNip05(this.nostrAccountIndex, account);
+        this._stashAndLoadNip05(account);
+        this.activeExternalId = null;
         this.nostrAccountIndex = account;
         this.nostrPubkeyHex = publicKeyHex;
         this.nostrNpub = npub;
@@ -1144,6 +1233,8 @@ export const useIdentityStore = defineStore('identity', {
           this.nostrNpub = prev.npub;
           this.nip05Handles = prev.nip05Handles;
           this.nostrAccountNip05 = prev.accountNip05;
+          this.activeExternalId = prev.activeExternalId;
+          if (external) external.nip05Handles = prev.externalHandles;
           throw persistErr;
         }
 
@@ -1169,7 +1260,7 @@ export const useIdentityStore = defineStore('identity', {
         err.code = 'NOSTR_ACCOUNT_UNKNOWN';
         throw err;
       }
-      if (account === this.nostrAccountIndex) {
+      if (account === this.nostrAccountIndex && !this.activeExternalId) {
         const err = new Error('The identity in use cannot be removed');
         err.code = 'NOSTR_ACCOUNT_ACTIVE';
         throw err;
@@ -1204,6 +1295,158 @@ export const useIdentityStore = defineStore('identity', {
       }
     },
 
+    // -------------------------------------------------------------------
+    // Identities from another app (utils/externalIdentity.js)
+    // -------------------------------------------------------------------
+
+    /** External identities for the list: [{ id, kind, pubkeyHex, npub, label, active }]. */
+    listExternalIdentities() {
+      return this.externalIdentities.map((e) => ({
+        id: e.id, kind: e.kind, pubkeyHex: e.pubkeyHex, npub: e.npub, label: e.label, active: e.id === this.activeExternalId,
+      }));
+    },
+
+    /**
+     * Keep an identity from another app on this phone. Not made active:
+     * switching goes through the address book like every switch.
+     *
+     * A key that is already here is not added twice: the answer names the
+     * existing identity (a derived account or an earlier import) instead.
+     *
+     * @param {{ kind: 'secretKey'|'nip07'|'nip46', pubkeyHex: string,
+     *   secretKey?: Uint8Array, clientKey?: Uint8Array,
+     *   bunker?: { remotePubkey: string, relays: string[] },
+     *   connection?: object }} input
+     *   `secretKey` / `clientKey` are encrypted here; the caller wipes them.
+     *   `connection`: a remote signer already paired, kept for reuse.
+     * @returns {Promise<{ key: number|string, added: boolean }>}
+     *   key: a derived account number, or the external identity id.
+     */
+    async addExternalIdentity({ kind, pubkeyHex, secretKey, clientKey, bunker, connection }) {
+      const pubkey = String(pubkeyHex || '').toLowerCase();
+      const existing = this.externalIdentities.find((e) => e.pubkeyHex === pubkey);
+      if (existing) return { key: existing.id, added: false };
+      const derived = (await this.listNostrIdentities()).find((row) => row.pubkeyHex === pubkey);
+      if (derived) return { key: derived.account, added: false };
+
+      const id = `x${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+      const secret = kind === 'secretKey' ? secretKey : kind === 'nip46' ? clientKey : null;
+      if (secret) {
+        localStorage.setItem(STORAGE_KEYS.EXTERNAL_ENVELOPE_PREFIX + id, await encryptString(bytesToHex(secret)));
+      }
+      const record = sanitizeExternalIdentities([{ id, kind, pubkeyHex: pubkey, bunker, createdAt: Date.now() }])[0];
+      if (!record) {
+        localStorage.removeItem(STORAGE_KEYS.EXTERNAL_ENVELOPE_PREFIX + id);
+        throw new Error('Invalid identity');
+      }
+      this.externalIdentities = [...this.externalIdentities, record];
+      try {
+        this._persistMetadata();
+      } catch (persistErr) {
+        this.externalIdentities = this.externalIdentities.filter((e) => e.id !== id);
+        localStorage.removeItem(STORAGE_KEYS.EXTERNAL_ENVELOPE_PREFIX + id);
+        throw persistErr;
+      }
+      if (connection) adoptBunker(id, connection);
+      return { key: id, added: true };
+    },
+
+    /** Make an external identity the one in use. Persist-then-commit. */
+    switchToExternalIdentity(id) {
+      const target = this.externalIdentities.find((e) => e.id === id);
+      if (!target) {
+        const err = new Error('Unknown identity');
+        err.code = 'NOSTR_ACCOUNT_UNKNOWN';
+        throw err;
+      }
+      if (this.activeExternalId === id) return { pubkeyHex: target.pubkeyHex, npub: target.npub };
+      const prev = {
+        activeExternalId: this.activeExternalId,
+        pubkey: this.nostrPubkeyHex,
+        npub: this.nostrNpub,
+        nip05Handles: this.nip05Handles.map((h) => ({ ...h })),
+        accountNip05: { ...this.nostrAccountNip05 },
+      };
+      this._stashActiveHandles();
+      this.activeExternalId = id;
+      this.nostrPubkeyHex = target.pubkeyHex;
+      this.nostrNpub = target.npub;
+      this.nip05Handles = target.nip05Handles.map((h) => ({ ...h }));
+      try {
+        this._persistMetadata();
+      } catch (persistErr) {
+        this.activeExternalId = prev.activeExternalId;
+        this.nostrPubkeyHex = prev.pubkey;
+        this.nostrNpub = prev.npub;
+        this.nip05Handles = prev.nip05Handles;
+        this.nostrAccountNip05 = prev.accountNip05;
+        throw persistErr;
+      }
+      return { pubkeyHex: target.pubkeyHex, npub: target.npub };
+    },
+
+    /**
+     * Take an external identity off this phone: its stored secret key or
+     * signer pairing is deleted. Not the identity in use.
+     */
+    deleteExternalIdentity(id) {
+      if (id === this.activeExternalId) {
+        const err = new Error('The identity in use cannot be removed');
+        err.code = 'NOSTR_ACCOUNT_ACTIVE';
+        throw err;
+      }
+      const prev = this.externalIdentities;
+      if (!prev.some((e) => e.id === id)) return;
+      this.externalIdentities = prev.filter((e) => e.id !== id);
+      try {
+        this._persistMetadata();
+      } catch (persistErr) {
+        this.externalIdentities = prev;
+        throw persistErr;
+      }
+      closeSigner(id);
+      localStorage.removeItem(STORAGE_KEYS.EXTERNAL_ENVELOPE_PREFIX + id);
+    },
+
+    /** An imported secret key, for the secret key sheet: { nsec }. */
+    async revealExternalSecret(id) {
+      const external = this.externalIdentities.find((e) => e.id === id);
+      if (!external || external.kind !== 'secretKey') throw noRawKeyError();
+      const secretKey = await this._readExternalSecret(id);
+      try {
+        return { nsec: nip19.nsecEncode(secretKey) };
+      } finally {
+        secretKey.fill(0);
+      }
+    },
+
+    /** Decrypt an external identity's stored key bytes (secret key or pairing key). */
+    async _readExternalSecret(id) {
+      const envelope = localStorage.getItem(STORAGE_KEYS.EXTERNAL_ENVELOPE_PREFIX + id);
+      if (!envelope) throw noRawKeyError();
+      return hexToBytes(await decryptString(envelope));
+    },
+
+    /**
+     * A NostrCore Signer for the identity in use, and the release that
+     * wipes any key bytes it holds. Every signature, encryption and
+     * decryption for the identity goes through here; a signer outside
+     * BuhoGO is checked on every answer (verifiedSigner).
+     *
+     * @returns {Promise<{ signer: import('nostr-core').Signer, release: () => void }>}
+     */
+    async acquireSigner() {
+      const external = this.activeExternal;
+      if (!external || external.kind === 'secretKey') {
+        const secretKey = await this.getNostrSecretKeyBytes();
+        return { signer: createSecretKeySigner(secretKey), release: () => secretKey.fill(0) };
+      }
+      const signer = external.kind === 'nip07'
+        ? extensionSigner()
+        : await bunkerSigner(external.id, external.bunker, () => this._readExternalSecret(external.id));
+      return { signer: verifiedSigner(signer, external.pubkeyHex), release: () => {} };
+    },
+
     /**
      * Derive the display material for every roster identity in one
      * mnemonic decrypt. Read-only — nothing is cached or persisted;
@@ -1220,8 +1463,9 @@ export const useIdentityStore = defineStore('identity', {
       try {
         // The identity in use always lists, even one removed earlier and
         // made active again by a restore.
+        const inUse = this.activeExternalId ? null : this.nostrAccountIndex;
         const listed = this.nostrKnownAccounts.filter(
-          (entry) => entry.i === this.nostrAccountIndex || !this.nostrRemovedAccounts.includes(entry.i),
+          (entry) => entry.i === inUse || !this.nostrRemovedAccounts.includes(entry.i),
         );
         return listed.map((entry) => {
           let npub = '';
@@ -1237,7 +1481,7 @@ export const useIdentityStore = defineStore('identity', {
             npub,
             pubkeyHex,
             label: entry.label || null,
-            active: entry.i === this.nostrAccountIndex,
+            active: entry.i === inUse,
           };
         });
       } finally {
@@ -1394,7 +1638,7 @@ export const useIdentityStore = defineStore('identity', {
           let upgraded = false;
           if (pointer.active > this.nostrAccountIndex) {
             const derived = deriveNostrIdentity(mnemonic, pointer.active);
-            this._stashAndLoadNip05(this.nostrAccountIndex, pointer.active);
+            this._stashAndLoadNip05(pointer.active);
             this.nostrAccountIndex = pointer.active;
             this.nostrPubkeyHex = derived.publicKeyHex;
             this.nostrNpub = derived.npub;

@@ -117,7 +117,7 @@ const routes = [
       // The identity backup page merged into Security.
       { path: '/identity/words', redirect: '/security' },
       { path: '/identity/identities', component: () => import('pages/identity/IdentityListPage.vue') },
-      { path: '/identity/identities/:account(\\d+)', component: () => import('pages/identity/IdentityDetailPage.vue') },
+      { path: '/identity/identities/:key(\\d+|x[a-z0-9]+)', component: () => import('pages/identity/IdentityDetailPage.vue') },
       // Legacy Keys links now land beside the identity each private key belongs to.
       { path: '/identity/advanced', redirect: '/identity/identities' },
       { path: '/identity/erase', component: () => import('pages/identity/IdentityErasePage.vue') },

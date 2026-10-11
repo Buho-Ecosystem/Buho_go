@@ -1013,16 +1013,17 @@ export const useAddressBookStore = defineStore('addressBook', {
         return fail('no-pubkey')
       }
 
-      let secretKey
+      let signer
+      let release = () => {}
       try {
         await this._adoptSyncIdentity(pubkey)
-        secretKey = await identityStore.getNostrSecretKeyBytes()
+        ;({ signer, release } = await identityStore.acquireSigner())
         const relaySet = await this._resolveSyncRelays({ pool, relays, pubkey, timeoutMs })
 
         // 1. FETCH the shared doc — per-relay, so absence is provable.
         let fetched
         try {
-          fetched = await fetchContactsDoc({ pool, relays: relaySet, pubkey, secretKey, timeoutMs })
+          fetched = await fetchContactsDoc({ pool, relays: relaySet, pubkey, signer, timeoutMs })
         } catch (err) {
           return fail(err?.code === 'CONTACTS_DOC_DECRYPT_FAILED' ? 'decrypt-failed' : 'fetch-failed')
         }
@@ -1090,7 +1091,7 @@ export const useAddressBookStore = defineStore('addressBook', {
         let legacyConclusive = false
         if (!this.legacyMigratedAt) {
           try {
-            const legacy = await fetchAddressBook({ pool, relays: relaySet, pubkey, secretKey, timeoutMs })
+            const legacy = await fetchAddressBook({ pool, relays: relaySet, pubkey, signer, timeoutMs })
             if (legacy) {
               hadRemote = true
               legacyRecords = partitionContactPayload(legacy.contacts).live
@@ -1139,7 +1140,7 @@ export const useAddressBookStore = defineStore('addressBook', {
         // (possible when the cache won) never rebases us backwards.
         if (mustPublish) {
           try {
-            const fresh = await fetchContactsDoc({ pool, relays: relaySet, pubkey, secretKey, timeoutMs })
+            const fresh = await fetchContactsDoc({ pool, relays: relaySet, pubkey, signer, timeoutMs })
             const isNewer = fresh.found && (
               fresh.event.created_at > baseCreatedAt
               || (fresh.event.created_at === baseCreatedAt && fresh.event.id !== baseEventId)
@@ -1176,7 +1177,7 @@ export const useAddressBookStore = defineStore('addressBook', {
           const createdAt = Math.max(Math.floor(Date.now() / 1000), baseCreatedAt + 1)
           let event
           try {
-            event = buildContactsDocEvent({ secretKey, pubkey, doc: merged.doc, createdAt })
+            event = await buildContactsDocEvent({ signer, pubkey, doc: merged.doc, createdAt })
           } catch (err) {
             if (err?.code === 'CONTACTS_DOC_TOO_LARGE') {
               console.warn('[addressBook] contacts doc over the size ceiling, publish deferred:', err.message)
@@ -1211,9 +1212,9 @@ export const useAddressBookStore = defineStore('addressBook', {
           })
         }
 
-        // Secret key is done — the rest is pure-local bookkeeping.
-        secretKey.fill(0)
-        secretKey = null
+        // The signer is done: the rest is pure-local bookkeeping.
+        release()
+        release = () => {}
 
         // Links are only real once the doc they point into exists
         // outside this device. After a refused publish an appended
@@ -1246,7 +1247,7 @@ export const useAddressBookStore = defineStore('addressBook', {
           ...counters,
         }
       } finally {
-        if (secretKey) secretKey.fill(0)
+        release()
       }
     },
 

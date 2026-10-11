@@ -91,6 +91,7 @@ function serializedMeta(state, ownerPubkey = state.ownerPubkey) {
     nip60TokenEventIds: state.nip60TokenEventIds,
     nip60BackupPending: state.nip60BackupPending,
     nip60LastBackedUpAt: state.nip60LastBackedUpAt,
+    nip60Blocked: state.nip60Blocked,
   });
 }
 
@@ -143,6 +144,12 @@ export const useSocialBucketStore = defineStore('socialBucket', {
     /** A local proof change still needs at least one relay acknowledgement. */
     nip60BackupPending: false,
     nip60LastBackedUpAt: null,
+    /**
+     * This key already has an ecash wallet event another app wrote, in a
+     * form this app cannot read. Nothing is published over it: replacing
+     * it would lose that wallet's key.
+     */
+    nip60Blocked: false,
 
     lastSyncAt: null,
     isSyncing: false,
@@ -280,6 +287,7 @@ export const useSocialBucketStore = defineStore('socialBucket', {
               ? parsed.nip60TokenEventIds.filter((id) => typeof id === 'string')
               : [];
             this.nip60BackupPending = Boolean(parsed.nip60BackupPending);
+            this.nip60Blocked = Boolean(parsed.nip60Blocked);
             this.nip60LastBackedUpAt = parsed.nip60LastBackedUpAt ?? null;
           }
         }
@@ -406,6 +414,7 @@ export const useSocialBucketStore = defineStore('socialBucket', {
       this.nip60TokenEventIds = [];
       this.nip60BackupPending = false;
       this.nip60LastBackedUpAt = null;
+      this.nip60Blocked = false;
       this.lastSyncAt = null;
       this.lastError = null;
       this.sweepStage = null;
@@ -459,6 +468,10 @@ export const useSocialBucketStore = defineStore('socialBucket', {
     ) {
       if (!state) return;
       const restoreOwner = this.ownerPubkey;
+      if (state.walletUnreadable) {
+        this.nip60Blocked = true;
+        this._persistMeta();
+      }
       if (state.wallet) {
         this.nip60Wallet = state.wallet;
         await this._persistNip60Wallet();
@@ -518,10 +531,33 @@ export const useSocialBucketStore = defineStore('socialBucket', {
       this._persistMeta();
     },
 
-    /** Publish the current local proof snapshot without touching npub.cash. */
-    async _backupNip60(secretKey, history = {}) {
+    /**
+     * Publish the current local proof snapshot without touching npub.cash.
+     * Never writes a wallet event without having read the current one: an
+     * identity brought from another app may already have an ecash wallet,
+     * and a blind write would replace it.
+     */
+    async _backupNip60(secretKey, history = {}, { fetcher = fetchNip60WalletState } = {}) {
       if (!this.mintUrl) return { ok: false, reason: 'NO_MINT' };
+      if (this.nip60Blocked) return { ok: false, reason: 'NIP60_FOREIGN_WALLET' };
       const backupOwner = this.ownerPubkey;
+      if (!this.nip60Wallet) {
+        let remote;
+        try {
+          remote = await fetcher({ secretKey, pubkey: backupOwner });
+        } catch (err) {
+          this.nip60BackupPending = true;
+          this._persistMeta();
+          return { ok: false, reason: 'NIP60_UNCHECKED' };
+        }
+        if (this.ownerPubkey !== backupOwner) return { ok: false, reason: 'PROFILE_CHANGED', appliedLocally: false };
+        if (remote?.walletUnreadable) {
+          this.nip60Blocked = true;
+          this._persistMeta();
+          return { ok: false, reason: 'NIP60_FOREIGN_WALLET' };
+        }
+        if (remote?.wallet) this.nip60Wallet = remote.wallet;
+      }
       try {
         const result = await publishNip60WalletState({
           secretKey,
@@ -566,6 +602,8 @@ export const useSocialBucketStore = defineStore('socialBucket', {
       nip60Fetcher = fetchNip60WalletState,
     } = {}) {
       if (!identityStore?.bootstrapped) return;
+      // The bucket signs with the identity's own key; a signer app cannot.
+      if (identityStore.identityCapabilities?.rawKey === false) return;
 
       const pubkeyHex = normalizeOwnerPubkey(identityStore.nostrPubkeyHex);
       if (!pubkeyHex) return;
@@ -653,6 +691,7 @@ export const useSocialBucketStore = defineStore('socialBucket', {
     async sweepTo({ identityStore, createInvoice }) {
       if (this.isSweeping) return { ok: false, reason: 'BUSY' };
       if (!identityStore?.bootstrapped) return { ok: false, reason: 'NO_IDENTITY' };
+      if (identityStore.identityCapabilities?.rawKey === false) return { ok: false, reason: 'NO_RAW_KEY' };
 
       this.isSweeping = true;
       this.sweepStage = 'checking';

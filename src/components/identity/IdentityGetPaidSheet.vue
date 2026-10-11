@@ -477,7 +477,8 @@ export default {
         // Adopting the address is a boot step, but the sheet may open in the
         // few seconds before it finishes, or after it failed while offline.
         // Same default chain as the boot: Spark wallet first, bucket after.
-        if (!this.payAddress && this.identity.nostrNpub) {
+        // Never for an identity from another app: its profile is its own.
+        if (!this.payAddress && this.identity.nostrNpub && !this.identity.activeExternalId) {
           const address = this.walletStore.preferredProfileLightningAddress
             || npubCashAddress(this.identity.nostrNpub);
           if (address) {

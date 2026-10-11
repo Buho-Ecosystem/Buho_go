@@ -1,9 +1,11 @@
 /**
  * The identities on this phone, ready to display.
  *
- * Rows come from the identity store's roster (removed identities excluded),
- * named and pictured from each identity's saved profile first, then from the
- * profiles the relays return. The identity in use reads the live profile
+ * Rows come from the identity store: the identities derived from the 12
+ * words (removed ones excluded) and the ones brought from another app, each
+ * with a `key` (the account number, or the external identity's id). They
+ * are named and pictured from each identity's saved profile first, then
+ * from the profiles the relays return. The identity in use reads the live profile
  * store, so an edit shows here at once, and the list refreshes itself after
  * every roster change.
  */
@@ -43,7 +45,17 @@ const ROSTER_ACTIONS = new Set([
   'createAnotherNostrIdentity',
   'removeNostrIdentityFromDevice',
   'restoreNostrIdentityToDevice',
+  'addExternalIdentity',
+  'switchToExternalIdentity',
+  'deleteExternalIdentity',
 ]);
+
+/** Where an imported identity's key lives, said under its name. */
+const ORIGIN_LABELS = {
+  secretKey: 'Secret key on this phone',
+  nip07: 'Browser extension',
+  nip46: 'Remote signer',
+};
 
 /**
  * @param {(key: string, params?: object) => string} t  the caller's $t
@@ -83,7 +95,10 @@ export function useIdentities(t) {
     const mine = ++generation;
     let listed;
     try {
-      listed = await identity.listNostrIdentities();
+      listed = [
+        ...(await identity.listNostrIdentities()).map((row) => ({ ...row, key: row.account })),
+        ...identity.listExternalIdentities().map((row) => ({ ...row, key: row.id, external: true })),
+      ];
     } catch (err) {
       console.warn('[identities] listing failed:', err);
       listed = [];
@@ -118,7 +133,12 @@ export function useIdentities(t) {
     if (row.displayName) return row.displayName;
     if (row.label) return row.label;
     if (row.username) return addressFor(row.username);
-    return t('Identity {n}', { n: row.account + 1 });
+    return row.external ? t('Imported identity') : t('Identity {n}', { n: row.account + 1 });
+  }
+
+  /** Where an imported identity's key lives ('' for an identity made here). */
+  function originOf(row) {
+    return row?.external ? t(ORIGIN_LABELS[row.kind]) : '';
   }
 
   /**
@@ -132,5 +152,5 @@ export function useIdentities(t) {
       : { text: shortPublicCode(row?.npub), mono: true };
   }
 
-  return { identities, refresh, nameOf, captionOf };
+  return { identities, refresh, nameOf, captionOf, originOf };
 }
