@@ -25,6 +25,7 @@ import {
   payingWalletReasonText,
   payingWalletHint,
   payingBlockedText,
+  requestPayability,
 } from '../payingWallets.js'
 
 const WALLETS = [
@@ -367,4 +368,13 @@ test('blocked text: empty when a wallet can pay, else the one sentence that is t
   assert.equal(payingBlockedText(only(['arkade']), t), "Arkade can't pay this.")
   assert.equal(payingBlockedText(listPayingWallets({ wallets: [{ id: 'a', name: '', type: 'arkade' }] }), t), "Wallet can't pay this.")
   assert.equal(payingBlockedText(only(['arkade', 'nwc'], { destinationType: 'spark_address' }), t), 'None of your wallets can pay this.')
+})
+
+test('request payability: nothing is claimed while the saved wallets load', () => {
+  const wallets = list({ wallets: WALLETS.filter((w) => w.id === 'arkade') })
+  assert.deepEqual(requestPayability({ hydrated: false, savedStateLoaded: false, wallets: [] }, t), { loading: true, reason: '' })
+  assert.deepEqual(requestPayability({ hydrated: true, savedStateLoaded: false, wallets: [] }, t),
+    { loading: false, reason: 'Your wallets could not be loaded. Close and reopen BuhoGO.' }, 'a failed load is not "no wallet"')
+  assert.deepEqual(requestPayability({ hydrated: true, savedStateLoaded: true, wallets }, t), { loading: false, reason: "Arkade can't pay this." })
+  assert.deepEqual(requestPayability({ hydrated: true, savedStateLoaded: true, wallets: list() }, t), { loading: false, reason: '' })
 })

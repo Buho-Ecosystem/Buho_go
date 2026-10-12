@@ -424,7 +424,7 @@ test('live expiry: the clock sleeps at most a minute and wakes for the nearest e
   chat.dispose();
 });
 
-test('payability: the request amount is asked, the reason and the loading state reach the card', async () => {
+test('payability: the request amount is asked, the reason and the loading state reach the card', () => {
   const theirs = request({ createdAt: seconds() - 10 });
   ingest(theirs);
   const card = (chat) => chat.items.value.find((i) => i.type === 'request').request;
@@ -706,7 +706,7 @@ test('the same view-model reused for another chat lets go of the first one', asy
   const current = ref(ANNA);
   const runtime = fakeRuntime();
   const chat = useContactChat({
-    partner: current, partnerName: 'x', store, runtime, pay: {}, payingWalletFor: () => null, payability: () => ({ loading: false, reason: '' }), t,
+    partner: current, partnerName: 'x', store, runtime, pay: {}, payingWalletFor: () => null, t,
     now: clock.now, setTimer: clock.setTimer, clearTimer: clock.clearTimer,
   });
   await chat.open();

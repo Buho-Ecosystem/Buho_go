@@ -315,7 +315,7 @@ export function describeDmError(error, { t, name = '' }) {
  * @property {{ payContact: Function, payInvoice: Function, payAddress: Function }} pay `usePayContact(ctx)`.
  * @property {(sats: number, destinationType?: string) => ({ id: string, usable: boolean, reason: string | null } | null)} payingWalletFor
  *   The wallet that would pay `sats` (the default pick of the "Pay with" field).
- * @property {(sats: number) => Payability} payability Whether a request of `sats` can be paid now.
+ * @property {(sats: number) => Payability} [payability] Whether a request of `sats` can be paid now.
  * @property {(walletId: string | null) => string} [walletNameOf] Display name of one of the user's wallets.
  * @property {() => Promise<import('../services/dm/paymentConfirmation.js').IncomingTransaction[]>} [loadIncomingTransactions]
  * @property {(key: string, params?: object) => string} t
@@ -330,7 +330,8 @@ export function describeDmError(error, { t, name = '' }) {
  */
 export function useContactChat(options) {
   const {
-    store, runtime, pay, payingWalletFor, payability, t, formatFiat,
+    store, runtime, pay, payingWalletFor, t, formatFiat,
+    payability = () => ({ loading: false, reason: '' }),
     walletNameOf = () => '',
     loadIncomingTransactions = async () => [],
     now: clock = Date.now,

@@ -254,7 +254,7 @@ import { i18n } from '../boot/i18n'
 import { fiatRatesService } from '../utils/fiatRates.js'
 import { onAppVisibility } from '../utils/appVisibility.js'
 import { shareContent } from '../utils/share.js'
-import { knownFeeReserveSats, listPayingWallets, payingBlockedText, pickDefaultPayingWallet } from '../utils/payingWallets.js'
+import { knownFeeReserveSats, listPayingWallets, pickDefaultPayingWallet, requestPayability } from '../utils/payingWallets.js'
 
 const HEX_64 = /^[0-9a-f]{64}$/
 
@@ -343,18 +343,12 @@ export default {
     /** The wallet "Pay with" starts with for a payment of `amountSats` over `destinationType`. */
     const payingWalletFor = (amountSats, destinationType) => pickDefaultPayingWallet(payingWalletsFor(amountSats, destinationType))
 
-    /**
-     * Whether a request of `amountSats` can be paid now. The page can open
-     * before the saved wallets have loaded (a slow start): until they have, an
-     * empty list says nothing about the user's wallets.
-     */
-    const payability = (amountSats) => {
-      if (!walletStore.hydrated) return { loading: true, reason: '' }
-      if (!walletStore.savedStateLoaded) {
-        return { loading: false, reason: t('Your wallets could not be loaded. Close and reopen BuhoGO.') }
-      }
-      return { loading: false, reason: payingBlockedText(payingWalletsFor(amountSats), t) }
-    }
+    /** Whether a request of `amountSats` can be paid now. */
+    const payability = (amountSats) => requestPayability({
+      hydrated: walletStore.hydrated,
+      savedStateLoaded: walletStore.savedStateLoaded,
+      wallets: payingWalletsFor(amountSats),
+    }, t)
 
     const chat = useContactChat({
       partner,

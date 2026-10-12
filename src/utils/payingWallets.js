@@ -220,3 +220,20 @@ export function payingBlockedText(list, t) {
     ? t("{wallet} can't pay this.", { wallet: wallets[0].name || t('Wallet') })
     : t('None of your wallets can pay this.')
 }
+
+/**
+ * Whether a payment request can be paid now. The screen can open before the
+ * saved wallets have loaded (a slow start): until they have, an empty list
+ * says nothing about the user's wallets, so nothing is claimed.
+ * @param {object} input
+ * @param {boolean} input.hydrated the wallet store finished loading, or gave up
+ * @param {boolean} input.savedStateLoaded the saved wallets were read
+ * @param {ReturnType<typeof listPayingWallets>} input.wallets
+ * @param {(key: string, params?: object) => string} t vue-i18n translate
+ * @returns {{ loading: boolean, reason: string }} reason '' when a wallet can pay
+ */
+export function requestPayability({ hydrated, savedStateLoaded, wallets }, t) {
+  if (!hydrated) return { loading: true, reason: '' }
+  if (!savedStateLoaded) return { loading: false, reason: t('Your wallets could not be loaded. Close and reopen BuhoGO.') }
+  return { loading: false, reason: payingBlockedText(wallets, t) }
+}
