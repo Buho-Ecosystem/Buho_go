@@ -996,6 +996,8 @@ export default {
       showWalletSwitcher: false,
       // Fee estimation for Spark Lightning payments
       estimatedFee: null,
+      // The estimate is the provider's guess, not a route quote.
+      estimatedFeeIsGuess: false,
       isEstimatingFee: false,
       // Save-to-contacts after payment
       showSaveContactDialog: false,
@@ -1843,7 +1845,10 @@ export default {
     payingWalletEntries() {
       const p = this.pendingPayment;
       if (!p || p.type === 'lnurl_withdraw') return [];
-      return this.rankPayingWallets(this.pendingDestinationType, this.payingAmountSats, this.estimatedFee);
+      // A guessed fee (no route quote) is shown and capped, but never held
+      // back from the balance: it could refuse a payment the wallet makes.
+      const knownFee = this.estimatedFeeIsGuess ? null : this.estimatedFee;
+      return this.rankPayingWallets(this.pendingDestinationType, this.payingAmountSats, knownFee);
     },
 
     /**
@@ -1858,13 +1863,15 @@ export default {
       if (!canWalletPay(this.getSendingWalletType(), this.pendingDestinationType)) {
         return { name: wallet?.name || '', reason: PAYING_REASON.UNSUPPORTED_DESTINATION };
       }
-      // The balance only matters when there is a choice to make.
-      // With a single wallet nothing could be offered instead, so the provider
-      // keeps reporting a real shortfall the way it always has.
-      const entries = this.payingWalletEntries;
-      if (entries.length < 2) return null;
-      const entry = entries.find((w) => w.id === wallet?.id);
-      return entry && !entry.usable ? entry : null;
+      // A known shortfall is said before the slide, also with a single
+      // wallet: the provider's own refusal comes after the tap and in its
+      // words. Only a balance verified just now refuses: a saved or older
+      // figure is being re-read (the payingWalletEntries watcher) and may
+      // be behind money that arrived meanwhile.
+      const entry = this.payingWalletEntries.find((w) => w.id === wallet?.id);
+      if (!entry || entry.usable) return null;
+      if (entry.reason === PAYING_REASON.INSUFFICIENT_BALANCE && this.walletStore.getDisplayBalance(entry.id).isCached) return null;
+      return entry;
     },
 
     paymentSheetWalletCanPay() {
@@ -2296,12 +2303,12 @@ export default {
     sendingWalletId: 'updateFeeEstimate',
 
     /**
-     * "Pay with" judges every wallet by its balance, so the other wallets'
-     * figures are refreshed once when a payment opens: only those not known
-     * to be current, and never the one already being read.
+     * "Pay with" judges every wallet by its balance, so their figures are
+     * refreshed once when a payment opens: only those not known to be
+     * current, and never the one already being read.
      */
     'payingWalletEntries.length'(count, before) {
-      if (count < 2 || before >= 2) return;
+      if (!count || before) return;
       for (const { id } of this.payingWalletEntries) {
         const shown = this.walletStore.getDisplayBalance(id);
         if (shown.refreshing || (shown.known && !shown.isCached)) continue;
@@ -5199,6 +5206,7 @@ export default {
         this.walletStore.showPaymentError(error, {
           context: 'payment',
           walletType,
+          walletName: this.getWalletById(sendingWalletId)?.name,
           route: this.routeLabelForPendingPayment(),
           amountSats: typeof amount === 'number' ? amount : undefined,
           t: this.$t.bind(this),
@@ -6165,6 +6173,7 @@ export default {
       // call wins.
       this._feeEstimateRun = (this._feeEstimateRun || 0) + 1;
       this.estimatedFee = null;
+      this.estimatedFeeIsGuess = false;
       this.isEstimatingFee = false;
 
       if (!this.pendingPayment) {
@@ -6220,6 +6229,7 @@ export default {
           const estimate = await provider.getLightningSendFeeEstimate(invoice);
           if (run !== this._feeEstimateRun) return;
           this.estimatedFee = estimate.estimatedFeeSats;
+          this.estimatedFeeIsGuess = estimate.isEstimated === true;
         } catch (error) {
           if (run !== this._feeEstimateRun) return;
           console.warn('Spark fee estimation failed:', error.message);
