@@ -545,6 +545,7 @@ async function doTransfer() {
     store.showPaymentError(e, {
       context: 'transfer',
       walletType: state.fromWallet?.type || null,
+      walletName: state.fromWallet?.name,
       route: `Transfer (${state.fromWallet?.name || '?'} → ${state.toWallet?.name || '?'})`,
       amountSats: parseInt(state.amount) || undefined,
       t: t,

@@ -1865,9 +1865,13 @@ export default {
       }
       // A known shortfall is said before the slide, also with a single
       // wallet: the provider's own refusal comes after the tap and in its
-      // words. Only what is known counts (see rankPayingWallets).
+      // words. Only a balance verified just now refuses: a saved or older
+      // figure is being re-read (the payingWalletEntries watcher) and may
+      // be behind money that arrived meanwhile.
       const entry = this.payingWalletEntries.find((w) => w.id === wallet?.id);
-      return entry && !entry.usable ? entry : null;
+      if (!entry || entry.usable) return null;
+      if (entry.reason === PAYING_REASON.INSUFFICIENT_BALANCE && this.walletStore.getDisplayBalance(entry.id).isCached) return null;
+      return entry;
     },
 
     paymentSheetWalletCanPay() {
@@ -3623,14 +3627,10 @@ export default {
      * @param {number|null} [knownFeeSats] the provider's own fee estimate, if any
      */
     rankPayingWallets(destinationType, amountSats = 0, knownFeeSats = null) {
-      // A balance whose last refresh failed may be behind (money that just
-      // arrived), so it never refuses a payment: it counts as unknown here.
-      const balances = Object.fromEntries(Object.entries(this.walletStore.balances || {})
-        .filter(([id]) => !this.walletStore.getDisplayBalance(id).outdated));
       return listPayingWallets({
         wallets: this.walletStore.wallets || [],
         activeWalletId: this.walletStore.activeWalletId,
-        balances,
+        balances: this.walletStore.balances || {},
         connectionStates: this.walletStore.connectionStates || {},
         destinationType,
         amountSats,

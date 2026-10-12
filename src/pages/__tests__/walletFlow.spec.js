@@ -326,7 +326,7 @@ const PAY_WALLETS = [
 const PAY_FUNDS = { biz: 50000, personal: 40000, alby: 30000, lnb: 20000, ark: 10000 };
 const INVOICE_SATS = { 'inv-1000': 1000, 'inv-zero': 0, 'inv-big': 45000 };
 
-function payingHarness({ wallets = PAY_WALLETS, active = 'biz', funds = PAY_FUNDS, outdated = [], connectionStates = {}, bus = { emit() {} } } = {}) {
+function payingHarness({ wallets = PAY_WALLETS, active = 'biz', funds = PAY_FUNDS, cached = [], connectionStates = {}, bus = { emit() {} } } = {}) {
   const calls = [];     // provider-level traffic, in order: [walletId, method, ...details]
   const lightning = []; // NWC service traffic
   const notices = [];
@@ -355,8 +355,8 @@ function payingHarness({ wallets = PAY_WALLETS, active = 'biz', funds = PAY_FUND
     balanceStates: Object.fromEntries(Object.entries(funds).map(([id, value]) => [id, { value }])),
     get activeWallet() { return this.wallets.find(w => w.id === this.activeWalletId) || null; },
     get activeWalletType() { return this.activeWallet?.type ?? null; },
-    // `outdated`: the last refresh of these balances failed.
-    getDisplayBalance: id => ({ known: id in funds, isCached: false, refreshing: false, outdated: outdated.includes(id) }),
+    // `cached`: these balances are saved or older figures, not verified just now.
+    getDisplayBalance: id => ({ known: id in funds, isCached: cached.includes(id), refreshing: false }),
     getSparkAddress: id => `spark1${id}`,
     ensureSparkConnected: async (id = null) => { calls.push([id, 'ensureSparkConnected']); return providerFor(id || store.activeWalletId); },
     ensureLNBitsConnected: async id => { calls.push([id, 'ensureLNBitsConnected']); return providerFor(id || store.activeWalletId); },
@@ -666,11 +666,15 @@ test('Pay with: a single wallet that holds too little says so before the slide, 
   await quietly(() => lone.vm.confirmPayment());
   assert.deepEqual(lone.lightning.filter(([step]) => step === 'send'), [], 'nothing was sent');
 
-  // A balance whose last refresh failed may be behind: it never refuses.
-  const behind = payingHarness({ wallets: [PAY_WALLETS[2]], active: 'alby', funds: { alby: 3 }, outdated: ['alby'] });
+  // A saved or older figure may be behind money that arrived meanwhile: it is
+  // re-read when the payment opens and refuses nothing until then.
+  const behind = payingHarness({ wallets: [PAY_WALLETS[2]], active: 'alby', funds: { alby: 3 }, cached: ['alby'] });
   await behind.vm.onPaymentDetected({ type: 'lightning_invoice', data: 'inv-big' });
   assert.equal(behind.vm.paymentSheetWalletCanPay, true);
-  assert.equal(behind.vm.payingWalletEntries[0].balanceSats, null);
+  assert.equal(behind.vm.paymentSheetWalletHint, '');
+  // ...which the opening payment starts, for a single wallet too.
+  behind.options.watch['payingWalletEntries.length'].call(behind.vm, 1, 0);
+  assert.deepEqual(behind.calls.filter(([, step]) => step === 'refreshBalance'), [['alby', 'refreshBalance']]);
 
   const arkadeOnly = payingHarness({ wallets: [PAY_WALLETS[4]], active: 'ark' });
   await arkadeOnly.vm.onPaymentDetected({ type: 'lightning_invoice', data: 'inv-1000' });
