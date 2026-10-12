@@ -54,9 +54,9 @@ export default boot(async ({ router }) => {
     // parameters and must never reach logcat.
     console.log(`[nfc] Tag scanned (${source}):`, redactPaymentInput(raw))
 
-    // The guards below read persisted state (kiosk mode, activeWallet). On a
-    // cold start this runs before Wallet.vue has mounted and initialized the
-    // store, so hydrate first — idempotent, synchronous prefix is enough.
+    // The guards below read the saved state (kiosk mode, activeWallet). The
+    // 'wallet-store' boot loaded it at start; this call is idempotent and
+    // only matters if that load never started.
     triggerWalletStoreHydration(walletStore)
 
     if (offerKioskPayment(raw, walletStore, router)) return

@@ -24,7 +24,7 @@
  * leaving a blank screen. Saves stay refused, and adds wait, until the load
  * lands.
  */
-export const START_LOAD_WAIT_MS = 3000
+const START_LOAD_WAIT_MS = 3000
 
 /**
  * Load the saved wallets and settings at start (the 'wallet-store' boot).

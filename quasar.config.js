@@ -27,8 +27,8 @@ export default defineConfig((ctx) => {
       'iconify',
       'safe-area',
       // 'wallet-store' loads the saved wallets and settings before anything
-      // reads or saves them (the kiosk guard, screen privacy, the boot tasks
-      // below, the first screen): a save made earlier would replace them.
+      // reads them (the kiosk guard, screen privacy, the boot tasks below, the
+      // first screen); until it has, the store refuses to save.
       'wallet-store',
       'kiosk',
       // 'secure-screen' reconciles the Pinia screen-privacy field

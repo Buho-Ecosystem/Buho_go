@@ -30,7 +30,12 @@ The store (`src/stores/wallet.js`) applies these rules. Membership changes run o
 
 ## Store actions
 
-- `createSparkWallet({ mnemonic })`: the first wallet. Throws `SPARK_WALLET_EXISTS` when Spark is already set up.
+- Every add and removal works on the saved wallets (the save rules are `_assertSavable` in the store):
+  - An add waits until the saved wallets are loaded, and throws `WALLET_STATE_UNAVAILABLE` when they could not be.
+  - The add's own durable save is the first to write the new wallet. When it is refused (`WALLET_STATE_CONFLICT`: another tab or window changed the wallets) or fails, the add is undone and nothing of it stays on disk.
+  - A new wallet's Lightning address reaches the profile only after that save.
+  - A removal that could not be saved is refused before anything is torn down. A removal is saved before it resolves.
+- `createSparkWallet({ mnemonic })`: the first wallet. Throws `SPARK_WALLET_EXISTS` when Spark is already set up; `/spark-setup` opened again with Spark saved goes to the wallet instead.
 - `addSparkWallet({ name })`:
   - Takes the next free account and connects it; a failed connect undoes the entry.
   - Switches to the new wallet.
@@ -113,11 +118,12 @@ Runs in `initialize()` until it completes once (`sparkModelVersion` 2):
 ## Validation
 
 - `npm test` includes:
-  - `sparkWallets.spec.js`: create, add, limit, restore, discovery, removal, rename, migration.
+  - `sparkWallets.spec.js`: create, add, limit, restore, discovery, removal, rename, migration, and the saved wallets across a reload and a second window.
   - `sparkLightningAddress.spec.js`.
   - `cloudBackup.spec.js`.
   - The pure-rule specs (`sparkAccounts`, `sparkBackup`, `autoWithdrawKeys`, `exitKeys`).
 - `node scripts/check-spark-wallets.mjs` drives Home, Settings, add, move address, removal and the tour in the browser. It covers German, dark mode and 320px. `scripts/check-wallet-details.mjs` covers the detail panel.
+- `node scripts/check-wallet-persistence.mjs` reloads every first-load route on a device with saved wallets, adds an LNbits wallet straight after a reload, keeps a kiosk device locked, and reopens Spark and Arkade setup with the wallet saved.
 
 ## Needs a device
 
