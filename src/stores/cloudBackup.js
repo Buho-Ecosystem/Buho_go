@@ -552,12 +552,12 @@ export const useCloudBackupStore = defineStore('cloudBackup', {
       const wallet = useWalletStore();
       const identity = useIdentityStore();
 
-      // The welcome-screen restore path reaches here before either store
+      // The welcome-screen restore path can reach here before either store
       // has loaded its persisted state. Applying against empty in-memory
       // state would mis-read "nothing on this device": the wallet store
-      // would refuse to persist (it never drops wallets it saw on disk)
-      // and the identity guard below would see bootstrapped=false while a
-      // key exists. Hydrate first; both calls are idempotent.
+      // would refuse to persist (it never saves before its saved state is
+      // loaded) and the identity guard below would see bootstrapped=false
+      // while a key exists. Hydrate first; both calls are idempotent.
       if (!wallet.isInitialized) await wallet.initialize();
       await identity.hydrate();
 

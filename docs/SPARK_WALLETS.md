@@ -71,7 +71,7 @@ Runs in `initialize()` until it completes once (`sparkModelVersion` 2):
 - Former pairs become two ordinary wallets that keep their names. No Personal is created, nothing is renamed, nothing is purged.
 - Pockets (the pre-1.6 model) become wallets on the same phrase.
 - `walletGroupId` is dropped.
-- Entries on another phrase, or a second entry for the same account, are set aside in `buhoGO_spark_set_aside_v1`. They are never deleted. The kept list then passes the store's persist guard explicitly. A wallet on another phrase stays reachable: Manage Wallets lists it under "Other recovery phrase" and shows its words.
+- Entries on another phrase, or a second entry for the same account, are set aside in `buhoGO_spark_set_aside_v1`. They are never deleted. The kept list is then saved: a save may drop a wallet the store read itself, never one it has not seen. A wallet on another phrase stays reachable: Manage Wallets lists it under "Other recovery phrase" and shows its words.
 - Auto-transfer rules from former pockets move to the wallet that now holds the account, switched off.
 - When a phrase cannot be read yet (an install still on the old PIN encryption), nothing is set aside and the migration waits for a later start.
 

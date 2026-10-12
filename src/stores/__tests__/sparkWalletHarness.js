@@ -44,8 +44,10 @@ export const decrypt = async (envelope) => {
  * @param {Function} [options.connect]  (wallet) => void | throws, before a provider goes live
  * @param {object} [options.storage]    initial localStorage contents
  * @param {object} [options.exits]      walletId -> exit ledger record
+ * @param {object} [options.deps]       more module stand-ins (import path -> exports), e.g. other providers
+ * @param {boolean} [options.validate]  run the store's own wallet validation on load (skipped otherwise)
  */
-export function createHarness({ evidence = {}, connect = null, storage = {}, exits = {} } = {}) {
+export function createHarness({ evidence = {}, connect = null, storage = {}, exits = {}, deps: extraDeps = {}, validate = false } = {}) {
   const local = memoryStorage(storage);
   globalThis.localStorage = local;
   const calls = { probes: [], deletedStorage: [], reconciled: [], removedConfigs: [], kitsRemoved: [], preserved: [], backupNotes: 0 };
@@ -144,12 +146,16 @@ export function createHarness({ evidence = {}, connect = null, storage = {}, exi
     '../utils/txCache.js': { clearCachedTransactions: () => {} },
     '../utils/fiatRates.js': { fiatRatesService: { formatFiatAmount: (amount, currency) => `${currency} ${amount.toFixed(2)}` } },
     './cloudBackup.js': { useCloudBackupStore: () => ({ noteWalletsChanged: () => { calls.backupNotes += 1; } }) },
+    ...extraDeps,
   };
 
   const source = readFileSync(new URL('../wallet.js', import.meta.url), 'utf8');
   const { code } = transformSync(source, { format: 'cjs', supported: { 'dynamic-import': false } });
   const module = { exports: {} };
-  new Function('require', 'module', 'exports', code)((name) => deps[name] || {}, module, module.exports);
+  // The store reads its own storage, not the global one: work a store leaves
+  // running after its test (a background discovery, a late connect) must
+  // never write into the next test's device.
+  new Function('require', 'module', 'exports', 'localStorage', code)((name) => deps[name] || {}, module, module.exports, local);
   const options = module.exports.useWalletStore;
 
   const store = { ...options.state() };
@@ -161,8 +167,9 @@ export function createHarness({ evidence = {}, connect = null, storage = {}, exi
   }
   // Network-facing helpers outside these specs.
   store.loadExchangeRates = async () => {};
-  store.validateWallets = async () => {};
   store._syncProfilePaymentAddress = async () => {};
+  // Saved fixtures may hold entries that validation would set aside.
+  if (!validate) store.validateWallets = async () => {};
 
   return {
     store,

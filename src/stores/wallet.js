@@ -192,8 +192,50 @@ const STORAGE_KEYS = {
   WALLET_STORE: 'buhoGO_wallet_store',
   LEGACY_STATE: 'buhoGO_wallet_state',
   DEVICE_KEY: 'buhoGO_device_key',
+  // Prefix for a saved wallet state that could not be read. It is kept
+  // under this prefix plus a unique suffix, never deleted, so the
+  // encrypted phrases it may hold can still be recovered by hand.
+  UNREADABLE_WALLET_STORE: 'buhoGO_wallet_store_unreadable',
 };
 const BALANCE_SCHEMA_VERSION = 1;
+
+/**
+ * The saved wallet state, or null when nothing is saved. A value that is
+ * not JSON is set aside under its own key and the store starts empty, so
+ * the person can restore. Throws when storage cannot be read or the value
+ * cannot be set aside: nothing may then be saved over it.
+ */
+function readSavedState() {
+  const raw = localStorage.getItem(STORAGE_KEYS.WALLET_STORE);
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw);
+  } catch {
+    const base = `${STORAGE_KEYS.UNREADABLE_WALLET_STORE}_${Date.now()}`;
+    let key = base;
+    for (let n = 2; localStorage.getItem(key) !== null; n += 1) key = `${base}_${n}`;
+    localStorage.setItem(key, raw);
+    localStorage.removeItem(STORAGE_KEYS.WALLET_STORE);
+    console.warn(`[wallet-store] The saved wallets could not be read; kept as ${key}`);
+    return null;
+  }
+}
+
+/**
+ * The wallet entries saved right now. This store only ever writes JSON it
+ * built, so a value it cannot read was written elsewhere: it counts as a
+ * conflict, and nothing is saved over it.
+ */
+function savedWalletsOnDisk() {
+  const raw = localStorage.getItem(STORAGE_KEYS.WALLET_STORE);
+  if (!raw) return [];
+  try {
+    const wallets = JSON.parse(raw)?.wallets;
+    if (wallets == null) return [];
+    if (Array.isArray(wallets)) return wallets;
+  } catch { /* unreadable: refused below */ }
+  throw codedError('WALLET_STATE_CONFLICT', 'The saved wallets were changed elsewhere and cannot be read; nothing was saved');
+}
 
 // Durable double-claim guard for L1 deposits. Module-level rather than
 // Pinia state: membership answers point-in-time questions and must
@@ -306,9 +348,6 @@ export const useWalletStore = defineStore('wallet', {
       technical: null,
     },
 
-    // Internal flag: set true when user explicitly removes wallets (bypasses persist guard)
-    _walletRemovalInProgress: false,
-
     // Spark multi-wallet model (utils/sparkWalletMigration.js). A fresh
     // install starts on the current model; older saves migrate once.
     sparkModelVersion: SPARK_MODEL_VERSION,
@@ -363,9 +402,20 @@ export const useWalletStore = defineStore('wallet', {
     // prevent boot flows (deep links, Wallet.vue) from racing each other
     // into duplicate store hydration / auto-connect work on cold start.
     isInitialized: false,
-    // Saved wallets and their last-known balances are loaded: screens can
-    // paint while connections and syncs continue in the background.
+    // Loading has settled, read or failed: screens can paint while
+    // connections and syncs continue in the background.
     hydrated: false,
+    // The saved state is in memory (read, or nothing was saved). Only this
+    // permits saving, because a save replaces everything on disk; a failed
+    // read leaves it false for the session.
+    savedStateLoaded: false,
+    // Ids of the wallets on disk as this store last read or wrote them. A
+    // save may drop one of these (the person removed it), never a saved
+    // wallet this store has not seen (another window added it).
+    _savedWalletIds: [],
+    // Saved entries this version cannot use (a missing secret, a type it
+    // does not know): off the wallet list, but written back by every save.
+    _unusableWallets: [],
     _initializePromise: null,
 
     // Bitcoin L1 deposit-claim coordination.
@@ -1133,12 +1183,11 @@ export const useWalletStore = defineStore('wallet', {
     },
 
     /**
-     * Initialize the store from localStorage
-     */
-    /**
-     * Resolves once the saved wallets and their last-known balances are
-     * loaded, which is early in initialize(): connections, rates and syncs
-     * may still be running. Screens await this to paint at once.
+     * Starts loading the saved state (initialize()) and resolves once loading
+     * has settled, which is early in initialize(): connections, rates and
+     * syncs may still be running. Screens await this to paint at once. Never
+     * rejects, also not when loading failed: `savedStateLoaded` tells the two
+     * apart.
      */
     whenHydrated() {
       if (this.hydrated) return Promise.resolve();
@@ -1153,6 +1202,21 @@ export const useWalletStore = defineStore('wallet', {
       });
     },
 
+    /**
+     * Waits until the saved state is in memory. Throws WALLET_STATE_UNAVAILABLE
+     * when it could not be read, so nothing is added to a list that cannot be
+     * saved. Every action that adds a wallet starts here, before it reads or
+     * changes the list. initialize() itself must never wait on it: it would
+     * wait for itself.
+     */
+    async _requireSavedState() {
+      await this.whenHydrated();
+      if (!this.savedStateLoaded) throw codedError('WALLET_STATE_UNAVAILABLE', 'The saved wallets could not be loaded');
+    },
+
+    /**
+     * Initialize the store from localStorage
+     */
     async initialize() {
       if (this.isInitialized) {
         return;
@@ -1166,8 +1230,9 @@ export const useWalletStore = defineStore('wallet', {
         let migrationNeedsPersist = false;
         try {
           // Load saved state
-          const savedState = localStorage.getItem(STORAGE_KEYS.WALLET_STORE);
-          const parsed = savedState ? JSON.parse(savedState) : null;
+          const parsed = readSavedState();
+          // Every wallet on disk, as read: a save may drop one of these.
+          this._savedWalletIds = (parsed?.wallets || []).map((w) => w?.id);
           if (parsed) {
 
             // Check if cached exchange rates are still valid (less than 1 hour old)
@@ -1207,8 +1272,6 @@ export const useWalletStore = defineStore('wallet', {
               const stored = !migration.setAside.length || setAsideSparkWallets(migration.setAside);
               migratedWallets.splice(0, migratedWallets.length, ...(stored ? migration.wallets : migration.all));
               parsed.activeWalletId = stored ? migration.activeWalletId : migration.allActiveWalletId;
-              // The saved list legitimately shrinks: let the next persist through.
-              if (stored && migration.setAside.length) this._walletRemovalInProgress = true;
               if (migration.complete && stored) sparkModelVersion = SPARK_MODEL_VERSION;
               migrationNeedsPersist = true;
             }
@@ -1263,6 +1326,8 @@ export const useWalletStore = defineStore('wallet', {
             try { legacyBalances = JSON.parse(localStorage.getItem(STORAGE_KEYS.LEGACY_STATE)); } catch { /* unusable cache */ }
           }
           this.hydrateBalanceStates(legacyBalances);
+          // Everything on disk is in memory now: saving is safe from here on.
+          this.savedStateLoaded = true;
           // The Spark migration's result is written once, after the balance
           // snapshot moved too, so neither can be lost to the other.
           if (migrationNeedsPersist) await this.persistState();
@@ -1400,9 +1465,10 @@ export const useWalletStore = defineStore('wallet', {
           connect: 'required',
           onProgress,
         });
+        const previousActiveWalletId = this.activeWalletId;
         this._landOnNewWallet(wallet);
         onProgress('done');
-        await this.persistState();
+        await this._saveAddedWallet(previousActiveWalletId, () => this._discardSparkEntry(wallet.id));
         this._startSparkLifecycle(wallet.id);
         this._noteWalletsChanged();
         return wallet;
@@ -1450,7 +1516,9 @@ export const useWalletStore = defineStore('wallet', {
           }
           this._queueSparkDiscovery(names);
           if (phraseConfirmed) this._markSparkBackedUp();
-          await this.persistState();
+          await this._saveAddedWallet(this.activeWalletId, async () => {
+            for (const wallet of added) await this._discardSparkEntry(wallet.id);
+          });
           for (const wallet of added) this._startSparkLifecycle(wallet.id);
           return { wallet: added[0] || null, added, merged: true };
         }
@@ -1472,11 +1540,14 @@ export const useWalletStore = defineStore('wallet', {
           }));
         }
         const landing = added.find(w => sparkAccountNumberOf(w) === SPARK_ACCOUNT_ORDER[0]) || wallet;
+        const previousActiveWalletId = this.activeWalletId;
         this._landOnNewWallet(landing);
         this._queueSparkDiscovery(names);
         if (phraseConfirmed) this.hasBackedUp = true;
         onProgress('done');
-        await this.persistState();
+        await this._saveAddedWallet(previousActiveWalletId, async () => {
+          for (const entry of added) await this._discardSparkEntry(entry.id);
+        });
         for (const entry of added) this._startSparkLifecycle(entry.id);
         return { wallet: landing, added, merged: false };
       });
@@ -1508,7 +1579,7 @@ export const useWalletStore = defineStore('wallet', {
           connect: 'required',
         });
         this._forgetQueuedSparkAccount(sparkAccountNumberOf(wallet));
-        await this.persistState();
+        await this._saveAddedWallet(this.activeWalletId, () => this._discardSparkEntry(wallet.id));
         this._startSparkLifecycle(wallet.id);
         this._noteWalletsChanged();
         await this.switchActiveWallet(wallet.id);
@@ -1516,11 +1587,16 @@ export const useWalletStore = defineStore('wallet', {
       });
     },
 
-    /** One Spark membership change at a time, with the shared busy/error flags. */
+    /**
+     * One Spark membership change at a time, with the shared busy/error flags.
+     * It starts once the saved wallets are in memory: every check the task
+     * makes (a wallet exists, the phrase matches, a free account) reads them.
+     */
     async _runSparkSetup(task) {
       this.isConnecting = true;
       this.lastError = null;
       try {
+        await this._requireSavedState();
         return await serializeSparkMembership(task);
       } catch (error) {
         this.lastError = error.message;
@@ -1577,9 +1653,9 @@ export const useWalletStore = defineStore('wallet', {
     },
 
     /**
-     * Undo a Spark entry that never became a working wallet. A balance read
-     * during the failed connect may already have saved it, so the shorter
-     * list is saved too.
+     * Undo a Spark entry whose add did not complete: its connect or its save
+     * failed. A balance read during the add may already have saved it, so
+     * the shorter list is saved too.
      */
     async _discardSparkEntry(walletId) {
       this._bumpWalletEpoch(walletId);
@@ -1593,7 +1669,27 @@ export const useWalletStore = defineStore('wallet', {
       const index = this.wallets.findIndex(w => w.id === walletId);
       if (index !== -1) this.wallets.splice(index, 1);
       await deleteBreezStorage(walletId).catch(() => {});
-      this._walletRemovalInProgress = true;
+      await this.persistState();
+    },
+
+    /**
+     * Undo an NWC, LNbits or Arkade entry whose add did not complete: its
+     * connection closes and its balance and info go with it. A balance read
+     * during the add may already have saved it, so the shorter list is saved
+     * too. The Spark counterpart is _discardSparkEntry.
+     */
+    async _discardWalletEntry(walletId) {
+      this._bumpWalletEpoch(walletId);
+      try {
+        await this.providers[walletId]?.disconnect();
+        this.connectionStates[walletId]?.nwcInstance?.close?.();
+      } catch { /* closing is best-effort */ }
+      delete this.providers[walletId];
+      delete this.walletInfos[walletId];
+      delete this.connectionStates[walletId];
+      this.forgetBalance(walletId);
+      const index = this.wallets.findIndex(w => w.id === walletId);
+      if (index !== -1) this.wallets.splice(index, 1);
       await this.persistState();
     },
 
@@ -1951,8 +2047,12 @@ export const useWalletStore = defineStore('wallet', {
         // The published profile may point at the old name. Serve the user:
         // move it to the new one and publish a fresh profile event, without
         // being asked. A custom address is never touched (see the helper).
-        this._syncProfilePaymentAddress({ previousAddresses: [previousAddress] })
-          .catch(() => {});
+        // Only for a saved wallet: an add that cannot be saved is undone, and
+        // the profile would then send payments to a phrase nobody kept.
+        if (this._savedWalletIds.includes(walletId)) {
+          this._syncProfilePaymentAddress({ previousAddresses: [previousAddress] })
+            .catch(() => {});
+        }
       }
     },
 
@@ -2228,12 +2328,16 @@ export const useWalletStore = defineStore('wallet', {
       this.isConnecting = true;
       this.lastError = null;
       const onProgress = walletData.onProgress || (() => {});
-
-      // Snapshot for atomic rollback.
-      const previousActiveWalletId = this.activeWalletId;
+      let previousActiveWalletId = null;
       let addedWalletId = null;
 
       try {
+        // Before the snapshot below: a rollback restores the selection it
+        // read, and only the loaded store holds the real one.
+        await this._requireSavedState();
+        // Snapshot for atomic rollback.
+        previousActiveWalletId = this.activeWalletId;
+
         // Only one Arkade wallet is allowed (D2).
         if (this.hasArkadeWallet) {
           const err = new Error('Arkade wallet already exists');
@@ -2290,25 +2394,17 @@ export const useWalletStore = defineStore('wallet', {
         await this.connectArkadeWallet(wallet.id);
 
         onProgress('done');
-        await this.persistState();
+        await this._saveAddedWallet(previousActiveWalletId, () => this._discardWalletEntry(wallet.id));
         this._noteWalletsChanged();
         return wallet;
       } catch (error) {
         // Atomic rollback — never leave a half-added Arkade wallet in memory or
-        // storage (the Spark counterpart is _discardSparkEntry).
-        if (addedWalletId) {
-          const provider = this.providers[addedWalletId];
-          if (provider) {
-            try { provider.disconnect(); } catch (e) { /* ignore */ }
-            delete this.providers[addedWalletId];
-          }
-          delete this.walletInfos[addedWalletId];
-          this.forgetBalance(addedWalletId);
-          delete this.connectionStates[addedWalletId];
-          const idx = this.wallets.findIndex((w) => w.id === addedWalletId);
-          if (idx !== -1) this.wallets.splice(idx, 1);
+        // storage (the Spark counterpart is _discardSparkEntry). A failed save
+        // has undone the wallet already; a failed connect has not.
+        if (addedWalletId && this.wallets.some((w) => w.id === addedWalletId)) {
+          this._restoreSelection(previousActiveWalletId);
+          await this._discardWalletEntry(addedWalletId);
         }
-        this.activeWalletId = previousActiveWalletId;
         this.lastError = error.message;
         throw error;
       } finally {
@@ -2451,6 +2547,9 @@ export const useWalletStore = defineStore('wallet', {
       this.lastError = null;
 
       try {
+        // Before the duplicate check and the default below read the list.
+        await this._requireSavedState();
+
         // Validate input
         if (!walletData.nwcUrl) {
           throw new Error('NWC connection URL is required');
@@ -2542,6 +2641,7 @@ export const useWalletStore = defineStore('wallet', {
         };
 
         // Store wallet data
+        const previousActiveWalletId = this.activeWalletId;
         this.wallets.push(wallet);
         this.connectionStates[wallet.id] = {
           connected: true,
@@ -2556,7 +2656,7 @@ export const useWalletStore = defineStore('wallet', {
         this.activeWalletId = wallet.id;
         wallet.isActive = true;
 
-        await this.persistState();
+        await this._saveAddedWallet(previousActiveWalletId, () => this._discardWalletEntry(wallet.id));
         this._noteWalletsChanged();
         return wallet;
       } catch (error) {
@@ -2584,6 +2684,9 @@ export const useWalletStore = defineStore('wallet', {
       this.lastError = null;
 
       try {
+        // Before the duplicate check and the default below read the list.
+        await this._requireSavedState();
+
         // Validate input
         if (!walletData.serverUrl) {
           throw new Error('LNBits server URL is required');
@@ -2638,6 +2741,7 @@ export const useWalletStore = defineStore('wallet', {
         };
 
         // Store wallet data
+        const previousActiveWalletId = this.activeWalletId;
         this.wallets.push(wallet);
         this.applyBalance(wallet.id, validation.walletInfo.balance, { source: 'connect' });
 
@@ -2648,7 +2752,7 @@ export const useWalletStore = defineStore('wallet', {
         // Connect the wallet
         await this.connectLNBitsWallet(wallet.id);
 
-        await this.persistState();
+        await this._saveAddedWallet(previousActiveWalletId, () => this._discardWalletEntry(wallet.id));
         this._noteWalletsChanged();
         return wallet;
       } catch (error) {
@@ -2810,7 +2914,6 @@ export const useWalletStore = defineStore('wallet', {
 
     async _dropWalletEntry(wallet) {
       const walletId = wallet.id;
-      this._walletRemovalInProgress = true;
       this._bumpWalletEpoch(walletId);
 
       if (wallet.type === WALLET_TYPES.SPARK) {
@@ -2886,7 +2989,6 @@ export const useWalletStore = defineStore('wallet', {
         }
       }
 
-      this._walletRemovalInProgress = true;
       await this.persistState();
       this._noteWalletsChanged();
 
@@ -3391,36 +3493,40 @@ export const useWalletStore = defineStore('wallet', {
     },
 
     /**
-     * Validate all wallets and remove invalid ones
+     * Keep the wallets this version can use. An entry it cannot use (a
+     * missing secret, a type it does not know) leaves the list but never the
+     * disk: it moves to `_unusableWallets`, which every save writes back as
+     * it was read, so a newer version or a repair can still reach it.
      */
     async validateWallets() {
-      const before = this.wallets.length;
+      const unusable = [];
       this.wallets = this.wallets.filter((wallet) => {
+        let valid;
         if (wallet.type === WALLET_TYPES.SPARK) {
-          const valid = !!wallet.connectionData?.encryptedMnemonic;
-          if (!valid) console.warn(`[validateWallets] Removing Spark wallet "${wallet.name}" (${wallet.id}): missing encryptedMnemonic`);
-          return valid;
+          valid = !!wallet.connectionData?.encryptedMnemonic;
+          if (!valid) console.warn(`[validateWallets] Setting aside Spark wallet "${wallet.name}" (${wallet.id}): missing encryptedMnemonic`);
+        } else if (wallet.type === WALLET_TYPES.LNBITS) {
+          valid = !!(wallet.connectionData?.serverUrl && wallet.connectionData?.adminKey);
+          if (!valid) console.warn(`[validateWallets] Setting aside LNBits wallet "${wallet.name}" (${wallet.id}): missing serverUrl or adminKey`);
+        } else if (wallet.type === WALLET_TYPES.ARKADE) {
+          valid = !!wallet.connectionData?.encryptedMnemonic;
+          if (!valid) console.warn(`[validateWallets] Setting aside Arkade wallet "${wallet.name}" (${wallet.id}): missing encryptedMnemonic`);
+        } else if (wallet.type === WALLET_TYPES.NWC) {
+          valid = typeof wallet.nwcUrl === 'string' && wallet.nwcUrl.startsWith('nostr+walletconnect://');
+          if (!valid) {
+            console.warn(`[validateWallets] Setting aside NWC wallet "${wallet.name}" (${wallet.id}): nwcUrl=${wallet.nwcUrl ? 'invalid format' : 'missing'}`, JSON.stringify({ type: wallet.type, keys: Object.keys(wallet) }));
+          }
+        } else {
+          valid = false;
+          console.warn(`[validateWallets] Setting aside wallet "${wallet.name}" (${wallet.id}): unknown type ${wallet.type}`);
         }
-        if (wallet.type === WALLET_TYPES.LNBITS) {
-          const valid = wallet.connectionData?.serverUrl && wallet.connectionData?.adminKey;
-          if (!valid) console.warn(`[validateWallets] Removing LNBits wallet "${wallet.name}" (${wallet.id}): missing serverUrl or adminKey`);
-          return valid;
-        }
-        if (wallet.type === WALLET_TYPES.ARKADE) {
-          const valid = !!wallet.connectionData?.encryptedMnemonic;
-          if (!valid) console.warn(`[validateWallets] Removing Arkade wallet "${wallet.name}" (${wallet.id}): missing encryptedMnemonic`);
-          return valid;
-        }
-        // NWC wallet
-        const isValid = wallet.nwcUrl && wallet.nwcUrl.startsWith('nostr+walletconnect://');
-        if (!isValid) {
-          console.warn(`[validateWallets] Removing NWC wallet "${wallet.name}" (${wallet.id}): nwcUrl=${wallet.nwcUrl ? 'invalid format' : 'missing'}`, JSON.stringify({ type: wallet.type, keys: Object.keys(wallet) }));
-        }
-        return isValid;
+        if (!valid) unusable.push(wallet);
+        return valid;
       });
 
-      if (this.wallets.length < before) {
-        console.warn(`[validateWallets] Removed ${before - this.wallets.length} wallet(s). ${this.wallets.length} remaining.`);
+      if (unusable.length) {
+        this._unusableWallets = [...this._unusableWallets, ...unusable];
+        console.warn(`[validateWallets] Set aside ${unusable.length} wallet(s) this version cannot use; they stay saved. ${this.wallets.length} remaining.`);
       }
 
       // Ensure active wallet is valid
@@ -3434,7 +3540,6 @@ export const useWalletStore = defineStore('wallet', {
      * Disconnect and remove all wallets
      */
     async disconnectAll() {
-      this._walletRemovalInProgress = true;
       for (const walletId of Object.keys(this.connectionStates)) {
         await this.disconnectWallet(walletId);
       }
@@ -3462,7 +3567,6 @@ export const useWalletStore = defineStore('wallet', {
      * Disconnect and remove only NWC wallets (keeps Spark wallet)
      */
     async disconnectNwcWallets() {
-      this._walletRemovalInProgress = true;
       const nwcWallets = this.wallets.filter(w => w.type === WALLET_TYPES.NWC);
 
       // Disconnect each NWC wallet
@@ -3490,7 +3594,6 @@ export const useWalletStore = defineStore('wallet', {
      * Disconnect and remove only LNBits wallets
      */
     async disconnectLNBitsWallets() {
-      this._walletRemovalInProgress = true;
       const lnbitsWallets = this.wallets.filter(w => w.type === WALLET_TYPES.LNBITS);
 
       // Disconnect each LNBits wallet
@@ -3947,31 +4050,30 @@ export const useWalletStore = defineStore('wallet', {
     },
 
     /**
-     * Persist state to localStorage
+     * Persist state to localStorage. A save replaces everything on disk, so
+     * two rules keep it from destroying what it replaces: nothing is written
+     * before the saved state is in memory (a screen opened straight after a
+     * reload, a boot task, a failed load), and a saved wallet this store
+     * never read or wrote (another window added it) is never dropped. A
+     * refused or failed save is logged, and thrown with `requireDurable`.
      */
     async persistState({ requireDurable = false } = {}) {
       try {
-        // Safety: never save fewer wallets than localStorage already has,
-        // unless the user explicitly removed wallets (disconnect/remove actions).
-        // Guards against HMR resets and race conditions that wipe wallet data.
-        if (!this._walletRemovalInProgress) {
-          const existing = localStorage.getItem(STORAGE_KEYS.WALLET_STORE);
-          if (existing) {
-            const parsed = JSON.parse(existing);
-            const savedCount = parsed.wallets?.length || 0;
-            if (savedCount > 0 && this.wallets.length < savedCount) {
-              console.warn(`[wallet-store] Refusing to persist — would lose wallets (${this.wallets.length} < ${savedCount} saved). This is likely an HMR or race condition.`);
-              if (requireDurable) throw new Error('Wallet state changed before backup confirmation');
-              return;
-            }
-          }
+        if (!this.savedStateLoaded) {
+          throw codedError('WALLET_STATE_UNAVAILABLE', 'The saved wallets are not loaded; nothing was saved');
         }
-        this._walletRemovalInProgress = false;
+        const wallets = [...this.wallets, ...this._unusableWallets];
+        const kept = new Set(wallets.map((w) => w.id));
+        // Entries without an id cannot be told apart; they never block a save.
+        const unseen = savedWalletsOnDisk().filter((w) => w?.id && !kept.has(w.id) && !this._savedWalletIds.includes(w.id));
+        if (unseen.length) {
+          throw codedError('WALLET_STATE_CONFLICT', `${unseen.length} saved wallet(s) changed elsewhere; nothing was saved`);
+        }
 
         // Save new format
         const stateToSave = {
           balanceSchemaVersion: BALANCE_SCHEMA_VERSION,
-          wallets: this.wallets,
+          wallets,
           activeWalletId: this.activeWalletId,
           preferredFiatCurrency: this.preferredFiatCurrency,
           defaultDisplayCurrency: this.defaultDisplayCurrency,
@@ -3996,6 +4098,7 @@ export const useWalletStore = defineStore('wallet', {
           sparkDiscovery: this.sparkDiscovery,
         };
         localStorage.setItem(STORAGE_KEYS.WALLET_STORE, JSON.stringify(stateToSave));
+        this._savedWalletIds = [...kept];
 
         // Maintain backward compatibility
         const legacyState = {
@@ -4025,6 +4128,30 @@ export const useWalletStore = defineStore('wallet', {
         console.error('Failed to persist wallet state:', error);
         if (requireDurable) throw error;
       }
+    },
+
+    /**
+     * The last step of every wallet add: the new wallet is saved before the
+     * add reports success. When the save is refused or fails, the selection
+     * goes back to `previousActiveWalletId`, `undo` takes the wallet back out
+     * of memory, and the error goes to the caller. A wallet that exists only
+     * in memory is gone on the next start, and for Spark and Arkade its
+     * recovery phrase with it.
+     */
+    async _saveAddedWallet(previousActiveWalletId, undo) {
+      try {
+        await this.persistState({ requireDurable: true });
+      } catch (error) {
+        this._restoreSelection(previousActiveWalletId);
+        await undo();
+        throw error;
+      }
+    },
+
+    /** Put back the selection an add found, when the add did not complete. */
+    _restoreSelection(walletId) {
+      this.activeWalletId = walletId;
+      for (const w of this.wallets) w.isActive = w.id === walletId;
     },
 
     /**
