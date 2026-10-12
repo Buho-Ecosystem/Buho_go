@@ -153,6 +153,26 @@ test('a service profile groups payments to both its identifier and original pay 
   assert.deepEqual(vm.history.map(tx => tx.id).sort(), ['identifier', 'link']);
 });
 
+test('contact history reloads when a wallet connects after the page opened, and per contact', () => {
+  const profile = evaluate('../ContactProfilePage.vue', {}).default;
+  const providers = {};
+  const vm = { $route: { params: { id: 'anna' } }, walletStore: { wallets: [{ id: 'A' }, { id: 'B' }], providers } };
+  const key = () => profile.computed.historyKey.call(vm);
+  const cold = key();
+  providers.A = { getTransactions: async () => [] };
+  assert.notEqual(key(), cold, 'a wallet that connected changes what the history is drawn from');
+  const connected = key();
+  vm.$route.params.id = 'ben';
+  assert.notEqual(key(), connected, 'another contact on the same page');
+
+  let loads = 0;
+  const page = { entry: { id: 'ben' }, history: [{ id: 'old' }], addressRevealed: true, loadHistory: () => { loads += 1; } };
+  profile.watch.historyKey.call(page);
+  profile.watch['$route.params.id'].call(page);
+  assert.equal(loads, 1);
+  assert.deepEqual([page.history, page.addressRevealed], [[], false], 'the last contact\'s payments are not shown for this one');
+});
+
 test('payment review retains a service identity and its exact payment destination', () => {
   const options = component({ '../services/nostrRecipient': { npubFromLightningAddress: () => null } });
   const address = addresses.canonicalLnurl('https://coffee.example/pay');
