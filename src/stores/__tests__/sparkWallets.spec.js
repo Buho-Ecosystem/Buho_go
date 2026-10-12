@@ -8,6 +8,8 @@
  */
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { readFileSync } from 'node:fs';
+import { transformSync } from 'esbuild';
 import { createHarness, savedSpark, PHRASE, OTHER_PHRASE, tick } from './sparkWalletHarness.js';
 
 const accounts = (store) => store.sparkWallets.map((w) => w.connectionData.accountNumber);
@@ -507,6 +509,14 @@ function saveInOtherWindow(h) {
   h.local.setItem(STORE_KEY, JSON.stringify(saved));
 }
 
+/** A module from src, run with stand-ins for its imports. */
+function loadModule(file, deps) {
+  const { code } = transformSync(readFileSync(new URL(file, import.meta.url), 'utf8'), { format: 'cjs' });
+  const module = { exports: {} };
+  new Function('require', 'module', 'exports', code)((name) => deps[name] || {}, module, module.exports);
+  return module.exports.default;
+}
+
 for (const [kind, add] of [
   ['LNbits', (store) => store.addLNBitsWallet(LNBITS)],
   ['NWC', (store) => store.addWallet({ name: 'Alby', nwcUrl: NWC_URL })],
@@ -682,6 +692,29 @@ test('when an unreadable saved state cannot be set aside, it stays and nothing i
   await assert.rejects(() => h.store.addLNBitsWallet(LNBITS), (e) => e.code === 'WALLET_STATE_UNAVAILABLE');
   assert.deepEqual(h.store.wallets, []);
   assert.equal(h.local.getItem(STORE_KEY), 'not json');
+});
+
+test('the screen-privacy boot saves nothing on the web, and on Android only the privacy flag', async () => {
+  for (const native of [false, true]) {
+    const h = reloaded([], { deps: { '../utils/secureScreen': { isScreenPrivacyEnabled: async () => true } } });
+    // The 'wallet-store' boot loaded the saved state first.
+    await h.store.initialize();
+    const boot = loadModule('../../boot/secure-screen.js', {
+      'quasar/wrappers': { boot: (fn) => fn },
+      vue: { watch() {} },
+      'stores/wallet': { useWalletStore: () => h.store },
+      '../utils/secureScreen': { isScreenPrivacySupported: () => native, applyScreenPrivacyTransient: async () => {} },
+    });
+    await boot({ router: { afterEach() {} } });
+    if (!native) {
+      assert.equal(h.local.getItem(STORE_KEY), h.raw, 'web: nothing saved');
+      assert.equal(h.store.privacyScreenEnabled, false);
+      continue;
+    }
+    const saved = h.saved();
+    assert.equal(saved.privacyScreenEnabled, true, 'Android: the native value is saved');
+    for (const [key, value] of Object.entries(JSON.parse(h.raw))) assert.deepEqual(saved[key], value, `${key} is kept`);
+  }
 });
 
 test('a new Spark wallet becomes the profile payment address only once it is saved', async () => {

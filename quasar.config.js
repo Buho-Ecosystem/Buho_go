@@ -26,12 +26,16 @@ export default defineConfig((ctx) => {
       'toasts',
       'iconify',
       'safe-area',
+      // 'wallet-store' loads the saved wallets and settings before anything
+      // reads or saves them (the kiosk guard, screen privacy, the boot tasks
+      // below, the first screen): a save made earlier would replace them.
+      'wallet-store',
       'kiosk',
       // 'secure-screen' reconciles the Pinia screen-privacy field
       // with the native SharedPreferences value applied by
       // MainActivity.onCreate, and installs the router-meta
-      // forceSecure override guard. Safe to load everywhere — the
-      // util layer no-ops on web.
+      // forceSecure override guard. Safe to load everywhere: on web
+      // it returns at once.
       'secure-screen',
       // Durable profile recovery, username activation and publication.
       'profile-sync',

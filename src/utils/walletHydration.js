@@ -1,19 +1,54 @@
 /**
- * Early-boot wallet store hydration.
+ * Loading the wallet store's saved state.
  *
- * Intent entry points (deep links, NFC scans) can fire before Wallet.vue has
- * mounted and run walletStore.initialize(). Their guards read persisted state
- * (kiosk mode, activeWallet) that is null until hydration runs, which would
- * misreport "no wallet set up" on a cold start.
+ * The store saves by replacing everything on disk with what it holds in
+ * memory, so the saved state must be in memory before anything reads or
+ * saves it. The 'wallet-store' boot file loads it at start on every
+ * platform, before the route guards, the boot tasks after it and the first
+ * screen (loadSavedWalletsAtStart). Until it is loaded the store refuses to
+ * save, and wallet adds wait for it.
  *
- * walletStore.initialize() is async, but its synchronous prefix (localStorage
- * read + migration + $patch) runs to completion before the first `await`.
- * That prefix is all the guards need; the connect/network tail continues in
- * the background and cannot starve the caller.
+ * initialize() is async: besides the storage read, the load runs the
+ * one-time wallet-model upgrade, which decrypts the saved phrases. Code that
+ * needs the saved state awaits walletStore.whenHydrated().
+ * readPersistedWalletState() serves guards that must answer synchronously,
+ * and triggerWalletStoreHydration() starts a load without waiting for it.
  *
- * Idempotent: dedupes via the store's isInitialized / _initializePromise
- * guards, so it is safe alongside Wallet.vue's own initialize() call.
+ * Idempotent: the store dedupes via isInitialized / _initializePromise, so
+ * every caller is safe alongside the others.
  */
+
+/**
+ * How long the start waits for the saved wallets. Loading is local and
+ * normally takes milliseconds; the bound only keeps a stuck load from
+ * leaving a blank screen. Saves stay refused, and adds wait, until the load
+ * lands.
+ */
+export const START_LOAD_WAIT_MS = 3000
+
+/**
+ * Load the saved wallets and settings at start (the 'wallet-store' boot).
+ * Never rejects: Quasar does not mount the app when a boot file throws.
+ * Warns when loading failed, or is still running after `waitMs`.
+ */
+export async function loadSavedWalletsAtStart(walletStore, { waitMs = START_LOAD_WAIT_MS } = {}) {
+  let timer
+  try {
+    await Promise.race([
+      walletStore.whenHydrated(),
+      new Promise((resolve) => { timer = setTimeout(resolve, waitMs) }),
+    ])
+  } catch (err) {
+    console.warn('[wallet-hydration] Loading the saved wallets failed:', err?.message || err)
+  } finally {
+    clearTimeout(timer)
+  }
+  if (!walletStore.hydrated) {
+    console.warn(`[wallet-hydration] Saved wallets still loading after ${waitMs} ms`)
+  } else if (!walletStore.savedStateLoaded) {
+    console.warn('[wallet-hydration] The saved wallets could not be loaded; nothing will be saved over them')
+  }
+}
 
 /**
  * Raw persisted wallet-store snapshot, or null when absent/unreadable.

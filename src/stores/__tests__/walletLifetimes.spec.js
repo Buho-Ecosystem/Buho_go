@@ -3,7 +3,9 @@
  *
  * Runs the real store actions with scripted providers: concurrent Spark
  * connects share one attempt, a removal during a connect cannot resurrect
- * the wallet, and removing a Spark wallet removes exactly that wallet.
+ * the wallet, and removing a Spark wallet removes exactly that wallet. The
+ * lifetime starts with the load at start: the saved wallets are in memory
+ * before any boot task or screen reads or saves them.
  */
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
@@ -175,4 +177,69 @@ test('a claimed mark the SDK proves wrong is released; a fresh or in-flight one 
   registry.add('chainonly:0');
   assert.equal(store.reconcileDepositClaims([{ txId: 'chainonly', outputIndex: 0, confirmed: true }]), 0);
   assert.equal(store.isDepositClaimed('chainonly', 0), true);
+});
+
+// ---- The load at start -------------------------------------------------------
+
+const settle = () => new Promise((resolve) => setImmediate(resolve));
+
+test('the load at start waits for the saved wallets, is bounded, and never rejects', async (t) => {
+  const { loadSavedWalletsAtStart } = await import('../../utils/walletHydration.js');
+  const warnings = [];
+  t.mock.method(console, 'warn', (...args) => warnings.push(args.join(' ')));
+
+  const loading = deferred();
+  const store = { hydrated: false, savedStateLoaded: false, whenHydrated: () => loading.promise };
+  let started = false;
+  const start = loadSavedWalletsAtStart(store, { waitMs: 60000 }).then(() => { started = true; });
+  await settle();
+  assert.equal(started, false, 'the start waits while the saved wallets load');
+  Object.assign(store, { hydrated: true, savedStateLoaded: true });
+  loading.resolve();
+  await start;
+  assert.deepEqual(warnings, []);
+
+  await loadSavedWalletsAtStart({ hydrated: false, whenHydrated: () => new Promise(() => {}) }, { waitMs: 5 });
+  assert.match(warnings.pop(), /still loading after 5 ms/, 'a load that never lands holds the start only so long');
+
+  for (const whenHydrated of [() => Promise.reject(new Error('boom')), () => { throw new Error('boom'); }]) {
+    await loadSavedWalletsAtStart({ hydrated: true, savedStateLoaded: true, whenHydrated }, { waitMs: 5 });
+    assert.match(warnings.pop(), /Loading the saved wallets failed: boom/);
+  }
+
+  await loadSavedWalletsAtStart({ hydrated: true, savedStateLoaded: false, whenHydrated: async () => {} });
+  assert.match(warnings.pop(), /could not be loaded/, 'a failed read is reported once at start');
+});
+
+test('the wallet-store boot holds the start until the saved wallets are loaded', async () => {
+  const hydration = await import('../../utils/walletHydration.js');
+  const loading = deferred();
+  const store = { hydrated: false, savedStateLoaded: false, whenHydrated: () => loading.promise };
+  const { code } = transformSync(readFileSync(new URL('../../boot/wallet-store.js', import.meta.url), 'utf8'), { format: 'cjs' });
+  const module = { exports: {} };
+  const deps = { 'quasar/wrappers': { boot: (fn) => fn }, 'stores/wallet': { useWalletStore: () => store }, 'src/utils/walletHydration': hydration };
+  new Function('require', 'module', 'exports', code)((name) => deps[name], module, module.exports);
+  let done = false;
+  const boot = Promise.resolve(module.exports.default({})).then(() => { done = true; });
+  await settle();
+  assert.equal(done, false, 'Quasar runs the next boot only after this one');
+  Object.assign(store, { hydrated: true, savedStateLoaded: true });
+  loading.resolve();
+  await boot;
+  assert.equal(done, true);
+});
+
+test("'wallet-store' boots after i18n and before every boot that reads or saves the wallets", () => {
+  const config = readFileSync(new URL('../../../quasar.config.js', import.meta.url), 'utf8');
+  const list = config.match(/boot:\s*\[([\s\S]*?)\]\.filter\(Boolean\)/)[1].replace(/\/\/.*$/gm, '');
+  const order = [...list.matchAll(/'([a-z0-9-]+)'/g)].map((match) => match[1]);
+  const position = (name) => {
+    const index = order.indexOf(name);
+    assert.notEqual(index, -1, `'${name}' is registered`);
+    return index;
+  };
+  assert.ok(position('wallet-store') > position('i18n'), 'after i18n');
+  for (const later of ['kiosk', 'secure-screen', 'profile-sync', 'payment-address', 'emergency-exit', 'deep-links', 'nfc']) {
+    assert.ok(position('wallet-store') < position(later), `before '${later}'`);
+  }
 });

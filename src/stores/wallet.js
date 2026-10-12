@@ -4022,12 +4022,12 @@ export const useWalletStore = defineStore('wallet', {
 
     /**
      * Reconcile the Pinia value with the native source of truth.
-     * Called once at boot — the localStorage hydrate runs first
-     * (synchronous), then this reads SharedPreferences via the
+     * Called once at boot on native, after the 'wallet-store' boot
+     * loaded the saved settings: reads SharedPreferences via the
      * plugin and corrects the store if they disagree (e.g. after a
      * migration that cleared localStorage but kept SharedPreferences,
-     * or vice versa). Silent on success; logs and keeps the store
-     * value on failure (fail-secure: localStorage default is `true`).
+     * or vice versa). Silent on success; logs and keeps the loaded
+     * value on failure.
      */
     async syncPrivacyScreenFromNative() {
       try {

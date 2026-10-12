@@ -38,22 +38,24 @@ import {
  *     some path other than the action (Pinia devtools, persistence
  *     hydration, etc.).
  *
- * Web/PWA behaviour: every native call no-ops in the util layer, the
- * router guard is harmless, and the watcher just mirrors state without
- * side effects. Safe to keep this boot file unconditional in the
- * Quasar config.
+ * Web/PWA behaviour: there is no flag to enforce, so the boot returns at
+ * once: no reconcile (it would only save a value nothing reads), no
+ * router guard, no watcher. Safe to keep this boot file unconditional in
+ * the Quasar config.
  */
 export default boot(async ({ router }) => {
+  if (!isScreenPrivacySupported()) return
+
   const walletStore = useWalletStore()
 
   // ── Reconcile Pinia ↔ native at boot ──────────────────────────────
   //
-  // Pinia hydrated from localStorage synchronously before this runs.
+  // The 'wallet-store' boot loaded the saved settings before this runs.
   // The native plugin owns the canonical persisted value (read by
-  // MainActivity on cold start). On platforms where the two layers
-  // can disagree (post-migration, dev-tools clear, manifest reset),
-  // this re-aligns the Pinia store to the native truth so the UI and
-  // the actual window flag never show different things.
+  // MainActivity on cold start). Where the two layers can disagree
+  // (post-migration, dev-tools clear, manifest reset), this re-aligns
+  // the Pinia store to the native truth so the UI and the actual
+  // window flag never show different things.
   await walletStore.syncPrivacyScreenFromNative()
 
   // ── forceSecure router-meta override ──────────────────────────────
@@ -70,13 +72,6 @@ export default boot(async ({ router }) => {
   // against a still-pending flag mutation. The brief window between
   // route mount and flag application is invisible — the destination
   // can't have rendered sensitive content yet.
-  if (!isScreenPrivacySupported()) {
-    // Nothing to do on web — both the toggle and the router-meta
-    // override would be no-ops. Skip the guard install so we don't
-    // attach a useless hook to every navigation.
-    return
-  }
-
   router.afterEach(async (to) => {
     const routeForcesSecure = to.matched.some(
       (record) => record.meta && record.meta.forceSecure
