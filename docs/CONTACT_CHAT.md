@@ -352,8 +352,19 @@ store, clock) so they can be unit tested without network or Pinia.
   seen (inclusive) until a page brings nothing new, at most
   `MAX_HISTORY_PAGES` (20). The cursor passes a relay only once its walk is
   done; a failed page leaves the cursor where it was.
-- Sync cursor (`lastSyncAt`), blocked pubkeys (on this device only; not
-  published as a NIP-51 list), per-contact mute flags.
+- Sync cursor (`lastSyncAt`), blocked pubkeys, per-contact mute flags.
+- Blocks follow the person (`services/dm/muteList.js`): the blocked keys are
+  kept in step with their NIP-51 mute list (kind 10000) on the discovery
+  relays, as Lotus and 0xchat keep theirs. The store logs block and unblock
+  changes not yet saved (`blockChanges`); a sync on start and after each
+  change reads the newest list, writes those changes into it (a block goes in
+  the private NIP-44 part, an unblock leaves both parts) and keeps every
+  other entry (words, hashtags, threads). A list read completely is the
+  truth, with the unsaved changes on top. A list with a private part this
+  device cannot read (NIP-04, a signer that refused) is never rewritten and
+  only adds blocks; no relay answering decides nothing. Blocks made before
+  this sync existed are published on the first sync. A signer app is only
+  asked once the person turned messages on.
 - Handled wraps (`handledWraps`, wrap id → created_at): never decrypted
   twice; pruned once older than the inbox window, at most 5,000.
 - Signer apps: `signerAppMessages` (opt-in, persisted) and `signerHold` (why
@@ -520,10 +531,9 @@ Replace the workaround when the upstream fix ships.
   device, fix natively if confirmed.
 - relay.damus.io and relay.nostr.net AUTH was broken server-side on
   2026-10-10; add them back to `DM_INBOX_RELAYS` once fixed.
-- Blocked pubkeys stay on the device. Other apps keep blocks in a NIP-51 mute
-  list (kind 10000, private NIP-44 tags; Lotus and 0xchat do): reading it
-  first, then writing new blocks there, would make blocks follow the person.
-  Reading the private part asks a signer app for one more decryption.
+- A mute list whose private part is NIP-04 (older apps) is read for its
+  public keys only and never rewritten; NIP-04 decryption is not wired into
+  the chat signer.
 - A thread the user started with a stranger stays under "Not in your
   contacts" (other clients count a chat you wrote to as known).
 - Replace the local workarounds when nostr-core #72 to #75 ship (section 11).

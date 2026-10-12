@@ -759,14 +759,15 @@ export default {
     confirmBlock() {
       if (!this.partnerKey) return
       const name = this.displayName
-      this.store.block(this.partnerKey)
+      // Saved on the device at once; the person's mute list follows in the background.
+      if (this.store.block(this.partnerKey)) this.runtime.syncBlockList()
       this.toast(this.t('Blocked {name}', { name }))
       this.goBack()
     },
 
     unblock() {
       if (!this.partnerKey) return
-      this.store.unblock(this.partnerKey)
+      if (this.store.unblock(this.partnerKey)) this.runtime.syncBlockList()
       this.toast(this.t('Unblocked {name}', { name: this.displayName }))
     },
 

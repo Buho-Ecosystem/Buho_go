@@ -38,6 +38,8 @@ export const KIND = Object.freeze({
   DM_RELAYS: 10050,
   /** NIP-65 relay list: where a person publishes (read only, to find a 10050 kept there). */
   RELAY_LIST: 10002,
+  /** NIP-51 mute list: blocked pubkeys shared with the person's other apps (muteList.js). */
+  MUTE_LIST: 10000,
   /** NIP-42 client authentication event, our answer to a relay's AUTH challenge. */
   AUTH: 22242,
 });

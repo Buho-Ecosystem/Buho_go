@@ -41,10 +41,11 @@
 import { nip19 } from 'nostr-core';
 import { stableNotificationId } from '../paymentNotifications.js';
 import { contactChatRoute, unknownChatRoute } from './routes.js';
-import { DM_DISCOVERY_RELAYS, KEY_IDLE_WIPE_MS, REMIND_INTERVAL_SECONDS } from './constants.js';
+import { DM_DISCOVERY_RELAYS, KEY_IDLE_WIPE_MS, KIND, REMIND_INTERVAL_SECONDS } from './constants.js';
 import { DM_ERROR, DmError } from './errors.js';
 import { createInbox, createSignAuth } from './inbox.js';
-import { INBOX_STATUS, createInboxRelayResolver } from './inboxRelays.js';
+import { INBOX_RELAY_QUERY_TIMEOUT_MS, INBOX_STATUS, createInboxRelayResolver, queryNewest } from './inboxRelays.js';
+import { createMuteListSync } from './muteList.js';
 import { matchIncomingPayments, transactionKey } from './paymentConfirmation.js';
 import { verifyPaymentViaAddress } from './paymentVerification.js';
 import {
@@ -91,6 +92,7 @@ export const CHAT_ACTIONS = Object.freeze([
   'requestState',
   'requestSettlement',
   'settleClaims',
+  'syncBlockList',
 ]);
 
 /**
@@ -331,6 +333,29 @@ export function createChatRuntime(deps = {}) {
   });
 
   const storePort = createInboxStoreAdapter(store, me);
+
+  // Blocks follow the person: kept in step with their NIP-51 mute list, on
+  // the same relays as their messaging relay list.
+  const muteList = (factories.createMuteListSync ?? createMuteListSync)({
+    me,
+    signer,
+    store: {
+      pendingBlockChanges: () => (store.scope === me ? store.pendingBlockChanges : []),
+      settleBlockChanges: (changes) => store.scope === me && store.settleBlockChanges(changes),
+      adoptBlockList: (keys, options) => store.scope === me && store.adoptBlockList(keys, options),
+    },
+    fetchLatest: () => queryNewest({
+      ensureRelay,
+      urls: DM_DISCOVERY_RELAYS,
+      pubkey: me,
+      kind: KIND.MUTE_LIST,
+      timeoutMs: INBOX_RELAY_QUERY_TIMEOUT_MS,
+      setTimer,
+      clearTimer,
+    }),
+    publish: async (event) => Boolean(await transport.publish(DM_DISCOVERY_RELAYS, event).firstAccept),
+    now,
+  });
 
   const inbox = createInbox({
     me,
@@ -963,6 +988,17 @@ export function createChatRuntime(deps = {}) {
     }
     void checkClaimsSoon();
     void reconcileOwnPayments();
+    void syncBlockList();
+  }
+
+  /**
+   * Bring the blocked keys and the person's mute list in step: on start and
+   * after a block or unblock here. Only while messages are received, so a
+   * signer app is not asked before the person turned messages on.
+   */
+  function syncBlockList() {
+    if (disposed || !receives()) return Promise.resolve();
+    return muteList.sync();
   }
 
   /** The person turned messages on for their signer app: receiving starts now. */
@@ -971,7 +1007,10 @@ export function createChatRuntime(deps = {}) {
     if (store.scope !== me) return;
     store.turnOnSignerAppMessages();
     signer.allowAgain();
-    if (started) await inbox.start();
+    if (started) {
+      await inbox.start();
+      void syncBlockList();
+    }
   }
 
   /** Close the subscription and the claim timers; the key is left as it is. `start()` may run again. */
@@ -1013,6 +1052,7 @@ export function createChatRuntime(deps = {}) {
     requestState,
     requestSettlement,
     settleClaims,
+    syncBlockList,
     // --- lifecycle (boot)
     start,
     stop,

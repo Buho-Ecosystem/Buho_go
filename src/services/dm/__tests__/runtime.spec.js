@@ -235,6 +235,8 @@ async function setup({
     incoming: [],
     /** The user's own sends (what became of a payment that was still routing). */
     outgoing: [],
+    /** Times the mute list sync ran. */
+    blockSyncs: 0,
   };
 
   env.runtime = createChatRuntime({
@@ -275,6 +277,7 @@ async function setup({
     factories: {
       createTransport: () => env.transport,
       createResolver: () => env.resolver,
+      createMuteListSync: () => ({ sync: async () => { env.blockSyncs += 1; } }),
     },
     inboxOptions: { random: () => 0.5 },
   });
@@ -1193,6 +1196,26 @@ test('with a signer app, receiving waits until the person turns messages on', as
   await env.transport.deliver(await textFrom(aliceKey, 'through the app'));
   await env.runtime.whenIdle();
   assert.equal(env.store.thread(ALICE).messages.at(-1).text, 'through the app');
+});
+
+test('blocks: start brings the mute list in step, and so does every block change after it', async () => {
+  const env = await setup();
+  await env.runtime.start();
+  assert.equal(env.blockSyncs, 1);
+  await env.runtime.syncBlockList();
+  assert.equal(env.blockSyncs, 2);
+  env.runtime.dispose();
+  await env.runtime.syncBlockList();
+  assert.equal(env.blockSyncs, 2, 'nothing after dispose');
+});
+
+test('blocks: a signer app is not asked for the mute list before the person turns messages on', async () => {
+  const env = await setup({ signerApp: signerAppFor({ online: true }) });
+  await env.runtime.start();
+  await env.runtime.syncBlockList();
+  assert.equal(env.blockSyncs, 0);
+  await env.runtime.turnOnMessages();
+  assert.equal(env.blockSyncs, 1);
 });
 
 test('with a signer app that is away, messages wait, the store says why, and a retry opens them', async () => {
