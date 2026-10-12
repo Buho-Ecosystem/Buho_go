@@ -109,16 +109,59 @@
           <p class="pay-row-foot">{{ addressFooter }}</p>
         </template>
 
-        <div v-else class="pay-empty">
-          <span class="pay-empty-mark"><q-spinner size="24px" /></span>
-          <h2 class="pay-empty-title">{{ $t('Setting up your address') }}</h2>
+        <!-- No address yet. An identity made here gets one on its own; one
+             brought from another app has its profile read first, then is
+             offered one: BuhoGO never sets it by itself. -->
+        <div v-else-if="emptyState === 'offer'" class="pay-empty">
+          <span class="pay-empty-mark"><Icon icon="tabler:wallet" width="24" height="24" /></span>
+          <h2 class="pay-empty-title">{{ $t('No address yet') }}</h2>
+          <p class="pay-empty-body">{{ $t('Choose where payments to your name arrive.') }}</p>
+          <div class="pay-empty-actions">
+            <button
+              v-if="defaultAddress"
+              type="button"
+              class="pay-share"
+              :disabled="profile.isPublishing"
+              @click="useDefaultAddress"
+            >
+              <Icon icon="tabler:arrow-down-left" width="16" height="16" />
+              {{ $t('Receive in {wallet}', { wallet: defaultWalletName }) }}
+            </button>
+            <button type="button" class="pay-share" :class="{ 'pay-share--quiet': defaultAddress }" @click="openEditor">
+              <Icon icon="tabler:plus" width="16" height="16" />
+              {{ $t('Use my own address instead') }}
+            </button>
+          </div>
+        </div>
+
+        <div v-else-if="emptyState === 'unreachable'" class="pay-empty">
+          <span class="pay-empty-mark"><Icon icon="tabler:cloud-off" width="24" height="24" /></span>
+          <h2 class="pay-empty-title">{{ $t("Couldn't check your profile") }}</h2>
           <p class="pay-empty-body">
-            {{ $t('BuhoGO is giving your name somewhere to receive. This needs a connection and finishes on its own.') }}
+            {{ $t('BuhoGO reads the profile you already have before it changes anything. Check your connection and try again.') }}
           </p>
-          <button type="button" class="pay-share" @click="openEditor">
-            <Icon icon="tabler:plus" width="16" height="16" />
-            {{ $t('Use my own address instead') }}
+          <button type="button" class="pay-share" @click="checkProfile">
+            <Icon icon="tabler:refresh" width="16" height="16" />
+            {{ $t('Try again') }}
           </button>
+        </div>
+
+        <div v-else class="pay-empty" aria-live="polite">
+          <span class="pay-empty-mark"><q-spinner size="24px" /></span>
+          <template v-if="emptyState === 'checking'">
+            <h2 class="pay-empty-title">{{ $t('Checking your profile') }}</h2>
+            <p class="pay-empty-body">{{ $t('BuhoGO reads the profile you already have before it changes anything.') }}</p>
+          </template>
+          <template v-else>
+            <h2 class="pay-empty-title">{{ $t('Setting up your address') }}</h2>
+            <p class="pay-empty-body">
+              {{ $t('BuhoGO is giving your name somewhere to receive. This needs a connection and finishes on its own.') }}
+            </p>
+            <button type="button" class="pay-share" @click="openEditor">
+              <Icon icon="tabler:plus" width="16" height="16" />
+              {{ $t('Use my own address instead') }}
+            </button>
+          </template>
         </div>
       </div>
     </q-card>
@@ -164,11 +207,11 @@
 
         <div class="own-address-actions">
           <button
-            v-if="!usingDefault"
+            v-if="!usingDefault && defaultAddress"
             type="button"
             class="own-address-reset"
             :disabled="profile.isPublishing"
-            @click="clearAddress"
+            @click="useDefaultAddress"
           >
             {{ $t('Use my BuhoGO address') }}
           </button>
@@ -247,6 +290,7 @@ import { buildProfileLink } from '../../utils/profileLink.js';
 import { getQrOptionsWithSize } from '../../utils/qrConfig.js';
 import { shareContent } from '../../utils/share.js';
 import { isLightningAddress } from '../../utils/addressUtils.js';
+import { missingAddressState } from '../../utils/profilePaymentAddress.js';
 
 export default {
   name: 'IdentityGetPaidSheet',
@@ -285,6 +329,8 @@ export default {
       _copyTimer: null,
       _incomingToken: 0,
       _preparing: false,
+      checkingProfile: false,
+      profileUnreachable: false,
     };
   },
 
@@ -346,6 +392,33 @@ export default {
 
     usingBucket() {
       return isNpubCashAddress(this.payAddress);
+    },
+
+    /**
+     * The address BuhoGO would give this identity: the oldest Spark wallet's,
+     * else the Social Bucket, which needs the secret key on this phone (it
+     * signs for the bucket), so a signer-app identity has none to offer.
+     */
+    defaultAddress() {
+      return this.walletStore.preferredProfileLightningAddress
+        || (this.identity.identityCapabilities.rawKey ? npubCashAddress(this.identity.nostrNpub) : null);
+    },
+
+    /** Where the default address lands, named for the offer. */
+    defaultWalletName() {
+      const address = String(this.defaultAddress || '').toLowerCase();
+      const wallet = this.walletStore.wallets.find((w) => this.walletStore.sparkLightningAddressOf(w) === address);
+      return wallet ? (wallet.name || this.$t('Wallet')) : this.$t('Social Bucket');
+    },
+
+    /** What the sheet says while there is no address (missingAddressState). */
+    emptyState() {
+      return missingAddressState({
+        imported: Boolean(this.identity.activeExternalId),
+        profileChecked: this.profile.remoteChecked,
+        unreachable: this.profileUnreachable,
+        checking: this.checkingProfile,
+      });
     },
 
     /** The Spark wallet this address belongs to, when it is one of ours. */
@@ -477,15 +550,14 @@ export default {
         // Adopting the address is a boot step, but the sheet may open in the
         // few seconds before it finishes, or after it failed while offline.
         // Same default chain as the boot: Spark wallet first, bucket after.
-        // Never for an identity from another app: its profile is its own.
-        if (!this.payAddress && this.identity.nostrNpub && !this.identity.activeExternalId) {
-          const address = this.walletStore.preferredProfileLightningAddress
-            || npubCashAddress(this.identity.nostrNpub);
-          if (address) {
-            this.profile.adoptDefaultPaymentAddress(address, {
-              isReplaceable: isNpubCashAddress,
-            });
-          }
+        // Never for an identity from another app: its profile is its own,
+        // read first and then offered an address (emptyState).
+        if (this.identity.activeExternalId) {
+          if (!this.profile.remoteChecked) this.checkProfile();
+        } else if (!this.payAddress && this.defaultAddress) {
+          this.profile.adoptDefaultPaymentAddress(this.defaultAddress, {
+            isReplaceable: isNpubCashAddress,
+          });
         }
 
         await Promise.allSettled([
@@ -696,10 +768,23 @@ export default {
     },
 
     /** Back to the default chain: Spark wallet first, bucket after. */
-    async clearAddress() {
-      const address = this.walletStore.preferredProfileLightningAddress
-        || npubCashAddress(this.identity.nostrNpub);
-      await this.persist(address, this.$t('Payments come back to BuhoGO'));
+    /** The default address on the profile: "Use my BuhoGO address", or the offer taken. */
+    async useDefaultAddress() {
+      await this.persist(this.defaultAddress, this.$t('Payments come back to BuhoGO'));
+    },
+
+    /** Read the published profile of an identity from another app. */
+    async checkProfile() {
+      if (this.checkingProfile) return;
+      this.checkingProfile = true;
+      try {
+        const result = await this.profile.recoverFromNostr({ identityStore: this.identity });
+        this.profileUnreachable = !result?.ok;
+      } catch {
+        this.profileUnreachable = true;
+      } finally {
+        this.checkingProfile = false;
+      }
     },
 
     /**
@@ -985,6 +1070,10 @@ button.pay-row { cursor: pointer; }
 }
 .pay-empty-title { margin: 0 0 6px; color: var(--text-primary); font-size: 19px; }
 .pay-empty-body { margin: 0 auto 13px; max-width: 340px; color: var(--text-secondary); font-size: 14px; line-height: 1.5; }
+.pay-empty-actions { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+/* The offer's second choice: one filled button per screen. */
+.get-paid-sheet .pay-share--quiet,
+.get-paid-sheet.card_dark_style .pay-share--quiet { background: var(--bg-input); color: var(--text-primary); }
 
 .payment-detail-sheet {
   width: 100%;

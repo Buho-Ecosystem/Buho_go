@@ -797,6 +797,44 @@ test('a wallet change never edits the profile of an identity brought from anothe
   assert.equal(profile.lud16, 'npub1me@npub.cash', 'an identity made here still gets its default');
 });
 
+test('a renamed address stays with its wallet; an imported profile follows only an address it took from it', async () => {
+  const profile = {
+    lud16: '',
+    hydrate: async () => {},
+    setField(field, value) { this[field] = value; },
+    adoptDefaultPaymentAddress(address, { isReplaceable }) {
+      if (this.lud16 && !isReplaceable(this.lud16)) return false;
+      this.lud16 = address;
+      return true;
+    },
+  };
+  const identity = { bootstrapped: true, activeExternalId: 'x1', nostrNpub: 'npub1me', hydrate: async () => {} };
+  const h = createHarness({
+    deps: {
+      './profile.js': { useProfileStore: () => profile },
+      './identity.js': { useIdentityStore: () => identity },
+      '../services/npubCash.js': { npubCashAddress: (npub) => `${npub}@npub.cash`, isNpubCashAddress: (value) => value.endsWith('@npub.cash') },
+      '../utils/profilePaymentAddress.js': profilePaymentAddress,
+    },
+  });
+  await h.store.initialize();
+  const sync = (options) => h.actions._syncProfilePaymentAddress.call(h.store, options);
+
+  profile.lud16 = 'old@btc.example.com';
+  await sync({ previousAddresses: ['old@btc.example.com'], renamedTo: 'new@btc.example.com' });
+  assert.equal(profile.lud16, 'new@btc.example.com', 'the address it took from this wallet moves with it');
+  profile.lud16 = 'me@elsewhere.example';
+  await sync({ previousAddresses: ['new@btc.example.com'], renamedTo: 'newer@btc.example.com' });
+  await sync({ previousAddresses: ['me@elsewhere.example'] });
+  assert.equal(profile.lud16, 'me@elsewhere.example', 'its own address, and a removal, change nothing');
+
+  // An identity made here: the rename is followed to the same wallet, not to the oldest one.
+  identity.activeExternalId = null;
+  profile.lud16 = 'second@btc.example.com';
+  await sync({ previousAddresses: ['second@btc.example.com'], renamedTo: 'second2@btc.example.com' });
+  assert.equal(profile.lud16, 'second2@btc.example.com');
+});
+
 test('an add whose own save fails leaves nothing on disk, and the profile follows only a saved wallet', async () => {
   const h = createHarness();
   await h.store.initialize();

@@ -2053,7 +2053,7 @@ export const useWalletStore = defineStore('wallet', {
         // undone, and the profile would then send payments to a phrase nobody
         // kept. Its save brings the profile along (_saveAddedWallets).
         if (!addingWallets.has(walletId)) {
-          this._syncProfilePaymentAddress({ previousAddresses: [previousAddress] })
+          this._syncProfilePaymentAddress({ previousAddresses: [previousAddress], renamedTo: address })
             .catch(() => {});
         }
       }
@@ -2192,11 +2192,12 @@ export const useWalletStore = defineStore('wallet', {
      * default. Runs after a Spark address changes or a Spark wallet is
      * removed: when the profile pointed at an old default (one of the given
      * previous addresses, or the Social Bucket), it adopts the current
-     * preferred address and publishes a fresh profile event. An address the
+     * preferred address and publishes a fresh profile event. A renamed
+     * address (`renamedTo`) is followed to the same wallet. An address the
      * user typed themselves is never touched. Dynamic imports keep the
      * wallet store free of a static profile dependency.
      */
-    async _syncProfilePaymentAddress({ previousAddresses = [] } = {}) {
+    async _syncProfilePaymentAddress({ previousAddresses = [], renamedTo = null } = {}) {
       try {
         const [
           { useProfileStore },
@@ -2220,11 +2221,18 @@ export const useWalletStore = defineStore('wallet', {
         const previous = previousAddresses
           .filter(Boolean)
           .map((value) => String(value).toLowerCase());
+        // The profile pointed at a wallet whose address was just renamed: it
+        // stays with that wallet, wherever it ranks.
+        const followsRename = Boolean(renamedTo) && previous.includes(String(profile.lud16).toLowerCase());
         // A profile brought from another app is the person's own (see the
-        // payment-address boot): a wallet change never edits it. Checked
-        // last, so a switch during the loads above is seen.
-        if (identity.activeExternalId) return;
-        profile.adoptDefaultPaymentAddress(preferred, {
+        // payment-address boot): a wallet change only carries an address it
+        // took from one of these wallets through that wallet's rename.
+        // Checked last, so a switch during the loads above is seen.
+        if (identity.activeExternalId) {
+          if (followsRename) profile.setField('lud16', renamedTo);
+          return;
+        }
+        profile.adoptDefaultPaymentAddress(followsRename ? renamedTo : preferred, {
           isReplaceable: (current) => {
             const value = String(current).toLowerCase();
             return isNpubCashAddress(value) || previous.includes(value);

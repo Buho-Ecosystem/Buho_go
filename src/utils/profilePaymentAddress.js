@@ -19,3 +19,18 @@ export function preferredProfileLightningAddress({ wallets = [], walletInfos = {
   }
   return null;
 }
+
+/**
+ * What the Get paid sheet says while the profile has no payment address.
+ * An identity made here is being given one ('setting-up'). One brought from
+ * another app has its published profile read first ('checking', or
+ * 'unreachable' when too few relays answered) and, with no address on it,
+ * is offered one ('offer'): BuhoGO never sets it on its own.
+ * @param {{ imported: boolean, profileChecked: boolean, unreachable: boolean, checking: boolean }} state
+ * @returns {'setting-up' | 'checking' | 'unreachable' | 'offer'}
+ */
+export function missingAddressState({ imported, profileChecked, unreachable, checking }) {
+  if (!imported) return 'setting-up';
+  if (profileChecked) return 'offer';
+  return unreachable && !checking ? 'unreachable' : 'checking';
+}
