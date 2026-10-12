@@ -225,7 +225,9 @@ export function anyAccepted(results) {
  * one. `ensureRelay` rejects on a failed handshake, so connect-then-
  * query makes `null` mean "not reached" while an array means "this
  * relay really answered". An empty answer from a socket that died
- * mid-query proves nothing and is demoted to "not reached" as well.
+ * mid-query proves nothing and is demoted to "not reached" as well, and
+ * so does one that only came when the window ran out: a socket can stay
+ * open after the network is gone, and its silence is not an answer.
  *
  * A pool without `ensureRelay` cannot prove a connection, so it can
  * never prove absence either — events still count, emptiness doesn't.
@@ -247,9 +249,10 @@ export async function queryOneRelay(pool, url, filter, maxWait) {
   // (default well under our window) — a connected-but-slow relay
   // would answer [] and count as reached. Give it the full window.
   if (relay) relay.eoseTimeout = maxWait;
+  const started = Date.now();
   const events = await pool.querySync([url], filter, { maxWait });
   if (!Array.isArray(events)) return null;
-  if (events.length === 0 && relay && relay.connected === false) return null;
+  if (events.length === 0 && (relay?.connected === false || Date.now() - started >= maxWait)) return null;
   return events;
 }
 
