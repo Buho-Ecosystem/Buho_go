@@ -499,7 +499,6 @@ on screen.
 | [#73](https://github.com/nostr-core-org/nostr-core/issues/73) `unwrap` trusts a forged rumor id | `openWrap.js` recomputes the id |
 | [#74](https://github.com/nostr-core-org/nostr-core/issues/74) nip17 helpers: no self copy / multi-recipient / kind 7 | `giftWrap.js` + `openWrap.js` on nip59 primitives |
 | [#75](https://github.com/nostr-core-org/nostr-core/issues/75) per-relay publish results, NIP-01 reason parser | `transport.js` + `errors.js` |
-| [#76](https://github.com/nostr-core-org/nostr-core/issues/76) NIP-46 `connect` sends the client pubkey (fix: [#77](https://github.com/nostr-core-org/nostr-core/pull/77), 1.0.5) | none: strict remote signers time out until the bump |
 | NIP-46 `connect` cannot send requested permissions (`nip44_encrypt,nip44_decrypt,sign_event:13,sign_event:22242`) | none: the opt-in notice asks the person to always allow |
 
 Replace the workaround when the upstream fix ships.
@@ -537,8 +536,7 @@ Replace the workaround when the upstream fix ships.
 - A thread the user started with a stranger stays under "Not in your
   contacts" (other clients count a chat you wrote to as known).
 - Replace the local workarounds when nostr-core #72 to #75 ship (section 11).
-- Signer apps (section 5a): bump nostr-core to 1.0.5 for the NIP-46 `connect`
-  fix (#76, #77); ask nostr-core for requested permissions in `connect` (the
+- Signer apps (section 5a): ask nostr-core for requested permissions in `connect` (the
   chat needs `nip44_encrypt`, `nip44_decrypt`, `sign_event:13`,
   `sign_event:22242` and `sign_event:10050`); nostr-core rejects a request
   whose answer is `auth_url` and forgets it, so the answer a signer sends
