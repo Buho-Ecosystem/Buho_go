@@ -421,7 +421,8 @@ the invoice does not exist until the payer taps Pay.
   sending is followed by new and old open requests alike. When the profile
   cannot be fetched or has no valid `lud16`, the `lud16` signed inside the
   request is used. It then pulls an invoice via LNURL-pay for exactly the
-  requested amount (LUD-12 comment `buho:req:<reference>` when allowed),
+  requested amount (no LUD-12 comment: the requester's wallet would show it
+  as the payment's message; the payment itself is matched, see below),
   validates it (decodes, mainnet, exact amount, not expired, within
   min/maxSendable) and hands it to the normal pipeline with "Pay with". The
   LUD-21 `verify` URL of the LNURL answer is kept when it is `https:` on the

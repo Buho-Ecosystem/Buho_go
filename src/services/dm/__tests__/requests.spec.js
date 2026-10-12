@@ -161,14 +161,15 @@ test('resolveRequesterAddress: without a usable profile address the signed one i
 // Paying: the invoice, created when the payer taps Pay
 // ---------------------------------------------------------------------------
 
-test('pullInvoice: asks the address for exactly the amount, with the LUD-12 reference', async () => {
+test('pullInvoice: asks the address for exactly the amount, with no comment', async () => {
   const fresh = makeInvoice({ sats: 5_000, hash: 9 });
   const { service, lnurl } = setup({ lnurl: fakeLnurl({ invoice: fresh }) });
-  const pulled = await service.pullInvoice({ lud16: ADDRESS, amountSats: 5_000, reference: 'abc123' });
+  const pulled = await service.pullInvoice({ lud16: ADDRESS, amountSats: 5_000 });
   assert.deepEqual(pulled, { bolt11: fresh.bolt11, verifyUrl: null });
   assert.deepEqual(lnurl.fetched, ['https://btc.mybuho.de/.well-known/lnurlp/anna']);
   assert.equal(lnurl.requested[0].msats, 5_000_000);
-  assert.deepEqual(lnurl.requested[0].options, { comment: 'buho:req:abc123' });
+  // A comment would be the payment's message in the requester's wallet.
+  assert.equal(lnurl.requested[0].options, undefined);
 });
 
 test('pullInvoice: hands on the LUD-21 verify URL only when it is https on the callback host', async () => {
@@ -187,14 +188,6 @@ test('pullInvoice: hands on the LUD-21 verify URL only when it is https on the c
     const { service } = setup({ lnurl: fakeLnurl({ invoice: makeInvoice({ sats: 5_000 }), verify }) });
     const pulled = await service.pullInvoice({ lud16: ADDRESS, amountSats: 5_000 });
     assert.equal(pulled.verifyUrl, expected, String(verify));
-  }
-});
-
-test('pullInvoice: no comment when the server allows none or too few characters', async () => {
-  for (const commentAllowed of [0, 5]) {
-    const { service, lnurl } = setup({ lnurl: fakeLnurl({ invoice: makeInvoice({ sats: 5_000 }), commentAllowed }) });
-    await service.pullInvoice({ lud16: ADDRESS, amountSats: 5_000, reference: 'abc123' });
-    assert.equal(lnurl.requested[0].options, undefined, String(commentAllowed));
   }
 });
 

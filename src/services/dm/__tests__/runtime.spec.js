@@ -797,7 +797,7 @@ test('fetchRequestInvoice pulls the invoice from the signed address, for exactly
 
   assert.deepEqual(await env.runtime.fetchRequestInvoice(ALICE, request.id), { bolt11: fresh.bolt11, verifyUrl: null });
   assert.deepEqual(server.fetched, ['https://alice.example/.well-known/lnurlp/Alice']);
-  assert.deepEqual(server.requested, [{ amountMsat: 800_000, comment: `buho:req:${request.id.slice(0, 12)}` }]);
+  assert.deepEqual(server.requested, [{ amountMsat: 800_000, comment: undefined }], 'no comment: it would be the message in the requester\'s wallet');
 });
 
 test('fetchRequestInvoice follows the requester\'s current profile address over the signed one', async () => {

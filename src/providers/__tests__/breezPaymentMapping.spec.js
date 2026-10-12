@@ -23,6 +23,7 @@ import {
   detailsArm,
   paymentHashOf,
 } from '../../utils/breezPayments.js';
+import { getTxMessage } from '../../utils/txMessage.js';
 
 let passed = 0;
 let failed = 0;
@@ -104,6 +105,13 @@ test('sender comment outranks the bolt11 description (LUD-06 hash case)', () => 
   p.details.lnurlReceiveMetadata = { senderComment: 'thanks for the coffee' };
   const row = mapBreezPaymentToTx(p);
   assert.equal(row.description, 'thanks for the coffee');
+});
+
+test('a Lightning-address receive without a comment shows no message, not the description hash', () => {
+  const p = lightningPayment();
+  p.details.description = 'a'.repeat(64);
+  const row = mapBreezPaymentToTx(p);
+  assert.equal(getTxMessage(row), '');
 });
 
 test('bolt11 description used when no sender comment exists', () => {

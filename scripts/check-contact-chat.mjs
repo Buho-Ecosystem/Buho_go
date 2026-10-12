@@ -379,7 +379,7 @@ try {
     await payRequestFromChat(bob, /^Alice requests.*Pizza again/);
     assert.equal(lnurl.issued.length, 1, 'one invoice, created when Bob tapped Pay');
     assert.equal(lnurl.issued[0].amountSats, 1000, 'for exactly the requested amount');
-    assert.match(lnurl.issued[0].comment ?? '', /^buho:req:/, 'tied to the request with the LUD-12 comment');
+    assert.equal(lnurl.issued[0].comment ?? null, null, 'no comment: it would be the payment\'s message in Alice\'s wallet');
     await payWithOptionsMatrix(bob.page);
     await snap(bob, '05-pay-with');
     await confirmPayment(bob.page);
@@ -428,7 +428,7 @@ try {
     assert.equal(lnurl.issued.length, issuedBefore, 'nothing was asked of the old address');
     assert.equal(lnurlNew.issued.length, 1, 'one invoice came from the new address');
     assert.equal(lnurlNew.issued[0].amountSats, 500, 'for exactly the requested amount');
-    assert.match(lnurlNew.issued[0].comment ?? '', /^buho:req:/);
+    assert.equal(lnurlNew.issued[0].comment ?? null, null);
     await confirmPayment(bob.page);
     await expectPaidFrom(bob, 'bob-spark', 3);
     assert.equal((await bob.page.evaluate(() => window.__e2ePayments)).at(-1).invoice, lnurlNew.issued[0].bolt11, 'the pulled invoice was paid');
