@@ -2119,8 +2119,9 @@ export const useWalletStore = defineStore('wallet', {
      * Spark wallets (Breez address transfer: the source authorises the
      * target's identity key, the target claims). The target's own address
      * is replaced; the source gets a fresh random name it can change later.
-     * A profile pointing at the target's old address moves to the current
-     * default; one pointing at the moved address keeps working as it is.
+     * A profile pointing at the target's old address moves with the target
+     * to the moved address; one pointing at the moved address keeps working
+     * as it is.
      *
      * @returns {Promise<{ moved: string, sourceAddress: string|null }>}
      * Errors carry `code`: LN_ADDRESS_INVALID_TARGET, LN_ADDRESS_NOT_CONNECTED,
@@ -2163,7 +2164,7 @@ export const useWalletStore = defineStore('wallet', {
         // reclaimed and never recorded on two wallets at once.
         await this._forgetSparkLightningAddress(from.id);
         // setSparkLightningAddress also moves a profile that pointed at the
-        // target's old address to the default.
+        // target's old address along to the moved one.
         await this.setSparkLightningAddress(to.id, movedAddress);
         let sourceAddress = null;
         try {

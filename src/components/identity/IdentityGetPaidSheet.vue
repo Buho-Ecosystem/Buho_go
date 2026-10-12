@@ -122,7 +122,7 @@
               type="button"
               class="pay-share"
               :disabled="profile.isPublishing"
-              @click="useDefaultAddress"
+              @click="acceptOffer"
             >
               <Icon icon="tabler:arrow-down-left" width="16" height="16" />
               {{ $t('Receive in {wallet}', { wallet: defaultWalletName }) }}
@@ -539,6 +539,7 @@ export default {
     async prepareSheet() {
       if (this._preparing) return;
       this._preparing = true;
+      this.profileUnreachable = false;
       try {
         await this.identity.hydrate();
         await Promise.all([
@@ -768,9 +769,14 @@ export default {
     },
 
     /** Back to the default chain: Spark wallet first, bucket after. */
-    /** The default address on the profile: "Use my BuhoGO address", or the offer taken. */
+    /** "Use my BuhoGO address": back from a typed address to the default. */
     async useDefaultAddress() {
       await this.persist(this.defaultAddress, this.$t('Payments come back to BuhoGO'));
+    },
+
+    /** The offer, taken: a first address, so nothing "comes back". */
+    async acceptOffer() {
+      await this.persist(this.defaultAddress, this.$t('Saved'));
     },
 
     /** Read the published profile of an identity from another app. */
@@ -778,8 +784,10 @@ export default {
       if (this.checkingProfile) return;
       this.checkingProfile = true;
       try {
-        const result = await this.profile.recoverFromNostr({ identityStore: this.identity });
-        this.profileUnreachable = !result?.ok;
+        await this.profile.recoverFromNostr({ identityStore: this.identity });
+        // Not read for any reason (no relay answered, an edit or a switch
+        // crossed the read): Try again, rather than a spinner that waits.
+        this.profileUnreachable = !this.profile.remoteChecked;
       } catch {
         this.profileUnreachable = true;
       } finally {
