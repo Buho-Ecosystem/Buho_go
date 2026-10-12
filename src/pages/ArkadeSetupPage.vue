@@ -68,6 +68,12 @@ export default {
         // Straight into the wallet; the tour waits in About > Onboarding Guide.
         this.$router.replace('/wallet');
       } catch (error) {
+        // Opened again with the wallet already saved (a reload during or
+        // after setup): it is there, so go to it.
+        if (error?.code === 'ARKADE_WALLET_EXISTS') {
+          this.$router.replace('/wallet');
+          return;
+        }
         console.error('Failed to create Arkade wallet:', error);
         this.walletStore.showPaymentError(error, {
           context: 'connect',

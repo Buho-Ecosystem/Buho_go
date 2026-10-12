@@ -324,17 +324,23 @@ export function formatInsufficientBalanceBreakdown(parts, t) {
 }
 
 /**
- * Map a stable error `code` (set by providers) to a friendly, actionable
- * reason. Used for Arkade Lightning (Boltz swap) failures, where the raw
- * SDK message is terse/technical but the failure mode is well-defined — and
- * crucially we can tell the user when a refundable failure already returned
- * their funds. Returns null when there's no code-specific mapping.
+ * Map a stable error `code` (set by providers and the wallet store) to a
+ * friendly, actionable reason. Used for Arkade Lightning (Boltz swap)
+ * failures, where the raw SDK message is terse/technical but the failure
+ * mode is well-defined — and crucially we can tell the user when a
+ * refundable failure already returned their funds — and for saved wallets
+ * that could not be changed. Exported for inline error surfaces that show
+ * one line. Returns null when there's no code-specific mapping.
  */
-function translateErrorCode(error, t) {
+export function translateErrorCode(error, t) {
   const code = error && typeof error === 'object' ? error.code : null;
   if (!code || typeof code !== 'string') return null;
 
   switch (code) {
+    case 'WALLET_STATE_UNAVAILABLE':
+      return t('Your wallets could not be loaded, so nothing was changed. Close and reopen BuhoGO, then try again.');
+    case 'WALLET_STATE_CONFLICT':
+      return t('Your wallets were changed in another tab or window, so nothing was saved here. Reload BuhoGO, then try again.');
     case 'ADDRESS_REQUEST_NOT_PAYMENT':
       return t('This link asks for your address. It cannot receive a payment.');
     case 'ARKADE_LN_UNAVAILABLE':

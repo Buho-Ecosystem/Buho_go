@@ -97,6 +97,12 @@ export default {
         // About > Onboarding Guide for whenever they want it.
         this.$router.replace('/wallet');
       } catch (error) {
+        // Opened again with the wallet already saved (a reload during or
+        // after setup): it is there, so go to it.
+        if (error?.code === 'SPARK_WALLET_EXISTS') {
+          this.$router.replace('/wallet');
+          return;
+        }
         console.error('Failed to create wallet:', error);
         this.walletStore.showPaymentError(error, {
           context: 'connect',

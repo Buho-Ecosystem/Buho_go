@@ -3,7 +3,7 @@
 import { strict as assert } from 'node:assert';
 import de from '../../i18n/de/index.js';
 import es from '../../i18n/es/index.js';
-import { getUnsupportedBolt12OfferCopy, classifyTransportFailure, buildPaymentError } from '../userErrors.js';
+import { getUnsupportedBolt12OfferCopy, classifyTransportFailure, buildPaymentError, translateErrorCode } from '../userErrors.js';
 
 const BOLT12_TITLE = "This payment request isn't supported yet";
 const BOLT12_REASON = 'This is a specific type of Lightning payment request. BuhoGO cannot pay BOLT12 offers yet, so no money was sent. Ask the recipient for a Lightning invoice or Lightning address instead.';
@@ -108,6 +108,33 @@ test('transport-failure copy has German and Spanish translations', () => {
   for (const messages of [de, es]) {
     assert.ok(messages[TIMEOUT_COPY], 'timeout copy key missing');
     assert.ok(messages[OFFLINE_COPY], 'offline copy key missing');
+  }
+});
+
+// ─── Saved wallets that could not be changed ───────────────────────────
+
+const WALLET_STATE_COPY = {
+  WALLET_STATE_UNAVAILABLE: 'Your wallets could not be loaded, so nothing was changed. Close and reopen BuhoGO, then try again.',
+  WALLET_STATE_CONFLICT: 'Your wallets were changed in another tab or window, so nothing was saved here. Reload BuhoGO, then try again.',
+};
+
+test('a refused wallet save is explained by BuhoGO, never attributed to a service', () => {
+  for (const [code, copy] of Object.entries(WALLET_STATE_COPY)) {
+    const e = buildPaymentError(Object.assign(new Error('The saved wallets could not be loaded'), { code }), { context: 'connect' });
+    assert.equal(e.reason, copy);
+    assert.equal(e.reasonSource, 'curated');
+    assert.equal(e.reasonAttribution, null);
+    assert.equal(translateErrorCode({ code }, (key) => key), copy, 'one-line error surfaces show the same copy');
+  }
+});
+
+test('the refused-save copy has German and Spanish translations, without em dashes or a raw @', () => {
+  for (const copy of Object.values(WALLET_STATE_COPY)) {
+    assert.doesNotMatch(copy, /—|@/);
+    for (const messages of [de, es]) {
+      assert.ok(messages[copy] && messages[copy] !== copy, `translation missing: ${copy}`);
+      assert.doesNotMatch(messages[copy], /—|@/);
+    }
   }
 });
 

@@ -62,6 +62,7 @@ import { computed, getCurrentInstance, nextTick, ref, watch } from 'vue';
 import { useWalletStore } from '../../stores/wallet';
 import { suggestWalletName } from '../../utils/sparkAccounts.js';
 import { MAX_WALLET_NAME_LENGTH, walletNameCopy } from '../../utils/walletNames.js';
+import { translateErrorCode } from '../../utils/userErrors';
 import WalletBrandMark from '../WalletBrandMark.vue';
 
 const props = defineProps({ modelValue: { type: Boolean, default: false } });
@@ -96,7 +97,7 @@ async function focusName() {
 function describe(failure) {
   if (failure?.problem) return walletNameCopy(failure.problem, t);
   if (failure?.code === 'SPARK_WALLET_LIMIT') return t('You already have the most Spark wallets this app supports.');
-  return t("Couldn't create the wallet. Check your connection and try again.");
+  return translateErrorCode(failure, t) || t("Couldn't create the wallet. Check your connection and try again.");
 }
 
 async function create() {
