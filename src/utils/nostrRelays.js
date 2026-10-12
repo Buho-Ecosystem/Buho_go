@@ -264,5 +264,5 @@ export async function queryOneRelay(pool, url, filter, maxWait) {
  * @returns {boolean}
  */
 export function provesAbsence(reached, asked) {
-  return reached >= Math.min(2, asked);
+  return asked > 0 && reached >= Math.min(2, asked);
 }

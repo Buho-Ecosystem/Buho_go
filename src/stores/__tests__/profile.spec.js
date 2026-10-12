@@ -1322,6 +1322,34 @@ await test('imported identity: a read that crossed a local edit leaves the profi
   assert.equal((await profile.publish({ pool: fakePool(), relays: TEST_RELAYS })).reason, 'unchecked');
 });
 
+await test('imported identity: an edit signed by an older build, never accepted, is not sent over the published profile', async () => {
+  const { profile, identity } = await freshEnvWithImportedIdentity();
+  profile.applyEdits({ about: 'New here' });
+  // What a build without the guard left behind: a signed {about} event no relay took.
+  profile.remoteChecked = true;
+  const refused = await profile.publish({ pool: fakePool({ 'wss://relay-a.test': 'reject', 'wss://relay-b.test': 'reject', 'wss://relay-c.test': 'reject' }), relays: TEST_RELAYS });
+  assert.equal(refused.ok, false);
+  profile.remoteChecked = false;
+  profile._persistMetadata();
+  await profile.hydrate({ force: true });
+  assert.ok(profile.pendingEvent, 'the unsent event survived the restart');
+  assert.equal(profile.remoteChecked, false);
+
+  const published = { name: 'satoshi', picture: 'https://x.test/me.png', lud16: 'me@wallet.test' };
+  const r = await profile.recoverFromNostr({ identityStore: identity, fetcher: answering(async () => fakeKind0Event(published)) });
+  assert.equal(r.hadRemote, true, 'merged although older than the local event');
+  assert.equal(profile.pendingEvent, null, 'the old event is dropped');
+  const pool = fakePool();
+  await (await profile.publish({ pool, relays: TEST_RELAYS })).settled;
+  assert.deepEqual(JSON.parse(pool.calls.find((c) => c.kind === 0).event.content), { ...published, about: 'New here' });
+});
+
+await test('recoverFromNostr: an event only one relay returned is not applied', async () => {
+  const { profile, identity } = await freshEnvWithImportedIdentity();
+  const r = await profile.recoverFromNostr({ identityStore: identity, fetcher: async () => ({ event: fakeKind0Event({ name: 'old' }), checked: false }) });
+  assert.deepEqual([r.ok, r.reason, profile.name, profile.remoteChecked], [false, 'unreachable', '', false]);
+});
+
 await test('remoteChecked: a profile saved before the flag counts as checked once it was published', async () => {
   const { profile, identity } = await freshEnvWithImportedIdentity();
   const key = `${STORAGE_KEY}_${identity.nostrPubkeyHex}`;

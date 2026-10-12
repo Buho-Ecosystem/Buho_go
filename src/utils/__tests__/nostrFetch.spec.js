@@ -408,13 +408,13 @@ await test('fetchProfileChecked: the newest valid event, checked', async () => {
   assert.deepEqual(got, { event: newer, checked: true });
 });
 
-await test('fetchProfileChecked: one event on the only reachable relay is enough', async () => {
+await test('fetchProfileChecked: an event from a lone relay is returned, not trusted', async () => {
   const event = makeKind0(ALICE_SECRET, { name: 'alice' }, 1700000000);
   const pool = reachabilityPool({
     unreachable: ['wss://relay-a.test', 'wss://relay-b.test'],
     eventsByRelay: { 'wss://relay-c.test': [event] },
   });
-  assert.deepEqual(await fetchProfileChecked(ALICE_PUBKEY, { pool, relays: TEST_RELAYS }), { event, checked: true });
+  assert.deepEqual(await fetchProfileChecked(ALICE_PUBKEY, { pool, relays: TEST_RELAYS }), { event, checked: false });
 });
 
 await test('fetchProfileChecked: no answer is not "no profile"', async () => {

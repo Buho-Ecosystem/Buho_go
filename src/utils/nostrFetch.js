@@ -299,13 +299,15 @@ export async function fetchProfile(pubkey, opts = {}) {
  * `fetchProfile` reads "no profile" and "no relay answered" the same way,
  * which is fine for showing someone else's card. Before publishing over the
  * person's OWN profile the two must differ: relays are asked one by one
- * (queryOneRelay), and an empty answer only counts once enough of them
- * provably answered (provesAbsence).
+ * (queryOneRelay), and the answer only counts once enough of them provably
+ * answered (provesAbsence). That holds for an event too: a lone relay may
+ * hold an old profile.
  *
  * @param {string} pubkey 64-char hex
  * @param {{ pool?: any, relays?: readonly string[], timeoutMs?: number }} [opts]
  * @returns {Promise<{ event: import('nostr-core').NostrEvent | null, checked: boolean }>}
- *   `checked`: an event was found, or its absence is proven
+ *   `event`: the newest valid one any relay returned; `checked`: enough
+ *   relays answered for `event` (or its absence) to be the published profile
  */
 export async function fetchProfileChecked(pubkey, opts = {}) {
   if (typeof pubkey !== 'string' || !/^[0-9a-f]{64}$/i.test(pubkey)) {
@@ -323,9 +325,6 @@ export async function fetchProfileChecked(pubkey, opts = {}) {
   const valid = reached
     .flatMap((answer) => answer.value)
     .filter((event) => isTrustworthyProfile(event, allowed));
-  if (valid.length > 0) {
-    valid.sort(compareEventFreshness);
-    return { event: valid[0], checked: true };
-  }
-  return { event: null, checked: provesAbsence(reached.length, relays.length) };
+  valid.sort(compareEventFreshness);
+  return { event: valid[0] || null, checked: provesAbsence(reached.length, relays.length) };
 }

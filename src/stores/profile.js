@@ -768,6 +768,8 @@ export const useProfileStore = defineStore('profile', {
      * Return shape:
      *   `{ ok: true,  acceptedRelay, settled }` — first relay accepted
      *   `{ ok: false, results, settled }`      — every kind:0 relay refused
+     *   `{ ok: false, reason: 'unchecked', results: [], settled }` — an
+     *     imported identity whose published profile was not read yet
      *
      * `settled` is a promise that resolves with the full per-relay
      * result array once every WebSocket settles. UI callers can
@@ -918,7 +920,7 @@ export const useProfileStore = defineStore('profile', {
      * local edits. An account/session or revision change during the fetch
      * invalidates the response. Recovery never acknowledges local work.
      *
-     * Test injection: `fetcher` swaps in a fake `fetchProfile` for
+     * Test injection: `fetcher` swaps in a fake `fetchProfileChecked` for
      * unit tests; `pool`, `relays`, `timeoutMs` are forwarded to the
      * default fetcher. Production callers pass `{ identityStore }`
      * and nothing else.
@@ -979,8 +981,8 @@ export const useProfileStore = defineStore('profile', {
       try {
         ({ event, checked } = await fetchOne(identityKeys.pubkeyHex, fetchOpts));
       } catch (err) {
-        // Pool failures already collapse to `null` inside
-        // `fetchProfile`. Reaching this branch means something
+        // Relay failures already count as unreached inside
+        // `fetchProfileChecked`. Reaching this branch means something
         // upstream of the network call broke (e.g. a programming
         // bug). Log it and surface a typed failure so the caller
         // can show a "couldn't reach relays" hint without crashing
@@ -995,35 +997,34 @@ export const useProfileStore = defineStore('profile', {
         };
       }
 
-      // Nothing found proves nothing until enough relays really answered.
-      if (!event && !checked) {
+      // Too few relays answered: nothing found proves nothing, and what one
+      // relay holds may be an old profile.
+      if (!checked) {
         return { ok: false, reason: 'unreachable', hadRemote: false, applied: 0, fields: [] };
       }
 
       if (!scope.current()) return skipped('identity-changed');
-      // The published profile is known from here on: absent, older than ours,
-      // or applied below. A local edit made during the read leaves it unknown,
-      // since the remote fields were not merged in.
-      const markChecked = () => {
-        if (this.remoteChecked) return;
-        this.remoteChecked = true;
-        this._persistMetadata();
-      };
       if (!event) {
-        markChecked();
+        if (!this.remoteChecked) {
+          this.remoteChecked = true;
+          this._persistMetadata();
+        }
         return { ok: true, hadRemote: false, applied: 0, fields: [] };
       }
 
+      // A local edit made during the read: the remote fields are not merged
+      // in, so the published profile stays unknown until the next read.
       if (this.revision !== revision) return skipped('local-changed');
-      if (this.eventVersion && compareEventFreshness(event, this.eventVersion) >= 0) {
-        markChecked();
-        return skipped('stale-event');
-      }
-      // Older builds only saved a wall-clock timestamp. It cannot establish an
-      // exact event version, but must not permit a clearly older profile rollback.
-      if (!this.eventVersion && this.lastPublishedAt && event.created_at < Math.floor(this.lastPublishedAt / 1000)) {
-        markChecked();
-        return skipped('stale-event');
+      // Until the published profile has been seen, a local version proves
+      // nothing (it may be an event no relay ever accepted), so the remote
+      // one is merged in below whatever its age.
+      if (this.remoteChecked) {
+        if (this.eventVersion && compareEventFreshness(event, this.eventVersion) >= 0) return skipped('stale-event');
+        // Older builds only saved a wall-clock timestamp. It cannot establish an
+        // exact event version, but must not permit a clearly older profile rollback.
+        if (!this.eventVersion && this.lastPublishedAt && event.created_at < Math.floor(this.lastPublishedAt / 1000)) {
+          return skipped('stale-event');
+        }
       }
 
       // Remote omissions clear synchronized fields. Pending local edits,

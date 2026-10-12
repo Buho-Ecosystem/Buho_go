@@ -46,7 +46,7 @@ A signer outside BuhoGO is wrapped in `verifiedSigner()`: every signed event mus
 - A profile publish keeps every field BuhoGO does not edit (`foreignProfileFields`, stored as `extraContent`).
 - A relay list (`kind:10002`) is published only when the key has none; an existing or uncheckable one is never replaced.
 - BuhoGO never edits an imported identity's profile on its own (the automatic Lightning address fill, at start and on a Spark wallet change, is for identities made here).
-- Nothing is published for an imported identity before its published profile was read (`profile.remoteChecked`). "No profile" counts only when at least two relays provably answered (`fetchProfileChecked`, `provesAbsence`); no answer is `unreachable`. An edit made before that waits, and the profile sync publishes it on top of the published fields once the read succeeds.
+- Nothing is published for an imported identity before its published profile was read (`profile.remoteChecked`). A read counts only when at least two relays provably answered (`fetchProfileChecked`, `provesAbsence`), for "no profile" and for a found one alike; fewer is `unreachable`. Until the first read, a local event version proves nothing (it may be one no relay accepted), so the published profile is merged in whatever its age. An edit made before that waits, and the profile sync publishes it on top of the published fields once the read succeeds.
 - The Social Bucket never writes an ecash wallet event without reading the current one, and never over one it cannot read (`nip60Blocked`).
 
 ## Not in Drive backup
