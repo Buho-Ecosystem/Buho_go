@@ -22,12 +22,8 @@
  */
 
 import { decodeBolt11, parseLightningAddress } from 'nostr-core';
-import { bytesToHex } from '@noble/hashes/utils.js';
 import { parseProfileContent } from '../../utils/nostrFetch.js';
 import { DM_ERROR, DmError } from './errors.js';
-
-/** Prefix of the LUD-12 comment that ties a pulled invoice to a request. */
-export const REQUEST_COMMENT_PREFIX = 'buho:req:';
 
 /** How long the payer waits for the requester's profile before using the address signed in the request. */
 export const PROFILE_LOOKUP_TIMEOUT_MS = 3_000;
@@ -106,14 +102,12 @@ function sameHostVerifyUrl(verifyUrl, callbackUrl) {
  * @param {{ fetchPayRequest: Function, requestInvoice: Function }} deps.lnurl
  *   nostr-core's `fetchPayRequest` and `requestLnurlInvoice`.
  * @param {() => number} [deps.now]  Milliseconds.
- * @param {() => string} [deps.randomReference]  12 hex chars for the LUD-12 comment.
  */
 export function createRequestService({
   getProfileAddress,
   fetchProfile,
   lnurl,
   now = () => Date.now(),
-  randomReference = () => bytesToHex(globalThis.crypto.getRandomValues(new Uint8Array(6))),
 } = {}) {
   for (const [name, dep] of Object.entries({ getProfileAddress, fetchProfile })) {
     if (typeof dep !== 'function') fail(DM_ERROR.INVALID_ARGUMENT, `${name} is required`);
@@ -186,23 +180,21 @@ export function createRequestService({
    * Validated before it is handed on: the amount lies within the address's
    * min/maxSendable, the invoice decodes, is mainnet, is for exactly
    * `amountSats` and is not yet expired. The LUD-21 verify URL comes along when
-   * it is `https:` on the callback's host. When the server allows a comment
-   * (LUD-12) it carries `buho:req:<reference>`.
+   * it is `https:` on the callback's host. No LUD-12 comment is sent: the
+   * requester's wallet would show it as the payment's message, and the
+   * request is matched by the payment itself (paymentConfirmation.js).
    *
    * @param {object} options
    * @param {string} options.lud16 Where to ask (`resolveRequesterAddress`).
    * @param {number} options.amountSats The requested amount, whole sats.
-   * @param {string} [options.reference] LUD-12 reference (default: random).
    * @returns {Promise<{ bolt11: string, verifyUrl: string | null }>} The BOLT-11 invoice and its LUD-21 verify URL.
    * @throws {DmError} INVALID_ARGUMENT, AMOUNT_OUT_OF_RANGE, INVOICE_FETCH_FAILED
    */
-  async function pullInvoice({ lud16, amountSats, reference = randomReference() } = {}) {
+  async function pullInvoice({ lud16, amountSats } = {}) {
     const payRequest = await loadPayRequest(lud16, amountSats, DM_ERROR.INVOICE_FETCH_FAILED);
     let response;
     try {
-      const comment = `${REQUEST_COMMENT_PREFIX}${reference}`;
-      const options = payRequest.commentAllowed >= comment.length ? { comment } : undefined;
-      response = await lnurl.requestInvoice(payRequest, amountSats * MSAT_PER_SAT, options);
+      response = await lnurl.requestInvoice(payRequest, amountSats * MSAT_PER_SAT);
     } catch (cause) {
       return fail(DM_ERROR.INVOICE_FETCH_FAILED, 'the Lightning address did not issue an invoice', { cause });
     }

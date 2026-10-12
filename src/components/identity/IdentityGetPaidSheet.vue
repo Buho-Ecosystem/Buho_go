@@ -291,6 +291,7 @@ import { getQrOptionsWithSize } from '../../utils/qrConfig.js';
 import { shareContent } from '../../utils/share.js';
 import { isLightningAddress } from '../../utils/addressUtils.js';
 import { missingAddressState } from '../../utils/profilePaymentAddress.js';
+import { getTxMessage } from '../../utils/txMessage.js';
 
 export default {
   name: 'IdentityGetPaidSheet',
@@ -707,7 +708,7 @@ export default {
     },
 
     incomingMemoFor(tx) {
-      return String(tx?.comment || tx?.description || '').trim();
+      return getTxMessage(tx);
     },
 
     async copy(value, which) {

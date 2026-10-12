@@ -199,3 +199,41 @@ export function payingWalletHint(wallet, destinationType, t, { hasAlternative = 
       return ''
   }
 }
+
+/**
+ * Why a payment cannot be made from any of the user's wallets, as one
+ * sentence for surfaces without a "Pay with" field (a chat request card).
+ * It names a wallet only when exactly one could take this kind of payment,
+ * so it never blames the wrong one.
+ * @param {ReturnType<typeof listPayingWallets>} list
+ * @param {(key: string, params?: object) => string} t vue-i18n translate
+ * @returns {string} '' when a wallet can pay
+ */
+export function payingBlockedText(list, t) {
+  const wallets = Array.isArray(list) ? list : []
+  if (wallets.length === 0) return t('You have no wallet to pay with.')
+  if (pickDefaultPayingWallet(wallets)?.usable) return ''
+  const short = wallets.filter((wallet) => wallet.reason === PAYING_REASON.INSUFFICIENT_BALANCE)
+  if (short.length === 1) return t('Not enough balance in {wallet}.', { wallet: short[0].name || t('Wallet') })
+  if (short.length > 1) return t('Not enough balance in your wallets.')
+  return wallets.length === 1
+    ? t("{wallet} can't pay this.", { wallet: wallets[0].name || t('Wallet') })
+    : t('None of your wallets can pay this.')
+}
+
+/**
+ * Whether a payment request can be paid now. The screen can open before the
+ * saved wallets have loaded (a slow start): until they have, an empty list
+ * says nothing about the user's wallets, so nothing is claimed.
+ * @param {object} input
+ * @param {boolean} input.hydrated the wallet store finished loading, or gave up
+ * @param {boolean} input.savedStateLoaded the saved wallets were read
+ * @param {ReturnType<typeof listPayingWallets>} input.wallets
+ * @param {(key: string, params?: object) => string} t vue-i18n translate
+ * @returns {{ loading: boolean, reason: string }} reason '' when a wallet can pay
+ */
+export function requestPayability({ hydrated, savedStateLoaded, wallets }, t) {
+  if (!hydrated) return { loading: true, reason: '' }
+  if (!savedStateLoaded) return { loading: false, reason: t('Your wallets could not be loaded. Close and reopen BuhoGO.') }
+  return { loading: false, reason: payingBlockedText(wallets, t) }
+}

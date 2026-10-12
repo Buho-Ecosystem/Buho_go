@@ -185,10 +185,26 @@ export default {
     // to the contact it was revealed for.
     '$route.params.id'() {
       this.addressRevealed = false
+      this.history = []
+    },
+    historyKey() {
+      if (this.entry) this.loadHistory()
     },
   },
 
   computed: {
+    /**
+     * What Between you is drawn from: this contact and the wallets that can
+     * list their payments. Wallets connect after the page may have opened (a
+     * cold start), and the page is reused across contacts: either reloads it.
+     */
+    historyKey() {
+      const ready = this.walletStore.wallets
+        .filter((wallet) => typeof this.walletStore.providers?.[wallet.id]?.getTransactions === 'function')
+        .map((wallet) => wallet.id)
+      return `${this.$route.params.id}|${ready.join(',')}`
+    },
+
     /** Live from the store, so an edit or a favorite toggle re-renders. */
     entry() {
       return this.addressBook.getEntryById(this.$route.params.id) || null
@@ -215,7 +231,9 @@ export default {
   },
 
   async created() {
-    await this.addressBook.initialize()
+    // The page can be the first one opened (a reload, a link): the
+    // transaction links Between you matches by are read here as well.
+    await Promise.all([this.addressBook.initialize(), this.txMetadata.initialize()])
     // Deep link to a contact that no longer exists (removed, or another
     // identity's list): back to the book rather than a blank page.
     if (!this.entry) {

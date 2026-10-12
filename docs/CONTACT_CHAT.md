@@ -226,7 +226,7 @@ store, clock) so they can be unit tested without network or Pinia.
   `new DmError(code, message?, { cause?, details? })` with `code` from the frozen
   `DM_ERROR` map (`INVALID_ARGUMENT`, `MESSAGE_TOO_LARGE`, `NO_IDENTITY`,
   `KEY_WIPED`, `NO_INBOX_RELAYS`, `NO_RELAY_ACCEPTED`, `RELAY_UNAVAILABLE`,
-  `AUTH_FAILED`, `TIMEOUT`, `INVALID_INVOICE`, `WALLET_CANNOT_PAY`,
+  `AUTH_FAILED`, `TIMEOUT`, `INVALID_INVOICE`,
   `SECRET_KEY_IN_TEXT`, `NO_PAYMENT_ADDRESS`, `PAYMENT_ADDRESS_UNREACHABLE`,
   `INVOICE_FETCH_FAILED`, `AMOUNT_OUT_OF_RANGE`); an unknown code throws a `TypeError`. `message` is
   developer text, never shown; `details` holds small non-secret facts (relay
@@ -421,7 +421,8 @@ the invoice does not exist until the payer taps Pay.
   sending is followed by new and old open requests alike. When the profile
   cannot be fetched or has no valid `lud16`, the `lud16` signed inside the
   request is used. It then pulls an invoice via LNURL-pay for exactly the
-  requested amount (LUD-12 comment `buho:req:<reference>` when allowed),
+  requested amount (no LUD-12 comment: the requester's wallet would show it
+  as the payment's message; the payment itself is matched, see below),
   validates it (decodes, mainnet, exact amount, not expired, within
   min/maxSendable) and hands it to the normal pipeline with "Pay with". The
   LUD-21 `verify` URL of the LNURL answer is kept when it is `https:` on the

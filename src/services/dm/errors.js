@@ -44,8 +44,6 @@ export const DM_ERROR = Object.freeze({
   INVALID_INVOICE: 'INVALID_INVOICE',
   /** The text contains an `nsec1...` or `ncryptsec1...` key, so it is never sent. */
   SECRET_KEY_IN_TEXT: 'SECRET_KEY_IN_TEXT',
-  /** The chosen wallet cannot pay Lightning invoices. */
-  WALLET_CANNOT_PAY: 'WALLET_CANNOT_PAY',
   /** The profile has no Lightning address, so there is nowhere to ask money to be sent. */
   NO_PAYMENT_ADDRESS: 'NO_PAYMENT_ADDRESS',
   /** The profile's Lightning address did not answer the LNURL-pay lookup, or answered nonsense. */

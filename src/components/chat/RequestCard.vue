@@ -20,7 +20,9 @@
 
   Honest states (nostrdesign.org: no silent failure):
     - disabledReason   Pay stays visible but is aria-disabled and says why
-                       inline ("Lightning is unavailable on Arkade").
+                       inline ("None of your wallets can pay this.").
+    - walletsLoading   the saved wallets are still loading: Pay waits
+                       (aria-disabled, aria-busy) and nothing is claimed yet.
     - untrusted        the sender is a stranger: danger styling, Pay is no
                        longer the filled primary action.
   The request carries no invoice: it is fetched when the payer taps Pay.
@@ -64,7 +66,7 @@
 
     <p v-if="showReason" :id="reasonId" class="request-card__reason" role="status">
       <Icon icon="tabler:alert-triangle" width="14" height="14" />
-      {{ reasonText }}
+      {{ disabledReason }}
     </p>
 
     <div v-if="state === 'pending' && !outgoing" class="request-card__actions">
@@ -77,6 +79,7 @@
         :class="untrusted ? 'request-btn--outline' : 'request-btn--pay'"
         :disabled="busy"
         :aria-disabled="payBlocked ? 'true' : undefined"
+        :aria-busy="walletsLoading ? 'true' : undefined"
         :aria-describedby="showReason ? reasonId : undefined"
         @click="onPay"
       >
@@ -149,11 +152,10 @@ export default {
     partnerName: { type: String, default: '' },
     /** When the request itself stops being open (its lifetime, not its invoice's), unix seconds. */
     validUntil: { type: Number, default: null },
-    /**
-     * Why the user cannot pay right now. Either the DM_ERROR code
-     * WALLET_CANNOT_PAY or ready, translated text. Empty = can pay.
-     */
+    /** Why the user cannot pay right now, translated. Empty = can pay. */
     disabledReason: { type: String, default: '' },
+    /** The saved wallets are still loading: Pay waits without a reason. */
+    walletsLoading: { type: Boolean, default: false },
     /**
      * Own request that is paid: did the user's own wallet show the money
      * (true), or is it only what the payer says (false: "{name} says it's paid")?
@@ -188,16 +190,10 @@ export default {
       return this.validUntil === null ? '' : formatWhen(this.validUntil, Date.now(), this.$i18n?.locale)
     },
     payBlocked() {
-      return !!this.disabledReason
-    },
-    /** The reason as a sentence: a known code is worded here, other text passes through. */
-    reasonText() {
-      return this.disabledReason === 'WALLET_CANNOT_PAY'
-        ? this.$t('This wallet cannot pay this request. Choose another wallet.')
-        : this.disabledReason
+      return this.walletsLoading || !!this.disabledReason
     },
     showReason() {
-      return this.state === 'pending' && !this.outgoing && this.payBlocked
+      return this.state === 'pending' && !this.outgoing && !!this.disabledReason
     },
     stateLine() {
       if (this.state === 'paid') {
