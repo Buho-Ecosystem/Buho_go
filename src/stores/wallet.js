@@ -340,7 +340,7 @@ export const useWalletStore = defineStore('wallet', {
       visible: false,
       title: '',
       reason: '',
-      reasonSource: null,        // 'upstream' | 'curated' | 'fallback'
+      reasonSource: null,        // 'upstream' | 'passthrough' | 'curated' | 'fallback'
       reasonAttribution: null,   // set when reasonSource === 'upstream'
       technical: null,
     },

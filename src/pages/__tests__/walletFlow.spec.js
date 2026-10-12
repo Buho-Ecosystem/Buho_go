@@ -7,6 +7,7 @@ import * as metadata from '../../utils/lnurlMetadata.js';
 import * as lnurlPay from '../../utils/lnurlPay.js';
 import * as payingWallets from '../../utils/payingWallets.js';
 import * as walletCapabilities from '../../utils/walletCapabilities.js';
+import * as errorOrigin from '../../utils/errorOrigin.js';
 
 // Run the production Options-API methods with controlled provider promises.
 function evaluate(file, dependencies = {}) {
@@ -91,6 +92,26 @@ test('only the invoice response can authorize a reusable payment link', async ()
       assert.equal(!!result.payLink, disposable === false);
     }
   }
+});
+
+test('an LNURL server\'s refusal is marked as its own; our fallback is not', async () => {
+  const fetchWith = (answers) => {
+    let call = 0;
+    const methods = component({
+      '../utils/errorOrigin.js': errorOrigin,
+      '../utils/lnurlPay.js': lnurlPay,
+      '../utils/lnurlHttp.js': { lnurlGetJson: async () => ({ ok: true, data: answers[call++] }) },
+      '../utils/lud23.js': { assertPaymentInput() {} },
+    }).methods;
+    return methods.fetchLNURLInvoice.call({ decodeLNURL: () => 'https://coffee.example/pay', walletStore: {} }, 'https://coffee.example/pay', 10).catch((error) => error);
+  };
+  const payRequest = { tag: 'payRequest', callback: 'https://coffee.example/cb', minSendable: 1000, maxSendable: 100000, metadata: '[]' };
+  const refused = await fetchWith([payRequest, { status: 'ERROR', reason: 'Amount is above the maximum' }]);
+  assert.deepEqual([refused.message, errorOrigin.isCounterpartyError(refused)], ['Amount is above the maximum', true]);
+  const closed = await fetchWith([{ status: 'ERROR', reason: 'This shop is closed' }]);
+  assert.equal(errorOrigin.isCounterpartyError(closed), true);
+  const garbled = await fetchWith([{ tag: 'withdrawRequest', reason: 'not a refusal' }]);
+  assert.deepEqual([garbled.message, errorOrigin.isCounterpartyError(garbled)], ['LNURL error', false]);
 });
 
 test('pending service sends retain payment identity without offering completed-payment actions', async () => {

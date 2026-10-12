@@ -226,7 +226,7 @@ export class LightningPaymentService {
 
       const data = response.data;
       if (!data || data.status === 'ERROR') {
-        throw counterpartyError(data?.reason, 'Failed to fetch Lightning Address data');
+        throw new Error(data?.reason || 'Failed to fetch Lightning Address data');
       }
       if (data.tag !== 'payRequest' || !data.callback) {
         throw new Error('Failed to fetch Lightning Address data');
@@ -281,7 +281,7 @@ export class LightningPaymentService {
       const data = response.data;
 
       if (!data || data.status === 'ERROR') {
-        throw counterpartyError(data?.reason, 'LNURL request failed');
+        throw new Error(data?.reason || 'LNURL request failed');
       }
 
       if (data.tag !== 'payRequest') {
