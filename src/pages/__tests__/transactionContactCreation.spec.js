@@ -98,7 +98,9 @@ test('closing the form while metadata initializes cannot change the captured tra
   const { contacts, metadata } = harness();
   const entry = await contacts.addEntry({ name: 'Lee', address: 'lee@example.com' });
   const gate = deferred();
-  metadata.initialize = () => gate.promise;
+  // The load lands late but does land: the store saves nothing before it.
+  const load = metadata.initialize;
+  metadata.initialize = async () => { await gate.promise; return load(); };
   const page = { creatingFromRoute: true, $route: { query: { transaction: 'first', wallet: 'A' } } };
   const pending = book.methods.handleEntrySaved.call(page, entry);
   page.$route.query = { transaction: 'second', wallet: 'B' };
