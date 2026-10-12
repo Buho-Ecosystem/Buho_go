@@ -223,7 +223,6 @@
 </template>
 
 <script>
-import { getCurrentInstance } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { copyToClipboard, useQuasar } from 'quasar'
 import { Icon } from '@iconify/vue'
@@ -251,10 +250,11 @@ import { containsSecretKey } from '../services/dm/protocol.js'
 import { contactChatRoute, contactPageRoute } from '../services/dm/routes.js'
 import { loadIncomingTransactions } from '../services/dm/incomingTransactions.js'
 import { normalizeTx } from '../services/txNormalizer.js'
+import { i18n } from '../boot/i18n'
 import { fiatRatesService } from '../utils/fiatRates.js'
 import { onAppVisibility } from '../utils/appVisibility.js'
 import { shareContent } from '../utils/share.js'
-import { knownFeeReserveSats, listPayingWallets, pickDefaultPayingWallet } from '../utils/payingWallets.js'
+import { knownFeeReserveSats, listPayingWallets, payingBlockedText, pickDefaultPayingWallet } from '../utils/payingWallets.js'
 
 const HEX_64 = /^[0-9a-f]{64}$/
 
@@ -271,8 +271,10 @@ export default {
   },
 
   setup() {
-    const { proxy } = getCurrentInstance()
-    const t = (key, params) => proxy.$t(key, params)
+    // The app's translator, not the instance's `$t`: that one only exists from
+    // beforeCreate to unmounted, and the thread's items are also computed
+    // outside that window.
+    const t = (key, params) => i18n.global.t(key, params)
     const $q = useQuasar()
     const route = useRoute()
     const router = useRouter()
@@ -327,8 +329,8 @@ export default {
     /** The currency a request can be typed in; '' while there is no rate (sats only then). */
     const requestFiatCode = () => (fiatToSats(1) === null ? '' : fiatCode())
 
-    /** The wallet "Pay with" starts with for a payment of `amountSats` over `destinationType`. */
-    const payingWalletFor = (amountSats, destinationType = 'lightning') => pickDefaultPayingWallet(listPayingWallets({
+    /** The user's wallets ranked for a payment of `amountSats` over `destinationType`. */
+    const payingWalletsFor = (amountSats, destinationType = 'lightning') => listPayingWallets({
       wallets: walletStore.wallets || [],
       activeWalletId: walletStore.activeWalletId,
       balances: walletStore.balances || {},
@@ -336,7 +338,23 @@ export default {
       destinationType,
       amountSats,
       feeReserve: knownFeeReserveSats(destinationType, null),
-    }))
+    })
+
+    /** The wallet "Pay with" starts with for a payment of `amountSats` over `destinationType`. */
+    const payingWalletFor = (amountSats, destinationType) => pickDefaultPayingWallet(payingWalletsFor(amountSats, destinationType))
+
+    /**
+     * Whether a request of `amountSats` can be paid now. The page can open
+     * before the saved wallets have loaded (a slow start): until they have, an
+     * empty list says nothing about the user's wallets.
+     */
+    const payability = (amountSats) => {
+      if (!walletStore.hydrated) return { loading: true, reason: '' }
+      if (!walletStore.savedStateLoaded) {
+        return { loading: false, reason: t('Your wallets could not be loaded. Close and reopen BuhoGO.') }
+      }
+      return { loading: false, reason: payingBlockedText(payingWalletsFor(amountSats), t) }
+    }
 
     const chat = useContactChat({
       partner,
@@ -347,6 +365,7 @@ export default {
       runtime,
       pay: usePayContact({ $q, $t: t, $router: router }),
       payingWalletFor,
+      payability,
       loadIncomingTransactions: () => loadIncomingTransactions({
         wallets: walletStore.wallets || [],
         getProvider: (id) => walletStore.providers?.[id],
