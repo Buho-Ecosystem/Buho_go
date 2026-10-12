@@ -249,10 +249,12 @@ export async function queryOneRelay(pool, url, filter, maxWait) {
   // (default well under our window) — a connected-but-slow relay
   // would answer [] and count as reached. Give it the full window.
   if (relay) relay.eoseTimeout = maxWait;
-  const started = Date.now();
+  // A monotonic clock: a wall-clock jump when the network returns must not
+  // turn a silent relay into one that answered.
+  const started = performance.now();
   const events = await pool.querySync([url], filter, { maxWait });
   if (!Array.isArray(events)) return null;
-  if (events.length === 0 && (relay?.connected === false || Date.now() - started >= maxWait)) return null;
+  if (events.length === 0 && (relay?.connected === false || performance.now() - started >= maxWait)) return null;
   return events;
 }
 
