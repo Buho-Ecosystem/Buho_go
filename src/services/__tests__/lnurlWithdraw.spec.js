@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { fetchWithdrawRequest, submitWithdrawCallback, safeWithdrawError } from '../lnurlWithdraw.js';
+import { isCounterpartyError } from '../../utils/errorOrigin.js';
 const metadata = { tag: 'withdrawRequest', k1: 'one-time', callback: 'https://card.example/callback?session=KeepCase', minWithdrawable: 1000, maxWithdrawable: 100000, defaultDescription: 'Bolt Card', pinLimit: 50000 };
 const get = async () => ({ ok: true, data: metadata });
 
@@ -46,6 +47,12 @@ test('PIN rejection and card blocking retain machine-readable codes', async () =
   for (const [reason, code] of [['Invalid PIN', 'INVALID_PIN'], ['Card blocked: invalid PIN', 'CARD_BLOCKED']]) {
     await assert.rejects(submitWithdrawCallback(metadata, 'lnbc-sale', '1234', { get: async () => ({ ok: true, data: { status: 'ERROR', reason } }) }), { code });
   }
+});
+test('a service\'s own reason is marked as theirs; our fallback is not', async () => {
+  const rejectedWith = async (data) => submitWithdrawCallback(metadata, 'lnbc-sale', '1234', { get: async () => ({ ok: true, data }) }).catch((error) => error);
+  assert.equal(isCounterpartyError(await rejectedWith({ status: 'ERROR', reason: 'Daily limit reached' })), true);
+  const silent = await rejectedWith({ status: 'ERROR' });
+  assert.deepEqual([silent.message, isCounterpartyError(silent)], ['Withdraw service rejected the request', false]);
 });
 test('aborted sessions and insecure PIN callbacks never submit', async () => {
   const controller = new AbortController(); controller.abort();

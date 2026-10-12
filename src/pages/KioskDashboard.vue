@@ -191,6 +191,7 @@ import WithdrawAuthorization from '../components/WithdrawAuthorization.vue'
 import { useKioskCardPayment } from '../composables/useKioskCardPayment.js'
 import { createPaymentMonitor, PaymentStatus } from '../utils/paymentMonitor.js'
 import { safeWithdrawError } from '../services/lnurlWithdraw.js'
+import { keepOrigin } from '../utils/errorOrigin.js'
 import { fiatSymbol as fiatSymbolFor } from 'src/utils/fiatCurrencies'
 
 export default defineComponent({
@@ -232,7 +233,7 @@ export default defineComponent({
     const card = useKioskCardPayment({
       sale, t,
       authorize: (...args) => cardAuthorization.value.submit(...args),
-      onError: error => store.showPaymentError(new Error(t(safeWithdrawError(error.message))), { context: 'kiosk', t }),
+      onError: error => store.showPaymentError(keepOrigin(error, new Error(t(safeWithdrawError(error.message)))), { context: 'kiosk', t }),
     })
 
     let successTimer = null

@@ -340,7 +340,7 @@ export const useWalletStore = defineStore('wallet', {
       visible: false,
       title: '',
       reason: '',
-      reasonSource: null,        // 'upstream' | 'curated' | 'fallback'
+      reasonSource: null,        // 'upstream' | 'passthrough' | 'curated' | 'fallback'
       reasonAttribution: null,   // set when reasonSource === 'upstream'
       technical: null,
     },
@@ -2576,7 +2576,7 @@ export const useWalletStore = defineStore('wallet', {
         // Check for duplicate
         const existing = this.wallets.find((w) => w.nwcUrl === walletData.nwcUrl);
         if (existing) {
-          throw new Error('This wallet is already connected');
+          throw codedError('WALLET_ALREADY_CONNECTED', 'This wallet is already connected');
         }
 
         // Parse NWC URL to get relay info and lightning address
@@ -2733,7 +2733,7 @@ export const useWalletStore = defineStore('wallet', {
                  w.connectionData?.walletId === validation.walletInfo.id
         );
         if (existing) {
-          throw new Error('This LNBits wallet is already connected');
+          throw codedError('WALLET_ALREADY_CONNECTED', 'This LNBits wallet is already connected');
         }
 
         // Create wallet object

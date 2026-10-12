@@ -36,8 +36,9 @@
             * Curated / fallback prose: BuhoGO is speaking, render plain.
             * Upstream prose: render in a quoted block with an attribution
               label so the user can tell the message is from a third
-              party (LUD-06 reason field, NWC error, etc.) and decide
-              how much weight to give it.
+              party (an LNURL server's LUD-06 reason, see errorOrigin.js)
+              and decide how much weight to give it. Text of unknown
+              origin ('passthrough') renders plain, unattributed.
         -->
         <div
           v-if="isUpstreamReason"

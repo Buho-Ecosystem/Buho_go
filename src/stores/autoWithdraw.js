@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { useTransactionMetadataStore } from './transactionMetadata'
 import { WALLET_TYPES } from '../providers/WalletFactory'
 import { lnurlGetJson } from '../utils/lnurlHttp.js'
+import { counterpartyError } from '../utils/errorOrigin.js'
 import { migratePocketConfigKeys } from '../utils/autoWithdrawKeys.js'
 
 const STORAGE_KEY = 'buhoGO_auto_withdraw'
@@ -366,7 +367,7 @@ export const useAutoWithdrawStore = defineStore('autoWithdraw', {
 
       const invoiceData = invoiceResponse.data || {}
       if (invoiceData.status === 'ERROR') {
-        throw new Error(invoiceData.reason || 'Invoice request failed')
+        throw counterpartyError(invoiceData.reason, 'Invoice request failed')
       }
 
       // LUD-09 note: any `successAction` on this response is intentionally

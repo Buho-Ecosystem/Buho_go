@@ -1,5 +1,6 @@
 import { lnurlToUrl } from '../utils/addressUtils.js';
 import { lnurlGetJson } from '../utils/lnurlHttp.js';
+import { counterpartyError } from '../utils/errorOrigin.js';
 import { parseFastWithdrawRequest, withdrawInfo } from '../utils/lnurlWithdraw.js';
 
 /** Shared metadata path for wallet redemption and kiosk card acceptance. */
@@ -11,7 +12,11 @@ export async function fetchLnurlRequest(input, { signal, get = lnurlGetJson } = 
   const response = await get(url, { timeoutMs: 10000, ...(signal ? { signal } : {}) });
   if (!response.ok) throw new Error(`Server returned ${response.status}`);
   if (!response.data) throw new Error('The server did not respond or the link is no longer valid');
-  if (response.data.status === 'ERROR') throw new Error(safeWithdrawError(response.data.reason || 'This link is no longer valid'));
+  if (response.data.status === 'ERROR') {
+    const error = counterpartyError(response.data.reason, 'This link is no longer valid');
+    error.message = safeWithdrawError(error.message);
+    throw error;
+  }
   return { url, data: response.data };
 }
 
@@ -63,8 +68,9 @@ export async function submitWithdrawCallback(request, bolt11, pin = null, { sign
   if (!response.ok) throw new Error(`Withdraw callback failed: ${response.status}`);
   const data = response.data || {};
   if (data.status === 'ERROR') {
-    const reason = safeWithdrawError(data.reason || 'Withdraw service rejected the request');
-    const error = new Error(reason);
+    const error = counterpartyError(data.reason, 'Withdraw service rejected the request');
+    error.message = safeWithdrawError(error.message);
+    const reason = error.message;
     if (reason.trim() === 'Invalid PIN') error.code = 'INVALID_PIN';
     else if (/card blocked/i.test(reason) && /pin/i.test(reason)) error.code = 'CARD_BLOCKED';
     throw error;

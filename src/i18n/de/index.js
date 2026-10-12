@@ -1706,6 +1706,7 @@ export default {
   "Invalid LNbits credentials": "Ungültige LNbits-Zugangsdaten",
   "Failed to connect to LNbits": "Verbindung zu LNbits fehlgeschlagen",
   "This LNbits wallet is already connected": "Dieses LNbits Wallet ist bereits verbunden",
+  "This wallet is already connected.": "Dieses Wallet ist bereits verbunden.",
   "https://your.lnbits.server": "https://dein.lnbits.server",
   "Connecting...": "Verbinde...",
   "Scan QR Code": "QR-Code scannen",

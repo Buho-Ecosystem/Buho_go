@@ -16,6 +16,7 @@ import { bech32 } from 'bech32';
 import { parseSuccessAction } from './successAction.js';
 import { isStoreablePayLink } from './lnurlPay.js';
 import { lnurlGetJson } from './lnurlHttp.js';
+import { counterpartyError } from './errorOrigin.js';
 import {
   isLightningAddress as isLightningAddressShared,
   isLightningInvoice as isLightningInvoiceShared,
@@ -440,7 +441,7 @@ export class LightningPaymentService {
     }
     const data = response.data || {};
     if (data.status === 'ERROR') {
-      throw new Error(data.reason || 'Lightning address payment request failed');
+      throw counterpartyError(data.reason, 'Lightning address payment request failed');
     }
     if (!data.pr) {
       throw new Error('No payment request received from Lightning address');
@@ -494,7 +495,7 @@ export class LightningPaymentService {
     const data = response.data || {};
 
     if (data.status === 'ERROR') {
-      throw new Error(data.reason || 'LNURL payment request failed');
+      throw counterpartyError(data.reason, 'LNURL payment request failed');
     }
 
     if (!data.pr) {

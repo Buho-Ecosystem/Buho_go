@@ -743,6 +743,7 @@ import {parseSuccessAction, resolveSuccessAction} from '../utils/successAction.j
 import {validateVerifyUrl, pollVerify} from '../utils/lnurlVerify.js';
 import {lnurlFetch, lnurlGetJson} from '../utils/lnurlHttp.js';
 import {classifyTransportFailure} from '../utils/userErrors.js';
+import { counterpartyError, keepOrigin } from '../utils/errorOrigin.js';
 import {buildLnurlPayCallbackUrl, isStoreablePayLink} from '../utils/lnurlPay.js';
 import {parsePayRequestMetadata, serviceTitle, normalizeServiceImage, serviceIdentity} from '../utils/lnurlMetadata.js';
 import {isLightningInvoice as isLightningInvoiceShared, isLightningAddress as isLightningAddressShared, stripWrapperScheme, nativeRailsFromBip21, canonicalLnurl, lnurlDomain} from '../utils/addressUtils.js';
@@ -3813,6 +3814,7 @@ export default {
         // Carry the code: translateErrorCode keys on it (ARKADE_LN_UNAVAILABLE
         // and friends), and codes never contain PINs.
         if (error?.code) safeError.code = error.code;
+        keepOrigin(error, safeError);
 
         console.error('Withdraw failed:', safeMessage);
         this.lnurlWithdrawStatus = 'error';
@@ -5822,7 +5824,7 @@ export default {
       if (!response.ok) throw new Error('Failed to fetch LNURL');
 
       const data = response.data;
-      if (!data || data.tag !== 'payRequest' || !data.callback || data.status === 'ERROR') throw new Error(data?.reason || 'LNURL error');
+      if (!data || data.tag !== 'payRequest' || !data.callback || data.status === 'ERROR') throw counterpartyError(data?.status === 'ERROR' && data.reason, 'LNURL error');
 
       // Standard sat sends are bounds-checked here; a currency (Option-A) send
       // is bounded by the provider in its own units (validated in the sheet).
@@ -5839,7 +5841,7 @@ export default {
       if (!invoiceResponse.ok) throw new Error('Failed to get invoice');
 
       const invoiceData = invoiceResponse.data;
-      if (!invoiceData || invoiceData.status === 'ERROR') throw new Error(invoiceData?.reason || 'Invoice error');
+      if (!invoiceData || invoiceData.status === 'ERROR') throw counterpartyError(invoiceData?.reason, 'Invoice error');
 
       // Return the invoice together with any LUD-09 successAction (recipient's
       // post-payment message) and LUD-21 `verify` URL the callback included.
@@ -6066,7 +6068,7 @@ export default {
 
       const data = response.data;
       if (!data || data.tag !== 'payRequest' || !data.callback || data.status === 'ERROR') {
-        throw new Error(data?.reason || 'Lightning address error');
+        throw counterpartyError(data?.status === 'ERROR' && data.reason, 'Lightning address error');
       }
 
       // Standard sat sends are bounds-checked here; a currency (Option-A) send
@@ -6094,7 +6096,7 @@ export default {
 
       const invoiceData = invoiceResponse.data;
       if (!invoiceData || invoiceData.status === 'ERROR') {
-        throw new Error(invoiceData?.reason || 'Invoice generation failed');
+        throw counterpartyError(invoiceData?.reason, 'Invoice generation failed');
       }
 
       // Return the invoice together with any LUD-09 successAction (recipient's
