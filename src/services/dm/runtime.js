@@ -687,8 +687,6 @@ export function createChatRuntime(deps = {}) {
     return requests.pullInvoice({
       lud16: await requestAddress(sender, message.id),
       amountSats: message.request.amountSats,
-      // Ties the invoice to the request in the requester's LNURL log (LUD-12).
-      reference: message.id.slice(0, 12),
     });
   }
 

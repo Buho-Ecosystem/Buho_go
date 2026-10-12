@@ -18,6 +18,12 @@
  *     way from elsewhere. Rendering either one tells the user nothing
  *     while looking exactly like it told them something.
  *
+ *   - *Machine text* only looks like text: the request reference older
+ *     BuhoGO builds sent as the LUD-12 comment of a chat payment
+ *     (`buho:req:` + 12 hex), and a bare description hash that a provider
+ *     can report in place of a description. It is hidden like a
+ *     placeholder.
+ *
  *   - A *message* is what someone actually attached to the payment: the
  *     payer's LUD-12 comment when the rails carried one, otherwise the
  *     invoice description. Comments outrank descriptions because a
@@ -44,10 +50,20 @@ const PLACEHOLDER_DESCRIPTIONS = new Set([
   'lightning transaction'
 ]);
 
+/** Strings no person wrote that still reach the message fields (see the header). */
+const MACHINE_TEXT = [
+  /^buho:req:[0-9a-f]{12}$/i,
+  /^[0-9a-f]{64}$/i,
+];
+
+function isMachineText(text) {
+  return MACHINE_TEXT.some((pattern) => pattern.test(text));
+}
+
 /**
  * Does this description carry no information for the user?
  *
- * True for empty text and for the defaults above. Callers can therefore
+ * True for empty text, the defaults above and machine text. Callers can therefore
  * treat "nothing was written" and "a placeholder was written" the same
  * way, which is the whole point: to the reader they are identical.
  *
@@ -57,7 +73,7 @@ const PLACEHOLDER_DESCRIPTIONS = new Set([
 export function isPlaceholderDescription(value) {
   const text = String(value ?? '').trim();
   if (!text) return true;
-  return PLACEHOLDER_DESCRIPTIONS.has(text.toLowerCase());
+  return PLACEHOLDER_DESCRIPTIONS.has(text.toLowerCase()) || isMachineText(text);
 }
 
 /**
@@ -88,7 +104,7 @@ export function getTxDescription(tx) {
 export function getTxMessage(tx) {
   if (!tx) return '';
   const comment = String(tx.comment || '').trim();
-  if (comment) return comment;
+  if (comment && !isMachineText(comment)) return comment;
   return getTxDescription(tx);
 }
 

@@ -109,5 +109,23 @@ test('nothing is ever invented', () => {
   assert.equal(getTxMessage({}), '')
 })
 
+test('the request reference older builds sent as a comment is not a message', () => {
+  const paid = { comment: 'buho:req:0a1b2c3d4e5f', description: 'Pizza for Anna' }
+  assert.equal(getTxMessage(paid), 'Pizza for Anna', 'the description shows instead')
+  assert.equal(getTxMessage({ comment: 'buho:req:0a1b2c3d4e5f' }), '')
+  assert.equal(getTxMessage({ description: 'buho:req:0a1b2c3d4e5f' }), '', 'on Spark the comment arrives as the description')
+  assert.equal(isPlaceholderDescription('buho:req:0a1b2c3d4e5f'), true)
+})
+
+test('a bare description hash is not a message', () => {
+  assert.equal(getTxMessage({ description: 'ab'.repeat(32) }), '')
+  assert.equal(getTxMessage({ comment: 'ab'.repeat(32), description: 'Rent' }), 'Rent')
+})
+
+test('text that merely mentions a request is still a message', () => {
+  assert.equal(getTxMessage({ comment: 'buho:req: thanks!' }), 'buho:req: thanks!')
+  assert.equal(getTxMessage({ comment: 'Paid buho:req:0a1b2c3d4e5f' }), 'Paid buho:req:0a1b2c3d4e5f')
+})
+
 console.log(`\n  ${passed} passed, ${failed} failed`)
 if (failed > 0) process.exit(1)
