@@ -17,6 +17,10 @@
  *                never containing reactions; outgoing ones carry `delivery`
  *     reactions  { [targetId]: { [senderPubkey]: { emoji, createdAt, id } } }
  *   blocked      pubkeys whose messages are dropped
+ *   blockChanges block / unblock changes made here and not yet saved to the
+ *                person's NIP-51 mute list: [{ op: 'block' | 'unblock', pubkey }]
+ *                (services/dm/muteList.js); a record from before the list
+ *                sync starts with its blocks in it, so they are published
  *   syncCursor   unix seconds of the last completed inbox sync, or null
  *   outbox       items waiting to be (re)sent, see `enqueueOutbox`
  *   inboxRelays  the inbox relay resolver's `snapshot()`, or null
@@ -173,7 +177,7 @@ function emptyThread() {
 
 function emptyState() {
   return {
-    threads: {}, blocked: [], syncCursor: null, outbox: [], inboxRelays: null, settlements: {}, handledWraps: {},
+    threads: {}, blocked: [], blockChanges: [], syncCursor: null, outbox: [], inboxRelays: null, settlements: {}, handledWraps: {},
     signerAppMessages: false,
     ownPayments: {},
     // Not persisted: why received messages wait for the signer app (a DmError code), or null.
@@ -369,6 +373,11 @@ function restoreState(raw, me) {
   }
 
   state.blocked = [...new Set((Array.isArray(raw.blocked) ? raw.blocked : []).map(hexKey).filter(Boolean))]
+  state.blockChanges = Array.isArray(raw.blockChanges)
+    ? raw.blockChanges
+      .filter(change => isPlainObject(change) && (change.op === 'block' || change.op === 'unblock') && hexKey(change.pubkey))
+      .map(change => ({ op: change.op, pubkey: hexKey(change.pubkey) }))
+    : state.blocked.map(pubkey => ({ op: 'block', pubkey }))
   state.syncCursor = isCount(raw.syncCursor) ? raw.syncCursor : null
   state.inboxRelays = isPlainObject(raw.inboxRelays) ? raw.inboxRelays : null
   if (isPlainObject(raw.settlements)) {
@@ -483,6 +492,9 @@ export const useMessagesStore = defineStore('messages', {
     settlement: state => requestId => state.settlements[requestId] ?? null,
 
     isBlocked: state => pubkey => state.blocked.includes(hexKey(pubkey)),
+
+    /** Block changes not yet saved to the mute list, oldest first (copies). */
+    pendingBlockChanges: state => state.blockChanges.map(change => ({ ...change })),
 
     /** Reactions on one message: [{ emoji, count, mine, senders }], most used first. */
     reactionsFor: state => (partner, targetId) => {
@@ -604,6 +616,7 @@ export const useMessagesStore = defineStore('messages', {
         version: STATE_VERSION,
         threads: this.threads,
         blocked: this.blocked,
+        blockChanges: this.blockChanges,
         syncCursor: this.syncCursor,
         outbox: this.outbox,
         inboxRelays: this.inboxRelays,
@@ -817,20 +830,62 @@ export const useMessagesStore = defineStore('messages', {
     block(pubkey) {
       const key = hexKey(pubkey)
       if (!this.scope || !key || key === this.scope || this.blocked.includes(key)) return false
-      this.blocked.push(key)
-      const thread = this.threads[key]
-      if (thread) thread.unread = 0
+      this._setBlocked(key, true)
+      this._recordBlockChange('block', key)
       this._markDirty()
       return true
     },
 
     unblock(pubkey) {
       const key = hexKey(pubkey)
-      const i = this.scope && key ? this.blocked.indexOf(key) : -1
-      if (i === -1) return false
-      this.blocked.splice(i, 1)
+      if (!this.scope || !key || !this.blocked.includes(key)) return false
+      this._setBlocked(key, false)
+      this._recordBlockChange('unblock', key)
       this._markDirty()
       return true
+    },
+
+    /** The mute list saved these changes; a later change of the same key stays pending. */
+    settleBlockChanges(changes) {
+      if (!this.scope) return
+      const saved = new Set(changes.map(change => `${change.op}:${change.pubkey}`))
+      this.blockChanges = this.blockChanges.filter(change => !saved.has(`${change.op}:${change.pubkey}`))
+      this._markDirty()
+    },
+
+    /**
+     * The keys the mute list blocks. When the whole list could be read
+     * (`complete`) it is the truth, with the changes not yet saved on top;
+     * otherwise its keys only add blocks, so nothing unseen gets unblocked.
+     */
+    adoptBlockList(keys, { complete }) {
+      if (!this.scope) return
+      const next = new Set(complete ? keys : [...this.blocked, ...keys])
+      for (const { op, pubkey } of this.blockChanges) {
+        if (op === 'block') next.add(pubkey)
+        else next.delete(pubkey)
+      }
+      next.delete(this.scope)
+      const changed = next.size !== this.blocked.length || this.blocked.some(key => !next.has(key))
+      if (!changed) return
+      for (const key of next) if (!this.blocked.includes(key)) this._setBlocked(key, true)
+      for (const key of [...this.blocked]) if (!next.has(key)) this._setBlocked(key, false)
+      this._markDirty()
+    },
+
+    _setBlocked(key, blocked) {
+      if (blocked) {
+        this.blocked.push(key)
+        const thread = this.threads[key]
+        if (thread) thread.unread = 0
+      } else {
+        this.blocked.splice(this.blocked.indexOf(key), 1)
+      }
+    },
+
+    /** Only the latest change per key matters: it is what the list must say. */
+    _recordBlockChange(op, pubkey) {
+      this.blockChanges = [...this.blockChanges.filter(change => change.pubkey !== pubkey), { op, pubkey }]
     },
 
     mute(partner, muted = true) {

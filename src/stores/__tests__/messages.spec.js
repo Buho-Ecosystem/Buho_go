@@ -473,6 +473,49 @@ test('pendingRequestsFrom lists only open incoming requests', async () => {
 
 // ----- blocking, lists -----------------------------------------------------
 
+test('block changes: only the latest change per key is kept until the mute list saves it', async () => {
+  const store = await scoped()
+  store.block(ALICE)
+  store.block(BOB)
+  store.unblock(ALICE)
+  assert.deepEqual(store.pendingBlockChanges, [{ op: 'block', pubkey: BOB }, { op: 'unblock', pubkey: ALICE }])
+  // Saved, while Bob was unblocked meanwhile: that newer change stays.
+  const saved = store.pendingBlockChanges
+  store.unblock(BOB)
+  store.settleBlockChanges(saved)
+  assert.deepEqual(store.pendingBlockChanges, [{ op: 'unblock', pubkey: BOB }])
+})
+
+test('block list: a complete list is the truth with unsaved changes on top; an incomplete one only adds blocks', async () => {
+  const CAROL = hex('c')
+  const store = await scoped()
+  store.ingest(msg(CAROL))
+  store.block(ALICE)
+  store.settleBlockChanges(store.pendingBlockChanges)
+  store.block(BOB) // not saved yet
+  store.adoptBlockList([CAROL, ME], { complete: true })
+  assert.deepEqual([...store.blocked].sort(), [BOB, CAROL].sort(), 'Alice was unblocked elsewhere; Bob waits to be saved; never me')
+  assert.equal(store.unreadFor(CAROL), 0, 'a key blocked elsewhere lights no badge')
+  store.adoptBlockList([], { complete: false })
+  assert.deepEqual([...store.blocked].sort(), [BOB, CAROL].sort(), 'an unreadable list unblocks nobody')
+  store.adoptBlockList([ALICE], { complete: false })
+  assert.equal(store.isBlocked(ALICE), true)
+})
+
+test('block list: a record from before the sync publishes its blocks first', async () => {
+  await storage.saveChatState(ME, { version: STATE_VERSION, threads: {}, blocked: [BOB] })
+  const store = freshStore()
+  await store.setScope(ME)
+  assert.deepEqual(store.pendingBlockChanges, [{ op: 'block', pubkey: BOB }])
+  store.settleBlockChanges(store.pendingBlockChanges)
+  await store.flush()
+  assert.deepEqual((await storage.loadChatState(ME)).blockChanges, [])
+  const again = freshStore()
+  await again.setScope(ME)
+  assert.deepEqual(again.pendingBlockChanges, [], 'once saved, never seeded again')
+  assert.equal(again.isBlocked(BOB), true)
+})
+
 test('blocked senders are dropped, unblocking restores', async () => {
   const store = await scoped()
   store.ingest(msg(ALICE))

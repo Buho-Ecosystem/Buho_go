@@ -64,6 +64,8 @@ const facade = Object.freeze({
   turnOnMessages: forward('turnOnMessages'),
   /** Signer-app identities: ask the signer app again after it refused or was away. */
   retrySigner: () => current.value?.retrySigner(),
+  /** After a block or unblock: save it to the person's mute list. Best effort, never rejects. */
+  syncBlockList: () => current.value?.syncBlockList(),
 
   requestState: requestId => (current.value ? current.value.requestState(requestId) : null),
   requestSettlement: requestId => (current.value ? current.value.requestSettlement(requestId) : null),
