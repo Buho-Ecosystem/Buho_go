@@ -491,17 +491,21 @@ on screen.
 - Per-sender rate limit after unwrap; size limits before unwrap.
 - A pasted `nsec` in the composer blocks sending.
 
-## 11. Upstream (`nostr-core`) gaps
+## 11. Upstream (`nostr-core`)
 
-| Issue | Local workaround |
+nostr-core 1.0.5 ships the fixes for #72 to #75, but the chat keeps its own
+code for each. The upstream helpers take a raw secret key or one AUTH key for
+every connection, while the chat signs through a signer that may be another
+app and authenticates each connection role with its own key. Swapping one in
+needs every point below covered.
+
+| Upstream (1.0.5) | Why the chat keeps its own code |
 |---|---|
-| [#72](https://github.com/nostr-core-org/nostr-core/issues/72) AUTH: `auth-required` kills subscriptions/publishes, no retry | `transport.js` |
-| [#73](https://github.com/nostr-core-org/nostr-core/issues/73) `unwrap` trusts a forged rumor id | `openWrap.js` recomputes the id |
-| [#74](https://github.com/nostr-core-org/nostr-core/issues/74) nip17 helpers: no self copy / multi-recipient / kind 7 | `giftWrap.js` + `openWrap.js` on nip59 primitives |
-| [#75](https://github.com/nostr-core-org/nostr-core/issues/75) per-relay publish results, NIP-01 reason parser | `transport.js` + `errors.js` |
-| NIP-46 `connect` cannot send requested permissions (`nip44_encrypt,nip44_decrypt,sign_event:13,sign_event:22242`) | none: the opt-in notice asks the person to always allow |
-
-Replace the workaround when the upstream fix ships.
+| [#72](https://github.com/nostr-core-org/nostr-core/issues/72) `authSigner` retries `auth-required` after AUTH | One key for every connection (the chat uses the identity on reads, a throwaway key on writes); misses the `ERROR: auth-required:` that damus and nostr.net send; no cap on challenges (a signer app would ask for each one); a 10 s signer timeout against the chat's 30 s; failures lose their `DmError` code. Never set `authSigner` on the transport's relays while `onauth` is set: both would retry. `transport.js` |
+| [#73](https://github.com/nostr-core-org/nostr-core/issues/73) `unwrap` rejects a forged rumor id | Needs the raw key and throws one generic error; the chat decrypts through the signer and needs a reason per failure. `openWrap.js` |
+| [#74](https://github.com/nostr-core-org/nostr-core/issues/74) `createMessage` / `unwrapMessage` (multi-recipient, self copy, kinds 15 and 7) | Raw key only, and it sets its own `created_at` and `p` tags over the chat's templates. `giftWrap.js` + `openWrap.js` on the nip59 primitives |
+| [#75](https://github.com/nostr-core-org/nostr-core/issues/75) `publishDetailed`, `parseRelayReason` | The parser is case-sensitive, ignores a bare `duplicate` and nested reasons, and throws on a missing reason (so `publishDetailed` can reject on `OK true` without one); no first-accept, error codes, retries or per-role sockets. `transport.js` + `errors.js` |
+| [#83](https://github.com/nostr-core-org/nostr-core/issues/83) NIP-46 `connect` cannot send requested permissions (`nip44_encrypt,nip44_decrypt,sign_event:13,sign_event:22242,sign_event:10050`) | Not in 1.0.5 ([#86](https://github.com/nostr-core-org/nostr-core/pull/86) is open). Until it ships, the opt-in notice asks the person to always allow. |
 
 ## 12. Testing
 
@@ -525,9 +529,6 @@ Replace the workaround when the upstream fix ships.
   late payment to an address outside the app is verified by the ledger only.
 - Muted 12px text (`--text-muted`, about 3.1 to 3.8:1) is an app-wide token,
   below WCAG AA for small text.
-- Android cold start: a notification tap after the process was killed probably
-  opens the start screen (the plugin only handles `onNewIntent`); verify on a
-  device, fix natively if confirmed.
 - relay.damus.io and relay.nostr.net AUTH was broken server-side on
   2026-10-10; add them back to `DM_INBOX_RELAYS` once fixed.
 - A mute list whose private part is NIP-04 (older apps) is read for its
@@ -535,10 +536,9 @@ Replace the workaround when the upstream fix ships.
   the chat signer.
 - A thread the user started with a stranger stays under "Not in your
   contacts" (other clients count a chat you wrote to as known).
-- Replace the local workarounds when nostr-core #72 to #75 ship (section 11).
-- Signer apps (section 5a): ask nostr-core for requested permissions in `connect` (the
-  chat needs `nip44_encrypt`, `nip44_decrypt`, `sign_event:13`,
-  `sign_event:22242` and `sign_event:10050`); nostr-core rejects a request
-  whose answer is `auth_url` and forgets it, so the answer a signer sends
-  after approval is lost (NIP-46 says keep waiting on the same id); check on
-  a device with nsec.app and Amber.
+- Signer apps (section 5a, issue #344), once nostr-core ships
+  [#86](https://github.com/nostr-core-org/nostr-core/pull/86) (planned for
+  1.0.6): request the chat's permissions at `connect` (section 11), and open a NIP-46
+  `auth_url` through `NostrConnect.onauthurl` (in nostr-core since 1.0.5)
+  instead of treating it as a refusal. Check on a device with nsec.app and
+  Amber.

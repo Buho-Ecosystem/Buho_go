@@ -1,9 +1,10 @@
 /**
  * Seal and gift wrap one rumor for several recipients and for ourselves.
  *
- * `nostr-core`'s NIP-17 helpers wrap one message for one recipient and offer no
- * self copy (upstream issue #74, docs/CONTACT_CHAT.md section 11), so this
- * module builds on the NIP-59 primitives. A sent message must also appear in
+ * `nostr-core`'s NIP-17 `createMessage` (1.0.5) seals with a raw secret key,
+ * while the chat signs through a signer that may be another app
+ * (docs/CONTACT_CHAT.md section 11), so this module builds on the NIP-59
+ * primitives. A sent message must also appear in
  * our own history on every device, hence the self copy: the same rumor
  * (one id) wrapped to our own pubkey.
  *

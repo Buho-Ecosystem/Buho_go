@@ -4,8 +4,10 @@
  * Services never import i18n (docs/CONTACT_CHAT.md section 3), so a failure is
  * a `DmError` with a stable machine code and the UI chooses the words. The
  * second half reads NIP-01 relay replies (`OK false "blocked: ..."`,
- * `CLOSED "auth-required: ..."`) into data the transport can branch on, which
- * `nostr-core` does not offer yet (upstream issue #75, section 11).
+ * `CLOSED "auth-required: ..."`) into data the transport can branch on.
+ * nostr-core's `parseRelayReason` (1.0.5) is stricter: case-sensitive, no bare
+ * keyword, no nested `ERROR: auth-required:`, and it throws on a missing
+ * reason, so this parser stays (section 11).
  *
  * Pure module: no I/O, no state, nothing logged.
  */
