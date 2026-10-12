@@ -9,6 +9,7 @@
  *   - amountless invoices and unknown balances never read as insufficient
  *   - the default pick
  *   - the shared fee reserve and its zero-fee / known-fee variant
+ *   - the one-sentence reason when no wallet can pay
  */
 
 import assert from 'node:assert/strict'
@@ -23,6 +24,7 @@ import {
   pickDefaultPayingWallet,
   payingWalletReasonText,
   payingWalletHint,
+  payingBlockedText,
 } from '../payingWallets.js'
 
 const WALLETS = [
@@ -348,4 +350,21 @@ test('the banner hint keeps the shared switch words for rail problems', () => {
     'Not enough balance in Wallet.')
   assert.equal(payingWalletHint({ name: 'Alby', reason: null }, 'lightning_invoice', t), '')
   assert.equal(payingWalletHint(null, 'lightning_invoice', t), '')
+})
+
+test('blocked text: empty when a wallet can pay, else the one sentence that is true', () => {
+  const only = (ids, overrides = {}) => list({ wallets: WALLETS.filter((w) => ids.includes(w.id)), ...overrides })
+  const short = { amountSats: 60_000 }
+
+  assert.equal(payingBlockedText(list({ amountSats: 1_000 }), t), '')
+  assert.equal(payingBlockedText(only(['arkade', 'nwc']), t), '', 'another wallet can pay')
+  assert.equal(payingBlockedText([], t), 'You have no wallet to pay with.')
+  assert.equal(payingBlockedText(null, t), 'You have no wallet to pay with.')
+  assert.equal(payingBlockedText(only(['nwc'], short), t), 'Not enough balance in Alby Hub.')
+  assert.equal(payingBlockedText(only(['nwc', 'lnbits'], short), t), 'Not enough balance in your wallets.')
+  // The only wallet that takes this rail is named; the one that never could is not blamed.
+  assert.equal(payingBlockedText(only(['nwc', 'arkade'], short), t), 'Not enough balance in Alby Hub.')
+  assert.equal(payingBlockedText(only(['arkade']), t), "Arkade can't pay this.")
+  assert.equal(payingBlockedText(listPayingWallets({ wallets: [{ id: 'a', name: '', type: 'arkade' }] }), t), "Wallet can't pay this.")
+  assert.equal(payingBlockedText(only(['arkade', 'nwc'], { destinationType: 'spark_address' }), t), 'None of your wallets can pay this.')
 })

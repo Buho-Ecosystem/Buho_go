@@ -550,6 +550,13 @@ try {
     await snap(alice, '08-unknown-sender');
   });
 
+  await step('a request none of Alice\'s wallets can cover says so, and Pay waits', async () => {
+    await deliverFromCarol(buildRequestTemplate({ recipient: ALICE.pubkey, amountSats: 9000, lud16: 'carol@btc.mybuho.de', note: 'Deposit' }));
+    const card = chatCard(alice.page, /Deposit/);
+    await card.getByText('Not enough balance in your wallets.').waitFor();
+    assert.equal(await card.getByRole('button', { name: 'Pay' }).getAttribute('aria-disabled'), 'true');
+  });
+
   console.log('7. Locales (en-US, de, es) and large text, light and dark');
   for (const textSize of ['normal', 'large']) {
     for (const locale of ['en-US', 'de', 'es']) {
@@ -583,7 +590,7 @@ try {
         await alice.page.waitForTimeout(300);
         await assertFits(alice.page, `unknown sender ${label}`);
         await snap(alice, `11-unknown-sender-${label}`);
-        await alice.page.locator('.request-btn--outline').click();
+        await alice.page.locator('.request-btn--outline:not([aria-disabled])').click();
         await alice.page.locator('.pay-with').waitFor();
         await assertFits(alice.page, `confirm sheet ${label}`);
         await snap(alice, `12-confirm-sheet-${label}`);

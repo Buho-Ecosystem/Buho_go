@@ -456,9 +456,9 @@ test('request card: no "amount in invoice" row, ever', async () => {
 })
 
 test('request card: a reason keeps Pay visible but aria-disabled, and is linked to it', async () => {
-  const html = await card({ disabledReason: 'Lightning is unavailable on Arkade' })
+  const html = await card({ disabledReason: 'None of your wallets can pay this.' })
   assert.match(html, /<p id="request-reason-[^"]*" class="request-card__reason" role="status">/)
-  assert.match(html, /Lightning is unavailable on Arkade/)
+  assert.match(html, /None of your wallets can pay this\./)
   const pay = tags(html, 'request-btn--pay')[0]
   assert.match(pay, /aria-disabled="true"/)
   assert.match(pay, /aria-describedby="request-reason-/)
@@ -467,17 +467,24 @@ test('request card: a reason keeps Pay visible but aria-disabled, and is linked 
   assert.doesNotMatch(await card({ outgoing: true, disabledReason: 'x' }), /request-card__reason/, 'the requester never pays')
 })
 
-test('request card: the WALLET_CANNOT_PAY code is worded and keeps Pay visible but aria-disabled', async () => {
-  const wallet = await card({ disabledReason: 'WALLET_CANNOT_PAY' })
-  assert.match(wallet, /This wallet cannot pay this request\. Choose another wallet\./)
-  assert.match(tags(wallet, 'request-btn--pay')[0], /aria-disabled="true"/)
-  assert.match(wallet, />\s*Decline\s*</)
+test('request card: while the wallets load, Pay waits busy and nothing is claimed', async () => {
+  const html = await card({ walletsLoading: true })
+  const pay = tags(html, 'request-btn--pay')[0]
+  assert.match(pay, /aria-disabled="true"/)
+  assert.match(pay, /aria-busy="true"/)
+  assert.doesNotMatch(pay, /aria-describedby/)
+  assert.doesNotMatch(html, /request-card__reason/)
+  assert.doesNotMatch(tags(html, 'request-btn--quiet')[0], /\sdisabled(=|\s|>)/, 'Decline does not wait for the wallets')
+  assert.doesNotMatch(tags(await card({}), 'request-btn--pay')[0], /aria-busy/)
 })
 
 test('request card: Pay does nothing while blocked or busy', () => {
   const blocked = vmOf(RequestCard, { amountSats: 1, disabledReason: 'no' })
   blocked.vm.onPay()
   assert.deepEqual(blocked.emitted, [])
+  const loading = vmOf(RequestCard, { amountSats: 1, walletsLoading: true })
+  loading.vm.onPay()
+  assert.deepEqual(loading.emitted, [])
   const busy = vmOf(RequestCard, { amountSats: 1, busy: true })
   busy.vm.onPay()
   assert.deepEqual(busy.emitted, [])
