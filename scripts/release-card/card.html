@@ -1,0 +1,78 @@
+<!doctype html>
+<!-- Release card: the 1200x630 picture that goes with every release's notes.
+     Rendered by scripts/release-card/render.sh; every value comes from the URL:
+       v   version, "1.12"
+       f   up to three feature names from the release's Highlights, "|"-separated
+       s   three phone screenshots, "|"-separated, paths relative to this file or absolute
+           (back, left; back, right; front) - portrait app captures, any phone aspect
+       c   optional floating chip, "Title|Subtitle"
+-->
+<html>
+<head>
+<meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=Fustat:wght@400..800&display=swap" rel="stylesheet">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { overflow: hidden; background: #07120E; }
+  body { font-family: 'Fustat', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; -webkit-font-smoothing: antialiased; }
+  .card { position: relative; overflow: hidden; width: 1200px; height: 630px; color: #fff;
+    background: radial-gradient(ellipse 50% 60% at 78% 50%, rgba(16,185,129,.26), rgba(16,185,129,0) 70%), #07120E; }
+  .rings { position: absolute; left: 78%; top: 50%; transform: translate(-50%,-50%); width: 1000px; aspect-ratio: 1; border-radius: 50%;
+    border: 1.5px solid rgba(255,255,255,.07); box-shadow: 0 0 0 130px rgba(255,255,255,.025), 0 0 0 260px rgba(255,255,255,.018); }
+
+  .copy { position: absolute; left: 72px; top: 68px; width: 520px; display: flex; flex-direction: column; align-items: flex-start; gap: 22px; }
+  .lockup { display: flex; align-items: center; gap: .42em; font-size: 32px; font-weight: 700; letter-spacing: -.02em; }
+  .lockup svg { height: 1.25em; width: auto; display: block; }
+  .tag { font-size: 17px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; padding: 7px 14px 6px; border-radius: 999px;
+         color: #0B2E22; background: #78D53C; margin-left: 6px; }
+  .new { display: inline-flex; align-items: center; gap: 10px; font-size: 20px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: #78D53C; }
+  .new::before { content: ''; width: 10px; height: 10px; border-radius: 50%; background: #78D53C; box-shadow: 0 0 0 6px rgba(120,213,60,.2); }
+  .version { font-weight: 800; letter-spacing: -.06em; line-height: .8; font-size: var(--vs, 230px); white-space: nowrap;
+    background: linear-gradient(180deg, #fff 0%, #CFF5DC 60%, #78D53C 100%); -webkit-background-clip: text; color: transparent; }
+  .feat { display: flex; flex-direction: column; gap: 12px; margin-top: 6px; }
+  .feat div { display: flex; align-items: center; gap: 12px; font-size: 24px; font-weight: 600; color: rgba(255,255,255,.9); }
+  .feat div::before { content: ''; flex: none; width: 8px; height: 8px; border-radius: 2px; background: #78D53C; }
+
+  .phone { position: absolute; width: var(--pw, 240px); aspect-ratio: 780 / 1688;
+    border-radius: calc(var(--pw, 240px) * .15); padding: calc(var(--pw, 240px) * .034); background: #121514;
+    box-shadow: 0 40px 80px -20px rgba(0,0,0,.5), inset 0 0 0 1px rgba(255,255,255,.08); }
+  .phone img { width: 100%; height: 100%; display: block; object-fit: cover; object-position: top; border-radius: calc(var(--pw, 240px) * .12); }
+
+  .chip { position: absolute; left: 600px; top: 500px; transform: rotate(-3deg); display: flex; align-items: center; font-size: 19px;
+    background: #1C201E; color: #fff; border-radius: 1.2em 1.2em 1.2em .3em; padding: .7em 1em;
+    box-shadow: 0 1.2em 2.4em -.8em rgba(0,0,0,.55); white-space: nowrap; }
+  .chip .t1 { font-weight: 700; letter-spacing: -.01em; line-height: 1.15; }
+  .chip .t2 { font-size: .78em; color: #9AA39E; line-height: 1.2; }
+</style>
+</head>
+<body>
+<div class="card" id="card"></div>
+<script>
+const LOGO = `<svg viewBox="0 0 30 32" fill="none"><path d="M0 13.4423C0 6.01833 6.01833 0 13.4423 0V18.5577C13.4423 25.9817 7.42399 32 0 32V13.4423Z" fill="#10B981"/><path d="M15.3906 7.30444C15.3906 3.27031 18.6609 0 22.6951 0C26.7292 0 29.9995 3.27031 29.9995 7.30444V7.72091C29.9995 11.755 26.7292 15.0253 22.6951 15.0253C18.6609 15.0253 15.3906 11.755 15.3906 7.72091V7.30444Z" fill="#78D53C"/><path d="M15.3906 24.281C15.3906 20.2469 18.6609 16.9766 22.6951 16.9766C26.7292 16.9766 29.9995 20.2469 29.9995 24.281V24.6975C29.9995 28.7316 26.7292 32.0019 22.6951 32.0019C18.6609 32.0019 15.3906 28.7316 15.3906 24.6975V24.281Z" fill="#43B65B"/></svg>`
+const esc = t => String(t).replace(/[&<>"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[ch])
+const q = new URLSearchParams(location.search)
+const v = q.get('v') || '0.0'
+const feats = (q.get('f') || '').split('|').map(s => s.trim()).filter(Boolean).slice(0, 3)
+const shots = (q.get('s') || '').split('|').map(s => s.trim()).filter(Boolean)
+const [c1, c2] = (q.get('c') || '').split('|').map(s => s.trim())
+const src = p => p.startsWith('/') ? 'file://' + p : p
+const phone = (p, style) => p ? `<div class="phone" style="${style}"><img src="${esc(src(p))}"></div>` : ''
+
+// Long version strings ("1.10.2") shrink so they never run into the phones.
+const vs = Math.min(230, Math.floor(520 / (v.length * 0.52)))
+
+document.getElementById('card').innerHTML = `
+  <div class="rings"></div>
+  <div class="copy">
+    <div class="lockup">${LOGO}<span>BuhoGO</span><span class="tag">Release</span></div>
+    <div class="new">What's new</div>
+    <div class="version" style="--vs:${vs}px">${esc(v)}</div>
+    <div class="feat">${feats.map(f => `<div>${esc(f)}</div>`).join('')}</div>
+  </div>
+  ${phone(shots[0], 'left:640px;top:150px;transform:rotate(-8deg)')}
+  ${phone(shots[1], 'left:1000px;top:150px;transform:rotate(8deg)')}
+  ${phone(shots[2], 'left:810px;top:96px;--pw:260px')}
+  ${c1 ? `<div class="chip"><div><div class="t1">${esc(c1)}</div>${c2 ? `<div class="t2">${esc(c2)}</div>` : ''}</div></div>` : ''}`
+</script>
+</body>
+</html>

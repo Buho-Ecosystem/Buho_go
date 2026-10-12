@@ -1227,6 +1227,7 @@ export default {
   "Scan QR": "Scan QR",
   "Paste": "Paste",
   "Lightning Invoice": "Lightning Invoice",
+  "Scan with any Bitcoin wallet": "Scan with any Bitcoin wallet",
   "LNURL Payment": "LNURL Payment",
   "Lightning Address": "Lightning Address",
   "Lightning Payment": "Lightning Payment",

@@ -1290,6 +1290,7 @@ export default {
   "Scan QR": "Escanear QR",
   "Paste": "Pegar",
   "Lightning Invoice": "Factura Lightning",
+  "Scan with any Bitcoin wallet": "Escanéalo con cualquier billetera Bitcoin",
   "LNURL Payment": "Pago LNURL",
   "Lightning Address": "Dirección Lightning",
   "Lightning Payment": "Pago Lightning",
