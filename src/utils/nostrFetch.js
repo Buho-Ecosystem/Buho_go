@@ -28,7 +28,7 @@
  */
 
 import { verifyEvent } from 'nostr-core';
-import { DEFAULT_RELAYS, getRelayPool } from './nostrRelays.js';
+import { DEFAULT_RELAYS, getRelayPool, provesAbsence, queryOneRelay } from './nostrRelays.js';
 
 // ----------------------------------------------------------------------------
 // Constants
@@ -291,4 +291,41 @@ export async function fetchProfile(pubkey, opts = {}) {
   // NIP-01 tie-break: newest created_at; lexically lowest id on tie.
   valid.sort(compareEventFreshness);
   return valid[0];
+}
+
+/**
+ * Fetch a key's newest kind:0 and say whether the answer can be trusted.
+ *
+ * `fetchProfile` reads "no profile" and "no relay answered" the same way,
+ * which is fine for showing someone else's card. Before publishing over the
+ * person's OWN profile the two must differ: relays are asked one by one
+ * (queryOneRelay), and an empty answer only counts once enough of them
+ * provably answered (provesAbsence).
+ *
+ * @param {string} pubkey 64-char hex
+ * @param {{ pool?: any, relays?: readonly string[], timeoutMs?: number }} [opts]
+ * @returns {Promise<{ event: import('nostr-core').NostrEvent | null, checked: boolean }>}
+ *   `checked`: an event was found, or its absence is proven
+ */
+export async function fetchProfileChecked(pubkey, opts = {}) {
+  if (typeof pubkey !== 'string' || !/^[0-9a-f]{64}$/i.test(pubkey)) {
+    throw new TypeError('pubkey must be a 64-char lowercase hex string');
+  }
+  const pubkeyHex = pubkey.toLowerCase();
+  const pool = opts.pool ?? getRelayPool();
+  const relays = Array.isArray(opts.relays) && opts.relays.length > 0 ? opts.relays : DEFAULT_RELAYS;
+  const maxWait = Number.isFinite(opts.timeoutMs) ? opts.timeoutMs : DEFAULT_FETCH_TIMEOUT_MS;
+  const filter = { kinds: [PROFILE_KIND], authors: [pubkeyHex], limit: 1 };
+
+  const answers = await Promise.allSettled(relays.map((url) => queryOneRelay(pool, url, filter, maxWait)));
+  const reached = answers.filter((answer) => answer.status === 'fulfilled' && Array.isArray(answer.value));
+  const allowed = new Set([pubkeyHex]);
+  const valid = reached
+    .flatMap((answer) => answer.value)
+    .filter((event) => isTrustworthyProfile(event, allowed));
+  if (valid.length > 0) {
+    valid.sort(compareEventFreshness);
+    return { event: valid[0], checked: true };
+  }
+  return { event: null, checked: provesAbsence(reached.length, relays.length) };
 }
