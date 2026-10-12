@@ -26,7 +26,7 @@
  * here degrades to the default preview rather than to a broken page.
  */
 
-const OG_IMAGE = '/og/profile-card.jpg';
+const OG_IMAGE = '/og/profile-card.jpg?v=2';
 
 /** Keys look like keys, not names, so they get the generic wording. */
 function isKey(value) {

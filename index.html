@@ -64,6 +64,8 @@
       Images live in public/og/ at 1200x630 and must stay under ~300 KB:
       WhatsApp silently drops larger og:images and shows no picture at all.
       URLs are absolute because preview scrapers do not resolve relative ones.
+      The ?v= suffix is a cache key: chat apps and X cache a preview image by
+      URL for days, so bump it whenever an image under public/og/ changes.
     -->
     <title>BuhoGO</title>
     <meta name="title" content="BuhoGO"/>
@@ -75,17 +77,17 @@
     <meta property="og:url" content="https://go.mybuho.de/"/>
     <meta property="og:title" content="BuhoGO"/>
     <meta property="og:description" content="The simple Bitcoin wallet. Pay people by name, share your card, and keep your keys."/>
-    <meta property="og:image" content="https://go.mybuho.de/og/site-card.jpg"/>
+    <meta property="og:image" content="https://go.mybuho.de/og/site-card.jpg?v=2"/>
     <meta property="og:image:width" content="1200"/>
     <meta property="og:image:height" content="630"/>
-    <meta property="og:image:alt" content="BuhoGO. The simple Bitcoin wallet."/>
+    <meta property="og:image:alt" content="BuhoGO. Pay people by name."/>
 
     <!-- X (Twitter) -->
     <meta property="twitter:card" content="summary_large_image"/>
     <meta property="twitter:url" content="https://go.mybuho.de/"/>
     <meta property="twitter:title" content="BuhoGO"/>
     <meta property="twitter:description" content="The simple Bitcoin wallet. Pay people by name, share your card, and keep your keys."/>
-    <meta property="twitter:image" content="https://go.mybuho.de/og/site-card.jpg"/>
+    <meta property="twitter:image" content="https://go.mybuho.de/og/site-card.jpg?v=2"/>
 
     <!--
       Clean links for shared profile cards.

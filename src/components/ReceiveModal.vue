@@ -1866,10 +1866,23 @@ export default {
       }
     },
 
+    /** "₿2,100 · ≈ $1.78" for the invoice share card; empty without an amount. */
+    invoiceShareAmount() {
+      const sats = this.generatedInvoice?.amount;
+      if (!(sats > 0)) return '';
+      const fiat = this.formatInvoiceFiat(sats);
+      return fiat ? `${this.formatInvoiceAmount(sats)} · ${fiat}` : this.formatInvoiceAmount(sats);
+    },
+
     async shareLightningAddress() {
       if (!this.lightningAddress) return;
 
-      const qrBlob = await qrBlobFromRef(this.$refs.lightningAddressQr, { label: this.lightningAddress });
+      const qrBlob = await qrBlobFromRef(this.$refs.lightningAddressQr, {
+        label: this.lightningAddress,
+        title: this.$t('Lightning Address'),
+        hint: this.$t('Scan with any Bitcoin wallet'),
+        rails: ['Lightning'],
+      });
       const result = await shareContent({
         title: this.$t('Lightning Address'),
         text: this.lightningAddress,
@@ -1934,7 +1947,11 @@ export default {
 
     async shareArkadeBoardingAddress() {
       if (!this.arkadeBoardingAddress) return;
-      const qrBlob = await qrBlobFromRef(this.$refs.arkadeBoardingQr, { label: this.arkadeBoardingAddress });
+      const qrBlob = await qrBlobFromRef(this.$refs.arkadeBoardingQr, {
+        label: this.arkadeBoardingAddress,
+        title: this.$t('Bitcoin Address'),
+        hint: this.$t('Scan with any Bitcoin wallet'),
+      });
       const result = await shareContent({
         title: this.$t('Bitcoin Address'),
         // The full unified string - exactly what the QR encodes, so the
@@ -1989,7 +2006,13 @@ export default {
       // Lightning URI so every wallet we share to can open it directly.
       const lightningUri = `lightning:${this.generatedInvoice.payment_request}`;
 
-      const qrBlob = await qrBlobFromRef(this.$refs.invoiceQr, { label: this.generatedInvoice?.payment_request || '' });
+      const qrBlob = await qrBlobFromRef(this.$refs.invoiceQr, {
+        label: this.generatedInvoice?.payment_request || '',
+        title: this.$t('Lightning Invoice'),
+        amount: this.invoiceShareAmount(),
+        hint: this.$t('Scan with any Bitcoin wallet'),
+        rails: ['Lightning'],
+      });
       const result = await shareContent({
         title: this.$t('Lightning Invoice'),
         // Pure invoice URI so recipients can copy-paste cleanly. The

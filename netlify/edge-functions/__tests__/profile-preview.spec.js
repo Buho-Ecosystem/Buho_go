@@ -51,7 +51,7 @@ for (const [shape, html] of [['source', SOURCE_HEAD], ['built', BUILT_HEAD]]) {
 
     assert.deepEqual(out.match(/<title>[^<]*<\/title>/g), ['<title>@maria on BuhoGO</title>']);
     assert.match(out, /<meta property="og:title" content="@maria on BuhoGO"\/>/);
-    assert.match(out, /<meta property="og:image" content="https:\/\/go\.mybuho\.de\/og\/profile-card\.jpg"\/>/);
+    assert.match(out, /<meta property="og:image" content="https:\/\/go\.mybuho\.de\/og\/profile-card\.jpg\?v=\d+"\/>/);
     assert.match(out, /<meta property="og:image:alt" content="@maria(?:&#?\w+;|')s BuhoGO card"\/>/);
     // Canonical strips the query: the key is a fallback, not part of the address.
     assert.match(out, /<meta property="og:url" content="https:\/\/go\.mybuho\.de\/p\/maria"\/>/);

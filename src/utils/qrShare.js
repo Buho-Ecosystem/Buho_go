@@ -1,8 +1,9 @@
 /**
  * QR share helper — turns a rendered QR canvas (via the <vue-qrcode>
- * component or a raw <canvas>) into a designed, shareable PNG card:
- * the code on a clean white surface, the identifier it encodes printed
- * beneath it, and the Buho brand mark as the footer.
+ * component or a raw <canvas>) into a designed, shareable 4:5 PNG card:
+ * a brand-green band saying what the code is, the code itself on a white
+ * panel with the identifier it encodes beneath it, the amount when there
+ * is one, and a footer telling the recipient what to do with it.
  *
  * Why the identifier is baked into the IMAGE while the share TEXT stays
  * the pure string:
@@ -12,6 +13,9 @@
  *   2. The shared text remains a pure invoice/address URI, so
  *      recipients can long-press → copy without scraping caption lines.
  *
+ * 4:5 because that is the largest shape chat apps and feeds show without
+ * cropping, so the code arrives big enough to scan off another screen.
+ *
  * Silent-failure by design: returns null (never throws) if the ref
  * isn't ready or the canvas can't be encoded, so callers can degrade
  * gracefully to text-only share without try/catch. A missing brand
@@ -20,26 +24,44 @@
 
 const BRAND_NAME = 'BuhoGO';
 const BRAND_MARK_URL = '/buho_logo.svg';
+const DEFAULT_HINT = 'Scan with any Bitcoin wallet';
 
 // ─── Card layout ─────────────────────────────────────────────────────
-// All values in canvas pixels. The QR is normalized to a fixed drawing
-// size so every share card comes out identical regardless of how large
-// the on-screen canvas happened to render.
-const QR_SIZE = 320;
-const CARD_PADDING_X = 56;
-const CARD_PADDING_TOP = 48;
+// All values in canvas pixels on a fixed 1080x1350 card. The QR is
+// normalized to a fixed drawing size so every share card comes out
+// identical regardless of how large the on-screen canvas rendered.
+const CARD_WIDTH = 1080;
+const CARD_HEIGHT = 1350;
+const SIDE = 72;
+const SURFACE = '#F8F5EE';
+const FONT_STACK = '"Manrope", -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif';
+
+const BAND_HEIGHT = 330;
+const BRAND_TOP = 64;
+const BRAND_MARK_HEIGHT = 50;
+const BRAND_MARK_WIDTH = 47; // the 30x32 asset's aspect
+const BRAND_MARK_GAP = 16;
+const BRAND_FONT = `700 40px ${FONT_STACK}`;
+const TITLE_SIZE = 64;
+const TITLE_BASELINE = 226;
+
+const PANEL_TOP = 270;
+const PANEL_PADDING = 54;
+const PANEL_RADIUS = 44;
+const QR_SIZE = 640;
 const LABEL_GAP = 30;
-const LABEL_FONT = '500 17px "SF Mono", ui-monospace, Menlo, Consolas, monospace';
-const LABEL_COLOR = '#475569';
-const DIVIDER_GAP = 28;
-const DIVIDER_COLOR = '#e2e8f0';
-const FOOTER_HEIGHT = 78;
-const FOOTER_BOTTOM_PADDING = 14;
-const BRAND_FONT = '700 22px "Manrope", -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif';
-const BRAND_COLOR = '#0f172a';
-const BRAND_MARK_WIDTH = 26;
-const BRAND_MARK_HEIGHT = 28; // matches the 30x32 asset's aspect
-const BRAND_MARK_GAP = 10;
+const LABEL_SIZE = 34;
+const LABEL_FONT = `600 ${LABEL_SIZE}px "SF Mono", ui-monospace, Menlo, Consolas, monospace`;
+const LABEL_COLOR = '#1F2622';
+const AMOUNT_GAP = 16;
+const AMOUNT_HEIGHT = 56;
+const AMOUNT_FONT = `700 30px ${FONT_STACK}`;
+
+const FOOTER_CENTER_Y = CARD_HEIGHT - 92;
+const HINT_FONT = `600 28px ${FONT_STACK}`;
+const RAIL_FONT = `700 22px ${FONT_STACK}`;
+const RAIL_HEIGHT = 50;
+const RAIL_GAP = 12;
 
 /**
  * @param {unknown} ref  Template ref pointing at a <vue-qrcode> or <canvas>.
@@ -47,14 +69,27 @@ const BRAND_MARK_GAP = 10;
  * @param {string} [opts.label]  The identifier the QR encodes (address /
  *   invoice). Printed beneath the code, middle-truncated to fit; omit to
  *   render the card without the line.
+ * @param {string} [opts.title]  What the code is ("Lightning Invoice"),
+ *   shown large in the band. Already translated by the caller.
+ * @param {string} [opts.amount]  Display amount ("₿2,100 · $1.78"), shown
+ *   as a pill under the label when the code asks for a fixed sum.
+ * @param {string} [opts.hint]  The footer line; translated by the caller.
+ * @param {string[]} [opts.rails]  Payment rails the code accepts, shown as
+ *   chips in the footer ("Lightning"). Omit when unsure: a wrong chip is
+ *   worse than none.
  * @returns {Promise<Blob | null>}
  */
-export async function qrBlobFromRef(ref, { label = '' } = {}) {
+export async function qrBlobFromRef(ref, { label = '', title = '', amount = '', hint = DEFAULT_HINT, rails = [] } = {}) {
   const source = resolveCanvas(ref);
   if (!source) return null;
 
   const brandMark = await loadBrandMark();
-  const branded = renderShareCard(source, { label, brandMark });
+  let branded = null;
+  try {
+    branded = renderShareCard(source, { label, title, amount, hint, rails, brandMark });
+  } catch {
+    branded = null;
+  }
 
   // A failed card render must not cost the recipient the image: fall
   // back to the plain QR canvas, so the share degrades card → plain QR
@@ -99,32 +134,48 @@ function loadBrandMark() {
  * Compose the share card. Returns null if a 2D context can't be
  * acquired (defensive — should never happen in practice).
  */
-function renderShareCard(sourceCanvas, { label, brandMark }) {
-  const width = QR_SIZE + CARD_PADDING_X * 2;
-  const hasLabel = typeof label === 'string' && label.trim() !== '';
-  const labelBlockHeight = hasLabel ? LABEL_GAP + 17 : 0;
-  const height = CARD_PADDING_TOP + QR_SIZE + labelBlockHeight
-    + DIVIDER_GAP + 1 + FOOTER_HEIGHT + FOOTER_BOTTOM_PADDING;
-
+function renderShareCard(sourceCanvas, { label, title, amount, hint, rails, brandMark }) {
   const canvas = document.createElement('canvas');
-  canvas.width = width;
-  canvas.height = height;
+  canvas.width = CARD_WIDTH;
+  canvas.height = CARD_HEIGHT;
 
   const ctx = canvas.getContext('2d');
   if (!ctx) return null;
 
-  // White surface gives the QR maximum scanning contrast across every
-  // background the image might land on (chat bubbles, galleries).
+  ctx.fillStyle = SURFACE;
+  ctx.fillRect(0, 0, CARD_WIDTH, CARD_HEIGHT);
+
+  drawBand(ctx, { title, brandMark });
+
+  // Panel: white keeps the QR at maximum scanning contrast wherever the
+  // image lands (chat bubbles, galleries, a second phone's camera).
+  const hasLabel = typeof label === 'string' && label.trim() !== '';
+  const hasAmount = typeof amount === 'string' && amount.trim() !== '';
+  const panelHeight = PANEL_PADDING * 2 + QR_SIZE
+    + (hasLabel ? LABEL_GAP + LABEL_SIZE + 8 : 0)
+    + (hasAmount ? AMOUNT_GAP + AMOUNT_HEIGHT : 0);
+  const panelWidth = CARD_WIDTH - SIDE * 2;
+
+  ctx.save();
+  ctx.shadowColor = 'rgba(3, 36, 26, 0.22)';
+  ctx.shadowBlur = 60;
+  ctx.shadowOffsetY = 28;
   ctx.fillStyle = '#ffffff';
-  ctx.fillRect(0, 0, width, height);
+  roundedRect(ctx, SIDE, PANEL_TOP, panelWidth, panelHeight, PANEL_RADIUS);
+  ctx.fill();
+  ctx.restore();
 
   // QR, normalized to a fixed size. Nearest-neighbor keeps the modules
   // razor-sharp when the on-screen canvas was smaller than QR_SIZE.
+  const qrLeft = (CARD_WIDTH - QR_SIZE) / 2;
+  let cursorY = PANEL_TOP + PANEL_PADDING;
   ctx.imageSmoothingEnabled = false;
-  ctx.drawImage(sourceCanvas, CARD_PADDING_X, CARD_PADDING_TOP, QR_SIZE, QR_SIZE);
+  ctx.drawImage(sourceCanvas, qrLeft, cursorY, QR_SIZE, QR_SIZE);
   ctx.imageSmoothingEnabled = true;
+  cursorY += QR_SIZE;
 
-  let cursorY = CARD_PADDING_TOP + QR_SIZE;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
 
   // The identifier the code encodes, readable and centered. The share
   // text carries the full string for copying; this line is for humans.
@@ -132,52 +183,111 @@ function renderShareCard(sourceCanvas, { label, brandMark }) {
     cursorY += LABEL_GAP;
     ctx.fillStyle = LABEL_COLOR;
     ctx.font = LABEL_FONT;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(
-      fitLabelToWidth(ctx, label.trim(), QR_SIZE),
-      width / 2,
-      cursorY + 8
-    );
-    cursorY += 17;
+    ctx.fillText(fitLabelToWidth(ctx, label.trim(), panelWidth - PANEL_PADDING * 2), CARD_WIDTH / 2, cursorY + LABEL_SIZE / 2);
+    cursorY += LABEL_SIZE + 8;
   }
 
-  cursorY += DIVIDER_GAP;
-  ctx.fillStyle = DIVIDER_COLOR;
-  ctx.fillRect(CARD_PADDING_X, cursorY, QR_SIZE, 1);
-  cursorY += 1;
+  if (hasAmount) {
+    cursorY += AMOUNT_GAP;
+    ctx.font = AMOUNT_FONT;
+    const text = amount.trim();
+    const pillWidth = ctx.measureText(text).width + 44;
+    ctx.fillStyle = '#E8F7EF';
+    roundedRect(ctx, (CARD_WIDTH - pillWidth) / 2, cursorY, pillWidth, AMOUNT_HEIGHT, AMOUNT_HEIGHT / 2);
+    ctx.fill();
+    ctx.fillStyle = '#047857';
+    ctx.fillText(text, CARD_WIDTH / 2, cursorY + AMOUNT_HEIGHT / 2 + 1);
+  }
 
-  // Footer: brand mark + name, centered as one group. Falls back to the
-  // name alone when the mark asset is unavailable.
-  const footerCenterY = cursorY + FOOTER_HEIGHT / 2;
-  ctx.fillStyle = BRAND_COLOR;
+  drawFooter(ctx, { hint, rails });
+  return canvas;
+}
+
+/** Brand-green band: logo, name, and what the code is. */
+function drawBand(ctx, { title, brandMark }) {
+  const base = ctx.createLinearGradient(0, 0, CARD_WIDTH * 0.35, BAND_HEIGHT * 1.9);
+  base.addColorStop(0, '#075A40');
+  base.addColorStop(1, '#03241A');
+  ctx.fillStyle = base;
+  ctx.fillRect(0, 0, CARD_WIDTH, BAND_HEIGHT);
+
+  // One soft leaf-green light from the top right, so the band is not flat.
+  const glow = ctx.createRadialGradient(CARD_WIDTH * 0.8, 0, 0, CARD_WIDTH * 0.8, 0, CARD_WIDTH * 0.6);
+  glow.addColorStop(0, 'rgba(120, 213, 60, 0.35)');
+  glow.addColorStop(1, 'rgba(120, 213, 60, 0)');
+  ctx.fillStyle = glow;
+  ctx.fillRect(0, 0, CARD_WIDTH, BAND_HEIGHT);
+
+  ctx.fillStyle = '#ffffff';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
   ctx.font = BRAND_FONT;
+  const brandCenterY = BRAND_TOP + BRAND_MARK_HEIGHT / 2;
+  let nameLeft = SIDE;
+  if (brandMark) {
+    try {
+      ctx.drawImage(brandMark, SIDE, BRAND_TOP, BRAND_MARK_WIDTH, BRAND_MARK_HEIGHT);
+      nameLeft = SIDE + BRAND_MARK_WIDTH + BRAND_MARK_GAP;
+    } catch {
+      nameLeft = SIDE;
+    }
+  }
+  ctx.fillText(BRAND_NAME, nameLeft, brandCenterY + 2);
+
+  if (typeof title === 'string' && title.trim() !== '') {
+    // Shrink rather than clip: translations run longer than English.
+    const maxWidth = CARD_WIDTH - SIDE * 2;
+    let size = TITLE_SIZE;
+    ctx.font = `800 ${size}px ${FONT_STACK}`;
+    while (size > 36 && ctx.measureText(title.trim()).width > maxWidth) {
+      size -= 2;
+      ctx.font = `800 ${size}px ${FONT_STACK}`;
+    }
+    ctx.textBaseline = 'alphabetic';
+    ctx.fillText(title.trim(), SIDE, TITLE_BASELINE);
+  }
+}
+
+/** Footer: what to do with the code, and which rails it takes. */
+function drawFooter(ctx, { hint, rails }) {
   ctx.textBaseline = 'middle';
 
-  if (brandMark) {
-    const nameWidth = ctx.measureText(BRAND_NAME).width;
-    const groupWidth = BRAND_MARK_WIDTH + BRAND_MARK_GAP + nameWidth;
-    const groupLeft = (width - groupWidth) / 2;
-    try {
-      ctx.drawImage(
-        brandMark,
-        groupLeft,
-        footerCenterY - BRAND_MARK_HEIGHT / 2,
-        BRAND_MARK_WIDTH,
-        BRAND_MARK_HEIGHT
-      );
-      ctx.textAlign = 'left';
-      ctx.fillText(BRAND_NAME, groupLeft + BRAND_MARK_WIDTH + BRAND_MARK_GAP, footerCenterY + 1);
-    } catch {
+  let railsLeft = CARD_WIDTH - SIDE;
+  const chips = Array.isArray(rails) ? rails.filter((r) => typeof r === 'string' && r.trim() !== '') : [];
+  if (chips.length) {
+    ctx.font = RAIL_FONT;
+    const widths = chips.map((r) => ctx.measureText(r).width + 36);
+    railsLeft = CARD_WIDTH - SIDE - widths.reduce((a, b) => a + b, 0) - RAIL_GAP * (chips.length - 1);
+    let x = railsLeft;
+    chips.forEach((rail, i) => {
+      ctx.fillStyle = '#EDEAE2';
+      roundedRect(ctx, x, FOOTER_CENTER_Y - RAIL_HEIGHT / 2, widths[i], RAIL_HEIGHT, RAIL_HEIGHT / 2);
+      ctx.fill();
+      ctx.fillStyle = '#3A403D';
       ctx.textAlign = 'center';
-      ctx.fillText(BRAND_NAME, width / 2, footerCenterY + 1);
-    }
-  } else {
-    ctx.textAlign = 'center';
-    ctx.fillText(BRAND_NAME, width / 2, footerCenterY + 1);
+      ctx.fillText(rail, x + widths[i] / 2, FOOTER_CENTER_Y + 1);
+      x += widths[i] + RAIL_GAP;
+    });
   }
 
-  return canvas;
+  if (typeof hint === 'string' && hint.trim() !== '') {
+    ctx.font = HINT_FONT;
+    ctx.fillStyle = '#5B625F';
+    ctx.textAlign = 'left';
+    ctx.fillText(fitLabelToWidth(ctx, hint.trim(), railsLeft - SIDE - 24), SIDE, FOOTER_CENTER_Y + 1);
+  }
+}
+
+/** Rounded rectangle path; ctx.roundRect is missing on older WebViews. */
+function roundedRect(ctx, x, y, w, h, r) {
+  const radius = Math.min(r, w / 2, h / 2);
+  ctx.beginPath();
+  ctx.moveTo(x + radius, y);
+  ctx.arcTo(x + w, y, x + w, y + h, radius);
+  ctx.arcTo(x + w, y + h, x, y + h, radius);
+  ctx.arcTo(x, y + h, x, y, radius);
+  ctx.arcTo(x, y, x + w, y, radius);
+  ctx.closePath();
 }
 
 /**

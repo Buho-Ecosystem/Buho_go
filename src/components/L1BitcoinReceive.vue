@@ -1165,6 +1165,9 @@ export default {
       const leadAddress = this.leadWithLightningAddress;
       const qrBlob = await qrBlobFromRef(this.$refs.depositQr, {
         label: leadAddress ? this.lightningAddress : this.depositAddress,
+        title: leadAddress ? this.$t('Lightning Address') : this.$t('Bitcoin Address'),
+        hint: this.$t('Scan with any Bitcoin wallet'),
+        rails: leadAddress ? ['Lightning'] : [],
       });
       const result = await shareContent({
         title: leadAddress ? this.$t('Lightning Address') : this.$t('Bitcoin Address'),
