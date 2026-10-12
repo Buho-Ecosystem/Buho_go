@@ -3783,7 +3783,6 @@ export const useWalletStore = defineStore('wallet', {
       try {
         const transactionMetadataStore = useTransactionMetadataStore();
         if (transactionId) {
-          if (!transactionMetadataStore.initialized) await transactionMetadataStore.initialize();
           await transactionMetadataStore.setLabelForTransaction(transactionId, fromWalletId, `Transfer to ${toWallet.name}`);
           await transactionMetadataStore.setSourceForTransaction(transactionId, fromWalletId, 'internal-transfer');
         } else {

@@ -22,6 +22,8 @@
  *   - getTransactionsWithTag / getTransactionsForContact still work,
  *     now returning { txId, walletId } so a caller can re-scope a
  *     follow-up read/write
+ *   - every write loads the saved entries first, and nothing is saved
+ *     before they are in memory: each save replaces them all
  *
  * Run directly with Node:
  *   node src/stores/__tests__/transactionMetadata.spec.js
@@ -58,6 +60,7 @@ globalThis.localStorage = new MemoryStorage();
 const { createPinia, setActivePinia } = await import('pinia');
 const { useTransactionMetadataStore } = await import('../transactionMetadata.js');
 const { useAddressBookStore } = await import('../addressBook.js');
+const { fiatRatesService } = await import('../../utils/fiatRates.js');
 
 let passed = 0;
 let failed = 0;
@@ -682,6 +685,150 @@ await test('provider IDs take precedence over newer heuristic links of the same 
   assert.equal(await store.consumePendingContactLinks([makeTx('known')], 'spark'), 1);
   assert.equal(store.getPayLinkForTransaction('known', 'spark'), 'lnurl1coffee');
   assert.equal(store.pendingContactLinks.length, 1);
+});
+
+// ---------------------------------------------------------------------------
+// Saved entries load before any write: each save replaces them all
+// ---------------------------------------------------------------------------
+
+const METADATA_KEY = 'buhoGO_transaction_metadata';
+const LINKS_KEY = 'buhoGO_pending_contact_links';
+const SAVED = {
+  'w1::rent': { contactId: 'c1', customNote: 'Rent for March', tags: ['rent'], fiatAtSettlement: { currency: 'USD', amount: 0.6, rate: 60000, capturedAt: 1 }, updatedAt: 1 },
+  'w2::gift': { contactId: null, customNote: 'Gift', tags: [], recipientAddress: 'ann@example.test', updatedAt: 1 },
+  'legacy-tx': { contactId: null, customNote: 'From before wallet scoping', tags: ['old'], updatedAt: 1 },
+};
+const onDisk = () => JSON.parse(localStorage.getItem(METADATA_KEY));
+const linksOnDisk = () => JSON.parse(localStorage.getItem(LINKS_KEY));
+
+/**
+ * The store right after a start: the saved notes and the pending link of a
+ * send to Bob are on disk, nothing is in memory yet. A balance update, or a
+ * screen that never loads the store, meets it like this.
+ */
+function startedStore() {
+  const store = freshStore();
+  localStorage.setItem(METADATA_KEY, JSON.stringify(SAVED));
+  localStorage.setItem(LINKS_KEY, JSON.stringify([
+    { contactId: 'c2', recipientAddress: 'bob@example.test', amountSats: 700, direction: 'outgoing', walletId: 'w9', sentAt: Date.now() },
+  ]));
+  return store;
+}
+
+await test('a payout tagged before anything loaded the store keeps every saved note, tag and contact link', async () => {
+  const store = startedStore();
+  // What auto-withdraw does after a payout it made from the first balance after a start.
+  await store.addTagToTransaction('payout', 'w1', 'auto-withdraw');
+  await store.setNoteForTransaction('payout', 'w1', 'Automatic transfer');
+  const disk = onDisk();
+  assert.deepEqual(disk, { ...SAVED, 'w1::payout': disk['w1::payout'] });
+  assert.deepEqual(disk['w1::payout'].tags, ['auto-withdraw']);
+  assert.equal(disk['w1::payout'].customNote, 'Automatic transfer');
+});
+
+await test('every write loads the saved entries first, whichever comes first after a start, and lands', async () => {
+  const createsNew = (disk) => Boolean(disk['w1::new']);
+  const writes = [
+    ['setContactForTransaction', (store) => store.setContactForTransaction('new', 'w1', 'c3')],
+    ['setRecipientAddressForTransaction', (store) => store.setRecipientAddressForTransaction('new', 'w1', 'cy@example.test')],
+    ['setLabelForTransaction', (store) => store.setLabelForTransaction('new', 'w1', 'Transfer to Savings')],
+    ['setSourceForTransaction', (store) => store.setSourceForTransaction('new', 'w1', 'internal-transfer')],
+    ['setCounterpartyAvatarForTransaction', (store) => store.setCounterpartyAvatarForTransaction('new', 'w1', { kind: 'nostr', npub: 'npub1example', picture: null })],
+    ['setMerchantVerificationForTransaction', (store) => store.setMerchantVerificationForTransaction('new', 'w1', { name: 'Corner Shop' })],
+    ['setSaleBreakdownForTransaction', (store) => store.setSaleBreakdownForTransaction('new', 'w1', { totalSats: 100 })],
+    ['clearContactForTransaction', (store) => store.clearContactForTransaction('new', 'w1')],
+    ['setNoteForTransaction', (store) => store.setNoteForTransaction('new', 'w1', 'Lunch')],
+    ['setSuccessActionForTransaction', (store) => store.setSuccessActionForTransaction('new', 'w1', { tag: 'message', message: 'Thanks' })],
+    ['setVerifyUrlForTransaction', (store) => store.setVerifyUrlForTransaction('new', 'w1', 'https://pay.example.test/verify/1')],
+    ['setPayLinkForTransaction', (store) => store.setPayLinkForTransaction('new', 'w1', 'lnurl1example')],
+    ['setDeliveryStatusForTransaction', (store) => store.setDeliveryStatusForTransaction('new', 'w1', { settled: true })],
+    ['setFiatAtSettlementForTransaction', (store) => store.setFiatAtSettlementForTransaction('new', 'w1', { currency: 'USD', amount: 1, rate: 90000, capturedAt: 2 })],
+    ['setTagsForTransaction', (store) => store.setTagsForTransaction('new', 'w1', ['food'])],
+    ['updateTransactionMetadata', (store) => store.updateTransactionMetadata('new', 'w1', { customNote: 'Lunch' })],
+    ['clearMetadataForTransaction', (store) => store.clearMetadataForTransaction('new', 'w1'), (disk) => !('w1::new' in disk)],
+    ['importMetadata', (store) => store.importMetadata({ 'w1::new': { contactId: null, customNote: 'Restored', tags: [], updatedAt: 2 } })],
+    ['enqueuePendingContactLink', (store) => store.enqueuePendingContactLink({ recipientAddress: 'dee@example.test', amountSats: 300, walletId: 'w1' }),
+      (disk, links) => links.some((link) => link.recipientAddress === 'dee@example.test')],
+  ];
+  for (const [name, write, landed = createsNew] of writes) {
+    await write(startedStore());
+    const disk = onDisk();
+    const links = linksOnDisk();
+    for (const [key, entry] of Object.entries(SAVED)) assert.deepEqual(disk[key], entry, `${name} keeps ${key}`);
+    assert.ok(links.some((link) => link.recipientAddress === 'bob@example.test'), `${name} keeps the pending link`);
+    assert.ok(landed(disk, links), `${name} saved its own change`);
+  }
+
+  // A deleted contact leaves the saved payments it was on.
+  await startedStore().clearMetadataForContact('c1');
+  assert.equal(onDisk()['w1::rent'].contactId, null);
+  assert.deepEqual(onDisk()['w2::gift'], SAVED['w2::gift']);
+});
+
+await test('a change made from a saved entry starts from it: tags add up, a priced payment is not priced again', async () => {
+  await startedStore().addTagToTransaction('rent', 'w1', 'auto-withdraw');
+  assert.deepEqual(onDisk()['w1::rent'].tags, ['rent', 'auto-withdraw']);
+  await startedStore().removeTagFromTransaction('rent', 'w1', 'auto-withdraw');
+  assert.deepEqual(onDisk()['w1::rent'].tags, ['rent']);
+
+  const { ratesAvailable, rates } = fiatRatesService;
+  Object.assign(fiatRatesService, { ratesAvailable: true, rates: { USD: 90000 } });
+  try {
+    const settledNow = { id: 'rent', type: 'outgoing', amount: -1000, timestamp: Math.floor(Date.now() / 1000) };
+    assert.equal(await startedStore().stampFreshTransactions([settledNow], 'w1', 'USD'), 0);
+    assert.deepEqual(onDisk()['w1::rent'].fiatAtSettlement, SAVED['w1::rent'].fiatAtSettlement);
+  } finally {
+    Object.assign(fiatRatesService, { ratesAvailable, rates });
+  }
+});
+
+await test('the first refresh after a start stamps a payment from its saved pending link', async () => {
+  const store = startedStore();
+  assert.equal(await store.consumePendingContactLinks([makeTx('sent-to-bob', { amount: -700 })], 'w9'), 1);
+  const disk = onDisk();
+  assert.equal(disk['w9::sent-to-bob'].recipientAddress, 'bob@example.test');
+  assert.equal(disk['w9::sent-to-bob'].contactId, 'c2');
+  assert.deepEqual(disk, { ...SAVED, 'w9::sent-to-bob': disk['w9::sent-to-bob'] });
+  assert.deepEqual(linksOnDisk(), [], 'the link is used up');
+});
+
+await test('nothing is saved before the saved entries are in memory', async () => {
+  const store = startedStore();
+  const saved = { metadata: localStorage.getItem(METADATA_KEY), links: localStorage.getItem(LINKS_KEY) };
+  store.metadata['w1::new'] = { contactId: null, customNote: 'Not loaded yet', tags: [], updatedAt: 2 };
+  store.pendingContactLinks.push({ recipientAddress: 'eve@example.test', amountSats: 1, sentAt: Date.now() });
+  await assert.rejects(() => store.persistMetadata(), /Failed to save transaction metadata/);
+  await store.persistPendingLinks();
+  assert.equal(localStorage.getItem(METADATA_KEY), saved.metadata);
+  assert.equal(localStorage.getItem(LINKS_KEY), saved.links);
+});
+
+await test('a saved value that cannot be read is set aside, never saved over', async () => {
+  const store = freshStore();
+  localStorage.setItem(METADATA_KEY, '{"w1::rent": {"customNote": "Rent');
+  localStorage.setItem(LINKS_KEY, 'not a list');
+  await store.setNoteForTransaction('new', 'w1', 'Lunch');
+  const keys = [...localStorage._data.keys()];
+  assert.equal(localStorage.getItem(keys.find((key) => key.startsWith(`${METADATA_KEY}_unreadable_`))), '{"w1::rent": {"customNote": "Rent');
+  assert.equal(localStorage.getItem(keys.find((key) => key.startsWith(`${LINKS_KEY}_unreadable_`))), 'not a list');
+  assert.deepEqual(Object.keys(onDisk()), ['w1::new'], 'the store starts empty and saves again');
+});
+
+await test('when an unreadable value cannot be set aside, it stays and nothing is saved over it', async () => {
+  const store = freshStore();
+  localStorage.setItem(METADATA_KEY, 'not json');
+  const setItem = localStorage.setItem.bind(localStorage);
+  localStorage.setItem = (key, value) => {
+    if (key.includes('_unreadable_')) throw Object.assign(new Error('The quota has been exceeded.'), { name: 'QuotaExceededError' });
+    return setItem(key, value);
+  };
+  await assert.rejects(() => store.setNoteForTransaction('new', 'w1', 'Lunch'), /Failed to save transaction metadata/);
+  assert.equal(await store.setLabelForTransaction('new', 'w1', 'Transfer to Savings'), null);
+  // A send that queues its link now is not interrupted.
+  await store.enqueuePendingContactLink({ recipientAddress: 'dee@example.test', amountSats: 300, walletId: 'w1' });
+  assert.equal(localStorage.getItem(METADATA_KEY), 'not json', 'kept where it was');
+  assert.equal(localStorage.getItem(LINKS_KEY), null);
+  assert.equal(store.initialized, false);
 });
 
 console.log(`\n  ${passed} passed, ${failed} failed`);

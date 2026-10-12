@@ -98,6 +98,30 @@ function _resolveMetadata(state, txId, walletId) {
   return state.metadata[txId] || null
 }
 
+/**
+ * Read one of the collections this store saves. This store only writes
+ * JSON it built, so a value that is not JSON was written elsewhere: it is
+ * kept under its own key (`<key>_unreadable_<time>`), never deleted, and
+ * the collection starts empty. Throws when it cannot be kept, or nothing
+ * can be read: the store then stays unloaded and saves nothing over it.
+ *
+ * @param {string} key
+ * @returns {*} the saved value, or null when nothing is saved
+ */
+function _readSaved(key) {
+  const raw = localStorage.getItem(key)
+  if (!raw) return null
+  try {
+    return JSON.parse(raw)
+  } catch {
+    const aside = `${key}_unreadable_${Date.now()}`
+    localStorage.setItem(aside, raw)
+    localStorage.removeItem(key)
+    console.warn(`[txMetadata] ${key} could not be read; kept as ${aside}`)
+    return null
+  }
+}
+
 export const useTransactionMetadataStore = defineStore('transactionMetadata', {
   state: () => ({
     // Map of storage key (`${walletId}::${txId}`, or a legacy bare
@@ -110,13 +134,11 @@ export const useTransactionMetadataStore = defineStore('transactionMetadata', {
     // returns only `preimage`, Spark returns a payment id that isn't
     // the transfer id, etc.).
     pendingContactLinks: [],
-    // True once initialize() has loaded (or attempted to load) both
-    // localStorage-backed collections. Callers that can run before the
-    // normal boot path (kiosk in particular boots on a separate path
-    // that may bypass the usual store init) must lazily initialize
-    // before touching pendingContactLinks — otherwise an early caller's
-    // empty in-memory queue would get persisted over, and silently
-    // clobber, whatever was already on disk.
+    // True once initialize() has read both saved collections into memory
+    // (or found nothing saved); a failed read leaves it false. Each is
+    // saved whole, so nothing is written before this (persistMetadata and
+    // persistPendingLinks refuse), and every action that changes either
+    // loads them first (_ensureLoaded).
     initialized: false
   }),
 
@@ -375,32 +397,39 @@ export const useTransactionMetadataStore = defineStore('transactionMetadata', {
     // Initialize store from localStorage. Agnostic to whether keys in the
     // persisted blob are legacy bare txIds or wallet-scoped composite
     // keys — it's just a JSON blob either way, so both shapes load as-is.
+    // Screens call it again to re-read. The store counts as loaded only
+    // when both collections were read (see _readSaved).
     async initialize() {
       try {
-        const savedMetadata = localStorage.getItem('buhoGO_transaction_metadata')
-        if (savedMetadata) {
-          this.metadata = JSON.parse(savedMetadata)
-        }
-      } catch (error) {
-        console.error('Error loading transaction metadata:', error)
-        this.metadata = {}
-      }
-      try {
-        const savedPending = localStorage.getItem('buhoGO_pending_contact_links')
+        const savedMetadata = _readSaved('buhoGO_transaction_metadata')
+        const savedPending = _readSaved('buhoGO_pending_contact_links')
+        if (savedMetadata) this.metadata = savedMetadata
         if (savedPending) {
-          const parsed = JSON.parse(savedPending)
           // Drop stale entries on load so a crash mid-send can't leave
           // a zombie link hanging around forever.
           const now = Date.now()
-          this.pendingContactLinks = Array.isArray(parsed)
-            ? parsed.filter((link) => now - (link?.sentAt || 0) < PENDING_LINK_TTL_MS)
+          this.pendingContactLinks = Array.isArray(savedPending)
+            ? savedPending.filter((link) => now - (link?.sentAt || 0) < PENDING_LINK_TTL_MS)
             : []
         }
+        this.initialized = true
       } catch (error) {
-        console.error('Error loading pending contact links:', error)
-        this.pendingContactLinks = []
+        console.error('Error loading transaction metadata:', error)
+        this.initialized = false
       }
-      this.initialized = true
+    },
+
+    /**
+     * Every action that changes the metadata or the pending links starts
+     * here, before it reads either. Both are saved whole, so a change made
+     * before the saved ones are in memory would replace them all on disk.
+     * Callers need not load first: auto-withdraw tags its payout from the
+     * first balance after a start, before any screen has loaded this store,
+     * and the kiosk never loads it. When they cannot be loaded, the change
+     * is not saved (persistMetadata and persistPendingLinks refuse).
+     */
+    async _ensureLoaded() {
+      if (!this.initialized) await this.initialize()
     },
 
     /**
@@ -479,10 +508,7 @@ export const useTransactionMetadataStore = defineStore('transactionMetadata', {
       walletId = null,
       transactionId = null,
     }) {
-      // A caller may run before the normal boot path initializes this store
-      // (kiosk in particular). Load whatever is already on disk first so we
-      // never overwrite it with an empty in-memory queue.
-      if (!this.initialized) await this.initialize()
+      await this._ensureLoaded()
 
       // Queue when there's anything to stamp once the tx surfaces: a recipient
       // address (for live contact resolution), a LUD-09 successAction (the
@@ -604,10 +630,7 @@ export const useTransactionMetadataStore = defineStore('transactionMetadata', {
      * @returns {Promise<number>} count of links consumed
      */
     async consumePendingContactLinks(transactions, walletId) {
-      // Same lazy-init guard as enqueue: a caller on a separate boot path
-      // (kiosk) must load the persisted queue before it can safely read or
-      // rewrite it.
-      if (!this.initialized) await this.initialize()
+      await this._ensureLoaded()
 
       if (!Array.isArray(transactions) || transactions.length === 0) return 0
       if (!this.pendingContactLinks || this.pendingContactLinks.length === 0) return 0
@@ -785,8 +808,11 @@ export const useTransactionMetadataStore = defineStore('transactionMetadata', {
       return Number.isFinite(t) ? t : 0
     },
 
+    // Saves the whole queue, so it is refused until the saved one is in
+    // memory (see _ensureLoaded).
     async persistPendingLinks() {
       try {
+        if (!this.initialized) throw new Error('Pending contact links are not loaded; nothing was saved')
         localStorage.setItem(
           'buhoGO_pending_contact_links',
           JSON.stringify(this.pendingContactLinks),
@@ -809,6 +835,7 @@ export const useTransactionMetadataStore = defineStore('transactionMetadata', {
      */
     async setContactForTransaction(txId, walletId, contactId) {
       try {
+        await this._ensureLoaded()
         if (!txId) {
           throw new Error('Transaction ID is required')
         }
@@ -858,6 +885,7 @@ export const useTransactionMetadataStore = defineStore('transactionMetadata', {
      */
     async setRecipientAddressForTransaction(txId, walletId, address) {
       try {
+        await this._ensureLoaded()
         if (!txId || !address) return null
         if (!walletId) {
           console.warn('[txMetadata] setRecipientAddressForTransaction: missing walletId, skipping write', { txId })
@@ -897,6 +925,7 @@ export const useTransactionMetadataStore = defineStore('transactionMetadata', {
      */
     async setLabelForTransaction(txId, walletId, label) {
       try {
+        await this._ensureLoaded()
         if (!txId || !label) return null
         if (!walletId) {
           console.warn('[txMetadata] setLabelForTransaction: missing walletId, skipping write', { txId })
@@ -936,6 +965,7 @@ export const useTransactionMetadataStore = defineStore('transactionMetadata', {
      */
     async setSourceForTransaction(txId, walletId, source) {
       try {
+        await this._ensureLoaded()
         if (!txId || !source) return null
         if (!walletId) {
           console.warn('[txMetadata] setSourceForTransaction: missing walletId, skipping write', { txId })
@@ -977,6 +1007,7 @@ export const useTransactionMetadataStore = defineStore('transactionMetadata', {
      */
     async setCounterpartyAvatarForTransaction(txId, walletId, avatar) {
       try {
+        await this._ensureLoaded()
         if (!txId || !avatar) return null
         if (!walletId) {
           console.warn('[txMetadata] setCounterpartyAvatarForTransaction: missing walletId, skipping write', { txId })
@@ -1017,6 +1048,7 @@ export const useTransactionMetadataStore = defineStore('transactionMetadata', {
      */
     async setMerchantVerificationForTransaction(txId, walletId, verification) {
       try {
+        await this._ensureLoaded()
         if (!txId || !verification) return null
         if (!walletId) {
           console.warn('[txMetadata] setMerchantVerificationForTransaction: missing walletId, skipping write', { txId })
@@ -1057,6 +1089,7 @@ export const useTransactionMetadataStore = defineStore('transactionMetadata', {
      */
     async setSaleBreakdownForTransaction(txId, walletId, breakdown) {
       try {
+        await this._ensureLoaded()
         if (!txId || !breakdown) return null
         if (!walletId) {
           console.warn('[txMetadata] setSaleBreakdownForTransaction: missing walletId, skipping write', { txId })
@@ -1095,6 +1128,7 @@ export const useTransactionMetadataStore = defineStore('transactionMetadata', {
      */
     async clearContactForTransaction(txId, walletId) {
       try {
+        await this._ensureLoaded()
         if (!txId) return null
         if (!walletId) {
           console.warn('[txMetadata] clearContactForTransaction: missing walletId, skipping write', { txId })
@@ -1132,6 +1166,7 @@ export const useTransactionMetadataStore = defineStore('transactionMetadata', {
      */
     async setNoteForTransaction(txId, walletId, note) {
       try {
+        await this._ensureLoaded()
         if (!txId) {
           throw new Error('Transaction ID is required')
         }
@@ -1179,6 +1214,7 @@ export const useTransactionMetadataStore = defineStore('transactionMetadata', {
      */
     async setSuccessActionForTransaction(txId, walletId, successAction) {
       try {
+        await this._ensureLoaded()
         if (!txId) throw new Error('Transaction ID is required')
         if (!successAction) return _resolveMetadata(this, txId, walletId)
         if (!walletId) {
@@ -1220,6 +1256,7 @@ export const useTransactionMetadataStore = defineStore('transactionMetadata', {
      */
     async setVerifyUrlForTransaction(txId, walletId, verifyUrl) {
       try {
+        await this._ensureLoaded()
         if (!txId) throw new Error('Transaction ID is required')
         if (!verifyUrl) return _resolveMetadata(this, txId, walletId)
         if (!walletId) {
@@ -1256,6 +1293,7 @@ export const useTransactionMetadataStore = defineStore('transactionMetadata', {
      */
     async setPayLinkForTransaction(txId, walletId, payLink) {
       try {
+        await this._ensureLoaded()
         if (!txId) throw new Error('Transaction ID is required')
         if (!payLink) return _resolveMetadata(this, txId, walletId)
         if (!walletId) {
@@ -1289,6 +1327,7 @@ export const useTransactionMetadataStore = defineStore('transactionMetadata', {
      */
     async setDeliveryStatusForTransaction(txId, walletId, deliveryStatus) {
       try {
+        await this._ensureLoaded()
         if (!txId) throw new Error('Transaction ID is required')
         if (!deliveryStatus) return _resolveMetadata(this, txId, walletId)
         if (!walletId) {
@@ -1323,6 +1362,7 @@ export const useTransactionMetadataStore = defineStore('transactionMetadata', {
      */
     async setFiatAtSettlementForTransaction(txId, walletId, snapshot) {
       try {
+        await this._ensureLoaded()
         if (!txId || !snapshot) return null
         if (!walletId) {
           console.warn('[txMetadata] setFiatAtSettlementForTransaction: missing walletId, skipping write', { txId })
@@ -1360,6 +1400,7 @@ export const useTransactionMetadataStore = defineStore('transactionMetadata', {
      * @returns {Promise<number>} count of transactions stamped
      */
     async stampFreshTransactions(transactions, walletId, currency) {
+      await this._ensureLoaded()
       if (!Array.isArray(transactions) || transactions.length === 0) return 0
       const cur = String(currency || 'USD').toUpperCase()
       if (!fiatRatesService.ratesAvailable) return 0
@@ -1402,6 +1443,7 @@ export const useTransactionMetadataStore = defineStore('transactionMetadata', {
      */
     async setTagsForTransaction(txId, walletId, tags) {
       try {
+        await this._ensureLoaded()
         if (!txId) {
           throw new Error('Transaction ID is required')
         }
@@ -1446,6 +1488,7 @@ export const useTransactionMetadataStore = defineStore('transactionMetadata', {
      */
     async addTagToTransaction(txId, walletId, tag) {
       try {
+        await this._ensureLoaded()
         const currentTags = this.getTagsForTransaction(txId, walletId)
 
         // Don't add if already exists
@@ -1476,6 +1519,7 @@ export const useTransactionMetadataStore = defineStore('transactionMetadata', {
      */
     async removeTagFromTransaction(txId, walletId, tag) {
       try {
+        await this._ensureLoaded()
         const currentTags = this.getTagsForTransaction(txId, walletId)
         const newTags = currentTags.filter(t => t !== tag)
         return await this.setTagsForTransaction(txId, walletId, newTags)
@@ -1497,6 +1541,7 @@ export const useTransactionMetadataStore = defineStore('transactionMetadata', {
      */
     async updateTransactionMetadata(txId, walletId, metadata) {
       try {
+        await this._ensureLoaded()
         if (!txId) {
           throw new Error('Transaction ID is required')
         }
@@ -1551,6 +1596,7 @@ export const useTransactionMetadataStore = defineStore('transactionMetadata', {
      */
     async clearMetadataForTransaction(txId, walletId) {
       try {
+        await this._ensureLoaded()
         if (!txId) {
           throw new Error('Transaction ID is required')
         }
@@ -1579,6 +1625,7 @@ export const useTransactionMetadataStore = defineStore('transactionMetadata', {
      */
     async clearMetadataForContact(contactId) {
       try {
+        await this._ensureLoaded()
         let changed = false
         Object.keys(this.metadata).forEach(key => {
           if (this.metadata[key].contactId === contactId) {
@@ -1597,9 +1644,11 @@ export const useTransactionMetadataStore = defineStore('transactionMetadata', {
       }
     },
 
-    // Persist metadata to localStorage
+    // Persist metadata to localStorage. A save replaces every saved entry,
+    // so it is refused until they are in memory (see _ensureLoaded).
     async persistMetadata() {
       try {
+        if (!this.initialized) throw new Error('Transaction metadata is not loaded; nothing was saved')
         localStorage.setItem('buhoGO_transaction_metadata', JSON.stringify(this.metadata))
       } catch (error) {
         console.error('Error saving transaction metadata:', error)
@@ -1616,6 +1665,7 @@ export const useTransactionMetadataStore = defineStore('transactionMetadata', {
     // Import metadata from backup
     async importMetadata(metadataObject) {
       try {
+        await this._ensureLoaded()
         if (typeof metadataObject !== 'object') {
           throw new Error('Invalid metadata format')
         }
