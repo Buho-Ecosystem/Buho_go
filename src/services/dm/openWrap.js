@@ -1,10 +1,10 @@
 /**
  * Open a received NIP-59 gift wrap, with a precise reason for every failure.
  *
- * `nostr-core`'s `unwrap` throws one generic error and trusts the rumor's id
- * (upstream issue #73, docs/CONTACT_CHAT.md section 11): a peer could send a
- * rumor whose `id` does not hash to its content and have it accepted under
- * that id. This module therefore walks the same steps on the `nip44`
+ * `nostr-core`'s `unwrap` needs the raw secret key and throws one generic error
+ * (docs/CONTACT_CHAT.md section 11), and a rumor id that does not hash to its
+ * content must be caught: a peer could otherwise have it accepted under that
+ * id. This module therefore walks the same steps on the `nip44`
  * primitives, checks each one and reports which failed, so the inbox can tell
  * a message not meant for us from a forgery. Every check runs on data a
  * stranger chose, and none of it may throw: the result is always a value.
@@ -41,7 +41,7 @@ export const OPEN_FAILURE = Object.freeze({
   INVALID_RUMOR: 'invalid-rumor',
   /** The seal's signer is not the rumor's author: someone speaks in another's name. */
   IMPERSONATION: 'impersonation',
-  /** The rumor's id is not the hash of its content (upstream #73). */
+  /** The rumor's id is not the hash of its content (a forged id). */
   ID_MISMATCH: 'id-mismatch',
 });
 

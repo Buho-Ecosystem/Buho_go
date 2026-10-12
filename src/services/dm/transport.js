@@ -4,8 +4,9 @@
  *
  * Gift wraps (kind 1059) are only served to a client that authenticated, and
  * some relays refuse anonymous writes too, so a plain relay pool cannot carry
- * this feature (upstream issue #72, docs/CONTACT_CHAT.md section 11). This
- * module owns its own `nostr-core` `Relay` instances, separate from the shared
+ * this feature. nostr-core's own AUTH retry (`authSigner`, 1.0.5) takes one
+ * key for every connection and has no challenge cap, so it does not fit
+ * either (docs/CONTACT_CHAT.md section 11). This module owns its own `nostr-core` `Relay` instances, separate from the shared
  * public pool so the identity never authenticates public queries, and keeps
  * three promises:
  *
@@ -998,7 +999,7 @@ class ReadLink extends RelayLink {
 
 const DISCONNECT_MESSAGES = new Set(['relay connection closed', 'relay connection closed by us']);
 
-/** Map the error `Relay.publish` rejects with onto what happened (nostr-core 1.0.4 wording). */
+/** Map the error `Relay.publish` rejects with onto what happened (nostr-core 1.0.5 wording). */
 function classifyPublishFailure(err, epoch) {
   const message = typeof err?.message === 'string' ? err.message : '';
   if (message === 'publish timed out') return { kind: 'timeout', epoch };
