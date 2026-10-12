@@ -9,10 +9,13 @@
  * public pool so the identity never authenticates public queries, and keeps
  * three promises:
  *
- * 1. Two roles, never mixed. A READ connection answers a challenge with the
+ * 1. Roles, never mixed. A READ connection answers a challenge with the
  *    identity (`signAuth`), because the relay must know whose inbox it serves.
  *    A WRITE connection answers with a throwaway key created per connection,
  *    so no relay learns who writes. A relay in both sets gets two sockets.
+ *    An IDENTITY_WRITE connection answers with the identity too, and exists
+ *    only for a relay that refused an anonymous write: inbox relays that take
+ *    gift wraps from known senders only (NIP-59, spam section).
  * 2. AUTH is a state machine, not a branch in the caller. A challenge is
  *    answered at once; a refusal that mentions `auth-required` waits for (or
  *    triggers) that answer and then repeats the request exactly once per
@@ -59,6 +62,8 @@ export const RELAY_ROLE = Object.freeze({
   READ: 'read',
   /** Publishing; authenticates with an ephemeral key per connection. */
   WRITE: 'write',
+  /** Publishing to a relay that refused an anonymous write; authenticates as the identity. */
+  IDENTITY_WRITE: 'identity-write',
 });
 
 /**
@@ -386,7 +391,7 @@ class RelayLink {
   /**
    * @param {object} ctx Transport internals (options, timers, notify, retire).
    * @param {string} url Normalised relay URL.
-   * @param {'read' | 'write'} role
+   * @param {'read' | 'write' | 'identity-write'} role
    */
   constructor(ctx, url, role) {
     this.ctx = ctx;
@@ -1004,9 +1009,10 @@ function classifyPublishFailure(err, epoch) {
 }
 
 class WriteLink extends RelayLink {
-  constructor(ctx, url) {
-    super(ctx, url, RELAY_ROLE.WRITE);
-    /** Ephemeral AUTH key of the current socket. Never the identity. */
+  /** @param {'write' | 'identity-write'} [role] */
+  constructor(ctx, url, role = RELAY_ROLE.WRITE) {
+    super(ctx, url, role);
+    /** Ephemeral AUTH key of the current socket (a WRITE link answers with it). Never the identity. */
     this._key = null;
     this._connecting = null;
     this._ops = 0;
@@ -1019,7 +1025,8 @@ class WriteLink extends RelayLink {
   }
 
   _signChallenge(challenge) {
-    // Only ever the throwaway key: a relay must not learn who writes.
+    // A relay must not learn who writes, unless it refused to take an anonymous write.
+    if (this.role === RELAY_ROLE.IDENTITY_WRITE) return this.ctx.options.signAuth({ relay: this.url, challenge });
     return createAuthEvent({ relay: this.url, challenge }, this._key);
   }
 
@@ -1227,11 +1234,14 @@ export function createDmTransport(options = {}) {
   const reads = new Map();
   /** @type {Map<string, WriteLink>} */
   const writes = new Map();
+  /** @type {Map<string, WriteLink>} Write links that authenticate as the identity. */
+  const identityWrites = new Map();
+  const writeMap = (role) => (role === RELAY_ROLE.IDENTITY_WRITE ? identityWrites : writes);
   let closed = false;
   let quiet = false;
   let bindingSeq = 0;
 
-  const status = () => [...reads.values(), ...writes.values()].map((link) => link.snapshot());
+  const status = () => [...reads.values(), ...writes.values(), ...identityWrites.values()].map((link) => link.snapshot());
 
   const ctx = {
     options: config,
@@ -1241,7 +1251,7 @@ export function createDmTransport(options = {}) {
       safeCall(config.onStatus, status());
     },
     retire(link) {
-      const map = link.role === RELAY_ROLE.READ ? reads : writes;
+      const map = link.role === RELAY_ROLE.READ ? reads : writeMap(link.role);
       if (map.get(link.url) === link) map.delete(link.url);
       link.dispose();
     },
@@ -1257,15 +1267,16 @@ export function createDmTransport(options = {}) {
     return link;
   }
 
-  function writeLink(url) {
-    let link = writes.get(url);
+  function writeLink(url, role = RELAY_ROLE.WRITE) {
+    const map = writeMap(role);
+    let link = map.get(url);
     if (link && link.state === RELAY_STATE.AUTH_FAILED
       && config.now() - link.authFailedAt >= config.authRetryCooldownMs) {
       link.recycle(); // a new publish after the cooldown is the "next connection"
     }
     if (!link) {
-      link = new WriteLink(ctx, url);
-      writes.set(url, link);
+      link = new WriteLink(ctx, url, role);
+      map.set(url, link);
       link.start();
     }
     return link;
@@ -1283,7 +1294,7 @@ export function createDmTransport(options = {}) {
    * AUTH, one retry of a transient failure (rate limit, relay error, dropped
    * socket); a timeout or a final refusal ends it.
    */
-  async function publishOne(url, event) {
+  async function publishOne(url, event, role) {
     let attempts = 0;
     let authRetried = false;
     let transientRetried = false;
@@ -1291,7 +1302,7 @@ export function createDmTransport(options = {}) {
     for (;;) {
       if (closed) return failed(DM_ERROR.RELAY_UNAVAILABLE, 'transport closed');
       attempts += 1;
-      const link = writeLink(url);
+      const link = writeLink(url, role);
       const outcome = await link.attempt(event);
       if (closed) return failed(DM_ERROR.RELAY_UNAVAILABLE, 'transport closed');
 
@@ -1382,16 +1393,19 @@ export function createDmTransport(options = {}) {
    *
    * @param {string[]} relays
    * @param {object} event A signed event.
+   * @param {{ asIdentity?: boolean }} [options] `asIdentity`: over connections that
+   *   authenticate as the identity. Only for relays that refused this write anonymously.
    * @returns {{ firstAccept: Promise<PublishResult | null>, allSettled: Promise<PublishResult[]> }}
    * @throws {DmError} INVALID_ARGUMENT for bad input.
    */
-  function publish(relays, event) {
+  function publish(relays, event, { asIdentity = false } = {}) {
     const urls = toRelayKeys(relays);
     assertEvent(event);
     if (urls.length === 0) {
       return { firstAccept: Promise.resolve(null), allSettled: Promise.resolve([]) };
     }
-    const perRelay = urls.map((url) => publishOne(url, event).catch(
+    const role = asIdentity ? RELAY_ROLE.IDENTITY_WRITE : RELAY_ROLE.WRITE;
+    const perRelay = urls.map((url) => publishOne(url, event, role).catch(
       () => result(url, 0, false, { code: DM_ERROR.RELAY_UNAVAILABLE, message: 'publish failed' }),
     ));
     return { firstAccept: firstSuccess(perRelay), allSettled: Promise.all(perRelay) };
@@ -1420,7 +1434,7 @@ export function createDmTransport(options = {}) {
    * throwaway keys and stay.
    */
   function resetIdentity() {
-    for (const link of [...reads.values()]) ctx.retire(link);
+    for (const link of [...reads.values(), ...identityWrites.values()]) ctx.retire(link);
     ctx.notify();
   }
 
@@ -1429,9 +1443,10 @@ export function createDmTransport(options = {}) {
     if (closed) return;
     closed = true;
     quiet = true;
-    for (const link of [...reads.values(), ...writes.values()]) link.dispose();
+    for (const link of [...reads.values(), ...writes.values(), ...identityWrites.values()]) link.dispose();
     reads.clear();
     writes.clear();
+    identityWrites.clear();
     timers.clearAll();
     quiet = false;
     ctx.notify();

@@ -164,11 +164,16 @@ AUTH must be invisible:
 - `transport.js` uses its own `nostr-core` `Relay` instances (separate from the
   shared public pool, so the identity never authenticates public queries) and
   sets `onauth` **before** `connect()`.
-- Two roles, never mixed, so a relay in both sets gets two sockets:
+- Roles, never mixed, so a relay in both sets gets two sockets:
   **read** connections (own inbox only) answer a challenge at once with the
   identity; **write** connections (every publish, self copies included)
   answer at once with an **ephemeral** key per connection, so no relay learns
-  who writes.
+  who writes. Some inbox relays take gift wraps from senders they know only
+  (NIP-59, spam section): a copy such a relay refuses for who wrote it
+  (`restricted:`, or an AUTH it did not accept) goes once more to that relay
+  alone over an **identity write** connection, which answers AUTH with the
+  identity. That relay then learns who wrote that copy; no other relay does.
+  `resetIdentity()` closes identity write connections with the read ones.
 - On `CLOSED "auth-required:…"` it authenticates and re-subscribes; on
   `OK false "auth-required:…"` it authenticates and re-sends once; after a
   reconnect it re-authenticates and restores subscriptions. A failed AUTH
@@ -529,11 +534,6 @@ Replace the workaround when the upstream fix ships.
 - A mute list whose private part is NIP-04 (older apps) is read for its
   public keys only and never rewritten; NIP-04 decryption is not wired into
   the chat signer.
-- Write connections answer AUTH with a throwaway key. NIP-59 (spam section)
-  now says clients SHOULD be able to authenticate with the real identity to
-  inbox relays that only accept gift wraps from known senders; a relay that
-  refuses with `restricted:` would need one retry on an identity-authenticated
-  link. Not seen on the default inbox relays yet.
 - A thread the user started with a stranger stays under "Not in your
   contacts" (other clients count a chat you wrote to as known).
 - Replace the local workarounds when nostr-core #72 to #75 ship (section 11).

@@ -31,7 +31,7 @@
 
 import { createAuthEventTemplate } from 'nostr-core';
 import { DM_DISCOVERY_RELAYS, DM_INBOX_RELAYS, KIND, SINCE_SLACK_SECONDS } from './constants.js';
-import { DM_ERROR, DmError, isRetryableRelayReason, isSignerWait } from './errors.js';
+import { DM_ERROR, DmError, RELAY_REASON, isRetryableRelayReason, isSignerWait } from './errors.js';
 import { createRumorGate, createWrapGate } from './inboundPolicy.js';
 import { INBOX_STATUS, buildInboxRelayListTemplate, normalizeInboxRelayUrl } from './inboxRelays.js';
 import { openGiftWrap } from './openWrap.js';
@@ -758,6 +758,13 @@ export function createInbox({
     return run;
   }
 
+  /** A refusal that is about the writer: the relay wants to know who writes (`restricted`, or an AUTH it did not accept). */
+  function refusedForWriter(result) {
+    if (result.ok) return false;
+    return result.code === DM_ERROR.AUTH_FAILED
+      || (result.code === DM_ERROR.NO_RELAY_ACCEPTED && result.prefix === RELAY_REASON.RESTRICTED);
+  }
+
   /** Classify the failed publishes of one copy: can trying again help? */
   function isRetryable(results) {
     if (results.length === 0) return true;
@@ -772,9 +779,18 @@ export function createInbox({
   /** Publish one copy and report `{ accepted, retryable, code }`. Never rejects. */
   async function publishCopy(relays, event) {
     try {
-      const { firstAccept, allSettled } = transport.publish(relays, event);
-      if (await firstAccept) return { accepted: true };
-      const results = await allSettled;
+      const anonymous = transport.publish(relays, event);
+      if (await anonymous.firstAccept) return { accepted: true };
+      let results = await anonymous.allSettled;
+      // Some inbox relays take gift wraps from senders they know only (NIP-59,
+      // spam section): a copy refused for who wrote it goes once more, as the
+      // identity, to those relays alone.
+      const gated = results.filter(refusedForWriter).map((r) => r.relay);
+      if (gated.length > 0) {
+        const asIdentity = transport.publish(gated, event, { asIdentity: true });
+        if (await asIdentity.firstAccept) return { accepted: true };
+        results = [...results.filter((r) => !gated.includes(r.relay)), ...(await asIdentity.allSettled)];
+      }
       return { accepted: false, retryable: isRetryable(results), code: failureCode(results) };
     } catch (cause) {
       return { accepted: false, retryable: true, code: DmError.is(cause) ? cause.code : DM_ERROR.RELAY_UNAVAILABLE };
