@@ -108,7 +108,7 @@ export function buildPaymentError(error, ctx = {}, $t = null) {
 
   const title = (typeof ctx.title === 'string' && ctx.title.trim())
     ? ctx.title.trim()
-    : titleForContext(context, t);
+    : titleForErrorCode(error, context, t) || titleForContext(context, t);
 
   let reason;
   let reasonSource;
@@ -329,12 +329,19 @@ export function formatInsufficientBalanceBreakdown(parts, t) {
  * SDK message is terse/technical but the failure mode is well-defined — and
  * crucially we can tell the user when a refundable failure already returned
  * their funds. Returns null when there's no code-specific mapping.
+ *
+ * It also explains the wallet store's WALLET_STATE_* refusals. Exported for
+ * error surfaces that show one line.
  */
-function translateErrorCode(error, t) {
+export function translateErrorCode(error, t) {
   const code = error && typeof error === 'object' ? error.code : null;
   if (!code || typeof code !== 'string') return null;
 
   switch (code) {
+    case 'WALLET_STATE_UNAVAILABLE':
+      return t('Your wallets could not be loaded, so nothing was changed. Close and reopen BuhoGO, then try again.');
+    case 'WALLET_STATE_CONFLICT':
+      return t('Your wallets were changed in another tab or window, so nothing was saved here. Reload BuhoGO, then try again.');
     case 'ADDRESS_REQUEST_NOT_PAYMENT':
       return t('This link asks for your address. It cannot receive a payment.');
     case 'ARKADE_LN_UNAVAILABLE':
@@ -348,6 +355,19 @@ function translateErrorCode(error, t) {
     default:
       return null;
   }
+}
+
+/**
+ * A headline the error's code decides, or null for the context's own. A
+ * wallet add the store could not save never reached the connection, so
+ * "Couldn't connect" would blame the wrong thing.
+ */
+function titleForErrorCode(error, context, t) {
+  const code = error && typeof error === 'object' ? error.code : null;
+  if (context === 'connect' && (code === 'WALLET_STATE_UNAVAILABLE' || code === 'WALLET_STATE_CONFLICT')) {
+    return t("Couldn't add the wallet");
+  }
+  return null;
 }
 
 /**

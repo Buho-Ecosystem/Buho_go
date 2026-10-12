@@ -39,6 +39,8 @@ function harness(ctx, type = 'lnbits') {
     '../boot/i18n': { i18n: { global: { t: (key, values = {}) => key.replace(/\{(\w+)\}/g, (_, name) => values[name] ?? name) } } },
   }).useWalletStore;
   const store = useStore(Pinia.createPinia());
+  // A device whose (empty) saved state is loaded; the wallets below appear on it.
+  store.savedStateLoaded = true;
   store.wallets = [{ id: 'A', type, name: 'Personal', metadata: {} }, { id: 'B', type, name: 'Business', metadata: {} }];
   for (const wallet of store.wallets) wallet.connectionData = { serverUrl: 'https://wallet.invalid', adminKey: 'test-key' };
   store.activeWalletId = 'A';
@@ -57,22 +59,28 @@ function harness(ctx, type = 'lnbits') {
   const vm = app.mount(root);
   ctx.after(() => { app.unmount(); clearTimeout(store._persistTimer); store.$dispose(); });
   const row = () => settings.methods.walletBalanceText.call({ walletStore: vm.walletStore, formatBalance: n => n }, 'A');
-  async function restart() {
+  /** The same device opened again: a new store over the saved state, nothing loaded yet. */
+  function reopen({ connecting = null } = {}) {
     const restored = useStore(Pinia.createPinia());
     restored.loadExchangeRates = async () => {};
     restored.connectLNBitsWallet = async id => {
+      if (connecting) await connecting;
       restored.providers[id] = provider;
       restored.connectionStates[id] = { connected: true };
       await restored.refreshBalance(id, { provider, source: 'connect' });
     };
     ctx.after(() => { clearTimeout(restored._persistTimer); restored.$dispose(); });
+    return restored;
+  }
+  async function restart() {
+    const restored = reopen();
     vm.walletStore = restored;
     await restored.initialize();
     assert.equal(restored.lastError, null);
     await Vue.nextTick();
     return restored;
   }
-  return { store, provider, vm, root, saved, row, notices, restart, setBalance: n => { value = n; failure = null; }, fail: () => { failure = new Error('offline'); } };
+  return { store, provider, vm, root, saved, row, notices, reopen, restart, setBalance: n => { value = n; failure = null; }, fail: () => { failure = new Error('offline'); } };
 }
 
 for (const type of ['lnbits', 'nwc', 'spark', 'arkade']) {
@@ -244,3 +252,40 @@ for (const outcome of ['success', 'error']) {
     assert.equal(JSON.parse(h.saved.get('buhoGO_wallet_store')).wallets[0].metadata.cachedBalance, 37);
   });
 }
+
+// Loading the saved state. With real Pinia, whenHydrated hears the store change.
+
+test('whenHydrated starts the load and resolves once the saved wallets are in memory, before they connect', async ctx => {
+  const h = harness(ctx);
+  await h.store.persistState();
+  const connected = deferred();
+  const reloaded = h.reopen({ connecting: connected.promise });
+  assert.equal(reloaded.hydrated, false);
+  await reloaded.whenHydrated();
+  assert.deepEqual(reloaded.wallets.map(w => w.id), ['A', 'B']);
+  assert.equal(reloaded.savedStateLoaded, true);
+  assert.equal(reloaded.isInitialized, false, 'the active wallet is still connecting');
+  connected.resolve();
+  await reloaded.initialize();
+  assert.equal(reloaded.connectionStates.A.connected, true);
+});
+
+test('whenHydrated also resolves when the saved state cannot be read, and then nothing is saved or added', async ctx => {
+  const h = harness(ctx);
+  await h.store.persistState();
+  const onDisk = h.saved.get('buhoGO_wallet_store');
+  const reloaded = h.reopen();
+  const { getItem } = localStorage;
+  localStorage.getItem = () => { throw new Error('storage is blocked'); };
+  try {
+    await reloaded.whenHydrated();
+  } finally {
+    localStorage.getItem = getItem;
+  }
+  assert.equal(reloaded.hydrated, true, 'screens still paint');
+  assert.equal(reloaded.savedStateLoaded, false);
+  assert.deepEqual(reloaded.wallets, []);
+  await assert.rejects(() => reloaded.persistState({ requireDurable: true }), e => e.code === 'WALLET_STATE_UNAVAILABLE');
+  await assert.rejects(() => reloaded.addLNBitsWallet({ serverUrl: 'https://lnbits.example', adminKey: 'k' }), e => e.code === 'WALLET_STATE_UNAVAILABLE');
+  assert.equal(h.saved.get('buhoGO_wallet_store'), onDisk);
+});

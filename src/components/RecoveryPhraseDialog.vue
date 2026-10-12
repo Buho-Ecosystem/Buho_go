@@ -84,6 +84,7 @@ import { useIdentityStore } from '../stores/identity';
 import { isBiometricAvailable, authenticate } from '../utils/biometric';
 import { useRecoveryPhraseFlow } from '../composables/useRecoveryPhraseFlow.js';
 import { walletBackupGroups } from '../utils/backupStatus.js';
+import { translateErrorCode } from '../utils/userErrors';
 import MnemonicOrderVerify from './MnemonicOrderVerify.vue';
 import BackupSuccessScreen from './BackupSuccessScreen.vue';
 
@@ -102,6 +103,8 @@ const target = ref(null);
 const fingerprint = ref(null);
 const acknowledged = ref(false);
 const checkComplete = ref(false);
+// Why the wallet store refused to save the confirmation (WALLET_STATE_*), if it said.
+const saveRefusal = ref('');
 const heading = ref(null);
 const body = ref(null);
 const isIdentity = computed(() => props.kind === 'identity');
@@ -133,12 +136,18 @@ const flow = useRecoveryPhraseFlow({
     return wallet.getMnemonicForWallet(target.value.id);
   },
   async save() {
+    saveRefusal.value = '';
     if (isIdentity.value) {
       if (!fingerprint.value || fingerprint.value !== identity.fingerprint) throw new Error('Identity changed');
       await identity.confirmBackup();
     } else {
       if (!wallet.wallets.some(w => w.id === target.value?.id)) throw new Error('Wallet removed');
-      await wallet.confirmBackup(target.value.id);
+      try {
+        await wallet.confirmBackup(target.value.id);
+      } catch (failure) {
+        saveRefusal.value = translateErrorCode(failure, t) || '';
+        throw failure;
+      }
     }
   },
   onVerified: () => emit('verified'),
@@ -148,7 +157,7 @@ const canContinue = computed(() => step.value === 'prepare' ? acknowledged.value
   : step.value === 'write' ? visible.value : step.value === 'check' && checkComplete.value);
 const errorMessage = computed(() => error.value === 'auth'
   ? t('Unlock was not completed. Try again when you are ready.')
-  : error.value === 'save' ? t('Backup status could not be saved. Your paper is unchanged. Try confirming again.')
+  : error.value === 'save' ? (saveRefusal.value || t('Backup status could not be saved. Your paper is unchanged. Try confirming again.'))
     : t('Recovery words could not be opened. Try again.'));
 
 function resetSession() {

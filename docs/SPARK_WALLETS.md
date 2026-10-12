@@ -30,7 +30,12 @@ The store (`src/stores/wallet.js`) applies these rules. Membership changes run o
 
 ## Store actions
 
-- `createSparkWallet({ mnemonic })`: the first wallet. Throws `SPARK_WALLET_EXISTS` when Spark is already set up.
+- Every add and removal works on the saved wallets (the save rules are `_assertSavable` in the store):
+  - An add waits until the saved wallets are loaded, and throws `WALLET_STATE_UNAVAILABLE` when they could not be.
+  - The add's own durable save is the first to write the new wallet. When it is refused (`WALLET_STATE_CONFLICT`: another tab or window changed the wallets) or fails, the add is undone and nothing of it stays on disk.
+  - A new wallet's Lightning address reaches the profile only after that save.
+  - A removal that could not be saved is refused before anything is torn down. A removal is saved before it resolves.
+- `createSparkWallet({ mnemonic })`: the first wallet. Throws `SPARK_WALLET_EXISTS` when Spark is already set up; `/spark-setup` opened again with Spark saved goes to the wallet instead.
 - `addSparkWallet({ name })`:
   - Takes the next free account and connects it; a failed connect undoes the entry.
   - Switches to the new wallet.
@@ -71,7 +76,7 @@ Runs in `initialize()` until it completes once (`sparkModelVersion` 2):
 - Former pairs become two ordinary wallets that keep their names. No Personal is created, nothing is renamed, nothing is purged.
 - Pockets (the pre-1.6 model) become wallets on the same phrase.
 - `walletGroupId` is dropped.
-- Entries on another phrase, or a second entry for the same account, are set aside in `buhoGO_spark_set_aside_v1`. They are never deleted. The kept list then passes the store's persist guard explicitly. A wallet on another phrase stays reachable: Manage Wallets lists it under "Other recovery phrase" and shows its words.
+- Entries on another phrase, or a second entry for the same account, are set aside in `buhoGO_spark_set_aside_v1`. They are never deleted. The kept list is then saved: a save may drop a wallet the store read itself, never one it has not seen. A wallet on another phrase stays reachable: Manage Wallets lists it under "Other recovery phrase" and shows its words.
 - Auto-transfer rules from former pockets move to the wallet that now holds the account, switched off.
 - When a phrase cannot be read yet (an install still on the old PIN encryption), nothing is set aside and the migration waits for a later start.
 
@@ -113,11 +118,12 @@ Runs in `initialize()` until it completes once (`sparkModelVersion` 2):
 ## Validation
 
 - `npm test` includes:
-  - `sparkWallets.spec.js`: create, add, limit, restore, discovery, removal, rename, migration.
+  - `sparkWallets.spec.js`: create, add, limit, restore, discovery, removal, rename, migration, and the saved wallets across a reload and a second window.
   - `sparkLightningAddress.spec.js`.
   - `cloudBackup.spec.js`.
   - The pure-rule specs (`sparkAccounts`, `sparkBackup`, `autoWithdrawKeys`, `exitKeys`).
 - `node scripts/check-spark-wallets.mjs` drives Home, Settings, add, move address, removal and the tour in the browser. It covers German, dark mode and 320px. `scripts/check-wallet-details.mjs` covers the detail panel.
+- `node scripts/check-wallet-persistence.mjs` reloads every first-load route on a device with saved wallets, adds an LNbits wallet straight after a reload, keeps a kiosk device locked, and reopens Spark and Arkade setup with the wallet saved.
 
 ## Needs a device
 

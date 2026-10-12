@@ -178,6 +178,7 @@ import { useWalletStore } from '../stores/wallet';
 import { useBip39Mnemonic } from '../composables/useBip39Mnemonic';
 import { probeAccountActivity as probeSparkAccountActivity } from '../services/breezSdk';
 import { ArkadeWalletProvider } from '../providers/ArkadeWalletProvider';
+import { translateErrorCode } from '../utils/userErrors';
 
 const SEED_WORD_COUNT = 12;
 
@@ -480,6 +481,15 @@ export default {
           caption: this.$t(
             'An Arkade wallet is already on this device. Remove it from Settings before restoring a different recovery phrase.'
           ),
+        };
+      }
+
+      // The saved wallets could not be loaded, or another window changed
+      // them: nothing was restored, and the reason says what to do.
+      if (error?.code === 'WALLET_STATE_UNAVAILABLE' || error?.code === 'WALLET_STATE_CONFLICT') {
+        return {
+          message: this.$t("We couldn't restore your wallet"),
+          caption: translateErrorCode(error, this.$t.bind(this)),
         };
       }
 

@@ -113,6 +113,13 @@ test('an older backup restores its wallets through the exit kits; another phrase
   assert.deepEqual(result.failed, []);
 });
 
+test('a wallet the device could not save comes back as failed with its code, so the sheet can say why', async () => {
+  const { store, drive } = harness({ restoreError: Object.assign(new Error('The saved wallets could not be loaded'), { code: 'WALLET_STATE_UNAVAILABLE' }) });
+  drive.payload = { v: 2, spark: { mnemonic: 'phrase words' } };
+  const result = await store.restore();
+  assert.deepEqual(result.failed, [{ label: 'spark', reason: 'The saved wallets could not be loaded', code: 'WALLET_STATE_UNAVAILABLE' }]);
+});
+
 const configured = (extra = {}) => ({ wallets: [spark('a', 1, 'Main')], meta: { lastBackupAt: '2026-10-01T10:00:00.000Z', signedInEmail: 'me@example.com' }, ...extra });
 
 test('after a wallet change the device that wrote the backup refreshes it, once, a few seconds later', async (t) => {

@@ -261,6 +261,7 @@ import { useWalletStore } from '../stores/wallet';
 import { useIdentityStore } from '../stores/identity';
 import { useCloudBackupStore } from '../stores/cloudBackup.js';
 import { WrongPassphraseError } from '../utils/backupCrypto.js';
+import { translateErrorCode } from '../utils/userErrors';
 
 export default {
   name: 'CloudBackupSheet',
@@ -605,7 +606,10 @@ export default {
       if (!parts.length) {
         return this.$t('Nothing new to restore. Everything was already in place.');
       }
-      return parts.join(' · ');
+      // A failure the app can explain (the saved wallets could not be
+      // changed) says what to do next.
+      const reason = result.failed.map((f) => translateErrorCode(f, this.$t.bind(this))).find(Boolean);
+      return reason ? `${parts.join(' · ')}. ${reason}` : parts.join(' · ');
     },
 
     async onDeleteBackup() {

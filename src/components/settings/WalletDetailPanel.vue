@@ -105,6 +105,7 @@ import WalletBrandMark from '../WalletBrandMark.vue';
 import HiddenAmount from '../HiddenAmount.vue';
 import balanceUpdating from '../../directives/balanceUpdating.js';
 import { MAX_WALLET_NAME_LENGTH, walletNameCopy } from '../../utils/walletNames.js';
+import { translateErrorCode } from '../../utils/userErrors';
 
 const vBalanceUpdating = balanceUpdating;
 
@@ -167,8 +168,9 @@ async function saveName() {
     if (name !== props.wallet.name) await props.renameWallet(props.wallet.id, name);
     await cancelEditing();
   } catch (error) {
-    // The store's own rules (length, unique) come back as a problem code.
-    nameError.value = error?.problem ? walletNameCopy(error.problem, t) : t("Couldn't save wallet name");
+    // The store's own rules (length, unique) come back as a problem code; a
+    // save the store refused (WALLET_STATE_*) comes with its own reason.
+    nameError.value = error?.problem ? walletNameCopy(error.problem, t) : (translateErrorCode(error, t) || t("Couldn't save wallet name"));
     nameInput.value?.focus();
   } finally {
     saving.value = false;

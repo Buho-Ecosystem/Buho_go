@@ -200,7 +200,7 @@ import ScannerOverlay from '../components/ScannerOverlay.vue'
 import LoadingScreen from '../components/LoadingScreen.vue'
 import { useWalletStore } from '../stores/wallet'
 import { mapActions } from 'pinia'
-import { getUserFriendlyErrorMessage } from '../utils/userErrors'
+import { getUserFriendlyErrorMessage, translateErrorCode } from '../utils/userErrors'
 import { parseNwcConnection, NWC_REASON_I18N_KEYS } from '../utils/nwcConnection'
 
 export default {
@@ -282,7 +282,10 @@ export default {
       } catch (error) {
         console.error('Failed to connect NWC wallet:', error);
         this.showLoadingScreen = false;
-        this.errorMessage = getUserFriendlyErrorMessage(error, 'connect', this.$t.bind(this));
+        // A reason BuhoGO knows (the saved wallets could not be changed)
+        // replaces the generic title, which would blame the connection.
+        const t = this.$t.bind(this);
+        this.errorMessage = translateErrorCode(error, t) || getUserFriendlyErrorMessage(error, 'connect', t);
       } finally {
         this.isConnecting = false;
       }

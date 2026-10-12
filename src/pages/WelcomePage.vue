@@ -283,8 +283,9 @@ export default {
               return
             }
           } catch (parseError) {
-            console.warn('Failed to parse wallet state, clearing:', parseError)
-            localStorage.removeItem('buhoGO_wallet_store')
+            // Never deleted here: the wallet store sets an unreadable state
+            // aside when it loads, and it may hold encrypted phrases.
+            console.warn('Failed to parse wallet state:', parseError)
           }
         }
         this.showLoadingScreen = false

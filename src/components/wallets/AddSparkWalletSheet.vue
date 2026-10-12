@@ -38,15 +38,16 @@
           enterkeyhint="done"
           :maxlength="maxLength"
           :disabled="creating"
-          :aria-invalid="!!error"
-          :aria-describedby="error ? 'add-spark-error' : 'add-spark-note'"
-          @input="error = ''"
+          :aria-invalid="!!nameError"
+          :aria-describedby="nameError ? 'add-spark-error' : 'add-spark-note'"
+          @input="nameError = ''"
         />
-        <p v-if="error" id="add-spark-error" class="form-sheet-error add-spark-error" role="alert">{{ error }}</p>
+        <p v-if="nameError" id="add-spark-error" class="form-sheet-error add-spark-error" role="alert">{{ nameError }}</p>
         <p id="add-spark-note" class="add-spark-note">
           {{ $t('Made from your recovery phrase, so the backup you have already covers it.') }}
           {{ remainingAfter === 0 ? $t("After this one, you can't add more Spark wallets.") : $t('You can add {count} more after this one.', { count: remainingAfter }) }}
         </p>
+        <p v-if="formError" class="form-sheet-error add-spark-failure" role="alert">{{ formError }}</p>
 
         <button type="submit" class="form-sheet-primary add-spark-primary" :disabled="creating || !name.trim()">
           <q-spinner v-if="creating" size="18px" :aria-hidden="true" />
@@ -62,6 +63,7 @@ import { computed, getCurrentInstance, nextTick, ref, watch } from 'vue';
 import { useWalletStore } from '../../stores/wallet';
 import { suggestWalletName } from '../../utils/sparkAccounts.js';
 import { MAX_WALLET_NAME_LENGTH, walletNameCopy } from '../../utils/walletNames.js';
+import { translateErrorCode } from '../../utils/userErrors';
 import WalletBrandMark from '../WalletBrandMark.vue';
 
 const props = defineProps({ modelValue: { type: Boolean, default: false } });
@@ -74,7 +76,11 @@ const { proxy } = getCurrentInstance();
 const t = (key, params) => proxy.$t(key, params);
 const nameInput = ref(null);
 const name = ref('');
-const error = ref('');
+const nameError = ref('');
+// Why the wallet was not created when the name is not the reason (the limit,
+// the connection, the saved wallets): shown with the action, and the name
+// field is left as it is.
+const formError = ref('');
 const creating = ref(false);
 const maxLength = MAX_WALLET_NAME_LENGTH;
 
@@ -84,7 +90,8 @@ const remainingAfter = computed(() => Math.max(0, store.remainingSparkSlots - 1)
 watch(() => props.modelValue, (visible) => {
   if (!visible) return;
   name.value = suggestWalletName(t('Wallet'), store.wallets);
-  error.value = '';
+  nameError.value = '';
+  formError.value = '';
 });
 
 async function focusName() {
@@ -96,21 +103,26 @@ async function focusName() {
 function describe(failure) {
   if (failure?.problem) return walletNameCopy(failure.problem, t);
   if (failure?.code === 'SPARK_WALLET_LIMIT') return t('You already have the most Spark wallets this app supports.');
-  return t("Couldn't create the wallet. Check your connection and try again.");
+  return translateErrorCode(failure, t) || t("Couldn't create the wallet. Check your connection and try again.");
 }
 
 async function create() {
   if (creating.value) return;
   creating.value = true;
-  error.value = '';
+  nameError.value = '';
+  formError.value = '';
   try {
     const wallet = await store.addSparkWallet({ name: name.value });
     emit('created', wallet);
     open.value = false;
   } catch (failure) {
     console.warn('[add-spark-wallet] not created:', failure?.code || failure?.message || failure);
-    error.value = describe(failure);
-    await focusName();
+    if (failure?.problem) {
+      nameError.value = describe(failure);
+      await focusName();
+    } else {
+      formError.value = describe(failure);
+    }
   } finally {
     creating.value = false;
   }
@@ -125,6 +137,7 @@ async function create() {
 .add-spark-input { width: 100%; min-height: 48px; padding: 10px 12px; border: 1px solid var(--border-card); border-radius: 12px; background: var(--bg-input); color: var(--text-primary); font: 500 16px/1.4 'Manrope', sans-serif; }
 .add-spark-input[aria-invalid="true"] { border-color: var(--color-negative); }
 .add-spark-error { margin: 8px 0 0; }
+.add-spark-failure { margin: 16px 0 0; }
 .add-spark-note { margin: 10px 0 0; color: var(--text-secondary); font-size: 13px; line-height: 1.5; }
 .add-spark-primary { margin-top: 24px; }
 body.body--dark .add-spark-mark { background: rgba(255, 255, 255, 0.1); }
