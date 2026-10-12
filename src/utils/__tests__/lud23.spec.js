@@ -4,7 +4,7 @@ import { bech32 } from 'bech32';
 import { isAddressRequest, parseAddressRequest, validateAddressRequestDetails, addressSubmissionUrl, assertPaymentInput } from '../lud23.js';
 import { resolveAddressRequest, submitAddressRequest } from '../../services/addressRequest.js';
 import { classifyDestination, isSuggestibleDestination, offerLabelKey, offerActionKey } from '../clipboardSuggestion.js';
-import { preferredProfileLightningAddress } from '../profilePaymentAddress.js';
+import { preferredProfileLightningAddress, missingAddressState } from '../profilePaymentAddress.js';
 
 const k1 = 'aB'.repeat(32);
 const data = { tag: 'addressRequest', k1, callback: 'https://receive.example/CaseSensitive?token=KeepMe&x=1', description: 'Rewards for Alice@Example.com' };
@@ -151,3 +151,14 @@ test('clipboard classification is local, neutral for LNURLs, and independent of 
   assert.equal(offerActionKey(encoded('https://example.com/lnurl'), 'spark'), 'Open');
   assert.equal(offerLabelKey(encoded('https://example.com/lnurl'), 'spark'), 'Copied link');
 });
+
+test('an identity from another app is never told its address sets itself up', () => {
+  const state = (overrides) => missingAddressState({ imported: true, profileChecked: false, unreachable: false, checking: false, ...overrides });
+  assert.equal(state({ imported: false }), 'setting-up', 'one made here gets an address on its own');
+  assert.equal(state({ checking: true }), 'checking', 'its published profile is read first');
+  assert.equal(state({}), 'checking');
+  assert.equal(state({ unreachable: true }), 'unreachable');
+  assert.equal(state({ unreachable: true, checking: true }), 'checking', 'a retry shows as checking');
+  assert.equal(state({ profileChecked: true }), 'offer', 'with none on it, one is offered, never set');
+});
+

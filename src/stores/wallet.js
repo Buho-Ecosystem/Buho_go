@@ -2053,7 +2053,7 @@ export const useWalletStore = defineStore('wallet', {
         // undone, and the profile would then send payments to a phrase nobody
         // kept. Its save brings the profile along (_saveAddedWallets).
         if (!addingWallets.has(walletId)) {
-          this._syncProfilePaymentAddress({ previousAddresses: [previousAddress] })
+          this._syncProfilePaymentAddress({ previousAddresses: [previousAddress], renamedTo: address })
             .catch(() => {});
         }
       }
@@ -2119,8 +2119,9 @@ export const useWalletStore = defineStore('wallet', {
      * Spark wallets (Breez address transfer: the source authorises the
      * target's identity key, the target claims). The target's own address
      * is replaced; the source gets a fresh random name it can change later.
-     * A profile pointing at the target's old address moves to the current
-     * default; one pointing at the moved address keeps working as it is.
+     * A profile pointing at the target's old address moves with the target
+     * to the moved address; one pointing at the moved address keeps working
+     * as it is.
      *
      * @returns {Promise<{ moved: string, sourceAddress: string|null }>}
      * Errors carry `code`: LN_ADDRESS_INVALID_TARGET, LN_ADDRESS_NOT_CONNECTED,
@@ -2163,7 +2164,7 @@ export const useWalletStore = defineStore('wallet', {
         // reclaimed and never recorded on two wallets at once.
         await this._forgetSparkLightningAddress(from.id);
         // setSparkLightningAddress also moves a profile that pointed at the
-        // target's old address to the default.
+        // target's old address along to the moved one.
         await this.setSparkLightningAddress(to.id, movedAddress);
         let sourceAddress = null;
         try {
@@ -2192,11 +2193,12 @@ export const useWalletStore = defineStore('wallet', {
      * default. Runs after a Spark address changes or a Spark wallet is
      * removed: when the profile pointed at an old default (one of the given
      * previous addresses, or the Social Bucket), it adopts the current
-     * preferred address and publishes a fresh profile event. An address the
+     * preferred address and publishes a fresh profile event. A renamed
+     * address (`renamedTo`) is followed to the same wallet. An address the
      * user typed themselves is never touched. Dynamic imports keep the
      * wallet store free of a static profile dependency.
      */
-    async _syncProfilePaymentAddress({ previousAddresses = [] } = {}) {
+    async _syncProfilePaymentAddress({ previousAddresses = [], renamedTo = null } = {}) {
       try {
         const [
           { useProfileStore },
@@ -2220,11 +2222,18 @@ export const useWalletStore = defineStore('wallet', {
         const previous = previousAddresses
           .filter(Boolean)
           .map((value) => String(value).toLowerCase());
+        // The profile pointed at a wallet whose address was just renamed: it
+        // stays with that wallet, wherever it ranks.
+        const followsRename = Boolean(renamedTo) && previous.includes(String(profile.lud16).toLowerCase());
         // A profile brought from another app is the person's own (see the
-        // payment-address boot): a wallet change never edits it. Checked
-        // last, so a switch during the loads above is seen.
-        if (identity.activeExternalId) return;
-        profile.adoptDefaultPaymentAddress(preferred, {
+        // payment-address boot): a wallet change only carries an address it
+        // took from one of these wallets through that wallet's rename.
+        // Checked last, so a switch during the loads above is seen.
+        if (identity.activeExternalId) {
+          if (followsRename) profile.setField('lud16', renamedTo);
+          return;
+        }
+        profile.adoptDefaultPaymentAddress(followsRename ? renamedTo : preferred, {
           isReplaceable: (current) => {
             const value = String(current).toLowerCase();
             return isNpubCashAddress(value) || previous.includes(value);
