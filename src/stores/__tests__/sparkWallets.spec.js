@@ -3,8 +3,9 @@
  * six equal wallets (accounts 0..5), one at onboarding. Covers creation,
  * adding, restore and resumable discovery, removal rules, renaming, the
  * one-time migration of saved pairs, and how the saved wallets survive a
- * reload: nothing is saved before they are loaded, and a wallet added
- * meanwhile joins them instead of replacing them.
+ * reload and a second window: nothing is saved before they are loaded, a
+ * wallet added meanwhile joins them instead of replacing them, and an add
+ * or a removal that cannot be saved changes nothing.
  */
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
@@ -385,6 +386,20 @@ test('entries on another phrase or duplicating an account are set aside, never d
   assert.equal(await h.store.getMnemonicForWallet('X'), OTHER_PHRASE, 'and its words can be shown');
 });
 
+test('the load saves the migration itself, so it lands while Spark is offline too', async () => {
+  const other = await savedSpark('X', 1, { phrase: OTHER_PHRASE, group: 'group-2' });
+  const h = createHarness({
+    // Nothing connects, so no later balance save writes the migrated list instead.
+    connect: () => { throw new Error('offline'); },
+    storage: { buhoGO_wallet_store: JSON.stringify({ wallets: [await savedSpark('B', 1), await savedSpark('P', 2), other], activeWalletId: 'B', hasBackedUp: true }) },
+  });
+  await h.store.initialize();
+  const saved = h.saved();
+  assert.equal(saved.sparkModelVersion, 2);
+  assert.deepEqual(saved.wallets.map((w) => w.id), ['B', 'P'], 'the entry on another phrase left the list');
+  assert.ok(saved.wallets.every((w) => w.connectionData.walletGroupId === undefined), 'grouping is dropped');
+});
+
 test('when a phrase cannot be read yet, nothing is set aside and the migration waits', async () => {
   const unreadable = { ...(await savedSpark('X', 1, { phrase: OTHER_PHRASE })), connectionData: { encryptedMnemonic: 'pin-format', network: 'MAINNET', accountNumber: 1, walletGroupId: 'g' } };
   const h = await startWith([await savedSpark('B', 1), unreadable]);
@@ -439,6 +454,7 @@ test('a saved discovery plan resumes at start', async () => {
   await tick();
   assert.deepEqual(h.store.sparkWallets.map((w) => w.connectionData.accountNumber), [1, 3]);
   assert.equal(h.store.sparkDiscovery, null);
+  assert.deepEqual(h.saved().wallets.map((w) => w.connectionData.accountNumber), [1, 3], 'what it found is saved');
 });
 
 // ---- Saved state across a reload -------------------------------------------
@@ -451,21 +467,29 @@ const SETTINGS = {
   preferredFiatCurrency: 'EUR', denominationCurrency: 'btc', useBip177Format: false, balanceHidden: true,
   biometricsEnabled: true, kioskTipValues: [7, 14, 21], kioskDisplayCurrency: 'fiat',
 };
+// The rest of what a reload once put back to its defaults: the kiosk, screen
+// privacy and the backup state.
+const DEVICE = {
+  ...SETTINGS, defaultDisplayCurrency: 'fiat', hasBackedUp: true, privacyScreenEnabled: true,
+  kioskEnabled: true, kioskPin: '2468', kioskWalletId: 'B', kioskTipEnabled: true, kioskRoundUpEnabled: true,
+};
 const LNBITS = { name: 'Kitty', serverUrl: 'https://lnbits.example', adminKey: 'admin-key' };
 const OTHER_WINDOW_WALLET = { id: 'X', type: 'nwc', name: 'Added in another tab', nwcUrl: 'nostr+walletconnect://beef?relay=wss%3A%2F%2Frelay.example&secret=0the' };
 
 const ids = (wallets) => wallets.map((w) => w.id);
-const settingsOf = (saved) => Object.fromEntries(Object.keys(SETTINGS).map((key) => [key, saved[key]]));
+const offline = () => { throw new Error('offline'); };
 const nwcWallet = () => ({ id: 'N', type: 'nwc', name: 'Alby', nwcUrl: NWC_URL, metadata: {} });
+const kittyWallet = () => ({ id: 'L', type: 'lnbits', name: 'Kitty', connectionData: { serverUrl: 'https://lnbits.example', walletId: 'lnbits-1', adminKey: 'k' }, metadata: {} });
+const shopWallet = () => ({ id: 'K', type: 'lnbits', name: 'Shop', connectionData: { serverUrl: 'https://shop.example', walletId: 'shop-1', adminKey: 'shop-key' }, metadata: {} });
 
 /** Stand-ins for the providers of the other wallet types. */
-function otherProviders({ arkadeConnect = null } = {}) {
+function otherProviders({ arkadeConnect = null, lnbitsConnect = null } = {}) {
   class LNBitsWalletProvider {
     static async validateCredentials(serverUrl) {
       return { valid: true, serverUrl, walletInfo: { id: 'lnbits-1', name: 'Kitty', balance: 2100 } };
     }
     constructor() { this.isConnected = false; }
-    async connect() { this.isConnected = true; }
+    async connect() { if (lnbitsConnect) await lnbitsConnect(); this.isConnected = true; }
     async getBalance() { return { balance: 2100 }; }
     async getInfo() { return { alias: 'Kitty' }; }
     async disconnect() { this.isConnected = false; }
@@ -493,12 +517,13 @@ function otherProviders({ arkadeConnect = null } = {}) {
 }
 
 /**
- * A device that saved `wallets` and SETTINGS, opened again. Nothing is loaded
- * yet, exactly as a screen opened straight after a reload finds the store.
+ * A device that saved `wallets` and `state` (SETTINGS unless given), opened
+ * again. Nothing is loaded yet, exactly as a screen opened straight after a
+ * reload finds the store.
  */
-function reloaded(wallets, { arkadeConnect, deps = {}, ...options } = {}) {
-  const raw = JSON.stringify({ balanceSchemaVersion: 1, wallets, activeWalletId: wallets[0]?.id ?? null, sparkModelVersion: 2, ...SETTINGS });
-  const h = createHarness({ ...options, storage: { [STORE_KEY]: raw }, deps: { ...otherProviders({ arkadeConnect }), ...deps } });
+function reloaded(wallets, { state = SETTINGS, arkadeConnect, lnbitsConnect, deps = {}, ...options } = {}) {
+  const raw = JSON.stringify({ balanceSchemaVersion: 1, wallets, activeWalletId: wallets[0]?.id ?? null, sparkModelVersion: 2, ...state });
+  const h = createHarness({ ...options, storage: { [STORE_KEY]: raw }, deps: { ...otherProviders({ arkadeConnect, lnbitsConnect }), ...deps } });
   return { ...h, raw };
 }
 
@@ -521,17 +546,21 @@ for (const [kind, add] of [
   ['LNbits', (store) => store.addLNBitsWallet(LNBITS)],
   ['NWC', (store) => store.addWallet({ name: 'Alby', nwcUrl: NWC_URL })],
 ]) {
-  test(`an ${kind} wallet added straight after a reload joins the saved Spark wallet and keeps every setting`, async () => {
-    const spark = await savedSpark('B', 1, { group: null });
+  test(`an ${kind} wallet added straight after a reload joins the saved wallets and keeps every setting`, async () => {
+    const device = [await savedSpark('B', 1, { group: null }), shopWallet()];
     // Spark stays offline, so no connect refreshes its saved entry meanwhile.
-    const h = reloaded([spark], { connect: () => { throw new Error('offline'); } });
+    const h = reloaded(device, { state: DEVICE, connect: offline });
     assert.equal(h.store.hydrated, false);
     assert.deepEqual(h.store.wallets, []);
     const wallet = await add(h.store);
     const saved = h.saved();
-    assert.deepEqual(ids(saved.wallets), ['B', wallet.id]);
-    assert.equal(JSON.stringify(saved.wallets[0]), JSON.stringify(spark), 'the Spark wallet and its recovery phrase, byte for byte');
-    assert.deepEqual(settingsOf(saved), SETTINGS);
+    assert.deepEqual(ids(saved.wallets), ['B', 'K', wallet.id]);
+    for (const entry of device) {
+      assert.equal(JSON.stringify(saved.wallets.find((w) => w.id === entry.id)), JSON.stringify(entry), `${entry.name} and its secret, byte for byte`);
+    }
+    for (const [key, value] of Object.entries(JSON.parse(h.raw))) {
+      if (key !== 'wallets' && key !== 'activeWalletId') assert.deepEqual(saved[key], value, `${key} is kept`);
+    }
     assert.equal(h.store.activeWalletId, wallet.id);
   });
 }
@@ -575,9 +604,23 @@ test('an Arkade wallet that cannot connect after a reload leaves the loaded sele
   assert.equal(h.store.lastError, 'ark server offline');
 });
 
+test('an LNbits wallet that cannot connect is taken back out, so adding it again works', async () => {
+  let reachable = false;
+  const h = reloaded([await savedSpark('B', 1, { group: null })], {
+    connect: offline,
+    lnbitsConnect: () => { if (!reachable) throw new Error('LNbits server unreachable'); },
+  });
+  await assert.rejects(() => h.store.addLNBitsWallet(LNBITS), /LNbits server unreachable/);
+  assert.deepEqual(ids(h.store.wallets), ['B'], 'not left in memory');
+  assert.equal(h.store.activeWalletId, 'B');
+  assert.deepEqual(ids(h.saved().wallets), ['B']);
+  reachable = true;
+  const wallet = await h.store.addLNBitsWallet(LNBITS);
+  assert.deepEqual(ids(h.saved().wallets), ['B', wallet.id], 'not refused as already connected');
+});
+
 test('removing wallets saves the shorter list, even when another save lands meanwhile', async () => {
-  const kitty = { id: 'L', type: 'lnbits', name: 'Kitty', connectionData: { serverUrl: 'https://lnbits.example', walletId: 'lnbits-1', adminKey: 'k' }, metadata: {} };
-  const h = reloaded([await savedSpark('B', 1, { group: null }), kitty]);
+  const h = reloaded([await savedSpark('B', 1, { group: null }), kittyWallet()]);
   await h.store.initialize();
   let release;
   const closing = new Promise((resolve) => { release = resolve; });
@@ -589,6 +632,17 @@ test('removing wallets saves the shorter list, even when another save lands mean
   release();
   await removal;
   assert.deepEqual(ids(h.saved().wallets), ['B']);
+});
+
+test('a wallet read at load can be removed at once: no save has to have written it first', async () => {
+  for (const remove of [(store) => store.removeWallet('L'), (store) => store.disconnectLNBitsWallets()]) {
+    // Spark stays offline, so nothing is saved between the load and the removal.
+    const h = reloaded([await savedSpark('B', 1, { group: null }), kittyWallet()], { connect: offline });
+    await h.store.initialize();
+    assert.equal(h.local.getItem(STORE_KEY), h.raw, 'nothing saved since the load');
+    await remove(h.store);
+    assert.deepEqual(ids(h.saved().wallets), ['B']);
+  }
 });
 
 test('a wallet another window saved is never dropped: saves are refused instead', async () => {
@@ -605,26 +659,176 @@ test('a wallet another window saved is never dropped: saves are refused instead'
   assert.equal(h.store.wallets[0].name, name, 'the rename is rolled back');
 });
 
+test('a removal another window would undo is refused before anything is torn down', async () => {
+  for (const [what, remove] of [
+    ['Spark from this device', (store) => store.removeSparkFromDevice()],
+    ['one wallet', (store) => store.removeWallet('L')],
+    ['every LNbits wallet', (store) => store.disconnectLNBitsWallets()],
+    ['every NWC wallet', (store) => store.disconnectNwcWallets()],
+  ]) {
+    const h = reloaded([await savedSpark('B', 1, { group: null }), kittyWallet(), nwcWallet()]);
+    await h.store.initialize();
+    saveInOtherWindow(h);
+    const onDisk = h.local.getItem(STORE_KEY);
+    await assert.rejects(() => remove(h.store), (e) => e.code === 'WALLET_STATE_CONFLICT', what);
+    assert.deepEqual(ids(h.store.wallets), ['B', 'L', 'N'], `${what}: every wallet is still here`);
+    assert.equal(h.store.providers.B?.isConnected, true, `${what}: nothing was disconnected`);
+    assert.deepEqual(h.calls.deletedStorage, [], `${what}: no engine storage was deleted`);
+    assert.equal(h.local.getItem(STORE_KEY), onDisk, `${what}: the saved wallets, the other window's too, are as they were`);
+  }
+});
+
+test('a removal whose save is refused says so instead of reporting success', async () => {
+  const h = reloaded([await savedSpark('B', 1, { group: null }), kittyWallet()]);
+  await h.store.initialize();
+  let release;
+  h.store.providers.L = { disconnect: () => new Promise((resolve) => { release = resolve; }) };
+  const removal = h.store.removeWallet('L');
+  await tick();
+  // Another window saves a wallet while this one is still closing the LNbits wallet.
+  saveInOtherWindow(h);
+  release();
+  await assert.rejects(removal, (e) => e.code === 'WALLET_STATE_CONFLICT');
+  assert.deepEqual(ids(h.saved().wallets), ['B', 'L', 'X'], 'nothing was saved over the other window\'s wallet');
+});
+
 for (const [action, device, add] of [
   ['creating Spark', () => [nwcWallet()], (store) => store.createSparkWallet({ mnemonic: PHRASE })],
   ['restoring Spark', () => [nwcWallet()], (store) => store.restoreSparkWallets({ mnemonic: PHRASE })],
+  ['restoring the phrase already here', () => savedSpark('B', 1, { group: null }).then((w) => [w]), (store) => store.restoreSparkWallets({ mnemonic: PHRASE, accounts: [{ accountNumber: 1 }, { accountNumber: 2 }] })],
   ['adding a Spark wallet', () => savedSpark('B', 1, { group: null }).then((w) => [w]), (store) => store.addSparkWallet({ name: 'Savings' })],
   ['adding Arkade', () => savedSpark('B', 1, { group: null }).then((w) => [w]), (store) => store.addArkadeWallet()],
   ['adding NWC', () => savedSpark('B', 1, { group: null }).then((w) => [w]), (store) => store.addWallet({ name: 'Alby', nwcUrl: NWC_URL })],
   ['adding LNbits', () => savedSpark('B', 1, { group: null }).then((w) => [w]), (store) => store.addLNBitsWallet(LNBITS)],
 ]) {
-  test(`${action} while another window saved a wallet fails, keeps nothing in memory and restores the selection`, async () => {
+  test(`${action} while another window saved a wallet fails and leaves the store as it found it`, async () => {
     const h = reloaded(await device());
     await h.store.initialize();
     saveInOtherWindow(h);
     const before = ids(h.store.wallets);
     const selection = h.store.activeWalletId;
+    const plan = h.store.sparkDiscovery;
     await assert.rejects(() => add(h.store), (e) => e.code === 'WALLET_STATE_CONFLICT');
     assert.deepEqual(ids(h.store.wallets), before, 'no wallet exists only in memory');
+    for (const map of ['providers', 'connectionStates', 'walletInfos', 'balanceStates']) {
+      assert.deepEqual(Object.keys(h.store[map]).filter((id) => !before.includes(id)), [], `nothing of it stays in ${map}`);
+    }
     assert.equal(h.store.activeWalletId, selection);
+    assert.deepEqual(ids(h.store.wallets.filter((w) => w.isActive)), [selection], 'only the selection it found is active');
+    assert.deepEqual(h.store.sparkDiscovery, plan, 'the discovery plan as it was');
     assert.deepEqual(ids(h.saved().wallets), [...before, 'X'], 'the other window\'s wallet is still saved');
   });
 }
+
+test('a refused add puts its discovery plan back; a restore takes its backup flag back only when no wallet of the phrase stays', async () => {
+  const fresh = reloaded([nwcWallet()]);
+  await fresh.store.initialize();
+  saveInOtherWindow(fresh);
+  await assert.rejects(() => fresh.store.restoreSparkWallets({ mnemonic: PHRASE }), (e) => e.code === 'WALLET_STATE_CONFLICT');
+  assert.equal(fresh.store.sparkDiscovery, null, 'no plan for a phrase that is not here');
+  assert.equal(fresh.store.hasBackedUp, false);
+
+  const merging = reloaded([await savedSpark('B', 1, { group: null, extra: { hasBackedUp: false } })]);
+  await merging.store.initialize();
+  saveInOtherWindow(merging);
+  await assert.rejects(() => merging.store.restoreSparkWallets({ mnemonic: PHRASE, accounts: [{ accountNumber: 2 }] }), (e) => e.code === 'WALLET_STATE_CONFLICT');
+  assert.equal(merging.store.sparkDiscovery, null, 'the plan the restore made is gone');
+  assert.equal(merging.store.wallets[0].metadata.hasBackedUp, true, 'the phrase was typed in, so the wallet already here counts as backed up');
+
+  const adding = reloaded([await savedSpark('B', 1, { group: null })], {
+    state: { ...SETTINGS, sparkDiscovery: { pending: [2, 3], attempts: 1, names: {} } },
+    // The queued accounts cannot be checked now, so discovery leaves them queued.
+    evidence: { 2: new Error('offline'), 3: new Error('offline') },
+  });
+  await adding.store.initialize();
+  await adding.store.discoverSparkAccounts();
+  saveInOtherWindow(adding);
+  await assert.rejects(() => adding.store.addSparkWallet({ name: 'Savings' }), (e) => e.code === 'WALLET_STATE_CONFLICT');
+  assert.deepEqual(adding.store.sparkDiscovery.pending, [2, 3], 'the account the add took is queued again');
+});
+
+test('an add whose own save fails puts the selection it moved back on disk too', async () => {
+  const h = reloaded([await savedSpark('B', 1, { group: null })], { connect: offline });
+  await h.store.initialize();
+  const { setItem } = h.local;
+  let full = true;
+  h.local.setItem = (key, value) => {
+    // Storage is full for the first save that holds the Arkade wallet; the
+    // balance save made while it connected, with it selected, landed.
+    if (key === STORE_KEY && full && JSON.parse(value).wallets.length > 1) {
+      full = false;
+      throw Object.assign(new Error('The quota has been exceeded.'), { name: 'QuotaExceededError' });
+    }
+    return setItem(key, value);
+  };
+  await assert.rejects(() => h.store.addArkadeWallet(), { name: 'QuotaExceededError' });
+  assert.deepEqual(ids(h.saved().wallets), ['B']);
+  assert.equal(h.saved().activeWalletId, 'B', 'not the Arkade wallet nobody saved');
+});
+
+test('an add whose own save fails leaves nothing on disk, and the profile follows only a saved wallet', async () => {
+  const h = createHarness();
+  await h.store.initialize();
+  let followed = 0;
+  h.store._syncProfilePaymentAddress = async () => { followed += 1; };
+  const { setItem } = h.local;
+  const written = [];
+  let full = true;
+  h.local.setItem = (key, value) => {
+    if (key === STORE_KEY) {
+      const { wallets } = JSON.parse(value);
+      // Storage is full for the first save that holds the new wallet: the
+      // saves made while it connected land, its own save does not.
+      if (full && wallets.length) {
+        full = false;
+        throw Object.assign(new Error('The quota has been exceeded.'), { name: 'QuotaExceededError' });
+      }
+      written.push(ids(wallets));
+    }
+    return setItem(key, value);
+  };
+  await assert.rejects(() => h.store.createSparkWallet({ mnemonic: PHRASE }), { name: 'QuotaExceededError' });
+  assert.ok(written.length >= 3, 'the saves made while it connected landed');
+  assert.ok(written.every((wallets) => !wallets.length), 'none of them wrote the new wallet');
+  assert.deepEqual(h.store.wallets, []);
+  assert.equal(followed, 0, 'the profile never points at an address whose phrase nobody kept');
+
+  h.local.setItem = setItem;
+  const wallet = await h.store.createSparkWallet({ mnemonic: PHRASE });
+  assert.deepEqual(ids(h.saved().wallets), [wallet.id]);
+  assert.ok(wallet.metadata.lud16);
+  assert.equal(followed, 1, 'once saved, the profile follows the new wallet');
+});
+
+test('an add refused because another window saved meanwhile leaves nothing of it on disk', async () => {
+  const h = createHarness();
+  await h.store.initialize();
+  const { setItem } = h.local;
+  const written = [];
+  h.local.setItem = (key, value) => {
+    setItem(key, value);
+    if (key !== STORE_KEY) return;
+    written.push(ids(JSON.parse(value).wallets));
+    // Another window opens while the new wallet connects and saves a wallet of its own.
+    if (written.length === 1) {
+      const theirs = JSON.parse(value);
+      theirs.wallets.push(OTHER_WINDOW_WALLET);
+      setItem(STORE_KEY, JSON.stringify(theirs));
+    }
+  };
+  await assert.rejects(() => h.store.createSparkWallet({ mnemonic: PHRASE }), (e) => e.code === 'WALLET_STATE_CONFLICT');
+  assert.ok(written.every((wallets) => !wallets.length), 'this window never wrote the new wallet');
+  assert.deepEqual(ids(h.saved().wallets), ['X'], 'nothing was saved here, as the message says');
+
+  // The other window removes its wallet again: this one saves again, and
+  // there is no wallet of the undone add for it to drop.
+  h.local.setItem = setItem;
+  setItem(STORE_KEY, JSON.stringify({ ...h.saved(), wallets: [] }));
+  h.store.setBalanceHidden(true);
+  await tick();
+  assert.equal(h.saved().balanceHidden, true);
+  assert.deepEqual(h.saved().wallets, []);
+});
 
 test('wallets this version cannot use stay saved, and settings saves still land', async () => {
   const unknownType = { id: 'X', type: 'cashu', name: 'From a newer version', connectionData: { encryptedMnemonic: 'enc:x:words' } };
@@ -651,6 +855,16 @@ test('an entry without an id never blocks saving', async () => {
   h.store.balanceHidden = false;
   await h.store.persistState({ requireDurable: true });
   assert.equal(h.saved().balanceHidden, false);
+});
+
+test('a saved value another writer left unreadable is never saved over', async () => {
+  for (const value of ['not json', '{"wallets":{}}']) {
+    const h = reloaded([await savedSpark('B', 1, { group: null })]);
+    await h.store.initialize();
+    h.local.setItem(STORE_KEY, value);
+    await assert.rejects(() => h.store.persistState({ requireDurable: true }), (e) => e.code === 'WALLET_STATE_CONFLICT', value);
+    assert.equal(h.local.getItem(STORE_KEY), value);
+  }
 });
 
 test('a saved state that cannot be read is set aside, never deleted, and the person can start again', async () => {
@@ -732,3 +946,4 @@ test('a new Spark wallet becomes the profile payment address only once it is sav
   await assert.rejects(() => refused.store.createSparkWallet({ mnemonic: PHRASE }), (e) => e.code === 'WALLET_STATE_CONFLICT');
   assert.equal(published, 0, 'no profile ever points at a recovery phrase nobody saved');
 });
+

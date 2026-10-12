@@ -48,7 +48,9 @@ function load({ createProvider, extraDeps = {} }) {
   const module = { exports: {} };
   new Function('require', 'module', 'exports', code)((name) => deps[name] || {}, module, module.exports);
   const options = module.exports.useWalletStore;
-  const store = { ...options.state(), persistState: async () => {} };
+  // A device whose saved state is loaded (nothing saved): removals may go
+  // ahead. Saving itself is stubbed out.
+  const store = { ...options.state(), savedStateLoaded: true, persistState: async () => {} };
   for (const [name, fn] of Object.entries(options.actions)) if (!(name in store)) store[name] = fn;
   store.persistState = async () => {};
   for (const [name, getter] of Object.entries(options.getters)) {
@@ -182,8 +184,10 @@ test('a claimed mark the SDK proves wrong is released; a fresh or in-flight one 
 // ---- The load at start -------------------------------------------------------
 
 const settle = () => new Promise((resolve) => setImmediate(resolve));
+// A start that waits forever must fail here, not hang the run.
+const BOUNDED = { timeout: 5000 };
 
-test('the load at start waits for the saved wallets, is bounded, and never rejects', async (t) => {
+test('the load at start waits for the saved wallets, is bounded, and never rejects', BOUNDED, async (t) => {
   const { loadSavedWalletsAtStart } = await import('../../utils/walletHydration.js');
   const warnings = [];
   t.mock.method(console, 'warn', (...args) => warnings.push(args.join(' ')));
@@ -211,7 +215,7 @@ test('the load at start waits for the saved wallets, is bounded, and never rejec
   assert.match(warnings.pop(), /could not be loaded/, 'a failed read is reported once at start');
 });
 
-test('the wallet-store boot holds the start until the saved wallets are loaded', async () => {
+test('the wallet-store boot holds the start until the saved wallets are loaded', BOUNDED, async () => {
   const hydration = await import('../../utils/walletHydration.js');
   const loading = deferred();
   const store = { hydrated: false, savedStateLoaded: false, whenHydrated: () => loading.promise };
