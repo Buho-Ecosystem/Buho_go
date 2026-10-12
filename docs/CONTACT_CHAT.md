@@ -226,7 +226,7 @@ store, clock) so they can be unit tested without network or Pinia.
   `new DmError(code, message?, { cause?, details? })` with `code` from the frozen
   `DM_ERROR` map (`INVALID_ARGUMENT`, `MESSAGE_TOO_LARGE`, `NO_IDENTITY`,
   `KEY_WIPED`, `NO_INBOX_RELAYS`, `NO_RELAY_ACCEPTED`, `RELAY_UNAVAILABLE`,
-  `AUTH_FAILED`, `TIMEOUT`, `INVALID_INVOICE`, `WALLET_CANNOT_PAY`,
+  `AUTH_FAILED`, `TIMEOUT`, `INVALID_INVOICE`,
   `SECRET_KEY_IN_TEXT`, `NO_PAYMENT_ADDRESS`, `PAYMENT_ADDRESS_UNREACHABLE`,
   `INVOICE_FETCH_FAILED`, `AMOUNT_OUT_OF_RANGE`); an unknown code throws a `TypeError`. `message` is
   developer text, never shown; `details` holds small non-secret facts (relay

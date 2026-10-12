@@ -48,7 +48,6 @@ import { DM_ERROR, DmError } from '../services/dm/errors.js';
 import { confirmIncomingPayments } from '../services/dm/paymentConfirmation.js';
 import { buildChatPaymentContext } from '../services/dm/paymentContext.js';
 import { MESSAGE_TYPE, REQUEST_STATUS, isFileMessage } from '../services/dm/protocol.js';
-import { PAYING_REASON, payingWalletReasonText } from '../utils/payingWallets.js';
 
 /** Characters of a replied-to message kept in the preview. */
 const REPLY_PREVIEW_CHARS = 140;
@@ -71,6 +70,12 @@ function clip(text, max = REPLY_PREVIEW_CHARS) {
 }
 
 /**
+ * @typedef {object} Payability
+ * @property {boolean} loading The saved wallets are still loading: Pay waits and nothing is claimed.
+ * @property {string} reason Why no wallet can pay, as a sentence ('' = one can).
+ */
+
+/**
  * @typedef {object} ThreadInput
  * @property {Array<object>} messages Thread messages of the store (ascending).
  * @property {string} partnerName Name shown for the other side.
@@ -78,7 +83,7 @@ function clip(text, max = REPLY_PREVIEW_CHARS) {
  * @property {number} now Unix seconds.
  * @property {(id: string) => Array<{ emoji: string, count: number, mine: boolean }>} reactionsFor
  * @property {(message: object) => string | null} requestStateOf State of a request message.
- * @property {(message: object) => string} disabledReasonOf Why a pending incoming request cannot be paid ('' = can).
+ * @property {(message: object) => Payability} payabilityOf Whether a pending incoming request can be paid now.
  * @property {(message: object) => ({ verified: boolean, walletId: string | null, address?: string | null } | null)} [settlementOf]
  *   How sure the user is that their own request is paid, and where it arrived.
  * @property {(walletId: string | null) => string} [walletNameOf] Display name of a wallet ('' when unknown).
@@ -97,7 +102,7 @@ function clip(text, max = REPLY_PREVIEW_CHARS) {
 export function buildThreadItems(input) {
   const {
     messages, partnerName, unknown = false, now, reactionsFor, requestStateOf,
-    disabledReasonOf, settlementOf = () => null, walletNameOf = () => '',
+    payabilityOf, settlementOf = () => null, walletNameOf = () => '',
     confirmedPayments = new Set(), busyIds = new Set(), formatFiat = () => '', t,
   } = input;
   const busy = busyIds instanceof Set ? busyIds : new Set(busyIds);
@@ -150,6 +155,7 @@ export function buildThreadItems(input) {
         const request = message.request;
         const state = requestStateOf(message) || 'pending';
         const pendingToPay = state === 'pending' && !message.outgoing;
+        const payability = pendingToPay ? payabilityOf(message) : null;
         const found = state === 'paid' && message.outgoing ? settlementOf(message) : null;
         const settlement = state === 'paid' && message.outgoing
           ? {
@@ -171,7 +177,8 @@ export function buildThreadItems(input) {
             state,
             validUntil: request.validUntil,
             settlement,
-            disabledReason: pendingToPay ? disabledReasonOf(message) : '',
+            disabledReason: payability?.reason || '',
+            walletsLoading: payability?.loading === true,
             untrusted: unknown && !message.outgoing,
             busy: busy.has(message.id),
             remindedRecently: now - (remindedAt.get(message.id) ?? -Infinity) < REMIND_INTERVAL_SECONDS,
@@ -308,6 +315,7 @@ export function describeDmError(error, { t, name = '' }) {
  * @property {{ payContact: Function, payInvoice: Function, payAddress: Function }} pay `usePayContact(ctx)`.
  * @property {(sats: number, destinationType?: string) => ({ id: string, usable: boolean, reason: string | null } | null)} payingWalletFor
  *   The wallet that would pay `sats` (the default pick of the "Pay with" field).
+ * @property {(sats: number) => Payability} [payability] Whether a request of `sats` can be paid now.
  * @property {(walletId: string | null) => string} [walletNameOf] Display name of one of the user's wallets.
  * @property {() => Promise<import('../services/dm/paymentConfirmation.js').IncomingTransaction[]>} [loadIncomingTransactions]
  * @property {(key: string, params?: object) => string} t
@@ -323,6 +331,7 @@ export function describeDmError(error, { t, name = '' }) {
 export function useContactChat(options) {
   const {
     store, runtime, pay, payingWalletFor, t, formatFiat,
+    payability = () => ({ loading: false, reason: '' }),
     walletNameOf = () => '',
     loadIncomingTransactions = async () => [],
     now: clock = Date.now,
@@ -356,14 +365,7 @@ export function useContactChat(options) {
     return own || store.requestStatus(message.id, now.value);
   };
 
-  const disabledReasonOf = (message) => {
-    const payer = payingWalletFor(message.request.amountSats, 'lightning');
-    if (!payer) return DM_ERROR.WALLET_CANNOT_PAY;
-    if (payer.usable) return '';
-    return payer.reason === PAYING_REASON.UNSUPPORTED_DESTINATION
-      ? DM_ERROR.WALLET_CANNOT_PAY
-      : payingWalletReasonText(payer.reason, t);
-  };
+  const payabilityOf = (message) => payability(message.request.amountSats);
 
   const settlementOf = (message) => runtime.requestSettlement(message.id);
 
@@ -374,7 +376,7 @@ export function useContactChat(options) {
     now: now.value,
     reactionsFor: (id) => store.reactionsFor(partner(), id),
     requestStateOf,
-    disabledReasonOf,
+    payabilityOf,
     settlementOf,
     walletNameOf,
     confirmedPayments: confirmedPayments.value,

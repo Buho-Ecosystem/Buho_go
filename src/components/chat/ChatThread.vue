@@ -29,6 +29,7 @@
         validUntil,       // unix seconds: when the request stops being open
         settlement,       // own paid request: { verified, walletName, address } | null
         disabledReason,   // why the user cannot pay now (translated) | ''
+        walletsLoading,   // the saved wallets are still loading: Pay waits
         untrusted,        // sender is a stranger
         busy              // an action is in flight
     } }
@@ -113,6 +114,7 @@
               :received-in="row.item.request.settlement?.walletName || ''"
               :received-at="row.item.request.settlement?.address || ''"
               :disabled-reason="row.item.request.disabledReason || ''"
+              :wallets-loading="!!row.item.request.walletsLoading"
               :untrusted="!!row.item.request.untrusted"
               :busy="!!row.item.request.busy"
               :reminded-recently="!!row.item.request.remindedRecently"

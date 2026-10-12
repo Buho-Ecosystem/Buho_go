@@ -64,7 +64,7 @@ function build(messages, overrides = {}) {
     now: 1_500_000,
     reactionsFor: () => [],
     requestStateOf: () => 'pending',
-    disabledReasonOf: () => '',
+    payabilityOf: () => ({ loading: false, reason: '' }),
     t,
     ...overrides,
   }).filter((item) => item.type !== 'day');
@@ -126,14 +126,14 @@ test('items: a request card carries state, valid_until, note, fiat and only pend
   const own = request({ outgoing: true });
   const items = build([incoming, done, own], {
     requestStateOf: (m) => (m.id === done.id ? 'paid' : 'pending'),
-    disabledReasonOf: () => 'WALLET_CANNOT_PAY',
+    payabilityOf: () => ({ loading: false, reason: 'None of your wallets can pay this.' }),
     formatFiat: (sats) => `≈ $${sats / 1000}`,
     busyIds: new Set([own.id]),
   });
   assert.deepEqual(items[0].request, {
     id: incoming.id, amountSats: 25_000, fiatText: '≈ $25', note: 'Pizza', outgoing: false, state: 'pending',
     validUntil: 2_000_000, settlement: null,
-    disabledReason: 'WALLET_CANNOT_PAY', untrusted: false, busy: false, remindedRecently: false,
+    disabledReason: 'None of your wallets can pay this.', walletsLoading: false, untrusted: false, busy: false, remindedRecently: false,
   });
   assert.equal(items[1].request.state, 'paid');
   assert.equal(items[1].request.disabledReason, '', 'a paid request has nothing to disable');
@@ -199,7 +199,7 @@ test('items: day separators are added and keys are unique', () => {
   const all = buildThreadItems({
     messages: [msg({ createdAt: 1_000_000 }), msg({ createdAt: 1_000_060 }), msg({ createdAt: 1_000_000 + 3 * day })],
     partnerName: 'Anna', now: 1_500_000, reactionsFor: () => [], requestStateOf: () => null,
-    disabledReasonOf: () => '', t,
+    payabilityOf: () => ({ loading: false, reason: '' }), t,
   });
   assert.deepEqual(all.map((item) => item.type), ['day', 'message', 'message', 'day', 'message']);
   assert.equal(new Set(all.map((item) => item.key)).size, all.length);
@@ -304,7 +304,7 @@ function fakeRuntime(overrides = {}) {
   return runtime;
 }
 
-function setup({ runtime = fakeRuntime(), payer = { id: 'biz', usable: true, reason: null }, loadIncomingTransactions, unknown = false, contact } = {}) {
+function setup({ runtime = fakeRuntime(), payer = { id: 'biz', usable: true, reason: null }, payability = { loading: false, reason: '' }, loadIncomingTransactions, unknown = false, contact } = {}) {
   const pay = { calls: [], payInvoice(...args) { this.calls.push(['payInvoice', ...args]); }, payContact(...args) { this.calls.push(['payContact', ...args]); }, payAddress(...args) { this.calls.push(['payAddress', ...args]); } };
   const payers = [];
   const chat = useContactChat({
@@ -316,6 +316,7 @@ function setup({ runtime = fakeRuntime(), payer = { id: 'biz', usable: true, rea
     runtime,
     pay,
     payingWalletFor: (amount, type) => { payers.push([amount, type]); return typeof payer === 'function' ? payer(amount, type) : payer; },
+    payability: (amount) => (typeof payability === 'function' ? payability(amount) : payability),
     loadIncomingTransactions,
     t,
     formatFiat: () => '',
@@ -423,17 +424,30 @@ test('live expiry: the clock sleeps at most a minute and wakes for the nearest e
   chat.dispose();
 });
 
-test('disabled reason: the paying wallet, balance and rail reasons in words', async () => {
+test('payability: the request amount is asked, the reason and the loading state reach the card', () => {
   const theirs = request({ createdAt: seconds() - 10 });
   ingest(theirs);
-  const reason = (chat) => chat.items.value.find((i) => i.type === 'request').request.disabledReason;
+  const card = (chat) => chat.items.value.find((i) => i.type === 'request').request;
+  const asked = [];
 
-  const ok = setup();
-  assert.equal(reason(ok.chat), '');
-  assert.deepEqual(ok.payers[0], [25_000, 'lightning']);
-  assert.equal(reason(setup({ payer: null }).chat), DM_ERROR.WALLET_CANNOT_PAY);
-  assert.equal(reason(setup({ payer: { id: 'x', usable: false, reason: 'insufficient-balance' } }).chat), 'Not enough balance');
-  assert.equal(reason(setup({ payer: { id: 'x', usable: false, reason: 'unsupported-destination' } }).chat), DM_ERROR.WALLET_CANNOT_PAY);
+  const ok = setup({ payability: (amount) => { asked.push(amount); return { loading: false, reason: '' }; } });
+  assert.deepEqual([card(ok.chat).disabledReason, card(ok.chat).walletsLoading], ['', false]);
+  assert.equal(asked[0], 25_000);
+  const blocked = setup({ payability: { loading: false, reason: 'None of your wallets can pay this.' } });
+  assert.equal(card(blocked.chat).disabledReason, 'None of your wallets can pay this.');
+  const loading = setup({ payability: { loading: true, reason: '' } });
+  assert.deepEqual([card(loading.chat).disabledReason, card(loading.chat).walletsLoading], ['', true]);
+});
+
+test('payability: the card follows the wallets once they have loaded', async () => {
+  const { ref } = await import('vue');
+  ingest(request({ createdAt: seconds() - 10 }));
+  const loaded = ref(false);
+  const { chat } = setup({ payability: () => (loaded.value ? { loading: false, reason: '' } : { loading: true, reason: '' }) });
+  const card = () => chat.items.value.find((i) => i.type === 'request').request;
+  assert.equal(card().walletsLoading, true);
+  loaded.value = true;
+  assert.equal(card().walletsLoading, false, 'recomputed without reopening the chat');
 });
 
 test('actions: text, reply, request, decline, withdraw and remind go to the runtime with the partner', async () => {
