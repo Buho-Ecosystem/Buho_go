@@ -809,6 +809,37 @@ test('an add whose own save fails leaves nothing on disk, and the profile follow
   assert.equal(followed, 1, 'once saved, the profile follows the new wallet');
 });
 
+for (const [kind, add, secret] of [
+  ['NWC', (store) => store.addWallet({ name: 'Alby', nwcUrl: NWC_URL }), NWC_URL],
+  ['LNbits', (store) => store.addLNBitsWallet(LNBITS), LNBITS.adminKey],
+]) {
+  test(`an ${kind} add whose own save fails leaves its secret nowhere on disk`, async () => {
+    const h = reloaded([await savedSpark('B', 1, { group: null })], { connect: offline });
+    await h.store.initialize();
+    const { setItem } = h.local;
+    const written = [];
+    let full = true;
+    h.local.setItem = (key, value) => {
+      if (key === STORE_KEY) {
+        // Storage is full for the first save that holds the new wallet: the
+        // balance save made while it connected lands, its own save does not.
+        if (full && JSON.parse(value).wallets.length > 1) {
+          full = false;
+          throw Object.assign(new Error('The quota has been exceeded.'), { name: 'QuotaExceededError' });
+        }
+        written.push(value);
+      }
+      return setItem(key, value);
+    };
+    await assert.rejects(() => add(h.store), { name: 'QuotaExceededError' });
+    assert.ok(written.length >= 2, 'the save made while it connected and the undo landed');
+    assert.ok(written.every((raw) => !raw.includes(secret)), 'none of them wrote the new wallet');
+    assert.deepEqual(ids(h.store.wallets), ['B']);
+    assert.deepEqual(ids(h.saved().wallets), ['B']);
+    assert.equal(h.saved().activeWalletId, 'B');
+  });
+}
+
 test('an add refused because another window saved meanwhile leaves nothing of it on disk', async () => {
   const h = createHarness();
   await h.store.initialize();
