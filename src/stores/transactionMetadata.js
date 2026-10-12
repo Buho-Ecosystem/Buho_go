@@ -489,7 +489,10 @@ export const useTransactionMetadataStore = defineStore('transactionMetadata', {
       // recipient's post-payment message), a LUD-21 verify URL (so Tx Details
       // can re-confirm fiat delivery later), a label/source (batch, internal
       // transfer, kiosk), and/or a kiosk saleBreakdown.
-      if (!recipientAddress && !successAction && !verifyUrl && !payLink && !label && !source && !counterpartyAvatar && !merchantVerification && !saleBreakdown) return
+      // An address-less per-payment link that names its contact is queued too
+      // (a paid invoice carries no address; the amount is its proof).
+      const isContactOnlyLink = !!contactId && !!perPayment && Number(amountSats) > 0
+      if (!recipientAddress && !successAction && !verifyUrl && !payLink && !label && !source && !counterpartyAvatar && !merchantVerification && !saleBreakdown && !isContactOnlyLink) return
       const now = Date.now()
       const normalisedAddress = recipientAddress
         ? String(recipientAddress).toLowerCase().trim()
@@ -701,7 +704,7 @@ export const useTransactionMetadataStore = defineStore('transactionMetadata', {
         // stamp) gets the same treatment as label/source — the amount is the
         // only evidence tying it to a tx, and a mis-stamped reusable link
         // would offer "Pay again" for a service the user never paid.
-        const needsAmountProof = !link.recipientAddress && (link.label || link.source || link.payLink)
+        const needsAmountProof = !link.recipientAddress && (link.label || link.source || link.payLink || link.contactId)
         const exact = eligible.find(amountMatches)
         if (!link.transactionId && needsAmountProof && !exact) continue
 

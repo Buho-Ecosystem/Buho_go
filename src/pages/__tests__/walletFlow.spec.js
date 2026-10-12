@@ -29,6 +29,7 @@ const component = (dependencies = {}) => evaluate('../Wallet.vue', {
   '../utils/amountFormatting.js': { formatAmount: n => `${n} sats` },
   '../stores/autoWithdraw': { useAutoWithdrawStore: () => ({ getConfig: () => null, checkAndExecute() {} }) },
   '../utils/fiatRates': { fiatRatesService: { convertSatsToFiat: async () => null } },
+  '../services/paymentNotifications.js': { isInternalRoute: (route) => typeof route === 'string' && route.startsWith('/') && !route.startsWith('//') },
   ...dependencies,
 }).default;
 
@@ -325,7 +326,7 @@ const PAY_WALLETS = [
 const PAY_FUNDS = { biz: 50000, personal: 40000, alby: 30000, lnb: 20000, ark: 10000 };
 const INVOICE_SATS = { 'inv-1000': 1000, 'inv-zero': 0, 'inv-big': 45000 };
 
-function payingHarness({ wallets = PAY_WALLETS, active = 'biz', funds = PAY_FUNDS, connectionStates = {} } = {}) {
+function payingHarness({ wallets = PAY_WALLETS, active = 'biz', funds = PAY_FUNDS, connectionStates = {}, bus = { emit() {} } } = {}) {
   const calls = [];     // provider-level traffic, in order: [walletId, method, ...details]
   const lightning = []; // NWC service traffic
   const notices = [];
@@ -369,6 +370,7 @@ function payingHarness({ wallets = PAY_WALLETS, active = 'biz', funds = PAY_FUND
   const options = component({
     '../utils/payingWallets.js': payingWallets,
     '../utils/walletCapabilities.js': walletCapabilities,
+    '../utils/eventBus.js': { EventBus: bus, PAYMENT_SENT: 'payment:sent' },
     '../utils/lightning.js': { LightningPaymentService: FakeLightningService },
     '../utils/lightningInvoice.js': { parseLightningInvoice: input => ({ invoice: input, amount: INVOICE_SATS[input] ?? 0, description: 'memo' }) },
     '../services/addressRequestIntake.js': { offerAddressRequest: () => false },
@@ -380,13 +382,13 @@ function payingHarness({ wallets = PAY_WALLETS, active = 'biz', funds = PAY_FUND
     '../utils/bip21.js': { parseBip21: () => null, bip21AmountToSats: () => 0 },
     '../utils/l1WithdrawErrors.js': { describeL1WithdrawError: error => ({ title: 'error', description: error.message }) },
   });
-  globalThis.localStorage ??= { getItem: () => null, setItem() {} };
+  globalThis.localStorage = { getItem: () => null, setItem() {} };
   const dispatched = [];
   const vm = {
     ...options.methods, ...options.data.call({}),
     $t: t, $refs: {}, walletStore: store,
     $q: { dark: { isActive: false }, notify: notice => notices.push(notice) },
-    addressBookStore: { findContactByAddress: () => null, findContactByPubkey: () => null },
+    addressBookStore: { findContactByAddress: () => null, findContactByPubkey: () => null, getEntryById: id => (id === 'c1' ? { id: 'c1' } : undefined) },
     transactionMetadataStore: { enqueuePendingContactLink: async link => { (sent.links ||= []).push(link); } },
     serviceImagesStore: { get: () => '' },
     runBrantaVerification() {}, runNostrRecipientEnrichment() {}, rememberServiceImage() {},
@@ -557,6 +559,26 @@ test('Pay with: the route query hands over the wallet', async () => {
     assert.equal(handed.length, 1);
     assert.equal(handed[0].sendingWalletId, expected, JSON.stringify(query));
     assert.deepEqual(replaced, { query: {} });
+  }
+});
+
+test('a handed-over payment returns to the screen that handed it over, when cancelled or done', async () => {
+  for (const [returnTo, expected] of [['/address-book/c1/chat', '/address-book/c1/chat'], ['https://evil.example', null], ['//evil.example', null]]) {
+    const { vm } = payingHarness();
+    const replaced = [];
+    Object.assign(vm, {
+      $route: { query: { action: 'pay_contact', address: 'bob@example.com', returnTo } },
+      $router: { replace: (value) => replaced.push(value) },
+      _walletInitPromise: Promise.resolve(),
+      payContactDestination: () => {},
+      cancelBrantaLookup: () => {},
+    });
+    vm.handlePaymentFromQuery();
+    await new Promise(resolve => setTimeout(resolve, 0));
+    assert.equal(vm.payReturnTo, expected, returnTo);
+    vm.onSendSheetCancel();
+    assert.deepEqual(replaced.slice(1), expected ? [expected] : [], 'only an in-app path is followed');
+    assert.equal(vm.payReturnTo, null, 'used once');
   }
 });
 
@@ -907,4 +929,123 @@ test('Pay with: a removed wallet falls back to the active one instead of paying 
   store.wallets = store.wallets.filter(w => w.id !== 'alby');
   assert.equal(vm.getSendingWallet().id, 'lnb');
   assert.equal(vm.getSendingWalletType(), 'lnbits');
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// Payment context: a caller (the contact chat) attaches an opaque string to a
+// payment and gets it back, with the outcome, in the `payment:sent` event.
+// ─────────────────────────────────────────────────────────────────────────
+
+test('payment context: an invoice handed over by a caller is paid as a lightning invoice and keeps its context', () => {
+  const { vm } = payingHarness();
+  const dispatched = [];
+  vm.onPaymentDetected = async payload => { dispatched.push(payload); };
+  vm.payContactDestination({ address: 'inv-1000', addressType: 'invoice', name: 'Bob', sendingWalletId: 'lnb', context: 'chat:abc' });
+  assert.deepEqual(dispatched, [{
+    type: 'lightning_invoice', data: 'inv-1000', contactName: 'Bob', paymentOnly: true, sendingWalletId: 'lnb', paymentContext: 'chat:abc',
+  }]);
+});
+
+test('payment context: the route query hands the context over, a repeated param is ignored', async () => {
+  for (const [context, expected] of [['chat:abc', 'chat:abc'], [['a', 'b'], undefined], ['', undefined], [undefined, undefined]]) {
+    const { vm } = payingHarness();
+    const handed = [];
+    Object.assign(vm, { $route: { query: { action: 'pay_contact', address: 'inv-1000', addressType: 'invoice', context } },
+      $router: { replace() {} }, _walletInitPromise: Promise.resolve(), payContactDestination: value => handed.push(value) });
+    vm.handlePaymentFromQuery();
+    await new Promise(resolve => setTimeout(resolve, 0));
+    assert.equal(handed[0].context, expected, JSON.stringify(context));
+    assert.equal('context' in handed[0], expected !== undefined);
+  }
+});
+
+test('payment context: a successful payment announces itself with the context, the amount and the paying wallet', async () => {
+  const events = [];
+  const { vm } = payingHarness({ bus: { emit: (name, data) => events.push([name, data]) } });
+  await vm.onPaymentDetected({ type: 'lightning_invoice', data: 'inv-1000', sendingWalletId: 'lnb', paymentContext: 'chat:abc' });
+  await quietly(() => vm.confirmPayment());
+  assert.equal(events.length, 1);
+  assert.equal(events[0][0], 'payment:sent');
+  assert.deepEqual(events[0][1], {
+    contactId: null, destination: 'inv-1000', amountSats: 1000, preimage: null, sendingWalletId: 'lnb', note: null, context: 'chat:abc',
+    status: 'completed', paymentHash: null,
+  });
+});
+
+test('payment context: a payment without a context still announces, with context null', async () => {
+  const events = [];
+  const { vm } = payingHarness({ bus: { emit: (name, data) => events.push([name, data]) } });
+  await vm.onPaymentDetected({ type: 'lightning_invoice', data: 'inv-1000' });
+  await quietly(() => vm.confirmPayment());
+  assert.equal(events.length, 1);
+  assert.equal(events[0][1].context, null);
+});
+
+test('payment context: a failing listener never turns a sent payment into an error', async () => {
+  const { vm, sent } = payingHarness({ bus: { emit() { throw new Error('listener bug'); } } });
+  await vm.onPaymentDetected({ type: 'lightning_invoice', data: 'inv-1000', paymentContext: 'chat:abc' });
+  const warn = console.warn;
+  console.warn = () => {};
+  try { await quietly(() => vm.confirmPayment()); } finally { console.warn = warn; }
+  assert.equal(sent.success.amount, 1000, 'the success screen still opened');
+});
+
+test('payment context: a failed payment announces nothing', async () => {
+  const events = [];
+  const { vm, store } = payingHarness({ bus: { emit: (name, data) => events.push([name, data]) } });
+  store.getProvider = () => { throw new Error('x'); };
+  store.ensureLNBitsConnected = async () => { throw new Error('offline'); };
+  let failures = 0;
+  store.showPaymentError = () => { failures += 1; };
+  Object.assign(vm, { pendingPayment: { ...invoicePayment(), paymentContext: 'chat:abc' }, sendingWalletId: 'lnb' });
+  const error = console.error;
+  console.error = () => {};
+  try { await quietly(() => vm.confirmPayment()); } finally { console.error = error; }
+  assert.equal(failures, 1, 'the payment really failed');
+  assert.deepEqual(events, []);
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// A chat request paid by invoice is linked to the contact (no address to find them by).
+// ─────────────────────────────────────────────────────────────────────────
+
+test('invoice contact: the route query hands over the contact id for an invoice only, a repeated param is ignored', async () => {
+  for (const [addressType, contactId, expected] of [['invoice', 'c1', 'c1'], ['invoice', ['a', 'b'], undefined],
+    ['invoice', '', undefined], ['lightning', 'c1', undefined]]) {
+    const { vm } = payingHarness();
+    const handed = [];
+    Object.assign(vm, { $route: { query: { action: 'pay_contact', address: 'inv-1000', addressType, contactId } },
+      $router: { replace() {} }, _walletInitPromise: Promise.resolve(), payContactDestination: value => handed.push(value) });
+    vm.handlePaymentFromQuery();
+    await new Promise(resolve => setTimeout(resolve, 0));
+    assert.equal(handed[0].contactId, expected, JSON.stringify([addressType, contactId]));
+  }
+});
+
+test('invoice contact: only an existing contact is kept on the payment, and only for an invoice', () => {
+  const { vm } = payingHarness();
+  const dispatched = [];
+  vm.onPaymentDetected = async payload => { dispatched.push(payload); };
+  vm.payContactDestination({ address: 'inv-1000', addressType: 'invoice', sendingWalletId: 'lnb', contactId: 'c1' });
+  vm.payContactDestination({ address: 'inv-1000', addressType: 'invoice', sendingWalletId: 'lnb', contactId: 'gone' });
+  vm.payContactDestination({ address: 'bob@example.com', addressType: 'lightning', sendingWalletId: 'lnb', contactId: 'c1' });
+  assert.equal(dispatched[0].paymentContactId, 'c1');
+  assert.equal('paymentContactId' in dispatched[1], false);
+  assert.equal('paymentContactId' in dispatched[2], false);
+});
+
+test('invoice contact: a paid invoice queues a contact link by amount on the paying wallet', async () => {
+  const events = [];
+  const { vm, sent } = payingHarness({ bus: { emit: (name, data) => events.push([name, data]) } });
+  await vm.onPaymentDetected({ type: 'lightning_invoice', data: 'inv-1000', sendingWalletId: 'lnb', paymentContactId: 'c1' });
+  await quietly(() => vm.confirmPayment());
+  assert.deepEqual(sent.links, [{ contactId: 'c1', amountSats: 1000, perPayment: true, walletId: 'lnb' }]);
+  assert.equal(events[0][1].contactId, 'c1');
+});
+
+test('invoice contact: an invoice without a contact queues nothing', async () => {
+  const { vm, sent } = payingHarness();
+  await vm.onPaymentDetected({ type: 'lightning_invoice', data: 'inv-1000', sendingWalletId: 'lnb' });
+  await quietly(() => vm.confirmPayment());
+  assert.equal(sent.links, undefined);
 });

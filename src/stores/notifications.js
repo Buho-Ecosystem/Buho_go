@@ -24,6 +24,11 @@ import {
  * `prompted` remembers that we already asked in the wizard, because the system
  * dialog is a one-shot on Android: asking again does nothing, and asking a
  * second time in our own UI would be nagging.
+ *
+ * `messagesEnabled` is the contact chat's own switch. It only narrows the two
+ * above (see `canNotifyMessages`): it can silence messages while payments keep
+ * coming, but it can never make a message through when notifications as a
+ * whole are off or not permitted.
  */
 
 const STORAGE_KEY = 'buhoGO_notifications'
@@ -32,6 +37,11 @@ export const useNotificationsStore = defineStore('notifications', {
   state: () => ({
     /** The user's switch inside the app. */
     enabled: false,
+    /**
+     * The user's switch for chat messages, on top of `enabled`. On by default:
+     * turning notifications on means messages too until they say otherwise.
+     */
+    messagesEnabled: true,
     /** 'granted' | 'denied' | 'prompt' | 'unsupported' — the OS's answer. */
     permission: 'prompt',
     /** Have we already shown the system dialog once (wizard or settings)? */
@@ -45,6 +55,14 @@ export const useNotificationsStore = defineStore('notifications', {
 
     /** The only question the rest of the app asks. */
     canNotify: (state) => isSupported() && state.enabled && state.permission === 'granted',
+
+    /**
+     * The same question for a chat message: everything `canNotify` needs, and
+     * the chat's own switch on top.
+     */
+    canNotifyMessages() {
+      return this.canNotify && this.messagesEnabled
+    },
 
     /**
      * Is the question still open — somewhere we can post, not asked before,
@@ -73,10 +91,14 @@ export const useNotificationsStore = defineStore('notifications', {
         const parsed = saved ? JSON.parse(saved) : null
         this.enabled = parsed?.enabled === true
         this.prompted = parsed?.prompted === true
+        // Saved before the chat existed there is no such field: that means
+        // "on", the default. Only an explicit `false` is the user's answer.
+        this.messagesEnabled = parsed?.messagesEnabled !== false
       } catch {
         // A fresh, quiet default is the right fallback.
         this.enabled = false
         this.prompted = false
+        this.messagesEnabled = true
       }
       this.initialized = true
       await this.syncPermission()
@@ -87,6 +109,7 @@ export const useNotificationsStore = defineStore('notifications', {
         localStorage.setItem(STORAGE_KEY, JSON.stringify({
           enabled: this.enabled,
           prompted: this.prompted,
+          messagesEnabled: this.messagesEnabled,
         }))
       } catch (error) {
         console.warn('[notifications] could not persist:', error)
@@ -139,17 +162,42 @@ export const useNotificationsStore = defineStore('notifications', {
     },
 
     /**
+     * The chat's own switch in Settings. The master switch and the OS
+     * permission are left alone; this only decides whether messages are
+     * announced once those allow notifications at all.
+     */
+    setMessagesEnabled(value) {
+      this.messagesEnabled = Boolean(value)
+      this.persist()
+    },
+
+    /**
      * Post a notification if the user asked for them. Copy comes in already
      * translated — this store decides *whether*, never *what*.
+     *
+     * The message goes to `notify` as it is, so every option the service
+     * knows (`force`, `channel`, `channelName`, `id`, `group`, `route`) works
+     * from here. `force` posts even while the app is visible; the receipt
+     * ledger uses it for a payment that settled while the app was hidden and
+     * was only caught up after the user returned (services/paymentReceipts.js).
+     *
+     * Payments come through here. A chat message goes through
+     * `notifyMessageIfEnabled`, which also honours the chat's own switch.
      */
-    /**
-     * `force` posts even while the app is visible; the receipt ledger uses
-     * it for a payment that settled while the app was hidden and was only
-     * caught up after the user returned (services/paymentReceipts.js).
-     */
-    async notifyIfEnabled({ title, body, force = false }) {
+    async notifyIfEnabled(message) {
       if (!this.canNotify) return false
-      return notify({ title, body, force })
+      return notify(message)
+    },
+
+    /**
+     * The same for a chat message: posted only when notifications are on and
+     * the chat's own switch is on, always on the `messages` channel. Pass the
+     * channel's translated name as `channelName`, and for one entry per chat
+     * an `id` from `stableNotificationId` with a `group` and a `route`.
+     */
+    async notifyMessageIfEnabled(message) {
+      if (!this.canNotifyMessages) return false
+      return notify({ ...message, channel: 'messages' })
     },
   },
 })

@@ -154,13 +154,17 @@ export default {
 
   components: { NostrContactPreview, ContactAvatar, NostrAddress },
 
-  props: { active: { type: Boolean, default: true } },
+  props: {
+    active: { type: Boolean, default: true },
+    /** Start with this text in the field (an npub from the chat's "Add contact"). */
+    initialQuery: { type: String, default: '' },
+  },
 
   emits: ['saved', 'open-existing', 'navigation-change', 'focus-back'],
 
   data() {
     return {
-      rawInput: '',
+      rawInput: this.initialQuery.trim(),
       results: [],
       resultEvents: [],
       searchLimit: 20,
@@ -337,6 +341,11 @@ export default {
     rawInput() {
       this.scheduleLookup();
     },
+  },
+
+  mounted() {
+    // A field that starts filled (initialQuery) looks itself up like typed text.
+    if (this.rawInput) this.scheduleLookup();
   },
 
   beforeUnmount() {

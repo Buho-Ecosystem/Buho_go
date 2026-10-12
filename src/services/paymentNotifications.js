@@ -19,19 +19,51 @@
  * degrade to "no notifications" rather than breaking whatever called us.
  * Nothing here ever throws at a caller — a notification is never worth failing
  * a payment path over.
+ *
+ * The contact chat reuses all of this (docs/CONTACT_CHAT.md, section 9). It
+ * adds a second Android channel (`messages`), an optional stable id so a newer
+ * message from the same chat replaces the older notification, an optional
+ * group key, and an in-app route stored in the notification so a tap can open
+ * the right screen (`onNotificationTap`). The same rules hold: silent while
+ * the app is on screen unless forced, no strings owned here, nothing thrown.
  */
 
 import { Capacitor } from '@capacitor/core'
 import { App } from '@capacitor/app'
 
-/** Android notification channel — created once, on first use. */
-const CHANNEL_ID = 'payments'
-/** Notification ids must be 32-bit ints; roll through a small window. */
+/**
+ * Android notification channels — each created once, on first use. `payments`
+ * is the original and stays exactly as it was. `messages` carries the contact
+ * chat. Both are heads-up (importance 4: worth a glance) and private on the
+ * lock screen (visibility 0: it shows the channel, not the content). A
+ * channel's display name is a string, so the caller passes it in translated.
+ */
+const CHANNEL_PAYMENTS = { id: 'payments', importance: 4, visibility: 0 }
+const CHANNEL_MESSAGES = { id: 'messages', importance: 4, visibility: 0 }
+
+/**
+ * Notification ids are 32-bit ints (Android: -2,147,483,648 … 2,147,483,647).
+ * These ranges are in use; keep them apart when adding another:
+ *
+ *   41,000 – 41,999                  payments: a rolling window, one new id per
+ *                                    post (ID_BASE, ID_WINDOW)
+ *   74,000 – 173,999                 emergency-exit unlock reminders
+ *                                    (services/exitNotifications.js)
+ *   1,000,000,000 – 1,999,999,999    stable ids (stableNotificationId): the same
+ *                                    key always maps to the same id, so a newer
+ *                                    notification replaces the older one
+ *                                    (STABLE_ID_BASE, STABLE_ID_WINDOW)
+ */
 const ID_BASE = 41000
 const ID_WINDOW = 1000
+const STABLE_ID_BASE = 1_000_000_000
+const STABLE_ID_WINDOW = 1_000_000_000
+const INT32_MIN = -2147483648
+const INT32_MAX = 2147483647
 
 let _pluginPromise = null
-let _channelReady = false
+/** channel id -> creation in flight or done; dropped again if it failed. */
+const _channelJobs = new Map()
 let _nextId = 0
 
 function loadPluginModule() {
@@ -105,21 +137,75 @@ export async function requestPermission() {
   }
 }
 
-/** Android needs a channel before anything can be posted to it. */
-async function ensureChannel(plugin, title) {
-  if (_channelReady || Capacitor.getPlatform() !== 'android') return
-  try {
-    await plugin.createChannel({
-      id: CHANNEL_ID,
-      name: title,
-      importance: 4, // heads-up: money arriving is worth a glance
-      visibility: 0, // lock screen shows the channel, not the amount
-    })
-    _channelReady = true
-  } catch (err) {
-    // A failed channel is not fatal on every OEM build; try posting anyway.
-    console.warn('[notifications] channel setup failed:', err?.message || err)
+/**
+ * Android needs a channel before anything can be posted to it. One creation
+ * per channel id: a post that arrives while the first one is still in flight
+ * waits for it instead of creating the channel a second time. Never rejects.
+ */
+function ensureChannel(plugin, channel, name) {
+  if (Capacitor.getPlatform() !== 'android') return Promise.resolve()
+  if (!_channelJobs.has(channel.id)) {
+    const job = Promise.resolve()
+      .then(() => plugin.createChannel({
+        id: channel.id,
+        name,
+        importance: channel.importance,
+        visibility: channel.visibility,
+      }))
+      .catch((err) => {
+        // A failed channel is not fatal on every OEM build; try posting
+        // anyway, and try the channel again on the next post.
+        _channelJobs.delete(channel.id)
+        console.warn('[notifications] channel setup failed:', err?.message || err)
+      })
+    _channelJobs.set(channel.id, job)
   }
+  return _channelJobs.get(channel.id)
+}
+
+/**
+ * A stable notification id for `key` — e.g. `chat:<pubkey>` — so that posting
+ * again for the same key replaces the notification still in the shade instead
+ * of stacking a second one. Deterministic across restarts and platforms (a
+ * 32-bit FNV-1a hash of the key, folded into the reserved window documented
+ * at the top: 1,000,000,000 – 1,999,999,999). Two different keys can in theory
+ * share an id (1 in a billion per pair); the cost would be one notification
+ * replacing another, nothing worse.
+ *
+ * @param {string} key
+ * @returns {number} an integer in [1_000_000_000, 1_999_999_999]
+ */
+export function stableNotificationId(key) {
+  const text = String(key)
+  let hash = 0x811c9dc5
+  for (let i = 0; i < text.length; i++) {
+    hash ^= text.charCodeAt(i)
+    hash = Math.imul(hash, 0x01000193)
+  }
+  return STABLE_ID_BASE + ((hash >>> 0) % STABLE_ID_WINDOW)
+}
+
+/**
+ * Is this a path inside the app — something safe to hand to the router?
+ * A leading `/` and nothing that could turn it into another origin: not `//…`
+ * (protocol-relative), not `/\…` (browsers read the backslash as a slash), and
+ * no control characters (URL parsing drops tabs and newlines, so `/<tab>/host`
+ * would become `//host`). Anything that is not a string is rejected.
+ *
+ * A route that comes back out of a notification is data, not a destination
+ * the app trusts: check it with this before following it.
+ *
+ * @param {unknown} route
+ * @returns {boolean}
+ */
+export function isInternalRoute(route) {
+  if (typeof route !== 'string' || route[0] !== '/') return false
+  if (route[1] === '/' || route[1] === '\\') return false
+  for (let i = 0; i < route.length; i++) {
+    const code = route.charCodeAt(i)
+    if (code < 0x20 || code === 0x7f) return false
+  }
+  return true
 }
 
 /**
@@ -141,36 +227,150 @@ export async function isInBackground() {
 }
 
 /**
- * Post "money arrived" — but only when the app is in the background.
+ * Post a notification — but only when the app is in the background.
  *
- * @param {{ title: string, body: string, force?: boolean }} message
+ * Payments call it with `{ title, body, force }` and get the `payments`
+ * channel and a rolling id, exactly as before. The remaining options are for
+ * the contact chat and are all optional; a value of the wrong type is ignored
+ * rather than failing the post.
+ *
+ * @param {object} message
  *   Copy is passed in already translated; this module owns no strings.
- *   `force` skips the background check (used by the Settings test tap).
+ * @param {string} message.title
+ * @param {string} [message.body]
+ * @param {boolean} [message.force=false]
+ *   Skip the background check (the Settings test tap, and a payment that
+ *   settled while the app was hidden and is only announced once it is back).
+ * @param {'payments'|'messages'} [message.channel='payments']
+ *   Android channel. Anything but `'messages'` means `payments`.
+ * @param {string} [message.channelName]
+ *   Display name of the channel, translated, used when the channel is first
+ *   created. Without it `payments` is named after the title (as it always
+ *   was) and `messages` after its id — never after a contact.
+ * @param {number} [message.id]
+ *   A 32-bit integer, normally from `stableNotificationId`. A newer
+ *   notification with the same id replaces the older one instead of stacking.
+ *   Without it each post takes the next id of the rolling payments window.
+ * @param {string} [message.group]
+ *   Android group key, e.g. `chat:<pubkey>`. No summary notification is posted
+ *   (yet), so one entry per chat comes from the stable `id`, not from the group.
+ * @param {string} [message.route]
+ *   In-app path to open on a tap, e.g. `/address-book/<id>/chat`. Stored as
+ *   `extra.route` and handed back by `onNotificationTap`.
  * @returns {Promise<boolean>} whether a notification was actually posted
  */
-export async function notify({ title, body, force = false }) {
+export async function notify({ title, body, force = false, channel, channelName, id, group, route } = {}) {
   const plugin = (await loadPluginModule())?.LocalNotifications
   if (!plugin || !title) return false
   if (!force && !(await isInBackground())) return false
 
-  await ensureChannel(plugin, title)
-  _nextId = (_nextId + 1) % ID_WINDOW
+  const target = channel === CHANNEL_MESSAGES.id ? CHANNEL_MESSAGES : CHANNEL_PAYMENTS
+  const fallbackName = target === CHANNEL_PAYMENTS ? title : target.id
+  await ensureChannel(plugin, target, typeof channelName === 'string' && channelName ? channelName : fallbackName)
+
+  let notificationId = id
+  if (!Number.isInteger(notificationId) || notificationId < INT32_MIN || notificationId > INT32_MAX) {
+    _nextId = (_nextId + 1) % ID_WINDOW
+    notificationId = ID_BASE + _nextId
+  }
+  const notification = {
+    id: notificationId,
+    title,
+    body: body || '',
+    channelId: target.id,
+    // No schedule block: post it now.
+    // A monochrome status-bar mark (res/drawable/ic_stat_notification);
+    // Android tints it, so it must be white on transparent.
+    smallIcon: 'ic_stat_notification',
+    // Posted now, so no alarm is involved. The plugin (8.3+) treats every
+    // notification as an exact alarm unless told otherwise, and without that
+    // permission (denied by default on Android 14+) it opens the "Alarms &
+    // reminders" settings screen and waits: in the background that screen is
+    // blocked and the notification is never posted.
+    isExactNotification: false,
+  }
+  if (typeof group === 'string' && group) notification.group = group
+  if (typeof route === 'string' && route) notification.extra = { route }
+
   try {
-    await plugin.schedule({
-      notifications: [{
-        id: ID_BASE + _nextId,
-        title,
-        body: body || '',
-        channelId: CHANNEL_ID,
-        // No schedule block: post it now.
-        // A monochrome status-bar mark (res/drawable/ic_stat_notification);
-        // Android tints it, so it must be white on transparent.
-        smallIcon: 'ic_stat_notification',
-      }],
-    })
+    await plugin.schedule({ notifications: [notification] })
     return true
   } catch (err) {
     console.warn('[notifications] could not post:', err?.message || err)
     return false
+  }
+}
+
+/** Tell one tap listener about a tap. Never throws, whatever the handler does. */
+function deliverTap(handler, event) {
+  try {
+    // Only a tap on the notification itself. No action buttons are registered
+    // and no platform reports a dismissal of these notifications today; this
+    // keeps a future one from opening a screen.
+    if (event?.actionId === 'dismiss') return
+    const stored = event?.notification?.extra
+    const extra = stored && typeof stored === 'object' && !Array.isArray(stored) ? stored : {}
+    const result = handler({
+      route: typeof extra.route === 'string' ? extra.route : null,
+      extra,
+    })
+    // An async handler that rejects must not become an unhandled rejection.
+    if (result && typeof result.catch === 'function') {
+      result.catch((err) => console.warn('[notifications] tap handler failed:', err?.message || err))
+    }
+  } catch (err) {
+    console.warn('[notifications] tap handler failed:', err?.message || err)
+  }
+}
+
+/**
+ * Be told when the user taps a notification this module posted.
+ *
+ * `handler({ route, extra })` runs for each tap. `extra` is the notification's
+ * extra data (always an object, `{}` when it had none — payment notifications
+ * carry none) and `route` is `extra.route` when that is a string, else `null`.
+ * The route is untrusted data: follow it only after `isInternalRoute(route)`.
+ *
+ * The plugin listener is attached lazily, and only where notifications exist
+ * at all. Register early (App.vue does, on mount): on Android and iOS the
+ * plugin holds a tap that arrives before any listener exists and hands it to
+ * the first one, while on the web — where the plugin turns a click on a
+ * notification into the same event — nothing is held, so a listener that comes
+ * late misses the clicks before it.
+ *
+ * @param {(tap: { route: string|null, extra: object }) => unknown} handler
+ * @returns {() => void} unsubscribe; safe to call more than once, and safe to
+ *   call before the listener has finished registering
+ */
+export function onNotificationTap(handler) {
+  if (typeof handler !== 'function') return () => {}
+
+  let active = true
+  let handle = null
+
+  const release = (listener) => {
+    try {
+      Promise.resolve(listener?.remove?.()).catch(() => {})
+    } catch {
+      // Nothing left to release.
+    }
+  }
+
+  loadPluginModule()
+    .then(async (pluginModule) => {
+      const plugin = pluginModule?.LocalNotifications
+      if (!plugin || !active) return
+      const registered = await plugin.addListener('localNotificationActionPerformed', (event) => {
+        if (active) deliverTap(handler, event)
+      })
+      if (active) handle = registered
+      else release(registered) // unsubscribed while registering
+    })
+    .catch((err) => console.warn('[notifications] tap listener unavailable:', err?.message || err))
+
+  return () => {
+    active = false
+    release(handle)
+    handle = null
   }
 }

@@ -336,6 +336,29 @@
         </SettingsRow>
 
         <!--
+          Chat messages: the contact chat's own switch, a refinement of the
+          payment-notification switch above. While notifications as a whole
+          are off the row is shown but disabled, with the reason in its
+          caption. Hidden when the chat is not running (no identity, kiosk).
+        -->
+        <SettingsRow
+          v-if="notificationsStore.supported && chatAvailable"
+          icon="tabler:message-circle"
+          :label="$t('Chat messages')"
+          :caption="messagesNotificationsCaption"
+          :interactive="false"
+        >
+          <template #right>
+            <q-toggle
+              :model-value="notificationsStore.messagesEnabled"
+              :disable="!notificationsStore.canNotify"
+              @update:model-value="notificationsStore.setMessagesEnabled"
+              :color="$q.dark.isActive ? 'brand-green' : 'brand-green-dark'"
+            />
+          </template>
+        </SettingsRow>
+
+        <!--
           Screen Privacy — Android FLAG_SECURE.
           On native: toggle mirrors the canonical persisted value
           owned by SecureScreenPlugin; toggling here flows through
@@ -2098,6 +2121,7 @@ import {useBitcoinPreferencesStore} from '../stores/bitcoinPreferences'
 import {useIdentityStore} from '../stores/identity'
 import {useProfileStore} from '../stores/profile'
 import {useNotificationsStore} from '../stores/notifications'
+import {useChatRuntime} from '../composables/useChatRuntime'
 import {mapState, mapActions} from 'pinia'
 import {fiatRatesService} from '../utils/fiatRates.js'
 import {formatAmount} from '../utils/amountFormatting.js'
@@ -2155,6 +2179,9 @@ const MEMPOOL_PRESET_URLS = [MEMPOOL_DEFAULT_URL, MEMPOOL_BLOCKTRAINER_URL];
 export default {
   name: 'SettingsPage',
   directives: { balanceUpdating },
+  setup() {
+    return { chatAvailable: useChatRuntime().available };
+  },
   components: {
     ArkadeLogo,
     WalletBrandMark,
@@ -2519,6 +2546,13 @@ export default {
       return this.notificationsStore.permission === 'denied'
         ? this.$t('Notifications are blocked for BuhoGO in your phone settings.')
         : this.$t('Get a notification when a payment lands while you are in another app.');
+    },
+
+    /** Caption of the Chat messages row; names the reason while it is disabled. */
+    messagesNotificationsCaption() {
+      return this.notificationsStore.canNotify
+        ? this.$t('Get a notification when someone writes to you.')
+        : this.$t('Turn on payment notifications first.');
     },
 
     /**

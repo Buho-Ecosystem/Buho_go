@@ -10,15 +10,20 @@
     <button
       type="button"
       class="payee-open"
-      :aria-label="entry.name"
+      :aria-label="unread > 0 ? `${entry.name}, ${$t('New messages')}: ${unread}` : entry.name"
       @click="$emit('open', entry)"
     >
       <!-- Avatar — real picture for nostr-sourced contacts, the
            app-wide grey silhouette otherwise. -->
-      <ContactAvatar
-        class="payee-avatar"
-        :entry="entry"
-      />
+      <span class="payee-avatar-wrap">
+        <ContactAvatar
+          class="payee-avatar"
+          :entry="entry"
+        />
+        <!-- Unread chat messages: a pin on the avatar's corner, so the
+             row keeps its layout. -->
+        <span v-if="unread > 0" class="payee-unread" aria-hidden="true">{{ unreadBadge }}</span>
+      </span>
 
       <span class="payee-copy">
         <span class="payee-name">{{ entry.name }}</span>
@@ -54,10 +59,18 @@ export default {
     entry: {
       type: Object,
       required: true
+    },
+    /** Unread chat messages from this contact (0: no badge). */
+    unread: {
+      type: Number,
+      default: 0
     }
   },
   emits: ['pay', 'open'],
   computed: {
+    unreadBadge() {
+      return this.unread > 99 ? '99+' : String(this.unread)
+    },
     displayAddress() {
       return this.entry.address || this.entry.lightningAddress || ''
     },
@@ -133,6 +146,30 @@ export default {
 
 .payee-row:active {
   background: rgba(127, 127, 127, 0.06);
+}
+
+.payee-avatar-wrap {
+  position: relative;
+  display: flex;
+  flex-shrink: 0;
+}
+
+.payee-unread {
+  position: absolute;
+  top: -4px;
+  right: -6px;
+  min-width: 18px;
+  height: 17px;
+  padding: 0 5px;
+  display: grid;
+  place-items: center;
+  box-sizing: border-box;
+  border: 2px solid var(--bg-primary);
+  border-radius: 999px;
+  background: var(--brand-accent);
+  color: #04150b;
+  font: 800 9px/1 'Manrope', sans-serif;
+  pointer-events: none;
 }
 
 .payee-avatar {

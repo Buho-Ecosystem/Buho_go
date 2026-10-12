@@ -18,8 +18,39 @@ import { useAddressBookStore } from '../stores/addressBook';
 const RESYNC_COOLDOWN_MS = 60 * 1000;
 
 /**
+ * What a caller may add to a payment it hands to the wallet page.
+ * @typedef {object} PayOptions
+ * @property {string} [walletId]  The wallet that should pay ("Pay with" preselection).
+ * @property {string} [context]   Opaque string returned in the `payment:sent` event
+ *   once the payment succeeded (the contact chat uses it to announce the payment).
+ * @property {string} [contactId]  Address-book id the payment belongs to. Only an invoice
+ *   needs it (it carries no address to find the contact by).
+ * @property {number} [amountSats]  Amount to fill into the confirm sheet (the user still confirms it).
+ *   Used when a payment is made for an expired request.
+ * @property {string} [note]  Note to fill into the confirm sheet, where the recipient accepts one
+ *   (for an invoice: shown as what the payment is for).
+ * @property {boolean} [returnHere]  Come back to the current screen when the payment is done or
+ *   cancelled (the contact chat), instead of staying on the wallet page.
+ */
+
+/** The optional query parameters of a hand-over. Empty values are left out. */
+function extraQuery({ walletId, context, amountSats, note, returnHere } = {}, router) {
+  return {
+    ...(returnHere && router?.currentRoute?.value?.fullPath ? { returnTo: router.currentRoute.value.fullPath } : {}),
+    ...(typeof walletId === 'string' && walletId ? { walletId } : {}),
+    ...(typeof context === 'string' && context ? { context } : {}),
+    ...(Number.isSafeInteger(amountSats) && amountSats > 0 ? { prefillAmount: String(amountSats) } : {}),
+    ...(typeof note === 'string' && note ? { prefillNote: note } : {}),
+  };
+}
+
+/**
  * @param {{ $q: any, $t: Function, $router: any }} ctx  Component instance.
- * @returns {{ payContact: (contact: object) => void }}
+ * @returns {{
+ *   payContact: (contact: object, options?: PayOptions) => void,
+ *   payInvoice: (invoice: { bolt11: string, name?: string }, options?: PayOptions) => void,
+ *   payAddress: (target: { address: string, addressType?: string, name?: string }, options?: PayOptions) => void,
+ * }}
  */
 export function usePayContact(ctx) {
   const store = useAddressBookStore();
@@ -39,7 +70,7 @@ export function usePayContact(ctx) {
     });
   }
 
-  function payContact(contact) {
+  function payContact(contact, options = {}) {
     if (!contact) return;
 
     // Fire the refresh before deciding anything, so it never blocks the tap.
@@ -82,9 +113,51 @@ export function usePayContact(ctx) {
         address,
         addressType: contact.addressType || 'lightning',
         contactName: contact.name,
+        ...extraQuery(options, ctx.$router),
       },
     });
   }
 
-  return { payContact };
+  /**
+   * Pay a BOLT-11 invoice (fetched for a payment request in the contact chat)
+   * through the same pipeline. There is no contact address to
+   * guard here: the invoice IS the destination, so the identity-only checks of
+   * `payContact` do not apply. The wallet page decodes it, checks it and shows
+   * the confirm sheet.
+   */
+  function payInvoice({ bolt11, name = '' } = {}, options = {}) {
+    if (typeof bolt11 !== 'string' || !bolt11.trim()) return;
+    ctx.$router.push({
+      path: '/wallet',
+      query: {
+        action: 'pay_contact',
+        address: bolt11.trim(),
+        addressType: 'invoice',
+        ...(name ? { contactName: name } : {}),
+        ...(typeof options.contactId === 'string' && options.contactId ? { contactId: options.contactId } : {}),
+        ...extraQuery(options, ctx.$router),
+      },
+    });
+  }
+
+  /**
+   * Pay an address that is not (or not yet) a saved contact's: the Lightning
+   * address of an expired payment request. Same pipeline and capability gate as
+   * `payContact`, without its contact-only guards and bookkeeping.
+   */
+  function payAddress({ address, addressType = 'lightning', name = '' } = {}, options = {}) {
+    if (typeof address !== 'string' || !address.trim()) return;
+    ctx.$router.push({
+      path: '/wallet',
+      query: {
+        action: 'pay_contact',
+        address: address.trim(),
+        addressType,
+        ...(name ? { contactName: name } : {}),
+        ...extraQuery(options, ctx.$router),
+      },
+    });
+  }
+
+  return { payContact, payInvoice, payAddress };
 }

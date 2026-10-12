@@ -884,7 +884,10 @@ export default {
     resetForFreshOpen() {
       this.showAddress = false
       this.addressCopied = false
-      this.comment = ''
+      // A payment made for a request starts with that request's note (the recipient must accept comments).
+      this.comment = this.payment?.commentAllowed
+        ? String(this.payment.defaultComment || '').slice(0, this.payment.commentMaxLength || 100)
+        : ''
       this.logoFailed = false
       // Fiat-payout addresses default to the recipient's own currency (the
       // natural "send 10,000 shillings" model); everything else uses the user's

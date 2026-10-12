@@ -132,6 +132,14 @@ const routes = [
       { path: '/address-book', component: () => import('pages/AddressBook.vue') },
       // A contact's own page: identity, pay, and the payments between you.
       { path: '/address-book/:id', component: () => import('pages/ContactProfilePage.vue') },
+      // The contact chat: money requests, payments and short encrypted
+      // messages with a saved contact. `/messages/:pubkey` is the same page for
+      // a sender who is not in the address book (the route notifications use):
+      // it shows who wrote with an "add contact / block" banner, and hands over
+      // to the contact route as soon as the sender is saved. Lazy-loaded like
+      // the contact page.
+      { path: '/address-book/:id/chat', component: () => import('pages/ContactChatPage.vue') },
+      { path: '/messages/:pubkey', component: () => import('pages/ContactChatPage.vue') },
       // Bitcoin merchant map. Lazy-loaded so maplibre-gl (~200KB gzipped)
       // never lands in the initial bundle. `?place=<id>` deep-links a pin.
       { path: '/map', component: () => import('pages/MapPage.vue') },

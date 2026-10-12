@@ -774,6 +774,7 @@ import {npubFromLightningAddress, shortenNpub, profileDisplayName, sanitizeImage
 import {fetchProfile, parseProfileContent, DEFAULT_FETCH_TIMEOUT_MS} from '../utils/nostrFetch.js';
 import {resolveNostrLightningTarget} from '../services/nostrPaymentTarget';
 import {Invoice} from '@getalby/lightning-tools';
+import {isInternalRoute} from '../services/paymentNotifications.js';
 import {parseLightningInvoice} from '../utils/lightningInvoice.js';
 import {fiatRatesService} from '../utils/fiatRates.js';
 import {fiatSymbol} from '../utils/fiatCurrencies.js';
@@ -828,6 +829,7 @@ import { useBitcoinDepositsStore } from '../stores/bitcoinDeposits';
 import {SA_RETAIL_SOURCE, parseZARFromMetadata} from '../utils/merchantQR.js';
 import {lookupBrantaVerification, BRANTA_LOOKUP_TIMEOUT_MS} from '../utils/branta.js';
 import { readCachedTransactions, mergeCachedTransactions } from '../utils/txCache.js';
+import { EventBus, PAYMENT_SENT } from '../utils/eventBus.js';
 
 function emptySaveContactData() {
   return {
@@ -899,6 +901,9 @@ export default {
   },
   data() {
     return {
+      // Where a handed-over payment returns to when it is done or cancelled
+      // (the contact chat); null: stay on the wallet page.
+      payReturnTo: null,
       // Emergency exit door state: re-evaluated on each balance tick.
       exitHealthTick: 0,
       exitBannerDismissedUntil: Number(localStorage.getItem('buhoGO_exit_banner_dismissed_until') || 0),
@@ -1636,15 +1641,18 @@ export default {
         // identity with the ₿ mark, never a stray letter. The memo (when
         // the invoice carries one) shows exactly once, in the payment-
         // indicator row below the hero; the raw BOLT11 stays one tap away.
-        recipient = {
-          name: this.$t('Bitcoin payment'),
-          color: '#F7931A',
-          initial: '₿',
+        // A request paid from the chat names who it is for: the contact (or
+        // the name the chat knows), since the invoice itself names nobody.
+        const contact = p.paymentContactId ? this.addressBookStore.getEntryById(p.paymentContactId) : null;
+        recipient = this.recipientFromContact(contact, {
+          fallbackName: p.contactName || this.$t('Bitcoin payment'),
+          fallbackColor: '#F7931A',
+          fallbackInitial: p.contactName ? undefined : '₿',
           addressType: 'invoice',
           // The raw destination for invoices is the BOLT11 itself, surfaced
           // (folded) under the payment indicator for manual verification.
           address: p.invoice || p.data || ''
-        };
+        });
       }
 
       // ── Branta merchant verification ──────────────────────────
@@ -1694,8 +1702,13 @@ export default {
           minSats: Math.ceil(p.minSendable / 1000),
           maxSats: Math.floor(p.maxSendable / 1000)
         };
+        // A payment made for a request arrives with its amount (the sender
+        // still confirms it); outside the range it would only mislead.
+        const wanted = p.prefill?.amountSats;
+        if (wanted >= amount.minSats && wanted <= amount.maxSats) amount.defaultAmount = wanted;
       } else {
         amount = { mode: 'free' };
+        if (p.prefill?.amountSats > 0) amount.defaultAmount = p.prefill.amountSats;
       }
 
       // ── Payout currency (LUD-21 currency extension #207) ──────
@@ -1762,9 +1775,12 @@ export default {
         // "memo" is just boilerplate metadata ("Pay to Wallet of Satoshi user:
         // …"), already conveyed by the logo + name + brand hint, so we drop it
         // rather than repeat it.
-        description: (walletBrand || nostrPubkey || p.description === recipient.name) ? '' : (p.description || p.defaultDescription || (bv && bv.description) || ''),
+        description: (walletBrand || nostrPubkey || p.description === recipient.name) ? '' : (p.description || p.defaultDescription || (bv && bv.description)
+          // A chat request's note: what the payment is for (an LNURL invoice carries no memo).
+          || (recipient.addressType === 'invoice' ? p.prefill?.note : '') || ''),
         commentAllowed: !!p.commentAllowed,
         commentMaxLength: p.commentAllowed || 100,
+        ...(p.prefill?.note ? { defaultComment: p.prefill.note } : {}),
         // Merchant-driven extras — countdown, ZAR fallback, stale rates.
         // The sheet hides each of these when the corresponding field is
         // absent, so we can wire them unconditionally here.
@@ -2698,8 +2714,15 @@ export default {
      * rail). The capability gate is asked of that wallet, so a contact the
      * active wallet cannot pay is still payable from another wallet that can.
      * The active wallet is never switched.
+     *
+     * `addressType: 'invoice'` pays a BOLT-11 invoice handed over as `address`
+     * (a payment request from the contact chat). `context` is an opaque string
+     * of the caller; it is returned unchanged in the `payment:sent` event once
+     * the payment succeeded (see `emitPaymentSent`). `prefill` ({ amountSats,
+     * note }) fills the confirm sheet for a payment made for a request that has
+     * no invoice any more; the sender still reviews and confirms it.
      */
-    payContactDestination({ address, addressType, name, sendingWalletId = null }) {
+    payContactDestination({ address, addressType, name, sendingWalletId = null, context = null, contactId = null, prefill = null }) {
       if (!address) return;
       if (offerAddressRequest(address, { t: this.$t.bind(this), paymentOnly: true })) return;
       const payerId = this.chooseSendingWalletId(addressType, sendingWalletId);
@@ -2718,6 +2741,7 @@ export default {
         bitcoin: 'bitcoin_address',
         lightning: 'lightning_address',
         lnurl: 'lnurl',
+        invoice: 'lightning_invoice',
       };
       void this.onPaymentDetected({
         type: typeMap[addressType] || 'lightning_address',
@@ -2728,6 +2752,11 @@ export default {
         // default pick runs again once the amount is known and may choose a
         // wallet that can cover it. `payerId` above only gates the rail.
         sendingWalletId: payerId === sendingWalletId ? sendingWalletId : null,
+        ...(context ? { paymentContext: context } : {}),
+        ...(prefill ? { prefill } : {}),
+        // Only an invoice needs it, and only a contact that exists is kept.
+        ...(addressType === 'invoice' && contactId && this.addressBookStore.getEntryById(contactId)
+          ? { paymentContactId: contactId } : {}),
       });
     },
 
@@ -2997,6 +3026,20 @@ export default {
       if (!isPayContact && !isLegacyBitcoin) return;
       // A repeated param arrives as an array; only a single id means anything.
       const walletId = isPayContact && typeof query.walletId === 'string' ? query.walletId : null;
+      // Opaque caller context, handed back in `payment:sent`. A repeated
+      // param is ignored, like walletId.
+      const context = isPayContact && typeof query.context === 'string' && query.context ? query.context : null;
+      // Amount and note to fill into the confirm sheet (Send anyway on an
+      // expired chat request). Only a clean positive integer counts.
+      const prefillSats = isPayContact && typeof query.prefillAmount === 'string' && /^[1-9][0-9]{0,14}$/.test(query.prefillAmount)
+        ? Number(query.prefillAmount) : null;
+      const prefillNote = isPayContact && typeof query.prefillNote === 'string' ? query.prefillNote : '';
+      const prefill = prefillSats || prefillNote ? { amountSats: prefillSats, note: prefillNote } : null;
+      // The screen that handed the payment over, to return to (an in-app path only).
+      this.payReturnTo = isPayContact && isInternalRoute(query.returnTo) ? query.returnTo : null;
+      // Address-book id of the contact an invoice is paid to (a chat request).
+      const contactId = isPayContact && query.addressType === 'invoice'
+        && typeof query.contactId === 'string' && query.contactId ? query.contactId : null;
 
       // Dispatch once wallet initialization settles (success or failure —
       // a failed init still gets the proper payment-error surface), then
@@ -3010,6 +3053,9 @@ export default {
             addressType: isLegacyBitcoin ? 'bitcoin' : (query.addressType || 'lightning'),
             name: query.contactName || null,
             sendingWalletId: walletId,
+            ...(context ? { context } : {}),
+            ...(contactId ? { contactId } : {}),
+            ...(prefill ? { prefill } : {}),
           });
 
           // Clear query params
@@ -4757,6 +4803,32 @@ export default {
     },
 
     /**
+     * Announce a sent payment on the EventBus (`payment:sent`, see utils/eventBus.js).
+     *
+     * The wallet page does not know who asked for the payment; listeners that
+     * do (the contact chat's announcer) recognise their own `context`. A
+     * listener that throws must never turn a payment that went through into an
+     * error screen, so this swallows everything.
+     */
+    /** The payment hash of a BOLT-11 invoice; null when there is none or it does not decode. */
+    paymentHashOf(invoice) {
+      if (!invoice) return null;
+      try {
+        return new Invoice({ pr: invoice }).paymentHash || null;
+      } catch {
+        return null;
+      }
+    },
+
+    emitPaymentSent(payload) {
+      try {
+        EventBus.emit(PAYMENT_SENT, payload);
+      } catch (error) {
+        console.warn('[wallet] a payment:sent listener failed:', error?.name || 'Error');
+      }
+    },
+
+    /**
      * Abort and clear any in-flight Branta lookup. Called when a payment is
      * abandoned (sheet cancelled, component unmounted) so a request for a
      * payment the user dropped does not linger.
@@ -4910,6 +4982,10 @@ export default {
             ? this.addressBookStore.findContactByPubkey(recipientNostrPubkey)
             : null
         );
+        // A paid invoice has no address to find the contact by: the chat names it.
+        const invoiceContactId = this.pendingPayment?.type === 'lightning_invoice' && this.pendingPayment.paymentContactId
+          && this.addressBookStore.getEntryById(this.pendingPayment.paymentContactId)
+          ? this.pendingPayment.paymentContactId : null;
         const shouldOfferSave = isCompletedSend && !!(recipientAddress && !existingContact);
         const recipientLabel = isServiceSend && !existingContact
           ? serviceName
@@ -4952,7 +5028,18 @@ export default {
           ? { name: bv.name || '', logoUrl: bv.logoUrl || '', logoLightUrl: bv.logoLightUrl || '', verifyUrl: bv.verifyUrl || '' }
           : null;
 
-        if (recipientAddress || successAction || verifyUrl || paymentSource || merchantVerification || payLink) {
+        if (invoiceContactId && !existingContact) {
+          try {
+            await this.transactionMetadataStore.enqueuePendingContactLink({
+              contactId: invoiceContactId,
+              amountSats: amount,
+              perPayment: true,
+              walletId: sendingWalletId,
+            });
+          } catch (err) {
+            console.warn('[wallet] could not queue contact link:', err);
+          }
+        } else if (recipientAddress || successAction || verifyUrl || paymentSource || merchantVerification || payLink) {
           try {
             // A resolved Nostr send carries the person's avatar + display
             // name so the tx row/hero show who was actually paid instead of
@@ -5061,6 +5148,21 @@ export default {
         // recipient payload is still intact, and let that brief micro-
         // interaction play. This is the bridge from the send CTA to the
         // confirmation screen.
+        // Tell whoever handed this payment over (the contact chat): a settled
+        // one is announced, one still routing is only recorded (it may fail),
+        // so a request it pays is never offered for paying twice.
+        this.emitPaymentSent({
+          contactId: existingContact?.id || invoiceContactId,
+          destination: recipientAddress || this.pendingPayment?.invoice || null,
+          amountSats: amount,
+          preimage: result?.preimage || null,
+          sendingWalletId,
+          note: comment,
+          context: this.pendingPayment?.paymentContext || null,
+          status: isCompletedSend ? 'completed' : 'pending',
+          paymentHash: result?.paymentHash || result?.payment_hash || this.paymentHashOf(this.pendingPayment?.invoice),
+        });
+
         this.sendDidSucceed = true;
         await new Promise((resolve) => setTimeout(resolve, 450)); // CTA completion beat
 
@@ -5159,7 +5261,15 @@ export default {
       }
     },
 
+    /** Back to the screen that handed the payment over, if one did (HIG: a modal task returns where it began). */
+    returnAfterPayment() {
+      const to = this.payReturnTo;
+      this.payReturnTo = null;
+      if (to) this.$router.replace(to);
+    },
+
     onSendSheetCancel() {
+      this.returnAfterPayment();
       this.cancelBrantaLookup();
       this.showSendSheet = false;
       this.sendDidSucceed = false;
@@ -5545,6 +5655,7 @@ export default {
      */
     onSendSuccessClosed() {
       this.showSendSuccess = false;
+      this.returnAfterPayment();
       // Stop any in-flight delivery poll (abort the request + ignore late
       // results) and clear the status so the next send starts clean.
       this._stopDeliveryPoll();

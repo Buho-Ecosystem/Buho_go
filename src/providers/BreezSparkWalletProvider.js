@@ -44,6 +44,7 @@ import {
   BREEZ_PAYMENT_STATUS as PAYMENT_STATUS,
   detailsArm,
   paymentHashOf,
+  bolt11ReceiveMethod,
   preimageOf,
   mapBreezPaymentsToTxList,
   mapWithdrawFeeQuoteToTiers,
@@ -666,7 +667,8 @@ export class BreezSparkWalletProvider extends WalletProvider {
     description,
     includeSparkAddress,
     includeSparkInvoice = false,
-    descriptionHash = null
+    descriptionHash = null,
+    expiry
   }) {
     this._ensureConnected();
 
@@ -692,11 +694,7 @@ export class BreezSparkWalletProvider extends WalletProvider {
     try {
       const response = await this._withTransportRetry(() =>
         this.sdk.receivePayment({
-          paymentMethod: {
-            type: 'bolt11Invoice',
-            description: memo,
-            amountSats,
-          }
+          paymentMethod: bolt11ReceiveMethod({ description: memo, amountSats, expiry })
         })
       );
 

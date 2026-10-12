@@ -1,0 +1,59 @@
+/*
+  Contact chat design tokens.
+
+  The app's own tokens (--bg-*, --text-*, --border-card, --brand-accent*,
+  --color-warn*, --radius-*) carry almost everything. These few are the chat's
+  additions: message bubbles, the "pay" pill, the Send blue (the Send button on
+  the home screen). The danger colour is the app's --color-negative, readable
+  on both papers.
+
+  Dark is the default, exactly like app.css; Quasar's body.body--light
+  overrides them. Imported by every chat component, so Vite emits it once.
+*/
+:root {
+  --chat-bubble-in: #232323;
+  --chat-bubble-out: rgba(21, 222, 114, 0.16);
+
+  /* The primary "Pay" pill: same pair as .profile-pay on the contact page. */
+  --chat-pay-bg: #F4F4F4;
+  --chat-pay-fg: #0C0C0C;
+  --chat-on-accent: #04150B;
+
+  /* Money bar: Request wears the receive tint, Send the send tint (home screen). */
+  --chat-request-bg: rgba(21, 222, 114, 0.14);
+  --chat-request-fg: #15DE72;
+  --chat-request-border: rgba(21, 222, 114, 0.22);
+  --chat-send-bg: rgba(59, 130, 246, 0.14);
+  --chat-send-fg: #3B82F6;
+  --chat-send-border: rgba(59, 130, 246, 0.22);
+
+  --chat-danger: var(--color-negative);
+  --chat-danger-soft: rgba(255, 68, 68, 0.09);
+  --chat-danger-line: rgba(255, 68, 68, 0.32);
+  --chat-warn-line: rgba(232, 196, 104, 0.38);
+  --chat-focus: #3B82F6;
+}
+
+body.body--light {
+  --chat-bubble-in: #EFE9DB;
+  --chat-bubble-out: rgba(5, 149, 115, 0.12);
+
+  --chat-pay-bg: #1A1A1C;
+  --chat-pay-fg: #FAF7EF;
+  --chat-on-accent: #FFFFFF;
+
+  /* Light mode drops the green / blue story: two quiet peers, so the one
+     filled button on screen is whatever waits for the person (a request's Pay). */
+  --chat-request-bg: var(--bg-input);
+  --chat-request-fg: var(--text-primary);
+  --chat-request-border: var(--border-card);
+  --chat-send-bg: var(--bg-input);
+  --chat-send-fg: var(--text-primary);
+  --chat-send-border: var(--border-card);
+
+  --chat-danger: var(--color-negative);
+  --chat-danger-soft: rgba(198, 40, 40, 0.07);
+  --chat-danger-line: rgba(198, 40, 40, 0.28);
+  --chat-warn-line: rgba(138, 95, 0, 0.32);
+  --chat-focus: #2563EB;
+}

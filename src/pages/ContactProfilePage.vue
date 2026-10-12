@@ -67,8 +67,9 @@
       </button>
 
       <!-- Payments between you, from the wallets' own histories joined
-           with the app's tx-to-contact links. Outgoing only: what YOU
-           sent this person. -->
+           with the app's tx-to-contact links. Both directions: what you
+           sent (matched by address or link) and what you received
+           (matched by link only, see loadHistory). -->
       <div class="profile-sec-label">{{ $t('Between you') }}</div>
       <div v-if="historyLoading" class="profile-history-note">
         <q-spinner size="15px" />
@@ -76,18 +77,23 @@
       </div>
       <template v-else-if="history.length > 0">
         <div class="profile-history">
-          <div v-for="tx in history" :key="tx.sourceKey" class="profile-tx">
+          <div
+            v-for="tx in history"
+            :key="tx.sourceKey"
+            class="profile-tx"
+            :class="{ 'profile-tx--incoming': tx.type === 'incoming' }"
+          >
             <span class="profile-tx-icon">
-              <Icon icon="tabler:arrow-up-right" width="15" height="15" />
+              <Icon :icon="tx.type === 'incoming' ? 'tabler:arrow-down-left' : 'tabler:arrow-up-right'" width="15" height="15" />
             </span>
             <span class="profile-tx-copy">
-              <strong>{{ $t('Sent') }}</strong>
+              <strong>{{ tx.type === 'incoming' ? $t('Received') : $t('Sent') }}</strong>
               <small>{{ formatTxDate(tx) }}</small>
             </span>
-            <span class="profile-tx-amt">{{ formatSats(tx.amountSats) }} {{ $t('sats') }}</span>
+            <span class="profile-tx-amt">{{ tx.type === 'incoming' ? '+' : '' }}{{ formatSats(tx.amountSats) }} {{ $t('sats') }}</span>
           </div>
         </div>
-        <p class="profile-history-note">{{ $t('Payments you made to this contact.') }}</p>
+        <p class="profile-history-note">{{ $t('Payments between you and {name}.', { name: entry.name }) }}</p>
       </template>
       <p v-else class="profile-history-note">{{ $t('No payments between you yet.') }}</p>
     </div>
@@ -261,9 +267,14 @@ export default {
     },
 
     /**
-     * Outgoing payments to this contact, joined from every available
-     * provider's history: a tx counts when its own address matches the
-     * contact's, or when the durable metadata link names this contact.
+     * Payments between you and this contact, joined from every available
+     * provider's history, in both directions:
+     *  - Outgoing: a tx counts when its own address (or the recipient address
+     *    in its metadata) matches the contact's, or when the durable metadata
+     *    link names this contact.
+     *  - Incoming: only when the durable metadata link names this contact.
+     *    An incoming tx's lnaddress is the user's OWN address, so matching it
+     *    would attach unrelated payments.
      * Best effort — a provider that cannot answer contributes nothing.
      */
     async loadHistory() {
@@ -290,9 +301,13 @@ export default {
               const meta = this.txMetadata.getMetadataForTransaction(tx.id, wallet.id) || {}
               const txAddress = String(tx.lnaddress || '').trim().toLowerCase()
               const metaAddress = String(meta.recipientAddress || '').trim().toLowerCase()
-              const matches =
-                (aliases.has(txAddress) || aliases.has(metaAddress))
-                || (contactId && meta.contactId === contactId)
+              const linked = Boolean(contactId) && meta.contactId === contactId
+              // Incoming payments match only by the explicit link. For an
+              // incoming tx, lnaddress is the user's OWN address: matching it
+              // would attach unrelated payments to this contact.
+              const matches = tx.type === 'incoming'
+                ? linked
+                : (aliases.has(txAddress) || aliases.has(metaAddress) || linked)
               return {
                 ...tx,
                 sourceKey: `${wallet.id}:${tx.id || tx.timestamp}`,
@@ -311,7 +326,7 @@ export default {
           .flat()
           .filter((tx) => (
             tx.matches
-            && tx.type === 'outgoing'
+            && ['outgoing', 'incoming'].includes(tx.type)
             && !['pending', 'failed', 'expired'].includes(tx.status)
           ))
           .sort((a, b) => b.timeMs - a.timeMs)
@@ -544,6 +559,10 @@ body.body--dark .profile-pay {
   font-weight: 750;
   color: var(--text-primary);
   font-variant-numeric: tabular-nums;
+}
+
+.profile-tx--incoming .profile-tx-amt {
+  color: var(--brand-accent-text);
 }
 
 .profile-history-note {

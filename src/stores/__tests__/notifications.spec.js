@@ -12,6 +12,10 @@
  * here, dialog and all — and that the row exists in a browser too, where only
  * the wizard slide is withheld.
  *
+ * The contact chat adds a third answer, `messagesEnabled`: its own switch,
+ * which only narrows the other two (`canNotifyMessages`), is saved next to
+ * them, and reads as "on" in anything saved before it existed.
+ *
  * Run directly with Node:
  *   node src/stores/__tests__/notifications.spec.js
  */
@@ -228,6 +232,206 @@ await test('nothing is posted unless the user asked for it', async () => {
   store.disable();
   await store.notifyIfEnabled({ title: 'Money arrived', body: '+2000' });
   assert.equal(svc.state.posted.length, 1, 'the switch is off; nothing more is posted');
+});
+
+console.log('\nchat messages');
+
+const STORED = 'buhoGO_notifications';
+const message = {
+  title: 'Alice',
+  body: 'Lunch?',
+  channelName: 'Messages',
+  id: 1_713_917_725,
+  group: 'chat:abc',
+  route: '/address-book/abc/chat',
+};
+
+/** A store whose persisted blob was written by `blob` before the app started. */
+async function storeSavedAs(blob, svc = service({ permission: 'granted' })) {
+  globalThis.localStorage = new MemoryStorage();
+  if (blob !== undefined) localStorage.setItem(STORED, blob);
+  setActivePinia(createPinia());
+  const store = loadStore(svc)();
+  await store.initialize();
+  return { store, svc };
+}
+
+await test('messages are on by default, but a fresh install is still quiet', async () => {
+  const { store } = fresh(service());
+  assert.equal(store.messagesEnabled, true, 'on before anything has been loaded, too');
+  await store.initialize();
+  assert.equal(store.messagesEnabled, true);
+  assert.equal(store.canNotifyMessages, false, 'the master switch is still off');
+});
+
+await test('the chat switch is saved next to the others and survives a reload', async () => {
+  const svc = service({ grant: true });
+  const { store } = fresh(svc);
+  await store.initialize();
+  await store.enable();
+  assert.deepEqual(JSON.parse(localStorage.getItem(STORED)), { enabled: true, prompted: true, messagesEnabled: true });
+
+  store.setMessagesEnabled(false);
+  assert.deepEqual(JSON.parse(localStorage.getItem(STORED)), { enabled: true, prompted: true, messagesEnabled: false });
+
+  setActivePinia(createPinia());
+  const reloaded = loadStore(svc)();
+  await reloaded.initialize();
+  assert.equal(reloaded.messagesEnabled, false);
+  assert.equal(reloaded.enabled, true);
+  assert.equal(reloaded.canNotify, true);
+  assert.equal(reloaded.canNotifyMessages, false);
+
+  reloaded.setMessagesEnabled(true);
+  setActivePinia(createPinia());
+  const again = loadStore(svc)();
+  await again.initialize();
+  assert.equal(again.messagesEnabled, true);
+  assert.equal(again.canNotifyMessages, true);
+});
+
+await test('what was saved before the chat existed reads as messages on', async () => {
+  const { store } = await storeSavedAs(JSON.stringify({ enabled: true, prompted: true }));
+  assert.equal(store.enabled, true, 'the saved answers are kept');
+  assert.equal(store.prompted, true);
+  assert.equal(store.messagesEnabled, true);
+  assert.equal(store.canNotifyMessages, true);
+
+  // Saving again upgrades the blob without changing anyone's answer.
+  store.disable();
+  assert.deepEqual(JSON.parse(localStorage.getItem(STORED)), { enabled: false, prompted: true, messagesEnabled: true });
+});
+
+await test('only an explicit "off" turns messages off when loading', async () => {
+  const off = await storeSavedAs(JSON.stringify({ enabled: true, prompted: true, messagesEnabled: false }));
+  assert.equal(off.store.messagesEnabled, false);
+  assert.equal(off.store.enabled, true);
+
+  for (const blob of [
+    JSON.stringify({ enabled: true, messagesEnabled: true }),
+    JSON.stringify({ enabled: true, messagesEnabled: 'false' }),
+    JSON.stringify({ enabled: true, messagesEnabled: null }),
+    JSON.stringify({ enabled: true, messagesEnabled: 0 }),
+    JSON.stringify('not an object'),
+    'null',
+    undefined,
+  ]) {
+    const { store } = await storeSavedAs(blob);
+    assert.equal(store.messagesEnabled, true, `blob ${blob}`);
+  }
+});
+
+await test('an unreadable blob falls back to quiet defaults, with messages on', async () => {
+  const { store } = await storeSavedAs('{not json');
+  assert.equal(store.enabled, false);
+  assert.equal(store.prompted, false);
+  assert.equal(store.messagesEnabled, true);
+  assert.equal(store.canNotifyMessages, false);
+});
+
+await test('the chat switch touches neither the master switch nor the OS', async () => {
+  const svc = service({ grant: true });
+  const { store } = fresh(svc);
+  await store.initialize();
+  await store.enable();
+  const requests = svc.state.requests;
+
+  store.setMessagesEnabled(false);
+  assert.equal(store.messagesEnabled, false);
+  assert.equal(store.enabled, true);
+  assert.equal(store.permission, 'granted');
+  store.setMessagesEnabled(true);
+  assert.equal(store.messagesEnabled, true);
+  assert.equal(svc.state.requests, requests, 'no system dialog');
+});
+
+await test('a message needs notifications on, the permission, and the chat switch', async () => {
+  const svc = service({ grant: true });
+  const { store } = fresh(svc);
+  await store.initialize();
+  assert.equal(store.canNotifyMessages, false, 'master switch off');
+
+  await store.enable();
+  assert.equal(store.canNotifyMessages, true);
+
+  store.setMessagesEnabled(false);
+  assert.equal(store.canNotifyMessages, false, 'chat switch off');
+  assert.equal(store.canNotify, true, 'payments are not affected');
+
+  store.setMessagesEnabled(true);
+  store.disable();
+  assert.equal(store.canNotifyMessages, false, 'the chat switch cannot override the master switch');
+
+  await store.enable();
+  svc.state.permission = 'denied';
+  await store.syncPermission();
+  assert.equal(store.canNotifyMessages, false, 'permission revoked in system settings');
+  assert.equal(store.messagesEnabled, true, 'the choice itself is kept');
+});
+
+await test('a chat notification respects both switches and always uses the messages channel', async () => {
+  const svc = service({ grant: true });
+  const { store } = fresh(svc);
+  await store.initialize();
+
+  assert.equal(await store.notifyMessageIfEnabled(message), false, 'notifications are off');
+  assert.equal(svc.state.posted.length, 0);
+
+  await store.enable();
+  assert.equal(await store.notifyMessageIfEnabled(message), true);
+  assert.deepEqual(svc.state.posted, [{ ...message, channel: 'messages' }]);
+
+  // The channel is not the caller's to choose here.
+  await store.notifyMessageIfEnabled({ ...message, channel: 'payments' });
+  assert.equal(svc.state.posted[1].channel, 'messages');
+  assert.equal(svc.state.posted.length, 2);
+
+  store.setMessagesEnabled(false);
+  assert.equal(await store.notifyMessageIfEnabled(message), false, 'the chat switch is off');
+  assert.equal(svc.state.posted.length, 2);
+  assert.equal(await store.notifyIfEnabled({ title: 'Payment received', body: '+1000' }), true, 'payments still come');
+  assert.equal(svc.state.posted.length, 3);
+
+  store.setMessagesEnabled(true);
+  svc.state.permission = 'denied';
+  await store.syncPermission();
+  assert.equal(await store.notifyMessageIfEnabled(message), false, 'the OS says no');
+  assert.equal(svc.state.posted.length, 3);
+
+  svc.state.permission = 'granted';
+  await store.syncPermission();
+  store.disable();
+  assert.equal(await store.notifyMessageIfEnabled(message), false, 'the master switch is off');
+  assert.equal(svc.state.posted.length, 3);
+});
+
+await test('a call without a message does not throw in the store', async () => {
+  const svc = service({ grant: true });
+  const { store } = fresh(svc);
+  await store.initialize();
+  await store.enable();
+  // The real service refuses a notification without a title; the store only
+  // has to hand over what it was given and not fall over on the way.
+  await store.notifyMessageIfEnabled(undefined);
+  await store.notifyIfEnabled(undefined);
+  assert.deepEqual(svc.state.posted, [{ channel: 'messages' }, undefined]);
+});
+
+await test('notifyIfEnabled hands every option to the service as it was given', async () => {
+  const svc = service({ grant: true });
+  const { store } = fresh(svc);
+  await store.initialize();
+  await store.enable();
+
+  const full = { ...message, force: true, channel: 'messages' };
+  assert.equal(await store.notifyIfEnabled(full), true);
+  assert.deepEqual(svc.state.posted[0], full);
+
+  // A payment caller, as before: nothing is added on the way.
+  assert.equal(await store.notifyIfEnabled({ title: 'Payment received', body: '+1000' }), true);
+  assert.deepEqual(svc.state.posted[1], { title: 'Payment received', body: '+1000' });
+  assert.equal(await store.notifyIfEnabled({ title: 'Payment received', body: '+1000', force: true }), true);
+  assert.deepEqual(svc.state.posted[2], { title: 'Payment received', body: '+1000', force: true });
 });
 
 console.log(`\n  ${passed} passed, ${failed} failed`);
