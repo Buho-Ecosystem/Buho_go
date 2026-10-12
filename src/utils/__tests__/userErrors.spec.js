@@ -117,19 +117,24 @@ const WALLET_STATE_COPY = {
   WALLET_STATE_UNAVAILABLE: 'Your wallets could not be loaded, so nothing was changed. Close and reopen BuhoGO, then try again.',
   WALLET_STATE_CONFLICT: 'Your wallets were changed in another tab or window, so nothing was saved here. Reload BuhoGO, then try again.',
 };
+const ADD_REFUSED_TITLE = "Couldn't add the wallet";
 
 test('a refused wallet save is explained by BuhoGO, never attributed to a service', () => {
   for (const [code, copy] of Object.entries(WALLET_STATE_COPY)) {
     const e = buildPaymentError(Object.assign(new Error('The saved wallets could not be loaded'), { code }), { context: 'connect' });
+    assert.equal(e.title, ADD_REFUSED_TITLE, 'an add that saved nothing never blames the connection');
     assert.equal(e.reason, copy);
     assert.equal(e.reasonSource, 'curated');
     assert.equal(e.reasonAttribution, null);
     assert.equal(translateErrorCode({ code }, (key) => key), copy, 'one-line error surfaces show the same copy');
+    assert.equal(buildPaymentError({ code }, {}).title, 'Something went wrong', 'elsewhere (a removal) the headline claims no add');
+    assert.equal(buildPaymentError({ code }, { context: 'connect', title: 'Own headline' }).title, 'Own headline');
   }
+  assert.equal(buildPaymentError(new Error('relay offline'), { context: 'connect' }).title, "Couldn't connect", 'a failed connect keeps its headline');
 });
 
 test('the refused-save copy has German and Spanish translations, without em dashes or a raw @', () => {
-  for (const copy of Object.values(WALLET_STATE_COPY)) {
+  for (const copy of [...Object.values(WALLET_STATE_COPY), ADD_REFUSED_TITLE]) {
     assert.doesNotMatch(copy, /—|@/);
     for (const messages of [de, es]) {
       assert.ok(messages[copy] && messages[copy] !== copy, `translation missing: ${copy}`);

@@ -7,6 +7,7 @@ export default {
   "All Spark wallets on this device share one recovery phrase. To restore a different one, back up the current phrase and remove its wallets in Settings first.": "Alle Spark Wallets auf diesem Gerät teilen sich eine Wiederherstellungsphrase. Um eine andere wiederherzustellen, sichere zuerst die aktuelle Phrase und entferne ihre Wallets in den Einstellungen.",
   "Your wallets could not be loaded, so nothing was changed. Close and reopen BuhoGO, then try again.": "Deine Wallets konnten nicht geladen werden, deshalb wurde nichts geändert. Schließe BuhoGO, öffne es wieder und versuche es erneut.",
   "Your wallets were changed in another tab or window, so nothing was saved here. Reload BuhoGO, then try again.": "Deine Wallets wurden in einem anderen Tab oder Fenster geändert, deshalb wurde hier nichts gespeichert. Lade BuhoGO neu und versuche es dann erneut.",
+  "Couldn't add the wallet": "Das Wallet konnte nicht hinzugefügt werden",
   "Couldn't save wallet name": "Wallet-Name konnte nicht gespeichert werden",
   "Enter a name for this wallet.": "Gib diesem Wallet einen Namen.",
   "Use at most {max} characters.": "Verwende höchstens {max} Zeichen.",

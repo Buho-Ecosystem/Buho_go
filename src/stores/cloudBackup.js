@@ -564,6 +564,9 @@ export const useCloudBackupStore = defineStore('cloudBackup', {
       const restored = [];
       const skipped = [];
       const failed = [];
+      // The code travels with a failure, so the sheet can explain the ones
+      // the app knows (WALLET_STATE_*: the saved wallets could not be changed).
+      const fail = (label, err) => failed.push({ label, reason: err?.message || String(err), code: err?.code || null });
 
       // Identity first: cheap, offline, and the Nostr key other features
       // hang off. Never replace an existing identity — a restore must not
@@ -588,7 +591,7 @@ export const useCloudBackupStore = defineStore('cloudBackup', {
               console.warn('[cloudBackup] pointer discovery after restore failed:', err);
             }
           } catch (err) {
-            failed.push({ label: 'identity', reason: err?.message || String(err) });
+            fail('identity', err);
           }
         }
       }
@@ -623,7 +626,7 @@ export const useCloudBackupStore = defineStore('cloudBackup', {
           else restored.push('spark');
         } catch (err) {
           if (err?.code === 'SPARK_OTHER_PHRASE') skipped.push('spark');
-          else failed.push({ label: 'spark', reason: err?.message || String(err) });
+          else fail('spark', err);
         }
       }
 
@@ -640,7 +643,7 @@ export const useCloudBackupStore = defineStore('cloudBackup', {
             });
             restored.push('arkade');
           } catch (err) {
-            failed.push({ label: 'arkade', reason: err?.message || String(err) });
+            fail('arkade', err);
           }
         }
       }
@@ -658,7 +661,7 @@ export const useCloudBackupStore = defineStore('cloudBackup', {
           await wallet.addWallet({ name: entry.name || undefined, nwcUrl: entry.nwcUrl });
           restored.push(label);
         } catch (err) {
-          failed.push({ label, reason: err?.message || String(err) });
+          fail(label, err);
         }
       }
 
@@ -688,7 +691,7 @@ export const useCloudBackupStore = defineStore('cloudBackup', {
           if (/already connected/i.test(err?.message || '')) {
             skipped.push(label);
           } else {
-            failed.push({ label, reason: err?.message || String(err) });
+            fail(label, err);
           }
         }
       }

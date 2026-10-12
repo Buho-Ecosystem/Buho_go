@@ -4,14 +4,21 @@
  * adding, restore and resumable discovery, removal rules, renaming, the
  * one-time migration of saved pairs, and how the saved wallets survive a
  * reload and a second window: nothing is saved before they are loaded, a
- * wallet added meanwhile joins them instead of replacing them, and an add
- * or a removal that cannot be saved changes nothing.
+ * wallet added meanwhile joins them instead of replacing them, an add or a
+ * removal that cannot be saved changes nothing, and the screens say why.
  */
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { readFileSync } from 'node:fs';
 import { transformSync } from 'esbuild';
-import { createHarness, savedSpark, PHRASE, OTHER_PHRASE, tick } from './sparkWalletHarness.js';
+import { parse, compileScript } from '@vue/compiler-sfc';
+import * as Vue from 'vue';
+import * as userErrors from '../../utils/userErrors.js';
+import * as walletNames from '../../utils/walletNames.js';
+import * as sparkAccountRules from '../../utils/sparkAccounts.js';
+import * as backupStatus from '../../utils/backupStatus.js';
+import * as recoveryPhraseFlow from '../../composables/useRecoveryPhraseFlow.js';
+import { createHarness, memoryStorage, savedSpark, PHRASE, OTHER_PHRASE, tick } from './sparkWalletHarness.js';
 
 const accounts = (store) => store.sparkWallets.map((w) => w.connectionData.accountNumber);
 
@@ -534,9 +541,11 @@ function saveInOtherWindow(h) {
   h.local.setItem(STORE_KEY, JSON.stringify(saved));
 }
 
-/** A module from src, run with stand-ins for its imports. */
+/** A module from src, or the `<script>` of a page, run with stand-ins for its imports. */
 function loadModule(file, deps) {
-  const { code } = transformSync(readFileSync(new URL(file, import.meta.url), 'utf8'), { format: 'cjs' });
+  const source = readFileSync(new URL(file, import.meta.url), 'utf8');
+  const script = file.endsWith('.vue') ? source.match(/<script>([\s\S]*?)<\/script>/)[1] : source;
+  const { code } = transformSync(script, { format: 'cjs', supported: { 'dynamic-import': false } });
   const module = { exports: {} };
   new Function('require', 'module', 'exports', code)((name) => deps[name] || {}, module, module.exports);
   return module.exports.default;
@@ -947,3 +956,159 @@ test('a new Spark wallet becomes the profile payment address only once it is sav
   assert.equal(published, 0, 'no profile ever points at a recovery phrase nobody saved');
 });
 
+// ---- What the screens say when the saved wallets cannot be changed ---------
+
+const WALLET_STATE_COPY = {
+  WALLET_STATE_UNAVAILABLE: 'Your wallets could not be loaded, so nothing was changed. Close and reopen BuhoGO, then try again.',
+  WALLET_STATE_CONFLICT: 'Your wallets were changed in another tab or window, so nothing was saved here. Reload BuhoGO, then try again.',
+};
+const refusal = (code) => Object.assign(new Error('nothing was saved'), { code });
+const t = (key, values = {}) => key.replace(/\{(\w+)\}/g, (_, name) => values[name] ?? name);
+const renderer = Vue.createRenderer({
+  createElement: () => ({ children: [] }), createText: (text) => ({ text }), createComment: () => ({}),
+  insert(node, parent) { node.parent = parent; parent.children.push(node); }, remove() {},
+  setElementText(node, text) { node.text = text; }, setText(node, text) { node.text = text; },
+  parentNode: (node) => node.parent, nextSibling: () => null, patchProp() {},
+});
+
+/** A `<script setup>` component, mounted without its template, with stand-ins for its imports. */
+function mountSetup(file, { props = {}, deps = {} } = {}) {
+  const { descriptor } = parse(readFileSync(new URL(file, import.meta.url), 'utf8'));
+  const { code } = transformSync(compileScript(descriptor, { id: file }).content, { format: 'cjs' });
+  const module = { exports: {} };
+  new Function('require', 'module', 'exports', code)((name) => ({ vue: Vue, ...deps })[name] || {}, module, module.exports);
+  const app = renderer.createApp({ ...module.exports.default, render: () => Vue.h('div') }, props);
+  app.config.globalProperties.$t = t;
+  app.mount({ children: [] });
+  return { state: app._instance.setupState, unmount: () => app.unmount() };
+}
+
+test('Spark and Arkade setup opened again with the wallet saved go to it; a refused add says why', async () => {
+  for (const [file, method, action, exists, deps] of [
+    ['../../pages/SparkSetupPage.vue', 'generateAndCreate', 'createSparkWallet', 'SPARK_WALLET_EXISTS', { '@scure/bip39': { generateMnemonic: () => PHRASE } }],
+    ['../../pages/ArkadeSetupPage.vue', 'createWallet', 'addArkadeWallet', 'ARKADE_WALLET_EXISTS', {}],
+  ]) {
+    const page = loadModule(file, deps);
+    for (const code of [exists, ...Object.keys(WALLET_STATE_COPY)]) {
+      const routes = [];
+      const shown = [];
+      const vm = {
+        $t: t,
+        $router: { replace: (path) => routes.push(['replace', path]), push: (path) => routes.push(['push', path]) },
+        walletStore: {
+          [action]: async () => { throw refusal(code); },
+          showPaymentError: (error, ctx) => shown.push(userErrors.buildPaymentError(error, ctx, ctx.t)),
+        },
+      };
+      await page.methods[method].call(vm);
+      if (code === exists) {
+        assert.deepEqual(routes, [['replace', '/wallet']], `${file}: the wallet is there, so it opens`);
+        assert.deepEqual(shown, [], `${file}: and no error is shown`);
+      } else {
+        assert.equal(shown[0].title, "Couldn't add the wallet", `${file}: the headline does not blame the connection`);
+        assert.equal(shown[0].reason, WALLET_STATE_COPY[code]);
+        assert.equal(shown[0].reasonAttribution, null);
+      }
+    }
+  }
+});
+
+test('the NWC form says why an add saved nothing', async () => {
+  const page = loadModule('../../pages/NWCSetupPage.vue', { pinia: { mapActions: () => ({}) }, '../utils/userErrors': userErrors });
+  for (const [code, copy] of Object.entries(WALLET_STATE_COPY)) {
+    const vm = {
+      ...page.methods, $t: t, walletName: 'Alby', nwcString: NWC_URL, errorMessage: '',
+      validateNwcString: () => true, addWallet: async () => { throw refusal(code); },
+    };
+    await vm.validateAndConnect();
+    assert.equal(vm.errorMessage, copy);
+  }
+});
+
+test('a restore that saved nothing says why', () => {
+  const page = loadModule('../../pages/RestorePage.vue', { '../utils/userErrors': userErrors });
+  for (const [code, copy] of Object.entries(WALLET_STATE_COPY)) {
+    assert.deepEqual(page.methods._userFacingRestoreError.call({ $t: t }, refusal(code)), { message: "We couldn't restore your wallet", caption: copy });
+  }
+});
+
+test('the welcome screen never deletes a saved state it cannot read', async () => {
+  globalThis.localStorage = memoryStorage({ [STORE_KEY]: 'not json' });
+  const page = loadModule('../../pages/WelcomePage.vue', {});
+  const vm = { loadingText: '', showLoadingScreen: true, $router: { push: (path) => assert.fail(`went to ${path}`) } };
+  await page.methods.initializeApp.call(vm);
+  assert.equal(localStorage.getItem(STORE_KEY), 'not json', 'left for the wallet store to set aside');
+  assert.equal(vm.showLoadingScreen, false);
+});
+
+test('the add-Spark sheet shows a refused save with the action, not on the name field', async () => {
+  for (const [failure, expected] of [
+    [refusal('WALLET_STATE_CONFLICT'), { formError: WALLET_STATE_COPY.WALLET_STATE_CONFLICT, nameError: '' }],
+    [refusal('WALLET_STATE_UNAVAILABLE'), { formError: WALLET_STATE_COPY.WALLET_STATE_UNAVAILABLE, nameError: '' }],
+    [new walletNames.WalletNameError('taken'), { formError: '', nameError: 'Another wallet already has this name.' }],
+  ]) {
+    const { state, unmount } = mountSetup('../../components/wallets/AddSparkWalletSheet.vue', {
+      props: { modelValue: true },
+      deps: {
+        '../../stores/wallet': { useWalletStore: () => ({ wallets: [], remainingSparkSlots: 5, addSparkWallet: async () => { throw failure; } }) },
+        '../../utils/sparkAccounts.js': sparkAccountRules,
+        '../../utils/walletNames.js': walletNames,
+        '../../utils/userErrors': userErrors,
+      },
+    });
+    await state.create();
+    assert.deepEqual({ formError: state.formError, nameError: state.nameError }, expected, failure.message);
+    unmount();
+  }
+});
+
+test('a rename or a backup confirmation the saved wallets refuse says why', async () => {
+  const rename = mountSetup('../../components/settings/WalletDetailPanel.vue', {
+    props: { wallet: { id: 'B', name: 'Wallet', type: 'spark' }, typeLabel: 'Spark', balance: '0', renameWallet: async () => { throw refusal('WALLET_STATE_CONFLICT'); } },
+    deps: { '../../utils/walletNames.js': walletNames, '../../utils/userErrors': userErrors },
+  });
+  await rename.state.startEditing();
+  rename.state.nameDraft = 'Main';
+  await rename.state.saveName();
+  assert.equal(rename.state.nameError, WALLET_STATE_COPY.WALLET_STATE_CONFLICT);
+  rename.unmount();
+
+  const previousDocument = globalThis.document;
+  globalThis.document = { hidden: false, addEventListener() {}, removeEventListener() {} };
+  try {
+    const store = {
+      wallets: [{ id: 'B', type: 'spark', name: 'Wallet', metadata: {} }], hasBackedUp: false, biometricsEnabled: false,
+      setAsideSparkWallets: () => [], getMnemonicForWallet: async () => PHRASE,
+      confirmBackup: async () => { throw refusal('WALLET_STATE_CONFLICT'); },
+    };
+    const backup = mountSetup('../../components/RecoveryPhraseDialog.vue', {
+      props: { modelValue: true, kind: 'wallet', mode: 'backup', walletId: 'B' },
+      deps: {
+        '../stores/wallet': { useWalletStore: () => store },
+        '../stores/identity': { useIdentityStore: () => ({ fingerprint: null }) },
+        '../utils/biometric': { isBiometricAvailable: async () => ({ available: false }), authenticate: async () => true },
+        '../composables/useRecoveryPhraseFlow.js': recoveryPhraseFlow,
+        '../utils/backupStatus.js': backupStatus,
+        '../utils/userErrors': userErrors,
+      },
+    });
+    backup.state.acknowledged = true;
+    await backup.state.advance(); // unlock, then the words
+    await backup.state.advance(); // on to the check
+    backup.state.checkComplete = true;
+    await backup.state.advance(); // confirm
+    assert.equal(backup.state.errorMessage, WALLET_STATE_COPY.WALLET_STATE_CONFLICT);
+    backup.unmount();
+  } finally {
+    globalThis.document = previousDocument;
+  }
+});
+
+test('a Drive restore that could not add its wallets says why', () => {
+  const sheet = loadModule('../../components/CloudBackupSheet.vue', { '../utils/userErrors': userErrors });
+  const summary = sheet.methods.describeRestoreResult.call({ $t: t }, {
+    restored: ['identity'], skipped: [],
+    failed: [{ label: 'spark', reason: 'not loaded', code: 'WALLET_STATE_UNAVAILABLE' }, { label: 'Alby', reason: 'not loaded', code: 'WALLET_STATE_UNAVAILABLE' }],
+  });
+  assert.equal(summary, `Restored: Nostr identity · Could not restore: Spark wallet, Alby. ${WALLET_STATE_COPY.WALLET_STATE_UNAVAILABLE}`);
+});
