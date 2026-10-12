@@ -29,7 +29,7 @@ import {
   emptyDoc,
   collectDocContactIds,
 } from '../utils/nostrContactsDoc.js'
-import { DEFAULT_RELAYS } from '../utils/nostrRelays.js'
+import { DEFAULT_RELAYS, provesAbsence } from '../utils/nostrRelays.js'
 
 // Address type constants
 export const ADDRESS_TYPES = {
@@ -1035,7 +1035,7 @@ export const useAddressBookStore = defineStore('addressBook', {
         //    provably answered: anything published from an unproven
         //    absence could replace a doc that merely sat out of reach.
         const cache = this._loadDocCache(pubkey)
-        const absenceProven = fetched.reachedRelays >= Math.min(2, relaySet.length)
+        const absenceProven = provesAbsence(fetched.reachedRelays, relaySet.length)
         let baseDoc
         let baseCreatedAt
         let baseEventId = ''

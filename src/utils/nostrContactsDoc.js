@@ -42,6 +42,7 @@ import {
   DEFAULT_RELAYS,
   publishToRelaysEager,
   getRelayPool,
+  queryOneRelay,
 } from './nostrRelays.js';
 import { compareEventFreshness } from './nostrFetch.js';
 
@@ -518,44 +519,6 @@ export function publishContactsDoc({ pool, relays, event, timeoutMs }) {
   const activePool = pool ?? getRelayPool();
   const urls = Array.isArray(relays) && relays.length > 0 ? relays : DEFAULT_RELAYS;
   return publishToRelaysEager(activePool, [...urls], event, { timeoutMs });
-}
-
-/**
- * Query one relay with a provable reachability outcome.
- *
- * nostr-core's `querySync` alone cannot provide one: a socket that
- * never connects resolves `[]` exactly like a connected relay with no
- * matching events, and treating that as "reached, empty" is how a
- * network blackout turns into publishing a fresh doc over the real
- * one. `ensureRelay` rejects on a failed handshake, so connect-then-
- * query makes `null` mean "not reached" while an array means "this
- * relay really answered". An empty answer from a socket that died
- * mid-query proves nothing and is demoted to "not reached" as well.
- *
- * A pool without `ensureRelay` cannot prove a connection, so it can
- * never prove absence either — events still count, emptiness doesn't.
- *
- * @returns {Promise<object[] | null>}  events, or null when unreached
- */
-async function queryOneRelay(pool, url, filter, maxWait) {
-  if (typeof pool.ensureRelay !== 'function') {
-    const events = await pool.querySync([url], filter, { maxWait });
-    return Array.isArray(events) && events.length > 0 ? events : null;
-  }
-  let relay;
-  try {
-    relay = await pool.ensureRelay(url, { connectionTimeout: maxWait });
-  } catch {
-    return null;
-  }
-  // The pool synthesizes EOSE after the relay's own eoseTimeout
-  // (default well under our window) — a connected-but-slow relay
-  // would answer [] and count as reached. Give it the full window.
-  if (relay) relay.eoseTimeout = maxWait;
-  const events = await pool.querySync([url], filter, { maxWait });
-  if (!Array.isArray(events)) return null;
-  if (events.length === 0 && relay && relay.connected === false) return null;
-  return events;
 }
 
 /**

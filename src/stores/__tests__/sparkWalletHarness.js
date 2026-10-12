@@ -173,6 +173,8 @@ export function createHarness({ evidence = {}, connect = null, storage = {}, exi
 
   return {
     store,
+    /** The store's own actions, including the ones stubbed above. */
+    actions: options.actions,
     calls,
     local,
     exits,

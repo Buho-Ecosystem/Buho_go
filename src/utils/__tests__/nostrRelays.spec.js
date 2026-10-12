@@ -17,6 +17,7 @@ import {
   DEFAULT_PUBLISH_TIMEOUT_MS,
   DEFAULT_RELAYS,
   anyAccepted,
+  provesAbsence,
   publishToRelaysEager,
 } from '../nostrRelays.js';
 
@@ -352,6 +353,14 @@ await test('anyAccepted returns false for empty / non-array input', () => {
   assert.equal(anyAccepted([]), false);
   assert.equal(anyAccepted(null), false);
   assert.equal(anyAccepted(undefined), false);
+});
+
+
+await test('provesAbsence: two answering relays, or all of fewer, and never none', () => {
+  assert.equal(provesAbsence(2, 5), true);
+  assert.equal(provesAbsence(1, 5), false);
+  assert.equal(provesAbsence(1, 1), true);
+  assert.equal(provesAbsence(0, 0), false);
 });
 
 console.log(`\n  ${passed} passed, ${failed} failed`);

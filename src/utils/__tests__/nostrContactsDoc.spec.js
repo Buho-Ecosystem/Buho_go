@@ -476,6 +476,22 @@ await test('fetchContactsDoc: a connected relay gets the full window before empt
   assert.equal(relay.eoseTimeout, 9000);
 });
 
+await test('fetchContactsDoc: a connected relay that stays silent until the window ends is not "reached"', async () => {
+  // A socket can outlive the network: it stays open and simply never answers.
+  const pool = {
+    async ensureRelay() { return { connected: true }; },
+    querySync: (_urls, _filter, { maxWait }) => new Promise((resolve) => setTimeout(() => resolve([]), maxWait)),
+  };
+  const result = await fetchContactsDoc({
+    pool,
+    relays: ['wss://a.test', 'wss://b.test'],
+    pubkey: ALICE_PUBKEY,
+    secretKey: ALICE_SECRET,
+    timeoutMs: 40,
+  });
+  assert.equal(result.reachedRelays, 0);
+});
+
 await test('fetchContactsDoc: a pool without ensureRelay can never prove absence', async () => {
   const result = await fetchContactsDoc({
     pool: { async querySync() { return []; } },

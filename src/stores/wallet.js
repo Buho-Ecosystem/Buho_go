@@ -2220,6 +2220,10 @@ export const useWalletStore = defineStore('wallet', {
         const previous = previousAddresses
           .filter(Boolean)
           .map((value) => String(value).toLowerCase());
+        // A profile brought from another app is the person's own (see the
+        // payment-address boot): a wallet change never edits it. Checked
+        // last, so a switch during the loads above is seen.
+        if (identity.activeExternalId) return;
         profile.adoptDefaultPaymentAddress(preferred, {
           isReplaceable: (current) => {
             const value = String(current).toLowerCase();

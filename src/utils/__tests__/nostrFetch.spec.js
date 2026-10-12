@@ -18,6 +18,7 @@ import {
   PROFILE_KIND,
   compareEventFreshness,
   fetchProfile,
+  fetchProfileChecked,
   parseProfileContent,
 } from '../nostrFetch.js';
 
@@ -376,6 +377,58 @@ await test('fetchProfile lowercases the pubkey before filtering', async () => {
   // still use the lowercase form.
   await fetchProfile(ALICE_PUBKEY.toUpperCase(), { pool, relays: TEST_RELAYS });
   assert.equal(pool.calls[0].filter.authors[0], ALICE_PUBKEY);
+});
+
+// ---------------------------------------------------------------------------
+// fetchProfileChecked — "no profile" only when enough relays really answered
+// ---------------------------------------------------------------------------
+
+/** Relays answer per URL; a listed one fails its handshake. */
+function reachabilityPool({ unreachable = [], eventsByRelay = {} } = {}) {
+  return {
+    async ensureRelay(url) {
+      if (unreachable.includes(url)) throw new Error('connect failed');
+      return { connected: true };
+    },
+    async querySync(urls) {
+      return urls.flatMap((url) => eventsByRelay[url] || []);
+    },
+  };
+}
+
+await test('fetchProfileChecked: the newest valid event, checked', async () => {
+  const older = makeKind0(ALICE_SECRET, { name: 'old' }, 1700000000);
+  const newer = makeKind0(ALICE_SECRET, { name: 'new' }, 1700000100);
+  const someoneElse = makeKind0(BOB_SECRET, { name: 'bob' }, 1800000000);
+  const pool = reachabilityPool({
+    unreachable: ['wss://relay-c.test'],
+    eventsByRelay: { 'wss://relay-a.test': [older, someoneElse], 'wss://relay-b.test': [newer] },
+  });
+  const got = await fetchProfileChecked(ALICE_PUBKEY, { pool, relays: TEST_RELAYS });
+  assert.deepEqual(got, { event: newer, checked: true });
+});
+
+await test('fetchProfileChecked: an event from a lone relay is returned, not trusted', async () => {
+  const event = makeKind0(ALICE_SECRET, { name: 'alice' }, 1700000000);
+  const pool = reachabilityPool({
+    unreachable: ['wss://relay-a.test', 'wss://relay-b.test'],
+    eventsByRelay: { 'wss://relay-c.test': [event] },
+  });
+  assert.deepEqual(await fetchProfileChecked(ALICE_PUBKEY, { pool, relays: TEST_RELAYS }), { event, checked: false });
+});
+
+await test('fetchProfileChecked: no answer is not "no profile"', async () => {
+  const none = reachabilityPool({ unreachable: [...TEST_RELAYS] });
+  assert.deepEqual(await fetchProfileChecked(ALICE_PUBKEY, { pool: none, relays: TEST_RELAYS }), { event: null, checked: false });
+  const one = reachabilityPool({ unreachable: ['wss://relay-a.test', 'wss://relay-b.test'] });
+  assert.deepEqual(await fetchProfileChecked(ALICE_PUBKEY, { pool: one, relays: TEST_RELAYS }), { event: null, checked: false });
+  const noHandshake = { async querySync() { return []; } };
+  assert.equal((await fetchProfileChecked(ALICE_PUBKEY, { pool: noHandshake, relays: TEST_RELAYS })).checked, false);
+});
+
+await test('fetchProfileChecked: two relays that answer empty prove there is no profile', async () => {
+  const pool = reachabilityPool({ unreachable: ['wss://relay-c.test'] });
+  assert.deepEqual(await fetchProfileChecked(ALICE_PUBKEY, { pool, relays: TEST_RELAYS }), { event: null, checked: true });
 });
 
 console.log(`\n  ${passed} passed, ${failed} failed`);

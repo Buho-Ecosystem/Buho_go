@@ -214,3 +214,60 @@ export function publishToRelaysEager(pool, urls, event, opts = {}) {
 export function anyAccepted(results) {
   return Array.isArray(results) && results.some((r) => r.ok);
 }
+
+/**
+ * Query one relay with a provable reachability outcome.
+ *
+ * nostr-core's `querySync` alone cannot provide one: a socket that
+ * never connects resolves `[]` exactly like a connected relay with no
+ * matching events, and treating that as "reached, empty" is how a
+ * network blackout turns into publishing a fresh doc over the real
+ * one. `ensureRelay` rejects on a failed handshake, so connect-then-
+ * query makes `null` mean "not reached" while an array means "this
+ * relay really answered". An empty answer from a socket that died
+ * mid-query proves nothing and is demoted to "not reached" as well, and
+ * so does one that only came when the window ran out: a socket can stay
+ * open after the network is gone, and its silence is not an answer.
+ *
+ * A pool without `ensureRelay` cannot prove a connection, so it can
+ * never prove absence either — events still count, emptiness doesn't.
+ *
+ * @returns {Promise<object[] | null>}  events, or null when unreached
+ */
+export async function queryOneRelay(pool, url, filter, maxWait) {
+  if (typeof pool.ensureRelay !== 'function') {
+    const events = await pool.querySync([url], filter, { maxWait });
+    return Array.isArray(events) && events.length > 0 ? events : null;
+  }
+  let relay;
+  try {
+    relay = await pool.ensureRelay(url, { connectionTimeout: maxWait });
+  } catch {
+    return null;
+  }
+  // The pool synthesizes EOSE after the relay's own eoseTimeout
+  // (default well under our window) — a connected-but-slow relay
+  // would answer [] and count as reached. Give it the full window.
+  if (relay) relay.eoseTimeout = maxWait;
+  // A monotonic clock: a wall-clock jump when the network returns must not
+  // turn a silent relay into one that answered.
+  const started = performance.now();
+  const events = await pool.querySync([url], filter, { maxWait });
+  if (!Array.isArray(events)) return null;
+  if (events.length === 0 && (relay?.connected === false || performance.now() - started >= maxWait)) return null;
+  return events;
+}
+
+/**
+ * Whether an empty answer can be trusted: at least two of the relays asked
+ * (or all of them, when fewer were asked) provably answered with nothing.
+ * Publishing a replaceable event over an absence that is not proven can
+ * replace the person's own event that merely sat out of reach.
+ *
+ * @param {number} reached relays that provably answered (queryOneRelay)
+ * @param {number} asked   relays that were asked
+ * @returns {boolean}
+ */
+export function provesAbsence(reached, asked) {
+  return asked > 0 && reached >= Math.min(2, asked);
+}

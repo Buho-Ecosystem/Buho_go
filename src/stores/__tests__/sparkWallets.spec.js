@@ -17,6 +17,7 @@ import * as userErrors from '../../utils/userErrors.js';
 import * as walletNames from '../../utils/walletNames.js';
 import * as sparkAccountRules from '../../utils/sparkAccounts.js';
 import * as backupStatus from '../../utils/backupStatus.js';
+import * as profilePaymentAddress from '../../utils/profilePaymentAddress.js';
 import * as recoveryPhraseFlow from '../../composables/useRecoveryPhraseFlow.js';
 import { createHarness, memoryStorage, savedSpark, PHRASE, OTHER_PHRASE, tick } from './sparkWalletHarness.js';
 
@@ -773,6 +774,27 @@ test('an add whose own save fails puts the selection it moved back on disk too',
   await assert.rejects(() => h.store.addArkadeWallet(), { name: 'QuotaExceededError' });
   assert.deepEqual(ids(h.saved().wallets), ['B']);
   assert.equal(h.saved().activeWalletId, 'B', 'not the Arkade wallet nobody saved');
+});
+
+test('a wallet change never edits the profile of an identity brought from another app', async () => {
+  const profile = { lud16: '', hydrate: async () => {}, adoptDefaultPaymentAddress(address) { this.lud16 = address; return true; } };
+  const identity = { bootstrapped: true, activeExternalId: 'x1', nostrNpub: 'npub1me', hydrate: async () => {} };
+  const h = createHarness({
+    deps: {
+      './profile.js': { useProfileStore: () => profile },
+      './identity.js': { useIdentityStore: () => identity },
+      '../services/npubCash.js': { npubCashAddress: (npub) => `${npub}@npub.cash`, isNpubCashAddress: (value) => value.endsWith('@npub.cash') },
+      '../utils/profilePaymentAddress.js': profilePaymentAddress,
+    },
+  });
+  await h.store.initialize();
+  const sync = () => h.actions._syncProfilePaymentAddress.call(h.store);
+  await sync();
+  assert.equal(profile.lud16, '', 'its own profile may already carry an address');
+
+  identity.activeExternalId = null;
+  await sync();
+  assert.equal(profile.lud16, 'npub1me@npub.cash', 'an identity made here still gets its default');
 });
 
 test('an add whose own save fails leaves nothing on disk, and the profile follows only a saved wallet', async () => {
