@@ -13,6 +13,9 @@
 
 import { strict as assert } from 'node:assert';
 
+/** A fetcher as `fetchProfileChecked` answers: the event, from relays that provably answered. */
+const answering = (fetch) => async (...args) => ({ event: await fetch(...args), checked: true });
+
 // ---------------------------------------------------------------------------
 // Browser globals shim — must be set up BEFORE the store imports load,
 // since they reference `localStorage` at module level.
@@ -41,7 +44,7 @@ globalThis.localStorage = new MemoryStorage();
 const { createPinia, setActivePinia } = await import('pinia');
 const { useProfileStore, PROFILE_FIELDS } = await import('../profile.js');
 const { useIdentityStore } = await import('../identity.js');
-const { verifyEvent } = await import('nostr-core');
+const { verifyEvent, getPublicKey } = await import('nostr-core');
 
 const STORAGE_KEY = 'buhoGO_profile_v1';
 
@@ -465,7 +468,7 @@ await test('publish never replaces a relay list the key already has, or one it c
 
 await test('publish keeps the profile fields other apps set', async () => {
   const { profile, identity } = await freshEnvWithIdentity();
-  await profile.recoverFromNostr({ identityStore: identity, fetcher: async () => fakeKind0Event({ display_name: 'Satoshi', lud06: 'lnurl1abc', pronouns: 'they/them', bot: false }) });
+  await profile.recoverFromNostr({ identityStore: identity, fetcher: answering(async () => fakeKind0Event({ display_name: 'Satoshi', lud06: 'lnurl1abc', pronouns: 'they/them', bot: false })) });
   profile.applyEdits({ about: 'New here' });
   const pool = fakePool();
   await (await profile.publish({ pool, relays: TEST_RELAYS })).settled;
@@ -889,7 +892,7 @@ function fakeKind0Event(content, createdAtSec = 1_700_000_000) {
 await test('recoverFromNostr: missing identity returns identity-not-bootstrapped', async () => {
   const s = freshEnv();
   const fetcher = async () => fakeKind0Event({ name: 'Satoshi' });
-  const r = await s.recoverFromNostr({ identityStore: null, fetcher });
+  const r = await s.recoverFromNostr({ identityStore: null, fetcher: answering(fetcher) });
   assert.equal(r.ok, false);
   assert.equal(r.reason, 'identity-not-bootstrapped');
   assert.equal(r.hadRemote, false);
@@ -899,7 +902,7 @@ await test('recoverFromNostr: missing identity returns identity-not-bootstrapped
 await test('recoverFromNostr: identity present but no remote event → hadRemote=false', async () => {
   const { profile, identity } = await freshEnvWithIdentity();
   const fetcher = async () => null;
-  const r = await profile.recoverFromNostr({ identityStore: identity, fetcher });
+  const r = await profile.recoverFromNostr({ identityStore: identity, fetcher: answering(fetcher) });
   assert.equal(r.ok, true);
   assert.equal(r.hadRemote, false);
   assert.equal(r.applied, 0);
@@ -919,7 +922,7 @@ await test('recoverFromNostr: applies every recognized field from the remote eve
     banner: 'https://blossom.test/banner.png',
     lud16: 'satoshi@x.test',
   });
-  const r = await profile.recoverFromNostr({ identityStore: identity, fetcher });
+  const r = await profile.recoverFromNostr({ identityStore: identity, fetcher: answering(fetcher) });
   assert.equal(r.ok, true);
   assert.equal(r.hadRemote, true);
   assert.equal(r.applied, 7);
@@ -939,7 +942,7 @@ await test('recoverFromNostr: passes the identity pubkey to the fetcher', async 
     seenPubkey = pk;
     return null;
   };
-  await profile.recoverFromNostr({ identityStore: identity, fetcher });
+  await profile.recoverFromNostr({ identityStore: identity, fetcher: answering(fetcher) });
   assert.equal(seenPubkey, identity.nostrPubkeyHex);
   assert.match(seenPubkey, /^[0-9a-f]{64}$/);
 });
@@ -947,14 +950,14 @@ await test('recoverFromNostr: passes the identity pubkey to the fetcher', async 
 await test('recoverFromNostr: leaves the store clean (isDirty=false) — local matches relays', async () => {
   const { profile, identity } = await freshEnvWithIdentity();
   const fetcher = async () => fakeKind0Event({ name: 'Satoshi' });
-  await profile.recoverFromNostr({ identityStore: identity, fetcher });
+  await profile.recoverFromNostr({ identityStore: identity, fetcher: answering(fetcher) });
   assert.equal(profile.isDirty, false);
 });
 
 await test('recoverFromNostr: stamps lastPublishedAt from event.created_at (in ms)', async () => {
   const { profile, identity } = await freshEnvWithIdentity();
   const fetcher = async () => fakeKind0Event({ name: 'Satoshi' }, 1_700_000_000);
-  await profile.recoverFromNostr({ identityStore: identity, fetcher });
+  await profile.recoverFromNostr({ identityStore: identity, fetcher: answering(fetcher) });
   assert.equal(profile.lastPublishedAt, 1_700_000_000_000);
 });
 
@@ -970,7 +973,7 @@ await test('recoverFromNostr: full overwrite clears stale local fields not prese
   profile._persistMetadata();
   // Remote only carries `name`; everything else should be cleared.
   const fetcher = async () => fakeKind0Event({ name: 'new' });
-  const r = await profile.recoverFromNostr({ identityStore: identity, fetcher });
+  const r = await profile.recoverFromNostr({ identityStore: identity, fetcher: answering(fetcher) });
   assert.equal(r.applied, 1);
   assert.deepEqual(r.fields, ['name']);
   assert.equal(profile.name, 'new');
@@ -987,7 +990,7 @@ await test('recoverFromNostr: known keys (incl. nip05) applied, unknown ignored'
     pronouns: 'they/them',
     custom_field: 'whatever',
   });
-  const r = await profile.recoverFromNostr({ identityStore: identity, fetcher });
+  const r = await profile.recoverFromNostr({ identityStore: identity, fetcher: answering(fetcher) });
   assert.equal(r.applied, 2);
   assert.equal(profile.name, 'Satoshi');
   // nip05 is a recognised profile field now, so it round-trips on recovery.
@@ -1003,7 +1006,7 @@ await test('recoverFromNostr: persists the recovered profile to localStorage', a
     name: 'Satoshi',
     lud16: 'satoshi@x.test',
   }, 1_700_000_000);
-  await profile.recoverFromNostr({ identityStore: identity, fetcher });
+  await profile.recoverFromNostr({ identityStore: identity, fetcher: answering(fetcher) });
   const persisted = readPersisted();
   assert.equal(persisted.name, 'Satoshi');
   assert.equal(persisted.lud16, 'satoshi@x.test');
@@ -1013,7 +1016,7 @@ await test('recoverFromNostr: persists the recovered profile to localStorage', a
 await test('recoverFromNostr: fetcher throwing collapses to ok=false, reason=fetch-failed', async () => {
   const { profile, identity } = await freshEnvWithIdentity();
   const fetcher = async () => { throw new Error('boom'); };
-  const r = await profile.recoverFromNostr({ identityStore: identity, fetcher });
+  const r = await profile.recoverFromNostr({ identityStore: identity, fetcher: answering(fetcher) });
   assert.equal(r.ok, false);
   assert.equal(r.reason, 'fetch-failed');
   assert.equal(r.hadRemote, false);
@@ -1023,7 +1026,7 @@ await test('recoverFromNostr: fetcher throwing collapses to ok=false, reason=fet
 await test('recoverFromNostr: remote event with empty content leaves the store empty', async () => {
   const { profile, identity } = await freshEnvWithIdentity();
   const fetcher = async () => fakeKind0Event({});
-  const r = await profile.recoverFromNostr({ identityStore: identity, fetcher });
+  const r = await profile.recoverFromNostr({ identityStore: identity, fetcher: answering(fetcher) });
   assert.equal(r.ok, true);
   assert.equal(r.hadRemote, true);
   assert.equal(r.applied, 0);
@@ -1044,7 +1047,7 @@ await test('recoverFromNostr: non-string content values are coerced to empty', a
     website: ['https://x.test'],
     picture: null,
   });
-  const r = await profile.recoverFromNostr({ identityStore: identity, fetcher });
+  const r = await profile.recoverFromNostr({ identityStore: identity, fetcher: answering(fetcher) });
   assert.equal(r.applied, 1);
   assert.equal(profile.name, 'Satoshi');
   assert.equal(profile.about, '');
@@ -1217,7 +1220,7 @@ await test('dropFreeNip05: paid names and other domains are left alone', async (
 await test('recoverFromNostr: a paid username comes back with the profile', async () => {
   const { profile, identity } = await freshEnvWithIdentity();
   const fetcher = async () => fakeKind0Event({ name: 'Maria', nip05: 'maria@mybuho.de' });
-  await profile.recoverFromNostr({ identityStore: identity, fetcher });
+  await profile.recoverFromNostr({ identityStore: identity, fetcher: answering(fetcher) });
   assert.equal(profile.username, 'maria');
   assert.equal(profile.isDirty, false);
 });
@@ -1225,7 +1228,7 @@ await test('recoverFromNostr: a paid username comes back with the profile', asyn
 await test('recoverFromNostr: a free handle is dropped and the profile goes out again', async () => {
   const { profile, identity } = await freshEnvWithIdentity();
   const fetcher = async () => fakeKind0Event({ name: 'Maria', nip05: 'luckyowl.482913@mybuho.de' });
-  await profile.recoverFromNostr({ identityStore: identity, fetcher });
+  await profile.recoverFromNostr({ identityStore: identity, fetcher: answering(fetcher) });
   assert.equal(profile.nip05, '');
   assert.equal(profile.username, '');
   assert.equal(profile.isDirty, true);
@@ -1249,6 +1252,92 @@ await test('dismissUsernameSuggestion: persists per identity', async () => {
   assert.ok(Number.isFinite(profile.usernameSuggestionDismissedAt));
   await profile.hydrate({ force: true });
   assert.ok(Number.isFinite(profile.usernameSuggestionDismissedAt));
+});
+
+// ---------------------------------------------------------------------------
+// An identity brought from another app: its published profile is read
+// before anything is published over it
+// ---------------------------------------------------------------------------
+
+async function freshEnvWithImportedIdentity() {
+  const env = await freshEnvWithIdentity();
+  const secretKey = new Uint8Array(32).fill(7);
+  const { key } = await env.identity.addExternalIdentity({ kind: 'secretKey', pubkeyHex: getPublicKey(secretKey), secretKey });
+  env.identity.switchToExternalIdentity(key);
+  await env.profile.hydrate();
+  return env;
+}
+
+const unanswered = async () => ({ event: null, checked: false });
+
+await test('imported identity: nothing is published before its profile was read', async () => {
+  const { profile, identity } = await freshEnvWithImportedIdentity();
+  profile.applyEdits({ about: 'New here' });
+  const pool = fakePool();
+  const refused = await profile.publish({ pool, relays: TEST_RELAYS });
+  assert.deepEqual([refused.ok, refused.reason, refused.results, await refused.settled], [false, 'unchecked', [], []]);
+  assert.equal(pool.calls.length, 0, 'nothing signed or sent');
+  assert.equal(profile.isDirty, true, 'the edit waits');
+
+  const r = await profile.recoverFromNostr({ identityStore: identity, fetcher: unanswered });
+  assert.deepEqual([r.ok, r.reason], [false, 'unreachable'], 'no answer is not "no profile"');
+  assert.equal((await profile.publish({ pool, relays: TEST_RELAYS })).reason, 'unchecked');
+  assert.equal(pool.calls.length, 0);
+});
+
+await test('imported identity: after the read, the edit goes out on top of the published profile', async () => {
+  const { profile, identity } = await freshEnvWithImportedIdentity();
+  profile.applyEdits({ about: 'New here' });
+  const published = { name: 'satoshi', picture: 'https://x.test/me.png', lud16: 'me@wallet.test', pronouns: 'they/them' };
+  await profile.recoverFromNostr({ identityStore: identity, fetcher: answering(async () => fakeKind0Event(published)) });
+  assert.equal(profile.remoteChecked, true);
+  const pool = fakePool();
+  await (await profile.publish({ pool, relays: TEST_RELAYS })).settled;
+  const content = JSON.parse(pool.calls.find((c) => c.kind === 0).event.content);
+  assert.deepEqual(content, { ...published, about: 'New here' });
+
+  // Checked stays checked after a restart.
+  await profile.hydrate({ force: true });
+  assert.equal(profile.remoteChecked, true);
+});
+
+await test('imported identity: a new key with no profile anywhere can publish once that is proven', async () => {
+  const { profile, identity } = await freshEnvWithImportedIdentity();
+  profile.applyEdits({ displayName: 'Fresh' });
+  const r = await profile.recoverFromNostr({ identityStore: identity, fetcher: async () => ({ event: null, checked: true }) });
+  assert.deepEqual([r.ok, r.hadRemote], [true, false]);
+  const result = await profile.publish({ pool: fakePool(), relays: TEST_RELAYS });
+  assert.equal(result.ok, true);
+});
+
+await test('imported identity: a read that crossed a local edit leaves the profile unchecked', async () => {
+  const { profile, identity } = await freshEnvWithImportedIdentity();
+  const fetcher = answering(async () => {
+    profile.applyEdits({ about: 'typed meanwhile' });
+    return fakeKind0Event({ name: 'satoshi', picture: 'https://x.test/me.png' });
+  });
+  const r = await profile.recoverFromNostr({ identityStore: identity, fetcher });
+  assert.equal(r.reason, 'local-changed');
+  assert.equal(profile.remoteChecked, false, 'the published fields were not merged in');
+  assert.equal((await profile.publish({ pool: fakePool(), relays: TEST_RELAYS })).reason, 'unchecked');
+});
+
+await test('remoteChecked: a profile saved before the flag counts as checked once it was published', async () => {
+  const { profile, identity } = await freshEnvWithImportedIdentity();
+  const key = `${STORAGE_KEY}_${identity.nostrPubkeyHex}`;
+  globalThis.localStorage.setItem(key, JSON.stringify({ version: 1, name: 'satoshi', lastPublishedAt: 1_700_000_000_000 }));
+  await profile.hydrate({ force: true });
+  assert.equal(profile.remoteChecked, true);
+  globalThis.localStorage.setItem(key, JSON.stringify({ version: 1, name: 'satoshi' }));
+  await profile.hydrate({ force: true });
+  assert.equal(profile.remoteChecked, false);
+});
+
+await test('an identity made here publishes without a read, as before', async () => {
+  const { profile, identity } = await freshEnvWithIdentity();
+  profile.applyEdits({ displayName: 'Satoshi' });
+  await profile.recoverFromNostr({ identityStore: identity, fetcher: unanswered });
+  assert.equal((await profile.publish({ pool: fakePool(), relays: TEST_RELAYS })).ok, true);
 });
 
 console.log(`\n  ${passed} passed, ${failed} failed`);

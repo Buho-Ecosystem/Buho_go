@@ -24,6 +24,8 @@ const deferred = () => {
   const promise = new Promise((yes, no) => { resolve = yes; reject = no; });
   return { promise, resolve, reject };
 };
+/** A fetcher as `fetchProfileChecked` answers: the event, from relays that provably answered. */
+const answering = (fetch) => async (...args) => ({ event: await fetch(...args), checked: true });
 const RELAYS = ['wss://test.invalid'];
 const HOUR = 3_600_000;
 const T = 1_800_000_000;
@@ -71,7 +73,7 @@ await test('restart before publication retains the exact selected username and p
   ({ identity, profile } = await env({ restart: true }));
   assert.equal(profile.username, 'maria');
   assert.equal(profile.isDirty, true);
-  await profile.recoverFromNostr({ identityStore: identity, fetcher: async () => remote({ name: 'Remote' }) });
+  await profile.recoverFromNostr({ identityStore: identity, fetcher: answering(async () => remote({ name: 'Remote' })) });
   assert.equal(profile.username, 'maria');
   assert.equal(profile.name, 'Remote', 'unmodified fields can recover alongside pending edits');
   const pool = poolWith();
@@ -85,7 +87,7 @@ await test('accepted publication, restart, then older relay profile cannot erase
   await purchase(identity, profile);
   await publish(profile);
   ({ identity, profile } = await env({ restart: true }));
-  const result = await profile.recoverFromNostr({ identityStore: identity, fetcher: async () => remote({}, T - 3600) });
+  const result = await profile.recoverFromNostr({ identityStore: identity, fetcher: answering(async () => remote({}, T - 3600)) });
   assert.equal(result.reason, 'stale-event');
   await reconcileProfileUsername({ identity, profile, api: ownedApi(identity) });
   assert.equal(profile.username, 'maria');
@@ -95,9 +97,9 @@ await test('accepted publication, restart, then older relay profile cannot erase
 await test('recovery in flight cannot erase a purchase completed during its fetch', async () => {
   const { identity, profile } = await env();
   const started = deferred(), reply = deferred();
-  const recovering = profile.recoverFromNostr({ identityStore: identity, fetcher: () => {
+  const recovering = profile.recoverFromNostr({ identityStore: identity, fetcher: answering(() => {
     started.resolve(); return reply.promise;
-  } });
+  }) });
   await started.promise;
   await purchase(identity, profile);
   reply.resolve(remote({}));
@@ -159,7 +161,7 @@ await test('successive edits in the same second produce strictly newer events', 
 
 await test('Nostr event ID resolves equal-timestamp ordering; later removal is respected', async () => {
   const { identity, profile } = await env();
-  const recover = (event) => profile.recoverFromNostr({ identityStore: identity, fetcher: async () => event });
+  const recover = (event) => profile.recoverFromNostr({ identityStore: identity, fetcher: answering(async () => event) });
   await recover(remote({ nip05: 'first@mybuho.de' }, T, 'b'.repeat(64)));
   assert.equal((await recover(remote({}, T, 'c'.repeat(64)))).reason, 'stale-event');
   assert.equal(profile.username, 'first');
@@ -175,9 +177,9 @@ await test('account switch during fetch never writes the other identity or its s
   const { identity, profile } = await env();
   const original = identity.nostrPubkeyHex;
   const started = deferred(), reply = deferred();
-  const recovering = profile.recoverFromNostr({ identityStore: identity, fetcher: () => {
+  const recovering = profile.recoverFromNostr({ identityStore: identity, fetcher: answering(() => {
     started.resolve(); return reply.promise;
-  } });
+  }) });
   await started.promise;
   await switchTo(identity, profile, 'd'.repeat(64));
   profile.setUsername('other');
@@ -210,9 +212,9 @@ await test('switch away and back invalidates an earlier fetch even with identica
   const { identity, profile } = await env();
   const original = identity.nostrPubkeyHex;
   const started = deferred(), reply = deferred();
-  const recovering = profile.recoverFromNostr({ identityStore: identity, fetcher: () => {
+  const recovering = profile.recoverFromNostr({ identityStore: identity, fetcher: answering(() => {
     started.resolve(); return reply.promise;
-  } });
+  }) });
   await started.promise;
   await switchTo(identity, profile, 'd'.repeat(64));
   await switchTo(identity, profile, original);
@@ -351,7 +353,7 @@ await test('a deliberate profile choice during activation wins over the pending 
 await test('legacy owned-name evidence never silently overrides newer remote choices', async () => {
   const { identity, profile } = await env();
   identity.recordOwnedHandle({ handle: 'old-name' });
-  await profile.recoverFromNostr({ identityStore: identity, fetcher: async () => remote({ nip05: 'new-name@other.test' }) });
+  await profile.recoverFromNostr({ identityStore: identity, fetcher: answering(async () => remote({ nip05: 'new-name@other.test' })) });
   await reconcileProfileUsername({ identity, profile, api: ownedApi(identity) });
   assert.equal(profile.nip05, 'new-name@other.test');
 });
@@ -423,7 +425,7 @@ await test('historical relay metadata arriving after checkout cannot cancel the 
   const { identity, profile } = await env();
   begin(identity, profile);
   const earlier = Math.floor(identity.pendingNip05Claim.createdAt / 1000) - 100;
-  await profile.recoverFromNostr({ identityStore: identity, fetcher: async () => remote({ nip05: 'old-name@mybuho.de' }, earlier) });
+  await profile.recoverFromNostr({ identityStore: identity, fetcher: answering(async () => remote({ nip05: 'old-name@mybuho.de' }, earlier)) });
   await settlePendingClaim({ identity, profile, api: ownedApi(identity) });
   assert.equal(profile.username, 'maria');
 });
@@ -432,7 +434,7 @@ await test('publishing another field after historical recovery cannot cancel the
   let { identity, profile } = await env();
   begin(identity, profile);
   const earlier = Math.floor(identity.pendingNip05Claim.createdAt / 1000) - 100;
-  await profile.recoverFromNostr({ identityStore: identity, fetcher: async () => remote({ nip05: 'old-name@mybuho.de' }, earlier) });
+  await profile.recoverFromNostr({ identityStore: identity, fetcher: answering(async () => remote({ nip05: 'old-name@mybuho.de' }, earlier)) });
   profile.setField('lud16', 'pay@example.test');
   await publish(profile);
   ({ identity, profile } = await env({ restart: true }));
@@ -445,7 +447,7 @@ await test('a newer remote username choice during activation is retained', async
   const { identity, profile } = await env();
   begin(identity, profile);
   const later = Math.floor(identity.pendingNip05Claim.createdAt / 1000) + 100;
-  await profile.recoverFromNostr({ identityStore: identity, fetcher: async () => remote({ nip05: 'chosen-elsewhere@mybuho.de' }, later) });
+  await profile.recoverFromNostr({ identityStore: identity, fetcher: answering(async () => remote({ nip05: 'chosen-elsewhere@mybuho.de' }, later)) });
   await settlePendingClaim({ identity, profile, api: ownedApi(identity) });
   assert.equal(profile.username, 'chosen-elsewhere');
   assert.equal(profile.isDirty, false);
@@ -485,7 +487,7 @@ function lifecycle() {
 function coordinator(identity, profile, overrides = {}) {
   const clock = scheduler(), life = lifecycle(), pool = poolWith();
   const sync = startProfileSync({ identity, profile, ...life, ...clock,
-    recoveryOptions: { fetcher: async () => remote({ name: 'Existing' }, T - 100) },
+    recoveryOptions: { fetcher: answering(async () => remote({ name: 'Existing' }, T - 100)) },
     publishOptions: { pool, relays: RELAYS, createdAt: T },
     claimApi: ownedApi(identity), ...overrides,
   });

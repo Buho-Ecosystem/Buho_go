@@ -34,7 +34,7 @@ import { hasRelayList } from '../utils/nostrContactsDoc.js';
 const keysWithRelayList = new Set();
 import { nip05AddressFor, ownUsernameFrom, splitNip05, isFreeShapeHandle } from '../services/nip05.js';
 import {
-  fetchProfile as fetchProfileFromRelays,
+  fetchProfileChecked,
   parseProfileContent,
   compareEventFreshness,
 } from '../utils/nostrFetch.js';
@@ -204,6 +204,13 @@ export const useProfileStore = defineStore('profile', {
      * them (utils/nostrProfile.js, foreignProfileFields).
      */
     extraContent: {},
+    /**
+     * The published profile of this key has been read (or proven absent), or
+     * an event of ours was accepted. Persisted. An identity brought from
+     * another app publishes nothing before this, so the profile it already has
+     * is never replaced by what this phone holds.
+     */
+    remoteChecked: false,
     /** Receipt written atomically with a claimed username; closes interrupted handoffs. */
     lastUsernameClaim: '',
     /** Invalidates asynchronous work when this store loads a different session. */
@@ -302,6 +309,7 @@ export const useProfileStore = defineStore('profile', {
       this.eventVersion = null;
       this.pendingEvent = null;
       this.extraContent = {};
+      this.remoteChecked = false;
       this.lastUsernameClaim = '';
       this.session += 1;
       this.isPublishing = false;
@@ -375,6 +383,8 @@ export const useProfileStore = defineStore('profile', {
             }
             this.lastUsernameClaim = typeof parsed.lastUsernameClaim === 'string' ? parsed.lastUsernameClaim : '';
             this.extraContent = foreignProfileFields(parsed.extraContent);
+            // Saved before the flag existed: a published or recovered profile was checked.
+            this.remoteChecked = parsed.remoteChecked === true || this.lastPublishedAt !== null;
           }
         }
       } catch (err) {
@@ -411,6 +421,7 @@ export const useProfileStore = defineStore('profile', {
         lastUsernameClaim: this.lastUsernameClaim,
       };
       if (Object.keys(this.extraContent).length) payload.extraContent = this.extraContent;
+      if (this.remoteChecked) payload.remoteChecked = true;
       if (this.lastPublishedAt !== null) {
         payload.lastPublishedAt = this.lastPublishedAt;
       }
@@ -774,7 +785,7 @@ export const useProfileStore = defineStore('profile', {
      * }} [opts]
      * @returns {Promise<
      *   | { ok: true,  acceptedRelay: string, settled: Promise<Array<{relay,ok,error}>> }
-     *   | { ok: false, results: Array<{relay,ok,error}>, settled: Promise<Array<{relay,ok,error}>> }
+     *   | { ok: false, results: Array<{relay,ok,error}>, settled: Promise<Array<{relay,ok,error}>>, reason?: 'unchecked' }
      *   | null
      * >}
      */
@@ -788,6 +799,13 @@ export const useProfileStore = defineStore('profile', {
         const err = new Error('No identity seed');
         err.code = 'IDENTITY_NOT_BOOTSTRAPPED';
         throw err;
+      }
+      // An identity brought from another app already has a profile. Until it
+      // has been read, publishing would replace all of it (name, picture,
+      // address) with what this phone holds. The edit stays pending and
+      // profileSync publishes it on top once the read succeeds.
+      if (identity.activeExternalId && !this.remoteChecked) {
+        return { ok: false, reason: 'unchecked', results: [], settled: Promise.resolve([]) };
       }
 
       const pool = opts.pool ?? getRelayPool();
@@ -859,6 +877,7 @@ export const useProfileStore = defineStore('profile', {
         if (firstAccept) {
           if (scope.current() && compareEventFreshness(profileEvent, this.eventVersion) <= 0) {
             this.lastPublishedAt = Date.now();
+            this.remoteChecked = true;
             for (const [field, editedAt] of Object.entries(this.pendingFields)) {
               if (editedAt <= revision) delete this.pendingFields[field];
             }
@@ -909,11 +928,11 @@ export const useProfileStore = defineStore('profile', {
      *   pool?:         import('nostr-core').RelayPool,
      *   relays?:       readonly string[],
      *   timeoutMs?:    number,
-     *   fetcher?:      typeof fetchProfileFromRelays,
+     *   fetcher?:      typeof fetchProfileChecked,
      * }} opts
      * @returns {Promise<{
      *   ok: boolean,
-     *   reason?: 'identity-not-bootstrapped' | 'fetch-failed',
+     *   reason?: 'identity-not-bootstrapped' | 'fetch-failed' | 'unreachable',
      *   hadRemote: boolean,
      *   applied: number,
      *   fields: string[],
@@ -949,15 +968,16 @@ export const useProfileStore = defineStore('profile', {
         };
       }
 
-      const fetchOne = typeof fetcher === 'function' ? fetcher : fetchProfileFromRelays;
+      const fetchOne = typeof fetcher === 'function' ? fetcher : fetchProfileChecked;
       const fetchOpts = {};
       if (pool) fetchOpts.pool = pool;
       if (Array.isArray(relays) && relays.length > 0) fetchOpts.relays = relays;
       if (Number.isFinite(timeoutMs)) fetchOpts.timeoutMs = timeoutMs;
 
       let event;
+      let checked;
       try {
-        event = await fetchOne(identityKeys.pubkeyHex, fetchOpts);
+        ({ event, checked } = await fetchOne(identityKeys.pubkeyHex, fetchOpts));
       } catch (err) {
         // Pool failures already collapse to `null` inside
         // `fetchProfile`. Reaching this branch means something
@@ -975,16 +995,34 @@ export const useProfileStore = defineStore('profile', {
         };
       }
 
-      if (!event) {
-        return { ok: true, hadRemote: false, applied: 0, fields: [] };
+      // Nothing found proves nothing until enough relays really answered.
+      if (!event && !checked) {
+        return { ok: false, reason: 'unreachable', hadRemote: false, applied: 0, fields: [] };
       }
 
       if (!scope.current()) return skipped('identity-changed');
+      // The published profile is known from here on: absent, older than ours,
+      // or applied below. A local edit made during the read leaves it unknown,
+      // since the remote fields were not merged in.
+      const markChecked = () => {
+        if (this.remoteChecked) return;
+        this.remoteChecked = true;
+        this._persistMetadata();
+      };
+      if (!event) {
+        markChecked();
+        return { ok: true, hadRemote: false, applied: 0, fields: [] };
+      }
+
       if (this.revision !== revision) return skipped('local-changed');
-      if (this.eventVersion && compareEventFreshness(event, this.eventVersion) >= 0) return skipped('stale-event');
+      if (this.eventVersion && compareEventFreshness(event, this.eventVersion) >= 0) {
+        markChecked();
+        return skipped('stale-event');
+      }
       // Older builds only saved a wall-clock timestamp. It cannot establish an
       // exact event version, but must not permit a clearly older profile rollback.
       if (!this.eventVersion && this.lastPublishedAt && event.created_at < Math.floor(this.lastPublishedAt / 1000)) {
+        markChecked();
         return skipped('stale-event');
       }
 
@@ -1018,6 +1056,7 @@ export const useProfileStore = defineStore('profile', {
       }
       this.eventVersion = { created_at: event.created_at, id: event.id };
       this.pendingEvent = null;
+      this.remoteChecked = true;
 
       // This is the remote event's time, not a local acknowledgment. Pending
       // fields retain their revisions until their own event is accepted.

@@ -2211,6 +2211,9 @@ export const useWalletStore = defineStore('wallet', {
         const identity = useIdentityStore();
         await identity.hydrate();
         if (!identity.bootstrapped) return;
+        // A profile brought from another app is the person's own (see the
+        // payment-address boot): a wallet change never edits it.
+        if (identity.activeExternalId) return;
         await profile.hydrate();
 
         const preferred = this.preferredProfileLightningAddress
