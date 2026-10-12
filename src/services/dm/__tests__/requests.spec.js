@@ -191,7 +191,6 @@ test('pullInvoice: hands on the LUD-21 verify URL only when it is https on the c
   }
 });
 
-
 test('pullInvoice: an amount outside min/maxSendable is AMOUNT_OUT_OF_RANGE and no invoice is requested', async () => {
   for (const sats of [5_000, 1]) {
     const { service, lnurl } = setup({ lnurl: fakeLnurl({ invoice: makeInvoice({ sats }), min: 10_000_000, max: 20_000_000 }) });
