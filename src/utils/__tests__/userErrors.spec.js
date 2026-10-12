@@ -143,5 +143,33 @@ test('the refused-save copy has German and Spanish translations, without em dash
   }
 });
 
+
+test('a wallet that holds too little is said in our words, never attributed to the recipient', () => {
+  const t = (key, values = {}) => key.replace(/\{(\w+)\}/g, (_, name) => values[name] ?? name);
+  const said = [
+    new Error('insufficient funds'),                                          // Breez SDK
+    new Error('LNBits API error: Insufficient balance.'),                     // LNbits
+    new Error('LNBits API error: You must reserve at least (1%) 10 sat to cover potential routing fees.'),
+    new Error('Not enough funds'),                                            // Arkade
+    Object.assign(new Error('Wallet refused'), { code: 'INSUFFICIENT_BALANCE' }), // NWC
+  ];
+  for (const error of said) {
+    const e = buildPaymentError(error, { context: 'payment', walletName: 'Business' }, t);
+    assert.equal(e.reason, 'Not enough balance in Business.', error.message);
+    assert.equal(e.reasonSource, 'curated');
+    assert.equal(e.reasonAttribution, null, error.message);
+  }
+  assert.equal(buildPaymentError(new Error('insufficient funds'), { context: 'payment' }).reason, 'Not enough funds.');
+  // Numbers still get the breakdown, which says more.
+  assert.match(buildPaymentError(new Error('Insufficient funds 109 / 50551'), { context: 'payment', amountSats: 50000, walletName: 'Business' }, t).reason, /Balance: 109 sats/);
+  // A recipient's own refusal is not a shortfall.
+  const theirs = buildPaymentError(new Error('Amount is above the maximum'), { context: 'payment', walletName: 'Business' });
+  assert.equal(theirs.reasonSource, 'upstream');
+  // A withdrawal service short of funds is the service's shortfall, not the user's.
+  const service = buildPaymentError(new Error('Insufficient balance'), { context: 'withdraw' });
+  assert.deepEqual([service.reasonSource, service.reasonAttribution], ['upstream', 'Reported by the withdrawal service']);
+  assert.equal(buildPaymentError(new Error('insufficient funds'), { context: 'transfer' }).reasonAttribution, null, 'an internal transfer pays from the user\'s wallet');
+});
+
 console.log(`\n${passed} passed, ${failed} failed`);
 if (failed) process.exit(1);

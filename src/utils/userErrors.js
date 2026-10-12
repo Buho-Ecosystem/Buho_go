@@ -57,8 +57,8 @@ export function getUnsupportedSilentPaymentCopy($t = null) {
  *   'upstream' — server prose passed the safety filter and is rendered
  *                verbatim. The dialog shows this in a quoted block with
  *                an attribution label (see `reasonAttribution`).
- *   'curated'  — we synthesised the text (insufficient-funds breakdown,
- *                tech-jargon translation). BuhoGO is speaking.
+ *   'curated'  — we synthesised the text (insufficient-funds breakdown or
+ *                shortfall, tech-jargon translation). BuhoGO is speaking.
  *   'fallback' — generic "Please try again." when the raw is unsafe.
  *                BuhoGO is speaking.
  *
@@ -72,6 +72,8 @@ export function getUnsupportedSilentPaymentCopy($t = null) {
  * @param {string} [ctx.route]      Free-form route label,
  *                                  e.g. 'LNURL-pay → invoice fetch'
  * @param {number} [ctx.amountSats]
+ * @param {string} [ctx.walletName] The paying wallet's name, for a shortfall
+ *                                  it reported ("Not enough balance in X.").
  * @param {string} [ctx.title]      Pre-translated headline override. Use
  *                                  sparingly: the title is the dialog's
  *                                  identity, and overriding it weakens the
@@ -129,6 +131,13 @@ export function buildPaymentError(error, ctx = {}, $t = null) {
       reasonSource = 'curated';
     } else if (breakdown) {
       reason = breakdown;
+      reasonSource = 'curated';
+    } else if (OWN_WALLET_PAYS.has(context) && isInsufficientFunds(error, raw)) {
+      // The paying wallet's own refusal: said in our words, never passed
+      // through as if the recipient had said it.
+      reason = ctx.walletName
+        ? t('Not enough balance in {wallet}.', { wallet: ctx.walletName })
+        : t('Not enough funds.');
       reasonSource = 'curated';
     } else if (translated) {
       reason = translated;
@@ -271,6 +280,26 @@ function expandInsufficientFunds(rawMsg, amountSats, t) {
   if (balance >= required) return null;
 
   return formatInsufficientBalanceBreakdown({ balance, required, amountSats, fee }, t);
+}
+
+/**
+ * How wallets word "this wallet does not hold enough": the Breez SDK, LNbits
+ * (including its fee reserve), NWC wallets and Arkade. A stable code wins
+ * over the words.
+ */
+const INSUFFICIENT_FUNDS_PATTERNS = [
+  /insufficient (funds|balance)/i,
+  /not enough (funds|balance)/i,
+  /exceeds? (the )?available balance/i,
+  /must reserve at least/i,
+];
+
+/** Contexts where the user's own wallet pays, so a shortfall is its own. */
+const OWN_WALLET_PAYS = new Set(['payment', 'transfer']);
+
+function isInsufficientFunds(error, raw) {
+  if (error && typeof error === 'object' && error.code === 'INSUFFICIENT_BALANCE') return true;
+  return INSUFFICIENT_FUNDS_PATTERNS.some((pattern) => pattern.test(raw || ''));
 }
 
 /**

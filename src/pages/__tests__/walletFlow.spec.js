@@ -326,7 +326,7 @@ const PAY_WALLETS = [
 const PAY_FUNDS = { biz: 50000, personal: 40000, alby: 30000, lnb: 20000, ark: 10000 };
 const INVOICE_SATS = { 'inv-1000': 1000, 'inv-zero': 0, 'inv-big': 45000 };
 
-function payingHarness({ wallets = PAY_WALLETS, active = 'biz', funds = PAY_FUNDS, connectionStates = {}, bus = { emit() {} } } = {}) {
+function payingHarness({ wallets = PAY_WALLETS, active = 'biz', funds = PAY_FUNDS, outdated = [], connectionStates = {}, bus = { emit() {} } } = {}) {
   const calls = [];     // provider-level traffic, in order: [walletId, method, ...details]
   const lightning = []; // NWC service traffic
   const notices = [];
@@ -355,6 +355,8 @@ function payingHarness({ wallets = PAY_WALLETS, active = 'biz', funds = PAY_FUND
     balanceStates: Object.fromEntries(Object.entries(funds).map(([id, value]) => [id, { value }])),
     get activeWallet() { return this.wallets.find(w => w.id === this.activeWalletId) || null; },
     get activeWalletType() { return this.activeWallet?.type ?? null; },
+    // `outdated`: the last refresh of these balances failed.
+    getDisplayBalance: id => ({ known: id in funds, isCached: false, refreshing: false, outdated: outdated.includes(id) }),
     getSparkAddress: id => `spark1${id}`,
     ensureSparkConnected: async (id = null) => { calls.push([id, 'ensureSparkConnected']); return providerFor(id || store.activeWalletId); },
     ensureLNBitsConnected: async id => { calls.push([id, 'ensureLNBitsConnected']); return providerFor(id || store.activeWalletId); },
@@ -653,13 +655,23 @@ test('Pay with: an unusable selection blocks the commit, in the sheet and in the
   assert.equal(down.vm.paymentSheetWalletHint, '');
 });
 
-test('Pay with: single-wallet users keep the old gate - the rail only, never the balance', async () => {
+test('Pay with: a single wallet that holds too little says so before the slide, like several do', async () => {
   const lone = payingHarness({ wallets: [PAY_WALLETS[2]], active: 'alby', funds: { alby: 3 } });
   await lone.vm.onPaymentDetected({ type: 'lightning_invoice', data: 'inv-big' });
   assert.equal(lone.vm.sendingWalletId, 'alby');
   assert.equal(lone.vm.payingWalletEntries.length, 1);
-  assert.equal(lone.vm.paymentSheetWalletCanPay, true, 'the provider reports a real shortfall, as it always has');
-  assert.equal(lone.vm.canConfirmPayment, true);
+  assert.equal(lone.vm.paymentSheetWalletCanPay, false);
+  assert.equal(lone.vm.canConfirmPayment, false);
+  assert.equal(lone.vm.paymentSheetWalletHint, 'Not enough balance in Alby Hub.', 'no other wallet to suggest');
+  await quietly(() => lone.vm.confirmPayment());
+  assert.deepEqual(lone.lightning.filter(([step]) => step === 'send'), [], 'nothing was sent');
+
+  // A balance whose last refresh failed may be behind: it never refuses.
+  const behind = payingHarness({ wallets: [PAY_WALLETS[2]], active: 'alby', funds: { alby: 3 }, outdated: ['alby'] });
+  await behind.vm.onPaymentDetected({ type: 'lightning_invoice', data: 'inv-big' });
+  assert.equal(behind.vm.paymentSheetWalletCanPay, true);
+  assert.equal(behind.vm.payingWalletEntries[0].balanceSats, null);
+
   const arkadeOnly = payingHarness({ wallets: [PAY_WALLETS[4]], active: 'ark' });
   await arkadeOnly.vm.onPaymentDetected({ type: 'lightning_invoice', data: 'inv-1000' });
   assert.equal(arkadeOnly.vm.paymentSheetWalletCanPay, false, 'the rail gate is unchanged');
@@ -681,6 +693,19 @@ test('Pay with: zero-fee rails reserve nothing, so a whole balance can be sent',
   assert.equal(ln.vm.paymentSheetWalletCanPay, true, 'no fee is known yet');
   ln.vm.estimatedFee = 7;
   assert.equal(ln.vm.paymentSheetWalletCanPay, false, '1000 + 7 > 1000');
+});
+
+test('Pay with: a guessed Spark fee is shown but never held back from the balance', async () => {
+  const funds = { ...PAY_FUNDS, biz: 1000 };
+  for (const [isEstimated, canPay] of [[true, true], [false, false]]) {
+    const { vm, store } = payingHarness({ funds });
+    store.ensureSparkConnected = async () => ({ getLightningSendFeeEstimate: async () => ({ estimatedFeeSats: 7, isEstimated }) });
+    vm.pendingPayment = invoicePayment();
+    vm.sendingWalletId = 'biz';
+    await vm.updateFeeEstimate();
+    assert.equal(vm.estimatedFee, 7, 'the sheet still shows it');
+    assert.equal(vm.paymentSheetWalletCanPay, canPay, isEstimated ? 'a guess refuses nothing' : 'a route quote counts');
+  }
 });
 
 test('Pay with: each wallet type pays through ITS OWN provider; the active wallet is never switched', async () => {
