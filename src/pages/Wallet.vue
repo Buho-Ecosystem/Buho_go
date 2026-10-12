@@ -743,6 +743,7 @@ import {parseSuccessAction, resolveSuccessAction} from '../utils/successAction.j
 import {validateVerifyUrl, pollVerify} from '../utils/lnurlVerify.js';
 import {lnurlFetch, lnurlGetJson} from '../utils/lnurlHttp.js';
 import {classifyTransportFailure} from '../utils/userErrors.js';
+import { keepOrigin } from '../utils/errorOrigin.js';
 import {buildLnurlPayCallbackUrl, isStoreablePayLink} from '../utils/lnurlPay.js';
 import {parsePayRequestMetadata, serviceTitle, normalizeServiceImage, serviceIdentity} from '../utils/lnurlMetadata.js';
 import {isLightningInvoice as isLightningInvoiceShared, isLightningAddress as isLightningAddressShared, stripWrapperScheme, nativeRailsFromBip21, canonicalLnurl, lnurlDomain} from '../utils/addressUtils.js';
@@ -3813,6 +3814,7 @@ export default {
         // Carry the code: translateErrorCode keys on it (ARKADE_LN_UNAVAILABLE
         // and friends), and codes never contain PINs.
         if (error?.code) safeError.code = error.code;
+        keepOrigin(error, safeError);
 
         console.error('Withdraw failed:', safeMessage);
         this.lnurlWithdrawStatus = 'error';

@@ -59,6 +59,7 @@ import {
   waitQuoteFromMature,
 } from '../utils/breezPayments.js';
 import { sparkHealth } from '../utils/sparkHealth.js';
+import { counterpartyError } from '../utils/errorOrigin.js';
 
 /**
  * One fresh synchronization per SDK instance at a time. Keyed by the SDK
@@ -1095,7 +1096,7 @@ export class BreezSparkWalletProvider extends WalletProvider {
 
       const lnurlData = response.data;
       if (!lnurlData || lnurlData.tag !== 'payRequest' || !lnurlData.callback || lnurlData.status === 'ERROR') {
-        throw new Error(lnurlData?.reason || 'Failed to fetch Lightning address info');
+        throw counterpartyError(lnurlData?.status === 'ERROR' && lnurlData.reason, 'Failed to fetch Lightning address info');
       }
 
       if (!(payout && payout.code && payout.amount > 0)) {
@@ -1121,7 +1122,7 @@ export class BreezSparkWalletProvider extends WalletProvider {
       const invoiceData = invoiceResponse.data;
 
       if (!invoiceData || invoiceData.status === 'ERROR') {
-        throw new Error(invoiceData?.reason || 'Failed to get invoice');
+        throw counterpartyError(invoiceData?.reason, 'Failed to get invoice');
       }
       if (!invoiceData.pr) {
         throw new Error('No payment request received from Lightning address');

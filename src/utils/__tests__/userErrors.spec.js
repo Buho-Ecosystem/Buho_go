@@ -4,6 +4,7 @@ import { strict as assert } from 'node:assert';
 import de from '../../i18n/de/index.js';
 import es from '../../i18n/es/index.js';
 import { getUnsupportedBolt12OfferCopy, classifyTransportFailure, buildPaymentError, translateErrorCode } from '../userErrors.js';
+import { counterpartyError, isCounterpartyError, keepOrigin } from '../errorOrigin.js';
 
 const BOLT12_TITLE = "This payment request isn't supported yet";
 const BOLT12_REASON = 'This is a specific type of Lightning payment request. BuhoGO cannot pay BOLT12 offers yet, so no money was sent. Ask the recipient for a Lightning invoice or Lightning address instead.';
@@ -163,12 +164,37 @@ test('a wallet that holds too little is said in our words, never attributed to t
   // Numbers still get the breakdown, which says more.
   assert.match(buildPaymentError(new Error('Insufficient funds 109 / 50551'), { context: 'payment', amountSats: 50000, walletName: 'Business' }, t).reason, /Balance: 109 sats/);
   // A recipient's own refusal is not a shortfall.
-  const theirs = buildPaymentError(new Error('Amount is above the maximum'), { context: 'payment', walletName: 'Business' });
+  const theirs = buildPaymentError(counterpartyError('Amount is above the maximum'), { context: 'payment', walletName: 'Business' });
   assert.equal(theirs.reasonSource, 'upstream');
   // A withdrawal service short of funds is the service's shortfall, not the user's.
-  const service = buildPaymentError(new Error('Insufficient balance'), { context: 'withdraw' });
+  const service = buildPaymentError(counterpartyError('Insufficient balance'), { context: 'withdraw' });
   assert.deepEqual([service.reasonSource, service.reasonAttribution], ['upstream', 'Reported by the withdrawal service']);
   assert.equal(buildPaymentError(new Error('insufficient funds'), { context: 'transfer' }).reasonAttribution, null, 'an internal transfer pays from the user\'s wallet');
+});
+
+
+test('"Reported by" names a party only for text that party sent', () => {
+  const server = buildPaymentError(counterpartyError('Amount is above the maximum', 'Invoice request failed'), { context: 'payment' });
+  assert.deepEqual([server.reason, server.reasonSource, server.reasonAttribution], ['Amount is above the maximum', 'upstream', 'Reported by the recipient']);
+  // Text of unknown origin (a wallet SDK, BuhoGO itself) is shown, unlabelled.
+  for (const context of ['payment', 'transfer', 'connect', 'kiosk', 'link']) {
+    const e = buildPaymentError(new Error('Route not found'), { context });
+    assert.deepEqual([e.reason, e.reasonSource, e.reasonAttribution], ['Route not found', 'passthrough', null], context);
+  }
+  // A server that gave no reason leaves our own fallback, unmarked.
+  const silent = counterpartyError('  ', 'Invoice request failed');
+  assert.deepEqual([silent.message, isCounterpartyError(silent)], ['Invoice request failed', false]);
+  // Rebuilding an error (to scrub or translate it) keeps the mark.
+  assert.equal(isCounterpartyError(keepOrigin(counterpartyError('Card limit reached'), new Error('Kartenlimit erreicht'))), true);
+  assert.equal(isCounterpartyError(keepOrigin(new Error('ours'), new Error('ours'))), false);
+});
+
+test('a wallet that is already connected is said by BuhoGO, in every language', () => {
+  const e = buildPaymentError(Object.assign(new Error('This LNBits wallet is already connected'), { code: 'WALLET_ALREADY_CONNECTED' }), { context: 'connect' });
+  assert.deepEqual([e.title, e.reason, e.reasonSource, e.reasonAttribution], [ADD_REFUSED_TITLE, 'This wallet is already connected.', 'curated', null]);
+  for (const messages of [de, es]) {
+    assert.ok(messages['This wallet is already connected.'] && messages['This wallet is already connected.'] !== 'This wallet is already connected.');
+  }
 });
 
 console.log(`\n${passed} passed, ${failed} failed`);

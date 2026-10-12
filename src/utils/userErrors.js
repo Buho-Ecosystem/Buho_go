@@ -17,8 +17,12 @@
  *
  * Design rule: the LUD-06 `reason` field is the protocol-blessed
  * user-facing string from the server. We pass it through verbatim
- * unless it looks like a JS stack trace, gRPC path, or hex blob.
+ * unless it looks like a JS stack trace, gRPC path, or hex blob, and
+ * only text marked as the server's (utils/errorOrigin.js) is labelled
+ * "Reported by ...".
  */
+
+import { isCounterpartyError } from './errorOrigin.js';
 
 const REASON_MAX_LENGTH = 280;
 
@@ -54,9 +58,14 @@ export function getUnsupportedSilentPaymentCopy($t = null) {
  * The `reasonSource` discriminates how `reason` was produced so the UI
  * can decide whether to attribute the text to a third party:
  *
- *   'upstream' — server prose passed the safety filter and is rendered
+ *   'upstream' — another party's prose (an error marked by
+ *                errorOrigin.counterpartyError: an LNURL server's
+ *                reason) passed the safety filter and is rendered
  *                verbatim. The dialog shows this in a quoted block with
  *                an attribution label (see `reasonAttribution`).
+ *   'passthrough' — any other text that passed the safety filter (a
+ *                wallet SDK, BuhoGO's own message). Shown as is, with no
+ *                label: who wrote it is not known, so nobody is named.
  *   'curated'  — we synthesised the text (insufficient-funds breakdown or
  *                shortfall, tech-jargon translation). BuhoGO is speaking.
  *   'fallback' — generic "Please try again." when the raw is unsafe.
@@ -95,7 +104,7 @@ export function getUnsupportedSilentPaymentCopy($t = null) {
  * @returns {{
  *   title: string,
  *   reason: string,
- *   reasonSource: 'upstream'|'curated'|'fallback',
+ *   reasonSource: 'upstream'|'passthrough'|'curated'|'fallback',
  *   reasonAttribution: string|null,
  *   technical: {
  *     raw: string, walletType: string|null, route: string|null,
@@ -144,16 +153,16 @@ export function buildPaymentError(error, ctx = {}, $t = null) {
       reasonSource = 'curated';
     } else if (isUserSafeMessage(raw)) {
       reason = truncate(raw.trim(), REASON_MAX_LENGTH);
-      reasonSource = 'upstream';
+      reasonSource = isCounterpartyError(error) ? 'upstream' : 'passthrough';
     } else {
       reason = t('Please try again.');
       reasonSource = 'fallback';
     }
   }
 
-  // Attribution is only meaningful when BuhoGO is forwarding third-party
-  // text. Curated and fallback reasons are written by us and need no
-  // label — adding one would falsely suggest the recipient said it.
+  // Attribution only for text another party is known to have sent. Our
+  // own reasons and text of unknown origin carry no label: one would
+  // put words in the recipient's mouth.
   const reasonAttribution = reasonSource === 'upstream'
     ? attributionForContext(context, t)
     : null;
@@ -359,8 +368,8 @@ export function formatInsufficientBalanceBreakdown(parts, t) {
  * crucially we can tell the user when a refundable failure already returned
  * their funds. Returns null when there's no code-specific mapping.
  *
- * It also explains the wallet store's WALLET_STATE_* refusals. Exported for
- * error surfaces that show one line.
+ * It also explains the wallet store's WALLET_STATE_* refusals and a wallet
+ * that is already connected. Exported for error surfaces that show one line.
  */
 export function translateErrorCode(error, t) {
   const code = error && typeof error === 'object' ? error.code : null;
@@ -371,6 +380,8 @@ export function translateErrorCode(error, t) {
       return t('Your wallets could not be loaded, so nothing was changed. Close and reopen BuhoGO, then try again.');
     case 'WALLET_STATE_CONFLICT':
       return t('Your wallets were changed in another tab or window, so nothing was saved here. Reload BuhoGO, then try again.');
+    case 'WALLET_ALREADY_CONNECTED':
+      return t('This wallet is already connected.');
     case 'ADDRESS_REQUEST_NOT_PAYMENT':
       return t('This link asks for your address. It cannot receive a payment.');
     case 'ARKADE_LN_UNAVAILABLE':
@@ -393,7 +404,7 @@ export function translateErrorCode(error, t) {
  */
 function titleForErrorCode(error, context, t) {
   const code = error && typeof error === 'object' ? error.code : null;
-  if (context === 'connect' && (code === 'WALLET_STATE_UNAVAILABLE' || code === 'WALLET_STATE_CONFLICT')) {
+  if (context === 'connect' && ['WALLET_STATE_UNAVAILABLE', 'WALLET_STATE_CONFLICT', 'WALLET_ALREADY_CONNECTED'].includes(code)) {
     return t("Couldn't add the wallet");
   }
   return null;

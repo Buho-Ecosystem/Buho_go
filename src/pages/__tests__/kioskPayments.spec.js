@@ -7,6 +7,7 @@ import * as monitor from '../../utils/paymentMonitor.js';
 import * as roundUp from '../../utils/roundUp.js';
 import * as fiat from '../../utils/fiatCurrencies.js';
 import { useKioskCardPayment } from '../../composables/useKioskCardPayment.js';
+import * as errorOrigin from '../../utils/errorOrigin.js';
 const script = readFileSync(new URL('../KioskDashboard.vue', import.meta.url), 'utf8').match(/<script>([\s\S]*?)<\/script>/)[1];
 const { code } = transformSync(script, { format: 'cjs' });
 const renderer = Vue.createRenderer({
@@ -45,6 +46,7 @@ function harness(ctx, options = {}) {
     '../components/PaymentConfirmSheet.vue': {}, '../components/WithdrawAuthorization.vue': {},
     '../composables/useKioskCardPayment.js': { useKioskCardPayment: args => useKioskCardPayment({ ...args, resolve: async () => ({ callback: 'https://card.example/callback', defaultDescription: 'Bolt Card', minSats: 1, maxSats: 10000 }) }) },
     '../services/lnurlWithdraw.js': { safeWithdrawError: error => error },
+    '../utils/errorOrigin.js': errorOrigin,
     '../utils/paymentMonitor.js': { ...monitor, createPaymentMonitor: config => { const instance = monitor.createPaymentMonitor(config); h.monitors.push(instance); return instance; } },
   };
   const module = { exports: {} };
