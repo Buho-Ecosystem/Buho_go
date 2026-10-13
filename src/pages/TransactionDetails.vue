@@ -1024,7 +1024,7 @@ export default {
       return key ? this.$t(key) : '';
     },
 
-    /** BuhoGO mark shown on Learn & Earn reward transactions. */
+    /** Learn & Earn mark shown on reward transactions. */
     earnBrandLogo() {
       return EARN_BRAND.logo;
     },

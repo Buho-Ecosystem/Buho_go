@@ -37,9 +37,10 @@ export function earnPayoutMemo(kind) {
 /** Row/hero branding for a Learn & Earn reward. */
 export const EARN_BRAND = Object.freeze({
   name: 'Learn & Earn',
+  // The Learn & Earn mark (graduation cap, sat tassel, on its cream tile).
   // Served from /public at the app root, so a plain absolute URL string with
   // no bundler import, matching how the other Buho logos are referenced.
-  logo: '/buho_logo_grey.svg',
+  logo: '/Learn and Earn/learn-earn-mark.svg',
 })
 
 /**
