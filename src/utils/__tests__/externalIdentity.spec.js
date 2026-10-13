@@ -7,7 +7,12 @@ import { test } from 'node:test';
 import { generateSecretKey, getPublicKey, nip19, createSecretKeySigner } from 'nostr-core';
 import { parseSecretKeyInput, sanitizeExternalIdentities, verifiedSigner } from '../externalIdentity.js';
 import { bytesToHex } from '../identityCrypto.js';
-import { adoptBunker, bunkerSigner, closeSigner, pairBunker } from '../../services/identitySigners.js';
+import {
+  adoptBunker, approvalUrl, BUNKER_PERMISSIONS, bunkerSigner, closeSigner, onSignerApproval, pairBunker,
+} from '../../services/identitySigners.js';
+import { KIND } from '../../services/dm/constants.js';
+import { CONTACTS_DOC_KIND, RELAY_LIST_KIND } from '../nostrContactsDoc.js';
+import { BLOSSOM_AUTH_KIND } from '../blossomProfileMedia.js';
 import { createFakeRemoteSigner } from './fakeRemoteSigner.js';
 
 const SECRET = generateSecretKey();
@@ -104,4 +109,40 @@ test('a remote signer that cannot be reached leaves no pairing key behind', asyn
   const clientKey = generateSecretKey();
   await assert.rejects(() => bunkerSigner('gone', { ...signer.bunker, relays: ['wss://nowhere.test'] }, async () => clientKey));
   assert.ok(clientKey.every((byte) => byte === 0));
+});
+
+test('a remote signer is asked at pairing for everything BuhoGO signs with it', async (t) => {
+  const signer = remoteSigner(t, 'perms');
+  await bunkerSigner('perms', signer.bunker, async () => generateSecretKey());
+  const [connect] = signer.requests;
+  assert.equal(connect.method, 'connect');
+  assert.equal(connect.params[2], BUNKER_PERMISSIONS);
+
+  const asked = BUNKER_PERMISSIONS.split(',');
+  assert.equal(new Set(asked).size, asked.length);
+  const kinds = [0, RELAY_LIST_KIND, CONTACTS_DOC_KIND, BLOSSOM_AUTH_KIND,
+    KIND.SEAL, KIND.AUTH, KIND.DM_RELAYS, KIND.MUTE_LIST];
+  for (const wanted of ['nip44_encrypt', 'nip44_decrypt', ...kinds.map((kind) => `sign_event:${kind}`)]) {
+    assert.ok(asked.includes(wanted), wanted);
+  }
+});
+
+test('a signer that asks for approval on its page gets it offered, and the request still completes', async (t) => {
+  const signer = remoteSigner(t, 'approval');
+  const offered = [];
+  const stops = [onSignerApproval((url) => offered.push(url)), onSignerApproval(() => { throw new Error('a broken listener'); })];
+  t.after(() => stops.forEach((stop) => stop()));
+  const connection = await bunkerSigner('approval', signer.bunker, async () => generateSecretKey());
+  signer.askApproval('https://signer.test/approve?id=1');
+  signer.askApproval('intent://approve#Intent;end');
+  assert.equal((await connection.signEvent(note())).pubkey, signer.userPubkey);
+  assert.deepEqual(offered, ['https://signer.test/approve?id=1']);
+});
+
+test('only a plain https approval page from a signer is offered', () => {
+  assert.equal(approvalUrl(' https://nsec.app/confirm?id=1 '), 'https://nsec.app/confirm?id=1');
+  for (const unsafe of ['http://nsec.app/confirm', 'intent://x#Intent;end', 'javascript:alert(1)',
+    'https://user:pass@nsec.app/', 'https://user@nsec.app/', 'not a link', '', null, undefined]) {
+    assert.equal(approvalUrl(unsafe), null, String(unsafe));
+  }
 });

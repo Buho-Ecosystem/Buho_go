@@ -51,6 +51,8 @@ export default {
   "This doesn't look like a secret key.": "Das sieht nicht nach einem geheimen Schlüssel aus.",
   "Store your secret key": "Deinen geheimen Schlüssel speichern",
   "Waiting for your signer to approve": "Warte auf die Freigabe deines Signers",
+  "Your signer app asks you to approve": "Deine Signer-App bittet um deine Freigabe",
+  "Open {host} to approve, then come back.": "Öffne {host}, gib frei und komm dann zurück.",
   "This is not a remote signer link. It starts with bunker://": "Das ist kein Link eines entfernten Signers. Er beginnt mit bunker://",
   "Your signer didn't answer. Check that it is open and try again.": "Dein Signer hat nicht geantwortet. Prüfe, ob er geöffnet ist, und versuche es erneut.",
   "Waiting for your browser extension": "Warte auf deine Browser-Erweiterung",

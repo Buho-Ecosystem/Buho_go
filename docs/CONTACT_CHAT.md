@@ -198,12 +198,17 @@ app (patterns from Lotus, Coracle/welshman, Amethyst, NDK, noStrudel):
 - At most 1 request at a time for an extension (each may prompt), 3 for a
   remote signer; 30 s per request (`SIGNER_TIMEOUT_MS`).
 - Nothing is lost: a locked or hidden app, a signer that is away
-  (`SIGNER_UNAVAILABLE`), declines (`SIGNER_DENIED`, also a NIP-46 `auth_url`)
+  (`SIGNER_UNAVAILABLE`), declines (`SIGNER_DENIED`)
   or lacks NIP-44 (`SIGNER_UNSUPPORTED`) keeps the wrap waiting and the cursor
   in place. The store's `signerHold` tells the notice why; "Try again" or
   coming back to the app opens the waiting wraps.
 - After a refusal no background request goes out until the person retries or
   sends something themselves (no prompt loop).
+- A remote signer that wants approval on its own page (NIP-46 `auth_url`) is
+  not refusing: the request keeps waiting, and `boot/signer-approval.js` names
+  the page's host in a toast with Open. It never opens on its own. The 30 s
+  per request still applies; work that timed out meanwhile goes again on Try
+  again or when the app comes back.
 - Nothing is asked while the app is in the background.
 - Each wrap is decrypted once: `handledWraps` remembers wraps already dealt
   with across restarts (the inbox re-reads two days on every start).
@@ -506,7 +511,11 @@ needs every point below covered.
 | [#73](https://github.com/nostr-core-org/nostr-core/issues/73) `unwrap` rejects a forged rumor id | Needs the raw key and throws one generic error; the chat decrypts through the signer and needs a reason per failure. `openWrap.js` |
 | [#74](https://github.com/nostr-core-org/nostr-core/issues/74) `createMessage` / `unwrapMessage` (multi-recipient, self copy, kinds 15 and 7) | Raw key only, and it sets its own `created_at` and `p` tags over the chat's templates. `giftWrap.js` + `openWrap.js` on the nip59 primitives |
 | [#75](https://github.com/nostr-core-org/nostr-core/issues/75) `publishDetailed`, `parseRelayReason` | The parser is case-sensitive, ignores a bare `duplicate` and nested reasons, and throws on a missing reason (so `publishDetailed` can reject on `OK true` without one); no first-accept, error codes, retries or per-role sockets. `transport.js` + `errors.js` |
-| [#83](https://github.com/nostr-core-org/nostr-core/issues/83) NIP-46 `connect` cannot send requested permissions (`nip44_encrypt,nip44_decrypt,sign_event:13,sign_event:22242,sign_event:10050`) | Not in 1.0.5 ([#86](https://github.com/nostr-core-org/nostr-core/pull/86) is open). Until it ships, the opt-in notice asks the person to always allow. |
+
+Since 1.0.6 a remote signer is asked at `connect` for everything BuhoGO signs
+with it (`BUNKER_PERMISSIONS` in `identitySigners.js`, [#83](https://github.com/nostr-core-org/nostr-core/issues/83)),
+again on every reconnect. The opt-in notice still asks to always allow: an
+extension has no such request, and a signer may ignore it.
 
 ## 12. Testing
 
@@ -537,9 +546,6 @@ needs every point below covered.
   the chat signer.
 - A thread the user started with a stranger stays under "Not in your
   contacts" (other clients count a chat you wrote to as known).
-- Signer apps (section 5a, issue #344), once nostr-core ships
-  [#86](https://github.com/nostr-core-org/nostr-core/pull/86) (planned for
-  1.0.6): request the chat's permissions at `connect` (section 11), and open a NIP-46
-  `auth_url` through `NostrConnect.onauthurl` (in nostr-core since 1.0.5)
-  instead of treating it as a refusal. Check on a device with nsec.app and
+- Signer apps (section 5a): the permissions asked at `connect` (section 11)
+  and an `auth_url` approval still need a check on a device with nsec.app and
   Amber.

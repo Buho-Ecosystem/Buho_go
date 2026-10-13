@@ -38,6 +38,8 @@ A signer outside BuhoGO is wrapped in `verifiedSigner()`: every signed event mus
 
 A remote signer connection signs every request with this app's pairing key, so it holds a copy of its own (`identitySigners.js`), wiped when the connection closes; the import sheet and the store wipe theirs as before. Callers that need the signer at the same time share one reconnect, so the signer sees one connection.
 
+Pairing asks a remote signer for everything BuhoGO signs with it (`BUNKER_PERMISSIONS`), so it can approve once. A signer that wants approval on its own page (NIP-46 `auth_url`) keeps the request waiting; `boot/signer-approval.js` names the page's host in a toast with Open, for https pages only (`approvalUrl`). The page never opens on its own: the request rarely follows a tap, so a browser would block it, and on a phone it would leave the app without warning.
+
 `identityCapabilities` says what the identity in use can do:
 
 - `rawKey` false (extension, remote signer): the Social Bucket is unavailable (it signs ecash mint quotes, which a signer cannot).
@@ -60,5 +62,5 @@ Imported secret keys are not in the Drive backup: the person brought them from e
 
 - `src/utils/__tests__/externalIdentity.spec.js`, `src/stores/__tests__/identity.spec.js` (imports), `profile.spec.js` (kept fields, relay list), `socialBucket.spec.js` (foreign wallet), `nostrContactsDoc.spec.js`, `addressBook.spec.js`.
 - `node scripts/check-own-identity.mjs`: secret key and extension import, "Is this you?", switching, detail pages, delete alert, a wrong remote signer link, dark mode.
-- Needs a device: a real remote signer (nsec.app, Amber over NIP-46) and a real extension (Alby, nos2x).
-- nostr-core 1.0.5 or later: 1.0.4 sent the wrong first `connect` param, so remote signers that check it timed out (nostr-core-org/nostr-core#76).
+- Needs a device: a real remote signer (nsec.app, Amber over NIP-46), including an approval page, and a real extension (Alby, nos2x).
+- nostr-core 1.0.6 or later: 1.0.4 sent the wrong first `connect` param, so remote signers that check it timed out (nostr-core-org/nostr-core#76); 1.0.6 sends the requested permissions (nostr-core-org/nostr-core#83).

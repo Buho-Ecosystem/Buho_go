@@ -93,8 +93,8 @@ importers:
         specifier: ^6.10.0
         version: 6.10.0
       nostr-core:
-        specifier: ^1.0.5
-        version: 1.0.5
+        specifier: ^1.0.6
+        version: 1.0.6
       pdfkit:
         specifier: ^0.20.1
         version: 0.20.2
@@ -3104,8 +3104,8 @@ packages:
     resolution: {integrity: sha512-6eZs5Ls3WtCisHWp9S2GUy8dqkpGi4BVSz3GaqiE6ezub0512ESztXUwUB6C6IKbQkY2Pnb/mD4WYojCRwcwLA==}
     engines: {node: '>=0.10.0'}
 
-  nostr-core@1.0.5:
-    resolution: {integrity: sha512-Nz/yyUb6YbZx9p3d+dOFXoNC29kUxc0Fgy5lhODqXvOn0W0Ypgri0LsMgUoEgdf2vbGdrb2o8cAP6OaGeGyGoQ==}
+  nostr-core@1.0.6:
+    resolution: {integrity: sha512-NX9BIwEw0oqkJaKPO7454aSikHhIwUKHiud8ETha3GutXjMPCShEOBzJky7hZeyAM3HhrrTUzR2OWP2c1MzXdg==}
 
   nostr-tools@2.23.3:
     resolution: {integrity: sha512-AALyt9k8xPdF4UV2mlLJ2mgCn4kpTB0DZ8t2r6wjdUh6anfx2cTVBsHUlo9U0EY/cKC5wcNyiMAmRJV5OVEalA==}
@@ -7424,7 +7424,7 @@ snapshots:
 
   normalize-path@3.0.0: {}
 
-  nostr-core@1.0.5:
+  nostr-core@1.0.6:
     dependencies:
       '@noble/ciphers': 1.3.0
       '@noble/curves': 1.9.7

@@ -1,7 +1,9 @@
 /**
  * A remote signer (NIP-46) on the fake relay network, for tests of
  * services/identitySigners.js. It holds a user key and answers the requests
- * that reach its relay: connect, get_public_key, sign_event.
+ * that reach its relay: connect, get_public_key, sign_event. `askApproval(url)`
+ * makes it answer the next request with that approval page first (NIP-46
+ * `auth_url`), then with the result.
  *
  * `install()` makes it the global `WebSocket`, which nostr-core's Relay uses;
  * `dispose()` restores it.
@@ -22,6 +24,8 @@ export function createFakeRemoteSigner({ url = 'wss://signer.test' } = {}) {
   const remotePubkey = getPublicKey(signerKey);
   /** Every request the signer received, decrypted: `{ id, method, params }`. */
   const requests = [];
+  /** Approval pages to name before the next answer. */
+  const approvals = [];
   const previousWebSocket = globalThis.WebSocket;
 
   function answer(request) {
@@ -40,19 +44,25 @@ export function createFakeRemoteSigner({ url = 'wss://signer.test' } = {}) {
     const key = nip44.getConversationKey(signerKey, event.pubkey);
     const request = JSON.parse(nip44.decrypt(event.content, key));
     requests.push(request);
-    const reply = { id: request.id, ...answer(request) };
-    inject(finalizeEvent({
+    const send = (reply) => inject(finalizeEvent({
       kind: NIP46_KIND,
       created_at: Math.floor(Date.now() / 1000),
       tags: [['p', event.pubkey]],
-      content: nip44.encrypt(JSON.stringify(reply), key),
+      content: nip44.encrypt(JSON.stringify({ id: request.id, ...reply }), key),
     }, signerKey));
+    if (request.method !== 'connect') {
+      for (const url of approvals.splice(0)) send({ result: 'auth_url', error: url });
+    }
+    send(answer(request));
   };
 
   return {
     bunker: { remotePubkey, relays: [url] },
     userPubkey: getPublicKey(userKey),
     requests,
+    askApproval(url) {
+      approvals.push(url);
+    },
     install() {
       globalThis.WebSocket = network.WebSocket;
     },

@@ -201,8 +201,6 @@ test('signer app errors map to chat codes; payload errors stay as they are', () 
     [coded('SIGNER_MISMATCH'), DM_ERROR.NO_IDENTITY],
     [named('Nip46RemoteError', 'Permission denied for nip44_decrypt'), DM_ERROR.SIGNER_DENIED],
     [new Error('User rejected'), DM_ERROR.SIGNER_DENIED],
-    // NIP-46 auth_url: the signer wants the person to approve at this link first.
-    [named('Nip46RemoteError', 'https://nsec.app/confirm?id=1'), DM_ERROR.SIGNER_DENIED],
   ];
   for (const [err, code] of cases) assert.ok(DmError.is(toDmError(err), code), `${err.name}: ${err.message} -> ${code}`);
 
