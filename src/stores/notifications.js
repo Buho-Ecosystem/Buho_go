@@ -25,22 +25,27 @@ import {
  * dialog is a one-shot on Android: asking again does nothing, and asking a
  * second time in our own UI would be nagging.
  *
- * `messagesEnabled` is the contact chat's own switch. It only narrows the two
- * above (see `canNotifyMessages`): it can silence messages while payments keep
- * coming, but it can never make a message through when notifications as a
- * whole are off or not permitted.
+ * `enabled` is the master switch. Under it each kind has its own switch,
+ * `paymentsEnabled` (money received) and `messagesEnabled` (the contact chat:
+ * requests and messages). They only narrow the master switch (see
+ * `canNotifyPayments`, `canNotifyMessages`): either can be silenced while the
+ * other keeps coming, but neither gets through while notifications as a whole
+ * are off or not permitted.
  */
 
 const STORAGE_KEY = 'buhoGO_notifications'
 
 export const useNotificationsStore = defineStore('notifications', {
   state: () => ({
-    /** The user's switch inside the app. */
+    /** The user's switch inside the app: notifications at all. */
     enabled: false,
     /**
-     * The user's switch for chat messages, on top of `enabled`. On by default:
-     * turning notifications on means messages too until they say otherwise.
+     * The user's switch for received payments, on top of `enabled`. On by
+     * default: turning notifications on means payments too until they say
+     * otherwise.
      */
+    paymentsEnabled: true,
+    /** The same for the contact chat (requests and messages). */
     messagesEnabled: true,
     /** 'granted' | 'denied' | 'prompt' | 'unsupported' — the OS's answer. */
     permission: 'prompt',
@@ -53,13 +58,15 @@ export const useNotificationsStore = defineStore('notifications', {
     /** Is this even a place where notifications exist? */
     supported: () => isSupported(),
 
-    /** The only question the rest of the app asks. */
+    /** Notifications at all: the master switch and the OS permission. */
     canNotify: (state) => isSupported() && state.enabled && state.permission === 'granted',
 
-    /**
-     * The same question for a chat message: everything `canNotify` needs, and
-     * the chat's own switch on top.
-     */
+    /** The question for a received payment: `canNotify` and the payments switch. */
+    canNotifyPayments() {
+      return this.canNotify && this.paymentsEnabled
+    },
+
+    /** The same for a chat request or message, with the chat's switch. */
     canNotifyMessages() {
       return this.canNotify && this.messagesEnabled
     },
@@ -91,13 +98,16 @@ export const useNotificationsStore = defineStore('notifications', {
         const parsed = saved ? JSON.parse(saved) : null
         this.enabled = parsed?.enabled === true
         this.prompted = parsed?.prompted === true
-        // Saved before the chat existed there is no such field: that means
-        // "on", the default. Only an explicit `false` is the user's answer.
+        // Saved before a kind had its own switch there is no such field:
+        // that means "on", the default. Only an explicit `false` is the
+        // user's answer.
+        this.paymentsEnabled = parsed?.paymentsEnabled !== false
         this.messagesEnabled = parsed?.messagesEnabled !== false
       } catch {
         // A fresh, quiet default is the right fallback.
         this.enabled = false
         this.prompted = false
+        this.paymentsEnabled = true
         this.messagesEnabled = true
       }
       this.initialized = true
@@ -109,6 +119,7 @@ export const useNotificationsStore = defineStore('notifications', {
         localStorage.setItem(STORAGE_KEY, JSON.stringify({
           enabled: this.enabled,
           prompted: this.prompted,
+          paymentsEnabled: this.paymentsEnabled,
           messagesEnabled: this.messagesEnabled,
         }))
       } catch (error) {
@@ -162,10 +173,16 @@ export const useNotificationsStore = defineStore('notifications', {
     },
 
     /**
-     * The chat's own switch in Settings. The master switch and the OS
-     * permission are left alone; this only decides whether messages are
-     * announced once those allow notifications at all.
+     * The payments switch in Settings. The master switch and the OS
+     * permission are left alone; this only decides whether received payments
+     * are announced once those allow notifications at all.
      */
+    setPaymentsEnabled(value) {
+      this.paymentsEnabled = Boolean(value)
+      this.persist()
+    },
+
+    /** The same for the contact chat's requests and messages. */
     setMessagesEnabled(value) {
       this.messagesEnabled = Boolean(value)
       this.persist()
@@ -181,11 +198,11 @@ export const useNotificationsStore = defineStore('notifications', {
      * ledger uses it for a payment that settled while the app was hidden and
      * was only caught up after the user returned (services/paymentReceipts.js).
      *
-     * Payments come through here. A chat message goes through
-     * `notifyMessageIfEnabled`, which also honours the chat's own switch.
+     * Payments come through here, so the payments switch applies. A chat
+     * message goes through `notifyMessageIfEnabled` instead.
      */
     async notifyIfEnabled(message) {
-      if (!this.canNotify) return false
+      if (!this.canNotifyPayments) return false
       return notify(message)
     },
 

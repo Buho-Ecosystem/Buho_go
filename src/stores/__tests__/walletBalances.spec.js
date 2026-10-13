@@ -34,7 +34,7 @@ function harness(ctx, type = 'lnbits') {
     '../utils/balanceState.js': balanceState,
     '../utils/claimedDeposits.js': { createClaimedDepositRegistry: () => ({}) },
     './autoWithdraw': { useAutoWithdrawStore: () => ({ checkAndExecute() {}, async initialize() {} }) },
-    './notifications': { useNotificationsStore: () => ({ canNotify: true, notifyIfEnabled: async message => notices.push(message) }) },
+    './notifications': { useNotificationsStore: () => ({ canNotifyPayments: true, notifyIfEnabled: async message => notices.push(message) }) },
     '../utils/amountFormatting.js': amount,
     '../boot/i18n': { i18n: { global: { t: (key, values = {}) => key.replace(/\{(\w+)\}/g, (_, name) => values[name] ?? name) } } },
   }).useWalletStore;

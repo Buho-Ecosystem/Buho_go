@@ -187,12 +187,14 @@ test('entry points hide themselves behind the runtime availability; messages liv
   assert.match(book, /this\.chatAvailable && this\.messages\.threadsSorted\.length > 0/)
   assert.match(book, /this\.chatAvailable && entry\.nostr_pubkey/)
   assert.doesNotMatch(readSrc('pages/identity/IdentityHomePage.vue'), /MessagesSheet/, 'one home for messages')
-  assert.match(readSrc('pages/Settings.vue'), /v-if="notificationsStore\.supported && chatAvailable"/)
+  assert.match(readSrc('components/settings/NotificationsSheet.vue'), /v-if="chatAvailable"\s+icon="tabler:message-circle"/)
   // The app badge counts contacts only: strangers wait inside Messages.
   assert.match(readSrc('components/MenuOverlay.vue'), /this\.chatAvailable \? this\.messagesStore\.knownUnread : 0/)
 })
 
-test('chat-messages switch is bound to the store and disabled without notifications', () => {
-  const settings = readSrc('pages/Settings.vue')
-  assert.match(settings, /:model-value="notificationsStore\.messagesEnabled"\s+:disable="!notificationsStore\.canNotify"\s+@update:model-value="notificationsStore\.setMessagesEnabled"/)
+test('the requests-and-messages switch is bound to the store and only shown while notifications are allowed', () => {
+  const sheet = readSrc('components/settings/NotificationsSheet.vue')
+  assert.match(sheet, /<div v-show="store\.canNotify">/)
+  assert.match(sheet, /:model-value="store\.messagesEnabled" :color="toggleColor" @update:model-value="store\.setMessagesEnabled"/)
+  assert.match(sheet, /:model-value="store\.paymentsEnabled" :color="toggleColor" @update:model-value="store\.setPaymentsEnabled"/)
 })

@@ -3272,7 +3272,7 @@ export const useWalletStore = defineStore('wallet', {
       if (received <= 0) return;
 
       const notifications = useNotificationsStore();
-      if (!notifications.canNotify) return;
+      if (!notifications.canNotifyPayments) return;
 
       const t = i18n.global.t.bind(i18n.global);
       notifications.notifyIfEnabled({
