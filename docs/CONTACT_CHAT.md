@@ -483,6 +483,12 @@ every notification plus a tap listener that opens it, one notification per chat
 notification for self copies, blocked or muted contacts, or the chat currently
 on screen.
 
+In Settings, one Notifications row opens `NotificationsSheet`: "Allow
+notifications" (the master switch, `enabled`) and, only while it is on,
+"Payments received" (`paymentsEnabled`) and "Requests and messages"
+(`messagesEnabled`, shown where the chat runs). Each kind only narrows the
+master switch.
+
 ## 10. Security rules
 
 - Never log decrypted content, keys or invoices (`utils/logRedaction.js`).

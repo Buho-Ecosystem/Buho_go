@@ -256,6 +256,8 @@
         :wallet-id="lnAddressWalletId || activeWalletId"
       />
 
+      <NotificationsSheet v-model="showNotificationsSheet" />
+
       <!-- One more Spark wallet from the recovery phrase on this device. -->
       <AddSparkWalletSheet v-model="showAddSparkSheet" @created="onSparkWalletCreated" />
 
@@ -311,52 +313,18 @@
         </SettingsRow>
 
         <!--
-          Payment notifications. A full peer of the setup wizard's slide, not a
-          read-out of it: someone who tapped "Not now" there turns them on
-          here, and the system dialog is raised from this row. The switch shows
-          `canNotify` (our switch AND the OS permission), so a permission
-          revoked in system settings reads as OFF without destroying the
-          user's own choice. After an OS-level denial Android never asks again,
-          so the caption says where to go instead of leaving a dead toggle.
+          Notifications: one row, the details in a sheet (master switch, then
+          one switch per kind). The value says what is in effect, so a
+          permission revoked in system settings reads as Blocked or Off
+          without destroying the user's own choices.
         -->
         <SettingsRow
           v-if="notificationsStore.supported"
           icon="tabler:bell"
-          :label="$t('Payment notifications')"
-          :caption="notificationsCaption"
-          :interactive="false"
-        >
-          <template #right>
-            <q-toggle
-              :model-value="notificationsStore.canNotify"
-              @update:model-value="toggleNotifications"
-              :color="$q.dark.isActive ? 'brand-green' : 'brand-green-dark'"
-            />
-          </template>
-        </SettingsRow>
-
-        <!--
-          Chat messages: the contact chat's own switch, a refinement of the
-          payment-notification switch above. While notifications as a whole
-          are off the row is shown but disabled, with the reason in its
-          caption. Hidden when the chat is not running (no identity, kiosk).
-        -->
-        <SettingsRow
-          v-if="notificationsStore.supported && chatAvailable"
-          icon="tabler:message-circle"
-          :label="$t('Chat messages')"
-          :caption="messagesNotificationsCaption"
-          :interactive="false"
-        >
-          <template #right>
-            <q-toggle
-              :model-value="notificationsStore.messagesEnabled"
-              :disable="!notificationsStore.canNotify"
-              @update:model-value="notificationsStore.setMessagesEnabled"
-              :color="$q.dark.isActive ? 'brand-green' : 'brand-green-dark'"
-            />
-          </template>
-        </SettingsRow>
+          :label="$t('Notifications')"
+          :inline-value="notificationsSummary"
+          @click="showNotificationsSheet = true"
+        />
 
         <!--
           Screen Privacy — Android FLAG_SECURE.
@@ -2145,6 +2113,7 @@ import SparkLightningAddressSheet from '../components/SparkLightningAddressSheet
 import InternalTransferModal from '../components/InternalTransferModal.vue'
 import WalletDetailPanel from '../components/settings/WalletDetailPanel.vue'
 import AddSparkWalletSheet from '../components/wallets/AddSparkWalletSheet.vue'
+import NotificationsSheet from '../components/settings/NotificationsSheet.vue'
 import MoveLightningAddressSheet from '../components/wallets/MoveLightningAddressSheet.vue'
 import { removalCopy } from '../utils/walletRemoval.js'
 import GetAppDialog from '../components/GetAppDialog.vue'
@@ -2193,6 +2162,7 @@ export default {
     InternalTransferModal,
     WalletDetailPanel,
     AddSparkWalletSheet,
+    NotificationsSheet,
     MoveLightningAddressSheet,
     GetAppDialog,
     TaxReportSheet,
@@ -2226,6 +2196,7 @@ export default {
       showTransferModal: false,
       transferFromWalletId: null,
       showCurrencyDialog: false,
+      showNotificationsSheet: false,
       showLanguageDialog: false,
       showMissingLanguageDialog: false,
       nostrCommunityUrl: 'https://nostr-ecosystem.netlify.app/join/g/groups.0xchat.com/85016a489c551428a50c339c75b6931a?n=BuhoGO&a=Public+discussion%2C+support%2C+and+updates+for+the+Buho+GO+Wallet%3A+a+native+wallet+interface+for+Spark%2C+Ark%2C+LNbits%2C+Nostr+Wallet+Connect%2C+and+&p=https%3A%2F%2Fblossom.primal.net%2Fd816ffbd78b10591710a1be9deca91700fe278e50250a07f0b1e421f0db03748',
@@ -2527,32 +2498,21 @@ export default {
     },
 
     /**
-     * Payment-notification store. Drives the row's visibility
-     * (`supported`), the toggle state (`canNotify`), and the enable /
-     * disable actions; `created()` calls `initialize()` so the row
-     * reflects the live OS permission on first paint.
+     * Notification store. Drives the row's visibility (`supported`) and
+     * its value; `created()` calls `initialize()` so the row reflects the
+     * live OS permission on first paint. The switches live in
+     * NotificationsSheet.
      */
     notificationsStore() {
       return useNotificationsStore();
     },
 
-    /**
-     * Caption under the Payment notifications row. A denial is final on
-     * Android — the OS will not raise the dialog again — so once the
-     * permission is 'denied' the caption stops explaining the feature and
-     * points at the only place the user can still change it.
-     */
-    notificationsCaption() {
-      return this.notificationsStore.permission === 'denied'
-        ? this.$t('Notifications are blocked for BuhoGO in your phone settings.')
-        : this.$t('Get a notification when a payment lands while you are in another app.');
-    },
-
-    /** Caption of the Chat messages row; names the reason while it is disabled. */
-    messagesNotificationsCaption() {
-      return this.notificationsStore.canNotify
-        ? this.$t('Get a notification when someone writes to you.')
-        : this.$t('Turn on payment notifications first.');
+    /** What the Notifications row says is in effect: On, Off or Blocked. */
+    notificationsSummary() {
+      const store = this.notificationsStore;
+      if (store.permission === 'denied') return this.$t('Blocked');
+      const any = store.canNotifyPayments || (this.chatAvailable && store.canNotifyMessages);
+      return any ? this.$t('On') : this.$t('Off');
     },
 
     /**
@@ -3627,27 +3587,6 @@ export default {
           timeout: 1500
         })
       }
-    },
-
-    /**
-     * The in-app switch. Turning it on asks the OS the first time; a denial is
-     * final on Android, so we say where the user can change their mind instead
-     * of pretending the toggle worked.
-     */
-    async toggleNotifications(value) {
-      if (!value) {
-        this.notificationsStore.disable();
-        return;
-      }
-      const on = await this.notificationsStore.enable();
-      if (on) return;
-      this.$q.notify({
-        message: this.notificationsStore.permission === 'denied'
-          ? this.$t('Notifications are blocked for BuhoGO in your phone settings.')
-          : this.$t('Notifications not available'),
-        color: 'warning',
-        timeout: 3500,
-      });
     },
 
     /**

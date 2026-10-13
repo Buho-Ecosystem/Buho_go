@@ -41,7 +41,7 @@ function balanceHarness() {
     '../providers/WalletFactory': { WALLET_TYPES: { SPARK: 'spark' } },
     '../stores/autoWithdraw': { useAutoWithdrawStore: () => ({ checkAndExecute() {} }) },
     '../utils/claimedDeposits.js': { createClaimedDepositRegistry: () => ({}) },
-    './notifications': { useNotificationsStore: () => ({ canNotify: true, notifyIfEnabled: async message => notices.push(message) }) },
+    './notifications': { useNotificationsStore: () => ({ canNotifyPayments: true, notifyIfEnabled: async message => notices.push(message) }) },
     '../utils/amountFormatting.js': { formatAmount: n => `${n} sats` },
     '../boot/i18n': { i18n: { global: { t } } },
   }).useWalletStore;

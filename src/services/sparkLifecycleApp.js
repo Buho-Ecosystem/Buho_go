@@ -62,7 +62,7 @@ async function deliverReceipt(receipt) {
     walletStore.lastReceipt = { walletId: receipt.walletId, amountSats: receipt.amountSats, at: Date.now() };
 
     const notifications = useNotificationsStore();
-    if (!notifications.canNotify) return; // permission or setting says no
+    if (!notifications.canNotifyPayments) return; // permission or setting says no
     const { system } = receiptDelivery(receipt, visibilitySnapshot());
     if (!system) return; // the user was looking at the app when it settled
 

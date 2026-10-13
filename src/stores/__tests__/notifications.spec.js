@@ -12,9 +12,10 @@
  * here, dialog and all — and that the row exists in a browser too, where only
  * the wizard slide is withheld.
  *
- * The contact chat adds a third answer, `messagesEnabled`: its own switch,
- * which only narrows the other two (`canNotifyMessages`), is saved next to
- * them, and reads as "on" in anything saved before it existed.
+ * Under the master switch each kind has its own answer, `paymentsEnabled`
+ * and `messagesEnabled` (the contact chat): each only narrows the other two
+ * (`canNotifyPayments`, `canNotifyMessages`), is saved next to them, and
+ * reads as "on" in anything saved before it existed.
  *
  * Run directly with Node:
  *   node src/stores/__tests__/notifications.spec.js
@@ -269,10 +270,10 @@ await test('the chat switch is saved next to the others and survives a reload', 
   const { store } = fresh(svc);
   await store.initialize();
   await store.enable();
-  assert.deepEqual(JSON.parse(localStorage.getItem(STORED)), { enabled: true, prompted: true, messagesEnabled: true });
+  assert.deepEqual(JSON.parse(localStorage.getItem(STORED)), { enabled: true, prompted: true, paymentsEnabled: true, messagesEnabled: true });
 
   store.setMessagesEnabled(false);
-  assert.deepEqual(JSON.parse(localStorage.getItem(STORED)), { enabled: true, prompted: true, messagesEnabled: false });
+  assert.deepEqual(JSON.parse(localStorage.getItem(STORED)), { enabled: true, prompted: true, paymentsEnabled: true, messagesEnabled: false });
 
   setActivePinia(createPinia());
   const reloaded = loadStore(svc)();
@@ -296,10 +297,12 @@ await test('what was saved before the chat existed reads as messages on', async 
   assert.equal(store.prompted, true);
   assert.equal(store.messagesEnabled, true);
   assert.equal(store.canNotifyMessages, true);
+  assert.equal(store.paymentsEnabled, true, 'payments too: the switch did not exist yet');
+  assert.equal(store.canNotifyPayments, true);
 
   // Saving again upgrades the blob without changing anyone's answer.
   store.disable();
-  assert.deepEqual(JSON.parse(localStorage.getItem(STORED)), { enabled: false, prompted: true, messagesEnabled: true });
+  assert.deepEqual(JSON.parse(localStorage.getItem(STORED)), { enabled: false, prompted: true, paymentsEnabled: true, messagesEnabled: true });
 });
 
 await test('only an explicit "off" turns messages off when loading', async () => {
@@ -367,6 +370,36 @@ await test('a message needs notifications on, the permission, and the chat switc
   await store.syncPermission();
   assert.equal(store.canNotifyMessages, false, 'permission revoked in system settings');
   assert.equal(store.messagesEnabled, true, 'the choice itself is kept');
+});
+
+await test('a payment needs notifications on, the permission, and the payments switch', async () => {
+  const svc = service({ grant: true });
+  const { store } = fresh(svc);
+  await store.initialize();
+  assert.equal(store.paymentsEnabled, true, 'on by default');
+  assert.equal(store.canNotifyPayments, false, 'master switch off');
+
+  await store.enable();
+  assert.equal(store.canNotifyPayments, true);
+  const requests = svc.state.requests;
+
+  store.setPaymentsEnabled(false);
+  assert.equal(store.canNotifyPayments, false, 'payments switch off');
+  assert.equal(store.canNotifyMessages, true, 'messages are not affected');
+  assert.equal(store.enabled, true, 'the master switch is left alone');
+  assert.equal(svc.state.requests, requests, 'no system dialog');
+  assert.equal(await store.notifyIfEnabled({ title: 'Payment received', body: '+1000' }), false);
+  assert.equal(await store.notifyMessageIfEnabled(message), true, 'messages still come');
+  assert.equal(svc.state.posted.length, 1);
+
+  setActivePinia(createPinia());
+  const reloaded = loadStore(svc)();
+  await reloaded.initialize();
+  assert.equal(reloaded.paymentsEnabled, false, 'the choice survives a reload');
+
+  reloaded.setPaymentsEnabled(true);
+  reloaded.disable();
+  assert.equal(reloaded.canNotifyPayments, false, 'the payments switch cannot override the master switch');
 });
 
 await test('a chat notification respects both switches and always uses the messages channel', async () => {
