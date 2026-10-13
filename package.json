@@ -52,7 +52,7 @@
     "axios": "1.20.0",
     "bech32": "^2.0.0",
     "maplibre-gl": "^6.10.0",
-    "nostr-core": "^1.0.5",
+    "nostr-core": "^1.0.6",
     "pdfkit": "^0.20.1",
     "pinia": "^3.0.3",
     "qr-scanner": "^1.4.2",

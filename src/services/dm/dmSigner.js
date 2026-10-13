@@ -242,9 +242,9 @@ export function toDmError(err) {
     return as(DM_ERROR.SIGNER_UNAVAILABLE);
   }
   // An extension rejects with a plain Error when the person declines; a remote
-  // signer answers with an error string. Both name the refusal in words. A
-  // remote signer that answers with a link (NIP-46 auth_url) wants the person
-  // to approve there first: the same "wait for the person" state.
-  if (REFUSAL.test(message) || /^https:\/\/\S+$/.test(message.trim())) return as(DM_ERROR.SIGNER_DENIED);
+  // signer answers with an error string. Both name the refusal in words. (A
+  // NIP-46 auth_url is not an error: the request keeps waiting while the app
+  // offers the link, see identitySigners.onSignerApproval.)
+  if (REFUSAL.test(message)) return as(DM_ERROR.SIGNER_DENIED);
   return err;
 }

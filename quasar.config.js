@@ -37,6 +37,9 @@ export default defineConfig((ctx) => {
       // forceSecure override guard. Safe to load everywhere: on web
       // it returns at once.
       'secure-screen',
+      // 'signer-approval' offers a remote signer's approval page as a toast.
+      // Before the boots below, whose first requests may already need it.
+      'signer-approval',
       // Durable profile recovery, username activation and publication.
       'profile-sync',
       // 'payment-address' gives every identity a payment address it did not

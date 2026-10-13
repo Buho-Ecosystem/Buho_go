@@ -14,7 +14,25 @@ import { Nip07Signer, NostrConnect, parseConnectionURI, generateSecretKey } from
 /** How long a remote signer may take to approve the pairing. */
 const BUNKER_CONNECT_TIMEOUT_MS = 60_000;
 /** How long one request (sign, encrypt) may wait for approval. */
-const BUNKER_REQUEST_TIMEOUT_MS = 60_000;
+export const BUNKER_REQUEST_TIMEOUT_MS = 60_000;
+
+/**
+ * What a remote signer is asked to allow when it pairs, so it can approve
+ * these once instead of on every request (NIP-46 `connect` permissions).
+ * One entry per thing BuhoGO asks the signer to do.
+ */
+export const BUNKER_PERMISSIONS = [
+  'nip44_encrypt', // chat seals, contacts doc, mute list
+  'nip44_decrypt', // received messages, contacts doc, mute list
+  'sign_event:0', // profile
+  'sign_event:10002', // relay list
+  'sign_event:24242', // avatar upload (Blossom)
+  'sign_event:30078', // contacts doc
+  'sign_event:13', // chat seal
+  'sign_event:22242', // relay sign-in (NIP-42 AUTH)
+  'sign_event:10050', // chat relay list
+  'sign_event:10000', // mute list
+].join(',');
 
 /** @type {Map<string, NostrConnect>} identity id -> live remote signer */
 const bunkers = new Map();
@@ -22,6 +40,49 @@ const bunkers = new Map();
 const reconnecting = new Map();
 /** @type {WeakMap<NostrConnect, Uint8Array>} connection -> its copy of the pairing key */
 const pairingKeys = new WeakMap();
+
+/** @type {Set<(url: string) => void>} */
+const approvalListeners = new Set();
+
+/**
+ * Listen for a remote signer that wants the person to approve a request on
+ * its own page (NIP-46 `auth_url`). The request keeps waiting meanwhile.
+ *
+ * @param {(url: string) => void} listener  gets the page's https URL
+ * @returns {() => void} stops listening
+ */
+export function onSignerApproval(listener) {
+  approvalListeners.add(listener);
+  return () => approvalListeners.delete(listener);
+}
+
+/**
+ * The approval page a signer named, when it is safe to open: https only and
+ * no credentials in it. Any other link (intent:, javascript:, a typo) is null.
+ *
+ * @param {unknown} raw
+ * @returns {string | null}
+ */
+export function approvalUrl(raw) {
+  let url;
+  try {
+    url = new URL(String(raw ?? '').trim());
+  } catch {
+    return null;
+  }
+  if (url.protocol !== 'https:' || url.username || url.password) return null;
+  return url.href;
+}
+
+function announceApproval(raw) {
+  const url = approvalUrl(raw);
+  if (!url) return;
+  for (const listener of approvalListeners) {
+    try {
+      listener(url);
+    } catch { /* a listener must not break the signer's relay subscription */ }
+  }
+}
 
 /** A browser extension that can sign is present (web only). */
 export function hasExtensionSigner() {
@@ -35,10 +96,13 @@ export function extensionSigner() {
 
 function openBunker({ remotePubkey, relays, clientKey, secret }) {
   const ownKey = clientKey.slice();
-  const connection = new NostrConnect({ remotePubkey, relayUrls: relays, secretKey: ownKey, secret });
+  const connection = new NostrConnect({
+    remotePubkey, relayUrls: relays, secretKey: ownKey, secret, perms: BUNKER_PERMISSIONS,
+  });
   pairingKeys.set(connection, ownKey);
   connection.timeout = BUNKER_REQUEST_TIMEOUT_MS;
   connection.handshakeTimeout = BUNKER_CONNECT_TIMEOUT_MS;
+  connection.onauthurl = announceApproval;
   return connection;
 }
 
