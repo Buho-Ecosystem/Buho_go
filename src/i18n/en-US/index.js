@@ -911,7 +911,7 @@ export default {
   "Show amounts as 1,234 sats": "Show amounts as 1,234 sats",
   // Feature card — Bitcoin Lessons (promoted to top).
   "Earn Sats": "Earn Sats",
-  "Earn real sats": "Earn real sats",
+  "Learn in short lessons and earn real bitcoin": "Learn in short lessons and earn real bitcoin",
   "Claim {n} sats!": "Claim {n} sats!",
   "{n} sats earned": "{n} sats earned",
   // Feature cards meta captions.

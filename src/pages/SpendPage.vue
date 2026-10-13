@@ -74,8 +74,8 @@
           :class="{ 'spend-row--active': earnSatsActive }"
           @click="onEarnSatsSelect"
         >
-          <span class="spend-row-icon">
-            <Icon icon="tabler:trophy" width="22" height="22" />
+          <span class="spend-row-icon spend-row-icon--brand spend-row-icon--earn">
+            <img :src="earnMark" alt="" />
           </span>
           <span class="spend-row-text">
             <span class="spend-row-title">{{ $t('Learn & Earn') }}</span>
@@ -103,6 +103,7 @@ import { Icon } from '@iconify/vue';
 import { Capacitor } from '@capacitor/core';
 import { useEarnStore } from '../stores/earn';
 import { useNadanadaOrdersStore } from '../stores/nadanadaOrders';
+import { EARN_BRAND } from '../services/earnBrand';
 import SettingsHubHeader from '../components/settings/SettingsHubHeader.vue';
 import SettingsHubNav from '../components/settings/SettingsHubNav.vue';
 import GetAppDialog from '../components/GetAppDialog.vue';
@@ -122,6 +123,7 @@ export default {
       showGetAppDialog: false,
       getAppDialogMessage: '',
       showBitrefill: false,
+      earnMark: EARN_BRAND.logo,
     };
   },
   mounted() {
@@ -157,7 +159,7 @@ export default {
       if (earn.totalEarned > 0) {
         return this.$t('{n} sats earned', { n: earn.totalEarned });
       }
-      return this.$t('Earn real sats');
+      return this.$t('Learn in short lessons and earn real bitcoin');
     },
     earnSatsActive() {
       const earn = useEarnStore();
@@ -385,6 +387,22 @@ body.body--dark .spend-row {
   height: 100%;
   object-fit: cover;
   display: block;
+}
+/* The Learn & Earn tile is cream like the light page, so it gets a hairline
+   edge there; on the dark page it stands out on its own. */
+.spend-row-icon--earn {
+  position: relative;
+}
+.spend-row-icon--earn::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  box-shadow: inset 0 0 0 1px rgba(120, 90, 40, 0.14);
+  pointer-events: none;
+}
+body.body--dark .spend-row-icon--earn::after {
+  display: none;
 }
 .spend-row-text {
   flex: 1;

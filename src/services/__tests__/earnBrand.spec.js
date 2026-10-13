@@ -38,7 +38,7 @@ test('an unknown kind falls back to the regular reward memo', () => {
 })
 
 test('brand points at the logo served from /public', () => {
-  assert.equal(EARN_BRAND.logo, '/buho_logo_grey.svg')
+  assert.equal(EARN_BRAND.logo, '/Learn and Earn/learn-earn-mark.svg')
 })
 
 test('an incoming reward is recognised by description or memo', () => {

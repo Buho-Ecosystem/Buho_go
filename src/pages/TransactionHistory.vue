@@ -843,7 +843,7 @@ export default {
     claimNeedsManual() {
       return this.manualClaimAllowed(this.claimingDeposit);
     },
-    /** BuhoGO mark shown on Learn & Earn reward rows. */
+    /** Learn & Earn mark shown on reward rows. */
     earnBrandLogo() {
       return EARN_BRAND.logo;
     },
