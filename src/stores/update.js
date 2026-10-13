@@ -6,6 +6,7 @@ import {
   releaseKey,
 } from '../services/appUpdate'
 import {
+  findWebUpdate,
   getUpdateRuntime,
   getUpdateManifestUrl,
   isKioskLocked,
@@ -46,6 +47,9 @@ function writePreferences(state) {
 }
 
 const preferences = readPreferences()
+
+/** The check under way, shared by everyone who asks while it runs. */
+let pendingCheck = null
 
 export const useUpdateStore = defineStore('appUpdate', {
   state: () => ({
@@ -112,12 +116,22 @@ export const useUpdateStore = defineStore('appUpdate', {
       }
     },
 
-    async checkForUpdates({ force = false } = {}) {
-      if (isKioskLocked()) return { skipped: 'kiosk' }
-      if (this.status === 'checking') return { skipped: 'checking' }
+    /**
+     * Look for a newer release. A check already under way answers this caller
+     * too, so a version tap during the startup check gets that check's result.
+     */
+    checkForUpdates({ force = false } = {}) {
+      if (isKioskLocked()) return Promise.resolve({ skipped: 'kiosk' })
+      pendingCheck ??= this.runCheck(force).finally(() => { pendingCheck = null })
+      return pendingCheck
+    },
+
+    async runCheck(force) {
       // `manifest` is intentionally session-only. Do not let a persisted
-      // timestamp suppress the first check after a process restart.
-      if (!force && this.manifest && this.lastCheckedAt && Date.now() - this.lastCheckedAt < CHECK_TTL_MS) {
+      // timestamp suppress the first check after a process restart, and let a
+      // failed check try again.
+      const fresh = this.manifest && this.status !== 'error' && Date.now() - this.lastCheckedAt < CHECK_TTL_MS
+      if (!force && fresh) {
         if (typeof window !== 'undefined' && window[PWA_UPDATE_FLAG]) this.markPwaUpdateReady()
         return { skipped: 'fresh' }
       }
@@ -142,19 +156,21 @@ export const useUpdateStore = defineStore('appUpdate', {
           fetchUpdateManifest({ url: getUpdateManifestUrl(), signal: controller.signal }),
         ])
         this.manifest = manifest
-        this.lastCheckedAt = Date.now()
-        this.persistPreferences()
 
         if (runtime.platform === 'web') {
-          if (typeof window !== 'undefined' && window[PWA_UPDATE_FLAG]) {
+          // The manifest only describes a web release; the service worker is
+          // what knows whether a newer deployment is actually ready.
+          if (window[PWA_UPDATE_FLAG] || await findWebUpdate()) {
+            window[PWA_UPDATE_FLAG] = true
             this.markPwaUpdateReady()
           } else {
             this.status = 'upToDate'
           }
-          return { status: this.status }
+        } else {
+          this.applyRelease(manifest.channels[runtime.channel])
         }
-
-        this.applyRelease(manifest.channels[runtime.channel])
+        this.lastCheckedAt = Date.now()
+        this.persistPreferences()
         return { status: this.status }
       } catch (error) {
         // A remote check must never delay or block wallet access. Preserve a
@@ -191,7 +207,10 @@ export const useUpdateStore = defineStore('appUpdate', {
     markPwaUpdateReady() {
       this.pwaReloadReady = true
       const manifestRelease = this.manifest?.channels?.web
-      this.release = manifestRelease || {
+      // A redeploy of the same version is still an update, but the sheet only
+      // names a version (and its notes) when it is newer than this one.
+      const named = manifestRelease && this.runtime && isReleaseNewer(this.runtime, manifestRelease)
+      this.release = named ? manifestRelease : {
         channel: 'web',
         enabled: true,
         version: null,

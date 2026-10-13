@@ -10,7 +10,7 @@ const VERSION_RE = /^\d+\.\d+\.\d+$/
 
 function usage(message) {
   if (message) console.error(`Error: ${message}\n`)
-  console.error('Usage: npm run release:activate -- --channel <channel> --version X.Y.Z [--build N] [--minimum-build N] [--note "What changed"] [--url https://...]')
+  console.error('Usage: npm run release:activate -- --channel <channel>[,<channel>...] --version X.Y.Z [--build N] [--minimum-build N] [--note "What changed"] [--url https://...]')
   process.exit(1)
 }
 
@@ -35,33 +35,41 @@ function integer(value, name, { optional = false } = {}) {
 }
 
 const args = parseArgs(process.argv.slice(2))
-if (!CHANNELS.has(args.channel)) usage('channel must be web, play, zapstore, apk, or ios')
-if (!VERSION_RE.test(args.version || '')) usage('version must use X.Y.Z format')
-
-const build = args.channel === 'web' ? null : integer(args.build, 'build')
-const minimumBuild = args.channel === 'web'
-  ? null
-  : integer(args['minimum-build'], 'minimum-build', { optional: true })
-if (build !== null && minimumBuild !== undefined && minimumBuild > build) {
-  usage('minimum-build cannot exceed build')
+// One channel, or several at once (`--channel play,zapstore,apk,web`) when a
+// release goes live everywhere together.
+const channels = String(args.channel || '').split(',').filter(Boolean)
+if (!channels.length || !channels.every(channel => CHANNELS.has(channel))) {
+  usage('channel must be web, play, zapstore, apk, or ios (comma-separated for several)')
 }
+if (!VERSION_RE.test(args.version || '')) usage('version must use X.Y.Z format')
+const native = channels.some(channel => channel !== 'web')
+const build = native ? integer(args.build, 'build') : null
+const minimumBuild = native ? integer(args['minimum-build'], 'minimum-build', { optional: true }) : undefined
+if (minimumBuild !== undefined && minimumBuild > build) usage('minimum-build cannot exceed build')
+if (args.url && channels.length > 1) usage('--url applies to one channel at a time')
 
 const manifest = JSON.parse(await readFile(MANIFEST_PATH, 'utf8'))
-const current = manifest.channels?.[args.channel]
-if (!current) usage(`manifest channel ${args.channel} is missing`)
-
 manifest.publishedAt = new Date().toISOString()
-manifest.channels[args.channel] = {
-  ...current,
-  enabled: true,
-  version: args.version,
-  build,
-  minimumBuild: minimumBuild ?? current.minimumBuild ?? 0,
-  url: args.url || current.url || null,
-  notes: args.notes.length ? { 'en-US': args.notes.slice(0, 3) } : current.notes,
+for (const channel of channels) {
+  const current = manifest.channels?.[channel]
+  if (!current) usage(`manifest channel ${channel} is missing`)
+  const web = channel === 'web'
+  manifest.channels[channel] = {
+    ...current,
+    enabled: true,
+    version: args.version,
+    build: web ? null : build,
+    minimumBuild: web ? null : minimumBuild ?? current.minimumBuild ?? 0,
+    url: args.url || current.url || null,
+    // Notes describe one release: a new version without notes shows none
+    // rather than the previous release's.
+    notes: args.notes.length
+      ? { 'en-US': args.notes.slice(0, 3) }
+      : current.version === args.version ? current.notes : { 'en-US': [] },
+  }
 }
 
-if (args.channel === 'ios' && !manifest.channels.ios.url) {
+if (channels.includes('ios') && !manifest.channels.ios.url) {
   usage('ios activation requires an apps.apple.com URL')
 }
 
@@ -74,5 +82,5 @@ try {
 }
 
 await writeFile(MANIFEST_PATH, `${JSON.stringify(manifest, null, 2)}\n`)
-console.log(`Activated ${args.channel} update ${args.version}${build === null ? '' : ` (build ${build})`}`)
-console.log(`Review and deploy ${MANIFEST_PATH} only after the channel artifact is downloadable.`)
+console.log(`Activated ${channels.join(', ')} update ${args.version}${build === null ? '' : ` (build ${build})`}`)
+console.log('Installed apps see it once this manifest is deployed (main, go.mybuho.de).')

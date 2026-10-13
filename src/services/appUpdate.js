@@ -1,5 +1,6 @@
 /**
- * Pure update-manifest parsing and version comparison.
+ * Pure update-manifest parsing and version comparison, and the web
+ * deployment check against an injected service-worker container.
  *
  * This module deliberately has no browser or Capacitor dependencies, which
  * keeps the security-sensitive comparison rules easy to unit test.
@@ -145,6 +146,45 @@ export async function fetchUpdateManifest({ url, fetchImpl = fetch, signal } = {
   })
   if (!response.ok) throw new Error(`Update check returned HTTP ${response.status}`)
   return normalizeUpdateManifest(await response.json())
+}
+
+/**
+ * Ask the service worker for a newer web deployment and resolve whether one
+ * is installed and waiting to take over. The whole check, asking included,
+ * gets `timeoutMs`: a stalled network must not hold the check open. `container`
+ * is `navigator.serviceWorker`, passed in so this module stays free of
+ * browser globals. Without a worker running this page (no service worker in
+ * this browser or build, or the very first visit) there is no update to offer.
+ *
+ * @returns {Promise<boolean>}
+ */
+export async function findWaitingWorker(container, { timeoutMs }) {
+  if (!container?.controller) return false
+  let timer
+  const deadline = new Promise(resolve => { timer = setTimeout(() => resolve(false), timeoutMs) })
+  try {
+    return await Promise.race([installedWorker(container), deadline])
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+async function installedWorker(container) {
+  const registration = await container.getRegistration()
+  if (!registration) return false
+  if (registration.waiting) return true
+  await registration.update()
+  const worker = registration.installing
+  if (!worker) return Boolean(registration.waiting)
+  await new Promise(resolve => {
+    const onStateChange = () => {
+      if (worker.state === 'installing') return
+      worker.removeEventListener('statechange', onStateChange)
+      resolve()
+    }
+    worker.addEventListener('statechange', onStateChange)
+  })
+  return Boolean(registration.waiting)
 }
 
 export function compareVersions(left, right) {

@@ -2,11 +2,13 @@ import { Capacitor, registerPlugin } from '@capacitor/core'
 import { App } from '@capacitor/app'
 import { version as bundledVersion } from '../../package.json'
 import { openInAppBrowser } from '../utils/inAppBrowser'
-import { selectAndroidChannel } from './appUpdate'
+import { findWaitingWorker, selectAndroidChannel } from './appUpdate'
 
 export const NativeUpdate = registerPlugin('BuhoUpdate')
 
 const NATIVE_UPDATE_MANIFEST_URL = 'https://go.mybuho.de/update-manifest.json'
+/** How long a newer web deployment may take to finish downloading during a check. */
+const WEB_INSTALL_TIMEOUT_MS = 30_000
 
 export function getUpdateManifestUrl() {
   // Web builds should read metadata from the deployment that supplied their
@@ -54,6 +56,16 @@ export async function getUpdateRuntime() {
     build: Number.isSafeInteger(build) && build >= 0 ? build : null,
     installSource,
   }
+}
+
+/**
+ * Whether a newer web deployment is installed and waiting. Asks the service
+ * worker to look now: the app navigates inside one page, so the browser
+ * itself only looks when the page loads.
+ */
+export function findWebUpdate() {
+  const container = typeof navigator === 'undefined' ? null : navigator.serviceWorker
+  return findWaitingWorker(container, { timeoutMs: WEB_INSTALL_TIMEOUT_MS })
 }
 
 export function isKioskLocked() {

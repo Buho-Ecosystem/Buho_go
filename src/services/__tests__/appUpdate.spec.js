@@ -1,8 +1,10 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import {
   compareVersions,
   fetchUpdateManifest,
+  findWaitingWorker,
   isReleaseNewer,
   isReleaseRequired,
   localizedReleaseNotes,
@@ -115,4 +117,104 @@ test('fetches the manifest without credentials or cache', async () => {
   assert.equal(request.options.cache, 'no-store')
   assert.equal(request.options.credentials, 'omit')
   assert.equal(request.options.redirect, 'error')
+})
+
+/**
+ * A service-worker container with one registration. `onUpdate` decides what
+ * `registration.update()` finds: nothing, or a worker that installs.
+ */
+function workerContainer({ waiting = null, onUpdate = () => {} } = {}) {
+  const registration = {
+    waiting,
+    installing: null,
+    updates: 0,
+    async update() {
+      this.updates += 1
+      onUpdate(this)
+    },
+  }
+  return { controller: {}, registration, getRegistration: async () => registration }
+}
+
+function installingWorker() {
+  const worker = new EventTarget()
+  worker.state = 'installing'
+  worker.finish = (state, registration) => {
+    worker.state = state
+    if (state === 'installed') registration.waiting = worker
+    registration.installing = null
+    worker.dispatchEvent(new Event('statechange'))
+  }
+  return worker
+}
+
+test('a web check finds a deployment that is already waiting without asking again', async () => {
+  const { registration, ...container } = workerContainer({ waiting: {} })
+  assert.equal(await findWaitingWorker(container, { timeoutMs: 50 }), true)
+  assert.equal(registration.updates, 0)
+})
+
+test('a web check asks for a new deployment and waits for it to install', async () => {
+  let worker
+  const container = workerContainer({
+    onUpdate: (registration) => {
+      worker = installingWorker()
+      registration.installing = worker
+      setTimeout(() => worker.finish('installed', registration), 5)
+    },
+  })
+  assert.equal(await findWaitingWorker(container, { timeoutMs: 1000 }), true)
+  assert.equal(container.registration.updates, 1)
+})
+
+test('a web check finds nothing when there is no newer deployment or no service worker', async () => {
+  assert.equal(await findWaitingWorker(workerContainer(), { timeoutMs: 50 }), false)
+  assert.equal(await findWaitingWorker(null, { timeoutMs: 50 }), false)
+  assert.equal(await findWaitingWorker({ controller: {}, getRegistration: async () => undefined }, { timeoutMs: 50 }), false)
+})
+
+test('a first visit, with no worker running the page yet, is never offered an update', async () => {
+  const { registration, ...firstVisit } = workerContainer({ waiting: {} })
+  assert.equal(await findWaitingWorker({ ...firstVisit, controller: null }, { timeoutMs: 50 }), false)
+  assert.equal(registration.updates, 0)
+})
+
+test('a web deployment that fails to install, or takes too long, is not offered', async () => {
+  const failing = workerContainer({
+    onUpdate: (registration) => {
+      const worker = installingWorker()
+      registration.installing = worker
+      setTimeout(() => worker.finish('redundant', registration), 5)
+    },
+  })
+  assert.equal(await findWaitingWorker(failing, { timeoutMs: 1000 }), false)
+
+  const slow = workerContainer({
+    onUpdate: (registration) => { registration.installing = installingWorker() },
+  })
+  assert.equal(await findWaitingWorker(slow, { timeoutMs: 20 }), false)
+
+  const stalled = workerContainer()
+  stalled.registration.update = () => new Promise(() => {})
+  assert.equal(await findWaitingWorker(stalled, { timeoutMs: 20 }), false, 'a stalled request ends with the check')
+})
+
+test('a failed web check is reported, not taken for "up to date"', async () => {
+  const offline = workerContainer({ onUpdate: () => { throw new Error('offline') } })
+  await assert.rejects(() => findWaitingWorker(offline, { timeoutMs: 50 }), /offline/)
+})
+
+test('the checked-in manifest announces the version this repository builds', () => {
+  const read = (path) => readFileSync(new URL(`../../../${path}`, import.meta.url), 'utf8')
+  const shipped = normalizeUpdateManifest(JSON.parse(read('public/update-manifest.json')))
+  const { version } = JSON.parse(read('package.json'))
+  const build = Number(read('src-capacitor/android/app/build.gradle').match(/versionCode (\d+)/)[1])
+
+  assert.equal(shipped.channels.web.version, version, 'web')
+  for (const channel of ['play', 'zapstore', 'apk']) {
+    const release = shipped.channels[channel]
+    if (!release.enabled) continue
+    assert.equal(release.version, version, `${channel} version (run ./update-version.sh or release:activate)`)
+    assert.equal(release.build, build, `${channel} build`)
+  }
 })
