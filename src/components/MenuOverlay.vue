@@ -107,11 +107,7 @@
         >
           <span class="menu-door-word">
             {{ $t('About') }}
-            <span
-              v-if="updateStore.hasUpdate"
-              class="menu-door-pill menu-door-pill--update"
-              aria-hidden="true"
-            >+1</span>
+            <span v-if="updateStore.stage" class="menu-door-dot" aria-hidden="true"></span>
           </span>
         </button>
       </nav>
@@ -148,9 +144,9 @@ function prefersReducedMotion() {
 /**
  * Full-screen menu behind the wallet toolbar's single trigger. Six doors,
  * one attention vocabulary: the Profile door carries the social-bucket
- * money pill, the About door carries the update pill, and both reuse the
- * exact signals the rest of the app already trusts (paymentCount and
- * updateStore.hasUpdate). The doors glide in from the right and stop dead
+ * money pill, the About door the update dot, and both reuse the exact
+ * signals the rest of the app already trusts (paymentCount and
+ * updateStore.stage). The doors glide in from the right and stop dead
  * on their final position, and leave the same way they came; the version
  * line at the foot is informational and untappable.
  */
@@ -212,7 +208,7 @@ export default {
     },
 
     aboutDoorLabel() {
-      if (!this.updateStore.hasUpdate) return this.$t('About');
+      if (!this.updateStore.stage) return this.$t('About');
       return `${this.$t('About')}, ${this.$t('A newer version is ready')}`;
     },
   },
@@ -448,8 +444,8 @@ body.body--dark .menu-surface {
   transition: transform 0.1s ease;
 }
 
-/* Same pill recipe as the toolbar (money) and the logo (update), worn as
-   a superscript on the door's word. */
+/* Same pill recipe as the toolbar (money), worn as a superscript on the
+   door's word. */
 .menu-door-pill {
   position: absolute;
   top: -8px;
@@ -472,10 +468,17 @@ body.body--dark .menu-surface {
   color: #07140f;
 }
 
-.menu-door-pill--update {
+/* An update is a status, not a count: the logo's dot, not a pill. */
+.menu-door-dot {
+  position: absolute;
+  top: -4px;
+  right: -16px;
+  width: 11px;
+  height: 11px;
+  border: 2px solid var(--bg-primary);
+  border-radius: 50%;
   background: var(--brand-accent);
-  color: #08291a;
-  box-shadow: 0 2px 7px rgba(5, 149, 115, 0.32);
+  box-sizing: border-box;
 }
 
 .menu-foot {

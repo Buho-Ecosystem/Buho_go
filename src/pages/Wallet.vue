@@ -6,14 +6,15 @@
       <button
         type="button"
         class="app-logo-button"
-        :aria-label="updateStore.hasUpdate ? $t('Update available. Open update details.') : $t('About BuhoGO')"
+        :aria-label="updateStore.stage ? $t('Update available. Open update details.') : $t('About BuhoGO')"
         @click="onAppLogoClick"
       >
         <q-avatar square size="30px">
           <img src="buho_logo.svg" alt="" class="app-logo">
         </q-avatar>
-        <transition name="update-pill">
-          <span v-if="updateStore.showLogoBadge" class="app-logo-update-pill" aria-hidden="true">+1</span>
+        <!-- A status, not a count: a quiet dot while an update waits. -->
+        <transition name="update-dot">
+          <span v-if="updateStore.stage" class="app-logo-update-dot" aria-hidden="true"></span>
         </transition>
       </button>
 
@@ -2354,7 +2355,7 @@ export default {
       localStorage.setItem('buhoGO_exit_banner_dismissed_until', String(until));
     },
     onAppLogoClick() {
-      if (this.updateStore.hasUpdate) {
+      if (this.updateStore.stage) {
         this.updateStore.openSheet();
         return;
       }
@@ -6327,27 +6328,20 @@ export default {
   background: var(--brand-accent-soft);
 }
 
-.app-logo-update-pill {
+.app-logo-update-dot {
   position: absolute;
-  top: 0;
-  left: -2px;
-  min-width: 20px;
-  height: 17px;
-  padding: 0 5px;
-  display: grid;
-  place-items: center;
+  top: 3px;
+  right: 3px;
+  width: 11px;
+  height: 11px;
   border: 2px solid var(--bg-primary);
-  border-radius: 999px;
+  border-radius: 50%;
   background: var(--brand-accent);
-  color: #08291a;
-  font: 800 9px/1 'Manrope', sans-serif;
-  letter-spacing: -0.02em;
   box-sizing: border-box;
-  box-shadow: 0 2px 7px rgba(5, 149, 115, 0.32);
 }
 
-.update-pill-enter-active { transition: opacity .18s ease, transform .22s cubic-bezier(.2, .8, .2, 1); }
-.update-pill-enter-from { opacity: 0; transform: scale(.55); }
+.update-dot-enter-active { transition: opacity .18s ease, transform .22s cubic-bezier(.2, .8, .2, 1); }
+.update-dot-enter-from { opacity: 0; transform: scale(.55); }
 
 .wallet-header {
   padding: 1rem;
@@ -6395,7 +6389,7 @@ export default {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .update-pill-enter-active { transition: none; }
+  .update-dot-enter-active { transition: none; }
 }
 
 @keyframes gradientShift {
