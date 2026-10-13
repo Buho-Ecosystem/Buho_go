@@ -122,7 +122,7 @@ import { useIdentityChange } from '../../composables/useIdentityChange';
 import { shortPublicCode, addressFor } from '../../composables/useIdentities';
 import { parseSecretKeyInput } from '../../utils/externalIdentity.js';
 import { npubFromHex } from '../../utils/identityCrypto.js';
-import { hasExtensionSigner, extensionSigner, pairBunker } from '../../services/identitySigners.js';
+import { hasExtensionSigner, extensionSigner, pairBunker, closeBunker } from '../../services/identitySigners.js';
 import { readClipboardCrossPlatform, writeClipboardCrossPlatform } from '../../utils/shopClipboard.js';
 import { isBiometricAvailable, authenticate } from '../../utils/biometric';
 import { fetchProfiles, parseProfileContent } from '../../utils/nostrFetch.js';
@@ -181,7 +181,7 @@ function forget() {
   attempt += 1;
   found.value?.secretKey?.fill(0);
   found.value?.clientKey?.fill(0);
-  found.value?.connection?.close?.();
+  closeBunker(found.value?.connection);
   found.value = null;
   secretInput.value = '';
   bunkerInput.value = '';
@@ -267,7 +267,7 @@ async function connectBunker() {
   waiting.value = t('Waiting for your signer to approve');
   try {
     const paired = await pairBunker(bunkerInput.value);
-    if (mine !== attempt) { paired.connection.close(); paired.clientKey.fill(0); return; }
+    if (mine !== attempt) { closeBunker(paired.connection); paired.clientKey.fill(0); return; }
     waiting.value = '';
     await showConfirm({ kind: 'nip46', pubkeyHex: paired.pubkeyHex, clientKey: paired.clientKey, bunker: paired.bunker, connection: paired.connection });
   } catch (err) {
@@ -307,8 +307,9 @@ async function useIdentity() {
     $q.notify({ type: 'negative', message: t("Couldn't add the identity"), caption: t('Please try again.'), timeout: 3500 });
     return;
   }
-  // The store keeps what it needs; this sheet's copies go now.
-  result.connection = null;
+  // The store keeps what it needs; this sheet's copies go now. A connection
+  // the store did not adopt (the identity was already here) closes with them.
+  if (added.added) result.connection = null;
   forget();
   step.value = 'choose';
   emit('update:modelValue', false);
