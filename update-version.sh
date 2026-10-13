@@ -76,8 +76,17 @@ fi
 
 rm -f "$PACKAGE_JSON.bak" "$CAPACITOR_PACKAGE_JSON.bak" "$BUILD_GRADLE.bak"
 
+# Every release goes live on Google Play, Zapstore and GitHub (APK) together,
+# so the update manifest moves with the version: installed apps learn about
+# the release once this reaches go.mybuho.de (docs/APP_UPDATES.md).
+if ! node scripts/activate-update.mjs --channel play,zapstore,apk,web --version "$NEW_VERSION" --build "$NEW_VERSION_CODE"; then
+    echo "Error: could not update public/update-manifest.json"
+    exit 1
+fi
+echo "✓ Updated public/update-manifest.json"
+
 echo ""
 echo "Version update complete!"
 echo "New version: $NEW_VERSION (versionCode: $NEW_VERSION_CODE)"
 echo "Remember: the APK at ./output/BuhoGO_v$UNDERSCORE_VERSION.apk must exist before publishing to Zapstore."
-echo "After each channel is live, activate it with: npm run release:activate -- --channel <channel> --version $NEW_VERSION --build $NEW_VERSION_CODE"
+echo "The update manifest already announces $NEW_VERSION on Play, Zapstore, APK and web; installed apps see it once main deploys."

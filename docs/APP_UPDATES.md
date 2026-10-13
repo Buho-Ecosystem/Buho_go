@@ -11,25 +11,38 @@ Capacitor WebView.
 ## Release safety
 
 The manifest is channel-aware because Google Play, Zapstore, direct APK, web,
-and a future App Store release can become available at different times. Never
-activate a channel until that exact artifact is downloadable. A premature
-activation gives users an update action that cannot succeed.
+and a future App Store release could become available at different times. A
+channel announcing a release that is not downloadable yet gives users an
+update action that cannot succeed.
 
-1. Bump and build the app with `./update-version.sh X.Y.Z`.
-2. Publish and verify the artifact for one distribution channel.
-3. Activate only that channel, for example:
+BuhoGO releases go live on Google Play, Zapstore and GitHub (APK) together, so
+the manifest moves with the version:
 
-   ```sh
-   npm run release:activate -- \
-     --channel play \
-     --version 1.10.0 \
-     --build 23 \
-     --note "Faster wallet startup" \
-     --note "Improved payment reliability"
-   ```
+1. `./update-version.sh X.Y.Z` bumps the version and the Android build, and
+   activates `play`, `zapstore`, `apk` and `web` in `public/update-manifest.json`
+   with that version and build (`release:activate` with several channels).
+2. Publish the artifacts as usual.
+3. The manifest reaches installed apps when `main` deploys to go.mybuho.de.
 
-4. Deploy the resulting manifest change.
-5. Repeat activation as the other channels become available.
+`appUpdate.spec.js` fails while an enabled Android channel or the web channel
+names another version or build than `package.json` and `build.gradle`, so a
+release cannot ship with a stale manifest again (1.9.2 to 1.10.0 did, and no
+installed app was told about them).
+
+Release notes are optional; add them, or activate a single channel that lags
+behind, with `release:activate`:
+
+```sh
+npm run release:activate -- \
+  --channel play,zapstore,apk \
+  --version 1.10.0 \
+  --build 25 \
+  --note "Faster wallet startup" \
+  --note "Improved payment reliability"
+```
+
+A new version activated without notes shows none, never the previous
+release's.
 
 Use `--minimum-build N` only when builds below `N` cannot safely continue.
 Required updates must be tested on every enabled channel first. The required
@@ -47,7 +60,15 @@ activation requires an allowlisted `https://apps.apple.com/...` URL.
 - Required updates show a persistent sheet after biometric unlock, outside
   onboarding, setup, restore, and locked kiosk routes.
 - PWA availability comes from the service-worker lifecycle; the manifest only
-  supplies display metadata.
+  supplies display metadata. Every check (start, coming back to the app, the
+  version tap on About) asks the service worker to look for a new deployment
+  (`registration.update()`), because the app navigates inside one page and the
+  browser itself only looks when the page loads. A deployment still
+  downloading gets up to 30 seconds.
+- Native apps check on start and when they come back to the foreground; web
+  checks when the tab becomes visible again. Both share `checkForUpdates`,
+  which goes to the network at most every six hours unless forced (the
+  version tap forces).
 - Android Play installs use Play Core. Other Android installs open an
   allowlisted Zapstore or GitHub destination.
 

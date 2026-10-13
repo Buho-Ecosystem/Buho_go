@@ -207,10 +207,18 @@ onMounted(async () => {
   await router.isReady()
   startupTimer = setTimeout(() => runCheck(), 650)
 
+  // Coming back to the app checks again; the store keeps that to one network
+  // check every few hours.
   if (Capacitor.isNativePlatform()) {
     resumeListener = await App.addListener('appStateChange', ({ isActive }) => {
       if (isActive) runCheck()
     })
+  } else {
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') runCheck()
+    }
+    document.addEventListener('visibilitychange', onVisible)
+    resumeListener = { remove: () => document.removeEventListener('visibilitychange', onVisible) }
   }
 })
 
