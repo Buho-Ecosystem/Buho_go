@@ -36,6 +36,8 @@ Every signature, encryption and decryption goes through `identity.acquireSigner(
 
 A signer outside BuhoGO is wrapped in `verifiedSigner()`: every signed event must carry the paired public key and a valid signature, or it is refused (`SIGNER_MISMATCH`).
 
+A remote signer connection signs every request with this app's pairing key, so it holds a copy of its own (`identitySigners.js`), wiped when the connection closes; the import sheet and the store wipe theirs as before. Callers that need the signer at the same time share one reconnect, so the signer sees one connection.
+
 `identityCapabilities` says what the identity in use can do:
 
 - `rawKey` false (extension, remote signer): the Social Bucket is unavailable (it signs ecash mint quotes, which a signer cannot).
