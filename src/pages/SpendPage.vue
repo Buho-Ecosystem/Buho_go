@@ -3,22 +3,19 @@
     <SettingsHubHeader :title="$t('Spend')" />
 
     <div class="spend-content">
-      <div
-        class="map-hero-card"
-        role="button"
-        tabindex="0"
-        @click="$router.push('/map')"
-        @keydown.enter="$router.push('/map')"
-        @keydown.space.prevent="$router.push('/map')"
-      >
-        <span class="hero-watermark--map" aria-hidden="true"></span>
-        <span class="hero-watermark--map-lift" aria-hidden="true"></span>
-        <span class="map-hero-scrim" aria-hidden="true"></span>
-        <span class="map-hero-text">
-          <span class="map-hero-label">{{ $t('Bitcoin Map') }}</span>
-          <span class="map-hero-title">{{ $t('Find shops that accept Bitcoin near you') }}</span>
+      <button type="button" class="map-card" @click="$router.push('/map')">
+        <span class="map-card-preview"><SpendMapPreview /></span>
+        <span class="map-card-body">
+          <span class="map-card-text">
+            <span class="map-card-label">
+              <Icon icon="tabler:map-pin-filled" width="14" height="14" class="map-card-pin" />
+              {{ $t('Bitcoin Map') }}
+            </span>
+            <span class="map-card-title">{{ $t('Find shops that accept Bitcoin near you') }}</span>
+          </span>
+          <Icon icon="tabler:chevron-right" class="spend-row-chevron" width="18" height="18" />
         </span>
-      </div>
+      </button>
 
       <div class="spend-rows">
         <button
@@ -107,16 +104,17 @@ import SettingsHubHeader from '../components/settings/SettingsHubHeader.vue';
 import SettingsHubNav from '../components/settings/SettingsHubNav.vue';
 import GetAppDialog from '../components/GetAppDialog.vue';
 import ComingSoonSheet from '../components/ComingSoonSheet.vue';
+import SpendMapPreview from '../components/settings/SpendMapPreview.vue';
 
 /**
  * Spend tab of the Settings / Identity / Spend hub - the default landing
- * tab. The Bitcoin Map is the hero (full width, tallest, map photo as
- * the actual background); eSIM & VPN, Bitrefill, and Learn & Earn follow
- * as one consistent stack of full-width rows.
+ * tab. The Bitcoin Map is the hero (full width, tallest, a drawn map
+ * above its title); eSIM & VPN, Bitrefill, and Learn & Earn follow as one
+ * consistent stack of full-width rows.
  */
 export default {
   name: 'SpendPage',
-  components: { Icon, SettingsHubHeader, SettingsHubNav, GetAppDialog, ComingSoonSheet },
+  components: { Icon, SettingsHubHeader, SettingsHubNav, GetAppDialog, ComingSoonSheet, SpendMapPreview },
   data() {
     return {
       showGetAppDialog: false,
@@ -226,105 +224,79 @@ export default {
 }
 
 /* ==================================================================
-   Bitcoin Map hero - the primary card on this page. Tall, full-bleed
-   map photo as the actual card background (not a faint corner accent),
-   with just a label + headline overlaid top-left and a light scrim
-   for legibility. Size and position alone (first, full-width, tallest)
-   signal "this is the main thing here" - no icon or badge needed.
+   Bitcoin Map card - the primary card on this page: a drawn map on top
+   (components/settings/SpendMapPreview.vue), the label and headline on
+   the plain card below it, so the text never competes with the map.
+   Size and position (first, full width, tallest) mark it as the main
+   thing here; the chevron says it opens a screen, like the rows below.
    ================================================================== */
-.map-hero-card {
+.map-card {
+  all: unset;
   box-sizing: border-box;
-  display: block;
+  display: flex;
+  flex-direction: column;
   width: 100%;
-  min-height: 280px;
   margin: 4px 0 20px;
-  padding: 24px;
+  overflow: hidden;
   border-radius: 22px;
   background-color: var(--bg-card);
   border: 1px solid var(--border-card);
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
   transition: transform 0.16s ease, border-color 0.18s ease;
-  position: relative;
-  overflow: hidden;
 }
-body.body--dark .map-hero-card {
+body.body--dark .map-card {
   border-color: rgba(255, 255, 255, 0.08);
 }
-.map-hero-card:active {
+.map-card:active {
   transform: scale(0.985);
   border-color: var(--map-accent);
 }
-.map-hero-text {
-  position: relative;
-  z-index: 1;
+.map-card:focus-visible {
+  outline: 2px solid var(--map-accent);
+  outline-offset: 2px;
+}
+.map-card-preview {
+  display: block;
+  height: 188px;
+}
+.map-card-body {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 18px 18px;
+}
+.map-card-text {
+  flex: 1;
+  min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  max-width: 90%;
+  gap: 4px;
   text-align: left;
 }
-.map-hero-label {
+.map-card-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   font-family: 'Manrope', sans-serif;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 600;
   color: var(--text-muted);
-  letter-spacing: 0.01em;
 }
-.map-hero-title {
+.map-card-pin {
+  color: #E07F0B;
+}
+body.body--dark .map-card-pin {
+  color: #F7931A;
+}
+.map-card-title {
   font-family: 'Manrope', sans-serif;
-  font-size: 20px;
+  font-size: 17px;
   font-weight: 800;
   color: var(--text-primary);
   letter-spacing: -0.01em;
-  /* Generous line-height - German/Spanish translations run longer than
-     English and wrap to 2-3 lines here, and a tight line-height at this
-     font-weight/size reads as overlapping rather than just wrapped. */
-  line-height: 1.4;
-}
-.hero-watermark--map {
-  position: absolute;
-  inset: 0;
-  z-index: 0;
-  pointer-events: none;
-  user-select: none;
-  background-image: url('/maps/btc-map-light.jpg');
-  background-size: cover;
-  background-position: center;
-  opacity: 0.95;
-}
-body.body--dark .hero-watermark--map {
-  background-image: url('/maps/btc-map-dark.jpg');
-  opacity: 1;
-}
-/* The dark map export itself is very low-contrast (muted grey roads on
-   near-black, unlike the light export's crisp roads/labels) - multiple
-   users reported it reads as barely-there. A plain brightness() filter
-   fixes that but clips the pins' red channel before green catches up,
-   shifting them from Bitcoin-orange to yellow. A mix-blend-mode: screen
-   layer lifts dark pixels a lot while leaving already-bright pixels (the
-   pins) mostly alone, so roads become legible without discoloring them. */
-.hero-watermark--map-lift {
-  position: absolute;
-  inset: 0;
-  z-index: 0;
-  pointer-events: none;
-  display: none;
-}
-body.body--dark .hero-watermark--map-lift {
-  display: block;
-  background: rgba(150, 150, 150, 0.35);
-  mix-blend-mode: screen;
-}
-.map-hero-scrim {
-  position: absolute;
-  inset: 0;
-  z-index: 0;
-  pointer-events: none;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.65) 0%, rgba(255, 255, 255, 0.15) 40%, rgba(255, 255, 255, 0) 65%);
-}
-body.body--dark .map-hero-scrim {
-  background: linear-gradient(180deg, rgba(12, 12, 12, 0.65) 0%, rgba(12, 12, 12, 0.15) 40%, rgba(12, 12, 12, 0) 65%);
+  /* German and Spanish run longer and wrap to two or three lines. */
+  line-height: 1.3;
 }
 
 /* ==================================================================
