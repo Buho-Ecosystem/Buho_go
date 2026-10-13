@@ -21,6 +21,8 @@ import * as Vue from 'vue'
 import * as ServerRenderer from 'vue/server-renderer'
 import * as amountFormatting from '../../utils/amountFormatting.js'
 import * as constants from '../../services/dm/constants.js'
+import * as amountKeypad from '../../utils/amountKeypad.js'
+import { LOOKUP_ERROR, NIP05_ERROR } from '../../utils/nostrLookup.js'
 
 const sfc = createRequire(import.meta.url)('@vue/compiler-sfc')
 
@@ -66,7 +68,11 @@ const MessageBubble = loadSfc('MessageBubble.vue', { ...base, './MessageMenu.vue
 const RequestCard = loadSfc('RequestCard.vue', base)
 const MoneyBar = loadSfc('MoneyBar.vue', base)
 const Composer = loadSfc('Composer.vue', { ...base, '../../services/dm/constants.js': constants })
-const RequestSheet = loadSfc('RequestSheet.vue', { ...base, '../../services/dm/constants.js': constants })
+// The keypad is AmountKeypad.vue (its rules: utils/amountKeypad.js, tested below); a marker stands in for it.
+const AmountKeypadStub = { props: ['modelValue', 'fiat', 'fiatCode', 'fiatRate'], render() { return Vue.h('div', { class: 'keypad-stub' }, this.$slots.default?.()) } }
+const RequestSheet = loadSfc('RequestSheet.vue', {
+  ...base, '../../services/dm/constants.js': constants, '../../utils/amountKeypad.js': amountKeypad, '../AmountKeypad.vue': AmountKeypadStub,
+})
 const UnknownSenderBanner = loadSfc('UnknownSenderBanner.vue', base)
 const SignerAppNotice = loadSfc('SignerAppNotice.vue', base)
 const ChatThread = loadSfc('ChatThread.vue', {
@@ -632,18 +638,21 @@ const ADDRESS = 'me@btc.mybuho.de'
 
 // ── RequestSheet ─────────────────────────────────────────────────────
 
-test('request sheet: title, labelled amount and note, the profile address as a quiet row, CTA', async () => {
+test('request sheet: title, the keypad, a quiet note link, where the money goes, CTA', async () => {
   const html = await render(RequestSheet, { modelValue: true, partnerName: 'Anna', address: ADDRESS })
   assert.match(html, /<section[^>]*aria-labelledby="request-title-/)
   assert.match(html, /Request from Anna/)
-  assert.match(html, /<label for="request-amount-[^"]*"[^>]*>Amount in sats<\/label>/)
-  assert.match(html, /inputmode="numeric"/)
-  assert.match(html, /Note \(optional\)/)
-  assert.match(html, /maxlength="200"/)
-  assert.match(html, /request-sheet__to[\s\S]*>To<[\s\S]*me@btc\.mybuho\.de/)
-  assert.doesNotMatch(html, /Receive in|receive-field/)
+  assert.match(html, /aria-label="Back"/)
+  assert.match(html, /class="keypad-stub request-sheet__keypad"/)
+  assert.match(html, /request-sheet__add-note[\s\S]*Add a note/)
+  assert.doesNotMatch(html, /request-sheet__note"/, 'no note field until it is asked for')
+  assert.match(html, /request-sheet__to[^>]*>\s*Paid to me@btc\.mybuho\.de/)
   assert.match(tags(html, 'request-sheet__cta')[0], /disabled/)
-  assert.match(html, /request-sheet__unit[^>]*>₿</)
+})
+
+test('request sheet: the avatar slot sits next to the title', async () => {
+  const html = await render(RequestSheet, { modelValue: true, partnerName: 'Anna', address: ADDRESS }, { slots: { avatar: () => Vue.h('b', 'face') } })
+  assert.match(html, /request-sheet__avatar">(<!--\[-->)?<b>face<\/b>/)
 })
 
 test('request sheet: a failure is shown as such', async () => {
@@ -652,34 +661,30 @@ test('request sheet: a failure is shown as such', async () => {
   assert.doesNotMatch(await render(RequestSheet, { modelValue: true, address: ADDRESS }), /request-sheet__failure/)
 })
 
-test('request sheet: without a profile address it explains and offers one button, no amount form', async () => {
+test('request sheet: without a profile address it explains and offers one button, no keypad', async () => {
   const html = await render(RequestSheet, { modelValue: true, partnerName: 'Anna' })
   assert.match(html, /To request money you need a Lightning address in your profile\./)
   assert.match(html, />\s*Set up Lightning address\s*</)
-  assert.doesNotMatch(html, /request-sheet__amount|inputmode="numeric"|request-sheet__to"/)
+  assert.doesNotMatch(html, /keypad-stub|request-sheet__to"/)
   const { vm, emitted } = vmOf(RequestSheet, {})
   vm.$emit('open-address')
   assert.deepEqual(emitted, [['open-address']])
   assert.deepEqual(RequestSheet.emits, ['update:modelValue', 'open-address', 'submit'])
 })
 
-test('request sheet: amount input keeps digits only, groups them, and validates the range', () => {
+test('request sheet: the typed amount is validated against the range', () => {
   const { vm } = vmOf(RequestSheet, { address: ADDRESS, minSats: 10, maxSats: 1_000_000 })
-  const type = (value) => { const event = { target: { value } }; vm.onAmountInput(event); return event.target.value }
-  assert.equal(type('2a5,0.00'), n(25000))
-  assert.equal(vm.amountText, '25000')
+  vm.amount = '25000'
   assert.equal(vm.amountSats, 25000)
   assert.equal(vm.canSubmit, true)
-  assert.equal(type('00012'), n(12))
-  assert.equal(type('1'.repeat(30)), n(Number('1'.repeat(12))), 'digits are capped')
-  type('5')
+  vm.amount = '5'
   assert.match(vm.amountError, /The smallest request is/)
   assert.equal(vm.canSubmit, false)
-  type('9999999')
+  vm.amount = '9999999'
   assert.match(vm.amountError, /The largest request is/)
   assert.equal(vm.canSubmit, false)
-  type('')
-  assert.equal(vm.amountError, '', 'an empty field is not an error yet')
+  vm.amount = ''
+  assert.equal(vm.amountError, '', 'nothing typed is not an error yet')
   assert.equal(vm.canSubmit, false)
 })
 
@@ -687,57 +692,131 @@ test('request sheet: submit reports amount and trimmed note', () => {
   const { vm, emitted } = vmOf(RequestSheet, { address: ADDRESS })
   vm.submit()
   assert.deepEqual(emitted, [], 'nothing to submit yet')
-  vm.onAmountInput({ target: { value: '12000' } })
+  vm.amount = '12000'
   vm.note = '  Pizza  '
   vm.submit()
   assert.deepEqual(emitted, [['submit', { amountSats: 12000, note: 'Pizza' }]])
 })
 
 test('request sheet: no submit while sending', () => {
-  const sending = vmOf(RequestSheet, { address: ADDRESS, submitting: true, amountText: '100' })
+  const sending = vmOf(RequestSheet, { address: ADDRESS, submitting: true, amount: '100' })
   sending.vm.submit()
   assert.deepEqual(sending.emitted, [])
 })
 
-test('request sheet: fiat comes from the page, the CTA names the amount, a fresh sheet starts empty', () => {
-  const { vm } = vmOf(RequestSheet, { address: ADDRESS, formatFiat: (s) => `≈ ${s / 100}` })
-  assert.equal(vm.conversion, '')
-  vm.amountText = '1500'
-  assert.equal(vm.conversion, '≈ 15')
+test('request sheet: the CTA names the amount; each opening starts fresh, from the amount it was given', () => {
+  const { vm } = vmOf(RequestSheet, { address: ADDRESS })
+  vm.amount = '1500'
   assert.ok(vm.ctaText.includes(`₿ ${n(1500)}`))
   vm.note = 'old'
+  vm.noteOpen = true
+  vm.inFiat = true
   RequestSheet.watch.modelValue.call(vm, true)
-  assert.equal(vm.amountText, '')
+  assert.equal(vm.amount, '')
   assert.equal(vm.note, '')
-  const busy = vmOf(RequestSheet, { address: ADDRESS, submitting: true, amountText: '5' })
+  assert.equal(vm.noteOpen, false)
+  assert.equal(vm.inFiat, false, 'a fresh sheet starts in sats')
+  const prefilled = vmOf(RequestSheet, { address: ADDRESS, initialSats: 5000 })
+  RequestSheet.watch.modelValue.call(prefilled.vm, true)
+  assert.equal(prefilled.vm.amount, '5000', "Receive's amount carries over")
+  const busy = vmOf(RequestSheet, { address: ADDRESS, submitting: true, amount: '5' })
   assert.equal(busy.vm.ctaText, 'Creating request')
 })
 
-test('request sheet: without a rate there is no unit switch, the amount is in sats', async () => {
-  const html = await render(RequestSheet, { modelValue: true, address: ADDRESS })
-  assert.doesNotMatch(html, /request-sheet__unit-pill/)
+test('request sheet: fiat needs a currency and a rate; the request is still in sats', () => {
+  assert.equal(vmOf(RequestSheet, { address: ADDRESS, fiatRate: 50_000 }).vm.keypadRate, 0, 'no currency, sats only')
+  assert.equal(vmOf(RequestSheet, { address: ADDRESS, fiatCode: 'USD' }).vm.keypadRate, 0, 'no rate, sats only')
+  const { vm, emitted } = vmOf(RequestSheet, { address: ADDRESS, fiatCode: 'USD', fiatRate: 100_000 })
+  assert.equal(vm.keypadCurrency, 'usd')
+  vm.inFiat = true
+  vm.amount = '4.25'
+  assert.equal(vm.amountSats, 4250)
+  vm.submit()
+  assert.deepEqual(emitted, [['submit', { amountSats: 4250, note: '' }]])
 })
 
-test('request sheet: the amount can be typed in fiat; the request is still in sats', async () => {
-  const fiat = { address: ADDRESS, fiatCode: 'USD', fiatToSats: (usd) => Math.floor(usd * 1000), formatFiat: (s) => `≈ $${s / 1000}` }
-  const html = await render(RequestSheet, { modelValue: true, ...fiat })
-  assert.match(html, /aria-label="Enter the amount in USD"/)
-  const { vm, emitted } = vmOf(RequestSheet, fiat)
-  const type = (value) => { const event = { target: { value } }; vm.onAmountInput(event); return event.target.value }
-  type('25')
-  vm.switchUnit()
-  assert.equal(vm.amountText, '', 'switching clears the field: no half-converted number')
-  assert.equal(vm.unitLabel, 'USD')
-  assert.equal(vm.amountLabel, 'Amount in USD')
-  assert.equal(type('4,2a59'), '4.25', 'a comma is a decimal point, two decimals at most')
-  assert.equal(vm.amountSats, 4250)
-  assert.equal(vm.conversion, `≈ ₿ ${n(4250)}`)
-  assert.equal(type('007.5'), '7.5')
-  assert.equal(type('.5'), '0.5')
-  vm.submit()
-  assert.deepEqual(emitted, [['submit', { amountSats: 500, note: '' }]])
-  RequestSheet.watch.modelValue.call(vm, true)
-  assert.equal(vm.unit, 'sats', 'a fresh sheet starts in sats')
+test('request sheet: the note opens on request and folds back when left empty', () => {
+  const { vm } = vmOf(RequestSheet, { address: ADDRESS })
+  vm.openNote()
+  assert.equal(vm.noteOpen, true)
+  vm.note = '   '
+  vm.closeEmptyNote()
+  assert.equal(vm.noteOpen, false)
+  vm.openNote()
+  vm.note = 'Dinner'
+  vm.closeEmptyNote()
+  assert.equal(vm.noteOpen, true)
+})
+
+// ── Amount keypad rules (utils/amountKeypad.js) ──────────────────────
+
+test('keypad: digits collapse leading zeros, 000 appends, the length is capped', () => {
+  const press = (keys, fiat = false) => keys.reduce((value, key) => amountKeypad.applyKeypadKey(value, key, { fiat }), '')
+  assert.equal(press(['0', '0', '5']), '5')
+  assert.equal(press(['5', '000']), '5000')
+  assert.equal(press(['000']), '0')
+  assert.equal(press(Array(20).fill('9')), '9'.repeat(amountKeypad.KEYPAD_MAX_LENGTH))
+  assert.equal(press(['5', '0', 'del']), '5')
+  assert.equal(press(['del']), '')
+})
+
+test('keypad: fiat takes one decimal point and two decimals', () => {
+  const press = (keys) => keys.reduce((value, key) => amountKeypad.applyKeypadKey(value, key, { fiat: true }), '')
+  assert.equal(press(['.', '5']), '0.5')
+  assert.equal(press(['3', '.', '.', '2', '6', '9']), '3.26')
+  assert.equal(press(['0', '.', '5']), '0.5')
+})
+
+test('keypad: amounts convert both ways, and the unit swaps only with a rate', () => {
+  const rate = 65_000
+  assert.equal(amountKeypad.keypadSats('5000', { fiat: false, rate }), 5000)
+  assert.equal(amountKeypad.keypadSats('3.25', { fiat: true, rate }), Math.floor((3.25 / rate) * 1e8))
+  assert.equal(amountKeypad.keypadSats('3.25', { fiat: true, rate: 0 }), 0)
+  assert.deepEqual(amountKeypad.swapKeypadUnit('5000', { fiat: false, rate }), { value: (5000 / 1e8 * rate).toFixed(2), fiat: true })
+  assert.deepEqual(amountKeypad.swapKeypadUnit('3.25', { fiat: true, rate }), { value: String(amountKeypad.fiatToSats(3.25, rate)), fiat: false })
+  assert.deepEqual(amountKeypad.swapKeypadUnit('', { fiat: false, rate }), { value: '', fiat: true })
+  assert.equal(amountKeypad.swapKeypadUnit('5000', { fiat: false, rate: 0 }), null)
+  assert.equal(amountKeypad.groupFiatInput('1234567.5'), '1,234,567.5')
+  assert.equal(amountKeypad.groupFiatInput(''), '0')
+})
+
+// ── Request from: who can be asked (requestPeople.js) ────────────────
+
+test('request from: only contacts with a public key, by name; recent chats first, then recent payments, once each', () => {
+  const people = loadJs('requestPeople.js', { '../../utils/nostrLookup.js': { LOOKUP_ERROR, NIP05_ERROR } })
+  const key = (c) => c.repeat(64)
+  const anna = { id: 'a', name: 'Anna Weber', nostr_pubkey: key('a'), lightningAddress: 'anna@mybuho.de' }
+  const ben = { id: 'b', name: 'ben', nostr_pubkey: key('b') }
+  const cleo = { id: 'c', name: 'Cléo', nostr_pubkey: key('c'), nostr_profile: { nip05: 'cleo@example.com' } }
+  const plain = { id: 'p', name: 'Address only', address: 'shop@getalby.com' }
+  assert.equal(people.canRequestFrom(plain), false)
+  assert.deepEqual(people.requestableContacts([cleo, plain, ben, anna]).map((e) => e.id), ['a', 'b', 'c'])
+
+  const byKey = Object.fromEntries([anna, ben, cleo].map((e) => [e.nostr_pubkey, e]))
+  const recent = people.recentRequestContacts({
+    threads: [{ partner: key('c') }, { partner: key('f') }, { partner: key('c') }],
+    recentlyPaid: [plain, anna, cleo, ben],
+    contactFor: (pubkey) => byKey[pubkey] || null,
+    limit: 3,
+  })
+  assert.deepEqual(recent.map((e) => e.id), ['c', 'a', 'b'], 'a stranger and an address-only contact are skipped')
+
+  const all = [anna, ben, cleo]
+  assert.deepEqual(people.matchContacts(all, 'cleo').map((e) => e.id), ['c'], 'accents do not matter')
+  assert.deepEqual(people.matchContacts(all, 'mybuho').map((e) => e.id), ['a'], 'the address matches too')
+  assert.deepEqual(people.matchContacts(all, 'anna weber').map((e) => e.id), ['a'])
+  assert.equal(people.matchContacts(all, '  ').length, 3)
+})
+
+test('request from: a failed search names its reason, never "check your connection" for a wrong username', () => {
+  const { lookupProblem } = loadJs('requestPeople.js', { '../../utils/nostrLookup.js': { LOOKUP_ERROR, NIP05_ERROR } })
+  const failing = (code) => lookupProblem(Object.assign(new Error(code), { code }))
+  assert.equal(failing(NIP05_ERROR.NOT_FOUND), 'no-username')
+  assert.equal(failing(LOOKUP_ERROR.INVALID_NPUB), 'none')
+  assert.equal(failing(NIP05_ERROR.HTTP), 'unchecked', 'an address with no username server, such as a plain Lightning address')
+  assert.equal(failing(NIP05_ERROR.NETWORK), 'failed')
+  assert.equal(lookupProblem(new Error('socket closed')), 'failed')
+  assert.equal(failing(LOOKUP_ERROR.CANCELLED), null)
 })
 
 // ── SignerAppNotice ──────────────────────────────────────────────────
@@ -969,8 +1048,11 @@ test('touch targets: every control is at least 44 pt', () => {
   at44('UnknownSenderBanner.vue', '.unknown-btn')
   at44('SignerAppNotice.vue', '.signer-notice__btn')
   at44('ChatThread.vue', '.chat-thread__pill')
-  at44('RequestSheet.vue', '.request-sheet__unit-pill')
+  at44('RequestSheet.vue', '.request-sheet__back')
+  at44('RequestSheet.vue', '.request-sheet__add-note')
   at44('RequestSheet.vue', '.request-sheet__to')
+  at44('RequestFromSheet.vue', '.request-from__row')
+  at44('RequestFromSheet.vue', '.request-from__scan')
 })
 
 test('dialog roots: a bottom sheet whose root is not a <div> still receives taps', () => {
@@ -1007,7 +1089,9 @@ test('presentational: no store, router, network or runtime imports', () => {
     const imports = [...strip(read(file)).matchAll(/^import .* from '([^']+)'/gm)].map((m) => m[1])
     for (const spec of imports) {
       assert.ok(
-        spec === '@iconify/vue' || spec.startsWith('./') || spec === '../../utils/amountFormatting.js' || spec === '../../services/dm/constants.js',
+        // The app's keypad and its rules are presentational too: no store, no network.
+        spec === '@iconify/vue' || spec.startsWith('./') || spec === '../../utils/amountFormatting.js' || spec === '../../services/dm/constants.js'
+          || spec === '../AmountKeypad.vue' || spec === '../../utils/amountKeypad.js',
         `${file} imports ${spec}`,
       )
     }

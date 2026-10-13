@@ -24,7 +24,7 @@
         :aria-describedby="requestDisabled && disabledHint ? hintId : undefined"
         @click="$emit('request')"
       >
-        <Icon icon="tabler:arrow-down-left" width="20" height="20" />
+        <Icon icon="buho:request" width="20" height="20" />
         <span>{{ $t('Request') }}</span>
       </button>
       <button

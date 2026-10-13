@@ -517,6 +517,12 @@ export const useWalletStore = defineStore('wallet', {
     },
 
     /**
+     * The price of one bitcoin in `currency` from the rate table; 0 while none
+     * is known. Typing a request in fiat converts with it, as Receive does.
+     */
+    exchangeRateFor: (state) => (currency) => Number(state.exchangeRates?.[String(currency || 'USD').toLowerCase()]) || 0,
+
+    /**
      * An amount in the person's fiat currency, formatted ('' while no rate is
      * known). Every wallet list shows it next to the Bitcoin figure, so the
      * conversion is always in view.

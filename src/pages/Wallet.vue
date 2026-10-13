@@ -448,7 +448,11 @@
       @open-vouchers="openVouchers"
       @redeem-voucher="redeemVoucher"
       @remove-voucher="removeVoucher"
+      @request-money="handleRequestMoney"
     />
+
+    <!-- Request from a contact, started on Receive -->
+    <RequestMoneyFlow v-model="showRequestMoney" :initial-sats="requestMoneySats" />
 
     <!-- Send Modal -->
     <SendModal
@@ -795,6 +799,7 @@ import {useAddressBookStore} from '../stores/addressBook';
 import {useTransactionMetadataStore} from '../stores/transactionMetadata';
 import {normalizeTx} from '../services/txNormalizer.js';
 import ReceiveModal from '../components/ReceiveModal.vue';
+import RequestMoneyFlow from '../components/chat/RequestMoneyFlow.vue';
 import SendModal from '../components/SendModal.vue';
 import QrScanSheet from '../components/QrScanSheet.vue';
 import {parsePaymentDestination} from '../providers/WalletFactory';
@@ -858,6 +863,7 @@ export default {
     WalletBrandMark,
     WalletSwitcherSheet,
     ReceiveModal,
+    RequestMoneyFlow,
     SendModal,
     QrScanSheet,
     ArkadeLogo,
@@ -934,6 +940,8 @@ export default {
       showReceiveModal: false,
       showSendModal: false,
       showRedeemScanner: false,
+      showRequestMoney: false,
+      requestMoneySats: 0,
       // Drives the Send sheet's loading CTA + inline error while we fetch and
       // validate a destination it emitted (before the confirm sheet opens).
       sendResolving: false,
@@ -3720,6 +3728,15 @@ export default {
       } catch (error) {
         console.warn('Could not refresh the balance of the wallet that paid:', error?.message || error);
       }
+    },
+
+    /** Receive's Request: ask a contact for the amount Receive already had. */
+    handleRequestMoney() {
+      this.requestMoneySats = this.$refs.receiveModal?.intendedReceiveSats || 0;
+      this.showReceiveModal = false;
+      this.$nextTick(() => {
+        this.showRequestMoney = true;
+      });
     },
 
     handleScanWithdraw() {
