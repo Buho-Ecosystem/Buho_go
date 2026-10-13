@@ -15,27 +15,15 @@
 
     <!-- No cards on this page: the story sits directly on the background
          and hairlines carry the structure. The only boxed things left are
-         real controls (version pill, donate buttons) and the official
-         store badges, which are boxes by design. -->
+         real controls (donate buttons) and the official store badges,
+         which are boxes by design. -->
     <div class="about-content">
-      <!-- Identity hero: bare mark, name, version. The version pill is the
-           update checker; a dot appears when a newer build is waiting. -->
+      <!-- Identity hero: bare mark, name, version. -->
       <div class="about-hero">
         <img src="/buho_logo.svg" alt="" class="about-hero-logo" />
         <div class="about-hero-body">
-          <div class="about-hero-title-row">
-            <span class="about-hero-name">BuhoGO</span>
-            <button
-              type="button"
-              class="about-version-pill"
-              :class="{ 'about-version-pill--update': updateStore.hasUpdate }"
-              @click="onVersionClick"
-            >
-              <span v-if="updateStore.hasUpdate" class="about-version-dot" aria-hidden="true"></span>
-              v{{ appVersion }}
-            </button>
-          </div>
-          <div class="about-version-caption">{{ versionCaption }}</div>
+          <span class="about-hero-name">BuhoGO</span>
+          <span class="about-hero-version">{{ $t('Version {version}', { version: appVersion }) }}</span>
         </div>
       </div>
 
@@ -45,6 +33,35 @@
 
       <!-- Plain rows, full-bleed tap targets, one hairline between. -->
       <div class="about-list">
+        <!-- Software update: what the last check found, and the way to the
+             update sheet. Opening About checks (at most every few hours);
+             tapping checks again, or opens the waiting update. -->
+        <SettingsRow
+          icon="tabler:circle-arrow-up"
+          :label="$t('Software update')"
+          :caption="updateCaption"
+          :inline-value="updateValue"
+          :disabled="kioskLocked"
+          @click="onSoftwareUpdate"
+        >
+          <template #right>
+            <q-spinner v-if="updateStore.status === 'checking'" size="16px" class="about-update-spinner" />
+            <span v-else-if="updateStore.stage" class="about-update-pending">
+              <span class="about-update-dot" aria-hidden="true"></span>
+              <Icon icon="tabler:chevron-right" width="16" height="16" class="about-update-chevron" />
+            </span>
+            <Icon
+              v-else-if="updateStore.status === 'upToDate'"
+              icon="tabler:check"
+              width="16"
+              height="16"
+              class="about-update-check"
+              aria-hidden="true"
+            />
+            <!-- Tapping checks again rather than opening a screen: no chevron. -->
+            <span v-else aria-hidden="true"></span>
+          </template>
+        </SettingsRow>
         <SettingsRow
           icon="tabler:school"
           :label="$t('Onboarding Guide')"
@@ -114,6 +131,7 @@ import { version } from '../../package.json';
 import SettingsRow from '../components/settings/SettingsRow.vue';
 import SupportBuhoGo from '../components/settings/SupportBuhoGo.vue';
 import { useUpdateStore } from '../stores/update';
+import { isKioskLocked } from '../services/updateRuntime';
 
 export default {
   name: 'AboutPage',
@@ -130,44 +148,49 @@ export default {
     appVersion() {
       return version;
     },
-    versionCaption() {
-      if (this.updateStore.isRequired) return this.$t('Update required');
-      if (this.updateStore.hasUpdate) return this.$t('A newer version is ready');
-      if (this.updateStore.status === 'checking') return this.$t('Checking for updates...');
-      return this.$t('Tap to check for updates');
+    /** Update checks are off while a kiosk faces customers. */
+    kioskLocked() {
+      return isKioskLocked();
+    },
+    /** The row's value: what the last check found. */
+    updateValue() {
+      const { stage, status, release } = this.updateStore;
+      if (status === 'checking') return this.$t('Checking...');
+      if (stage === 'ready') return this.$t('Ready to install');
+      if (stage === 'required') return this.$t('Update required');
+      if (stage) {
+        return release?.version
+          ? this.$t('{version} available', { version: release.version })
+          : this.$t('Available');
+      }
+      return status === 'upToDate' ? this.$t('Up to date') : '';
+    },
+    /** The row's caption: when it last checked, or what to do next. */
+    updateCaption() {
+      if (this.kioskLocked) return this.$t('Not available in kiosk mode');
+      if (this.updateStore.status === 'error') return this.$t("Couldn't check. Tap to try again.");
+      const at = this.updateStore.lastCheckedAt;
+      if (!at) return this.$t('Tap to check for updates');
+      const today = new Date(at).toDateString() === new Date().toDateString();
+      const when = new Intl.DateTimeFormat(
+        this.$i18n.locale,
+        today ? { timeStyle: 'short' } : { dateStyle: 'medium', timeStyle: 'short' },
+      ).format(at);
+      return today
+        ? this.$t('Checked today at {time}', { time: when })
+        : this.$t('Last checked {date}', { date: when });
     },
   },
+  mounted() {
+    // Like a system update screen, opening About looks for an update; the
+    // store keeps that to one network check every few hours.
+    if (!this.kioskLocked) this.updateStore.checkForUpdates();
+  },
   methods: {
-    async onVersionClick() {
-      let result = null;
-      if (!this.updateStore.hasUpdate) {
-        result = await this.updateStore.checkForUpdates({ force: true });
-      }
-      if (this.updateStore.hasUpdate) {
-        this.updateStore.openSheet();
-        return;
-      }
-      if (result?.error || this.updateStore.status === 'error') {
-        this.$q.notify({
-          message: this.$t('Could not check for updates. Please try again.'),
-          icon: 'cloud_off',
-          timeout: 3000,
-        });
-        return;
-      }
-      if (result?.skipped === 'kiosk') {
-        this.$q.notify({
-          message: this.$t('Update checks are unavailable in kiosk mode.'),
-          icon: 'info',
-          timeout: 3000,
-        });
-        return;
-      }
-      this.$q.notify({
-        message: this.$t('BuhoGO is up to date'),
-        icon: 'check_circle',
-        timeout: 2500,
-      });
+    /** Opens the waiting update, or checks now and opens what it finds. */
+    async onSoftwareUpdate() {
+      if (!this.updateStore.stage) await this.updateStore.checkForUpdates({ force: true });
+      if (this.updateStore.stage) this.updateStore.openSheet();
     },
 
     openGithubRepo() {
@@ -269,13 +292,9 @@ export default {
 .about-hero-body {
   flex: 1;
   min-width: 0;
-}
-
-.about-hero-title-row {
   display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 10px;
+  flex-direction: column;
+  gap: 2px;
 }
 
 .about-hero-name {
@@ -285,46 +304,37 @@ export default {
   color: var(--text-primary);
 }
 
-/* The version pill IS the update checker: quiet by default, ringed with
-   a dot when a newer build waits. The one boxed control up here. */
-.about-version-pill {
+.about-hero-version {
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+/* Software update row: a spinner while checking, the update dot and a
+   chevron while one waits (the row opens it), a check when up to date. */
+.about-update-spinner {
+  color: var(--text-muted);
+}
+
+.about-update-pending {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  min-height: 28px;
-  padding: 3px 10px;
-  border: 1px solid var(--border-card);
-  border-radius: 999px;
-  background: transparent;
-  color: var(--text-secondary);
-  font-family: var(--font-mono);
-  font-size: 11.5px;
-  font-weight: 600;
-  cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
-  transition: transform 0.1s ease;
+  gap: 8px;
 }
 
-.about-version-pill:active {
-  transform: scale(0.96);
-}
-
-.about-version-pill--update {
-  border-color: #15DE72;
-  color: var(--text-primary);
-}
-
-.about-version-dot {
-  width: 6px;
-  height: 6px;
+.about-update-dot {
+  width: 8px;
+  height: 8px;
   border-radius: 50%;
-  background: #15DE72;
+  background: var(--brand-accent);
 }
 
-.about-version-caption {
-  margin-top: 3px;
-  font-size: 11px;
+.about-update-chevron {
   color: var(--text-muted);
+  opacity: 0.7;
+}
+
+.about-update-check {
+  color: var(--brand-accent-text);
 }
 
 .about-mission {

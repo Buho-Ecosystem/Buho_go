@@ -210,6 +210,26 @@ export function isReleaseRequired(runtime, release) {
     && runtime.build < release.minimumBuild
 }
 
+/**
+ * Which part of the update flow to show, from the check's status and the
+ * Google Play download:
+ *
+ *   'ready'        a Play download finished; restarting installs it
+ *   'required'     this build is below the release's minimum
+ *   'downloading'  a Play download is under way
+ *   'available'    a newer release can be installed
+ *   null           nothing to show
+ *
+ * A finished download wins even when the latest check failed: Play recovers
+ * it on its own, offline included, and only a restart completes it.
+ */
+export function updateStage({ status, playUpdateStatus }) {
+  if (playUpdateStatus === 'downloaded') return 'ready'
+  if (status === 'required') return 'required'
+  if (status !== 'available') return null
+  return playUpdateStatus === 'downloading' ? 'downloading' : 'available'
+}
+
 export function releaseKey(release) {
   if (!release) return ''
   // Acknowledgement belongs to the channel release itself. The manifest-level

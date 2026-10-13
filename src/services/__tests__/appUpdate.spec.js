@@ -11,6 +11,7 @@ import {
   normalizeUpdateManifest,
   releaseKey,
   selectAndroidChannel,
+  updateStage,
 } from '../appUpdate.js'
 
 function manifest(overrides = {}) {
@@ -216,5 +217,18 @@ test('the checked-in manifest announces the version this repository builds', () 
     if (!release.enabled) continue
     assert.equal(release.version, version, `${channel} version (run ./update-version.sh or release:activate)`)
     assert.equal(release.build, build, `${channel} build`)
+  }
+})
+
+test('the update flow shows one stage at a time, and a finished download always wins', () => {
+  const stage = (status, playUpdateStatus = '') => updateStage({ status, playUpdateStatus })
+  assert.equal(stage('available'), 'available')
+  assert.equal(stage('available', 'downloading'), 'downloading')
+  assert.equal(stage('available', 'downloaded'), 'ready')
+  assert.equal(stage('required'), 'required')
+  assert.equal(stage('required', 'downloading'), 'required', 'Play shows its own screen for a required update')
+  for (const status of ['idle', 'checking', 'upToDate', 'error']) {
+    assert.equal(stage(status), null, status)
+    assert.equal(stage(status, 'downloaded'), 'ready', `${status}: only a restart completes a downloaded update`)
   }
 })

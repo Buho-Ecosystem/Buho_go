@@ -4,6 +4,7 @@ import {
   isReleaseNewer,
   isReleaseRequired,
   releaseKey,
+  updateStage,
 } from '../services/appUpdate'
 import {
   findWebUpdate,
@@ -23,23 +24,15 @@ const CHECK_TIMEOUT_MS = 6_000
 function readPreferences() {
   try {
     const parsed = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}')
-    return {
-      cueShownFor: typeof parsed.cueShownFor === 'string' ? parsed.cueShownFor : '',
-      dismissedFor: typeof parsed.dismissedFor === 'string' ? parsed.dismissedFor : '',
-      lastCheckedAt: Number.isFinite(parsed.lastCheckedAt) ? parsed.lastCheckedAt : 0,
-    }
+    return { lastCheckedAt: Number.isFinite(parsed.lastCheckedAt) ? parsed.lastCheckedAt : 0 }
   } catch {
-    return { cueShownFor: '', dismissedFor: '', lastCheckedAt: 0 }
+    return { lastCheckedAt: 0 }
   }
 }
 
 function writePreferences(state) {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({
-      cueShownFor: state.cueShownFor,
-      dismissedFor: state.dismissedFor,
-      lastCheckedAt: state.lastCheckedAt,
-    }))
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ lastCheckedAt: state.lastCheckedAt }))
   } catch {
     // Storage can be unavailable in private browsing. Update discovery still
     // works for the current session; only cross-launch acknowledgement is lost.
@@ -58,8 +51,6 @@ export const useUpdateStore = defineStore('appUpdate', {
     manifest: null,
     release: null,
     currentReleaseKey: '',
-    cueShownFor: preferences.cueShownFor,
-    dismissedFor: preferences.dismissedFor,
     lastCheckedAt: preferences.lastCheckedAt,
     lastError: '',
     actionError: '',
@@ -76,16 +67,11 @@ export const useUpdateStore = defineStore('appUpdate', {
   getters: {
     hasUpdate: state => state.status === 'available' || state.status === 'required',
     isRequired: state => state.status === 'required',
-    showLogoBadge() {
-      return this.hasUpdate
-    },
-    shouldShowCue() {
-      return this.status === 'available'
-        && !!this.currentReleaseKey
-        && this.cueShownFor !== this.currentReleaseKey
-        && this.dismissedFor !== this.currentReleaseKey
-    },
-    playUpdateDownloaded: state => state.playUpdateStatus === 'downloaded',
+    /**
+     * The part of the update flow to show (`updateStage`); null when there is
+     * nothing to show. The app marks the logo and the menu while it is set.
+     */
+    stage: state => updateStage(state),
     playDownloadProgress: state => {
       if (!state.playTotalBytes) return 0
       return Math.min(1, state.playBytesDownloaded / state.playTotalBytes)
@@ -223,23 +209,15 @@ export const useUpdateStore = defineStore('appUpdate', {
       this.status = 'available'
     },
 
-    markCueShown() {
-      if (!this.currentReleaseKey) return
-      this.cueShownFor = this.currentReleaseKey
-      this.persistPreferences()
-    },
-
     openSheet() {
-      if (!this.hasUpdate) return
+      if (!this.stage) return
       this.actionError = ''
       this.sheetOpen = true
     },
 
     dismissSheet() {
       if (this.isRequired && !this.requiredRecoveryAccess) return
-      if (this.currentReleaseKey) this.dismissedFor = this.currentReleaseKey
       this.sheetOpen = false
-      this.persistPreferences()
     },
 
     async allowRecoveryAccess(router) {
@@ -264,10 +242,9 @@ export const useUpdateStore = defineStore('appUpdate', {
         if (this.runtime?.platform === 'android' && this.release.channel === 'play') {
           try {
             const result = await NativeUpdate.startPlayUpdate({ immediate: this.isRequired })
-            if (result?.started) {
-              if (!this.isRequired) this.sheetOpen = false
-              return true
-            }
+            // The sheet stays open: Play reports the download into it
+            // (stage 'downloading', then 'ready').
+            if (result?.started) return true
           } catch {
             // A Play API failure (non-Play install, staged rollout, old bridge)
             // falls back to the verified HTTPS Play listing below.

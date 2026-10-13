@@ -1,102 +1,99 @@
+<!--
+  UpdateExperience: how BuhoGO tells people about a new version
+  (docs/APP_UPDATES.md).
+
+  An ordinary update never interrupts. A dot on the logo and on About in the
+  menu, and the Software update row on About, lead to this sheet. It opens on
+  its own only twice: for a required update (full screen, the recovery phrase
+  stays reachable), and once a Google Play download has finished, because only
+  a restart completes it.
+
+  One sheet, by stage (updateStage): available, downloading, ready, required.
+  Each has one filled button; the other action is quiet text.
+-->
 <template>
   <q-dialog
     :model-value="updateStore.sheetOpen"
-    :persistent="updateStore.isRequired"
-    :position="$q.screen.lt.sm ? 'bottom' : 'standard'"
+    :persistent="isRequired"
+    :maximized="isRequired"
+    :position="isRequired || !$q.screen.lt.sm ? 'standard' : 'bottom'"
     :class="$q.dark.isActive ? 'dialog_dark' : 'dialog_light'"
     @update:model-value="onDialogModel"
   >
-    <q-card class="update-sheet" :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'">
-      <div class="update-sheet__grab" aria-hidden="true"></div>
+    <q-card
+      class="update-sheet"
+      :class="[$q.dark.isActive ? 'card_dark_style' : 'card_light_style', { 'update-sheet--full': isRequired }]"
+    >
+      <div v-if="!isRequired" class="form-sheet-grabber" aria-hidden="true"></div>
 
-      <q-card-section class="update-sheet__header">
-        <div class="update-sheet__icon" :class="{ 'update-sheet__icon--required': updateStore.isRequired }">
-          <Icon :icon="updateStore.isRequired ? 'tabler:shield-exclamation' : 'tabler:download'" width="27" height="27" />
-        </div>
-        <div class="update-sheet__copy">
-          <h2 class="update-sheet__title">{{ updateTitle }}</h2>
-          <p class="update-sheet__version">
-            {{ $t('You are using version {version}', { version: currentVersion }) }}
-          </p>
-        </div>
-      </q-card-section>
-
-      <q-card-section v-if="releaseNotes.length" class="update-sheet__notes">
-        <div v-for="note in releaseNotes" :key="note" class="update-sheet__note">
-          <span class="update-sheet__check" aria-hidden="true">
-            <Icon icon="tabler:check" width="13" height="13" />
+      <div v-if="focused" class="update-sheet__focus">
+        <span class="update-mark update-mark--large">
+          <img src="/buho_logo.svg" alt="" />
+          <span class="update-mark__badge" :class="isRequired ? 'update-mark__badge--warn' : 'update-mark__badge--done'" aria-hidden="true">
+            <Icon :icon="isRequired ? 'tabler:exclamation-mark' : 'tabler:check'" width="15" height="15" />
           </span>
-          <span>{{ note }}</span>
+        </span>
+        <h2 class="update-sheet__title">{{ isRequired ? $t('Update required') : $t('Ready to install') }}</h2>
+        <p class="update-sheet__body">{{ focusBody }}</p>
+      </div>
+
+      <template v-else>
+        <div class="update-sheet__release">
+          <span class="update-mark"><img src="/buho_logo.svg" alt="" /></span>
+          <div class="update-sheet__heading">
+            <h2 class="update-sheet__title">{{ releaseTitle }}</h2>
+            <p class="update-sheet__source">{{ sourceLine }}</p>
+          </div>
         </div>
-      </q-card-section>
+        <section v-if="releaseNotes.length" class="update-sheet__notes">
+          <h3>{{ $t("What's new") }}</h3>
+          <ul>
+            <li v-for="note in releaseNotes" :key="note">{{ note }}</li>
+          </ul>
+        </section>
+      </template>
 
-      <q-card-section v-if="updateStore.isRequired" class="update-sheet__required-copy">
-        {{ $t('This update is needed to keep BuhoGO working safely. You can still back up your recovery phrase first.') }}
-      </q-card-section>
-
-      <q-card-section v-if="isDownloading" class="update-sheet__progress">
+      <div v-if="stage === 'downloading'" class="update-sheet__progress">
         <div class="update-sheet__progress-copy">
-          <span>{{ $t('Downloading update') }}</span>
-          <span v-if="progressPercent">{{ progressPercent }}%</span>
+          <span>{{ $t('Downloading...') }}</span>
+          <span v-if="sizeLine">{{ sizeLine }}</span>
         </div>
         <q-linear-progress
           rounded
           size="6px"
-          :indeterminate="!progressPercent"
+          :indeterminate="!updateStore.playTotalBytes"
           :value="updateStore.playDownloadProgress"
           color="positive"
+          :aria-label="$t('Downloading...')"
         />
-      </q-card-section>
-
-      <div v-if="updateStore.actionError" class="update-sheet__error" role="alert">
-        {{ $t('Could not open the update. Please try again.') }}
       </div>
 
-      <q-card-actions class="update-sheet__actions">
-        <q-btn
-          v-if="updateStore.isRequired"
-          flat
-          no-caps
-          :label="$t('Back Up First')"
-          class="update-sheet__secondary"
-          @click="openRecovery"
-        />
-        <q-btn
-          v-else
-          flat
-          no-caps
-          :label="$t('Not Now')"
-          class="update-sheet__secondary"
-          @click="updateStore.dismissSheet()"
-        />
-        <q-btn
-          unelevated
-          no-caps
-          :loading="updateStore.actionPending"
-          :disable="isDownloading"
-          :label="$t('Update Now')"
-          class="update-sheet__primary"
-          @click="updateStore.performUpdate()"
-        />
-      </q-card-actions>
+      <p v-if="note" class="update-sheet__note" :class="{ 'update-sheet__note--focus': focused }">
+        <Icon v-if="note.secure" icon="tabler:lock" width="15" height="15" aria-hidden="true" />
+        <span>{{ note.text }}</span>
+      </p>
+
+      <p v-if="updateStore.actionError" class="form-sheet-error update-sheet__error" role="alert">
+        {{ $t('Could not open the update. Please try again.') }}
+      </p>
+
+      <div class="update-sheet__actions">
+        <button
+          v-if="actions.primary"
+          type="button"
+          class="form-sheet-primary"
+          :disabled="updateStore.actionPending"
+          @click="actions.primary.run"
+        >
+          <q-spinner v-if="updateStore.actionPending" size="18px" aria-hidden="true" />
+          {{ actions.primary.label }}
+        </button>
+        <button type="button" class="update-sheet__quiet" @click="actions.secondary.run">
+          {{ actions.secondary.label }}
+        </button>
+      </div>
     </q-card>
   </q-dialog>
-
-  <transition name="update-ready">
-    <div v-if="updateStore.playUpdateDownloaded" class="update-ready-banner" role="status">
-      <div>
-        <div class="update-ready-banner__title">{{ $t('Update ready') }}</div>
-        <div class="update-ready-banner__copy">{{ $t('Restart BuhoGO to finish installing it.') }}</div>
-      </div>
-      <q-btn
-        unelevated
-        no-caps
-        :label="$t('Restart')"
-        class="update-ready-banner__button"
-        @click="updateStore.completePlayUpdate()"
-      />
-    </div>
-  </transition>
 </template>
 
 <script setup>
@@ -127,53 +124,111 @@ const updateStore = useUpdateStore()
 
 let resumeListener = null
 let startupTimer = null
+/** The finished Play download is presented once per session; afterwards the dot leads back. */
+let readyPresented = false
 
-const currentVersion = computed(() => updateStore.runtime?.version || '—')
-const releaseNotes = computed(() => localizedReleaseNotes(updateStore.release, locale.value))
-const updateTitle = computed(() => {
-  if (updateStore.release?.version) {
-    return t('BuhoGO {version} is available', { version: updateStore.release.version })
-  }
-  return t('A new BuhoGO version is ready')
+/** Where people get each channel's update, as the sheet names it. */
+const SOURCE = Object.freeze({
+  play: { available: 'Update available on Google Play', downloading: 'Downloading from Google Play' },
+  zapstore: { available: 'Update available on Zapstore' },
+  apk: { available: 'Update available on GitHub' },
+  ios: { available: 'Update available on the App Store' },
+  // A web update is already downloaded by the time it is offered.
+  web: { available: 'Ready to install' },
 })
-const isDownloading = computed(() => updateStore.playUpdateStatus === 'downloading')
-const progressPercent = computed(() => Math.round(updateStore.playDownloadProgress * 100))
 
-function eligibleForCue() {
-  return !props.suspended && route.path === '/wallet'
+const stage = computed(() => updateStore.stage)
+const isRequired = computed(() => updateStore.isRequired)
+/** Required and ready say one thing, centred; the others show the release. */
+const focused = computed(() => isRequired.value || stage.value === 'ready')
+const version = computed(() => updateStore.release?.version || '')
+const releaseNotes = computed(() => localizedReleaseNotes(updateStore.release, locale.value))
+
+const releaseTitle = computed(() => (version.value
+  ? t('BuhoGO {version}', { version: version.value })
+  : t('New version of BuhoGO')))
+
+const sourceLine = computed(() => {
+  const source = SOURCE[updateStore.release?.channel]
+  if (!source) return ''
+  return t(source[stage.value] || source.available)
+})
+
+const focusBody = computed(() => {
+  if (isRequired.value && stage.value !== 'ready') {
+    return t('This version of BuhoGO is no longer supported. Update to keep sending and receiving safely.')
+  }
+  return version.value
+    ? t('BuhoGO {version} has downloaded. Restart to finish updating; it takes a few seconds.', { version: version.value })
+    : t('The update has downloaded. Restart to finish updating; it takes a few seconds.')
+})
+
+const megabytes = computed(() => new Intl.NumberFormat(locale.value, { maximumFractionDigits: 1 }))
+const sizeLine = computed(() => {
+  const { playBytesDownloaded: done, playTotalBytes: total } = updateStore
+  if (!total) return ''
+  const mb = bytes => megabytes.value.format(bytes / 1_000_000)
+  return t('{done} of {total} MB', { done: mb(done), total: mb(total) })
+})
+
+/** The line under the content: what the update means for the wallet. */
+const note = computed(() => {
+  if (stage.value === 'downloading') {
+    return { secure: false, text: t('You can keep using BuhoGO. It tells you when the update is ready.') }
+  }
+  if (isRequired.value && stage.value !== 'ready') {
+    return { secure: true, text: t('Your funds are safe. Nothing is lost by updating.') }
+  }
+  return { secure: true, text: t('Your wallets, balance and recovery phrase stay exactly as they are.') }
+})
+
+const actions = computed(() => {
+  const later = isRequired.value
+    ? { label: t('Back Up Recovery Phrase'), run: openRecovery }
+    : null
+  switch (stage.value) {
+    case 'ready':
+      return {
+        primary: { label: t('Restart BuhoGO'), run: () => updateStore.completePlayUpdate() },
+        secondary: later || { label: t('Later'), run: dismiss },
+      }
+    case 'downloading':
+      return { primary: null, secondary: { label: t('Continue in Background'), run: dismiss } }
+    default:
+      return {
+        primary: { label: t('Update'), run: () => updateStore.performUpdate() },
+        secondary: later || { label: t('Not Now'), run: dismiss },
+      }
+  }
+})
+
+function dismiss() {
+  updateStore.dismissSheet()
 }
 
-function eligibleForRequiredUpdate() {
-  if (props.suspended) return false
-  // Required updates may yield only to Security, where the recovery words
-  // live. As soon as the user leaves that exact route, the update sheet
-  // becomes persistent again instead of granting unrestricted access for the
-  // rest of the session.
-  if (updateStore.requiredRecoveryAccess && route.path === '/security') return false
+function openRecovery() {
+  updateStore.allowRecoveryAccess(router)
+}
+
+/** Screens where an update may present itself: not lock, kiosk, setup or restore. */
+function presentableRoute() {
   return !['/', '/kiosk'].includes(route.path) && !route.path.includes('setup') && !route.path.includes('restore')
 }
 
 function surfaceUpdate() {
-  if (updateStore.isRequired && eligibleForRequiredUpdate()) {
+  if (props.suspended || !presentableRoute()) return
+  if (stage.value === 'ready' && !readyPresented) {
+    readyPresented = true
     updateStore.openSheet()
     return
   }
-  if (!updateStore.shouldShowCue || !eligibleForCue()) return
-
-  // Mark before presenting so rapid route changes cannot duplicate the cue.
-  // The persistent logo badge remains even after this lightweight message.
-  updateStore.markCueShown()
-  $q.notify({
-    message: t('BuhoGO update available'),
-    caption: t('Tap View to see what is new.'),
-    icon: 'system_update_alt',
-    timeout: 5500,
-    actions: [{
-      label: t('View'),
-      color: 'white',
-      handler: () => updateStore.openSheet(),
-    }],
-  })
+  // Required updates may yield only to Security, where the recovery words
+  // live. As soon as the user leaves that exact route, the update sheet
+  // becomes persistent again instead of granting unrestricted access for the
+  // rest of the session.
+  if (isRequired.value && !(updateStore.requiredRecoveryAccess && route.path === '/security')) {
+    updateStore.openSheet()
+  }
 }
 
 async function runCheck(options) {
@@ -184,7 +239,6 @@ async function runCheck(options) {
 function onPwaUpdateReady() {
   window[PWA_UPDATE_FLAG] = true
   updateStore.markPwaUpdateReady()
-  surfaceUpdate()
 }
 
 function onDialogModel(open) {
@@ -192,12 +246,8 @@ function onDialogModel(open) {
   else updateStore.dismissSheet()
 }
 
-function openRecovery() {
-  updateStore.allowRecoveryAccess(router)
-}
-
 watch(
-  () => [props.suspended, route.fullPath, updateStore.status, updateStore.currentReleaseKey],
+  () => [props.suspended, route.fullPath, updateStore.status, stage.value],
   surfaceUpdate,
   { flush: 'post' }
 )
@@ -231,160 +281,145 @@ onUnmounted(() => {
 
 <style scoped>
 .update-sheet {
-  width: min(100%, 420px);
-  border-radius: 22px;
-  padding: 4px 6px 8px;
+  /* The ring around the mark's badge matches the sheet behind it. */
+  --update-ring: var(--bg-card);
+  width: min(100%, 440px);
+  box-sizing: border-box;
+  padding: 0 24px calc(20px + var(--safe-bottom, 0px));
   color: var(--text-primary);
-}
-
-.update-sheet__grab {
-  display: none;
-  width: 36px;
-  height: 5px;
-  margin: 8px auto 2px;
-  border-radius: 999px;
-  background: var(--border-card);
-}
-
-.update-sheet__header {
+  font-family: 'Manrope', sans-serif;
   display: flex;
-  align-items: center;
-  gap: 14px;
-  padding: 20px 18px 10px;
+  flex-direction: column;
+}
+body.body--dark .update-sheet { --update-ring: #0C0C0C; }
+
+.update-sheet--full {
+  width: 100%;
+  max-width: none;
+  min-height: 100%;
+  border-radius: 0 !important;
+  padding-top: var(--safe-top, 0px);
 }
 
-.update-sheet__icon {
-  width: 54px;
-  height: 54px;
-  flex: 0 0 54px;
+.update-mark {
+  position: relative;
+  width: 64px;
+  height: 64px;
+  flex-shrink: 0;
   display: grid;
   place-items: center;
-  border-radius: 17px;
-  color: var(--brand-accent);
-  background: var(--brand-accent-soft);
+  border-radius: 16px;
+  background: var(--bg-input);
+  border: 1px solid var(--border-card);
 }
+.update-mark img { width: 32px; height: 34px; }
+.update-mark--large { width: 84px; height: 84px; border-radius: 21px; }
+.update-mark--large img { width: 42px; height: 45px; }
 
-.update-sheet__icon--required {
-  color: var(--color-warn, #f59e0b);
-  background: var(--color-warn-soft, rgba(245, 158, 11, 0.14));
-}
-
-.update-sheet__copy { min-width: 0; }
-
-.update-sheet__title {
-  margin: 0;
-  font: 700 18px/1.25 'Manrope', sans-serif;
-  letter-spacing: -0.02em;
-}
-
-.update-sheet__version {
-  margin: 5px 0 0;
-  color: var(--text-muted);
-  font: 500 12.5px/1.4 'Manrope', sans-serif;
-}
-
-.update-sheet__notes {
-  display: grid;
-  gap: 10px;
-  padding: 10px 18px 12px;
-}
-
-.update-sheet__note {
-  display: flex;
-  align-items: flex-start;
-  gap: 9px;
-  color: var(--text-secondary);
-  font: 500 13.5px/1.45 'Manrope', sans-serif;
-}
-
-.update-sheet__check {
-  width: 20px;
-  height: 20px;
-  flex: 0 0 20px;
+.update-mark__badge {
+  position: absolute;
+  right: -7px;
+  bottom: -7px;
+  width: 28px;
+  height: 28px;
   display: grid;
   place-items: center;
   border-radius: 50%;
-  color: #08291a;
-  background: var(--brand-accent);
+  box-shadow: 0 0 0 3px var(--update-ring);
 }
+.update-mark__badge--done { background: var(--brand-accent); color: #04140B; }
+.update-mark__badge--warn { background: #F5A524; color: #1A1A1A; }
 
-.update-sheet__required-copy {
-  margin: 6px 18px 4px;
-  padding: 11px 12px;
-  border-radius: 12px;
+.update-sheet__release {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding-top: 14px;
+}
+.update-sheet__heading { min-width: 0; }
+
+.update-sheet__title {
+  margin: 0;
+  font-size: 21px;
+  font-weight: 800;
+  line-height: 1.25;
+  letter-spacing: -0.01em;
+}
+.update-sheet__source {
+  margin: 3px 0 0;
+  font-size: 14px;
   color: var(--text-secondary);
-  background: var(--color-warn-soft, rgba(245, 158, 11, 0.1));
-  font: 500 12.5px/1.45 'Manrope', sans-serif;
 }
 
-.update-sheet__progress { padding: 10px 18px; }
+.update-sheet__notes { margin-top: 24px; }
+.update-sheet__notes h3 { margin: 0 0 8px; font-size: 15px; font-weight: 700; }
+.update-sheet__notes ul {
+  margin: 0;
+  padding-left: 20px;
+  display: grid;
+  gap: 6px;
+  font-size: 15px;
+  line-height: 1.45;
+  color: var(--text-secondary);
+}
+
+.update-sheet__focus {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding-top: 20px;
+}
+.update-sheet__focus .update-sheet__title { margin-top: 24px; }
+.update-sheet--full .update-sheet__focus {
+  flex: 1;
+  justify-content: center;
+}
+.update-sheet__body {
+  margin: 10px 0 0;
+  max-width: 320px;
+  font-size: 16px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
+.update-sheet__progress { margin-top: 26px; }
 .update-sheet__progress-copy {
   display: flex;
   justify-content: space-between;
-  margin-bottom: 7px;
+  margin-bottom: 10px;
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
   color: var(--text-secondary);
-  font: 600 12px/1.3 'Manrope', sans-serif;
 }
 
-.update-sheet__error {
-  margin: 4px 18px;
-  color: var(--color-red, #ef4444);
-  font: 600 12.5px/1.4 'Manrope', sans-serif;
+.update-sheet__note {
+  margin: 22px 0 0;
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--text-muted);
 }
+.update-sheet__note svg { flex-shrink: 0; margin-top: 1px; }
+.update-sheet__note--focus { justify-content: center; text-align: left; }
+
+.update-sheet__error { margin: 12px 0 0; }
 
 .update-sheet__actions {
-  display: grid;
-  grid-template-columns: 1fr 1.45fr;
-  gap: 9px;
-  padding: 14px 18px 16px;
-}
-
-.update-sheet__primary,
-.update-sheet__secondary {
-  min-height: 46px;
-  border-radius: 13px;
-  font: 700 14px/1 'Manrope', sans-serif;
-}
-
-.update-sheet__primary { background: var(--brand-accent); color: #08291a; }
-.update-sheet__secondary { color: var(--text-secondary); background: var(--bg-input); }
-
-.update-ready-banner {
-  position: fixed;
-  z-index: 10001;
-  left: max(14px, env(safe-area-inset-left));
-  right: max(14px, env(safe-area-inset-right));
-  bottom: calc(14px + var(--safe-bottom, 0px));
-  max-width: 440px;
-  margin: 0 auto;
+  margin-top: 24px;
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 14px;
-  padding: 13px 14px 13px 16px;
-  border: 1px solid var(--border-card);
-  border-radius: 16px;
-  background: var(--bg-card);
-  color: var(--text-primary);
-  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.24);
+  flex-direction: column;
+  gap: 4px;
 }
-
-.update-ready-banner__title { font: 700 14px/1.3 'Manrope', sans-serif; }
-.update-ready-banner__copy { margin-top: 2px; color: var(--text-muted); font: 500 12px/1.35 'Manrope', sans-serif; }
-.update-ready-banner__button { flex-shrink: 0; border-radius: 11px; background: var(--brand-accent); color: #08291a; font-weight: 700; }
-
-.update-ready-enter-active,
-.update-ready-leave-active { transition: opacity .18s ease, transform .18s ease; }
-.update-ready-enter-from,
-.update-ready-leave-to { opacity: 0; transform: translateY(12px); }
-
-@media (max-width: 599px) {
-  .update-sheet { max-width: none; border-radius: 22px 22px 0 0; padding-bottom: var(--safe-bottom, 0px); }
-  .update-sheet__grab { display: block; }
+.update-sheet__quiet {
+  min-height: 48px;
+  border: 0;
+  background: transparent;
+  color: var(--brand-accent-text);
+  font: 600 16px/1.3 'Manrope', sans-serif;
+  cursor: pointer;
 }
-
-@media (prefers-reduced-motion: reduce) {
-  .update-ready-enter-active,
-  .update-ready-leave-active { transition: none; }
-}
+.update-sheet__quiet:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; border-radius: 10px; }
 </style>

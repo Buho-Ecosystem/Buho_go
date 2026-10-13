@@ -55,10 +55,19 @@ activation requires an allowlisted `https://apps.apple.com/...` URL.
 
 - Update checks are best-effort, time out after six seconds, and never block
   wallet startup.
-- Ordinary updates show one lightweight cue per release and keep the `+1`
-  badge on the wallet logo until the app is updated.
-- Required updates show a persistent sheet after biometric unlock, outside
-  onboarding, setup, restore, and locked kiosk routes.
+- An ordinary update never interrupts. A dot on the wallet logo and on About
+  in the menu stays until the app is updated; the logo, the menu and About's
+  Software update row open the update sheet (`UpdateExperience.vue`), which
+  names the release, where it comes from, what is new and that the wallet
+  stays as it is, with one Update button and a quiet Not Now.
+- The sheet presents itself only twice: a required update (full screen after
+  biometric unlock, outside onboarding, setup, restore and locked kiosk
+  routes, with Back Up Recovery Phrase as the way out) and, once per session,
+  a finished Google Play download, which only a restart completes. Its
+  stages come from `updateStage` (available, downloading, ready, required).
+- About shows the version and a Software update row: what the last check
+  found and when (opening About checks, within the six-hour limit; tapping
+  checks now or opens the waiting update).
 - PWA availability comes from the service-worker lifecycle; the manifest only
   supplies display metadata. Every check (start, coming back to the app, the
   version tap on About) asks the service worker to look for a new deployment
