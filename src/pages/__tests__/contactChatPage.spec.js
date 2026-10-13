@@ -147,8 +147,8 @@ function pageOf({ route = { params: { id: 'addr-1' } }, available = true, scope 
     walletStore: { wallets, useBip177Format: true, getDisplayBalance: () => ({ known: false }), sparkLightningAddressOf: () => null },
     profile: { lud16: 'me@example.com' },
     formatFiat: () => '',
-    fiatToSats: () => null,
-    requestFiatCode: () => '',
+    fiatCode: () => 'USD',
+    requestFiatRate: () => 0,
     copyText: async () => {},
   }
   vm.bookReady = bookReady

@@ -197,6 +197,13 @@
               </span>
               <span class="cta-label" :class="$q.dark.isActive ? 'cta-label-dark' : 'cta-label-light'">{{ $t('Redeem') }}</span>
             </button>
+            <!-- Ask a contact for this amount: a chat request (RequestMoneyFlow). -->
+            <button v-if="chatAvailable" class="cta" @click="$emit('request-money')">
+              <span class="cta-circle" :class="$q.dark.isActive ? 'cta-request-dark' : 'cta-request-light'">
+                <Icon icon="buho:request" width="20" height="20" />
+              </span>
+              <span class="cta-label" :class="$q.dark.isActive ? 'cta-label-dark' : 'cta-label-light'">{{ $t('Request') }}</span>
+            </button>
           </div>
         </div>
 
@@ -323,33 +330,24 @@
               </span>
               <span class="cta-label" :class="$q.dark.isActive ? 'cta-label-dark' : 'cta-label-light'">{{ $t('Redeem') }}</span>
             </button>
+            <!-- Ask a contact for this amount: a chat request (RequestMoneyFlow). -->
+            <button v-if="chatAvailable" class="cta" @click="$emit('request-money')">
+              <span class="cta-circle" :class="$q.dark.isActive ? 'cta-request-dark' : 'cta-request-light'">
+                <Icon icon="buho:request" width="20" height="20" />
+              </span>
+              <span class="cta-label" :class="$q.dark.isActive ? 'cta-label-dark' : 'cta-label-light'">{{ $t('Request') }}</span>
+            </button>
           </div>
         </div>
 
         <!-- Keypad View: amount display + description link + numeric grid -->
-        <div class="keypad-view" v-else-if="showAmountKeypadView">
-          <!-- Amount display: primary on top, secondary (with swap) below -->
-          <div class="keypad-amount">
-            <div
-              class="keypad-amount-primary"
-              :class="[
-                $q.dark.isActive ? 'text-white' : 'text-grey-9',
-                amountInSats === 0 ? 'keypad-amount-empty' : ''
-              ]"
-              :style="{ fontSize: primaryFontSize }"
-            >
-              {{ primaryDisplay }}<span v-if="!isFiatMode" class="keypad-amount-suffix">sats</span>
-            </div>
-            <div
-              class="keypad-amount-secondary"
-              :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'"
-              @click="swapKeypadMode"
-            >
-              <span>{{ secondaryDisplay }}</span>
-              <Icon v-if="fiatRate" icon="tabler:arrows-up-down" width="16" height="16" class="keypad-swap-icon" />
-            </div>
-          </div>
-
+        <AmountKeypad
+          v-else-if="showAmountKeypadView"
+          v-model="keypadValue"
+          v-model:fiat="isFiatMode"
+          :fiat-code="fiatCode"
+          :fiat-rate="fiatRate"
+        >
           <!-- Description: link if empty, chip if set. Both open the sheet. -->
           <button
             v-if="!description"
@@ -372,22 +370,7 @@
             <span class="keypad-desc-chip-text">{{ description }}</span>
             <Icon icon="tabler:edit" width="14" height="14" />
           </button>
-
-          <!-- Numeric keypad grid -->
-          <div class="keypad-grid">
-            <button
-              v-for="key in keypadKeys"
-              :key="key"
-              type="button"
-              class="keypad-key"
-              :class="$q.dark.isActive ? 'keypad-key-dark' : 'keypad-key-light'"
-              @click="keypadTap(key)"
-            >
-              <Icon v-if="key === 'del'" icon="tabler:backspace" width="22" height="22" />
-              <template v-else>{{ key }}</template>
-            </button>
-          </div>
-        </div>
+        </AmountKeypad>
       </q-card-section>
 
       <!-- Footer (only on the keypad) -->
@@ -474,8 +457,10 @@ import ArkadeLogo from './ArkadeLogo.vue';
 import { NostrWebLNProvider } from "@getalby/sdk";
 import { Invoice } from "@getalby/lightning-tools";
 import { formatAmount } from '../utils/amountFormatting.js';
-import { fiatSymbol as fiatSymbolFor } from '../utils/fiatCurrencies.js';
 import { fiatRatesService } from '../utils/fiatRates.js';
+import { keypadSats, satsToFiat } from '../utils/amountKeypad.js';
+import AmountKeypad from './AmountKeypad.vue';
+import { useChatRuntime } from '../composables/useChatRuntime.js';
 import { paymentHashOf } from '../utils/breezPayments.js';
 
 /** Does this settled SDK payment pay the invoice with this payment hash? */
@@ -507,11 +492,12 @@ export default {
     ArkadeLogo,
     PaymentConfirmation,
     L1BitcoinReceive,
-    VoucherSheet
+    VoucherSheet,
+    AmountKeypad,
   },
   setup() {
     const walletStore = useWalletStore();
-    return { walletStore };
+    return { walletStore, chatAvailable: useChatRuntime().available };
   },
   props: {
     voucherChecking: { type: Object, default: () => ({}) },
@@ -535,7 +521,7 @@ export default {
   },
   emits: [
     'update:modelValue', 'invoice-created', 'bitcoin-deposits-updated', 'scan-withdraw',
-    'open-vouchers', 'redeem-voucher', 'remove-voucher',
+    'open-vouchers', 'redeem-voucher', 'remove-voucher', 'request-money',
   ],
   data() {
     return {
@@ -616,11 +602,7 @@ export default {
      * mode parses the integer directly.
      */
     amountInSats() {
-      if (this.isFiatMode) {
-        const fiat = parseFloat(this.keypadValue) || 0;
-        return this.fiatToSats(fiat);
-      }
-      return parseInt(this.keypadValue, 10) || 0;
+      return keypadSats(this.keypadValue, { fiat: this.isFiatMode, rate: this.fiatRate });
     },
     /**
      * Active fiat currency for the keypad's secondary display + fiat-mode
@@ -634,60 +616,6 @@ export default {
       return this.walletStore.exchangeRates?.[this.fiatCode]
         || this.walletState.exchangeRates?.[this.fiatCode]
         || 0;
-    },
-    /**
-     * The typed amount must always fit on one line. 44px holds about eleven
-     * characters on a 360px phone; past that the size steps down with the
-     * length shown, so 999,999,999,999 sats stays fully visible.
-     */
-    primaryFontSize() {
-      const chars = String(this.primaryDisplay).length + (this.isFiatMode ? 0 : 3);
-      if (chars <= 11) return '44px';
-      return `${Math.max(22, Math.floor(44 * 11 / chars))}px`;
-    },
-    fiatSymbol() {
-      return fiatSymbolFor(this.fiatCode);
-    },
-    /**
-     * Keys for the 3x4 keypad grid. The bottom-left key swaps between
-     * `000` (sats mode — fast PoS-style entry) and `.` (fiat mode — for
-     * cents). Bottom-right is always backspace.
-     */
-    keypadKeys() {
-      return [
-        '1', '2', '3',
-        '4', '5', '6',
-        '7', '8', '9',
-        this.isFiatMode ? '.' : '000',
-        '0',
-        'del',
-      ];
-    },
-    /**
-     * Primary display: what the user is actively typing.
-     * Sats mode: "1,000 sats". Fiat mode: "$ 0.00".
-     */
-    primaryDisplay() {
-      if (this.isFiatMode) {
-        return `${this.fiatSymbol}${this.groupedFiatInput(this.keypadValue)}`;
-      }
-      const formatted = this.keypadValue
-        ? Number(this.keypadValue).toLocaleString('en-US')
-        : '0';
-      return formatted;
-    },
-    /**
-     * Secondary display: the *other* unit's value, derived from the
-     * primary input. Tapping the swap icon promotes this to primary.
-     */
-    secondaryDisplay() {
-      if (this.isFiatMode) {
-        const sats = this.amountInSats;
-        return sats > 0 ? `${sats.toLocaleString('en-US')} sats` : '0 sats';
-      }
-      // No rate is "unknown", never a zero value.
-      if (!this.fiatRate) return '--';
-      return fiatRatesService.formatFiatAmount(this.satsToFiat(this.amountInSats), this.fiatCode);
     },
     hasLightningAddress() {
       return !!this.walletStore.activeWalletLightningAddress;
@@ -1127,15 +1055,7 @@ export default {
      */
     calculateFiatAmount(sats) {
       if (!this.fiatRate) return '--';
-      return fiatRatesService.formatFiatAmount(this.satsToFiat(sats), this.fiatCode);
-    },
-
-    /** "1234567.5" -> "1,234,567.5": groups the whole part, keeps typed decimals. */
-    groupedFiatInput(value) {
-      if (!value) return '0';
-      const [whole, decimals] = String(value).split('.');
-      const grouped = Number(whole || 0).toLocaleString('en-US');
-      return decimals !== undefined ? `${grouped}.${decimals}` : grouped;
+      return fiatRatesService.formatFiatAmount(satsToFiat(sats, this.fiatRate), this.fiatCode);
     },
 
     /**
@@ -1593,75 +1513,6 @@ export default {
           this.paymentStatusMessage = this.$t('Waiting for payment...');
           break;
       }
-    },
-
-    /**
-     * Handle a key press from the in-app keypad.
-     * - digits: append, collapsing leading zeros (so '0' + '5' = '5', not '05')
-     * - '0': allowed as a stable single-zero state
-     * - '000' (sats mode): append three zeros
-     * - '.' (fiat mode): append decimal if not already present; cap to 2 places
-     * - 'del': pop last char
-     */
-    keypadTap(key) {
-      if (key === 'del') {
-        this.keypadValue = this.keypadValue.slice(0, -1);
-        return;
-      }
-      if (key === '.') {
-        if (this.keypadValue.includes('.')) return;
-        this.keypadValue = (this.keypadValue || '0') + '.';
-        return;
-      }
-      // Cap input length to keep the display readable.
-      if (this.keypadValue.length >= 12) return;
-
-      // Fiat mode: enforce 2 decimal places max.
-      if (this.isFiatMode && this.keypadValue.includes('.')) {
-        const decimals = this.keypadValue.split('.')[1] || '';
-        if (decimals.length >= 2) return;
-      }
-
-      let next = this.keypadValue + key;
-      // Collapse leading zeros (e.g. '00' → '0', '05' → '5'), but keep
-      // '0.' / '0.5' intact for fiat decimal entry.
-      while (next.length > 1 && next.startsWith('0') && !next.startsWith('0.')) {
-        next = next.slice(1);
-      }
-      // Re-cap after the 000 expansion may have pushed us over.
-      if (next.length > 12) next = next.slice(0, 12);
-      this.keypadValue = next;
-    },
-
-    /**
-     * Swap the primary input mode (sats ↔ fiat) and convert the current
-     * value so the displayed amount stays roughly the same. Conversions
-     * are floor-rounded for sats and 2-decimal for fiat.
-     */
-    swapKeypadMode() {
-      if (!this.fiatRate) return; // Can't swap without an exchange rate.
-      if (this.isFiatMode) {
-        const sats = this.amountInSats;
-        this.keypadValue = sats > 0 ? String(sats) : '';
-        this.isFiatMode = false;
-      } else {
-        const fiat = this.satsToFiat(this.amountInSats);
-        this.keypadValue = fiat > 0 ? fiat.toFixed(2) : '';
-        this.isFiatMode = true;
-      }
-    },
-
-    /** Convert a fiat amount (in fiatCode) to integer sats. */
-    fiatToSats(fiat) {
-      if (!this.fiatRate || fiat <= 0) return 0;
-      const btc = fiat / this.fiatRate;
-      return Math.floor(btc * 100000000);
-    },
-
-    /** Convert integer sats to fiat (in fiatCode). */
-    satsToFiat(sats) {
-      if (!this.fiatRate || sats <= 0) return 0;
-      return (sats / 100000000) * this.fiatRate;
     },
 
     openDescriptionSheet() {
@@ -2877,18 +2728,22 @@ export default {
 .cta-row {
   display: flex;
   justify-content: center;
-  gap: 20px;
+  gap: 8px;
   align-self: stretch;
   margin-top: 13px;
   padding-bottom: max(10px, var(--safe-bottom, 0px));
 }
 
+/* The actions share the row, so five (with Request) fit a 360px phone;
+   a label a little wider than its share runs into the gap, centred. */
 .cta {
+  flex: 1 1 0;
+  min-width: 0;
+  max-width: 72px;
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 6px;
-  min-width: 56px;
   padding: 0;
   border: 0;
   background: none;
@@ -2920,11 +2775,18 @@ export default {
 .cta-accent-light:hover { background: rgba(247, 147, 26, 0.20); }
 .cta-accent-dark { background: rgba(247, 147, 26, 0.18); color: #FBBF77; }
 .cta-accent-dark:hover { background: rgba(247, 147, 26, 0.24); }
+/* Request closes the row in the chat's request green, a quiet counterpart
+   to Amount's warm accent at the other end. */
+.cta-request-light { background: rgba(5, 149, 115, 0.12); color: #0B7A55; }
+.cta-request-light:hover { background: rgba(5, 149, 115, 0.18); }
+.cta-request-dark { background: rgba(21, 222, 114, 0.14); color: #15DE72; }
+.cta-request-dark:hover { background: rgba(21, 222, 114, 0.2); }
 
 .cta-label {
   font-size: 12px;
   font-weight: 600;
   letter-spacing: -0.005em;
+  white-space: nowrap;
 }
 
 .cta-label-light { color: rgba(0, 0, 0, 0.65); }
@@ -3241,82 +3103,9 @@ export default {
 }
 
 /* ===========================================
-   In-app Keypad (Alby-inspired)
+   Keypad view: the amount and keys are AmountKeypad.vue; the description
+   link and chip below belong to this sheet.
    =========================================== */
-.keypad-view {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 1rem;
-  padding-top: 0.5rem;
-  min-height: 0;
-}
-
-/* Amount display */
-.keypad-amount {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 1rem 0 0.5rem;
-  width: 100%;
-  min-width: 0;
-  overflow: hidden;
-}
-
-.keypad-amount-primary {
-  font-family: 'Manrope', sans-serif;
-  font-size: 44px;
-  font-weight: 700;
-  letter-spacing: -0.02em;
-  line-height: 1;
-  display: flex;
-  align-items: baseline;
-  justify-content: center;
-  gap: 0.4rem;
-  /* primaryFontSize keeps the number on one line; never spill off-screen. */
-  max-width: 100%;
-  padding: 0 1rem;
-  box-sizing: border-box;
-  white-space: nowrap;
-  font-variant-numeric: tabular-nums;
-  transition: font-size 0.12s ease;
-}
-
-.keypad-amount-primary.keypad-amount-empty {
-  opacity: 0.35;
-}
-
-.keypad-amount-suffix {
-  font-size: 18px;
-  font-weight: 500;
-  letter-spacing: 0;
-  opacity: 0.6;
-}
-
-.keypad-amount-secondary {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
-  font-family: 'Manrope', sans-serif;
-  font-size: 15px;
-  font-weight: 500;
-  padding: 0.4rem 0.8rem;
-  border-radius: 999px;
-  cursor: pointer;
-  transition: background-color 0.15s ease;
-  user-select: none;
-}
-
-.keypad-amount-secondary:active {
-  background: rgba(128, 128, 128, 0.12);
-}
-
-.keypad-swap-icon {
-  opacity: 0.6;
-}
-
 /* Description link / chip */
 .keypad-desc-link {
   display: inline-flex;
@@ -3365,62 +3154,6 @@ export default {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-}
-
-/* 3x4 keypad grid */
-.keypad-grid {
-  width: 100%;
-  max-width: 360px;
-  margin-top: auto;
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 0.5rem;
-  padding-bottom: 0.5rem;
-}
-
-.keypad-key {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  height: 60px;
-  border: none;
-  border-radius: 14px;
-  font-family: 'Manrope', sans-serif;
-  font-size: 26px;
-  font-weight: 600;
-  letter-spacing: -0.01em;
-  cursor: pointer;
-  transition: background-color 0.12s ease, transform 0.08s ease;
-  user-select: none;
-  -webkit-tap-highlight-color: transparent;
-}
-
-.keypad-key:active {
-  transform: scale(0.96);
-}
-
-.keypad-key-light {
-  background: rgba(0, 0, 0, 0.04);
-  color: #1A1A1A;
-}
-
-.keypad-key-light:active {
-  background: rgba(0, 0, 0, 0.09);
-}
-
-.keypad-key-dark {
-  background: rgba(255, 255, 255, 0.06);
-  color: #FFFFFF;
-}
-
-.keypad-key-dark:active {
-  background: rgba(255, 255, 255, 0.12);
-}
-
-@media (max-width: 360px) {
-  .keypad-amount-primary { font-size: 36px; }
-  .keypad-amount-suffix { font-size: 15px; }
-  .keypad-key { height: 52px; font-size: 22px; }
 }
 
 /* Description bottom sheet */

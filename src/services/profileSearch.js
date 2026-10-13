@@ -1,5 +1,5 @@
 import { RelayPool, nip19, verifyEvent } from 'nostr-core';
-import { classifyIdentifier } from '../utils/nostrLookup.js';
+import { classifyIdentifier, lookupIdentifier } from '../utils/nostrLookup.js';
 import { usernameAddressFromInput } from './nip05.js';
 import { compareEventFreshness, parseProfileContent } from '../utils/nostrFetch.js';
 import { DEFAULT_RELAYS } from '../utils/nostrRelays.js';
@@ -140,4 +140,31 @@ export async function fetchPeopleProfile(pubkey, options = {}) {
     ...options, relays: options.relays?.length ? options.relays : DEFAULT_RELAYS, limit: 1,
   });
   return { ...result, event: result.profiles[0]?.event || null };
+}
+
+/**
+ * The people one search field means: a name searches profiles; a public
+ * identifier (public code, profile link, username, address) resolves to the
+ * one person it names, with the relays it came with. Anything else finds no
+ * one. `complete` is false when no relay answered in time, so "no one" may
+ * just mean "not reachable". A failed identifier lookup rejects with its
+ * typed code (LOOKUP_ERROR / NIP05_ERROR).
+ *
+ * @param {string} query
+ * @param {{ signal?: AbortSignal, pool?: object, resolve?: typeof lookupIdentifier }} [options]
+ * @returns {Promise<{ people: Array<{ pubkey: string, npub: string, name: string, nip05: string,
+ *   picture: string, event: object, relays: string[] }>, complete: boolean }>}
+ */
+export async function findPeople(query, { signal, pool, resolve = lookupIdentifier } = {}) {
+  const input = text(query);
+  const mode = classifyPeopleInput(input);
+  if (mode === 'name') {
+    const { profiles, complete } = await searchProfiles(input, { signal, pool });
+    return { people: profiles.map(profile => ({ ...profile, relays: [] })), complete };
+  }
+  if (mode !== 'identifier') return { people: [], complete: true };
+  const resolved = await resolve(usernameAddressFromInput(input) || input, { signal, timeoutMs: PROFILE_SEARCH_TIMEOUT_MS });
+  const relays = Array.isArray(resolved.relays) ? resolved.relays : [];
+  const { profiles, complete } = await fetchPeopleProfile(resolved.pubkey, { signal, pool, ...(relays.length ? { relays } : {}) });
+  return { people: profiles.map(profile => ({ ...profile, relays })), complete };
 }

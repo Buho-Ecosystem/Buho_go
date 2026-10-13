@@ -190,6 +190,10 @@ test('entry points hide themselves behind the runtime availability; messages liv
   assert.match(readSrc('components/settings/NotificationsSheet.vue'), /v-if="chatAvailable"\s+icon="tabler:message-circle"/)
   // The app badge counts contacts only: strangers wait inside Messages.
   assert.match(readSrc('components/MenuOverlay.vue'), /this\.chatAvailable \? this\.messagesStore\.knownUnread : 0/)
+  // Receive offers Request only while the chat runs: a request travels as a chat message.
+  const receive = readSrc('components/ReceiveModal.vue')
+  assert.equal((receive.match(/<button v-if="chatAvailable" class="cta" @click="\$emit\('request-money'\)">/g) || []).length, 2)
+  assert.match(readSrc('pages/Wallet.vue'), /@request-money="handleRequestMoney"/)
 })
 
 test('the requests-and-messages switch is bound to the store and only shown while notifications are allowed', () => {

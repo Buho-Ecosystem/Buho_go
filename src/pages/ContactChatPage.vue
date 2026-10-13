@@ -166,9 +166,8 @@
       v-model="requestOpen"
       :partner-name="displayName"
       :address="profile.lud16 || ''"
-      :format-fiat="formatFiat"
-      :fiat-code="requestFiatCode()"
-      :fiat-to-sats="fiatToSats"
+      :fiat-code="fiatCode()"
+      :fiat-rate="requestFiatRate()"
       :submitting="requestSubmitting"
       :error="requestError"
       :bip177="bip177"
@@ -319,15 +318,8 @@ export default {
         return ''
       }
     }
-    const fiatToSats = (value) => {
-      try {
-        return fiatRatesService.convertFiatToSatsSync(value, fiatCode())
-      } catch {
-        return null
-      }
-    }
-    /** The currency a request can be typed in; '' while there is no rate (sats only then). */
-    const requestFiatCode = () => (fiatToSats(1) === null ? '' : fiatCode())
+    /** The rate a request is typed in fiat with; 0 while there is none (sats only then). */
+    const requestFiatRate = () => walletStore.exchangeRateFor(fiatCode())
 
     /** The user's wallets ranked for a payment of `amountSats` over `destinationType`. */
     const payingWalletsFor = (amountSats, destinationType = 'lightning') => listPayingWallets({
@@ -376,7 +368,7 @@ export default {
     const signerNotice = useSignerAppNotice()
 
     return {
-      t, router, store, addressBook, walletStore, profile, runtime, chat, partner, contact, partnerName: displayName, formatFiat, fiatToSats, requestFiatCode,
+      t, router, store, addressBook, walletStore, profile, runtime, chat, partner, contact, partnerName: displayName, formatFiat, fiatCode, requestFiatRate,
       /** The app's clipboard (falls back where the WebView has no clipboard API). */
       copyText: copyToClipboard,
       signerState: signerNotice.state,

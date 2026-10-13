@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { finalizeEvent, nip19 } from 'nostr-core';
-import { searchProfiles, fetchPeopleProfile, classifyPeopleInput, profileMatchScore, PROFILE_SEARCH_RELAYS } from '../profileSearch.js';
+import { searchProfiles, fetchPeopleProfile, findPeople, classifyPeopleInput, profileMatchScore, PROFILE_SEARCH_RELAYS } from '../profileSearch.js';
 
 const key = n => new Uint8Array(32).fill(n);
 const event = (name, timestamp = 10, author = 1, extra = {}) => finalizeEvent({
@@ -141,4 +141,35 @@ test('classifyPeopleInput: @name is a BuhoGO username lookup, a bare word is a n
   assert.equal(classifyPeopleInput('maria@mybuho.de'), 'identifier');
   assert.equal(classifyPeopleInput('maria'), 'name');
   assert.equal(classifyPeopleInput('@'), 'incomplete');
+});
+
+test('findPeople: a name searches, an identifier resolves to that one person with its relays, anything else finds no one', async () => {
+  const alice = event('Alice');
+  const named = await findPeople('Alice', {
+    pool: fakePool(Object.fromEntries(PROFILE_SEARCH_RELAYS.map(url => [url, c => { c.onevent(alice); c.oneose(); }]))),
+  });
+  assert.equal(named.complete, true);
+  assert.deepEqual(named.people.map(person => [person.pubkey, person.name, person.relays]), [[alice.pubkey, 'Alice', []]]);
+
+  const asked = [];
+  const pool = fakePool({ 'wss://hint': c => { c.onevent(alice); c.oneose(); } });
+  const resolve = async (input) => { asked.push(input); return { pubkey: alice.pubkey, relays: ['wss://hint'] }; };
+  const { people: [person], complete } = await findPeople('@alice', { pool, resolve });
+  assert.equal(asked[0], 'alice@mybuho.de', 'a username is looked up as its full address');
+  assert.equal(person.event.id, alice.id);
+  assert.deepEqual(person.relays, ['wss://hint']);
+  assert.equal(complete, true);
+  assert.equal(pool.requests[0].url, 'wss://hint', 'the hinted relay is asked');
+
+  for (const nothing of ['', 'a', `nsec1${'q'.repeat(58)}`, 'nostr:npub1']) {
+    assert.deepEqual(await findPeople(nothing, { resolve: () => assert.fail('no lookup') }), { people: [], complete: true }, nothing);
+  }
+});
+
+test('findPeople: no relay answering is not "no one"; a failed lookup rejects with its code', async () => {
+  const silent = await findPeople('Alice', { pool: fakePool(Object.fromEntries(PROFILE_SEARCH_RELAYS.map(url => [url, 'fail']))) });
+  assert.deepEqual(silent, { people: [], complete: false });
+
+  const notFound = Object.assign(new Error('not found'), { code: 'NIP05_NOT_FOUND' });
+  await assert.rejects(findPeople('bob@example.com', { resolve: async () => { throw notFound; } }), notFound);
 });
