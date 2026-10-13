@@ -221,6 +221,7 @@
           @deposits-updated="handleBitcoinDepositsUpdated"
           @request-amount="tapAmountButton"
           @scan-withdraw="$emit('scan-withdraw')"
+          @request-money="$emit('request-money')"
         />
 
         <!-- Specific-amount Lightning Invoice Display -->

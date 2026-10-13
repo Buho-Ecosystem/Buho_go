@@ -30,7 +30,7 @@
 
       <div class="request-from__search">
         <label class="request-from__field">
-          <Icon icon="tabler:search" width="16" height="16" aria-hidden="true" />
+          <Icon icon="tabler:search" width="16" height="16" />
           <input
             v-model="query"
             type="search"

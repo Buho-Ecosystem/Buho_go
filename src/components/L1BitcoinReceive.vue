@@ -117,8 +117,8 @@
 
     <!-- One row of equal, labeled actions (52pt targets): shape the
          request, hand out an identity, hand out the code, pull in a
-         voucher. Copy asks which identity instead of guessing; Share
-         hands out the full unified string - exactly what the QR encodes. -->
+         voucher, ask someone. Copy asks which identity instead of guessing;
+         Share hands out the full unified string - exactly what the QR encodes. -->
     <div v-if="depositAddress" class="cta-row">
       <button class="cta" @click="$emit('request-amount')">
         <span class="cta-circle cta-circle-accent" :class="$q.dark.isActive ? 'cta-accent-dark' : 'cta-accent-light'">
@@ -175,6 +175,13 @@
           <Icon icon="tabler:scan" width="20" height="20" />
         </span>
         <span class="cta-label" :class="$q.dark.isActive ? 'cta-label-dark' : 'cta-label-light'">{{ $t('Redeem') }}</span>
+      </button>
+      <!-- Ask someone for money: a chat request (RequestMoneyFlow). -->
+      <button v-if="chatAvailable" class="cta" @click="$emit('request-money')">
+        <span class="cta-circle" :class="$q.dark.isActive ? 'cta-request-dark' : 'cta-request-light'">
+          <Icon icon="buho:request" width="20" height="20" />
+        </span>
+        <span class="cta-label" :class="$q.dark.isActive ? 'cta-label-dark' : 'cta-label-light'">{{ $t('Request') }}</span>
       </button>
     </div>
 
@@ -436,6 +443,7 @@ import { truncateAddress } from 'src/utils/addressUtils';
 import { getQrOptions } from 'src/utils/qrConfig';
 import { composeUnifiedBip21 } from 'src/utils/bip21';
 import { AUTO_CLAIM_THRESHOLDS } from 'src/stores/bitcoinPreferences';
+import { useChatRuntime } from 'src/composables/useChatRuntime.js';
 
 export default {
   name: 'L1BitcoinReceive',
@@ -478,7 +486,7 @@ export default {
     }
   },
 
-  emits: ['deposit-claimed', 'deposits-updated', 'request-amount', 'scan-withdraw'],
+  emits: ['deposit-claimed', 'deposits-updated', 'request-amount', 'scan-withdraw', 'request-money'],
 
   data() {
     return {
@@ -517,7 +525,7 @@ export default {
 
   setup() {
     const walletStore = useWalletStore();
-    return { walletStore, bitcoinDepositsStore: useBitcoinDepositsStore() };
+    return { walletStore, bitcoinDepositsStore: useBitcoinDepositsStore(), chatAvailable: useChatRuntime().available };
   },
 
   computed: {
@@ -1486,18 +1494,22 @@ export default {
 .cta-row {
   display: flex;
   justify-content: center;
-  gap: 20px;
+  gap: 8px;
   align-self: stretch;
   margin-top: 13px;
   padding-bottom: max(10px, var(--safe-bottom, 0px));
 }
 
+/* The actions share the row, so five (with Request) fit a 360px phone;
+   a label a little wider than its share runs into the gap, centred. */
 .cta {
+  flex: 1 1 0;
+  min-width: 0;
+  max-width: 72px;
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 6px;
-  min-width: 56px;
   padding: 0;
   border: 0;
   background: none;
@@ -1529,11 +1541,18 @@ export default {
 .cta-accent-light:hover { background: rgba(247, 147, 26, 0.20); }
 .cta-accent-dark { background: rgba(247, 147, 26, 0.18); color: #FBBF77; }
 .cta-accent-dark:hover { background: rgba(247, 147, 26, 0.24); }
+/* Request closes the row in the chat's request green, a quiet counterpart
+   to Amount's warm accent at the other end. */
+.cta-request-light { background: rgba(5, 149, 115, 0.12); color: #0B7A55; }
+.cta-request-light:hover { background: rgba(5, 149, 115, 0.18); }
+.cta-request-dark { background: rgba(21, 222, 114, 0.14); color: #15DE72; }
+.cta-request-dark:hover { background: rgba(21, 222, 114, 0.2); }
 
 .cta-label {
   font-size: 12px;
   font-weight: 600;
   letter-spacing: -0.005em;
+  white-space: nowrap;
 }
 
 .cta-label-light { color: rgba(0, 0, 0, 0.65); }
