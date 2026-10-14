@@ -260,7 +260,7 @@
                and only as one quiet pill until asked: the default view is
                the plain confirming sheet. Tapping the pill opens the
                comparison in its place, so nothing above the strip moves.
-               The wait column repeats the line under the amount; the Now
+               The wait column repeats the line under the amount; the Faster
                column is the offer. "~" marks the SDK's estimate. -->
           <transition name="speed-reveal" mode="out-in">
             <div
@@ -284,15 +284,16 @@
               key="compare"
               class="claim-choice"
               role="table"
+              :lang="$i18n.locale"
               :aria-label="$t('Speed up')"
             >
               <span class="choice-cell choice-head"></span>
               <span class="choice-cell choice-head">{{ $t('Wait') }}</span>
-              <span class="choice-cell choice-head choice-now">{{ $t('Now') }}</span>
+              <span class="choice-cell choice-head choice-now">{{ $t('Faster') }}</span>
 
-              <span class="choice-cell choice-label">{{ $t('Ready in') }}</span>
-              <span class="choice-cell choice-value">{{ $t('~10-60 min') }}</span>
-              <span class="choice-cell choice-value choice-now">{{ $t('Right away') }}</span>
+              <span class="choice-cell choice-label">{{ $t('Available') }}</span>
+              <span class="choice-cell choice-value choice-timing">{{ standardAvailabilityLabel }}</span>
+              <span class="choice-cell choice-value choice-timing choice-now">{{ earlyAvailabilityLabel }}</span>
 
               <span class="choice-cell choice-label">{{ $t('Fee') }}</span>
               <span class="choice-cell choice-value deduct">{{ waitPrefix }}{{ formatAmount(waitQuote.feeSats) }}</span>
@@ -310,6 +311,10 @@
               :class="$q.dark.isActive ? 'details-dark' : 'details-light'"
             >
               <div class="fee-row">
+                <span class="fee-label">{{ $t('Available') }}</span>
+                <span class="fee-value">{{ earlyAvailabilityLabel }}</span>
+              </div>
+              <div class="fee-row">
                 <span class="fee-label">{{ $t('Deposit') }}</span>
                 <span class="fee-value">{{ formatAmount(claimingDeposit.amount || 0) }}</span>
               </div>
@@ -319,6 +324,10 @@
               </div>
             </div>
           </transition>
+
+          <p v-if="instantClassification && speedUpOpen" class="claim-timing-help" :class="$q.dark.isActive ? 'meta-dark' : 'meta-light'">
+            {{ $t('Confirmations are checks by the Bitcoin network. The wait can vary.') }}
+          </p>
 
           <div class="sheet-actions">
             <q-btn
@@ -331,7 +340,7 @@
               data-audit="deposit-add-now"
               @click="confirmInstantClaim"
             >
-              {{ $t('Add now') }}
+              {{ earlyConfirmationsRemaining === 0 ? $t('Add now') : $t('Speed up deposit') }}
               <template v-slot:loading>
                 <q-spinner size="18px" class="q-mr-sm" />
                 {{ $t('Adding') }}
@@ -444,6 +453,7 @@ import { getQrOptions } from 'src/utils/qrConfig';
 import { composeUnifiedBip21 } from 'src/utils/bip21';
 import { AUTO_CLAIM_THRESHOLDS } from 'src/stores/bitcoinPreferences';
 import { useChatRuntime } from 'src/composables/useChatRuntime.js';
+import { remainingDepositConfirmations } from 'src/utils/breezPayments.js';
 
 export default {
   name: 'L1BitcoinReceive',
@@ -503,7 +513,7 @@ export default {
       showClaimDialog: false,
       claimingDeposit: null,
       claimWalletId: null,
-      // Instant (0-conf) offer for the sheet's confirming view:
+      // Instant or expedited offer for the sheet's confirming view:
       // a classification from classifyUnconfirmedDeposit with
       // category 'instant', or null when the SSP offered none.
       instantClassification: null,
@@ -591,6 +601,24 @@ export default {
     /** Estimated wait figures carry the "~" the timing line already uses. */
     waitPrefix() {
       return this.waitQuote?.isEstimate ? '~' : '';
+    },
+
+    // The quote can know a newer depth than the explorer; polling can then
+    // advance beyond it. Neither changes the fee approval or claim request.
+    depositConfirmations() {
+      return Math.max(this.claimingDeposit?.confirmations || 0, this.instantClassification?.confirmations || 0);
+    },
+
+    earlyConfirmationsRemaining() {
+      return remainingDepositConfirmations(this.instantClassification?.plan?.confirmationsRequired, this.depositConfirmations);
+    },
+
+    earlyAvailabilityLabel() {
+      return this.depositAvailabilityLabel(this.earlyConfirmationsRemaining);
+    },
+
+    standardAvailabilityLabel() {
+      return this.depositAvailabilityLabel(remainingDepositConfirmations(this.waitQuote?.confirmationsRequired, this.depositConfirmations));
     },
 
     netClaimAmount() {
@@ -879,6 +907,13 @@ export default {
       } catch (error) {
         console.warn('Deposit offers lookup failed:', error?.message || error);
       }
+    },
+
+    depositAvailabilityLabel(remaining) {
+      if (remaining === null) return this.$t('Timing varies');
+      if (remaining === 0) return this.$t('Available now');
+      if (remaining === 1) return this.$t('After 1 more confirmation');
+      return this.$t('After {count} more confirmations', { count: remaining });
     },
 
     /** The pill gives way to the comparison, in place. */
@@ -1953,7 +1988,7 @@ export default {
 
 /* Two ways to add a confirming deposit, priced side by side. Shown only
    once Speed up is tapped. It sits directly on the sheet, no card: the
-   Now column's faint tint is the only surface, so the two columns never
+   Faster column's faint tint is the only surface, so the two columns never
    read as one list and the eye lands on the column the primary button
    acts on. */
 .claim-choice {
@@ -1961,7 +1996,7 @@ export default {
   padding: 6px 8px;
   border-radius: 12px;
   display: grid;
-  grid-template-columns: 1fr auto auto;
+  grid-template-columns: minmax(0, 0.8fr) repeat(2, minmax(0, 1fr));
   column-gap: 6px;
   font-size: 14px;
   font-variant-numeric: tabular-nums;
@@ -1980,6 +2015,7 @@ export default {
 }
 .choice-label {
   opacity: 0.7;
+  padding-inline: 4px;
 }
 /* A price is one token: the "~" mark, the unit and the digits never
    break across lines, whatever the locale's grouping does to the width. */
@@ -1987,6 +2023,17 @@ export default {
   font-weight: 500;
   text-align: right;
   white-space: nowrap;
+}
+.choice-timing {
+  white-space: normal;
+  line-height: 1.4;
+  hyphens: auto;
+  overflow-wrap: anywhere;
+}
+.claim-timing-help {
+  margin: 0 28px 16px;
+  font-size: 13px;
+  line-height: 1.5;
 }
 .choice-value.deduct {
   color: #FF6B6B;

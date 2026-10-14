@@ -1589,6 +1589,7 @@ export class BreezSparkWalletProvider extends WalletProvider {
       quote: { transactionId: deposit.txId, outputIndex: deposit.outputIndex || 0, creditAmountSats: creditSats, feeSats },
       plan: instant,
       wait,
+      confirmations: quote.confirmations,
       creditSats,
       feeSats,
       classifiedAt: Date.now(),

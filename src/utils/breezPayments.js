@@ -234,8 +234,15 @@ export function waitQuoteFromMature(mature) {
     creditAmountSats: Number(mature.creditAmountSats || 0),
     feeSats: Number(mature.feeSats || 0),
     isEstimate: mature.isEstimate === true,
-    confirmationsRequired: Number(mature.confirmationsRequired || 0),
+    confirmationsRequired: mature.confirmationsRequired,
   };
+}
+
+/** Display-only wait for a quoted claim depth; unknown never means ready. */
+export function remainingDepositConfirmations(required, current) {
+  if (!Number.isInteger(required) || required < 0
+    || !Number.isInteger(current) || current < 0) return null;
+  return Math.max(0, required - current);
 }
 
 /**
