@@ -774,7 +774,7 @@ export default {
     async getWithWallet() {
       const wallet = this.selectedWallet;
       if (!wallet || this.busy) return;
-      const provider = this.walletStore.providers?.[wallet.id];
+      const provider = this.walletStore.getProvider(wallet.id);
       if (!provider) {
         this.notice = this.$t("That wallet isn't ready. Pick another or pay from another wallet.");
         return;
