@@ -815,7 +815,7 @@ export default {
     async onPay() {
       if (!this.canPay) return;
       const wallet = this.walletStore.wallets.find((w) => w.id === this.selectedWalletId);
-      const provider = this.walletStore.providers?.[this.selectedWalletId];
+      const provider = this.walletStore.getProvider(this.selectedWalletId);
       if (!wallet || !provider) {
         this.payError = this.$t("That wallet isn't ready. Pick another or pay from another wallet.");
         return;
