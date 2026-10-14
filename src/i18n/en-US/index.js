@@ -3167,6 +3167,13 @@ export default {
   "One peaceful place for your day, your people and your ideas.": "One peaceful place for your day, your people and your ideas.",
   // ─── Instant Bitcoin deposits ───
   "Add now": "Add now",
+  "Faster": "Faster",
+  "Available now": "Available now",
+  "After 1 more confirmation": "After 1 more confirmation",
+  "After {count} more confirmations": "After {count} more confirmations",
+  "Timing varies": "Timing varies",
+  "Speed up deposit": "Speed up deposit",
+  "Confirmations are checks by the Bitcoin network. The wait can vary.": "Confirmations are checks by the Bitcoin network. The wait can vary.",
   "Wait": "Wait",
   "Now": "Now",
   "You get": "You get",
