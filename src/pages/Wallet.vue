@@ -2218,10 +2218,12 @@ export default {
     // NFC capability for the "NFC ready" badge. Fire-and-forget — never blocks
     // the wallet load, and stays false on web/PWA (no NFC there).
     isNfcAvailable().then((ok) => { this.nfcReady = ok; }).catch(() => {});
-    // Keep the init promise so cross-page payment handoffs (route query)
-    // can dispatch exactly when the wallet layer is ready instead of
-    // guessing with a fixed delay.
-    this._walletInitPromise = this.initializeWallet();
+    // Payments handed over from another screen (route query, deep link, NFC)
+    // wait for the wallets to be loaded and connected, never for this page's
+    // fresh sync, rates and history: a Spark sync that stalls (up to 20 s per
+    // try) must not leave the confirm sheet unopened.
+    this._walletsReady = this.walletStore.initialize();
+    this.initializeWallet();
     // Check for a payment handed over from the Address Book page
     this.handlePaymentFromQuery();
     // Check if existing Spark wallets need one-time PIN migration
@@ -2239,11 +2241,11 @@ export default {
       (paymentData) => {
         if (!paymentData || paymentData.target === 'kiosk') return;
         this.walletStore.pendingDeepLink = null;
-        // Dispatch once wallet initialization settles — a cold-start intent
-        // can arrive before providers are connected, and the NWC/LNbits
+        // Dispatch once the wallets are ready: a cold-start intent can
+        // arrive before providers are connected, and the NWC/LNbits
         // resolution paths need the active wallet in place. Same readiness
         // gate the route-query handoff uses.
-        Promise.resolve(this._walletInitPromise)
+        Promise.resolve(this._walletsReady)
           .catch(() => {})
           .then(() => this.onPaymentDetected(paymentData));
       },
@@ -3135,11 +3137,11 @@ export default {
       const contactId = isPayContact && query.addressType === 'invoice'
         && typeof query.contactId === 'string' && query.contactId ? query.contactId : null;
 
-      // Dispatch once wallet initialization settles (success or failure —
-      // a failed init still gets the proper payment-error surface), then
-      // route through the shared contact entry point (capability gate +
-      // canonical dispatcher).
-      Promise.resolve(this._walletInitPromise)
+      // Dispatch once the wallets are ready (success or failure: a failed
+      // init still gets the proper payment-error surface), then route
+      // through the shared contact entry point (capability gate + canonical
+      // dispatcher).
+      Promise.resolve(this._walletsReady)
         .catch(() => {})
         .then(() => {
           this.payContactDestination({

@@ -595,7 +595,7 @@ test('Pay with: the route query hands over the wallet', async () => {
     const { vm } = payingHarness();
     const handed = [];
     let replaced;
-    Object.assign(vm, { $route: { query }, $router: { replace: value => { replaced = value; } }, _walletInitPromise: Promise.resolve(),
+    Object.assign(vm, { $route: { query }, $router: { replace: value => { replaced = value; } }, _walletsReady: Promise.resolve(),
       payContactDestination: value => handed.push(value) });
     vm.handlePaymentFromQuery();
     await new Promise(resolve => setTimeout(resolve, 0));
@@ -605,6 +605,26 @@ test('Pay with: the route query hands over the wallet', async () => {
   }
 });
 
+test('a handed-over payment opens once the wallets are ready, without waiting for the page sync', async () => {
+  const { vm } = payingHarness();
+  const handed = [];
+  let ready;
+  Object.assign(vm, {
+    $route: { query: { action: 'pay_contact', address: 'lnbc1invoice', addressType: 'invoice' } },
+    $router: { replace() {} },
+    // The page's own start-up (fresh Spark sync, rates, history) can stall for a long time.
+    _walletInitPromise: new Promise(() => {}),
+    _walletsReady: new Promise((resolve) => { ready = resolve; }),
+    payContactDestination: (value) => handed.push(value),
+  });
+  vm.handlePaymentFromQuery();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(handed.length, 0, 'not before the wallets are loaded and connected');
+  ready();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(handed.length, 1, 'the stalled page start-up does not hold it back');
+});
+
 test('a handed-over payment returns to the screen that handed it over, when cancelled or done', async () => {
   for (const [returnTo, expected] of [['/address-book/c1/chat', '/address-book/c1/chat'], ['https://evil.example', null], ['//evil.example', null]]) {
     const { vm } = payingHarness();
@@ -612,7 +632,7 @@ test('a handed-over payment returns to the screen that handed it over, when canc
     Object.assign(vm, {
       $route: { query: { action: 'pay_contact', address: 'bob@example.com', returnTo } },
       $router: { replace: (value) => replaced.push(value) },
-      _walletInitPromise: Promise.resolve(),
+      _walletsReady: Promise.resolve(),
       payContactDestination: () => {},
       cancelBrantaLookup: () => {},
     });
@@ -1021,7 +1041,7 @@ test('payment context: the route query hands the context over, a repeated param 
     const { vm } = payingHarness();
     const handed = [];
     Object.assign(vm, { $route: { query: { action: 'pay_contact', address: 'inv-1000', addressType: 'invoice', context } },
-      $router: { replace() {} }, _walletInitPromise: Promise.resolve(), payContactDestination: value => handed.push(value) });
+      $router: { replace() {} }, _walletsReady: Promise.resolve(), payContactDestination: value => handed.push(value) });
     vm.handlePaymentFromQuery();
     await new Promise(resolve => setTimeout(resolve, 0));
     assert.equal(handed[0].context, expected, JSON.stringify(context));
@@ -1085,7 +1105,7 @@ test('invoice contact: the route query hands over the contact id for an invoice 
     const { vm } = payingHarness();
     const handed = [];
     Object.assign(vm, { $route: { query: { action: 'pay_contact', address: 'inv-1000', addressType, contactId } },
-      $router: { replace() {} }, _walletInitPromise: Promise.resolve(), payContactDestination: value => handed.push(value) });
+      $router: { replace() {} }, _walletsReady: Promise.resolve(), payContactDestination: value => handed.push(value) });
     vm.handlePaymentFromQuery();
     await new Promise(resolve => setTimeout(resolve, 0));
     assert.equal(handed[0].contactId, expected, JSON.stringify([addressType, contactId]));
