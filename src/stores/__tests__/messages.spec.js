@@ -479,9 +479,18 @@ test('requestsToPay: open requests from contacts, oldest first; strangers and bl
   const stranger = requestMsg(BOB, { createdAt: 999 })
   for (const m of [later, first, cancelled, OUT({ createdAt: 1003 }), stranger]) store.ingest(m)
   store.ingest(statusMsg(ALICE, cancelled.id, 'cancelled', { createdAt: 1010 }))
-  assert.deepEqual(store.requestsToPay.map(m => m.id), [first.id, later.id])
+  assert.deepEqual(store.requestsToPay().map(m => m.id), [first.id, later.id])
   store.block(ALICE)
-  assert.deepEqual(store.requestsToPay, [])
+  assert.deepEqual(store.requestsToPay(), [])
+})
+
+test('requestsToPay: a request leaves the list once it expires at the given time', async () => {
+  const store = await scoped()
+  const short = IN({ createdAt: 1000, request: { amountSats: 1, note: null, lud16: 'bob@x.org', validUntil: 3000 } })
+  const long = IN({ createdAt: 1001 })
+  for (const m of [short, long]) store.ingest(m)
+  assert.deepEqual(store.requestsToPay(3000).map(m => m.id), [short.id, long.id])
+  assert.deepEqual(store.requestsToPay(3001).map(m => m.id), [long.id])
 })
 
 // ----- blocking, lists -----------------------------------------------------

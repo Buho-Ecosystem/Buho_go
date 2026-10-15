@@ -127,6 +127,8 @@ const lnurlNew = new LnurlServer({
 // An address whose wallet is not in Alice's app: only LUD-21 can tell her the money arrived.
 const lnurlExternal = new LnurlServer({ ledger, domain: 'getalby.example' })
 const lnurlServers = [lnurl, lnurlNew, lnurlExternal]
+/** While set, invoice callbacks wait for this promise: a scenario looks at Pay mid-fetch. */
+let callbacksHeld = null
 
 // Wallets, described once and built inside the page (see `seedWallets`).
 const ALICE_WALLETS = [
@@ -173,7 +175,7 @@ async function launchUser(browser, who) {
   })
   context.setDefaultTimeout(15000)
 
-  await context.route('**/*', (route) => {
+  await context.route('**/*', async (route) => {
     const url = new URL(route.request().url())
     if (url.hostname === 'mempool.space' && url.pathname === '/api/v1/prices') {
       return route.fulfill({
@@ -187,6 +189,8 @@ async function launchUser(browser, who) {
       candidate.owns(url.hostname)
     )
     if (server) {
+      if (callbacksHeld && url.pathname.startsWith('/lnurlp/callback/'))
+        await callbacksHeld
       const { status, body } = server.handle(url)
       return route.fulfill({
         status,
@@ -558,7 +562,32 @@ try {
   const waiting = bob.page.getByRole('region', { name: 'Waiting for you' })
   await waiting.getByText('₿ 10,000 · Weekend cabin', { exact: true }).waitFor()
   await snap(bob, '05d-waiting-sheet')
-  await waiting.getByRole('button', { name: 'Pay', exact: true }).click()
+  const payInSheet = waiting.getByRole('button', { name: 'Pay', exact: true })
+  const closeSheet = async () => {
+    await waiting.getByRole('button', { name: 'Done', exact: true }).click()
+    await waiting.waitFor({ state: 'hidden' })
+  }
+  // A failed Pay says why in the sheet; the next opening starts clean.
+  lnurl.failNext = 'Temporarily unavailable'
+  await payInSheet.click()
+  await waiting.getByRole('alert').waitFor()
+  await closeSheet()
+  await line.click()
+  await waiting.getByText('₿ 10,000 · Weekend cabin', { exact: true }).waitFor()
+  assert.equal(await waiting.getByRole('alert').count(), 0, 'no error left over from the last Pay')
+  // Closed while the invoice loads: the Pay is dropped, no confirm sheet opens.
+  let releaseCallbacks
+  callbacksHeld = new Promise((resolve) => { releaseCallbacks = resolve })
+  await payInSheet.click()
+  await waiting.locator('[aria-busy="true"]').waitFor()
+  await closeSheet()
+  releaseCallbacks()
+  callbacksHeld = null
+  await bob.page.waitForTimeout(1500)
+  assert.equal(await bob.page.getByText('Pay with', { exact: true }).count(), 0, 'closing the sheet cancelled the Pay')
+  assert.ok(!bob.page.url().includes('pay_contact'), bob.page.url())
+  await line.click()
+  await payInSheet.click()
   await bob.page.getByText('Pay with', { exact: true }).waitFor()
   await bob.page.getByRole('button', { name: /Pay with/ }).click()
   await bob.page
@@ -573,9 +602,12 @@ try {
     1,
     'the real NWC send service paid exactly once'
   )
-  await navigate(bob.page, '/wallet')
+  await bob.page.locator('.confirmation-backdrop').click()
   await bob.page.locator('.history-link').waitFor()
   assert.equal(await bob.page.locator('[data-audit="waiting-line"]').count(), 0)
+  // Home is in the history once: one Back leaves it for Requests, where Bob came from.
+  await bob.page.goBack()
+  await bob.page.waitForURL(/#\/requests$/)
   await alice.page.getByText('1 of 3 paid', { exact: true }).waitFor()
   await snap(alice, '06b-nwc-verified-progress')
   for (const payer of [carol, dave]) {
@@ -776,6 +808,32 @@ try {
   await snap(alice, '16-chat-request-listed')
   await taxi.click()
   await alice.page.locator('.chat-header').waitFor()
+  // A request that expires while Home is open leaves the line on time (Pay could only fail now).
+  // First Bob's last payment ends: its success screen closes and returns him to the chat.
+  await bob.page.locator('.confirmation-backdrop').waitFor({ state: 'detached' })
+  await bob.page.locator('.chat-header').waitFor()
+  await navigate(bob.page, '/wallet')
+  await bob.page.locator('.history-link').waitFor()
+  const lineText = () =>
+    bob.page.evaluate(() => document.querySelector('[data-audit="waiting-line"]')?.innerText ?? null)
+  const before = await lineText()
+  await bob.page.evaluate(async ({ pubkey, address }) => {
+    const { useMessagesStore } = await import('/src/stores/messages.js')
+    const store = useMessagesStore()
+    const createdAt = Math.floor(Date.now() / 1000)
+    store.ingest({
+      id: 'e'.repeat(64), kind: 14, type: 'request', text: 'request', replyTo: null,
+      sender: pubkey, recipient: store.scope, partner: pubkey, outgoing: false, createdAt,
+      request: { amountSats: 500, note: 'Parking', lud16: address, validUntil: createdAt + 3 },
+      status: null, payment: null, reaction: null, degraded: false
+    })
+  }, { pubkey: ALICE.pubkey, address: ALICE_ADDRESS })
+  await bob.page.waitForFunction((text) => document.querySelector('[data-audit="waiting-line"]')?.innerText !== text, before)
+  await bob.page.waitForFunction(
+    (text) => (document.querySelector('[data-audit="waiting-line"]')?.innerText ?? null) === text,
+    before,
+    { timeout: 6000 }
+  )
   assert.equal(pageErrors.length, 0, pageErrors.join('\n'))
   console.log(
     'Shared requests: one person and several, equal/individual entry, private delivery, NWC/Spark payments, progress, repayment, restart, locales and small screens passed.'

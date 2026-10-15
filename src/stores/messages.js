@@ -564,9 +564,10 @@ export const useMessagesStore = defineStore('messages', {
      * Requests that wait for the user, oldest first: money a contact asked for
      * that is not paid, declined, cancelled or expired. Strangers and blocked
      * senders stay out (strangers light no badge; they wait in Messages).
+     * `now` is unix seconds: a caller that shows the list keeps its own clock,
+     * so a request leaves the list once it expires.
      */
-    requestsToPay(state) {
-      const now = deps.now()
+    requestsToPay: state => (now = deps.now()) => {
       const open = []
       for (const [partner, thread] of Object.entries(state.threads)) {
         if (!deps.isKnownContact(partner) || state.blocked.includes(partner)) continue
