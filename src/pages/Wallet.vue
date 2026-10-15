@@ -254,7 +254,7 @@
                 :suffix="balanceSuffix"
                 class="amount-number"
                 :class="[$q.dark.isActive ? 'amount-number-dark' : 'amount-number-light', { 'balance-stale': activeBalanceOutdated }]"
-                :title="activeBalanceOutdated ? $t('Last known balance — not current') : null"
+                :title="activeBalanceOutdated ? $t('Last known balance, not current') : null"
                 :spin-timing="{ duration: 750, easing: 'cubic-bezier(0.16, 1, 0.3, 1)' }"
                 :transform-timing="{ duration: 750, easing: 'cubic-bezier(0.16, 1, 0.3, 1)' }"
               />
