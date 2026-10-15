@@ -28,6 +28,7 @@ an assigned amount.
 - `services/dm/requestGoals.js`: validated private manifests and resumable sending.
 - `stores/messages.js`: encrypted, identity-scoped persistence and protected request history.
 - `useRequests.js` and `RequestGoalsPage.vue`: the Requests page, derived from the chat's ledger.
+- `WaitingForYou.vue`, `useWaiting.js`, `utils/waitingSummary.js`: Home's line and its "Waiting for you" sheet.
 - `stores/messages.js` `requestsToPay`: the one rule for a request that waits for the user.
 
 The interface follows Apple's guidance for [segmented controls](https://developer.apple.com/design/human-interface-guidelines/segmented-controls),
@@ -44,16 +45,19 @@ confirmation pipeline are reused. English, German and Spanish are translated.
 A request waits for the user while a saved contact's request is not paid,
 declined, cancelled or expired (`requestsToPay`). Strangers and blocked
 senders never count; their requests stay in Messages, as their messages do.
-Following Apple's guidance on [badges](https://developer.apple.com/design/human-interface-guidelines/notifications#Badges)
-and [lists](https://developer.apple.com/design/human-interface-guidelines/lists-and-tables),
-the signal only appears while there is something to act on and leads
-straight to it:
+Following Apple's guidance on [feedback](https://developer.apple.com/design/human-interface-guidelines/feedback)
+(status "unobtrusive but easy for people to check", in words: Mail's unread
+count) and [accessibility](https://developer.apple.com/design/human-interface-guidelines/accessibility)
+("more than color alone"), the signal is a written line that only appears
+while there is something to act on and leads straight to it:
 
-- Home: one card above the last transaction, in the chat's open-request
-  colours. One request reads "Anna requests" and opens that chat, where Pay
-  is; several read "3 requests to pay" and open the Requests page. Muted
-  chats stay quiet, amounts follow Hide balance, and the card disappears as
-  soon as nothing waits.
+- Home: one written line above Receive and Send, the way Mail writes its
+  unread count: "Anna asks for ₿ 8,000", or "2 requests · 1 voucher" when
+  more waits (vouchers that still hold money count too). It opens "Waiting
+  for you": each request with Pay, which hands over to the send pipeline
+  exactly as Pay in the chat does (`requestPaymentHandover`), and each
+  voucher with Redeem. Muted chats stay quiet, amounts follow Hide balance,
+  and the line goes as soon as nothing waits.
 - Receive → Requests: "To pay" first, then everything the user asked for:
   goals and requests sent from inside a chat. One person opens the chat,
   several open their progress.
@@ -136,9 +140,13 @@ Screenshots from the native browser review (test identities and amounts):
 | --- | --- |
 | ![Verified progress](images/shared-requests/progress.png) | ![Repayment](images/shared-requests/repayment.png) |
 
-| One person | A request waits on the home |
+| One person | Home says a request waits |
 | --- | --- |
 | ![One person](images/shared-requests/one-person.png) | ![A request waits](images/shared-requests/home-request.png) |
+
+| Waiting for you |
+| --- |
+| ![Waiting for you](images/shared-requests/waiting-sheet.png) |
 
 | Requests, including ones sent from a chat |
 | --- |

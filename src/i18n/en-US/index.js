@@ -3285,7 +3285,6 @@ export default {
   "BuhoGO will stop tracking it. If money is left, you will need the original code to get it.": "BuhoGO will stop tracking it. If money is left, you will need the original code to get it.",
   "{amount} left on this voucher. Find it under Receive.": "{amount} left on this voucher. Find it under Receive.",
   "This voucher is now empty.": "This voucher is now empty.",
-  "Receive payment, vouchers saved": "Receive payment, vouchers saved",
   "No vouchers saved.": "No vouchers saved.",
   "Know when money arrives": "Know when money arrives",
   "Get a notification when a payment lands while you are in another app. It works while BuhoGO stays open in the background, not after it is closed.": "Get a notification when a payment lands while you are in another app. It works while BuhoGO stays open in the background, not after it is closed.",

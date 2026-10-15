@@ -19,7 +19,7 @@ The store re-checks stale vouchers (older than 60 s) when the Vouchers sheet ope
 | Scan, paste, clipboard strip, NFC, `lightning:` / `lnurlw:` links, LUD-08 inline links, Receive → Redeem | All reach `onPaymentDetected`, where every resolved withdrawRequest is handed to the voucher store. Intake follows the code, not a surface. |
 | Receive sheet | One summary row under the header while at least one voucher holds money (title or count, sum left, disclosure). Shown in every receive view. Nothing when there is nothing. |
 | Vouchers subview | The existing Receive dialog shows the list; Back preserves the receive form and restores focus. Rows are single native buttons: tap sweeps through the same dispatcher and review a scanned code takes. Edit exposes Remove, which asks first. Failed checks are said in words next to the last known figure. |
-| Home | A 6 px dot on the Receive button while a voucher holds money; the label reads "Receive payment, vouchers saved". |
+| Home | One written line above Receive and Send while a voucher holds money ("₿ 15,000 left on Meetup voucher", or "2 vouchers"). It opens "Waiting for you", where Redeem starts the redemption. |
 | Withdraw success | Shows where to find the voucher immediately, then the authoritative balance after its post-confirmation check. Never deducts twice or guesses that the voucher is empty. |
 | Spark, LNbits, NWC | A voucher redeems into the active wallet through the existing invoice providers. Arkade keeps its Lightning-unavailable message. |
 | Locked kiosk | Boots without the wallet page and never shows vouchers. |
@@ -33,7 +33,7 @@ The store re-checks stale vouchers (older than 60 s) when the Vouchers sheet ope
 
 - `node src/stores/__tests__/withdrawVouchers.spec.js`: store tests covering identity across carriers and rotation, erase on absence, ERROR versus empty, `currentBalance` priority, the domain title fallback, stale re-checks, reload, explicit removal, funded retention beyond 180 days and 30 entries, repeated URL rotation, unavailable funds and empty-only pruning.
 - `node --test src/utils/__tests__/lnurlWithdraw.spec.js src/pages/__tests__/fastWithdraw.spec.js`: parser and Wallet page integration, including `sourceUrl` on inline and fetched answers and the tracking side note that never blocks a withdrawal.
-- `node scripts/check-lud14.mjs`: browser fixtures on the real Wallet page: the home dot and the summary row, the sheet's automatic re-check with a rotating service and a service ERROR, Enter on a row opening the redeem review with one fetch and no invoice, Edit → Remove with confirmation, the empty state, and en-US/de/es in light/dark at 390 px, 320 px with 200% text and 768 px.
+- `node scripts/check-lud14.mjs`: browser fixtures on the real Wallet page: the Home line and the summary row, the sheet's automatic re-check with a rotating service and a service ERROR, Enter on a row opening the redeem review with one fetch and no invoice, Edit → Remove with confirmation, the empty state, and en-US/de/es in light/dark at 390 px, 320 px with 200% text and 768 px.
 
 - `node --test src/pages/__tests__/walletFlow.spec.js`: settlement ordering, stale receipt guards and wallet balance request attribution.
 - Follow-up evidence: `output/pr287-fixes/INDEX.md`. Browser checks assert actual computed text growth and one visible dialog, including 320 px at 200% text in all three locales.

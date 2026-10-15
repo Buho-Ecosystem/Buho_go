@@ -541,7 +541,7 @@ try {
     .filter({ hasText: 'Weekend cabin' })
   assert.ok(!(await card.innerText()).includes('Carol'))
   assert.equal(await bob.page.locator('.chat-goal-progress').count(), 0)
-  // Bob is told a request waits: under Requests, "To pay", and on his home.
+  // Bob is told a request waits: under Requests, "To pay", and in one line on Home.
   await navigate(bob.page, '/requests')
   await bob.page.getByRole('heading', { name: 'To pay' }).waitFor()
   await bob.page
@@ -549,13 +549,16 @@ try {
     .filter({ hasText: 'Alice requests' })
     .waitFor()
   await snap(bob, '05b-to-pay-list')
+  // He pays from Home: the line opens "Waiting for you", whose Pay goes the chat's way.
   await navigate(bob.page, '/wallet')
-  const waiting = bob.page.locator('.to-pay-card')
-  await waiting.getByText('Alice requests', { exact: true }).waitFor()
-  await snap(bob, '05c-home-request-waiting')
-  await waiting.click()
-  await bob.page.locator('.chat-header').waitFor()
-  await card.getByRole('button', { name: 'Pay', exact: true }).click()
+  const line = bob.page.locator('[data-audit="waiting-line"]')
+  await line.getByText('Alice asks for ₿ 10,000', { exact: true }).waitFor()
+  await snap(bob, '05c-home-waiting-line')
+  await line.click()
+  const waiting = bob.page.getByRole('region', { name: 'Waiting for you' })
+  await waiting.getByText('₿ 10,000 · Weekend cabin', { exact: true }).waitFor()
+  await snap(bob, '05d-waiting-sheet')
+  await waiting.getByRole('button', { name: 'Pay', exact: true }).click()
   await bob.page.getByText('Pay with', { exact: true }).waitFor()
   await bob.page.getByRole('button', { name: /Pay with/ }).click()
   await bob.page
@@ -572,7 +575,7 @@ try {
   )
   await navigate(bob.page, '/wallet')
   await bob.page.locator('.history-link').waitFor()
-  assert.equal(await bob.page.locator('.to-pay-card').count(), 0)
+  assert.equal(await bob.page.locator('[data-audit="waiting-line"]').count(), 0)
   await alice.page.getByText('1 of 3 paid', { exact: true }).waitFor()
   await snap(alice, '06b-nwc-verified-progress')
   for (const payer of [carol, dave]) {

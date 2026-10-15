@@ -51,3 +51,32 @@ export function parseChatPaymentContext(context) {
   if (requestId !== null && !HEX_64.test(requestId)) return null;
   return { partner, requestId, verifyUrl: rest.join(':') || null };
 }
+
+/**
+ * The arguments for `usePayContact().payInvoice` that pay a partner's request
+ * through the ordinary send pipeline. `invoice` was fetched from the
+ * requester's current Lightning address for exactly the requested amount;
+ * the context makes the always-on announcer tell the partner once it went
+ * out. Shared by the chat and Home's "Waiting for you" sheet.
+ *
+ * @param {{ partner: string, message: { id: string, request: { note?: string|null } },
+ *   invoice: { bolt11: string, verifyUrl?: string|null }, name?: string, contactId?: string,
+ *   payer?: { id: string, usable: boolean } | null }} input
+ * @returns {[{ bolt11: string, name: string }, object]}
+ */
+export function requestPaymentHandover({ partner, message, invoice, name = '', contactId, payer = null }) {
+  return [
+    { bolt11: invoice.bolt11, name },
+    {
+      // An unusable pick is not forced on the wallet page: its own sheet explains and offers the others.
+      walletId: payer?.usable ? payer.id : undefined,
+      // The verify URL (LUD-21) rides along so the announcement can carry it.
+      context: buildChatPaymentContext(partner, message.id, invoice.verifyUrl),
+      // The invoice has no address, so the contact is named for the history link.
+      contactId,
+      // What the money is for, shown on the confirm sheet (an LNURL invoice carries no memo).
+      note: message.request.note || undefined,
+      returnHere: true,
+    },
+  ];
+}

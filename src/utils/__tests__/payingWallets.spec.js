@@ -21,6 +21,7 @@ import {
   feeReserveSats,
   knownFeeReserveSats,
   listPayingWallets,
+  payingWalletsInStore,
   pickDefaultPayingWallet,
   payingWalletReasonText,
   payingWalletHint,
@@ -377,4 +378,18 @@ test('request payability: nothing is claimed while the saved wallets load', () =
     { loading: false, reason: 'Your wallets could not be loaded. Close and reopen BuhoGO.' }, 'a failed load is not "no wallet"')
   assert.deepEqual(requestPayability({ hydrated: true, savedStateLoaded: true, wallets }, t), { loading: false, reason: "Arkade can't pay this." })
   assert.deepEqual(requestPayability({ hydrated: true, savedStateLoaded: true, wallets: list() }, t), { loading: false, reason: '' })
+})
+
+test('payingWalletsInStore reads the wallet store the way listPayingWallets is given it', () => {
+  const store = {
+    wallets: [{ id: 'a', type: 'spark', name: 'A' }, { id: 'b', type: 'nwc', name: 'B' }],
+    activeWalletId: 'b',
+    balances: { a: { sats: 50_000 }, b: { sats: 10 } },
+    connectionStates: {},
+  }
+  assert.deepEqual(
+    payingWalletsInStore(store, 1_000),
+    listPayingWallets({ ...store, destinationType: 'lightning', amountSats: 1_000, feeReserve: knownFeeReserveSats('lightning', null) }),
+  )
+  assert.deepEqual(payingWalletsInStore({}, 1_000), [], 'an empty store has nothing to pay with')
 })

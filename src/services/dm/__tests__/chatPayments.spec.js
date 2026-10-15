@@ -12,7 +12,7 @@ import { test } from 'node:test';
 import { sha256 } from '@noble/hashes/sha2.js';
 import { bytesToHex } from '@noble/hashes/utils.js';
 import { DM_ERROR, DmError } from '../errors.js';
-import { buildChatPaymentContext, parseChatPaymentContext } from '../paymentContext.js';
+import { buildChatPaymentContext, parseChatPaymentContext, requestPaymentHandover } from '../paymentContext.js';
 import { PAYMENT_SENT_EVENT, createPaymentAnnouncer } from '../paymentAnnouncer.js';
 import { CONFIRMATION_WINDOW_SECONDS, confirmIncomingPayments } from '../paymentConfirmation.js';
 import { makeInvoice } from './invoiceFixture.js';
@@ -38,6 +38,28 @@ test('context: the verify URL rides along, colons and all, and needs a request',
   assert.equal(context, `chat:${PARTNER}:${REQUEST}:${url}`);
   assert.deepEqual(parseChatPaymentContext(context), { partner: PARTNER, requestId: REQUEST, verifyUrl: url });
   assert.equal(buildChatPaymentContext(PARTNER, undefined, url), `chat:${PARTNER}`);
+});
+
+test('hand-over: a request is paid with its invoice, its note and a context naming it', () => {
+  const partner = 'a'.repeat(64);
+  const message = { id: 'b'.repeat(64), request: { amountSats: 8_000, note: 'Cinema tickets' } };
+  const invoice = { bolt11: 'lnbc80u1...', verifyUrl: 'https://pay.example/verify/1' };
+  const [target, options] = requestPaymentHandover({
+    partner, message, invoice, name: 'Lena', contactId: 'c1', payer: { id: 'spark', usable: true },
+  });
+  assert.deepEqual(target, { bolt11: 'lnbc80u1...', name: 'Lena' });
+  assert.deepEqual(options, {
+    walletId: 'spark',
+    context: buildChatPaymentContext(partner, message.id, invoice.verifyUrl),
+    contactId: 'c1',
+    note: 'Cinema tickets',
+    returnHere: true,
+  });
+  const [, unusable] = requestPaymentHandover({
+    partner, message: { ...message, request: { amountSats: 8_000, note: null } }, invoice, payer: { id: 'arkade', usable: false },
+  });
+  assert.equal(unusable.walletId, undefined, 'an unusable wallet is left for the confirm sheet to explain');
+  assert.equal(unusable.note, undefined);
 });
 
 test('context: builders refuse malformed ids, the parser refuses everything that is not exactly a chat context', () => {
