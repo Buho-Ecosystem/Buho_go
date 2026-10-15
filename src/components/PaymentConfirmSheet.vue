@@ -31,25 +31,28 @@
     :aria-labelledby="titleId"
     :class="$q.dark.isActive ? 'dialog_dark' : 'dialog_light'"
   >
-    <q-card class="sheet-card" :class="[{ 'sheet-card--redeem': isRedeem }, $q.dark.isActive ? 'sheet-card-dark' : 'sheet-card-light']">
-      <div v-if="!isRedeem" class="grab-bar"></div>
+    <q-card ref="card" class="sheet-card" :class="[{ 'sheet-card--redeem': isRedeem }, $q.dark.isActive ? 'sheet-card-dark' : 'sheet-card-light']">
+      <!-- Swipe down anywhere on the grab bar or the header to close. -->
+      <div class="sheet-top" v-touch-swipe.mouse.down="onHeaderSwipe">
+        <div v-if="!isRedeem" class="grab-bar"></div>
 
-      <header class="top-row" v-touch-swipe.mouse.down="onHeaderSwipe">
-        <q-btn flat round dense @click="onTopAction" class="top-btn glass-back-btn" :disable="isRedeem && (isSending || isComplete)" :aria-label="$t(isRedeem ? 'Cancel' : 'Back')">
-          <svg v-if="isRedeem" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="m6 6 12 12M6 18 18 6" /></svg>
-          <Icon v-else icon="tabler:chevron-left" width="20" height="20" />
-        </q-btn>
-        <h2 class="top-title" :id="titleId">{{ topTitle }}</h2>
-        <!-- Verification sits in the top-right corner (Blitz-style): a single
-             tappable seal, not an inline pill under the recipient name. -->
-        <div class="top-action">
-          <BrantaVerifiedBadge
-            v-if="recipientVerification"
-            :verify-url="recipientVerification.verifyUrl"
-            icon-only
-          />
-        </div>
-      </header>
+        <header class="top-row">
+          <q-btn flat round dense @click="onTopAction" class="top-btn glass-back-btn" :disable="isRedeem && (isSending || isComplete)" :aria-label="$t(isRedeem ? 'Cancel' : 'Back')">
+            <svg v-if="isRedeem" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="m6 6 12 12M6 18 18 6" /></svg>
+            <Icon v-else icon="tabler:chevron-left" width="20" height="20" />
+          </q-btn>
+          <h2 class="top-title" :id="titleId">{{ topTitle }}</h2>
+          <!-- Verification sits in the top-right corner (Blitz-style): a single
+               tappable seal, not an inline pill under the recipient name. -->
+          <div class="top-action">
+            <BrantaVerifiedBadge
+              v-if="recipientVerification"
+              :verify-url="recipientVerification.verifyUrl"
+              icon-only
+            />
+          </div>
+        </header>
+      </div>
 
       <!--
         One confirm-and-send screen. The amount is editable for free/range and
@@ -337,6 +340,7 @@ import SlideToSend from './SlideToSend.vue'
 import BrantaVerifiedBadge from './BrantaVerifiedBadge.vue'
 import ProgressCta from './ProgressCta.vue'
 import PayWithField from './PayWithField.vue'
+import { onAndroidBack } from '../utils/androidBack.js'
 
 // Below this, a tap "Send" button; above it, slide-to-confirm. Both morph into
 // the same filling ProgressCta once committed.
@@ -842,6 +846,7 @@ export default {
         this.resetForFreshOpen()
         this.loadFiatRates()
       }
+      this.listenForBack(v)
     },
     // A new/changed logo URL (e.g. a Branta verification arriving async
     // after the sheet opened) gets a fresh chance to load.
@@ -856,6 +861,9 @@ export default {
     amountInSats(sats) {
       this.$emit('amount-changed', sats)
     }
+  },
+  beforeUnmount() {
+    this._stopBackListener?.()
   },
   methods: {
     async loadFiatRates() {
@@ -924,8 +932,35 @@ export default {
       if (!this.isRedeem) this.$emit('cancel')
     },
 
+    /**
+     * Swipe down and Android's Back close the sheet like its back button,
+     * but never while a payment is on its way: a gesture can be accidental,
+     * the button is right there.
+     */
     onHeaderSwipe() {
-      if (this.isRedeem) this.onTopAction()
+      if (!this.isSending && !this.isComplete) this.onTopAction()
+    },
+
+    /**
+     * Quasar answers Back only for dialogs that also close on any route
+     * change, and this one must not: the pay hand-over clears the URL right
+     * after it opens. Redeem's dialog does close that way while idle, so
+     * Quasar handles its Back.
+     */
+    listenForBack(open) {
+      this._stopBackListener?.()
+      this._stopBackListener = open && !this.isRedeem ? onAndroidBack(() => this.onBackButton()) : null
+    },
+
+    onBackButton() {
+      if (this.isTopDialog()) this.onHeaderSwipe()
+    },
+
+    /** False while another dialog (an error, a confirmation) sits above this sheet; Back then belongs to that one. */
+    isTopDialog() {
+      const own = this.$refs.card?.$el.closest('[id^="q-portal--dialog--"]')
+      const dialogs = document.querySelectorAll('body > [id^="q-portal--dialog--"]')
+      return !!own && dialogs[dialogs.length - 1] === own
     },
 
     onAmountChange() {
@@ -1050,6 +1085,11 @@ export default {
 }
 
 /* ─── Top row ─── */
+.sheet-top {
+  flex-shrink: 0;
+  user-select: none;
+  touch-action: pan-x;
+}
 .top-row {
   display: flex;
   align-items: center;
@@ -1535,7 +1575,7 @@ export default {
 }
 /* Redeem keeps the familiar review surface and scales with larger text. */
 .sheet-card--redeem .top-title { font-size: 1rem; }
-.sheet-card--redeem .top-row { padding-top: 12px; user-select: none; touch-action: pan-x; }
+.sheet-card--redeem .top-row { padding-top: 12px; }
 .sheet-card--redeem .top-btn { min-width: 44px; min-height: 44px; }
 .sheet-card--redeem .recipient-name { font-size: 1rem; white-space: normal; overflow-wrap: anywhere; }
 .sheet-card--redeem .recipient-addr,
