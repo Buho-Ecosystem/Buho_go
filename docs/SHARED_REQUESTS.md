@@ -45,15 +45,16 @@ A request waits for the user while a saved contact's request is not paid,
 declined, cancelled or expired (`requestsToPay`). Strangers and blocked
 senders never count; their requests stay in Messages, as their messages do.
 Following Apple's guidance on [badges](https://developer.apple.com/design/human-interface-guidelines/notifications#Badges)
-and [lists](https://developer.apple.com/design/human-interface-guidelines/lists-and-tables),
-the signal only appears while there is something to act on and leads
-straight to it:
+("discoverable but not distracting or invasive") and the way BuhoGO
+announces updates, the signal is quiet, only appears while there is
+something to act on, and leads straight to it:
 
-- Home: one card above the last transaction, in the chat's open-request
-  colours. One request reads "Anna requests" and opens that chat, where Pay
-  is; several read "3 requests to pay" and open the Requests page. Muted
-  chats stay quiet, amounts follow Hide balance, and the card disappears as
-  soon as nothing waits.
+- Home: a dot on Send, as quiet as the update dot on the logo (a status,
+  not a count; Send's accessible name says a request is waiting). Send
+  lists the request first: "Anna requests" with the amount and the note.
+  One request opens its chat, where Pay is; several ("3 requests to pay")
+  open the Requests page. Muted chats stay quiet, amounts follow Hide
+  balance, and the dot goes as soon as nothing waits.
 - Receive → Requests: "To pay" first, then everything the user asked for:
   goals and requests sent from inside a chat. One person opens the chat,
   several open their progress.
@@ -136,9 +137,13 @@ Screenshots from the native browser review (test identities and amounts):
 | --- | --- |
 | ![Verified progress](images/shared-requests/progress.png) | ![Repayment](images/shared-requests/repayment.png) |
 
-| One person | A request waits on the home |
+| One person | A request waits: a dot on Send |
 | --- | --- |
 | ![One person](images/shared-requests/one-person.png) | ![A request waits](images/shared-requests/home-request.png) |
+
+| Send lists it first |
+| --- |
+| ![Send lists the request](images/shared-requests/send-request.png) |
 
 | Requests, including ones sent from a chat |
 | --- |

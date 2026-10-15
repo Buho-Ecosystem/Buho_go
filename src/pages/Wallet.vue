@@ -303,42 +303,6 @@
         more informative entry point than the old round icon button.
       -->
       <div class="last-tx-section">
-        <!-- Money a contact asked for: one card, same anatomy as the last
-             transaction, until it is paid, declined or expired. One request
-             opens its chat (where Pay is); several open the Requests page. -->
-        <button
-          v-if="toPayCard"
-          type="button"
-          class="last-tx-card to-pay-card"
-          :class="$q.dark.isActive ? 'last-tx-card-dark' : 'last-tx-card-light'"
-          :aria-label="`${toPayCard.title}. ${toPayCard.subtitle}`"
-          @click="openRequestsToPay"
-        >
-          <span class="last-tx-avatar-wrap">
-            <ContactAvatar
-              class="last-tx-avatar"
-              :entry="toPayCard.contact || {}"
-              :name="toPayCard.contact?.name || ''"
-            />
-            <span class="last-tx-type-badge tx-badge-request">
-              <Icon icon="buho:request" width="9" height="9" />
-            </span>
-          </span>
-          <span class="last-tx-info">
-            <span class="last-tx-title" :class="$q.dark.isActive ? 'last-tx-title-dark' : 'last-tx-title-light'">
-              {{ toPayCard.title }}
-            </span>
-            <span class="last-tx-time" :class="$q.dark.isActive ? 'last-tx-muted-dark' : 'last-tx-muted-light'">
-              {{ toPayCard.subtitle }}
-            </span>
-          </span>
-          <span class="last-tx-amount-wrap">
-            <span class="last-tx-amount" :class="$q.dark.isActive ? 'last-tx-title-dark' : 'last-tx-title-light'">
-              <HiddenAmount>{{ toPayCard.amount }}</HiddenAmount>
-            </span>
-          </span>
-        </button>
-
         <!-- Loading: skeleton -->
         <div
           v-if="isLoadingLastTransaction"
@@ -463,9 +427,12 @@
           @click="openSend"
           no-caps
           unelevated
-          :aria-label="$t('Send payment')"
+          :aria-label="requestsToPay.length ? $t('Send payment, a request is waiting') : $t('Send payment')"
         >
           <Icon icon="tabler:scan" width="20" height="20" />
+          <!-- Someone asked for money: a dot, no number, like the update dot
+               on the logo. Send lists the request at the top. -->
+          <span v-if="requestsToPay.length" class="action-dot" aria-hidden="true"></span>
           <span class="btn-text">{{ $t('Send') }}</span>
         </q-btn>
       </div>
@@ -851,9 +818,6 @@ import WalletSwitcherSheet from '../components/wallets/WalletSwitcherSheet.vue';
 import PaymentConfirmSheet from '../components/PaymentConfirmSheet.vue';
 import ContactAvatar from '../components/AddressBook/ContactAvatar.vue';
 import {useRequestsToPay} from '../composables/useRequests.js';
-import {contactChatRoute} from '../services/dm/routes.js';
-// The waiting-request colours, shared with the chat's request card.
-import '../components/chat/chatTokens.css';
 import BatchSendModal from '../components/BatchSendModal.vue';
 import BackupBanner from '../components/BackupBanner.vue';
 import BackupShortcut from '../components/BackupShortcut.vue';
@@ -1112,36 +1076,6 @@ export default {
       const ms = sparkHealth().unreachableFor(this.walletStore.activeWalletId);
       return ms ? exitDurationText(ms, (key, params) => this.$t(key, params)) : '';
     },
-    /** The home card for requests waiting for the user, or null when none wait. */
-    toPayCard() {
-      const requests = this.requestsToPay;
-      if (!requests.length) return null;
-      const contactOf = (pubkey) => this.addressBookStore.findContactByPubkey(pubkey);
-      const firstName = (pubkey) => String(contactOf(pubkey)?.name || '').trim().split(/\s+/)[0];
-      const amount = formatAmount(
-        requests.reduce((sum, request) => sum + request.request.amountSats, 0),
-        this.walletStore.useBip177Format,
-      );
-      const [first] = requests;
-      if (requests.length === 1) {
-        return {
-          contact: contactOf(first.partner),
-          title: this.$t('{name} requests', { name: firstName(first.partner) }),
-          subtitle: first.request.note || this.$t('Payment request'),
-          amount,
-        };
-      }
-      const names = [...new Set(requests.map((request) => firstName(request.partner)))];
-      return {
-        contact: contactOf(first.partner),
-        title: this.$t('{n} requests to pay', { n: requests.length }),
-        subtitle: names.length > 2
-          ? this.$t('{names} and {n} more', { names: names.slice(0, 2).join(', '), n: names.length - 2 })
-          : names.join(', '),
-        amount,
-      };
-    },
-
     menuButtonLabel() {
       if (!this.socialBucketStore.hasUnseenPayments) return this.$t('Menu');
       const count = this.socialBucketStore.paymentCount;
@@ -2426,11 +2360,6 @@ export default {
     }
   },
   methods: {
-    openRequestsToPay() {
-      const contact = this.toPayCard?.contact;
-      this.$router.push(this.requestsToPay.length === 1 && contact ? contactChatRoute(contact.id) : '/requests');
-    },
-
     openEmergencyExit() {
       this.$router.push(`/security/exit/${this.walletStore.activeWalletId}`);
     },
@@ -6853,11 +6782,6 @@ export default {
   border-color: var(--border-card);
 }
 
-/* A request waiting for the user: the chat's open-request colours. */
-.to-pay-card {
-  background: var(--color-warn-soft);
-  border: 1.5px dashed var(--chat-warn-line);
-}
 
 .last-tx-icon {
   flex: 0 0 auto;
@@ -6916,7 +6840,6 @@ export default {
 .tx-badge-pos { background: #3B82F6; }
 .tx-badge-aux { background: #64748B; }
 .tx-badge-zap { background: #662482; }
-.tx-badge-request { background: var(--color-warn); color: var(--bg-card); }
 
 /* Nostr ostrich head, sized up for the same reason as in the history
    list: it is filled art, not a stroked glyph. This disc is the

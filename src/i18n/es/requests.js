@@ -54,6 +54,7 @@ export default {
   'To pay': 'Por pagar',
   'Your requests': 'Tus solicitudes',
   '{n} requests to pay': '{n} solicitudes por pagar',
+  'Send payment, a request is waiting': 'Enviar pago, hay una solicitud pendiente',
   'No requests yet': 'Todavía no hay solicitudes',
   'Ask one person or a few. See their payments here.':
     'Pide a una o varias personas. Ve sus pagos aquí.',

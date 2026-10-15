@@ -190,6 +190,23 @@
 
       <!-- ─────────────  METHOD ROWS  ───────────── -->
       <div v-if="showMethods" class="method-block">
+        <!-- A contact asked for money: the first row, marked by a dot like
+             the update row. One request opens its chat (Pay is there);
+             several open Requests. Hidden once nothing waits. -->
+        <template v-if="waitingRequests">
+          <button type="button" class="method-row" data-audit="send-requests" @click="openWaitingRequests">
+            <span class="method-icon method-icon--request">
+              <Icon icon="buho:request" width="20" height="20" />
+              <span class="method-dot" aria-hidden="true"></span>
+            </span>
+            <span class="method-text">
+              <span class="method-title">{{ waitingRequests.title }}</span>
+              <span class="method-sub">{{ waitingRequests.subtitle }}</span>
+            </span>
+            <Icon icon="tabler:chevron-right" width="16" height="16" class="method-chev" />
+          </button>
+          <div class="method-divider"></div>
+        </template>
         <button type="button" class="method-row" data-audit="send-mobile-money" @click="enterMobileMoney">
           <span class="method-icon">
             <Icon icon="tabler:device-mobile" width="20" height="20" />
@@ -391,6 +408,9 @@ import {
 import { resolveNostrLightningTarget, NOSTR_TARGET_ERROR } from '../services/nostrPaymentTarget';
 import { usernameAddressFromInput } from '../services/nip05';
 import ContactAvatar from './AddressBook/ContactAvatar.vue';
+import { useRequestsToPay } from '../composables/useRequests.js';
+import { contactChatRoute } from '../services/dm/routes.js';
+import { formatAmount } from '../utils/amountFormatting.js';
 import ArkadeLogo from './ArkadeLogo.vue';
 import ProgressCta from './ProgressCta.vue';
 
@@ -421,7 +441,7 @@ export default {
   setup() {
     const addressBookStore = useAddressBookStore();
     const walletStore = useWalletStore();
-    return { addressBookStore, walletStore };
+    return { addressBookStore, walletStore, requestsToPay: useRequestsToPay() };
   },
   data() {
     return {
@@ -654,6 +674,32 @@ export default {
     // any typing hands their space to the contact filter or the preview card.
     showMethods() {
       return !this.mobileMoneyMode && !(this.manualInput || '').trim();
+    },
+
+    /**
+     * The row for requests that wait for the user, or null. One request:
+     * "Lena requests" and its amount and note. Several: how many, and who.
+     * Amounts stay out while the balance is hidden.
+     */
+    waitingRequests() {
+      const requests = this.requestsToPay;
+      if (!requests.length) return null;
+      const firstName = (pubkey) => String(this.addressBookStore.findContactByPubkey(pubkey)?.name || '').trim().split(/\s+/)[0];
+      const amountOf = (sats) => (this.walletStore.balanceHidden ? '' : formatAmount(sats, this.walletStore.useBip177Format));
+      if (requests.length === 1) {
+        const [{ partner, request }] = requests;
+        return {
+          title: this.$t('{name} requests', { name: firstName(partner) }),
+          subtitle: [amountOf(request.amountSats), request.note || this.$t('Payment request')].filter(Boolean).join(' · '),
+        };
+      }
+      const names = [...new Set(requests.map((message) => firstName(message.partner)))];
+      return {
+        title: this.$t('{n} requests to pay', { n: requests.length }),
+        subtitle: names.length > 2
+          ? this.$t('{names} and {n} more', { names: names.slice(0, 2).join(', '), n: names.length - 2 })
+          : names.join(', '),
+      };
     },
 
     showContactsSection() {
@@ -1145,6 +1191,13 @@ export default {
     goToAddressBook() {
       this.show = false;
       this.$router.push('/address-book');
+    },
+
+    openWaitingRequests() {
+      const [first, ...rest] = this.requestsToPay;
+      const contact = first && this.addressBookStore.findContactByPubkey(first.partner);
+      this.show = false;
+      this.$router.push(contact && !rest.length ? contactChatRoute(contact.id) : '/requests');
     },
 
     onContactPicked(contact) {
@@ -1865,6 +1918,24 @@ export default {
   gap: 1px;
   min-width: 0;
   flex: 1;
+}
+
+.method-icon--request {
+  position: relative;
+  color: var(--brand-accent-text);
+}
+
+/* The update dot's anatomy: brand colour, a ring in the surface colour. */
+.method-dot {
+  position: absolute;
+  top: -3px;
+  right: -3px;
+  width: 11px;
+  height: 11px;
+  border: 2px solid var(--bg-card);
+  border-radius: 50%;
+  background: var(--brand-accent);
+  box-sizing: border-box;
 }
 
 .method-title {

@@ -541,7 +541,7 @@ try {
     .filter({ hasText: 'Weekend cabin' })
   assert.ok(!(await card.innerText()).includes('Carol'))
   assert.equal(await bob.page.locator('.chat-goal-progress').count(), 0)
-  // Bob is told a request waits: under Requests, "To pay", and on his home.
+  // Bob is told a request waits: under Requests, "To pay", and by a dot on Send.
   await navigate(bob.page, '/requests')
   await bob.page.getByRole('heading', { name: 'To pay' }).waitFor()
   await bob.page
@@ -550,9 +550,14 @@ try {
     .waitFor()
   await snap(bob, '05b-to-pay-list')
   await navigate(bob.page, '/wallet')
-  const waiting = bob.page.locator('.to-pay-card')
-  await waiting.getByText('Alice requests', { exact: true }).waitFor()
+  const send = bob.page.locator('[data-audit="fab-send"]')
+  await send.locator('.action-dot').waitFor()
+  assert.equal(await send.getAttribute('aria-label'), 'Send payment, a request is waiting')
   await snap(bob, '05c-home-request-waiting')
+  await send.click()
+  const waiting = bob.page.locator('[data-audit="send-requests"]')
+  await waiting.getByText('Alice requests', { exact: true }).waitFor()
+  await snap(bob, '05d-send-request-waiting')
   await waiting.click()
   await bob.page.locator('.chat-header').waitFor()
   await card.getByRole('button', { name: 'Pay', exact: true }).click()
@@ -572,7 +577,7 @@ try {
   )
   await navigate(bob.page, '/wallet')
   await bob.page.locator('.history-link').waitFor()
-  assert.equal(await bob.page.locator('.to-pay-card').count(), 0)
+  assert.equal(await bob.page.locator('[data-audit="fab-send"] .action-dot').count(), 0)
   await alice.page.getByText('1 of 3 paid', { exact: true }).waitFor()
   await snap(alice, '06b-nwc-verified-progress')
   for (const payer of [carol, dave]) {

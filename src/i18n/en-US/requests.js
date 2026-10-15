@@ -53,6 +53,7 @@ export default {
   'To pay': 'To pay',
   'Your requests': 'Your requests',
   '{n} requests to pay': '{n} requests to pay',
+  'Send payment, a request is waiting': 'Send payment, a request is waiting',
   'No requests yet': 'No requests yet',
   'Ask one person or a few. See their payments here.':
     'Ask one person or a few. See their payments here.',
