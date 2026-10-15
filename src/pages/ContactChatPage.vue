@@ -239,7 +239,7 @@ import MoneyBar from '../components/chat/MoneyBar.vue'
 import Composer from '../components/chat/Composer.vue'
 import RequestSheet from '../components/chat/RequestSheet.vue'
 import { requestIdsOf } from '../services/dm/requestGoals.js'
-import { useRequestGoals } from '../composables/useRequestGoals.js'
+import { useRequests } from '../composables/useRequests.js'
 import UnknownSenderBanner from '../components/chat/UnknownSenderBanner.vue'
 import SignerAppNotice from '../components/chat/SignerAppNotice.vue'
 import ContactAvatar from '../components/AddressBook/ContactAvatar.vue'
@@ -292,7 +292,7 @@ export default {
     const walletStore = useWalletStore()
     const profile = useProfileStore()
     const runtime = useChatRuntime()
-    const goalViews = useRequestGoals()
+    const goalViews = useRequests()
     const goalForRequest = id => goalViews.goals.value.find(goal => goal.shares.some(share => requestIdsOf(share).includes(id)))
 
     // Who the chat is with. `/address-book/:id/chat` names a contact,

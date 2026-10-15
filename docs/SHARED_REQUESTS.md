@@ -27,7 +27,8 @@ an assigned amount.
 - `RequestMoneyFlow.vue`: identity capture, navigation, address setup and contact saving.
 - `services/dm/requestGoals.js`: validated private manifests and resumable sending.
 - `stores/messages.js`: encrypted, identity-scoped persistence and protected request history.
-- `useRequestGoals.js` and `RequestGoalsPage.vue`: derived progress from the chat's ledger.
+- `useRequests.js` and `RequestGoalsPage.vue`: the Requests page, derived from the chat's ledger.
+- `stores/messages.js` `requestsToPay`: the one rule for a request that waits for the user.
 
 The interface follows Apple's guidance for [segmented controls](https://developer.apple.com/design/human-interface-guidelines/segmented-controls),
 [entering data](https://developer.apple.com/design/human-interface-guidelines/entering-data),
@@ -37,6 +38,26 @@ two related choices in one sheet, labeled numeric fields, automatic totals,
 one primary action, explicit Back and Close navigation, and 44px input targets.
 The existing Quasar/Capacitor UI, icons, themes, safe-area values and payment
 confirmation pipeline are reused. English, German and Spanish are translated.
+
+## Requests that need the user
+
+A request waits for the user while a saved contact's request is not paid,
+declined, cancelled or expired (`requestsToPay`). Strangers and blocked
+senders never count; their requests stay in Messages, as their messages do.
+Following Apple's guidance on [badges](https://developer.apple.com/design/human-interface-guidelines/notifications#Badges)
+and [lists](https://developer.apple.com/design/human-interface-guidelines/lists-and-tables),
+the signal only appears while there is something to act on and leads
+straight to it:
+
+- Home: one card above the last transaction, in the chat's open-request
+  colours. One request reads "Anna requests" and opens that chat, where Pay
+  is; several read "3 requests to pay" and open the Requests page. Muted
+  chats stay quiet, amounts follow Hide balance, and the card disappears as
+  soon as nothing waits.
+- Receive → Requests: "To pay" first, then everything the user asked for:
+  goals and requests sent from inside a chat. One person opens the chat,
+  several open their progress.
+- The existing message notification still announces each new request.
 
 ## Delivery and persistence
 
@@ -115,6 +136,10 @@ Screenshots from the native browser review (test identities and amounts):
 | --- | --- |
 | ![Verified progress](images/shared-requests/progress.png) | ![Repayment](images/shared-requests/repayment.png) |
 
-| One person |
+| One person | A request waits on the home |
+| --- | --- |
+| ![One person](images/shared-requests/one-person.png) | ![A request waits](images/shared-requests/home-request.png) |
+
+| Requests, including ones sent from a chat |
 | --- |
-| ![One person](images/shared-requests/one-person.png) |
+| ![Requests](images/shared-requests/requests-list.png) |

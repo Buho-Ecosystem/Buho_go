@@ -560,6 +560,24 @@ export const useMessagesStore = defineStore('messages', {
       return null
     },
 
+    /**
+     * Requests that wait for the user, oldest first: money a contact asked for
+     * that is not paid, declined, cancelled or expired. Strangers and blocked
+     * senders stay out (strangers light no badge; they wait in Messages).
+     */
+    requestsToPay(state) {
+      const now = deps.now()
+      const open = []
+      for (const [partner, thread] of Object.entries(state.threads)) {
+        if (!deps.isKnownContact(partner) || state.blocked.includes(partner)) continue
+        const states = deriveRequestStates(thread.messages, now, state.ownPayments)
+        for (const m of thread.messages) {
+          if (m.type === MESSAGE_TYPE.REQUEST && !m.outgoing && states.get(m.id) === REQUEST_STATE.PENDING) open.push(m)
+        }
+      }
+      return open.sort((a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id))
+    },
+
     /** Requests the partner sent that can still be paid, oldest first. */
     pendingRequestsFrom: state => (partner, now = deps.now()) => {
       const thread = state.threads[hexKey(partner)]

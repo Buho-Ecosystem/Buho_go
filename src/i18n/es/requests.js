@@ -36,7 +36,6 @@ export default {
   'View repayment': 'Ver reembolso',
   'View progress': 'Ver progreso',
   Requests: 'Solicitudes',
-  Request: 'Solicitud',
   'Request to {n} people': 'Solicitud a {n} personas',
   'Request to {name}': 'Solicitud a {name}',
   'of {amount} received': 'de {amount} recibidos',
@@ -52,6 +51,9 @@ export default {
     'Cada persona tiene una solicitud en vuestro chat privado.',
   'Try sending the request to {name} again':
     'Volver a enviar la solicitud a {name}',
+  'To pay': 'Por pagar',
+  'Your requests': 'Tus solicitudes',
+  '{n} requests to pay': '{n} solicitudes por pagar',
   'No requests yet': 'Todavía no hay solicitudes',
   'Ask one person or a few. See their payments here.':
     'Pide a una o varias personas. Ve sus pagos aquí.',

@@ -345,6 +345,24 @@ export const requestIdsOf = (share) => [
   ...(share.previousRequests || []).map((attempt) => attempt.requestId)
 ]
 
+/**
+ * A request sent from inside a chat, shaped as a one-person goal, so the
+ * Requests page lists and derives it like every other request.
+ */
+export function chatRequestGoal(message) {
+  const { amountSats, note } = message.request
+  return {
+    id: message.id,
+    createdAt: message.createdAt,
+    note: note || '',
+    totalSats: amountSats,
+    ownSats: 0,
+    shares: [
+      { pubkey: message.partner, name: '', amountSats, requestId: message.id }
+    ]
+  }
+}
+
 /** One compact view model; only verified settlements contribute to progress. */
 export function requestGoalProgress(
   goal,

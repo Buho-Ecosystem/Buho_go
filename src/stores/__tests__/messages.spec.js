@@ -471,6 +471,19 @@ test('pendingRequestsFrom lists only open incoming requests', async () => {
   assert.deepEqual(store.pendingRequestsFrom(BOB, 2000), [])
 })
 
+test('requestsToPay: open requests from contacts, oldest first; strangers and blocked senders stay out', async () => {
+  const store = await scoped()
+  const later = IN({ createdAt: 1005 })
+  const first = IN({ createdAt: 1000 })
+  const cancelled = IN({ createdAt: 1001 })
+  const stranger = requestMsg(BOB, { createdAt: 999 })
+  for (const m of [later, first, cancelled, OUT({ createdAt: 1003 }), stranger]) store.ingest(m)
+  store.ingest(statusMsg(ALICE, cancelled.id, 'cancelled', { createdAt: 1010 }))
+  assert.deepEqual(store.requestsToPay.map(m => m.id), [first.id, later.id])
+  store.block(ALICE)
+  assert.deepEqual(store.requestsToPay, [])
+})
+
 // ----- blocking, lists -----------------------------------------------------
 
 test('block changes: only the latest change per key is kept until the mute list saves it', async () => {

@@ -35,7 +35,6 @@ export default {
   'View repayment': 'View repayment',
   'View progress': 'View progress',
   Requests: 'Requests',
-  Request: 'Request',
   'Request to {n} people': 'Request to {n} people',
   'Request to {name}': 'Request to {name}',
   'of {amount} received': 'of {amount} received',
@@ -51,6 +50,9 @@ export default {
     'Each person has a request in your private chat.',
   'Try sending the request to {name} again':
     'Try sending the request to {name} again',
+  'To pay': 'To pay',
+  'Your requests': 'Your requests',
+  '{n} requests to pay': '{n} requests to pay',
   'No requests yet': 'No requests yet',
   'Ask one person or a few. See their payments here.':
     'Ask one person or a few. See their payments here.',

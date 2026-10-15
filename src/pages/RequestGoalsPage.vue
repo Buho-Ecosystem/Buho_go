@@ -80,16 +80,15 @@
               class="request-goals__person-main"
               type="button"
               :disabled="!share.hasMessage"
-              :aria-label="
-                $t('Open chat with {name}', {
-                  name: share.name || shortName(share.pubkey)
-                })
-              "
-              @click="openChat(share)"
+              :aria-label="$t('Open chat with {name}', { name: shareName(share) })"
+              @click="openChat(share.pubkey)"
             >
-              <ContactAvatar :entry="contact(share) || {}" :name="share.name" />
+              <ContactAvatar
+                :entry="contactOf(share.pubkey) || {}"
+                :name="shareName(share)"
+              />
               <span class="request-goals__names"
-                ><strong>{{ share.name || shortName(share.pubkey) }}</strong
+                ><strong>{{ shareName(share) }}</strong
                 ><small
                   :class="{ 'request-goals__paid': share.state === 'paid' }"
                   >{{ $t(stateLabels[share.state] || 'Requested') }}</small
@@ -112,7 +111,7 @@
               :disabled="busy.has(share.requestId)"
               :aria-label="
                 $t('Try sending the request to {name} again', {
-                  name: share.name || shortName(share.pubkey)
+                  name: shareName(share)
                 })
               "
               @click="retry(share)"
@@ -137,43 +136,102 @@
     </template>
     <template v-else-if="!detailId">
       <div class="request-goals__body request-goals__list">
-        <button
-          v-for="item in goals"
-          :key="item.id"
-          class="request-goals__list-row"
-          type="button"
-          @click="
-            $router.push({ name: 'request-goal', params: { goalId: item.id } })
-          "
+        <section v-if="toPay.length" :aria-labelledby="toPayId">
+          <h2 :id="toPayId" class="request-goals__section">
+            {{ $t('To pay') }}
+          </h2>
+          <button
+            v-for="request in toPay"
+            :key="request.id"
+            class="request-goals__list-row"
+            type="button"
+            @click="openChat(request.partner)"
+          >
+            <ContactAvatar
+              :entry="contactOf(request.partner) || {}"
+              :name="nameOf(request.partner)"
+            />
+            <span class="request-goals__names"
+              ><strong>{{
+                $t('{name} requests', { name: nameOf(request.partner) })
+              }}</strong
+              ><small>{{
+                request.request.note || $t('Payment request')
+              }}</small></span
+            >
+            <span class="request-goals__list-amount">{{
+              money(request.request.amountSats)
+            }}</span
+            ><Icon icon="tabler:chevron-right" width="16" height="16" />
+          </button>
+        </section>
+        <section
+          v-if="outgoing.length"
+          :aria-labelledby="toPay.length ? outgoingId : undefined"
         >
-          <span class="request-goals__list-icon"
-            ><Icon
-              :icon="item.complete ? 'tabler:circle-check' : 'buho:request'"
-              width="22"
-              height="22"
-          /></span>
-          <span class="request-goals__names"
-            ><strong>{{ title(item) }}</strong
-            ><small>{{
-              $t('{n} of {total} paid', {
-                n: item.paidCount,
-                total: item.shares.length
-              })
-            }}</small
-            ><span class="request-goals__mini-bar"
-              ><span
-                :style="{
-                  width: `${(item.receivedSats / item.collectSats) * 100}%`
-                }" /></span
-          ></span>
-          <span class="request-goals__list-amount"
-            >{{ money(item.receivedSats)
-            }}<small>{{
-              $t('of {amount}', { amount: money(item.collectSats) })
-            }}</small></span
-          ><Icon icon="tabler:chevron-right" width="16" height="16" />
-        </button>
-        <div v-if="!goals.length" class="request-goals__empty">
+          <h2 v-if="toPay.length" :id="outgoingId" class="request-goals__section">
+            {{ $t('Your requests') }}
+          </h2>
+          <button
+            v-for="item in outgoing"
+            :key="item.id"
+            class="request-goals__list-row"
+            type="button"
+            @click="openRequest(item)"
+          >
+            <template v-if="item.shares.length === 1">
+              <ContactAvatar
+                :entry="contactOf(item.shares[0].pubkey) || {}"
+                :name="shareName(item.shares[0])"
+              />
+              <span class="request-goals__names"
+                ><strong>{{ shareName(item.shares[0]) }}</strong
+                ><small
+                  :class="{
+                    'request-goals__paid': item.shares[0].state === 'paid'
+                  }"
+                  >{{ singleStatus(item) }}</small
+                ></span
+              >
+              <span class="request-goals__list-amount">{{
+                money(item.collectSats)
+              }}</span>
+            </template>
+            <template v-else>
+              <span class="request-goals__list-icon"
+                ><Icon
+                  :icon="item.complete ? 'tabler:circle-check' : 'buho:request'"
+                  width="22"
+                  height="22"
+              /></span>
+              <span class="request-goals__names"
+                ><strong>{{ title(item) }}</strong
+                ><small>{{
+                  $t('{n} of {total} paid', {
+                    n: item.paidCount,
+                    total: item.shares.length
+                  })
+                }}</small
+                ><span class="request-goals__mini-bar"
+                  ><span
+                    :style="{
+                      width: `${(item.receivedSats / item.collectSats) * 100}%`
+                    }" /></span
+              ></span>
+              <span class="request-goals__list-amount"
+                >{{ money(item.receivedSats)
+                }}<small>{{
+                  $t('of {amount}', { amount: money(item.collectSats) })
+                }}</small></span
+              >
+            </template>
+            <Icon icon="tabler:chevron-right" width="16" height="16" />
+          </button>
+        </section>
+        <div
+          v-if="!toPay.length && !outgoing.length"
+          class="request-goals__empty"
+        >
           <Icon icon="buho:request" width="32" height="32" />
           <h2>{{ $t('No requests yet') }}</h2>
           <p>{{ $t('Ask one person or a few. See their payments here.') }}</p>
@@ -208,7 +266,7 @@
 import { computed, getCurrentInstance, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Icon } from '@iconify/vue'
-import { useRequestGoals } from '../composables/useRequestGoals.js'
+import { useRequests } from '../composables/useRequests.js'
 import { useAddressBookStore } from '../stores/addressBook.js'
 import { useWalletStore } from '../stores/wallet.js'
 import { describeDmError } from '../composables/useContactChat.js'
@@ -223,7 +281,9 @@ const route = useRoute(),
   router = useRouter(),
   wallets = useWalletStore(),
   addressBook = useAddressBookStore()
-const { goals, goalFor, runtime, ready } = useRequestGoals()
+const { outgoing, toPay, goalFor, runtime, ready } = useRequests()
+const toPayId = `request-goals-to-pay-${proxy.$.uid}`
+const outgoingId = `request-goals-outgoing-${proxy.$.uid}`
 const detailId = computed(() =>
   typeof route.params.goalId === 'string' ? route.params.goalId : ''
 )
@@ -244,15 +304,20 @@ const stateLabels = {
 }
 const money = (amount) =>
   formatSats(amount, wallets.useBip177Format !== false, proxy.$i18n.locale)
+const shortName = (pubkey) => `${pubkey.slice(0, 8)}…`
+const contactOf = (pubkey) => addressBook.findContactByPubkey(pubkey)
+const nameOf = (pubkey) => contactOf(pubkey)?.name || shortName(pubkey)
+const shareName = (share) => share.name || nameOf(share.pubkey)
 const title = (item) =>
   item.note ||
   (item.shares.length === 1
-    ? t('Request to {name}', {
-        name: item.shares[0].name || shortName(item.shares[0].pubkey)
-      })
+    ? t('Request to {name}', { name: shareName(item.shares[0]) })
     : t('Request to {n} people', { n: item.shares.length }))
-const shortName = (pubkey) => `${pubkey.slice(0, 8)}…`
-const contact = (share) => addressBook.findContactByPubkey(share.pubkey)
+/** One person: their note and where the request stands, in one line. */
+const singleStatus = (item) =>
+  [item.note, t(stateLabels[item.shares[0].state] || 'Requested')]
+    .filter(Boolean)
+    .join(' · ')
 const deliveryError = (share) =>
   describeDmError(new DmError(share.errorCode, 'request delivery failed'), {
     t,
@@ -265,11 +330,14 @@ function back() {
   if (window.history.state?.back) router.back()
   else router.replace(detailId.value ? '/requests' : '/wallet')
 }
-function openChat(share) {
-  const found = contact(share)
-  router.push(
-    found ? contactChatRoute(found.id) : unknownChatRoute(share.pubkey)
-  )
+function openChat(pubkey) {
+  const found = contactOf(pubkey)
+  router.push(found ? contactChatRoute(found.id) : unknownChatRoute(pubkey))
+}
+/** One person: the chat where the request lives. Several: their progress. */
+function openRequest(item) {
+  if (item.shares.length === 1) openChat(item.shares[0].pubkey)
+  else router.push({ name: 'request-goal', params: { goalId: item.id } })
 }
 async function retry(share) {
   if (busy.has(share.requestId)) return
@@ -491,6 +559,17 @@ async function retry(share) {
   color: var(--text-primary);
   text-align: left;
   cursor: pointer;
+}
+.request-goals__section {
+  margin: 20px 0 2px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+.request-goals__list-row :deep(.contact-avatar) {
+  width: 42px;
+  height: 42px;
+  flex-shrink: 0;
 }
 .request-goals__list-icon {
   width: 42px;

@@ -35,7 +35,6 @@ export default {
   'View repayment': 'Rückzahlung ansehen',
   'View progress': 'Fortschritt ansehen',
   Requests: 'Anfragen',
-  Request: 'Anfrage',
   'Request to {n} people': 'Anfrage an {n} Personen',
   'Request to {name}': 'Anfrage an {name}',
   'of {amount} received': 'von {amount} erhalten',
@@ -50,6 +49,9 @@ export default {
   'Each person has a request in your private chat.':
     'Jede Person hat eine Anfrage in eurem privaten Chat.',
   'Try sending the request to {name} again': 'Anfrage erneut an {name} senden',
+  'To pay': 'Zu bezahlen',
+  'Your requests': 'Deine Anfragen',
+  '{n} requests to pay': '{n} offene Anfragen an dich',
   'No requests yet': 'Noch keine Anfragen',
   'Ask one person or a few. See their payments here.':
     'Frage eine oder mehrere Personen. Ihre Zahlungen siehst du hier.',

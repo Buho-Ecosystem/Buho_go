@@ -541,6 +541,20 @@ try {
     .filter({ hasText: 'Weekend cabin' })
   assert.ok(!(await card.innerText()).includes('Carol'))
   assert.equal(await bob.page.locator('.chat-goal-progress').count(), 0)
+  // Bob is told a request waits: under Requests, "To pay", and on his home.
+  await navigate(bob.page, '/requests')
+  await bob.page.getByRole('heading', { name: 'To pay' }).waitFor()
+  await bob.page
+    .locator('.request-goals__list-row')
+    .filter({ hasText: 'Alice requests' })
+    .waitFor()
+  await snap(bob, '05b-to-pay-list')
+  await navigate(bob.page, '/wallet')
+  const waiting = bob.page.locator('.to-pay-card')
+  await waiting.getByText('Alice requests', { exact: true }).waitFor()
+  await snap(bob, '05c-home-request-waiting')
+  await waiting.click()
+  await bob.page.locator('.chat-header').waitFor()
   await card.getByRole('button', { name: 'Pay', exact: true }).click()
   await bob.page.getByText('Pay with', { exact: true }).waitFor()
   await bob.page.getByRole('button', { name: /Pay with/ }).click()
@@ -556,6 +570,9 @@ try {
     1,
     'the real NWC send service paid exactly once'
   )
+  await navigate(bob.page, '/wallet')
+  await bob.page.locator('.history-link').waitFor()
+  assert.equal(await bob.page.locator('.to-pay-card').count(), 0)
   await alice.page.getByText('1 of 3 paid', { exact: true }).waitFor()
   await snap(alice, '06b-nwc-verified-progress')
   for (const payer of [carol, dave]) {
@@ -730,9 +747,32 @@ try {
   await alice.page
     .locator('.request-goals__list-row')
     .filter({ hasText: 'Concert ticket' })
-    .getByText('1 of 1 paid', { exact: true })
+    .getByText('Concert ticket · Paid', { exact: true })
     .waitFor()
   await snap(alice, '15-requests-list')
+
+  // A request sent from inside a chat is listed too, and opens that chat.
+  await openChatFromAddressBook(alice, 'Carol')
+  await alice.page.getByRole('button', { name: 'Request', exact: true }).click()
+  const sheet = alice.page.locator('.request-sheet')
+  for (const key of ['2', '000'])
+    await sheet
+      .locator('.amount-keypad__key')
+      .getByText(key, { exact: true })
+      .click()
+  await sheet.locator('.request-sheet__add-note').click()
+  await sheet.getByRole('textbox', { name: 'Note (optional)' }).fill('Taxi')
+  await sheet.locator('.request-sheet__cta').click()
+  await sheet.waitFor({ state: 'hidden' })
+  await alice.page.locator('.request-card').filter({ hasText: 'Taxi' }).waitFor()
+  await navigate(alice.page, '/requests')
+  const taxi = alice.page
+    .locator('.request-goals__list-row')
+    .filter({ hasText: 'Taxi' })
+  await taxi.getByText('Taxi · Requested', { exact: true }).waitFor()
+  await snap(alice, '16-chat-request-listed')
+  await taxi.click()
+  await alice.page.locator('.chat-header').waitFor()
   assert.equal(pageErrors.length, 0, pageErrors.join('\n'))
   console.log(
     'Shared requests: one person and several, equal/individual entry, private delivery, NWC/Spark payments, progress, repayment, restart, locales and small screens passed.'

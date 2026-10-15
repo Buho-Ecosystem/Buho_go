@@ -3,11 +3,16 @@ import assert from 'node:assert/strict'
 import { createPinia, setActivePinia } from 'pinia'
 import { createRumor, getPublicKey } from 'nostr-core'
 import {
+  chatRequestGoal,
   createRequestGoalService,
   normalizeRequestGoal,
   requestGoalProgress
 } from '../requestGoals.js'
-import { parseRumor, buildPaymentTemplate } from '../protocol.js'
+import {
+  parseRumor,
+  buildPaymentTemplate,
+  buildRequestTemplate
+} from '../protocol.js'
 import { DmError, DM_ERROR } from '../errors.js'
 import {
   matchIncomingPayments,
@@ -420,4 +425,36 @@ test('NWC-style hash-only payment messages round trip without affecting older pa
     ),
     false
   )
+})
+
+test('a request sent from a chat reads as a one-person goal, paid only once verified', () => {
+  const message = parseRumor(
+    createRumor(
+      buildRequestTemplate({
+        recipient: PEOPLE[0].pubkey,
+        amountSats: 2_000,
+        lud16: 'me@example.org',
+        note: 'Taxi',
+        now: () => 1_000
+      }),
+      ME
+    ),
+    { me: ME }
+  )
+  const view = (state, settlement) =>
+    requestGoalProgress(chatRequestGoal(message), {
+      messageFor: () => ({ ...message, delivery: 'sent' }),
+      stateFor: () => state,
+      settlementFor: () => settlement
+    })
+  const open = view('pending', null)
+  assert.equal(open.id, message.id)
+  assert.equal(open.note, 'Taxi')
+  assert.equal(open.collectSats, 2_000)
+  assert.deepEqual(
+    open.shares.map((share) => [share.pubkey, share.state]),
+    [[PEOPLE[0].pubkey, 'pending']]
+  )
+  assert.equal(view('paid', null).shares[0].state, 'checking')
+  assert.equal(view('paid', { verified: true }).complete, true)
 })
