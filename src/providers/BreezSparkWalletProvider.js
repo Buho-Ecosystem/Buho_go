@@ -60,6 +60,7 @@ import {
 } from '../utils/breezPayments.js';
 import { sparkHealth } from '../utils/sparkHealth.js';
 import { counterpartyError } from '../utils/errorOrigin.js';
+import { classifyTransportFailure } from '../utils/userErrors.js';
 
 /**
  * One fresh synchronization per SDK instance at a time. Keyed by the SDK
@@ -946,6 +947,9 @@ export class BreezSparkWalletProvider extends WalletProvider {
       });
       return { estimatedFeeSats: routeFee, invoice: cleanInvoice };
     } catch (error) {
+      // Nothing reached Spark: there is no fee to tell, and the payment
+      // cannot go through either. The caller says so instead of a guess.
+      if (classifyTransportFailure(error?.message || String(error)) === 'offline') throw error;
       // Fallback chain: invoice amount, then the caller's hint, then an
       // assumed 10k sats — so a zero-amount invoice never yields a 5-sat
       // percentage-floor cap that would block the eventual send.

@@ -1,5 +1,10 @@
 import { boot } from 'quasar/wrappers'
-import { Icon, addIcon } from '@iconify/vue'
+// Resolves to the offline build (quasar.config.js): icons come only from
+// the sets added here, never from the network.
+import { Icon, addIcon, addCollection } from '@iconify/vue'
+import tabler from '@iconify-json/tabler/icons.json'
+
+addCollection(tabler)
 
 /**
  * BuhoGO's own icons, drawn on the same 24px grid and 2px stroke as the

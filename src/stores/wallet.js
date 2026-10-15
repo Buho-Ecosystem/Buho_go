@@ -176,11 +176,14 @@ import { isActive as isActiveExit } from '../utils/exitLedger.js';
 import { isWalletBackedUp } from '../utils/backupStatus.js';
 import {
   buildPaymentError,
+  classifyTransportFailure,
   getUnsupportedBolt12OfferCopy,
   getUnsupportedSilentPaymentCopy,
   getUserFriendlyError,
   getUserFriendlyErrorMessage,
+  unreachableReason,
 } from '../utils/userErrors';
+import { diagnoseConnection } from '../utils/connectivity.js';
 import * as deviceCrypto from '../utils/deviceCrypto';
 import { clearCachedTransactions } from '../utils/txCache.js';
 import { i18n } from '../boot/i18n';
@@ -873,15 +876,28 @@ export const useWalletStore = defineStore('wallet', {
      *                                  amountSats, t).
      */
     showPaymentError(error, ctx = {}) {
-      const built = buildPaymentError(error, ctx, ctx.t || null);
+      const t = ctx.t || ((key) => key);
+      const built = buildPaymentError(error, ctx, t);
+      // No server answered: say whether the phone is offline, its network
+      // has no internet, or only that service is down. A caller's own
+      // reason still wins.
+      const unreachable = !ctx.reason && classifyTransportFailure(built.technical.raw) === 'offline';
       this.paymentError = {
         visible: true,
         title: built.title,
-        reason: built.reason,
+        reason: unreachable ? t('Checking your connection...') : built.reason,
         reasonSource: built.reasonSource,
         reasonAttribution: built.reasonAttribution,
         technical: built.technical,
       };
+      if (unreachable) this._explainUnreachable(this.paymentError, t);
+    },
+
+    async _explainUnreachable(shown, t) {
+      const kind = await diagnoseConnection();
+      // Only while the same error is still on screen.
+      if (this.paymentError !== shown) return;
+      this.paymentError = { ...shown, reason: unreachableReason(kind, shown.technical.raw, t) };
     },
 
     /**

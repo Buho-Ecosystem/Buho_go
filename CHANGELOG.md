@@ -45,6 +45,9 @@ Still on a BuhoGO from GitHub or Zapstore older than 1.9.1? It was signed with a
 - Fixed Between you on a contact's page staying empty after a cold start, or showing the previous contact's payments.
 - Fixed the Onboarding Guide in About not opening, and a wallet renamed in Settings not being saved.
 - Fixed German and Spanish texts: the About door in the menu read "About you", and the start-up text stayed in English.
+- Fixed the payment sheet trapping you when the phone had no connection: Android's Back button and a swipe down now close it, like the arrow at its top left.
+- Icons ship with the app, so they show without internet. They were loaded from another server at every start, and without a connection buttons such as Back showed up empty.
+- When a payment reaches no server, BuhoGO says why: you're offline, the network has no internet (a VPN that blocks traffic, for example), or Spark can't be reached while the internet works. The payment sheet says so before you send and shows no guessed network fee.
 
 ## [1.10.0]
 
