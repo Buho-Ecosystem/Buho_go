@@ -29,8 +29,8 @@ export default {
   '{n} people selected': '{n} Personen ausgewählt',
   'Choose up to {n} people.': 'Bis zu {n} Personen auswählen.',
   'Sending requests…': 'Anfragen werden gesendet…',
-  'Your request could not be saved. Try again.':
-    'Deine Anfrage konnte nicht gespeichert werden. Versuche es erneut.',
+  'Could not save on this device. Try again.':
+    'Konnte auf diesem Gerät nicht gespeichert werden. Versuche es erneut.',
   'Request repayment': 'Rückzahlung anfragen',
   'View repayment': 'Rückzahlung ansehen',
   'View progress': 'Fortschritt ansehen',

@@ -246,7 +246,7 @@ export function describeDmError(error, { t, name = '' }) {
   let message;
   switch (code) {
     case DM_ERROR.STORAGE_UNAVAILABLE:
-      message = t('Your request could not be saved. Try again.');
+      message = t('Could not save on this device. Try again.');
       break;
     case DM_ERROR.NO_INBOX_RELAYS:
       return {

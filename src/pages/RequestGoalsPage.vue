@@ -4,14 +4,8 @@
       <button type="button" :aria-label="$t('Back')" @click="back">
         <Icon icon="tabler:chevron-left" width="20" height="20" />
       </button>
-      <h1>{{ $t(detailId ? 'Request' : 'Requests') }}</h1>
-      <button
-        type="button"
-        :aria-label="$t('Close')"
-        @click="$router.push('/wallet')"
-      >
-        <Icon icon="tabler:x" width="20" height="20" />
-      </button>
+      <h1>{{ $t(detailId ? 'Payment request' : 'Requests') }}</h1>
+      <span aria-hidden="true" />
     </header>
     <div
       v-if="!ready"
@@ -140,15 +134,6 @@
           {{ $t('Each person has a request in your private chat.') }}
         </p>
       </div>
-      <footer class="request-goals__footer">
-        <button
-          class="request-goals__done"
-          type="button"
-          @click="$router.push('/wallet')"
-        >
-          {{ $t('Done') }}
-        </button>
-      </footer>
     </template>
     <template v-else-if="!detailId">
       <div class="request-goals__body request-goals__list">
@@ -275,8 +260,10 @@ const deliveryError = (share) =>
   }).message
 const goalError = (code) =>
   describeDmError(new DmError(code, 'request sending failed'), { t }).message
+// Back returns to where the page was opened from (chat, receipt, list, wallet).
 function back() {
-  router.push(detailId.value ? '/requests' : '/wallet')
+  if (window.history.state?.back) router.back()
+  else router.replace(detailId.value ? '/requests' : '/wallet')
 }
 function openChat(share) {
   const found = contact(share)

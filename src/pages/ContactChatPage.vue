@@ -138,7 +138,7 @@
           </p>
         </template>
         <template #request-footer="{ request }">
-          <button v-if="request.outgoing && goalForRequest(request.id)" type="button" class="chat-goal-progress"
+          <button v-if="request.outgoing && goalForRequest(request.id)?.shares.length > 1" type="button" class="chat-goal-progress"
             @click="$router.push({ name: 'request-goal', params: { goalId: goalForRequest(request.id).id } })">
             <span>{{ $t('View progress') }} · {{ $t('{n} of {total} paid', { n: goalForRequest(request.id).paidCount, total: goalForRequest(request.id).shares.length }) }}</span>
             <Icon icon="tabler:chevron-right" width="14" height="14" />

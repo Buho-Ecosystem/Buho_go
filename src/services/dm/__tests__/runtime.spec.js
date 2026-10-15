@@ -946,6 +946,39 @@ test('without a preimage the amount and the time window decide; a wrong amount o
   assert.deepEqual(env.runtime.requestSettlement(message.id), { verified: true, walletId: 'w1', address: null });
 });
 
+test('a goal with one person keeps the chat rule; with several people the exact receipt is required', async () => {
+  const partners = () => new Map([
+    [ALICE, { status: 'found', relays: ALICE_RELAYS, checkedAt: 0 }],
+    [BOB, { status: 'found', relays: ALICE_RELAYS, checkedAt: 0 }],
+  ]);
+  const claimWithoutPreimage = async (env, requestId) => {
+    await env.transport.deliver(await wrapFor(aliceKey, buildStatusTemplate({
+      recipient: ME, requestId, value: 'paid', amountSats: 12_000, now: claimAt(NOW + 7_300),
+    })));
+    await flush();
+    env.incoming = [{ amountSats: 12_000, settledAt: NOW + 7_320, walletId: 'w1' }];
+    await env.runtime.settleClaims();
+  };
+
+  const one = await setup({ partners: partners() });
+  await one.runtime.createRequestGoal({ id: 'one-person', people: [{ pubkey: ALICE, name: 'Alice' }], totalSats: 12_000 });
+  await one.runtime.whenIdle();
+  await one.runtime.start();
+  const single = one.store.requestGoal('one-person').shares[0].requestId;
+  await claimWithoutPreimage(one, single);
+  assert.equal(one.runtime.requestSettlement(single).verified, true);
+
+  const several = await setup({ partners: partners() });
+  await several.runtime.createRequestGoal({
+    id: 'two-people', people: [{ pubkey: ALICE, name: 'Alice' }, { pubkey: BOB, name: 'Bob' }], totalSats: 24_000,
+  });
+  await several.runtime.whenIdle();
+  await several.runtime.start();
+  const shared = several.store.requestGoal('two-people').shares.find((share) => share.pubkey === ALICE).requestId;
+  await claimWithoutPreimage(several, shared);
+  assert.equal(several.runtime.requestSettlement(shared).verified, false);
+});
+
 test('a claim below the requested amount is not verified', async () => {
   const env = await setup();
   const message = await env.runtime.requestMoney(ALICE, { amountSats: 12_000 });

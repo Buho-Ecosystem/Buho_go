@@ -835,7 +835,9 @@ export function createChatRuntime(deps = {}) {
             // The amount and the time come from the request, never from the claim.
             const payment = { ...claim.payment, amountSats: request.request.amountSats };
             open.push({ partner, request, claim: { ...claim, payment, notBefore: request.createdAt,
-              requireProof: Boolean(store.requestGoalFor?.(request.id)) } });
+              // Several people often owe equal amounts at once: amount and time cannot tell them
+              // apart, so their claims need the exact receipt. One person keeps the chat's rule.
+              requireProof: (store.requestGoalFor?.(request.id)?.shares.length ?? 0) > 1 } });
           }
         }
         if (open.length === 0) return { settled, pending };

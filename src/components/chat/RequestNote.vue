@@ -75,9 +75,13 @@ function show() {
     sans-serif;
   cursor: pointer;
 }
-.request-note input:focus-visible,
+.request-note input:focus {
+  outline: none;
+  border-bottom-color: var(--brand-accent-text);
+  box-shadow: 0 1px 0 var(--brand-accent-text);
+}
 .request-note button:focus-visible {
-  outline: 2px solid var(--chat-focus, #2563eb);
+  outline: 2px solid var(--brand-accent-text);
   outline-offset: 2px;
 }
 </style>

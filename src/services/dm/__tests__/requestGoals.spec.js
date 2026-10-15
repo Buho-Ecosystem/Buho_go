@@ -182,6 +182,19 @@ test('storage failure publishes nothing and the same draft resumes after storage
     ids
   )
 })
+test('a goal is refused while this identity cannot be saved, and nothing is sent', async () => {
+  const canPersist = store.canPersist
+  store.canPersist = () => false
+  try {
+    await assert.rejects(
+      service.create(request()),
+      (error) => error.code === DM_ERROR.STORAGE_UNAVAILABLE
+    )
+    assert.equal(sent.length, 0)
+  } finally {
+    store.canPersist = canPersist
+  }
+})
 test('an identity switch during preflight never writes a goal into the next identity', async () => {
   const interrupted = createRequestGoalService({
     me: ME,

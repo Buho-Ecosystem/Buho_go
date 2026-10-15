@@ -673,10 +673,15 @@ export const useMessagesStore = defineStore('messages', {
       r.timer = deps.setTimer(() => { r.timer = null; this.flush() }, delay)
     },
 
+    /** Whether changes reach storage: false without an identity, or when its record could not be read. */
+    canPersist() {
+      return Boolean(this.scope) && runtime(this).persist
+    },
+
     /** Write pending changes now. Resolves true when nothing is left unsaved, false when the write failed. */
     async flush() {
       const r = runtime(this)
-      if (!r.persist || !this.scope) return false
+      if (!this.scope) return false
       if (r.timer !== null) { deps.clearTimer(r.timer); r.timer = null }
       const pubkey = this.scope
       if (pubkey && r.dirty && r.persist) {

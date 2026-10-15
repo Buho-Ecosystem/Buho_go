@@ -44,6 +44,7 @@ import { useAddressBookStore } from '../../stores/addressBook.js'
 import { useProfileStore } from '../../stores/profile.js'
 import { useWalletStore } from '../../stores/wallet.js'
 import { useMessagesStore } from '../../stores/messages.js'
+import { contactChatRoute, unknownChatRoute } from '../../services/dm/routes.js'
 
 const props = defineProps({
   modelValue: Boolean,
@@ -115,6 +116,7 @@ async function send(payload) {
     })
     if (runtime.me.value !== identity) return
     // Save new contacts only when their request reached the durable outbox.
+    const savedIds = new Map()
     for (const person of chosen) {
       if (person.contact || !person.profile) continue
       const share = messages
@@ -128,19 +130,29 @@ async function send(payload) {
         continue
       if (runtime.me.value !== identity) return
       try {
-        await addressBook.addNostrContact({
+        const entry = await addressBook.addNostrContact({
           pubkey: person.pubkey,
           npub: person.profile.npub,
           event: person.profile.event,
           relayHints: person.profile.relays,
           allowWithoutLightningAddress: true
         })
+        if (entry?.id) savedIds.set(person.pubkey, entry.id)
       } catch {
         /* The pubkey chat remains reachable when contact saving fails. */
       }
     }
     if (runtime.me.value !== identity) return
     emit('update:modelValue', false)
+    // One person: the request lives in your chat with them. Several: their progress.
+    if (chosen.length === 1) {
+      const [person] = chosen
+      const contactId = person.contact?.id || savedIds.get(person.pubkey)
+      await router.push(
+        contactId ? contactChatRoute(contactId) : unknownChatRoute(person.pubkey)
+      )
+      return
+    }
     await router.push({ name: 'request-goal', params: { goalId } })
   } catch (cause) {
     if (runtime.me.value !== identity) return

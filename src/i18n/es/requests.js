@@ -30,8 +30,8 @@ export default {
   '{n} people selected': '{n} personas seleccionadas',
   'Choose up to {n} people.': 'Elige hasta {n} personas.',
   'Sending requests…': 'Enviando solicitudes…',
-  'Your request could not be saved. Try again.':
-    'No se pudo guardar tu solicitud. Inténtalo de nuevo.',
+  'Could not save on this device. Try again.':
+    'No se pudo guardar en este dispositivo. Inténtalo de nuevo.',
   'Request repayment': 'Solicitar reembolso',
   'View repayment': 'Ver reembolso',
   'View progress': 'Ver progreso',

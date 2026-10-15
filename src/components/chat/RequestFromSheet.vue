@@ -285,6 +285,7 @@ onBeforeUnmount(cancelLookup);
   margin: 0 0 10px;
 }
 .request-from__tick {
+  margin-left: auto;
   width: 22px;
   height: 22px;
   border: 1px solid var(--border-card);
@@ -298,7 +299,9 @@ onBeforeUnmount(cancelLookup);
   border-color: var(--brand-accent-text);
   color: var(--bg-card);
 }
-.request-from__selected .request-from__avatar {
+/* Rows carry a trailing tick; the Recent faces have no row, so their ring shows the choice. */
+.request-from__person.request-from__selected .request-from__avatar {
+  border-radius: 50%;
   outline: 2px solid var(--brand-accent-text);
   outline-offset: 3px;
 }

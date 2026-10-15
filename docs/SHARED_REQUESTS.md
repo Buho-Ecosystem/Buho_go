@@ -4,7 +4,9 @@ Receive → Request and completed outgoing receipts → Request repayment use
 the same people picker and amount sheet. The requester chooses Equal shares
 or By amount, optionally adds a note, and sends. Each person receives an
 ordinary private request in their own chat; there is no group conversation,
-shared wallet, or disclosure of the other people's shares.
+shared wallet, or disclosure of the other people's shares. With one person,
+sending opens the chat with them, as a chat request always did; with several,
+their progress opens. Both appear under Receive → Requests.
 
 Equal shares divide a direct request's total among the chosen people. A
 repayment starts from the original recipient amount, excluding network fees,
@@ -63,14 +65,15 @@ sync and real Nostr groups remain separate work.
 
 ## Payment verification
 
-A payer's message alone never advances a goal. Equal amounts are common,
-so amount/time matching is insufficient for these requests. Their claims
-must match an exact payment hash/preimage in the requester's own incoming
-ledger, or a validated LUD-21 receipt from their payment address. Hash-only
+A payer's message alone never advances a goal. When a goal asks several
+people, equal amounts are common, so amount/time matching is insufficient.
+Their claims must match an exact payment hash/preimage in the requester's
+own incoming ledger, or a validated LUD-21 receipt from their payment
+address. A goal with one person follows the chat request rule below. Hash-only
 payment announcements support wallets that omit a preimage, including NWC.
 The optional `payment_hash` tag is additive to the existing protocol; older
 clients still read the amount, note and fallback text. Ordinary chat requests
-retain their existing amount/time fallback.
+and one-person goals retain their existing amount/time fallback.
 
 One receipt settles at most one request, including when two wallet connections
 expose the same transaction, or the same wallet serves different local identities. Unverified announcements show Checking payment
@@ -111,3 +114,7 @@ Screenshots from the native browser review (test identities and amounts):
 | Verified progress | Repayment from an outgoing transaction |
 | --- | --- |
 | ![Verified progress](images/shared-requests/progress.png) | ![Repayment](images/shared-requests/repayment.png) |
+
+| One person |
+| --- |
+| ![One person](images/shared-requests/one-person.png) |

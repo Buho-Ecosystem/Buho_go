@@ -142,7 +142,8 @@ export function createRequestGoalService({
   const renewing = new Map()
   async function durable() {
     assertUsable()
-    if ((await store.flush()) === false)
+    // A goal must survive a restart: refuse it while this identity cannot be saved.
+    if (store.canPersist?.() === false || (await store.flush()) === false)
       throw new DmError(
         DM_ERROR.STORAGE_UNAVAILABLE,
         'request storage unavailable'

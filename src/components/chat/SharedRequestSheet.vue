@@ -14,9 +14,9 @@
           :disabled="submitting"
           @click="$emit('back')"
         >
-          <Icon icon="tabler:chevron-left" width="18" height="18" />{{
+          <Icon icon="tabler:chevron-left" width="18" height="18" /><span>{{
             $t('People')
-          }}
+          }}</span>
         </button>
         <h2 :id="titleId">
           {{
@@ -50,13 +50,7 @@
             'shared-request__body--individual': draft.method === 'amounts'
           }"
         >
-          <button
-            class="shared-request__people"
-            type="button"
-            :disabled="submitting"
-            :aria-label="$t('Change people')"
-            @click="$emit('back')"
-          >
+          <div v-if="people.length > 1" class="shared-request__people">
             <span class="shared-request__faces" aria-hidden="true"
               ><ContactAvatar
                 v-for="person in people.slice(0, 4)"
@@ -66,7 +60,7 @@
                 :picture="person.profile?.picture || ''"
             /></span>
             <span>{{ peopleLabel }}</span>
-          </button>
+          </div>
           <div
             v-if="people.length > 1 || repayment || draft.method === 'amounts'"
             class="shared-request__methods"
@@ -106,9 +100,16 @@
               @edit="editTotal"
               @swap-unit="preserveTotal"
             >
-              <p class="shared-request__each">{{ eachLabel }}</p>
+              <p v-if="eachLabel" class="shared-request__each">{{ eachLabel }}</p>
               <p v-if="roundedShares" class="shared-request__rounding">
                 {{ roundedShares }}
+              </p>
+              <p
+                v-if="allocation.error && totalSats"
+                class="shared-request__feedback shared-request__feedback--error"
+                role="status"
+              >
+                {{ allocationMessage }}
               </p>
               <button
                 v-if="repayment"
@@ -129,18 +130,14 @@
                   :class="{ 'shared-request__switch--on': draft.includeSelf }"
                 />
               </button>
-              <RequestNote
-                v-model="draft.note"
-                :initially-open="draft.noteOpen"
+              <button
+                class="shared-request__address"
+                type="button"
                 :disabled="submitting"
-              />
-              <p
-                v-if="allocation.error && totalSats"
-                class="shared-request__feedback shared-request__feedback--error"
-                role="status"
+                @click="$emit('open-address')"
               >
-                {{ allocationMessage }}
-              </p>
+                {{ $t('Paid to {address}', { address }) }}
+              </button>
             </AmountKeypad>
           </div>
           <template v-else>
@@ -249,7 +246,7 @@
                 <strong>{{
                   draft.includeSelf
                     ? allocation.error
-                      ? '—'
+                      ? '--'
                       : money(allocation.ownSats)
                     : ''
                 }}</strong>
@@ -267,25 +264,25 @@
             >
               {{ allocationMessage }}
             </p>
-            <RequestNote
-              v-model="draft.note"
-              :initially-open="draft.noteOpen"
+            <button
+              class="shared-request__address"
+              type="button"
               :disabled="submitting"
-            />
+              @click="$emit('open-address')"
+            >
+              {{ $t('Paid to {address}', { address }) }}
+            </button>
           </template>
         </div>
       </template>
       <footer class="shared-request__footer">
         <p v-if="error" class="form-sheet-error" role="alert">{{ error }}</p>
-        <button
+        <RequestNote
           v-if="address"
-          class="shared-request__address"
-          type="button"
+          v-model="draft.note"
+          :initially-open="draft.noteOpen"
           :disabled="submitting"
-          @click="$emit('open-address')"
-        >
-          {{ $t('Paid to {address}', { address }) }}
-        </button>
+        />
         <button
           class="form-sheet-primary"
           type="button"
@@ -377,7 +374,7 @@ const fiat = (amount) =>
         style: 'currency',
         currency: props.fiatCode
       }).format((amount / 100_000_000) * rate.value)
-    : '—'
+    : '--'
 const displayTotal = computed(() =>
   props.repayment ? totalSats.value : allocation.value.collectSats
 )
@@ -393,17 +390,15 @@ const peopleLabel = computed(() =>
       })
 )
 const eachLabel = computed(() => {
-  if (allocation.value.error)
-    return props.people.length > 1 ? t('Split equally') : ''
+  if (props.people.length === 1) return ''
+  if (allocation.value.error) return t('Split equally')
   const first = allocation.value.shares[0].amountSats
   const uneven = allocation.value.shares.some(
     (share) => share.amountSats !== first
   )
-  return props.people.length > 1
-    ? t(uneven ? 'About {amount} each' : '{amount} each', {
-        amount: money(first)
-      })
-    : money(first)
+  return t(uneven ? 'About {amount} each' : '{amount} each', {
+    amount: money(first)
+  })
 })
 const roundedShares = computed(() => {
   const shares = allocation.value.shares
@@ -562,6 +557,17 @@ function submit() {
 }
 .shared-request__back {
   justify-content: flex-start;
+  min-width: 0;
+}
+/* A long label ("Personen") truncates; the chevron keeps its size. */
+.shared-request__back svg {
+  flex-shrink: 0;
+}
+.shared-request__back span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .shared-request__close {
   color: var(--text-secondary);
@@ -584,7 +590,7 @@ function submit() {
   align-items: center;
   justify-content: center;
   gap: 8px;
-  min-height: 44px;
+  min-height: 28px;
   flex-shrink: 0;
   margin: 0 20px 6px;
   border: 0;
@@ -849,18 +855,27 @@ function submit() {
 }
 .shared-request__footer {
   flex-shrink: 0;
-  padding: 8px 20px 0;
+  padding: 4px 20px 0;
   background: var(--bg-card);
+}
+.shared-request__footer .request-note {
+  padding: 0;
+  margin-bottom: 8px;
 }
 .shared-request__address {
   min-height: 44px;
   display: block;
-  margin: 0 auto 4px;
+  flex-shrink: 0;
+  margin: 0 auto;
   border: 0;
   background: none;
   font-size: 11px;
   color: var(--text-secondary);
   overflow-wrap: anywhere;
+}
+/* Above the keypad, close to the action, when there is room. */
+.shared-request__equal .shared-request__address {
+  margin-top: auto;
 }
 .shared-request__empty {
   flex: 1;

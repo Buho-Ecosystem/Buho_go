@@ -764,6 +764,17 @@ test('a storage failure on load never overwrites the record', async () => {
   assert.equal(saves.length, 0)
 })
 
+test('an unreadable record keeps the chat in memory: flush lets sends go, canPersist says no', async () => {
+  configureMessages({ storage: { loadChatState: async () => { throw new Error('IDB down') }, saveChatState: async () => {}, deleteChatState: async () => {} } })
+  const store = freshStore()
+  assert.equal(await store.setScope(ME), false)
+  store.ingest(msg(ALICE))
+  assert.equal(await store.flush(), true)
+  assert.equal(store.canPersist(), false)
+  await store.setScope(null)
+  assert.equal(store.canPersist(), false)
+})
+
 test('a record from a newer app version is left untouched', async () => {
   await storage.saveChatState(ME, { version: STATE_VERSION + 1, threads: { future: true } })
   const store = await scoped()

@@ -29,8 +29,8 @@ export default {
   '{n} people selected': '{n} people selected',
   'Choose up to {n} people.': 'Choose up to {n} people.',
   'Sending requests…': 'Sending requests…',
-  'Your request could not be saved. Try again.':
-    'Your request could not be saved. Try again.',
+  'Could not save on this device. Try again.':
+    'Could not save on this device. Try again.',
   'Request repayment': 'Request repayment',
   'View repayment': 'View repayment',
   'View progress': 'View progress',

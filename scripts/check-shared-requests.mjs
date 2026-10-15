@@ -578,6 +578,9 @@ try {
   await alice.page.getByText('Everyone has paid', { exact: true }).waitFor()
   await alice.page.setViewportSize({ width: 320, height: 740 })
   await snap(alice, '07-small-screen-progress')
+  // Back returns to the chat the progress was opened from.
+  await alice.page.locator('.request-goals__header button').first().click()
+  await alice.page.locator('.chat-header').waitFor()
   await navigate(alice.page, '/requests')
   await alice.page.locator('.request-goals__footer .form-sheet-primary').click()
   for (const name of ['Bob', 'Carol', 'Dave'])
@@ -676,9 +679,63 @@ try {
   await seedWallets(alice, ALICE_WALLETS)
   await navigate(alice.page, `/requests/${goalId}`)
   await alice.page.getByText('Everyone has paid', { exact: true }).waitFor()
+  await setLocale(alice.page, 'de')
+  assert.equal(
+    await alice.page.locator('.request-goals__header h1').innerText(),
+    'Zahlungsanfrage'
+  )
+  await setLocale(alice.page, 'en-US')
+
+  // One person: no split, the chat opens, and the request is tracked under Requests.
+  console.log('Checking a request to one person')
+  await alice.page.setViewportSize({ width: 390, height: 844 })
+  await navigate(alice.page, '/requests')
+  await alice.page.locator('.request-goals__footer .form-sheet-primary').click()
+  await alice.page.locator('.request-from__row').filter({ hasText: 'Bob' }).click()
+  await alice.page.locator('.request-from__footer .form-sheet-primary').click()
+  await alice.page.locator('.shared-request').waitFor()
+  assert.equal(await alice.page.locator('.shared-request__methods').count(), 0)
+  assert.equal(await alice.page.locator('.shared-request__each').count(), 0)
+  for (const key of ['5', '000'])
+    await alice.page
+      .locator('.shared-request .amount-keypad__key')
+      .getByText(key, { exact: true })
+      .click()
+  await alice.page.locator('.request-note button').click()
+  await alice.page
+    .getByRole('textbox', { name: 'Note (optional)' })
+    .fill('Concert ticket')
+  await snap(alice, '13-one-person-amount')
+  await alice.page
+    .locator('.shared-request__footer .form-sheet-primary')
+    .click()
+  await alice.page.locator('.chat-header').waitFor()
+  const single = alice.page
+    .locator('.request-card')
+    .filter({ hasText: 'Concert ticket' })
+  await single.waitFor()
+  assert.equal(await single.locator('.chat-goal-progress').count(), 0)
+  await openChatFromAddressBook(bob, 'Alice')
+  await bob.page
+    .locator('.request-card')
+    .filter({ hasText: 'Concert ticket' })
+    .getByRole('button', { name: 'Pay', exact: true })
+    .click()
+  await bob.page.getByText('Pay with', { exact: true }).waitFor()
+  await confirmRealPayment(bob.page)
+  await bob.page.getByText('Payment Sent', { exact: true }).waitFor()
+  await single.getByText('Paid', { exact: true }).waitFor()
+  await snap(alice, '14-one-person-paid-chat')
+  await navigate(alice.page, '/requests')
+  await alice.page
+    .locator('.request-goals__list-row')
+    .filter({ hasText: 'Concert ticket' })
+    .getByText('1 of 1 paid', { exact: true })
+    .waitFor()
+  await snap(alice, '15-requests-list')
   assert.equal(pageErrors.length, 0, pageErrors.join('\n'))
   console.log(
-    'Shared requests: native equal/individual entry, private delivery, NWC/Spark payments, progress, repayment, restart, locales and small screens passed.'
+    'Shared requests: one person and several, equal/individual entry, private delivery, NWC/Spark payments, progress, repayment, restart, locales and small screens passed.'
   )
 } catch (error) {
   console.error(error)
