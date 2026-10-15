@@ -57,6 +57,8 @@ const routes = [
       { path: '/nwc-setup', component: () => import('pages/NWCSetupPage.vue') },
       { path: '/lnbits-setup', component: () => import('pages/LNBitsSetupPage.vue') },
       { path: '/wallet', component: () => import('pages/Wallet.vue') },
+      { path: '/requests', name: 'request-goals', component: () => import('pages/RequestGoalsPage.vue') },
+      { path: '/requests/:goalId', name: 'request-goal', component: () => import('pages/RequestGoalsPage.vue') },
       // Settings / Identity / Spend hub - three sibling tabs, each its own
       // route. Entry points target the tab they mean: the wallet toolbar's
       // profile icon opens `/identity`, Map's back-fallback opens `/spend`.

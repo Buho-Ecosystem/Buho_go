@@ -18,6 +18,9 @@ or a reply, never the point. The wallet must not turn into a messenger.
 - Library: `nostr-core` (already a dependency). Gaps are wrapped locally and filed
   upstream (see section 11).
 
+Shared payment goals build on these private requests; their UI, persistence and
+verification contract is documented in [SHARED_REQUESTS.md](SHARED_REQUESTS.md).
+
 Non-goals: group chats, sending files, read receipts, typing
 indicators, push while the app is closed.
 
@@ -82,6 +85,7 @@ Services  services/dm/                  pure modules, no Pinia, unit tested
   transport.js      relay connections with automatic NIP-42 AUTH
   inbox.js          coordinator: subscribe, sync, outbox, retries
   requests.js       profile-address preflight, payer-side address lookup and invoice pull
+  requestGoals.js   private goal manifests, durable batch sends, retries and renewal
 Existing  identity · profile · addressBook · transactionMetadata · wallet providers
           · notifications (local notifications + toasts)
 ```
@@ -103,6 +107,12 @@ NIP-17 clients (0xchat, Amethyst, …) show something sensible.
 | status | 14 | `["p", recipient]`, `["e", requestId, "", "reply"]`, `["buho", "status", "<paid\|declined\|cancelled\|reminder>", "1"]`, optional `["preimage", "<hex>"]` | `✅ Paid: 12,000 sats` (or `✅ Paid`) / `✖️ Declined the payment request` / `↩️ Withdrew the payment request` / `🔔 Reminder: payment request still open` |
 | payment | 14 | `["p", recipient]`, `["buho", "payment", "1"]`, `["amount", "<msat>"]`, optional `["note", "<text>"]`, `["preimage", "<hex>"]`, `["e", requestId, "", "reply"]`, optional `["verify", "<url>"]` | `↗ Sent 5,000 sats – Coffee` |
 | reaction | 7 | `["e", targetId]`, `["p", partner]`, `["k", "14"]` | the emoji |
+
+Shared-request extensions remain convention v1: optional `replaces` identifies
+the previous request on a signed renewal; optional `payment_hash` identifies a
+Lightning receipt when a payer cannot provide its preimage. Older readers ignore
+these tags. Local encrypted chat state version 2 adds private goal manifests
+and migrates version 1. No participant list is transmitted.
 
 No NIP-40 `expiration` tag on rumors or wraps: other clients and relays would
 delete the history. A request is only a notice: it carries no invoice, but the

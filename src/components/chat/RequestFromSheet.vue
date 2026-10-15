@@ -20,7 +20,7 @@
     @update:model-value="$emit('update:modelValue', $event)"
     @show="loadContacts"
   >
-    <section class="request-from" :aria-labelledby="titleId">
+    <section class="request-from" :class="{ 'request-from--multiple': multiple }" :aria-labelledby="titleId">
       <div class="form-sheet-grabber" aria-hidden="true" />
       <header class="form-sheet-header">
         <button type="button" class="form-sheet-cancel" @click="$emit('update:modelValue', false)">{{ $t('Cancel') }}</button>
@@ -54,7 +54,7 @@
           <template v-if="recent.length">
             <h3 class="request-from__label">{{ $t('Recent') }}</h3>
             <div class="request-from__recent">
-              <button v-for="entry in recent" :key="entry.id" type="button" class="request-from__person" @click="pickContact(entry)">
+              <button v-for="entry in recent" :key="entry.id" type="button" class="request-from__person" :aria-pressed="multiple ? isSelected(entry.nostr_pubkey) : undefined" :class="{ 'request-from__selected': multiple && isSelected(entry.nostr_pubkey) }" @click="pickContact(entry)">
                 <span class="request-from__avatar request-from__avatar--large"><ContactAvatar :entry="entry" :name="entry.name" /></span>
                 <span class="request-from__first-name">{{ firstName(entry.name) }}</span>
               </button>
@@ -63,12 +63,12 @@
 
           <template v-if="allContacts.length">
             <h3 class="request-from__label">{{ $t('Contacts') }}</h3>
-            <button v-for="entry in allContacts" :key="entry.id" type="button" class="request-from__row" @click="pickContact(entry)">
+            <button v-for="entry in allContacts" :key="entry.id" type="button" class="request-from__row" :aria-pressed="multiple ? isSelected(entry.nostr_pubkey) : undefined" :class="{ 'request-from__selected': multiple && isSelected(entry.nostr_pubkey) }" @click="pickContact(entry)">
               <span class="request-from__avatar"><ContactAvatar :entry="entry" :name="entry.name" /></span>
               <span class="request-from__names">
                 <span class="request-from__name">{{ entry.name }}</span>
                 <span v-if="addressOf(entry)" class="request-from__address">{{ addressOf(entry) }}</span>
-              </span>
+              </span><span v-if="multiple" class="request-from__tick" aria-hidden="true"><Icon v-if="isSelected(entry.nostr_pubkey)" icon="tabler:check" width="14" height="14" /></span>
             </button>
           </template>
 
@@ -82,23 +82,23 @@
         <template v-else>
           <template v-if="matches.length">
             <h3 class="request-from__label">{{ $t('Contacts') }}</h3>
-            <button v-for="entry in matches" :key="entry.id" type="button" class="request-from__row" @click="pickContact(entry)">
+            <button v-for="entry in matches" :key="entry.id" type="button" class="request-from__row" :aria-pressed="multiple ? isSelected(entry.nostr_pubkey) : undefined" :class="{ 'request-from__selected': multiple && isSelected(entry.nostr_pubkey) }" @click="pickContact(entry)">
               <span class="request-from__avatar"><ContactAvatar :entry="entry" :name="entry.name" /></span>
               <span class="request-from__names">
                 <span class="request-from__name">{{ entry.name }}</span>
                 <span v-if="addressOf(entry)" class="request-from__address">{{ addressOf(entry) }}</span>
-              </span>
+              </span><span v-if="multiple" class="request-from__tick" aria-hidden="true"><Icon v-if="isSelected(entry.nostr_pubkey)" icon="tabler:check" width="14" height="14" /></span>
             </button>
           </template>
 
           <template v-if="newPeople.length">
             <h3 class="request-from__label">{{ $t('More people') }}</h3>
-            <button v-for="person in newPeople" :key="person.pubkey" type="button" class="request-from__row" @click="pickPerson(person)">
+            <button v-for="person in newPeople" :key="person.pubkey" type="button" class="request-from__row" :aria-pressed="multiple ? isSelected(person.pubkey) : undefined" :class="{ 'request-from__selected': multiple && isSelected(person.pubkey) }" @click="pickPerson(person)">
               <span class="request-from__avatar"><ContactAvatar :name="personName(person)" :picture="person.picture" /></span>
               <span class="request-from__names">
                 <span class="request-from__name">{{ personName(person) }}</span>
                 <span v-if="person.nip05" class="request-from__address">{{ person.nip05 }}</span>
-              </span>
+              </span><span v-if="multiple" class="request-from__tick" aria-hidden="true"><Icon v-if="isSelected(person.pubkey)" icon="tabler:check" width="14" height="14" /></span>
             </button>
             <p class="request-from__note">{{ $t('Someone new is added to your contacts when you send the request.') }}</p>
           </template>
@@ -110,6 +110,11 @@
           <p v-else-if="status" class="request-from__status" role="status">{{ status }}</p>
         </template>
       </div>
+      <footer v-if="multiple" class="request-from__footer">
+        <p v-if="selectionError" class="form-sheet-error" role="alert">{{ selectionError }}</p>
+        <p v-else>{{ selected.length ? $t(selected.length === 1 ? '1 person selected' : '{n} people selected', { n: selected.length }) : $t('Choose one person or a few') }}</p>
+        <button class="form-sheet-primary" type="button" :disabled="!selected.length" @click="$emit('next')">{{ $t('Next') }}</button>
+      </footer>
     </section>
 
     <QrScanSheet
@@ -128,19 +133,30 @@ import QrScanSheet from '../QrScanSheet.vue';
 import { useAddressBookStore } from '../../stores/addressBook';
 import { useMessagesStore } from '../../stores/messages';
 import { findPeople, classifyPeopleInput, PROFILE_SEARCH_DEBOUNCE_MS } from '../../services/profileSearch.js';
+import { MAX_REQUEST_PEOPLE } from '../../utils/requestAllocation.js';
 import { parseProfileLink } from '../../utils/profileLink.js';
 import { formatUsername } from '../../services/nip05.js';
 import { lookupProblem, matchContacts, recentRequestContacts, requestableContacts } from './requestPeople.js';
 
-defineProps({ modelValue: { type: Boolean, default: false } });
-const emit = defineEmits(['update:modelValue', 'pick']);
+const props = defineProps({ modelValue: { type: Boolean, default: false }, multiple: Boolean, selected: { type: Array, default: () => [] }, excludePubkey: { type: String, default: '' } });
+const emit = defineEmits(['update:modelValue', 'pick', 'update:selected', 'next']);
 
 const { proxy } = getCurrentInstance();
+const t = (key, params) => proxy.$t(key, params);
 const titleId = `request-from-title-${proxy.$.uid}`;
 const addressBook = useAddressBookStore();
 const messages = useMessagesStore();
 
 const query = ref('');
+const selectionError = ref('');
+const isSelected = pubkey => props.selected.some(person => person.pubkey === pubkey);
+function selectPerson(person) {
+  if (!props.multiple) { emit('pick', person); return; }
+  selectionError.value = '';
+  if (isSelected(person.pubkey)) { emit('update:selected', props.selected.filter(picked => picked.pubkey !== person.pubkey)); return; }
+  if (props.selected.length >= MAX_REQUEST_PEOPLE) { selectionError.value = t('Choose up to {n} people.', { n: MAX_REQUEST_PEOPLE }); return; }
+  emit('update:selected', [...props.selected, person]);
+}
 const scanning = ref(false);
 /** The network search: 'idle', 'busy', 'done', or why it found no one ('none', 'no-username', 'unchecked', 'failed'). */
 const lookup = ref('idle');
@@ -148,12 +164,12 @@ const people = ref([]);
 let timer = null;
 let controller = null;
 
-const allContacts = computed(() => requestableContacts(addressBook.entries));
+const allContacts = computed(() => requestableContacts(addressBook.entries).filter(entry => entry.nostr_pubkey !== props.excludePubkey));
 const recent = computed(() => recentRequestContacts({
   threads: messages.threadsSorted,
   recentlyPaid: addressBook.recentlyPaidEntries,
   contactFor: (pubkey) => addressBook.findContactByPubkey(pubkey),
-}));
+}).filter(entry => entry.nostr_pubkey !== props.excludePubkey));
 const searching = computed(() => query.value.trim().length > 0);
 
 /** Contacts the words match, plus any the network search names. */
@@ -165,7 +181,7 @@ const matches = computed(() => {
   return [...local, ...known];
 });
 /** People the network search found who are not contacts yet. */
-const newPeople = computed(() => people.value.filter((person) => !addressBook.findContactByPubkey(person.pubkey)));
+const newPeople = computed(() => people.value.filter((person) => person.pubkey !== props.excludePubkey && !addressBook.findContactByPubkey(person.pubkey)));
 
 /** The line under the results: why the field can't search yet, or why no one was found. */
 const status = computed(() => {
@@ -238,11 +254,11 @@ function onScanned(text) {
 }
 
 function pickContact(entry) {
-  emit('pick', { pubkey: entry.nostr_pubkey, name: entry.name, contact: entry, profile: null });
+  selectPerson({ pubkey: entry.nostr_pubkey, name: entry.name, contact: entry, profile: null });
 }
 
 function pickPerson(person) {
-  emit('pick', {
+  selectPerson({
     pubkey: person.pubkey,
     name: personName(person),
     contact: null,
@@ -254,6 +270,39 @@ onBeforeUnmount(cancelLookup);
 </script>
 
 <style scoped>
+.request-from__footer {
+  flex-shrink: 0;
+  padding: 12px 20px max(16px, var(--safe-bottom, 0px));
+  background: var(--bg-card);
+}
+.request-from__footer .form-sheet-primary {
+  width: 100%;
+}
+.request-from__footer p {
+  text-align: center;
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin: 0 0 10px;
+}
+.request-from__tick {
+  width: 22px;
+  height: 22px;
+  border: 1px solid var(--border-card);
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+}
+.request-from__selected .request-from__tick {
+  background: var(--brand-accent-text);
+  border-color: var(--brand-accent-text);
+  color: var(--bg-card);
+}
+.request-from__selected .request-from__avatar {
+  outline: 2px solid var(--brand-accent-text);
+  outline-offset: 3px;
+}
+
 .request-from {
   /* Quasar only makes a dialog's direct child <div> tappable; this root is a <section>. */
   pointer-events: all;

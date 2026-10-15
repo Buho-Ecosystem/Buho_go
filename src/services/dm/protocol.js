@@ -180,12 +180,13 @@ function validUntilFromTag(tagValue) {
 }
 
 /** The payload of a payment request, validated and normalised. */
-function normalizeRequest({ amountSats, note, lud16, validUntil }, createdAt) {
+function normalizeRequest({ amountSats, note, lud16, validUntil, replaces }, createdAt) {
   return {
     amountSats: requireSats(amountSats),
     note: normalizeNote(note),
     lud16: requireLud16(lud16),
     validUntil: requireValidUntil(validUntil, createdAt),
+    ...(replaces == null ? {} : { replaces: requireHex(replaces, 'replaces') }),
   };
 }
 
@@ -202,13 +203,14 @@ function normalizeStatus({ requestId, value, preimage }) {
 }
 
 /** The payload of a payment, validated and normalised. */
-function normalizePayment({ amountSats, note, preimage, requestId, verifyUrl }) {
+function normalizePayment({ amountSats, note, preimage, requestId, verifyUrl, paymentHash }) {
   return {
     amountSats: requireSats(amountSats),
     note: normalizeNote(note),
     preimage: preimage === undefined || preimage === null ? null : requireHex(preimage, 'preimage'),
     requestId: requestId === undefined || requestId === null ? null : requireHex(requestId, 'requestId'),
     verifyUrl: normalizeVerifyUrl(verifyUrl),
+    ...(paymentHash !== undefined && paymentHash !== null ? { paymentHash: requireHex(paymentHash, 'paymentHash') } : {}),
   };
 }
 
@@ -356,11 +358,11 @@ export function buildTextTemplate({ recipient, text, replyTo, now = unixNow } = 
  * @returns {EventTemplate}
  * @throws {DmError} `INVALID_ARGUMENT` or `MESSAGE_TOO_LARGE`.
  */
-export function buildRequestTemplate({ recipient, amountSats, lud16, note, validUntil, now = unixNow } = {}) {
+export function buildRequestTemplate({ recipient, amountSats, lud16, note, validUntil, replaces, now = unixNow } = {}) {
   const { to, createdAt } = begin(recipient, now);
   refuseSecretNote(note);
   const request = normalizeRequest(
-    { amountSats, note, lud16, validUntil: validUntil ?? createdAt + REQUEST_LIFETIME_SECONDS },
+    { amountSats, note, lud16, replaces, validUntil: validUntil ?? createdAt + REQUEST_LIFETIME_SECONDS },
     createdAt,
   );
   const tags = [
@@ -371,6 +373,7 @@ export function buildRequestTemplate({ recipient, amountSats, lud16, note, valid
     ['valid_until', String(request.validUntil)],
   ];
   if (request.note) tags.push(['note', request.note]);
+  if (request.replaces) tags.push(['replaces', request.replaces]);
   const content =
     `\u{1F4B8} Payment request: ${formatSats(request.amountSats)} sats${noteSuffix(request.note)}` +
     `\nPay to: ${request.lud16}`;
@@ -431,10 +434,10 @@ export function buildStatusTemplate({ recipient, requestId, value, preimage, amo
  * @returns {EventTemplate}
  * @throws {DmError} `INVALID_ARGUMENT` or `MESSAGE_TOO_LARGE`.
  */
-export function buildPaymentTemplate({ recipient, amountSats, preimage, note, requestId, verifyUrl, now = unixNow } = {}) {
+export function buildPaymentTemplate({ recipient, amountSats, preimage, note, requestId, verifyUrl, paymentHash, now = unixNow } = {}) {
   const { to, createdAt } = begin(recipient, now);
   refuseSecretNote(note);
-  const payment = normalizePayment({ amountSats, note, preimage, requestId, verifyUrl });
+  const payment = normalizePayment({ amountSats, note, preimage, requestId, verifyUrl, paymentHash });
   const tags = [
     ['p', to],
     ['buho', MESSAGE_TYPE.PAYMENT, PROTOCOL_VERSION],
@@ -444,6 +447,7 @@ export function buildPaymentTemplate({ recipient, amountSats, preimage, note, re
   if (payment.preimage) tags.push(['preimage', payment.preimage]);
   if (payment.requestId) tags.push(replyTag(payment.requestId));
   if (payment.verifyUrl) tags.push(['verify', payment.verifyUrl]);
+  if (payment.paymentHash) tags.push(['payment_hash', payment.paymentHash]);
   const content = `↗ Sent ${formatSats(payment.amountSats)} sats${noteSuffix(payment.note)}`;
   return { kind: KIND.DM, tags, content, created_at: createdAt };
 }
@@ -560,6 +564,7 @@ function readBuhoPayload(tags, createdAt) {
           amountSats: msatTagToSats(singleTagValue(tags, 'amount')),
           note: singleTagValue(tags, 'note'),
           lud16: singleTagValue(tags, 'lud16'),
+          replaces: singleTagValue(tags, 'replaces'),
           // A sender cannot keep a request open longer than the lifetime every
           // request has (or pin it forever: open requests are never pruned).
           validUntil: Math.min(validUntilFromTag(singleTagValue(tags, 'valid_until')), createdAt + REQUEST_LIFETIME_SECONDS),
@@ -585,6 +590,7 @@ function readBuhoPayload(tags, createdAt) {
           preimage: singleTagValue(tags, 'preimage'),
           requestId: replyTarget(tags),
           verifyUrl: singleTagValue(tags, 'verify'),
+          paymentHash: singleTagValue(tags, 'payment_hash'),
         }),
       };
     default:

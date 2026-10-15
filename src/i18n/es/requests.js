@@ -1,0 +1,61 @@
+// Shared payment requests: short labels and actionable status copy.
+export default {
+  'Loading…': 'Cargando…',
+  'Open chat with {name}': 'Abrir chat con {name}',
+  'Equal shares': 'Partes iguales',
+  'By amount': 'Por importe',
+  'Expense total': 'Total del gasto',
+  'Total to receive': 'Total a recibir',
+  'Amount per person': 'Importe por persona',
+  'Include my share': 'Incluir mi parte',
+  'Cover the rest': 'Cubro el resto',
+  'Not included': 'No incluido',
+  'Close request': 'Cerrar solicitud',
+  'Change people': 'Cambiar personas',
+  'How to split the request': 'Cómo dividir la solicitud',
+  'About {amount} each': 'Aproximadamente {amount} cada uno',
+  '{amount} each': '{amount} cada uno',
+  'Split equally': 'Dividir en partes iguales',
+  'Enter at least {amount}.': 'Introduce al menos {amount}.',
+  'Enter an amount for {name}.': 'Introduce un importe para {name}.',
+  '{amount} over the expense total.':
+    '{amount} por encima del total del gasto.',
+  '{amount} left to assign.': 'Faltan {amount} por asignar.',
+  'The total is too large.': 'El total es demasiado alto.',
+  'Amount for {name}': 'Importe para {name}',
+  'Switch amount between {currency} and sats':
+    'Cambiar el importe entre {currency} y sats',
+  'Choose one person or a few': 'Elige una o varias personas',
+  '1 person selected': '1 persona seleccionada',
+  '{n} people selected': '{n} personas seleccionadas',
+  'Choose up to {n} people.': 'Elige hasta {n} personas.',
+  'Sending requests…': 'Enviando solicitudes…',
+  'Your request could not be saved. Try again.':
+    'No se pudo guardar tu solicitud. Inténtalo de nuevo.',
+  'Request repayment': 'Solicitar reembolso',
+  'View repayment': 'Ver reembolso',
+  'View progress': 'Ver progreso',
+  Requests: 'Solicitudes',
+  Request: 'Solicitud',
+  'Request to {n} people': 'Solicitud a {n} personas',
+  'Request to {name}': 'Solicitud a {name}',
+  'of {amount} received': 'de {amount} recibidos',
+  'of {amount}': 'de {amount}',
+  'Amount received': 'Importe recibido',
+  'Everyone has paid': 'Todos han pagado',
+  '{n} of {total} paid': '{n} de {total} han pagado',
+  'Your share: {amount}': 'Tu parte: {amount}',
+  'Checking payment…': 'Comprobando el pago…',
+  'Not sent': 'No enviado',
+  Requested: 'Solicitado',
+  'Each person has a request in your private chat.':
+    'Cada persona tiene una solicitud en vuestro chat privado.',
+  'Try sending the request to {name} again':
+    'Volver a enviar la solicitud a {name}',
+  'No requests yet': 'Todavía no hay solicitudes',
+  'Ask one person or a few. See their payments here.':
+    'Pide a una o varias personas. Ve sus pagos aquí.',
+  'Request not found': 'Solicitud no encontrada',
+  'This request may belong to another identity.':
+    'Esta solicitud puede pertenecer a otra identidad.'
+}

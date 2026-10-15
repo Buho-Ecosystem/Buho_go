@@ -920,3 +920,14 @@ test('the app badge counts unread messages of contacts only; Messages counts eve
   assert.equal(store.totalUnread, 2)
   assert.equal(store.knownUnread, 1, 'a stranger lights no badge')
 })
+
+test('action proxies share the same dirty flag and durable save queue', async () => {
+  const store = await scoped()
+  // Pinia devtools supplies a fresh proxy as `this` for every action.
+  const actionProxy = () => new Proxy(store, { get: Reflect.get, set: Reflect.set })
+  store.ingest.call(actionProxy(), msg(ALICE))
+  assert.equal(await store.flush.call(actionProxy()), true)
+  const saved = await storage.loadChatState(ME)
+  assert.equal(saved.threads[ALICE].messages.length, 1)
+  assert.equal(saved.threads[ALICE].messages[0].id, store.thread(ALICE).messages[0].id)
+})

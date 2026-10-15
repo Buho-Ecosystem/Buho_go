@@ -137,6 +137,13 @@
               : $t('Nothing here yet. Request or send money to get started.') }}
           </p>
         </template>
+        <template #request-footer="{ request }">
+          <button v-if="request.outgoing && goalForRequest(request.id)" type="button" class="chat-goal-progress"
+            @click="$router.push({ name: 'request-goal', params: { goalId: goalForRequest(request.id).id } })">
+            <span>{{ $t('View progress') }} · {{ $t('{n} of {total} paid', { n: goalForRequest(request.id).paidCount, total: goalForRequest(request.id).shares.length }) }}</span>
+            <Icon icon="tabler:chevron-right" width="14" height="14" />
+          </button>
+        </template>
       </ChatThread>
 
       <div v-if="blocked" class="chat-blocked" role="status">
@@ -231,6 +238,8 @@ import ChatThread from '../components/chat/ChatThread.vue'
 import MoneyBar from '../components/chat/MoneyBar.vue'
 import Composer from '../components/chat/Composer.vue'
 import RequestSheet from '../components/chat/RequestSheet.vue'
+import { requestIdsOf } from '../services/dm/requestGoals.js'
+import { useRequestGoals } from '../composables/useRequestGoals.js'
 import UnknownSenderBanner from '../components/chat/UnknownSenderBanner.vue'
 import SignerAppNotice from '../components/chat/SignerAppNotice.vue'
 import ContactAvatar from '../components/AddressBook/ContactAvatar.vue'
@@ -283,6 +292,8 @@ export default {
     const walletStore = useWalletStore()
     const profile = useProfileStore()
     const runtime = useChatRuntime()
+    const goalViews = useRequestGoals()
+    const goalForRequest = id => goalViews.goals.value.find(goal => goal.shares.some(share => requestIdsOf(share).includes(id)))
 
     // Who the chat is with. `/address-book/:id/chat` names a contact,
     // `/messages/:pubkey` a pubkey; both end in a partner pubkey (null while
@@ -369,6 +380,7 @@ export default {
 
     return {
       t, router, store, addressBook, walletStore, profile, runtime, chat, partner, contact, partnerName: displayName, formatFiat, fiatCode, requestFiatRate,
+      goalForRequest,
       /** The app's clipboard (falls back where the WebView has no clipboard API). */
       copyText: copyToClipboard,
       signerState: signerNotice.state,
@@ -803,6 +815,30 @@ function shortNpubOf(pubkey) {
 </script>
 
 <style scoped>
+.chat-goal-progress {
+  width: 100%;
+  min-height: 44px;
+  margin-top: 12px;
+  padding: 10px 0 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  border: 0;
+  border-top: 1px solid var(--border-card);
+  background: none;
+  color: var(--brand-accent-text);
+  font:
+    600 11px Manrope,
+    sans-serif;
+  text-align: left;
+  cursor: pointer;
+}
+.chat-goal-progress:focus-visible {
+  outline: 2px solid var(--chat-focus);
+  outline-offset: 3px;
+}
+
 .contact-chat-page {
   background: var(--bg-secondary);
   font-family: 'Manrope', sans-serif;

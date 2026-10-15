@@ -74,8 +74,17 @@ export function matchIncomingPayments(payments, transactions, {
 } = {}) {
   const confirmed = new Map();
   const used = new Set();
+  // Two connections can expose the same underlying Lightning wallet. Its
+  // payment hash identifies one receipt, even if both histories list it.
+  const usedKeys = new Set([...consumed].map(key => typeof key === 'string' && HEX_64.test(key) ? key.toLowerCase() : key));
   const txs = Array.isArray(transactions) ? transactions : [];
-  const free = (tx, i) => !used.has(i) && !consumed.has(transactionKey(tx));
+  const free = (tx, i) => !used.has(i) && !usedKeys.has(transactionKey(tx));
+  const use = (index, message) => {
+    used.add(index);
+    const tx = txs[index], key = transactionKey(tx);
+    if (key) usedKeys.add(key);
+    confirmed.set(message.id, tx);
+  };
   const inTime = (tx, message) => Number.isFinite(tx.settledAt)
     && !(tx.settledAt < (message.notBefore ?? -Infinity) - CLOCK_SKEW_SECONDS);
 
@@ -85,13 +94,19 @@ export function matchIncomingPayments(payments, transactions, {
   const withoutProof = [];
   for (const message of payments ?? []) {
     if (!(message.createdAt <= nowSeconds + CLOCK_SKEW_SECONDS)) continue;
-    const hash = hashOfPreimage(message.payment?.preimage);
+    const preimageHash = hashOfPreimage(message.payment?.preimage);
+    const suppliedHash = typeof message.payment?.paymentHash === 'string' && HEX_64.test(message.payment.paymentHash)
+      ? message.payment.paymentHash.toLowerCase() : null;
+    // A preimage and explicit hash that disagree prove nothing.
+    if (preimageHash && suppliedHash && preimageHash !== suppliedHash) continue;
+    const hash = preimageHash || suppliedHash;
+    if (message.requireProof && !hash) continue;
     (hash ? withProof : withoutProof).push({ message, hash });
   }
 
   for (const { message, hash } of withProof) {
     const index = txs.findIndex((tx, i) => free(tx, i) && tx.paymentHash?.toLowerCase() === hash && inTime(tx, message));
-    if (index !== -1) { used.add(index); confirmed.set(message.id, txs[index]); }
+    if (index !== -1) use(index, message);
   }
 
   for (const { message } of withoutProof) {
@@ -102,7 +117,7 @@ export function matchIncomingPayments(payments, transactions, {
       && inTime(tx, message)
       && Math.abs(tx.settledAt - message.createdAt) <= windowSeconds
     ));
-    if (index !== -1) { used.add(index); confirmed.set(message.id, txs[index]); }
+    if (index !== -1) use(index, message);
   }
   return confirmed;
 }

@@ -164,6 +164,9 @@
         </div>
       </div>
 
+      <div v-if="canRequestRepayment" class="repayment-entry">
+        <button type="button" @click="openRepayment"><Icon :icon="linkedRepayment ? 'tabler:chart-bar' : 'buho:request'" width="18" height="18" />{{ $t(linkedRepayment ? 'View repayment' : 'Request repayment') }}</button>
+      </div>
       <!-- Transaction Info -->
       <div class="details-section">
         <div class="tx-table">
@@ -659,6 +662,7 @@
         </q-card-actions>
       </q-card>
     </q-dialog>
+    <RequestMoneyFlow v-model="repaymentOpen" :initial-sats="repaymentSeed?.amountSats || 0" :initial-note="repaymentSeed?.note || ''" :source="repaymentSeed?.source || null" />
   </q-page>
 </template>
 
@@ -687,6 +691,9 @@ import { getTxDescription, getTxMessage, isPlaceholderDescription } from '../uti
 import { zapperProfile, zapperProfileEvent } from '../services/zapperProfiles';
 import { NOSTRICH_HEAD_ICON } from '../utils/nostrIcon.js';
 import { EARN_BRAND, earnRewardKind } from '../services/earnBrand';
+import RequestMoneyFlow from '../components/chat/RequestMoneyFlow.vue';
+import { useChatRuntime } from '../composables/useChatRuntime.js';
+import { useMessagesStore } from '../stores/messages.js';
 
 // "Type" row text per metadata source (i18n message keys, resolved through
 // $t at render time). Lookup map on purpose: later passes stamp more sources
@@ -702,12 +709,22 @@ const TX_SOURCE_TYPE_KEYS = {
 
 export default {
   name: 'TransactionDetailsPage',
-  components: { ContactAvatar, Icon },
+  components: { ContactAvatar, Icon, RequestMoneyFlow },
+  setup() {
+    const runtime = useChatRuntime();
+    return {
+      requestChatAvailable: runtime.available,
+      requestChatMe: runtime.me,
+      requestMessages: useMessagesStore(),
+    };
+  },
   data() {
     return {
       loading: true,
       showDeveloperMode: false,
       showNoteEditor: false,
+      repaymentOpen: false,
+      repaymentSeed: null,
       noteDraft: '',
       savingNote: false,
       transaction: null,
@@ -980,6 +997,18 @@ export default {
      *
      * @returns {number} non-negative sats
      */
+    repaymentSource() {
+      const tx = this.transaction;
+      const walletId = tx?.walletId || this.$route.query.wallet || this.walletStore?.activeWalletId;
+      return tx?.id && walletId ? { walletId: String(walletId), transactionId: String(tx.id) } : null;
+    },
+    canRequestRepayment() {
+      return this.requestChatAvailable && this.isSettled && this.transaction?.type === 'outgoing'
+        && Number.isSafeInteger(this.displayAmountSats) && this.displayAmountSats > 0 && Boolean(this.repaymentSource);
+    },
+    linkedRepayment() {
+      return this.requestMessages.scope === this.requestChatMe ? this.requestMessages.requestGoalForSource(this.repaymentSource) : null;
+    },
     displayAmountSats() {
       // The normalizer computed the recipient amount with the correct
       // per-provider fee semantics (Spark's amount includes the fee,
@@ -1108,6 +1137,20 @@ export default {
   },
 
   methods: {
+    openRepayment() {
+      if (!this.canRequestRepayment) return;
+      if (this.linkedRepayment) {
+        this.$router.push({ name: 'request-goal', params: { goalId: this.linkedRepayment.id } });
+        return;
+      }
+      const description = getTxDescription(this.transaction);
+      this.repaymentSeed = {
+        amountSats: this.displayAmountSats,
+        source: { ...this.repaymentSource },
+        note: String(this.transaction?.label || (isPlaceholderDescription(description) ? '' : description) || '').slice(0, 120),
+      };
+      this.repaymentOpen = true;
+    },
     editNote() {
       this.noteDraft = this.currentNote;
       this.showNoteEditor = true;
@@ -1838,6 +1881,30 @@ export default {
 </script>
 
 <style scoped>
+.repayment-entry {
+  padding: 0 20px 20px;
+}
+.repayment-entry button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 48px;
+  border: 1px solid var(--border-card);
+  border-radius: 14px;
+  background: var(--bg-card);
+  color: var(--text-primary);
+  font:
+    600 14px Manrope,
+    sans-serif;
+  cursor: pointer;
+}
+.repayment-entry button:focus-visible {
+  outline: 2px solid var(--chat-focus, #2563eb);
+  outline-offset: 3px;
+}
+
 /* ===== Base Page ===== */
 .transaction-details-page {
   background: var(--bg-secondary);

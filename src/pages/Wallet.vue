@@ -449,6 +449,7 @@
       @redeem-voucher="redeemVoucher"
       @remove-voucher="removeVoucher"
       @request-money="handleRequestMoney"
+      @open-requests="showReceiveModal = false; $router.push('/requests')"
     />
 
     <!-- Request from a contact, started on Receive -->

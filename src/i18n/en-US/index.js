@@ -1,3 +1,4 @@
+import requests from './requests.js';
 import profilePayment from './profilePayment.js';
 import addressRequest from './addressRequest.js';
 import backup from './backup.js';
@@ -5,6 +6,7 @@ import exit from './exit.js';
 import wallets from './wallets.js';
 import identities from './identities.js';
 export default {
+  ...requests,
   ...profilePayment,
   "Charge card": "Charge card",
   "Charge": "Charge",

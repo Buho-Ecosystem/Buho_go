@@ -45,7 +45,7 @@
           <div class="header-title" :class="$q.dark.isActive ? 'main_page_title_dark' : 'main_page_title_light'">
             {{ headerTitle }}
           </div>
-          <div class="header-actions"></div>
+          <div class="header-actions"><button v-if="chatAvailable" type="button" class="receive-requests" @click="$emit('open-requests')">{{ $t('Requests') }}</button></div>
         </div>
       </q-card-section>
 
@@ -521,6 +521,7 @@ export default {
     }
   },
   emits: [
+    'open-requests',
     'update:modelValue', 'invoice-created', 'bitcoin-deposits-updated', 'scan-withdraw',
     'open-vouchers', 'redeem-voucher', 'remove-voucher', 'request-money',
   ],
@@ -1936,6 +1937,18 @@ export default {
 </script>
 
 <style scoped>
+.receive-requests {
+  border: 0;
+  background: none;
+  color: var(--brand-accent-text);
+  min-height: 44px;
+  padding: 0 4px;
+  font:
+    600 12px Manrope,
+    sans-serif;
+  cursor: pointer;
+}
+
 .receive-modal :deep(.q-dialog__inner) {
   padding: 0;
 }

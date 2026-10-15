@@ -3,7 +3,6 @@
  * i18n: anything that needs a sentence takes it from the component.
  */
 
-import { formatAmount } from '../../utils/amountFormatting.js'
 import { REQUEST_STATE } from '../../services/dm/constants.js'
 
 /** Emoji offered in the message menu, in display order. */
@@ -48,8 +47,9 @@ export function formatWhen(unixSeconds, nowMs = Date.now(), locale) {
 }
 
 /** "5,000 sats" or "₿ 5,000" (the user's BIP-177 setting). Sats are whole numbers. */
-export function formatSats(amountSats, bip177 = true) {
-  return formatAmount(Number.isFinite(amountSats) ? amountSats : 0, bip177)
+export function formatSats(amountSats, bip177 = true, locale) {
+  const formatted = Math.abs(Number.isFinite(amountSats) ? amountSats : 0).toLocaleString(locale)
+  return bip177 ? `₿ ${formatted}` : `${formatted} sats`
 }
 
 /**

@@ -233,6 +233,8 @@ async function setup({
     profileAddress,
     /** What the user's wallets show as settled incoming money (payment-claim verification). */
     incoming: [],
+    consumed: new Set(),
+    loadIncoming: null,
     /** The user's own sends (what became of a payment that was still routing). */
     outgoing: [],
     /** Times the mute list sync ran. */
@@ -256,7 +258,8 @@ async function setup({
       ? { kind: 0, pubkey, content: JSON.stringify(env.profiles.get(pubkey)) }
       : null),
     lnurl,
-    loadIncomingTransactions: async () => env.incoming,
+    loadIncomingTransactions: async () => env.loadIncoming ? env.loadIncoming() : env.incoming,
+    loadConsumedTransactions: async () => env.consumed,
     loadOutgoingTransactions: async () => env.outgoing,
     contacts: { find: (pubkey) => env.contactsById.get(pubkey) ?? null },
     notifications: {
@@ -1347,4 +1350,29 @@ test('a request is reminded about at most once a day', async () => {
   await assert.rejects(env.runtime.remindRequest(ALICE, request.id), (err) => DmError.is(err, DM_ERROR.INVALID_ARGUMENT));
   await clock.advance(24 * 60 * 60 * 1_000 + 1_000);
   await env.runtime.remindRequest(ALICE, request.id);
+});
+
+
+test('a receipt used by another local identity cannot verify a new claim', async () => {
+  const { env, message } = await setupExternal();
+  env.consumed.add(HASH_OF_PREIMAGE);
+  env.incoming = [{ amountSats: 12_000, settledAt: NOW + 7_300, paymentHash: HASH_OF_PREIMAGE, walletId: 'w1' }];
+  env.lnurl.verifyAnswer = settledAnswer();
+  await deliverClaim(env, message.id, { verifyUrl: VERIFY_URL });
+  await env.runtime.settleClaims();
+  assert.equal(env.runtime.requestSettlement(message.id).verified, false);
+  assert.equal(env.store.settlement(message.id), null);
+});
+
+test('an identity change while reading the wallet ledger never writes a late settlement', async () => {
+  const { env, message } = await setupExternal();
+  await deliverClaim(env, message.id);
+  env.loadIncoming = async () => {
+    await env.store.setScope(OTHER_ME);
+    return [{ amountSats: 12_000, settledAt: NOW + 7_300, paymentHash: HASH_OF_PREIMAGE, walletId: 'w1' }];
+  };
+  await env.runtime.settleClaims();
+  assert.equal(env.store.scope, OTHER_ME);
+  assert.equal(env.store.settlement(message.id), null);
+  env.runtime.dispose();
 });

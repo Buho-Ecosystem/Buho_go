@@ -1402,3 +1402,22 @@ test('status: reports sync, queue and outbox', async () => {
   assert.equal(status.outbox, 1);
   assert.equal(status.cursor, START_S);
 });
+
+
+test('storage failure blocks initial publication and retries until the outbox is durable', async () => {
+  const { network, alice, bob } = await pair();
+  let saved = false;
+  alice.store.flush = async () => saved;
+  const before = network.published.length;
+  await assert.rejects(alice.inbox.send({ partner: bob.pubkey, template: textTo(bob, 'A durable request') }), error => error.code === DM_ERROR.STORAGE_UNAVAILABLE);
+  const [item] = alice.store.outbox.list();
+  assert.ok(item);
+  await alice.inbox.retry(item.id);
+  await settle(alice);
+  assert.equal(network.published.length, before);
+  saved = true;
+  await alice.inbox.retry(item.id);
+  await settle(alice);
+  assert.ok(network.published.length > before);
+  assert.equal(alice.store.raw.messages.get(item.id).delivery, 'sent');
+});

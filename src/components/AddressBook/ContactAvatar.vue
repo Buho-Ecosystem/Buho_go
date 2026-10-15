@@ -31,7 +31,7 @@
       stroke-width="1.8"
       stroke-linecap="round"
       stroke-linejoin="round"
-      aria-hidden="true"
+      :aria-hidden="true"
     >
       <path d="M3 21l18 0" />
       <path d="M3 7v1a3 3 0 0 0 6 0v-1m0 1a3 3 0 0 0 6 0v-1m0 1a3 3 0 0 0 6 0v-1h-18l2 -4h14l2 4" />
@@ -44,7 +44,7 @@
       class="contact-avatar__glyph"
       viewBox="0 0 24 24"
       fill="currentColor"
-      aria-hidden="true"
+      :aria-hidden="true"
     >
       <path d="M12 12.3a4.05 4.05 0 1 0 0-8.1 4.05 4.05 0 0 0 0 8.1Zm0 2.2c-4.3 0-7.6 2.6-8.1 6.3h16.2c-.5-3.7-3.8-6.3-8.1-6.3Z" />
     </svg>

@@ -14,6 +14,7 @@
 -->
 <template>
   <div class="amount-keypad">
+    <div class="amount-keypad__content" :class="{ 'amount-keypad__content--scroll': scrollContent }">
     <div class="amount-keypad__amount">
       <div
         class="amount-keypad__primary"
@@ -26,7 +27,7 @@
       <button
         type="button"
         class="amount-keypad__secondary"
-        :disabled="!fiatRate"
+        :disabled="disabled || !fiatRate"
         :aria-label="fiatRate ? $t('Enter the amount in {unit}', { unit: otherUnit }) : undefined"
         @click="swap"
       >
@@ -36,6 +37,7 @@
     </div>
 
     <slot />
+    </div>
 
     <div class="amount-keypad__keys">
       <button
@@ -43,11 +45,12 @@
         :key="key"
         type="button"
         class="amount-keypad__key"
+        :disabled="disabled"
         :aria-label="key === 'del' ? $t('Delete') : undefined"
         @click="tap(key)"
       >
         <Icon v-if="key === 'del'" icon="tabler:backspace" width="22" height="22" />
-        <template v-else>{{ key }}</template>
+        <template v-else>{{ key === '.' ? decimalSeparator : key }}</template>
       </button>
     </div>
   </div>
@@ -69,23 +72,32 @@ const props = defineProps({
   fiatCode: { type: String, default: 'usd' },
   /** Fiat per bitcoin; 0 when unknown, which leaves sats only. */
   fiatRate: { type: Number, default: 0 },
+  disabled: { type: Boolean, default: false },
+  scrollContent: { type: Boolean, default: false },
+  locale: { type: String, default: '' },
+  /** Optional canonical amount: display rounding must not change an assigned share. */
+  exactSats: { type: Number, default: null },
 });
-const emit = defineEmits(['update:modelValue', 'update:fiat']);
+const emit = defineEmits(['update:modelValue', 'update:fiat', 'edit', 'swap-unit']);
 
-const sats = computed(() => keypadSats(props.modelValue, { fiat: props.fiat, rate: props.fiatRate }));
+const sats = computed(() => props.exactSats ?? keypadSats(props.modelValue, { fiat: props.fiat, rate: props.fiatRate }));
 const keys = computed(() => ['1', '2', '3', '4', '5', '6', '7', '8', '9', props.fiat ? '.' : '000', '0', 'del']);
 const fiatLabel = computed(() => props.fiatCode.toUpperCase());
 const otherUnit = computed(() => (props.fiat ? 'sats' : fiatLabel.value));
+const numberLocale = computed(() => props.locale || 'en-US');
+const decimalSeparator = computed(() => new Intl.NumberFormat(numberLocale.value).formatToParts(1.1).find(part => part.type === 'decimal')?.value || '.');
 
 const primary = computed(() => (props.fiat
-  ? `${fiatSymbolFor(props.fiatCode)}${groupFiatInput(props.modelValue)}`
-  : (props.modelValue ? Number(props.modelValue).toLocaleString('en-US') : '0')));
+  ? `${fiatSymbolFor(props.fiatCode)}${groupFiatInput(props.modelValue, numberLocale.value)}`
+  : (props.exactSats !== null ? sats.value.toLocaleString(numberLocale.value) : props.modelValue ? Number(props.modelValue).toLocaleString(numberLocale.value) : '0')));
 
 const secondary = computed(() => {
-  if (props.fiat) return `${sats.value.toLocaleString('en-US')} sats`;
+  if (props.fiat) return `${sats.value.toLocaleString(numberLocale.value)} sats`;
   // No rate is "unknown", never a zero value.
   if (!props.fiatRate) return '--';
-  return fiatRatesService.formatFiatAmount(satsToFiat(sats.value, props.fiatRate), props.fiatCode);
+  const amount = satsToFiat(sats.value, props.fiatRate);
+  return props.locale ? new Intl.NumberFormat(props.locale, { style: 'currency', currency: fiatLabel.value }).format(amount)
+    : fiatRatesService.formatFiatAmount(amount, props.fiatCode);
 });
 
 /**
@@ -98,12 +110,17 @@ const primaryFontSize = computed(() => {
 });
 
 function tap(key) {
+  if (props.disabled) return;
+  emit('edit');
   emit('update:modelValue', applyKeypadKey(props.modelValue, key, { fiat: props.fiat }));
 }
 
 function swap() {
+  if (props.disabled) return;
   const swapped = swapKeypadUnit(props.modelValue, { fiat: props.fiat, rate: props.fiatRate });
   if (!swapped) return;
+  if (props.exactSats !== null) swapped.value = swapped.fiat ? satsToFiat(sats.value, props.fiatRate).toFixed(2) : String(sats.value);
+  emit('swap-unit');
   emit('update:modelValue', swapped.value);
   emit('update:fiat', swapped.fiat);
 }
@@ -130,6 +147,23 @@ function swap() {
   align-items: center;
   gap: 0.5rem;
   padding: 1rem 0 0.5rem;
+}
+.amount-keypad__content {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+}
+.amount-keypad__content--scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  gap: 6px;
+}
+.amount-keypad__key:disabled {
+  opacity: 0.4;
+  cursor: default;
 }
 
 .amount-keypad__primary {
