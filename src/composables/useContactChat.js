@@ -46,7 +46,7 @@ import { insertDaySeparators } from '../components/chat/chatFormat.js';
 import { REMIND_INTERVAL_SECONDS } from '../services/dm/constants.js';
 import { DM_ERROR, DmError } from '../services/dm/errors.js';
 import { confirmIncomingPayments } from '../services/dm/paymentConfirmation.js';
-import { buildChatPaymentContext } from '../services/dm/paymentContext.js';
+import { buildChatPaymentContext, requestPaymentHandover } from '../services/dm/paymentContext.js';
 import { MESSAGE_TYPE, REQUEST_STATUS, isFileMessage } from '../services/dm/protocol.js';
 
 /** Characters of a replied-to message kept in the preview. */
@@ -612,21 +612,14 @@ export function useContactChat(options) {
     if (paid) return paid;
     const fetched = await guarded(id, () => runtime.fetchRequestInvoice(partner(), id));
     if (!fetched.ok) return fetched;
-    const payer = payingWalletFor(message.request.amountSats, 'lightning');
-    pay.payInvoice(
-      { bolt11: fetched.value.bolt11, name: partnerName() },
-      {
-        // An unusable pick is not forced on the wallet page: its own sheet explains and offers the others.
-        walletId: payer?.usable ? payer.id : undefined,
-        // The verify URL (LUD-21) rides along so the announcement can carry it.
-        context: buildChatPaymentContext(partner(), message.id, fetched.value.verifyUrl),
-        // The invoice has no address, so the contact is named for the history link.
-        contactId: contact()?.id,
-        // What the money is for, shown on the confirm sheet (an LNURL invoice carries no memo).
-        note: message.request.note || undefined,
-        returnHere: true,
-      },
-    );
+    pay.payInvoice(...requestPaymentHandover({
+      partner: partner(),
+      message,
+      invoice: fetched.value,
+      name: partnerName(),
+      contactId: contact()?.id,
+      payer: payingWalletFor(message.request.amountSats, 'lightning'),
+    }));
     return { ok: true };
   }
 

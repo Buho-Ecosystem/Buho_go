@@ -3291,7 +3291,6 @@ export default {
   "BuhoGO will stop tracking it. If money is left, you will need the original code to get it.": "BuhoGO verfolgt ihn dann nicht mehr. Wenn noch Geld übrig ist, brauchst du den Originalcode.",
   "{amount} left on this voucher. Find it under Receive.": "{amount} sind noch auf diesem Gutschein. Du findest ihn unter Empfangen.",
   "This voucher is now empty.": "Dieser Gutschein ist jetzt leer.",
-  "Receive payment, vouchers saved": "Zahlung empfangen, Gutscheine gespeichert",
   "No vouchers saved.": "Keine Gutscheine gespeichert.",
   "Know when money arrives": "Wissen, wenn Geld ankommt",
   "Get a notification when a payment lands while you are in another app. It works while BuhoGO stays open in the background, not after it is closed.": "Erhalte eine Mitteilung, wenn eine Zahlung ankommt, während du in einer anderen App bist. Das funktioniert, solange BuhoGO im Hintergrund geöffnet bleibt, nicht nachdem es geschlossen wurde.",

@@ -99,12 +99,12 @@ try {
   });
   await page.waitForTimeout(500);
 
-  // 1. Home: only a dot. Receive: one summary line.
-  assert.equal(await page.locator('.action-btn-receive .action-dot').count(), 1);
-  assert.equal(await page.locator('.action-btn-receive').getAttribute('aria-label'), 'Receive payment, vouchers saved');
-  await page.screenshot({ path: `${output}/home-dot-light.png` });
+  // 1. Home: one written line says what waits. Receive: one summary line.
+  await page.locator('[data-audit="waiting-line"]', { hasText: '2 vouchers' }).waitFor();
+  assert.equal(await page.locator('.action-btn-receive').getAttribute('aria-label'), 'Receive payment');
+  await page.screenshot({ path: `${output}/home-line-light.png` });
   await openReceive();
-  await page.getByText('2 vouchers', { exact: true }).waitFor();
+  await page.locator('.voucher-summary-title', { hasText: '2 vouchers' }).waitFor();
   await page.locator('.voucher-summary', { hasText: 'left' }).waitFor();
   assert.ok((await heights('.voucher-summary'))[0] >= 44);
   assert.equal(requests.length, 0, 'opening Receive never calls a service');
@@ -180,7 +180,7 @@ try {
   });
   await page.getByText('No vouchers saved.', { exact: true }).waitFor();
   await closeAll();
-  assert.equal(await page.locator('.action-dot').count(), 0);
+  assert.equal(await page.locator('[data-audit="waiting-line"]').count(), 0);
   await page.evaluate(() => { window.__walletPage.showReceiveModal = true; });
   await page.waitForTimeout(400);
   assert.equal(await page.locator('.voucher-summary').count(), 0);

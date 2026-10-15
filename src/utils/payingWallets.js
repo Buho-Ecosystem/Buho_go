@@ -141,6 +141,19 @@ export function listPayingWallets({
   return [...entries.filter((w) => w.isActive), ...entries.filter((w) => !w.isActive)]
 }
 
+/** `listPayingWallets` over what the wallet store holds right now (its wallets, balances, connections). */
+export function payingWalletsInStore(walletStore, amountSats, destinationType = 'lightning') {
+  return listPayingWallets({
+    wallets: walletStore.wallets || [],
+    activeWalletId: walletStore.activeWalletId,
+    balances: walletStore.balances || {},
+    connectionStates: walletStore.connectionStates || {},
+    destinationType,
+    amountSats,
+    feeReserve: knownFeeReserveSats(destinationType, null),
+  })
+}
+
 /**
  * The wallet a payment starts with: the active wallet when it can pay, else
  * the first wallet that can, else the active one (so the sheet can still say

@@ -160,7 +160,7 @@
     </div>
 
     <!-- Main Content -->
-    <div v-else class="main-content">
+    <div v-else class="main-content" :class="{ 'main-content--waiting': somethingWaits }">
       <!-- The active wallet's name, for every wallet type; opens the switcher. -->
       <q-chip
         v-if="activeWallet"
@@ -303,42 +303,6 @@
         more informative entry point than the old round icon button.
       -->
       <div class="last-tx-section">
-        <!-- Money a contact asked for: one card, same anatomy as the last
-             transaction, until it is paid, declined or expired. One request
-             opens its chat (where Pay is); several open the Requests page. -->
-        <button
-          v-if="toPayCard"
-          type="button"
-          class="last-tx-card to-pay-card"
-          :class="$q.dark.isActive ? 'last-tx-card-dark' : 'last-tx-card-light'"
-          :aria-label="`${toPayCard.title}. ${toPayCard.subtitle}`"
-          @click="openRequestsToPay"
-        >
-          <span class="last-tx-avatar-wrap">
-            <ContactAvatar
-              class="last-tx-avatar"
-              :entry="toPayCard.contact || {}"
-              :name="toPayCard.contact?.name || ''"
-            />
-            <span class="last-tx-type-badge tx-badge-request">
-              <Icon icon="buho:request" width="9" height="9" />
-            </span>
-          </span>
-          <span class="last-tx-info">
-            <span class="last-tx-title" :class="$q.dark.isActive ? 'last-tx-title-dark' : 'last-tx-title-light'">
-              {{ toPayCard.title }}
-            </span>
-            <span class="last-tx-time" :class="$q.dark.isActive ? 'last-tx-muted-dark' : 'last-tx-muted-light'">
-              {{ toPayCard.subtitle }}
-            </span>
-          </span>
-          <span class="last-tx-amount-wrap">
-            <span class="last-tx-amount" :class="$q.dark.isActive ? 'last-tx-title-dark' : 'last-tx-title-light'">
-              <HiddenAmount>{{ toPayCard.amount }}</HiddenAmount>
-            </span>
-          </span>
-        </button>
-
         <!-- Loading: skeleton -->
         <div
           v-if="isLoadingLastTransaction"
@@ -442,6 +406,8 @@
 
     <!-- Bottom Action Buttons -->
     <div class="bottom-actions">
+      <!-- What waits for the user (a contact's request, a voucher), in words. -->
+      <WaitingForYou @redeem-voucher="redeemVoucher" />
       <div class="action-buttons">
         <q-btn
           class="action-btn action-btn-receive"
@@ -449,12 +415,9 @@
           @click="openReceive"
           no-caps
           unelevated
-          :aria-label="withdrawVouchersStore.active.length ? $t('Receive payment, vouchers saved') : $t('Receive payment')"
+          :aria-label="$t('Receive payment')"
         >
           <Icon icon="tabler:qrcode" width="20" height="20" />
-          <!-- LUD-14: a saved voucher still holds money. A dot, no number:
-               it says "there is something here", never how much. -->
-          <span v-if="withdrawVouchersStore.active.length" class="action-dot" aria-hidden="true"></span>
           <span class="btn-text">{{ $t('Receive') }}</span>
         </q-btn>
         <q-btn
@@ -850,10 +813,8 @@ import WalletBrandMark from '../components/WalletBrandMark.vue';
 import WalletSwitcherSheet from '../components/wallets/WalletSwitcherSheet.vue';
 import PaymentConfirmSheet from '../components/PaymentConfirmSheet.vue';
 import ContactAvatar from '../components/AddressBook/ContactAvatar.vue';
-import {useRequestsToPay} from '../composables/useRequests.js';
-import {contactChatRoute} from '../services/dm/routes.js';
-// The waiting-request colours, shared with the chat's request card.
-import '../components/chat/chatTokens.css';
+import WaitingForYou from '../components/WaitingForYou.vue';
+import {useWaiting} from '../composables/useWaiting.js';
 import BatchSendModal from '../components/BatchSendModal.vue';
 import BackupBanner from '../components/BackupBanner.vue';
 import BackupShortcut from '../components/BackupShortcut.vue';
@@ -911,6 +872,7 @@ export default {
     OnchainFeePanel,
     InternalTransferModal,
     MenuOverlay,
+    WaitingForYou,
     PaymentConfirmSheet,
     BatchSendModal,
     PaymentConfirmation,
@@ -936,7 +898,8 @@ export default {
     const withdrawVouchersStore = useWithdrawVouchersStore();
     const serviceImagesStore = useServiceImagesStore();
     return {
-      requestsToPay: useRequestsToPay(),
+      // Something waits (a request, a voucher): the Home line shows, and the content makes room.
+      somethingWaits: useWaiting().hasAny,
       bitcoinDepositsStore: useBitcoinDepositsStore(),
       serviceImagesStore,
       walletStore,
@@ -1112,36 +1075,6 @@ export default {
       const ms = sparkHealth().unreachableFor(this.walletStore.activeWalletId);
       return ms ? exitDurationText(ms, (key, params) => this.$t(key, params)) : '';
     },
-    /** The home card for requests waiting for the user, or null when none wait. */
-    toPayCard() {
-      const requests = this.requestsToPay;
-      if (!requests.length) return null;
-      const contactOf = (pubkey) => this.addressBookStore.findContactByPubkey(pubkey);
-      const firstName = (pubkey) => String(contactOf(pubkey)?.name || '').trim().split(/\s+/)[0];
-      const amount = formatAmount(
-        requests.reduce((sum, request) => sum + request.request.amountSats, 0),
-        this.walletStore.useBip177Format,
-      );
-      const [first] = requests;
-      if (requests.length === 1) {
-        return {
-          contact: contactOf(first.partner),
-          title: this.$t('{name} requests', { name: firstName(first.partner) }),
-          subtitle: first.request.note || this.$t('Payment request'),
-          amount,
-        };
-      }
-      const names = [...new Set(requests.map((request) => firstName(request.partner)))];
-      return {
-        contact: contactOf(first.partner),
-        title: this.$t('{n} requests to pay', { n: requests.length }),
-        subtitle: names.length > 2
-          ? this.$t('{names} and {n} more', { names: names.slice(0, 2).join(', '), n: names.length - 2 })
-          : names.join(', '),
-        amount,
-      };
-    },
-
     menuButtonLabel() {
       if (!this.socialBucketStore.hasUnseenPayments) return this.$t('Menu');
       const count = this.socialBucketStore.paymentCount;
@@ -2269,6 +2202,10 @@ export default {
     this.cancelBrantaLookup();
   },
   watch: {
+    // A payment handed over while Home is already open (its "Waiting for you" sheet).
+    '$route.query.action'(action) {
+      if (action) this.handlePaymentFromQuery();
+    },
     activeCanonicalBalance: {
       handler: 'updateSecondaryValue',
       immediate: true
@@ -2428,11 +2365,6 @@ export default {
     }
   },
   methods: {
-    openRequestsToPay() {
-      const contact = this.toPayCard?.contact;
-      this.$router.push(this.requestsToPay.length === 1 && contact ? contactChatRoute(contact.id) : '/requests');
-    },
-
     openEmergencyExit() {
       this.$router.push(`/security/exit/${this.walletStore.activeWalletId}`);
     },
@@ -6571,6 +6503,11 @@ export default {
   max-width: 100vw;
 }
 
+/* Room for the "waiting for you" line above Receive and Send. */
+.main-content--waiting {
+  padding-bottom: 9rem;
+}
+
 /* Wallet Chip (q-chip) */
 /* ===== Spark Tab Bar ===== */
 
@@ -6855,11 +6792,6 @@ export default {
   border-color: var(--border-card);
 }
 
-/* A request waiting for the user: the chat's open-request colours. */
-.to-pay-card {
-  background: var(--color-warn-soft);
-  border: 1.5px dashed var(--chat-warn-line);
-}
 
 .last-tx-icon {
   flex: 0 0 auto;
@@ -6918,7 +6850,6 @@ export default {
 .tx-badge-pos { background: #3B82F6; }
 .tx-badge-aux { background: #64748B; }
 .tx-badge-zap { background: #662482; }
-.tx-badge-request { background: var(--color-warn); color: var(--bg-card); }
 
 /* Nostr ostrich head, sized up for the same reason as in the history
    list: it is filled art, not a stroked glyph. This disc is the
@@ -7188,16 +7119,6 @@ export default {
   position: relative;
 }
 
-.action-dot {
-  position: absolute;
-  top: -2px;
-  left: 16px;
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--brand-accent);
-  box-shadow: 0 0 0 2px var(--bg-primary);
-}
 
 /* Send — blue tinted fill. #3B82F6 chosen over #2563EB for the
    icon/label because it has stronger contrast on the tinted wash

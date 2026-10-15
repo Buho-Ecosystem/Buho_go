@@ -262,7 +262,7 @@ import { i18n } from '../boot/i18n'
 import { fiatRatesService } from '../utils/fiatRates.js'
 import { onAppVisibility } from '../utils/appVisibility.js'
 import { shareContent } from '../utils/share.js'
-import { knownFeeReserveSats, listPayingWallets, pickDefaultPayingWallet, requestPayability } from '../utils/payingWallets.js'
+import { payingWalletsInStore, pickDefaultPayingWallet, requestPayability } from '../utils/payingWallets.js'
 
 const HEX_64 = /^[0-9a-f]{64}$/
 
@@ -333,15 +333,7 @@ export default {
     const requestFiatRate = () => walletStore.exchangeRateFor(fiatCode())
 
     /** The user's wallets ranked for a payment of `amountSats` over `destinationType`. */
-    const payingWalletsFor = (amountSats, destinationType = 'lightning') => listPayingWallets({
-      wallets: walletStore.wallets || [],
-      activeWalletId: walletStore.activeWalletId,
-      balances: walletStore.balances || {},
-      connectionStates: walletStore.connectionStates || {},
-      destinationType,
-      amountSats,
-      feeReserve: knownFeeReserveSats(destinationType, null),
-    })
+    const payingWalletsFor = (amountSats, destinationType = 'lightning') => payingWalletsInStore(walletStore, amountSats, destinationType)
 
     /** The wallet "Pay with" starts with for a payment of `amountSats` over `destinationType`. */
     const payingWalletFor = (amountSats, destinationType) => pickDefaultPayingWallet(payingWalletsFor(amountSats, destinationType))
