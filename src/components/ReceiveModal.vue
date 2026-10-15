@@ -1986,28 +1986,31 @@ export default {
 }
 
 .header-content {
-  display: flex;
+  /* Equal side columns keep the title centred, also with Requests on the right. */
+  display: grid;
+  grid-template-columns: minmax(40px, 1fr) auto minmax(40px, 1fr);
   align-items: center;
-  justify-content: space-between;
   height: 44px;
+}
+
+.header-content > :first-child {
+  justify-self: start;
 }
 
 /* The back circle itself comes from the shared .glass-back-btn utility
    (src/css/app.css); the inline SVG keeps its per-theme fill. */
 
 .header-title {
-  flex: 1;
   text-align: center;
-  margin: 0 1rem;
+  margin: 0 0.75rem;
 }
 
-/* Phantom right-side spacer that mirrors the back button's footprint, so
-   the centered title is visually centered on screen rather than centered
-   between the back button and the right edge. */
+/* The right column: Requests when the chat is available, else empty. */
 .header-actions {
-  width: 40px;
+  justify-self: end;
+  display: flex;
+  align-items: center;
   height: 40px;
-  flex-shrink: 0;
 }
 
 .address-btn {
