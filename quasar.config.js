@@ -123,6 +123,17 @@ export default defineConfig((ctx) => {
         viteConf.optimizeDeps.exclude = viteConf.optimizeDeps.exclude || []
         viteConf.optimizeDeps.exclude.push('@breeztech/breez-sdk-spark')
 
+        // Every icon ships inside the app (boot/iconify.js). The offline build
+        // of @iconify/vue has no code that downloads icons, so icons show
+        // without internet and no import can bring the downloader back; it
+        // would insert another server's markup into this page.
+        // Quasar hands its aliases over as an object; the exact-match rule
+        // needs Vite's list form.
+        viteConf.resolve.alias = [
+          { find: /^@iconify\/vue$/, replacement: '@iconify/vue/offline' },
+          ...Object.entries(viteConf.resolve.alias).map(([find, replacement]) => ({ find, replacement }))
+        ]
+
         // The Arkade SDK's descriptor dependency writes through a bare `global`
         // identifier. That used to be patched here with an optimizeDeps define
         // (global -> globalThis), which only ever covered the dev pre-bundle and

@@ -686,7 +686,7 @@
           </div>
           <div class="save-contact-address" :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'">
             <Icon
-              :icon="saveContactData.service ? 'tabler:storefront' : (saveContactData.addressType === 'spark' ? 'tabler:flame' : 'tabler:bolt')"
+              :icon="saveContactData.service ? 'tabler:building-store' : (saveContactData.addressType === 'spark' ? 'tabler:flame' : 'tabler:bolt')"
               width="16" height="16"
               :style="saveContactData.service ? null : { color: saveContactData.addressType === 'spark' ? '#4caf50' : '#ffc107' }"
               class="q-mr-xs"
@@ -3488,7 +3488,7 @@ export default {
         'INR': 'tabler:currency-rupee',
         'CAD': 'tabler:currency-dollar',
         'AUD': 'tabler:currency-dollar',
-        'CHF': 'tabler:currency-franc',
+        'CHF': 'tabler:currency-frank',
         'KRW': 'tabler:currency-won',
         'BRL': 'tabler:currency-real',
         'MXN': 'tabler:currency-dollar',

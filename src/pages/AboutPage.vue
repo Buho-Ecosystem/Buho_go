@@ -104,7 +104,7 @@
         <div class="store-badge-row">
           <button type="button" class="store-badge-btn" @click="openPlayStore">
             <span class="store-badge-playstore">
-              <Icon icon="logos:google-play-icon" width="24" height="24" />
+              <img src="/Playstore/google-play-icon.svg" alt="" width="24" height="24" />
               <span class="store-badge-text">
                 <span class="store-badge-eyebrow">GET IT ON</span>
                 <span class="store-badge-title">Google Play</span>

@@ -41,10 +41,9 @@
             <span class="iform-seclabel">{{ $t('Server details') }}</span>
             <button class="iform-scan" type="button" @click="openScanner">
               <!--
-                Inline SVG (Tabler "scan" outline) rather than the Iconify
-                <Icon> component: the network-loaded `tabler:qrcode-scan`
-                resolves to an empty SVG in this build, and inlining keeps
-                the action icon-on-first-paint with no async dependency.
+                Inline SVG (Tabler "scan" outline). It was inlined when icons
+                still came from the network and the name used, qrcode-scan,
+                is not in the Tabler set.
               -->
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                 <path d="M4 7V6a2 2 0 0 1 2-2h2"/><path d="M4 17v1a2 2 0 0 0 2 2h2"/><path d="M16 4h2a2 2 0 0 1 2 2v1"/><path d="M16 20h2a2 2 0 0 0 2-2v-1"/><path d="M5 12h14"/>
