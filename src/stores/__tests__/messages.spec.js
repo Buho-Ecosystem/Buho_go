@@ -20,7 +20,7 @@ globalThis.localStorage = new MemoryStorage()
 const { createPinia, setActivePinia } = await import('pinia')
 const { createDmStorage, createMemoryBackend } = await import('../../utils/dmStorage.js')
 const {
-  useMessagesStore, configureMessages, resetMessagesConfig,
+  useMessagesStore, configureMessages, resetMessagesConfig, deriveRequestStates, msUntilExpired,
   DELIVERY, REQUEST_STATE, MAX_MESSAGES_PER_THREAD, MAX_UNKNOWN_THREADS, SAVE_DEBOUNCE_MS, SAVE_MAX_WAIT_MS, STATE_VERSION,
 } = await import('../messages.js')
 
@@ -482,6 +482,13 @@ test('requestsToPay: open requests from contacts, oldest first; strangers and bl
   assert.deepEqual(store.requestsToPay().map(m => m.id), [first.id, later.id])
   store.block(ALICE)
   assert.deepEqual(store.requestsToPay(), [])
+})
+
+test('msUntilExpired wakes just after the moment deriveRequestStates expires a request', () => {
+  const request = requestMsg(ALICE, { request: { amountSats: 1, note: null, lud16: 'bob@x.org', validUntil: 3000 } })
+  const wake = 2000 * 1000 + msUntilExpired(3000, 2000 * 1000)
+  assert.equal(deriveRequestStates([request], Math.floor((wake - 251) / 1000)).get(request.id), REQUEST_STATE.PENDING)
+  assert.equal(deriveRequestStates([request], Math.floor(wake / 1000)).get(request.id), REQUEST_STATE.EXPIRED)
 })
 
 test('requestsToPay: a request leaves the list once it expires at the given time', async () => {

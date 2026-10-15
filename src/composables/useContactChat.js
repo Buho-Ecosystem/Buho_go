@@ -48,6 +48,7 @@ import { DM_ERROR, DmError } from '../services/dm/errors.js';
 import { confirmIncomingPayments } from '../services/dm/paymentConfirmation.js';
 import { buildChatPaymentContext, requestPaymentHandover } from '../services/dm/paymentContext.js';
 import { MESSAGE_TYPE, REQUEST_STATUS, isFileMessage } from '../services/dm/protocol.js';
+import { msUntilExpired } from '../stores/messages.js';
 
 /** Characters of a replied-to message kept in the preview. */
 const REPLY_PREVIEW_CHARS = 140;
@@ -402,7 +403,7 @@ export function useContactChat(options) {
     let wake = MAX_TICK_MS;
     for (const item of items.value) {
       if (item.type !== 'request' || item.request.state !== 'pending') continue;
-      const until = item.request.validUntil * 1000 - clock() + 500;
+      const until = msUntilExpired(item.request.validUntil, clock());
       if (until > 0) wake = Math.min(wake, until);
     }
     return Math.max(MIN_TICK_MS, wake);

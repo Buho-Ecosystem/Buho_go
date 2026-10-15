@@ -406,7 +406,24 @@ test('live expiry: a pending request turns expired by itself when its valid_unti
   assert.equal(state(), 'pending');
   clock.advance(60_000);
   assert.equal(state(), 'pending');
-  clock.advance(31_000);
+  clock.advance(31_250);
+  assert.equal(state(), 'expired');
+  chat.dispose();
+});
+
+test('live expiry: Pay gives way to Send anyway within a second of valid_until passing', async () => {
+  const theirs = request({ createdAt: seconds() - 10 });
+  theirs.request.validUntil = seconds() + 90;
+  ingest(theirs);
+  const { chat } = setup();
+  await chat.open();
+  const state = () => chat.items.value.find((i) => i.type === 'request').request.state;
+  // Like real time: small steps, so each timer fires at its own moment.
+  const start = clock.ms;
+  const runUntil = (ms) => { while (clock.ms < start + ms) clock.advance(250); };
+  runUntil(90_750);
+  assert.equal(state(), 'pending', 'the last second of its lifetime');
+  runUntil(91_500);
   assert.equal(state(), 'expired');
   chat.dispose();
 });
@@ -420,7 +437,7 @@ test('live expiry: the clock sleeps at most a minute and wakes for the nearest e
   await store.flush();
   const waits = [...clock.timers.values()].map((timer) => timer.at - clock.ms);
   assert.equal(waits.length, 1);
-  assert.ok(waits[0] >= 1000 && waits[0] <= 5600, String(waits[0]));
+  assert.equal(waits[0], 6_250, 'just after the second valid_until names has passed');
   chat.dispose();
 });
 

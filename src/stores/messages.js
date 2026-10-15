@@ -191,6 +191,16 @@ function emptyState() {
 }
 
 /**
+ * Milliseconds from `nowMs` until a request with this `validUntil` reads as
+ * expired: `deriveRequestStates` expires it once the clock is past that second.
+ * A quarter second more, so a timer set for it never wakes a moment early.
+ *
+ * @param {number} validUntil Unix seconds.
+ * @param {number} nowMs
+ */
+export const msUntilExpired = (validUntil, nowMs) => (validUntil + 1) * 1000 + 250 - nowMs
+
+/**
  * Derive the state of every request in a thread in one pass.
  *
  * A status counts only from the right party: `paid` and `declined` from the

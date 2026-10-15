@@ -1,5 +1,5 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { deriveRequestStates, useMessagesStore } from '../stores/messages.js'
+import { deriveRequestStates, msUntilExpired, useMessagesStore } from '../stores/messages.js'
 import { useChatRuntime } from './useChatRuntime.js'
 import { MESSAGE_TYPE } from '../services/dm/protocol.js'
 import {
@@ -109,10 +109,8 @@ export function useRequestsToPay() {
     (list) => {
       clearTimeout(timer)
       if (!list.length) return
-      // Expired once the clock passes validUntil; the 250 ms make sure it has.
-      const nextExpiryMs =
-        (Math.min(...list.map((message) => message.request.validUntil)) + 1) * 1000 + 250
-      const wait = Math.min(Math.max(nextExpiryMs - Date.now(), 0), MAX_CLOCK_WAIT_MS)
+      const nextExpiry = Math.min(...list.map((message) => message.request.validUntil))
+      const wait = Math.min(Math.max(msUntilExpired(nextExpiry, Date.now()), 0), MAX_CLOCK_WAIT_MS)
       timer = setTimeout(() => {
         now.value = nowSeconds()
       }, wait)
