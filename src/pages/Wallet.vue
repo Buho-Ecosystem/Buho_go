@@ -254,7 +254,7 @@
                 :suffix="balanceSuffix"
                 class="amount-number"
                 :class="[$q.dark.isActive ? 'amount-number-dark' : 'amount-number-light', { 'balance-stale': activeBalanceOutdated }]"
-                :title="activeBalanceOutdated ? $t('Last known balance — not current') : null"
+                :title="activeBalanceOutdated ? $t('Last known balance, not current') : null"
                 :spin-timing="{ duration: 750, easing: 'cubic-bezier(0.16, 1, 0.3, 1)' }"
                 :transform-timing="{ duration: 750, easing: 'cubic-bezier(0.16, 1, 0.3, 1)' }"
               />
@@ -445,7 +445,7 @@
       :voucher-checking="withdrawVouchersStore.checking"
       :voucher-display-sats="withdrawVouchersStore.displaySats"
       @open-vouchers="openVouchers"
-      @redeem-voucher="redeemVoucher"
+      @redeem-voucher="redeemVoucherFromReceive"
       @remove-voucher="removeVoucher"
       @request-money="handleRequestMoney"
       @open-requests="showReceiveModal = false; $router.push('/requests')"
@@ -3884,14 +3884,20 @@ export default {
      * Sweep a saved voucher: hand its balanceCheck URL to the canonical
      * dispatcher, which fetches the fresh withdrawRequest (new k1, current
      * bounds), tracks whatever URL it rotated to, and opens the redeem sheet.
-     * One path — a voucher redeems exactly like a scanned QR.
+     * One path — a voucher redeems exactly like a scanned QR. `targetSats`
+     * pre-fills the redeem sheet; Home's "Waiting for you" passes none.
      */
-    redeemVoucher(voucher) {
+    redeemVoucher(voucher, targetSats = null) {
       if (!voucher?.balanceCheck) return;
       haptics.tap();
-      this.pendingWithdrawTargetSats = this.$refs.receiveModal?.intendedReceiveSats || null;
+      this.pendingWithdrawTargetSats = targetSats;
       this.showReceiveModal = false;
       void this.onPaymentDetected({ type: 'lnurl', data: voucher.balanceCheck });
+    },
+
+    /** Redeem from Receive's voucher list: carry the amount Receive already had. */
+    redeemVoucherFromReceive(voucher) {
+      this.redeemVoucher(voucher, this.$refs.receiveModal?.intendedReceiveSats || null);
     },
 
     /**
@@ -5304,7 +5310,11 @@ export default {
     returnAfterPayment() {
       const to = this.payReturnTo;
       this.payReturnTo = null;
-      if (to) this.$router.replace(to);
+      if (!to) return;
+      // The hand-over pushed the wallet page on top of that screen: step back
+      // to it, so it is not in the history twice (Back would seem to do nothing).
+      if (this.$router.options.history.state?.back === to) this.$router.back();
+      else this.$router.replace(to);
     },
 
     onSendSheetCancel() {
@@ -7949,6 +7959,11 @@ export default {
 
   .main-content {
     padding: 1rem 1rem 5.5rem 1rem;
+  }
+
+  /* The padding above resets the waiting-line room, so phones set it again. */
+  .main-content--waiting {
+    padding-bottom: 8.5rem;
   }
 
   .amount-number {

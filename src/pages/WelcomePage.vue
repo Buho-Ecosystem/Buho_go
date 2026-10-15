@@ -1,7 +1,7 @@
 <template>
   <LoadingScreen
     :show="showLoadingScreen"
-    :loading-text="loadingText"
+    :loading-text="$t(loadingText)"
   />
 
   <q-page class="welcome-page">
@@ -246,6 +246,7 @@ export default {
   data() {
     return {
       showLoadingScreen: true,
+      // An i18n key: the template translates it, so it follows a language change.
       loadingText: 'Initializing BuhoGO...',
       showMoreSheet: false,
       showCloudRestoreSheet: false,

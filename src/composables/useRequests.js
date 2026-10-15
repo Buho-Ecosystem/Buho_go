@@ -1,5 +1,5 @@
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-import { deriveRequestStates, useMessagesStore } from '../stores/messages.js'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { deriveRequestStates, msUntilExpired, useMessagesStore } from '../stores/messages.js'
 import { useChatRuntime } from './useChatRuntime.js'
 import { MESSAGE_TYPE } from '../services/dm/protocol.js'
 import {
@@ -11,6 +11,11 @@ import {
 const isReady = (messages, runtime) =>
   runtime.available.value && messages.scope === runtime.me.value
 
+const nowSeconds = () => Math.floor(Date.now() / 1000)
+
+/** The longest Home's list goes without reading the clock (a timer cannot wait 30 days). */
+const MAX_CLOCK_WAIT_MS = 60_000
+
 /**
  * The Requests page model, derived from the chat ledger: what the user asked
  * for (goals and requests sent from a chat) and what contacts ask of them.
@@ -18,7 +23,7 @@ const isReady = (messages, runtime) =>
 export function useRequests() {
   const messages = useMessagesStore()
   const runtime = useChatRuntime()
-  const now = ref(Math.floor(Date.now() / 1000))
+  const now = ref(nowSeconds())
   let timer
   const ready = computed(() => isReady(messages, runtime))
   const ledger = computed(() => {
@@ -63,11 +68,11 @@ export function useRequests() {
       (a, b) => b.createdAt - a.createdAt || a.id.localeCompare(b.id)
     )
   })
-  const toPay = computed(() => (ready.value ? messages.requestsToPay : []))
+  const toPay = computed(() => (ready.value ? messages.requestsToPay(now.value) : []))
   onMounted(() => {
     void runtime.settleClaims().catch(() => {})
     timer = setInterval(() => {
-      now.value = Math.floor(Date.now() / 1000)
+      now.value = nowSeconds()
     }, 30_000)
   })
   onBeforeUnmount(() => clearInterval(timer))
@@ -82,15 +87,36 @@ export function useRequests() {
   }
 }
 
-/** Requests waiting for the user that should catch their eye; muted chats stay quiet. */
+/**
+ * Requests waiting for the user that should catch their eye; muted chats stay
+ * quiet. The clock moves when the next request expires, so an expired request
+ * leaves the list on time instead of failing on Pay.
+ */
 export function useRequestsToPay() {
   const messages = useMessagesStore()
   const runtime = useChatRuntime()
-  return computed(() =>
+  const now = ref(nowSeconds())
+  const requests = computed(() =>
     isReady(messages, runtime)
-      ? messages.requestsToPay.filter(
-          (message) => !messages.threads[message.partner]?.muted
-        )
+      ? messages
+          .requestsToPay(now.value)
+          .filter((message) => !messages.threads[message.partner]?.muted)
       : []
   )
+  let timer
+  watch(
+    requests,
+    (list) => {
+      clearTimeout(timer)
+      if (!list.length) return
+      const nextExpiry = Math.min(...list.map((message) => message.request.validUntil))
+      const wait = Math.min(Math.max(msUntilExpired(nextExpiry, Date.now()), 0), MAX_CLOCK_WAIT_MS)
+      timer = setTimeout(() => {
+        now.value = nowSeconds()
+      }, wait)
+    },
+    { immediate: true }
+  )
+  onBeforeUnmount(() => clearTimeout(timer))
+  return requests
 }

@@ -127,6 +127,8 @@ const requestLine = ({ request }) =>
 
 // The sheet closes by itself once nothing waits any more.
 watch(hasAny, (any) => { if (!any) open.value = false })
+// Each opening starts clean: no error left over from an earlier Pay.
+watch(open, (isOpen) => { if (isOpen) error.value = '' })
 
 function openChat(pubkey) {
   const contact = contactOf(pubkey)
@@ -143,6 +145,8 @@ async function payRequest(message) {
   const contact = contactOf(message.partner)
   try {
     const invoice = await runtime.fetchRequestInvoice(message.partner, message.id)
+    // Closed while the invoice was on its way: the user left, so nothing opens.
+    if (!open.value) return
     open.value = false
     payContact.payInvoice(...requestPaymentHandover({
       partner: message.partner,

@@ -20,7 +20,7 @@ globalThis.localStorage = new MemoryStorage()
 const { createPinia, setActivePinia } = await import('pinia')
 const { createDmStorage, createMemoryBackend } = await import('../../utils/dmStorage.js')
 const {
-  useMessagesStore, configureMessages, resetMessagesConfig,
+  useMessagesStore, configureMessages, resetMessagesConfig, deriveRequestStates, msUntilExpired,
   DELIVERY, REQUEST_STATE, MAX_MESSAGES_PER_THREAD, MAX_UNKNOWN_THREADS, SAVE_DEBOUNCE_MS, SAVE_MAX_WAIT_MS, STATE_VERSION,
 } = await import('../messages.js')
 
@@ -479,9 +479,25 @@ test('requestsToPay: open requests from contacts, oldest first; strangers and bl
   const stranger = requestMsg(BOB, { createdAt: 999 })
   for (const m of [later, first, cancelled, OUT({ createdAt: 1003 }), stranger]) store.ingest(m)
   store.ingest(statusMsg(ALICE, cancelled.id, 'cancelled', { createdAt: 1010 }))
-  assert.deepEqual(store.requestsToPay.map(m => m.id), [first.id, later.id])
+  assert.deepEqual(store.requestsToPay().map(m => m.id), [first.id, later.id])
   store.block(ALICE)
-  assert.deepEqual(store.requestsToPay, [])
+  assert.deepEqual(store.requestsToPay(), [])
+})
+
+test('msUntilExpired wakes just after the moment deriveRequestStates expires a request', () => {
+  const request = requestMsg(ALICE, { request: { amountSats: 1, note: null, lud16: 'bob@x.org', validUntil: 3000 } })
+  const wake = 2000 * 1000 + msUntilExpired(3000, 2000 * 1000)
+  assert.equal(deriveRequestStates([request], Math.floor((wake - 251) / 1000)).get(request.id), REQUEST_STATE.PENDING)
+  assert.equal(deriveRequestStates([request], Math.floor(wake / 1000)).get(request.id), REQUEST_STATE.EXPIRED)
+})
+
+test('requestsToPay: a request leaves the list once it expires at the given time', async () => {
+  const store = await scoped()
+  const short = IN({ createdAt: 1000, request: { amountSats: 1, note: null, lud16: 'bob@x.org', validUntil: 3000 } })
+  const long = IN({ createdAt: 1001 })
+  for (const m of [short, long]) store.ingest(m)
+  assert.deepEqual(store.requestsToPay(3000).map(m => m.id), [short.id, long.id])
+  assert.deepEqual(store.requestsToPay(3001).map(m => m.id), [long.id])
 })
 
 // ----- blocking, lists -----------------------------------------------------

@@ -631,7 +631,7 @@ test('a handed-over payment returns to the screen that handed it over, when canc
     const replaced = [];
     Object.assign(vm, {
       $route: { query: { action: 'pay_contact', address: 'bob@example.com', returnTo } },
-      $router: { replace: (value) => replaced.push(value) },
+      $router: { replace: (value) => replaced.push(value), options: { history: { state: { back: null } } } },
       _walletsReady: Promise.resolve(),
       payContactDestination: () => {},
       cancelBrantaLookup: () => {},
@@ -642,6 +642,27 @@ test('a handed-over payment returns to the screen that handed it over, when canc
     vm.onSendSheetCancel();
     assert.deepEqual(replaced.slice(1), expected ? [expected] : [], 'only an in-app path is followed');
     assert.equal(vm.payReturnTo, null, 'used once');
+  }
+});
+
+test('a handed-over payment steps back to the screen right behind it, so Back is not spent on a copy', async () => {
+  for (const returnTo of ['/wallet', '/address-book/c1/chat']) {
+    const { vm } = payingHarness();
+    const replaced = [];
+    let backs = 0;
+    Object.assign(vm, {
+      $route: { query: { action: 'pay_contact', address: 'bob@example.com', returnTo } },
+      // The hand-over pushed the wallet page on top of `returnTo`.
+      $router: { replace: (value) => replaced.push(value), back: () => { backs += 1; }, options: { history: { state: { back: returnTo } } } },
+      _walletsReady: Promise.resolve(),
+      payContactDestination: () => {},
+      cancelBrantaLookup: () => {},
+    });
+    vm.handlePaymentFromQuery();
+    await new Promise(resolve => setTimeout(resolve, 0));
+    vm.onSendSheetCancel();
+    assert.equal(backs, 1, returnTo);
+    assert.deepEqual(replaced, [{ query: {} }], 'no second entry for the same screen');
   }
 });
 

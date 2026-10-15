@@ -151,9 +151,22 @@ try {
   state = await store();
   assert.equal(state.count, 2, 'a sweep on a rotating service does not duplicate the voucher');
   assert.equal(state.active.find(v => v.id === 'v-atm').balanceCheck, 'https://cash.example/balance/abc3');
+  const typedInReceive = await page.evaluate(() => window.__walletPage.$refs.receiveModal.intendedReceiveSats);
+  assert.ok(typedInReceive > 0);
+  assert.equal(await page.evaluate(() => window.__walletPage.pendingPayment.receiveAmount), typedInReceive, 'Receive carries its amount');
   await page.locator('.sheet-card--redeem .top-btn').click();
   await page.locator('.sheet-card--redeem').waitFor({ state: 'detached' });
   console.log('✓ a row tap sweeps through the same review as a scanned code, with one fetch and no invoice');
+
+  // 3b. Redeem from Home's line starts fresh: the amount left in the closed Receive is not carried.
+  await page.locator('[data-audit="waiting-line"]').click();
+  await page.getByRole('region', { name: 'Waiting for you' }).getByRole('listitem')
+    .filter({ hasText: 'ATM voucher' }).getByRole('button', { name: 'Redeem', exact: true }).click();
+  await page.locator('.sheet-card--redeem').waitFor();
+  assert.equal(await page.evaluate(() => window.__walletPage.pendingPayment.receiveAmount), null, 'no amount from Receive');
+  await page.locator('.sheet-card--redeem .top-btn').click();
+  await page.locator('.sheet-card--redeem').waitFor({ state: 'detached' });
+  console.log('✓ Redeem from Home does not carry an amount left in Receive');
 
   // 4. Edit → Remove asks first; Cancel keeps, Remove forgets. Empty state reads as such.
   await openReceive();
