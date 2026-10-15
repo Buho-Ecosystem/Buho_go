@@ -114,6 +114,7 @@ async function sendAndRead() {
   await sheet.getByRole('button', { name: /^Send .*sats$/ }).click();
   await dialog.waitFor();
   await page.waitForFunction((checking) => document.querySelector('.error-dialog .error-reason')?.textContent.trim() !== checking, SAYS.checking);
+  await page.waitForTimeout(400); // faded in, so its screenshot is readable
   return (await dialog.locator('.error-reason').textContent()).trim();
 }
 
