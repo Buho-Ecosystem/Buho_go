@@ -26,6 +26,15 @@ import { isCounterpartyError } from './errorOrigin.js';
 
 const REASON_MAX_LENGTH = 280;
 
+// A browser's own words for a fetch that reached no server (Chrome, Safari,
+// Firefox), plus React Native's.
+const FETCH_FAILURES = [
+  'failed to fetch',
+  'load failed',
+  'networkerror when attempting to fetch resource.',
+  'network request failed',
+];
+
 /**
  * Mainstream-first copy for a BOLT12 offer. The technical term appears in the
  * explanation, not the headline, so the same dialog works for people who have
@@ -492,9 +501,10 @@ export function classifyTransportFailure(msg) {
       || lower === 'ssl handshake timed out') {
     return 'timeout';
   }
-  if (lower === 'failed to fetch'
-      || lower === 'network request failed'
-      || lower === 'load failed'
+  if (FETCH_FAILURES.includes(lower)
+      // The Spark SDK's WebAssembly HTTP client wraps the browser's words:
+      // "network error: Request error: error sending request : JsValue(TypeError: Failed to fetch ...".
+      || FETCH_FAILURES.some((words) => lower.includes(`jsvalue(typeerror: ${words}`))
       || lower.includes('unable to resolve host')
       || lower.includes('no address associated')
       // Android connect failure embeds host and port; require the port
@@ -506,6 +516,29 @@ export function classifyTransportFailure(msg) {
     return 'offline';
   }
   return null;
+}
+
+/**
+ * Why a server could not be reached, in words a person can act on.
+ * `kind` comes from diagnoseConnection() (utils/connectivity.js). Spark is
+ * named only when the Spark SDK itself reported the failure; any other
+ * server (a recipient's, a shop's) stays "the service".
+ *
+ * @param {'offline'|'no-internet'|'service'} kind
+ * @param {string} raw  the failure's own text
+ * @param {Function} [$t]
+ */
+export function unreachableReason(kind, raw, $t = null) {
+  const t = $t || ((s) => s);
+  if (kind === 'offline') {
+    return t("You're offline. Connect to Wi-Fi or mobile data, then try again.");
+  }
+  if (kind === 'no-internet') {
+    return t('No internet connection. Check your Wi-Fi, mobile data or VPN, then try again.');
+  }
+  return /\bsparksdkerror\b/i.test(raw || '')
+    ? t("Spark can't be reached right now. Your internet works, so try again in a moment.")
+    : t("The service can't be reached right now. Your internet works, so try again in a moment.");
 }
 
 /**

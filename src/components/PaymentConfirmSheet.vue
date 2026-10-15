@@ -233,6 +233,12 @@
             <span>{{ $t('Exchange rates may be outdated') }}</span>
           </div>
 
+          <!-- The fee check reached no server: why, before the slide. -->
+          <div v-if="payment?.connectionNotice" class="wallet-hint" role="status">
+            <Icon icon="tabler:wifi-off" width="14" height="14" />
+            <span>{{ payment.connectionNotice }}</span>
+          </div>
+
           <!-- Comment: sits directly under the amount block, in the slot
                the preset chips used to hold, so it stays visible above the
                CTA even with the keyboard up. -->

@@ -3,7 +3,7 @@
 import { strict as assert } from 'node:assert';
 import de from '../../i18n/de/index.js';
 import es from '../../i18n/es/index.js';
-import { getUnsupportedBolt12OfferCopy, classifyTransportFailure, buildPaymentError, translateErrorCode } from '../userErrors.js';
+import { getUnsupportedBolt12OfferCopy, classifyTransportFailure, buildPaymentError, translateErrorCode, unreachableReason } from '../userErrors.js';
 import { counterpartyError, isCounterpartyError, keepOrigin } from '../errorOrigin.js';
 
 const BOLT12_TITLE = "This payment request isn't supported yet";
@@ -87,6 +87,41 @@ test('classifyTransportFailure leaves upstream server prose untouched', () => {
   assert.equal(classifyTransportFailure('Error: failed to fetch invoice from node'), null);
   assert.equal(classifyTransportFailure(''), null);
   assert.equal(classifyTransportFailure(null), null);
+});
+
+// The Spark SDK's failure when nothing answered (a phone whose VPN blocked
+// all traffic, 2026-10-15), shortened from the user's report.
+const SPARK_UNREACHABLE = 'SparkSdkError: Service error: service provider error: authentication error: '
+  + 'network error: Request error: error sending request : JsValue(TypeError: Failed to fetch\n'
+  + 'TypeError: Failed to fetch\n    at a (https://localhost/assets/breezSdk-vtUOD6Wq.js:2:1075))';
+
+test('classifyTransportFailure sees through the Spark SDK wrapping the browser error', () => {
+  assert.equal(classifyTransportFailure(SPARK_UNREACHABLE), 'offline');
+  assert.equal(classifyTransportFailure('network error: Request error: error sending request : JsValue(TypeError: Load failed)'), 'offline');
+  assert.equal(classifyTransportFailure('NetworkError when attempting to fetch resource.'), 'offline');
+  const e = buildPaymentError(new Error(SPARK_UNREACHABLE), { context: 'payment', walletType: 'spark' });
+  assert.equal(e.reason, OFFLINE_COPY);
+  assert.equal(e.reasonSource, 'curated');
+});
+
+test('unreachableReason names Spark only when the Spark SDK reported the failure', () => {
+  assert.match(unreachableReason('offline', SPARK_UNREACHABLE), /^You're offline\./);
+  assert.match(unreachableReason('no-internet', SPARK_UNREACHABLE), /^No internet connection\..*VPN/);
+  assert.match(unreachableReason('service', SPARK_UNREACHABLE), /^Spark can't be reached/);
+  // A recipient's server that is down is not Spark's doing.
+  assert.match(unreachableReason('service', 'Failed to fetch'), /^The service can't be reached/);
+});
+
+test('connection copy has German and Spanish translations', () => {
+  const copy = [
+    'Checking your connection...',
+    ...['offline', 'no-internet'].map((kind) => unreachableReason(kind, '')),
+    unreachableReason('service', SPARK_UNREACHABLE),
+    unreachableReason('service', ''),
+  ];
+  for (const messages of [de, es]) {
+    for (const text of copy) assert.ok(messages[text] && messages[text] !== text, `missing: ${text}`);
+  }
 });
 
 test('buildPaymentError curates the LNURL timeout instead of attributing it upstream', () => {

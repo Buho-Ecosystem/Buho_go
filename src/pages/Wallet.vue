@@ -747,7 +747,8 @@ import {LightningPaymentService, resolveLUD17URL} from '../utils/lightning.js';
 import {parseSuccessAction, resolveSuccessAction} from '../utils/successAction.js';
 import {validateVerifyUrl, pollVerify} from '../utils/lnurlVerify.js';
 import {lnurlFetch, lnurlGetJson} from '../utils/lnurlHttp.js';
-import {classifyTransportFailure} from '../utils/userErrors.js';
+import { classifyTransportFailure, unreachableReason } from '../utils/userErrors.js';
+import { diagnoseConnection } from '../utils/connectivity.js';
 import { counterpartyError, keepOrigin } from '../utils/errorOrigin.js';
 import {buildLnurlPayCallbackUrl, isStoreablePayLink} from '../utils/lnurlPay.js';
 import {parsePayRequestMetadata, serviceTitle, normalizeServiceImage, serviceIdentity} from '../utils/lnurlMetadata.js';
@@ -1013,6 +1014,8 @@ export default {
       estimatedFee: null,
       // The estimate is the provider's guess, not a route quote.
       estimatedFeeIsGuess: false,
+      // Why the fee check reached no server, said before the slide.
+      connectionNotice: '',
       isEstimatingFee: false,
       // Save-to-contacts after payment
       showSaveContactDialog: false,
@@ -1806,6 +1809,7 @@ export default {
           : null,
         zarAmount: p.zarAmount || null,
         ratesStale: !!(p.merchant && this.ratesStale),
+        connectionNotice: this.connectionNotice,
         feeEstimate,
         payoutCurrency
       };
@@ -5330,6 +5334,7 @@ export default {
       this.sendPayout = null;
       this.estimatedFee = null;
       this.isEstimatingFee = false;
+      this.connectionNotice = '';
       // On-chain state must not leak into the next open: a stale quote
       // would gate (or worse, price) a different payment.
       this.l1Fee = null;
@@ -6216,6 +6221,7 @@ export default {
       this.estimatedFee = null;
       this.estimatedFeeIsGuess = false;
       this.isEstimatingFee = false;
+      this.connectionNotice = '';
 
       if (!this.pendingPayment) {
         return;
@@ -6276,6 +6282,13 @@ export default {
           console.warn('Spark fee estimation failed:', error.message);
           // No fallback - don't show estimated fee if SDK fails
           this.estimatedFee = null;
+          // Nothing reached Spark: say why now rather than after the slide.
+          // The slide stays, so a connection that comes back can still pay.
+          const raw = error?.message || String(error);
+          if (classifyTransportFailure(raw) === 'offline') {
+            const kind = await diagnoseConnection();
+            if (run === this._feeEstimateRun) this.connectionNotice = unreachableReason(kind, raw, this.$t.bind(this));
+          }
         } finally {
           if (run === this._feeEstimateRun) this.isEstimatingFee = false;
         }
