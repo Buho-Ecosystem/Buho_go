@@ -2,6 +2,49 @@
 
 Notable changes to BuhoGO, newest first. Zapstore takes each release's notes from its section here (`release_notes` in `zapstore.yaml`). Releases up to 1.9.2 are described on [GitHub Releases](https://github.com/Buho-Ecosystem/Buho_go/releases).
 
+## [1.11.0]
+
+### Before you update
+
+Still on a BuhoGO from GitHub or Zapstore older than 1.9.1? It was signed with a different key, so Android will not install 1.11.0 over it. Back up your recovery phrases in Security, uninstall BuhoGO, then install 1.11.0. Updating from 1.9.1 or later works as usual.
+
+### Highlights
+
+- **Contact chat.** Ask a contact for money, pay their request or send them money in a private, end-to-end encrypted chat. Tap a contact in the Address Book to open it. A request can be typed in your own currency, stays open for 30 days and shows as paid once BuhoGO has confirmed the money arrived. Short messages, replies and reactions sit next to it, and text that looks like a secret key or recovery phrase is never sent.
+- **Up to six Spark wallets.** One recovery phrase now holds up to six equal Spark wallets, to keep savings, a shop or the family apart, and one backup covers them all. Add, rename, switch and remove them in Settings, and move a wallet's Lightning address to another one. Your Business and Personal wallets become two ordinary wallets that keep their names, and a restore brings back every wallet you used.
+- **Split the bill.** Request, new in Receive, asks one person or several at once, in equal shares or by amount, and shows who has paid. Pick people from your contacts, search for anyone or scan the code on their profile. After paying for a group, Request repayment on the payment asks the others for their share, fees left out. Each person gets an ordinary private request; only you see the whole list.
+- **Choose which wallet pays.** With more than one wallet, the payment sheet shows Pay with, so any of your wallets can pay without switching the active one. Each shows its balance and says plainly when it can't pay.
+- **Use an identity from another app.** Add identity now also takes an identity you already have: from a browser extension on the web, a remote signer link, or its secret key. BuhoGO shows the profile it found before anything is saved and keeps that profile's existing details when you edit it. Get paid offers a payment address instead of setting one on its own, and website sign-ins keep using your 12 words.
+- **Waiting for you.** When a contact asks you for money or a voucher still holds money, one line above Receive and Send says so. Tap it to pay or redeem right there. Requests that expire leave the line on their own, and muted chats stay quiet.
+
+### UI/UX
+
+- **Identities in one list.** Every identity on this phone is one row: tap it to switch, with Undo. Its detail page copies the public code or the secret key, and removes the identity from this phone with Undo; your 12 words bring it back. Erase all identities now says that it erases every identity.
+- **Messages live in the Address Book.** A Messages row lists every chat, unread messages show on the contact and on the Address Book door in the menu, and a message notification opens the chat. Chats with people who are not in your contacts sit in their own section and never light the menu badge.
+- **Calmer updates.** An ordinary update no longer pops up. A dot on the logo and on About leads to one sheet that follows the update from download to restart, and About shows the version and when BuhoGO last checked.
+- **One Notifications setting.** Preferences has one Notifications row that says On, Off or Blocked. Its sheet turns notifications on and switches payments received, and requests and messages, separately.
+- **Wallet details in Manage Wallets.** Each wallet opens a page to rename, use, reconnect or remove it; a Spark wallet also shows its own Lightning address. A wallet is removed only once a fresh balance shows it empty, and the last Spark wallet only after its recovery phrase is backed up.
+- **Fiat next to every balance** in Manage Wallets and the wallet switcher, which also shows the total across your wallets. A total is dimmed only when a figure in it is out of date.
+- **Between you shows both directions.** A contact's page lists the payments you received from them as well as the ones you sent.
+- **A designed QR image to share.** Sharing from Receive sends a card that names what the code is, with the amount for an invoice and "Scan with any Bitcoin wallet". Links to go.mybuho.de and to shared profile cards have new previews.
+- **Clearer deposit timing.** Speeding up a Bitcoin deposit says "Available now" or how many confirmations are still needed, instead of always "Right away", and explains confirmations in plain words.
+- **Spend tab.** The Bitcoin Map card is a drawn map with its title below it, and Learn & Earn has its own mark, also on reward payments, and a clearer subtitle.
+- **Arkade colours.** The Arkade mark is purple in light mode and red in dark mode on every screen.
+
+### Bug Fixes
+
+- Fixed a web issue where adding a wallet straight after reloading its setup page erased every other wallet on the device, a Spark recovery phrase included, and reset settings such as currency and app lock. A tab that missed a change made in another tab now asks you to reload instead of overwriting it.
+- Fixed an automatic transfer made right after start erasing the saved notes, tags and contact links of past payments.
+- Fixed payment notifications never appearing on Android 14 and later while BuhoGO was in the background.
+- With a single wallet, a payment larger than the balance is now stopped before the slide with "Not enough balance", instead of failing with the wallet's own error shown as the recipient's.
+- Error messages name the recipient or the service only when that party really sent the text. Adding a wallet that is already connected now says so.
+- Fixed NWC wallets stopping with "That wallet isn't ready" when buying an eSIM, a VPN or a username.
+- Fixed update notices: installed apps had not been told about any version after 1.9.1, and an open web app now notices a new version.
+- A payment opened from a contact, a link, NFC or a request now appears as soon as the wallets are ready, instead of after Home's whole start-up, which could take half a minute when Spark synced slowly.
+- Fixed Between you on a contact's page staying empty after a cold start, or showing the previous contact's payments.
+- Fixed the Onboarding Guide in About not opening, and a wallet renamed in Settings not being saved.
+- Fixed German and Spanish texts: the About door in the menu read "About you", and the start-up text stayed in English.
+
 ## [1.10.0]
 
 ### Before you update
