@@ -75,6 +75,8 @@ function signingFor(identity, pubkey) {
  * @param {(raw: object, options: { walletType: string }) => object} [services.normalizeTx]
  *   The transaction normaliser; with it the runtime can check a payment the partner reports
  *   against the user's wallets.
+ * @param {(owner: string) => Promise<Set<string>>} [services.loadSettledTransactionKeys]
+ *   Receipt keys used by other identities on this installation.
  * @param {typeof WebSocket} [services.WebSocket]
  * @param {typeof createChatRuntime} [services.createChatRuntime] Replacement constructor, for tests.
  * @returns {(pubkey: string) => ReturnType<typeof createChatRuntime>} Builds the runtime for one identity.
@@ -90,6 +92,8 @@ export function createAppRuntimeFactory(stores, services) {
       store: stores.messages(),
       getProfileAddress: () => profile.lud16,
       fetchProfile: services.fetchProfile,
+      loadConsumedTransactions: services.loadSettledTransactionKeys
+        ? () => services.loadSettledTransactionKeys(pubkey) : undefined,
       lnurl: {
         fetchPayRequest: services.lnurl.fetchPayRequest,
         requestInvoice: services.lnurl.requestLnurlInvoice,

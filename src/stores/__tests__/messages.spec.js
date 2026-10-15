@@ -471,6 +471,19 @@ test('pendingRequestsFrom lists only open incoming requests', async () => {
   assert.deepEqual(store.pendingRequestsFrom(BOB, 2000), [])
 })
 
+test('requestsToPay: open requests from contacts, oldest first; strangers and blocked senders stay out', async () => {
+  const store = await scoped()
+  const later = IN({ createdAt: 1005 })
+  const first = IN({ createdAt: 1000 })
+  const cancelled = IN({ createdAt: 1001 })
+  const stranger = requestMsg(BOB, { createdAt: 999 })
+  for (const m of [later, first, cancelled, OUT({ createdAt: 1003 }), stranger]) store.ingest(m)
+  store.ingest(statusMsg(ALICE, cancelled.id, 'cancelled', { createdAt: 1010 }))
+  assert.deepEqual(store.requestsToPay.map(m => m.id), [first.id, later.id])
+  store.block(ALICE)
+  assert.deepEqual(store.requestsToPay, [])
+})
+
 // ----- blocking, lists -----------------------------------------------------
 
 test('block changes: only the latest change per key is kept until the mute list saves it', async () => {
@@ -764,6 +777,17 @@ test('a storage failure on load never overwrites the record', async () => {
   assert.equal(saves.length, 0)
 })
 
+test('an unreadable record keeps the chat in memory: flush lets sends go, canPersist says no', async () => {
+  configureMessages({ storage: { loadChatState: async () => { throw new Error('IDB down') }, saveChatState: async () => {}, deleteChatState: async () => {} } })
+  const store = freshStore()
+  assert.equal(await store.setScope(ME), false)
+  store.ingest(msg(ALICE))
+  assert.equal(await store.flush(), true)
+  assert.equal(store.canPersist(), false)
+  await store.setScope(null)
+  assert.equal(store.canPersist(), false)
+})
+
 test('a record from a newer app version is left untouched', async () => {
   await storage.saveChatState(ME, { version: STATE_VERSION + 1, threads: { future: true } })
   const store = await scoped()
@@ -919,4 +943,15 @@ test('the app badge counts unread messages of contacts only; Messages counts eve
   store.ingest(msg('e'.repeat(64), { id: rid(30_002) }))
   assert.equal(store.totalUnread, 2)
   assert.equal(store.knownUnread, 1, 'a stranger lights no badge')
+})
+
+test('action proxies share the same dirty flag and durable save queue', async () => {
+  const store = await scoped()
+  // Pinia devtools supplies a fresh proxy as `this` for every action.
+  const actionProxy = () => new Proxy(store, { get: Reflect.get, set: Reflect.set })
+  store.ingest.call(actionProxy(), msg(ALICE))
+  assert.equal(await store.flush.call(actionProxy()), true)
+  const saved = await storage.loadChatState(ME)
+  assert.equal(saved.threads[ALICE].messages.length, 1)
+  assert.equal(saved.threads[ALICE].messages[0].id, store.thread(ALICE).messages[0].id)
 })

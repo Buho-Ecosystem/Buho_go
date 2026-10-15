@@ -245,6 +245,9 @@ export function describeDmError(error, { t, name = '' }) {
   const code = DmError.is(error) ? error.code : 'UNKNOWN';
   let message;
   switch (code) {
+    case DM_ERROR.STORAGE_UNAVAILABLE:
+      message = t('Could not save on this device. Try again.');
+      break;
     case DM_ERROR.NO_INBOX_RELAYS:
       return {
         code,
@@ -658,6 +661,7 @@ export function useContactChat(options) {
     const message = messageById(id);
     if (!message || message.type !== MESSAGE_TYPE.REQUEST || !message.outgoing) return Promise.resolve({ ok: false, error: null });
     const { amountSats, note } = message.request;
+    if (store.requestGoalFor?.(id)) return guarded(id, () => runtime.renewRequestGoal(partner(), id));
     return guarded(id, () => runtime.requestMoney(partner(), { amountSats, note: note || undefined }));
   }
 

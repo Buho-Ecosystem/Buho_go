@@ -24,6 +24,8 @@
 export const DM_ERROR = Object.freeze({
   /** A caller passed a value the function cannot work with (malformed pubkey, empty text). */
   INVALID_ARGUMENT: 'INVALID_ARGUMENT',
+  /** Private request records could not be durably saved; nothing new is sent. */
+  STORAGE_UNAVAILABLE: 'STORAGE_UNAVAILABLE',
   /** Text, note or rumor exceeds `MAX_TEXT_LENGTH`, `MAX_NOTE_LENGTH` or `MAX_RUMOR_BYTES`. */
   MESSAGE_TOO_LARGE: 'MESSAGE_TOO_LARGE',
   /** No BuhoGO identity exists yet, so there is nothing to sign or decrypt with. */

@@ -11,7 +11,7 @@
  * scope is set (before the first load, after `setScope(null)`) every mutating
  * action is a no-op and nothing is persisted.
  *
- * Shape (also the persisted format, `STATE_VERSION` 1):
+ * Shape (also the persisted format, `STATE_VERSION` 2):
  *   threads[partner] = { messages, reactions, unread, lastReadAt, muted }
  *     messages   ChatMessage[] sorted by (createdAt, id), deduped by rumor id,
  *                never containing reactions; outgoing ones carry `delivery`
@@ -24,6 +24,7 @@
  *   syncCursor   unix seconds of the last completed inbox sync, or null
  *   outbox       items waiting to be (re)sent, see `enqueueOutbox`
  *   inboxRelays  the inbox relay resolver's `snapshot()`, or null
+ *   requestGoals private shared-request manifests (never sent to partners)
  *   settlements  own requests whose payment a wallet of the user confirmed, by request id (see `setSettlement`)
  *   ownPayments  payments the user made for a partner's request, by request id:
  *                { status: 'pending' | 'sent', announced, amountSats, ... }; a
@@ -40,16 +41,19 @@
  */
 
 import { defineStore } from 'pinia'
+import { toRaw } from 'vue'
 import { DELIVERY, REQUEST_STATE, SINCE_SLACK_SECONDS } from '../services/dm/constants.js'
 import { MESSAGE_TYPE, REQUEST_STATUS } from '../services/dm/protocol.js'
 import { loadChatState, saveChatState, deleteChatState, deleteAllChatStates } from '../utils/dmStorage.js'
 import { useAddressBookStore } from './addressBook.js'
+import { normalizeRequestGoal, requestIdsOf } from '../services/dm/requestGoals.js'
+import { requestSourceKey } from '../utils/requestAllocation.js'
 
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
 
-export const STATE_VERSION = 1
+export const STATE_VERSION = 2
 
 /** Threads with people outside the address book kept at most: the least recently active one goes first. */
 export const MAX_UNKNOWN_THREADS = 50
@@ -180,6 +184,7 @@ function emptyState() {
     threads: {}, blocked: [], blockChanges: [], syncCursor: null, outbox: [], inboxRelays: null, settlements: {}, handledWraps: {},
     signerAppMessages: false,
     ownPayments: {},
+    requestGoals: {},
     // Not persisted: why received messages wait for the signer app (a DmError code), or null.
     signerHold: null,
   }
@@ -249,6 +254,19 @@ export function deriveRequestStates(messages, now, ownPayments = {}) {
       states.set(id, REQUEST_STATE.EXPIRED)
     }
   }
+  // A signed replacement closes the original; paying either version never
+  // offers the other again. A peer cannot replace somebody else's request.
+  for (const replacement of requests.values()) {
+    const original = requests.get(replacement.request.replaces)
+    if (!original || original.sender !== replacement.sender || original.recipient !== replacement.recipient
+      || original.request.amountSats !== replacement.request.amountSats || replacement.createdAt <= original.createdAt) continue
+    const oldState = states.get(original.id), newState = states.get(replacement.id)
+    if (oldState === REQUEST_STATE.PAID || newState === REQUEST_STATE.PAID) {
+      states.set(original.id, REQUEST_STATE.PAID); states.set(replacement.id, REQUEST_STATE.PAID)
+    } else if (oldState === REQUEST_STATE.PAYING || newState === REQUEST_STATE.PAYING) {
+      states.set(original.id, REQUEST_STATE.PAYING); states.set(replacement.id, REQUEST_STATE.PAYING)
+    } else states.set(original.id, REQUEST_STATE.CANCELLED)
+  }
   return states
 }
 
@@ -258,17 +276,18 @@ export function deriveRequestStates(messages, now, ownPayments = {}) {
  * never loses the answer that settles it). Reactions on dropped messages go too.
  * @returns {number} How many messages were dropped.
  */
-function pruneThread(thread, now, max) {
+function pruneThread(thread, now, max, retainedRequests = new Set()) {
   const { messages } = thread
   if (messages.length <= max) return 0
 
   const keep = new Set(messages.slice(messages.length - max).map(m => m.id))
   const states = deriveRequestStates(messages, now)
   for (const m of messages) {
-    if (m.type === MESSAGE_TYPE.REQUEST && states.get(m.id) === REQUEST_STATE.PENDING) keep.add(m.id)
+    if (m.type === MESSAGE_TYPE.REQUEST && (states.get(m.id) === REQUEST_STATE.PENDING || retainedRequests.has(m.id))) keep.add(m.id)
   }
   for (const m of messages) {
     if (m.type === MESSAGE_TYPE.STATUS && keep.has(m.status.requestId)) keep.add(m.id)
+    if (m.type === MESSAGE_TYPE.PAYMENT && retainedRequests.has(m.payment?.requestId)) keep.add(m.id)
   }
 
   const dropped = messages.filter(m => !keep.has(m.id))
@@ -292,8 +311,8 @@ function applyReaction(thread, message) {
 // Persisted format: migration and validation
 // ---------------------------------------------------------------------------
 
-/** `MIGRATIONS[n]` upgrades a version-n record to n + 1. Empty until a format change needs one. */
-const MIGRATIONS = {}
+/** `MIGRATIONS[n]` upgrades a version-n record to n + 1. Version 1 migrates without losing its chat history. */
+const MIGRATIONS = { 1: raw => ({ ...raw, requestGoals: {} }) }
 
 /**
  * Bring a stored record to `STATE_VERSION`.
@@ -342,6 +361,10 @@ function restoreReactions(raw) {
 /** Rebuild a clean in-memory state from a migrated record. Entries that do not validate are skipped. */
 function restoreState(raw, me) {
   const state = emptyState()
+  for (const rawGoal of Object.values(isPlainObject(raw.requestGoals) ? raw.requestGoals : {})) {
+    const goal = normalizeRequestGoal(rawGoal, me)
+    if (goal) state.requestGoals[goal.id] = goal
+  }
   state.outbox = restoreOutbox(raw.outbox)
   const queued = new Set(state.outbox.map(item => item.id))
 
@@ -406,7 +429,10 @@ function restoreState(raw, me) {
 const runtimes = new WeakMap()
 
 function runtime(store) {
-  let r = runtimes.get(store)
+  // Pinia's devtools wrap each action in a different proxy. All actions
+  // must share the same save queue and dirty flag, including nested ones.
+  const key = toRaw(store)
+  let r = runtimes.get(key)
   if (!r) {
     r = {
       generation: 0,
@@ -417,7 +443,7 @@ function runtime(store) {
       /** False when the record could not be read or is newer than this app: never overwrite it. */
       persist: true,
     }
-    runtimes.set(store, r)
+    runtimes.set(key, r)
   }
   return r
 }
@@ -490,6 +516,13 @@ export const useMessagesStore = defineStore('messages', {
 
     /** `settlement(id)` -> `{ walletId?, address?, paymentHash?, paidAt }` once a wallet of the user confirmed the payment of an own request, or null. */
     settlement: state => requestId => state.settlements[requestId] ?? null,
+    requestGoal: state => id => state.requestGoals[id] ?? null,
+    requestGoalFor: state => requestId => Object.values(state.requestGoals).find(goal => goal.shares.some(share => requestIdsOf(share).includes(requestId))) ?? null,
+    requestGoalForSource: state => source => {
+      const key = requestSourceKey(source)
+      return key ? Object.values(state.requestGoals).find(goal => requestSourceKey(goal.source) === key) ?? null : null
+    },
+    requestGoalsSorted: state => Object.values(state.requestGoals).sort((a, b) => b.createdAt - a.createdAt || a.id.localeCompare(b.id)),
 
     isBlocked: state => pubkey => state.blocked.includes(hexKey(pubkey)),
 
@@ -525,6 +558,24 @@ export const useMessagesStore = defineStore('messages', {
         }
       }
       return null
+    },
+
+    /**
+     * Requests that wait for the user, oldest first: money a contact asked for
+     * that is not paid, declined, cancelled or expired. Strangers and blocked
+     * senders stay out (strangers light no badge; they wait in Messages).
+     */
+    requestsToPay(state) {
+      const now = deps.now()
+      const open = []
+      for (const [partner, thread] of Object.entries(state.threads)) {
+        if (!deps.isKnownContact(partner) || state.blocked.includes(partner)) continue
+        const states = deriveRequestStates(thread.messages, now, state.ownPayments)
+        for (const m of thread.messages) {
+          if (m.type === MESSAGE_TYPE.REQUEST && !m.outgoing && states.get(m.id) === REQUEST_STATE.PENDING) open.push(m)
+        }
+      }
+      return open.sort((a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id))
     },
 
     /** Requests the partner sent that can still be paid, oldest first. */
@@ -624,6 +675,7 @@ export const useMessagesStore = defineStore('messages', {
         handledWraps: this.handledWraps,
         signerAppMessages: this.signerAppMessages,
         ownPayments: this.ownPayments,
+        requestGoals: this.requestGoals,
       }))
     },
 
@@ -639,9 +691,15 @@ export const useMessagesStore = defineStore('messages', {
       r.timer = deps.setTimer(() => { r.timer = null; this.flush() }, delay)
     },
 
+    /** Whether changes reach storage: false without an identity, or when its record could not be read. */
+    canPersist() {
+      return Boolean(this.scope) && runtime(this).persist
+    },
+
     /** Write pending changes now. Resolves true when nothing is left unsaved, false when the write failed. */
     async flush() {
       const r = runtime(this)
+      if (!this.scope) return false
       if (r.timer !== null) { deps.clearTimer(r.timer); r.timer = null }
       const pubkey = this.scope
       if (pubkey && r.dirty && r.persist) {
@@ -697,7 +755,8 @@ export const useMessagesStore = defineStore('messages', {
 
     /** Drop the least recently active stranger threads until a new one fits under MAX_UNKNOWN_THREADS. */
     _makeRoomForStranger() {
-      const strangers = this.unknownThreads
+      const protectedPeople = new Set(Object.values(this.requestGoals).flatMap(goal => goal.shares.map(share => share.pubkey)))
+      const strangers = this.unknownThreads.filter(row => !protectedPeople.has(row.partner))
       for (const row of strangers.slice(MAX_UNKNOWN_THREADS - 1)) delete this.threads[row.partner]
     },
 
@@ -898,6 +957,50 @@ export const useMessagesStore = defineStore('messages', {
       return true
     },
 
+    // ----- private request goals ------------------------------------------
+
+    addRequestGoal(raw) {
+      const goal = normalizeRequestGoal(raw, this.scope)
+      if (!goal) throw new TypeError('messages: invalid request goal')
+      if (this.requestGoals[goal.id] || (goal.source && this.requestGoalForSource(goal.source))) return false
+      this.requestGoals[goal.id] = goal
+      this._markDirty()
+      return true
+    },
+
+    setRequestGoalError(goalId, requestId, code) {
+      const share = this.requestGoals[goalId]?.shares.find(share => share.requestId === requestId)
+      if (!this.scope || !share || share.errorCode === code) return false
+      share.errorCode = code
+      this._markDirty()
+      return true
+    },
+
+    setRequestGoalSendError(goalId, code) {
+      const goal = this.requestGoals[goalId]
+      if (!this.scope || !goal || goal.sendErrorCode === code) return false
+      goal.sendErrorCode = code; this._markDirty()
+      return true
+    },
+
+    replaceRequestGoalShare(goalId, requestId, attempt) {
+      const goal = this.requestGoals[goalId]
+      if (!goal || !this.scope) return false
+      const next = JSON.parse(JSON.stringify(goal))
+      const share = next.shares.find(share => share.requestId === requestId)
+      if (!share) return false
+      share.previousRequests = [...(share.previousRequests || []), { requestId, template: share.template }]
+      share.requestId = attempt.requestId; share.template = attempt.template; share.errorCode = null
+      const normalized = normalizeRequestGoal(next, this.scope)
+      if (!normalized) throw new TypeError('messages: invalid replacement request')
+      this.requestGoals[goalId] = normalized; this._markDirty()
+      return true
+    },
+
+    _retainedGoalRequests() {
+      return new Set(Object.values(this.requestGoals).flatMap(goal => goal.shares.flatMap(requestIdsOf)))
+    },
+
     // ----- sync, outbox, relay cache ---------------------------------------
 
     /** Remember how far the inbox has synced (unix seconds). Only moves forward; `null` clears it. */
@@ -1024,7 +1127,7 @@ export const useMessagesStore = defineStore('messages', {
 
     _autoPrune(thread) {
       if (thread.messages.length > MAX_MESSAGES_PER_THREAD + PRUNE_SLACK) {
-        pruneThread(thread, deps.now(), MAX_MESSAGES_PER_THREAD)
+        pruneThread(thread, deps.now(), MAX_MESSAGES_PER_THREAD, this._retainedGoalRequests())
         thread.unread = Math.min(thread.unread, thread.messages.length)
       }
     },
@@ -1033,9 +1136,10 @@ export const useMessagesStore = defineStore('messages', {
     prune() {
       if (!this.scope) return 0
       const now = deps.now()
+      const retained = this._retainedGoalRequests()
       let dropped = 0
       for (const thread of Object.values(this.threads)) {
-        const n = pruneThread(thread, now, MAX_MESSAGES_PER_THREAD)
+        const n = pruneThread(thread, now, MAX_MESSAGES_PER_THREAD, retained)
         if (n > 0) thread.unread = Math.min(thread.unread, thread.messages.length)
         dropped += n
       }

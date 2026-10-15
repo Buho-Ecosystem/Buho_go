@@ -124,6 +124,7 @@
         {{ $t('Send anyway') }}
       </button>
     </div>
+    <slot name="footer" />
   </section>
 </template>
 

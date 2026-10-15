@@ -49,6 +49,9 @@ const facade = Object.freeze({
 
   sendText: forward('sendText'),
   requestMoney: forward('requestMoney'),
+  createRequestGoal: forward('createRequestGoal'),
+  retryRequestGoal: forward('retryRequestGoal'),
+  renewRequestGoal: forward('renewRequestGoal'),
   declineRequest: forward('declineRequest'),
   cancelRequest: forward('cancelRequest'),
   remindRequest: forward('remindRequest'),

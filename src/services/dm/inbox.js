@@ -119,7 +119,7 @@ export const MAX_HISTORY_PAGES = 20;
 
 /**
  * The narrow port to the chat store. The Pinia adapter is written separately;
- * everything here is synchronous and must not throw for ordinary input.
+ * Methods are synchronous except `flush`, and must not throw for ordinary input.
  *
  * @typedef {object} InboxStore
  * @property {() => number | null} getSyncCursor Unix seconds of the last completed sync, or null before the first.
@@ -131,6 +131,7 @@ export const MAX_HISTORY_PAGES = 20;
  *   Store a message we just wrote, with its delivery state.
  * @property {(id: string, delivery: 'queued' | 'sending' | 'sent' | 'failed') => unknown} setDelivery
  *   Move an outgoing message to a new delivery state (a `sent` one stays sent).
+ * @property {() => Promise<boolean>} [flush] Persist the message and outbox before publication.
  * @property {(pubkey: string) => boolean} isBlocked Whether a sender is blocked.
  * @property {{ list: () => OutboxItem[], put: (item: OutboxItem) => unknown, remove: (id: string) => unknown }} outbox
  *   The persistent outbox: `put` inserts or replaces by `item.id`.
@@ -723,6 +724,9 @@ export function createInbox({
     // Persist before the first byte leaves the device: a crash must not lose or double a message.
     store.addOutgoing(message, { delivery: found ? DELIVERY.SENDING : DELIVERY.QUEUED });
     store.outbox.put(item);
+    // Real persistence, not just a reactive queue, precedes publication.
+    if (await store.flush?.() === false) throw new DmError(DM_ERROR.STORAGE_UNAVAILABLE, 'chat storage unavailable');
+    if (mine !== epoch) throw new DmError(DM_ERROR.NO_IDENTITY, 'chat identity changed');
     if (found) {
       track(item.id, deliver(item, mine));
     } else {
@@ -839,6 +843,14 @@ export function createInbox({
    */
   async function deliver(item, mine) {
     const alive = () => mine === epoch;
+
+    // Retries must respect the same persistence guarantee as the first send.
+    if (!alive()) return;
+    if (await store.flush?.() === false) {
+      if (alive()) fail(item, DM_ERROR.STORAGE_UNAVAILABLE);
+      return;
+    }
+    if (!alive()) return;
 
     if (item.relays === null || item.stale) {
       let lookup = null;

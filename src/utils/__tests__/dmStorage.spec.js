@@ -132,3 +132,15 @@ test('deleteAllChatStates removes every identity\'s record and nothing else', as
   assert.equal(await storage.loadChatState('b'.repeat(64)), null)
   assert.equal(await backend.get('unrelated'), 'keep me')
 })
+
+
+test('receipt keys exclude the active identity and expose no chat content', async () => {
+  const { storage, backend } = setup()
+  await storage.saveChatState(ALICE, { settlements: { one: { paymentHash: '1'.repeat(64) } } })
+  await storage.saveChatState(BOB, { threads: { secret: 'private note' }, settlements: {
+    two: { paymentHash: 'AB'.repeat(32) }, three: { transactionKey: 'wallet:receipt' }, bad: { paymentHash: 'invalid' },
+  } })
+  await backend.set('chat:invalid', 'ignored')
+  assert.deepEqual(await storage.loadSettledTransactionKeys(ALICE), new Set(['ab'.repeat(32), 'wallet:receipt']))
+  assert.deepEqual(await storage.loadSettledTransactionKeys(BOB), new Set(['1'.repeat(64)]))
+})

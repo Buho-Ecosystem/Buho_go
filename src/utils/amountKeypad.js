@@ -62,9 +62,10 @@ export function swapKeypadUnit(value, { fiat, rate }) {
 }
 
 /** "1234567.5" becomes "1,234,567.5": groups the whole part, keeps the typed decimals. */
-export function groupFiatInput(value) {
+export function groupFiatInput(value, locale = 'en-US') {
   if (!value) return '0';
   const [whole, decimals] = String(value).split('.');
-  const grouped = Number(whole || 0).toLocaleString('en-US');
-  return decimals !== undefined ? `${grouped}.${decimals}` : grouped;
+  const grouped = Number(whole || 0).toLocaleString(locale);
+  const separator = new Intl.NumberFormat(locale).formatToParts(1.1).find(part => part.type === 'decimal')?.value || '.';
+  return decimals !== undefined ? `${grouped}${separator}${decimals}` : grouped;
 }

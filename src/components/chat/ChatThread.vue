@@ -125,7 +125,9 @@
               @withdraw="forward('withdraw-request', row.item.request.id)"
               @send-anyway="forward('send-anyway-request', row.item.request.id)"
               @request-again="forward('request-again', row.item.request.id)"
-            />
+            >
+              <template #footer><slot name="request-footer" :request="row.item.request" /></template>
+            </RequestCard>
           </div>
 
           <PaymentLine

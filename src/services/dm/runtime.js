@@ -48,6 +48,7 @@ import { INBOX_RELAY_QUERY_TIMEOUT_MS, INBOX_STATUS, createInboxRelayResolver, q
 import { createMuteListSync } from './muteList.js';
 import { matchIncomingPayments, transactionKey } from './paymentConfirmation.js';
 import { verifyPaymentViaAddress } from './paymentVerification.js';
+import { createRequestGoalService, requestIdsOf } from './requestGoals.js';
 import {
   MESSAGE_TYPE,
   REQUEST_STATUS,
@@ -80,6 +81,9 @@ const noop = () => {};
 export const CHAT_ACTIONS = Object.freeze([
   'sendText',
   'requestMoney',
+  'createRequestGoal',
+  'retryRequestGoal',
+  'renewRequestGoal',
   'declineRequest',
   'cancelRequest',
   'remindRequest',
@@ -169,6 +173,7 @@ export function createInboxStoreAdapter(store, me) {
     rememberHandledWrap: (wrapId, createdAt) => active() && store.rememberHandledWrap(wrapId, createdAt),
     addOutgoing: (message, options) => active() && store.addOutgoing(message, options),
     setDelivery: (id, delivery) => active() && store.setDelivery(id, delivery),
+    flush: () => active() ? store.flush?.() : Promise.resolve(false),
     isBlocked: (pubkey) => active() && store.isBlocked(pubkey),
     outbox: {
       // Detached copies: the inbox edits an item and then `put`s it back, and
@@ -230,6 +235,8 @@ export function createInboxStoreAdapter(store, me) {
  * @property {() => Promise<import('./paymentConfirmation.js').IncomingTransaction[]>} [loadIncomingTransactions]
  *   The settled incoming transactions of the user's wallets, each with its `walletId`. Without it a
  *   payment the partner reports can never be verified.
+ * @property {() => Promise<Iterable<string>>} [loadConsumedTransactions]
+ *   Receipt hashes/keys already verified by another local identity.
  * @property {(url: string, options: { connectionTimeout: number }) => Promise<object>} ensureRelay
  *   The shared relay pool's `ensureRelay` (used by the relay list resolver).
  * @property {typeof WebSocket} [WebSocket]
@@ -264,6 +271,7 @@ export function createChatRuntime(deps = {}) {
     isHidden = () => false,
     linkPayment,
     loadIncomingTransactions,
+    loadConsumedTransactions,
     loadOutgoingTransactions,
     ensureRelay,
     WebSocket,
@@ -414,6 +422,9 @@ export function createChatRuntime(deps = {}) {
     return message;
   }
 
+  const goals = createRequestGoalService({ me, store, requests, send: sendTemplate,
+    retry: (id) => inbox.retry(id), assertUsable, nowSeconds });
+
   // ----- UI actions ------------------------------------------------------
 
   /**
@@ -509,7 +520,7 @@ export function createChatRuntime(deps = {}) {
    * @throws {DmError} when the payment message itself cannot be written or sent
    *   (NO_INBOX_RELAYS, INVALID_ARGUMENT, KEY_WIPED, ...).
    */
-  async function announcePayment(partner, { amountSats, note, preimage, requestId, verifyUrl } = {}) {
+  async function announcePayment(partner, { amountSats, note, preimage, requestId, verifyUrl, paymentHash } = {}) {
     const recipient = normalizePubkey(partner);
     assertUsable();
     const reference = requestId === undefined || requestId === null ? undefined : normalizePubkey(requestId, 'requestId');
@@ -517,7 +528,8 @@ export function createChatRuntime(deps = {}) {
     const cleanPreimage = typeof preimage === 'string' && preimage ? preimage.toLowerCase() : undefined;
 
     const sent = await sendTemplate(recipient, buildPaymentTemplate({
-      recipient, amountSats, preimage: cleanPreimage, note: cleanNote, requestId: reference, verifyUrl, now: nowSeconds,
+      recipient, amountSats, preimage: cleanPreimage, note: cleanNote, requestId: reference, verifyUrl,
+      paymentHash: paymentHash?.toLowerCase(), now: nowSeconds,
     }));
     // Less than was asked ("Send anyway" with a smaller amount) is a payment, not the request paid.
     if (!reference || !coversRequest(recipient, reference, amountSats)) return { payment: sent, status: null, statusError: null };
@@ -582,9 +594,10 @@ export function createChatRuntime(deps = {}) {
   }
 
   /** Tell the partner, and remember that they were told. */
-  async function announceOwnPayment(partner, { amountSats, note, preimage, requestId, verifyUrl }) {
+  async function announceOwnPayment(partner, { amountSats, note, preimage, requestId, verifyUrl, paymentHash }) {
     await announcePayment(partner, {
       amountSats, note: note ?? undefined, preimage: preimage ?? undefined, requestId: requestId ?? undefined, verifyUrl: verifyUrl ?? undefined,
+      paymentHash: paymentHash ?? undefined,
     });
     if (requestId && store.ownPayment(requestId)) store.setOwnPayment(requestId, { status: 'sent', announced: true });
   }
@@ -718,7 +731,7 @@ export function createChatRuntime(deps = {}) {
    */
   function requestState(requestId) {
     const id = normalizePubkey(requestId, 'requestId');
-    if (store.settlement(id)) return 'paid';
+    if (settlementForGoalRequest(id)) return 'paid';
     return store.requestStatus(id, nowSeconds());
   }
 
@@ -732,9 +745,17 @@ export function createChatRuntime(deps = {}) {
    */
   function requestSettlement(requestId) {
     const id = normalizePubkey(requestId, 'requestId');
-    const settled = store.settlement(id);
+    const settled = settlementForGoalRequest(id);
     if (settled) return { verified: true, walletId: settled.walletId ?? null, address: settled.address ?? null };
     return store.requestStatus(id, nowSeconds()) === 'paid' ? { verified: false, walletId: null, address: null } : null;
+  }
+
+  function settlementForGoalRequest(id) {
+    const direct = store.settlement(id);
+    if (direct) return direct;
+    const goal = store.requestGoalFor?.(id);
+    const share = goal?.shares.find(share => requestIdsOf(share).includes(id));
+    return share ? requestIdsOf(share).map(requestId => store.settlement(requestId)).find(Boolean) || null : null;
   }
 
   // ----- the payer's claim against the user's own ledger ------------------
@@ -757,7 +778,7 @@ export function createChatRuntime(deps = {}) {
         id: message.id,
         requestId: message.payment.requestId,
         createdAt: message.createdAt,
-        payment: { amountSats: message.payment.amountSats, preimage: message.payment.preimage },
+        payment: { amountSats: message.payment.amountSats, preimage: message.payment.preimage, paymentHash: message.payment.paymentHash },
         verifyUrl: message.payment.verifyUrl,
       });
       if (message.payment.requestId) withPayment.add(message.payment.requestId);
@@ -813,29 +834,38 @@ export function createChatRuntime(deps = {}) {
             if (!request || store.settlement(request.id)) continue;
             // The amount and the time come from the request, never from the claim.
             const payment = { ...claim.payment, amountSats: request.request.amountSats };
-            open.push({ partner, request, claim: { ...claim, payment, notBefore: request.createdAt } });
+            open.push({ partner, request, claim: { ...claim, payment, notBefore: request.createdAt,
+              // Several people often owe equal amounts at once: amount and time cannot tell them
+              // apart, so their claims need the exact receipt. One person keeps the chat's rule.
+              requireProof: (store.requestGoalFor?.(request.id)?.shares.length ?? 0) > 1 } });
           }
         }
         if (open.length === 0) return { settled, pending };
 
         const transactions = await (loadIncomingTransactions?.() ?? []);
         const consumed = settledTransactionKeys();
+        for (const key of await (loadConsumedTransactions?.() ?? [])) consumed.add(key);
+        if (disposed || store.scope !== me) return { settled, pending };
         const matches = matchIncomingPayments(open.map((entry) => entry.claim), transactions, { consumed, nowSeconds: nowSeconds() });
         for (const { partner, request, claim } of open) {
           // A request with several claims (payment and status): the first that holds settles it.
           if (store.settlement(request.id)) continue;
-          if (disposed) break;
+          if (disposed || store.scope !== me) break;
           const tx = matches.get(claim.id);
           // Money that came in but less than was asked is not the request paid.
           if (tx && tx.amountSats >= request.request.amountSats) {
             await recordVerifiedPayment(partner, request, tx);
+            if (tx.paymentHash) consumed.add(tx.paymentHash.toLowerCase());
+            const key = transactionKey(tx);
+            if (key) consumed.add(key);
             settled += 1;
             continue;
           }
-          const proof = claim.verifyUrl && await verifyViaAddress(claim.verifyUrl, request, settledTransactionKeys());
+          const proof = claim.verifyUrl && await verifyViaAddress(claim.verifyUrl, request, consumed);
           if (!proof) { pending += 1; continue; }
-          if (disposed) break;
+          if (disposed || store.scope !== me) break;
           store.setSettlement(request.id, { ...proof, paidAt: nowSeconds() });
+          if (proof.paymentHash) consumed.add(proof.paymentHash.toLowerCase());
           settled += 1;
         }
       } catch {
@@ -852,7 +882,7 @@ export function createChatRuntime(deps = {}) {
   function settledTransactionKeys() {
     const keys = new Set();
     for (const entry of Object.values(store.settlements ?? {})) {
-      if (entry.paymentHash) keys.add(entry.paymentHash);
+      if (entry.paymentHash) keys.add(entry.paymentHash.toLowerCase());
       if (entry.transactionKey) keys.add(entry.transactionKey);
     }
     return keys;
@@ -1037,6 +1067,9 @@ export function createChatRuntime(deps = {}) {
     // --- UI actions
     sendText,
     requestMoney,
+    createRequestGoal: goals.create,
+    retryRequestGoal: goals.deliver,
+    renewRequestGoal: goals.renew,
     declineRequest,
     cancelRequest,
     remindRequest,

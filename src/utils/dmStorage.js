@@ -135,6 +135,23 @@ export function createDmStorage({
       await backend.delete(recordKey(pubkey))
     },
 
+    /** Receipt identities only: prevent reusing a payment after changing identity. */
+    async loadSettledTransactionKeys(exceptOwner) {
+      const excluded = recordKey(exceptOwner)
+      const keys = new Set()
+      for (const key of await backend.keys()) {
+        const owner = String(key).startsWith(KEY_PREFIX) ? String(key).slice(KEY_PREFIX.length) : ''
+        if (!HEX_PUBKEY.test(owner) || key === excluded) continue
+        const state = await this.loadChatState(owner)
+        for (const settlement of Object.values(state?.settlements || {})) {
+          const hash = typeof settlement?.paymentHash === 'string' ? settlement.paymentHash.toLowerCase() : ''
+          if (HEX_PUBKEY.test(hash)) keys.add(hash)
+          if (typeof settlement?.transactionKey === 'string') keys.add(settlement.transactionKey)
+        }
+      }
+      return keys
+    },
+
     /** Remove every identity's chat history (the identities themselves were erased). */
     async deleteAllChatStates() {
       const keys = await backend.keys()
@@ -150,3 +167,4 @@ export const loadChatState = pubkey => app().loadChatState(pubkey)
 export const saveChatState = (pubkey, state) => app().saveChatState(pubkey, state)
 export const deleteChatState = pubkey => app().deleteChatState(pubkey)
 export const deleteAllChatStates = () => app().deleteAllChatStates()
+export const loadSettledTransactionKeys = owner => app().loadSettledTransactionKeys(owner)
