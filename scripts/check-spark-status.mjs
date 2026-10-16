@@ -79,6 +79,11 @@ const setLevel = (level, { status = null } = {}) => page.evaluate(async ({ level
         localStorage.setItem(STORAGE_KEY, JSON.stringify({ firstDownAt: t - 26 * 3600e3, lastDownAt: t - 10 * 60e3, observedMs: 40 * 60e3, sessions: ['earlier-1', 'earlier-2'], lastAnsweredAt: null }));
         store.newSession('this-session');
       }
+      if (level === 'unreachable') {
+        // Spark answered earlier today: the sheet's footnote names the time.
+        at(-45 * 60e3);
+        store.record(VERDICT.ANSWERED);
+      }
       at(-3 * 60e3);
       store.record(VERDICT.SPARK_DOWN);
       Date.now = realNow;
@@ -125,11 +130,12 @@ try {
   await page.getByText('No internet connection', { exact: true }).waitFor();
   await shot('home-no-internet');
   await openSheet();
-  await page.getByText('Things to check', { exact: true }).waitFor();
+  await page.getByText('Check Wi-Fi, mobile data or your VPN.', { exact: true }).waitFor();
+  await page.getByText('Offline', { exact: true }).waitFor();
   await page.getByRole('button', { name: 'Try again', exact: true }).waitFor();
   await shot('sheet-no-internet');
   await closeSheet();
-  console.log('✓ no internet: line, sheet with things to check, Try again');
+  console.log('✓ no internet: line, one sentence of advice, Try again');
 
   // Home mounting while a status is already showing (opening the app
   // offline) must render in full: nothing may translate during setup.
@@ -140,18 +146,21 @@ try {
   await page.getByText('No internet connection', { exact: true }).waitFor();
   console.log('✓ Home mounts in full with a status already showing');
 
-  assert.equal(await setLevel('unreachable', { status: 'major' }), 2);
+  assert.equal(await setLevel('unreachable', { status: 'partial' }), 2);
   await page.getByText("Spark can't be reached", { exact: true }).waitFor();
   await shot('home-spark-unreachable');
   await openSheet();
-  await page.getByText('Spark reports an outage', { exact: true }).waitFor();
+  await page.getByText('Partial outage', { exact: true }).waitFor();
+  await page.getByText(/^Last answer from Spark /).waitFor();
+  await page.getByText('Safe', { exact: true }).waitFor();
   assert.equal(await page.locator('[data-audit="spark-status-exit"]').count(), 0, 'no exit in a short outage');
   await shot('sheet-spark-unreachable');
   await closeSheet();
 
   assert.equal(await setLevel('unreachable', { status: 'operational' }), 2);
   await openSheet();
-  await page.getByText('Spark reports no problem', { exact: true }).waitFor();
+  await page.getByText('Try another Wi-Fi or mobile data.', { exact: true }).waitFor();
+  await page.getByText('No problem', { exact: true }).waitFor();
   await shot('sheet-blocked-here');
   await closeSheet();
   console.log('✓ Spark unreachable: no exit; "operational" points at this network');
@@ -162,7 +171,7 @@ try {
   await shot('home-long-outage');
   await openSheet();
   await page.locator('[data-audit="spark-status-exit"]').waitFor();
-  await page.getByText('About 4,250 sats in network fees', { exact: true }).waitFor();
+  await page.getByText('2 weeks · about 4,250 sats in fees', { exact: true }).waitFor();
   await shot('sheet-long-outage');
   await sheetEnd();
   await shot('sheet-long-outage-end');
@@ -182,12 +191,33 @@ try {
   await localBalance();
   await setLevel('long', { status: 'major' });
   await openSheet();
-  await page.getByText(/waiting is the better choice/).waitFor();
+  await page.getByText('Not worth it now', { exact: true }).waitFor();
   assert.equal(await page.locator('[data-audit="spark-status-exit"]').count(), 0, 'no way in when it is not worth it');
   await sheetEnd();
   await shot('sheet-long-outage-not-worth');
   await closeSheet();
   console.log('✓ not worth it: says so, offers no way in');
+
+  // German is the longest copy: every row must still fit at 320 px.
+  await page.setViewportSize({ width: 320, height: 640 });
+  await page.evaluate(async () => {
+    const { applyLocale } = await import('/src/i18n/locales.js');
+    applyLocale(window.__audit.app._instance.proxy.$i18n, 'de');
+  });
+  await line.click();
+  await page.locator('.spark-sheet').waitFor();
+  await page.getByText('Lohnt sich nicht', { exact: true }).waitFor();
+  const overflow = await page.locator('.spark-sheet').evaluate(el => el.scrollWidth > el.clientWidth);
+  assert.equal(overflow, false, 'no sideways overflow in German at 320 px');
+  await shot('sheet-long-outage-not-worth-de-320');
+  await page.locator('.spark-sheet__done').click();
+  await page.waitForTimeout(400);
+  await page.evaluate(async () => {
+    const { applyLocale } = await import('/src/i18n/locales.js');
+    applyLocale(window.__audit.app._instance.proxy.$i18n, 'en-US');
+  });
+  await page.setViewportSize({ width: 390, height: 844 });
+  console.log('✓ German at 320 px');
 
   await page.evaluate(() => window.__audit.setDark(true));
   await setLevel('unreachable', { status: 'major' });

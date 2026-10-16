@@ -276,7 +276,7 @@ try {
   assert.equal(await page.getByRole('button', { name: /^Emergency exit/ }).count(), 0, 'no exit on Home');
   await shot('home-status-line');
   await page.locator('[data-audit="spark-status-line"]').click();
-  await page.getByText('Your money is safe', { exact: true }).waitFor();
+  await page.getByText('Your money', { exact: true }).waitFor();
   assert.equal(await page.locator('[data-audit="spark-status-exit"]').count(), 0, 'no exit in a short outage');
   await shot('home-status-sheet');
   await page.getByRole('button', { name: 'Done', exact: true }).click();
