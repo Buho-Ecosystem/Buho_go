@@ -1,7 +1,7 @@
 <!--
-  LNBitsStep: one step of the LNbits form sheet (Connect, Wallet found,
-  Lightning address, Pay Links is off). It draws the chrome every step
-  shares, so the steps only describe their own content:
+  FormSheetStep: one step of a setup form sheet (connect a wallet, name
+  it, give it an address, explain a problem). It draws the chrome every
+  step shares, so a step only describes its own content:
 
     top bar  — glass Back on the left (when `back`), a text action such as
                "Not now" on the right (when `skipLabel`)
@@ -10,8 +10,7 @@
     body     — the default slot, scrolling when it has to
     footer   — the `footer` slot: the step's one primary action
 
-  The parent provides the sheet itself (.iform-sheet): the setup page's
-  route sheet, or LNBitsAddressSheet in Settings.
+  The parent provides the sheet itself (.iform-sheet, src/css/app.css).
 -->
 <template>
   <header class="iform-sheet-top">
@@ -20,21 +19,21 @@
     </q-btn>
     <div v-else class="iform-sheet-spacer"></div>
     <div class="iform-sheet-title"></div>
-    <button v-if="skipLabel" type="button" class="lnbits-step__skip" @click="$emit('skip')">{{ skipLabel }}</button>
+    <button v-if="skipLabel" type="button" class="form-sheet-step__skip" @click="$emit('skip')">{{ skipLabel }}</button>
     <div v-else class="iform-sheet-spacer"></div>
   </header>
 
   <div class="iform-sheet-scroll">
     <div class="iform-body">
       <div class="iform-hero">
-        <div class="iform-tile lnbits-step__tile">
+        <div class="iform-tile form-sheet-step__tile">
           <slot name="icon" />
-          <span v-if="badge" class="lnbits-step__badge" :class="`is-${badge}`" aria-hidden="true">
+          <span v-if="badge" class="form-sheet-step__badge" :class="`is-${badge}`" aria-hidden="true">
             <Icon :icon="badge === 'good' ? 'tabler:check' : 'tabler:exclamation-mark'" width="11" height="11" />
           </span>
         </div>
-        <h2 :id="titleId" class="iform-hero-title lnbits-step__title">{{ title }}</h2>
-        <p v-if="subtitle" class="iform-hero-sub lnbits-step__sub">{{ subtitle }}</p>
+        <h2 :id="titleId" class="iform-hero-title form-sheet-step__title">{{ title }}</h2>
+        <p v-if="subtitle" class="iform-hero-sub form-sheet-step__sub">{{ subtitle }}</p>
       </div>
       <slot />
     </div>
@@ -47,7 +46,7 @@
 
 <script>
 export default {
-  name: 'LNBitsStep',
+  name: 'FormSheetStep',
   props: {
     title: { type: String, required: true },
     subtitle: { type: String, default: '' },
@@ -63,7 +62,7 @@ export default {
 </script>
 
 <style scoped>
-.lnbits-step__skip {
+.form-sheet-step__skip {
   flex-shrink: 0;
   min-height: 40px;
   padding: 0 6px;
@@ -73,16 +72,16 @@ export default {
   font: 600 15px 'Manrope', sans-serif;
   cursor: pointer;
 }
-.lnbits-step__skip:focus-visible {
+.form-sheet-step__skip:focus-visible {
   outline: 2px solid var(--brand-accent-text);
   outline-offset: 2px;
   border-radius: 8px;
 }
-.lnbits-step__tile {
+.form-sheet-step__tile {
   position: relative;
   color: var(--text-secondary);
 }
-.lnbits-step__badge {
+.form-sheet-step__badge {
   position: absolute;
   right: -6px;
   bottom: -6px;
@@ -94,13 +93,13 @@ export default {
   color: #fff;
   border: 3px solid var(--bg-card);
 }
-.lnbits-step__badge.is-good { background: #059573; }
-.lnbits-step__badge.is-warn { background: #B7791F; }
-.lnbits-step__title {
+.form-sheet-step__badge.is-good { background: #059573; }
+.form-sheet-step__badge.is-warn { background: #B7791F; }
+.form-sheet-step__title {
   margin: 12px 0 0;
   text-wrap: balance;
 }
-.lnbits-step__sub {
+.form-sheet-step__sub {
   margin: 5px 0 0;
   text-wrap: balance;
 }

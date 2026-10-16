@@ -11,7 +11,7 @@
   caller moves on to the address step. No "Check again" button needed.
 -->
 <template>
-  <LNBitsStep
+  <FormSheetStep
     :title="$t('Pay Links is off')"
     :subtitle="$t('This LNbits extension gives you a Lightning address.')"
     badge="warn"
@@ -49,19 +49,19 @@
         @click="$emit('done')"
       >{{ primaryLabel || $t('Continue') }}</q-btn>
     </template>
-  </LNBitsStep>
+  </FormSheetStep>
 </template>
 
 <script>
 import { Capacitor } from '@capacitor/core';
-import LNBitsStep from './LNBitsStep.vue';
+import FormSheetStep from '../sheets/FormSheetStep.vue';
 import { openInAppBrowser } from '../../utils/inAppBrowser.js';
 import { shareContent } from '../../utils/share.js';
 import { extensionsUrl } from '../../utils/lnbitsAddress.js';
 
 export default {
   name: 'LNBitsPayLinksStep',
-  components: { LNBitsStep },
+  components: { FormSheetStep },
   props: {
     serverUrl: { type: String, required: true },
     domain: { type: String, required: true },

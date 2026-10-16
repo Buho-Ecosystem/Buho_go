@@ -4,7 +4,7 @@
   named in one field. The wallet ID stays out: nobody needs it here.
 -->
 <template>
-  <LNBitsStep :title="$t('Wallet found')" :subtitle="domain" badge="good" back @back="$emit('back')">
+  <FormSheetStep :title="$t('Wallet found')" :subtitle="domain" badge="good" back @back="$emit('back')">
     <template #icon>
       <LNBitsMark />
     </template>
@@ -45,18 +45,18 @@
         @click="add"
       >{{ $t('Add wallet') }}</q-btn>
     </template>
-  </LNBitsStep>
+  </FormSheetStep>
 </template>
 
 <script>
-import LNBitsStep from './LNBitsStep.vue';
+import FormSheetStep from '../sheets/FormSheetStep.vue';
 import LNBitsMark from './LNBitsMark.vue';
 import { formatAmount } from '../../utils/amountFormatting.js';
 import { useWalletStore } from '../../stores/wallet';
 
 export default {
   name: 'LNBitsWalletFound',
-  components: { LNBitsStep, LNBitsMark },
+  components: { FormSheetStep, LNBitsMark },
   props: {
     name: { type: String, default: '' },
     domain: { type: String, required: true },

@@ -13,7 +13,7 @@
   and stores the result on `confirm`.
 -->
 <template>
-  <LNBitsStep
+  <FormSheetStep
     :title="$t('Lightning address')"
     :subtitle="mode === 'pick' ? $t('Pick one for this wallet.') : $t('Get paid by name, like email.')"
     :back="back"
@@ -106,16 +106,16 @@
         @click="onConfirm"
       >{{ mode === 'pick' ? $t('Use address') : $t('Create address') }}</q-btn>
     </template>
-  </LNBitsStep>
+  </FormSheetStep>
 </template>
 
 <script>
-import LNBitsStep from './LNBitsStep.vue';
+import FormSheetStep from '../sheets/FormSheetStep.vue';
 import { isValidUsername, splitAddress, suggestUsername } from '../../utils/lnbitsAddress.js';
 
 export default {
   name: 'LNBitsAddressStep',
-  components: { LNBitsStep },
+  components: { FormSheetStep },
   props: {
     /** Hostname for the "@domain" part, e.g. "legend.lnbits.com". */
     domain: { type: String, required: true },
