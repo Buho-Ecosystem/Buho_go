@@ -189,5 +189,21 @@ test('isValidNwcConnection mirrors parseNwcConnection.ok', () => {
   assert.equal(isValidNwcConnection(''), false);
 });
 
+test('every relay survives parsing, in order (backups keep working)', () => {
+  const backup = 'wss://relay.backup.example';
+  const r = parseNwcConnection(`nostr+walletconnect://${PK}?relay=${RELAY_ENC}&relay=${encodeURIComponent(backup)}&secret=${SECRET}`);
+  assert.equal(r.ok, true);
+  assert.deepEqual(r.relays, [RELAY, backup]);
+  assert.equal(r.relay, RELAY, 'first relay stays the primary');
+  const again = parseNwcConnection(r.normalized);
+  assert.deepEqual(again.relays, [RELAY, backup], 'the normalised form keeps both');
+});
+
+test('one bad relay among several rejects the connection', () => {
+  const r = parseNwcConnection(`nostr+walletconnect://${PK}?relay=${RELAY_ENC}&relay=https%3A%2F%2Fnot-a-relay&secret=${SECRET}`);
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, NwcParseReason.InvalidRelay);
+});
+
 console.log(`\n  ${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);
