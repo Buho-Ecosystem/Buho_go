@@ -392,6 +392,7 @@ function payingHarness({ wallets = PAY_WALLETS, active = 'biz', funds = PAY_FUND
     getLightningSendFeeEstimate: async () => { calls.push([id, 'getLightningSendFeeEstimate']); return { estimatedFeeSats: 7 }; },
   });
   const store = {
+    nwcLimitFor: () => null,
     wallets, activeWalletId: active, connectionStates, balances: funds,
     balanceStates: Object.fromEntries(Object.entries(funds).map(([id, value]) => [id, { value }])),
     get activeWallet() { return this.wallets.find(w => w.id === this.activeWalletId) || null; },

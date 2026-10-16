@@ -15,6 +15,9 @@ import * as exitLedger from '../../utils/exitLedger.js';
 import * as sparkAccountScan from '../../services/sparkAccountScan.js';
 import * as addressUtils from '../../utils/addressUtils.js';
 import * as lightningAddressNames from '../../utils/lightningAddressNames.js';
+import * as nwcWallet from '../../utils/nwcWallet.js';
+import * as nwcConnection from '../../utils/nwcConnection.js';
+import * as nwcErrors from '../../utils/nwcErrors.js';
 
 export const PHRASE = 'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about';
 export const OTHER_PHRASE = 'zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo wrong';
@@ -124,6 +127,10 @@ export function createHarness({ evidence = {}, connect = null, storage = {}, exi
     '../utils/exitLedger.js': exitLedger,
     '../services/sparkAccountScan.js': sparkAccountScan,
     '../utils/addressUtils.js': addressUtils,
+    // The pure NWC rules the store follows (connection grants, names, errors).
+    '../utils/nwcWallet.js': nwcWallet,
+    '../utils/nwcConnection.js': nwcConnection,
+    '../utils/nwcErrors.js': nwcErrors,
     '../utils/lightningAddressNames.js': lightningAddressNames,
     '../services/breezSdk': {
       deleteWalletStorage: async (id) => { calls.deletedStorage.push(id); },

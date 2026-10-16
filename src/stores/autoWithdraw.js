@@ -4,6 +4,7 @@ import { WALLET_TYPES } from '../providers/WalletFactory'
 import { lnurlGetJson } from '../utils/lnurlHttp.js'
 import { counterpartyError } from '../utils/errorOrigin.js'
 import { migratePocketConfigKeys } from '../utils/autoWithdrawKeys.js'
+import { payWithNwc } from '../services/nwcPayment.js'
 
 const STORAGE_KEY = 'buhoGO_auto_withdraw'
 const SPEED_LABELS = { low: 'Economy', medium: 'Standard', high: 'Priority' }
@@ -401,7 +402,7 @@ export const useAutoWithdrawStore = defineStore('autoWithdraw', {
           nwc = await walletStore.connectWallet(walletId)
         }
         if (!nwc) throw new Error('NWC not connected')
-        const result = await nwc.sendPayment(invoice)
+        const result = await payWithNwc(nwc, invoice, { limit: walletStore.nwcLimitFor(walletId) })
         return { id: result.payment_hash || result.paymentHash || result.preimage || null, status: 'completed' }
       }
     },

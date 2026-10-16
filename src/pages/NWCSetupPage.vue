@@ -1,9 +1,4 @@
 <template>
-  <!-- Loading Screen -->
-  <LoadingScreen
-    :show="showLoadingScreen"
-    :loading-text="loadingText"
-  />
 
   <!-- The route presents as a 100% bottom sheet: dimmed ground, surface
        at the large detent, grabber + glass back for chrome. The identity
@@ -14,101 +9,46 @@
     <div class="iform-sheet" role="dialog" aria-modal="true" :aria-label="$t('Connect NWC Wallet')">
       <div class="iform-sheet-grab" aria-hidden="true"></div>
 
-      <!-- Connect form -->
+      <!-- Connect, then the wallet's own answer: what it is (found), that
+           it is already here (duplicate), or which part did not answer
+           (problem). Steps of this one sheet, never dialogs on top of it. -->
       <template v-if="!showScanner">
-        <header class="iform-sheet-top">
-          <q-btn flat round dense class="glass-back-btn" :aria-label="$t('Back')" @click="goBack">
-            <Icon icon="tabler:chevron-left" width="20" height="20" />
-          </q-btn>
-          <div class="iform-sheet-title"></div>
-          <div class="iform-sheet-spacer"></div>
-        </header>
-
-        <div class="iform-sheet-scroll">
-          <div class="iform-body">
-            <div class="iform-hero">
-              <div class="iform-tile">
-                <!-- NWC Logo -->
-                <svg width="30" height="30" viewBox="0 0 257 256" fill="none" xmlns="http://www.w3.org/2000/svg">
-                  <path d="M110.938 31.0639C100.704 20.8691 84.0846 20.9782 73.8873 31.2091L7.91341 97.4141C-2.28517 107.646 -2.15541 123.974 8.07554 134.17L116.246 242.34C126.479 252.534 143.066 252.449 153.263 242.218L185.415 210.066C176.038 219.443 168.322 212.701 159.178 203.595L141.244 185.662C127.63 191.051 111.718 188.374 100.688 177.365L87.0221 163.699C86.5623 163.243 86.2075 162.767 85.9582 162.17C85.7089 161.572 85.5803 160.931 85.5797 160.284C85.5792 159.637 85.7067 158.995 85.955 158.398C86.2033 157.8 86.5923 157.293 87.0513 156.837L94.7848 149.103L77.9497 132.268C75.3144 129.638 74.8841 125.391 77.2407 122.522C79.9345 119.228 84.8188 119.053 87.7741 122.002L104.837 139.051L116.394 127.494L99.5187 110.661C96.8822 108.03 96.4531 103.784 98.8298 100.895C99.4602 100.128 100.244 99.5006 101.131 99.0542C102.019 98.6077 102.989 98.3518 103.981 98.3028C104.973 98.2538 105.964 98.4129 106.891 98.7697C107.818 99.1266 108.66 99.6733 109.363 100.375L126.495 117.393L133.755 110.132C134.211 109.673 134.66 109.259 135.258 109.01C135.855 108.761 136.496 108.632 137.144 108.632C137.791 108.631 138.432 108.758 139.03 109.006C139.628 109.254 140.171 109.618 140.628 110.077L154.316 123.738C165.208 134.609 168.056 150.431 162.964 163.943L180.901 181.88C190.045 190.985 197.696 197.785 207.074 188.408L247.645 147.836C237.893 157.588 229.881 150.075 220.244 140.446L110.938 31.0639Z" fill="url(#nwc_setup_grad)"/>
-                  <path d="M187.641 13.0273L153.153 47.4873L229.781 124.116C237.116 131.419 243.491 137.239 250.565 134.417C254.654 132.787 257.461 128.351 255.894 124.238C219.227 28.0253 219.212 28.0238 214.348 17.507C209.484 6.99014 195.804 4.76016 187.641 13.0273Z" fill="#897FFF"/>
-                  <defs>
-                    <linearGradient id="nwc_setup_grad" x1="123.989" y1="10.4384" x2="123.989" y2="249.939" gradientUnits="userSpaceOnUse">
-                      <stop stop-color="#FFCA4A"/>
-                      <stop offset="1" stop-color="#F7931A"/>
-                    </linearGradient>
-                  </defs>
-                </svg>
-              </div>
-              <div class="iform-hero-title">{{ $t('Connect NWC Wallet') }}</div>
-              <div class="iform-hero-sub">{{ $t('Link your existing Lightning wallet via Nostr Wallet Connect') }}</div>
-            </div>
-
-            <div class="iform-secrow">
-              <span class="iform-seclabel">{{ $t('Connection') }}</span>
-              <button class="iform-scan" type="button" @click="openScanner">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                  <path d="M4 7V6a2 2 0 0 1 2-2h2"/><path d="M4 17v1a2 2 0 0 0 2 2h2"/><path d="M16 4h2a2 2 0 0 1 2 2v1"/><path d="M16 20h2a2 2 0 0 0 2-2v-1"/><path d="M5 12h14"/>
-                </svg>
-                {{ $t('Scan') }}
-              </button>
-            </div>
-
-            <div class="iform-group">
-              <div class="iform-row">
-                <div class="iform-label">{{ $t('Wallet Name') }}</div>
-                <q-input
-                  v-model="walletName"
-                  :placeholder="$t('e.g. My Lightning Wallet')"
-                  class="iform-input"
-                  borderless
-                  dense
-                  hide-bottom-space
-                />
-              </div>
-              <div class="iform-row">
-                <div class="iform-label">{{ $t('NWC Connection String') }}</div>
-                <q-input
-                  v-model="nwcString"
-                  :placeholder="$t('nostr+walletconnect://...')"
-                  class="iform-input"
-                  borderless
-                  dense
-                  type="textarea"
-                  autogrow
-                  hide-bottom-space
-                />
-              </div>
-            </div>
-
-            <!-- Error Message -->
-            <div v-if="errorMessage" class="error-message q-mt-md">
-              {{ errorMessage }}
-            </div>
-
-            <div class="iform-hint">
-              {{ $t('Get your NWC string from your Lightning wallet\'s settings') }}
-            </div>
-          </div>
-        </div>
-
-        <footer class="iform-sheet-footer">
-          <q-btn
-            class="iform-connect full-width"
-            :class="$q.dark.isActive ? 'dialog_add_btn_dark' : 'dialog_add_btn_light'"
-            :loading="isConnecting"
-            @click="validateAndConnect"
-            :disable="!walletName || !nwcString"
-            no-caps
-            unelevated
-          >
-            <span v-if="!isConnecting">{{ $t('Connect') }}</span>
-            <template v-slot:loading>
-              <q-spinner-dots class="q-mr-sm"/>
-              {{ $t('Connecting...') }}
-            </template>
-          </q-btn>
-        </footer>
+        <NWCWalletFound
+          v-if="step === 'found'"
+          v-model:name="walletName"
+          :probe="probe"
+          :relay="relay"
+          :busy="isAdding"
+          @back="step = 'connect'"
+          @add="addConnectedWallet"
+        />
+        <NWCDuplicateStep
+          v-else-if="step === 'duplicate'"
+          :existing="duplicate.wallet"
+          :same-connection="duplicate.sameConnection"
+          @back="step = 'connect'"
+          @open="openExisting"
+          @add-anyway="step = 'found'"
+        />
+        <NWCConnectProblem
+          v-else-if="step === 'problem'"
+          :kind="problemKind"
+          :relay="relay"
+          :busy="isTesting"
+          @retry="testConnection"
+          @edit="step = 'connect'"
+        />
+        <NWCConnectStep
+          v-else
+          v-model="nwcString"
+          :error="errorMessage"
+          :busy="isTesting"
+          :waiting="isWaiting"
+          @back="goBack"
+          @paste="pasteConnection"
+          @scan="openScanner"
+          @continue="testConnection"
+        />
       </template>
 
       <!-- Web QR scanner (native uses ScannerOverlay below) -->
@@ -197,39 +137,76 @@ import QrScanner from 'qr-scanner'
 import { createQrScanner } from '../utils/qrScanner'
 import { isNativeScannerAvailable } from '../utils/nativeScanner'
 import ScannerOverlay from '../components/ScannerOverlay.vue'
-import LoadingScreen from '../components/LoadingScreen.vue'
+import NWCConnectStep from '../components/nwc/NWCConnectStep.vue'
+import NWCWalletFound from '../components/nwc/NWCWalletFound.vue'
+import NWCDuplicateStep from '../components/nwc/NWCDuplicateStep.vue'
+import NWCConnectProblem from '../components/nwc/NWCConnectProblem.vue'
 import { useWalletStore } from '../stores/wallet'
-import { mapActions } from 'pinia'
+import { mapActions, mapState } from 'pinia'
 import { getUserFriendlyErrorMessage, translateErrorCode } from '../utils/userErrors'
 import { parseNwcConnection, NWC_REASON_I18N_KEYS } from '../utils/nwcConnection'
+import { findSameWallet, relayHost, suggestedWalletName } from '../utils/nwcWallet.js'
+import { NWC_ERROR } from '../utils/nwcErrors.js'
+import { probeNwcConnection } from '../services/nwcProbe.js'
+import { readClipboardCrossPlatform } from '../utils/shopClipboard.js'
 
+/**
+ * Connect a wallet over Nostr Wallet Connect, test first and name second:
+ *
+ *   connect   — paste or scan; the secret stays hidden
+ *   found     — the wallet answered: its name, balance, address, what this
+ *               connection may do and its spending limit; then Add wallet
+ *   duplicate — it is a wallet that is already here
+ *   problem   — the relay or the wallet did not answer, and which one
+ *
+ * Nothing is saved until Add wallet; the store reuses the test result.
+ */
 export default {
   name: 'NWCSetupPage',
   components: {
-    LoadingScreen,
     ScannerOverlay,
+    NWCConnectStep,
+    NWCWalletFound,
+    NWCDuplicateStep,
+    NWCConnectProblem,
   },
   data() {
     return {
-      walletName: '',
+      step: 'connect',
       nwcString: '',
-      isConnecting: false,
+      walletName: '',
       errorMessage: '',
+      isTesting: false,
+      isWaiting: false,
+      isAdding: false,
+      // services/nwcProbe result for the connection being added.
+      probe: null,
+      problemKind: 'no-answer',
+      duplicate: { wallet: null, sameConnection: false },
       showScanner: false,
       nativeScannerActive: false,
       cameraError: false,
       cameraErrorMessage: '',
       cameraLoading: true,
       qrScanner: null,
-      showLoadingScreen: false,
-      loadingText: '',
     }
+  },
+  computed: {
+    ...mapState(useWalletStore, ['wallets']),
+    relay() {
+      return relayHost(this.probe?.normalized || parseNwcConnection(this.nwcString).normalized || '');
+    },
+  },
+  watch: {
+    nwcString() {
+      this.errorMessage = '';
+    },
   },
   beforeUnmount() {
     this.stopQrScanner();
   },
   methods: {
-    ...mapActions(useWalletStore, ['addWallet']),
+    ...mapActions(useWalletStore, ['addWallet', 'switchActiveWallet']),
 
     goBack() {
       if (window.history.length > 1) {
@@ -239,56 +216,93 @@ export default {
       }
     },
 
-    validateNwcString(nwcString) {
-      // Single source of truth for what counts as a valid NWC string —
-      // see src/utils/nwcConnection.js. Accepts every known prefix variant
-      // (no-slash, no-plus, web+, lightning: wrapper, case-insensitive)
-      // and validates required params structurally.
-      const result = parseNwcConnection(nwcString);
-      if (result.ok) return true;
-      const key = NWC_REASON_I18N_KEYS[result.reason] || 'Invalid connection string format';
-      return this.$t(key);
+    /** Why a connection string cannot be used, or '' when it can. */
+    connectionProblem(raw) {
+      const result = parseNwcConnection(raw);
+      if (result.ok) return '';
+      return this.$t(NWC_REASON_I18N_KEYS[result.reason] || 'Invalid connection string format');
     },
 
-    async validateAndConnect() {
-      if (!this.walletName.trim()) {
-        this.errorMessage = this.$t('Wallet name is required');
+    async pasteConnection() {
+      const text = (await readClipboardCrossPlatform()) || '';
+      if (!text.trim()) {
+        this.errorMessage = this.$t('The clipboard is empty.');
         return;
       }
+      this.nwcString = text.trim();
+      this.errorMessage = this.connectionProblem(this.nwcString);
+    },
 
-      const validation = this.validateNwcString(this.nwcString);
-      if (validation !== true) {
-        this.errorMessage = validation;
+    /**
+     * Ask the wallet before saving anything. Its answer decides the next
+     * step: found, duplicate, or which part did not answer.
+     */
+    async testConnection() {
+      const problem = this.connectionProblem(this.nwcString);
+      if (problem) {
+        this.errorMessage = problem;
+        this.step = 'connect';
         return;
       }
-
-      this.isConnecting = true;
+      this.isTesting = true;
+      this.isWaiting = false;
       this.errorMessage = '';
-
       try {
-        this.showLoadingScreen = true;
-        this.loadingText = this.$t('Connecting to wallet...');
+        const probe = await this.probeConnection(this.nwcString, { onWaiting: () => { this.isWaiting = true; } });
+        this.probe = probe;
+        this.walletName = suggestedWalletName(probe, this.$t('Lightning wallet'));
+        const existing = findSameWallet(this.wallets, probe);
+        if (existing) {
+          const sameConnection = parseNwcConnection(existing.nwcUrl).pubkey === probe.connectionPubkey;
+          this.duplicate = { wallet: existing, sameConnection };
+          this.step = 'duplicate';
+        } else {
+          this.step = 'found';
+        }
+      } catch (error) {
+        console.warn('NWC connection test failed:', error?.message || error);
+        if (error?.code === NWC_ERROR.NO_ANSWER || error?.code === NWC_ERROR.RELAY_UNREACHABLE) {
+          this.problemKind = error.code === NWC_ERROR.RELAY_UNREACHABLE ? 'relay' : 'no-answer';
+          this.step = 'problem';
+        } else {
+          const t = this.$t.bind(this);
+          this.errorMessage = translateErrorCode(error, t) || getUserFriendlyErrorMessage(error, 'connect', t);
+          this.step = 'connect';
+        }
+      } finally {
+        this.isTesting = false;
+        this.isWaiting = false;
+      }
+    },
 
-        await this.addWallet({
-          name: this.walletName.trim(),
-          nwcUrl: this.nwcString.trim()
-        });
+    /** The connection test (services/nwcProbe), one method so a test harness can stand in for a wallet. */
+    probeConnection(url, options) {
+      return probeNwcConnection(url, options);
+    },
 
-        this.loadingText = this.$t('Loading wallet...');
-        await new Promise(resolve => setTimeout(resolve, 500));
-
+    async addConnectedWallet() {
+      if (!this.probe || this.isAdding) return;
+      this.isAdding = true;
+      try {
+        await this.addWallet({ name: this.walletName, nwcUrl: this.probe.normalized, probe: this.probe });
         // Straight into the wallet; the tour waits in About > Onboarding Guide.
         this.$router.replace('/wallet');
       } catch (error) {
-        console.error('Failed to connect NWC wallet:', error);
-        this.showLoadingScreen = false;
-        // A reason BuhoGO knows (the saved wallets could not be changed)
+        console.error('Failed to add NWC wallet:', error);
+        // A reason BuhoGO knows (already added, saved wallets unavailable)
         // replaces the generic title, which would blame the connection.
         const t = this.$t.bind(this);
         this.errorMessage = translateErrorCode(error, t) || getUserFriendlyErrorMessage(error, 'connect', t);
+        this.step = 'connect';
       } finally {
-        this.isConnecting = false;
+        this.isAdding = false;
       }
+    },
+
+    /** The wallet is already here: use it instead of adding it twice. */
+    async openExisting() {
+      await this.switchActiveWallet(this.duplicate.wallet.id);
+      this.$router.replace('/wallet');
     },
 
     async openScanner() {
@@ -370,15 +384,10 @@ export default {
       // tailored message — users routinely confuse the two.
       const result = parseNwcConnection(qrData);
       if (result.ok) {
-        // Persist the canonical form, not the raw scan, so downstream
-        // code (store, provider) only ever sees one shape.
+        // The canonical form (every relay kept), then straight on to the test.
         this.nwcString = result.normalized;
         this.closeScanner();
-        this.$q.notify({
-          type: 'positive',
-          message: this.$t('NWC connection string scanned'),
-          timeout: 1500,
-        });
+        this.testConnection();
         return;
       }
 
@@ -426,16 +435,6 @@ export default {
   margin: 4px 0 14px;
 }
 
-/* Error Message */
-.error-message {
-  color: #FF4B4B;
-  font-family: 'Manrope', sans-serif;
-  font-size: 13px;
-  text-align: center;
-  padding: 0.5rem;
-  background: rgba(255, 75, 75, 0.1);
-  border-radius: 8px;
-}
 
 /* Scanner Styles */
 .qr-scanner-container {

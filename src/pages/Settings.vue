@@ -1067,6 +1067,8 @@
           :rename-wallet="walletStore.updateWalletName"
           :lightning-address="detailWallet.type === 'spark' ? (walletInfos[detailWallet.id]?.lightningAddress || detailWallet.metadata?.lud16 || '') : ''"
           :can-move-address="sparkWallets.length > 1"
+          :nwc-limit="walletStore.nwcLimitFor(detailWallet.id)"
+          :nwc-status="walletStore.nwcStatus[detailWallet.id] || ''"
           @back="closeWalletDetail"
           @switch="handleSwitchWallet"
           @reconnect="reconnectWallet"
@@ -2109,6 +2111,8 @@ import ArkadeLogo from '../components/ArkadeLogo.vue'
 import WalletBrandMark from '../components/WalletBrandMark.vue'
 import BiometricEnableDialog from '../components/BiometricEnableDialog.vue'
 import LNBitsLightningAddressDialog from '../components/LNBitsLightningAddressDialog.vue'
+import { suggestedWalletName } from '../utils/nwcWallet.js'
+import { NWC_ERROR, nwcError } from '../utils/nwcErrors.js'
 import SparkLightningAddressSheet from '../components/SparkLightningAddressSheet.vue'
 import InternalTransferModal from '../components/InternalTransferModal.vue'
 import WalletDetailPanel from '../components/settings/WalletDetailPanel.vue'
@@ -2533,49 +2537,8 @@ export default {
 
     nwcWalletAlias() {
       if (!this.activeWallet || this.activeWallet.type !== 'nwc') return null;
-      const alias = this.activeWallet.metadata?.alias
-        || this.walletInfos[this.activeWalletId]?.alias
-        || null;
-      // Don't show "Unknown" — it's just noise
-      if (!alias || alias === 'Unknown') return null;
-      return alias;
-    },
-
-    nwcSupportedMethods() {
-      if (!this.activeWallet || this.activeWallet.type !== 'nwc') return [];
-      const methods = this.activeWallet.metadata?.methods
-        || this.walletInfos[this.activeWalletId]?.methods
-        || [];
-      // Map both snake_case (NWC spec) and camelCase (Alby SDK) to user-friendly labels
-      const friendlyNames = {
-        'pay_invoice': 'Send',
-        'make_invoice': 'Receive',
-        'get_balance': 'Balance',
-        'lookup_invoice': 'Lookup',
-        'list_transactions': 'History',
-        'get_info': 'Info',
-        'multi_pay_invoice': 'Multi-pay',
-        // camelCase variants (Alby SDK format)
-        'payInvoice': 'Send',
-        'sendPayment': 'Send',
-        'payKeysend': 'Keysend',
-        'makeInvoice': 'Receive',
-        'getBalance': 'Balance',
-        'lookupInvoice': 'Lookup',
-        'listTransactions': 'History',
-        'getInfo': 'Info',
-        'multiPayInvoice': 'Multi-pay',
-      };
-      // Deduplicate friendly names (e.g. payInvoice + sendPayment both → "Send")
-      const seen = new Set();
-      return methods
-        .map(m => friendlyNames[m] || m)
-        .filter(label => {
-          if (seen.has(label)) return false;
-          seen.add(label);
-          return true;
-        })
-        .slice(0, 6);
+      // What the wallet calls itself; placeholders ("Unknown", "N/A") say nothing.
+      return suggestedWalletName({ alias: this.activeWallet.metadata?.alias }, '') || null;
     },
 
     lnbitsServerDomain() {
@@ -3744,6 +3707,14 @@ export default {
           void this.walletStore.reconcileSpark([walletId], 'user')
         } else {
           await this.connectWallet(walletId)
+          // NWC: connecting only sets the connection up. Ask the wallet, and
+          // only call it reconnected when it answered.
+          if ((wallet?.type || 'nwc') === 'nwc') {
+            const status = await this.walletStore.refreshNwcDetails(walletId)
+            if (status !== 'answering') {
+              throw nwcError(status === 'relay' ? NWC_ERROR.RELAY_UNREACHABLE : NWC_ERROR.NO_ANSWER)
+            }
+          }
         }
         this.$q.notify({
           type: 'positive',
@@ -3753,6 +3724,7 @@ export default {
         this.walletStore.showPaymentError(error, {
           context: 'connect',
           route: 'Reconnect wallet',
+          walletName: this.wallets.find(w => w.id === walletId)?.name || '',
           t: this.$t.bind(this),
         })
       } finally {

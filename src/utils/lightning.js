@@ -11,6 +11,7 @@ import { assertPaymentInput } from './lud23.js';
  */
 
 import { NostrWebLNProvider } from '@getalby/sdk';
+import { payWithNwc } from '../services/nwcPayment.js';
 import { Invoice } from '@getalby/lightning-tools';
 import { bech32 } from 'bech32';
 import { parseSuccessAction } from './successAction.js';
@@ -104,10 +105,17 @@ export class LightningPaymentService {
    * Creates a new LightningPaymentService instance
    * @param {string} nwcConnectionString - The NWC connection URL (nostr+walletconnect://...)
    */
-  constructor(nwcConnectionString) {
+  /**
+   * @param {string} nwcConnectionString
+   * @param {object} [options]
+   * @param {object|null} [options.limit] the connection's spending limit
+   *   (store.nwcLimitFor): a payment above it stops before it is sent
+   */
+  constructor(nwcConnectionString, { limit = null } = {}) {
     if (!nwcConnectionString) {
       throw new Error('NWC connection string is required');
     }
+    this.limit = limit;
 
     this.nwc = new NostrWebLNProvider({
       nostrWalletConnectUrl: nwcConnectionString,
@@ -395,7 +403,7 @@ export class LightningPaymentService {
    */
   async payInvoice(invoice) {
     await this.enable();
-    return this.nwc.sendPayment(invoice);
+    return payWithNwc(this.nwc, invoice, { limit: this.limit });
   }
 
   /**
@@ -447,7 +455,7 @@ export class LightningPaymentService {
       throw new Error('No payment request received from Lightning address');
     }
 
-    const result = await this.nwc.sendPayment(data.pr);
+    const result = await payWithNwc(this.nwc, data.pr, { limit: this.limit });
     // Preserve the recipient's LUD-09 post-payment message so the caller can
     // surface it once the payment settles.
     return { ...result, successAction: parseSuccessAction(data.successAction, callback) };
@@ -502,7 +510,7 @@ export class LightningPaymentService {
       throw new Error('No payment request received from LNURL callback');
     }
 
-    const result = await this.nwc.sendPayment(data.pr);
+    const result = await payWithNwc(this.nwc, data.pr, { limit: this.limit });
     // Preserve the LUD-09 successAction (recipient's post-payment message) so
     // the caller can show it once the payment settles, and the LUD-11 verdict
     // on the link itself: `disposable: false` means this LNURL may be kept and

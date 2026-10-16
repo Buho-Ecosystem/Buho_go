@@ -5,6 +5,7 @@ import backup from './backup.js';
 import exit from './exit.js';
 import wallets from './wallets.js';
 import identities from './identities.js';
+import nwc from './nwc.js';
 export default {
   ...requests,
   ...profilePayment,
@@ -52,6 +53,7 @@ export default {
   ...exit,
   ...wallets,
   ...identities,
+  ...nwc,
   // Spend: Bitrefill door
   "Gift cards, mobile top-ups and more": "Geschenkkarten, Handy-Guthaben und mehr",
   "Bitrefill is on its way": "Bitrefill kommt bald",

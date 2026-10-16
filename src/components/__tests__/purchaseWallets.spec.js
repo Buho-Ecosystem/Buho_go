@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { transformSync } from 'esbuild';
 import { parse } from '@vue/compiler-sfc';
+import * as nwcPayment from '../../services/nwcPayment.js';
 
 // Load the real handlers and store accessor without starting wallet SDKs.
 function load(file, dependencies = {}) {
@@ -23,8 +24,9 @@ const walletOptions = load('../../stores/wallet.js', {
   },
   '../utils/claimedDeposits.js': { createClaimedDepositRegistry: () => ({}) },
 }).useWalletStore;
-const shop = load('../shop/PurchaseSheet.vue').default;
-const username = load('../Nip05MarketplaceSheet.vue').default;
+// NWC pays through the real proof-checking helper (services/nwcPayment).
+const shop = load('../shop/PurchaseSheet.vue', { '../../services/nwcPayment.js': nwcPayment }).default;
+const username = load('../Nip05MarketplaceSheet.vue', { '../services/nwcPayment.js': nwcPayment }).default;
 
 function harness(flow, type = 'nwc', { available = true, failPayment = false, settled = false } = {}) {
   const events = [];
@@ -34,7 +36,9 @@ function harness(flow, type = 'nwc', { available = true, failPayment = false, se
     events.push(['pay', request]);
     if (failPayment) throw new Error('Payment rejected');
   };
-  const provider = type === 'nwc' ? { sendPayment: pay } : { payInvoice: pay };
+  // An NWC wallet answers with a preimage; the test invoice has no hash to
+  // check it against, so the answer itself is the outcome (services/nwcPayment).
+  const provider = type === 'nwc' ? { sendPayment: async (request) => { await pay(request); return { preimage: 'ab'.repeat(32) }; } } : { payInvoice: pay };
   const walletStore = {
     wallets: [wallet],
     providers: type !== 'nwc' && available ? { [wallet.id]: provider } : {},
@@ -42,6 +46,7 @@ function harness(flow, type = 'nwc', { available = true, failPayment = false, se
       [wallet.id]: { connected: available, nwcInstance: type === 'nwc' && available ? provider : null },
     },
     getProvider: walletOptions.actions.getProvider,
+    nwcLimitFor: () => null,
   };
   const vm = {
     walletStore,

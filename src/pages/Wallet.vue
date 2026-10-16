@@ -228,6 +228,15 @@
                 :class="$q.dark.isActive ? 'amount-number-dark' : 'amount-number-light'"
                 :aria-label="$t('Balance hidden')"
               >••••</span>
+              <!-- An NWC connection that may not read the balance: a calm
+                   dash, not a placeholder waiting for a figure that never comes. -->
+              <span
+                v-else-if="!activeWalletSharesBalance"
+                class="amount-number amount-number-hidden"
+                :class="$q.dark.isActive ? 'amount-number-dark' : 'amount-number-light'"
+                :title="$t('This connection does not share the balance')"
+                :aria-label="$t('This connection does not share the balance')"
+              >–</span>
               <!-- Nothing known for this wallet yet: a placeholder, never a
                    0 that reads as an empty wallet (#293). -->
               <span
@@ -265,6 +274,10 @@
                  :class="$q.dark.isActive ? 'balance-secondary-dark' : 'balance-secondary-light'">
               <span v-if="walletStore.balanceHidden" class="secondary-amount-display">
                 <span class="secondary-value">••••</span>
+              </span>
+              <!-- Permanent, not loading: said once, in words, under the dash. -->
+              <span v-else-if="!activeWalletSharesBalance" class="secondary-amount-display">
+                <span class="secondary-value">{{ $t('Balance not shared') }}</span>
               </span>
               <span v-else-if="secondaryValue" class="secondary-amount-display">
                 <span class="secondary-value">{{ secondaryValue }}</span>
@@ -554,6 +567,7 @@
       :paying-wallets="payingWalletEntries"
       :sending-wallet-id="sendingWalletId"
       :is-sending="isSendingPayment"
+      :status-message="nwcSendWaiting ? $t('Waiting for your wallet app…') : ''"
       :is-complete="sendDidSucceed"
       :commit-gate="sendSheetCommitGate"
       @amount-changed="sendSheetAmountSats = $event"
@@ -748,6 +762,7 @@ import {parseSuccessAction, resolveSuccessAction} from '../utils/successAction.j
 import {validateVerifyUrl, pollVerify} from '../utils/lnurlVerify.js';
 import {lnurlFetch, lnurlGetJson} from '../utils/lnurlHttp.js';
 import { classifyTransportFailure, unreachableReason } from '../utils/userErrors.js';
+import { capabilitiesOf } from '../utils/nwcWallet.js';
 import { diagnoseConnection } from '../utils/connectivity.js';
 import { counterpartyError, keepOrigin } from '../utils/errorOrigin.js';
 import {buildLnurlPayCallbackUrl, isStoreablePayLink} from '../utils/lnurlPay.js';
@@ -1004,6 +1019,9 @@ export default {
       currentDisplayMode: null, // set from store in created()
       isSwitchingCurrency: false,
       isSendingPayment: false,
+      // An NWC payment still waiting after a few seconds: the wallet may be
+      // an app on another phone that wakes by push. Said, not left to a spinner.
+      nwcSendWaiting: false,
       // True for the brief completion beat after a send succeeds — drives the
       // CTA's fill-to-100% + checkmark before the success screen appears.
       sendDidSucceed: false,
@@ -2087,6 +2105,11 @@ export default {
     preferredFiatCurrency() {
       return (this.walletStore.preferredFiatCurrency || 'USD').toUpperCase();
     },
+    /** False for an NWC connection its wallet did not allow to read the balance. */
+    activeWalletSharesBalance() {
+      const wallet = this.walletStore.wallets.find((w) => w.id === this.walletStore.activeWalletId);
+      return !wallet || capabilitiesOf(wallet).balance;
+    },
     /** Canonical state of the active wallet (known/stale/…), or null. */
     activeBalanceState() {
       const id = this.walletStore.activeWalletId;
@@ -2190,6 +2213,7 @@ export default {
     );
   },
   beforeUnmount() {
+    clearTimeout(this._nwcWaitTimer);
     if (this.refreshInterval) {
       clearInterval(this.refreshInterval);
     }
@@ -2206,6 +2230,13 @@ export default {
     this.cancelBrantaLookup();
   },
   watch: {
+    isSendingPayment(sending) {
+      clearTimeout(this._nwcWaitTimer);
+      this.nwcSendWaiting = false;
+      if (sending && this.getSendingWalletType() === 'nwc') {
+        this._nwcWaitTimer = setTimeout(() => { this.nwcSendWaiting = this.isSendingPayment; }, 5000);
+      }
+    },
     // A payment handed over while Home is already open (its "Waiting for you" sheet).
     '$route.query.action'(action) {
       if (action) this.handlePaymentFromQuery();
@@ -5509,7 +5540,9 @@ export default {
         throw new Error('No active NWC wallet found');
       }
 
-      const lightningService = new LightningPaymentService(nwcUrl);
+      const lightningService = new LightningPaymentService(nwcUrl, {
+        limit: this.walletStore.nwcLimitFor(walletId || this.walletStore.activeWalletId),
+      });
       return await lightningService.sendPayment(this.getNwcPaymentData(), amount, comment);
     },
 
