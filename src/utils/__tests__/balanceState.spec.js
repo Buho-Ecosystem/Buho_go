@@ -129,6 +129,20 @@ test('after a failed sync, a cache read cannot replace saved funds or invent a z
   assert.equal(recovered.error, null);
 });
 
+test('with nothing known, a positive local figure shows as out of date while Spark is away (#381)', () => {
+  const local = nextBalanceState(emptyBalanceState(), { value: 48210, source: 'cache', fresh: false, at: NOW, error: 'Spark did not answer the sync' });
+  assert.equal(local.value, 48210);
+  assert.equal(local.source, 'cache');
+  assert.equal(local.verifiedAt, null);
+  assert.equal(local.error, 'Spark did not answer the sync', 'still marked as failing');
+  const shown = describeBalance(local, { now: NOW });
+  assert.equal(shown.status, BALANCE_STATUS.STALE);
+  assert.ok(shown.stale && shown.error, 'Home dims it as out of date');
+  // A verified refresh replaces it and clears the error.
+  const verified = nextBalanceState(local, { value: 50000, source: 'sync', at: NOW + 1000 });
+  assert.deepEqual([verified.value, verified.error], [50000, null]);
+});
+
 test('a cache read that changes a verified value is not presented as verified', () => {
   const verified = nextBalanceState(emptyBalanceState(), { value: 100, source: 'sync', at: NOW });
   const changed = nextBalanceState(verified, { value: 150, source: 'cache', fresh: false, at: NOW + 1000 });
