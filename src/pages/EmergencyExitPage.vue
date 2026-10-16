@@ -1,6 +1,6 @@
 <template>
   <q-page class="id-sub-page identity-surface exit-page" :class="$q.dark.isActive ? 'bg-dark' : 'bg-light'">
-    <IdentityNav :back-to="$t('Settings')" to="/settings?section=advanced" />
+    <IdentityNav :back-to="$t('Security')" to="/security" />
 
     <div class="id-sub-body exit-body">
       <h1 class="id-large-title">{{ $t('Emergency exit') }}</h1>
@@ -190,7 +190,7 @@ import { useEmergencyExitStore } from '../stores/emergencyExit';
 import { exitDriver } from '../services/emergencyExit.js';
 import { exitKitService } from '../services/exitKit.js';
 import { remindersAvailable } from '../services/exitNotifications.js';
-import { sparkHealth } from '../utils/sparkHealth.js';
+import { sparkReachability, LEVEL } from '../utils/sparkReachability.js';
 import { canCancel, canChangeDestination, needsAttention, isActive, arrivedSat, sweepFeeSat, selectFundingInputs } from '../utils/exitLedger.js';
 import { kitState } from '../utils/exitKit.js';
 import { sparkAccountNumberOf } from '../utils/sparkAccounts.js';
@@ -296,14 +296,13 @@ export default {
       return this.$t('From the last check {date}. Starting takes a fresh quote at today\'s fees. Nothing is sent until you confirm the last step.', { date: when });
     },
     sparkLine() {
-      const health = sparkHealth();
-      if (health.isSustainedOutage(this.walletId)) {
-        return this.$t('Spark has not answered for {duration}.', { duration: durationText(health.unreachableFor(this.walletId), this.tr) });
+      // The same verified record the Home status line reads (#381).
+      const state = sparkReachability().snapshot();
+      if (state.level >= LEVEL.UNREACHABLE && state.since) {
+        return this.$t('Spark has not answered since {when}.', { when: this.answeredWhen(state.since) });
       }
-      const at = health.lastSuccessAt(this.walletId);
-      if (!at) return '';
-      const when = this.relativeDay(at) === this.$t('today') ? `${this.$t('today')} ${formatTime(at, this.$i18n.locale)}` : this.relativeDay(at);
-      return this.$t('Last answer from Spark {when}.', { when });
+      const at = state.lastAnsweredAt;
+      return at ? this.$t('Last answer from Spark {when}.', { when: this.answeredWhen(at) }) : '';
     },
     lastChecked() {
       const exit = this.exit;
@@ -417,6 +416,10 @@ export default {
   methods: {
     shortAddress,
     tr(key, params) { return this.$t(key, params); },
+    answeredWhen(at) {
+      const day = this.relativeDay(at);
+      return day === this.$t('today') ? `${day} ${formatTime(at, this.$i18n.locale)}` : day;
+    },
     num(value) { return formatSats(value, this.$i18n.locale); },
     sats(value) { return `${this.num(value)} sats`; },
     day(timestamp) { return timestamp ? formatDay(timestamp, this.$i18n.locale) : ''; },

@@ -142,6 +142,17 @@ export async function ensureWasmInit() {
   return mod;
 }
 
+/**
+ * Spark's published service status ('operational', 'degraded', 'partial',
+ * 'major' or 'unknown'). Needs no wallet instance. The status is curated by
+ * people, so it confirms an outage the app measured and never starts one.
+ */
+export async function getSparkStatus() {
+  const mod = await ensureWasmInit();
+  const result = await mod.getSparkStatus();
+  return String(result?.status || 'unknown');
+}
+
 /** BuhoGO network name -> Breez Network. Breez supports mainnet/regtest only. */
 function toBreezNetwork(network) {
   const key = String(network || 'MAINNET').toUpperCase();

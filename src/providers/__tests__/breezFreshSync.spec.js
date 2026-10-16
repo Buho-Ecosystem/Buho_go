@@ -4,10 +4,12 @@
  * getInfo({ ensureSynced: true }) only waits for the SDK's initial sync and
  * then reads the local cache, so it is no proof that Spark answered. These
  * tests run the REAL provider class against a scripted SDK and pin the
- * contract: a fresh read performs syncWallet, a cache read never records
- * network health, a failed sync stays visibly stale, money callers can
- * demand freshness, concurrent reads share one sync, and a sync that
- * outlives its connection cannot report success for the replacement.
+ * contract: a fresh read performs syncWallet, a cache read never reports
+ * Spark reachability, a failed sync stays visibly stale and never marks
+ * Spark down by itself, one attempt reports one outcome however many
+ * callers wait on it (#381), money callers can demand freshness,
+ * concurrent reads share one sync, and a sync that outlives its connection
+ * cannot report success for the replacement.
  *
  * Run directly with Node:
  *   node src/providers/__tests__/breezFreshSync.spec.js
@@ -24,7 +26,11 @@ globalThis.localStorage = {
 globalThis.fetch = async () => { throw new Error('network disabled under test'); };
 
 const { BreezSparkWalletProvider } = await import('../BreezSparkWalletProvider.js');
-const { sparkHealth } = await import('../../utils/sparkHealth.js');
+const { sparkReachability } = await import('../../utils/sparkReachability.js');
+const { startReachabilityChecks, stopReachabilityChecks } = await import('../../services/sparkReachabilityCheck.js');
+
+const settled = () => new Promise((r) => setImmediate(r));
+const lastAnswer = () => sparkReachability().stored().lastAnsweredAt;
 
 let passed = 0;
 let failed = 0;
@@ -84,29 +90,28 @@ await test('a fresh read performs a real sync after startup and says so', async 
   assert.equal(provider.lastSyncedAt(), second.syncedAt);
 });
 
-await test('initial readiness and cache reads never record network health', async () => {
+await test('initial readiness and cache reads never report reachability', async () => {
   const sdk = scriptedSdk();
   const provider = providerWith(sdk);
-  sparkHealth().recordFailure(provider.walletId);
+  sparkReachability().clear();
   await provider.whenInitiallySynced();
   const cached = await provider.getCachedBalance();
+  await settled();
   assert.equal(cached.fresh, false);
   assert.equal(cached.source, 'cache');
   assert.equal(sdk.syncCalls, 0);
-  assert.equal(sparkHealth().lastSuccessAt(provider.walletId), null, 'no success from a local read');
-  assert.ok(sparkHealth().unreachableFor(provider.walletId) >= 0);
-  assert.ok(store.get('buhoGO_spark_health_v1').includes(provider.walletId));
+  assert.equal(lastAnswer(), null, 'no answer from a local read');
 });
 
-await test('a completed sync records success and clears the outage streak', async () => {
+await test('a completed sync reports that Spark answered', async () => {
   const provider = providerWith(scriptedSdk());
-  sparkHealth().recordFailure(provider.walletId);
+  sparkReachability().clear();
   await provider.getBalance();
-  assert.ok(sparkHealth().lastSuccessAt(provider.walletId));
-  assert.equal(sparkHealth().unreachableFor(provider.walletId), 0);
+  await settled();
+  assert.ok(lastAnswer());
 });
 
-await test('a failed sync keeps the last value, labelled stale, and records failure', async () => {
+await test('a failed sync keeps the last value, labelled stale, and never marks Spark down by itself', async () => {
   const sdk = scriptedSdk({ balance: 500, sync: async () => { throw new Error('transport error'); } });
   const provider = providerWith(sdk);
   const result = await provider.getBalance();
@@ -114,8 +119,8 @@ await test('a failed sync keeps the last value, labelled stale, and records fail
   assert.equal(result.fresh, false);
   assert.equal(result.source, 'cache');
   assert.match(result.syncError, /transport error/);
-  assert.equal(sparkHealth().lastSuccessAt(provider.walletId), null);
-  assert.ok(sparkHealth().unreachableFor(provider.walletId) >= 0);
+  await settled();
+  assert.equal(sparkReachability().stored().firstDownAt, null);
 });
 
 await test('money callers can require fresh data and see the failure', async () => {
@@ -152,6 +157,7 @@ await test('concurrent reads share one network sync', async () => {
 });
 
 await test('a sync that outlives its connection is rejected, never applied', async () => {
+  sparkReachability().clear();
   const gate = deferred();
   const oldSdk = scriptedSdk({ balance: 999, sync: () => gate.promise });
   const provider = providerWith(oldSdk);
@@ -160,19 +166,27 @@ await test('a sync that outlives its connection is rejected, never applied', asy
   provider.sdk = scriptedSdk({ balance: 5 }); // rebuild / replacement
   gate.resolve({});
   await assert.rejects(pending, (e) => e.code === 'BREEZ_SYNC_OBSOLETE');
-  assert.equal(sparkHealth().lastSuccessAt(provider.walletId), null, 'old instance cannot vouch for the new one');
+  await settled();
+  assert.equal(lastAnswer(), null, 'old instance cannot vouch for the new one');
 });
 
-await test('reachability probes use a real sync', async () => {
-  const sdk = scriptedSdk();
-  const provider = providerWith(sdk);
-  assert.equal(await provider.probeReachability({ timeoutMs: 100 }), true);
-  assert.equal(sdk.syncCalls, 1);
-  assert.equal(sdk.ensureSyncedCalls, 0);
-  const down = providerWith(scriptedSdk({ sync: async () => { throw new Error('down'); } }));
-  assert.equal(await down.probeReachability({ timeoutMs: 100 }), false);
-  provider.isConnected = false;
-  assert.equal(await provider.probeReachability(), false);
+await test('one sync attempt reports one outcome, however many callers wait on it (#381)', async () => {
+  const checker = startReachabilityChecks();
+  const reports = [];
+  checker.reportFailedAttempt = (outcome) => reports.push(outcome);
+  checker.reportAnswered = () => reports.push('answered');
+  try {
+    const gate = deferred();
+    const provider = providerWith(scriptedSdk({ sync: () => gate.promise }));
+    const callers = Promise.allSettled([provider.getBalance(), provider.getBalance(), provider.syncNow(), provider.getBalance()]);
+    await settled();
+    gate.reject(new Error('down'));
+    await callers;
+    await settled();
+    assert.deepEqual(reports, [{ errored: false }]);
+  } finally {
+    stopReachabilityChecks();
+  }
 });
 
 await test('a sync the SDK resolves while Spark never answered is not fresh (Breez 0.25 offline)', async () => {
@@ -193,12 +207,58 @@ await test('a sync the SDK resolves while Spark never answered is not fresh (Bre
   assert.equal(stale.fresh, false);
   assert.equal(stale.balance, 77, 'last value kept');
   assert.match(stale.syncError, /did not answer/);
-  assert.equal(sparkHealth().lastSuccessAt('w-observed'), null);
+  await settled();
+  assert.equal(lastAnswer(), null);
   await assert.rejects(() => provider.getBalance({ requireFresh: true }), (e) => e.code === 'BREEZ_SYNC_UNVERIFIED');
   online = true;
   const fresh = await provider.getBalance();
   assert.equal(fresh.fresh, true);
-  assert.ok(sparkHealth().lastSuccessAt('w-observed'));
+  await settled();
+  assert.ok(lastAnswer());
+});
+
+await test('a failed sync that still got real Spark answers counts as Spark answering', async () => {
+  const { createSparkNetworkObserver } = await import('../../utils/sparkNetwork.js');
+  const network = createSparkNetworkObserver();
+  let n = 0;
+  const flaky = network.wrap(async () => { n += 1; if (n > 1) throw new TypeError('Failed to fetch'); return { status: 200 }; });
+  const sdk = scriptedSdk({ sync: async () => {
+    await Promise.allSettled([1, 2, 3].map(() => flaky('https://2.spark.flashnet.xyz/rpc')));
+    await new Promise((r) => setImmediate(r));
+    return {};
+  } });
+  const provider = new BreezSparkWalletProvider('w-flaky', { name: 't', _testSdk: sdk, _testNetwork: network });
+  provider.isConnected = true;
+  sparkReachability().clear();
+  const result = await provider.getBalance();
+  await settled();
+  assert.equal(result.fresh, false, 'more failures than answers: not fresh');
+  assert.ok(lastAnswer(), 'but Spark is reachable');
+});
+
+await test('a sync that answers only with server errors is not fresh and never counts as an answer', async () => {
+  const { createSparkNetworkObserver } = await import('../../utils/sparkNetwork.js');
+  const network = createSparkNetworkObserver();
+  const errorPage = network.wrap(async () => ({ status: 503 }));
+  const sdk = scriptedSdk({ sync: async () => {
+    await Promise.allSettled([1, 2].map(() => errorPage('https://0.spark.lightspark.com/rpc')));
+    await new Promise((r) => setImmediate(r));
+    return {};
+  } });
+  const provider = new BreezSparkWalletProvider('w-503', { name: 't', _testSdk: sdk, _testNetwork: network });
+  provider.isConnected = true;
+  const checker = startReachabilityChecks();
+  const reports = [];
+  checker.reportFailedAttempt = (outcome) => reports.push(outcome);
+  checker.reportAnswered = () => reports.push('answered');
+  try {
+    const result = await provider.getBalance();
+    await settled();
+    assert.equal(result.fresh, false);
+    assert.deepEqual(reports, [{ errored: true }]);
+  } finally {
+    stopReachabilityChecks();
+  }
 });
 
 console.log(`\n${passed} passed, ${failed} failed`);
