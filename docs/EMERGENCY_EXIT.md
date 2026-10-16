@@ -19,10 +19,21 @@ A Spark wallet's money can move to plain Bitcoin without Spark's operators, usin
 
 ### The door
 
-- Settings → Advanced: the Spark-only Emergency exit kit row opens `ExitKitSheet.vue` with the receipt, copies, share, refresh, the explainer and the door to start or resume an exit. `HowExitWorksSheet.vue` is the briefing card. The exit page returns to Advanced, expanded. Security keeps the backup card's second state line (`Exit kit checked today`).
+- Security, backup area: the Spark-only Emergency exit kit row (`BackupChoices.vue`) opens `ExitKitSheet.vue` with the receipt, copies, share, refresh, the explainer and the door to start or resume an exit. This is the kit's only home: it sits next to the recovery words it depends on, and never in Settings or the Danger Zone (#381). `HowExitWorksSheet.vue` is the briefing card. The exit page returns to Security. The Spark backup row keeps its second state line (`Exit kit checked today`). `/security?open=exit-kit` opens the sheet directly.
 - The kit sheet starts with a compact status and exit-review entry for each wallet. Native disclosure controls reveal amounts, copy dates, sharing and refresh actions. Missing kits, refresh failures, phone-only copies and outdated external copies remain visible when collapsed. This applies [Apple HIG's progressive-disclosure guidance](https://developer.apple.com/design/human-interface-guidelines/layout) to maintenance details; the fee review and final send confirmation remain explicit.
-- Home: `ExitBanner.vue` appears only after a sustained outage (`src/utils/sparkHealth.js`: three failed synced reads over six hours, recorded by the provider's synced reads and by a five-minute reachability probe from the exit monitor, never while the phone itself is offline) and can be dismissed for a day. Exit progress is available through Settings → Advanced; no progress chip appears on the home screen.
-- Kiosk mode never reaches any of it: the kiosk router guard redirects unlisted routes, and the banner respects `isKioskRestricted`.
+- Home never shows the exit. When Spark cannot be reached, one quiet line under the balance names the cause (`SparkStatusLine.vue`): "No internet connection", "Spark can't be reached", or after a long verified outage "Spark unreachable since …". It opens `SparkStatusSheet.vue`: what happened, that the money is safe, what to try. Only the long-outage sheet mentions the exit, below "waiting is the best choice", with the kit's fee figures, and only when more comes back than the fees take; its row leads to the kit in Security. Nothing to dismiss: the line leaves once Spark answers. Exit progress is available through Security; no progress chip appears on the home screen.
+- Kiosk mode never reaches any of it: the kiosk router guard redirects unlisted routes, and the line respects `isKioskRestricted`.
+
+### When Spark counts as unreachable
+
+The signal points at an irreversible, paid action, so it only moves on proof (`src/utils/sparkReachability.js`, checks in `src/services/sparkReachabilityCheck.js`, #381):
+
+- One verdict per check: answered, no internet, Spark down, or unknown. A Spark sync reports its outcome once, when it settles, however many callers wait on it; a failure alone never marks Spark down.
+- Spark down needs the internet to work (`utils/connectivity.js`: independent HTTPS hosts) and at least two of the three Spark operators to fail when asked directly (`utils/sparkOperators.js`). Spark signs with two of three, so one operator away is no outage. Answers that are only 5xx, 429 or 401 count as failures (`utils/sparkNetwork.js`).
+- Any answer from Spark clears everything. Checks never run while the app is hidden or in the first 15 seconds after start, resume or reconnect.
+- Time counts only while the app is checking: each verdict adds the gap since the previous one, capped at 10 minutes. A 48-hour silence or a clock that went backwards restarts the streak. Nothing is shown from saved state before the session's own checks.
+- Level 1, no internet: after one check. Level 2, Spark can't be reached: two Spark-down verdicts at least two minutes apart in this session. Level 3, long outage: Spark down in at least three app sessions (an hour away starts a new one), 24 hours from the first to the latest verdict, 30 minutes observed, the latest under 10 minutes old, and Spark's own status (`getSparkStatus()`) not "operational". When that status says operational, the sheet points at this network instead.
+- One record for all Spark wallets (`buhoGO_spark_reachability_v1`). The earlier per-wallet record and the banner dismissal are deleted on start.
 
 ### The exit page
 
@@ -49,7 +60,7 @@ Account 1 keeps the addresses every exit used before. A shared fee money address
 ## Validation
 
 - `npm test` runs the emergency-exit specs: key derivation against the BIP-84 vectors and the per-account layout, signing only from known fee money paths, address validation, chain planning, ledger transitions, the Esplora client with failover and package rules, the kit life cycle, the exit driver end to end against fakes, outage tracking, and native reminder scheduling without awaiting a Capacitor proxy.
-- `node scripts/check-emergency-exit.mjs` against the dev server (`pnpm dev --port 9011`, or set `EXIT_BASE_URL` for another port): seeds public test words, stubs the SDK provider and every chain endpoint, and drives the real UI through Settings → Advanced, keyboard disclosure of kit details, start, destination validation, fee money, confirmation and safe dismissal, package broadcasting in dependency order, the timelock, the sweep, done with its receipt, cancel behind its confirmation, the outage banner, no progress chip on home, resume from Settings, German at 320px with 200% text, and the dark theme. Screenshots land in `output/emergency-exit/`.
+- `node scripts/check-emergency-exit.mjs` against the dev server (`pnpm dev --port 9011`, or set `EXIT_BASE_URL` for another port): seeds public test words, stubs the SDK provider and every chain endpoint, and drives the real UI through the Security backup area, keyboard disclosure of kit details, start, destination validation, fee money, confirmation and safe dismissal, package broadcasting in dependency order, the timelock, the sweep, done with its receipt, cancel behind its confirmation, the Home status line and its sheet (no exit on Home), no progress chip on home, resume from Security, German at 320px with 200% text, and the dark theme. Screenshots land in `output/emergency-exit/`.
 
 ## Limits and follow-ups
 
