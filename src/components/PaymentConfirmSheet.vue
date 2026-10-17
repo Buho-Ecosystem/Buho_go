@@ -37,11 +37,11 @@
         <div v-if="!isRedeem" class="grab-bar"></div>
 
         <header class="top-row">
-          <q-btn flat round dense @click="onTopAction" class="top-btn glass-back-btn" :disable="isRedeem && (isSending || isComplete)" :aria-label="$t(isRedeem ? 'Cancel' : 'Back')">
+          <q-btn flat round dense @click="onTopAction" class="top-btn glass-back-btn" :disable="takeover ? takeoverLocked : isRedeem && (isSending || isComplete)" :aria-label="$t(isRedeem ? 'Cancel' : 'Back')">
             <svg v-if="isRedeem" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="m6 6 12 12M6 18 18 6" /></svg>
             <Icon v-else icon="tabler:chevron-left" width="20" height="20" />
           </q-btn>
-          <h2 class="top-title" :id="titleId">{{ topTitle }}</h2>
+          <h2 class="top-title" :id="titleId">{{ takeover ? takeoverTitle : topTitle }}</h2>
           <!-- Verification sits in the top-right corner (Blitz-style): a single
                tappable seal, not an inline pill under the recipient name. -->
           <div class="top-action">
@@ -61,7 +61,20 @@
         on the same screen. Each piece of info (recipient, payment type, amount,
         fee) is shown exactly once.
       -->
-      <div class="stage stage-compose">
+      <!-- A card the phone is still reading: the card itself, at once, so the
+           tap gets an answer before the card's service does. -->
+      <div v-if="isReading" class="stage stage-reading">
+        <CardFace reading :name="payment.card?.name" :host="payment.card?.host" />
+        <div class="reading-status" role="status"><q-spinner size="16px" />{{ $t('Reading card…') }}</div>
+      </div>
+
+      <!-- The card's PIN (or what came of it) in place of the amount and the
+           slide: same sheet, same card and amount, nothing new to orient in. -->
+      <div v-show="takeover" class="stage stage-takeover">
+        <slot name="takeover" />
+      </div>
+
+      <div v-if="!isReading" v-show="!takeover" class="stage stage-compose">
           <!-- Amount leads: the recipient was chosen on the screen before,
                so the number is this screen's job and takes the stage.
                Locked, range, or free depending on mode. -->
@@ -102,6 +115,13 @@
                  the user's chosen display currency. -->
             <div v-if="zarSecondary" class="zar-secondary">
               R{{ zarSecondary }} ZAR
+            </div>
+            <!-- Said before the slide, not after: from this amount on, the
+                 card asks for its PIN. Appears only once the amount reaches
+                 the card's limit, so it never suggests an amount. -->
+            <div v-if="needsCardPin" class="card-pin-note">
+              <Icon icon="tabler:lock" width="13" height="13" />
+              <span>{{ $t('Needs the card PIN') }}</span>
             </div>
           </section>
 
@@ -294,7 +314,7 @@
              the filling ProgressCta — trickle while in flight, then 100% +
              check on success — bridging cleanly into the confirmation screen
              with no separate confirm step and no blank in between. -->
-        <div class="cta-row confirm-cta">
+        <div v-if="!isReading" v-show="!takeover" class="cta-row confirm-cta">
             <transition name="cta-swap" mode="out-in">
               <ProgressCta
                 v-if="isSending || isComplete"
@@ -309,6 +329,8 @@
                 ref="slideRef"
                 :label="slideLabel"
                 :disabled="!canSubmit"
+                :tone="isRedeem ? 'receive' : 'send'"
+                :lock-at-end="needsCardPin"
                 @complete="emitConfirm"
               />
               <button
@@ -325,7 +347,7 @@
 
             <!-- Status line during send takes priority over the generic fees
                  footnote, which only shows when no fee data is displayed. -->
-            <div v-if="isSending && statusMessage" class="fee-footnote status-line">
+            <div v-if="isSending && statusMessage && statusMessage !== sendingLabel" class="fee-footnote status-line">
               {{ statusMessage }}
             </div>
             <div v-else-if="!isSending && !isComplete && !feeRowVisible && !hasExtras && verb === 'send'" class="fee-footnote">
@@ -346,6 +368,7 @@ import SlideToSend from './SlideToSend.vue'
 import BrantaVerifiedBadge from './BrantaVerifiedBadge.vue'
 import ProgressCta from './ProgressCta.vue'
 import PayWithField from './PayWithField.vue'
+import CardFace from './CardFace.vue'
 import { onAndroidBack } from '../utils/androidBack.js'
 
 // Below this, a tap "Send" button; above it, slide-to-confirm. Both morph into
@@ -354,7 +377,7 @@ const SLIDE_THRESHOLD_SATS = 10000
 
 export default {
   name: 'PaymentConfirmSheet',
-  components: { SlideToSend, BrantaVerifiedBadge, ProgressCta, PayWithField },
+  components: { SlideToSend, BrantaVerifiedBadge, ProgressCta, PayWithField, CardFace },
   props: {
     modelValue: { type: Boolean, default: false },
     /**
@@ -410,9 +433,18 @@ export default {
      * panel: no confirmed fee quote, no send. Defaults open so ordinary
      * payments never need to pass it.
      */
-    commitGate: { type: Boolean, default: true }
+    commitGate: { type: Boolean, default: true },
+    /**
+     * The parent's `takeover` slot replaces the amount and the commit
+     * control while true: a card's PIN asked for in place, or how the card
+     * answered. The top button then emits `takeover-cancel` (disabled while
+     * `takeoverLocked`, e.g. while the PIN is being checked).
+     */
+    takeover: { type: Boolean, default: false },
+    takeoverTitle: { type: String, default: '' },
+    takeoverLocked: { type: Boolean, default: false }
   },
-  emits: ['update:modelValue', 'confirm', 'cancel', 'amount-changed', 'update:sendingWalletId'],
+  emits: ['update:modelValue', 'confirm', 'cancel', 'amount-changed', 'update:sendingWalletId', 'takeover-cancel'],
   data() {
     return {
       showAddress: false,
@@ -745,8 +777,20 @@ export default {
     requiresSlide() {
       // Tap button up to the threshold; slide-to-confirm above it. Flows
       // can force the deliberate gesture regardless of amount (on-chain
-      // sends: every transaction is irreversible, so always slide).
-      return !!this.payment?.forceSlide || this.amountInSats > SLIDE_THRESHOLD_SATS
+      // sends: every transaction is irreversible, so always slide). A card
+      // always slides: one gesture for every card amount.
+      return !!this.payment?.forceSlide || this.isCard || this.amountInSats > SLIDE_THRESHOLD_SATS
+    },
+
+    // ───── Card (Bolt Card withdraw) ─────
+    /** `payment.card`: { name, host, pinLimit (msat) } for a tapped card. */
+    isCard() { return !!this.payment?.card },
+    /** The sheet is up before the card's service answered. */
+    isReading() { return !!this.payment?.reading },
+    /** LUD-XX: the card asks for its PIN when amount (msat) reaches pinLimit. */
+    needsCardPin() {
+      const limit = this.payment?.card?.pinLimit
+      return this.isCard && Number.isSafeInteger(limit) && limit > 0 && this.amountInSats > 0 && this.amountInSats * 1000 >= limit
     },
 
     // True when the parent filled the `extras` slot (e.g. the on-chain
@@ -808,6 +852,7 @@ export default {
     isRedeem() { return this.verb === 'redeem' || this.verb === 'charge' },
 
     topTitle() {
+      if (this.isCard || this.isReading) return this.$t('Receive from card')
       if (this.verb === 'charge') return this.$t('Charge card')
       return this.isRedeem ? this.$t('Redeem from') : this.$t('Send to')
     },
@@ -818,6 +863,7 @@ export default {
     },
 
     slideLabel() {
+      if (this.isCard) return `${this.$t('Slide to receive')} ${this.formattedConfirmAmount}`
       const phrase = this.verb === 'charge' ? this.$t('Slide to charge') : this.isRedeem ? this.$t('Slide to redeem') : this.$t('Slide to send')
       return `${phrase} ${this.formattedConfirmAmount}`
     },
@@ -834,6 +880,7 @@ export default {
 
     // In-flight label shown inside the filling ProgressCta.
     sendingLabel() {
+      if (this.isCard) return this.$t('Receiving sats...')
       return this.isRedeem ? this.$t('Redeeming...') : this.$t('Sending...')
     }
   },
@@ -866,6 +913,10 @@ export default {
      */
     amountInSats(sats) {
       this.$emit('amount-changed', sats)
+    },
+    /** The card's answer arrived in an open sheet: start it like a fresh open. */
+    isReading(reading, wasReading) {
+      if (wasReading && !reading && this.show) this.resetForFreshOpen()
     }
   },
   beforeUnmount() {
@@ -933,6 +984,10 @@ export default {
     },
 
     onTopAction() {
+      if (this.takeover) {
+        if (!this.takeoverLocked) this.$emit('takeover-cancel')
+        return
+      }
       if (this.isRedeem && (this.isSending || this.isComplete)) return
       this.show = false
       if (!this.isRedeem) this.$emit('cancel')
@@ -1440,6 +1495,36 @@ export default {
   font-variant-numeric: tabular-nums;
 }
 .amount-helper-convert { margin-left: auto; }
+
+/* ─── Card ─── */
+.stage-reading {
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  padding: 18px 36px 28px;
+  min-height: 300px;
+}
+.reading-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+.stage-takeover { padding-bottom: 12px; }
+.card-pin-note {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  padding: 5px 11px;
+  border-radius: 999px;
+  background: var(--bg-input);
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+}
 
 /* ZAR secondary — sits below the helper row for SA-retail merchants when
    the user's preferred fiat differs from the QR's native ZAR amount. */

@@ -599,10 +599,30 @@
       :is-sending="withdrawSheetIsBusy"
       :status-message="withdrawSheetStatus"
       :commit-gate="!withdrawUnavailableMessage"
+      :takeover="withdrawPinActive || withdrawCardLocked"
+      :takeover-title="withdrawCardLocked ? '' : $t('Card PIN')"
+      :takeover-locked="withdrawPinChecking"
       @confirm="onWithdrawSheetConfirm"
       @cancel="onWithdrawSheetCancel"
+      @takeover-cancel="onWithdrawTakeoverCancel"
     >
-      <template #extras>
+      <!-- The card's PIN, and a locked card, in the sheet itself: the card
+           and the amount stay on screen (LUD-XX pinLimit). -->
+      <template #takeover>
+        <WithdrawAuthorization
+          ref="withdrawAuthorization"
+          :destination="walletDisplayName ? $t('Into {wallet}', { wallet: walletDisplayName }) : ''"
+          @update:active="withdrawPinActive = $event"
+          @update:checking="withdrawPinChecking = $event"
+        />
+        <div v-if="withdrawCardLocked" class="withdraw-card-result" role="status">
+          <CardFace locked :host="withdrawSheetProps?.card?.host" />
+          <h3>{{ $t('Card locked') }}</h3>
+          <p>{{ $t("Too many wrong PINs. The card's issuer can unlock it.") }}</p>
+          <button type="button" class="withdraw-card-done" @click="onWithdrawSheetCancel">{{ $t('Done') }}</button>
+        </div>
+      </template>
+      <template v-if="!withdrawSheetProps?.card" #extras>
         <p v-if="walletDisplayName" class="withdraw-review-context">
           {{ $t('Receiving wallet: {wallet}', { wallet: walletDisplayName }) }}
         </p>
@@ -622,7 +642,6 @@
       @closed="onWithdrawSuccessClosed"
     />
 
-    <WithdrawAuthorization ref="withdrawAuthorization" />
 
     <!--
       Send Success Screen.
@@ -807,6 +826,7 @@ import balanceUpdating from '../directives/balanceUpdating.js';
 import {createPaymentMonitor, PaymentStatus} from '../utils/paymentMonitor.js';
 import PaymentConfirmation from '../components/PaymentConfirmation.vue';
 import WithdrawAuthorization from '../components/WithdrawAuthorization.vue';
+import CardFace from '../components/CardFace.vue';
 import {useWalletStore} from '../stores/wallet';
 import {useUpdateStore} from '../stores/update';
 import {useAddressBookStore} from '../stores/addressBook';
@@ -897,6 +917,7 @@ export default {
     IdentityAuthDialog,
     ContactAvatar,
     WithdrawAuthorization,
+    CardFace,
   },
   directives: { balanceUpdating },
   setup() {
@@ -975,6 +996,12 @@ export default {
       // built by the corresponding `*SheetProps` computed below.
       showSendSheet: false,
       showWithdrawSheet: false,
+      // A Bolt Card: the sheet is up while the card's service answers, the
+      // PIN is being asked in it, or the card came back locked.
+      withdrawReading: null,
+      withdrawPinActive: false,
+      withdrawPinChecking: false,
+      withdrawCardLocked: false,
       // Set when a withdraw is initiated from the Receive modal's "Redeem"
       // button, which closes the modal before the scan happens. Carried into
       // the redeem sheet by onPaymentDetected (then cleared), so the amount
@@ -1939,10 +1966,18 @@ export default {
      * source pre-committed an amount, range otherwise.
      */
     withdrawSheetProps() {
+      if (this.withdrawReading) {
+        return { reading: true, card: { name: 'Bolt Card', host: this.withdrawReading.host }, amount: { mode: 'free' } };
+      }
       const p = this.pendingPayment;
       if (!p || p.type !== 'lnurl_withdraw') return null;
 
       const recipient = withdrawRecipient(p, this.$t.bind(this));
+      // A card speaks for itself (logo, name, service): no rail wording.
+      const card = recipient.logoUrl
+        ? { name: recipient.name, host: recipient.address, pinLimit: p.pinLimit }
+        : null;
+      if (card) delete recipient.viaOverride;
 
       let amount;
       if (p.isFixedAmount) {
@@ -1969,6 +2004,7 @@ export default {
       return {
         recipient,
         amount,
+        ...(card ? { card } : {}),
         // Description already lives in the recipient name; surfacing it
         // again in the description row would be redundant.
         description: '',
@@ -3844,6 +3880,14 @@ export default {
         // the callback URL, and we don't want it landing in console output
         // or the cross-app payment-error notification surface.
         if (error?.name === 'AbortError') { this.resetWithdrawState(); return; }
+        // A card locked after three wrong PINs is an answer, not a fault:
+        // shown in the sheet with who can fix it, no error dialog.
+        if (error?.code === 'CARD_BLOCKED') {
+          this.resetWithdrawState();
+          this.withdrawCardLocked = true;
+          haptics.error();
+          return;
+        }
         const safeMessage = safeWithdrawError(error?.message);
         const safeError = new Error(safeMessage);
         safeError.name = error?.name || 'Error';
@@ -3946,54 +3990,31 @@ export default {
     },
 
     async createInvoiceForWithdraw(amountSats, description) {
-      const walletType = this.walletStore.activeWalletType;
-      let result;
-
-      if (walletType === 'spark') {
-        const provider = await this.walletStore.ensureSparkConnected();
-        result = await provider.createInvoice({ amount: amountSats, description });
-      } else if (walletType === 'lnbits') {
-        const provider = this.walletStore.getActiveProvider();
-        if (!provider) throw new Error('No LNbits provider available');
-        result = await provider.createInvoice({ amount: amountSats, description });
-      } else if (walletType === 'arkade') {
+      const walletId = this.walletStore.activeWalletId;
+      if (this.walletStore.activeWalletType === 'arkade') {
         // Arkade's Lightning rail is out of service (Boltz retired); an
         // LNURL-withdraw needs an invoice this wallet cannot mint. Throw the
         // coded error so the dialog shows the translated outage copy.
         const err = new Error('Lightning is temporarily unavailable for Arkade wallets');
         err.code = 'ARKADE_LN_UNAVAILABLE';
         throw err;
-      } else {
-        // NWC - LightningPaymentService uses positional args and returns snake_case
-        const activeWallet = this.getActiveWallet();
-        if (!activeWallet?.nwcString) throw new Error('No active wallet found');
-        const lightningService = new LightningPaymentService(activeWallet.nwcString);
-        result = await lightningService.createInvoice(amountSats, description);
       }
+      // The store makes the invoice the way every receiving screen does: one
+      // connection per wallet, NWC grants checked (a connection that may not
+      // receive says so), a stale connection reconnected.
+      const result = await this.walletStore.createInvoiceDetailsOnWallet(walletId, amountSats, description);
 
-      // Normalize to snake_case for PaymentMonitor compatibility
-      const paymentRequest = result.payment_request || result.paymentRequest;
-      let paymentHash = result.payment_hash || result.paymentHash || result.rHash || result.r_hash;
-
-      // Fallback: decode payment hash from the bolt11 invoice
-      if (!paymentHash && paymentRequest) {
-        try {
-          const decoded = new Invoice({ pr: paymentRequest });
-          paymentHash = decoded.paymentHash || null;
-        } catch (e) {
-          console.warn('Could not decode payment hash from invoice:', e.message);
-        }
-      }
-
+      // Normalized to snake_case for PaymentMonitor.
       return {
-        payment_request: paymentRequest,
-        payment_hash: paymentHash,
+        payment_request: result.paymentRequest,
+        payment_hash: result.paymentHash,
         // Spark-specific receive request ID (UUID). Required by
         // getLightningReceiveRequest() — the payment hash is NOT a valid
         // ID for that endpoint. Other backends won't populate this.
         invoice_id: result.id || null,
+        walletId,
         amount: amountSats,
-        expires_at: result.expires_at || result.expiresAt || Math.floor(Date.now() / 1000) + 3600
+        expires_at: result.expiresAt || Math.floor(Date.now() / 1000) + 3600
       };
     },
 
@@ -4391,8 +4412,26 @@ export default {
             return;
           }
 
+          // A card (lnurlw://) gets its sheet on the tap itself: the card on
+          // screen while its service answers, instead of nothing at all.
+          const cardTap = !fromField && /^(lightning:)?lnurlw:\/\//i.test(String(paymentData.data).trim());
+          let cardRead = null;
+          if (cardTap) {
+            let host = '';
+            try { host = new URL(String(paymentData.data).trim().replace(/^(lightning:)?lnurlw:/i, 'https:')).host; } catch { /* shown without a host */ }
+            this.resetWithdrawState();
+            cardRead = Symbol('card read');
+            this.withdrawReading = { host, id: cardRead };
+            this.showWithdrawSheet = true;
+            haptics.tap();
+          }
+
           // Fetch LNURL endpoint info for all wallet types to determine pay vs withdraw
           const lnurlInfo = await this.fetchLNURLInfo(paymentData.data);
+
+          // The reading sheet was closed while the card's service answered:
+          // the person changed their mind, so nothing opens again.
+          if (cardRead && this.withdrawReading?.id !== cardRead) return;
 
           if (lnurlInfo.error || !lnurlInfo.lnurlType) {
             // Surface it where the user is: inline in the Send field when that's
@@ -4697,6 +4736,7 @@ export default {
         if (this.pendingPayment?.type === 'lnurl_withdraw') {
           // A redeem is a receive: no wallet "pays" it.
           this.sendingWalletId = null;
+          this.withdrawReading = null;
           this.showWithdrawSheet = true;
         } else {
           // The payload is final: bind the paying wallet to it (a caller's
@@ -4722,6 +4762,12 @@ export default {
       } finally {
         // The nested NIP-05 rescue call already settled the outcome (closed the
         // sheet or set the inline error); don't clobber it from the outer call.
+        // A card read that led nowhere (an error, or not a withdrawal after
+        // all) takes its sheet down; the error, if any, is already up.
+        if (this.withdrawReading) {
+          this.withdrawReading = null;
+          this.showWithdrawSheet = false;
+        }
         if (!delegated) {
           this.sendResolving = false;
           // Close the Send sheet only on success; failures stay open so the
@@ -5322,14 +5368,25 @@ export default {
       // executeWithdraw transitions lnurlWithdrawStatus through stages.
       // 'confirmed' closes the sheet via handleWithdrawConfirmed.
       // 'error' lands here — let the user retry.
-      if (this.lnurlWithdrawStatus === 'error') {
+      // 'idle' after a cancelled PIN (nothing was sent) or a locked card.
+      if (this.lnurlWithdrawStatus === 'error' || this.lnurlWithdrawStatus === 'idle') {
         this.$refs.withdrawSheetRef?.resetSlide();
       }
+    },
+
+    /** The sheet's top button while the PIN (or a locked card) fills it. */
+    onWithdrawTakeoverCancel() {
+      if (this.withdrawCardLocked) return this.onWithdrawSheetCancel();
+      // Nothing is sent: the pending authorization settles as cancelled and
+      // the sheet returns to the amount and the slide.
+      this.$refs.withdrawAuthorization?.cancel();
     },
 
     onWithdrawSheetCancel() {
       this.cancelBrantaLookup();
       this.showWithdrawSheet = false;
+      this.withdrawReading = null;
+      this.withdrawCardLocked = false;
       this.resetWithdrawState();
       this.pendingPayment = null;
       this.paymentAmount = '';
@@ -8197,6 +8254,10 @@ export default {
   transform: translateX(-10px);
 }
 .withdraw-review-context { margin: 0; font-size: .9375rem; line-height: 1.5; overflow-wrap: anywhere; }
+.withdraw-card-result { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 8px; padding: 8px 16px 4px; }
+.withdraw-card-result h3 { margin: 14px 0 0; font-size: 1.25rem; font-weight: 800; line-height: 1.3; letter-spacing: -0.01em; color: var(--text-primary); }
+.withdraw-card-result p { margin: 0; max-width: 260px; font-size: .875rem; line-height: 1.45; color: var(--text-muted); }
+.withdraw-card-done { margin-top: 18px; width: 100%; height: 52px; border: none; border-radius: 16px; background: var(--bg-input); color: var(--text-primary); font-family: 'Manrope', sans-serif; font-size: 1rem; font-weight: 700; cursor: pointer; }
 </style>
 
 <style>
