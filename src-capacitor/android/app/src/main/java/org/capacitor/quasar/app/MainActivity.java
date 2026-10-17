@@ -6,6 +6,8 @@ import android.nfc.Tag;
 import android.os.Bundle;
 import android.util.Log;
 
+import androidx.core.splashscreen.SplashScreen;
+
 import com.getcapacitor.BridgeActivity;
 import com.getcapacitor.PluginHandle;
 
@@ -50,25 +52,36 @@ public class MainActivity extends BridgeActivity implements NfcAdapter.ReaderCal
     private NfcAdapter nfcAdapter;
 
     /**
-     * Register plugins and apply the screen-privacy flag before the first
-     * frame. FLAG_SECURE is read straight from SharedPreferences (owned by
-     * SecureScreenPlugin) so an opted-in user is protected before
-     * super.onCreate() renders. Default is OFF until the user opts in.
+     * Install the splash, register plugins and apply the screen-privacy flag
+     * before the first frame. The splash is held until the app has drawn the
+     * same picture (LaunchPlugin). FLAG_SECURE is read straight from
+     * SharedPreferences (owned by SecureScreenPlugin) so an opted-in user is
+     * protected before super.onCreate() renders. Default is OFF until the
+     * user opts in.
      */
     @Override
     public void onCreate(Bundle savedInstanceState) {
+        LaunchPlugin.hold(SplashScreen.installSplashScreen(this));
+
         registerPlugin(NfcPlugin.class);
         registerPlugin(SecureScreenPlugin.class);
         registerPlugin(BuhoUpdatePlugin.class);
         registerPlugin(CloudBackupPlugin.class);
         registerPlugin(AppLockPlugin.class);
         registerPlugin(FileExportPlugin.class);
+        registerPlugin(LaunchPlugin.class);
 
         if (SecureScreenPlugin.readPersistedPreference(this)) {
             getWindow().addFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE);
         }
 
         super.onCreate(savedInstanceState);
+
+        // Whatever shows before the page paints is the launch background,
+        // never the WebView's white.
+        if (getBridge() != null && getBridge().getWebView() != null) {
+            getBridge().getWebView().setBackgroundColor(getColor(R.color.launch_background));
+        }
 
         nfcAdapter = NfcAdapter.getDefaultAdapter(this);
     }

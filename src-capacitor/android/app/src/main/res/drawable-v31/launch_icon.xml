@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The splash mark on Android 12 and later: it builds itself on a cold start.
+  The leaf grows from its base, then the two dots pop in, 820 ms in all
+  (windowSplashScreenAnimationDuration). It ends as the static mark of
+  drawable/launch_icon.xml, which is also the app's first frame.
+-->
+<animated-vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt">
+    <aapt:attr name="android:drawable">
+        <vector
+            android:width="288dp"
+            android:height="288dp"
+            android:viewportWidth="288"
+            android:viewportHeight="288">
+            <group
+                android:translateX="108"
+                android:translateY="105.6"
+                android:scaleX="2.4"
+                android:scaleY="2.4">
+                <group android:name="leaf" android:pivotX="6.72" android:pivotY="32" android:scaleY="0">
+                    <path android:fillColor="#059573" android:pathData="M0 13.4423C0 6.01833 6.01833 0 13.4423 0V18.5577C13.4423 25.9817 7.42399 32 0 32V13.4423Z" />
+                </group>
+                <group android:name="dot_top" android:pivotX="22.7" android:pivotY="7.5" android:scaleX="0" android:scaleY="0">
+                    <path android:fillColor="#78D53C" android:pathData="M15.3906 7.30444C15.3906 3.27031 18.6609 0 22.6951 0C26.7292 0 29.9995 3.27031 29.9995 7.30444V7.72091C29.9995 11.755 26.7292 15.0253 22.6951 15.0253C18.6609 15.0253 15.3906 11.755 15.3906 7.72091V7.30444Z" />
+                </group>
+                <group android:name="dot_bottom" android:pivotX="22.7" android:pivotY="24.5" android:scaleX="0" android:scaleY="0">
+                    <path android:fillColor="#43B65B" android:pathData="M15.3906 24.281C15.3906 20.2469 18.6609 16.9766 22.6951 16.9766C26.7292 16.9766 29.9995 20.2469 29.9995 24.281V24.6975C29.9995 28.7316 26.7292 32.0019 22.6951 32.0019C18.6609 32.0019 15.3906 28.7316 15.3906 24.6975V24.281Z" />
+                </group>
+            </group>
+        </vector>
+    </aapt:attr>
+    <target android:name="leaf">
+        <aapt:attr name="android:animation">
+            <objectAnimator
+                android:propertyName="scaleY"
+                android:valueFrom="0"
+                android:valueTo="1"
+                android:duration="450"
+                android:interpolator="@android:interpolator/fast_out_slow_in" />
+        </aapt:attr>
+    </target>
+    <target android:name="dot_top">
+        <aapt:attr name="android:animation">
+            <set>
+                <objectAnimator android:propertyName="scaleX" android:valueFrom="0" android:valueTo="1"
+                    android:startOffset="280" android:duration="400" android:interpolator="@android:anim/overshoot_interpolator" />
+                <objectAnimator android:propertyName="scaleY" android:valueFrom="0" android:valueTo="1"
+                    android:startOffset="280" android:duration="400" android:interpolator="@android:anim/overshoot_interpolator" />
+            </set>
+        </aapt:attr>
+    </target>
+    <target android:name="dot_bottom">
+        <aapt:attr name="android:animation">
+            <set>
+                <objectAnimator android:propertyName="scaleX" android:valueFrom="0" android:valueTo="1"
+                    android:startOffset="420" android:duration="400" android:interpolator="@android:anim/overshoot_interpolator" />
+                <objectAnimator android:propertyName="scaleY" android:valueFrom="0" android:valueTo="1"
+                    android:startOffset="420" android:duration="400" android:interpolator="@android:anim/overshoot_interpolator" />
+            </set>
+        </aapt:attr>
+    </target>
+</animated-vector>
