@@ -7,13 +7,13 @@ import wallets from './wallets.js';
 import identities from './identities.js';
 import lnbits from './lnbits.js';
 import nwc from './nwc.js';
+import boltCard from './boltCard.js';
 export default {
   ...requests,
   ...profilePayment,
   "Charge card": "Cobrar a la tarjeta",
   "Charge": "Cobrar",
   "Slide to charge": "Desliza para cobrar",
-  "Card ready. Enter the sale amount to continue.": "Tarjeta lista. Introduce el importe de la venta para continuar.",
   "Reading card…": "Leyendo tarjeta…",
   "The sale amount is outside this card’s payment limits.": "El importe de la venta está fuera de los límites de pago de esta tarjeta.",
   "This card does not support withdrawals.": "Esta tarjeta no admite retiros.",
@@ -56,6 +56,7 @@ export default {
   ...identities,
   ...lnbits,
   ...nwc,
+  ...boltCard,
   // Spend: Bitrefill door
   "Gift cards, mobile top-ups and more": "Tarjetas regalo, recargas móviles y más",
   "Bitrefill is on its way": "Bitrefill está en camino",
@@ -2496,13 +2497,8 @@ export default {
   "Never type these words into a website or save them in cloud notes.": "Nunca escribas estas palabras en un sitio web ni las guardes en notas en la nube.",
 
   // Bolt Card PIN (LUD-XX pinLimit).
-  "Bolt Card PIN": "PIN de Bolt Card",
-  "Enter your 4-digit PIN to confirm this withdrawal": "Ingresa tu PIN de 4 dígitos para confirmar este retiro",
   "Authorize withdrawal": "Autorizar retiro",
-  "Authorizing…": "Autorizando…",
   "Invalid PIN": "PIN incorrecto",
-  "Invalid PIN. {n} attempts left.": "PIN incorrecto. Quedan {n} intentos.",
-  "Invalid PIN. Last attempt.": "PIN incorrecto. Último intento.",
   "Card blocked: too many incorrect PIN attempts": "Tarjeta bloqueada: demasiados intentos de PIN incorrectos",
   "PIN authorization requires a secure connection": "La autorización con PIN requiere una conexión segura",
   "PIN entry timed out": "Tiempo de PIN agotado",
