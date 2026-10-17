@@ -3025,6 +3025,7 @@ export default {
   "Allow receiving in your wallet app, or add a wallet that can.": "Permite recibir en la app de tu cartera, o añade una cartera que pueda.",
   "No wallet here can receive": "Ninguna cartera aquí puede recibir",
   "Can't send": "No puede enviar",
+  "Can't confirm payments": "No puede confirmar pagos",
   "BuhoGO can't open this link": "BuhoGO no puede abrir este enlace",
   "Set up a wallet first": "Configura primero una cartera",
   "Payment links need a wallet.": "Los enlaces de pago necesitan una cartera.",

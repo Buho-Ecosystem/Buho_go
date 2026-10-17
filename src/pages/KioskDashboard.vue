@@ -185,7 +185,6 @@ import { roundUpTargetSats } from 'src/utils/roundUp'
 import { useTransactionMetadataStore } from 'stores/transactionMetadata'
 import KioskPinPad from 'components/KioskPinPad.vue'
 import QRCode from 'qrcode'
-import { Invoice } from '@getalby/lightning-tools'
 import PaymentConfirmSheet from '../components/PaymentConfirmSheet.vue'
 import WithdrawAuthorization from '../components/WithdrawAuthorization.vue'
 import { useKioskCardPayment } from '../composables/useKioskCardPayment.js'
@@ -381,18 +380,14 @@ export default defineComponent({
       state.value = 'processing'; invoiceData.value = null; qrDataUrl.value = ''
       paymentProblem.value = ''
       try {
-        // `store.providers[id]` may hold a stale entry whose underlying SDK
-        // wallet was released (hot reload, wallet switch, Spark disconnect
-        // on lock). `ensureWalletConnectedForTransfer` is the same guard
-        // the transfer/batch/auto-withdraw paths use — reconnect if the
-        // provider isn't actually connected, then return a live one.
-        const provider = await store.ensureWalletConnectedForTransfer(walletId)
+        // The store knows how each kind of wallet makes an invoice (NWC
+        // included) and reconnects one whose connection went stale (hot
+        // reload, wallet switch, Spark disconnect on lock), as it does for
+        // every other screen that asks a wallet to receive.
+        const result = await store.createInvoiceDetailsOnWallet(walletId, amountSats, 'Kiosk Payment')
         if (!current()) return
-        const result = await provider.createInvoice({ amount: amountSats, description: 'Kiosk Payment' })
-        if (!current()) return
-        const paymentHash = result.paymentHash || result.payment_hash || new Invoice({ pr: result.paymentRequest }).paymentHash
-        if (!paymentHash) throw new Error('Invoice must have a payment_hash')
-        invoiceData.value = { ...result, paymentHash, walletId, amountSats }
+        if (!result.paymentHash) throw new Error('Invoice must have a payment_hash')
+        invoiceData.value = { ...result, walletId, amountSats }
         const qr = await QRCode.toDataURL(result.paymentRequest, { width: 300, margin: 2, color: { dark: '#000000', light: '#ffffff' } })
         if (!current()) return
         qrDataUrl.value = qr
@@ -422,8 +417,7 @@ export default defineComponent({
         invoice: { payment_hash: invoice.paymentHash, amount: invoice.amountSats, expires_at: invoice.expiresAt || invoice.expires_at },
         provider: { lookupInvoice: async hash => {
           try {
-            const provider = await store.ensureWalletConnectedForTransfer(invoice.walletId)
-            const result = await provider.lookupInvoice(hash)
+            const result = await store.lookupInvoiceOnWallet(invoice.walletId, hash)
             failures = 0
             return result
           } catch (error) {

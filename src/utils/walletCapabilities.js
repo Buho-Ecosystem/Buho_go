@@ -110,3 +110,24 @@ export function canWalletReceiveLightning(wallet) {
   if (type === 'arkade') return false
   return capabilitiesOf({ ...wallet, type }).receive
 }
+
+/** Why a wallet cannot take kiosk payments (kioskWalletBlocker). */
+export const KIOSK_BLOCKER = Object.freeze({
+  CANNOT_RECEIVE: 'cannot-receive',
+  CANNOT_CONFIRM: 'cannot-confirm',
+})
+
+/**
+ * Why this wallet cannot be the kiosk's wallet, or null when it can. A sale
+ * needs an invoice (canWalletReceiveLightning) and a way to see it paid: an
+ * NWC connection must be allowed lookup_invoice or list_transactions, or a
+ * paid sale would never complete on screen.
+ * @param {{ type?: string, metadata?: object }|null} wallet
+ * @returns {null|'cannot-receive'|'cannot-confirm'}
+ */
+export function kioskWalletBlocker(wallet) {
+  if (!canWalletReceiveLightning(wallet)) return KIOSK_BLOCKER.CANNOT_RECEIVE
+  const may = capabilitiesOf({ ...wallet, type: wallet.type || 'nwc' })
+  if (!may.lookup && !may.history) return KIOSK_BLOCKER.CANNOT_CONFIRM
+  return null
+}

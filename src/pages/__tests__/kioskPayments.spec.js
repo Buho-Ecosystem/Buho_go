@@ -34,6 +34,9 @@ function harness(ctx, options = {}) {
     kioskDisplayCurrency: 'sats', preferredFiatCurrency: 'USD', exchangeRates: {},
     providers: { merchant: provider }, balances: { merchant: 0 }, pendingDeepLink: options.pending || null,
     async ensureWalletConnectedForTransfer(id) { assert.equal(id, 'merchant'); return provider; },
+    // The store's receive methods, answered by the stand-in wallet above.
+    async createInvoiceDetailsOnWallet(id, amount, description) { assert.equal(id, 'merchant'); return provider.createInvoice({ amount, description }); },
+    async lookupInvoiceOnWallet(id, hash) { assert.equal(id, 'merchant'); return provider.lookupInvoice(hash); },
     showPaymentError: error => h.errors.push(error),
     refreshBalance: async id => { assert.equal(id, 'merchant'); },
   });
@@ -173,4 +176,35 @@ test('a sale paid while asleep still succeeds when resumed after invoice expiry'
   await h.monitors[0].checkNow();
   assert.equal(h.vm.state, 'success');
   assert.equal(h.receipts.length, 1);
+});
+
+test('a kiosk on an NWC wallet charges and sees the payment through the store (#397)', async ctx => {
+  const h = harness(ctx); await settle();
+  // An NWC connection has no createInvoice/lookupInvoice the kiosk could call
+  // directly; only the store knows how to ask it.
+  const provider = await h.store.ensureWalletConnectedForTransfer('merchant');
+  delete provider.createInvoice; delete provider.lookupInvoice;
+  const asked = [];
+  h.store.createInvoiceDetailsOnWallet = async (id, amount, description) => {
+    asked.push(['invoice', id, amount, description]);
+    return { paymentRequest: 'lnbc-nwc-sale', paymentHash: 'nwc-hash', expiresAt: Math.floor(Date.now() / 1000) + 3600 };
+  };
+  let paid = false;
+  h.store.lookupInvoiceOnWallet = async (id, hash) => { asked.push(['lookup', id, hash]); return { paid, amount: 100 }; };
+  h.vm.rawInput = '100'; h.vm.proceedToTipOrCharge(); await settle();
+  assert.equal(h.vm.state, 'payment', 'QR shown, waiting');
+  assert.deepEqual(h.errors, []);
+  paid = true;
+  await h.monitors[0].checkNow();
+  assert.equal(h.vm.state, 'success');
+  assert.deepEqual(asked[0], ['invoice', 'merchant', 100, 'Kiosk Payment']);
+  assert.ok(asked.slice(1).every((entry) => entry.join() === ['lookup', 'merchant', 'nwc-hash'].join()));
+});
+
+test('a kiosk wallet that may not create invoices says why instead of charging', async ctx => {
+  const h = harness(ctx); await settle();
+  h.store.createInvoiceDetailsOnWallet = async () => { throw Object.assign(new Error('This connection cannot create invoices'), { code: 'NWC_RECEIVE_NOT_ALLOWED' }); };
+  h.vm.rawInput = '100'; h.vm.proceedToTipOrCharge(); await settle();
+  assert.equal(h.vm.state, 'input');
+  assert.equal(h.errors[0]?.code, 'NWC_RECEIVE_NOT_ALLOWED', 'shown in the payment-error dialog');
 });

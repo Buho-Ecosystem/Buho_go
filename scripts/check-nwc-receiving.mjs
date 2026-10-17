@@ -186,6 +186,44 @@ const seedBucket = (page) => page.evaluate(() => {
   console.log('✓ transfer: a source that was still connecting is chosen once it is');
 }
 
+// 3c · Kiosk wallet (#397): every wallet listed; one that cannot take kiosk
+// payments is not choosable and says why. Peek may create invoices but
+// neither look them up nor list payments, so a paid sale would never show.
+{
+  const peek = { id: 'peek', type: 'nwc', name: 'Peek', nwcUrl: url('e'), balance: 0, metadata: { methods: ['make_invoice', 'get_info'] } };
+  const { page, errors, context } = await open({ wallets: [...WALLETS, peek], active: 'kitty' });
+  await page.evaluate(() => window.__audit.app.config.globalProperties.$router.push('/settings'));
+  // Elements belong to the components that render them; climb to the page.
+  const settingsPage = () => {
+    for (const node of document.querySelectorAll('.q-page *')) {
+      for (let c = node.__vueParentComponent; c; c = c.parent) if (c.type?.name === 'SettingsPage') return c;
+    }
+    return null;
+  };
+  await page.waitForFunction(settingsPage, null, { timeout: 30000 });
+  await page.evaluate((find) => {
+    const c = new Function(`return (${find})`)()();
+    c.proxy.kioskWalletSelection = 'kitty';
+    c.proxy.kioskPinSetupStep = 'selectWallet';
+    c.proxy.showKioskPinSetupDialog = true;
+  }, settingsPage.toString());
+  await page.locator('.kiosk-wallet-row').first().waitFor();
+  const rows = await page.$$eval('.kiosk-wallet-row', (list) => list.map((row) => ({
+    name: row.querySelector('.kiosk-wallet-row-name')?.textContent.trim(),
+    disabled: row.disabled,
+    note: row.querySelector('.kiosk-wallet-row-type')?.textContent.trim(),
+  })));
+  const byName = Object.fromEntries(rows.map((r) => [r.name, r]));
+  assert.equal(byName.Kitty.disabled, false);
+  assert.equal(byName.Coinos.disabled, false, 'receive-only with lookup: a fine kiosk wallet');
+  assert.deepEqual([byName['Alby Hub'].disabled, byName['Alby Hub'].note], [true, "Can't receive"]);
+  assert.deepEqual([byName.Peek.disabled, byName.Peek.note], [true, "Can't confirm payments"]);
+  await shot(page, 'kiosk-wallets');
+  assert.deepEqual(errors, []);
+  await context.close();
+  console.log('✓ kiosk: wallets that cannot take kiosk payments are listed with the reason, not choosable');
+}
+
 // 4 · Dark, and German at 320 px.
 {
   const { page, errors, context } = await open({ theme: 'dark' });
