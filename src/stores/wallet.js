@@ -10,7 +10,7 @@ import { defineStore } from 'pinia';
 import { NostrWebLNProvider } from '@getalby/sdk';
 import { parseNwcConnection } from '../utils/nwcConnection.js';
 import { capabilitiesOf, nip47Methods, spendingLimitFrom, suggestedWalletName } from '../utils/nwcWallet.js';
-import { isRelayFailure } from '../utils/nwcErrors.js';
+import { NWC_ERROR, isRelayFailure, nwcError } from '../utils/nwcErrors.js';
 import { probeNwcConnection } from '../services/nwcProbe.js';
 import { payWithNwc } from '../services/nwcPayment.js';
 import { fiatRatesService } from '../utils/fiatRates.js';
@@ -192,7 +192,7 @@ import { diagnoseConnection } from '../utils/connectivity.js';
 import * as deviceCrypto from '../utils/deviceCrypto';
 import { clearCachedTransactions } from '../utils/txCache.js';
 import { i18n } from '../boot/i18n';
-import { canWalletPay } from '../utils/walletCapabilities.js';
+import { canWalletPay, canWalletReceiveLightning } from '../utils/walletCapabilities.js';
 import {
   setScreenPrivacyEnabled as nativeSetScreenPrivacyEnabled,
   isScreenPrivacyEnabled as nativeIsScreenPrivacyEnabled,
@@ -3723,13 +3723,16 @@ export const useWalletStore = defineStore('wallet', {
       return this.wallets.map(wallet => {
         const isConnected = this.connectionStates[wallet.id]?.connected;
         const balance = this.balances[wallet.id] || 0;
+        // An NWC connection does only what its wallet granted (utils/nwcWallet).
+        const receiveOnly = !capabilitiesOf(wallet).send;
 
         return {
           ...wallet,
           isConnected,
           balance,
-          canSend: isConnected && balance > 0,
-          canReceive: true // All wallets can receive
+          receiveOnly,
+          canSend: isConnected && balance > 0 && !receiveOnly,
+          canReceive: canWalletReceiveLightning(wallet),
         };
       })
       // Internal transfers ride Lightning invoices between the two wallets
@@ -3756,10 +3759,13 @@ export const useWalletStore = defineStore('wallet', {
     /**
      * Create a bolt11 invoice on one specific wallet.
      *
-     * Extracted from the internal-transfer path, which had this inline, so the
-     * Social Bucket can ask a wallet to receive without duplicating the
-     * per-backend differences (NWC speaks makeInvoice, everything else speaks
-     * createInvoice).
+     * The one way BuhoGO asks one of its wallets to receive: the Social
+     * Bucket and internal transfers both come through here, so the
+     * per-backend differences live in one place. NWC speaks WebLN
+     * (makeInvoice, memo in `defaultMemo`; the SDK ignores `description`),
+     * everything else speaks createInvoice. A connection whose wallet did
+     * not grant make_invoice is refused with its reason before anything is
+     * asked; Arkade's provider refuses with its own (ARKADE_LN_UNAVAILABLE).
      *
      * @param {string} walletId
      * @param {number} amountSats
@@ -3770,13 +3776,16 @@ export const useWalletStore = defineStore('wallet', {
       const wallet = this.wallets.find(w => w.id === walletId);
       if (!wallet) throw new Error('Wallet not found');
 
-      await this.ensureWalletConnectedForTransfer(walletId);
-      const provider = this.providers[walletId];
-      if (!provider) throw new Error('Wallet is not connected');
+      const isNwc = (wallet.type || WALLET_TYPES.NWC) === WALLET_TYPES.NWC;
+      if (isNwc && !capabilitiesOf(wallet).receive) {
+        throw nwcError(NWC_ERROR.RECEIVE_NOT_ALLOWED, 'This connection cannot create invoices');
+      }
 
-      const isNwc = wallet.type === WALLET_TYPES.NWC;
+      // NWC connections live in connectionStates, not in `providers`: take
+      // the provider this returns, whatever the wallet type.
+      const provider = await this.ensureWalletConnectedForTransfer(walletId);
       const result = isNwc
-        ? await provider.makeInvoice({ amount: amountSats, description })
+        ? await provider.makeInvoice({ amount: amountSats, defaultMemo: description })
         : await provider.createInvoice({ amount: amountSats, description });
 
       const invoice =
@@ -3905,31 +3914,10 @@ export const useWalletStore = defineStore('wallet', {
       } else {
         // Lightning path: create invoice on destination, pay from source
         try {
-          if (toType === 'spark' || toType === 'lnbits' || toType === 'arkade') {
-            // Spark, LNBits and Arkade all expose createInvoice({ amount,
-            // description }). For Arkade this mints a Boltz reverse-swap invoice;
-            // the source wallet then pays it like any other bolt11.
-            const invoiceResult = await toProvider.createInvoice({
-              amount: amountSats,
-              description: transferMemo
-            });
-            invoice = invoiceResult.paymentRequest || invoiceResult.payment_request || invoiceResult.bolt11 || invoiceResult;
-          } else {
-            // NWC wallet (WebLN interface) - makeInvoice expects satoshis
-            // The Alby SDK handles internal conversion to millisats for NIP-47
-            const invoiceResult = await toProvider.makeInvoice({
-              amount: amountSats,
-              description: transferMemo
-            });
-            invoice = invoiceResult.invoice || invoiceResult.paymentRequest || invoiceResult.bolt11;
-          }
+          invoice = await this.createInvoiceOnWallet(toWalletId, amountSats, transferMemo);
         } catch (invoiceError) {
           console.error('Invoice creation error:', invoiceError);
           throw new Error(this._friendlyTransferError(invoiceError, fromWallet, toWallet, 'invoice'));
-        }
-
-        if (!invoice) {
-          throw new Error('Failed to create invoice from destination wallet');
         }
 
         if (toType === 'spark') {

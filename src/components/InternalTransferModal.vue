@@ -219,7 +219,7 @@
             </div>
             <StatusDot :status="connStatus[w.id]" />
             <Icon v-if="w.id === state.fromWallet?.id" icon="tabler:check" width="18" height="18" class="check" />
-            <span v-else-if="!w.canSend" class="hint-text">{{ $t('No balance') }}</span>
+            <span v-else-if="!w.canSend" class="hint-text">{{ w.receiveOnly ? $t('Receive only') : $t('No balance') }}</span>
           </button>
         </div>
       </q-card>
@@ -240,7 +240,7 @@
             :key="w.id"
             type="button"
             class="picker-row"
-            :class="{ selected: w.id === state.toWallet?.id, disabled: w.id === state.fromWallet?.id }"
+            :class="{ selected: w.id === state.toWallet?.id, disabled: w.id === state.fromWallet?.id || !w.canReceive }"
             @click="pickTo(w)"
           >
             <WalletAvatar :type="w.type" :wallet-id="w.id" />
@@ -251,6 +251,7 @@
             <StatusDot :status="connStatus[w.id]" />
             <Icon v-if="w.id === state.toWallet?.id" icon="tabler:check" width="18" height="18" class="check" />
             <span v-else-if="w.id === state.fromWallet?.id" class="hint-text">{{ $t('Source') }}</span>
+            <span v-else-if="!w.canReceive" class="hint-text">{{ $t("Can't receive") }}</span>
           </button>
         </div>
       </q-card>
@@ -458,7 +459,7 @@ function pickFrom(w) {
 }
 
 function pickTo(w) {
-  if (w.id === state.fromWallet?.id) return;
+  if (w.id === state.fromWallet?.id || !w.canReceive) return;
   state.toWallet = w;
   state.showToPicker = false;
   haptics.tap();

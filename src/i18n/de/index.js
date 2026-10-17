@@ -3040,6 +3040,8 @@ export default {
   "Destination": "Ziel",
   "No wallets available": "Keine Wallet verfügbar",
   "Your money stays in the bucket until the transfer completes.": "Dein Geld bleibt im Bucket, bis die Übertragung abgeschlossen ist.",
+  "Can't receive": "Kann nicht empfangen",
+  "No wallet here can receive right now": "Gerade kann keine Wallet hier empfangen",
   "The network fee is taken from this amount.": "Die Netzwerkgebühr wird von diesem Betrag abgezogen.",
   "Move": "Bewegen",
   "Your own address": "Deine eigene Adresse",

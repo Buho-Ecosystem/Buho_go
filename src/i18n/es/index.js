@@ -3039,6 +3039,8 @@ export default {
   "Destination": "Destino",
   "No wallets available": "No hay monederos disponibles",
   "Your money stays in the bucket until the transfer completes.": "Tu dinero permanece en el bucket hasta que termine la transferencia.",
+  "Can't receive": "No puede recibir",
+  "No wallet here can receive right now": "Ahora ningún monedero puede recibir",
   "The network fee is taken from this amount.": "La comisión de red se descuenta de este importe.",
   "Move": "Mover",
   "Your own address": "Tu propia dirección",

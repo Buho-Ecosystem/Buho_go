@@ -29,6 +29,8 @@
  * wallet type — so it stays unit-testable under plain Node.
  */
 
+import { capabilitiesOf } from './nwcWallet.js'
+
 const KIND_BY_TYPE = {
   spark: 'spark',
   spark_address: 'spark',
@@ -86,4 +88,21 @@ export function walletSwitchHint(type, t) {
   // Only Arkade ever fails the lightning kind (see canWalletPay), so the
   // hint can name it.
   return t('Lightning is temporarily unavailable on Arkade - switch to another wallet')
+}
+
+/**
+ * Can this wallet receive a Lightning payment right now? Every surface that
+ * asks a wallet to receive (Social Bucket, internal transfer destinations)
+ * answers through here. Arkade's Lightning rail is out of service (see
+ * canWalletPay); an NWC connection may only create invoices when its
+ * wallet granted make_invoice (utils/nwcWallet). Wallets saved without a
+ * type are NWC connections, as everywhere else.
+ * @param {{ type?: string, metadata?: object }|null} wallet
+ * @returns {boolean}
+ */
+export function canWalletReceiveLightning(wallet) {
+  if (!wallet) return false
+  const type = wallet.type || 'nwc'
+  if (type === 'arkade') return false
+  return capabilitiesOf({ ...wallet, type }).receive
 }

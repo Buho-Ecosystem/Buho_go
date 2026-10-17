@@ -3032,6 +3032,8 @@ export default {
   "Destination": "Destination",
   "No wallets available": "No wallets available",
   "Your money stays in the bucket until the transfer completes.": "Your money stays in the bucket until the transfer completes.",
+  "Can't receive": "Can't receive",
+  "No wallet here can receive right now": "No wallet here can receive right now",
   "The network fee is taken from this amount.": "The network fee is taken from this amount.",
   "Move": "Move",
   "Your own address": "Your own address",

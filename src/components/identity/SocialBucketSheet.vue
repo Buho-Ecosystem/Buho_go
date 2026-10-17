@@ -91,23 +91,27 @@
 
           <div v-else class="sb-no-wallet">
             <Icon icon="tabler:wallet-off" width="20" height="20" />
-            <span>{{ $t('No wallets available') }}</span>
+            <span>{{ wallets.length ? $t('No wallet here can receive right now') : $t('No wallets available') }}</span>
           </div>
 
           <transition name="sb-wallet-list">
             <div v-if="showWallets && wallets.length > 1" class="sb-wallet-list">
+              <!-- A wallet that cannot receive stays in the list, dimmed, with
+                   the reason where its balance would be: people look for it. -->
               <button
                 v-for="wallet in wallets"
                 :key="wallet.id"
                 type="button"
                 class="sb-wallet-option"
-                :class="{ 'sb-wallet-option--selected': wallet.id === selectedWalletId }"
+                :class="{ 'sb-wallet-option--selected': wallet.id === selectedWalletId, 'sb-wallet-option--off': !wallet.canReceive }"
+                :disabled="!wallet.canReceive"
                 @click="selectWallet(wallet.id)"
               >
                 <span class="sb-wallet-icon"><Icon :icon="walletIcon(wallet.type)" width="18" height="18" /></span>
                 <span class="sb-wallet-copy">
                   <strong>{{ wallet.name }}</strong>
-                  <small>{{ formatSats(wallet.balance) }} {{ $t('sats') }}</small>
+                  <small v-if="wallet.canReceive">{{ formatSats(wallet.balance) }} {{ $t('sats') }}</small>
+                  <small v-else>{{ $t("Can't receive") }}</small>
                 </span>
                 <Icon v-if="wallet.id === selectedWalletId" icon="tabler:check" width="18" height="18" class="sb-option-check" />
               </button>
@@ -209,9 +213,16 @@ export default {
       set(v) { this.$emit('update:modelValue', v); },
     },
 
-    /** Every wallet can receive, so every wallet is a valid destination. */
+    /**
+     * Every wallet, each marked by the store whether it can receive now
+     * (`canReceive`: an NWC connection without make_invoice cannot).
+     */
     wallets() {
       return this.walletStore.getTransferableWallets();
+    },
+
+    receivingWallets() {
+      return this.wallets.filter((wallet) => wallet.canReceive);
     },
 
     selectedWalletName() {
@@ -220,11 +231,11 @@ export default {
     },
 
     selectedWallet() {
-      return this.wallets.find((wallet) => wallet.id === this.selectedWalletId) || null;
+      return this.receivingWallets.find((wallet) => wallet.id === this.selectedWalletId) || null;
     },
 
     canMove() {
-      return this.bucket.canSweep && !!this.selectedWalletId;
+      return this.bucket.canSweep && !!this.selectedWallet;
     },
 
     moveButtonLabel() {
@@ -273,7 +284,9 @@ export default {
       if (!isOpen) return;
       this.moveIssue = null;
       this.showWallets = false;
-      this.selectedWalletId = this.walletStore.activeWalletId || this.wallets[0]?.id || null;
+      // The wallet in use when it can receive, else the first one that can.
+      const active = this.receivingWallets.find((wallet) => wallet.id === this.walletStore.activeWalletId);
+      this.selectedWalletId = (active || this.receivingWallets[0])?.id || null;
       // The balance is the reason this sheet exists, so it is refreshed on
       // every open rather than trusted from the last visit.
       await this.bucket.sync({ identityStore: this.identity });
@@ -293,6 +306,7 @@ export default {
 
     selectWallet(walletId) {
       if (this.bucket.isSweeping) return;
+      if (!this.receivingWallets.some((wallet) => wallet.id === walletId)) return;
       this.selectedWalletId = walletId;
       this.showWallets = false;
       this.moveIssue = null;
@@ -539,6 +553,11 @@ export default {
 .sb-wallet-option:last-child { border-bottom: 0; }
 .sb-wallet-option:active,
 .sb-wallet-option--selected { background: var(--brand-accent-soft); }
+/* Cannot receive: visible, not choosable; the reason replaces the balance. */
+.sb-wallet-option--off { cursor: default; }
+.sb-wallet-option--off:active { background: transparent; }
+.sb-wallet-option--off .sb-wallet-icon,
+.sb-wallet-option--off strong { opacity: .45; }
 .sb-wallet-option .sb-wallet-icon { width: 36px; height: 36px; flex-basis: 36px; }
 
 .sb-wallet-list-enter-active,

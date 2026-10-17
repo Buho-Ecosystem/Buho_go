@@ -22,6 +22,8 @@ Every relay in the connection string is kept (`src/utils/nwcConnection.js`); ext
 - A connection without `get_balance` shows a dash and "Balance not shared"; its balance is never asked for.
 - `store.refreshNwcDetails()` asks the wallet again on every refresh: name, grants, Lightning address, spending limit, and whether it answered (`store.nwcStatus`). This also repairs wallets saved before these details were read correctly. The status never changes `connected`: a wallet on a phone can miss one 10 s question and still wake for a payment, so a single silence must not take it out of the wallet lists. Settings shows the status, offers Reconnect for a silent wallet, and only says "Reconnected" when the wallet answered.
 - A connection without `make_invoice` says so on Receive before asking the wallet.
+- A connection without `make_invoice` is never offered as a destination (Social Bucket, internal transfer), and one without `pay_invoice` never as a source: `store.getTransferableWallets()` marks `canReceive`, `canSend` and `receiveOnly` from `utils/walletCapabilities.canWalletReceiveLightning` and the grants.
+- `store.createInvoiceOnWallet()` is the one way BuhoGO asks its own wallets to receive. For NWC it uses the connection from `connectionStates` (NWC never has a `providers` entry) and sends the memo as `defaultMemo`, the only field the SDK reads.
 
 ## Paying: only on proof
 
