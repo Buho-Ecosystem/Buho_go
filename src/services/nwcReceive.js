@@ -96,11 +96,9 @@ export async function lookupNwcInvoice(nwc, paymentHash, { methods } = {}) {
   const may = nwcCapabilities(methods);
 
   if (may.lookup) {
+    let tx;
     try {
-      const tx = await withinWait(client.lookupInvoice({ payment_hash: paymentHash }), LOOKUP_WAIT_MS);
-      return checkNWCPaymentStatus(tx)
-        ? { paid: true, preimage: tx.preimage || undefined, amount: toSats(tx.amount) || undefined }
-        : { paid: false };
+      tx = await withinWait(client.lookupInvoice({ payment_hash: paymentHash }), LOOKUP_WAIT_MS);
     } catch (error) {
       if (!may.history) {
         // Some wallets only know an invoice once it is paid: not yet.
@@ -108,16 +106,33 @@ export async function lookupNwcInvoice(nwc, paymentHash, { methods } = {}) {
         throw error;
       }
       // Not found, not implemented, or no answer: the list may still know.
+      return fromRecentIncoming(client, paymentHash);
     }
+    if (!checkNWCPaymentStatus(tx)) return { paid: false };
+    if (typeof tx.state === 'string' && tx.state) return paidFrom(tx);
+    // A record without `state` that looks settled cannot always be believed:
+    // the LNbits NWC extension sets settled_at (to the creation time) on an
+    // incoming invoice its node marked failed when it expired, exactly as on
+    // a paid one. Its payment list holds settled payments only, so it
+    // decides when the connection may read it; otherwise only an invoice
+    // that has not expired yet is believed.
+    if (may.history) return fromRecentIncoming(client, paymentHash);
+    const expiresAt = Number(tx.expires_at);
+    return expiresAt > 0 && expiresAt <= Math.floor(Date.now() / 1000) ? { paid: false } : paidFrom(tx);
   }
 
-  if (may.history) {
-    const { transactions = [] } = await client.listTransactions({ limit: RECENT_INCOMING, unpaid: false, type: 'incoming' }) || {};
-    const tx = transactions.find((t) => t?.payment_hash === paymentHash);
-    return tx && checkNWCPaymentStatus(tx)
-      ? { paid: true, preimage: tx.preimage || undefined, amount: toSats(tx.amount) || undefined }
-      : { paid: false };
-  }
+  if (may.history) return fromRecentIncoming(client, paymentHash);
 
   throw nwcError(NWC_ERROR.CONFIRM_NOT_ALLOWED, 'This connection cannot confirm payments');
+}
+
+function paidFrom(tx) {
+  return { paid: true, preimage: tx.preimage || undefined, amount: toSats(tx.amount) || undefined };
+}
+
+/** The invoice among the recent incoming payments, paid only when settled there. */
+async function fromRecentIncoming(client, paymentHash) {
+  const { transactions = [] } = await client.listTransactions({ limit: RECENT_INCOMING, unpaid: false, type: 'incoming' }) || {};
+  const tx = transactions.find((t) => t?.payment_hash === paymentHash);
+  return tx && checkNWCPaymentStatus(tx) ? paidFrom(tx) : { paid: false };
 }

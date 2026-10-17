@@ -124,3 +124,32 @@ test('a lookup-only wallet that does not know an unpaid invoice yet means "not y
   const { nwc } = connection({ lookup: () => { throw sdk('invoice not found', 'NOT_FOUND'); } });
   assert.deepEqual(await lookupNwcInvoice(nwc, HASH, { methods: ['lookup_invoice'] }), { paid: false });
 });
+
+// ── Records without `state`: "settled" is confirmed before it is believed ──
+
+const now = () => Math.floor(Date.now() / 1000);
+// The LNbits NWC extension's lookup_invoice: settled_at is the creation time
+// for a paid invoice AND for one its node marked failed when it expired.
+const lnbitsRecord = (expiresAt) => ({ invoice: 'lnbc1', payment_hash: HASH, preimage: ZEROS, amount: 21000, created_at: now() - 7200, expires_at: expiresAt, settled_at: now() - 7200 });
+
+test('an expired invoice that a stateless wallet calls settled is paid only if its payment list says so', async () => {
+  const failed = connection({ lookup: () => lnbitsRecord(now() - 3600), list: () => ({ transactions: [] }) });
+  assert.deepEqual(await lookupNwcInvoice(failed.nwc, HASH, { methods: ['lookup_invoice', 'list_transactions'] }), { paid: false }, 'expired and failed: not in the list');
+  assert.deepEqual(failed.asked.map(([m]) => m), ['lookup_invoice', 'list_transactions']);
+
+  const paid = connection({ lookup: () => lnbitsRecord(now() - 3600), list: () => ({ transactions: [{ payment_hash: HASH, settled_at: now() - 7000, amount: 21000 }] }) });
+  assert.equal((await lookupNwcInvoice(paid.nwc, HASH, { methods: ['lookup_invoice', 'list_transactions'] })).paid, true, 'paid: it is in the list');
+});
+
+test('without a list, a stateless "settled" is believed only before the invoice expires', async () => {
+  const expired = connection({ lookup: () => lnbitsRecord(now() - 3600) });
+  assert.deepEqual(await lookupNwcInvoice(expired.nwc, HASH, { methods: ['lookup_invoice'] }), { paid: false });
+  const live = connection({ lookup: () => lnbitsRecord(now() + 3600) });
+  assert.equal((await lookupNwcInvoice(live.nwc, HASH, { methods: ['lookup_invoice'] })).paid, true);
+});
+
+test('a record with `state` is read as given, without a second request', async () => {
+  const { nwc, asked } = connection({ lookup: () => ({ state: 'settled', settled_at: now() - 10, expires_at: now() - 5 }) });
+  assert.equal((await lookupNwcInvoice(nwc, HASH, { methods: ['lookup_invoice', 'list_transactions'] })).paid, true);
+  assert.deepEqual(asked.map(([m]) => m), ['lookup_invoice']);
+});

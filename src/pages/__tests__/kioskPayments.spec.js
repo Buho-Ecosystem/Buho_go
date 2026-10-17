@@ -8,6 +8,8 @@ import * as roundUp from '../../utils/roundUp.js';
 import * as fiat from '../../utils/fiatCurrencies.js';
 import { useKioskCardPayment } from '../../composables/useKioskCardPayment.js';
 import * as errorOrigin from '../../utils/errorOrigin.js';
+import * as walletCapabilities from '../../utils/walletCapabilities.js';
+import * as nwcErrors from '../../utils/nwcErrors.js';
 const script = readFileSync(new URL('../KioskDashboard.vue', import.meta.url), 'utf8').match(/<script>([\s\S]*?)<\/script>/)[1];
 const { code } = transformSync(script, { format: 'cjs' });
 const renderer = Vue.createRenderer({
@@ -50,6 +52,8 @@ function harness(ctx, options = {}) {
     '../composables/useKioskCardPayment.js': { useKioskCardPayment: args => useKioskCardPayment({ ...args, resolve: async () => ({ callback: 'https://card.example/callback', defaultDescription: 'Bolt Card', minSats: 1, maxSats: 10000 }) }) },
     '../services/lnurlWithdraw.js': { safeWithdrawError: error => error },
     '../utils/errorOrigin.js': errorOrigin,
+    '../utils/walletCapabilities.js': walletCapabilities,
+    '../utils/nwcErrors.js': nwcErrors,
     '../utils/paymentMonitor.js': { ...monitor, createPaymentMonitor: config => { const instance = monitor.createPaymentMonitor(config); h.monitors.push(instance); return instance; } },
   };
   const module = { exports: {} };
@@ -207,4 +211,14 @@ test('a kiosk wallet that may not create invoices says why instead of charging',
   h.vm.rawInput = '100'; h.vm.proceedToTipOrCharge(); await settle();
   assert.equal(h.vm.state, 'input');
   assert.equal(h.errors[0]?.code, 'NWC_RECEIVE_NOT_ALLOWED', 'shown in the payment-error dialog');
+});
+
+test('a kiosk wallet that can no longer see payments refuses the sale before a QR is shown', async ctx => {
+  const h = harness(ctx); await settle();
+  // Chosen when it could; its connection has since lost lookup and list.
+  h.store.wallets = [{ id: 'merchant', type: 'nwc', metadata: { methods: ['make_invoice'] } }];
+  h.vm.rawInput = '100'; h.vm.proceedToTipOrCharge(); await settle();
+  assert.equal(h.created.length, 0, 'no invoice made');
+  assert.equal(h.vm.state, 'input');
+  assert.equal(h.errors[0]?.code, 'NWC_CONFIRM_NOT_ALLOWED');
 });

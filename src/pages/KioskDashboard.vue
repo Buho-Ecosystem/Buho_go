@@ -192,6 +192,8 @@ import { createPaymentMonitor, PaymentStatus } from '../utils/paymentMonitor.js'
 import { safeWithdrawError } from '../services/lnurlWithdraw.js'
 import { keepOrigin } from '../utils/errorOrigin.js'
 import { fiatSymbol as fiatSymbolFor } from 'src/utils/fiatCurrencies'
+import { kioskWalletBlocker, KIOSK_BLOCKER } from '../utils/walletCapabilities.js'
+import { NWC_ERROR, nwcError } from '../utils/nwcErrors.js'
 
 export default defineComponent({
   name: 'KioskDashboard',
@@ -380,6 +382,12 @@ export default defineComponent({
       state.value = 'processing'; invoiceData.value = null; qrDataUrl.value = ''
       paymentProblem.value = ''
       try {
+        // A sale this wallet could never see paid is refused before a QR is
+        // shown (its connection may have lost the grant since it was chosen).
+        const wallet = store.wallets.find(w => w.id === walletId)
+        if (kioskWalletBlocker(wallet) === KIOSK_BLOCKER.CANNOT_CONFIRM) {
+          throw nwcError(NWC_ERROR.CONFIRM_NOT_ALLOWED, 'This connection cannot confirm payments')
+        }
         // The store knows how each kind of wallet makes an invoice (NWC
         // included) and reconnects one whose connection went stale (hot
         // reload, wallet switch, Spark disconnect on lock), as it does for
