@@ -5,6 +5,7 @@ import backup from './backup.js';
 import exit from './exit.js';
 import wallets from './wallets.js';
 import identities from './identities.js';
+import lnbits from './lnbits.js';
 export default {
   ...requests,
   ...profilePayment,
@@ -52,6 +53,7 @@ export default {
   ...exit,
   ...wallets,
   ...identities,
+  ...lnbits,
   // Spend: Bitrefill door
   "Gift cards, mobile top-ups and more": "Gift cards, mobile top-ups and more",
   "Bitrefill is on its way": "Bitrefill is on its way",
@@ -254,8 +256,6 @@ export default {
   "Receipt": "Receipt",
   "Open link": "Open link",
   "Could not decrypt the message": "Could not decrypt the message",
-  "Thank-you message (optional)": "Thank-you message (optional)",
-  "Shown to anyone who pays this address, right after they pay.": "Shown to anyone who pays this address, right after they pay.",
   "Tip the seller": "Tip the seller",
   "Browse and order on the seller's Nostr market.": "Browse and order on the seller's Nostr market.",
   "Nostr market": "Nostr market",
@@ -771,17 +771,9 @@ export default {
   "Hidden again. Tap Show words to reveal.": "Hidden again. Tap Show words to reveal.",
   // Identity / Lightning address
   "Not set up yet": "Not set up yet",
-  "Get a Lightning Address": "Get a Lightning Address",
-  "A simple name like email, so anyone can send you sats.": "A simple name like email, so anyone can send you sats.",
-  "Pick a short name. You can change it later in your LNbits wallet.": "Pick a short name. You can change it later in your LNbits wallet.",
-  "Your address will be": "Your address will be",
   "yourname": "yourname",
   "Create a new one": "Create a new one",
-  "Back to my addresses": "Back to my addresses",
-  "We found addresses on your wallet. Pick one to use, or add another.": "We found addresses on your wallet. Pick one to use, or add another.",
   "Get one to receive payments by name": "Get one to receive payments by name",
-  "Not supported by this LNbits server": "Not supported by this LNbits server",
-  "Lightning Address not supported": "Lightning Address not supported",
   "Checking server…": "Checking server…",
   "Lightning address created": "Lightning address created",
   "Lightning address updated": "Lightning address updated",
