@@ -469,7 +469,7 @@ test('a saved discovery plan resumes at start', async () => {
 
 const STORE_KEY = 'buhoGO_wallet_store';
 const UNREADABLE_PREFIX = 'buhoGO_wallet_store_unreadable_';
-const NWC_URL = 'nostr+walletconnect://f00d?relay=wss%3A%2F%2Frelay.example&secret=5ec7';
+const NWC_URL = `nostr+walletconnect://${'f0'.repeat(32)}?relay=wss%3A%2F%2Frelay.example&secret=${'5e'.repeat(32)}`;
 // Settings the person changed: nothing may put the defaults back.
 const SETTINGS = {
   preferredFiatCurrency: 'EUR', denominationCurrency: 'btc', useBip177Format: false, balanceHidden: true,
@@ -520,6 +520,14 @@ function otherProviders({ arkadeConnect = null, lnbitsConnect = null } = {}) {
   return {
     '../providers/LNBitsWalletProvider': { LNBitsWalletProvider },
     '@getalby/sdk': { NostrWebLNProvider },
+    // The connection test (services/nwcProbe): the same wallet as above answers.
+    '../services/nwcProbe.js': {
+      probeNwcConnection: async (url) => ({
+        normalized: url, connectionPubkey: 'f0'.repeat(32), relays: ['wss://relay.example'],
+        alias: 'Alby', nodePubkey: 'pk-nwc', network: 'mainnet', methods: ['pay_invoice'],
+        notifications: [], lud16: null, balanceSats: 1500, limit: null,
+      }),
+    },
     '../providers/ArkadeWalletProvider': { ArkadeWalletProvider },
   };
 }
@@ -1105,14 +1113,15 @@ test('Spark and Arkade setup opened again with the wallet saved go to it; a refu
 });
 
 test('the NWC form says why an add saved nothing', async () => {
-  const page = loadModule('../../pages/NWCSetupPage.vue', { pinia: { mapActions: () => ({}) }, '../utils/userErrors': userErrors });
+  const page = loadModule('../../pages/NWCSetupPage.vue', { pinia: { mapActions: () => ({}), mapState: () => ({}) }, '../utils/userErrors': userErrors });
   for (const [code, copy] of Object.entries(WALLET_STATE_COPY)) {
     const vm = {
-      ...page.methods, $t: t, walletName: 'Alby', nwcString: NWC_URL, errorMessage: '',
-      validateNwcString: () => true, addWallet: async () => { throw refusal(code); },
+      ...page.methods, $t: t, walletName: 'Alby', nwcString: NWC_URL, errorMessage: '', step: 'found', isAdding: false,
+      probe: { normalized: NWC_URL }, addWallet: async () => { throw refusal(code); },
     };
-    await vm.validateAndConnect();
+    await vm.addConnectedWallet();
     assert.equal(vm.errorMessage, copy);
+    assert.equal(vm.step, 'connect', 'back to the connection, where the reason shows');
   }
 });
 

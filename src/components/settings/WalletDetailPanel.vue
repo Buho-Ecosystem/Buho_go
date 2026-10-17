@@ -45,14 +45,24 @@
           <span v-if="active" class="detail-active"><Icon icon="tabler:check" width="14" height="14" :aria-hidden="true" />{{ $t('Active') }}</span>
         </div>
         <div class="detail-balance">
+          <!-- An NWC connection that may not read the balance has none to wait for. -->
+          <span v-if="!sharesBalance" class="detail-balance-unshared">{{ $t('Not shared') }}</span>
           <!-- Never a stand-in number or dash: a placeholder until the first figure arrives. -->
-          <span v-if="!balanceKnown" v-balance-updating="balanceRefreshing" class="balance-placeholder" role="img" :aria-label="$t('Balance not loaded yet')" />
+          <span v-else-if="!balanceKnown" v-balance-updating="balanceRefreshing" class="balance-placeholder" role="img" :aria-label="$t('Balance not loaded yet')" />
           <HiddenAmount v-else :class="{ 'balance-stale': balanceOutdated }">{{ balance }}</HiddenAmount>
         </div>
         <HiddenAmount v-if="balanceKnown && fiat" class="detail-fiat" :class="{ 'balance-stale': balanceOutdated }">{{ fiat }}</HiddenAmount>
       </div>
 
       <p v-if="connectionError" class="detail-error detail-connection-error" role="status">{{ connectionError }}</p>
+      <!-- NWC: address, spending limit, what the connection may do, whether it answers. -->
+      <NWCWalletDetails
+        v-if="isNwc"
+        :wallet="wallet"
+        :limit="nwcLimit"
+        :status="nwcStatus"
+        @copy-address="$emit('copy-address', $event)"
+      />
 
       <!-- Spark: the wallet's own Lightning address. Each Spark wallet has one;
            it can be changed here or handed to another of your wallets. -->
@@ -103,6 +113,8 @@ import { computed, getCurrentInstance, nextTick, onMounted, ref } from 'vue';
 import { Icon } from '@iconify/vue';
 import WalletBrandMark from '../WalletBrandMark.vue';
 import HiddenAmount from '../HiddenAmount.vue';
+import NWCWalletDetails from '../nwc/NWCWalletDetails.vue';
+import { capabilitiesOf } from '../../utils/nwcWallet.js';
 import balanceUpdating from '../../directives/balanceUpdating.js';
 import { MAX_WALLET_NAME_LENGTH, walletNameCopy } from '../../utils/walletNames.js';
 import { translateErrorCode } from '../../utils/userErrors';
@@ -131,7 +143,13 @@ const props = defineProps({
   lightningAddress: { type: String, default: '' },
   /** Spark only: another Spark wallet exists to hand the address to. */
   canMoveAddress: Boolean,
+  /** NWC only: the spending limit the wallet shares (store.nwcLimitFor), or null. */
+  nwcLimit: { type: Object, default: null },
+  /** NWC only: whether the wallet answered when last asked (store.nwcStatus). */
+  nwcStatus: { type: String, default: '' },
 });
+const isNwc = computed(() => (props.wallet.type || 'nwc') === 'nwc');
+const sharesBalance = computed(() => capabilitiesOf(props.wallet).balance);
 const emit = defineEmits(['back', 'switch', 'reconnect', 'remove', 'copy-address', 'change-address', 'move-address']);
 // vue-i18n runs in legacy mode (src/boot/i18n.js), so useI18n() throws.
 // Reach $t through the component proxy, the app's established pattern.
@@ -238,4 +256,5 @@ button:not(:disabled):active { filter: brightness(.9); }
   .detail-edit { grid-column: 2; grid-row: 1; }
   .detail-identity-copy { grid-column: 1 / -1; grid-row: 2; }
 }
+.detail-balance-unshared { font-size: 1.0625rem; font-weight: 600; color: var(--detail-secondary); }
 </style>

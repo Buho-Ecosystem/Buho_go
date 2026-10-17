@@ -252,6 +252,7 @@
 import { Icon } from '@iconify/vue';
 import VueQrcode from '@chenfengyuan/vue-qrcode';
 import { useIdentityStore } from '../stores/identity';
+import { payWithNwc } from '../services/nwcPayment.js';
 import { useProfileStore } from '../stores/profile';
 import { useWalletStore } from '../stores/wallet';
 import { useTransactionMetadataStore } from '../stores/transactionMetadata';
@@ -798,7 +799,7 @@ export default {
 
       try {
         // NWC takes the bare code; Spark and LNbits take an object.
-        if (wallet.type === 'nwc') await provider.sendPayment(invoice.invoice);
+        if (wallet.type === 'nwc') await payWithNwc(provider, invoice.invoice, { limit: this.walletStore.nwcLimitFor(wallet.id) });
         else await provider.payInvoice({ invoice: invoice.invoice });
       } catch (err) {
         console.warn('[username] payment failed:', err);

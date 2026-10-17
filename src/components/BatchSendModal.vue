@@ -1422,7 +1422,7 @@ async function startBatch() {
           if (!nwcString) {
             throw new Error('NWC connection not found')
           }
-          const lightningService = new LightningPaymentService(nwcString)
+          const lightningService = new LightningPaymentService(nwcString, { limit: walletStore.nwcLimitFor(walletStore.activeWalletId) })
           const paymentData = await lightningService.processPaymentInput(address)
           payment = await lightningService.sendPayment(paymentData, result.amount)
           action = payment?.successAction || null
@@ -1474,7 +1474,7 @@ async function startBatch() {
           if (!nwcString) {
             throw new Error('NWC connection not found')
           }
-          const lightningService = new LightningPaymentService(nwcString)
+          const lightningService = new LightningPaymentService(nwcString, { limit: walletStore.nwcLimitFor(walletStore.activeWalletId) })
           payment = await lightningService.payInvoice(invoice)
         } else if (walletType === WALLET_TYPES.LNBITS) {
           const lnbitsProvider = await walletStore.ensureLNBitsConnected()

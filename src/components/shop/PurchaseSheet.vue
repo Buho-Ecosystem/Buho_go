@@ -370,6 +370,7 @@ import { Icon } from '@iconify/vue';
 import VueQrcode from '@chenfengyuan/vue-qrcode';
 import { Invoice } from '@getalby/lightning-tools';
 import { useWalletStore } from '../../stores/wallet';
+import { payWithNwc } from '../../services/nwcPayment.js';
 import { useNadanadaOrdersStore } from '../../stores/nadanadaOrders';
 import {
   redeemOrder, orderReceiptText, ORDER_KIND, ORDER_STATE,
@@ -841,7 +842,7 @@ export default {
         const pr = this.invoice.paymentRequest;
         // Mirror the wallet store's cross-wallet transfer branching:
         // NWC takes a bare string; Spark / LNbits take an object.
-        if (wallet.type === 'nwc') await provider.sendPayment(pr);
+        if (wallet.type === 'nwc') await payWithNwc(provider, pr, { limit: this.walletStore.nwcLimitFor(wallet.id) });
         else await provider.payInvoice({ invoice: pr });
       } catch (err) {
         // The wallet threw. Usually nothing was sent, but an errored-yet-settled

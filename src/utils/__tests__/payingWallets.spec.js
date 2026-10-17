@@ -393,3 +393,24 @@ test('payingWalletsInStore reads the wallet store the way listPayingWallets is g
   )
   assert.deepEqual(payingWalletsInStore({}, 1_000), [], 'an empty store has nothing to pay with')
 })
+
+test('an NWC connection its wallet allows to receive only is never picked to pay (#nwc)', () => {
+  const list = listPayingWallets({
+    wallets: [
+      { id: 'recv', name: 'Coinos', type: 'nwc', metadata: { methods: ['make_invoice', 'lookup_invoice'] } },
+      { id: 'pay', name: 'Alby Hub', type: 'nwc', metadata: { methods: ['pay_invoice', 'make_invoice'] } },
+      { id: 'old', name: 'Old', type: 'nwc', metadata: {} },
+    ],
+    activeWalletId: 'recv',
+    amountSats: 1000,
+  });
+  const byId = Object.fromEntries(list.map((w) => [w.id, w]));
+  assert.equal(byId.recv.reason, PAYING_REASON.SEND_NOT_ALLOWED);
+  assert.equal(byId.recv.usable, false);
+  assert.equal(byId.pay.usable, true);
+  assert.equal(byId.old.usable, true, 'a wallet saved before grants were stored keeps working');
+  assert.equal(pickDefaultPayingWallet(list).id, 'pay');
+  const t = (k, p = {}) => k.replace(/\{(\w+)\}/g, (_, x) => p[x]);
+  assert.equal(payingWalletReasonText(PAYING_REASON.SEND_NOT_ALLOWED, t), 'Receive only');
+  assert.match(payingWalletHint(byId.recv, 'lightning', t), /Coinos allows this connection to receive only/);
+});

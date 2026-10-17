@@ -7,6 +7,9 @@ import * as Pinia from 'pinia';
 import * as balanceState from '../../utils/balanceState.js';
 import * as amount from '../../utils/amountFormatting.js';
 import { createSparkLifecycle } from '../../services/sparkLifecycle.js';
+import * as nwcWallet from '../../utils/nwcWallet.js';
+import * as nwcConnection from '../../utils/nwcConnection.js';
+import * as nwcErrors from '../../utils/nwcErrors.js';
 
 const deferred = () => { let resolve, reject; const promise = new Promise((yes, no) => { resolve = yes; reject = no; }); return { promise, resolve, reject }; };
 function load(file, deps = {}) {
@@ -32,6 +35,10 @@ function harness(ctx, type = 'lnbits') {
     pinia: Pinia,
     '../providers/WalletFactory': { WALLET_TYPES: { SPARK: 'spark', LNBITS: 'lnbits', ARKADE: 'arkade', NWC: 'nwc' } },
     '../utils/balanceState.js': balanceState,
+    // The pure NWC rules the store follows (connection grants, names, errors).
+    '../utils/nwcWallet.js': nwcWallet,
+    '../utils/nwcConnection.js': nwcConnection,
+    '../utils/nwcErrors.js': nwcErrors,
     '../utils/claimedDeposits.js': { createClaimedDepositRegistry: () => ({}) },
     './autoWithdraw': { useAutoWithdrawStore: () => ({ checkAndExecute() {}, async initialize() {} }) },
     './notifications': { useNotificationsStore: () => ({ canNotifyPayments: true, notifyIfEnabled: async message => notices.push(message) }) },

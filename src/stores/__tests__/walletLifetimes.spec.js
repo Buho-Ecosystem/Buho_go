@@ -17,6 +17,9 @@ import { createClaimedDepositRegistry } from '../../utils/claimedDeposits.js';
 import * as sparkAccounts from '../../utils/sparkAccounts.js';
 import * as walletRemoval from '../../utils/walletRemoval.js';
 import * as exitLedger from '../../utils/exitLedger.js';
+import * as nwcWallet from '../../utils/nwcWallet.js';
+import * as nwcConnection from '../../utils/nwcConnection.js';
+import * as nwcErrors from '../../utils/nwcErrors.js';
 
 globalThis.localStorage = { getItem: () => null, setItem() {}, removeItem() {} };
 
@@ -30,6 +33,10 @@ function load({ createProvider, extraDeps = {} }) {
     '../providers/WalletFactory': { WALLET_TYPES: { SPARK: 'spark', NWC: 'nwc', LNBITS: 'lnbits', ARKADE: 'arkade' }, createWalletProvider: createProvider, inferWalletType: () => 'spark' },
     '../utils/deviceCrypto': { decryptString: async () => 'test mnemonic' },
     '../utils/balanceState.js': balanceState,
+    // The pure NWC rules the store follows (connection grants, names, errors).
+    '../utils/nwcWallet.js': nwcWallet,
+    '../utils/nwcConnection.js': nwcConnection,
+    '../utils/nwcErrors.js': nwcErrors,
     '../stores/autoWithdraw': {},
     './autoWithdraw': { useAutoWithdrawStore: () => ({ checkAndExecute() {}, removeConfig: async () => {} }) },
     './exitKit': { useExitKitStore: () => ({ remove() {} }) },

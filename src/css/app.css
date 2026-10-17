@@ -1207,6 +1207,99 @@ body.body--light .iform-scan {
   margin: 10px 4px 0;
 }
 
+/* One line of a form-sheet group: a label, a value, an optional tile in
+   front and chevron behind. Lines in a group are divided like .iform-row. */
+.iform-line {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 50px;
+  padding: 10px 14px;
+  border: 0;
+  background: none;
+  color: var(--text-primary);
+  font: 600 15px 'Manrope', sans-serif;
+  text-align: left;
+}
+button.iform-line { cursor: pointer; }
+.iform-row + .iform-line,
+.iform-line + .iform-line,
+.iform-line + .iform-row {
+  border-top: 1px solid var(--border-card);
+}
+.iform-line-label {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.iform-line-label small {
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.iform-line-value {
+  flex-shrink: 1;
+  min-width: 0;
+  max-width: 60%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-weight: 600;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+.iform-line-value.is-good { color: var(--brand-accent-text); }
+.iform-line-value.is-warn { color: #8A5A00; }
+body.body--dark .iform-line-value.is-warn { color: #F5C451; }
+.iform-line-tile {
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
+  display: grid;
+  place-items: center;
+  background: var(--bg-card);
+  color: var(--text-secondary);
+}
+.iform-line-chevron {
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
+.iform-line:focus-visible,
+.iform-secondary:focus-visible {
+  outline: 2px solid var(--brand-accent-text);
+  outline-offset: -2px;
+  border-radius: 12px;
+}
+/* Small print under a group: read it if you want, skip it if not. */
+.iform-foot {
+  margin: 10px 4px 0;
+  font-family: 'Manrope', sans-serif;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--text-muted);
+}
+/* The quieter second action under a sheet's primary button. */
+.iform-secondary {
+  display: block;
+  width: 100%;
+  min-height: 44px;
+  margin-top: 6px;
+  border: 0;
+  background: none;
+  color: var(--brand-accent-text);
+  font: 600 15px 'Manrope', sans-serif;
+  cursor: pointer;
+}
+
 .iform-connect {
   height: 52px;
   border-radius: 16px;

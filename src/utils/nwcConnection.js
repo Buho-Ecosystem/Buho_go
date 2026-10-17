@@ -26,7 +26,10 @@
  * @property {true}   ok
  * @property {string} normalized   Canonical `nostr+walletconnect://…` form.
  * @property {string} pubkey       Wallet pubkey (64-char hex, lowercased).
- * @property {string} relay        Raw relay URL (case preserved).
+ * @property {string} relay        First relay URL (case preserved).
+ * @property {string[]} relays     Every relay, in order. NIP-47 lets a
+ *                                 connection name several; the extra ones
+ *                                 are backups and must survive parsing.
  * @property {string} secret       Secret hex (case preserved).
  * @property {?string} lud16       Optional lightning address; null if absent.
  *
@@ -175,9 +178,10 @@ export function parseNwcConnection(raw) {
   if (!pubkey) return { ok: false, reason: NwcParseReason.MissingPubkey };
   if (!HEX_64_RE.test(pubkey)) return { ok: false, reason: NwcParseReason.InvalidPubkey };
 
-  const relay = url.searchParams.get('relay');
-  if (!relay) return { ok: false, reason: NwcParseReason.MissingRelay };
-  if (!RELAY_RE.test(relay)) return { ok: false, reason: NwcParseReason.InvalidRelay };
+  const relays = url.searchParams.getAll('relay').filter(Boolean);
+  if (!relays.length) return { ok: false, reason: NwcParseReason.MissingRelay };
+  if (!relays.every((r) => RELAY_RE.test(r))) return { ok: false, reason: NwcParseReason.InvalidRelay };
+  const relay = relays[0];
 
   const secret = url.searchParams.get('secret');
   if (!secret) return { ok: false, reason: NwcParseReason.MissingSecret };
@@ -189,9 +193,10 @@ export function parseNwcConnection(raw) {
   const rawLud16 = url.searchParams.get('lud16');
   const lud16 = (rawLud16 && rawLud16 !== 'null') ? rawLud16 : null;
 
-  // Rebuild the canonical form. URLSearchParams handles encoding for us.
+  // Rebuild the canonical form, every relay kept. URLSearchParams handles
+  // encoding for us.
   const params = new URLSearchParams();
-  params.set('relay', relay);
+  for (const r of relays) params.append('relay', r);
   params.set('secret', secret);
   if (lud16) params.set('lud16', lud16);
 
@@ -200,6 +205,7 @@ export function parseNwcConnection(raw) {
     normalized: `${CANONICAL_SCHEME}${pubkey.toLowerCase()}?${params.toString()}`,
     pubkey: pubkey.toLowerCase(),
     relay,
+    relays,
     secret,
     lud16,
   };

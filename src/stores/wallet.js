@@ -8,6 +8,11 @@ import { preferredProfileLightningAddress as preferredProfileAddress } from '../
 
 import { defineStore } from 'pinia';
 import { NostrWebLNProvider } from '@getalby/sdk';
+import { parseNwcConnection } from '../utils/nwcConnection.js';
+import { capabilitiesOf, nip47Methods, spendingLimitFrom, suggestedWalletName } from '../utils/nwcWallet.js';
+import { isRelayFailure } from '../utils/nwcErrors.js';
+import { probeNwcConnection } from '../services/nwcProbe.js';
+import { payWithNwc } from '../services/nwcPayment.js';
 import { fiatRatesService } from '../utils/fiatRates.js';
 import { SELECTABLE_FIAT_CURRENCIES } from '../utils/fiatCurrencies.js';
 import { LNBitsWalletProvider } from '../providers/LNBitsWalletProvider';
@@ -296,6 +301,12 @@ export const useWalletStore = defineStore('wallet', {
     // subdust change makes the wallet read as empty and the funds look lost.
     balanceDetails: {},
     walletInfos: {},
+    // NWC connections, runtime only: the spending limit the wallet shares
+    // (utils/nwcWallet spendingLimitFrom, null = no limit or not shared) and
+    // whether it answered last time it was asked: 'answering' | 'no-answer'
+    // | 'relay' (its relay could not be reached).
+    nwcLimits: {},
+    nwcStatus: {},
 
     // User preferences
     preferredFiatCurrency: 'USD',
@@ -2586,93 +2597,43 @@ export const useWalletStore = defineStore('wallet', {
         // Before the duplicate check and the default below read the list.
         await this._requireSavedState();
 
-        // Validate input
-        if (!walletData.nwcUrl) {
-          throw new Error('NWC connection URL is required');
-        }
+        const parsed = parseNwcConnection(walletData?.nwcUrl);
+        if (!parsed.ok) throw codedError('NWC_INVALID', 'Invalid NWC URL format');
 
-        if (!walletData.nwcUrl.startsWith('nostr+walletconnect://')) {
-          throw new Error('Invalid NWC URL format');
-        }
-
-        // Check for duplicate
-        const existing = this.wallets.find((w) => w.nwcUrl === walletData.nwcUrl);
-        if (existing) {
+        // The same connection twice, however it is spelled, is never useful.
+        // (The same *wallet* through a second connection is the person's
+        // call; the setup page asks before getting here.)
+        const sameConnection = this.wallets.find((w) => (w.type || WALLET_TYPES.NWC) === WALLET_TYPES.NWC
+          && parseNwcConnection(w.nwcUrl).pubkey === parsed.pubkey);
+        if (sameConnection) {
           throw codedError('WALLET_ALREADY_CONNECTED', 'This wallet is already connected');
         }
 
-        // Parse NWC URL to get relay info and lightning address
-        const nwcUrlParsed = new URL(walletData.nwcUrl.replace('nostr+walletconnect://', 'http://'));
-        const relays = nwcUrlParsed.searchParams.getAll('relay');
-        const lud16Raw = nwcUrlParsed.searchParams.get('lud16');
-        // Handle "null" string as no address, validate it looks like user@domain
-        const lud16 = (lud16Raw && lud16Raw !== 'null' && lud16Raw.includes('@') && !lud16Raw.includes('://')) ? lud16Raw : null;
-        console.log('Connecting to NWC with relays:', relays);
-        if (lud16) console.log('Lightning address (lud16):', lud16);
+        // Ask the wallet first (services/nwcProbe): who it is, what this
+        // connection may do. The setup page hands in its own test result;
+        // other callers (cloud restore) test here.
+        const tested = walletData.probe || await probeNwcConnection(parsed.normalized);
 
-        // Test connection with retry logic
-        const nwc = new NostrWebLNProvider({
-          nostrWalletConnectUrl: walletData.nwcUrl,
-        });
+        const nwc = new NostrWebLNProvider({ nostrWalletConnectUrl: tested.normalized });
+        await nwc.enable();
 
-        // Try to enable with retry - some relays/wallets need more time
-        let retries = 5;
-        let lastError = null;
-        const delays = [2000, 3000, 4000, 5000, 6000]; // Progressive delay
-
-        while (retries > 0) {
-          try {
-            console.log(`NWC enable attempt ${6 - retries}/5...`);
-            await nwc.enable();
-            console.log('NWC connection successful');
-            break; // Success
-          } catch (enableError) {
-            lastError = enableError;
-            retries--;
-            if (retries > 0) {
-              const delay = delays[5 - retries - 1] || 5000;
-              console.warn(`NWC enable failed, retrying in ${delay/1000}s... (${retries} retries left)`, enableError.message);
-              await new Promise(resolve => setTimeout(resolve, delay));
-            }
-          }
-        }
-
-        if (retries === 0 && lastError) {
-          // Provide more helpful error message
-          if (lastError.message.includes('no info event')) {
-            throw new Error(
-              'Could not connect to wallet. The relay did not return the NIP-47 info event (kind 13194). ' +
-              'This may happen if:\n' +
-              '1. The wallet service is not running or not connected to the relay\n' +
-              '2. The relay is slow or unresponsive\n' +
-              '3. The wallet does not support the NIP-47 info event\n\n' +
-              'Please try again, or check that your wallet service is online and connected.'
-            );
-          }
-          throw lastError;
-        }
-
-        const [info, balanceResponse] = await Promise.all([
-          nwc.getInfo(),
-          nwc.getBalance(),
-        ]);
-
-        // Create wallet object
         const wallet = {
           id: this.generateWalletId(),
           type: WALLET_TYPES.NWC,
-          name: walletData.name || info.alias || 'Lightning Wallet',
-          nwcUrl: walletData.nwcUrl,
+          name: String(walletData.name || '').trim() || suggestedWalletName(tested),
+          nwcUrl: tested.normalized,
           isActive: false,
           isDefault: this.wallets.length === 0,
           createdAt: Date.now(),
           lastUsed: Date.now(),
           metadata: {
-            alias: info.alias || 'Unknown',
-            pubkey: info.pubkey || '',
-            network: info.network || 'mainnet',
-            methods: info.methods || [],
-            lud16: lud16,
+            alias: tested.alias,
+            pubkey: tested.nodePubkey,
+            walletPubkey: tested.connectionPubkey,
+            network: tested.network,
+            methods: tested.methods,
+            notifications: tested.notifications,
+            lud16: tested.lud16,
           },
         };
 
@@ -2686,8 +2647,12 @@ export const useWalletStore = defineStore('wallet', {
           nwcInstance: nwc,
           error: null,
         };
-        this.applyBalance(wallet.id, balanceResponse.balance, { source: 'connect' });
-        this.walletInfos[wallet.id] = info;
+        this.nwcStatus[wallet.id] = 'answering';
+        this.nwcLimits[wallet.id] = tested.limit;
+        // A connection that may not read the balance has none to show.
+        if (tested.balanceSats !== null) {
+          this.applyBalance(wallet.id, tested.balanceSats, { source: 'connect' });
+        }
 
         // Activate the newly added wallet
         this.activeWalletId = wallet.id;
@@ -2702,6 +2667,68 @@ export const useWalletStore = defineStore('wallet', {
       } finally {
         this.isConnecting = false;
       }
+    },
+
+    /**
+     * Ask an NWC wallet again who it is, what this connection may do and
+     * how much of its spending limit is left, and record whether it
+     * answered. Keeps the saved details current (a person can change a
+     * connection's grants in their wallet app) and repairs wallets saved
+     * before these details were read correctly.
+     *
+     * @returns {Promise<'answering'|'no-answer'|'relay'>}
+     */
+    async refreshNwcDetails(walletId) {
+      const wallet = this.wallets.find((w) => w.id === walletId);
+      const client = this.connectionStates[walletId]?.nwcInstance?.client;
+      if (!wallet || !client) return this.nwcStatus[walletId] || 'no-answer';
+
+      let status = 'answering';
+      try {
+        const info = await client.getInfo();
+        const methods = nip47Methods(info?.methods);
+        const meta = wallet.metadata || {};
+        const next = {
+          ...meta,
+          alias: String(info?.alias || ''),
+          pubkey: String(info?.pubkey || meta.pubkey || ''),
+          walletPubkey: meta.walletPubkey || parseNwcConnection(wallet.nwcUrl).pubkey || '',
+          network: info?.network || meta.network || 'mainnet',
+          methods: methods.length ? methods : nip47Methods(meta.methods),
+          notifications: Array.isArray(info?.notifications) ? info.notifications : (meta.notifications || []),
+          lud16: meta.lud16 || info?.lud16 || null,
+        };
+        if (JSON.stringify(next) !== JSON.stringify(meta)) {
+          wallet.metadata = next;
+          this._schedulePersist();
+        }
+        this.nwcLimits[walletId] = capabilitiesOf(wallet).limit
+          ? await client.getBudget().then(spendingLimitFrom).catch(() => this.nwcLimits[walletId] ?? null)
+          : null;
+      } catch (error) {
+        // A connection that may not ask who it is still answered.
+        if (error?.code === 'RESTRICTED' || error?.code === 'NOT_IMPLEMENTED') status = 'answering';
+        else status = isRelayFailure(error) ? 'relay' : 'no-answer';
+        if (status !== 'answering') console.warn('[nwc] wallet did not answer:', error?.message || error);
+      }
+
+      // Recorded here only. `connected` keeps meaning "the connection is set
+      // up": a wallet on a phone can miss a 10 s get_info and still wake for
+      // a payment (60 s), so one silence must not take it out of the
+      // wallet lists. Settings shows the status and offers Reconnect.
+      this.nwcStatus[walletId] = status;
+      return status;
+    },
+
+    /**
+     * The spending limit an NWC connection shares, or null. A limit whose
+     * period has ended has reset, so it no longer holds anything back.
+     */
+    nwcLimitFor(walletId) {
+      const limit = this.nwcLimits[walletId];
+      if (!limit) return null;
+      if (limit.renewsAt && limit.renewsAt <= Date.now()) return null;
+      return limit;
     },
 
     // ==========================================
@@ -3207,6 +3234,10 @@ export const useWalletStore = defineStore('wallet', {
     /** The shared balance read for every provider and screen. Wallet info
      * and transaction history must never delay publication of fresh funds. */
     async refreshBalance(walletId, { provider = null, source = 'sync' } = {}) {
+      // An NWC connection without balance access has none to read; asking
+      // anyway only produces an error and a placeholder that never resolves.
+      const target = this.wallets.find((w) => w.id === walletId);
+      if (target && !capabilitiesOf(target).balance) return false;
       const read = this.beginBalanceRead(walletId);
       if (!this.isBalanceReadCurrent(read)) return false;
       this.markBalanceRefresh(walletId, true);
@@ -3240,6 +3271,11 @@ export const useWalletStore = defineStore('wallet', {
       if (!wallet) return;
       // Publish the balance independently of ancillary wallet information.
       await this.refreshBalance(walletId);
+      if ((wallet.type || WALLET_TYPES.NWC) === WALLET_TYPES.NWC) {
+        // NWC: who the wallet is, what this connection may do, its limit.
+        await this.refreshNwcDetails(walletId);
+        return;
+      }
       const provider = this.getProvider(walletId);
       const epoch = epochOf(walletId);
       if (!provider || !this.wallets.includes(wallet)) return;
@@ -3910,8 +3946,8 @@ export const useWalletStore = defineStore('wallet', {
             // Arkade this is a Boltz submarine swap.
             paymentResult = await fromProvider.payInvoice({ invoice });
           } else {
-            // NWC wallet - use sendPayment with just the invoice string
-            paymentResult = await fromProvider.sendPayment(invoice);
+            // NWC: proof-checked, never resent on its own (services/nwcPayment).
+            paymentResult = await payWithNwc(fromProvider, invoice, { limit: this.nwcLimitFor(fromWalletId) });
           }
         } catch (payError) {
           console.error('Payment error:', payError);

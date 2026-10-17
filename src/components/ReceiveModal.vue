@@ -456,6 +456,8 @@
 import VueQrcode from '@chenfengyuan/vue-qrcode';
 import ArkadeLogo from './ArkadeLogo.vue';
 import { NostrWebLNProvider } from "@getalby/sdk";
+import { capabilitiesOf } from '../utils/nwcWallet.js';
+import { NWC_ERROR, nwcError } from '../utils/nwcErrors.js';
 import { Invoice } from "@getalby/lightning-tools";
 import { formatAmount } from '../utils/amountFormatting.js';
 import { fiatRatesService } from '../utils/fiatRates.js';
@@ -485,6 +487,9 @@ import { composeUnifiedBip21 } from '../utils/bip21';
 import PaymentConfirmation from './PaymentConfirmation.vue';
 import L1BitcoinReceive from './L1BitcoinReceive.vue';
 import VoucherSheet from './VoucherSheet.vue';
+
+/** NWC receive polling: start after 4 s, back off to one check every 15 s. */
+const NWC_POLLING = Object.freeze({ initialInterval: 4000, maxInterval: 15000, backoffMultiplier: 1.5, maxAttempts: 18 });
 
 export default {
   name: 'ReceiveModal',
@@ -1395,7 +1400,10 @@ export default {
       };
 
       // Start polling for payment confirmation
-      this.paymentMonitor = createPaymentMonitor();
+      // Gentler than the default: a wallet behind NWC may be an app on a
+      // phone, and every lookup can wake it with a push. About three and a
+      // half minutes in all, like the default.
+      this.paymentMonitor = createPaymentMonitor(NWC_POLLING);
 
       this.paymentMonitor.start({
         invoice: {
@@ -1618,6 +1626,10 @@ export default {
           if (!activeWallet || !activeWallet.nwcString) {
             throw new Error('No active wallet found');
           }
+          const saved = this.walletStore.wallets.find(w => w.id === this.walletState.activeWalletId);
+          if (saved && !capabilitiesOf(saved).receive) {
+            throw nwcError(NWC_ERROR.RECEIVE_NOT_ALLOWED, 'This connection cannot create invoices');
+          }
 
           const nwc = new NostrWebLNProvider({
             nostrWalletConnectUrl: activeWallet.nwcString,
@@ -1688,6 +1700,7 @@ export default {
         this.walletStore.showPaymentError(error, {
           context: 'receive',
           walletType: this.walletStore.activeWalletType,
+          walletName: this.walletStore.activeWallet?.name || '',
           route: 'Invoice creation',
           amountSats: this.amountInSats,
           t: this.$t.bind(this),

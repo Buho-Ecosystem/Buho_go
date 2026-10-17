@@ -6,6 +6,7 @@ import exit from './exit.js';
 import wallets from './wallets.js';
 import identities from './identities.js';
 import lnbits from './lnbits.js';
+import nwc from './nwc.js';
 export default {
   ...requests,
   ...profilePayment,
@@ -54,6 +55,7 @@ export default {
   ...wallets,
   ...identities,
   ...lnbits,
+  ...nwc,
   // Spend: Bitrefill door
   "Gift cards, mobile top-ups and more": "Gift cards, mobile top-ups and more",
   "Bitrefill is on its way": "Bitrefill is on its way",

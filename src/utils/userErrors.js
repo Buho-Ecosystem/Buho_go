@@ -23,6 +23,7 @@
  */
 
 import { isCounterpartyError } from './errorOrigin.js';
+import { nwcErrorText } from './nwcErrors.js';
 
 const REASON_MAX_LENGTH = 280;
 
@@ -141,7 +142,7 @@ export function buildPaymentError(error, ctx = {}, $t = null) {
     reason = ctx.reason.trim();
     reasonSource = 'curated';
   } else {
-    const byCode = translateErrorCode(error, t);
+    const byCode = translateErrorCode(error, t, { walletName: ctx.walletName });
     const breakdown = expandInsufficientFunds(raw, ctx.amountSats, t);
     const translated = translateTechJargon(raw, t);
     if (byCode) {
@@ -380,7 +381,12 @@ export function formatInsufficientBalanceBreakdown(parts, t) {
  * It also explains the wallet store's WALLET_STATE_* refusals and a wallet
  * that is already connected. Exported for error surfaces that show one line.
  */
-export function translateErrorCode(error, t) {
+export function translateErrorCode(error, t, { walletName = '' } = {}) {
+  // Nostr Wallet Connect: limits, permissions, no answer (utils/nwcErrors).
+  // Asked first: the SDK's "no info event" failure carries no code.
+  const nwc = error && typeof error === 'object' ? nwcErrorText(error, t, { walletName }) : null;
+  if (nwc) return nwc;
+
   const code = error && typeof error === 'object' ? error.code : null;
   if (!code || typeof code !== 'string') return null;
 
@@ -416,6 +422,8 @@ function titleForErrorCode(error, context, t) {
   if (context === 'connect' && ['WALLET_STATE_UNAVAILABLE', 'WALLET_STATE_CONFLICT', 'WALLET_ALREADY_CONNECTED'].includes(code)) {
     return t("Couldn't add the wallet");
   }
+  // Not a failure: the outcome is unknown until the wallet says (services/nwcPayment).
+  if (code === 'NWC_PAYMENT_UNCONFIRMED') return t('Payment not confirmed');
   return null;
 }
 
