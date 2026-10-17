@@ -18,7 +18,6 @@ import {
 
 const STATUS_CONCURRENCY = 4;
 const REMINDER_DRIFT_MS = 60 * 60 * 1000;
-const SYNC_TIMEOUT_MS = 15000;
 
 export class ExitError extends Error {
   constructor(code, message) { super(message || code); this.code = code; }
@@ -356,27 +355,14 @@ function lazyEsplora() {
 }
 
 /**
- * One bounded network sync per connected Spark wallet (both accounts, not
- * only the selected one), recording only whether Spark answered. This is
- * what lets the home screen notice a sustained outage while the app sits
- * open on cached balances.
+ * Keep every active exit moving while the app is open. Safe to call
+ * repeatedly. Spark reachability has its own checks
+ * (services/sparkReachabilityCheck), started from the same boot file.
  */
-async function probeSparkHealth() {
-  const store = walletStore();
-  const ids = (store.sparkWallets || []).map(w => w.id);
-  if (!ids.length && store.activeWalletId) ids.push(store.activeWalletId);
-  await Promise.all(ids.map(async (id) => {
-    const provider = store.getSparkProvider(id);
-    if (provider?.isConnected && typeof provider.probeReachability === 'function') await provider.probeReachability({ timeoutMs: SYNC_TIMEOUT_MS });
-  }));
-}
-
-/** Keep every active exit moving and Spark's reachability known while the app is open. Safe to call repeatedly. */
 export function startExitMonitor({ intervalMs = 5 * 60 * 1000 } = {}) {
   if (monitor) return monitor;
   const run = async () => {
     await exitDriver().tickAll().catch(error => console.warn('exit monitor pass failed:', error?.message || error));
-    await probeSparkHealth().catch(() => {});
   };
   const timer = setInterval(run, intervalMs);
   const onVisible = () => { if (document.visibilityState === 'visible') run(); };

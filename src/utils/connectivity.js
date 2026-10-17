@@ -1,14 +1,17 @@
 /**
  * After a request failed to reach its server: is the phone offline, does
- * its network have no internet, or is only that service down? Asked once,
- * after a failure, never in the background.
+ * its network have no internet, or is only that service down? Asked only
+ * after something failed: a payment, or a Spark check (#381).
  *
- * A probe is a bare HEAD request to a host BuhoGO already talks to and that
- * belongs to no wallet service, so a wallet outage cannot fail it: no
- * credentials, no referrer, no cached answer. Either host answering means
- * the internet works, so one host being down never reads as "no internet".
+ * A probe is a bare HEAD request to a host that belongs to no wallet
+ * service, so a wallet outage cannot fail it: no credentials, no referrer,
+ * no cached answer. Any host answering means the internet works, so one
+ * host being down never reads as "no internet". The hosts sit with
+ * different providers; the third is a CDN trace endpoint, because a
+ * Bitcoin explorer may hold plain browser requests open. HTTPS keeps a
+ * sign-in page on public Wi-Fi from answering for any of them.
  */
-export const PROBE_URLS = ['https://go.mybuho.de/', 'https://mempool.space/'];
+export const PROBE_URLS = ['https://go.mybuho.de/', 'https://mempool.space/', 'https://www.cloudflare.com/cdn-cgi/trace'];
 export const PROBE_TIMEOUT_MS = 3000;
 
 /**
