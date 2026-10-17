@@ -21,6 +21,9 @@ export default defineConfig((ctx) => {
       // 'theme' runs first so the persisted light/dark choice is applied
       // before any component renders — avoids a flash of the wrong theme.
       'theme',
+      // 'launch' lets the launch frame and Android's splash go once the first
+      // screen has painted, unless home takes the launch over itself.
+      'launch',
       'axios',
       'i18n',
       'toasts',

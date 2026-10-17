@@ -10,7 +10,7 @@
         @click="onAppLogoClick"
       >
         <q-avatar square size="30px">
-          <img src="buho_logo.svg" alt="" class="app-logo">
+          <img ref="appLogo" src="buho_logo.svg" alt="" class="app-logo" :class="{ 'app-logo--launching': launching }">
         </q-avatar>
         <!-- A status, not a count: a quiet dot while an update waits. -->
         <transition name="update-dot">
@@ -110,48 +110,21 @@
     -->
 
     <!--
-      Loading state. One language across the app: a skeleton where content
-      will land, never a word standing in for it. It holds until the balance
-      is authoritative, for a returning user as much as a fresh install — a
-      figure carried over from the last session is a claim about someone's
-      money, and a cached zero would read as an empty wallet rather than as
-      "not fetched yet". A skeleton claims nothing.
+      The launch: the first home screen of a session starts as the launch
+      frame (the mark, centred) and carries the mark into the toolbar once the
+      saved wallets are in, breathing while it waits (LaunchMark.vue). Until
+      then nothing is drawn beneath it; after, the home screen below never
+      shows a figure it does not know: an unloaded balance pulses in place.
     -->
-    <div v-if="showLoadingScreen" class="main-content">
-      <!-- Wallet Chip skeleton -->
-      <q-skeleton type="QChip" width="90px" height="28px" animation="wave" style="margin-bottom: 1rem; border-radius: 20px;" />
-
-      <!-- Balance Section skeleton -->
-      <div class="balance-section">
-        <div class="balance-container" style="padding: 1rem;">
-          <div class="balance-amount" style="margin-bottom: 1rem; display: flex; justify-content: center;">
-            <q-skeleton type="text" width="220px" height="40px" animation="wave" style="border-radius: 8px;" />
-          </div>
-          <div style="display: flex; justify-content: center;">
-            <q-skeleton type="text" width="100px" height="16px" animation="wave" style="border-radius: 6px;" />
-          </div>
-        </div>
-      </div>
-
-      <!-- Last transaction preview skeleton -->
-      <div class="last-tx-section">
-        <div class="last-tx-card-skeleton" :class="$q.dark.isActive ? 'last-tx-skeleton-dark' : 'last-tx-skeleton-light'">
-          <q-skeleton type="circle" size="36px" animation="wave" />
-          <div class="last-tx-card-skeleton-text">
-            <q-skeleton type="text" width="60%" height="14px" animation="wave" />
-            <q-skeleton type="text" width="40%" height="12px" animation="wave" />
-          </div>
-          <div class="last-tx-card-skeleton-amount">
-            <q-skeleton type="text" width="80px" height="14px" animation="wave" />
-            <q-skeleton type="text" width="56px" height="12px" animation="wave" />
-          </div>
-        </div>
-        <q-skeleton type="text" width="72px" height="14px" animation="wave" class="history-link-skeleton" />
-      </div>
-    </div>
+    <LaunchMark
+      v-if="launching"
+      :ready="!showLoadingScreen"
+      :target="() => $refs.appLogo"
+      @done="launching = false"
+    />
 
     <!-- Main Content -->
-    <div v-else class="main-content" :class="{ 'main-content--waiting': somethingWaits }">
+    <div v-if="!showLoadingScreen" class="main-content" :class="{ 'main-content--waiting': somethingWaits, 'main-content--arriving': launching }">
       <!-- The active wallet's name, for every wallet type; opens the switcher. -->
       <q-chip
         v-if="activeWallet"
@@ -827,6 +800,8 @@ import {createPaymentMonitor, PaymentStatus} from '../utils/paymentMonitor.js';
 import PaymentConfirmation from '../components/PaymentConfirmation.vue';
 import WithdrawAuthorization from '../components/WithdrawAuthorization.vue';
 import CardFace from '../components/CardFace.vue';
+import LaunchMark from '../components/LaunchMark.vue';
+import {claimLaunch} from '../utils/launch.js';
 import {useWalletStore} from '../stores/wallet';
 import {useUpdateStore} from '../stores/update';
 import {useAddressBookStore} from '../stores/addressBook';
@@ -918,6 +893,7 @@ export default {
     ContactAvatar,
     WithdrawAuthorization,
     CardFace,
+    LaunchMark,
   },
   directives: { balanceUpdating },
   setup() {
@@ -1036,6 +1012,8 @@ export default {
       sendPayout: null,
       refreshInterval: null,
       showLoadingScreen: true,
+      // This home screen carries the session's launch (LaunchMark.vue).
+      launching: false,
       currentDisplayMode: null, // set from store in created()
       isSwitchingCurrency: false,
       isSendingPayment: false,
@@ -2171,7 +2149,9 @@ export default {
     }
   },
   async created() {
-    // Safety timeout: force-hide loading screen after 15s to prevent permanent black screen
+    // Only the first home screen of a session plays the launch.
+    this.launching = claimLaunch();
+    // Safety net: show home (and let the launch land) after 15 s, whatever the store does.
     setTimeout(() => {
       this.showLoadingScreen = false;
     }, 15000);
@@ -6391,6 +6371,22 @@ export default {
   -webkit-tap-highlight-color: transparent;
 }
 
+.app-logo--launching {
+  /* The launch mark is on its way here; it lands, then this one shows. */
+  visibility: hidden;
+}
+
+/* The home screen rises in beneath the travelling launch mark. */
+.main-content--arriving {
+  animation: home-arrive 0.5s cubic-bezier(0.2, 0.9, 0.25, 1) both;
+}
+@keyframes home-arrive {
+  from { opacity: 0; transform: translateY(14px); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .main-content--arriving { animation: none; }
+}
+
 .app-logo-button:focus-visible {
   outline: 2px solid var(--brand-accent);
   outline-offset: 2px;
@@ -7048,10 +7044,6 @@ export default {
   flex-direction: column;
   align-items: flex-end;
   gap: 6px;
-}
-
-.history-link-skeleton {
-  border-radius: 4px;
 }
 
 @media (prefers-reduced-motion: reduce) {

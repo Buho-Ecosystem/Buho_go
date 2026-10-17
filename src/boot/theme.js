@@ -1,5 +1,6 @@
 import { boot } from 'quasar/wrappers'
 import { Dark } from 'quasar'
+import { rememberLaunchTheme } from '../utils/launch.js'
 
 /**
  * Theme boot — single source of truth for light/dark mode persistence.
@@ -51,6 +52,8 @@ function readStoredTheme() {
  * @param {boolean} isDark - current dark-mode state to persist
  */
 export function persistTheme(isDark) {
+  // The next launch's splash is drawn in this theme too (utils/launch.js).
+  rememberLaunchTheme(isDark)
   try {
     window.localStorage.setItem(
       THEME_STORAGE_KEY,
@@ -71,4 +74,7 @@ export default boot(() => {
   const stored = readStoredTheme()
   const resolved = stored !== null ? stored : false
   Dark.set(resolved)
+  // Keeps Android's splash in step with a choice made before this release,
+  // or changed while the app was not running.
+  rememberLaunchTheme(resolved)
 })
