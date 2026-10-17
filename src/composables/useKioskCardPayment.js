@@ -1,6 +1,7 @@
 import { computed, onScopeDispose, ref, watch } from 'vue';
 import { fetchWithdrawRequest } from '../services/lnurlWithdraw.js';
 import { withdrawRecipient } from '../utils/lnurlWithdraw.js';
+import { lnurlToUrl } from '../utils/addressUtils.js';
 
 const CARD_LIFETIME_MS = 120000;
 
@@ -8,10 +9,18 @@ const CARD_LIFETIME_MS = 120000;
  * The page owns the sale and settlement; this composable only handles review
  * and authorization. Neither a callback acknowledgment nor a balance change
  * is proof that the sale was paid.
+ *
+ * A card tapped on the pay screen pays at once, like a terminal: the amount
+ * was on screen when the card touched the phone (the card's PIN, when its
+ * limit asks for one, still comes first). A card tapped before there was a
+ * sale is held and waits in `review` for an explicit confirm, because its
+ * holder never saw the amount.
  */
 export function useKioskCardPayment({ sale, authorize, onError, t = text => text, resolve = fetchWithdrawRequest }) {
   const phase = ref('empty');
   const request = ref(null);
+  /** The card's service, shown on the card face from the tap on. */
+  const host = ref('');
   let input = null;
   let controller = null;
   let expiryTimer = null;
@@ -22,6 +31,7 @@ export function useKioskCardPayment({ sale, authorize, onError, t = text => text
     clearTimeout(expiryTimer);
     input = null;
     request.value = null;
+    host.value = '';
     phase.value = 'empty';
   }
 
@@ -41,6 +51,7 @@ export function useKioskCardPayment({ sale, authorize, onError, t = text => text
       }
       request.value = info;
       phase.value = 'review';
+      if (!input.confirmFirst) void confirm({ amountSats: currentSale.amountSats });
     } catch (error) {
       if (attempt.signal.aborted) return;
       reset();
@@ -54,7 +65,8 @@ export function useKioskCardPayment({ sale, authorize, onError, t = text => text
     if (phase.value !== 'empty' || !payment?.data) return false;
     const receivedAt = payment.receivedAt || Date.now();
     if (Date.now() - receivedAt > CARD_LIFETIME_MS) return false;
-    input = { data: payment.data, receivedAt };
+    input = { data: payment.data, receivedAt, confirmFirst: !sale.value };
+    try { host.value = new URL(lnurlToUrl(payment.data) || '').host; } catch { host.value = ''; }
     phase.value = 'ready';
     expiryTimer = setTimeout(reset, Math.max(0, CARD_LIFETIME_MS - (Date.now() - receivedAt)));
     void prepare();
@@ -91,9 +103,5 @@ export function useKioskCardPayment({ sale, authorize, onError, t = text => text
     amount: { mode: 'fixed', fixedSats: sale.value.amountSats },
     description: '', commentAllowed: false,
   } : null);
-  const message = computed(() => ({
-    ready: t('Card ready. Enter the sale amount to continue.'),
-    loading: t('Reading card…'),
-  }[phase.value] || ''));
-  return { phase, payment, message, accept, confirm, reset };
+  return { phase, payment, host, accept, confirm, reset };
 }
