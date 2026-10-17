@@ -39,6 +39,25 @@ Receiving polls gently (`NWC_POLLING` in `ReceiveModal.vue`): each lookup can wa
 
 `src/utils/nwcErrors.js` gives every NIP-47 error code a sentence and a next step (spending limit used up, not allowed, connection removed, rate limited, no answer, relay unreachable, not confirmed). `utils/userErrors.translateErrorCode` asks it first, so every error surface shows the same words. Only errors carrying the SDK's NWC codes are read by message, so an unrelated timeout is never taken for an NWC one.
 
+## SDK
+
+`@getalby/sdk` 7.0.0. `utils/nwcErrors` reads its transport failures by class, code and message; checked against the real SDK with a stand-in relay:
+
+| What happened | SDK error | BuhoGO reads it as |
+|---|---|---|
+| Relay socket never opens (4.4 s) | `Nip47NetworkError` "Failed to connect to …", code `OTHER` | relay failure, nothing sent |
+| No wallet behind the relay | `Error` "no info event (kind 13194)…", no code | no answer, nothing sent |
+| Event sent, relay never acknowledged it | `Nip47PublishError` "failed to publish: …" or `Nip47PublishTimeoutError`, code `INTERNAL` | unknown outcome: the event may have reached the wallet |
+| Request delivered, no reply | `Nip47ReplyTimeoutError` "reply timeout…", code `INTERNAL` | unknown outcome |
+
+Reply timeouts: `get_info`, `get_balance`, `get_budget` and `list_transactions` wait 10 s; `pay_invoice`, `make_invoice` and `lookup_invoice` wait 60 s. Requests carry no `expiration` tag (also not in 8).
+
+Not yet on 8 (#390). 8.0.3, the latest release, and upstream `master`:
+- connect to a relay without a timeout (`_checkConnected` calls `ensureRelay` with no `connectionTimeout`): a relay that accepts the TCP connection but never completes the WebSocket handshake makes every request wait forever, where 7 fails after 4.4 s;
+- reject a connection secret or wallet key in upper-case hex, which `utils/nwcConnection` accepts and stores as given, so saved wallets would stop connecting.
+
+Upgrade once the first is fixed upstream, after normalizing stored hex to lower case.
+
 ## Checks
 
 - Unit: `nwcConnection`, `nwcWallet`, `nwcErrors`, `nwcPayment`, `nwcProbe`, plus the paying-wallet and store specs.
