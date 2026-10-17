@@ -457,6 +457,7 @@ import VueQrcode from '@chenfengyuan/vue-qrcode';
 import ArkadeLogo from './ArkadeLogo.vue';
 import { NostrWebLNProvider } from "@getalby/sdk";
 import { capabilitiesOf } from '../utils/nwcWallet.js';
+import { lookupNwcInvoice } from '../services/nwcReceive.js';
 import { NWC_ERROR, nwcError } from '../utils/nwcErrors.js';
 import { Invoice } from "@getalby/lightning-tools";
 import { formatAmount } from '../utils/amountFormatting.js';
@@ -478,7 +479,7 @@ function receivedSats(payment) {
   return Number.isFinite(n) && n > 0 ? n : 0;
 }
 import { useWalletStore } from '../stores/wallet';
-import { createPaymentMonitor, PaymentStatus, checkNWCPaymentStatus } from '../utils/paymentMonitor';
+import { createPaymentMonitor, PaymentStatus } from '../utils/paymentMonitor';
 import { shareContent } from '../utils/share';
 import { qrBlobFromRef } from '../utils/qrShare';
 import { truncateAddress } from '../utils/addressUtils';
@@ -1332,70 +1333,19 @@ export default {
         return;
       }
 
-      // Per-session capability flag for `lookup_invoice`.
-      //
-      // Some NWC wallets either don't implement lookup_invoice or only
-      // index invoices once they've been paid — both surface as
-      // "invoice not found" rejections when we poll. The Alby SDK logs
-      // each failure to console.error *before* rejecting the promise,
-      // so a multi-minute receive window can produce 30+ noisy log
-      // lines for a flow that's actually working (via the
-      // listTransactions fallback below).
-      //
-      // After the first failure we mark lookup_invoice unavailable for
-      // the rest of this monitor session and skip straight to the
-      // fallback. The flag is intentionally per-session (closure-scoped)
-      // rather than memoised across sessions — wallet capabilities can
-      // change between connections, so the next receive should re-probe.
-      let lookupInvoiceAvailable = true;
-
+      // One way to see an NWC invoice paid (services/nwcReceive):
+      // lookup_invoice or the recent incoming payments, as this connection
+      // was granted. A check that fails is "not paid yet"; the monitor
+      // keeps polling until the invoice expires, as before.
+      const savedMethods = this.walletStore.wallets
+        .find((w) => w.id === this.walletState.activeWalletId)?.metadata?.methods;
       wrappedProvider = {
         lookupInvoice: async (hash) => {
-          if (lookupInvoiceAvailable) {
-            try {
-              const invoice = await rawProvider.lookupInvoice({ payment_hash: hash });
-              if (invoice && checkNWCPaymentStatus(invoice)) {
-                return { paid: true, preimage: invoice?.preimage, amount: invoice?.amount };
-              }
-            } catch {
-              // Sticky-flag the wallet's lookup_invoice as unreliable
-              // for the rest of this monitor session — see comment
-              // above. The fallback below takes over from here.
-              lookupInvoiceAvailable = false;
-            }
-          }
-
-          // Fallback: scan recent incoming transactions for our
-          // payment_hash. Used when lookup_invoice isn't available, or
-          // when it returned an unpaid result and the transaction list
-          // might already reflect a payment the invoice index hasn't.
           try {
-            const txResponse = await rawProvider.listTransactions({
-              limit: 50,
-              unpaid: false,
-              type: 'incoming'
-            });
-
-            if (txResponse?.transactions) {
-              const found = txResponse.transactions.find(tx =>
-                tx.payment_hash === hash || tx.paymentHash === hash
-              );
-
-              if (found && checkNWCPaymentStatus(found)) {
-                return {
-                  paid: true,
-                  preimage: found.preimage,
-                  amount: Math.abs(found.amount || 0)
-                };
-              }
-            }
+            return await lookupNwcInvoice(rawProvider, hash, { methods: savedMethods });
           } catch {
-            // listTransactions also failed — return not paid; the
-            // monitor accumulates consecutive errors and stops after
-            // the configured threshold.
+            return { paid: false };
           }
-
-          return { paid: false };
         }
       };
 
