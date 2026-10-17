@@ -141,11 +141,22 @@ test('an expired invoice that a stateless wallet calls settled is paid only if i
   assert.equal((await lookupNwcInvoice(paid.nwc, HASH, { methods: ['lookup_invoice', 'list_transactions'] })).paid, true, 'paid: it is in the list');
 });
 
-test('without a list, a stateless "settled" is believed only before the invoice expires', async () => {
+test('without a list, a stateless "settled" is believed before expiry; after it, the answer is "cannot tell"', async () => {
+  // Past expiry a paid and a failed LNbits record are identical: neither a
+  // false "paid" nor a false "expired" for a sale that was paid.
   const expired = connection({ lookup: () => lnbitsRecord(now() - 3600) });
-  assert.deepEqual(await lookupNwcInvoice(expired.nwc, HASH, { methods: ['lookup_invoice'] }), { paid: false });
+  await assert.rejects(lookupNwcInvoice(expired.nwc, HASH, { methods: ['lookup_invoice'] }), (e) => e.code === NWC_ERROR.RECEIPT_UNKNOWN);
   const live = connection({ lookup: () => lnbitsRecord(now() + 3600) });
-  assert.equal((await lookupNwcInvoice(live.nwc, HASH, { methods: ['lookup_invoice'] })).paid, true);
+  const answer = await lookupNwcInvoice(live.nwc, HASH, { methods: ['lookup_invoice'] });
+  assert.equal(answer.paid, true);
+  assert.equal(answer.preimage, undefined, 'the all-zero placeholder is not passed on as a preimage');
+});
+
+test('grants never saved and a list the wallet refuses: the expiry rule decides', async () => {
+  const live = connection({ lookup: () => lnbitsRecord(now() + 3600), list: () => { throw sdk('not allowed', 'RESTRICTED'); } });
+  assert.equal((await lookupNwcInvoice(live.nwc, HASH, {})).paid, true);
+  const known = connection({ lookup: () => lnbitsRecord(now() + 3600), list: () => { throw sdk('reply timeout: x', 'INTERNAL'); } });
+  await assert.rejects(lookupNwcInvoice(known.nwc, HASH, { methods: ['lookup_invoice', 'list_transactions'] }), /reply timeout/, 'granted list: its failure is real');
 });
 
 test('a record with `state` is read as given, without a second request', async () => {

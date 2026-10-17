@@ -22,6 +22,8 @@ export const NWC_ERROR = Object.freeze({
   // May create invoices but neither look one up nor list payments: a paid
   // invoice could never be seen (services/nwcReceive).
   CONFIRM_NOT_ALLOWED: 'NWC_CONFIRM_NOT_ALLOWED',
+  // An expired invoice whose wallet record cannot tell paid from failed.
+  RECEIPT_UNKNOWN: 'NWC_RECEIPT_UNKNOWN',
 });
 
 /** Wallet answers that settle a payment as not made. */

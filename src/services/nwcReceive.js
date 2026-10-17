@@ -114,11 +114,23 @@ export async function lookupNwcInvoice(nwc, paymentHash, { methods } = {}) {
     // the LNbits NWC extension sets settled_at (to the creation time) on an
     // incoming invoice its node marked failed when it expired, exactly as on
     // a paid one. Its payment list holds settled payments only, so it
-    // decides when the connection may read it; otherwise only an invoice
-    // that has not expired yet is believed.
-    if (may.history) return fromRecentIncoming(client, paymentHash);
+    // decides when the connection may read it.
+    if (may.history) {
+      try {
+        return await fromRecentIncoming(client, paymentHash);
+      } catch (error) {
+        // Grants never saved: the list was only assumed. Use the expiry rule.
+        if (may.known) throw error;
+      }
+    }
+    // Without the list, an invoice that has not expired cannot have failed
+    // by expiring. Past expiry a paid and a failed invoice look the same, so
+    // say so rather than guess either way (a screen offers to check again).
     const expiresAt = Number(tx.expires_at);
-    return expiresAt > 0 && expiresAt <= Math.floor(Date.now() / 1000) ? { paid: false } : paidFrom(tx);
+    if (expiresAt > 0 && expiresAt <= Math.floor(Date.now() / 1000)) {
+      throw nwcError(NWC_ERROR.RECEIPT_UNKNOWN, 'The wallet cannot tell whether this expired invoice was paid');
+    }
+    return paidFrom(tx);
   }
 
   if (may.history) return fromRecentIncoming(client, paymentHash);
@@ -126,8 +138,13 @@ export async function lookupNwcInvoice(nwc, paymentHash, { methods } = {}) {
   throw nwcError(NWC_ERROR.CONFIRM_NOT_ALLOWED, 'This connection cannot confirm payments');
 }
 
+/** A preimage of all zeros is a wallet's placeholder, not proof of anything. */
+function realPreimage(preimage) {
+  return typeof preimage === 'string' && /[1-9a-f]/i.test(preimage) ? preimage : undefined;
+}
+
 function paidFrom(tx) {
-  return { paid: true, preimage: tx.preimage || undefined, amount: toSats(tx.amount) || undefined };
+  return { paid: true, preimage: realPreimage(tx.preimage), amount: toSats(tx.amount) || undefined };
 }
 
 /** The invoice among the recent incoming payments, paid only when settled there. */
