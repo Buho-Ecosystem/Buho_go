@@ -9,6 +9,10 @@ import { classifyIdentifier } from '../utils/nostrLookup'
 import { triggerWalletStoreHydration } from '../utils/walletHydration'
 import { cardRouteForDeepLink, createDeepLinkDeduper } from '../utils/deepLinkRouting'
 import { redactPaymentInput } from '../utils/logRedaction'
+import { i18n } from './i18n'
+
+// Outside any component: the shared instance, as the stores use it.
+const t = (key) => i18n.global.t(key)
 
 /**
  * Deep link handler for Android intent filters.
@@ -102,7 +106,7 @@ function handleDeepLink(url, router, walletStore) {
   if (!paymentData) {
     Notify.create({
       type: 'warning',
-      message: 'Unsupported link format',
+      message: t("BuhoGO can't open this link"),
       timeout: 3000
     })
     return
@@ -124,8 +128,8 @@ function handleDeepLink(url, router, walletStore) {
   if (!walletStore.activeWallet) {
     Notify.create({
       type: 'warning',
-      message: 'Please set up a wallet first',
-      caption: 'A wallet is needed to process payment links',
+      message: t('Set up a wallet first'),
+      caption: t('Payment links need a wallet.'),
       timeout: 5000
     })
     return
