@@ -46,11 +46,11 @@ function isSdkFallback(methods) {
  * must never lock someone out of their own money.
  *
  * @param {string[]} methods NIP-47 or WebLN names
- * @returns {{ known: boolean, send: boolean, receive: boolean, balance: boolean, history: boolean, limit: boolean }}
+ * @returns {{ known: boolean, send: boolean, receive: boolean, balance: boolean, history: boolean, lookup: boolean, limit: boolean }}
  */
 export function nwcCapabilities(methods) {
   const list = isSdkFallback(methods) ? [] : nip47Methods(methods);
-  if (!list.length) return { known: false, send: true, receive: true, balance: true, history: true, limit: false };
+  if (!list.length) return { known: false, send: true, receive: true, balance: true, history: true, lookup: true, limit: false };
   const has = (m) => list.includes(m);
   return {
     known: true,
@@ -58,13 +58,14 @@ export function nwcCapabilities(methods) {
     receive: has('make_invoice'),
     balance: has('get_balance'),
     history: has('list_transactions'),
+    lookup: has('lookup_invoice'),
     limit: has('get_budget'),
   };
 }
 
 /** Capabilities of any wallet: NWC follows its grants, every other type can do all. */
 export function capabilitiesOf(wallet) {
-  if ((wallet?.type || 'nwc') !== 'nwc') return { known: true, send: true, receive: true, balance: true, history: true, limit: false };
+  if ((wallet?.type || 'nwc') !== 'nwc') return { known: true, send: true, receive: true, balance: true, history: true, lookup: true, limit: false };
   return nwcCapabilities(wallet?.metadata?.methods);
 }
 

@@ -37,6 +37,20 @@ Every NWC payment goes through `src/services/nwcPayment.js` (`payWithNwc`): the 
 
 Receiving polls gently (`NWC_POLLING` in `ReceiveModal.vue`): each lookup can wake the owner's phone.
 
+## Receiving: one way for every screen
+
+`src/services/nwcReceive.js` creates an invoice on an NWC connection and tells whether it has been paid, through the connection's own NIP-47 client (`nwc.client`). The SDK's WebLN layer on top drops what a receiving screen needs: `makeInvoice` returns only the invoice text (no hash, no expiry), and `lookupInvoice` reads `{ paymentHash }`, so a plain hash or `{ payment_hash }` reaches the wallet as no hash at all.
+
+- `makeNwcInvoice`: `make_invoice` in millisats; returns the invoice, its payment hash and expiry.
+- `makeNwcInvoice` falls back to the expiry written in the invoice when the wallet leaves `expires_at` out, so a screen watching it always stops.
+- `lookupNwcInvoice`: `lookup_invoice` when the connection may (at most 10 s per answer), else the recent incoming payments (`list_transactions`), also when the wallet cannot find the invoice yet. A lookup-only wallet that does not know an unpaid invoice means "not yet". A connection allowed neither cannot see a payment arrive (`NWC_CONFIRM_NOT_ALLOWED`).
+- **Paid means settled.** `utils/paymentMonitor.checkNWCPaymentStatus` reads `state`, `status`, `settled`/`paid` or `settled_at`, and never a preimage alone: NIP-47 allows a preimage on an unpaid invoice ("optional if unpaid"), and the LNbits NWC extension returns one (or 64 zeros) for every invoice it created. Counting it as paid would complete an unpaid kiosk sale the moment its QR appears.
+- **A record without `state` that looks settled is confirmed first.** The LNbits NWC extension sets `settled_at` (to the creation time) on an incoming invoice its node marked failed when it expired, exactly as on a paid one. When the connection may list payments, the list (settled payments only) decides. Without it, an invoice that has not expired is believed; past expiry a paid and a failed record look the same, so the answer is "cannot tell" (`NWC_RECEIPT_UNKNOWN`) and the screen offers to check again, never a false "paid" or a false "expired". Records with `state` (Alby Hub, Zeus) are read as given. An all-zero preimage is a placeholder and is not passed on.
+
+The store wraps both for every wallet type: `createInvoiceDetailsOnWallet()` (invoice, hash, expiry; `createInvoiceOnWallet()` returns just the invoice) and `lookupInvoiceOnWallet()` (`{ paid, preimage, amount }`, the payment monitor's shape). The kiosk, Social Bucket, internal transfer, Learn & Earn and Home's LNURL-withdraw check use them; Receive uses `lookupNwcInvoice` for its payment check.
+
+The kiosk only offers wallets that can take a payment (`walletCapabilities.kioskWalletBlocker`): able to receive, and for NWC allowed `lookup_invoice` or `list_transactions`. The others are listed, not choosable, with the reason ("Can't receive", "Can't confirm payments"). A kiosk whose wallet has lost the grant since refuses the sale before showing a QR, and Settings will not start it.
+
 ## Errors in words
 
 `src/utils/nwcErrors.js` gives every NIP-47 error code a sentence and a next step (spending limit used up, not allowed, connection removed, rate limited, no answer, relay unreachable, not confirmed). `utils/userErrors.translateErrorCode` asks it first, so every error surface shows the same words. Only errors carrying the SDK's NWC codes are read by message, so an unrelated timeout is never taken for an NWC one.

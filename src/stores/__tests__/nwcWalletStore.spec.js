@@ -64,23 +64,26 @@ function receivingStore({ methods = ['pay_invoice', 'make_invoice'] } = {}) {
   } });
   const { store } = harness;
   const asked = [];
-  const nwc = {
-    async makeInvoice(args) { asked.push(args); return { paymentRequest: 'lnbc210n1nwc' }; },
-  };
+  const looked = [];
+  // The connection's NIP-47 client, as the SDK's NostrWebLNProvider holds it.
+  const nwc = { client: {
+    async makeInvoice(args) { asked.push(args); return { invoice: 'lnbc210n1nwc', payment_hash: 'ab'.repeat(32), expires_at: 1_900_000_000 }; },
+    async lookupInvoice(args) { looked.push(args); return { state: 'settled', settled_at: 1, amount: 21000 }; },
+  } };
   store.wallets = [
     { id: 'hub', type: 'nwc', name: 'Hub', nwcUrl: RECEIVE_URL, metadata: { methods } },
     { id: 'kitty', type: 'lnbits', name: 'Kitty', metadata: {} },
   ];
   store.connectionStates.hub = { connected: true, nwcInstance: nwc, error: null };
   assert.equal(store.providers.hub, undefined, 'NWC wallets never get a `providers` entry');
-  return { store, asked, setBalance: harness.setBalance };
+  return { store, asked, looked, setBalance: harness.setBalance };
 }
 
 test('the Social Bucket can ask an NWC wallet for an invoice, with its memo', async () => {
   const { store, asked } = receivingStore();
   assert.equal(await store.createInvoiceOnWallet('hub', 21, 'Social Bucket'), 'lnbc210n1nwc');
-  // The SDK reads the memo from `defaultMemo` only.
-  assert.deepEqual(asked, [{ amount: 21, defaultMemo: 'Social Bucket' }]);
+  // NIP-47 make_invoice: millisats, and the memo as `description`.
+  assert.deepEqual(asked, [{ amount: 21000, description: 'Social Bucket' }]);
 });
 
 test('a connection without make_invoice is refused before the wallet is asked', async () => {
@@ -98,7 +101,7 @@ test('an internal transfer into an NWC wallet takes the same path', async () => 
   store.refreshWalletData = async () => {};
   const result = await store.transferBetweenWallets('kitty', 'hub', 21, 'Rent');
   assert.equal(result.success, true);
-  assert.deepEqual(asked, [{ amount: 21, defaultMemo: 'Rent' }]);
+  assert.deepEqual(asked, [{ amount: 21000, description: 'Rent' }]);
   assert.deepEqual(paid, ['lnbc210n1nwc']);
 });
 
@@ -122,4 +125,28 @@ test('wallet lists say what each wallet may do: receive-only and send-only conne
     old: [true, true, false],    // saved before grants were stored: as before
     peek: [false, false, false], // read only: not "receive only", it cannot receive either
   }, 'Arkade stays out while its Lightning is paused');
+});
+
+// ── The kiosk's two questions (#397) ─────────────────────────────────────
+
+test('an NWC invoice comes with its hash and expiry, and its payment is seen', async () => {
+  const { store, looked } = receivingStore({ methods: ['make_invoice', 'lookup_invoice'] });
+  assert.deepEqual(await store.createInvoiceDetailsOnWallet('hub', 21, 'Kiosk Payment'), {
+    paymentRequest: 'lnbc210n1nwc', paymentHash: 'ab'.repeat(32), expiresAt: 1_900_000_000,
+  });
+  assert.deepEqual(await store.lookupInvoiceOnWallet('hub', 'ab'.repeat(32)), { paid: true, preimage: undefined, amount: 21 });
+  assert.deepEqual(looked, [{ payment_hash: 'ab'.repeat(32) }]);
+});
+
+test('other wallets keep their own invoice fields, with a hash decoded when missing', async () => {
+  const { store } = receivingStore();
+  const lnbits = {
+    async createInvoice() { return { paymentRequest: 'lnbc-kitty', paymentHash: 'cd'.repeat(32), expiresAt: null, checkingId: 'k1' }; },
+    async lookupInvoice(hash) { return { paid: hash === 'cd'.repeat(32) }; },
+  };
+  store.ensureWalletConnectedForTransfer = async () => lnbits;
+  assert.deepEqual(await store.createInvoiceDetailsOnWallet('kitty', 5, 'Kiosk Payment'), {
+    paymentRequest: 'lnbc-kitty', paymentHash: 'cd'.repeat(32), expiresAt: null, checkingId: 'k1',
+  });
+  assert.deepEqual(await store.lookupInvoiceOnWallet('kitty', 'cd'.repeat(32)), { paid: true });
 });

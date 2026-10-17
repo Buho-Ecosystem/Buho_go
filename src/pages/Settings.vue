@@ -371,7 +371,7 @@
             icon="tabler:wallet"
             :label="$t('kiosk.destinationWallet')"
             :caption="kioskSelectedWalletName || $t('kiosk.noWalletSelected')"
-            @click="kioskWalletSelection = walletStore.kioskWalletId || ''; showKioskWalletPicker = true"
+            @click="openKioskWalletPicker"
           />
 
           <SettingsRow
@@ -519,11 +519,14 @@
               <p v-if="!kioskEligibleWallets.length" class="kiosk-wallet-empty" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'">
                 {{ $t('Kiosk needs a wallet that can create Lightning invoices. Add a Spark, LNbits or NWC wallet first.') }}
               </p>
+              <!-- Every wallet is listed; one that cannot take kiosk payments
+                   is not choosable and says why where its type would be. -->
               <button
-                v-for="w in kioskEligibleWallets" :key="w.id"
+                v-for="w in kioskWalletOptions" :key="w.id"
                 type="button"
                 class="kiosk-wallet-row"
-                :class="{ 'kiosk-wallet-row-active': kioskWalletSelection === w.id }"
+                :class="{ 'kiosk-wallet-row-active': kioskWalletSelection === w.id, 'kiosk-wallet-row-off': w.kioskReason }"
+                :disabled="Boolean(w.kioskReason)"
                 @click="kioskWalletSelection = w.id"
               >
                 <span class="kiosk-wallet-row-radio">
@@ -531,7 +534,7 @@
                 </span>
                 <span class="kiosk-wallet-row-info">
                   <span class="kiosk-wallet-row-name">{{ w.name }}</span>
-                  <span class="kiosk-wallet-row-type">{{ getWalletTypeLabel(w) }}</span>
+                  <span class="kiosk-wallet-row-type">{{ w.kioskReason || getWalletTypeLabel(w) }}</span>
                 </span>
                 <span class="kiosk-wallet-row-icon">
                   <svg v-if="w.type === 'spark'" width="18" height="17" viewBox="0 0 135 128" fill="none" xmlns="http://www.w3.org/2000/svg" :style="{ color: $q.dark.isActive ? '#fff' : '#1a1a1a' }">
@@ -630,16 +633,18 @@
               {{ $t('kiosk.selectWallet') }}
             </div>
             <q-list>
-              <q-item v-for="w in kioskEligibleWallets" :key="w.id" clickable v-ripple
+              <q-item v-for="w in kioskWalletOptions" :key="w.id" clickable v-ripple
+                :disable="Boolean(w.kioskReason)"
                 @click="kioskWalletSelection = w.id">
                 <q-item-section side>
                   <q-radio :model-value="kioskWalletSelection" :val="w.id"
+                    :disable="Boolean(w.kioskReason)"
                     :color="$q.dark.isActive ? 'brand-green' : 'brand-green-dark'"
                     @update:model-value="kioskWalletSelection = $event" />
                 </q-item-section>
                 <q-item-section>
                   <q-item-label>{{ w.name }}</q-item-label>
-                  <q-item-label caption>{{ getWalletTypeLabel(w) }}</q-item-label>
+                  <q-item-label caption>{{ w.kioskReason || getWalletTypeLabel(w) }}</q-item-label>
                 </q-item-section>
                 <q-item-section side>
                   <!-- Spark -->
@@ -668,7 +673,7 @@
             <q-btn flat no-caps :label="$t('Cancel')" color="grey" @click="showKioskWalletPicker = false" />
             <q-btn flat no-caps :label="$t('Confirm')"
               :color="$q.dark.isActive ? 'brand-green' : 'brand-green-dark'"
-              :disable="!kioskWalletSelection"
+              :disable="!kioskSelectionAllowed"
               @click="confirmKioskWalletSelection" />
           </q-card-actions>
         </q-card>
@@ -2096,6 +2101,7 @@ import WalletBrandMark from '../components/WalletBrandMark.vue'
 import BiometricEnableDialog from '../components/BiometricEnableDialog.vue'
 import LNBitsAddressSheet from '../components/lnbits/LNBitsAddressSheet.vue'
 import { suggestedWalletName } from '../utils/nwcWallet.js'
+import { kioskWalletBlocker, KIOSK_BLOCKER } from '../utils/walletCapabilities.js'
 import { NWC_ERROR, nwcError } from '../utils/nwcErrors.js'
 import SparkLightningAddressSheet from '../components/SparkLightningAddressSheet.vue'
 import InternalTransferModal from '../components/InternalTransferModal.vue'
@@ -2374,8 +2380,20 @@ export default {
      * invoices, and Arkade's Lightning rail is out of service (Boltz
      * retired) - offering it would set up a kiosk that cannot charge.
      */
+    /**
+     * Every wallet for the kiosk pickers, each with the reason it cannot take
+     * kiosk payments ('' when it can): utils/walletCapabilities decides, so
+     * an NWC connection that may not create invoices, or never see them
+     * paid, is not offered, and Arkade not while its Lightning is paused.
+     */
+    kioskWalletOptions() {
+      return this.wallets.map((w) => ({ ...w, kioskReason: this.kioskReasonText(kioskWalletBlocker(w)) }));
+    },
     kioskEligibleWallets() {
-      return this.wallets.filter((w) => w.type !== 'arkade');
+      return this.kioskWalletOptions.filter((w) => !w.kioskReason);
+    },
+    kioskSelectionAllowed() {
+      return this.kioskEligibleWallets.some((w) => w.id === this.kioskWalletSelection);
     },
 
     /** The wallet the detail sheet is showing; null once it is removed. */
@@ -2493,8 +2511,10 @@ export default {
 
     kioskSelectedWalletName() {
       if (!this.walletStore.kioskWalletId) return '';
-      const w = this.wallets.find(w => w.id === this.walletStore.kioskWalletId);
-      return w ? w.name : '';
+      const w = this.kioskWalletOptions.find(w => w.id === this.walletStore.kioskWalletId);
+      if (!w) return '';
+      // Chosen before its connection lost the grant: say so where it is set.
+      return w.kioskReason ? `${w.name} · ${w.kioskReason}` : w.name;
     },
 
     nwcWalletAlias() {
@@ -3114,7 +3134,16 @@ export default {
       this.kioskDisableError = '';
     },
 
+    /** The words for a kiosk blocker (utils/walletCapabilities), or ''. */
+    kioskReasonText(blocker) {
+      if (blocker === KIOSK_BLOCKER.CANNOT_RECEIVE) return this.$t("Can't receive");
+      if (blocker === KIOSK_BLOCKER.CANNOT_CONFIRM) return this.$t("Can't confirm payments");
+      return '';
+    },
+
     confirmKioskWalletSelection() {
+      // Never persist a wallet the picker does not offer.
+      if (!this.kioskEligibleWallets.some((w) => w.id === this.kioskWalletSelection)) return;
       this.walletStore.setKioskWallet(this.kioskWalletSelection);
       this.showKioskWalletPicker = false;
     },
@@ -3125,9 +3154,24 @@ export default {
       this.walletStore.setKioskTipValues(arr);
     },
 
+    /** The kiosk wallet picker, preselecting the saved wallet only while it can take payments. */
+    openKioskWalletPicker() {
+      const saved = this.walletStore.kioskWalletId || '';
+      this.kioskWalletSelection = this.kioskEligibleWallets.some((w) => w.id === saved) ? saved : '';
+      this.showKioskWalletPicker = true;
+    },
+
     async handleStartKiosk() {
       if (!this.walletStore.kioskWalletId) {
         this.$q.notify({ message: this.$t('kiosk.noWalletSelected'), color: 'warning' });
+        return;
+      }
+      // A wallet chosen before its connection lost a grant would show a QR
+      // that can never complete: choose another one first.
+      const saved = this.kioskWalletOptions.find((w) => w.id === this.walletStore.kioskWalletId);
+      if (saved?.kioskReason) {
+        this.$q.notify({ message: this.$t('Choose a kiosk wallet that can take payments'), caption: `${saved.name} · ${saved.kioskReason}`, color: 'warning' });
+        this.openKioskWalletPicker();
         return;
       }
       this.kioskActivating = true;
@@ -7044,6 +7088,13 @@ body.body--light .kiosk-setup-primary {
   transition: background 0.15s ease, box-shadow 0.15s ease, transform 0.08s ease;
 }
 .kiosk-wallet-row:active { transform: scale(0.99); }
+/* Cannot take kiosk payments: the name steps back, the reason stays readable. */
+.kiosk-wallet-row-off { cursor: not-allowed; }
+.kiosk-wallet-row-off:active { transform: none; }
+.kiosk-wallet-row-off .kiosk-wallet-row-name,
+.kiosk-wallet-row-off .kiosk-wallet-row-icon,
+.kiosk-wallet-row-off .kiosk-wallet-row-radio { opacity: .45; }
+.kiosk-wallet-row-off .kiosk-wallet-row-type { color: var(--text-secondary); }
 
 .kiosk-wallet-row-active {
   background: rgba(21, 222, 114, 0.14);

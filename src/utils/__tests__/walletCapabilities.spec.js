@@ -18,6 +18,8 @@ import {
   canWalletPay,
   walletSwitchHint,
   canWalletReceiveLightning,
+  kioskWalletBlocker,
+  KIOSK_BLOCKER,
 } from '../walletCapabilities.js';
 
 let passed = 0;
@@ -109,6 +111,17 @@ test('receiving: Spark and LNbits can, Arkade cannot (Lightning paused), NWC fol
   // Saved without a type: an NWC connection.
   assert.equal(canWalletReceiveLightning({ metadata: { methods: ['pay_invoice'] } }), false);
   assert.equal(canWalletReceiveLightning(null), false);
+});
+
+test('kiosk: a wallet must create invoices and see them paid', () => {
+  assert.equal(kioskWalletBlocker({ type: 'spark' }), null);
+  assert.equal(kioskWalletBlocker({ type: 'lnbits' }), null);
+  assert.equal(kioskWalletBlocker({ type: 'arkade' }), KIOSK_BLOCKER.CANNOT_RECEIVE);
+  assert.equal(kioskWalletBlocker({ type: 'nwc', metadata: { methods: ['pay_invoice'] } }), KIOSK_BLOCKER.CANNOT_RECEIVE);
+  assert.equal(kioskWalletBlocker({ type: 'nwc', metadata: { methods: ['make_invoice'] } }), KIOSK_BLOCKER.CANNOT_CONFIRM);
+  assert.equal(kioskWalletBlocker({ type: 'nwc', metadata: { methods: ['make_invoice', 'lookup_invoice'] } }), null);
+  assert.equal(kioskWalletBlocker({ type: 'nwc', metadata: { methods: ['make_invoice', 'list_transactions'] } }), null);
+  assert.equal(kioskWalletBlocker({ type: 'nwc', metadata: {} }), null, 'grants unknown: as before');
 });
 
 console.log(`\n  ${passed} passed, ${failed} failed`);

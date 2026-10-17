@@ -804,7 +804,7 @@ import {isNfcAvailable} from '../utils/nfc.js';
 import NumberFlow from '@number-flow/vue';
 import HiddenAmount from '../components/HiddenAmount.vue';
 import balanceUpdating from '../directives/balanceUpdating.js';
-import {createPaymentMonitor, PaymentStatus, checkNWCPaymentStatus} from '../utils/paymentMonitor.js';
+import {createPaymentMonitor, PaymentStatus} from '../utils/paymentMonitor.js';
 import PaymentConfirmation from '../components/PaymentConfirmation.vue';
 import WithdrawAuthorization from '../components/WithdrawAuthorization.vue';
 import {useWalletStore} from '../stores/wallet';
@@ -4084,50 +4084,12 @@ export default {
         return;
       }
 
-      let rawProvider = this.walletStore.getActiveProvider();
-      if (!rawProvider) {
-        rawProvider = new LightningPaymentService(activeWallet.nwcString);
-      }
-
+      // The store's one way to see an invoice paid (services/nwcReceive for
+      // NWC): it reconnects the wallet when needed and believes only a
+      // settled record. A check that fails is "not paid yet", as before.
+      const walletId = this.walletStore.activeWalletId;
       const wrappedProvider = {
-        lookupInvoice: async (hash) => {
-          // Try lookupInvoice first
-          try {
-            const result = await rawProvider.lookupInvoice({ payment_hash: hash, paymentHash: hash });
-            if (result && checkNWCPaymentStatus(result)) {
-              return { paid: true, preimage: result.preimage, amount: result.amount };
-            }
-          } catch (e) {
-            // lookupInvoice not supported - use fallback
-          }
-
-          // Fallback: Search in recent transactions
-          try {
-            const txResponse = await rawProvider.listTransactions({
-              limit: 50,
-              unpaid: false,
-              type: 'incoming'
-            });
-
-            if (txResponse?.transactions) {
-              const found = txResponse.transactions.find(tx =>
-                tx.payment_hash === hash || tx.paymentHash === hash
-              );
-
-              if (found && checkNWCPaymentStatus(found)) {
-                return {
-                  paid: true,
-                  preimage: found.preimage,
-                  amount: Math.abs(found.amount || 0)
-                };
-              }
-            }
-          } catch (listError) {
-            // listTransactions also failed
-          }
-
-          return { paid: false };
-        }
+        lookupInvoice: (hash) => this.walletStore.lookupInvoiceOnWallet(walletId, hash).catch(() => ({ paid: false })),
       };
 
       this.withdrawPaymentMonitor = createPaymentMonitor();

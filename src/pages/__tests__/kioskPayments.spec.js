@@ -8,6 +8,8 @@ import * as roundUp from '../../utils/roundUp.js';
 import * as fiat from '../../utils/fiatCurrencies.js';
 import { useKioskCardPayment } from '../../composables/useKioskCardPayment.js';
 import * as errorOrigin from '../../utils/errorOrigin.js';
+import * as walletCapabilities from '../../utils/walletCapabilities.js';
+import * as nwcErrors from '../../utils/nwcErrors.js';
 const script = readFileSync(new URL('../KioskDashboard.vue', import.meta.url), 'utf8').match(/<script>([\s\S]*?)<\/script>/)[1];
 const { code } = transformSync(script, { format: 'cjs' });
 const renderer = Vue.createRenderer({
@@ -34,6 +36,9 @@ function harness(ctx, options = {}) {
     kioskDisplayCurrency: 'sats', preferredFiatCurrency: 'USD', exchangeRates: {},
     providers: { merchant: provider }, balances: { merchant: 0 }, pendingDeepLink: options.pending || null,
     async ensureWalletConnectedForTransfer(id) { assert.equal(id, 'merchant'); return provider; },
+    // The store's receive methods, answered by the stand-in wallet above.
+    async createInvoiceDetailsOnWallet(id, amount, description) { assert.equal(id, 'merchant'); return provider.createInvoice({ amount, description }); },
+    async lookupInvoiceOnWallet(id, hash) { assert.equal(id, 'merchant'); return provider.lookupInvoice(hash); },
     showPaymentError: error => h.errors.push(error),
     refreshBalance: async id => { assert.equal(id, 'merchant'); },
   });
@@ -47,6 +52,8 @@ function harness(ctx, options = {}) {
     '../composables/useKioskCardPayment.js': { useKioskCardPayment: args => useKioskCardPayment({ ...args, resolve: async () => ({ callback: 'https://card.example/callback', defaultDescription: 'Bolt Card', minSats: 1, maxSats: 10000 }) }) },
     '../services/lnurlWithdraw.js': { safeWithdrawError: error => error },
     '../utils/errorOrigin.js': errorOrigin,
+    '../utils/walletCapabilities.js': walletCapabilities,
+    '../utils/nwcErrors.js': nwcErrors,
     '../utils/paymentMonitor.js': { ...monitor, createPaymentMonitor: config => { const instance = monitor.createPaymentMonitor(config); h.monitors.push(instance); return instance; } },
   };
   const module = { exports: {} };
@@ -173,4 +180,45 @@ test('a sale paid while asleep still succeeds when resumed after invoice expiry'
   await h.monitors[0].checkNow();
   assert.equal(h.vm.state, 'success');
   assert.equal(h.receipts.length, 1);
+});
+
+test('a kiosk on an NWC wallet charges and sees the payment through the store (#397)', async ctx => {
+  const h = harness(ctx); await settle();
+  // An NWC connection has no createInvoice/lookupInvoice the kiosk could call
+  // directly; only the store knows how to ask it.
+  const provider = await h.store.ensureWalletConnectedForTransfer('merchant');
+  delete provider.createInvoice; delete provider.lookupInvoice;
+  const asked = [];
+  h.store.createInvoiceDetailsOnWallet = async (id, amount, description) => {
+    asked.push(['invoice', id, amount, description]);
+    return { paymentRequest: 'lnbc-nwc-sale', paymentHash: 'nwc-hash', expiresAt: Math.floor(Date.now() / 1000) + 3600 };
+  };
+  let paid = false;
+  h.store.lookupInvoiceOnWallet = async (id, hash) => { asked.push(['lookup', id, hash]); return { paid, amount: 100 }; };
+  h.vm.rawInput = '100'; h.vm.proceedToTipOrCharge(); await settle();
+  assert.equal(h.vm.state, 'payment', 'QR shown, waiting');
+  assert.deepEqual(h.errors, []);
+  paid = true;
+  await h.monitors[0].checkNow();
+  assert.equal(h.vm.state, 'success');
+  assert.deepEqual(asked[0], ['invoice', 'merchant', 100, 'Kiosk Payment']);
+  assert.ok(asked.slice(1).every((entry) => entry.join() === ['lookup', 'merchant', 'nwc-hash'].join()));
+});
+
+test('a kiosk wallet that may not create invoices says why instead of charging', async ctx => {
+  const h = harness(ctx); await settle();
+  h.store.createInvoiceDetailsOnWallet = async () => { throw Object.assign(new Error('This connection cannot create invoices'), { code: 'NWC_RECEIVE_NOT_ALLOWED' }); };
+  h.vm.rawInput = '100'; h.vm.proceedToTipOrCharge(); await settle();
+  assert.equal(h.vm.state, 'input');
+  assert.equal(h.errors[0]?.code, 'NWC_RECEIVE_NOT_ALLOWED', 'shown in the payment-error dialog');
+});
+
+test('a kiosk wallet that can no longer see payments refuses the sale before a QR is shown', async ctx => {
+  const h = harness(ctx); await settle();
+  // Chosen when it could; its connection has since lost lookup and list.
+  h.store.wallets = [{ id: 'merchant', type: 'nwc', metadata: { methods: ['make_invoice'] } }];
+  h.vm.rawInput = '100'; h.vm.proceedToTipOrCharge(); await settle();
+  assert.equal(h.created.length, 0, 'no invoice made');
+  assert.equal(h.vm.state, 'input');
+  assert.equal(h.errors[0]?.code, 'NWC_CONFIRM_NOT_ALLOWED');
 });
