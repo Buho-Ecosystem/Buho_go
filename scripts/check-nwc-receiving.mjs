@@ -219,9 +219,22 @@ const seedBucket = (page) => page.evaluate(() => {
   assert.deepEqual([byName['Alby Hub'].disabled, byName['Alby Hub'].note], [true, "Can't receive"]);
   assert.deepEqual([byName.Peek.disabled, byName.Peek.note], [true, "Can't confirm payments"]);
   await shot(page, 'kiosk-wallets');
+
+  // Peek was saved as the kiosk wallet before it lost its grants: starting
+  // the kiosk opens the picker instead, with nothing preselected.
+  const started = await page.evaluate(async (find) => {
+    const c = new Function(`return (${find})`)()();
+    const store = window.__audit.app.config.globalProperties.$pinia._s.get('wallet');
+    c.proxy.showKioskPinSetupDialog = false;
+    store.kioskEnabled = true; store.kioskWalletId = 'peek';
+    await c.proxy.handleStartKiosk();
+    return { route: location.hash, picker: c.proxy.showKioskWalletPicker, selection: c.proxy.kioskWalletSelection, allowed: c.proxy.kioskSelectionAllowed };
+  }, settingsPage.toString());
+  assert.equal(started.route.includes('/kiosk'), false, 'no kiosk on a wallet that cannot complete a sale');
+  assert.deepEqual([started.picker, started.selection, started.allowed], [true, '', false]);
   assert.deepEqual(errors, []);
   await context.close();
-  console.log('✓ kiosk: wallets that cannot take kiosk payments are listed with the reason, not choosable');
+  console.log('✓ kiosk: wallets that cannot take kiosk payments are listed with the reason, not choosable or started');
 }
 
 // 4 · Dark, and German at 320 px.

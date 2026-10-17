@@ -2,6 +2,8 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { lookupNwcInvoice, makeNwcInvoice } from '../nwcReceive.js';
 import { NWC_ERROR } from '../../utils/nwcErrors.js';
+import { checkNWCPaymentStatus } from '../../utils/paymentMonitor.js';
+import { profileInvoiceFixture } from '../../../scripts/fixtures/profileInvoice.mjs';
 
 const HASH = 'ab'.repeat(32);
 const sdk = (message, code) => Object.assign(new Error(message), { code });
@@ -77,4 +79,48 @@ test('a connection allowed neither cannot confirm a payment and says so', async 
   const { nwc, asked } = connection({});
   await assert.rejects(lookupNwcInvoice(nwc, HASH, { methods: ['make_invoice'] }), (e) => e.code === NWC_ERROR.CONFIRM_NOT_ALLOWED);
   assert.equal(asked.length, 0);
+});
+
+// ── Paid means settled, never "has a preimage" ────────────────────────────
+
+const ZEROS = '0'.repeat(64);
+
+test('an unpaid invoice that carries a preimage is not paid', async () => {
+  // The LNbits NWC extension's lookup_invoice for an unpaid incoming invoice:
+  // a preimage (stored, or zeros) and settled_at null, no state.
+  for (const record of [
+    { invoice: 'lnbc1', payment_hash: HASH, preimage: ZEROS, settled_at: null, amount: 21000 },
+    { state: 'pending', preimage: 'cafe' },
+    { state: 'expired', preimage: 'cafe' },
+    { state: 'accepted', preimage: 'cafe' }, // a hold invoice taken, not settled
+  ]) {
+    const { nwc } = connection({ lookup: () => record });
+    assert.deepEqual(await lookupNwcInvoice(nwc, HASH, { methods: ['lookup_invoice'] }), { paid: false }, JSON.stringify(record));
+  }
+});
+
+test('the settled check reads settlement fields only', () => {
+  assert.equal(checkNWCPaymentStatus({ preimage: 'cafe' }), false, 'a preimage alone');
+  assert.equal(checkNWCPaymentStatus({ paid: false, preimage: 'cafe' }), false, 'WebLN lookupInvoice of an unpaid invoice');
+  assert.equal(checkNWCPaymentStatus({ state: 'pending', settled_at: 0 }), false);
+  assert.equal(checkNWCPaymentStatus({ state: 'SETTLED' }), true);
+  assert.equal(checkNWCPaymentStatus({ settled_at: 1_800_000_000 }), true, 'older wallets without state');
+  assert.equal(checkNWCPaymentStatus({ settledAt: 1_800_000_000 }), true);
+  assert.equal(checkNWCPaymentStatus({ paid: true }), true);
+  assert.equal(checkNWCPaymentStatus({ status: 'completed' }), true);
+  assert.equal(checkNWCPaymentStatus({ status: 'pending', preimage: 'cafe' }), false);
+  assert.equal(checkNWCPaymentStatus(null), false);
+});
+
+test('an invoice without expires_at takes the expiry written in it', async () => {
+  const invoice = profileInvoiceFixture(21, 1_800_000_000_000);
+  const { nwc } = connection({ make: () => ({ invoice }) }); // no payment_hash, no expires_at
+  const made = await makeNwcInvoice(nwc, { amountSats: 21 });
+  assert.equal(made.expiresAt, 1_800_000_900, 'so a screen watching it stops at expiry');
+  assert.match(made.paymentHash, /^[0-9a-f]{64}$/);
+});
+
+test('a lookup-only wallet that does not know an unpaid invoice yet means "not yet"', async () => {
+  const { nwc } = connection({ lookup: () => { throw sdk('invoice not found', 'NOT_FOUND'); } });
+  assert.deepEqual(await lookupNwcInvoice(nwc, HASH, { methods: ['lookup_invoice'] }), { paid: false });
 });

@@ -19,18 +19,36 @@ import { checkNWCPaymentStatus } from '../utils/paymentMonitor.js';
 /** How many recent incoming payments to scan when the wallet has no lookup. */
 const RECENT_INCOMING = 50;
 
+/**
+ * How long one lookup_invoice may take. The SDK waits 60 s for that reply;
+ * a screen polling every few seconds would stall on a silent wallet.
+ */
+export const LOOKUP_WAIT_MS = 10000;
+
 function clientOf(nwc) {
   const client = nwc?.client;
   if (!client) throw new Error('Wallet is not connected');
   return client;
 }
 
-function paymentHashOf(invoice) {
+/** The payment hash and expiry (Unix seconds) written in the invoice itself. */
+function decodeInvoice(invoice) {
   try {
-    return new Invoice({ pr: invoice }).paymentHash || null;
+    const decoded = new Invoice({ pr: invoice });
+    const expiry = decoded.expiryDate instanceof Date ? Math.floor(decoded.expiryDate.getTime() / 1000) : null;
+    return { paymentHash: decoded.paymentHash || null, expiresAt: expiry > 0 ? expiry : null };
   } catch {
-    return null;
+    return { paymentHash: null, expiresAt: null };
   }
+}
+
+/** The answer, or a NO_ANSWER error once `ms` passed (the request itself runs on). */
+function withinWait(promise, ms) {
+  let timer;
+  const late = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(nwcError(NWC_ERROR.NO_ANSWER, 'No answer to the lookup')), ms);
+  });
+  return Promise.race([promise, late]).finally(() => clearTimeout(timer));
 }
 
 const toSats = (msat) => Math.floor(Math.abs(Number(msat) || 0) / 1000);
@@ -39,7 +57,8 @@ const toSats = (msat) => Math.floor(Math.abs(Number(msat) || 0) / 1000);
  * @param {object} nwc NostrWebLNProvider (its `client` is the NIP-47 client)
  * @param {{ amountSats: number, description?: string }} request
  * @returns {Promise<{ paymentRequest: string, paymentHash: string|null, expiresAt: number|null }>}
- *   expiresAt in Unix seconds, when the wallet says
+ *   expiresAt in Unix seconds: the wallet's, else the invoice's own, so a
+ *   screen watching it always knows when to stop
  */
 export async function makeNwcInvoice(nwc, { amountSats, description = '' }) {
   const tx = await clientOf(nwc).makeInvoice({
@@ -47,10 +66,11 @@ export async function makeNwcInvoice(nwc, { amountSats, description = '' }) {
     ...(description ? { description } : {}),
   });
   if (!tx?.invoice) throw new Error('Wallet did not return an invoice');
+  const written = decodeInvoice(tx.invoice);
   return {
     paymentRequest: tx.invoice,
-    paymentHash: tx.payment_hash || paymentHashOf(tx.invoice),
-    expiresAt: Number(tx.expires_at) > 0 ? Number(tx.expires_at) : null,
+    paymentHash: tx.payment_hash || written.paymentHash,
+    expiresAt: Number(tx.expires_at) > 0 ? Number(tx.expires_at) : written.expiresAt,
   };
 }
 
@@ -63,6 +83,10 @@ export async function makeNwcInvoice(nwc, { amountSats, description = '' }) {
  * recent incoming payments (list_transactions). A connection allowed
  * neither cannot confirm a payment at all and says so.
  *
+ * Paid means the record says settled (utils/paymentMonitor
+ * checkNWCPaymentStatus); a preimage alone never does, since wallets may
+ * return one for an unpaid invoice.
+ *
  * @param {object} nwc NostrWebLNProvider
  * @param {string} paymentHash
  * @param {{ methods?: string[] }} [options] the connection's saved grants (wallet.metadata.methods)
@@ -73,12 +97,16 @@ export async function lookupNwcInvoice(nwc, paymentHash, { methods } = {}) {
 
   if (may.lookup) {
     try {
-      const tx = await client.lookupInvoice({ payment_hash: paymentHash });
+      const tx = await withinWait(client.lookupInvoice({ payment_hash: paymentHash }), LOOKUP_WAIT_MS);
       return checkNWCPaymentStatus(tx)
         ? { paid: true, preimage: tx.preimage || undefined, amount: toSats(tx.amount) || undefined }
         : { paid: false };
     } catch (error) {
-      if (!may.history) throw error;
+      if (!may.history) {
+        // Some wallets only know an invoice once it is paid: not yet.
+        if (error?.code === 'NOT_FOUND') return { paid: false };
+        throw error;
+      }
       // Not found, not implemented, or no answer: the list may still know.
     }
   }

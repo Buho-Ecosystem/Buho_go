@@ -3027,6 +3027,7 @@ export default {
   "No wallet here can receive": "Keine Wallet hier kann empfangen",
   "Can't send": "Kann nicht senden",
   "Can't confirm payments": "Kann Zahlungen nicht bestätigen",
+  "Choose a kiosk wallet that can take payments": "Wähle eine Kiosk-Wallet, die Zahlungen annehmen kann",
   "BuhoGO can't open this link": "BuhoGO kann diesen Link nicht öffnen",
   "Set up a wallet first": "Richte zuerst eine Wallet ein",
   "Payment links need a wallet.": "Zahlungslinks brauchen eine Wallet.",

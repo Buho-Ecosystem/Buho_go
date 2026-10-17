@@ -371,7 +371,7 @@
             icon="tabler:wallet"
             :label="$t('kiosk.destinationWallet')"
             :caption="kioskSelectedWalletName || $t('kiosk.noWalletSelected')"
-            @click="kioskWalletSelection = walletStore.kioskWalletId || ''; showKioskWalletPicker = true"
+            @click="openKioskWalletPicker"
           />
 
           <SettingsRow
@@ -673,7 +673,7 @@
             <q-btn flat no-caps :label="$t('Cancel')" color="grey" @click="showKioskWalletPicker = false" />
             <q-btn flat no-caps :label="$t('Confirm')"
               :color="$q.dark.isActive ? 'brand-green' : 'brand-green-dark'"
-              :disable="!kioskWalletSelection"
+              :disable="!kioskSelectionAllowed"
               @click="confirmKioskWalletSelection" />
           </q-card-actions>
         </q-card>
@@ -2392,6 +2392,9 @@ export default {
     kioskEligibleWallets() {
       return this.kioskWalletOptions.filter((w) => !w.kioskReason);
     },
+    kioskSelectionAllowed() {
+      return this.kioskEligibleWallets.some((w) => w.id === this.kioskWalletSelection);
+    },
 
     /** The wallet the detail sheet is showing; null once it is removed. */
     detailWallet() {
@@ -3151,9 +3154,24 @@ export default {
       this.walletStore.setKioskTipValues(arr);
     },
 
+    /** The kiosk wallet picker, preselecting the saved wallet only while it can take payments. */
+    openKioskWalletPicker() {
+      const saved = this.walletStore.kioskWalletId || '';
+      this.kioskWalletSelection = this.kioskEligibleWallets.some((w) => w.id === saved) ? saved : '';
+      this.showKioskWalletPicker = true;
+    },
+
     async handleStartKiosk() {
       if (!this.walletStore.kioskWalletId) {
         this.$q.notify({ message: this.$t('kiosk.noWalletSelected'), color: 'warning' });
+        return;
+      }
+      // A wallet chosen before its connection lost a grant would show a QR
+      // that can never complete: choose another one first.
+      const saved = this.kioskWalletOptions.find((w) => w.id === this.walletStore.kioskWalletId);
+      if (saved?.kioskReason) {
+        this.$q.notify({ message: this.$t('Choose a kiosk wallet that can take payments'), caption: `${saved.name} · ${saved.kioskReason}`, color: 'warning' });
+        this.openKioskWalletPicker();
         return;
       }
       this.kioskActivating = true;

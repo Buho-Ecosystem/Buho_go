@@ -265,32 +265,30 @@ export function createPaymentMonitor(config = {}) {
 }
 
 /**
- * Check NWC payment status across different wallet implementations.
- * Handles various field names and formats used by different NWC wallets.
+ * Whether an NWC invoice record says it has been paid, across the field
+ * names different wallets use. Only a settlement field decides: `state`,
+ * `status`, `settled` / `paid`, or a `settled_at` time. A preimage alone
+ * proves nothing for an incoming invoice: NIP-47 lets a wallet return one
+ * before payment ("optional if unpaid"), and some return one, or a
+ * placeholder of zeros, for every invoice they created.
  * @param {Object} record - Transaction or invoice record from NWC
  * @returns {boolean} Whether the payment is settled/paid
  */
 export function checkNWCPaymentStatus(record) {
   if (!record) return false;
 
-  // NIP-47 transactions carry a lowercase 'state'
-  if (record.state === 'settled') return true;
-  if (record.state === 'SETTLED') return true;
+  // NIP-47 `state` is authoritative when present: settled | pending | failed | expired | accepted.
+  if (typeof record.state === 'string' && record.state) return record.state.toLowerCase() === 'settled';
 
-  // Legacy/fallback checks for different wallet implementations
-  if (record.settled === true) return true;
-  if (record.paid === true) return true;
+  // Older or wallet-specific status words.
+  if (typeof record.status === 'string' && record.status) {
+    return ['settled', 'complete', 'completed', 'paid'].includes(record.status.toLowerCase());
+  }
 
-  // Status field variants
-  if (record.status === 'SETTLED' || record.status === 'settled') return true;
-  if (record.status === 'complete' || record.status === 'completed') return true;
+  if (record.settled === true || record.paid === true) return true;
 
-  // settled_at timestamp (camelCase and snake_case)
-  if (typeof record.settled_at === 'number' && record.settled_at > 0) return true;
-  if (typeof record.settledAt === 'number' && record.settledAt > 0) return true;
-
-  // Preimage presence indicates payment was received
-  if (record.preimage && record.preimage.length > 0) return true;
+  // settled_at timestamp (snake_case and camelCase)
+  if (Number(record.settled_at) > 0 || Number(record.settledAt) > 0) return true;
 
   return false;
 }

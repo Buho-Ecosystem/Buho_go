@@ -42,7 +42,9 @@ Receiving polls gently (`NWC_POLLING` in `ReceiveModal.vue`): each lookup can wa
 `src/services/nwcReceive.js` creates an invoice on an NWC connection and tells whether it has been paid, through the connection's own NIP-47 client (`nwc.client`). The SDK's WebLN layer on top drops what a receiving screen needs: `makeInvoice` returns only the invoice text (no hash, no expiry), and `lookupInvoice` reads `{ paymentHash }`, so a plain hash or `{ payment_hash }` reaches the wallet as no hash at all.
 
 - `makeNwcInvoice`: `make_invoice` in millisats; returns the invoice, its payment hash and expiry.
-- `lookupNwcInvoice`: `lookup_invoice` when the connection may, else the recent incoming payments (`list_transactions`), also when the wallet cannot find the invoice yet. A connection allowed neither cannot see a payment arrive (`NWC_CONFIRM_NOT_ALLOWED`).
+- `makeNwcInvoice` falls back to the expiry written in the invoice when the wallet leaves `expires_at` out, so a screen watching it always stops.
+- `lookupNwcInvoice`: `lookup_invoice` when the connection may (at most 10 s per answer), else the recent incoming payments (`list_transactions`), also when the wallet cannot find the invoice yet. A lookup-only wallet that does not know an unpaid invoice means "not yet". A connection allowed neither cannot see a payment arrive (`NWC_CONFIRM_NOT_ALLOWED`).
+- **Paid means settled.** `utils/paymentMonitor.checkNWCPaymentStatus` reads `state`, `status`, `settled`/`paid` or `settled_at`, and never a preimage alone: NIP-47 allows a preimage on an unpaid invoice ("optional if unpaid"), and the LNbits NWC extension returns one (or 64 zeros) for every invoice it created. Counting it as paid would complete an unpaid kiosk sale the moment its QR appears.
 
 The store wraps both for every wallet type: `createInvoiceDetailsOnWallet()` (invoice, hash, expiry; `createInvoiceOnWallet()` returns just the invoice) and `lookupInvoiceOnWallet()` (`{ paid, preimage, amount }`, the payment monitor's shape). The kiosk, Social Bucket, internal transfer and Learn & Earn use them; Receive uses `lookupNwcInvoice` for its payment check.
 
