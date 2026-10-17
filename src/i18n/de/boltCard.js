@@ -31,7 +31,7 @@ export default {
   "Waiting": "Offen",
   "Keep": "Behalten",
   "Parked sale paid": "Geparkter Verkauf bezahlt",
-  "Six sales are parked": "Sechs Verkäufe sind geparkt",
+  "{n} sales are parked": "{n} Verkäufe sind geparkt",
   "Open or remove one first.": "Öffne oder entferne zuerst einen.",
   "Remove parked sale?": "Geparkten Verkauf entfernen?",
   "If the customer still pays it, the sats reach the wallet but this kiosk will not show the sale.": "Zahlt der Kunde ihn noch, kommen die Sats in der Wallet an, aber dieser Kiosk zeigt den Verkauf nicht.",

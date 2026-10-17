@@ -31,7 +31,6 @@ test('tap before amount waits for a sale, then reviews its fixed amount without 
   h.sale.value = invoice;
   await settle();
   assert.equal(h.card.phase.value, 'review');
-  assert.deepEqual(h.card.payment.value.amount, { mode: 'fixed', fixedSats: 100 });
   assert.equal(h.submissions.length, 0);
   await h.card.confirm({ amountSats: 100 });
   assert.equal(h.submissions[0][1], invoice.paymentRequest);
@@ -100,7 +99,7 @@ for (const stage of ['metadata', 'authorization']) {
       await submitting;
       await settle();
       assert.equal(h.card.phase.value, 'empty');
-      assert.equal(h.card.payment.value, null);
+      assert.equal(h.card.host.value, '');
       assert.equal(h.errors.length, 0);
     });
   }

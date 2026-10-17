@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { parseFastWithdrawRequest, withdrawInfo } from '../lnurlWithdraw.js';
+import { parseFastWithdrawRequest, withdrawInfo, isCardRequest, isCardLink, withdrawLinkHost } from '../lnurlWithdraw.js';
 
 const metadata = { tag: 'withdrawRequest', k1: 'Opaque-Token+KeepCase', callback: 'https://cash.example/Callback?session=A%2BB',
   minWithdrawable: 1000, maxWithdrawable: 500000, defaultDescription: 'Voucher for Alice@Example.com · Danke 🎁' };
@@ -75,4 +75,21 @@ test('whole-satoshi bounds round inward, including zero minimum and fractional f
   assert.equal(fixed.isFixedAmount, true); assert.ok(fixed.minSats > fixed.maxSats);
   const single = withdrawInfo({ ...metadata, minWithdrawable: 1500, maxWithdrawable: 2500 });
   assert.equal(single.isFixedAmount, true); assert.equal(single.fixedAmountSats, 2);
+});
+
+test('a card is known by its link, its PIN limit or its own name', () => {
+  assert.equal(isCardLink('lnurlw://card.example/ln?p=1&c=2'), true);
+  assert.equal(isCardLink('lightning:LNURLW://card.example/ln'), true, 'wrapped and any case');
+  assert.equal(isCardLink('https://card.example/ln'), false, 'a plain https link may be anything');
+  assert.equal(isCardLink(null), false);
+  assert.equal(isCardRequest({ pinLimit: 10_000_000 }), true);
+  assert.equal(isCardRequest({ defaultDescription: 'My Bolt Card' }), true);
+  assert.equal(isCardRequest({ defaultDescription: 'Voucher' }), false);
+  assert.equal(isCardRequest(null), false);
+});
+
+test('the service behind a withdraw link, for the card face', () => {
+  assert.equal(withdrawLinkHost('lnurlw://card.example/ln?p=1'), 'card.example');
+  assert.equal(withdrawLinkHost('https://pay.example:8443/w'), 'pay.example:8443');
+  assert.equal(withdrawLinkHost('not a link'), '');
 });

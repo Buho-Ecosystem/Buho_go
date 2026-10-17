@@ -251,13 +251,12 @@ import QRCode from 'qrcode'
 import WithdrawAuthorization from '../components/WithdrawAuthorization.vue'
 import CardFace from '../components/CardFace.vue'
 import { useKioskCardPayment } from '../composables/useKioskCardPayment.js'
-import { useKioskParkedSales } from '../composables/useKioskParkedSales.js'
+import { useKioskParkedSales, MAX_PARKED } from '../composables/useKioskParkedSales.js'
 import { isNfcAvailable } from '../utils/nfc.js'
 import { haptics } from '../utils/haptics.js'
 import { useQuasar } from 'quasar'
 import { createPaymentMonitor, PaymentStatus } from '../utils/paymentMonitor.js'
 import { safeWithdrawError } from '../services/lnurlWithdraw.js'
-import { keepOrigin } from '../utils/errorOrigin.js'
 import { fiatSymbol as fiatSymbolFor } from 'src/utils/fiatCurrencies'
 import { kioskWalletBlocker, KIOSK_BLOCKER } from '../utils/walletCapabilities.js'
 import { NWC_ERROR, nwcError } from '../utils/nwcErrors.js'
@@ -305,7 +304,7 @@ export default defineComponent({
     const nfcReady = ref(false)
     const sale = computed(() => state.value === 'payment' && !paymentProblem.value ? invoiceData.value : null)
     const card = useKioskCardPayment({
-      sale, t,
+      sale,
       authorize: (...args) => cardAuthorization.value.submit(...args),
       onError: (error) => {
         cardProblem.value = cardProblemText(error)
@@ -328,7 +327,7 @@ export default defineComponent({
       if (error?.name === 'TimeoutError' || error?.name === 'TypeError' || /did not respond|network|failed to fetch/i.test(message)) {
         return t("No answer from the card's service. If the card paid, this screen shows it.")
       }
-      return t(safeWithdrawError(keepOrigin(error, new Error(message)).message))
+      return t(safeWithdrawError(message))
     }
     function confirmHeldCard() {
       if (invoiceData.value) void card.confirm({ amountSats: invoiceData.value.amountSats })
@@ -341,6 +340,7 @@ export default defineComponent({
     const showCartSheet = ref(false)
     const showParkedSheet = ref(false)
     const parkPop = ref(false)
+    let parkPopTimer = null
     const parked = useKioskParkedSales({
       lookup: (walletId, hash) => store.lookupInvoiceOnWallet(walletId, hash),
       onPaid: (sale) => {
@@ -577,7 +577,7 @@ export default defineComponent({
     function parkInvoice() {
       if (!invoiceData.value) return
       if (parked.full.value) {
-        $q.notify({ type: 'warning', position: 'top', timeout: 4000, message: t('Six sales are parked'), caption: t('Open or remove one first.') })
+        $q.notify({ type: 'warning', position: 'top', timeout: 4000, message: t('{n} sales are parked', { n: MAX_PARKED }), caption: t('Open or remove one first.') })
         return
       }
       const ok = parked.park({
@@ -605,7 +605,8 @@ export default defineComponent({
       void haptics.medium()
       // The header pill takes the sale: it pops so the eye follows it there.
       parkPop.value = false
-      requestAnimationFrame(() => { parkPop.value = true; setTimeout(() => { parkPop.value = false }, 600) })
+      clearTimeout(parkPopTimer)
+      requestAnimationFrame(() => { parkPop.value = true; parkPopTimer = setTimeout(() => { parkPop.value = false }, 600) })
     }
 
     /** A parked sale opens on an empty register only: nothing on it is lost. */
@@ -790,7 +791,7 @@ export default defineComponent({
       walletReady.value = !!store.providers[store.kioskWalletId]
     })
     isNfcAvailable().then((ok) => { nfcReady.value = ok }).catch(() => {})
-    onUnmounted(() => { saleRevision++; clearPolling(); clearTimeout(tapTimer); clearTimeout(successTimer) })
+    onUnmounted(() => { saleRevision++; clearPolling(); clearTimeout(tapTimer); clearTimeout(successTimer); clearTimeout(parkPopTimer) })
 
     return {
       state, walletReady, rawInput, formattedDisplay, amountFontStyle, amountSats, isFiatMode, fiatSymbol, kioskWalletName,

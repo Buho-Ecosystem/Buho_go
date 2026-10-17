@@ -8,7 +8,6 @@ import * as roundUp from '../../utils/roundUp.js';
 import * as fiat from '../../utils/fiatCurrencies.js';
 import { useKioskCardPayment } from '../../composables/useKioskCardPayment.js';
 import { useKioskParkedSales } from '../../composables/useKioskParkedSales.js';
-import * as errorOrigin from '../../utils/errorOrigin.js';
 import * as walletCapabilities from '../../utils/walletCapabilities.js';
 import * as nwcErrors from '../../utils/nwcErrors.js';
 const script = readFileSync(new URL('../KioskDashboard.vue', import.meta.url), 'utf8').match(/<script>([\s\S]*?)<\/script>/)[1];
@@ -62,7 +61,6 @@ function harness(ctx, options = {}) {
     quasar: { useQuasar: () => ({ notify: notice => h.notices.push(notice), dialog: options => ({ onOk: ok => h.dialogs.push({ options, ok }) }) }) },
     '../composables/useKioskCardPayment.js': { useKioskCardPayment: args => useKioskCardPayment({ ...args, resolve: async () => ({ callback: 'https://card.example/callback', defaultDescription: 'Bolt Card', minSats: 1, maxSats: 10000 }) }) },
     '../services/lnurlWithdraw.js': { safeWithdrawError: error => error },
-    '../utils/errorOrigin.js': errorOrigin,
     '../utils/walletCapabilities.js': walletCapabilities,
     '../utils/nwcErrors.js': nwcErrors,
     '../utils/paymentMonitor.js': { ...monitor, createPaymentMonitor: config => { const instance = monitor.createPaymentMonitor(config); h.monitors.push(instance); return instance; } },
@@ -79,7 +77,7 @@ function harness(ctx, options = {}) {
   return h;
 }
 
-test('cold-start card waits for amount and reuses the existing confirmation payload', async ctx => {
+test('cold-start card waits for the amount, then for an explicit charge of exactly the sale', async ctx => {
   const h = harness(ctx, { pending: { data: 'lnurlw://card.example/tap', target: 'kiosk', receivedAt: Date.now() } });
   await settle();
   assert.equal(h.store.pendingDeepLink, null);
@@ -88,8 +86,10 @@ test('cold-start card waits for amount and reuses the existing confirmation payl
   h.vm.rawInput = '100'; h.vm.proceedToTipOrCharge(); await settle();
   assert.equal(h.created.length, 1);
   assert.equal(h.vm.card.phase.value, 'review');
-  assert.equal(h.vm.card.payment.value.amount.fixedSats, 100);
-  assert.equal(h.authorized.length, 0);
+  assert.equal(h.authorized.length, 0, 'its holder never saw the amount');
+  h.vm.confirmHeldCard(); await settle();
+  assert.equal(h.authorized.length, 1);
+  assert.equal(h.authorized[0][2], 100);
   assert.equal(h.store.activeWalletId, 'personal');
   assert.equal(h.store.kioskOwnerAccess, false);
 });
@@ -103,10 +103,10 @@ test('amount-first tap includes confirmed tips and charges the kiosk invoice exa
   assert.equal(h.created.length, 0);
   h.vm.selectedTipPercent = 10; h.vm.confirmTip(); await settle();
   assert.equal(h.created[0].amount, 110);
-  assert.equal(h.vm.card.payment.value.amount.fixedSats, 110);
   await h.vm.card.confirm({ amountSats: 110 });
   await h.vm.card.confirm({ amountSats: 110 });
   assert.equal(h.authorized.length, 1);
+  assert.equal(h.authorized[0][2], 110, 'the tip is charged');
   assert.equal(h.authorized[0][1], 'lnbc-sale');
   assert.equal(h.vm.state, 'payment', 'callback OK cannot declare paid');
 });
@@ -282,7 +282,7 @@ test('a full list refuses to park and drops nothing', async ctx => {
   h.vm.parkInvoice();
   assert.equal(h.vm.parkedCount, 6);
   assert.equal(h.vm.state, 'payment', 'the seventh sale stays on screen');
-  assert.equal(h.notices.at(-1).message, 'Six sales are parked');
+  assert.equal(h.notices.at(-1).message, '{n} sales are parked');
 });
 
 test('parked sales survive a restart and are still watched', async ctx => {

@@ -3,8 +3,7 @@
     v-if="visible"
     :amount-display="amountDisplay"
     :fiat-amount="fiatAmount"
-    :card-name="card.name"
-    :card-host="card.host"
+    :card-host="cardHost"
     :destination="destination"
     :prompt="prompt || $t('Enter the card PIN')"
     :error-message="error"
@@ -48,7 +47,7 @@ const validating = ref(false);
 const error = ref('');
 const errorDetail = ref('');
 const amount = ref(0);
-const card = ref({ name: 'Bolt Card', host: '' });
+const cardHost = ref('');
 const amountDisplay = computed(() => formatAmount(amount.value, store.useBip177Format));
 const fiatAmount = computed(() => {
   const currency = store.preferredFiatCurrency || 'USD';
@@ -74,10 +73,6 @@ function cancel() {
 }
 onBeforeUnmount(cancel);
 
-function hostOf(request) {
-  try { return new URL(request.callback).host; } catch { return ''; }
-}
-
 /** Used by both wallet and kiosk, with the exact invoice chosen by the caller. */
 async function submit(request, invoice, amountSats, { signal } = {}) {
   if (session) throw new Error('Withdrawal already in progress');
@@ -89,7 +84,7 @@ async function submit(request, invoice, amountSats, { signal } = {}) {
     if (signal?.aborted || controller.signal.aborted) throw new DOMException('Withdrawal cancelled', 'AbortError');
   };
   amount.value = amountSats;
-  card.value = { name: 'Bolt Card', host: hostOf(request) };
+  try { cardHost.value = new URL(request.callback).host; } catch { cardHost.value = ''; }
   error.value = '';
   errorDetail.value = '';
   let attempts = 0;

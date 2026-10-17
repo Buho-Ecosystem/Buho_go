@@ -771,7 +771,7 @@
 <script>
 import { offerAddressRequest } from '../services/addressRequestIntake.js';
 import { assertPaymentInput } from '../utils/lud23.js';
-import { withdrawInfo, withdrawRecipient } from '../utils/lnurlWithdraw.js';
+import { withdrawInfo, withdrawRecipient, isCardRequest, isCardLink, withdrawLinkHost } from '../utils/lnurlWithdraw.js';
 import { fetchLnurlRequest, safeWithdrawError } from '../services/lnurlWithdraw.js';
 import { NostrWebLNProvider } from "@getalby/sdk";
 import {LightningPaymentService, resolveLUD17URL} from '../utils/lightning.js';
@@ -1974,7 +1974,7 @@ export default {
 
       const recipient = withdrawRecipient(p, this.$t.bind(this));
       // A card speaks for itself (logo, name, service): no rail wording.
-      const card = recipient.logoUrl
+      const card = isCardRequest(p)
         ? { name: recipient.name, host: recipient.address, pinLimit: p.pinLimit }
         : null;
       if (card) delete recipient.viaOverride;
@@ -4414,14 +4414,11 @@ export default {
 
           // A card (lnurlw://) gets its sheet on the tap itself: the card on
           // screen while its service answers, instead of nothing at all.
-          const cardTap = !fromField && /^(lightning:)?lnurlw:\/\//i.test(String(paymentData.data).trim());
           let cardRead = null;
-          if (cardTap) {
-            let host = '';
-            try { host = new URL(String(paymentData.data).trim().replace(/^(lightning:)?lnurlw:/i, 'https:')).host; } catch { /* shown without a host */ }
+          if (!fromField && isCardLink(paymentData.data)) {
             this.resetWithdrawState();
             cardRead = Symbol('card read');
-            this.withdrawReading = { host, id: cardRead };
+            this.withdrawReading = { host: withdrawLinkHost(paymentData.data), id: cardRead };
             this.showWithdrawSheet = true;
             haptics.tap();
           }

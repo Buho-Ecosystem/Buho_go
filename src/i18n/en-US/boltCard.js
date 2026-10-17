@@ -31,7 +31,7 @@ export default {
   "Waiting": "Waiting",
   "Keep": "Keep",
   "Parked sale paid": "Parked sale paid",
-  "Six sales are parked": "Six sales are parked",
+  "{n} sales are parked": "{n} sales are parked",
   "Open or remove one first.": "Open or remove one first.",
   "Remove parked sale?": "Remove parked sale?",
   "If the customer still pays it, the sats reach the wallet but this kiosk will not show the sale.": "If the customer still pays it, the sats reach the wallet but this kiosk will not show the sale.",

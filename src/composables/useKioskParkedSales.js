@@ -129,5 +129,5 @@ export function useKioskParkedSales({ lookup, onPaid, storage = globalThis.local
     globalThis.document?.removeEventListener?.('visibilitychange', onVisible);
   });
 
-  return { list, count, full, park, take, remove, checkNow: () => schedule(true) };
+  return { list, count, full, park, take, remove };
 }

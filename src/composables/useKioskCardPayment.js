@@ -1,7 +1,6 @@
-import { computed, onScopeDispose, ref, watch } from 'vue';
+import { onScopeDispose, ref, watch } from 'vue';
 import { fetchWithdrawRequest } from '../services/lnurlWithdraw.js';
-import { withdrawRecipient } from '../utils/lnurlWithdraw.js';
-import { lnurlToUrl } from '../utils/addressUtils.js';
+import { withdrawLinkHost } from '../utils/lnurlWithdraw.js';
 
 const CARD_LIFETIME_MS = 120000;
 
@@ -16,7 +15,7 @@ const CARD_LIFETIME_MS = 120000;
  * sale is held and waits in `review` for an explicit confirm, because its
  * holder never saw the amount.
  */
-export function useKioskCardPayment({ sale, authorize, onError, t = text => text, resolve = fetchWithdrawRequest }) {
+export function useKioskCardPayment({ sale, authorize, onError, resolve = fetchWithdrawRequest }) {
   const phase = ref('empty');
   const request = ref(null);
   /** The card's service, shown on the card face from the tap on. */
@@ -66,7 +65,7 @@ export function useKioskCardPayment({ sale, authorize, onError, t = text => text
     const receivedAt = payment.receivedAt || Date.now();
     if (Date.now() - receivedAt > CARD_LIFETIME_MS) return false;
     input = { data: payment.data, receivedAt, confirmFirst: !sale.value };
-    try { host.value = new URL(lnurlToUrl(payment.data) || '').host; } catch { host.value = ''; }
+    host.value = withdrawLinkHost(payment.data);
     phase.value = 'ready';
     expiryTimer = setTimeout(reset, Math.max(0, CARD_LIFETIME_MS - (Date.now() - receivedAt)));
     void prepare();
@@ -98,10 +97,5 @@ export function useKioskCardPayment({ sale, authorize, onError, t = text => text
   }, { flush: 'sync' });
   onScopeDispose(reset);
 
-  const payment = computed(() => request.value && sale.value ? {
-    recipient: withdrawRecipient(request.value, t),
-    amount: { mode: 'fixed', fixedSats: sale.value.amountSats },
-    description: '', commentAllowed: false,
-  } : null);
-  return { phase, payment, host, accept, confirm, reset };
+  return { phase, host, accept, confirm, reset };
 }
