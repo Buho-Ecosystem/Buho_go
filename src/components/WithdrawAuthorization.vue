@@ -1,43 +1,63 @@
 <template>
-  <PinEntryDialog
-    :model-value="visible"
-    :title="$t('Bolt Card PIN')"
-    :subtitle="$t('Enter your 4-digit PIN to confirm this withdrawal')"
+  <CardPinPanel
+    v-if="visible"
     :amount-display="amountDisplay"
     :fiat-amount="fiatAmount"
-    :pin-length="4"
-    mode="enter"
-    :show-back-button="true"
+    :card-host="cardHost"
+    :destination="destination"
+    :prompt="prompt || $t('Enter the card PIN')"
     :error-message="error"
+    :error-detail="errorDetail"
     :loading="validating"
-    :loading-text="$t('Authorizing…')"
+    :loading-text="$t('Checking PIN…')"
     :timeout-seconds="60"
     @pin-complete="enterPin"
-    @cancel="cancel"
     @timeout="cancel"
   />
 </template>
 
 <script setup>
-import { computed, getCurrentInstance, nextTick, onBeforeUnmount, ref } from 'vue';
-import PinEntryDialog from './PinEntryDialog.vue';
+import { computed, getCurrentInstance, nextTick, onBeforeUnmount, ref, watch } from 'vue';
+import CardPinPanel from './CardPinPanel.vue';
 import { useWalletStore } from '../stores/wallet';
 import { formatAmount } from '../utils/amountFormatting.js';
 import { fiatRatesService } from '../utils/fiatRates';
 import { submitWithdrawCallback } from '../services/lnurlWithdraw.js';
+
+/**
+ * Authorizes one card withdrawal: asks for the card's PIN when the amount
+ * reaches its pinLimit (LUD-XX), sends the callback, and handles the
+ * service's "Invalid PIN" / "Card blocked" answers. Draws the PIN in place
+ * (CardPinPanel); the parent decides where, and learns through `active`
+ * when the PIN takes over its screen and through `checking` while a typed
+ * PIN is with the card's service.
+ */
+const props = defineProps({
+  /** "Into Main" in the wallet; empty at the kiosk. */
+  destination: { type: String, default: '' },
+  /** Defaults to "Enter the card PIN"; the kiosk asks the customer directly. */
+  prompt: { type: String, default: '' },
+});
+const emit = defineEmits(['update:active', 'update:checking']);
 
 const { proxy } = getCurrentInstance();
 const store = useWalletStore();
 const visible = ref(false);
 const validating = ref(false);
 const error = ref('');
+const errorDetail = ref('');
 const amount = ref(0);
+const cardHost = ref('');
 const amountDisplay = computed(() => formatAmount(amount.value, store.useBip177Format));
 const fiatAmount = computed(() => {
   const currency = store.preferredFiatCurrency || 'USD';
   const rate = store.exchangeRates[currency] || store.exchangeRates[currency.toLowerCase()];
   return rate ? '≈ ' + fiatRatesService.formatFiatAmount(amount.value * rate / 100000000, currency) : '';
 });
+watch(visible, (active) => emit('update:active', active), { flush: 'sync' });
+// While a typed PIN is with the card's service, the PIN screen cannot be
+// called back: the parent keeps its cancel out of reach.
+watch(() => visible.value && validating.value, (checking) => emit('update:checking', checking), { flush: 'sync' });
 let session = null;
 let resolvePin = null;
 
@@ -64,7 +84,9 @@ async function submit(request, invoice, amountSats, { signal } = {}) {
     if (signal?.aborted || controller.signal.aborted) throw new DOMException('Withdrawal cancelled', 'AbortError');
   };
   amount.value = amountSats;
+  try { cardHost.value = new URL(request.callback).host; } catch { cardHost.value = ''; }
   error.value = '';
+  errorDetail.value = '';
   let attempts = 0;
   try {
     assertActive();
@@ -90,16 +112,20 @@ async function submit(request, invoice, amountSats, { signal } = {}) {
       } catch (failure) {
         assertActive();
         if (requiresPin && failure.code === 'INVALID_PIN' && ++attempts < 3) {
+          // Cleared first so the same message twice still reads as new.
           error.value = '';
+          errorDetail.value = '';
           await nextTick();
           assertActive();
-          error.value = attempts === 2
-            ? proxy.$t('Invalid PIN. Last attempt.')
-            : proxy.$t('Invalid PIN. {n} attempts left.', { n: 3 - attempts });
+          const left = 3 - attempts;
+          error.value = left === 1
+            ? proxy.$t('Wrong PIN. 1 try left.')
+            : proxy.$t('Wrong PIN. {n} tries left.', { n: left });
+          errorDetail.value = left === 1 ? proxy.$t('Another wrong PIN locks this card.') : '';
           continue;
         }
         if (failure.code === 'CARD_BLOCKED' || (failure.code === 'INVALID_PIN' && attempts >= 3)) {
-          throw new Error(proxy.$t('Card blocked: too many incorrect PIN attempts'));
+          throw Object.assign(new Error(proxy.$t('Card blocked: too many incorrect PIN attempts')), { code: 'CARD_BLOCKED' });
         }
         throw failure;
       }

@@ -18,7 +18,7 @@ function harness(ctx, submit = async () => {}) {
   const calls = [];
   const module = { exports: {} };
   const dependencies = {
-    vue: Vue, './PinEntryDialog.vue': {},
+    vue: Vue, './CardPinPanel.vue': {},
     '../stores/wallet': { useWalletStore: () => ({ exchangeRates: {}, useBip177Format: false }) },
     '../utils/amountFormatting.js': { formatAmount: amount => amount + ' sats' },
     '../utils/fiatRates': { fiatRatesService: {} },
@@ -27,12 +27,13 @@ function harness(ctx, submit = async () => {}) {
   new Function('require', 'module', 'exports', code)(name => {
     assert.ok(name in dependencies, name); return dependencies[name];
   }, module, module.exports);
-  const app = renderer.createApp({ ...module.exports.default, render: () => Vue.h('div') });
+  const active = [];
+  const app = renderer.createApp({ ...module.exports.default, render: () => Vue.h('div') }, { 'onUpdate:active': value => active.push(value) });
   app.config.globalProperties.$t = (key, values = {}) => key.replace('{n}', values.n);
   const exposed = app.mount({ children: [] });
   const state = app._instance.setupState;
   ctx.after(() => app.unmount());
-  return { ...exposed, submit: exposed.submit, cancel: exposed.cancel, state, calls, app };
+  return { ...exposed, submit: exposed.submit, cancel: exposed.cancel, state, calls, app, active };
 }
 test('below PIN limit submits directly; at the limit waits for PIN', async ctx => {
   const h = harness(ctx);
@@ -50,13 +51,21 @@ test('below PIN limit submits directly; at the limit waits for PIN', async ctx =
 test('invalid PIN retries use the same invoice and stop after three attempts', async ctx => {
   const h = harness(ctx, async () => { throw Object.assign(new Error('Invalid PIN'), { code: 'INVALID_PIN' }); });
   const pending = h.submit(request, 'same-invoice', 100);
-  const rejected = assert.rejects(pending, /incorrect PIN/);
+  const rejected = assert.rejects(pending, error => error.code === 'CARD_BLOCKED' && /incorrect PIN/.test(error.message));
+  const said = [];
   for (let attempt = 1; attempt <= 3; attempt++) {
     h.state.enterPin('0000');
     await settle();
-    if (attempt < 3) assert.equal(h.state.visible, true);
+    if (attempt < 3) {
+      assert.equal(h.state.visible, true);
+      said.push([h.state.error, h.state.errorDetail]);
+    }
   }
   await rejected;
+  assert.deepEqual(said, [
+    ['Wrong PIN. 2 tries left.', ''],
+    ['Wrong PIN. 1 try left.', 'Another wrong PIN locks this card.'],
+  ], 'the try that can lock the card says so first');
   assert.equal(h.calls.length, 3);
   assert.ok(h.calls.every(call => call[1] === 'same-invoice'));
 });
@@ -85,4 +94,15 @@ test('invalid sale amounts cannot reach the callback', async ctx => {
   const h = harness(ctx);
   await assert.rejects(h.submit(request, 'invoice', 300), /Invalid amount/);
   assert.equal(h.calls.length, 0);
+});
+
+test('the PIN takes over its host only while it is asked for', async ctx => {
+  const h = harness(ctx);
+  const pending = h.submit(request, 'invoice', 100);
+  assert.deepEqual(h.active, [true]);
+  h.state.enterPin('1234');
+  await pending;
+  assert.deepEqual(h.active, [true, false]);
+  await h.submit(request, 'invoice', 10);
+  assert.deepEqual(h.active, [true, false], 'below the PIN limit nothing is shown');
 });

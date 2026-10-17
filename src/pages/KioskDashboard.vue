@@ -9,10 +9,6 @@
             <q-icon name="point_of_sale" size="13px" />
             <span>{{ kioskWalletName }}</span>
           </div>
-          <button v-if="parkedInvoice" :disabled="state !== 'input'" class="kiosk-park-btn" @click.stop="resumeParked">
-            <q-icon name="pause_circle" size="15px" />
-            <span>1</span>
-          </button>
         </div>
         <div class="kiosk-logo" @click="handleScreenTap">
           <img src="/buho_logo.svg" alt="Buho" class="kiosk-logo-img" />
@@ -22,43 +18,84 @@
         </button>
       </header>
 
-      <p v-if="card.message.value && (card.phase.value !== 'ready' || state === 'input')" class="text-center" role="status">{{ card.message.value }}</p>
-      <PaymentConfirmSheet
-        :model-value="card.phase.value === 'review' || card.phase.value === 'submitting'"
-        :payment="card.payment.value"
-        verb="charge"
-        :is-sending="card.phase.value === 'submitting'"
-        :status-message="$t('Requesting funds...')"
-        @confirm="card.confirm"
-        @cancel="card.reset"
+      <!-- Parked sales, said in words: one quiet line, one tap to the list.
+           It takes the parked sale the moment it is parked (it pops). -->
+      <button
+        v-if="parkedCount && (state === 'input' || state === 'payment')"
+        class="pos-parked-line"
+        :class="{ 'pos-parked-line--pop': parkPop }"
+        @click.stop="showParkedSheet = true"
       >
-        <template #extras><p>{{ $t('Receiving wallet: {wallet}', { wallet: kioskWalletName }) }}</p></template>
-      </PaymentConfirmSheet>
-      <WithdrawAuthorization ref="cardAuthorization" />
+        <q-icon name="pause_circle" size="16px" />
+        <span>{{ parkedCount === 1 ? $t('1 parked sale') : $t('{n} parked sales', { n: parkedCount }) }}</span>
+        <q-icon name="chevron_right" size="16px" class="pos-parked-line-chevron" />
+      </button>
 
       <!-- ═══ Paid ═══ -->
       <div v-if="state === 'success'" class="pos-state-center">
         <div class="pos-paid-ring"><q-icon name="check" size="36px" /></div>
         <span class="pos-state-title mt-4">{{ $t('kiosk.paymentReceived') }}</span>
         <div class="pos-amount-pill mt-2">{{ displaySats(invoiceData?.amountSats ?? finalAmountSats) }}</div>
+        <span v-if="paidByCard" class="pos-paid-method">{{ $t('Paid by card') }}</span>
         <button class="pos-primary-btn mt-8" @click.stop="resetToInput">{{ $t('kiosk.newCharge') }}</button>
       </div>
 
       <!-- ═══ QR ═══ -->
-      <div v-else-if="state === 'payment'" class="pos-state-center">
-        <p class="pos-qr-label">{{ $t('kiosk.waitingForPayment') }}</p>
-        <div class="pos-qr-amount-lg">{{ displaySats(invoiceData?.amountSats ?? finalAmountSats) }}</div>
-        <div class="pos-qr-area">
-          <div class="pos-qr-card animate-pop">
-            <q-spinner v-if="!invoiceData" size="36px" color="grey-6" />
-            <img v-else :src="qrDataUrl" alt="QR" class="pos-qr-img" />
+      <div v-else-if="state === 'payment'" class="pos-state-center pos-pay">
+        <template v-if="!cardPinActive">
+          <p class="pos-qr-label">{{ $t('kiosk.waitingForPayment') }}</p>
+          <div class="pos-qr-amount-lg">{{ displaySats(invoiceData?.amountSats ?? finalAmountSats) }}</div>
+        </template>
+
+        <!-- The card's PIN, asked on this screen. Mounted for the whole sale
+             so a card can be authorized the moment it is read; it draws
+             nothing until a PIN is needed. -->
+        <WithdrawAuthorization
+          ref="cardAuthorization"
+          :prompt="$t('Enter your card PIN')"
+          @update:active="cardPinActive = $event"
+          @update:checking="cardPinChecking = $event"
+        />
+        <button v-if="cardPinActive" class="pos-text-btn pos-card-other" :disabled="cardPinChecking" @click.stop="cancelCardPin">{{ $t('Pay another way') }}</button>
+
+        <!-- A card in play takes the QR's place: read, confirmed, paying. -->
+        <div v-else-if="cardBusy" class="pos-card-stage">
+          <CardFace :reading="card.phase.value === 'loading'" :host="card.host.value" />
+          <template v-if="card.phase.value === 'review'">
+            <button class="pos-primary-btn pos-card-confirm" @click.stop="confirmHeldCard">{{ $t('Charge card') }}</button>
+            <button class="pos-text-btn" @click.stop="card.reset()">{{ $t('Pay another way') }}</button>
+          </template>
+          <div v-else class="pos-card-status" role="status">
+            <q-spinner size="16px" />
+            <span>{{ card.phase.value === 'loading' ? $t('Reading card…') : $t('Paying…') }}</span>
           </div>
         </div>
+
+        <template v-else>
+          <div class="pos-qr-area">
+            <div class="pos-qr-card animate-pop">
+              <q-spinner v-if="!invoiceData" size="36px" color="grey-6" />
+              <img v-else :src="qrDataUrl" alt="QR" class="pos-qr-img" />
+            </div>
+          </div>
+          <p class="pos-qr-hint">{{ $t('Scan with any Bitcoin wallet') }}</p>
+          <!-- A card that did not pay: why, in one line, with the QR still
+               here so the sale can finish another way. -->
+          <div v-if="cardProblem" class="pos-card-problem" role="alert">
+            <q-icon name="error_outline" size="18px" />
+            <span><b>{{ cardProblem }}</b> {{ $t('Scan the code to pay instead.') }}</span>
+          </div>
+          <div v-else-if="nfcReady" class="pos-card-lane">
+            <span class="pos-card-wave"><svg class="pos-contactless" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" aria-hidden="true"><path d="M7.5 9.2a4.2 4.2 0 0 1 0 5.6" /><path d="M11 6.6a8 8 0 0 1 0 10.8" /><path d="M14.5 4a11.8 11.8 0 0 1 0 16" /></svg></span>
+            <span class="pos-card-lane-text"><b>{{ $t('Hold a Bolt Card here') }}</b><span>{{ $t('Against the back of this phone') }}</span></span>
+          </div>
+        </template>
+
         <p v-if="paymentProblem" role="status">{{ paymentProblem }}</p>
         <button v-if="retryStatus" class="pos-text-btn" @click="startPolling">{{ $t('Check payment again') }}</button>
-        <div class="pos-payment-actions">
-          <button class="pos-text-btn" @click.stop="parkInvoice">{{ $t('kiosk.park') || 'Park' }}</button>
-          <button class="pos-text-btn pos-cancel-btn" @click.stop="cancelPayment">{{ $t('Cancel') }}</button>
+        <div v-if="!cardBusy && !cardPinActive" class="pos-payment-actions">
+          <button class="pos-outline-btn" @click.stop="parkInvoice"><q-icon name="pause_circle" size="18px" />{{ $t('kiosk.park') }}</button>
+          <button class="pos-outline-btn pos-cancel-btn" @click.stop="cancelPayment">{{ $t('Cancel') }}</button>
         </div>
       </div>
 
@@ -105,6 +142,7 @@
           <span class="pos-cart-count">{{ accumulatedItems.length }} {{ accumulatedItems.length === 1 ? $t('kiosk.item') : $t('kiosk.items') }}  ·  {{ displaySats(accumulatedSats) }}</span>
           <button class="pos-cart-x" @click.stop.prevent="clearAll"><q-icon name="close" size="14px" /></button>
         </div>
+        <div v-if="card.phase.value === 'ready'" class="pos-card-held" role="status"><svg class="pos-contactless" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" aria-hidden="true"><path d="M7.5 9.2a4.2 4.2 0 0 1 0 5.6" /><path d="M11 6.6a8 8 0 0 1 0 10.8" /><path d="M14.5 4a11.8 11.8 0 0 1 0 16" /></svg><span>{{ $t('Card held · enter the amount') }}</span></div>
         <div class="pos-top">
           <div class="pos-amount-area">
             <div class="pos-amount-row"><span class="pos-currency-sym">{{ isFiatMode ? fiatSymbol : '' }}</span><span class="pos-amount-value" :class="{ 'pos-amount-sm': formattedDisplay.length > 7 }" :style="amountFontStyle">{{ formattedDisplay }}</span><span v-if="!isFiatMode" class="pos-currency-suffix">sats</span></div>
@@ -136,6 +174,31 @@
             <div v-for="(item, idx) in accumulatedItems" :key="idx" class="pos-sheet-row">
               <span>{{ displaySats(item) }}</span>
               <button class="pos-sheet-remove" @click.stop="removeAccumulatedItem(idx)"><q-icon name="remove_circle_outline" size="18px" /></button>
+            </div>
+          </q-card-section>
+        </q-card>
+      </q-dialog>
+
+      <!-- ═══ Parked sales ═══ -->
+      <q-dialog v-model="showParkedSheet" position="bottom">
+        <q-card class="pos-cart-sheet pos-parked-sheet" :class="$q.dark.isActive ? 'pos-cart-sheet-dark' : 'pos-cart-sheet-light'">
+          <q-card-section>
+            <div class="pos-sheet-header">
+              <span class="pos-sheet-title">{{ $t('Parked sales') }}</span>
+              <span class="pos-parked-note">{{ $t('Still watched for payment') }}</span>
+            </div>
+            <p v-if="!canResume" class="pos-parked-hint">{{ $t('Finish or clear the current sale to open a parked one.') }}</p>
+            <div v-for="sale in parkedList" :key="sale.id" class="pos-parked-row" :class="{ 'pos-parked-row--expired': sale.status === 'expired' }">
+              <button
+                class="pos-parked-open"
+                :disabled="!canResume || sale.status === 'expired'"
+                @click.stop="resumeParked(sale.id)"
+              >
+                <span class="pos-parked-amount">{{ displaySats(sale.invoiceData.amountSats) }}</span>
+                <span class="pos-parked-meta">{{ parkedMeta(sale) }}</span>
+              </button>
+              <span class="pos-parked-status" :class="`pos-parked-status--${sale.status}`">{{ sale.status === 'expired' ? $t('Expired') : $t('Waiting') }}</span>
+              <button class="pos-sheet-remove" :aria-label="$t('Remove')" @click.stop="removeParked(sale)"><q-icon name="remove_circle_outline" size="20px" /></button>
             </div>
           </q-card-section>
         </q-card>
@@ -185,19 +248,22 @@ import { roundUpTargetSats } from 'src/utils/roundUp'
 import { useTransactionMetadataStore } from 'stores/transactionMetadata'
 import KioskPinPad from 'components/KioskPinPad.vue'
 import QRCode from 'qrcode'
-import PaymentConfirmSheet from '../components/PaymentConfirmSheet.vue'
 import WithdrawAuthorization from '../components/WithdrawAuthorization.vue'
+import CardFace from '../components/CardFace.vue'
 import { useKioskCardPayment } from '../composables/useKioskCardPayment.js'
+import { useKioskParkedSales, MAX_PARKED } from '../composables/useKioskParkedSales.js'
+import { isNfcAvailable } from '../utils/nfc.js'
+import { haptics } from '../utils/haptics.js'
+import { useQuasar } from 'quasar'
 import { createPaymentMonitor, PaymentStatus } from '../utils/paymentMonitor.js'
 import { safeWithdrawError } from '../services/lnurlWithdraw.js'
-import { keepOrigin } from '../utils/errorOrigin.js'
 import { fiatSymbol as fiatSymbolFor } from 'src/utils/fiatCurrencies'
 import { kioskWalletBlocker, KIOSK_BLOCKER } from '../utils/walletCapabilities.js'
 import { NWC_ERROR, nwcError } from '../utils/nwcErrors.js'
 
 export default defineComponent({
   name: 'KioskDashboard',
-  components: { KioskPinPad, PaymentConfirmSheet, WithdrawAuthorization },
+  components: { KioskPinPad, WithdrawAuthorization, CardFace },
 
   setup() {
     const router = useRouter()
@@ -229,17 +295,63 @@ export default defineComponent({
     let saleRevision = 0
     const paymentProblem = ref('')
     const retryStatus = ref(false)
+    const $q = useQuasar()
     const cardAuthorization = ref(null)
+    const cardPinActive = ref(false)
+    const cardPinChecking = ref(false)
+    const cardProblem = ref('')
+    const paidByCard = ref(false)
+    const nfcReady = ref(false)
     const sale = computed(() => state.value === 'payment' && !paymentProblem.value ? invoiceData.value : null)
     const card = useKioskCardPayment({
-      sale, t,
+      sale,
       authorize: (...args) => cardAuthorization.value.submit(...args),
-      onError: error => store.showPaymentError(keepOrigin(error, new Error(t(safeWithdrawError(error.message)))), { context: 'kiosk', t }),
+      onError: (error) => {
+        cardProblem.value = cardProblemText(error)
+        void haptics.error()
+      },
     })
+    const cardBusy = computed(() => ['loading', 'review', 'submitting', 'waiting'].includes(card.phase.value))
+
+    /**
+     * Why a card did not pay, in the customer's words. Shown on the pay
+     * screen with the QR still there: at a counter a dialog to dismiss is
+     * one step too many, and the sale is not over.
+     */
+    function cardProblemText(error) {
+      const message = String(error?.message || '')
+      if (error?.code === 'CARD_BLOCKED') return t('Card locked after too many wrong PINs.')
+      if (/payment limits/i.test(message)) return t("This card can't pay this amount.")
+      // The request may have reached the card's service: whether it paid is
+      // for the sale's own watch to tell, not for this line to guess.
+      if (error?.name === 'TimeoutError' || error?.name === 'TypeError' || /did not respond|network|failed to fetch/i.test(message)) {
+        return t("No answer from the card's service. If the card paid, this screen shows it.")
+      }
+      return t(safeWithdrawError(message))
+    }
+    function confirmHeldCard() {
+      if (invoiceData.value) void card.confirm({ amountSats: invoiceData.value.amountSats })
+    }
+    function cancelCardPin() {
+      if (!cardPinChecking.value) cardAuthorization.value?.cancel()
+    }
 
     let successTimer = null
     const showCartSheet = ref(false)
-    const parkedInvoice = ref(null)
+    const showParkedSheet = ref(false)
+    const parkPop = ref(false)
+    let parkPopTimer = null
+    const parked = useKioskParkedSales({
+      lookup: (walletId, hash) => store.lookupInvoiceOnWallet(walletId, hash),
+      onPaid: (sale) => {
+        recordSale(sale.invoiceData, sale.saleBreakdown)
+        void haptics.success()
+        $q.notify({ type: 'positive', icon: 'check_circle', position: 'top', timeout: 4000,
+          message: t('Parked sale paid'), caption: displaySats(sale.invoiceData.amountSats) })
+      },
+    })
+    const parkedList = parked.list
+    const parkedCount = parked.count
     const showUnlockDialog = ref(false)
     const showPinStep = ref(false)
     const unlockPinRef = ref(null)
@@ -379,6 +491,7 @@ export default defineComponent({
       if (!walletId || !Number.isSafeInteger(amountSats) || amountSats <= 0) return
       const current = () => revision === saleRevision && walletId === store.kioskWalletId && store.kioskEnabled && !store.kioskOwnerAccess
       captureSaleBreakdown()
+      cardProblem.value = ''
       state.value = 'processing'; invoiceData.value = null; qrDataUrl.value = ''
       paymentProblem.value = ''
       try {
@@ -438,7 +551,7 @@ export default defineComponent({
         } },
         onStatusChange(status) {
           if (paymentMonitor !== monitor || invoiceData.value !== invoice) return
-          if (status === PaymentStatus.CONFIRMED) { clearPolling(); showSuccess() }
+          if (status === PaymentStatus.CONFIRMED) { paidByCard.value = card.phase.value === 'waiting'; clearPolling(); showSuccess() }
           else if (status === PaymentStatus.EXPIRED || status === PaymentStatus.ERROR) {
             paymentProblem.value = t(status === PaymentStatus.EXPIRED ? 'Payment expired' : 'Could not check payment status. Please check again.')
             retryStatus.value = status === PaymentStatus.ERROR
@@ -455,21 +568,31 @@ export default defineComponent({
       if (visibilityHandler) document.removeEventListener('visibilitychange', visibilityHandler)
       visibilityHandler = null
     }
-    function cancelPayment() { saleRevision++; clearPolling(); card.reset(); invoiceData.value = null; parkedInvoice.value = null; saleBreakdownSnapshot.value = null; state.value = 'input' }
+    function cancelPayment() { saleRevision++; clearPolling(); card.reset(); cardProblem.value = ''; invoiceData.value = null; saleBreakdownSnapshot.value = null; state.value = 'input' }
 
+    /**
+     * Set the sale on screen aside, still watched, and free the register.
+     * Nothing is ever dropped to make room: a full list says so instead.
+     */
     function parkInvoice() {
-      saleRevision++
-      parkedInvoice.value = {
+      if (!invoiceData.value) return
+      if (parked.full.value) {
+        $q.notify({ type: 'warning', position: 'top', timeout: 4000, message: t('{n} sales are parked', { n: MAX_PARKED }), caption: t('Open or remove one first.') })
+        return
+      }
+      const ok = parked.park({
         invoiceData: invoiceData.value,
-        qrDataUrl: qrDataUrl.value,
         baseAmountSats: baseAmountSats.value,
         accumulatedItems: [...accumulatedItems.value],
-        // Carried through park/resume as its own copy so a SECOND charge
-        // started while this one sits parked can't clobber the snapshot
-        // this invoice will need once resumed and paid.
+        // Carried with the sale so a SECOND charge started while this one
+        // waits can't clobber the snapshot it needs once paid.
         saleBreakdown: saleBreakdownSnapshot.value
-      }
+      })
+      if (!ok) return
+      saleRevision++
       clearPolling()
+      card.reset()
+      cardProblem.value = ''
       rawInput.value = '0'
       accumulatedItems.value = []
       baseAmountSats.value = 0
@@ -479,19 +602,65 @@ export default defineComponent({
       qrDataUrl.value = ''
       saleBreakdownSnapshot.value = null
       state.value = 'input'
+      void haptics.medium()
+      // The header pill takes the sale: it pops so the eye follows it there.
+      parkPop.value = false
+      clearTimeout(parkPopTimer)
+      requestAnimationFrame(() => { parkPop.value = true; parkPopTimer = setTimeout(() => { parkPop.value = false }, 600) })
     }
 
-    function resumeParked() {
-      if (!parkedInvoice.value || state.value !== 'input') return
+    /** A parked sale opens on an empty register only: nothing on it is lost. */
+    const canResume = computed(() => state.value === 'input' && rawInput.value === '0' && accumulatedItems.value.length === 0)
+
+    async function resumeParked(id) {
+      if (!canResume.value) return
+      const sale = parked.take(id)
+      if (!sale) return
+      showParkedSheet.value = false
       saleRevision++
-      invoiceData.value = parkedInvoice.value.invoiceData
-      qrDataUrl.value = parkedInvoice.value.qrDataUrl
-      baseAmountSats.value = parkedInvoice.value.baseAmountSats
-      accumulatedItems.value = parkedInvoice.value.accumulatedItems
-      saleBreakdownSnapshot.value = parkedInvoice.value.saleBreakdown || null
-      parkedInvoice.value = null
+      const revision = saleRevision
+      cardProblem.value = ''
+      paymentProblem.value = ''
+      invoiceData.value = sale.invoiceData
+      baseAmountSats.value = sale.baseAmountSats
+      accumulatedItems.value = sale.accumulatedItems || []
+      saleBreakdownSnapshot.value = sale.saleBreakdown || null
+      qrDataUrl.value = ''
       state.value = 'payment'
       startPolling()
+      try {
+        const qr = await QRCode.toDataURL(sale.invoiceData.paymentRequest, { width: 300, margin: 2, color: { dark: '#000000', light: '#ffffff' } })
+        if (revision === saleRevision) qrDataUrl.value = qr
+      } catch (error) {
+        console.error('[kiosk] QR for a parked sale:', error)
+      }
+    }
+
+    /** "2 items · 4 min ago": enough to tell parked sales apart at a glance. */
+    function parkedMeta(sale) {
+      const minutes = Math.max(0, Math.round((Date.now() - sale.parkedAt) / 60000))
+      const age = minutes < 1 ? t('just now') : t('{n} min ago', { n: minutes })
+      const items = sale.accumulatedItems?.length || 0
+      return items > 1 ? `${items} ${t('kiosk.items')} · ${age}` : age
+    }
+
+    /**
+     * Removing stops the watch. An expired sale goes at once; one that can
+     * still be paid asks first, because a payment after removal reaches the
+     * wallet without the kiosk showing the sale.
+     */
+    function removeParked(sale) {
+      if (sale.status === 'expired') { parked.remove(sale.id); if (!parkedCount.value) showParkedSheet.value = false; return }
+      $q.dialog({
+        title: t('Remove parked sale?'),
+        message: t('If the customer still pays it, the sats reach the wallet but this kiosk will not show the sale.'),
+        cancel: { label: t('Keep'), flat: true, noCaps: true },
+        ok: { label: t('Remove'), flat: true, noCaps: true, color: 'negative' },
+        persistent: true,
+      }).onOk(() => {
+        parked.remove(sale.id)
+        if (!parkedCount.value) showParkedSheet.value = false
+      })
     }
 
     /**
@@ -522,12 +691,9 @@ export default defineComponent({
       }
     }
 
-    function showSuccess() {
-      // Idempotent: overlapping poll chains or a race between the event and
-      // the poll must not record the same sale twice.
-      if (state.value === 'success') return
-      const walletId = invoiceData.value.walletId
-      void store.refreshBalance(walletId)
+    /** Stamp a paid sale onto its incoming tx, and refresh the wallet. */
+    function recordSale(invoice, breakdown) {
+      void store.refreshBalance(invoice.walletId)
       // Stamp the sale onto the incoming tx once it surfaces in history.
       // Best-effort and non-blocking: the kiosk boots on its own path, so
       // the metadata store lazy-initializes itself, and a metadata failure
@@ -537,16 +703,23 @@ export default defineComponent({
           label: t('Kiosk sale'),
           source: 'kiosk',
           direction: 'incoming',
-          amountSats: invoiceData.value.amountSats,
+          amountSats: invoice.amountSats,
           // The kiosk's destination wallet — the one whose tx list will
           // actually show the sale once it surfaces.
-          walletId: invoiceData.value.walletId,
+          walletId: invoice.walletId,
           // The curated subtotal/tip/round-up/total captured at invoice
           // creation (see captureSaleBreakdown) — null when there was
           // nothing meaningful to attach.
-          saleBreakdown: saleBreakdownSnapshot.value,
+          saleBreakdown: breakdown,
         }).catch(() => {})
       } catch (_) { /* non-critical */ }
+    }
+
+    function showSuccess() {
+      // Idempotent: overlapping poll chains or a race between the event and
+      // the poll must not record the same sale twice.
+      if (state.value === 'success') return
+      recordSale(invoiceData.value, saleBreakdownSnapshot.value)
       state.value = 'success'
       clearTimeout(successTimer)
       successTimer = setTimeout(resetToInput, 7000)
@@ -554,6 +727,7 @@ export default defineComponent({
 
     function resetToInput() {
       cancelPayment()
+      paidByCard.value = false
       clearTimeout(successTimer)
       rawInput.value = '0'
       accumulatedItems.value = []
@@ -583,6 +757,7 @@ export default defineComponent({
       if (payment?.target !== 'kiosk') return
       store.pendingDeepLink = null
       if (!store.kioskEnabled || store.kioskOwnerAccess || state.value === 'success') return
+      if (card.phase.value === 'empty') cardProblem.value = ''
       if (card.accept(payment) && state.value === 'input' && totalSatsForCharge.value > 0) proceedToTipOrCharge()
     }, { immediate: true })
 
@@ -615,7 +790,8 @@ export default defineComponent({
 
       walletReady.value = !!store.providers[store.kioskWalletId]
     })
-    onUnmounted(() => { saleRevision++; clearPolling(); clearTimeout(tapTimer); clearTimeout(successTimer) })
+    isNfcAvailable().then((ok) => { nfcReady.value = ok }).catch(() => {})
+    onUnmounted(() => { saleRevision++; clearPolling(); clearTimeout(tapTimer); clearTimeout(successTimer); clearTimeout(parkPopTimer) })
 
     return {
       state, walletReady, rawInput, formattedDisplay, amountFontStyle, amountSats, isFiatMode, fiatSymbol, kioskWalletName,
@@ -625,8 +801,10 @@ export default defineComponent({
       totalBeforeRoundUp, roundUpValue, useRoundUp, finalAmountSats,
       offersTip, offersRoundUp, extrasTitle, extrasSkipLabel, extraLabel,
       baseAmountSats, formatSats, displaySats, createCharge, confirmTip,
-      card, cardAuthorization, paymentProblem, retryStatus, startPolling,
-      invoiceData, qrDataUrl, cancelPayment, parkInvoice, resumeParked, parkedInvoice, resetToInput,
+      card, cardAuthorization, cardBusy, cardPinActive, cardPinChecking, cardProblem, paidByCard, nfcReady,
+      confirmHeldCard, cancelCardPin, paymentProblem, retryStatus, startPolling,
+      invoiceData, qrDataUrl, cancelPayment, parkInvoice, resumeParked, resetToInput,
+      parkedList, parkedCount, canResume, showParkedSheet, parkPop, parkedMeta, removeParked,
       showCartSheet, showUnlockDialog, showPinStep, unlockPinRef, unlockError,
       handleUnlockPin, resetUnlock, handleScreenTap, store
     }
@@ -736,19 +914,63 @@ export default defineComponent({
 .pos-cart-sheet-light .pos-sheet-remove { color: var(--text-muted); }
 .pos-sheet-remove:active { color: #ef4444; }
 
-/* Park button in header */
 .kiosk-header-left { display: flex; align-items: center; gap: 6px; }
-.kiosk-park-btn {
-  height: 30px; padding: 0 10px; border-radius: 8px; border: none;
-  background: rgba(247,147,26,0.1); color: #F7931A;
-  display: flex; align-items: center; justify-content: center; gap: 4px;
-  cursor: pointer; -webkit-tap-highlight-color: transparent;
-  font-family: 'Manrope', sans-serif; font-size: 12px; font-weight: 700;
-}
-.kiosk-park-btn:active { transform: scale(0.94); }
 
-/* Payment screen actions */
-.pos-payment-actions { display: flex; gap: 16px; align-items: center; justify-content: center; }
+.pos-parked-line { align-self: center; display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 6px 12px 6px 10px; border: none; border-radius: 999px; background: rgba(247,147,26,0.1); color: #F7931A; font-family: 'Manrope', sans-serif; font-size: 13px; font-weight: 700; cursor: pointer; -webkit-tap-highlight-color: transparent; flex-shrink: 0; }
+.kiosk-light .pos-parked-line { color: #8A5F00; background: rgba(138,95,0,0.08); }
+.pos-parked-line-chevron { opacity: 0.7; margin-left: -2px; }
+.pos-parked-line--pop { animation: park-pop 0.55s cubic-bezier(0.34, 1.56, 0.64, 1); }
+@keyframes park-pop { 0% { transform: scale(1); } 35% { transform: scale(1.12); } 100% { transform: scale(1); } }
+
+/* Payment screen actions: two equal, labelled buttons. */
+.pos-payment-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; width: 100%; max-width: 340px; margin-top: 18px; }
+.pos-outline-btn { height: 48px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; border-radius: 14px; border: 1px solid rgba(107,114,128,0.4); background: transparent; color: inherit; font-family: 'Manrope', sans-serif; font-size: 0.9375rem; font-weight: 700; cursor: pointer; -webkit-tap-highlight-color: transparent; transition: transform 0.08s ease, background 0.12s ease; }
+.pos-outline-btn:active { transform: scale(0.97); background: rgba(107,114,128,0.08); }
+.kiosk-light .pos-outline-btn { border-color: var(--border-card); }
+
+/* ─── Cards ─── */
+.pos-qr-hint { font-size: 0.8125rem; color: #9ca3af; margin: -4px 0 0; }
+.pos-contactless { width: 20px; height: 20px; flex: none; }
+.pos-card-lane { display: flex; align-items: center; gap: 12px; width: 100%; max-width: 340px; margin-top: 16px; padding: 12px 14px; border-radius: 16px; background: rgba(255,255,255,0.05); text-align: left; }
+.kiosk-light .pos-card-lane { background: var(--bg-input); }
+.pos-card-wave { position: relative; width: 42px; height: 42px; flex: none; border-radius: 50%; display: grid; place-items: center; background: rgba(21,222,114,0.14); color: #15DE72; }
+.kiosk-light .pos-card-wave { color: #059573; background: rgba(5,149,115,0.1); }
+.pos-card-wave::before, .pos-card-wave::after { content: ""; position: absolute; inset: 0; border-radius: 50%; border: 1.5px solid currentColor; opacity: 0; animation: card-ring 2.4s ease-out infinite; }
+.pos-card-wave::after { animation-delay: 1.2s; }
+@keyframes card-ring { 0% { transform: scale(1); opacity: 0.5; } 100% { transform: scale(1.7); opacity: 0; } }
+.pos-card-lane-text { display: flex; flex-direction: column; font-family: 'Manrope', sans-serif; }
+.pos-card-lane-text b { font-size: 0.875rem; }
+.pos-card-lane-text span { font-size: 0.75rem; color: #9ca3af; }
+.pos-card-problem { display: flex; gap: 10px; align-items: flex-start; width: 100%; max-width: 340px; margin-top: 16px; padding: 12px 14px; border-radius: 14px; background: rgba(239,68,68,0.1); color: #f87171; font-size: 0.8125rem; line-height: 1.45; text-align: left; font-family: 'Manrope', sans-serif; }
+.kiosk-light .pos-card-problem { color: #B42332; background: rgba(180,35,50,0.07); }
+.pos-card-problem b { font-weight: 700; }
+.pos-card-stage { width: 100%; max-width: 300px; display: flex; flex-direction: column; align-items: center; gap: 18px; margin: 8px 0 4px; }
+.pos-card-status { display: inline-flex; align-items: center; gap: 8px; font-family: 'Manrope', sans-serif; font-size: 0.9375rem; font-weight: 600; color: #9ca3af; }
+.pos-card-confirm { margin-top: 4px; }
+.pos-card-other { margin-top: 12px; }
+.pos-card-held { align-self: center; display: inline-flex; align-items: center; gap: 8px; margin-top: 4px; padding: 8px 14px; border-radius: 999px; background: rgba(21,222,114,0.12); color: #3FE08C; font-family: 'Manrope', sans-serif; font-size: 0.8125rem; font-weight: 700; }
+.kiosk-light .pos-card-held { background: rgba(5,149,115,0.1); color: #046B53; }
+.pos-pay :deep(.card-pin) { max-width: 340px; }
+.pos-paid-method { margin-top: 8px; font-size: 0.8125rem; color: #9ca3af; font-family: 'Manrope', sans-serif; }
+
+/* ─── Parked sales ─── */
+.pos-parked-note { font-size: 12px; font-weight: 500; color: #9ca3af; }
+.pos-parked-hint { margin: 0 0 6px; font-size: 12.5px; color: #9ca3af; font-family: 'Manrope', sans-serif; }
+.pos-parked-row { display: flex; align-items: center; gap: 10px; padding: 6px 0; border-bottom: 1px solid rgba(255,255,255,0.06); }
+.pos-cart-sheet-light .pos-parked-row { border-color: var(--border-card); }
+.pos-parked-row:last-child { border-bottom: none; }
+.pos-parked-open { flex: 1; min-width: 0; min-height: 52px; display: flex; flex-direction: column; align-items: flex-start; justify-content: center; gap: 2px; background: none; border: none; padding: 4px 0; color: inherit; text-align: left; cursor: pointer; font-family: 'Manrope', sans-serif; -webkit-tap-highlight-color: transparent; }
+.pos-parked-open:disabled { cursor: default; }
+.pos-parked-amount { font-size: 1.0625rem; font-weight: 800; letter-spacing: -0.01em; }
+.pos-parked-meta { font-size: 12px; color: #9ca3af; }
+.pos-parked-row--expired .pos-parked-amount { color: #9ca3af; text-decoration: line-through; text-decoration-color: rgba(156,163,175,0.5); }
+.pos-parked-status { font-size: 11.5px; font-weight: 700; padding: 4px 9px; border-radius: 999px; font-family: 'Manrope', sans-serif; }
+.pos-parked-status--waiting { background: rgba(247,147,26,0.12); color: #F7931A; }
+.pos-parked-status--expired { background: rgba(156,163,175,0.14); color: #9ca3af; }
+
+@media (prefers-reduced-motion: reduce) {
+  .pos-parked-line--pop, .pos-card-wave::before, .pos-card-wave::after { animation: none; }
+}
 
 /* Amount */
 .pos-top { flex: 1; min-height: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 1rem 1.5rem 0.5rem; overflow: hidden; }

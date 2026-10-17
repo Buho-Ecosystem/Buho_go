@@ -1,3 +1,5 @@
+import { lnurlToUrl, stripWrapperScheme } from './addressUtils.js';
+
 // LUD-08 adds an optional local metadata path. A null result always means
 // use the ordinary LUD-03 GET; it never means the request was redeemed.
 const REQUIRED = ['tag', 'k1', 'callback', 'minWithdrawable', 'maxWithdrawable', 'defaultDescription'];
@@ -113,9 +115,24 @@ export function withdrawInfo(data, { sourceUrl = null } = {}) {
   };
 }
 
-/** The same source identity on wallet and kiosk confirmation screens. */
+/** A withdrawal that comes from a card: it sets a PIN limit, or says so. */
+export function isCardRequest(request) {
+  return request?.pinLimit != null || /bolt\s*card/i.test(request?.defaultDescription || '');
+}
+
+/** A tapped card's link: Bolt Cards write LUD-17 `lnurlw://`. */
+export function isCardLink(input) {
+  return /^lnurlw:\/\//i.test(stripWrapperScheme(input));
+}
+
+/** The service behind a withdraw link, shown on the card face ('' if none). */
+export function withdrawLinkHost(input) {
+  try { return new URL(lnurlToUrl(input) || '').host; } catch { return ''; }
+}
+
+/** The withdrawal's source as the redeem sheet shows it. */
 export function withdrawRecipient(request, t = text => text) {
-  const isCard = request.pinLimit != null || /bolt\s*card/i.test(request.defaultDescription || '');
+  const isCard = isCardRequest(request);
   let host = '';
   try { host = new URL(request.callback).host; } catch { /* invalid request stays unpayable */ }
   return {

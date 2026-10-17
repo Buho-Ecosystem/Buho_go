@@ -31,7 +31,6 @@ test('tap before amount waits for a sale, then reviews its fixed amount without 
   h.sale.value = invoice;
   await settle();
   assert.equal(h.card.phase.value, 'review');
-  assert.deepEqual(h.card.payment.value.amount, { mode: 'fixed', fixedSats: 100 });
   assert.equal(h.submissions.length, 0);
   await h.card.confirm({ amountSats: 100 });
   assert.equal(h.submissions[0][1], invoice.paymentRequest);
@@ -39,12 +38,16 @@ test('tap before amount waits for a sale, then reviews its fixed amount without 
   assert.equal(h.card.phase.value, 'waiting', 'callback acceptance is not receipt');
 });
 
-test('tap on existing QR uses that invoice; duplicate taps and confirmations do not pay twice', async ctx => {
+test('tap on the pay screen pays that invoice at once; duplicate taps and confirmations do not pay twice', async ctx => {
   const pending = deferred();
   const h = harness(ctx, { authorize: () => pending.promise });
   h.sale.value = invoice;
   h.card.accept(tap());
   await settle();
+  assert.equal(h.card.phase.value, 'submitting', 'the amount was on screen when the card touched the phone');
+  assert.equal(h.submissions.length, 1);
+  assert.equal(h.submissions[0][1], invoice.paymentRequest);
+  assert.equal(h.submissions[0][2], invoice.amountSats);
   assert.equal(h.card.accept(tap()), false);
   const submitting = h.card.confirm({ amountSats: 100 });
   await h.card.confirm({ amountSats: 100 });
@@ -62,8 +65,10 @@ test('card bounds never change the sale amount and mismatched confirmation is re
   assert.equal(h.card.phase.value, 'empty');
   assert.match(h.errors[0].message, /limits/);
   assert.equal(h.submissions.length, 0);
-  h.sale.value = invoice;
+  // A card held before the sale waits for a confirm of exactly the sale.
+  h.sale.value = null;
   h.card.accept(tap());
+  h.sale.value = invoice;
   await settle();
   await h.card.confirm({ amountSats: 99 });
   assert.equal(h.submissions.length, 0);
@@ -94,7 +99,7 @@ for (const stage of ['metadata', 'authorization']) {
       await submitting;
       await settle();
       assert.equal(h.card.phase.value, 'empty');
-      assert.equal(h.card.payment.value, null);
+      assert.equal(h.card.host.value, '');
       assert.equal(h.errors.length, 0);
     });
   }
@@ -110,4 +115,12 @@ test('a failed callback is not automatically retried', async ctx => {
   assert.equal(h.submissions.length, 1);
   assert.equal(h.errors.length, 1);
   assert.equal(h.sale.value, invoice, 'keep the existing invoice available for settlement');
+});
+
+test('the card face names the card service from the tap on', ctx => {
+  const h = harness(ctx);
+  h.card.accept(tap());
+  assert.equal(h.card.host.value, 'card.example');
+  h.card.reset();
+  assert.equal(h.card.host.value, '');
 });

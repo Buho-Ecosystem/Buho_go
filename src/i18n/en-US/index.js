@@ -7,13 +7,13 @@ import wallets from './wallets.js';
 import identities from './identities.js';
 import lnbits from './lnbits.js';
 import nwc from './nwc.js';
+import boltCard from './boltCard.js';
 export default {
   ...requests,
   ...profilePayment,
   "Charge card": "Charge card",
   "Charge": "Charge",
   "Slide to charge": "Slide to charge",
-  "Card ready. Enter the sale amount to continue.": "Card ready. Enter the sale amount to continue.",
   "Reading card…": "Reading card…",
   "The sale amount is outside this card’s payment limits.": "The sale amount is outside this card’s payment limits.",
   "This card does not support withdrawals.": "This card does not support withdrawals.",
@@ -56,6 +56,7 @@ export default {
   ...identities,
   ...lnbits,
   ...nwc,
+  ...boltCard,
   // Spend: Bitrefill door
   "Gift cards, mobile top-ups and more": "Gift cards, mobile top-ups and more",
   "Bitrefill is on its way": "Bitrefill is on its way",
@@ -2508,13 +2509,8 @@ export default {
 
   // Bolt Card PIN (LUD-XX pinLimit) — shown when a card-issued
   // withdrawRequest sets a pinLimit and the amount meets it.
-  "Bolt Card PIN": "Bolt Card PIN",
-  "Enter your 4-digit PIN to confirm this withdrawal": "Enter your 4-digit PIN to confirm this withdrawal",
   "Authorize withdrawal": "Authorize withdrawal",
-  "Authorizing…": "Authorizing…",
   "Invalid PIN": "Invalid PIN",
-  "Invalid PIN. {n} attempts left.": "Invalid PIN. {n} attempts left.",
-  "Invalid PIN. Last attempt.": "Invalid PIN. Last attempt.",
   "Card blocked: too many incorrect PIN attempts": "Card blocked: too many incorrect PIN attempts",
   "PIN authorization requires a secure connection": "PIN authorization requires a secure connection",
   "PIN entry timed out": "PIN entry timed out",

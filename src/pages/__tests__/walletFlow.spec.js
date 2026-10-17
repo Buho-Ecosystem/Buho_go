@@ -5,6 +5,7 @@ import { transformSync } from 'esbuild';
 import * as addresses from '../../utils/addressUtils.js';
 import * as metadata from '../../utils/lnurlMetadata.js';
 import * as lnurlPay from '../../utils/lnurlPay.js';
+import * as lnurlWithdraw from '../../utils/lnurlWithdraw.js';
 import * as payingWallets from '../../utils/payingWallets.js';
 import * as walletCapabilities from '../../utils/walletCapabilities.js';
 import * as errorOrigin from '../../utils/errorOrigin.js';
@@ -27,6 +28,7 @@ const deferred = () => {
 const component = (dependencies = {}) => evaluate('../Wallet.vue', {
   '../utils/addressUtils.js': addresses,
   '../utils/lnurlMetadata.js': metadata,
+  '../utils/lnurlWithdraw.js': lnurlWithdraw,
   '../utils/amountFormatting.js': { formatAmount: n => `${n} sats` },
   '../stores/autoWithdraw': { useAutoWithdrawStore: () => ({ getConfig: () => null, checkAndExecute() {} }) },
   '../utils/fiatRates': { fiatRatesService: { convertSatsToFiat: async () => null } },

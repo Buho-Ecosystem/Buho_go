@@ -7,7 +7,7 @@ import * as monitor from '../../utils/paymentMonitor.js';
 import * as roundUp from '../../utils/roundUp.js';
 import * as fiat from '../../utils/fiatCurrencies.js';
 import { useKioskCardPayment } from '../../composables/useKioskCardPayment.js';
-import * as errorOrigin from '../../utils/errorOrigin.js';
+import { useKioskParkedSales } from '../../composables/useKioskParkedSales.js';
 import * as walletCapabilities from '../../utils/walletCapabilities.js';
 import * as nwcErrors from '../../utils/nwcErrors.js';
 const script = readFileSync(new URL('../KioskDashboard.vue', import.meta.url), 'utf8').match(/<script>([\s\S]*?)<\/script>/)[1];
@@ -19,13 +19,19 @@ const renderer = Vue.createRenderer({
   setElementText() {}, setText() {}, parentNode: node => node.parent, nextSibling: () => null, patchProp() {},
 });
 async function settle() { for (let i = 0; i < 25; i++) await Vue.nextTick(); }
+const wait = ms => new Promise(done => setTimeout(done, ms));
+let saleNumber = 0;
+const nextSale = () => { saleNumber++; return { paymentRequest: `lnbc-sale-${saleNumber}`, paymentHash: `sale-hash-${saleNumber}`, expiresAt: Math.floor(Date.now() / 1000) + 900 }; };
 const deferred = () => { let resolve; const promise = new Promise(done => { resolve = done; }); return { resolve, promise }; };
 function harness(ctx, options = {}) {
-  const h = { paid: false, created: [], authorized: [], lookups: [], receipts: [], errors: [], monitors: [] };
+  const h = { paid: false, created: [], authorized: [], lookups: [], receipts: [], errors: [], monitors: [], notices: [], dialogs: [] };
+  h.storage = options.storage || new Map();
   globalThis.document = { visibilityState: 'visible', addEventListener() {}, removeEventListener() {} };
+  globalThis.requestAnimationFrame ??= fn => setTimeout(fn, 0);
+  h.paidHashes = new Set();
   const provider = {
     async createInvoice(request) { h.created.push(request); return options.create ? options.create(request) : { paymentRequest: 'lnbc-sale', paymentHash: 'sale-hash' }; },
-    async lookupInvoice(hash) { h.lookups.push(hash); return { paid: h.paid }; },
+    async lookupInvoice(hash) { h.lookups.push(hash); return { paid: h.paid || h.paidHashes.has(hash) }; },
     async getBalance() { return { balance: 100000 }; },
   };
   const store = Vue.reactive({
@@ -48,10 +54,13 @@ function harness(ctx, options = {}) {
     'stores/transactionMetadata': { useTransactionMetadataStore: () => ({ enqueuePendingContactLink: async receipt => h.receipts.push(receipt) }) },
     'components/KioskPinPad.vue': {}, 'src/utils/roundUp': roundUp, 'src/utils/fiatCurrencies': fiat,
     qrcode: { toDataURL: async () => 'data:image/png;base64,test' }, '@getalby/lightning-tools': {},
-    '../components/PaymentConfirmSheet.vue': {}, '../components/WithdrawAuthorization.vue': {},
+    '../components/WithdrawAuthorization.vue': {}, '../components/CardFace.vue': {},
+    '../composables/useKioskParkedSales.js': { useKioskParkedSales: args => useKioskParkedSales({ ...args, watchMs: 5, storage: { getItem: key => h.storage.get(key) ?? null, setItem: (key, value) => h.storage.set(key, value) } }) },
+    '../utils/nfc.js': { isNfcAvailable: async () => false },
+    '../utils/haptics.js': { haptics: { tap() {}, medium() {}, success() {}, error() {} } },
+    quasar: { useQuasar: () => ({ notify: notice => h.notices.push(notice), dialog: options => ({ onOk: ok => h.dialogs.push({ options, ok }) }) }) },
     '../composables/useKioskCardPayment.js': { useKioskCardPayment: args => useKioskCardPayment({ ...args, resolve: async () => ({ callback: 'https://card.example/callback', defaultDescription: 'Bolt Card', minSats: 1, maxSats: 10000 }) }) },
     '../services/lnurlWithdraw.js': { safeWithdrawError: error => error },
-    '../utils/errorOrigin.js': errorOrigin,
     '../utils/walletCapabilities.js': walletCapabilities,
     '../utils/nwcErrors.js': nwcErrors,
     '../utils/paymentMonitor.js': { ...monitor, createPaymentMonitor: config => { const instance = monitor.createPaymentMonitor(config); h.monitors.push(instance); return instance; } },
@@ -68,7 +77,7 @@ function harness(ctx, options = {}) {
   return h;
 }
 
-test('cold-start card waits for amount and reuses the existing confirmation payload', async ctx => {
+test('cold-start card waits for the amount, then for an explicit charge of exactly the sale', async ctx => {
   const h = harness(ctx, { pending: { data: 'lnurlw://card.example/tap', target: 'kiosk', receivedAt: Date.now() } });
   await settle();
   assert.equal(h.store.pendingDeepLink, null);
@@ -77,8 +86,10 @@ test('cold-start card waits for amount and reuses the existing confirmation payl
   h.vm.rawInput = '100'; h.vm.proceedToTipOrCharge(); await settle();
   assert.equal(h.created.length, 1);
   assert.equal(h.vm.card.phase.value, 'review');
-  assert.equal(h.vm.card.payment.value.amount.fixedSats, 100);
-  assert.equal(h.authorized.length, 0);
+  assert.equal(h.authorized.length, 0, 'its holder never saw the amount');
+  h.vm.confirmHeldCard(); await settle();
+  assert.equal(h.authorized.length, 1);
+  assert.equal(h.authorized[0][2], 100);
   assert.equal(h.store.activeWalletId, 'personal');
   assert.equal(h.store.kioskOwnerAccess, false);
 });
@@ -92,10 +103,10 @@ test('amount-first tap includes confirmed tips and charges the kiosk invoice exa
   assert.equal(h.created.length, 0);
   h.vm.selectedTipPercent = 10; h.vm.confirmTip(); await settle();
   assert.equal(h.created[0].amount, 110);
-  assert.equal(h.vm.card.payment.value.amount.fixedSats, 110);
   await h.vm.card.confirm({ amountSats: 110 });
   await h.vm.card.confirm({ amountSats: 110 });
   assert.equal(h.authorized.length, 1);
+  assert.equal(h.authorized[0][2], 110, 'the tip is charged');
   assert.equal(h.authorized[0][1], 'lnbc-sale');
   assert.equal(h.vm.state, 'payment', 'callback OK cannot declare paid');
 });
@@ -105,7 +116,10 @@ test('QR-first tap reuses invoice and unrelated balance growth cannot settle the
   await settle();
   h.vm.rawInput = '100'; h.vm.proceedToTipOrCharge(); await settle();
   h.tap(); await settle();
+  assert.equal(h.authorized.length, 1, 'a tap on the pay screen pays at once');
   await h.vm.card.confirm({ amountSats: 100 });
+  assert.equal(h.authorized.length, 1);
+  assert.equal(h.vm.cardBusy, true, 'the card stays on screen while the sale settles');
   assert.equal(h.created.length, 1);
   h.store.balances.merchant = 999999;
   await h.monitors[0].checkNow();
@@ -116,6 +130,7 @@ test('QR-first tap reuses invoice and unrelated balance growth cannot settle the
   assert.equal(h.receipts.length, 1);
   assert.equal(h.receipts[0].walletId, 'merchant');
   assert.equal(h.receipts[0].amountSats, 100);
+  assert.equal(h.vm.paidByCard, true);
   assert.ok(h.lookups.every(hash => hash === 'sale-hash'));
 });
 
@@ -123,12 +138,15 @@ test('parking clears card credentials and resuming preserves the invoice includi
   const h = harness(ctx); await settle();
   h.store.kioskTipEnabled = true;
   h.vm.rawInput = '100'; h.vm.proceedToTipOrCharge(); h.vm.selectedTipPercent = 10; h.vm.confirmTip(); await settle();
-  h.tap(); await settle();
   h.vm.parkInvoice();
   assert.equal(h.vm.card.phase.value, 'empty');
-  h.vm.resumeParked(); h.tap(); await settle();
-  assert.equal(h.vm.card.payment.value.amount.fixedSats, 110);
+  assert.equal(h.vm.parkedCount, 1);
+  assert.equal(h.vm.state, 'input');
+  await h.vm.resumeParked(h.vm.parkedList[0].id); await settle();
+  assert.equal(h.vm.parkedCount, 0);
+  h.tap(); await settle();
   assert.equal(h.vm.invoiceData.amountSats, 110);
+  assert.equal(h.authorized[0][2], 110, 'the resumed sale is charged with its tip');
   assert.equal(h.created.length, 1);
 });
 
@@ -162,8 +180,9 @@ test('a card-server timeout is visible and the same invoice can still settle', a
   await settle();
   h.vm.rawInput = '100'; h.vm.proceedToTipOrCharge(); await settle();
   h.tap(); await settle();
-  await h.vm.card.confirm({ amountSats: 100 });
-  assert.equal(h.errors.length, 1);
+  assert.equal(h.errors.length, 0, 'no dialog at the counter');
+  assert.match(h.vm.cardProblem, /No answer from the card's service/);
+  assert.equal(h.vm.cardBusy, false, 'the QR is back');
   assert.equal(h.vm.state, 'payment');
   assert.equal(h.authorized.length, 1);
   h.paid = true;
@@ -221,4 +240,85 @@ test('a kiosk wallet that can no longer see payments refuses the sale before a Q
   assert.equal(h.created.length, 0, 'no invoice made');
   assert.equal(h.vm.state, 'input');
   assert.equal(h.errors[0]?.code, 'NWC_CONFIRM_NOT_ALLOWED');
+});
+
+// ── Parked sales ──────────────────────────────────────────────────────────
+
+async function chargeAndPark(h, amount) {
+  h.vm.rawInput = String(amount); h.vm.proceedToTipOrCharge(); await settle();
+  h.vm.parkInvoice(); await settle();
+}
+
+test('parking keeps every sale and keeps watching it; a paid one is recorded wherever the register is', async ctx => {
+  const h = harness(ctx, { create: nextSale }); await settle();
+  await chargeAndPark(h, 100);
+  await chargeAndPark(h, 200);
+  assert.equal(h.vm.parkedCount, 2, 'a second park never drops the first');
+  h.vm.rawInput = '300'; h.vm.proceedToTipOrCharge(); await settle();
+  const first = h.vm.parkedList.find(sale => sale.invoiceData.amountSats === 100);
+  h.paidHashes.add(first.invoiceData.paymentHash);
+  await wait(30); await settle();
+  assert.equal(h.vm.parkedCount, 1);
+  assert.equal(h.receipts.length, 1);
+  assert.equal(h.receipts[0].amountSats, 100);
+  assert.equal(h.notices.length, 1);
+  assert.equal(h.vm.state, 'payment', 'the sale on screen is untouched');
+  assert.equal(h.vm.invoiceData.amountSats, 300);
+});
+
+test('cancelling the sale on screen leaves parked sales alone', async ctx => {
+  const h = harness(ctx, { create: nextSale }); await settle();
+  await chargeAndPark(h, 100);
+  h.vm.rawInput = '50'; h.vm.proceedToTipOrCharge(); await settle();
+  h.vm.cancelPayment();
+  assert.equal(h.vm.parkedCount, 1);
+});
+
+test('a full list refuses to park and drops nothing', async ctx => {
+  const h = harness(ctx, { create: nextSale }); await settle();
+  for (let i = 1; i <= 6; i++) await chargeAndPark(h, i * 10);
+  assert.equal(h.vm.parkedCount, 6);
+  h.vm.rawInput = '70'; h.vm.proceedToTipOrCharge(); await settle();
+  h.vm.parkInvoice();
+  assert.equal(h.vm.parkedCount, 6);
+  assert.equal(h.vm.state, 'payment', 'the seventh sale stays on screen');
+  assert.equal(h.notices.at(-1).message, '{n} sales are parked');
+});
+
+test('parked sales survive a restart and are still watched', async ctx => {
+  const storage = new Map();
+  const before = harness(ctx, { create: nextSale, storage }); await settle();
+  await chargeAndPark(before, 100);
+  const hash = before.vm.parkedList[0].invoiceData.paymentHash;
+  const after = harness(ctx, { storage }); await settle();
+  assert.equal(after.vm.parkedCount, 1);
+  after.paidHashes.add(hash);
+  await wait(30); await settle();
+  assert.equal(after.vm.parkedCount, 0);
+  assert.equal(after.receipts.length, 1);
+});
+
+test('a parked sale opens only on an empty register, and an expired one not at all', async ctx => {
+  const h = harness(ctx, { create: () => ({ ...nextSale(), expiresAt: Math.floor(Date.now() / 1000) + 1 }) }); await settle();
+  await chargeAndPark(h, 100);
+  const id = h.vm.parkedList[0].id;
+  h.vm.rawInput = '5';
+  await h.vm.resumeParked(id);
+  assert.equal(h.vm.parkedCount, 1, 'typing on the register keeps it parked');
+  assert.equal(h.vm.state, 'input');
+  h.vm.rawInput = '0';
+  await wait(1100); await wait(30); await settle();
+  assert.equal(h.vm.parkedList[0].status, 'expired', 'checked once more after expiry, then shown expired');
+  h.vm.removeParked(h.vm.parkedList[0]);
+  assert.equal(h.vm.parkedCount, 0, 'an expired sale goes without asking');
+});
+
+test('removing a sale that can still be paid asks first', async ctx => {
+  const h = harness(ctx, { create: nextSale }); await settle();
+  await chargeAndPark(h, 100);
+  h.vm.removeParked(h.vm.parkedList[0]);
+  assert.equal(h.vm.parkedCount, 1);
+  assert.equal(h.dialogs.length, 1);
+  h.dialogs[0].ok();
+  assert.equal(h.vm.parkedCount, 0);
 });
