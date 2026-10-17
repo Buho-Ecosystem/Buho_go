@@ -54,6 +54,7 @@ export default {
   "This connection has {amount} sats left. Raise the limit in {wallet}, or pay less.": "A esta conexión le quedan {amount} sats. Sube el límite en {wallet} o paga menos.",
   "{wallet} does not allow this connection to do that. Change it in {wallet}.": "{wallet} no permite eso a esta conexión. Cámbialo en {wallet}.",
   "This connection cannot create invoices. Allow receiving in {wallet}.": "Esta conexión no puede crear facturas. Permite recibir en {wallet}.",
+  "This connection cannot see incoming payments. Allow it to look up invoices in {wallet}.": "Esta conexión no puede ver pagos entrantes. Permítele consultar facturas en {wallet}.",
   "This connection was removed or has expired. Create a new one in {wallet}.": "Esta conexión se eliminó o caducó. Crea una nueva en {wallet}.",
   "Too many requests in a short time. Wait a moment, then try again.": "Demasiadas solicitudes en poco tiempo. Espera un momento y vuelve a intentarlo.",
   "{wallet} cannot do this over Nostr Wallet Connect.": "{wallet} no puede hacer esto con Nostr Wallet Connect.",

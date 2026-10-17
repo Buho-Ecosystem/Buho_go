@@ -19,6 +19,9 @@ export const NWC_ERROR = Object.freeze({
   UNCONFIRMED: 'NWC_PAYMENT_UNCONFIRMED',
   LIMIT_TOO_LOW: 'NWC_LIMIT_TOO_LOW',
   RECEIVE_NOT_ALLOWED: 'NWC_RECEIVE_NOT_ALLOWED',
+  // May create invoices but neither look one up nor list payments: a paid
+  // invoice could never be seen (services/nwcReceive).
+  CONFIRM_NOT_ALLOWED: 'NWC_CONFIRM_NOT_ALLOWED',
 });
 
 /** Wallet answers that settle a payment as not made. */
@@ -113,6 +116,8 @@ export function nwcErrorText(error, t, { walletName = '', locale } = {}) {
       return t('{wallet} does not allow this connection to do that. Change it in {wallet}.', { wallet });
     case NWC_ERROR.RECEIVE_NOT_ALLOWED:
       return t('This connection cannot create invoices. Allow receiving in {wallet}.', { wallet });
+    case NWC_ERROR.CONFIRM_NOT_ALLOWED:
+      return t('This connection cannot see incoming payments. Allow it to look up invoices in {wallet}.', { wallet });
     case 'UNAUTHORIZED':
       return t('This connection was removed or has expired. Create a new one in {wallet}.', { wallet });
     case 'RATE_LIMITED':

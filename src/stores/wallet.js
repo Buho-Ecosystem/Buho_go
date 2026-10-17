@@ -13,6 +13,7 @@ import { capabilitiesOf, nip47Methods, spendingLimitFrom, suggestedWalletName } 
 import { NWC_ERROR, isRelayFailure, nwcError } from '../utils/nwcErrors.js';
 import { probeNwcConnection } from '../services/nwcProbe.js';
 import { payWithNwc } from '../services/nwcPayment.js';
+import { lookupNwcInvoice, makeNwcInvoice } from '../services/nwcReceive.js';
 import { fiatRatesService } from '../utils/fiatRates.js';
 import { SELECTABLE_FIAT_CURRENCIES } from '../utils/fiatCurrencies.js';
 import { LNBitsWalletProvider } from '../providers/LNBitsWalletProvider';
@@ -3749,22 +3750,26 @@ export const useWalletStore = defineStore('wallet', {
     },
 
     /**
-     * Create a bolt11 invoice on one specific wallet.
+     * Create an invoice on one specific wallet, with what a receiving
+     * screen needs to watch it: the invoice, its payment hash and, when the
+     * backend says, its expiry (Unix seconds). Every field the backend
+     * returned is kept (Spark's receive id, for one).
      *
-     * The one way BuhoGO asks one of its wallets to receive: the Social
-     * Bucket, internal transfers and Learn & Earn payouts all come through
-     * here, so the per-backend differences live in one place. NWC speaks WebLN
-     * (makeInvoice, memo in `defaultMemo`; the SDK ignores `description`),
-     * everything else speaks createInvoice. A connection whose wallet did
-     * not grant make_invoice is refused with its reason before anything is
-     * asked; Arkade's provider refuses with its own (ARKADE_LN_UNAVAILABLE).
+     * The one way BuhoGO asks one of its own wallets to receive: the kiosk,
+     * the Social Bucket, internal transfers and Learn & Earn payouts all come
+     * through here, so the per-backend differences live in one place. NWC
+     * goes through services/nwcReceive (NIP-47 make_invoice, which returns
+     * the hash and expiry the WebLN layer drops); everything else speaks
+     * createInvoice. A connection whose wallet did not grant make_invoice is
+     * refused with its reason before anything is asked; Arkade's provider
+     * refuses with its own (ARKADE_LN_UNAVAILABLE).
      *
      * @param {string} walletId
      * @param {number} amountSats
      * @param {string} [description]
-     * @returns {Promise<string>} bolt11
+     * @returns {Promise<{ paymentRequest: string, paymentHash: string|null, expiresAt: number|null }>}
      */
-    async createInvoiceOnWallet(walletId, amountSats, description = '') {
+    async createInvoiceDetailsOnWallet(walletId, amountSats, description = '') {
       const wallet = this.wallets.find(w => w.id === walletId);
       if (!wallet) throw new Error('Wallet not found');
 
@@ -3776,19 +3781,60 @@ export const useWalletStore = defineStore('wallet', {
       // NWC connections live in connectionStates, not in `providers`: take
       // the provider this returns, whatever the wallet type.
       const provider = await this.ensureWalletConnectedForTransfer(walletId);
-      const result = isNwc
-        ? await provider.makeInvoice({ amount: amountSats, defaultMemo: description })
-        : await provider.createInvoice({ amount: amountSats, description });
+      if (isNwc) return makeNwcInvoice(provider, { amountSats, description });
 
-      const invoice =
+      const result = await provider.createInvoice({ amount: amountSats, description });
+      const paymentRequest =
         result?.paymentRequest ||
         result?.payment_request ||
         result?.invoice ||
         result?.bolt11 ||
         (typeof result === 'string' ? result : '');
+      if (!paymentRequest) throw new Error('Wallet did not return an invoice');
 
-      if (!invoice) throw new Error('Wallet did not return an invoice');
-      return invoice;
+      let paymentHash = result?.paymentHash || result?.payment_hash || null;
+      if (!paymentHash) {
+        try { paymentHash = new Invoice({ pr: paymentRequest }).paymentHash || null; } catch { /* not decodable */ }
+      }
+      return {
+        ...(typeof result === 'object' && result ? result : {}),
+        paymentRequest,
+        paymentHash,
+        expiresAt: Number(result?.expiresAt ?? result?.expires_at) > 0 ? Number(result?.expiresAt ?? result?.expires_at) : null,
+      };
+    },
+
+    /**
+     * Create a bolt11 invoice on one specific wallet (createInvoiceDetailsOnWallet,
+     * the invoice text only).
+     *
+     * @param {string} walletId
+     * @param {number} amountSats
+     * @param {string} [description]
+     * @returns {Promise<string>} bolt11
+     */
+    async createInvoiceOnWallet(walletId, amountSats, description = '') {
+      return (await this.createInvoiceDetailsOnWallet(walletId, amountSats, description)).paymentRequest;
+    },
+
+    /**
+     * Whether an invoice created on this wallet has been paid, as the payment
+     * monitor reads it: `{ paid, preimage?, amount? }`. NWC goes through
+     * services/nwcReceive (lookup_invoice or list_transactions, as the
+     * connection was granted); every other backend answers lookupInvoice
+     * with that shape itself.
+     *
+     * @param {string} walletId
+     * @param {string} paymentHash
+     */
+    async lookupInvoiceOnWallet(walletId, paymentHash) {
+      const wallet = this.wallets.find(w => w.id === walletId);
+      if (!wallet) throw new Error('Wallet not found');
+      const provider = await this.ensureWalletConnectedForTransfer(walletId);
+      if ((wallet.type || WALLET_TYPES.NWC) === WALLET_TYPES.NWC) {
+        return lookupNwcInvoice(provider, paymentHash, { methods: wallet.metadata?.methods });
+      }
+      return provider.lookupInvoice(paymentHash);
     },
 
     /**

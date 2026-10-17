@@ -11,9 +11,9 @@ test('both method vocabularies read the same; unknown names are kept, empties dr
 
 test('a connection can do exactly what its wallet granted', () => {
   const receiveOnly = nwcCapabilities(['make_invoice', 'lookup_invoice', 'get_info']);
-  assert.deepEqual(receiveOnly, { known: true, send: false, receive: true, balance: false, history: false, limit: false });
+  assert.deepEqual(receiveOnly, { known: true, send: false, receive: true, balance: false, history: false, lookup: true, limit: false });
   const full = nwcCapabilities(['pay_invoice', 'make_invoice', 'get_balance', 'list_transactions', 'get_budget']);
-  assert.deepEqual(full, { known: true, send: true, receive: true, balance: true, history: true, limit: true });
+  assert.deepEqual(full, { known: true, send: true, receive: true, balance: true, history: true, lookup: false, limit: true });
 });
 
 test('a wallet saved before methods were stored keeps working', () => {
