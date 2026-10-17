@@ -65,6 +65,19 @@ export function readPersistedWalletState() {
   }
 }
 
+/**
+ * Where the first screen should be: a person with a saved wallet goes
+ * straight home, before the welcome screen ever draws. A saved state that
+ * cannot be read stays where it is (the wallet store sets it aside when it
+ * loads) and leaves the welcome screen in place.
+ *
+ * @returns {string|true} '/wallet', or true to stay
+ */
+export function savedWalletRedirect() {
+  const saved = readPersistedWalletState()
+  return saved?.activeWalletId && Array.isArray(saved.wallets) && saved.wallets.length > 0 ? '/wallet' : true
+}
+
 function hasPersistedWalletConfig() {
   const parsed = readPersistedWalletState()
   return Array.isArray(parsed?.wallets) && parsed.wallets.length > 0

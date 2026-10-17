@@ -1,4 +1,5 @@
 import { Capacitor } from '@capacitor/core'
+import { savedWalletRedirect } from 'src/utils/walletHydration'
 
 /**
  * Guard for the Learn & Earn (`/learn*`) routes. The feature pays out real
@@ -45,7 +46,8 @@ const routes = [
     path: '/',
     component: () => import('layouts/MainLayout.vue'),
     children: [
-      { path: '', component: () => import('pages/WelcomePage.vue') },
+      // A returning person goes home before the welcome screen mounts.
+      { path: '', component: () => import('pages/WelcomePage.vue'), beforeEnter: savedWalletRedirect },
       { path: '/spark-setup', component: () => import('pages/SparkSetupPage.vue') },
       { path: '/arkade-setup', component: () => import('pages/ArkadeSetupPage.vue') },
       // Unified, wallet-type-aware restore. `/restore` lets the user pick;

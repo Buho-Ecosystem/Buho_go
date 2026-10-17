@@ -1,9 +1,4 @@
 <template>
-  <LoadingScreen
-    :show="showLoadingScreen"
-    :loading-text="$t(loadingText)"
-  />
-
   <q-page class="welcome-page">
     <div class="bgo-screen">
       <!-- ═══════════════ Cream editorial hero ═══════════════ -->
@@ -226,7 +221,6 @@
 </template>
 
 <script>
-import LoadingScreen from '../components/LoadingScreen.vue'
 import BackupKeyring from '../components/BackupKeyring.vue'
 import CloudBackupSheet from '../components/CloudBackupSheet.vue'
 import { isCloudBackupPlatform } from '../services/cloudStorage.js'
@@ -239,15 +233,11 @@ import {
 export default {
   name: 'WelcomePage',
   components: {
-    LoadingScreen,
     CloudBackupSheet,
     BackupKeyring,
   },
   data() {
     return {
-      showLoadingScreen: true,
-      // An i18n key: the template translates it, so it follows a language change.
-      loadingText: 'Initializing BuhoGO...',
       showMoreSheet: false,
       showCloudRestoreSheet: false,
       // Set once a Drive restore brought anything back; navigation happens
@@ -264,37 +254,7 @@ export default {
       return isCloudBackupPlatform()
     },
   },
-  mounted() {
-    setTimeout(() => {
-      this.showLoadingScreen = false
-    }, 5000)
-    this.initializeApp()
-  },
   methods: {
-    async initializeApp() {
-      try {
-        const existingState = localStorage.getItem('buhoGO_wallet_store')
-        if (existingState) {
-          this.loadingText = 'Checking wallet state...'
-          try {
-            const walletInfo = JSON.parse(existingState)
-            if (walletInfo.activeWalletId && walletInfo.wallets?.length > 0) {
-              this.loadingText = 'Loading wallet...'
-              this.$router.push('/wallet')
-              return
-            }
-          } catch (parseError) {
-            // Never deleted here: the wallet store sets an unreadable state
-            // aside when it loads, and it may hold encrypted phrases.
-            console.warn('Failed to parse wallet state:', parseError)
-          }
-        }
-        this.showLoadingScreen = false
-      } catch (error) {
-        console.error('Error initializing app:', error)
-        this.showLoadingScreen = false
-      }
-    },
     goToSparkSetup() { this.$router.push('/spark-setup') },
     openCloudRestore() {
       this.showMoreSheet = false
