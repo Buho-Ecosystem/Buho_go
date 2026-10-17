@@ -14,6 +14,7 @@
  */
 import { Invoice } from '@getalby/lightning-tools';
 import { NWC_ERROR, isUncertainPaymentError, nwcError } from '../utils/nwcErrors.js';
+import { spendingLimitFrom } from '../utils/nwcWallet.js';
 
 /** Waits between lookups of an unconfirmed payment, about half a minute in all. */
 export const LOOKUP_DELAYS_MS = Object.freeze([2000, 5000, 8000, 15000]);
@@ -45,8 +46,9 @@ function decode(invoice) {
  * @param {string} invoice BOLT11
  * @param {object} [options]
  * @param {{ remainingSats: number, renewsAt?: number|null }|null} [options.limit]
- *   the connection's spending limit, when the wallet shares it: a payment
- *   above it is stopped here, with the reason, instead of at the wallet
+ *   the connection's spending limit as last read, when the wallet shares
+ *   it: a payment above it is stopped here, with the reason, once the
+ *   wallet confirms the limit still stands
  * @param {number[]} [options.lookupDelays]
  * @param {(ms: number) => Promise<void>} [options.sleep]
  * @param {(invoice: string) => { paymentHash: string|null, amountSats: number }} [options.decodeInvoice]
@@ -61,10 +63,13 @@ export async function payWithNwc(nwc, invoice, {
   const { paymentHash, amountSats } = decodeInvoice(invoice);
 
   if (limit && amountSats > 0 && amountSats > limit.remainingSats) {
-    throw nwcError(NWC_ERROR.LIMIT_TOO_LOW, 'Above the connection spending limit', {
-      remainingSats: limit.remainingSats,
-      renewsAt: limit.renewsAt || null,
-    });
+    const current = await currentLimit(nwc, limit);
+    if (current && amountSats > current.remainingSats) {
+      throw nwcError(NWC_ERROR.LIMIT_TOO_LOW, 'Above the connection spending limit', {
+        remainingSats: current.remainingSats,
+        renewsAt: current.renewsAt || null,
+      });
+    }
   }
 
   let answer = null;
@@ -78,6 +83,21 @@ export async function payWithNwc(nwc, invoice, {
     return { preimage: answer.preimage };
   }
   return confirmByLookup(nwc, paymentHash, { lookupDelays, sleep });
+}
+
+/**
+ * The limit as the wallet sees it now. The one passed in may be old: the
+ * person may have raised it in their wallet, which is exactly what the
+ * error asks them to do. Without an answer the last known limit stands.
+ */
+async function currentLimit(nwc, known) {
+  const client = nwc?.client;
+  if (!client || typeof client.getBudget !== 'function') return known;
+  try {
+    return spendingLimitFrom(await client.getBudget());
+  } catch {
+    return known;
+  }
 }
 
 /**

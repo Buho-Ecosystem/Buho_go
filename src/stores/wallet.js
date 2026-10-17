@@ -10,7 +10,7 @@ import { defineStore } from 'pinia';
 import { NostrWebLNProvider } from '@getalby/sdk';
 import { parseNwcConnection } from '../utils/nwcConnection.js';
 import { capabilitiesOf, nip47Methods, spendingLimitFrom, suggestedWalletName } from '../utils/nwcWallet.js';
-import { NWC_ERROR, isRelayFailure } from '../utils/nwcErrors.js';
+import { isRelayFailure } from '../utils/nwcErrors.js';
 import { probeNwcConnection } from '../services/nwcProbe.js';
 import { payWithNwc } from '../services/nwcPayment.js';
 import { fiatRatesService } from '../utils/fiatRates.js';
@@ -2712,18 +2712,23 @@ export const useWalletStore = defineStore('wallet', {
         if (status !== 'answering') console.warn('[nwc] wallet did not answer:', error?.message || error);
       }
 
+      // Recorded here only. `connected` keeps meaning "the connection is set
+      // up": a wallet on a phone can miss a 10 s get_info and still wake for
+      // a payment (60 s), so one silence must not take it out of the
+      // wallet lists. Settings shows the status and offers Reconnect.
       this.nwcStatus[walletId] = status;
-      const state = this.connectionStates[walletId];
-      if (state) {
-        state.connected = status === 'answering';
-        state.error = status === 'answering' ? null : (status === 'relay' ? NWC_ERROR.RELAY_UNREACHABLE : NWC_ERROR.NO_ANSWER);
-      }
       return status;
     },
 
-    /** The spending limit an NWC connection shares, or null. */
+    /**
+     * The spending limit an NWC connection shares, or null. A limit whose
+     * period has ended has reset, so it no longer holds anything back.
+     */
     nwcLimitFor(walletId) {
-      return this.nwcLimits[walletId] || null;
+      const limit = this.nwcLimits[walletId];
+      if (!limit) return null;
+      if (limit.renewsAt && limit.renewsAt <= Date.now()) return null;
+      return limit;
     },
 
     // ==========================================

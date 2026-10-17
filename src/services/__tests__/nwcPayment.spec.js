@@ -81,3 +81,22 @@ test('a payment above the shared spending limit stops before it is sent', async 
   assert.equal(w.calls.pay, 0);
   assert.deepEqual(await payWithNwc(w, 'lnbc1', { ...fast, limit: { remainingSats: 9000 } }), { preimage: PREIMAGE });
 });
+
+test('a limit raised in the wallet since it was last read lets the payment through', async () => {
+  // The cached figure says 2,400 sats left; the wallet now says otherwise.
+  const msat = (sats) => sats * 1000;
+  const cached = { remainingSats: 2400, renewsAt: null };
+  const raised = wallet({ pay: () => ({ preimage: PREIMAGE }) });
+  raised.client.getBudget = async () => ({ total_budget: msat(20000), used_budget: msat(1000) });
+  assert.deepEqual(await payWithNwc(raised, 'lnbc1', { ...fast, limit: cached }), { preimage: PREIMAGE });
+  assert.equal(raised.calls.pay, 1);
+
+  const still = wallet({ pay: () => ({ preimage: PREIMAGE }) });
+  still.client.getBudget = async () => ({ total_budget: msat(3000), used_budget: msat(1000) });
+  await assert.rejects(payWithNwc(still, 'lnbc1', { ...fast, limit: cached }), (e) => e.code === NWC_ERROR.LIMIT_TOO_LOW && e.remainingSats === 2000);
+  assert.equal(still.calls.pay, 0, 'the current figure is the one shown');
+
+  const silent = wallet({ pay: () => ({ preimage: PREIMAGE }) });
+  silent.client.getBudget = async () => { throw sdk('reply timeout', 'INTERNAL'); };
+  await assert.rejects(payWithNwc(silent, 'lnbc1', { ...fast, limit: cached }), (e) => e.code === NWC_ERROR.LIMIT_TOO_LOW && e.remainingSats === 2400);
+});

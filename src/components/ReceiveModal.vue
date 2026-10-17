@@ -456,6 +456,8 @@
 import VueQrcode from '@chenfengyuan/vue-qrcode';
 import ArkadeLogo from './ArkadeLogo.vue';
 import { NostrWebLNProvider } from "@getalby/sdk";
+import { capabilitiesOf } from '../utils/nwcWallet.js';
+import { NWC_ERROR, nwcError } from '../utils/nwcErrors.js';
 import { Invoice } from "@getalby/lightning-tools";
 import { formatAmount } from '../utils/amountFormatting.js';
 import { fiatRatesService } from '../utils/fiatRates.js';
@@ -1624,6 +1626,10 @@ export default {
           if (!activeWallet || !activeWallet.nwcString) {
             throw new Error('No active wallet found');
           }
+          const saved = this.walletStore.wallets.find(w => w.id === this.walletState.activeWalletId);
+          if (saved && !capabilitiesOf(saved).receive) {
+            throw nwcError(NWC_ERROR.RECEIVE_NOT_ALLOWED, 'This connection cannot create invoices');
+          }
 
           const nwc = new NostrWebLNProvider({
             nostrWalletConnectUrl: activeWallet.nwcString,
@@ -1694,6 +1700,7 @@ export default {
         this.walletStore.showPaymentError(error, {
           context: 'receive',
           walletType: this.walletStore.activeWalletType,
+          walletName: this.walletStore.activeWallet?.name || '',
           route: 'Invoice creation',
           amountSats: this.amountInSats,
           t: this.$t.bind(this),

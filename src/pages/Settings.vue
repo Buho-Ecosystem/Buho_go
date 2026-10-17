@@ -1060,7 +1060,7 @@
           :balance-refreshing="walletStore.getDisplayBalance(detailWallet.id).refreshing"
           :fiat="walletStore.fiatValueOf(walletStore.getDisplayBalance(detailWallet.id).balance)"
           :active="detailWallet.id === activeWalletId"
-          :connected="!!connectionStates[detailWallet.id]?.connected"
+          :connected="isWalletLive(detailWallet)"
           :switching="walletSwitching"
           :reconnecting="!!isReconnecting[detailWallet.id]"
           :connection-error="connectionStates[detailWallet.id]?.error ? $t('This wallet is offline right now. Check your connection, then tap Reconnect.') : ''"
@@ -3692,6 +3692,16 @@ export default {
       } finally {
         this.isAddingWallet = false
       }
+    },
+
+    /**
+     * Live for the detail panel: connected, and for NWC also answering when
+     * last asked (store.nwcStatus), so a silent wallet offers Reconnect.
+     */
+    isWalletLive(wallet) {
+      if (!this.connectionStates[wallet.id]?.connected) return false;
+      if ((wallet.type || 'nwc') !== 'nwc') return true;
+      return !['no-answer', 'relay'].includes(this.walletStore.nwcStatus[wallet.id]);
     },
 
     async reconnectWallet(walletId) {

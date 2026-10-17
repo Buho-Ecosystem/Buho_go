@@ -18,7 +18,6 @@ export const NWC_ERROR = Object.freeze({
   RELAY_UNREACHABLE: 'NWC_RELAY_UNREACHABLE',
   UNCONFIRMED: 'NWC_PAYMENT_UNCONFIRMED',
   LIMIT_TOO_LOW: 'NWC_LIMIT_TOO_LOW',
-  SEND_NOT_ALLOWED: 'NWC_SEND_NOT_ALLOWED',
   RECEIVE_NOT_ALLOWED: 'NWC_RECEIVE_NOT_ALLOWED',
 });
 
@@ -26,7 +25,7 @@ export const NWC_ERROR = Object.freeze({
 const DEFINITE_FAILURES = new Set([
   'PAYMENT_FAILED', 'INSUFFICIENT_BALANCE', 'QUOTA_EXCEEDED', 'RESTRICTED',
   'UNAUTHORIZED', 'RATE_LIMITED', 'NOT_IMPLEMENTED', 'UNSUPPORTED_ENCRYPTION',
-  'FEE_LIMIT_EXCEEDED', NWC_ERROR.LIMIT_TOO_LOW, NWC_ERROR.SEND_NOT_ALLOWED,
+  'FEE_LIMIT_EXCEEDED', NWC_ERROR.LIMIT_TOO_LOW, NWC_ERROR.RECEIVE_NOT_ALLOWED,
 ]);
 
 function messageOf(error) {
@@ -104,7 +103,6 @@ export function nwcErrorText(error, t, { walletName = '', locale } = {}) {
         ? t('This connection has {amount} sats left until {date}. Raise the limit in {wallet}, or pay less.', { amount: Number(error.remainingSats || 0).toLocaleString(locale), date: dayOf(error.renewsAt, locale), wallet })
         : t('This connection has {amount} sats left. Raise the limit in {wallet}, or pay less.', { amount: Number(error.remainingSats || 0).toLocaleString(locale), wallet });
     case 'RESTRICTED':
-    case NWC_ERROR.SEND_NOT_ALLOWED:
       return t('{wallet} does not allow this connection to do that. Change it in {wallet}.', { wallet });
     case NWC_ERROR.RECEIVE_NOT_ALLOWED:
       return t('This connection cannot create invoices. Allow receiving in {wallet}.', { wallet });

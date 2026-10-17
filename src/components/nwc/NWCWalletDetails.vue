@@ -72,9 +72,13 @@ const renewsText = computed(() => {
 });
 
 // Not asked this session yet (a wallet that is not the active one): ask now,
-// so the status says what the wallet answers rather than "Checking…".
+// so the status says what the wallet answers rather than "Checking…". A
+// connection that is already set up is asked again, never built twice.
 onMounted(() => {
-  if (!props.status) store.connectWallet(props.wallet.id).catch(() => {});
+  if (props.status) return;
+  const id = props.wallet.id;
+  const ask = store.connectionStates[id]?.nwcInstance ? store.refreshNwcDetails(id) : store.connectWallet(id);
+  ask.catch(() => {});
 });
 
 function amountText(sats) {

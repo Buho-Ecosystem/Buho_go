@@ -20,7 +20,8 @@ Every relay in the connection string is kept (`src/utils/nwcConnection.js`); ext
 
 - A connection without `pay_invoice` is never offered to pay ("Receive only" in Pay with, `utils/payingWallets.js`).
 - A connection without `get_balance` shows a dash and "Balance not shared"; its balance is never asked for.
-- `store.refreshNwcDetails()` asks the wallet again on every refresh: name, grants, Lightning address, spending limit, and whether it answered (`store.nwcStatus`). This also repairs wallets saved before these details were read correctly. Reconnect in Settings only says "Reconnected" when the wallet answered.
+- `store.refreshNwcDetails()` asks the wallet again on every refresh: name, grants, Lightning address, spending limit, and whether it answered (`store.nwcStatus`). This also repairs wallets saved before these details were read correctly. The status never changes `connected`: a wallet on a phone can miss one 10 s question and still wake for a payment, so a single silence must not take it out of the wallet lists. Settings shows the status, offers Reconnect for a silent wallet, and only says "Reconnected" when the wallet answered.
+- A connection without `make_invoice` says so on Receive before asking the wallet.
 
 ## Paying: only on proof
 
@@ -30,7 +31,7 @@ Every NWC payment goes through `src/services/nwcPayment.js` (`payWithNwc`): the 
 - No reply, a publish that was not acknowledged, or a generic `INTERNAL`/`OTHER` error is an unknown outcome, not a failure: the invoice is looked up a few times. A record the wallet marks settled counts as paid; marked failed counts as failed.
 - Still unknown after the last lookup: `NWC_PAYMENT_UNCONFIRMED`, and the person is asked to check their wallet before paying again. A payment is never sent a second time on its own.
 - A request that never left (no wallet behind the relay, relay unreachable) is a plain failure.
-- When the wallet shares a spending limit, a payment above what is left stops before it is sent, with the amount left and the reset date.
+- When the wallet shares a spending limit, a payment above what is left is checked with the wallet once more (the person may have just raised it) and then stops before it is sent, with the amount left and the reset date. A limit whose period has ended holds nothing back (`store.nwcLimitFor`).
 
 Receiving polls gently (`NWC_POLLING` in `ReceiveModal.vue`): each lookup can wake the owner's phone.
 
