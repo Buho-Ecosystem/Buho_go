@@ -2694,7 +2694,8 @@ export const useWalletStore = defineStore('wallet', {
           pubkey: String(info?.pubkey || meta.pubkey || ''),
           walletPubkey: meta.walletPubkey || parseNwcConnection(wallet.nwcUrl).pubkey || '',
           network: info?.network || meta.network || 'mainnet',
-          methods: methods.length ? methods : nip47Methods(meta.methods),
+          // No methods in the answer: keep what was saved, as saved.
+          methods: methods.length ? methods : (meta.methods || []),
           notifications: Array.isArray(info?.notifications) ? info.notifications : (meta.notifications || []),
           lud16: meta.lud16 || info?.lud16 || null,
         };

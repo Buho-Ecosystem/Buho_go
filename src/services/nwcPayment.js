@@ -16,8 +16,15 @@ import { Invoice } from '@getalby/lightning-tools';
 import { NWC_ERROR, isUncertainPaymentError, nwcError } from '../utils/nwcErrors.js';
 import { spendingLimitFrom } from '../utils/nwcWallet.js';
 
-/** Waits between lookups of an unconfirmed payment, about half a minute in all. */
+/** Waits between lookups of an unconfirmed payment, half a minute in all. */
 export const LOOKUP_DELAYS_MS = Object.freeze([2000, 5000, 8000, 15000]);
+
+/**
+ * How long one lookup may take. The SDK waits 60 s for a lookup_invoice
+ * reply; a wallet that is silent would stretch the check to five minutes.
+ * 10 s, like the SDK's other reads, keeps the whole check near 70 s.
+ */
+export const LOOKUP_WAIT_MS = 10000;
 
 async function sha256Hex(hex) {
   const bytes = new Uint8Array(hex.match(/.{2}/g).map((b) => parseInt(b, 16)));
@@ -50,6 +57,7 @@ function decode(invoice) {
  *   it: a payment above it is stopped here, with the reason, once the
  *   wallet confirms the limit still stands
  * @param {number[]} [options.lookupDelays]
+ * @param {number} [options.lookupWait] longest wait for one lookup's answer
  * @param {(ms: number) => Promise<void>} [options.sleep]
  * @param {(invoice: string) => { paymentHash: string|null, amountSats: number }} [options.decodeInvoice]
  * @returns {Promise<{ preimage: string }>}
@@ -57,6 +65,7 @@ function decode(invoice) {
 export async function payWithNwc(nwc, invoice, {
   limit = null,
   lookupDelays = LOOKUP_DELAYS_MS,
+  lookupWait = LOOKUP_WAIT_MS,
   sleep = (ms) => new Promise((r) => setTimeout(r, ms)),
   decodeInvoice = decode,
 } = {}) {
@@ -82,7 +91,7 @@ export async function payWithNwc(nwc, invoice, {
   if (answer && (!paymentHash || await provesPayment(answer.preimage, paymentHash))) {
     return { preimage: answer.preimage };
   }
-  return confirmByLookup(nwc, paymentHash, { lookupDelays, sleep });
+  return confirmByLookup(nwc, paymentHash, { lookupDelays, lookupWait, sleep });
 }
 
 /**
@@ -100,20 +109,29 @@ async function currentLimit(nwc, known) {
   }
 }
 
+/** The answer, or a NO_ANSWER error once `ms` passed (the request itself runs on). */
+function withinWait(promise, ms) {
+  let timer;
+  const late = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(nwcError(NWC_ERROR.NO_ANSWER, 'No answer to the lookup')), ms);
+  });
+  return Promise.race([promise, late]).finally(() => clearTimeout(timer));
+}
+
 /**
  * Ask the wallet about a payment whose outcome is unknown. Settled with a
  * proving preimage: paid. Marked failed: not paid. Anything else after the
  * last try: NWC_PAYMENT_UNCONFIRMED, so the person checks before paying again.
  * A record the wallet marks settled is its confirmation too.
  */
-async function confirmByLookup(nwc, paymentHash, { lookupDelays, sleep }) {
+async function confirmByLookup(nwc, paymentHash, { lookupDelays, lookupWait, sleep }) {
   const client = nwc?.client;
   if (client && typeof client.lookupInvoice === 'function') {
     for (const delay of lookupDelays) {
       await sleep(delay);
       let tx;
       try {
-        tx = await client.lookupInvoice({ payment_hash: paymentHash });
+        tx = await withinWait(client.lookupInvoice({ payment_hash: paymentHash }), lookupWait);
       } catch (error) {
         if (error?.code === 'NOT_IMPLEMENTED' || error?.code === 'RESTRICTED') break;
         continue; // NOT_FOUND or no answer yet: the wallet may still be paying
