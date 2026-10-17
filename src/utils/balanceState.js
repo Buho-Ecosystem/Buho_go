@@ -86,7 +86,10 @@ export function nextBalanceState(prev, { value, source = 'sync', fresh = VERIFIE
   const known = base.value !== null && base.value !== undefined;
   const failing = !!(error || base.error);
   if (known && (failing || base.source === 'persisted')) return { ...base, error: error || base.error };
-  if (!known && failing) return { ...base, error: error || base.error };
+  // Nothing known and the refresh failed (Spark away, #381): a positive
+  // local figure beats a placeholder that never resolves. It keeps the
+  // error, so it reads as out of date; a zero still stays unknown.
+  if (!known && failing && n === 0) return { ...base, error: error || base.error };
   return {
     value: n,
     source: source === 'persisted' ? 'persisted' : 'cache',
@@ -94,7 +97,7 @@ export function nextBalanceState(prev, { value, source = 'sync', fresh = VERIFIE
     verifiedAt: n === base.value ? base.verifiedAt : null,
     updatedAt: at,
     refreshing: base.refreshing,
-    error: base.error,
+    error: error || base.error,
   };
 }
 

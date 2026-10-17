@@ -9,13 +9,43 @@
        at the large detent, grabber + glass back for chrome. The identity
        lives in the centered hero, so the bar itself stays headerless. -->
   <q-page class="iform-sheet-page">
-    <div class="iform-sheet-scrim" aria-hidden="true" @click="goBack"></div>
+    <div class="iform-sheet-scrim" aria-hidden="true" @click="onScrim"></div>
 
     <div class="iform-sheet" role="dialog" aria-modal="true" :aria-label="$t('Connect LNbits')">
       <div class="iform-sheet-grab" aria-hidden="true"></div>
 
+      <!-- After Connect: the wallet's name, then its Lightning address (or
+           why there can be none yet). Steps of this same sheet, never
+           dialogs stacked on it. -->
+      <LNBitsWalletFound
+        v-if="step === 'name'"
+        v-model:name="walletName"
+        :domain="displayServerUrl"
+        :balance-sats="validatedBalance"
+        @back="step = 'connect'"
+        @add="addWallet"
+      />
+      <LNBitsAddressStep
+        v-else-if="step === 'address'"
+        :domain="address.domain"
+        :existing-addresses="address.existing"
+        :default-username="walletName"
+        :create-address="createLightningAddress"
+        :skip-label="$t('Not now')"
+        @skip="goToSuccess"
+        @confirm="onLightningAddressConfirm"
+      />
+      <LNBitsPayLinksStep
+        v-else-if="step === 'paylinks'"
+        :server-url="validatedServerUrl"
+        :domain="address.domain"
+        :check-status="checkPayLinks"
+        @done="goToSuccess"
+        @available="openAddressStep"
+      />
+
       <!-- Connect form -->
-      <template v-if="!showScanner">
+      <template v-else-if="!showScanner">
         <header class="iform-sheet-top">
           <q-btn flat round dense class="glass-back-btn" :aria-label="$t('Back')" @click="goBack">
             <Icon icon="tabler:chevron-left" width="20" height="20" />
@@ -28,10 +58,7 @@
           <div class="iform-body">
           <div class="iform-hero">
             <div class="iform-tile">
-              <!-- LNbits Lightning Bolt (official) -->
-              <svg xmlns="http://www.w3.org/2000/svg" width="24" height="28" viewBox="0 0 502 902" fill="none">
-                <path d="M158.566 493.857L1 901L450.49 355.202H264.831L501.791 1H187.881L36.4218 493.857H158.566Z" fill="#FF1FE1"/>
-              </svg>
+              <LNBitsMark />
             </div>
             <div class="iform-hero-title">{{ $t('Connect LNbits') }}</div>
             <div class="iform-hero-sub">{{ $t('Enter your LNbits server details') }}</div>
@@ -218,91 +245,6 @@
       </template>
     </div>
 
-      <!-- Wallet Name Dialog -->
-      <q-dialog v-model="showNameDialog" :class="$q.dark.isActive ? 'dialog_dark' : 'dialog_light'">
-        <q-card class="name-dialog" :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'">
-          <q-card-section class="dialog-header">
-            <div class="dialog-title" :class="$q.dark.isActive ? 'dialog_title_dark' : 'dialog_title_light'">
-              {{ $t('Name Your Wallet') }}
-            </div>
-            <q-btn
-              flat
-              round
-              dense
-              icon="close"
-              v-close-popup
-              class="close-btn"
-              :class="$q.dark.isActive ? 'text-white' : 'text-grey-6'"
-            />
-          </q-card-section>
-
-          <q-card-section class="dialog-content">
-            <!-- Wallet Info Preview -->
-            <div class="wallet-preview q-mb-md" :class="$q.dark.isActive ? 'preview-dark' : 'preview-light'">
-              <div class="preview-row">
-                <span class="preview-label">{{ $t('Server') }}</span>
-                <span class="preview-value">{{ displayServerUrl }}</span>
-              </div>
-              <div class="preview-row">
-                <span class="preview-label">{{ $t('Wallet ID') }}</span>
-                <span class="preview-value preview-id">{{ validatedWalletId }}</span>
-              </div>
-              <div class="preview-row">
-                <span class="preview-label">{{ $t('Balance') }}</span>
-                <span class="preview-value">{{ validatedBalance }} sats</span>
-              </div>
-            </div>
-
-            <q-input
-              v-model="walletName"
-              :placeholder="validatedWalletName || $t('My LNbits Wallet')"
-              :rules="[val => !!val || $t('Wallet name is required')]"
-              autofocus
-              :class="$q.dark.isActive ? 'search_bg' : 'search_light'"
-              borderless
-              input-class="q-px-md"
-              dense
-              hide-bottom-space
-            />
-            <div class="input-hint" :class="$q.dark.isActive ? 'view_title_dark' : 'view_title'">
-              {{ $t('Choose a name to easily identify this wallet') }}
-            </div>
-          </q-card-section>
-
-          <q-card-actions align="right" class="dialog-actions">
-            <q-btn
-              flat
-              :label="$t('Cancel')"
-              v-close-popup
-              class="cancel-action-btn"
-              :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-6'"
-            />
-            <q-btn
-              unelevated
-              :label="$t('Add Wallet')"
-              @click="addWallet"
-              :disable="!walletName"
-              class="continue-action-btn"
-              :class="$q.dark.isActive ? 'dialog_add_btn_dark' : 'dialog_add_btn_light'"
-              no-caps
-            />
-          </q-card-actions>
-        </q-card>
-      </q-dialog>
-
-      <!-- Post-connect: offer to attach a lightning address (lnurlp extension). -->
-      <!-- Skipped in kiosk mode so unattended setups don't stall on this dialog. -->
-      <LNBitsLightningAddressDialog
-        v-if="addressPrompt.visible"
-        v-model="addressPrompt.visible"
-        :domain="addressPrompt.domain"
-        :existing-addresses="addressPrompt.existingAddresses"
-        :default-username="addressPrompt.defaultUsername"
-        :create-address="addressPrompt.createAddress"
-        @confirm="onLightningAddressConfirm"
-        @skip="onLightningAddressSkip"
-      />
-
     <!-- Native MLKit scanner (iOS/Android). Continuous so it captures both the
          server URL and admin key in one session. Teleports to <body>. -->
     <ScannerOverlay
@@ -324,7 +266,10 @@ import { createQrScanner } from '../utils/qrScanner'
 import { isNativeScannerAvailable } from '../utils/nativeScanner'
 import ScannerOverlay from '../components/ScannerOverlay.vue'
 import LoadingScreen from '../components/LoadingScreen.vue'
-import LNBitsLightningAddressDialog from '../components/LNBitsLightningAddressDialog.vue'
+import LNBitsMark from '../components/lnbits/LNBitsMark.vue'
+import LNBitsWalletFound from '../components/lnbits/LNBitsWalletFound.vue'
+import LNBitsAddressStep from '../components/lnbits/LNBitsAddressStep.vue'
+import LNBitsPayLinksStep from '../components/lnbits/LNBitsPayLinksStep.vue'
 import { useWalletStore } from '../stores/wallet'
 import { LNBitsWalletProvider } from '../providers/LNBitsWalletProvider'
 import { mapActions, mapState } from 'pinia'
@@ -335,7 +280,10 @@ export default {
   name: 'LNBitsSetupPage',
   components: {
     LoadingScreen,
-    LNBitsLightningAddressDialog,
+    LNBitsMark,
+    LNBitsWalletFound,
+    LNBitsAddressStep,
+    LNBitsPayLinksStep,
     ScannerOverlay,
   },
   data() {
@@ -358,7 +306,8 @@ export default {
       cameraErrorMessage: '',
       cameraLoading: true,
       qrScanner: null,
-      showNameDialog: false,
+      // Which step of the sheet shows: 'connect' | 'name' | 'address' | 'paylinks'.
+      step: 'connect',
       walletName: '',
       showLoadingScreen: false,
       loadingText: '',
@@ -367,17 +316,8 @@ export default {
       validatedWalletId: '',
       validatedWalletName: '',
       validatedBalance: 0,
-      // Post-connect lightning-address prompt.
-      // Populated by maybePromptLightningAddress() once the wallet is saved and
-      // we've verified the lnurlp extension is available.
-      addressPrompt: {
-        visible: false,
-        walletId: null,
-        domain: '',
-        existingAddresses: [],
-        defaultUsername: '',
-        createAddress: null,
-      },
+      // The saved wallet the address steps work on (set by offerLightningAddress).
+      address: { walletId: null, domain: '', existing: [] },
     }
   },
   computed: {
@@ -433,6 +373,11 @@ export default {
     adminKey(val) {
       this.applyLndhubUri(val);
     },
+  },
+  created() {
+    // Set once the wallet is saved. Not reactive on purpose: a provider
+    // holds a live connection and must never be wrapped in a Vue proxy.
+    this.addressProvider = null;
   },
   beforeUnmount() {
     this.stopQrScanner();
@@ -530,9 +475,7 @@ export default {
         this.validatedWalletName = validation.walletInfo.name;
         this.validatedBalance = validation.walletInfo.balance;
         this.walletName = validation.walletInfo.name;
-
-        // Show name dialog
-        this.showNameDialog = true;
+        this.step = 'name';
 
       } catch (error) {
         console.error('LNbits validation failed:', error);
@@ -545,7 +488,6 @@ export default {
     async addWallet() {
       if (!this.walletName.trim()) return;
 
-      this.showNameDialog = false;
       this.showLoadingScreen = true;
       this.loadingText = this.$t('Adding wallet...');
 
@@ -571,21 +513,19 @@ export default {
         return;
       }
 
-      // Wallet is saved. In kiosk mode we never interrupt with extra dialogs —
-      // head straight to the success screen. Otherwise offer to set up a
-      // lightning address if the server supports it.
-      if (this.kioskEnabled) {
+      // Wallet is saved. In kiosk mode nothing interrupts: straight to the
+      // wallet. Otherwise offer a Lightning address, or say why there can
+      // be none yet.
+      if (this.kioskEnabled || !(await this.offerLightningAddress(wallet))) {
         this.goToSuccess();
-        return;
       }
+    },
 
-      const prompted = await this.maybePromptLightningAddress(wallet);
-      if (!prompted) {
-        // No lnurlp extension (or probe failed) — nothing to prompt, just finish.
-        this.goToSuccess();
-      }
-      // If prompted === true, navigation happens after the user responds to
-      // the dialog (see onLightningAddressConfirm / onLightningAddressSkip).
+    /** A tap on the dimmed ground: a step back before saving, done after. */
+    onScrim() {
+      if (this.step === 'connect') this.goBack();
+      else if (this.step === 'name') this.step = 'connect';
+      else this.goToSuccess();
     },
 
     /**
@@ -598,93 +538,71 @@ export default {
     },
 
     /**
-     * Check whether the connected LNbits server has the lnurlp extension and,
-     * if so, open the lightning-address dialog pre-populated with any
-     * existing addresses on the wallet.
+     * After the wallet is saved: the address step when the server's Pay
+     * Links extension answers, the Pay Links step when the server says it
+     * is off. When the server cannot tell (no network, server error), the
+     * person goes straight to the wallet: nothing is claimed about Pay
+     * Links that the server did not say.
      *
-     * Hides the loading screen before opening the dialog so the user sees
-     * the prompt on a clean background.
-     *
-     * @param {Object} wallet - the freshly-created wallet object from the store
-     * @returns {Promise<boolean>} true if the dialog was opened, false otherwise
+     * @returns {Promise<boolean>} true when a step is shown
      */
-    async maybePromptLightningAddress(wallet) {
+    async offerLightningAddress(wallet) {
       if (!wallet) return false;
-
-      // Build a throwaway provider instance pinned to the wallet we just added.
-      // We don't use the store-managed connection because the dialog's lifecycle
-      // is self-contained and we want to keep these API calls isolated.
-      const provider = new LNBitsWalletProvider(wallet.id, {
+      // A provider of its own, pinned to the wallet just added, so these
+      // calls stay out of the store-managed connection.
+      this.addressProvider = new LNBitsWalletProvider(wallet.id, {
         name: wallet.name,
         serverUrl: wallet.connectionData.serverUrl,
         walletId: wallet.connectionData.walletId,
         adminKey: wallet.connectionData.adminKey,
       });
-
-      const available = await provider.checkLnurlpAvailable();
-      if (!available) return false;
-
-      let existing = [];
-      try {
-        existing = await provider.listLightningAddresses();
-      } catch (e) {
-        // Extension present but listing failed — proceed with empty list so
-        // the user can still create one. Don't block the flow on a non-fatal error.
-        console.warn('Failed to list existing lightning addresses:', e);
-      }
-
-      const domain = new URL(wallet.connectionData.serverUrl).hostname;
-
-      this.showLoadingScreen = false;
-      this.addressPrompt = {
-        visible: true,
+      this.address = {
         walletId: wallet.id,
-        domain,
-        existingAddresses: existing,
-        // Suggest a username derived from the wallet name (lowercase, alphanumeric).
-        // The dialog sanitises this further before using it.
-        defaultUsername: wallet.name || '',
-        // The dialog invokes this when the user clicks "Create address".
-        // Bound here so the provider instance stays in closure. `options`
-        // carries an optional LUD-09 successText (success_text) for the link.
-        createAddress: (username, options = {}) =>
-          provider.createLightningAddress({ username, successText: options.successText }),
+        domain: new URL(wallet.connectionData.serverUrl).hostname,
+        existing: [],
       };
+
+      const status = await this.addressProvider.lnurlpStatus();
+      if (status === 'unknown') return false;
+      this.showLoadingScreen = false;
+      if (status === 'off') this.step = 'paylinks';
+      else await this.openAddressStep();
       return true;
+    },
+
+    /** Existing addresses first: if the wallet has some, the step offers them. */
+    async openAddressStep() {
+      try {
+        this.address.existing = await this.addressProvider.listLightningAddresses();
+      } catch (e) {
+        // Listing failed while Pay Links answered: creating still works.
+        console.warn('Failed to list existing lightning addresses:', e);
+        this.address.existing = [];
+      }
+      this.step = 'address';
+    },
+
+    createLightningAddress(username, options = {}) {
+      return this.addressProvider.createLightningAddress({ username, successText: options.successText });
+    },
+
+    checkPayLinks() {
+      return this.addressProvider.lnurlpStatus();
     },
 
     async onLightningAddressConfirm({ address }) {
       try {
-        await this.setWalletLightningAddress(this.addressPrompt.walletId, address);
+        await this.setWalletLightningAddress(this.address.walletId, address);
       } catch (e) {
-        // Persisting the address is a local-only op; failure here is extremely
-        // unlikely but we don't want to strand the user. Notify and move on.
+        // A local-only write; unlikely to fail, but never strand the person.
         console.error('Failed to save lightning address locally:', e);
         this.$q.notify({
           type: 'warning',
           message: this.$t('Address created but not saved locally'),
           caption: this.$t('You can set it again from Settings.'),
         });
-      } finally {
-        this.resetAddressPrompt();
-        this.goToSuccess();
       }
-    },
-
-    onLightningAddressSkip() {
-      this.resetAddressPrompt();
       this.goToSuccess();
-    },
-
-    resetAddressPrompt() {
-      this.addressPrompt = {
-        visible: false,
-        walletId: null,
-        domain: '',
-        existingAddresses: [],
-        defaultUsername: '',
-        createAddress: null,
-      };
     },
 
     async openScanner() {
@@ -912,11 +830,6 @@ export default {
   color: var(--text-secondary);
 }
 
-/* Name-dialog hint keeps its muted colour in dark mode */
-.view_title_dark {
-  color: #B0B0B0;
-}
-
 /* Error Message */
 .error-message {
   color: #FF4B4B;
@@ -1066,99 +979,6 @@ body.body--light .scan-progress-divider {
   font-weight: 500;
 }
 
-/* Dialog Styling */
-.name-dialog {
-  width: 100%;
-  max-width: 400px;
-  border-radius: 24px;
-}
-
-.dialog-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 1.5rem;
-  border-bottom: 1px solid;
-  border-bottom-color: #2A342A;
-}
-
-.close-btn {
-  width: 32px;
-  height: 32px;
-}
-
-.dialog-content {
-  padding: 1.5rem;
-}
-
-/* Wallet Preview */
-.wallet-preview {
-  padding: 1rem;
-  border-radius: 12px;
-}
-
-.preview-dark {
-  background: #1A1A1A;
-}
-
-.preview-light {
-  background: var(--bg-input);
-}
-
-.preview-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 0.25rem 0;
-}
-
-.preview-label {
-  font-family: 'Manrope', sans-serif;
-  font-size: 13px;
-  color: #888;
-}
-
-.preview-value {
-  font-family: 'Manrope', sans-serif;
-  font-size: 13px;
-  font-weight: 500;
-}
-
-.preview-id {
-  font-family: var(--font-mono);
-  font-size: 11px;
-  max-width: 180px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.input-hint {
-  font-family: 'Manrope', sans-serif;
-  font-size: 12px;
-  text-align: center;
-  margin-top: 0.5rem;
-}
-
-.dialog-actions {
-  padding: 1rem 1.5rem 1.5rem;
-  gap: 0.75rem;
-}
-
-.cancel-action-btn {
-  font-family: 'Manrope', sans-serif;
-  font-size: 14px;
-  font-weight: 500;
-}
-
-.continue-action-btn {
-  height: 40px;
-  border-radius: 24px;
-  font-family: 'Manrope', sans-serif;
-  font-size: 14px;
-  font-weight: 400;
-  padding: 0 1.5rem;
-}
-
 /* Responsive Design */
 @media (max-width: 480px) {
   .qr-scanner-container {
@@ -1168,11 +988,6 @@ body.body--light .scan-progress-divider {
   .scanning-frame {
     width: 180px;
     height: 180px;
-  }
-
-  .name-dialog {
-    max-width: 350px;
-    margin: 1rem;
   }
 }
 </style>

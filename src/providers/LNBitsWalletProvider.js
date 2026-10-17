@@ -33,6 +33,7 @@ const LN_ADDRESS_DEFAULTS = Object.freeze({
 });
 
 import { WalletProvider } from './WalletProvider';
+import { payLinksStatusOf } from '../utils/lnbitsAddress.js';
 import { SUCCESS_ACTION_MAX_CHARS } from '../utils/successAction.js';
 
 export class LNBitsWalletProvider extends WalletProvider {
@@ -510,19 +511,26 @@ export class LNBitsWalletProvider extends WalletProvider {
   // ==========================================
 
   /**
-   * Check whether the lnurlp extension is installed and reachable on this server.
-   * Used to decide whether it's worth prompting the user to add a lightning address.
+   * Is the lnurlp extension ("Pay Links" in LNbits) usable for this wallet?
    *
-   * @returns {Promise<boolean>} true if the extension responds, false otherwise
+   * - 'available' — the extension answered.
+   * - 'off'       — the server answered that it is not there: 404 when it is
+   *                 not installed, 403 when it is installed but not enabled
+   *                 for this account. Someone can fix that in LNbits.
+   * - 'unknown'   — anything else (no network, server error, key refused).
+   *                 That says nothing about the extension, so callers must
+   *                 not tell the user it is off.
+   *
+   * A passive capability probe: never throws.
+   *
+   * @returns {Promise<'available'|'off'|'unknown'>}
    */
-  async checkLnurlpAvailable() {
+  async lnurlpStatus() {
     try {
       await this._apiRequest('/lnurlp/api/v1/links?all_wallets=false');
-      return true;
+      return 'available';
     } catch (error) {
-      // Any failure (extension missing, 404, network, auth) → treat as unavailable.
-      // We intentionally don't surface the error: this is a passive capability probe.
-      return false;
+      return payLinksStatusOf(error);
     }
   }
 
@@ -540,7 +548,7 @@ export class LNBitsWalletProvider extends WalletProvider {
     try {
       links = await this._apiRequest('/lnurlp/api/v1/links?all_wallets=false');
     } catch (error) {
-      // Caller should have already called checkLnurlpAvailable; but be defensive.
+      // Caller should have already called lnurlpStatus; but be defensive.
       return [];
     }
 

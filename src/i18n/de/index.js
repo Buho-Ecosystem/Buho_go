@@ -5,6 +5,7 @@ import backup from './backup.js';
 import exit from './exit.js';
 import wallets from './wallets.js';
 import identities from './identities.js';
+import lnbits from './lnbits.js';
 import nwc from './nwc.js';
 export default {
   ...requests,
@@ -53,6 +54,7 @@ export default {
   ...exit,
   ...wallets,
   ...identities,
+  ...lnbits,
   ...nwc,
   // Spend: Bitrefill door
   "Gift cards, mobile top-ups and more": "Geschenkkarten, Handy-Guthaben und mehr",
@@ -262,8 +264,6 @@ export default {
   "Receipt": "Beleg",
   "Open link": "Link öffnen",
   "Could not decrypt the message": "Nachricht konnte nicht entschlüsselt werden",
-  "Thank-you message (optional)": "Dankesnachricht (optional)",
-  "Shown to anyone who pays this address, right after they pay.": "Wird jedem angezeigt, der an diese Adresse zahlt, direkt nach der Zahlung.",
   "Tip the seller": "Dem Verkäufer Trinkgeld geben",
   "Browse and order on the seller's Nostr market.": "Stöbere und bestelle auf dem Nostr-Markt des Verkäufers.",
   "Nostr market": "Nostr-Markt",
@@ -808,17 +808,9 @@ export default {
   "Hidden again. Tap Show words to reveal.": "Wieder verborgen. Tippe auf Wörter anzeigen, um sie aufzudecken.",
   // Identity / Lightning address
   "Not set up yet": "Noch nicht eingerichtet",
-  "Get a Lightning Address": "Hol dir eine Lightning-Adresse",
-  "A simple name like email, so anyone can send you sats.": "Ein einfacher Name wie eine E-Mail, damit dir jeder Sats senden kann.",
-  "Pick a short name. You can change it later in your LNbits wallet.": "Wähle einen kurzen Namen. Du kannst ihn später in deinem LNbits-Wallet ändern.",
-  "Your address will be": "Deine Adresse wird sein",
   "yourname": "yourname",
   "Create a new one": "Eine neue erstellen",
-  "Back to my addresses": "Zurück zu meinen Adressen",
-  "We found addresses on your wallet. Pick one to use, or add another.": "Wir haben Adressen in deinem Wallet gefunden. Wähle eine aus oder füge eine weitere hinzu.",
   "Get one to receive payments by name": "Hol dir eine, um Zahlungen über deinen Namen zu empfangen",
-  "Not supported by this LNbits server": "Von diesem LNbits-Server nicht unterstützt",
-  "Lightning Address not supported": "Lightning-Adresse nicht unterstützt",
   "Checking server…": "Server wird geprüft…",
   "Lightning address created": "Lightning-Adresse erstellt",
   "Lightning address updated": "Lightning-Adresse aktualisiert",

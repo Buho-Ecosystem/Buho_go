@@ -69,6 +69,16 @@
 
     <IdentityRestoreDialog v-model="showRestoreDialog" @restored="onIdentityRestored" />
 
+    <!-- The emergency exit kit and the exit itself: their one home, next
+         to the recovery words they depend on. -->
+    <ExitKitSheet
+      v-model="showKitSheet"
+      @how="openKitAction('how')"
+      @cloud="openKitAction('cloud')"
+      @hide="onKitHidden"
+    />
+    <HowExitWorksSheet v-model="showHowExit" />
+
     <SettingsHubNav />
   </q-page>
 </template>
@@ -79,6 +89,8 @@ import BackupChoices from '../components/BackupChoices.vue';
 import BackupKeyring from '../components/BackupKeyring.vue';
 import BackupSubjectIcon from '../components/BackupSubjectIcon.vue';
 import CloudBackupSheet from '../components/CloudBackupSheet.vue';
+import ExitKitSheet from '../components/exit/ExitKitSheet.vue';
+import HowExitWorksSheet from '../components/exit/HowExitWorksSheet.vue';
 import IdentityRestoreDialog from '../components/IdentityRestoreDialog.vue';
 import RecoveryPhraseDialog from '../components/RecoveryPhraseDialog.vue';
 import IdentityGroup from '../components/identity/IdentityGroup.vue';
@@ -97,8 +109,9 @@ import { useAddressBookStore } from '../stores/addressBook';
  * lands while words are still unchecked. The rows are the whole split:
  * tapping Bitcoin or Identity starts that recovery flow directly, and Done
  * lands back here with the row checked. The page also owns the optional
- * Drive copy and the restore chooser, so Settings and Profile carry no
- * backup entries of their own.
+ * Drive copy, the restore chooser and the Spark emergency exit kit, so
+ * Settings and Profile carry no backup entries of their own.
+ * `?open=exit-kit` opens the kit (the Home help sheet links here).
  */
 export default {
   name: 'SecurityPage',
@@ -109,6 +122,8 @@ export default {
     BackupKeyring,
     BackupSubjectIcon,
     CloudBackupSheet,
+    ExitKitSheet,
+    HowExitWorksSheet,
     IdentityRestoreDialog,
     RecoveryPhraseDialog,
     IdentityGroup,
@@ -133,6 +148,9 @@ export default {
       showRestoreChoice: false,
       pendingRestore: null,
       showRestoreDialog: false,
+      showKitSheet: false,
+      showHowExit: false,
+      pendingKitAction: null,
     };
   },
 
@@ -141,6 +159,11 @@ export default {
     // and a cold deep link arrives before either store has loaded.
     await this.identity.hydrate();
     await this.ensureWalletLoaded();
+    if (this.$route.query.open === 'exit-kit') {
+      // Opened once: Back from here must not open it again.
+      this.$router.replace({ query: { ...this.$route.query, open: undefined } });
+      this.showKitSheet = true;
+    }
   },
 
   methods: {
@@ -149,10 +172,25 @@ export default {
         this.openCloud('backup');
       } else if (choice.kind === 'restore') {
         this.showRestoreChoice = true;
+      } else if (choice.kind === 'exit-kit') {
+        this.showKitSheet = true;
       } else {
         this.selection = choice;
         this.showWords = true;
       }
+    },
+
+    openKitAction(action) {
+      this.pendingKitAction = action;
+      this.showKitSheet = false;
+    },
+
+    onKitHidden() {
+      // Hand off only after the sheet closes: one sheet at a time, focus intact.
+      const action = this.pendingKitAction;
+      this.pendingKitAction = null;
+      if (action === 'how') this.showHowExit = true;
+      else if (action === 'cloud') this.openCloud('backup');
     },
 
     openCloud(intent) {

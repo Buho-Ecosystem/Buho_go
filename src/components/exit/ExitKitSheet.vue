@@ -96,8 +96,9 @@ import { isCloudBackupPlatform } from '../../services/cloudStorage.js';
 /**
  * The receipt: per Spark wallet, when the kit was last checked, what could
  * leave, where copies live, and the door to the exit itself. Maintenance
- * details start collapsed; kit problems stay visible. Opened from
- * Settings → Advanced; it changes nothing on its own.
+ * details start collapsed; kit problems stay visible. Opened from the
+ * backup area under Security, its only home (#381); it changes nothing on
+ * its own.
  */
 export default {
   name: 'ExitKitSheet',

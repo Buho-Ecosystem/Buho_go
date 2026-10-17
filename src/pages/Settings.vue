@@ -157,14 +157,14 @@
           <!--
             Lightning Address row — always rendered for LNbits.
 
-            Four visual states, driven by `lnAddressRowState`:
-              • 'set'         — address attached; row opens the dialog
-                                in pick-mode for swap / replace.
-              • 'unsetReady'  — no address yet, server supports lnurlp;
-                                row opens dialog in create-or-pick mode.
-              • 'unsetBlocked' — lnurlp extension missing on this
-                                 server; informational, not interactive.
-              • 'probing'     — lnurlp availability not yet known.
+            States, driven by `lnAddressRowState`:
+              • 'set'         — address attached; opens the sheet to swap it.
+              • 'unsetReady'  — no address yet, Pay Links answers; opens
+                                the sheet to pick or create one.
+              • 'unsetBlocked' — the server says Pay Links is off; opens
+                                 the sheet that says who can turn it on.
+              • 'unknown'     — the server could not be asked; a tap asks again.
+              • 'probing'     — not asked yet.
           -->
           <SettingsRow
             icon="tabler:at"
@@ -177,7 +177,8 @@
             <template #caption>
               <template v-if="lnAddressRowState === 'set'">{{ activeWalletLightningAddress }}</template>
               <template v-else-if="lnAddressRowState === 'unsetReady'">{{ $t('Get one to receive payments by name') }}</template>
-              <template v-else-if="lnAddressRowState === 'unsetBlocked'">{{ $t('Not supported by this LNbits server') }}</template>
+              <template v-else-if="lnAddressRowState === 'unsetBlocked'"><span class="ln-address-dot" aria-hidden="true"></span>{{ $t('Needs Pay Links') }}</template>
+              <template v-else-if="lnAddressRowState === 'unknown'">{{ $t("Couldn't reach the server") }}</template>
               <template v-else><q-spinner size="12px" class="q-mr-xs" />{{ $t('Checking server…') }}</template>
             </template>
             <template v-if="lnAddressRowState === 'set'" #right>
@@ -232,21 +233,21 @@
       />
 
       <!--
-        Reusable lightning-address dialog. Always mounted (gated by its
-        own v-if) so the trigger row stays simple. Same component used
-        by LNBitsSetupPage during onboarding — the prop contract
-        decouples UI from data, so the caller owns the throwaway
-        provider, existing-addresses list, and persist step.
+        The LNbits wallet's Lightning address: the same steps as setup
+        (pick or create, or Pay Links is off), in one form sheet. This
+        page owns the provider, the existing-address list and the save.
       -->
-      <LNBitsLightningAddressDialog
-        v-if="lnAddressPrompt.visible"
-        v-model="lnAddressPrompt.visible"
-        :domain="lnAddressPrompt.domain"
-        :existing-addresses="lnAddressPrompt.existingAddresses"
-        :default-username="lnAddressPrompt.defaultUsername"
-        :create-address="lnAddressPrompt.createAddress"
+      <LNBitsAddressSheet
+        v-model="lnAddressSheet.visible"
+        :view="lnAddressSheet.view"
+        :server-url="lnAddressSheet.serverUrl"
+        :domain="lnAddressSheet.domain"
+        :existing-addresses="lnAddressSheet.existingAddresses"
+        :default-username="lnAddressSheet.defaultUsername"
+        :create-address="createLnbitsAddress"
+        :check-status="probeLnurlpForActiveWallet"
+        @available="showLnbitsAddressStep"
         @confirm="onLightningAddressConfirm"
-        @skip="onLightningAddressSkip"
       />
 
       <!-- Breez-engine Spark Lightning address: claim / copy / remove -->
@@ -690,13 +691,6 @@
         :default-expanded="$route.query.section === 'advanced'"
       >
         <SettingsRow
-          v-if="walletStore.sparkWallets.length"
-          icon="tabler:fire-extinguisher"
-          :label="$t('Emergency exit kit')"
-          :caption="$t('Move this wallet\'s money to plain Bitcoin without Spark\'s help.')"
-          @click="showKitSheet = true"
-        />
-        <SettingsRow
           icon="tabler:chart-line"
           :label="$t('Exchange Rate Source')"
           :caption="mempoolSourceLabel"
@@ -860,15 +854,6 @@
     </q-dialog>
 
     <TaxReportSheet v-model="showTaxReportSheet" />
-
-    <ExitKitSheet
-      v-model="showKitSheet"
-      @how="openKitAction('how')"
-      @cloud="openKitAction('cloud')"
-      @hide="onKitHidden"
-    />
-    <HowExitWorksSheet v-model="showHowExit" />
-    <CloudBackupSheet v-model="showKitCloudBackup" intent="backup" />
 
     <GetAppDialog v-model="showGetAppDialog" :message="getAppDialogMessage" />
 
@@ -2110,7 +2095,7 @@ import balanceUpdating from '../directives/balanceUpdating.js'
 import ArkadeLogo from '../components/ArkadeLogo.vue'
 import WalletBrandMark from '../components/WalletBrandMark.vue'
 import BiometricEnableDialog from '../components/BiometricEnableDialog.vue'
-import LNBitsLightningAddressDialog from '../components/LNBitsLightningAddressDialog.vue'
+import LNBitsAddressSheet from '../components/lnbits/LNBitsAddressSheet.vue'
 import { suggestedWalletName } from '../utils/nwcWallet.js'
 import { NWC_ERROR, nwcError } from '../utils/nwcErrors.js'
 import SparkLightningAddressSheet from '../components/SparkLightningAddressSheet.vue'
@@ -2122,9 +2107,6 @@ import MoveLightningAddressSheet from '../components/wallets/MoveLightningAddres
 import { removalCopy } from '../utils/walletRemoval.js'
 import GetAppDialog from '../components/GetAppDialog.vue'
 import TaxReportSheet from '../components/settings/TaxReportSheet.vue'
-import ExitKitSheet from '../components/exit/ExitKitSheet.vue'
-import HowExitWorksSheet from '../components/exit/HowExitWorksSheet.vue'
-import CloudBackupSheet from '../components/CloudBackupSheet.vue'
 import SettingsSection from '../components/settings/SettingsSection.vue'
 import SettingsRow from '../components/settings/SettingsRow.vue'
 import SettingsAttentionStrip from '../components/settings/SettingsAttentionStrip.vue'
@@ -2161,7 +2143,7 @@ export default {
     SparkSeedPhraseDialog,
     BiometricEnableDialog,
     KioskPinPad,
-    LNBitsLightningAddressDialog,
+    LNBitsAddressSheet,
     SparkLightningAddressSheet,
     InternalTransferModal,
     WalletDetailPanel,
@@ -2170,9 +2152,6 @@ export default {
     MoveLightningAddressSheet,
     GetAppDialog,
     TaxReportSheet,
-    ExitKitSheet,
-    HowExitWorksSheet,
-    CloudBackupSheet,
     SettingsSection,
     SettingsRow,
     SettingsAttentionStrip,
@@ -2185,10 +2164,6 @@ export default {
   data() {
     return {
       showWalletsDialog: false,
-      showKitSheet: false,
-      showHowExit: false,
-      showKitCloudBackup: false,
-      pendingKitAction: null,
       showSparkLnAddressSheet: false,
       showAddWalletDialog: false,
       // A wallet's details, pushed inside the Manage Wallets sheet.
@@ -2315,29 +2290,20 @@ export default {
 
       // ─── LNbits lightning address management ───────────────────────────
       //
-      // Cache of `lnurlp` extension availability, keyed by wallet id.
-      //   undefined → not yet probed
-      //   true      → probe succeeded; address row is interactive
-      //   false     → probe failed; row renders informational-only
-      //
-      // Keyed by wallet id (not by serverUrl) because two LNbits wallets
-      // can share a server but have separately disabled extensions in
-      // theory; cheap to over-probe.
-      lnurlpAvailability: {},
+      // Pay Links (lnurlp) status per wallet id, from provider.lnurlpStatus():
+      // 'available' | 'off' | 'unknown'; missing = not asked yet. Keyed by
+      // wallet, not server: Pay Links is switched on per LNbits account.
+      lnurlpStatus: {},
 
-      // Pre-populated by `openLightningAddressDialog()` and consumed by
-      // <LNBitsLightningAddressDialog>. Mirrors the structure used by
-      // LNBitsSetupPage so the dialog component sees an identical shape
-      // whether it's invoked from onboarding or from Settings.
-      lnAddressPrompt: {
+      // The Lightning address sheet (LNBitsAddressSheet).
+      lnAddressSheet: {
         visible: false,
+        view: 'address',
         walletId: null,
+        serverUrl: '',
         domain: '',
         existingAddresses: [],
         defaultUsername: '',
-        // Closure bound to a throwaway provider; receives a username and
-        // returns the freshly-created `{ address, id, username }`.
-        createAddress: null,
       },
 
       // Kiosk Mode
@@ -2564,20 +2530,16 @@ export default {
       if (this.activeWalletLightningAddress) return 'set';
       const walletId = this.activeWallet?.id;
       if (!walletId) return 'probing';
-      const available = this.lnurlpAvailability[walletId];
-      if (available === true) return 'unsetReady';
-      if (available === false) return 'unsetBlocked';
+      const status = this.lnurlpStatus[walletId];
+      if (status === 'available') return 'unsetReady';
+      if (status === 'off') return 'unsetBlocked';
+      if (status === 'unknown') return 'unknown';
       return 'probing';
     },
 
-    /**
-     * Row is interactive in every state except `unsetBlocked` (server
-     * doesn't support lnurlp) and the brief `probing` window. `set` is
-     * clickable so users can swap to a different address.
-     */
+    /** Every state leads somewhere except the brief wait for the first answer. */
     lnAddressRowClickable() {
-      return this.lnAddressRowState === 'set'
-        || this.lnAddressRowState === 'unsetReady';
+      return this.lnAddressRowState !== 'probing';
     },
 
     activeSparkBackedUp() {
@@ -3014,19 +2976,6 @@ export default {
     }
   },
   methods: {
-    openKitAction(action) {
-      this.pendingKitAction = action;
-      this.showKitSheet = false;
-    },
-
-    onKitHidden() {
-      // Hand off only after the dialog closes, preserving focus and one sheet at a time.
-      const action = this.pendingKitAction;
-      this.pendingKitAction = null;
-      if (action === 'how') this.showHowExit = true;
-      else if (action === 'cloud') this.showKitCloudBackup = true;
-    },
-
     ...mapActions(useWalletStore, [
       'initialize',
       'addWallet',
@@ -3234,95 +3183,83 @@ export default {
     },
 
     /**
-     * Probe the active LNbits wallet for `lnurlp` extension availability
-     * and cache the result. Idempotent: cached results short-circuit so
-     * navigation back-and-forth doesn't re-hit the server.
-     *
-     * Called from the watcher above. Safe to call when the active wallet
-     * is not LNbits — it's a no-op in that case.
+     * Ask the active LNbits wallet's server about Pay Links (lnurlp) once
+     * and cache the answer, so moving around Settings does not re-ask.
+     * No-op for other wallet types.
      */
     async maybeProbeLnurlpForActiveWallet() {
       const wallet = this.activeWallet;
-      if (!wallet || wallet.type !== 'lnbits') return;
-      // Already probed this wallet this session — keep the cached value.
-      if (Object.prototype.hasOwnProperty.call(this.lnurlpAvailability, wallet.id)) return;
+      if (!wallet || wallet.type !== 'lnbits' || this.lnurlpStatus[wallet.id]) return;
+      await this.probeLnurlpForActiveWallet();
+    },
 
+    /** Ask again, cache and return the answer ('available' | 'off' | 'unknown'). */
+    async probeLnurlpForActiveWallet() {
+      const wallet = this.activeWallet;
       const provider = this._buildActiveLNBitsProvider();
-      if (!provider) return;
-
-      let available = false;
-      try {
-        available = await provider.checkLnurlpAvailable();
-      } catch (err) {
-        // `checkLnurlpAvailable` swallows its own errors and returns
-        // false, but be belt-and-braces here in case the contract drifts.
-        console.warn('[settings] lnurlp probe failed:', err);
-        available = false;
-      }
-      // Reassign the whole map so Vue picks up the change.
-      this.lnurlpAvailability = { ...this.lnurlpAvailability, [wallet.id]: available };
+      if (!provider) return 'unknown';
+      const status = await provider.lnurlpStatus();
+      this.lnurlpStatus = { ...this.lnurlpStatus, [wallet.id]: status };
+      return status;
     },
 
     /**
-     * Open the lightning-address dialog. Handles both states uniformly:
-     *   • If the wallet already has an address, opens in pick-mode with
-     *     the server's existing addresses listed so the user can swap.
-     *   • If not, opens in create-mode (the dialog auto-detects based
-     *     on the existingAddresses array we pass in).
-     *
-     * Listing failures are non-fatal: the dialog still opens in create
-     * mode with an empty existing list so the user can still create.
+     * The Lightning Address row. Pay Links answering opens the address
+     * step (pick when addresses exist, else create); Pay Links off opens
+     * the step that says who can turn it on; a server that cannot be
+     * reached is asked once more, then said so.
      */
     async openLightningAddressDialog() {
       const wallet = this.activeWallet;
       if (!wallet || wallet.type !== 'lnbits') return;
 
-      const provider = this._buildActiveLNBitsProvider();
-      if (!provider) return;
-
-      // Re-probe lazily if we somehow didn't on mount (defensive — the
-      // watcher should have run by now, but it's free to be safe).
-      if (!Object.prototype.hasOwnProperty.call(this.lnurlpAvailability, wallet.id)) {
-        await this.maybeProbeLnurlpForActiveWallet();
-      }
-      if (this.lnurlpAvailability[wallet.id] === false) {
-        this.$q.notify({
-          type: 'warning',
-          message: this.$t('Lightning Address not supported'),
-          caption: this.$t('Not supported by this LNbits server'),
-          timeout: 4000,
-        });
+      let status = this.lnurlpStatus[wallet.id];
+      if (status !== 'available' && status !== 'off') status = await this.probeLnurlpForActiveWallet();
+      if (status === 'unknown') {
+        this.$q.notify({ type: 'warning', message: this.$t("Couldn't reach the server"), caption: this._lnbitsDomain(wallet), timeout: 3000 });
         return;
       }
 
-      let existing = [];
-      try {
-        existing = await provider.listLightningAddresses();
-      } catch (err) {
-        // Extension present but listing failed (transient server issue,
-        // auth quirk, etc.) — let the user proceed in create mode rather
-        // than block them at the row.
-        console.warn('[settings] listLightningAddresses failed:', err);
-      }
-
-      const domain = this.lnbitsServerDomain
-        || (wallet.connectionData?.serverUrl
-          ? this._safeHostname(wallet.connectionData.serverUrl)
-          : '');
-
-      this.lnAddressPrompt = {
-        visible: true,
+      this.lnAddressSheet = {
+        visible: false,
+        view: status === 'off' ? 'paylinks' : 'address',
         walletId: wallet.id,
-        domain,
-        existingAddresses: existing,
+        serverUrl: wallet.connectionData?.serverUrl || '',
+        domain: this._lnbitsDomain(wallet),
+        existingAddresses: [],
         defaultUsername: wallet.name || '',
-        // Closure keeps the provider instance alive for the dialog's
-        // lifecycle — see LNBitsSetupPage.maybePromptLightningAddress
-        // for the same pattern. `options` carries an optional LUD-09
-        // successText (success_text) for the new pay link.
-        createAddress: (username, options = {}) =>
-          provider.createLightningAddress({ username, successText: options.successText }),
       };
+      if (status === 'available') await this._loadLnbitsAddresses();
+      this.lnAddressSheet.visible = true;
+    },
+
+    /** Pay Links was turned on while the sheet was open: on to the address step. */
+    async showLnbitsAddressStep() {
+      this.lnurlpStatus = { ...this.lnurlpStatus, [this.lnAddressSheet.walletId]: 'available' };
+      await this._loadLnbitsAddresses();
+      this.lnAddressSheet.view = 'address';
+    },
+
+    async _loadLnbitsAddresses() {
+      const provider = this._buildActiveLNBitsProvider();
+      try {
+        this.lnAddressSheet.existingAddresses = provider ? await provider.listLightningAddresses() : [];
+      } catch (err) {
+        // Pay Links answered but listing failed: creating still works.
+        console.warn('[settings] listLightningAddresses failed:', err);
+        this.lnAddressSheet.existingAddresses = [];
+      }
+    },
+
+    createLnbitsAddress(username, options = {}) {
+      const provider = this._buildActiveLNBitsProvider();
+      if (!provider) return Promise.reject(new Error(this.$t('Could not create address.')));
+      return provider.createLightningAddress({ username, successText: options.successText });
+    },
+
+    _lnbitsDomain(wallet) {
+      return this.lnbitsServerDomain
+        || (wallet.connectionData?.serverUrl ? this._safeHostname(wallet.connectionData.serverUrl) : '');
     },
 
     /**
@@ -3335,8 +3272,7 @@ export default {
     },
 
     async onLightningAddressConfirm({ address, isNew }) {
-      const walletId = this.lnAddressPrompt.walletId;
-      this._resetLnAddressPrompt();
+      const walletId = this.lnAddressSheet.walletId;
       if (!walletId || !address) return;
 
       try {
@@ -3361,21 +3297,6 @@ export default {
           timeout: 5000,
         });
       }
-    },
-
-    onLightningAddressSkip() {
-      this._resetLnAddressPrompt();
-    },
-
-    _resetLnAddressPrompt() {
-      this.lnAddressPrompt = {
-        visible: false,
-        walletId: null,
-        domain: '',
-        existingAddresses: [],
-        defaultUsername: '',
-        createAddress: null,
-      };
     },
 
     async openCurrencyDialog() {
@@ -4456,6 +4377,17 @@ export default {
 </script>
 
 <style scoped>
+/* Pay Links is off on this LNbits server: an amber dot before the caption. */
+.ln-address-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-right: 6px;
+  border-radius: 50%;
+  background: #B7791F;
+  vertical-align: 1px;
+}
+
 .settings-page {
   min-height: 100vh;
   display: flex;
