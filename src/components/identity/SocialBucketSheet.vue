@@ -91,7 +91,12 @@
 
           <div v-else class="sb-no-wallet">
             <Icon icon="tabler:wallet-off" width="20" height="20" />
-            <span>{{ wallets.length ? $t('No wallet here can receive right now') : $t('No wallets available') }}</span>
+            <span v-if="!wallets.length">{{ $t('No wallets available') }}</span>
+            <!-- Say what to do: a grant missing in the wallet app stays missing. -->
+            <span v-else class="sb-no-wallet-copy">
+              {{ $t('No wallet here can receive') }}
+              <small>{{ $t('Allow receiving for this connection in your wallet app, or add a wallet that can.') }}</small>
+            </span>
           </div>
 
           <transition name="sb-wallet-list">
@@ -214,8 +219,9 @@ export default {
     },
 
     /**
-     * Every wallet, each marked by the store whether it can receive now
-     * (`canReceive`: an NWC connection without make_invoice cannot).
+     * The wallets a move can go to, each marked by the store whether it can
+     * receive (`canReceive`: an NWC connection without make_invoice cannot).
+     * Arkade is left out by the store while its Lightning is paused.
      */
     wallets() {
       return this.walletStore.getTransferableWallets();
@@ -280,13 +286,19 @@ export default {
   },
 
   watch: {
+    // A connection's grants can change while the sheet is open (a refresh
+    // reads them again): never keep a destination that can no longer receive.
+    receivingWallets(list) {
+      if (this.bucket.isSweeping || !this.selectedWalletId) return;
+      if (list.some((wallet) => wallet.id === this.selectedWalletId)) return;
+      this.selectedWalletId = this.defaultDestinationId();
+    },
+
     async modelValue(isOpen) {
       if (!isOpen) return;
       this.moveIssue = null;
       this.showWallets = false;
-      // The wallet in use when it can receive, else the first one that can.
-      const active = this.receivingWallets.find((wallet) => wallet.id === this.walletStore.activeWalletId);
-      this.selectedWalletId = (active || this.receivingWallets[0])?.id || null;
+      this.selectedWalletId = this.defaultDestinationId();
       // The balance is the reason this sheet exists, so it is refreshed on
       // every open rather than trusted from the last visit.
       await this.bucket.sync({ identityStore: this.identity });
@@ -302,6 +314,12 @@ export default {
       if (type === 'nwc') return 'tabler:plug-connected';
       if (type === 'lnbits') return 'tabler:server';
       return 'tabler:wallet';
+    },
+
+    /** The wallet in use when it can receive, else the first one that can. */
+    defaultDestinationId() {
+      const active = this.receivingWallets.find((wallet) => wallet.id === this.walletStore.activeWalletId);
+      return (active || this.receivingWallets[0])?.id || null;
     },
 
     selectWallet(walletId) {
@@ -502,6 +520,9 @@ export default {
   background: var(--bg-card);
   text-align: left;
 }
+.sb-no-wallet > :deep(svg) { flex: 0 0 auto; }
+.sb-no-wallet-copy { min-width: 0; font: 650 14px 'Manrope', sans-serif; color: var(--text-primary); }
+.sb-no-wallet-copy small { display: block; margin-top: 3px; color: var(--text-secondary); font-size: 12px; font-weight: 500; line-height: 1.4; }
 .sb-destination { cursor: pointer; }
 .sb-destination:disabled { cursor: default; opacity: 1; }
 .sb-destination:active:not(:disabled),

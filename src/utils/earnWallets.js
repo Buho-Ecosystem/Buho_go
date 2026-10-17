@@ -3,8 +3,12 @@
  *
  * Arkade receives Lightning through a reverse swap. Its incoming minimum is
  * higher than the reward program can pay, so it must never be offered or used
- * as a Learn & Earn payout destination.
+ * as a Learn & Earn payout destination. A payout is a Lightning receive, so
+ * a wallet must also be able to receive at all (walletCapabilities): an NWC
+ * connection whose wallet did not grant make_invoice cannot.
  */
+
+import { canWalletReceiveLightning } from './walletCapabilities.js';
 
 const UNSUPPORTED_EARN_PAYOUT_WALLET_TYPES = new Set(['arkade']);
 
@@ -19,7 +23,9 @@ function walletType(wallet) {
  * @returns {boolean}
  */
 export function isEarnPayoutWallet(wallet) {
-  return Boolean(wallet) && !UNSUPPORTED_EARN_PAYOUT_WALLET_TYPES.has(walletType(wallet));
+  return Boolean(wallet)
+    && !UNSUPPORTED_EARN_PAYOUT_WALLET_TYPES.has(walletType(wallet))
+    && canWalletReceiveLightning(wallet);
 }
 
 /**

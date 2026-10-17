@@ -109,6 +109,7 @@ test('wallet lists say what each wallet may do: receive-only and send-only conne
     { id: 'tips', type: 'nwc', name: 'Tips', nwcUrl: RECEIVE_URL, metadata: { methods: ['make_invoice', 'get_balance'] } },
     { id: 'hub', type: 'nwc', name: 'Hub', nwcUrl: RECEIVE_URL, metadata: { methods: ['pay_invoice', 'get_balance'] } },
     { id: 'old', type: 'nwc', name: 'Old', nwcUrl: RECEIVE_URL, metadata: {} },
+    { id: 'peek', type: 'nwc', name: 'Peek', nwcUrl: RECEIVE_URL, metadata: { methods: ['get_balance', 'list_transactions'] } },
     { id: 'ark', type: 'arkade', name: 'Ark', metadata: {} },
   ];
   for (const w of store.wallets) store.connectionStates[w.id] = { connected: true };
@@ -119,5 +120,6 @@ test('wallet lists say what each wallet may do: receive-only and send-only conne
     tips: [false, true, true],   // may not pay: never a source
     hub: [true, false, false],   // may not create invoices: never a destination
     old: [true, true, false],    // saved before grants were stored: as before
+    peek: [false, false, false], // read only: not "receive only", it cannot receive either
   }, 'Arkade stays out while its Lightning is paused');
 });

@@ -3725,15 +3725,18 @@ export const useWalletStore = defineStore('wallet', {
         const isConnected = this.connectionStates[wallet.id]?.connected;
         const balance = this.balances[wallet.id] || 0;
         // An NWC connection does only what its wallet granted (utils/nwcWallet).
-        const receiveOnly = !capabilitiesOf(wallet).send;
+        const sendAllowed = capabilitiesOf(wallet).send;
+        const canReceive = canWalletReceiveLightning(wallet);
 
         return {
           ...wallet,
           isConnected,
           balance,
-          receiveOnly,
-          canSend: isConnected && balance > 0 && !receiveOnly,
-          canReceive: canWalletReceiveLightning(wallet),
+          sendAllowed,
+          // May only receive: the reason a picker gives for not paying from it.
+          receiveOnly: !sendAllowed && canReceive,
+          canSend: isConnected && balance > 0 && sendAllowed,
+          canReceive,
         };
       })
       // Internal transfers ride Lightning invoices between the two wallets
@@ -3746,22 +3749,11 @@ export const useWalletStore = defineStore('wallet', {
     },
 
     /**
-     * Ensure a wallet is connected for transfer.
-     *
-     * Delegates LNBits to `ensureLNBitsConnected` so every LNBits send/transfer
-     * path uses one source of truth for connect/reconnect. Spark and NWC keep
-     * their own connect calls because their connection models differ (Spark
-     * needs a device-key auto-connect; NWC tracks connection in a side
-     * `nwcInstance` rather than on the provider).
-     *
-     * @param {string} walletId - Wallet ID to connect
-     * @returns {Promise<Object>} Provider instance
-     */
-    /**
      * Create a bolt11 invoice on one specific wallet.
      *
      * The one way BuhoGO asks one of its wallets to receive: the Social
-     * Bucket and internal transfers both come through here, so the
+     * Bucket, internal transfers and Learn & Earn payouts all come through
+     * here, so the
      * per-backend differences live in one place. NWC speaks WebLN
      * (makeInvoice, memo in `defaultMemo`; the SDK ignores `description`),
      * everything else speaks createInvoice. A connection whose wallet did
@@ -3800,6 +3792,18 @@ export const useWalletStore = defineStore('wallet', {
       return invoice;
     },
 
+    /**
+     * Ensure a wallet is connected for transfer.
+     *
+     * Delegates LNBits to `ensureLNBitsConnected` so every LNBits send/transfer
+     * path uses one source of truth for connect/reconnect. Spark and NWC keep
+     * their own connect calls because their connection models differ (Spark
+     * needs a device-key auto-connect; NWC tracks connection in a side
+     * `nwcInstance` rather than on the provider).
+     *
+     * @param {string} walletId - Wallet ID to connect
+     * @returns {Promise<Object>} Provider instance
+     */
     async ensureWalletConnectedForTransfer(walletId) {
       const wallet = this.wallets.find(w => w.id === walletId);
       if (!wallet) {

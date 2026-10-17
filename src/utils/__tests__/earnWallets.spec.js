@@ -39,5 +39,13 @@ test('a saved Arkade selection is rejected instead of redirected', () => {
   assert.equal(findEarnPayoutWallet(wallets, 'spark')?.id, 'spark');
 });
 
+test('a connection that may not create invoices is never a payout destination', () => {
+  const sendOnly = { id: 'hub', type: 'nwc', metadata: { methods: ['pay_invoice', 'get_balance'] } };
+  const tips = { id: 'tips', type: 'nwc', metadata: { methods: ['make_invoice'] } };
+  assert.equal(isEarnPayoutWallet(sendOnly), false);
+  assert.equal(isEarnPayoutWallet(tips), true);
+  assert.equal(findEarnPayoutWallet([sendOnly, tips], 'hub'), null, 'no silent switch to another wallet');
+});
+
 console.log(`\n${passed} passed, ${failed} failed`);
 if (failed) process.exit(1);

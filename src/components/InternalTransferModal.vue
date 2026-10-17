@@ -210,6 +210,7 @@
             type="button"
             class="picker-row"
             :class="{ selected: w.id === state.fromWallet?.id, disabled: !w.canSend }"
+            :disabled="!w.canSend"
             @click="pickFrom(w)"
           >
             <WalletAvatar :type="w.type" :wallet-id="w.id" />
@@ -219,7 +220,7 @@
             </div>
             <StatusDot :status="connStatus[w.id]" />
             <Icon v-if="w.id === state.fromWallet?.id" icon="tabler:check" width="18" height="18" class="check" />
-            <span v-else-if="!w.canSend" class="hint-text">{{ w.receiveOnly ? $t('Receive only') : $t('No balance') }}</span>
+            <span v-else-if="!w.canSend" class="hint-text">{{ sourceBlockedReason(w) }}</span>
           </button>
         </div>
       </q-card>
@@ -241,6 +242,7 @@
             type="button"
             class="picker-row"
             :class="{ selected: w.id === state.toWallet?.id, disabled: w.id === state.fromWallet?.id || !w.canReceive }"
+            :disabled="w.id === state.fromWallet?.id || !w.canReceive"
             @click="pickTo(w)"
           >
             <WalletAvatar :type="w.type" :wallet-id="w.id" />
@@ -412,7 +414,11 @@ const transferNote = computed(() => {
 
 const canProceed = computed(() => {
   if (state.isTransferring) return false;
-  if (state.currentStep === 1) return state.fromWallet && state.toWallet && state.fromWallet.id !== state.toWallet.id;
+  if (state.currentStep === 1) {
+    // Read the destination live: its connection's grants can change while open.
+    const to = wallets.value.find(w => w.id === state.toWallet?.id);
+    return Boolean(state.fromWallet && to?.canReceive && state.fromWallet.id !== to.id);
+  }
   if (state.currentStep === 2) return state.amount && parseInt(state.amount) > 0 && !state.amountError;
   return true;
 });
@@ -428,7 +434,9 @@ const fmt = (sats) => sats ? `${sats.toLocaleString()} sats` : '0 sats';
 async function init() {
   const preferred = wallets.value.find(w => w.id === (props.fromWalletId || store.activeWalletId));
   if (preferred?.canSend) state.fromWallet = preferred;
-  if (state.toWallet?.id === state.fromWallet?.id) state.toWallet = null;
+  // A destination kept from an earlier opening must still be able to receive.
+  const keptTo = wallets.value.find(w => w.id === state.toWallet?.id);
+  if (!keptTo?.canReceive || keptTo.id === state.fromWallet?.id) state.toWallet = null;
   await reconnectAll();
 }
 
@@ -448,6 +456,13 @@ async function reconnectAll() {
     }
   }));
   state.isReconnecting = false;
+}
+
+/** Why a wallet cannot be the source, in the row's words. */
+function sourceBlockedReason(w) {
+  if (w.receiveOnly) return t('Receive only');
+  if (!w.sendAllowed) return t("Can't send");
+  return t('No balance');
 }
 
 function pickFrom(w) {
@@ -1050,8 +1065,12 @@ watch(() => props.modelValue, (open) => { if (open) init(); });
 }
 .picker-row:hover { background: rgba(128,128,128,.06); }
 .picker-row.selected { background: rgba(21,222,114,.1); }
-.picker-row.disabled { opacity: .4; cursor: not-allowed; }
+/* Not choosable: the avatar and name step back, the reason stays readable. */
+.picker-row.disabled { cursor: not-allowed; }
 .picker-row.disabled:hover { background: transparent; }
+.picker-row.disabled .avatar,
+.picker-row.disabled .wallet-meta { opacity: .45; }
+.picker-row.disabled .hint-text { color: var(--c-text2); }
 .picker-row .wallet-meta { flex: 1; }
 .check { color: #15DE72; }
 .hint-text { font-size: 11px; color: var(--c-text3); }

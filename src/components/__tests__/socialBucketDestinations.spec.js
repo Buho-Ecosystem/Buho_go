@@ -72,3 +72,15 @@ test('with no wallet able to receive there is nothing to move to', async () => {
   assert.equal(vm.selectedWallet, null);
   assert.equal(vm.canMove, false);
 });
+
+test('a destination that stops receiving while the sheet is open is replaced, not kept', async () => {
+  const wallets = [{ ...spark }, { id: 'tips', type: 'nwc', name: 'Tips', balance: 0, canReceive: true }];
+  const vm = mount(wallets, { activeWalletId: 'spark' });
+  await sheet.watch.modelValue.call(vm, true);
+  assert.equal(vm.selectedWalletId, 'spark');
+  // A refresh reads the grants again: Spark stays, but say the chosen one lost receiving.
+  wallets[0].canReceive = false;
+  sheet.watch.receivingWallets.call(vm, vm.receivingWallets);
+  assert.equal(vm.selectedWalletId, 'tips');
+  assert.equal(vm.canMove, true);
+});

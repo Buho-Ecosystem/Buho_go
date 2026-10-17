@@ -1,6 +1,6 @@
 /**
  * walletCapabilities — the single source of truth for "can the active
- * wallet pay this destination?".
+ * wallet pay this destination?" and "can this wallet receive Lightning?".
  *
  * Every surface that gates a destination on the active wallet's rails
  * (Send sheet, confirm sheets, contact flows) answers through here, so
@@ -25,8 +25,12 @@
  * them, and the dedicated unsupported-BOLT12 dialog (wallet store)
  * owns that explanation.
  *
- * Pure and synchronous — no store imports, callers pass the active
- * wallet type — so it stays unit-testable under plain Node.
+ * Receiving (canWalletReceiveLightning) takes the wallet itself: an NWC
+ * connection receives only when its wallet granted make_invoice
+ * (utils/nwcWallet), which the type alone cannot say.
+ *
+ * Pure and synchronous — no store imports, callers pass the wallet type
+ * or the wallet — so it stays unit-testable under plain Node.
  */
 
 import { capabilitiesOf } from './nwcWallet.js'

@@ -2969,7 +2969,6 @@ export default {
   methods: {
     ...mapActions(useWalletStore, [
       'initialize',
-      'addWallet',
       'removeWallet',
       'updateWalletName',
       'setDefaultWallet',
