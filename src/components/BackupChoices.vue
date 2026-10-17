@@ -30,9 +30,19 @@
       {{ $t('For connected wallets, keep the recovery details from your wallet provider.') }}
     </p>
 
-    <!-- Quieter rows: the optional cloud copy and the way back for someone
-         who already has a backup. Neither changes whether words are checked. -->
+    <!-- Quieter rows: the emergency exit kit, the optional cloud copy and
+         the way back for someone who already has a backup. None of them
+         changes whether words are checked. The exit kit lives here and
+         nowhere else: it only works together with the recovery words. -->
     <div class="backup-choices-more">
+      <button v-if="sparkWallets.length" type="button" class="backup-choice backup-choice-quiet" data-audit="exit-kit-row" @click="$emit('select', { kind: 'exit-kit' })">
+        <span class="backup-choice-icon"><Icon icon="tabler:fire-extinguisher" width="26" height="26" :aria-hidden="true" /></span>
+        <span class="backup-choice-copy">
+          <strong>{{ $t('Emergency exit kit') }}</strong>
+          <span class="backup-choice-detail">{{ $t('Move this wallet\'s money to plain Bitcoin without Spark\'s help.') }}</span>
+        </span>
+        <Icon icon="tabler:chevron-right" width="18" height="18" class="backup-choice-chevron" :aria-hidden="true" />
+      </button>
       <button v-if="cloudAvailable" type="button" class="backup-choice backup-choice-quiet" @click="$emit('select', { kind: 'cloud' })">
         <span class="backup-choice-icon"><BackupKeyring :size="28" /></span>
         <span class="backup-choice-copy">
@@ -72,6 +82,7 @@ import WalletTypeChip from './WalletTypeChip.vue';
  * Emits `select` with one of these kinds:
  *   wallet | identity  - a set of recovery words, with `walletId`, `saved`
  *                        and the `mode` the recovery dialog should open in
+ *   exit-kit           - the Spark emergency exit kit (and the exit itself)
  *   cloud              - the optional Google Drive copy
  *   restore            - the person already has a backup and wants it back
  */

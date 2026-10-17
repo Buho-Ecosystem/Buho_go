@@ -100,15 +100,6 @@
          Send opens the same confirmation flow as an explicit paste. -->
     <ClipboardSuggestion :busy="clipboardResolving" @use="useClipboardDestination" />
 
-    <!-- The emergency exit door: shown only after Spark has been unreachable
-         for hours, never on a happy path. Dismissal lasts a day. -->
-    <ExitBanner
-      :visible="showExitBanner"
-      :outage="exitBannerOutage"
-      @open="openEmergencyExit"
-      @dismiss="dismissExitBanner"
-    />
-
     <!-- Backup Reminder Banner -->
     <!-- Paused: the persistent keyring is the home backup entry point.
     <BackupBanner
@@ -288,6 +279,13 @@
           <Icon icon="tabler:progress-check" width="13" height="13" />
           <span>{{ unspendableLabel }}</span>
         </div>
+
+        <!-- Why Spark cannot be reached, in one quiet line (#381). Never a
+             card, and never the emergency exit on Home. -->
+        <SparkStatusLine
+          v-if="walletStore.isActiveWalletSpark && !walletStore.isKioskRestricted"
+          :wallet-id="walletStore.activeWalletId"
+        />
       </div>
 
       <!--
@@ -819,9 +817,7 @@ import {useWaiting} from '../composables/useWaiting.js';
 import BatchSendModal from '../components/BatchSendModal.vue';
 import BackupBanner from '../components/BackupBanner.vue';
 import BackupShortcut from '../components/BackupShortcut.vue';
-import ExitBanner from '../components/exit/ExitBanner.vue';
-import { sparkHealth } from '../utils/sparkHealth.js';
-import { durationText as exitDurationText } from '../composables/useExitFormat.js';
+import SparkStatusLine from '../components/spark/SparkStatusLine.vue';
 import ClipboardSuggestion from '../components/ClipboardSuggestion.vue';
 import IdentityAuthDialog from '../components/IdentityAuthDialog.vue';
 import {useAutoWithdrawStore} from '../stores/autoWithdraw';
@@ -881,7 +877,7 @@ export default {
     HiddenAmount,
     BackupBanner,
     BackupShortcut,
-    ExitBanner,
+    SparkStatusLine,
     ClipboardSuggestion,
     IdentityAuthDialog,
     ContactAvatar,
@@ -918,9 +914,6 @@ export default {
       // Where a handed-over payment returns to when it is done or cancelled
       // (the contact chat); null: stay on the wallet page.
       payReturnTo: null,
-      // Emergency exit door state: re-evaluated on each balance tick.
-      exitHealthTick: 0,
-      exitBannerDismissedUntil: Number(localStorage.getItem('buhoGO_exit_banner_dismissed_until') || 0),
       // True only on a device where NFC is available + enabled — drives the
       // small "NFC ready" badge next to the logo.
       nfcReady: false,
@@ -1066,18 +1059,6 @@ export default {
     };
   },
   computed: {
-    showExitBanner() {
-      void this.exitHealthTick;
-      if (!this.walletStore.isActiveWalletSpark || this.walletStore.isKioskRestricted) return false;
-      if (Date.now() < this.exitBannerDismissedUntil) return false;
-      if (typeof navigator !== 'undefined' && navigator.onLine === false) return false;
-      return sparkHealth().isSustainedOutage(this.walletStore.activeWalletId);
-    },
-    exitBannerOutage() {
-      void this.exitHealthTick;
-      const ms = sparkHealth().unreachableFor(this.walletStore.activeWalletId);
-      return ms ? exitDurationText(ms, (key, params) => this.$t(key, params)) : '';
-    },
     menuButtonLabel() {
       if (!this.socialBucketStore.hasUnseenPayments) return this.$t('Menu');
       const count = this.socialBucketStore.paymentCount;
@@ -2369,14 +2350,6 @@ export default {
     }
   },
   methods: {
-    openEmergencyExit() {
-      this.$router.push(`/security/exit/${this.walletStore.activeWalletId}`);
-    },
-    dismissExitBanner() {
-      const until = Date.now() + 24 * 60 * 60 * 1000;
-      this.exitBannerDismissedUntil = until;
-      localStorage.setItem('buhoGO_exit_banner_dismissed_until', String(until));
-    },
     onAppLogoClick() {
       if (this.updateStore.stage) {
         this.updateStore.openSheet();
@@ -3250,7 +3223,6 @@ export default {
         if (this.walletStore.isActiveWalletSpark) {
           // The existing Spark lifecycle owns its periodic reads and events.
           if (!opts.preferCached) await this.walletStore.reconcileSpark([walletId], 'user');
-          this.exitHealthTick++;
         } else {
           await this.walletStore.refreshBalance(walletId);
         }

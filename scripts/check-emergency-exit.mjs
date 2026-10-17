@@ -112,16 +112,16 @@ try {
   await page.goto(`${base}/#/security`);
   await page.waitForFunction(() => !!window.__audit?.app?._instance, null, { timeout: 120000 });
   await page.getByText('Exit kit checked today', { exact: true }).first().waitFor();
-  assert.equal(await page.getByRole('button', { name: /^Emergency exit kit/ }).count(), 0);
-  await shot('security-kit-line');
+  await page.getByRole('button', { name: /^Emergency exit kit/ }).waitFor();
+  await shot('security-kit-row');
+  // The kit has one home, the backup area under Security (#381).
   await go('/settings');
   const advanced = page.getByRole('button', { name: 'Advanced', exact: true });
   await advanced.waitFor();
-  assert.equal(await advanced.getAttribute('aria-expanded'), 'false');
   await advanced.click();
-  await page.getByRole('button', { name: /^Emergency exit kit/ }).waitFor();
-  await advanced.scrollIntoViewIfNeeded();
-  await shot('settings-advanced');
+  await page.waitForTimeout(300);
+  assert.equal(await page.getByRole('button', { name: /^Emergency exit kit/ }).count(), 0, 'no second entry in Settings');
+  await go('/security');
   await page.getByRole('button', { name: /^Emergency exit kit/ }).click();
   await page.locator('.exit-kit-sheet').waitFor();
   assert.equal(await page.locator('.exit-kit-details[open]').count(), 0);
@@ -138,7 +138,7 @@ try {
   await shot('how-it-works');
   await page.getByRole('button', { name: 'Done', exact: true }).click();
   await page.locator('.exit-how-sheet').waitFor({ state: 'detached' });
-  console.log('✓ Settings → Advanced opens the kit and explainer; Security keeps its backup status');
+  console.log('✓ Security opens the kit and explainer; Settings has no second entry');
 
   await injectProvider();
   await page.getByRole('button', { name: /^Emergency exit kit/ }).click();
@@ -251,17 +251,35 @@ try {
   assert.equal(await exitRecord(), null);
   console.log('✓ an unsigned exit can be cancelled after a confirmation');
 
-  // Home: the door after a sustained outage, no progress chip while an exit runs.
+  // Home: a quiet status line, never the exit itself (#381). The old
+  // outage record is deleted on start, so it cannot raise anything.
   await page.evaluate(() => {
-    const now = Date.now();
-    localStorage.setItem('buhoGO_spark_health_v1', JSON.stringify({ 'spark-personal-1': { lastSuccessAt: now - 8 * 3600e3, firstFailureAt: now - 7 * 3600e3, failures: 3 } }));
+    localStorage.setItem('buhoGO_spark_health_v1', JSON.stringify({ 'spark-personal-1': { firstFailureAt: Date.now() - 33 * 3600e3, failures: 9 } }));
   });
+  await page.goto(`${base}/#/wallet`);
   await page.reload();
   await page.waitForFunction(() => !!window.__audit?.app?._instance, null, { timeout: 120000 });
-  await go('/wallet');
-  await page.getByText('Spark is not responding', { exact: true }).waitFor({ timeout: 60000 });
-  await page.getByText(/No answer from Spark for 7 hours/).waitFor();
-  await shot('home-banner');
+  await page.locator('.wallet-toolbar').waitFor({ timeout: 60000 });
+  await page.waitForTimeout(500);
+  assert.equal(await page.evaluate(() => localStorage.getItem('buhoGO_spark_health_v1')), null, 'old record deleted');
+  assert.equal(await page.locator('[data-audit="spark-status-line"]').count(), 0, 'nothing from saved state');
+  // Two verified Spark-down checks, minutes apart.
+  await page.evaluate(async () => {
+    const { sparkReachability, VERDICT } = await import('/src/utils/sparkReachability.js');
+    const realNow = Date.now;
+    Date.now = () => realNow() - 3 * 60e3;
+    sparkReachability().record(VERDICT.SPARK_DOWN);
+    Date.now = realNow;
+    sparkReachability().record(VERDICT.SPARK_DOWN);
+  });
+  await page.getByText("Spark can't be reached", { exact: true }).waitFor();
+  assert.equal(await page.getByRole('button', { name: /^Emergency exit/ }).count(), 0, 'no exit on Home');
+  await shot('home-status-line');
+  await page.locator('[data-audit="spark-status-line"]').click();
+  await page.getByText('Your money', { exact: true }).waitFor();
+  assert.equal(await page.locator('[data-audit="spark-status-exit"]').count(), 0, 'no exit in a short outage');
+  await shot('home-status-sheet');
+  await page.getByRole('button', { name: 'Done', exact: true }).click();
   // A consistent record: a signed chain whose tree is confirmed and whose refund waits on its timelock.
   chain.statuses.F2 = { confirmed: true, block_height: 900100 };
   chain.statuses.N2 = { confirmed: true, block_height: 900101 };
@@ -278,23 +296,23 @@ try {
     store.set({ v: 1, walletId: 'spark-personal-1', stage: 'unlock', createdAt: Date.now(), updatedAt: Date.now(), destination: { address: 'bc1qcr8te4kr609gcawutmrza0j4xv80jy8z306fyu' }, funding: { address: 'x', utxos: [], confirmedSat: 9000, requiredSat: 8500, shortfallSat: 0, confirmedAt: Date.now() }, quote: { recoverableValueSat: 89700, totalFeeSat: 8800, singleUtxoFundingSat: 8500, feeRateSatPerVbyte: 4, leafIds: [] }, triage: { recoverableSat: 89700, notWorthSat: 9900 }, built: { transactions, totalFeeSat: 8800, recoverableValueSat: 89700 }, statuses: { F2: { known: true, confirmed: true, blockHeight: 900100 }, N2: { known: true, confirmed: true, blockHeight: 900101 } }, tipHeight: 900103, unlock: { height: 901501, blocksLeft: 1397, estimatedAt: Date.now() + 14 * 86400e3 }, progress: { confirmed: 2, total: 4 } });
   });
   assert.equal(await page.locator('.exit-chip').count(), 0);
-  await page.getByRole('button', { name: 'Dismiss', exact: true }).click();
-  await page.getByText('Spark is not responding', { exact: true }).waitFor({ state: 'detached' });
+  // Spark answers again: the line leaves on its own, nothing to dismiss.
+  await page.evaluate(async () => {
+    const { sparkReachability, VERDICT } = await import('/src/utils/sparkReachability.js');
+    sparkReachability().record(VERDICT.ANSWERED);
+  });
+  await page.locator('[data-audit="spark-status-line"]').waitFor({ state: 'detached' });
   await shot('home-without-exit-chip');
-  await go('/settings?section=advanced');
+  await go('/security');
   await page.getByRole('button', { name: /^Emergency exit kit/ }).click();
   await page.locator('.exit-kit-sheet').getByRole('button', { name: /^Emergency exit\b/ }).first().click();
   await page.waitForFunction(() => location.hash.includes('/security/exit/spark-personal-1'));
   await page.getByText(/Unlocks around/).first().waitFor();
   await shot('exit-unlock-resumed');
-  console.log('✓ home has no exit chip; Settings → Advanced resumes the running exit');
+  console.log('✓ the status line leaves on its own; Security resumes the running exit');
 
-  await page.getByRole('button', { name: 'Settings', exact: true }).click();
-  await page.getByRole('button', { name: 'Advanced', exact: true }).waitFor();
-  assert.equal(await page.getByRole('button', { name: 'Advanced', exact: true }).getAttribute('aria-expanded'), 'true');
-  const kitBounds = await page.getByRole('button', { name: /^Emergency exit kit/ }).boundingBox();
-  assert.ok(kitBounds && kitBounds.y >= 0 && kitBounds.y + kitBounds.height < page.viewportSize().height - 100,
-    'return navigation brings the kit row into view above the bottom navigation');
+  await page.getByRole('button', { name: 'Security', exact: true }).click();
+  await page.getByRole('button', { name: /^Emergency exit kit/ }).waitFor();
   await page.getByRole('button', { name: /^Emergency exit kit/ }).click();
   await page.locator('.exit-kit-sheet').getByRole('button', { name: /^Emergency exit\b/ }).first().click();
   await page.getByText(/Unlocks around/).first().waitFor();
@@ -320,9 +338,9 @@ try {
   });
   await page.getByText(/Unlocks around/).first().waitFor();
   await shot('exit-unlock-dark');
-  await go('/settings?section=advanced');
+  await go('/security');
   await page.getByRole('button', { name: /^Emergency exit kit/ }).waitFor();
-  await shot('settings-advanced-dark');
+  await shot('security-dark');
   await page.getByRole('button', { name: /^Emergency exit kit/ }).click();
   await page.locator('.exit-kit-sheet').waitFor();
   await shot('kit-sheet-dark');
@@ -332,14 +350,14 @@ try {
   await shot('home-without-exit-chip-dark');
   console.log('✓ dark theme');
 
-  await go('/settings?section=advanced');
+  await go('/security');
   await page.getByRole('button', { name: /^Emergency exit kit/ }).waitFor();
   await page.evaluate(() => {
     const store = window.__audit.app.config.globalProperties.$pinia._s.get('wallet');
     store.wallets = store.wallets.filter(wallet => wallet.type !== 'spark');
   });
   await page.getByRole('button', { name: /^Emergency exit kit/ }).waitFor({ state: 'detached' });
-  console.log('✓ the Advanced entry is hidden without Spark wallets');
+  console.log('✓ the Security entry is hidden without Spark wallets');
 
   assert.deepEqual(errors, []);
   console.log(`Screenshots: ${output}`);

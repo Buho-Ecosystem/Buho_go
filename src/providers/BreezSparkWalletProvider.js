@@ -58,7 +58,7 @@ import {
   mergePendingDeposits,
   waitQuoteFromMature,
 } from '../utils/breezPayments.js';
-import { sparkHealth } from '../utils/sparkHealth.js';
+import { reportSparkAttempt } from '../services/sparkReachabilityCheck.js';
 import { counterpartyError } from '../utils/errorOrigin.js';
 import { classifyTransportFailure } from '../utils/userErrors.js';
 
@@ -465,9 +465,11 @@ export class BreezSparkWalletProvider extends WalletProvider {
    * - Concurrent callers on the same SDK instance share one sync.
    * - A sync that outlives its instance (rebuild, removal) rejects with
    *   BREEZ_SYNC_OBSOLETE instead of reporting success for the new one.
-   * - Spark health is recorded from this outcome only: a completed sync is
-   *   success; a failure while the phone is online is failure. A local
-   *   cache read never touches health.
+   * - Each attempt reports one outcome to the Spark reachability check
+   *   (#381), once, when it settles: Spark answered, or it did not. A
+   *   failure alone never marks Spark as down; the check then proves the
+   *   internet works and the operators fail before it does. Callers that
+   *   time out only ask for that check. A local cache read reports nothing.
    *
    * @returns {Promise<{ syncedAt:number, durationMs:number }>}
    */
@@ -503,16 +505,23 @@ export class BreezSparkWalletProvider extends WalletProvider {
       shared = { promise, startedAt };
       freshSyncs.set(sdk, shared);
       const entry = shared;
+      // Freshness and reachability belong to the instance that synced; a
+      // rebuilt or removed connection says nothing about Spark.
+      const current = () => this.sdk === sdk || breezSdk.peek?.(walletId)?.sdk === sdk;
       promise
         .then(
           ({ syncedAt }) => {
-            // Health and freshness belong to the instance that synced.
-            if (this.sdk === sdk || breezSdk.peek?.(walletId)?.sdk === sdk) {
-              lastNetworkSync.set(walletId, syncedAt);
-              sparkHealth().recordSuccess(walletId);
-            }
+            if (!current()) return;
+            lastNetworkSync.set(walletId, syncedAt);
+            reportSparkAttempt({ answered: true });
           },
-          () => {},
+          () => {
+            if (!current()) return;
+            const seen = network && before ? network.between(before, network.snapshot()) : null;
+            // Any real answer means Spark is there, even if the sync failed.
+            if (seen?.ok > 0) reportSparkAttempt({ answered: true });
+            else reportSparkAttempt({ answered: false, errored: (seen?.serverErrors || 0) > 0 });
+          },
         )
         .finally(() => {
           if (freshSyncs.get(sdk) === entry) freshSyncs.delete(sdk);
@@ -530,10 +539,8 @@ export class BreezSparkWalletProvider extends WalletProvider {
       if (this.sdk !== sdk) throw syncError('Spark sync finished for a replaced connection', 'BREEZ_SYNC_OBSOLETE');
       return outcome;
     } catch (error) {
-      if (error?.code !== 'BREEZ_SYNC_OBSOLETE'
-        && (typeof navigator === 'undefined' || navigator.onLine !== false)) {
-        sparkHealth().recordFailure(walletId);
-      }
+      // A slow sync proves nothing either way: ask for a check, record nothing.
+      if (error?.code === 'BREEZ_SYNC_TIMEOUT') reportSparkAttempt({ answered: false });
       throw error;
     } finally {
       if (timer) clearTimeout(timer);
@@ -2052,22 +2059,6 @@ export class BreezSparkWalletProvider extends WalletProvider {
   async importUnilateralExitState(exitState) {
     this._ensureConnected();
     await this.sdk.importUnilateralExitState({ exitState });
-  }
-
-  /**
-   * Reachability for the background monitor: a real network sync, so the
-   * emergency exit door's outage evidence (recorded inside syncNow) is never
-   * cleared by a local cache read. A phone that is itself offline records
-   * nothing. Never throws.
-   */
-  async probeReachability({ timeoutMs } = {}) {
-    if (!this.sdk || !this.isConnected) return false;
-    try {
-      await this.syncNow(timeoutMs ? { timeoutMs } : {});
-      return true;
-    } catch {
-      return false;
-    }
   }
 
   /** Local balance read, no sync: the number an offline quote should be compared against. */

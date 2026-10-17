@@ -12,7 +12,18 @@
  *
  * The wrapper never changes a request or a response; it only observes the
  * returned promise. It records no URLs, bodies or payloads.
+ *
+ * A response is not always an answer (#381): 5xx (an overloaded operator or
+ * a proxy's error page), 429 (rate limited) and 401 (key refused) mean
+ * Spark did not serve the request, so they are counted apart as server
+ * errors and never as evidence that Spark answered.
  */
+
+/** HTTP statuses that reached a server but got no service from it. */
+export function isServerError(status) {
+  const code = Number(status);
+  return code >= 500 || code === 429 || code === 401;
+}
 
 /** Spark operators and the Lightspark SSP the SDK talks to while syncing. */
 export function isSparkHost(host) {
@@ -23,7 +34,12 @@ export function isSparkHost(host) {
 }
 
 export function createSparkNetworkObserver({ isSpark = isSparkHost, now = () => Date.now() } = {}) {
-  const counters = { ok: 0, failed: 0, lastOkAt: null, lastFailedAt: null };
+  const counters = { ok: 0, failed: 0, serverErrors: 0, lastOkAt: null, lastFailedAt: null };
+
+  function between(before, after) {
+    const delta = (field) => (after?.[field] ?? 0) - (before?.[field] ?? 0);
+    return { ok: delta('ok'), failed: delta('failed'), serverErrors: delta('serverErrors') };
+  }
 
   function hostOf(input) {
     try {
@@ -42,13 +58,24 @@ export function createSparkNetworkObserver({ isSpark = isSparkHost, now = () => 
         const promise = fetchImpl.apply(this, arguments);
         if (isSpark(hostOf(input))) {
           promise.then(
-            () => { counters.ok += 1; counters.lastOkAt = now(); },
+            (response) => {
+              if (isServerError(response?.status)) {
+                counters.serverErrors += 1;
+                counters.lastFailedAt = now();
+              } else {
+                counters.ok += 1;
+                counters.lastOkAt = now();
+              }
+            },
             () => { counters.failed += 1; counters.lastFailedAt = now(); },
           );
         }
         return promise;
       };
       observed.__sparkObserved = true;
+      // Requests that must not count as Spark traffic (the reachability
+      // probes in utils/sparkOperators) go through the original.
+      observed.unobserved = fetchImpl;
       return observed;
     },
 
@@ -57,16 +84,18 @@ export function createSparkNetworkObserver({ isSpark = isSparkHost, now = () => 
     },
 
     /**
-     * Did Spark answer between two snapshots? Responses must outnumber
-     * transport failures (one flaky request in a healthy sync is not an
+     * Did Spark answer between two snapshots? Answers must outnumber
+     * transport failures and server errors (one flaky request in a healthy sync is not an
      * outage; offline, every request fails). No traffic at all is
      * "unknown", reported as false: an unverified sync is not fresh.
      */
     answeredBetween(before, after) {
-      const ok = (after?.ok ?? 0) - (before?.ok ?? 0);
-      const failed = (after?.failed ?? 0) - (before?.failed ?? 0);
-      return ok > 0 && failed < ok;
+      const { ok, failed, serverErrors } = between(before, after);
+      return ok > 0 && failed + serverErrors < ok;
     },
+
+    /** What happened between two snapshots: answers, transport failures, server errors. */
+    between,
 
     /** Spark answered recently and nothing failed since. */
     answeredRecently(windowMs = 30000) {

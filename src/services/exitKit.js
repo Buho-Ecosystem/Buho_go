@@ -281,13 +281,13 @@ export function exitKitService() {
   return instance;
 }
 
-/** A full app reset: every kit, ledger record and health entry goes too. */
+/** A full app reset: every kit, ledger record and the Spark reachability record go too. */
 export async function clearExitData() {
   const storage = (await import('../utils/kitStorage.js')).kitStorage();
   for (const key of await storage.keys().catch(() => [])) await storage.delete(key).catch(() => {});
   useExitKitStore().clear();
   (await import('../stores/emergencyExit.js')).useEmergencyExitStore().clear();
-  (await import('../utils/sparkHealth.js')).sparkHealth().clear();
+  (await import('../utils/sparkReachability.js')).sparkReachability().clear();
 }
 
 function lazyStorage() {

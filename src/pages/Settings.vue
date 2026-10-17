@@ -691,13 +691,6 @@
         :default-expanded="$route.query.section === 'advanced'"
       >
         <SettingsRow
-          v-if="walletStore.sparkWallets.length"
-          icon="tabler:fire-extinguisher"
-          :label="$t('Emergency exit kit')"
-          :caption="$t('Move this wallet\'s money to plain Bitcoin without Spark\'s help.')"
-          @click="showKitSheet = true"
-        />
-        <SettingsRow
           icon="tabler:chart-line"
           :label="$t('Exchange Rate Source')"
           :caption="mempoolSourceLabel"
@@ -861,15 +854,6 @@
     </q-dialog>
 
     <TaxReportSheet v-model="showTaxReportSheet" />
-
-    <ExitKitSheet
-      v-model="showKitSheet"
-      @how="openKitAction('how')"
-      @cloud="openKitAction('cloud')"
-      @hide="onKitHidden"
-    />
-    <HowExitWorksSheet v-model="showHowExit" />
-    <CloudBackupSheet v-model="showKitCloudBackup" intent="backup" />
 
     <GetAppDialog v-model="showGetAppDialog" :message="getAppDialogMessage" />
 
@@ -2119,9 +2103,6 @@ import MoveLightningAddressSheet from '../components/wallets/MoveLightningAddres
 import { removalCopy } from '../utils/walletRemoval.js'
 import GetAppDialog from '../components/GetAppDialog.vue'
 import TaxReportSheet from '../components/settings/TaxReportSheet.vue'
-import ExitKitSheet from '../components/exit/ExitKitSheet.vue'
-import HowExitWorksSheet from '../components/exit/HowExitWorksSheet.vue'
-import CloudBackupSheet from '../components/CloudBackupSheet.vue'
 import SettingsSection from '../components/settings/SettingsSection.vue'
 import SettingsRow from '../components/settings/SettingsRow.vue'
 import SettingsAttentionStrip from '../components/settings/SettingsAttentionStrip.vue'
@@ -2167,9 +2148,6 @@ export default {
     MoveLightningAddressSheet,
     GetAppDialog,
     TaxReportSheet,
-    ExitKitSheet,
-    HowExitWorksSheet,
-    CloudBackupSheet,
     SettingsSection,
     SettingsRow,
     SettingsAttentionStrip,
@@ -2182,10 +2160,6 @@ export default {
   data() {
     return {
       showWalletsDialog: false,
-      showKitSheet: false,
-      showHowExit: false,
-      showKitCloudBackup: false,
-      pendingKitAction: null,
       showSparkLnAddressSheet: false,
       showAddWalletDialog: false,
       // A wallet's details, pushed inside the Manage Wallets sheet.
@@ -3039,19 +3013,6 @@ export default {
     }
   },
   methods: {
-    openKitAction(action) {
-      this.pendingKitAction = action;
-      this.showKitSheet = false;
-    },
-
-    onKitHidden() {
-      // Hand off only after the dialog closes, preserving focus and one sheet at a time.
-      const action = this.pendingKitAction;
-      this.pendingKitAction = null;
-      if (action === 'how') this.showHowExit = true;
-      else if (action === 'cloud') this.showKitCloudBackup = true;
-    },
-
     ...mapActions(useWalletStore, [
       'initialize',
       'addWallet',
