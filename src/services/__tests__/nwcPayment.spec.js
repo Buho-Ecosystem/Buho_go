@@ -100,3 +100,21 @@ test('a limit raised in the wallet since it was last read lets the payment throu
   silent.client.getBudget = async () => { throw sdk('reply timeout', 'INTERNAL'); };
   await assert.rejects(payWithNwc(silent, 'lnbc1', { ...fast, limit: cached }), (e) => e.code === NWC_ERROR.LIMIT_TOO_LOW && e.remainingSats === 2400);
 });
+
+test('a lookup the wallet never answers is given up after the wait, then the next one is tried', async () => {
+  let calls = 0;
+  const w = {
+    sendPayment: async () => { throw sdk('reply timeout: event a', 'INTERNAL'); },
+    client: {
+      lookupInvoice: () => {
+        calls += 1;
+        // First lookup: silent forever. Second: the wallet's record says settled.
+        return calls === 1 ? new Promise(() => {}) : Promise.resolve({ state: 'settled', preimage: PREIMAGE });
+      },
+    },
+  };
+  const started = Date.now();
+  assert.deepEqual(await payWithNwc(w, 'lnbc1', { ...fast, lookupWait: 20 }), { preimage: PREIMAGE });
+  assert.equal(calls, 2);
+  assert.ok(Date.now() - started < 1000, 'not held by the silent lookup');
+});

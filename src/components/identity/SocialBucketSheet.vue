@@ -91,23 +91,32 @@
 
           <div v-else class="sb-no-wallet">
             <Icon icon="tabler:wallet-off" width="20" height="20" />
-            <span>{{ $t('No wallets available') }}</span>
+            <span v-if="!wallets.length">{{ $t('No wallets available') }}</span>
+            <!-- Say what to do: a grant missing in the wallet app stays missing. -->
+            <span v-else class="sb-no-wallet-copy">
+              {{ $t('No wallet here can receive') }}
+              <small>{{ $t('Allow receiving in your wallet app, or add a wallet that can.') }}</small>
+            </span>
           </div>
 
           <transition name="sb-wallet-list">
             <div v-if="showWallets && wallets.length > 1" class="sb-wallet-list">
+              <!-- A wallet that cannot receive stays in the list, dimmed, with
+                   the reason where its balance would be: people look for it. -->
               <button
                 v-for="wallet in wallets"
                 :key="wallet.id"
                 type="button"
                 class="sb-wallet-option"
-                :class="{ 'sb-wallet-option--selected': wallet.id === selectedWalletId }"
+                :class="{ 'sb-wallet-option--selected': wallet.id === selectedWalletId, 'sb-wallet-option--off': !wallet.canReceive }"
+                :disabled="!wallet.canReceive"
                 @click="selectWallet(wallet.id)"
               >
                 <span class="sb-wallet-icon"><Icon :icon="walletIcon(wallet.type)" width="18" height="18" /></span>
                 <span class="sb-wallet-copy">
                   <strong>{{ wallet.name }}</strong>
-                  <small>{{ formatSats(wallet.balance) }} {{ $t('sats') }}</small>
+                  <small v-if="wallet.canReceive">{{ formatSats(wallet.balance) }} {{ $t('sats') }}</small>
+                  <small v-else>{{ $t("Can't receive") }}</small>
                 </span>
                 <Icon v-if="wallet.id === selectedWalletId" icon="tabler:check" width="18" height="18" class="sb-option-check" />
               </button>
@@ -209,9 +218,17 @@ export default {
       set(v) { this.$emit('update:modelValue', v); },
     },
 
-    /** Every wallet can receive, so every wallet is a valid destination. */
+    /**
+     * The wallets a move can go to, each marked by the store whether it can
+     * receive (`canReceive`: an NWC connection without make_invoice cannot).
+     * Arkade is left out by the store while its Lightning is paused.
+     */
     wallets() {
       return this.walletStore.getTransferableWallets();
+    },
+
+    receivingWallets() {
+      return this.wallets.filter((wallet) => wallet.canReceive);
     },
 
     selectedWalletName() {
@@ -220,11 +237,11 @@ export default {
     },
 
     selectedWallet() {
-      return this.wallets.find((wallet) => wallet.id === this.selectedWalletId) || null;
+      return this.receivingWallets.find((wallet) => wallet.id === this.selectedWalletId) || null;
     },
 
     canMove() {
-      return this.bucket.canSweep && !!this.selectedWalletId;
+      return this.bucket.canSweep && !!this.selectedWallet;
     },
 
     moveButtonLabel() {
@@ -269,11 +286,20 @@ export default {
   },
 
   watch: {
+    // A connection's grants can change while the sheet is open (a refresh
+    // reads them again): never keep a destination that can no longer
+    // receive, and take one that has just become able when none was.
+    receivingWallets(list) {
+      if (this.bucket.isSweeping) return;
+      if (list.some((wallet) => wallet.id === this.selectedWalletId)) return;
+      this.selectedWalletId = this.defaultDestinationId();
+    },
+
     async modelValue(isOpen) {
       if (!isOpen) return;
       this.moveIssue = null;
       this.showWallets = false;
-      this.selectedWalletId = this.walletStore.activeWalletId || this.wallets[0]?.id || null;
+      this.selectedWalletId = this.defaultDestinationId();
       // The balance is the reason this sheet exists, so it is refreshed on
       // every open rather than trusted from the last visit.
       await this.bucket.sync({ identityStore: this.identity });
@@ -291,8 +317,15 @@ export default {
       return 'tabler:wallet';
     },
 
+    /** The wallet in use when it can receive, else the first one that can. */
+    defaultDestinationId() {
+      const active = this.receivingWallets.find((wallet) => wallet.id === this.walletStore.activeWalletId);
+      return (active || this.receivingWallets[0])?.id || null;
+    },
+
     selectWallet(walletId) {
       if (this.bucket.isSweeping) return;
+      if (!this.receivingWallets.some((wallet) => wallet.id === walletId)) return;
       this.selectedWalletId = walletId;
       this.showWallets = false;
       this.moveIssue = null;
@@ -488,6 +521,9 @@ export default {
   background: var(--bg-card);
   text-align: left;
 }
+.sb-no-wallet > :deep(svg) { flex: 0 0 auto; }
+.sb-no-wallet-copy { min-width: 0; font: 650 14px 'Manrope', sans-serif; color: var(--text-primary); }
+.sb-no-wallet-copy small { display: block; margin-top: 3px; color: var(--text-secondary); font-size: 12px; font-weight: 500; line-height: 1.4; }
 .sb-destination { cursor: pointer; }
 .sb-destination:disabled { cursor: default; opacity: 1; }
 .sb-destination:active:not(:disabled),
@@ -539,6 +575,11 @@ export default {
 .sb-wallet-option:last-child { border-bottom: 0; }
 .sb-wallet-option:active,
 .sb-wallet-option--selected { background: var(--brand-accent-soft); }
+/* Cannot receive: visible, not choosable; the reason replaces the balance. */
+.sb-wallet-option--off { cursor: default; }
+.sb-wallet-option--off:active { background: transparent; }
+.sb-wallet-option--off .sb-wallet-icon,
+.sb-wallet-option--off strong { opacity: .45; }
 .sb-wallet-option .sb-wallet-icon { width: 36px; height: 36px; flex-basis: 36px; }
 
 .sb-wallet-list-enter-active,

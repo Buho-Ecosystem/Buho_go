@@ -22,6 +22,8 @@ Every relay in the connection string is kept (`src/utils/nwcConnection.js`); ext
 - A connection without `get_balance` shows a dash and "Balance not shared"; its balance is never asked for.
 - `store.refreshNwcDetails()` asks the wallet again on every refresh: name, grants, Lightning address, spending limit, and whether it answered (`store.nwcStatus`). This also repairs wallets saved before these details were read correctly. The status never changes `connected`: a wallet on a phone can miss one 10 s question and still wake for a payment, so a single silence must not take it out of the wallet lists. Settings shows the status, offers Reconnect for a silent wallet, and only says "Reconnected" when the wallet answered.
 - A connection without `make_invoice` says so on Receive before asking the wallet.
+- A connection without `make_invoice` is never offered as a destination (Social Bucket, internal transfer), and one without `pay_invoice` never as a source: `store.getTransferableWallets()` marks `canReceive`, `canSend` and `receiveOnly` from `utils/walletCapabilities.canWalletReceiveLightning` and the grants.
+- `store.createInvoiceOnWallet()` is the one way BuhoGO asks its own wallets to receive (Social Bucket, internal transfer, Learn & Earn payouts). For NWC it uses the connection from `connectionStates` (NWC never has a `providers` entry) and sends the memo as `defaultMemo`, the only field the SDK reads.
 
 ## Paying: only on proof
 
@@ -39,7 +41,27 @@ Receiving polls gently (`NWC_POLLING` in `ReceiveModal.vue`): each lookup can wa
 
 `src/utils/nwcErrors.js` gives every NIP-47 error code a sentence and a next step (spending limit used up, not allowed, connection removed, rate limited, no answer, relay unreachable, not confirmed). `utils/userErrors.translateErrorCode` asks it first, so every error surface shows the same words. Only errors carrying the SDK's NWC codes are read by message, so an unrelated timeout is never taken for an NWC one.
 
+## SDK
+
+`@getalby/sdk` 7.0.0. `utils/nwcErrors` reads its transport failures by class, code and message; checked against the real SDK with a stand-in relay:
+
+| What happened | SDK error | BuhoGO reads it as |
+|---|---|---|
+| Relay socket never opens (4.4 s) | `Nip47NetworkError` "Failed to connect to …", code `OTHER` | relay failure, nothing sent |
+| No wallet behind the relay | `Error` "no info event (kind 13194)…", no code | no answer, nothing sent |
+| Event sent, relay never acknowledged it, refused it, or the socket dropped at publish | `Nip47PublishError` "failed to publish: …" or `Nip47PublishTimeoutError`, code `INTERNAL` | unknown outcome: the SDK's message cannot tell these apart, and in the first the wallet may have the request |
+| Request delivered, no reply | `Nip47ReplyTimeoutError` "reply timeout…", code `INTERNAL` | unknown outcome |
+
+Reply timeouts: `get_info`, `get_balance`, `get_budget` and `list_transactions` wait 10 s; `pay_invoice`, `make_invoice` and `lookup_invoice` wait 60 s. Requests carry no `expiration` tag (also not in 8).
+
+Not yet on 8 (#390). 8.0.3, the latest release, and upstream `master`:
+- connect to a relay without a timeout (`_checkConnected` calls `ensureRelay` with no `connectionTimeout`): a relay that accepts the TCP connection but never completes the WebSocket handshake makes every request wait forever, where 7 fails after 4.4 s;
+- reject a connection secret or wallet key in upper-case hex, which `utils/nwcConnection` accepts and stores as given, so saved wallets would stop connecting.
+
+Upgrade once the first is fixed upstream, after normalizing stored hex to lower case.
+
 ## Checks
 
-- Unit: `nwcConnection`, `nwcWallet`, `nwcErrors`, `nwcPayment`, `nwcProbe`, plus the paying-wallet and store specs.
+- Unit: `nwcConnection`, `nwcWallet`, `nwcErrors` (including the SDK's own error classes), `nwcPayment`, `nwcProbe`, `nwcWalletStore`, `nwcWalletProvider`, plus the paying-wallet, Social Bucket and Learn & Earn wallet specs.
 - Browser: `node scripts/check-nwc-connect.mjs` against `pnpm dev --port 9031` (or `NWC_BASE_URL`): every connect step with a stand-in wallet, the Settings details, Home with a receive-only connection, dark mode and German at 320 px.
+- Browser: `node scripts/check-nwc-receiving.mjs`: the Social Bucket destinations and the internal-transfer pickers with a send-only and a receive-only connection.

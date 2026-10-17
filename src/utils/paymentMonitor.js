@@ -273,7 +273,7 @@ export function createPaymentMonitor(config = {}) {
 export function checkNWCPaymentStatus(record) {
   if (!record) return false;
 
-  // Alby SDK v7 uses 'state' field with lowercase values
+  // NIP-47 transactions carry a lowercase 'state'
   if (record.state === 'settled') return true;
   if (record.state === 'SETTLED') return true;
 

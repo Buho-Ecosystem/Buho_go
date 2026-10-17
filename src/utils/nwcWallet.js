@@ -30,6 +30,17 @@ export function nip47Methods(methods) {
 }
 
 /**
+ * The SDK's WebLN getInfo() answers a failed get_info with exactly
+ * ['sendPayment'] instead of an error, and earlier versions of BuhoGO saved
+ * whatever it returned. That list says nothing about the grants (a real
+ * pay-only connection saved then looks the same), so it counts as unknown
+ * until the wallet answers again (store.refreshNwcDetails).
+ */
+function isSdkFallback(methods) {
+  return Array.isArray(methods) && methods.length === 1 && methods[0] === 'sendPayment';
+}
+
+/**
  * What a connection can do. When the wallet never said (wallets saved
  * before methods were stored), everything is assumed, as before: a guess
  * must never lock someone out of their own money.
@@ -38,7 +49,7 @@ export function nip47Methods(methods) {
  * @returns {{ known: boolean, send: boolean, receive: boolean, balance: boolean, history: boolean, limit: boolean }}
  */
 export function nwcCapabilities(methods) {
-  const list = nip47Methods(methods);
+  const list = isSdkFallback(methods) ? [] : nip47Methods(methods);
   if (!list.length) return { known: false, send: true, receive: true, balance: true, history: true, limit: false };
   const has = (m) => list.includes(m);
   return {

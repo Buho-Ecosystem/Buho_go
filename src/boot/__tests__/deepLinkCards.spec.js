@@ -26,6 +26,7 @@ function harness({ activeWallet = null, kiosk = false, launchUrl = null } = {}) 
   const walletStore = { activeWallet, kioskEnabled: kiosk, kioskOwnerAccess: false, pendingDeepLink: null };
   const dependencies = {
     '../services/kioskPaymentIntake.js': kioskIntake,
+    './i18n': { i18n: { global: { t: (key) => `t:${key}` } } },
     'quasar/wrappers': { boot: (callback) => callback },
     quasar: { Notify: { create: (n) => notices.push(n) } },
     '@capacitor/core': { Capacitor: { isNativePlatform: () => true } },
@@ -116,4 +117,16 @@ test('kiosk mode still blocks card links', async () => {
   await h.start();
   h.open(`nostr:${NPUB}`);
   assert.equal(h.pushes.length, 0);
+});
+
+test('what a link cannot do is said in the person\'s language', async () => {
+  const unknown = harness({ activeWallet: { id: 'w' } });
+  await unknown.start();
+  unknown.open('ftp://example.com/file');
+  assert.deepEqual(unknown.notices.map((n) => n.message), ["t:BuhoGO can't open this link"]);
+
+  const noWallet = harness();
+  await noWallet.start();
+  noWallet.open('lightning:maria@mybuho.de');
+  assert.deepEqual(noWallet.notices.map((n) => [n.message, n.caption]), [['t:Set up a wallet first', 't:Payment links need a wallet.']]);
 });

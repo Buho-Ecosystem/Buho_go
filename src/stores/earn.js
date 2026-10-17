@@ -372,9 +372,9 @@ export const useEarnStore = defineStore('earn', {
      * directly therefore failed for every NWC user and for anyone claiming in
      * a later session, surfacing as `payout_failed`.
      *
-     * Mirror the proven internal-transfer path: ensure a connected provider
-     * via `ensureWalletConnectedForTransfer`, then branch on wallet type —
-     * NWC exposes the WebLN `makeInvoice`, Spark/LNbits use `createInvoice`.
+     * The wallet store's createInvoiceOnWallet is the one way BuhoGO asks
+     * its own wallets to receive: it connects the wallet when needed and
+     * owns the per-type differences (NWC memo, grants).
      */
     async _createUserInvoice(amountSats, kind) {
       const { useWalletStore } = await import('./wallet')
@@ -391,35 +391,14 @@ export const useEarnStore = defineStore('earn', {
       }
 
       return {
-        invoice: await this._invoiceFromWallet(walletStore, wallet.id, wallet, amountSats, kind),
+        invoice: await this._invoiceFromWallet(walletStore, wallet.id, amountSats, kind),
         wallet,
       }
     },
 
-    /**
-     * Create a Lightning invoice on one supported wallet. NWC exposes the
-     * WebLN `makeInvoice`; Spark and LNbits use `createInvoice`.
-     */
-    async _invoiceFromWallet(walletStore, walletId, wallet, amountSats, kind) {
-      const provider = await walletStore.ensureWalletConnectedForTransfer(walletId)
-      if (!provider) throw new Error('Wallet not connected')
-
-      const memo = earnPayoutMemo(kind)
-      const type = (wallet.type || 'nwc').toLowerCase()
-      if (type === 'spark' || type === 'lnbits') {
-        const result = await provider.createInvoice({
-          amount: amountSats,
-          description: memo,
-        })
-        return result.paymentRequest || result.payment_request || result.bolt11 || result
-      }
-
-      // NWC wallets use the WebLN interface; makeInvoice expects sats.
-      const result = await provider.makeInvoice({
-        amount: amountSats,
-        description: memo,
-      })
-      return result.invoice || result.paymentRequest || result.bolt11
+    /** A Lightning invoice for the reward, on the chosen wallet. */
+    async _invoiceFromWallet(walletStore, walletId, amountSats, kind) {
+      return walletStore.createInvoiceOnWallet(walletId, amountSats, earnPayoutMemo(kind))
     },
 
     /**

@@ -23,6 +23,7 @@ function harness(file, launchInput, kiosk = false) {
   });
   const dependencies = {
     '../services/kioskPaymentIntake.js': kioskIntake,
+    './i18n': { i18n: { global: { t: (key) => `t:${key}` } } },
     'quasar/wrappers': { boot: callback => callback },
     quasar: { Notify: { create: () => assert.fail('sharing must not hit a payment error') } },
     '@capacitor/core': { Capacitor: { isNativePlatform: () => true } },

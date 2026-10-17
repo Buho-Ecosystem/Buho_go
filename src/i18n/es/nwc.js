@@ -46,6 +46,8 @@ export default {
   "Receive only": "Solo recibir",
   "{wallet} allows this connection to receive only. Choose another wallet, or allow sending in {wallet}.": "{wallet} solo permite recibir con esta conexión. Elige otra billetera o permite enviar en {wallet}.",
   "{wallet} allows this connection to receive only. Allow sending in {wallet}.": "{wallet} solo permite recibir con esta conexión. Permite enviar en {wallet}.",
+  "{wallet} does not allow this connection to send. Choose another wallet, or allow sending in {wallet}.": "{wallet} no permite enviar a esta conexión. Elige otra cartera, o permite enviar en {wallet}.",
+  "{wallet} does not allow this connection to send. Allow sending in {wallet}.": "{wallet} no permite enviar a esta conexión. Permite enviar en {wallet}.",
   "your wallet app": "tu app de billetera",
   "This connection has used up its spending limit. Raise it in {wallet}, or wait until it resets.": "Esta conexión agotó su límite de gasto. Súbelo en {wallet} o espera a que se renueve.",
   "This connection has {amount} sats left until {date}. Raise the limit in {wallet}, or pay less.": "A esta conexión le quedan {amount} sats hasta el {date}. Sube el límite en {wallet} o paga menos.",

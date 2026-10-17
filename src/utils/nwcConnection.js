@@ -1,10 +1,9 @@
 /**
  * NWC (Nostr Wallet Connect / NIP-47) connection string parser.
  *
- * The same connection string can land in our hands from three places:
+ * The same connection string can land in our hands from two places:
  *   1. The NWC setup page (manual paste or QR scan).
- *   2. The legacy IndexPage NWC scanner.
- *   3. The Settings.vue add-wallet form.
+ *   2. A backup restore, through store.addWallet.
  *
  * Before this module existed, each call site used a bare
  * `startsWith('nostr+walletconnect://')` check. That had three problems:
