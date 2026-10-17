@@ -432,14 +432,24 @@ const fmt = (sats) => sats ? `${sats.toLocaleString()} sats` : '0 sats';
 // Methods
 // ─────────────────────────────────────────────────────────────
 async function init() {
-  const preferred = wallets.value.find(w => w.id === (props.fromWalletId || store.activeWalletId));
-  if (preferred?.canSend) state.fromWallet = preferred;
-  // A source kept from an earlier opening must still be able to pay.
-  else if (!wallets.value.find(w => w.id === state.fromWallet?.id)?.canSend) state.fromWallet = null;
+  choosePreferredSource();
   // A destination kept from an earlier opening must still be able to receive.
   const keptTo = wallets.value.find(w => w.id === state.toWallet?.id);
   if (!keptTo?.canReceive || keptTo.id === state.fromWallet?.id) state.toWallet = null;
   await reconnectAll();
+  // Paying needs a live connection: a wallet that was still connecting at
+  // open can be the source now, unless the person already chose one.
+  if (!state.fromWallet) {
+    choosePreferredSource();
+    if (state.toWallet?.id === state.fromWallet?.id) state.toWallet = null;
+  }
+}
+
+/** The wallet asked for (or the active one) when it can pay; never a kept source that cannot. */
+function choosePreferredSource() {
+  const preferred = wallets.value.find(w => w.id === (props.fromWalletId || store.activeWalletId));
+  if (preferred?.canSend) state.fromWallet = preferred;
+  else if (!wallets.value.find(w => w.id === state.fromWallet?.id)?.canSend) state.fromWallet = null;
 }
 
 async function reconnectAll() {

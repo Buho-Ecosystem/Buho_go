@@ -165,6 +165,27 @@ const seedBucket = (page) => page.evaluate(() => {
   console.log('✓ transfer: "Receive only" as a source, "Can\'t receive" as a destination');
 }
 
+// 3b · The wallet asked for is still connecting when the transfer opens:
+// once it is connected it becomes the source, rather than nothing.
+{
+  const { page, errors, context } = await open({ active: 'kitty' });
+  await page.evaluate(() => {
+    const store = window.__audit.app.config.globalProperties.$pinia._s.get('wallet');
+    store.connectionStates.kitty.connected = false;
+    store.ensureWalletConnectedForTransfer = async (id) => {
+      await new Promise((r) => setTimeout(r, 300));
+      store.connectionStates[id].connected = true;
+      return {};
+    };
+  });
+  await render(page, '/src/components/InternalTransferModal.vue', {});
+  await openSheet(page);
+  await page.locator('.wallet-btn').first().filter({ hasText: 'Kitty' }).waitFor({ timeout: 10000 });
+  assert.deepEqual(errors, []);
+  await context.close();
+  console.log('✓ transfer: a source that was still connecting is chosen once it is');
+}
+
 // 4 · Dark, and German at 320 px.
 {
   const { page, errors, context } = await open({ theme: 'dark' });
