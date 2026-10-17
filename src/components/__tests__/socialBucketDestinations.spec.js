@@ -84,3 +84,14 @@ test('a destination that stops receiving while the sheet is open is replaced, no
   assert.equal(vm.selectedWalletId, 'tips');
   assert.equal(vm.canMove, true);
 });
+
+test('a wallet that becomes able to receive while nothing could is taken', async () => {
+  const wallets = [{ ...sendOnly }];
+  const vm = mount(wallets);
+  await sheet.watch.modelValue.call(vm, true);
+  assert.equal(vm.selectedWalletId, null);
+  wallets[0].canReceive = true; // a refresh found make_invoice
+  sheet.watch.receivingWallets.call(vm, vm.receivingWallets);
+  assert.equal(vm.selectedWalletId, 'send-only');
+  assert.equal(vm.canMove, true);
+});

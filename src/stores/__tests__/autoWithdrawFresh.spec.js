@@ -18,6 +18,7 @@ function load() {
     '../providers/WalletFactory': { WALLET_TYPES: { SPARK: 'spark', ARKADE: 'arkade', NWC: 'nwc', LNBITS: 'lnbits' } },
     '../utils/lnurlHttp.js': {},
     '../utils/autoWithdrawKeys.js': { migratePocketConfigKeys: (configs) => ({ configs, moved: [], dropped: [] }) },
+    '../utils/nwcErrors.js': { NWC_ERROR: { UNCONFIRMED: 'NWC_PAYMENT_UNCONFIRMED' } },
   };
   const module = { exports: {} };
   new Function('require', 'module', 'exports', code)((n) => deps[n] || {}, module, module.exports);
@@ -74,4 +75,27 @@ test('unchanged conditions send from the verified balance', async () => {
   read.resolve({ balance: 20000, fresh: true });
   await run;
   assert.deepEqual(sends, [Math.floor(20000 * 0.97)], 'amount from the verified read, not the caller');
+});
+
+test('a payment with an unknown outcome is not retried on the next tick, a failed one is', async (t) => {
+  t.mock.timers.enable({ apis: ['Date'], now: 1_000_000 });
+  for (const [code, retriesAfter16s] of [['NWC_PAYMENT_UNCONFIRMED', false], ['PAYMENT_FAILED', true]]) {
+    const { aw, walletStore } = setup();
+    // Each test file run shares the module's cooldown map; a fresh wallet id keeps cases apart.
+    const id = `W-${code}`;
+    walletStore.wallets = [{ id, type: 'spark', name: 'Business' }];
+    walletStore.providers = { [id]: { getBalance: async () => ({ balance: 50000, fresh: true }) } };
+    aw.configs = { [id]: { enabled: true, thresholdSats: 1000, payoutType: 'lightning', lightningAddress: 'me@example.com' } };
+    let attempts = 0;
+    aw._executeSparkPayout = async () => { attempts += 1; throw Object.assign(new Error('x'), { code }); };
+    await aw.checkAndExecute(id, 50000, walletStore);
+    t.mock.timers.tick(16_000);
+    await aw.checkAndExecute(id, 50000, walletStore);
+    assert.equal(attempts, retriesAfter16s ? 2 : 1, code);
+    if (!retriesAfter16s) {
+      t.mock.timers.tick(10 * 60_000);
+      await aw.checkAndExecute(id, 50000, walletStore);
+      assert.equal(attempts, 2, 'tried again once the hold is over');
+    }
+  }
 });

@@ -3753,8 +3753,7 @@ export const useWalletStore = defineStore('wallet', {
      *
      * The one way BuhoGO asks one of its wallets to receive: the Social
      * Bucket, internal transfers and Learn & Earn payouts all come through
-     * here, so the
-     * per-backend differences live in one place. NWC speaks WebLN
+     * here, so the per-backend differences live in one place. NWC speaks WebLN
      * (makeInvoice, memo in `defaultMemo`; the SDK ignores `description`),
      * everything else speaks createInvoice. A connection whose wallet did
      * not grant make_invoice is refused with its reason before anything is

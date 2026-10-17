@@ -434,6 +434,8 @@ const fmt = (sats) => sats ? `${sats.toLocaleString()} sats` : '0 sats';
 async function init() {
   const preferred = wallets.value.find(w => w.id === (props.fromWalletId || store.activeWalletId));
   if (preferred?.canSend) state.fromWallet = preferred;
+  // A source kept from an earlier opening must still be able to pay.
+  else if (!wallets.value.find(w => w.id === state.fromWallet?.id)?.canSend) state.fromWallet = null;
   // A destination kept from an earlier opening must still be able to receive.
   const keptTo = wallets.value.find(w => w.id === state.toWallet?.id);
   if (!keptTo?.canReceive || keptTo.id === state.fromWallet?.id) state.toWallet = null;

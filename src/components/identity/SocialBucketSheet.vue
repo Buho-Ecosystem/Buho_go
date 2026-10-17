@@ -95,7 +95,7 @@
             <!-- Say what to do: a grant missing in the wallet app stays missing. -->
             <span v-else class="sb-no-wallet-copy">
               {{ $t('No wallet here can receive') }}
-              <small>{{ $t('Allow receiving for this connection in your wallet app, or add a wallet that can.') }}</small>
+              <small>{{ $t('Allow receiving in your wallet app, or add a wallet that can.') }}</small>
             </span>
           </div>
 
@@ -287,9 +287,10 @@ export default {
 
   watch: {
     // A connection's grants can change while the sheet is open (a refresh
-    // reads them again): never keep a destination that can no longer receive.
+    // reads them again): never keep a destination that can no longer
+    // receive, and take one that has just become able when none was.
     receivingWallets(list) {
-      if (this.bucket.isSweeping || !this.selectedWalletId) return;
+      if (this.bucket.isSweeping) return;
       if (list.some((wallet) => wallet.id === this.selectedWalletId)) return;
       this.selectedWalletId = this.defaultDestinationId();
     },

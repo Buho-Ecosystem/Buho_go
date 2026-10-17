@@ -46,6 +46,8 @@ export default {
   "Receive only": "Nur empfangen",
   "{wallet} allows this connection to receive only. Choose another wallet, or allow sending in {wallet}.": "{wallet} erlaubt dieser Verbindung nur das Empfangen. Wähle eine andere Wallet oder erlaube das Senden in {wallet}.",
   "{wallet} allows this connection to receive only. Allow sending in {wallet}.": "{wallet} erlaubt dieser Verbindung nur das Empfangen. Erlaube das Senden in {wallet}.",
+  "{wallet} does not allow this connection to send. Choose another wallet, or allow sending in {wallet}.": "{wallet} erlaubt dieser Verbindung nicht zu senden. Wähle eine andere Wallet, oder erlaube das Senden in {wallet}.",
+  "{wallet} does not allow this connection to send. Allow sending in {wallet}.": "{wallet} erlaubt dieser Verbindung nicht zu senden. Erlaube das Senden in {wallet}.",
   "your wallet app": "deine Wallet-App",
   "This connection has used up its spending limit. Raise it in {wallet}, or wait until it resets.": "Diese Verbindung hat ihr Ausgabelimit aufgebraucht. Erhöhe es in {wallet} oder warte, bis es neu beginnt.",
   "This connection has {amount} sats left until {date}. Raise the limit in {wallet}, or pay less.": "Diese Verbindung hat bis {date} noch {amount} Sats. Erhöhe das Limit in {wallet} oder zahle weniger.",

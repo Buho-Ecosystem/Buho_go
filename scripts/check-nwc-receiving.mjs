@@ -132,7 +132,7 @@ const seedBucket = (page) => page.evaluate(() => {
   await seedBucket(page);
   await openSheet(page);
   await page.locator('.sb-no-wallet-copy', { hasText: 'No wallet here can receive' }).waitFor();
-  await page.getByText('Allow receiving for this connection in your wallet app, or add a wallet that can.').waitFor();
+  await page.getByText('Allow receiving in your wallet app, or add a wallet that can.').waitFor();
   assert.equal(await page.locator('.btn-primary').isDisabled(), true);
   await shot(page, 'bucket-none-can-receive');
   assert.deepEqual(errors, []);

@@ -49,7 +49,7 @@ Receiving polls gently (`NWC_POLLING` in `ReceiveModal.vue`): each lookup can wa
 |---|---|---|
 | Relay socket never opens (4.4 s) | `Nip47NetworkError` "Failed to connect to …", code `OTHER` | relay failure, nothing sent |
 | No wallet behind the relay | `Error` "no info event (kind 13194)…", no code | no answer, nothing sent |
-| Event sent, relay never acknowledged it | `Nip47PublishError` "failed to publish: …" or `Nip47PublishTimeoutError`, code `INTERNAL` | unknown outcome: the event may have reached the wallet |
+| Event sent, relay never acknowledged it, refused it, or the socket dropped at publish | `Nip47PublishError` "failed to publish: …" or `Nip47PublishTimeoutError`, code `INTERNAL` | unknown outcome: the SDK's message cannot tell these apart, and in the first the wallet may have the request |
 | Request delivered, no reply | `Nip47ReplyTimeoutError` "reply timeout…", code `INTERNAL` | unknown outcome |
 
 Reply timeouts: `get_info`, `get_balance`, `get_budget` and `list_transactions` wait 10 s; `pay_invoice`, `make_invoice` and `lookup_invoice` wait 60 s. Requests carry no `expiration` tag (also not in 8).
