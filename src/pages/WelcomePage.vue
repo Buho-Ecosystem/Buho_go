@@ -189,7 +189,7 @@
             </svg>
           </span>
           <span class="bgo-st">
-            <span class="bgo-t">Nostr Wallet Connect</span>
+            <span class="bgo-t">{{ $t('Nostr Wallet Connect') }}</span>
             <span class="bgo-d">{{ $t('Paste an NWC string') }}</span>
           </span>
           <svg class="bgo-schev" width="8" height="13" viewBox="0 0 8 13" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
@@ -204,7 +204,7 @@
             </svg>
           </span>
           <span class="bgo-st">
-            <span class="bgo-t">LNbits Wallet</span>
+            <span class="bgo-t">{{ $t('LNbits Wallet') }}</span>
             <span class="bgo-d">{{ $t('Connect via API endpoint') }}</span>
           </span>
           <svg class="bgo-schev" width="8" height="13" viewBox="0 0 8 13" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">

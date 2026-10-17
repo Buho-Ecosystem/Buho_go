@@ -17,6 +17,7 @@ import {
   destinationKind,
   canWalletPay,
   walletSwitchHint,
+  canWalletReceiveLightning,
 } from '../walletCapabilities.js';
 
 let passed = 0;
@@ -93,6 +94,21 @@ test('switch hints exist exactly for blockable rails', () => {
     walletSwitchHint('unknown', t),
     'Lightning is temporarily unavailable on Arkade - switch to another wallet'
   );
+});
+
+test('receiving: Spark and LNbits can, Arkade cannot (Lightning paused), NWC follows its grants', () => {
+  assert.equal(canWalletReceiveLightning({ type: 'spark' }), true);
+  assert.equal(canWalletReceiveLightning({ type: 'lnbits' }), true);
+  assert.equal(canWalletReceiveLightning({ type: 'arkade' }), false);
+  assert.equal(canWalletReceiveLightning({ type: 'nwc', metadata: { methods: ['pay_invoice', 'make_invoice'] } }), true);
+  assert.equal(canWalletReceiveLightning({ type: 'nwc', metadata: { methods: ['pay_invoice', 'get_balance'] } }), false);
+  // The WebLN spelling of the same grant counts too.
+  assert.equal(canWalletReceiveLightning({ type: 'nwc', metadata: { methods: ['makeInvoice'] } }), true);
+  // Saved before methods were stored: as before, assumed able.
+  assert.equal(canWalletReceiveLightning({ type: 'nwc', metadata: {} }), true);
+  // Saved without a type: an NWC connection.
+  assert.equal(canWalletReceiveLightning({ metadata: { methods: ['pay_invoice'] } }), false);
+  assert.equal(canWalletReceiveLightning(null), false);
 });
 
 console.log(`\n  ${passed} passed, ${failed} failed`);

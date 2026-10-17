@@ -129,6 +129,9 @@ importers:
       '@iconify-json/circle-flags':
         specifier: ^1.2.10
         version: 1.2.10
+      '@iconify-json/tabler':
+        specifier: ^1.2.41
+        version: 1.2.42
       '@playwright/test':
         specifier: ^1.59.1
         version: 1.59.1
@@ -987,6 +990,9 @@ packages:
 
   '@iconify-json/circle-flags@1.2.10':
     resolution: {integrity: sha512-sZRxs689a281RtZvuAiKtV7pQHv8Tk0HkinSM7QvLgdLEK8xgGRCcbDvL09Rq+/KtemmsMzGhS9/qt+r3ca+Ug==}
+
+  '@iconify-json/tabler@1.2.42':
+    resolution: {integrity: sha512-fObaBh/H2zJphk3lS1dWPUf/buuGaCHQXnB4UYgKOPXQub5Ac1qEu0AHRj/0+E2FEl8pWfgM2xQWzfz7ffcY+A==}
 
   '@iconify/types@2.0.0':
     resolution: {integrity: sha512-+wluvCrRhXrhyOmRDJ3q8mux9JkKy5SJ/v8ol2tu4FVjyYvtEzkc/3pK15ET6RKg4b4w4BmTk1+gsCUhf21Ykg==}
@@ -5192,6 +5198,10 @@ snapshots:
       - typescript
 
   '@iconify-json/circle-flags@1.2.10':
+    dependencies:
+      '@iconify/types': 2.0.0
+
+  '@iconify-json/tabler@1.2.42':
     dependencies:
       '@iconify/types': 2.0.0
 

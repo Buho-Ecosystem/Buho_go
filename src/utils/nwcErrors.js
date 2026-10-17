@@ -56,9 +56,16 @@ export function isRelayFailure(error) {
   return error?.code === NWC_ERROR.RELAY_UNREACHABLE || /publish timeout|failed to publish|failed to connect to/i.test(sdkTransportMessage(error));
 }
 
-/** Failures that happen before a request leaves: nothing can have been paid. */
+/**
+ * Failures that happen before a request leaves: nothing can have been paid.
+ * Only two qualify: no wallet info event (the SDK does not send without it)
+ * and a relay socket that never opened. "failed to publish" does not: the
+ * relay library writes the event to the socket first and only then waits
+ * for the relay's OK, so a missing OK says nothing about whether the
+ * wallet received the request.
+ */
 function neverSent(error) {
-  return isMissingWallet(error) || /failed to publish|failed to connect to/i.test(sdkTransportMessage(error));
+  return isMissingWallet(error) || /failed to connect to/i.test(sdkTransportMessage(error));
 }
 
 /**

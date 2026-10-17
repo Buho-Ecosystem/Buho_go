@@ -5,13 +5,13 @@
  * Maintains backward compatibility with existing NWC functionality.
  *
  * Features:
- * - Real-time payment notifications via subscribeNotifications (Alby SDK v7)
+ * - Real-time payment notifications via subscribeNotifications
  * - Polling fallback for wallets that don't support notifications
  * - Comprehensive payment status detection
  */
 
 import { WalletProvider } from './WalletProvider';
-import { NostrWebLNProvider, NWCClient } from '@getalby/sdk';
+import { NostrWebLNProvider } from '@getalby/sdk';
 
 /**
  * The settlement state of one NIP-47 transaction record.
@@ -34,7 +34,7 @@ export class NWCWalletProvider extends WalletProvider {
     super(walletId, walletData);
 
     this.nwc = null;
-    this.nwcClient = null; // For notification subscriptions
+    this.nwcClient = null; // the provider's own NIP-47 client (notifications, get_info)
     this.nwcUrl = walletData.nwcUrl;
     this.metadata = walletData.metadata || {};
   }
@@ -56,38 +56,14 @@ export class NWCWalletProvider extends WalletProvider {
       this.nwc = new NostrWebLNProvider({
         nostrWalletConnectUrl: this.nwcUrl,
       });
+      // Only marks the provider enabled; nothing goes over the network, so
+      // there is nothing to retry. A wallet that does not answer shows up on
+      // the first real request instead.
+      await this.nwc.enable();
 
-      // Enable with retry logic
-      let retries = 3;
-      let lastError = null;
-
-      while (retries > 0) {
-        try {
-          await this.nwc.enable();
-          break;
-        } catch (error) {
-          lastError = error;
-          retries--;
-          if (retries > 0) {
-            await new Promise(resolve => setTimeout(resolve, 2000));
-          }
-        }
-      }
-
-      if (retries === 0 && lastError) {
-        throw lastError;
-      }
-
-      // Also create NWCClient for notification subscriptions (Alby SDK v7)
-      try {
-        this.nwcClient = new NWCClient({
-          nostrWalletConnectUrl: this.nwcUrl
-        });
-      } catch (e) {
-        // NWCClient is optional - notifications won't work but polling will
-        console.warn('NWCClient creation failed (notifications unavailable):', e.message);
-        this.nwcClient = null;
-      }
+      // The provider already holds a NIP-47 client on the same relay
+      // connection; notifications use it rather than opening a second one.
+      this.nwcClient = this.nwc.client;
 
       this.isConnected = true;
       this.clearError();
@@ -110,16 +86,7 @@ export class NWCWalletProvider extends WalletProvider {
       }
     }
 
-    if (this.nwcClient) {
-      try {
-        if (typeof this.nwcClient.close === 'function') {
-          this.nwcClient.close();
-        }
-      } catch (error) {
-        console.warn('Error closing NWCClient:', error);
-      }
-    }
-
+    // nwcClient is this.nwc's own client: closing the provider closed it.
     this.nwc = null;
     this.nwcClient = null;
     this.isConnected = false;
@@ -247,7 +214,7 @@ export class NWCWalletProvider extends WalletProvider {
   _checkIfPaid(record) {
     if (!record) return false;
 
-    // Alby SDK v7 uses 'state' field with lowercase values
+    // NIP-47 transactions carry a lowercase 'state'
     if (record.state === 'settled') return true;
     if (record.state === 'SETTLED') return true;
 
@@ -396,7 +363,7 @@ export class NWCWalletProvider extends WalletProvider {
 
   /**
    * Subscribe to payment notifications (real-time, no polling needed)
-   * Uses Alby SDK v7 built-in subscribeNotifications
+   * Uses the SDK's subscribeNotifications on the provider's client
    *
    * @param {Function} callback - Called with payment info: { paymentHash, amount, preimage, state, settledAt }
    * @returns {Promise<Function>} Unsubscribe function

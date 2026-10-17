@@ -2087,7 +2087,6 @@ import { isBiometricAvailable } from '../utils/biometric.js'
 import { isScreenPrivacySupported } from '../utils/secureScreen.js'
 import { Capacitor } from '@capacitor/core'
 import {truncateAddress} from '../utils/addressUtils.js'
-import { parseNwcConnection, NWC_REASON_I18N_KEYS } from '../utils/nwcConnection'
 import { loadDismissedWarnings, saveDismissedWarnings } from '../utils/attentionWarnings.js'
 import KioskPinPad from '../components/KioskPinPad.vue'
 import SparkSeedPhraseDialog from '../components/SparkSeedPhraseDialog.vue'
@@ -2187,9 +2186,6 @@ export default {
 
 
       // New wallet form
-      newWalletName: '',
-      newWalletNwc: '',
-      isAddingWallet: false,
       isReconnecting: {},
 
       // Settings
@@ -2688,11 +2684,6 @@ export default {
     hasLnbitsWallets() {
       return this.wallets.some(w => w.type === 'lnbits');
     },
-    isValidNewWallet() {
-      return this.newWalletName.trim() &&
-        this.newWalletNwc.trim() &&
-        this.validateNwcString(this.newWalletNwc) === true
-    },
 
     isPinValid() {
       if (!this.hasPin) {
@@ -2978,7 +2969,6 @@ export default {
   methods: {
     ...mapActions(useWalletStore, [
       'initialize',
-      'addWallet',
       'removeWallet',
       'updateWalletName',
       'setDefaultWallet',
@@ -3569,50 +3559,6 @@ export default {
       const colors = ['wallet-green', 'wallet-blue', 'wallet-purple', 'wallet-orange', 'wallet-red']
       const index = wallet.id.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0) % colors.length
       return colors[index]
-    },
-
-    validateNwcString(nwcString) {
-      // Single source of truth for what counts as a valid NWC string —
-      // see src/utils/nwcConnection.js. Accepts every known prefix variant
-      // and validates the required params (relay, secret, pubkey) structurally.
-      const result = parseNwcConnection(nwcString)
-      if (result.ok) return true
-      const key = NWC_REASON_I18N_KEYS[result.reason] || 'Invalid connection string format'
-      return this.$t(key)
-    },
-
-    async addNewWallet() {
-      if (!this.isValidNewWallet) return
-
-      this.isAddingWallet = true
-      try {
-        // Persist the canonical NWC form so the store and provider only
-        // ever see one shape (handles the no-slash / no-plus / lightning:
-        // wrapper variants transparently).
-        const parsed = parseNwcConnection(this.newWalletNwc)
-        await this.addWallet({
-          name: this.newWalletName.trim(),
-          nwcUrl: parsed.ok ? parsed.normalized : this.newWalletNwc.trim()
-        })
-
-        this.showAddWalletDialog = false
-        this.newWalletName = ''
-        this.newWalletNwc = ''
-
-        this.$q.notify({
-          type: 'positive',
-          message: this.$t('Wallet connected'),
-
-        })
-      } catch (error) {
-        this.walletStore.showPaymentError(error, {
-          context: 'connect',
-          route: 'Add wallet',
-          t: this.$t.bind(this),
-        })
-      } finally {
-        this.isAddingWallet = false
-      }
     },
 
     /**

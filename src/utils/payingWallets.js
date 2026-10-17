@@ -20,14 +20,16 @@
  * so it runs under plain Node like walletCapabilities.
  */
 
-import { canWalletPay, destinationKind, walletSwitchHint } from './walletCapabilities.js'
+import { canWalletPay, canWalletReceiveLightning, destinationKind, walletSwitchHint } from './walletCapabilities.js'
 import { capabilitiesOf } from './nwcWallet.js'
 
 /** Stable reason codes. UI copy is derived from these, never the other way. */
 export const PAYING_REASON = Object.freeze({
   UNSUPPORTED_DESTINATION: 'unsupported-destination',
   INSUFFICIENT_BALANCE: 'insufficient-balance',
-  // An NWC connection its wallet did not allow to send (utils/nwcWallet).
+  // NWC connections its wallet did not allow to send (utils/nwcWallet):
+  // one that may still receive, and one that may do neither.
+  RECEIVE_ONLY: 'receive-only',
   SEND_NOT_ALLOWED: 'send-not-allowed',
 })
 
@@ -125,7 +127,9 @@ export function listPayingWallets({
       if (!canWalletPay(type, destinationType)) {
         reason = PAYING_REASON.UNSUPPORTED_DESTINATION
       } else if (!capabilitiesOf({ ...wallet, type }).send) {
-        reason = PAYING_REASON.SEND_NOT_ALLOWED
+        reason = canWalletReceiveLightning({ ...wallet, type })
+          ? PAYING_REASON.RECEIVE_ONLY
+          : PAYING_REASON.SEND_NOT_ALLOWED
       } else if (amount > 0 && balanceSats !== null && balanceSats < amount + reserve) {
         reason = PAYING_REASON.INSUFFICIENT_BALANCE
       }
@@ -188,8 +192,10 @@ export function payingWalletReasonText(reason, t) {
       return t("Can't pay this")
     case PAYING_REASON.INSUFFICIENT_BALANCE:
       return t('Not enough balance')
-    case PAYING_REASON.SEND_NOT_ALLOWED:
+    case PAYING_REASON.RECEIVE_ONLY:
       return t('Receive only')
+    case PAYING_REASON.SEND_NOT_ALLOWED:
+      return t("Can't send")
     default:
       return ''
   }
@@ -215,10 +221,14 @@ export function payingWalletHint(wallet, destinationType, t, { hasAlternative = 
       return hasAlternative
         ? t('Not enough balance in {wallet}. Choose another wallet or send less.', { wallet: name })
         : t('Not enough balance in {wallet}.', { wallet: name })
-    case PAYING_REASON.SEND_NOT_ALLOWED:
+    case PAYING_REASON.RECEIVE_ONLY:
       return hasAlternative
         ? t('{wallet} allows this connection to receive only. Choose another wallet, or allow sending in {wallet}.', { wallet: name })
         : t('{wallet} allows this connection to receive only. Allow sending in {wallet}.', { wallet: name })
+    case PAYING_REASON.SEND_NOT_ALLOWED:
+      return hasAlternative
+        ? t('{wallet} does not allow this connection to send. Choose another wallet, or allow sending in {wallet}.', { wallet: name })
+        : t('{wallet} does not allow this connection to send. Allow sending in {wallet}.', { wallet: name })
     default:
       return ''
   }

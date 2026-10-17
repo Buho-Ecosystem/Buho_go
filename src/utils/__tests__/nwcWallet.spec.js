@@ -57,3 +57,14 @@ test('the relay shows as its host', () => {
   assert.equal(relayHost('nostr+walletconnect://abc?relay=wss%3A%2F%2Frelay.getalby.com%2Fv1&secret=x'), 'relay.getalby.com');
   assert.equal(relayHost('nostr+walletconnect://abc?secret=x'), '');
 });
+
+test('the SDK\'s stand-in answer for a failed get_info says nothing about the grants', () => {
+  // Earlier versions saved WebLN getInfo() as is; on a failed get_info that
+  // is exactly ['sendPayment']. Read as unknown: everything assumed, as before.
+  const legacy = nwcCapabilities(['sendPayment']);
+  assert.deepEqual([legacy.known, legacy.send, legacy.receive, legacy.balance], [false, true, true, true]);
+  // A real answer in either vocabulary is read as given.
+  assert.deepEqual(nwcCapabilities(['pay_invoice']).receive, false);
+  assert.deepEqual(nwcCapabilities(['sendPayment', 'getBalance']).receive, false);
+  assert.equal(capabilitiesOf({ type: 'nwc', metadata: { methods: ['sendPayment'] } }).receive, true);
+});

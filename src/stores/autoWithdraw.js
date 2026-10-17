@@ -5,6 +5,7 @@ import { lnurlGetJson } from '../utils/lnurlHttp.js'
 import { counterpartyError } from '../utils/errorOrigin.js'
 import { migratePocketConfigKeys } from '../utils/autoWithdrawKeys.js'
 import { payWithNwc } from '../services/nwcPayment.js'
+import { NWC_ERROR } from '../utils/nwcErrors.js'
 
 const STORAGE_KEY = 'buhoGO_auto_withdraw'
 const SPEED_LABELS = { low: 'Economy', medium: 'Standard', high: 'Priority' }
@@ -18,6 +19,11 @@ const COOLDOWN_MS = 60_000 // 60s between successful triggers per wallet
 // hiccup) deserve a quicker retry. After a failure we roll the cooldown back so
 // the next balance tick can retry once this much time has elapsed.
 const FAILURE_RETRY_MS = 15_000 // 15s backoff before retrying a failed transfer
+// A payment whose outcome is unknown (services/nwcPayment) may have gone out.
+// Retrying it pays a fresh invoice, so the rule rests long enough for the
+// wallet's balance to show what happened: a settled payment leaves nothing
+// above the threshold, and the person has the "check your wallet" message.
+const UNCONFIRMED_HOLD_MS = 10 * 60_000
 const MIN_SEND_SATS = 10   // Don't send dust
 
 // Module-level lock — not in Pinia state, avoids reactivity issues
@@ -250,7 +256,8 @@ export const useAutoWithdrawStore = defineStore('autoWithdraw', {
         // retry after FAILURE_RETRY_MS instead of waiting out the full 60s
         // success cooldown — the difference between "intermittently works" and
         // "works on the next refresh".
-        _lastTriggerTime.set(configKey, Date.now() - COOLDOWN_MS + FAILURE_RETRY_MS)
+        const holdMs = error?.code === NWC_ERROR.UNCONFIRMED ? UNCONFIRMED_HOLD_MS : FAILURE_RETRY_MS
+        _lastTriggerTime.set(configKey, Date.now() - COOLDOWN_MS + holdMs)
 
         // Hand the raw error to the UI watcher so it can route it
         // through the global payment-error dialog (same surface as

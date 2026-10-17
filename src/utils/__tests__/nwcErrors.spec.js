@@ -1,5 +1,8 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import {
+  Nip47NetworkError, Nip47PublishError, Nip47PublishTimeoutError, Nip47ReplyTimeoutError, Nip47WalletError,
+} from '@getalby/sdk';
 import { NWC_ERROR, isNoAnswer, isRelayFailure, isUncertainPaymentError, nwcError, nwcErrorText } from '../nwcErrors.js';
 
 const t = (key, params = {}) => key.replace(/\{(\w+)\}/g, (_, k) => String(params[k]));
@@ -9,6 +12,8 @@ const sdk = (message, code) => Object.assign(new Error(message), { code });
 test('an unanswered payment is unknown, not failed', () => {
   assert.equal(isUncertainPaymentError(sdk('reply timeout: event abc', 'INTERNAL')), true);
   assert.equal(isUncertainPaymentError(sdk('publish timeout: abc', 'INTERNAL')), true);
+  // The event went out; only the relay's OK is missing. The wallet may have it.
+  assert.equal(isUncertainPaymentError(sdk('failed to publish: AggregateError: All promises were rejected', 'INTERNAL')), true);
   assert.equal(isUncertainPaymentError(sdk('something odd', 'INTERNAL')), true, 'a generic wallet error says nothing about the payment');
   assert.equal(isUncertainPaymentError(sdk('?', 'OTHER')), true);
 });
@@ -16,7 +21,6 @@ test('an unanswered payment is unknown, not failed', () => {
 test('a request that never left, or a clear refusal, is a plain failure', () => {
   assert.equal(isUncertainPaymentError(new Error('no info event (kind 13194) returned from relay')), false);
   assert.equal(isUncertainPaymentError(sdk('Failed to connect to wss://x', 'OTHER')), false);
-  assert.equal(isUncertainPaymentError(sdk('failed to publish: x', 'INTERNAL')), false);
   for (const code of ['PAYMENT_FAILED', 'QUOTA_EXCEEDED', 'INSUFFICIENT_BALANCE', 'RESTRICTED', 'UNAUTHORIZED', 'RATE_LIMITED', 'NOT_IMPLEMENTED']) {
     assert.equal(isUncertainPaymentError(sdk('no', code)), false, code);
   }
@@ -54,4 +58,28 @@ test('an unconfirmed payment is never headed "Payment failed"', async () => {
   const built = buildPaymentError(nwcError(NWC_ERROR.UNCONFIRMED), { context: 'payment', walletName: 'Alby Hub' }, t);
   assert.equal(built.title, 'Payment not confirmed');
   assert.match(built.reason, /Check Alby Hub before trying again/);
+});
+
+test('the SDK\'s own error classes are read as documented (docs/NWC.md, SDK)', () => {
+  // Built exactly as @getalby/sdk raises them; an SDK change that moves a
+  // code or a message breaks this test, not a payment.
+  const connect = new Nip47NetworkError('Failed to connect to wss://relay.example', 'OTHER');
+  assert.deepEqual([isRelayFailure(connect), isUncertainPaymentError(connect)], [true, false]);
+
+  const missingWallet = new Error('no info event (kind 13194) returned from relay');
+  assert.deepEqual([isNoAnswer(missingWallet), isUncertainPaymentError(missingWallet)], [true, false]);
+
+  for (const sentButUnacknowledged of [
+    new Nip47PublishError('failed to publish: AggregateError: All promises were rejected', 'INTERNAL'),
+    new Nip47PublishTimeoutError('publish timeout: abc', 'INTERNAL'),
+  ]) {
+    assert.equal(isRelayFailure(sentButUnacknowledged), true);
+    assert.equal(isUncertainPaymentError(sentButUnacknowledged), true, sentButUnacknowledged.message);
+  }
+
+  const silent = new Nip47ReplyTimeoutError('reply timeout: event abc', 'INTERNAL');
+  assert.deepEqual([isNoAnswer(silent), isUncertainPaymentError(silent)], [true, true]);
+
+  assert.equal(isUncertainPaymentError(new Nip47WalletError('insufficient balance', 'INSUFFICIENT_BALANCE')), false);
+  assert.equal(isUncertainPaymentError(new Nip47WalletError('unknown Error', 'INTERNAL')), true);
 });

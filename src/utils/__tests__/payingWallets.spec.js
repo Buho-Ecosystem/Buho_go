@@ -400,17 +400,21 @@ test('an NWC connection its wallet allows to receive only is never picked to pay
       { id: 'recv', name: 'Coinos', type: 'nwc', metadata: { methods: ['make_invoice', 'lookup_invoice'] } },
       { id: 'pay', name: 'Alby Hub', type: 'nwc', metadata: { methods: ['pay_invoice', 'make_invoice'] } },
       { id: 'old', name: 'Old', type: 'nwc', metadata: {} },
+      { id: 'peek', name: 'Peek', type: 'nwc', metadata: { methods: ['get_balance'] } },
     ],
     activeWalletId: 'recv',
     amountSats: 1000,
   });
   const byId = Object.fromEntries(list.map((w) => [w.id, w]));
-  assert.equal(byId.recv.reason, PAYING_REASON.SEND_NOT_ALLOWED);
+  assert.equal(byId.recv.reason, PAYING_REASON.RECEIVE_ONLY);
+  assert.equal(byId.peek.reason, PAYING_REASON.SEND_NOT_ALLOWED, 'read only: it cannot receive either');
   assert.equal(byId.recv.usable, false);
   assert.equal(byId.pay.usable, true);
   assert.equal(byId.old.usable, true, 'a wallet saved before grants were stored keeps working');
   assert.equal(pickDefaultPayingWallet(list).id, 'pay');
   const t = (k, p = {}) => k.replace(/\{(\w+)\}/g, (_, x) => p[x]);
-  assert.equal(payingWalletReasonText(PAYING_REASON.SEND_NOT_ALLOWED, t), 'Receive only');
+  assert.equal(payingWalletReasonText(PAYING_REASON.RECEIVE_ONLY, t), 'Receive only');
+  assert.equal(payingWalletReasonText(PAYING_REASON.SEND_NOT_ALLOWED, t), "Can't send");
   assert.match(payingWalletHint(byId.recv, 'lightning', t), /Coinos allows this connection to receive only/);
+  assert.match(payingWalletHint(byId.peek, 'lightning', t), /Peek does not allow this connection to send/);
 });
