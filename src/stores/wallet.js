@@ -39,6 +39,7 @@ import {
   summarizeTotal,
 } from '../utils/balanceState.js';
 import { sparkLifecycle, forgetSparkWallet } from '../services/sparkLifecycleApp.js';
+import { startAutoTransferWatch } from '../services/autoTransferWatch.js';
 import { scanSparkAccounts } from '../services/sparkAccountScan.js';
 import {
   SPARK_ACCOUNT_ORDER,
@@ -1381,9 +1382,11 @@ export const useWalletStore = defineStore('wallet', {
           // fresh ones arrive reactively instead of holding up startup.
           this.loadExchangeRates().catch(() => {});
 
-          // Initialize auto-withdraw store
+          // Auto-Transfer: the saved rules, and the watch that keeps the
+          // balances of their wallets current (Spark has its own lifecycle).
           const autoWithdrawStore = useAutoWithdrawStore();
           await autoWithdrawStore.initialize({ wallets: this.wallets });
+          if (typeof window !== 'undefined' && !window.__AUDIT__) startAutoTransferWatch(this, autoWithdrawStore).catch(() => {});
 
           // Auto-connect Spark wallets — detect if migration from PIN is needed
           if (this.sparkWallets.length > 0) {
@@ -3045,7 +3048,7 @@ export const useWalletStore = defineStore('wallet', {
       forgetSparkWallet?.(walletId);
       delete this.walletInfos[walletId];
       try { useExitKitStore().remove(walletId); } catch { /* metadata only */ }
-      await useAutoWithdrawStore().removeConfig(walletId);
+      await useAutoWithdrawStore().forgetWallet(walletId);
       if (this.kioskWalletId === walletId) this.kioskWalletId = null;
       return removedAddresses;
     },
@@ -3886,9 +3889,11 @@ export const useWalletStore = defineStore('wallet', {
      * @param {string} toWalletId - Destination wallet ID
      * @param {number} amountSats - Amount in satoshis
      * @param {string} [memo] - Optional memo/description
+     * @param {object} [stamp] - How the sending side's history names it:
+     *   `source` ('internal-transfer' unless given) and `label`
      * @returns {Promise<Object>} Transfer result
      */
-    async transferBetweenWallets(fromWalletId, toWalletId, amountSats, memo = '') {
+    async transferBetweenWallets(fromWalletId, toWalletId, amountSats, memo = '', stamp = {}) {
       if (fromWalletId === toWalletId) {
         throw new Error('Cannot transfer to the same wallet');
       }
@@ -3990,15 +3995,17 @@ export const useWalletStore = defineStore('wallet', {
       // (credit) link carries toWalletId — or the two legs could stamp (or
       // race to consume) each other's record.
       const transactionId = internalTransferTransactionId(fromType, paymentResult, invoice);
+      const outgoingSource = stamp.source || 'internal-transfer';
+      const outgoingLabel = stamp.label || `Transfer to ${toWallet.name}`;
       try {
         const transactionMetadataStore = useTransactionMetadataStore();
         if (transactionId) {
-          await transactionMetadataStore.setLabelForTransaction(transactionId, fromWalletId, `Transfer to ${toWallet.name}`);
-          await transactionMetadataStore.setSourceForTransaction(transactionId, fromWalletId, 'internal-transfer');
+          await transactionMetadataStore.setLabelForTransaction(transactionId, fromWalletId, outgoingLabel);
+          await transactionMetadataStore.setSourceForTransaction(transactionId, fromWalletId, outgoingSource);
         } else {
           await transactionMetadataStore.enqueuePendingContactLink({
-            label: `Transfer to ${toWallet.name}`,
-            source: 'internal-transfer',
+            label: outgoingLabel,
+            source: outgoingSource,
             amountSats,
             walletId: fromWalletId,
           });

@@ -145,7 +145,7 @@ export function createHarness({ evidence = {}, connect = null, storage = {}, exi
       sparkLifecycle: () => ({ start() {}, reconcile(id) { calls.reconciled.push(id); return Promise.resolve(); } }),
       forgetSparkWallet: () => {},
     },
-    './autoWithdraw': { useAutoWithdrawStore: () => ({ checkAndExecute() {}, async initialize() {}, removeConfig: async (id) => { calls.removedConfigs.push(id); } }) },
+    './autoWithdraw': { useAutoWithdrawStore: () => ({ checkAndExecute() {}, async initialize() {}, forgetWallet: async (id) => { calls.removedConfigs.push(id); } }) },
     './exitKit': { useExitKitStore: () => ({ remove: (id) => calls.kitsRemoved.push(id) }) },
     './emergencyExit': { useEmergencyExitStore: () => exitStore },
     '../services/exitKit.js': {

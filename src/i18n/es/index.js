@@ -8,6 +8,7 @@ import identities from './identities.js';
 import lnbits from './lnbits.js';
 import nwc from './nwc.js';
 import walletRemoval from './walletRemoval.js';
+import autoTransfer from './autoTransfer.js';
 import boltCard from './boltCard.js';
 export default {
   ...requests,
@@ -58,6 +59,7 @@ export default {
   ...lnbits,
   ...nwc,
   ...walletRemoval,
+  ...autoTransfer,
   ...boltCard,
   // Spend: Bitrefill door
   "Gift cards, mobile top-ups and more": "Tarjetas regalo, recargas móviles y más",
@@ -235,8 +237,6 @@ export default {
   "The Lightning payment couldn't be completed. Please try again.": "No se pudo completar el pago Lightning. Inténtalo de nuevo.",
   // ─── Arkade auxiliary paths (transfer / batch / auto-withdraw) ───
   "Requires Arkade": "Requiere Arkade",
-  "Arkade transfers are instant and near free": "Las transferencias Arkade son instantáneas y casi gratis",
-  "ark1...": "ark1...",
   // ─── Arkade on-chain (boarding receive / offboard send) ───
   "Includes an on-chain network fee": "Incluye una comisión de red on-chain",
   "Preparing address...": "Preparando la dirección ...",
@@ -694,9 +694,6 @@ export default {
   "day ago": "hace 1 día",
   "days ago": "días atrás",
   // Round 2 extras (already in en-US)
-  "Auto-transfer complete": "Transferencia automática completada",
-  "Auto-transfer rule removed": "Regla de transferencia automática eliminada",
-  "Auto-transfer settings saved": "Ajustes de transferencia automática guardados",
   "Awaiting payment": "Esperando el pago",
   "Bitcoin address": "Dirección Bitcoin",
   "Could not process this link": "No se pudo procesar este enlace",
@@ -773,7 +770,6 @@ export default {
   "We ask for your PIN, pattern or password whenever we need to be sure it's you.": "Te pedimos tu PIN, patrón o contraseña cuando necesitamos asegurarnos de que eres tú.",
   "We ask you to unlock your phone whenever we need to be sure it's you.": "Te pedimos que desbloquees tu teléfono cuando necesitamos asegurarnos de que eres tú.",
   // Settings
-  "Spark transfers are instant and free": "Las transferencias Spark son instantáneas y gratis",
   "Show your recovery phrase": "Muestra tu frase de recuperación",
   "Tap \"Add Wallet\" to get started": "Toca \"Agregar Cartera\" para empezar",
   "Lightning address copied": "Dirección Lightning copiada",
@@ -784,7 +780,6 @@ export default {
   "Point BuhoGO at a Mempool server you host or trust": "Apunta BuhoGO a un servidor Mempool que tú alojes o en el que confíes",
   "Must start with https:// and end with /api/v1": "Debe empezar con https:// y terminar con /api/v1",
   "https://your-mempool.example.com/api/v1": "https://your-mempool.example.com/api/v1",
-  "spark1...": "spark1...",
   "Community": "Comunidad",
   "Community-run, based in Germany": "Gestionado por la comunidad, con sede en Alemania",
   "Works for everyone": "Funciona para todos",
@@ -865,23 +860,14 @@ export default {
   "kiosk.connecting": "Conectando...",
   // Already in en-US (es catch-up)
   "Add Description": "Agregar descripción",
-  "Amount in sats": "Monto en sats",
   "Enter the amount in {unit}": "Ingresar el monto en {unit}",
   "Back up your wallet": "Respalda tu cartera",
   "Backup Seed Phrase": "Respaldar frase semilla",
-  "Connect a wallet to set up automatic transfers": "Conecta una cartera para configurar transferencias automáticas",
   "Couldn't create invoice": "No se pudo crear la factura",
   "Exchange Rate Source": "Fuente del tipo de cambio",
-  "Inactive": "Inactivo",
-  "Last transfer": "Última transferencia",
-  "Move funds automatically when your balance grows past a threshold": "Mueve fondos automáticamente cuando tu saldo supere un umbral",
   "Other": "Otro",
   "Protect your funds by saving your recovery phrase.": "Protege tus fondos guardando tu frase de recuperación.",
-  "Remove rule": "Eliminar regla",
-  "Threshold": "Umbral",
-  "Transfer via": "Transferir vía",
   "Verified": "Verificado",
-  "bc1q...": "bc1q...",
   "Save for the Future": "Ahorra para el Futuro",
   "Ready to save? You can send your Bitcoin to a hardware wallet or any Bitcoin address for long-term storage.": "¿Listo para ahorrar? Puedes enviar tu Bitcoin a una hardware wallet o cualquier dirección Bitcoin para guardarlos a largo plazo.",
   "Let's go!": "¡Vamos!",
@@ -955,7 +941,6 @@ export default {
   "Format": "Formato",
   "N/A": "N/D",
   // Auto-Transfer dialog explainer.
-  "Set a sats threshold per wallet. When the wallet hits it, the excess moves to a destination you choose.": "Define un umbral en sats por wallet. Cuando el wallet lo alcanza, el excedente se mueve al destino que elijas.",
   // Quick toggle — Hide Balance privacy mode.
   "Hidden": "Oculto",
   "Visible": "Visible",
@@ -1075,7 +1060,6 @@ export default {
   "Total Balance": "Saldo Total",
   "Online": "En Línea",
   "Kiosk needs a wallet that can create Lightning invoices. Add a Spark, LNbits or NWC wallet first.": "El kiosco necesita una billetera que pueda crear facturas Lightning. Añade primero una billetera Spark, LNbits o NWC.",
-  "Lightning transfers are temporarily unavailable on Arkade - use the Arkade option": "Las transferencias Lightning no están disponibles temporalmente en Arkade - usa la opción Arkade",
   "Arkade pays instantly - on-chain needs a confirmation": "Arkade paga al instante - on-chain necesita una confirmación",
   "Lightning is temporarily unavailable on Arkade - switch to another wallet": "Lightning no está disponible temporalmente en Arkade - cambia a otra billetera",
   "Lightning is temporarily unavailable on Arkade wallets. Your Arkade address and Bitcoin address still work, and any other wallet can pay Lightning.": "Lightning no está disponible temporalmente en las billeteras Arkade. Tu dirección Arkade y tu dirección Bitcoin siguen funcionando, y cualquier otra billetera puede pagar Lightning.",
@@ -1397,7 +1381,6 @@ export default {
   "contact": "contacto",
   "Enter contact name": "Ingresa el nombre del contacto",
   "user@domain.com": "usuario{'@'}dominio.com",
-  "user@example.com": "usuario{'@'}ejemplo.com",
   "Lightning address is required": "La dirección Lightning es obligatoria",
   "Invalid Lightning address format": "Formato de dirección Lightning inválido",
   "Invalid Bitcoin address format": "Formato de dirección Bitcoin inválido",

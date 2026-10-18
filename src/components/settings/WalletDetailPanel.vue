@@ -102,6 +102,15 @@
         <p v-else-if="canMoveAddress && !lightningAddress" class="detail-group-note">{{ $t('This wallet has no address to move right now.') }}</p>
       </section>
 
+      <!-- Its Auto-Transfer rule, or the way to set one up. -->
+      <button type="button" class="detail-group detail-link" data-audit="detail-auto-transfer" @click="$emit('auto-transfer', wallet.id)">
+        <span class="detail-group-copy">
+          <span class="detail-group-label">{{ $t('Auto-Transfer') }}</span>
+          <span class="detail-group-value is-placeholder">{{ autoTransfer || $t('Set Up') }}</span>
+        </span>
+        <Icon icon="tabler:chevron-right" width="18" height="18" class="detail-link-chevron" :aria-hidden="true" />
+      </button>
+
       <div v-if="!active || canReconnect" class="detail-actions">
         <button v-if="!active" type="button" class="detail-button detail-primary" :disabled="switching || reconnecting || saving" @click="$emit('switch', wallet.id)">
           <q-spinner v-if="switching" size="20px" :aria-hidden="true" />
@@ -168,11 +177,13 @@ const props = defineProps({
   nwcStatus: { type: String, default: '' },
   /** Spark, Arkade: the wallet's recovery phrase is confirmed backed up. */
   phraseBackedUp: Boolean,
+  /** Its Auto-Transfer rule in a few words ("To Savings"); '' when it has none. */
+  autoTransfer: { type: String, default: '' },
 });
 const isNwc = computed(() => (props.wallet.type || 'nwc') === 'nwc');
 const onPhone = computed(() => walletKind(props.wallet) === WALLET_KIND.ON_PHONE);
 const sharesBalance = computed(() => capabilitiesOf(props.wallet).balance);
-const emit = defineEmits(['back', 'switch', 'reconnect', 'remove', 'backup', 'copy-address', 'change-address', 'move-address']);
+const emit = defineEmits(['back', 'switch', 'reconnect', 'remove', 'backup', 'copy-address', 'change-address', 'move-address', 'auto-transfer']);
 // vue-i18n runs in legacy mode (src/boot/i18n.js), so useI18n() throws.
 // Reach $t through the component proxy, the app's established pattern.
 const { proxy } = getCurrentInstance();
@@ -273,6 +284,8 @@ button:not(:disabled):active { filter: brightness(.9); }
 .detail-group-value.is-placeholder { font-family: inherit; color: var(--detail-secondary); }
 .detail-group-action { display: block; width: 100%; min-height: 48px; padding: 12px 16px; border: 0; border-top: 1px solid var(--detail-line); background: transparent; color: inherit; font: 500 .9375rem/1.4 'Manrope', sans-serif; text-align: start; cursor: pointer; }
 .detail-group-note { margin: 0; padding: 0 16px 12px; color: var(--detail-secondary); font-size: .8125rem; line-height: 1.45; }
+.detail-link { display: flex; align-items: center; gap: 8px; width: 100%; padding: 12px 12px 12px 16px; color: inherit; font: inherit; text-align: start; cursor: pointer; }
+.detail-link-chevron { flex-shrink: 0; color: var(--detail-secondary); }
 @media (max-width: 360px) {
   .detail-identity { display: grid; grid-template-columns: 1fr 44px; gap: 12px; }
   .detail-avatar { grid-column: 1; grid-row: 1; }

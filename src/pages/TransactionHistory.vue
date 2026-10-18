@@ -756,6 +756,7 @@ const INVOICE_EXPIRY_CHECK_MS = 15000;
 // (e.g. 'nostr', 'phone') and only need a new entry here, no logic change.
 const TX_SOURCE_CHIP_KEYS = {
   'internal-transfer': 'Transfer',
+  'auto-transfer': 'Auto-Transfer',
   'social-bucket': 'Profile payout',
   batch: 'Batch',
   kiosk: 'Kiosk',
@@ -768,6 +769,7 @@ const TX_SOURCE_CHIP_KEYS = {
 // avatar or arrow already tells the story).
 const TX_SOURCE_ICONS = {
   'internal-transfer': 'tabler:arrows-exchange',
+  'auto-transfer': 'tabler:arrow-autofit-right',
   'social-bucket': 'tabler:user-dollar',
   kiosk: 'tabler:building-store',
 };
@@ -1315,6 +1317,10 @@ export default {
       if (contact) return { full: contact.name, kind: 'name' };
 
       const label = this.getTxMetadataLabel(tx);
+      // An Auto-Transfer stamps its destination's name; the row says where it went.
+      if (this.getTxMetadataSource(tx) === 'auto-transfer') {
+        return { full: label ? this.$t('To {name}', { name: label }) : this.$t('Auto-Transfer'), kind: 'name' };
+      }
       if (label) return { full: label, kind: 'name' };
 
       // Below anything the user assigned, but above the message fallback:
@@ -1322,10 +1328,7 @@ export default {
       const earnTitle = this.getEarnRewardTitle(tx);
       if (earnTitle) return { full: earnTitle, kind: 'name' };
 
-      if (this.isAutoWithdraw(tx)) {
-        const note = this.getAutoWithdrawNote(tx);
-        return { full: note || this.$t('Auto-Transfer'), kind: 'name' };
-      }
+      if (this.isAutoWithdraw(tx)) return { full: this.$t('Auto-Transfer'), kind: 'name' };
 
       // Zap: the row is about WHO zapped. Resolved profile name when the
       // relays have answered, a shortened npub until then — reactive, so
@@ -1492,6 +1495,7 @@ export default {
       if (source === 'kiosk') return { icon: 'tabler:building-store', cls: 'tx-badge-pos' };
       if (source === 'batch') return { icon: 'tabler:stack-2', cls: 'tx-badge-aux' };
       if (source === 'internal-transfer') return { icon: 'tabler:arrows-exchange', cls: 'tx-badge-aux' };
+      if (source === 'auto-transfer') return { icon: 'tabler:arrow-autofit-right', cls: 'tx-badge-aux' };
       if (source === 'social-bucket') return { icon: 'tabler:user-dollar', cls: 'tx-badge-aux' };
       return tx.type === 'incoming'
         ? { icon: 'tabler:arrow-down-left', cls: 'tx-badge-in' }
@@ -1508,7 +1512,7 @@ export default {
       if (this.isPendingInvoice(tx)) return 'tabler:clock';
       if (tx.status === 'pending') return 'tabler:clock';
       if (tx.status === 'expired') return 'tabler:clock-x';
-      if (this.isAutoWithdraw(tx)) return 'tabler:send';
+      if (this.isAutoWithdraw(tx)) return 'tabler:arrow-autofit-right';
       if (this.isBitcoinTransaction(tx)) return 'tabler:currency-bitcoin';
       const sourceIcon = TX_SOURCE_ICONS[this.getTxMetadataSource(tx)];
       if (sourceIcon) return sourceIcon;
@@ -2201,13 +2205,6 @@ export default {
       return tags.includes('auto-withdraw');
     },
 
-    getAutoWithdrawNote(tx) {
-      if (!tx?.id || !this.metadataStore) return null;
-      try {
-        return this.metadataStore.getNoteForTransaction(tx.id, this.historyWalletId) || null;
-      } catch { return null; }
-    },
-
     getTransactionTypeText(tx) {
       if (this.isPendingInvoice(tx)) return this.$t('Invoice created');
       if (this.isAutoWithdraw(tx)) return this.$t('Auto-Transfer');
@@ -2228,7 +2225,7 @@ export default {
 
     getTransactionIcon(tx) {
       if (this.isPendingInvoice(tx)) return 'tabler:clock';
-      if (this.isAutoWithdraw(tx)) return 'tabler:send';
+      if (this.isAutoWithdraw(tx)) return 'tabler:arrow-autofit-right';
       if (this.isBitcoinTransaction(tx)) return 'tabler:currency-bitcoin';
       if (tx.senderNpub) return 'tabler:bolt';
       return tx.type === 'incoming' ? 'tabler:arrow-down' : 'tabler:arrow-up';

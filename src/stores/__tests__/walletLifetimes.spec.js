@@ -38,7 +38,7 @@ function load({ createProvider, extraDeps = {} }) {
     '../utils/nwcConnection.js': nwcConnection,
     '../utils/nwcErrors.js': nwcErrors,
     '../stores/autoWithdraw': {},
-    './autoWithdraw': { useAutoWithdrawStore: () => ({ checkAndExecute() {}, removeConfig: async () => {} }) },
+    './autoWithdraw': { useAutoWithdrawStore: () => ({ checkAndExecute() {}, forgetWallet: async () => {} }) },
     './exitKit': { useExitKitStore: () => ({ remove() {} }) },
     '../services/exitKit.js': { exitKitService: () => ({ onSparkConnected() {}, onSparkDisconnected() {}, preserveBeforeRemoval: async () => {} }), clearExitData: async () => {} },
     '../services/breezSdk': { deleteWalletStorage: async () => {}, deleteAllStorage: async () => {} },

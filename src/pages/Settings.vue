@@ -1036,6 +1036,8 @@
           @switch="handleSwitchWallet"
           @reconnect="reconnectWallet"
           :phrase-backed-up="walletStore.phraseBackedUp(detailWallet.id) === true"
+          :auto-transfer="autoTransferSummary(detailWallet.id)"
+          @auto-transfer="openAutoTransfer"
           @remove="confirmRemoveWallet"
           @backup="openPhraseBackup"
           @copy-address="copyToClipboard($event, $t('Lightning address copied'))"
@@ -1712,344 +1714,6 @@
     />
 
 
-    <!-- Auto-Transfer Wallet List Dialog -->
-    <q-dialog v-model="showAutoTransferDialog" :class="$q.dark.isActive ? 'dialog_dark' : 'dialog_light'">
-      <q-card class="wallets-dialog-card" :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'">
-        <q-card-section class="dialog-header wallets-dialog-header">
-          <div class="dialog-title" :class="$q.dark.isActive ? 'dialog_title_dark' : 'dialog_title_light'">
-            {{ $t('Auto-Transfer') }}
-          </div>
-          <q-btn flat round dense v-close-popup :class="$q.dark.isActive ? 'close_btn_dark' : 'close_btn_light'">
-            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 20 20" fill="none">
-              <path d="M15 5L5 15M5 5L15 15" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-            </svg>
-          </q-btn>
-        </q-card-section>
-
-        <!--
-          One-line explainer right under the title so a first-time
-          user understands what the dialog is for before they see
-          the wallet list. Without this the feature reads as
-          generic "pick a wallet" with no clue what happens after.
-        -->
-        <div class="dialog-explainer" :class="$q.dark.isActive ? 'dialog-explainer-dark' : 'dialog-explainer-light'">
-          {{ $t('Set a sats threshold per wallet. When the wallet hits it, the excess moves to a destination you choose.') }}
-        </div>
-
-        <q-card-section class="wallets-dialog-content">
-          <!-- Empty state -->
-          <div v-if="wallets.length === 0" class="aw-empty-state" :class="$q.dark.isActive ? 'aw-empty-dark' : 'aw-empty-light'">
-            <img
-              src="/Onboarding wizard spark/storyset-transfer-money-bro.svg"
-              class="aw-empty-illustration"
-              alt=""
-              aria-hidden="true"
-            />
-            <div class="aw-empty-text">{{ $t('Connect a wallet to set up automatic transfers') }}</div>
-          </div>
-
-          <!-- Wallet list -->
-          <div v-else class="aw-dialog-list">
-            <div
-              v-for="entry in awWalletEntries"
-              :key="'awd-' + entry.configKey"
-              class="aw-dialog-item"
-              :class="$q.dark.isActive ? 'aw-dialog-item-dark' : 'aw-dialog-item-light'"
-              @click="openAutoWithdrawFromDialog(entry.wallet, entry.configKey, entry.name)"
-            >
-              <div class="aw-wallet-avatar" :class="'aw-avatar-' + (entry.type || 'nwc')">
-                <!-- Spark -->
-                <svg v-if="entry.type === 'spark'" width="16" height="15" viewBox="0 0 135 128" fill="none" xmlns="http://www.w3.org/2000/svg">
-                  <path fill-rule="evenodd" clip-rule="evenodd" d="M79.4319 49.3554L81.7454 0H52.8438L55.1573 49.356L8.9311 31.9035L0 59.3906L47.6565 72.4425L16.7743 111.012L40.1562 128L67.2966 86.7083L94.4358 127.998L117.818 111.01L86.9359 72.4412L134.587 59.3907L125.656 31.9036L79.4319 49.3554Z" fill="white"/>
-                </svg>
-                <!-- NWC -->
-                <svg v-else-if="entry.type === 'nwc'" width="16" height="16" viewBox="0 0 257 256" fill="none" xmlns="http://www.w3.org/2000/svg">
-                  <path d="M110.938 31.0639C100.704 20.8691 84.0846 20.9782 73.8873 31.2091L7.91341 97.4141C-2.28517 107.646-2.15541 123.974 8.07554 134.17L116.246 242.34C126.479 252.534 143.066 252.449 153.263 242.218L185.415 210.066C176.038 219.443 168.322 212.701 159.178 203.595L141.244 185.662C127.63 191.051 111.718 188.374 100.688 177.365L87.0221 163.699C86.5623 163.243 86.2075 162.767 85.9582 162.17C85.7089 161.572 85.5803 160.931 85.5797 160.284C85.5792 159.637 85.7067 158.995 85.955 158.398C86.2033 157.8 86.5923 157.293 87.0513 156.837L94.7848 149.103L77.9497 132.268C75.3144 129.638 74.8841 125.391 77.2407 122.522C79.9345 119.228 84.8188 119.053 87.7741 122.002L104.837 139.051L116.394 127.494L99.5187 110.661C96.8822 108.03 96.4531 103.784 98.8298 100.895C99.4602 100.128 100.244 99.5006 101.131 99.0542C102.019 98.6077 102.989 98.3518 103.981 98.3028C104.973 98.2538 105.964 98.4129 106.891 98.7697C107.818 99.1266 108.66 99.6733 109.363 100.375L126.495 117.393L133.755 110.132C134.211 109.673 134.66 109.259 135.258 109.01C135.855 108.761 136.496 108.632 137.144 108.632C137.791 108.631 138.432 108.758 139.03 109.006C139.628 109.254 140.171 109.618 140.628 110.077L154.316 123.738C165.208 134.609 168.056 150.431 162.964 163.943L180.901 181.88C190.045 190.985 197.696 197.785 207.074 188.408L247.645 147.836C237.893 157.588 229.881 150.075 220.244 140.446L110.938 31.0639Z" fill="white"/>
-                  <path d="M187.641 13.0273L153.153 47.4873L229.781 124.116C237.116 131.419 243.491 137.239 250.565 134.417C254.654 132.787 257.461 128.351 255.894 124.238C219.227 28.0253 219.212 28.0238 214.348 17.507C209.484 6.99014 195.804 4.76016 187.641 13.0273Z" fill="white"/>
-                </svg>
-                <!-- LNbits -->
-                <svg v-else-if="entry.type === 'lnbits'" width="14" height="16" viewBox="0 0 502 902" fill="none" xmlns="http://www.w3.org/2000/svg">
-                  <path d="M158.566 493.857L1 901L450.49 355.202H264.831L501.791 1H187.881L36.4218 493.857H158.566Z" fill="white"/>
-                </svg>
-                <!-- Arkade -->
-                <!-- Arkade's two brand colours: purple on a light tile, orange on a deep purple one. -->
-                <ArkadeLogo v-else-if="entry.type === 'arkade'" variant="mark" :size="16" />
-                <Icon v-else icon="tabler:wallet" width="16" height="16" style="color: white;" />
-              </div>
-              <div class="aw-dialog-item-info">
-                <div class="aw-dialog-item-name" :class="$q.dark.isActive ? 'aw-name-dark' : 'aw-name-light'">
-                  {{ entry.name }}
-                </div>
-                <div v-if="getAutoWithdrawConfig(entry.configKey)?.enabled" class="aw-dialog-item-summary" :class="$q.dark.isActive ? 'aw-summary-dark' : 'aw-summary-light'">
-                  {{ Number(getAutoWithdrawConfig(entry.configKey).thresholdSats).toLocaleString() }} {{ $t('sats') }} &rarr; {{ truncateAutoWithdrawDest(entry.configKey) }}
-                </div>
-              </div>
-              <div class="aw-dialog-item-right">
-                <span
-                  class="aw-status-pill"
-                  :class="getAutoWithdrawConfig(entry.configKey)?.enabled ? 'aw-pill-active' : 'aw-pill-inactive'"
-                >
-                  {{ getAutoWithdrawConfig(entry.configKey)?.enabled ? $t('Active') : $t('Off') }}
-                </span>
-                <Icon icon="tabler:chevron-right" width="16" height="16" :class="$q.dark.isActive ? 'chevron-dark' : 'chevron-light'" />
-              </div>
-            </div>
-          </div>
-        </q-card-section>
-      </q-card>
-    </q-dialog>
-
-    <!-- Auto-Withdraw Config Dialog -->
-    <q-dialog v-model="showAutoWithdrawDialog" position="bottom" :class="$q.dark.isActive ? 'dialog_dark' : 'dialog_light'">
-      <q-card class="aw-config-dialog" :class="$q.dark.isActive ? 'dialog_card_dark' : 'dialog_card_light'">
-        <!-- Header -->
-        <q-card-section class="aw-dialog-header">
-          <div class="aw-dialog-icon-wrap" :class="'aw-icon-wrap-' + (awConfigWallet?.type || 'nwc')">
-            <Icon icon="tabler:send" width="28" height="28" />
-          </div>
-          <div class="aw-dialog-title" :class="$q.dark.isActive ? 'dialog_title_dark' : 'dialog_title_light'">
-            {{ $t('Auto-Transfer') }}
-          </div>
-          <div class="aw-dialog-entry-name" :class="$q.dark.isActive ? 'aw-subtitle-dark' : 'aw-subtitle-light'">
-            {{ awConfigEntryName }}
-          </div>
-          <div class="aw-dialog-subtitle" :class="$q.dark.isActive ? 'aw-subtitle-dark' : 'aw-subtitle-light'">
-            {{ $t('Move funds automatically when your balance grows past a threshold') }}
-          </div>
-        </q-card-section>
-
-        <q-card-section class="aw-dialog-body">
-          <!-- Enable toggle -->
-          <div class="aw-toggle-row" :class="$q.dark.isActive ? 'aw-toggle-dark' : 'aw-toggle-light'">
-            <div class="aw-toggle-label">
-              <span class="aw-toggle-text" :class="$q.dark.isActive ? 'aw-name-dark' : 'aw-name-light'">
-                {{ awConfigForm.enabled ? $t('Active') : $t('Inactive') }}
-              </span>
-            </div>
-            <q-toggle
-              v-model="awConfigForm.enabled"
-              :color="awToggleColor"
-            />
-          </div>
-
-          <!-- Threshold -->
-          <div class="aw-field-group">
-            <div class="aw-field-label" :class="$q.dark.isActive ? 'aw-label-dark' : 'aw-label-light'">
-              {{ $t('Threshold') }}
-            </div>
-            <q-input
-              v-model.number="awConfigForm.thresholdSats"
-              type="number"
-              :placeholder="$t('Amount in sats')"
-              borderless
-              dense
-              class="aw-input"
-              :class="$q.dark.isActive ? 'aw-input-dark' : 'aw-input-light'"
-              :disable="!awConfigForm.enabled"
-            >
-              <template v-slot:append>
-                <span class="aw-input-suffix" :class="$q.dark.isActive ? 'aw-suffix-dark' : 'aw-suffix-light'">sats</span>
-              </template>
-            </q-input>
-            <div v-if="awConfigForm.thresholdSats > 0 && exchangeRates[String(preferredFiatCurrency).toLowerCase()]" class="aw-fiat-hint" :class="$q.dark.isActive ? 'aw-hint-dark' : 'aw-hint-light'">
-              &asymp; {{ formatFiatValue(awConfigForm.thresholdSats) }}
-            </div>
-          </div>
-
-          <!-- Payout type (Spark only — 3 options) -->
-          <div v-if="awConfigWallet?.type === 'spark'" class="aw-field-group">
-            <div class="aw-field-label" :class="$q.dark.isActive ? 'aw-label-dark' : 'aw-label-light'">
-              {{ $t('Transfer via') }}
-            </div>
-            <div class="aw-payout-pills">
-              <div
-                class="aw-pill-option"
-                :class="[
-                  awConfigForm.payoutType === 'spark' ? 'aw-pill-selected aw-pill-sel-spark' : '',
-                  $q.dark.isActive ? 'aw-pill-dark' : 'aw-pill-light',
-                  !awConfigForm.enabled ? 'aw-pill-disabled' : ''
-                ]"
-                @click="awConfigForm.enabled && (awConfigForm.payoutType = 'spark')"
-              >
-                <svg width="14" height="13" viewBox="0 0 135 128" fill="none" xmlns="http://www.w3.org/2000/svg">
-                  <path fill-rule="evenodd" clip-rule="evenodd" d="M79.4319 49.3554L81.7454 0H52.8438L55.1573 49.356L8.9311 31.9035L0 59.3906L47.6565 72.4425L16.7743 111.012L40.1562 128L67.2966 86.7083L94.4358 127.998L117.818 111.01L86.9359 72.4412L134.587 59.3907L125.656 31.9036L79.4319 49.3554Z" fill="currentColor"/>
-                </svg>
-                {{ $t('Spark') }}
-              </div>
-              <div
-                class="aw-pill-option"
-                :class="[
-                  awConfigForm.payoutType === 'lightning' ? 'aw-pill-selected aw-pill-sel-spark' : '',
-                  $q.dark.isActive ? 'aw-pill-dark' : 'aw-pill-light',
-                  !awConfigForm.enabled ? 'aw-pill-disabled' : ''
-                ]"
-                @click="awConfigForm.enabled && (awConfigForm.payoutType = 'lightning')"
-              >
-                <Icon icon="tabler:bolt" width="16" height="16" />
-                {{ $t('Lightning') }}
-              </div>
-              <div
-                class="aw-pill-option"
-                :class="[
-                  awConfigForm.payoutType === 'onchain' ? 'aw-pill-selected aw-pill-sel-spark' : '',
-                  $q.dark.isActive ? 'aw-pill-dark' : 'aw-pill-light',
-                  !awConfigForm.enabled ? 'aw-pill-disabled' : ''
-                ]"
-                @click="awConfigForm.enabled && (awConfigForm.payoutType = 'onchain')"
-              >
-                <Icon icon="tabler:link" width="16" height="16" />
-                {{ $t('On-chain') }}
-              </div>
-            </div>
-            <!-- Zero-fee hint for Spark -->
-            <div v-if="awConfigForm.payoutType === 'spark'" class="aw-spark-hint" :class="$q.dark.isActive ? 'aw-hint-dark' : 'aw-hint-light'">
-              <Icon icon="tabler:discount-check" width="14" height="14" />
-              {{ $t('Spark transfers are instant and free') }}
-            </div>
-          </div>
-
-          <!-- Payout type (Arkade — native ark1 or Lightning) -->
-          <div v-else-if="awConfigWallet?.type === 'arkade'" class="aw-field-group">
-            <div class="aw-field-label" :class="$q.dark.isActive ? 'aw-label-dark' : 'aw-label-light'">
-              {{ $t('Transfer via') }}
-            </div>
-            <div class="aw-payout-pills">
-              <div
-                class="aw-pill-option"
-                :class="[
-                  awConfigForm.payoutType === 'arkade' ? 'aw-pill-selected aw-pill-sel-spark' : '',
-                  $q.dark.isActive ? 'aw-pill-dark' : 'aw-pill-light',
-                  !awConfigForm.enabled ? 'aw-pill-disabled' : ''
-                ]"
-                @click="awConfigForm.enabled && (awConfigForm.payoutType = 'arkade')"
-              >
-                <ArkadeLogo variant="mark" :size="16" />
-                {{ $t('Arkade') }}
-              </div>
-              <div
-                class="aw-pill-option"
-                :class="[
-                  awConfigForm.payoutType === 'lightning' ? 'aw-pill-selected aw-pill-sel-spark' : '',
-                  $q.dark.isActive ? 'aw-pill-dark' : 'aw-pill-light',
-                  (!awConfigForm.enabled || awArkadeLightningBlocked) ? 'aw-pill-disabled' : ''
-                ]"
-                @click="awConfigForm.enabled && !awArkadeLightningBlocked && (awConfigForm.payoutType = 'lightning')"
-              >
-                <Icon icon="tabler:bolt" width="16" height="16" />
-                {{ $t('Lightning') }}
-              </div>
-            </div>
-            <div v-if="awArkadeLightningBlocked" class="aw-spark-hint" :class="$q.dark.isActive ? 'aw-hint-dark' : 'aw-hint-light'">
-              <Icon icon="tabler:info-circle" width="14" height="14" />
-              {{ $t('Lightning transfers are temporarily unavailable on Arkade - use the Arkade option') }}
-            </div>
-            <div v-if="awConfigForm.payoutType === 'arkade'" class="aw-spark-hint" :class="$q.dark.isActive ? 'aw-hint-dark' : 'aw-hint-light'">
-              <Icon icon="tabler:discount-check" width="14" height="14" />
-              {{ $t('Arkade transfers are instant and near free') }}
-            </div>
-          </div>
-
-          <!-- Destination -->
-          <div class="aw-field-group">
-            <div class="aw-field-label" :class="$q.dark.isActive ? 'aw-label-dark' : 'aw-label-light'">
-              {{ awDestinationLabel }}
-            </div>
-            <q-input
-              v-if="awConfigForm.payoutType === 'spark' && awConfigWallet?.type === 'spark'"
-              v-model="awConfigForm.sparkAddress"
-              :placeholder="$t('spark1...')"
-              borderless
-              dense
-              class="aw-input"
-              :class="$q.dark.isActive ? 'aw-input-dark' : 'aw-input-light'"
-              :disable="!awConfigForm.enabled"
-            />
-            <q-input
-              v-else-if="awConfigForm.payoutType === 'onchain' && awConfigWallet?.type === 'spark'"
-              v-model="awConfigForm.bitcoinAddress"
-              :placeholder="$t('bc1q...')"
-              borderless
-              dense
-              class="aw-input"
-              :class="$q.dark.isActive ? 'aw-input-dark' : 'aw-input-light'"
-              :disable="!awConfigForm.enabled"
-            />
-            <q-input
-              v-else-if="awConfigForm.payoutType === 'arkade' && awConfigWallet?.type === 'arkade'"
-              v-model="awConfigForm.arkadeAddress"
-              :placeholder="$t('ark1...')"
-              borderless
-              dense
-              class="aw-input"
-              :class="$q.dark.isActive ? 'aw-input-dark' : 'aw-input-light'"
-              :disable="!awConfigForm.enabled"
-            />
-            <q-input
-              v-else
-              v-model="awConfigForm.lightningAddress"
-              :placeholder="$t('user@example.com')"
-              borderless
-              dense
-              class="aw-input"
-              :class="$q.dark.isActive ? 'aw-input-dark' : 'aw-input-light'"
-              :disable="!awConfigForm.enabled"
-            />
-          </div>
-
-          <!-- Fee speed (on-chain only) -->
-          <div v-if="awConfigForm.payoutType === 'onchain' && awConfigWallet?.type === 'spark'" class="aw-field-group">
-            <div class="aw-field-label" :class="$q.dark.isActive ? 'aw-label-dark' : 'aw-label-light'">
-              {{ $t('Network fee') }}
-            </div>
-            <div class="aw-fee-cards">
-              <div
-                v-for="speed in feeSpeedOptions"
-                :key="speed.value"
-                class="aw-fee-card"
-                :class="[
-                  awConfigForm.feeSpeed === speed.value ? 'aw-fee-selected aw-fee-sel-' + (awConfigWallet?.type || 'nwc') : '',
-                  $q.dark.isActive ? 'aw-fee-dark' : 'aw-fee-light',
-                  !awConfigForm.enabled ? 'aw-pill-disabled' : ''
-                ]"
-                @click="awConfigForm.enabled && (awConfigForm.feeSpeed = speed.value)"
-              >
-                <Icon :icon="speed.icon" width="18" height="18" />
-                <div class="aw-fee-label">{{ speed.label }}</div>
-                <div class="aw-fee-desc" :class="$q.dark.isActive ? 'aw-hint-dark' : 'aw-hint-light'">{{ speed.desc }}</div>
-              </div>
-            </div>
-          </div>
-
-          <!-- Last transfer info -->
-          <div v-if="awConfigLastTriggered" class="aw-last-transfer" :class="$q.dark.isActive ? 'aw-hint-dark' : 'aw-hint-light'">
-            <Icon icon="tabler:clock" width="14" height="14" />
-            {{ $t('Last transfer') }}: {{ awConfigLastTriggered }}
-          </div>
-        </q-card-section>
-
-        <!-- Actions -->
-        <q-card-actions class="aw-dialog-actions">
-          <q-btn
-            flat
-            :label="$t('Save')"
-            @click="saveAutoWithdrawConfig"
-            :disable="!isAutoWithdrawConfigValid"
-            class="aw-save-btn"
-            :class="'aw-save-' + (awConfigWallet?.type || 'nwc')"
-            no-caps
-          />
-          <q-btn
-            v-if="getAutoWithdrawConfig(awConfigWalletId)"
-            flat
-            :label="$t('Remove rule')"
-            @click="removeAutoWithdrawConfig"
-            class="aw-remove-btn"
-            no-caps
-          />
-        </q-card-actions>
-      </q-card>
-    </q-dialog>
-
     <SettingsHubNav />
   </q-page>
 </template>
@@ -2057,6 +1721,7 @@
 <script>
 import {useWalletStore} from '../stores/wallet'
 import {useAutoWithdrawStore} from '../stores/autoWithdraw'
+import { destinationLabel } from '../utils/autoTransferCopy.js'
 import {useBitcoinPreferencesStore} from '../stores/bitcoinPreferences'
 import {useIdentityStore} from '../stores/identity'
 import {useProfileStore} from '../stores/profile'
@@ -2315,27 +1980,6 @@ export default {
       kioskActivating: false,
       kioskWalletSelection: '',
 
-      // Auto-transfer
-      showAutoTransferDialog: false,
-      showAutoWithdrawDialog: false,
-      awConfigWalletId: null,
-      awConfigWallet: null,
-      awConfigEntryName: '',
-      awConfigForm: {
-        enabled: false,
-        thresholdSats: 0,
-        payoutType: 'lightning',
-        lightningAddress: '',
-        bitcoinAddress: '',
-        sparkAddress: '',
-        arkadeAddress: '',
-        feeSpeed: 'medium',
-      },
-      feeSpeedOptions: [
-        { value: 'low', label: 'Economy', desc: '~1 hour', icon: 'tabler:leaf' },
-        { value: 'medium', label: 'Standard', desc: '~30 min', icon: 'tabler:scale' },
-        { value: 'high', label: 'Priority', desc: 'Next block', icon: 'tabler:rocket' },
-      ],
     }
   },
   computed: {
@@ -2343,15 +1987,6 @@ export default {
     setAsideWallets() {
       return this.showWalletsDialog ? this.walletStore.setAsideSparkWallets() : [];
     },
-    /**
-     * An Arkade wallet's auto-withdraw cannot ride Lightning while the rail
-     * is out of service (Boltz retired) - the pill is disabled and existing
-     * lightning configs are steered to the Arkade option when opened.
-     */
-    awArkadeLightningBlocked() {
-      return this.awConfigWallet?.type === 'arkade';
-    },
-
     /**
      * Wallets the kiosk can charge through. Kiosk charges are Lightning
      * invoices, and Arkade's Lightning rail is out of service (Boltz
@@ -2629,17 +2264,26 @@ export default {
      * card is informative before a tap. Earn Sats and Address Book
      * moved to the Spend tab.
      */
+    /** Rules that are switched on. */
+    autoTransferOn() {
+      return Object.values(useAutoWithdrawStore().configs).filter((rule) => rule.enabled).length;
+    },
+    autoTransferMeta() {
+      const store = useAutoWithdrawStore();
+      if (store.needingAttention.length) return this.$t('Needs attention');
+      if (this.autoTransferOn) return this.$t('{count} on', { count: this.autoTransferOn });
+      return Object.keys(store.configs).length ? this.$t('Paused') : this.$t('No rules yet');
+    },
+
     featureCards() {
       const kioskOn = !!this.walletStore.kioskEnabled;
       return [
         {
           id: 'auto-transfer',
-          icon: 'tabler:send',
+          icon: 'tabler:arrow-autofit-right',
           label: this.$t('Auto-Transfer'),
-          meta: this.awActiveCount > 0
-            ? `${this.awActiveCount} ${this.$t('active')}`
-            : this.$t('No rules yet'),
-          active: this.awActiveCount > 0,
+          meta: this.autoTransferMeta,
+          active: this.autoTransferOn > 0,
         },
         {
           id: 'kiosk',
@@ -2810,65 +2454,6 @@ export default {
       return this.$t('Custom server');
     },
 
-    // Expand wallets into auto-transfer entries
-    awWalletEntries() {
-      const entries = [];
-      for (const wallet of this.wallets) {
-        entries.push({
-          configKey: wallet.id,
-          wallet,
-          name: wallet.name,
-          type: wallet.type,
-        });
-      }
-      return entries;
-    },
-
-    awActiveCount() {
-      return this.awWalletEntries.filter(
-        entry => this.getAutoWithdrawConfig(entry.configKey)?.enabled
-      ).length;
-    },
-
-    awToggleColor() {
-      const type = this.awConfigWallet?.type;
-      if (type === 'spark') return 'grey-8';
-      if (type === 'lnbits') return 'pink-5';
-      return 'amber-7'; // nwc
-    },
-
-    awDestinationLabel() {
-      if (this.awConfigWallet?.type === 'spark') {
-        if (this.awConfigForm.payoutType === 'spark') return this.$t('Spark address');
-        if (this.awConfigForm.payoutType === 'onchain') return this.$t('Bitcoin address');
-      }
-      if (this.awConfigWallet?.type === 'arkade' && this.awConfigForm.payoutType === 'arkade') {
-        return this.$t('Arkade address');
-      }
-      return this.$t('Lightning address');
-    },
-
-    isAutoWithdrawConfigValid() {
-      if (!this.awConfigForm.enabled) return true; // Can save disabled config
-      if (!this.awConfigForm.thresholdSats || this.awConfigForm.thresholdSats <= 0) return false;
-      if (this.awConfigForm.payoutType === 'spark' && this.awConfigWallet?.type === 'spark') {
-        return !!this.awConfigForm.sparkAddress?.trim();
-      }
-      if (this.awConfigForm.payoutType === 'onchain' && this.awConfigWallet?.type === 'spark') {
-        return !!this.awConfigForm.bitcoinAddress.trim();
-      }
-      if (this.awConfigForm.payoutType === 'arkade' && this.awConfigWallet?.type === 'arkade') {
-        return !!this.awConfigForm.arkadeAddress?.trim();
-      }
-      return !!this.awConfigForm.lightningAddress.trim();
-    },
-
-    awConfigLastTriggered() {
-      const config = this.getAutoWithdrawConfig(this.awConfigWalletId);
-      if (!config?.lastTriggeredAt) return null;
-      const d = new Date(config.lastTriggeredAt);
-      return d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    }
   },
   watch: {
     // A removed wallet's details close; the sheet always reopens on the list.
@@ -3416,7 +3001,7 @@ export default {
     onFeatureSelect(id) {
       switch (id) {
         case 'auto-transfer':
-          this.showAutoTransferDialog = true;
+          this.$router.push('/auto-transfer');
           return;
         case 'kiosk':
           this.handleKioskToggle(!this.walletStore.kioskEnabled);
@@ -3812,6 +3397,20 @@ export default {
         return;
       }
       this.askToRemove(copy, () => this.walletStore.removeWallet(walletId), () => this.confirmRemoveWallet(walletId));
+    },
+
+    /** The wallet's Auto-Transfer rule in a few words, for its details. */
+    autoTransferSummary(walletId) {
+      const rule = useAutoWithdrawStore().getConfig(walletId);
+      if (!rule) return '';
+      if (!rule.enabled) return this.$t('Paused');
+      return this.$t('To {name}', { name: destinationLabel(rule.destination, { wallets: this.wallets }) });
+    },
+
+    /** The wallet's rule, or the setup sheet for a new one. */
+    openAutoTransfer(walletId) {
+      this.showWalletsDialog = false;
+      this.$router.push(useAutoWithdrawStore().getConfig(walletId) ? `/auto-transfer/${walletId}` : { path: '/auto-transfer', query: { new: walletId } });
     },
 
     /** Security, opened on this wallet's recovery phrase. */
@@ -4213,96 +3812,6 @@ export default {
     navigateToRestoreArkade() {
       this.showAddWalletDialog = false;
       this.$router.push('/arkade-restore');
-    },
-
-    // Auto-withdraw methods
-    getAutoWithdrawConfig(walletId) {
-      if (!walletId) return null;
-      const store = useAutoWithdrawStore();
-      return store.getConfig(walletId);
-    },
-
-    truncateAutoWithdrawDest(walletId) {
-      const config = this.getAutoWithdrawConfig(walletId);
-      if (!config) return '';
-      let dest = '';
-      if (config.payoutType === 'spark') dest = config.sparkAddress;
-      else if (config.payoutType === 'onchain') dest = config.bitcoinAddress;
-      else if (config.payoutType === 'arkade') dest = config.arkadeAddress;
-      else dest = config.lightningAddress;
-      if (!dest) return '';
-      if (dest.includes('@')) return dest;
-      if (dest.length > 16) return `${dest.slice(0, 8)}...${dest.slice(-4)}`;
-      return dest;
-    },
-
-    openAutoWithdrawFromDialog(wallet, configKey, entryName) {
-      this.showAutoTransferDialog = false;
-      // Small delay to let the list dialog close before opening the config dialog
-      setTimeout(() => {
-        this.openAutoWithdrawConfig(wallet, configKey, entryName);
-      }, 200);
-    },
-
-    openAutoWithdrawConfig(wallet, configKey, entryName) {
-      this.awConfigWalletId = configKey || wallet.id;
-      this.awConfigWallet = wallet;
-      this.awConfigEntryName = entryName || wallet.name;
-      const existing = this.getAutoWithdrawConfig(this.awConfigWalletId);
-      if (existing) {
-        // A persisted Arkade+Lightning config predates the outage; steer it
-        // to the Arkade option so the sheet never shows a dead selection.
-        const existingPayoutType = (wallet.type === 'arkade' && (existing.payoutType || 'lightning') === 'lightning')
-          ? 'arkade'
-          : (existing.payoutType || 'lightning');
-        this.awConfigForm = {
-          enabled: existing.enabled,
-          thresholdSats: existing.thresholdSats,
-          payoutType: existingPayoutType,
-          lightningAddress: existing.lightningAddress || '',
-          bitcoinAddress: existing.bitcoinAddress || '',
-          sparkAddress: existing.sparkAddress || '',
-          arkadeAddress: existing.arkadeAddress || '',
-          feeSpeed: existing.feeSpeed || 'medium',
-        };
-      } else {
-        this.awConfigForm = {
-          enabled: false,
-          thresholdSats: 0,
-          // Arkade defaults to its instant, near-zero-fee native payout.
-          payoutType: wallet?.type === 'arkade' ? 'arkade' : 'lightning',
-          lightningAddress: '',
-          bitcoinAddress: '',
-          sparkAddress: '',
-          arkadeAddress: '',
-          feeSpeed: 'medium',
-        };
-      }
-      this.showAutoWithdrawDialog = true;
-    },
-
-    async saveAutoWithdrawConfig() {
-      const store = useAutoWithdrawStore();
-      await store.saveConfig(this.awConfigWalletId, this.awConfigForm);
-      this.showAutoWithdrawDialog = false;
-      this.$q.notify({
-        message: this.$t('Auto-transfer settings saved'),
-        color: 'positive',
-        position: 'top',
-        timeout: 2000,
-      });
-    },
-
-    async removeAutoWithdrawConfig() {
-      const store = useAutoWithdrawStore();
-      await store.removeConfig(this.awConfigWalletId);
-      this.showAutoWithdrawDialog = false;
-      this.$q.notify({
-        message: this.$t('Auto-transfer rule removed'),
-        color: 'info',
-        position: 'top',
-        timeout: 2000,
-      });
     },
 
     /**
@@ -6371,493 +5880,6 @@ body.body--light .wallet-avatar-arkade {
 }
 
 /* Backup Dialog */
-/* ==========================================
-   Auto-Withdraw — Neobank Style
-   ========================================== */
-
-/* Empty state */
-.aw-empty-state {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 8px;
-  padding: 32px 16px;
-  margin: 0 16px 12px;
-  border-radius: 14px;
-}
-.aw-empty-dark {
-  background: rgba(255, 255, 255, 0.03);
-}
-.aw-empty-light {
-  background: rgba(0, 0, 0, 0.02);
-  border: 1px solid rgba(0, 0, 0, 0.06);
-}
-.aw-empty-icon {
-  color: rgba(128, 128, 128, 0.4);
-}
-.aw-empty-illustration {
-  width: 100%;
-  max-width: 160px;
-  height: auto;
-  margin-bottom: 8px;
-  user-select: none;
-  pointer-events: none;
-}
-.aw-empty-text {
-  font-family: 'Manrope', sans-serif;
-  font-size: 13px;
-  color: rgba(128, 128, 128, 0.5);
-  text-align: center;
-}
-
-/* Wallet list */
-.aw-wallet-list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 0 16px;
-  margin-bottom: 12px;
-}
-
-.aw-wallet-card {
-  display: flex;
-  flex-direction: column;
-  padding: 14px 16px;
-  border-radius: 14px;
-  cursor: pointer;
-  transition: background 0.15s ease;
-}
-.aw-card-dark {
-  background: var(--bg-card);
-  border: 1px solid var(--border-card);
-}
-.aw-card-dark:active {
-  background: rgba(255, 255, 255, 0.08);
-}
-.aw-card-light {
-  background: var(--bg-card);
-  border: 1px solid var(--border-card);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
-}
-.aw-card-light:active {
-  background: rgba(0, 0, 0, 0.02);
-}
-
-.aw-wallet-row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.aw-wallet-avatar {
-  width: 36px;
-  height: 36px;
-  border-radius: 10px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-}
-.aw-avatar-spark {
-  background: linear-gradient(135deg, #2A2A2A, #1A1A1A);
-}
-.aw-avatar-lnbits {
-  background: linear-gradient(135deg, #FF1FE1, #C919B0);
-}
-.aw-avatar-nwc {
-  background: linear-gradient(135deg, #FFCA4A, #F7931A);
-}
-.aw-avatar-arkade {
-  background: var(--arkade-tile);
-}
-
-.aw-wallet-info {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-.aw-wallet-name {
-  font-family: 'Manrope', sans-serif;
-  font-size: 14px;
-  font-weight: 600;
-  line-height: 1.3;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-.aw-name-dark { color: rgba(255, 255, 255, 0.9); }
-.aw-name-light { color: rgba(0, 0, 0, 0.85); }
-
-.aw-wallet-summary {
-  font-family: 'Manrope', sans-serif;
-  font-size: 11px;
-  line-height: 1.3;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.aw-summary-dark { color: rgba(255, 255, 255, 0.4); }
-.aw-summary-light { color: rgba(0, 0, 0, 0.4); }
-
-.aw-wallet-status {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-shrink: 0;
-}
-
-.aw-status-pill {
-  font-family: 'Manrope', sans-serif;
-  font-size: 11px;
-  font-weight: 600;
-  padding: 3px 10px;
-  border-radius: 20px;
-  letter-spacing: 0.01em;
-}
-.aw-pill-active {
-  background: rgba(16, 185, 129, 0.12);
-  color: #10B981;
-}
-.aw-pill-inactive {
-  background: rgba(128, 128, 128, 0.1);
-  color: rgba(128, 128, 128, 0.6);
-}
-
-/* One-line explainer under a dialog title. Calmer than the body
-   text so it reads as guidance, not content. Used by Auto-Transfer
-   for now; reusable for any dialog that needs a quick "what this
-   is for" line above the main content. */
-.dialog-explainer {
-  font-family: 'Manrope', sans-serif;
-  font-size: 12.5px;
-  line-height: 1.45;
-  padding: 0 24px 14px;
-  margin-top: -6px;
-  letter-spacing: -0.005em;
-}
-.dialog-explainer-dark  { color: var(--text-muted); }
-.dialog-explainer-light { color: var(--text-muted); }
-
-/* Auto-Transfer dialog list */
-.aw-dialog-list {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-.aw-dialog-item {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 12px 14px;
-  border-radius: 12px;
-  cursor: pointer;
-  transition: background 0.15s ease;
-}
-.aw-dialog-item-dark {
-  background: rgba(255, 255, 255, 0.03);
-}
-.aw-dialog-item-dark:active {
-  background: rgba(255, 255, 255, 0.06);
-}
-.aw-dialog-item-light {
-  background: rgba(0, 0, 0, 0.02);
-}
-.aw-dialog-item-light:active {
-  background: rgba(0, 0, 0, 0.05);
-}
-.aw-dialog-item-info {
-  flex: 1;
-  min-width: 0;
-}
-.aw-dialog-item-name {
-  font-family: 'Manrope', sans-serif;
-  font-size: 14px;
-  font-weight: 600;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.aw-dialog-item-summary {
-  font-family: 'Manrope', sans-serif;
-  font-size: 12px;
-  margin-top: 2px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.aw-dialog-item-right {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-shrink: 0;
-}
-
-/* Config dialog */
-.aw-config-dialog {
-  width: 100%;
-  max-width: 420px;
-  border-radius: 20px 20px 0 0 !important;
-}
-
-.aw-dialog-header {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 8px;
-  padding: 24px 20px 12px;
-  text-align: center;
-}
-
-.aw-dialog-icon-wrap {
-  width: 52px;
-  height: 52px;
-  border-radius: 16px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  margin-bottom: 4px;
-}
-/* Dialog icon wrap — per wallet type */
-.aw-icon-wrap-spark {
-  background: rgba(30, 30, 30, 0.1);
-  color: #3A3A3A;
-}
-.aw-icon-wrap-lnbits {
-  background: rgba(255, 31, 225, 0.1);
-  color: #FF1FE1;
-}
-.aw-icon-wrap-nwc {
-  background: rgba(247, 147, 26, 0.1);
-  color: #F7931A;
-}
-.aw-icon-wrap-arkade {
-  background: var(--arkade-tint);
-  color: var(--arkade-ink);
-}
-
-.aw-dialog-title {
-  font-family: 'Manrope', sans-serif;
-  font-size: 18px;
-  font-weight: 700;
-}
-
-.aw-dialog-entry-name {
-  font-family: 'Manrope', sans-serif;
-  font-size: 13px;
-  font-weight: 600;
-  margin-bottom: 4px;
-}
-
-.aw-dialog-subtitle {
-  font-family: 'Manrope', sans-serif;
-  font-size: 12px;
-  line-height: 1.4;
-  max-width: 280px;
-}
-.aw-subtitle-dark { color: rgba(255, 255, 255, 0.4); }
-.aw-subtitle-light { color: rgba(0, 0, 0, 0.45); }
-
-.aw-dialog-body {
-  padding: 8px 20px 16px;
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-/* Toggle row */
-.aw-toggle-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 10px 14px;
-  border-radius: 12px;
-}
-.aw-toggle-dark { background: rgba(255, 255, 255, 0.04); }
-.aw-toggle-light { background: rgba(0, 0, 0, 0.02); }
-
-.aw-toggle-text {
-  font-family: 'Manrope', sans-serif;
-  font-size: 14px;
-  font-weight: 600;
-}
-
-/* Field groups */
-.aw-field-group {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.aw-field-label {
-  font-family: 'Manrope', sans-serif;
-  font-size: 11px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-}
-.aw-label-dark { color: rgba(255, 255, 255, 0.35); }
-.aw-label-light { color: rgba(0, 0, 0, 0.4); }
-
-.aw-input {
-  border-radius: 10px;
-  padding: 2px 12px;
-  font-family: 'Manrope', sans-serif;
-  font-size: 14px;
-}
-.aw-input-dark { background: var(--bg-input); }
-.aw-input-light { background: var(--bg-input); border: 1px solid var(--border-card); }
-
-.aw-input-suffix {
-  font-family: 'Manrope', sans-serif;
-  font-size: 12px;
-  font-weight: 600;
-}
-.aw-suffix-dark { color: rgba(255, 255, 255, 0.3); }
-.aw-suffix-light { color: rgba(0, 0, 0, 0.3); }
-
-.aw-fiat-hint {
-  font-family: 'Manrope', sans-serif;
-  font-size: 11px;
-  padding-left: 12px;
-}
-.aw-spark-hint {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  font-family: 'Manrope', sans-serif;
-  font-size: 11px;
-  margin-top: 6px;
-}
-.aw-hint-dark { color: rgba(255, 255, 255, 0.3); }
-.aw-hint-light { color: rgba(0, 0, 0, 0.35); }
-
-/* Payout type pills */
-.aw-payout-pills {
-  display: flex;
-  gap: 8px;
-}
-
-.aw-pill-option {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  padding: 10px;
-  border-radius: 10px;
-  cursor: pointer;
-  font-family: 'Manrope', sans-serif;
-  font-size: 13px;
-  font-weight: 600;
-  transition: all 0.15s ease;
-}
-.aw-pill-dark {
-  background: rgba(255, 255, 255, 0.04);
-  color: rgba(255, 255, 255, 0.5);
-}
-.aw-pill-light {
-  background: rgba(0, 0, 0, 0.03);
-  color: rgba(0, 0, 0, 0.4);
-  border: 1px solid rgba(0, 0, 0, 0.06);
-}
-/* Pill selected — per wallet type */
-.aw-pill-sel-spark.aw-pill-dark { background: rgba(60, 60, 60, 0.3); color: #fff; }
-.aw-pill-sel-spark.aw-pill-light { background: rgba(30, 30, 30, 0.08); color: #1A1A1A; border-color: rgba(30, 30, 30, 0.2); }
-.aw-pill-sel-lnbits.aw-pill-dark { background: rgba(255, 31, 225, 0.15); color: #FF5AEA; }
-.aw-pill-sel-lnbits.aw-pill-light { background: rgba(255, 31, 225, 0.08); color: #C919B0; border-color: rgba(255, 31, 225, 0.25); }
-.aw-pill-sel-nwc.aw-pill-dark { background: rgba(247, 147, 26, 0.15); color: #FFCA4A; }
-.aw-pill-sel-nwc.aw-pill-light { background: rgba(247, 147, 26, 0.1); color: #D97706; border-color: rgba(247, 147, 26, 0.3); }
-.aw-pill-disabled {
-  opacity: 0.4;
-  pointer-events: none;
-}
-
-/* Fee speed cards */
-.aw-fee-cards {
-  display: flex;
-  gap: 8px;
-}
-
-.aw-fee-card {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 4px;
-  padding: 12px 8px;
-  border-radius: 12px;
-  cursor: pointer;
-  transition: all 0.15s ease;
-}
-.aw-fee-dark {
-  background: rgba(255, 255, 255, 0.04);
-  color: rgba(255, 255, 255, 0.5);
-}
-.aw-fee-light {
-  background: rgba(0, 0, 0, 0.03);
-  color: rgba(0, 0, 0, 0.4);
-  border: 1px solid rgba(0, 0, 0, 0.06);
-}
-/* Fee selected — per wallet type (only Spark has on-chain) */
-.aw-fee-sel-spark.aw-fee-dark { background: rgba(60, 60, 60, 0.3); color: #fff; }
-.aw-fee-sel-spark.aw-fee-light { background: rgba(30, 30, 30, 0.08); color: #1A1A1A; border-color: rgba(30, 30, 30, 0.2); }
-
-.aw-fee-label {
-  font-family: 'Manrope', sans-serif;
-  font-size: 12px;
-  font-weight: 600;
-}
-
-.aw-fee-desc {
-  font-family: 'Manrope', sans-serif;
-  font-size: 10px;
-}
-
-/* Last transfer */
-.aw-last-transfer {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-family: 'Manrope', sans-serif;
-  font-size: 11px;
-  padding-top: 4px;
-}
-
-/* Dialog actions */
-.aw-dialog-actions {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding: 8px 20px 20px;
-}
-
-.aw-save-btn {
-  width: 100%;
-  font-family: 'Manrope', sans-serif;
-  font-size: 15px;
-  font-weight: 600;
-  padding: 12px;
-  border-radius: 12px;
-}
-/* Save button — per wallet type */
-.aw-save-spark { background: rgba(30, 30, 30, 0.9); color: #fff; }
-.aw-save-spark:hover { background: rgba(30, 30, 30, 1); }
-.aw-save-lnbits { background: rgba(255, 31, 225, 0.15); color: #FF1FE1; }
-.aw-save-lnbits:hover { background: rgba(255, 31, 225, 0.25); }
-.aw-save-nwc { background: rgba(247, 147, 26, 0.15); color: #D97706; }
-.aw-save-nwc:hover { background: rgba(247, 147, 26, 0.25); }
-.aw-save-arkade { background: var(--arkade-tint); color: var(--arkade-ink-text); }
-.aw-save-arkade:hover { box-shadow: inset 0 0 0 1px var(--arkade-tint-border); }
-
-.aw-remove-btn {
-  width: 100%;
-  font-family: 'Manrope', sans-serif;
-  font-size: 13px;
-  color: rgba(239, 68, 68, 0.7);
-}
-
 /* NWC Method Chips */
 .nwc-methods-row {
   display: flex;
