@@ -24,6 +24,10 @@ Docker), exact reproduction steps, a PoC, the concrete impact, and how you want 
 
 Test only against your own wallets. Never use funds or accounts belonging to others.
 
+## Supported Versions
+
+Fixes go into the latest release. Please reproduce on the latest version from Google Play, Zapstore, [GitHub releases](https://github.com/Buho-Ecosystem/Buho_go/releases) or [go.mybuho.de](https://go.mybuho.de) before reporting.
+
 ## Response
 
 | Stage | Target |
@@ -41,12 +45,14 @@ Advisories are published on GitHub and credit you unless you ask otherwise.
 
 ## Scope
 
-**In scope:** this repository and its build pipeline, `go.mybuho.de`, the Play Store app
-(`mybuho.buhogo`), the official Docker image, seed storage, encryption, biometric and PIN handling,
+**In scope:** this repository and its build pipeline, `go.mybuho.de`, the Android app
+(`mybuho.buhogo`) from Google Play, Zapstore and GitHub releases, the official Docker image, recovery
+phrase storage and encryption, cloud backup, biometric and PIN handling, the Spark emergency exit,
 payment destination parsing and resolution (invoices, Lightning addresses, LNURL, on-chain, Spark,
-npub and NIP-05, phone numbers), NWC secret handling and permission scoping, LNBits credential
-handling, Kiosk Mode isolation, Batch Send, Auto-Transfer, Internal Transfer, and supply-chain issues
-in declared dependencies.
+Arkade, npub and NIP-05, phone numbers), NWC secret handling and permission scoping, LNbits
+credential handling, Kiosk Mode isolation, Bolt Card and NFC payments, Batch Send, Auto-Transfer,
+Internal Transfer, contact chat encryption (NIP-17), identity keys and remote signers (NIP-46), and
+supply-chain issues in declared dependencies.
 
 **Out of scope:** third-party services unless the flaw is in *our* use of them (Spark, LNBits
 servers, NWC providers, Branta, Nostr relays, map and price data, Google Play, Netlify, Docker Hub),
@@ -101,13 +107,23 @@ deployment isolated from any node holding significant funds.
 
 ## What BuhoGO Cannot Protect Against
 
-A compromised device. A user who shares their seed or screen. A malicious LNBits server, NWC
-provider, or relay the user chose to connect to. Builds from unofficial sources, so verify APK
-signatures. A lost seed phrase, for which there is no recovery path.
+A compromised device. A user who shares their recovery phrase or screen. A malicious LNbits server,
+NWC provider, or relay the user chose to connect to. Builds from unofficial sources, so verify APK
+signatures. A lost recovery phrase, for which there is no recovery path.
+
+## Verifying a Download
+
+APKs from GitHub releases and Zapstore are signed with this certificate (SHA-256):
+
+```
+26:C7:82:AE:11:B1:55:D6:27:9C:B6:72:90:8B:0D:F6:F8:5A:6F:B5:A9:2D:37:88:B1:5B:51:BF:28:D9:C7:EC
+```
+
+Check it with `apksigner verify --print-certs BuhoGO_vX.Y.Z.apk`. Google Play delivers its own signed build.
 
 ---
 
 For ordinary bugs and feature requests, use [Issues](https://github.com/Buho-Ecosystem/Buho_go/issues)
 and [CONTRIBUTING.md](CONTRIBUTING.md).
 
-*Last updated: `2026_08_04`. The version in `main` is authoritative.*
+*Last updated: `2026_10_18`. The version in `main` is authoritative.*

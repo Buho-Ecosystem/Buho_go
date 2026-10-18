@@ -25,24 +25,25 @@ summary: The friendly Bitcoin and Lightning wallet
 description: |
   BuhoGO is a friendly, open-source Bitcoin and Lightning wallet. Hold your own keys, pay anyone, and spend anywhere, all from one clean app.
 
-  Bring the wallets you already use through Nostr Wallet Connect (NWC) or LNbits, or create a self-custodial Spark wallet right inside BuhoGO. Switch between your Wallets with a tap.
+  Create self-custodial Spark wallets (up to six from one recovery phrase) or an Arkade wallet right inside BuhoGO, or bring the wallets you already use through Nostr Wallet Connect (NWC) or LNbits. Switch between them with a tap.
 
   ## What you can do
-  - Pay Lightning invoices, Lightning addresses, LNURL, and Spark addresses
-  - Send to a Nostr profile or a NIP-05 name
-  - Scan any QR, including LNbits and Bitcoin ATM withdraw codes
-  - Tap-toPay NFC 
-  - Receive over Lightning, on-chain, and with Spark address QR codes
-  - Discover Bitcoin-friendly places near you on the built-in map
-  - Buy eSIMs and VPNs, and browse Vouchers without leaving the app
-  - Pay many contacts at once with batch payments
-  - Move funds automatically with Auto-Transfer, over Lightning or on-chain
-  - Keep an address book for faster repeat payments
-  - Follow your history with reports. PDF, xml, CSV
-  - Switch between a polished dark and light theme, in your language
+  - Pay Lightning invoices, Lightning addresses, LNURL, Spark addresses and Bitcoin addresses
+  - Send to a Nostr profile, a NIP-05 name or a phone number
+  - Choose which of your wallets pays, right on the payment sheet
+  - Ask friends for money, split the bill and chat in private, end-to-end encrypted
+  - Receive with one QR code that works for every kind of payment
+  - Tap to pay with NFC and Bolt Cards
+  - Run a shop with Kiosk mode: tips, round-up and card payments
+  - Move money on its own with Auto-Transfer, in sats or your currency
+  - Discover Bitcoin-friendly places on the built-in map
+  - Buy eSIMs, VPNs and gift cards without leaving the app
+  - Learn Bitcoin in short lessons and earn real sats
+  - Export your history as PDF, CSV or XML
+  - Dark and light theme, in English, German and Spanish
 
   ## Why BuhoGO?
-  Most wallets lock you into one provider. BuhoGO works with the setup you already have, or lets you start fresh with Spark in minutes. It is built for clarity, speed, and self-custody, without the jargon.
+  Most wallets lock you into one provider. BuhoGO works with the setup you already have, or lets you start fresh in minutes. It is built for clarity, speed and self-custody, without the jargon.
 
 # SPDX license identifier (the repo ships the GNU AGPL v3)
 license: AGPL-3.0-only
@@ -77,16 +78,16 @@ tags:
 icon: ./public/Buho_logo__Sharp_grey.jpg
 
 images:
-  - ./store/playstore/Playstore1.png    # Clean home, Business and Personal
-  - ./store/playstore/Playstore2.png    # Wallet overview
-  - ./store/playstore/Playstore2_1.png  # Wallet transactions
-  - ./store/playstore/Playstore2_2.png  # Wallet Reports
-  - ./store/playstore/Playstore3.png    # Discover Bitcoin-friendly places (map)
-  - ./store/playstore/Playstore3_1.png  # Send to anyone over Lightning
-  - ./store/playstore/Playstore4.png    # Clean Auto-Transfer
-  - ./store/playstore/Playstore5.png    # Batch payments
-  - ./store/playstore/Playstore6.png    # Auto-Transfer
-  - ./store/playstore/Playstore7.png    # Dark mode
+  - ./store/screens/01-home.png           # Home: balance, last payment, Receive and Send
+  - ./store/screens/02-send.png           # Send to a contact, pay with any of your wallets
+  - ./store/screens/03-receive.png        # One QR for every kind of payment
+  - ./store/screens/04-wallets.png        # Your wallets: on this phone and connected
+  - ./store/screens/05-requests.png       # Split the bill: who has paid
+  - ./store/screens/06-chat.png           # Contact chat with money requests
+  - ./store/screens/07-spend.png          # Bitcoin map, eSIM and VPN, Bitrefill, Learn & Earn
+  - ./store/screens/08-kiosk.png          # Kiosk mode with tips
+  - ./store/screens/09-auto-transfer.png  # Auto-Transfer: money that moves on its own
+  - ./store/screens/10-dark.png           # Dark mode
 
 # ---------------------------------------------------------------------------
 # Enrichment (YAML values above always take priority)

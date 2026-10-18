@@ -71,9 +71,9 @@ No pull request needed for any of this. A link and a short note is plenty.
 
 BuhoGO ships in **English, German, and Spanish** today. Want your language next? You are 80% of the way there:
 
-1. Copy `src/i18n/en-US/index.js` to `src/i18n/<your-locale>/index.js`
+1. Copy the folder `src/i18n/en-US/` to `src/i18n/<your-locale>/` (one file per feature area, merged in its `index.js`)
 2. Translate the values (keep the keys)
-3. Register the locale in `src/boot/i18n.js`
+3. Register the locale in `src/i18n/index.js` and add it to `SUPPORTED_LOCALES` in `src/i18n/locales.js`
 4. Open a pull request. Even a partial translation is useful
 
 > [!CAUTION]
@@ -89,7 +89,7 @@ A great bug report is half the fix. Include:
 
 - **What you did** (3 lines max)
 - **What happened** vs **what you expected**
-- **Wallet type**: Spark, Arkade, NWC, or LNBits
+- **Wallet type**: Spark, Arkade, NWC, or LNbits
 - **Platform**: web (which browser?), Android version, app version
 - **A screenshot or screen recording** if it is visual
 
@@ -114,7 +114,7 @@ We align on direction before code gets written. It saves everyone a wasted weeke
 Full setup and architecture live in the **[Developer Guide](Developer.md)**. The essentials:
 
 > [!TIP]
-> **Looking for high-impact work?** BuhoGO now ships an **Arkade (Ark L2)** wallet, our newest backend. Reviews, real-device testing, and swap-hardening PRs are all welcome. Read **[ARK_ME.md](ARK_ME.md)** to jump in. You do not need to be a developer to help test it.
+> **Looking for high-impact work?** Arkade's Lightning is paused until it moves to the new `@arkade-os/swap` service, and testing on real phones is always welcome. The Arkade section of the [Developer Guide](Developer.md) is the place to start. How each feature works is in the [feature records](docs/README.md).
 
 <details open>
 <summary><b>📦 Quick start</b></summary>
@@ -148,10 +148,12 @@ Feature and fix pull requests target **`dev`**. The `main` branch tracks the rel
 <details>
 <summary><b>✅ Before you push</b></summary>
 
+- [ ] `npm test` passes, and the browser check for the area you touched (`scripts/check-*.mjs`) if there is one
 - [ ] Tested on **dark and light** themes
-- [ ] Tested on **at least one** wallet type (Spark, Arkade, NWC, or LNBits)
-- [ ] If you touched a flow used in **kiosk mode**, retested kiosk
-- [ ] No `console.log` of mnemonics, PINs, API keys, or NWC strings, ever
+- [ ] Tested on **at least one** wallet type (Spark, Arkade, NWC, or LNbits)
+- [ ] If you touched a flow that moves money, retested **kiosk mode**, batch send, internal transfer and Auto-Transfer where they apply
+- [ ] New text in **English, German and Spanish**, and no em dashes in what people read in the app
+- [ ] No `console.log` of recovery phrases, PINs, API keys, or NWC strings, ever
 - [ ] Screenshot or short clip in the pull request if it is visual
 
 </details>

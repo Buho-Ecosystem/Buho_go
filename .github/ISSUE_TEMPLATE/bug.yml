@@ -1,0 +1,32 @@
+name: Bug
+description: Something does not work as it should
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: "Security problem? Do not open an issue: see [SECURITY.md](https://github.com/Buho-Ecosystem/Buho_go/blob/main/SECURITY.md)."
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what happened, and what you expected.
+    validations:
+      required: true
+  - type: dropdown
+    id: wallet
+    attributes:
+      label: Wallet type
+      multiple: true
+      options: [Spark, Arkade, NWC, LNbits, Not wallet related]
+  - type: input
+    id: where
+    attributes:
+      label: Version and platform
+      placeholder: "1.11.0 on Android 15 (Google Play), or the web app in Firefox"
+    validations:
+      required: true
+  - type: textarea
+    id: media
+    attributes:
+      label: Screenshot or recording
+      description: If it is visible, show it. Hide balances and addresses you do not want public.
