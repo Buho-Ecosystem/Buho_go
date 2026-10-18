@@ -774,33 +774,22 @@
            everything else), and the chevron toggle adds one more
            tap before destructive actions become visible. -->
       <SettingsSection
+        v-if="dangerActions.length"
         :title="$t('Danger Zone')"
         collapsible
         :default-expanded="false"
       >
+        <!-- Every wallet of a kind at once; one wallet leaves from its own
+             details in Manage Wallets. A row that cannot run yet is muted
+             and says why; tapping it offers the way out. -->
         <SettingsRow
-          v-if="hasSparkWallet"
+          v-for="action in dangerActions"
+          :key="action.key"
           destructive
-          :label="sparkWallets.length > 1 ? $t('Remove Spark wallets') : $t('Remove Spark wallet')"
-          @click="confirmDeleteSparkWallet"
-        />
-        <SettingsRow
-          v-if="hasArkadeWallet"
-          destructive
-          :label="$t('Delete Arkade Wallet')"
-          @click="confirmDeleteArkadeWallet"
-        />
-        <SettingsRow
-          v-if="hasNwcWallets"
-          destructive
-          :label="$t('Remove NWC Connections')"
-          @click="confirmDisconnectNwc"
-        />
-        <SettingsRow
-          v-if="hasLnbitsWallets"
-          destructive
-          :label="$t('Remove LNbits Connections')"
-          @click="confirmDisconnectLNBits"
+          :quiet="!!action.blockedReason"
+          :label="action.label"
+          :caption="action.blockedReason || action.covers"
+          @click="action.run"
         />
       </SettingsSection>
 
@@ -809,50 +798,34 @@
 
     </div>
 
-    <!-- Danger Confirmation Dialog -->
-    <q-dialog v-model="showDangerConfirmDialog" :class="$q.dark.isActive ? 'dialog_dark' : 'dialog_light'">
-      <q-card class="danger-confirm-card" :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'">
-        <q-card-section class="danger-header">
-          <div class="danger-icon-wrapper">
-            <Icon icon="tabler:alert-triangle" width="32" height="32" class="danger-icon" />
-          </div>
-          <div class="danger-title">{{ dangerConfirmTitle }}</div>
-          <div class="danger-message" :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'">
-            {{ dangerConfirmMessage }}
-          </div>
-        </q-card-section>
-
-        <q-card-section class="danger-content">
-          <div class="confirm-instruction" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'">
-            {{ $t('Type') }} <span class="confirm-phrase">"{{ dangerConfirmPhrase }}"</span> {{ $t('to confirm') }}
-          </div>
+    <!-- Typed confirmation: only when a recovery phrase leaves this phone
+         (utils/walletRemoval.js). Every other removal is a plain alert. -->
+    <q-dialog v-model="showTypedRemoval" :class="$q.dark.isActive ? 'dialog_dark' : 'dialog_light'">
+      <q-card v-if="typedRemoval" class="typed-removal-card" :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'">
+        <q-card-section class="typed-removal-body">
+          <div class="typed-removal-title">{{ typedRemoval.copy.title }}</div>
+          <div class="typed-removal-message">{{ typedRemoval.copy.message }}</div>
           <q-input
-            v-model="dangerConfirmInput"
+            v-model="typedRemovalInput"
             outlined
             dense
-            class="confirm-input"
+            class="typed-removal-input"
+            :placeholder="$t('Type {phrase}', { phrase: typedRemovalPhrase })"
+            :aria-label="$t('Type {phrase}', { phrase: typedRemovalPhrase })"
             :dark="$q.dark.isActive"
-            @keyup.enter="executeDangerAction"
+            @keyup.enter="confirmTypedRemoval"
           />
         </q-card-section>
-
-        <q-card-actions class="danger-actions">
+        <q-card-actions class="typed-removal-actions">
+          <q-btn flat no-caps :label="$t('Cancel')" v-close-popup class="typed-removal-cancel" />
           <q-btn
             flat
             no-caps
-            :label="$t('Cancel')"
-            v-close-popup
-            class="cancel-btn"
-            :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-6'"
-          />
-          <q-btn
-            unelevated
-            no-caps
-            :label="dangerConfirmButtonText"
-            :disable="dangerConfirmInput !== dangerConfirmPhrase"
-            :loading="isDangerActionLoading"
-            class="danger-action-btn"
-            @click="executeDangerAction"
+            :label="typedRemoval.copy.confirmLabel"
+            :disable="typedRemovalInput !== typedRemovalPhrase"
+            :loading="isRemoving"
+            class="typed-removal-confirm"
+            @click="confirmTypedRemoval"
           />
         </q-card-actions>
       </q-card>
@@ -1062,7 +1035,9 @@
           @back="closeWalletDetail"
           @switch="handleSwitchWallet"
           @reconnect="reconnectWallet"
+          :phrase-backed-up="walletStore.phraseBackedUp(detailWallet.id) === true"
           @remove="confirmRemoveWallet"
+          @backup="openPhraseBackup"
           @copy-address="copyToClipboard($event, $t('Lightning address copied'))"
           @change-address="openLightningAddressSheet"
           @move-address="openMoveAddress"
@@ -1134,9 +1109,13 @@
               {{ $t('Looking for more wallets from your recovery phrase') }}
             </p>
 
+            <!-- Grouped by what this phone holds: a wallet's recovery phrase, or
+                 only a connection to a wallet that lives elsewhere. -->
+            <section v-for="group in walletGroups" :key="group.kind" class="wallets-group-section" :aria-label="group.title">
+            <h3 class="wallets-group-title">{{ group.title }}</h3>
             <div class="wallets-list-scroll" :class="$q.dark.isActive ? 'wallets-group-dark' : 'wallets-group-light'">
               <div
-                v-for="wallet in sortedWallets"
+                v-for="wallet in group.wallets"
                 :key="wallet.id"
                 class="wallet-card-wrapper"
               >
@@ -1192,6 +1171,7 @@
 
               </div>
           </div>
+            </section>
 
             <!-- Wallets an earlier version kept on another recovery phrase:
                  off the list (one phrase per device), never out of reach. -->
@@ -2109,7 +2089,7 @@ import WalletDetailPanel from '../components/settings/WalletDetailPanel.vue'
 import AddSparkWalletSheet from '../components/wallets/AddSparkWalletSheet.vue'
 import NotificationsSheet from '../components/settings/NotificationsSheet.vue'
 import MoveLightningAddressSheet from '../components/wallets/MoveLightningAddressSheet.vue'
-import { removalCopy } from '../utils/walletRemoval.js'
+import { removalCopy, removalBlockerLabel, sparkRemovalCopy, disconnectAllCopy, walletKind, WALLET_KIND } from '../utils/walletRemoval.js'
 import GetAppDialog from '../components/GetAppDialog.vue'
 import TaxReportSheet from '../components/settings/TaxReportSheet.vue'
 import SettingsSection from '../components/settings/SettingsSection.vue'
@@ -2249,13 +2229,11 @@ export default {
       // Donation
 
       // Danger confirmation dialog
-      showDangerConfirmDialog: false,
-      dangerConfirmTitle: '',
-      dangerConfirmMessage: '',
-      dangerConfirmButtonText: '',
-      dangerConfirmInput: '',
-      dangerConfirmAction: null,
-      isDangerActionLoading: false,
+      // A removal waiting for its typed confirmation: { copy, remove, recheck }.
+      showTypedRemoval: false,
+      typedRemoval: null,
+      typedRemovalInput: '',
+      isRemoving: false,
 
       // Biometrics / App Lock
       biometricsEnabled: false,
@@ -2288,7 +2266,6 @@ export default {
       dismissedWarnings: loadDismissedWarnings(),
 
       // Wallet removal
-      walletToRemove: null,
 
       // ─── LNbits lightning address management ───────────────────────────
       //
@@ -2408,8 +2385,54 @@ export default {
      * transcription, not understanding. Built from one value so the label,
      * the comparison and the translation can never drift apart.
      */
-    dangerConfirmPhrase() {
+    typedRemovalPhrase() {
       return this.$t('I understand');
+    },
+
+    /** Manage Wallets: wallets whose phrase is on this phone, then connected ones. */
+    walletGroups() {
+      const groups = [
+        { kind: WALLET_KIND.ON_PHONE, title: this.$t('On this phone'), wallets: [] },
+        { kind: WALLET_KIND.CONNECTED, title: this.$t('Connected'), wallets: [] },
+      ];
+      for (const wallet of this.sortedWallets) groups.find((g) => g.kind === walletKind(wallet)).wallets.push(wallet);
+      return groups.filter((g) => g.wallets.length);
+    },
+
+    /** Danger Zone: what each row covers, and why it cannot run yet ('' when it can). */
+    dangerActions() {
+      const t = this.$t.bind(this);
+      const actions = [];
+      if (this.sparkWallets.length) {
+        actions.push({
+          key: 'spark',
+          label: t('Remove Spark from this phone'),
+          covers: this.listNames(this.sparkWallets.map((w) => w.name)),
+          blockedReason: removalBlockerLabel(this.walletStore.sparkRemovalCheck(), t),
+          run: this.confirmRemoveSpark,
+        });
+      }
+      const arkade = this.wallets.find((w) => w.type === 'arkade');
+      if (arkade) {
+        actions.push({
+          key: 'arkade',
+          label: t('Remove Arkade from this phone'),
+          covers: arkade.name,
+          blockedReason: removalBlockerLabel(this.walletStore.removalCheckFor(arkade.id), t),
+          run: () => this.confirmRemoveWallet(arkade.id),
+        });
+      }
+      const connected = this.wallets.filter((w) => walletKind(w) === WALLET_KIND.CONNECTED);
+      if (connected.length) {
+        actions.push({
+          key: 'connected',
+          label: t('Disconnect all connected wallets'),
+          covers: this.listNames(connected.map((w) => w.name)),
+          blockedReason: '',
+          run: this.confirmDisconnectAll,
+        });
+      }
+      return actions;
     },
 
     ...mapState(useWalletStore, [
@@ -2698,13 +2721,6 @@ export default {
       ];
     },
 
-    hasNwcWallets() {
-      return this.wallets.some(w => w.type === 'nwc');
-    },
-    hasLnbitsWallets() {
-      return this.wallets.some(w => w.type === 'lnbits');
-    },
-
     isPinValid() {
       if (!this.hasPin) {
         return this.newPin.length >= 4;
@@ -2989,14 +3005,11 @@ export default {
   methods: {
     ...mapActions(useWalletStore, [
       'initialize',
-      'removeWallet',
       'updateWalletName',
       'setDefaultWallet',
       'switchActiveWallet',
       'connectWallet',
       'disconnectAll',
-      'disconnectNwcWallets',
-      'disconnectLNBitsWallets',
       'updateCurrencyPreferences',
       'loadExchangeRates',
       'getSparkMnemonic',
@@ -3164,6 +3177,13 @@ export default {
     async handleStartKiosk() {
       if (!this.walletStore.kioskWalletId) {
         this.$q.notify({ message: this.$t('kiosk.noWalletSelected'), color: 'warning' });
+        return;
+      }
+      // A kiosk wallet that is no longer on this phone (one left before
+      // removals cleared the binding) would fail every sale: choose again.
+      if (!this.wallets.some((w) => w.id === this.walletStore.kioskWalletId)) {
+        this.$q.notify({ message: this.$t('Choose a kiosk wallet that can take payments'), color: 'warning' });
+        this.openKioskWalletPicker();
         return;
       }
       // A wallet chosen before its connection lost a grant would show a QR
@@ -3670,128 +3690,93 @@ export default {
       }
     },
 
-    confirmDisconnectNwc() {
-      this.dangerConfirmTitle = this.$t('Remove NWC Connections');
-      this.dangerConfirmMessage = this.$t('This will remove all NWC wallet connections. Your Spark wallet will not be affected. You can reconnect NWC wallets later using your connection strings.');
-      this.dangerConfirmButtonText = this.$t('Remove NWC');
-      this.dangerConfirmInput = '';
-      this.dangerConfirmAction = 'disconnectNwc';
-      this.showDangerConfirmDialog = true;
+    /** Names joined the way the person's language joins them ("Alby Hub and Kitty"). */
+    listNames(names) {
+      try {
+        return new Intl.ListFormat(this.$i18n.locale, { style: 'long', type: 'conjunction' }).format(names);
+      } catch {
+        return names.join(', ');
+      }
     },
 
-    confirmDisconnectLNBits() {
-      this.dangerConfirmTitle = this.$t('Remove LNbits Connections');
-      this.dangerConfirmMessage = this.$t('This will remove all LNbits wallet connections. Your Spark wallet and NWC connections will not be affected. You can reconnect LNbits wallets later using your credentials.');
-      this.dangerConfirmButtonText = this.$t('Remove LNbits');
-      this.dangerConfirmInput = '';
-      this.dangerConfirmAction = 'disconnectLNBits';
-      this.showDangerConfirmDialog = true;
-    },
-
-    confirmDeleteSparkWallet() {
-      if (!this.sparkWallets.length) return;
-
-      // All Spark wallets leave together with their phrase: the rules for
-      // the last wallet apply across all of them.
-      const check = this.walletStore.sparkRemovalCheck();
-      const total = this.sparkWallets.reduce((sum, w) => sum + (this.walletStore.getDisplayBalance(w.id).balance || 0), 0);
-      const copy = removalCopy({ check, wallet: { type: 'spark', name: this.$t('Spark') }, t: this.$t.bind(this), formatAmount: this.formatSats, balanceSats: total });
+    /** Every Spark wallet, and their shared recovery phrase, off this phone. */
+    confirmRemoveSpark() {
+      const balanceSats = this.sparkWallets.reduce((sum, w) => sum + (this.walletStore.getDisplayBalance(w.id).balance || 0), 0);
+      const copy = sparkRemovalCopy({
+        check: this.walletStore.sparkRemovalCheck(),
+        t: this.$t.bind(this),
+        formatAmount: this.formatSats,
+        balanceSats,
+        includesKioskWallet: this.sparkWallets.some((w) => w.id === this.walletStore.kioskWalletId),
+      });
       if (copy.blocked) {
-        this.showRemovalBlocked(copy, null);
+        this.showRemovalBlocked(copy, this.sparkWallets[0]?.id);
         return;
       }
-
-      const count = this.sparkWallets.length;
-      this.dangerConfirmTitle = this.$t('Remove Spark from this phone?');
-      this.dangerConfirmMessage = (count > 1
-        ? this.$t('This removes all {count} Spark wallets and their recovery phrase from this phone. You can restore them any time with your recovery phrase.', { count })
-        : this.$t('This removes your last Spark wallet and its recovery phrase from this phone. You can restore it any time with your recovery phrase.'))
-        + ' ' + this.$t('The last saved exit kit stays on this phone in case you add the wallet again with the same recovery phrase.');
-      this.dangerConfirmButtonText = this.$t('Remove');
-      this.dangerConfirmInput = '';
-      this.dangerConfirmAction = 'deleteSparkWallet';
-      this.showDangerConfirmDialog = true;
+      this.askToRemove(copy, () => this.walletStore.removeSparkFromDevice(), () => this.confirmRemoveSpark());
     },
 
-    confirmDeleteArkadeWallet() {
-      if (!this.wallets.some(w => w.type === 'arkade')) return;
-
-      this.dangerConfirmTitle = this.$t('Delete Arkade Wallet');
-      this.dangerConfirmMessage = this.$t('This will permanently delete your Arkade wallet. Make sure you have backed up your recovery phrase. This action cannot be undone.');
-      this.dangerConfirmButtonText = this.$t('Delete');
-      this.dangerConfirmInput = '';
-      this.dangerConfirmAction = 'deleteArkadeWallet';
-      this.showDangerConfirmDialog = true;
+    /** Every connected wallet (NWC, LNbits): only connections leave. */
+    confirmDisconnectAll() {
+      const wallets = this.wallets.filter((w) => walletKind(w) === WALLET_KIND.CONNECTED);
+      if (!wallets.length) return;
+      const copy = disconnectAllCopy({
+        wallets,
+        t: this.$t.bind(this),
+        listNames: this.listNames,
+        includesKioskWallet: wallets.some((w) => w.id === this.walletStore.kioskWalletId),
+      });
+      this.askToRemove(copy, () => this.walletStore.disconnectConnectedWallets());
     },
 
-    async executeDangerAction() {
-      if (this.dangerConfirmInput !== this.dangerConfirmPhrase) return;
+    /**
+     * Ask the way the copy says: a plain alert, or the typed confirmation
+     * when a recovery phrase leaves this phone. `recheck` runs again when
+     * the store refuses because something changed since the check.
+     */
+    askToRemove(copy, remove, recheck = null) {
+      if (copy.typed) {
+        this.typedRemoval = { copy, remove, recheck };
+        this.typedRemovalInput = '';
+        this.showTypedRemoval = true;
+        return;
+      }
+      this.$q.dialog({
+        title: copy.title,
+        message: copy.message,
+        cancel: { label: this.$t('Cancel'), flat: true, noCaps: true },
+        ok: { label: copy.confirmLabel, color: 'negative', flat: true, noCaps: true },
+        class: this.$q.dark.isActive ? 'card_dark_style' : 'card_light_style',
+        dark: this.$q.dark.isActive,
+      }).onOk(() => this.runRemoval(copy, remove, recheck));
+    },
 
-      this.isDangerActionLoading = true;
-
+    async confirmTypedRemoval() {
+      if (!this.typedRemoval || this.typedRemovalInput !== this.typedRemovalPhrase || this.isRemoving) return;
+      const { copy, remove, recheck } = this.typedRemoval;
+      this.isRemoving = true;
       try {
-        if (this.dangerConfirmAction === 'disconnectNwc') {
-          await this.disconnectNwcWallets();
-          this.$q.notify({
-            type: 'positive',
-            message: this.$t('NWC connections removed'),
-
-          });
-          this.showDangerConfirmDialog = false;
-        } else if (this.dangerConfirmAction === 'disconnectLNBits') {
-          await this.disconnectLNBitsWallets();
-          this.$q.notify({
-            type: 'positive',
-            message: this.$t('LNbits connections removed'),
-
-          });
-          this.showDangerConfirmDialog = false;
-        } else if (this.dangerConfirmAction === 'deleteSparkWallet') {
-          await this.walletStore.removeSparkFromDevice();
-          this.$q.notify({
-            type: 'positive',
-            message: this.$t('Spark removed from this phone'),
-          });
-          this.showDangerConfirmDialog = false;
-        } else if (this.dangerConfirmAction === 'deleteArkadeWallet') {
-          // Single Arkade wallet by design; removeWallet disconnects it and
-          // deletes its local databases (cache + pending-swap store).
-          const arkade = this.wallets.find(w => w.type === 'arkade');
-          if (arkade) {
-            await this.removeWallet(arkade.id);
-          }
-          this.$q.notify({
-            type: 'positive',
-            message: this.$t('Arkade wallet deleted'),
-          });
-          this.showDangerConfirmDialog = false;
-        } else if (this.dangerConfirmAction === 'removeWallet') {
-          await this.removeWallet(this.walletToRemove.id);
-          this.$q.notify({
-            type: 'positive',
-            message: this.$t('Wallet removed'),
-
-          });
-          this.showDangerConfirmDialog = false;
-          this.walletToRemove = null;
-        }
-
-        // Redirect to welcome page if no wallets remain after any deletion
-        if (this.wallets.length === 0) {
-          this.$router.push('/');
-        }
-      } catch (error) {
-        console.error('Danger action error:', error);
-        // Danger actions (delete wallets, disconnect NWC, etc.) don't
-        // fit any specific failure context — the user just needs to
-        // know the action didn't go through. Generic title + raw
-        // error in the technical pane is enough.
-        this.walletStore.showPaymentError(error, {
-          route: `Settings danger action: ${this.dangerConfirmAction}`,
-          t: this.$t.bind(this),
-        });
+        await this.runRemoval(copy, remove, recheck);
       } finally {
-        this.isDangerActionLoading = false;
+        this.isRemoving = false;
+        this.showTypedRemoval = false;
+      }
+    },
+
+    async runRemoval(copy, remove, recheck) {
+      try {
+        await remove();
+        this.$q.notify({ type: 'positive', message: copy.doneMessage });
+        // Nothing left to manage: back to the start.
+        if (this.wallets.length === 0) this.$router.push('/');
+      } catch (error) {
+        if (error?.code === 'WALLET_REMOVAL_BLOCKED' && recheck) {
+          // The situation changed since the check (money arrived): explain it.
+          this.showTypedRemoval = false;
+          recheck();
+          return;
+        }
+        this.walletStore.showPaymentError(error, { route: 'Remove wallet', t: this.$t.bind(this) });
       }
     },
 
@@ -3806,59 +3791,33 @@ export default {
       return formatAmount(amount, this.useBip177Format);
     },
 
+    /** One wallet off this phone, from its details or the Danger Zone. */
     async confirmRemoveWallet(walletId) {
-      const wallet = this.wallets.find(w => w.id === walletId)
-      if (!wallet) return
-
-      // Only a balance read just now can show a Spark wallet is empty.
-      if (wallet.type === 'spark') await this.walletStore.refreshBalance(walletId)
-      const check = this.walletStore.removalCheckFor(walletId)
+      const wallet = this.wallets.find((w) => w.id === walletId);
+      if (!wallet) return;
+      // Only a balance read just now can show a wallet is empty.
+      if (walletKind(wallet) === WALLET_KIND.ON_PHONE) {
+        await this.walletStore.refreshBalance(walletId).catch(() => {});
+      }
       const copy = removalCopy({
-        check,
+        check: this.walletStore.removalCheckFor(walletId),
         wallet,
         t: this.$t.bind(this),
         formatAmount: this.formatSats,
         balanceSats: this.walletStore.getDisplayBalance(walletId).balance,
-      })
+        isKioskWallet: this.walletStore.kioskWalletId === walletId,
+      });
       if (copy.blocked) {
-        this.showRemovalBlocked(copy, walletId)
-        return
+        this.showRemovalBlocked(copy, walletId);
+        return;
       }
+      this.askToRemove(copy, () => this.walletStore.removeWallet(walletId), () => this.confirmRemoveWallet(walletId));
+    },
 
-      // A Spark wallet that is not the last one can come back from the
-      // recovery phrase: a plain destructive alert is enough. Removals that
-      // cannot be undone keep the typed confirmation below.
-      if (wallet.type === 'spark' && !check.notes.includes('last_spark_wallet')) {
-        this.$q.dialog({
-          title: copy.title,
-          message: copy.message,
-          cancel: { label: this.$t('Cancel'), flat: true, noCaps: true },
-          ok: { label: copy.confirmLabel, color: 'negative', flat: true, noCaps: true },
-          class: this.$q.dark.isActive ? 'card_dark_style' : 'card_light_style',
-          dark: this.$q.dark.isActive,
-        }).onOk(async () => {
-          try {
-            await this.removeWallet(walletId)
-            this.$q.notify({ type: 'positive', message: this.$t('Wallet removed'), position: 'top' })
-          } catch (error) {
-            if (error?.code === 'WALLET_REMOVAL_BLOCKED') {
-              // The situation changed since the check (money arrived): explain it.
-              this.confirmRemoveWallet(walletId)
-              return
-            }
-            this.walletStore.showPaymentError(error, { route: 'Remove wallet', t: this.$t.bind(this) })
-          }
-        })
-        return
-      }
-
-      this.walletToRemove = wallet
-      this.dangerConfirmTitle = copy.title
-      this.dangerConfirmMessage = copy.message
-      this.dangerConfirmButtonText = copy.confirmLabel
-      this.dangerConfirmInput = ''
-      this.dangerConfirmAction = 'removeWallet'
-      this.showDangerConfirmDialog = true
+    /** Security, opened on this wallet's recovery phrase. */
+    openPhraseBackup(walletId) {
+      this.showWalletsDialog = false;
+      this.$router.push({ path: '/security', query: { open: 'backup', wallet: walletId } });
     },
 
     loadPinState() {
@@ -4159,8 +4118,7 @@ export default {
         dark: this.$q.dark.isActive,
       }).onOk(() => {
         if (copy.action === 'backup') {
-          this.showWalletsDialog = false;
-          this.$router.push('/security');
+          this.openPhraseBackup(walletId);
         } else if (copy.action === 'move_funds') {
           this.transferFromWalletId = walletId;
           this.showTransferModal = true;
@@ -4531,97 +4489,58 @@ export default {
   color: #ff6b9d;
 }
 
-/* Danger Confirmation Dialog */
-.danger-confirm-card {
+/* Typed removal confirmation (a recovery phrase leaves this phone) */
+.typed-removal-card {
   width: 100%;
-  max-width: 340px;
+  max-width: 320px;
   border-radius: 16px;
 }
 
-.danger-header {
+.typed-removal-body {
   display: flex;
   flex-direction: column;
-  align-items: center;
+  gap: 8px;
+  padding: 22px 20px 6px;
   text-align: center;
-  padding: 1.5rem 1.5rem 0.5rem;
-}
-
-.danger-icon-wrapper {
-  width: 56px;
-  height: 56px;
-  border-radius: 50%;
-  background: rgba(239, 68, 68, 0.12);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  margin-bottom: 1rem;
-}
-
-.danger-icon {
-  color: #EF4444;
-}
-
-.danger-title {
   font-family: 'Manrope', sans-serif;
-  font-size: 18px;
+}
+
+.typed-removal-title {
+  font-size: 17px;
   font-weight: 700;
-  color: #EF4444;
-  margin-bottom: 0.5rem;
+  line-height: 1.3;
 }
 
-.danger-message {
-  font-family: 'Manrope', sans-serif;
+.typed-removal-message {
   font-size: 14px;
-  line-height: 1.5;
+  line-height: 1.45;
+  color: var(--text-secondary);
 }
 
-.danger-content {
-  padding: 1rem 1.5rem;
+.typed-removal-input {
+  margin-top: 8px;
 }
 
-.confirm-instruction {
-  font-family: 'Manrope', sans-serif;
-  font-size: 13px;
-  margin-bottom: 0.75rem;
-  text-align: center;
-}
-
-.confirm-phrase {
-  font-weight: 600;
-  color: #EF4444;
-}
-
-.confirm-input {
-  margin-bottom: 0;
-}
-
-.confirm-input :deep(.q-field__control) {
+.typed-removal-input :deep(.q-field__control) {
   border-radius: 10px;
 }
 
-.danger-actions {
-  padding: 0.5rem 1.5rem 1.5rem;
-  display: flex;
-  justify-content: flex-end;
-  gap: 0.5rem;
+.typed-removal-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  padding: 8px 12px 12px;
 }
 
-.cancel-btn {
+.typed-removal-cancel,
+.typed-removal-confirm {
   font-family: 'Manrope', sans-serif;
   font-weight: 600;
   border-radius: 10px;
 }
 
-.danger-action-btn {
-  font-family: 'Manrope', sans-serif;
-  font-weight: 600;
-  border-radius: 10px;
-  background: #EF4444 !important;
-  color: white !important;
-}
-
-.danger-action-btn:disabled {
-  opacity: 0.4;
+.typed-removal-confirm {
+  color: var(--color-negative, #B42332);
+  font-weight: 700;
 }
 
 .action-icon-dark {
@@ -4940,7 +4859,7 @@ export default {
 
 /* ----------------------------------------------------------------
    Missing-language request popup — compact, friendly confirm-style
-   card (same shell shape as .danger-confirm-card, brand-green
+   card (same shell shape as .typed-removal-card, brand-green
    instead of alarm-red since this is an invitation, not a warning).
 ---------------------------------------------------------------- */
 .lang-request-card {
@@ -5360,6 +5279,9 @@ export default {
   border-radius: 16px;
   overflow: hidden;
 }
+
+.wallets-group-section + .wallets-group-section { margin-top: 18px; }
+.wallets-group-title { margin: 0 4px 8px; color: var(--text-secondary); font-size: 13px; font-weight: 600; }
 
 .wallets-group-light { background: #FFFFFF; }
 .wallets-group-dark  { background: #2C2C2E; }

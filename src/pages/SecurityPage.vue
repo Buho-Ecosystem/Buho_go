@@ -100,6 +100,7 @@ import SettingsHubNav from '../components/settings/SettingsHubNav.vue';
 import { useIdentityHealth } from '../composables/useIdentityHealth';
 import { isCloudBackupPlatform } from '../services/cloudStorage.js';
 import { useAddressBookStore } from '../stores/addressBook';
+import { useWalletStore } from '../stores/wallet';
 
 /**
  * Security: every backup and every way back, on one page.
@@ -111,7 +112,9 @@ import { useAddressBookStore } from '../stores/addressBook';
  * lands back here with the row checked. The page also owns the optional
  * Drive copy, the restore chooser and the Spark emergency exit kit, so
  * Settings and Profile carry no backup entries of their own.
- * `?open=exit-kit` opens the kit (the Home help sheet links here).
+ * `?open=exit-kit` opens the kit (the Home help sheet links here);
+ * `?open=backup&wallet=<id>` opens that wallet's recovery phrase (a wallet
+ * that cannot leave this phone before its phrase is backed up links here).
  */
 export default {
   name: 'SecurityPage',
@@ -134,7 +137,7 @@ export default {
 
   setup() {
     const { identity, profile, ensureWalletLoaded } = useIdentityHealth();
-    return { identity, profile, ensureWalletLoaded, addressBook: useAddressBookStore() };
+    return { identity, profile, ensureWalletLoaded, addressBook: useAddressBookStore(), walletStore: useWalletStore() };
   },
 
   data() {
@@ -159,10 +162,18 @@ export default {
     // and a cold deep link arrives before either store has loaded.
     await this.identity.hydrate();
     await this.ensureWalletLoaded();
+    // A route change dismisses open dialogs: clear the link first, then open.
     if (this.$route.query.open === 'exit-kit') {
       // Opened once: Back from here must not open it again.
-      this.$router.replace({ query: { ...this.$route.query, open: undefined } });
+      await this.$router.replace({ query: { ...this.$route.query, open: undefined } });
       this.showKitSheet = true;
+    } else if (this.$route.query.open === 'backup') {
+      // From a wallet that cannot leave this phone before its phrase is
+      // backed up (Settings, wallet details): straight to that phrase.
+      const walletId = this.$route.query.wallet;
+      await this.$router.replace({ query: { ...this.$route.query, open: undefined, wallet: undefined } });
+      const backedUp = this.walletStore.phraseBackedUp(walletId);
+      if (backedUp !== null) this.onSelect({ kind: 'wallet', walletId, mode: backedUp ? 'view' : 'backup' });
     }
   },
 

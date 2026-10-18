@@ -53,7 +53,7 @@ import {
 } from '../utils/sparkAccounts.js';
 import { migrateSparkWallets as migrateToSparkModel, SPARK_MODEL_VERSION } from '../utils/sparkWalletMigration.js';
 import { normalizeWalletName, walletNameProblem, WalletNameError } from '../utils/walletNames.js';
-import { removalCheck, WalletRemovalError } from '../utils/walletRemoval.js';
+import { removalCheck, walletKind, WALLET_KIND, WalletRemovalError } from '../utils/walletRemoval.js';
 import { registerRandomLightningAddress } from '../utils/lightningAddressNames.js';
 
 /** One output of one deposit transaction: `${txId}:${vout}` (vout defaults to 0). */
@@ -2885,9 +2885,21 @@ export const useWalletStore = defineStore('wallet', {
     },
 
     /**
-     * Whether a wallet may be removed right now, and what the person should
-     * hear first (utils/walletRemoval.js). Screens call this before asking
-     * for confirmation; removeWallet enforces the same verdict.
+     * Whether a wallet's recovery phrase is confirmed backed up: the shared
+     * Spark phrase, or an Arkade wallet's own. Null for a connected wallet,
+     * which has no phrase on this phone.
+     */
+    phraseBackedUp(walletId) {
+      const wallet = this.wallets.find((w) => w.id === walletId);
+      if (wallet?.type === WALLET_TYPES.SPARK) return this._sparkPhraseBackedUp();
+      if (wallet?.type === WALLET_TYPES.ARKADE) return wallet.metadata?.hasBackedUp === true;
+      return null;
+    },
+
+    /**
+     * Whether a wallet may leave this phone right now, and what the person
+     * should hear first (utils/walletRemoval.js). Screens call this before
+     * asking for confirmation; removeWallet enforces the same verdict.
      * @returns {{ allowed: boolean, blockers: string[], notes: string[] }}
      */
     removalCheckFor(walletId) {
@@ -2900,7 +2912,7 @@ export const useWalletStore = defineStore('wallet', {
         balance: { known: balance.known, value: balance.value, fresh: balance.status === 'fresh' },
         hasPendingDeposit: (this.pendingDepositsByWallet?.[walletId] || []).length > 0,
         hasActiveExit: isActiveExit(useEmergencyExitStore().exitFor(walletId)),
-        backedUp: this._sparkPhraseBackedUp(),
+        backedUp: this.phraseBackedUp(walletId) === true,
       });
     },
 
@@ -2920,10 +2932,12 @@ export const useWalletStore = defineStore('wallet', {
     },
 
     /**
-     * Remove one wallet. Spark wallets are checked first (removalCheckFor);
-     * a refusal throws WalletRemovalError with the blockers. A removal that
-     * could not be saved is refused before anything is torn down
-     * (_assertSavable), and the removal is saved before this resolves.
+     * Take one wallet off this phone: a wallet whose phrase is here is
+     * removed, a connected one is disconnected; both through the same path.
+     * A wallet on this phone is checked first (removalCheckFor); a refusal
+     * throws WalletRemovalError with the blockers. A removal that could not
+     * be saved is refused before anything is torn down (_assertSavable), and
+     * the removal is saved before this resolves.
      * @param {string} walletId - The wallet ID to remove
      */
     async removeWallet(walletId) {
@@ -2931,7 +2945,7 @@ export const useWalletStore = defineStore('wallet', {
         try {
           const wallet = this.wallets.find((w) => w.id === walletId);
           if (!wallet) throw new Error('Wallet not found');
-          if (wallet.type === WALLET_TYPES.SPARK) {
+          if (walletKind(wallet) === WALLET_KIND.ON_PHONE) {
             const check = this.removalCheckFor(walletId);
             if (!check.allowed) throw new WalletRemovalError(check.blockers);
           }
@@ -3655,61 +3669,23 @@ export const useWalletStore = defineStore('wallet', {
     },
 
     /**
-     * Disconnect and remove only NWC wallets (keeps Spark wallet). Refused
-     * and saved like every removal (see disconnectAll).
+     * Disconnect every connected wallet (NWC, LNbits) at once (Danger Zone).
+     * The same path as one removal, so the kiosk binding, the default wallet,
+     * cached history and auto-transfer rules never point at a wallet that is
+     * gone. Refused before anything is torn down when it could not be saved;
+     * saved before this resolves.
      */
-    async disconnectNwcWallets() {
-      this._assertSavable();
-      const nwcWallets = this.wallets.filter(w => w.type === WALLET_TYPES.NWC);
-
-      // Disconnect each NWC wallet
-      for (const wallet of nwcWallets) {
-        await this.disconnectWallet(wallet.id);
-        // Clean up state for this wallet
-        delete this.connectionStates[wallet.id];
-        this.forgetBalance(wallet.id);
-        delete this.walletInfos[wallet.id];
-        delete this.providers[wallet.id];
+    async disconnectConnectedWallets() {
+      const connected = this.wallets.filter((w) => walletKind(w) === WALLET_KIND.CONNECTED);
+      if (!connected.length) return;
+      try {
+        this._assertSavable();
+        for (const wallet of connected) await this._removeWalletEntry(wallet);
+        await this._afterWalletsRemoved({ removedTypes: [...new Set(connected.map((w) => w.type))] });
+      } catch (error) {
+        this.lastError = error.message;
+        throw error;
       }
-
-      // Remove NWC wallets from the list
-      this.wallets = this.wallets.filter(w => w.type !== WALLET_TYPES.NWC);
-
-      // If active wallet was NWC, switch to Spark or null
-      if (!this.wallets.find(w => w.id === this.activeWalletId)) {
-        this.activeWalletId = this.wallets[0]?.id || null;
-      }
-
-      await this.persistState({ requireDurable: true });
-    },
-
-    /**
-     * Disconnect and remove only LNBits wallets. Refused and saved like
-     * every removal (see disconnectAll).
-     */
-    async disconnectLNBitsWallets() {
-      this._assertSavable();
-      const lnbitsWallets = this.wallets.filter(w => w.type === WALLET_TYPES.LNBITS);
-
-      // Disconnect each LNBits wallet
-      for (const wallet of lnbitsWallets) {
-        await this.disconnectWallet(wallet.id);
-        // Clean up state for this wallet
-        delete this.connectionStates[wallet.id];
-        this.forgetBalance(wallet.id);
-        delete this.walletInfos[wallet.id];
-        delete this.providers[wallet.id];
-      }
-
-      // Remove LNBits wallets from the list
-      this.wallets = this.wallets.filter(w => w.type !== WALLET_TYPES.LNBITS);
-
-      // If active wallet was LNBits, switch to first available or null
-      if (!this.wallets.find(w => w.id === this.activeWalletId)) {
-        this.activeWalletId = this.wallets[0]?.id || null;
-      }
-
-      await this.persistState({ requireDurable: true });
     },
 
     // ==========================================

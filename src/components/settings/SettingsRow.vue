@@ -35,6 +35,7 @@
       { 'settings-row--clickable': interactive && !disabled },
       { 'settings-row--disabled': disabled },
       { 'settings-row--destructive': destructive },
+      { 'settings-row--quiet': quiet },
     ]"
     :aria-disabled="disabled ? 'true' : null"
     @click="onClick"
@@ -102,6 +103,8 @@ export default {
     disabled: { type: Boolean, default: false },
     showChevron: { type: Boolean, default: true },
     destructive: { type: Boolean, default: false },
+    /** A destructive row that cannot run yet: muted, still tappable (it explains why). */
+    quiet: { type: Boolean, default: false },
   },
   emits: ['click'],
   methods: {
@@ -243,5 +246,8 @@ body.body--light .settings-row-badge--info { color: #1E63B8; }
 }
 .settings-row--destructive .settings-row-body {
   align-items: center;
+}
+.settings-row--destructive.settings-row--quiet .settings-row-label {
+  color: var(--text-muted);
 }
 </style>

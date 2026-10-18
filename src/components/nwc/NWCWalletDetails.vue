@@ -31,6 +31,9 @@
         <span class="nwc-details__value nwc-details__status" :class="`is-${statusTone}`">{{ statusText }}</span>
       </div>
     </div>
+    <!-- Disconnecting only forgets the connection here; the wallet keeps
+         allowing it until it is revoked there (NIP-47 has no revoke request). -->
+    <p class="nwc-details__note">{{ $t('To revoke it, remove the connection in {name} too.', { name: wallet.name }) }}</p>
   </section>
 </template>
 
@@ -156,6 +159,13 @@ function amountText(sats) {
   outline: 2px solid var(--brand-accent-text);
   outline-offset: -2px;
 }
+.nwc-details__note {
+  margin: 8px 4px 0;
+  color: var(--detail-secondary, var(--text-muted));
+  font-size: .8125rem;
+  line-height: 1.45;
+}
+
 .nwc-details__heading {
   margin: 22px 4px 9px;
   font: 700 .6875rem 'Manrope', sans-serif;
