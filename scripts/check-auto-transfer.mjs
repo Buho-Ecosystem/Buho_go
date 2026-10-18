@@ -270,10 +270,26 @@ console.log('✓ attention: the list says it, the rule page explains it, Home sh
   await shot(page, 'wallet-details');
   await page.locator('[data-audit="detail-auto-transfer"]').click();
   await page.waitForFunction(() => location.hash === '#/auto-transfer/shop', null, { timeout: 5000 });
+
+  // A wallet without a rule: "Set Up" opens New Rule for that wallet, and the
+  // sheet survives the page clearing its ?new= query.
+  await go(page, '/settings');
+  const settings = await page.evaluateHandle(() => {
+    for (const el of document.querySelectorAll('*')) for (let c = el.__vueParentComponent; c; c = c.parent) if (c.type?.name === 'SettingsPage') return c.proxy;
+  });
+  await settings.evaluate((vm) => { vm.showWalletsDialog = true; vm.detailWalletId = 'savings'; });
+  await pause(900);
+  assert.match(await page.locator('[data-audit="detail-auto-transfer"]').innerText(), /Auto-Transfer\s*Set Up/);
+  await page.locator('[data-audit="detail-auto-transfer"]').click();
+  await page.waitForFunction(() => location.hash === '#/auto-transfer', null, { timeout: 5000 });
+  await pause(1000);
+  assert.equal(await sheet(page).isVisible(), true, 'New Rule stays open');
+  assert.match(await sheet(page).locator('.iform-line').first().innerText(), /Savings/);
+  await shot(page, 'set-up-from-details');
   assert.deepEqual(errors, []);
   await context.close();
 }
-console.log('✓ afterwards: the toast names where it went, history says "To Savings", the wallet\'s details lead to the rule');
+console.log('✓ afterwards: the toast names where it went, history says "To Savings", the wallet\'s details lead to the rule, or to New Rule when it has none');
 
 // 5 · Dark.
 {

@@ -88,12 +88,13 @@ export default {
       return this.walletStore.wallets.some((w) => !this.autoTransfer.getConfig(w.id));
     },
   },
-  created() {
+  async created() {
     const walletId = this.$route.query.new;
-    if (walletId) {
-      this.$router.replace({ query: {} });
-      this.openNew(String(walletId));
-    }
+    if (!walletId) return;
+    // Clear the query first: a route change closes an open dialog, so the
+    // sheet opens once the route has settled.
+    await this.$router.replace({ query: {} });
+    this.openNew(String(walletId));
   },
   methods: {
     openNew(walletId = '') {
