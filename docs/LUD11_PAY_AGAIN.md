@@ -40,7 +40,7 @@ A service is a payee, not a new kind of object: it lives in the same list, on th
 
 Pending Spark service payments retain their recipient, reusable link and provider payment ID. The metadata queue matches that ID before any amount/time heuristic, including after restart or delayed settlement. Pay again stays hidden for pending and failed transactions. Contact history recognizes both the promoted Lightning identifier and its saved pay-link alias.
 
-`node --test src/pages/__tests__/walletFlow.spec.js` covers disposable-response precedence, pending sends, completed-only repeat actions and contact history aliases. The store specs cover restart, delayed settlement and stable-ID precedence. Browser checks assert real text enlargement, readable names and 44 px Pay targets in all three locales. Evidence: `output/pr287-fixes/INDEX.md`.
+`node --test src/pages/__tests__/walletFlow.spec.js` covers disposable-response precedence, pending sends, completed-only repeat actions and contact history aliases. The store specs cover restart, delayed settlement and stable-ID precedence. Browser checks assert real text enlargement, readable names and 44 px Pay targets in all three locales.
 
 ## Visual follow-up
 
@@ -48,4 +48,4 @@ Confirmation preserves the saved service name and logo (or storefront fallback),
 
 Receipts show existing notes as text. More contains note editing with explicit Save/Cancel, contact assignment/removal and technical details. The tag selector is removed; existing stored metadata remains intact. Favorites is a secondary action in the contact profile's More menu.
 
-Voucher editing gives removal its own row, keeping the identity readable at 200% text. The removal alert scales its title, warning and actions together, keeps actions visible and initially focuses Cancel. Screenshots and browser evidence: `output/pr287-visual-fixes/index.html`.
+Voucher editing gives removal its own row, keeping the identity readable at 200% text. The removal alert scales its title, warning and actions together, keeps actions visible and initially focuses Cancel.

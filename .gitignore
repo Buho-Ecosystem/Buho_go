@@ -1,62 +1,65 @@
+# Personal ignores (a private test folder, editor quirks) go in
+# .git/info/exclude: it works like this file and is never committed.
+
+# --- System -----------------------------------------------------------------
 .DS_Store
 .thumbs.db
+
+# --- Dependencies -----------------------------------------------------------
 node_modules
 
-# Local build scripts
-/build-release.sh
-/build-signed-release.sh
-
-# LLM Stuff
-/.claude
-/TX_METADATA_RESEARCH.md
-screenshots
-/RELEASE_NOTES_v*.md
-/STANDARD_RELEASE_NOTES_PROMPT.md
-/Release_Notes
-/Plans WIP
-/Articels
-/cloud_backup.md
-/audit
-/playwright.config.mjs
-.playwright-mcp
-
-# Quasar core related directories
+# --- Build output -----------------------------------------------------------
 .quasar
 /dist
 /quasar.config.*.temporary.compiled*
-
-# Cordova related directories and files
-/src-cordova/node_modules
-/src-cordova/platforms
-/src-cordova/plugins
-/src-cordova/www
-
-# Capacitor related directories and files
 /src-capacitor/www
 /src-capacitor/node_modules
 
-# Log files
+# --- Release artifacts and signing ------------------------------------------
+# APKs land in output/ for zapstore.yaml; releases are published, not committed.
+*.apk
+*.aab
+*.jks
+*.keystore
+/build-release.sh
+/build-signed-release.sh
+/RELEASE_NOTES_v*.md
+/STANDARD_RELEASE_NOTES_PROMPT.md
+/Release_Notes
+
+# --- Local work: plans, notes, generated output -----------------------------
+# output/ is the scratch area for checks, screenshots and release builds
+# (scripts/check-*.mjs write there).
+/output
+/Plans WIP
+/Articels
+/audit
+screenshots
+
+# --- Agent and browser tooling ----------------------------------------------
+/.claude
+/CLAUDE.md
+.playwright-mcp
+/playwright.config.mjs
+
+# --- Environment ------------------------------------------------------------
+.env
+.env.local*
+
+# --- Logs -------------------------------------------------------------------
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
-# Editor directories and files
+# --- Editors ----------------------------------------------------------------
 .idea
 *.suo
 *.ntvs*
 *.njsproj
 *.sln
 
-# local .env files
-.env.local*
-.env
-/CLAUDE.md
-
-# Local map dev screenshots / Playwright artifacts
+# --- Stray screenshot drops in the root --------------------------------------
+/*.png
 map-phase*.png
-.playwright-mcp/
-
-# Stray screenshot drops (German "Bildschirmfoto" / English "Screenshot")
 Bildschirmfoto*.png
 Screenshot*.png
-/*.png

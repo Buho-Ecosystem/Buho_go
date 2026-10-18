@@ -13,7 +13,7 @@
 
 <br>
 
-<img src="public/Playstore/Playstore1.png" alt="BuhoGO home screen" width="760">
+<img src="store/playstore/Playstore1.png" alt="BuhoGO home screen" width="760">
 
 </div>
 
@@ -47,7 +47,7 @@ Not sure which to pick? The [User Guide](Guide.md) compares them in plain langua
 ## Pay anyone, anywhere
 
 <div align="center">
-<img src="public/Playstore/Playstore3_1.png" alt="Sending a payment in BuhoGO" width="760">
+<img src="store/playstore/Playstore3_1.png" alt="Sending a payment in BuhoGO" width="760">
 </div>
 
 - Lightning invoices, Lightning addresses, LNURL pay and withdraw
@@ -62,7 +62,7 @@ Not sure which to pick? The [User Guide](Guide.md) compares them in plain langua
 ## Find places that take Bitcoin
 
 <div align="center">
-<img src="public/Playstore/Playstore3.png" alt="The Bitcoin places map in BuhoGO" width="380">
+<img src="store/playstore/Playstore3.png" alt="The Bitcoin places map in BuhoGO" width="380">
 </div>
 
 Open the map to discover cafes, shops, and services near you that accept Bitcoin. Search, filter, and pay straight from your wallet.
@@ -74,9 +74,9 @@ A short, friendly course built right into the app. Work through bite-size questi
 ## Built for business
 
 <div align="center">
-<img src="public/Playstore/Playstore5.png" alt="Batch Send wizard" width="760">
+<img src="store/playstore/Playstore5.png" alt="Batch Send wizard" width="760">
 <br><br>
-<img src="public/Playstore/Playstore6.png" alt="Auto-Transfer" width="360">
+<img src="store/playstore/Playstore6.png" alt="Auto-Transfer" width="360">
 </div>
 
 - **Kiosk Mode** turns any phone or tablet into a PIN-locked point-of-sale terminal, with tips, round-up, and fiat display. Staff only ever see the keypad.
@@ -88,7 +88,7 @@ A short, friendly course built right into the app. Work through bite-size questi
 ## Now in dark mode
 
 <div align="center">
-<img src="public/Playstore/Playstore7.png" alt="BuhoGO in dark mode" width="760">
+<img src="store/playstore/Playstore7.png" alt="BuhoGO in dark mode" width="760">
 </div>
 
 A calmer look for your everyday wallet. Switch any time in Settings, along with your language (English, German, Spanish) and biometric unlock.
@@ -115,6 +115,7 @@ Want to build it yourself or run your own copy? The [Developer Guide](Developer.
 | [**Use Cases**](USE_CASES.md) | Follow real "I want to do X" walkthroughs |
 | [**Developer Guide**](Developer.md) | Understand the architecture and build the app |
 | [**Arkade wallet**](ARK_ME.md) | Understand the Arkade (Ark L2) backend in depth |
+| [**Feature records**](docs/README.md) | Look up how a feature works and the rules behind it |
 | [**Contributing**](CONTRIBUTING.md) | Help out, from fixing a typo to shipping a feature |
 
 ## Credits

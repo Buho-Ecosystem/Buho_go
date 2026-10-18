@@ -68,7 +68,7 @@ So a payment that arrives while the app is closed or frozen moves on the next re
 - `node --test src/utils/__tests__/autoTransfer.spec.js src/stores/__tests__/autoTransferEngine.spec.js src/services/__tests__/autoTransferWatch.spec.js`
 - `node scripts/check-auto-transfer-cold-start.mjs`: a cold boot with saved wallets and a rule; the rule's wallet must be read within 15 s.
 - `node scripts/check-auto-transfer.mjs` (dev server on port 9031): setup through the real sheet, destinations, attention on the list, page and Home, history, the wallet's details, dark, and the real chain from a verified balance through the engine and a wallet-to-wallet transfer to the toast, failures and recovery.
-- On a device: `output/auto-transfer/device/` holds the timeline script used for the background check.
+- On a device: `scripts/device/auto-transfer-timeline.mjs` (steps in its header) runs the open → background → resume timeline above.
 
 | Rules | Setup | A rule | Home |
 |---|---|---|---|
