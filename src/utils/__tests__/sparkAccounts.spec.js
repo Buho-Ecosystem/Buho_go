@@ -9,7 +9,7 @@ import {
   nextFreeSparkAccount, remainingSparkSlots, canAddSparkWallet, isRestorableAccount, isConclusiveScan, suggestWalletName,
 } from '../sparkAccounts.js';
 import { normalizeWalletName, walletNameProblem, walletNameCopy, MAX_WALLET_NAME_LENGTH } from '../walletNames.js';
-import { removalCheck, removalCopy } from '../walletRemoval.js';
+import { removalCheck, removalCopy, removalBlockerLabel, sparkRemovalCopy, disconnectAllCopy, walletKind } from '../walletRemoval.js';
 
 const spark = (accountNumber, extra = {}) => ({ id: `s${accountNumber}`, type: 'spark', name: `S${accountNumber}`, connectionData: { accountNumber, network: 'MAINNET' }, ...extra });
 const t = (key, values = {}) => key.replace(/\{(\w+)\}/g, (_, name) => values[name] ?? name);
@@ -83,24 +83,67 @@ test('removal rules: money, deposits, exits and the last wallet', () => {
   assert.deepEqual(check({ sparkWalletCount: 1, balance: { known: true, value: 5 } }).blockers, ['needs_backup'], 'the last wallet may hold money only with a backup');
   assert.equal(check({ sparkWalletCount: 1, balance: { known: true, value: 5 }, backedUp: true }).allowed, true);
   assert.deepEqual(check({ sparkWalletCount: 1 }).blockers, ['needs_backup'], 'even an empty last wallet takes the phrase, and every removed account with it');
+  assert.deepEqual(check({ sparkWalletCount: 1, backedUp: true }).notes, ['phrase_leaves']);
   assert.equal(check({ sparkWalletCount: 1, balance: { known: false, value: 0 }, backedUp: true }).allowed, true);
-  assert.deepEqual(removalCheck({ wallet: { type: 'nwc' }, balance: { known: true, value: 9 } }), { allowed: true, blockers: [], notes: [] });
 });
 
-test('removal copy names one reason at a time and offers the step that unblocks it', () => {
+test('an Arkade wallet keeps its own phrase: backed up, or just shown empty', () => {
+  const arkade = (overrides) => removalCheck({ wallet: { type: 'arkade' }, balance: { known: true, value: 900, fresh: true }, ...overrides });
+  assert.deepEqual(arkade().blockers, ['needs_backup']);
+  assert.deepEqual(arkade({ balance: { known: true, value: 0, fresh: false } }).blockers, ['needs_backup'], 'a saved zero proves nothing');
+  assert.equal(arkade({ balance: { known: true, value: 0, fresh: true } }).allowed, true);
+  assert.equal(arkade({ backedUp: true }).allowed, true);
+  assert.deepEqual(arkade({ backedUp: true }).notes, ['phrase_leaves']);
+});
+
+test('a connected wallet is only a connection: nothing blocks disconnecting it', () => {
+  for (const type of ['nwc', 'lnbits', undefined]) {
+    assert.equal(walletKind({ type }), 'connected');
+    assert.deepEqual(removalCheck({ wallet: { type }, balance: { known: true, value: 9 } }), { allowed: true, blockers: [], notes: [] });
+  }
+  assert.equal(walletKind({ type: 'spark' }), 'on_phone');
+  assert.equal(walletKind({ type: 'arkade' }), 'on_phone');
+});
+
+test('removal copy: one reason at a time, the step that unblocks it, and the verb of the kind', () => {
   const wallet = { type: 'spark', name: 'Savings' };
   const funded = removalCopy({ check: check({ balance: { known: true, value: 7 } }), wallet, t, formatAmount: n => `${n} sats`, balanceSats: 7 });
-  assert.deepEqual([funded.blocked, funded.action], [true, 'move_funds']);
-  assert.match(funded.message, /Savings still holds 7 sats/);
-  const both = removalCopy({ check: check({ hasActiveExit: true, balance: { known: true, value: 7 } }), wallet, t });
-  assert.equal(both.title, 'Emergency exit in progress');
-  assert.equal(removalCopy({ check: check({ sparkWalletCount: 1, balance: { known: false, value: 0 } }), wallet, t }).action, 'backup');
+  assert.deepEqual([funded.blocked, funded.action, funded.message], [true, 'move_funds', 'Savings holds 7 sats.']);
+  assert.equal(removalCopy({ check: check({ hasActiveExit: true, balance: { known: true, value: 7 } }), wallet, t }).title, 'Emergency exit in progress');
+  const unbacked = removalCopy({ check: check({ sparkWalletCount: 1, balance: { known: true, value: 0 } }), wallet, t });
+  assert.deepEqual([unbacked.action, unbacked.title], ['backup', 'Back up Savings first']);
+  assert.deepEqual([removalCopy({ check: check({ balance: { known: false, value: 0 } }), wallet, t }).blocked], [true]);
+
+  const one = removalCopy({ check: check(), wallet, t });
+  assert.deepEqual([one.title, one.message, one.confirmLabel, one.typed], ['Remove Savings from this phone?', 'Your recovery phrase brings it back.', 'Remove', false]);
   const last = removalCopy({ check: check({ sparkWalletCount: 1, backedUp: true }), wallet, t });
-  assert.equal(last.blocked, false);
-  assert.match(last.title, /Remove Spark from this phone/);
-  assert.match(last.message, /exit kit stays/);
-  const unknown = removalCopy({ check: check({ balance: { known: false, value: 0 } }), wallet, t });
-  assert.deepEqual([unknown.blocked, unknown.title], [true, 'Balance not checked']);
-  assert.equal(removalCopy({ check: removalCheck({ wallet: { type: 'nwc' } }), wallet: { type: 'nwc', name: 'Alby' }, t }).title, 'Remove Wallet');
-  for (const copy of [funded, both, last, unknown]) assert.ok(!/—/.test(copy.title + copy.message), 'no em dashes in copy');
+  assert.deepEqual([last.message, last.typed], ['Its recovery phrase leaves too.', true], 'typed only when a phrase leaves');
+  assert.equal(last.doneMessage, 'Savings removed from this phone');
+
+  const hub = { type: 'nwc', name: 'Alby Hub' };
+  const connected = removalCopy({ check: removalCheck({ wallet: hub }), wallet: hub, t });
+  assert.deepEqual([connected.title, connected.message, connected.confirmLabel, connected.typed, connected.doneMessage],
+    ['Disconnect Alby Hub?', 'Your money stays in Alby Hub.', 'Disconnect', false, 'Alby Hub disconnected']);
+  const kiosk = removalCopy({ check: removalCheck({ wallet: hub }), wallet: hub, t, isKioskWallet: true });
+  assert.equal(kiosk.message, 'Your money stays in Alby Hub. The kiosk stops taking payments.');
+
+  for (const copy of [funded, unbacked, one, last, connected, kiosk]) {
+    const text = `${copy.title} ${copy.message}`;
+    assert.ok(!/—|delete|cannot be undone|permanently/i.test(text), `never "delete": ${text}`);
+  }
+});
+
+test('Danger Zone: every wallet of a kind at once, and a short reason when it cannot run', () => {
+  const spark = sparkRemovalCopy({ check: check({ sparkWalletCount: 1, backedUp: true }), t });
+  assert.deepEqual([spark.title, spark.typed, spark.doneMessage], ['Remove Spark from this phone?', true, 'Spark removed from this phone']);
+  assert.equal(sparkRemovalCopy({ check: check({ sparkWalletCount: 1 }), t }).action, 'backup');
+  const listNames = (names) => names.join(' and ');
+  const two = disconnectAllCopy({ wallets: [{ type: 'nwc', name: 'Alby Hub' }, { type: 'lnbits', name: 'Kitty' }], t, listNames });
+  assert.deepEqual([two.title, two.message, two.typed, two.doneMessage],
+    ['Disconnect 2 wallets?', 'Your money stays in Alby Hub and Kitty.', false, '2 wallets disconnected']);
+  assert.equal(disconnectAllCopy({ wallets: [{ type: 'nwc', name: 'Alby Hub' }], t, listNames }).title, 'Disconnect Alby Hub?', 'one wallet: named');
+  assert.equal(removalBlockerLabel(check({ sparkWalletCount: 1 }), t), 'Back up first');
+  assert.equal(removalBlockerLabel(check({ balance: { known: true, value: 3 } }), t), 'Move the money first');
+  assert.equal(removalBlockerLabel(check({ balance: { known: false, value: 0 } }), t), '', 'an unchecked balance is checked on tap');
+  assert.equal(removalBlockerLabel(check(), t), '');
 });

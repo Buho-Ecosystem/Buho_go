@@ -254,7 +254,7 @@ test('the last Spark wallet goes only with a backed-up phrase, whatever its bala
   h.setBalance(wallet.id, 900);
   const check = h.store.removalCheckFor(wallet.id);
   assert.deepEqual(check.blockers, ['needs_backup']);
-  assert.ok(check.notes.includes('last_spark_wallet'));
+  assert.ok(check.notes.includes('phrase_leaves'));
   await h.store.confirmBackup(wallet.id);
   assert.equal(h.store.removalCheckFor(wallet.id).allowed, true);
   await h.store.removeWallet(wallet.id);
@@ -511,6 +511,7 @@ function otherProviders({ arkadeConnect = null, lnbitsConnect = null } = {}) {
   class ArkadeWalletProvider {
     static generateMnemonic() { return OTHER_PHRASE; }
     static isValidMnemonic() { return true; }
+    static async deleteStorage() {}
     constructor() { this.isConnected = false; }
     async connect() { if (arkadeConnect) await arkadeConnect(); this.isConnected = true; }
     async getBalance() { return { balance: 0, pending: 0, recoverable: 0 }; }
@@ -643,7 +644,7 @@ test('removing wallets saves the shorter list, even when another save lands mean
   let release;
   const closing = new Promise((resolve) => { release = resolve; });
   h.store.providers.L = { disconnect: () => closing };
-  const removal = h.store.disconnectLNBitsWallets();
+  const removal = h.store.disconnectConnectedWallets();
   await tick();
   // A balance or settings save while the LNbits wallet is still closing.
   await h.store.persistState();
@@ -653,7 +654,7 @@ test('removing wallets saves the shorter list, even when another save lands mean
 });
 
 test('a wallet read at load can be removed at once: no save has to have written it first', async () => {
-  for (const remove of [(store) => store.removeWallet('L'), (store) => store.disconnectLNBitsWallets()]) {
+  for (const remove of [(store) => store.removeWallet('L'), (store) => store.disconnectConnectedWallets()]) {
     // Spark stays offline, so nothing is saved between the load and the removal.
     const h = reloaded([await savedSpark('B', 1, { group: null }), kittyWallet()], { connect: offline });
     await h.store.initialize();
@@ -681,8 +682,7 @@ test('a removal another window would undo is refused before anything is torn dow
   for (const [what, remove] of [
     ['Spark from this device', (store) => store.removeSparkFromDevice()],
     ['one wallet', (store) => store.removeWallet('L')],
-    ['every LNbits wallet', (store) => store.disconnectLNBitsWallets()],
-    ['every NWC wallet', (store) => store.disconnectNwcWallets()],
+    ['every connected wallet', (store) => store.disconnectConnectedWallets()],
   ]) {
     const h = reloaded([await savedSpark('B', 1, { group: null }), kittyWallet(), nwcWallet()]);
     await h.store.initialize();
@@ -694,6 +694,36 @@ test('a removal another window would undo is refused before anything is torn dow
     assert.deepEqual(h.calls.deletedStorage, [], `${what}: no engine storage was deleted`);
     assert.equal(h.local.getItem(STORE_KEY), onDisk, `${what}: the saved wallets, the other window's too, are as they were`);
   }
+});
+
+test('disconnecting every connected wallet leaves nothing pointing at them', async () => {
+  const h = reloaded([kittyWallet(), nwcWallet(), await savedSpark('B', 1, { group: null })]);
+  await h.store.initialize();
+  h.store.wallets.find((w) => w.id === 'N').isDefault = true;
+  h.store.kioskWalletId = 'N';
+  await h.store.disconnectConnectedWallets();
+  assert.deepEqual(ids(h.store.wallets), ['B']);
+  assert.equal(h.store.kioskWalletId, null, 'the kiosk no longer takes payments into a wallet that is gone');
+  assert.equal(h.store.activeWalletId, 'B');
+  assert.deepEqual(h.store.wallets.filter((w) => w.isDefault).map((w) => w.id), ['B'], 'a remaining wallet is the default');
+  assert.deepEqual(ids(h.saved().wallets), ['B']);
+});
+
+test('an Arkade wallet leaves this phone only with a backed-up phrase, or just shown empty', async () => {
+  const h = reloaded([await savedSpark('B', 1, { group: null }), { id: 'A', type: 'arkade', name: 'Arkade', metadata: {} }]);
+  await h.store.initialize();
+  h.setBalance('A', 12000);
+  assert.deepEqual(h.store.removalCheckFor('A').blockers, ['needs_backup']);
+  await assert.rejects(() => h.store.removeWallet('A'), (e) => e.code === 'WALLET_REMOVAL_BLOCKED');
+  assert.ok(h.store.wallets.some((w) => w.id === 'A'), 'still on this phone');
+  h.setBalance('A', 0);
+  assert.equal(h.store.removalCheckFor('A').allowed, true, 'nothing in it: nothing to lose');
+  h.setBalance('A', 500);
+  await h.store.confirmBackup('A');
+  assert.equal(h.store.phraseBackedUp('A'), true);
+  assert.ok(h.store.removalCheckFor('A').notes.includes('phrase_leaves'));
+  await h.store.removeWallet('A');
+  assert.deepEqual(ids(h.store.wallets), ['B']);
 });
 
 test('a removal whose save is refused says so instead of reporting success', async () => {
