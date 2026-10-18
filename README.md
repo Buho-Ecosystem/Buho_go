@@ -44,8 +44,8 @@ Use as many as you like, side by side, and choose which one pays.
 - **Ask for money and split the bill.** One request to several people, in equal shares or by amount, and see who has paid. [Requests](https://docs-buhogo.netlify.app/features/requests)
 - **Chat with your contacts.** Requests and payments in a private, end-to-end encrypted chat. [Contact chat](https://docs-buhogo.netlify.app/features/chat)
 - **Spend it.** A map of places that take Bitcoin, eSIMs and VPNs, gift cards, and short lessons that pay real sats. [Spend](https://docs-buhogo.netlify.app/features/spend)
-- **Run a shop.** Kiosk mode turns a phone into a point of sale with tips, round-up and Bolt Card payments. [Kiosk](https://docs-buhogo.netlify.app/features/kiosk) · [NFC](https://docs-buhogo.netlify.app/features/nfc)
-- **Move money on its own.** Auto-Transfer sends what is above an amount to savings, a contact or an address, in sats or your currency. [Transfers](https://docs-buhogo.netlify.app/features/transfer)
+- **Run a shop.** Kiosk mode turns a phone into a point of sale with tips, round-up and Bolt Card payments. [Kiosk](https://docs-buhogo.netlify.app/features/kiosk) · [Bolt Cards](https://docs-buhogo.netlify.app/features/bolt-card)
+- **Move money on its own.** Auto-Transfer sends what is above an amount to savings, a contact or an address, in sats or your currency. [Auto-Transfer](https://docs-buhogo.netlify.app/features/auto-transfer)
 - **Be someone.** Nostr identities, a username, a public page to get paid, and Lightning login. [Identities](https://docs-buhogo.netlify.app/features/identities)
 - **Stay safe.** Backups of your recovery phrase, app lock, and an emergency exit for Spark. [Backup](https://docs-buhogo.netlify.app/features/backup) · [Emergency exit](https://docs-buhogo.netlify.app/features/emergency-exit)
 
