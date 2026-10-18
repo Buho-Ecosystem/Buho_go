@@ -55,6 +55,22 @@
       </div>
 
       <p v-if="connectionError" class="detail-error detail-connection-error" role="status">{{ connectionError }}</p>
+      <!-- A wallet whose phrase is on this phone: whether that phrase is
+           backed up, next to the action that takes it off the phone. -->
+      <section v-if="onPhone" class="detail-group" :aria-label="$t('Recovery phrase')">
+        <div class="detail-group-row">
+          <span class="detail-group-copy">
+            <span class="detail-group-label">{{ $t('Recovery phrase') }}</span>
+            <span class="detail-group-value is-placeholder">{{ $t('On this phone') }}</span>
+          </span>
+          <span v-if="phraseBackedUp" class="detail-backed-up">
+            <Icon icon="tabler:check" width="16" height="16" :aria-hidden="true" />{{ $t('Backed up') }}
+          </span>
+        </div>
+        <button v-if="!phraseBackedUp" type="button" class="detail-group-action" @click="$emit('backup', wallet.id)">
+          {{ $t('Back up') }}
+        </button>
+      </section>
       <!-- NWC: address, spending limit, what the connection may do, whether it answers. -->
       <NWCWalletDetails
         v-if="isNwc"
@@ -99,9 +115,11 @@
         </button>
       </div>
 
+      <!-- BuhoGO never deletes a wallet: one whose phrase is here leaves this
+           phone, a connected one is disconnected (utils/walletRemoval.js). -->
       <div class="detail-danger-section">
         <button type="button" class="detail-button detail-danger" :disabled="saving || switching || reconnecting" @click="$emit('remove', wallet.id)">
-          <Icon icon="tabler:trash" width="20" height="20" :aria-hidden="true" />{{ $t('Remove Wallet') }}
+          {{ onPhone ? $t('Remove from this phone') : $t('Disconnect') }}
         </button>
       </div>
     </div>
@@ -115,6 +133,7 @@ import WalletBrandMark from '../WalletBrandMark.vue';
 import HiddenAmount from '../HiddenAmount.vue';
 import NWCWalletDetails from '../nwc/NWCWalletDetails.vue';
 import { capabilitiesOf } from '../../utils/nwcWallet.js';
+import { walletKind, WALLET_KIND } from '../../utils/walletRemoval.js';
 import balanceUpdating from '../../directives/balanceUpdating.js';
 import { MAX_WALLET_NAME_LENGTH, walletNameCopy } from '../../utils/walletNames.js';
 import { translateErrorCode } from '../../utils/userErrors';
@@ -147,10 +166,13 @@ const props = defineProps({
   nwcLimit: { type: Object, default: null },
   /** NWC only: whether the wallet answered when last asked (store.nwcStatus). */
   nwcStatus: { type: String, default: '' },
+  /** Spark, Arkade: the wallet's recovery phrase is confirmed backed up. */
+  phraseBackedUp: Boolean,
 });
 const isNwc = computed(() => (props.wallet.type || 'nwc') === 'nwc');
+const onPhone = computed(() => walletKind(props.wallet) === WALLET_KIND.ON_PHONE);
 const sharesBalance = computed(() => capabilitiesOf(props.wallet).balance);
-const emit = defineEmits(['back', 'switch', 'reconnect', 'remove', 'copy-address', 'change-address', 'move-address']);
+const emit = defineEmits(['back', 'switch', 'reconnect', 'remove', 'backup', 'copy-address', 'change-address', 'move-address']);
 // vue-i18n runs in legacy mode (src/boot/i18n.js), so useI18n() throws.
 // Reach $t through the component proxy, the app's established pattern.
 const { proxy } = getCurrentInstance();
@@ -230,7 +252,8 @@ body.body--light .detail-avatar--arkade { background: var(--arkade-tile); box-sh
 .detail-primary { background: var(--btn-primary-bg); color: var(--btn-primary-fg); }
 .detail-secondary { background: var(--detail-surface); border-color: var(--detail-line); }
 .detail-danger-section { border-top: 1px solid var(--detail-line); padding-top: 16px; margin-top: 24px; }
-.detail-danger { background: transparent; color: var(--detail-danger); justify-content: flex-start; font-weight: 500; }
+.detail-danger { background: transparent; color: var(--detail-danger); font-weight: 600; }
+.detail-backed-up { display: inline-flex; align-items: center; gap: 4px; padding-right: 8px; color: var(--detail-active); font-size: .8125rem; font-weight: 600; }
 button:focus-visible, input:focus-visible { outline: 2px solid currentColor; outline-offset: 3px; }
 button:disabled { opacity: .5; cursor: default; }
 button:not(:disabled):active { filter: brightness(.9); }

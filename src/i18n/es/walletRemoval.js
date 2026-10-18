@@ -1,0 +1,23 @@
+// Taking a wallet off this phone: "Remove from this phone" for a wallet whose recovery phrase is here, "Disconnect" for a connected one. Never "delete". Keep the same keys in all three locales.
+export default {
+  "Back up first": "Primero haz la copia",
+  "Remove {name} once it has finished.": "Quita {name} cuando haya terminado.",
+  "Add or return the deposit to {name} first.": "Primero añade o devuelve el depósito a {name}.",
+  "Back up {name} first": "Primero haz la copia de {name}",
+  "It holds {amount}.": "Contiene {amount}.",
+  "Only its recovery phrase brings it back.": "Solo su frase de recuperación la recupera.",
+  "{name} holds {amount}.": "{name} contiene {amount}.",
+  "The kiosk stops taking payments.": "El quiosco deja de aceptar pagos.",
+  "Your money stays in {name}.": "Tu dinero se queda en {name}.",
+  "{name} disconnected": "{name} desconectada",
+  "Its recovery phrase leaves too.": "Su frase de recuperación también se va.",
+  "Your recovery phrase brings it back.": "Tu frase de recuperación la recupera.",
+  "Disconnect {count} wallets?": "¿Desconectar {count} carteras?",
+  "Your money stays in {names}.": "Tu dinero se queda en {names}.",
+  "{count} wallets disconnected": "{count} carteras desconectadas",
+  "Remove Spark from this phone": "Quitar Spark de este teléfono",
+  "Remove Arkade from this phone": "Quitar Arkade de este teléfono",
+  "Disconnect all connected wallets": "Desconectar todas las carteras conectadas",
+  "Type {phrase}": "Escribe {phrase}",
+  "To revoke it, remove the connection in {name} too.": "Para revocarla, quita la conexión también en {name}.",
+};
