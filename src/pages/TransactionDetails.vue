@@ -192,10 +192,19 @@
 
           <!-- How this payment was made, when an auxiliary path stamped a
                source (internal transfer, batch send, kiosk sale). -->
-          <div v-if="txTypeRowText" class="tx-row">
+          <!-- An Auto-Transfer leads to the rule that sent it. -->
+          <component
+            :is="autoTransferRuleWalletId ? 'button' : 'div'"
+            v-if="txTypeRowText"
+            :type="autoTransferRuleWalletId ? 'button' : undefined"
+            class="tx-row"
+            :class="{ 'tx-row--link': autoTransferRuleWalletId }"
+            @click="autoTransferRuleWalletId && $router.push(`/auto-transfer/${autoTransferRuleWalletId}`)"
+          >
             <div class="tx-row-label">{{ $t('Type') }}</div>
             <div class="tx-row-value">{{ txTypeRowText }}</div>
-          </div>
+            <Icon v-if="autoTransferRuleWalletId" icon="tabler:chevron-right" width="16" height="16" class="tx-row-chevron" />
+          </component>
 
           <!-- Created + Settled as separate timestamps when the provider
                reports both; a single combined row otherwise. -->
@@ -694,12 +703,14 @@ import { EARN_BRAND, earnRewardKind } from '../services/earnBrand';
 import RequestMoneyFlow from '../components/chat/RequestMoneyFlow.vue';
 import { useChatRuntime } from '../composables/useChatRuntime.js';
 import { useMessagesStore } from '../stores/messages.js';
+import { useAutoWithdrawStore } from '../stores/autoWithdraw';
 
 // "Type" row text per metadata source (i18n message keys, resolved through
 // $t at render time). Lookup map on purpose: later passes stamp more sources
 // (e.g. 'nostr', 'phone') and only need a new entry here, no logic change.
 const TX_SOURCE_TYPE_KEYS = {
   'internal-transfer': 'Internal transfer',
+  'auto-transfer': 'Auto-Transfer',
   'social-bucket': 'Profile payout',
   batch: 'Batch payment',
   kiosk: 'Kiosk sale',
@@ -894,6 +905,7 @@ export default {
         if (source === 'kiosk') return { icon: 'tabler:building-store', cls: 'tx-badge-pos' };
         if (source === 'batch') return { icon: 'tabler:stack-2', cls: 'tx-badge-aux' };
         if (source === 'internal-transfer') return { icon: 'tabler:arrows-exchange', cls: 'tx-badge-aux' };
+        if (source === 'auto-transfer') return { icon: 'tabler:arrow-autofit-right', cls: 'tx-badge-aux' };
         if (source === 'social-bucket') return { icon: 'tabler:user-dollar', cls: 'tx-badge-aux' };
       } catch { /* metadata store not ready — direction still applies */ }
       return this.transaction.type === 'incoming'
@@ -1043,6 +1055,13 @@ export default {
      * metadata source on this tx; '' hides the row (unknown enums included,
      * so a newer stamp never renders a raw identifier).
      */
+    /** The wallet whose Auto-Transfer rule sent this, while that rule exists. */
+    autoTransferRuleWalletId() {
+      if (!this.transaction?.id || !this.metadataStore) return null;
+      if (this.metadataStore.getSourceForTransaction(this.transaction.id, this.metadataWalletId) !== 'auto-transfer') return null;
+      return useAutoWithdrawStore().getConfig(this.metadataWalletId) ? this.metadataWalletId : null;
+    },
+
     txTypeRowText() {
       // A reward has no metadata source stamped on it (it is an incoming
       // payment the app never sent), so name it from its own branding.
@@ -2511,6 +2530,24 @@ export default {
 
 .tx-row:last-child {
   border-bottom: none;
+}
+
+.tx-row--link {
+  width: 100%;
+  align-items: center;
+  border-left: 0;
+  border-right: 0;
+  border-top: 0;
+  background: none;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
+.tx-row--link .tx-row-value { flex: 1; }
+.tx-row-chevron {
+  flex-shrink: 0;
+  margin-left: -8px;
+  color: var(--text-muted);
 }
 
 .tx-row-label {

@@ -134,6 +134,8 @@ const routes = [
       { path: '/transactions', component: () => import('pages/TransactionHistory.vue') },
       { path: '/transaction/:id', component: () => import('pages/TransactionDetails.vue') },
       { path: '/address-book', component: () => import('pages/AddressBook.vue') },
+      { path: '/auto-transfer', component: () => import('pages/AutoTransferPage.vue') },
+      { path: '/auto-transfer/:walletId', component: () => import('pages/AutoTransferRulePage.vue') },
       // A contact's own page: identity, pay, and the payments between you.
       { path: '/address-book/:id', component: () => import('pages/ContactProfilePage.vue') },
       // The contact chat: money requests, payments and short encrypted

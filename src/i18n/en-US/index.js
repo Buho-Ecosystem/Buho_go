@@ -8,6 +8,7 @@ import identities from './identities.js';
 import lnbits from './lnbits.js';
 import nwc from './nwc.js';
 import walletRemoval from './walletRemoval.js';
+import autoTransfer from './autoTransfer.js';
 import boltCard from './boltCard.js';
 export default {
   ...requests,
@@ -58,6 +59,7 @@ export default {
   ...lnbits,
   ...nwc,
   ...walletRemoval,
+  ...autoTransfer,
   ...boltCard,
   // Spend: Bitrefill door
   "Gift cards, mobile top-ups and more": "Gift cards, mobile top-ups and more",
@@ -229,8 +231,6 @@ export default {
   "The Lightning payment couldn't be completed. Please try again.": "The Lightning payment couldn't be completed. Please try again.",
   // ─── Arkade auxiliary paths (transfer / batch / auto-withdraw) ───
   "Requires Arkade": "Requires Arkade",
-  "Arkade transfers are instant and near free": "Arkade transfers are instant and near free",
-  "ark1...": "ark1...",
   // ─── Arkade on-chain (boarding receive / offboard send) ───
   "Includes an on-chain network fee": "Includes an on-chain network fee",
   "Preparing address...": "Preparing address...",
@@ -741,7 +741,6 @@ export default {
   "We ask for your PIN, pattern or password whenever we need to be sure it's you.": "We ask for your PIN, pattern or password whenever we need to be sure it's you.",
   "We ask you to unlock your phone whenever we need to be sure it's you.": "We ask you to unlock your phone whenever we need to be sure it's you.",
   // Settings
-  "Spark transfers are instant and free": "Spark transfers are instant and free",
   "Show your recovery phrase": "Show your recovery phrase",
   "Tap \"Add Wallet\" to get started": "Tap \"Add Wallet\" to get started",
   "Lightning address copied": "Lightning address copied",
@@ -752,7 +751,6 @@ export default {
   "Point BuhoGO at a Mempool server you host or trust": "Point BuhoGO at a Mempool server you host or trust",
   "Must start with https:// and end with /api/v1": "Must start with https:// and end with /api/v1",
   "https://your-mempool.example.com/api/v1": "https://your-mempool.example.com/api/v1",
-  "spark1...": "spark1...",
   "Community": "Community",
   "Community-run, based in Germany": "Community-run, based in Germany",
   "Works for everyone": "Works for everyone",
@@ -904,7 +902,6 @@ export default {
   "Format": "Format",
   "N/A": "N/A",
   // Auto-Transfer dialog explainer.
-  "Set a sats threshold per wallet. When the wallet hits it, the excess moves to a destination you choose.": "Set a sats threshold per wallet. When the wallet hits it, the excess moves to a destination you choose.",
   // Quick toggle — Hide Balance privacy mode.
   "Hidden": "Hidden",
   "Visible": "Visible",
@@ -1024,7 +1021,6 @@ export default {
   "Total Balance": "Total Balance",
   "Online": "Online",
   "Kiosk needs a wallet that can create Lightning invoices. Add a Spark, LNbits or NWC wallet first.": "Kiosk needs a wallet that can create Lightning invoices. Add a Spark, LNbits or NWC wallet first.",
-  "Lightning transfers are temporarily unavailable on Arkade - use the Arkade option": "Lightning transfers are temporarily unavailable on Arkade - use the Arkade option",
   "Arkade pays instantly - on-chain needs a confirmation": "Arkade pays instantly - on-chain needs a confirmation",
   "Lightning is temporarily unavailable on Arkade - switch to another wallet": "Lightning is temporarily unavailable on Arkade - switch to another wallet",
   "Lightning is temporarily unavailable on Arkade wallets. Your Arkade address and Bitcoin address still work, and any other wallet can pay Lightning.": "Lightning is temporarily unavailable on Arkade wallets. Your Arkade address and Bitcoin address still work, and any other wallet can pay Lightning.",
@@ -1808,24 +1804,11 @@ export default {
   "Backup Seed Phrase": "Backup Seed Phrase",
   "Verified": "Verified",
   "Exchange Rate Source": "Exchange Rate Source",
-  "Move funds automatically when your balance grows past a threshold": "Move funds automatically when your balance grows past a threshold",
-  "Threshold": "Threshold",
-  "Amount in sats": "Amount in sats",
   "Enter the amount in {unit}": "Enter the amount in {unit}",
-  "Transfer via": "Transfer via",
   "On-chain": "On-chain",
   "Lightning address": "Lightning address",
   "Bitcoin address": "Bitcoin address",
-  "user@example.com": "user{'@'}example.com",
-  "bc1q...": "bc1q...",
-  "Last transfer": "Last transfer",
-  "Remove rule": "Remove rule",
-  "Inactive": "Inactive",
-  "Auto-transfer settings saved": "Auto-transfer settings saved",
-  "Auto-transfer rule removed": "Auto-transfer rule removed",
-  "Auto-transfer complete": "Auto-transfer complete",
   "Auto-transfer failed": "Auto-transfer failed",
-  "Connect a wallet to set up automatic transfers": "Connect a wallet to set up automatic transfers",
   "Set up automatic transfers for your wallets": "Set up automatic transfers for your wallets",
   "Back up your wallet": "Back up your wallet",
   "Protect your funds by saving your recovery phrase.": "Protect your funds by saving your recovery phrase.",

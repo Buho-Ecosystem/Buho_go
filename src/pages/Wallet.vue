@@ -154,7 +154,6 @@
         <!-- Default wallet icon -->
         <Icon v-else icon="tabler:wallet" width="12" height="12" class="wallet-chip-icon" />
         {{ walletDisplayName }}
-        <Icon v-if="isAutoTransferActive" icon="tabler:send" width="10" height="10" class="aw-indicator-icon" />
         <Icon icon="tabler:chevron-down" width="10" height="10" class="wallet-chip-disclosure" :aria-hidden="true" />
       </q-chip>
 
@@ -272,6 +271,7 @@
           v-if="walletStore.isActiveWalletSpark && !walletStore.isKioskRestricted"
           :wallet-id="walletStore.activeWalletId"
         />
+        <AutoTransferStatusLine v-if="!walletStore.isKioskRestricted" />
       </div>
 
       <!--
@@ -828,6 +828,8 @@ import BatchSendModal from '../components/BatchSendModal.vue';
 import BackupBanner from '../components/BackupBanner.vue';
 import BackupShortcut from '../components/BackupShortcut.vue';
 import SparkStatusLine from '../components/spark/SparkStatusLine.vue';
+import { formatSats } from '../utils/autoTransferCopy.js';
+import AutoTransferStatusLine from '../components/autoTransfer/AutoTransferStatusLine.vue';
 import ClipboardSuggestion from '../components/ClipboardSuggestion.vue';
 import IdentityAuthDialog from '../components/IdentityAuthDialog.vue';
 import {useAutoWithdrawStore} from '../stores/autoWithdraw';
@@ -888,6 +890,7 @@ export default {
     BackupBanner,
     BackupShortcut,
     SparkStatusLine,
+    AutoTransferStatusLine,
     ClipboardSuggestion,
     IdentityAuthDialog,
     ContactAvatar,
@@ -1399,12 +1402,6 @@ export default {
     },
     isSparkWallet() {
       return this.walletStore.isActiveWalletSpark;
-    },
-    isAutoTransferActive() {
-      if (!this.activeWallet) return false;
-      const awStore = useAutoWithdrawStore();
-      const config = awStore.getConfig(this.activeWallet.id);
-      return config?.enabled === true;
     },
     autoWithdrawResult() {
       const awStore = useAutoWithdrawStore()
@@ -2369,31 +2366,16 @@ export default {
       }
     },
 
+    /** A rule moved money: say what and where, briefly. Failures speak on the Home line. */
     autoWithdrawResult(result) {
       if (!result) return
-      const awStore = useAutoWithdrawStore()
-      if (result.type === 'success') {
-        this.$q.notify({
-          type: 'positive',
-          message: this.$t('Auto-transfer complete'),
-          caption: `${result.amount.toLocaleString()} sats → ${result.destination}`,
-          icon: 'send',
-          timeout: 4000
-        })
-      } else if (result.type === 'error') {
-        // Background flows funnel through the same dialog as
-        // user-initiated payments so the failure UI is consistent
-        // app-wide. The wallet name is woven into the route label
-        // so a copied report still says which wallet auto-fired.
-        this.walletStore.showPaymentError(result.error, {
-          context: 'withdraw',
-          walletType: result.walletType,
-          route: `Auto-transfer (${result.walletName})`,
-          amountSats: typeof result.amountSats === 'number' ? result.amountSats : undefined,
-          t: this.$t.bind(this),
-        })
-      }
-      awStore.lastResult = null
+      this.$q.notify({
+        type: 'positive',
+        message: this.$t('Moved {amount}', { amount: formatSats(result.amount, { bip177: this.walletStore.useBip177Format }) }),
+        caption: this.$t('To {name}', { name: result.destinationName }),
+        timeout: 4000
+      })
+      useAutoWithdrawStore().lastResult = null
     }
   },
   methods: {
@@ -6588,11 +6570,6 @@ export default {
 .wallet-chip-icon {
   opacity: 0.7;
   margin-right: 4px;
-}
-
-.aw-indicator-icon {
-  color: rgba(99, 102, 241, 0.5);
-  margin-left: 2px;
 }
 
 /* Balance Section */
