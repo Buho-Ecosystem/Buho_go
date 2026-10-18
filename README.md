@@ -4,126 +4,98 @@
 
 **The friendly Bitcoin wallet. Hold your own keys, pay anyone, spend anywhere.**
 
-[![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](LICENSE)
-[![Live App](https://img.shields.io/badge/Web-go.mybuho.de-15DE72)](https://go.mybuho.de)
+[![Web app](https://img.shields.io/badge/Web-go.mybuho.de-15DE72)](https://go.mybuho.de)
 [![Google Play](https://img.shields.io/badge/Android-Google%20Play-3DDC84?logo=googleplay&logoColor=white)](https://play.google.com/store/apps/details?id=mybuho.buhogo)
+[![Zapstore](https://img.shields.io/badge/Android-Zapstore-9B59B6)](https://zapstore.dev/apps/mybuho.buhogo)
 [![Docker](https://img.shields.io/badge/Docker-robinvonmises%2Fbuho__go-2496ED?logo=docker&logoColor=white)](https://hub.docker.com/r/robinvonmises/buho_go)
+[![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](LICENSE)
 
-[**Open the app**](https://go.mybuho.de) · [**User Guide**](Guide.md) · [**Use Cases**](USE_CASES.md) · [**Developers**](Developer.md) · [**Contribute**](CONTRIBUTING.md)
+[**Open the app**](https://go.mybuho.de) · [**Docs**](https://docs-buhogo.netlify.app/) · [**Developers**](#for-developers) · [**Contribute**](CONTRIBUTING.md)
 
 <br>
 
-<img src="store/playstore/Playstore1.png" alt="BuhoGO home screen" width="760">
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset=".github/media/hero-dark.webp">
+  <img src=".github/media/hero-light.webp" alt="BuhoGO: Home, sending to a contact, Receive with one QR code, and the wallet list" width="880">
+</picture>
 
 </div>
 
-## Why people use BuhoGO
+## What it is
 
-BuhoGO is a Bitcoin and Lightning wallet that gets out of your way.
+BuhoGO is a self-custodial Bitcoin and Lightning wallet for web and Android. Create a wallet in seconds, or connect the one you already use, and pay anything from a Lightning invoice to a phone number. Your keys stay on your device: no sign-up, no email, no ID.
 
-- **Start in seconds.** Create a self-custodial wallet, or connect one you already have. No sign-up, no email, no ID check.
-- **Pay almost anything.** A Lightning invoice, a Lightning address, a Bitcoin address, a Nostr profile, even a phone number.
-- **Spend in the real world.** Find cafes and shops that take Bitcoin right from the map inside the app.
-- **Learn as you go.** Answer short Bitcoin questions and earn real sats while you do.
+New here? [Getting started](https://docs-buhogo.netlify.app/getting-started) walks you through your first wallet and backup.
 
-No one holds your money but you.
+## Wallets
 
-## Four ways to hold your sats
+Use as many as you like, side by side, and choose which one pays.
 
-One app, four kinds of wallet. Use as many as you like, side by side.
-
-| Wallet | Who holds the keys | Great for |
+| Wallet | Who holds the keys | Good for |
 | --- | --- | --- |
-| **Spark** | You (self-custody) | Newcomers who want true ownership plus on-chain Bitcoin |
-| **Arkade** | You (self-custody) | Instant, near-zero-fee Bitcoin on the Ark L2, plus Lightning and on-chain |
-| **NWC** | Your existing wallet (Alby, Primal, and others) | Keeping the Lightning wallet you already love |
-| **LNBits** | Your own server | Power users running their own node |
+| [**Spark**](https://docs-buhogo.netlify.app/spark-wallet) | You. Up to six wallets from one recovery phrase | Starting out: Lightning, on-chain Bitcoin, free transfers between Spark wallets |
+| [**Arkade**](https://docs-buhogo.netlify.app/arkade-wallet) | You | Instant `ark1` transfers and on-chain Bitcoin on the Ark protocol. Its Lightning is paused while its provider moves to a new service. |
+| [**NWC**](https://docs-buhogo.netlify.app/nwc-wallet) | The wallet you connect (Alby Hub, Primal and others) | Keeping the Lightning wallet you already have |
+| [**LNbits**](https://docs-buhogo.netlify.app/lnbits-wallet) | Your own server | Running your own node |
 
-> [!TIP]
-> Spark is the easiest place to start. It gives you on-chain Bitcoin deposits and withdrawals, plus instant, zero-fee transfers to other Spark users, with no channel management to think about. Prefer the Ark protocol? **Arkade** is fully self-custodial too, with instant `ark1` transfers, Lightning, and on-chain in one wallet. See [ARK_ME.md](ARK_ME.md) for how it works.
+## What you can do
 
-Not sure which to pick? The [User Guide](Guide.md) compares them in plain language.
-
-## Pay anyone, anywhere
-
-<div align="center">
-<img src="store/playstore/Playstore3_1.png" alt="Sending a payment in BuhoGO" width="760">
-</div>
-
-- Lightning invoices, Lightning addresses, LNURL pay and withdraw
-- On-chain Bitcoin, send and receive (Spark and Arkade)
-- Instant, zero-fee Spark to Spark transfers
-- Instant, near-zero-fee Arkade (Ark L2) `ark1` transfers
-- Send to a **Nostr** profile, by npub or NIP-05 name
-- Send to a **phone number** in Kenya and Zambia
-- BuhoGO recognises who you are paying (Blink, Primal, Phoenix, Strike, and more) and shows their logo, so you can double check before you send
-- **Branta verified** destinations confirm the money is going where you expect
-
-## Find places that take Bitcoin
+- **Pay anyone.** Invoices, Lightning addresses, LNURL, Bitcoin and Spark addresses, Nostr profiles, and phone numbers in Kenya and Zambia. [How paying works](https://docs-buhogo.netlify.app/payment-scenarios)
+- **Ask for money and split the bill.** One request to several people, in equal shares or by amount, and see who has paid. [Requests](https://docs-buhogo.netlify.app/features/requests)
+- **Chat with your contacts.** Requests and payments in a private, end-to-end encrypted chat. [Contact chat](https://docs-buhogo.netlify.app/features/chat)
+- **Spend it.** A map of places that take Bitcoin, eSIMs and VPNs, gift cards, and short lessons that pay real sats. [Spend](https://docs-buhogo.netlify.app/features/spend)
+- **Run a shop.** Kiosk mode turns a phone into a point of sale with tips, round-up and Bolt Card payments. [Kiosk](https://docs-buhogo.netlify.app/features/kiosk) · [NFC](https://docs-buhogo.netlify.app/features/nfc)
+- **Move money on its own.** Auto-Transfer sends what is above an amount to savings, a contact or an address, in sats or your currency. [Transfers](https://docs-buhogo.netlify.app/features/transfer)
+- **Be someone.** Nostr identities, a username, a public page to get paid, and Lightning login. [Identities](https://docs-buhogo.netlify.app/features/identities)
+- **Stay safe.** Backups of your recovery phrase, app lock, and an emergency exit for Spark. [Backup](https://docs-buhogo.netlify.app/features/backup) · [Emergency exit](https://docs-buhogo.netlify.app/features/emergency-exit)
 
 <div align="center">
-<img src="store/playstore/Playstore3.png" alt="The Bitcoin places map in BuhoGO" width="380">
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset=".github/media/features-dark.webp">
+  <img src=".github/media/features-light.webp" alt="Kiosk mode with tips, the Spend tab with the Bitcoin map, a split payment request, and an Auto-Transfer rule" width="880">
+</picture>
 </div>
 
-Open the map to discover cafes, shops, and services near you that accept Bitcoin. Search, filter, and pay straight from your wallet.
-
-## Learn Bitcoin, earn real sats
-
-A short, friendly course built right into the app. Work through bite-size questions about Bitcoin and Lightning, earn one sat for every correct answer, and claim them straight to your wallet. Learning that pays you back.
-
-## Built for business
-
-<div align="center">
-<img src="store/playstore/Playstore5.png" alt="Batch Send wizard" width="760">
-<br><br>
-<img src="store/playstore/Playstore6.png" alt="Auto-Transfer" width="360">
-</div>
-
-- **Kiosk Mode** turns any phone or tablet into a PIN-locked point-of-sale terminal, with tips, round-up, and fiat display. Staff only ever see the keypad.
-- **Batch Send** pays many people in one guided flow, with progress for each.
-- **Auto-Transfer** sweeps funds to a safe destination whenever your balance crosses a threshold. Works with Lightning and on-chain.
-- **Internal Transfer** moves money between your own wallets.
-- **Address Book** keeps your contacts and their Lightning, Spark, or Bitcoin addresses in one place.
-
-## Now in dark mode
-
-<div align="center">
-<img src="store/playstore/Playstore7.png" alt="BuhoGO in dark mode" width="760">
-</div>
-
-A calmer look for your everyday wallet. Switch any time in Settings, along with your language (English, German, Spanish) and biometric unlock.
+Everything else, from batch payments to transaction reports, is in the [feature list](https://docs-buhogo.netlify.app/features). Light and dark theme; English, German and Spanish.
 
 ## Your keys, your coins
 
-Your wallet lives on your device, not on our servers. Self-custodial seeds are encrypted on the phone and never leave it. Connection details for NWC and LNBits are stored locally only. We cannot see your balance, freeze your funds, or hand them to anyone. Back up your seed phrase and you are in full control.
+Recovery phrases are encrypted on your device and never leave it. Connection details for NWC and LNbits stay on the device too. Nobody at BuhoGO can see your balance, freeze your money or move it. Back up your recovery phrase: it is the only way back to your money. See [SECURITY.md](SECURITY.md) to report a vulnerability or verify a download.
 
 ## Get BuhoGO
 
 | Platform | Where |
 | --- | --- |
-| **Web app** | [go.mybuho.de](https://go.mybuho.de) |
-| **Android** | [Google Play](https://play.google.com/store/apps/details?id=mybuho.buhogo) |
-| **Self-host** | [Docker image](https://hub.docker.com/r/robinvonmises/buho_go) |
+| Web | [go.mybuho.de](https://go.mybuho.de) |
+| Android | [Google Play](https://play.google.com/store/apps/details?id=mybuho.buhogo) · [Zapstore](https://zapstore.dev/apps/mybuho.buhogo) · [GitHub releases](https://github.com/Buho-Ecosystem/Buho_go/releases) |
+| Self-host | [Docker image](https://hub.docker.com/r/robinvonmises/buho_go) |
 
-Want to build it yourself or run your own copy? The [Developer Guide](Developer.md) walks you through it.
+## For developers
 
-## Documentation
+Vue 3, Quasar, Pinia and Capacitor. Every wallet type sits behind one provider interface, so the screens never know which one they talk to.
 
-| Doc | Read this to... |
+```bash
+git clone https://github.com/Buho-Ecosystem/Buho_go.git
+cd Buho_go
+npm install
+npm run dev        # http://localhost:9000
+npm test           # unit tests
+npm run build      # dist/spa
+```
+
+| Read | For |
 | --- | --- |
-| [**User Guide**](Guide.md) | Set up a wallet, send, receive, run a kiosk |
-| [**Use Cases**](USE_CASES.md) | Follow real "I want to do X" walkthroughs |
-| [**Developer Guide**](Developer.md) | Understand the architecture and build the app |
-| [**Arkade wallet**](ARK_ME.md) | Understand the Arkade (Ark L2) backend in depth |
-| [**Feature records**](docs/README.md) | Look up how a feature works and the rules behind it |
-| [**Contributing**](CONTRIBUTING.md) | Help out, from fixing a typo to shipping a feature |
+| [Developer.md](Developer.md) | Architecture, wallet providers, stores, building for Android |
+| [Feature records](docs/README.md) | How a feature works and the rules that keep it right |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | Branches, pull requests, tests and checks |
+| [CHANGELOG.md](CHANGELOG.md) | What changed in each release |
 
-## Credits
+Pull requests go to `dev`; `main` is the released state.
 
-[Illustrations by Storyset](https://storyset.com/)
+## Support and credits
+
+[Support BuhoGO on Geyser](https://geyser.fund/project/buhogo) · [Illustrations by Storyset](https://storyset.com/)
 
 ## License
 
-[AGPL-3.0](LICENSE). Built for Bitcoiners, by Bitcoiners. 🦉
-</content>
-</invoke>
+[AGPL-3.0](LICENSE).

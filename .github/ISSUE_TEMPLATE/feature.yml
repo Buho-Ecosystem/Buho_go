@@ -1,0 +1,20 @@
+name: Idea
+description: Suggest a feature or an improvement
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: Who runs into it, and when?
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: Your idea
+      description: A rough sketch is fine.
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives you considered

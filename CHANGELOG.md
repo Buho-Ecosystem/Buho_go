@@ -17,6 +17,8 @@ Still on a BuhoGO from GitHub or Zapstore older than 1.9.1? It was signed with a
 - **Choose which wallet pays.** With more than one wallet, the payment sheet shows Pay with, so any of your wallets can pay without switching the active one. Each shows its balance and says plainly when it can't pay.
 - **Use an identity from another app.** Add identity now also takes an identity you already have: from a browser extension on the web, a remote signer link, or its secret key. BuhoGO shows the profile it found before anything is saved and keeps that profile's existing details when you edit it. Get paid offers a payment address instead of setting one on its own, and website sign-ins keep using your 12 words.
 - **Waiting for you.** When a contact asks you for money or a voucher still holds money, one line above Receive and Send says so. Tap it to pay or redeem right there. Requests that expire leave the line on their own, and muted chats stay quiet.
+- **Auto-Transfer, rebuilt.** A rule reads as a sentence: when a wallet holds more than an amount, move everything, or everything above what you keep, to another of your wallets, a contact or an address. Amounts can be in your currency. Each rule has its own page with its progress and recent transfers, and a transfer that fails shows one line on Home instead of an alert.
+- **Bolt Card on one sheet.** Tapping a card shows the card, the amount and the PIN on one sheet with a new slide. The kiosk says it takes cards, and every parked sale stays watched, also after a restart.
 
 ### UI/UX
 
@@ -31,6 +33,10 @@ Still on a BuhoGO from GitHub or Zapstore older than 1.9.1? It was signed with a
 - **Clearer deposit timing.** Speeding up a Bitcoin deposit says "Available now" or how many confirmations are still needed, instead of always "Right away", and explains confirmations in plain words.
 - **Spend tab.** The Bitcoin Map card is a drawn map with its title below it, and Learn & Earn has its own mark, also on reward payments, and a clearer subtitle.
 - **Arkade colours.** The Arkade mark is purple in light mode and red in dark mode on every screen.
+- **One picture from the tap to Home.** The launch screen matches Home in light and dark, and the owl moves to its place, instead of three screens with different backgrounds.
+- **Remove from this phone, or Disconnect.** Removing a wallet now says what happens: a Spark or Arkade wallet leaves this phone and its recovery phrase brings it back; an NWC or LNbits wallet is disconnected and the money stays where it is. Manage Wallets groups wallets as On this phone and Connected.
+- **Connecting NWC and LNbits.** An NWC connection is tested before you name it and shows what it can do. LNbits setup stays in one sheet, with help when the server has no Pay Links.
+- **Spark status in words.** When Spark can't be reached, Home says so in one quiet line, and only once the internet works and Spark's operators don't answer. The emergency exit lives in Security.
 
 ### Bug Fixes
 
@@ -48,6 +54,11 @@ Still on a BuhoGO from GitHub or Zapstore older than 1.9.1? It was signed with a
 - Fixed the payment sheet trapping you when the phone had no connection: Android's Back button and a swipe down now close it, like the arrow at its top left.
 - Icons ship with the app, so they show without internet. They were loaded from another server at every start, and without a connection buttons such as Back showed up empty.
 - When a payment reaches no server, BuhoGO says why: you're offline, the network has no internet (a VPN that blocks traffic, for example), or Spark can't be reached while the internet works. The payment sheet says so before you send and shows no guessed network fee.
+- Fixed Auto-Transfer moving almost the whole balance instead of what is above the amount, holding back 3% even between Spark wallets, and sending a wrong amount to a Bitcoin address. Rules on wallets other than the active one now run too.
+- Fixed a kiosk on an NWC wallet not taking any payment, and two ways an unpaid sale could show as paid. An NWC payment now counts only on proof.
+- Fixed moving money into an NWC wallet.
+- Fixed the kiosk staying set to a wallet that had been disconnected, which made every sale fail.
+- An Arkade wallet that holds money can now be removed only once its recovery phrase is backed up.
 
 ## [1.10.0]
 

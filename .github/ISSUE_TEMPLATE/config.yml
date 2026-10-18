@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: How do I…?
+    url: https://docs-buhogo.netlify.app/faq
+    about: Questions about using BuhoGO are answered in the docs.
+  - name: Report a security problem
+    url: https://github.com/Buho-Ecosystem/Buho_go/security/advisories/new
+    about: Report it privately, never in a public issue.

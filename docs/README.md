@@ -1,6 +1,6 @@
 # Feature records
 
-How each feature works and the rules that keep it right, written when it was built. Start with the [Developer Guide](../Developer.md) for the architecture; come here for one feature.
+How each feature works and the rules that keep it right, written for developers when it was built. Start with the [Developer Guide](../Developer.md) for the architecture; come here for one feature. Help for people using BuhoGO lives on the [docs site](https://docs-buhogo.netlify.app/).
 
 [← README](../README.md) · [Developer Guide](../Developer.md)
 
