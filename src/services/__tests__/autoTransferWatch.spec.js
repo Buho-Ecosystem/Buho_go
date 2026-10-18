@@ -29,39 +29,43 @@ test('only wallets with a switched-on rule that Spark does not already keep fres
   assert.deepEqual(watch.watched().map((w) => w.id), ['hub', 'ark', 'legacy']);
 });
 
-test('every minute while running, one failing wallet does not stop the others or the next round', async () => {
+test('a start reads at once, then every minute; one failing wallet stops neither the others nor the next round', async () => {
   const { watch, timers, refreshed } = setup();
-  watch.start();
+  await watch.start();
+  assert.deepEqual(refreshed, ['hub', 'ark', 'legacy'], 'a cold start does not wait a minute');
   assert.equal(timers.length, 1);
   assert.equal(timers[0].ms, WATCH_INTERVAL_MS);
   timers[0].fn();
   await new Promise((r) => setImmediate(r));
-  assert.deepEqual(refreshed, ['hub', 'ark', 'legacy']);
+  assert.equal(refreshed.length, 6);
   assert.equal(timers.length, 2, 'the next round is scheduled after a failure too');
 });
 
 test('returning to the app reads at once; a stopped watch does nothing', async () => {
-  const { watch, timers, refreshed, rules } = setup();
-  watch.start();
+  const { watch, timers, refreshed, rules, clock } = setup();
+  await watch.start();
+  clock.t += RESUME_SETTLE_MS;
   await watch.resume();
-  assert.deepEqual(refreshed, ['hub', 'ark', 'legacy']);
+  assert.equal(refreshed.length, 6);
   assert.equal(timers[0].cleared, true, 'the pending round is replaced, not doubled');
   watch.stop();
   rules.kitty.enabled = true;
+  clock.t += RESUME_SETTLE_MS;
   await watch.resume();
-  assert.equal(refreshed.length, 3);
+  assert.equal(refreshed.length, 6);
 });
 
 test('coming back raises several events and the thawed timer at once: one read covers them all', async () => {
   const { watch, timers, refreshed, clock } = setup();
-  watch.start();
+  await watch.start();
+  clock.t += 10 * WATCH_INTERVAL_MS; // frozen in the background
   const thawed = timers[0].fn(); // the frozen round fires on thaw
   await Promise.all([watch.resume(), watch.resume(), watch.resume(), thawed]);
-  assert.deepEqual(refreshed, ['hub', 'ark', 'legacy'], 'one round, not four');
+  assert.equal(refreshed.length, 6, 'one round, not four');
   clock.t += RESUME_SETTLE_MS - 1;
   await watch.resume();
-  assert.equal(refreshed.length, 3, 'a resume right after a round adds nothing');
+  assert.equal(refreshed.length, 6, 'a resume right after a round adds nothing');
   clock.t += 2;
   await watch.resume();
-  assert.equal(refreshed.length, 6, 'a later return reads again');
+  assert.equal(refreshed.length, 9, 'a later return reads again');
 });

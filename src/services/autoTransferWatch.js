@@ -9,7 +9,8 @@
  * kiosk does not open Home. Without this watch, a rule on any of those would
  * never run.
  *
- * Every minute while the app runs, and once on return to the app, each
+ * At start (a cold start after the app was closed), every minute while the
+ * app runs, and once on return to the app, each
  * wallet with a switched-on rule that the Spark lifecycle does not cover
  * has its balance read. There is no background service: while Android has
  * the app frozen, nothing here runs, and the read on return catches up.
@@ -59,10 +60,11 @@ export function createAutoTransferWatch({ wallets, ruleFor, refresh, setTimer = 
   return {
     watched,
     check,
+    /** Reads at once: a payment may have arrived while the app was closed. */
     start() {
-      if (running) return;
+      if (running) return Promise.resolve();
       running = true;
-      schedule();
+      return check().finally(schedule);
     },
     stop() {
       running = false;
