@@ -9,7 +9,7 @@ test('a rule saved for a former pocket moves to the wallet holding that account 
   const rule = { enabled: true, thresholdSats: 5000 };
   const { configs, moved, dropped } = migratePocketConfigKeys({ 'parent:2': rule, parent: { enabled: false }, nwc: { enabled: true } }, wallets);
   assert.deepEqual(Object.keys(configs).sort(), ['nwc', 'parent', 'pocket-wallet']);
-  assert.deepEqual(configs['pocket-wallet'], { enabled: false, thresholdSats: 5000 }, 'a dormant rule never starts sending by itself');
+  assert.deepEqual(configs['pocket-wallet'], { enabled: false, pausedReason: 'moved', thresholdSats: 5000 }, 'a dormant rule never starts sending by itself, and says why');
   assert.equal(rule.enabled, true, 'the saved rule is not mutated');
   assert.deepEqual(moved, ['parent:2']);
   assert.deepEqual(dropped, []);

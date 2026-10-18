@@ -5,8 +5,8 @@
  * a new id, which left those rules pointing at nothing. This moves each one
  * to the wallet that now holds that account of the same phrase, switched
  * off: a rule that has not run for months must not start sending money to a
- * destination the person may no longer use. They turn it back on in
- * Settings.
+ * destination the person may no longer use. Its page says why it is
+ * paused, and the person turns it back on there.
  *
  * Pure: takes the saved rules and the wallets, returns the rules to keep.
  */
@@ -40,7 +40,7 @@ export function migratePocketConfigKeys(configs, wallets) {
       dropped.push(key);
       continue;
     }
-    result[target.id] = { ...config, enabled: false };
+    result[target.id] = { ...config, enabled: false, pausedReason: 'moved' };
     moved.push(key);
   }
   return { configs: result, moved, dropped };
