@@ -36,4 +36,4 @@ The store re-checks stale vouchers (older than 60 s) when the Vouchers sheet ope
 - `node scripts/check-lud14.mjs`: browser fixtures on the real Wallet page: the Home line and the summary row, the sheet's automatic re-check with a rotating service and a service ERROR, Enter on a row opening the redeem review with one fetch and no invoice, Edit → Remove with confirmation, the empty state, and en-US/de/es in light/dark at 390 px, 320 px with 200% text and 768 px.
 
 - `node --test src/pages/__tests__/walletFlow.spec.js`: settlement ordering, stale receipt guards and wallet balance request attribution.
-- Follow-up evidence: `output/pr287-fixes/INDEX.md`. Browser checks assert actual computed text growth and one visible dialog, including 320 px at 200% text in all three locales.
+- Browser checks assert actual computed text growth and one visible dialog, including 320 px at 200% text in all three locales.
