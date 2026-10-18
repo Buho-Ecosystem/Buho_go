@@ -1694,8 +1694,6 @@ export default {
   "Starting camera...": "Kamera wird gestartet...",
   "My LNbits Wallet": "Mein LNbits Wallet",
   "Add Wallet": "Wallet hinzufügen",
-  "Initializing BuhoGO...": "BuhoGO wird gestartet...",
-  "Checking wallet state...": "Wallet-Status wird geprüft...",
   "Loading wallet...": "Wallet wird geladen...",
   "Failed to add wallet": "Wallet hinzufügen fehlgeschlagen",
   "Please fill in all fields": "Bitte alle Felder ausfüllen",

@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The launch: the system splash is the home screen, empty. Its background is
+  the home screen's own (cream, or #171717 in dark), and its mark matches the
+  first frame the app draws (src/components/LaunchMark.vue), so splash and app
+  are one picture. The night value applies when the app's own theme is dark
+  (LaunchPlugin.setNightMode, Android 12 and later) or, before Android 12,
+  when the system is.
+-->
+<resources>
+    <color name="launch_background">#FAF7EF</color>
+</resources>

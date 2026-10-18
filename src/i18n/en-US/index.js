@@ -1386,8 +1386,6 @@ export default {
   "Failed to scan QR code: ": "Failed to scan QR code: ",
   "No camera found on this device.": "No camera found on this device.",
   "Failed to connect wallet: ": "Failed to connect wallet: ",
-  "Initializing BuhoGO...": "Initializing BuhoGO...",
-  "Checking wallet state...": "Checking wallet state...",
   "Loading wallet...": "Loading wallet...",
   "General": "General",
   "Spark Wallet": "Spark Wallet",

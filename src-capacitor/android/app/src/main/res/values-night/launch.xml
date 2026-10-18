@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The launch background in dark: the dark home screen's own (see values/launch.xml). -->
+<resources>
+    <color name="launch_background">#171717</color>
+</resources>

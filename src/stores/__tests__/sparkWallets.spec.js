@@ -1162,13 +1162,15 @@ test('a restore that saved nothing says why', () => {
   }
 });
 
-test('the welcome screen never deletes a saved state it cannot read', async () => {
+test('the first screen never deletes a saved state it cannot read', async () => {
+  const { savedWalletRedirect } = await import('../../utils/walletHydration.js');
   globalThis.localStorage = memoryStorage({ [STORE_KEY]: 'not json' });
-  const page = loadModule('../../pages/WelcomePage.vue', {});
-  const vm = { loadingText: '', showLoadingScreen: true, $router: { push: (path) => assert.fail(`went to ${path}`) } };
-  await page.methods.initializeApp.call(vm);
+  assert.equal(savedWalletRedirect(), true, 'stays on the welcome screen');
   assert.equal(localStorage.getItem(STORE_KEY), 'not json', 'left for the wallet store to set aside');
-  assert.equal(vm.showLoadingScreen, false);
+  globalThis.localStorage = memoryStorage({ [STORE_KEY]: JSON.stringify({ activeWalletId: 'a', wallets: [{ id: 'a' }] }) });
+  assert.equal(savedWalletRedirect(), '/wallet', 'a saved wallet goes straight home');
+  globalThis.localStorage = memoryStorage({ [STORE_KEY]: JSON.stringify({ activeWalletId: null, wallets: [] }) });
+  assert.equal(savedWalletRedirect(), true);
 });
 
 test('the add-Spark sheet shows a refused save with the action, not on the name field', async () => {
