@@ -77,16 +77,16 @@ tags:
 icon: ./public/Buho_logo__Sharp_grey.jpg
 
 images:
-  - ./public/Playstore/Playstore1.png    # Clean home, Business and Personal
-  - ./public/Playstore/Playstore2.png    # Wallet overview
-  - ./public/Playstore/Playstore2_1.png  # Wallet transactions
-  - ./public/Playstore/Playstore2_2.png  # Wallet Reports
-  - ./public/Playstore/Playstore3.png    # Discover Bitcoin-friendly places (map)
-  - ./public/Playstore/Playstore3_1.png  # Send to anyone over Lightning
-  - ./public/Playstore/Playstore4.png    # Clean Auto-Transfer
-  - ./public/Playstore/Playstore5.png    # Batch payments
-  - ./public/Playstore/Playstore6.png    # Auto-Transfer
-  - ./public/Playstore/Playstore7.png    # Dark mode
+  - ./store/playstore/Playstore1.png    # Clean home, Business and Personal
+  - ./store/playstore/Playstore2.png    # Wallet overview
+  - ./store/playstore/Playstore2_1.png  # Wallet transactions
+  - ./store/playstore/Playstore2_2.png  # Wallet Reports
+  - ./store/playstore/Playstore3.png    # Discover Bitcoin-friendly places (map)
+  - ./store/playstore/Playstore3_1.png  # Send to anyone over Lightning
+  - ./store/playstore/Playstore4.png    # Clean Auto-Transfer
+  - ./store/playstore/Playstore5.png    # Batch payments
+  - ./store/playstore/Playstore6.png    # Auto-Transfer
+  - ./store/playstore/Playstore7.png    # Dark mode
 
 # ---------------------------------------------------------------------------
 # Enrichment (YAML values above always take priority)
