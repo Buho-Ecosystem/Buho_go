@@ -28,6 +28,12 @@ Alby Hub, Coinos and the code never show a secret. BuhoGO makes the connection's
 
 The SDK's own client-initiated connection (`NWAClient`) is not used: it sends no `state`, which NWC-08 wallets require, and accepts any info event naming the key.
 
+Screens (`docs/images/connect-wallet/`, from `scripts/check-nwc-pairing.mjs`):
+
+| Chooser | Alby Hub | Waiting | Code | Found |
+|---|---|---|---|---|
+| <img src="images/connect-wallet/chooser.png" width="150"> | <img src="images/connect-wallet/hub.png" width="150"> | <img src="images/connect-wallet/hub-waiting.png" width="150"> | <img src="images/connect-wallet/code.png" width="150"> | <img src="images/connect-wallet/found.png" width="150"> |
+
 The return route with nothing waiting for it says so ("Nothing is waiting for this approval"), or, in an Android browser, offers to finish in the app. In kiosk mode these routes stay setup routes and links do nothing, as before.
 
 ## What a connection may do
