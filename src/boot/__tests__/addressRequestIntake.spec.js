@@ -1,4 +1,5 @@
 import * as kioskIntake from '../../services/kioskPaymentIntake.js';
+import * as nwcIntake from '../../services/nwcConnectionIntake.js';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { readFileSync } from 'node:fs';
@@ -31,6 +32,7 @@ function harness(file, launchInput, kiosk = false) {
       addListener: (name, fn) => { listeners[name] = fn; },
       getLaunchUrl: async () => ({ url: launchInput }),
     } },
+    '../services/nwcConnectionIntake.js': nwcIntake,
     '../services/addressRequestIntake.js': { offerAddressRequest: input => {
       if (!isAddressRequest(input)) return false;
       session.open(input);

@@ -1706,6 +1706,7 @@ export default {
   "Import existing seed phrase": "Importar frase semilla existente",
   "Self-Custodial Wallet": "Cartera Auto-custodiada",
   "Connect a wallet you already use": "Conecta una cartera que ya usas",
+  "Wallet connection": "Conexión de cartera",
   "Locked": "Bloqueada",
   "Tap to unlock": "Toca para desbloquear",
   "Switched to {name}": "Cambiado a {name}",

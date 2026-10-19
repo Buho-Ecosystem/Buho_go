@@ -14,6 +14,8 @@ How BuhoGO connects to a wallet over Nostr Wallet Connect (NIP-47) as a client, 
 
 Every relay in the connection string is kept (`src/utils/nwcConnection.js`); extra relays are backups. Pasted and scanned strings are stored in one normalized form.
 
+A connection can also arrive from outside the sheet: a `nostr+walletconnect://` link from another app ("Connect" in a wallet; the Android filter lists the scheme and its no-`+` form), or one scanned or pasted on Home, where the field reads "Wallet connection". `src/services/nwcConnectionIntake.js` hands it to the sheet in memory, once, never in the route (the string can spend), and the sheet tests it at once; an open sheet takes a new one directly. A link does nothing in kiosk mode.
+
 ## What a connection may do
 
 `src/utils/nwcWallet.js` turns the methods the wallet granted into Send, Receive, Balance, History and Limit. Wallets saved before methods were stored are assumed to do all, as before.

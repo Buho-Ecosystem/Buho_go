@@ -1,5 +1,6 @@
 import { offerKioskPayment } from '../services/kioskPaymentIntake.js';
 import { offerAddressRequest } from '../services/addressRequestIntake.js';
+import { offerNwcConnection } from '../services/nwcConnectionIntake.js';
 import { boot } from 'quasar/wrappers'
 import { Notify } from 'quasar'
 import { Capacitor } from '@capacitor/core'
@@ -90,6 +91,10 @@ function handleDeepLink(url, router, walletStore) {
   triggerWalletStoreHydration(walletStore)
 
   if (offerKioskPayment(url, walletStore, router)) return
+
+  // A wallet's connection link ("Connect" in Alby Hub and others) adds that
+  // wallet. Needs no wallet yet, so it comes before the wallet guard.
+  if (offerNwcConnection(url, router)) return
 
   // A shared card is not a payment, and neither is a Nostr identity. Both
   // open the same page the browser would have shown, natively, where paying

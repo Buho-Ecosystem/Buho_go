@@ -211,6 +211,16 @@ export function parseNwcConnection(raw) {
 }
 
 /**
+ * True when text is meant as an NWC connection: its scheme says so (any of
+ * the variants normaliseInput accepts), whether the rest is valid or not.
+ * Such text belongs in the connect flow, which can say what is wrong with
+ * it, never on the payment rails.
+ */
+export function looksLikeNwcConnection(raw) {
+  return normaliseInput(raw).startsWith(CANONICAL_SCHEME);
+}
+
+/**
  * Boolean convenience predicate for callers that don't need the parsed
  * parts (e.g. early-return guards before opening a confirmation dialog).
  */

@@ -149,6 +149,7 @@ import { findSameWallet, relayHost, suggestedWalletName } from '../utils/nwcWall
 import { NWC_ERROR } from '../utils/nwcErrors.js'
 import { probeNwcConnection } from '../services/nwcProbe.js'
 import { readClipboardCrossPlatform } from '../utils/shopClipboard.js'
+import { listenForNwcConnection, takeNwcConnection } from '../services/nwcConnectionIntake.js'
 
 /**
  * Connect a wallet over Nostr Wallet Connect, test first and name second:
@@ -202,7 +203,16 @@ export default {
       this.errorMessage = '';
     },
   },
+  // A connection opened from another app, or scanned or pasted on Home,
+  // arrives here and is tested at once; while the sheet is open, a new one
+  // replaces it.
+  mounted() {
+    this.stopListening = listenForNwcConnection((connection) => this.useHandedConnection(connection));
+    const handed = takeNwcConnection();
+    if (handed) this.useHandedConnection(handed);
+  },
   beforeUnmount() {
+    this.stopListening?.();
     this.stopQrScanner();
   },
   methods: {
@@ -221,6 +231,13 @@ export default {
       const result = parseNwcConnection(raw);
       if (result.ok) return '';
       return this.$t(NWC_REASON_I18N_KEYS[result.reason] || 'Invalid connection string format');
+    },
+
+    useHandedConnection(connection) {
+      if (this.isTesting || this.isAdding) return;
+      this.closeScanner();
+      this.nwcString = connection;
+      this.testConnection();
     },
 
     async pasteConnection() {
