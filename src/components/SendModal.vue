@@ -356,6 +356,8 @@
 <script>
 import { isAddressRequest, parseAddressRequest } from '../utils/lud23.js';
 import { offerAddressRequest } from '../services/addressRequestIntake.js';
+import { offerNwcConnection } from '../services/nwcConnectionIntake.js';
+import { looksLikeNwcConnection } from '../utils/nwcConnection.js';
 import { Capacitor } from '@capacitor/core';
 import QrScanSheet from './QrScanSheet.vue';
 import { useAddressBookStore } from '../stores/addressBook';
@@ -472,6 +474,8 @@ export default {
       const raw = (this.manualInput || '').trim();
       if (!raw) return null;
       if (isAddressRequest(raw)) return 'address_request';
+      // A wallet's connection, not a payment: it adds that wallet.
+      if (looksLikeNwcConnection(raw)) return 'wallet_connection';
       const lower = raw.toLowerCase();
 
       // BIP21 first — bitcoin:<addr>?... is structurally distinct and
@@ -534,6 +538,7 @@ export default {
       // format we must name (BOLT12, so its error makes sense) differ.
       const labels = {
         address_request: this.$t('Address request'),
+        wallet_connection: this.$t('Wallet connection'),
         spark: this.$t('Bitcoin'),
         bolt12_offer: this.$t('BOLT12 offer'),
         silent_payment: this.$t('Silent payment'),
@@ -555,6 +560,7 @@ export default {
       // glyph (it is a link), phone and Nostr keep their identities.
       const icons = {
         address_request: 'tabler:address-book',
+        wallet_connection: 'tabler:plug-connected',
         bolt12_offer: 'tabler:bolt',
         silent_payment: 'tabler:eye-off',
         lightning_invoice: 'tabler:currency-bitcoin',
@@ -580,7 +586,7 @@ export default {
     // CTA disables, and nothing is ever emitted — so a confirm sheet
     // that could only dead-end never opens.
     capabilityBlocked() {
-      if (!this.isValidManualInput || this.detectedInputType === 'address_request') return '';
+      if (!this.isValidManualInput || ['address_request', 'wallet_connection'].includes(this.detectedInputType)) return '';
       const paymentType = this.determinePaymentType(this.manualInput.trim());
       if (this.walletStore.canAnyWalletPay(paymentType)) return '';
       return walletSwitchHint(paymentType, this.$t.bind(this));
@@ -898,6 +904,11 @@ export default {
 
         if (offerAddressRequest(inputData, { t: this.$t.bind(this) })) {
           this.show = false; this.isProcessing = false; return;
+        }
+        // A wallet's connection goes to the connect sheet; its secret does
+        // not stay in this field.
+        if (offerNwcConnection(inputData, this.$router)) {
+          this.manualInput = ''; this.show = false; this.isProcessing = false; return;
         }
         let trimmedData = inputData.trim();
 

@@ -1668,6 +1668,7 @@ export default {
   "Import existing seed phrase": "Import existing seed phrase",
   "Self-Custodial Wallet": "Self-Custodial Wallet",
   "Connect a wallet you already use": "Connect a wallet you already use",
+  "Wallet connection": "Wallet connection",
   "Locked": "Locked",
   "Tap to unlock": "Tap to unlock",
   "Switched to {name}": "Switched to {name}",

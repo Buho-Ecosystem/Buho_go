@@ -66,6 +66,18 @@
                 <data android:scheme="NOSTR" />
             </intent-filter>
 
+            <!-- Deep link: a wallet's NWC connection (NIP-47). "Connect" in a
+                 wallet app opens BuhoGO's connect sheet with it. The no-`+`
+                 form is what some wallets still write. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="nostr+walletconnect" />
+                <data android:scheme="NOSTR+WALLETCONNECT" />
+                <data android:scheme="nostrwalletconnect" />
+            </intent-filter>
+
             <!-- App Link: a shared card link opens the card in BuhoGO.
                  https://go.mybuho.de/p/<name-or-key>
 

@@ -1705,6 +1705,7 @@ export default {
   "Import existing seed phrase": "Bestehende Seed-Phrase importieren",
   "Self-Custodial Wallet": "Selbstverwaltetes Wallet",
   "Connect a wallet you already use": "Eine Wallet verbinden, die du schon nutzt",
+  "Wallet connection": "Wallet-Verbindung",
   "Locked": "Gesperrt",
   "Tap to unlock": "Tippen zum Entsperren",
   "Switched to {name}": "Gewechselt zu {name}",

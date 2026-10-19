@@ -12,6 +12,7 @@ import { test } from 'node:test';
 import { readFileSync } from 'node:fs';
 import { transformSync } from 'esbuild';
 import * as routing from '../../utils/deepLinkRouting.js';
+import * as nwcIntake from '../../services/nwcConnectionIntake.js';
 import { invoiceAppIntent } from '../../utils/publicProfilePayment.js';
 import { profileInvoiceFixture } from '../../../scripts/fixtures/profileInvoice.mjs';
 
@@ -35,6 +36,7 @@ function harness({ activeWallet = null, kiosk = false, launchUrl = null } = {}) 
       getLaunchUrl: async () => launchUrl ? { url: launchUrl } : null,
     } },
     '../services/addressRequestIntake.js': { offerAddressRequest: () => false },
+    '../services/nwcConnectionIntake.js': nwcIntake,
     '../providers/WalletFactory': {
       parsePaymentDestination: (input) => (input.startsWith('lightning:')
         ? { valid: true, type: input.startsWith('lightning:ln') ? 'lightning_invoice' : 'lightning_address', data: input.slice('lightning:'.length) }
@@ -112,6 +114,25 @@ for (const cold of [true, false]) {
     assert.equal(h.notices.length, 0);
   });
 }
+
+test('a wallet connection link opens the connect sheet, even with no wallet', async () => {
+  const connection = `nostr+walletconnect://${'a'.repeat(64)}?relay=wss%3A%2F%2Frelay.getalby.com%2Fv1&secret=${'5e'.repeat(32)}`;
+  const h = harness();
+  await h.start();
+  h.open(connection);
+  assert.deepEqual(h.pushes, ['/nwc-setup'], 'the secret is not in the route');
+  assert.equal(nwcIntake.takeNwcConnection(), connection);
+  assert.equal(h.walletStore.pendingDeepLink, null, 'not a payment');
+  assert.equal(h.notices.length, 0);
+});
+
+test('kiosk mode blocks wallet connection links', async () => {
+  const h = harness({ kiosk: true });
+  await h.start();
+  h.open(`nostr+walletconnect://${'a'.repeat(64)}?relay=wss%3A%2F%2Fr.example&secret=${'5e'.repeat(32)}`);
+  assert.deepEqual(h.pushes, []);
+  assert.equal(nwcIntake.takeNwcConnection(), '');
+});
 
 test('kiosk mode still blocks card links', async () => {
   const h = harness({ kiosk: true });
