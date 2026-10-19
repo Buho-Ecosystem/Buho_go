@@ -116,6 +116,33 @@ REST with the wallet's admin key (`X-Api-Key`): `GET /api/v1/wallet`, `POST /api
 
 ---
 
+## Listing a wallet in "Connect a wallet"
+
+"Connect a wallet" (Settings → Manage Wallets → Add Wallet, and Welcome → More ways to start) lists the wallets someone may already use. The list is **data**: one entry per wallet in `src/utils/connectWallets.js`. The chooser, the approval step and the pairing read the entry and never name a wallet, so a new wallet needs no screen or pairing code.
+
+| `pairing` | When to use it | The entry needs |
+| --- | --- | --- |
+| `approve-and-return` | The wallet has an approval page that takes BuhoGO's key and sends the person back (Alby Hub's `/apps/new`, or any Hub that speaks it) | `approval.path`, `locations` and/or `selfHosted` (+ `locationLabel`, `ownLabel`, `ownHint`), `relays` it announces on, `note`; `appId` if its app store lists BuhoGO; `scanLabel` for a second way in |
+| `approve-known` | An approval page that takes the key but neither returns nor announces; the wallet serves every connection from one key and relay (Coinos) | `approval.url`, `path`, `walletPubkey`, `relay`, `note`; `keepName` if the wallet calls itself after a server |
+| `sheet` | The wallet has its own setup sheet (LNbits) | `route` |
+| `manual` | Paste, scan, or show a code (there is exactly one) | nothing else |
+| `soon: true` | On its way (BuhoHub): shown apart as a note, never a choice | `about` |
+
+To add a wallet:
+
+1. Add the entry (`id`, `name`, `logo`, `subtitle`, `pairing`, and what the table asks for). Order in the list is order on screen: one-tap approvals first.
+2. Put the logo in `public/` (square, readable on white).
+3. Add every string the entry names (`subtitle`, `about`, `approval.*Label`, `note`, `ownHint`) to `src/i18n/{en-US,de,es}/nwc.js`. Brand names stay as they are.
+4. Run `node --test src/utils/__tests__/connectWallets.spec.js`. It names anything missing: the logo file, a string in a locale, an https origin, a relay, a wallet key.
+5. Run `node scripts/check-nwc-pairing.mjs` (dev server on 9033) and look at the chooser.
+6. Before shipping, approve once with a real account of that wallet.
+
+A wallet that changes its approval page changes only its entry. BuhoHub opens by turning its entry from `soon` into a pairing. The flows and the security rules (secret made on the phone, a request taken once, answers checked) are in [docs/NWC.md](docs/NWC.md#choosing-a-wallet-and-pairing-without-a-secret).
+
+**Being listed in a wallet's own app store** is the other direction, and it waits for a release. A listing points that wallet's users at BuhoGO's released screens, so it is sent only after `dev` is merged to `main`, released and deployed. The Alby Hub listing is ready in `store/alby-hub/` (issue #389). See the release step in [docs/APP_UPDATES.md](docs/APP_UPDATES.md#release-safety).
+
+---
+
 ## Sending a payment
 
 The send flow is **one screen**: `SendModal.vue` raises `onPaymentDetected`, and `PaymentConfirmSheet.vue` shows the recipient, amount and paying wallet before the slide. Resolvers feed it:
