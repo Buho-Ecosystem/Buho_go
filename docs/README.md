@@ -19,6 +19,7 @@ How each feature works and the rules that keep it right, written for developers 
 |---|---|
 | [Auto-Transfer](AUTO_TRANSFER.md) | Rules that move money on their own, and when they run |
 | [Bolt Card](BOLT_CARD.md) | Taking money from a Bolt Card, in the wallet and at the kiosk |
+| [Merchant verification](BRANTA.md) | Showing the business you pay, and stopping a changed code (Branta) |
 | [Shared payment requests](SHARED_REQUESTS.md) | Requests from Receive and repayments from receipts |
 | [Contact chat](CONTACT_CHAT.md) | Money requests and encrypted messages between contacts |
 | [LUD-08 fast withdrawal](LUD08_FAST_WITHDRAW.md) | Redeeming withdraw links in one step |

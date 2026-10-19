@@ -9,6 +9,7 @@ import * as lnurlWithdraw from '../../utils/lnurlWithdraw.js';
 import * as payingWallets from '../../utils/payingWallets.js';
 import * as walletCapabilities from '../../utils/walletCapabilities.js';
 import * as errorOrigin from '../../utils/errorOrigin.js';
+import * as branta from '../../utils/branta.js';
 
 // Run the production Options-API methods with controlled provider promises.
 function evaluate(file, dependencies = {}) {
@@ -29,6 +30,7 @@ const component = (dependencies = {}) => evaluate('../Wallet.vue', {
   '../utils/addressUtils.js': addresses,
   '../utils/lnurlMetadata.js': metadata,
   '../utils/lnurlWithdraw.js': lnurlWithdraw,
+  '../utils/branta.js': branta,
   '../utils/amountFormatting.js': { formatAmount: n => `${n} sats` },
   '../stores/autoWithdraw': { useAutoWithdrawStore: () => ({ getConfig: () => null, checkAndExecute() {} }) },
   '../utils/fiatRates': { fiatRatesService: { convertSatsToFiat: async () => null } },
@@ -1056,7 +1058,7 @@ test('payment context: an invoice handed over by a caller is paid as a lightning
   vm.onPaymentDetected = async payload => { dispatched.push(payload); };
   vm.payContactDestination({ address: 'inv-1000', addressType: 'invoice', name: 'Bob', sendingWalletId: 'lnb', context: 'chat:abc' });
   assert.deepEqual(dispatched, [{
-    type: 'lightning_invoice', data: 'inv-1000', contactName: 'Bob', paymentOnly: true, sendingWalletId: 'lnb', paymentContext: 'chat:abc',
+    type: 'lightning_invoice', data: 'inv-1000', contactName: 'Bob', paymentOnly: true, sendingWalletId: 'lnb', paymentContext: 'chat:abc', firstParty: true,
   }]);
 });
 

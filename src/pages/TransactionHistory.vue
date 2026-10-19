@@ -438,8 +438,16 @@
                 >
                   <!-- Icon / avatar -->
                   <span class="tx-row-icon-wrap">
+                    <!-- A Branta-verified business: its own logo, saved with the payment. -->
                     <ContactAvatar
-                      v-if="getContactForTransaction(tx)"
+                      v-if="getTxVerifiedBusiness(tx)"
+                      class="tx-row-avatar"
+                      :logo="getTxVerifiedBusiness(tx).avatar"
+                      :name="getTxVerifiedBusiness(tx).name"
+                      :initial-length="2"
+                    />
+                    <ContactAvatar
+                      v-else-if="getContactForTransaction(tx)"
                       class="tx-row-avatar"
                       :entry="getContactForTransaction(tx)"
                       :initial-length="2"
@@ -728,6 +736,7 @@
 import { NostrWebLNProvider } from "@getalby/sdk";
 import PaymentConfirmation from '../components/PaymentConfirmation.vue';
 import ContactAvatar from '../components/AddressBook/ContactAvatar.vue';
+import { brantaAvatar } from '../utils/branta.js';
 import HiddenAmount from '../components/HiddenAmount.vue';
 import { fiatRatesService } from '../utils/fiatRates.js';
 import { formatAmount as formatAmountUtil, formatAmountWithPrefix } from '../utils/amountFormatting.js';
@@ -1252,6 +1261,17 @@ export default {
      * phone-rail case — its explicit `picture` URL gate only accepts
      * https/data URLs, not a bundled asset path.
      */
+    /**
+     * The Branta-verified business a send went to, from the record saved with
+     * it: { name, avatar } (avatar null without a logo), or null.
+     */
+    getTxVerifiedBusiness(tx) {
+      if (!tx?.id || !this.metadataStore) return null;
+      const verified = this.metadataStore.getMerchantVerificationForTransaction(tx.id, this.historyWalletId);
+      if (!verified || !verified.name) return null;
+      return { name: verified.name, avatar: brantaAvatar(verified) };
+    },
+
     getTxAvatarPicture(tx) {
       if (!tx || !tx.id || !this.metadataStore) return null;
       try {
@@ -1281,7 +1301,8 @@ export default {
     /**
      * The top line of a transaction row, plus what kind of thing it is.
      *
-     * Priority, first hit wins: pending/expired status → contact name →
+     * Priority, first hit wins: pending/expired status → Branta-verified
+     * business → contact name →
      * metadata label (internal transfer / batch / kiosk) → Learn & Earn
      * reward → auto-withdraw note → zap sender → recipient address
      * (sends only) → the payment's own message → a generic direction
@@ -1312,6 +1333,10 @@ export default {
         };
       }
       if (tx.status === 'expired') return { full: this.$t('Invoice expired'), kind: 'status' };
+
+      // A Branta-verified business is who was paid, as on the confirm sheet.
+      const business = this.getTxVerifiedBusiness(tx);
+      if (business?.name) return { full: business.name, kind: 'name' };
 
       const contact = this.getContactForTransaction(tx);
       if (contact) return { full: contact.name, kind: 'name' };

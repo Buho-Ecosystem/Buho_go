@@ -96,6 +96,7 @@
                 class="hero-avatar"
                 :entry="heroAvatar.entry"
                 :picture="heroAvatar.picture"
+                :logo="heroAvatar.logo"
                 :name="heroAvatar.name"
                 :initial-length="2"
               />
@@ -125,6 +126,9 @@
                 <Icon :icon="heroBadge.icon" width="12" height="12" />
               </span>
             </span>
+
+            <!-- A verified business leads the receipt by name. -->
+            <div v-if="merchantVerification?.name" class="hero-business">{{ merchantVerification.name }}</div>
 
             <div class="hero-amount" :class="getAmountClass()">
               {{ getFormattedAmount() }}
@@ -175,20 +179,24 @@
             <div class="tx-row-value">{{ counterpartyAddressDisplay }}</div>
           </div>
 
-          <!-- Branta merchant verification, carried over from the confirm
-               sheet's badge — same trust signal, now on the receipt. -->
-          <div
+          <!-- The confirm sheet's seal, kept with the payment: opens Branta's
+               verification page again when Branta gave one. -->
+          <component
+            :is="merchantVerification.verifyUrl ? 'button' : 'div'"
             v-if="merchantVerification"
-            class="tx-row"
+            :type="merchantVerification.verifyUrl ? 'button' : null"
+            class="tx-row tx-row-verified"
             :class="{ 'tx-row-clickable': merchantVerification.verifyUrl }"
+            :aria-label="merchantVerifyLabel"
             @click="openMerchantVerifyUrl"
           >
-            <div class="tx-row-label">{{ $t('Verified by Branta') }}</div>
-            <div class="tx-row-value tx-row-value-verified">
+            <span class="tx-row-label">{{ $t('Verified by') }}</span>
+            <span class="tx-row-value tx-row-value-verified">
               <Icon icon="tabler:rosette-discount-check-filled" width="14" height="14" class="verified-row-icon" />
-              <span>{{ merchantVerification.name || $t('Verified merchant') }}</span>
-            </div>
-          </div>
+              <span>Branta</span>
+              <Icon v-if="merchantVerification.verifyUrl" icon="tabler:chevron-right" width="14" height="14" class="verified-row-chevron" />
+            </span>
+          </component>
 
           <!-- How this payment was made, when an auxiliary path stamped a
                source (internal transfer, batch send, kiosk sale). -->
@@ -688,6 +696,7 @@ import { matchLnAddressService } from '../services/lnAddressServices';
 import { shareContent } from '../utils/share';
 import { copySensitive } from '../utils/sensitiveClipboard.js';
 import { openInAppBrowser } from '../utils/inAppBrowser.js';
+import { brantaAvatar } from '../utils/branta.js';
 import { formatSuccessActionUrl } from '../utils/successAction.js';
 import { isLnurl } from '../utils/addressUtils.js';
 import { serviceAddressLine } from '../utils/lnurlMetadata.js';
@@ -850,6 +859,9 @@ export default {
      */
     heroAvatar() {
       if (!this.transaction) return null;
+      // A Branta-verified business is who was paid, as in the list.
+      const business = this.merchantVerification;
+      if (business?.name) return { logo: brantaAvatar(business), name: business.name, entry: {} };
       if (this.assignedContact) return { entry: this.assignedContact };
       if (!this.metadataStore) return null;
       const address = this.getCounterpartyAddress();
@@ -977,6 +989,14 @@ export default {
       if (!this.transaction || !this.metadataStore) return null;
       if (this.transaction.type !== 'outgoing') return null;
       return this.metadataStore.getMerchantVerificationForTransaction(this.transaction.id, this.metadataWalletId);
+    },
+
+    /** What a screen reader hears on the verification row, when it opens a page. */
+    merchantVerifyLabel() {
+      const business = this.merchantVerification;
+      if (!business?.verifyUrl) return null;
+      const who = business.name ? `, ${business.name}` : '';
+      return `${this.$t('Verified by Branta')}${who}. ${this.$t("Opens Branta's verification.")}`;
     },
 
     filteredContacts() {
@@ -2594,6 +2614,38 @@ export default {
   color: var(--text-muted);
   opacity: 0.7;
   flex-shrink: 0;
+}
+
+.tx-row-verified {
+  width: 100%;
+  border: none;
+  border-bottom: 1px solid var(--border-card);
+  background: none;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+}
+
+.tx-row-verified:focus-visible {
+  outline: 2px solid var(--brand-accent, #059573);
+  outline-offset: -2px;
+}
+
+.verified-row-chevron {
+  color: var(--text-secondary);
+  flex-shrink: 0;
+}
+
+.hero-business {
+  margin-top: 8px;
+  max-width: 100%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-family: 'Manrope', sans-serif;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-primary);
 }
 
 .tx-row-value-verified {

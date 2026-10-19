@@ -1,171 +1,220 @@
 /**
  * Branta merchant verification (send side).
  *
- * Branta lets a wallet show the user WHO they are about to pay. When a
- * business registers its destination with Branta (via BTCPay Server,
- * Zaprite, Take My Sats, or a custom integration), a send-side lookup
- * returns the verified platform name and logo, which we surface on the
- * confirm sheets as a tappable "verified by Branta" badge before the user
- * sends.
+ * Branta tells a wallet WHO it is about to pay. A business registers its
+ * payment destinations with Branta (via BTCPay Server, Zaprite, Take My Sats
+ * or a custom integration); before sending, the wallet looks the destination
+ * up and gets the business's name, logo and a verification page.
  *
- * Read-only. No API key, no account, one network call. It is a
- * progressive enhancement, never a gate:
- *   - A miss (the destination was never posted to Branta) is the NORMAL
- *     case for most payments. It is not an error.
- *   - On a miss OR on any thrown error we resolve to null and the caller
- *     renders nothing. The payment flow never depends on this lookup and
- *     must never fail because of it.
+ * Read-only: no API key, no account, one request per payment. A miss is the
+ * normal case and is never shown. The one answer that does reach the person
+ * is a CHANGED code: an on-chain code whose visible address is not the one
+ * the business registered (SDK `BrantaPaymentException`, reason `tampered`).
+ * Branta asks wallets to treat that as a hard stop.
  *
- * Pattern: this mirrors Blitz Wallet's docs-faithful integration
- * (github.com/BlitzWallet, app/functions/branta) and the official
- * "For Wallets" guide:
- *   - Always strict privacy mode.
- *   - getPaymentsByQrCode handles both BOLT11 and ZK on-chain
- *     (branta_id / branta_secret) payloads. We hand it the raw text.
- *   - Production guardrail (BuhoGO ships and tests live).
+ * Privacy is strict. The SDK hashes an invoice or Ark address and encrypts
+ * it client-side, so the raw destination never leaves the phone; an
+ * on-chain code is only looked up when it already carries Branta's key
+ * (`branta_id` + `branta_secret`). Lightning addresses, LNURL, BOLT12, Spark
+ * and plain on-chain addresses cannot be checked in strict mode and are not
+ * attempted.
  *
- * Privacy: strict mode. For a BOLT11 invoice the SDK derives a key from
- * the invoice itself and AES-encrypts it client-side, so the raw invoice
- * is never transmitted. On-chain only resolves when the QR already
- * carries the ZK params, so a plain address is never sent either.
- *
- * Verifiable destination types in strict mode: BOLT11 invoices, and
- * on-chain addresses whose QR includes branta_id + branta_secret. Raw
- * Lightning Address / LNURL / Spark cannot be resolved in strict mode and
- * are not attempted (the caller gates this; Blitz does the same).
+ * Debugging: localStorage `branta_debug` = '1' logs lookups; `branta_env` =
+ * 'staging' points at Branta's staging service (it only knows Branta's
+ * example destinations). Both are read once, at the first lookup.
  */
-import { BrantaServerBaseUrl } from '@branta-ops/branta'
+import { BrantaServerBaseUrl, BrantaPaymentExceptionReason } from '@branta-ops/branta'
 import { BrantaService } from '@branta-ops/branta/v2'
 
-/**
- * Defaults to the live production guardrail. A build can be pointed at
- * Branta's fully-siloed staging guardrail for QA by setting
- * localStorage 'branta_env' to 'staging' (staging only resolves Branta's
- * staging example destinations).
- */
-function resolveBaseUrl() {
+export const BRANTA_STATUS = Object.freeze({
+  CHECKING: 'checking',
+  VERIFIED: 'verified',
+  TAMPERED: 'tampered',
+  NONE: 'none',
+})
+
+/** How long the confirm sheet waits for an answer before it settles without one. */
+export const BRANTA_HOLD_MS = 1500
+
+/** Upper bound for a lookup. Past the hold, only a changed code still matters. */
+export const BRANTA_LOOKUP_TIMEOUT_MS = 8000
+
+/** Behind a logo made for dark backgrounds, when that is the only one. */
+const DARK_PLATE = '#1A1A1C'
+
+const BOLT11_PREFIX = /^ln(bc|tb|bcrt)/i
+const ARK_PREFIX = /^ark1/i
+
+function readLocalFlag(key) {
   try {
-    if (typeof localStorage !== 'undefined' && localStorage.getItem('branta_env') === 'staging') {
-      return BrantaServerBaseUrl.Staging
-    }
+    return typeof localStorage !== 'undefined' ? localStorage.getItem(key) : null
   } catch {
-    /* localStorage unavailable; fall through to production */
+    return null
   }
-  return BrantaServerBaseUrl.Production
 }
 
-// Built lazily so the SDK (and its first touch of Web Crypto) is only
-// pulled in the first time a lookup actually runs, never at module load.
 let service = null
-function getService() {
+let debugEnabled = null
+
+// Built on first use, so the SDK and its first touch of Web Crypto stay out
+// of app start.
+function defaultService() {
   if (!service) {
-    service = new BrantaService({ baseUrl: resolveBaseUrl(), privacy: 'strict' })
+    const baseUrl = readLocalFlag('branta_env') === 'staging'
+      ? BrantaServerBaseUrl.Staging
+      : BrantaServerBaseUrl.Production
+    service = new BrantaService({ baseUrl, privacy: 'strict' })
   }
   return service
 }
 
-const DEBUG = (() => {
-  try {
-    return typeof localStorage !== 'undefined' && localStorage.getItem('branta_debug') === '1'
-  } catch {
-    return false
-  }
-})()
-
 function debug(...args) {
-  if (DEBUG) console.log('[Branta]', ...args)
+  if (debugEnabled === null) debugEnabled = readLocalFlag('branta_debug') === '1'
+  if (debugEnabled) console.log('[Branta]', ...args)
 }
 
 const isHttps = (value) => typeof value === 'string' && value.startsWith('https://')
 
-// Abort a Branta lookup after this long. The lookup is fire-and-forget, so
-// this only bounds resource use; it never delays or affects a payment.
-export const BRANTA_LOOKUP_TIMEOUT_MS = 8000
-
-// Small bounded per-session cache keyed by the exact lookup text, so a
-// re-render or quick re-scan never issues a duplicate request and a repeat
-// of a known miss resolves instantly to null.
-const CACHE_LIMIT = 100
-const cache = new Map()
-
-function cacheGet(key) {
-  return cache.has(key) ? cache.get(key) : undefined
-}
-
-function cacheSet(key, value) {
-  if (cache.size >= CACHE_LIMIT) {
-    cache.delete(cache.keys().next().value)
+/** Query parameters of a `bitcoin:` / `lightning:` URI, keys lowercased; null when it is no URI. */
+function uriParams(raw) {
+  if (typeof raw !== 'string' || !raw.includes(':')) return null
+  try {
+    const params = new URL(raw.trim()).searchParams
+    const out = new Map()
+    for (const [key, value] of params) {
+      const lower = key.toLowerCase()
+      if (!out.has(lower)) out.set(lower, value)
+    }
+    return out
+  } catch {
+    return null
   }
-  cache.set(key, value)
 }
 
 /**
- * Reduce a Branta PaymentsResult to the small shape the UI needs, or null
- * when there is nothing meaningful (or safe) to show. We keep only https
- * URLs, matching Blitz Wallet.
+ * True when a code carries both of Branta's key parameters, the only way an
+ * on-chain destination can be checked. Keys match case-insensitively, as the
+ * SDK's own parser lowercases them.
  */
-function normalize(result) {
-  if (!result || !Array.isArray(result.payments) || result.payments.length === 0) {
-    return null
+export function hasBrantaParams(raw) {
+  const params = uriParams(raw)
+  return !!params && params.has('branta_id') && params.has('branta_secret')
+}
+
+/**
+ * What to hand Branta for a payment, or null when nothing in it can be
+ * checked.
+ *
+ *   - A code with Branta's key: the whole code. The SDK then checks every
+ *     part of it and notices when the visible address was changed.
+ *   - Otherwise the destination BuhoGO pays, when it is an invoice or an
+ *     Ark address. Never another part of a unified code: without Branta's
+ *     key nothing ties the parts together, so a verified invoice says
+ *     nothing about the Ark or Spark address paid instead.
+ *
+ * @param {object} payment  the pending payment (type, invoice, data, rawInput, arkadeAddress)
+ * @returns {string|null}
+ */
+export function brantaLookupText(payment) {
+  if (!payment) return null
+  const raw = typeof payment.rawInput === 'string' ? payment.rawInput.trim() : ''
+  if (hasBrantaParams(raw)) return raw
+
+  if (payment.type === 'lightning_invoice') {
+    const invoice = String(payment.invoice || payment.data || '').replace(/^lightning:/i, '').trim()
+    if (BOLT11_PREFIX.test(invoice)) return invoice
   }
-  const payment = result.payments[0]
-  // A non-empty payments array means the destination IS verified, per the
-  // SDK contract, regardless of whether a display name was returned. We
-  // surface whatever Branta gave us; consumers fall back gracefully when
-  // the name is absent (the badge still reads "Verified by Branta", and the
-  // on-chain sheet falls back to "Bitcoin Address").
+  if (payment.type === 'arkade_address') {
+    const address = String(payment.arkadeAddress || payment.data || '').trim()
+    if (ARK_PREFIX.test(address)) return address
+  }
+  return null
+}
+
+/**
+ * The avatar for a verified business: Branta's logo for light backgrounds
+ * on BuhoGO's white plate, or its dark-background logo on a dark plate when
+ * that is the only one. Null without a logo.
+ *
+ * @param {{logoUrl?:string, logoLightUrl?:string}} verification
+ * @returns {{url:string, background:string}|null}
+ */
+export function brantaAvatar(verification) {
+  if (verification?.logoLightUrl) return { url: verification.logoLightUrl, background: '' }
+  if (verification?.logoUrl) return { url: verification.logoUrl, background: DARK_PLATE }
+  return null
+}
+
+/**
+ * Reduce Branta's answer to what BuhoGO shows and keeps, or null when there
+ * is no payment in it. Only https links survive.
+ */
+export function normalizeBrantaResult(result) {
+  const payment = Array.isArray(result?.payments) ? result.payments[0] : null
+  if (!payment) return null
   const verification = {
-    name: (payment.platform || '').trim(),
-    // Branta serves a dark-background logo (platformLogoUrl) and an
-    // optional light-background variant. The UI picks per theme.
+    name: String(payment.platform || '').trim(),
+    // Branta's platformLogoUrl is drawn for dark backgrounds, the light
+    // variant for light ones; brantaAvatar picks.
     logoUrl: isHttps(payment.platformLogoUrl) ? payment.platformLogoUrl : '',
     logoLightUrl: isHttps(payment.platformLogoLightUrl) ? payment.platformLogoLightUrl : '',
-    description: (payment.description || '').trim(),
+    description: String(payment.description || '').trim(),
     verifyUrl: isHttps(result.verifyUrl) ? result.verifyUrl : '',
   }
-  // Nothing displayable at all (no name, no logo, no link): treat as a miss.
+  // A payment without a name, a logo or a page gives nothing to show.
   if (!verification.name && !verification.logoUrl && !verification.logoLightUrl && !verification.verifyUrl) {
     return null
   }
   return verification
 }
 
+// Per-session answers by lookup text, so a re-scan costs nothing. A changed
+// code and an error are never cached: the next look asks again.
+const CACHE_LIMIT = 100
+const cache = new Map()
+
+function remember(key, answer) {
+  if (cache.size >= CACHE_LIMIT) cache.delete(cache.keys().next().value)
+  cache.set(key, answer)
+}
+
 /**
- * Verify a payment destination with Branta.
+ * Ask Branta about a payment destination. Never throws.
  *
  * @param {object} params
- * @param {string} params.qrText  the raw destination text to verify: a
- *                                 BOLT11 invoice (with or without a
- *                                 `lightning:` prefix) or a `bitcoin:` URI
- *                                 carrying branta_id + branta_secret.
- * @param {AbortSignal} [params.signal]  cancels the in-flight request when
- *                                        a newer payment supersedes it.
- * @returns {Promise<{name:string, logoUrl:string, logoLightUrl:string,
- *                     description:string, verifyUrl:string} | null>}
- *          The verification on a match, or null on a miss / any error.
- *          Never throws.
+ * @param {string} params.qrText  what brantaLookupText returned
+ * @param {AbortSignal} [params.signal]
+ * @param {object} [params.service]  a BrantaService; tests pass a stand-in
+ * @returns {Promise<{status:'verified', verification:object}|{status:'tampered'}|{status:'none'}>}
  */
-export async function lookupBrantaVerification({ qrText, signal } = {}) {
+export async function checkWithBranta({ qrText, signal, service: injected } = {}) {
   const value = (qrText || '').trim()
-  if (!value) return null
+  if (!value) return { status: BRANTA_STATUS.NONE }
 
-  const cached = cacheGet(value)
-  if (cached !== undefined) {
-    debug('cache hit', value.slice(0, 24), '->', cached)
-    return cached
-  }
+  const cached = cache.get(value)
+  if (cached) return cached
 
   try {
-    const result = await getService().getPaymentsByQrCode(value, undefined, signal)
-    const normalized = normalize(result)
-    debug('lookup', value.slice(0, 24), '->', normalized)
-    cacheSet(value, normalized)
-    return normalized
-  } catch (err) {
-    // A miss is normal and a network/crypto/abort error must never surface
-    // to the user or break the send. Swallow it and show nothing. Errors
-    // are not cached so a transient failure can be retried next time.
-    debug('lookup error (ignored)', err && err.message)
-    return null
+    const result = await (injected || defaultService()).getPaymentsByQrCode(value, undefined, signal)
+    const verification = normalizeBrantaResult(result)
+    const answer = verification
+      ? { status: BRANTA_STATUS.VERIFIED, verification }
+      : { status: BRANTA_STATUS.NONE }
+    debug('lookup', value.slice(0, 24), '->', answer.status)
+    remember(value, answer)
+    return answer
+  } catch (error) {
+    if (error?.reason === BrantaPaymentExceptionReason.Tampered) {
+      debug('changed code', value.slice(0, 24))
+      return { status: BRANTA_STATUS.TAMPERED }
+    }
+    // Offline, aborted, no Web Crypto: as good as no answer.
+    debug('lookup failed (ignored)', error?.message)
+    return { status: BRANTA_STATUS.NONE }
   }
+}
+
+/** Forget cached answers (tests). */
+export function clearBrantaCache() {
+  cache.clear()
 }

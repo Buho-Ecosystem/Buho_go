@@ -831,6 +831,30 @@ await test('when an unreadable value cannot be set aside, it stays and nothing i
   assert.equal(store.initialized, false);
 });
 
+await test('a verified business is stamped only on the payment with its amount', async () => {
+  const store = freshStore();
+  const business = { name: 'Kaffeehaus Lindgren', logoUrl: '', logoLightUrl: 'https://cdn/logo.png', description: '', verifyUrl: 'https://v/x' };
+  await store.enqueuePendingContactLink({ amountSats: 4200, merchantVerification: business, walletId: 'w1' });
+
+  // An invoice send has no address to prove it: the newest send is not enough.
+  assert.equal(await store.consumePendingContactLinks([makeTx('coffee-later', { amount: -900 })], 'w1'), 0);
+  assert.equal(store.getMerchantVerificationForTransaction('coffee-later', 'w1'), null);
+
+  assert.equal(await store.consumePendingContactLinks([makeTx('coffee-later', { amount: -900 }), makeTx('coffee', { amount: -4200 })], 'w1'), 1);
+  assert.deepEqual(store.getMerchantVerificationForTransaction('coffee', 'w1'), business);
+});
+
+await test('a payment stamped with a verified business is not claimed again', async () => {
+  const store = freshStore();
+  const business = { name: 'Kaffeehaus Lindgren', verifyUrl: 'https://v/x' };
+  await store.enqueuePendingContactLink({ amountSats: 4200, merchantVerification: business, walletId: 'w1' });
+  assert.equal(await store.consumePendingContactLinks([makeTx('coffee', { amount: -4200 })], 'w1'), 1);
+
+  await store.enqueuePendingContactLink({ amountSats: 4200, label: 'Transfer to Savings', source: 'internal-transfer', walletId: 'w1' });
+  assert.equal(await store.consumePendingContactLinks([makeTx('coffee', { amount: -4200 })], 'w1'), 0);
+  assert.equal(store.getLabelForTransaction('coffee', 'w1'), null);
+});
+
 console.log(`\n  ${passed} passed, ${failed} failed`);
 // Force-exit: importing the store transitively loads utils/fiatRates.js,
 // whose singleton starts a real setInterval background refresh at module

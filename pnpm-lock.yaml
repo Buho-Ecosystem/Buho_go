@@ -12,8 +12,8 @@ importers:
         specifier: ^0.4.69
         version: 0.4.69
       '@branta-ops/branta':
-        specifier: 3.1.3
-        version: 3.1.3
+        specifier: 3.2.2
+        version: 3.2.2
       '@breeztech/breez-sdk-spark':
         specifier: 0.26.1
         version: 0.26.1
@@ -735,8 +735,8 @@ packages:
   '@bitcoinerlab/miniscript@2.0.0':
     resolution: {integrity: sha512-P8yyubPf6lphmIZfyD/ZbhT/umJX7zH1mKjGql7z0Qt+xuffnz2AueQqq2/01VE2rTIq80VM0oRFdJClGBYx/g==}
 
-  '@branta-ops/branta@3.1.3':
-    resolution: {integrity: sha512-rcyDBYnYD+cmvQWylJ+n3JdR65FiHP1tVPtWQMhKLmcXx56czL8Ez7+I9jy7pmLBIVwP6mS1EsUqSrvQi22v1w==}
+  '@branta-ops/branta@3.2.2':
+    resolution: {integrity: sha512-ruc2LyTxZqkRRqCdG3xcmkEZ7jZIwsl7rEptT40U0AIzSUEhs2BzQlo7oAoGmfDS4ZK4RNsrMMundnQ/YyUFJw==}
 
   '@breeztech/breez-sdk-spark@0.26.1':
     resolution: {integrity: sha512-mPHW7N+OZMay1uJ0ARAkczgiXB+iJGvuTsVxVsHLyP/S8OdidoxZVfLQm4ItOgyFaJAVFqKvQdsf7G40+3o1FA==}
@@ -5021,7 +5021,7 @@ snapshots:
     dependencies:
       bip68: 1.0.4
 
-  '@branta-ops/branta@3.1.3': {}
+  '@branta-ops/branta@3.2.2': {}
 
   '@breeztech/breez-sdk-spark@0.26.1':
     optionalDependencies:

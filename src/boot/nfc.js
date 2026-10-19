@@ -114,6 +114,8 @@ export default boot(async ({ router }) => {
     const paymentData = {
       data: parsed.invoice || parsed.offer || parsed.address || parsed.lnurl || raw,
       type: parsed.type,
+      // The tag as written keeps any Branta key for the merchant check.
+      rawInput: raw,
       // BIP21 metadata rides along so a unified QR written to a tag can take
       // the native-rail shortcut in onPaymentDetected, same as a scan.
       ...(parsed.bip21 ? { bip21: parsed.bip21 } : {})

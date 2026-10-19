@@ -95,7 +95,8 @@ test('a lightning link still goes to the payment path', async () => {
   const h = harness({ activeWallet: { id: 'w' } });
   await h.start();
   h.open('lightning:maria@mybuho.de');
-  assert.deepEqual(h.walletStore.pendingDeepLink, { data: 'maria@mybuho.de', type: 'lightning_address' });
+  // The link as it came rides along (rawInput), for the merchant check.
+  assert.deepEqual(h.walletStore.pendingDeepLink, { data: 'maria@mybuho.de', type: 'lightning_address', rawInput: 'lightning:maria@mybuho.de' });
   assert.deepEqual(h.pushes, ['/wallet']);
 });
 
@@ -106,7 +107,7 @@ for (const cold of [true, false]) {
     const h = harness({ activeWallet: { id: 'w' }, launchUrl: cold ? uri : null });
     await h.start();
     if (!cold) h.open(uri);
-    assert.deepEqual(h.walletStore.pendingDeepLink, { type: 'lightning_invoice', data: invoice });
+    assert.deepEqual(h.walletStore.pendingDeepLink, { type: 'lightning_invoice', data: invoice, rawInput: uri });
     assert.deepEqual(h.pushes, ['/wallet']);
     assert.equal(h.notices.length, 0);
   });
