@@ -134,7 +134,8 @@ async function payHere() {
     actionError.value = t('Please set up a wallet first');
     return;
   }
-  const payment = { type: 'lightning_invoice', data: invoice.value.invoice };
+  // A BuhoGO user's own invoice: never on Branta, so not looked up.
+  const payment = { type: 'lightning_invoice', data: invoice.value.invoice, firstParty: true };
   walletStore.pendingDeepLink = payment;
   try {
     const result = await router.push('/wallet');

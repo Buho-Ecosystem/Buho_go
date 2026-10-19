@@ -73,7 +73,8 @@ function parseDeepLinkURI(url) {
 
   // Keep the BIP21 metadata: a unified QR's spark=/ark= rails and amount=
   // let onPaymentDetected route the payment over the wallet's native rail.
-  return { data, type: parsed.type, ...(parsed.bip21 ? { bip21: parsed.bip21 } : {}) }
+  // The link as it came keeps any Branta key for the merchant check.
+  return { data, type: parsed.type, rawInput: input, ...(parsed.bip21 ? { bip21: parsed.bip21 } : {}) }
 }
 
 function handleDeepLink(url, router, walletStore) {

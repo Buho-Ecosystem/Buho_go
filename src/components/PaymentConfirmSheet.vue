@@ -7,8 +7,10 @@
 
   Responsibilities — strictly presentational:
     - One screen: recipient hero, amount (editable for free/range, locked for
-      fixed), optional comment, fee. The Branta verification seal sits in the
-      top-right corner when the parent attached a verified result.
+      fixed), optional comment, fee. While the parent checks the recipient
+      with Branta (`recipient.checking`) the row pulses in place and the
+      commit control waits; a verified business brings the seal to the
+      top-right corner.
     - The commit control morphs into the filling ProgressCta on submit:
       slide-to-confirm above the high-value threshold, a tap button below it.
     - Validates the entered amount against the supplied constraints before
@@ -42,13 +44,11 @@
             <Icon v-else icon="tabler:chevron-left" width="20" height="20" />
           </q-btn>
           <h2 class="top-title" :id="titleId">{{ takeover ? takeoverTitle : topTitle }}</h2>
-          <!-- Verification sits in the top-right corner (Blitz-style): a single
-               tappable seal, not an inline pill under the recipient name. -->
+          <!-- A verified business: its seal, opening Branta's page. -->
           <div class="top-action">
             <BrantaVerifiedBadge
-              v-if="recipientVerification"
+              v-if="recipientVerification && !takeover"
               :verify-url="recipientVerification.verifyUrl"
-              icon-only
             />
           </div>
         </header>
@@ -135,7 +135,12 @@
                identifier line), and everything else behind the info glyph.
                No ambiguous chevron and no verification marks the app
                cannot honestly make. -->
-          <section class="recipient-cell">
+          <section
+            class="recipient-cell"
+            :class="{ 'recipient-cell--checking': recipientChecking }"
+            :aria-busy="recipientChecking ? 'true' : null"
+            :aria-label="recipientChecking ? $t('Checking the business') : null"
+          >
             <div
               class="recipient-avatar"
               :class="{
@@ -170,7 +175,11 @@
               </svg>
               <span v-else>{{ recipientInitial }}</span>
             </div>
-            <div class="recipient-meta">
+            <div v-if="recipientChecking" class="recipient-meta" aria-hidden="true">
+              <span class="recipient-skeleton recipient-skeleton--name"></span>
+              <span class="recipient-skeleton"></span>
+            </div>
+            <div v-else class="recipient-meta">
               <div class="recipient-name-row">
                 <div class="recipient-name">{{ recipientName }}</div>
                 <!-- Countdown chip — present for time-bounded merchant QRs.
@@ -189,7 +198,7 @@
               <div v-if="recipientAddressLabel" class="recipient-addr">{{ recipientAddressLabel }}</div>
             </div>
             <button
-              v-if="addressNeedsDetails"
+              v-if="addressNeedsDetails && !recipientChecking"
               type="button"
               class="recipient-info"
               :aria-label="$t('Details')"
@@ -512,7 +521,10 @@ export default {
     recipientAddress() {
       return this.payment?.recipient?.address || ''
     },
+    // A verified business is named, not addressed: its raw destination
+    // stays one tap away behind the info button.
     recipientAddressLabel() {
+      if (this.recipientVerification) return ''
       return this.payment?.recipient?.addressLabel || this.recipientAddress
     },
     isServiceRecipient() {
@@ -523,9 +535,11 @@ export default {
     addressNeedsDetails() {
       return this.recipientAddressLabel !== this.recipientAddress || this.recipientAddress.length > 34
     },
-    // Branta merchant verification, present only when the parent's adapter
-    // attached it after a positive lookup. Absent on every unverified
-    // payment, so the badge simply never renders in the common case.
+    // Branta: the check still running (the row waits, so does the commit
+    // control), and a verified business (the seal in the top bar).
+    recipientChecking() {
+      return this.payment?.recipient?.checking === true
+    },
     recipientVerification() {
       return this.payment?.recipient?.verification || null
     },
@@ -667,7 +681,7 @@ export default {
     },
 
     canSubmit() {
-      return this.walletCanPay && this.isAmountAcceptable && this.commitGate
+      return this.walletCanPay && this.isAmountAcceptable && this.commitGate && !this.recipientChecking
     },
 
     // The left half of the amount helper row. Only range mode has bounds
@@ -1210,6 +1224,35 @@ export default {
   padding: 11px 12px;
   border-radius: var(--radius-md);
   background: var(--bg-input);
+}
+
+.recipient-cell--checking .recipient-avatar {
+  animation: recipient-checking 1.6s ease-in-out infinite;
+}
+
+.recipient-skeleton {
+  display: block;
+  width: 44%;
+  height: 10px;
+  margin-top: 7px;
+  border-radius: 5px;
+  background: var(--border-card);
+  animation: recipient-checking 1.6s ease-in-out infinite;
+}
+
+.recipient-skeleton--name {
+  width: 62%;
+  height: 13px;
+  margin-top: 0;
+}
+
+@keyframes recipient-checking {
+  50% { opacity: 0.45; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .recipient-cell--checking .recipient-avatar,
+  .recipient-skeleton { animation: none; }
 }
 
 .recipient-avatar {

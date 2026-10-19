@@ -463,12 +463,12 @@ export const useTransactionMetadataStore = defineStore('transactionMetadata', {
      * picture instead of a generic icon. Per-payment like label/source (see
      * below) — never merged into an existing link.
      *
-     * `merchantVerification` ({ name, logoUrl, logoLightUrl, verifyUrl })
-     * carries the Branta-verified merchant identity behind the send (see
-     * runBrantaVerification/lookupBrantaVerification in Wallet.vue), so Tx
-     * Details can show "you paid a verified merchant" on the receipt, not
-     * only on the confirm screen before sending. Per-payment like
-     * counterpartyAvatar above — never merged into an existing link.
+     * `merchantVerification` ({ name, logoUrl, logoLightUrl, description,
+     * verifyUrl }) carries the Branta-verified business behind the send
+     * (Wallet.vue brantaReceipt), so History and Transaction Details name it
+     * after sending. It has no address to prove its payment, so it needs a
+     * matching amount. Per-payment like counterpartyAvatar above — never
+     * merged into an existing link.
      *
      * `saleBreakdown` (subtotal/tip/round-up/discount/item-count/total)
      * carries the curated point-of-sale breakdown a kiosk sale captured at
@@ -644,13 +644,13 @@ export const useTransactionMetadataStore = defineStore('transactionMetadata', {
       let mutated = remaining.length !== this.pendingContactLinks.length
 
       // A tx is "stamped" once it has a contactId, a recipientAddress, a
-      // successAction, a label, or a source, so a later link can't re-claim
+      // successAction, a label, a source or a verified business, so a later link can't re-claim
       // a tx an earlier link already resolved. Scoped to `walletId` so a
       // record belonging to a DIFFERENT wallet that happens to share this
       // tx id is never consulted.
       const isStamped = (tx) => {
         const m = _resolveMetadata(this, tx.id, walletId)
-        return !!(m?.contactId || m?.recipientAddress || m?.successAction || m?.payLink || m?.label || m?.source)
+        return !!(m?.contactId || m?.recipientAddress || m?.successAction || m?.payLink || m?.label || m?.source || m?.merchantVerification)
       }
 
       const isOutgoingTx = (tx) => {
@@ -727,7 +727,9 @@ export const useTransactionMetadataStore = defineStore('transactionMetadata', {
         // stamp) gets the same treatment as label/source — the amount is the
         // only evidence tying it to a tx, and a mis-stamped reusable link
         // would offer "Pay again" for a service the user never paid.
-        const needsAmountProof = !link.recipientAddress && (link.label || link.source || link.payLink || link.contactId)
+        // So does a verified business (an invoice or on-chain send has no
+        // address form to stamp): it must never name an unrelated payment.
+        const needsAmountProof = !link.recipientAddress && (link.label || link.source || link.payLink || link.contactId || link.merchantVerification)
         const exact = eligible.find(amountMatches)
         if (!link.transactionId && needsAmountProof && !exact) continue
 

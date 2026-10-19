@@ -734,38 +734,26 @@
           </template>
         </SettingsRow>
 
-        <!-- Merchant verification (Branta). When on, BuhoGO checks the
-             payment you are about to send and, for supported businesses,
-             shows the verified merchant name + logo on the confirm sheet.
-             The check runs privately (strict mode, the destination is
-             never sent in the clear) and a no-match simply shows nothing.
-             Default on. The info tooltip explains it in plain language for
-             anyone who wants the detail. -->
+        <!-- Merchant verification (Branta), on by default. The section footer
+             says what it does when on; off follows from that. -->
         <SettingsRow
           icon="tabler:rosette-discount-check"
           :label="$t('Merchant verification')"
-          :caption="$t('Show a verified name and logo for supported businesses you pay.')"
           :interactive="false"
         >
           <template #right>
-            <q-btn
-              flat
-              round
-              dense
-              size="sm"
-              class="branta-info"
-              :aria-label="$t('About merchant verification')"
-              @click="showMerchantVerifyDialog = true"
-            >
-              <Icon icon="tabler:info-circle" width="18" height="18" />
-            </q-btn>
             <q-toggle
               :model-value="bitcoinPrefsStore.brantaVerificationEnabled"
               @update:model-value="bitcoinPrefsStore.setBrantaVerificationEnabled"
               :color="$q.dark.isActive ? 'brand-green' : 'brand-green-dark'"
+              :aria-label="$t('Merchant verification')"
             />
           </template>
         </SettingsRow>
+        <template #footer>
+          {{ $t("Shows a business's verified name and logo before you pay. Checked privately with Branta; your payment details are never shared.") }}
+          <a href="https://branta.pro" class="settings-footer-link" @click.prevent="openBrantaSite">{{ $t('About Branta') }}</a>
+        </template>
       </SettingsSection>
 
       <!-- ─────────────── DANGER ZONE ───────────────
@@ -1475,61 +1463,6 @@
       </q-card>
     </q-dialog>
 
-    <!-- Merchant verification (Branta) — info popup. Same shell as the auto-add
-         dialog, finished with a sleek Branta-branded footer line. -->
-    <q-dialog v-model="showMerchantVerifyDialog" :class="$q.dark.isActive ? 'dialog_dark' : 'dialog_light'">
-      <q-card class="dialog-card info-dialog" :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'">
-        <q-card-section class="dialog-header">
-          <div class="dialog-title" :class="$q.dark.isActive ? 'dialog_title_dark' : 'dialog_title_light'">
-            {{ $t('Merchant verification') }}
-          </div>
-          <q-btn
-            flat
-            round
-            dense
-            v-close-popup
-            :class="$q.dark.isActive ? 'close_btn_dark' : 'close_btn_light'"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 20 20" fill="none">
-              <path d="M15 5L5 15M5 5L15 15" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-            </svg>
-          </q-btn>
-        </q-card-section>
-
-        <q-card-section class="dialog-content">
-          <div class="info-hero">
-            <img
-              src="/Learn and Earn/Question_pictures/connected-world.svg"
-              class="info-hero-img"
-              alt=""
-              aria-hidden="true"
-            />
-          </div>
-
-          <p class="info-text" :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'">
-            {{ $t('When you pay a supported business, BuhoGO shows its verified name and logo right on the confirm screen, so you know your money is going to the right place.') }}
-          </p>
-          <p class="info-text" :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'">
-            {{ $t('The check runs privately. Your payment destination is never shared, and if there is no match, nothing extra is shown.') }}
-          </p>
-          <p class="info-text info-text--muted" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'">
-            {{ $t('Off: payments are sent without the verification check.') }}
-          </p>
-
-          <!-- Sleek branded bottom line. The official Branta wordmark flips
-               black/white with the theme, so it stays crisp in both modes. -->
-          <div class="branta-footer">
-            <span class="branta-footer-label">{{ $t('Powered by') }}</span>
-            <img
-              :src="$q.dark.isActive ? '/Branta/logo-white-all.svg' : '/Branta/logo-black-all.svg'"
-              alt="Branta"
-              class="branta-footer-logo"
-            />
-          </div>
-        </q-card-section>
-      </q-card>
-    </q-dialog>
-
     <q-dialog v-model="showMempoolDialog" :class="$q.dark.isActive ? 'dialog_dark' : 'dialog_light'">
       <q-card class="dialog-card mempool-dialog" :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'">
         <q-card-section class="dialog-header">
@@ -1765,6 +1698,7 @@ import SettingsFeatureCards from '../components/settings/SettingsFeatureCards.vu
 import SettingsHubHeader from '../components/settings/SettingsHubHeader.vue'
 import SettingsHubNav from '../components/settings/SettingsHubNav.vue'
 import HiddenAmount from '../components/HiddenAmount.vue'
+import { openInAppBrowser } from '../utils/inAppBrowser.js'
 import { LNBitsWalletProvider } from '../providers/LNBitsWalletProvider'
 // Alternative lightweight verification (type 3 random words). Kept out
 // of the flow intentionally — the order-tap check is stronger. Retained
@@ -1833,7 +1767,6 @@ export default {
       showSecurityDialog: false,
       showMempoolDialog: false,
       showAutoAddDepositsDialog: false,
-      showMerchantVerifyDialog: false,
 
 
       // New wallet form
@@ -2588,6 +2521,10 @@ export default {
     }
   },
   methods: {
+    openBrantaSite() {
+      openInAppBrowser('https://branta.pro')
+    },
+
     ...mapActions(useWalletStore, [
       'initialize',
       'updateWalletName',
@@ -4579,7 +4516,7 @@ export default {
   flex: 1;
 }
 
-/* Info affordance next to the Merchant verification toggle (Advanced). */
+/* Info affordance next to a toggle (Advanced). */
 .branta-info {
   color: var(--text-muted);
 }
@@ -5216,29 +5153,10 @@ body.body--light .wallet-avatar-arkade {
   margin-bottom: 0;
 }
 
-/* Sleek partner-branding line at the bottom of an info popup. The Branta
-   wordmark is a dark logo on white, so it sits on a small white chip to stay
-   legible in both light and dark mode. */
-.branta-footer {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  margin-top: 18px;
-  padding-top: 14px;
-  border-top: 1px solid var(--border-card);
-}
-.branta-footer-label {
-  font-size: 10.5px;
+.settings-footer-link {
+  color: var(--brand-accent-text, var(--text-primary));
   font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--text-muted);
-}
-.branta-footer-logo {
-  height: 16px;
-  width: auto;
-  display: block;
+  text-decoration: none;
 }
 
 .mempool-dialog {

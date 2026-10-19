@@ -96,6 +96,12 @@ export default {
     entry: { type: Object, default: () => ({}) },
     name: { type: String, default: '' },
     picture: { type: String, default: '' },
+    /**
+     * A business's logo handed in directly (a Branta-verified payee):
+     * { url, background }. It wins over every other picture and is fitted
+     * whole on its plate, like the bundled brand marks.
+     */
+    logo: { type: Object, default: null },
     color: { type: String, default: '' },
     initialLength: {
       type: Number,
@@ -113,6 +119,8 @@ export default {
   computed: {
     visibleAvatarUrl() {
       if (this.imgBroken) return ''
+      const handedLogo = this.logo?.url ? this.gateUrl(this.logo.url) : ''
+      if (handedLogo) return handedLogo
       const explicit = typeof this.picture === 'string' ? this.picture.trim() : ''
       if (explicit) {
         const gated = this.gateUrl(explicit)
@@ -198,14 +206,20 @@ export default {
      * cropped: the circle would otherwise slice the mark itself. The registry
      * marks these with `logoContain`, exactly as the send sheet reads them.
      */
+    /** A handed-in business logo is on screen. */
+    showingHandedLogo() {
+      return !!this.logo?.url && this.visibleAvatarUrl === this.gateUrl(this.logo.url)
+    },
+
     containBrandArt() {
+      if (this.showingHandedLogo) return true
       return this.showingBrandArt && this.addressBrand?.logoContain === true
     },
 
     /** Per-brand inset override; the stylesheet's conservative default holds
      *  for any mark whose silhouette has not been measured. */
     brandInsetStyle() {
-      const inset = this.containBrandArt ? this.addressBrand?.logoInset : ''
+      const inset = this.containBrandArt && !this.showingHandedLogo ? this.addressBrand?.logoInset : ''
       return inset ? { padding: inset } : null
     },
 
@@ -213,7 +227,7 @@ export default {
      *  with its own backdrop (a white wordmark) overrides the default white. */
     brandPlateStyle() {
       if (!this.containBrandArt) return null
-      const bg = this.addressBrand?.logoBg
+      const bg = this.showingHandedLogo ? this.logo.background : this.addressBrand?.logoBg
       return bg ? { background: bg } : null
     },
   },
@@ -221,6 +235,7 @@ export default {
   watch: {
     'entry.nostr_profile.picture'() { this.imgBroken = false },
     picture() { this.imgBroken = false },
+    'logo.url'() { this.imgBroken = false },
   },
 
   methods: {

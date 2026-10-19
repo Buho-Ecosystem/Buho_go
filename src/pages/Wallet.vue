@@ -541,11 +541,17 @@
       :status-message="nwcSendWaiting ? $t('Waiting for your wallet app…') : ''"
       :is-complete="sendDidSucceed"
       :commit-gate="sendSheetCommitGate"
+      :takeover="brantaTampered"
       @amount-changed="sendSheetAmountSats = $event"
       @update:sending-wallet-id="onSendingWalletChange"
       @confirm="onSendSheetConfirm"
       @cancel="onSendSheetCancel"
+      @takeover-cancel="onSendSheetCancel"
     >
+      <!-- Branta found the code changed: the payment stops here. -->
+      <template #takeover>
+        <BrantaChangedCode v-if="brantaTampered" @close="onSendSheetCancel" />
+      </template>
       <!-- Spark on-chain rides the shared sheet with the L1 fee machinery
            in the extras slot: balance + Use all, per-speed SDK fee quote,
            and the breakdown. The panel's gate blocks the slide until a
@@ -629,6 +635,7 @@
       :amount="sendSuccessAmount"
       :fiat-amount="sendSuccessFiat"
       :recipient="sendSuccessRecipient"
+      :verified-recipient="sendSuccessVerified"
       :label="sendSuccessLabel"
       :show-save-contact="sendSuccessShowSaveContact"
       :success-action="sendSuccessAction"
@@ -800,6 +807,7 @@ import {createPaymentMonitor, PaymentStatus} from '../utils/paymentMonitor.js';
 import PaymentConfirmation from '../components/PaymentConfirmation.vue';
 import WithdrawAuthorization from '../components/WithdrawAuthorization.vue';
 import CardFace from '../components/CardFace.vue';
+import BrantaChangedCode from '../components/BrantaChangedCode.vue';
 import LaunchMark from '../components/LaunchMark.vue';
 import {claimLaunch} from '../utils/launch.js';
 import {useWalletStore} from '../stores/wallet';
@@ -845,7 +853,7 @@ import {
 } from '../stores/bitcoinPreferences';
 import { useBitcoinDepositsStore } from '../stores/bitcoinDeposits';
 import {SA_RETAIL_SOURCE, parseZARFromMetadata} from '../utils/merchantQR.js';
-import {lookupBrantaVerification, BRANTA_LOOKUP_TIMEOUT_MS} from '../utils/branta.js';
+import {BRANTA_HOLD_MS, BRANTA_LOOKUP_TIMEOUT_MS, BRANTA_STATUS, brantaAvatar, brantaLookupText, checkWithBranta} from '../utils/branta.js';
 import { readCachedTransactions, mergeCachedTransactions } from '../utils/txCache.js';
 import { EventBus, PAYMENT_SENT } from '../utils/eventBus.js';
 
@@ -896,6 +904,7 @@ export default {
     ContactAvatar,
     WithdrawAuthorization,
     CardFace,
+    BrantaChangedCode,
     LaunchMark,
   },
   directives: { balanceUpdating },
@@ -1070,6 +1079,8 @@ export default {
       sendSuccessAmount: 0,
       sendSuccessFiat: '',
       sendSuccessRecipient: '',
+      // A Branta-verified business, for the paid screen's recipient pill.
+      sendSuccessVerified: null,
       sendSuccessLabel: '',
       sendSuccessShowSaveContact: false,
       // LUD-09 message from the recipient, shown on the send-success screen.
@@ -1676,32 +1687,23 @@ export default {
         });
       }
 
-      // ── Branta merchant verification ──────────────────────────
-      // Attached asynchronously by runBrantaVerification on a positive
-      // lookup. We surface the verified business name + logo as the hero
-      // identity (overriding the generic "Lightning invoice" label and
-      // colored initial), but never relabel a contact the user saved
-      // themselves, and never override an SA-retail merchant. The tappable
-      // "verified by Branta" badge is attached whenever a match exists.
-      const bv = p.brantaVerification;
+      // ── Branta merchant verification (runBrantaVerification) ──
+      // While the check runs, the row holds its place. A verified business
+      // becomes the recipient, a saved contact's name included: the
+      // verified identity is what is being paid. Its logo is fitted whole
+      // on the avatar plate. Curated retail merchants keep their own.
+      if (p.branta?.status === BRANTA_STATUS.CHECKING) recipient.checking = true;
+      const bv = this.brantaVerificationOf(p);
       if (bv && !p.merchant) {
-        const verifiedLogo = this.$q.dark.isActive
-          ? (bv.logoUrl || bv.logoLightUrl)
-          : (bv.logoLightUrl || bv.logoUrl);
-        if (!recipient.matchedContact) {
-          if (bv.name) recipient.name = bv.name;
-          if (verifiedLogo) {
-            recipient.logoUrl = verifiedLogo;
-            // Branta-delivered brand marks render best contained (not cropped).
-            // Any avatar styling tuned for the wallet logo we're replacing
-            // (inset, backdrop) goes with it — the merchant art is unknown, so
-            // it falls back to the safe default inset on the white plate.
-            recipient.logoContain = true;
-            recipient.logoInset = '';
-            recipient.logoBg = '';
-          }
+        if (bv.name) recipient.name = bv.name;
+        const avatar = brantaAvatar(bv);
+        if (avatar) {
+          recipient.logoUrl = avatar.url;
+          recipient.logoBg = avatar.background;
+          recipient.logoContain = true;
+          recipient.logoInset = '';
         }
-        recipient.verification = { verifyUrl: bv.verifyUrl };
+        recipient.verification = { name: bv.name, verifyUrl: bv.verifyUrl };
       }
 
       // ── Amount mode ───────────────────────────────────────────
@@ -1918,6 +1920,11 @@ export default {
     // Extra commit condition for the sheet: Spark on-chain must hold a
     // settled, affordable fee quote before the slide can complete. Every
     // other payment leaves the gate open.
+    /** Branta found the visible address is not the business's: stop the payment. */
+    brantaTampered() {
+      return this.pendingPayment?.branta?.status === BRANTA_STATUS.TAMPERED;
+    },
+
     sendSheetCommitGate() {
       if (!this.isSparkL1Payment) return true;
       return !!(this.l1Fee?.ready && !this.l1Fee.insufficient);
@@ -2791,6 +2798,9 @@ export default {
         // Only an invoice needs it, and only a contact that exists is kept.
         ...(addressType === 'invoice' && contactId && this.addressBookStore.getEntryById(contactId)
           ? { paymentContactId: contactId } : {}),
+        // A contact's invoice is a person's own (chat requests, Waiting for
+        // you): never on Branta, so it is not looked up.
+        ...(addressType === 'invoice' ? { firstParty: true } : {}),
       });
     },
 
@@ -2950,6 +2960,16 @@ export default {
           feeAmountSats: fee.totalFeeSats,
           deductFeeFromWithdrawalAmount: false
         });
+
+        // A verified business stays with the withdrawal, as on every other send.
+        const merchantVerification = this.brantaReceipt(this.pendingPayment);
+        if (merchantVerification) {
+          this.transactionMetadataStore.enqueuePendingContactLink({
+            amountSats,
+            merchantVerification,
+            walletId,
+          }).catch((err) => console.warn('[wallet] could not queue the verified business:', err));
+        }
 
         // Same post-submit lifecycle as before the fold: close the sheet,
         // clear the payment, poll in the background with toasts. Polling
@@ -3795,6 +3815,7 @@ export default {
       void this.onPaymentDetected({
         data,
         type: parsed.type,
+        rawInput: value,
         ...(parsed.bip21 ? { bip21: parsed.bip21 } : {}),
       });
     },
@@ -4676,9 +4697,8 @@ export default {
           this.pendingPayment = paymentData;
         }
 
-        // Merchant verification (Branta). Fire-and-forget: it runs in the
-        // background, can never block or break the send, and only ever
-        // adds a badge on a positive match. A miss does nothing.
+        // Merchant verification (Branta). Starts before the sheet opens, so
+        // a checkable payment opens in its checking state; see below.
         this.runBrantaVerification(this.pendingPayment);
 
         // Nostr-profile enrichment for npub.cash-style addresses. Same
@@ -4737,87 +4757,52 @@ export default {
     },
 
     /**
-     * Merchant verification (Branta), send side. Fired fire-and-forget
-     * after the payment payload is built and the confirm sheet is on its
-     * way up. It is a progressive enhancement and is wrapped so it can
-     * never disrupt the payment: every failure path resolves to "show
-     * nothing". Mirrors Blitz Wallet's gating and the official wallet docs.
+     * Merchant verification (Branta), send side.
      *
-     * Verifiable in strict mode:
-     *   - BOLT11 invoices (scanned, pasted, or the lightning leg extracted
-     *     from a BIP21 QR): looked up privately, the raw invoice is never
-     *     sent to Branta. Badge shown on PaymentConfirmSheet.
-     *   - On-chain addresses whose QR carries branta_id + branta_secret
-     *     (ZK params): badge shown on the on-chain withdraw sheet.
-     * Raw Lightning Address / LNURL / Spark cannot resolve in strict mode
-     * and are intentionally skipped (Blitz Wallet skips them too).
+     * A payment Branta can check opens its confirm sheet in the CHECKING
+     * state: the recipient row holds its place and the commit control
+     * waits. The sheet settles once, on the answer or after BRANTA_HOLD_MS,
+     * so nothing changes under a finger:
+     *   - verified: the business becomes the recipient, the badge shows;
+     *   - no answer, a miss or an error: the normal recipient, nothing more;
+     *   - a changed code: the sheet stops the payment. This one answer still
+     *     counts after the hold, until the payment is on its way.
+     * Your own users' invoices (`firstParty`) and curated retail merchants
+     * are not looked up: they are never on Branta.
      */
     runBrantaVerification(payment) {
-      try {
-        if (!this.bitcoinPrefsStore.brantaVerificationEnabled) return;
-        // SA-retail merchants carry their own curated identity and are not
-        // on Branta; skip so the two never collide.
-        if (!payment || payment.source === SA_RETAIL_SOURCE) return;
+      if (!payment || !this.bitcoinPrefsStore.brantaVerificationEnabled) return;
+      if (payment.firstParty || payment.source === SA_RETAIL_SOURCE) return;
+      const qrText = brantaLookupText(payment);
+      if (!qrText) return;
 
-        // Decide what raw text (if any) to hand the SDK.
-        let qrText = null;
-        if (payment.type === 'lightning_invoice') {
-          // The extracted BOLT11 (covers a direct scan, a paste, and the
-          // lightning leg of a BIP21 unified QR).
-          qrText = payment.invoice || payment.data || null;
-        } else if (payment.type === 'bitcoin_address') {
-          // On-chain only resolves when the QR carries the ZK params.
-          const raw = payment.rawInput || '';
-          if (this.hasBrantaParams(raw)) qrText = raw;
-        }
-        if (!qrText) return;
+      this.cancelBrantaLookup();
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), BRANTA_LOOKUP_TIMEOUT_MS);
+      const hold = setTimeout(() => settle({ status: BRANTA_STATUS.NONE }), BRANTA_HOLD_MS);
+      this._brantaAbort = controller;
 
-        // Cancel any earlier in-flight lookup, then bound the new one with
-        // a short timeout so a hung request cannot linger.
-        if (this._brantaAbort) this._brantaAbort.abort();
-        const controller = new AbortController();
-        this._brantaAbort = controller;
-        const timer = setTimeout(() => controller.abort(), BRANTA_LOOKUP_TIMEOUT_MS);
+      payment.branta = { status: BRANTA_STATUS.CHECKING };
+      // Each payment is a fresh object, so a late answer never lands on another.
+      const isCurrent = () => this.pendingPayment === payment;
+      const settle = (answer) => {
+        if (isCurrent() && payment.branta?.status === BRANTA_STATUS.CHECKING) payment.branta = answer;
+      };
 
-        // Identity guard: only paint the badge if this is still the exact
-        // same pending payment when the lookup resolves. Each new payment
-        // reassigns this.pendingPayment to a fresh object, so a late result
-        // can never land on a different payment.
-        const token = payment;
-
-        lookupBrantaVerification({ qrText, signal: controller.signal })
-          .then((verification) => {
-            if (!verification) return;
-            if (this.pendingPayment !== token) return;
-            // Adding the key on the reactive payload re-runs the sheet
-            // adapter (and the on-chain sheet prop), so the badge appears
-            // the moment the result lands.
-            this.pendingPayment.brantaVerification = verification;
-          })
-          .catch(() => { /* never surfaces; see utils/branta.js */ })
-          .finally(() => clearTimeout(timer));
-      } catch {
-        // Defensive: verification must never disrupt the payment path.
-      }
-    },
-
-    /**
-     * True when a bitcoin: URI carries both Branta ZK params, the only
-     * case an on-chain destination can be verified in strict mode. Mirrors
-     * Blitz Wallet's check.
-     */
-    hasBrantaParams(raw) {
-      if (!raw || typeof raw !== 'string') return false;
-      try {
-        const url = new URL(raw);
-        // The SDK's QR parser lowercases query keys, so match
-        // case-insensitively to agree with it and not skip a
-        // non-canonical-cased QR.
-        const keys = [...url.searchParams.keys()].map((k) => k.toLowerCase());
-        return keys.includes('branta_id') && keys.includes('branta_secret');
-      } catch {
-        return false;
-      }
+      checkWithBranta({ qrText, signal: controller.signal })
+        .then((answer) => {
+          if (answer.status === BRANTA_STATUS.TAMPERED) {
+            if (isCurrent() && !this.isSendingPayment && !this.sendDidSucceed) payment.branta = answer;
+            return;
+          }
+          settle(answer);
+        })
+        .finally(() => {
+          clearTimeout(timeout);
+          clearTimeout(hold);
+          // Never leave a payment checking: an abort settles it too.
+          settle({ status: BRANTA_STATUS.NONE });
+        });
     },
 
     /**
@@ -4847,10 +4832,22 @@ export default {
     },
 
     /**
-     * Abort and clear any in-flight Branta lookup. Called when a payment is
-     * abandoned (sheet cancelled, component unmounted) so a request for a
-     * payment the user dropped does not linger.
+     * Abort any in-flight Branta lookup, for a payment that was dropped or
+     * replaced (sheet cancelled, component unmounted, a newer payment).
      */
+    /** A payment's Branta verification, once verified; null otherwise. */
+    brantaVerificationOf(payment) {
+      return payment?.branta?.status === BRANTA_STATUS.VERIFIED ? payment.branta.verification : null;
+    },
+
+    /** What a verified payment keeps on its transaction; null when not verified. */
+    brantaReceipt(payment) {
+      const bv = this.brantaVerificationOf(payment);
+      if (!bv) return null;
+      const { name, logoUrl, logoLightUrl, description, verifyUrl } = bv;
+      return { name, logoUrl, logoLightUrl, description, verifyUrl };
+    },
+
     cancelBrantaLookup() {
       if (this._brantaAbort) {
         this._brantaAbort.abort();
@@ -5036,15 +5033,8 @@ export default {
         // address) is the Nostr rail. Plain Lightning sends carry none.
         const paymentSource = isPayoutProvider ? 'phone' : (isNostrSend ? 'nostr' : null);
 
-        // A Branta-verified destination (see runBrantaVerification) carries
-        // the merchant's real name/logo/verify link, resolved async while
-        // the confirm sheet was open. Only the fields Tx Details actually
-        // renders are kept — the longer `description` lives on the sheet,
-        // not the receipt.
-        const bv = this.pendingPayment?.brantaVerification;
-        const merchantVerification = bv
-          ? { name: bv.name || '', logoUrl: bv.logoUrl || '', logoLightUrl: bv.logoLightUrl || '', verifyUrl: bv.verifyUrl || '' }
-          : null;
+        // A verified business stays with the payment (History, details).
+        const merchantVerification = this.brantaReceipt(this.pendingPayment);
 
         if (invoiceContactId && !existingContact) {
           try {
@@ -5095,8 +5085,7 @@ export default {
               // and avatar; null for every other rail.
               label: counterpartyLabel,
               counterpartyAvatar,
-              // Branta-verified sends only — carries the receipt-ready
-              // merchant identity through to Tx Details.
+              // Branta-verified sends only: the business, for History and details.
               merchantVerification,
               // The wallet this send went out on, so the link is only ever
               // drained by that wallet's own tx-list refresh.
@@ -5196,6 +5185,7 @@ export default {
           showSaveContact: shouldOfferSave,
           successAction,
           verifyUrl,
+          verifiedBusiness: merchantVerification,
         });
 
         this.showSendSheet = false;
@@ -5623,7 +5613,7 @@ export default {
      * COMPLETED — promoting a contact off a payment that may yet
      * fail would be misleading.
      */
-    async openSendSuccess({ amount, recipient, status, showSaveContact, successAction = null, verifyUrl = null }) {
+    async openSendSuccess({ amount, recipient, status, showSaveContact, successAction = null, verifyUrl = null, verifiedBusiness = null }) {
       const isCompleted = status !== 'pending';
 
       // LUD-21 fiat-delivery poll. Owned here (one place) so every success
@@ -5651,6 +5641,9 @@ export default {
 
       this.sendSuccessAmount = Number(amount) || 0;
       this.sendSuccessRecipient = recipient || '';
+      this.sendSuccessVerified = verifiedBusiness
+        ? { name: verifiedBusiness.name || recipient || '', avatar: brantaAvatar(verifiedBusiness) }
+        : null;
       this.sendSuccessLabel = isCompleted
         ? this.$t('Payment Sent')
         : this.$t('Still sending…');
@@ -5699,6 +5692,7 @@ export default {
       this.sendSuccessAmount = 0;
       this.sendSuccessFiat = '';
       this.sendSuccessRecipient = '';
+      this.sendSuccessVerified = null;
       this.sendSuccessLabel = '';
       this.sendSuccessShowSaveContact = false;
       this.sendSuccessAction = null;

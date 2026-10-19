@@ -11,6 +11,9 @@
     into a clickable row with a chevron and animates the card body
     open/closed. Defaults to expanded; pass `:default-expanded="false"`
     for sections that should start collapsed (e.g. Advanced).
+
+    The `footer` slot is a short explanation under the card, the way a
+    grouped list explains its last setting, in place of an info button.
   -->
   <section class="settings-section">
     <header
@@ -36,8 +39,13 @@
       />
     </header>
     <q-slide-transition>
-      <div v-show="!collapsible || expanded" class="settings-section-card">
-        <slot />
+      <div v-show="!collapsible || expanded">
+        <div class="settings-section-card">
+          <slot />
+        </div>
+        <p v-if="$slots.footer" class="settings-section-footer">
+          <slot name="footer" />
+        </p>
       </div>
     </q-slide-transition>
   </section>
@@ -127,6 +135,14 @@ export default {
 
 .settings-section-chevron-expanded {
   transform: rotate(180deg);
+}
+
+.settings-section-footer {
+  margin: 8px 18px 0;
+  font-family: 'Manrope', sans-serif;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--text-secondary);
 }
 
 .settings-section-card {
