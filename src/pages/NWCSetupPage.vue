@@ -205,6 +205,7 @@ import {
 } from '../services/nwcPairing.js'
 import { buildAppHandoffUrl, isAndroidBrowser } from '../utils/publicCard.js'
 import { writeClipboardCrossPlatform } from '../utils/shopClipboard.js'
+import { openInAppBrowser } from '../utils/inAppBrowser.js'
 
 const HUB_ADDRESS_KEY = 'buhoGO_hub_address'
 
@@ -249,6 +250,9 @@ export default {
       fromChooser: false,
       // The connection came from approving or a code, not from the field.
       paired: false,
+      // The name a paired wallet gets when its own is not one (Coinos calls
+      // itself after its node, "ln.coinos.io").
+      pairedName: '',
       // utils/nwcPairing request while one is out; its state for the steps.
       pairing: null,
       pairingState: 'ready',
@@ -330,10 +334,11 @@ export default {
       return this.$t(NWC_REASON_I18N_KEYS[result.reason] || 'Invalid connection string format');
     },
 
-    useHandedConnection(connection, { paired = false } = {}) {
+    useHandedConnection(connection, { paired = false, name = '' } = {}) {
       if (this.isTesting || this.isAdding) return;
       this.closeScanner();
       this.paired = paired;
+      this.pairedName = name;
       this.nwcString = connection;
       this.testConnection();
     },
@@ -444,7 +449,7 @@ export default {
         const watch = new AbortController();
         this.coinosWatch = watch;
         waitForApproval(coinosConnection(request), { signal: watch.signal, ask: (connection) => this.askWallet(connection) })
-          .then((approved) => { if (approved) this.finishPairing(request, coinosConnection(request)); });
+          .then((approved) => { if (approved) this.finishPairing(request, coinosConnection(request), { name: 'Coinos' }); });
       } else {
         this.stopAnswerListening = this.listenForAnswer(request, (answer) => {
           this.finishPairing(request, connectionFor(request, answer));
@@ -466,10 +471,11 @@ export default {
      * An answer arrived: take the kept request (once, so a second answer
      * for the same approval does nothing) and test the connection.
      */
-    async finishPairing(request, connection) {
+    async finishPairing(request, connection, { name = '' } = {}) {
       const taken = await takePairing(request.id);
       if (!taken) return;
       this.stopWatching();
+      this.closeInAppBrowser();
       this.pairing = null;
       this.pairingState = 'ready';
       if (!connection) {
@@ -477,7 +483,7 @@ export default {
         this.step = 'connect';
         return;
       }
-      this.useHandedConnection(connection, { paired: true });
+      this.useHandedConnection(connection, { paired: true, name });
     },
 
     /** A Hub's return address, opened on this route or handed to this open sheet. */
@@ -535,16 +541,31 @@ export default {
     },
 
     /**
-     * Leave BuhoGO for a web page or a wallet app. In the app, a navigation
-     * to another site or scheme opens the system browser or that app;
-     * on the web a page that sends the person back opens in place.
+     * Open a wallet's page or app. In the app a web page opens in the
+     * in-app browser, so the person approves without leaving BuhoGO, and a
+     * wallet app's link opens that app. On the web a page that sends the
+     * person back opens in place, any other in a new tab.
      */
     openOutside(url, { sameTab = false } = {}) {
+      const webPage = /^https?:/i.test(url);
+      if (Capacitor.isNativePlatform() && webPage) {
+        openInAppBrowser(url);
+        return;
+      }
       if (Capacitor.isNativePlatform() || sameTab) {
         window.location.href = url;
         return;
       }
       window.open(url, '_blank', 'noopener');
+    },
+
+    /** The approval page is done with once the answer is here (where the system lets an app close it). */
+    async closeInAppBrowser() {
+      if (!Capacitor.isNativePlatform()) return;
+      try {
+        const { Browser } = await import('@capacitor/browser');
+        await Browser.close();
+      } catch { /* not open, or not closable on this system */ }
     },
 
     async pasteConnection() {
@@ -574,7 +595,7 @@ export default {
       try {
         const probe = await this.probeConnection(this.nwcString, { onWaiting: () => { this.isWaiting = true; } });
         this.probe = probe;
-        this.walletName = suggestedWalletName(probe, this.$t('Lightning wallet'));
+        this.walletName = this.pairedName || suggestedWalletName(probe, this.$t('Lightning wallet'));
         const existing = findSameWallet(this.wallets, probe);
         if (existing) {
           const sameConnection = parseNwcConnection(existing.nwcUrl).pubkey === probe.connectionPubkey;

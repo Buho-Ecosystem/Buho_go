@@ -178,7 +178,8 @@ try {
 
   // 6 · Coinos: approve there; BuhoGO asks until Coinos knows the connection.
   await page.getByRole('button', { name: 'Back', exact: true }).click();
-  await standIn(page, 'Coinos');
+  // Coinos calls itself after its node; BuhoGO names it Coinos.
+  await standIn(page, 'ln.coinos.io');
   await page.locator('[data-audit="connect-coinos"]').click();
   await page.getByText(/Coinos opens so you can approve BuhoGO/).waitFor();
   await shot(page, 'coinos-ready');
