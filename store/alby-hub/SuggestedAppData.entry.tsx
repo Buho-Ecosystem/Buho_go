@@ -36,6 +36,14 @@ import buhogo from "src/assets/suggested-apps/buhogo.png";
             </ExternalLink>{" "}
             in your browser
           </p>
+          <p className="text-muted-foreground">
+            Or start in BuhoGO: under{" "}
+            <span className="font-medium text-foreground">
+              Connect a wallet
+            </span>
+            , tap <span className="font-medium text-foreground">Alby Hub</span>{" "}
+            and approve BuhoGO here, without a code
+          </p>
         </>
       ),
       finalizeGuide: (
@@ -44,17 +52,39 @@ import buhogo from "src/assets/suggested-apps/buhogo.png";
             <h3 className="font-medium">In BuhoGO</h3>
             <ul className="list-inside list-decimal text-muted-foreground">
               <li>
-                On Home, tap{" "}
-                <span className="font-medium text-foreground">Send</span>
+                Open{" "}
+                <span className="font-medium text-foreground">Settings</span>{" "}
+                {">"}{" "}
+                <span className="font-medium text-foreground">
+                  Manage Wallets
+                </span>{" "}
+                {">"}{" "}
+                <span className="font-medium text-foreground">Add Wallet</span>{" "}
+                {">"}{" "}
+                <span className="font-medium text-foreground">
+                  Connect a wallet
+                </span>
+                . New to BuhoGO? Tap{" "}
+                <span className="font-medium text-foreground">
+                  More ways to start
+                </span>{" "}
+                {">"}{" "}
+                <span className="font-medium text-foreground">
+                  Connect a wallet you already use
+                </span>
               </li>
               <li>
-                Tap <span className="font-medium text-foreground">Scan</span>{" "}
-                and scan the QR code below. On the same phone, tap{" "}
+                Tap <span className="font-medium text-foreground">Alby Hub</span>
+                , then{" "}
+                <span className="font-medium text-foreground">
+                  Scan a code from your Hub
+                </span>
+                , and scan the QR code below. On the same phone, tap{" "}
                 <span className="font-medium text-foreground">
                   Copy Connection Secret
                 </span>{" "}
-                here, then{" "}
-                <span className="font-medium text-foreground">Paste</span>{" "}
+                here and{" "}
+                <span className="font-medium text-foreground">Paste</span> it
                 in BuhoGO
               </li>
               <li>
