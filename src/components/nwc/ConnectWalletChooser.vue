@@ -1,7 +1,9 @@
 <!--
   ConnectWalletChooser: the first step of "Connect a wallet". One short
   list from utils/connectWallets, each row named after the wallet and what
-  the person does there. Wallets on their way (`soon`) sit apart, as
+  the person does there. A choice that works only on some devices
+  (`offered`) shows where the page offers it (`offers`), with the page's
+  own line under it. Wallets on their way (`soon`) sit apart, as
   information: not a choice yet, so a tap only says what it is.
 -->
 <template>
@@ -12,7 +14,7 @@
 
     <div class="iform-group">
       <button
-        v-for="wallet in wallets"
+        v-for="wallet in shown"
         :key="wallet.id"
         type="button"
         class="iform-line connect-choice"
@@ -22,7 +24,7 @@
         <span class="iform-line-tile connect-choice__tile" aria-hidden="true">
           <ConnectWalletMark :wallet="wallet" />
         </span>
-        <span class="iform-line-label">{{ nameOf(wallet) }}<small>{{ $t(wallet.subtitle) }}</small></span>
+        <span class="iform-line-label">{{ nameOf(wallet) }}<small>{{ offers[wallet.id]?.subtitle || $t(wallet.subtitle) }}</small></span>
         <Icon icon="tabler:chevron-right" width="18" height="18" class="iform-line-chevron" :aria-hidden="true" />
       </button>
     </div>
@@ -58,6 +60,13 @@ import { availableWallets, upcomingWallets } from '../../utils/connectWallets.js
 export default {
   name: 'ConnectWalletChooser',
   components: { FormSheetStep, ConnectWalletMark },
+  props: {
+    /**
+     * Choices offered on this device, by id ({ subtitle } replaces the
+     * entry's line); an `offered` entry missing here is not shown.
+     */
+    offers: { type: Object, default: () => ({}) },
+  },
   emits: ['choose', 'back'],
   data() {
     return {
@@ -66,6 +75,9 @@ export default {
       // The upcoming wallet whose note is open.
       open: '',
     };
+  },
+  computed: {
+    shown() { return this.wallets.filter((wallet) => !wallet.offered || this.offers[wallet.id]); },
   },
   methods: {
     nameOf(wallet) { return wallet.name || this.$t(wallet.nameKey); },

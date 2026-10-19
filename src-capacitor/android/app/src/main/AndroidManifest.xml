@@ -2,6 +2,16 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
+    <!-- Package visibility (Android 11+): the apps that can open a
+         wallet connection request, so "Connect a wallet" can offer a wallet
+         app on this phone by name (WalletAppsPlugin). -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="nostr+walletauth" />
+        </intent>
+    </queries>
+
     <application
         android:allowBackup="true"
         android:icon="@mipmap/ic_launcher"
@@ -76,6 +86,17 @@
                 <data android:scheme="nostr+walletconnect" />
                 <data android:scheme="NOSTR+WALLETCONNECT" />
                 <data android:scheme="nostrwalletconnect" />
+            </intent-filter>
+
+            <!-- Deep link: back from a wallet app that approved BuhoGO
+                 ("return_to" of a connection request opened on this phone).
+                 Carries only the request id; the connection itself arrives
+                 over the wallet's relay. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="buhogo" android:host="nwc" />
             </intent-filter>
 
             <!-- App Link: a shared card link opens the card in BuhoGO.

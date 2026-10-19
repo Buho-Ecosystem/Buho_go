@@ -70,6 +70,7 @@ public class MainActivity extends BridgeActivity implements NfcAdapter.ReaderCal
         registerPlugin(AppLockPlugin.class);
         registerPlugin(FileExportPlugin.class);
         registerPlugin(LaunchPlugin.class);
+        registerPlugin(WalletAppsPlugin.class);
 
         if (SecureScreenPlugin.readPersistedPreference(this)) {
             getWindow().addFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE);

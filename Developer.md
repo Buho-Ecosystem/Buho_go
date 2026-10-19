@@ -124,9 +124,11 @@ REST with the wallet's admin key (`X-Api-Key`): `GET /api/v1/wallet`, `POST /api
 | --- | --- | --- |
 | `approve-and-return` | The wallet has an approval page that takes BuhoGO's key and sends the person back (Alby Hub's `/apps/new`, or any Hub that speaks it) | `approval.path`, `locations` and/or `selfHosted` (+ `locationLabel`, `ownLabel`, `ownHint`), `relays` it announces on, `note`; `appId` if its app store lists BuhoGO; `scanLabel` for a second way in |
 | `approve-known` | An approval page that takes the key but neither returns nor announces; the wallet serves every connection from one key and relay (Coinos) | `approval.url`, `path`, `walletPubkey`, `relay`, `note`; `keepName` if the wallet calls itself after a server |
+| `wallet-app` | A wallet app on the same phone opens BuhoGO's connection request (`nostr+walletauth`), approves it and answers on its relays (Alby Go, Blitz Wallet) | `offered: true`, `approval.note`. The page offers it per device (`services/walletApps.js`) |
 | `sheet` | The wallet has its own setup sheet (LNbits) | `route` |
 | `manual` | Paste, scan, or show a code (there is exactly one) | nothing else |
 | `soon: true` | On its way (BuhoHub): shown apart as a note, never a choice | `about` |
+| `offered: true` | A choice that works only on some devices; the page passes `offers` to the chooser, which may also replace the line under it | (any pairing) |
 
 To add a wallet:
 

@@ -155,8 +155,23 @@ function handleDeepLink(url, router, walletStore) {
   }
 }
 
-export default boot(async ({ router }) => {
+/**
+ * The router, with pushes held until its first navigation is done. A cold
+ * start's link arrives before it, and the first navigation (to the start
+ * screen) would otherwise replace the link's route.
+ */
+function afterFirstNavigation(router) {
+  let ready = typeof router.isReady !== 'function'
+  const started = ready ? Promise.resolve() : router.isReady().finally(() => { ready = true })
+  return {
+    get currentRoute() { return router.currentRoute },
+    push: (to) => (ready ? router.push(to) : started.then(() => router.push(to))),
+  }
+}
+
+export default boot(async ({ router: appRouter }) => {
   if (!Capacitor.isNativePlatform()) return
+  const router = afterFirstNavigation(appRouter)
 
   const { useWalletStore } = await import('../stores/wallet')
   const walletStore = useWalletStore()

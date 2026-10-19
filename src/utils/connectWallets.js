@@ -16,10 +16,14 @@
  *                       returns nor announces. The wallet serves every
  *                       connection from one known key and relay, so BuhoGO
  *                       asks until the wallet knows the key.
+ *   wallet-app          A wallet app on this phone opens BuhoGO's connection
+ *                       request, approves it and answers on its relays.
  *   sheet               Its own setup sheet (`route`).
  *   manual              Paste, scan, or show a code the wallet app approves.
  *
  * `soon: true` shows the wallet apart, as a note (`about`), not a choice.
+ * `offered: true` shows a choice only where it can work; the page decides
+ * per device (services/walletApps for the wallet app) and may name it.
  * Strings (`subtitle`, `about`, `approval.*Label`, `approval.note`) are i18n
  * keys; `name` is a brand and stays as it is.
  */
@@ -27,6 +31,7 @@
 export const PAIRING = Object.freeze({
   APPROVE_AND_RETURN: 'approve-and-return',
   APPROVE_KNOWN: 'approve-known',
+  WALLET_APP: 'wallet-app',
   SHEET: 'sheet',
   MANUAL: 'manual',
 });
@@ -39,6 +44,17 @@ export const PAIRING = Object.freeze({
 export const CODE_RELAYS = Object.freeze(['wss://relay.getalby.com', 'wss://relay2.getalby.com']);
 
 export const CONNECT_WALLETS = Object.freeze([
+  {
+    id: 'walletapp',
+    nameKey: 'Wallet app on this phone',
+    icon: 'tabler:device-mobile',
+    subtitle: 'Approve BuhoGO in the app. Nothing to copy.',
+    pairing: PAIRING.WALLET_APP,
+    offered: true,
+    approval: {
+      note: 'Your wallet app opens so you can approve BuhoGO. Nothing to copy.',
+    },
+  },
   {
     id: 'albyhub',
     name: 'Alby Hub',
@@ -115,7 +131,7 @@ export function upcomingWallets() {
   return CONNECT_WALLETS.filter((wallet) => wallet.soon);
 }
 
-/** True for wallets the person approves on the wallet's own page. */
+/** True for wallets the person approves on the wallet's own page or app. */
 export function pairsByApproval(wallet) {
-  return wallet?.pairing === PAIRING.APPROVE_AND_RETURN || wallet?.pairing === PAIRING.APPROVE_KNOWN;
+  return [PAIRING.APPROVE_AND_RETURN, PAIRING.APPROVE_KNOWN, PAIRING.WALLET_APP].includes(wallet?.pairing);
 }

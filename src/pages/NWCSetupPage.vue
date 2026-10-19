@@ -16,8 +16,14 @@
       <template v-if="!showScanner">
         <ConnectWalletChooser
           v-if="step === 'choose'"
+          :offers="chooserOffers"
           @choose="choose"
           @back="goBack"
+        />
+        <GetWalletAppStep
+          v-else-if="step === 'get-app'"
+          @back="step = 'choose'"
+          @show-code="showCode"
         />
         <WalletApproveStep
           v-else-if="step === 'approve' && approvingWallet"
@@ -194,10 +200,12 @@ import ConnectWalletChooser from '../components/nwc/ConnectWalletChooser.vue'
 import WalletApproveStep from '../components/nwc/WalletApproveStep.vue'
 import WalletAuthCodeStep from '../components/nwc/WalletAuthCodeStep.vue'
 import PairingReturnStep from '../components/nwc/PairingReturnStep.vue'
+import GetWalletAppStep from '../components/nwc/GetWalletAppStep.vue'
+import { findWalletApps, walletAppOffer } from '../services/walletApps.js'
 import {
-  CODE_REQUEST, PAIRING_TTL_MS, RETURN_PATH,
-  answerRelays, approvalUrl, connectionFor, createPairingRequest, knownConnection,
-  normalizeWalletUrl, readReturn, returnUrlFor, walletAuthUri,
+  APP_RETURN_URL, CODE_REQUEST, PAIRING_TTL_MS, RETURN_PATH,
+  answerRelays, approvalUrl, connectionFor, createPairingRequest, isPairingExpired, knownConnection,
+  normalizeWalletUrl, readReturn, returnRequestId, returnUrlFor, walletAuthUri,
 } from '../utils/nwcPairing.js'
 import { PAIRING, connectWallet, pairsByApproval } from '../utils/connectWallets.js'
 import {
@@ -219,7 +227,8 @@ function readOwnAddresses() {
  * Connect a wallet over Nostr Wallet Connect, test first and name second:
  *
  *   choose    — which wallet (utils/connectWallets: Alby Hub, Coinos, …)
- *   approve   — approve BuhoGO on the wallet's own page
+ *   approve   — approve BuhoGO on the wallet's own page or app
+ *   get-app   — web on Android: a wallet app on this phone needs BuhoGO for Android
  *   code      — a code the wallet app scans and approves (NWC-08)
  *   return    — a wallet sent the person back, but nothing waits for it here
  *   connect   — paste or scan; the secret stays hidden
@@ -248,6 +257,7 @@ export default {
     WalletApproveStep,
     WalletAuthCodeStep,
     PairingReturnStep,
+    GetWalletAppStep,
   },
   data() {
     return {
@@ -271,7 +281,11 @@ export default {
       addressError: '',
       codeUri: '',
       codeCopied: false,
+      // The step Back from the code returns to.
+      codeBackStep: '',
       canHandOff: false,
+      // services/walletApps: how a wallet app on this phone is offered, if at all.
+      walletApp: null,
       nwcString: '',
       walletName: '',
       errorMessage: '',
@@ -293,7 +307,18 @@ export default {
   computed: {
     ...mapState(useWalletStore, ['wallets']),
     approvingWallet() {
-      return connectWallet(this.approveWallet);
+      const wallet = connectWallet(this.approveWallet);
+      if (wallet?.pairing !== PAIRING.WALLET_APP) return wallet;
+      // Named after the app when there is one; Android asks which when several.
+      const names = this.walletApp?.names || [];
+      return { ...wallet, name: names.length === 1 ? names[0] : this.$t('Wallet app') };
+    },
+    /** Choices that depend on this device, for the chooser. */
+    chooserOffers() {
+      const offer = this.walletApp;
+      if (!offer) return {};
+      const subtitle = offer.mode === 'open' ? offer.names.join(', ') : this.$t('In BuhoGO for Android');
+      return { walletapp: { subtitle } };
     },
     relay() {
       return relayHost(this.probe?.normalized || parseNwcConnection(this.nwcString).normalized || '');
@@ -308,6 +333,7 @@ export default {
   // arrives here and is tested at once; while the sheet is open, a new one
   // replaces it.
   mounted() {
+    this.findWalletApp();
     this.stopListening = listenForNwcConnection((connection) => this.useHandedConnection(connection));
     this.stopReturnListening = listenForPairingReturn((query) => this.finishFromReturn(query));
     if (this.$route.path === RETURN_PATH) {
@@ -373,7 +399,14 @@ export default {
 
     backFromCode() {
       this.cancelPairing();
-      this.step = this.fromChooser ? 'connect' : 'choose';
+      this.step = this.codeBackStep || 'choose';
+    },
+
+    /** Whether this device can offer a wallet app on this phone (services/walletApps). */
+    async findWalletApp() {
+      const native = Capacitor.isNativePlatform();
+      const apps = await findWalletApps({ native });
+      this.walletApp = walletAppOffer({ apps, native, userAgent: navigator.userAgent });
     },
 
     /** A row in the chooser: its entry says how that wallet connects. */
@@ -382,6 +415,10 @@ export default {
       if (!wallet) return;
       this.fromChooser = true;
       this.errorMessage = '';
+      if (wallet.pairing === PAIRING.WALLET_APP && this.walletApp?.mode !== 'open') {
+        this.step = 'get-app';
+        return;
+      }
       if (wallet.pairing === PAIRING.SHEET) {
         this.$router.replace(wallet.route);
         return;
@@ -395,6 +432,8 @@ export default {
       this.addressError = '';
       this.restoreLocation(wallet);
       this.step = 'approve';
+      // A wallet app opens at once: the tap on its row is the tap that opens it.
+      if (wallet.pairing === PAIRING.WALLET_APP) this.openApproval();
     },
 
     /** The first location, or the person's own address when they used one before. */
@@ -434,6 +473,10 @@ export default {
         this.addressError = '';
         await this.startPairing(wallet.id, { baseUrl });
       }
+      if (wallet.pairing === PAIRING.WALLET_APP) {
+        this.openOutside(walletAuthUri(this.pairing, { returnTo: APP_RETURN_URL }));
+        return;
+      }
       // A wallet that sends the person back opens in place on the web;
       // one that does not gets its own tab.
       this.openOutside(approvalUrl(this.pairing, wallet), { sameTab: wallet.pairing === PAIRING.APPROVE_AND_RETURN });
@@ -441,6 +484,8 @@ export default {
 
     /** The code a wallet app scans (NWC-08), with a fresh request. */
     async showCode() {
+      // A new code from an expired one keeps where Back goes.
+      if (this.step !== 'code') this.codeBackStep = this.step;
       this.step = 'code';
       this.codeUri = '';
       this.codeCopied = false;
@@ -453,8 +498,10 @@ export default {
       this.codeCopied = true;
     },
 
+    /** The code, opened in a wallet app on this phone; in the app, the wallet may send the person back. */
     openCode() {
-      this.openOutside(this.codeUri, { sameTab: true });
+      const returnTo = Capacitor.isNativePlatform() ? APP_RETURN_URL : '';
+      this.openOutside(walletAuthUri(this.pairing, { returnTo }), { sameTab: true });
     },
 
     /**
@@ -464,12 +511,20 @@ export default {
      */
     async startPairing(walletId, { baseUrl = '' } = {}) {
       this.stopWatching();
-      const wallet = connectWallet(walletId);
       const request = createPairingRequest(walletId, { baseUrl });
       await savePairing(request);
+      this.watchPairing(request);
+    },
+
+    /** Wait for the answer to a kept request, until it expires. */
+    watchPairing(request) {
+      const wallet = connectWallet(request.walletId);
+      // A connection from an earlier pairing in this sheet is done with.
+      this.paired = false;
       this.pairing = request;
       this.pairingState = 'waiting';
-      this.expiryTimer = setTimeout(() => this.expirePairing(), PAIRING_TTL_MS);
+      const left = PAIRING_TTL_MS - (Date.now() - Number(request.createdAt));
+      this.expiryTimer = setTimeout(() => this.expirePairing(), Math.max(0, left));
       const name = wallet?.keepName ? wallet.name : '';
       if (wallet?.pairing === PAIRING.APPROVE_KNOWN) {
         const connection = knownConnection(request, wallet);
@@ -513,10 +568,21 @@ export default {
       this.useHandedConnection(connection, { paired: true, name });
     },
 
-    /** A wallet's return address, opened on this route or handed to this open sheet. */
+    /**
+     * A wallet's return address, opened on this route or handed to this
+     * open sheet. A Hub's return carries the answer; a wallet app's return
+     * only names the request, whose answer comes over the relay: it brings
+     * the waiting step back, also after the system closed BuhoGO.
+     */
     async finishFromReturn(query) {
       const answer = readReturn(query);
-      const request = answer && await loadPairing();
+      const requestId = answer?.requestId || returnRequestId(query);
+      if (!answer && requestId && (this.paired || this.isTesting || this.pairing?.id === requestId)) return;
+      const request = requestId && await loadPairing();
+      if (!answer && request?.id === requestId && !isPairingExpired(request)) {
+        this.resumePairing(request);
+        return;
+      }
       if (!answer || !request || request.id !== answer.requestId || (answer.state && answer.state !== request.state)) {
         // Answered already over the relay (this sheet is on it), or not
         // this BuhoGO's request.
@@ -528,6 +594,18 @@ export default {
       }
       const wallet = connectWallet(request.walletId);
       this.finishPairing(request, connectionFor(request, answer), { name: wallet?.keepName ? wallet.name : '' });
+    },
+
+    /** Back to the step a kept request belongs to, waiting for its answer. */
+    resumePairing(request) {
+      if (request.walletId === CODE_REQUEST) {
+        this.codeUri = walletAuthUri(request);
+        this.step = 'code';
+      } else {
+        this.approveWallet = request.walletId;
+        this.step = 'approve';
+      }
+      this.watchPairing(request);
     },
 
     /** From an Android browser, give the return address to the app. */
