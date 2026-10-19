@@ -1308,7 +1308,7 @@ export default {
 
       try {
         // The wallet's one relay connection, connected if it has none (#395).
-        rawProvider = await this.walletStore.nwcConnection(this.walletState.activeWalletId);
+        rawProvider = await this.walletStore.nwcConnection(this.walletStore.activeWalletId);
       } catch (error) {
         console.warn('Could not get provider for payment monitoring:', error.message);
         return;
