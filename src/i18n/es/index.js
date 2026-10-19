@@ -1705,7 +1705,7 @@ export default {
   "Generate a new seed phrase": "Generar nueva frase semilla",
   "Import existing seed phrase": "Importar frase semilla existente",
   "Self-Custodial Wallet": "Cartera Auto-custodiada",
-  "Custodial Wallet (NWC)": "Nostr Wallet Connect",
+  "Connect a wallet you already use": "Conecta una cartera que ya usas",
   "Locked": "Bloqueada",
   "Tap to unlock": "Toca para desbloquear",
   "Switched to {name}": "Cambiado a {name}",

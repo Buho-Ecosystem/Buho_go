@@ -1349,9 +1349,12 @@
           </div>
 
           <!-- LNbits Wallet Section -->
-          <div class="wallet-type-section q-mb-md">
+          <!-- Wallets that live elsewhere, one row per way to connect. Named by
+               what the person does, never by custody: a self-hosted Alby Hub
+               or LNbits node is not custodial. -->
+          <div class="wallet-type-section">
             <div class="section-label" :class="$q.dark.isActive ? 'table_col_dark' : 'table_col_light'">
-              {{ $t('LNbits Wallet') }}
+              {{ $t('Connect a wallet you already use') }}
             </div>
 
             <div
@@ -1373,14 +1376,6 @@
                 </div>
               </div>
               <Icon icon="tabler:chevron-right" width="18" height="18" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'" />
-            </div>
-
-          </div>
-
-          <!-- NWC Wallet Section -->
-          <div class="wallet-type-section">
-            <div class="section-label" :class="$q.dark.isActive ? 'table_col_dark' : 'table_col_light'">
-              {{ $t('Custodial Wallet (NWC)') }}
             </div>
 
             <div

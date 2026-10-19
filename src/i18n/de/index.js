@@ -1704,7 +1704,7 @@ export default {
   "Generate a new seed phrase": "Neue Seed-Phrase generieren",
   "Import existing seed phrase": "Bestehende Seed-Phrase importieren",
   "Self-Custodial Wallet": "Selbstverwaltetes Wallet",
-  "Custodial Wallet (NWC)": "Nostr Wallet Connect",
+  "Connect a wallet you already use": "Eine Wallet verbinden, die du schon nutzt",
   "Locked": "Gesperrt",
   "Tap to unlock": "Tippen zum Entsperren",
   "Switched to {name}": "Gewechselt zu {name}",
