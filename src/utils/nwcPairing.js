@@ -6,25 +6,25 @@
  * own key and relays. BuhoGO then builds the usual connection string, which
  * the connect sheet tests like any other.
  *
- * Three ways a wallet approves:
+ * The wallet approves in one of two ways, both described per wallet in
+ * utils/connectWallets.js (nothing here names a wallet):
  *
- *   hub     Alby Hub's approval page (`/apps/new?pubkey=…&return_to=…`). It
- *           sends the person back with its relays and key, and also
- *           publishes an info event addressed to our key on its relays.
- *   coinos  Coinos' approval page (`/apps/new?pubkey=…`). It neither returns
- *           nor announces; it serves every connection from one wallet key
- *           on one relay, so the connection is known up front and an answer
- *           to `get_info` is the approval.
- *   code    A `nostr+walletauth://` code (NWC-08, client-initiated
- *           connection) that a wallet app scans or opens. The wallet
- *           answers with its info event, addressed to our key, carrying our
- *           `state`.
+ *   approval page  The wallet's own page takes BuhoGO's public key. It either
+ *                  sends the person back and announces the connection on its
+ *                  relays (approve-and-return), or serves every connection
+ *                  from one known key, so the connection is known up front
+ *                  (approve-known).
+ *   code           A `nostr+walletauth://` request (NWC-08, client-initiated
+ *                  connection) that a wallet app scans or opens. The wallet
+ *                  answers with its info event, addressed to our key,
+ *                  carrying our `state`.
  *
  * Pure: no storage, no network. services/nwcPairing.js keeps and listens.
  */
 
 import { bytesToHex, generateSecretKey, getPublicKey, randomBytes } from 'nostr-core';
 import { parseNwcConnection } from './nwcConnection.js';
+import { CODE_RELAYS, PAIRING } from './connectWallets.js';
 
 /** How long an approval may take before the request is dropped. */
 export const PAIRING_TTL_MS = 15 * 60 * 1000;
@@ -40,24 +40,10 @@ export const REQUEST_METHODS = Object.freeze([
 export const OPTIONAL_METHODS = Object.freeze(['get_budget']);
 export const NOTIFICATION_TYPES = Object.freeze(['payment_received', 'payment_sent']);
 
-/**
- * Alby Hub's default relays: where a Hub publishes the info event for a new
- * connection, and where wallets that create connections on a Hub answer.
- * A code also asks to be answered here, so one listener serves both.
- */
-export const HUB_RELAYS = Object.freeze(['wss://relay.getalby.com', 'wss://relay2.getalby.com']);
+/** The request id of a code (no wallet chosen; any wallet app answers). */
+export const CODE_REQUEST = 'code';
 
-/** Alby Cloud: every cloud Hub is reached through this address. */
-export const ALBY_CLOUD_URL = 'https://my.albyhub.com';
-
-/** Coinos serves every connection from this key, on this relay. */
-export const COINOS = Object.freeze({
-  url: 'https://coinos.io',
-  walletPubkey: 'ba80990666ef0b6f4ba5059347beb13242921e54669e680064ca755256a1e3a6',
-  relay: 'wss://relay.coinos.io',
-});
-
-/** Where a Hub sends the person back (an https address; the app opens it). */
+/** Where a wallet sends the person back (an https address; the app opens it). */
 export const RETURN_URL = 'https://go.mybuho.de/nwc/connected';
 export const RETURN_PATH = '/nwc/connected';
 
@@ -72,30 +58,30 @@ const HOST_RE = /^(\[[0-9a-f:.]+\]|[a-z0-9-]+(\.[a-z0-9-]+)*)$/i;
  * A new pairing request: the connection's own key pair, a `state` the
  * wallet must echo, and an id the return address carries.
  *
- * @param {'hub'|'coinos'|'code'} kind
+ * @param {string} walletId utils/connectWallets id, or CODE_REQUEST
  * @param {object} [options]
- * @param {string} [options.hubUrl] the Hub's address (kind 'hub')
+ * @param {string} [options.baseUrl] where the approval page lives, when the wallet has several (a self-hosted Hub)
  * @param {number} [options.now]
  * @returns {PairingRequest}
  *
  * @typedef {object} PairingRequest
  * @property {string} id
- * @property {'hub'|'coinos'|'code'} kind
+ * @property {string} walletId
  * @property {string} secret   hex; the connection's secret, never shown
  * @property {string} pubkey   hex; what the wallet sees
  * @property {string} state    hex; echoed by wallets that follow NWC-08
- * @property {string} hubUrl
+ * @property {string} baseUrl
  * @property {number} createdAt
  */
-export function createPairingRequest(kind, { hubUrl = '', now = Date.now() } = {}) {
+export function createPairingRequest(walletId, { baseUrl = '', now = Date.now() } = {}) {
   const key = generateSecretKey();
   return {
     id: bytesToHex(randomBytes(12)),
-    kind,
+    walletId,
     secret: bytesToHex(key),
     pubkey: getPublicKey(key),
     state: bytesToHex(randomBytes(16)),
-    hubUrl,
+    baseUrl,
     createdAt: now,
   };
 }
@@ -106,11 +92,13 @@ export function isPairingExpired(request, now = Date.now()) {
 }
 
 /**
- * The address someone typed for their Hub, as an origin plus optional path;
- * '' when it is not one. A bare host gets https. Plain http stays possible
- * for a Hub at home (nothing secret travels in this link).
+ * An address someone typed for their own wallet server (a self-hosted
+ * Hub), as an origin plus optional path; '' when it is not one. A bare host
+ * gets https. Plain http stays possible for a server at home (nothing
+ * secret travels in the approval link). A pasted approval-page address
+ * (`approvalPath`) is trimmed back to the server.
  */
-export function normalizeHubUrl(input) {
+export function normalizeWalletUrl(input, { approvalPath = '' } = {}) {
   let text = String(input || '').trim();
   if (!text) return '';
   if (!/^[a-z][a-z0-9+.-]*:\/\//i.test(text)) text = `https://${text}`;
@@ -124,33 +112,42 @@ export function normalizeHubUrl(input) {
   // Browsers differ on what they accept as a host (some escape spaces), so
   // the host is checked here: a name, an IPv4 address or a bracketed IPv6.
   if (!HOST_RE.test(url.hostname)) return '';
-  const path = url.pathname.replace(/\/+$/, '').replace(/\/apps\/new$/i, '');
+  let path = url.pathname.replace(/\/+$/, '');
+  if (approvalPath && path.toLowerCase().endsWith(approvalPath.toLowerCase())) {
+    path = path.slice(0, -approvalPath.length).replace(/\/+$/, '');
+  }
   return `${url.protocol}//${url.host}${path}`;
 }
 
-/** The link that opens the Hub's approval page for this request. */
-export function hubApprovalUrl(request, { returnUrl = RETURN_URL } = {}) {
+/**
+ * The link that opens a wallet's approval page for this request. Every
+ * approval page gets BuhoGO's name and public key; one that sends the
+ * person back (approve-and-return) also gets the methods BuhoGO uses and
+ * the return address with the request id.
+ *
+ * @param {PairingRequest} request
+ * @param {object} wallet utils/connectWallets entry
+ */
+export function approvalUrl(request, wallet, { returnUrl = RETURN_URL } = {}) {
+  const { approval } = wallet;
   const params = new URLSearchParams();
-  params.set('app', 'buhogo');
+  if (approval.appId) params.set('app', approval.appId);
   params.set('name', APP_NAME);
   params.set('pubkey', request.pubkey);
-  params.set('request_methods', REQUEST_METHODS.join(' '));
-  params.set('notification_types', NOTIFICATION_TYPES.join(' '));
-  params.set('return_to', `${returnUrl}?request=${request.id}`);
-  return `${request.hubUrl || ALBY_CLOUD_URL}/apps/new?${params.toString().replace(/\+/g, '%20')}`;
-}
-
-/** The link that opens Coinos' approval page for this request. */
-export function coinosApprovalUrl(request) {
-  const params = new URLSearchParams({ name: APP_NAME, pubkey: request.pubkey });
-  return `${COINOS.url}/apps/new?${params.toString()}`;
+  if (wallet.pairing === PAIRING.APPROVE_AND_RETURN) {
+    params.set('request_methods', REQUEST_METHODS.join(' '));
+    params.set('notification_types', NOTIFICATION_TYPES.join(' '));
+    params.set('return_to', `${returnUrl}?request=${request.id}`);
+  }
+  const base = request.baseUrl || approval.url || approval.locations?.[0]?.url || '';
+  return `${base}${approval.path}?${params.toString().replace(/\+/g, '%20')}`;
 }
 
 /**
  * The `nostr+walletauth://` code a wallet scans (NWC-08). Wallets that
  * follow the older draft read the same parameters and ignore `state`.
  */
-export function walletAuthUri(request, { relays = HUB_RELAYS } = {}) {
+export function walletAuthUri(request, { relays = CODE_RELAYS } = {}) {
   const params = new URLSearchParams();
   for (const relay of relays) params.append('relay', relay);
   params.set('state', request.state);
@@ -178,9 +175,17 @@ export function connectionFor(request, { walletPubkey, relays, lud16 = '' }) {
   return parsed.ok ? parsed.normalized : '';
 }
 
-/** Coinos' connection for this request, known before it is approved. */
-export function coinosConnection(request) {
-  return connectionFor(request, { walletPubkey: COINOS.walletPubkey, relays: [COINOS.relay] });
+/** The connection of an approve-known wallet, known before it is approved. */
+export function knownConnection(request, wallet) {
+  return connectionFor(request, { walletPubkey: wallet.approval.walletPubkey, relays: [wallet.approval.relay] });
+}
+
+/**
+ * Where to listen for a wallet's answer to a request: the wallet's own
+ * announcing relays, or for a code the relays the code names.
+ */
+export function answerRelays(wallet) {
+  return wallet?.approval?.relays || CODE_RELAYS;
 }
 
 /**
@@ -189,15 +194,16 @@ export function coinosConnection(request) {
  *
  * The event must name our key (`p`). A wallet that sends `state` must send
  * ours. Alby Hub sends none, so an answer without it counts only when it
- * came over one of the Hub relays; anywhere else it could be anyone's.
- * The caller has checked the signature.
+ * came over one of `statelessRelays` (where such a Hub announces); anywhere
+ * else it could be anyone's. The caller has checked the signature.
  *
  * @param {object} event
  * @param {PairingRequest} request
  * @param {string} receivedOn the relay the event came from
+ * @param {{ statelessRelays?: string[] }} [options]
  * @returns {{ walletPubkey: string, relays: string[] } | null}
  */
-export function readWalletAnswer(event, request, receivedOn) {
+export function readWalletAnswer(event, request, receivedOn, { statelessRelays = CODE_RELAYS } = {}) {
   if (!event || event.kind !== WALLET_INFO_KIND) return null;
   if (!HEX_64_RE.test(String(event.pubkey || ''))) return null;
   const tags = Array.isArray(event.tags) ? event.tags : [];
@@ -207,7 +213,7 @@ export function readWalletAnswer(event, request, receivedOn) {
   const states = tag('state');
   if (states.length) {
     if (!states.includes(request.state)) return null;
-  } else if (!HUB_RELAYS.includes(stripSlash(receivedOn))) {
+  } else if (!statelessRelays.map(stripSlash).includes(stripSlash(receivedOn))) {
     return null;
   }
 
@@ -219,14 +225,14 @@ export function readWalletAnswer(event, request, receivedOn) {
 }
 
 /**
- * What a Hub put on the return address: its relays, its wallet key, a
+ * What a wallet put on the return address: its relays, its wallet key, a
  * Lightning address, and our request id. Reads Alby Hub's names (`relay`,
  * `pubkey`) and NWC-08's (`relay_url`, `wallet_pubkey`).
  *
  * @param {Record<string, string|string[]>} query the route's query
  * @returns {{ requestId: string, walletPubkey: string, relays: string[], lud16: string, state: string } | null}
  */
-export function readHubReturn(query) {
+export function readReturn(query) {
   const all = (name) => [].concat(query?.[name] ?? []).map(String).filter(Boolean);
   const requestId = all('request')[0] || '';
   const walletPubkey = (all('wallet_pubkey')[0] || all('pubkey')[0] || '').toLowerCase();
@@ -247,7 +253,7 @@ function stripSlash(url) {
 }
 
 /**
- * The in-app route for a return address a Hub opened
+ * The in-app route for a return address a wallet opened
  * (https://go.mybuho.de/nwc/connected?…), or null for any other link.
  * Repeated parameters (several relays) stay lists.
  *

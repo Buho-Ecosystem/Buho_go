@@ -30,7 +30,7 @@ const crypt = {
 
 test('a request is kept encrypted and read back', async () => {
   const storage = memoryStorage();
-  const request = createPairingRequest('hub', { hubUrl: 'https://hub.example.com' });
+  const request = createPairingRequest('albyhub', { baseUrl: 'https://hub.example.com' });
   await savePairing(request, { storage, encrypt: crypt.encrypt });
   assert.ok(!storage.dump().includes(request.secret), 'the secret is not stored in the clear');
   assert.deepEqual(await loadPairing({ storage, decrypt: crypt.decrypt, now: request.createdAt }), request);
@@ -46,7 +46,7 @@ test('an expired request is dropped', async () => {
 
 test('a request is taken once, even by two answers at the same time', async () => {
   const storage = memoryStorage();
-  const request = createPairingRequest('hub');
+  const request = createPairingRequest('albyhub');
   await savePairing(request, { storage, encrypt: crypt.encrypt });
   const options = { storage, decrypt: crypt.decrypt, now: request.createdAt };
   const [first, second] = await Promise.all([takePairing(request.id, options), takePairing(request.id, options)]);
@@ -56,7 +56,7 @@ test('a request is taken once, even by two answers at the same time', async () =
 
 test('a request with another id is not taken', async () => {
   const storage = memoryStorage();
-  const request = createPairingRequest('hub');
+  const request = createPairingRequest('albyhub');
   await savePairing(request, { storage, encrypt: crypt.encrypt });
   assert.equal(await takePairing('other', { storage, decrypt: crypt.decrypt, now: request.createdAt }), null);
   clearPairing({ storage });
@@ -116,7 +116,7 @@ test('a forged or foreign answer is ignored', async () => {
   assert.equal(answered, false);
 });
 
-test('Coinos counts as approved once it answers, or refuses as not allowed', async () => {
+test('an approve-known wallet counts as approved once it answers, or refuses as not allowed', async () => {
   const client = (behaviour) => () => ({ getInfo: async () => behaviour(), close() {} });
   assert.equal(await walletKnowsConnection('c', { createClient: client(() => ({ alias: 'coinos' })) }), true);
   assert.equal(await walletKnowsConnection('c', { createClient: client(() => { throw Object.assign(new Error('no'), { code: 'RESTRICTED' }); }) }), true);

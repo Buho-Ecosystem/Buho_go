@@ -20,12 +20,12 @@
           @back="goBack"
         />
         <WalletApproveStep
-          v-else-if="step === 'approve'"
-          v-model:hub-choice="hubChoice"
-          v-model:hub-address="hubAddress"
-          :wallet="approveWallet"
+          v-else-if="step === 'approve' && approvingWallet"
+          v-model:location="approveLocation"
+          v-model:own-address="ownAddress"
+          :wallet="approvingWallet"
           :state="pairingState"
-          :error="hubError"
+          :error="addressError"
           @open="openApproval"
           @cancel="cancelPairing"
           @restart="restartPairing"
@@ -195,10 +195,11 @@ import WalletApproveStep from '../components/nwc/WalletApproveStep.vue'
 import WalletAuthCodeStep from '../components/nwc/WalletAuthCodeStep.vue'
 import PairingReturnStep from '../components/nwc/PairingReturnStep.vue'
 import {
-  HUB_RELAYS, PAIRING_TTL_MS, RETURN_PATH, ALBY_CLOUD_URL,
-  coinosApprovalUrl, coinosConnection, connectionFor, createPairingRequest,
-  hubApprovalUrl, normalizeHubUrl, readHubReturn, returnUrlFor, walletAuthUri,
+  CODE_REQUEST, PAIRING_TTL_MS, RETURN_PATH,
+  answerRelays, approvalUrl, connectionFor, createPairingRequest, knownConnection,
+  normalizeWalletUrl, readReturn, returnUrlFor, walletAuthUri,
 } from '../utils/nwcPairing.js'
+import { PAIRING, connectWallet, pairsByApproval } from '../utils/connectWallets.js'
 import {
   clearPairing, listenForWalletAnswer, loadPairing, savePairing, takePairing,
   waitForApproval, walletKnowsConnection,
@@ -207,15 +208,20 @@ import { buildAppHandoffUrl, isAndroidBrowser } from '../utils/publicCard.js'
 import { writeClipboardCrossPlatform } from '../utils/shopClipboard.js'
 import { openInAppBrowser } from '../utils/inAppBrowser.js'
 
-const HUB_ADDRESS_KEY = 'buhoGO_hub_address'
+// Where each self-hosted wallet lives, by wallet id: { albyhub: 'https://…' }.
+const OWN_ADDRESSES_KEY = 'buhoGO_connect_addresses'
+
+function readOwnAddresses() {
+  try { return JSON.parse(localStorage.getItem(OWN_ADDRESSES_KEY) || '{}') || {} } catch { return {} }
+}
 
 /**
  * Connect a wallet over Nostr Wallet Connect, test first and name second:
  *
- *   choose    — which wallet: Alby Hub, Coinos, LNbits, another wallet
- *   approve   — approve BuhoGO on the wallet's own page (Alby Hub, Coinos)
+ *   choose    — which wallet (utils/connectWallets: Alby Hub, Coinos, …)
+ *   approve   — approve BuhoGO on the wallet's own page
  *   code      — a code the wallet app scans and approves (NWC-08)
- *   return    — a Hub sent the person back, but nothing waits for it here
+ *   return    — a wallet sent the person back, but nothing waits for it here
  *   connect   — paste or scan; the secret stays hidden
  *   found     — the wallet answered: its name, balance, address, what this
  *               connection may do and its spending limit; then Add wallet
@@ -250,16 +256,19 @@ export default {
       fromChooser: false,
       // The connection came from approving or a code, not from the field.
       paired: false,
-      // The name a paired wallet gets when its own is not one (Coinos calls
-      // itself after its node, "ln.coinos.io").
+      // The name a paired wallet gets when its own is not one (an entry's
+      // `keepName`, for wallets that call themselves after a server).
       pairedName: '',
       // utils/nwcPairing request while one is out; its state for the steps.
       pairing: null,
       pairingState: 'ready',
-      approveWallet: 'albyhub',
-      hubChoice: 'cloud',
-      hubAddress: '',
-      hubError: '',
+      // The utils/connectWallets id being approved, where it lives (a
+      // location id, or 'own' with the address typed), and what is wrong
+      // with that address.
+      approveWallet: '',
+      approveLocation: '',
+      ownAddress: '',
+      addressError: '',
       codeUri: '',
       codeCopied: false,
       canHandOff: false,
@@ -283,6 +292,9 @@ export default {
   },
   computed: {
     ...mapState(useWalletStore, ['wallets']),
+    approvingWallet() {
+      return connectWallet(this.approveWallet);
+    },
     relay() {
       return relayHost(this.probe?.normalized || parseNwcConnection(this.nwcString).normalized || '');
     },
@@ -364,31 +376,48 @@ export default {
       this.step = this.fromChooser ? 'connect' : 'choose';
     },
 
-    choose(wallet) {
+    /** A row in the chooser: its entry says how that wallet connects. */
+    choose(id) {
+      const wallet = connectWallet(id);
+      if (!wallet) return;
       this.fromChooser = true;
       this.errorMessage = '';
-      if (wallet === 'lnbits') {
-        this.$router.replace('/lnbits-setup');
+      if (wallet.pairing === PAIRING.SHEET) {
+        this.$router.replace(wallet.route);
         return;
       }
-      if (wallet === 'other') {
+      if (wallet.pairing === PAIRING.MANUAL) {
         this.step = 'connect';
         return;
       }
-      this.approveWallet = wallet;
+      this.approveWallet = wallet.id;
       this.pairingState = 'ready';
-      this.hubError = '';
-      if (wallet === 'albyhub') this.restoreHubAddress();
+      this.addressError = '';
+      this.restoreLocation(wallet);
       this.step = 'approve';
     },
 
-    restoreHubAddress() {
-      let saved = '';
-      try { saved = localStorage.getItem(HUB_ADDRESS_KEY) || ''; } catch { /* storage unavailable */ }
-      if (saved && saved !== ALBY_CLOUD_URL) {
-        this.hubChoice = 'own';
-        this.hubAddress = saved;
+    /** The first location, or the person's own address when they used one before. */
+    restoreLocation(wallet) {
+      const saved = wallet.approval.selfHosted ? readOwnAddresses()[wallet.id] : '';
+      this.ownAddress = saved || '';
+      this.approveLocation = saved ? 'own' : (wallet.approval.locations?.[0]?.id || '');
+    },
+
+    /** Where the approval page lives for this approval, or '' (and why) when the typed address is not one. */
+    approvalBase(wallet) {
+      if (this.approveLocation !== 'own') {
+        return wallet.approval.locations?.find((place) => place.id === this.approveLocation)?.url || '';
       }
+      const url = normalizeWalletUrl(this.ownAddress, { approvalPath: wallet.approval.path });
+      if (!url) {
+        this.addressError = this.$t("That doesn't look like a web address.");
+        return null;
+      }
+      try {
+        localStorage.setItem(OWN_ADDRESSES_KEY, JSON.stringify({ ...readOwnAddresses(), [wallet.id]: url }));
+      } catch { /* storage unavailable */ }
+      return url;
     },
 
     /**
@@ -397,23 +426,17 @@ export default {
      * same page for the same request.
      */
     async openApproval() {
+      const wallet = this.approvingWallet;
+      if (!pairsByApproval(wallet)) return;
       if (this.pairingState !== 'waiting') {
-        let hubUrl = '';
-        if (this.approveWallet === 'albyhub') {
-          hubUrl = this.hubChoice === 'cloud' ? ALBY_CLOUD_URL : normalizeHubUrl(this.hubAddress);
-          if (!hubUrl) {
-            this.hubError = this.$t("That doesn't look like a web address.");
-            return;
-          }
-          try { localStorage.setItem(HUB_ADDRESS_KEY, hubUrl); } catch { /* storage unavailable */ }
-        }
-        this.hubError = '';
-        await this.startPairing(this.approveWallet === 'albyhub' ? 'hub' : 'coinos', { hubUrl });
+        const baseUrl = this.approvalBase(wallet);
+        if (baseUrl === null) return;
+        this.addressError = '';
+        await this.startPairing(wallet.id, { baseUrl });
       }
-      const url = this.pairing.kind === 'hub' ? hubApprovalUrl(this.pairing) : coinosApprovalUrl(this.pairing);
-      // A Hub sends the person back to this address, so on the web it
-      // opens in place; Coinos does not return, so it gets its own tab.
-      this.openOutside(url, { sameTab: this.pairing.kind === 'hub' });
+      // A wallet that sends the person back opens in place on the web;
+      // one that does not gets its own tab.
+      this.openOutside(approvalUrl(this.pairing, wallet), { sameTab: wallet.pairing === PAIRING.APPROVE_AND_RETURN });
     },
 
     /** The code a wallet app scans (NWC-08), with a fresh request. */
@@ -421,7 +444,7 @@ export default {
       this.step = 'code';
       this.codeUri = '';
       this.codeCopied = false;
-      await this.startPairing('code');
+      await this.startPairing(CODE_REQUEST);
       this.codeUri = walletAuthUri(this.pairing);
     },
 
@@ -435,34 +458,38 @@ export default {
     },
 
     /**
-     * Make, keep and watch a request: the Hub and the code are answered by
-     * an info event on the Hub relays; Coinos answers once approved.
+     * Make, keep and watch a request. An approve-known wallet answers by
+     * knowing the connection; every other one (and a code) by an info
+     * event on its relays.
      */
-    async startPairing(kind, { hubUrl = '' } = {}) {
+    async startPairing(walletId, { baseUrl = '' } = {}) {
       this.stopWatching();
-      const request = createPairingRequest(kind, { hubUrl });
+      const wallet = connectWallet(walletId);
+      const request = createPairingRequest(walletId, { baseUrl });
       await savePairing(request);
       this.pairing = request;
       this.pairingState = 'waiting';
       this.expiryTimer = setTimeout(() => this.expirePairing(), PAIRING_TTL_MS);
-      if (kind === 'coinos') {
+      const name = wallet?.keepName ? wallet.name : '';
+      if (wallet?.pairing === PAIRING.APPROVE_KNOWN) {
+        const connection = knownConnection(request, wallet);
         const watch = new AbortController();
-        this.coinosWatch = watch;
-        waitForApproval(coinosConnection(request), { signal: watch.signal, ask: (connection) => this.askWallet(connection) })
-          .then((approved) => { if (approved) this.finishPairing(request, coinosConnection(request), { name: 'Coinos' }); });
+        this.knownWatch = watch;
+        waitForApproval(connection, { signal: watch.signal, ask: (c) => this.askWallet(c) })
+          .then((approved) => { if (approved) this.finishPairing(request, connection, { name }); });
       } else {
         this.stopAnswerListening = this.listenForAnswer(request, (answer) => {
-          this.finishPairing(request, connectionFor(request, answer));
+          this.finishPairing(request, connectionFor(request, answer), { name });
         });
       }
     },
 
     /** Listening for a wallet's answer, one method so a test harness can answer instead. */
     listenForAnswer(request, onAnswer) {
-      return listenForWalletAnswer(request, HUB_RELAYS, onAnswer);
+      return listenForWalletAnswer(request, answerRelays(connectWallet(request.walletId)), onAnswer);
     },
 
-    /** Does the wallet know this connection yet (Coinos)? Replaceable in a test harness. */
+    /** Does the wallet know this connection yet (approve-known)? Replaceable in a test harness. */
     askWallet(connection) {
       return walletKnowsConnection(connection, { createClient: (url) => new NWCClient({ nostrWalletConnectUrl: url }) });
     },
@@ -486,9 +513,9 @@ export default {
       this.useHandedConnection(connection, { paired: true, name });
     },
 
-    /** A Hub's return address, opened on this route or handed to this open sheet. */
+    /** A wallet's return address, opened on this route or handed to this open sheet. */
     async finishFromReturn(query) {
-      const answer = readHubReturn(query);
+      const answer = readReturn(query);
       const request = answer && await loadPairing();
       if (!answer || !request || request.id !== answer.requestId || (answer.state && answer.state !== request.state)) {
         // Answered already over the relay (this sheet is on it), or not
@@ -499,7 +526,8 @@ export default {
         this.step = 'return';
         return;
       }
-      this.finishPairing(request, connectionFor(request, answer));
+      const wallet = connectWallet(request.walletId);
+      this.finishPairing(request, connectionFor(request, answer), { name: wallet?.keepName ? wallet.name : '' });
     },
 
     /** From an Android browser, give the return address to the app. */
@@ -529,8 +557,8 @@ export default {
 
     stopWatching() {
       clearTimeout(this.expiryTimer);
-      this.coinosWatch?.abort();
-      this.coinosWatch = null;
+      this.knownWatch?.abort();
+      this.knownWatch = null;
       this.stopAnswerListening?.();
       this.stopAnswerListening = null;
     },

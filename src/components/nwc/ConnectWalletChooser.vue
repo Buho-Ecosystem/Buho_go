@@ -1,9 +1,8 @@
 <!--
   ConnectWalletChooser: the first step of "Connect a wallet". One short
-  list, each row named after the wallet and what the person does there:
-  the wallets with a one-tap approval first, then LNbits, then any other
-  wallet. BuhoHub sits apart, as information: it is not a choice yet, so a
-  tap only says what it is.
+  list from utils/connectWallets, each row named after the wallet and what
+  the person does there. Wallets on their way (`soon`) sit apart, as
+  information: not a choice yet, so a tap only says what it is.
 -->
 <template>
   <FormSheetStep :title="$t('Connect a wallet')" :subtitle="$t('Use a wallet you already have, here in BuhoGO.')" back @back="$emit('back')">
@@ -13,39 +12,39 @@
 
     <div class="iform-group">
       <button
-        v-for="option in options"
-        :key="option.id"
+        v-for="wallet in wallets"
+        :key="wallet.id"
         type="button"
         class="iform-line connect-choice"
-        :data-audit="`connect-${option.id}`"
-        @click="$emit('choose', option.id)"
+        :data-audit="`connect-${wallet.id}`"
+        @click="$emit('choose', wallet.id)"
       >
         <span class="iform-line-tile connect-choice__tile" aria-hidden="true">
-          <ConnectWalletMark :wallet="option.id" />
+          <ConnectWalletMark :wallet="wallet" />
         </span>
-        <span class="iform-line-label">{{ option.title }}<small>{{ option.subtitle }}</small></span>
+        <span class="iform-line-label">{{ nameOf(wallet) }}<small>{{ $t(wallet.subtitle) }}</small></span>
         <Icon icon="tabler:chevron-right" width="18" height="18" class="iform-line-chevron" :aria-hidden="true" />
       </button>
     </div>
 
-    <div class="iform-group connect-soon">
+    <div v-for="wallet in upcoming" :key="wallet.id" class="iform-group connect-soon">
       <button
         type="button"
         class="iform-line"
-        :aria-expanded="soonOpen"
-        aria-controls="connect-buhohub-about"
-        data-audit="connect-buhohub"
-        @click="soonOpen = !soonOpen"
+        :aria-expanded="open === wallet.id"
+        :aria-controls="`connect-about-${wallet.id}`"
+        :data-audit="`connect-${wallet.id}`"
+        @click="open = open === wallet.id ? '' : wallet.id"
       >
         <span class="iform-line-tile connect-choice__tile" aria-hidden="true">
-          <ConnectWalletMark wallet="buhohub" />
+          <ConnectWalletMark :wallet="wallet" />
         </span>
-        <span class="iform-line-label">BuhoHub</span>
+        <span class="iform-line-label">{{ nameOf(wallet) }}</span>
         <span class="connect-soon__label">{{ $t('Coming soon') }}</span>
-        <Icon icon="tabler:chevron-down" width="16" height="16" class="iform-line-chevron connect-soon__chevron" :class="{ 'is-open': soonOpen }" :aria-hidden="true" />
+        <Icon icon="tabler:chevron-down" width="16" height="16" class="iform-line-chevron connect-soon__chevron" :class="{ 'is-open': open === wallet.id }" :aria-hidden="true" />
       </button>
-      <p v-show="soonOpen" id="connect-buhohub-about" class="connect-soon__about">
-        {{ $t('The home base behind BuhoGO is on its way. Once it opens, you connect it here.') }}
+      <p v-show="open === wallet.id" :id="`connect-about-${wallet.id}`" class="connect-soon__about">
+        {{ $t(wallet.about) }}
       </p>
     </div>
   </FormSheetStep>
@@ -54,23 +53,22 @@
 <script>
 import FormSheetStep from '../sheets/FormSheetStep.vue';
 import ConnectWalletMark from './ConnectWalletMark.vue';
+import { availableWallets, upcomingWallets } from '../../utils/connectWallets.js';
 
 export default {
   name: 'ConnectWalletChooser',
   components: { FormSheetStep, ConnectWalletMark },
   emits: ['choose', 'back'],
   data() {
-    return { soonOpen: false };
+    return {
+      wallets: availableWallets(),
+      upcoming: upcomingWallets(),
+      // The upcoming wallet whose note is open.
+      open: '',
+    };
   },
-  computed: {
-    options() {
-      return [
-        { id: 'albyhub', title: 'Alby Hub', subtitle: this.$t('Approve BuhoGO in your Hub') },
-        { id: 'coinos', title: 'Coinos', subtitle: this.$t('Approve BuhoGO in Coinos') },
-        { id: 'lnbits', title: 'LNbits', subtitle: this.$t('Server address and key') },
-        { id: 'other', title: this.$t('Another wallet'), subtitle: this.$t('Scan, paste or show a code') },
-      ];
-    },
+  methods: {
+    nameOf(wallet) { return wallet.name || this.$t(wallet.nameKey); },
   },
 };
 </script>

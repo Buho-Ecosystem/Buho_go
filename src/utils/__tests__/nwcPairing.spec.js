@@ -8,22 +8,26 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { getPublicKey, hexToBytes } from 'nostr-core';
 import {
-  ALBY_CLOUD_URL, COINOS, HUB_RELAYS, PAIRING_TTL_MS, RETURN_PATH,
-  coinosApprovalUrl, coinosConnection, connectionFor, createPairingRequest,
-  hubApprovalUrl, isPairingExpired, normalizeHubUrl, pairingReturnRoute,
-  readHubReturn, readWalletAnswer, returnUrlFor, walletAuthUri,
+  CODE_REQUEST, PAIRING_TTL_MS, RETURN_PATH,
+  answerRelays, approvalUrl, connectionFor, createPairingRequest, isPairingExpired,
+  knownConnection, normalizeWalletUrl, pairingReturnRoute, readReturn,
+  readWalletAnswer, returnUrlFor, walletAuthUri,
 } from '../nwcPairing.js';
+import { CODE_RELAYS, PAIRING, connectWallet } from '../connectWallets.js';
 import { parseNwcConnection } from '../nwcConnection.js';
 
+const hubWallet = connectWallet('albyhub');
+const coinosWallet = connectWallet('coinos');
+
 const WALLET = 'a'.repeat(64);
-const request = createPairingRequest('code', { now: 1_000_000 });
+const request = createPairingRequest(CODE_REQUEST, { now: 1_000_000 });
 
 test('a request has its own key pair, a state and an id', () => {
   assert.match(request.secret, /^[a-f0-9]{64}$/);
   assert.equal(request.pubkey, getPublicKey(hexToBytes(request.secret)));
   assert.match(request.state, /^[a-f0-9]{32}$/, 'at least 128 bits, lower-case hex (NWC-08)');
   assert.match(request.id, /^[a-f0-9]{24}$/);
-  const other = createPairingRequest('code');
+  const other = createPairingRequest(CODE_REQUEST);
   assert.notEqual(other.secret, request.secret);
   assert.notEqual(other.state, request.state);
 });
@@ -39,7 +43,7 @@ test('the code names BuhoGO, its key, the state and what it asks for, never the 
   assert.ok(uri.startsWith(`nostr+walletauth://${request.pubkey}?`));
   assert.ok(!uri.includes(request.secret));
   const params = new URL(uri.replace('nostr+walletauth://', 'https://')).searchParams;
-  assert.deepEqual(params.getAll('relay'), HUB_RELAYS);
+  assert.deepEqual(params.getAll('relay'), CODE_RELAYS);
   assert.equal(params.get('state'), request.state);
   assert.equal(params.get('name'), 'BuhoGO');
   assert.equal(params.get('request_methods'), 'pay_invoice make_invoice lookup_invoice get_balance get_info list_transactions');
@@ -48,29 +52,38 @@ test('the code names BuhoGO, its key, the state and what it asks for, never the 
   assert.ok(!uri.includes('+pay'), 'spaces as %20, not +');
 });
 
-test('the Hub link carries our key and a return address with the request id', () => {
-  const hub = { ...request, kind: 'hub', hubUrl: 'https://hub.example.com' };
-  const url = new URL(hubApprovalUrl(hub));
+test('an approve-and-return link carries our key, the methods and a return address with the request id', () => {
+  const hub = { ...request, walletId: 'albyhub', baseUrl: 'https://hub.example.com' };
+  const url = new URL(approvalUrl(hub, hubWallet));
   assert.equal(url.origin + url.pathname, 'https://hub.example.com/apps/new');
   assert.equal(url.searchParams.get('pubkey'), request.pubkey);
   assert.equal(url.searchParams.get('app'), 'buhogo');
   assert.equal(url.searchParams.get('name'), 'BuhoGO');
   assert.equal(url.searchParams.get('return_to'), `https://go.mybuho.de/nwc/connected?request=${request.id}`);
   assert.ok(!url.href.includes(request.secret));
-  assert.ok(hubApprovalUrl({ ...hub, hubUrl: '' }).startsWith(`${ALBY_CLOUD_URL}/apps/new?`), 'Alby Cloud when no address');
+  assert.equal(url.searchParams.get('request_methods'), 'pay_invoice make_invoice lookup_invoice get_balance get_info list_transactions');
+  assert.ok(approvalUrl({ ...hub, baseUrl: '' }, hubWallet).startsWith('https://my.albyhub.com/apps/new?'), 'the first location when no address');
 });
 
-test('the Coinos link carries our key only, and its connection is known up front', () => {
-  const url = new URL(coinosApprovalUrl(request));
+test('an approve-known link carries our key only, and its connection is known up front', () => {
+  const url = new URL(approvalUrl(request, coinosWallet));
   assert.equal(url.href.split('?')[0], 'https://coinos.io/apps/new');
+  assert.deepEqual([...url.searchParams.keys()], ['name', 'pubkey']);
   assert.equal(url.searchParams.get('pubkey'), request.pubkey);
-  const parsed = parseNwcConnection(coinosConnection(request));
-  assert.equal(parsed.pubkey, COINOS.walletPubkey);
-  assert.deepEqual(parsed.relays, [COINOS.relay]);
+  const parsed = parseNwcConnection(knownConnection(request, coinosWallet));
+  assert.equal(parsed.pubkey, coinosWallet.approval.walletPubkey);
+  assert.deepEqual(parsed.relays, [coinosWallet.approval.relay]);
   assert.equal(parsed.secret, request.secret);
 });
 
-test('a typed Hub address becomes an origin with https by default', () => {
+test('a wallet is answered for on its own relays; a code on the code relays', () => {
+  assert.deepEqual(answerRelays(hubWallet), hubWallet.approval.relays);
+  assert.deepEqual(answerRelays(null), CODE_RELAYS);
+  assert.equal(coinosWallet.pairing, PAIRING.APPROVE_KNOWN);
+});
+
+test('a typed address becomes an origin with https by default', () => {
+  const normalizeHubUrl = (text) => normalizeWalletUrl(text, { approvalPath: '/apps/new' });
   assert.equal(normalizeHubUrl('hub.example.com'), 'https://hub.example.com');
   assert.equal(normalizeHubUrl(' https://hub.example.com/ '), 'https://hub.example.com');
   assert.equal(normalizeHubUrl('https://hub.example.com/apps/new'), 'https://hub.example.com');
@@ -108,23 +121,24 @@ test('an answer with state must carry ours, and may move the connection to its r
   assert.equal(readWalletAnswer(answer([['p', request.pubkey], ['state', 'f'.repeat(32)]]), request, 'wss://relay.getalby.com'), null);
 });
 
-test('an answer without state counts only from a Hub relay (Alby Hub sends none)', () => {
+test('an answer without state counts only from the relays the wallet announces on (Alby Hub sends none)', () => {
   assert.deepEqual(
     readWalletAnswer(answer([['p', request.pubkey]]), request, 'wss://relay2.getalby.com/'),
     { walletPubkey: WALLET, relays: ['wss://relay2.getalby.com'] },
   );
   assert.equal(readWalletAnswer(answer([['p', request.pubkey]]), request, 'wss://relay.other.example'), null);
+  assert.ok(readWalletAnswer(answer([['p', request.pubkey]]), request, 'wss://relay.other.example', { statelessRelays: ['wss://relay.other.example'] }));
 });
 
-test('a Hub return gives the wallet key, relays and Lightning address', () => {
-  const back = readHubReturn({ request: request.id, relay: ['wss://relay.getalby.com', 'wss://relay2.getalby.com'], pubkey: WALLET, lud16: 'maria@getalby.com' });
+test('a return gives the wallet key, relays and Lightning address', () => {
+  const back = readReturn({ request: request.id, relay: ['wss://relay.getalby.com', 'wss://relay2.getalby.com'], pubkey: WALLET, lud16: 'maria@getalby.com' });
   assert.deepEqual(back, { requestId: request.id, walletPubkey: WALLET, relays: ['wss://relay.getalby.com', 'wss://relay2.getalby.com'], lud16: 'maria@getalby.com', state: '' });
-  const nwc08 = readHubReturn({ request: request.id, relay_url: 'wss://r.example', wallet_pubkey: WALLET, state: request.state });
+  const nwc08 = readReturn({ request: request.id, relay_url: 'wss://r.example', wallet_pubkey: WALLET, state: request.state });
   assert.equal(nwc08.walletPubkey, WALLET);
   assert.deepEqual(nwc08.relays, ['wss://r.example']);
   assert.equal(nwc08.state, request.state);
-  assert.equal(readHubReturn({ relay: 'wss://r.example', pubkey: WALLET }), null, 'no request id');
-  assert.equal(readHubReturn({ request: request.id, pubkey: WALLET }), null, 'no relay');
+  assert.equal(readReturn({ relay: 'wss://r.example', pubkey: WALLET }), null, 'no request id');
+  assert.equal(readReturn({ request: request.id, pubkey: WALLET }), null, 'no relay');
 });
 
 test('only the return address on go.mybuho.de becomes the return route', () => {
