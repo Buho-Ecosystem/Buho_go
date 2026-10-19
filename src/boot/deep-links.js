@@ -1,6 +1,6 @@
 import { offerKioskPayment } from '../services/kioskPaymentIntake.js';
 import { offerAddressRequest } from '../services/addressRequestIntake.js';
-import { offerNwcConnection } from '../services/nwcConnectionIntake.js';
+import { offerNwcConnection, offerPairingReturn } from '../services/nwcConnectionIntake.js';
 import { boot } from 'quasar/wrappers'
 import { Notify } from 'quasar'
 import { Capacitor } from '@capacitor/core'
@@ -22,7 +22,8 @@ const t = (key) => i18n.global.t(key)
  * Registers BuhoGO as a handler for lightning:, bitcoin:, lnurlp://, lnurlw://
  * URI schemes so it appears in the Android app chooser alongside other Lightning wallets,
  * and as an App Link handler for https://go.mybuho.de/p/… so a shared card opens
- * the card instead of the browser. NIP-21 identities (nostr:npub… /
+ * the card instead of the browser (and for /nwc/connected, where a Hub sends
+ * the person back after approving BuhoGO). NIP-21 identities (nostr:npub… /
  * nostr:nprofile…, e.g. the card QR scanned with the system camera) open the
  * same card screen, which offers both Pay and Save (issue #301).
  *
@@ -93,8 +94,10 @@ function handleDeepLink(url, router, walletStore) {
   if (offerKioskPayment(url, walletStore, router)) return
 
   // A wallet's connection link ("Connect" in Alby Hub and others) adds that
-  // wallet. Needs no wallet yet, so it comes before the wallet guard.
+  // wallet, and so does a Hub's return after approving BuhoGO. Neither needs
+  // a wallet yet, so both come before the wallet guard.
   if (offerNwcConnection(url, router)) return
+  if (offerPairingReturn(url, router)) return
 
   // A shared card is not a payment, and neither is a Nostr identity. Both
   // open the same page the browser would have shown, natively, where paying

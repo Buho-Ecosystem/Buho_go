@@ -1,7 +1,8 @@
 <!--
   NWCConnectStep: get a Nostr Wallet Connect connection in, by Paste or by
-  Scan. The connection string carries a secret that can spend, so the
-  field is hidden like a password, with a reveal toggle. Nothing is named
+  Scan, or switch to showing a code the wallet approves (offerCode). The
+  connection string carries a secret that can spend, so the field is
+  hidden like a password, with a reveal toggle. Nothing is named
   here: Continue tests the connection first, and the wallet names itself.
 -->
 <template>
@@ -71,6 +72,9 @@
           {{ waiting ? $t('Waiting for your wallet…') : $t('Checking…') }}
         </template>
       </q-btn>
+      <button v-if="offerCode && !busy" type="button" class="iform-secondary" @click="$emit('show-code')">
+        {{ $t('Let your wallet scan a code instead') }}
+      </button>
     </template>
   </FormSheetStep>
 </template>
@@ -89,8 +93,10 @@ export default {
     busy: { type: Boolean, default: false },
     /** The wallet did not answer at once; it may be an app waking up. */
     waiting: { type: Boolean, default: false },
+    /** Offer the other way round: BuhoGO shows a code the wallet approves. */
+    offerCode: { type: Boolean, default: false },
   },
-  emits: ['update:modelValue', 'paste', 'scan', 'continue', 'back'],
+  emits: ['update:modelValue', 'paste', 'scan', 'continue', 'back', 'show-code'],
   data() {
     return { revealed: false };
   },

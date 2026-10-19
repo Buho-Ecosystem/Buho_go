@@ -134,6 +134,15 @@ test('kiosk mode blocks wallet connection links', async () => {
   assert.equal(nwcIntake.takeNwcConnection(), '');
 });
 
+test('a Hub return address opens the connect sheet, even with no wallet', async () => {
+  const h = harness();
+  await h.start();
+  h.open(`https://go.mybuho.de/nwc/connected?request=abc123&relay=wss%3A%2F%2Frelay.getalby.com&pubkey=${'a'.repeat(64)}`);
+  assert.deepEqual(h.pushes, [{ path: '/nwc/connected', query: { request: 'abc123', relay: 'wss://relay.getalby.com', pubkey: 'a'.repeat(64) } }]);
+  assert.equal(h.walletStore.pendingDeepLink, null, 'not a payment');
+  assert.equal(h.notices.length, 0);
+});
+
 test('kiosk mode still blocks card links', async () => {
   const h = harness({ kiosk: true });
   await h.start();

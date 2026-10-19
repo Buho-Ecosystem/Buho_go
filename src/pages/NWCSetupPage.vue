@@ -6,27 +6,63 @@
   <q-page class="iform-sheet-page">
     <div class="iform-sheet-scrim" aria-hidden="true" @click="goBack"></div>
 
-    <div class="iform-sheet" role="dialog" aria-modal="true" :aria-label="$t('Connect NWC Wallet')">
+    <div class="iform-sheet" role="dialog" aria-modal="true" :aria-label="$t('Connect a wallet')">
       <div class="iform-sheet-grab" aria-hidden="true"></div>
 
-      <!-- Connect, then the wallet's own answer: what it is (found), that
-           it is already here (duplicate), or which part did not answer
-           (problem). Steps of this one sheet, never dialogs on top of it. -->
+      <!-- Choose how, connect, then the wallet's own answer: what it is
+           (found), that it is already here (duplicate), or which part did
+           not answer (problem). Steps of this one sheet, never dialogs on
+           top of it. -->
       <template v-if="!showScanner">
+        <ConnectWalletChooser
+          v-if="step === 'choose'"
+          @choose="choose"
+          @back="goBack"
+        />
+        <WalletApproveStep
+          v-else-if="step === 'approve' && approvingWallet"
+          v-model:location="approveLocation"
+          v-model:own-address="ownAddress"
+          :wallet="approvingWallet"
+          :state="pairingState"
+          :error="addressError"
+          @open="openApproval"
+          @cancel="cancelPairing"
+          @restart="restartPairing"
+          @scan="scanFromApprove"
+          @back="backToChooser"
+        />
+        <WalletAuthCodeStep
+          v-else-if="step === 'code'"
+          :uri="codeUri"
+          :expired="pairingState === 'expired'"
+          :copied="codeCopied"
+          @copy="copyCode"
+          @open="openCode"
+          @restart="showCode"
+          @back="backFromCode"
+        />
+        <PairingReturnStep
+          v-else-if="step === 'return'"
+          :hand-off="canHandOff"
+          @hand-off="handOffToApp"
+          @restart="backToChooser"
+          @back="goBack"
+        />
         <NWCWalletFound
-          v-if="step === 'found'"
+          v-else-if="step === 'found'"
           v-model:name="walletName"
           :probe="probe"
           :relay="relay"
           :busy="isAdding"
-          @back="step = 'connect'"
+          @back="backToInput"
           @add="addConnectedWallet"
         />
         <NWCDuplicateStep
           v-else-if="step === 'duplicate'"
           :existing="duplicate.wallet"
           :same-connection="duplicate.sameConnection"
-          @back="step = 'connect'"
+          @back="backToInput"
           @open="openExisting"
           @add-anyway="step = 'found'"
         />
@@ -36,7 +72,7 @@
           :relay="relay"
           :busy="isTesting"
           @retry="testConnection"
-          @edit="step = 'connect'"
+          @edit="backToInput"
         />
         <NWCConnectStep
           v-else
@@ -44,10 +80,12 @@
           :error="errorMessage"
           :busy="isTesting"
           :waiting="isWaiting"
-          @back="goBack"
+          :offer-code="fromChooser"
+          @back="backFromConnect"
           @paste="pasteConnection"
           @scan="openScanner"
           @continue="testConnection"
+          @show-code="showCode"
         />
       </template>
 
@@ -149,11 +187,41 @@ import { findSameWallet, relayHost, suggestedWalletName } from '../utils/nwcWall
 import { NWC_ERROR } from '../utils/nwcErrors.js'
 import { probeNwcConnection } from '../services/nwcProbe.js'
 import { readClipboardCrossPlatform } from '../utils/shopClipboard.js'
-import { listenForNwcConnection, takeNwcConnection } from '../services/nwcConnectionIntake.js'
+import { listenForNwcConnection, listenForPairingReturn, takeNwcConnection } from '../services/nwcConnectionIntake.js'
+import { NWCClient } from '@getalby/sdk'
+import { Capacitor } from '@capacitor/core'
+import ConnectWalletChooser from '../components/nwc/ConnectWalletChooser.vue'
+import WalletApproveStep from '../components/nwc/WalletApproveStep.vue'
+import WalletAuthCodeStep from '../components/nwc/WalletAuthCodeStep.vue'
+import PairingReturnStep from '../components/nwc/PairingReturnStep.vue'
+import {
+  CODE_REQUEST, PAIRING_TTL_MS, RETURN_PATH,
+  answerRelays, approvalUrl, connectionFor, createPairingRequest, knownConnection,
+  normalizeWalletUrl, readReturn, returnUrlFor, walletAuthUri,
+} from '../utils/nwcPairing.js'
+import { PAIRING, connectWallet, pairsByApproval } from '../utils/connectWallets.js'
+import {
+  clearPairing, listenForWalletAnswer, loadPairing, savePairing, takePairing,
+  waitForApproval, walletKnowsConnection,
+} from '../services/nwcPairing.js'
+import { buildAppHandoffUrl, isAndroidBrowser } from '../utils/publicCard.js'
+import { writeClipboardCrossPlatform } from '../utils/shopClipboard.js'
+import { openInAppBrowser } from '../utils/inAppBrowser.js'
+
+// Where each self-hosted wallet lives, by wallet id: { albyhub: 'https://…' }.
+const OWN_ADDRESSES_KEY = 'buhoGO_connect_addresses'
+
+function readOwnAddresses() {
+  try { return JSON.parse(localStorage.getItem(OWN_ADDRESSES_KEY) || '{}') || {} } catch { return {} }
+}
 
 /**
  * Connect a wallet over Nostr Wallet Connect, test first and name second:
  *
+ *   choose    — which wallet (utils/connectWallets: Alby Hub, Coinos, …)
+ *   approve   — approve BuhoGO on the wallet's own page
+ *   code      — a code the wallet app scans and approves (NWC-08)
+ *   return    — a wallet sent the person back, but nothing waits for it here
  *   connect   — paste or scan; the secret stays hidden
  *   found     — the wallet answered: its name, balance, address, what this
  *               connection may do and its spending limit; then Add wallet
@@ -161,6 +229,12 @@ import { listenForNwcConnection, takeNwcConnection } from '../services/nwcConnec
  *   problem   — the relay or the wallet did not answer, and which one
  *
  * Nothing is saved until Add wallet; the store reuses the test result.
+ * Approving and the code never show a secret: BuhoGO makes the
+ * connection's key pair, the wallet answers with its own key and relays
+ * (utils/nwcPairing), and the result is tested like a pasted one.
+ *
+ * Routes: /connect-wallet starts at choose, /nwc-setup at connect (links
+ * and Home hand a connection over), /nwc/connected is a Hub's return.
  */
 export default {
   name: 'NWCSetupPage',
@@ -170,10 +244,34 @@ export default {
     NWCWalletFound,
     NWCDuplicateStep,
     NWCConnectProblem,
+    ConnectWalletChooser,
+    WalletApproveStep,
+    WalletAuthCodeStep,
+    PairingReturnStep,
   },
   data() {
     return {
       step: 'connect',
+      // Reached from the chooser: Back returns there, and the code is offered.
+      fromChooser: false,
+      // The connection came from approving or a code, not from the field.
+      paired: false,
+      // The name a paired wallet gets when its own is not one (an entry's
+      // `keepName`, for wallets that call themselves after a server).
+      pairedName: '',
+      // utils/nwcPairing request while one is out; its state for the steps.
+      pairing: null,
+      pairingState: 'ready',
+      // The utils/connectWallets id being approved, where it lives (a
+      // location id, or 'own' with the address typed), and what is wrong
+      // with that address.
+      approveWallet: '',
+      approveLocation: '',
+      ownAddress: '',
+      addressError: '',
+      codeUri: '',
+      codeCopied: false,
+      canHandOff: false,
       nwcString: '',
       walletName: '',
       errorMessage: '',
@@ -194,6 +292,9 @@ export default {
   },
   computed: {
     ...mapState(useWalletStore, ['wallets']),
+    approvingWallet() {
+      return connectWallet(this.approveWallet);
+    },
     relay() {
       return relayHost(this.probe?.normalized || parseNwcConnection(this.nwcString).normalized || '');
     },
@@ -208,11 +309,23 @@ export default {
   // replaces it.
   mounted() {
     this.stopListening = listenForNwcConnection((connection) => this.useHandedConnection(connection));
+    this.stopReturnListening = listenForPairingReturn((query) => this.finishFromReturn(query));
+    if (this.$route.path === RETURN_PATH) {
+      this.finishFromReturn(this.$route.query);
+      return;
+    }
     const handed = takeNwcConnection();
-    if (handed) this.useHandedConnection(handed);
+    if (handed) {
+      this.useHandedConnection(handed);
+    } else if (this.$route.path === '/connect-wallet') {
+      this.step = 'choose';
+    }
   },
   beforeUnmount() {
     this.stopListening?.();
+    this.stopReturnListening?.();
+    // The kept request stays: a Hub's return can still finish it.
+    this.stopWatching();
     this.stopQrScanner();
   },
   methods: {
@@ -233,11 +346,254 @@ export default {
       return this.$t(NWC_REASON_I18N_KEYS[result.reason] || 'Invalid connection string format');
     },
 
-    useHandedConnection(connection) {
+    useHandedConnection(connection, { paired = false, name = '' } = {}) {
       if (this.isTesting || this.isAdding) return;
       this.closeScanner();
+      this.paired = paired;
+      this.pairedName = name;
       this.nwcString = connection;
       this.testConnection();
+    },
+
+    /** Back from found, duplicate or problem: to where the connection came from. */
+    backToInput() {
+      this.step = this.paired ? 'choose' : 'connect';
+      if (this.paired) this.nwcString = '';
+    },
+
+    backFromConnect() {
+      if (this.fromChooser) this.step = 'choose';
+      else this.goBack();
+    },
+
+    backToChooser() {
+      this.cancelPairing();
+      this.step = 'choose';
+    },
+
+    backFromCode() {
+      this.cancelPairing();
+      this.step = this.fromChooser ? 'connect' : 'choose';
+    },
+
+    /** A row in the chooser: its entry says how that wallet connects. */
+    choose(id) {
+      const wallet = connectWallet(id);
+      if (!wallet) return;
+      this.fromChooser = true;
+      this.errorMessage = '';
+      if (wallet.pairing === PAIRING.SHEET) {
+        this.$router.replace(wallet.route);
+        return;
+      }
+      if (wallet.pairing === PAIRING.MANUAL) {
+        this.step = 'connect';
+        return;
+      }
+      this.approveWallet = wallet.id;
+      this.pairingState = 'ready';
+      this.addressError = '';
+      this.restoreLocation(wallet);
+      this.step = 'approve';
+    },
+
+    /** The first location, or the person's own address when they used one before. */
+    restoreLocation(wallet) {
+      const saved = wallet.approval.selfHosted ? readOwnAddresses()[wallet.id] : '';
+      this.ownAddress = saved || '';
+      this.approveLocation = saved ? 'own' : (wallet.approval.locations?.[0]?.id || '');
+    },
+
+    /** Where the approval page lives for this approval, or '' (and why) when the typed address is not one. */
+    approvalBase(wallet) {
+      if (this.approveLocation !== 'own') {
+        return wallet.approval.locations?.find((place) => place.id === this.approveLocation)?.url || '';
+      }
+      const url = normalizeWalletUrl(this.ownAddress, { approvalPath: wallet.approval.path });
+      if (!url) {
+        this.addressError = this.$t("That doesn't look like a web address.");
+        return null;
+      }
+      try {
+        localStorage.setItem(OWN_ADDRESSES_KEY, JSON.stringify({ ...readOwnAddresses(), [wallet.id]: url }));
+      } catch { /* storage unavailable */ }
+      return url;
+    },
+
+    /**
+     * Open the wallet's approval page. The first time makes and keeps the
+     * request and starts watching for the answer; later taps reopen the
+     * same page for the same request.
+     */
+    async openApproval() {
+      const wallet = this.approvingWallet;
+      if (!pairsByApproval(wallet)) return;
+      if (this.pairingState !== 'waiting') {
+        const baseUrl = this.approvalBase(wallet);
+        if (baseUrl === null) return;
+        this.addressError = '';
+        await this.startPairing(wallet.id, { baseUrl });
+      }
+      // A wallet that sends the person back opens in place on the web;
+      // one that does not gets its own tab.
+      this.openOutside(approvalUrl(this.pairing, wallet), { sameTab: wallet.pairing === PAIRING.APPROVE_AND_RETURN });
+    },
+
+    /** The code a wallet app scans (NWC-08), with a fresh request. */
+    async showCode() {
+      this.step = 'code';
+      this.codeUri = '';
+      this.codeCopied = false;
+      await this.startPairing(CODE_REQUEST);
+      this.codeUri = walletAuthUri(this.pairing);
+    },
+
+    async copyCode() {
+      await writeClipboardCrossPlatform(this.codeUri);
+      this.codeCopied = true;
+    },
+
+    openCode() {
+      this.openOutside(this.codeUri, { sameTab: true });
+    },
+
+    /**
+     * Make, keep and watch a request. An approve-known wallet answers by
+     * knowing the connection; every other one (and a code) by an info
+     * event on its relays.
+     */
+    async startPairing(walletId, { baseUrl = '' } = {}) {
+      this.stopWatching();
+      const wallet = connectWallet(walletId);
+      const request = createPairingRequest(walletId, { baseUrl });
+      await savePairing(request);
+      this.pairing = request;
+      this.pairingState = 'waiting';
+      this.expiryTimer = setTimeout(() => this.expirePairing(), PAIRING_TTL_MS);
+      const name = wallet?.keepName ? wallet.name : '';
+      if (wallet?.pairing === PAIRING.APPROVE_KNOWN) {
+        const connection = knownConnection(request, wallet);
+        const watch = new AbortController();
+        this.knownWatch = watch;
+        waitForApproval(connection, { signal: watch.signal, ask: (c) => this.askWallet(c) })
+          .then((approved) => { if (approved) this.finishPairing(request, connection, { name }); });
+      } else {
+        this.stopAnswerListening = this.listenForAnswer(request, (answer) => {
+          this.finishPairing(request, connectionFor(request, answer), { name });
+        });
+      }
+    },
+
+    /** Listening for a wallet's answer, one method so a test harness can answer instead. */
+    listenForAnswer(request, onAnswer) {
+      return listenForWalletAnswer(request, answerRelays(connectWallet(request.walletId)), onAnswer);
+    },
+
+    /** Does the wallet know this connection yet (approve-known)? Replaceable in a test harness. */
+    askWallet(connection) {
+      return walletKnowsConnection(connection, { createClient: (url) => new NWCClient({ nostrWalletConnectUrl: url }) });
+    },
+
+    /**
+     * An answer arrived: take the kept request (once, so a second answer
+     * for the same approval does nothing) and test the connection.
+     */
+    async finishPairing(request, connection, { name = '' } = {}) {
+      const taken = await takePairing(request.id);
+      if (!taken) return;
+      this.stopWatching();
+      this.closeInAppBrowser();
+      this.pairing = null;
+      this.pairingState = 'ready';
+      if (!connection) {
+        this.errorMessage = this.$t('The wallet answered with a connection BuhoGO cannot use.');
+        this.step = 'connect';
+        return;
+      }
+      this.useHandedConnection(connection, { paired: true, name });
+    },
+
+    /** A wallet's return address, opened on this route or handed to this open sheet. */
+    async finishFromReturn(query) {
+      const answer = readReturn(query);
+      const request = answer && await loadPairing();
+      if (!answer || !request || request.id !== answer.requestId || (answer.state && answer.state !== request.state)) {
+        // Answered already over the relay (this sheet is on it), or not
+        // this BuhoGO's request.
+        if (this.paired || this.isTesting) return;
+        this.canHandOff = !Capacitor.isNativePlatform() && isAndroidBrowser(navigator.userAgent);
+        this.returnQuery = query;
+        this.step = 'return';
+        return;
+      }
+      const wallet = connectWallet(request.walletId);
+      this.finishPairing(request, connectionFor(request, answer), { name: wallet?.keepName ? wallet.name : '' });
+    },
+
+    /** From an Android browser, give the return address to the app. */
+    handOffToApp() {
+      const intent = buildAppHandoffUrl(returnUrlFor(this.returnQuery));
+      if (intent) window.location.href = intent;
+    },
+
+    expirePairing() {
+      this.stopWatching();
+      clearPairing();
+      this.pairing = null;
+      this.pairingState = 'expired';
+    },
+
+    cancelPairing() {
+      this.stopWatching();
+      clearPairing();
+      this.pairing = null;
+      this.pairingState = 'ready';
+    },
+
+    restartPairing() {
+      this.pairingState = 'ready';
+      this.openApproval();
+    },
+
+    stopWatching() {
+      clearTimeout(this.expiryTimer);
+      this.knownWatch?.abort();
+      this.knownWatch = null;
+      this.stopAnswerListening?.();
+      this.stopAnswerListening = null;
+    },
+
+    scanFromApprove() {
+      this.step = 'connect';
+      this.openScanner();
+    },
+
+    /**
+     * Open a wallet's page or app. In the app a web page opens in the
+     * in-app browser, so the person approves without leaving BuhoGO, and a
+     * wallet app's link opens that app. On the web a page that sends the
+     * person back opens in place, any other in a new tab.
+     */
+    openOutside(url, { sameTab = false } = {}) {
+      const webPage = /^https?:/i.test(url);
+      if (Capacitor.isNativePlatform() && webPage) {
+        openInAppBrowser(url);
+        return;
+      }
+      if (Capacitor.isNativePlatform() || sameTab) {
+        window.location.href = url;
+        return;
+      }
+      window.open(url, '_blank', 'noopener');
+    },
+
+    /** The approval page is done with once the answer is here (where the system lets an app close it). */
+    async closeInAppBrowser() {
+      if (!Capacitor.isNativePlatform()) return;
+      try {
+        const { Browser } = await import('@capacitor/browser');
+        await Browser.close();
+      } catch { /* not open, or not closable on this system */ }
     },
 
     async pasteConnection() {
@@ -267,7 +623,7 @@ export default {
       try {
         const probe = await this.probeConnection(this.nwcString, { onWaiting: () => { this.isWaiting = true; } });
         this.probe = probe;
-        this.walletName = suggestedWalletName(probe, this.$t('Lightning wallet'));
+        this.walletName = this.pairedName || suggestedWalletName(probe, this.$t('Lightning wallet'));
         const existing = findSameWallet(this.wallets, probe);
         if (existing) {
           const sameConnection = parseNwcConnection(existing.nwcUrl).pubkey === probe.connectionPubkey;
