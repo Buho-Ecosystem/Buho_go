@@ -164,6 +164,13 @@ test('a cold start link waits for the first navigation, so the start screen cann
   assert.deepEqual(h.pushes, [{ path: `/p/${NPUB}`, query: {} }]);
 });
 
+test('a failed first navigation does not hold links back', async () => {
+  const h = harness({ isReady: () => Promise.reject(new Error('navigation aborted')), launchUrl: `nostr:${NPUB}` });
+  await h.start();
+  await new Promise((r) => setTimeout(r, 0));
+  assert.deepEqual(h.pushes, [{ path: `/p/${NPUB}`, query: {} }]);
+});
+
 test('kiosk mode still blocks card links', async () => {
   const h = harness({ kiosk: true });
   await h.start();

@@ -162,7 +162,8 @@ function handleDeepLink(url, router, walletStore) {
  */
 function afterFirstNavigation(router) {
   let ready = typeof router.isReady !== 'function'
-  const started = ready ? Promise.resolve() : router.isReady().finally(() => { ready = true })
+  // A first navigation that fails still ends the wait; links then navigate as before.
+  const started = ready ? Promise.resolve() : router.isReady().catch(() => {}).finally(() => { ready = true })
   return {
     get currentRoute() { return router.currentRoute },
     push: (to) => (ready ? router.push(to) : started.then(() => router.push(to))),
