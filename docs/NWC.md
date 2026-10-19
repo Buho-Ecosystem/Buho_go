@@ -16,6 +16,20 @@ Every relay in the connection string is kept (`src/utils/nwcConnection.js`); ext
 
 A connection can also arrive from outside the sheet: a `nostr+walletconnect://` link from another app ("Connect" in a wallet; the Android filter lists the scheme and its no-`+` form), or one scanned or pasted on Home, where the field reads "Wallet connection". `src/services/nwcConnectionIntake.js` hands it to the sheet in memory, once, never in the route (the string can spend), and the sheet tests it at once; an open sheet takes a new one directly. A link does nothing in kiosk mode.
 
+## Choosing a wallet, and pairing without a secret
+
+"Connect a wallet" (`/connect-wallet`; one row in Settings' Add New Wallet and in Welcome's "More ways to start") first asks which wallet (`ConnectWalletChooser`): Alby Hub, Coinos, LNbits (its own sheet), or another wallet (the paste and scan step above). BuhoHub sits apart as a note that it is coming; a tap says what it is, nothing more. `/nwc-setup` still opens straight at paste and scan, for links and Home.
+
+Alby Hub, Coinos and the code never show a secret. BuhoGO makes the connection's key pair, keeps the request encrypted with the device key for 15 minutes, one at a time (`src/services/nwcPairing.js`), and the wallet answers with its own key and relays. The answer becomes an ordinary connection string (`src/utils/nwcPairing.js`), which goes through the same test and "Wallet found" as a pasted one. A request is taken once, by whichever answer arrives first, so one approval never adds a wallet twice.
+
+- **Alby Hub** (`WalletApproveStep`): Alby Cloud (`my.albyhub.com`) or the person's own Hub by address (remembered). BuhoGO opens `<hub>/apps/new` with its public key, the methods it uses and `return_to=https://go.mybuho.de/nwc/connected?request=<id>`. The Hub answers twice: it publishes an info event (kind 13194) addressed to our key on its relays (`relay.getalby.com`, `relay2.getalby.com`), which BuhoGO listens for while waiting, and it sends the person back to the return address with its relays, key and Lightning address. On the web the Hub opens in the same tab and the return finishes the request; in the app it opens in the browser, and the return is an App Link (`/nwc/connected`, next to `/p/`). When the browser keeps it, that page offers "Open BuhoGO" (an intent link with the package), and the relay answer usually finished it already. The Hub signs in or unlocks first and keeps the link through that.
+- **Coinos**: its approval page (`coinos.io/apps/new?pubkey=…`) neither returns nor announces. Coinos serves every connection from one wallet key on `wss://relay.coinos.io`, so the connection is known up front; BuhoGO asks it `get_info` until Coinos knows the key (an answer, or "not allowed"), which is the approval.
+- **A code** (`WalletAuthCodeStep`, NWC-08 client-initiated connection): a `nostr+walletauth://` request with our key, a `state`, the methods (`get_budget` optional) and the Hub relays, shown as a QR code, copyable, and openable on this phone. Wallets that create connections on a Hub (Alby Go) answer on the Hub relays without `state`; wallets that follow NWC-08 (Blitz Wallet) answer on the given relays with it and may name other relays. An answer must name our key and carry our `state`; one without `state` counts only from a Hub relay. Its signature is checked.
+
+The SDK's own client-initiated connection (`NWAClient`) is not used: it sends no `state`, which NWC-08 wallets require, and accepts any info event naming the key.
+
+The return route with nothing waiting for it says so ("Nothing is waiting for this approval"), or, in an Android browser, offers to finish in the app. In kiosk mode these routes stay setup routes and links do nothing, as before.
+
 ## What a connection may do
 
 `src/utils/nwcWallet.js` turns the methods the wallet granted into Send, Receive, Balance, History and Limit. Wallets saved before methods were stored are assumed to do all, as before.
@@ -78,6 +92,7 @@ Upgrade once the first is fixed upstream, after normalizing stored hex to lower 
 
 ## Checks
 
-- Unit: `nwcConnection`, `nwcWallet`, `nwcErrors` (including the SDK's own error classes), `nwcPayment`, `nwcProbe`, `nwcWalletStore`, `nwcWalletProvider`, plus the paying-wallet, Social Bucket and Learn & Earn wallet specs.
+- Unit: `nwcConnection`, `nwcPairing` (links, answers, returns; keeping and listening), `nwcWallet`, `nwcErrors` (including the SDK's own error classes), `nwcPayment`, `nwcProbe`, `nwcWalletStore`, `nwcWalletProvider`, plus the paying-wallet, Social Bucket and Learn & Earn wallet specs.
 - Browser: `node scripts/check-nwc-connect.mjs` against `pnpm dev --port 9031` (or `NWC_BASE_URL`): every connect step with a stand-in wallet, the Settings details, Home with a receive-only connection, dark mode and German at 320 px.
 - Browser: `node scripts/check-nwc-receiving.mjs`: the Social Bucket destinations and the internal-transfer pickers with a send-only and a receive-only connection.
+- Browser: `node scripts/check-nwc-pairing.mjs` against `pnpm dev --port 9033` (or `PAIRING_BASE_URL`): the chooser and BuhoHub note, Alby Hub (own address, waiting, relay answer, return address), Coinos, the code and its expiry, Settings and Welcome entries, the return with nothing waiting (Android hand-off), dark mode and German at 320 px.

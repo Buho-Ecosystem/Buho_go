@@ -83,7 +83,8 @@
 
                  Its own filter, not merged with the schemes above: autoVerify
                  applies to the whole filter, and a filter that also carries
-                 custom schemes fails verification outright. Scoped to /p/ so
+                 custom schemes fails verification outright. Scoped to /p/ and
+                 /nwc/connected (a Hub's return after approving BuhoGO) so
                  BuhoGO never claims the rest of the site — the web wallet has
                  to keep opening in a browser.
 
@@ -98,6 +99,7 @@
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="https" android:host="go.mybuho.de" android:pathPrefix="/p/" />
+                <data android:scheme="https" android:host="go.mybuho.de" android:path="/nwc/connected" />
             </intent-filter>
 
             <!-- MainActivity itself deliberately declares NO NFC intent

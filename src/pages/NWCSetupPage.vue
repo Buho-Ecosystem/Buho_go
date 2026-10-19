@@ -6,27 +6,63 @@
   <q-page class="iform-sheet-page">
     <div class="iform-sheet-scrim" aria-hidden="true" @click="goBack"></div>
 
-    <div class="iform-sheet" role="dialog" aria-modal="true" :aria-label="$t('Connect NWC Wallet')">
+    <div class="iform-sheet" role="dialog" aria-modal="true" :aria-label="$t('Connect a wallet')">
       <div class="iform-sheet-grab" aria-hidden="true"></div>
 
-      <!-- Connect, then the wallet's own answer: what it is (found), that
-           it is already here (duplicate), or which part did not answer
-           (problem). Steps of this one sheet, never dialogs on top of it. -->
+      <!-- Choose how, connect, then the wallet's own answer: what it is
+           (found), that it is already here (duplicate), or which part did
+           not answer (problem). Steps of this one sheet, never dialogs on
+           top of it. -->
       <template v-if="!showScanner">
+        <ConnectWalletChooser
+          v-if="step === 'choose'"
+          @choose="choose"
+          @back="goBack"
+        />
+        <WalletApproveStep
+          v-else-if="step === 'approve'"
+          v-model:hub-choice="hubChoice"
+          v-model:hub-address="hubAddress"
+          :wallet="approveWallet"
+          :state="pairingState"
+          :error="hubError"
+          @open="openApproval"
+          @cancel="cancelPairing"
+          @restart="restartPairing"
+          @scan="scanFromApprove"
+          @back="backToChooser"
+        />
+        <WalletAuthCodeStep
+          v-else-if="step === 'code'"
+          :uri="codeUri"
+          :expired="pairingState === 'expired'"
+          :copied="codeCopied"
+          @copy="copyCode"
+          @open="openCode"
+          @restart="showCode"
+          @back="backFromCode"
+        />
+        <PairingReturnStep
+          v-else-if="step === 'return'"
+          :hand-off="canHandOff"
+          @hand-off="handOffToApp"
+          @restart="backToChooser"
+          @back="goBack"
+        />
         <NWCWalletFound
-          v-if="step === 'found'"
+          v-else-if="step === 'found'"
           v-model:name="walletName"
           :probe="probe"
           :relay="relay"
           :busy="isAdding"
-          @back="step = 'connect'"
+          @back="backToInput"
           @add="addConnectedWallet"
         />
         <NWCDuplicateStep
           v-else-if="step === 'duplicate'"
           :existing="duplicate.wallet"
           :same-connection="duplicate.sameConnection"
-          @back="step = 'connect'"
+          @back="backToInput"
           @open="openExisting"
           @add-anyway="step = 'found'"
         />
@@ -36,7 +72,7 @@
           :relay="relay"
           :busy="isTesting"
           @retry="testConnection"
-          @edit="step = 'connect'"
+          @edit="backToInput"
         />
         <NWCConnectStep
           v-else
@@ -44,10 +80,12 @@
           :error="errorMessage"
           :busy="isTesting"
           :waiting="isWaiting"
-          @back="goBack"
+          :offer-code="fromChooser"
+          @back="backFromConnect"
           @paste="pasteConnection"
           @scan="openScanner"
           @continue="testConnection"
+          @show-code="showCode"
         />
       </template>
 
@@ -149,11 +187,34 @@ import { findSameWallet, relayHost, suggestedWalletName } from '../utils/nwcWall
 import { NWC_ERROR } from '../utils/nwcErrors.js'
 import { probeNwcConnection } from '../services/nwcProbe.js'
 import { readClipboardCrossPlatform } from '../utils/shopClipboard.js'
-import { listenForNwcConnection, takeNwcConnection } from '../services/nwcConnectionIntake.js'
+import { listenForNwcConnection, listenForPairingReturn, takeNwcConnection } from '../services/nwcConnectionIntake.js'
+import { NWCClient } from '@getalby/sdk'
+import { Capacitor } from '@capacitor/core'
+import ConnectWalletChooser from '../components/nwc/ConnectWalletChooser.vue'
+import WalletApproveStep from '../components/nwc/WalletApproveStep.vue'
+import WalletAuthCodeStep from '../components/nwc/WalletAuthCodeStep.vue'
+import PairingReturnStep from '../components/nwc/PairingReturnStep.vue'
+import {
+  HUB_RELAYS, PAIRING_TTL_MS, RETURN_PATH, ALBY_CLOUD_URL,
+  coinosApprovalUrl, coinosConnection, connectionFor, createPairingRequest,
+  hubApprovalUrl, normalizeHubUrl, readHubReturn, returnUrlFor, walletAuthUri,
+} from '../utils/nwcPairing.js'
+import {
+  clearPairing, listenForWalletAnswer, loadPairing, savePairing, takePairing,
+  waitForApproval, walletKnowsConnection,
+} from '../services/nwcPairing.js'
+import { buildAppHandoffUrl, isAndroidBrowser } from '../utils/publicCard.js'
+import { writeClipboardCrossPlatform } from '../utils/shopClipboard.js'
+
+const HUB_ADDRESS_KEY = 'buhoGO_hub_address'
 
 /**
  * Connect a wallet over Nostr Wallet Connect, test first and name second:
  *
+ *   choose    — which wallet: Alby Hub, Coinos, LNbits, another wallet
+ *   approve   — approve BuhoGO on the wallet's own page (Alby Hub, Coinos)
+ *   code      — a code the wallet app scans and approves (NWC-08)
+ *   return    — a Hub sent the person back, but nothing waits for it here
  *   connect   — paste or scan; the secret stays hidden
  *   found     — the wallet answered: its name, balance, address, what this
  *               connection may do and its spending limit; then Add wallet
@@ -161,6 +222,12 @@ import { listenForNwcConnection, takeNwcConnection } from '../services/nwcConnec
  *   problem   — the relay or the wallet did not answer, and which one
  *
  * Nothing is saved until Add wallet; the store reuses the test result.
+ * Approving and the code never show a secret: BuhoGO makes the
+ * connection's key pair, the wallet answers with its own key and relays
+ * (utils/nwcPairing), and the result is tested like a pasted one.
+ *
+ * Routes: /connect-wallet starts at choose, /nwc-setup at connect (links
+ * and Home hand a connection over), /nwc/connected is a Hub's return.
  */
 export default {
   name: 'NWCSetupPage',
@@ -170,10 +237,28 @@ export default {
     NWCWalletFound,
     NWCDuplicateStep,
     NWCConnectProblem,
+    ConnectWalletChooser,
+    WalletApproveStep,
+    WalletAuthCodeStep,
+    PairingReturnStep,
   },
   data() {
     return {
       step: 'connect',
+      // Reached from the chooser: Back returns there, and the code is offered.
+      fromChooser: false,
+      // The connection came from approving or a code, not from the field.
+      paired: false,
+      // utils/nwcPairing request while one is out; its state for the steps.
+      pairing: null,
+      pairingState: 'ready',
+      approveWallet: 'albyhub',
+      hubChoice: 'cloud',
+      hubAddress: '',
+      hubError: '',
+      codeUri: '',
+      codeCopied: false,
+      canHandOff: false,
       nwcString: '',
       walletName: '',
       errorMessage: '',
@@ -208,11 +293,23 @@ export default {
   // replaces it.
   mounted() {
     this.stopListening = listenForNwcConnection((connection) => this.useHandedConnection(connection));
+    this.stopReturnListening = listenForPairingReturn((query) => this.finishFromReturn(query));
+    if (this.$route.path === RETURN_PATH) {
+      this.finishFromReturn(this.$route.query);
+      return;
+    }
     const handed = takeNwcConnection();
-    if (handed) this.useHandedConnection(handed);
+    if (handed) {
+      this.useHandedConnection(handed);
+    } else if (this.$route.path === '/connect-wallet') {
+      this.step = 'choose';
+    }
   },
   beforeUnmount() {
     this.stopListening?.();
+    this.stopReturnListening?.();
+    // The kept request stays: a Hub's return can still finish it.
+    this.stopWatching();
     this.stopQrScanner();
   },
   methods: {
@@ -233,11 +330,221 @@ export default {
       return this.$t(NWC_REASON_I18N_KEYS[result.reason] || 'Invalid connection string format');
     },
 
-    useHandedConnection(connection) {
+    useHandedConnection(connection, { paired = false } = {}) {
       if (this.isTesting || this.isAdding) return;
       this.closeScanner();
+      this.paired = paired;
       this.nwcString = connection;
       this.testConnection();
+    },
+
+    /** Back from found, duplicate or problem: to where the connection came from. */
+    backToInput() {
+      this.step = this.paired ? 'choose' : 'connect';
+      if (this.paired) this.nwcString = '';
+    },
+
+    backFromConnect() {
+      if (this.fromChooser) this.step = 'choose';
+      else this.goBack();
+    },
+
+    backToChooser() {
+      this.cancelPairing();
+      this.step = 'choose';
+    },
+
+    backFromCode() {
+      this.cancelPairing();
+      this.step = this.fromChooser ? 'connect' : 'choose';
+    },
+
+    choose(wallet) {
+      this.fromChooser = true;
+      this.errorMessage = '';
+      if (wallet === 'lnbits') {
+        this.$router.replace('/lnbits-setup');
+        return;
+      }
+      if (wallet === 'other') {
+        this.step = 'connect';
+        return;
+      }
+      this.approveWallet = wallet;
+      this.pairingState = 'ready';
+      this.hubError = '';
+      if (wallet === 'albyhub') this.restoreHubAddress();
+      this.step = 'approve';
+    },
+
+    restoreHubAddress() {
+      let saved = '';
+      try { saved = localStorage.getItem(HUB_ADDRESS_KEY) || ''; } catch { /* storage unavailable */ }
+      if (saved && saved !== ALBY_CLOUD_URL) {
+        this.hubChoice = 'own';
+        this.hubAddress = saved;
+      }
+    },
+
+    /**
+     * Open the wallet's approval page. The first time makes and keeps the
+     * request and starts watching for the answer; later taps reopen the
+     * same page for the same request.
+     */
+    async openApproval() {
+      if (this.pairingState !== 'waiting') {
+        let hubUrl = '';
+        if (this.approveWallet === 'albyhub') {
+          hubUrl = this.hubChoice === 'cloud' ? ALBY_CLOUD_URL : normalizeHubUrl(this.hubAddress);
+          if (!hubUrl) {
+            this.hubError = this.$t("That doesn't look like a web address.");
+            return;
+          }
+          try { localStorage.setItem(HUB_ADDRESS_KEY, hubUrl); } catch { /* storage unavailable */ }
+        }
+        this.hubError = '';
+        await this.startPairing(this.approveWallet === 'albyhub' ? 'hub' : 'coinos', { hubUrl });
+      }
+      const url = this.pairing.kind === 'hub' ? hubApprovalUrl(this.pairing) : coinosApprovalUrl(this.pairing);
+      // A Hub sends the person back to this address, so on the web it
+      // opens in place; Coinos does not return, so it gets its own tab.
+      this.openOutside(url, { sameTab: this.pairing.kind === 'hub' });
+    },
+
+    /** The code a wallet app scans (NWC-08), with a fresh request. */
+    async showCode() {
+      this.step = 'code';
+      this.codeUri = '';
+      this.codeCopied = false;
+      await this.startPairing('code');
+      this.codeUri = walletAuthUri(this.pairing);
+    },
+
+    async copyCode() {
+      await writeClipboardCrossPlatform(this.codeUri);
+      this.codeCopied = true;
+    },
+
+    openCode() {
+      this.openOutside(this.codeUri, { sameTab: true });
+    },
+
+    /**
+     * Make, keep and watch a request: the Hub and the code are answered by
+     * an info event on the Hub relays; Coinos answers once approved.
+     */
+    async startPairing(kind, { hubUrl = '' } = {}) {
+      this.stopWatching();
+      const request = createPairingRequest(kind, { hubUrl });
+      await savePairing(request);
+      this.pairing = request;
+      this.pairingState = 'waiting';
+      this.expiryTimer = setTimeout(() => this.expirePairing(), PAIRING_TTL_MS);
+      if (kind === 'coinos') {
+        const watch = new AbortController();
+        this.coinosWatch = watch;
+        waitForApproval(coinosConnection(request), { signal: watch.signal, ask: (connection) => this.askWallet(connection) })
+          .then((approved) => { if (approved) this.finishPairing(request, coinosConnection(request)); });
+      } else {
+        this.stopAnswerListening = this.listenForAnswer(request, (answer) => {
+          this.finishPairing(request, connectionFor(request, answer));
+        });
+      }
+    },
+
+    /** Listening for a wallet's answer, one method so a test harness can answer instead. */
+    listenForAnswer(request, onAnswer) {
+      return listenForWalletAnswer(request, HUB_RELAYS, onAnswer);
+    },
+
+    /** Does the wallet know this connection yet (Coinos)? Replaceable in a test harness. */
+    askWallet(connection) {
+      return walletKnowsConnection(connection, { createClient: (url) => new NWCClient({ nostrWalletConnectUrl: url }) });
+    },
+
+    /**
+     * An answer arrived: take the kept request (once, so a second answer
+     * for the same approval does nothing) and test the connection.
+     */
+    async finishPairing(request, connection) {
+      const taken = await takePairing(request.id);
+      if (!taken) return;
+      this.stopWatching();
+      this.pairing = null;
+      this.pairingState = 'ready';
+      if (!connection) {
+        this.errorMessage = this.$t('The wallet answered with a connection BuhoGO cannot use.');
+        this.step = 'connect';
+        return;
+      }
+      this.useHandedConnection(connection, { paired: true });
+    },
+
+    /** A Hub's return address, opened on this route or handed to this open sheet. */
+    async finishFromReturn(query) {
+      const answer = readHubReturn(query);
+      const request = answer && await loadPairing();
+      if (!answer || !request || request.id !== answer.requestId || (answer.state && answer.state !== request.state)) {
+        // Answered already over the relay (this sheet is on it), or not
+        // this BuhoGO's request.
+        if (this.paired || this.isTesting) return;
+        this.canHandOff = !Capacitor.isNativePlatform() && isAndroidBrowser(navigator.userAgent);
+        this.returnQuery = query;
+        this.step = 'return';
+        return;
+      }
+      this.finishPairing(request, connectionFor(request, answer));
+    },
+
+    /** From an Android browser, give the return address to the app. */
+    handOffToApp() {
+      const intent = buildAppHandoffUrl(returnUrlFor(this.returnQuery));
+      if (intent) window.location.href = intent;
+    },
+
+    expirePairing() {
+      this.stopWatching();
+      clearPairing();
+      this.pairing = null;
+      this.pairingState = 'expired';
+    },
+
+    cancelPairing() {
+      this.stopWatching();
+      clearPairing();
+      this.pairing = null;
+      this.pairingState = 'ready';
+    },
+
+    restartPairing() {
+      this.pairingState = 'ready';
+      this.openApproval();
+    },
+
+    stopWatching() {
+      clearTimeout(this.expiryTimer);
+      this.coinosWatch?.abort();
+      this.coinosWatch = null;
+      this.stopAnswerListening?.();
+      this.stopAnswerListening = null;
+    },
+
+    scanFromApprove() {
+      this.step = 'connect';
+      this.openScanner();
+    },
+
+    /**
+     * Leave BuhoGO for a web page or a wallet app. In the app, a navigation
+     * to another site or scheme opens the system browser or that app;
+     * on the web a page that sends the person back opens in place.
+     */
+    openOutside(url, { sameTab = false } = {}) {
+      if (Capacitor.isNativePlatform() || sameTab) {
+        window.location.href = url;
+        return;
+      }
+      window.open(url, '_blank', 'noopener');
     },
 
     async pasteConnection() {
