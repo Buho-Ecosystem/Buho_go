@@ -78,16 +78,17 @@ tags:
 icon: ./public/Buho_logo__Sharp_grey.jpg
 
 images:
-  - ./store/screens/01-home.png           # Home: balance, last payment, Receive and Send
-  - ./store/screens/02-send.png           # Send to a contact, pay with any of your wallets
-  - ./store/screens/03-receive.png        # One QR for every kind of payment
-  - ./store/screens/04-wallets.png        # Your wallets: on this phone and connected
-  - ./store/screens/05-requests.png       # Split the bill: who has paid
-  - ./store/screens/06-chat.png           # Contact chat with money requests
-  - ./store/screens/07-spend.png          # Bitcoin map, eSIM and VPN, Bitrefill, Learn & Earn
-  - ./store/screens/08-kiosk.png          # Kiosk mode with tips
-  - ./store/screens/09-auto-transfer.png  # Auto-Transfer: money that moves on its own
-  - ./store/screens/10-dark.png           # Dark mode
+  - ./store/zapstore/01-everyday.png       # Bitcoin for every day: balance and payments
+  - ./store/zapstore/02-send.png           # Send in a few taps
+  - ./store/zapstore/03-wallets.png        # All your wallets in one place
+  - ./store/zapstore/04-spend-map.png      # Put your bitcoin to use: the Bitcoin map
+  - ./store/zapstore/05-receive.png        # One QR, ready to receive
+  - ./store/zapstore/06-chat.png           # A conversation and a payment
+  - ./store/zapstore/07-shared-bills.png   # Split the cost, see who has paid
+  - ./store/zapstore/08-spend.png          # Places, gift cards and mobile data
+  - ./store/zapstore/09-kiosk.png          # Your phone, your checkout
+  - ./store/zapstore/10-auto-transfer.png  # Set a rule, money moves on its own
+  - ./store/zapstore/11-dark.png           # Dark mode
 
 # ---------------------------------------------------------------------------
 # Enrichment (YAML values above always take priority)
