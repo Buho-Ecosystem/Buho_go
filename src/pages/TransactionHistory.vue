@@ -733,7 +733,6 @@
 </template>
 
 <script>
-import { NostrWebLNProvider } from "@getalby/sdk";
 import PaymentConfirmation from '../components/PaymentConfirmation.vue';
 import ContactAvatar from '../components/AddressBook/ContactAvatar.vue';
 import { brantaAvatar } from '../utils/branta.js';
@@ -1985,11 +1984,8 @@ export default {
         throw new Error('No active NWC wallet found');
       }
 
-      const nwc = new NostrWebLNProvider({
-        nostrWalletConnectUrl: activeWallet.nwcString,
-      });
-
-      await nwc.enable();
+      // Every page over the wallet's one relay connection (#395).
+      const nwc = await this.walletStore.nwcConnection(activeWallet.id);
 
       // Fetch batch with current offset
       const transactionsResponse = await nwc.listTransactions({

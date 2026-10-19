@@ -365,10 +365,8 @@ export const useAutoWithdrawStore = defineStore('autoWithdraw', {
         const result = await provider.payInvoice({ invoice })
         return { id: result.payment_hash || result.id || null }
       }
-      // An NWC connection dropped on resume or by its relay is rebuilt.
-      let nwc = walletStore.connectionStates[walletId]?.nwcInstance
-      if (!nwc) nwc = await walletStore.connectWallet(walletId)
-      if (!nwc) throw new Error('NWC not connected')
+      // The wallet's one connection, rebuilt if it was dropped (#395).
+      const nwc = await walletStore.nwcConnection(walletId)
       const result = await payWithNwc(nwc, invoice, { limit: walletStore.nwcLimitFor(walletId) })
       return { id: result.payment_hash || result.paymentHash || result.preimage || null }
     },

@@ -105,6 +105,8 @@ Self-custodial on the Ark protocol (VTXOs); one Arkade wallet per install.
 
 A Nostr Wallet Connect (NIP-47) client. Every NWC payment goes through `services/nwcPayment.js` (`payWithNwc`), which proof-checks a payment and never resends one whose outcome is unknown. Record: [docs/NWC.md](docs/NWC.md).
 
+**One relay connection per wallet:** ask `await walletStore.nwcConnection(walletId)` for the wallet's live connection; never build a `NostrWebLNProvider` in a screen or service. `LightningPaymentService` takes that connection and does not close it. `node scripts/check-nwc-connections.mjs` counts the connections.
+
 </details>
 
 <details>
