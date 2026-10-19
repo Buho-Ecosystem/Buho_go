@@ -61,8 +61,16 @@ test('a choice says how it pairs; a wallet on its way says what it is', () => {
   assert.equal(availableWallets().filter((wallet) => wallet.pairing === PAIRING.MANUAL).length, 1, 'one manual way');
 });
 
+test('a wallet app on this phone is offered per device and says what happens', () => {
+  const apps = CONNECT_WALLETS.filter((wallet) => wallet.pairing === PAIRING.WALLET_APP);
+  assert.equal(apps.length, 1);
+  assert.equal(apps[0].offered, true, 'only where the device can do it');
+  assert.ok(apps[0].approval?.note);
+  assert.ok(pairsByApproval(apps[0]));
+});
+
 test('an approval page is described completely', () => {
-  for (const wallet of CONNECT_WALLETS.filter(pairsByApproval)) {
+  for (const wallet of CONNECT_WALLETS.filter((entry) => pairsByApproval(entry) && entry.pairing !== PAIRING.WALLET_APP)) {
     const { approval } = wallet;
     assert.match(approval.path, /^\//, `${wallet.id}: path`);
     assert.ok(approval.note, `${wallet.id}: note`);

@@ -23,6 +23,11 @@ the manifest moves with the version:
    with that version and build (`release:activate` with several channels).
 2. Publish the artifacts as usual.
 3. The manifest reaches installed apps when `main` deploys to go.mybuho.de.
+4. Then send the store listings that wait for this release. They point other
+   apps' users at screens that exist only once `main` is out:
+   - **Alby Hub app store** (issue #389): `store/alby-hub/PULL_REQUEST.md` has
+     the steps, the logo and the entry; open the pull request to getAlby/hub
+     once the release with "Connect a wallet" (#410, #412) is live.
 
 `appUpdate.spec.js` fails while an enabled Android channel or the web channel
 names another version or build than `package.json` and `build.gradle`, so a

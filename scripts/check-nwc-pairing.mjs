@@ -230,8 +230,43 @@ try {
   await page.locator('.code-card').waitFor();
   console.log('✓ an expired code says so and offers a new one');
 
-  // 9 · Add the wallet; Settings has one row for connecting.
+  // 8b · A wallet app on this phone (the Android app found Alby Go): one
+  // tap opens it with a way back; the answer comes over the relay.
+  await page.getByRole('button', { name: 'Back', exact: true }).click();
+  await page.getByRole('button', { name: 'Back', exact: true }).click();
+  await standIn(page, 'Alby Go');
+  await page.evaluate(() => {
+    let c = document.querySelector('.iform-sheet').__vueParentComponent;
+    while (c && c.type.name !== 'NWCSetupPage') c = c.parent;
+    c.proxy.walletApp = { mode: 'open', names: ['Alby Go'] };
+  });
+  await page.locator('[data-audit="connect-walletapp"]').filter({ hasText: 'Alby Go' }).waitFor();
+  await shot(page, 'chooser-wallet-app');
+  await page.locator('[data-audit="connect-walletapp"]').click();
+  await page.getByText('Waiting for approval in Alby Go…').waitFor();
+  const appLink = new URL((await page.evaluate(() => window.__pairing.opened.at(-1))).replace('nostr+walletauth://', 'https://'));
+  assert.match(appLink.searchParams.get('return_to'), /^buhogo:\/\/nwc\/connected\?request=[a-f0-9]{24}$/, 'one tap opened the wallet app, with a way back');
+  await shot(page, 'wallet-app-waiting');
+  // Android closed BuhoGO meanwhile: the wallet's way back reopens the waiting request.
+  const walletAppRequest = new URL(appLink.searchParams.get('return_to').replace('buhogo://', 'https://x/')).searchParams.get('request');
+  await page.evaluate(() => {
+    let c = document.querySelector('.iform-sheet').__vueParentComponent;
+    while (c && c.type.name !== 'NWCSetupPage') c = c.parent;
+    c.proxy.stopWatching();
+    c.proxy.pairing = null;
+    c.proxy.step = 'choose';
+  });
+  await page.evaluate((id) => {
+    let c = document.querySelector('.iform-sheet').__vueParentComponent;
+    while (c && c.type.name !== 'NWCSetupPage') c = c.parent;
+    return c.proxy.finishFromReturn({ request: id });
+  }, walletAppRequest);
+  await page.getByText('Waiting for approval in Alby Go…').waitFor();
   await page.evaluate((wallet) => window.__pairing.answer({ walletPubkey: wallet, relays: ['wss://relay.getalby.com'] }), HUB_WALLET);
+  await page.locator('.nwc-found__input').waitFor();
+  console.log('✓ wallet app: named row, one tap opens it with a way back, a return resumes the wait, the answer is found');
+
+  // 9 · Add the wallet; Settings has one row for connecting.
   await page.getByRole('button', { name: 'Add wallet', exact: true }).click();
   await page.waitForFunction(() => location.hash.includes('/wallet'), null, { timeout: 30000 });
   await go(page, '/settings');
@@ -257,6 +292,28 @@ try {
   await dark.locator('.code-card').waitFor();
   await shot(dark, 'code-dark');
   await dark.context().close();
+
+  // The web app on an Android phone: the wallet app needs BuhoGO for
+  // Android; both stores, and a code as the way that works here.
+  const web = await newPage({ userAgent: ANDROID_UA });
+  await bootSheet(web, '/connect-wallet');
+  await web.locator('[data-audit="connect-walletapp"]').filter({ hasText: 'In BuhoGO for Android' }).waitFor();
+  await web.locator('[data-audit="connect-walletapp"]').click();
+  await web.getByText('Use the BuhoGO app').waitFor();
+  assert.match(await web.locator('[data-audit="store-play"]').getAttribute('href'), /^https:\/\/play\.google\.com\/store\/apps\/details\?id=mybuho\.buhogo$/);
+  assert.match(await web.locator('[data-audit="store-zapstore"]').getAttribute('href'), /^https:\/\/zapstore\.dev\/apps\//);
+  await shot(web, 'web-get-app');
+  await web.getByRole('button', { name: 'Show a code instead' }).click();
+  await web.locator('.code-card').waitFor();
+  await web.getByRole('button', { name: 'Back', exact: true }).click();
+  await web.getByText('Use the BuhoGO app').waitFor();
+  await web.context().close();
+  const desktop = await newPage();
+  await bootSheet(desktop, '/connect-wallet');
+  await desktop.locator('[data-audit="connect-albyhub"]').waitFor();
+  assert.equal(await desktop.locator('[data-audit="connect-walletapp"]').count(), 0, 'not offered on a desktop browser');
+  await desktop.context().close();
+  console.log('✓ web: Android browser gets BuhoGO for Android with both stores and a code; desktop is not offered');
 
   // 10 · A return no one here waits for: hand it to the app on Android,
   // start again anywhere else.

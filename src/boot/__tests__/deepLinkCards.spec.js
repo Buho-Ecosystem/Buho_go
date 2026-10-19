@@ -19,7 +19,7 @@ import { profileInvoiceFixture } from '../../../scripts/fixtures/profileInvoice.
 const NPUB = 'npub1az708q3kd9zy6z6f44zav5ygvdwelkzspf6mtusttx47lft2z38sghk0w7';
 const NPROFILE = 'nprofile1qqsw308nsgmxj3zdpdy663wk2zyx8mulmpgq5ad47g94n2l044dpgnchl3h4r';
 
-function harness({ activeWallet = null, kiosk = false, launchUrl = null } = {}) {
+function harness({ activeWallet = null, kiosk = false, launchUrl = null, isReady } = {}) {
   const listeners = {};
   const pushes = [];
   const notices = [];
@@ -61,6 +61,7 @@ function harness({ activeWallet = null, kiosk = false, launchUrl = null } = {}) 
   const router = {
     currentRoute: { value: { path: '/' } },
     push: (to) => { pushes.push(to); return Promise.resolve(); },
+    ...(isReady ? { isReady } : {}),
   };
   return {
     pushes, notices, walletStore,
@@ -141,6 +142,33 @@ test('a Hub return address opens the connect sheet, even with no wallet', async 
   assert.deepEqual(h.pushes, [{ path: '/nwc/connected', query: { request: 'abc123', relay: 'wss://relay.getalby.com', pubkey: 'a'.repeat(64) } }]);
   assert.equal(h.walletStore.pendingDeepLink, null, 'not a payment');
   assert.equal(h.notices.length, 0);
+});
+
+test('a wallet app sending the person back opens the connect sheet', async () => {
+  const h = harness();
+  await h.start();
+  h.open('buhogo://nwc/connected?request=abc123');
+  assert.deepEqual(h.pushes, [{ path: '/nwc/connected', query: { request: 'abc123' } }]);
+  assert.equal(h.notices.length, 0, "never \"BuhoGO can't open this link\"");
+});
+
+test('a cold start link waits for the first navigation, so the start screen cannot replace it', async () => {
+  let started;
+  const firstNavigation = new Promise((resolve) => { started = resolve; });
+  const h = harness({ isReady: () => firstNavigation, launchUrl: `nostr:${NPUB}` });
+  await h.start();
+  await new Promise((r) => setTimeout(r, 0));
+  assert.deepEqual(h.pushes, [], 'held while the router starts');
+  started();
+  await new Promise((r) => setTimeout(r, 0));
+  assert.deepEqual(h.pushes, [{ path: `/p/${NPUB}`, query: {} }]);
+});
+
+test('a failed first navigation does not hold links back', async () => {
+  const h = harness({ isReady: () => Promise.reject(new Error('navigation aborted')), launchUrl: `nostr:${NPUB}` });
+  await h.start();
+  await new Promise((r) => setTimeout(r, 0));
+  assert.deepEqual(h.pushes, [{ path: `/p/${NPUB}`, query: {} }]);
 });
 
 test('kiosk mode still blocks card links', async () => {

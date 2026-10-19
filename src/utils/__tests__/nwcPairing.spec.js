@@ -8,7 +8,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { getPublicKey, hexToBytes } from 'nostr-core';
 import {
-  CODE_REQUEST, PAIRING_TTL_MS, RETURN_PATH,
+  APP_RETURN_URL, CODE_REQUEST, PAIRING_TTL_MS, RETURN_PATH, returnRequestId,
   answerRelays, approvalUrl, connectionFor, createPairingRequest, isPairingExpired,
   knownConnection, normalizeWalletUrl, pairingReturnRoute, readReturn,
   readWalletAnswer, returnUrlFor, walletAuthUri,
@@ -50,6 +50,12 @@ test('the code names BuhoGO, its key, the state and what it asks for, never the 
   assert.equal(params.get('optional_request_methods'), 'get_budget');
   assert.equal(params.get('notification_types'), 'payment_received payment_sent');
   assert.ok(!uri.includes('+pay'), 'spaces as %20, not +');
+});
+
+test('only a code opened on this phone asks the wallet app to send the person back', () => {
+  assert.equal(new URL(walletAuthUri(request).replace('nostr+walletauth://', 'https://')).searchParams.get('return_to'), null, 'not in a QR for another device');
+  const onPhone = new URL(walletAuthUri(request, { returnTo: APP_RETURN_URL }).replace('nostr+walletauth://', 'https://'));
+  assert.equal(onPhone.searchParams.get('return_to'), `buhogo://nwc/connected?request=${request.id}`);
 });
 
 test('an approve-and-return link carries our key, the methods and a return address with the request id', () => {
@@ -147,5 +153,11 @@ test('only the return address on go.mybuho.de becomes the return route', () => {
   assert.equal(pairingReturnRoute('https://evil.example/nwc/connected?request=x'), null);
   assert.equal(pairingReturnRoute('https://go.mybuho.de/p/maria'), null);
   assert.equal(pairingReturnRoute('lightning:lnbc1'), null);
+  // A wallet app on this phone sends the person back with the request id only.
+  assert.deepEqual(pairingReturnRoute(`buhogo://nwc/connected?request=${request.id}`), { path: RETURN_PATH, query: { request: request.id } });
+  assert.deepEqual(pairingReturnRoute('BUHOGO://nwc/connected/'), { path: RETURN_PATH, query: {} });
+  assert.equal(pairingReturnRoute('buhogo://pay?x=1'), null);
+  assert.equal(returnRequestId({ request: ['a', 'b'] }), 'a');
+  assert.equal(returnRequestId({}), '');
   assert.equal(returnUrlFor(route.query), `https://go.mybuho.de/nwc/connected?request=${request.id}&relay=wss%3A%2F%2Fa&relay=wss%3A%2F%2Fb&pubkey=${WALLET}`);
 });

@@ -101,21 +101,7 @@
 
       <div class="about-group">
         <div class="about-label">{{ $t('Get the app') }}</div>
-        <div class="store-badge-row">
-          <button type="button" class="store-badge-btn" @click="openPlayStore">
-            <span class="store-badge-playstore">
-              <img src="/Playstore/google-play-icon.svg" alt="" width="24" height="24" />
-              <span class="store-badge-text">
-                <span class="store-badge-eyebrow">GET IT ON</span>
-                <span class="store-badge-title">Google Play</span>
-              </span>
-            </span>
-          </button>
-
-          <button type="button" class="store-badge-btn" @click="openZapstore">
-            <img src="/ZapStore/get-it-on-zapstore.png" alt="Get it on Zapstore" class="store-badge-img" />
-          </button>
-        </div>
+        <StoreBadges />
       </div>
 
       <!-- The ask closes the page: story first, then the ways in, then
@@ -130,12 +116,13 @@ import { Icon } from '@iconify/vue';
 import { version } from '../../package.json';
 import SettingsRow from '../components/settings/SettingsRow.vue';
 import SupportBuhoGo from '../components/settings/SupportBuhoGo.vue';
+import StoreBadges from '../components/StoreBadges.vue';
 import { useUpdateStore } from '../stores/update';
 import { isKioskLocked } from '../services/updateRuntime';
 
 export default {
   name: 'AboutPage',
-  components: { Icon, SettingsRow, SupportBuhoGo },
+  components: { Icon, SettingsRow, SupportBuhoGo, StoreBadges },
   setup() {
     return { updateStore: useUpdateStore() };
   },
@@ -209,16 +196,6 @@ export default {
         return;
       }
       window.open(this.nostrCommunityUrl, '_blank', 'noopener,noreferrer');
-    },
-    openPlayStore() {
-      window.open('https://play.google.com/store/apps/details?id=mybuho.buhogo', '_blank', 'noopener,noreferrer');
-    },
-    openZapstore() {
-      window.open(
-        'https://zapstore.dev/apps/naddr1qqxk67tzw45x7tnzw45x7em0qgs83nn04fezvsu89p8xg7axjwye2u67errat3dx2um725fs7qnrqlgrqsqqqlstrk2q4u',
-        '_blank',
-        'noopener,noreferrer'
-      );
     },
   },
 };
@@ -390,71 +367,5 @@ export default {
 .about-brand-tile--telegram {
   background: #26A5E4;
   color: #FFFFFF;
-}
-
-/* ----------------------------------------------------------------
-   Downloads — the official badges are boxes by design; left-aligned
-   like everything else on the page.
----------------------------------------------------------------- */
-.store-badge-row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 12px;
-}
-
-.store-badge-btn {
-  display: inline-flex;
-  align-items: center;
-  border: none;
-  background: transparent;
-  padding: 0;
-  cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
-  transition: transform 0.1s ease;
-}
-
-.store-badge-btn:active {
-  transform: scale(0.97);
-}
-
-.store-badge-img {
-  height: 44px;
-  width: auto;
-  display: block;
-}
-
-.store-badge-playstore {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  height: 44px;
-  padding: 0 14px;
-  border-radius: 10px;
-  background: #000;
-  border: 1.5px solid #A6A6A6;
-  box-sizing: border-box;
-}
-
-.store-badge-text {
-  display: flex;
-  flex-direction: column;
-  line-height: 1.15;
-}
-
-.store-badge-eyebrow {
-  font-family: 'Manrope', sans-serif;
-  font-size: 8px;
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  color: #A6A6A6;
-}
-
-.store-badge-title {
-  font-family: 'Manrope', sans-serif;
-  font-size: 14.5px;
-  font-weight: 700;
-  color: #fff;
-  margin-top: 2px;
 }
 </style>

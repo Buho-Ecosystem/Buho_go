@@ -103,4 +103,14 @@ export default {
   "You approved BuhoGO. The app that asked finishes the connection.": "Du hast BuhoGO freigegeben. Die App, die gefragt hat, schließt die Verbindung ab.",
   "It may have expired, or it was started on another device. Start again from here.": "Sie ist vielleicht abgelaufen oder wurde auf einem anderen Gerät gestartet. Starte hier neu.",
   "Open BuhoGO": "BuhoGO öffnen",
+  // A wallet app on the same phone.
+  "Wallet app on this phone": "Wallet-App auf diesem Handy",
+  "Approve BuhoGO in the app. Nothing to copy.": "BuhoGO in der App freigeben. Nichts zu kopieren.",
+  "Your wallet app opens so you can approve BuhoGO. Nothing to copy.": "Deine Wallet-App öffnet sich, damit du BuhoGO freigibst. Nichts zu kopieren.",
+  "Wallet app": "Wallet-App",
+  "In BuhoGO for Android": "In BuhoGO für Android",
+  "Use the BuhoGO app": "Nutze die BuhoGO-App",
+  "Connecting a wallet app on this phone works in BuhoGO for Android. Install it, then connect from there.": "Eine Wallet-App auf diesem Handy verbindest du in BuhoGO für Android. Installiere es und verbinde dich dann dort.",
+  "Staying in the browser? Show a code your wallet app scans or opens.": "Bleibst du im Browser? Zeig einen Code, den deine Wallet-App scannt oder öffnet.",
+  "Show a code instead": "Stattdessen einen Code zeigen",
 };

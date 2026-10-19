@@ -46,12 +46,19 @@ export const CODE_REQUEST = 'code';
 /** Where a wallet sends the person back (an https address; the app opens it). */
 export const RETURN_URL = 'https://go.mybuho.de/nwc/connected';
 export const RETURN_PATH = '/nwc/connected';
+/**
+ * Where a wallet app on the same phone sends the person back. A custom
+ * scheme, not the https address: it needs no App Link verification, which
+ * Play-signed builds do not have yet. It carries only the request id.
+ */
+export const APP_RETURN_URL = 'buhogo://nwc/connected';
 
 const APP_NAME = 'BuhoGO';
 const APP_ICON = 'https://go.mybuho.de/icons/buho_go_app_icon.png';
 const HEX_64_RE = /^[a-f0-9]{64}$/i;
 const STATE_RE = /^[a-f0-9]{32,}$/;
 const RELAY_RE = /^wss?:\/\/\S+$/i;
+const APP_RETURN_RE = /^buhogo:\/\/nwc\/connected\/?(\?.*)?$/i;
 const HOST_RE = /^(\[[0-9a-f:.]+\]|[a-z0-9-]+(\.[a-z0-9-]+)*)$/i;
 
 /**
@@ -146,8 +153,11 @@ export function approvalUrl(request, wallet, { returnUrl = RETURN_URL } = {}) {
 /**
  * The `nostr+walletauth://` code a wallet scans (NWC-08). Wallets that
  * follow the older draft read the same parameters and ignore `state`.
+ * `returnTo` is only for a link opened on this phone: a wallet app that
+ * reads it (Alby Go) sends the person back to BuhoGO after approving. A
+ * code shown to another device leaves it out.
  */
-export function walletAuthUri(request, { relays = CODE_RELAYS } = {}) {
+export function walletAuthUri(request, { relays = CODE_RELAYS, returnTo = '' } = {}) {
   const params = new URLSearchParams();
   for (const relay of relays) params.append('relay', relay);
   params.set('state', request.state);
@@ -156,6 +166,7 @@ export function walletAuthUri(request, { relays = CODE_RELAYS } = {}) {
   params.set('request_methods', REQUEST_METHODS.join(' '));
   params.set('optional_request_methods', OPTIONAL_METHODS.join(' '));
   params.set('notification_types', NOTIFICATION_TYPES.join(' '));
+  if (returnTo) params.set('return_to', `${returnTo}?request=${request.id}`);
   return `nostr+walletauth://${request.pubkey}?${params.toString().replace(/\+/g, '%20')}`;
 }
 
@@ -224,6 +235,11 @@ export function readWalletAnswer(event, request, receivedOn, { statelessRelays =
   };
 }
 
+/** The request id a return address names, '' when none. */
+export function returnRequestId(query) {
+  return String([].concat(query?.request ?? [])[0] || '');
+}
+
 /**
  * What a wallet put on the return address: its relays, its wallet key, a
  * Lightning address, and our request id. Reads Alby Hub's names (`relay`,
@@ -254,25 +270,37 @@ function stripSlash(url) {
 
 /**
  * The in-app route for a return address a wallet opened
- * (https://go.mybuho.de/nwc/connected?…), or null for any other link.
- * Repeated parameters (several relays) stay lists.
+ * (https://go.mybuho.de/nwc/connected?… from a Hub, buhogo://nwc/connected?…
+ * from a wallet app on this phone), or null for any other link. Repeated
+ * parameters (several relays) stay lists.
  *
  * @param {string} url
  * @returns {{ path: string, query: Record<string, string|string[]> } | null}
  */
 export function pairingReturnRoute(url) {
-  let parsed;
-  try {
-    parsed = new URL(String(url || '').trim());
-  } catch {
-    return null;
+  const text = String(url || '').trim();
+  // Older Android WebViews read a custom scheme's host as part of the path,
+  // so the app's return address is matched as text, not through URL.
+  const appMatch = text.match(APP_RETURN_RE);
+  let search;
+  if (appMatch) {
+    search = appMatch[1] || '';
+  } else {
+    let parsed;
+    try {
+      parsed = new URL(text);
+    } catch {
+      return null;
+    }
+    const home = new URL(RETURN_URL);
+    if (parsed.protocol !== 'https:' || parsed.host !== home.host) return null;
+    if (parsed.pathname.replace(/\/+$/, '') !== RETURN_PATH) return null;
+    search = parsed.search;
   }
-  const home = new URL(RETURN_URL);
-  if (parsed.protocol !== 'https:' || parsed.host !== home.host) return null;
-  if (parsed.pathname.replace(/\/+$/, '') !== RETURN_PATH) return null;
+  const params = new URLSearchParams(search);
   const query = {};
-  for (const key of new Set(parsed.searchParams.keys())) {
-    const values = parsed.searchParams.getAll(key);
+  for (const key of new Set(params.keys())) {
+    const values = params.getAll(key);
     query[key] = values.length > 1 ? values : values[0];
   }
   return { path: RETURN_PATH, query };

@@ -1,7 +1,12 @@
 <!--
-  The pull request for getAlby/hub, ready to send once BuhoGO's NWC link
-  handling (#385, PR #410) and the connect chooser with Alby Hub pairing
-  (PR #412) are in a release. Before sending:
+  The pull request for getAlby/hub (issue #389). It is sent after a release,
+  never before: the guides send Hub users to BuhoGO's "Connect a wallet"
+  screens (#410, #412), which they only have once `dev` is merged to `main`,
+  released and deployed (docs/APP_UPDATES.md, release step 4). The poster
+  links below also point at `main`.
+
+  Before sending:
+  - the release with #410 and #412 is live on Play, Zapstore and go.mybuho.de;
   - set addedDate in SuggestedAppData.entry.tsx to the day of the PR;
   - check the poster links below resolve on `main` (they live in store/zapstore/);
   - connect a real Alby Hub once with these exact steps (see "Tested").
