@@ -9,6 +9,8 @@
  * how a check proves BuhoGO keeps one connection per wallet.
  *
  * Test fixture only: invoices are synthetic regtest strings, never payable.
+ * scripts/device/nwc-stand-in.mjs serves the same wallet on a local port
+ * for a device.
  */
 import { createHash, randomBytes } from 'node:crypto';
 import { bech32 } from 'bech32';
@@ -186,6 +188,12 @@ export function createNwcStandIn({ relayUrl = 'wss://relay.standin.test', handle
     connection: `nostr+walletconnect://${walletPubkey}?relay=${encodeURIComponent(relayUrl)}&secret=${bytesToHex(clientSecret)}`,
     /** Route the page's connections to the relay here. */
     attach: (page) => page.routeWebSocket((url) => url.href.startsWith(relayUrl), serve),
+    /** Answer one connection given as { onMessage, send, onClose, close } (e.g. a real WebSocket server's). */
+    serve,
+    /** The wallet's info event, to publish on a real relay. */
+    info,
+    /** The wallet's signed answer to a request event addressed to it, or null for anything else. */
+    answerTo: (event) => (event?.kind === REQUEST_KIND && event.tags.some((t) => t[0] === 'p' && t[1] === walletPubkey) ? respond(event) : null),
     /** Drop every open connection from the relay's side, as a phone losing the network would. */
     dropAll() {
       for (const socket of sockets.list) {

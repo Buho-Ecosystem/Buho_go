@@ -63,7 +63,7 @@ An NWC wallet keeps one relay connection while the app runs (#395). The store ow
 - **Dropped relays:** the SDK opens the socket on the first request and reconnects a dropped relay on the next one, so the same connection survives a phone losing the network or the app going to the background.
 - **Short-lived on purpose:** the connection test before adding (`nwcProbe`), the pairing check (`walletKnowsConnection`) and the tax report (`NWCWalletProvider`, reads across wallets) each open their own and close it when done.
 
-Measured with a stand-in wallet (`scripts/check-nwc-connections.mjs`): before, one wallet held 9 connections after Home, two history pages, a transaction, Receive, a send and a batch of 3; now it holds 1 throughout, reconnects once after the relay drops it, and none after removal.
+Measured with a stand-in wallet (`scripts/check-nwc-connections.mjs`): before, one wallet held 9 connections after Home, two history pages, a transaction, Receive, a send and a batch of 3; now it holds 1 throughout, reconnects once after the relay drops it, and none after removal. On an Android 16 emulator (debug build, stand-in wallet on a public relay via `scripts/device/nwc-stand-in.mjs --relay …`): one connection from start through Home, history and a transaction; after 25 s in the background with the network off it reconnected once on the next request; none after removal.
 
 ## What a connection may do
 
