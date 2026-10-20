@@ -103,21 +103,15 @@ async function openHistory() {
   await go('/transactions');
   await rows().nth(2).waitFor();
 }
-/** Open Transaction Details for one fixture payment. The page is handed the transaction directly:
- * it fetches it from the wallet, which this check does not have. */
+/** Open Transaction Details for one fixture payment, loaded from the wallet's connection as History opens it. */
 async function openDetails(id) {
   await go(`/transaction/${id}?wallet=main`);
-  await page.evaluate((tx) => {
-    for (const el of document.querySelectorAll('*')) {
-      for (let c = el.__vueParentComponent; c; c = c.parent) {
-        if (c.type?.name === 'TransactionDetailsPage') {
-          Object.assign(c.proxy, { isLoading: false, loading: false, transaction: tx });
-          return;
-        }
-      }
-    }
-  }, (({ payment_hash: id, fees_paid: fee, ...rest }) => ({ ...rest, id, fee, walletId: 'main' }))(TXS.find((tx) => tx.payment_hash === id)));
-  await pause(600);
+  await page.locator('.hero-card').first().waitFor();
+  await page.waitForFunction((txId) => {
+    for (const el of document.querySelectorAll('*')) for (let c = el.__vueParentComponent; c; c = c.parent) if (c.type?.name === 'TransactionDetailsPage') return c.proxy.transaction?.id === txId;
+    return false;
+  }, id);
+  await pause(400);
 }
 async function expectSheet(from) {
   await page.waitForFunction(() => location.hash.startsWith('#/wallet'));
@@ -198,9 +192,9 @@ try {
   await paymentsSheet.waitFor();
   await paymentsSheet.locator('.payments-row:not(.payments-row--current)').click();
   await page.waitForFunction(() => location.hash.startsWith('#/transaction/tx-rent-sep'));
-  // The same page shows the other receipt: it starts over, not just its address.
+  // The other receipt itself is shown, not only its address.
   await page.waitForFunction(() => {
-    for (const el of document.querySelectorAll('*')) for (let c = el.__vueParentComponent; c; c = c.parent) if (c.type?.name === 'TransactionDetailsPage') return c.proxy.loading === false && c.proxy.transaction === null;
+    for (const el of document.querySelectorAll('*')) for (let c = el.__vueParentComponent; c; c = c.parent) if (c.type?.name === 'TransactionDetailsPage') return c.proxy.transaction?.id === 'tx-rent-sep';
     return false;
   });
   await openDetails('tx-guess');
