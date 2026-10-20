@@ -11,6 +11,7 @@ import * as walletCapabilities from '../../utils/walletCapabilities.js';
 import * as errorOrigin from '../../utils/errorOrigin.js';
 import * as branta from '../../utils/branta.js';
 import * as payAgain from '../../utils/payAgain.js';
+import * as recipientPayments from '../../services/recipientPayments.js';
 
 // Run the production Options-API methods with controlled provider promises.
 function evaluate(file, dependencies = {}) {
@@ -168,7 +169,7 @@ test('Spark wallets are never announced from a balance difference', () => {
 });
 
 test('a service profile groups payments to both its identifier and original pay link', async () => {
-  const profile = evaluate('../ContactProfilePage.vue', { '../services/txNormalizer.js': { normalizeTx: tx => tx } }).default;
+  const profile = evaluate('../ContactProfilePage.vue', { '../services/recipientPayments.js': recipientPayments }).default;
   const payLink = addresses.canonicalLnurl('https://coffee.example/pay');
   const transactions = ['identifier', 'link', 'other'].map(id => ({ id, type: 'outgoing', status: 'completed', amount: 100, timestamp: Date.now() }));
   const vm = { ...profile.methods, _historyToken: 0, entry: { id: 'coffee', service: { payLink, identifier: 'alice@coffee.example' } },

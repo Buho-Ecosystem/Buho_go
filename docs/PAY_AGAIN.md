@@ -7,6 +7,19 @@ recipient to the one send pipeline, the same hand-over as a contact tap, with
 the last amount filled in. The user still sees the confirm sheet and always
 confirms on the slide, whatever the amount. Nothing is paid by the swipe.
 
+## Payments to this recipient
+
+On a receipt for a recipient that can be paid again, the To row and More
+options open how often and how much was paid to it: the amount sent (fees
+left out, fiat at today's rate) and the number of payments since the first,
+then each payment by month (each opens its receipt, the one you came from
+always listed and marked), and Pay again. Nothing is added to the receipt but
+the row's chevron. The list joins the first page of every wallet's history
+(or the list History last showed, for a wallet without a provider or whose
+provider fails) through `services/recipientPayments.js`, the same matching a
+contact's "Between you" uses. When a wallet answered with a full page, older
+payments may exist, so the figures say "recently" instead of "since".
+
 ## What can be paid again
 
 Only what the user chose to pay, recorded by the main send flow at send time
@@ -47,11 +60,13 @@ swipe leaves out because that link can be stamped by time alone.
 - `composables/usePayContact.js` `payAgain`: the hand-over (`prefillAmount`, `prefillPayout`, `repeat=1`, return route).
 - `Wallet.vue`: records the send, reads the hand-over, `repeat` forces the slide.
 - `TransactionHistory.vue`: the swipe (Quasar slide item, slot only on rows that qualify).
-- `TransactionDetails.vue`: the Pay again row.
+- `TransactionDetails.vue`: the Pay again row; the To row and More options open the payments.
+- `services/recipientPayments.js`: the payments to one recipient, shared with a contact's "Between you".
+- `RecipientPaymentsSheet.vue`: the totals, the list, Pay again.
 
 ## Checks
 
-- Unit: `payAgain`, `transactionMetadata` (proof only), `usePayContact`, `walletFlow` (record, exclusions, hand-over, sheet).
+- Unit: `payAgain`, `transactionMetadata` (proof only), `usePayContact`, `recipientPayments`, `walletFlow` (record, exclusions, hand-over, sheet).
 - Browser: `node scripts/check-pay-again.mjs` against `pnpm dev --port 9036` (or `PAY_AGAIN_BASE_URL`): which rows slide, a short swipe springs back, a full swipe and the Details row open the sheet with the last amount and the slide and come back, light, dark and German.
 - Device: that each wallet type's payments get the record (the ids line up), Android's back-gesture edge.
 
