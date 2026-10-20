@@ -160,6 +160,42 @@ test('Pay again is unavailable until a payment completes, including failed payme
 });
 
 
+test('an NWC receipt opened from History loads from the wallet store\'s wallet, also a few pages down', async () => {
+  const details = evaluate('../TransactionDetails.vue', { pinia: { mapState: () => ({}) }, '../utils/payAgain.js': payAgain }).default;
+  const listed = Array.from({ length: 130 }, (_, i) => ({ payment_hash: `h${i}`, type: 'outgoing', amount: 100 + i, fees_paid: 1, settled_at: 1791300000 - i }));
+  const asked = [];
+  const nwc = { listTransactions: async ({ limit, offset }) => { asked.push(offset); return { transactions: listed.slice(offset, offset + limit) }; } };
+  const vm = {
+    ...details.methods,
+    transaction: null,
+    walletState: {},
+    // The wallet as History names it: from the store, with nwcUrl and no nwcString.
+    walletStore: { activeWallet: null, nwcConnection: async (id) => { assert.equal(id, 'main'); return nwc; } },
+    normalizeForDetails: (tx) => tx,
+  };
+  const wallet = { id: 'main', type: 'nwc', nwcUrl: 'nostr+walletconnect://x' };
+  await vm.fetchNWCTransaction('h3', wallet);
+  assert.equal(vm.transaction.id, 'h3');
+  assert.deepEqual(asked, [0]);
+
+  asked.length = 0;
+  await vm.fetchNWCTransaction('h120', wallet);
+  assert.equal(vm.transaction.id, 'h120', 'found on the second page');
+  assert.deepEqual(asked, [0, 100]);
+
+  asked.length = 0;
+  vm.transaction = null;
+  await vm.fetchNWCTransaction('missing', wallet);
+  assert.equal(vm.transaction, null);
+  assert.deepEqual(asked, [0, 100], 'stops at the end of the list');
+
+  await assert.rejects(vm.fetchNWCTransaction('h3', { id: 'spark', type: 'spark' }), /No active NWC wallet/);
+  vm.walletStore.activeWallet = wallet;
+  vm.transaction = null;
+  await vm.fetchNWCTransaction('h3');
+  assert.equal(vm.transaction.id, 'h3', 'no route wallet: the active one');
+});
+
 test('Spark wallets are never announced from a balance difference', () => {
   const { store, notices } = balanceHarness();
   const spark = { id: 'S', name: 'Business', type: 'spark' };

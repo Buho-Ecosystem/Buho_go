@@ -755,6 +755,10 @@ const TX_SOURCE_TYPE_KEYS = {
   phone: 'Phone payment',
 };
 
+// How far an NWC receipt looks for its payment: five pages of 100.
+const NWC_PAGE_SIZE = 100;
+const NWC_LOOKUP_PAGES = 5;
+
 export default {
   name: 'TransactionDetailsPage',
   components: { ContactAvatar, Icon, RecipientPaymentsSheet, RequestMoneyFlow },
@@ -1489,25 +1493,25 @@ export default {
       }
     },
 
+    /**
+     * An NWC payment, from the wallet the route names (else the active one),
+     * over its one relay connection (store.nwcConnection, #395). History
+     * names the wallet from the wallet store, whose NWC wallets carry their
+     * connection as `nwcUrl`: the wallet is checked by type, not by a field
+     * of the old saved state. A payment further down than the first page is
+     * looked for a few pages on, since History can list it.
+     */
     async fetchNWCTransaction(txId, wallet = null) {
-      // The route-named wallet when provided, else the active one, over its
-      // one relay connection (store.nwcConnection, #395).
-      const targetWallet = wallet || this.walletState.connectedWallets?.find(
-        w => w.id === this.walletState.activeWalletId
-      );
-
-      if (!targetWallet?.nwcString) {
+      const targetWallet = wallet || this.walletStore.activeWallet;
+      if (!targetWallet?.id || (targetWallet.type || 'nwc') !== 'nwc') {
         throw new Error('No active NWC wallet found');
       }
 
       const nwc = await this.walletStore.nwcConnection(targetWallet.id);
-      const transactionsResponse = await nwc.listTransactions({ limit: 100 });
-
-      if (transactionsResponse && transactionsResponse.transactions) {
-        const found = transactionsResponse.transactions.find(tx =>
-          tx.id === txId || tx.payment_hash === txId
-        );
-
+      for (let page = 0; page < NWC_LOOKUP_PAGES; page += 1) {
+        const response = await nwc.listTransactions({ limit: NWC_PAGE_SIZE, offset: page * NWC_PAGE_SIZE });
+        const transactions = response?.transactions || [];
+        const found = transactions.find(tx => tx.id === txId || tx.payment_hash === txId);
         if (found) {
           this.transaction = this.normalizeForDetails({
             ...found,
@@ -1515,8 +1519,9 @@ export default {
             fee: found.fee || found.fees_paid || 0,
             payment_request: found.payment_request || found.invoice || null
           }, 'nwc');
-          console.log('NWC Transaction loaded with description:', this.transaction.description);
+          return;
         }
+        if (transactions.length < NWC_PAGE_SIZE) return;
       }
     },
 
