@@ -27,8 +27,6 @@
 </template>
 
 <script>
-import { haptics } from '../utils/haptics';
-
 /**
  * Floating bottom navigation for the Learn & Earn section.
  *
@@ -62,9 +60,6 @@ export default {
   methods: {
     navigate(tab) {
       if (this.$route.path === tab.route) return;
-      // Fire-and-forget: a native haptic tap gives the bar a proper
-      // tactile feel on iOS/Android and is a silent no-op on web.
-      haptics.tap();
       this.$router.push(tab.route);
     },
   },

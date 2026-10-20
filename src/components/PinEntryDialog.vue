@@ -324,6 +324,7 @@ export default {
     errorMessage(newVal) {
       if (newVal) {
         this.hasError = true;
+        haptics.error();
         this.shakeAndClear();
       }
     }
@@ -349,7 +350,6 @@ export default {
       }
       this.pressedKey = null;
       this.handleKeyPress(key);
-      this.haptic();
     },
 
     onTouchCancel() {
@@ -363,10 +363,6 @@ export default {
         return;
       }
       this.handleKeyPress(key);
-    },
-
-    haptic() {
-      haptics.tap();
     },
 
     handleKeyPress(key) {

@@ -12,6 +12,8 @@ import * as errorOrigin from '../../utils/errorOrigin.js';
 import * as branta from '../../utils/branta.js';
 import * as payAgain from '../../utils/payAgain.js';
 import * as recipientPayments from '../../services/recipientPayments.js';
+import * as haptics from '../../utils/haptics.js';
+import * as nwcErrors from '../../utils/nwcErrors.js';
 
 // Run the production Options-API methods with controlled provider promises.
 function evaluate(file, dependencies = {}) {
@@ -37,6 +39,8 @@ const component = (dependencies = {}) => evaluate('../Wallet.vue', {
   '../stores/autoWithdraw': { useAutoWithdrawStore: () => ({ getConfig: () => null, checkAndExecute() {} }) },
   '../utils/fiatRates': { fiatRatesService: { convertSatsToFiat: async () => null } },
   '../utils/payAgain.js': payAgain,
+  '../utils/haptics.js': haptics,
+  '../utils/nwcErrors.js': nwcErrors,
   '../services/paymentNotifications.js': { isInternalRoute: (route) => typeof route === 'string' && route.startsWith('/') && !route.startsWith('//') },
   ...dependencies,
 }).default;
@@ -374,7 +378,7 @@ const PAY_WALLETS = [
 const PAY_FUNDS = { biz: 50000, personal: 40000, alby: 30000, lnb: 20000, ark: 10000 };
 const INVOICE_SATS = { 'inv-1000': 1000, 'inv-zero': 0, 'inv-big': 45000 };
 
-function payingHarness({ wallets = PAY_WALLETS, active = 'biz', funds = PAY_FUNDS, cached = [], connectionStates = {}, bus = { emit() {} } } = {}) {
+function payingHarness({ wallets = PAY_WALLETS, active = 'biz', funds = PAY_FUNDS, cached = [], connectionStates = {}, bus = { emit() {} }, deps = {} } = {}) {
   const calls = [];     // provider-level traffic, in order: [walletId, method, ...details]
   const lightning = []; // NWC service traffic: [step, the wallet whose connection it uses (null: none), ...]
   const notices = [];
@@ -435,6 +439,7 @@ function payingHarness({ wallets = PAY_WALLETS, active = 'biz', funds = PAY_FUND
     '../utils/bip21.js': { parseBip21: () => null, bip21AmountToSats: () => 0 },
     '../utils/merchantQR.js': { SA_RETAIL_SOURCE: 'sa_retail', parseZARFromMetadata: () => null },
     '../utils/l1WithdrawErrors.js': { describeL1WithdrawError: error => ({ title: 'error', description: error.message }) },
+    ...deps,
   });
   globalThis.localStorage = { getItem: () => null, setItem() {} };
   const dispatched = [];
@@ -1017,6 +1022,35 @@ test('Pay again: the sheet ends on the slide and starts in the recipient\'s curr
   props = options.computed.paymentSheetProps.call(vm);
   assert.equal(props.amount.defaultPayout, undefined, 'another currency now');
   assert.equal(props.forceSlide, false, 'an ordinary payment keeps its usual confirm');
+});
+
+test('haptics: a failed payment is felt as an error, an unknown outcome as a warning, a redeem by its result', async () => {
+  const played = [];
+  const recorder = { haptics: Object.fromEntries(['tap', 'medium', 'success', 'error', 'warning'].map((kind) => [kind, () => { played.push(kind); }])) };
+
+  // An LNbits payment that failed.
+  const failed = payingHarness({ active: 'biz', deps: { '../utils/haptics.js': recorder } });
+  failed.store.showPaymentError = () => {};
+  failed.store.ensureLNBitsConnected = async () => ({ payLightningAddress: async () => { throw new Error('route not found'); } });
+  Object.assign(failed.vm, { pendingPayment: lnAddressPayment(), sendingWalletId: 'lnb', paymentAmount: '2500' });
+  await quietly(() => failed.vm.confirmPayment());
+  assert.deepEqual(played, ['error']);
+
+  // An NWC payment whose outcome the wallet could not confirm: it has not failed.
+  played.length = 0;
+  class UnconfirmedService {
+    async sendPayment() { throw Object.assign(new Error('Payment not confirmed'), { code: 'NWC_PAYMENT_UNCONFIRMED' }); }
+  }
+  const unknown = payingHarness({ active: 'alby', deps: { '../utils/haptics.js': recorder, '../utils/lightning.js': { LightningPaymentService: UnconfirmedService } } });
+  unknown.store.showPaymentError = () => {};
+  Object.assign(unknown.vm, { pendingPayment: lnAddressPayment(), paymentAmount: '2500' });
+  await quietly(() => unknown.vm.confirmPayment());
+  assert.deepEqual(played, ['warning']);
+
+  // A voucher or card redeem: only its outcome.
+  played.length = 0;
+  for (const status of ['creating', 'monitoring', 'confirmed', 'error', 'idle']) failed.options.watch.lnurlWithdrawStatus.call({}, status);
+  assert.deepEqual(played, ['success', 'error']);
 });
 
 test('Pay with: the fee estimate is the paying wallet\'s', async () => {

@@ -481,7 +481,6 @@ function pickFrom(w) {
   if (!w.canSend) return;
   state.fromWallet = w;
   state.showFromPicker = false;
-  haptics.tap();
   if (state.toWallet?.id === w.id) state.toWallet = null;
 }
 
@@ -489,7 +488,6 @@ function pickTo(w) {
   if (w.id === state.fromWallet?.id || !w.canReceive) return;
   state.toWallet = w;
   state.showToPicker = false;
-  haptics.tap();
 }
 
 function setPercent(p) {
@@ -497,7 +495,6 @@ function setPercent(p) {
   state.isMaxAmount = false;
   state.amount = Math.floor((state.fromWallet.balance || 0) * p / 100).toString();
   validateAmount();
-  haptics.tap();
 }
 
 function setMax() {
@@ -521,7 +518,6 @@ function setMax() {
   state.amount = maxAmount.toString();
   state.isMaxAmount = true;
   validateAmount();
-  haptics.tap();
 }
 
 function validateAmount() {
@@ -541,7 +537,6 @@ function goNext() {
   if (!canProceed.value) return;
   if (state.currentStep < 3) {
     state.currentStep++;
-    haptics.tap();
     if (state.currentStep === 2) nextTick(() => amountInputRef.value?.focus());
   } else {
     doTransfer();
@@ -551,7 +546,6 @@ function goNext() {
 function goBack() {
   if (state.currentStep > 1) {
     state.currentStep--;
-    haptics.tap();
   }
 }
 
@@ -559,7 +553,6 @@ async function doTransfer() {
   if (state.isTransferring) return;
   state.isTransferring = true;
   try {
-    haptics.medium();
     const result = await store.transferBetweenWallets(state.fromWallet.id, state.toWallet.id, parseInt(state.amount));
     state.transactionId = result.transactionId;
     state.transferComplete = true;

@@ -147,7 +147,6 @@ function onPointerDown(e) {
   pointerOffset = e.clientX - thumbPx.value;
   samples = [{ x: thumbPx.value, t: performance.now() }];
   e.target.setPointerCapture?.(e.pointerId);
-  haptics.tap();
   window.addEventListener('pointermove', onPointerMove);
   window.addEventListener('pointerup', onPointerUp, { once: true });
   window.addEventListener('pointercancel', onPointerUp, { once: true });
@@ -187,12 +186,14 @@ function onPointerUp() {
   }
 }
 
+// The slide commits; the payment's outcome plays its own haptic once it is
+// known (docs/HAPTICS.md). A flick that never armed still feels the commit.
 function finish() {
   if (completed.value) return;
+  if (!armed.value) haptics.medium();
   thumbPx.value = maxX;
   armed.value = false;
   completed.value = true;
-  haptics.success();
   emit('complete');
 }
 

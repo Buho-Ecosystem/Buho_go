@@ -124,7 +124,6 @@ export default {
   methods: {
     press(key) {
       if (this.loading) return
-      haptics.tap()
       if (key === 'del') this.pin = this.pin.slice(0, -1)
       else if (this.pin.length < this.length) this.pin += key
       this.armIdle()

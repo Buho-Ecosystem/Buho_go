@@ -121,6 +121,7 @@
 import { Icon } from '@iconify/vue';
 import QrScanner from 'qr-scanner';
 import { createQrScanner } from '../utils/qrScanner';
+import { haptics } from '../utils/haptics.js';
 import { isNativeScannerAvailable, startLiveScan } from '../utils/nativeScanner';
 import {
   NATIVE_ERROR,
@@ -365,6 +366,7 @@ export default {
         // in frame can't fire twice before the parent closes us.
         if (this.detected) return;
         this.detected = true;
+        haptics.tap();
         this.$emit('scanned', value);
         return;
       }
@@ -375,6 +377,7 @@ export default {
       if (value === this.lastValue && now - this.lastAt < 2000) return;
       this.lastValue = value;
       this.lastAt = now;
+      haptics.tap();
       this.$emit('scanned', value);
     },
 
