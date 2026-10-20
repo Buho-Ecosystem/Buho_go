@@ -3170,8 +3170,9 @@ export default {
 }
 
 /* Pay again swipe (Quasar slide item): transparent, shaped like the row it
-   holds. The action is wide on purpose: the swipe fires past it, more than
-   half a phone-width row, so a scroll that drifts sideways never pays. */
+   holds. The swipe fires 40 px past the action's width, about half a phone
+   row: a scroll that drifts sideways never pays, and the swipe need not
+   start at the screen edge, where Android's Back gesture lives. */
 .tx-slide {
   background: transparent;
   border-radius: 14px;
@@ -3197,7 +3198,7 @@ export default {
   flex-direction: column;
   align-items: center;
   gap: 4px;
-  width: 168px;
+  width: 128px;
   font-family: 'Manrope', sans-serif;
   font-size: 13px;
   font-weight: 700;

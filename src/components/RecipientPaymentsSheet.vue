@@ -270,7 +270,6 @@ function payAgain() {
   display: block;
   font-size: 20px;
   font-weight: 800;
-  overflow-wrap: anywhere;
 }
 .payments-stat__label {
   display: block;
