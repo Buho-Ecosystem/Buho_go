@@ -1867,7 +1867,10 @@ export default {
      * ends on the slide. Nothing is sent from here.
      */
     payAgain() {
-      usePayContact(this).payAgain(this.payAgainTarget, { walletId: this.metadataWalletId });
+      usePayContact(this).payAgain(this.payAgainTarget, {
+        walletId: this.metadataWalletId,
+        name: this.heroAvatar?.name || this.assignedContact?.name || '',
+      });
     },
 
     // Open Branta's verification page for this merchant. Mirrors

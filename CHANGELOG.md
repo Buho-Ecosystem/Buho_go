@@ -57,6 +57,7 @@ Still on a BuhoGO from GitHub or Zapstore older than 1.9.1? It was signed with a
 - When a payment reaches no server, BuhoGO says why: you're offline, the network has no internet (a VPN that blocks traffic, for example), or Spark can't be reached while the internet works. The payment sheet says so before you send and shows no guessed network fee.
 - Fixed Auto-Transfer moving almost the whole balance instead of what is above the amount, holding back 3% even between Spark wallets, and sending a wrong amount to a Bitcoin address. Rules on wallets other than the active one now run too.
 - Fixed a kiosk on an NWC wallet not taking any payment, and two ways an unpaid sale could show as paid. An NWC payment now counts only on proof.
+- Fixed Auto-Transfer payments from an NWC wallet missing their label in History.
 - Fixed moving money into an NWC wallet.
 - Fixed the kiosk staying set to a wallet that had been disconnected, which made every sale fail.
 - An Arkade wallet that holds money can now be removed only once its recovery phrase is backed up.

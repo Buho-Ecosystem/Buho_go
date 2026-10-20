@@ -56,7 +56,7 @@ function extraQuery({ walletId, context, amountSats, note, payout, repeat, retur
  *   payContact: (contact: object, options?: PayOptions) => void,
  *   payInvoice: (invoice: { bolt11: string, name?: string }, options?: PayOptions) => void,
  *   payAddress: (target: { address: string, addressType?: string, name?: string }, options?: PayOptions) => void,
- *   payAgain: (target: object|null, options?: { walletId?: string }) => void,
+ *   payAgain: (target: object|null, options?: { walletId?: string, name?: string }) => void,
  * }}
  */
 export function usePayContact(ctx) {
@@ -169,11 +169,13 @@ export function usePayContact(ctx) {
   /**
    * Pay a past recipient again (utils/payAgain `payAgainTarget`): the same
    * pipeline as any payment, the last amount suggested, ending on the slide,
-   * and back on this screen afterwards. `walletId` is the wallet that paid.
+   * and back on this screen afterwards. `walletId` is the wallet that paid,
+   * `name` what the screen calls the recipient (shown until the pipeline
+   * names it from the address book or the service).
    */
-  function payAgain(target, { walletId } = {}) {
+  function payAgain(target, { walletId, name = '' } = {}) {
     if (!target) return;
-    payAddress({ address: target.address, addressType: target.addressType }, {
+    payAddress({ address: target.address, addressType: target.addressType, name }, {
       walletId,
       amountSats: target.amountSats,
       payout: target.payout,
