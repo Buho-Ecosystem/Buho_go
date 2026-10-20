@@ -16,6 +16,8 @@ const TXS = [
   { payment_hash: 'tx-rent', type: 'outgoing', amount: 1500, fees_paid: 2, settled_at: t - 120, status: 'completed', description: 'Rent' },
   { payment_hash: 'tx-guess', type: 'outgoing', amount: 2100, fees_paid: 1, settled_at: t - 240, status: 'completed', description: 'Order 4471' },
   { payment_hash: 'tx-in', type: 'incoming', amount: 12500, fees_paid: 0, settled_at: t - 360, status: 'completed', description: 'Dinner split' },
+  // Last month's rent: the same recipient, listed among the payments to it.
+  { payment_hash: 'tx-rent-sep', type: 'outgoing', amount: 1400, fees_paid: 2, settled_at: t - 30 * 86400, status: 'completed', description: 'Rent' },
 ];
 const NWC = `nostr+walletconnect://${'a'.repeat(64)}?relay=wss%3A%2F%2Frelay.example&secret=${'5e'.repeat(32)}`;
 const WALLET = { id: 'main', type: 'nwc', name: 'Main', nwcUrl: NWC, metadata: { methods: ['pay_invoice', 'get_balance', 'list_transactions'] } };
@@ -67,6 +69,9 @@ await page.evaluate(async ({ wallet, txs }) => {
   await metadata.setPayAgainForTransaction('tx-rent', wallet.id, { address: 'rent@pay.example', addressType: 'lightning', amountSats: 1500 });
   // Matched by time only: the address shows, but it is never paid again.
   await metadata.setRecipientAddressForTransaction('tx-guess', wallet.id, 'guess@pay.example');
+  await metadata.setRecipientAddressForTransaction('tx-rent-sep', wallet.id, 'rent@pay.example');
+  // The list History last showed, which the payments sheet reads for a wallet without a provider.
+  localStorage.setItem('buhoGO_tx_cache_v1', JSON.stringify({ [wallet.id]: txs.map(({ payment_hash: id, ...tx }) => ({ ...tx, id })) }));
 }, { wallet: WALLET, txs: TXS });
 
 const go = async (path) => { await page.evaluate((p) => window.__audit.app.config.globalProperties.$router.push(p), path); await pause(1500); };
@@ -164,7 +169,37 @@ try {
   assert.equal(await page.locator('.pay-again-row').count(), 0);
   console.log('✓ Details: the Pay again row opens the same sheet and returns; none for a time-matched recipient');
 
-  // 5. Dark mode, and German, for the swipe and the row.
+  // 5. Payments to this recipient: from the To row and from More options, each one opens its receipt.
+  await openDetails('tx-rent');
+  const paymentsSheet = page.locator('.payments-sheet');
+  await page.locator('.tx-row--link', { hasText: 'rent@pay.example' }).click();
+  await paymentsSheet.waitFor();
+  await pause(400);
+  const stats = await paymentsSheet.locator('.payments-stat strong').allInnerTexts();
+  assert.deepEqual(stats, ['2,900 sats', '2'], 'two payments, 1,500 + 1,400 sats');
+  assert.match(await paymentsSheet.innerText(), /Sent in total/);
+  assert.equal(await paymentsSheet.locator('.payments-row').count(), 2);
+  assert.equal(await paymentsSheet.locator('.payments-row--current').count(), 1, 'this payment is marked');
+  assert.equal(await page.getByText('Order 4471').count(), 0, 'another recipient is not listed');
+  await page.screenshot({ path: `${output}/payments-sheet-light.png` });
+  await paymentsSheet.getByRole('button', { name: 'Done' }).click();
+  await paymentsSheet.waitFor({ state: 'detached' });
+  await page.locator('.receipt-more').click();
+  await page.getByText('Payments to this recipient', { exact: true }).click();
+  await paymentsSheet.waitFor();
+  await paymentsSheet.locator('.payments-row:not(.payments-row--current)').click();
+  await page.waitForFunction(() => location.hash.startsWith('#/transaction/tx-rent-sep'));
+  // The same page shows the other receipt: it starts over, not just its address.
+  await page.waitForFunction(() => {
+    for (const el of document.querySelectorAll('*')) for (let c = el.__vueParentComponent; c; c = c.parent) if (c.type?.name === 'TransactionDetailsPage') return c.proxy.loading === false && c.proxy.transaction === null;
+    return false;
+  });
+  await openDetails('tx-guess');
+  await page.getByText('Order 4471').first().waitFor();
+  assert.equal(await page.locator('.tx-row--link', { hasText: 'guess@pay.example' }).count(), 0, 'no list for a recipient that cannot be paid again');
+  console.log('✓ payments to this recipient: from the To row and More options, totals, this one marked, each opens its receipt');
+
+  // 6. Dark mode, and German, for the swipe and the row.
   await openHistory();
   await page.evaluate(() => { window.__audit.setDark(true); window.__audit.app._instance.proxy.$i18n.locale = 'de'; });
   await pause(300);
@@ -175,6 +210,10 @@ try {
   await openDetails('tx-rent');
   await page.locator('.pay-again-row').waitFor();
   await page.screenshot({ path: `${output}/details-dark-de.png`, fullPage: true });
+  await page.locator('.tx-row--link', { hasText: 'rent@pay.example' }).click();
+  await paymentsSheet.waitFor();
+  await pause(400);
+  await page.screenshot({ path: `${output}/payments-sheet-dark-de.png` });
   console.log('✓ dark mode and German');
 
   assert.deepEqual(errors, []);

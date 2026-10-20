@@ -146,7 +146,7 @@ import { useAddressBookStore } from '../stores/addressBook'
 import { useWalletStore } from '../stores/wallet'
 import { useTransactionMetadataStore } from '../stores/transactionMetadata'
 import { usePayContact } from '../composables/usePayContact'
-import { normalizeTx } from '../services/txNormalizer.js'
+import { loadRecipientPayments } from '../services/recipientPayments.js'
 import ContactAvatar from '../components/AddressBook/ContactAvatar.vue'
 import AddressBookModal from '../components/AddressBook/AddressBookModal.vue'
 import { serviceAddressLine } from '../utils/lnurlMetadata.js'
@@ -285,82 +285,29 @@ export default {
     },
 
     /**
-     * Payments between you and this contact, joined from every available
-     * provider's history, in both directions:
-     *  - Outgoing: a tx counts when its own address (or the recipient address
-     *    in its metadata) matches the contact's, or when the durable metadata
-     *    link names this contact.
-     *  - Incoming: only when the durable metadata link names this contact.
-     *    An incoming tx's lnaddress is the user's OWN address, so matching it
-     *    would attach unrelated payments.
-     * Best effort — a provider that cannot answer contributes nothing.
+     * Payments between you and this contact, from every wallet, in both
+     * directions (services/recipientPayments has the matching rules).
      */
     async loadHistory() {
       const token = ++this._historyToken
       const contactId = this.entry?.id
-      const address = this.entryAddress.trim().toLowerCase()
-      const aliases = new Set([address, this.entry?.service?.payLink, this.entry?.service?.identifier]
-        .filter(Boolean).map(value => value.trim().toLowerCase()))
-      if (!contactId && !aliases.size) return
-
-      const sources = this.walletStore.wallets
-        .map((wallet) => ({ wallet, provider: this.walletStore.providers?.[wallet.id] }))
-        .filter(({ provider }) => typeof provider?.getTransactions === 'function')
-      if (!sources.length) return
+      const addresses = [this.entryAddress, this.entry?.service?.payLink, this.entry?.service?.identifier]
+      if (!contactId && !addresses.some(Boolean)) return
 
       this.historyLoading = true
       try {
-        const batches = await Promise.all(sources.map(async ({ wallet, provider }) => {
-          try {
-            const result = await provider.getTransactions({ limit: 100, offset: 0 })
-            const raw = Array.isArray(result) ? result : (result?.transactions || [])
-            return raw.map((r) => {
-              const tx = normalizeTx(r, { walletType: wallet.type })
-              const meta = this.txMetadata.getMetadataForTransaction(tx.id, wallet.id) || {}
-              const txAddress = String(tx.lnaddress || '').trim().toLowerCase()
-              const metaAddress = String(meta.recipientAddress || '').trim().toLowerCase()
-              const linked = Boolean(contactId) && meta.contactId === contactId
-              // Incoming payments match only by the explicit link. For an
-              // incoming tx, lnaddress is the user's OWN address: matching it
-              // would attach unrelated payments to this contact.
-              const matches = tx.type === 'incoming'
-                ? linked
-                : (aliases.has(txAddress) || aliases.has(metaAddress) || linked)
-              return {
-                ...tx,
-                sourceKey: `${wallet.id}:${tx.id || tx.timestamp}`,
-                amountSats: tx.recipientSats || Math.abs(Number(tx.amount) || 0),
-                timeMs: this.txTimeMs(tx),
-                matches,
-              }
-            })
-          } catch {
-            return []
-          }
-        }))
-
+        const { payments } = await loadRecipientPayments({
+          wallets: this.walletStore.wallets,
+          providers: this.walletStore.providers,
+          metadataFor: (txId, walletId) => this.txMetadata.getMetadataForTransaction(txId, walletId),
+          addresses,
+          contactId,
+        })
         if (token !== this._historyToken) return
-        this.history = batches
-          .flat()
-          .filter((tx) => (
-            tx.matches
-            && ['outgoing', 'incoming'].includes(tx.type)
-            && !['pending', 'failed', 'expired'].includes(tx.status)
-          ))
-          .sort((a, b) => b.timeMs - a.timeMs)
-          .slice(0, HISTORY_LIMIT)
+        this.history = payments.slice(0, HISTORY_LIMIT)
       } finally {
         if (token === this._historyToken) this.historyLoading = false
       }
-    },
-
-    txTimeMs(tx) {
-      const raw = tx?.settled_at ?? tx?.created_at ?? tx?.timestamp ?? tx?.time
-      if (typeof raw === 'number' && Number.isFinite(raw)) {
-        return raw < 1e12 ? raw * 1000 : raw
-      }
-      const parsed = Date.parse(raw)
-      return Number.isFinite(parsed) ? parsed : 0
     },
 
     formatTxDate(tx) {

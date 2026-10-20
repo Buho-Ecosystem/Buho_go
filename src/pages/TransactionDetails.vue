@@ -31,6 +31,12 @@
           <Icon icon="tabler:dots-vertical" width="22" height="22" />
           <q-menu anchor="bottom right" self="top right">
             <q-list class="receipt-menu">
+              <template v-if="payAgainTarget">
+                <q-item clickable v-close-popup @click="showRecipientPayments = true">
+                  <q-item-section>{{ $t('Payments to this recipient') }}</q-item-section>
+                </q-item>
+                <q-separator />
+              </template>
               <q-item clickable v-close-popup @click="editNote">
                 <q-item-section>{{ $t('Edit note') }}</q-item-section>
               </q-item>
@@ -174,10 +180,19 @@
       <!-- Transaction Info -->
       <div class="details-section">
         <div class="tx-table">
-          <div v-if="getCounterpartyAddress()" class="tx-row">
-            <div class="tx-row-label">{{ transaction.type === 'outgoing' ? $t('To') : $t('Paid to') }}</div>
-            <div class="tx-row-value">{{ counterpartyAddressDisplay }}</div>
-          </div>
+          <!-- A recipient that can be paid again: the row opens the payments to it. -->
+          <component
+            :is="payAgainTarget ? 'button' : 'div'"
+            v-if="getCounterpartyAddress()"
+            :type="payAgainTarget ? 'button' : null"
+            class="tx-row"
+            :class="{ 'tx-row--link': payAgainTarget }"
+            @click="payAgainTarget && (showRecipientPayments = true)"
+          >
+            <span class="tx-row-label">{{ transaction.type === 'outgoing' ? $t('To') : $t('Paid to') }}</span>
+            <span class="tx-row-value">{{ counterpartyAddressDisplay }}</span>
+            <Icon v-if="payAgainTarget" icon="tabler:chevron-right" width="16" height="16" class="tx-row-chevron" aria-hidden="true" />
+          </component>
 
           <!-- The confirm sheet's seal, kept with the payment: opens Branta's
                verification page again when Branta gave one. -->
@@ -679,6 +694,17 @@
       </q-card>
     </q-dialog>
     <RequestMoneyFlow v-model="repaymentOpen" :initial-sats="repaymentSeed?.amountSats || 0" :initial-note="repaymentSeed?.note || ''" :source="repaymentSeed?.source || null" />
+    <RecipientPaymentsSheet
+      v-if="payAgainTarget"
+      v-model="showRecipientPayments"
+      :name="recipientPaymentsName"
+      :address-line="recipientPaymentsName === counterpartyAddressDisplay ? '' : counterpartyAddressDisplay"
+      :addresses="recipientPaymentAddresses"
+      :contact-id="assignedContact?.id || ''"
+      :current="transaction"
+      :current-wallet-id="metadataWalletId || ''"
+      :target="payAgainTarget"
+    />
   </q-page>
 </template>
 
@@ -710,6 +736,7 @@ import { zapperProfile, zapperProfileEvent } from '../services/zapperProfiles';
 import { NOSTRICH_HEAD_ICON } from '../utils/nostrIcon.js';
 import { EARN_BRAND, earnRewardKind } from '../services/earnBrand';
 import RequestMoneyFlow from '../components/chat/RequestMoneyFlow.vue';
+import RecipientPaymentsSheet from '../components/RecipientPaymentsSheet.vue';
 import { useChatRuntime } from '../composables/useChatRuntime.js';
 import { useMessagesStore } from '../stores/messages.js';
 import { useAutoWithdrawStore } from '../stores/autoWithdraw';
@@ -729,7 +756,7 @@ const TX_SOURCE_TYPE_KEYS = {
 
 export default {
   name: 'TransactionDetailsPage',
-  components: { ContactAvatar, Icon, RequestMoneyFlow },
+  components: { ContactAvatar, Icon, RecipientPaymentsSheet, RequestMoneyFlow },
   setup() {
     const runtime = useChatRuntime();
     return {
@@ -743,6 +770,7 @@ export default {
       loading: true,
       showDeveloperMode: false,
       showNoteEditor: false,
+      showRecipientPayments: false,
       repaymentOpen: false,
       repaymentSeed: null,
       noteDraft: '',
@@ -798,6 +826,15 @@ export default {
   },
 
   watch: {
+    // Another receipt opened on this page (from the payments to its
+    // recipient): the router reuses this instance, so it starts over.
+    '$route.fullPath'(to, from) {
+      if (to === from || !this.$route.path.startsWith('/transaction/')) return;
+      if (this._zapProfileTimer) clearInterval(this._zapProfileTimer);
+      const { walletStore, addressBookStore, metadataStore, fiatRates, loadingFiatRates } = this;
+      Object.assign(this.$data, this.$options.data.call(this), { walletStore, addressBookStore, metadataStore, fiatRates, loadingFiatRates });
+      this.initializeTransactionDetails();
+    },
     'fiatRates': {
       handler() {
         this.$forceUpdate();
@@ -956,6 +993,19 @@ export default {
         metadata: this.metadataStore.getMetadataForTransaction(this.transaction.id, this.metadataWalletId),
         withPayLink: true,
       });
+    },
+
+    /** Every address this payment's recipient is known by, for the payments to it. */
+    recipientPaymentAddresses() {
+      const meta = this.transaction && this.metadataStore
+        ? this.metadataStore.getMetadataForTransaction(this.transaction.id, this.metadataWalletId)
+        : null;
+      return [this.payAgainTarget?.address, meta?.recipientAddress, meta?.payLink].filter(Boolean);
+    },
+
+    /** The recipient, as this receipt names it. */
+    recipientPaymentsName() {
+      return this.heroAvatar?.name || this.assignedContact?.name || this.counterpartyAddressDisplay;
     },
 
     /**
@@ -2596,7 +2646,10 @@ export default {
   flex-shrink: 0;
 }
 
-.tx-row-verified {
+/* A row that is a button (the verified business, the recipient of a payment
+   that can be made again) looks like every other row. */
+.tx-row-verified,
+button.tx-row {
   width: 100%;
   border: none;
   border-bottom: 1px solid var(--border-card);
@@ -2606,7 +2659,8 @@ export default {
   text-align: left;
 }
 
-.tx-row-verified:focus-visible {
+.tx-row-verified:focus-visible,
+button.tx-row:focus-visible {
   outline: 2px solid var(--brand-accent, #059573);
   outline-offset: -2px;
 }
