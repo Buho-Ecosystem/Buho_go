@@ -684,7 +684,6 @@
 </template>
 
 <script>
-import { NostrWebLNProvider } from "@getalby/sdk";
 import { fiatRatesService } from '../utils/fiatRates.js';
 import { fiatSymbol } from '../utils/fiatCurrencies.js';
 import { formatAmount, formatAmountWithPrefix } from '../utils/amountFormatting.js';
@@ -1448,8 +1447,8 @@ export default {
     },
 
     async fetchNWCTransaction(txId, wallet = null) {
-      // The route-named wallet's connection when provided, else the active
-      // one — each NWC wallet has its own connection string.
+      // The route-named wallet when provided, else the active one, over its
+      // one relay connection (store.nwcConnection, #395).
       const targetWallet = wallet || this.walletState.connectedWallets?.find(
         w => w.id === this.walletState.activeWalletId
       );
@@ -1458,12 +1457,7 @@ export default {
         throw new Error('No active NWC wallet found');
       }
 
-      const nwc = new NostrWebLNProvider({
-        nostrWalletConnectUrl: targetWallet.nwcString,
-      });
-
-      await nwc.enable();
-
+      const nwc = await this.walletStore.nwcConnection(targetWallet.id);
       const transactionsResponse = await nwc.listTransactions({ limit: 100 });
 
       if (transactionsResponse && transactionsResponse.transactions) {

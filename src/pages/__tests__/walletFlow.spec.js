@@ -373,18 +373,18 @@ const INVOICE_SATS = { 'inv-1000': 1000, 'inv-zero': 0, 'inv-big': 45000 };
 
 function payingHarness({ wallets = PAY_WALLETS, active = 'biz', funds = PAY_FUNDS, cached = [], connectionStates = {}, bus = { emit() {} } } = {}) {
   const calls = [];     // provider-level traffic, in order: [walletId, method, ...details]
-  const lightning = []; // NWC service traffic
+  const lightning = []; // NWC service traffic: [step, the wallet whose connection it uses (null: none), ...]
   const notices = [];
   const sent = {};      // what the success screen / metadata writes received
   class FakeLightningService {
-    constructor(url) { this.url = url; lightning.push(['new', url]); }
+    constructor(nwc = null) { this.wallet = nwc?.walletId ?? null; lightning.push(['new', this.wallet]); }
     async processPaymentInput(input) {
-      lightning.push(['process', this.url, input]);
+      lightning.push(['process', this.wallet, input]);
       return { type: 'lightning_address', address: input, minSendable: 1000, maxSendable: 1e9, minSats: 1, maxSats: 1e6,
         isFixedAmount: false, fixedAmountSats: null, amount: null, commentAllowed: 0, callback: 'https://cb.example/pay',
         description: `Payment to ${input}` };
     }
-    async sendPayment(data, amount, comment) { lightning.push(['send', this.url, data, amount, comment]); return { preimage: 'ff', status: 'completed' }; }
+    async sendPayment(data, amount, comment) { lightning.push(['send', this.wallet, data, amount, comment]); return { preimage: 'ff', status: 'completed' }; }
   }
   const providerFor = id => ({
     payInvoice: async args => { calls.push([id, 'payInvoice', args.invoice]); return { id: `tx-${id}`, status: 'completed' }; },
@@ -397,6 +397,8 @@ function payingHarness({ wallets = PAY_WALLETS, active = 'biz', funds = PAY_FUND
   });
   const store = {
     nwcLimitFor: () => null,
+    // The wallet's one NWC connection (#395), named by its wallet.
+    nwcConnection: async (id) => ({ walletId: id }),
     wallets, activeWalletId: active, connectionStates, balances: funds,
     balanceStates: Object.fromEntries(Object.entries(funds).map(([id, value]) => [id, { value }])),
     get activeWallet() { return this.wallets.find(w => w.id === this.activeWalletId) || null; },
@@ -672,10 +674,10 @@ test('a handed-over payment steps back to the screen right behind it, so Back is
 });
 
 test('Pay with: the payload takes the shape of the paying wallet\'s backend', async () => {
-  // Paid by an NWC wallet: resolved through that wallet's own NWC string, never the active wallet's.
+  // Paid by an NWC wallet: resolved for NWC, and reading the address needs no connection.
   const nwc = payingHarness({ active: 'biz' });
   await nwc.vm.onPaymentDetected({ type: 'lightning_address', data: 'bob@example.com', sendingWalletId: 'alby' });
-  assert.deepEqual(nwc.lightning, [['new', 'nostr+walletconnect://alby'], ['process', 'nostr+walletconnect://alby', 'bob@example.com']]);
+  assert.deepEqual(nwc.lightning, [['new', null], ['process', null, 'bob@example.com']]);
   assert.equal(nwc.vm.pendingPayment.address, 'bob@example.com');
   assert.equal(nwc.vm.sendingWalletId, 'alby');
 
@@ -836,7 +838,7 @@ test('Pay with: a Spark wallet\'s balance is refreshed through the Spark lifecyc
   assert.deepEqual(callsTo(lnbits.calls, 'refreshBalance'), [['lnb', 'refreshBalance']]);
 });
 
-test('Pay with: the NWC wallet that was chosen pays, with its own connection string', async () => {
+test('Pay with: the NWC wallet that was chosen pays, over its own connection', async () => {
   // The payment was resolved for a Spark wallet (the default), then the user picked the NWC wallet.
   const { vm, store, lightning, calls } = payingHarness({ active: 'biz' });
   await vm.onPaymentDetected({ type: 'lightning_address', data: 'bob@example.com' });
@@ -845,7 +847,7 @@ test('Pay with: the NWC wallet that was chosen pays, with its own connection str
   vm.paymentAmount = '2500';
   vm.sendSheetAmountSats = 2500;
   await quietly(() => vm.confirmPayment());
-  assert.deepEqual(lightning.map(entry => entry.slice(0, 2)), [['new', 'nostr+walletconnect://alby'], ['send', 'nostr+walletconnect://alby']]);
+  assert.deepEqual(lightning.map(entry => entry.slice(0, 2)), [['new', 'alby'], ['send', 'alby']]);
   const [, , data, amount] = lightning[1];
   assert.equal(data.type, 'lightning_address');
   assert.equal(data.address, 'bob@example.com', 'bridged to the shape the NWC service reads');

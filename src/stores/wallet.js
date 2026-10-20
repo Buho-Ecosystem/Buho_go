@@ -68,6 +68,8 @@ const observedBalance = new Map();
 const balanceReads = new Map();
 // walletId -> { epoch, promise }: one store-level Spark connection attempt.
 const sparkConnects = new Map();
+// walletId -> promise: the one NWC connect in flight; a second asker shares it.
+const nwcConnects = new Map();
 // walletId -> bumped on disconnect, rebuild and removal. Work started under
 // an older epoch must not publish providers, balances or info afterwards.
 const walletEpochs = new Map();
@@ -80,6 +82,11 @@ const removingWallets = new Set();
 // takes a wallet for saved that may still be undone.
 const addingWallets = new Set();
 const epochOf = (walletId) => walletEpochs.get(walletId) || 0;
+
+/** Close an NWC connection; closing is best-effort and never throws. */
+function closeNwc(nwc) {
+  try { nwc?.close?.(); } catch (e) { console.warn('Error closing NWC connection:', e); }
+}
 
 // Spark membership changes (create, restore, add, discover, remove) run one
 // at a time, so two of them can never claim the same account.
@@ -3168,34 +3175,76 @@ export const useWalletStore = defineStore('wallet', {
         return this.providers[walletId];
       }
 
-      // NWC wallet
-      try {
-        const nwc = new NostrWebLNProvider({
-          nostrWalletConnectUrl: wallet.nwcUrl,
-        });
+      return this._connectNwc(wallet);
+    },
 
-        await nwc.enable();
-
-        this.connectionStates[walletId] = {
-          connected: true,
-          lastConnected: Date.now(),
-          nwcInstance: nwc,
-          error: null,
-        };
-
-        // Refresh data
-        await this.refreshWalletData(walletId);
-
-        return nwc;
-      } catch (error) {
-        this.connectionStates[walletId] = {
-          connected: false,
-          lastConnected: Date.now(),
-          nwcInstance: null,
-          error: error.message,
-        };
-        throw error;
+    /**
+     * The NWC wallet's live connection, connecting it when it has none.
+     *
+     * Every screen and service asks here instead of building its own
+     * NostrWebLNProvider, so a wallet keeps one relay connection while the
+     * app runs (#395). The SDK reconnects a dropped relay on the next
+     * request, so the connection outlives a phone losing the network.
+     *
+     * @param {string} walletId
+     * @returns {Promise<object>} the wallet's NostrWebLNProvider
+     */
+    async nwcConnection(walletId) {
+      const live = this.connectionStates[walletId]?.nwcInstance;
+      if (live) return live;
+      const wallet = this.wallets.find((w) => w.id === walletId);
+      if (!wallet || (wallet.type || WALLET_TYPES.NWC) !== WALLET_TYPES.NWC) {
+        throw new Error('Not an NWC wallet');
       }
+      return this._connectNwc(wallet);
+    },
+
+    /**
+     * Connect an NWC wallet: one attempt at a time per wallet (a second
+     * caller shares it), the connection it replaces closed, and nothing
+     * published for a wallet disconnected or removed meanwhile. A
+     * connection that fails is closed too, never left open unowned.
+     */
+    _connectNwc(wallet) {
+      const walletId = wallet.id;
+      const pending = nwcConnects.get(walletId);
+      if (pending) return pending;
+
+      const attempt = (async () => {
+        if (removingWallets.has(walletId)) throw new Error('Wallet is being removed');
+        const epoch = epochOf(walletId);
+        const nwc = new NostrWebLNProvider({ nostrWalletConnectUrl: wallet.nwcUrl });
+        try {
+          await nwc.enable();
+          if (epochOf(walletId) !== epoch) throw new Error('Wallet was disconnected');
+          const previous = this.connectionStates[walletId]?.nwcInstance;
+          if (previous && previous !== nwc) closeNwc(previous);
+          this.connectionStates[walletId] = {
+            connected: true,
+            lastConnected: Date.now(),
+            nwcInstance: nwc,
+            error: null,
+          };
+          await this.refreshWalletData(walletId);
+          if (epochOf(walletId) !== epoch) throw new Error('Wallet was disconnected');
+          return nwc;
+        } catch (error) {
+          closeNwc(nwc);
+          if (epochOf(walletId) === epoch) {
+            this.connectionStates[walletId] = {
+              connected: false,
+              lastConnected: Date.now(),
+              nwcInstance: null,
+              error: error.message,
+            };
+          }
+          throw error;
+        }
+      })();
+      nwcConnects.set(walletId, attempt);
+      const forget = () => { if (nwcConnects.get(walletId) === attempt) nwcConnects.delete(walletId); };
+      attempt.then(forget, forget);
+      return attempt;
     },
 
     /**
@@ -3220,14 +3269,7 @@ export const useWalletStore = defineStore('wallet', {
           delete this.providers[walletId];
         }
       } else if (state) {
-        // Close NWC connection if exists
-        if (state.nwcInstance && typeof state.nwcInstance.close === 'function') {
-          try {
-            state.nwcInstance.close();
-          } catch (e) {
-            console.warn('Error closing NWC connection:', e);
-          }
-        }
+        closeNwc(state.nwcInstance);
       }
 
       this.connectionStates[walletId] = {
@@ -3819,11 +3861,10 @@ export const useWalletStore = defineStore('wallet', {
     /**
      * Ensure a wallet is connected for transfer.
      *
-     * Delegates LNBits to `ensureLNBitsConnected` so every LNBits send/transfer
-     * path uses one source of truth for connect/reconnect. Spark and NWC keep
-     * their own connect calls because their connection models differ (Spark
-     * needs a device-key auto-connect; NWC tracks connection in a side
-     * `nwcInstance` rather than on the provider).
+     * Delegates LNBits to `ensureLNBitsConnected` and NWC to `nwcConnection`
+     * so every send/transfer path uses one source of truth for
+     * connect/reconnect. Spark keeps its own connect call (a device-key
+     * auto-connect).
      *
      * @param {string} walletId - Wallet ID to connect
      * @returns {Promise<Object>} Provider instance
@@ -3838,11 +3879,14 @@ export const useWalletStore = defineStore('wallet', {
         return await this.ensureLNBitsConnected(walletId);
       }
 
+      if ((wallet.type || WALLET_TYPES.NWC) === WALLET_TYPES.NWC) {
+        return this.nwcConnection(walletId);
+      }
+
       let provider = this.getProvider(walletId);
       const isActuallyConnected = provider && (
         (wallet.type === WALLET_TYPES.SPARK && provider.isConnected) ||
-        (wallet.type === WALLET_TYPES.ARKADE && provider.isConnected) ||
-        (wallet.type === WALLET_TYPES.NWC && this.connectionStates[walletId]?.nwcInstance)
+        (wallet.type === WALLET_TYPES.ARKADE && provider.isConnected)
       );
 
       if (isActuallyConnected) {

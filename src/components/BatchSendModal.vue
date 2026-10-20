@@ -1273,10 +1273,14 @@ function getActiveWalletType() {
   return walletStore.activeWalletType || null
 }
 
-function getActiveWalletNwcString() {
-  const wallet = getActiveWallet()
-  // NWC wallets store the connection URL as 'nwcUrl'
-  return wallet?.nwcUrl || wallet?.nwcString || null
+/**
+ * Payments from the active NWC wallet, over its one relay connection: every
+ * row of a batch shares it instead of opening its own (#395).
+ */
+async function nwcPaymentService() {
+  const walletId = walletStore.activeWalletId
+  const nwc = await walletStore.nwcConnection(walletId)
+  return new LightningPaymentService(nwc, { limit: walletStore.nwcLimitFor(walletId) })
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -1416,13 +1420,9 @@ async function startBatch() {
           payment = await arkadeProvider.payInvoice({ invoice })
           result.status = 'success'
         } else if (walletType === WALLET_TYPES.NWC) {
-          // NWC: create service and pay. Its payLightningAddress parses the
-          // successAction at its own callback boundary.
-          const nwcString = getActiveWalletNwcString()
-          if (!nwcString) {
-            throw new Error('NWC connection not found')
-          }
-          const lightningService = new LightningPaymentService(nwcString, { limit: walletStore.nwcLimitFor(walletStore.activeWalletId) })
+          // NWC: pay over the wallet's connection. Its payLightningAddress
+          // parses the successAction at its own callback boundary.
+          const lightningService = await nwcPaymentService()
           const paymentData = await lightningService.processPaymentInput(address)
           payment = await lightningService.sendPayment(paymentData, result.amount)
           action = payment?.successAction || null
@@ -1470,11 +1470,7 @@ async function startBatch() {
         action = successAction
 
         if (walletType === WALLET_TYPES.NWC) {
-          const nwcString = getActiveWalletNwcString()
-          if (!nwcString) {
-            throw new Error('NWC connection not found')
-          }
-          const lightningService = new LightningPaymentService(nwcString, { limit: walletStore.nwcLimitFor(walletStore.activeWalletId) })
+          const lightningService = await nwcPaymentService()
           payment = await lightningService.payInvoice(invoice)
         } else if (walletType === WALLET_TYPES.LNBITS) {
           const lnbitsProvider = await walletStore.ensureLNBitsConnected()

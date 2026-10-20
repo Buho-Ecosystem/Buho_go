@@ -455,7 +455,6 @@
 <script>
 import VueQrcode from '@chenfengyuan/vue-qrcode';
 import ArkadeLogo from './ArkadeLogo.vue';
-import { NostrWebLNProvider } from "@getalby/sdk";
 import { capabilitiesOf } from '../utils/nwcWallet.js';
 import { lookupNwcInvoice } from '../services/nwcReceive.js';
 import { NWC_ERROR, nwcError } from '../utils/nwcErrors.js';
@@ -1308,21 +1307,8 @@ export default {
       let wrappedProvider = null;
 
       try {
-        rawProvider = this.walletStore.getActiveProvider();
-
-        if (!rawProvider) {
-          // Create NWC provider on-the-fly
-          const activeWallet = this.walletState.connectedWallets?.find(
-            w => w.id === this.walletState.activeWalletId
-          );
-
-          if (activeWallet?.nwcString) {
-            rawProvider = new NostrWebLNProvider({
-              nostrWalletConnectUrl: activeWallet.nwcString,
-            });
-            await rawProvider.enable();
-          }
-        }
+        // The wallet's one relay connection, connected if it has none (#395).
+        rawProvider = await this.walletStore.nwcConnection(this.walletStore.activeWalletId);
       } catch (error) {
         console.warn('Could not get provider for payment monitoring:', error.message);
         return;
@@ -1581,11 +1567,8 @@ export default {
             throw nwcError(NWC_ERROR.RECEIVE_NOT_ALLOWED, 'This connection cannot create invoices');
           }
 
-          const nwc = new NostrWebLNProvider({
-            nostrWalletConnectUrl: activeWallet.nwcString,
-          });
-
-          await nwc.enable();
+          // Over the wallet's one relay connection (#395).
+          const nwc = await this.walletStore.nwcConnection(activeWallet.id);
           // @getalby/sdk's NostrWebLNProvider.makeInvoice only reads
           // `defaultMemo` for the invoice description — passing our
           // `description` key (as used by every other provider's

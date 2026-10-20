@@ -54,6 +54,17 @@ Screens (`docs/images/connect-wallet/`, from `scripts/check-nwc-pairing.mjs`):
 
 The return route with nothing waiting for it says so ("Nothing is waiting for this approval"), or, in an Android browser, offers to finish in the app. In kiosk mode these routes stay setup routes and links do nothing, as before.
 
+## One relay connection per wallet
+
+An NWC wallet keeps one relay connection while the app runs (#395). The store owns it (`connectionStates[id].nwcInstance`), and every screen and service asks for it with `store.nwcConnection(walletId)` instead of building a `NostrWebLNProvider` of its own: Home, history and its pages, a transaction, Receive (invoice and payment check), sends, batch sends, Auto-Transfer, internal transfer, kiosk, Social Bucket and Learn & Earn. `LightningPaymentService` takes that connection and never closes it; reading a payment input (Lightning address, LNURL, invoice) needs none.
+
+- **One connect at a time:** two askers while it is being made share the same attempt. Connecting again closes the connection it replaces.
+- **Nothing left open:** a connect that fails is closed. One that outlives a disconnect or a removal (the wallet's epoch moved) is closed and refused, never handed out. Disconnect and removal close the wallet's connection.
+- **Dropped relays:** the SDK opens the socket on the first request and reconnects a dropped relay on the next one, so the same connection survives a phone losing the network or the app going to the background.
+- **Short-lived on purpose:** the connection test before adding (`nwcProbe`), the pairing check (`walletKnowsConnection`) and the tax report (`NWCWalletProvider`, reads across wallets) each open their own and close it when done.
+
+Measured with a stand-in wallet (`scripts/check-nwc-connections.mjs`): before, one wallet held 9 connections after Home, two history pages, a transaction, Receive, a send and a batch of 3; now it holds 1 throughout, reconnects once after the relay drops it, and none after removal. On an Android 16 emulator (debug build, stand-in wallet on a public relay via `scripts/device/nwc-stand-in.mjs --relay …`): one connection from start through Home, history and a transaction; after 25 s in the background with the network off it reconnected once on the next request; none after removal.
+
 ## What a connection may do
 
 `src/utils/nwcWallet.js` turns the methods the wallet granted into Send, Receive, Balance, History and Limit. Wallets saved before methods were stored are assumed to do all, as before.
@@ -116,7 +127,8 @@ Upgrade once the first is fixed upstream, after normalizing stored hex to lower 
 
 ## Checks
 
-- Unit: `nwcConnection`, `connectWallets` (every entry complete), `walletApps` (when the wallet app is offered), `nwcPairing` (links, answers, returns; keeping and listening), `nwcWallet`, `nwcErrors` (including the SDK's own error classes), `nwcPayment`, `nwcProbe`, `nwcWalletStore`, `nwcWalletProvider`, plus the paying-wallet, Social Bucket and Learn & Earn wallet specs.
+- Unit: `nwcConnection`, `connectWallets` (every entry complete), `nwcWalletStore` (one connection per wallet), `walletApps` (when the wallet app is offered), `nwcPairing` (links, answers, returns; keeping and listening), `nwcWallet`, `nwcErrors` (including the SDK's own error classes), `nwcPayment`, `nwcProbe`, `nwcWalletStore`, `nwcWalletProvider`, plus the paying-wallet, Social Bucket and Learn & Earn wallet specs.
 - Browser: `node scripts/check-nwc-connect.mjs` against `pnpm dev --port 9031` (or `NWC_BASE_URL`): every connect step with a stand-in wallet, the Settings details, Home with a receive-only connection, dark mode and German at 320 px.
+- Browser: `node scripts/check-nwc-connections.mjs` against `pnpm dev --port 9034` (or `CONNECTIONS_BASE_URL`; `CONNECTIONS_EXPECT=one` asserts): a stand-in NWC wallet and relay (`scripts/fixtures/nwcStandIn.mjs`, real signatures and encryption) counts the connections through every flow above, and its payments carry a valid proof.
 - Browser: `node scripts/check-nwc-receiving.mjs`: the Social Bucket destinations and the internal-transfer pickers with a send-only and a receive-only connection.
 - Browser: `node scripts/check-nwc-pairing.mjs` against `pnpm dev --port 9033` (or `PAIRING_BASE_URL`): the chooser and BuhoHub note, a wallet app on this phone (one tap, way back, resumed wait) and the web's get-the-app step, Alby Hub (own address, waiting, relay answer, return address), Coinos, the code and its expiry, Settings and Welcome entries, the return with nothing waiting (Android hand-off), dark mode and German at 320 px.

@@ -10,7 +10,6 @@ import { assertPaymentInput } from './lud23.js';
  * @requires bech32 - For LNURL decoding
  */
 
-import { NostrWebLNProvider } from '@getalby/sdk';
 import { payWithNwc } from '../services/nwcPayment.js';
 import { Invoice } from '@getalby/lightning-tools';
 import { bech32 } from 'bech32';
@@ -99,50 +98,32 @@ export const PaymentType = {
 /**
  * LightningPaymentService handles all Lightning Network payment operations
  * through Nostr Wallet Connect (NWC).
+ *
+ * It pays and asks over the wallet's own connection, which the wallet store
+ * owns and shares (`store.nwcConnection(walletId)`), so a payment never
+ * opens a relay connection of its own (#395); it never closes it either.
+ * Reading a payment input (Lightning address, LNURL, invoice) needs no
+ * connection at all.
  */
 export class LightningPaymentService {
   /**
-   * Creates a new LightningPaymentService instance
-   * @param {string} nwcConnectionString - The NWC connection URL (nostr+walletconnect://...)
-   */
-  /**
-   * @param {string} nwcConnectionString
+   * @param {object|null} [nwc] the wallet's NostrWebLNProvider from
+   *   `store.nwcConnection`; none when only reading payment inputs
    * @param {object} [options]
    * @param {object|null} [options.limit] the connection's spending limit
    *   (store.nwcLimitFor): a payment above it stops before it is sent
    */
-  constructor(nwcConnectionString, { limit = null } = {}) {
-    if (!nwcConnectionString) {
-      throw new Error('NWC connection string is required');
-    }
+  constructor(nwc = null, { limit = null } = {}) {
+    this.nwc = nwc;
     this.limit = limit;
-
-    this.nwc = new NostrWebLNProvider({
-      nostrWalletConnectUrl: nwcConnectionString,
-    });
-    this.enabled = false;
   }
 
-  /**
-   * Enables the NWC connection. Must be called before any wallet operations.
-   * Safe to call multiple times - will only connect once.
-   * @returns {Promise<void>}
-   */
-  async enable() {
-    if (!this.enabled) {
-      await this.nwc.enable();
-      this.enabled = true;
+  /** The wallet's connection, for anything that talks to the wallet. */
+  requireNwc() {
+    if (!this.nwc) {
+      throw new Error('NWC connection is required');
     }
-  }
-
-  /**
-   * Closes the NWC connection and cleans up resources
-   */
-  close() {
-    if (this.nwc && typeof this.nwc.close === 'function') {
-      this.nwc.close();
-    }
-    this.enabled = false;
+    return this.nwc;
   }
 
   // ============================================================================
@@ -377,7 +358,7 @@ export class LightningPaymentService {
    * @returns {Promise<Object>} Payment result with preimage
    */
   async sendPayment(paymentData, amount = null, comment = null) {
-    await this.enable();
+    this.requireNwc();
 
     switch (paymentData.type) {
       case PaymentType.LIGHTNING_INVOICE:
@@ -402,8 +383,7 @@ export class LightningPaymentService {
    * @returns {Promise<Object>} Payment result with preimage
    */
   async payInvoice(invoice) {
-    await this.enable();
-    return payWithNwc(this.nwc, invoice, { limit: this.limit });
+    return payWithNwc(this.requireNwc(), invoice, { limit: this.limit });
   }
 
   /**
@@ -455,7 +435,7 @@ export class LightningPaymentService {
       throw new Error('No payment request received from Lightning address');
     }
 
-    const result = await payWithNwc(this.nwc, data.pr, { limit: this.limit });
+    const result = await payWithNwc(this.requireNwc(), data.pr, { limit: this.limit });
     // Preserve the recipient's LUD-09 post-payment message so the caller can
     // surface it once the payment settles.
     return { ...result, successAction: parseSuccessAction(data.successAction, callback) };
@@ -510,7 +490,7 @@ export class LightningPaymentService {
       throw new Error('No payment request received from LNURL callback');
     }
 
-    const result = await payWithNwc(this.nwc, data.pr, { limit: this.limit });
+    const result = await payWithNwc(this.requireNwc(), data.pr, { limit: this.limit });
     // Preserve the LUD-09 successAction (recipient's post-payment message) so
     // the caller can show it once the payment settles, and the LUD-11 verdict
     // on the link itself: `disposable: false` means this LNURL may be kept and
@@ -535,7 +515,7 @@ export class LightningPaymentService {
    * @returns {Promise<Object>} Invoice data with payment_request, payment_hash, etc.
    */
   async createInvoice(amount, description = '', expiry = 3600) {
-    await this.enable();
+    this.requireNwc();
 
     if (!amount || amount <= 0) {
       throw new Error('Amount must be greater than 0');
@@ -550,7 +530,7 @@ export class LightningPaymentService {
       invoiceRequest.expiry = expiry;
     }
 
-    const invoice = await this.nwc.makeInvoice(invoiceRequest);
+    const invoice = await this.requireNwc().makeInvoice(invoiceRequest);
 
     // Normalize response fields (WebLN uses camelCase, we use snake_case)
     return {
@@ -572,8 +552,7 @@ export class LightningPaymentService {
    * @returns {Promise<Object>} Balance object with balance in sats
    */
   async getBalance() {
-    await this.enable();
-    return this.nwc.getBalance();
+    return this.requireNwc().getBalance();
   }
 
   /**
@@ -581,8 +560,7 @@ export class LightningPaymentService {
    * @returns {Promise<Object>} Wallet info object
    */
   async getInfo() {
-    await this.enable();
-    return this.nwc.getInfo();
+    return this.requireNwc().getInfo();
   }
 
   /**
@@ -596,7 +574,7 @@ export class LightningPaymentService {
    * @returns {Promise<Object>} Transaction list with transactions array
    */
   async listTransactions(options = {}) {
-    await this.enable();
+    this.requireNwc();
 
     const queryOptions = {
       limit: 50,
@@ -604,7 +582,7 @@ export class LightningPaymentService {
       ...options,
     };
 
-    return this.nwc.listTransactions(queryOptions);
+    return this.requireNwc().listTransactions(queryOptions);
   }
 
   /**
@@ -615,8 +593,7 @@ export class LightningPaymentService {
    * @returns {Promise<Object>} Invoice/transaction details
    */
   async lookupInvoice(params) {
-    await this.enable();
-    return this.nwc.lookupInvoice({
+    return this.requireNwc().lookupInvoice({
       payment_hash: params.paymentHash,
       invoice: params.paymentRequest,
     });

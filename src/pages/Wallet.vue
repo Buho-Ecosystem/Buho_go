@@ -4474,13 +4474,11 @@ export default {
                 ...lnurlInfo
               };
             } else {
-              // Process LNURL for NWC wallets
-              const nwcUrl = this.getNwcUrl(payerWalletId);
-              if (!nwcUrl) {
+              // Process LNURL for NWC wallets: reading it needs no connection.
+              if (!this.getNwcUrl(payerWalletId)) {
                 throw new Error('No active wallet found');
               }
-              const lightningService = new LightningPaymentService(nwcUrl);
-              const processedLnurl = await lightningService.processPaymentInput(paymentData.data);
+              const processedLnurl = await new LightningPaymentService().processPaymentInput(paymentData.data);
               // The SDK result only contains payment mechanics. Preserve the
               // source payload so resolved identity metadata is not dropped.
               this.pendingPayment = {
@@ -4559,13 +4557,11 @@ export default {
               ...lnurlInfo
             };
           } else {
-            // Process Lightning Address for NWC wallets
-            const nwcUrl = this.getNwcUrl(payerWalletId);
-            if (!nwcUrl) {
+            // Process Lightning Address for NWC wallets: reading it needs no connection.
+            if (!this.getNwcUrl(payerWalletId)) {
               throw new Error('No active wallet found');
             }
-            const lightningService = new LightningPaymentService(nwcUrl);
-            const processedAddress = await lightningService.processPaymentInput(paymentData.data);
+            const processedAddress = await new LightningPaymentService().processPaymentInput(paymentData.data);
             // Keep the lightning address + any carried Nostr identity on the
             // payload (processedAddress only exposes `address`), so the confirm
             // sheet brands NWC sends the same as Spark/lnbits — wallet logo,
@@ -5473,16 +5469,13 @@ export default {
     },
 
     async sendNWCPayment(amount, comment, walletId = null) {
-      // NWC has no shared provider object to ask: the service connects with
-      // the wallet's own NWC string.
-      const nwcUrl = walletId ? this.getNwcUrl(walletId) : this.getActiveWallet()?.nwcString;
-      if (!nwcUrl) {
+      // Over the wallet's one relay connection (store.nwcConnection, #395).
+      const id = walletId || this.walletStore.activeWalletId;
+      if (!this.getNwcUrl(id)) {
         throw new Error('No active NWC wallet found');
       }
-
-      const lightningService = new LightningPaymentService(nwcUrl, {
-        limit: this.walletStore.nwcLimitFor(walletId || this.walletStore.activeWalletId),
-      });
+      const nwc = await this.walletStore.nwcConnection(id);
+      const lightningService = new LightningPaymentService(nwc, { limit: this.walletStore.nwcLimitFor(id) });
       return await lightningService.sendPayment(this.getNwcPaymentData(), amount, comment);
     },
 

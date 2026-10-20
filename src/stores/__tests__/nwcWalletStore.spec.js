@@ -150,3 +150,78 @@ test('other wallets keep their own invoice fields, with a hash decoded when miss
   });
   assert.deepEqual(await store.lookupInvoiceOnWallet('kitty', 'cd'.repeat(32)), { paid: true });
 });
+
+// ── One relay connection per NWC wallet (#395) ─────────────────────────────
+
+/** A store whose SDK stand-in counts the connections it builds and closes. */
+function connectionHarness() {
+  const built = [];
+  class FakeNWC {
+    constructor({ nostrWalletConnectUrl }) { this.url = nostrWalletConnectUrl; this.closed = false; built.push(this); }
+    async enable() {}
+    close() { this.closed = true; }
+  }
+  const { store } = createHarness({ deps: { '@getalby/sdk': { NostrWebLNProvider: FakeNWC } } });
+  store.wallets = [{ id: 'hub', type: 'nwc', name: 'Hub', nwcUrl: URL_A, metadata: {} }];
+  store.refreshWalletData = async () => {};
+  store._schedulePersist = () => {};
+  return { store, built, open: () => built.filter((nwc) => !nwc.closed) };
+}
+
+test('every asker gets the wallet\'s one connection, also while it is still being made', async () => {
+  const { store, built } = connectionHarness();
+  const [a, b] = await Promise.all([store.nwcConnection('hub'), store.nwcConnection('hub')]);
+  assert.equal(a, b);
+  assert.equal(await store.nwcConnection('hub'), a, 'later askers get the live one');
+  assert.equal(await store.ensureWalletConnectedForTransfer('hub'), a, 'transfers too');
+  assert.equal(built.length, 1);
+});
+
+test('connecting again replaces the connection and closes the old one', async () => {
+  const { store, open } = connectionHarness();
+  const first = await store.nwcConnection('hub');
+  const second = await store.connectWallet('hub');
+  assert.notEqual(second, first);
+  assert.equal(first.closed, true);
+  assert.deepEqual(open(), [second]);
+});
+
+test('a connect that fails, or outlives a disconnect, leaves nothing open', async () => {
+  const failing = connectionHarness();
+  failing.store.refreshWalletData = async () => { throw new Error('relay not reachable'); };
+  await assert.rejects(failing.store.nwcConnection('hub'));
+  assert.deepEqual(failing.open(), []);
+  assert.equal(failing.store.connectionStates.hub.nwcInstance, null);
+
+  // Disconnected (or removed) while the connect was still loading its data:
+  // the asker gets an error, not a closed connection, and nothing stays open.
+  const raced = connectionHarness();
+  let release;
+  raced.store.refreshWalletData = () => new Promise((resolve) => { release = resolve; });
+  const connecting = raced.store.nwcConnection('hub');
+  await new Promise((r) => setTimeout(r, 0));
+  await raced.store.disconnectWallet('hub');
+  release();
+  await assert.rejects(connecting, /disconnected/);
+  assert.deepEqual(raced.open(), []);
+  assert.equal(raced.store.connectionStates.hub.nwcInstance, null);
+  assert.equal(raced.store.connectionStates.hub.connected, false);
+});
+
+test('disconnecting closes the connection; asking again makes one new one', async () => {
+  const { store, built, open } = connectionHarness();
+  const first = await store.nwcConnection('hub');
+  await store.disconnectWallet('hub');
+  assert.equal(first.closed, true);
+  assert.deepEqual(open(), []);
+  const next = await store.nwcConnection('hub');
+  assert.deepEqual(open(), [next]);
+  assert.equal(built.length, 2);
+});
+
+test('only NWC wallets have an NWC connection', async () => {
+  const { store } = connectionHarness();
+  store.wallets.push({ id: 'spark', type: 'spark', name: 'Spark' });
+  await assert.rejects(store.nwcConnection('spark'), /Not an NWC wallet/);
+  await assert.rejects(store.nwcConnection('gone'), /Not an NWC wallet/);
+});
