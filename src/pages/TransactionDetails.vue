@@ -292,11 +292,10 @@
             <div class="tx-row-value">{{ getSettlementRateDisplay() }}</div>
           </div>
 
-          <!-- LUD-11: the service that issued this LNURL said it is reusable
-               (disposable: false), so the link was kept. One action row at
-               the end of the details: paying the same merchant again must
-               not mean finding the QR again. -->
-          <button v-if="reusablePayLink" type="button" class="pay-again-row" @click="payAgain">
+          <!-- Pay again (utils/payAgain): one action row at the end of the
+               details, the visible way to what History's swipe does. Paying
+               the same recipient again must not mean finding the code again. -->
+          <button v-if="payAgainTarget" type="button" class="pay-again-row" @click="payAgain">
             <span class="pay-again-icon" aria-hidden="true">
               <Icon icon="tabler:repeat" width="18" height="18" />
             </span>
@@ -698,6 +697,8 @@ import { openInAppBrowser } from '../utils/inAppBrowser.js';
 import { brantaAvatar } from '../utils/branta.js';
 import { formatSuccessActionUrl } from '../utils/successAction.js';
 import { isLnurl } from '../utils/addressUtils.js';
+import { payAgainTarget as resolvePayAgain } from '../utils/payAgain.js';
+import { usePayContact } from '../composables/usePayContact.js';
 import { serviceAddressLine } from '../utils/lnurlMetadata.js';
 import { pollVerify } from '../utils/lnurlVerify.js';
 import { lnurlFetch } from '../utils/lnurlHttp.js';
@@ -944,17 +945,17 @@ export default {
     },
 
     /**
-     * LUD-11 reusable LNURL stamped on this send, or null.
-     *
-     * Outgoing only, same reasoning as currentSuccessAction above: metadata is
-     * keyed by payment hash, so the receiving half of a payment that lives
-     * twice in this app must not offer to pay the sender's link.
+     * What Pay again would pay (utils/payAgain), or null. Outgoing payments
+     * only: metadata is keyed by payment hash, so the receiving half of a
+     * payment that lives twice in this app must not offer to pay itself.
      */
-    reusablePayLink() {
+    payAgainTarget() {
       if (!this.transaction || !this.metadataStore) return null;
-      if (this.transaction.type !== 'outgoing') return null;
-      if ((this.transaction.status || 'completed') !== 'completed') return null;
-      return this.metadataStore.getPayLinkForTransaction(this.transaction.id, this.metadataWalletId);
+      return resolvePayAgain({
+        tx: this.transaction,
+        metadata: this.metadataStore.getMetadataForTransaction(this.transaction.id, this.metadataWalletId),
+        withPayLink: true,
+      });
     },
 
     /**
@@ -1819,27 +1820,12 @@ export default {
     },
 
     /**
-     * Pay this recipient again through the stored LUD-11 link.
-     *
-     * Hands the LNURL to the wallet page's dispatcher — the same route a
-     * contact tap takes — so the repeat payment gets the whole send pipeline
-     * (metadata fetch, amount entry, capability gate, confirm sheet) rather
-     * than a shortcut that skips the confirmation. Nothing is sent from here.
+     * Pay this recipient again: handed to the wallet page's dispatcher, the
+     * same route a contact tap takes, so it gets the whole send pipeline and
+     * ends on the slide. Nothing is sent from here.
      */
     payAgain() {
-      const link = this.reusablePayLink;
-      if (!link) return;
-      this.$router.push({
-        path: '/wallet',
-        query: {
-          action: 'pay_contact',
-          address: link,
-          addressType: 'lnurl',
-          // Carry the name the receipt already shows, when there is one, so
-          // the confirm sheet names the same recipient this row does.
-          ...(this.assignedContact?.name ? { contactName: this.assignedContact.name } : {}),
-        },
-      });
+      usePayContact(this).payAgain(this.payAgainTarget, { walletId: this.metadataWalletId });
     },
 
     // Open Branta's verification page for this merchant. Mirrors

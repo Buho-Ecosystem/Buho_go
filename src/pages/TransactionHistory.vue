@@ -425,179 +425,194 @@
           <q-slide-transition>
             <div v-show="group.expanded || group.isFlat" class="tx-rows">
               <template v-for="tx in group.transactions" :key="tx.id">
-                <!-- Regular row -->
-                <button
+                <!-- Regular row. A payment that can be made again slides left
+                     to Pay again (a full swipe, past half the row); without a
+                     slot the row cannot move at all. Transaction Details
+                     carries the same action as a visible row. -->
+                <q-slide-item
                   v-if="!tx.isGroup"
-                  type="button"
-                  class="tx-row"
-                  :class="[
-                    $q.dark.isActive ? 'tx-row-dark' : 'tx-row-light',
-                    { 'tx-row-pending': tx.status === 'pending' }
-                  ]"
-                  @click="viewTransaction(tx)"
+                  class="tx-slide"
+                  @slide="onPayAgainSlide"
+                  @right="onPayAgainSwipe(tx, $event)"
                 >
-                  <!-- Icon / avatar -->
-                  <span class="tx-row-icon-wrap">
-                    <!-- A Branta-verified business: its own logo, saved with the payment. -->
-                    <ContactAvatar
-                      v-if="getTxVerifiedBusiness(tx)"
-                      class="tx-row-avatar"
-                      :logo="getTxVerifiedBusiness(tx).avatar"
-                      :name="getTxVerifiedBusiness(tx).name"
-                      :initial-length="2"
-                    />
-                    <ContactAvatar
-                      v-else-if="getContactForTransaction(tx)"
-                      class="tx-row-avatar"
-                      :entry="getContactForTransaction(tx)"
-                      :initial-length="2"
-                    />
-                    <!--
-                      A Learn & Earn reward has no counterparty address for
-                      the avatar chain below to resolve, so it carries the
-                      BuhoGO mark. It sits after the contact branch because
-                      nothing auto-stamps a contact on an incoming payment:
-                      one being there means the user assigned it, and that
-                      outranks our branding. Plain <img> rather than
-                      ContactAvatar because that component's picture prop
-                      only accepts https/data URLs, not an asset path.
-                    -->
-                    <span v-else-if="isEarnRewardTx(tx)" class="tx-row-icon tx-row-icon-earn">
-                      <img :src="earnBrandLogo" class="tx-row-earn-logo" alt="" aria-hidden="true" />
+                  <template v-if="payAgainTargets[tx.id]" #right>
+                    <span class="tx-slide-action">
+                      <Icon icon="tabler:repeat" width="22" height="22" aria-hidden="true" />
+                      <span>{{ $t('Pay again') }}</span>
                     </span>
-                    <ContactAvatar
-                      v-else-if="getTxAvatarPicture(tx)"
-                      class="tx-row-avatar"
-                      :picture="getTxAvatarPicture(tx)"
-                      :entry="{ address: getTxCounterparty(tx) }"
-                      :name="txTitle(tx).kind === 'message' ? '' : txTitle(tx).full"
-                      :initial-length="2"
-                    />
-                    <!-- Status rows (awaiting / expired) keep the icon
-                         circle — a clock says more than a silhouette
-                         there. Every completed row is avatar-first: the
-                         person/brand carries identity, the corner badge
-                         below carries the movement type. -->
-                    <span
-                      v-else-if="tx.status !== 'completed'"
-                      class="tx-row-icon"
-                      :class="[
-                        $q.dark.isActive ? 'tx-row-icon-dark' : 'tx-row-icon-light',
-                        `tx-row-icon-${getTxIconTone(tx)}`,
-                        { 'tx-row-icon-bitcoin': isBitcoinTransaction(tx) && tx.status !== 'expired' }
-                      ]"
-                    >
-                      <Icon :icon="getTxIcon(tx)" width="18" height="18" />
-                    </span>
-                    <ContactAvatar
-                      v-else
-                      class="tx-row-avatar"
-                      :entry="{ address: getTxCounterparty(tx) }"
-                    />
-                    <!-- Movement-type badge (received / sent / POS /
-                         batch / transfer / zap) riding the avatar corner. -->
-                    <span
-                      v-if="getTxBadge(tx)"
-                      class="tx-row-type-badge"
-                      :class="getTxBadge(tx).cls"
-                    >
-                      <Icon :icon="getTxBadge(tx).icon" width="10" height="10" />
-                    </span>
-                  </span>
-
-                  <!-- Text column -->
-                  <span class="tx-row-body">
-                    <span class="tx-row-title-row">
-                      <!-- Names and memos shorten at the end, where the
-                           least meaning sits. An address shortens in the
-                           middle instead, so both the person and the
-                           service they were paid at stay readable. Both
-                           halves stay in the DOM, so screen readers and
-                           the details view still get the whole string. -->
-                      <span
-                        v-if="txTitle(tx).parts"
-                        class="tx-row-title tx-row-title-split"
-                        :class="$q.dark.isActive ? 'tx-row-title-dark' : 'tx-row-title-light'"
-                      >
-                        <span class="tx-row-title-head">{{ txTitle(tx).parts.head }}</span
-                        ><span class="tx-row-title-tail">{{ txTitle(tx).parts.tail }}</span>
+                  </template>
+                  <button
+                    type="button"
+                    class="tx-row"
+                    :class="[
+                      $q.dark.isActive ? 'tx-row-dark' : 'tx-row-light',
+                      { 'tx-row-pending': tx.status === 'pending' }
+                    ]"
+                    @click="viewTransaction(tx)"
+                  >
+                    <!-- Icon / avatar -->
+                    <span class="tx-row-icon-wrap">
+                      <!-- A Branta-verified business: its own logo, saved with the payment. -->
+                      <ContactAvatar
+                        v-if="getTxVerifiedBusiness(tx)"
+                        class="tx-row-avatar"
+                        :logo="getTxVerifiedBusiness(tx).avatar"
+                        :name="getTxVerifiedBusiness(tx).name"
+                        :initial-length="2"
+                      />
+                      <ContactAvatar
+                        v-else-if="getContactForTransaction(tx)"
+                        class="tx-row-avatar"
+                        :entry="getContactForTransaction(tx)"
+                        :initial-length="2"
+                      />
+                      <!--
+                        A Learn & Earn reward has no counterparty address for
+                        the avatar chain below to resolve, so it carries the
+                        BuhoGO mark. It sits after the contact branch because
+                        nothing auto-stamps a contact on an incoming payment:
+                        one being there means the user assigned it, and that
+                        outranks our branding. Plain <img> rather than
+                        ContactAvatar because that component's picture prop
+                        only accepts https/data URLs, not an asset path.
+                      -->
+                      <span v-else-if="isEarnRewardTx(tx)" class="tx-row-icon tx-row-icon-earn">
+                        <img :src="earnBrandLogo" class="tx-row-earn-logo" alt="" aria-hidden="true" />
                       </span>
-                      <!-- A message is quoted and unbolded so it reads as
-                           something someone wrote, never as a contact the
-                           user saved. See resolveTxTitle(). -->
+                      <ContactAvatar
+                        v-else-if="getTxAvatarPicture(tx)"
+                        class="tx-row-avatar"
+                        :picture="getTxAvatarPicture(tx)"
+                        :entry="{ address: getTxCounterparty(tx) }"
+                        :name="txTitle(tx).kind === 'message' ? '' : txTitle(tx).full"
+                        :initial-length="2"
+                      />
+                      <!-- Status rows (awaiting / expired) keep the icon
+                           circle — a clock says more than a silhouette
+                           there. Every completed row is avatar-first: the
+                           person/brand carries identity, the corner badge
+                           below carries the movement type. -->
                       <span
-                        v-else
-                        class="tx-row-title"
+                        v-else-if="tx.status !== 'completed'"
+                        class="tx-row-icon"
                         :class="[
-                          $q.dark.isActive ? 'tx-row-title-dark' : 'tx-row-title-light',
-                          { 'tx-row-title-message': txTitle(tx).kind === 'message' }
+                          $q.dark.isActive ? 'tx-row-icon-dark' : 'tx-row-icon-light',
+                          `tx-row-icon-${getTxIconTone(tx)}`,
+                          { 'tx-row-icon-bitcoin': isBitcoinTransaction(tx) && tx.status !== 'expired' }
                         ]"
                       >
-                        <template v-if="txTitle(tx).kind === 'message'">&#8220;{{ txTitle(tx).full }}&#8221;</template>
-                        <template v-else>{{ txTitle(tx).full }}</template>
+                        <Icon :icon="getTxIcon(tx)" width="18" height="18" />
                       </span>
-                      <!-- L1 badge — calls out on-chain transactions
-                           (deposits + cooperative-exit withdrawals) so a
-                           user scanning history can tell on-chain apart
-                           from Lightning at a glance. Survives the
-                           post-claim transition because the claimed-tx
-                           ids are persisted to localStorage. -->
+                      <ContactAvatar
+                        v-else
+                        class="tx-row-avatar"
+                        :entry="{ address: getTxCounterparty(tx) }"
+                      />
+                      <!-- Movement-type badge (received / sent / POS /
+                           batch / transfer / zap) riding the avatar corner. -->
                       <span
-                        v-if="isBitcoinTransaction(tx)"
-                        class="tx-l1-badge"
-                        :class="$q.dark.isActive ? 'tx-l1-badge-dark' : 'tx-l1-badge-light'"
+                        v-if="getTxBadge(tx)"
+                        class="tx-row-type-badge"
+                        :class="getTxBadge(tx).cls"
                       >
-                        {{ $t('On-chain') }}
+                        <Icon :icon="getTxBadge(tx).icon" width="10" height="10" />
                       </span>
-                      <!-- Source chip — same visual as the L1 badge, marking
-                           rows written by an auxiliary payment path (internal
-                           transfer, batch send, kiosk sale). At most one chip
-                           per row; on-chain wins when both would apply. -->
+                    </span>
+
+                    <!-- Text column -->
+                    <span class="tx-row-body">
+                      <span class="tx-row-title-row">
+                        <!-- Names and memos shorten at the end, where the
+                             least meaning sits. An address shortens in the
+                             middle instead, so both the person and the
+                             service they were paid at stay readable. Both
+                             halves stay in the DOM, so screen readers and
+                             the details view still get the whole string. -->
+                        <span
+                          v-if="txTitle(tx).parts"
+                          class="tx-row-title tx-row-title-split"
+                          :class="$q.dark.isActive ? 'tx-row-title-dark' : 'tx-row-title-light'"
+                        >
+                          <span class="tx-row-title-head">{{ txTitle(tx).parts.head }}</span
+                          ><span class="tx-row-title-tail">{{ txTitle(tx).parts.tail }}</span>
+                        </span>
+                        <!-- A message is quoted and unbolded so it reads as
+                             something someone wrote, never as a contact the
+                             user saved. See resolveTxTitle(). -->
+                        <span
+                          v-else
+                          class="tx-row-title"
+                          :class="[
+                            $q.dark.isActive ? 'tx-row-title-dark' : 'tx-row-title-light',
+                            { 'tx-row-title-message': txTitle(tx).kind === 'message' }
+                          ]"
+                        >
+                          <template v-if="txTitle(tx).kind === 'message'">&#8220;{{ txTitle(tx).full }}&#8221;</template>
+                          <template v-else>{{ txTitle(tx).full }}</template>
+                        </span>
+                        <!-- L1 badge — calls out on-chain transactions
+                             (deposits + cooperative-exit withdrawals) so a
+                             user scanning history can tell on-chain apart
+                             from Lightning at a glance. Survives the
+                             post-claim transition because the claimed-tx
+                             ids are persisted to localStorage. -->
+                        <span
+                          v-if="isBitcoinTransaction(tx)"
+                          class="tx-l1-badge"
+                          :class="$q.dark.isActive ? 'tx-l1-badge-dark' : 'tx-l1-badge-light'"
+                        >
+                          {{ $t('On-chain') }}
+                        </span>
+                        <!-- Source chip — same visual as the L1 badge, marking
+                             rows written by an auxiliary payment path (internal
+                             transfer, batch send, kiosk sale). At most one chip
+                             per row; on-chain wins when both would apply. -->
+                        <span
+                          v-else-if="getTxSourceChip(tx)"
+                          class="tx-l1-badge"
+                          :class="$q.dark.isActive ? 'tx-l1-badge-dark' : 'tx-l1-badge-light'"
+                        >
+                          {{ getTxSourceChip(tx) }}
+                        </span>
+                      </span>
+                      <span class="tx-row-sub" :class="$q.dark.isActive ? 'tx-row-muted-dark' : 'tx-row-muted-light'">
+                        {{ getTxSubtitle(tx) }}
+                      </span>
+                    </span>
+
+                    <!--
+                      Amount column.
+
+                      Headline shows the *recipient amount* (what the
+                      user typed when sending), not the gross deducted.
+                      The fee, when present, surfaces as a small inline
+                      note on the existing fiat sub-line so the user
+                      can reconcile "I sent X, the network took Y" at
+                      a glance — without adding a new row of vertical
+                      chrome. Spark-to-Spark and incoming transactions
+                      omit the fee badge entirely (getFeeBadge returns
+                      '').
+                    -->
+                    <span class="tx-row-amount-col">
                       <span
-                        v-else-if="getTxSourceChip(tx)"
-                        class="tx-l1-badge"
-                        :class="$q.dark.isActive ? 'tx-l1-badge-dark' : 'tx-l1-badge-light'"
+                        class="tx-row-amount"
+                        :class="[
+                          $q.dark.isActive ? 'tx-row-title-dark' : 'tx-row-title-light',
+                          {
+                            'tx-row-amount-in': tx.type === 'incoming' && tx.status === 'completed',
+                            'tx-row-amount-out': tx.type === 'outgoing' && tx.status === 'completed',
+                            'tx-row-amount-expired': tx.status === 'expired'
+                          }
+                        ]"
                       >
-                        {{ getTxSourceChip(tx) }}
+                        <HiddenAmount>{{ getFormattedAmount(tx) }}</HiddenAmount>
+                      </span>
+                      <span class="tx-row-fiat" :class="$q.dark.isActive ? 'tx-row-muted-dark' : 'tx-row-muted-light'">
+                        <HiddenAmount>{{ getFiatAmount(tx) }}</HiddenAmount><template v-if="getFeeBadge(tx)"> · {{ getFeeBadge(tx) }}</template>
                       </span>
                     </span>
-                    <span class="tx-row-sub" :class="$q.dark.isActive ? 'tx-row-muted-dark' : 'tx-row-muted-light'">
-                      {{ getTxSubtitle(tx) }}
-                    </span>
-                  </span>
-
-                  <!--
-                    Amount column.
-
-                    Headline shows the *recipient amount* (what the
-                    user typed when sending), not the gross deducted.
-                    The fee, when present, surfaces as a small inline
-                    note on the existing fiat sub-line so the user
-                    can reconcile "I sent X, the network took Y" at
-                    a glance — without adding a new row of vertical
-                    chrome. Spark-to-Spark and incoming transactions
-                    omit the fee badge entirely (getFeeBadge returns
-                    '').
-                  -->
-                  <span class="tx-row-amount-col">
-                    <span
-                      class="tx-row-amount"
-                      :class="[
-                        $q.dark.isActive ? 'tx-row-title-dark' : 'tx-row-title-light',
-                        {
-                          'tx-row-amount-in': tx.type === 'incoming' && tx.status === 'completed',
-                          'tx-row-amount-out': tx.type === 'outgoing' && tx.status === 'completed',
-                          'tx-row-amount-expired': tx.status === 'expired'
-                        }
-                      ]"
-                    >
-                      <HiddenAmount>{{ getFormattedAmount(tx) }}</HiddenAmount>
-                    </span>
-                    <span class="tx-row-fiat" :class="$q.dark.isActive ? 'tx-row-muted-dark' : 'tx-row-muted-light'">
-                      <HiddenAmount>{{ getFiatAmount(tx) }}</HiddenAmount><template v-if="getFeeBadge(tx)"> · {{ getFeeBadge(tx) }}</template>
-                    </span>
-                  </span>
-                </button>
+                  </button>
+                </q-slide-item>
 
                 <!-- Micropayment group -->
                 <div v-if="tx.isGroup" class="tx-micro">
@@ -755,6 +770,9 @@ import { NOSTRICH_HEAD_ICON } from '../utils/nostrIcon.js';
 import { splitAddressForDisplay } from '../utils/addressUtils.js';
 import { getTxDescription, getTxMessage as resolveTxMessage, isPlaceholderDescription } from '../utils/txMessage.js';
 import { readCachedTransactions, mergeCachedTransactions } from '../utils/txCache.js';
+import { payAgainTarget } from '../utils/payAgain.js';
+import { usePayContact } from '../composables/usePayContact.js';
+import { haptics } from '../utils/haptics.js';
 
 // How often open history re-checks pending invoices against their expiry.
 const INVOICE_EXPIRY_CHECK_MS = 15000;
@@ -805,6 +823,8 @@ export default {
       depositRead: 0,
       addressBookStore: null,
       metadataStore: null,
+      // A swipe past the Pay again threshold (one haptic tap per crossing).
+      payAgainArmed: false,
       expandedGroups: new Set(),
       expandedMicropaymentGroups: new Set(),
       showLoadingScreen: true,
@@ -869,6 +889,18 @@ export default {
      */
     historyWalletId() {
       return this.walletState?.activeWalletId || null;
+    },
+
+    /** Per row: what Pay again would pay (utils/payAgain), for the rows that offer it. */
+    payAgainTargets() {
+      const targets = {};
+      if (!this.metadataStore) return targets;
+      for (const tx of this.filteredTransactions) {
+        if (!tx?.id || tx.isGroup) continue;
+        const target = payAgainTarget({ tx, metadata: this.metadataStore.getMetadataForTransaction(tx.id, this.historyWalletId) });
+        if (target) targets[tx.id] = target;
+      }
+      return targets;
     },
 
     filteredTransactions() {
@@ -2473,6 +2505,20 @@ export default {
       });
     },
 
+    /** A light tap once a swipe has gone far enough to Pay again on release. */
+    onPayAgainSlide({ ratio, isReset }) {
+      const armed = !isReset && ratio >= 1;
+      if (armed && !this.payAgainArmed) haptics.tap();
+      this.payAgainArmed = armed;
+    },
+
+    /** A full swipe on a row: the row slides back, and the payment opens again. */
+    onPayAgainSwipe(tx, { reset }) {
+      reset();
+      this.payAgainArmed = false;
+      usePayContact(this).payAgain(this.payAgainTargets[tx.id], { walletId: this.historyWalletId });
+    },
+
     viewTransaction(tx) {
       // Carry the owning wallet so the details page resolves the tx
       // against THIS wallet instead of whatever is active by then.
@@ -3121,6 +3167,40 @@ export default {
   display: flex;
   flex-direction: column;
   gap: 8px;
+}
+
+/* Pay again swipe (Quasar slide item): transparent, shaped like the row it
+   holds. The action is wide on purpose: the swipe fires past it, more than
+   half a phone-width row, so a scroll that drifts sideways never pays. */
+.tx-slide {
+  background: transparent;
+  border-radius: 14px;
+}
+
+.tx-slide :deep(.q-slide-item__right) {
+  /* The deeper brand green, with the theme's primary-button text on it:
+     readable at 13 px in both themes. */
+  background: var(--brand-accent-text);
+  color: var(--btn-primary-fg);
+  border-radius: 14px;
+  padding: 0 8px;
+}
+
+/* The slide item clips its content, so keyboard focus is drawn inside the row. */
+.tx-slide .tx-row:focus-visible {
+  outline: 2px solid var(--brand-accent-text);
+  outline-offset: -2px;
+}
+
+.tx-slide-action {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  width: 168px;
+  font-family: 'Manrope', sans-serif;
+  font-size: 13px;
+  font-weight: 700;
 }
 
 .tx-row {

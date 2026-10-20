@@ -23,6 +23,7 @@ How each feature works and the rules that keep it right, written for developers 
 | [Shared payment requests](SHARED_REQUESTS.md) | Requests from Receive and repayments from receipts |
 | [Contact chat](CONTACT_CHAT.md) | Money requests and encrypted messages between contacts |
 | [LUD-08 fast withdrawal](LUD08_FAST_WITHDRAW.md) | Redeeming withdraw links in one step |
+| [Pay again](PAY_AGAIN.md) | Paying a past recipient again from History or the receipt |
 | [LUD-11 pay again](LUD11_PAY_AGAIN.md) | Paying a service again, and service payees |
 | [LUD-14 vouchers](LUD14_VOUCHERS.md) | Vouchers with a balance |
 | [LUD-23 address sharing](LUD23_APP_WIDE_PLAN.md) | Asking for and sharing payment addresses across the app |

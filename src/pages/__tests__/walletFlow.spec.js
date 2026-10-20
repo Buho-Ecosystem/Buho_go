@@ -10,6 +10,7 @@ import * as payingWallets from '../../utils/payingWallets.js';
 import * as walletCapabilities from '../../utils/walletCapabilities.js';
 import * as errorOrigin from '../../utils/errorOrigin.js';
 import * as branta from '../../utils/branta.js';
+import * as payAgain from '../../utils/payAgain.js';
 
 // Run the production Options-API methods with controlled provider promises.
 function evaluate(file, dependencies = {}) {
@@ -34,6 +35,7 @@ const component = (dependencies = {}) => evaluate('../Wallet.vue', {
   '../utils/amountFormatting.js': { formatAmount: n => `${n} sats` },
   '../stores/autoWithdraw': { useAutoWithdrawStore: () => ({ getConfig: () => null, checkAndExecute() {} }) },
   '../utils/fiatRates': { fiatRatesService: { convertSatsToFiat: async () => null } },
+  '../utils/payAgain.js': payAgain,
   '../services/paymentNotifications.js': { isInternalRoute: (route) => typeof route === 'string' && route.startsWith('/') && !route.startsWith('//') },
   ...dependencies,
 }).default;
@@ -148,11 +150,11 @@ test('pending service sends retain payment identity without offering completed-p
 });
 
 test('Pay again is unavailable until a payment completes, including failed payments', () => {
-  const details = evaluate('../TransactionDetails.vue', { pinia: { mapState: () => ({}) } }).default;
+  const details = evaluate('../TransactionDetails.vue', { pinia: { mapState: () => ({}) }, '../utils/payAgain.js': payAgain }).default;
   for (const status of ['pending', 'failed', 'completed']) {
-    const link = details.computed.reusablePayLink.call({ transaction: { id: 'p', type: 'outgoing', status },
-      metadataWalletId: 'A', metadataStore: { getPayLinkForTransaction: () => 'lnurl1service' } });
-    assert.equal(link, status === 'completed' ? 'lnurl1service' : null);
+    const target = details.computed.payAgainTarget.call({ transaction: { id: 'p', type: 'outgoing', status },
+      metadataWalletId: 'A', metadataStore: { getMetadataForTransaction: (id, walletId) => (id === 'p' && walletId === 'A' ? { payLink: 'lnurl1service' } : null) } });
+    assert.equal(target?.address ?? null, status === 'completed' ? 'lnurl1service' : null);
   }
 });
 
@@ -430,6 +432,7 @@ function payingHarness({ wallets = PAY_WALLETS, active = 'biz', funds = PAY_FUND
     '../utils/sparkPayment.js': { decodeSparkDestination: value => ({ kind: 'address', receiverAddress: value }) },
     '../utils/lud4.js': { looksLikeLud04: () => false },
     '../utils/bip21.js': { parseBip21: () => null, bip21AmountToSats: () => 0 },
+    '../utils/merchantQR.js': { SA_RETAIL_SOURCE: 'sa_retail', parseZARFromMetadata: () => null },
     '../utils/l1WithdrawErrors.js': { describeL1WithdrawError: error => ({ title: 'error', description: error.message }) },
   });
   globalThis.localStorage = { getItem: () => null, setItem() {} };
@@ -899,6 +902,114 @@ test('Pay with: transaction metadata is written against the wallet that paid', a
   legacy.vm.addressBookStore.addEntry = async entry => ({ id: 'c', ...entry });
   await legacy.vm.saveRecipientAsContact();
   assert.equal(legacy.sent.links[0].walletId, 'biz');
+});
+
+test('Pay again: a send records what the user chose to pay, with the ids its payment will carry', async () => {
+  const { vm, sent } = payingHarness({ active: 'biz' });
+  Object.assign(vm, { pendingPayment: lnAddressPayment(), sendingWalletId: 'lnb', paymentAmount: '2500', sendPayout: { code: 'KES', amount: 1645 } });
+  await quietly(() => vm.confirmPayment());
+  const { proof, ...record } = sent.links[0].payAgain;
+  assert.deepEqual(record, { address: 'bob@example.com', addressType: 'lightning', amountSats: 2500, payout: { code: 'KES', amount: 1645 } });
+  assert.ok(proof.includes('tx-lnb'));
+
+  // An NWC wallet pays the sat estimate, so no amount in the recipient's currency is kept.
+  const nwc = payingHarness({ active: 'alby' });
+  Object.assign(nwc.vm, { pendingPayment: lnAddressPayment(), paymentAmount: '2500', sendPayout: { code: 'KES', amount: 1645 } });
+  await quietly(() => nwc.vm.confirmPayment());
+  assert.equal(nwc.sent.links[0].payAgain.payout, null);
+});
+
+test('Pay again: a single order or a Nostr profile is never recorded', () => {
+  const { vm } = payingHarness();
+  const record = (pendingPayment, extra = {}) => {
+    vm.pendingPayment = pendingPayment;
+    return vm.payAgainRecordFor({ result: { id: 'p1' }, amount: 1000, payLink: null, walletType: 'spark', isNostrSend: false, ...extra });
+  };
+  assert.equal(record({ sparkAddress: 'spark1shop', bip21: { address: 'bc1q' } }), null, 'a unified code names one order');
+  assert.equal(record({ lightningAddress: 'till@example.com', merchant: { name: 'Till' } }), null, 'a till code');
+  assert.equal(record({ lightningAddress: 'till@example.com', source: 'sa_retail' }), null, 'a till code');
+  assert.equal(record({ sparkAddress: 'spark1shop', sparkInvoice: 'spark1invoice' }), null, 'a Spark invoice');
+  assert.equal(record({ lightningAddress: 'bob@example.com' }, { isNostrSend: true }), null, 'a profile address can change');
+  assert.equal(record({ invoice: 'lnbc1', type: 'lightning_invoice' }), null, 'an invoice');
+  assert.equal(record({ bitcoinAddress: 'bc1q' }), null, 'an on-chain address');
+  assert.equal(record({ sparkAddress: 'spark1sam' }).addressType, 'spark');
+  assert.equal(record({ arkadeAddress: 'ark1sam' }).addressType, 'arkade');
+  assert.deepEqual(record({ lnurl: 'lnurl1x' }, { payLink: 'lnurl1kept' }).address, 'lnurl1kept', 'the reusable link that was paid');
+});
+
+test('Pay again: the hand-over carries the amounts and the slide, and an early stop goes back', async () => {
+  const { vm } = payingHarness();
+  const handed = [];
+  let backs = 0;
+  Object.assign(vm, {
+    $route: { query: { action: 'pay_contact', address: 'shop@example.com', prefillAmount: '15000', prefillPayout: 'KES:1645', repeat: '1', returnTo: '/transactions' } },
+    $router: { replace() {}, back: () => { backs += 1; }, options: { history: { state: { back: '/transactions' } } } },
+    _walletsReady: Promise.resolve(),
+    payContactDestination: (args) => { handed.push(args); return false; },
+  });
+  vm.handlePaymentFromQuery();
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.deepEqual(handed[0].prefill, { amountSats: 15000, note: '', payout: { code: 'KES', amount: 1645 } });
+  assert.equal(handed[0].repeat, true);
+  assert.equal(backs, 1, 'nothing opened: back to History');
+  assert.equal(vm.payReturnTo, null);
+
+  // A caller that asked for no return: the hand-over is still cleared from the address.
+  const replaced = [];
+  Object.assign(vm, {
+    $route: { query: { action: 'pay_contact', address: 'shop@example.com' } },
+    $router: { replace: (value) => replaced.push(value), back: () => assert.fail('nowhere to go back to'), options: { history: { state: { back: null } } } },
+  });
+  vm.handlePaymentFromQuery();
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.deepEqual(replaced, [{ query: {} }]);
+
+  for (const prefillPayout of ['kes:1645', 'KES:-1', 'KES:0', 'KES:1e5']) {
+    handed.length = 0;
+    vm.$route = { query: { action: 'pay_contact', address: 'shop@example.com', prefillPayout } };
+    vm.handlePaymentFromQuery();
+    await new Promise(resolve => setTimeout(resolve, 0));
+    assert.equal(handed[0].prefill, undefined, prefillPayout);
+    assert.equal(handed[0].repeat, undefined);
+  }
+});
+
+test('a handed-over payment that leads nowhere goes back where it came from', async () => {
+  const { vm, store } = payingHarness();
+  const shown = [];
+  let backs = 0;
+  store.showPaymentError = (error) => shown.push(error.message);
+  Object.assign(vm, {
+    payReturnTo: '/transactions',
+    $router: { replace() {}, back: () => { backs += 1; }, options: { history: { state: { back: '/transactions' } } } },
+    fetchLightningAddressInfo: async () => { throw new Error('not found'); },
+  });
+  await quietly(() => vm.onPaymentDetected({ type: 'lightning_address', data: 'gone@example.com', paymentOnly: true }));
+  assert.equal(shown.length, 1, 'the error is shown');
+  assert.equal(backs, 1, 'and the user is back on History');
+  assert.equal(vm.payReturnTo, null, 'no return is left for a later send');
+});
+
+test('Pay again: the sheet ends on the slide and starts in the recipient\'s currency where it can', () => {
+  const { vm, options } = payingHarness({ active: 'biz' });
+  vm.resolveWalletBrand = () => null;
+  const currency = { code: 'KES', multiplier: 9000, decimals: 0, minSendable: 10, maxSendable: 150000 };
+  vm.pendingPayment = lnAddressPayment({ repeat: true, currency, prefill: { amountSats: 15000, payout: { code: 'KES', amount: 1645 } } });
+  let props = options.computed.paymentSheetProps.call(vm);
+  assert.equal(props.forceSlide, true);
+  assert.equal(props.amount.defaultPayout, 1645);
+  assert.equal(props.amount.defaultAmount, 15000, 'sats stay as the fallback');
+
+  vm.sendingWalletId = 'alby';
+  assert.equal(options.computed.paymentSheetProps.call(vm).amount.defaultPayout, undefined, 'an NWC wallet pays the sat estimate');
+  vm.sendingWalletId = null;
+  vm.pendingPayment = lnAddressPayment({ repeat: true, currency: { ...currency, maxSendable: 1000 }, prefill: { amountSats: 15000, payout: { code: 'KES', amount: 1645 } } });
+  assert.equal(options.computed.paymentSheetProps.call(vm).amount.defaultPayout, undefined, 'outside what the recipient takes now');
+  vm.sendingWalletId = null;
+  vm.pendingPayment = lnAddressPayment({ currency: { ...currency, code: 'TZS' }, prefill: { amountSats: 15000, payout: { code: 'KES', amount: 1645 } } });
+  props = options.computed.paymentSheetProps.call(vm);
+  assert.equal(props.amount.defaultPayout, undefined, 'another currency now');
+  assert.equal(props.forceSlide, false, 'an ordinary payment keeps its usual confirm');
 });
 
 test('Pay with: the fee estimate is the paying wallet\'s', async () => {

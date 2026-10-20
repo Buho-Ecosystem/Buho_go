@@ -177,7 +177,7 @@ Which wallet can pay what is decided once, in `utils/walletCapabilities.js`. A n
 | `addressBook` | Contacts, synced over Nostr |
 | `identity` / `profile` | Nostr identities and the public profile |
 | `messages` | Contact chat (NIP-17) ([record](docs/CONTACT_CHAT.md)) |
-| `transactionMetadata` | Notes, tags, labels and sources per transaction, scoped to a wallet |
+| `transactionMetadata` | Notes, tags, labels and sources per transaction, scoped to a wallet, and what Pay again may pay ([record](docs/PAY_AGAIN.md)) |
 | `exitKit` / `emergencyExit` | Spark emergency exit |
 | `cloudBackup` | Encrypted Google Drive backup ([record](docs/CLOUD_BACKUP_SETUP.md)) |
 | `earn` | Learn & Earn progress and claims |
