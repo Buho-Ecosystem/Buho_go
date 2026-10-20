@@ -180,6 +180,8 @@
 </template>
 
 <script>
+import { haptics } from '../utils/haptics.js';
+
 export default {
   name: 'PinEntryDialog',
   props: {
@@ -364,9 +366,7 @@ export default {
     },
 
     haptic() {
-      if (navigator.vibrate) {
-        navigator.vibrate(8);
-      }
+      haptics.tap();
     },
 
     handleKeyPress(key) {

@@ -1033,6 +1033,8 @@ export default {
   "Amount Display Format": "Anzeigeformat für Beträge",
   "Screen Privacy": "Bildschirm-Schutz",
   "Block screenshots, screen recordings, and previews in the app switcher.": "Blockiert Screenshots, Bildschirmaufnahmen und Vorschaubilder in der App-Übersicht.",
+  "Haptics": "Haptik",
+  "Feel a tap for payments, errors and other key moments": "Ein spürbares Tippen bei Zahlungen, Fehlern und anderen wichtigen Momenten",
   "Screen privacy enabled": "Bildschirm-Schutz aktiviert",
   "Screen privacy disabled": "Bildschirm-Schutz deaktiviert",
   "Couldn't update screen privacy": "Bildschirm-Schutz konnte nicht geändert werden",

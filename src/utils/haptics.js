@@ -1,82 +1,71 @@
 /**
- * Haptic Feedback Utility
- * Provides native haptic feedback on iOS/Android via Capacitor
+ * Haptic feedback: a light physical answer to a moment that matters (the
+ * slide arming and sending, a card read, a payment that failed), never to
+ * every tap. Native apps only, through Capacitor's Haptics plugin; on the
+ * web every call does nothing.
+ *
+ * The user can turn haptics off in Settings (on by default). The choice is
+ * read once and kept here, so every call site respects it without knowing
+ * about it. A phone whose own vibration or touch feedback is off stays
+ * silent either way.
  */
 
 import { Capacitor } from '@capacitor/core';
+import { Haptics, ImpactStyle, NotificationType } from '@capacitor/haptics';
 
-// Check if haptics are available
-const isNative = Capacitor.isNativePlatform();
-const HapticsPlugin = isNative ? Capacitor.Plugins?.Haptics : null;
+const STORAGE_KEY = 'buhoGO_haptics_enabled';
 
-/**
- * Haptic feedback types
- */
-export const haptics = {
-  /**
-   * Light tap - for selections, toggles
-   */
-  tap: async () => {
-    if (HapticsPlugin?.impact) {
-      try {
-        await HapticsPlugin.impact({ style: 'LIGHT' });
-      } catch (e) {
-        // Haptics not available
-      }
-    }
-  },
-
-  /**
-   * Medium tap - for confirmations
-   */
-  medium: async () => {
-    if (HapticsPlugin?.impact) {
-      try {
-        await HapticsPlugin.impact({ style: 'MEDIUM' });
-      } catch (e) {
-        // Haptics not available
-      }
-    }
-  },
-
-  /**
-   * Success notification - for completed actions
-   */
-  success: async () => {
-    if (HapticsPlugin?.notification) {
-      try {
-        await HapticsPlugin.notification({ type: 'SUCCESS' });
-      } catch (e) {
-        // Haptics not available
-      }
-    }
-  },
-
-  /**
-   * Error notification - for failed actions
-   */
-  error: async () => {
-    if (HapticsPlugin?.notification) {
-      try {
-        await HapticsPlugin.notification({ type: 'ERROR' });
-      } catch (e) {
-        // Haptics not available
-      }
-    }
-  },
-
-  /**
-   * Warning notification
-   */
-  warning: async () => {
-    if (HapticsPlugin?.notification) {
-      try {
-        await HapticsPlugin.notification({ type: 'WARNING' });
-      } catch (e) {
-        // Haptics not available
-      }
-    }
+function readEnabled() {
+  try {
+    return localStorage.getItem(STORAGE_KEY) !== 'false';
+  } catch {
+    return true;
   }
+}
+
+let enabled = readEnabled();
+
+/** True when haptics can play on this device: a native app. */
+export function hapticsSupported() {
+  return Capacitor.isNativePlatform();
+}
+
+/** The user's choice in Settings. */
+export function hapticsEnabled() {
+  return enabled;
+}
+
+/** @param {boolean} on */
+export function setHapticsEnabled(on) {
+  enabled = Boolean(on);
+  try {
+    localStorage.setItem(STORAGE_KEY, String(enabled));
+  } catch {
+    // Kept for this session only.
+  }
+}
+
+/** One feedback, played only when it can and may; a failure is never the caller's problem. */
+const feedback = (play) => async () => {
+  if (!enabled || !hapticsSupported()) return;
+  try {
+    await play();
+  } catch {
+    // The device cannot play it.
+  }
+};
+
+export const haptics = {
+  /** Light tap: a selection, a key, a threshold reached. */
+  tap: feedback(() => Haptics.impact({ style: ImpactStyle.Light })),
+  /** Medium tap: something about to happen (the slide armed, a card read). */
+  medium: feedback(() => Haptics.impact({ style: ImpactStyle.Medium })),
+  /** A completed action: sent, paid. */
+  success: feedback(() => Haptics.notification({ type: NotificationType.Success })),
+  /** A failed action. */
+  error: feedback(() => Haptics.notification({ type: NotificationType.Error })),
+  /** Something needs attention. */
+  warning: feedback(() => Haptics.notification({ type: NotificationType.Warning })),
 };
 
 export default haptics;

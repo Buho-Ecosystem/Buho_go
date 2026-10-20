@@ -328,6 +328,28 @@
         />
 
         <!--
+          Haptics: on by default, in the app only (a browser cannot play
+          them). Off silences every haptic in the app; the phone's own
+          vibration setting still applies on top.
+        -->
+        <SettingsRow
+          v-if="hapticsSupported"
+          icon="tabler:device-mobile-vibration"
+          :label="$t('Haptics')"
+          :caption="$t('Feel a tap for payments, errors and other key moments')"
+          :interactive="false"
+        >
+          <template #right>
+            <q-toggle
+              :model-value="hapticsOn"
+              :aria-label="$t('Haptics')"
+              @update:model-value="updateHaptics"
+              :color="$q.dark.isActive ? 'brand-green' : 'brand-green-dark'"
+            />
+          </template>
+        </SettingsRow>
+
+        <!--
           Screen Privacy — Android FLAG_SECURE.
           On native: toggle mirrors the canonical persisted value
           owned by SecureScreenPlugin; toggling here flows through
@@ -1668,6 +1690,7 @@ import SettingsHubHeader from '../components/settings/SettingsHubHeader.vue'
 import SettingsHubNav from '../components/settings/SettingsHubNav.vue'
 import HiddenAmount from '../components/HiddenAmount.vue'
 import { openInAppBrowser } from '../utils/inAppBrowser.js'
+import { haptics, hapticsEnabled, hapticsSupported, setHapticsEnabled } from '../utils/haptics.js'
 import { LNBitsWalletProvider } from '../providers/LNBitsWalletProvider'
 // Alternative lightweight verification (type 3 random words). Kept out
 // of the flow intentionally — the order-tap check is stronger. Retained
@@ -1716,6 +1739,8 @@ export default {
   },
   data() {
     return {
+      hapticsOn: hapticsEnabled(),
+      hapticsSupported: hapticsSupported(),
       showWalletsDialog: false,
       showSparkLnAddressSheet: false,
       showAddWalletDialog: false,
@@ -2944,6 +2969,13 @@ export default {
     setDisplayCurrency(value) {
       this.walletStore.defaultDisplayCurrency = value;
       this.walletStore.persistState();
+    },
+
+    /** Haptics on or off; turning them on answers with one tap, so the user feels what they chose. */
+    updateHaptics(value) {
+      setHapticsEnabled(value)
+      this.hapticsOn = value
+      if (value) haptics.tap()
     },
 
     updateAmountFormat(value) {

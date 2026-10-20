@@ -1034,6 +1034,8 @@ export default {
   "Amount Display Format": "Formato de visualización de cantidades",
   "Screen Privacy": "Privacidad de pantalla",
   "Block screenshots, screen recordings, and previews in the app switcher.": "Bloquea capturas, grabaciones de pantalla y vistas previas en el selector de apps.",
+  "Haptics": "Respuesta háptica",
+  "Feel a tap for payments, errors and other key moments": "Una vibración breve en pagos, errores y otros momentos clave",
   "Screen privacy enabled": "Privacidad de pantalla activada",
   "Screen privacy disabled": "Privacidad de pantalla desactivada",
   "Couldn't update screen privacy": "No se pudo actualizar la privacidad de pantalla",
