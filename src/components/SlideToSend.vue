@@ -110,6 +110,9 @@ let pointerOffset = 0;
 let maxX = 0;
 let raf = 0;
 let samples = [];
+// The commit's haptic has played for this slide (the finger reached the
+// detent, or finish() played it for a flick or a keyboard run).
+let committedFelt = false;
 
 const travel = () => maxX || computeMaxX();
 const progress = computed(() => {
@@ -135,7 +138,12 @@ function computeMaxX() {
 function setThumb(x) {
   thumbPx.value = x;
   const isArmed = maxX > 0 && x >= maxX * ARM_AT;
-  if (isArmed && !armed.value) haptics.medium();
+  // The detent is the finger's: a spring back after a failed send, or a run
+  // by keyboard, passes it silently.
+  if (isArmed && !armed.value && dragging.value) {
+    haptics.medium();
+    committedFelt = true;
+  }
   armed.value = isArmed;
 }
 
@@ -146,6 +154,7 @@ function onPointerDown(e) {
   maxX = computeMaxX();
   pointerOffset = e.clientX - thumbPx.value;
   samples = [{ x: thumbPx.value, t: performance.now() }];
+  committedFelt = false;
   e.target.setPointerCapture?.(e.pointerId);
   window.addEventListener('pointermove', onPointerMove);
   window.addEventListener('pointerup', onPointerUp, { once: true });
@@ -187,10 +196,11 @@ function onPointerUp() {
 }
 
 // The slide commits; the payment's outcome plays its own haptic once it is
-// known (docs/HAPTICS.md). A flick that never armed still feels the commit.
+// known (docs/HAPTICS.md). A flick, or a keyboard run, feels the commit here.
 function finish() {
   if (completed.value) return;
-  if (!armed.value) haptics.medium();
+  if (!committedFelt) haptics.medium();
+  committedFelt = true;
   thumbPx.value = maxX;
   armed.value = false;
   completed.value = true;
@@ -233,6 +243,7 @@ function completeByAction() {
   if (props.disabled || props.loading || completed.value || dragging.value) return;
   maxX = computeMaxX();
   if (maxX <= 0) return;
+  committedFelt = false;
   springTo(maxX, 1.2, finish);
 }
 
@@ -245,6 +256,7 @@ function onClick(e) {
 function reset() {
   completed.value = false;
   armed.value = false;
+  committedFelt = false;
   maxX = computeMaxX();
   springTo(0);
 }

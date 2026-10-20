@@ -52,10 +52,10 @@ const EXPECTED = {
   'components/BatchSendModal.vue': ['error', 'success', 'warning'], // the batch's outcome
   'components/CardPinPanel.vue': ['error'], // wrong card PIN
   'components/InternalTransferModal.vue': ['error', 'success'], // the transfer's outcome
-  'components/PinEntryDialog.vue': ['error'], // wrong app PIN
+  'components/PinEntryDialog.vue': ['error'], // wrong app PIN (the dialog is not used today)
   'components/ReceiveModal.vue': ['success'], // a payment arrived
-  'components/ScannerOverlay.vue': ['tap', 'tap'], // a code recognised (one-shot, continuous)
-  'components/SlideToSend.vue': ['medium', 'medium'], // the commit point (armed, or a flick)
+  'components/ScannerOverlay.vue': ['tap', 'tap'], // a code recognised (one-shot; a new code when scanning several)
+  'components/SlideToSend.vue': ['medium', 'medium'], // the commit: the finger at the detent, or finish() for a flick or keyboard run
   'pages/KioskDashboard.vue': ['error', 'medium', 'success', 'success'], // card failed, sale parked, sale paid, parked sale paid
   'pages/Settings.vue': ['tap'], // turning haptics on
   'pages/TransactionHistory.vue': ['tap'], // the Pay again swipe's threshold

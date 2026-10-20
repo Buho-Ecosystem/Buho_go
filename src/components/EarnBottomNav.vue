@@ -34,7 +34,7 @@
  * look and feel like a modern mobile app bar — a translucent floating
  * pill detached from the screen edges, with a soft animated "active"
  * indicator that expands to reveal the label (Material 3 style) and a
- * gentle press animation. Haptic feedback fires on native platforms.
+ * gentle press animation.
  *
  * Exit always routes to `/wallet` rather than using router.back() so
  * the destination is predictable no matter how the user arrived here.

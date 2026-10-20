@@ -375,9 +375,10 @@ export default {
       // code (or the same one after a beat) so multi-field capture keeps going.
       const now = Date.now();
       if (value === this.lastValue && now - this.lastAt < 2000) return;
+      // A new code is felt; the same one held in view again is not.
+      if (value !== this.lastValue) haptics.tap();
       this.lastValue = value;
       this.lastAt = now;
-      haptics.tap();
       this.$emit('scanned', value);
     },
 
