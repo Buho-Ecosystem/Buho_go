@@ -920,7 +920,7 @@ test('Pay again: a send records what the user chose to pay, with the ids its pay
   assert.equal(nwc.sent.links[0].payAgain.payout, null);
 });
 
-test('Pay again: a single order or a Nostr profile is never recorded', () => {
+test('Pay again: a single order or a Nostr profile is never recorded; a Bitcoin address is', () => {
   const { vm } = payingHarness();
   const record = (pendingPayment, extra = {}) => {
     vm.pendingPayment = pendingPayment;
@@ -932,7 +932,13 @@ test('Pay again: a single order or a Nostr profile is never recorded', () => {
   assert.equal(record({ sparkAddress: 'spark1shop', sparkInvoice: 'spark1invoice' }), null, 'a Spark invoice');
   assert.equal(record({ lightningAddress: 'bob@example.com' }, { isNostrSend: true }), null, 'a profile address can change');
   assert.equal(record({ invoice: 'lnbc1', type: 'lightning_invoice' }), null, 'an invoice');
-  assert.equal(record({ bitcoinAddress: 'bc1q' }), null, 'an on-chain address');
+  assert.equal(record({ bitcoinAddress: 'bc1q' }).addressType, 'bitcoin', 'an on-chain address');
+  assert.equal(record({ bitcoinAddress: 'bc1q', bip21: { address: 'bc1q' } }).address, 'bc1q', 'a code that only carries the address');
+  assert.equal(record({ bitcoinAddress: 'bc1q', bip21: { address: 'bc1q', amount: '0.001' } }), null, 'a code with an amount is one order');
+  const brantaReceipt = vm.brantaReceipt;
+  vm.brantaReceipt = () => ({ name: 'Shop' });
+  assert.equal(record({ bitcoinAddress: 'bc1q' }), null, 'a verified business is a checkout');
+  vm.brantaReceipt = brantaReceipt;
   assert.equal(record({ sparkAddress: 'spark1sam' }).addressType, 'spark');
   assert.equal(record({ arkadeAddress: 'ark1sam' }).addressType, 'arkade');
   assert.deepEqual(record({ lnurl: 'lnurl1x' }, { payLink: 'lnurl1kept' }).address, 'lnurl1kept', 'the reusable link that was paid');
@@ -1067,7 +1073,7 @@ test('Pay with: the sheet\'s fee row follows the paying wallet', () => {
 });
 
 test('Pay with: on-chain sends are the paying Spark wallet\'s, not the active one\'s', async () => {
-  const { vm, store, calls } = payingHarness({ active: 'alby' });
+  const { vm, store, calls, sent } = payingHarness({ active: 'alby' });
   // The active NWC wallet cannot pay on-chain, so the default pick is a Spark wallet.
   await vm.onPaymentDetected({ type: 'bitcoin_address', data: 'bc1qxyz' });
   assert.equal(vm.sendingWalletId, 'biz');
@@ -1083,6 +1089,13 @@ test('Pay with: on-chain sends are the paying Spark wallet\'s, not the active on
   assert.deepEqual(callsTo(calls, 'ensureSparkConnected'), [['personal', 'ensureSparkConnected']]);
   assert.deepEqual(callsTo(calls, 'withdrawToL1'), [['personal', 'withdrawToL1', 'bc1qxyz', 5000]]);
   assert.deepEqual(monitored, [['req-1', 'personal']], 'the paying wallet watches its own withdrawal');
+  // Pay again: its own link, waiting for the withdrawal's id.
+  const [link] = sent.links;
+  assert.deepEqual({ ...link, payAgain: { ...link.payAgain, proof: undefined } }, {
+    amountSats: 5000, transactionId: 'req-1', walletId: 'personal',
+    payAgain: { address: 'bc1qxyz', addressType: 'bitcoin', amountSats: 5000, payout: null, proof: undefined },
+  });
+  assert.ok(link.payAgain.proof.includes('req-1'));
   assert.equal(vm.sendingWalletId, null);
   assert.equal(store.activeWalletId, 'alby');
   assert.deepEqual(callsTo(calls, 'reconcileSpark'), [['*', 'reconcileSpark', ['personal'], 'user']]);

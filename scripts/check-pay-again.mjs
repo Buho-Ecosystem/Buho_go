@@ -16,6 +16,8 @@ const TXS = [
   { payment_hash: 'tx-rent', type: 'outgoing', amount: 1500, fees_paid: 2, settled_at: t - 120, status: 'completed', description: 'Rent' },
   { payment_hash: 'tx-guess', type: 'outgoing', amount: 2100, fees_paid: 1, settled_at: t - 240, status: 'completed', description: 'Order 4471' },
   { payment_hash: 'tx-in', type: 'incoming', amount: 12500, fees_paid: 0, settled_at: t - 360, status: 'completed', description: 'Dinner split' },
+  // An on-chain send that can be paid again.
+  { payment_hash: 'tx-btc', type: 'outgoing', amount: 50000, fees_paid: 780, settled_at: t - 480, status: 'completed', description: 'Savings', rawType: 'withdrawal' },
   // Last month's rent: the same recipient, listed among the payments to it.
   { payment_hash: 'tx-rent-sep', type: 'outgoing', amount: 1400, fees_paid: 2, settled_at: t - 30 * 86400, status: 'completed', description: 'Rent' },
 ];
@@ -70,6 +72,7 @@ await page.evaluate(async ({ wallet, txs }) => {
   // Matched by time only: the address shows, but it is never paid again.
   await metadata.setRecipientAddressForTransaction('tx-guess', wallet.id, 'guess@pay.example');
   await metadata.setRecipientAddressForTransaction('tx-rent-sep', wallet.id, 'rent@pay.example');
+  await metadata.setPayAgainForTransaction('tx-btc', wallet.id, { address: 'bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh', addressType: 'bitcoin', amountSats: 50000 });
   // The list History last showed, which the payments sheet reads for a wallet without a provider.
   localStorage.setItem('buhoGO_tx_cache_v1', JSON.stringify({ [wallet.id]: txs.map(({ payment_hash: id, ...tx }) => ({ ...tx, id })) }));
 }, { wallet: WALLET, txs: TXS });
@@ -138,6 +141,12 @@ try {
   // only for a slot), so it cannot be swiped; a tap still opens its details.
   assert.equal(await rows().nth(0).locator('.q-slide-item__right').count(), 1);
   for (const i of [1, 2]) assert.equal(await rows().nth(i).locator('.q-slide-item__right').count(), 0, `row ${i} has no Pay again`);
+  // A Bitcoin address can be paid again too.
+  assert.equal(await rows().nth(3).locator('.q-slide-item__right').count(), 1, 'the on-chain payment has Pay again');
+  await drag(rows().nth(3), 150, { hold: true });
+  await pause(150);
+  await page.screenshot({ path: `${output}/history-swipe-onchain.png` });
+  await release(rows().nth(3));
   console.log('✓ a row whose recipient was only matched by time, and a receive, never slide');
 
   // 2. A short swipe reveals the action and springs back without paying.

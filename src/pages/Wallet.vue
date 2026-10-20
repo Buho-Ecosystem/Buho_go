@@ -853,7 +853,7 @@ import {
 } from '../stores/bitcoinPreferences';
 import { useBitcoinDepositsStore } from '../stores/bitcoinDeposits';
 import {SA_RETAIL_SOURCE, parseZARFromMetadata} from '../utils/merchantQR.js';
-import { sendsPayoutAmount } from '../utils/payAgain.js';
+import { namesOneOrder, sendsPayoutAmount } from '../utils/payAgain.js';
 import {BRANTA_HOLD_MS, BRANTA_LOOKUP_TIMEOUT_MS, BRANTA_STATUS, brantaAvatar, brantaLookupText, checkWithBranta} from '../utils/branta.js';
 import { readCachedTransactions, mergeCachedTransactions } from '../utils/txCache.js';
 import { EventBus, PAYMENT_SENT } from '../utils/eventBus.js';
@@ -2985,6 +2985,9 @@ export default {
             walletId,
           }).catch((err) => console.warn('[wallet] could not queue the verified business:', err));
         }
+        // So does what Pay again may pay: the withdrawal's id is the one its payment is listed under.
+        const payAgain = this.payAgainRecordFor({ result: { id: result.requestId }, amount: amountSats, payLink: null, walletType: 'spark', isNostrSend: false });
+        if (payAgain) this.queueOnChainPayAgain(payAgain, result.requestId, walletId);
 
         // Same post-submit lifecycle as before the fold: close the sheet,
         // clear the payment, poll in the background with toasts. Polling
@@ -5066,6 +5069,12 @@ export default {
 
         // A verified business stays with the payment (History, details).
         const merchantVerification = this.brantaReceipt(this.pendingPayment);
+        // What Pay again may pay later, kept only on a payment it can prove.
+        // An on-chain send has no address stamp to be matched by, so its
+        // record waits on its own for the payment's id.
+        const payAgain = this.payAgainRecordFor({ result, amount, payLink, walletType, isNostrSend });
+        if (payAgain?.addressType === 'bitcoin') this.queueOnChainPayAgain(payAgain, result?.id, sendingWalletId);
+        const addressPayAgain = payAgain?.addressType === 'bitcoin' ? null : payAgain;
 
         if (invoiceContactId && !existingContact) {
           try {
@@ -5118,8 +5127,7 @@ export default {
               counterpartyAvatar,
               // Branta-verified sends only: the business, for History and details.
               merchantVerification,
-              // What Pay again may pay later, kept only on a payment it can prove.
-              payAgain: this.payAgainRecordFor({ result, amount, payLink, walletType, isNostrSend }),
+              payAgain: addressPayAgain,
               // The wallet this send went out on, so the link is only ever
               // drained by that wallet's own tx-list refresh.
               walletId: sendingWalletId,
@@ -5597,20 +5605,25 @@ export default {
      * What Pay again may pay for this send (utils/payAgain), or null: the
      * destination the user chose and the amount the recipient was sent.
      *
-     * A unified code, a till code and a Spark invoice each name one order, and
-     * a Nostr profile's address can change, so none of them is repeated. The
+     * A unified code, a till code, a verified business and a Spark invoice each name one order, and
+     * a Nostr profile's address can change, so none of them is repeated; a
+     * code that only carries a Bitcoin address is that address. The
      * amount in the recipient's currency is kept only for a wallet that sends
      * it as such. `proof` is the ids this payment will show up under in the
      * wallet's history; without one nothing is recorded.
      */
     payAgainRecordFor({ result, amount, payLink, walletType, isNostrSend }) {
       const p = this.pendingPayment;
-      if (!p || p.bip21 || p.merchant || p.source === SA_RETAIL_SOURCE || p.sparkInvoice || isNostrSend) return null;
+      const orderCode = p?.bip21 && (!p.bitcoinAddress || namesOneOrder(p.bip21));
+      // A verified business (Branta) is a merchant's checkout, and its seal
+      // stays the only thing stamped on the payment.
+      if (!p || orderCode || p.merchant || p.source === SA_RETAIL_SOURCE || p.sparkInvoice || isNostrSend || this.brantaReceipt(p)) return null;
       const destination = p.lightningAddress ? { address: p.lightningAddress, addressType: 'lightning' }
         : payLink ? { address: payLink, addressType: 'lnurl' }
           : p.sparkAddress ? { address: p.sparkAddress, addressType: 'spark' }
             : p.arkadeAddress ? { address: p.arkadeAddress, addressType: 'arkade' }
-              : null;
+              : p.bitcoinAddress ? { address: p.bitcoinAddress, addressType: 'bitcoin' }
+                : null;
       if (!destination) return null;
       return {
         ...destination,
@@ -5618,6 +5631,21 @@ export default {
         payout: sendsPayoutAmount(walletType) ? this.sendPayout : null,
         proof: [result?.id, result?.paymentHash, result?.payment_hash, result?.preimage],
       };
+    },
+
+    /**
+     * Queue an on-chain send's Pay again record on its own: it carries no
+     * address stamp to be matched by, so it waits for the payment listed
+     * under `transactionId`, the id the send returned. Best effort.
+     */
+    queueOnChainPayAgain(record, transactionId, walletId) {
+      if (!record || !transactionId) return;
+      this.transactionMetadataStore.enqueuePendingContactLink({
+        amountSats: record.amountSats,
+        payAgain: record,
+        transactionId,
+        walletId,
+      }).catch((err) => console.warn('[wallet] could not queue Pay again:', err));
     },
 
     // Helper: Get recipient address type from pending payment

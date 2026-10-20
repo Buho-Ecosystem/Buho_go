@@ -27,15 +27,25 @@ Only what the user chose to pay, recorded by the main send flow at send time
 
 - a Lightning address, including a phone-number payout;
 - a reusable pay link (LUD-11, `disposable: false`), the link that was paid;
-- a Spark or Arkade address.
+- a Spark or Arkade address;
+- a Bitcoin (on-chain) address, typed, pasted or from a code that carries
+  only the address. Reusing it is the user's choice, as when typing it again.
 
-Never: an invoice, a Spark invoice, a merchant's unified code (its native
-`spark=`/`ark=` address belongs to one order), a till or checkout code, an
-on-chain address, a Nostr profile's address (it can change; the profile is
-resolved again next time), batch sends, kiosk sales, transfers between own
-wallets, Auto-Transfer and purchases.
+Never: an invoice, a Spark invoice, a payment code that names one order (an
+amount, a Lightning invoice or offer, a native `spark=`/`ark=` address, a
+payjoin endpoint or a `req-` parameter next to it), a verified business, a
+till or checkout code, a Nostr profile's address (it can
+change; the profile is resolved again next time), batch sends, kiosk sales,
+transfers between own wallets, Auto-Transfer and purchases.
 
-The amount is the amount the recipient was sent, not the fee-inclusive total.
+An on-chain send has no address stamp to be matched by, so its record is
+queued on its own with the id the send returned (Spark: the withdrawal id;
+Arkade: the transaction id) and waits for exactly that payment; the History
+row keeps its "Bitcoin sent" title.
+
+The amount is the amount the user entered: what the recipient was sent, not
+the fee-inclusive total (an Arkade on-chain send takes its network fee out of
+that amount).
 When the user paid in the recipient's own currency (LUD-21) from a wallet
 that sends it as such (Spark, Arkade, LNbits), that amount is kept too, and
 the sheet starts in that currency while the recipient still offers it and
@@ -68,6 +78,6 @@ swipe leaves out because that link can be stamped by time alone.
 
 - Unit: `payAgain`, `transactionMetadata` (proof only), `usePayContact`, `recipientPayments`, `walletFlow` (record, exclusions, hand-over, sheet).
 - Browser: `node scripts/check-pay-again.mjs` against `pnpm dev --port 9036` (or `PAY_AGAIN_BASE_URL`): which rows slide, a short swipe springs back, a full swipe and the Details row open the sheet with the last amount and the slide and come back, light, dark and German.
-- Device: that each wallet type's payments get the record (the ids line up), Android's back-gesture edge.
+- Device: that each wallet type's payments get the record (the ids line up; Arkade's on-chain id is unverified), Android's back-gesture edge.
 
 Screens: `docs/images/pay-again/`, from `scripts/check-pay-again.mjs`.

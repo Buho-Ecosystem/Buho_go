@@ -989,6 +989,10 @@ export default {
       } else {
         this.displayAmount = ''
       }
+      // The parent starts every open at zero (the on-chain fee panel quotes
+      // per amount), so report the starting amount even when it equals the
+      // last one and the watcher stays silent.
+      this.$nextTick(() => this.$emit('amount-changed', this.amountInSats))
     },
 
     /**

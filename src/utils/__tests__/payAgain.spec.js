@@ -11,11 +11,12 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { payAgainProof, payAgainRecord, payAgainTarget, provesPayment, sendsPayoutAmount } from '../payAgain.js';
+import { namesOneOrder, payAgainProof, payAgainRecord, payAgainTarget, provesPayment, sendsPayoutAmount } from '../payAgain.js';
 
 const SPARK = 'spark1pgssyuuuhnrrdjswal5c3s3rafw9w3y5dd4cjy3duxlf7hjzkp0rqx6dj6mrhu';
 const ARK = 'ark1qq4hfssprtcgnjzf8qlw2f78yvjau5kldfugg29k34y7j96q2w4t567uy9ukgfl2ntulrsw0z5txqlhc2tvdmlnnnwplyajfwpaq4rxztzadm9';
 const LNURL = 'lnurl1dp68gurn8ghj7um9wfmxjcm99e3k7mf0v9cxj0m385ekvcenxc6r2c35xvukxefcv5mkvv34x5ekzd3ev56nyd3hxqurzepexejxxepnxscrvwfnv9nxzcn9xq6xyefhvgcxxcmyxymnserxfq5fns';
+const BTC = 'bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh';
 const done = { type: 'outgoing', status: 'completed', amount: -1502 };
 const record = (extra = {}) => ({ address: 'alice@example.com', addressType: 'lightning', amountSats: 1500, ...extra });
 
@@ -50,11 +51,11 @@ test('the other stamps on a payment are never repeated', () => {
 });
 
 test('each destination kind, and only an address of that kind', () => {
-  for (const [addressType, address] of [['lightning', 'bob@example.com'], ['lnurl', LNURL], ['spark', SPARK], ['arkade', ARK]]) {
+  for (const [addressType, address] of [['lightning', 'bob@example.com'], ['lnurl', LNURL], ['spark', SPARK], ['arkade', ARK], ['bitcoin', BTC]]) {
     assert.equal(payAgainRecord({ address, addressType })?.addressType, addressType);
   }
   for (const bad of [
-    { address: 'bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh', addressType: 'bitcoin' },
+    { address: 'bob@example.com', addressType: 'bitcoin' },
     { address: 'lnbc10u1pexample', addressType: 'invoice' },
     { address: SPARK, addressType: 'lightning' },
     { address: 'bob@example.com', addressType: 'spark' },
@@ -103,4 +104,19 @@ test('a payment is proven only by an id, payment hash or preimage the send retur
 test('only wallets that send an amount in the recipient currency keep one', () => {
   for (const type of ['spark', 'arkade', 'lnbits']) assert.equal(sendsPayoutAmount(type), true, type);
   for (const type of ['nwc', null, undefined, 'bitcoin']) assert.equal(sendsPayoutAmount(type), false, String(type));
+});
+
+test('a plain Bitcoin address code can be paid again; a code for one order cannot', () => {
+  assert.equal(namesOneOrder(null), false);
+  assert.equal(namesOneOrder({ address: BTC }), false);
+  assert.equal(namesOneOrder({ address: BTC, label: 'Savings' }), false);
+  assert.equal(namesOneOrder({ address: BTC, amount: '0.0005' }), true);
+  assert.equal(namesOneOrder({ address: BTC, lightning: 'lnbc1' }), true);
+  assert.equal(namesOneOrder({ address: BTC, lno: 'lno1' }), true);
+  assert.equal(namesOneOrder({ address: BTC, params: { spark: SPARK } }), true);
+  assert.equal(namesOneOrder({ address: BTC, params: { spark: 'not-an-address' } }), true, 'any Spark rail, valid or not');
+  assert.equal(namesOneOrder({ address: BTC, params: { branta_id: 'x', branta_secret: 'y' } }), true, 'a verified business');
+  assert.equal(namesOneOrder({ address: BTC, params: { pj: 'https://shop.example/pj' } }), true, 'a payjoin checkout');
+  assert.equal(namesOneOrder({ address: BTC, params: { 'req-terms': '1' } }), true);
+  assert.equal(namesOneOrder({ address: BTC, params: { label: 'Savings' } }), false);
 });
