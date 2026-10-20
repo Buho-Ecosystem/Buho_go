@@ -3,12 +3,16 @@ PODS:
     - CapacitorCordova
   - CapacitorApp (8.1.0):
     - Capacitor
+  - CapacitorBrowser (8.0.5):
+    - Capacitor
   - CapacitorClipboard (8.0.1):
     - Capacitor
   - CapacitorCordova (8.3.1)
   - CapacitorFilesystem (8.1.3):
     - Capacitor
     - IONFilesystemLib (~> 1.1.1)
+  - CapacitorHaptics (8.0.2):
+    - Capacitor
   - CapacitorLocalNotifications (8.3.1):
     - Capacitor
   - CapacitorMlkitBarcodeScanning (8.0.1):
@@ -69,9 +73,11 @@ PODS:
 DEPENDENCIES:
   - "Capacitor (from `../../node_modules/@capacitor/ios`)"
   - "CapacitorApp (from `../../node_modules/@capacitor/app`)"
+  - "CapacitorBrowser (from `../../node_modules/@capacitor/browser`)"
   - "CapacitorClipboard (from `../../node_modules/@capacitor/clipboard`)"
   - "CapacitorCordova (from `../../node_modules/@capacitor/ios`)"
   - "CapacitorFilesystem (from `../../node_modules/@capacitor/filesystem`)"
+  - "CapacitorHaptics (from `../../node_modules/@capacitor/haptics`)"
   - "CapacitorLocalNotifications (from `../../node_modules/@capacitor/local-notifications`)"
   - "CapacitorMlkitBarcodeScanning (from `../../node_modules/@capacitor-mlkit/barcode-scanning`)"
   - "CapacitorShare (from `../../node_modules/@capacitor/share`)"
@@ -97,12 +103,16 @@ EXTERNAL SOURCES:
     :path: "../../node_modules/@capacitor/ios"
   CapacitorApp:
     :path: "../../node_modules/@capacitor/app"
+  CapacitorBrowser:
+    :path: "../../node_modules/@capacitor/browser"
   CapacitorClipboard:
     :path: "../../node_modules/@capacitor/clipboard"
   CapacitorCordova:
     :path: "../../node_modules/@capacitor/ios"
   CapacitorFilesystem:
     :path: "../../node_modules/@capacitor/filesystem"
+  CapacitorHaptics:
+    :path: "../../node_modules/@capacitor/haptics"
   CapacitorLocalNotifications:
     :path: "../../node_modules/@capacitor/local-notifications"
   CapacitorMlkitBarcodeScanning:
@@ -115,9 +125,11 @@ EXTERNAL SOURCES:
 SPEC CHECKSUMS:
   Capacitor: 46dbaa89c1d1cd121b9fc2dc839c1f39cc49e326
   CapacitorApp: 449ffe26375e96f8aaaee625ac6e01e5c57c8650
+  CapacitorBrowser: f94f92654e92a97981bf346b3681af76527dace0
   CapacitorClipboard: c75fdaa6e622111119f35e7914ecfc67b05efecb
   CapacitorCordova: 9010447fe25e869705fcf525e5f490facde87608
   CapacitorFilesystem: b2bbd84bb91c177906c9dbc252864cb71ab9957b
+  CapacitorHaptics: 296f771ecd89c7a1bd92a7b6826a7d268e2e70f5
   CapacitorLocalNotifications: e0747a329ddde3074d52dc74a003688af90e42be
   CapacitorMlkitBarcodeScanning: d97b2398adb4a8686fce9b1c0c6f09623f1baae8
   CapacitorShare: 0c58305114538568059bfc07111f22dcb9cb2a82
@@ -135,6 +147,6 @@ SPEC CHECKSUMS:
   nanopb: fad817b59e0457d11a5dfbde799381cd727c1275
   PromisesObjC: 752c3227f599e3467650e47ea36f433eeb10c273
 
-PODFILE CHECKSUM: e065713dd68fab0e5b2dd88f0fae5a22b44a4ac0
+PODFILE CHECKSUM: 99d9389e3611fe54825618233aa03527b29207a9
 
 COCOAPODS: 1.16.2
