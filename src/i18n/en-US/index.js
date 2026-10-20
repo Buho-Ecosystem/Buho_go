@@ -995,6 +995,8 @@ export default {
   "Amount Display Format": "Amount Display Format",
   "Screen Privacy": "Screen Privacy",
   "Block screenshots, screen recordings, and previews in the app switcher.": "Block screenshots, screen recordings, and previews in the app switcher.",
+  "Haptics": "Haptics",
+  "Feel a tap for payments, errors and other key moments": "Feel a tap for payments, errors and other key moments",
   "Screen privacy enabled": "Screen privacy enabled",
   "Screen privacy disabled": "Screen privacy disabled",
   "Couldn't update screen privacy": "Couldn't update screen privacy",

@@ -32,6 +32,7 @@ Still on a BuhoGO from GitHub or Zapstore older than 1.9.1? It was signed with a
 - **A designed QR image to share.** Sharing from Receive sends a card that names what the code is, with the amount for an invoice and "Scan with any Bitcoin wallet". Links to go.mybuho.de and to shared profile cards have new previews.
 - **Clearer deposit timing.** Speeding up a Bitcoin deposit says "Available now" or how many confirmations are still needed, instead of always "Right away", and explains confirmations in plain words.
 - **Spend tab.** The Bitcoin Map card is a drawn map with its title below it, and Learn & Earn has its own mark, also on reward payments, and a clearer subtitle.
+- **Haptics.** The app gives a light tap at the moments that matter, such as sliding to send or tapping a card, as it was always meant to. Turn it off in Settings, Preferences, Haptics.
 - **Arkade colours.** The Arkade mark is purple in light mode and red in dark mode on every screen.
 - **One picture from the tap to Home.** The launch screen matches Home in light and dark, and the owl moves to its place, instead of three screens with different backgrounds.
 - **Remove from this phone, or Disconnect.** Removing a wallet now says what happens: a Spark or Arkade wallet leaves this phone and its recovery phrase brings it back; an NWC or LNbits wallet is disconnected and the money stays where it is. Manage Wallets groups wallets as On this phone and Connected.
