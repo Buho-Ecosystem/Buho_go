@@ -855,6 +855,75 @@ await test('a payment stamped with a verified business is not claimed again', as
   assert.equal(store.getLabelForTransaction('coffee', 'w1'), null);
 });
 
+// ---------------------------------------------------------------------------
+// Pay again: the send-time record is stamped only on a payment it can prove
+// ---------------------------------------------------------------------------
+
+const payAgain = { address: 'bob@example.test', addressType: 'lightning', amountSats: 1500, payout: { code: 'KES', amount: 1645 } };
+
+await test('the Pay again record lands on the payment carrying an id the send returned', async () => {
+  const store = freshStore();
+  await store.enqueuePendingContactLink({ recipientAddress: 'bob@example.test', amountSats: 1500, payAgain: { ...payAgain, proof: ['hash-bob'] }, walletId: 'w1' });
+  const bob = { ...makeTx('bob', { amount: -1500 }), paymentHash: 'hash-bob' };
+  assert.equal(await store.consumePendingContactLinks([makeTx('other', { amount: -900 }), bob], 'w1'), 1);
+  assert.deepEqual(store.getMetadataForTransaction('bob', 'w1').payAgain, payAgain);
+  assert.equal(store.getMetadataForTransaction('other', 'w1'), null);
+});
+
+await test('a link with a record waits for its proven payment before the time match may claim it', async () => {
+  const store = freshStore();
+  await store.enqueuePendingContactLink({ recipientAddress: 'bob@example.test', amountSats: 1500, payAgain: { ...payAgain, proof: ['hash-bob'] }, walletId: 'w1' });
+  // The wallet has not listed it yet: nothing is stamped, the link waits.
+  assert.equal(await store.consumePendingContactLinks([makeTx('shop', { amount: -21000 })], 'w1'), 0);
+  assert.equal(store.getMetadataForTransaction('shop', 'w1'), null);
+  const bob = { ...makeTx('bob', { amount: -1500 }), paymentHash: 'hash-bob' };
+  assert.equal(await store.consumePendingContactLinks([makeTx('shop', { amount: -21000 }), bob], 'w1'), 1);
+  assert.deepEqual(store.getMetadataForTransaction('bob', 'w1').payAgain, payAgain);
+});
+
+await test('after the wait, a payment matched only by time or amount gets the address but never the Pay again record', async () => {
+  for (const tx of [makeTx('shop', { amount: -21000 }), makeTx('same', { amount: -1500 })]) {
+    const store = freshStore();
+    await store.enqueuePendingContactLink({ recipientAddress: 'bob@example.test', amountSats: 1500, payAgain: { ...payAgain, proof: ['hash-bob'] }, walletId: 'w1' });
+    const sentAt = Date.now() - 11 * 60 * 1000;
+    store.pendingContactLinks[0].sentAt = sentAt;
+    tx.timestamp = Math.floor(sentAt / 1000);
+    assert.equal(await store.consumePendingContactLinks([tx], 'w1'), 1);
+    const meta = store.getMetadataForTransaction(tx.id, 'w1');
+    assert.equal(meta.recipientAddress, 'bob@example.test');
+    assert.equal(meta.payAgain, undefined, tx.id);
+  }
+});
+
+await test('a preimage or the provider id proves it too', async () => {
+  const store = freshStore();
+  await store.enqueuePendingContactLink({ recipientAddress: 'bob@example.test', amountSats: 1500, payAgain: { ...payAgain, proof: ['', 'pre-1', null] }, walletId: 'w1' });
+  await store.consumePendingContactLinks([{ ...makeTx('n1', { amount: -1500 }), preimage: 'pre-1' }], 'w1');
+  assert.deepEqual(store.getMetadataForTransaction('n1', 'w1').payAgain, payAgain);
+
+  await store.enqueuePendingContactLink({ recipientAddress: 'bob@example.test', amountSats: 1500, payAgain: { ...payAgain, proof: ['s1'] }, transactionId: 's1', walletId: 'w1' });
+  await store.consumePendingContactLinks([makeTx('s1', { amount: -1502 }), makeTx('s2', { amount: -1500 })], 'w1');
+  assert.deepEqual(store.getMetadataForTransaction('s1', 'w1').payAgain, payAgain);
+});
+
+await test('the payment the record names is the match, even when another one is newer or has its amount', async () => {
+  const store = freshStore();
+  await store.enqueuePendingContactLink({ recipientAddress: 'bob@example.test', amountSats: 1500, payAgain: { ...payAgain, proof: ['hash-bob'] }, walletId: 'w1' });
+  const newer = { ...makeTx('shop', { amount: -1500 }), timestamp: Math.floor(Date.now() / 1000) };
+  const bob = { ...makeTx('bob', { amount: -1502 }), timestamp: Math.floor(Date.now() / 1000) - 60, paymentHash: 'hash-bob' };
+  assert.equal(await store.consumePendingContactLinks([newer, bob], 'w1'), 1);
+  assert.deepEqual(store.getMetadataForTransaction('bob', 'w1').payAgain, payAgain);
+  assert.equal(store.getMetadataForTransaction('bob', 'w1').recipientAddress, 'bob@example.test');
+  assert.equal(store.getMetadataForTransaction('shop', 'w1'), null, 'the other payment is left alone');
+});
+
+await test('a record without proof, or not a valid one, is never queued', async () => {
+  const store = freshStore();
+  await store.enqueuePendingContactLink({ amountSats: 1500, payAgain, walletId: 'w1' });
+  await store.enqueuePendingContactLink({ amountSats: 10, payAgain: { address: 'bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh', addressType: 'bitcoin', proof: ['x'] }, walletId: 'w1' });
+  assert.equal(store.pendingContactLinks.length, 0);
+});
+
 console.log(`\n  ${passed} passed, ${failed} failed`);
 // Force-exit: importing the store transitively loads utils/fiatRates.js,
 // whose singleton starts a real setInterval background refresh at module

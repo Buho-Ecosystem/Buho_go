@@ -11,6 +11,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { readFileSync } from 'node:fs';
 import { transformSync } from 'esbuild';
+import * as payAgain from '../../utils/payAgain.js';
 
 // The composable imports the address book store through a path Node cannot
 // resolve (no extension); compile it the way the repo's other page specs do.
@@ -18,7 +19,8 @@ function load(store) {
   const source = readFileSync(new URL('../usePayContact.js', import.meta.url), 'utf8');
   const { code } = transformSync(source, { format: 'cjs' });
   const module = { exports: {} };
-  new Function('require', 'module', 'exports', code)(() => ({ useAddressBookStore: () => store }), module, module.exports);
+  const modules = { '../utils/payAgain.js': payAgain };
+  new Function('require', 'module', 'exports', code)((name) => modules[name] || { useAddressBookStore: () => store }, module, module.exports);
   return module.exports.usePayContact;
 }
 
@@ -115,4 +117,20 @@ test('payAddress: pays an address that is no saved contact, with wallet, context
       walletId: 'lnb', context: 'chat:abc', prefillAmount: '100', prefillNote: 'Hi',
     },
   });
+});
+
+test('payAddress: Pay again carries the recipient currency amount and always ends on the slide', () => {
+  const { pay, pushed } = harness();
+  pay.payAddress({ address: 'shop@example.com' }, { amountSats: 15000, payout: { code: 'KES', amount: 1645 }, repeat: true });
+  assert.deepEqual(pushed[0].query, {
+    action: 'pay_contact', address: 'shop@example.com', addressType: 'lightning',
+    prefillAmount: '15000', prefillPayout: 'KES:1645', repeat: '1',
+  });
+  // Anything unsound is left out rather than passed on.
+  pay.payAddress({ address: 'shop@example.com' }, { payout: { code: 'kes', amount: 5 }, repeat: 'yes' });
+  pay.payAddress({ address: 'shop@example.com' }, { payout: { code: 'KES', amount: 0 } });
+  for (const { query } of pushed.slice(1)) {
+    assert.equal('prefillPayout' in query, false);
+    assert.equal('repeat' in query, false);
+  }
 });

@@ -60,7 +60,8 @@ function decode(invoice) {
  * @param {number} [options.lookupWait] longest wait for one lookup's answer
  * @param {(ms: number) => Promise<void>} [options.sleep]
  * @param {(invoice: string) => { paymentHash: string|null, amountSats: number }} [options.decodeInvoice]
- * @returns {Promise<{ preimage: string }>}
+ * @returns {Promise<{ preimage: string, paymentHash: string|null }>} with the
+ *   invoice's payment hash, the id the payment is listed under
  */
 export async function payWithNwc(nwc, invoice, {
   limit = null,
@@ -89,9 +90,9 @@ export async function payWithNwc(nwc, invoice, {
   }
 
   if (answer && (!paymentHash || await provesPayment(answer.preimage, paymentHash))) {
-    return { preimage: answer.preimage };
+    return { preimage: answer.preimage, paymentHash };
   }
-  return confirmByLookup(nwc, paymentHash, { lookupDelays, lookupWait, sleep });
+  return { ...await confirmByLookup(nwc, paymentHash, { lookupDelays, lookupWait, sleep }), paymentHash };
 }
 
 /**

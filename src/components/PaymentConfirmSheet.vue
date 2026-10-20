@@ -978,6 +978,11 @@ export default {
       if (this.amountMode === 'fixed') {
         this.displayAmount = String(this.fixedSats)
         this.currentCurrency = 'sats'
+      } else if (this.payoutCurrency && this.payment?.amount?.defaultPayout > 0) {
+        // A payment made again starts with the amount the recipient was
+        // sent, in their currency.
+        this.displayAmount = String(this.payment.amount.defaultPayout)
+        this.currentCurrency = this.payoutCurrency.code
       } else if (this.payment?.amount?.defaultAmount) {
         this.displayAmount = String(this.payment.amount.defaultAmount)
         this.currentCurrency = 'sats'

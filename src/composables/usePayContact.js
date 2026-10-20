@@ -13,6 +13,7 @@
  */
 
 import { useAddressBookStore } from '../stores/addressBook';
+import { CURRENCY_CODE } from '../utils/payAgain.js';
 
 /** A rage-tap should not hammer the relays. */
 const RESYNC_COOLDOWN_MS = 60 * 1000;
@@ -29,18 +30,23 @@ const RESYNC_COOLDOWN_MS = 60 * 1000;
  *   Used when a payment is made for an expired request.
  * @property {string} [note]  Note to fill into the confirm sheet, where the recipient accepts one
  *   (for an invoice: shown as what the payment is for).
+ * @property {{ code: string, amount: number }} [payout]  Amount in the recipient's own currency,
+ *   used instead of `amountSats` while the recipient still offers that currency (Pay again).
+ * @property {boolean} [repeat]  A payment made again: the confirm sheet always ends on the slide.
  * @property {boolean} [returnHere]  Come back to the current screen when the payment is done or
  *   cancelled (the contact chat), instead of staying on the wallet page.
  */
 
 /** The optional query parameters of a hand-over. Empty values are left out. */
-function extraQuery({ walletId, context, amountSats, note, returnHere } = {}, router) {
+function extraQuery({ walletId, context, amountSats, note, payout, repeat, returnHere } = {}, router) {
   return {
     ...(returnHere && router?.currentRoute?.value?.fullPath ? { returnTo: router.currentRoute.value.fullPath } : {}),
     ...(typeof walletId === 'string' && walletId ? { walletId } : {}),
     ...(typeof context === 'string' && context ? { context } : {}),
     ...(Number.isSafeInteger(amountSats) && amountSats > 0 ? { prefillAmount: String(amountSats) } : {}),
     ...(typeof note === 'string' && note ? { prefillNote: note } : {}),
+    ...(CURRENCY_CODE.test(payout?.code || '') && Number(payout.amount) > 0 ? { prefillPayout: `${payout.code}:${payout.amount}` } : {}),
+    ...(repeat === true ? { repeat: '1' } : {}),
   };
 }
 
@@ -50,6 +56,7 @@ function extraQuery({ walletId, context, amountSats, note, returnHere } = {}, ro
  *   payContact: (contact: object, options?: PayOptions) => void,
  *   payInvoice: (invoice: { bolt11: string, name?: string }, options?: PayOptions) => void,
  *   payAddress: (target: { address: string, addressType?: string, name?: string }, options?: PayOptions) => void,
+ *   payAgain: (target: object|null, options?: { walletId?: string, name?: string }) => void,
  * }}
  */
 export function usePayContact(ctx) {
@@ -159,5 +166,23 @@ export function usePayContact(ctx) {
     });
   }
 
-  return { payContact, payInvoice, payAddress };
+  /**
+   * Pay a past recipient again (utils/payAgain `payAgainTarget`): the same
+   * pipeline as any payment, the last amount suggested, ending on the slide,
+   * and back on this screen afterwards. `walletId` is the wallet that paid,
+   * `name` what the screen calls the recipient (shown until the pipeline
+   * names it from the address book or the service).
+   */
+  function payAgain(target, { walletId, name = '' } = {}) {
+    if (!target) return;
+    payAddress({ address: target.address, addressType: target.addressType, name }, {
+      walletId,
+      amountSats: target.amountSats,
+      payout: target.payout,
+      repeat: true,
+      returnHere: true,
+    });
+  }
+
+  return { payContact, payInvoice, payAddress, payAgain };
 }

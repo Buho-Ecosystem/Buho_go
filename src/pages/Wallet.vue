@@ -853,6 +853,7 @@ import {
 } from '../stores/bitcoinPreferences';
 import { useBitcoinDepositsStore } from '../stores/bitcoinDeposits';
 import {SA_RETAIL_SOURCE, parseZARFromMetadata} from '../utils/merchantQR.js';
+import { sendsPayoutAmount } from '../utils/payAgain.js';
 import {BRANTA_HOLD_MS, BRANTA_LOOKUP_TIMEOUT_MS, BRANTA_STATUS, brantaAvatar, brantaLookupText, checkWithBranta} from '../utils/branta.js';
 import { readCachedTransactions, mergeCachedTransactions } from '../utils/txCache.js';
 import { EventBus, PAYMENT_SENT } from '../utils/eventBus.js';
@@ -1751,6 +1752,15 @@ export default {
           multiplier: Number(cur.multiplier)
         };
       }
+      // Pay again: the amount the recipient was sent in their own currency,
+      // while they still offer it and the paying wallet sends it as such
+      // (an NWC wallet pays the sat estimate only).
+      const lastPayout = p.prefill?.payout;
+      if (payoutCurrency && amount.mode !== 'fixed' && sendsPayoutAmount(this.getSendingWalletType()) && lastPayout?.code === payoutCurrency.code) {
+        const local = Number(lastPayout.amount.toFixed(payoutCurrency.decimals));
+        const { minSendable: min, maxSendable: max } = payoutCurrency;
+        if ((!min || local >= min) && (!max || local <= max)) amount.defaultPayout = local;
+      }
 
       // ── Fee estimate ──────────────────────────────────────────
       // Only Spark wallets expose pre-call fee data. NWC/LNbits omit the
@@ -1788,8 +1798,9 @@ export default {
         recipient,
         amount,
         // On-chain sends always take the deliberate slide gesture — every
-        // L1 transaction is irreversible, regardless of amount.
-        forceSlide: !!p.bitcoinAddress,
+        // L1 transaction is irreversible, regardless of amount. So does a
+        // payment made again: its amount was filled in, not typed.
+        forceSlide: !!p.bitcoinAddress || !!p.repeat,
         // Description precedence is deliberate: the invoice / LNURL memo
         // (what the user is actually paying for) wins; Branta's
         // platform-level description is only a fallback when no memo exists.
@@ -2760,12 +2771,14 @@ export default {
      * (a payment request from the contact chat). `context` is an opaque string
      * of the caller; it is returned unchanged in the `payment:sent` event once
      * the payment succeeded (see `emitPaymentSent`). `prefill` ({ amountSats,
-     * note }) fills the confirm sheet for a payment made for a request that has
-     * no invoice any more; the sender still reviews and confirms it.
+     * note, payout }) fills the confirm sheet for a payment made for a request
+     * that has no invoice any more, or made again; the sender still reviews and
+     * confirms it. `repeat` (Pay again) always ends on the slide. Returns false
+     * when nothing opened.
      */
-    payContactDestination({ address, addressType, name, sendingWalletId = null, context = null, contactId = null, prefill = null }) {
-      if (!address) return;
-      if (offerAddressRequest(address, { t: this.$t.bind(this), paymentOnly: true })) return;
+    payContactDestination({ address, addressType, name, sendingWalletId = null, context = null, contactId = null, prefill = null, repeat = false }) {
+      if (!address) return false;
+      if (offerAddressRequest(address, { t: this.$t.bind(this), paymentOnly: true })) return false;
       const payerId = this.chooseSendingWalletId(addressType, sendingWalletId);
       if (!canWalletPay(this.walletTypeOf(payerId), addressType)) {
         this.$q.notify({
@@ -2774,7 +2787,7 @@ export default {
           caption: walletSwitchHint(addressType, this.$t.bind(this)),
           timeout: 3500,
         });
-        return;
+        return false;
       }
       const typeMap = {
         spark: 'spark_address',
@@ -2801,7 +2814,9 @@ export default {
         // A contact's invoice is a person's own (chat requests, Waiting for
         // you): never on Branta, so it is not looked up.
         ...(addressType === 'invoice' ? { firstParty: true } : {}),
+        ...(repeat ? { repeat: true } : {}),
       });
+      return true;
     },
 
     /**
@@ -3088,7 +3103,16 @@ export default {
       const prefillSats = isPayContact && typeof query.prefillAmount === 'string' && /^[1-9][0-9]{0,14}$/.test(query.prefillAmount)
         ? Number(query.prefillAmount) : null;
       const prefillNote = isPayContact && typeof query.prefillNote === 'string' ? query.prefillNote : '';
-      const prefill = prefillSats || prefillNote ? { amountSats: prefillSats, note: prefillNote } : null;
+      // Pay again: the amount in the recipient's own currency ("KES:1645"),
+      // used when the recipient still offers that currency.
+      const payoutMatch = isPayContact && typeof query.prefillPayout === 'string'
+        ? /^([A-Z]{3}):([0-9]{1,12}(?:\.[0-9]{1,8})?)$/.exec(query.prefillPayout) : null;
+      const prefillPayout = payoutMatch && Number(payoutMatch[2]) > 0
+        ? { code: payoutMatch[1], amount: Number(payoutMatch[2]) } : null;
+      const prefill = prefillSats || prefillNote || prefillPayout
+        ? { amountSats: prefillSats, note: prefillNote, ...(prefillPayout ? { payout: prefillPayout } : {}) } : null;
+      // A payment made again ends on the slide, whatever its amount.
+      const repeat = isPayContact && query.repeat === '1';
       // The screen that handed the payment over, to return to (an in-app path only).
       this.payReturnTo = isPayContact && isInternalRoute(query.returnTo) ? query.returnTo : null;
       // Address-book id of the contact an invoice is paid to (a chat request).
@@ -3102,7 +3126,7 @@ export default {
       Promise.resolve(this._walletsReady)
         .catch(() => {})
         .then(() => {
-          this.payContactDestination({
+          const started = this.payContactDestination({
             address: query.address,
             addressType: isLegacyBitcoin ? 'bitcoin' : (query.addressType || 'lightning'),
             name: query.contactName || null,
@@ -3110,7 +3134,14 @@ export default {
             ...(context ? { context } : {}),
             ...(contactId ? { contactId } : {}),
             ...(prefill ? { prefill } : {}),
+            ...(repeat ? { repeat } : {}),
           });
+          // Nothing opened (this wallet cannot pay it, or it was an address
+          // request): back to the screen that handed it over, if one asked.
+          if (started === false && this.payReturnTo) {
+            this.returnAfterPayment();
+            return;
+          }
 
           // Clear query params
           this.$router.replace({ query: {} });
@@ -4748,6 +4779,10 @@ export default {
           // Close the Send sheet only on success; failures stay open so the
           // user sees the inline error and can fix the input in place.
           if (resolved && fromField) this.showSendModal = false;
+          // A payment another screen handed over that led nowhere goes back
+          // there (the error is app-wide), instead of leaving the return
+          // pending for some later, unrelated send.
+          if (!resolved && !fromField) this.returnAfterPayment();
         }
       }
     },
@@ -5083,6 +5118,8 @@ export default {
               counterpartyAvatar,
               // Branta-verified sends only: the business, for History and details.
               merchantVerification,
+              // What Pay again may pay later, kept only on a payment it can prove.
+              payAgain: this.payAgainRecordFor({ result, amount, payLink, walletType, isNostrSend }),
               // The wallet this send went out on, so the link is only ever
               // drained by that wallet's own tx-list refresh.
               walletId: sendingWalletId,
@@ -5554,6 +5591,33 @@ export default {
       if (this.pendingPayment.arkadeAddress) return this.pendingPayment.arkadeAddress;
       // LNURL is not saveable as a stable address
       return null;
+    },
+
+    /**
+     * What Pay again may pay for this send (utils/payAgain), or null: the
+     * destination the user chose and the amount the recipient was sent.
+     *
+     * A unified code, a till code and a Spark invoice each name one order, and
+     * a Nostr profile's address can change, so none of them is repeated. The
+     * amount in the recipient's currency is kept only for a wallet that sends
+     * it as such. `proof` is the ids this payment will show up under in the
+     * wallet's history; without one nothing is recorded.
+     */
+    payAgainRecordFor({ result, amount, payLink, walletType, isNostrSend }) {
+      const p = this.pendingPayment;
+      if (!p || p.bip21 || p.merchant || p.source === SA_RETAIL_SOURCE || p.sparkInvoice || isNostrSend) return null;
+      const destination = p.lightningAddress ? { address: p.lightningAddress, addressType: 'lightning' }
+        : payLink ? { address: payLink, addressType: 'lnurl' }
+          : p.sparkAddress ? { address: p.sparkAddress, addressType: 'spark' }
+            : p.arkadeAddress ? { address: p.arkadeAddress, addressType: 'arkade' }
+              : null;
+      if (!destination) return null;
+      return {
+        ...destination,
+        amountSats: amount,
+        payout: sendsPayoutAmount(walletType) ? this.sendPayout : null,
+        proof: [result?.id, result?.paymentHash, result?.payment_hash, result?.preimage],
+      };
     },
 
     // Helper: Get recipient address type from pending payment

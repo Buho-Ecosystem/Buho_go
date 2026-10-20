@@ -31,13 +31,13 @@ test('a preimage that hashes to the invoice is proof', async () => {
   assert.equal(await provesPayment('22'.repeat(32), HASH), false);
   assert.equal(await provesPayment('', HASH), false);
   const w = wallet({ pay: () => ({ preimage: PREIMAGE }) });
-  assert.deepEqual(await payWithNwc(w, 'lnbc1', fast), { preimage: PREIMAGE });
+  assert.deepEqual(await payWithNwc(w, 'lnbc1', fast), { preimage: PREIMAGE, paymentHash: HASH });
   assert.equal(w.calls.lookup, 0);
 });
 
 test('an answer without proof is looked up, never paid again', async () => {
   const w = wallet({ pay: () => ({ preimage: '' }), lookups: [sdk('not yet', 'NOT_FOUND'), { state: 'settled', preimage: PREIMAGE }] });
-  assert.deepEqual(await payWithNwc(w, 'lnbc1', fast), { preimage: PREIMAGE });
+  assert.deepEqual(await payWithNwc(w, 'lnbc1', fast), { preimage: PREIMAGE, paymentHash: HASH });
   assert.equal(w.calls.pay, 1);
 });
 
@@ -79,7 +79,7 @@ test('a payment above the shared spending limit stops before it is sent', async 
     (e) => e.code === NWC_ERROR.LIMIT_TOO_LOW && e.remainingSats === 2400,
   );
   assert.equal(w.calls.pay, 0);
-  assert.deepEqual(await payWithNwc(w, 'lnbc1', { ...fast, limit: { remainingSats: 9000 } }), { preimage: PREIMAGE });
+  assert.deepEqual(await payWithNwc(w, 'lnbc1', { ...fast, limit: { remainingSats: 9000 } }), { preimage: PREIMAGE, paymentHash: HASH });
 });
 
 test('a limit raised in the wallet since it was last read lets the payment through', async () => {
@@ -88,7 +88,7 @@ test('a limit raised in the wallet since it was last read lets the payment throu
   const cached = { remainingSats: 2400, renewsAt: null };
   const raised = wallet({ pay: () => ({ preimage: PREIMAGE }) });
   raised.client.getBudget = async () => ({ total_budget: msat(20000), used_budget: msat(1000) });
-  assert.deepEqual(await payWithNwc(raised, 'lnbc1', { ...fast, limit: cached }), { preimage: PREIMAGE });
+  assert.deepEqual(await payWithNwc(raised, 'lnbc1', { ...fast, limit: cached }), { preimage: PREIMAGE, paymentHash: HASH });
   assert.equal(raised.calls.pay, 1);
 
   const still = wallet({ pay: () => ({ preimage: PREIMAGE }) });
@@ -114,7 +114,7 @@ test('a lookup the wallet never answers is given up after the wait, then the nex
     },
   };
   const started = Date.now();
-  assert.deepEqual(await payWithNwc(w, 'lnbc1', { ...fast, lookupWait: 20 }), { preimage: PREIMAGE });
+  assert.deepEqual(await payWithNwc(w, 'lnbc1', { ...fast, lookupWait: 20 }), { preimage: PREIMAGE, paymentHash: HASH });
   assert.equal(calls, 2);
   assert.ok(Date.now() - started < 1000, 'not held by the silent lookup');
 });

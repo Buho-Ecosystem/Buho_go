@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { useAddressBookStore } from './addressBook.js'
 import { useServiceImagesStore } from './serviceImages.js'
 import { fiatRatesService } from '../utils/fiatRates.js'
+import { payAgainProof, payAgainRecord, provesPayment } from '../utils/payAgain.js'
 
 // A receive is only stamped with "today's rate" when it is genuinely fresh —
 // this is the whole guardrail against ever backfilling a historical
@@ -30,6 +31,9 @@ const MAX_PENDING_LINKS = 200
 // Spark settlement can lag, so 5 minutes catches everything in practice
 // without being so wide it can swallow an unrelated next send.
 const PENDING_LINK_TIME_WINDOW_MS = 5 * 60 * 1000
+// A link with a Pay again record waits this long for the payment its proof
+// names (a wallet may list it late) before the time match may claim it.
+const PAY_AGAIN_PROOF_WAIT_MS = 10 * 60 * 1000
 
 // ---------------------------------------------------------------------------
 // Storage key — wallet-scoped metadata
@@ -478,6 +482,9 @@ export const useTransactionMetadataStore = defineStore('transactionMetadata', {
      * instead of recomputing one here). Per-payment like label/source/
      * counterpartyAvatar above — never merged into an existing link.
      *
+     * `payAgain` (utils/payAgain) is what the user chose to pay, with `proof`,
+     * the ids the send returned; it is stamped only on a payment carrying one.
+     *
      * `perPayment` opts an otherwise plain address/contact link out of
      * de-duplication. Interactive contact sends use it because two valid
      * sends can have the same recipient and amount.
@@ -503,12 +510,15 @@ export const useTransactionMetadataStore = defineStore('transactionMetadata', {
       counterpartyAvatar = null,
       merchantVerification = null,
       saleBreakdown = null,
+      payAgain = null,
       perPayment = false,
       direction = 'outgoing',
       walletId = null,
       transactionId = null,
     }) {
       await this._ensureLoaded()
+      const payAgainProofIds = payAgainProof(payAgain?.proof)
+      const payAgainLink = payAgainProofIds.length ? payAgainRecord(payAgain) : null
 
       // Queue when there's anything to stamp once the tx surfaces: a recipient
       // address (for live contact resolution), a LUD-09 successAction (the
@@ -518,7 +528,7 @@ export const useTransactionMetadataStore = defineStore('transactionMetadata', {
       // An address-less per-payment link that names its contact is queued too
       // (a paid invoice carries no address; the amount is its proof).
       const isContactOnlyLink = !!contactId && !!perPayment && Number(amountSats) > 0
-      if (!recipientAddress && !successAction && !verifyUrl && !payLink && !label && !source && !counterpartyAvatar && !merchantVerification && !saleBreakdown && !isContactOnlyLink) return
+      if (!recipientAddress && !successAction && !verifyUrl && !payLink && !label && !source && !counterpartyAvatar && !merchantVerification && !saleBreakdown && !payAgainLink && !isContactOnlyLink) return
       const now = Date.now()
       const normalisedAddress = recipientAddress
         ? String(recipientAddress).toLowerCase().trim()
@@ -539,7 +549,7 @@ export const useTransactionMetadataStore = defineStore('transactionMetadata', {
       // merchant, or POS breakdown), so it must never be merged or collapsed.
       // This matters especially for batch/kiosk, where two unrelated payments
       // can easily share the same recipient + amount.
-      const isPerPayment = !!transactionId || !!perPayment || !!successAction || !!verifyUrl || !!payLink || !!label || !!source || !!counterpartyAvatar || !!merchantVerification || !!saleBreakdown
+      const isPerPayment = !!transactionId || !!perPayment || !!successAction || !!verifyUrl || !!payLink || !!label || !!source || !!counterpartyAvatar || !!merchantVerification || !!saleBreakdown || !!payAgainLink
       if (!isPerPayment) {
         // A plain link (recipient address, maybe a contactId) is either a
         // double-submit or a post-save "add the contactId" upgrade. Merge it
@@ -574,6 +584,8 @@ export const useTransactionMetadataStore = defineStore('transactionMetadata', {
         counterpartyAvatar: counterpartyAvatar || null,
         merchantVerification: merchantVerification || null,
         saleBreakdown: saleBreakdown || null,
+        payAgain: payAgainLink,
+        payAgainProof: payAgainLink ? payAgainProofIds : [],
         perPayment: !!perPayment,
         direction: normalisedDirection,
         walletId: normalisedWalletId,
@@ -650,7 +662,7 @@ export const useTransactionMetadataStore = defineStore('transactionMetadata', {
       // tx id is never consulted.
       const isStamped = (tx) => {
         const m = _resolveMetadata(this, tx.id, walletId)
-        return !!(m?.contactId || m?.recipientAddress || m?.successAction || m?.payLink || m?.label || m?.source || m?.merchantVerification)
+        return !!(m?.contactId || m?.recipientAddress || m?.successAction || m?.payLink || m?.label || m?.source || m?.merchantVerification || m?.payAgain)
       }
 
       const isOutgoingTx = (tx) => {
@@ -731,9 +743,13 @@ export const useTransactionMetadataStore = defineStore('transactionMetadata', {
         // address form to stamp): it must never name an unrelated payment.
         const needsAmountProof = !link.recipientAddress && (link.label || link.source || link.payLink || link.contactId || link.merchantVerification)
         const exact = eligible.find(amountMatches)
-        if (!link.transactionId && needsAmountProof && !exact) continue
+        // A send that carries a Pay again record names its payment's ids:
+        // that payment is the match, before any amount or time heuristic.
+        const proven = link.payAgain ? eligible.find(({ tx }) => provesPayment(tx, link.payAgainProof)) : null
+        if (!link.transactionId && needsAmountProof && !exact && !proven) continue
+        if (link.payAgain && !proven && now - linkSentAt < PAY_AGAIN_PROOF_WAIT_MS) continue
 
-        const pick = exact || eligible[0]
+        const pick = proven || exact || eligible[0]
 
         try {
           // Always stamp the durable recipient address; stamp the
@@ -770,6 +786,11 @@ export const useTransactionMetadataStore = defineStore('transactionMetadata', {
           }
           if (link.saleBreakdown) {
             await this.setSaleBreakdownForTransaction(pick.tx.id, walletId, link.saleBreakdown)
+          }
+          // Pay again pays this recipient again, so its record goes only on
+          // the payment its ids name; matched any other way, none is offered.
+          if (proven) {
+            await this.setPayAgainForTransaction(pick.tx.id, walletId, link.payAgain)
           }
           claimed.add(pick.tx.id)
           remaining = remaining.filter((l) => l !== link)
@@ -1314,6 +1335,29 @@ export const useTransactionMetadataStore = defineStore('transactionMetadata', {
         console.error('Error setting payLink for transaction:', error)
         throw error
       }
+    },
+
+    /**
+     * Persist what Pay again may pay for a transaction, scoped to `walletId`.
+     * Only consumePendingContactLinks writes it, and only on proof.
+     *
+     * @param {string} txId
+     * @param {string} walletId
+     * @param {object} record
+     * @returns {Promise<object|null>}
+     */
+    async setPayAgainForTransaction(txId, walletId, record) {
+      await this._ensureLoaded()
+      const payAgain = payAgainRecord(record)
+      if (!txId || !walletId || !payAgain) return _resolveMetadata(this, txId, walletId)
+      const key = _key(txId, walletId)
+      if (!this.metadata[key]) {
+        this.metadata[key] = { contactId: null, customNote: '', tags: [], updatedAt: Date.now() }
+      }
+      this.metadata[key].payAgain = payAgain
+      this.metadata[key].updatedAt = Date.now()
+      await this.persistMetadata()
+      return this.metadata[key]
     },
 
     /**
