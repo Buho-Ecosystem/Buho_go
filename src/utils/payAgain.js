@@ -10,7 +10,7 @@
  * LUD-11 reusable pay link is the one older fallback, without an amount.
  */
 
-import { isArkadeAddress, isLightningAddress, isLnurl, isSparkAddress } from './addressUtils.js';
+import { isArkadeAddress, isBitcoinAddress, isLightningAddress, isLnurl, isSparkAddress } from './addressUtils.js';
 
 /** Destination kinds Pay again may repeat, with the check each address must pass. */
 const KINDS = {
@@ -18,7 +18,23 @@ const KINDS = {
   lnurl: isLnurl,
   spark: isSparkAddress,
   arkade: isArkadeAddress,
+  bitcoin: isBitcoinAddress,
 };
+
+/**
+ * True for a payment code (BIP21) that names one order: it carries an amount,
+ * another way to pay it (a Lightning invoice or offer, a Spark or Arkade
+ * address), a merchant's checkout (a verified business, a payjoin endpoint)
+ * or a parameter the wallet must understand (`req-`). A plain Bitcoin
+ * address code names only the address.
+ * @param {object|null} bip21  from utils/bip21 `parseBip21`
+ */
+export function namesOneOrder(bip21) {
+  if (!bip21) return false;
+  const params = bip21.params || {};
+  if (bip21.amount || bip21.lightning || bip21.lno || params.spark || params.ark) return true;
+  return Object.keys(params).some((key) => key === 'pj' || key === 'branta_id' || key.startsWith('req-'));
+}
 
 /** A recipient currency code, as LUD-21 names it. */
 export const CURRENCY_CODE = /^[A-Z]{3}$/;

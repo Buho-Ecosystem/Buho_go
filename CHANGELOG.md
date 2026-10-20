@@ -37,7 +37,7 @@ Still on a BuhoGO from GitHub or Zapstore older than 1.9.1? It was signed with a
 - **Remove from this phone, or Disconnect.** Removing a wallet now says what happens: a Spark or Arkade wallet leaves this phone and its recovery phrase brings it back; an NWC or LNbits wallet is disconnected and the money stays where it is. Manage Wallets groups wallets as On this phone and Connected.
 - **Connecting NWC and LNbits.** An NWC connection is tested before you name it and shows what it can do. LNbits setup stays in one sheet, with help when the server has no Pay Links.
 - **Spark status in words.** When Spark can't be reached, Home says so in one quiet line, and only once the internet works and Spark's operators don't answer. The emergency exit lives in Security.
-- **Pay again.** Swipe a payment to the left in History, or tap Pay again in its details, to pay the same Lightning address, Spark or Arkade address or reusable payment link again. The last amount is filled in, in the recipient's own currency where they offer one, and the payment still ends on the slide. Payments to an invoice, a shop's checkout code or an on-chain address are not offered. Tap the recipient on the receipt, or More options, to see how often and how much you paid them.
+- **Pay again.** Swipe a payment to the left in History, or tap Pay again in its details, to pay the same Lightning address, Spark, Arkade or Bitcoin address or reusable payment link again. The last amount is filled in, in the recipient's own currency where they offer one, and the payment still ends on the slide. Payments to an invoice or a shop's checkout code are not offered. Tap the recipient on the receipt, or More options, to see how often and how much you paid them.
 
 ### Bug Fixes
 

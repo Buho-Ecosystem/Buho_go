@@ -903,10 +903,23 @@ await test('the payment the record names is the match, even when another one is 
   assert.equal(store.getMetadataForTransaction('shop', 'w1'), null, 'the other payment is left alone');
 });
 
+await test('an on-chain record waits for the id of its payment, and lands only there', async () => {
+  const store = freshStore();
+  const onChain = { address: 'bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh', addressType: 'bitcoin', amountSats: 50000, payout: null };
+  await store.enqueuePendingContactLink({ amountSats: 50000, payAgain: { ...onChain, proof: ['w-1'] }, transactionId: 'w-1', walletId: 'w1' });
+  // Not listed yet: another payment of the same amount gets nothing, and the record waits.
+  assert.equal(await store.consumePendingContactLinks([makeTx('other', { amount: -50000 })], 'w1'), 0);
+  assert.equal(store.getMetadataForTransaction('other', 'w1'), null);
+  assert.equal(store.pendingContactLinks.length, 1);
+  assert.equal(await store.consumePendingContactLinks([makeTx('other', { amount: -50000 }), makeTx('w-1', { amount: -50780 })], 'w1'), 1);
+  assert.deepEqual(store.getMetadataForTransaction('w-1', 'w1').payAgain, onChain);
+  assert.equal(store.getMetadataForTransaction('w-1', 'w1').recipientAddress, undefined, 'the row keeps its on-chain title');
+});
+
 await test('a record without proof, or not a valid one, is never queued', async () => {
   const store = freshStore();
   await store.enqueuePendingContactLink({ amountSats: 1500, payAgain, walletId: 'w1' });
-  await store.enqueuePendingContactLink({ amountSats: 10, payAgain: { address: 'bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh', addressType: 'bitcoin', proof: ['x'] }, walletId: 'w1' });
+  await store.enqueuePendingContactLink({ amountSats: 10, payAgain: { address: 'lnbc10u1pexample', addressType: 'invoice', proof: ['x'] }, walletId: 'w1' });
   assert.equal(store.pendingContactLinks.length, 0);
 });
 
