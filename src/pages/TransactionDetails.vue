@@ -187,6 +187,7 @@
             :type="payAgainTarget ? 'button' : null"
             class="tx-row"
             :class="{ 'tx-row--link': payAgainTarget }"
+            :aria-haspopup="payAgainTarget ? 'dialog' : null"
             @click="payAgainTarget && (showRecipientPayments = true)"
           >
             <span class="tx-row-label">{{ transaction.type === 'outgoing' ? $t('To') : $t('Paid to') }}</span>
@@ -826,15 +827,6 @@ export default {
   },
 
   watch: {
-    // Another receipt opened on this page (from the payments to its
-    // recipient): the router reuses this instance, so it starts over.
-    '$route.fullPath'(to, from) {
-      if (to === from || !this.$route.path.startsWith('/transaction/')) return;
-      if (this._zapProfileTimer) clearInterval(this._zapProfileTimer);
-      const { walletStore, addressBookStore, metadataStore, fiatRates, loadingFiatRates } = this;
-      Object.assign(this.$data, this.$options.data.call(this), { walletStore, addressBookStore, metadataStore, fiatRates, loadingFiatRates });
-      this.initializeTransactionDetails();
-    },
     'fiatRates': {
       handler() {
         this.$forceUpdate();

@@ -40,7 +40,13 @@
 <!--    </q-drawer>-->
 
     <q-page-container>
-      <router-view />
+      <!-- A receipt opened from another receipt (the payments to its
+           recipient) is a page of its own: work still running for the
+           previous one can never land on it. Every other route renders as
+           before. -->
+      <router-view v-slot="{ Component, route }">
+        <component :is="Component" :key="route.path.startsWith('/transaction/') ? route.fullPath : undefined" />
+      </router-view>
     </q-page-container>
   </q-layout>
 </template>

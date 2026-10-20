@@ -66,6 +66,22 @@ test('a wallet that answers with a full page may hold more', async () => {
   assert.equal(complete, false);
 });
 
+test('a slow wallet is answered by its cached list, and a whole history counts as complete', async () => {
+  const { payments, complete } = await loadRecipientPayments({
+    wallets: [{ id: 'slow', type: 'nwc' }, { id: 'all', type: 'arkade' }],
+    providers: {
+      slow: { getTransactions: () => new Promise(() => {}) },
+      all: { getTransactions: async () => Array.from({ length: 150 }, (_, i) => sent(`a${i}`, -10, 1)) },
+    },
+    readCache: (walletId) => (walletId === 'slow' ? [sent('s1', -500, 2)] : []),
+    metadataFor: (txId) => (txId === 's1' || txId === 'a0' ? { recipientAddress: 'shop@example.com' } : null),
+    addresses: ['shop@example.com'],
+    timeoutMs: 20,
+  });
+  assert.deepEqual(payments.map((p) => p.sourceKey), ['slow:s1', 'all:a0']);
+  assert.equal(complete, true);
+});
+
 test('nothing to match by, nothing listed', async () => {
   assert.deepEqual(await loadRecipientPayments({ wallets: [{ id: 'A' }], metadataFor: () => null, addresses: [] }), { payments: [], complete: true });
 });

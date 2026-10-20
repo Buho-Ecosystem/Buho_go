@@ -11,16 +11,18 @@
  *    unrelated payments.
  *
  * Matching only decides what is listed; nothing here pays. Each wallet
- * answers with the first page of its own history, or the list History last
- * showed when there is no provider to ask (an NWC wallet) or it fails.
- * Nothing older than that page is read, so the result says when a wallet
- * may hold more.
+ * answers with the first page of its own history, or with the list History
+ * last showed when it has no provider in the store, fails, or takes longer
+ * than a few seconds (a relay round trip). Nothing older than that page is
+ * read, so the result says when a wallet may hold more.
  */
 
 import { normalizeTx } from './txNormalizer.js';
 import { TX_CACHE_LIMIT, readCachedTransactions } from '../utils/txCache.js';
 
 const PAGE_SIZE = 100;
+/** How long one wallet may take before its cached list answers instead. */
+const WALLET_TIMEOUT_MS = 4000;
 const UNSETTLED = new Set(['pending', 'failed', 'expired']);
 
 const normalized = (value) => String(value || '').trim().toLowerCase();
@@ -69,6 +71,7 @@ export async function loadRecipientPayments({
   addresses = [],
   contactId = null,
   readCache = readCachedTransactions,
+  timeoutMs = WALLET_TIMEOUT_MS,
 }) {
   const aliases = new Set(addresses.filter(Boolean).map(normalized));
   if (!contactId && !aliases.size) return { payments: [], complete: true };
@@ -77,13 +80,21 @@ export async function loadRecipientPayments({
   const history = async (wallet) => {
     const provider = providers?.[wallet.id];
     if (typeof provider?.getTransactions === 'function') {
+      let timer = null;
       try {
-        const result = await provider.getTransactions({ limit: PAGE_SIZE, offset: 0 });
+        const result = await Promise.race([
+          provider.getTransactions({ limit: PAGE_SIZE, offset: 0 }),
+          new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('timeout')), timeoutMs); }),
+        ]);
         const page = Array.isArray(result) ? result : (result?.transactions || []);
-        if (page.length >= PAGE_SIZE) complete = false;
+        // Exactly one page: there may be more. A provider that ignores the
+        // limit answers with its whole history.
+        if (page.length === PAGE_SIZE) complete = false;
         return page;
       } catch {
         // Fall through to what History last showed.
+      } finally {
+        clearTimeout(timer);
       }
     }
     const cached = readCache(wallet.id) || [];
