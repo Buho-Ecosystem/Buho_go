@@ -202,7 +202,30 @@ try {
   assert.equal(await page.locator('.tx-row--link', { hasText: 'guess@pay.example' }).count(), 0, 'no list for a recipient that cannot be paid again');
   console.log('✓ payments to this recipient: from the To row and More options, totals, this one marked, each opens its receipt');
 
-  // 6. Dark mode, and German, for the swipe and the row.
+  // 6. Haptics on a send that fails: one commit at the slide's end, one error, and the
+  // spring back is silent. (On the web nothing plays; the calls are recorded here.)
+  await openDetails('tx-rent');
+  await page.locator('.pay-again-row').click();
+  const sendSheet = page.locator('.sheet-card:not(.sheet-card--redeem)');
+  await sendSheet.waitFor({ timeout: 20000 });
+  await pause(600);
+  await page.evaluate(async () => {
+    const { haptics } = await import('/src/utils/haptics.js');
+    window.__played = [];
+    for (const kind of Object.keys(haptics)) haptics[kind] = () => { window.__played.push(kind); };
+  });
+  const thumb = await sendSheet.locator('.slide-thumb').boundingBox();
+  const track = await sendSheet.locator('.slide-track').boundingBox();
+  await page.mouse.move(thumb.x + thumb.width / 2, thumb.y + thumb.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(track.x + track.width - 8, thumb.y + thumb.height / 2, { steps: 20 });
+  await page.mouse.up();
+  await page.waitForFunction(() => window.__played?.includes('error'), null, { timeout: 20000 });
+  await pause(1500); // the slide springs back
+  assert.deepEqual(await page.evaluate(() => window.__played), ['medium', 'error']);
+  console.log('✓ haptics on a failed send: the commit once, then the error; the spring back is silent');
+
+  // 7. Dark mode, and German, for the swipe and the row.
   await openHistory();
   await page.evaluate(() => { window.__audit.setDark(true); window.__audit.app._instance.proxy.$i18n.locale = 'de'; });
   await pause(300);

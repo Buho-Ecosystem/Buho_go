@@ -487,6 +487,7 @@ import { composeUnifiedBip21 } from '../utils/bip21';
 import PaymentConfirmation from './PaymentConfirmation.vue';
 import L1BitcoinReceive from './L1BitcoinReceive.vue';
 import VoucherSheet from './VoucherSheet.vue';
+import { haptics } from '../utils/haptics.js';
 
 /** NWC receive polling: start after 4 s, back off to one check every 15 s. */
 const NWC_POLLING = Object.freeze({ initialInterval: 4000, maxInterval: 15000, backoffMultiplier: 1.5, maxAttempts: 18 });
@@ -1419,6 +1420,7 @@ export default {
           if (this.isPaymentConfirmed) return;
           this.isPaymentConfirmed = true;
           this.paymentStatusMessage = this.$t('Payment received!');
+          haptics.success();
 
           // Stop monitoring
           this.stopPaymentMonitor();

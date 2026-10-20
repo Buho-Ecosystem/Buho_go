@@ -649,6 +649,7 @@ import { bech32 } from 'bech32'
 import { getUserFriendlyError, formatInsufficientBalanceBreakdown } from '../utils/userErrors'
 import ContactAvatar from './AddressBook/ContactAvatar.vue'
 import SuccessCheckmark from './SuccessCheckmark.vue'
+import { haptics } from '../utils/haptics.js'
 
 // ─────────────────────────────────────────────────────────────
 // Props / Emits
@@ -1525,6 +1526,13 @@ async function startBatch() {
   }
 
   isExecuting.value = false
+
+  // The batch's outcome, felt once; a cancel was the user's own doing.
+  if (isComplete.value && !isCancelled.value) {
+    if (failedCount.value === 0) haptics.success()
+    else if (successCount.value > 0) haptics.warning()
+    else haptics.error()
+  }
 
   // Auto-advance to summary
   if (isComplete.value || isCancelled.value) {

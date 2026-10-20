@@ -29,7 +29,6 @@
 <script>
 import { Icon } from '@iconify/vue';
 import BackupKeyringGlyph from '../BackupKeyringGlyph.vue';
-import { haptics } from '../../utils/haptics';
 
 /**
  * Floating bottom navigation for the Settings / Security / Identity / Spend
@@ -73,9 +72,6 @@ export default {
   methods: {
     navigate(tab) {
       if (this.$route.path === tab.route) return;
-      // Fire-and-forget: a native haptic tap gives the bar a proper
-      // tactile feel on iOS/Android and is a silent no-op on web.
-      haptics.tap();
       this.$router.push(tab.route);
     },
   },

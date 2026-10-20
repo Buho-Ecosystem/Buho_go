@@ -27,8 +27,6 @@
 </template>
 
 <script>
-import { haptics } from '../utils/haptics';
-
 /**
  * Floating bottom navigation for the Learn & Earn section.
  *
@@ -36,7 +34,7 @@ import { haptics } from '../utils/haptics';
  * look and feel like a modern mobile app bar — a translucent floating
  * pill detached from the screen edges, with a soft animated "active"
  * indicator that expands to reveal the label (Material 3 style) and a
- * gentle press animation. Haptic feedback fires on native platforms.
+ * gentle press animation.
  *
  * Exit always routes to `/wallet` rather than using router.back() so
  * the destination is predictable no matter how the user arrived here.
@@ -62,9 +60,6 @@ export default {
   methods: {
     navigate(tab) {
       if (this.$route.path === tab.route) return;
-      // Fire-and-forget: a native haptic tap gives the bar a proper
-      // tactile feel on iOS/Android and is a silent no-op on web.
-      haptics.tap();
       this.$router.push(tab.route);
     },
   },

@@ -799,6 +799,7 @@ import {fiatRatesService} from '../utils/fiatRates.js';
 import {fiatSymbol} from '../utils/fiatCurrencies.js';
 import {formatMainBalance as formatMainBalanceUtil, formatAmount} from '../utils/amountFormatting.js';
 import {haptics} from '../utils/haptics.js';
+import { NWC_ERROR } from '../utils/nwcErrors.js';
 import {isNfcAvailable} from '../utils/nfc.js';
 import NumberFlow from '@number-flow/vue';
 import HiddenAmount from '../components/HiddenAmount.vue';
@@ -2242,6 +2243,11 @@ export default {
     this.cancelBrantaLookup();
   },
   watch: {
+    // A voucher or card redeem ends here either way: its outcome is felt.
+    lnurlWithdrawStatus(status) {
+      if (status === 'confirmed') haptics.success();
+      else if (status === 'error') haptics.error();
+    },
     isSendingPayment(sending) {
       clearTimeout(this._nwcWaitTimer);
       this.nwcSendWaiting = false;
@@ -2678,7 +2684,6 @@ export default {
         return;
       }
 
-      haptics.tap();
       this.sendResolveError = '';
       this.clipboardResolving = true;
       try {
@@ -3002,6 +3007,7 @@ export default {
         this._monitorL1Withdrawal(result.requestId, walletId);
       } catch (error) {
         console.error('Withdrawal failed:', error);
+        haptics.error();
         const msg = describeL1WithdrawError(error, this.$t.bind(this));
         this.walletStore.showPaymentError(error, {
           context: 'withdraw',
@@ -3391,17 +3397,14 @@ export default {
     },
 
     openTransactionHistory() {
-      haptics.tap();
       this.$router.push('/transactions');
     },
 
     openReceive() {
-      haptics.tap();
       this.showReceiveModal = true;
     },
 
     openSend() {
-      haptics.tap();
       this.showSendModal = true;
     },
 
@@ -3957,7 +3960,6 @@ export default {
      */
     redeemVoucher(voucher, targetSats = null) {
       if (!voucher?.balanceCheck) return;
-      haptics.tap();
       this.pendingWithdrawTargetSats = targetSats;
       this.showReceiveModal = false;
       void this.onPaymentDetected({ type: 'lnurl', data: voucher.balanceCheck });
@@ -5245,6 +5247,9 @@ export default {
 
       } catch (error) {
         console.error('Payment failed:', error);
+        // A payment whose outcome is unknown needs attention; it has not failed.
+        if (error?.code === NWC_ERROR.UNCONFIRMED) haptics.warning();
+        else haptics.error();
         this.walletStore.showPaymentError(error, {
           context: 'payment',
           walletType,
@@ -5700,6 +5705,8 @@ export default {
      */
     async openSendSuccess({ amount, recipient, status, showSaveContact, successAction = null, verifyUrl = null, verifiedBusiness = null }) {
       const isCompleted = status !== 'pending';
+      // Money left: felt once the payment completed, never while it routes.
+      if (isCompleted) haptics.success();
 
       // LUD-21 fiat-delivery poll. Owned here (one place) so every success
       // screen — main send AND contact-pay — starts fresh: the token bump +

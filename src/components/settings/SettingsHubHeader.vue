@@ -22,7 +22,6 @@
 
 <script>
 import { Icon } from '@iconify/vue';
-import { haptics } from '../../utils/haptics';
 
 /**
  * Shared header for the Settings, Security and Spend tabs. Identity is the
@@ -42,7 +41,6 @@ export default {
   },
   methods: {
     goHome() {
-      haptics.tap();
       if (this.$route.path === '/wallet') return;
       this.$router.push('/wallet');
     },

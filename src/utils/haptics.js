@@ -56,9 +56,9 @@ const feedback = (play) => async () => {
 };
 
 export const haptics = {
-  /** Light tap: a selection, a key, a threshold reached. */
+  /** Light tap: something snapped or was read (a card, a QR code, a threshold). */
   tap: feedback(() => Haptics.impact({ style: ImpactStyle.Light })),
-  /** Medium tap: something about to happen (the slide armed, a card read). */
+  /** Medium tap: a commit point crossed (the slide armed, a sale parked). */
   medium: feedback(() => Haptics.impact({ style: ImpactStyle.Medium })),
   /** A completed action: sent, paid. */
   success: feedback(() => Haptics.notification({ type: NotificationType.Success })),

@@ -24,6 +24,25 @@ Routine taps (buttons, tabs, keys, copying) get none: people expect them to
 work, and a haptic on every touch drowns out the ones that matter. Never a
 haptic without a visible change at the same moment.
 
+## Where
+
+| Moment | Plays |
+|---|---|
+| A payment sent (once it completed), a batch sent (as its summary counts it), a transfer done | `success` |
+| A payment received while you watch, a voucher or card redeemed, a kiosk sale paid (also a parked one) | `success` |
+| A payment, an on-chain withdrawal, a batch, a transfer, a redeem or a kiosk card payment failed; a wrong card PIN; a card locked | `error` |
+| A payment whose outcome is unknown, a batch where some failed | `warning` |
+| The slide reaching its commit point (or committed by a flick), a kiosk sale parked | `medium` |
+| A card read, a QR code recognised (a new one, when scanning several), the History swipe past Pay again, turning haptics on | `tap` |
+
+Nothing else plays: no tabs, buttons, keys, pickers, steps or copying, and
+nothing while a payment is still pending. The slide's commit plays once, from
+the finger at the detent or at the commit itself for a flick or a keyboard
+run; springing back after a failed send is silent. (The app PIN dialog,
+`PinEntryDialog.vue`, plays an error on a wrong PIN but is not used today.) The list is enforced by
+`src/utils/__tests__/haptics.spec.js` ("haptics play only at the moments the
+map lists"): a new haptic is added there on purpose, with its meaning.
+
 ## Notes
 
 - Android plays every pattern as a short vibration (the plugin uses the

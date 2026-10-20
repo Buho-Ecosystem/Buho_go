@@ -721,6 +721,8 @@ export default defineComponent({
       if (state.value === 'success') return
       recordSale(invoiceData.value, saleBreakdownSnapshot.value)
       state.value = 'success'
+      // Felt at the counter while the goods change hands.
+      void haptics.success()
       clearTimeout(successTimer)
       successTimer = setTimeout(resetToInput, 7000)
     }
