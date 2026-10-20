@@ -31,6 +31,9 @@ const MAX_PENDING_LINKS = 200
 // Spark settlement can lag, so 5 minutes catches everything in practice
 // without being so wide it can swallow an unrelated next send.
 const PENDING_LINK_TIME_WINDOW_MS = 5 * 60 * 1000
+// A link with a Pay again record waits this long for the payment its proof
+// names (a wallet may list it late) before the time match may claim it.
+const PAY_AGAIN_PROOF_WAIT_MS = 10 * 60 * 1000
 
 // ---------------------------------------------------------------------------
 // Storage key — wallet-scoped metadata
@@ -744,6 +747,7 @@ export const useTransactionMetadataStore = defineStore('transactionMetadata', {
         // that payment is the match, before any amount or time heuristic.
         const proven = link.payAgain ? eligible.find(({ tx }) => provesPayment(tx, link.payAgainProof)) : null
         if (!link.transactionId && needsAmountProof && !exact && !proven) continue
+        if (link.payAgain && !proven && now - linkSentAt < PAY_AGAIN_PROOF_WAIT_MS) continue
 
         const pick = proven || exact || eligible[0]
 

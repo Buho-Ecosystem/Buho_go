@@ -1,7 +1,7 @@
 # Pay again
 
 A completed payment to a recipient that can be paid again offers Pay again:
-swipe its row in History to the left (a full swipe, past half the row), or
+swipe its row in History to the left (a full swipe, about half the row), or
 tap the Pay again row at the end of its Transaction Details. Both hand the
 recipient to the one send pipeline, the same hand-over as a contact tap, with
 the last amount filled in. The user still sees the confirm sheet and always
