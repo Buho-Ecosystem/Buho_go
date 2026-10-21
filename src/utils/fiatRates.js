@@ -1,15 +1,23 @@
 /**
  * Fiat Rates Service
  * Handles fetching and caching of Bitcoin fiat exchange rates. Mempool's
- * /prices endpoint is the primary source; currencies it omits come from
+ * /prices endpoint is the primary source (the user's server, else
+ * mempool.space, then the fallback server); currencies it omits come from
  * Alby's per-currency endpoint. Which currency uses which is declared once
  * in fiatCurrencies.js.
  */
 import { FIAT_SYMBOLS, MEMPOOL_RATE_CURRENCIES, ALBY_RATE_CURRENCIES } from './fiatCurrencies.js'
 
+// Asked when the chosen Mempool server fails. Not offered in Settings.
+export const MEMPOOL_FALLBACK_URL = 'https://mempool.emzy.de/api/v1';
+
+// Servers that were once offered in Settings and no longer exist. A saved
+// choice of one goes back to the default.
+const RETIRED_MEMPOOL_URLS = ['https://mempool.blocktrainer.de/api/v1'];
+
 // fetch() has no timeout option; a host that never answers would hold every
 // caller (and the screens awaiting them) forever.
-function fetchWithTimeout(url, ms) {
+export function fetchWithTimeout(url, ms) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), ms);
   return fetch(url, { signal: controller.signal }).finally(() => clearTimeout(timer));
@@ -42,6 +50,10 @@ export class FiatRatesService {
       if (settings) {
         const parsed = JSON.parse(settings);
         this.customApiUrl = parsed.customMempoolUrl || null;
+        if (RETIRED_MEMPOOL_URLS.includes(this.customApiUrl)) {
+          this.customApiUrl = null;
+          this.saveSettings();
+        }
       }
     } catch (error) {
       console.error('Error loading mempool settings:', error);
@@ -159,44 +171,49 @@ export class FiatRatesService {
   }
 
   /**
-   * Mempool's /prices endpoint first. If Mempool is down, Alby serves every
-   * currency, so an outage of one source never leaves the app without rates.
+   * Mempool's /prices endpoint first: the chosen server, then the fallback
+   * server. If no Mempool server answers, Alby serves every currency, so an
+   * outage of one source never leaves the app without rates.
    */
   async refreshRates() {
-    const apiUrl = this.getApiUrl();
     this.lastError = null;
 
     const previous = this.rates || {};
     const rates = { time: Math.floor(Date.now() / 1000) };
     let fresh = false;
 
-    try {
-      const response = await fetchWithTimeout(`${apiUrl}/prices`, 10000);
+    const servers = [...new Set([this.getApiUrl(), MEMPOOL_FALLBACK_URL])];
+    for (const apiUrl of servers) {
+      try {
+        const response = await fetchWithTimeout(`${apiUrl}/prices`, 10000);
 
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+
+        const data = await response.json();
+
+        // Validate response structure
+        if (!data || typeof data !== 'object' || !data.USD) {
+          throw new Error('Invalid response format from Mempool API');
+        }
+
+        // Convert to our expected format (rates per BTC)
+        if (data.time) rates.time = data.time;
+        for (const code of MEMPOOL_RATE_CURRENCIES) {
+          rates[code] = data[code] || 0;
+        }
+        fresh = true;
+        break;
+      } catch (error) {
+        console.warn(`Mempool rates unavailable from ${apiUrl}:`, error.message);
+        this.lastError = error.message;
       }
-
-      const data = await response.json();
-
-      // Validate response structure
-      if (!data || typeof data !== 'object' || !data.USD) {
-        throw new Error('Invalid response format from Mempool API');
-      }
-
-      // Convert to our expected format (rates per BTC)
-      if (data.time) rates.time = data.time;
-      for (const code of MEMPOOL_RATE_CURRENCIES) {
-        rates[code] = data[code] || 0;
-      }
-      fresh = true;
-    } catch (error) {
-      console.warn('Mempool rates unavailable, using Alby for every currency:', error.message);
-      this.lastError = error.message;
     }
 
-    // Currencies the Mempool /prices endpoint doesn't return (and, when
-    // Mempool failed, all of them) come from Alby's per-currency endpoint.
+    // Currencies the Mempool /prices endpoint doesn't return (and, when no
+    // Mempool server answered, all of them) come from Alby's per-currency
+    // endpoint.
     // Fetched in parallel; one failure never blocks the others.
     // A failed Alby call keeps the last real rate instead of dropping the
     // currency until the next refresh (a BRL balance read R$0,00).

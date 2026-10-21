@@ -996,7 +996,7 @@
                     {{ currency }}
                   </div>
                   <div class="currency-rate" :class="$q.dark.isActive ? 'table_col_dark' : 'table_col_light'">
-                    {{ getCurrencySymbol(currency) }}1 = {{ formatSats(exchangeRates[currency.toLowerCase()]) }}
+                    {{ fiatUnitRate(currency) }}
                   </div>
                 </div>
               </div>
@@ -1531,27 +1531,6 @@
 
             <div class="source-separator" role="presentation"></div>
 
-            <!-- Blocktrainer -->
-            <button
-              type="button"
-              class="source-row"
-              :class="{ 'source-row-selected': mempoolSelectedSource === 'blocktrainer' }"
-              @click="selectMempoolSource('blocktrainer')"
-            >
-              <span class="source-radio" aria-hidden="true">
-                <span class="source-radio-dot" />
-              </span>
-              <span class="source-body">
-                <span class="source-head">
-                  <span class="source-name">Blocktrainer</span>
-                  <span class="source-tag tag-community">{{ $t('Community') }}</span>
-                </span>
-                <span class="source-desc">{{ $t('Community-run, based in Germany') }}</span>
-              </span>
-            </button>
-
-            <div class="source-separator" role="presentation"></div>
-
             <!-- Your own server (custom) -->
             <button
               type="button"
@@ -1652,7 +1631,7 @@ import {useProfileStore} from '../stores/profile'
 import {useNotificationsStore} from '../stores/notifications'
 import {useChatRuntime} from '../composables/useChatRuntime'
 import {mapState, mapActions} from 'pinia'
-import {fiatRatesService} from '../utils/fiatRates.js'
+import {fiatRatesService, fetchWithTimeout} from '../utils/fiatRates.js'
 import {formatAmount} from '../utils/amountFormatting.js'
 import { SELECTABLE_FIAT_CURRENCIES, fiatSymbol, fiatFlag } from '../utils/fiatCurrencies.js'
 import {shareContent} from '../utils/share.js'
@@ -1698,14 +1677,12 @@ import { LNBitsWalletProvider } from '../providers/LNBitsWalletProvider'
 // import MnemonicVerify from '../components/MnemonicVerify.vue'
 import { SUPPORTED_LOCALES, applyLocale, getSavedLocale } from '../i18n/locales'
 
-// Preset Mempool servers offered in the exchange-rate source picker.
-// Kept at module scope so they are referenced via computed getters in
-// the template without being reactive (they never change per instance).
-// Any URL that is not one of these presets is treated as "custom" and
-// the custom-server panel is auto-expanded on dialog open.
+// The default Mempool server offered in the exchange-rate source picker.
+// Kept at module scope so it is referenced via a computed getter in the
+// template without being reactive (it never changes per instance).
+// Any other URL is treated as "custom" and the custom-server panel is
+// auto-expanded on dialog open.
 const MEMPOOL_DEFAULT_URL = 'https://mempool.space/api/v1';
-const MEMPOOL_BLOCKTRAINER_URL = 'https://mempool.blocktrainer.de/api/v1';
-const MEMPOOL_PRESET_URLS = [MEMPOOL_DEFAULT_URL, MEMPOOL_BLOCKTRAINER_URL];
 
 export default {
   name: 'SettingsPage',
@@ -1787,7 +1764,7 @@ export default {
       // the store; the other two are scratch space used only while the
       // dialog is open.
       customMempoolUrl: null,
-      mempoolSelectedSource: 'default', // 'default' | 'blocktrainer' | 'custom'
+      mempoolSelectedSource: 'default', // 'default' | 'custom'
       mempoolCustomDraft: '',
       isTestingUrl: false,
       // Bumps on every dialog open so the animated SVG replays its
@@ -2323,8 +2300,6 @@ export default {
      */
     mempoolEffectiveUrl() {
       switch (this.mempoolSelectedSource) {
-        case 'blocktrainer':
-          return MEMPOOL_BLOCKTRAINER_URL;
         case 'custom': {
           const url = (this.mempoolCustomDraft || '').trim();
           return url === MEMPOOL_DEFAULT_URL || !url ? null : url;
@@ -2339,10 +2314,6 @@ export default {
     // same reference each render keeps reactivity cheap.
     MEMPOOL_DEFAULT_URL() {
       return MEMPOOL_DEFAULT_URL;
-    },
-
-    MEMPOOL_BLOCKTRAINER_URL() {
-      return MEMPOOL_BLOCKTRAINER_URL;
     },
 
     /**
@@ -2374,9 +2345,6 @@ export default {
       const saved = this.customMempoolUrl;
       if (!saved || saved === MEMPOOL_DEFAULT_URL) {
         return this.$t('Default (mempool.space)');
-      }
-      if (saved === MEMPOOL_BLOCKTRAINER_URL) {
-        return this.$t('Blocktrainer');
       }
       return this.$t('Custom server');
     },
@@ -2997,6 +2965,13 @@ export default {
       return SELECTABLE_FIAT_CURRENCIES
     },
 
+    /** What one unit of the currency buys, "$1 = 1,180 sats". The stored rate is the price of one bitcoin. */
+    fiatUnitRate(currency) {
+      const btcPrice = this.exchangeRates[currency.toLowerCase()]
+      const sats = btcPrice > 0 ? this.formatSats(Math.round(100000000 / btcPrice)) : '--'
+      return `${this.getCurrencySymbol(currency)}1 = ${sats}`
+    },
+
     getCurrencySymbol(currency) {
       return fiatSymbol(currency)
     },
@@ -3441,9 +3416,6 @@ export default {
       if (!saved || saved === MEMPOOL_DEFAULT_URL) {
         this.mempoolSelectedSource = 'default';
         this.mempoolCustomDraft = '';
-      } else if (saved === MEMPOOL_BLOCKTRAINER_URL) {
-        this.mempoolSelectedSource = 'blocktrainer';
-        this.mempoolCustomDraft = '';
       } else {
         // Anything else, including legacy emzy.de URLs that predate the
         // preset cull, lands on the custom row with the URL preserved
@@ -3492,7 +3464,7 @@ export default {
         if (urlToTest) {
           // Test the URL by making a request
           const testUrl = urlToTest.endsWith('/') ? urlToTest + 'prices' : urlToTest + '/prices';
-          const response = await fetch(testUrl);
+          const response = await fetchWithTimeout(testUrl, 10000);
 
           if (!response.ok) {
             throw new Error(`HTTP ${response.status}: ${response.statusText}`);
@@ -5401,11 +5373,6 @@ body.body--light .wallet-avatar-arkade {
 .tag-default {
   background: rgba(21, 222, 114, 0.12);
   color: #15DE72;
-}
-
-.tag-community {
-  background: rgba(251, 191, 36, 0.12);
-  color: #F59E0B;
 }
 
 /* Spark Wallet Section Styles */
