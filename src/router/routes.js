@@ -154,6 +154,9 @@ const routes = [
       // eSIM + VPN shop (nadanada). Lazy-loaded so the catalog + QR code only
       // enter the bundle when the user opens the store. Same pattern as /map.
       { path: '/shop', component: () => import('pages/ShopPage.vue'), beforeEnter: shopNativeOnly },
+      // Bitrefill shop: Bitrefill's widget in a frame, paid from the user's
+      // wallets. Works on the web too (a frame needs no CORS). Lazy-loaded.
+      { path: '/bitrefill', component: () => import('pages/BitrefillPage.vue') },
       // Online shops directory (BitcoinListings + BTCPay + Nostr). Lazy-loaded
       // so the adapters + Nostr code never land in the initial bundle.
       // Retired with the Spend online row: the merchant directory was too

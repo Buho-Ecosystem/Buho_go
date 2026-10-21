@@ -35,9 +35,8 @@
         </button>
 
         <!-- Bitrefill: gift cards, mobile top-ups and more, bought inside
-             the app and paid from this wallet. The store is not built yet;
-             the door is here so the shape of Spend is settled. -->
-        <button type="button" class="spend-row" @click="showBitrefill = true">
+             the app and paid from this wallet (pages/BitrefillPage.vue). -->
+        <button type="button" class="spend-row" @click="$router.push('/bitrefill')">
           <span class="spend-row-icon spend-row-icon--brand">
             <img src="/Bitrefill/bitrefill-mark.png" alt="" />
           </span>
@@ -85,13 +84,6 @@
 
     <SettingsHubNav />
     <GetAppDialog v-model="showGetAppDialog" :message="getAppDialogMessage" />
-    <ComingSoonSheet
-      v-model="showBitrefill"
-      :title="$t('Bitrefill is on its way')"
-      :message="$t('Buy gift cards and mobile top-ups with your bitcoin, right here. We are building it now.')"
-    >
-      <template #brand><img src="/Bitrefill/bitrefill-mark.png" alt="" /></template>
-    </ComingSoonSheet>
   </q-page>
 </template>
 
@@ -104,7 +96,6 @@ import { EARN_BRAND } from '../services/earnBrand';
 import SettingsHubHeader from '../components/settings/SettingsHubHeader.vue';
 import SettingsHubNav from '../components/settings/SettingsHubNav.vue';
 import GetAppDialog from '../components/GetAppDialog.vue';
-import ComingSoonSheet from '../components/ComingSoonSheet.vue';
 import SpendMapPreview from '../components/settings/SpendMapPreview.vue';
 
 /**
@@ -115,12 +106,11 @@ import SpendMapPreview from '../components/settings/SpendMapPreview.vue';
  */
 export default {
   name: 'SpendPage',
-  components: { Icon, SettingsHubHeader, SettingsHubNav, GetAppDialog, ComingSoonSheet, SpendMapPreview },
+  components: { Icon, SettingsHubHeader, SettingsHubNav, GetAppDialog, SpendMapPreview },
   data() {
     return {
       showGetAppDialog: false,
       getAppDialogMessage: '',
-      showBitrefill: false,
       earnMark: EARN_BRAND.logo,
     };
   },
