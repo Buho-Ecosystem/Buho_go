@@ -719,9 +719,9 @@
       >
         <SettingsRow
           icon="tabler:chart-line"
-          :label="$t('Exchange Rate Source')"
-          :caption="mempoolSourceLabel"
-          @click="showMempoolDialog = true"
+          :label="$t('Exchange rates')"
+          :inline-value="mempoolSourceLabel"
+          @click="openExchangeRates"
         />
 
         <!-- Auto-add Bitcoin deposits — only relevant for Spark
@@ -996,7 +996,7 @@
                     {{ currency }}
                   </div>
                   <div class="currency-rate" :class="$q.dark.isActive ? 'table_col_dark' : 'table_col_light'">
-                    {{ getCurrencySymbol(currency) }}1 = {{ formatSats(exchangeRates[currency.toLowerCase()]) }}
+                    {{ fiatUnitRate(currency) }}
                   </div>
                 </div>
               </div>
@@ -1406,7 +1406,6 @@
       </q-card>
     </q-dialog>
 
-    <!-- Mempool API Dialog -->
     <!-- Auto-add Bitcoin deposits — info popup. Explains, TLDR + friendly, how
          on-chain deposits to a Spark wallet get claimed into the balance. -->
     <q-dialog v-model="showAutoAddDepositsDialog" :class="$q.dark.isActive ? 'dialog_dark' : 'dialog_light'">
@@ -1454,173 +1453,14 @@
       </q-card>
     </q-dialog>
 
-    <q-dialog v-model="showMempoolDialog" :class="$q.dark.isActive ? 'dialog_dark' : 'dialog_light'">
-      <q-card class="dialog-card mempool-dialog" :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'">
-        <q-card-section class="dialog-header">
-          <div class="dialog-title" :class="$q.dark.isActive ? 'dialog_title_dark' : 'dialog_title_light'">
-            {{ $t('Exchange rate source') }}
-          </div>
-          <q-btn
-            flat
-            round
-            dense
-            v-close-popup
-            :class="$q.dark.isActive ? 'close_btn_dark' : 'close_btn_light'"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 20 20" fill="none">
-              <path d="M15 5L5 15M5 5L15 15" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-            </svg>
-          </q-btn>
-        </q-card-section>
-
-        <q-card-section class="dialog-content">
-          <!--
-            Animated building-blocks illustration. Self-contained SVG so
-            the browser runs its CSS animations inside an <img> sandbox.
-            Three layers of "replay on open" defense, because SVG-in-img
-            animation restart is inconsistent across WebViews:
-              1. v-if toggles off-and-on each open → Vue destroys and
-                 recreates the DOM element, guaranteeing a fresh load.
-              2. :key bumps → forces Vue to treat the new element as
-                 brand new even when the subtree isn't otherwise
-                 invalidated.
-              3. ?v= URL cache-bust → forces the browser to treat the
-                 SVG as a new resource with a fresh render context.
-            See the `showMempoolDialog` watcher.
-          -->
-          <div class="mempool-hero">
-            <img
-              v-if="mempoolHeroMounted"
-              :key="mempoolAnimationKey"
-              :src="`/Onboarding wizard spark/building-blocks-animated.svg?v=${mempoolAnimationKey}`"
-              class="mempool-hero-img"
-              alt=""
-              aria-hidden="true"
-            />
-          </div>
-
-          <!-- Plain-language intro. "BuhoGO" is rendered as a brand
-               span so the green accent survives translations. -->
-          <p class="mempool-intro-text" :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'">
-            <span class="buhogo-brand">BuhoGO</span>
-            {{ $t('uses a public Bitcoin server to show live prices. Pick which one to use.') }}
-          </p>
-
-          <!-- Source picker. Single radio-style list; the custom input
-               appears inline exactly when "Your own server" is selected,
-               so there's no extra click to reveal or hide it. -->
-          <div class="source-list" :class="$q.dark.isActive ? 'source-list-dark' : 'source-list-light'">
-            <!-- Default -->
-            <button
-              type="button"
-              class="source-row"
-              :class="{ 'source-row-selected': mempoolSelectedSource === 'default' }"
-              @click="selectMempoolSource('default')"
-            >
-              <span class="source-radio" aria-hidden="true">
-                <span class="source-radio-dot" />
-              </span>
-              <span class="source-body">
-                <span class="source-head">
-                  <span class="source-name">mempool.space</span>
-                  <span class="source-tag tag-default">{{ $t('Default') }}</span>
-                </span>
-                <span class="source-desc">{{ $t('Works for everyone') }}</span>
-              </span>
-            </button>
-
-            <div class="source-separator" role="presentation"></div>
-
-            <!-- Blocktrainer -->
-            <button
-              type="button"
-              class="source-row"
-              :class="{ 'source-row-selected': mempoolSelectedSource === 'blocktrainer' }"
-              @click="selectMempoolSource('blocktrainer')"
-            >
-              <span class="source-radio" aria-hidden="true">
-                <span class="source-radio-dot" />
-              </span>
-              <span class="source-body">
-                <span class="source-head">
-                  <span class="source-name">Blocktrainer</span>
-                  <span class="source-tag tag-community">{{ $t('Community') }}</span>
-                </span>
-                <span class="source-desc">{{ $t('Community-run, based in Germany') }}</span>
-              </span>
-            </button>
-
-            <div class="source-separator" role="presentation"></div>
-
-            <!-- Your own server (custom) -->
-            <button
-              type="button"
-              class="source-row"
-              :class="{ 'source-row-selected': mempoolSelectedSource === 'custom' }"
-              @click="selectMempoolSource('custom')"
-            >
-              <span class="source-radio" aria-hidden="true">
-                <span class="source-radio-dot" />
-              </span>
-              <span class="source-body">
-                <span class="source-head">
-                  <span class="source-name">{{ $t('Your own server') }}</span>
-                  <span class="source-tag tag-advanced">{{ $t('Advanced') }}</span>
-                </span>
-                <span class="source-desc">{{ $t('Point BuhoGO at a Mempool server you host or trust') }}</span>
-              </span>
-            </button>
-
-            <!-- Inline custom input, part of the same list. Only rendered
-                 when the custom row is the active selection. -->
-            <div v-if="mempoolSelectedSource === 'custom'" class="source-custom">
-              <q-input
-                ref="mempoolCustomInput"
-                v-model="mempoolCustomDraft"
-                :placeholder="$t('https://your-mempool.example.com/api/v1')"
-                class="source-custom-input"
-                :class="$q.dark.isActive ? 'source-custom-input-dark' : 'source-custom-input-light'"
-                borderless
-                input-class="q-px-md source-custom-input-inner"
-                dense
-                clearable
-                autocapitalize="off"
-                autocorrect="off"
-                spellcheck="false"
-                :error="!!customUrlErrorMessage"
-                :error-message="customUrlErrorMessage"
-                hide-bottom-space
-              />
-              <p class="source-custom-help" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'">
-                <Icon icon="tabler:info-circle" width="14" height="14" class="source-custom-help-icon" />
-                {{ $t('Must start with https:// and end with /api/v1') }}
-              </p>
-            </div>
-          </div>
-
-        </q-card-section>
-
-        <q-card-actions align="right" class="dialog-actions">
-          <q-btn
-            flat
-            :label="$t('Use default')"
-            @click="resetMempoolUrl"
-            no-caps
-            :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-6'"
-          />
-          <q-btn
-            flat
-            :label="$t('Save')"
-            @click="saveMempoolUrl"
-            :loading="isTestingUrl"
-            :disable="!isMempoolUrlValid"
-            class="continue-action-btn"
-            :class="$q.dark.isActive ? 'dialog_add_btn_dark' : 'dialog_add_btn_light'"
-            no-caps
-          />
-        </q-card-actions>
-      </q-card>
-    </q-dialog>
+    <!-- Where BuhoGO gets Bitcoin prices -->
+    <ExchangeRateSheet
+      v-model="showMempoolDialog"
+      :saved-url="customMempoolUrl"
+      :last-update="ratesLastUpdate"
+      :check-server="checkMempoolServer"
+      @change="onRateServerChange"
+    />
 
     <!-- Spark recovery phrase (unified view + backup flow) -->
     <SparkSeedPhraseDialog
@@ -1652,7 +1492,8 @@ import {useProfileStore} from '../stores/profile'
 import {useNotificationsStore} from '../stores/notifications'
 import {useChatRuntime} from '../composables/useChatRuntime'
 import {mapState, mapActions} from 'pinia'
-import {fiatRatesService} from '../utils/fiatRates.js'
+import {fiatRatesService, checkMempoolServer} from '../utils/fiatRates.js'
+import { mempoolServerLabel } from '../utils/mempoolServer.js'
 import {formatAmount} from '../utils/amountFormatting.js'
 import { SELECTABLE_FIAT_CURRENCIES, fiatSymbol, fiatFlag } from '../utils/fiatCurrencies.js'
 import {shareContent} from '../utils/share.js'
@@ -1669,6 +1510,7 @@ import ArkadeLogo from '../components/ArkadeLogo.vue'
 import WalletBrandMark from '../components/WalletBrandMark.vue'
 import BiometricEnableDialog from '../components/BiometricEnableDialog.vue'
 import LNBitsAddressSheet from '../components/lnbits/LNBitsAddressSheet.vue'
+import ExchangeRateSheet from '../components/settings/ExchangeRateSheet.vue'
 import { suggestedWalletName } from '../utils/nwcWallet.js'
 import { kioskWalletBlocker, KIOSK_BLOCKER } from '../utils/walletCapabilities.js'
 import { NWC_ERROR, nwcError } from '../utils/nwcErrors.js'
@@ -1698,15 +1540,6 @@ import { LNBitsWalletProvider } from '../providers/LNBitsWalletProvider'
 // import MnemonicVerify from '../components/MnemonicVerify.vue'
 import { SUPPORTED_LOCALES, applyLocale, getSavedLocale } from '../i18n/locales'
 
-// Preset Mempool servers offered in the exchange-rate source picker.
-// Kept at module scope so they are referenced via computed getters in
-// the template without being reactive (they never change per instance).
-// Any URL that is not one of these presets is treated as "custom" and
-// the custom-server panel is auto-expanded on dialog open.
-const MEMPOOL_DEFAULT_URL = 'https://mempool.space/api/v1';
-const MEMPOOL_BLOCKTRAINER_URL = 'https://mempool.blocktrainer.de/api/v1';
-const MEMPOOL_PRESET_URLS = [MEMPOOL_DEFAULT_URL, MEMPOOL_BLOCKTRAINER_URL];
-
 export default {
   name: 'SettingsPage',
   directives: { balanceUpdating },
@@ -1720,6 +1553,7 @@ export default {
     BiometricEnableDialog,
     KioskPinPad,
     LNBitsAddressSheet,
+    ExchangeRateSheet,
     SparkLightningAddressSheet,
     InternalTransferModal,
     WalletDetailPanel,
@@ -1772,35 +1606,10 @@ export default {
       currentPin: '',
       newPin: '',
 
-      // Mempool API settings.
-      //
-      // The dialog edits state through two explicit data fields:
-      //   * `mempoolSelectedSource` — which radio row is active. This is
-      //     stored as the source of truth so "custom with empty draft"
-      //     still reads as 'custom' in the UI rather than collapsing
-      //     back to default (as a URL-derived computed would).
-      //   * `mempoolCustomDraft` — the text in the custom URL input.
-      //     Preserved across selection switches so quickly tapping a
-      //     preset to compare doesn't discard the user's typing.
-      //
-      // `customMempoolUrl` remains the persisted, committed value from
-      // the store; the other two are scratch space used only while the
-      // dialog is open.
+      // Exchange rates: the user's own Mempool server (null = the
+      // default) and when prices last came in, for the sheet.
       customMempoolUrl: null,
-      mempoolSelectedSource: 'default', // 'default' | 'blocktrainer' | 'custom'
-      mempoolCustomDraft: '',
-      isTestingUrl: false,
-      // Bumps on every dialog open so the animated SVG replays its
-      // internal CSS animations. The key drives both a Vue :key and a
-      // URL query-string on the <img> for cache-busting.
-      mempoolAnimationKey: 0,
-      // Toggled off-then-on around each open so Vue fully unmounts and
-      // remounts the <img> element. Belt-and-braces: some WebView
-      // builds keep SVG animation state across `:key` changes when the
-      // parent q-dialog doesn't fully tear down the subtree, so we
-      // force a real DOM destroy with v-if. Paired with the key + URL
-      // bust, this makes replay reliable on Chromium and WebKit.
-      mempoolHeroMounted: true,
+      ratesLastUpdate: null,
 
       // Language options (shared registry — see src/i18n/locales.js)
       localeOptions: SUPPORTED_LOCALES,
@@ -2299,86 +2108,9 @@ export default {
       return this.currentPin.length >= 4 && this.newPin.length >= 4;
     },
 
-    /**
-     * Whether the current edit is ready to save. Presets are always
-     * valid. For custom: an empty draft is treated as "use default" and
-     * allowed; a non-empty draft must parse as an http(s) URL.
-     */
-    isMempoolUrlValid() {
-      if (this.mempoolSelectedSource !== 'custom') return true;
-      const url = (this.mempoolCustomDraft || '').trim();
-      if (!url) return true;
-      try {
-        const parsed = new URL(url);
-        return parsed.protocol === 'https:' || parsed.protocol === 'http:';
-      } catch {
-        return false;
-      }
-    },
-
-    /**
-     * The URL that `saveMempoolUrl` will persist, before normalization.
-     * Returns null for "use the built-in default" so the Settings row
-     * caption reads accurately afterwards.
-     */
-    mempoolEffectiveUrl() {
-      switch (this.mempoolSelectedSource) {
-        case 'blocktrainer':
-          return MEMPOOL_BLOCKTRAINER_URL;
-        case 'custom': {
-          const url = (this.mempoolCustomDraft || '').trim();
-          return url === MEMPOOL_DEFAULT_URL || !url ? null : url;
-        }
-        case 'default':
-        default:
-          return null;
-      }
-    },
-
-    // Expose the module-scope preset URLs to the template. Returning the
-    // same reference each render keeps reactivity cheap.
-    MEMPOOL_DEFAULT_URL() {
-      return MEMPOOL_DEFAULT_URL;
-    },
-
-    MEMPOOL_BLOCKTRAINER_URL() {
-      return MEMPOOL_BLOCKTRAINER_URL;
-    },
-
-    /**
-     * Inline error shown below the custom-URL input. Returns an empty
-     * string (falsy) when the URL is valid or the field is empty.
-     * Keeping the validation message inline here rather than in a
-     * separate notify makes the constraint feel like part of the form,
-     * not a jarring after-the-fact alert.
-     */
-    customUrlErrorMessage() {
-      if (this.mempoolSelectedSource !== 'custom') return '';
-      const url = (this.mempoolCustomDraft || '').trim();
-      if (!url) return ''; // empty is allowed while the user is still typing
-      try {
-        const parsed = new URL(url);
-        if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
-          return this.$t('Must start with https:// (or http://)');
-        }
-      } catch {
-        return this.$t('That does not look like a valid address');
-      }
-      return '';
-    },
-
-    // Plain-language label for the Settings-row caption. Picks the
-    // friendly name of a known preset when applicable, otherwise falls
-    // back to "Custom" for a user-supplied URL.
+    // The server prices come from, as the Settings row shows it.
     mempoolSourceLabel() {
-      const saved = this.customMempoolUrl;
-      if (!saved || saved === MEMPOOL_DEFAULT_URL) {
-        return this.$t('Default (mempool.space)');
-      }
-      if (saved === MEMPOOL_BLOCKTRAINER_URL) {
-        return this.$t('Blocktrainer');
-      }
-      return this.$t('Custom server');
+      return mempoolServerLabel(this.customMempoolUrl);
     },
 
   },
@@ -2409,29 +2141,6 @@ export default {
       if (isOpen && this.kioskPinSetupStep === 'intro') {
         this.kioskIntroAnimationKey += 1;
       }
-    },
-
-    /**
-     * Whenever the exchange-rate-source dialog opens, rehydrate the
-     * editing state from whatever is currently saved. Covers the
-     * "cancel without saving" case (don't leak stale edits) and the
-     * "legacy URL" case (user with a saved emzy.de URL sees the custom
-     * row selected and their URL in the input, ready to keep using).
-     * Also replays the building-blocks animation by briefly unmounting
-     * and re-inserting the hero image (see the comment on the template).
-     */
-    showMempoolDialog(isOpen) {
-      if (!isOpen) return;
-      this.resetMempoolEditorFromSavedUrl();
-      // Unmount → bump → remount in the next tick. This guarantees
-      // Vue destroys the <img> DOM node and creates a fresh one, which
-      // (combined with the URL cache-bust) triggers a brand-new SVG
-      // load with its internal animations at frame 0.
-      this.mempoolHeroMounted = false;
-      this.mempoolAnimationKey += 1;
-      this.$nextTick(() => {
-        this.mempoolHeroMounted = true;
-      });
     },
 
     /**
@@ -2869,10 +2578,11 @@ export default {
       }
     },
 
-    async openCurrencyDialog() {
-      // Refresh exchange rates before showing dialog
-      await this.loadExchangeRates()
+    openCurrencyDialog() {
+      // Open at once; the rates refresh behind it. Choosing a currency never
+      // needs a rate, so a slow or down rate source must not block the picker.
       this.showCurrencyDialog = true
+      this.loadExchangeRates()
     },
 
     /**
@@ -2994,6 +2704,13 @@ export default {
 
     selectableFiatCurrencies() {
       return SELECTABLE_FIAT_CURRENCIES
+    },
+
+    /** What one unit of the currency buys, "$1 = 1,180 sats". The stored rate is the price of one bitcoin. */
+    fiatUnitRate(currency) {
+      const btcPrice = this.exchangeRates[currency.toLowerCase()]
+      const sats = btcPrice > 0 ? this.formatSats(Math.round(100000000 / btcPrice)) : '--'
+      return `${this.getCurrencySymbol(currency)}1 = ${sats}`
     },
 
     getCurrencySymbol(currency) {
@@ -3426,116 +3143,24 @@ export default {
 
     loadMempoolSettings() {
       this.customMempoolUrl = fiatRatesService.customApiUrl;
-      this.resetMempoolEditorFromSavedUrl();
     },
 
-    /**
-     * Map the persisted `customMempoolUrl` back into the dialog's
-     * editing state (source + custom draft). Called on component load
-     * and every time the dialog opens. Centralised so the "saved URL →
-     * editor state" mapping lives in exactly one function.
-     */
-    resetMempoolEditorFromSavedUrl() {
-      const saved = this.customMempoolUrl;
-      if (!saved || saved === MEMPOOL_DEFAULT_URL) {
-        this.mempoolSelectedSource = 'default';
-        this.mempoolCustomDraft = '';
-      } else if (saved === MEMPOOL_BLOCKTRAINER_URL) {
-        this.mempoolSelectedSource = 'blocktrainer';
-        this.mempoolCustomDraft = '';
-      } else {
-        // Anything else, including legacy emzy.de URLs that predate the
-        // preset cull, lands on the custom row with the URL preserved
-        // so the user can keep using it or switch to a preset.
-        this.mempoolSelectedSource = 'custom';
-        this.mempoolCustomDraft = saved;
-      }
+    openExchangeRates() {
+      this.ratesLastUpdate = fiatRatesService.lastUpdate;
+      this.showMempoolDialog = true;
     },
 
-    /**
-     * "Use default" button: revert the editor to the built-in default.
-     * The custom draft is cleared so it doesn't linger silently and
-     * surprise the user next time they expand the custom row.
-     */
-    resetMempoolUrl() {
-      this.mempoolSelectedSource = 'default';
-      this.mempoolCustomDraft = '';
+    checkMempoolServer(url) {
+      return checkMempoolServer(url);
     },
 
-    /**
-     * Change which exchange-rate source is selected. When switching to
-     * 'custom', focus the input so the user can start typing without a
-     * second tap. Idempotent: re-selecting the active source is a no-op.
-     */
-    selectMempoolSource(source) {
-      if (this.mempoolSelectedSource === source) return;
-      this.mempoolSelectedSource = source;
-      if (source === 'custom') {
-        this.$nextTick(() => {
-          const ref = this.$refs.mempoolCustomInput;
-          if (ref && typeof ref.focus === 'function') ref.focus();
-        });
-      }
-    },
-
-    async saveMempoolUrl() {
-      this.isTestingUrl = true;
-
-      try {
-        // The computed already normalizes default preset and empty
-        // custom draft to null so the Settings row caption reflects
-        // "Default (mempool.space)" when that's effectively what's in
-        // use (rather than "Custom server").
-        const urlToTest = this.mempoolEffectiveUrl;
-
-        if (urlToTest) {
-          // Test the URL by making a request
-          const testUrl = urlToTest.endsWith('/') ? urlToTest + 'prices' : urlToTest + '/prices';
-          const response = await fetch(testUrl);
-
-          if (!response.ok) {
-            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-          }
-
-          const data = await response.json();
-          if (!data || !data.USD) {
-            throw new Error('Invalid response format');
-          }
-        }
-
-        // Save the URL
-        fiatRatesService.setCustomApiUrl(urlToTest);
-        this.customMempoolUrl = urlToTest;
-
-        // Force refresh rates so the app starts using the new source
-        // immediately instead of waiting for the next periodic tick.
-        await fiatRatesService.fetchLatestRates();
-
-        this.showMempoolDialog = false;
-
-        // Confirmation toast names the new source so the user can see
-        // exactly what changed. The label is computed off the just-
-        // updated `customMempoolUrl`, so it stays accurate for presets
-        // and custom URLs alike. Concatenated rather than interpolated
-        // because vue-i18n returns missing keys verbatim without
-        // running interpolation on the fallback.
-        this.$q.notify({
-          type: 'positive',
-          message: this.$t('Exchange rate source updated'),
-          caption: `${this.$t('Now using')} ${this.mempoolSourceLabel}`,
-          timeout: 2000,
-        });
-
-      } catch (error) {
-        console.error('Error testing Mempool URL:', error);
-        this.walletStore.showPaymentError(error, {
-          context: 'connect',
-          route: 'Mempool API test',
-          t: this.$t.bind(this),
-        });
-      } finally {
-        this.isTestingUrl = false;
-      }
+    /** The sheet checked the server already; switch to it and fetch prices from it now. */
+    async onRateServerChange(url) {
+      fiatRatesService.setCustomApiUrl(url);
+      this.customMempoolUrl = url;
+      await fiatRatesService.fetchLatestRates();
+      this.ratesLastUpdate = fiatRatesService.lastUpdate;
+      this.loadExchangeRates();
     },
 
     getCurrentLanguageLabel() {
@@ -4036,11 +3661,6 @@ export default {
 }
 
 .address-book-icon {
-  background: linear-gradient(135deg, #8B5CF6, #7C3AED);
-  color: white;
-}
-
-.mempool-icon {
   background: linear-gradient(135deg, #8B5CF6, #7C3AED);
   color: white;
 }
@@ -5107,13 +4727,8 @@ body.body--light .wallet-avatar-arkade {
   }
 }
 
-/* Exchange-rate-source (Mempool) Dialog
- * Shares .dialog-card base styles (overflow: hidden for rounded corners)
- * but lays its children out as a flex column so the middle section
- * scrolls internally when content exceeds the viewport. Without this,
- * expanding the custom-server panel clips the Save button off-screen
- * on short devices. */
-/* Auto-add Bitcoin deposits info popup — same shell as the mempool dialog. */
+/* Auto-add Bitcoin deposits info popup. A flex column, so the middle
+ * section scrolls when the content is taller than the viewport. */
 .info-dialog {
   width: 100%;
   max-width: 440px;
@@ -5153,258 +4768,6 @@ body.body--light .wallet-avatar-arkade {
   color: var(--brand-accent-text, var(--text-primary));
   font-weight: 600;
   text-decoration: none;
-}
-
-.mempool-dialog {
-  width: 100%;
-  max-width: 440px;
-  max-height: min(92vh, 760px);
-  display: flex;
-  flex-direction: column;
-}
-
-.mempool-dialog .dialog-header {
-  flex: 0 0 auto;
-}
-
-.mempool-dialog .dialog-content {
-  flex: 1 1 auto;
-  overflow-y: auto;
-  -webkit-overflow-scrolling: touch;
-  /* Fade the scroll edges into the card for a softer look when the
-     content overflows. Optional polish. */
-  scrollbar-width: thin;
-}
-
-.mempool-dialog .dialog-actions {
-  flex: 0 0 auto;
-  border-top: 1px solid var(--border-card);
-}
-
-/* Animated hero illustration. Served via <img> so the SVG's inline CSS
-   keyframes run in a self-contained sandbox. `min-height` reserves the
-   illustration's vertical footprint so the layout doesn't jump during
-   the one-tick unmount-remount that forces the animation to replay. */
-.mempool-hero {
-  width: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  margin: 0 0 8px;
-  min-height: 220px;
-  /* Clip any skew that overshoots the hero frame during the animation
-     so it can't push the card wider mid-animation. */
-  overflow: hidden;
-}
-
-.mempool-hero-img {
-  width: 100%;
-  max-width: 220px;
-  height: auto;
-  user-select: none;
-  pointer-events: none;
-}
-
-@media (max-height: 720px) {
-  .mempool-hero {
-    min-height: 180px;
-  }
-  .mempool-hero-img {
-    max-width: 180px;
-  }
-}
-
-.mempool-intro-text {
-  font-family: 'Manrope', sans-serif;
-  font-size: 13px;
-  line-height: 1.5;
-  margin: 0 auto 14px;
-  max-width: 340px;
-  text-align: center;
-}
-
-/* Green brand accent for the word "BuhoGO" in body copy. Keeps the
-   surrounding text translatable while letting the brand name pop. */
-.buhogo-brand {
-  font-weight: 700;
-  color: #15DE72;
-  background: linear-gradient(135deg, #059573, #15DE72);
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
-  letter-spacing: 0.01em;
-}
-
-/* Exchange-rate source picker.
- * Single radio-style list: three rows with an inline custom-URL field
- * that appears when the "Your own server" row is the active selection.
- * No disclosure toggle — the selection itself drives visibility. */
-.source-list {
-  border-radius: 14px;
-  border: 1px solid;
-  overflow: hidden;
-  margin-bottom: 14px;
-}
-
-.source-list-dark {
-  background: var(--bg-secondary);
-  border-color: var(--border-card);
-}
-
-.source-list-light {
-  background: #ffffff;
-  border-color: #e2e8f0;
-}
-
-.source-row {
-  width: 100%;
-  display: flex;
-  align-items: flex-start;
-  gap: 12px;
-  padding: 14px 16px;
-  background: transparent;
-  border: none;
-  cursor: pointer;
-  text-align: left;
-  transition: background 0.12s ease;
-  -webkit-tap-highlight-color: transparent;
-}
-
-.source-row:active {
-  background: rgba(21, 222, 114, 0.06);
-}
-
-.source-radio {
-  flex: 0 0 auto;
-  width: 20px;
-  height: 20px;
-  border-radius: 50%;
-  border: 2px solid var(--border-card);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  margin-top: 2px;
-  transition: border-color 0.15s ease, background 0.15s ease;
-}
-
-.source-row-selected .source-radio {
-  border-color: #15DE72;
-  background: #15DE72;
-}
-
-.source-radio-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: #ffffff;
-  transform: scale(0);
-  transition: transform 0.15s ease;
-}
-
-.source-row-selected .source-radio-dot {
-  transform: scale(1);
-}
-
-.source-body {
-  flex: 1 1 auto;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
-}
-
-.source-head {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-.source-name {
-  font-family: 'Manrope', sans-serif;
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--text-primary);
-}
-
-.source-desc {
-  font-family: 'Manrope', sans-serif;
-  font-size: 12px;
-  line-height: 1.4;
-  color: var(--text-muted);
-}
-
-.source-separator {
-  height: 1px;
-  background: var(--border-card);
-  margin-left: 48px; /* aligns with the body column, not the radio */
-}
-
-/* Inline custom input — part of the list, visually anchored to the
-   "Your own server" row but clearly its own editing surface. */
-.source-custom {
-  padding: 0 16px 16px 48px; /* left-inset matches source-body column */
-}
-
-.source-custom-input {
-  border-radius: 10px;
-  transition: border-color 0.15s ease;
-}
-
-.source-custom-input-dark {
-  background: var(--bg-input);
-  border: 1px solid var(--border-card);
-}
-
-.source-custom-input-light {
-  background: var(--bg-input);
-  border: 1px solid var(--border-card);
-}
-
-.source-custom-input-inner {
-  font-family: var(--font-mono);
-  font-size: 12px;
-}
-
-.source-custom-help {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin: 10px 0 0;
-  font-family: 'Manrope', sans-serif;
-  font-size: 11px;
-  line-height: 1.4;
-}
-
-.source-custom-help-icon {
-  flex: 0 0 auto;
-  opacity: 0.8;
-}
-
-.source-tag {
-  font-family: 'Manrope', sans-serif;
-  font-size: 10px;
-  font-weight: 600;
-  padding: 2px 8px;
-  border-radius: 999px;
-  letter-spacing: 0.02em;
-  white-space: nowrap;
-}
-
-.tag-advanced {
-  background: rgba(148, 163, 184, 0.16);
-  color: #64748b;
-}
-
-/* Shared preset tags, used by .source-head badges. */
-.tag-default {
-  background: rgba(21, 222, 114, 0.12);
-  color: #15DE72;
-}
-
-.tag-community {
-  background: rgba(251, 191, 36, 0.12);
-  color: #F59E0B;
 }
 
 /* Spark Wallet Section Styles */
