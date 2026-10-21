@@ -2869,10 +2869,11 @@ export default {
       }
     },
 
-    async openCurrencyDialog() {
-      // Refresh exchange rates before showing dialog
-      await this.loadExchangeRates()
+    openCurrencyDialog() {
+      // Open at once; the rates refresh behind it. Choosing a currency never
+      // needs a rate, so a slow or down rate source must not block the picker.
       this.showCurrencyDialog = true
+      this.loadExchangeRates()
     },
 
     /**
