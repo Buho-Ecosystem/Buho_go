@@ -51,6 +51,7 @@ test('on the web nothing plays, and nothing throws', async () => {
 const EXPECTED = {
   'components/BatchSendModal.vue': ['error', 'success', 'warning'], // the batch's outcome
   'components/CardPinPanel.vue': ['error'], // wrong card PIN
+  'components/IncomingPaymentHost.vue': ['success'], // Bitcoin arrived on its own
   'components/InternalTransferModal.vue': ['error', 'success'], // the transfer's outcome
   'components/PinEntryDialog.vue': ['error'], // wrong app PIN (the dialog is not used today)
   'components/ReceiveModal.vue': ['success'], // a payment arrived

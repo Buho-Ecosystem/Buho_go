@@ -21,8 +21,9 @@
           <div v-if="toast.config.caption" class="app-toast__caption">{{ toast.config.caption }}</div>
         </div>
         <!-- A real button supplies the tap/keyboard/VoiceOver alternative.
-             It overlays only the message, never the separate action buttons. -->
-        <button v-if="simple" type="button" class="app-toast__tap-dismiss" :aria-label="$t('Dismiss')" :aria-describedby="`toast-copy-${toast.id}`" @click="dismiss" />
+             It overlays only the message, never the separate action buttons.
+             With `onOpen` a tap opens what the toast announces. -->
+        <button v-if="simple" type="button" class="app-toast__tap-dismiss" :aria-label="tapLabel" :aria-describedby="`toast-copy-${toast.id}`" @click="tap" />
       </div>
       <span v-if="toast.count > 1" class="app-toast__count" :aria-label="`${toast.count}`">{{ toast.count }}</span>
     </div>
@@ -49,11 +50,12 @@ import { Icon } from '@iconify/vue';
 import { i18n } from '../../boot/i18n.js';
 
 const props = defineProps({ toast: { type: Object, required: true } });
-const emit = defineEmits(['dismiss', 'pause', 'resume', 'action']);
+const emit = defineEmits(['dismiss', 'pause', 'resume', 'action', 'open']);
 const card = ref(null), dx = ref(0), dragging = ref(false), leaving = ref(false);
 let pointer = null, leaveTimer = null, suppressUntil = 0, returnFocus = null;
 const simple = computed(() => props.toast.duration > 0 && !props.toast.config.actions.length && !props.toast.config.closeBtn);
 const dismissLabel = computed(() => typeof props.toast.config.closeBtn === 'string' ? props.toast.config.closeBtn : i18n.global.t('Dismiss'));
+const tapLabel = computed(() => (props.toast.config.onOpen && props.toast.config.openLabel) || i18n.global.t('Dismiss'));
 const icon = computed(() => props.toast.config.icon === 'las la-exclamation-triangle' ? 'warning' : (props.toast.config.icon || ''));
 const colorClass = computed(() => `app-toast--${props.toast.config.color || props.toast.config.type || 'neutral'}`);
 const motionStyle = computed(() => ({ '--toast-x': `${dx.value}px`, '--toast-opacity': leaving.value ? 0 : Math.max(0.45, 1 - Math.abs(dx.value) / 420) }));
@@ -66,6 +68,12 @@ function dismiss() {
   if (leaving.value) return;
   leaving.value = true;
   emit('dismiss');
+}
+function tap() {
+  if (!props.toast.config.onOpen) return dismiss();
+  if (leaving.value) return;
+  leaving.value = true;
+  emit('open');
 }
 function pointerDown(event) {
   if (!event.isPrimary || event.button !== 0 || leaving.value || pointer) return;

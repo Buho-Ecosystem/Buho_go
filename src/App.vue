@@ -23,6 +23,9 @@
   <!-- Global payment-error dialog. Wired to walletStore.paymentError so
        any page or store can surface a failure via showPaymentError(). -->
   <PaymentErrorDialog />
+  <!-- Bitcoin that arrives while the app is open: the "Bitcoin received"
+       screen on Home, a toast elsewhere. Silent behind the app lock. -->
+  <IncomingPaymentHost :suspended="locked" />
   <ToastHost />
 </template>
 
@@ -37,6 +40,7 @@ import { triggerWalletStoreHydration, readPersistedWalletState } from 'src/utils
 import { useAddressBookSync } from 'src/composables/useAddressBookSync'
 import PaymentErrorDialog from 'src/components/PaymentErrorDialog.vue'
 import ToastHost from 'src/components/toasts/ToastHost.vue'
+import IncomingPaymentHost from 'src/components/IncomingPaymentHost.vue'
 import UpdateExperience from 'src/components/UpdateExperience.vue'
 import AddressRequestSheet from 'src/components/AddressRequestSheet.vue'
 import { useAddressRequestStore } from 'src/stores/addressRequest.js'
@@ -48,7 +52,7 @@ import { setAppLocked } from 'src/utils/appLock'
 export default defineComponent({
   name: 'App',
 
-  components: { PaymentErrorDialog, UpdateExperience, AddressRequestSheet, ToastHost },
+  components: { PaymentErrorDialog, UpdateExperience, AddressRequestSheet, ToastHost, IncomingPaymentHost },
 
   setup () {
     const store = useWalletStore()

@@ -59,11 +59,18 @@ async function deliverReceipt(receipt) {
       import('../utils/amountFormatting.js'),
     ]);
     const walletStore = useWalletStore();
-    walletStore.lastReceipt = { walletId: receipt.walletId, amountSats: receipt.amountSats, at: Date.now() };
+    const { system } = receiptDelivery(receipt, visibilitySnapshot());
+    walletStore.lastReceipt = {
+      walletId: receipt.walletId,
+      amountSats: receipt.amountSats,
+      at: Date.now(),
+      paymentId: receipt.id,
+      paymentHash: receipt.paymentHash,
+      settledWhileAway: system,
+    };
 
     const notifications = useNotificationsStore();
     if (!notifications.canNotifyPayments) return; // permission or setting says no
-    const { system } = receiptDelivery(receipt, visibilitySnapshot());
     if (!system) return; // the user was looking at the app when it settled
 
     const wallet = walletStore.wallets.find((w) => w.id === receipt.walletId);

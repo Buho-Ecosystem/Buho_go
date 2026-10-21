@@ -3468,4 +3468,5 @@ export default {
   "Your signer app didn't answer. Check that it is open, then try again.": "Your signer app didn't answer. Check that it is open, then try again.",
   "Your signer app can't encrypt messages. Update it or use another signer app.": "Your signer app can't encrypt messages. Update it or use another signer app.",
   "Couldn't send right now. Please try again in a moment.": "Couldn't send right now. Please try again in a moment.",
+  "Show payment": "Show payment",
 }

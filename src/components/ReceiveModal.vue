@@ -488,6 +488,7 @@ import PaymentConfirmation from './PaymentConfirmation.vue';
 import L1BitcoinReceive from './L1BitcoinReceive.vue';
 import VoucherSheet from './VoucherSheet.vue';
 import { haptics } from '../utils/haptics.js';
+import { expectReceiveInvoice, confirmReceivePayment, forgetReceiveInvoice } from '../services/incomingPayments.js';
 
 /** NWC receive polling: start after 4 s, back off to one check every 15 s. */
 const NWC_POLLING = Object.freeze({ initialInterval: 4000, maxInterval: 15000, backoffMultiplier: 1.5, maxAttempts: 18 });
@@ -801,6 +802,22 @@ export default {
         });
       } else {
         this.stopPaymentMonitor();
+        forgetReceiveInvoice(this.generatedInvoice?.payment_hash);
+      }
+    },
+    // This sheet confirms the invoices it shows with its own screen; the
+    // app-wide announcement leaves them to it (services/incomingPayments.js).
+    // One it stops showing unpaid is news again when it is paid later.
+    generatedInvoice(next, previous) {
+      if (previous?.payment_hash && previous.payment_hash !== next?.payment_hash) {
+        forgetReceiveInvoice(previous.payment_hash);
+      }
+      if (next?.payment_hash) {
+        expectReceiveInvoice({
+          walletId: next.walletId || this.walletStore.activeWalletId,
+          paymentHash: next.payment_hash,
+          amountSats: next.amount,
+        });
       }
     }
   },
@@ -1045,6 +1062,7 @@ export default {
       // do not cover it with a completed-payment confirmation.
       if (result.processing) return;
       // Show success confirmation similar to Lightning payments
+      confirmReceivePayment({ walletId: this.walletStore.activeWalletId, amountSats: result.amount });
       this.confirmedAmount = result.amount;
       this.confirmedFiatAmount = this.calculateFiatAmount(result.amount);
       this.showPaymentConfirmation = true;
@@ -1419,6 +1437,12 @@ export default {
           // Idempotency guard — event and poll can both fire for the same payment.
           if (this.isPaymentConfirmed) return;
           this.isPaymentConfirmed = true;
+          // This sheet confirms it; the app-wide announcement must not repeat it.
+          confirmReceivePayment({
+            walletId: this.generatedInvoice?.walletId || this.walletStore.activeWalletId,
+            paymentHash: this.generatedInvoice?.payment_hash,
+            amountSats: data.amount || this.generatedInvoice?.amount,
+          });
           this.paymentStatusMessage = this.$t('Payment received!');
           haptics.success();
 

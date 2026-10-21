@@ -6,7 +6,7 @@
         <div v-for="toast in at(position)" :key="toast.id" class="app-toast-entry">
           <ToastCard :toast="toast" @dismiss="toastController.dismiss(toast.id)"
             @pause="toastController.pause(toast.id, $event)" @resume="toastController.resume(toast.id, $event)"
-            @action="toastController.act(toast.id, $event)" />
+            @action="toastController.act(toast.id, $event)" @open="toastController.open(toast.id)" />
         </div>
       </TransitionGroup>
     </div>

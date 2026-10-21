@@ -617,7 +617,7 @@
       :amount="withdrawConfirmedAmount"
       :fiat-amount="withdrawConfirmedFiat"
       :description="withdrawSuccessNote"
-      label="Sats Received"
+      :label="$t('Bitcoin received')"
       @closed="onWithdrawSuccessClosed"
     />
 
