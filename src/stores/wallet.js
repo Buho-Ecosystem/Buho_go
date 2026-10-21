@@ -299,8 +299,10 @@ export const useWalletStore = defineStore('wallet', {
     // Unclaimed on-chain deposits per Spark wallet, discovered by the
     // lifecycle for every wallet regardless of selection.
     pendingDepositsByWallet: {},
-    // The most recent detected receipt { walletId, amountSats, at }, for
-    // in-app surfaces; system notifications are posted by the lifecycle.
+    // The most recent detected receipt, for in-app surfaces
+    // (IncomingPaymentHost): { walletId, amountSats, at, paymentId,
+    // paymentHash, settledWhileAway }. paymentId and paymentHash are null
+    // when only the balance said so (non-Spark wallets).
     lastReceipt: null,
     // Funds the wallet holds but cannot spend yet, keyed by wallet ID:
     // { pending, recoverable }. Arkade is the only backend that reports a
@@ -1210,6 +1212,19 @@ export const useWalletStore = defineStore('wallet', {
       if (!toWalletId || !paymentHash) return;
       this._internalTransfers = (this._internalTransfers || []).filter((t) => t.until > Date.now());
       this._internalTransfers.push({ toWalletId, paymentHash: String(paymentHash).toLowerCase(), until: Date.now() + windowMs });
+    },
+
+    /**
+     * True, once, when an internal transfer to this wallet is in flight: a
+     * balance rise there is the user's own move. For wallets that report no
+     * payment, where isInternalTransferReceipt cannot match a hash.
+     */
+    takeInternalTransferTo(walletId) {
+      const list = (this._internalTransfers || []).filter((t) => t.until > Date.now());
+      const idx = list.findIndex((t) => t.toWalletId === walletId);
+      if (idx !== -1) list.splice(idx, 1);
+      this._internalTransfers = list;
+      return idx !== -1;
     },
 
     isInternalTransferReceipt(walletId, payment) {
@@ -3364,11 +3379,13 @@ export const useWalletStore = defineStore('wallet', {
      * and a transfer in, without this store having to understand any of them.
      * A send lowers the balance and is never announced.
      *
-     * Deliberately quiet in three cases: the first reading of a session (we
-     * have nothing to compare against, and "you received your whole balance"
-     * on launch would be a lie), while the app is on screen (the UI is already
-     * showing it — the service checks this), and when the user has not asked
-     * for notifications at all.
+     * Each rise is reported as `lastReceipt`, which IncomingPaymentHost shows
+     * in the app. The system notification stays quiet in three cases: the
+     * first reading of a session (we have nothing to compare against, and
+     * "you received your whole balance" on launch would be a lie), while the
+     * app is on screen (the host shows it; the service checks this), and when
+     * the user has not asked for notifications at all. A rise on a wallet an
+     * internal transfer is heading to is the user's own move: neither.
      *
      * Fire-and-forget: a notification is never worth failing a refresh over.
      */
@@ -3389,6 +3406,10 @@ export const useWalletStore = defineStore('wallet', {
       if (previous === undefined) return;
       const received = balanceAfter - previous;
       if (received <= 0) return;
+      if (this.takeInternalTransferTo(wallet.id)) return;
+
+      const settledWhileAway = typeof document !== 'undefined' && document.visibilityState === 'hidden';
+      this.lastReceipt = { walletId: wallet.id, amountSats: received, at: Date.now(), paymentId: null, paymentHash: null, settledWhileAway };
 
       const notifications = useNotificationsStore();
       if (!notifications.canNotifyPayments) return;

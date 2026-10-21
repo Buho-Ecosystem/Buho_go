@@ -29,11 +29,11 @@
         <!-- Amount Display. The amount + fiat lines are hidden when we
              can't determine the paid amount (zero-amount invoice paid via
              the Spark event path, which carries no amount info). The
-             "Payment Received" label still shows so the user gets clear
+             "Bitcoin received" label still shows so the user gets clear
              confirmation. -->
         <div class="amount-section" :class="{ 'fade-in': showAmount }">
           <div class="amount-label" :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-6'">
-            {{ label || $t('Payment Received') }}
+            {{ label || $t('Bitcoin received') }}
           </div>
           <div v-if="amount > 0" class="amount-value" :class="$q.dark.isActive ? 'text-white' : 'text-grey-9'">
             {{ formatAmount(amount) }}

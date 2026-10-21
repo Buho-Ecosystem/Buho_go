@@ -27,6 +27,8 @@
  * receipt discovered in the foreground means.
  */
 
+import { paymentHashOf } from '../utils/breezPayments.js';
+
 export const RECEIPTS_STORAGE_KEY = 'buhoGO_payment_receipts_v1';
 export const MAX_SEEN_PER_WALLET = 400;
 export const MAX_PENDING_PER_WALLET = 100;
@@ -35,7 +37,7 @@ export const CHECKPOINT_SLACK_S = 120;
 
 /**
  * Normalize an SDK Payment or a mapped transaction row into
- * { id, isReceive, status, amountSats, timestamp (unix s) }.
+ * { id, paymentHash, isReceive, status, amountSats, timestamp (unix s) }.
  */
 export function receiptFromPayment(payment) {
   if (!payment || payment.id == null) return null;
@@ -50,8 +52,10 @@ export function receiptFromPayment(payment) {
   const isMappedRow = payment.paymentType === undefined && payment.fees === undefined;
   const amountSats = Math.max(0, Math.round(isMappedRow ? raw - fee : raw));
   const ts = Number(payment.timestamp ?? payment.settled_at ?? 0);
+  const hash = paymentHashOf(payment) || payment.paymentHash || payment.payment_hash;
   return {
     id: String(payment.id),
+    paymentHash: hash ? String(hash).toLowerCase() : null,
     isReceive,
     status: payment.status || 'completed',
     amountSats,

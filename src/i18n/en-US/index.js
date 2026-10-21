@@ -3462,4 +3462,5 @@ export default {
   "Use this server": "Use this server",
   "That doesn't look like a server address.": "That doesn't look like a server address.",
   "This server didn't answer. Check the address and try again.": "This server didn't answer. Check the address and try again.",
+  "Show payment": "Show payment",
 }

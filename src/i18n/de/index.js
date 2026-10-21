@@ -3472,4 +3472,5 @@ export default {
   "Use this server": "Diesen Server nutzen",
   "That doesn't look like a server address.": "Das sieht nicht nach einer Serveradresse aus.",
   "This server didn't answer. Check the address and try again.": "Dieser Server hat nicht geantwortet. Prüfe die Adresse und versuche es erneut.",
+  "Show payment": "Zahlung anzeigen",
 }
