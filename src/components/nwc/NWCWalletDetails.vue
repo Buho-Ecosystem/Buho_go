@@ -142,7 +142,7 @@ function amountText(sats) {
 }
 .nwc-details__status.is-good { color: var(--brand-accent-text); font-weight: 600; }
 .nwc-details__status.is-warn { color: #8A5A00; font-weight: 600; }
-:global(body.body--dark) .nwc-details__status.is-warn { color: #F5C451; }
+body.body--dark .nwc-details__status.is-warn { color: #F5C451; }
 .nwc-details__icon {
   flex-shrink: 0;
   width: 40px;
