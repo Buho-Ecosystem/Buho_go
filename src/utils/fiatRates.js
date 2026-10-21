@@ -1,15 +1,41 @@
 /**
  * Fiat Rates Service
  * Handles fetching and caching of Bitcoin fiat exchange rates. Mempool's
- * /prices endpoint is the primary source; currencies it omits come from
+ * /prices endpoint is the primary source (the user's server, else
+ * mempool.space, then the fallback server); currencies it omits come from
  * Alby's per-currency endpoint. Which currency uses which is declared once
  * in fiatCurrencies.js.
  */
 import { FIAT_SYMBOLS, MEMPOOL_RATE_CURRENCIES, ALBY_RATE_CURRENCIES } from './fiatCurrencies.js'
+import { MEMPOOL_DEFAULT_URL, MEMPOOL_FALLBACK_URL, RETIRED_MEMPOOL_URLS } from './mempoolServer.js'
+
+// fetch() has no timeout option; a host that never answers would hold every
+// caller (and the screens awaiting them) forever.
+export function fetchWithTimeout(url, ms) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), ms);
+  return fetch(url, { signal: controller.signal }).finally(() => clearTimeout(timer));
+}
+
+/**
+ * Whether a Mempool server answers with prices. Resolves when it does;
+ * throws when it does not answer, answers with an error, or sends
+ * something that is not a price list.
+ */
+export async function checkMempoolServer(apiUrl) {
+  const response = await fetchWithTimeout(`${apiUrl}/prices`, 10000);
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+  }
+  const data = await response.json();
+  if (!data || !data.USD) {
+    throw new Error('Invalid response format');
+  }
+}
 
 export class FiatRatesService {
   constructor() {
-    this.defaultApiUrl = 'https://mempool.space/api/v1';
+    this.defaultApiUrl = MEMPOOL_DEFAULT_URL;
     this.customApiUrl = null;
     this.rates = {};
     this.lastUpdate = null;
@@ -19,6 +45,7 @@ export class FiatRatesService {
     this.settingsKey = 'buhoGO_mempool_settings';
     this.ratesAvailable = false;
     this.lastError = null;
+    this.inflight = null;
 
     this.loadSettings();
     this.loadCachedRates();
@@ -33,6 +60,10 @@ export class FiatRatesService {
       if (settings) {
         const parsed = JSON.parse(settings);
         this.customApiUrl = parsed.customMempoolUrl || null;
+        if (RETIRED_MEMPOOL_URLS.includes(this.customApiUrl)) {
+          this.customApiUrl = null;
+          this.saveSettings();
+        }
       }
     } catch (error) {
       console.error('Error loading mempool settings:', error);
@@ -139,56 +170,81 @@ export class FiatRatesService {
   }
 
   /**
-   * Fetch latest fiat rates from Mempool API
+   * Fetch latest fiat rates. One refresh runs at a time: every caller that
+   * asks while a fetch is under way waits on that same fetch.
    */
-  async fetchLatestRates() {
-    const apiUrl = this.getApiUrl();
+  fetchLatestRates() {
+    if (!this.inflight) {
+      this.inflight = this.refreshRates().finally(() => { this.inflight = null; });
+    }
+    return this.inflight;
+  }
+
+  /**
+   * Mempool's /prices endpoint first: the chosen server, then the fallback
+   * server. If no Mempool server answers, Alby serves every currency, so an
+   * outage of one source never leaves the app without rates.
+   */
+  async refreshRates() {
     this.lastError = null;
 
-    try {
-      const response = await fetch(`${apiUrl}/prices`, {
-        timeout: 10000 // 10 second timeout
-      });
+    const previous = this.rates || {};
+    const rates = { time: Math.floor(Date.now() / 1000) };
+    let fresh = false;
 
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-      }
+    const servers = [...new Set([this.getApiUrl(), MEMPOOL_FALLBACK_URL])];
+    for (const apiUrl of servers) {
+      try {
+        const response = await fetchWithTimeout(`${apiUrl}/prices`, 10000);
 
-      const data = await response.json();
-
-      // Validate response structure
-      if (!data || typeof data !== 'object' || !data.USD) {
-        throw new Error('Invalid response format from Mempool API');
-      }
-
-      // Convert to our expected format (rates per BTC)
-      const previous = this.rates || {};
-      this.rates = { time: data.time || Math.floor(Date.now() / 1000) };
-      for (const code of MEMPOOL_RATE_CURRENCIES) {
-        this.rates[code] = data[code] || 0;
-      }
-
-      // Currencies the Mempool /prices endpoint doesn't return come from
-      // Alby's per-currency endpoint. Fetched in parallel; one failure never
-      // blocks the others or the rest of the rates.
-      // A failed Alby call keeps the last real rate instead of dropping the
-      // currency until the next refresh (a BRL balance read R$0,00).
-      await Promise.all(ALBY_RATE_CURRENCIES.map(async (code) => {
-        if (previous[code] > 0) this.rates[code] = previous[code];
-        try {
-          const res = await fetch(`https://getalby.com/api/rates/${code.toLowerCase()}.json`, {
-            timeout: 5000
-          });
-          if (!res.ok) return;
-          const data = await res.json();
-          if (data && typeof data.rate_float === 'number') {
-            this.rates[code] = data.rate_float;
-          }
-        } catch (err) {
-          console.warn(`Failed to fetch ${code} rate from Alby:`, err.message);
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
         }
-      }));
 
+        const data = await response.json();
+
+        // Validate response structure
+        if (!data || typeof data !== 'object' || !data.USD) {
+          throw new Error('Invalid response format from Mempool API');
+        }
+
+        // Convert to our expected format (rates per BTC)
+        if (data.time) rates.time = data.time;
+        for (const code of MEMPOOL_RATE_CURRENCIES) {
+          rates[code] = data[code] || 0;
+        }
+        fresh = true;
+        break;
+      } catch (error) {
+        console.warn(`Mempool rates unavailable from ${apiUrl}:`, error.message);
+        this.lastError = error.message;
+      }
+    }
+
+    // Currencies the Mempool /prices endpoint doesn't return (and, when no
+    // Mempool server answered, all of them) come from Alby's per-currency
+    // endpoint.
+    // Fetched in parallel; one failure never blocks the others.
+    // A failed Alby call keeps the last real rate instead of dropping the
+    // currency until the next refresh (a BRL balance read R$0,00).
+    const fromAlby = fresh ? ALBY_RATE_CURRENCIES : [...MEMPOOL_RATE_CURRENCIES, ...ALBY_RATE_CURRENCIES];
+    await Promise.all(fromAlby.map(async (code) => {
+      if (previous[code] > 0) rates[code] = previous[code];
+      try {
+        const res = await fetchWithTimeout(`https://getalby.com/api/rates/${code.toLowerCase()}.json`, 5000);
+        if (!res.ok) return;
+        const data = await res.json();
+        if (data && typeof data.rate_float === 'number') {
+          rates[code] = data.rate_float;
+          fresh = true;
+        }
+      } catch (err) {
+        console.warn(`Failed to fetch ${code} rate from Alby:`, err.message);
+      }
+    }));
+
+    if (fresh) {
+      this.rates = rates;
       this.lastUpdate = new Date();
       this.ratesAvailable = true;
       this.lastError = null;
@@ -196,21 +252,19 @@ export class FiatRatesService {
 
       console.log('Fiat rates updated:', this.rates);
       return this.rates;
-
-    } catch (error) {
-      console.error('Error fetching fiat rates:', error);
-      this.lastError = error.message;
-
-      // If we have valid cached rates, use them
-      if (this.isCacheValid() && Object.keys(this.rates).length > 0) {
-        console.log('📦 Using cached rates due to fetch error');
-        this.ratesAvailable = true;
-        return this.rates;
-      }
-
-      this.ratesAvailable = false;
-      return null;
     }
+
+    console.error('Error fetching fiat rates:', this.lastError);
+
+    // If we have valid cached rates, use them
+    if (this.isCacheValid() && Object.keys(this.rates).length > 0) {
+      console.log('📦 Using cached rates due to fetch error');
+      this.ratesAvailable = true;
+      return this.rates;
+    }
+
+    this.ratesAvailable = false;
+    return null;
   }
 
   /**
@@ -322,7 +376,7 @@ export class FiatRatesService {
     const apiUrl = this.getApiUrl();
     
     try {
-      const response = await fetch(`${apiUrl}/historical-price?currency=${currency.toUpperCase()}&timestamp=${timestamp}`);
+      const response = await fetchWithTimeout(`${apiUrl}/historical-price?currency=${currency.toUpperCase()}&timestamp=${timestamp}`, 10000);
       
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
