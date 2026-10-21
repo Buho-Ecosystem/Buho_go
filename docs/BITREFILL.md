@@ -19,7 +19,7 @@ Approval must cover the web app (`https://go.mybuho.de`) and the Android app, wh
 
 | Step | Who | What |
 |---|---|---|
-| First open | BuhoGO | `BitrefillEmailSheet` asks where vouchers go: once, suggested from the backup account's email, "Not now" allowed. Stored encrypted with the device key (`deviceCrypto`). The header's mail button changes or removes it later |
+| First open | BuhoGO | `BitrefillEmailSheet` asks for the email Bitrefill sends the vouchers to ("Email for your vouchers", field "Send vouchers to", button "Use this email"): once, suggested from the backup account's email, "Not now" allowed. Stored encrypted with the device key (`deviceCrypto`). The header's mail button changes or removes it later |
 | Shopping | Bitrefill | `embed.bitrefill.com/?ref&utm_source&paymentMethods=lightning&showPaymentInfo=false&theme&hl&email`. With `email`, Bitrefill skips its own email step |
 | Confirm | Bitrefill | With `showPaymentInfo=false` the widget shows "Final confirmation"; the user's tap sends `payment_intent` with the BOLT11 invoice |
 | Pay | BuhoGO | `PaymentConfirmSheet`: Bitrefill as recipient, the invoice memo, the paying wallet, the price countdown from the invoice's expiry. `services/bitrefill/pay.js` pays like an internal transfer: NWC through `payWithNwc`, every other backend through `payInvoice({ invoice })`, then names the payment "Bitrefill" in History |

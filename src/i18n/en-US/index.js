@@ -64,10 +64,12 @@ export default {
   // Spend: Bitrefill row
   "Gift cards, mobile top-ups and more": "Gift cards, mobile top-ups and more",
   // Bitrefill shop (pages/BitrefillPage.vue)
-  "Where should vouchers go?": "Where should vouchers go?",
-  "Bitrefill emails every voucher and receipt. Enter your address once and BuhoGO fills it in when you shop.": "Bitrefill emails every voucher and receipt. Enter your address once and BuhoGO fills it in when you shop.",
+  "Email for your vouchers": "Email for your vouchers",
+  "Send vouchers to": "Send vouchers to",
+  "Use this email": "Use this email",
+  "Bitrefill sends every voucher you buy to this address, together with its receipt. Use an inbox you can open.": "Bitrefill sends every voucher you buy to this address, together with its receipt. Use an inbox you can open.",
   "Enter a valid email address.": "Enter a valid email address.",
-  "Vouchers also arrive in this inbox. Anyone who can read it can open them.": "Vouchers also arrive in this inbox. Anyone who can read it can open them.",
+  "Anyone who can read this inbox can open your vouchers.": "Anyone who can read this inbox can open your vouchers.",
   "Kept encrypted on this phone. Only Bitrefill receives it, when you shop.": "Kept encrypted on this phone. Only Bitrefill receives it, when you shop.",
   "Remove email": "Remove email",
   "Voucher email": "Voucher email",

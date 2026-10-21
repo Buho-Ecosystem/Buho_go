@@ -19,10 +19,10 @@
         <div class="brmail-tile" aria-hidden="true">
           <img src="/Bitrefill/bitrefill-mark.png" alt="" />
         </div>
-        <h2 :id="titleId" class="brmail-title">{{ $t('Where should vouchers go?') }}</h2>
-        <p class="brmail-lead">{{ $t('Bitrefill emails every voucher and receipt. Enter your address once and BuhoGO fills it in when you shop.') }}</p>
+        <h2 :id="titleId" class="brmail-title">{{ $t('Email for your vouchers') }}</h2>
+        <p :id="leadId" class="brmail-lead">{{ $t('Bitrefill sends every voucher you buy to this address, together with its receipt. Use an inbox you can open.') }}</p>
 
-        <label class="brmail-label" :for="inputId">{{ $t('Email') }}</label>
+        <label class="brmail-label" :for="inputId">{{ $t('Send vouchers to') }}</label>
         <input
           :id="inputId"
           ref="input"
@@ -38,14 +38,14 @@
           maxlength="254"
           placeholder="you@example.com"
           :aria-invalid="showError ? 'true' : 'false'"
-          :aria-describedby="showError ? errorId : undefined"
+          :aria-describedby="showError ? `${errorId} ${leadId}` : leadId"
         >
         <p v-if="showError" :id="errorId" class="brmail-error" role="alert">{{ $t('Enter a valid email address.') }}</p>
 
         <ul class="brmail-notes">
           <li>
             <Icon icon="tabler:mail" width="18" height="18" aria-hidden="true" />
-            <span>{{ $t('Vouchers also arrive in this inbox. Anyone who can read it can open them.') }}</span>
+            <span>{{ $t('Anyone who can read this inbox can open your vouchers.') }}</span>
           </li>
           <li>
             <Icon icon="tabler:lock" width="18" height="18" aria-hidden="true" />
@@ -61,7 +61,7 @@
           :class="$q.dark.isActive ? 'dialog_add_btn_dark' : 'dialog_add_btn_light'"
           :loading="busy"
           :disable="busy || !email.trim()"
-          :label="editing ? $t('Save') : $t('Continue')"
+          :label="editing ? $t('Save') : $t('Use this email')"
         />
         <button v-if="editing && hasSaved" type="button" class="brmail-secondary brmail-secondary--destructive" @click="$emit('remove')">
           {{ $t('Remove email') }}
@@ -79,10 +79,10 @@ import { Icon } from '@iconify/vue';
 import { isValidEmail } from '../../services/bitrefill/widget.js';
 
 /**
- * Asks once where Bitrefill should send vouchers, before the first visit to
- * the shop. The address is only a convenience: "Not now" leaves it to
- * Bitrefill's own checkout. Opened again from the shop's header to change or
- * remove it. Says plainly that vouchers land in that inbox too.
+ * Asks once for the email Bitrefill sends vouchers to, before the first visit
+ * to the shop. The title, the field's label and the button all say that this
+ * address receives the vouchers. "Not now" leaves the email to Bitrefill's
+ * own checkout. Opened again from the shop's header to change or remove it.
  *
  * UI only: the shop page stores the address (encrypted) on `save`.
  */
@@ -107,6 +107,7 @@ export default {
     titleId() { return `brmail-title-${this.$.uid}`; },
     inputId() { return `brmail-input-${this.$.uid}`; },
     errorId() { return `brmail-error-${this.$.uid}`; },
+    leadId() { return `brmail-lead-${this.$.uid}`; },
     showError() { return this.submitted && !isValidEmail(this.email); },
   },
   methods: {

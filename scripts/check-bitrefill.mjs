@@ -125,8 +125,15 @@ const toastText = (page) => page.locator('.q-notification, .toast, [role="status
 {
   const { page, context, errors, widgetUrls } = await open({ theme: 'dark' });
   // First open: the email step, before anything loads.
-  await page.getByText('Where should vouchers go?').waitFor({ timeout: 30000 });
+  await page.getByText('Email for your vouchers').waitFor({ timeout: 30000 });
   assert.equal(await page.locator('iframe.bitrefill-frame').count(), 0, 'the widget waits for the email step');
+  // Title, field label and button all say this address receives the vouchers.
+  assert.match(await page.locator('.brmail-lead').innerText(), /sends every voucher you buy to this address/);
+  assert.equal((await page.locator('.brmail-label').innerText()).trim(), 'Send vouchers to');
+  assert.equal((await page.locator('.brmail-primary').innerText()).trim(), 'Use this email');
+  assert.match(await page.locator('.brmail-notes').innerText(), /Anyone who can read this inbox can open your vouchers/);
+  await page.waitForFunction(() => { const i = document.querySelector('.brmail-tile img'); return i && i.complete && i.naturalWidth > 0; });
+  await pause(400);
   await shot(page, 'email-step');
   // An invalid address is refused in place.
   await page.locator('.brmail-input').fill('not-an-email');
@@ -158,14 +165,14 @@ console.log('✓ real widget: the email step comes first, then the widget opens 
 // ── Part 1b · "Not now" and editing ──────────────────────────────────────
 {
   const { page, context, errors } = await open({ theme: 'light', stubWidget: true });
-  await page.getByText('Where should vouchers go?').waitFor({ timeout: 30000 });
+  await page.getByText('Email for your vouchers').waitFor({ timeout: 30000 });
   await page.getByRole('button', { name: 'Not now' }).click();
   await page.locator('iframe.bitrefill-frame').waitFor();
   assert.equal(new URL(await page.locator('iframe.bitrefill-frame').getAttribute('src')).searchParams.has('email'), false, 'no email, no parameter');
   assert.equal(await page.evaluate(() => localStorage.getItem('buhoGO_bitrefill_email_asked')), '1', 'asked once');
   // The header button opens it again, as an editor.
   await page.getByRole('button', { name: 'Voucher email' }).click();
-  await page.getByText('Where should vouchers go?').waitFor();
+  await page.getByText('Email for your vouchers').waitFor();
   assert.equal(await page.getByRole('button', { name: 'Not now' }).count(), 0, 'editing has no Not now');
   await page.locator('.brmail-input').fill('later@example.com');
   await page.getByRole('button', { name: 'Save' }).click();
