@@ -5,6 +5,7 @@ import android.nfc.NfcAdapter;
 import android.nfc.Tag;
 import android.os.Bundle;
 import android.util.Log;
+import android.webkit.CookieManager;
 
 import androidx.core.splashscreen.SplashScreen;
 
@@ -82,6 +83,10 @@ public class MainActivity extends BridgeActivity implements NfcAdapter.ReaderCal
         // never the WebView's white.
         if (getBridge() != null && getBridge().getWebView() != null) {
             getBridge().getWebView().setBackgroundColor(getColor(R.color.launch_background));
+            // The Bitrefill shop runs Bitrefill's widget in a frame. Android
+            // WebViews refuse cookies set inside frames by default, which
+            // would leave the widget without its checkout session.
+            CookieManager.getInstance().setAcceptThirdPartyCookies(getBridge().getWebView(), true);
         }
 
         nfcAdapter = NfcAdapter.getDefaultAdapter(this);

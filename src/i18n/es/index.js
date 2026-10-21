@@ -61,10 +61,24 @@ export default {
   ...walletRemoval,
   ...autoTransfer,
   ...boltCard,
-  // Spend: Bitrefill door
+  // Spend: Bitrefill row
   "Gift cards, mobile top-ups and more": "Tarjetas regalo, recargas móviles y más",
-  "Bitrefill is on its way": "Bitrefill está en camino",
-  "Buy gift cards and mobile top-ups with your bitcoin, right here. We are building it now.": "Compra tarjetas regalo y recargas móviles con tus bitcoin, aquí mismo. Lo estamos construyendo.",
+  // Bitrefill shop (pages/BitrefillPage.vue)
+  "Where should vouchers go?": "¿A dónde enviamos los vales?",
+  "Bitrefill emails every voucher and receipt. Enter your address once and BuhoGO fills it in when you shop.": "Bitrefill envía cada vale y cada recibo por correo. Escribe tu dirección una vez y BuhoGO la rellena cuando compres.",
+  "Enter a valid email address.": "Escribe un correo válido.",
+  "Vouchers also arrive in this inbox. Anyone who can read it can open them.": "Los vales también llegan a este buzón. Quien pueda leerlo puede abrirlos.",
+  "Kept encrypted on this phone. Only Bitrefill receives it, when you shop.": "Se guarda cifrado en este teléfono. Solo Bitrefill lo recibe, cuando compras.",
+  "Remove email": "Quitar correo",
+  "Voucher email": "Correo para vales",
+  "The shop needs an internet connection.": "La tienda necesita conexión a internet.",
+  "Add a wallet to pay.": "Añade una cartera para pagar.",
+  "The price ran out. Choose the card again for a new price.": "El precio caducó. Elige la tarjeta otra vez para obtener un precio nuevo.",
+  "This order is already paid.": "Este pedido ya está pagado.",
+  "A payment for this order may still be on its way. Check the order in the shop before paying again.": "Puede que un pago de este pedido aún esté en camino. Revisa el pedido en la tienda antes de pagar otra vez.",
+  "BuhoGO can't pay this order. Please try again in the shop.": "BuhoGO no puede pagar este pedido. Inténtalo de nuevo en la tienda.",
+  "Paid. Your voucher appears in the shop and in your email.": "Pagado. Tu vale aparece en la tienda y en tu correo.",
+  "Couldn't save the email. Please try again.": "No se pudo guardar el correo. Inténtalo de nuevo.",
   // Home clipboard offer
   "Copied address": "Dirección copiada",
   "Copied payment request": "Solicitud de pago copiada",

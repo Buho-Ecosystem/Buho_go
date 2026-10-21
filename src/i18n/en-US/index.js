@@ -61,10 +61,24 @@ export default {
   ...walletRemoval,
   ...autoTransfer,
   ...boltCard,
-  // Spend: Bitrefill door
+  // Spend: Bitrefill row
   "Gift cards, mobile top-ups and more": "Gift cards, mobile top-ups and more",
-  "Bitrefill is on its way": "Bitrefill is on its way",
-  "Buy gift cards and mobile top-ups with your bitcoin, right here. We are building it now.": "Buy gift cards and mobile top-ups with your bitcoin, right here. We are building it now.",
+  // Bitrefill shop (pages/BitrefillPage.vue)
+  "Where should vouchers go?": "Where should vouchers go?",
+  "Bitrefill emails every voucher and receipt. Enter your address once and BuhoGO fills it in when you shop.": "Bitrefill emails every voucher and receipt. Enter your address once and BuhoGO fills it in when you shop.",
+  "Enter a valid email address.": "Enter a valid email address.",
+  "Vouchers also arrive in this inbox. Anyone who can read it can open them.": "Vouchers also arrive in this inbox. Anyone who can read it can open them.",
+  "Kept encrypted on this phone. Only Bitrefill receives it, when you shop.": "Kept encrypted on this phone. Only Bitrefill receives it, when you shop.",
+  "Remove email": "Remove email",
+  "Voucher email": "Voucher email",
+  "The shop needs an internet connection.": "The shop needs an internet connection.",
+  "Add a wallet to pay.": "Add a wallet to pay.",
+  "The price ran out. Choose the card again for a new price.": "The price ran out. Choose the card again for a new price.",
+  "This order is already paid.": "This order is already paid.",
+  "A payment for this order may still be on its way. Check the order in the shop before paying again.": "A payment for this order may still be on its way. Check the order in the shop before paying again.",
+  "BuhoGO can't pay this order. Please try again in the shop.": "BuhoGO can't pay this order. Please try again in the shop.",
+  "Paid. Your voucher appears in the shop and in your email.": "Paid. Your voucher appears in the shop and in your email.",
+  "Couldn't save the email. Please try again.": "Couldn't save the email. Please try again.",
   // Home clipboard offer
   "Copied address": "Copied address",
   "Copied payment request": "Copied payment request",

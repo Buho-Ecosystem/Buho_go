@@ -61,10 +61,24 @@ export default {
   ...walletRemoval,
   ...autoTransfer,
   ...boltCard,
-  // Spend: Bitrefill door
+  // Spend: Bitrefill row
   "Gift cards, mobile top-ups and more": "Geschenkkarten, Handy-Guthaben und mehr",
-  "Bitrefill is on its way": "Bitrefill kommt bald",
-  "Buy gift cards and mobile top-ups with your bitcoin, right here. We are building it now.": "Kaufe Geschenkkarten und Handy-Guthaben mit deinen Bitcoin, direkt hier. Wir bauen gerade daran.",
+  // Bitrefill shop (pages/BitrefillPage.vue)
+  "Where should vouchers go?": "Wohin sollen Gutscheine gehen?",
+  "Bitrefill emails every voucher and receipt. Enter your address once and BuhoGO fills it in when you shop.": "Bitrefill schickt jeden Gutschein und jeden Beleg per E-Mail. Gib deine Adresse einmal ein, BuhoGO trägt sie beim Einkaufen für dich ein.",
+  "Enter a valid email address.": "Gib eine gültige E-Mail-Adresse ein.",
+  "Vouchers also arrive in this inbox. Anyone who can read it can open them.": "Gutscheine kommen auch in diesem Postfach an. Wer es lesen kann, kann sie öffnen.",
+  "Kept encrypted on this phone. Only Bitrefill receives it, when you shop.": "Verschlüsselt auf diesem Handy gespeichert. Nur Bitrefill bekommt sie, wenn du einkaufst.",
+  "Remove email": "E-Mail entfernen",
+  "Voucher email": "E-Mail für Gutscheine",
+  "The shop needs an internet connection.": "Der Shop braucht eine Internetverbindung.",
+  "Add a wallet to pay.": "Füge eine Wallet hinzu, um zu bezahlen.",
+  "The price ran out. Choose the card again for a new price.": "Der Preis ist abgelaufen. Wähle die Karte erneut für einen neuen Preis.",
+  "This order is already paid.": "Diese Bestellung ist schon bezahlt.",
+  "A payment for this order may still be on its way. Check the order in the shop before paying again.": "Eine Zahlung für diese Bestellung ist vielleicht noch unterwegs. Prüfe die Bestellung im Shop, bevor du erneut bezahlst.",
+  "BuhoGO can't pay this order. Please try again in the shop.": "BuhoGO kann diese Bestellung nicht bezahlen. Versuche es im Shop erneut.",
+  "Paid. Your voucher appears in the shop and in your email.": "Bezahlt. Dein Gutschein erscheint im Shop und in deiner E-Mail.",
+  "Couldn't save the email. Please try again.": "Die E-Mail konnte nicht gespeichert werden. Versuche es erneut.",
   // Home clipboard offer
   "Copied address": "Kopierte Adresse",
   "Copied payment request": "Kopierte Zahlungsanfrage",
