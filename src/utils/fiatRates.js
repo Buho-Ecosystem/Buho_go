@@ -7,13 +7,7 @@
  * in fiatCurrencies.js.
  */
 import { FIAT_SYMBOLS, MEMPOOL_RATE_CURRENCIES, ALBY_RATE_CURRENCIES } from './fiatCurrencies.js'
-
-// Asked when the chosen Mempool server fails. Not offered in Settings.
-export const MEMPOOL_FALLBACK_URL = 'https://mempool.emzy.de/api/v1';
-
-// Servers that were once offered in Settings and no longer exist. A saved
-// choice of one goes back to the default.
-const RETIRED_MEMPOOL_URLS = ['https://mempool.blocktrainer.de/api/v1'];
+import { MEMPOOL_DEFAULT_URL, MEMPOOL_FALLBACK_URL, RETIRED_MEMPOOL_URLS } from './mempoolServer.js'
 
 // fetch() has no timeout option; a host that never answers would hold every
 // caller (and the screens awaiting them) forever.
@@ -23,9 +17,25 @@ export function fetchWithTimeout(url, ms) {
   return fetch(url, { signal: controller.signal }).finally(() => clearTimeout(timer));
 }
 
+/**
+ * Whether a Mempool server answers with prices. Resolves when it does;
+ * throws when it does not answer, answers with an error, or sends
+ * something that is not a price list.
+ */
+export async function checkMempoolServer(apiUrl) {
+  const response = await fetchWithTimeout(`${apiUrl}/prices`, 10000);
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+  }
+  const data = await response.json();
+  if (!data || !data.USD) {
+    throw new Error('Invalid response format');
+  }
+}
+
 export class FiatRatesService {
   constructor() {
-    this.defaultApiUrl = 'https://mempool.space/api/v1';
+    this.defaultApiUrl = MEMPOOL_DEFAULT_URL;
     this.customApiUrl = null;
     this.rates = {};
     this.lastUpdate = null;
