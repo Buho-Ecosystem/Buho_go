@@ -249,9 +249,7 @@ export default {
   line-height: 1.45;
   color: #8A5A00;
 }
-/* The whole selector sits inside :global(); with a scoped part after it,
-   Vue would keep only `body.body--dark` and tint every text in dark mode. */
-:global(body.body--dark .exchange-rate-sheet__error) { color: #F5C451; }
+body.body--dark .exchange-rate-sheet__error { color: #F5C451; }
 .exchange-rate-sheet__error-icon {
   flex-shrink: 0;
   margin-top: 1px;
