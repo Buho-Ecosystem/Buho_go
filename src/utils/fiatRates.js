@@ -105,6 +105,11 @@ export class FiatRatesService {
     return url.endsWith('/') ? url.slice(0, -1) : url;
   }
 
+  /** The Mempool servers to ask, in order: the chosen one, then the fallback. */
+  mempoolServers() {
+    return [...new Set([this.getApiUrl(), MEMPOOL_FALLBACK_URL])];
+  }
+
   /**
    * Load cached rates from localStorage
    * Only use cached rates if they're less than maxCacheAge old
@@ -192,8 +197,7 @@ export class FiatRatesService {
     const rates = { time: Math.floor(Date.now() / 1000) };
     let fresh = false;
 
-    const servers = [...new Set([this.getApiUrl(), MEMPOOL_FALLBACK_URL])];
-    for (const apiUrl of servers) {
+    for (const apiUrl of this.mempoolServers()) {
       try {
         const response = await fetchWithTimeout(`${apiUrl}/prices`, 10000);
 

@@ -12,9 +12,13 @@
  *   1. The snapshot the app recorded at settlement (transactionMetadata's
  *      `fiatAtSettlement`). Captured within minutes of the payment, so it is
  *      the closest thing to the real number that exists.
- *   2. mempool.space's historical-price endpoint — the same host the app
- *      already trusts for rates and on-chain data, so no new dependency
- *      enters the app for this.
+ *   2. A Mempool server's historical-price endpoint: the same servers the
+ *      app already asks for live rates (the chosen one, then the fallback),
+ *      so no new dependency enters the app for this.
+ *
+ * A Mempool server can stop answering without failing: the connection just
+ * hangs (mempool.space did, see #426). So every request has a time limit,
+ * and a server that misses it is not asked again for the rest of the report.
  *
  * Two properties of that endpoint shape everything below, both verified
  * against the live API rather than taken from documentation:
@@ -29,11 +33,21 @@
  *     ordinary outcome here, and the only honest return is null.
  */
 
-/** Same host the app already uses for live rates and deposit tracking. */
-const API = 'https://mempool.space/api/v1';
+import { MEMPOOL_DEFAULT_URL, MEMPOOL_FALLBACK_URL, mempoolServerLabel } from '../../utils/mempoolServer.js';
 
-/** Named so a figure in the report can be traced back to who said it. */
-export const RATE_SOURCE = 'mempool.space/historical-price';
+/** The servers the live rates use when nobody says otherwise. */
+const DEFAULT_SERVERS = [MEMPOOL_DEFAULT_URL, MEMPOOL_FALLBACK_URL];
+
+/** How long one server may take to answer one request. */
+export const REQUEST_TIMEOUT_MS = 10000;
+
+/**
+ * Named so a figure in the report can be traced back to who said it:
+ * "mempool.space/historical-price", or the server that answered instead.
+ */
+export function rateSource(server) {
+  return `${mempoolServerLabel(server)}/historical-price`;
+}
 
 /** Recorded at settlement by the app itself — the most accurate source. */
 export const SETTLEMENT_SOURCE = 'recorded at settlement';
@@ -56,6 +70,17 @@ function dayKey(currency, ms) {
   return `${currency}:${new Date(ms).toISOString().slice(0, 10)}`;
 }
 
+/** fetch() has no timeout of its own; a hung server would hold the report forever. */
+async function fetchWithTimeout(doFetch, url, timeoutMs) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await doFetch(url, { signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 /**
  * A rate lookup with a cache and a hard request budget.
  *
@@ -63,13 +88,52 @@ function dayKey(currency, ms) {
  * and a report that fires hundreds of requests at a public API is both slow
  * and rude. When it runs out, later rows simply have no rate — which the
  * report then states, rather than filling the gap with something plausible.
+ *
+ * Servers are asked in order. One that does not answer, or answers with an
+ * error, is dropped for the rest of this lookup's life: a year of rates
+ * through a dead first server would otherwise wait out its time limit once
+ * per day. With every server dropped, the remaining rows have no rate.
  */
-export function createRateLookup({ currency, maxRequests = 400, fetchImpl } = {}) {
+export function createRateLookup({
+  currency,
+  maxRequests = 400,
+  fetchImpl,
+  servers = DEFAULT_SERVERS,
+  timeoutMs = REQUEST_TIMEOUT_MS,
+} = {}) {
   const cur = String(currency || '').toUpperCase();
   const supported = supportsCurrency(cur);
   const cache = new Map();
   const doFetch = fetchImpl || ((...args) => fetch(...args));
+  const answering = [...new Set(servers)];
   let spent = 0;
+
+  /**
+   * `{ server, point }` from the first server that answers for
+   * `timestampSec`; `point` is null when it holds none. Throws only when no
+   * server answered.
+   */
+  async function pricePoint(timestampSec) {
+    while (answering.length) {
+      const server = answering[0];
+      try {
+        const res = await fetchWithTimeout(
+          doFetch,
+          `${server}/historical-price?currency=${cur}&timestamp=${timestampSec}`,
+          timeoutMs,
+        );
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        // An empty body is the documented shape of "we do not cover this
+        // currency", so parse defensively rather than letting it throw.
+        const text = await res.text();
+        return { server, point: text ? JSON.parse(text)?.prices?.[0] ?? null : null };
+      } catch {
+        // Hung, offline, refused, or not a price answer: the next server.
+        answering.shift();
+      }
+    }
+    throw new Error('No Mempool server answered');
+  }
 
   /**
    * @param {number} ms epoch milliseconds of the transaction
@@ -82,32 +146,24 @@ export function createRateLookup({ currency, maxRequests = 400, fetchImpl } = {}
 
     const key = dayKey(cur, t);
     if (cache.has(key)) return cache.get(key);
-    if (spent >= maxRequests) return null;
+    if (spent >= maxRequests || !answering.length) return null;
 
     spent += 1;
     let result = null;
     try {
-      const res = await doFetch(
-        `${API}/historical-price?currency=${cur}&timestamp=${Math.floor(t / 1000)}`,
-      );
-      if (res.ok) {
-        // An empty body is the documented shape of "we do not cover this
-        // currency", so parse defensively rather than letting it throw.
-        const text = await res.text();
-        const point = text ? JSON.parse(text)?.prices?.[0] : null;
-        const price = Number(point?.[cur]);
-        if (Number.isFinite(price) && price > 0) {
-          result = {
-            currency: cur,
-            rate: price,
-            source: RATE_SOURCE,
-            // The point's OWN time, not the one we asked for.
-            at: Number(point.time) * 1000,
-          };
-        }
+      const { server, point } = await pricePoint(Math.floor(t / 1000));
+      const price = Number(point?.[cur]);
+      if (Number.isFinite(price) && price > 0) {
+        result = {
+          currency: cur,
+          rate: price,
+          source: rateSource(server),
+          // The point's OWN time, not the one we asked for.
+          at: Number(point.time) * 1000,
+        };
       }
     } catch {
-      // Offline, rate-limited, or malformed: no rate is a true statement.
+      // No server answered: no rate is a true statement.
     }
 
     cache.set(key, result);

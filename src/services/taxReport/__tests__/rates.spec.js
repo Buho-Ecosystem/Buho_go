@@ -13,7 +13,7 @@
 import { strict as assert } from 'node:assert'
 import {
   createRateLookup, rateFromSnapshot, supportsCurrency,
-  SUPPORTED_CURRENCIES, RATE_SOURCE, SETTLEMENT_SOURCE,
+  SUPPORTED_CURRENCIES, SETTLEMENT_SOURCE, rateSource,
 } from '../rates.js'
 
 let passed = 0
@@ -37,6 +37,26 @@ const priced = (cur, price, timeSec) =>
   ok(JSON.stringify({ prices: [{ time: timeSec, [cur]: price, USD: 71810 }] }))
 
 const AUG_2026 = Date.parse('2026-08-26T12:00:00Z')
+const DAY = 86400_000
+
+const PRIMARY = 'https://mempool.space/api/v1'
+const FALLBACK = 'https://mempool.emzy.de/api/v1'
+
+/** A server that accepts the connection and never answers, until aborted. */
+const hangs = (url, { signal } = {}) => new Promise((_, reject) => {
+  signal?.addEventListener('abort', () => reject(new Error('aborted')))
+})
+
+/** A fetch that answers per server and counts what each one was asked. */
+function servers(byServer) {
+  const asked = {}
+  const fetchImpl = (url, init) => {
+    const server = Object.keys(byServer).find((s) => url.startsWith(s))
+    asked[server] = (asked[server] || 0) + 1
+    return byServer[server](url, init)
+  }
+  return { fetchImpl, asked }
+}
 
 async function run() {
   await test('the covered currencies are the ones the endpoint answers for', () => {
@@ -71,7 +91,7 @@ async function run() {
     const r = await lookup.at(AUG_2026)
     assert.equal(r.rate, 62960)
     assert.equal(r.currency, 'EUR')
-    assert.equal(r.source, RATE_SOURCE)
+    assert.equal(r.source, 'mempool.space/historical-price')
     assert.equal(r.at, pointSec * 1000)
     assert.notEqual(r.at, AUG_2026)
   })
@@ -135,6 +155,62 @@ async function run() {
     assert.ok(await lookup.at(AUG_2026 + day))
     assert.equal(await lookup.at(AUG_2026 + 2 * day), null, 'budget spent')
     assert.equal(calls, 2)
+  })
+
+  // ── servers that fail ────────────────────────────────────────────────────
+
+  await test('a server that never answers is given up on its time limit, and the fallback answers', async () => {
+    const { fetchImpl, asked } = servers({ [PRIMARY]: hangs, [FALLBACK]: priced('EUR', 62960, 1787572400) })
+    const lookup = createRateLookup({ currency: 'EUR', fetchImpl, servers: [PRIMARY, FALLBACK], timeoutMs: 20 })
+    const r = await lookup.at(AUG_2026)
+    assert.equal(r.rate, 62960)
+    assert.equal(r.source, rateSource(FALLBACK))
+    assert.equal(r.source, 'mempool.emzy.de/historical-price', 'the source names the server that answered')
+    assert.deepEqual(asked, { [PRIMARY]: 1, [FALLBACK]: 1 })
+  })
+
+  await test('a server that failed is not asked again for later days', async () => {
+    // Otherwise a year of rates waits out the dead server's limit once per day.
+    const { fetchImpl, asked } = servers({ [PRIMARY]: hangs, [FALLBACK]: priced('EUR', 62960, 1787572400) })
+    const lookup = createRateLookup({ currency: 'EUR', fetchImpl, servers: [PRIMARY, FALLBACK], timeoutMs: 20 })
+    for (let i = 0; i < 5; i += 1) assert.ok(await lookup.at(AUG_2026 + i * DAY))
+    assert.deepEqual(asked, { [PRIMARY]: 1, [FALLBACK]: 5 })
+  })
+
+  await test('an error answer moves on to the next server too', async () => {
+    const { fetchImpl } = servers({
+      [PRIMARY]: async () => ({ ok: false, status: 503, text: async () => '' }),
+      [FALLBACK]: priced('EUR', 62960, 1787572400),
+    })
+    const lookup = createRateLookup({ currency: 'EUR', fetchImpl, servers: [PRIMARY, FALLBACK] })
+    assert.equal((await lookup.at(AUG_2026)).source, rateSource(FALLBACK))
+  })
+
+  await test('with no server answering, every row has no rate and nothing more is asked', async () => {
+    const { fetchImpl, asked } = servers({ [PRIMARY]: hangs, [FALLBACK]: hangs })
+    const lookup = createRateLookup({ currency: 'EUR', fetchImpl, servers: [PRIMARY, FALLBACK], timeoutMs: 20 })
+    assert.equal(await lookup.at(AUG_2026), null)
+    assert.equal(await lookup.at(AUG_2026 + DAY), null)
+    assert.deepEqual(asked, { [PRIMARY]: 1, [FALLBACK]: 1 })
+  })
+
+  await test('a server that answers without a price point is believed, not skipped', async () => {
+    // It answered: the fallback mirrors the same data, so asking it as well
+    // would only double the requests for a currency neither covers.
+    const { fetchImpl, asked } = servers({ [PRIMARY]: ok(''), [FALLBACK]: priced('EUR', 62960, 1787572400) })
+    const lookup = createRateLookup({ currency: 'EUR', fetchImpl, servers: [PRIMARY, FALLBACK] })
+    assert.equal(await lookup.at(AUG_2026), null)
+    assert.deepEqual(asked, { [PRIMARY]: 1 })
+  })
+
+  await test('the default servers are the app\'s own default and fallback', async () => {
+    const urls = []
+    const lookup = createRateLookup({
+      currency: 'EUR',
+      fetchImpl: async (url) => { urls.push(url); throw new Error('offline') },
+    })
+    await lookup.at(AUG_2026)
+    assert.deepEqual(urls.map((u) => u.split('/historical-price')[0]), [PRIMARY, FALLBACK])
   })
 
   await test('an unusable timestamp is not looked up', async () => {

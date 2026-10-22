@@ -328,6 +328,7 @@ import {
 } from '../../services/taxReport';
 import { createReportConnector } from '../../services/taxReport/connect.js';
 import { saveFile, shareFile, canShareFile } from '../../services/fileExport.js';
+import { fiatRatesService } from '../../utils/fiatRates.js';
 
 /**
  * "Transaction report" — the tax-record export.
@@ -744,6 +745,7 @@ export default {
           snapshotFor: (txId, walletId) =>
             this.metadataStore.getFiatAtSettlementForTransaction(txId, walletId),
           currency: this.currency,
+          rateServers: fiatRatesService.mempoolServers(),
           period: { fromMs: period.fromMs ?? null, toMs: period.toMs ?? null },
           locale: this.$i18n?.locale,
           onProgress: (p) => { if (!signal.aborted) this.progress = p; },
