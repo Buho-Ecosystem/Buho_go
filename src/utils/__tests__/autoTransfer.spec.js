@@ -6,6 +6,8 @@ import {
   PAUSED,
   ROUTE,
   addEvent,
+  isStuckWait,
+  STUCK_WAIT_MS,
   amountSats,
   destinationProblem,
   failureReason,
@@ -126,6 +128,25 @@ test('recent activity keeps 20 events, newest first, and one line for a repeated
   assert.equal(events[0].at, 39);
 });
 
+test('a repeated wait keeps when it began and its latest cause (#430)', () => {
+  let events = [];
+  events = addEvent(events, { at: 100, outcome: OUTCOME.SKIPPED, reason: 'balance_unverified', detail: 'BREEZ_SYNC_TIMEOUT' });
+  events = addEvent(events, { at: 200, outcome: OUTCOME.SKIPPED, reason: 'balance_unverified', detail: 'BREEZ_SYNC_UNVERIFIED' });
+  events = addEvent(events, { at: 300, outcome: OUTCOME.SKIPPED, reason: 'balance_unverified' });
+  assert.equal(events.length, 1);
+  assert.deepEqual(events[0], { at: 300, since: 100, outcome: OUTCOME.SKIPPED, reason: 'balance_unverified', detail: 'BREEZ_SYNC_UNVERIFIED' });
+});
+
+test('a balance that cannot be checked for 10 minutes needs the person; other waits do not (#430)', () => {
+  const now = 50 * 60e3;
+  const waiting = (since, reason = 'balance_unverified') => ({ enabled: true, events: [{ at: now, since, outcome: OUTCOME.SKIPPED, reason }] });
+  assert.equal(ruleStatus(waiting(now - 2 * 60e3), { now }).kind, 'waiting', 'a short wait is just a wait');
+  assert.equal(ruleStatus(waiting(now - STUCK_WAIT_MS), { now }).kind, 'attention');
+  assert.equal(ruleStatus(waiting(now - 60 * 60e3, 'no_rate'), { now }).kind, 'waiting', 'waiting for a rate is fine');
+  assert.equal(ruleStatus({ ...waiting(now - STUCK_WAIT_MS), enabled: false }, { now }).kind, 'paused');
+  assert.equal(isStuckWait({ at: now, outcome: OUTCOME.SKIPPED, reason: 'balance_unverified' }, now), false, 'a first entry starts the clock');
+});
+
 test('a rule says where it stands', () => {
   assert.deepEqual(ruleStatus({ enabled: true, events: [] }), { kind: 'waiting' });
   const sent = { at: 1, outcome: OUTCOME.SENT, amount: 9 };
@@ -145,7 +166,7 @@ test('suggested amounts are the next round steps above the balance', () => {
 
 // ---- The words (utils/autoTransferCopy.js) ---------------------------------
 
-import { destinationLabel, eventRow, formatRuleAmount, reasonText, ruleSentence, statusText, whenText } from '../autoTransferCopy.js';
+import { attentionCopy, destinationLabel, eventRow, formatRuleAmount, reasonText, ruleSentence, statusText, whenText } from '../autoTransferCopy.js';
 
 const t = (key, values = {}) => key.replace(/\{(\w+)\}/g, (_, name) => values[name] ?? name);
 const ctx = { t, locale: 'en-US', bip177: false, wallets: [shop, savings], now: 10_000_000 };
@@ -180,4 +201,28 @@ test('every reason is one short sentence, and never says "withdrawal" or names a
     assert.doesNotMatch(text, /withdraw|lightning|spark|on-chain|—/i, reason);
   }
   assert.deepEqual(eventRow({ at: 10_000_000 - 60e3, outcome: 'failed', reason: 'offline' }, ctx), { title: "Couldn't send", detail: '1 minute ago · There was no connection.', value: '', tone: 'warn' });
+});
+
+test('a balance that could not be checked says why when the cause is known (#430)', () => {
+  const said = (detail) => reasonText('balance_unverified', { t, wallet: 'Shop', detail });
+  assert.equal(said('BREEZ_SYNC_TIMEOUT'), 'Checking the balance took too long.');
+  assert.equal(said('BREEZ_SYNC_UNVERIFIED'), "The network didn't answer the balance check.");
+  assert.equal(said('Spark wallet is not connected'), "Shop isn't connected.");
+  assert.equal(said(null), "The balance couldn't be checked.");
+  for (const detail of ['BREEZ_SYNC_TIMEOUT', 'BREEZ_SYNC_UNVERIFIED', 'Spark wallet is not connected', 'SOMETHING_ELSE']) {
+    assert.match(said(detail), /^[^.]+\.$/);
+    assert.doesNotMatch(said(detail), /withdraw|lightning|spark|on-chain|—/i, detail);
+  }
+  const row = eventRow({ at: 10_000_000, outcome: 'skipped', reason: 'balance_unverified', detail: 'BREEZ_SYNC_TIMEOUT' }, ctx);
+  assert.equal(row.detail, 'now · Checking the balance took too long.');
+});
+
+test('a rule stuck on its balance check is a warning with Try Again (#430)', () => {
+  const now = Date.now();
+  const rule = { enabled: true, threshold: { sats: 15_000 }, destination: { kind: 'wallet', walletId: 'savings' }, events: [{ at: now, since: now - STUCK_WAIT_MS - 1, outcome: 'skipped', reason: 'balance_unverified', detail: 'BREEZ_SYNC_TIMEOUT' }] };
+  assert.deepEqual(statusText(rule, ctx), { text: "Can't check the balance", tone: 'warn' });
+  const copy = attentionCopy(rule, { walletName: 'Shop', balanceSats: 15_962 }, ctx);
+  assert.equal(copy.line, "Auto-Transfer can't check Shop's balance");
+  assert.equal(copy.canRetry, true);
+  assert.match(copy.text, /^Checking the balance took too long\. 15,962 sats stays in Shop\.$/);
 });

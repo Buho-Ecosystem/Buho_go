@@ -93,6 +93,44 @@ test('a fresh-read failure skips the transfer instead of sending from a stale fi
   assert.deepEqual(events(aw, id), [['skipped', 'balance_unverified']]);
 });
 
+test('a sync that just finished confirms the balance: no second sync right behind it (#430)', async () => {
+  const { aw, id, sent, provider, walletStore } = setup();
+  let freshSyncs = 0;
+  provider.lastSyncedAt = () => Date.now() - 5_000; // the lifecycle's sync that triggered this run
+  provider.getCachedBalance = async () => ({ balance: 15_962 });
+  provider.getBalance = async () => { freshSyncs += 1; throw Object.assign(new Error('rate limited'), { code: 'BREEZ_SYNC_UNVERIFIED' }); };
+  await aw.checkAndExecute(id, 15_962, walletStore);
+  assert.equal(freshSyncs, 0, 'the recent sync is enough');
+  assert.equal(sent.length, 1, 'the transfer runs');
+  assert.deepEqual(events(aw, id)[0][0], 'sent');
+});
+
+test('an older sync is not enough: the balance is synced fresh first', async () => {
+  const { aw, id, read, sent, provider, walletStore } = setup();
+  let cachedReads = 0;
+  provider.lastSyncedAt = () => Date.now() - 5 * 60_000;
+  provider.getCachedBalance = async () => { cachedReads += 1; return { balance: 99_999 }; };
+  const run = aw.checkAndExecute(id, 20_000, walletStore);
+  read.resolve({ balance: 20_000 });
+  await run;
+  assert.equal(cachedReads, 0);
+  assert.deepEqual(sent, [['lightning', LN, 19_800]]);
+});
+
+test('a failed check keeps its cause, and repeats stay one line that remembers when they began (#430)', async () => {
+  const { aw, id, walletStore } = setup();
+  walletStore.providers[id].getBalance = async () => { throw Object.assign(new Error('breez sync timeout'), { code: 'BREEZ_SYNC_TIMEOUT' }); };
+  await aw.checkAndExecute(id, 50_000, walletStore);
+  const first = aw.configs[id].events[0];
+  assert.equal(first.detail, 'BREEZ_SYNC_TIMEOUT');
+  walletStore.providers[id].getBalance = async () => { throw new Error('Spark wallet is not connected'); };
+  await aw.tryNow(id, { ...walletStore, getDisplayBalance: () => ({ balance: 50_000 }) });
+  const [row, ...rest] = aw.configs[id].events;
+  assert.equal(rest.length, 0, 'one line');
+  assert.equal(row.detail, 'Spark wallet is not connected', 'a message without a code is kept as text');
+  assert.equal(row.since, first.at);
+});
+
 test('turning the rule off, rebuilding the connection or removing the wallet during the read prevents the send', async () => {
   for (const change of ['off', 'rebuild', 'remove']) {
     const { aw, id, read, sent, walletStore } = setup();

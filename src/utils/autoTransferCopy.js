@@ -10,7 +10,7 @@
 
 import { formatSatoshis } from './amountFormatting.js';
 import { abbreviateDestination } from './clipboardSuggestion.js';
-import { DESTINATION_KIND, OUTCOME, PAUSED, ruleStatus } from './autoTransfer.js';
+import { DESTINATION_KIND, OUTCOME, PAUSED, isStuckWait, ruleStatus } from './autoTransfer.js';
 
 /**
  * @typedef {object} CopyContext
@@ -64,14 +64,14 @@ export function whenText(at, { locale = 'en-US', now = Date.now() } = {}) {
  * Why a rule did not move money, as one short sentence. `wallet` is the
  * rule's wallet, `destination` its destination's label.
  */
-export function reasonText(reason, { t, wallet = '', destination = '' }) {
+export function reasonText(reason, { t, wallet = '', destination = '', detail = null }) {
   switch (reason) {
     case 'unreachable': return t('{name} didn\'t answer.', { name: destination });
     case 'offline': return t('There was no connection.');
     case 'insufficient': return t('There wasn\'t enough left for the fee.');
     case 'refused': return t('{name} refused it.', { name: destination });
     case 'unconfirmed': return t('It may have gone through, so check {name} first.', { name: destination });
-    case 'balance_unverified': return t('The balance couldn\'t be checked.');
+    case 'balance_unverified': return balanceUnverifiedText(detail, { t, wallet });
     case 'no_rate': return t('Waiting for an exchange rate.');
     case 'below_minimum': return t('Too little to move.');
     case 'cannot_pay': return t('{name} can\'t pay this destination right now.', { name: wallet });
@@ -82,6 +82,18 @@ export function reasonText(reason, { t, wallet = '', destination = '' }) {
     case 'unknown': return t('Choose another destination.');
     default: return t('It didn\'t go through.');
   }
+}
+
+/**
+ * Why the balance could not be confirmed, from the cause kept with the
+ * entry (stores/autoWithdraw.js). Unknown causes keep the general sentence.
+ */
+function balanceUnverifiedText(detail, { t, wallet }) {
+  const cause = String(detail || '');
+  if (cause === 'BREEZ_SYNC_TIMEOUT') return t('Checking the balance took too long.');
+  if (cause === 'BREEZ_SYNC_UNVERIFIED') return t('The network didn\'t answer the balance check.');
+  if (/not connected/i.test(cause) && wallet) return t('{name} isn\'t connected.', { name: wallet });
+  return t('The balance couldn\'t be checked.');
 }
 
 /**
@@ -108,6 +120,7 @@ export function statusText(rule, ctx) {
   const status = ruleStatus(rule);
   if (status.kind === 'attention') {
     if (rule.pausedReason === PAUSED.FAILURES) return { text: ctx.t('Paused after failed tries'), tone: 'warn' };
+    if (isStuckWait(status.event)) return { text: ctx.t("Can't check the balance"), tone: 'warn' };
     return { text: status.event?.outcome === OUTCOME.FAILED ? ctx.t('Couldn\'t send') : ctx.t('Can\'t send'), tone: 'warn' };
   }
   if (status.kind === 'paused') return { text: ctx.t('Paused'), tone: 'muted' };
@@ -136,7 +149,7 @@ export function eventRow(event, ctx, names = {}) {
   if (event.outcome === OUTCOME.SENT) {
     return { title: formatSats(event.amount, ctx), detail: when, value: ctx.t('Sent'), tone: 'good' };
   }
-  const reason = reasonText(event.reason, { t: ctx.t, ...names });
+  const reason = reasonText(event.reason, { t: ctx.t, ...names, detail: event.detail ?? null });
   if (event.outcome === OUTCOME.FAILED) return { title: ctx.t('Couldn\'t send'), detail: `${when} · ${reason}`, value: '', tone: 'warn' };
   return { title: ctx.t('Waited'), detail: `${when} · ${reason}`, value: '', tone: 'muted' };
 }
@@ -149,7 +162,15 @@ export function attentionCopy(rule, { walletName, balanceSats = 0 }, ctx) {
   const status = ruleStatus(rule);
   if (status.kind !== 'attention') return null;
   const destination = destinationLabel(rule.destination, ctx) || ctx.t('the destination');
-  const reason = reasonText(status.event?.reason, { t: ctx.t, wallet: walletName, destination });
+  const reason = reasonText(status.event?.reason, { t: ctx.t, wallet: walletName, destination, detail: status.event?.detail ?? null });
+  if (isStuckWait(status.event)) {
+    return {
+      line: ctx.t("Auto-Transfer can't check {name}'s balance", { name: walletName }),
+      title: ctx.t("Can't check the balance"),
+      text: `${reason} ${ctx.t('{amount} stays in {name}.', { amount: formatSats(balanceSats, ctx), name: walletName })}`,
+      canRetry: true,
+    };
+  }
   if (rule.pausedReason === PAUSED.FAILURES) {
     return {
       line: ctx.t('Auto-Transfer paused · {name}', { name: walletName }),
