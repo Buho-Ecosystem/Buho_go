@@ -48,10 +48,27 @@ const FAILURE_RETRY_MS = 15_000
 // out. Retrying would pay again, so the rule rests long enough for the
 // balance to show what happened.
 const UNCONFIRMED_HOLD_MS = 10 * 60_000
+// A Spark balance counts as confirmed when a network sync of that wallet
+// finished this recently. The run is usually triggered by exactly such a
+// sync; starting a second full sync right behind it is what the operators
+// rate-limit or let time out on a funded wallet (#430).
+const RECENT_SYNC_MS = 60_000
 
 // Outside Pinia state on purpose: bookkeeping, not something to render.
 const _running = new Set()
 const _lastTriggerTime = new Map()
+
+/**
+ * Why a balance check failed, short enough to keep with the entry: the
+ * provider's error code (BREEZ_SYNC_TIMEOUT, BREEZ_SYNC_UNVERIFIED, …) when
+ * it has one, otherwise the start of the message.
+ */
+function verifyFailureDetail(error) {
+  const code = String(error?.code || '')
+  if (/^[A-Z][A-Z0-9_]{2,63}$/.test(code)) return code
+  const message = String(error?.message || error || '').trim()
+  return message ? message.slice(0, 120) : null
+}
 
 export const useAutoWithdrawStore = defineStore('autoWithdraw', {
   state: () => ({
@@ -223,11 +240,12 @@ export const useAutoWithdrawStore = defineStore('autoWithdraw', {
           const epoch = walletStore.walletEpoch?.(walletId)
           let fresh
           try {
-            fresh = await provider.getBalance({ requireFresh: true })
+            fresh = await this._confirmedSparkBalance(provider)
           } catch (error) {
             console.warn('[Auto-Transfer] Skipped: the balance could not be checked:', error?.message || error)
             _lastTriggerTime.set(walletId, Date.now() - COOLDOWN_MS + FAILURE_RETRY_MS)
-            this._skip(walletId, 'balance_unverified')
+            // The cause is kept with the entry, so it can be read afterwards.
+            this._skip(walletId, 'balance_unverified', { detail: verifyFailureDetail(error) })
             return
           }
           // The read can take seconds: the rule may have changed, the wallet
@@ -279,6 +297,21 @@ export const useAutoWithdrawStore = defineStore('autoWithdraw', {
       } finally {
         _running.delete(walletId)
       }
+    },
+
+    /**
+     * A Spark balance the network confirmed: the wallet's local figure when a
+     * sync of it completed within RECENT_SYNC_MS (the SDK's state is what that
+     * sync left, plus this phone's own payments since), otherwise the result
+     * of a fresh sync. A figure that is lower in truth only makes the payment
+     * fail; it never sends money that is not there.
+     */
+    async _confirmedSparkBalance(provider) {
+      const syncedAt = Number(provider.lastSyncedAt?.())
+      if (syncedAt && Date.now() - syncedAt <= RECENT_SYNC_MS && typeof provider.getCachedBalance === 'function') {
+        return provider.getCachedBalance()
+      }
+      return provider.getBalance({ requireFresh: true })
     },
 
     /**
@@ -384,8 +417,8 @@ export const useAutoWithdrawStore = defineStore('autoWithdraw', {
       }
     },
 
-    _skip(walletId, reason) {
-      this._record(walletId, { at: Date.now(), outcome: OUTCOME.SKIPPED, reason })
+    _skip(walletId, reason, extra = {}) {
+      this._record(walletId, { at: Date.now(), outcome: OUTCOME.SKIPPED, reason, ...extra })
     },
 
     /**
