@@ -26,6 +26,8 @@
         <button v-if="simple" type="button" class="app-toast__tap-dismiss" :aria-label="tapLabel" :aria-describedby="`toast-copy-${toast.id}`" @click="tap" />
       </div>
       <span v-if="toast.count > 1" class="app-toast__count" :aria-label="`${toast.count}`">{{ toast.count }}</span>
+      <!-- A toast that opens something shows it: the tap target above is invisible. -->
+      <Icon v-if="simple && toast.config.onOpen" icon="tabler:chevron-right" width="16" height="16" class="app-toast__chevron" aria-hidden="true" />
     </div>
     <div v-if="!simple" class="app-toast__actions">
       <button type="button" class="app-toast__dismiss" :aria-describedby="`toast-copy-${toast.id}`" @click="dismiss">{{ dismissLabel }}</button>
@@ -181,6 +183,7 @@ body.body--dark .app-toast--info { --toast-accent: #9ccbff; --toast-tint: #2d445
 .app-toast button:focus-visible { outline: 2px solid currentColor; outline-offset: -2px; }
 .app-toast button:active { background: #8882; }
 .app-toast__tap-dismiss { position: absolute; inset: 0; width: 100%; height: 100%; min-height: 0 !important; }
+.app-toast__chevron { flex-shrink: 0; margin-right: -6px; opacity: .55; }
 .app-toast__dismiss { flex-shrink: 0; padding: 0 8px; }
 .app-toast__actions { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 8px; }
 .app-toast__actions button { display: flex; gap: 6px; align-items: center; justify-content: center; padding: 0 12px; color: var(--toast-accent); }

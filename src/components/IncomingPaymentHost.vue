@@ -3,18 +3,25 @@
   are in the app without having asked for it, such as a payment to their
   Lightning address. services/incomingPayments.js decides where:
 
-    Home, nothing open    the "Bitcoin received" screen (PaymentConfirmation)
+    Home, nothing open    the "Bitcoin received" screen (PaymentConfirmation),
+                          naming the wallet when there is more than one
     anywhere else         a toast at the bottom; a tap opens the payment in
                           Transaction details, a swipe dismisses it
 
   Payments to the same wallet in a row add up on what is already showing.
-  Mounted once, in App.vue.
+
+  A receipt for a wallet other than the active one is also kept as unseen
+  (stores/unseenReceipts.js), so the Switch Wallet sheet can say what that
+  wallet received until the user looks at it: by switching to it, or by
+  opening the payment from the toast. Mounted once, in App.vue.
 -->
 <template>
   <PaymentConfirmation
     v-model="screenOpen"
     :amount="screenSats"
     :fiat-amount="fiatText(screenSats)"
+    :recipient="screenWallet"
+    recipient-prefix=""
     @closed="onScreenClosed"
   />
 </template>
@@ -25,10 +32,12 @@ import { useRoute, useRouter } from 'vue-router';
 import { useQuasar } from 'quasar';
 import PaymentConfirmation from './PaymentConfirmation.vue';
 import { useWalletStore } from '../stores/wallet';
+import { useUnseenReceiptsStore } from '../stores/unseenReceipts.js';
 import { i18n } from '../boot/i18n.js';
 import { formatAmount } from '../utils/amountFormatting.js';
 import { fiatRatesService } from '../utils/fiatRates.js';
 import { haptics } from '../utils/haptics.js';
+import { isUnseenReceipt } from '../utils/unseenReceipts.js';
 import {
   incomingSurface,
   shownByReceive,
@@ -41,11 +50,16 @@ const props = defineProps({
   suspended: { type: Boolean, default: false },
 });
 
-const TOAST_TIMEOUT_MS = 4000;
+/**
+ * Longer than an ordinary toast: it names an amount and a wallet, and a
+ * tap on it opens the payment, so reading it must leave time to act.
+ */
+const TOAST_TIMEOUT_MS = 6000;
 /** How far back a balance-based payment is looked for in its wallet's history. */
 const LOOKBACK_MS = 15 * 60 * 1000;
 
 const walletStore = useWalletStore();
+const unseen = useUnseenReceiptsStore();
 const route = useRoute();
 const router = useRouter();
 const $q = useQuasar();
@@ -58,12 +72,17 @@ const t = (key, values) => i18n.global.t(key, values);
 let current = null;
 const screenOpen = ref(false);
 const screenSats = ref(0);
+const screenWallet = ref('');
 
 watch(() => walletStore.lastReceipt, announce);
+// Looking at a wallet means switching to it: its receipts stop being news.
+watch(() => walletStore.activeWalletId, (walletId) => { if (walletId) unseen.markSeen(walletId); }, { immediate: true });
 
 function announce(receipt) {
-  if (props.suspended || !receipt?.walletId || !(receipt.amountSats > 0)) return;
-  if (shownByReceive(receipt)) return;
+  if (!receipt?.walletId || !(receipt.amountSats > 0)) return;
+  const confirmedOnScreen = shownByReceive(receipt);
+  if (isUnseenReceipt(receipt, { activeWalletId: walletStore.activeWalletId, confirmedOnScreen })) unseen.add(receipt);
+  if (props.suspended || confirmedOnScreen) return;
   const surface = incomingSurface({
     path: route.path,
     dialogOpen: !!document.querySelector('.q-dialog[aria-modal="true"]'),
@@ -92,20 +111,25 @@ function announce(receipt) {
   current = entry;
   if (surface === 'screen') {
     screenSats.value = entry.sats;
+    // With one wallet the name says nothing; with several it says where the money is.
+    screenWallet.value = walletStore.wallets.length > 1 ? t('to {wallet}', { wallet: walletName(entry.walletId) }) : '';
     screenOpen.value = true;
   } else {
     entry.update = $q.notify(toastConfig(entry));
   }
 }
 
+function walletName(walletId) {
+  return walletStore.wallets.find((w) => w.id === walletId)?.name || t('your wallet');
+}
+
 function toastConfig(entry) {
-  const wallet = walletStore.wallets.find((w) => w.id === entry.walletId);
   return {
     type: 'positive',
     message: t('Bitcoin received'),
     caption: t('{amount} · {wallet}', {
       amount: formatAmount(entry.sats, walletStore.useBip177Format),
-      wallet: wallet?.name || t('your wallet'),
+      wallet: walletName(entry.walletId),
     }),
     position: 'bottom',
     timeout: TOAST_TIMEOUT_MS,
@@ -117,9 +141,13 @@ function toastConfig(entry) {
   };
 }
 
-/** One payment opens in Transaction details; several open History. */
+/**
+ * One payment opens in Transaction details; several open History, which
+ * lists the active wallet, so a wallet that is not active becomes it first.
+ */
 async function openPayment(entry) {
-  if (entry.count > 1) return router.push('/transactions');
+  unseen.markSeen(entry.walletId);
+  if (entry.count > 1) return openHistory(entry.walletId);
   if (entry.paymentId) return router.push(transactionRoute(entry.walletId, entry.paymentId));
   const wallet = walletStore.wallets.find((w) => w.id === entry.walletId);
   const id = await findReceivedTransactionId({
@@ -128,7 +156,12 @@ async function openPayment(entry) {
     amountSats: entry.sats,
     sinceMs: entry.firstAt - LOOKBACK_MS,
   }).catch(() => null);
-  return router.push(id ? transactionRoute(entry.walletId, id) : '/transactions');
+  return id ? router.push(transactionRoute(entry.walletId, id)) : openHistory(entry.walletId);
+}
+
+async function openHistory(walletId) {
+  if (walletId !== walletStore.activeWalletId) await walletStore.switchActiveWallet(walletId).catch(() => {});
+  return router.push('/transactions');
 }
 
 function onScreenClosed() {

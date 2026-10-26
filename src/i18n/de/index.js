@@ -3473,4 +3473,6 @@ export default {
   "That doesn't look like a server address.": "Das sieht nicht nach einer Serveradresse aus.",
   "This server didn't answer. Check the address and try again.": "Dieser Server hat nicht geantwortet. Prüfe die Adresse und versuche es erneut.",
   "Show payment": "Zahlung anzeigen",
+  "Received {amount} since you last looked": "{amount} empfangen, seit du zuletzt nachgesehen hast",
+  "to {wallet}": "an {wallet}",
 }

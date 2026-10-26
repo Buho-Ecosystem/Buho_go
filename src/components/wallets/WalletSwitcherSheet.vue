@@ -92,6 +92,12 @@
               :class="$q.dark.isActive ? 'check-accent-dark' : 'check-accent-light'"
               :aria-hidden="true"
             />
+            <!-- What the wallet received since the user last looked at it
+                 (stores/unseenReceipts). The balance already includes it. -->
+            <span v-else-if="unseenOf(wallet.id)" class="switch-unseen-pill">
+              <HiddenAmount aria-hidden="true">+ {{ formatBalance(unseenOf(wallet.id).sats) }}</HiddenAmount>
+              <span class="switch-sr-only">{{ $t('Received {amount} since you last looked', { amount: formatBalance(unseenOf(wallet.id).sats) }) }}</span>
+            </span>
           </div>
         </div>
         <!-- A restore keeps finding the phrase's other wallets for a while. -->
@@ -134,6 +140,7 @@
 import { computed } from 'vue';
 import { Icon } from '@iconify/vue';
 import { useWalletStore } from '../../stores/wallet';
+import { useUnseenReceiptsStore } from '../../stores/unseenReceipts.js';
 import { formatMainBalance } from '../../utils/amountFormatting.js';
 import WalletBrandMark from '../WalletBrandMark.vue';
 import WalletTypeChip from '../WalletTypeChip.vue';
@@ -150,6 +157,7 @@ const props = defineProps({
 const emit = defineEmits(['update:modelValue', 'switch', 'transfer', 'manage']);
 
 const store = useWalletStore();
+const unseen = useUnseenReceiptsStore();
 
 const open = computed({ get: () => props.modelValue, set: (value) => emit('update:modelValue', value) });
 const wallets = computed(() => store.wallets);
@@ -159,6 +167,7 @@ const discovering = computed(() => store.sparkDiscoveryRunning);
 const anyRefreshing = computed(() => totalInfo.value.refreshing);
 
 const connected = (walletId) => !!store.connectionStates[walletId]?.connected;
+const unseenOf = (walletId) => unseen.forWallet(walletId);
 const display = (walletId) => store.getDisplayBalance(walletId);
 const formatBalance = (sats) => formatMainBalance(sats, store.useBip177Format);
 const fiatOf = (sats) => store.fiatValueOf(sats);
@@ -483,6 +492,23 @@ body.body--light .switch-avatar-arkade {
   font-size: 14px;
   font-weight: 600;
   color: var(--text-primary);
+}
+/* What the wallet received since the user last looked at it: the toolbar's
+   money pill, on the trailing edge where the active row wears its check. */
+.switch-unseen-pill {
+  position: relative;
+  flex-shrink: 0;
+  display: inline-grid;
+  place-items: center;
+  height: 22px;
+  padding: 0 9px;
+  border-radius: 999px;
+  background: #10b981;
+  color: #07140f;
+  font: 800 12px/1 'Manrope', sans-serif;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 .switch-sr-only {
   position: absolute;

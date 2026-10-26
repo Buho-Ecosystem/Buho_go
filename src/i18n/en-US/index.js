@@ -3463,4 +3463,6 @@ export default {
   "That doesn't look like a server address.": "That doesn't look like a server address.",
   "This server didn't answer. Check the address and try again.": "This server didn't answer. Check the address and try again.",
   "Show payment": "Show payment",
+  "Received {amount} since you last looked": "Received {amount} since you last looked",
+  "to {wallet}": "to {wallet}",
 }
