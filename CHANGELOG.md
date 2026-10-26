@@ -22,6 +22,7 @@ Still on a BuhoGO from GitHub or Zapstore older than 1.9.1? It was signed with a
 
 ### UI/UX
 
+- **Money that arrives in another wallet.** When Bitcoin reaches a wallet you are not using, the Switch Wallet sheet and Manage Wallets mark that wallet with what came in, until you open it. The toast about it stays a little longer and shows that a tap opens the payment, and the confirmation on Home names the wallet.
 - **Identities in one list.** Every identity on this phone is one row: tap it to switch, with Undo. Its detail page copies the public code or the secret key, and removes the identity from this phone with Undo; your 12 words bring it back. Erase all identities now says that it erases every identity.
 - **Messages live in the Address Book.** A Messages row lists every chat, unread messages show on the contact and on the Address Book door in the menu, and a message notification opens the chat. Chats with people who are not in your contacts sit in their own section and never light the menu badge.
 - **Calmer updates.** An ordinary update no longer pops up. A dot on the logo and on About leads to one sheet that follows the update from download to restart, and About shows the version and when BuhoGO last checked.

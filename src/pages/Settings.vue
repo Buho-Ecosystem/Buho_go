@@ -1164,6 +1164,8 @@
                   <div class="wallet-row-sub" :class="$q.dark.isActive ? 'row-sub-dark' : 'row-sub-light'">
                     <span>{{ getWalletTypeLabel(wallet) }}</span>
                     <span v-if="wallet.id === activeWalletId" class="row-sub-active" :class="$q.dark.isActive ? 'sub-active-dark' : 'sub-active-light'"> · {{ $t('Active') }}</span>
+                    <!-- What it received since the user last looked at it (stores/unseenReceipts). -->
+                    <span v-else-if="unseenReceipts.forWallet(wallet.id)" class="row-sub-unseen"> · <HiddenAmount aria-hidden="true">+ {{ formatBalance(unseenReceipts.forWallet(wallet.id).sats) }}</HiddenAmount><span class="sr-only">{{ $t('Received {amount} since you last looked', { amount: formatBalance(unseenReceipts.forWallet(wallet.id).sats) }) }}</span></span>
                     <span v-else-if="!connectionStates[wallet.id]?.connected"> · {{ $t('Offline') }}</span>
                   </div>
                 </div>
@@ -1484,6 +1486,7 @@
 
 <script>
 import {useWalletStore} from '../stores/wallet'
+import {useUnseenReceiptsStore} from '../stores/unseenReceipts.js'
 import {useAutoWithdrawStore} from '../stores/autoWithdraw'
 import { destinationLabel } from '../utils/autoTransferCopy.js'
 import {useBitcoinPreferencesStore} from '../stores/bitcoinPreferences'
@@ -1839,6 +1842,9 @@ export default {
 
     walletStore() {
       return useWalletStore();
+    },
+    unseenReceipts() {
+      return useUnseenReceiptsStore();
     },
 
     /**
@@ -4381,6 +4387,10 @@ export default {
 
 .row-sub-active.sub-active-light { color: #1A1A1A; font-weight: 600; }
 .row-sub-active.sub-active-dark { color: #15DE72; font-weight: 600; }
+/* Received since the user last looked: the credit green, in words on this line. */
+.row-sub-unseen { color: #059573; font-weight: 700; font-variant-numeric: tabular-nums; }
+.row-sub-dark .row-sub-unseen { color: #15DE72; }
+.row-sub-unseen .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 
 .wallet-row-value {
   font-family: var(--font-mono);
