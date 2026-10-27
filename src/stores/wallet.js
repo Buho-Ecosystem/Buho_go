@@ -2885,8 +2885,19 @@ export const useWalletStore = defineStore('wallet', {
           name: wallet.name,
           serverUrl: wallet.connectionData.serverUrl,
           adminKey: wallet.connectionData.adminKey,
+          walletId: wallet.connectionData.walletId,
+          invoiceKey: wallet.connectionData.invoiceKey,
           metadata: wallet.metadata,
         });
+        // The read-only key for live payments, fetched once with the admin
+        // key, is kept with it: saved like it, never in a backup (it can
+        // always be asked for again).
+        provider._onInvoiceKey = (invoiceKey) => {
+          if (!this.wallets.includes(wallet) || wallet.connectionData.invoiceKey === invoiceKey) return;
+          wallet.connectionData.invoiceKey = invoiceKey;
+          this._schedulePersist();
+        };
+
 
         // Connect
         await provider.connect();

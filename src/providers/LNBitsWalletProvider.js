@@ -12,10 +12,14 @@
  *
  * API Endpoints used:
  * - GET  /api/v1/wallet - Get wallet info and balance
+ * - PATCH /api/v1/wallet - With an empty body: the wallet's read-only invoice
+ *   key, once (LNbits 0.12 to 1.6 change nothing but its "updated" time)
  * - POST /api/v1/payments - Create invoice (out: false) or pay invoice (out: true)
  * - GET  /api/v1/payments/<hash> - Check payment status
  * - GET  /api/v1/payments - List payments
  * - POST /api/v1/payments/decode - Decode invoice
+ * - WS   /api/v1/ws/<invoice key> - Each settled payment, live (watchPayments).
+ *   Keyed by the invoice key, never the admin key: LNbits logs the path.
  *
  * Optional (lnurlp extension, feature-detected at runtime):
  * - GET  /lnurlp/api/v1/links - List pay links (lightning addresses when `username` is set)
@@ -36,6 +40,21 @@ import { WalletProvider } from './WalletProvider';
 import { payLinksStatusOf } from '../utils/lnbitsAddress.js';
 import { SUCCESS_ACTION_MAX_CHARS } from '../utils/successAction.js';
 
+/**
+ * What one live message says: `{ paymentHash }` for a payment record, an
+ * empty hint for any other well-formed message, null for anything that is
+ * not LNbits' JSON. Read defensively: the channel takes posts from anyone
+ * who knows its key, so nothing here is trusted beyond "look now".
+ */
+export function lnbitsPaymentHint(data) {
+  if (typeof data !== 'string' || data.length > 100_000) return null;
+  let message;
+  try { message = JSON.parse(data); } catch { return null; }
+  if (!message || typeof message !== 'object') return null;
+  const hash = String(message.payment?.payment_hash || '').toLowerCase();
+  return /^[0-9a-f]{64}$/.test(hash) ? { paymentHash: hash } : {};
+}
+
 export class LNBitsWalletProvider extends WalletProvider {
   constructor(walletId, walletData) {
     super(walletId, walletData);
@@ -43,6 +62,13 @@ export class LNBitsWalletProvider extends WalletProvider {
     this.serverUrl = walletData.serverUrl;
     this.lnbitsWalletId = walletData.walletId; // LNBits internal wallet ID
     this.adminKey = walletData.adminKey;
+    // Read-only key for the live payment channel. Fetched once when missing;
+    // the store keeps it next to the admin key (`_onInvoiceKey`).
+    this.invoiceKey = walletData.invoiceKey || null;
+    this._onInvoiceKey = null;
+    this._invoiceKeyRequest = null;
+    // Live channels this provider opened; disconnect() closes them all.
+    this._watches = new Set();
     this.metadata = walletData.metadata || {};
     this.walletInfo = null;
   }
@@ -130,6 +156,7 @@ export class LNBitsWalletProvider extends WalletProvider {
   }
 
   async disconnect() {
+    for (const watch of [...this._watches]) watch.stop();
     this.isConnected = false;
     this.walletInfo = null;
   }
@@ -285,40 +312,147 @@ export class LNBitsWalletProvider extends WalletProvider {
     }
   }
 
-  async getTransactions({ limit = 50, offset = 0 } = {}) {
+  /**
+   * Payments newest first, as the app's transaction rows. Errors are
+   * thrown: a caller that must know whether it read anything (the payment
+   * watch) cannot take an empty list for "no payments".
+   */
+  async listPayments({ limit = 50, offset = 0 } = {}) {
     this._ensureConnected();
+    const response = await this._apiRequest(`/api/v1/payments?limit=${limit}&offset=${offset}`);
+    return Array.isArray(response) ? response.map((tx) => this._toTransaction(tx)) : [];
+  }
 
+  async getTransactions({ limit = 50, offset = 0 } = {}) {
     try {
-      // LNBits payments endpoint with pagination
-      const response = await this._apiRequest(`/api/v1/payments?limit=${limit}&offset=${offset}`);
-
-      if (!response || !Array.isArray(response)) {
-        return [];
-      }
-
-      return response.map(tx => ({
-        id: tx.payment_hash || tx.checking_id,
-        paymentHash: tx.payment_hash || null,
-        type: tx.amount > 0 ? 'receive' : 'send',
-        amount: Math.floor(Math.abs(tx.amount) / 1000), // Convert msats to sats
-        timestamp: this._parseTimestamp(tx.time || tx.created_at),
-        // LNbits' /payments list only ever gives us one timestamp per
-        // record — there's no separate "settled at" — so created_at
-        // mirrors the same value rather than inventing a second one.
-        created_at: this._parseTimestamp(tx.created_at || tx.time),
-        description: tx.memo || '',
-        status: this._parsePaymentStatus(tx.status, tx.pending),
-        fee: tx.fee ? Math.floor(Math.abs(tx.fee) / 1000) : 0,
-        bolt11: tx.bolt11 || tx.payment_request || null,
-        preimage: tx.preimage || null,
-        expiry: tx.expiry ?? null,
-        tag: tx.tag || null,
-        extra: tx.extra || null
-      }));
+      return await this.listPayments({ limit, offset });
     } catch (error) {
       console.warn('getTransactions error:', error.message);
       return [];
     }
+  }
+
+  /**
+   * One payment of this wallet by its hash, as a transaction row, or null
+   * when LNbits does not know it as this wallet's.
+   */
+  async getPayment(paymentHash) {
+    this._ensureConnected();
+    const response = await this._apiRequest(`/api/v1/payments/${encodeURIComponent(paymentHash)}`);
+    // `details` comes only for this wallet's own payments (its key was sent).
+    const details = response?.details;
+    if (!details || typeof details !== 'object') return null;
+    const row = this._toTransaction(details);
+    if (response.paid === true) {
+      row.status = 'completed';
+      row.settled_at ||= this._parseTimestamp(details.updated_at || details.time);
+    }
+    return row;
+  }
+
+  /** One LNbits payment record as the app's transaction row. */
+  _toTransaction(tx) {
+    const status = this._parsePaymentStatus(tx.status, tx.pending);
+    return {
+      id: tx.payment_hash || tx.checking_id,
+      paymentHash: tx.payment_hash || null,
+      type: tx.amount > 0 ? 'receive' : 'send',
+      amount: Math.floor(Math.abs(tx.amount) / 1000), // Convert msats to sats
+      timestamp: this._parseTimestamp(tx.time || tx.created_at),
+      // LNbits' /payments list only ever gives us one timestamp per
+      // record — there's no separate "settled at" — so created_at
+      // mirrors the same value rather than inventing a second one.
+      created_at: this._parseTimestamp(tx.created_at || tx.time),
+      // When it was paid: LNbits 1.x moves `updated_at` on settlement, while
+      // `time` stays when the invoice was made. Absent on older servers.
+      settled_at: status === 'completed' ? this._parseTimestamp(tx.updated_at) : null,
+      description: tx.memo || '',
+      status,
+      fee: tx.fee ? Math.floor(Math.abs(tx.fee) / 1000) : 0,
+      bolt11: tx.bolt11 || tx.payment_request || null,
+      preimage: tx.preimage || null,
+      expiry: tx.expiry ?? null,
+      tag: tx.tag || null,
+      extra: tx.extra || null
+    };
+  }
+
+  /**
+   * The wallet's invoice key: read-only (it can list and receive, never
+   * spend). The admin key asks LNbits for it once; an empty PATCH returns
+   * the wallet with its keys and changes nothing but its "updated" time.
+   * Refused when LNbits answers for another wallet.
+   */
+  async getInvoiceKey() {
+    if (this.invoiceKey) return this.invoiceKey;
+    this._invoiceKeyRequest ||= (async () => {
+      const wallet = await this._apiRequest('/api/v1/wallet', { method: 'PATCH', body: '{}' });
+      const key = String(wallet?.inkey || '');
+      if (!/^[0-9a-f]{32}$/i.test(key)) throw new Error('LNbits did not return an invoice key');
+      if (this.lnbitsWalletId && wallet.id && wallet.id !== this.lnbitsWalletId) {
+        throw new Error('LNbits answered for another wallet');
+      }
+      this.invoiceKey = key;
+      try { this._onInvoiceKey?.(key); } catch { /* the key still works for this session */ }
+      return key;
+    })().finally(() => { this._invoiceKeyRequest = null; });
+    return this._invoiceKeyRequest;
+  }
+
+  /**
+   * Watch this wallet's payments live: LNbits pushes every settled payment
+   * over a websocket keyed by the invoice key. Each message only says
+   * "look now" (`onActivity({ paymentHash })`): anyone who knows the key
+   * can post into that channel, so the payment is read from the API before
+   * anything is believed.
+   *
+   * No replay: what settles while the socket is closed arrives through the
+   * caller's catch-up read. A closed socket stays closed until `revive()`,
+   * which the caller runs on its own schedule (services/walletWatch).
+   *
+   * @param {(hint: { paymentHash?: string }) => void} onActivity
+   * @param {{ WebSocket?: typeof WebSocket }} [deps]
+   * @returns {Promise<{ stop: () => void, revive: () => void }>}
+   */
+  async watchPayments(onActivity, { WebSocket: Socket = globalThis.WebSocket } = {}) {
+    this._ensureConnected();
+    if (typeof Socket !== 'function') throw new Error('No WebSocket in this environment');
+    const key = await this.getInvoiceKey();
+    const address = `${this.serverUrl.replace(/^http/i, 'ws')}/api/v1/ws/${key}`;
+    let socket = null;
+    let stopped = false;
+
+    const open = () => {
+      const ws = new Socket(address);
+      socket = ws;
+      ws.onmessage = (event) => {
+        const hint = lnbitsPaymentHint(event?.data);
+        if (hint && !stopped) onActivity(hint);
+      };
+      // The close that follows says enough; the address carries a key and
+      // is never logged.
+      ws.onerror = () => {};
+      ws.onclose = () => { if (socket === ws) socket = null; };
+    };
+
+    open();
+    const watch = {
+      stop: () => {
+        stopped = true;
+        this._watches.delete(watch);
+        const ws = socket;
+        socket = null;
+        try { ws?.close(); } catch { /* already closed */ }
+      },
+      // Open again when the socket is gone (closed by the server, the
+      // network or the OS). One that is open or opening is left alone.
+      revive: () => {
+        if (stopped || (socket && socket.readyState <= 1)) return;
+        try { open(); } catch { /* the next revive tries again */ }
+      },
+    };
+    this._watches.add(watch);
+    return watch;
   }
 
   /**
