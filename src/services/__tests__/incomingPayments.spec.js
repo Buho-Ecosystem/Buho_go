@@ -6,12 +6,22 @@ import {
   expectReceiveInvoice,
   confirmReceivePayment,
   forgetReceiveInvoice,
+  expectReceiveFunds,
+  forgetReceiveFunds,
   shownByReceive,
   transactionRoute,
   findReceivedTransactionId,
 } from '../incomingPayments.js';
 
 const at = (path, extra = {}) => ({ path, dialogOpen: false, kiosk: false, settledWhileAway: false, ...extra });
+
+test('the open address receive sheet owns only its wallet until it closes', () => {
+  expectReceiveFunds('arkade');
+  assert.equal(shownByReceive({ walletId: 'arkade', amountSats: 2100 }), true);
+  assert.equal(shownByReceive({ walletId: 'another', amountSats: 2100 }), false);
+  forgetReceiveFunds('arkade');
+  assert.equal(shownByReceive({ walletId: 'arkade', amountSats: 2100 }), false);
+});
 
 test('Home with nothing open shows the screen; everywhere else a toast', () => {
   assert.equal(incomingSurface(at(HOME_PATH)), 'screen');

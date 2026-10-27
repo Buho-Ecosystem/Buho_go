@@ -375,7 +375,8 @@ export class ArkadeWalletProvider extends WalletProvider {
       const history = await this.wallet.getTransactionHistory();
       return (history || []).map((tx) => {
         const key = tx.key || {};
-        const id = key.arkTxid || key.commitmentTxid || key.boardingTxid || '';
+        // A boarding receipt keeps its id when its commitment later appears.
+        const id = key.arkTxid || key.boardingTxid || key.commitmentTxid || '';
         // BuhoGO's tx list (and the LNbits/NWC providers) speak unix SECONDS.
         // The SDK's `createdAt` is documented as ms-epoch — but normalize by
         // magnitude anyway so a unit change in a future SDK can't shift

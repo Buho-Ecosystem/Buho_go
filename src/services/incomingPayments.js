@@ -44,6 +44,16 @@ export function incomingSurface({ path, dialogOpen, kiosk, settledWhileAway }) {
 
 /** Invoices the Receive sheet shows, by payment hash: { walletId, amountSats, confirmed, until }. */
 const receiveInvoices = new Map();
+// Address receives have no invoice hash. Their open sheet owns confirmation.
+const receiveAddresses = new Set();
+
+export function expectReceiveFunds(walletId) {
+  if (walletId) receiveAddresses.add(walletId);
+}
+
+export function forgetReceiveFunds(walletId) {
+  receiveAddresses.delete(walletId);
+}
 
 function prune(now) {
   for (const [hash, invoice] of receiveInvoices) if (invoice.until <= now) receiveInvoices.delete(hash);
@@ -85,6 +95,7 @@ export function forgetReceiveInvoice(paymentHash) {
 export function shownByReceive({ walletId, paymentHash, amountSats }, now = Date.now()) {
   prune(now);
   if (paymentHash) return receiveInvoices.has(String(paymentHash).toLowerCase());
+  if (receiveAddresses.has(walletId)) return true;
   return [...receiveInvoices.values()].some((invoice) =>
     invoice.walletId === walletId && invoice.amountSats > 0 && invoice.amountSats === amountSats);
 }

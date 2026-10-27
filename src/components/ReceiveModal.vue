@@ -488,7 +488,7 @@ import PaymentConfirmation from './PaymentConfirmation.vue';
 import L1BitcoinReceive from './L1BitcoinReceive.vue';
 import VoucherSheet from './VoucherSheet.vue';
 import { haptics } from '../utils/haptics.js';
-import { expectReceiveInvoice, confirmReceivePayment, forgetReceiveInvoice } from '../services/incomingPayments.js';
+import { expectReceiveInvoice, confirmReceivePayment, forgetReceiveInvoice, expectReceiveFunds, forgetReceiveFunds } from '../services/incomingPayments.js';
 
 /** NWC receive polling: start after 4 s, back off to one check every 15 s. */
 const NWC_POLLING = Object.freeze({ initialInterval: 4000, maxInterval: 15000, backoffMultiplier: 1.5, maxAttempts: 18 });
@@ -1089,6 +1089,10 @@ export default {
      */
     stopPaymentMonitor() {
       this.sparkMonitorGeneration = (this.sparkMonitorGeneration || 0) + 1;
+      if (this._arkadeReceiveWalletId) {
+        forgetReceiveFunds(this._arkadeReceiveWalletId);
+        this._arkadeReceiveWalletId = null;
+      }
       // Stop polling-based monitor (NWC)
       if (this.paymentMonitor) {
         this.paymentMonitor.stop();
@@ -1144,42 +1148,54 @@ export default {
     },
 
     /**
-     * Live monitor for the native ark1 address tab (no generated invoice). The
-     * received amount isn't known up front, so we capture the balance at open
-     * and report the delta when funds land. Best-effort: balance/tx list still
-     * reflect the payment if the stream is unavailable.
+     * SDK notifications wake the shared monitor; they are not receipts (they
+     * also include spends, change and unconfirmed boarding deposits). Only a
+     * new completed incoming history entry can confirm the receive screen.
      */
     async startArkadeNativeMonitor() {
+      this.stopPaymentMonitor();
+      const generation = this.sparkMonitorGeneration;
+      const walletId = this.walletStore.activeWalletId;
+      const startedAt = Math.floor(Date.now() / 1000);
+      const current = () => this.show && generation === this.sparkMonitorGeneration
+        && this.walletStore.activeWalletId === walletId;
       let provider;
+      let history;
       try {
-        provider = await this.walletStore.ensureArkadeConnected();
+        provider = await this.walletStore.ensureArkadeConnected(walletId);
+        // If the first history read is offline, still arm retries. The time
+        // boundary below excludes old rows when history becomes available.
+        history = await provider.getTransactions().catch(() => []);
       } catch (error) {
         console.warn('Could not connect Arkade provider for native monitoring:', error);
         return;
       }
-      let baseline = 0;
-      try { baseline = Number((await provider.getBalance())?.balance ?? 0); } catch (e) { /* ignore */ }
-      // The awaits above race a quick modal close (and the four call sites
-      // never await this method): registering now would orphan a listener
-      // that pops the success screen with a stale baseline after close.
-      if (!this.show) return;
-      if (this._arkadeStopIncoming) {
-        try { this._arkadeStopIncoming(); } catch { /* already gone */ }
-        this._arkadeStopIncoming = null;
-      }
+      if (!current()) return;
+      const completed = new Set(history.filter(tx => tx.status === 'completed').map(tx => tx.id));
+      const pending = new Set(history.filter(tx => tx.status === 'pending').map(tx => tx.id));
+      this._arkadeReceiveWalletId = walletId;
+      expectReceiveFunds(walletId);
       this.paymentStatus = PaymentStatus.PENDING;
+      const monitor = createPaymentMonitor({ maxAttempts: Infinity, maxConsecutiveErrors: Infinity });
+      this.paymentMonitor = monitor;
+      await monitor.start({
+        lookup: async () => {
+          const rows = await provider.getTransactions();
+          const receipt = rows.find(tx => tx.id && tx.type === 'incoming' && tx.status === 'completed'
+            && Number(tx.amount) > 0 && !completed.has(tx.id)
+            && (pending.has(tx.id) || tx.timestamp >= startedAt));
+          return receipt ? { paid: true, amount: Number(receipt.amount), id: receipt.id } : { paid: false };
+        },
+        onStatusChange: (status, data) => {
+          if (current() && !this.isPaymentConfirmed) this.handlePaymentStatus(status, data);
+        },
+      });
       try {
-        this._arkadeStopIncoming = await provider.startIncomingFundsListener(async () => {
-          if (!this.show) return;
-          if (this.isPaymentConfirmed) return;
-          let received;
-          try {
-            const now = Number((await provider.getBalance())?.balance ?? 0);
-            const delta = now - baseline;
-            received = delta > 0 ? delta : undefined;
-          } catch (e) { /* fall back to unknown amount */ }
-          this.handlePaymentStatus(PaymentStatus.CONFIRMED, { amount: received });
+        const stop = await provider.startIncomingFundsListener(() => {
+          if (current()) void monitor.checkNow();
         });
+        if (current()) this._arkadeStopIncoming = stop;
+        else stop();
       } catch (error) {
         console.warn('Could not start Arkade native incoming monitor:', error);
       }
