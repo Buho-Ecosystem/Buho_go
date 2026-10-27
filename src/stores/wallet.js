@@ -39,7 +39,7 @@ import {
   summarizeTotal,
 } from '../utils/balanceState.js';
 import { sparkLifecycle, forgetSparkWallet } from '../services/sparkLifecycleApp.js';
-import { startAutoTransferWatch } from '../services/autoTransferWatch.js';
+import { startWalletWatch, walletWatch } from '../services/walletWatch.js';
 import { scanSparkAccounts } from '../services/sparkAccountScan.js';
 import {
   SPARK_ACCOUNT_ORDER,
@@ -302,7 +302,8 @@ export const useWalletStore = defineStore('wallet', {
     // The most recent detected receipt, for in-app surfaces
     // (IncomingPaymentHost): { walletId, amountSats, at, paymentId,
     // paymentHash, settledWhileAway }. paymentId and paymentHash are null
-    // when only the balance said so (non-Spark wallets).
+    // when only the balance said so (an NWC connection that may not read
+    // its history); paymentHash also for payments that have none (Arkade).
     lastReceipt: null,
     // Funds the wallet holds but cannot spend yet, keyed by wallet ID:
     // { pending, recoverable }. Arkade is the only backend that reports a
@@ -1413,11 +1414,10 @@ export const useWalletStore = defineStore('wallet', {
           // fresh ones arrive reactively instead of holding up startup.
           this.loadExchangeRates().catch(() => {});
 
-          // Auto-Transfer: the saved rules, and the watch that keeps the
-          // balances of their wallets current (Spark has its own lifecycle).
+          // Auto-Transfer: the saved rules (the wallet watch below keeps
+          // the balances of their wallets current).
           const autoWithdrawStore = useAutoWithdrawStore();
           await autoWithdrawStore.initialize({ wallets: this.wallets });
-          if (typeof window !== 'undefined' && !window.__AUDIT__) startAutoTransferWatch(this, autoWithdrawStore).catch(() => {});
 
           // Auto-connect Spark wallets — detect if migration from PIN is needed
           if (this.sparkWallets.length > 0) {
@@ -1455,6 +1455,9 @@ export const useWalletStore = defineStore('wallet', {
           if (this.sparkWallets.length > 0 && !(typeof window !== 'undefined' && window.__AUDIT__)) {
             sparkLifecycle?.()?.start();
           }
+          // Every other wallet is watched by the app too: incoming payments
+          // and Auto-Transfer balances, whichever wallet is on screen.
+          if (typeof window !== 'undefined' && !window.__AUDIT__) startWalletWatch?.(this, autoWithdrawStore);
           // A restore that could not check every account yet carries on.
           if (!this.needsPinMigration) this._resumeSparkDiscovery();
         } catch (error) {
@@ -1785,6 +1788,8 @@ export const useWalletStore = defineStore('wallet', {
      * wallet store keeps no static dependency on the backup store.
      */
     _noteWalletsChanged() {
+      // New wallets are watched for payments; removed ones no longer.
+      walletWatch?.()?.sync();
       import('./cloudBackup.js')
         .then(({ useCloudBackupStore }) => useCloudBackupStore().noteWalletsChanged())
         .catch((error) => console.warn('[wallet] backup refresh not scheduled:', error?.message || error));
@@ -2898,7 +2903,6 @@ export const useWalletStore = defineStore('wallet', {
           this._schedulePersist();
         };
 
-
         // Connect
         await provider.connect();
 
@@ -3051,6 +3055,8 @@ export const useWalletStore = defineStore('wallet', {
     async _dropWalletEntry(wallet) {
       const walletId = wallet.id;
       this._bumpWalletEpoch(walletId);
+      // Its live payment channel closes before the connection does.
+      walletWatch?.()?.forget(walletId);
 
       if (wallet.type === WALLET_TYPES.SPARK) {
         // The databases are about to be deleted with their exit chains: take
@@ -3392,12 +3398,17 @@ export const useWalletStore = defineStore('wallet', {
     },
 
     /**
-     * Tell the user money arrived while they were looking at something else.
+     * A wallet's balance went UP between two refreshes.
      *
-     * A balance that went UP between two refreshes is the honest, rail-agnostic
-     * signal here: it covers a Lightning receive, an on-chain deposit landing
-     * and a transfer in, without this store having to understand any of them.
-     * A send lowers the balance and is never announced.
+     * Spark wallets, and every wallet whose history can be read (LNbits,
+     * Arkade, an NWC connection allowed list_transactions), are announced by
+     * payment, each once with its own amount: the Spark lifecycle and
+     * services/walletWatch. For those a rise only asks the watch to look now.
+     *
+     * Only a wallet whose history cannot be read (an NWC connection without
+     * list_transactions) is announced from the rise itself: it covers a
+     * Lightning receive and a transfer in, without this store having to
+     * understand either. A send lowers the balance and is never announced.
      *
      * Each rise is reported as `lastReceipt`, which IncomingPaymentHost shows
      * in the app. The system notification stays quiet in three cases: the
@@ -3426,6 +3437,10 @@ export const useWalletStore = defineStore('wallet', {
       if (previous === undefined) return;
       const received = balanceAfter - previous;
       if (received <= 0) return;
+      // A wallet whose history can be read is announced by payment, with
+      // each payment's own amount (services/walletWatch): the rise only
+      // asks the watch to look now.
+      if (capabilitiesOf(wallet).history && walletWatch?.()?.hint(wallet.id)) return;
       if (this.takeInternalTransferTo(wallet.id)) return;
 
       const settledWhileAway = typeof document !== 'undefined' && document.visibilityState === 'hidden';
