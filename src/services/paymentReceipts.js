@@ -51,7 +51,9 @@ export function receiptFromPayment(payment) {
   const fee = Number(payment.fees ?? payment.fee ?? 0);
   const isMappedRow = payment.paymentType === undefined && payment.fees === undefined;
   const amountSats = Math.max(0, Math.round(isMappedRow ? raw - fee : raw));
-  const ts = Number(payment.timestamp ?? payment.settled_at ?? 0);
+  // When it settled, where the row says so: a row's own timestamp can be
+  // when its invoice was created, long before it was paid.
+  const ts = Number(payment.settled_at ?? payment.timestamp ?? 0);
   const hash = paymentHashOf(payment) || payment.paymentHash || payment.payment_hash;
   return {
     id: String(payment.id),
@@ -208,6 +210,80 @@ export function createReceiptLedger({
       write();
     },
   };
+}
+
+/** History is read this many payments at a time... */
+export const HISTORY_PAGE_SIZE = 50;
+/** ...and at most this many pages back, however long the wallet was away. */
+export const HISTORY_MAX_PAGES = 10;
+
+/** When the oldest payment of a page was made, by the order the wallet lists them in. */
+function oldestListed(page) {
+  const oldest = page[page.length - 1];
+  return Number(oldest?.created_at ?? oldest?.timestamp ?? oldest?.settled_at ?? 0);
+}
+
+/**
+ * Catch up one wallet: read its history newest first, a page at a time,
+ * until the ledger's checkpoint is covered (bounded by `maxPages`), and
+ * decide every payment through the ledger. The first read of a wallet
+ * only primes its baseline. Shared by every wallet type: the Spark
+ * lifecycle and services/walletWatch.
+ *
+ * @param {object} p
+ * @param {ReturnType<typeof createReceiptLedger>} p.ledger
+ * @param {string} p.walletId
+ * @param {(offset: number, limit: number) => Promise<object[]>} p.readPage  newest first
+ * @param {() => boolean} [p.isCurrent]  false once the wallet was removed or
+ *   replaced mid-read: the pass stops and decides nothing
+ * @param {(payment: object) => boolean} [p.isInternal]  the user's own transfer
+ * @param {(receipt: object) => void} [p.deliver]
+ * @returns {Promise<{ primed: boolean, announced: number, unseen: number } | null>}
+ *   null when the wallet stopped being current; `unseen` counts settled
+ *   payments the ledger had not decided before (activity it missed)
+ */
+export async function catchUpReceipts({
+  ledger,
+  walletId,
+  readPage,
+  isCurrent = () => true,
+  isInternal = () => false,
+  deliver = () => {},
+  pageSize = HISTORY_PAGE_SIZE,
+  maxPages = HISTORY_MAX_PAGES,
+  now = () => Date.now(),
+}) {
+  const startedAt = Math.floor(now() / 1000);
+  const primed = ledger.isPrimed(walletId);
+  // Page back until the checkpoint is covered: a long absence on a busy
+  // wallet can hold more than one page of payments.
+  const floor = (ledger.checkpoint(walletId) ?? startedAt) - CHECKPOINT_SLACK_S;
+  const history = [];
+  for (let page = 0; page < maxPages; page += 1) {
+    const batch = (await readPage(page * pageSize, pageSize)) || [];
+    if (!isCurrent()) return null;
+    history.push(...batch);
+    // A baseline needs only what is newest.
+    if (!primed) break;
+    const oldest = oldestListed(batch);
+    if (batch.length < pageSize || !oldest || oldest < floor) break;
+  }
+  if (!primed) {
+    ledger.prime(walletId, history);
+    return { primed: true, announced: 0, unseen: 0 };
+  }
+  let announced = 0;
+  let unseen = 0;
+  for (const payment of history) {
+    if (payment?.status !== 'pending' && !ledger.isSeen(walletId, payment?.id)) unseen += 1;
+    const receipt = ledger.ingest(walletId, payment, { origin: 'catchup', internal: !!isInternal(payment) });
+    if (receipt) {
+      announced += 1;
+      deliver(receipt);
+    }
+  }
+  ledger.markCaughtUp(walletId, startedAt);
+  return { primed: false, announced, unseen };
 }
 
 /**

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { createReceiptLedger, receiptFromPayment, receiptDelivery, CHECKPOINT_SLACK_S } from '../paymentReceipts.js';
+import { createReceiptLedger, receiptFromPayment, receiptDelivery, catchUpReceipts, CHECKPOINT_SLACK_S } from '../paymentReceipts.js';
 
 function memory() {
   const m = new Map();
@@ -157,4 +157,90 @@ test('a receive pending at baseline or before a restart is announced when it set
   assert.ok(r, 'old creation time, but it was pending: still news');
   assert.equal(r.amountSats, 700);
   assert.deepEqual(ledger.pendingIds('A'), []);
+});
+
+// ---- catchUpReceipts: the one catch-up every wallet type uses ----------
+
+/** A wallet's mapped history rows (LNbits, NWC, Arkade shape), newest first. */
+const row = (id, sats, ts, extra = {}) => ({ id, type: 'receive', status: 'completed', amount: sats, fee: 0, timestamp: ts, ...extra });
+const pager = (rows) => { const reads = []; return { reads, readPage: async (offset, limit) => { reads.push([offset, limit]); return rows.slice(offset, offset + limit); } }; };
+
+test('catch-up: the first read only sets the baseline, later ones announce what is new', async () => {
+  const c = clock();
+  const ledger = createReceiptLedger({ storage: memory(), now: c.now });
+  const delivered = [];
+  const history = [row('old-1', 10, c.s() - 100), row('old-2', 20, c.s() - 200)];
+  const { readPage } = pager(history);
+  const first = await catchUpReceipts({ ledger, walletId: 'W', readPage, deliver: (r) => delivered.push(r), now: c.now });
+  assert.deepEqual(first, { primed: true, announced: 0, unseen: 0 });
+  assert.equal(delivered.length, 0, 'what was there before is not news');
+  c.advance(30);
+  history.unshift(row('new', 500, c.s()));
+  const second = await catchUpReceipts({ ledger, walletId: 'W', readPage, deliver: (r) => delivered.push(r), now: c.now });
+  assert.deepEqual([second.announced, second.unseen], [1, 1]);
+  assert.equal(delivered[0].id, 'new');
+  assert.equal(delivered[0].amountSats, 500);
+  const third = await catchUpReceipts({ ledger, walletId: 'W', readPage, deliver: (r) => delivered.push(r), now: c.now });
+  assert.equal(third.announced, 0, 'read again: nothing twice');
+});
+
+test('catch-up: pages back with offset and limit until the checkpoint is covered, bounded', async () => {
+  const c = clock();
+  const ledger = createReceiptLedger({ storage: memory(), now: c.now });
+  ledger.prime('W', []);
+  c.advance(3600);
+  const rows = Array.from({ length: 120 }, (_, i) => row(`p${i}`, 1, c.s() - i));
+  const { readPage, reads } = pager(rows);
+  const delivered = [];
+  await catchUpReceipts({ ledger, walletId: 'W', readPage, deliver: (r) => delivered.push(r), now: c.now });
+  assert.deepEqual(reads, [[0, 50], [50, 50], [100, 50]]);
+  assert.equal(delivered.length, 120, 'nothing beyond the first page is lost');
+  const capped = pager(Array.from({ length: 900 }, (_, i) => row(`q${i}`, 1, c.s())));
+  await catchUpReceipts({ ledger, walletId: 'W2', readPage: capped.readPage, now: c.now }); // primes
+  await catchUpReceipts({ ledger, walletId: 'W2', readPage: capped.readPage, maxPages: 3, now: c.now });
+  assert.equal(capped.reads.length, 1 + 3, 'a baseline reads one page, a catch-up at most maxPages');
+});
+
+test('catch-up: a wallet removed mid-read decides nothing', async () => {
+  const c = clock();
+  const ledger = createReceiptLedger({ storage: memory(), now: c.now });
+  ledger.prime('W', []);
+  c.advance(10);
+  let current = true;
+  const result = await catchUpReceipts({
+    ledger, walletId: 'W', now: c.now,
+    readPage: async () => { current = false; return [row('x', 1, c.s())]; },
+    isCurrent: () => current,
+    deliver: () => assert.fail('a removed wallet announces nothing'),
+  });
+  assert.equal(result, null);
+  assert.equal(ledger.isSeen('W', 'x'), false);
+});
+
+test('catch-up: the user\'s own transfer is recorded, never announced', async () => {
+  const c = clock();
+  const ledger = createReceiptLedger({ storage: memory(), now: c.now });
+  ledger.prime('W', []);
+  c.advance(10);
+  const result = await catchUpReceipts({
+    ledger, walletId: 'W', now: c.now,
+    readPage: async () => [row('mine', 300, c.s(), { paymentHash: 'h1' })],
+    isInternal: (p) => p.paymentHash === 'h1',
+    deliver: () => assert.fail('an internal transfer is not money arriving'),
+  });
+  assert.equal(result.announced, 0);
+  assert.equal(ledger.isSeen('W', 'mine'), true);
+});
+
+test('an invoice created long ago and paid now counts from when it was paid', async () => {
+  // LNbits lists a payment by when its invoice was made; settled_at says when money arrived.
+  const c = clock();
+  const ledger = createReceiptLedger({ storage: memory(), now: c.now });
+  ledger.prime('W', []);
+  c.advance(7200);
+  ledger.markCaughtUp('W', c.s() - 60); // the app read this wallet a minute ago
+  const late = row('late', 40, c.s() - 7000, { settled_at: c.s() });
+  assert.ok(ledger.ingest('W', late, { origin: 'catchup' }), 'paid just now: news');
+  const replay = row('replay', 40, c.s() - 7000, { settled_at: c.s() - 7000 });
+  assert.equal(ledger.ingest('W', replay, { origin: 'catchup' }), null, 'paid long before the checkpoint: history, not news');
 });

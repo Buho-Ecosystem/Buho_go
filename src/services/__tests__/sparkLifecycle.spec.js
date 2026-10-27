@@ -38,7 +38,8 @@ function harness({ wallets = ['Business', 'Personal'], active = 'Personal', sync
       return { balance: 1000, fresh: true, syncedAt: t.now() };
     },
     async getCachedBalance() { return { balance: behaviour[id]?.cached ?? 1000, fresh: false }; },
-    async getTransactions(offset = 0, limit = 50) {
+    // The real provider's signature (BreezSparkWalletProvider): an options object.
+    async getTransactions({ offset = 0, limit = 50 } = {}) {
       calls.history[id] = (calls.history[id] || 0) + 1;
       const h = behaviour[id]?.history;
       if (typeof h === 'function') return h(offset, limit);

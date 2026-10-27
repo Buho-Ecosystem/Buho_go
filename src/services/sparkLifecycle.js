@@ -31,6 +31,8 @@
  * plain Node (see __tests__/sparkLifecycle.spec.js).
  */
 
+import { catchUpReceipts } from './paymentReceipts.js';
+
 export const HEALTH = Object.freeze({
   DISCONNECTED: 'disconnected',
   CONNECTING: 'connecting',
@@ -210,39 +212,21 @@ export function createSparkLifecycle({
   // ---- Reconcile --------------------------------------------------------
 
   async function catchUpHistory(r, gen, provider) {
-    if (!ledger || typeof provider.getTransactions !== 'function') return;
-    const startedAt = Math.floor(now() / 1000);
-    // Page back until the checkpoint is covered: a long absence on a busy
-    // wallet can hold more than one page of payments (bounded).
-    const floor = (ledger.checkpoint?.(r.walletId) ?? startedAt) - 120;
-    const history = [];
-    for (let page = 0; page < maxHistoryPages; page += 1) {
-      const batch = await withDeadline(provider.getTransactions(page * historyLimit, historyLimit), ancillaryDeadlineMs, 'history');
-      if (!isCurrent(r, gen)) return;
-      history.push(...(batch || []));
-      if (!ledger.isPrimed(r.walletId)) break;
-      const oldest = batch?.[batch.length - 1];
-      const ts = Number(oldest?.timestamp ?? oldest?.settled_at ?? 0);
-      if (!batch || batch.length < historyLimit || !ts || ts < floor) break;
-    }
-    if (!ledger.isPrimed(r.walletId)) {
-      ledger.prime(r.walletId, history);
-      diag(r.walletId, 'receipts-primed', { n: history.length });
-      return;
-    }
-    let announced = 0;
-    let unseen = 0;
-    for (const payment of history) {
-      if (payment?.status !== 'pending' && ledger.isSeen && !ledger.isSeen(r.walletId, payment?.id)) unseen += 1;
-      const receipt = ledger.ingest(r.walletId, payment, {
-        origin: 'catchup',
-        internal: !!store.isInternalTransferReceipt?.(r.walletId, payment),
-      });
-      if (receipt) { announced += 1; deliverReceipt(receipt); }
-    }
-    ledger.markCaughtUp(r.walletId, startedAt);
-    if (announced) diag(r.walletId, 'receipts-caught-up', { n: announced });
-    return unseen;
+    if (!ledger || typeof provider.getTransactions !== 'function') return 0;
+    const result = await catchUpReceipts({
+      ledger,
+      walletId: r.walletId,
+      readPage: (offset, limit) => withDeadline(provider.getTransactions({ offset, limit }), ancillaryDeadlineMs, 'history'),
+      isCurrent: () => isCurrent(r, gen),
+      isInternal: (payment) => !!store.isInternalTransferReceipt?.(r.walletId, payment),
+      deliver: deliverReceipt,
+      pageSize: historyLimit,
+      maxPages: maxHistoryPages,
+      now,
+    });
+    if (result?.primed) diag(r.walletId, 'receipts-primed');
+    if (result?.announced) diag(r.walletId, 'receipts-caught-up', { n: result.announced });
+    return result?.unseen || 0;
   }
 
   async function discoverDeposits(r, gen, provider) {
