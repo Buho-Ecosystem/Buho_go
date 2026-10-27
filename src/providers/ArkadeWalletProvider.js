@@ -40,6 +40,7 @@
 import { WalletProvider } from './WalletProvider';
 import {
   Wallet,
+  isContractVtxoEvent,
   ESPLORA_URL,
   Ramps,
   RestArkProvider,
@@ -87,6 +88,37 @@ async function deleteDatabase(name) {
   }
 }
 
+/**
+ * One SDK history record as the app's transaction row (see getTransactions
+ * for why a boarding deposit keeps its on-chain id).
+ */
+export function arkadeTransactionRow(tx) {
+  const key = tx.key || {};
+  const id = key.boardingTxid || key.arkTxid || key.commitmentTxid || '';
+  // BuhoGO's tx list (and the LNbits/NWC providers) speak unix SECONDS.
+  // The SDK's `createdAt` is documented as ms-epoch — but normalize by
+  // magnitude anyway so a unit change in a future SDK can't shift
+  // timestamps by x1000. (ms now ≈ 1.7e12; seconds ≈ 1.7e9; 1e11 cleanly
+  // separates them and stays correct for decades.)
+  const raw = tx.createdAt ? Number(tx.createdAt) : 0;
+  const timestamp = raw >= 1e11 ? Math.round(raw / 1000) : Math.round(raw);
+  // `settled` means "anchored on Bitcoin via a batch swap" — but an
+  // offchain Arkade transaction (arkTxid set) is final and spendable
+  // the moment it exists, so showing it as pending would tell a user
+  // their received (and spendable) money hasn't arrived. Only boarding
+  // deposits genuinely await something (the settlement that converts
+  // them into spendable balance).
+  const spendable = tx.settled || Boolean(key.arkTxid);
+  return {
+    id,
+    type: tx.type === 'RECEIVED' ? 'incoming' : 'outgoing',
+    amount: Number(tx.amount || 0),
+    timestamp: Number.isFinite(timestamp) && timestamp > 0 ? timestamp : 0,
+    status: spendable ? 'completed' : 'pending',
+    description: '',
+  };
+}
+
 export class ArkadeWalletProvider extends WalletProvider {
   constructor(walletId, walletData) {
     super(walletId, walletData);
@@ -108,9 +140,9 @@ export class ArkadeWalletProvider extends WalletProvider {
     // restore scan finished" onto the wallet's metadata.
     this._onRestoreScanComplete = null;
 
-    // Stop handle for the notifyIncomingFunds subscription; tracked here so
-    // disconnect() can always tear it down.
-    this._stopIncoming = null;
+    // Payment watches this provider opened (watchPayments); disconnect()
+    // stops them all.
+    this._watches = new Set();
   }
 
   getType() {
@@ -297,12 +329,7 @@ export class ArkadeWalletProvider extends WalletProvider {
   }
 
   async disconnect() {
-    try {
-      if (this._stopIncoming) this._stopIncoming();
-    } catch (error) {
-      console.warn('[arkade] error stopping incoming-funds listener:', error);
-    }
-    this._stopIncoming = null;
+    for (const watch of [...this._watches]) watch.stop();
     // Tear down the SDK wallet's background machinery (contract watcher,
     // settlement poll, provider streams) — 0.4.x wallets own live resources.
     try {
@@ -369,40 +396,70 @@ export class ArkadeWalletProvider extends WalletProvider {
     }
   }
 
-  async getTransactions() {
+  /**
+   * The wallet's history newest first, as the app's transaction rows; a
+   * page of it with `limit` (the SDK always builds the whole history).
+   *
+   * Ids stay the same for the life of a payment. A boarding deposit is
+   * keyed by its on-chain transaction from the mempool on: once it boards,
+   * the SDK adds the commitment transaction to its key, and an id taken
+   * from that would change under links, notes and the receipt ledger.
+   * Outputs of one transaction share a key and become one row.
+   *
+   * @param {{ offset?: number, limit?: number }} [page]
+   */
+  async getTransactions({ offset = 0, limit } = {}) {
     this._ensureConnected();
     try {
       const history = await this.wallet.getTransactionHistory();
-      return (history || []).map((tx) => {
-        const key = tx.key || {};
-        const id = key.arkTxid || key.commitmentTxid || key.boardingTxid || '';
-        // BuhoGO's tx list (and the LNbits/NWC providers) speak unix SECONDS.
-        // The SDK's `createdAt` is documented as ms-epoch — but normalize by
-        // magnitude anyway so a unit change in a future SDK can't shift
-        // timestamps by x1000. (ms now ≈ 1.7e12; seconds ≈ 1.7e9; 1e11 cleanly
-        // separates them and stays correct for decades.)
-        const raw = tx.createdAt ? Number(tx.createdAt) : 0;
-        const timestamp = raw >= 1e11 ? Math.round(raw / 1000) : Math.round(raw);
-        // `settled` means "anchored on Bitcoin via a batch swap" — but an
-        // offchain Arkade transaction (arkTxid set) is final and spendable
-        // the moment it exists, so showing it as pending would tell a user
-        // their received (and spendable) money hasn't arrived. Only boarding
-        // deposits genuinely await something (the settlement that converts
-        // them into spendable balance).
-        const spendable = tx.settled || Boolean(key.arkTxid);
-        return {
-          id,
-          type: tx.type === 'RECEIVED' ? 'incoming' : 'outgoing',
-          amount: Number(tx.amount || 0),
-          timestamp: Number.isFinite(timestamp) && timestamp > 0 ? timestamp : 0,
-          status: spendable ? 'completed' : 'pending',
-          description: '',
-        };
-      });
+      const rows = [];
+      const byId = new Map();
+      for (const tx of history || []) {
+        const row = arkadeTransactionRow(tx);
+        const same = byId.get(`${row.type}:${row.id}`);
+        if (same) {
+          same.amount += row.amount;
+          continue;
+        }
+        byId.set(`${row.type}:${row.id}`, row);
+        rows.push(row);
+      }
+      return limit == null ? rows.slice(offset) : rows.slice(offset, offset + limit);
     } catch (error) {
       this.setError(error);
       throw error;
     }
+  }
+
+  /**
+   * Watch for money arriving: the SDK's contract stream, which every
+   * connected wallet already runs (reconnecting and catching up on its
+   * own), reports each new output on one of the wallet's own addresses.
+   * That includes change, renewals and recovered outputs, so it only says
+   * "look now" (`onActivity({})`); the history decides what was received.
+   *
+   * @param {(hint: object) => void} onActivity
+   * @returns {Promise<{ stop: () => void }>}
+   */
+  async watchPayments(onActivity) {
+    this._ensureConnected();
+    const manager = await this.wallet.getContractManager();
+    let stopped = false;
+    const unsubscribe = manager.onContractEvent((event) => {
+      // A watch-only script is not the wallet's own (no contract).
+      if (stopped || event?.type !== 'vtxo_received' || !isContractVtxoEvent(event)) return;
+      onActivity({});
+    });
+    const watch = {
+      stop: () => {
+        if (stopped) return;
+        stopped = true;
+        this._watches.delete(watch);
+        try { unsubscribe(); } catch { /* the wallet is gone */ }
+      },
+    };
+    this._watches.add(watch);
+    return watch;
   }
 
   // ==========================================
@@ -544,28 +601,6 @@ export class ArkadeWalletProvider extends WalletProvider {
   async lookupInvoice() {
     this._ensureConnected();
     throw this._lightningUnavailable();
-  }
-
-  /**
-   * Subscribe to incoming funds (native ark1 receipts land as VTXOs here).
-   * Returns/stores a stop handle that disconnect() also tears down.
-   * @param {(funds: any) => void} callback
-   * @returns {Promise<() => void>}
-   */
-  async startIncomingFundsListener(callback) {
-    this._ensureConnected();
-    if (this._stopIncoming) {
-      try { this._stopIncoming(); } catch { /* ignore */ }
-      this._stopIncoming = null;
-    }
-    this._stopIncoming = await this.wallet.notifyIncomingFunds((funds) => {
-      try {
-        callback(funds);
-      } catch (error) {
-        console.warn('[arkade] incoming-funds callback error:', error);
-      }
-    });
-    return this._stopIncoming;
   }
 
   // ==========================================
