@@ -121,6 +121,12 @@ export class ArkadeWalletProvider extends WalletProvider {
     return true;
   }
 
+  // A read/validation failure does not dispose the SDK or its background
+  // managers. Keep using that instance until an explicit disconnect.
+  setError(error) {
+    this.connectionError = error instanceof Error ? error.message : error;
+  }
+
   // ==========================================
   // Static helpers (onboarding)
   // ==========================================
@@ -263,6 +269,7 @@ export class ArkadeWalletProvider extends WalletProvider {
       });
       this.clearError();
     } catch (error) {
+      this.isConnected = false;
       this.setError(error);
       throw error;
     } finally {
@@ -297,6 +304,7 @@ export class ArkadeWalletProvider extends WalletProvider {
   }
 
   async disconnect() {
+    this._incomingGeneration = (this._incomingGeneration || 0) + 1;
     try {
       if (this._stopIncoming) this._stopIncoming();
     } catch (error) {
@@ -555,17 +563,23 @@ export class ArkadeWalletProvider extends WalletProvider {
    */
   async startIncomingFundsListener(callback) {
     this._ensureConnected();
+    const generation = this._incomingGeneration = (this._incomingGeneration || 0) + 1;
     if (this._stopIncoming) {
       try { this._stopIncoming(); } catch { /* ignore */ }
       this._stopIncoming = null;
     }
-    this._stopIncoming = await this.wallet.notifyIncomingFunds((funds) => {
+    const stop = await this.wallet.notifyIncomingFunds((funds) => {
       try {
         callback(funds);
       } catch (error) {
         console.warn('[arkade] incoming-funds callback error:', error);
       }
     });
+    if (generation !== this._incomingGeneration) {
+      stop();
+      return () => {};
+    }
+    this._stopIncoming = stop;
     return this._stopIncoming;
   }
 

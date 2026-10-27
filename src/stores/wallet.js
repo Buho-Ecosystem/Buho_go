@@ -66,8 +66,8 @@ export function depositClaimKey(txId, outputIndex) {
 const observedBalance = new Map();
 // Shared by page ticks and store refreshes; the newest request owns its result.
 const balanceReads = new Map();
-// walletId -> { epoch, promise }: one store-level Spark connection attempt.
-const sparkConnects = new Map();
+// walletId -> { epoch, promise }: one connection attempt per seed-based wallet.
+const seedConnects = new Map();
 // walletId -> promise: the one NWC connect in flight; a second asker shares it.
 const nwcConnects = new Map();
 // walletId -> bumped on disconnect, rebuild and removal. Work started under
@@ -1940,16 +1940,21 @@ export const useWalletStore = defineStore('wallet', {
      * Connect to a Spark wallet using device key
      * @param {string} walletId - Wallet ID
      */
-    async connectSparkWallet(walletId, { forceReinit = false } = {}) {
-      if (removingWallets.has(walletId)) throw new Error('Spark connection was cancelled');
+    async connectSparkWallet(walletId, options = {}) {
+      return this._connectSeedWallet(walletId, '_initializeSparkWallet', options);
+    },
+
+    /** Share initialization and cancellation rules across seed-based engines. */
+    async _connectSeedWallet(walletId, initialize, { forceReinit = false } = {}) {
+      if (removingWallets.has(walletId)) throw new Error('Wallet connection was cancelled');
       // Serialized per wallet: concurrent callers (startup, lifecycle,
       // switch, transfer) share one attempt instead of building separate
       // providers that race to publish.
-      const pending = sparkConnects.get(walletId);
+      const pending = seedConnects.get(walletId);
       if (pending) {
         if (!forceReinit && pending.epoch === epochOf(walletId)) return pending.promise;
         await pending.promise.catch(() => {});
-        return this.connectSparkWallet(walletId, { forceReinit });
+        return this._connectSeedWallet(walletId, initialize, { forceReinit });
       }
       if (!forceReinit && this.providers[walletId]?.isConnected && this.connectionStates[walletId]?.connected) {
         return;
@@ -1959,12 +1964,12 @@ export const useWalletStore = defineStore('wallet', {
         if (this.providers[walletId]) this.providers[walletId].isConnected = false;
       }
       const entry = { epoch: epochOf(walletId), promise: null };
-      entry.promise = this._initializeSparkWallet(walletId, { forceReinit, epoch: entry.epoch });
-      sparkConnects.set(walletId, entry);
+      entry.promise = this[initialize](walletId, { forceReinit, epoch: entry.epoch });
+      seedConnects.set(walletId, entry);
       try {
         return await entry.promise;
       } finally {
-        if (sparkConnects.get(walletId) === entry) sparkConnects.delete(walletId);
+        if (seedConnects.get(walletId) === entry) seedConnects.delete(walletId);
       }
     },
 
@@ -2492,13 +2497,28 @@ export const useWalletStore = defineStore('wallet', {
      * @param {string} walletId
      */
     async connectArkadeWallet(walletId) {
+      return this._connectSeedWallet(walletId, '_initializeArkadeWallet');
+    },
+
+    async _initializeArkadeWallet(walletId, { epoch }) {
       const wallet = this.wallets.find((w) => w.id === walletId);
       if (!wallet || wallet.type !== WALLET_TYPES.ARKADE) {
         throw new Error('Arkade wallet not found');
       }
 
+      const current = () => epochOf(walletId) === epoch && this.wallets.includes(wallet) && !removingWallets.has(walletId);
+      const assertCurrent = () => {
+        if (!current()) throw new Error('Arkade connection was cancelled');
+      };
+      let provider;
       try {
-        const provider = new ArkadeWalletProvider(walletId, {
+        const previous = this.providers[walletId];
+        if (previous) {
+          await previous.disconnect();
+          if (this.providers[walletId] === previous) delete this.providers[walletId];
+        }
+        assertCurrent();
+        provider = new ArkadeWalletProvider(walletId, {
           name: wallet.name,
           network: wallet.connectionData.network,
           arkServerUrl: wallet.connectionData.arkServerUrl,
@@ -2510,18 +2530,20 @@ export const useWalletStore = defineStore('wallet', {
         });
 
         provider._onRestoreScanComplete = () => {
+          if (!current()) return;
           if (!wallet.metadata) wallet.metadata = {};
           wallet.metadata.arkadeRestoreScanned = true;
         };
 
         // Mirror background VTXO maintenance into reactive store state so the
         // UI can show a subtle indicator while a settlement is in flight.
-        provider._onMaintenance = (active) => { this.arkadeMaintaining = active; };
+        provider._onMaintenance = (active) => { if (current()) this.arkadeMaintaining = active; };
 
         // Background swap lifecycle (autonomous claims of incoming Lightning,
         // auto-refunds of failed outgoing swaps) changes the balance without a
         // user action — refresh so the UI reflects it promptly.
         provider._onSwapActivity = (kind, swap, error) => {
+          if (!current()) return;
           if (kind === 'failed') {
             console.warn('[arkade] swap failed, auto-refund handling engaged:',
               swap?.id, error?.message || error);
@@ -2530,6 +2552,7 @@ export const useWalletStore = defineStore('wallet', {
         };
 
         await provider.connect();
+        assertCurrent();
 
         this.providers[walletId] = provider;
         this.connectionStates[walletId] = {
@@ -2539,8 +2562,10 @@ export const useWalletStore = defineStore('wallet', {
         };
 
         await this.refreshBalance(walletId, { provider, source: 'connect' });
+        assertCurrent();
 
         const info = await provider.getInfo();
+        assertCurrent();
         this.walletInfos[walletId] = info;
 
         // Cache the ark1 address on the wallet so it renders while locked /
@@ -2550,6 +2575,9 @@ export const useWalletStore = defineStore('wallet', {
           wallet.metadata.arkadeAddress = info.arkadeAddress;
         }
       } catch (error) {
+        await provider?.disconnect().catch(() => {});
+        if (this.providers[walletId] === provider) delete this.providers[walletId];
+        if (!current()) throw error;
         this.connectionStates[walletId] = {
           connected: false,
           lastConnected: Date.now(),
@@ -3283,6 +3311,7 @@ export const useWalletStore = defineStore('wallet', {
           await provider.disconnect();
           delete this.providers[walletId];
         }
+        if (wallet?.type === WALLET_TYPES.ARKADE) this.arkadeMaintaining = false;
       } else if (state) {
         closeNwc(state.nwcInstance);
       }
