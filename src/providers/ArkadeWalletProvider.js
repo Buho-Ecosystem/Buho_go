@@ -96,7 +96,8 @@ export class ArkadeWalletProvider extends WalletProvider {
     this.network = walletData.network || ARKADE_DEFAULT_NETWORK;
     this.arkServerUrl = walletData.arkServerUrl || ARKADE_MAINNET_SERVER;
 
-    this._lastRecoveryCheck = 0;
+    this._nextRecoveryCheckAt = 0;
+    this._recoveryCheck = null;
     // Optional callback the store wires up to mirror "a recovery settlement
     // is in flight" into reactive state (subtle wallet-maintenance indicator).
     this._onMaintenance = null;
@@ -626,28 +627,37 @@ export class ArkadeWalletProvider extends WalletProvider {
   async checkLiveness({ force = false } = {}) {
     const out = { recovered: false };
     if (!this.wallet || !this.isConnected) return out;
+    if (this._recoveryCheck) return this._recoveryCheck;
+    if (!force && Date.now() < this._nextRecoveryCheckAt) return out;
 
-    const THROTTLE_MS = 6 * 60 * 60 * 1000;
-    const now = Date.now();
-    if (!force && now - this._lastRecoveryCheck < THROTTLE_MS) return out;
-    this._lastRecoveryCheck = now;
-
-    try {
-      const manager = await this.wallet.getVtxoManager();
-      const rec = await manager.getRecoverableBalance();
-      if (rec && Number(rec.recoverable) > 0) {
-        this._notifyMaintenance(true);
-        try {
-          await manager.recoverVtxos();
-          out.recovered = true;
-        } finally {
-          this._notifyMaintenance(false);
+    const attempt = (async () => {
+      try {
+        const manager = await this.wallet.getVtxoManager();
+        const rec = await manager.getRecoverableBalance();
+        if (rec && Number(rec.recoverable) > 0) {
+          this._notifyMaintenance(true);
+          try {
+            await manager.recoverVtxos();
+            out.recovered = true;
+          } finally {
+            this._notifyMaintenance(false);
+          }
         }
+        // Long cooldown only after a successful check. A transient failure
+        // retries on the next normal refresh after a short backoff.
+        this._nextRecoveryCheckAt = Date.now() + 6 * 60 * 60 * 1000;
+      } catch (error) {
+        this._nextRecoveryCheckAt = Date.now() + 30 * 1000;
+        console.warn('[arkade] VTXO recovery check failed:', error?.message || error);
       }
-    } catch (error) {
-      console.warn('[arkade] VTXO recovery check failed:', error?.message || error);
+      return out;
+    })();
+    this._recoveryCheck = attempt;
+    try {
+      return await attempt;
+    } finally {
+      this._recoveryCheck = null;
     }
-    return out;
   }
 
   _notifyMaintenance(active) {

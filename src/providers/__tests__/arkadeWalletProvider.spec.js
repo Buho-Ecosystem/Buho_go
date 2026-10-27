@@ -34,3 +34,43 @@ test('disconnect releases a subscription still being established', async () => {
   assert.equal(stopped, 1);
   assert.equal(provider._stopIncoming, null);
 });
+
+test('a failed recovery check retries after a short backoff, rather than six hours', async t => {
+  let time = 1000000;
+  t.mock.method(Date, 'now', () => time);
+  t.mock.method(console, 'warn', () => {});
+  let checks = 0;
+  let recovered = 0;
+  const provider = connectedArkade({ getVtxoManager: async () => {
+    checks++;
+    if (checks === 1) throw new Error('offline');
+    return { getRecoverableBalance: async () => ({ recoverable: 1000 }), recoverVtxos: async () => { recovered++; } };
+  } });
+  await provider.checkLiveness();
+  time += 29000;
+  await provider.checkLiveness();
+  assert.equal(checks, 1, 'failed checks do not spin on every read');
+  time += 1000;
+  await provider.checkLiveness();
+  assert.equal(checks, 2);
+  assert.equal(recovered, 1);
+  time += 30000;
+  await provider.checkLiveness();
+  assert.equal(checks, 2, 'a successful check keeps the long cooldown');
+});
+
+test('forced and ordinary recovery callers share an in-flight settlement', async () => {
+  const settling = deferred();
+  let recoveries = 0;
+  const maintenance = [];
+  const provider = connectedArkade({ getVtxoManager: async () => ({
+    getRecoverableBalance: async () => ({ recoverable: 1000 }),
+    recoverVtxos: async () => { recoveries++; await settling.promise; },
+  }) });
+  provider._onMaintenance = active => maintenance.push(active);
+  const checks = [provider.checkLiveness(), provider.checkLiveness({ force: true })];
+  settling.resolve();
+  assert.deepEqual(await Promise.all(checks), [{ recovered: true }, { recovered: true }]);
+  assert.equal(recoveries, 1);
+  assert.deepEqual(maintenance, [true, false]);
+});
