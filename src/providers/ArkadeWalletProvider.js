@@ -41,7 +41,7 @@ import { WalletProvider } from './WalletProvider';
 import {
   Wallet,
   ESPLORA_URL,
-  Ramps,
+  createDefaultPaymentRouter,
   RestArkProvider,
   RestIndexerProvider,
   EsploraProvider,
@@ -473,9 +473,12 @@ export class ArkadeWalletProvider extends WalletProvider {
    * @param {number} params.amount - amount in sats
    * @returns {Promise<{id: string, status: string}>}
    */
-  async offboardToBitcoin({ bitcoinAddress, amount }) {
+  async _quoteOffboard({ bitcoinAddress, amount }) {
     this._ensureConnected();
-    const sats = Math.floor(Number(amount) || 0);
+    const sats = Number(amount);
+    if (!Number.isSafeInteger(sats) || sats <= 0) {
+      throw new Error('Amount must be a positive whole number of sats');
+    }
     const info = await this.wallet.arkProvider.getInfo();
     // A collaborative exit is subject to the server's dust / output minimums.
     // Surface a friendly floor BEFORE Ramps rejects with a raw SDK error.
@@ -490,13 +493,30 @@ export class ArkadeWalletProvider extends WalletProvider {
       err.minSats = floor;
       throw err;
     }
+    // Naming the inputs lets the SDK include their fees and the change fee
+    // in its receiver-exact quote. Reuse the SDK's pricing and settlement.
+    const selectedVtxos = await this.wallet.getSpendableVtxos({
+      withRecoverable: false, withUnrolled: false, genericallySpendableOnly: true,
+    });
+    return createDefaultPaymentRouter(this.wallet).route({ raw: bitcoinAddress, amount: sats, selectedVtxos });
+  }
+
+  async getBitcoinSendFeeEstimate(params) {
+    const { amount, fee, total } = await this._quoteOffboard(params);
+    return { amount, fee, total };
+  }
+
+  async offboardToBitcoin({ bitcoinAddress, amount, maxFee }) {
     try {
-      const txid = await new Ramps(this.wallet).offboard(
-        bitcoinAddress,
-        info.fees,
-        BigInt(sats)
-      );
-      return { id: txid, status: 'completed' };
+      const quote = await this._quoteOffboard({ bitcoinAddress, amount });
+      if (!Number.isSafeInteger(maxFee) || maxFee < 0 || quote.fee > maxFee) {
+        const err = new Error('The Bitcoin fee changed. Review the updated fee and try again.');
+        err.code = 'ARKADE_OFFBOARD_FEE_CHANGED';
+        throw err;
+      }
+      const handle = await quote.send();
+      const { txid } = await handle.settled();
+      return { id: txid, status: 'completed', fee: quote.fee };
     } catch (error) {
       if (!error.code) error.code = 'ARKADE_OFFBOARD_FAILED';
       this.setError(error);

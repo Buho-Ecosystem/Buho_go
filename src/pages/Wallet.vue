@@ -758,7 +758,7 @@ import {LightningPaymentService, resolveLUD17URL} from '../utils/lightning.js';
 import {parseSuccessAction, resolveSuccessAction} from '../utils/successAction.js';
 import {validateVerifyUrl, pollVerify} from '../utils/lnurlVerify.js';
 import {lnurlFetch, lnurlGetJson} from '../utils/lnurlHttp.js';
-import { classifyTransportFailure, unreachableReason } from '../utils/userErrors.js';
+import { buildPaymentError, classifyTransportFailure, unreachableReason } from '../utils/userErrors.js';
 import { capabilitiesOf } from '../utils/nwcWallet.js';
 import { diagnoseConnection } from '../utils/connectivity.js';
 import { counterpartyError, keepOrigin } from '../utils/errorOrigin.js';
@@ -1047,6 +1047,7 @@ export default {
       // Why the fee check reached no server, said before the slide.
       connectionNotice: '',
       isEstimatingFee: false,
+      arkadeFeeQuote: null,
       // Save-to-contacts after payment
       showSaveContactDialog: false,
       // amountSats lets the post-save handler link the freshly created
@@ -1785,9 +1786,7 @@ export default {
           // Instant internal transfer — free. Named by outcome, not rail.
           feeEstimate = { sats: 0, isEstimating: false, label: this.$t('Free · instant') };
         } else if (p.bitcoinAddress) {
-          // On-chain offboard pays a Bitcoin network fee, deducted from the
-          // amount. Plain-language note (no pre-call number is exposed).
-          feeEstimate = { sats: null, isEstimating: false, label: this.$t('Includes a network fee') };
+          feeEstimate = { sats: this.estimatedFee, isEstimating: this.isEstimatingFee };
         } else {
           // The swap layer charges a small fee, deducted automatically (no
           // pre-call estimate). Plain-language note, no rail name, no number.
@@ -1938,8 +1937,18 @@ export default {
     },
 
     sendSheetCommitGate() {
+      if (this.getSendingWalletType() === 'arkade' && this.pendingPayment?.bitcoinAddress) {
+        return !!this.currentArkadeFeeQuote && !this.isEstimatingFee && !this.connectionNotice;
+      }
       if (!this.isSparkL1Payment) return true;
       return !!(this.l1Fee?.ready && !this.l1Fee.insufficient);
+    },
+
+    currentArkadeFeeQuote() {
+      const quote = this.arkadeFeeQuote;
+      return quote && quote.walletId === this.payerWalletId
+        && quote.address === this.pendingPayment?.bitcoinAddress
+        && quote.amount === this.payingAmountSats ? quote : null;
     },
 
     // A rail problem keeps the shared switch-wallet words; a balance problem
@@ -2375,6 +2384,7 @@ export default {
      * balance need no watcher - they are computed from the same id.
      */
     sendingWalletId: 'updateFeeEstimate',
+    sendSheetAmountSats: 'updateFeeEstimate',
 
     /**
      * "Pay with" judges every wallet by its balance, so their figures are
@@ -4924,6 +4934,7 @@ export default {
 
     async confirmPayment() {
       if (!this.canConfirmPayment) return;
+      if (this.getSendingWalletType() === 'arkade' && this.pendingPayment?.bitcoinAddress && !this.sendSheetCommitGate) return;
 
       this.isSendingPayment = true;
       // The wallet that pays - the "Pay with" choice, else the active wallet -
@@ -5473,6 +5484,7 @@ export default {
      * provider returned, and the metadata is threaded onto the result.
      */
     async sendArkadePayment(amount, comment, payout = null, walletId = null) {
+      const maxFee = this.currentArkadeFeeQuote?.fee;
       const provider = await this.walletStore.ensureArkadeConnected(walletId);
 
       // Native ark1 → ark1: instant, near-zero fee fast path.
@@ -5509,10 +5521,17 @@ export default {
 
       // On-chain (bc1…): collaborative exit (offboard) via Ramps.
       if (this.pendingPayment.bitcoinAddress) {
-        return await provider.offboardToBitcoin({
-          bitcoinAddress: this.pendingPayment.bitcoinAddress,
-          amount,
-        });
+        try {
+          return await provider.offboardToBitcoin({
+            bitcoinAddress: this.pendingPayment.bitcoinAddress,
+            amount,
+            maxFee,
+          });
+        } catch (error) {
+          // A changed fee must be reviewed before another attempt to send.
+          await this.updateFeeEstimate();
+          throw error;
+        }
       }
 
       throw new Error('Unsupported payment type for Arkade wallet');
@@ -6291,6 +6310,7 @@ export default {
       this.estimatedFeeIsGuess = false;
       this.isEstimatingFee = false;
       this.connectionNotice = '';
+      this.arkadeFeeQuote = null;
 
       if (!this.pendingPayment) {
         return;
@@ -6299,6 +6319,27 @@ export default {
       // The wallet that pays decides who can estimate: the active wallet,
       // unless "Pay with" chose another.
       const walletType = this.getSendingWalletType();
+
+      if (walletType === 'arkade' && this.pendingPayment.bitcoinAddress) {
+        const run = this._feeEstimateRun;
+        const walletId = this.getSendingWallet()?.id;
+        const address = this.pendingPayment.bitcoinAddress;
+        const amount = this.payingAmountSats;
+        if (!amount) return;
+        this.isEstimatingFee = true;
+        try {
+          const provider = await this.walletStore.ensureArkadeConnected(walletId);
+          const quote = await provider.getBitcoinSendFeeEstimate({ bitcoinAddress: address, amount });
+          if (run !== this._feeEstimateRun) return;
+          this.estimatedFee = quote.fee;
+          this.arkadeFeeQuote = { ...quote, walletId, address };
+        } catch (error) {
+          if (run === this._feeEstimateRun) this.connectionNotice = buildPaymentError(error, { context: 'send', amountSats: amount }, this.$t.bind(this)).reason;
+        } finally {
+          if (run === this._feeEstimateRun) this.isEstimatingFee = false;
+        }
+        return;
+      }
 
       // === SPARK WALLET: Use SDK fee estimation ===
       if (walletType === 'spark') {
