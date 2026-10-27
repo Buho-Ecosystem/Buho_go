@@ -138,3 +138,50 @@ export function relayHost(nwcUrl) {
     return '';
   }
 }
+
+/**
+ * The settlement state of one NIP-47 transaction record.
+ *
+ * NIP-47 reports `state`: settled | pending | failed | accepted. "accepted"
+ * means a hold invoice the recipient has taken but not settled, so the money
+ * has not moved and it is not completed. A service that predates `state` is
+ * read from `settled_at` instead, which is set only once it has.
+ */
+export function resolveNwcStatus(tx) {
+  const state = String(tx?.state || '').toLowerCase();
+  if (state === 'settled') return 'completed';
+  if (state === 'failed') return 'failed';
+  if (state) return 'pending';
+  return tx?.settled_at || tx?.settledAt ? 'completed' : 'pending';
+}
+
+/**
+ * One NIP-47 transaction, amounts already in sats (the SDK's WebLN layer
+ * converts them), as the app's transaction row. The raw record is spread
+ * first so nothing it carries (a description_hash, a field a later SDK
+ * adds) is lost; the canonical names go on top.
+ */
+export function nwcTransactionRow(tx) {
+  return {
+    ...tx,
+    id: tx.payment_hash || tx.paymentHash || tx.id,
+    // NIP-47 states the direction itself, and its `amount` is UNSIGNED.
+    // Falling back to `amount > 0` therefore matched every row, including
+    // sends, and reported a spent bitcoin as income.
+    type: tx.type === 'outgoing' ? 'send' : 'receive',
+    amount: Math.abs(tx.amount || 0),
+    timestamp: tx.settled_at || tx.settledAt || tx.created_at || tx.createdAt || null,
+    created_at: tx.created_at || tx.createdAt || null,
+    settled_at: tx.settled_at || tx.settledAt || null,
+    description: tx.description || tx.memo || '',
+    // There is no `settled` boolean on the record (see the SDK's
+    // Nip47Transaction type): `state` decides, `settled_at` for a service
+    // that omits it.
+    status: resolveNwcStatus(tx),
+    fee: tx.fees_paid || tx.feesPaid || 0,
+    paymentHash: tx.payment_hash || tx.paymentHash || null,
+    preimage: tx.preimage || null,
+    bolt11: tx.invoice || tx.bolt11 || tx.payment_request || null,
+    descriptionHash: tx.description_hash || tx.descriptionHash || null,
+  };
+}

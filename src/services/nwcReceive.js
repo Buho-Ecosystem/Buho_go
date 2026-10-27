@@ -1,6 +1,7 @@
 /**
  * Receiving through Nostr Wallet Connect, one way for every caller: create an
- * invoice on the connected wallet, and tell whether it has been paid.
+ * invoice on the connected wallet, tell whether it has been paid, and hear
+ * about every payment the wallet receives (services/walletWatch).
  *
  * Both talk NIP-47 through the connection's own client (`nwc.client`, the
  * SDK's NWCClient) rather than the WebLN layer on top of it. The WebLN
@@ -13,7 +14,7 @@
  */
 import { Invoice } from '@getalby/lightning-tools';
 import { NWC_ERROR, nwcError } from '../utils/nwcErrors.js';
-import { nwcCapabilities } from '../utils/nwcWallet.js';
+import { nwcCapabilities, nwcTransactionRow } from '../utils/nwcWallet.js';
 import { checkNWCPaymentStatus } from '../utils/paymentMonitor.js';
 
 /** How many recent incoming payments to scan when the wallet has no lookup. */
@@ -152,4 +153,94 @@ async function fromRecentIncoming(client, paymentHash) {
   const { transactions = [] } = await client.listTransactions({ limit: RECENT_INCOMING, unpaid: false, type: 'incoming' }) || {};
   const tx = transactions.find((t) => t?.payment_hash === paymentHash);
   return tx && checkNWCPaymentStatus(tx) ? paidFrom(tx) : { paid: false };
+}
+
+// ---- Every payment the wallet receives (services/walletWatch) -----------
+
+/** True when this connection was granted payment_received notifications. */
+export function notifiesPayments(wallet) {
+  const list = wallet?.metadata?.notifications;
+  return Array.isArray(list) && list.includes('payment_received');
+}
+
+/**
+ * Hear about received payments as the wallet announces them (NWC-02), over
+ * the connection's own client and relays. The SDK keeps the subscription:
+ * each relay reconnects on its own with backoff, and closing the
+ * connection ends it. A notification only says "look now"
+ * (`onActivity({ paymentHash })`); the payment is read before it counts.
+ *
+ * `revive({ returned })` subscribes afresh, so a relay waiting out a long
+ * backoff while the app was away is opened now. Without a return it does
+ * so only when no relay is connected. The SDK sends no heartbeat, so a
+ * socket that died silently is not seen here; the caller's catch-up read
+ * covers that.
+ *
+ * @param {object} nwc NostrWebLNProvider
+ * @param {(hint: { paymentHash?: string }) => void} onActivity
+ * @returns {Promise<{ stop: () => void, revive: (opts?: { returned?: boolean }) => void }>}
+ */
+export async function watchNwcPayments(nwc, onActivity) {
+  const client = clientOf(nwc);
+  let unsubscribe = null;
+  let stopped = false;
+
+  const subscribe = async () => {
+    const next = await client.subscribeNotifications((notification) => {
+      if (stopped) return;
+      const hash = String(notification?.notification?.payment_hash || '').toLowerCase();
+      onActivity(/^[0-9a-f]{64}$/.test(hash) ? { paymentHash: hash } : {});
+    }, ['payment_received']);
+    if (stopped) { next(); return; }
+    const previous = unsubscribe;
+    unsubscribe = next;
+    previous?.();
+  };
+
+  await subscribe();
+  return {
+    stop: () => {
+      stopped = true;
+      const current = unsubscribe;
+      unsubscribe = null;
+      current?.();
+    },
+    revive: ({ returned = false } = {}) => {
+      if (stopped || (!returned && client.connected)) return;
+      subscribe().catch(() => { /* the next revive tries again */ });
+    },
+  };
+}
+
+/**
+ * Settled payments of the connection, newest first, as transaction rows.
+ * Errors are thrown: an empty list must mean "no payments", never "could
+ * not read".
+ */
+export async function listNwcPayments(nwc, { offset = 0, limit = 50 } = {}) {
+  const result = await nwc.listTransactions({ limit, offset, unpaid: false });
+  return (result?.transactions || []).map(nwcTransactionRow);
+}
+
+/**
+ * One payment by its hash, as a transaction row, when the connection may
+ * look invoices up; null otherwise or when the wallet does not know it. A
+ * record without `state` is not believed on its own (see lookupNwcInvoice):
+ * the list read decides those.
+ *
+ * @param {object} nwc NostrWebLNProvider
+ * @param {string} paymentHash
+ * @param {{ methods?: string[] }} [options] the connection's saved grants
+ */
+export async function findNwcPayment(nwc, paymentHash, { methods } = {}) {
+  if (!nwcCapabilities(methods).lookup) return null;
+  let tx;
+  try {
+    tx = await withinWait(clientOf(nwc).lookupInvoice({ payment_hash: paymentHash }), LOOKUP_WAIT_MS);
+  } catch (error) {
+    if (error?.code === 'NOT_FOUND') return null;
+    throw error;
+  }
+  if (!tx || typeof tx.state !== 'string' || !tx.state) return null;
+  return nwcTransactionRow({ ...tx, amount: toSats(tx.amount), fees_paid: toSats(tx.fees_paid) });
 }
