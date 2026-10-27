@@ -1317,6 +1317,15 @@ export const useWalletStore = defineStore('wallet', {
               if (migrated.type === WALLET_TYPES.SPARK && migrated.metadata && migrated.metadata.hasBackedUp === undefined) {
                 migrated.metadata.hasBackedUp = storeBackedUp;
               }
+              // NWC connections saved with upper-case hex: the SDK opens
+              // only lower case, the same keys (#390). Rewritten once.
+              if (migrated.type === WALLET_TYPES.NWC && typeof migrated.nwcUrl === 'string') {
+                const parsedNwc = parseNwcConnection(migrated.nwcUrl);
+                if (parsedNwc.ok && parsedNwc.normalized !== migrated.nwcUrl) {
+                  migrated.nwcUrl = parsedNwc.normalized;
+                  migrationNeedsPersist = true;
+                }
+              }
               return migrated;
             });
 

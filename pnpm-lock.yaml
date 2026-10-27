@@ -63,8 +63,8 @@ importers:
         specifier: ^5.1.2
         version: 5.2.1
       '@getalby/sdk':
-        specifier: ^7.0.0
-        version: 7.0.0
+        specifier: ^9.0.0
+        version: 9.0.0
       '@iconify/vue':
         specifier: ^5.0.0
         version: 5.0.0(vue@3.5.32)
@@ -988,13 +988,13 @@ packages:
     resolution: {integrity: sha512-dxOmJLJAh6qJ8rsbA5/Bwj7MSI9X3RkxxqmCedl5rfP+yKwNSdfu8i4EiCZN/tk2hNBJb8GHSCcPRNZfwfmEHg==}
     engines: {node: '>=14'}
 
-  '@getalby/lightning-tools@6.1.0':
-    resolution: {integrity: sha512-rGurar9X4Gm+9xwoNYS8s9YLK7ZYqvbqv4KbHLYV0LEeB0HxZHRgmxblGqg+fYfp6iiYHx+edIgUpt9rS3VwFw==}
+  '@getalby/lightning-tools@9.0.2':
+    resolution: {integrity: sha512-h58Bw8oQg9MXdGud5agfRnjGVY24Hzj8hCljdIEZyijXjfkVdSXet2Mpjc3lz/BpIdZz51uM8CXuwnXi0BOqFg==}
     engines: {node: '>=14'}
 
-  '@getalby/sdk@7.0.0':
-    resolution: {integrity: sha512-0c8gyvFbRDHZIgHmOD/dfyPukxZLeidx/hx7SXlMIS/hsx4mXpKpo9Gx1zW90buElnd3k9TVB/S/bnFSEZPE7w==}
-    engines: {node: '>=14'}
+  '@getalby/sdk@9.0.0':
+    resolution: {integrity: sha512-lUepv1KWXVAuycHsl3qYMkgvwol1fgjjyPDKEfpeQ9soNN3nupf8YAX+mbldK+w+caGai3iXfykzFmT7kmSfBw==}
+    engines: {node: '>=22'}
 
   '@iconify-json/circle-flags@1.2.10':
     resolution: {integrity: sha512-sZRxs689a281RtZvuAiKtV7pQHv8Tk0HkinSM7QvLgdLEK8xgGRCcbDvL09Rq+/KtemmsMzGhS9/qt+r3ca+Ug==}
@@ -1767,6 +1767,9 @@ packages:
 
   '@vue/shared@3.5.32':
     resolution: {integrity: sha512-ksNyrmRQzWJJ8n3cRDuSF7zNNontuJg1YHnmWRJd2AMu8Ij2bqwiiri2lH5rHtYPZjj4STkNcgcmiQqlOjiYGg==}
+
+  '@webbtc/webln-types@3.0.0':
+    resolution: {integrity: sha512-aXfTHLKz5lysd+6xTeWl+qHNh/p3qVYbeLo+yDN5cUDmhie2ZoGvkppfWxzbGkcFBzb6dJyQ2/i2cbmDHas+zQ==}
 
   abort-controller@3.0.0:
     resolution: {integrity: sha512-h8lQ8tacZYnR3vNQTgibj+tODHI5/+l06Au2Pcriv/Gmet0eaj4TwWH41sO9wnHDiQsEj19q0drzdWdeAHtweg==}
@@ -5200,11 +5203,12 @@ snapshots:
 
   '@getalby/lightning-tools@5.2.1': {}
 
-  '@getalby/lightning-tools@6.1.0': {}
+  '@getalby/lightning-tools@9.0.2': {}
 
-  '@getalby/sdk@7.0.0':
+  '@getalby/sdk@9.0.0':
     dependencies:
-      '@getalby/lightning-tools': 6.1.0
+      '@getalby/lightning-tools': 9.0.2
+      '@webbtc/webln-types': 3.0.0
       nostr-tools: 2.23.3
     transitivePeerDependencies:
       - typescript
@@ -6028,6 +6032,8 @@ snapshots:
       vue: 3.5.32
 
   '@vue/shared@3.5.32': {}
+
+  '@webbtc/webln-types@3.0.0': {}
 
   abort-controller@3.0.0:
     dependencies:
