@@ -89,6 +89,14 @@ export function createReceiptLedger({
 
   const nowS = () => Math.floor(now() / 1000);
 
+  /**
+   * The ledger's key for a decided payment. A send is kept apart from a
+   * receive of the same id: a wallet paying its own invoice lists both
+   * under one payment hash (LNbits), and the send must not hide the
+   * receipt. A receive keeps its plain id, the one callers look up.
+   */
+  const keyOf = (r) => (r.isReceive ? r.id : `send:${r.id}`);
+
   function entry(walletId) {
     return state[walletId] || null;
   }
@@ -118,7 +126,7 @@ export function createReceiptLedger({
         if (!r) continue;
         // A receive still pending at baseline is announced when it settles.
         if (r.status === 'pending' && r.isReceive) e.pending.push(r.id);
-        else remember(e, r.id);
+        else remember(e, keyOf(r));
       }
       state[walletId] = e;
       write();
@@ -154,13 +162,13 @@ export function createReceiptLedger({
         }
         return null;
       }
-      if (e.seen.includes(r.id)) return null;
-      const wasPending = e.pending.includes(r.id);
+      if (e.seen.includes(keyOf(r))) return null;
+      const wasPending = r.isReceive && e.pending.includes(r.id);
       if (wasPending) e.pending = e.pending.filter((id) => id !== r.id);
       // Settled sends and failed payments are remembered as decided (so a
       // catch-up can tell new activity from old) but never announced.
       if (!r.isReceive || r.status !== 'completed') {
-        remember(e, r.id);
+        remember(e, keyOf(r));
         write();
         return null;
       }
@@ -192,8 +200,15 @@ export function createReceiptLedger({
       return [...(entry(walletId)?.pending || [])];
     },
 
+    /** True when the receive with this id has been decided. */
     isSeen(walletId, paymentId) {
       return !!entry(walletId)?.seen.includes(String(paymentId));
+    },
+
+    /** True when this payment, either direction, has been decided. */
+    isDecided(walletId, payment) {
+      const r = receiptFromPayment(payment);
+      return !!r && !!entry(walletId)?.seen.includes(keyOf(r));
     },
 
     checkpoint(walletId) {
@@ -275,7 +290,7 @@ export async function catchUpReceipts({
   let announced = 0;
   let unseen = 0;
   for (const payment of history) {
-    if (payment?.status !== 'pending' && !ledger.isSeen(walletId, payment?.id)) unseen += 1;
+    if (payment?.status !== 'pending' && !ledger.isDecided(walletId, payment)) unseen += 1;
     const receipt = ledger.ingest(walletId, payment, { origin: 'catchup', internal: !!isInternal(payment) });
     if (receipt) {
       announced += 1;

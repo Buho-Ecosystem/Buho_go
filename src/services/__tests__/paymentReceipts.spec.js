@@ -89,7 +89,8 @@ test('outgoing, failed and pending payments are never completed receipts', () =>
   // The pending receive completing later is announced then, once.
   assert.ok(ledger.ingest('A', receive('p', 10, c.s(), 'completed')));
   assert.equal(ledger.ingest('A', receive('p', 10, c.s(), 'completed')), null);
-  assert.equal(ledger.isSeen('A', 's'), true, 'settled sends count as seen activity');
+  assert.equal(ledger.isDecided('A', send('s', 10, c.s())), true, 'settled sends count as decided activity');
+  assert.equal(ledger.isSeen('A', 's'), false, 'and never as a decided receive of that id');
 });
 
 test('internal transfers between own wallets are recorded, not announced', () => {
@@ -243,4 +244,20 @@ test('an invoice created long ago and paid now counts from when it was paid', as
   assert.ok(ledger.ingest('W', late, { origin: 'catchup' }), 'paid just now: news');
   const replay = row('replay', 40, c.s() - 7000, { settled_at: c.s() - 7000 });
   assert.equal(ledger.ingest('W', replay, { origin: 'catchup' }), null, 'paid long before the checkpoint: history, not news');
+});
+
+test('a wallet paying its own invoice: the send does not hide the receipt under the same hash', async () => {
+  // LNbits lists both halves of a self-payment under one payment hash.
+  const c = clock();
+  const ledger = createReceiptLedger({ storage: memory(), now: c.now });
+  ledger.prime('W', []);
+  c.advance(10);
+  const result = await catchUpReceipts({
+    ledger, walletId: 'W', now: c.now,
+    readPage: async () => [row('h1', 21, c.s(), { type: 'send' }), row('h1', 21, c.s())],
+  });
+  assert.deepEqual([result.announced, result.unseen], [1, 2]);
+  assert.equal(ledger.isSeen('W', 'h1'), true, 'the receipt is decided under its plain id');
+  const again = await catchUpReceipts({ ledger, walletId: 'W', now: c.now, readPage: async () => [row('h1', 21, c.s(), { type: 'send' }), row('h1', 21, c.s())] });
+  assert.deepEqual([again.announced, again.unseen], [0, 0], 'both halves stay decided');
 });
