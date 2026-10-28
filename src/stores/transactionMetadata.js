@@ -1640,6 +1640,27 @@ export const useTransactionMetadataStore = defineStore('transactionMetadata', {
      * @param {string} walletId
      * @returns {Promise<void>}
      */
+    /**
+     * A payment that is listed under a new id: what is kept about it moves
+     * from the old id, once. A record already under the new id stays (it
+     * was written later). An Arkade deposit, keyed by its commitment
+     * transaction in earlier versions and by its on-chain transaction now,
+     * is the one case today.
+     *
+     * @returns {Promise<boolean>} true when a record moved
+     */
+    async adoptTransactionId(walletId, oldId, newId) {
+      await this._ensureLoaded()
+      if (!walletId || !oldId || !newId || oldId === newId) return false
+      const from = _key(oldId, walletId)
+      const to = _key(newId, walletId)
+      if (!this.metadata[from] || this.metadata[to]) return false
+      this.metadata[to] = this.metadata[from]
+      delete this.metadata[from]
+      await this.persistMetadata()
+      return true
+    },
+
     async clearMetadataForTransaction(txId, walletId) {
       try {
         await this._ensureLoaded()

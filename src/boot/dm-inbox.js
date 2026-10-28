@@ -52,7 +52,7 @@ export default boot(async () => {
     import('../services/dm/notificationCopy.js'), import('../composables/useChatRuntime.js'),
     import('../services/dm/paymentAnnouncer.js'),
     import('../utils/nostrRelays.js'), import('../utils/amountFormatting.js'), import('./i18n.js'),
-    import('../utils/walletHydration.js'), import('../services/sparkLifecycleApp.js'), import('nostr-core'),
+    import('../utils/walletHydration.js'), import('../services/paymentReceiptsApp.js'), import('nostr-core'),
     import('../services/txNormalizer.js'), import('../utils/nostrFetch.js'),
     import('../utils/dmStorage.js'),
   ]);

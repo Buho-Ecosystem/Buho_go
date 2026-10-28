@@ -63,14 +63,16 @@ export function isRelayFailure(error) {
 
 /**
  * Failures that happen before a request leaves: nothing can have been paid.
- * Only two qualify: no wallet info event (the SDK does not send without it)
- * and a relay socket that never opened. "failed to publish" does not: the
- * relay library writes the event to the socket first and only then waits
- * for the relay's OK, so a missing OK says nothing about whether the
- * wallet received the request.
+ * Three qualify: no wallet info event (the SDK does not send without it), a
+ * relay socket that never opened, and a publish whose every relay failed to
+ * connect (the SDK lists each relay's reason on `relayErrors`). Any other
+ * publish failure does not: the event may have gone out before the relay
+ * refused it or the socket dropped, so the wallet may have the request.
  */
 function neverSent(error) {
-  return isMissingWallet(error) || /failed to connect to/i.test(sdkTransportMessage(error));
+  if (isMissingWallet(error) || /failed to connect to/i.test(sdkTransportMessage(error))) return true;
+  const relays = Array.isArray(error?.relayErrors) ? error.relayErrors : [];
+  return relays.length > 0 && relays.every((relay) => /^connection failure/i.test(String(relay?.reason || '')));
 }
 
 /**

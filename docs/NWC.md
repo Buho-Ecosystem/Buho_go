@@ -60,7 +60,7 @@ An NWC wallet keeps one relay connection while the app runs (#395). The store ow
 
 - **One connect at a time:** two askers while it is being made share the same attempt. Connecting again closes the connection it replaces.
 - **Nothing left open:** a connect that fails is closed. One that outlives a disconnect or a removal (the wallet's epoch moved) is closed and refused, never handed out. Disconnect and removal close the wallet's connection.
-- **Dropped relays:** the SDK opens the socket on the first request and reconnects a dropped relay on the next one, so the same connection survives a phone losing the network or the app going to the background.
+- **Dropped relays:** the SDK opens the socket on the first request and reconnects a dropped relay on the next one, giving up on a relay after 3 s, so the same connection survives a phone losing the network or the app going to the background. A notification subscription reconnects each relay on its own ([Incoming payments](INCOMING_PAYMENTS.md)).
 - **Short-lived on purpose:** the connection test before adding (`nwcProbe`), the pairing check (`walletKnowsConnection`) and the tax report (`NWCWalletProvider`, reads across wallets) each open their own and close it when done.
 
 Measured with a stand-in wallet (`scripts/check-nwc-connections.mjs`): before, one wallet held 9 connections after Home, two history pages, a transaction, Receive, a send and a batch of 3; now it holds 1 throughout, reconnects once after the relay drops it, and none after removal. On an Android 16 emulator (debug build, stand-in wallet on a public relay via `scripts/device/nwc-stand-in.mjs --relay …`): one connection from start through Home, history and a transaction; after 25 s in the background with the network off it reconnected once on the next request; none after removal.
@@ -108,22 +108,27 @@ The kiosk only offers wallets that can take a payment (`walletCapabilities.kiosk
 
 ## SDK
 
-`@getalby/sdk` 7.0.0. `utils/nwcErrors` reads its transport failures by class, code and message; checked against the real SDK with a stand-in relay:
+`@getalby/sdk` 9.0.0 (#390). `utils/nwcErrors` reads its transport failures by class, code and message, checked against the SDK's own error classes (`nwcErrors.spec`):
 
 | What happened | SDK error | BuhoGO reads it as |
 |---|---|---|
-| Relay socket never opens (4.4 s) | `Nip47NetworkError` "Failed to connect to …", code `OTHER` | relay failure, nothing sent |
+| Relay socket never opens (3 s per relay) | `Nip47NetworkError` "Failed to connect to …", code `OTHER` | relay failure, nothing sent |
 | No wallet behind the relay | `Error` "no info event (kind 13194)…", no code | no answer, nothing sent |
-| Event sent, relay never acknowledged it, refused it, or the socket dropped at publish | `Nip47PublishError` "failed to publish: …" or `Nip47PublishTimeoutError`, code `INTERNAL` | unknown outcome: the SDK's message cannot tell these apart, and in the first the wallet may have the request |
+| No relay could be reached to publish | `Nip47PublishError`, every `relayErrors` reason "connection failure: …" | relay failure, nothing sent |
+| Event sent, then a relay refused it or the socket dropped | `Nip47PublishError` with any other reason, code `INTERNAL` | unknown outcome: the wallet may have the request |
+| Event sent, no relay acknowledged it in 5 s | `Nip47PublishTimeoutError` "publish timeout…", code `INTERNAL` | unknown outcome |
 | Request delivered, no reply | `Nip47ReplyTimeoutError` "reply timeout…", code `INTERNAL` | unknown outcome |
 
-Reply timeouts: `get_info`, `get_balance`, `get_budget` and `list_transactions` wait 10 s; `pay_invoice`, `make_invoice` and `lookup_invoice` wait 60 s. Requests carry no `expiration` tag (also not in 8).
+Reply timeouts: `get_info`, `get_balance`, `get_budget` and `list_transactions` wait 10 s; `pay_invoice`, `make_invoice` and `lookup_invoice` wait 60 s.
 
-Not yet on 8 (#390). 8.0.3, the latest release, and upstream `master`:
-- connect to a relay without a timeout (`_checkConnected` calls `ensureRelay` with no `connectionTimeout`): a relay that accepts the TCP connection but never completes the WebSocket handshake makes every request wait forever, where 7 fails after 4.4 s;
-- reject a connection secret or wallet key in upper-case hex, which `utils/nwcConnection` accepts and stores as given, so saved wallets would stop connecting.
+What 9 changed for BuhoGO:
 
-Upgrade once the first is fixed upstream, after normalizing stored hex to lower case.
+- **Connect timeout.** Every relay connection gives up after 3 s. A relay that accepts the TCP connection but never completes the WebSocket handshake fails instead of holding every request forever, the 8.x regression reported as getAlby/js-sdk#586.
+- **Lower-case hex.** The SDK refuses a secret or wallet key in upper case. `utils/nwcConnection` stores both in lower case, and connections saved earlier are rewritten once on load.
+- **Reconnecting pool.** Each relay reconnects on its own, 1 s doubling to 5 min, and `close()` stops every loop, so closing a connection also ends its notification subscription.
+- **Amounts** must be whole, positive millisats. BuhoGO only asks for whole sats.
+- **Gone:** the multi-pay methods, which BuhoGO never used.
+- **Still missing:** a request `expiration` tag, and a heartbeat. A socket that dies without closing is noticed only by the next request or resubscribe; [Incoming payments](INCOMING_PAYMENTS.md) covers that with its catch-up read.
 
 ## Checks
 

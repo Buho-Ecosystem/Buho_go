@@ -6,6 +6,8 @@ import {
   expectReceiveInvoice,
   confirmReceivePayment,
   forgetReceiveInvoice,
+  expectReceiveFunds,
+  forgetReceiveFunds,
   shownByReceive,
   transactionRoute,
   findReceivedTransactionId,
@@ -89,4 +91,13 @@ test('a slow or missing provider falls back to the cached list; nothing recent g
     sinceMs: Date.now(), readCache: () => rows.filter((r) => r.id === 'old'),
   });
   assert.equal(none, null);
+});
+
+test('while the sheet shows a wallet\'s addresses, that wallet\'s receipts without an invoice are the sheet\'s', () => {
+  expectReceiveFunds('ark');
+  assert.equal(shownByReceive({ walletId: 'ark', paymentHash: null, amountSats: 1234 }), true);
+  assert.equal(shownByReceive({ walletId: 'other', paymentHash: null, amountSats: 1234 }), false, 'another wallet is still news');
+  assert.equal(shownByReceive({ walletId: 'ark', paymentHash: 'ff'.repeat(32), amountSats: 1234 }), false, 'an invoice payment is matched by its hash');
+  forgetReceiveFunds('ark');
+  assert.equal(shownByReceive({ walletId: 'ark', paymentHash: null, amountSats: 1234 }), false, 'closed: news again');
 });
