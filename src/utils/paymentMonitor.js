@@ -54,22 +54,19 @@ export class PaymentMonitor {
    * @param {Function} params.onStatusChange - Callback: (status, data) => void
    * @returns {Promise<void>}
    */
-  async start({ invoice = null, provider = null, lookup = null, onStatusChange }) {
+  async start({ invoice, provider, onStatusChange }) {
     this.stop();
 
-    if (!lookup && !invoice?.payment_hash) {
+    if (!invoice?.payment_hash) {
       throw new Error('Invoice must have a payment_hash');
     }
 
-    if (!lookup && !provider) {
+    if (!provider) {
       throw new Error('Provider is required');
     }
 
     this.invoice = invoice;
     this.provider = provider;
-    // Address receipts use the same polling, retry and cancellation behavior
-    // as invoices, with a backend-specific source of payment evidence.
-    this.lookup = lookup;
     this.onStatusChange = onStatusChange || (() => {});
     this.isMonitoring = true;
     this.attemptCount = 0;
@@ -150,8 +147,8 @@ export class PaymentMonitor {
       // when available, since it maps directly to getLightningReceiveRequest.
       // Falls back to payment_hash, which providers may resolve via a
       // transfer-list scan.
-      const lookupKey = this.invoice?.invoice_id || this.invoice?.payment_hash;
-      const result = await (this.lookup ? this.lookup() : this.provider.lookupInvoice(lookupKey));
+      const lookupKey = this.invoice.invoice_id || this.invoice.payment_hash;
+      const result = await this.provider.lookupInvoice(lookupKey);
       if (!isCurrent()) return;
       this.consecutiveErrors = 0;
 
@@ -160,8 +157,7 @@ export class PaymentMonitor {
         this._notifyStatus(PaymentStatus.CONFIRMED, {
           message: 'Payment received',
           preimage: result.preimage,
-          amount: result.amount || this.invoice?.amount,
-          id: result.id,
+          amount: result.amount || this.invoice.amount,
           attempt: this.attemptCount
         });
         this.stop();
@@ -236,7 +232,7 @@ export class PaymentMonitor {
    * @returns {boolean}
    */
   _isExpired() {
-    if (!this.invoice?.expires_at) return false;
+    if (!this.invoice.expires_at) return false;
 
     const now = Math.floor(Date.now() / 1000);
     const expiryTime = this.invoice.expires_at - this.config.expiryBuffer;

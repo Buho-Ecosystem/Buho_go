@@ -17,6 +17,7 @@ How each feature works and the rules that keep it right, written for developers 
 
 | Record | What it covers |
 |---|---|
+| [Incoming payments](INCOMING_PAYMENTS.md) | "Bitcoin received" for every wallet type: live hints, one ledger, once per payment |
 | [Auto-Transfer](AUTO_TRANSFER.md) | Rules that move money on their own, and when they run |
 | [Bolt Card](BOLT_CARD.md) | Taking money from a Bolt Card, in the wallet and at the kiosk |
 | [Merchant verification](BRANTA.md) | Showing the business you pay, and stopping a changed code (Branta) |

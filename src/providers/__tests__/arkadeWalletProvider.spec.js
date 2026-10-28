@@ -23,16 +23,17 @@ test('a boarding receipt keeps its id when settlement adds the commitment id', a
   assert.equal((await provider.getTransactions())[0].id, 'deposit');
 });
 
-test('disconnect releases a subscription still being established', async () => {
-  const subscribing = deferred();
-  let stopped = 0;
-  const provider = connectedArkade({ notifyIncomingFunds: () => subscribing.promise, dispose: async () => {} });
-  const start = provider.startIncomingFundsListener(() => {});
+test('disconnect cancels a payment watch whose contract manager is still loading', async () => {
+  const loading = deferred();
+  let subscriptions = 0;
+  const provider = connectedArkade({ getContractManager: () => loading.promise, dispose: async () => {} });
+  const starting = provider.watchPayments(() => {});
   await provider.disconnect();
-  subscribing.resolve(() => { stopped++; });
-  await start;
-  assert.equal(stopped, 1);
-  assert.equal(provider._stopIncoming, null);
+  loading.resolve({ onContractEvent: () => { subscriptions++; return () => {}; } });
+  const watch = await starting;
+  watch.stop();
+  assert.equal(subscriptions, 0);
+  assert.equal(provider._watches.size, 0);
 });
 
 test('a failed recovery check retries after a short backoff, rather than six hours', async t => {

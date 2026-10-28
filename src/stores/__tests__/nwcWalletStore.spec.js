@@ -225,3 +225,14 @@ test('only NWC wallets have an NWC connection', async () => {
   await assert.rejects(store.nwcConnection('spark'), /Not an NWC wallet/);
   await assert.rejects(store.nwcConnection('gone'), /Not an NWC wallet/);
 });
+
+test('a connection saved with upper-case hex is stored once in lower case, the only form the SDK opens (#390)', async () => {
+  const upper = `nostr+walletconnect://${'A1'.repeat(32)}?relay=wss%3A%2F%2Frelay.example&secret=${'5E'.repeat(32)}`;
+  const { store, saved } = createHarness({
+    storage: { buhoGO_wallet_store: JSON.stringify({ wallets: [{ id: 'hub', type: 'nwc', name: 'Hub', nwcUrl: upper, metadata: {} }], activeWalletId: 'hub' }) },
+  });
+  store.connectWallet = async () => null; // no relay in a unit test
+  await store.initialize();
+  assert.equal(store.wallets[0].nwcUrl, URL_A);
+  assert.equal(saved().wallets[0].nwcUrl, URL_A, 'written back, so the next start reads it as it is');
+});

@@ -937,6 +937,19 @@ await test('a record without proof, or not a valid one, is never queued', async 
   assert.equal(store.pendingContactLinks.length, 0);
 });
 
+await test('a payment that changed its id keeps what was kept about it, once', async () => {
+  const store = freshStore();
+  await store.setNoteForTransaction('commit-1', 'ark', 'Rent from Ana');
+  assert.equal(await store.adoptTransactionId('ark', 'commit-1', 'board-1'), true);
+  assert.equal(store.getNoteForTransaction('board-1', 'ark'), 'Rent from Ana');
+  assert.equal(store.getMetadataForTransaction('commit-1', 'ark'), null, 'moved, not copied');
+  await store.setNoteForTransaction('commit-2', 'ark', 'old');
+  await store.setNoteForTransaction('board-2', 'ark', 'newer');
+  assert.equal(await store.adoptTransactionId('ark', 'commit-2', 'board-2'), false, 'a record under the new id stays');
+  assert.equal(store.getNoteForTransaction('board-2', 'ark'), 'newer');
+  assert.equal(await store.adoptTransactionId('other', 'commit-1', 'board-1'), false, 'another wallet\'s ids are its own');
+});
+
 console.log(`\n  ${passed} passed, ${failed} failed`);
 // Force-exit: importing the store transitively loads utils/fiatRates.js,
 // whose singleton starts a real setInterval background refresh at module

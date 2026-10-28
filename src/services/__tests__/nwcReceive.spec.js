@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { lookupNwcInvoice, makeNwcInvoice } from '../nwcReceive.js';
+import { lookupNwcInvoice, makeNwcInvoice, watchNwcPayments, listNwcPayments, findNwcPayment, notifiesPayments } from '../nwcReceive.js';
 import { NWC_ERROR } from '../../utils/nwcErrors.js';
 import { checkNWCPaymentStatus } from '../../utils/paymentMonitor.js';
 import { profileInvoiceFixture } from '../../../scripts/fixtures/profileInvoice.mjs';
@@ -163,4 +163,83 @@ test('a record with `state` is read as given, without a second request', async (
   const { nwc, asked } = connection({ lookup: () => ({ state: 'settled', settled_at: now() - 10, expires_at: now() - 5 }) });
   assert.equal((await lookupNwcInvoice(nwc, HASH, { methods: ['lookup_invoice', 'list_transactions'] })).paid, true);
   assert.deepEqual(asked.map(([m]) => m), ['lookup_invoice']);
+});
+
+// ---- Every payment the wallet receives (services/walletWatch) -----------
+
+/** A client whose notification subscriptions the test drives. */
+function notifyingClient() {
+  const subs = [];
+  const client = {
+    connected: true,
+    async subscribeNotifications(onNotification, types) {
+      const sub = { onNotification, types, closed: false };
+      subs.push(sub);
+      return () => { sub.closed = true; };
+    },
+  };
+  return { client, subs, nwc: { client } };
+}
+
+test('notifications are only a hint to look, with the payment hash when it is one', async () => {
+  const { nwc, subs } = notifyingClient();
+  const hints = [];
+  const watch = await watchNwcPayments(nwc, (hint) => hints.push(hint));
+  assert.deepEqual(subs[0].types, ['payment_received']);
+  subs[0].onNotification({ notification_type: 'payment_received', notification: { payment_hash: HASH.toUpperCase(), amount: 21000 } });
+  subs[0].onNotification({ notification_type: 'payment_received', notification: { payment_hash: 'nope' } });
+  subs[0].onNotification(null);
+  assert.deepEqual(hints, [{ paymentHash: HASH }, {}, {}]);
+  watch.stop();
+  assert.equal(subs[0].closed, true);
+  subs[0].onNotification({ notification: { payment_hash: HASH } });
+  assert.equal(hints.length, 3, 'a stopped watch says nothing');
+});
+
+test('back in front: one fresh subscription replaces the old; otherwise only when no relay is connected', async () => {
+  const { nwc, client, subs } = notifyingClient();
+  const watch = await watchNwcPayments(nwc, () => {});
+  watch.revive();
+  await Promise.resolve();
+  assert.equal(subs.length, 1, 'connected and not returning: the SDK keeps it');
+  watch.revive({ returned: true });
+  await new Promise((r) => setImmediate(r));
+  assert.equal(subs.length, 2);
+  assert.deepEqual(subs.map((s) => s.closed), [true, false], 'the old one is closed, never two at once');
+  client.connected = false;
+  watch.revive();
+  await new Promise((r) => setImmediate(r));
+  assert.equal(subs.length, 3);
+  watch.stop();
+  watch.revive({ returned: true });
+  await new Promise((r) => setImmediate(r));
+  assert.equal(subs.length, 3);
+});
+
+test('a connection is watched only when it was granted payment notifications', () => {
+  assert.equal(notifiesPayments({ metadata: { notifications: ['payment_received', 'payment_sent'] } }), true);
+  assert.equal(notifiesPayments({ metadata: { notifications: ['payment_sent'] } }), false);
+  assert.equal(notifiesPayments({ metadata: {} }), false);
+});
+
+test('the list read gives settled rows, and a failure is never an empty list', async () => {
+  const asked = [];
+  const nwc = { listTransactions: async (request) => { asked.push(request); return { transactions: [{ type: 'incoming', payment_hash: HASH, amount: 21, state: 'settled', settled_at: 1790000600, created_at: 1790000000 }] }; } };
+  const [row] = await listNwcPayments(nwc, { offset: 20, limit: 20 });
+  assert.deepEqual(asked, [{ limit: 20, offset: 20, unpaid: false }]);
+  assert.deepEqual([row.id, row.type, row.status, row.amount, row.settled_at, row.created_at], [HASH, 'receive', 'completed', 21, 1790000600, 1790000000]);
+  const failing = { listTransactions: async () => { throw sdk('reply timeout: x', 'INTERNAL'); } };
+  await assert.rejects(listNwcPayments(failing), /reply timeout/);
+});
+
+test('one payment by its hash: amounts in sats; a record without state, or no lookup grant, decides nothing', async () => {
+  const settled = connection({ lookup: () => ({ type: 'incoming', state: 'settled', payment_hash: HASH, amount: 21000, settled_at: 5 }) });
+  const row = await findNwcPayment(settled.nwc, HASH, { methods: ['lookup_invoice'] });
+  assert.deepEqual([row.id, row.status, row.amount], [HASH, 'completed', 21]);
+  const stateless = connection({ lookup: () => ({ type: 'incoming', payment_hash: HASH, amount: 21000, settled_at: 5 }) });
+  assert.equal(await findNwcPayment(stateless.nwc, HASH, { methods: ['lookup_invoice'] }), null);
+  const unknown = connection({ lookup: () => { throw sdk('not found', 'NOT_FOUND'); } });
+  assert.equal(await findNwcPayment(unknown.nwc, HASH, { methods: ['lookup_invoice'] }), null);
+  const listOnly = connection({ lookup: () => assert.fail('not granted') });
+  assert.equal(await findNwcPayment(listOnly.nwc, HASH, { methods: ['list_transactions'] }), null);
 });

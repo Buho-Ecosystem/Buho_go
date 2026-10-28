@@ -66,13 +66,16 @@ try {
       getInfo: async () => ({ arkadeAddress, type: 'arkade' }),
       getBoardingAddress: async () => bitcoinAddress,
       getTransactions: async () => window.arkadeRows,
-      startIncomingFundsListener: async callback => { window.arkadeEvent = callback; return () => { window.arkadeEvent = null; }; },
+      watchPayments: async callback => { window.arkadeEvent = callback; return { stop() { window.arkadeEvent = null; } }; },
       getBitcoinSendFeeEstimate: async ({ amount }) => ({ amount, fee: 130, total: amount + 130 }),
       offboardToBitcoin: async args => { window.arkadeSend = args; return { id: 'scripted-exit', status: 'completed', fee: 130 }; },
     };
     store.providers = { ark: provider };
     store.ensureArkadeConnected = async () => provider;
     store.refreshWalletData = async () => {};
+    const { walletWatch, startWalletWatch } = await import('/src/services/walletWatch.js');
+    window.arkadeWatch = walletWatch() || startWalletWatch(store, { getConfig: () => null });
+    await window.arkadeWatch.check('ark');
     let component = document.querySelector('.wallet-page-light, .wallet-page-dark').__vueParentComponent;
     while (component && component.type.name !== 'WalletPage') component = component.parent;
     window.walletPage = component.proxy;
@@ -99,21 +102,24 @@ try {
   console.log('PASS: full payment request and bare-address copying in both themes');
 
   await openReceive();
-  await page.evaluate(() => {
+  await page.evaluate(async () => {
     window.arkadeRows = [{ id: 'spend', type: 'outgoing', status: 'completed', amount: 1000, timestamp: Math.floor(Date.now() / 1000) }];
     window.arkadeEvent({ type: 'vtxo', newVtxos: [], spentVtxos: [{ value: 1000 }] });
+    await window.arkadeWatch.check('ark');
   });
   await page.waitForTimeout(150);
   assert.equal(await page.evaluate(() => window.receiveModal.isPaymentConfirmed), false);
-  await page.evaluate(() => {
+  await page.evaluate(async () => {
     window.arkadeRows = [{ id: 'boarding', type: 'incoming', status: 'pending', amount: 1000, timestamp: Math.floor(Date.now() / 1000) }];
     window.arkadeEvent({ type: 'utxo', coins: [{ value: 1000, status: { confirmed: false } }] });
+    await window.arkadeWatch.check('ark');
   });
   await page.waitForTimeout(150);
   assert.equal(await page.evaluate(() => window.receiveModal.isPaymentConfirmed), false);
-  await page.evaluate(() => {
+  await page.evaluate(async () => {
     window.arkadeRows[0].status = 'completed';
     window.arkadeEvent({ type: 'vtxo', newVtxos: [{ value: 1000 }] });
+    await window.arkadeWatch.check('ark');
   });
   await page.waitForFunction(() => window.receiveModal.isPaymentConfirmed);
   assert.equal(await page.evaluate(() => window.receiveModal.confirmedAmount), 1000, 'actual receipt, not the requested 2100');

@@ -80,6 +80,20 @@ test('the SDK\'s own error classes are read as documented (docs/NWC.md, SDK)', (
   const silent = new Nip47ReplyTimeoutError('reply timeout: event abc', 'INTERNAL');
   assert.deepEqual([isNoAnswer(silent), isUncertainPaymentError(silent)], [true, true]);
 
+  // The SDK names each relay's reason: when no relay could even be reached,
+  // the request never left and the payment plainly failed.
+  const unreachable = new Nip47PublishError('failed to publish: wss://a: connection failure: Error: timed out', 'INTERNAL', [
+    { url: 'wss://a', reason: 'connection failure: Error: timed out' },
+    { url: 'wss://b', reason: 'connection failure: Error: refused' },
+  ]);
+  assert.deepEqual([isRelayFailure(unreachable), isUncertainPaymentError(unreachable)], [true, false]);
+  // One relay took the socket and then refused or dropped: the wallet may have it.
+  const refused = new Nip47PublishError('failed to publish: wss://a: blocked', 'INTERNAL', [
+    { url: 'wss://a', reason: 'blocked: not allowed' },
+    { url: 'wss://b', reason: 'connection failure: Error: refused' },
+  ]);
+  assert.equal(isUncertainPaymentError(refused), true);
+
   assert.equal(isUncertainPaymentError(new Nip47WalletError('insufficient balance', 'INSUFFICIENT_BALANCE')), false);
   assert.equal(isUncertainPaymentError(new Nip47WalletError('unknown Error', 'INTERNAL')), true);
 });

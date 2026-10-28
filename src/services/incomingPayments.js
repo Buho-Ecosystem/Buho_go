@@ -14,7 +14,8 @@
  *     settled while the app was away (the system notification covered it).
  *
  * The Receive sheet confirms the invoice it created itself, with its own
- * screen. It registers each invoice it shows here, and a receipt for one of
+ * screen. It registers each invoice it shows here (and, for a wallet paid
+ * to an address, that it shows the address), and a receipt for one of
  * them is left to the sheet, so the same payment is never announced twice.
  */
 
@@ -44,16 +45,6 @@ export function incomingSurface({ path, dialogOpen, kiosk, settledWhileAway }) {
 
 /** Invoices the Receive sheet shows, by payment hash: { walletId, amountSats, confirmed, until }. */
 const receiveInvoices = new Map();
-// Address receives have no invoice hash. Their open sheet owns confirmation.
-const receiveAddresses = new Set();
-
-export function expectReceiveFunds(walletId) {
-  if (walletId) receiveAddresses.add(walletId);
-}
-
-export function forgetReceiveFunds(walletId) {
-  receiveAddresses.delete(walletId);
-}
 
 function prune(now) {
   for (const [hash, invoice] of receiveInvoices) if (invoice.until <= now) receiveInvoices.delete(hash);
@@ -87,10 +78,27 @@ export function forgetReceiveInvoice(paymentHash) {
   if (!receiveInvoices.get(hash)?.confirmed) receiveInvoices.delete(hash);
 }
 
+/** Wallets whose own addresses the Receive sheet shows (no invoice), by wallet id. */
+const receiveAddresses = new Set();
+
+/**
+ * The Receive sheet shows this wallet's own addresses and confirms what
+ * arrives there itself: a receipt of this wallet without an invoice is the
+ * sheet's to announce until `forgetReceiveFunds`.
+ */
+export function expectReceiveFunds(walletId) {
+  if (walletId) receiveAddresses.add(walletId);
+}
+
+export function forgetReceiveFunds(walletId) {
+  receiveAddresses.delete(walletId);
+}
+
 /**
  * True when the Receive sheet confirms this receipt's payment. A receipt
- * with a payment hash matches its invoice exactly; one from a balance rise
- * (no hash) matches an invoice of the same wallet and amount.
+ * with a payment hash matches its invoice exactly; one without (a balance
+ * rise, a payment to an address) belongs to a sheet showing that wallet's
+ * addresses, or matches an invoice of the same wallet and amount.
  */
 export function shownByReceive({ walletId, paymentHash, amountSats }, now = Date.now()) {
   prune(now);
