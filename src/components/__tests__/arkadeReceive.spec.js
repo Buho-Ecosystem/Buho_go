@@ -13,6 +13,8 @@ const deps = {
     createPaymentMonitor: config => createPaymentMonitor({ ...config, initialInterval: 60000 }),
   },
   '../services/incomingPayments.js': { expectReceiveFunds() {}, forgetReceiveFunds() {} },
+  '../utils/qrShare': { qrBlobFromRef: async () => null },
+  '../utils/share': { shareContent: async () => ({ success: false, reason: 'unsupported' }) },
 };
 new Function('require', 'module', 'exports', code)(name => deps[name] || {}, module, module.exports);
 const methods = module.exports.default.methods;
@@ -112,4 +114,21 @@ test('a subscription that finishes after close is immediately released', async t
   subscribed(() => { released++; });
   await starting;
   assert.equal(released, 1);
+});
+
+test('QR copy and sharing fallback preserve the request; address menu items remain bare', async t => {
+  const copied = [];
+  const navigatorDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
+  Object.defineProperty(globalThis, 'navigator', { configurable: true, value: { clipboard: { writeText: async value => copied.push(value) } } });
+  t.after(() => Object.defineProperty(globalThis, 'navigator', navigatorDescriptor));
+  const vm = {
+    ...methods, arkadeUnifiedQrValue: 'bitcoin:bc1-test?amount=0.000021&ark=ark1-test&message=Lunch',
+    arkadeBoardingAddress: 'bc1-test', arkadeAddress: 'ark1-test', $refs: {},
+    $t: value => value, $q: { notify() {} },
+  };
+  await vm.copyArkadeRequest();
+  await vm.shareArkadeBoardingAddress();
+  await vm.copyArkadeBoardingAddress();
+  await vm.copyArkadeAddress();
+  assert.deepEqual(copied, [vm.arkadeUnifiedQrValue, vm.arkadeUnifiedQrValue, 'bc1-test', 'ark1-test']);
 });
