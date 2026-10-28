@@ -57,6 +57,9 @@ export function receiptFromPayment(payment) {
   const hash = paymentHashOf(payment) || payment.paymentHash || payment.payment_hash;
   return {
     id: String(payment.id),
+    // Other ids the same payment was listed under before (an Arkade deposit
+    // under its commitment transaction): seen under one, seen.
+    aliases: Array.isArray(payment.aliases) ? payment.aliases.filter(Boolean).map(String) : [],
     paymentHash: hash ? String(hash).toLowerCase() : null,
     isReceive,
     status: payment.status || 'completed',
@@ -96,6 +99,13 @@ export function createReceiptLedger({
    * receipt. A receive keeps its plain id, the one callers look up.
    */
   const keyOf = (r) => (r.isReceive ? r.id : `send:${r.id}`);
+
+  /** Decided already, under its key or (a receive) under an earlier id. */
+  function seenUnder(e, r) {
+    if (e.seen.includes(keyOf(r))) return true;
+    if (!r.isReceive && e.seen.includes(r.id)) return true; // a send saved before it had its own key
+    return r.isReceive && r.aliases.some((id) => e.seen.includes(id));
+  }
 
   function entry(walletId) {
     return state[walletId] || null;
@@ -162,7 +172,11 @@ export function createReceiptLedger({
         }
         return null;
       }
-      if (e.seen.includes(keyOf(r))) return null;
+      if (seenUnder(e, r)) {
+        // Known under an earlier id: the same payment, decided under this one too.
+        if (remember(e, keyOf(r))) write();
+        return null;
+      }
       const wasPending = r.isReceive && e.pending.includes(r.id);
       if (wasPending) e.pending = e.pending.filter((id) => id !== r.id);
       // Settled sends and failed payments are remembered as decided (so a
@@ -200,6 +214,18 @@ export function createReceiptLedger({
       return [...(entry(walletId)?.pending || [])];
     },
 
+    /**
+     * A receive another screen already announced (the Receive sheet's
+     * own confirmation): decided now, so no later read announces it again.
+     */
+    markSeen(walletId, paymentId) {
+      if (!walletId || !paymentId) return;
+      const t = nowS();
+      const e = (state[walletId] ||= { primedAt: t, checkpoint: t, seen: [], pending: [] });
+      e.pending = (e.pending || []).filter((id) => id !== String(paymentId));
+      if (remember(e, String(paymentId))) write();
+    },
+
     /** True when the receive with this id has been decided. */
     isSeen(walletId, paymentId) {
       return !!entry(walletId)?.seen.includes(String(paymentId));
@@ -208,7 +234,21 @@ export function createReceiptLedger({
     /** True when this payment, either direction, has been decided. */
     isDecided(walletId, payment) {
       const r = receiptFromPayment(payment);
-      return !!r && !!entry(walletId)?.seen.includes(keyOf(r));
+      const e = r && entry(walletId);
+      return !!e && seenUnder(e, r);
+    },
+
+    /**
+     * True when ingesting this payment now could announce it: a settled
+     * receive not decided yet. Asking "is it the user's own transfer?"
+     * only then keeps a transfer's note from being used up by the pending
+     * invoice it settles later.
+     */
+    couldAnnounce(walletId, payment) {
+      const r = receiptFromPayment(payment);
+      if (!r || !r.isReceive || r.status !== 'completed') return false;
+      const e = entry(walletId);
+      return !e || !seenUnder(e, r);
     },
 
     checkpoint(walletId) {
@@ -291,7 +331,8 @@ export async function catchUpReceipts({
   let unseen = 0;
   for (const payment of history) {
     if (payment?.status !== 'pending' && !ledger.isDecided(walletId, payment)) unseen += 1;
-    const receipt = ledger.ingest(walletId, payment, { origin: 'catchup', internal: !!isInternal(payment) });
+    const internal = ledger.couldAnnounce(walletId, payment) && !!isInternal(payment);
+    const receipt = ledger.ingest(walletId, payment, { origin: 'catchup', internal });
     if (receipt) {
       announced += 1;
       deliver(receipt);

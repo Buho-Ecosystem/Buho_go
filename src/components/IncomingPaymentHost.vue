@@ -74,7 +74,9 @@ const screenOpen = ref(false);
 const screenSats = ref(0);
 const screenWallet = ref('');
 
-watch(() => walletStore.lastReceipt, announce);
+// Synchronously: one catch-up can report several payments in a row, and a
+// batched watcher would see only the last of them.
+watch(() => walletStore.lastReceipt, announce, { flush: 'sync' });
 // Looking at a wallet means switching to it: its receipts stop being news.
 watch(() => walletStore.activeWalletId, (walletId) => { if (walletId) unseen.markSeen(walletId); }, { immediate: true });
 

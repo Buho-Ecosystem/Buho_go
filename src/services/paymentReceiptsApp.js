@@ -61,6 +61,17 @@ export function receiptLedger() {
   return (ledger ||= createReceiptLedger());
 }
 
+/**
+ * The Receive sheet confirmed this payment with its own screen: the ledger
+ * takes it as decided, so the app never announces it a second time, also
+ * not after a restart. Wallets that name payments by hash (LNbits, NWC)
+ * use the hash as the payment's id.
+ */
+export function noteReceiptShown(walletId, paymentHash) {
+  if (!walletId || !paymentHash) return;
+  try { receiptLedger().markSeen(walletId, String(paymentHash).toLowerCase()); } catch { /* storage */ }
+}
+
 /** A wallet left this phone: its receipt history goes with it. */
 export function forgetWalletReceipts(walletId) {
   try { receiptLedger().forget(walletId); } catch { /* storage */ }

@@ -109,6 +109,10 @@ export function arkadeTransactionRow(tx) {
   // deposits genuinely await something (the settlement that converts
   // them into spendable balance).
   const spendable = tx.settled || Boolean(key.arkTxid);
+  // A boarded deposit was listed under its commitment transaction before
+  // (earlier versions, and the SDK's own batch row while the chain catches
+  // up): that id still names this payment.
+  const aliases = key.boardingTxid && key.commitmentTxid ? [key.commitmentTxid] : [];
   return {
     id,
     type: tx.type === 'RECEIVED' ? 'incoming' : 'outgoing',
@@ -116,6 +120,7 @@ export function arkadeTransactionRow(tx) {
     timestamp: Number.isFinite(timestamp) && timestamp > 0 ? timestamp : 0,
     status: spendable ? 'completed' : 'pending',
     description: '',
+    ...(aliases.length ? { aliases } : {}),
   };
 }
 
@@ -143,6 +148,11 @@ export class ArkadeWalletProvider extends WalletProvider {
     // Payment watches this provider opened (watchPayments); disconnect()
     // stops them all.
     this._watches = new Set();
+    // Optional callback the store wires up to move what is kept about a
+    // payment (notes, labels, price at settlement) from an id it had in
+    // earlier versions to the id it has now: `(oldId, newId) => void`.
+    this._onIdChanged = null;
+    this._idsAdopted = new Set();
   }
 
   getType() {
@@ -416,6 +426,7 @@ export class ArkadeWalletProvider extends WalletProvider {
       const byId = new Map();
       for (const tx of history || []) {
         const row = arkadeTransactionRow(tx);
+        for (const oldId of row.aliases || []) this._adoptId(oldId, row.id);
         const same = byId.get(`${row.type}:${row.id}`);
         if (same) {
           same.amount += row.amount;
@@ -429,6 +440,13 @@ export class ArkadeWalletProvider extends WalletProvider {
       this.setError(error);
       throw error;
     }
+  }
+
+  /** Tell the store, once per session, that a payment's earlier id is now `newId`. */
+  _adoptId(oldId, newId) {
+    if (!this._onIdChanged || this._idsAdopted.has(oldId)) return;
+    this._idsAdopted.add(oldId);
+    try { this._onIdChanged(oldId, newId); } catch { /* kept under the old id */ }
   }
 
   /**

@@ -46,12 +46,23 @@ export const RETRY_MS = [2000, 5000, 15000, 30000];
 /** History is read this many payments at a time. */
 export const PAGE_SIZE = 20;
 /** Payment hashes a wallet's channel named that wait for the next run. */
-const MAX_HINTS = 20;
+const MAX_HINTS = 5;
+/** How long one step of a run may take (connect, a read, a lookup). */
+export const STEP_DEADLINE_MS = 30 * 1000;
+/** A live channel that failed to open is tried again after this long. */
+export const CHANNEL_RETRY_MS = 5 * 60 * 1000;
+/** Runs a live channel asks for are this far apart at least (anyone who
+ * knows an LNbits channel's key can post into it). */
+export const HINT_SPACING_MS = 3000;
+/** History reads that fail in a row, online, before the balance takes over. */
+export const HISTORY_GIVE_UP = 3;
 
 /** Triggers worth one follow-up run when they land during a run. */
 const URGENT = new Set(['hint', 'resume', 'online', 'added']);
 /** Triggers after which a channel may have died while the app was away. */
 const RETURNED = new Set(['resume', 'online']);
+/** A wallet's answers that its history will not be read, now or later. */
+const REFUSED = new Set(['RESTRICTED', 'NOT_IMPLEMENTED', 'UNAUTHORIZED']);
 
 const isSpark = (wallet) => (wallet?.type || 'nwc') === 'spark';
 
@@ -105,6 +116,8 @@ export function createWalletWatch({
   clearTimer = clearTimeout,
   now = Date.now,
   log = () => {},
+  deadlineMs = STEP_DEADLINE_MS,
+  online = () => typeof navigator === 'undefined' || navigator.onLine !== false,
 }) {
   /** walletId -> per-wallet record */
   const records = new Map();
@@ -122,10 +135,27 @@ export function createWalletWatch({
   const isCurrent = (r, gen) => r.generation === gen && records.get(r.walletId) === r && !!walletOf(r.walletId);
   const diag = (walletId, event, extra = {}) => log({ t: now(), w: String(walletId || '').slice(-6), event, ...extra });
 
+  /**
+   * A step that does not answer in time fails its run (which is retried),
+   * so one silent server can never hold up the other wallets or the next
+   * round. The request itself runs on; its late answer is ignored.
+   */
+  function within(promise, label) {
+    let timer = null;
+    const late = new Promise((_, reject) => {
+      timer = setTimeout(() => reject(Object.assign(new Error(`${label} timed out`), { code: 'DEADLINE' })), deadlineMs);
+    });
+    return Promise.race([Promise.resolve(promise), late]).finally(() => clearTimeout(timer));
+  }
+
   function record(walletId) {
     let r = records.get(walletId);
     if (!r) {
-      r = { walletId, generation: ++generations, inflight: null, rerun: null, retryTimer: null, failures: 0, channel: null, channelOwner: null, hints: new Set() };
+      r = {
+        walletId, generation: ++generations, inflight: null, rerun: null, retryTimer: null, failures: 0,
+        channel: null, channelOwner: null, channelFailedAt: 0, hints: new Set(),
+        historyFailures: 0, historyRefused: false, lastHintRunAt: 0, hintTimer: null,
+      };
       records.set(walletId, r);
     }
     return r;
@@ -145,17 +175,31 @@ export function createWalletWatch({
     if (!started || !r || r.generation !== gen) return;
     const hash = String(hint?.paymentHash || '').toLowerCase();
     if (/^[0-9a-f]{64}$/.test(hash) && r.hints.size < MAX_HINTS) r.hints.add(hash);
-    check(walletId, 'hint');
+    runForHint(r);
+  }
+
+  /**
+   * A hinted run now, or once HINT_SPACING_MS has passed since the last
+   * hinted one: the first message after a quiet spell is read at once, a
+   * flood of them at most every few seconds.
+   */
+  function runForHint(r) {
+    if (r.hintTimer || !started) return; // one waiting already covers it
+    const wait = Math.max(0, r.lastHintRunAt + HINT_SPACING_MS - now());
+    if (!wait) { check(r.walletId, 'hint'); return; }
+    r.hintTimer = setTimer(() => { r.hintTimer = null; check(r.walletId, 'hint'); }, wait);
   }
 
   /**
    * The channel belongs to the owner it was opened on: a reconnect makes a
    * new owner, and the channel moves with it. A channel that could not be
-   * opened is tried again when the owner changes or the app comes back.
+   * opened is tried again when the owner changes, the app comes back, or
+   * a while later (CHANNEL_RETRY_MS).
    */
   async function armChannel(r, gen, wallet, owner, payments, reason) {
     const returned = RETURNED.has(reason);
-    if (r.channelOwner === owner && (r.channel || !returned)) {
+    const retryFailed = !r.channel && r.channelFailedAt > 0 && now() - r.channelFailedAt >= CHANNEL_RETRY_MS;
+    if (r.channelOwner === owner && (r.channel || (!returned && !retryFailed))) {
       try { r.channel?.revive?.({ returned }); } catch { /* the next run tries again */ }
       return;
     }
@@ -163,9 +207,13 @@ export function createWalletWatch({
     r.channelOwner = owner;
     if (!payments?.watch) return;
     let channel = null;
+    const opening = Promise.resolve().then(() => payments.watch(owner, (hint) => onHint(r.walletId, gen, hint), wallet));
     try {
-      channel = await payments.watch(owner, (hint) => onHint(r.walletId, gen, hint), wallet);
+      channel = await within(opening, 'channel');
     } catch (error) {
+      // One that opens after all is closed again, never left running.
+      opening.then((late) => { try { late?.stop?.(); } catch { /* gone */ } }, () => {});
+      r.channelFailedAt = now();
       diag(r.walletId, 'channel-failed', { error: errClass(error) });
       return;
     }
@@ -174,6 +222,7 @@ export function createWalletWatch({
       return;
     }
     r.channel = channel || null;
+    r.channelFailedAt = 0;
     if (channel) diag(r.walletId, 'channel');
   }
 
@@ -186,66 +235,100 @@ export function createWalletWatch({
     if (!payments.find) return false;
     let found = false;
     for (const hash of hashes) {
+      // Rows of the wallets that name payments by hash (LNbits, NWC) carry
+      // the hash as their id, so a decided receipt is found under it.
       if (ledger.isSeen(r.walletId, hash)) continue;
       let row = null;
       try {
-        row = await payments.find(owner, hash, wallet);
+        row = await within(payments.find(owner, hash, wallet), 'find');
       } catch (error) {
         diag(r.walletId, 'find-failed', { error: errClass(error) });
         continue;
       }
       if (!isCurrent(r, gen)) return found;
       if (!row) continue;
-      const receipt = ledger.ingest(r.walletId, row, { origin: 'catchup', internal: !!isInternal(r.walletId, row) });
+      const internal = ledger.couldAnnounce(r.walletId, row) && !!isInternal(r.walletId, row);
+      const receipt = ledger.ingest(r.walletId, row, { origin: 'catchup', internal });
       if (receipt) deliver(receipt);
       if (row.status !== 'pending') found = true;
     }
     return found;
   }
 
+  /** True when the watch announces this wallet's payments from its history. */
+  function readsHistoryOf(wallet, r = records.get(wallet.id)) {
+    return !!paymentsOf(wallet)?.readPage && canReadHistory(wallet) && !r?.historyRefused;
+  }
+
   async function runOnce(r, reason) {
     const gen = r.generation;
     const wallet = walletOf(r.walletId);
     if (!wallet || isSpark(wallet)) return;
+    let failure = null;
     try {
-      const owner = await connect(wallet.id);
+      const owner = await within(connect(wallet.id), 'connect');
       if (!isCurrent(r, gen)) return;
       if (!owner) throw Object.assign(new Error('not connected'), { code: 'NOT_CONNECTED' });
       const payments = paymentsOf(wallet);
       await armChannel(r, gen, wallet, owner, payments, reason);
       if (!isCurrent(r, gen)) return;
 
-      const readsHistory = !!payments?.readPage && canReadHistory(wallet);
       let activity = false;
-      if (readsHistory) {
-        const result = await catchUpReceipts({
-          ledger,
-          walletId: wallet.id,
-          readPage: (offset, limit) => payments.readPage(owner, offset, limit, wallet),
-          isCurrent: () => isCurrent(r, gen),
-          isInternal: (payment) => isInternal(wallet.id, payment),
-          deliver,
-          pageSize: PAGE_SIZE,
-          now,
-        });
-        if (result === null) return;
-        activity = result.unseen > 0;
-        if (await findHinted(r, gen, wallet, owner, payments)) activity = true;
-        if (!isCurrent(r, gen)) return;
-        if (result.announced) diag(wallet.id, 'receipts', { n: result.announced });
+      if (readsHistoryOf(wallet, r)) {
+        // A failed history read is retried, but holds up neither the
+        // balance below nor a rule waiting for it (as in the Spark lifecycle).
+        try {
+          const result = await catchUpReceipts({
+            ledger,
+            walletId: wallet.id,
+            readPage: (offset, limit) => within(payments.readPage(owner, offset, limit, wallet), 'history'),
+            isCurrent: () => isCurrent(r, gen),
+            isInternal: (payment) => isInternal(wallet.id, payment),
+            deliver,
+            pageSize: PAGE_SIZE,
+            now,
+          });
+          if (result === null) return;
+          activity = result.unseen > 0;
+          if (await findHinted(r, gen, wallet, owner, payments)) activity = true;
+          if (!isCurrent(r, gen)) return;
+          if (result.announced) diag(wallet.id, 'receipts', { n: result.announced });
+          r.historyFailures = 0;
+        } catch (error) {
+          if (!isCurrent(r, gen)) return;
+          failure = error;
+          r.historyFailures += 1;
+          diag(wallet.id, 'catchup-failed', { error: errClass(error) });
+          // A wallet that says no to its history (not granted, not built),
+          // or whose history never answers while the network does, is left
+          // to its balance for this session. Its ledger goes: a later
+          // return to its history starts from a new baseline instead of
+          // announcing again what the balance announced.
+          if (REFUSED.has(error?.code) || (online() && r.historyFailures >= HISTORY_GIVE_UP)) {
+            r.historyRefused = true;
+            ledger.forget(wallet.id);
+            failure = null; // nothing left to retry: the balance tells from here
+            diag(wallet.id, 'history-given-up');
+          }
+        }
       }
       // The balance follows what arrived or left; a wallet whose history
       // cannot be read has only its balance to tell; a rule needs a
       // verified figure on every round.
-      if (activity || !readsHistory || ruleFor(wallet.id)?.enabled) await refreshBalance(wallet.id);
-      r.failures = 0;
-      clearRetry(r);
+      if (activity || !readsHistoryOf(wallet, r) || ruleFor(wallet.id)?.enabled) await within(refreshBalance(wallet.id), 'balance');
+      if (!isCurrent(r, gen)) return;
     } catch (error) {
       if (!isCurrent(r, gen)) return;
-      r.failures += 1;
-      diag(r.walletId, 'failed', { reason, failures: r.failures, error: errClass(error) });
-      scheduleRetry(r);
+      failure = error;
     }
+    if (!failure) {
+      r.failures = 0;
+      clearRetry(r);
+      return;
+    }
+    r.failures += 1;
+    diag(r.walletId, 'failed', { reason, failures: r.failures, error: errClass(failure) });
+    scheduleRetry(r);
   }
 
   function clearRetry(r) {
@@ -270,11 +353,14 @@ export function createWalletWatch({
       if (URGENT.has(reason)) r.rerun = reason;
       return r.inflight;
     }
+    if (reason === 'hint') r.lastHintRunAt = now();
     const run = runOnce(r, reason).finally(() => {
       r.inflight = null;
       const again = r.rerun;
       r.rerun = null;
-      if (again && records.get(walletId) === r) check(walletId, again);
+      if (!again || records.get(walletId) !== r) return;
+      if (again === 'hint') runForHint(r);
+      else check(walletId, again);
     });
     r.inflight = run;
     return run;
@@ -311,6 +397,7 @@ export function createWalletWatch({
     if (!r) return;
     r.generation = ++generations;
     clearRetry(r);
+    if (r.hintTimer) { clearTimer(r.hintTimer); r.hintTimer = null; }
     stopChannel(r);
     r.hints.clear();
     records.delete(walletId);
@@ -341,12 +428,13 @@ export function createWalletWatch({
     },
     /**
      * Something outside the watch saw this wallet's balance rise. True when
-     * the watch reads the wallet and will say what arrived; false leaves it
-     * to the caller.
+     * the watch reads the wallet's history and will say what arrived; false
+     * leaves it to the caller (not started, Spark, or a wallet whose history
+     * cannot be read).
      */
     hint(walletId) {
       const wallet = walletOf(walletId);
-      if (!started || !wallet || isSpark(wallet)) return false;
+      if (!started || !wallet || isSpark(wallet) || !readsHistoryOf(wallet)) return false;
       check(walletId, 'balance');
       return true;
     },
@@ -387,7 +475,8 @@ export function startWalletWatch(walletStore, autoTransferStore) {
   if (instance || typeof window === 'undefined') return instance;
   trackAppVisibility();
   instance = createWalletWatch({
-    wallets: () => walletStore.wallets,
+    // A wallet on its way off the phone is not watched (nor reconnected).
+    wallets: () => walletStore.wallets.filter((w) => !walletStore.isRemovingWallet?.(w.id)),
     connect: (walletId) => walletStore.ensureWalletConnectedForTransfer(walletId),
     canReadHistory: (wallet) => capabilitiesOf(wallet).history,
     ruleFor: (walletId) => autoTransferStore.getConfig(walletId),

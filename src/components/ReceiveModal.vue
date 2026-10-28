@@ -489,6 +489,7 @@ import L1BitcoinReceive from './L1BitcoinReceive.vue';
 import VoucherSheet from './VoucherSheet.vue';
 import { haptics } from '../utils/haptics.js';
 import { expectReceiveInvoice, confirmReceivePayment, forgetReceiveInvoice, expectReceiveFunds, forgetReceiveFunds } from '../services/incomingPayments.js';
+import { noteReceiptShown } from '../services/paymentReceiptsApp.js';
 
 /** NWC receive polling: start after 4 s, back off to one check every 15 s. */
 const NWC_POLLING = Object.freeze({ initialInterval: 4000, maxInterval: 15000, backoffMultiplier: 1.5, maxAttempts: 18 });
@@ -1151,11 +1152,12 @@ export default {
       const since = Date.now();
       expectReceiveFunds(walletId);
       this.paymentStatus = PaymentStatus.PENDING;
+      // Synchronously, like the app-wide host: every receipt, not the last of a batch.
       const stop = this.$watch(() => this.walletStore.lastReceipt, (receipt) => {
         if (!this.show || this.isPaymentConfirmed) return;
         if (receipt?.walletId !== walletId || !(receipt.at >= since)) return;
         this.handlePaymentStatus(PaymentStatus.CONFIRMED, { amount: receipt.amountSats });
-      });
+      }, { flush: 'sync' });
       this.arkadeReceipts = { walletId, stop };
     },
 
@@ -1419,12 +1421,14 @@ export default {
           // Idempotency guard — event and poll can both fire for the same payment.
           if (this.isPaymentConfirmed) return;
           this.isPaymentConfirmed = true;
-          // This sheet confirms it; the app-wide announcement must not repeat it.
+          // This sheet confirms it; the app-wide announcement must not repeat
+          // it, now or when the wallet's history is read later.
           confirmReceivePayment({
             walletId: this.generatedInvoice?.walletId || this.walletStore.activeWalletId,
             paymentHash: this.generatedInvoice?.payment_hash,
             amountSats: data.amount || this.generatedInvoice?.amount,
           });
+          noteReceiptShown(this.generatedInvoice?.walletId || this.walletStore.activeWalletId, this.generatedInvoice?.payment_hash);
           this.paymentStatusMessage = this.$t('Payment received!');
           haptics.success();
 

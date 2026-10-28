@@ -12,7 +12,7 @@
 
 import { WalletProvider } from './WalletProvider';
 import { NostrWebLNProvider } from '@getalby/sdk';
-import { nwcTransactionRow } from '../utils/nwcWallet.js';
+import { listNwcPayments } from '../services/nwcReceive.js';
 
 
 export class NWCWalletProvider extends WalletProvider {
@@ -289,23 +289,9 @@ export class NWCWalletProvider extends WalletProvider {
     this._ensureConnected();
 
     try {
-      // `from`/`until` are NIP-47 unix TIMESTAMPS bounding when a payment
-      // happened, not a row window. Passing the paging offset into them asked
-      // a spec-compliant service for the hundred seconds after 1 January 1970
-      // and got an empty list back, while `offset` was never sent at all.
-      const transactions = await this.nwc.listTransactions({
-        limit,
-        offset,
-        unpaid: false
-      });
-
-      if (!transactions || !Array.isArray(transactions.transactions)) {
-        return [];
-      }
-
-      // `this.nwc` is `NostrWebLNProvider`, whose `listTransactions`
-      // already converts msats→sats; utils/nwcWallet reads the rest.
-      return transactions.transactions.map(nwcTransactionRow);
+      // Paged with limit and offset: `from`/`until` are NIP-47 unix
+      // TIMESTAMPS bounding when a payment happened, not a row window.
+      return await listNwcPayments(this.nwc, { limit, offset });
     } catch (error) {
       // Many NWC wallets don't support listTransactions
       console.warn('listTransactions not supported or failed:', error);

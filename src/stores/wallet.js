@@ -39,6 +39,7 @@ import {
   summarizeTotal,
 } from '../utils/balanceState.js';
 import { sparkLifecycle, forgetSparkWallet } from '../services/sparkLifecycleApp.js';
+import { forgetWalletReceipts } from '../services/paymentReceiptsApp.js';
 import { startWalletWatch, walletWatch } from '../services/walletWatch.js';
 import { scanSparkAccounts } from '../services/sparkAccountScan.js';
 import {
@@ -2510,6 +2511,8 @@ export const useWalletStore = defineStore('wallet', {
       if (!wallet || wallet.type !== WALLET_TYPES.ARKADE) {
         throw new Error('Arkade wallet not found');
       }
+      // Its databases may be being deleted right now.
+      if (removingWallets.has(walletId)) throw new Error('Wallet is being removed');
 
       try {
         const provider = new ArkadeWalletProvider(walletId, {
@@ -2526,6 +2529,12 @@ export const useWalletStore = defineStore('wallet', {
         provider._onRestoreScanComplete = () => {
           if (!wallet.metadata) wallet.metadata = {};
           wallet.metadata.arkadeRestoreScanned = true;
+        };
+
+        // A deposit keeps one id from the mempool on; what earlier versions
+        // kept under its commitment id moves to it.
+        provider._onIdChanged = (oldId, newId) => {
+          Promise.resolve(useTransactionMetadataStore().adoptTransactionId(walletId, oldId, newId)).catch(() => {});
         };
 
         // Mirror background VTXO maintenance into reactive store state so the
@@ -2883,6 +2892,7 @@ export const useWalletStore = defineStore('wallet', {
       if (!wallet || wallet.type !== WALLET_TYPES.LNBITS) {
         throw new Error('LNBits wallet not found');
       }
+      if (removingWallets.has(walletId)) throw new Error('Wallet is being removed');
 
       try {
         // Create provider
@@ -3036,6 +3046,11 @@ export const useWalletStore = defineStore('wallet', {
       });
     },
 
+    /** True while a wallet is on its way off this phone. */
+    isRemovingWallet(walletId) {
+      return removingWallets.has(walletId);
+    },
+
     /**
      * Everything that belongs to one wallet leaves with it: connection,
      * engine databases, caches, lifecycle work, exit kit metadata (the kit
@@ -3093,7 +3108,8 @@ export const useWalletStore = defineStore('wallet', {
       if (index !== -1) this.wallets.splice(index, 1);
       delete this.connectionStates[walletId];
       this.forgetBalance(walletId);
-      forgetSparkWallet?.(walletId);
+      if (wallet.type === WALLET_TYPES.SPARK) forgetSparkWallet?.(walletId);
+      else forgetWalletReceipts?.(walletId);
       delete this.walletInfos[walletId];
       try { useExitKitStore().remove(walletId); } catch { /* metadata only */ }
       await useAutoWithdrawStore().forgetWallet(walletId);
@@ -3437,10 +3453,10 @@ export const useWalletStore = defineStore('wallet', {
       if (previous === undefined) return;
       const received = balanceAfter - previous;
       if (received <= 0) return;
-      // A wallet whose history can be read is announced by payment, with
-      // each payment's own amount (services/walletWatch): the rise only
-      // asks the watch to look now.
-      if (capabilitiesOf(wallet).history && walletWatch?.()?.hint(wallet.id)) return;
+      // A wallet whose history the watch reads is announced by payment,
+      // with each payment's own amount (services/walletWatch): the rise
+      // only asks the watch to look now.
+      if (walletWatch?.()?.hint(wallet.id)) return;
       if (this.takeInternalTransferTo(wallet.id)) return;
 
       const settledWhileAway = typeof document !== 'undefined' && document.visibilityState === 'hidden';
@@ -4051,13 +4067,12 @@ export const useWalletStore = defineStore('wallet', {
           throw new Error(this._friendlyTransferError(invoiceError, fromWallet, toWallet, 'invoice'));
         }
 
-        if (toType === 'spark') {
-          // The receiving half will settle this invoice: identify that
-          // receipt by its payment hash so it is not announced as income.
-          try {
-            this.noteInternalTransfer(toWalletId, new Invoice({ pr: String(invoice) }).paymentHash || null);
-          } catch { /* unidentified: not suppressed */ }
-        }
+        // The receiving half will settle this invoice: identify that
+        // receipt by its payment hash so it is not announced as income
+        // (every wallet type's receipts are matched by hash).
+        try {
+          this.noteInternalTransfer(toWalletId, new Invoice({ pr: String(invoice) }).paymentHash || null);
+        } catch { /* unidentified: not suppressed */ }
 
         try {
           if (fromType === 'spark' || fromType === 'lnbits' || fromType === 'arkade') {
@@ -4409,7 +4424,9 @@ export const useWalletStore = defineStore('wallet', {
       sparkPhraseEpoch += 1;
       for (const wallet of this.wallets) {
         this._bumpWalletEpoch(wallet.id);
+        walletWatch?.()?.forget(wallet.id);
         if (wallet.type === WALLET_TYPES.SPARK) forgetSparkWallet?.(wallet.id);
+        else forgetWalletReceipts?.(wallet.id);
       }
       if (this._persistTimer) { clearTimeout(this._persistTimer); this._persistTimer = null; }
       // Close all connections first

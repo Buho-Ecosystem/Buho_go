@@ -1486,7 +1486,10 @@ export default {
       const provider = await this.walletStore.ensureArkadeConnected(walletId || this.walletStore.activeWalletId);
 
       const transactions = await provider.getTransactions();
-      const found = transactions.find(tx => tx.id === txId);
+      // A link kept from before a deposit got its lasting id names it by
+      // its earlier one (its aliases).
+      const found = transactions.find(tx => tx.id === txId)
+        || transactions.find(tx => tx.aliases?.includes(txId));
 
       if (found) {
         this.transaction = this.normalizeForDetails(found, 'arkade');

@@ -149,10 +149,11 @@ export function createSparkLifecycle({
       case 'paymentFailed':
       case 'paymentPending': {
         if (ledger && event.payment) {
-          const receipt = ledger.ingest(r.walletId, event.payment, {
-            origin: 'event',
-            internal: !!store.isInternalTransferReceipt?.(r.walletId, event.payment),
-          });
+          // Only a payment that could be announced is checked against the
+          // transfer notes: a pending event must not use one up.
+          const internal = (ledger.couldAnnounce?.(r.walletId, event.payment) ?? true)
+            && !!store.isInternalTransferReceipt?.(r.walletId, event.payment);
+          const receipt = ledger.ingest(r.walletId, event.payment, { origin: 'event', internal });
           if (receipt) deliverReceipt(receipt);
         }
         publishCachedBalance(r, gen, 'event');

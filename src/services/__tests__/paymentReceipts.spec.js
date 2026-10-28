@@ -261,3 +261,65 @@ test('a wallet paying its own invoice: the send does not hide the receipt under 
   const again = await catchUpReceipts({ ledger, walletId: 'W', now: c.now, readPage: async () => [row('h1', 21, c.s(), { type: 'send' }), row('h1', 21, c.s())] });
   assert.deepEqual([again.announced, again.unseen], [0, 0], 'both halves stay decided');
 });
+
+test('sends saved before they had their own key are still decided after an upgrade', async () => {
+  const c = clock();
+  const storage = memory();
+  // What an earlier version saved: the send under its plain id.
+  storage.setItem('buhoGO_payment_receipts_v1', JSON.stringify({ W: { primedAt: c.s(), checkpoint: c.s(), seen: ['s-old'], pending: [] } }));
+  const ledger = createReceiptLedger({ storage, now: c.now });
+  c.advance(30);
+  const result = await catchUpReceipts({ ledger, walletId: 'W', now: c.now, readPage: async () => [row('s-old', 5, c.s() - 40, { type: 'send' })] });
+  assert.equal(result.unseen, 0, 'no missed activity, so no needless refresh after the upgrade');
+});
+
+test('an Arkade deposit seen first under its commitment id is not announced again under its lasting id', async () => {
+  const c = clock();
+  const ledger = createReceiptLedger({ storage: memory(), now: c.now });
+  ledger.prime('A', []);
+  c.advance(60);
+  const delivered = [];
+  // The chain has not caught up: the SDK lists the boarded output as a batch receipt.
+  await catchUpReceipts({ ledger, walletId: 'A', now: c.now, deliver: (r) => delivered.push(r.id),
+    readPage: async () => [row('commit-1', 5000, c.s()), row('board-1', 5000, c.s() - 30, { status: 'pending' })] });
+  c.advance(60);
+  // Now it has: one deposit row, settled, that names the commitment as its earlier id.
+  await catchUpReceipts({ ledger, walletId: 'A', now: c.now, deliver: (r) => delivered.push(r.id),
+    readPage: async () => [row('board-1', 5000, c.s() - 90, { aliases: ['commit-1'] })] });
+  assert.deepEqual(delivered, ['commit-1'], 'once');
+  assert.equal(ledger.isSeen('A', 'board-1'), true, 'decided under its lasting id too');
+});
+
+test('a transfer note is only asked about for a payment that could be announced', async () => {
+  const c = clock();
+  const ledger = createReceiptLedger({ storage: memory(), now: c.now });
+  ledger.prime('W', []);
+  c.advance(10);
+  const asked = [];
+  const isInternal = (p) => { asked.push(p.id); return p.paymentHash === 'mine'; };
+  // The transfer's invoice, still unpaid: no question, so the note stays.
+  await catchUpReceipts({ ledger, walletId: 'W', now: c.now, isInternal,
+    readPage: async () => [row('t1', 900, c.s(), { status: 'pending', paymentHash: 'mine' }), row('old', 1, c.s() - 5000, { type: 'send' })] });
+  assert.deepEqual(asked, []);
+  c.advance(10);
+  const result = await catchUpReceipts({ ledger, walletId: 'W', now: c.now, isInternal,
+    deliver: () => assert.fail('the user\'s own transfer is not announced'),
+    readPage: async () => [row('t1', 900, c.s(), { paymentHash: 'mine' })] });
+  assert.deepEqual(asked, ['t1']);
+  assert.equal(result.announced, 0);
+});
+
+test('a payment the Receive sheet confirmed is never announced by a later read, also after a restart', async () => {
+  const c = clock();
+  const storage = memory();
+  let ledger = createReceiptLedger({ storage, now: c.now });
+  ledger.prime('W', []);
+  c.advance(10);
+  ledger.markSeen('W', 'h-sheet');
+  ledger = createReceiptLedger({ storage, now: c.now }); // restarted
+  c.advance(600);
+  const result = await catchUpReceipts({ ledger, walletId: 'W', now: c.now,
+    deliver: () => assert.fail('the sheet already said so'),
+    readPage: async () => [row('h-sheet', 210, c.s() - 590)] });
+  assert.equal(result.announced, 0);
+});

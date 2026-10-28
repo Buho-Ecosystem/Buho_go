@@ -83,3 +83,15 @@ test('only a new output on the wallet\'s own addresses asks to look', async () =
   watch.stop();
   assert.equal(unsubscribed, 1, 'stopping twice is harmless');
 });
+
+test('a boarded deposit names its earlier id; the store is told once per session to move what it kept', async () => {
+  const p = provider([{ key: { boardingTxid: BOARD, commitmentTxid: COMMIT }, type: 'RECEIVED', amount: 50000, settled: true, createdAt: 1 }]);
+  const moved = [];
+  p._onIdChanged = (oldId, newId) => moved.push([oldId, newId]);
+  const [row] = await p.getTransactions();
+  assert.deepEqual([row.id, row.aliases], [BOARD, [COMMIT]]);
+  await p.getTransactions();
+  assert.deepEqual(moved, [[COMMIT, BOARD]]);
+  const [pending] = await provider([{ key: { boardingTxid: BOARD }, type: 'RECEIVED', amount: 1, settled: false }]).getTransactions();
+  assert.equal(pending.aliases, undefined, 'a deposit not boarded yet has no earlier id');
+});

@@ -5,7 +5,7 @@
  */
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { RESUME_SETTLE_MS, RETRY_MS, WATCH_INTERVAL_MS, PAGE_SIZE, createWalletWatch } from '../walletWatch.js';
+import { RESUME_SETTLE_MS, RETRY_MS, WATCH_INTERVAL_MS, PAGE_SIZE, PAYMENTS, createWalletWatch } from '../walletWatch.js';
 import { createReceiptLedger } from '../paymentReceipts.js';
 
 const T0 = 1_790_000_000; // unix s
@@ -19,7 +19,7 @@ function memory() {
   return { getItem: (k) => m.get(k) ?? null, setItem: (k, v) => m.set(k, String(v)) };
 }
 
-function setup({ storage = memory(), wallets: initial } = {}) {
+function setup({ storage = memory(), wallets: initial, online = true } = {}) {
   const clock = { t: T0 * 1000 };
   const s = () => Math.floor(clock.t / 1000);
   const wallets = initial || [
@@ -48,7 +48,7 @@ function setup({ storage = memory(), wallets: initial } = {}) {
     },
     readPage: async (owner, offset, limit, wallet) => {
       calls.pages.push([wallet.id, offset, limit]);
-      if (fail[wallet.id]) throw Object.assign(new Error('offline'), { code: 'OFFLINE' });
+      if (fail[wallet.id]) throw Object.assign(new Error('no'), { code: fail[wallet.id] === true ? 'OFFLINE' : fail[wallet.id] });
       return history[wallet.id].slice(offset, offset + limit);
     },
     find: async (owner, paymentHash, wallet) => {
@@ -75,6 +75,7 @@ function setup({ storage = memory(), wallets: initial } = {}) {
     setTimer: (fn, ms) => { const t = { fn, ms }; timers.push(t); return t; },
     clearTimer: (t) => { t.cleared = true; },
     now: () => clock.t,
+    online: () => (typeof online === 'function' ? online() : online),
   });
   const channel = (walletId) => channels.filter((c) => c.walletId === walletId).at(-1);
   return { watch, wallets, history, lookup, rules, noHistory, fail, owners, channels, channel, calls, timers, delivered, clock, s, ledger, storage };
@@ -188,7 +189,7 @@ test('Auto-Transfer: a wallet with a switched-on rule has its balance read every
 });
 
 test('a failed read retries a few times, then waits for the round; nothing is announced twice', async () => {
-  const h = setup();
+  const h = setup({ online: false }); // the network is down: nothing to give up on
   await h.watch.start();
   h.clock.t += 10_000;
   h.history.kitty.unshift(receive('r1', 99, h.s()));
@@ -334,4 +335,99 @@ test('coming back raises several events and the thawed timer at once: one round 
   h.clock.t += RESUME_SETTLE_MS - 1;
   await h.watch.resume();
   assert.equal(h.calls.pages.length, before + 3, 'a resume right after a round adds nothing');
+});
+
+test('a failing history read holds up neither the balance nor the rule waiting for it', async () => {
+  const h = setup();
+  h.rules.kitty = { enabled: true };
+  h.fail.kitty = true;
+  await h.watch.start();
+  assert.ok(h.calls.balances.includes('kitty'), 'the rule still gets its verified balance');
+  assert.ok(h.timers.some((t) => t.ms === RETRY_MS[0]), 'and the history read is tried again');
+  assert.equal(h.watch.hint('kitty'), true, 'a passing failure keeps announcing by payment');
+});
+
+test('a wallet that refuses its history is left to its balance from then on', async () => {
+  const h = setup();
+  h.fail.hub = 'RESTRICTED';
+  await h.watch.start();
+  assert.equal(h.watch.hint('hub'), false, 'its balance rise is announced by the store again');
+  assert.ok(!h.timers.some((t) => RETRY_MS.includes(t.ms)), 'a refusal is not retried');
+  const pages = h.calls.pages.filter(([id]) => id === 'hub').length;
+  h.timers.at(-1).fn();
+  await flush();
+  assert.equal(h.calls.pages.filter(([id]) => id === 'hub').length, pages, 'and its history is not asked for again');
+  assert.equal(h.calls.balances.filter((id) => id === 'hub').length, 2, 'its balance is read every round');
+});
+
+test('a balance rise on a wallet whose history cannot be read stays with the store', async () => {
+  const h = setup();
+  h.noHistory.add('hub');
+  await h.watch.start();
+  assert.equal(h.watch.hint('hub'), false);
+  assert.equal(h.watch.hint('kitty'), true);
+});
+
+test('each wallet type is read and watched through its own entry points', async () => {
+  const calls = [];
+  const provider = {
+    watchPayments: (fn) => { calls.push(['watchPayments', typeof fn]); return { stop() {} }; },
+    listPayments: (page) => { calls.push(['listPayments', page]); return []; },
+    getTransactions: (page) => { calls.push(['getTransactions', page]); return []; },
+    getPayment: (hash) => { calls.push(['getPayment', hash]); return null; },
+  };
+  await PAYMENTS.lnbits.watch(provider, () => {});
+  await PAYMENTS.lnbits.readPage(provider, 20, 20);
+  await PAYMENTS.lnbits.find(provider, 'h');
+  await PAYMENTS.arkade.watch(provider, () => {});
+  await PAYMENTS.arkade.readPage(provider, 0, 20);
+  assert.equal(PAYMENTS.arkade.find, undefined, 'Arkade payments carry no hash to look up');
+  assert.deepEqual(calls, [
+    ['watchPayments', 'function'], ['listPayments', { offset: 20, limit: 20 }], ['getPayment', 'h'],
+    ['watchPayments', 'function'], ['getTransactions', { offset: 0, limit: 20 }],
+  ]);
+  // NWC: a live channel only where the connection was granted notifications.
+  const subscribed = [];
+  const nwc = { client: { connected: true, subscribeNotifications: async (fn, types) => { subscribed.push(types); return () => {}; } } };
+  assert.equal(await PAYMENTS.nwc.watch(nwc, () => {}, { metadata: { notifications: [] } }), null);
+  const channel = await PAYMENTS.nwc.watch(nwc, () => {}, { metadata: { notifications: ['payment_received'] } });
+  assert.deepEqual(subscribed, [['payment_received']]);
+  channel.stop();
+});
+
+test('history that never answers while the network does: the balance takes over, and its ledger starts afresh', async () => {
+  const h = setup();
+  await h.watch.start();
+  h.clock.t += 10_000;
+  h.history.hub.unshift(receive('n1', 3, h.s()));
+  h.fail.hub = 'INTERNAL'; // a reply timeout, again and again
+  for (let i = 0; i < 3; i += 1) {
+    h.timers.filter((t) => t.ms === WATCH_INTERVAL_MS && !t.cleared).at(-1).fn();
+    await flush();
+  }
+  assert.equal(h.watch.hint('hub'), false, 'its balance rise is announced by the store from now on');
+  assert.equal(h.ledger.isPrimed('hub'), false, 'forgotten: a later session primes again instead of repeating');
+  assert.equal(h.delivered.length, 0);
+});
+
+test('a flood of channel messages runs at most once per spacing', async () => {
+  const h = setup();
+  await h.watch.start();
+  h.clock.t += 60_000;
+  const before = h.calls.pages.filter(([id]) => id === 'kitty').length;
+  for (let i = 0; i < 50; i += 1) h.channel('kitty').onHint({ paymentHash: hash(100 + i) });
+  await flush();
+  const reads = h.calls.pages.filter(([id]) => id === 'kitty').length - before;
+  assert.ok(reads <= 1, `one run now (${reads})`);
+  assert.ok(h.calls.finds.length <= 5, 'and only a few named payments looked up');
+  assert.equal(h.timers.filter((t) => !t.cleared && t.ms > 0 && t.ms <= 3000).length, 1, 'the rest wait for one spaced run');
+});
+
+test('a payment right after a round is read at once; only hinted runs are spaced', async () => {
+  const h = setup();
+  await h.watch.start(); // a round just ran
+  h.history.kitty.unshift(receive('now', 9, h.s()));
+  h.channel('kitty').onHint({});
+  await flush();
+  assert.deepEqual(h.delivered.map((r) => r.id), ['now'], 'no wait after the start or minute round');
 });

@@ -3,8 +3,9 @@
  * invoice on the connected wallet, tell whether it has been paid, and hear
  * about every payment the wallet receives (services/walletWatch).
  *
- * Both talk NIP-47 through the connection's own client (`nwc.client`, the
- * SDK's NWCClient) rather than the WebLN layer on top of it. The WebLN
+ * Invoices and lookups talk NIP-47 through the connection's own client
+ * (`nwc.client`, the SDK's NWCClient) rather than the WebLN layer on top of
+ * it (the payment list below reads WebLN's, which converts to sats). The WebLN
  * methods drop what a receiving screen needs: makeInvoice returns only the
  * invoice text (no payment hash, no expiry) and lookupInvoice expects
  * `{ paymentHash }`, so a plain hash, or `{ payment_hash }`, reaches the

@@ -324,6 +324,7 @@ export class LNBitsWalletProvider extends WalletProvider {
   }
 
   async getTransactions({ limit = 50, offset = 0 } = {}) {
+    this._ensureConnected();
     try {
       return await this.listPayments({ limit, offset });
     } catch (error) {
@@ -345,7 +346,10 @@ export class LNBitsWalletProvider extends WalletProvider {
     const row = this._toTransaction(details);
     if (response.paid === true) {
       row.status = 'completed';
-      row.settled_at ||= this._parseTimestamp(details.updated_at || details.time);
+      // When it was paid, for the receipt ledger: LNbits 1.x moves
+      // `updated_at` on settlement, while `time` stays when the invoice was
+      // made. Kept off the list rows, whose time the screens show as is.
+      row.settled_at = this._parseTimestamp(details.updated_at || details.time);
     }
     return row;
   }
@@ -363,9 +367,6 @@ export class LNBitsWalletProvider extends WalletProvider {
       // record — there's no separate "settled at" — so created_at
       // mirrors the same value rather than inventing a second one.
       created_at: this._parseTimestamp(tx.created_at || tx.time),
-      // When it was paid: LNbits 1.x moves `updated_at` on settlement, while
-      // `time` stays when the invoice was made. Absent on older servers.
-      settled_at: status === 'completed' ? this._parseTimestamp(tx.updated_at) : null,
       description: tx.memo || '',
       status,
       fee: tx.fee ? Math.floor(Math.abs(tx.fee) / 1000) : 0,

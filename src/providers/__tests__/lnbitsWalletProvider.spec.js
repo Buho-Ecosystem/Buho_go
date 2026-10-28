@@ -149,9 +149,11 @@ test('the history read tells a failure from an empty list; the screens keep thei
   const p = provider();
   await assert.rejects(p.listPayments({ limit: 5 }), /LNBits API error/);
   assert.deepEqual(await p.getTransactions({ limit: 5 }), []);
+  p.isConnected = false;
+  await assert.rejects(p.getTransactions({ limit: 5 }), /not connected/i, 'not connected is still said, as before');
 });
 
-test('a settled row says when it was paid, apart from when its invoice was made', async () => {
+test('list rows keep the time the screens show; only a single lookup says when it was paid', async () => {
   server({
     'GET /api/v1/payments': [
       { payment_hash: HASH, amount: 50000, fee: 0, status: 'success', time: '2026-10-27T10:00:00Z', created_at: '2026-10-27T10:00:00Z', updated_at: '2026-10-27T12:30:00Z' },
@@ -162,9 +164,8 @@ test('a settled row says when it was paid, apart from when its invoice was made'
   assert.equal(paid.type, 'receive');
   assert.equal(paid.amount, 50);
   assert.equal(paid.timestamp, Date.parse('2026-10-27T10:00:00Z') / 1000);
-  assert.equal(paid.settled_at, Date.parse('2026-10-27T12:30:00Z') / 1000);
+  assert.equal(paid.settled_at, undefined, 'History, details and the tax report read these rows unchanged');
   assert.equal(open.status, 'pending');
-  assert.equal(open.settled_at, null);
 });
 
 test('one payment is read by its hash; another wallet\'s payment is nothing to this one', async () => {
