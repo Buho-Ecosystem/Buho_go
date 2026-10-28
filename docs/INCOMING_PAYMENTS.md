@@ -62,6 +62,7 @@ What it cannot do: run while Android has the app frozen or closed. The read on r
 ## The Receive sheet
 
 - An invoice the sheet created is registered (`incomingPayments.expectReceiveInvoice`). When the sheet confirms it, the host leaves it alone, and the ledger takes it as decided (`noteReceiptShown`), so no later read announces it again, also not after a restart.
+- NWC takes verified `lastReceipt` entries matching both its wallet and invoice hash, with the actual received amount. It reuses the same synchronous receipt watcher as Arkade and adds no relay subscription. With notifications and readable history, an invoice check once a minute covers missed notifications; connections without that shared receipt path keep their existing polling. Return to the app and back online check immediately, through the same single-flight monitor. Close, wallet switch and unmount cancel the sheet's observers and discard late results. Creating its invoice uses the store's existing NIP-47 path, preserving the hash and expiry.
 - An Arkade wallet's sheet shows addresses, no invoice. It takes the wallet's receipts from `lastReceipt` (only its own wallet's, only ones that arrived while it was open), and `expectReceiveFunds` keeps the host quiet about them. A renewal never confirms the sheet, because it is never a receipt.
 
 ## Known limits
@@ -72,6 +73,6 @@ What it cannot do: run while Android has the app frozen or closed. The read on r
 
 ## Checks
 
-- Unit: `paymentReceipts`, `sparkLifecycle`, `walletWatch`, `incomingPaymentsStore` (store wiring), `lnbitsWalletProvider`, `arkadeWalletProvider`, `nwcReceive`, `incomingPayments`, `transactionMetadata`, all in `npm test`.
-- Browser: `node scripts/check-incoming-detection.mjs` against `npx quasar dev --port 9415` (or `DETECT_BASE_URL`): the Arkade Receive sheet confirms only its own wallet's new receipts, announced once, and three receipts of one catch-up add up in one toast.
+- Unit: `paymentReceipts`, `sparkLifecycle`, `walletWatch`, `incomingPaymentsStore` (store wiring), `lnbitsWalletProvider`, `arkadeWalletProvider`, `nwcReceive` (service and Receive sheet), `incomingPayments`, `transactionMetadata`, all in `npm test`.
+- Browser: `node scripts/check-incoming-detection.mjs` against `npx quasar dev --port 9415` (or `DETECT_BASE_URL`): Arkade confirms only its own wallet's new receipts; three receipts of one catch-up add up in one toast; NWC confirms through one shared subscription without sheet polling or a duplicate announcement. NWC without notifications retains invoice polling, and a lookup-only connection checks immediately on resume. External wallet requests are blocked; the actual components, store invoice action, watch, ledger and delivery run against a scripted remote wallet.
 - Live, with a real LNbits wallet and its NWC connection (2026-10-28): the invoice key fetched equals the wallet's; a payment announced 200 ms after it settled, with its own amount, while sending and receiving left the balance unchanged; heard again after the socket dropped; caught up after a restart; nothing announced twice. On NWC: a payment found in 0.6 s, a payment sent through it, the SDK resubscribing after a relay drop, and a relay that never completes its handshake failing after 3 s as a plain relay failure.

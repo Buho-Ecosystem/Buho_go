@@ -462,8 +462,8 @@
 import VueQrcode from '@chenfengyuan/vue-qrcode';
 import ArkadeLogo from './ArkadeLogo.vue';
 import { capabilitiesOf } from '../utils/nwcWallet.js';
-import { lookupNwcInvoice } from '../services/nwcReceive.js';
-import { NWC_ERROR, nwcError } from '../utils/nwcErrors.js';
+import { lookupNwcInvoice, notifiesPayments } from '../services/nwcReceive.js';
+import { onAppVisibility } from '../utils/appVisibility.js';
 import { Invoice } from "@getalby/lightning-tools";
 import { formatAmount } from '../utils/amountFormatting.js';
 import { fiatRatesService } from '../utils/fiatRates.js';
@@ -498,7 +498,10 @@ import { expectReceiveInvoice, confirmReceivePayment, forgetReceiveInvoice, expe
 import { noteReceiptShown } from '../services/paymentReceiptsApp.js';
 
 /** NWC receive polling: start after 4 s, back off to one check every 15 s. */
-const NWC_POLLING = Object.freeze({ initialInterval: 4000, maxInterval: 15000, backoffMultiplier: 1.5, maxAttempts: 18 });
+const NWC_POLLING = Object.freeze({ initialInterval: 4000, maxInterval: 15000, backoffMultiplier: 1.5, maxAttempts: 18, expiryBuffer: 0 });
+/** Notifications lead; check once a minute in case the relay missed one.
+ * Bound the fallback to an hour, with the invoice's actual expiry deciding first. */
+const NWC_NOTIFICATION_FALLBACK = Object.freeze({ initialInterval: 60000, maxInterval: 60000, backoffMultiplier: 1, maxAttempts: 61, expiryBuffer: 0 });
 
 export default {
   name: 'ReceiveModal',
@@ -565,8 +568,9 @@ export default {
       // Payment monitoring
       paymentMonitor: null,
       sparkEventUnsubscribe: null, // For Spark event-based monitoring
-      arkadeReceipts: null, // { walletId, stop }: Arkade receipts this sheet confirms
-      sparkMonitorGeneration: 0, // bumped on stop: late async work of an old monitor is dropped
+      receiveReceipts: null, // { walletId, addresses, stop }: shared receipts this sheet confirms
+      nwcResumeStop: null,
+      monitorGeneration: 0, // bumped on stop: late async work of an old monitor is dropped
       sparkPollState: null, // { cancelled: boolean } cancellation token for Spark invoice polling
       sparkVisibilityHandler: null, // visibilitychange listener for mobile resume catch-up
       paymentStatus: PaymentStatus.PENDING,
@@ -826,7 +830,10 @@ export default {
           amountSats: next.amount,
         });
       }
-    }
+    },
+    'walletStore.activeWalletId'(next, previous) {
+      if (next !== previous) this.stopPaymentMonitor();
+    },
   },
   mounted() {
     // Listen for window resize to update QR size
@@ -1095,8 +1102,8 @@ export default {
      * Stop the payment monitor if running
      */
     stopPaymentMonitor() {
-      this.sparkMonitorGeneration = (this.sparkMonitorGeneration || 0) + 1;
-      // Stop polling-based monitor (NWC)
+      this.monitorGeneration = (this.monitorGeneration || 0) + 1;
+      // Stop invoice polling (LNbits and the NWC fallback).
       if (this.paymentMonitor) {
         this.paymentMonitor.stop();
         this.paymentMonitor = null;
@@ -1116,13 +1123,15 @@ export default {
         document.removeEventListener('visibilitychange', this.sparkVisibilityHandler);
         this.sparkVisibilityHandler = null;
       }
-      // Stop taking Arkade receipts
-      this.stopArkadeReceiptWatch();
+      this.nwcResumeStop?.();
+      this.nwcResumeStop = null;
+      this.stopReceiptMonitor();
     },
 
     /**
      * Start monitoring for payment confirmation
-     * Uses event-based for Spark (instant), polling for LNbits/NWC
+     * Spark uses SDK events; NWC consumes shared receipts with a polling
+     * fallback. LNbits checks its invoice through the existing monitor.
      */
     async startPaymentMonitor() {
       if (!this.generatedInvoice?.payment_hash) {
@@ -1138,7 +1147,7 @@ export default {
       } else if (this.isLNBitsWallet) {
         await this.startLNBitsPollingMonitor();
       } else {
-        await this.startNWCPollingMonitor();
+        this.startNWCReceiveMonitor();
       }
     },
 
@@ -1152,29 +1161,35 @@ export default {
      * here; an on-chain deposit confirms once it is spendable.
      */
     startArkadeNativeMonitor() {
-      this.stopArkadeReceiptWatch();
       const walletId = this.walletStore.activeWalletId;
       if (!walletId) return;
       const since = Date.now();
-      expectReceiveFunds(walletId);
       this.paymentStatus = PaymentStatus.PENDING;
+      this.startReceiptMonitor(walletId, receipt => receipt.at >= since, { addresses: true });
+    },
+
+    /** The app already verified these receipts. Match the sheet's request,
+     * keeping one synchronous watcher for both invoice and address receives. */
+    startReceiptMonitor(walletId, matches, { addresses = false } = {}) {
+      this.stopReceiptMonitor();
+      if (addresses) expectReceiveFunds(walletId);
       // Synchronously, like the app-wide host: every receipt, not the last of a batch.
       const stop = this.$watch(() => this.walletStore.lastReceipt, (receipt) => {
         if (!this.show || this.isPaymentConfirmed) return;
         if (this.walletStore.activeWalletId !== walletId) return;
-        if (receipt?.walletId !== walletId || !(receipt.at >= since)) return;
+        if (receipt?.walletId !== walletId || !matches(receipt)) return;
         if (!Number.isSafeInteger(receipt.amountSats) || receipt.amountSats <= 0) return;
         this.handlePaymentStatus(PaymentStatus.CONFIRMED, { amount: receipt.amountSats });
       }, { flush: 'sync' });
-      this.arkadeReceipts = { walletId, stop };
+      this.receiveReceipts = { walletId, addresses, stop };
     },
 
-    stopArkadeReceiptWatch() {
-      const watching = this.arkadeReceipts;
-      this.arkadeReceipts = null;
+    stopReceiptMonitor() {
+      const watching = this.receiveReceipts;
+      this.receiveReceipts = null;
       if (!watching) return;
       watching.stop();
-      forgetReceiveFunds(watching.walletId);
+      if (watching.addresses) forgetReceiveFunds(watching.walletId);
     },
 
     /**
@@ -1201,10 +1216,10 @@ export default {
       const walletId = invoice?.walletId || this.walletStore.activeWalletId;
       const expectedHash = String(invoice?.payment_hash || '').toLowerCase();
       const invoiceId = invoice?.invoice_id;
-      const generation = this.sparkMonitorGeneration || 0;
+      const generation = this.monitorGeneration || 0;
       // Still the same monitor for the same invoice: a closed sheet or a
       // replacement invoice must not be confirmed by this one's late work.
-      const current = () => generation === (this.sparkMonitorGeneration || 0) && this.generatedInvoice === invoice;
+      const current = () => generation === (this.monitorGeneration || 0) && this.generatedInvoice === invoice;
       let provider;
       try {
         provider = await this.walletStore.ensureSparkConnected(walletId);
@@ -1288,13 +1303,13 @@ export default {
 
     async checkSparkInvoiceOnce(provider, invoiceId, walletId) {
       if (!invoiceId || this.isPaymentConfirmed) return;
-      const generation = this.sparkMonitorGeneration || 0;
+      const generation = this.monitorGeneration || 0;
       try {
         const liveProvider = walletId ? await this.walletStore.ensureSparkConnected(walletId) : provider;
         const status = await liveProvider.getLightningReceiveStatus(invoiceId);
         // The resume lookup belongs to one invoice: a newer invoice (or a
         // closed sheet) must not be confirmed by it.
-        if (this.isPaymentConfirmed || generation !== (this.sparkMonitorGeneration || 0)
+        if (this.isPaymentConfirmed || generation !== (this.monitorGeneration || 0)
           || this.generatedInvoice?.invoice_id !== invoiceId) return;
         if (status.isPaid) {
           this.handlePaymentStatus(PaymentStatus.CONFIRMED, {
@@ -1310,61 +1325,57 @@ export default {
     },
 
     /**
-     * Start NWC payment monitoring using polling
-     * Falls back to listTransactions if lookupInvoice is not supported
+     * Take the existing wallet watch's verified receipts by wallet and hash.
+     * No second relay subscription: notifications, reconnect and history
+     * verification belong to walletWatch. The invoice lookup only covers a
+     * missed notification or a connection without notifications/history.
      */
-    async startNWCPollingMonitor() {
-      let rawProvider = null;
-      let wrappedProvider = null;
+    startNWCReceiveMonitor() {
+      this.stopPaymentMonitor();
+      const invoice = this.generatedInvoice;
+      const walletId = invoice?.walletId || this.walletStore.activeWalletId;
+      const paymentHash = String(invoice?.payment_hash || '').toLowerCase();
+      const wallet = this.walletStore.wallets.find(w => w.id === walletId);
+      if (!wallet || !paymentHash || !this.show || this.isPaymentConfirmed
+        || this.walletStore.activeWalletId !== walletId) return;
+      const generation = this.monitorGeneration;
+      const current = () => generation === this.monitorGeneration && this.show && !this.isPaymentConfirmed
+        && this.walletStore.activeWalletId === walletId && this.walletStore.wallets.some(w => w.id === walletId)
+        && this.generatedInvoice === invoice;
 
-      try {
-        // The wallet's one relay connection, connected if it has none (#395).
-        rawProvider = await this.walletStore.nwcConnection(this.walletStore.activeWalletId);
-      } catch (error) {
-        console.warn('Could not get provider for payment monitoring:', error.message);
-        return;
-      }
+      this.startReceiptMonitor(walletId, receipt => current()
+        && String(receipt.paymentHash || '').toLowerCase() === paymentHash);
 
-      if (!rawProvider) {
-        console.warn('No provider available for payment monitoring');
-        return;
-      }
-
-      // One way to see an NWC invoice paid (services/nwcReceive):
-      // lookup_invoice or the recent incoming payments, as this connection
-      // was granted. A check that fails is "not paid yet"; the monitor
-      // keeps polling until the invoice expires, as before.
-      const savedMethods = this.walletStore.wallets
-        .find((w) => w.id === this.walletState.activeWalletId)?.metadata?.methods;
-      wrappedProvider = {
-        lookupInvoice: async (hash) => {
-          try {
-            return await lookupNwcInvoice(rawProvider, hash, { methods: savedMethods });
-          } catch {
-            return { paid: false };
-          }
-        }
-      };
-
-      // Start polling for payment confirmation
-      // Gentler than the default: a wallet behind NWC may be an app on a
-      // phone, and every lookup can wake it with a push. About three and a
-      // half minutes in all, like the default.
-      this.paymentMonitor = createPaymentMonitor(NWC_POLLING);
-
-      this.paymentMonitor.start({
-        invoice: {
-          payment_hash: this.generatedInvoice.payment_hash,
-          expires_at: this.generatedInvoice.expires_at,
-          amount: this.generatedInvoice.amount
+      // A lookup-only connection has no per-invoice receipts from the
+      // shared history watch. Keep its regular checks even if it advertises
+      // notifications; a balance rise cannot identify this invoice.
+      const hasReceiptNotifications = notifiesPayments(wallet) && capabilitiesOf(wallet).history;
+      const monitor = createPaymentMonitor(hasReceiptNotifications ? NWC_NOTIFICATION_FALLBACK : NWC_POLLING);
+      this.paymentMonitor = monitor;
+      monitor.start({
+        invoice: { ...invoice, payment_hash: paymentHash },
+        provider: {
+          lookupInvoice: async (hash) => {
+            if (!current()) return { paid: false };
+            // Ask the store each time: reconnects replace the connection.
+            const connection = await this.walletStore.nwcConnection(walletId);
+            if (!current()) return { paid: false };
+            return lookupNwcInvoice(connection, hash, { methods: wallet.metadata?.methods });
+          },
         },
-        provider: wrappedProvider,
         onStatusChange: (status, data) => {
-          if (!this.isPaymentConfirmed) {
-            this.handlePaymentStatus(status, data);
-          }
-        }
+          if (current()) this.handlePaymentStatus(status, data);
+        },
       });
+
+      // Covers lookup-only grants as well as a relay missed while suspended.
+      const check = () => { if (current()) monitor.checkNow(); };
+      const stopVisibility = onAppVisibility(visible => { if (visible) check(); });
+      window.addEventListener('online', check);
+      this.nwcResumeStop = () => {
+        stopVisibility();
+        window.removeEventListener('online', check);
+      };
     },
 
     /**
@@ -1503,6 +1514,10 @@ export default {
         return;
       }
 
+      const walletId = this.walletStore.activeWalletId;
+      const generation = this.monitorGeneration;
+      const current = () => this.show && generation === this.monitorGeneration
+        && walletId === this.walletStore.activeWalletId && this.walletStore.wallets.some(w => w.id === walletId);
       this.isCreatingInvoice = true;
       try {
         // LUD-09 note: `successAction` does not apply to a plain BOLT11 invoice.
@@ -1574,32 +1589,12 @@ export default {
           this.isCreatingInvoice = false;
           return;
         } else {
-          // Use NWC for NWC wallets
-          const activeWallet = this.walletState.connectedWallets?.find(
-            w => w.id === this.walletState.activeWalletId
-          );
-
-          if (!activeWallet || !activeWallet.nwcString) {
-            throw new Error('No active wallet found');
-          }
-          const saved = this.walletStore.wallets.find(w => w.id === this.walletState.activeWalletId);
-          if (saved && !capabilitiesOf(saved).receive) {
-            throw nwcError(NWC_ERROR.RECEIVE_NOT_ALLOWED, 'This connection cannot create invoices');
-          }
-
-          // Over the wallet's one relay connection (#395).
-          const nwc = await this.walletStore.nwcConnection(activeWallet.id);
-          // @getalby/sdk's NostrWebLNProvider.makeInvoice only reads
-          // `defaultMemo` for the invoice description — passing our
-          // `description` key (as used by every other provider's
-          // createInvoice) is silently ignored, which is why NWC invoices
-          // came back with an empty d-tag despite the user typing a note.
-          invoice = await nwc.makeInvoice({
-            amount: invoiceParams.amount,
-            defaultMemo: invoiceParams.description,
-          });
+          // Reuse the same NIP-47 invoice path as transfers and the kiosk.
+          // It preserves the hash and expiry that WebLN.makeInvoice drops.
+          invoice = await this.walletStore.createInvoiceDetailsOnWallet(walletId, invoiceParams.amount, invoiceParams.description);
         }
 
+        if (!current()) return;
         const paymentRequest = invoice.paymentRequest || invoice.payment_request;
         if (!paymentRequest) {
           throw new Error('Invalid invoice: missing payment request');
@@ -1617,9 +1612,9 @@ export default {
           payment_request: paymentRequest,
           payment_hash: paymentHash,
           invoice_id: invoice.invoice_id || invoice.id || null,
-          walletId: this.walletStore.activeWalletId,
-          amount: invoice.amount || this.amountInSats,
-          description: invoice.description || this.description || 'BuhoGO Payment',
+          walletId,
+          amount: invoice.amount || invoiceParams.amount,
+          description: invoice.description || invoiceParams.description,
           expires_at: invoice.expires_at || invoice.expiresAt,
           created_at: Math.floor(Date.now() / 1000)
         };
@@ -1643,6 +1638,7 @@ export default {
         this.startPaymentMonitor();
 
       } catch (error) {
+        if (!current()) return;
         console.error('Error creating invoice:', error);
 
         // Funnel into the global payment-error dialog so the upstream

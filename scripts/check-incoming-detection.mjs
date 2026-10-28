@@ -2,13 +2,17 @@
  * watches by payment (docs/INCOMING_PAYMENTS.md): the Arkade Receive sheet
  * confirms only a receipt of its own wallet that arrived while it was open,
  * the app-wide announcement then stays quiet, and a burst of receipts from
- * one catch-up adds up instead of showing only the last. Start
+ * one catch-up adds up instead of showing only the last. NWC uses one
+ * shared subscription, confirms its invoice without a sheet lookup, and
+ * retains polling/resume checks for limited connections. Start
  * `npx quasar dev --port 9415` first (or set DETECT_BASE_URL). Every external
  * request is blocked; receipts are put in the wallet store the way the
  * receipt ledger delivers them. */
 import { chromium } from '@playwright/test';
 import assert from 'node:assert/strict';
 import { mkdir } from 'node:fs/promises';
+import { profileInvoiceFixture } from './fixtures/profileInvoice.mjs';
+import { Invoice } from '@getalby/lightning-tools';
 
 const base = process.env.DETECT_BASE_URL || 'http://localhost:9415';
 const output = process.env.DETECT_OUTPUT || new URL('../output/incoming-detection/check', import.meta.url).pathname;
@@ -28,7 +32,7 @@ process.on('uncaughtException', async (error) => {
   process.exit(1);
 });
 
-async function open() {
+async function open(wallets = WALLETS) {
   const context = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2 });
   const page = await context.newPage();
   page.on('pageerror', (e) => errors.push(e.message));
@@ -53,7 +57,7 @@ async function open() {
     // What paymentReceiptsApp.deliverReceipt writes for one receipt.
     window.__receive = (receipt) => { store.lastReceipt = { at: Date.now(), paymentHash: null, settledWhileAway: false, ...receipt }; };
     window.__home = () => { let c = document.querySelector('.q-page').__vueParentComponent; while (c && !('showReceiveModal' in (c.proxy || {}))) c = c.parent; return c.proxy; };
-  }, WALLETS);
+  }, wallets);
   await page.waitForTimeout(1200);
   lastPage = page;
   return page;
@@ -113,6 +117,126 @@ const received = (page) => page.locator('.app-toast', { hasText: 'Bitcoin receiv
   await shot(page, '02-burst-adds-up');
   pass('three payments in one catch-up add up to ₿ 60 in one toast');
   await page.close();
+}
+
+// NWC: exercise the real sheet, store invoice action, wallet watch, receipt
+// ledger and delivery. Only the remote NIP-47 wallet is scripted.
+async function openNwc({ notifications = true, history = true } = {}) {
+  const methods = ['make_invoice', 'lookup_invoice', ...(history ? ['list_transactions'] : [])];
+  const invoice = profileInvoiceFixture(5000);
+  const paymentHash = new Invoice({ pr: invoice }).paymentHash;
+  const page = await open([{ id: 'nwc', type: 'nwc', name: 'Alby Hub', balance: 50000,
+    metadata: { methods, notifications: notifications ? ['payment_received'] : [] } }]);
+  await page.evaluate(async ({ invoice, paymentHash }) => {
+    const store = window.__store;
+    const { createWalletWatch, walletWatch } = await import('/src/services/walletWatch.js');
+    const { receiptLedger, deliverReceipt } = await import('/src/services/paymentReceiptsApp.js');
+    walletWatch()?.stop();
+    window.__nwcRequests = { make: 0, lookup: 0, subscriptions: 0 };
+    window.__nwcRows = [];
+    window.__nwcLookup = { state: 'pending' };
+    window.__nwcHash = paymentHash;
+    const connection = {
+      connected: true,
+      listTransactions: async () => ({ transactions: window.__nwcRows }),
+      client: {
+        connected: true,
+        makeInvoice: async () => {
+          window.__nwcRequests.make++;
+          return { invoice, payment_hash: paymentHash, expires_at: Math.floor(Date.now() / 1000) + 3600 };
+        },
+        lookupInvoice: async ({ payment_hash }) => {
+          window.__nwcRequests.lookup++;
+          if (payment_hash !== paymentHash) throw new Error('Wrong invoice hash');
+          return window.__nwcLookup;
+        },
+        subscribeNotifications: async callback => {
+          window.__nwcRequests.subscriptions++;
+          window.__nwcHint = callback;
+          return () => { if (window.__nwcHint === callback) window.__nwcHint = null; };
+        },
+      },
+    };
+    store.ensureWalletConnectedForTransfer = async () => connection;
+    store.nwcConnection = async () => connection;
+    store.refreshWalletData = async () => {};
+    // The same ledger used by the sheet's noteReceiptShown and the host.
+    const ledger = receiptLedger();
+    window.__nwcWatch = createWalletWatch({
+      wallets: () => store.wallets, connect: async () => connection,
+      canReadHistory: wallet => wallet.metadata.methods.includes('list_transactions'),
+      ruleFor: () => null, refreshBalance: async () => {}, ledger, deliver: deliverReceipt,
+      setTimer: () => ({}), clearTimer() {},
+    });
+    await window.__nwcWatch.start();
+    window.__home().showReceiveModal = true;
+  }, { invoice, paymentHash });
+  await page.locator('.receive-card').waitFor();
+  await page.evaluate(async () => {
+    let c = document.querySelector('.receive-card').__vueParentComponent;
+    while (c && c.type.name !== 'ReceiveModal') c = c.parent;
+    window.__sheet = c.proxy;
+    window.__sheet.tapAmountButton();
+    window.__sheet.keypadValue = '5000';
+    await window.__sheet.createInvoice();
+  });
+  await page.waitForFunction(() => window.__sheet.generatedInvoice?.payment_hash === window.__nwcHash);
+  return page;
+}
+
+{
+  const page = await openNwc();
+  await page.waitForTimeout(4500); // The old sheet would already have polled.
+  assert.deepEqual(await page.evaluate(() => window.__nwcRequests), { make: 1, lookup: 0, subscriptions: 1 });
+  await page.evaluate(async () => {
+    window.__nwcHint({ notification: { payment_hash: window.__nwcHash } });
+    await window.__nwcWatch.check('nwc');
+  });
+  assert.equal(await page.evaluate(() => window.__sheet.isPaymentConfirmed), false, 'a hint without settlement is not payment proof');
+  assert.equal(await page.evaluate(() => window.__sheet.paymentMonitor.attemptCount), 0, 'the shared watch verified the hint; the sheet did not poll');
+  const verificationLookups = await page.evaluate(() => window.__nwcRequests.lookup);
+  await page.evaluate(async () => {
+    window.__nwcRows = [{ payment_hash: window.__nwcHash, type: 'incoming', state: 'settled', amount: 777, settled_at: Math.floor(Date.now() / 1000) }];
+    window.__nwcHint({ notification: { payment_hash: window.__nwcHash } });
+    await window.__nwcWatch.check('nwc');
+  });
+  await page.waitForFunction(() => window.__sheet.isPaymentConfirmed);
+  await page.locator('.payment-confirmation').waitFor();
+  assert.equal(await page.evaluate(() => window.__sheet.confirmedAmount), 777);
+  assert.equal(await page.locator('.payment-confirmation').count(), 1);
+  assert.equal(await received(page).count(), 0, 'the host did not repeat the sheet confirmation');
+  assert.equal(await page.evaluate(() => window.__nwcRequests.lookup), verificationLookups, 'no sheet lookup was needed');
+  await shot(page, '03-nwc-shared-receipt');
+  await page.close();
+  pass('NWC: one shared subscription, verified receipt, actual amount, no sheet lookup or duplicate announcement');
+}
+
+{
+  const page = await openNwc({ notifications: false });
+  await page.evaluate(() => {
+    window.__audit.setDark(true);
+    window.__nwcLookup = { state: 'settled', amount: 21000 };
+  });
+  await page.waitForFunction(() => window.__sheet.isPaymentConfirmed, null, { timeout: 10000 });
+  assert.equal(await page.evaluate(() => window.__sheet.confirmedAmount), 21);
+  assert.deepEqual(await page.evaluate(() => window.__nwcRequests), { make: 1, lookup: 1, subscriptions: 0 });
+  await shot(page, '04-nwc-polling-fallback');
+  await page.close();
+  pass('NWC: without notifications, the existing polling confirms by invoice hash');
+}
+
+{
+  const page = await openNwc({ history: false });
+  await page.evaluate(() => {
+    window.__nwcLookup = { state: 'settled', amount: 42000 };
+    document.dispatchEvent(new Event('visibilitychange'));
+    window.dispatchEvent(new Event('online'));
+  });
+  await page.waitForFunction(() => window.__sheet.isPaymentConfirmed);
+  assert.equal(await page.evaluate(() => window.__sheet.confirmedAmount), 42);
+  assert.equal(await page.evaluate(() => window.__nwcRequests.lookup), 1, 'resume and online share one lookup');
+  await page.close();
+  pass('NWC: lookup-only grants catch up immediately on resume, without history');
 }
 
 assert.deepEqual(errors, [], `page errors: ${errors.join('\n')}`);
