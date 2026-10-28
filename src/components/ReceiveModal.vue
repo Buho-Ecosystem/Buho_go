@@ -102,7 +102,7 @@
             </template>
 
             <div v-if="arkadeBoardingAddress" class="qr-section">
-              <div class="qr-card" @click="copyArkadeBoardingAddress">
+              <button type="button" class="qr-card" :aria-label="$t('Copy payment code')" @click="copyArkadeRequest">
                 <div class="qr-frame">
                   <vue-qrcode
                     ref="arkadeBoardingQr"
@@ -116,7 +116,7 @@
                     <img src="/buho_logo.svg" alt="" />
                   </span>
                 </div>
-              </div>
+              </button>
             </div>
 
             <div v-else class="default-zero-loading">
@@ -164,6 +164,12 @@
               <span class="cta-label" :class="$q.dark.isActive ? 'cta-label-dark' : 'cta-label-light'">{{ $t('Copy') }}</span>
               <q-menu anchor="top middle" self="bottom middle" :offset="[0, 6]">
                 <q-list class="copy-menu">
+                  <q-item v-close-popup clickable @click="copyArkadeRequest">
+                    <div class="copy-item">
+                      <span>{{ $t('Payment request') }}</span>
+                      <small>{{ generatedInvoice?.amount > 0 ? formatInvoiceAmount(generatedInvoice.amount) : $t('Bitcoin') + ' · Arkade' }}</small>
+                    </div>
+                  </q-item>
                   <q-item v-if="generatedInvoice && generatedInvoice.amount > 0 && generatedInvoice.payment_request" v-close-popup clickable @click="copyInvoice">
                     <div class="copy-item">
                       <span>{{ $t('Lightning invoice') }}</span>
@@ -1155,7 +1161,9 @@ export default {
       // Synchronously, like the app-wide host: every receipt, not the last of a batch.
       const stop = this.$watch(() => this.walletStore.lastReceipt, (receipt) => {
         if (!this.show || this.isPaymentConfirmed) return;
+        if (this.walletStore.activeWalletId !== walletId) return;
         if (receipt?.walletId !== walletId || !(receipt.at >= since)) return;
+        if (!Number.isSafeInteger(receipt.amountSats) || receipt.amountSats <= 0) return;
         this.handlePaymentStatus(PaymentStatus.CONFIRMED, { amount: receipt.amountSats });
       }, { flush: 'sync' });
       this.arkadeReceipts = { walletId, stop };
@@ -1746,11 +1754,19 @@ export default {
       }
     },
 
-    async copyArkadeBoardingAddress() {
-      if (!this.arkadeBoardingAddress) return;
+    copyArkadeRequest() {
+      return this.copyReceiveText(this.arkadeUnifiedQrValue, 'Copied payment request');
+    },
+
+    copyArkadeBoardingAddress() {
+      return this.copyReceiveText(this.arkadeBoardingAddress, 'Address copied');
+    },
+
+    async copyReceiveText(value, message) {
+      if (!value) return;
       try {
-        await navigator.clipboard.writeText(this.arkadeBoardingAddress);
-        this.$q.notify({ type: 'positive', message: this.$t('Address copied') });
+        await navigator.clipboard.writeText(value);
+        this.$q.notify({ type: 'positive', message: this.$t(message) });
       } catch (error) {
         this.$q.notify({ type: 'negative', message: this.$t('Couldn\'t copy') });
       }
@@ -1774,24 +1790,12 @@ export default {
         this.$q.notify({ type: 'positive', message: this.$t('Shared') });
       } else if (result.reason === 'unsupported' || result.reason === 'error') {
         if (result.reason === 'error') console.error('Failed to share boarding address:', result.error);
-        await this.copyArkadeBoardingAddress();
+        await this.copyArkadeRequest();
       }
     },
 
     async copyArkadeAddress() {
-      if (!this.arkadeAddress) return;
-      try {
-        await navigator.clipboard.writeText(this.arkadeAddress);
-        this.$q.notify({
-          type: 'positive',
-          message: this.$t('Arkade address copied'),
-        });
-      } catch (error) {
-        this.$q.notify({
-          type: 'negative',
-          message: this.$t('Couldn\'t copy'),
-        });
-      }
+      return this.copyReceiveText(this.arkadeAddress, 'Arkade address copied');
     },
 
     formatInvoiceAmount(sats) {
@@ -2013,6 +2017,9 @@ export default {
 }
 
 .qr-card {
+  padding: 0;
+  border: 0;
+  background: transparent;
   cursor: pointer;
   transition: transform 0.2s ease;
 }

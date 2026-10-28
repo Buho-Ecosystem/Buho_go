@@ -88,12 +88,17 @@ Self-custodial on the Ark protocol (VTXOs); one Arkade wallet per install.
 | Method | Purpose |
 | --- | --- |
 | `getArkadeAddress()` / `transferToArkadeAddress({ arkadeAddress, amount })` | Instant `ark1` → `ark1` |
-| `getBoardingAddress()` / `offboardToBitcoin({ bitcoinAddress, amount })` | On-chain receive and send (Ramps) |
+| `getBoardingAddress()` / `offboardToBitcoin({ bitcoinAddress, amount, maxFee })` | On-chain receive and exact-amount send |
+| `getBitcoinSendFeeEstimate({ bitcoinAddress, amount })` | SDK quote for recipient amount, fee and total |
 | `watchPayments(onActivity)` | A new output on the wallet's own addresses: a hint to read the history ([docs/INCOMING_PAYMENTS.md](docs/INCOMING_PAYMENTS.md)) |
-| `checkLiveness()` | VTXO renew and recover, throttled |
+| `checkLiveness()` | Recover swept/subdust outputs; coalesced and throttled |
 
 - **Keys:** `MnemonicIdentity.fromMnemonic` on BIP-86 Taproot `m/86'/{0 mainnet, 1 test}'/0'/0/*` (`utils/arkadeKeys.js`, pinned by a test). A BuhoGO Arkade phrase restores in the Arkade reference wallet.
 - **Server:** `https://arkade.computer` (mainnet only). Esplora: mempool.space.
+- **Onchain amounts:** SDK 0.4.79 is pinned for `Ramps.offboardExact`, used through its payment router. The recipient gets the entered amount and fees come on top. The confirmation sheet holds a quote for that wallet, destination and amount; a higher fee at submission requires review again. Input and change fees are included by naming the spendable inputs, without duplicating SDK fee calculations.
+- **Receive evidence:** SDK notifications include spends and unconfirmed deposits. They only wake the app-wide wallet watch and receipt ledger; the Receive sheet consumes the resulting receipt with its actual amount. The displayed request, including amount and note, is preserved by QR copy and sharing.
+- **Lifecycle:** Spark and Arkade share connection serialization and cancellation. Read failures retain the Arkade engine; replacement closes it first. Recovery failures retry after 30 seconds, successful checks after six hours.
+- **Checks:** `npm test`; `npm run check:arkade` against a local dev server on port 9024. The browser check uses scripted wallets and captures light/dark screens without real payments. UI feedback follows [Apple's feedback guidance](https://developer.apple.com/design/human-interface-guidelines/feedback): confirm completed work and keep status near the task. Payment semantics follow [Arkade boarding/offboarding](https://docs.arkadeos.com/wallets/advanced/boarding.md).
 - **Lightning is paused.** It rode the retired Boltz swap service; the successor (`@arkade-os/swap`) is not wired yet. `utils/walletCapabilities.js` (`canWalletPay`) keeps every screen from offering Lightning on Arkade.
 - **Brand colours:** purple in light mode, red-orange in dark mode (`components/ArkadeLogo.vue`, `--arkade-*` tokens).
 - References: [Arkade docs](https://docs.arkadeos.com/) · [TS SDK](https://github.com/arkade-os/ts-sdk) · [reference wallet](https://github.com/arkade-os/wallet)

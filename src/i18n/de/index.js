@@ -249,6 +249,7 @@ export default {
   // ─── Arkade copy: plain-language (no swap/on-chain jargon) ───
   "Includes a small Lightning fee": "Enthält eine kleine Lightning Gebühr",
   "Includes a network fee": "Enthält eine Netzwerkgebühr",
+  "The Bitcoin fee changed. Review the updated fee and try again.": "Die Bitcoin-Gebühr hat sich geändert. Prüfe die aktualisierte Gebühr und versuche es erneut.",
   "Updating your wallet...": "Wallet wird aktualisiert...",
   "Sending to a Bitcoin address automatically isn't available for Arkade yet. Use a Lightning or Arkade address instead.": "Das automatische Senden an eine Bitcoin Adresse ist für Arkade noch nicht verfügbar. Nutze stattdessen eine Lightning oder Arkade Adresse.",
   "That amount is too small to send to a Bitcoin address. The minimum is {min} sats.": "Dieser Betrag ist zu klein, um an eine Bitcoin Adresse zu senden. Das Minimum sind {min} Sats.",

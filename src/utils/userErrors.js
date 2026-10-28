@@ -405,6 +405,8 @@ export function translateErrorCode(error, t, { walletName = '' } = {}) {
       return t("Sending to a Bitcoin address automatically isn't available for Arkade yet. Use a Lightning or Arkade address instead.");
     case 'ARKADE_OFFBOARD_BELOW_MIN':
       return t('That amount is too small to send to a Bitcoin address. The minimum is {min} sats.', { min: error.minSats || 0 });
+    case 'ARKADE_OFFBOARD_FEE_CHANGED':
+      return t('The Bitcoin fee changed. Review the updated fee and try again.');
     case 'ARKADE_OFFBOARD_FAILED':
       return t("Sending to a Bitcoin address didn't go through. Please try again.");
     default:

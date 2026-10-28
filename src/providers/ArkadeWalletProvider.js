@@ -42,7 +42,7 @@ import {
   Wallet,
   isContractVtxoEvent,
   ESPLORA_URL,
-  Ramps,
+  createDefaultPaymentRouter,
   RestArkProvider,
   RestIndexerProvider,
   EsploraProvider,
@@ -133,7 +133,8 @@ export class ArkadeWalletProvider extends WalletProvider {
     this.network = walletData.network || ARKADE_DEFAULT_NETWORK;
     this.arkServerUrl = walletData.arkServerUrl || ARKADE_MAINNET_SERVER;
 
-    this._lastRecoveryCheck = 0;
+    this._nextRecoveryCheckAt = 0;
+    this._recoveryCheck = null;
     // Optional callback the store wires up to mirror "a recovery settlement
     // is in flight" into reactive state (subtle wallet-maintenance indicator).
     this._onMaintenance = null;
@@ -148,6 +149,7 @@ export class ArkadeWalletProvider extends WalletProvider {
     // Payment watches this provider opened (watchPayments); disconnect()
     // stops them all.
     this._watches = new Set();
+    this._watchGeneration = 0;
     // Optional callback the store wires up to move what is kept about a
     // payment (notes, labels, price at settlement) from an id it had in
     // earlier versions to the id it has now: `(oldId, newId) => void`.
@@ -161,6 +163,12 @@ export class ArkadeWalletProvider extends WalletProvider {
 
   isArkade() {
     return true;
+  }
+
+  // A read/validation failure does not dispose the SDK or its background
+  // managers. Keep using that instance until an explicit disconnect.
+  setError(error) {
+    this.connectionError = error instanceof Error ? error.message : error;
   }
 
   // ==========================================
@@ -305,6 +313,7 @@ export class ArkadeWalletProvider extends WalletProvider {
       });
       this.clearError();
     } catch (error) {
+      this.isConnected = false;
       this.setError(error);
       throw error;
     } finally {
@@ -339,6 +348,7 @@ export class ArkadeWalletProvider extends WalletProvider {
   }
 
   async disconnect() {
+    this._watchGeneration++;
     for (const watch of [...this._watches]) watch.stop();
     // Tear down the SDK wallet's background machinery (contract watcher,
     // settlement poll, provider streams) — 0.4.x wallets own live resources.
@@ -461,7 +471,9 @@ export class ArkadeWalletProvider extends WalletProvider {
    */
   async watchPayments(onActivity) {
     this._ensureConnected();
+    const generation = this._watchGeneration;
     const manager = await this.wallet.getContractManager();
+    if (generation !== this._watchGeneration || !this.isConnected) return { stop() {} };
     let stopped = false;
     const unsubscribe = manager.onContractEvent((event) => {
       // A watch-only script is not the wallet's own (no contract).
@@ -538,9 +550,12 @@ export class ArkadeWalletProvider extends WalletProvider {
    * @param {number} params.amount - amount in sats
    * @returns {Promise<{id: string, status: string}>}
    */
-  async offboardToBitcoin({ bitcoinAddress, amount }) {
+  async _quoteOffboard({ bitcoinAddress, amount }) {
     this._ensureConnected();
-    const sats = Math.floor(Number(amount) || 0);
+    const sats = Number(amount);
+    if (!Number.isSafeInteger(sats) || sats <= 0) {
+      throw new Error('Amount must be a positive whole number of sats');
+    }
     const info = await this.wallet.arkProvider.getInfo();
     // A collaborative exit is subject to the server's dust / output minimums.
     // Surface a friendly floor BEFORE Ramps rejects with a raw SDK error.
@@ -555,13 +570,30 @@ export class ArkadeWalletProvider extends WalletProvider {
       err.minSats = floor;
       throw err;
     }
+    // Naming the inputs lets the SDK include their fees and the change fee
+    // in its receiver-exact quote. Reuse the SDK's pricing and settlement.
+    const selectedVtxos = await this.wallet.getSpendableVtxos({
+      withRecoverable: false, withUnrolled: false, genericallySpendableOnly: true,
+    });
+    return createDefaultPaymentRouter(this.wallet).route({ raw: bitcoinAddress, amount: sats, selectedVtxos });
+  }
+
+  async getBitcoinSendFeeEstimate(params) {
+    const { amount, fee, total } = await this._quoteOffboard(params);
+    return { amount, fee, total };
+  }
+
+  async offboardToBitcoin({ bitcoinAddress, amount, maxFee }) {
     try {
-      const txid = await new Ramps(this.wallet).offboard(
-        bitcoinAddress,
-        info.fees,
-        BigInt(sats)
-      );
-      return { id: txid, status: 'completed' };
+      const quote = await this._quoteOffboard({ bitcoinAddress, amount });
+      if (!Number.isSafeInteger(maxFee) || maxFee < 0 || quote.fee > maxFee) {
+        const err = new Error('The Bitcoin fee changed. Review the updated fee and try again.');
+        err.code = 'ARKADE_OFFBOARD_FEE_CHANGED';
+        throw err;
+      }
+      const handle = await quote.send();
+      const { txid } = await handle.settled();
+      return { id: txid, status: 'completed', fee: quote.fee };
     } catch (error) {
       if (!error.code) error.code = 'ARKADE_OFFBOARD_FAILED';
       this.setError(error);
@@ -664,28 +696,37 @@ export class ArkadeWalletProvider extends WalletProvider {
   async checkLiveness({ force = false } = {}) {
     const out = { recovered: false };
     if (!this.wallet || !this.isConnected) return out;
+    if (this._recoveryCheck) return this._recoveryCheck;
+    if (!force && Date.now() < this._nextRecoveryCheckAt) return out;
 
-    const THROTTLE_MS = 6 * 60 * 60 * 1000;
-    const now = Date.now();
-    if (!force && now - this._lastRecoveryCheck < THROTTLE_MS) return out;
-    this._lastRecoveryCheck = now;
-
-    try {
-      const manager = await this.wallet.getVtxoManager();
-      const rec = await manager.getRecoverableBalance();
-      if (rec && Number(rec.recoverable) > 0) {
-        this._notifyMaintenance(true);
-        try {
-          await manager.recoverVtxos();
-          out.recovered = true;
-        } finally {
-          this._notifyMaintenance(false);
+    const attempt = (async () => {
+      try {
+        const manager = await this.wallet.getVtxoManager();
+        const rec = await manager.getRecoverableBalance();
+        if (rec && Number(rec.recoverable) > 0) {
+          this._notifyMaintenance(true);
+          try {
+            await manager.recoverVtxos();
+            out.recovered = true;
+          } finally {
+            this._notifyMaintenance(false);
+          }
         }
+        // Long cooldown only after a successful check. A transient failure
+        // retries on the next normal refresh after a short backoff.
+        this._nextRecoveryCheckAt = Date.now() + 6 * 60 * 60 * 1000;
+      } catch (error) {
+        this._nextRecoveryCheckAt = Date.now() + 30 * 1000;
+        console.warn('[arkade] VTXO recovery check failed:', error?.message || error);
       }
-    } catch (error) {
-      console.warn('[arkade] VTXO recovery check failed:', error?.message || error);
+      return out;
+    })();
+    this._recoveryCheck = attempt;
+    try {
+      return await attempt;
+    } finally {
+      this._recoveryCheck = null;
     }
-    return out;
   }
 
   _notifyMaintenance(active) {

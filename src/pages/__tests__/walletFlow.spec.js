@@ -14,6 +14,7 @@ import * as payAgain from '../../utils/payAgain.js';
 import * as recipientPayments from '../../services/recipientPayments.js';
 import * as haptics from '../../utils/haptics.js';
 import * as nwcErrors from '../../utils/nwcErrors.js';
+import * as userErrors from '../../utils/userErrors.js';
 
 // Run the production Options-API methods with controlled provider promises.
 function evaluate(file, dependencies = {}) {
@@ -41,6 +42,7 @@ const component = (dependencies = {}) => evaluate('../Wallet.vue', {
   '../utils/payAgain.js': payAgain,
   '../utils/haptics.js': haptics,
   '../utils/nwcErrors.js': nwcErrors,
+    '../utils/userErrors.js': userErrors,
   '../services/paymentNotifications.js': { isInternalRoute: (route) => typeof route === 'string' && route.startsWith('/') && !route.startsWith('//') },
   ...dependencies,
 }).default;
@@ -515,6 +517,63 @@ const quietly = async fn => {
   try { return await fn(); } finally { console.log = log; }
 };
 const callsTo = (calls, method) => calls.filter(call => call[1] === method);
+
+test('Arkade onchain requires a quote for this wallet, destination and recipient amount', async () => {
+  const { vm, store, options } = payingHarness({ active: 'ark' });
+  vm.pendingPayment = { type: 'bitcoin_address', bitcoinAddress: 'bc1-destination', fixedAmountSats: 2100 };
+  store.ensureArkadeConnected = async () => ({ getBitcoinSendFeeEstimate: async ({ amount }) => ({ amount, fee: 130, total: amount + 130 }) });
+  assert.equal(vm.sendSheetCommitGate, false);
+  await vm.updateFeeEstimate();
+  assert.equal(vm.sendSheetCommitGate, true);
+  assert.equal(vm.estimatedFee, 130);
+  assert.equal(vm.currentArkadeFeeQuote.total, 2230);
+  vm.sendSheetAmountSats = 3000;
+  assert.equal(vm.sendSheetCommitGate, false, 'changing the amount invalidates the old quote immediately');
+  assert.equal(options.watch.sendSheetAmountSats, 'updateFeeEstimate');
+  await vm.updateFeeEstimate();
+  assert.equal(vm.sendSheetCommitGate, true);
+  vm.pendingPayment.bitcoinAddress = 'bc1-another';
+  assert.equal(vm.sendSheetCommitGate, false);
+  vm.sendingWalletId = 'personal';
+  assert.equal(vm.currentArkadeFeeQuote, null);
+});
+
+test('an Arkade quote failure explains why sending is disabled; late quotes cannot overwrite a new amount', async () => {
+  const { vm, store } = payingHarness({ active: 'ark' });
+  vm.pendingPayment = { type: 'bitcoin_address', bitcoinAddress: 'bc1-destination', fixedAmountSats: 2100 };
+  store.ensureArkadeConnected = async () => ({ getBitcoinSendFeeEstimate: async () => { throw new Error('Network unavailable'); } });
+  await vm.updateFeeEstimate();
+  assert.equal(vm.sendSheetCommitGate, false);
+  assert.ok(vm.connectionNotice);
+  const old = deferred();
+  store.ensureArkadeConnected = async () => ({ getBitcoinSendFeeEstimate: async ({ amount }) => amount === 2100 ? old.promise : { amount, fee: 150, total: amount + 150 } });
+  const first = vm.updateFeeEstimate();
+  vm.sendSheetAmountSats = 3000;
+  await vm.updateFeeEstimate();
+  old.resolve({ amount: 2100, fee: 1, total: 2101 });
+  await first;
+  assert.equal(vm.estimatedFee, 150);
+  assert.equal(vm.currentArkadeFeeQuote.amount, 3000);
+});
+
+test('Arkade sends hold the approved fee across awaits and reprice a refused send', async () => {
+  const { vm, store } = payingHarness({ active: 'ark' });
+  vm.pendingPayment = { type: 'bitcoin_address', bitcoinAddress: 'bc1-destination', fixedAmountSats: 2100 };
+  vm.arkadeFeeQuote = { walletId: 'ark', address: 'bc1-destination', amount: 2100, fee: 130, total: 2230 };
+  const connecting = deferred();
+  store.ensureArkadeConnected = () => connecting.promise;
+  const attempt = vm.sendArkadePayment(2100, null, null, 'ark');
+  vm.arkadeFeeQuote = null; // a queued UI watcher refreshed its state
+  let repriced = 0;
+  vm.updateFeeEstimate = async () => { repriced++; };
+  connecting.resolve({ offboardToBitcoin: async args => {
+    assert.equal(args.maxFee, 130);
+    assert.equal(args.amount, 2100);
+    throw Object.assign(new Error('fee changed'), { code: 'ARKADE_OFFBOARD_FEE_CHANGED' });
+  } });
+  await assert.rejects(attempt, { code: 'ARKADE_OFFBOARD_FEE_CHANGED' });
+  assert.equal(repriced, 1);
+});
 
 test('Pay with: an untouched payment is paid by the active wallet, whatever its type', async () => {
   for (const active of ['biz', 'personal', 'alby', 'lnb']) {
