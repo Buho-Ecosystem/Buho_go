@@ -27,6 +27,12 @@
  * a system notification for what settled while away). Push while closed is
  * #276.
  *
+ * It follows the rules of the Spark lifecycle (sparkLifecycle.js:
+ * generation-bound runs, one follow-up, backoff, catch-up through the same
+ * ledger) without its Spark-only work (sync, deposits, rebuilds, exit
+ * kits), which is why the two stay separate. A change to how runs are
+ * scheduled belongs in both.
+ *
  * The scheduling is createWalletWatch, pure and tested; startWalletWatch
  * wires it to the stores and the app.
  */

@@ -28,7 +28,8 @@
  * Delivery in that state is #276 (push/wake), not this module.
  *
  * Everything external is injected, so the scheduling logic is testable in
- * plain Node (see __tests__/sparkLifecycle.spec.js).
+ * plain Node (see __tests__/sparkLifecycle.spec.js). Wallets of the other
+ * types follow the same rules in services/walletWatch.js.
  */
 
 import { catchUpReceipts } from './paymentReceipts.js';

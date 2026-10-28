@@ -60,7 +60,7 @@ An NWC wallet keeps one relay connection while the app runs (#395). The store ow
 
 - **One connect at a time:** two askers while it is being made share the same attempt. Connecting again closes the connection it replaces.
 - **Nothing left open:** a connect that fails is closed. One that outlives a disconnect or a removal (the wallet's epoch moved) is closed and refused, never handed out. Disconnect and removal close the wallet's connection.
-- **Dropped relays:** the SDK opens the socket on the first request and reconnects a dropped relay on the next one, giving up on a relay after 3 s, so the same connection survives a phone losing the network or the app going to the background. A notification subscription reconnects each relay on its own (see Incoming payments).
+- **Dropped relays:** the SDK opens the socket on the first request and reconnects a dropped relay on the next one, giving up on a relay after 3 s, so the same connection survives a phone losing the network or the app going to the background. A notification subscription reconnects each relay on its own ([Incoming payments](INCOMING_PAYMENTS.md)).
 - **Short-lived on purpose:** the connection test before adding (`nwcProbe`), the pairing check (`walletKnowsConnection`) and the tax report (`NWCWalletProvider`, reads across wallets) each open their own and close it when done.
 
 Measured with a stand-in wallet (`scripts/check-nwc-connections.mjs`): before, one wallet held 9 connections after Home, two history pages, a transaction, Receive, a send and a batch of 3; now it holds 1 throughout, reconnects once after the relay drops it, and none after removal. On an Android 16 emulator (debug build, stand-in wallet on a public relay via `scripts/device/nwc-stand-in.mjs --relay …`): one connection from start through Home, history and a transaction; after 25 s in the background with the network off it reconnected once on the next request; none after removal.
@@ -128,7 +128,7 @@ What 9 changed for BuhoGO:
 - **Reconnecting pool.** Each relay reconnects on its own, 1 s doubling to 5 min, and `close()` stops every loop, so closing a connection also ends its notification subscription.
 - **Amounts** must be whole, positive millisats. BuhoGO only asks for whole sats.
 - **Gone:** the multi-pay methods, which BuhoGO never used.
-- **Still missing:** a request `expiration` tag, and a heartbeat. A socket that dies without closing is noticed only by the next request or resubscribe; Incoming payments covers that with its catch-up read.
+- **Still missing:** a request `expiration` tag, and a heartbeat. A socket that dies without closing is noticed only by the next request or resubscribe; [Incoming payments](INCOMING_PAYMENTS.md) covers that with its catch-up read.
 
 ## Checks
 

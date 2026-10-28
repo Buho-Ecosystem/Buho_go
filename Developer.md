@@ -37,7 +37,7 @@ src/
 ├── composables/  shared component logic (contact chat, address book sync, …)
 ├── pages/        routed screens (Wallet = Home, Settings, KioskDashboard, AutoTransfer*, setup pages, …)
 ├── providers/    WalletProvider (base) + BreezSpark / Arkade / NWC / LNBits + WalletFactory
-├── services/     side effects: Spark lifecycle, NWC payment, map sources, chat (dm/), tax report, …
+├── services/     side effects: Spark lifecycle, wallet watch (incoming payments), NWC payment, map sources, chat (dm/), tax report, …
 ├── stores/       Pinia stores (wallet, autoWithdraw, addressBook, identity, messages, …)
 ├── utils/        pure rules, each with tests in utils/__tests__/
 ├── data/         Learn & Earn questions per locale
@@ -89,7 +89,7 @@ Self-custodial on the Ark protocol (VTXOs); one Arkade wallet per install.
 | --- | --- |
 | `getArkadeAddress()` / `transferToArkadeAddress({ arkadeAddress, amount })` | Instant `ark1` → `ark1` |
 | `getBoardingAddress()` / `offboardToBitcoin({ bitcoinAddress, amount })` | On-chain receive and send (Ramps) |
-| `startIncomingFundsListener(cb)` | Incoming funds |
+| `watchPayments(onActivity)` | A new output on the wallet's own addresses: a hint to read the history ([docs/INCOMING_PAYMENTS.md](docs/INCOMING_PAYMENTS.md)) |
 | `checkLiveness()` | VTXO renew and recover, throttled |
 
 - **Keys:** `MnemonicIdentity.fromMnemonic` on BIP-86 Taproot `m/86'/{0 mainnet, 1 test}'/0'/0/*` (`utils/arkadeKeys.js`, pinned by a test). A BuhoGO Arkade phrase restores in the Arkade reference wallet.
@@ -113,6 +113,8 @@ A Nostr Wallet Connect (NIP-47) client. Every NWC payment goes through `services
 <summary><b>LNbits</b>: <code>LNBitsWalletProvider</code></summary>
 
 REST with the wallet's admin key (`X-Api-Key`): `GET /api/v1/wallet`, `POST /api/v1/payments`, `GET /api/v1/payments/{hash}`. The server must allow your origin (CORS) on the web.
+
+Incoming payments arrive live over `/api/v1/ws/<invoice key>` (`watchPayments`). The read-only invoice key is fetched once with the admin key and kept beside it; the admin key never goes into a URL ([docs/INCOMING_PAYMENTS.md](docs/INCOMING_PAYMENTS.md)).
 
 </details>
 
