@@ -40,7 +40,7 @@ function harness(t, { notifications = true, methods = ['make_invoice', 'lookup_i
   const wallet = { id: 'nwc', type: 'nwc', metadata: { methods, notifications: notifications ? ['payment_received'] : [] } };
   const store = reactive({ wallets: [wallet], activeWalletId: 'nwc', activeWalletType: 'nwc', lastReceipt: null });
   const invoice = { walletId: 'nwc', payment_hash: HASH, amount: 5000, expires_at: 1_900_003_600 };
-  const requests = [], statuses = [], refreshes = [], notices = [];
+  const requests = [], statuses = [], refreshes = [], notices = [], activities = [];
   let rows = [], subscribers = [], lookups = 0, connections = 0;
   let lookup = () => ({ state: 'pending' });
   let connect = () => connection;
@@ -56,6 +56,7 @@ function harness(t, { notifications = true, methods = ['make_invoice', 'lookup_i
   };
   store.nwcConnection = async id => { assert.equal(id, 'nwc'); connections++; return connect(); };
   store.refreshWalletData = async id => { refreshes.push(id); };
+  store.recordConfirmedReceive = activity => { activities.push(activity); return activity; };
   const memory = new Map();
   ledger = createReceiptLedger({ storage: { getItem: key => memory.get(key), setItem: (key, value) => memory.set(key, value) } });
   const localLedger = ledger;
@@ -77,7 +78,7 @@ function harness(t, { notifications = true, methods = ['make_invoice', 'lookup_i
   });
   const deliver = receipt => { store.lastReceipt = { walletId: receipt.walletId, paymentHash: receipt.paymentHash, paymentId: receipt.id, amountSats: receipt.amountSats, at: Date.now() }; };
   return {
-    vm, store, connection, requests, statuses, refreshes, notices, ledger: localLedger,
+    vm, store, connection, requests, statuses, refreshes, notices, activities, ledger: localLedger,
     get lookups() { return lookups; }, get connections() { return connections; }, get subscribers() { return subscribers.length; },
     setLookup(fn) { lookup = fn; }, setConnect(fn) { connect = fn; }, setRows(value) { rows = value; },
     receipt(extra = {}) { store.lastReceipt = { walletId: 'nwc', paymentHash: HASH, amountSats: 2100, at: Date.now(), ...extra }; },
@@ -115,6 +116,9 @@ test('one shared NWC subscription verifies history and confirms the exact invoic
   assert.deepEqual(h.refreshes, ['nwc']);
   assert.equal(h.ledger.isSeen('nwc', HASH), true);
   assert.equal(incoming.shownByReceive(h.store.lastReceipt), true, 'the host leaves this receipt to the sheet');
+  assert.equal(h.activities.length, 1);
+  assert.equal(h.activities[0].paymentHash, HASH);
+  assert.equal(h.activities[0].amountSats, 2100);
 });
 
 test('an unpaid notification and another invoice cannot confirm the sheet', async t => {
@@ -124,6 +128,7 @@ test('an unpaid notification and another invoice cannot confirm the sheet', asyn
   h.setRows([{ payment_hash: OTHER, type: 'incoming', amount: 2100, state: 'settled', settled_at: Date.now() / 1000 }]);
   await hint(OTHER);
   assert.equal(h.vm.isPaymentConfirmed, false);
+  assert.equal(h.activities.length, 0, 'unpaid activity is not recorded as a receive');
   assert.equal(incoming.shownByReceive(h.store.lastReceipt), false, 'another invoice remains news for the host');
 });
 
@@ -145,6 +150,26 @@ test('missed notifications use a slow lookup on the same connection', async t =>
   await h.tick(1);
   assert.equal(h.lookups, 1);
   assert.deepEqual(h.requests, [{ payment_hash: HASH }]);
+  assert.equal(h.vm.confirmedAmount, 2100);
+  assert.equal(h.store.lastReceipt, null, 'the sheet can confirm before the shared ledger delivers');
+  assert.equal(h.activities.length, 1, 'Home still receives the confirmed activity');
+  assert.equal(h.activities[0].walletId, 'nwc');
+  assert.equal(h.activities[0].paymentHash, HASH);
+  assert.equal(h.activities[0].amountSats, 2100);
+  assert.equal(h.ledger.ingest('nwc', { id: HASH, type: 'incoming', status: 'completed', amount: 2100, timestamp: Date.now() / 1000 }), null,
+    'the sheet suppression can silence later ledger delivery without losing Home activity');
+});
+
+test('deposit activity keeps its owning wallet and an accepted unsettled claim is not a receipt', t => {
+  const h = harness(t);
+  h.vm.calculateFiatAmount = amount => String(amount);
+  h.vm.handleBitcoinDepositClaimed({ walletId: 'original', amount: 2100, processing: true });
+  h.vm.handleBitcoinDepositClaimed({ walletId: 'original', amount: 2100, settled: false });
+  assert.equal(h.activities.length, 0);
+  assert.equal(h.vm.showPaymentConfirmation, undefined);
+  h.vm.handleBitcoinDepositClaimed({ walletId: 'original', amount: 2100, transferId: 'claim-payment' });
+  assert.equal(h.activities[0].walletId, 'original');
+  assert.equal(h.activities[0].paymentId, 'claim-payment');
   assert.equal(h.vm.confirmedAmount, 2100);
 });
 
@@ -230,6 +255,15 @@ test('reconnection is resolved afresh for every fallback lookup', async t => {
   await h.vm.paymentMonitor.checkNow();
   assert.equal(h.connections, 2);
   assert.equal(h.vm.confirmedAmount, 21);
+});
+
+test('a fee-bearing NWC lookup preserves its credited amount on Home and the confirmation', async t => {
+  const h = harness(t, { methods: ['lookup_invoice'] });
+  h.vm.startNWCReceiveMonitor();
+  h.setLookup(() => ({ state: 'settled', amount: 2100000, fees_paid: 5000 }));
+  await h.vm.paymentMonitor.checkNow();
+  assert.equal(h.vm.confirmedAmount, 2100);
+  assert.equal(h.activities.at(-1).amountSats, 2100);
 });
 
 for (const paid of [true, false]) {

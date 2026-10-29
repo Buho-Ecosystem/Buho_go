@@ -7,6 +7,8 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { transformSync } from 'esbuild';
+import { receiptFromPayment } from '../../services/paymentReceipts.js';
+import { normalizeTx } from '../../services/txNormalizer.js';
 
 function loadModule() {
   const load = (file, deps) => {
@@ -166,6 +168,24 @@ test('list rows keep the time the screens show; only a single lookup says when i
   assert.equal(paid.timestamp, Date.parse('2026-10-27T10:00:00Z') / 1000);
   assert.equal(paid.settled_at, undefined, 'History, details and the tax report read these rows unchanged');
   assert.equal(open.status, 'pending');
+  const receipt = receiptFromPayment(paid);
+  assert.equal(receipt.timestamp, paid.timestamp, 'metadata update time must not change ledger checkpoints');
+  assert.equal(receipt.settlementKnown, false);
+});
+
+test('fee-bearing incoming LNbits activity and completed transaction show the same net amount', () => {
+  const row = provider()._toTransaction({ payment_hash: HASH, amount: 2100000, fee: 5000, status: 'success', time: 1790000000 });
+  assert.equal(receiptFromPayment(row).amountSats, 2095);
+  assert.equal(normalizeTx(row, { walletType: 'lnbits' }).recipientSats, 2095);
+  assert.equal(receiptFromPayment(row).settlementKnown, false, 'an invoice creation timestamp is not settlement proof');
+});
+
+test('Receive-sheet lookup reports credited sats separately from the invoice amount', async () => {
+  server({ [`GET /api/v1/payments/${HASH}`]: { paid: true, preimage: 'pre', details: { payment_hash: HASH, amount: 2100000, fee: -5000, status: 'success' } } });
+  const result = await provider().lookupInvoice(HASH);
+  assert.equal(result.paid, true);
+  assert.equal(result.amount, 2100);
+  assert.equal(result.receivedSats, 2095);
 });
 
 test('one payment is read by its hash; another wallet\'s payment is nothing to this one', async () => {

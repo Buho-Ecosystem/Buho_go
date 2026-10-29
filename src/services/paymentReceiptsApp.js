@@ -87,13 +87,27 @@ export async function deliverReceipt(receipt) {
       import('../utils/amountFormatting.js'),
     ]);
     const walletStore = useWalletStore();
+    // Delivery imports are asynchronous; a removed wallet owns no surface.
+    if (!walletStore.wallets.some((wallet) => wallet.id === receipt.walletId)) return;
     const { system } = receiptDelivery(receipt, visibilitySnapshot());
+    const observedAt = Date.now();
+    const activity = walletStore.recordConfirmedReceive({
+      walletId: receipt.walletId,
+      paymentId: receipt.id,
+      paymentHash: receipt.paymentHash,
+      aliases: receipt.aliases,
+      amountSats: receipt.amountSats,
+      settledAt: receipt.settlementKnown === false ? null : receipt.timestamp,
+      observedAt,
+    });
     walletStore.lastReceipt = {
       walletId: receipt.walletId,
       amountSats: receipt.amountSats,
-      at: Date.now(),
+      at: observedAt,
       paymentId: receipt.id,
       paymentHash: receipt.paymentHash,
+      aliases: receipt.aliases || [],
+      settledAt: activity?.settledAt || null,
       settledWhileAway: system,
     };
 

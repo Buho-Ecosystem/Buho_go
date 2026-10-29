@@ -57,6 +57,84 @@ test('a wallet the watch cannot read is still announced from its rise', () => {
   store.noticeIncomingPayment(wallet, 1000);
   store.noticeIncomingPayment(wallet, 1210);
   assert.deepEqual([store.lastReceipt?.walletId, store.lastReceipt?.amountSats], ['n', 210]);
+  assert.equal(store.latestConfirmedReceive('n').amountSats, 210);
+  assert.equal(store.latestConfirmedReceive('n').paymentId, null);
+});
+
+test('confirmed receive activity enriches one payment without repeating its arrival or announcements', () => {
+  const { store } = watched();
+  store.wallets = [lnbitsWallet('a'), lnbitsWallet('b')];
+  const first = store.recordConfirmedReceive({ walletId: 'a', paymentHash: HASH.toUpperCase(), amountSats: 2100, observedAt: 1_900_000_005_000 });
+  assert.equal(first.paymentHash, HASH);
+  assert.equal(first.settledAt, null, 'observing receipt is not a settlement timestamp');
+  assert.equal(store.lastReceipt, null, 'display activity never produces a duplicate toast');
+  const duplicate = store.recordConfirmedReceive({ walletId: 'a', paymentHash: HASH, amountSats: 2100 });
+  assert.equal(duplicate, first);
+  assert.equal(store.confirmedReceiveActivity, first);
+  const enriched = store.recordConfirmedReceive({ walletId: 'a', paymentId: 'provider-id', paymentHash: HASH, settledAt: 1_900_000_000, amountSats: 2100 });
+  assert.equal(enriched.sequence, first.sequence);
+  assert.equal(enriched.revision, first.revision + 1);
+  assert.equal(enriched.observedAt, first.observedAt);
+  assert.equal(enriched.settledAt, 1_900_000_000_000);
+  assert.equal(store.latestConfirmedReceive('a'), enriched);
+  assert.equal(store.confirmedReceivesByWallet.a.length, 1);
+  const second = store.recordConfirmedReceive({ walletId: 'b', paymentHash: HASH, amountSats: 42 });
+  assert.notEqual(second.sequence, first.sequence, 'identity is scoped to its wallet');
+});
+
+test('payment aliases retain identity and duplicate enrichment cannot make an old receipt latest', () => {
+  const { store } = watched();
+  store.wallets = [lnbitsWallet('a')];
+  const old = store.recordConfirmedReceive({ walletId: 'a', paymentId: 'commitment', amountSats: 200 });
+  const latest = store.recordConfirmedReceive({ walletId: 'a', paymentId: 'newest', amountSats: 300 });
+  const alias = store.recordConfirmedReceive({ walletId: 'a', paymentId: 'onchain', aliases: ['commitment'], amountSats: 200 });
+  assert.equal(alias.sequence, old.sequence);
+  assert.equal(store.confirmedReceivesByWallet.a.length, 2);
+  assert.equal(store.latestConfirmedReceive('a'), latest);
+  assert.equal(store.recordConfirmedReceive({ walletId: 'a', paymentId: 'commitment', amountSats: 200 }).sequence, old.sequence);
+});
+
+test('newest-first catch-up seeds Home with the newest settlement, not its final older observation', () => {
+  const { store } = watched();
+  store.wallets = [lnbitsWallet('a')];
+  const newest = store.recordConfirmedReceive({ walletId: 'a', paymentId: 'newest', amountSats: 900, settledAt: 1_900_000_002 });
+  store.recordConfirmedReceive({ walletId: 'a', paymentId: 'older', amountSats: 100, settledAt: 1_900_000_000 });
+  assert.equal(store.confirmedReceiveActivity.paymentId, 'older', 'live signals still report each payment');
+  assert.equal(store.latestConfirmedReceive('a'), newest, 'remount and wallet-switch seed retain latest settlement');
+  store.recordConfirmedReceive({ walletId: 'a', paymentId: 'older', aliases: ['earlier-id'], amountSats: 100 });
+  assert.equal(store.latestConfirmedReceive('a'), newest, 'enriching an older signal does not reorder settlement');
+  const tied = store.recordConfirmedReceive({ walletId: 'a', paymentId: 'same-instant', amountSats: 300, settledAt: 1_900_000_002 });
+  assert.equal(store.latestConfirmedReceive('a'), tied, 'equal settlement times use observation order');
+  const unknown = store.recordConfirmedReceive({ walletId: 'a', paymentId: 'unknown-time', amountSats: 400 });
+  assert.equal(store.latestConfirmedReceive('a'), unknown, 'an unknown timestamp is never invented');
+  store.recordConfirmedReceive({ walletId: 'a', paymentId: 'still-older', amountSats: 50, settledAt: 1_899_999_990 });
+  assert.equal(store.latestConfirmedReceive('a'), unknown, 'an older known receipt cannot use an unknown observation to displace the newest known settlement');
+});
+
+test('anonymous observations never gain identity from equal amounts and history is bounded', () => {
+  const { store } = watched();
+  store.wallets = [lnbitsWallet('a')];
+  const first = store.recordConfirmedReceive({ walletId: 'a', amountSats: 100 });
+  const second = store.recordConfirmedReceive({ walletId: 'a', amountSats: 100 });
+  assert.notEqual(first.sequence, second.sequence);
+  assert.equal(second.paymentId, null);
+  for (let i = 0; i < 100; i++) store.recordConfirmedReceive({ walletId: 'a', paymentId: `payment-${i}`, amountSats: 100 });
+  assert.equal(store.confirmedReceivesByWallet.a.length, 64);
+  assert.equal(store.latestConfirmedReceive('a').paymentId, 'payment-99');
+});
+
+test('invalid and removed-wallet activity cannot publish and removal forgets its observations', async () => {
+  const { store } = watched();
+  const wallet = lnbitsWallet('a');
+  store.wallets = [wallet];
+  for (const amountSats of [0, -1, NaN, Infinity, 1.5]) assert.equal(store.recordConfirmedReceive({ walletId: 'a', amountSats }), null);
+  assert.equal(store.recordConfirmedReceive({ walletId: 'missing', amountSats: 100 }), null);
+  assert.equal(store.confirmedReceiveActivity, null);
+  store.recordConfirmedReceive({ walletId: 'a', paymentId: 'first', amountSats: 100 });
+  await store._dropWalletEntry(wallet);
+  assert.equal(store.latestConfirmedReceive('a'), null);
+  assert.equal(store.confirmedReceiveActivity, null);
+  assert.equal(store.recordConfirmedReceive({ walletId: 'a', paymentId: 'late', amountSats: 100 }), null);
 });
 
 test('a transfer into an LNbits wallet is the user\'s own move: its receipt is marked by hash', async () => {

@@ -297,13 +297,17 @@ export class LNBitsWalletProvider extends WalletProvider {
       }
 
       // LNBits uses status string: "pending", "success", "failed"
-      const status = this._parsePaymentStatus(response.status, response.pending);
-      const isPaid = status === 'completed';
+      const details = response.details || response;
+      const status = this._parsePaymentStatus(details.status, details.pending);
+      const isPaid = response.paid === true || (response.paid !== false && status === 'completed');
+      const amount = details.amount ? Math.floor(Math.abs(details.amount) / 1000) : 0;
+      const receiverFee = details.fee ? Math.floor(Math.abs(details.fee) / 1000) : 0;
 
       return {
         paid: isPaid,
         preimage: response.preimage || null,
-        amount: response.amount ? Math.floor(Math.abs(response.amount) / 1000) : 0
+        amount,
+        ...(isPaid && receiverFee > 0 ? { receivedSats: Math.max(0, amount - receiverFee) } : {}),
       };
     } catch (error) {
       // Payment not found or error - assume not paid
@@ -350,6 +354,7 @@ export class LNBitsWalletProvider extends WalletProvider {
       // `updated_at` on settlement, while `time` stays when the invoice was
       // made. Kept off the list rows, whose time the screens show as is.
       row.settled_at = this._parseTimestamp(details.updated_at || details.time);
+      row.receiptTimeIsCreation = !details.updated_at;
     }
     return row;
   }
@@ -363,6 +368,11 @@ export class LNBitsWalletProvider extends WalletProvider {
       type: tx.amount > 0 ? 'receive' : 'send',
       amount: Math.floor(Math.abs(tx.amount) / 1000), // Convert msats to sats
       timestamp: this._parseTimestamp(tx.time || tx.created_at),
+      // Keep History's existing display time, but let receipts distinguish
+      // verified settlement from an invoice's creation-time fallback.
+      // updated_at can also change on a later metadata edit. Never promote
+      // a list update time into settlement proof or a ledger checkpoint.
+      receiptTimeIsCreation: true,
       // LNbits' /payments list only ever gives us one timestamp per
       // record — there's no separate "settled at" — so created_at
       // mirrors the same value rather than inventing a second one.

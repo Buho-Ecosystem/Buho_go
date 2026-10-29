@@ -83,6 +83,19 @@ const removingWallets = new Set();
 // takes a wallet for saved that may still be undone.
 const addingWallets = new Set();
 const epochOf = (walletId) => walletEpochs.get(walletId) || 0;
+const CONFIRMED_RECEIVE_LIMIT = 64;
+const receiveIdentity = (value) => {
+  if (value == null || value === '') return null;
+  const text = String(value);
+  return /^[a-f0-9]{64}$/i.test(text) ? text.toLowerCase() : text;
+};
+const receiveIdentities = (activity) => [activity.paymentId, activity.paymentHash, ...(activity.aliases || [])]
+  .map(receiveIdentity).filter(Boolean);
+const receiveTimeMs = (value) => {
+  if (value == null) return null;
+  const number = typeof value === 'number' ? value : Date.parse(value);
+  return Number.isFinite(number) && number > 0 ? (number < 1e11 ? number * 1000 : number) : null;
+};
 
 /** Close an NWC connection; closing is best-effort and never throws. */
 function closeNwc(nwc) {
@@ -306,6 +319,11 @@ export const useWalletStore = defineStore('wallet', {
     // when only the balance said so (an NWC connection that may not read
     // its history); paymentHash also for payments that have none (Arkade).
     lastReceipt: null,
+    // Runtime display activity, independent of whether a receive was already
+    // announced by its sheet. These are observations, never synthetic history.
+    confirmedReceiveActivity: null,
+    confirmedReceivesByWallet: {},
+    confirmedReceiveSequence: 0,
     // Funds the wallet holds but cannot spend yet, keyed by wallet ID:
     // { pending, recoverable }. Arkade is the only backend that reports a
     // split today (boarding UTXOs awaiting confirmation, and subdust or
@@ -469,6 +487,19 @@ export const useWalletStore = defineStore('wallet', {
   }),
 
   getters: {
+    /** Catch-up lists newest first; its last observed receipt can be older.
+     * Seed Home by known settlement order, using observation order only when
+     * either time is unknown or both receipts settled in the same instant. */
+    latestConfirmedReceive: (state) => (walletId) => {
+      let settled = null, unknown = null;
+      for (const entry of state.confirmedReceivesByWallet[walletId] || []) {
+        if (!entry.settledAt) {
+          if (!unknown || entry.sequence > unknown.sequence) unknown = entry;
+        } else if (!settled || entry.settledAt > settled.settledAt
+          || (entry.settledAt === settled.settledAt && entry.sequence > settled.sequence)) settled = entry;
+      }
+      return unknown && (!settled || unknown.sequence > settled.sequence) ? unknown : settled;
+    },
     // Compatibility view for existing consumers, derived from the same state.
     balances: (state) => Object.fromEntries(Object.entries(state.balanceStates)
       .filter(([, balance]) => balance.value != null)
@@ -884,6 +915,62 @@ export const useWalletStore = defineStore('wallet', {
   },
 
   actions: {
+    /**
+     * A verified receive happened, even when its sheet already announced it.
+     * This never drives notifications or writes a fabricated history row.
+     * Identityless balance observations remain separate: matching by amount
+     * or observation time would collapse real payments or invent identity.
+     */
+    recordConfirmedReceive(input) {
+      const walletId = input?.walletId;
+      if (!walletId || removingWallets.has(walletId) || !this.wallets.some((wallet) => wallet.id === walletId)) return null;
+      const amountSats = input.amountSats == null ? null : Number(input.amountSats);
+      if (amountSats !== null && (!Number.isSafeInteger(amountSats) || amountSats <= 0)) return null;
+      const activity = {
+        walletId,
+        paymentId: receiveIdentity(input.paymentId),
+        paymentHash: input.paymentHash ? String(input.paymentHash).toLowerCase() : null,
+        aliases: [...new Set((Array.isArray(input.aliases) ? input.aliases : []).map(receiveIdentity).filter(Boolean))],
+        amountSats,
+        settledAt: receiveTimeMs(input.settledAt),
+        observedAt: receiveTimeMs(input.observedAt) || Date.now(),
+      };
+      activity.aliases = [...new Set(receiveIdentities(activity))];
+      const identities = new Set(receiveIdentities(activity));
+      const previous = this.confirmedReceivesByWallet[walletId] || [];
+      const index = identities.size ? previous.findIndex((entry) => receiveIdentities(entry).some((id) => identities.has(id))) : -1;
+      let next;
+      if (index !== -1) {
+        const known = previous[index];
+        next = {
+          ...known,
+          paymentId: activity.paymentId && !known.aliases.includes(activity.paymentId)
+            ? activity.paymentId : known.paymentId || activity.paymentId,
+          paymentHash: activity.paymentHash || known.paymentHash,
+          aliases: [...new Set([...known.aliases, ...receiveIdentities(known), ...activity.aliases])],
+          amountSats: activity.amountSats ?? known.amountSats,
+          settledAt: activity.settledAt ?? known.settledAt,
+          observedAt: known.observedAt,
+        };
+        // A repeated signal adds no arrival and does not wake Home again.
+        if (next.paymentId === known.paymentId && next.paymentHash === known.paymentHash
+            && next.amountSats === known.amountSats && next.settledAt === known.settledAt
+            && next.aliases.length === known.aliases.length && next.aliases.every((id) => known.aliases.includes(id))) return known;
+        next.revision = known.revision + 1;
+        this.confirmedReceivesByWallet[walletId] = previous.map((entry, i) => i === index ? next : entry);
+      } else {
+        next = { ...activity, sequence: ++this.confirmedReceiveSequence, revision: 1 };
+        this.confirmedReceivesByWallet[walletId] = [...previous, next].slice(-CONFIRMED_RECEIVE_LIMIT);
+      }
+      this.confirmedReceiveActivity = next;
+      return next;
+    },
+
+    forgetConfirmedReceives(walletId) {
+      delete this.confirmedReceivesByWallet[walletId];
+      if (this.confirmedReceiveActivity?.walletId === walletId) this.confirmedReceiveActivity = null;
+    },
+
     /**
      * Surface any user-facing failure via the global error dialog.
      * Funnels payment, withdraw, transfer, kiosk, link-resolution,
@@ -3098,6 +3185,7 @@ export const useWalletStore = defineStore('wallet', {
     async _dropWalletEntry(wallet) {
       const walletId = wallet.id;
       this._bumpWalletEpoch(walletId);
+      this.forgetConfirmedReceives(walletId);
       // Its live payment channel closes before the connection does.
       walletWatch?.()?.forget(walletId);
 
@@ -3489,6 +3577,7 @@ export const useWalletStore = defineStore('wallet', {
       if (this.takeInternalTransferTo(wallet.id)) return;
 
       const settledWhileAway = typeof document !== 'undefined' && document.visibilityState === 'hidden';
+      this.recordConfirmedReceive({ walletId: wallet.id, amountSats: received });
       this.lastReceipt = { walletId: wallet.id, amountSats: received, at: Date.now(), paymentId: null, paymentHash: null, settledWhileAway };
 
       const notifications = useNotificationsStore();
@@ -3797,6 +3886,8 @@ export const useWalletStore = defineStore('wallet', {
 
       this.wallets = [];
       this.activeWalletId = null;
+      this.confirmedReceiveActivity = null;
+      this.confirmedReceivesByWallet = {};
       this.connectionStates = {};
       for (const id of Object.keys(this.balanceStates || {})) forgetSparkWallet?.(id);
       this.balanceStates = {};

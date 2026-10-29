@@ -1074,9 +1074,17 @@ export default {
     handleBitcoinDepositClaimed(result) {
       // A pending claim already has progress feedback in the claim sheet;
       // do not cover it with a completed-payment confirmation.
-      if (result.processing) return;
+      if (result.processing || result.settled === false) return;
+      const walletId = result.walletId || this.walletStore.activeWalletId;
+      this.walletStore.recordConfirmedReceive({
+        walletId,
+        paymentId: result.paymentId || result.transferId || result.claimId || null,
+        aliases: result.aliases,
+        amountSats: result.amount,
+        settledAt: result.settledAt,
+      });
       // Show success confirmation similar to Lightning payments
-      confirmReceivePayment({ walletId: this.walletStore.activeWalletId, amountSats: result.amount });
+      confirmReceivePayment({ walletId, amountSats: result.amount });
       this.confirmedAmount = result.amount;
       this.confirmedFiatAmount = this.calculateFiatAmount(result.amount);
       this.showPaymentConfirmation = true;
@@ -1179,7 +1187,7 @@ export default {
         if (this.walletStore.activeWalletId !== walletId) return;
         if (receipt?.walletId !== walletId || !matches(receipt)) return;
         if (!Number.isSafeInteger(receipt.amountSats) || receipt.amountSats <= 0) return;
-        this.handlePaymentStatus(PaymentStatus.CONFIRMED, { amount: receipt.amountSats });
+        this.handlePaymentStatus(PaymentStatus.CONFIRMED, { amount: receipt.amountSats, receipt });
       }, { flush: 'sync' });
       this.receiveReceipts = { walletId, addresses, stop };
     },
@@ -1440,14 +1448,26 @@ export default {
           // Idempotency guard — event and poll can both fire for the same payment.
           if (this.isPaymentConfirmed) return;
           this.isPaymentConfirmed = true;
+          // Home observes verified activity independently of the announcement
+          // ledger: this sheet can suppress a later ledger delivery entirely.
+          const receiveWalletId = data.receipt?.walletId || this.generatedInvoice?.walletId || this.walletStore.activeWalletId;
+          this.walletStore.recordConfirmedReceive({
+            walletId: receiveWalletId,
+            paymentId: data.receipt?.paymentId || data.paymentId || data.transferId || null,
+            paymentHash: data.receipt?.paymentHash || this.generatedInvoice?.payment_hash,
+            aliases: data.receipt?.aliases,
+            amountSats: data.receivedSats ?? (data.amount || this.generatedInvoice?.amount || null),
+            settledAt: data.receipt?.settledAt || data.settledAt,
+            observedAt: data.receipt?.at,
+          });
           // This sheet confirms it; the app-wide announcement must not repeat
           // it, now or when the wallet's history is read later.
           confirmReceivePayment({
-            walletId: this.generatedInvoice?.walletId || this.walletStore.activeWalletId,
+            walletId: receiveWalletId,
             paymentHash: this.generatedInvoice?.payment_hash,
             amountSats: data.amount || this.generatedInvoice?.amount,
           });
-          noteReceiptShown(this.generatedInvoice?.walletId || this.walletStore.activeWalletId, this.generatedInvoice?.payment_hash);
+          noteReceiptShown(receiveWalletId, this.generatedInvoice?.payment_hash);
           this.paymentStatusMessage = this.$t('Payment received!');
           haptics.success();
 
@@ -1465,8 +1485,8 @@ export default {
           });
 
           // Refresh wallet balance in background
-          if (this.walletStore.activeWalletId) {
-            this.walletStore.refreshWalletData(this.walletStore.activeWalletId);
+          if (receiveWalletId) {
+            this.walletStore.refreshWalletData(receiveWalletId);
           }
           break;
 

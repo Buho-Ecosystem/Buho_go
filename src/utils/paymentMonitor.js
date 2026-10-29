@@ -158,6 +158,7 @@ export class PaymentMonitor {
           message: 'Payment received',
           preimage: result.preimage,
           amount: result.amount || this.invoice.amount,
+          ...(result.receivedSats != null ? { receivedSats: result.receivedSats } : {}),
           attempt: this.attemptCount
         });
         this.stop();
