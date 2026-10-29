@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { createReceiptLedger, receiptFromPayment, receiptDelivery, catchUpReceipts, CHECKPOINT_SLACK_S } from '../paymentReceipts.js';
+import { nwcTransactionRow } from '../../utils/nwcWallet.js';
+import { normalizeTx } from '../txNormalizer.js';
 
 function memory() {
   const m = new Map();
@@ -124,6 +126,15 @@ test('mapped history rows normalize to the received (net) amount', () => {
   const row = { id: 'x', type: 'receive', amount: 1005, fee: 5, status: 'completed', timestamp: T0 };
   assert.equal(receiptFromPayment(row).amountSats, 1000);
   assert.equal(receiptFromPayment(receive('y', 42, T0)).amountSats, 42);
+});
+
+test('NWC receipt credit and completed receive agree on the already-net amount with fee metadata', () => {
+  const row = nwcTransactionRow({ payment_hash: 'nwc', type: 'incoming', amount: 2100, fees_paid: 5, state: 'settled', settled_at: T0 });
+  assert.equal(receiptFromPayment(row).amountSats, 2100);
+  assert.equal(normalizeTx(row, { walletType: 'nwc' }).recipientSats, 2100);
+  assert.equal(receiptFromPayment(row).settlementKnown, true);
+  const withoutSettlementTime = nwcTransactionRow({ payment_hash: 'old-invoice', type: 'incoming', amount: 2100, state: 'settled', created_at: T0 - 3600 });
+  assert.equal(receiptFromPayment(withoutSettlementTime).settlementKnown, false);
 });
 
 test('delivery: settled while hidden is posted even after returning; on screen is not', () => {

@@ -274,118 +274,23 @@
         <AutoTransferStatusLine v-if="!walletStore.isKioskRestricted" />
       </div>
 
-      <!--
-        Last-transaction preview + History link.
-
-        When a last transaction is available we show it as a tappable
-        card above the History link. When it's loading we show a
-        skeleton card. When there is no transaction we render only the
-        History link (no placeholder / empty-state copy here — the
-        /transactions page handles empty state itself).
-
-        Everything routes to /transactions; the card is just a richer,
-        more informative entry point than the old round icon button.
-      -->
-      <div class="last-tx-section">
-        <!-- Loading: skeleton -->
-        <div
-          v-if="isLoadingLastTransaction"
-          class="last-tx-card-skeleton"
-          :class="$q.dark.isActive ? 'last-tx-skeleton-dark' : 'last-tx-skeleton-light'"
-        >
-          <q-skeleton type="circle" size="36px" animation="wave" />
-          <div class="last-tx-card-skeleton-text">
-            <q-skeleton type="text" width="60%" height="14px" animation="wave" />
-            <q-skeleton type="text" width="40%" height="12px" animation="wave" />
-          </div>
-          <div class="last-tx-card-skeleton-amount">
-            <q-skeleton type="text" width="80px" height="14px" animation="wave" />
-            <q-skeleton type="text" width="56px" height="12px" animation="wave" />
-          </div>
-        </div>
-
-        <!-- Loaded: the most recent transaction -->
-        <button
-          v-else-if="lastTransaction"
-          type="button"
-          class="last-tx-card"
-          :class="$q.dark.isActive ? 'last-tx-card-dark' : 'last-tx-card-light'"
-          @click="openTransactionHistory"
-          :aria-label="$t('Open transaction history')"
-        >
-          <!-- Avatar-first preview, same anatomy as the history list:
-               contact photo / counterparty picture (incl. a zapper's
-               relay profile) / silhouette, with the movement-type badge
-               riding the corner. -->
-          <span class="last-tx-avatar-wrap">
-            <ContactAvatar
-              v-if="lastTxContact"
-              class="last-tx-avatar"
-              :entry="lastTxContact"
-            />
-            <ContactAvatar
-              v-else-if="lastTxAvatarPicture"
-              class="last-tx-avatar"
-              :picture="lastTxAvatarPicture"
-              :entry="{ address: lastTxAvatarAddress }"
-              :name="lastTxHeading.kind === 'message' ? '' : lastTxHeading.text"
-            />
-            <ContactAvatar
-              v-else
-              class="last-tx-avatar"
-              :entry="{ address: lastTxAvatarAddress }"
-            />
-            <span
-              v-if="lastTxBadge"
-              class="last-tx-type-badge"
-              :class="lastTxBadge.cls"
-            >
-              <Icon :icon="lastTxBadge.icon" width="9" height="9" />
-            </span>
-          </span>
-          <span class="last-tx-info">
-            <!-- A message is quoted and unbolded so it reads as something
-                 someone wrote, never as a contact the user saved. -->
-            <span
-              class="last-tx-title"
-              :class="[
-                $q.dark.isActive ? 'last-tx-title-dark' : 'last-tx-title-light',
-                { 'last-tx-title-message': lastTxHeading.kind === 'message' }
-              ]"
-            >
-              <template v-if="lastTxHeading.kind === 'message'">&#8220;{{ lastTxHeading.text }}&#8221;</template>
-              <template v-else>{{ lastTxHeading.text }}</template>
-            </span>
-            <span class="last-tx-time" :class="$q.dark.isActive ? 'last-tx-muted-dark' : 'last-tx-muted-light'">
-              {{ lastTxTimeAgo }}
-            </span>
-          </span>
-          <span class="last-tx-amount-wrap">
-            <span class="last-tx-amount" :class="$q.dark.isActive ? 'last-tx-title-dark' : 'last-tx-title-light'">
-              <HiddenAmount>{{ lastTxAmountDisplay }}</HiddenAmount>
-            </span>
-            <span
-              v-if="lastTxFiatDisplay"
-              class="last-tx-fiat"
-              :class="$q.dark.isActive ? 'last-tx-muted-dark' : 'last-tx-muted-light'"
-            >
-              <HiddenAmount>{{ lastTxFiatDisplay }}</HiddenAmount>
-            </span>
-          </span>
-        </button>
-
-        <!-- Always: the History link row -->
-        <button
-          type="button"
-          class="history-link"
-          data-audit="history-link"
-          :class="$q.dark.isActive ? 'history-link-dark' : 'history-link-light'"
-          @click="openTransactionHistory"
-        >
-          <Icon icon="tabler:list" width="16" height="16" />
-          <span>{{ $t('History') }}</span>
-        </button>
-      </div>
+      <LatestTransactionCard
+        :key="latestTransactionState.walletId"
+        :phase="latestTransactionState.phase"
+        :receipt-key="latestTransactionState.receipt ? `${latestTransactionState.walletId}:${latestTransactionState.receipt.sequence}` : ''"
+        :arrival-key="latestTransactionState.arrivalKey"
+        :transaction-key="lastTransaction ? `${latestTransactionState.walletId}:${lastTransaction.type}:${lastTransaction.id}` : ''"
+        :contact="lastTxContact"
+        :avatar-picture="lastTxAvatarPicture"
+        :avatar-address="lastTxAvatarAddress"
+        :badge="lastTxBadge"
+        :heading="lastTxHeading"
+        :time="lastTxTimeAgo"
+        :amount="lastPreviewAmount"
+        :fiat="lastPreviewFiat"
+        @open-history="openTransactionHistory"
+        @retry="retryLastTransaction"
+      />
     </div>
 
     <!-- Bottom Action Buttons -->
@@ -802,7 +707,9 @@ import {haptics} from '../utils/haptics.js';
 import { NWC_ERROR } from '../utils/nwcErrors.js';
 import {isNfcAvailable} from '../utils/nfc.js';
 import NumberFlow from '@number-flow/vue';
-import HiddenAmount from '../components/HiddenAmount.vue';
+import LatestTransactionCard from '../components/LatestTransactionCard.vue';
+import { createLatestTransactionPreview } from '../services/latestTransactionPreview.js';
+import { readLatestTransactionHistory } from '../services/latestTransactionHistory.js';
 import balanceUpdating from '../directives/balanceUpdating.js';
 import {createPaymentMonitor, PaymentStatus} from '../utils/paymentMonitor.js';
 import PaymentConfirmation from '../components/PaymentConfirmation.vue';
@@ -896,7 +803,7 @@ export default {
     BatchSendModal,
     PaymentConfirmation,
     NumberFlow,
-    HiddenAmount,
+    LatestTransactionCard,
     BackupBanner,
     BackupShortcut,
     SparkStatusLine,
@@ -954,13 +861,10 @@ export default {
       migrationError: '',
       isMigrating: false,
 
-      // Last transaction preview shown above the History link.
-      // `null` before the first fetch completes (we render a skeleton
-      // instead while `isLoadingLastTransaction` is true). Populated
-      // with the raw provider tx object; formatting happens in
-      // computed properties.
+      // The controller owns preview state. Keep its normalized transaction
+      // available to the existing contact/message/amount presentation.
       lastTransaction: null,
-      isLoadingLastTransaction: true,
+      latestTransactionState: { walletId: null, phase: 'initial', transaction: null, receipt: null, arrivalKey: null },
 
       showReceiveModal: false,
       showSendModal: false,
@@ -1146,13 +1050,43 @@ export default {
       return `${amount} ${this.$t('becoming available')}`;
     },
 
-    /**
-     * Whether the last transaction represents an incoming payment.
-     * Handles the provider's direct types ('receive' / 'send') and the
-     * legacy 'incoming' / 'outgoing' shape that the rest of the app
-     * also recognises, plus a defensive amount-sign fallback for any
-     * future provider that forgets to set `type`.
-     */
+    /** The canonical wallet and connection that own every preview read. */
+    lastPreviewContext() {
+      // activeWallet is a presentation copy (it adds nwcString). Ownership
+      // must use the canonical store object, as the balance/lifetime guards do.
+      const wallet = this.walletStore.wallets.find(w => w.id === this.walletStore.activeWalletId);
+      const walletId = wallet?.id || null;
+      const owner = walletId ? this.walletStore.getProvider(walletId) : null;
+      const epoch = walletId ? this.walletStore.walletEpoch(walletId) : 0;
+      return {
+        walletId, wallet, walletType: wallet?.type || 'nwc', owner,
+        epoch,
+        isCurrent: () => this.walletStore.activeWalletId === walletId
+          && this.walletStore.wallets.includes(wallet)
+          && this.walletStore.getProvider(walletId) === owner
+          && this.walletStore.walletEpoch(walletId) === epoch,
+      };
+    },
+
+    lastPreviewAmount() {
+      if (['receipt', 'unavailable'].includes(this.latestTransactionState.phase)) {
+        const sats = this.latestTransactionState.receipt?.amountSats;
+        return Number.isSafeInteger(sats) && sats > 0
+          ? `+${formatAmount(sats, this.walletStore.useBip177Format)}` : '';
+      }
+      return this.lastTxAmountDisplay;
+    },
+
+    lastPreviewFiat() {
+      if (!['receipt', 'unavailable'].includes(this.latestTransactionState.phase)) return this.lastTxFiatDisplay;
+      const sats = this.latestTransactionState.receipt?.amountSats;
+      if (!Number.isSafeInteger(sats) || sats <= 0) return '';
+      const currency = this.walletStore.preferredFiatCurrency || 'USD';
+      const fiat = fiatRatesService.convertSatsToFiatSync(sats, currency);
+      return fiat == null ? '' : `${this.$t('about')} ${fiatRatesService.formatFiatAmount(fiat, currency)}`;
+    },
+
+    /** Direction vocabulary is shared with the transaction list. */
     lastTxIsIncoming() {
       const tx = this.lastTransaction;
       if (!tx) return false;
@@ -1190,6 +1124,7 @@ export default {
     lastTxBadge() {
       const tx = this.lastTransaction;
       if (!tx) return null;
+      if (tx.status === 'pending') return { icon: 'tabler:clock', cls: 'tx-badge-aux' };
       if ((tx.status ?? 'completed') !== 'completed') return null;
       if (this.lastTxZap) return { icon: NOSTRICH_HEAD_ICON, cls: 'tx-badge-zap' };
       try {
@@ -1342,6 +1277,7 @@ export default {
         this.lastTransaction.createdTime ??
         null;
       const time = this.formatRelativeTime(ts);
+      if (this.lastTransaction.status === 'pending') return `${this.$t('Pending')} · ${time}`;
       // Same rule as the history list: the message rides here in quotes,
       // unless the top line is already carrying it — the same text must
       // never appear twice in one preview.
@@ -2174,6 +2110,7 @@ export default {
     }
   },
   async created() {
+    this.initializeTransactionPreview();
     // Only the first home screen of a session plays the launch.
     this.launching = claimLaunch();
     // Safety net: show home (and let the launch land) after 15 s, whatever the store does.
@@ -2235,6 +2172,7 @@ export default {
     );
   },
   beforeUnmount() {
+    this._transactionPreview?.dispose();
     clearTimeout(this._nwcWaitTimer);
     if (this.refreshInterval) {
       clearInterval(this.refreshInterval);
@@ -2333,10 +2271,9 @@ export default {
       this.pendingBitcoinDeposits = [];
       this.checkPendingBitcoinDeposits();
       if (next === prev) return;
-      // The new wallet's last known transaction paints at once; the read
-      // below replaces it.
-      this.showCachedLastTransaction(next);
-      this.loadLastTransaction();
+      // The synchronous preview-context watcher invalidates reads before
+      // another wallet can paint, including A -> B -> A switches.
+
     },
 
     currentDisplayMode: {
@@ -3257,11 +3194,9 @@ export default {
       }
     },
 
-    /** The wallet's last known transaction, before any provider read. */
-    showCachedLastTransaction(walletId) {
-      const cached = walletId ? readCachedTransactions(walletId)[0] || null : null;
-      this.lastTransaction = cached;
-      this.isLoadingLastTransaction = !cached;
+    /** Select the wallet's cached preview while its connection comes up. */
+    showCachedLastTransaction() {
+      this._transactionPreview?.select(this.lastPreviewContext);
     },
 
     async checkSparkWalletUnlock() {
@@ -3330,80 +3265,52 @@ export default {
       }
     },
 
-    /**
-     * Fetch the single most recent transaction for the active wallet
-     * and store it in `lastTransaction`. Best-effort: when the active
-     * wallet isn't connected yet, or its provider doesn't expose
-     * `getTransactions`, we silently clear to null so the UI falls
-     * back to just the "History" link without an error state.
-     *
-     * Called from updateWalletBalance's `finally` block — so it fires on
-     * the 30s periodic tick, after every send/receive, and on wallet
-     * switch, for every wallet type (Spark / LNbits / NWC). Also called
-     * directly from created() after initial connect.
-     */
-    async loadLastTransaction() {
-      const walletId = this.activeWallet?.id;
-      if (!walletId) {
-        this.lastTransaction = null;
-        this.isLoadingLastTransaction = false;
-        return;
-      }
+    /** One controller owns every history read and receipt interim state. */
+    initializeTransactionPreview() {
+      this._transactionPreview = createLatestTransactionPreview({
+        readHistory: readLatestTransactionHistory,
+        readCache: readCachedTransactions,
+        writeCache: mergeCachedTransactions,
+        normalizeRow: (raw, context) => normalizeTx(raw, {
+          walletType: context.walletType,
+          fiatAtSettlement: this.transactionMetadataStore.getFiatAtSettlementForTransaction(raw?.id, context.walletId),
+        }),
+        prepareTransactions: async (rawRows, context, isCurrent) => {
+          if (!isCurrent()) return;
+          const txs = rawRows.map(raw => normalizeTx(raw, { walletType: context.walletType }));
+          try {
+            await this.transactionMetadataStore.consumePendingContactLinks(txs, context.walletId);
+          } catch (error) { console.warn('[wallet] pending-contact-link drain failed:', error); }
+          if (!isCurrent()) return;
+          try {
+            await this.transactionMetadataStore.stampFreshTransactions(txs, context.walletId, this.walletStore.preferredFiatCurrency || 'USD');
+          } catch (error) { console.warn('[wallet] fiat-at-settlement stamp failed:', error); }
+        },
+        onChange: state => {
+          this.latestTransactionState = state;
+          this.lastTransaction = state.transaction;
+        },
+      });
+      this.$watch(() => this.lastPreviewContext, context => {
+        this._transactionPreview.select(context);
+        const activity = this.walletStore.latestConfirmedReceive?.(context?.walletId);
+        if (activity) this._transactionPreview.receive(activity, { replayArrival: false });
+        this._transactionPreview.refresh();
+      }, { immediate: true, flush: 'sync' });
+      // Synchronous: one catch-up may deliver multiple receipts in a turn.
+      this.$watch(() => this.walletStore.confirmedReceiveActivity, activity => {
+        if (activity) this._transactionPreview.receive(activity);
+      }, { flush: 'sync' });
+    },
 
-      try {
-        const provider = this.walletStore.providers?.[walletId];
-        // Not connected yet: keep the cached card; the read after the
-        // connection replaces it.
-        if (!provider) return;
-        if (typeof provider.getTransactions !== 'function') {
-          this.lastTransaction = null;
-          return;
-        }
+    loadLastTransaction() {
+      if (!this._transactionPreview) return Promise.resolve();
+      this._transactionPreview.select(this.lastPreviewContext);
+      return this._transactionPreview.refresh();
+    },
 
-        // Fetch a small batch (not just the top one) so the pending-
-        // contact-link consumer has something to match against —
-        // settlement latency on some rails means our just-sent tx may
-        // not yet be the freshest row, or the user may have multiple
-        // sends in flight.
-        const result = await provider.getTransactions({ limit: 10, offset: 0 });
-        const rawTxs = Array.isArray(result) ? result : (result?.transactions || []);
-
-        // One canonical shape for every provider (see services/txNormalizer.js),
-        // merging any stored price-at-settlement snapshot.
-        const walletType = this.activeWallet?.type || null;
-        const txs = rawTxs.map((raw) => normalizeTx(raw, {
-          walletType,
-          fiatAtSettlement: this.transactionMetadataStore.getFiatAtSettlementForTransaction(raw?.id, walletId),
-        }));
-
-        // Drain the queued contact links before we publish the new
-        // lastTransaction, so the home-screen preview reads the
-        // freshly-stamped metadata on the same paint.
-        try {
-          await this.transactionMetadataStore.consumePendingContactLinks(txs, walletId);
-        } catch (err) {
-          console.warn('[wallet] pending-contact-link drain failed:', err);
-        }
-
-        // Capture the BTC rate for just-settled txs while it still
-        // reflects the settlement moment (no-op for older rows).
-        try {
-          const currency = this.walletStore.preferredFiatCurrency || 'USD';
-          await this.transactionMetadataStore.stampFreshTransactions(txs, walletId, currency);
-        } catch (err) {
-          console.warn('[wallet] fiat-at-settlement stamp failed:', err);
-        }
-
-        // The user may have switched wallets while this read ran.
-        if (this.activeWallet?.id !== walletId) return;
-        this.lastTransaction = txs.length > 0 ? txs[0] : null;
-        mergeCachedTransactions(walletId, txs);
-      } catch (err) {
-        // A failed read keeps what is on screen (the cached card).
-        console.warn('Failed to load last transaction:', err);
-      } finally {
-        if (this.activeWallet?.id === walletId) this.isLoadingLastTransaction = false;
-      }
+    retryLastTransaction() {
+      return this._transactionPreview?.retry();
     },
 
     openTransactionHistory() {
@@ -6878,286 +6785,6 @@ export default {
 .secondary-fade-leave-to {
   opacity: 0;
   transform: translateY(10px);
-}
-
-/* ------------------------------------------------------------------
-   Last-transaction preview + History link.
-   Neutral palette only — deliberately no green accents here. The
-   balance above carries the brand colour; this block stays quiet so
-   the eye lands on the amount, not the last-tx direction.
------------------------------------------------------------------- */
-.last-tx-section {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 10px;
-  padding: 0 1.25rem;
-  margin-bottom: 1.5rem;
-  /* Never size to the content: a long memo's unwrapped width would
-     otherwise widen the section, and the card with it, past the screen. */
-  width: 100%;
-  max-width: 100%;
-  min-width: 0;
-  box-sizing: border-box;
-}
-
-/* ── Card ──────────────────────────────────────────────────────── */
-.last-tx-card {
-  width: 100%;
-  max-width: 440px;
-  min-width: 0;
-  box-sizing: border-box;
-  overflow: hidden;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 12px 14px;
-  border-radius: 14px;
-  border: 1px solid;
-  background: none;
-  cursor: pointer;
-  text-align: left;
-  transition: transform 0.12s ease, background 0.15s ease;
-  -webkit-tap-highlight-color: transparent;
-  font-family: 'Manrope', sans-serif;
-}
-
-.last-tx-card:active {
-  transform: scale(0.99);
-}
-
-.last-tx-card-light {
-  background: #ffffff;
-  border-color: #e2e8f0;
-}
-
-.last-tx-card-dark {
-  background: var(--bg-secondary);
-  border-color: var(--border-card);
-}
-
-
-.last-tx-icon {
-  flex: 0 0 auto;
-  width: 36px;
-  height: 36px;
-  border-radius: 50%;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.last-tx-icon-light {
-  background: #f1f5f9;
-  color: #475569;
-}
-
-.last-tx-icon-dark {
-  background: rgba(255, 255, 255, 0.06);
-  color: #cbd5e1;
-}
-
-/* Inherit-class slot for the ContactAvatar substitution — matches the
-   icon's footprint so the row's rhythm stays identical whether the
-   preview shows a contact picture or the generic arrow. */
-.last-tx-avatar-wrap {
-  position: relative;
-  flex: 0 0 auto;
-  display: inline-flex;
-}
-
-.last-tx-avatar {
-  flex: 0 0 auto;
-  width: 36px;
-  height: 36px;
-  font-size: 14px;
-}
-
-/* Movement-type badge — same vocabulary and colors as the history
-   list, so the home preview reads identically. */
-.last-tx-type-badge {
-  position: absolute;
-  right: -3px;
-  bottom: -3px;
-  width: 15px;
-  height: 15px;
-  border-radius: 50%;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  color: #fff;
-  box-shadow: 0 0 0 2px var(--bg-card);
-}
-
-.tx-badge-in { background: #10B981; }
-.tx-badge-out { background: #EF4444; }
-.tx-badge-pos { background: #3B82F6; }
-.tx-badge-aux { background: #64748B; }
-.tx-badge-zap { background: #662482; }
-
-/* Nostr ostrich head, sized up for the same reason as in the history
-   list: it is filled art, not a stroked glyph. This disc is the
-   smallest of the three at 15px, so 12px is the floor that still
-   reads; the mark very nearly fills it. */
-.tx-badge-zap :deep(svg) {
-  width: 12px;
-  height: 12px;
-}
-
-.last-tx-info {
-  flex: 1 1 auto;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  overflow: hidden;
-}
-
-.last-tx-title {
-  font-size: 14px;
-  font-weight: 600;
-  line-height: 1.2;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.last-tx-title-light {
-  color: #0f172a;
-}
-
-.last-tx-title-dark {
-  color: #f1f5f9;
-}
-
-/* Counterparty-written text never wears contact typography — see the
-   matching rule on the transaction list's .tx-row-title-message. */
-.last-tx-title-message {
-  font-weight: 400;
-}
-
-.last-tx-title-message.last-tx-title-light {
-  color: #334155;
-}
-
-.last-tx-title-message.last-tx-title-dark {
-  color: #cbd5e1;
-}
-
-.last-tx-time,
-.last-tx-fiat {
-  font-size: 12px;
-  font-weight: 400;
-  line-height: 1.2;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.last-tx-muted-light {
-  color: #64748b;
-}
-
-.last-tx-muted-dark {
-  color: #94a3b8;
-}
-
-.last-tx-amount-wrap {
-  flex: 0 0 auto;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 2px;
-  min-width: 0;
-  /* The memo yields first, but the amount column cannot take the row. */
-  max-width: 45%;
-}
-
-.last-tx-amount {
-  font-size: 14px;
-  font-weight: 600;
-  line-height: 1.2;
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-/* ── History link ─────────────────────────────────────────────── */
-.history-link {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 10px 18px;
-  border: none;
-  background: none;
-  font-family: 'Manrope', sans-serif;
-  font-size: 14px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: opacity 0.12s ease;
-  -webkit-tap-highlight-color: transparent;
-}
-
-.history-link:active {
-  opacity: 0.6;
-}
-
-.history-link-light {
-  color: #475569;
-}
-
-.history-link-dark {
-  color: #cbd5e1;
-}
-
-/* ── Skeleton ─────────────────────────────────────────────────── */
-.last-tx-card-skeleton {
-  width: 100%;
-  max-width: 440px;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 12px 14px;
-  border-radius: 14px;
-  border: 1px solid;
-}
-
-.last-tx-skeleton-light {
-  background: #ffffff;
-  border-color: #e2e8f0;
-}
-
-.last-tx-skeleton-dark {
-  background: var(--bg-secondary);
-  border-color: var(--border-card);
-}
-
-.last-tx-card-skeleton-text {
-  flex: 1 1 auto;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  min-width: 0;
-}
-
-.last-tx-card-skeleton-amount {
-  flex: 0 0 auto;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 6px;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .last-tx-card,
-  .history-link {
-    transition: none;
-  }
-  .last-tx-card:active {
-    transform: none;
-  }
 }
 
 /* Bottom Actions

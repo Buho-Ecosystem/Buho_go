@@ -50,7 +50,11 @@ export function receiptFromPayment(payment) {
   const raw = Number(payment.amount ?? 0);
   const fee = Number(payment.fees ?? payment.fee ?? 0);
   const isMappedRow = payment.paymentType === undefined && payment.fees === undefined;
-  const amountSats = Math.max(0, Math.round(isMappedRow ? raw - fee : raw));
+  // A provider can supply explicit credited sats (NWC). Otherwise mapped
+  // Spark/LNbits rows carry gross receive amount; SDK Payments are net.
+  const explicitNet = payment.recipientSats == null ? NaN : Number(payment.recipientSats);
+  const amountSats = Math.max(0, Math.round(isMappedRow
+    ? (Number.isFinite(explicitNet) ? explicitNet : raw - fee) : raw));
   // When it settled, where the row says so: a row's own timestamp can be
   // when its invoice was created, long before it was paid.
   const ts = Number(payment.settled_at ?? payment.timestamp ?? 0);
@@ -65,6 +69,7 @@ export function receiptFromPayment(payment) {
     status: payment.status || 'completed',
     amountSats,
     timestamp: Number.isFinite(ts) && ts > 0 ? (ts > 1e12 ? Math.floor(ts / 1000) : ts) : null,
+    settlementKnown: payment.receiptTimeIsCreation !== true,
   };
 }
 

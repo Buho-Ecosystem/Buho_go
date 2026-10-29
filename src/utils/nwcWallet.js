@@ -170,9 +170,13 @@ export function nwcTransactionRow(tx) {
     // sends, and reported a spent bitcoin as income.
     type: tx.type === 'outgoing' ? 'send' : 'receive',
     amount: Math.abs(tx.amount || 0),
+    // NWC's incoming amount is already credited (Alby Hub's isolated
+    // balance sums incoming amount_msat without subtracting fee_msat).
+    recipientSats: Math.abs(tx.amount || 0),
     timestamp: tx.settled_at || tx.settledAt || tx.created_at || tx.createdAt || null,
     created_at: tx.created_at || tx.createdAt || null,
     settled_at: tx.settled_at || tx.settledAt || null,
+    receiptTimeIsCreation: !(tx.settled_at || tx.settledAt),
     description: tx.description || tx.memo || '',
     // There is no `settled` boolean on the record (see the SDK's
     // Nip47Transaction type): `state` decides, `settled_at` for a service

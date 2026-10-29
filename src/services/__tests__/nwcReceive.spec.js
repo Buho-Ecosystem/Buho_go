@@ -112,6 +112,13 @@ test('the settled check reads settlement fields only', () => {
   assert.equal(checkNWCPaymentStatus(null), false);
 });
 
+test('Receive-sheet lookup preserves the credited NWC amount when fee metadata is present', async () => {
+  const { nwc } = connection({ lookup: () => ({ state: 'settled', amount: 2100000, fees_paid: 5000, settled_at: 1 }) });
+  const result = await lookupNwcInvoice(nwc, HASH, { methods: ['lookup_invoice'] });
+  assert.equal(result.amount, 2100);
+  assert.equal(result.receivedSats, undefined);
+});
+
 test('an invoice without expires_at takes the expiry written in it', async () => {
   const invoice = profileInvoiceFixture(21, 1_800_000_000_000);
   const { nwc } = connection({ make: () => ({ invoice }) }); // no payment_hash, no expires_at
