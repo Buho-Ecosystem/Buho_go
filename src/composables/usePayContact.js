@@ -53,7 +53,7 @@ function extraQuery({ walletId, context, amountSats, note, payout, repeat, retur
 /**
  * @param {{ $q: any, $t: Function, $router: any }} ctx  Component instance.
  * @returns {{
- *   payContact: (contact: object, options?: PayOptions) => void,
+ *   payContact: (contact: object, options?: PayOptions) => boolean,
  *   payInvoice: (invoice: { bolt11: string, name?: string }, options?: PayOptions) => void,
  *   payAddress: (target: { address: string, addressType?: string, name?: string }, options?: PayOptions) => void,
  *   payAgain: (target: object|null, options?: { walletId?: string, name?: string }) => void,
@@ -77,8 +77,9 @@ export function usePayContact(ctx) {
     });
   }
 
+  /** @returns {boolean} true when the payment was handed to the wallet page */
   function payContact(contact, options = {}) {
-    if (!contact) return;
+    if (!contact) return false;
 
     // Fire the refresh before deciding anything, so it never blocks the tap.
     maybeRefresh(contact);
@@ -96,7 +97,7 @@ export function usePayContact(ctx) {
         ),
         timeout: 4500,
       });
-      return;
+      return false;
     }
 
     const address = contact.address || contact.lightningAddress;
@@ -107,7 +108,7 @@ export function usePayContact(ctx) {
         caption: ctx.$t('Add an address for this contact to pay them.'),
         timeout: 4000,
       });
-      return;
+      return false;
     }
 
     // Recency feeds the Quick pay shelf. Best effort, never blocks the tap.
@@ -123,6 +124,7 @@ export function usePayContact(ctx) {
         ...extraQuery(options, ctx.$router),
       },
     });
+    return true;
   }
 
   /**

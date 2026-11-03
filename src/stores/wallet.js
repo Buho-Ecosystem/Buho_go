@@ -437,6 +437,13 @@ export const useWalletStore = defineStore('wallet', {
     // between Capacitor's getLaunchUrl resolution and Vue's component lifecycle.
     pendingDeepLink: null,
 
+    // A screen to open, asked for from outside the app (a Quick Settings tile,
+    // a launcher shortcut): { kind, contactId, source, receivedAt, seq }.
+    // Written by services/openActionIntake.js once the app lock is passed,
+    // drained by Wallet.vue the same way as pendingDeepLink. Runtime only,
+    // never saved.
+    pendingOpenAction: null,
+
     // Error tracking
     lastError: null,
 

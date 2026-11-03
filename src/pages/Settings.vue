@@ -259,6 +259,10 @@
 
       <NotificationsSheet v-model="showNotificationsSheet" />
 
+      <!-- Tiles and launcher shortcuts (#445, #446). Also opened by
+           long-pressing a BuhoGO tile: ?section=quick-access. -->
+      <QuickAccessSheet v-if="quickAccessSupported" v-model="showQuickAccessSheet" />
+
       <!-- One more Spark wallet from the recovery phrase on this device. -->
       <AddSparkWalletSheet v-model="showAddSparkSheet" @created="onSparkWalletCreated" />
 
@@ -325,6 +329,18 @@
           :label="$t('Notifications')"
           :inline-value="notificationsSummary"
           @click="showNotificationsSheet = true"
+        />
+
+        <!--
+          Quick access: the Quick Settings tiles and the Home screen
+          shortcuts, in a sheet. Android only.
+        -->
+        <SettingsRow
+          v-if="quickAccessSupported"
+          icon="tabler:layout-grid-add"
+          :label="$t('Quick access')"
+          :caption="$t('Open Send, Receive or Scan QR in one tap')"
+          @click="showQuickAccessSheet = true"
         />
 
         <!--
@@ -1522,6 +1538,8 @@ import InternalTransferModal from '../components/InternalTransferModal.vue'
 import WalletDetailPanel from '../components/settings/WalletDetailPanel.vue'
 import AddSparkWalletSheet from '../components/wallets/AddSparkWalletSheet.vue'
 import NotificationsSheet from '../components/settings/NotificationsSheet.vue'
+import QuickAccessSheet from '../components/settings/QuickAccessSheet.vue'
+import { quickAccessSupported } from '../services/quickAccess.js'
 import MoveLightningAddressSheet from '../components/wallets/MoveLightningAddressSheet.vue'
 import { removalCopy, removalBlockerLabel, sparkRemovalCopy, disconnectAllCopy, walletKind, WALLET_KIND } from '../utils/walletRemoval.js'
 import GetAppDialog from '../components/GetAppDialog.vue'
@@ -1562,6 +1580,7 @@ export default {
     WalletDetailPanel,
     AddSparkWalletSheet,
     NotificationsSheet,
+    QuickAccessSheet,
     MoveLightningAddressSheet,
     GetAppDialog,
     TaxReportSheet,
@@ -1578,6 +1597,7 @@ export default {
     return {
       hapticsOn: hapticsEnabled(),
       hapticsSupported: hapticsSupported(),
+      quickAccessSupported: quickAccessSupported(),
       showWalletsDialog: false,
       showSparkLnAddressSheet: false,
       showAddWalletDialog: false,
@@ -1591,6 +1611,7 @@ export default {
       transferFromWalletId: null,
       showCurrencyDialog: false,
       showNotificationsSheet: false,
+      showQuickAccessSheet: false,
       showLanguageDialog: false,
       showMissingLanguageDialog: false,
       nostrCommunityUrl: 'https://nostr-ecosystem.netlify.app/join/g/groups.0xchat.com/85016a489c551428a50c339c75b6931a?n=BuhoGO&a=Public+discussion%2C+support%2C+and+updates+for+the+Buho+GO+Wallet%3A+a+native+wallet+interface+for+Spark%2C+Ark%2C+LNbits%2C+Nostr+Wallet+Connect%2C+and+&p=https%3A%2F%2Fblossom.primal.net%2Fd816ffbd78b10591710a1be9deca91700fe278e50250a07f0b1e421f0db03748',
@@ -2121,6 +2142,11 @@ export default {
 
   },
   watch: {
+    // Long-pressing a BuhoGO tile while Settings is already open.
+    '$route.query.section'(section) {
+      if (section === 'quick-access') this.openQuickAccessFromRoute();
+    },
+
     // A removed wallet's details close; the sheet always reopens on the list.
     detailWallet(wallet) {
       if (!wallet && this.detailWalletId) this.detailWalletId = null;
@@ -2215,6 +2241,11 @@ export default {
       this.$nextTick(() => { this.showWalletsDialog = true; });
     }
 
+    // Long-pressing a BuhoGO tile in Quick Settings (#445).
+    if (this.$route.query.section === 'quick-access') {
+      this.$nextTick(() => this.openQuickAccessFromRoute());
+    }
+
     // Native-only redirect. A direct web navigation to /learn* is bounced
     // here by the router guard (see router/routes.js) with ?getApp=learn.
     // Open the shared Get-the-App dialog so the user learns that Learn &
@@ -2230,6 +2261,20 @@ export default {
     }
   },
   methods: {
+    /**
+     * Open the Quick access sheet for ?section=quick-access. The query is
+     * dropped first, so the next long-press on a tile changes the route again
+     * and the watcher above sees it; the sheet opens only after that
+     * navigation, because a dialog closes itself on a route change.
+     */
+    openQuickAccessFromRoute() {
+      const { section, ...query } = this.$route.query;
+      const dropped = section === 'quick-access' ? this.$router.replace({ query }).catch(() => {}) : Promise.resolve();
+      dropped.then(() => {
+        if (this.quickAccessSupported) this.showQuickAccessSheet = true;
+      });
+    },
+
     openBrantaSite() {
       openInAppBrowser('https://branta.pro')
     },
