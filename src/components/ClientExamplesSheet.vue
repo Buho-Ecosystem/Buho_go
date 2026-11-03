@@ -213,6 +213,7 @@ export default {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  padding-bottom: var(--safe-bottom, 0px);
 }
 
 .sheet-handle {

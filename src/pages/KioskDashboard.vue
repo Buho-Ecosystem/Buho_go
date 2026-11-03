@@ -904,7 +904,7 @@ export default defineComponent({
 .pos-cart-x:active { color: #ef4444; }
 
 /* Cart bottom sheet */
-.pos-cart-sheet { width: 100%; border-radius: 16px 16px 0 0 !important; }
+.pos-cart-sheet { width: 100%; border-radius: 16px 16px 0 0 !important; padding-bottom: var(--safe-bottom, 0px); }
 .pos-cart-sheet-dark { background: #0C0C0C !important; border: 1px solid #2A342A !important; border-bottom: none !important; color: #FFF; }
 .pos-cart-sheet-light { background: var(--bg-card) !important; border: 1px solid var(--border-card) !important; border-bottom: none !important; color: var(--text-primary); }
 .pos-sheet-header { display: flex; justify-content: space-between; font-family: 'Manrope', sans-serif; font-weight: 700; font-size: 15px; padding-bottom: 12px; border-bottom: 1px solid #2A342A; margin-bottom: 8px; }
