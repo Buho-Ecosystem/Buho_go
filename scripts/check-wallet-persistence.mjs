@@ -210,7 +210,9 @@ try {
     await at(page, '#/kiosk');
     assert.deepEqual(await storeState(page), { kioskEnabled: true, kioskOwnerAccess: false }, 'still locked to the kiosk');
     const state = await saved(page);
-    assert.equal(state.kioskPin, '2468');
+    // Saved in plain text by an earlier version: only a hash is left.
+    assert.equal(state.kioskPin, undefined);
+    assert.ok(state.kioskPinHash && !state.kioskPinHash.includes('2468'));
     assert.equal(state.kioskWalletId, spark.id);
     assert.equal(state.kioskTipEnabled, true);
     assert.deepEqual(settingsOf(state), settings);

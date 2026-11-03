@@ -193,16 +193,29 @@
         </template>
 
         <!--
-          Wallet-level admin: managing the connected wallets list.
-          Auto-Transfer and Address Book moved up into the Feature
-          Cards row so they read as features rather than wallet
-          config; Backups lives in Security.
+          Wallet-level admin: the connected wallets, then the two features
+          that work across them. Each is a row that opens its own page, the
+          way iOS Settings lists its features (issue #449). Backups lives in
+          Security.
         -->
         <SettingsRow
           icon="tabler:wallet"
           :label="$t('Manage Wallets')"
           :caption="`${wallets.length} ${wallets.length === 1 ? $t('wallet') : $t('wallets')}`"
           @click="showWalletsDialog = true"
+        />
+        <SettingsRow
+          icon="tabler:arrow-autofit-right"
+          :label="$t('Auto-Transfer')"
+          :inline-value="autoTransferMeta"
+          @click="$router.push('/auto-transfer')"
+        />
+        <SettingsRow
+          icon="tabler:cash-register"
+          :label="$t('kiosk.kioskMode')"
+          :inline-value="walletStore.kioskEnabled ? $t('On') : $t('Off')"
+          data-audit="settings-kiosk-row"
+          @click="$router.push('/kiosk-mode')"
         />
 
         <!--
@@ -217,20 +230,6 @@
           @click="showTaxReportSheet = true"
         />
       </SettingsSection>
-
-      <!--
-        Feature cards — three value features that were previously
-        plain rows: Auto-Transfer, Address Book, Kiosk. Positioned
-        after the Wallet section (rather than at the very top)
-        because the Quick Toggles already occupy the prime above-
-        the-fold slot; stacking two card rows at the top read as
-        too dense, and putting features here gives them their own
-        breathing room while staying high on the page.
-      -->
-      <SettingsFeatureCards
-        :features="featureCards"
-        @select="onFeatureSelect"
-      />
 
       <!--
         The LNbits wallet's Lightning address: the same steps as setup
@@ -377,330 +376,6 @@
         </SettingsRow>
       </SettingsSection>
 
-      <!-- ─────────────── KIOSK MODE (config) ───────────────
-           Only renders when Kiosk is enabled. The enable/disable
-           switch lives in the Feature Cards row at the top — the
-           card pulses green when active and tapping it toggles
-           kiosk on or off through the same `handleKioskToggle`
-           pipeline. Once enabled, this section appears below to
-           host the configuration: destination wallet → PIN → tips
-           → round-up → display → activate CTA. -->
-      <SettingsSection
-        v-if="walletStore.kioskEnabled"
-        :title="$t('kiosk.kioskMode')"
-      >
-          <SettingsRow
-            icon="tabler:wallet"
-            :label="$t('kiosk.destinationWallet')"
-            :caption="kioskSelectedWalletName || $t('kiosk.noWalletSelected')"
-            @click="openKioskWalletPicker"
-          />
-
-          <SettingsRow
-            icon="tabler:lock"
-            :label="$t('kiosk.currentPin') + ': ' + walletStore.kioskPin"
-            :interactive="false"
-          >
-            <template #right>
-              <q-btn flat dense no-caps size="sm" class="inline-link-btn" @click="showKioskChangePinDialog = true">
-                {{ $t('kiosk.changePin') }}
-              </q-btn>
-            </template>
-          </SettingsRow>
-
-          <SettingsRow
-            icon="tabler:heart-handshake"
-            :label="$t('kiosk.enableTips')"
-            :interactive="false"
-          >
-            <template #right>
-              <q-toggle
-                :model-value="walletStore.kioskTipEnabled"
-                :color="$q.dark.isActive ? 'brand-green' : 'brand-green-dark'"
-                @update:model-value="(v) => walletStore.setKioskTipEnabled(v)"
-              />
-            </template>
-          </SettingsRow>
-
-          <!-- Tip percentage inputs — appear only when tips are on,
-               keeping the closed state minimal. Three inputs let the
-               operator preset the common one-tap tip choices. -->
-          <div v-if="walletStore.kioskTipEnabled" class="kiosk-tip-input-row">
-            <q-input
-              v-for="(val, idx) in walletStore.kioskTipValues" :key="'tip-'+idx"
-              :model-value="walletStore.kioskTipValues[idx]"
-              type="number"
-              suffix="%"
-              dense filled
-              :label="$t('kiosk.tipValue') + ' ' + (idx + 1)"
-              :dark="$q.dark.isActive"
-              class="kiosk-tip-input"
-              @update:model-value="(v) => updateKioskTipValue(idx, v)"
-            />
-          </div>
-
-          <SettingsRow
-            icon="tabler:arrow-bar-to-up"
-            :label="$t('kiosk.roundUp')"
-            :caption="$t('kiosk.roundUpDesc')"
-            :interactive="false"
-          >
-            <template #right>
-              <q-toggle
-                :model-value="walletStore.kioskRoundUpEnabled"
-                :color="$q.dark.isActive ? 'brand-green' : 'brand-green-dark'"
-                @update:model-value="(v) => walletStore.setKioskRoundUpEnabled(v)"
-              />
-            </template>
-          </SettingsRow>
-
-          <SettingsRow
-            icon="tabler:currency-bitcoin"
-            :label="$t('kiosk.displayCurrency')"
-            :interactive="false"
-          >
-            <template #right>
-              <q-btn-toggle
-                :model-value="walletStore.kioskDisplayCurrency"
-                dense no-caps unelevated size="sm"
-                class="settings-mini-toggle"
-                :class="$q.dark.isActive ? 'settings-mini-toggle-dark' : 'settings-mini-toggle-light'"
-                :options="[{ label: 'Sats', value: 'sats' }, { label: walletStore.preferredFiatCurrency, value: 'fiat' }]"
-                @update:model-value="(v) => walletStore.setKioskDisplayCurrency(v)"
-              />
-            </template>
-          </SettingsRow>
-
-          <div class="kiosk-activate-row">
-            <q-btn unelevated no-caps
-              class="full-width kiosk-start-btn"
-              :class="$q.dark.isActive ? 'kiosk-start-btn-dark' : 'kiosk-start-btn-light'"
-              :disable="!walletStore.kioskWalletId || kioskActivating"
-              :loading="kioskActivating"
-              @click="handleStartKiosk">
-              {{ $t('kiosk.activateKiosk') }}
-            </q-btn>
-          </div>
-      </SettingsSection>
-
-      <!-- Kiosk PIN Setup Dialog -->
-      <q-dialog v-model="showKioskPinSetupDialog" persistent @hide="resetKioskPinSetup">
-        <div class="kiosk-setup-dialog" :style="{ background: 'var(--bg-card)', color: 'var(--text-primary)' }">
-          <!-- Intro -->
-          <template v-if="kioskPinSetupStep === 'intro'">
-            <!--
-              Animated "scan-to-pay" illustration. Served as a standalone
-              SVG so the browser runs its self-contained CSS animations
-              inside an <img> sandbox. The :key + URL query string change
-              on every entry to the intro step so the browser treats
-              each render as a fresh resource and replays the internal
-              animations from frame 0. See the `watch` block above.
-            -->
-            <div class="kiosk-setup-hero">
-              <img
-                :key="kioskIntroAnimationKey"
-                :src="`/Onboarding wizard spark/scan-to-pay-animated.svg?v=${kioskIntroAnimationKey}`"
-                class="kiosk-setup-illustration"
-                alt=""
-                aria-hidden="true"
-              />
-            </div>
-
-            <h3 class="kiosk-setup-title">{{ $t('kiosk.kioskMode') }}</h3>
-            <p class="kiosk-setup-desc">{{ $t('kiosk.introDesc') }}</p>
-
-            <div class="kiosk-setup-features">
-              <div class="kiosk-setup-feature">
-                <div class="kiosk-feature-icon"><Icon icon="tabler:lock" width="18" height="18" /></div>
-                <span>{{ $t('kiosk.introFeaturePos') }}</span>
-              </div>
-              <div class="kiosk-setup-feature">
-                <div class="kiosk-feature-icon"><Icon icon="tabler:shield-lock" width="18" height="18" /></div>
-                <span>{{ $t('kiosk.introFeatureLock') }}</span>
-              </div>
-              <div class="kiosk-setup-feature">
-                <div class="kiosk-feature-icon"><Icon icon="tabler:password" width="18" height="18" /></div>
-                <span>{{ $t('kiosk.introFeaturePin') }}</span>
-              </div>
-            </div>
-
-            <button class="kiosk-setup-primary" @click="kioskPinSetupStep = 'selectWallet'">
-              {{ $t('kiosk.introContinue') }}
-            </button>
-            <button class="kiosk-setup-secondary" @click="showKioskPinSetupDialog = false">
-              {{ $t('Cancel') }}
-            </button>
-          </template>
-
-          <!-- Select destination wallet -->
-          <template v-else-if="kioskPinSetupStep === 'selectWallet'">
-            <h3 class="kiosk-setup-title">{{ $t('kiosk.selectDestinationTitle') }}</h3>
-            <p class="kiosk-setup-desc">{{ $t('kiosk.selectDestinationDesc') }}</p>
-
-            <div class="kiosk-wallet-list">
-              <p v-if="!kioskEligibleWallets.length" class="kiosk-wallet-empty" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'">
-                {{ $t('Kiosk needs a wallet that can create Lightning invoices. Add a Spark, LNbits or NWC wallet first.') }}
-              </p>
-              <!-- Every wallet is listed; one that cannot take kiosk payments
-                   is not choosable and says why where its type would be. -->
-              <button
-                v-for="w in kioskWalletOptions" :key="w.id"
-                type="button"
-                class="kiosk-wallet-row"
-                :class="{ 'kiosk-wallet-row-active': kioskWalletSelection === w.id, 'kiosk-wallet-row-off': w.kioskReason }"
-                :disabled="Boolean(w.kioskReason)"
-                @click="kioskWalletSelection = w.id"
-              >
-                <span class="kiosk-wallet-row-radio">
-                  <span v-if="kioskWalletSelection === w.id" class="kiosk-wallet-row-dot" />
-                </span>
-                <span class="kiosk-wallet-row-info">
-                  <span class="kiosk-wallet-row-name">{{ w.name }}</span>
-                  <span class="kiosk-wallet-row-type">{{ w.kioskReason || getWalletTypeLabel(w) }}</span>
-                </span>
-                <span class="kiosk-wallet-row-icon">
-                  <svg v-if="w.type === 'spark'" width="18" height="17" viewBox="0 0 135 128" fill="none" xmlns="http://www.w3.org/2000/svg" :style="{ color: $q.dark.isActive ? '#fff' : '#1a1a1a' }">
-                    <path fill-rule="evenodd" clip-rule="evenodd" d="M79.4319 49.3554L81.7454 0H52.8438L55.1573 49.356L8.9311 31.9035L0 59.3906L47.6565 72.4425L16.7743 111.012L40.1562 128L67.2966 86.7083L94.4358 127.998L117.818 111.01L86.9359 72.4412L134.587 59.3907L125.656 31.9036L79.4319 49.3554Z" fill="currentColor"/>
-                  </svg>
-                  <svg v-else-if="w.type === 'nwc'" width="18" height="18" viewBox="0 0 257 256" fill="none" xmlns="http://www.w3.org/2000/svg">
-                    <path d="M110.938 31.0639C100.704 20.8691 84.0846 20.9782 73.8873 31.2091L7.91341 97.4141C-2.28517 107.646 -2.15541 123.974 8.07554 134.17L116.246 242.34C126.479 252.534 143.066 252.449 153.263 242.218L185.415 210.066C176.038 219.443 168.322 212.701 159.178 203.595L141.244 185.662C127.63 191.051 111.718 188.374 100.688 177.365L87.0221 163.699C86.5623 163.243 86.2075 162.767 85.9582 162.17C85.7089 161.572 85.5803 160.931 85.5797 160.284C85.5792 159.637 85.7067 158.995 85.955 158.398C86.2033 157.8 86.5923 157.293 87.0513 156.837L94.7848 149.103L77.9497 132.268C75.3144 129.638 74.8841 125.391 77.2407 122.522C79.9345 119.228 84.8188 119.053 87.7741 122.002L104.837 139.051L116.394 127.494L99.5187 110.661C96.8822 108.03 96.4531 103.784 98.8298 100.895C99.4602 100.128 100.244 99.5006 101.131 99.0542C102.019 98.6077 102.989 98.3518 103.981 98.3028C104.973 98.2538 105.964 98.4129 106.891 98.7697C107.818 99.1266 108.66 99.6733 109.363 100.375L126.495 117.393L133.755 110.132C134.211 109.673 134.66 109.259 135.258 109.01C135.855 108.761 136.496 108.632 137.144 108.632C137.791 108.631 138.432 108.758 139.03 109.006C139.628 109.254 140.171 109.618 140.628 110.077L154.316 123.738C165.208 134.609 168.056 150.431 162.964 163.943L180.901 181.88C190.045 190.985 197.696 197.785 207.074 188.408L247.645 147.836C237.893 157.588 229.881 150.075 220.244 140.446L110.938 31.0639Z" fill="url(#nwc_kiosk_setup_grad)"/>
-                    <path d="M187.641 13.0273L153.153 47.4873L229.781 124.116C237.116 131.419 243.491 137.239 250.565 134.417C254.654 132.787 257.461 128.351 255.894 124.238C219.227 28.0253 219.212 28.0238 214.348 17.507C209.484 6.99014 195.804 4.76016 187.641 13.0273Z" fill="#897FFF"/>
-                    <defs><linearGradient id="nwc_kiosk_setup_grad" x1="123.989" y1="10.4384" x2="123.989" y2="249.939" gradientUnits="userSpaceOnUse"><stop stop-color="#FFCA4A"/><stop offset="1" stop-color="#F7931A"/></linearGradient></defs>
-                  </svg>
-                  <svg v-else-if="w.type === 'lnbits'" width="13" height="18" viewBox="0 0 502 902" fill="none" xmlns="http://www.w3.org/2000/svg">
-                    <path d="M158.566 493.857L1 901L450.49 355.202H264.831L501.791 1H187.881L36.4218 493.857H158.566Z" fill="#FF1FE1"/>
-                  </svg>
-                  <ArkadeLogo v-else-if="w.type === 'arkade'" variant="mark" :size="18" />
-                  <Icon v-else icon="tabler:wallet" width="18" height="18" />
-                </span>
-              </button>
-            </div>
-
-            <button class="kiosk-setup-primary"
-              :disabled="!kioskWalletSelection"
-              :style="!kioskWalletSelection ? { opacity: 0.5, cursor: 'not-allowed' } : null"
-              @click="advanceFromKioskWalletSelect">
-              {{ $t('kiosk.introNext') }}
-            </button>
-            <button class="kiosk-setup-secondary" @click="kioskPinSetupStep = 'intro'">
-              {{ $t('Back') }}
-            </button>
-          </template>
-
-          <!-- Enter PIN -->
-          <template v-else-if="kioskPinSetupStep === 'enter'">
-            <KioskPinPad ref="kioskSetupPinPadRef" :title="$t('kiosk.setupPin')" :error-message="kioskPinError"
-              @complete="handleKioskPinSetupComplete" />
-            <button class="kiosk-setup-secondary" @click="kioskPinSetupStep = 'selectWallet'; kioskPinError = ''">
-              {{ $t('Back') }}
-            </button>
-          </template>
-
-          <!-- Confirm PIN -->
-          <template v-else-if="kioskPinSetupStep === 'confirm'">
-            <KioskPinPad ref="kioskSetupPinPadRef" :title="$t('kiosk.confirmPin')" :error-message="kioskPinError"
-              @complete="handleKioskPinSetupComplete" />
-            <button class="kiosk-setup-secondary"
-              @click="kioskPinSetupStep = 'enter'; kioskPinError = ''; $refs.kioskSetupPinPadRef?.reset()">
-              {{ $t('Back') }}
-            </button>
-          </template>
-        </div>
-      </q-dialog>
-
-      <!-- Kiosk Change PIN Dialog -->
-      <q-dialog v-model="showKioskChangePinDialog" persistent @hide="resetKioskChangePin">
-        <q-card style="min-width: 320px; max-width: 360px; border-radius: 20px;"
-          :class="$q.dark.isActive ? 'bg-dark text-white' : ''">
-          <q-card-section class="text-center">
-            <div class="text-subtitle1 text-weight-bold q-mb-md">
-              {{ kioskChangePinStep === 'verify' ? $t('kiosk.enterCurrentPin') : (kioskChangePinStep === 'enter' ? $t('kiosk.enterNewPin') : $t('kiosk.confirmNewPin')) }}
-            </div>
-            <KioskPinPad ref="kioskChangePinPadRef" title="" :error-message="kioskChangePinError"
-              @complete="handleKioskChangePinComplete" />
-            <q-btn flat no-caps color="grey" class="q-mt-sm"
-              @click="showKioskChangePinDialog = false">
-              {{ $t('Cancel') }}
-            </q-btn>
-          </q-card-section>
-        </q-card>
-      </q-dialog>
-
-      <!-- Kiosk Disable Dialog -->
-      <q-dialog v-model="showKioskDisableDialog" persistent @hide="resetKioskDisable">
-        <q-card style="min-width: 320px; max-width: 360px; border-radius: 20px;"
-          :class="$q.dark.isActive ? 'bg-dark text-white' : ''">
-          <q-card-section class="text-center">
-            <q-icon name="lock_open" size="32px" color="orange" class="q-mb-md" />
-            <div class="text-subtitle1 text-weight-bold q-mb-sm">{{ $t('kiosk.disableKiosk') }}</div>
-            <p class="text-body2 q-mb-md" :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'">
-              {{ $t('kiosk.enterPinToDisable') }}
-            </p>
-            <KioskPinPad ref="kioskDisablePinPadRef" title="" :error-message="kioskDisableError"
-              @complete="handleKioskDisablePin" />
-            <q-btn flat no-caps color="grey" class="q-mt-sm"
-              @click="showKioskDisableDialog = false">
-              {{ $t('Cancel') }}
-            </q-btn>
-          </q-card-section>
-        </q-card>
-      </q-dialog>
-
-      <!-- Kiosk Wallet Picker Dialog -->
-      <q-dialog v-model="showKioskWalletPicker">
-        <q-card style="min-width: 320px; max-width: 380px; border-radius: 20px;"
-          :class="$q.dark.isActive ? 'bg-dark text-white' : ''">
-          <q-card-section>
-            <div class="text-subtitle1 text-weight-bold q-mb-md text-center">
-              {{ $t('kiosk.selectWallet') }}
-            </div>
-            <q-list>
-              <q-item v-for="w in kioskWalletOptions" :key="w.id" clickable v-ripple
-                :disable="Boolean(w.kioskReason)"
-                @click="kioskWalletSelection = w.id">
-                <q-item-section side>
-                  <q-radio :model-value="kioskWalletSelection" :val="w.id"
-                    :disable="Boolean(w.kioskReason)"
-                    :color="$q.dark.isActive ? 'brand-green' : 'brand-green-dark'"
-                    @update:model-value="kioskWalletSelection = $event" />
-                </q-item-section>
-                <q-item-section>
-                  <q-item-label>{{ w.name }}</q-item-label>
-                  <q-item-label caption>{{ w.kioskReason || getWalletTypeLabel(w) }}</q-item-label>
-                </q-item-section>
-                <q-item-section side>
-                  <!-- Spark -->
-                  <svg v-if="w.type === 'spark'" width="20" height="19" viewBox="0 0 135 128" fill="none" xmlns="http://www.w3.org/2000/svg" :style="{ color: $q.dark.isActive ? '#fff' : '#1a1a1a' }">
-                    <path fill-rule="evenodd" clip-rule="evenodd" d="M79.4319 49.3554L81.7454 0H52.8438L55.1573 49.356L8.9311 31.9035L0 59.3906L47.6565 72.4425L16.7743 111.012L40.1562 128L67.2966 86.7083L94.4358 127.998L117.818 111.01L86.9359 72.4412L134.587 59.3907L125.656 31.9036L79.4319 49.3554Z" fill="currentColor"/>
-                  </svg>
-                  <!-- NWC -->
-                  <svg v-else-if="w.type === 'nwc'" width="20" height="20" viewBox="0 0 257 256" fill="none" xmlns="http://www.w3.org/2000/svg">
-                    <path d="M110.938 31.0639C100.704 20.8691 84.0846 20.9782 73.8873 31.2091L7.91341 97.4141C-2.28517 107.646 -2.15541 123.974 8.07554 134.17L116.246 242.34C126.479 252.534 143.066 252.449 153.263 242.218L185.415 210.066C176.038 219.443 168.322 212.701 159.178 203.595L141.244 185.662C127.63 191.051 111.718 188.374 100.688 177.365L87.0221 163.699C86.5623 163.243 86.2075 162.767 85.9582 162.17C85.7089 161.572 85.5803 160.931 85.5797 160.284C85.5792 159.637 85.7067 158.995 85.955 158.398C86.2033 157.8 86.5923 157.293 87.0513 156.837L94.7848 149.103L77.9497 132.268C75.3144 129.638 74.8841 125.391 77.2407 122.522C79.9345 119.228 84.8188 119.053 87.7741 122.002L104.837 139.051L116.394 127.494L99.5187 110.661C96.8822 108.03 96.4531 103.784 98.8298 100.895C99.4602 100.128 100.244 99.5006 101.131 99.0542C102.019 98.6077 102.989 98.3518 103.981 98.3028C104.973 98.2538 105.964 98.4129 106.891 98.7697C107.818 99.1266 108.66 99.6733 109.363 100.375L126.495 117.393L133.755 110.132C134.211 109.673 134.66 109.259 135.258 109.01C135.855 108.761 136.496 108.632 137.144 108.632C137.791 108.631 138.432 108.758 139.03 109.006C139.628 109.254 140.171 109.618 140.628 110.077L154.316 123.738C165.208 134.609 168.056 150.431 162.964 163.943L180.901 181.88C190.045 190.985 197.696 197.785 207.074 188.408L247.645 147.836C237.893 157.588 229.881 150.075 220.244 140.446L110.938 31.0639Z" fill="url(#nwc_kiosk_grad)"/>
-                    <path d="M187.641 13.0273L153.153 47.4873L229.781 124.116C237.116 131.419 243.491 137.239 250.565 134.417C254.654 132.787 257.461 128.351 255.894 124.238C219.227 28.0253 219.212 28.0238 214.348 17.507C209.484 6.99014 195.804 4.76016 187.641 13.0273Z" fill="#897FFF"/>
-                    <defs><linearGradient id="nwc_kiosk_grad" x1="123.989" y1="10.4384" x2="123.989" y2="249.939" gradientUnits="userSpaceOnUse"><stop stop-color="#FFCA4A"/><stop offset="1" stop-color="#F7931A"/></linearGradient></defs>
-                  </svg>
-                  <!-- LNbits -->
-                  <svg v-else-if="w.type === 'lnbits'" width="14" height="20" viewBox="0 0 502 902" fill="none" xmlns="http://www.w3.org/2000/svg">
-                    <path d="M158.566 493.857L1 901L450.49 355.202H264.831L501.791 1H187.881L36.4218 493.857H158.566Z" fill="#FF1FE1"/>
-                  </svg>
-                  <!-- Arkade -->
-                  <ArkadeLogo v-else-if="w.type === 'arkade'" variant="mark" :size="20" />
-                  <!-- Fallback -->
-                  <Icon v-else icon="tabler:wallet" width="20" height="20" :class="$q.dark.isActive ? 'chevron-dark' : 'chevron-light'" />
-                </q-item-section>
-              </q-item>
-            </q-list>
-          </q-card-section>
-          <q-card-actions align="right">
-            <q-btn flat no-caps :label="$t('Cancel')" color="grey" @click="showKioskWalletPicker = false" />
-            <q-btn flat no-caps :label="$t('Confirm')"
-              :color="$q.dark.isActive ? 'brand-green' : 'brand-green-dark'"
-              :disable="!kioskSelectionAllowed"
-              @click="confirmKioskWalletSelection" />
-          </q-card-actions>
-        </q-card>
-      </q-dialog>
-
       <!-- The Onboarding Guide lives on the About page now, next to the
            project's story, so Settings stays pure configuration. -->
 
@@ -708,7 +383,7 @@
            Collapsed by default. Power-user toggles that the
            typical user never needs to touch (exchange-rate source,
            auto-add Bitcoin deposits). Positioned after the
-           mainstream surfaces — wallet, preferences, kiosk — so
+           mainstream surfaces — wallet, preferences — so
            anyone hunting for advanced controls is happy to scroll
            the extra row. -->
       <SettingsSection
@@ -1506,7 +1181,6 @@ import { isScreenPrivacySupported } from '../utils/secureScreen.js'
 import { Capacitor } from '@capacitor/core'
 import {truncateAddress} from '../utils/addressUtils.js'
 import { loadDismissedWarnings, saveDismissedWarnings } from '../utils/attentionWarnings.js'
-import KioskPinPad from '../components/KioskPinPad.vue'
 import SparkSeedPhraseDialog from '../components/SparkSeedPhraseDialog.vue'
 import balanceUpdating from '../directives/balanceUpdating.js'
 import ArkadeLogo from '../components/ArkadeLogo.vue'
@@ -1515,7 +1189,7 @@ import BiometricEnableDialog from '../components/BiometricEnableDialog.vue'
 import LNBitsAddressSheet from '../components/lnbits/LNBitsAddressSheet.vue'
 import ExchangeRateSheet from '../components/settings/ExchangeRateSheet.vue'
 import { suggestedWalletName } from '../utils/nwcWallet.js'
-import { kioskWalletBlocker, KIOSK_BLOCKER } from '../utils/walletCapabilities.js'
+import { walletTypeLabel } from '../utils/walletNames.js'
 import { NWC_ERROR, nwcError } from '../utils/nwcErrors.js'
 import SparkLightningAddressSheet from '../components/SparkLightningAddressSheet.vue'
 import InternalTransferModal from '../components/InternalTransferModal.vue'
@@ -1530,7 +1204,6 @@ import SettingsSection from '../components/settings/SettingsSection.vue'
 import SettingsRow from '../components/settings/SettingsRow.vue'
 import SettingsAttentionStrip from '../components/settings/SettingsAttentionStrip.vue'
 import SettingsQuickToggles from '../components/settings/SettingsQuickToggles.vue'
-import SettingsFeatureCards from '../components/settings/SettingsFeatureCards.vue'
 import SettingsHubHeader from '../components/settings/SettingsHubHeader.vue'
 import SettingsHubNav from '../components/settings/SettingsHubNav.vue'
 import HiddenAmount from '../components/HiddenAmount.vue'
@@ -1554,7 +1227,6 @@ export default {
     WalletBrandMark,
     SparkSeedPhraseDialog,
     BiometricEnableDialog,
-    KioskPinPad,
     LNBitsAddressSheet,
     ExchangeRateSheet,
     SparkLightningAddressSheet,
@@ -1569,7 +1241,6 @@ export default {
     SettingsRow,
     SettingsAttentionStrip,
     SettingsQuickToggles,
-    SettingsFeatureCards,
     SettingsHubHeader,
     SettingsHubNav,
     HiddenAmount,
@@ -1689,36 +1360,6 @@ export default {
         defaultUsername: '',
       },
 
-      // Kiosk Mode
-      showKioskPinSetupDialog: false,
-      showKioskChangePinDialog: false,
-      showKioskDisableDialog: false,
-      showKioskWalletPicker: false,
-      kioskPinSetupStep: 'intro', // 'intro' | 'selectWallet' | 'enter' | 'confirm'
-      // Monotonically increments each time the user lands on the intro
-      // step with the dialog open. Drives both a Vue `:key` (so Vue
-      // fully remounts the <img> DOM node) and a URL query-string on
-      // the animated SVG (so the browser treats each render as a new
-      // resource and restarts the SVG's internal CSS animations from
-      // frame 0). Without both, Chromium and WebKit have been observed
-      // to cache the final animation state and skip the replay.
-      //
-      // Each unique key adds one entry (~60 KB) to the HTTP cache.
-      // Expected bump count per session is small (dialog opens are a
-      // rare, deliberate action), so unbounded growth is acceptable.
-      // Ping-ponging across a small pool was considered and rejected:
-      // reusing a URL defeats the cache-bust and can leave the animation
-      // frozen for users on browsers where that was the original issue.
-      kioskIntroAnimationKey: 0,
-      kioskPinFirst: '',
-      kioskPinError: '',
-      kioskChangePinStep: 'verify', // 'verify' | 'enter' | 'confirm'
-      kioskChangePinFirst: '',
-      kioskChangePinError: '',
-      kioskDisableError: '',
-      kioskActivating: false,
-      kioskWalletSelection: '',
-
     }
   },
   computed: {
@@ -1726,27 +1367,6 @@ export default {
     setAsideWallets() {
       return this.showWalletsDialog ? this.walletStore.setAsideSparkWallets() : [];
     },
-    /**
-     * Wallets the kiosk can charge through. Kiosk charges are Lightning
-     * invoices, and Arkade's Lightning rail is out of service (Boltz
-     * retired) - offering it would set up a kiosk that cannot charge.
-     */
-    /**
-     * Every wallet for the kiosk pickers, each with the reason it cannot take
-     * kiosk payments ('' when it can): utils/walletCapabilities decides, so
-     * an NWC connection that may not create invoices, or never see them
-     * paid, is not offered, and Arkade not while its Lightning is paused.
-     */
-    kioskWalletOptions() {
-      return this.wallets.map((w) => ({ ...w, kioskReason: this.kioskReasonText(kioskWalletBlocker(w)) }));
-    },
-    kioskEligibleWallets() {
-      return this.kioskWalletOptions.filter((w) => !w.kioskReason);
-    },
-    kioskSelectionAllowed() {
-      return this.kioskEligibleWallets.some((w) => w.id === this.kioskWalletSelection);
-    },
-
     /** The wallet the detail sheet is showing; null once it is removed. */
     detailWallet() {
       return this.wallets.find((w) => w.id === this.detailWalletId) || null;
@@ -1909,13 +1529,6 @@ export default {
       return this.walletStore.activeWalletType === 'spark';
     },
 
-    kioskSelectedWalletName() {
-      if (!this.walletStore.kioskWalletId) return '';
-      const w = this.kioskWalletOptions.find(w => w.id === this.walletStore.kioskWalletId);
-      if (!w) return '';
-      // Chosen before its connection lost the grant: say so where it is set.
-      return w.kioskReason ? `${w.name} · ${w.kioskReason}` : w.name;
-    },
 
     nwcWalletAlias() {
       if (!this.activeWallet || this.activeWallet.type !== 'nwc') return null;
@@ -2000,41 +1613,16 @@ export default {
       return warnings.filter((w) => !this.dismissedWarnings.includes(w.id));
     },
 
-    /**
-     * Feature cards row — Auto-Transfer and Kiosk Mode. Meta strings
-     * carry live context (active rule count, kiosk status) so the
-     * card is informative before a tap. Earn Sats and Address Book
-     * moved to the Spend tab.
-     */
     /** Rules that are switched on. */
     autoTransferOn() {
       return Object.values(useAutoWithdrawStore().configs).filter((rule) => rule.enabled).length;
     },
+    /** The Auto-Transfer row's value: where the rules stand, in a few words. */
     autoTransferMeta() {
       const store = useAutoWithdrawStore();
       if (store.needingAttention.length) return this.$t('Needs attention');
       if (this.autoTransferOn) return this.$t('{count} on', { count: this.autoTransferOn });
       return Object.keys(store.configs).length ? this.$t('Paused') : this.$t('No rules yet');
-    },
-
-    featureCards() {
-      const kioskOn = !!this.walletStore.kioskEnabled;
-      return [
-        {
-          id: 'auto-transfer',
-          icon: 'tabler:arrow-autofit-right',
-          label: this.$t('Auto-Transfer'),
-          meta: this.autoTransferMeta,
-          active: this.autoTransferOn > 0,
-        },
-        {
-          id: 'kiosk',
-          icon: 'tabler:cash-register',
-          label: this.$t('kiosk.kioskMode'),
-          meta: kioskOn ? this.$t('Active') : this.$t('Off'),
-          active: kioskOn,
-        },
-      ];
     },
 
     /**
@@ -2130,26 +1718,6 @@ export default {
     },
 
     /**
-     * Replay the kiosk intro animation every time the user lands on
-     * the intro step with the dialog visible. Covers both (a) a fresh
-     * open of the setup dialog and (b) navigating back to intro from
-     * the PIN entry step. Bumping `kioskIntroAnimationKey` changes the
-     * `<img>` :key (remounting the DOM node) and the SVG URL query
-     * string (invalidating the cached render context), which together
-     * force the SVG's internal CSS animations to restart from frame 0.
-     */
-    kioskPinSetupStep(next) {
-      if (next === 'intro' && this.showKioskPinSetupDialog) {
-        this.kioskIntroAnimationKey += 1;
-      }
-    },
-    showKioskPinSetupDialog(isOpen) {
-      if (isOpen && this.kioskPinSetupStep === 'intro') {
-        this.kioskIntroAnimationKey += 1;
-      }
-    },
-
-    /**
      * Trigger an lnurlp availability probe whenever the active wallet
      * becomes (or is replaced by) an LNbits wallet. Result is cached
      * per wallet id, so re-visits during the same session are free.
@@ -2218,7 +1786,7 @@ export default {
     // Native-only redirect. A direct web navigation to /learn* is bounced
     // here by the router guard (see router/routes.js) with ?getApp=learn.
     // Open the shared Get-the-App dialog so the user learns that Learn &
-    // Earn is app-only, matching the card-tap path in onFeatureSelect.
+    // Earn is app-only, the same message the Learn & Earn card gives on the web.
     if (this.$route.query.getApp === 'learn') {
       this.$nextTick(() => this.promptForLearnEarnApp());
     }
@@ -2278,168 +1846,6 @@ export default {
       // wallet as backed up via the store, closed itself, and emitted.
       // Nothing else to do here; the Settings row re-renders via the
       // `activeSparkBackedUp` computed.
-    },
-
-    // ─── Kiosk Mode ───────────────────────────────────
-
-    handleKioskToggle(val) {
-      if (val) {
-        // Pre-select an existing kiosk destination if one was set previously,
-        // otherwise default to the currently active wallet so the wizard's
-        // wallet step always has a sensible default and can never produce
-        // a half-configured state (kiosk enabled, no destination).
-        // Only pre-select a wallet the kiosk can actually charge through
-        // (Arkade is filtered out of the picker while its Lightning rail is
-        // out; a hidden ineligible selection would let Next persist it).
-        const eligible = new Set(this.kioskEligibleWallets.map((w) => w.id));
-        const preferred = this.walletStore.kioskWalletId || this.walletStore.activeWalletId || '';
-        this.kioskWalletSelection = eligible.has(preferred)
-          ? preferred
-          : (this.kioskEligibleWallets[0]?.id || '');
-        this.showKioskPinSetupDialog = true;
-      } else {
-        this.showKioskDisableDialog = true;
-      }
-    },
-
-    async advanceFromKioskWalletSelect() {
-      if (!this.kioskWalletSelection) return;
-      // Defense in depth: never persist a wallet the picker doesn't offer.
-      if (!this.kioskEligibleWallets.some((w) => w.id === this.kioskWalletSelection)) return;
-      await this.walletStore.setKioskWallet(this.kioskWalletSelection);
-      this.kioskPinSetupStep = 'enter';
-    },
-
-    handleKioskPinSetupComplete(pin) {
-      if (this.kioskPinSetupStep === 'enter') {
-        this.kioskPinFirst = pin;
-        this.kioskPinSetupStep = 'confirm';
-        this.kioskPinError = '';
-        this.$nextTick(() => this.$refs.kioskSetupPinPadRef?.reset());
-      } else {
-        if (pin === this.kioskPinFirst) {
-          this.walletStore.enableKiosk(pin, this.walletStore.kioskWalletId || '');
-          this.showKioskPinSetupDialog = false;
-          this.$q.notify({ message: this.$t('kiosk.kioskEnabled'), color: 'positive' });
-        } else {
-          this.kioskPinError = this.$t('kiosk.pinMismatch');
-        }
-      }
-    },
-
-    resetKioskPinSetup() {
-      this.kioskPinSetupStep = 'intro';
-      this.kioskPinFirst = '';
-      this.kioskPinError = '';
-    },
-
-    handleKioskChangePinComplete(pin) {
-      if (this.kioskChangePinStep === 'verify') {
-        if (this.walletStore.verifyKioskPin(pin)) {
-          this.kioskChangePinStep = 'enter';
-          this.kioskChangePinError = '';
-          this.$nextTick(() => this.$refs.kioskChangePinPadRef?.reset());
-        } else {
-          this.kioskChangePinError = this.$t('kiosk.incorrectPin');
-        }
-      } else if (this.kioskChangePinStep === 'enter') {
-        this.kioskChangePinFirst = pin;
-        this.kioskChangePinStep = 'confirm';
-        this.kioskChangePinError = '';
-        this.$nextTick(() => this.$refs.kioskChangePinPadRef?.reset());
-      } else {
-        if (pin === this.kioskChangePinFirst) {
-          this.walletStore.changeKioskPin(pin);
-          this.showKioskChangePinDialog = false;
-          this.$q.notify({ message: this.$t('kiosk.pinChanged'), color: 'positive' });
-        } else {
-          this.kioskChangePinError = this.$t('kiosk.pinMismatch');
-        }
-      }
-    },
-
-    resetKioskChangePin() {
-      this.kioskChangePinStep = 'verify';
-      this.kioskChangePinFirst = '';
-      this.kioskChangePinError = '';
-    },
-
-    handleKioskDisablePin(pin) {
-      if (this.walletStore.verifyKioskPin(pin)) {
-        this.walletStore.disableKiosk();
-        this.showKioskDisableDialog = false;
-        this.$q.notify({ message: this.$t('kiosk.kioskDisabled'), color: 'positive' });
-      } else {
-        this.kioskDisableError = this.$t('kiosk.incorrectPin');
-      }
-    },
-
-    resetKioskDisable() {
-      this.kioskDisableError = '';
-    },
-
-    /** The words for a kiosk blocker (utils/walletCapabilities), or ''. */
-    kioskReasonText(blocker) {
-      if (blocker === KIOSK_BLOCKER.CANNOT_RECEIVE) return this.$t("Can't receive");
-      if (blocker === KIOSK_BLOCKER.CANNOT_CONFIRM) return this.$t("Can't confirm payments");
-      return '';
-    },
-
-    confirmKioskWalletSelection() {
-      // Never persist a wallet the picker does not offer.
-      if (!this.kioskEligibleWallets.some((w) => w.id === this.kioskWalletSelection)) return;
-      this.walletStore.setKioskWallet(this.kioskWalletSelection);
-      this.showKioskWalletPicker = false;
-    },
-
-    updateKioskTipValue(idx, val) {
-      const arr = [...this.walletStore.kioskTipValues];
-      arr[idx] = parseInt(val) || 0;
-      this.walletStore.setKioskTipValues(arr);
-    },
-
-    /** The kiosk wallet picker, preselecting the saved wallet only while it can take payments. */
-    openKioskWalletPicker() {
-      const saved = this.walletStore.kioskWalletId || '';
-      this.kioskWalletSelection = this.kioskEligibleWallets.some((w) => w.id === saved) ? saved : '';
-      this.showKioskWalletPicker = true;
-    },
-
-    async handleStartKiosk() {
-      if (!this.walletStore.kioskWalletId) {
-        this.$q.notify({ message: this.$t('kiosk.noWalletSelected'), color: 'warning' });
-        return;
-      }
-      // A kiosk wallet that is no longer on this phone (one left before
-      // removals cleared the binding) would fail every sale: choose again.
-      if (!this.wallets.some((w) => w.id === this.walletStore.kioskWalletId)) {
-        this.$q.notify({ message: this.$t('Choose a kiosk wallet that can take payments'), color: 'warning' });
-        this.openKioskWalletPicker();
-        return;
-      }
-      // A wallet chosen before its connection lost a grant would show a QR
-      // that can never complete: choose another one first.
-      const saved = this.kioskWalletOptions.find((w) => w.id === this.walletStore.kioskWalletId);
-      if (saved?.kioskReason) {
-        this.$q.notify({ message: this.$t('Choose a kiosk wallet that can take payments'), caption: `${saved.name} · ${saved.kioskReason}`, color: 'warning' });
-        this.openKioskWalletPicker();
-        return;
-      }
-      this.kioskActivating = true;
-      try {
-        await this.walletStore.activateKioskMode();
-        this.$router.push('/kiosk');
-      } catch (err) {
-        console.error('Kiosk activation failed:', err);
-        this.walletStore.showPaymentError(err, {
-          context: 'kiosk',
-          walletType: this.walletStore.activeWalletType,
-          route: 'Kiosk activation',
-          t: this.$t.bind(this),
-        });
-      } finally {
-        this.kioskActivating = false;
-      }
     },
 
     // ─── LNbits Lightning Address ─────────────────────────────────────
@@ -2635,28 +2041,6 @@ export default {
     },
 
     /**
-     * Routes a feature-card tap to the right surface. Same fan-out
-     * pattern as the quick-toggle and attention-strip handlers —
-     * keeps the underlying dialogs / routes / toggles as the single
-     * source of truth, with the card surface staying purely visual.
-     *
-     * For Kiosk: tapping the card always flips the toggle. The
-     * setup dialog opens automatically on the off→on transition via
-     * `handleKioskToggle`, so the user sees the same first-run flow
-     * whether they tap the card or the section toggle.
-     */
-    onFeatureSelect(id) {
-      switch (id) {
-        case 'auto-transfer':
-          this.$router.push('/auto-transfer');
-          return;
-        case 'kiosk':
-          this.handleKioskToggle(!this.walletStore.kioskEnabled);
-          return;
-      }
-    },
-
-    /**
      * Routes an attention-strip CTA tap to the right surface. The
      * strip stays thin — it just reports which warning was acted on;
      * the work happens here so the actual dialogs / routes / toggles
@@ -2840,7 +2224,7 @@ export default {
 
     /**
      * Open the shared Get-the-App dialog for Learn & Earn. Single source
-     * of the app-only message so the card-tap gate (onFeatureSelect) and
+     * of the app-only message so the card-tap gate and
      * the router-guard redirect landing (mounted) stay in sync.
      */
     promptForLearnEarnApp() {
@@ -2953,7 +2337,7 @@ export default {
         t: this.$t.bind(this),
         formatAmount: this.formatSats,
         balanceSats,
-        includesKioskWallet: this.sparkWallets.some((w) => w.id === this.walletStore.kioskWalletId),
+        includesKioskWallet: this.walletStore.kioskEnabled && this.sparkWallets.some((w) => w.id === this.walletStore.kioskWalletId),
       });
       if (copy.blocked) {
         this.showRemovalBlocked(copy, this.sparkWallets[0]?.id);
@@ -2970,7 +2354,7 @@ export default {
         wallets,
         t: this.$t.bind(this),
         listNames: this.listNames,
-        includesKioskWallet: wallets.some((w) => w.id === this.walletStore.kioskWalletId),
+        includesKioskWallet: this.walletStore.kioskEnabled && wallets.some((w) => w.id === this.walletStore.kioskWalletId),
       });
       this.askToRemove(copy, () => this.walletStore.disconnectConnectedWallets());
     },
@@ -3051,7 +2435,9 @@ export default {
         t: this.$t.bind(this),
         formatAmount: this.formatSats,
         balanceSats: this.walletStore.getDisplayBalance(walletId).balance,
-        isKioskWallet: this.walletStore.kioskWalletId === walletId,
+        // Turning kiosk off keeps its wallet for next time: only a kiosk that
+        // is on stops taking payments.
+        isKioskWallet: this.walletStore.kioskEnabled && this.walletStore.kioskWalletId === walletId,
       });
       if (copy.blocked) {
         this.showRemovalBlocked(copy, walletId);
@@ -3228,13 +2614,7 @@ export default {
     },
 
     getWalletTypeLabel(wallet) {
-      switch (wallet.type) {
-        case 'spark': return 'Spark';
-        case 'arkade': return 'Arkade';
-        case 'lnbits': return 'LNbits';
-        case 'nwc':
-        default: return 'NWC';
-      }
+      return walletTypeLabel(wallet);
     },
 
     openWalletDetail(walletId) {
@@ -3541,21 +2921,6 @@ export default {
 
 .section-label-light {
   color: var(--text-muted);
-}
-
-/* Compact layout helpers introduced by the refactor */
-.kiosk-tip-input-row {
-  display: flex;
-  gap: 8px;
-  padding: 12px 16px;
-}
-.kiosk-tip-input-row .kiosk-tip-input {
-  flex: 1;
-  min-width: 0;
-}
-
-.kiosk-activate-row {
-  padding: 12px 16px 14px;
 }
 
 .donation-portal-link .q-icon {
@@ -5188,187 +4553,6 @@ body.body--light .wallet-avatar-arkade {
 .nwc-method-chip-light {
   background: rgba(0, 0, 0, 0.04);
   color: rgba(0, 0, 0, 0.5);
-}
-
-/* Kiosk Setup Dialog */
-.kiosk-setup-dialog {
-  width: 90vw; max-width: 420px;
-  border-radius: var(--radius-lg);
-  padding: 20px 24px 28px;
-  display: flex; flex-direction: column; align-items: center;
-  text-align: center;
-}
-
-/* Animated hero illustration for the intro step.
-   The SVG carries its own CSS keyframes inside a <style> block and is
-   served via <img> so the animation plays in a self-contained sandbox
-   and auto-replays whenever the dialog remounts. */
-.kiosk-setup-hero {
-  width: 100%;
-  display: flex;
-  justify-content: center;
-  margin-bottom: 8px;
-  /* Clip any drawing that overflows the intended frame so the skew on
-     the QR-code animation can't push beyond the dialog edge. */
-  overflow: hidden;
-}
-
-.kiosk-setup-illustration {
-  width: 100%;
-  max-width: 340px;
-  height: auto;
-  user-select: none;
-  pointer-events: none;
-}
-
-.kiosk-setup-title {
-  font-family: 'Manrope', sans-serif;
-  font-size: 1.25rem; font-weight: 800;
-  margin: 0 0 8px; color: var(--text-primary);
-}
-
-.kiosk-setup-desc {
-  font-family: 'Manrope', sans-serif;
-  font-size: 0.875rem; line-height: 1.5;
-  color: var(--text-secondary);
-  margin: 0 0 20px; max-width: 300px;
-}
-
-.kiosk-setup-features {
-  width: 100%; display: flex; flex-direction: column; gap: 8px;
-  margin-bottom: 24px;
-}
-
-.kiosk-setup-feature {
-  display: flex; align-items: center; gap: 12px;
-  padding: 12px 16px; border-radius: var(--radius-sm);
-  background: var(--bg-input); text-align: left;
-  font-family: 'Manrope', sans-serif; font-size: 0.875rem; font-weight: 500;
-  color: var(--text-secondary);
-}
-
-.kiosk-feature-icon {
-  width: 32px; height: 32px; border-radius: 8px; flex-shrink: 0;
-  display: flex; align-items: center; justify-content: center;
-  background: var(--bg-secondary); color: var(--text-muted);
-}
-
-/* PIN-setup intro CTA — tinted green, matches .kiosk-start-btn. */
-.kiosk-setup-primary {
-  width: 100%;
-  height: 50px;
-  border: none;
-  border-radius: 16px;
-  background: rgba(21, 222, 114, 0.14);
-  color: #15DE72;
-  box-shadow: inset 0 0 0 1px rgba(21, 222, 114, 0.22);
-  font-family: 'Manrope', sans-serif;
-  font-size: 0.9375rem;
-  font-weight: 600;
-  letter-spacing: -0.005em;
-  cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
-  transition:
-    filter 0.18s ease,
-    transform 0.18s cubic-bezier(0.4, 0, 0.2, 1);
-}
-.kiosk-setup-primary:hover { filter: brightness(1.06); }
-.kiosk-setup-primary:active { transform: scale(0.98); filter: brightness(0.94); }
-
-body.body--light .kiosk-setup-primary {
-  /* Same neutral primary-action pill as .kiosk-start-btn-light and
-     .create-invoice-btn-light. One visual weight for every CTA on
-     cream. */
-  background: var(--btn-neutral-bg);
-  color: var(--btn-neutral-fg);
-  box-shadow: none;
-}
-
-.kiosk-setup-secondary {
-  background: none; border: none;
-  color: var(--text-muted);
-  font-family: 'Manrope', sans-serif; font-size: 0.875rem; font-weight: 500;
-  cursor: pointer; padding: 12px 16px; margin-top: 4px;
-  -webkit-tap-highlight-color: transparent;
-}
-.kiosk-setup-secondary:active { opacity: 0.6; }
-
-/* Wizard wallet picker — mirrors the .kiosk-setup-feature card style but
-   is interactive: each row is a button with a left-side radio dot, and
-   the selected row uses the app-wide tinted-green selection grammar. */
-.kiosk-wallet-list {
-  width: 100%; display: flex; flex-direction: column; gap: 8px;
-  margin-bottom: 20px;
-}
-
-.kiosk-wallet-row {
-  display: flex; align-items: center; gap: 12px;
-  padding: 12px 14px;
-  border-radius: var(--radius-sm);
-  background: var(--bg-input);
-  border: 1px solid transparent;
-  text-align: left;
-  font-family: 'Manrope', sans-serif;
-  color: var(--text-secondary);
-  cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
-  transition: background 0.15s ease, box-shadow 0.15s ease, transform 0.08s ease;
-}
-.kiosk-wallet-row:active { transform: scale(0.99); }
-/* Cannot take kiosk payments: the name steps back, the reason stays readable. */
-.kiosk-wallet-row-off { cursor: not-allowed; }
-.kiosk-wallet-row-off:active { transform: none; }
-.kiosk-wallet-row-off .kiosk-wallet-row-name,
-.kiosk-wallet-row-off .kiosk-wallet-row-icon,
-.kiosk-wallet-row-off .kiosk-wallet-row-radio { opacity: .45; }
-.kiosk-wallet-row-off .kiosk-wallet-row-type { color: var(--text-secondary); }
-
-.kiosk-wallet-row-active {
-  background: rgba(21, 222, 114, 0.14);
-  box-shadow: inset 0 0 0 1px rgba(21, 222, 114, 0.22);
-}
-body.body--light .kiosk-wallet-row-active {
-  background: rgba(5, 149, 115, 0.10);
-  box-shadow: inset 0 0 0 1px rgba(5, 149, 115, 0.20);
-}
-
-.kiosk-wallet-row-radio {
-  width: 20px; height: 20px; flex-shrink: 0;
-  border-radius: 50%;
-  border: 1.5px solid var(--text-muted);
-  display: flex; align-items: center; justify-content: center;
-  transition: border-color 0.15s ease;
-}
-.kiosk-wallet-row-active .kiosk-wallet-row-radio { border-color: #15DE72; }
-body.body--light .kiosk-wallet-row-active .kiosk-wallet-row-radio { border-color: #059573; }
-
-.kiosk-wallet-row-dot {
-  width: 10px; height: 10px; border-radius: 50%;
-  background: #15DE72;
-}
-body.body--light .kiosk-wallet-row-dot { background: #059573; }
-
-.kiosk-wallet-row-info {
-  flex: 1; min-width: 0;
-  display: flex; flex-direction: column; gap: 2px;
-}
-
-.kiosk-wallet-row-name {
-  font-size: 0.9375rem; font-weight: 600;
-  color: var(--text-primary);
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-}
-
-.kiosk-wallet-row-type {
-  font-size: 0.75rem; font-weight: 500;
-  color: var(--text-muted);
-}
-
-.kiosk-wallet-row-icon {
-  flex-shrink: 0;
-  width: 28px; height: 28px;
-  display: flex; align-items: center; justify-content: center;
-  color: var(--text-muted);
 }
 
 </style>
