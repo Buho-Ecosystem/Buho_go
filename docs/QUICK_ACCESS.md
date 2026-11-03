@@ -111,6 +111,11 @@ a second time.
 
 ## Notes
 
+- The launcher marks a pinned shortcut with the app icon, so the app icon
+  is part of this: its mark (`drawable/ic_launcher_mark.xml`) sits inside
+  the 66dp circle every launcher shape keeps, and is also the monochrome
+  layer for themed icons. The legacy PNGs (Android 7) are rendered from the
+  same paths.
 - Add a tile (Android 13 and newer) uses the system's own dialog. Android
   may stop showing it after it was declined a few times, so the sheet always
   says how to add a tile by hand.
