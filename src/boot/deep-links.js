@@ -9,6 +9,7 @@ import { parsePaymentDestination } from '../providers/WalletFactory'
 import { classifyIdentifier } from '../utils/nostrLookup'
 import { triggerWalletStoreHydration } from '../utils/walletHydration'
 import { cardRouteForDeepLink, createDeepLinkDeduper } from '../utils/deepLinkRouting'
+import { readPaymentLink } from '../utils/paymentLink'
 import { redactPaymentInput } from '../utils/logRedaction'
 import { i18n } from './i18n'
 
@@ -16,11 +17,15 @@ import { i18n } from './i18n'
 const t = (key) => i18n.global.t(key)
 
 /**
- * Deep link handler for Android intent filters.
+ * Deep link handler for the links the system hands BuhoGO (Android intent
+ * filters, and the URL schemes in Info.plist).
  *
  * Only loaded in Capacitor builds (see quasar.config.js).
  * Registers BuhoGO as a handler for lightning:, bitcoin:, lnurlp://, lnurlw://
  * URI schemes so it appears in the Android app chooser alongside other Lightning wallets,
+ * and for its own payment link, buhogo://pay?request=…, which a checkout uses
+ * to open BuhoGO in particular (utils/paymentLink.js; it is unwrapped first
+ * and its request then takes the same path as a lightning:/bitcoin: link),
  * and as an App Link handler for https://go.mybuho.de/p/… so a shared card opens
  * the card instead of the browser (and for /nwc/connected, where a Hub sends
  * the person back after approving BuhoGO). NIP-21 identities (nostr:npub… /
@@ -79,7 +84,25 @@ function parseDeepLinkURI(url) {
   return { data, type: parsed.type, rawInput: input, ...(parsed.bip21 ? { bip21: parsed.bip21 } : {}) }
 }
 
-function handleDeepLink(url, router, walletStore) {
+function cantOpenLink() {
+  Notify.create({
+    type: 'warning',
+    message: t("BuhoGO can't open this link"),
+    timeout: 3000
+  })
+}
+
+function handleDeepLink(incoming, router, walletStore) {
+  // A BuhoGO payment link carries a request; from here on it is read as if
+  // that request had come as a link of its own. One BuhoGO cannot read is
+  // refused rather than guessed at.
+  const link = readPaymentLink(incoming)
+  if (link && !link.request) {
+    if (shouldHandle(incoming)) cantOpenLink()
+    return
+  }
+  const url = link ? link.request : incoming
+
   if (offerAddressRequest(url)) return
   if (!url || !shouldHandle(url)) return
 
@@ -113,11 +136,7 @@ function handleDeepLink(url, router, walletStore) {
   const paymentData = parseDeepLinkURI(url)
   if (paymentData && offerAddressRequest(paymentData.data)) return
   if (!paymentData) {
-    Notify.create({
-      type: 'warning',
-      message: t("BuhoGO can't open this link"),
-      timeout: 3000
-    })
+    cantOpenLink()
     return
   }
 

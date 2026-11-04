@@ -30,6 +30,7 @@ How each feature works and the rules that keep it right, written for developers 
 | [LUD-14 vouchers](LUD14_VOUCHERS.md) | Vouchers with a balance |
 | [LUD-23 address sharing](LUD23_APP_WIDE_PLAN.md) | Asking for and sharing payment addresses across the app |
 | [Clipboard offer](CLIPBOARD_OFFER.md) | Offering to pay what was just copied, once |
+| [Payment links](PAYMENT_LINKS.md) | `buhogo://pay?request=…`: links that open BuhoGO in particular, for checkouts that list wallets |
 | [QR scanning without Play services](QR_SCANNER_FALLBACK.md) | Scanning on phones without Google Play services |
 
 ## Backup and identity

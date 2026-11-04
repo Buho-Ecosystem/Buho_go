@@ -93,6 +93,22 @@
 				<string>lnurlw</string>
 			</array>
 		</dict>
+		<!--
+		  BuhoGO's own scheme, for links meant for BuhoGO in particular:
+		  buhogo://pay?request=… is a checkout's "BuhoGO" entry (the
+		  payment, which the person confirms; utils/paymentLink.js), and
+		  buhogo://nwc/connected is the way back from a wallet app that
+		  approved a connection (utils/nwcPairing.js). Same as the Android
+		  intent filter.
+		-->
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>mybuho.buhogo.links</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>buhogo</string>
+			</array>
+		</dict>
 	</array>
 </dict>
 </plist>

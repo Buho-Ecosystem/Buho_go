@@ -88,15 +88,26 @@
                 <data android:scheme="nostrwalletconnect" />
             </intent-filter>
 
-            <!-- Deep link: back from a wallet app that approved BuhoGO
-                 ("return_to" of a connection request opened on this phone).
-                 Carries only the request id; the connection itself arrives
-                 over the wallet's relay. -->
+            <!-- Deep link: BuhoGO's own scheme, for links meant for BuhoGO
+                 in particular, whatever wallet the phone picks for the
+                 general schemes above.
+                   buhogo://pay?request=…  a checkout's "BuhoGO" entry: the
+                                           payment, which the person confirms
+                                           (utils/paymentLink.js,
+                                           docs/PAYMENT_LINKS.md). The
+                                           buhogo:lightning:… form some wallet
+                                           lists build is read the same way.
+                   buhogo://nwc/…          back from a wallet app that approved
+                                           BuhoGO ("return_to" of a connection
+                                           request opened on this phone). Only
+                                           the request id; the connection
+                                           arrives over the wallet's relay. -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="buhogo" android:host="nwc" />
+                <data android:scheme="buhogo" />
+                <data android:scheme="BUHOGO" />
             </intent-filter>
 
             <!-- App Link: a shared card link opens the card in BuhoGO.

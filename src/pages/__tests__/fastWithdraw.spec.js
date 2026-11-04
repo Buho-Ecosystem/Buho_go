@@ -13,6 +13,7 @@ import * as lud4 from '../../utils/lud4.js';
 import * as lnurlMetadata from '../../utils/lnurlMetadata.js';
 import * as userErrors from '../../utils/userErrors.js';
 import * as deepLinkRouting from '../../utils/deepLinkRouting.js';
+import * as paymentLink from '../../utils/paymentLink.js';
 
 // Execute the production Options-API methods, replacing provider/UI imports
 // that these paths never use. IO is explicit so an accidental GET fails.
@@ -175,6 +176,7 @@ for (const file of ['deep-links.js', 'nfc.js']) {
         '../utils/walletHydration': { triggerWalletStoreHydration() {} },
         '../utils/nostrLookup': { classifyIdentifier: () => null }, '../utils/profileLink': { profileLinkRoute: () => null },
         '../utils/deepLinkRouting': deepLinkRouting,
+        '../utils/paymentLink': paymentLink,
         '../utils/logRedaction': { redactPaymentInput: () => '(redacted)' },
         '../services/nwcConnectionIntake.js': nwcIntake,
         '../services/addressRequestIntake.js': { offerAddressRequest: input => addressRequests.isAddressRequest?.(input) || false },
