@@ -38,6 +38,9 @@ export class FiatRatesService {
     this.defaultApiUrl = MEMPOOL_DEFAULT_URL;
     this.customApiUrl = null;
     this.rates = {};
+    // When each currency's rate was fetched (ms), by code. A rate kept from
+    // an earlier fetch keeps its time, so its real age stays known (#456).
+    this.rateTimes = {};
     this.lastUpdate = null;
     this.updateInterval = 5 * 60 * 1000; // 5 minutes
     this.maxCacheAge = 60 * 60 * 1000; // 1 hour - max age for cached rates
@@ -124,11 +127,13 @@ export class FiatRatesService {
         // Check if cached rates are still valid (not too old)
         if (this.lastUpdate && this.isCacheValid()) {
           this.rates = data.rates || {};
+          this.rateTimes = data.rateTimes || {};
           this.ratesAvailable = Object.keys(this.rates).length > 0;
           console.log('📦 Loaded cached rates from', this.lastUpdate.toISOString());
         } else {
           // Cache is too old, clear it
           this.rates = {};
+          this.rateTimes = {};
           this.ratesAvailable = false;
           console.log('⚠️ Cached rates expired, need fresh data');
         }
@@ -136,6 +141,7 @@ export class FiatRatesService {
     } catch (error) {
       console.error('Error loading cached rates:', error);
       this.rates = {};
+      this.rateTimes = {};
       this.lastUpdate = null;
       this.ratesAvailable = false;
     }
@@ -157,6 +163,7 @@ export class FiatRatesService {
     try {
       const data = {
         rates: this.rates,
+        rateTimes: this.rateTimes,
         lastUpdate: this.lastUpdate ? this.lastUpdate.toISOString() : null
       };
       localStorage.setItem(this.storageKey, JSON.stringify(data));
@@ -170,6 +177,8 @@ export class FiatRatesService {
    */
   needsUpdate() {
     if (!this.lastUpdate) return true;
+    // Rates saved before their fetch times were kept: fetch them again.
+    if (!Object.keys(this.rateTimes || {}).length) return true;
     const now = new Date();
     return (now - this.lastUpdate) > this.updateInterval;
   }
@@ -194,7 +203,9 @@ export class FiatRatesService {
     this.lastError = null;
 
     const previous = this.rates || {};
+    const previousTimes = this.rateTimes || {};
     const rates = { time: Math.floor(Date.now() / 1000) };
+    const times = {};
     let fresh = false;
 
     for (const apiUrl of this.mempoolServers()) {
@@ -214,8 +225,10 @@ export class FiatRatesService {
 
         // Convert to our expected format (rates per BTC)
         if (data.time) rates.time = data.time;
+        const pricedAt = data.time ? data.time * 1000 : Date.now();
         for (const code of MEMPOOL_RATE_CURRENCIES) {
           rates[code] = data[code] || 0;
+          if (data[code] > 0) times[code] = pricedAt;
         }
         fresh = true;
         break;
@@ -233,13 +246,17 @@ export class FiatRatesService {
     // currency until the next refresh (a BRL balance read R$0,00).
     const fromAlby = fresh ? ALBY_RATE_CURRENCIES : [...MEMPOOL_RATE_CURRENCIES, ...ALBY_RATE_CURRENCIES];
     await Promise.all(fromAlby.map(async (code) => {
-      if (previous[code] > 0) rates[code] = previous[code];
+      if (previous[code] > 0) {
+        rates[code] = previous[code];
+        if (previousTimes[code]) times[code] = previousTimes[code];
+      }
       try {
         const res = await fetchWithTimeout(`https://getalby.com/api/rates/${code.toLowerCase()}.json`, 5000);
         if (!res.ok) return;
         const data = await res.json();
         if (data && typeof data.rate_float === 'number') {
           rates[code] = data.rate_float;
+          times[code] = Date.now();
           fresh = true;
         }
       } catch (err) {
@@ -249,6 +266,7 @@ export class FiatRatesService {
 
     if (fresh) {
       this.rates = rates;
+      this.rateTimes = times;
       this.lastUpdate = new Date();
       this.ratesAvailable = true;
       this.lastError = null;
@@ -416,6 +434,13 @@ export class FiatRatesService {
       clearInterval(this.updateIntervalId);
       this.updateIntervalId = null;
     }
+  }
+
+  /**
+   * When each currency's rate was fetched (ms), by upper-case code.
+   */
+  getRateTimes() {
+    return { ...this.rateTimes };
   }
 
   /**
