@@ -467,6 +467,7 @@
           :amount-sats="sendSheetAmountSats"
           :address="l1DestinationAddress"
           :available-balance="sendingWalletBalance ?? 0"
+          :amount-fixed="paymentSheetProps?.amount?.mode === 'fixed'"
           :wallet-id="payerWalletId"
           :disabled="isSendingPayment"
           @update:fee="l1Fee = $event"
@@ -3683,6 +3684,19 @@ export default {
     },
 
     /**
+     * The amount (sats) a payload asks for: an invoice's own amount, else a
+     * fixed amount it already carries, else its BIP 21 `amount`; 0 when it
+     * names none. Every payer pick for one payment reads it, so they all
+     * pick for the same number.
+     */
+    requestAmountSats(paymentData) {
+      return this.invoiceAmountOf(paymentData)
+        || Number(paymentData?.fixedAmountSats)
+        || bip21AmountToSats(paymentData?.bip21?.amount)
+        || 0;
+    },
+
+    /**
      * The user picked another wallet in "Pay with". Only the payment's wallet
      * changes - the active wallet stays exactly as it is. Capability, balance
      * and the fee estimate follow from the new id (computeds + the
@@ -4273,7 +4287,7 @@ export default {
         // the one that will pay.
         paymentData = this.preferNativeBip21Rail(
           paymentData,
-          paymentData?.bip21 ? this.walletTypeOf(payerFor(this.invoiceAmountOf(paymentData))) : undefined,
+          paymentData?.bip21 ? this.walletTypeOf(payerFor(this.requestAmountSats(paymentData))) : undefined,
         );
 
         // Transform the payment data to match expected structure
@@ -4634,12 +4648,15 @@ export default {
         } else if (paymentData.type === 'bitcoin_address' && paymentData.data) {
           // Bitcoin on-chain: Spark (L1 withdraw) or Arkade (Ramps offboard).
           // The paying wallet must be one of them, not necessarily the active one.
-          const payerType = this.walletTypeOf(payerFor(Number(paymentData.fixedAmountSats) || 0));
+          // A request's amount (bitcoin:…?amount=0.0005) is paid as asked, like an invoice's.
+          const fixedAmountSats = this.requestAmountSats(paymentData);
+          const payerType = this.walletTypeOf(payerFor(fixedAmountSats));
           if (payerType !== 'spark' && payerType !== 'arkade') {
             throw new Error('Bitcoin withdrawals require a Spark or Arkade wallet');
           }
           this.pendingPayment = {
             ...paymentData,
+            ...(fixedAmountSats ? { fixedAmountSats } : {}),
             bitcoinAddress: paymentData.data
           };
         } else {
