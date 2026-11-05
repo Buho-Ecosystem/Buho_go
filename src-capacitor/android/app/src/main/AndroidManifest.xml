@@ -4,12 +4,25 @@
 
     <!-- Package visibility (Android 11+): the apps that can open a
          wallet connection request, so "Connect a wallet" can offer a wallet
-         app on this phone by name (WalletAppsPlugin). -->
+         app on this phone by name, and the apps that can pay a lightning: or
+         bitcoin: request, for "Pay from another wallet" on Receive
+         (WalletAppsPlugin). -->
     <queries>
         <intent>
             <action android:name="android.intent.action.VIEW" />
             <data android:scheme="nostr+walletauth" />
         </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="lightning" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="bitcoin" />
+        </intent>
+        <!-- Wallets opened by a web link instead (utils/walletAppLinks.js,
+             androidPackage). -->
+        <package android:name="com.squareup.cash" />
     </queries>
 
     <application

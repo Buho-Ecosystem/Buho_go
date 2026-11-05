@@ -22,6 +22,32 @@
 	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<!-- The wallet apps "Pay from another wallet" may open, by their own
+	     link scheme (utils/walletAppLinks.js). canOpenURL answers only for the
+	     schemes listed here; keep both lists the same, at most 25. -->
+	<key>LSApplicationQueriesSchemes</key>
+	<array>
+		<string>alby</string>
+		<string>aqua</string>
+		<string>bitkit</string>
+		<string>blink</string>
+		<string>blitz</string>
+		<string>blixtwallet</string>
+		<string>bluewallet</string>
+		<string>cakewallet</string>
+		<string>squarecash</string>
+		<string>cashme</string>
+		<string>coinsnap</string>
+		<string>glow</string>
+		<string>manna</string>
+		<string>muun</string>
+		<string>phoenix</string>
+		<string>river</string>
+		<string>strike</string>
+		<string>walletofsatoshi</string>
+		<string>zebedee</string>
+		<string>zeusln</string>
+	</array>
 	<key>UILaunchStoryboardName</key>
 	<string>LaunchScreen</string>
 	<key>UIMainStoryboardFile</key>

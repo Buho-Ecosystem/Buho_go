@@ -58,7 +58,7 @@
       <button
         v-if="vouchers.length"
         type="button"
-        class="voucher-summary"
+        class="disclosure-row"
         ref="voucherSummary"
         :aria-label="voucherSummaryTitle + ', ' + voucherSummaryLeft"
         @click="openVouchers"
@@ -66,12 +66,25 @@
         <span class="voucher-summary-icon" aria-hidden="true">
           <Icon icon="tabler:ticket" width="18" height="18" />
         </span>
-        <span class="voucher-summary-copy" aria-hidden="true">
-          <strong class="voucher-summary-title">{{ voucherSummaryTitle }}</strong>
-          <small class="voucher-summary-sub">{{ voucherSummaryLeft }}</small>
+        <span class="disclosure-row-copy" aria-hidden="true">
+          <strong class="disclosure-row-title">{{ voucherSummaryTitle }}</strong>
+          <small class="disclosure-row-sub">{{ voucherSummaryLeft }}</small>
         </span>
-        <Icon icon="tabler:chevron-right" width="18" height="18" class="voucher-summary-chevron" aria-hidden="true" />
+        <Icon icon="tabler:chevron-right" width="18" height="18" class="disclosure-row-chevron" aria-hidden="true" />
       </button>
+
+      <!-- Another wallet app on this phone pays this request. Beside the
+           voucher row, outside the content section, so every receive view
+           offers it; it steps aside while the keypad is up and shows only
+           when such an app is installed. -->
+      <PayFromWallet
+        :request="payFromWalletRequest"
+        :kind="payFromWalletKind"
+        :amount-label="payFromWalletRequest ? formatInvoiceAmount(generatedInvoice.amount) : ''"
+        :row-visible="!showAmountKeypadView"
+        @need-amount="tapAmountButton"
+        @copy="copyPaymentCode"
+      />
 
       <!-- Content -->
       <q-card-section class="receive-content">
@@ -492,6 +505,7 @@ import { getQrOptions } from '../utils/qrConfig';
 import { composeUnifiedBip21 } from '../utils/bip21';
 import PaymentConfirmation from './PaymentConfirmation.vue';
 import L1BitcoinReceive from './L1BitcoinReceive.vue';
+import PayFromWallet from './PayFromWallet.vue';
 import VoucherSheet from './VoucherSheet.vue';
 import { haptics } from '../utils/haptics.js';
 import { expectReceiveInvoice, confirmReceivePayment, forgetReceiveInvoice, expectReceiveFunds, forgetReceiveFunds } from '../services/incomingPayments.js';
@@ -510,6 +524,7 @@ export default {
     ArkadeLogo,
     PaymentConfirmation,
     L1BitcoinReceive,
+    PayFromWallet,
     VoucherSheet,
     AmountKeypad,
   },
@@ -721,6 +736,30 @@ export default {
         && !this.showArkadeUnifiedView
         && !this.showSpecificInvoiceView
         && !this.showLightningAddressView;
+    },
+    /**
+     * What another wallet app pays: the request with its amount, '' while
+     * there is none. The Lightning invoice when there is one, since most
+     * wallets pay those, in lower case (an invoice reads the same in either
+     * case, and some wallets only recognise lower case); else (Arkade
+     * without its Lightning rail) the unified Bitcoin request with the
+     * amount.
+     */
+    payFromWalletRequest() {
+      const invoice = this.generatedInvoice;
+      if (!(invoice?.amount > 0)) return '';
+      if (invoice.payment_request) return `lightning:${invoice.payment_request.toLowerCase()}`;
+      if (this.showArkadeUnifiedView) return this.arkadeUnifiedQrValue;
+      return '';
+    },
+    /**
+     * The kind of request payFromWalletRequest is expected to be once there
+     * is an amount, so the row names the right apps before then. Every
+     * wallet hands over an invoice, except Arkade, whose request is its
+     * unified Bitcoin one unless it could also make an invoice.
+     */
+    payFromWalletKind() {
+      return this.isArkadeWallet ? 'bitcoin' : 'lightning';
     },
     /**
      * Public accessor — the sats amount the user currently intends to
@@ -1762,6 +1801,11 @@ export default {
           message: this.$t("Couldn't load address"),
         });
       }
+    },
+
+    /** The code on screen, copied: the invoice, or Arkade's unified request. */
+    copyPaymentCode() {
+      return this.showArkadeUnifiedView ? this.copyArkadeRequest() : this.copyInvoice();
     },
 
     copyArkadeRequest() {
@@ -3202,35 +3246,9 @@ export default {
 }
 
 /* ─────────────────────────────────────────────────────────────
-   LUD-14 voucher summary: one line while a saved voucher holds money
+   LUD-14 voucher summary: one line while a saved voucher holds money.
+   The row is the shared disclosure row (css/app.css); the icon is its own.
    ───────────────────────────────────────────────────────────── */
-.voucher-summary {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  width: calc(100% - 32px);
-  min-height: 52px;
-  margin: 0 16px 10px;
-  padding: 8px 12px;
-  border: 1px solid var(--border-card);
-  border-radius: 16px;
-  background: var(--bg-card);
-  color: var(--text-primary);
-  text-align: left;
-  font-family: inherit;
-  cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
-}
-
-.voucher-summary:active {
-  opacity: 0.85;
-}
-
-.voucher-summary:focus-visible {
-  outline: 2px solid var(--brand-accent);
-  outline-offset: 2px;
-}
-
 .voucher-summary-icon {
   display: grid;
   place-items: center;
@@ -3242,29 +3260,4 @@ export default {
   color: var(--brand-accent);
 }
 
-.voucher-summary-copy {
-  display: flex;
-  flex: 1;
-  min-width: 0;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.voucher-summary-title {
-  font: 700 0.9375rem/1.3 'Manrope', sans-serif;
-  color: var(--text-primary);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.voucher-summary-sub {
-  font: 0.8125rem/1.3 'Manrope', sans-serif;
-  color: var(--text-secondary);
-}
-
-.voucher-summary-chevron {
-  flex-shrink: 0;
-  color: var(--text-secondary);
-}
 </style>

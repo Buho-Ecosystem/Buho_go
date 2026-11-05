@@ -13,13 +13,13 @@
 -->
 <template>
   <q-dialog :model-value="modelValue" position="bottom" @update:model-value="$emit('update:modelValue', $event)">
-    <section class="spark-sheet" :aria-labelledby="titleId">
+    <section class="info-sheet spark-sheet" :aria-labelledby="titleId">
       <div class="form-sheet-grabber" aria-hidden="true" />
-      <div class="spark-sheet__bar">
-        <button type="button" class="spark-sheet__done" @click="close">{{ $t('Done') }}</button>
+      <div class="info-sheet-bar">
+        <button type="button" class="info-sheet-done" @click="close">{{ $t('Done') }}</button>
       </div>
 
-      <header class="spark-sheet__hero">
+      <header class="info-sheet-hero">
         <span class="spark-sheet__hero-icon" aria-hidden="true">
           <Icon :icon="level === LEVEL.NO_INTERNET ? 'tabler:wifi-off' : 'tabler:cloud-off'" width="26" height="26" />
         </span>
@@ -186,62 +186,20 @@ function openExitKit() {
 </script>
 
 <style scoped>
-/* Quasar only makes a dialog's direct child <div> tappable; this root is a <section>. */
+/* The frame, Done and the hero are the shared info sheet (css/app.css).
+   Status tones: green says safe, amber says waiting; nothing reads as an alarm. */
 .spark-sheet {
-  pointer-events: all;
-  width: 100%;
-  max-width: 520px;
-  max-height: min(90dvh, calc(100dvh - var(--safe-top, 0px) - 8px));
-  overflow-y: auto;
-  box-sizing: border-box;
-  display: flex;
-  flex-direction: column;
-  background: var(--bg-card);
-  color: var(--text-primary);
-  border-radius: var(--radius-xl) var(--radius-xl) 0 0;
-  border-top: 1px solid var(--border-card);
-  padding: 0 20px max(20px, var(--safe-bottom, 0px));
-  font-family: 'Manrope', sans-serif;
-  /* Status tones: green says safe, amber says waiting; nothing reads as an alarm. */
   --spark-good: var(--brand-accent-text);
   --spark-good-tile: var(--brand-accent-soft);
   --spark-warn: #8A5A00;
   --spark-warn-tile: rgba(196, 140, 20, 0.16);
   --spark-tile: var(--bg-input);
 }
-/* A short screen scrolls the sheet; nothing in it may be squeezed instead. */
-.spark-sheet > * {
-  flex-shrink: 0;
-}
 .body--dark .spark-sheet {
   --spark-warn: #F5C451;
   --spark-warn-tile: rgba(245, 196, 81, 0.14);
 }
 
-.spark-sheet__bar {
-  display: flex;
-  justify-content: flex-end;
-  min-height: 36px;
-  margin-top: -6px;
-}
-.spark-sheet__done {
-  min-height: 44px;
-  padding: 0 4px;
-  border: 0;
-  background: none;
-  color: var(--brand-accent-text);
-  font: 600 16px 'Manrope', sans-serif;
-  cursor: pointer;
-}
-
-.spark-sheet__hero {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 6px;
-  padding: 0 12px;
-  text-align: center;
-}
 .spark-sheet__hero-icon {
   display: grid;
   place-items: center;
@@ -251,20 +209,6 @@ function openExitKit() {
   border-radius: 50%;
   background: var(--spark-tile);
   color: var(--text-secondary);
-}
-.spark-sheet__hero h2 {
-  margin: 0;
-  font-size: 22px;
-  font-weight: 800;
-  line-height: 1.25;
-  text-wrap: balance;
-}
-.spark-sheet__hero p {
-  margin: 0;
-  font-size: 15px;
-  line-height: 1.45;
-  color: var(--text-secondary);
-  text-wrap: balance;
 }
 
 .spark-list {
@@ -369,7 +313,6 @@ function openExitKit() {
 .spark-sheet__retry-note {
   text-align: center;
 }
-.spark-sheet__done:focus-visible,
 .spark-row--link:focus-visible {
   outline: 2px solid var(--brand-accent-text);
   outline-offset: 2px;
