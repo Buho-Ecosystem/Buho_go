@@ -145,7 +145,7 @@
         <div v-if="card.phase.value === 'ready'" class="pos-card-held" role="status"><svg class="pos-contactless" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" aria-hidden="true"><path d="M7.5 9.2a4.2 4.2 0 0 1 0 5.6" /><path d="M11 6.6a8 8 0 0 1 0 10.8" /><path d="M14.5 4a11.8 11.8 0 0 1 0 16" /></svg><span>{{ $t('Card held · enter the amount') }}</span></div>
         <div class="pos-top">
           <div class="pos-amount-area">
-            <div class="pos-amount-row"><span class="pos-currency-sym">{{ isFiatMode ? fiatSymbol : '' }}</span><span class="pos-amount-value" :class="{ 'pos-amount-sm': formattedDisplay.length > 7 }" :style="amountFontStyle">{{ formattedDisplay }}</span><span v-if="!isFiatMode" class="pos-currency-suffix">sats</span></div>
+            <div class="pos-amount-row"><span class="pos-currency-sym">{{ amountPrefix }}</span><span class="pos-amount-value" :class="{ 'pos-amount-sm': formattedDisplay.length > 7 }" :style="amountFontStyle">{{ formattedDisplay }}</span><span v-if="showSatsSuffix" class="pos-currency-suffix">sats</span></div>
           </div>
         </div>
         <div class="pos-bottom">
@@ -237,6 +237,7 @@ import { useQuasar } from 'quasar'
 import { createPaymentMonitor, PaymentStatus } from '../utils/paymentMonitor.js'
 import { safeWithdrawError } from '../services/lnurlWithdraw.js'
 import { fiatSymbol as fiatSymbolFor } from 'src/utils/fiatCurrencies'
+import { formatAmount } from 'src/utils/amountFormatting'
 import { kioskWalletBlocker, KIOSK_BLOCKER } from '../utils/walletCapabilities.js'
 import { NWC_ERROR, nwcError } from '../utils/nwcErrors.js'
 
@@ -343,6 +344,11 @@ export default defineComponent({
       return store.exchangeRates[currency] || store.exchangeRates[currency.toLowerCase()] || 0
     })
     const fiatSymbol = computed(() => fiatSymbolFor(store.preferredFiatCurrency || 'USD').trim())
+    // The amount wears its unit the way the Home balance does: the fiat
+    // symbol, or ₿ in front, or "sats" after it in the legacy format.
+    const useBip177 = computed(() => store.useBip177Format !== false)
+    const amountPrefix = computed(() => (isFiatMode.value ? fiatSymbol.value : useBip177.value ? '₿' : ''))
+    const showSatsSuffix = computed(() => !isFiatMode.value && !useBip177.value)
     const formattedDisplay = computed(() => {
       if (rawInput.value === '0') return '0'
       if (isFiatMode.value) return rawInput.value
@@ -351,7 +357,7 @@ export default defineComponent({
     // Past ten characters the amount shrinks with its length so the
     // largest allowed entry (12 digits plus grouping) stays on screen.
     const amountFontStyle = computed(() => {
-      const chars = formattedDisplay.value.length + (isFiatMode.value ? 1 : 3)
+      const chars = formattedDisplay.value.length + (showSatsSuffix.value ? 3 : 1)
       return chars > 10 ? { fontSize: `${Math.max(1.5, (3 * 10) / chars).toFixed(2)}rem` } : null
     })
     const amountSats = computed(() => {
@@ -631,7 +637,7 @@ export default defineComponent({
       if (sale.status === 'expired') { parked.remove(sale.id); if (!parkedCount.value) showParkedSheet.value = false; return }
       $q.dialog({
         title: t('Remove parked sale?'),
-        message: t('If the customer still pays it, the sats reach the wallet but this kiosk will not show the sale.'),
+        message: t('If the customer still pays it, the payment reaches the wallet but this kiosk will not show the sale.'),
         cancel: { label: t('Keep'), flat: true, noCaps: true },
         ok: { label: t('Remove'), flat: true, noCaps: true, color: 'negative' },
         persistent: true,
@@ -719,14 +725,12 @@ export default defineComponent({
       saleBreakdownSnapshot.value = null
       state.value = 'input'
     }
-    function formatSats(sats) { return new Intl.NumberFormat().format(sats) }
-
     function displaySats(sats) {
       if (isFiatMode.value && fiatRate.value > 0) {
         const fiat = (sats / 100_000_000) * fiatRate.value
         return `${fiatSymbol.value} ${fiat.toFixed(2)}`
       }
-      return `${formatSats(sats)} sats`
+      return formatAmount(sats, useBip177.value)
     }
 
     function handleUnlockPin(pin) { if (store.unlockToOwnerMode(pin)) { showUnlockDialog.value = false; router.push('/wallet') } else { unlockError.value = t('kiosk.incorrectPin'); unlockPinRef.value?.fail() } }
@@ -776,13 +780,13 @@ export default defineComponent({
     onUnmounted(() => { saleRevision++; clearPolling(); clearTimeout(tapTimer); clearTimeout(successTimer); clearTimeout(parkPopTimer) })
 
     return {
-      state, walletReady, rawInput, formattedDisplay, amountFontStyle, amountSats, isFiatMode, fiatSymbol, kioskWalletName,
+      state, walletReady, rawInput, formattedDisplay, amountFontStyle, amountSats, isFiatMode, fiatSymbol, amountPrefix, showSatsSuffix, kioskWalletName,
       accumulatedItems, accumulatedSats, totalSatsForCharge,
       handleNumpad, addToAccumulated, removeAccumulatedItem, clearAll, proceedToTipOrCharge,
       tipOptions, selectedTipPercent, selectedTipAmount, tipInteractive,
       totalBeforeRoundUp, roundUpValue, useRoundUp, finalAmountSats,
       offersTip, offersRoundUp, extrasTitle, extrasSkipLabel, extraLabel,
-      baseAmountSats, formatSats, displaySats, createCharge, confirmTip,
+      baseAmountSats, displaySats, createCharge, confirmTip,
       card, cardAuthorization, cardBusy, cardPinActive, cardPinChecking, cardProblem, paidByCard, nfcReady,
       confirmHeldCard, cancelCardPin, paymentProblem, retryStatus, startPolling,
       invoiceData, qrDataUrl, cancelPayment, parkInvoice, resumeParked, resetToInput,
@@ -884,7 +888,7 @@ export default defineComponent({
 .pos-cart-x:active { color: #ef4444; }
 
 /* Cart bottom sheet */
-.pos-cart-sheet { width: 100%; border-radius: 16px 16px 0 0 !important; }
+.pos-cart-sheet { width: 100%; border-radius: 16px 16px 0 0 !important; padding-bottom: var(--safe-bottom, 0px); }
 .pos-cart-sheet-dark { background: #0C0C0C !important; border: 1px solid #2A342A !important; border-bottom: none !important; color: #FFF; }
 .pos-cart-sheet-light { background: var(--bg-card) !important; border: 1px solid var(--border-card) !important; border-bottom: none !important; color: var(--text-primary); }
 .pos-sheet-header { display: flex; justify-content: space-between; font-family: 'Manrope', sans-serif; font-weight: 700; font-size: 15px; padding-bottom: 12px; border-bottom: 1px solid #2A342A; margin-bottom: 8px; }

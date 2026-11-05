@@ -6,6 +6,7 @@ import * as Vue from 'vue';
 import * as monitor from '../../utils/paymentMonitor.js';
 import * as roundUp from '../../utils/roundUp.js';
 import * as fiat from '../../utils/fiatCurrencies.js';
+import * as amountFormatting from '../../utils/amountFormatting.js';
 import { useKioskCardPayment } from '../../composables/useKioskCardPayment.js';
 import { useKioskParkedSales } from '../../composables/useKioskParkedSales.js';
 import * as walletCapabilities from '../../utils/walletCapabilities.js';
@@ -53,6 +54,7 @@ function harness(ctx, options = {}) {
     'stores/wallet': { useWalletStore: () => store },
     'stores/transactionMetadata': { useTransactionMetadataStore: () => ({ enqueuePendingContactLink: async receipt => h.receipts.push(receipt) }) },
     'components/KioskPinPad.vue': {}, 'src/utils/roundUp': roundUp, 'src/utils/fiatCurrencies': fiat,
+    'src/utils/amountFormatting': amountFormatting,
     qrcode: { toDataURL: async () => 'data:image/png;base64,test' }, '@getalby/lightning-tools': {},
     '../components/WithdrawAuthorization.vue': {}, '../components/CardFace.vue': {},
     '../composables/useKioskParkedSales.js': { useKioskParkedSales: args => useKioskParkedSales({ ...args, watchMs: 5, storage: { getItem: key => h.storage.get(key) ?? null, setItem: (key, value) => h.storage.set(key, value) } }) },
@@ -321,4 +323,20 @@ test('removing a sale that can still be paid asks first', async ctx => {
   assert.equal(h.dialogs.length, 1);
   h.dialogs[0].ok();
   assert.equal(h.vm.parkedCount, 0);
+});
+
+test('the register shows amounts in the Bitcoin format chosen in Settings (#453)', async ctx => {
+  const h = harness(ctx); await settle();
+  const n = (1234).toLocaleString();
+  assert.equal(h.vm.amountPrefix, '₿', 'the default format puts ₿ in front');
+  assert.equal(h.vm.showSatsSuffix, false);
+  assert.equal(h.vm.displaySats(1234), `₿ ${n}`);
+  h.store.useBip177Format = false; await settle();
+  assert.equal(h.vm.amountPrefix, '');
+  assert.equal(h.vm.showSatsSuffix, true, 'only the legacy format says sats');
+  assert.equal(h.vm.displaySats(1234), `${n} sats`);
+  h.store.kioskDisplayCurrency = 'fiat'; h.store.exchangeRates = { USD: 100_000 }; await settle();
+  assert.equal(h.vm.amountPrefix, '$');
+  assert.equal(h.vm.showSatsSuffix, false);
+  assert.equal(h.vm.displaySats(1234), '$ 1.23', 'fiat keeps its two decimals');
 });

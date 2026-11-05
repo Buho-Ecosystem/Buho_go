@@ -612,6 +612,7 @@ export default {
 .exit-confirm-warning p { margin: 0; font-size: 0.875rem; line-height: 1.45; color: var(--text-secondary); }
 .exit-confirm-actions { flex-shrink: 0; display: flex; flex-direction: column; gap: 4px; padding: 12px 20px max(12px, env(safe-area-inset-bottom)); border-top: 1px solid var(--border-card); }
 .exit-confirm-actions > button { margin-top: 0; min-height: 52px; padding: 12px 16px; font-size: 0.96875rem; line-height: 1.4; }
+.exit-destination { padding-bottom: var(--safe-bottom, 0px); }
 .exit-destination-body { display: flex; flex-direction: column; gap: 14px; }
 .exit-destination-actions {
   display: grid;

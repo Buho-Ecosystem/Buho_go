@@ -4068,6 +4068,7 @@ export default {
   max-width: 100%;
   border-radius: 20px 20px 0 0;
   margin: 0;
+  padding-bottom: var(--safe-bottom, 0px);
 }
 
 .claim-action-sheet.sheet-dark {
