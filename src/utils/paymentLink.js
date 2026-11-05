@@ -8,14 +8,16 @@
  * The request is decoded once and then read like a scanned code; the person
  * confirms as for any payment. Lists that build wallet links by prefix
  * (`<wallet>:lightning:<invoice>`) work too: whatever follows `buhogo:` is
- * the request. `buhogo://nwc/…` is the wallet-connection return
- * (utils/nwcPairing.js), not a payment. Format and examples for integrators:
- * docs/PAYMENT_LINKS.md.
+ * the request. BuhoGO's other links are not payments: `buhogo://nwc/…` is
+ * the wallet-connection return (utils/nwcPairing.js) and `buhogo://open/…`
+ * a Quick Settings tile or launcher shortcut (utils/openActions.js). Format
+ * and examples for integrators: docs/PAYMENT_LINKS.md.
  */
 
 const SCHEME = 'buhogo:';
 const PAY = 'pay';
-const CONNECTION_RETURN = 'nwc';
+/** BuhoGO's links that are not payments: the wallet-connection return and the open actions. */
+const NOT_PAYMENTS = new Set(['nwc', 'open']);
 
 /**
  * The pay link that opens the app answering to `scheme` with this request:
@@ -30,8 +32,8 @@ export function payLink(scheme, request) {
 
 /**
  * What a link carries for BuhoGO to pay.
- *   null                not a BuhoGO payment link (any other link, and the
- *                       wallet-connection return)
+ *   null                not a BuhoGO payment link (any other link, the
+ *                       wallet-connection return and the open actions)
  *   { request }         the request it carries
  *   { request: '' }     a BuhoGO payment link without a request BuhoGO can
  *                       read: none, one that was not encoded and came
@@ -45,7 +47,7 @@ export function readPaymentLink(url) {
   if (!isBuhoLink(text)) return null;
   const rest = text.slice(SCHEME.length).replace(/^\/\//, '');
   const head = rest.split(/[/?#]/, 1)[0].toLowerCase();
-  if (head === CONNECTION_RETURN) return null;
+  if (NOT_PAYMENTS.has(head)) return null;
   const request = head === PAY ? requestParam(rest.slice(PAY.length)) : rest.trim();
   return { request: isBuhoLink(request) ? '' : request };
 }

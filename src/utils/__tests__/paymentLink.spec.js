@@ -74,6 +74,10 @@ await test('other links are not payment links', () => {
   for (const link of [
     'buhogo://nwc/connected?request=abc',
     'BUHOGO://NWC/connected?request=abc',
+    // A Quick Settings tile and a launcher shortcut (utils/openActions.js).
+    'buhogo://open/receive?src=tile',
+    'buhogo://open/pay?contact=addr-1-x&src=shortcut',
+    'buhogo://open',
     `lightning:${INVOICE}`,
     BIP21,
     'https://go.mybuho.de/p/maria',

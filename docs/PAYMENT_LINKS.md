@@ -60,7 +60,9 @@ A link BuhoGO can't read shows "BuhoGO can't open this link" and pays nothing. T
 
 Without a wallet set up, BuhoGO says "Set up a wallet first", as for any payment link.
 
-`buhogo://nwc/connected` is a different link: a wallet app sending the person back after approving a connection ([Nostr Wallet Connect](NWC.md)). It is never read as a payment.
+Two other BuhoGO links are never read as a payment:
+- `buhogo://nwc/connected`: a wallet app sending the person back after approving a connection ([Nostr Wallet Connect](NWC.md)).
+- `buhogo://open/…`: a Quick Settings tile or a launcher shortcut opening one screen ([Quick access](QUICK_ACCESS.md)).
 
 ## Registration
 
