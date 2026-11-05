@@ -230,7 +230,7 @@ import KioskPinPad from 'components/KioskPinPad.vue'
 import QRCode from 'qrcode'
 import WithdrawAuthorization from '../components/WithdrawAuthorization.vue'
 import CardFace from '../components/CardFace.vue'
-import { useKioskCardPayment } from '../composables/useKioskCardPayment.js'
+import { CARD_NOT_PAID, useKioskCardPayment } from '../composables/useKioskCardPayment.js'
 import { useKioskParkedSales, MAX_PARKED } from '../composables/useKioskParkedSales.js'
 import { isNfcAvailable } from '../utils/nfc.js'
 import { haptics } from '../utils/haptics.js'
@@ -303,6 +303,7 @@ export default defineComponent({
       const message = String(error?.message || '')
       if (error?.code === 'CARD_BLOCKED') return t('Card locked after too many wrong PINs.')
       if (/payment limits/i.test(message)) return t("This card can't pay this amount.")
+      if (error?.code === CARD_NOT_PAID) return t('No payment came from the card.')
       // The request may have reached the card's service: whether it paid is
       // for the sale's own watch to tell, not for this line to guess.
       if (error?.name === 'TimeoutError' || error?.name === 'TypeError' || /did not respond|network|failed to fetch/i.test(message)) {

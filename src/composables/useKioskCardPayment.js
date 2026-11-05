@@ -2,7 +2,21 @@ import { onScopeDispose, ref, watch } from 'vue';
 import { fetchWithdrawRequest } from '../services/lnurlWithdraw.js';
 import { withdrawLinkHost } from '../utils/lnurlWithdraw.js';
 
+/** How long a tapped card stays usable before it is put to work. */
 const CARD_LIFETIME_MS = 120000;
+
+/**
+ * How long a card waits for its payment once its service has answered OK.
+ * That answer only accepts the request: the service pays afterwards (LUD-03),
+ * and one whose wallet has no funds or no route never pays (#460). Letting go
+ * then costs nothing: the sale's own watch keeps running, so a payment that
+ * arrives later still completes it, and an invoice is paid only once, so a
+ * second tap or a scan cannot pay twice.
+ */
+export const CARD_PAYMENT_WAIT_MS = 60000;
+
+/** The `code` of the error passed to `onError` when the wait ends unpaid. */
+export const CARD_NOT_PAID = 'CARD_NOT_PAID';
 
 /** One ephemeral card attempt, bound to the kiosk's existing sale invoice.
  * The page owns the sale and settlement; this composable only handles review
@@ -14,20 +28,31 @@ const CARD_LIFETIME_MS = 120000;
  * limit asks for one, still comes first). A card tapped before there was a
  * sale is held and waits in `review` for an explicit confirm, because its
  * holder never saw the amount.
+ *
+ * Phases: empty → ready (held, up to CARD_LIFETIME_MS) → loading (reading
+ * the card) → review → submitting → waiting (the service said OK, up to
+ * `paymentWaitMs`). Every way out of a phase other than the next one goes
+ * through reset(), back to empty.
  */
-export function useKioskCardPayment({ sale, authorize, onError, resolve = fetchWithdrawRequest }) {
+export function useKioskCardPayment({ sale, authorize, onError, resolve = fetchWithdrawRequest, paymentWaitMs = CARD_PAYMENT_WAIT_MS }) {
   const phase = ref('empty');
   const request = ref(null);
   /** The card's service, shown on the card face from the tap on. */
   const host = ref('');
   let input = null;
   let controller = null;
-  let expiryTimer = null;
+  /** The held card's lifetime, then the wait for its payment: one at a time. */
+  let timer = null;
+
+  function startTimer(ms, onEnd) {
+    clearTimeout(timer);
+    timer = setTimeout(onEnd, Math.max(0, ms));
+  }
 
   function reset() {
     controller?.abort();
     controller = null;
-    clearTimeout(expiryTimer);
+    clearTimeout(timer);
     input = null;
     request.value = null;
     host.value = '';
@@ -37,7 +62,7 @@ export function useKioskCardPayment({ sale, authorize, onError, resolve = fetchW
   async function prepare() {
     if (!input || !sale.value || phase.value !== 'ready') return;
     if (Date.now() - input.receivedAt > CARD_LIFETIME_MS) { reset(); return; }
-    clearTimeout(expiryTimer);
+    clearTimeout(timer);
     const currentSale = sale.value;
     const attempt = new AbortController();
     controller = attempt;
@@ -67,7 +92,7 @@ export function useKioskCardPayment({ sale, authorize, onError, resolve = fetchW
     input = { data: payment.data, receivedAt, confirmFirst: !sale.value };
     host.value = withdrawLinkHost(payment.data);
     phase.value = 'ready';
-    expiryTimer = setTimeout(reset, Math.max(0, CARD_LIFETIME_MS - (Date.now() - receivedAt)));
+    startTimer(CARD_LIFETIME_MS - (Date.now() - receivedAt), reset);
     void prepare();
     return true;
   }
@@ -84,11 +109,18 @@ export function useKioskCardPayment({ sale, authorize, onError, resolve = fetchW
       // Discard the credential after use. Settlement remains with the page.
       input = null;
       request.value = null;
+      startTimer(paymentWaitMs, giveUp);
     } catch (error) {
       if (attempt.signal.aborted) return;
       reset();
       if (error?.name !== 'AbortError') onError(error);
     }
+  }
+
+  /** The service said OK and no payment came: the sale goes back to the QR. */
+  function giveUp() {
+    reset();
+    onError(Object.assign(new Error('No payment came from the card.'), { code: CARD_NOT_PAID }));
   }
 
   watch(sale, (current, previous) => {

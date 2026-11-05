@@ -7,7 +7,7 @@ import * as monitor from '../../utils/paymentMonitor.js';
 import * as roundUp from '../../utils/roundUp.js';
 import * as fiat from '../../utils/fiatCurrencies.js';
 import * as amountFormatting from '../../utils/amountFormatting.js';
-import { useKioskCardPayment } from '../../composables/useKioskCardPayment.js';
+import * as cardPayment from '../../composables/useKioskCardPayment.js';
 import { useKioskParkedSales } from '../../composables/useKioskParkedSales.js';
 import * as walletCapabilities from '../../utils/walletCapabilities.js';
 import * as nwcErrors from '../../utils/nwcErrors.js';
@@ -63,7 +63,7 @@ function harness(ctx, options = {}) {
     '../utils/nfc.js': { isNfcAvailable: async () => false },
     '../utils/haptics.js': { haptics: { tap() {}, medium() {}, success() {}, error() {} } },
     quasar: { useQuasar: () => ({ notify: notice => h.notices.push(notice), dialog: options => ({ onOk: ok => h.dialogs.push({ options, ok }) }) }) },
-    '../composables/useKioskCardPayment.js': { useKioskCardPayment: args => useKioskCardPayment({ ...args, resolve: async () => ({ callback: 'https://card.example/callback', defaultDescription: 'Bolt Card', minSats: 1, maxSats: 10000 }) }) },
+    '../composables/useKioskCardPayment.js': { ...cardPayment, useKioskCardPayment: args => cardPayment.useKioskCardPayment({ ...args, resolve: async () => ({ callback: 'https://card.example/callback', defaultDescription: 'Bolt Card', minSats: 1, maxSats: 10000 }), paymentWaitMs: options.cardPaymentWaitMs }) },
     '../services/lnurlWithdraw.js': { safeWithdrawError: error => error },
     '../utils/walletCapabilities.js': walletCapabilities,
     '../utils/nwcErrors.js': nwcErrors,
@@ -193,6 +193,50 @@ test('a card-server timeout is visible and the same invoice can still settle', a
   await h.monitors[0].checkNow();
   assert.equal(h.vm.state, 'success');
   assert.equal(h.created.length, 1);
+});
+
+// A card whose service answered OK but never pays (#460).
+async function cardThatNeverPays(ctx, cardPaymentWaitMs = 20) {
+  const h = harness(ctx, { cardPaymentWaitMs }); await settle();
+  h.vm.rawInput = '100'; h.vm.proceedToTipOrCharge(); await settle();
+  h.tap(); await settle();
+  assert.equal(h.vm.card.phase.value, 'waiting');
+  assert.equal(h.vm.cardBusy, true, '"Paying…" in the QR\'s place');
+  return h;
+}
+
+test('a card that never pays gives the sale back to the QR with Park and Cancel, and a late payment still counts', async ctx => {
+  const h = await cardThatNeverPays(ctx);
+  await wait(30); await settle();
+  assert.equal(h.vm.cardBusy, false, 'the QR, Park and Cancel are back');
+  assert.equal(h.vm.cardProblem, 'No payment came from the card.');
+  assert.equal(h.vm.state, 'payment');
+  assert.equal(h.errors.length, 0, 'no dialog at the counter');
+  h.paid = true;
+  await h.monitors[0].checkNow();
+  assert.equal(h.vm.state, 'success');
+  assert.equal(h.vm.paidByCard, false, 'who paid late is not known');
+  assert.equal(h.created.length, 1);
+});
+
+test('after a card that never paid, the next tap tries the same invoice again', async ctx => {
+  const h = await cardThatNeverPays(ctx);
+  await wait(30); await settle();
+  h.tap(); await settle();
+  assert.equal(h.authorized.length, 2);
+  assert.equal(h.authorized[1][1], h.authorized[0][1], 'the same invoice');
+  assert.equal(h.vm.cardProblem, '', 'the new tap clears the old line');
+  assert.equal(h.vm.cardBusy, true);
+});
+
+test('an invoice that expires while the card waits lets go of the card', async ctx => {
+  // The full wait, so only the expiry can end it here.
+  const h = await cardThatNeverPays(ctx, cardPayment.CARD_PAYMENT_WAIT_MS);
+  h.monitors[0].invoice.expires_at = Math.floor(Date.now() / 1000) - 1;
+  await h.monitors[0].checkNow(); await settle();
+  assert.equal(h.vm.paymentProblem, 'Payment expired');
+  assert.equal(h.vm.card.phase.value, 'empty');
+  assert.equal(h.vm.cardBusy, false, 'Park and Cancel are back');
 });
 
 test('a sale paid while asleep still succeeds when resumed after invoice expiry', async ctx => {

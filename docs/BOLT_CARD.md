@@ -38,8 +38,8 @@ Before: the PIN took over the whole screen, the kiosk went back to its QR after 
 - **The pay screen offers the card**, next to the QR, when the device has NFC switched on ("Hold a Bolt Card here").
 - **A tap on the pay screen pays at once**, like a terminal: the amount was on screen when the card touched the phone. When the amount reaches the card's PIN limit, the customer types the PIN on the same screen ("Pay another way" goes back to the QR without losing the sale).
 - **A card tapped before there was a sale** is held for two minutes ("Card held · enter the amount"). After Charge it waits for an explicit "Charge card", because its holder never saw the amount.
-- **The card stays on screen until the sale is paid** ("Paying…"). The sale's own payment watch decides paid, never the callback's OK.
-- **A card that does not pay** says why in one line on the pay screen, with the QR still there: locked after wrong PINs, outside the card's limits, or no answer from the card's service (then the screen says that a payment, if it happened, still shows up). No dialog to dismiss at the counter.
+- **The card stays on screen while it pays** ("Paying…"), for at most a minute after its service answered OK (`CARD_PAYMENT_WAIT_MS`). That OK only accepts the request: the service pays afterwards (LUD-03), and one whose wallet has no funds or no route never pays (#460). The sale's own payment watch decides paid, never the callback's OK, and it keeps running after the card lets go, so a later payment still completes the sale. An invoice that expires while the card waits lets go of the card too.
+- **A card that does not pay** says why in one line on the pay screen, with the QR, Park and Cancel back: locked after wrong PINs, outside the card's limits, no answer from the card's service (then the screen says that a payment, if it happened, still shows up), or no payment within the minute ("No payment came from the card."). The next tap tries the same invoice again. No dialog to dismiss at the counter.
 - The success screen says "Paid by card" when the card paid.
 
 ## Parked sales
