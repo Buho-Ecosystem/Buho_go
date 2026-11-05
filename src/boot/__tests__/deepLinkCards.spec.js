@@ -14,6 +14,8 @@ import { transformSync } from 'esbuild';
 import * as routing from '../../utils/deepLinkRouting.js';
 import * as paymentLink from '../../utils/paymentLink.js';
 import * as nwcIntake from '../../services/nwcConnectionIntake.js';
+import * as openActionIntake from '../../services/openActionIntake.js';
+import { resetAppLock, setAppLocked } from '../../utils/appLock.js';
 import { invoiceAppIntent } from '../../utils/publicProfilePayment.js';
 import { profileInvoiceFixture } from '../../../scripts/fixtures/profileInvoice.mjs';
 
@@ -24,6 +26,7 @@ function harness({ activeWallet = null, kiosk = false, launchUrl = null, isReady
   const listeners = {};
   const pushes = [];
   const notices = [];
+  const shortcutsUsed = [];
   let clock = 10_000;
   const walletStore = { activeWallet, kioskEnabled: kiosk, kioskOwnerAccess: false, pendingDeepLink: null };
   const dependencies = {
@@ -38,6 +41,8 @@ function harness({ activeWallet = null, kiosk = false, launchUrl = null, isReady
     } },
     '../services/addressRequestIntake.js': { offerAddressRequest: () => false },
     '../services/nwcConnectionIntake.js': nwcIntake,
+    '../services/openActionIntake.js': openActionIntake,
+    '../services/quickAccess.js': { reportShortcutUsed: (id) => shortcutsUsed.push(id) },
     '../providers/WalletFactory': {
       parsePaymentDestination: (input) => (input.startsWith('lightning:')
         ? { valid: true, type: input.startsWith('lightning:ln') ? 'lightning_invoice' : 'lightning_address', data: input.slice('lightning:'.length) }
@@ -66,7 +71,7 @@ function harness({ activeWallet = null, kiosk = false, launchUrl = null, isReady
     ...(isReady ? { isReady } : {}),
   };
   return {
-    pushes, notices, walletStore,
+    pushes, notices, walletStore, shortcutsUsed,
     start: () => module.exports.default({ router }),
     open: (url) => listeners.appUrlOpen({ url }),
     advance: (ms) => { clock += ms; },
@@ -190,6 +195,33 @@ test('what a link cannot do is said in the person\'s language', async () => {
   await noWallet.start();
   noWallet.open('lightning:maria@mybuho.de');
   assert.deepEqual(noWallet.notices.map((n) => [n.message, n.caption]), [['t:Set up a wallet first', 't:Payment links need a wallet.']]);
+});
+
+test('a Quick Settings tile or a launcher shortcut opens one screen on Home (#444)', async () => {
+  // The hand-over waits for the saved wallets and the app lock first.
+  const settle = () => new Promise((resolve) => setImmediate(resolve));
+  setAppLocked(false);
+  const h = harness({ activeWallet: { id: 'w' } });
+  await h.start();
+  h.open('buhogo://open/receive?src=tile');
+  await settle();
+  const { receivedAt, seq, ...receive } = h.walletStore.pendingOpenAction;
+  assert.deepEqual(receive, { kind: 'receive', contactId: null, source: 'tile' });
+  assert.deepEqual(h.pushes, ['/wallet']);
+
+  h.open('buhogo://open/pay?contact=addr-1-x&src=shortcut');
+  await settle();
+  assert.equal(h.walletStore.pendingOpenAction.contactId, 'addr-1-x');
+  assert.deepEqual(h.shortcutsUsed, ['pay-addr-1-x'], 'the launcher learns which shortcut was used');
+  assert.equal(h.notices.length, 0, 'never "BuhoGO can\'t open this link"');
+
+  const kiosk = harness({ activeWallet: { id: 'w' }, kiosk: true });
+  await kiosk.start();
+  kiosk.open('buhogo://open/send?src=tile');
+  await settle();
+  assert.equal(kiosk.walletStore.pendingOpenAction, undefined, 'a locked kiosk opens nothing');
+  assert.equal(kiosk.pushes.length, 0);
+  resetAppLock();
 });
 
 // BuhoGO's payment link: a checkout's "BuhoGO" entry (buhogo://pay?request=…).

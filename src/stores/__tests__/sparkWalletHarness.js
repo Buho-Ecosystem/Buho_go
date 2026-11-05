@@ -19,6 +19,7 @@ import * as nwcWallet from '../../utils/nwcWallet.js';
 import * as nwcConnection from '../../utils/nwcConnection.js';
 import * as nwcErrors from '../../utils/nwcErrors.js';
 import * as walletCapabilities from '../../utils/walletCapabilities.js';
+import * as kioskPin from '../../utils/kioskPin.js';
 import * as nwcReceive from '../../services/nwcReceive.js';
 
 export const PHRASE = 'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about';
@@ -134,6 +135,7 @@ export function createHarness({ evidence = {}, connect = null, storage = {}, exi
     '../utils/nwcConnection.js': nwcConnection,
     '../utils/nwcErrors.js': nwcErrors,
     '../utils/walletCapabilities.js': walletCapabilities,
+    '../utils/kioskPin.js': kioskPin,
     '../services/nwcReceive.js': nwcReceive,
     '../utils/lightningAddressNames.js': lightningAddressNames,
     '../services/breezSdk': {

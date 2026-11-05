@@ -16,6 +16,8 @@ let known = false;
 let locked = false;
 /** @type {Array<() => void>} */
 let waiting = [];
+/** @type {Array<() => void>} */
+let waitingForUnlock = [];
 
 /**
  * Report the lock state. Called by `App.vue`: once with the launch state, then
@@ -29,6 +31,11 @@ export function setAppLocked(value) {
   const release = waiting;
   waiting = [];
   for (const resolve of release) resolve();
+  if (!locked) {
+    const unlocked = waitingForUnlock;
+    waitingForUnlock = [];
+    for (const resolve of unlocked) resolve();
+  }
 }
 
 /** Is the app locked right now? `false` until App.vue reports (see `isAppLockKnown`). */
@@ -46,9 +53,20 @@ export function whenAppLockKnown() {
   return known ? Promise.resolve() : new Promise((resolve) => { waiting.push(resolve); });
 }
 
+/**
+ * Resolves once App.vue has reported the app as unlocked: immediately when it
+ * already did, otherwise when the person unlocks. Something asked for from
+ * outside the app (a Quick Settings tile, a launcher shortcut) opens its
+ * screen only then.
+ */
+export function whenAppUnlocked() {
+  return known && !locked ? Promise.resolve() : new Promise((resolve) => { waitingForUnlock.push(resolve); });
+}
+
 /** Forget everything. For tests. */
 export function resetAppLock() {
   known = false;
   locked = false;
   waiting = [];
+  waitingForUnlock = [];
 }

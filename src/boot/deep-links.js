@@ -1,6 +1,8 @@
 import { offerKioskPayment } from '../services/kioskPaymentIntake.js';
 import { offerAddressRequest } from '../services/addressRequestIntake.js';
 import { offerNwcConnection, offerPairingReturn } from '../services/nwcConnectionIntake.js';
+import { offerOpenAction } from '../services/openActionIntake.js';
+import { reportShortcutUsed } from '../services/quickAccess.js';
 import { boot } from 'quasar/wrappers'
 import { Notify } from 'quasar'
 import { Capacitor } from '@capacitor/core'
@@ -30,7 +32,9 @@ const t = (key) => i18n.global.t(key)
  * the card instead of the browser (and for /nwc/connected, where a Hub sends
  * the person back after approving BuhoGO). NIP-21 identities (nostr:npub… /
  * nostr:nprofile…, e.g. the card QR scanned with the system camera) open the
- * same card screen, which offers both Pay and Save (issue #301).
+ * same card screen, which offers both Pay and Save (issue #301). The Quick
+ * Settings tiles and the launcher shortcuts arrive as buhogo://open/… and open
+ * one screen (services/openActionIntake.js, issue #444).
  *
  * The flow:
  *   1. Android receives an intent matching our URI schemes (AndroidManifest.xml)
@@ -115,6 +119,9 @@ function handleDeepLink(incoming, router, walletStore) {
   triggerWalletStoreHydration(walletStore)
 
   if (offerKioskPayment(url, walletStore, router)) return
+
+  // A Quick Settings tile or a launcher shortcut: open one screen.
+  if (offerOpenAction(url, walletStore, router, { reportShortcutUsed })) return
 
   // A wallet's connection link ("Connect" in Alby Hub and others) adds that
   // wallet, and so does a Hub's return after approving BuhoGO. Neither needs

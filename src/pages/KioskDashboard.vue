@@ -143,9 +143,10 @@
           <button class="pos-cart-x" @click.stop.prevent="clearAll"><q-icon name="close" size="14px" /></button>
         </div>
         <div v-if="card.phase.value === 'ready'" class="pos-card-held" role="status"><svg class="pos-contactless" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" aria-hidden="true"><path d="M7.5 9.2a4.2 4.2 0 0 1 0 5.6" /><path d="M11 6.6a8 8 0 0 1 0 10.8" /><path d="M14.5 4a11.8 11.8 0 0 1 0 16" /></svg><span>{{ $t('Card held · enter the amount') }}</span></div>
+        <div v-if="priceMissing" class="pos-card-held pos-price-wait" role="status"><q-icon name="schedule" size="18px" /><span>{{ $t('Waiting for the Bitcoin price to charge in {currency}', { currency: fiatCurrency }) }}</span></div>
         <div class="pos-top">
           <div class="pos-amount-area">
-            <div class="pos-amount-row"><span class="pos-currency-sym">{{ isFiatMode ? fiatSymbol : '' }}</span><span class="pos-amount-value" :class="{ 'pos-amount-sm': formattedDisplay.length > 7 }" :style="amountFontStyle">{{ formattedDisplay }}</span><span v-if="!isFiatMode" class="pos-currency-suffix">sats</span></div>
+            <div class="pos-amount-row"><span class="pos-currency-sym">{{ amountPrefix }}</span><span class="pos-amount-value" :class="{ 'pos-amount-sm': formattedDisplay.length > 7 }" :style="amountFontStyle">{{ formattedDisplay }}</span><span v-if="showSatsSuffix" class="pos-currency-suffix">sats</span></div>
           </div>
         </div>
         <div class="pos-bottom">
@@ -158,7 +159,7 @@
           </div>
           <div class="pos-actions">
             <button class="pos-add-btn" :class="{ 'pos-btn-disabled': amountSats <= 0 }" :disabled="amountSats <= 0" @click.stop="addToAccumulated"><q-icon name="add" size="22px" /></button>
-            <button class="pos-primary-btn pos-charge-btn" :class="{ 'pos-btn-disabled': !walletReady || totalSatsForCharge <= 0 }" :disabled="!walletReady || totalSatsForCharge <= 0" @click.stop="proceedToTipOrCharge"><q-icon name="receipt_long" size="20px" /><span v-if="!walletReady">{{ $t('kiosk.connecting') || 'Connecting...' }}</span><span v-else-if="totalSatsForCharge > 0">{{ $t('kiosk.charge') }} {{ displaySats(totalSatsForCharge) }}</span><span v-else>{{ $t('kiosk.enterAmount') }}</span></button>
+            <button class="pos-primary-btn pos-charge-btn" :class="{ 'pos-btn-disabled': !walletReady || priceMissing || totalSatsForCharge <= 0 }" :disabled="!walletReady || priceMissing || totalSatsForCharge <= 0" @click.stop="proceedToTipOrCharge"><q-icon name="receipt_long" size="20px" /><span v-if="!walletReady">{{ $t('kiosk.connecting') || 'Connecting...' }}</span><span v-else-if="priceMissing">{{ $t('kiosk.charge') }}</span><span v-else-if="totalSatsForCharge > 0">{{ $t('kiosk.charge') }} {{ displaySats(totalSatsForCharge) }}</span><span v-else>{{ $t('kiosk.enterAmount') }}</span></button>
           </div>
         </div>
       </template>
@@ -204,36 +205,15 @@
         </q-card>
       </q-dialog>
 
-      <!-- ═══ Unlock ═══ -->
+      <!-- ═══ Unlock ═══
+           The lock goes straight to the PIN, as Guided Access does: the right
+           PIN ends the register (owner area), Resume goes back to it. -->
       <q-dialog v-model="showUnlockDialog" persistent @hide="resetUnlock">
         <div class="kiosk-dialog">
-          <transition name="kiosk-fade" mode="out-in">
-            <div v-if="!showPinStep" key="explain" class="kiosk-dialog-body">
-              <div class="kiosk-dialog-icon">
-                <q-icon name="shield" size="28px" />
-              </div>
-              <h3 class="kiosk-dialog-title">{{ $t('kiosk.ownerAreaTitle') }}</h3>
-              <p class="kiosk-dialog-desc">{{ $t('kiosk.ownerAreaDescLong') }}</p>
-
-              <div class="kiosk-unlock-features">
-                <div class="kiosk-unlock-feature">
-                  <div class="kiosk-unlock-feature-icon"><q-icon name="lock" size="16px" /></div>
-                  <span>{{ $t('kiosk.ownerHintProtected') }}</span>
-                </div>
-                <div class="kiosk-unlock-feature">
-                  <div class="kiosk-unlock-feature-icon"><q-icon name="pin" size="16px" /></div>
-                  <span>{{ $t('kiosk.ownerHintPin') }}</span>
-                </div>
-              </div>
-
-              <button class="pos-primary-btn kiosk-dialog-btn" @click="showPinStep = true">{{ $t('kiosk.continueToPin') }}</button>
-              <button class="pos-text-btn" @click="showUnlockDialog = false">{{ $t('kiosk.backToPos') }}</button>
-            </div>
-            <div v-else key="pin" class="kiosk-dialog-body">
-              <KioskPinPad ref="unlockPinRef" :title="$t('kiosk.enterPin')" :error-message="unlockError" @complete="handleUnlockPin" />
-              <button class="pos-text-btn" @click="showPinStep = false">{{ $t('Back') }}</button>
-            </div>
-          </transition>
+          <div class="kiosk-dialog-body">
+            <KioskPinPad ref="unlockPinRef" :title="$t('kiosk.enterPin')" :subtitle="$t('Only the owner can leave the register.')" :error-message="unlockError" @complete="handleUnlockPin" />
+            <button class="pos-text-btn" @click="showUnlockDialog = false">{{ $t('Resume') }}</button>
+          </div>
         </div>
       </q-dialog>
     </div>
@@ -257,7 +237,8 @@ import { haptics } from '../utils/haptics.js'
 import { useQuasar } from 'quasar'
 import { createPaymentMonitor, PaymentStatus } from '../utils/paymentMonitor.js'
 import { safeWithdrawError } from '../services/lnurlWithdraw.js'
-import { fiatSymbol as fiatSymbolFor } from 'src/utils/fiatCurrencies'
+import { fiatSymbol as fiatSymbolFor, freshRate } from 'src/utils/fiatCurrencies'
+import { formatAmount } from 'src/utils/amountFormatting'
 import { kioskWalletBlocker, KIOSK_BLOCKER } from '../utils/walletCapabilities.js'
 import { NWC_ERROR, nwcError } from '../utils/nwcErrors.js'
 
@@ -353,18 +334,27 @@ export default defineComponent({
     const parkedList = parked.list
     const parkedCount = parked.count
     const showUnlockDialog = ref(false)
-    const showPinStep = ref(false)
     const unlockPinRef = ref(null)
     const unlockError = ref('')
     let tapCount = 0
     let tapTimer = null
+    let priceTimer = null
 
     const isFiatMode = computed(() => store.kioskDisplayCurrency === 'fiat')
-    const fiatRate = computed(() => {
-      const currency = store.preferredFiatCurrency || 'USD'
-      return store.exchangeRates[currency] || store.exchangeRates[currency.toLowerCase()] || 0
-    })
+    const fiatCurrency = computed(() => (store.preferredFiatCurrency || 'USD').toUpperCase())
+    // A fiat sale is priced only with a Bitcoin price fetched in the last
+    // hour. Without one the register says so and charges nothing: the typed
+    // number is never read as Bitcoin (#456). `now` ticks with each refresh,
+    // so a price ages out while the register stays open.
+    const now = ref(Date.now())
+    const fiatRate = computed(() => freshRate(store.exchangeRates, store.exchangeRateTimes, fiatCurrency.value, now.value))
+    const priceMissing = computed(() => isFiatMode.value && !(fiatRate.value > 0))
     const fiatSymbol = computed(() => fiatSymbolFor(store.preferredFiatCurrency || 'USD').trim())
+    // The amount wears its unit the way the Home balance does: the fiat
+    // symbol, or ₿ in front, or "sats" after it in the legacy format.
+    const useBip177 = computed(() => store.useBip177Format !== false)
+    const amountPrefix = computed(() => (isFiatMode.value ? fiatSymbol.value : useBip177.value ? '₿' : ''))
+    const showSatsSuffix = computed(() => !isFiatMode.value && !useBip177.value)
     const formattedDisplay = computed(() => {
       if (rawInput.value === '0') return '0'
       if (isFiatMode.value) return rawInput.value
@@ -373,12 +363,12 @@ export default defineComponent({
     // Past ten characters the amount shrinks with its length so the
     // largest allowed entry (12 digits plus grouping) stays on screen.
     const amountFontStyle = computed(() => {
-      const chars = formattedDisplay.value.length + (isFiatMode.value ? 1 : 3)
+      const chars = formattedDisplay.value.length + (showSatsSuffix.value ? 3 : 1)
       return chars > 10 ? { fontSize: `${Math.max(1.5, (3 * 10) / chars).toFixed(2)}rem` } : null
     })
     const amountSats = computed(() => {
       const num = parseFloat(rawInput.value) || 0
-      if (isFiatMode.value && fiatRate.value > 0) return Math.round((num / fiatRate.value) * 100_000_000)
+      if (isFiatMode.value) return fiatRate.value > 0 ? Math.round((num / fiatRate.value) * 100_000_000) : 0
       return Math.round(num)
     })
     const totalSatsForCharge = computed(() => accumulatedSats.value + amountSats.value)
@@ -468,7 +458,7 @@ export default defineComponent({
     function clearAll() { rawInput.value = '0'; accumulatedItems.value = [] }
 
     function proceedToTipOrCharge() {
-      if (state.value !== 'input' || totalSatsForCharge.value <= 0) return
+      if (state.value !== 'input' || priceMissing.value || totalSatsForCharge.value <= 0) return
       baseAmountSats.value = totalSatsForCharge.value
       selectedTipPercent.value = 0; useRoundUp.value = false
       // Either setting alone is enough to earn the screen. Reading only
@@ -485,6 +475,8 @@ export default defineComponent({
 
     async function createCharge() {
       if (state.value !== 'input' && state.value !== 'tipping') return
+      // The price ran out on the tip screen: back to the amount, which says why.
+      if (priceMissing.value) { state.value = 'input'; return }
       const revision = ++saleRevision
       const walletId = store.kioskWalletId
       const amountSats = finalAmountSats.value
@@ -653,7 +645,7 @@ export default defineComponent({
       if (sale.status === 'expired') { parked.remove(sale.id); if (!parkedCount.value) showParkedSheet.value = false; return }
       $q.dialog({
         title: t('Remove parked sale?'),
-        message: t('If the customer still pays it, the sats reach the wallet but this kiosk will not show the sale.'),
+        message: t('If the customer still pays it, the payment reaches the wallet but this kiosk will not show the sale.'),
         cancel: { label: t('Keep'), flat: true, noCaps: true },
         ok: { label: t('Remove'), flat: true, noCaps: true, color: 'negative' },
         persistent: true,
@@ -741,18 +733,18 @@ export default defineComponent({
       saleBreakdownSnapshot.value = null
       state.value = 'input'
     }
-    function formatSats(sats) { return new Intl.NumberFormat().format(sats) }
-
     function displaySats(sats) {
       if (isFiatMode.value && fiatRate.value > 0) {
         const fiat = (sats / 100_000_000) * fiatRate.value
         return `${fiatSymbol.value} ${fiat.toFixed(2)}`
       }
-      return `${formatSats(sats)} sats`
+      return formatAmount(sats, useBip177.value)
     }
 
-    function handleUnlockPin(pin) { if (store.unlockToOwnerMode(pin)) { showUnlockDialog.value = false; router.push('/wallet') } else { unlockError.value = t('kiosk.incorrectPin') } }
-    function resetUnlock() { showPinStep.value = false; unlockError.value = ''; if (unlockPinRef.value) unlockPinRef.value.reset() }
+    function handleUnlockPin(pin) { if (store.unlockToOwnerMode(pin)) { showUnlockDialog.value = false; router.push('/wallet') } else { unlockError.value = t('kiosk.incorrectPin'); unlockPinRef.value?.fail() } }
+    function resetUnlock() { unlockError.value = ''; unlockPinRef.value?.reset() }
+    // A forgotten PIN: 13 taps on the logo open the owner area without it, and
+    // the owner sets a new PIN on the Kiosk Mode page (kept on purpose, #449).
     function handleScreenTap() { tapCount++; clearTimeout(tapTimer); tapTimer = setTimeout(() => { tapCount = 0 }, 5000); if (tapCount >= 13) { tapCount = 0; store.forceUnlockKiosk(); router.push('/wallet') } }
 
     watch(() => store.pendingDeepLink, payment => {
@@ -766,6 +758,13 @@ export default defineComponent({
     watch(() => [store.kioskWalletId, store.kioskEnabled, store.kioskOwnerAccess], () => cancelPayment(), { flush: 'sync' })
 
     onMounted(async () => {
+      // Home refreshes the price, but a kiosk boots straight into the
+      // register: it keeps its own price current while it prices in fiat.
+      // Started before any await, so onUnmounted always finds the timer.
+      refreshPrice()
+      priceTimer = setInterval(refreshPrice, 60_000)
+      document.addEventListener('visibilitychange', refreshPriceWhenVisible)
+
       // Load persisted state if store hasn't initialized yet
       if (!store.kioskEnabled) {
         await store.initialize()
@@ -792,22 +791,30 @@ export default defineComponent({
 
       walletReady.value = !!store.providers[store.kioskWalletId]
     })
+    function refreshPrice() {
+      now.value = Date.now()
+      if (isFiatMode.value) store.loadExchangeRates().catch(() => {})
+    }
+    function refreshPriceWhenVisible() { if (document.visibilityState === 'visible') refreshPrice() }
     isNfcAvailable().then((ok) => { nfcReady.value = ok }).catch(() => {})
-    onUnmounted(() => { saleRevision++; clearPolling(); clearTimeout(tapTimer); clearTimeout(successTimer); clearTimeout(parkPopTimer) })
+    onUnmounted(() => {
+      saleRevision++; clearPolling(); clearTimeout(tapTimer); clearTimeout(successTimer); clearTimeout(parkPopTimer)
+      clearInterval(priceTimer); document.removeEventListener('visibilitychange', refreshPriceWhenVisible)
+    })
 
     return {
-      state, walletReady, rawInput, formattedDisplay, amountFontStyle, amountSats, isFiatMode, fiatSymbol, kioskWalletName,
+      state, walletReady, rawInput, formattedDisplay, amountFontStyle, amountSats, isFiatMode, fiatSymbol, fiatCurrency, priceMissing, amountPrefix, showSatsSuffix, kioskWalletName,
       accumulatedItems, accumulatedSats, totalSatsForCharge,
       handleNumpad, addToAccumulated, removeAccumulatedItem, clearAll, proceedToTipOrCharge,
       tipOptions, selectedTipPercent, selectedTipAmount, tipInteractive,
       totalBeforeRoundUp, roundUpValue, useRoundUp, finalAmountSats,
       offersTip, offersRoundUp, extrasTitle, extrasSkipLabel, extraLabel,
-      baseAmountSats, formatSats, displaySats, createCharge, confirmTip,
+      baseAmountSats, displaySats, createCharge, confirmTip,
       card, cardAuthorization, cardBusy, cardPinActive, cardPinChecking, cardProblem, paidByCard, nfcReady,
       confirmHeldCard, cancelCardPin, paymentProblem, retryStatus, startPolling,
       invoiceData, qrDataUrl, cancelPayment, parkInvoice, resumeParked, resetToInput,
       parkedList, parkedCount, canResume, showParkedSheet, parkPop, parkedMeta, removeParked,
-      showCartSheet, showUnlockDialog, showPinStep, unlockPinRef, unlockError,
+      showCartSheet, showUnlockDialog, unlockPinRef, unlockError,
       handleUnlockPin, resetUnlock, handleScreenTap, store
     }
   }
@@ -904,7 +911,7 @@ export default defineComponent({
 .pos-cart-x:active { color: #ef4444; }
 
 /* Cart bottom sheet */
-.pos-cart-sheet { width: 100%; border-radius: 16px 16px 0 0 !important; }
+.pos-cart-sheet { width: 100%; border-radius: 16px 16px 0 0 !important; padding-bottom: var(--safe-bottom, 0px); }
 .pos-cart-sheet-dark { background: #0C0C0C !important; border: 1px solid #2A342A !important; border-bottom: none !important; color: #FFF; }
 .pos-cart-sheet-light { background: var(--bg-card) !important; border: 1px solid var(--border-card) !important; border-bottom: none !important; color: var(--text-primary); }
 .pos-sheet-header { display: flex; justify-content: space-between; font-family: 'Manrope', sans-serif; font-weight: 700; font-size: 15px; padding-bottom: 12px; border-bottom: 1px solid #2A342A; margin-bottom: 8px; }
@@ -952,6 +959,8 @@ export default defineComponent({
 .pos-card-other { margin-top: 12px; }
 .pos-card-held { align-self: center; display: inline-flex; align-items: center; gap: 8px; margin-top: 4px; padding: 8px 14px; border-radius: 999px; background: rgba(21,222,114,0.12); color: #3FE08C; font-family: 'Manrope', sans-serif; font-size: 0.8125rem; font-weight: 700; }
 .kiosk-light .pos-card-held { background: rgba(5,149,115,0.1); color: #046B53; }
+.pos-price-wait { background: rgba(245,158,11,0.14); color: #FBBF24; }
+.kiosk-light .pos-price-wait { background: rgba(180,83,9,0.1); color: #92400E; }
 .pos-pay :deep(.card-pin) { max-width: 340px; }
 .pos-paid-method { margin-top: 8px; font-size: 0.8125rem; color: #9ca3af; font-family: 'Manrope', sans-serif; }
 
@@ -1083,34 +1092,11 @@ export default defineComponent({
 .kiosk-light .tip-break-total { color: var(--text-primary); }
 
 /* Dialog */
-/* Dialog */
 .kiosk-dialog { background: var(--bg-card); border-radius: var(--radius-lg); padding: 32px 24px; width: 90vw; max-width: 360px; color: var(--text-primary); }
 .kiosk-dialog-body { display: flex; flex-direction: column; align-items: center; text-align: center; }
-.kiosk-dialog-icon { width: 52px; height: 52px; border-radius: 14px; background: var(--bg-input); color: var(--color-green); display: flex; align-items: center; justify-content: center; margin-bottom: 16px; }
-.kiosk-dialog-title { font-family: 'Manrope', sans-serif; font-size: 19px; font-weight: 800; margin: 0 0 8px; color: var(--text-primary); }
-.kiosk-dialog-desc { font-size: 14px; color: var(--text-secondary); margin: 0 0 24px; line-height: 1.5; }
 .kiosk-dialog .pos-text-btn { color: var(--text-muted); }
-.kiosk-dialog-btn { background: var(--color-green) !important; color: white !important; }
-
-/* Unlock features list */
-.kiosk-unlock-features { width: 100%; margin-bottom: 24px; display: flex; flex-direction: column; gap: 8px; }
-.kiosk-unlock-feature {
-  display: flex; align-items: center; gap: 12px;
-  padding: 12px 16px; border-radius: var(--radius-sm);
-  background: var(--bg-input); text-align: left;
-  font-family: 'Manrope', sans-serif; font-size: 0.875rem; font-weight: 500;
-  color: var(--text-secondary);
-}
-.kiosk-unlock-feature-icon {
-  width: 32px; height: 32px; border-radius: 8px; flex-shrink: 0;
-  display: flex; align-items: center; justify-content: center;
-  background: var(--bg-secondary); color: var(--text-muted);
-}
-
-/* Transitions */
-.kiosk-fade-enter-active, .kiosk-fade-leave-active { transition: opacity 0.15s ease, transform 0.15s ease; }
-.kiosk-fade-enter-from { opacity: 0; transform: translateX(12px); }
-.kiosk-fade-leave-to { opacity: 0; transform: translateX(-12px); }
+/* Resume sits under the keypad: room so a near miss on 0 never resumes. */
+.kiosk-dialog .pos-text-btn { margin-top: 20px; }
 
 @media (max-height: 680px) {
   .pos-amount-value { font-size: 3rem; }

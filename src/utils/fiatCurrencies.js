@@ -64,6 +64,22 @@ export function fiatSymbol(code) {
   return FIAT_SYMBOLS[c] || c + ' '
 }
 
+// How long a Bitcoin price may be used to turn a fiat amount into Bitcoin
+// after it was fetched. Older saved rates are dropped at start, and the
+// register refuses a fiat sale without a price this recent (#456).
+export const RATE_MAX_AGE_MS = 60 * 60 * 1000
+
+// The price of one bitcoin in `code`, or 0 when no price for it was fetched
+// within RATE_MAX_AGE_MS. `rates` and `times` are keyed by lowercase code, as
+// in the wallet store; `times` holds when each rate was fetched (ms).
+export function freshRate(rates, times, code, now = Date.now()) {
+  const c = String(code || 'USD').toLowerCase()
+  const rate = Number(rates?.[c])
+  const at = Number(times?.[c])
+  if (!(rate > 0) || !(at > 0) || now - at > RATE_MAX_AGE_MS) return 0
+  return rate
+}
+
 // Flag emoji for a currency code, with a neutral fallback for anything
 // not in FIAT_FLAGS (e.g. a future addition made only to FIAT_SYMBOLS).
 export function fiatFlag(code) {

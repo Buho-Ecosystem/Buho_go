@@ -27,6 +27,7 @@ export default {
   "No answer from the card's service. If the card paid, this screen shows it.": "Keine Antwort vom Dienst der Karte. Hat die Karte bezahlt, zeigt dieser Bildschirm es an.",
   "Parked sales": "Geparkte Verkäufe",
   "Still watched for payment": "Zahlungen werden weiter erkannt",
+  "Waiting for the Bitcoin price to charge in {currency}": "Warten auf den Bitcoin-Preis, um in {currency} zu kassieren",
   "Finish or clear the current sale to open a parked one.": "Schließe den aktuellen Verkauf ab oder leere ihn, um einen geparkten zu öffnen.",
   "Waiting": "Offen",
   "Keep": "Behalten",
@@ -34,7 +35,7 @@ export default {
   "{n} sales are parked": "{n} Verkäufe sind geparkt",
   "Open or remove one first.": "Öffne oder entferne zuerst einen.",
   "Remove parked sale?": "Geparkten Verkauf entfernen?",
-  "If the customer still pays it, the sats reach the wallet but this kiosk will not show the sale.": "Zahlt der Kunde ihn noch, kommen die Sats in der Wallet an, aber dieser Kiosk zeigt den Verkauf nicht.",
+  "If the customer still pays it, the payment reaches the wallet but this kiosk will not show the sale.": "Zahlt der Kunde ihn noch, kommt die Zahlung in der Wallet an, aber dieser Kiosk zeigt den Verkauf nicht.",
   "1 parked sale": "1 geparkter Verkauf",
   "{n} parked sales": "{n} geparkte Verkäufe",
 };

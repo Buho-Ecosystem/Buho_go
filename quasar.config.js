@@ -172,6 +172,15 @@ export default defineConfig((ctx) => {
     framework: {
       config: {
         dark: false,
+        // The app pads for the system bars itself (--safe-top / --safe-bottom
+        // in app.css). Since 2.32 Quasar also pads on Android, and its sheet
+        // rule replaces every bottom sheet's own bottom padding. Android stays
+        // with the app's padding; iOS keeps Quasar's, as before. Both are
+        // named because naming one turns the other off.
+        capacitor: {
+          iosStatusBarPadding: true,
+          androidStatusBarPadding: false,
+        },
         notify: {
           position: 'bottom',
           timeout: 2500,

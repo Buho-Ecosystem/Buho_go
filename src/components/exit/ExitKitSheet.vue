@@ -208,6 +208,7 @@ export default {
 </script>
 
 <style scoped>
+.exit-kit-sheet { padding-bottom: var(--safe-bottom, 0px); }
 .exit-kit-body { display: flex; flex-direction: column; gap: 16px; }
 .exit-kit-summary {
   display: flex;

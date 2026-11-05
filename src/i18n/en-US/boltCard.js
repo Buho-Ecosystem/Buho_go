@@ -27,6 +27,7 @@ export default {
   "No answer from the card's service. If the card paid, this screen shows it.": "No answer from the card's service. If the card paid, this screen shows it.",
   "Parked sales": "Parked sales",
   "Still watched for payment": "Still watched for payment",
+  "Waiting for the Bitcoin price to charge in {currency}": "Waiting for the Bitcoin price to charge in {currency}",
   "Finish or clear the current sale to open a parked one.": "Finish or clear the current sale to open a parked one.",
   "Waiting": "Waiting",
   "Keep": "Keep",
@@ -34,7 +35,7 @@ export default {
   "{n} sales are parked": "{n} sales are parked",
   "Open or remove one first.": "Open or remove one first.",
   "Remove parked sale?": "Remove parked sale?",
-  "If the customer still pays it, the sats reach the wallet but this kiosk will not show the sale.": "If the customer still pays it, the sats reach the wallet but this kiosk will not show the sale.",
+  "If the customer still pays it, the payment reaches the wallet but this kiosk will not show the sale.": "If the customer still pays it, the payment reaches the wallet but this kiosk will not show the sale.",
   "1 parked sale": "1 parked sale",
   "{n} parked sales": "{n} parked sales",
 };

@@ -1,5 +1,6 @@
 import * as withdrawService from '../../services/lnurlWithdraw.js';
 import * as nwcIntake from '../../services/nwcConnectionIntake.js';
+import * as openActionIntake from '../../services/openActionIntake.js';
 import * as kioskIntake from '../../services/kioskPaymentIntake.js';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
@@ -179,6 +180,8 @@ for (const file of ['deep-links.js', 'nfc.js']) {
         '../utils/paymentLink': paymentLink,
         '../utils/logRedaction': { redactPaymentInput: () => '(redacted)' },
         '../services/nwcConnectionIntake.js': nwcIntake,
+        '../services/openActionIntake.js': openActionIntake,
+        '../services/quickAccess.js': { reportShortcutUsed() {} },
         '../services/addressRequestIntake.js': { offerAddressRequest: input => addressRequests.isAddressRequest?.(input) || false },
         '../utils/nfc': { addNfcListener() {}, addNfcErrorListener() {}, isNfcAvailable: async () => true,
           consumePendingNfcScan: async () => ({ raw: input, source: 'system_dispatch' }) },
