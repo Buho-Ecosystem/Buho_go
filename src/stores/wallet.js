@@ -216,6 +216,7 @@ import * as deviceCrypto from '../utils/deviceCrypto';
 import { clearCachedTransactions } from '../utils/txCache.js';
 import { i18n } from '../boot/i18n';
 import { canWalletPay, canWalletReceiveLightning } from '../utils/walletCapabilities.js';
+import { hashKioskPin, kioskPinMatches, savedKioskPinHash } from '../utils/kioskPin.js';
 import {
   setScreenPrivacyEnabled as nativeSetScreenPrivacyEnabled,
   isScreenPrivacyEnabled as nativeIsScreenPrivacyEnabled,
@@ -407,7 +408,7 @@ export const useWalletStore = defineStore('wallet', {
 
     // Kiosk Mode
     kioskEnabled: false,
-    kioskPin: '',
+    kioskPinHash: '', // utils/kioskPin.js: salted hash, never the PIN itself
     kioskOwnerAccess: false, // true = merchant unlocked, false = locked to POS
     kioskWalletId: null, // which wallet receives kiosk payments
 
@@ -436,6 +437,13 @@ export const useWalletStore = defineStore('wallet', {
     // drains and clears this on mount, so the intent is never lost to the race
     // between Capacitor's getLaunchUrl resolution and Vue's component lifecycle.
     pendingDeepLink: null,
+
+    // A screen to open, asked for from outside the app (a Quick Settings tile,
+    // a launcher shortcut): { kind, contactId, source, receivedAt, seq }.
+    // Written by services/openActionIntake.js once the app lock is passed,
+    // drained by Wallet.vue the same way as pendingDeepLink. Runtime only,
+    // never saved.
+    pendingOpenAction: null,
 
     // Error tracking
     lastError: null,
@@ -1437,6 +1445,8 @@ export const useWalletStore = defineStore('wallet', {
               migrationNeedsPersist = true;
             }
 
+            if (parsed.kioskPin) migrationNeedsPersist = true;
+
             console.log(`[wallet-store] Loading ${migratedWallets.length} wallet(s):`, migratedWallets.map(w => `${w.type}:${w.name}`));
 
             this.$patch({
@@ -1458,9 +1468,10 @@ export const useWalletStore = defineStore('wallet', {
               privacyScreenEnabled: parsed.privacyScreenEnabled !== undefined
                 ? !!parsed.privacyScreenEnabled
                 : false,
-              // Kiosk
+              // Kiosk. A PIN an earlier version saved in plain text is hashed
+              // here and saved again below, so the plain copy leaves storage.
               kioskEnabled: parsed.kioskEnabled || false,
-              kioskPin: parsed.kioskPin || '',
+              kioskPinHash: savedKioskPinHash(parsed),
               kioskOwnerAccess: this.kioskOwnerAccess || false, // preserve if already unlocked this session
               kioskWalletId: parsed.kioskWalletId || null,
               kioskTipEnabled: parsed.kioskTipEnabled || false,
@@ -1518,7 +1529,9 @@ export const useWalletStore = defineStore('wallet', {
                 this.needsPinMigration = true;
                 console.log('[wallet] PIN migration required — waiting for user to enter PIN one last time');
               } else {
-                await this.connectAllSparkWallets({ waitFor: [this.activeWalletId, this.kioskWalletId] });
+                // The register's wallet only matters while kiosk is on (turning it
+                // off keeps the choice for next time).
+                await this.connectAllSparkWallets({ waitFor: [this.activeWalletId, this.kioskEnabled ? this.kioskWalletId : null] });
               }
             }
           }
@@ -4450,7 +4463,7 @@ export const useWalletStore = defineStore('wallet', {
           privacyScreenEnabled: this.privacyScreenEnabled,
           // Kiosk
           kioskEnabled: this.kioskEnabled,
-          kioskPin: this.kioskPin,
+          kioskPinHash: this.kioskPinHash,
           kioskWalletId: this.kioskWalletId,
           kioskTipEnabled: this.kioskTipEnabled,
           kioskTipValues: this.kioskTipValues,
@@ -4585,27 +4598,26 @@ export const useWalletStore = defineStore('wallet', {
 
     async enableKiosk(pin, walletId) {
       this.kioskEnabled = true;
-      this.kioskPin = pin;
+      this.kioskPinHash = hashKioskPin(pin);
       this.kioskWalletId = walletId || null;
       this.kioskOwnerAccess = true; // merchant keeps full access after setup
       await this.persistState();
     },
 
+    /**
+     * Turns kiosk off. Only the PIN goes: the wallet, tips, round-up and
+     * display stay for the next time it is turned on (issue #449).
+     */
     async disableKiosk() {
       this.pendingDeepLink = null;
       this.kioskEnabled = false;
-      this.kioskPin = '';
+      this.kioskPinHash = '';
       this.kioskOwnerAccess = false;
-      this.kioskWalletId = null;
-      this.kioskTipEnabled = false;
-      this.kioskTipValues = [5, 10, 20];
-      this.kioskRoundUpEnabled = false;
-      this.kioskDisplayCurrency = 'sats';
       await this.persistState();
     },
 
     unlockToOwnerMode(pin) {
-      if (pin === this.kioskPin) {
+      if (kioskPinMatches(pin, this.kioskPinHash)) {
         if (this.pendingDeepLink?.target === 'kiosk') this.pendingDeepLink = null;
         this.kioskOwnerAccess = true;
         return true;
@@ -4623,12 +4635,8 @@ export const useWalletStore = defineStore('wallet', {
       this.kioskOwnerAccess = false;
     },
 
-    verifyKioskPin(pin) {
-      return pin === this.kioskPin;
-    },
-
     async changeKioskPin(newPin) {
-      this.kioskPin = newPin;
+      this.kioskPinHash = hashKioskPin(newPin);
       await this.persistState();
     },
 

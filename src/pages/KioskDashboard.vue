@@ -204,36 +204,15 @@
         </q-card>
       </q-dialog>
 
-      <!-- ═══ Unlock ═══ -->
+      <!-- ═══ Unlock ═══
+           The lock goes straight to the PIN, as Guided Access does: the right
+           PIN ends the register (owner area), Resume goes back to it. -->
       <q-dialog v-model="showUnlockDialog" persistent @hide="resetUnlock">
         <div class="kiosk-dialog">
-          <transition name="kiosk-fade" mode="out-in">
-            <div v-if="!showPinStep" key="explain" class="kiosk-dialog-body">
-              <div class="kiosk-dialog-icon">
-                <q-icon name="shield" size="28px" />
-              </div>
-              <h3 class="kiosk-dialog-title">{{ $t('kiosk.ownerAreaTitle') }}</h3>
-              <p class="kiosk-dialog-desc">{{ $t('kiosk.ownerAreaDescLong') }}</p>
-
-              <div class="kiosk-unlock-features">
-                <div class="kiosk-unlock-feature">
-                  <div class="kiosk-unlock-feature-icon"><q-icon name="lock" size="16px" /></div>
-                  <span>{{ $t('kiosk.ownerHintProtected') }}</span>
-                </div>
-                <div class="kiosk-unlock-feature">
-                  <div class="kiosk-unlock-feature-icon"><q-icon name="pin" size="16px" /></div>
-                  <span>{{ $t('kiosk.ownerHintPin') }}</span>
-                </div>
-              </div>
-
-              <button class="pos-primary-btn kiosk-dialog-btn" @click="showPinStep = true">{{ $t('kiosk.continueToPin') }}</button>
-              <button class="pos-text-btn" @click="showUnlockDialog = false">{{ $t('kiosk.backToPos') }}</button>
-            </div>
-            <div v-else key="pin" class="kiosk-dialog-body">
-              <KioskPinPad ref="unlockPinRef" :title="$t('kiosk.enterPin')" :error-message="unlockError" @complete="handleUnlockPin" />
-              <button class="pos-text-btn" @click="showPinStep = false">{{ $t('Back') }}</button>
-            </div>
-          </transition>
+          <div class="kiosk-dialog-body">
+            <KioskPinPad ref="unlockPinRef" :title="$t('kiosk.enterPin')" :subtitle="$t('Only the owner can leave the register.')" :error-message="unlockError" @complete="handleUnlockPin" />
+            <button class="pos-text-btn" @click="showUnlockDialog = false">{{ $t('Resume') }}</button>
+          </div>
         </div>
       </q-dialog>
     </div>
@@ -354,7 +333,6 @@ export default defineComponent({
     const parkedList = parked.list
     const parkedCount = parked.count
     const showUnlockDialog = ref(false)
-    const showPinStep = ref(false)
     const unlockPinRef = ref(null)
     const unlockError = ref('')
     let tapCount = 0
@@ -755,8 +733,10 @@ export default defineComponent({
       return formatAmount(sats, useBip177.value)
     }
 
-    function handleUnlockPin(pin) { if (store.unlockToOwnerMode(pin)) { showUnlockDialog.value = false; router.push('/wallet') } else { unlockError.value = t('kiosk.incorrectPin') } }
-    function resetUnlock() { showPinStep.value = false; unlockError.value = ''; if (unlockPinRef.value) unlockPinRef.value.reset() }
+    function handleUnlockPin(pin) { if (store.unlockToOwnerMode(pin)) { showUnlockDialog.value = false; router.push('/wallet') } else { unlockError.value = t('kiosk.incorrectPin'); unlockPinRef.value?.fail() } }
+    function resetUnlock() { unlockError.value = ''; unlockPinRef.value?.reset() }
+    // A forgotten PIN: 13 taps on the logo open the owner area without it, and
+    // the owner sets a new PIN on the Kiosk Mode page (kept on purpose, #449).
     function handleScreenTap() { tapCount++; clearTimeout(tapTimer); tapTimer = setTimeout(() => { tapCount = 0 }, 5000); if (tapCount >= 13) { tapCount = 0; store.forceUnlockKiosk(); router.push('/wallet') } }
 
     watch(() => store.pendingDeepLink, payment => {
@@ -811,7 +791,7 @@ export default defineComponent({
       confirmHeldCard, cancelCardPin, paymentProblem, retryStatus, startPolling,
       invoiceData, qrDataUrl, cancelPayment, parkInvoice, resumeParked, resetToInput,
       parkedList, parkedCount, canResume, showParkedSheet, parkPop, parkedMeta, removeParked,
-      showCartSheet, showUnlockDialog, showPinStep, unlockPinRef, unlockError,
+      showCartSheet, showUnlockDialog, unlockPinRef, unlockError,
       handleUnlockPin, resetUnlock, handleScreenTap, store
     }
   }
@@ -1087,34 +1067,11 @@ export default defineComponent({
 .kiosk-light .tip-break-total { color: var(--text-primary); }
 
 /* Dialog */
-/* Dialog */
 .kiosk-dialog { background: var(--bg-card); border-radius: var(--radius-lg); padding: 32px 24px; width: 90vw; max-width: 360px; color: var(--text-primary); }
 .kiosk-dialog-body { display: flex; flex-direction: column; align-items: center; text-align: center; }
-.kiosk-dialog-icon { width: 52px; height: 52px; border-radius: 14px; background: var(--bg-input); color: var(--color-green); display: flex; align-items: center; justify-content: center; margin-bottom: 16px; }
-.kiosk-dialog-title { font-family: 'Manrope', sans-serif; font-size: 19px; font-weight: 800; margin: 0 0 8px; color: var(--text-primary); }
-.kiosk-dialog-desc { font-size: 14px; color: var(--text-secondary); margin: 0 0 24px; line-height: 1.5; }
 .kiosk-dialog .pos-text-btn { color: var(--text-muted); }
-.kiosk-dialog-btn { background: var(--color-green) !important; color: white !important; }
-
-/* Unlock features list */
-.kiosk-unlock-features { width: 100%; margin-bottom: 24px; display: flex; flex-direction: column; gap: 8px; }
-.kiosk-unlock-feature {
-  display: flex; align-items: center; gap: 12px;
-  padding: 12px 16px; border-radius: var(--radius-sm);
-  background: var(--bg-input); text-align: left;
-  font-family: 'Manrope', sans-serif; font-size: 0.875rem; font-weight: 500;
-  color: var(--text-secondary);
-}
-.kiosk-unlock-feature-icon {
-  width: 32px; height: 32px; border-radius: 8px; flex-shrink: 0;
-  display: flex; align-items: center; justify-content: center;
-  background: var(--bg-secondary); color: var(--text-muted);
-}
-
-/* Transitions */
-.kiosk-fade-enter-active, .kiosk-fade-leave-active { transition: opacity 0.15s ease, transform 0.15s ease; }
-.kiosk-fade-enter-from { opacity: 0; transform: translateX(12px); }
-.kiosk-fade-leave-to { opacity: 0; transform: translateX(-12px); }
+/* Resume sits under the keypad: room so a near miss on 0 never resumes. */
+.kiosk-dialog .pos-text-btn { margin-top: 20px; }
 
 @media (max-height: 680px) {
   .pos-amount-value { font-size: 3rem; }

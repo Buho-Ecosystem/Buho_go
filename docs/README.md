@@ -20,6 +20,7 @@ How each feature works and the rules that keep it right, written for developers 
 | [Incoming payments](INCOMING_PAYMENTS.md) | "Bitcoin received" for every wallet type: live hints, one ledger, once per payment |
 | [Auto-Transfer](AUTO_TRANSFER.md) | Rules that move money on their own, and when they run |
 | [Bolt Card](BOLT_CARD.md) | Taking money from a Bolt Card, in the wallet and at the kiosk |
+| [Kiosk Mode](KIOSK_MODE.md) | The register for staff: its settings page, the PIN, and leaving the register |
 | [Merchant verification](BRANTA.md) | Showing the business you pay, and stopping a changed code (Branta) |
 | [Shared payment requests](SHARED_REQUESTS.md) | Requests from Receive and repayments from receipts |
 | [Contact chat](CONTACT_CHAT.md) | Money requests and encrypted messages between contacts |
@@ -47,6 +48,7 @@ How each feature works and the rules that keep it right, written for developers 
 | Record | What it covers |
 |---|---|
 | [Launch](LAUNCH.md) | From tapping the icon to holding the wallet |
+| [Quick access](QUICK_ACCESS.md) | Quick Settings tiles and Home screen shortcuts that open one screen |
 | [App updates](APP_UPDATES.md) | How native builds find and offer updates |
 | [Toasts](TOAST_INTERACTIONS.md) | When the app speaks up, and how |
 
