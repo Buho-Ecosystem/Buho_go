@@ -6,7 +6,8 @@
   standard sheet:
 
     - balance row with "Use all" (emits `use-max`; the parent writes the
-      amount back into the sheet)
+      amount back into the sheet); without "Use all" when the request
+      fixes the amount
     - debounced fee quote from the Spark SDK (`getWithdrawalFeeQuote`) —
       we don't second-guess it with third-party mempool data, because
       those are the numbers the SSP will actually charge when the
@@ -18,7 +19,7 @@
 
   Contract with the parent:
     - props: amountSats (live from the sheet's @amount-changed),
-      address, availableBalance, disabled (while submitting)
+      address, availableBalance, amountFixed, disabled (while submitting)
     - @update:fee  the selected quote as a commit gate:
         { ready, speed, feeQuoteId, totalFeeSats, insufficient } —
         or null whenever no valid quote is selected. The parent feeds
@@ -35,6 +36,7 @@
         {{ $t('Available') }} · {{ formatAmount(availableBalance) }}
       </span>
       <button
+        v-if="!amountFixed"
         type="button"
         class="max-pill"
         :disabled="disabled || availableBalance <= 0"
@@ -105,7 +107,7 @@
          wallet-hint so the UI stays unified. -->
     <div v-if="insufficientBalance && amountSats > 0" class="balance-warning">
       <Icon icon="tabler:alert-triangle" width="14" height="14" />
-      <span>{{ $t('Total exceeds your balance, try a smaller amount') }}</span>
+      <span>{{ amountFixed ? $t('The amount plus fees exceeds your balance.') : $t('Total exceeds your balance, try a smaller amount') }}</span>
     </div>
   </div>
 </template>
@@ -130,6 +132,8 @@ export default {
     /** Bare on-chain destination (BIP21 already unwrapped upstream). */
     address: { type: String, required: true },
     availableBalance: { type: Number, default: 0 },
+    /** The request fixes the amount (bitcoin:…?amount=), so there is nothing for "Use all" to set. */
+    amountFixed: { type: Boolean, default: false },
     /**
      * The Spark wallet that pays ("Pay with"); the quote is requested from
      * and priced for that wallet. null = the active wallet, as ever.

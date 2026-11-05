@@ -1910,6 +1910,7 @@ export default {
   "Copy Address": "Copiar dirección",
   "Failed to access camera. Please try again.": "No se pudo abrir la cámara. Inténtalo de nuevo.",
   "Total exceeds your balance, try a smaller amount": "El total supera tu saldo. Prueba con un importe menor.",
+  "The amount plus fees exceeds your balance.": "El importe más las comisiones supera tu saldo.",
   "Fiat rates unavailable": "Tipos de cambio no disponibles",
   "Fiat rates unavailable - switch to sats or refresh the app": "Tipos de cambio no disponibles - cambia a sats o recarga la app.",
   "Incorrect PIN. Please try again.": "PIN incorrecto. Inténtalo de nuevo.",

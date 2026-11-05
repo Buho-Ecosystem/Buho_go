@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { readFileSync } from 'node:fs';
 import { transformSync } from 'esbuild';
+import * as bip21Helpers from '../../utils/bip21.js';
 import * as addresses from '../../utils/addressUtils.js';
 import * as metadata from '../../utils/lnurlMetadata.js';
 import * as lnurlPay from '../../utils/lnurlPay.js';
@@ -1247,6 +1248,35 @@ test('Pay with: Arkade can pay on-chain too, and the L1 panel then stays out of 
   assert.equal(vm.isSparkL1Payment, false);
   vm.onSendingWalletChange('biz');
   assert.equal(vm.isSparkL1Payment, true);
+});
+
+test('a Bitcoin request is paid with the amount it asks for, as an invoice is', async () => {
+  const { vm } = payingHarness({ deps: { '../utils/bip21.js': bip21Helpers } });
+  await vm.onPaymentDetected({ type: 'bitcoin_address', data: 'bc1qxyz', bip21: { address: 'bc1qxyz', amount: '0.0004' } });
+  assert.equal(vm.pendingPayment.fixedAmountSats, 40_000, 'bitcoin:…?amount=0.0004');
+  assert.equal(vm.pendingPayment.bitcoinAddress, 'bc1qxyz');
+  assert.equal(vm.showSendSheet, true);
+  assert.equal(vm.getPaymentAmountForFee(), 40_000, 'the fee is quoted for the amount asked');
+  assert.deepEqual(vm.paymentSheetProps.amount, { mode: 'fixed', fixedSats: 40_000 }, 'locked, so "Use all" stays away');
+
+  const plain = payingHarness({ deps: { '../utils/bip21.js': bip21Helpers } });
+  await plain.vm.onPaymentDetected({ type: 'bitcoin_address', data: 'bc1qxyz', bip21: { address: 'bc1qxyz' } });
+  assert.equal(plain.vm.pendingPayment.fixedAmountSats, undefined, 'no amount asked: the person types it');
+});
+
+test('every payer pick for a Bitcoin request picks for the amount it asks for', async () => {
+  const { vm } = payingHarness({ deps: { '../utils/bip21.js': bip21Helpers } });
+  const picks = [];
+  const choose = vm.chooseSendingWalletId;
+  vm.chooseSendingWalletId = function (type, requested, amountSats) {
+    picks.push(amountSats);
+    return choose.call(this, type, requested, amountSats);
+  };
+  await vm.onPaymentDetected({ type: 'bitcoin_address', data: 'bc1qxyz', bip21: { address: 'bc1qxyz', amount: '0.0004' } });
+  assert.ok(picks.length > 0);
+  assert.ok(picks.every((amount) => amount === 40_000), `picked for ${picks.join(', ')}`);
+  assert.equal(vm.requestAmountSats({ type: 'spark_address', fixedAmountSats: 1234 }), 1234, 'a fixed amount it already carries');
+  assert.equal(vm.requestAmountSats({ type: 'bitcoin_address', data: 'bc1qxyz' }), 0, 'none asked');
 });
 
 test('Pay with: a BIP21 native rail follows the wallet that pays', async () => {

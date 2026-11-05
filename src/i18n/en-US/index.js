@@ -1801,6 +1801,7 @@ export default {
   "One more time": "One more time",
   "Those don't match - try again": "Those don't match - try again",
   "Total exceeds your balance, try a smaller amount": "Total exceeds your balance, try a smaller amount",
+  "The amount plus fees exceeds your balance.": "The amount plus fees exceeds your balance.",
   "Save new PIN": "Save new PIN",
   "Your PIN keeps your wallet private. Choose something only you know.": "Your PIN keeps your wallet private. Choose something only you know.",
   "Payment expired": "Payment expired",
