@@ -10,9 +10,9 @@ The card shows up as an object the moment it touches the phone, and everything a
 |---|---|---|---|---|
 | ![Reading](images/boltcard/wallet-reading.png) | ![Slide](images/boltcard/wallet-slide.png) | ![PIN](images/boltcard/wallet-pin.png) | ![Last try](images/boltcard/wallet-last-try.png) | ![Locked](images/boltcard/wallet-locked.png) |
 
-| Kiosk | | | | |
-|---|---|---|---|---|
-| ![Pay](images/boltcard/kiosk-pay.png) | ![PIN](images/boltcard/kiosk-pin.png) | ![Paying](images/boltcard/kiosk-paying.png) | ![Declined](images/boltcard/kiosk-declined.png) | ![Parked](images/boltcard/kiosk-parked.png) |
+| Kiosk | | | | | |
+|---|---|---|---|---|---|
+| ![Pay](images/boltcard/kiosk-pay.png) | ![PIN](images/boltcard/kiosk-pin.png) | ![Paying](images/boltcard/kiosk-paying.png) | ![Declined](images/boltcard/kiosk-declined.png) | ![No payment came from the card](images/boltcard/kiosk-not-paid.png) | ![Parked](images/boltcard/kiosk-parked.png) |
 
 Before: the PIN took over the whole screen, the kiosk went back to its QR after the PIN, and a locked card was an error dialog.
 
