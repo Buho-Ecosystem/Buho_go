@@ -765,6 +765,10 @@ import { namesOneOrder, sendsPayoutAmount } from '../utils/payAgain.js';
 import {BRANTA_HOLD_MS, BRANTA_LOOKUP_TIMEOUT_MS, BRANTA_STATUS, brantaAvatar, brantaLookupText, checkWithBranta} from '../utils/branta.js';
 import { readCachedTransactions, mergeCachedTransactions } from '../utils/txCache.js';
 import { EventBus, PAYMENT_SENT } from '../utils/eventBus.js';
+import { whenAppUnlocked } from '../utils/appLock.js';
+import { isOpenActionCurrent } from '../services/openActionIntake.js';
+import { findShortcutContact } from '../utils/quickAccessPlan.js';
+import { usePayContact } from '../composables/usePayContact.js';
 
 function emptySaveContactData() {
   return {
@@ -1003,6 +1007,23 @@ export default {
     };
   },
   computed: {
+    /**
+     * A tile or shortcut must not cut into these (runOpenAction): a payment
+     * on its way or its outcome, a destination still being looked up (its
+     * confirm sheet opens when it lands), a confirm sheet holding a resolved
+     * payment, and the flows that end in a decision (a request, batch,
+     * transfer, PIN migration, identity approval, saving a contact).
+     */
+    openActionWouldInterrupt() {
+      return this.isSendingPayment
+        || this.sendResolving || this.clipboardResolving
+        || this.showSendSheet || this.showWithdrawSheet
+        || this.showRequestMoney
+        || this.showSendSuccess || this.showWithdrawSuccess
+        || this.showBatchSend || this.showTransferModal
+        || this.showMigrationDialog || this.showIdentityAuthDialog
+        || this.showSaveContactDialog;
+    },
     menuButtonLabel() {
       if (!this.socialBucketStore.hasUnseenPayments) return this.$t('Menu');
       const count = this.socialBucketStore.paymentCount;
@@ -2142,6 +2163,8 @@ export default {
     // fresh sync, rates and history: a Spark sync that stalls (up to 20 s per
     // try) must not leave the confirm sheet unopened.
     this._walletsReady = this.walletStore.initialize();
+    this._walletsSettled = false;
+    Promise.resolve(this._walletsReady).catch(() => {}).then(() => { this._walletsSettled = true; });
     this.initializeWallet();
     // Check for a payment handed over from the Address Book page
     this.handlePaymentFromQuery();
@@ -2167,6 +2190,19 @@ export default {
         Promise.resolve(this._walletsReady)
           .catch(() => {})
           .then(() => this.onPaymentDetected(paymentData));
+      },
+      { immediate: true }
+    );
+    // A screen asked for from outside the app: a Quick Settings tile or a
+    // launcher shortcut (services/openActionIntake.js). Drained like a deep
+    // link, then opened as soon as the app lock is passed (openWhenUnlocked).
+    this.$watch(
+      () => this.walletStore.pendingOpenAction,
+      (action) => {
+        if (!action) return;
+        this.walletStore.pendingOpenAction = null;
+        this.openWhenUnlocked(action)
+          .catch((err) => console.warn('[open-action] Could not open the screen:', err?.message || err));
       },
       { immediate: true }
     );
@@ -3323,6 +3359,88 @@ export default {
 
     openSend() {
       this.showSendModal = true;
+    },
+
+    /**
+     * Open an action's screen as soon as the app lock is passed, like a tap
+     * on Home: never after the wallets connect (a cold start's Spark connect
+     * takes seconds). The sheets show their own loading, and Pay waits for
+     * the wallets in the payment pipeline, as a tap in Payees does.
+     *
+     * The intake already waited for the lock; it is awaited again last, so
+     * it cannot come back between the check and the screen. An action that a
+     * newer one replaced, or that waited too long, is dropped instead of
+     * opening a screen out of the blue (isOpenActionCurrent).
+     *
+     * @param {{ kind: string, contactId: string|null, receivedAt: number, seq: number }} action
+     */
+    async openWhenUnlocked(action) {
+      // On a cold start the contacts may still be loading.
+      if (action.kind === 'pay') await this.addressBookStore.initialize();
+      await whenAppUnlocked();
+      if (!isOpenActionCurrent(action)) return;
+      this.runOpenAction(action);
+    },
+
+    /**
+     * Open the screen a Quick Settings tile or a launcher shortcut asked for
+     * (issue #444). Send, Scan and Receive open the same sheets as the Home
+     * buttons; Pay opens the saved contact's payment like a tap in Payees.
+     * Nothing is filled in and nothing is paid.
+     *
+     * A payment that is underway, or a sheet the person has to finish, keeps
+     * the screen: the action is dropped rather than stacked on top of it. The
+     * sheets it may replace are closed first, so two never stack.
+     *
+     * @param {{ kind: string, contactId: string|null }} action
+     */
+    runOpenAction(action) {
+      if (this.$.isUnmounted) return;
+      // Kiosk mode or the last wallet removed while the action waited.
+      if (this.walletStore.kioskEnabled || !this.walletStore.activeWallet) return;
+      if (this.openActionWouldInterrupt) return;
+
+      if (action.kind === 'pay') {
+        const contact = findShortcutContact(this.addressBookStore.entries, action.contactId);
+        if (!contact) {
+          this.$q.notify({ type: 'info', message: this.$t('This contact was removed'), timeout: 3000 });
+          return;
+        }
+        this.closeSheetsForOpenAction();
+        const handedOver = usePayContact(this).payContact(contact);
+        // On a cold start the hand-over waits for the wallets to connect
+        // (handlePaymentFromQuery), which can take seconds: say so, rather
+        // than leave Home looking as if the tap was lost.
+        if (handedOver && !this._walletsSettled) {
+          const dismiss = this.$q.notify({
+            type: 'ongoing',
+            message: this.$t('Getting ready to pay {name}', { name: contact.name }),
+            timeout: 0,
+            spinner: true,
+          });
+          Promise.resolve(this._walletsReady).catch(() => {}).then(dismiss);
+        }
+        return;
+      }
+
+      this.closeSheetsForOpenAction();
+      if (action.kind === 'receive') {
+        this.openReceive();
+      } else if (action.kind === 'send' || action.kind === 'scan') {
+        this.openSend();
+        // The scanner is the Send sheet's own child surface: closing it
+        // leaves the person on Send, where they can paste or type instead.
+        if (action.kind === 'scan') this.$nextTick(() => this.$refs.sendModal?.openScanner());
+      }
+    },
+
+    /** Sheets an open action replaces: nothing in them is lost that the person cannot reopen. */
+    closeSheetsForOpenAction() {
+      this.showSendModal = false;
+      this.showReceiveModal = false;
+      this.showRedeemScanner = false;
+      this.showWalletSwitcher = false;
+      this.showMenu = false;
     },
 
     /**

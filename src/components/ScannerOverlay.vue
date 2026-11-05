@@ -129,6 +129,7 @@ import {
   shouldFallBackToWeb,
   shouldRetryNativeAfterWebFailure,
 } from '../utils/scannerEngine';
+import { EventBus } from '../utils/eventBus.js';
 
 export default {
   name: 'ScannerOverlay',
@@ -174,13 +175,26 @@ export default {
 
   mounted() {
     if (this.active) this.start();
+    // While the camera runs, every other surface is hidden
+    // (body.barcode-scanner-active), the app lock's screen included. When
+    // the lock engages (the app went to the background), close as if the
+    // person had pressed back, so the lock screen shows on return instead
+    // of a live camera.
+    EventBus.on('app:locked', this.onAppLocked);
   },
 
   beforeUnmount() {
+    EventBus.off('app:locked', this.onAppLocked);
     this.stop();
   },
 
   methods: {
+    onAppLocked() {
+      if (!this.active) return;
+      this.stop();
+      this.$emit('close');
+    },
+
     async start() {
       const seq = ++this.startSeq;
       this.error = '';
