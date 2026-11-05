@@ -15,7 +15,7 @@ import { probeNwcConnection } from '../services/nwcProbe.js';
 import { payWithNwc } from '../services/nwcPayment.js';
 import { lookupNwcInvoice, makeNwcInvoice } from '../services/nwcReceive.js';
 import { fiatRatesService } from '../utils/fiatRates.js';
-import { SELECTABLE_FIAT_CURRENCIES } from '../utils/fiatCurrencies.js';
+import { SELECTABLE_FIAT_CURRENCIES, RATE_MAX_AGE_MS } from '../utils/fiatCurrencies.js';
 import { LNBitsWalletProvider } from '../providers/LNBitsWalletProvider';
 import { ArkadeWalletProvider } from '../providers/ArkadeWalletProvider';
 import { ARKADE_MAINNET_SERVER, ARKADE_DEFAULT_NETWORK } from '../utils/arkadeKeys';
@@ -360,6 +360,9 @@ export const useWalletStore = defineStore('wallet', {
     exchangeRates: {},
     exchangeRatesAvailable: false,
     exchangeRatesLastUpdate: null,
+    // When each rate was fetched (ms), keyed like exchangeRates; a rate is
+    // used to price a sale only while freshRate() accepts its time.
+    exchangeRateTimes: {},
     exchangeRatesError: null,
 
     // Seed backup tracking
@@ -1399,8 +1402,7 @@ export const useWalletStore = defineStore('wallet', {
             let ratesStillValid = false;
             if (parsed.exchangeRatesLastUpdate) {
               const lastUpdate = new Date(parsed.exchangeRatesLastUpdate);
-              const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
-              ratesStillValid = lastUpdate > oneHourAgo;
+              ratesStillValid = lastUpdate > new Date(Date.now() - RATE_MAX_AGE_MS);
             }
 
             // Migrate old wallets without type field
@@ -1460,6 +1462,7 @@ export const useWalletStore = defineStore('wallet', {
               exchangeRates: ratesStillValid ? (parsed.exchangeRates || {}) : {},
               exchangeRatesAvailable: ratesStillValid && parsed.exchangeRatesAvailable,
               exchangeRatesLastUpdate: ratesStillValid ? parsed.exchangeRatesLastUpdate : null,
+              exchangeRateTimes: ratesStillValid ? (parsed.exchangeRateTimes || {}) : {},
               hasBackedUp: parsed.hasBackedUp || false,
               biometricsEnabled: parsed.biometricsEnabled || false,
               // Screen privacy: off by default. Only an explicitly
@@ -4294,6 +4297,12 @@ export const useWalletStore = defineStore('wallet', {
           this.exchangeRates = Object.fromEntries(
             SELECTABLE_FIAT_CURRENCIES.map((code) => [code.toLowerCase(), rates[code] || this.exchangeRates[code.toLowerCase()] || 0])
           );
+          // Each rate's own fetch time, never this moment: a rate the service
+          // kept from an earlier fetch keeps its age (#456).
+          const times = fiatRatesService.getRateTimes();
+          this.exchangeRateTimes = Object.fromEntries(
+            SELECTABLE_FIAT_CURRENCIES.map((code) => [code.toLowerCase(), rates[code] ? times[code] || 0 : this.exchangeRateTimes[code.toLowerCase()] || 0])
+          );
           this.exchangeRatesAvailable = true;
           this.exchangeRatesLastUpdate = new Date().toISOString();
           this.exchangeRatesError = null;
@@ -4458,6 +4467,7 @@ export const useWalletStore = defineStore('wallet', {
           exchangeRates: this.exchangeRates,
           exchangeRatesAvailable: this.exchangeRatesAvailable,
           exchangeRatesLastUpdate: this.exchangeRatesLastUpdate,
+          exchangeRateTimes: this.exchangeRateTimes,
           hasBackedUp: this.hasBackedUp,
           biometricsEnabled: this.biometricsEnabled,
           privacyScreenEnabled: this.privacyScreenEnabled,

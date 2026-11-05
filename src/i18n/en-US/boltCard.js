@@ -27,6 +27,7 @@ export default {
   "No answer from the card's service. If the card paid, this screen shows it.": "No answer from the card's service. If the card paid, this screen shows it.",
   "Parked sales": "Parked sales",
   "Still watched for payment": "Still watched for payment",
+  "Waiting for the Bitcoin price to charge in {currency}": "Waiting for the Bitcoin price to charge in {currency}",
   "Finish or clear the current sale to open a parked one.": "Finish or clear the current sale to open a parked one.",
   "Waiting": "Waiting",
   "Keep": "Keep",

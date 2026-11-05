@@ -143,6 +143,7 @@
           <button class="pos-cart-x" @click.stop.prevent="clearAll"><q-icon name="close" size="14px" /></button>
         </div>
         <div v-if="card.phase.value === 'ready'" class="pos-card-held" role="status"><svg class="pos-contactless" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" aria-hidden="true"><path d="M7.5 9.2a4.2 4.2 0 0 1 0 5.6" /><path d="M11 6.6a8 8 0 0 1 0 10.8" /><path d="M14.5 4a11.8 11.8 0 0 1 0 16" /></svg><span>{{ $t('Card held · enter the amount') }}</span></div>
+        <div v-if="priceMissing" class="pos-card-held pos-price-wait" role="status"><q-icon name="schedule" size="18px" /><span>{{ $t('Waiting for the Bitcoin price to charge in {currency}', { currency: fiatCurrency }) }}</span></div>
         <div class="pos-top">
           <div class="pos-amount-area">
             <div class="pos-amount-row"><span class="pos-currency-sym">{{ amountPrefix }}</span><span class="pos-amount-value" :class="{ 'pos-amount-sm': formattedDisplay.length > 7 }" :style="amountFontStyle">{{ formattedDisplay }}</span><span v-if="showSatsSuffix" class="pos-currency-suffix">sats</span></div>
@@ -158,7 +159,7 @@
           </div>
           <div class="pos-actions">
             <button class="pos-add-btn" :class="{ 'pos-btn-disabled': amountSats <= 0 }" :disabled="amountSats <= 0" @click.stop="addToAccumulated"><q-icon name="add" size="22px" /></button>
-            <button class="pos-primary-btn pos-charge-btn" :class="{ 'pos-btn-disabled': !walletReady || totalSatsForCharge <= 0 }" :disabled="!walletReady || totalSatsForCharge <= 0" @click.stop="proceedToTipOrCharge"><q-icon name="receipt_long" size="20px" /><span v-if="!walletReady">{{ $t('kiosk.connecting') || 'Connecting...' }}</span><span v-else-if="totalSatsForCharge > 0">{{ $t('kiosk.charge') }} {{ displaySats(totalSatsForCharge) }}</span><span v-else>{{ $t('kiosk.enterAmount') }}</span></button>
+            <button class="pos-primary-btn pos-charge-btn" :class="{ 'pos-btn-disabled': !walletReady || priceMissing || totalSatsForCharge <= 0 }" :disabled="!walletReady || priceMissing || totalSatsForCharge <= 0" @click.stop="proceedToTipOrCharge"><q-icon name="receipt_long" size="20px" /><span v-if="!walletReady">{{ $t('kiosk.connecting') || 'Connecting...' }}</span><span v-else-if="priceMissing">{{ $t('kiosk.charge') }}</span><span v-else-if="totalSatsForCharge > 0">{{ $t('kiosk.charge') }} {{ displaySats(totalSatsForCharge) }}</span><span v-else>{{ $t('kiosk.enterAmount') }}</span></button>
           </div>
         </div>
       </template>
@@ -236,7 +237,7 @@ import { haptics } from '../utils/haptics.js'
 import { useQuasar } from 'quasar'
 import { createPaymentMonitor, PaymentStatus } from '../utils/paymentMonitor.js'
 import { safeWithdrawError } from '../services/lnurlWithdraw.js'
-import { fiatSymbol as fiatSymbolFor } from 'src/utils/fiatCurrencies'
+import { fiatSymbol as fiatSymbolFor, freshRate } from 'src/utils/fiatCurrencies'
 import { formatAmount } from 'src/utils/amountFormatting'
 import { kioskWalletBlocker, KIOSK_BLOCKER } from '../utils/walletCapabilities.js'
 import { NWC_ERROR, nwcError } from '../utils/nwcErrors.js'
@@ -337,12 +338,17 @@ export default defineComponent({
     const unlockError = ref('')
     let tapCount = 0
     let tapTimer = null
+    let priceTimer = null
 
     const isFiatMode = computed(() => store.kioskDisplayCurrency === 'fiat')
-    const fiatRate = computed(() => {
-      const currency = store.preferredFiatCurrency || 'USD'
-      return store.exchangeRates[currency] || store.exchangeRates[currency.toLowerCase()] || 0
-    })
+    const fiatCurrency = computed(() => (store.preferredFiatCurrency || 'USD').toUpperCase())
+    // A fiat sale is priced only with a Bitcoin price fetched in the last
+    // hour. Without one the register says so and charges nothing: the typed
+    // number is never read as Bitcoin (#456). `now` ticks with each refresh,
+    // so a price ages out while the register stays open.
+    const now = ref(Date.now())
+    const fiatRate = computed(() => freshRate(store.exchangeRates, store.exchangeRateTimes, fiatCurrency.value, now.value))
+    const priceMissing = computed(() => isFiatMode.value && !(fiatRate.value > 0))
     const fiatSymbol = computed(() => fiatSymbolFor(store.preferredFiatCurrency || 'USD').trim())
     // The amount wears its unit the way the Home balance does: the fiat
     // symbol, or ₿ in front, or "sats" after it in the legacy format.
@@ -362,7 +368,7 @@ export default defineComponent({
     })
     const amountSats = computed(() => {
       const num = parseFloat(rawInput.value) || 0
-      if (isFiatMode.value && fiatRate.value > 0) return Math.round((num / fiatRate.value) * 100_000_000)
+      if (isFiatMode.value) return fiatRate.value > 0 ? Math.round((num / fiatRate.value) * 100_000_000) : 0
       return Math.round(num)
     })
     const totalSatsForCharge = computed(() => accumulatedSats.value + amountSats.value)
@@ -452,7 +458,7 @@ export default defineComponent({
     function clearAll() { rawInput.value = '0'; accumulatedItems.value = [] }
 
     function proceedToTipOrCharge() {
-      if (state.value !== 'input' || totalSatsForCharge.value <= 0) return
+      if (state.value !== 'input' || priceMissing.value || totalSatsForCharge.value <= 0) return
       baseAmountSats.value = totalSatsForCharge.value
       selectedTipPercent.value = 0; useRoundUp.value = false
       // Either setting alone is enough to earn the screen. Reading only
@@ -469,6 +475,8 @@ export default defineComponent({
 
     async function createCharge() {
       if (state.value !== 'input' && state.value !== 'tipping') return
+      // The price ran out on the tip screen: back to the amount, which says why.
+      if (priceMissing.value) { state.value = 'input'; return }
       const revision = ++saleRevision
       const walletId = store.kioskWalletId
       const amountSats = finalAmountSats.value
@@ -750,6 +758,13 @@ export default defineComponent({
     watch(() => [store.kioskWalletId, store.kioskEnabled, store.kioskOwnerAccess], () => cancelPayment(), { flush: 'sync' })
 
     onMounted(async () => {
+      // Home refreshes the price, but a kiosk boots straight into the
+      // register: it keeps its own price current while it prices in fiat.
+      // Started before any await, so onUnmounted always finds the timer.
+      refreshPrice()
+      priceTimer = setInterval(refreshPrice, 60_000)
+      document.addEventListener('visibilitychange', refreshPriceWhenVisible)
+
       // Load persisted state if store hasn't initialized yet
       if (!store.kioskEnabled) {
         await store.initialize()
@@ -776,11 +791,19 @@ export default defineComponent({
 
       walletReady.value = !!store.providers[store.kioskWalletId]
     })
+    function refreshPrice() {
+      now.value = Date.now()
+      if (isFiatMode.value) store.loadExchangeRates().catch(() => {})
+    }
+    function refreshPriceWhenVisible() { if (document.visibilityState === 'visible') refreshPrice() }
     isNfcAvailable().then((ok) => { nfcReady.value = ok }).catch(() => {})
-    onUnmounted(() => { saleRevision++; clearPolling(); clearTimeout(tapTimer); clearTimeout(successTimer); clearTimeout(parkPopTimer) })
+    onUnmounted(() => {
+      saleRevision++; clearPolling(); clearTimeout(tapTimer); clearTimeout(successTimer); clearTimeout(parkPopTimer)
+      clearInterval(priceTimer); document.removeEventListener('visibilitychange', refreshPriceWhenVisible)
+    })
 
     return {
-      state, walletReady, rawInput, formattedDisplay, amountFontStyle, amountSats, isFiatMode, fiatSymbol, amountPrefix, showSatsSuffix, kioskWalletName,
+      state, walletReady, rawInput, formattedDisplay, amountFontStyle, amountSats, isFiatMode, fiatSymbol, fiatCurrency, priceMissing, amountPrefix, showSatsSuffix, kioskWalletName,
       accumulatedItems, accumulatedSats, totalSatsForCharge,
       handleNumpad, addToAccumulated, removeAccumulatedItem, clearAll, proceedToTipOrCharge,
       tipOptions, selectedTipPercent, selectedTipAmount, tipInteractive,
@@ -936,6 +959,8 @@ export default defineComponent({
 .pos-card-other { margin-top: 12px; }
 .pos-card-held { align-self: center; display: inline-flex; align-items: center; gap: 8px; margin-top: 4px; padding: 8px 14px; border-radius: 999px; background: rgba(21,222,114,0.12); color: #3FE08C; font-family: 'Manrope', sans-serif; font-size: 0.8125rem; font-weight: 700; }
 .kiosk-light .pos-card-held { background: rgba(5,149,115,0.1); color: #046B53; }
+.pos-price-wait { background: rgba(245,158,11,0.14); color: #FBBF24; }
+.kiosk-light .pos-price-wait { background: rgba(180,83,9,0.1); color: #92400E; }
 .pos-pay :deep(.card-pin) { max-width: 340px; }
 .pos-paid-method { margin-top: 8px; font-size: 0.8125rem; color: #9ca3af; font-family: 'Manrope', sans-serif; }
 
