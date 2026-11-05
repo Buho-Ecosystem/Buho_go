@@ -1607,7 +1607,6 @@ export default {
   "Invalid QR code": "Ungültiger QR-Code",
   "Invoice copied": "Rechnung kopiert",
   "Invoice expired": "Rechnung abgelaufen",
-  "Invoice ready": "Rechnung bereit",
   "No description": "Keine Beschreibung",
   "PIN updated": "PIN aktualisiert",
   "Please enter your 6-digit PIN": "Bitte gib deine 6-stellige PIN ein",

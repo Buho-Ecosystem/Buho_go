@@ -1571,7 +1571,6 @@ export default {
   "Invalid QR code": "Invalid QR code",
   "Invoice copied": "Invoice copied",
   "Invoice expired": "Invoice expired",
-  "Invoice ready": "Invoice ready",
   "No description": "No description",
   "PIN updated": "PIN updated",
   "Please enter your 6-digit PIN": "Please enter your 6-digit PIN",

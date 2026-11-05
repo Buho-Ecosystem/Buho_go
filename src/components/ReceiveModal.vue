@@ -1648,12 +1648,6 @@ export default {
           this.showAmountInput = false;
         }
 
-        this.$q.notify({
-          type: 'positive',
-          message: this.$t('Invoice ready'),
-          
-        });
-
         // Start monitoring for payment confirmation
         this.startPaymentMonitor();
 
