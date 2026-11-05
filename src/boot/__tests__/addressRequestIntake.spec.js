@@ -1,4 +1,5 @@
 import * as kioskIntake from '../../services/kioskPaymentIntake.js';
+import * as paymentLink from '../../utils/paymentLink.js';
 import * as nwcIntake from '../../services/nwcConnectionIntake.js';
 import * as openActionIntake from '../../services/openActionIntake.js';
 import assert from 'node:assert/strict';
@@ -46,6 +47,7 @@ function harness(file, launchInput, kiosk = false) {
     '../utils/walletHydration': { triggerWalletStoreHydration: () => assert.fail('must not connect wallets for sharing') },
     '../utils/nostrLookup': { classifyIdentifier: () => null },
     '../utils/deepLinkRouting': { cardRouteForDeepLink: () => null, createDeepLinkDeduper },
+    '../utils/paymentLink': paymentLink,
     '../utils/logRedaction': { redactPaymentInput: () => '(redacted)' },
     '../utils/nfc': {
       addNfcListener: callback => { foregroundScan = callback; }, addNfcErrorListener: () => {}, isNfcAvailable: async () => true,

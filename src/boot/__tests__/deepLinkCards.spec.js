@@ -12,6 +12,7 @@ import { test } from 'node:test';
 import { readFileSync } from 'node:fs';
 import { transformSync } from 'esbuild';
 import * as routing from '../../utils/deepLinkRouting.js';
+import * as paymentLink from '../../utils/paymentLink.js';
 import * as nwcIntake from '../../services/nwcConnectionIntake.js';
 import * as openActionIntake from '../../services/openActionIntake.js';
 import { resetAppLock, setAppLocked } from '../../utils/appLock.js';
@@ -55,6 +56,7 @@ function harness({ activeWallet = null, kiosk = false, launchUrl = null, isReady
       createDeepLinkDeduper: () => routing.createDeepLinkDeduper({ now: () => clock }),
     },
     '../utils/logRedaction': { redactPaymentInput: () => '(redacted)' },
+    '../utils/paymentLink': paymentLink,
   };
   const { code } = transformSync(readFileSync(new URL('../deep-links.js', import.meta.url), 'utf8'), {
     format: 'cjs', supported: { 'dynamic-import': false },
@@ -220,4 +222,61 @@ test('a Quick Settings tile or a launcher shortcut opens one screen on Home (#44
   assert.equal(kiosk.walletStore.pendingOpenAction, undefined, 'a locked kiosk opens nothing');
   assert.equal(kiosk.pushes.length, 0);
   resetAppLock();
+});
+
+// BuhoGO's payment link: a checkout's "BuhoGO" entry (buhogo://pay?request=…).
+const INVOICE = 'lnbc168u1p5qypq9pp5abcdefghijklmnopqrstuvwxyz';
+const PAY_LINK = paymentLink.payLink('buhogo', `lightning:${INVOICE}`);
+
+for (const cold of [true, false]) {
+  test(`a BuhoGO payment link opens the payment with its request, ${cold ? 'from a closed app' : 'in a running app'}`, async () => {
+    const h = harness({ activeWallet: { id: 'w' }, launchUrl: cold ? PAY_LINK : null });
+    await h.start();
+    if (!cold) h.open(PAY_LINK);
+    // Exactly what a lightning: link with the same request gives.
+    assert.deepEqual(h.walletStore.pendingDeepLink, { type: 'lightning_invoice', data: INVOICE, rawInput: `lightning:${INVOICE}` });
+    assert.deepEqual(h.pushes, ['/wallet']);
+    assert.equal(h.notices.length, 0);
+  });
+}
+
+test('a cold start that delivers the payment link twice opens it once', async () => {
+  const h = harness({ activeWallet: { id: 'w' }, launchUrl: PAY_LINK });
+  await h.start();
+  h.open(PAY_LINK);
+  assert.deepEqual(h.pushes, ['/wallet']);
+});
+
+test('the prefix form older wallet lists build opens the payment too', async () => {
+  const h = harness({ activeWallet: { id: 'w' } });
+  await h.start();
+  h.open(`buhogo:lightning:${INVOICE}`);
+  assert.equal(h.walletStore.pendingDeepLink?.data, INVOICE);
+});
+
+test('a BuhoGO payment link BuhoGO cannot read says so, and pays nothing', async () => {
+  for (const link of ['buhogo://pay', 'buhogo://pay?request=', `buhogo://pay?request=bitcoin:bc1q?amount=1&lightning=${INVOICE}`, 'buhogo://pay?request=nonsense']) {
+    const h = harness({ activeWallet: { id: 'w' } });
+    await h.start();
+    h.open(link);
+    assert.deepEqual(h.notices.map((n) => n.message), ["t:BuhoGO can't open this link"], link);
+    assert.equal(h.walletStore.pendingDeepLink, null, link);
+    assert.deepEqual(h.pushes, [], link);
+  }
+});
+
+test('a payment link needs a wallet like any payment link', async () => {
+  const h = harness();
+  await h.start();
+  h.open(PAY_LINK);
+  assert.deepEqual(h.notices.map((n) => n.message), ['t:Set up a wallet first']);
+  assert.equal(h.walletStore.pendingDeepLink, null);
+});
+
+test('a locked kiosk never pays from a payment link', async () => {
+  const h = harness({ activeWallet: { id: 'w' }, kiosk: true });
+  await h.start();
+  h.open(PAY_LINK);
+  assert.equal(h.walletStore.pendingDeepLink, null);
+  assert.deepEqual(h.pushes, []);
 });
