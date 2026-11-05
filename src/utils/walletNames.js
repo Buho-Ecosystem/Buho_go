@@ -45,3 +45,14 @@ export function walletNameCopy(problem, t) {
     default: return '';
   }
 }
+
+/** The kind of wallet in words, for a caption: "Spark", "LNbits", "NWC". */
+export function walletTypeLabel(wallet) {
+  switch (wallet?.type) {
+    case 'spark': return 'Spark';
+    case 'arkade': return 'Arkade';
+    case 'lnbits': return 'LNbits';
+    case 'nwc':
+    default: return 'NWC';
+  }
+}
