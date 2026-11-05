@@ -5,6 +5,7 @@ import { transformSync } from 'esbuild';
 import * as Vue from 'vue';
 import * as Pinia from 'pinia';
 import * as balanceState from '../../utils/balanceState.js';
+import * as kioskPin from '../../utils/kioskPin.js';
 import * as amount from '../../utils/amountFormatting.js';
 import { createSparkLifecycle } from '../../services/sparkLifecycle.js';
 import * as nwcWallet from '../../utils/nwcWallet.js';
@@ -35,6 +36,7 @@ function harness(ctx, type = 'lnbits') {
     pinia: Pinia,
     '../providers/WalletFactory': { WALLET_TYPES: { SPARK: 'spark', LNBITS: 'lnbits', ARKADE: 'arkade', NWC: 'nwc' } },
     '../utils/balanceState.js': balanceState,
+    '../utils/kioskPin.js': kioskPin,
     // The pure NWC rules the store follows (connection grants, names, errors).
     '../utils/nwcWallet.js': nwcWallet,
     '../utils/nwcConnection.js': nwcConnection,

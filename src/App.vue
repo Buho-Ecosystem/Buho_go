@@ -38,6 +38,7 @@ import { useWalletStore } from 'src/stores/wallet'
 import { authenticate as biometricAuth, isBiometricAvailable } from 'src/utils/biometric'
 import { triggerWalletStoreHydration, readPersistedWalletState } from 'src/utils/walletHydration'
 import { useAddressBookSync } from 'src/composables/useAddressBookSync'
+import { useQuickAccessSync } from 'src/composables/useQuickAccessSync'
 import PaymentErrorDialog from 'src/components/PaymentErrorDialog.vue'
 import ToastHost from 'src/components/toasts/ToastHost.vue'
 import IncomingPaymentHost from 'src/components/IncomingPaymentHost.vue'
@@ -65,6 +66,9 @@ export default defineComponent({
     // any surface publish, whether or not the Address Book page is
     // ever opened. No-ops on kiosk devices.
     useAddressBookSync()
+    // Quick Settings tiles and launcher shortcuts follow the app's state
+    // (wallet, kiosk mode, app lock, contacts, language). Android only.
+    useQuickAccessSync()
 
     const locked = ref(false)
     // Screens that read the clipboard on foreground wait until the lock is gone.

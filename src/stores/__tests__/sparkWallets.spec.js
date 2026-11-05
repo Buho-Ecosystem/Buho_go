@@ -14,6 +14,7 @@ import { transformSync } from 'esbuild';
 import { parse, compileScript } from '@vue/compiler-sfc';
 import * as Vue from 'vue';
 import * as userErrors from '../../utils/userErrors.js';
+import { hashKioskPin } from '../../utils/kioskPin.js';
 import * as walletNames from '../../utils/walletNames.js';
 import * as sparkAccountRules from '../../utils/sparkAccounts.js';
 import * as backupStatus from '../../utils/backupStatus.js';
@@ -432,7 +433,7 @@ test('at start only the wallets on screen hold up loading; the rest connect behi
   const wallets = [await savedSpark('A', 1, { group: null }), await savedSpark('B', 2, { group: null }), await savedSpark('C', 3, { group: null })];
   const h = createHarness({
     connect: async (wallet) => { if (wallet.id !== 'A' && wallet.id !== 'C') await gate; },
-    storage: { buhoGO_wallet_store: JSON.stringify({ wallets, activeWalletId: 'A', kioskWalletId: 'C', sparkModelVersion: 2 }) },
+    storage: { buhoGO_wallet_store: JSON.stringify({ wallets, activeWalletId: 'A', kioskEnabled: true, kioskWalletId: 'C', sparkModelVersion: 2 }) },
   });
   await h.store.initialize();
   assert.equal(h.store.connectionStates.A?.connected, true);
@@ -441,6 +442,23 @@ test('at start only the wallets on screen hold up loading; the rest connect behi
   release();
   await new Promise((resolve) => setTimeout(resolve, 20));
   assert.equal(h.store.connectionStates.B?.connected, true);
+});
+
+test('with kiosk off, the wallet kept for the register does not hold up loading', async () => {
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  const wallets = [await savedSpark('A', 1, { group: null }), await savedSpark('C', 3, { group: null })];
+  const h = createHarness({
+    connect: async (wallet) => { if (wallet.id === 'C') await gate; },
+    storage: { buhoGO_wallet_store: JSON.stringify({ wallets, activeWalletId: 'A', kioskEnabled: false, kioskWalletId: 'C', sparkModelVersion: 2 }) },
+  });
+  await h.store.initialize();
+  assert.equal(h.store.connectionStates.A?.connected, true);
+  assert.notEqual(h.store.connectionStates.C?.connected, true, 'C connects behind, like any other wallet');
+  assert.equal(h.store.kioskWalletId, 'C', 'turning kiosk off keeps its wallet for next time');
+  release();
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.equal(h.store.connectionStates.C?.connected, true);
 });
 
 test('pockets from the oldest model become wallets on the same phrase', async () => {
@@ -475,11 +493,13 @@ const SETTINGS = {
   preferredFiatCurrency: 'EUR', denominationCurrency: 'btc', useBip177Format: false, balanceHidden: true,
   biometricsEnabled: true, kioskTipValues: [7, 14, 21], kioskDisplayCurrency: 'fiat',
 };
+// PIN 2468, hashed as utils/kioskPin.js saves it.
+const KIOSK_PIN_HASH = hashKioskPin('2468', '5a17');
 // The rest of what a reload once put back to its defaults: the kiosk, screen
 // privacy and the backup state.
 const DEVICE = {
   ...SETTINGS, defaultDisplayCurrency: 'fiat', hasBackedUp: true, privacyScreenEnabled: true,
-  kioskEnabled: true, kioskPin: '2468', kioskWalletId: 'B', kioskTipEnabled: true, kioskRoundUpEnabled: true,
+  kioskEnabled: true, kioskPinHash: KIOSK_PIN_HASH, kioskWalletId: 'B', kioskTipEnabled: true, kioskRoundUpEnabled: true,
 };
 const LNBITS = { name: 'Kitty', serverUrl: 'https://lnbits.example', adminKey: 'admin-key' };
 const OTHER_WINDOW_WALLET = { id: 'X', type: 'nwc', name: 'Added in another tab', nwcUrl: 'nostr+walletconnect://beef?relay=wss%3A%2F%2Frelay.example&secret=0the' };
@@ -982,6 +1002,40 @@ test('wallets this version cannot use stay saved, and settings saves still land'
   for (const entry of [unknownType, noUrl, noId]) {
     assert.ok(saved.wallets.some((w) => JSON.stringify(w) === JSON.stringify(entry)), `${entry.name} is still saved as it was`);
   }
+});
+
+test('a kiosk PIN saved in plain text leaves storage on the next start and still opens the register', async () => {
+  const h = reloaded([await savedSpark('B', 1, { group: null })], { state: { ...SETTINGS, kioskEnabled: true, kioskPin: '2468', kioskWalletId: 'B' } });
+  await h.store.initialize();
+  await tick();
+  assert.ok(!h.local.getItem(STORE_KEY).includes('2468'), 'no plain PIN left in storage');
+  assert.equal(h.saved().kioskPinHash, h.store.kioskPinHash);
+  assert.equal(h.store.unlockToOwnerMode('1111'), false);
+  assert.equal(h.store.unlockToOwnerMode('2468'), true);
+});
+
+test('turning kiosk off removes only the PIN; its wallet, tips and display stay for next time', async () => {
+  const h = reloaded([await savedSpark('B', 1, { group: null })]);
+  await h.store.initialize();
+  await h.store.enableKiosk('2468', 'B');
+  await h.store.setKioskTipEnabled(true);
+  await h.store.setKioskRoundUpEnabled(true);
+  await h.store.setKioskDisplayCurrency('fiat');
+  assert.ok(!h.local.getItem(STORE_KEY).includes('2468'), 'only the hash is saved');
+  await h.store.changeKioskPin('1357');
+  h.store.kioskOwnerAccess = false; // back at the register
+  assert.equal(h.store.unlockToOwnerMode('2468'), false, 'the old PIN no longer opens the app');
+  assert.equal(h.store.unlockToOwnerMode('1357'), true);
+  await h.store.disableKiosk();
+  await tick();
+  const saved = h.saved();
+  assert.equal(saved.kioskEnabled, false);
+  assert.equal(saved.kioskPinHash, '');
+  assert.equal(saved.kioskWalletId, 'B');
+  assert.equal(saved.kioskTipEnabled, true);
+  assert.equal(saved.kioskRoundUpEnabled, true);
+  assert.equal(saved.kioskDisplayCurrency, 'fiat');
+  assert.equal(h.store.unlockToOwnerMode('1357'), false, 'no PIN opens anything once it is gone');
 });
 
 test('an entry without an id never blocks saving', async () => {

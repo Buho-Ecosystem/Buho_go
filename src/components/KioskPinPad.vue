@@ -53,14 +53,16 @@ export default defineComponent({
     }
 
     watch(pin, (val) => { if (val.length === 4) emit('complete', val) })
-    watch(() => props.errorMessage, (msg) => {
-      if (msg) { hasError.value = true; shaking.value = true; pin.value = ''; setTimeout(() => { shaking.value = false }, 500) }
-    })
+    /** A wrong entry: shake and clear. The parent calls it on every wrong
+     *  entry, since a second wrong PIN leaves the same error message and the
+     *  watcher below would not run again (the pad stayed full and dead). */
+    function fail() { hasError.value = true; shaking.value = true; pin.value = ''; setTimeout(() => { shaking.value = false }, 500) }
+    watch(() => props.errorMessage, (msg) => { if (msg) fail() })
 
     function reset() { pin.value = ''; hasError.value = false; shaking.value = false }
-    expose({ reset })
+    expose({ reset, fail })
 
-    return { pin, shaking, hasError, keypadButtons, handleKey, reset }
+    return { pin, shaking, hasError, keypadButtons, handleKey, reset, fail }
   }
 })
 </script>

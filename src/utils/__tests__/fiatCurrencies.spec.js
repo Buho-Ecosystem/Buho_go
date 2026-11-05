@@ -17,6 +17,8 @@ import {
   SELECTABLE_FIAT_CURRENCIES,
   fiatSymbol,
   fiatFlag,
+  freshRate,
+  RATE_MAX_AGE_MS,
 } from '../fiatCurrencies.js'
 
 let passed = 0
@@ -88,6 +90,19 @@ test('fiatFlag is case-insensitive and falls back to a neutral glyph', () => {
   assert.equal(fiatFlag('brl'), FIAT_FLAGS.BRL)
   assert.equal(fiatFlag('xyz'), '💱')
   assert.equal(fiatFlag(undefined), '💱')
+})
+
+test('freshRate uses a price for an hour after it was fetched, then not at all (#456)', () => {
+  const now = 1_800_000_000_000
+  const rates = { usd: 100_000, kes: 10_000_000 }
+  assert.equal(RATE_MAX_AGE_MS, 60 * 60 * 1000)
+  assert.equal(freshRate(rates, { usd: now - 59 * 60 * 1000 }, 'USD', now), 100_000)
+  assert.equal(freshRate(rates, { usd: now - RATE_MAX_AGE_MS }, 'usd', now), 100_000)
+  assert.equal(freshRate(rates, { usd: now - RATE_MAX_AGE_MS - 1 }, 'USD', now), 0)
+  assert.equal(freshRate(rates, { usd: now }, 'KES', now), 0, 'each currency needs its own fetch time')
+  assert.equal(freshRate(rates, {}, 'USD', now), 0, 'a price of unknown age is not used')
+  assert.equal(freshRate({ usd: 0 }, { usd: now }, 'USD', now), 0)
+  assert.equal(freshRate(undefined, undefined, 'USD', now), 0)
 })
 
 console.log(`\n${passed} passed, ${failed} failed`)

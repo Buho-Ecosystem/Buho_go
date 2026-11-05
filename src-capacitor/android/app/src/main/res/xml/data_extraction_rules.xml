@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Android backup and transfer to a new phone, Android 12 and newer (older
+  versions read backup_rules.xml). Everything is backed up as before, except
+  the Quick access state (QuickAccessState.java): which tiles were added
+  belongs to this phone, and a restore would claim tiles that are not there.
+-->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="sharedpref" path="BuhoGoQuickAccess.xml" />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="sharedpref" path="BuhoGoQuickAccess.xml" />
+    </device-transfer>
+</data-extraction-rules>

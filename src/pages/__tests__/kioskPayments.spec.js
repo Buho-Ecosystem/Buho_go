@@ -6,6 +6,7 @@ import * as Vue from 'vue';
 import * as monitor from '../../utils/paymentMonitor.js';
 import * as roundUp from '../../utils/roundUp.js';
 import * as fiat from '../../utils/fiatCurrencies.js';
+import * as amountFormatting from '../../utils/amountFormatting.js';
 import { useKioskCardPayment } from '../../composables/useKioskCardPayment.js';
 import { useKioskParkedSales } from '../../composables/useKioskParkedSales.js';
 import * as walletCapabilities from '../../utils/walletCapabilities.js';
@@ -24,7 +25,7 @@ let saleNumber = 0;
 const nextSale = () => { saleNumber++; return { paymentRequest: `lnbc-sale-${saleNumber}`, paymentHash: `sale-hash-${saleNumber}`, expiresAt: Math.floor(Date.now() / 1000) + 900 }; };
 const deferred = () => { let resolve; const promise = new Promise(done => { resolve = done; }); return { resolve, promise }; };
 function harness(ctx, options = {}) {
-  const h = { paid: false, created: [], authorized: [], lookups: [], receipts: [], errors: [], monitors: [], notices: [], dialogs: [] };
+  const h = { paid: false, created: [], authorized: [], lookups: [], receipts: [], errors: [], monitors: [], notices: [], dialogs: [], priceLoads: 0 };
   h.storage = options.storage || new Map();
   globalThis.document = { visibilityState: 'visible', addEventListener() {}, removeEventListener() {} };
   globalThis.requestAnimationFrame ??= fn => setTimeout(fn, 0);
@@ -39,13 +40,15 @@ function harness(ctx, options = {}) {
     kioskWallet: { id: 'merchant', name: 'Register', type: 'lnbits' },
     wallets: [{ id: 'merchant', type: 'lnbits' }], activeWalletId: 'personal',
     kioskTipEnabled: false, kioskTipValues: [5, 10, 20], kioskRoundUpEnabled: false,
-    kioskDisplayCurrency: 'sats', preferredFiatCurrency: 'USD', exchangeRates: {},
+    kioskDisplayCurrency: 'sats', preferredFiatCurrency: 'USD', exchangeRates: {}, exchangeRateTimes: {},
+    async loadExchangeRates() { h.priceLoads += 1; },
     providers: { merchant: provider }, balances: { merchant: 0 }, pendingDeepLink: options.pending || null,
     async ensureWalletConnectedForTransfer(id) { assert.equal(id, 'merchant'); return provider; },
     // The store's receive methods, answered by the stand-in wallet above.
     async createInvoiceDetailsOnWallet(id, amount, description) { assert.equal(id, 'merchant'); return provider.createInvoice({ amount, description }); },
     async lookupInvoiceOnWallet(id, hash) { assert.equal(id, 'merchant'); return provider.lookupInvoice(hash); },
     showPaymentError: error => h.errors.push(error),
+    ...options.storeState,
     refreshBalance: async id => { assert.equal(id, 'merchant'); },
   });
   const dependencies = {
@@ -53,6 +56,7 @@ function harness(ctx, options = {}) {
     'stores/wallet': { useWalletStore: () => store },
     'stores/transactionMetadata': { useTransactionMetadataStore: () => ({ enqueuePendingContactLink: async receipt => h.receipts.push(receipt) }) },
     'components/KioskPinPad.vue': {}, 'src/utils/roundUp': roundUp, 'src/utils/fiatCurrencies': fiat,
+    'src/utils/amountFormatting': amountFormatting,
     qrcode: { toDataURL: async () => 'data:image/png;base64,test' }, '@getalby/lightning-tools': {},
     '../components/WithdrawAuthorization.vue': {}, '../components/CardFace.vue': {},
     '../composables/useKioskParkedSales.js': { useKioskParkedSales: args => useKioskParkedSales({ ...args, watchMs: 5, storage: { getItem: key => h.storage.get(key) ?? null, setItem: (key, value) => h.storage.set(key, value) } }) },
@@ -321,4 +325,47 @@ test('removing a sale that can still be paid asks first', async ctx => {
   assert.equal(h.dialogs.length, 1);
   h.dialogs[0].ok();
   assert.equal(h.vm.parkedCount, 0);
+});
+
+test('the register shows amounts in the Bitcoin format chosen in Settings (#453)', async ctx => {
+  const h = harness(ctx); await settle();
+  const n = (1234).toLocaleString();
+  assert.equal(h.vm.amountPrefix, '₿', 'the default format puts ₿ in front');
+  assert.equal(h.vm.showSatsSuffix, false);
+  assert.equal(h.vm.displaySats(1234), `₿ ${n}`);
+  h.store.useBip177Format = false; await settle();
+  assert.equal(h.vm.amountPrefix, '');
+  assert.equal(h.vm.showSatsSuffix, true, 'only the legacy format says sats');
+  assert.equal(h.vm.displaySats(1234), `${n} sats`);
+  h.store.kioskDisplayCurrency = 'fiat'; h.store.exchangeRates = { usd: 100_000 }; h.store.exchangeRateTimes = { usd: Date.now() }; await settle();
+  assert.equal(h.vm.amountPrefix, '$');
+  assert.equal(h.vm.showSatsSuffix, false);
+  assert.equal(h.vm.displaySats(1234), '$ 1.23', 'fiat keeps its two decimals');
+});
+
+test('a fiat register charges only with a Bitcoin price from the last hour, and says why it waits (#456)', async ctx => {
+  const h = harness(ctx, { storeState: { kioskDisplayCurrency: 'fiat' } }); await settle();
+  assert.equal(h.priceLoads, 1, 'the register asks for the price itself');
+  h.vm.rawInput = '12.50'; await settle();
+  assert.equal(h.vm.priceMissing, true);
+  assert.equal(h.vm.amountSats, 0, 'without a price the typed number is never read as Bitcoin');
+  h.vm.proceedToTipOrCharge(); await settle();
+  assert.equal(h.created.length, 0, 'nothing is charged');
+  h.store.exchangeRates = { usd: 100_000 }; h.store.exchangeRateTimes = { usd: Date.now() - 61 * 60 * 1000 }; await settle();
+  assert.equal(h.vm.priceMissing, true, 'a price older than an hour is not used');
+  h.vm.proceedToTipOrCharge(); await settle();
+  assert.equal(h.created.length, 0);
+  h.store.exchangeRateTimes = { usd: Date.now() - 59 * 60 * 1000 }; await settle();
+  assert.equal(h.vm.priceMissing, false, 'the last known price counts for an hour');
+  h.vm.proceedToTipOrCharge(); await settle();
+  assert.equal(h.created.length, 1);
+  assert.equal(h.created[0].amount, 12_500, '12.50 at 100,000 per bitcoin');
+});
+
+test('a register in Bitcoin needs no price and never fetches one', async ctx => {
+  const h = harness(ctx); await settle();
+  assert.equal(h.priceLoads, 0);
+  assert.equal(h.vm.priceMissing, false);
+  h.vm.rawInput = '2100'; h.vm.proceedToTipOrCharge(); await settle();
+  assert.equal(h.created[0].amount, 2100);
 });

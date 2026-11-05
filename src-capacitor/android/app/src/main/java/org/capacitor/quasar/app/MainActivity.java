@@ -71,9 +71,19 @@ public class MainActivity extends BridgeActivity implements NfcAdapter.ReaderCal
         registerPlugin(FileExportPlugin.class);
         registerPlugin(LaunchPlugin.class);
         registerPlugin(WalletAppsPlugin.class);
+        registerPlugin(QuickAccessPlugin.class);
 
         if (SecureScreenPlugin.readPersistedPreference(this)) {
             getWindow().addFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE);
+        }
+
+        // A recreated activity (the font size changed, or the app is reopened
+        // from Recents after Android stopped it) gets its last intent again,
+        // and the app would read its link as new. A Quick Settings tile's or
+        // a shortcut's link must not open its screen a second time.
+        if (savedInstanceState != null || (getIntent().getFlags() & Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY) != 0) {
+            Intent plain = OpenActionIntents.withoutOpenLink(getIntent());
+            if (plain != null) setIntent(plain);
         }
 
         super.onCreate(savedInstanceState);
