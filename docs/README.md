@@ -32,6 +32,7 @@ How each feature works and the rules that keep it right, written for developers 
 | [LUD-23 address sharing](LUD23_APP_WIDE_PLAN.md) | Asking for and sharing payment addresses across the app |
 | [Clipboard offer](CLIPBOARD_OFFER.md) | Offering to pay what was just copied, once |
 | [Payment links](PAYMENT_LINKS.md) | `buhogo://pay?request=…`: links that open BuhoGO in particular, for checkouts that list wallets |
+| [Pay from another wallet](PAY_FROM_ANOTHER_WALLET.md) | Receive opens another wallet app on the phone with the request; the wallet catalog for iPhone and where each link comes from |
 | [QR scanning without Play services](QR_SCANNER_FALLBACK.md) | Scanning on phones without Google Play services |
 
 ## Backup and identity

@@ -10,6 +10,7 @@ import nwc from './nwc.js';
 import walletRemoval from './walletRemoval.js';
 import autoTransfer from './autoTransfer.js';
 import boltCard from './boltCard.js';
+import walletApps from './walletApps.js';
 export default {
   ...requests,
   ...profilePayment,
@@ -61,6 +62,7 @@ export default {
   ...walletRemoval,
   ...autoTransfer,
   ...boltCard,
+  ...walletApps,
   // Spend: Bitrefill door
   "Gift cards, mobile top-ups and more": "Gift cards, mobile top-ups and more",
   "Bitrefill is on its way": "Bitrefill is on its way",
@@ -1571,7 +1573,6 @@ export default {
   "Invalid QR code": "Invalid QR code",
   "Invoice copied": "Invoice copied",
   "Invoice expired": "Invoice expired",
-  "Invoice ready": "Invoice ready",
   "No description": "No description",
   "PIN updated": "PIN updated",
   "Please enter your 6-digit PIN": "Please enter your 6-digit PIN",
