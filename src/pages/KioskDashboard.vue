@@ -544,7 +544,9 @@ export default defineComponent({
         } },
         onStatusChange(status) {
           if (paymentMonitor !== monitor || invoiceData.value !== invoice) return
-          if (status === PaymentStatus.CONFIRMED) { paidByCard.value = card.phase.value === 'waiting'; clearPolling(); showSuccess() }
+          // A payment while the card pays is the card's: the QR is not on
+          // screen then, and many card services pay before they answer OK.
+          if (status === PaymentStatus.CONFIRMED) { paidByCard.value = ['submitting', 'waiting'].includes(card.phase.value); clearPolling(); showSuccess() }
           else if (status === PaymentStatus.EXPIRED || status === PaymentStatus.ERROR) {
             paymentProblem.value = t(status === PaymentStatus.EXPIRED ? 'Payment expired' : 'Could not check payment status. Please check again.')
             retryStatus.value = status === PaymentStatus.ERROR

@@ -138,6 +138,23 @@ test('QR-first tap reuses invoice and unrelated balance growth cannot settle the
   assert.ok(h.lookups.every(hash => hash === 'sale-hash'));
 });
 
+// Many card services pay first and answer OK after, so the watch can see the
+// payment while the card's request is still open.
+test('a card whose service pays before it answers is still "Paid by card"', async ctx => {
+  const answer = deferred();
+  const h = harness(ctx, { authorize: () => answer.promise });
+  await settle();
+  h.vm.rawInput = '100'; h.vm.proceedToTipOrCharge(); await settle();
+  h.tap(); await settle();
+  assert.equal(h.vm.card.phase.value, 'submitting');
+  h.paid = true;
+  await h.monitors[0].checkNow();
+  assert.equal(h.vm.state, 'success');
+  assert.equal(h.vm.paidByCard, true);
+  answer.resolve(); await settle();
+  assert.equal(h.vm.state, 'success');
+});
+
 test('parking clears card credentials and resuming preserves the invoice including tip', async ctx => {
   const h = harness(ctx); await settle();
   h.store.kioskTipEnabled = true;
