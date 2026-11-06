@@ -40,11 +40,23 @@ test('foreground catch-up and scheduled polls share a single lookup', async ctx 
   let calls = 0;
   await h.start(() => { calls++; return pending.promise; });
   const first = h.monitor.checkNow();
-  await h.monitor.checkNow();
+  const second = h.monitor.checkNow();
   assert.equal(calls, 1);
   pending.resolve({ paid: true });
-  await first;
+  await Promise.all([first, second]);
   assert.equal(h.events.filter(s => s === PaymentStatus.CONFIRMED).length, 1);
+});
+test('a check asked for while one is under way waits for its answer', async ctx => {
+  const h = harness(ctx), pending = deferred();
+  await h.start(() => pending.promise);
+  void h.monitor.checkNow();
+  let answered = false;
+  const asked = h.monitor.checkNow().then(() => { answered = true; });
+  await new Promise(done => setImmediate(done));
+  assert.equal(answered, false, 'not before the lookup answers');
+  pending.resolve({ paid: true });
+  await asked;
+  assert.equal(h.events.at(-1), PaymentStatus.CONFIRMED);
 });
 test('a stopped monitor ignores a late paid result', async ctx => {
   const h = harness(ctx), pending = deferred();
