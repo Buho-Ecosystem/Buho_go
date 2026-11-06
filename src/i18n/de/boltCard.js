@@ -24,6 +24,7 @@ export default {
   "Paid by card": "Mit Karte bezahlt",
   "Card locked after too many wrong PINs.": "Karte nach zu vielen falschen PINs gesperrt.",
   "This card can't pay this amount.": "Diese Karte kann diesen Betrag nicht bezahlen.",
+  "No payment came from the card.": "Von der Karte kam keine Zahlung.",
   "No answer from the card's service. If the card paid, this screen shows it.": "Keine Antwort vom Dienst der Karte. Hat die Karte bezahlt, zeigt dieser Bildschirm es an.",
   "Parked sales": "Geparkte Verkäufe",
   "Still watched for payment": "Zahlungen werden weiter erkannt",

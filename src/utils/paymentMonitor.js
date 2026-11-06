@@ -44,6 +44,7 @@ export class PaymentMonitor {
     this.consecutiveErrors = 0;
     this.revision = 0;
     this.checking = false;
+    this.pendingCheck = null;
   }
 
   /**
@@ -113,16 +114,21 @@ export class PaymentMonitor {
 
     clearTimeout(this.timeoutId);
     this.timeoutId = setTimeout(() => {
-      this._checkPayment();
+      this.checkNow();
     }, this.currentInterval);
   }
 
   /**
-   * Check payment status
-   * @private
+   * Check payment status now. A check already under way is the one to wait
+   * for, so awaiting this always waits for an answer.
+   * @returns {Promise<void>}
    */
-  checkNow() { return this._checkPayment(); }
+  checkNow() {
+    if (!this.checking) this.pendingCheck = this._checkPayment();
+    return this.pendingCheck;
+  }
 
+  /** @private */
   async _checkPayment() {
     if (!this.isMonitoring || this.checking) return;
     clearTimeout(this.timeoutId);

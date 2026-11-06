@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { effectScope, shallowRef } from 'vue';
-import { useKioskCardPayment } from '../useKioskCardPayment.js';
+import { CARD_NOT_PAID, CARD_PAYMENT_WAIT_MS, LAST_CHECK_MS, useKioskCardPayment } from '../useKioskCardPayment.js';
 
 const info = { callback: 'https://card.example/callback', k1: 'test', minSats: 1, maxSats: 1000, defaultDescription: 'Bolt Card' };
 const invoice = { paymentRequest: 'lnbc-test', amountSats: 100, walletId: 'kiosk-wallet' };
@@ -17,6 +17,7 @@ function harness(ctx, options = {}) {
   const resolutions = [];
   const card = scope.run(() => useKioskCardPayment({ sale,
     onError: error => errors.push(error),
+    checkPayment: options.checkPayment && (() => options.checkPayment({ card, sale })),
     resolve: async (...args) => { resolutions.push(args); return options.resolve ? options.resolve(...args) : info; },
     authorize: async (...args) => { submissions.push(args); return options.authorize?.(...args); },
   }));
@@ -116,6 +117,84 @@ test('a failed callback is not automatically retried', async ctx => {
   assert.equal(h.errors.length, 1);
   assert.equal(h.sale.value, invoice, 'keep the existing invoice available for settlement');
 });
+
+// LUD-03: the service answers OK and pays afterwards; one that cannot pay
+// never does (#460).
+test('a card whose service said OK but never pays gives the sale back after the wait', async ctx => {
+  ctx.mock.timers.enable({ apis: ['setTimeout'] });
+  const h = harness(ctx);
+  h.sale.value = invoice;
+  h.card.accept(tap());
+  await settle();
+  assert.equal(h.card.phase.value, 'waiting');
+  ctx.mock.timers.tick(CARD_PAYMENT_WAIT_MS - 1);
+  assert.equal(h.card.phase.value, 'waiting', 'a slow payment gets the whole wait');
+  assert.equal(h.card.accept(tap()), false, 'no second tap while the first may still pay');
+  ctx.mock.timers.tick(1);
+  await settle();
+  assert.equal(h.card.phase.value, 'empty');
+  assert.equal(h.card.host.value, '');
+  assert.deepEqual(h.errors.map(error => error.code), [CARD_NOT_PAID]);
+  assert.equal(h.sale.value, invoice, 'the same invoice stays on screen to be paid another way');
+  assert.equal(h.card.accept(tap()), true, 'the next tap can try again');
+  await settle();
+  assert.equal(h.submissions.length, 2);
+  assert.equal(h.submissions[1][1], invoice.paymentRequest);
+});
+
+test('a payment the last check finds ends the sale with the card still paying, and no line says otherwise', async ctx => {
+  ctx.mock.timers.enable({ apis: ['setTimeout'] });
+  const checked = [];
+  // The page's check finds the payment and ends the sale.
+  const h = harness(ctx, { checkPayment: ({ card, sale }) => { checked.push(card.phase.value); sale.value = null; } });
+  h.sale.value = invoice;
+  h.card.accept(tap());
+  await settle();
+  assert.equal(checked.length, 0, 'no check before the wait is over');
+  ctx.mock.timers.tick(CARD_PAYMENT_WAIT_MS);
+  await settle();
+  assert.deepEqual(checked, ['waiting']);
+  assert.equal(h.card.phase.value, 'empty');
+  ctx.mock.timers.tick(LAST_CHECK_MS);
+  assert.equal(h.errors.length, 0);
+});
+
+for (const [name, checkPayment] of [['never answers', () => new Promise(() => {})], ['fails', async () => { throw new Error('offline'); }]]) {
+  test(`a last check that ${name} still lets the card go, once`, async ctx => {
+    ctx.mock.timers.enable({ apis: ['setTimeout'] });
+    const h = harness(ctx, { checkPayment });
+    h.sale.value = invoice;
+    h.card.accept(tap());
+    await settle();
+    ctx.mock.timers.tick(CARD_PAYMENT_WAIT_MS);
+    await settle();
+    if (name === 'never answers') {
+      assert.equal(h.card.phase.value, 'waiting', 'the card stays while the check may still answer');
+      ctx.mock.timers.tick(LAST_CHECK_MS);
+    }
+    assert.equal(h.card.phase.value, 'empty');
+    ctx.mock.timers.tick(LAST_CHECK_MS);
+    await settle();
+    assert.deepEqual(h.errors.map(error => error.code), [CARD_NOT_PAID]);
+  });
+}
+
+for (const reason of ['paid', 'cancel', 'new sale']) {
+  test(`a wait that ends early (${reason}) never reports the card unpaid`, async ctx => {
+    ctx.mock.timers.enable({ apis: ['setTimeout'] });
+    const h = harness(ctx);
+    h.sale.value = invoice;
+    h.card.accept(tap());
+    await settle();
+    assert.equal(h.card.phase.value, 'waiting');
+    if (reason === 'paid') h.sale.value = null;
+    if (reason === 'cancel') h.card.reset();
+    if (reason === 'new sale') h.sale.value = { ...invoice, paymentRequest: 'lnbc-next' };
+    ctx.mock.timers.tick(CARD_PAYMENT_WAIT_MS);
+    assert.equal(h.errors.length, 0);
+    assert.equal(h.card.phase.value, 'empty');
+  });
+}
 
 test('the card face names the card service from the tap on', ctx => {
   const h = harness(ctx);

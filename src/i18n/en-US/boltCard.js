@@ -24,6 +24,7 @@ export default {
   "Paid by card": "Paid by card",
   "Card locked after too many wrong PINs.": "Card locked after too many wrong PINs.",
   "This card can't pay this amount.": "This card can't pay this amount.",
+  "No payment came from the card.": "No payment came from the card.",
   "No answer from the card's service. If the card paid, this screen shows it.": "No answer from the card's service. If the card paid, this screen shows it.",
   "Parked sales": "Parked sales",
   "Still watched for payment": "Still watched for payment",
