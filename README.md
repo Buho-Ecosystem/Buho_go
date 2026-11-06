@@ -4,12 +4,12 @@
 
 **The friendly Bitcoin wallet. Hold your own keys, pay anyone, spend anywhere.**
 
-[![Web app](https://img.shields.io/badge/Web-go.mybuho.de-15DE72)](https://go.mybuho.de)
-[![Google Play](https://img.shields.io/badge/Android-Google%20Play-3DDC84?logo=googleplay&logoColor=white)](https://play.google.com/store/apps/details?id=mybuho.buhogo)
-[![Zapstore](https://img.shields.io/badge/Android-Zapstore-9B59B6)](https://zapstore.dev/apps/mybuho.buhogo)
-[![Obtainium](https://img.shields.io/badge/Android-Obtainium-6D4AFF)](https://apps.obtainium.imranr.dev/redirect?r=obtainium://app/%7B%22id%22%3A%22mybuho.buhogo%22%2C%22url%22%3A%22https%3A%2F%2Fgithub.com%2FBuho-Ecosystem%2FBuho_go%22%2C%22author%22%3A%22Buho-Ecosystem%22%2C%22name%22%3A%22BuhoGO%22%7D)
-[![Docker](https://img.shields.io/badge/Docker-robinvonmises%2Fbuho__go-2496ED?logo=docker&logoColor=white)](https://hub.docker.com/r/robinvonmises/buho_go)
-[![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](LICENSE)
+[![Web app](.github/media/badges/web.svg)](https://go.mybuho.de)
+[![Google Play](.github/media/badges/google-play.svg)](https://play.google.com/store/apps/details?id=mybuho.buhogo)
+[![Zapstore](.github/media/badges/zapstore.svg)](https://zapstore.dev/apps/mybuho.buhogo)
+[![Obtainium](.github/media/badges/obtainium.svg)](https://apps.obtainium.imranr.dev/redirect?r=obtainium://app/%7B%22id%22%3A%22mybuho.buhogo%22%2C%22url%22%3A%22https%3A%2F%2Fgithub.com%2FBuho-Ecosystem%2FBuho_go%22%2C%22author%22%3A%22Buho-Ecosystem%22%2C%22name%22%3A%22BuhoGO%22%7D)
+[![Docker](.github/media/badges/docker.svg)](https://hub.docker.com/r/robinvonmises/buho_go)
+[![License: AGPL-3.0](.github/media/badges/license.svg)](LICENSE)
 
 [**Open the app**](https://go.mybuho.de) · [**Docs**](https://docs-buhogo.netlify.app/) · [**Developers**](#for-developers) · [**Contribute**](CONTRIBUTING.md)
 
