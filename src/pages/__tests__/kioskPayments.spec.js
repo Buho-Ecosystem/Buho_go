@@ -236,6 +236,15 @@ test('a card that never pays gives the sale back to the QR with Park and Cancel,
   assert.equal(h.created.length, 1);
 });
 
+test('a payment no check has seen yet when the wait ends completes the sale as "Paid by card", with no line', async ctx => {
+  const h = await cardThatNeverPays(ctx);
+  h.paid = true; // paid while the phone slept, or since the last check
+  await wait(30); await settle();
+  assert.equal(h.vm.state, 'success');
+  assert.equal(h.vm.paidByCard, true);
+  assert.equal(h.vm.cardProblem, '');
+});
+
 test('after a card that never paid, the next tap tries the same invoice again', async ctx => {
   const h = await cardThatNeverPays(ctx);
   await wait(30); await settle();

@@ -287,6 +287,7 @@ export default defineComponent({
     const card = useKioskCardPayment({
       sale,
       authorize: (...args) => cardAuthorization.value.submit(...args),
+      checkPayment: () => paymentMonitor?.checkNow(),
       onError: (error) => {
         cardProblem.value = cardProblemText(error)
         void haptics.error()

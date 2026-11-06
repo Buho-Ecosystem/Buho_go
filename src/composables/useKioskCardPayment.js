@@ -15,6 +15,14 @@ const CARD_LIFETIME_MS = 120000;
  */
 export const CARD_PAYMENT_WAIT_MS = 60000;
 
+/**
+ * How long the sale's last check may take when the wait is over. A payment
+ * that came while the phone slept, or since the last check, then completes
+ * the sale with the card still on screen, instead of a line saying no
+ * payment came. A check that does not answer in time lets the card go anyway.
+ */
+export const LAST_CHECK_MS = 10000;
+
 /** The `code` of the error passed to `onError` when the wait ends unpaid. */
 export const CARD_NOT_PAID = 'CARD_NOT_PAID';
 
@@ -31,10 +39,14 @@ export const CARD_NOT_PAID = 'CARD_NOT_PAID';
  *
  * Phases: empty → ready (held, up to CARD_LIFETIME_MS) → loading (reading
  * the card) → review → submitting → waiting (the service said OK, up to
- * `paymentWaitMs`). Every way out of a phase other than the next one goes
- * through reset(), back to empty.
+ * `paymentWaitMs`, then the sale's last check, up to LAST_CHECK_MS). Every
+ * way out of a phase other than the next one goes through reset(), back to
+ * empty.
+ *
+ * `checkPayment` is the sale's own check; a payment it finds ends the sale,
+ * which lets go of the card.
  */
-export function useKioskCardPayment({ sale, authorize, onError, resolve = fetchWithdrawRequest, paymentWaitMs = CARD_PAYMENT_WAIT_MS }) {
+export function useKioskCardPayment({ sale, authorize, onError, checkPayment = () => {}, resolve = fetchWithdrawRequest, paymentWaitMs = CARD_PAYMENT_WAIT_MS }) {
   const phase = ref('empty');
   const request = ref(null);
   /** The card's service, shown on the card face from the tap on. */
@@ -117,10 +129,17 @@ export function useKioskCardPayment({ sale, authorize, onError, resolve = fetchW
     }
   }
 
-  /** The service said OK and no payment came: the sale goes back to the QR. */
+  /** The wait is over: one last check of the sale, then the sale goes back
+   * to the QR. A payment the check finds ends the sale first. */
   function giveUp() {
-    reset();
-    onError(Object.assign(new Error('No payment came from the card.'), { code: CARD_NOT_PAID }));
+    const attempt = controller;
+    const letGo = () => {
+      if (attempt.signal.aborted) return;
+      reset();
+      onError(Object.assign(new Error('No payment came from the card.'), { code: CARD_NOT_PAID }));
+    };
+    startTimer(LAST_CHECK_MS, letGo);
+    Promise.resolve().then(checkPayment).then(letGo, letGo);
   }
 
   watch(sale, (current, previous) => {
