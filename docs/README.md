@@ -60,6 +60,7 @@ Earlier plans and research, kept for context. Not a description of the app as it
 
 | Note | Status |
 |---|---|
+| [Notifications research and plan](NOTIFICATIONS_PLAN.md) | In progress: simple setup, register sales and payment requests over Nostr |
 | [Android App Links](notes/android-app-links.md) | Open: verified links for shared cards |
 | [MoneyBadger / CryptoQR](notes/PnP_honeybadger.md) | Not built |
 | [Cloud backup plan](notes/cloud_backup.md) | Superseded by [Cloud backup setup](CLOUD_BACKUP_SETUP.md) |
