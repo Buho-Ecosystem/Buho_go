@@ -5,6 +5,7 @@
  */
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
+import { Worker } from 'node:worker_threads';
 import {
   convertToLightningAddress,
   getMerchantInfo,
@@ -19,6 +20,38 @@ const PROVIDER_EXAMPLE = '00020126530023za.co.electrum.picknpay0122fom7Ku0aQ9SvG
 const CAP = 2048;
 /** Far above linear matching, far below anything a person would notice as a freeze. */
 const BUDGET_MS = 100;
+/** A runaway pattern never answers, so the test gives up here instead of hanging. */
+const GIVE_UP_MS = 5000;
+
+const MATCHER_URL = new URL('../merchantQR.js', import.meta.url).href;
+const WORKER_SOURCE = `
+  const { parentPort, workerData } = require('node:worker_threads');
+  import(workerData.matcher).then(({ isSARetailerQR }) => {
+    const started = performance.now();
+    isSARetailerQR(workerData.text);
+    parentPort.postMessage(performance.now() - started);
+  });
+`;
+
+/** How long matching takes, measured in a worker: a runaway pattern blocks its thread, and only a worker can be stopped. */
+function timeMatch(text) {
+  return new Promise((resolve, reject) => {
+    const worker = new Worker(WORKER_SOURCE, { eval: true, workerData: { matcher: MATCHER_URL, text } });
+    const timer = setTimeout(() => {
+      worker.terminate();
+      reject(new Error(`still matching after ${GIVE_UP_MS} ms`));
+    }, GIVE_UP_MS);
+    worker.once('message', (elapsed) => {
+      clearTimeout(timer);
+      worker.terminate();
+      resolve(elapsed);
+    });
+    worker.once('error', (error) => {
+      clearTimeout(timer);
+      reject(error);
+    });
+  });
+}
 
 describe('recognising a till code', () => {
   const families = [
@@ -40,6 +73,7 @@ describe('recognising a till code', () => {
     ['00000000000000000000', 'zapper'],
     ['http://2.zap.pe?t=6&i=1:2:7[34|0.00|3:10[39|ZAR,38|Test', 'zapper'],
     ['http://2.zap.pe?t=6\ni=1:2:7', 'zapper'],
+    ['http://2.zap.pe?t=6\r\ni=1:2:7', 'zapper'],
     ['https://transactionjunction.co.za/TEST', 'zapper'],
     ['CRSTPC-1-2-3-4-5', 'zapper'],
     ['https://scantopay.io/TEST', 'scantopay'],
@@ -115,10 +149,8 @@ describe('hostile input', () => {
   ];
 
   for (const [name, text] of hostile) {
-    test(`${name} is answered at once`, () => {
-      const started = performance.now();
-      isSARetailerQR(text);
-      const elapsed = performance.now() - started;
+    test(`${name} is answered at once`, async () => {
+      const elapsed = await timeMatch(text);
       assert.ok(elapsed < BUDGET_MS, `took ${Math.round(elapsed)} ms`);
     });
   }

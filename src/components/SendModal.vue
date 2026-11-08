@@ -978,8 +978,9 @@ export default {
         if (paymentType === 'unknown') {
           // Check for SA retailer QR codes (PnP, Checkers, Woolworths, etc.)
           // last of all, so a retailer's name inside an address or a Bitcoin
-          // link never counts.
-          if (isSARetailerQR(cleanData)) {
+          // link never counts. A till code is a bare code: inside a
+          // `bitcoin:` or `lightning:` link it is not one.
+          if (cleanData === trimmedData && isSARetailerQR(cleanData)) {
             const result = convertToLightningAddress(cleanData);
             if (result) {
               this.$emit('payment-detected', {

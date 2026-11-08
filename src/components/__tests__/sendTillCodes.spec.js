@@ -48,7 +48,7 @@ function sendSheet() {
 
 const methods = sendSheet();
 
-async function scan(text) {
+async function scan(text, walletType = 'spark') {
   const emitted = [];
   const notices = [];
   const vm = {
@@ -56,7 +56,7 @@ async function scan(text) {
     $t: (key) => key,
     $q: { notify: (notice) => notices.push(notice) },
     $emit: (name, payload) => { if (name === 'payment-detected') emitted.push(payload); },
-    walletStore: { activeWalletType: 'spark', canAnyWalletPay: () => true },
+    walletStore: { activeWalletType: walletType, canAnyWalletPay: () => true },
     isProcessing: false,
     manualInput: '',
     show: true,
@@ -65,15 +65,17 @@ async function scan(text) {
   return { emitted, notices, processing: vm.isProcessing };
 }
 
-test('a shop the provider takes goes out as its address, marked as a shop', async () => {
-  const { emitted, notices } = await scan(TILL_CODE);
-  assert.deepEqual(notices, []);
-  assert.equal(emitted.length, 1);
-  assert.equal(emitted[0].type, 'lightning_address');
-  assert.equal(emitted[0].source, merchantQR.SA_RETAIL_SOURCE);
-  assert.equal(emitted[0].merchant.id, 'picknpay');
-  assert.equal(emitted[0].data, `${encodeURIComponent(TILL_CODE)}@cryptoqr.net`);
-});
+for (const walletType of ['spark', 'arkade', 'nwc', 'lnbits', null]) {
+  test(`a shop the provider takes goes out as its address, marked as a shop (${walletType} wallet)`, async () => {
+    const { emitted, notices } = await scan(TILL_CODE, walletType);
+    assert.deepEqual(notices, []);
+    assert.equal(emitted.length, 1);
+    assert.equal(emitted[0].type, 'lightning_address');
+    assert.equal(emitted[0].source, merchantQR.SA_RETAIL_SOURCE);
+    assert.equal(emitted[0].merchant.id, 'picknpay');
+    assert.equal(emitted[0].data, `${encodeURIComponent(TILL_CODE)}@cryptoqr.net`);
+  });
+}
 
 for (const [code, shop] of [['0821234567', 'Scan to Pay'], ['https://pos.snapscan.io/qr/TEST', 'SnapScan']]) {
   test(`${code} says ${shop} is not supported yet, and stops`, async () => {
@@ -92,6 +94,17 @@ test('anything else is simply not recognized', async () => {
   assert.equal(notices[0].message, "We don't recognize this code");
   assert.equal(processing, false);
 });
+
+// A till code is a bare code. Wrapped in a link, nothing goes to the provider.
+for (const text of [`lightning:${TILL_CODE}`, `bitcoin:${TILL_CODE}`, 'bitcoin:0821234567', 'lightning:0821234567']) {
+  test(`${text.slice(0, 24)}... is not a till code`, async () => {
+    const { emitted, notices, processing } = await scan(text);
+    assert.deepEqual(emitted, []);
+    assert.equal(notices.length, 1);
+    assert.equal(notices[0].message, "We don't recognize this code");
+    assert.equal(processing, false);
+  });
+}
 
 const payments = [
   ['a Lightning address named after a retailer', 'snapscan@example.com', 'lightning_address'],
