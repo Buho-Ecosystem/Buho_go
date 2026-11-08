@@ -245,7 +245,7 @@ import { useWalletStore } from '../../stores/wallet';
 import { useAutoWithdrawStore } from '../../stores/autoWithdraw';
 import { useAddressBookStore } from '../../stores/addressBook';
 import { keypadSats } from '../../utils/amountKeypad.js';
-import { lnurlGetJson } from '../../utils/lnurlHttp.js';
+import { fetchPayRequest, lightningAddressUrl } from '../../utils/lnurlPay.js';
 import { readClipboardCrossPlatform } from '../../utils/shopClipboard.js';
 import {
   DESTINATION_KIND,
@@ -578,11 +578,13 @@ export default {
       this.choose(read);
     },
     async lightningAddressAnswers(address) {
-      const [user, domain] = address.split('@');
+      const url = lightningAddressUrl(address);
+      if (!url) return false;
       try {
-        // A person is waiting on this: give up sooner than a payment would.
-        const response = await lnurlGetJson(`https://${domain}/.well-known/lnurlp/${user}`, { timeoutMs: 8000 });
-        return response.ok && response.data?.tag === 'payRequest' && !!response.data.callback;
+        // The check a transfer makes, so an address accepted here is one the
+        // rule can pay. A person is waiting: give up sooner than a payment would.
+        await fetchPayRequest(url, { timeoutMs: 8000 });
+        return true;
       } catch {
         return false;
       }

@@ -31,10 +31,7 @@
 import { WalletProvider } from './WalletProvider.js';
 import { AUTO_CLAIM_THRESHOLDS } from '../stores/bitcoinPreferences.js';
 import { Invoice } from '@getalby/lightning-tools';
-import { parseSuccessAction } from '../utils/successAction.js';
-import { validateVerifyUrl } from '../utils/lnurlVerify.js';
-import { lnurlGetJson } from '../utils/lnurlHttp.js';
-import { buildLnurlPayCallbackUrl } from '../utils/lnurlPay.js';
+import { fetchPayRequest, lightningAddressUrl, requestPayInvoice } from '../utils/lnurlPay.js';
 import { fiatRatesService } from '../utils/fiatRates.js';
 import { isBitcoinAddress } from '../utils/addressUtils.js';
 import { identityPublicKeyFromSparkAddress } from '../utils/sparkPayment.js';
@@ -59,7 +56,6 @@ import {
   waitQuoteFromMature,
 } from '../utils/breezPayments.js';
 import { reportSparkAttempt } from '../services/sparkReachabilityCheck.js';
-import { counterpartyError } from '../utils/errorOrigin.js';
 import { classifyTransportFailure } from '../utils/userErrors.js';
 
 /**
@@ -1093,64 +1089,27 @@ export class BreezSparkWalletProvider extends WalletProvider {
     this._ensureConnected();
 
     try {
-      const [username, domain] = lightningAddress.split('@');
-      if (!username || !domain) {
+      // Asked for and checked by utils/lnurlPay.js: a refusal keeps the
+      // service's reason, and the invoice must be for the amount confirmed.
+      const url = lightningAddressUrl(lightningAddress);
+      if (!url) {
         throw new Error('Invalid Lightning address format');
       }
-
-      const lnurlEndpoint = `https://${domain}/.well-known/lnurlp/${username}`;
-      const response = await lnurlGetJson(lnurlEndpoint);
-
-      if (!response.ok) {
-        throw new Error('Failed to fetch Lightning address info');
-      }
-
-      const lnurlData = response.data;
-      if (!lnurlData || lnurlData.tag !== 'payRequest' || !lnurlData.callback || lnurlData.status === 'ERROR') {
-        throw counterpartyError(lnurlData?.status === 'ERROR' && lnurlData.reason, 'Failed to fetch Lightning address info');
-      }
-
-      if (!(payout && payout.code && payout.amount > 0)) {
-        const minSendable = Math.ceil((lnurlData.minSendable || 1000) / 1000);
-        const maxSendable = Math.floor((lnurlData.maxSendable || 100000000000) / 1000);
-        if (amountSats < minSendable || amountSats > maxSendable) {
-          throw new Error(`Amount must be between ${minSendable} and ${maxSendable} sats`);
-        }
-      }
-      const callbackUrl = buildLnurlPayCallbackUrl({
-        callback: lnurlData.callback,
-        amountSats,
-        payout,
-        comment,
-        commentAllowed: lnurlData.commentAllowed,
-      });
-
-      const invoiceResponse = await lnurlGetJson(callbackUrl);
-      if (!invoiceResponse.ok) {
-        throw new Error('Failed to get invoice from Lightning address');
-      }
-
-      const invoiceData = invoiceResponse.data;
-
-      if (!invoiceData || invoiceData.status === 'ERROR') {
-        throw counterpartyError(invoiceData?.reason, 'Failed to get invoice');
-      }
-      if (!invoiceData.pr) {
-        throw new Error('No payment request received from Lightning address');
-      }
+      const payRequest = await fetchPayRequest(url);
+      const invoice = await requestPayInvoice(payRequest, { amountSats, payout, comment });
 
       // Invoice already carries the amount — passing amountSats would be
       // rejected (zero-amount invoices only).
       const result = await this.payInvoice({
-        invoice: invoiceData.pr,
+        invoice: invoice.pr,
         preferSpark: true
       });
 
       return {
         ...result,
         lightningAddress: lightningAddress,
-        successAction: parseSuccessAction(invoiceData.successAction, lnurlData.callback),
-        verify: validateVerifyUrl(invoiceData.verify, lnurlData.callback),
+        successAction: invoice.successAction,
+        verify: invoice.verify,
       };
     } catch (error) {
       this.setError(error);

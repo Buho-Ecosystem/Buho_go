@@ -98,12 +98,17 @@
             class="input-helper"
             :class="{
               'input-helper--error': !!resolveError,
+              'input-helper--reported': !!resolveError && !!resolveErrorSource,
               'input-helper--warn': !resolveError && !!capabilityBlocked
             }"
           >
             <template v-if="resolveError">
               <Icon icon="tabler:alert-circle" width="13" height="13" class="helper-icon-error" />
-              <span>{{ resolveError }}</span>
+              <span v-if="resolveErrorSource" class="helper-reported">
+                <span class="helper-reported-by">{{ resolveErrorSource }}</span>
+                <span>{{ resolveError }}</span>
+              </span>
+              <span v-else>{{ resolveError }}</span>
             </template>
             <template v-else-if="capabilityBlocked">
               <Icon icon="tabler:arrows-exchange" width="13" height="13" class="helper-icon-warn" />
@@ -415,6 +420,12 @@ export default {
     // doesn't exist). Shown inline in the field so the user can fix it without
     // ever leaving the sheet. Cleared on edit (update:resolveError).
     resolveError: {
+      type: String,
+      default: ''
+    },
+    // Who said resolveError when it is a service's own words ("Reported by
+    // the recipient"). Shown above them, so nobody takes them for BuhoGO's.
+    resolveErrorSource: {
       type: String,
       default: ''
     }
@@ -1572,6 +1583,29 @@ export default {
    message (e.g. "We couldn't find this Lightning address") reads clearly. */
 .input-helper--error {
   color: #EF4444;
+}
+
+/* A service's own words: who said them on the first line, quietly, then
+   their text. The icon sits on the first line. */
+.input-helper--reported {
+  align-items: flex-start;
+}
+
+.input-helper--reported .helper-icon-error {
+  margin-top: 2px;
+}
+
+.helper-reported {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.helper-reported-by {
+  color: var(--text-muted);
+  font-weight: 500;
 }
 
 /* Capability hint (amber, not red): the destination is valid, the wallet

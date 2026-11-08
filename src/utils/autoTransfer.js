@@ -22,6 +22,7 @@
 
 import { canWalletPay, canWalletReceiveLightning } from './walletCapabilities.js';
 import { classifyDestination, normalizeDestination } from './clipboardSuggestion.js';
+import { isCounterpartyError } from './errorOrigin.js';
 
 export const DESTINATION_KIND = Object.freeze({
   WALLET: 'wallet',
@@ -249,8 +250,14 @@ export function failureReason(error) {
   const code = String(error?.code || '');
   const message = String(error?.message || '').toLowerCase();
   if (code === 'NWC_PAYMENT_UNCONFIRMED') return 'unconfirmed';
-  if (error?.counterparty || code === 'COUNTERPARTY_ERROR') return 'refused';
+  // The destination's service said no: its own reason (utils/errorOrigin.js),
+  // a refusal that came without one, or an amount outside what it accepts
+  // (utils/lnurlPay.js).
+  if (isCounterpartyError(error) || error?.counterparty || code === 'COUNTERPARTY_ERROR'
+      || code === 'LNURL_REFUSED' || code === 'LNURL_AMOUNT_OUT_OF_RANGE') return 'refused';
   if (/insufficient|not enough|balance too low/.test(message)) return 'insufficient';
+  // It answered, but with an HTTP error or no pay request: as good as no answer.
+  if (code === 'LNURL_HTTP_ERROR' || code === 'LNURL_NOT_PAY_REQUEST') return 'unreachable';
   if (/invalid .*address|no .*address configured|could not resolve|failed to fetch|not found|404/.test(message)) return 'unreachable';
   if (/timeout|timed out|network|offline|connect|unreachable|transport/.test(message)) return 'offline';
   return 'other';

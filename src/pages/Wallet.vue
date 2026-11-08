@@ -349,6 +349,7 @@
       v-model="showSendModal"
       :resolving="sendResolving"
       :resolve-error="sendResolveError"
+      :resolve-error-source="sendResolveSource"
       @update:resolve-error="sendResolveError = $event"
       @payment-detected="onPaymentDetected"
       @open-batch-send="showBatchSend = true"
@@ -661,16 +662,16 @@ import { withdrawInfo, withdrawRecipient, isCardRequest, isCardLink, withdrawLin
 import { fetchLnurlRequest, safeWithdrawError } from '../services/lnurlWithdraw.js';
 import { NostrWebLNProvider } from "@getalby/sdk";
 import {LightningPaymentService, resolveLUD17URL} from '../utils/lightning.js';
-import {parseSuccessAction, resolveSuccessAction} from '../utils/successAction.js';
-import {validateVerifyUrl, pollVerify} from '../utils/lnurlVerify.js';
-import {lnurlFetch, lnurlGetJson} from '../utils/lnurlHttp.js';
+import {resolveSuccessAction} from '../utils/successAction.js';
+import {pollVerify} from '../utils/lnurlVerify.js';
+import {lnurlFetch} from '../utils/lnurlHttp.js';
 import { buildPaymentError, classifyTransportFailure, unreachableReason } from '../utils/userErrors.js';
 import { capabilitiesOf } from '../utils/nwcWallet.js';
 import { diagnoseConnection } from '../utils/connectivity.js';
-import { counterpartyError, keepOrigin } from '../utils/errorOrigin.js';
-import {buildLnurlPayCallbackUrl, isStoreablePayLink} from '../utils/lnurlPay.js';
+import { counterpartyError, isCounterpartyError, keepOrigin } from '../utils/errorOrigin.js';
+import { PAY_REQUEST_ERROR, fetchPayRequest, lightningAddressUrl, readPayRequest, requestPayInvoice } from '../utils/lnurlPay.js';
 import {parsePayRequestMetadata, serviceTitle, normalizeServiceImage, serviceIdentity} from '../utils/lnurlMetadata.js';
-import {isLightningInvoice as isLightningInvoiceShared, isLightningAddress as isLightningAddressShared, stripWrapperScheme, nativeRailsFromBip21, canonicalLnurl, lnurlDomain} from '../utils/addressUtils.js';
+import {isLightningInvoice as isLightningInvoiceShared, isLightningAddress as isLightningAddressShared, stripWrapperScheme, nativeRailsFromBip21, canonicalLnurl, lnurlDomain, lnurlToUrl} from '../utils/addressUtils.js';
 // One rule for "what is this string", shared with the Send field and the
 // home clipboard strip, so resolving from Home can't disagree with the sheet.
 import {classifyDestination, normalizeDestination} from '../utils/clipboardSuggestion.js';
@@ -880,6 +881,9 @@ export default {
       // validate a destination it emitted (before the confirm sheet opens).
       sendResolving: false,
       sendResolveError: '',
+      // Who said sendResolveError when it is a service's own words
+      // ("Reported by the recipient"); empty when BuhoGO says it.
+      sendResolveSource: '',
       // True while a destination taken from the home clipboard strip is
       // resolving with no sheet up: the strip itself shows the wait, and
       // the confirm sheet is the next surface the user sees.
@@ -2227,6 +2231,10 @@ export default {
     this.cancelBrantaLookup();
   },
   watch: {
+    // A cleared error clears its label with it, whoever cleared it.
+    sendResolveError(message) {
+      if (!message) this.sendResolveSource = '';
+    },
     // A voucher or card redeem ends here either way: its outcome is felt.
     lnurlWithdrawStatus(status) {
       if (status === 'confirmed') haptics.success();
@@ -2520,10 +2528,15 @@ export default {
      * to the global error dialog. The caller has already set `resolved = false`.
      */
     failSendResolution(message, fromField, dialogOpts = {}) {
+      // A service's own words keep their label ("Reported by the
+      // recipient"), inline and in the dialog alike.
+      const attribution = dialogOpts.attribution || '';
       if (fromField) {
         this.sendResolveError = message;
+        this.sendResolveSource = attribution;
       } else {
-        this.walletStore.showPaymentError(new Error(message), {
+        const error = attribution ? counterpartyError(message, message) : new Error(message);
+        this.walletStore.showPaymentError(error, {
           context: dialogOpts.context || 'payment',
           route: dialogOpts.route || 'Payment dispatch',
           t: this.$t.bind(this),
@@ -2679,9 +2692,13 @@ export default {
       // the reason (onPaymentDetected reported it inline — see fromField).
       if (this.sendResolveError) {
         const message = this.sendResolveError;
+        const source = this.sendResolveSource;
         this.sendResolveError = '';
         this.showSendModal = true;
-        this.$nextTick(() => this.$refs.sendModal?.revealFailed(text, message));
+        this.$nextTick(() => {
+          this.$refs.sendModal?.revealFailed(text, message);
+          this.sendResolveSource = source;
+        });
       }
     },
 
@@ -4505,7 +4522,7 @@ export default {
             const reason = lnurlInfo.reason
               || this.$t('The server did not respond or the link is no longer valid');
             resolved = false;
-            this.failSendResolution(reason, fromField, { context: 'link', route: 'LUD-17 scan' });
+            this.failSendResolution(reason, fromField, { context: 'link', route: 'LUD-17 scan', attribution: lnurlInfo.attribution });
             return;
           }
 
@@ -4617,7 +4634,7 @@ export default {
             const reason = lnurlInfo.error && lnurlInfo.reason
               ? lnurlInfo.reason
               : this.$t("We couldn't find this Lightning address");
-            this.failSendResolution(reason, fromField);
+            this.failSendResolution(reason, fromField, { attribution: lnurlInfo.error ? lnurlInfo.attribution : null });
             return;
           }
 
@@ -5500,7 +5517,7 @@ export default {
       // LNURL - decode and fetch invoice, then pay
       // Note: LNURL invoices already have amount encoded, so don't pass amountSats
       if (this.pendingPayment.lnurl) {
-        const { pr, successAction, verify, payLink, serviceMeta } = await this.fetchLNURLInvoice(this.pendingPayment.lnurl, amount, payout);
+        const { pr, successAction, verify, payLink, serviceMeta } = await this.fetchLNURLInvoice(this.pendingPayment.lnurl, amount, payout, comment);
         const result = await provider.payInvoice({
           invoice: pr,
           preferSpark: true,
@@ -5556,7 +5573,7 @@ export default {
 
       // LNURL-pay → fetch the encoded-amount invoice, then swap.
       if (this.pendingPayment.lnurl) {
-        const { pr, successAction, verify, payLink, serviceMeta } = await this.fetchLNURLInvoice(this.pendingPayment.lnurl, amount, payout);
+        const { pr, successAction, verify, payLink, serviceMeta } = await this.fetchLNURLInvoice(this.pendingPayment.lnurl, amount, payout, comment);
         const result = await provider.payInvoice({ invoice: pr });
         return { ...result, successAction, verify, payLink, serviceMeta };
       }
@@ -5633,7 +5650,7 @@ export default {
 
       // LNURL - fetch invoice then pay
       if (this.pendingPayment.lnurl) {
-        const { pr, successAction, verify, payLink, serviceMeta } = await this.fetchLNURLInvoice(this.pendingPayment.lnurl, amount, payout);
+        const { pr, successAction, verify, payLink, serviceMeta } = await this.fetchLNURLInvoice(this.pendingPayment.lnurl, amount, payout, comment);
         const result = await provider.payInvoice({ invoice: pr });
         return { ...result, successAction, verify, payLink, serviceMeta };
       }
@@ -5988,54 +6005,33 @@ export default {
       return `${start}...${end}`;
     },
 
-    // Helper: Fetch invoice from LNURL
-    async fetchLNURLInvoice(lnurl, amountSats, payout = null) {
+    /**
+     * The invoice for an LNURL-pay link, asked for and checked by
+     * utils/lnurlPay.js: a refusal keeps the service's reason, and the
+     * invoice must be for the amount confirmed. Comes with any LUD-09
+     * successAction and LUD-21 `verify` URL, both checked against the
+     * callback.
+     *
+     * LUD-11: a service that answers `disposable: false` is telling us this
+     * LNURL is reusable. That is the one case where the QR itself is worth
+     * keeping — a raw LNURL has no address form, so without it paying the
+     * same merchant again means finding the code again. `payLink` is null
+     * for every ordinary (single-use) link.
+     */
+    async fetchLNURLInvoice(lnurl, amountSats, payout = null, comment = '') {
       assertPaymentInput(lnurl);
-      const url = this.decodeLNURL(lnurl);
-
-      // Fetch LNURL endpoint
-      const response = await lnurlGetJson(url);
-      if (!response.ok) throw new Error('Failed to fetch LNURL');
-
-      const data = response.data;
-      if (!data || data.tag !== 'payRequest' || !data.callback || data.status === 'ERROR') throw counterpartyError(data?.status === 'ERROR' && data.reason, 'LNURL error');
-
-      // Standard sat sends are bounds-checked here; a currency (Option-A) send
-      // is bounded by the provider in its own units (validated in the sheet).
-      if (!(payout && payout.code && payout.amount > 0)) {
-        const minSats = Math.ceil((data.minSendable || 1000) / 1000);
-        const maxSats = Math.floor((data.maxSendable || 100000000000) / 1000);
-        if (amountSats < minSats || amountSats > maxSats) {
-          throw new Error(`Amount must be between ${formatAmount(minSats, this.walletStore.useBip177Format)} and ${formatAmount(maxSats, this.walletStore.useBip177Format)}`);
-        }
-      }
-      const callbackUrl = buildLnurlPayCallbackUrl({ callback: data.callback, amountSats, payout });
-
-      const invoiceResponse = await lnurlGetJson(callbackUrl);
-      if (!invoiceResponse.ok) throw new Error('Failed to get invoice');
-
-      const invoiceData = invoiceResponse.data;
-      if (!invoiceData || invoiceData.status === 'ERROR') throw counterpartyError(invoiceData?.reason, 'Invoice error');
-
-      // Return the invoice together with any LUD-09 successAction (recipient's
-      // post-payment message) and LUD-21 `verify` URL the callback included.
-      // `verify` is validated same-domain against the callback (never a third
-      // party), mirroring the LUD-09 url guard. Callers thread them onward.
-      //
-      // LUD-11: a service that answers `disposable: false` is telling us this
-      // LNURL is reusable. That is the one case where the QR itself is worth
-      // keeping — a raw LNURL has no address form, so without it paying the
-      // same merchant again means finding the code again. `payLink` is null
-      // for every ordinary (single-use) link.
-      const storeable = isStoreablePayLink(invoiceData);
+      const url = lnurlToUrl(lnurl);
+      if (!url) throw new Error('Invalid LNURL');
+      const payRequest = await fetchPayRequest(url);
+      const { pr, successAction, verify, storeable } = await requestPayInvoice(payRequest, { amountSats, payout, comment });
       return {
-        pr: invoiceData.pr,
-        successAction: parseSuccessAction(invoiceData.successAction, data.callback),
-        verify: validateVerifyUrl(invoiceData.verify, data.callback),
+        pr,
+        successAction,
+        verify,
         payLink: storeable ? lnurl : null,
         // What the service says about itself (LUD-06 metadata), kept only
         // for a storeable link: that is the one that becomes a payee.
-        serviceMeta: storeable ? parsePayRequestMetadata(data.metadata) : null,
+        serviceMeta: storeable ? parsePayRequestMetadata(payRequest.metadata) : null,
       };
     },
 
@@ -6062,6 +6058,26 @@ export default {
     },
 
     /**
+     * Why an LNURL or Lightning address could not be read, for the Send
+     * field or the error dialog: `{ reason, attribution }`. A refusal or an
+     * answer utils/lnurlPay.js could not use goes through the payment error
+     * copy, so a service's reason keeps its safety filter and is labelled as
+     * theirs (`attribution`, e.g. "Reported by the recipient"), never shown
+     * as if BuhoGO said it. Anything else is a transport failure (above).
+     * @param {Error} error
+     * @param {'payment'|'link'} context  whose words a refusal is: the
+     *   recipient's for an address, the server's for a link
+     */
+    describeLnurlFailure(error, context) {
+      const ours = Object.values(PAY_REQUEST_ERROR).includes(error?.code);
+      if (!ours && !isCounterpartyError(error)) {
+        return { reason: this.describeLnurlTransportError(error), attribution: null };
+      }
+      const built = buildPaymentError(error, { context, useBip177Format: this.walletStore.useBip177Format }, this.$t.bind(this));
+      return { reason: built.reason, attribution: built.reasonAttribution };
+    },
+
+    /**
      * Fetch LNURL info from a Lightning address
      * Returns min/max amounts and whether it's a fixed amount.
      * A server that answers but doesn't serve the address yields {} ("not
@@ -6071,8 +6087,8 @@ export default {
      * the Send sheet spinning forever.
      */
     async fetchLightningAddressInfo(address) {
-      const [username, domain] = address.split('@');
-      if (!username || !domain) {
+      const url = lightningAddressUrl(address);
+      if (!url) {
         return {};
       }
 
@@ -6091,21 +6107,8 @@ export default {
       }
 
       try {
-        const endpoint = `https://${domain}/.well-known/lnurlp/${username}`;
-        const response = await lnurlGetJson(endpoint, { timeoutMs: 10000 });
-
-        if (!response.ok) {
-          return {};
-        }
-
-        const data = response.data;
-
-        if (!data || data.tag !== 'payRequest' || !data.callback || data.status === 'ERROR') {
-          return {};
-        }
-
-        const minSendable = data.minSendable || 1000;
-        const maxSendable = data.maxSendable || 100000000000;
+        const data = await fetchPayRequest(url, { timeoutMs: 10000 });
+        const { minSendable, maxSendable } = data;
         const isFixedAmount = minSendable === maxSendable;
 
         return {
@@ -6115,7 +6118,7 @@ export default {
           maxSats: Math.floor(maxSendable / 1000),
           isFixedAmount,
           fixedAmountSats: isFixedAmount ? Math.floor(minSendable / 1000) : null,
-          commentAllowed: data.commentAllowed || 0,
+          commentAllowed: data.commentAllowed,
           description: data.metadata ? this.parseLnurlMetadata(data.metadata) : null,
           // LUD-21 currency extension (#207): the recipient's local payout
           // currency (e.g. TZS for ChapSmart), so the sender can denominate in
@@ -6123,8 +6126,15 @@ export default {
           currency: data.currency || null
         };
       } catch (error) {
-        console.warn('Failed to fetch Lightning address info:', error.message);
-        return { error: true, reason: this.describeLnurlTransportError(error) };
+        // An HTTP error, or something other than a pay request: nothing to
+        // pay at this address, so "not found" (the caller tries NIP-05).
+        if (error?.code === PAY_REQUEST_ERROR.HTTP || error?.code === PAY_REQUEST_ERROR.NOT_PAY_REQUEST) {
+          return {};
+        }
+        // A refusal, terms that cannot be paid, or no answer at all (on the
+        // phone a network failure carries the platform's own code): say which.
+        console.warn('Failed to fetch Lightning address info:', error?.message);
+        return { error: true, ...this.describeLnurlFailure(error, 'payment') };
       }
     },
 
@@ -6193,8 +6203,10 @@ export default {
           return {};
         }
 
-        const minSendable = data.minSendable || 1000;
-        const maxSendable = data.maxSendable || 100000000000;
+        // The same checks the payment makes later, so a link that cannot be
+        // paid says so now instead of after the slide.
+        const payRequest = readPayRequest(data);
+        const { minSendable, maxSendable } = payRequest;
         const isFixedAmount = minSendable === maxSendable;
 
         return {
@@ -6205,82 +6217,37 @@ export default {
           maxSats: Math.floor(maxSendable / 1000),
           isFixedAmount,
           fixedAmountSats: isFixedAmount ? Math.floor(minSendable / 1000) : null,
-          commentAllowed: data.commentAllowed || 0,
-          callback: data.callback,
+          commentAllowed: payRequest.commentAllowed,
+          callback: payRequest.callback,
           description: data.metadata ? this.parseLnurlMetadata(data.metadata) : null,
           serviceMeta: parsePayRequestMetadata(data.metadata),
         };
       } catch (error) {
         console.warn('Failed to fetch LNURL info:', safeWithdrawError(error.message));
         // Surface the underlying failure so the send field / error dialog
-        // shows what actually happened (timeout, offline) instead of a
-        // misleading upstream-attributed message.
-        return { error: true, reason: this.describeLnurlTransportError(error) };
+        // shows what actually happened (timeout, offline, the service's
+        // refusal) instead of a misleading or bare technical message.
+        return { error: true, ...this.describeLnurlFailure(error, 'link') };
       }
     },
 
     /**
-     * Fetch a Lightning invoice from a Lightning address
+     * The invoice for a Lightning address, asked for and checked by
+     * utils/lnurlPay.js (see fetchLNURLInvoice).
      * @param {string} address - Lightning address (user@domain)
      * @param {number} amountSats - Amount in satoshis
      * @param {string} [comment] - Optional comment
-     * @returns {Promise<string>} Lightning invoice (bolt11)
+     * @param {{code: string, amount: number}|null} [payout] - LUD-21 amount in the recipient's currency
+     * @returns {Promise<{pr: string, successAction: object|null, verify: string|null}>}
      */
     async fetchLightningAddressInvoice(address, amountSats, comment, payout = null) {
-      const [username, domain] = address.split('@');
-      if (!username || !domain) {
+      const url = lightningAddressUrl(address);
+      if (!url) {
         throw new Error('Invalid Lightning address');
       }
-
-      // Fetch LNURL endpoint info
-      const endpoint = `https://${domain}/.well-known/lnurlp/${username}`;
-      const response = await lnurlGetJson(endpoint);
-
-      if (!response.ok) {
-        throw new Error('Failed to resolve Lightning address');
-      }
-
-      const data = response.data;
-      if (!data || data.tag !== 'payRequest' || !data.callback || data.status === 'ERROR') {
-        throw counterpartyError(data?.status === 'ERROR' && data.reason, 'Lightning address error');
-      }
-
-      // Standard sat sends are bounds-checked here; a currency (Option-A) send
-      // is bounded by the provider in its own units (validated in the sheet).
-      if (!(payout && payout.code && payout.amount > 0)) {
-        const minSats = Math.ceil((data.minSendable || 1000) / 1000);
-        const maxSats = Math.floor((data.maxSendable || 100000000000) / 1000);
-        if (amountSats < minSats || amountSats > maxSats) {
-          throw new Error(`Amount must be between ${minSats} and ${maxSats} sats`);
-        }
-      }
-      const callbackUrl = buildLnurlPayCallbackUrl({
-        callback: data.callback,
-        amountSats,
-        payout,
-        comment,
-        commentAllowed: data.commentAllowed,
-      });
-
-      // Request the invoice
-      const invoiceResponse = await lnurlGetJson(callbackUrl);
-      if (!invoiceResponse.ok) {
-        throw new Error('Failed to get invoice from Lightning address');
-      }
-
-      const invoiceData = invoiceResponse.data;
-      if (!invoiceData || invoiceData.status === 'ERROR') {
-        throw counterpartyError(invoiceData?.reason, 'Invoice generation failed');
-      }
-
-      // Return the invoice together with any LUD-09 successAction (recipient's
-      // post-payment message) and LUD-21 `verify` URL, validated same-domain
-      // against the callback (never a third party). null when absent.
-      return {
-        pr: invoiceData.pr,
-        successAction: parseSuccessAction(invoiceData.successAction, data.callback),
-        verify: validateVerifyUrl(invoiceData.verify, data.callback),
-      };
+      const payRequest = await fetchPayRequest(url);
+      const { pr, successAction, verify } = await requestPayInvoice(payRequest, { amountSats, payout, comment });
+      return { pr, successAction, verify };
     },
 
     /**

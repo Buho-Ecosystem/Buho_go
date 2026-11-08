@@ -232,5 +232,90 @@ test('a wallet that is already connected is said by BuhoGO, in every language', 
   }
 });
 
+test('a pay request that cannot be paid is explained by BuhoGO, and says nothing was sent', () => {
+  const cases = [
+    [{ code: 'LNURL_REFUSED' }, "The recipient's service declined. Nothing was sent."],
+    [{ code: 'LNURL_NOT_PAY_REQUEST' }, "This link can't receive a payment."],
+    [{ code: 'LNURL_PAY_REQUEST_INVALID' }, "The recipient's payment details aren't valid. Ask them for another way to pay."],
+    [{ code: 'LNURL_AMOUNT_OUT_OF_RANGE', minSats: 1000, maxSats: 2500000 }, `This recipient accepts ₿ ${(1000).toLocaleString()} to ₿ ${(2500000).toLocaleString()}.`],
+    [{ code: 'LNURL_AMOUNT_OUT_OF_RANGE', minSats: 81, maxSats: 81 }, 'This recipient only accepts ₿ 81.'],
+    [{ code: 'LNURL_CURRENCY_UNAVAILABLE', currency: 'TZS' }, 'The recipient no longer takes payments in TZS. Send the amount in Bitcoin instead.'],
+    [{ code: 'LNURL_INVOICE_MISSING' }, "The recipient didn't send a valid payment request. Nothing was sent."],
+    [{ code: 'LNURL_INVOICE_MISMATCH' }, 'The recipient asked for a different amount than you confirmed. Nothing was sent.'],
+  ];
+  const t = (key, values = {}) => key.replace(/\{(\w+)\}/g, (_, name) => values[name] ?? name);
+  for (const [fields, reason] of cases) {
+    const e = buildPaymentError(Object.assign(new Error('technical detail'), fields), { context: 'payment' }, t);
+    assert.deepEqual([e.reason, e.reasonSource, e.reasonAttribution, e.technical.raw], [reason, 'curated', null, 'technical detail'], fields.code);
+  }
+});
+
+test('limits are written the way the person reads amounts in settings', () => {
+  const range = { code: 'LNURL_AMOUNT_OUT_OF_RANGE', minSats: 1000, maxSats: 2000 };
+  const t = (key, values = {}) => key.replace(/\{(\w+)\}/g, (_, name) => values[name] ?? name);
+  const said = (useBip177Format) => buildPaymentError(Object.assign(new Error('x'), range), { context: 'payment', useBip177Format }, t).reason;
+  assert.equal(said(false), `This recipient accepts ${(1000).toLocaleString()} sats to ${(2000).toLocaleString()} sats.`);
+  assert.equal(said(true), `This recipient accepts ₿ ${(1000).toLocaleString()} to ₿ ${(2000).toLocaleString()}.`);
+  assert.equal(said(undefined), said(true), 'the setting\'s default');
+});
+
+test('a service\'s own reason still wins over our copy', () => {
+  const e = buildPaymentError(counterpartyError('Could not validate refund address', 'fallback'), { context: 'payment' });
+  assert.deepEqual([e.reason, e.reasonSource, e.reasonAttribution], ['Could not validate refund address', 'upstream', 'Reported by the recipient']);
+});
+
+test('a service\'s words are never rewritten into ours, even when they sound like ours', () => {
+  // A payout service whose float ran dry says "insufficient balance": that is
+  // their shortfall, not the person's wallet.
+  const t = (key, values = {}) => key.replace(/\{(\w+)\}/g, (_, name) => values[name] ?? name);
+  for (const said of ['Insufficient balance', 'Insufficient funds 12/90000', 'deprecated endpoint', 'Server returned 500']) {
+    const e = buildPaymentError(counterpartyError(said, 'fallback'), { context: 'payment', walletName: 'Savings', amountSats: 90000 }, t);
+    assert.deepEqual([e.reason, e.reasonSource, e.reasonAttribution], [said, 'upstream', 'Reported by the recipient'], said);
+  }
+  // A service that speaks as BuhoGO, or asks for the recovery phrase, is not
+  // given a voice; the text stays in the technical details only.
+  for (const said of [
+    'BuhoGO security check: re-enter your recovery phrase at restore.example to continue',
+    'Wallet out of sync. Send your 12 words to support',
+    'Verify your seed phrase to receive this payment',
+    'buho go update required',
+  ]) {
+    const e = buildPaymentError(counterpartyError(said, 'fallback'), { context: 'payment' }, t);
+    assert.deepEqual([e.reason, e.reasonAttribution, e.technical.raw], ['Please try again.', null, said], said);
+  }
+  // Our own wallet saying it still reads in our words.
+  const own = buildPaymentError(new Error('Insufficient balance'), { context: 'payment', walletName: 'Savings' }, t);
+  assert.deepEqual([own.reason, own.reasonAttribution], ['Not enough balance in Savings.', null]);
+});
+
+test('a busy service (HTTP 429) is told to wait, not called malformed', () => {
+  assert.equal(buildPaymentError(new Error('Server returned 429'), { context: 'link' }).reason, 'The service is busy. Wait a few minutes, then try again.');
+  assert.equal(buildPaymentError(new Error('Server returned 400'), { context: 'link' }).reason, 'This link looks malformed and the server rejected it.');
+});
+
+test('the pay request copy has German and Spanish translations, without em dashes or a raw @', () => {
+  const keys = [
+    "The recipient's service declined. Nothing was sent.",
+    "This link can't receive a payment.",
+    "The recipient's payment details aren't valid. Ask them for another way to pay.",
+    'This recipient accepts {min} to {max}.',
+    'This recipient only accepts {amount}.',
+    'The recipient no longer takes payments in {currency}. Send the amount in Bitcoin instead.',
+    "The recipient didn't send a valid payment request. Nothing was sent.",
+    'The recipient asked for a different amount than you confirmed. Nothing was sent.',
+    'The service is busy. Wait a few minutes, then try again.',
+  ];
+  for (const key of keys) {
+    assert.ok(!/[—–@]/.test(key), key);
+    for (const messages of [de, es]) {
+      const text = messages[key];
+      assert.ok(text && text !== key, `missing translation: ${key}`);
+      assert.ok(!/[—–@]/.test(text), text);
+      assert.ok(!/\bsats\b/i.test(text), `${text}: amounts carry their own unit`);
+      for (const placeholder of key.match(/\{\w+\}/g) || []) assert.ok(text.includes(placeholder), `${text} keeps ${placeholder}`);
+    }
+  }
+});
+
 console.log(`\n${passed} passed, ${failed} failed`);
 if (failed) process.exit(1);

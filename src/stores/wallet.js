@@ -999,7 +999,7 @@ export const useWalletStore = defineStore('wallet', {
      */
     showPaymentError(error, ctx = {}) {
       const t = ctx.t || ((key) => key);
-      const built = buildPaymentError(error, ctx, t);
+      const built = buildPaymentError(error, { useBip177Format: this.useBip177Format, ...ctx }, t);
       // No server answered: say whether the phone is offline, its network
       // has no internet, or only that service is down. A caller's own
       // reason still wins.

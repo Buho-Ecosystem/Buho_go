@@ -12,8 +12,7 @@
 import { defineStore } from 'pinia'
 import { useTransactionMetadataStore } from './transactionMetadata'
 import { WALLET_TYPES } from '../providers/WalletFactory'
-import { lnurlGetJson } from '../utils/lnurlHttp.js'
-import { counterpartyError } from '../utils/errorOrigin.js'
+import { fetchPayRequest, lightningAddressUrl, requestPayInvoice } from '../utils/lnurlPay.js'
 import { migratePocketConfigKeys } from '../utils/autoWithdrawKeys.js'
 import { payWithNwc } from '../services/nwcPayment.js'
 import { NWC_ERROR } from '../utils/nwcErrors.js'
@@ -376,21 +375,14 @@ export const useAutoWithdrawStore = defineStore('autoWithdraw', {
 
     /** A Lightning address paid from an NWC or LNbits wallet. */
     async _payLightningAddress(walletStore, walletId, walletType, address, amount) {
-      const [username, domain] = address.split('@')
-      if (!username || !domain) throw new Error('Could not resolve Lightning address')
-      const meta = await lnurlGetJson(`https://${domain}/.well-known/lnurlp/${username}`)
-      const pay = meta.ok ? meta.data : null
-      if (!pay?.callback || pay.tag !== 'payRequest' || pay.status === 'ERROR') {
-        throw new Error('Could not resolve Lightning address')
-      }
-      const separator = pay.callback.includes('?') ? '&' : '?'
-      const invoiceResponse = await lnurlGetJson(`${pay.callback}${separator}amount=${amount * 1000}`)
-      if (!invoiceResponse.ok) throw new Error('Failed to get invoice from Lightning address')
-      const invoiceData = invoiceResponse.data || {}
-      if (invoiceData.status === 'ERROR') throw counterpartyError(invoiceData.reason, 'Invoice request failed')
+      const url = lightningAddressUrl(address)
+      if (!url) throw new Error('Could not resolve Lightning address')
+      // The same request every send makes (utils/lnurlPay.js). Nobody is
+      // watching here, so its check matters most: an invoice for any other
+      // amount than the rule's is refused before anything is paid.
+      const payRequest = await fetchPayRequest(url)
       // A LUD-09 successAction is ignored: nobody is there to read it.
-      const invoice = invoiceData.pr
-      if (!invoice) throw new Error('No invoice returned')
+      const { pr: invoice } = await requestPayInvoice(payRequest, { amountSats: amount })
 
       if (walletType === WALLET_TYPES.LNBITS) {
         // ensureLNBitsConnected heals a connection a 401 marked as lost.

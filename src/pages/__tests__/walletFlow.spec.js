@@ -6,6 +6,7 @@ import * as bip21Helpers from '../../utils/bip21.js';
 import * as addresses from '../../utils/addressUtils.js';
 import * as metadata from '../../utils/lnurlMetadata.js';
 import * as lnurlPay from '../../utils/lnurlPay.js';
+import { PAY_REQUEST, failed, fakeService, invoiceFor, lnurlPayWith, ok } from '../../utils/__tests__/lnurlPayFixtures.js';
 import * as lnurlWithdraw from '../../utils/lnurlWithdraw.js';
 import * as payingWallets from '../../utils/payingWallets.js';
 import * as walletCapabilities from '../../utils/walletCapabilities.js';
@@ -92,40 +93,113 @@ test('confirmed withdrawal shows only the authoritative remaining balance', asyn
 test('only the invoice response can authorize a reusable payment link', async () => {
   for (const early of [false, true, undefined]) {
     for (const disposable of [false, true, null, undefined]) {
-      let call = 0;
+      const { get } = fakeService(ok({ ...PAY_REQUEST, disposable: early }), ok({ pr: invoiceFor(10), disposable }));
       const methods = component({
-        '../utils/lnurlPay.js': lnurlPay,
-        '../utils/lnurlHttp.js': { lnurlGetJson: async () => ({ ok: true, data: ++call === 1
-          ? { tag: 'payRequest', callback: 'https://coffee.example/cb', minSendable: 1000, maxSendable: 100000, metadata: '[]', disposable: early }
-          : { pr: 'fixture', disposable } }) },
+        '../utils/lnurlPay.js': lnurlPayWith(get),
         '../utils/lud23.js': { assertPaymentInput() {} },
-        '../utils/successAction.js': { parseSuccessAction: () => null },
-        '../utils/lnurlVerify.js': { validateVerifyUrl: () => null },
       }).methods;
-      const result = await methods.fetchLNURLInvoice.call({ decodeLNURL: () => 'https://coffee.example/pay', walletStore: {} }, 'https://coffee.example/pay', 10);
+      const result = await methods.fetchLNURLInvoice.call({ walletStore: {} }, 'https://coffee.example/pay', 10);
       assert.equal(!!result.payLink, disposable === false);
+      assert.equal(result.pr, invoiceFor(10));
     }
   }
 });
 
 test('an LNURL server\'s refusal is marked as its own; our fallback is not', async () => {
-  const fetchWith = (answers) => {
-    let call = 0;
+  const fetchWith = (...answers) => {
+    const { get } = fakeService(...answers);
     const methods = component({
-      '../utils/errorOrigin.js': errorOrigin,
-      '../utils/lnurlPay.js': lnurlPay,
-      '../utils/lnurlHttp.js': { lnurlGetJson: async () => ({ ok: true, data: answers[call++] }) },
+      '../utils/lnurlPay.js': lnurlPayWith(get),
       '../utils/lud23.js': { assertPaymentInput() {} },
     }).methods;
-    return methods.fetchLNURLInvoice.call({ decodeLNURL: () => 'https://coffee.example/pay', walletStore: {} }, 'https://coffee.example/pay', 10).catch((error) => error);
+    return methods.fetchLNURLInvoice.call({ walletStore: {} }, 'https://coffee.example/pay', 10).catch((error) => error);
   };
-  const payRequest = { tag: 'payRequest', callback: 'https://coffee.example/cb', minSendable: 1000, maxSendable: 100000, metadata: '[]' };
-  const refused = await fetchWith([payRequest, { status: 'ERROR', reason: 'Amount is above the maximum' }]);
+  const refused = await fetchWith(ok(PAY_REQUEST), ok({ status: 'ERROR', reason: 'Amount is above the maximum' }));
   assert.deepEqual([refused.message, errorOrigin.isCounterpartyError(refused)], ['Amount is above the maximum', true]);
-  const closed = await fetchWith([{ status: 'ERROR', reason: 'This shop is closed' }]);
+  const closed = await fetchWith(ok({ status: 'ERROR', reason: 'This shop is closed' }));
   assert.equal(errorOrigin.isCounterpartyError(closed), true);
-  const garbled = await fetchWith([{ tag: 'withdrawRequest', reason: 'not a refusal' }]);
-  assert.deepEqual([garbled.message, errorOrigin.isCounterpartyError(garbled)], ['LNURL error', false]);
+  // The provider sends its reason with an HTTP 500: it still reaches the person.
+  const behind500 = await fetchWith(ok(PAY_REQUEST), failed(500, { status: 'ERROR', reason: 'Could not validate refund address' }));
+  assert.deepEqual([behind500.message, errorOrigin.isCounterpartyError(behind500)], ['Could not validate refund address', true]);
+  const garbled = await fetchWith(ok({ tag: 'withdrawRequest', reason: 'not a refusal' }));
+  assert.deepEqual([garbled.code, errorOrigin.isCounterpartyError(garbled)], [lnurlPay.PAY_REQUEST_ERROR.NOT_PAY_REQUEST, false]);
+});
+
+test('an LNURL payment sends the comment the person typed and stops at an invoice for another amount', async () => {
+  const { get, asked } = fakeService(ok(PAY_REQUEST), ok({ pr: invoiceFor(10) }), ok(PAY_REQUEST), ok({ pr: invoiceFor(1000) }));
+  const methods = component({
+    '../utils/lnurlPay.js': lnurlPayWith(get),
+    '../utils/lud23.js': { assertPaymentInput() {} },
+  }).methods;
+  const paid = [];
+  const provider = { payInvoice: async (args) => { paid.push(args.invoice); return { id: 'tx', status: 'completed' }; } };
+  const vm = { ...methods, pendingPayment: { lnurl: 'https://coffee.example/pay' }, walletStore: { ensureSparkConnected: async () => provider, ensureLNBitsConnected: async () => provider } };
+  await vm.sendSparkPayment(10, 'thanks', null, 'A');
+  assert.equal(asked[1].url, 'https://pay.example/lnurlp/cb/alice?amount=10000&comment=thanks');
+  assert.deepEqual(paid, [invoiceFor(10)]);
+  await assert.rejects(vm.sendLNBitsPayment(10, '', null, 'B'), (error) => error.code === lnurlPay.PAY_REQUEST_ERROR.INVOICE_MISMATCH);
+  assert.deepEqual(paid, [invoiceFor(10)], 'the oversized invoice was never paid');
+});
+
+test('a Lightning address that refuses says why, labelled as theirs; one that is not there stays "not found"', async () => {
+  const infoWith = (...answers) => infoFor('alice@example.com', ...answers);
+  const infoFor = (address, ...answers) => {
+    const { get } = fakeService(...answers);
+    const methods = component({
+      '../utils/lnurlPay.js': lnurlPayWith(get),
+      '../utils/errorOrigin.js': errorOrigin,
+      '../services/lnAddressServices': { matchLnAddressService: () => null },
+      '@capacitor/core': { Capacitor: { isNativePlatform: () => true } },
+    }).methods;
+    return methods.fetchLightningAddressInfo.call({ ...methods, $t: t, walletStore: { useBip177Format: true } }, address);
+  };
+  assert.deepEqual(await infoWith(failed(500, { status: 'ERROR', reason: 'This account is suspended' })),
+    { error: true, reason: 'This account is suspended', attribution: 'Reported by the recipient' });
+  assert.deepEqual(await infoWith(ok({ ...PAY_REQUEST, callback: 'http://pay.example/cb' })),
+    { error: true, reason: "The recipient's payment details aren't valid. Ask them for another way to pay.", attribution: null });
+  assert.deepEqual(await infoWith(ok({ status: 'ERROR' })),
+    { error: true, reason: "The recipient's service declined. Nothing was sent.", attribution: null }, 'a refusal without words is said in ours');
+  assert.deepEqual(await infoWith(failed(404)), {});
+  assert.deepEqual(await infoWith(ok({ tag: 'withdrawRequest' })), {});
+  const found = await infoWith(ok(PAY_REQUEST));
+  assert.deepEqual([found.minSats, found.maxSats, found.commentAllowed, found.isFixedAmount], [1, 100000, 32, false]);
+  for (const address of ['not an address', 'alice@evil.example/x', 'a/b@example.com']) {
+    assert.deepEqual(await infoFor(address), {}, `${address} is never requested`);
+  }
+});
+
+test('on the phone, no network reads as no network, never as "not found"', async () => {
+  // The native HTTP stack rejects with the platform's own error code.
+  const offline = [
+    Object.assign(new Error('Unable to resolve host "example.com": No address associated with hostname'), { code: 'UnknownHostException' }),
+    Object.assign(new Error('The Internet connection appears to be offline.'), { code: 'NSURLErrorDomain' }),
+    new TypeError('Failed to fetch'),
+  ];
+  for (const failure of offline) {
+    const { get } = fakeService(failure);
+    const methods = component({
+      '../utils/lnurlPay.js': lnurlPayWith(get),
+      '../utils/errorOrigin.js': errorOrigin,
+      '../services/lnAddressServices': { matchLnAddressService: () => null },
+      '@capacitor/core': { Capacitor: { isNativePlatform: () => true } },
+    }).methods;
+    const info = await methods.fetchLightningAddressInfo.call({ ...methods, $t: t, walletStore: {} }, 'alice@example.com');
+    assert.deepEqual(info, { error: true, reason: "Couldn't reach the network. Please check your internet and try again.", attribution: null }, failure.message);
+  }
+});
+
+test('a service\'s words keep their label in the Send field and in the dialog', () => {
+  const methods = component({ '../utils/errorOrigin.js': errorOrigin }).methods;
+  const shown = [];
+  const vm = { ...methods, $t: t, sendResolveError: '', sendResolveSource: '', walletStore: { showPaymentError: (error, ctx) => shown.push([error, ctx]) } };
+  vm.failSendResolution('This account is suspended', true, { attribution: 'Reported by the recipient' });
+  assert.deepEqual([vm.sendResolveError, vm.sendResolveSource], ['This account is suspended', 'Reported by the recipient']);
+  vm.failSendResolution("We couldn't find this Lightning address", true, { attribution: null });
+  assert.equal(vm.sendResolveSource, '', 'our own words carry no label');
+  vm.failSendResolution('Shop closed', false, { context: 'link', attribution: 'Reported by the server' });
+  vm.failSendResolution('Our words', false, {});
+  assert.deepEqual(shown.map(([error]) => [error.message, errorOrigin.isCounterpartyError(error)]), [['Shop closed', true], ['Our words', false]]);
+  assert.equal(shown[0][1].context, 'link');
 });
 
 test('pending service sends retain payment identity without offering completed-payment actions', async () => {

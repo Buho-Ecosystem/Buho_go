@@ -11,6 +11,7 @@ import walletRemoval from './walletRemoval.js';
 import autoTransfer from './autoTransfer.js';
 import boltCard from './boltCard.js';
 import walletApps from './walletApps.js';
+import payRequests from './payRequests.js';
 export default {
   ...requests,
   ...profilePayment,
@@ -63,6 +64,7 @@ export default {
   ...autoTransfer,
   ...boltCard,
   ...walletApps,
+  ...payRequests,
   // Spend: Bitrefill door
   "Gift cards, mobile top-ups and more": "Gift cards, mobile top-ups and more",
   "Bitrefill is on its way": "Bitrefill is on its way",

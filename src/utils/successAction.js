@@ -56,11 +56,13 @@ function clampText(value) {
 }
 
 /** Whether a string is a syntactically valid http(s) URL. */
+// An http(s) link with no `user:password@` in front of its host: those let
+// a link read as one site ("shop.example:x@other.example") and open another.
 function isHttpUrl(value) {
   if (typeof value !== 'string' || !value) return false;
   try {
     const u = new URL(value);
-    return u.protocol === 'http:' || u.protocol === 'https:';
+    return (u.protocol === 'http:' || u.protocol === 'https:') && !u.username && !u.password;
   } catch {
     return false;
   }
@@ -82,10 +84,12 @@ export function formatSuccessActionUrl(url, max = 42) {
   if (trimmed.length <= max) return trimmed;
   const slash = trimmed.indexOf('/');
   const host = slash === -1 ? trimmed : trimmed.slice(0, slash);
-  // Keep the host intact and eat into the path; a host longer than the budget
-  // is simply truncated at the end.
+  // Keep the host intact and eat into the path. A host longer than the budget
+  // keeps its end, the part that names the site it belongs to:
+  // "…verify-session.other.example", never "shop.example.verify-ses…".
   const room = max - host.length - 1;
-  if (room < 4) return `${trimmed.slice(0, max - 1)}…`;
+  if (host.length > max - 1) return `…${host.slice(host.length - (max - 1))}`;
+  if (room < 4) return `${host}…`;
   return `${host}…${trimmed.slice(trimmed.length - room + 1)}`;
 }
 
