@@ -785,7 +785,10 @@ export default {
       if (fe.label) return fe.label
       if (typeof fe.sats !== 'number') return ''
       if (fe.sats === 0) return this.$t('Free')
-      return `${fe.sats.toLocaleString()} sats`
+      const amount = formatAmount(fe.sats, this.useBip177Format)
+      // A limit, not a quote: the most the payment may cost (Lightning
+      // addresses and links have no invoice to quote until after the slide).
+      return fe.isLimit ? this.$t('Up to {amount}', { amount }) : amount
     },
 
     requiresSlide() {

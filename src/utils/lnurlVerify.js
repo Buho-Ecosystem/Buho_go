@@ -131,6 +131,12 @@ function sleep(ms, signal) {
   })
 }
 
+// A redirect is never followed: it could take the poll to a host the
+// same-host rule (validateVerifyUrl) keeps out. Both spellings, for the LNURL
+// transport (utils/lnurlHttp.js) and for a plain fetch. A redirect then reads
+// as an answer that is not ok, and the poll carries on.
+const NO_REDIRECTS = Object.freeze({ disableRedirects: true, redirect: 'manual' })
+
 /**
  * fetch with a per-request timeout and external-abort support, so one hung
  * connection can't stall the poll past its deadline. Falls back to a plain
@@ -138,7 +144,7 @@ function sleep(ms, signal) {
  */
 async function fetchWithTimeout(doFetch, url, timeoutMs, externalSignal) {
   if (typeof AbortController === 'undefined' || !timeoutMs) {
-    return doFetch(url, externalSignal ? { signal: externalSignal } : undefined)
+    return doFetch(url, externalSignal ? { ...NO_REDIRECTS, signal: externalSignal } : { ...NO_REDIRECTS })
   }
   const controller = new AbortController()
   const onAbort = () => controller.abort()
@@ -148,7 +154,7 @@ async function fetchWithTimeout(doFetch, url, timeoutMs, externalSignal) {
   }
   const timer = setTimeout(() => controller.abort(), timeoutMs)
   try {
-    return await doFetch(url, { signal: controller.signal })
+    return await doFetch(url, { ...NO_REDIRECTS, signal: controller.signal })
   } finally {
     clearTimeout(timer)
     externalSignal?.removeEventListener?.('abort', onAbort)

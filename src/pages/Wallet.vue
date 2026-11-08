@@ -683,6 +683,7 @@ import {
   pickDefaultPayingWallet,
   knownFeeReserveSats,
   payingWalletHint,
+  unquotedFeeLimitSats,
 } from '../utils/payingWallets.js';
 import {
   decodeSparkDestination,
@@ -1742,6 +1743,11 @@ export default {
           feeEstimate = { sats: null, isEstimating: true };
         } else if (this.estimatedFee !== null && this.estimatedFee !== undefined) {
           feeEstimate = { sats: this.estimatedFee, isEstimating: false };
+        } else if ((p.lightningAddress || p.lnurl) && p.type !== 'lnurl_withdraw') {
+          // No invoice to quote until after the slide: the most the route
+          // may cost, which the payment then holds to (sendSparkPayment).
+          const limit = unquotedFeeLimitSats(this.payingAmountSats);
+          if (limit > 0) feeEstimate = { sats: limit, isEstimating: false, isLimit: true };
         }
       } else if (payerType === 'arkade') {
         if (p.arkadeAddress) {
@@ -5045,6 +5051,14 @@ export default {
           result = await this.sendNWCPayment(amount, comment, sendingWalletId);
         }
 
+        // What went to the recipient: the invoice's amount. In the recipient's
+        // currency that is the estimate confirmed plus the service's fee, and
+        // it is what History shows, so the success screen and the records
+        // that find this payment in History use it too. Otherwise it is the
+        // amount confirmed (requestPayInvoice holds the invoice to it).
+        const invoiceSats = Number(result?.invoiceSats);
+        const sentSats = Number.isFinite(invoiceSats) && invoiceSats > 0 ? Math.ceil(invoiceSats) : amount;
+
 
         // LUD-09: the recipient may have returned a successAction alongside the
         // invoice (a post-payment message, link, or AES-encrypted secret).
@@ -5152,7 +5166,7 @@ export default {
           try {
             await this.transactionMetadataStore.enqueuePendingContactLink({
               contactId: invoiceContactId,
-              amountSats: amount,
+              amountSats: sentSats,
               perPayment: true,
               walletId: sendingWalletId,
             });
@@ -5182,7 +5196,7 @@ export default {
             await this.transactionMetadataStore.enqueuePendingContactLink({
               contactId: existingContact?.id || null,
               recipientAddress,
-              amountSats: amount,
+              amountSats: sentSats,
               // Ride the same deferred queue to durably stamp the recipient's
               // LUD-09 message onto the outgoing tx once it surfaces in history.
               successAction,
@@ -5256,7 +5270,7 @@ export default {
             // Carry the amount so the post-save handler can queue a
             // pending contact link against the same outgoing tx the
             // existing-contact path uses.
-            amountSats: amount,
+            amountSats: sentSats,
             nostrIdentity,
             // ... and the wallet that sent it: that is the history the link
             // belongs to, whichever wallet is active by the time Save is tapped.
@@ -5274,7 +5288,7 @@ export default {
         this.emitPaymentSent({
           contactId: existingContact?.id || invoiceContactId,
           destination: recipientAddress || this.pendingPayment?.invoice || null,
-          amountSats: amount,
+          amountSats: sentSats,
           preimage: result?.preimage || null,
           sendingWalletId,
           note: comment,
@@ -5292,7 +5306,7 @@ export default {
         // polling already resolved to a terminal status by now; a 60s timeout
         // without settling lands on PENDING with softer "still routing" copy.
         this.openSendSuccess({
-          amount,
+          amount: sentSats,
           recipient: recipientLabel,
           status,
           showSaveContact: shouldOfferSave,
@@ -5505,7 +5519,8 @@ export default {
           invoice: this.pendingPayment.invoice,
           preferSpark: true, // Auto-use Spark transfer if recipient has Spark address
           amountSats: isZeroAmountInvoice ? amount : null, // Only pass amount for zero-amount invoices
-          maxFee: this.estimatedFee || undefined // Pass UI-displayed fee estimate
+          // The fee the sheet showed; a quote of 0 ("Free") is a quote too.
+          maxFee: this.estimatedFee ?? undefined
         });
       }
 
@@ -5517,14 +5532,15 @@ export default {
       // LNURL - decode and fetch invoice, then pay
       // Note: LNURL invoices already have amount encoded, so don't pass amountSats
       if (this.pendingPayment.lnurl) {
-        const { pr, successAction, verify, payLink, serviceMeta } = await this.fetchLNURLInvoice(this.pendingPayment.lnurl, amount, payout, comment);
+        const { pr, invoiceSats, successAction, verify, payLink, serviceMeta } = await this.fetchLNURLInvoice(this.pendingPayment.lnurl, amount, payout, comment);
         const result = await provider.payInvoice({
           invoice: pr,
           preferSpark: true,
-          maxFee: this.estimatedFee || undefined // Pass UI-displayed fee estimate
+          // The limit the sheet showed: there was no invoice to quote.
+          feeLimitSats: unquotedFeeLimitSats(amount),
           // amountSats intentionally omitted - LNURL invoice has amount encoded
         });
-        return { ...result, successAction, verify, payLink, serviceMeta };
+        return { ...result, invoiceSats, successAction, verify, payLink, serviceMeta };
       }
 
       throw new Error('Unsupported payment type for Spark wallet');
@@ -5561,21 +5577,21 @@ export default {
 
       // Lightning address → fetch a bolt11 for the amount, then swap.
       if (this.pendingPayment.lightningAddress) {
-        const { pr, successAction, verify } = await this.fetchLightningAddressInvoice(
+        const { pr, invoiceSats, successAction, verify } = await this.fetchLightningAddressInvoice(
           this.pendingPayment.lightningAddress,
           amount,
           comment,
           payout
         );
         const result = await provider.payInvoice({ invoice: pr });
-        return { ...result, successAction, verify };
+        return { ...result, invoiceSats, successAction, verify };
       }
 
       // LNURL-pay → fetch the encoded-amount invoice, then swap.
       if (this.pendingPayment.lnurl) {
-        const { pr, successAction, verify, payLink, serviceMeta } = await this.fetchLNURLInvoice(this.pendingPayment.lnurl, amount, payout, comment);
+        const { pr, invoiceSats, successAction, verify, payLink, serviceMeta } = await this.fetchLNURLInvoice(this.pendingPayment.lnurl, amount, payout, comment);
         const result = await provider.payInvoice({ invoice: pr });
-        return { ...result, successAction, verify, payLink, serviceMeta };
+        return { ...result, invoiceSats, successAction, verify, payLink, serviceMeta };
       }
 
       // On-chain (bc1…): collaborative exit (offboard) via Ramps.
@@ -5638,21 +5654,21 @@ export default {
 
       // Lightning address - fetch invoice first then pay
       if (this.pendingPayment.lightningAddress) {
-        const { pr, successAction, verify } = await this.fetchLightningAddressInvoice(
+        const { pr, invoiceSats, successAction, verify } = await this.fetchLightningAddressInvoice(
           this.pendingPayment.lightningAddress,
           amount,
           comment,
           payout
         );
         const result = await provider.payInvoice({ invoice: pr });
-        return { ...result, successAction, verify };
+        return { ...result, invoiceSats, successAction, verify };
       }
 
       // LNURL - fetch invoice then pay
       if (this.pendingPayment.lnurl) {
-        const { pr, successAction, verify, payLink, serviceMeta } = await this.fetchLNURLInvoice(this.pendingPayment.lnurl, amount, payout, comment);
+        const { pr, invoiceSats, successAction, verify, payLink, serviceMeta } = await this.fetchLNURLInvoice(this.pendingPayment.lnurl, amount, payout, comment);
         const result = await provider.payInvoice({ invoice: pr });
-        return { ...result, successAction, verify, payLink, serviceMeta };
+        return { ...result, invoiceSats, successAction, verify, payLink, serviceMeta };
       }
 
       throw new Error('Unsupported payment type for LNbits wallet');
@@ -6023,9 +6039,10 @@ export default {
       const url = lnurlToUrl(lnurl);
       if (!url) throw new Error('Invalid LNURL');
       const payRequest = await fetchPayRequest(url);
-      const { pr, successAction, verify, storeable } = await requestPayInvoice(payRequest, { amountSats, payout, comment });
+      const { pr, amountSats: invoiceSats, successAction, verify, storeable } = await requestPayInvoice(payRequest, { amountSats, payout, comment });
       return {
         pr,
+        invoiceSats,
         successAction,
         verify,
         payLink: storeable ? lnurl : null,
@@ -6219,6 +6236,9 @@ export default {
           fixedAmountSats: isFixedAmount ? Math.floor(minSendable / 1000) : null,
           commentAllowed: payRequest.commentAllowed,
           callback: payRequest.callback,
+          // As the service sent it: the invoice's description hash is checked
+          // against it (requestPayInvoice), also when NWC pays from these terms.
+          metadata: typeof data.metadata === 'string' ? data.metadata : null,
           description: data.metadata ? this.parseLnurlMetadata(data.metadata) : null,
           serviceMeta: parsePayRequestMetadata(data.metadata),
         };
@@ -6238,7 +6258,8 @@ export default {
      * @param {number} amountSats - Amount in satoshis
      * @param {string} [comment] - Optional comment
      * @param {{code: string, amount: number}|null} [payout] - LUD-21 amount in the recipient's currency
-     * @returns {Promise<{pr: string, successAction: object|null, verify: string|null}>}
+     * @returns {Promise<{pr: string, invoiceSats: number, successAction: object|null, verify: string|null}>}
+     *   `invoiceSats` is what the invoice asks for (see requestPayInvoice)
      */
     async fetchLightningAddressInvoice(address, amountSats, comment, payout = null) {
       const url = lightningAddressUrl(address);
@@ -6246,8 +6267,8 @@ export default {
         throw new Error('Invalid Lightning address');
       }
       const payRequest = await fetchPayRequest(url);
-      const { pr, successAction, verify } = await requestPayInvoice(payRequest, { amountSats, payout, comment });
-      return { pr, successAction, verify };
+      const { pr, amountSats: invoiceSats, successAction, verify } = await requestPayInvoice(payRequest, { amountSats, payout, comment });
+      return { pr, invoiceSats, successAction, verify };
     },
 
     /**

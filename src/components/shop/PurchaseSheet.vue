@@ -371,6 +371,7 @@ import VueQrcode from '@chenfengyuan/vue-qrcode';
 import { Invoice } from '@getalby/lightning-tools';
 import { useWalletStore } from '../../stores/wallet';
 import { payWithNwc } from '../../services/nwcPayment.js';
+import { buildPaymentError } from '../../utils/userErrors.js';
 import { useNadanadaOrdersStore } from '../../stores/nadanadaOrders';
 import {
   redeemOrder, orderReceiptText, ORDER_KIND, ORDER_STATE,
@@ -850,7 +851,13 @@ export default {
         // never re-pay a settled invoice and never falsely report failure on a
         // payment that landed. Either way the order stays in the ledger.
         if (await this.probeSettled()) return; // moved on; payment had landed
-        const msg = err?.message || '';
+        // Said the way every payment says it: in the person's language, with
+        // amounts as settings writes them, never the wallet's raw English.
+        const msg = err ? buildPaymentError(err, {
+          context: 'payment',
+          walletType: wallet.type,
+          useBip177Format: this.walletStore.useBip177Format,
+        }, this.$t.bind(this)).reason : '';
         this.payError = msg
           ? this.$t('Payment didn’t go through: {msg}', { msg })
           : this.$t('Payment didn’t go through. Try again.');

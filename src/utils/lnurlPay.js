@@ -18,11 +18,22 @@
  *     service cannot charge more than was shown. In the recipient's currency
  *     (LUD-21) the service adds its fee to the estimate the person saw, so
  *     the invoice may be above it, but only by PAYOUT_FEE_ALLOWANCE_PERCENT.
+ *   - The invoice must be for this pay request: one whose description hash
+ *     names other metadata is refused (LUD-06), as it was made for another
+ *     payment. One with a plain description instead is accepted; payout
+ *     services send those, and nothing in it can be checked.
+ *   - An invoice that had long expired when it arrived is refused.
+ *   - The callback is asked without following redirects off its host, so the
+ *     amount and the note reach the host that was checked, and no other. A
+ *     redirect that stays on that host (a moved path) is followed, twice at
+ *     most, where the phone can see where it points.
  *
  * Errors carry a `code` from PAY_REQUEST_ERROR, except a refusal with the
  * service's own reason: that one is marked as the service's words
  * (utils/errorOrigin.js) and keeps them as its message.
  */
+import { sha256 } from '@noble/hashes/sha2.js'
+import { bytesToHex } from '@noble/hashes/utils.js'
 import { lnurlGetJson } from './lnurlHttp.js'
 import { ONION_HOST_RE } from './addressUtils.js'
 import { counterpartyError } from './errorOrigin.js'
@@ -34,6 +45,8 @@ import { validateVerifyUrl } from './lnurlVerify.js'
 export const PAY_REQUEST_ERROR = Object.freeze({
   /** The service answered with an HTTP error and no reason of its own. */
   HTTP: 'LNURL_HTTP_ERROR',
+  /** The callback redirected off its host, or where it pointed cannot be seen. */
+  REDIRECTED: 'LNURL_REDIRECTED',
   /** The service declined (`status: "ERROR"`) without saying why. */
   REFUSED: 'LNURL_REFUSED',
   /** The link answered, but not with a pay request. */
@@ -48,6 +61,10 @@ export const PAY_REQUEST_ERROR = Object.freeze({
   INVOICE_MISSING: 'LNURL_INVOICE_MISSING',
   /** The invoice is for another amount than the one asked for. */
   INVOICE_MISMATCH: 'LNURL_INVOICE_MISMATCH',
+  /** The invoice's description hash names another pay request's metadata. */
+  INVOICE_NOT_FOR_REQUEST: 'LNURL_INVOICE_NOT_FOR_REQUEST',
+  /** The invoice had expired long before it arrived. */
+  INVOICE_EXPIRED: 'LNURL_INVOICE_EXPIRED',
 })
 
 // Limits a service leaves out (or sends as 0), as every path has always assumed.
@@ -63,6 +80,20 @@ const DEFAULT_MAX_MSAT = 100000000000
  */
 export const PAYOUT_FEE_ALLOWANCE_PERCENT = 10
 const PAYOUT_ROUNDING_SATS = 10
+
+/**
+ * How long past its expiry a fresh invoice is still handed to the wallet.
+ * Expiry is judged by the service's own clock (its Date header) when the
+ * phone can read it, and by the phone's clock otherwise. Some services make
+ * invoices that live a minute, and a phone's clock can be off by more than
+ * that: refusing on it alone would stop payments that go through. The wallet
+ * still refuses an invoice that has truly expired. One older than this is
+ * stale, not a clock that is a little off.
+ */
+const EXPIRY_CLOCK_GRACE_SECONDS = 600
+
+// Redirects the callback may make on its own host before it is refused.
+const MAX_SAME_HOST_REDIRECTS = 2
 
 // Query parameters the wallet adds to the callback (LUD-06, LUD-12, LUD-18,
 // LUD-21). One already in the callback, in any case, would give the service
@@ -402,6 +433,40 @@ export function payoutCeilingSats(estimateSats) {
   return estimateSats + Math.ceil((estimateSats * PAYOUT_FEE_ALLOWANCE_PERCENT) / 100) + PAYOUT_ROUNDING_SATS
 }
 
+/** An answer that sends the request on: a 3xx, or a browser's opaque redirect (status 0). */
+function isRedirect(response) {
+  const status = Number(response?.status) || 0
+  return !response?.ok && (status === 0 || (status >= 300 && status < 400))
+}
+
+/**
+ * Where a redirect from `from` points, if it stays on the same scheme, host
+ * and port, carries no credentials, and can be seen at all; else null.
+ */
+function sameHostRedirect(from, location) {
+  if (typeof location !== 'string' || !location.trim()) return null
+  try {
+    const origin = new URL(from)
+    const next = new URL(location.trim(), origin)
+    if (next.origin !== origin.origin || next.username || next.password) return null
+    next.hash = ''
+    return next.href
+  } catch {
+    return null
+  }
+}
+
+/** The service's clock in seconds, from its Date header, or null. */
+function serviceClockSeconds(response) {
+  const at = typeof response?.date === 'string' ? Date.parse(response.date) : NaN
+  return Number.isFinite(at) ? at / 1000 : null
+}
+
+/** SHA-256 of a pay request's metadata, as an invoice for it carries it (LUD-06). */
+function metadataHash(metadata) {
+  return bytesToHex(sha256(new TextEncoder().encode(metadata)))
+}
+
 /** The invoice in a callback answer, decoded. */
 function readInvoice(data, decode) {
   const missing = (message) => payRequestError(PAY_REQUEST_ERROR.INVOICE_MISSING, message)
@@ -415,7 +480,12 @@ function readInvoice(data, decode) {
   }
   const amountSats = Number(decoded?.amount)
   if (!Number.isFinite(amountSats) || amountSats <= 0) throw missing('The invoice has no amount')
-  return { pr: typeof decoded.invoice === 'string' && decoded.invoice ? decoded.invoice : pr, amountSats }
+  return {
+    pr: typeof decoded.invoice === 'string' && decoded.invoice ? decoded.invoice : pr,
+    amountSats,
+    descriptionHash: typeof decoded.descriptionHash === 'string' ? decoded.descriptionHash.toLowerCase() : null,
+    expiresAt: Number.isFinite(decoded.expiry) ? decoded.expiry : null,
+  }
 }
 
 /**
@@ -427,9 +497,15 @@ function readInvoice(data, decode) {
  * the person confirmed: the service adds its fee, so the invoice may be above
  * it, but never past payoutCeilingSats.
  *
+ * The invoice must also be for this pay request when it says what it is for
+ * (a description hash), and must not have long expired. The hash is checked
+ * against `payRequest.metadata` as the service sent it; a kept copy without
+ * it skips that check.
+ *
  * @param {object} payRequest  from fetchPayRequest, or a kept copy of its terms
  * @param {{ amountSats: number, payout?: {code:string, amount:number}|null, comment?: string }} args
- * @param {{ get?: Function, decode?: Function, timeoutMs?: number, signal?: AbortSignal }} [options]
+ * @param {{ get?: Function, decode?: Function, timeoutMs?: number, signal?: AbortSignal,
+ *   now?: () => number }} [options]  `now` is the phone's clock in milliseconds
  * @returns {Promise<{ pr: string, amountSats: number, successAction: object|null,
  *   verify: string|null, storeable: boolean }>} `amountSats` is the invoice's;
  *   `successAction` is the LUD-09 action as utils/successAction.js reads it,
@@ -441,7 +517,7 @@ function readInvoice(data, decode) {
 export async function requestPayInvoice(
   payRequest,
   { amountSats, payout = null, comment = '' } = {},
-  { get = lnurlGetJson, decode = parseLightningInvoice, timeoutMs, signal } = {},
+  { get = lnurlGetJson, decode = parseLightningInvoice, timeoutMs, signal, now = Date.now } = {},
 ) {
   const terms = payTerms(payRequest)
   const currency = currencyPayout(payout, terms.currency)
@@ -467,8 +543,26 @@ export async function requestPayInvoice(
     comment,
     commentAllowed: terms.commentAllowed,
   })
-  const data = serviceAnswer(await get(url, { timeoutMs, signal }))
+  const ask = (target) => get(target, { timeoutMs, signal, disableRedirects: true })
+  let target = url
+  let response = await ask(target)
+  for (let hops = 0; hops < MAX_SAME_HOST_REDIRECTS && isRedirect(response); hops += 1) {
+    const next = sameHostRedirect(target, response?.location)
+    if (!next) break
+    target = next
+    response = await ask(target)
+  }
+  // A refusal with its reason is still read first (serviceAnswer).
+  if (isRedirect(response) && response?.data?.status !== 'ERROR') {
+    const status = Number(response?.status) || 0
+    throw payRequestError(PAY_REQUEST_ERROR.REDIRECTED, `The callback redirected (${status || 'opaque'})`, { status })
+  }
+  const data = serviceAnswer(response)
   const invoice = readInvoice(data, decode)
+  if (invoice.descriptionHash && typeof payRequest.metadata === 'string'
+      && invoice.descriptionHash !== metadataHash(payRequest.metadata)) {
+    throw payRequestError(PAY_REQUEST_ERROR.INVOICE_NOT_FOR_REQUEST, 'The invoice was made for another payment request')
+  }
   const tooMuch = sats === null ? invoice.amountSats > payoutCeilingSats(confirmed) : invoice.amountSats !== sats
   if (tooMuch) {
     throw payRequestError(
@@ -476,6 +570,10 @@ export async function requestPayInvoice(
       `The invoice is for ${invoice.amountSats} sats, not the ${confirmed} sats confirmed`,
       { askedSats: confirmed, invoiceSats: invoice.amountSats },
     )
+  }
+  const clock = serviceClockSeconds(response) ?? now() / 1000
+  if (invoice.expiresAt !== null && invoice.expiresAt + EXPIRY_CLOCK_GRACE_SECONDS < clock) {
+    throw payRequestError(PAY_REQUEST_ERROR.INVOICE_EXPIRED, 'The invoice had already expired')
   }
   return {
     pr: invoice.pr,

@@ -30,7 +30,7 @@ test('web submission disallows redirects, cookies and referrer disclosure', asyn
   const saved = globalThis.fetch;
   try {
     globalThis.fetch = async (_, options) => {
-      assert.equal(options.redirect, 'error');
+      assert.equal(options.redirect, 'manual');
       assert.equal(options.credentials, 'omit');
       assert.equal(options.referrerPolicy, 'no-referrer');
       return { ok: true, status: 200, json: async () => ({ status: 'OK' }) };
@@ -38,6 +38,24 @@ test('web submission disallows redirects, cookies and referrer disclosure', asyn
     const api = transport(false);
     assert.equal((await api.lnurlGetJson('https://example.com/share', { disableRedirects: true })).data.status, 'OK');
   } finally { globalThis.fetch = saved; }
+});
+
+test('a redirect on the web reads as an answer that is not ok, not as a lost connection', async () => {
+  const saved = globalThis.fetch;
+  try {
+    // What a browser hands back for a redirect it was told not to follow.
+    globalThis.fetch = async () => ({ ok: false, status: 0, type: 'opaqueredirect', json: async () => { throw new SyntaxError('no body'); } });
+    const api = transport(false);
+    assert.deepEqual(await api.lnurlGetJson('https://example.com/cb', { disableRedirects: true }), { ok: false, status: 0, data: null, location: null, date: null });
+  } finally { globalThis.fetch = saved; }
+});
+
+test('a redirect that was not followed says where it points, and the service clock comes along', async () => {
+  const api = transport(true, async () => ({ status: 302, data: '', headers: { Location: '/cb/next', DATE: 'Sun, 08 Nov 2026 12:00:00 GMT' } }));
+  const answer = await api.lnurlGetJson('https://example.com/cb', { disableRedirects: true });
+  assert.deepEqual([answer.ok, answer.status, answer.location, answer.date], [false, 302, '/cb/next', 'Sun, 08 Nov 2026 12:00:00 GMT']);
+  const plain = await transport(true, async () => ({ status: 200, data: { ok: 1 } })).lnurlGetJson('https://example.com/cb');
+  assert.deepEqual([plain.location, plain.date], [null, null], 'no headers, none made up');
 });
 
 test('external cancellation stops waiting for native metadata and ignores its late response', async () => {

@@ -53,6 +53,20 @@ export function feeReserveSats(amountSats) {
 }
 
 /**
+ * The most a Lightning payment may cost in routing fees when no fee was
+ * quoted before it was confirmed: a Lightning address or a payment link,
+ * whose invoice exists only after the slide, and every path that pays an
+ * invoice without showing a quote. The Send sheet shows it as "Up to", and a
+ * Spark wallet refuses a route that costs more. The same 1 % and 10 sats as
+ * the reserve above: room for any ordinary route, and a bound on the rest.
+ * @param {number} amountSats  the amount being paid
+ * @returns {number} sats; 0 when there is no amount yet
+ */
+export function unquotedFeeLimitSats(amountSats) {
+  return feeReserveSats(amountSats)
+}
+
+/**
  * The fee reserve for the send pipeline: only what is KNOWN to be charged.
  *
  * Spark and Arkade addresses are zero-fee rails, so nothing is held back.

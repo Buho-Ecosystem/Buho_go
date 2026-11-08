@@ -57,6 +57,7 @@ import {
 } from '../utils/breezPayments.js';
 import { reportSparkAttempt } from '../services/sparkReachabilityCheck.js';
 import { classifyTransportFailure } from '../utils/userErrors.js';
+import { FEE_RESERVE_MIN_SATS, unquotedFeeLimitSats } from '../utils/payingWallets.js';
 
 /**
  * One fresh synchronization per SDK instance at a time. Keyed by the SDK
@@ -967,9 +968,25 @@ export class BreezSparkWalletProvider extends WalletProvider {
     }
   }
 
+  /**
+   * Pay a BOLT11 invoice. The route fee is capped before any funds move:
+   *   - `maxFee` is a fee the person was shown as a quote; the cap allows
+   *     5 sats more, so a quote refreshed since then does not refuse over
+   *     rounding.
+   *   - `feeLimitSats` is a limit the person was shown ("Up to"); it holds
+   *     as it is.
+   *   - With neither, nothing was shown, and the cap is unquotedFeeLimitSats
+   *     of the amount: batch send, Auto-Transfer, transfers between wallets
+   *     and purchases never pay an unbounded fee. The amount is the
+   *     invoice's, else the one passed for an amountless invoice, else the
+   *     one the engine is about to send (an invoice this decoder cannot
+   *     read). With none of them, the cap is the limit's floor.
+   * A route above the cap is refused with code LIGHTNING_FEE_ABOVE_LIMIT.
+   */
   async payInvoice({
     invoice,
     maxFee = null,
+    feeLimitSats = null,
     preferSpark = false,
     amountSats = null,
     awaitCompletion = true,
@@ -995,14 +1012,17 @@ export class BreezSparkWalletProvider extends WalletProvider {
         preferSpark,
       });
 
-      // The engine has no SDK-side fee cap; enforce the caller's cap against
-      // the quoted route fee before any funds move. The cap carries a
-      // +5 sat headroom so a quote refreshed between estimate and send
-      // doesn't refuse over rounding.
-      const feeCap = typeof maxFee === 'number' ? maxFee + 5 : routeFee + 5;
+      // The engine has no SDK-side fee cap, so the cap is enforced here,
+      // against the quoted route fee (see the method's comment).
+      const paidSats = [decoded.isZeroAmount ? amountSats : decoded.amount, prep?.amount]
+        .map(Number).find((sats) => Number.isFinite(sats) && sats > 0);
+      const feeCap = typeof feeLimitSats === 'number' ? feeLimitSats
+        : typeof maxFee === 'number' ? maxFee + 5
+          : paidSats ? unquotedFeeLimitSats(paidSats) : FEE_RESERVE_MIN_SATS;
       if (routeFee > feeCap) {
-        throw new Error(
-          `Lightning payment failed: fee ${routeFee} sats exceeds the ${feeCap} sats limit`
+        throw Object.assign(
+          new Error(`Lightning payment failed: fee ${routeFee} sats exceeds the ${feeCap} sats limit`),
+          { code: 'LIGHTNING_FEE_ABOVE_LIMIT', feeSats: routeFee, limitSats: feeCap },
         );
       }
 
@@ -1099,15 +1119,21 @@ export class BreezSparkWalletProvider extends WalletProvider {
       const invoice = await requestPayInvoice(payRequest, { amountSats, payout, comment });
 
       // Invoice already carries the amount — passing amountSats would be
-      // rejected (zero-amount invoices only).
+      // rejected (zero-amount invoices only). No fee could be quoted before
+      // the invoice existed: the limit is the one the Send sheet shows, of
+      // the amount confirmed.
       const result = await this.payInvoice({
         invoice: invoice.pr,
-        preferSpark: true
+        preferSpark: true,
+        feeLimitSats: unquotedFeeLimitSats(amountSats),
       });
 
       return {
         ...result,
         lightningAddress: lightningAddress,
+        // What the invoice asked for: in the recipient's currency, the
+        // estimate confirmed plus the service's fee.
+        invoiceSats: invoice.amountSats,
         successAction: invoice.successAction,
         verify: invoice.verify,
       };

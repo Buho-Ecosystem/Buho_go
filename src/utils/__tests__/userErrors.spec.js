@@ -242,6 +242,9 @@ test('a pay request that cannot be paid is explained by BuhoGO, and says nothing
     [{ code: 'LNURL_CURRENCY_UNAVAILABLE', currency: 'TZS' }, 'The recipient no longer takes payments in TZS. Send the amount in Bitcoin instead.'],
     [{ code: 'LNURL_INVOICE_MISSING' }, "The recipient didn't send a valid payment request. Nothing was sent."],
     [{ code: 'LNURL_INVOICE_MISMATCH' }, 'The recipient asked for a different amount than you confirmed. Nothing was sent.'],
+    [{ code: 'LNURL_INVOICE_NOT_FOR_REQUEST' }, "The recipient's payment request doesn't match this payment. Nothing was sent."],
+    [{ code: 'LNURL_INVOICE_EXPIRED' }, "The recipient's payment request had expired. Nothing was sent. Try again."],
+    [{ code: 'LNURL_REDIRECTED', status: 302 }, "The recipient's service tried to redirect this payment. Nothing was sent. Ask them for another way to pay."],
   ];
   const t = (key, values = {}) => key.replace(/\{(\w+)\}/g, (_, name) => values[name] ?? name);
   for (const [fields, reason] of cases) {
@@ -257,6 +260,16 @@ test('limits are written the way the person reads amounts in settings', () => {
   assert.equal(said(false), `This recipient accepts ${(1000).toLocaleString()} sats to ${(2000).toLocaleString()} sats.`);
   assert.equal(said(true), `This recipient accepts ₿ ${(1000).toLocaleString()} to ₿ ${(2000).toLocaleString()}.`);
   assert.equal(said(undefined), said(true), 'the setting\'s default');
+});
+
+test('a route above the fee limit says both amounts the way settings writes them', () => {
+  const t = (key, values = {}) => key.replace(/\{(\w+)\}/g, (_, name) => values[name] ?? name);
+  const error = Object.assign(new Error('Lightning payment failed: fee 1200 sats exceeds the 1000 sats limit'),
+    { code: 'LIGHTNING_FEE_ABOVE_LIMIT', feeSats: 1200, limitSats: 1000 });
+  const said = (useBip177Format) => buildPaymentError(error, { context: 'payment', useBip177Format }, t);
+  assert.equal(said(true).reason, `The network fee would be ₿ ${(1200).toLocaleString()}, more than the ₿ ${(1000).toLocaleString()} limit. Nothing was sent. Try again later.`);
+  assert.equal(said(false).reason, `The network fee would be ${(1200).toLocaleString()} sats, more than the ${(1000).toLocaleString()} sats limit. Nothing was sent. Try again later.`);
+  assert.deepEqual([said(true).reasonSource, said(true).reasonAttribution], ['curated', null], 'our own limit, said in our words');
 });
 
 test('a service\'s own reason still wins over our copy', () => {
@@ -304,6 +317,11 @@ test('the pay request copy has German and Spanish translations, without em dashe
     "The recipient didn't send a valid payment request. Nothing was sent.",
     'The recipient asked for a different amount than you confirmed. Nothing was sent.',
     'The service is busy. Wait a few minutes, then try again.',
+    "The recipient's payment request doesn't match this payment. Nothing was sent.",
+    "The recipient's payment request had expired. Nothing was sent. Try again.",
+    'The network fee would be {fee}, more than the {limit} limit. Nothing was sent. Try again later.',
+    'Up to {amount}',
+    "The recipient's service tried to redirect this payment. Nothing was sent. Ask them for another way to pay.",
   ];
   for (const key of keys) {
     assert.ok(!/[—–@]/.test(key), key);

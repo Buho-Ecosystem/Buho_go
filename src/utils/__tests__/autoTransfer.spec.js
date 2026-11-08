@@ -117,7 +117,11 @@ test('failures are named in a few words', () => {
   assert.equal(failureReason({ code: 'LNURL_AMOUNT_OUT_OF_RANGE', message: 'Amount must be between 1 and 100 sats' }), 'refused', 'more than it takes');
   assert.equal(failureReason({ code: 'LNURL_HTTP_ERROR', message: 'Server returned 503' }), 'unreachable');
   assert.equal(failureReason({ code: 'LNURL_NOT_PAY_REQUEST', message: 'The link is not a pay request' }), 'unreachable');
+  assert.equal(failureReason({ code: 'LNURL_REDIRECTED', message: 'The callback redirected (302)' }), 'unreachable');
   assert.equal(failureReason({ code: 'LNURL_INVOICE_MISMATCH', message: 'The invoice is for 10 sats, not the 1 sats asked for' }), 'other');
+  // A transfer between wallets says this in our words, which mention the
+  // network: the code decides, so it never reads as a lost connection.
+  assert.equal(failureReason({ code: 'LIGHTNING_FEE_ABOVE_LIMIT', message: 'The network fee would be ₿ 12, more than the ₿ 10 limit. (Spark → Savings)' }), 'fee');
   assert.equal(failureReason(new Error('Insufficient balance')), 'insufficient');
   assert.equal(failureReason(new Error('Could not resolve Lightning address')), 'unreachable');
   assert.equal(failureReason(new Error('Request timed out')), 'offline');
@@ -203,7 +207,7 @@ test('a status is a few words; times are relative and translated', () => {
 });
 
 test('every reason is one short sentence, and never says "withdrawal" or names a route', () => {
-  const reasons = ['unreachable', 'offline', 'insufficient', 'refused', 'unconfirmed', 'balance_unverified', 'no_rate', 'below_minimum', 'cannot_pay', 'cannot_receive', 'missing', 'loop', 'self', 'unknown', 'other'];
+  const reasons = ['unreachable', 'offline', 'insufficient', 'fee', 'refused', 'unconfirmed', 'balance_unverified', 'no_rate', 'below_minimum', 'cannot_pay', 'cannot_receive', 'missing', 'loop', 'self', 'unknown', 'other'];
   for (const reason of reasons) {
     const text = reasonText(reason, { t, wallet: 'Shop', destination: 'Savings' });
     assert.match(text, /^[^.]+\.$/, `${reason}: one sentence`);

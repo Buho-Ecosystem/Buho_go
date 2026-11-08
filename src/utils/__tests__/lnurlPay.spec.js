@@ -21,7 +21,7 @@ import {
   requestPayInvoice,
 } from '../lnurlPay.js';
 import { isCounterpartyError } from '../errorOrigin.js';
-import { PAY_REQUEST, failed, fakeService, invoiceFor, ok } from './lnurlPayFixtures.js';
+import { INVOICE_TIME, PAY_REQUEST, failed, fakeService, invoiceFor, metadataHash, ok } from './lnurlPayFixtures.js';
 
 /** The provider's own test till code, as the Send sheet hands it over. */
 const TILL_ADDRESS = '00020129530023za.co.electrum.picknpay0122TSHP6SJNKTR3IY%2Fconfirm520458125303710540115802ZA5916cryptoqrtestscan6002CT6304821D@cryptoqr.net';
@@ -355,6 +355,146 @@ describe('asking for the invoice', () => {
     const timeout = Object.assign(new Error('The server did not respond in time'), { name: 'AbortError' });
     const { get } = fakeService(timeout);
     await assert.rejects(requestPayInvoice(payRequest, { amountSats: 81 }, { get }), (error) => error === timeout);
+  });
+});
+
+describe('the invoice is the one for this payment', () => {
+  const payRequest = readPayRequest(PAY_REQUEST);
+  const madeFor = (metadata, sats = 81) => invoiceFor(sats, { descriptionHash: metadataHash(metadata) });
+
+  test('an invoice made for this pay request is paid', async () => {
+    const { get } = fakeService(ok({ pr: madeFor(PAY_REQUEST.metadata) }));
+    assert.equal((await requestPayInvoice(payRequest, { amountSats: 81 }, { get })).pr, madeFor(PAY_REQUEST.metadata));
+  });
+
+  test('an invoice made for another pay request is refused, even for the right amount', async () => {
+    const { get } = fakeService(ok({ pr: madeFor('[["text/plain","Mallory"]]') }));
+    await assert.rejects(requestPayInvoice(payRequest, { amountSats: 81 }, { get }),
+      (error) => error.code === PAY_REQUEST_ERROR.INVOICE_NOT_FOR_REQUEST && !isCounterpartyError(error));
+  });
+
+  test('the hash is of the metadata exactly as the service sent it', async () => {
+    // The same JSON with other spacing is another text, so another hash.
+    const { get } = fakeService(ok({ pr: madeFor('[["text/plain", "Alice"]]') }));
+    await assert.rejects(requestPayInvoice(payRequest, { amountSats: 81 }, { get }), withCode(PAY_REQUEST_ERROR.INVOICE_NOT_FOR_REQUEST));
+  });
+
+  test('an invoice with a plain description is paid: payout services send those, and it names nothing to check', async () => {
+    const { get } = fakeService(ok({ pr: invoiceFor(81) }));
+    assert.equal((await requestPayInvoice(payRequest, { amountSats: 81 }, { get })).amountSats, 81);
+  });
+
+  test('kept terms without the metadata pay without the check, as before', async () => {
+    const { metadata, ...terms } = payRequest;
+    assert.equal(typeof metadata, 'string');
+    const { get } = fakeService(ok({ pr: madeFor('[["text/plain","Mallory"]]') }));
+    assert.equal((await requestPayInvoice(terms, { amountSats: 81 }, { get })).amountSats, 81);
+  });
+
+  test('an invoice for another pay request and another amount says it is for another payment', async () => {
+    const { get } = fakeService(ok({ pr: madeFor('[["text/plain","Mallory"]]', 8100) }));
+    await assert.rejects(requestPayInvoice(payRequest, { amountSats: 81 }, { get }), withCode(PAY_REQUEST_ERROR.INVOICE_NOT_FOR_REQUEST));
+  });
+});
+
+describe('an invoice that expired long ago is never paid', () => {
+  const payRequest = readPayRequest(PAY_REQUEST);
+  // The fixture's invoices live 15 minutes from INVOICE_TIME.
+  const at = (secondsAfterMade) => () => (INVOICE_TIME + secondsAfterMade) * 1000;
+
+  test('one made a day ago is refused', async () => {
+    const { get } = fakeService(ok({ pr: invoiceFor(81, { createdAt: INVOICE_TIME - 86400 }) }));
+    await assert.rejects(requestPayInvoice(payRequest, { amountSats: 81 }, { get, now: at(0) }),
+      (error) => error.code === PAY_REQUEST_ERROR.INVOICE_EXPIRED && !isCounterpartyError(error));
+  });
+
+  test('a fresh one is paid on a phone whose clock runs up to ten minutes past its expiry', async () => {
+    for (const seconds of [0, 899, 900, 1200, 1500]) {
+      const { get } = fakeService(ok({ pr: invoiceFor(81) }));
+      assert.equal((await requestPayInvoice(payRequest, { amountSats: 81 }, { get, now: at(seconds) })).amountSats, 81, `${seconds} s`);
+    }
+  });
+
+  test('past that, it is stale whatever the clock', async () => {
+    const { get } = fakeService(ok({ pr: invoiceFor(81) }));
+    await assert.rejects(requestPayInvoice(payRequest, { amountSats: 81 }, { get, now: at(1501) }), withCode(PAY_REQUEST_ERROR.INVOICE_EXPIRED));
+  });
+});
+
+describe('redirects', () => {
+  const payRequest = readPayRequest(PAY_REQUEST);
+  const redirect = (location, status = 302) => ({ ok: false, status, data: null, location });
+
+  test('the callback is asked without following them; the pay request is not', async () => {
+    const { get, asked } = fakeService(ok(PAY_REQUEST), ok({ pr: invoiceFor(81) }));
+    const fetched = await fetchPayRequest('https://example.com/.well-known/lnurlp/alice', { get });
+    await requestPayInvoice(fetched, { amountSats: 81 }, { get });
+    assert.equal(asked[0].options.disableRedirects, undefined, 'a domain may send its address to the service that runs it');
+    assert.equal(asked[1].options.disableRedirects, true, 'the amount and the note reach the host that was checked');
+  });
+
+  test('a redirect on the same host is followed, and the invoice it leads to is checked as any', async () => {
+    const { get, asked } = fakeService(redirect('/lnurlp/cb/alice/?amount=81000', 301), ok({ pr: invoiceFor(81) }));
+    assert.equal((await requestPayInvoice(payRequest, { amountSats: 81 }, { get })).pr, invoiceFor(81));
+    assert.deepEqual(asked.map(({ url }) => url), [`${PAY_REQUEST.callback}?amount=81000`, 'https://pay.example/lnurlp/cb/alice/?amount=81000']);
+    assert.equal(asked[1].options.disableRedirects, true);
+
+    const wrong = fakeService(redirect('https://pay.example/other?amount=8100000'), ok({ pr: invoiceFor(8100) }));
+    await assert.rejects(requestPayInvoice(payRequest, { amountSats: 81 }, { get: wrong.get }), withCode(PAY_REQUEST_ERROR.INVOICE_MISMATCH),
+      'a redirect cannot change what is paid');
+  });
+
+  for (const [name, location] of [
+    ['to another host', 'https://elsewhere.example/cb?amount=81000'],
+    ['to a look-alike host', 'https://pay.example.evil.example/cb'],
+    ['down to http', 'http://pay.example/lnurlp/cb/alice?amount=81000'],
+    ['to another port', 'https://pay.example:8443/cb'],
+    ['with credentials', 'https://user:secret@pay.example/cb'],
+    ['nowhere the phone can see', null],
+  ]) {
+    test(`a redirect ${name} is refused, and nothing is asked of it`, async () => {
+      const { get, asked } = fakeService(redirect(location));
+      await assert.rejects(requestPayInvoice(payRequest, { amountSats: 81 }, { get }),
+        (error) => error.code === PAY_REQUEST_ERROR.REDIRECTED && error.status === 302 && !isCounterpartyError(error));
+      assert.equal(asked.length, 1);
+    });
+  }
+
+  test('a browser\'s opaque redirect is refused too', async () => {
+    const { get } = fakeService(failed(0));
+    await assert.rejects(requestPayInvoice(payRequest, { amountSats: 81 }, { get }), (error) => error.code === PAY_REQUEST_ERROR.REDIRECTED && error.status === 0);
+  });
+
+  test('a host that keeps redirecting is refused after two hops', async () => {
+    const { get, asked } = fakeService(redirect('/a'), redirect('/b'), redirect('/c'));
+    await assert.rejects(requestPayInvoice(payRequest, { amountSats: 81 }, { get }), withCode(PAY_REQUEST_ERROR.REDIRECTED));
+    assert.equal(asked.length, 3);
+  });
+
+  test('a refusal sent with a redirect status keeps its reason', async () => {
+    const { get } = fakeService({ ok: false, status: 302, data: { status: 'ERROR', reason: 'Could not validate refund address' }, location: null });
+    await assert.rejects(requestPayInvoice(payRequest, { amountSats: 81 }, { get }), refusedWith('Could not validate refund address'));
+  });
+});
+
+describe('expiry is judged by the service\'s clock when it sends one', () => {
+  const payRequest = readPayRequest(PAY_REQUEST);
+  const at = (secondsAfterMade) => () => (INVOICE_TIME + secondsAfterMade) * 1000;
+  const dated = (pr, secondsAfterMade) => ({ ...ok({ pr }), date: new Date((INVOICE_TIME + secondsAfterMade) * 1000).toUTCString() });
+
+  test('a fresh invoice is paid on a phone whose clock runs an hour fast', async () => {
+    const { get } = fakeService(dated(invoiceFor(81), 5));
+    assert.equal((await requestPayInvoice(payRequest, { amountSats: 81 }, { get, now: at(3600) })).amountSats, 81);
+  });
+
+  test('a stale one is refused by the service\'s own clock, whatever the phone says', async () => {
+    const { get } = fakeService(dated(invoiceFor(81), 86400));
+    await assert.rejects(requestPayInvoice(payRequest, { amountSats: 81 }, { get, now: at(0) }), withCode(PAY_REQUEST_ERROR.INVOICE_EXPIRED));
+  });
+
+  test('a Date header that cannot be read leaves it to the phone\'s clock', async () => {
+    const { get } = fakeService({ ...ok({ pr: invoiceFor(81) }), date: 'yesterday-ish' });
+    await assert.rejects(requestPayInvoice(payRequest, { amountSats: 81 }, { get, now: at(3600) }), withCode(PAY_REQUEST_ERROR.INVOICE_EXPIRED));
   });
 });
 

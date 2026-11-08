@@ -4,6 +4,7 @@ import { test } from 'node:test';
 import { transformSync } from 'esbuild';
 import { parse } from '@vue/compiler-sfc';
 import * as nwcPayment from '../../services/nwcPayment.js';
+import * as userErrors from '../../utils/userErrors.js';
 
 // Load the real handlers and store accessor without starting wallet SDKs.
 function load(file, dependencies = {}) {
@@ -25,7 +26,7 @@ const walletOptions = load('../../stores/wallet.js', {
   '../utils/claimedDeposits.js': { createClaimedDepositRegistry: () => ({}) },
 }).useWalletStore;
 // NWC pays through the real proof-checking helper (services/nwcPayment).
-const shop = load('../shop/PurchaseSheet.vue', { '../../services/nwcPayment.js': nwcPayment }).default;
+const shop = load('../shop/PurchaseSheet.vue', { '../../services/nwcPayment.js': nwcPayment, '../../utils/userErrors.js': userErrors }).default;
 const username = load('../Nip05MarketplaceSheet.vue', { '../services/nwcPayment.js': nwcPayment }).default;
 
 function harness(flow, type = 'nwc', { available = true, failPayment = false, settled = false } = {}) {
@@ -124,6 +125,17 @@ for (const flow of ['shop', 'username']) {
     assert.equal(h.vm.actionInflight, false);
   });
 }
+
+test('shop: a failed payment is said in our words, with its amounts, never the wallet\'s raw English', async () => {
+  const h = harness('shop', 'spark');
+  h.vm.$t = (key, values = {}) => key.replace(/\{(\w+)\}/g, (_, name) => values[name] ?? name);
+  h.vm.walletStore.providers.selected.payInvoice = async () => {
+    throw Object.assign(new Error('Lightning payment failed: fee 120 sats exceeds the 100 sats limit'), { code: 'LIGHTNING_FEE_ABOVE_LIMIT', feeSats: 120, limitSats: 100 });
+  };
+  await h.run();
+  assert.equal(h.vm.payError, 'Payment didn’t go through: The network fee would be ₿ 120, more than the ₿ 100 limit. Nothing was sent. Try again later.');
+  assert.equal(h.vm.paid, false);
+});
 
 test('shop: an already settled previous attempt does not send another NWC payment', async () => {
   const h = harness('shop', 'nwc', { settled: true });

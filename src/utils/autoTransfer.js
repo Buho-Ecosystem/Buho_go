@@ -250,6 +250,10 @@ export function failureReason(error) {
   const code = String(error?.code || '');
   const message = String(error?.message || '').toLowerCase();
   if (code === 'NWC_PAYMENT_UNCONFIRMED') return 'unconfirmed';
+  // The route cost more than a payment with no fee shown may
+  // (providers/BreezSparkWalletProvider.js). Named before the words are
+  // read: its copy mentions the network, which is not a lost connection.
+  if (code === 'LIGHTNING_FEE_ABOVE_LIMIT') return 'fee';
   // The destination's service said no: its own reason (utils/errorOrigin.js),
   // a refusal that came without one, or an amount outside what it accepts
   // (utils/lnurlPay.js).
@@ -257,7 +261,7 @@ export function failureReason(error) {
       || code === 'LNURL_REFUSED' || code === 'LNURL_AMOUNT_OUT_OF_RANGE') return 'refused';
   if (/insufficient|not enough|balance too low/.test(message)) return 'insufficient';
   // It answered, but with an HTTP error or no pay request: as good as no answer.
-  if (code === 'LNURL_HTTP_ERROR' || code === 'LNURL_NOT_PAY_REQUEST') return 'unreachable';
+  if (code === 'LNURL_HTTP_ERROR' || code === 'LNURL_REDIRECTED' || code === 'LNURL_NOT_PAY_REQUEST') return 'unreachable';
   if (/invalid .*address|no .*address configured|could not resolve|failed to fetch|not found|404/.test(message)) return 'unreachable';
   if (/timeout|timed out|network|offline|connect|unreachable|transport/.test(message)) return 'offline';
   return 'other';

@@ -42,6 +42,7 @@ const component = (dependencies = {}) => evaluate('../Wallet.vue', {
   '../stores/autoWithdraw': { useAutoWithdrawStore: () => ({ getConfig: () => null, checkAndExecute() {} }) },
   '../utils/fiatRates': { fiatRatesService: { convertSatsToFiat: async () => null } },
   '../utils/payAgain.js': payAgain,
+  '../utils/payingWallets.js': payingWallets,
   '../utils/haptics.js': haptics,
   '../utils/nwcErrors.js': nwcErrors,
     '../utils/userErrors.js': userErrors,
@@ -126,19 +127,33 @@ test('an LNURL server\'s refusal is marked as its own; our fallback is not', asy
 });
 
 test('an LNURL payment sends the comment the person typed and stops at an invoice for another amount', async () => {
-  const { get, asked } = fakeService(ok(PAY_REQUEST), ok({ pr: invoiceFor(10) }), ok(PAY_REQUEST), ok({ pr: invoiceFor(1000) }));
+  const { get, asked } = fakeService(ok(PAY_REQUEST), ok({ pr: invoiceFor(2500) }), ok(PAY_REQUEST), ok({ pr: invoiceFor(25000) }));
   const methods = component({
     '../utils/lnurlPay.js': lnurlPayWith(get),
     '../utils/lud23.js': { assertPaymentInput() {} },
   }).methods;
   const paid = [];
-  const provider = { payInvoice: async (args) => { paid.push(args.invoice); return { id: 'tx', status: 'completed' }; } };
+  const limits = [];
+  const provider = { payInvoice: async (args) => { paid.push(args.invoice); limits.push(args.feeLimitSats); return { id: 'tx', status: 'completed' }; } };
   const vm = { ...methods, pendingPayment: { lnurl: 'https://coffee.example/pay' }, walletStore: { ensureSparkConnected: async () => provider, ensureLNBitsConnected: async () => provider } };
-  await vm.sendSparkPayment(10, 'thanks', null, 'A');
-  assert.equal(asked[1].url, 'https://pay.example/lnurlp/cb/alice?amount=10000&comment=thanks');
-  assert.deepEqual(paid, [invoiceFor(10)]);
-  await assert.rejects(vm.sendLNBitsPayment(10, '', null, 'B'), (error) => error.code === lnurlPay.PAY_REQUEST_ERROR.INVOICE_MISMATCH);
-  assert.deepEqual(paid, [invoiceFor(10)], 'the oversized invoice was never paid');
+  const result = await vm.sendSparkPayment(2500, 'thanks', null, 'A');
+  assert.equal(asked[1].url, 'https://pay.example/lnurlp/cb/alice?amount=2500000&comment=thanks');
+  assert.deepEqual(paid, [invoiceFor(2500)]);
+  assert.deepEqual(limits, [25], 'Spark holds the route to the limit the sheet showed: 1 % of 2,500');
+  assert.equal(result.invoiceSats, 2500, 'the invoice amount reaches the success screen');
+  await assert.rejects(vm.sendLNBitsPayment(2500, '', null, 'B'), (error) => error.code === lnurlPay.PAY_REQUEST_ERROR.INVOICE_MISMATCH);
+  assert.deepEqual(paid, [invoiceFor(2500)], 'the oversized invoice was never paid');
+});
+
+test('a pasted invoice pays with the fee the sheet quoted, a free one included', async () => {
+  const methods = component().methods;
+  for (const [estimatedFee, maxFee] of [[7, 7], [0, 0], [null, undefined]]) {
+    const asked = [];
+    const provider = { payInvoice: async (args) => { asked.push(args); return { id: 'tx', status: 'completed' }; } };
+    const vm = { ...methods, estimatedFee, pendingPayment: { invoice: 'lnbc-x', amount: 1000 }, walletStore: { ensureSparkConnected: async () => provider } };
+    await vm.sendSparkPayment(1000, '', null, 'A');
+    assert.equal(asked[0].maxFee, maxFee, `quoted ${estimatedFee}`);
+  }
 });
 
 test('a Lightning address that refuses says why, labelled as theirs; one that is not there stays "not found"', async () => {
@@ -1003,6 +1018,34 @@ test('Pay with: each wallet type pays through ITS OWN provider; the active walle
     assert.deepEqual(callsTo(calls, 'updateWalletBalance'), [], `home refresh skipped for ${payer}`);
     assert.equal(callsTo(calls, 'reconcileSpark').length + callsTo(calls, 'refreshBalance').length, 1);
     assert.equal(sent.success.amount, payment.amount ?? 2500);
+  }
+});
+
+test('a Lightning address on Spark shows the most its route may cost; other wallets and no amount show none', () => {
+  const { vm, options } = payingHarness({ active: 'biz' });
+  vm.resolveWalletBrand = () => null;
+  const feeRow = () => options.computed.paymentSheetProps.call(vm).feeEstimate;
+  Object.assign(vm, { pendingPayment: lnAddressPayment(), sendingWalletId: 'personal', sendSheetAmountSats: 2500 });
+  assert.deepEqual(feeRow(), { sats: 25, isEstimating: false, isLimit: true }, '1 % of the amount');
+  vm.sendSheetAmountSats = 300;
+  assert.deepEqual(feeRow(), { sats: 10, isEstimating: false, isLimit: true }, 'never under 10 sats');
+  vm.pendingPayment = { type: 'lnurl', data: 'lnurl1xyz', lnurl: 'lnurl1xyz', minSendable: 1000, maxSendable: 1e9 };
+  assert.equal(feeRow().isLimit, true, 'a payment link the same');
+  vm.sendSheetAmountSats = 0;
+  vm.pendingPayment = lnAddressPayment();
+  assert.equal(feeRow(), null, 'no amount yet, no limit to show');
+  Object.assign(vm, { sendSheetAmountSats: 2500, sendingWalletId: 'alby' });
+  assert.equal(feeRow(), null, 'an NWC wallet sets its own fees');
+});
+
+test('the success screen and History records carry what the invoice charged, in the recipient\'s currency too', async () => {
+  for (const [invoiceSats, shown] of [[2060, 2060], [2500, 2500], [undefined, 2500], [2059.4, 2060]]) {
+    const { vm, sent } = payingHarness({ active: 'biz' });
+    vm.fetchLightningAddressInvoice = async () => ({ pr: 'lnbc-resolved', invoiceSats, successAction: null, verify: null });
+    Object.assign(vm, { pendingPayment: lnAddressPayment(), sendingWalletId: 'lnb', paymentAmount: '2500', sendSheetAmountSats: 2500 });
+    await quietly(() => vm.confirmPayment());
+    assert.equal(sent.success.amount, shown, `invoice for ${invoiceSats}`);
+    assert.deepEqual(sent.links.map(link => link.amountSats), [shown], 'the record that finds the payment in History');
   }
 });
 

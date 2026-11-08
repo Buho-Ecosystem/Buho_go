@@ -437,6 +437,19 @@ export function translateErrorCode(error, t, { walletName = '', useBip177Format 
       return t("The recipient didn't send a valid payment request. Nothing was sent.");
     case 'LNURL_INVOICE_MISMATCH':
       return t('The recipient asked for a different amount than you confirmed. Nothing was sent.');
+    case 'LNURL_INVOICE_NOT_FOR_REQUEST':
+      return t("The recipient's payment request doesn't match this payment. Nothing was sent.");
+    case 'LNURL_REDIRECTED':
+      return t("The recipient's service tried to redirect this payment. Nothing was sent. Ask them for another way to pay.");
+    case 'LNURL_INVOICE_EXPIRED':
+      return t("The recipient's payment request had expired. Nothing was sent. Try again.");
+    // A Spark route that costs more than the limit the payment allows
+    // (providers/BreezSparkWalletProvider.js payInvoice).
+    case 'LIGHTNING_FEE_ABOVE_LIMIT':
+      return t('The network fee would be {fee}, more than the {limit} limit. Nothing was sent. Try again later.', {
+        fee: formatAmount(Number(error.feeSats) || 0, useBip177Format),
+        limit: formatAmount(Number(error.limitSats) || 0, useBip177Format),
+      });
     default:
       return null;
   }
