@@ -73,6 +73,16 @@ When it says this while the code is read, the words show in the Send field and n
 
 MoneyBadger can only refund to a Lightning address the payer gave with the payment (LUD-18 `payerData.identifier`). It enforces this at affected stores from 2026-09-01. The confirm sheet's "Refunds to" row shares one, and only with a callback on `cryptoqr.net` over https, checked again when the invoice is asked for. See `src/utils/refundAddress.js`.
 
+Which address the row offers, the first by default:
+
+1. the paying wallet's own;
+2. the other wallets', oldest first;
+3. the profile's payment address;
+4. the identity's Social Bucket (`npub…@npub.cash`);
+5. one typed for this payment.
+
+The Social Bucket is always there for an identity whose key is on the phone, so a refund has a place to land when no Spark, LNbits or NWC wallet has an address. An identity held by a signer app has none: the bucket is emptied by signing with the key itself.
+
 ## Live checks (2026-11-07, read-only)
 
 Against `cryptoqr.net` with MoneyBadger's public test code. GET requests only, nothing paid.
@@ -83,10 +93,21 @@ Against `cryptoqr.net` with MoneyBadger's public test code. GET requests only, n
 - A made-up SnapScan code gives `UNSUPPORTED_QR_CODE`. Made-up codes of other networks give `UNKNOWN_CODE`, which proves nothing.
 - The service rate-limits after about 30 requests (HTTP 429, still limited 5 minutes later). Keep manual checks short.
 
+## Live checks (2026-11-09, read-only)
+
+Through BuhoGO's own `requestPayInvoice`, four GET requests, nothing paid.
+
+- A Social Bucket address, of a key made for the check, is accepted. The invoice passes the amount, hash and expiry checks.
+- An address that cannot resolve is refused (`Could not validate refund address`) and read as refused, so the row says so.
+
+## On a phone
+
+The request goes through the platform's HTTP plugin (`src/utils/lnurlHttp.js`) with the URL as built and no `params`. Android then sends it as given (`new URL`). iOS sends it as given too, because it re-encodes only a URL that holds no `%` at all, and a till code's always does. So `%2F` reaches MoneyBadger as `%2F`. Handed `params`, the Android plugin would rebuild the path decoded, and `/` would get a 404. `lnurlHttp.spec.js` fails if `params` are ever added. Read from the plugin source (Capacitor 8.3.1); a payment on a device is the final proof.
+
 ## Not proven yet
 
 - Real Zapper, Scan to Pay, Ecentric and Yoyo codes through this route. Only the Pick n Pay style is tested. A family whose codes have a scheme other than http(s), or spaces outside an EMV code, would need its own rule.
-- Which networks Checkers, Shoprite and Woolworths tills use today. The table above is the earlier research; a till of theirs on another network shows the storefront mark.
+- Which networks Checkers, Shoprite and Woolworths tills use today. The table above is the earlier research. Shoprite Group launched EMV till codes built with Electrum in 2020, which fits the table. Reports from 2026 say Bitcoin at Checkers and Shoprite also runs through Scan to Pay. A till of theirs on another network shows the storefront mark. Nothing public ties Woolworths to MoneyBadger yet.
 - Zapper codes with a line break: the address check refuses control characters in a name, so such a code is refused before it is sent.
 - That a refund arrives. That needs a real payment with the test code and `completion=cancel`.
 
@@ -95,4 +116,6 @@ Against `cryptoqr.net` with MoneyBadger's public test code. GET requests only, n
 - `node --test src/utils/__tests__/merchantQR.spec.js`
 - `node --test src/components/__tests__/sendTillCodes.spec.js`
 - `node --test src/pages/__tests__/walletFlow.spec.js` (the till tests in the Send field, the sheet and history)
+- `node src/utils/__tests__/lnurlHttp.spec.js` (what the phone's HTTP plugin is handed)
+- `node --test src/utils/__tests__/refundAddress.spec.js` (which refund address, and what a refusal means)
 - `scripts/check-merchant-qr.mjs`: a browser check against the dev server, with MoneyBadger stood in locally

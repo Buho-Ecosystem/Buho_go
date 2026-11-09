@@ -4,12 +4,15 @@
  * Under Node there is no Capacitor native platform, so these tests
  * exercise the web-fetch branch (the same one the browser build uses)
  * by stubbing global fetch, plus the JSON/error normalization that both
- * branches share.
+ * branches share. The phone branch is run once with a stand-in plugin,
+ * to pin what it is handed.
  *
  * Run directly with Node:
  *   node src/utils/__tests__/lnurlHttp.spec.js
  */
 import { strict as assert } from 'node:assert'
+import { readFileSync } from 'node:fs'
+import { transformSync } from 'esbuild'
 import { lnurlFetch, lnurlGetJson } from '../lnurlHttp.js'
 
 const tests = []
@@ -132,6 +135,47 @@ test('lnurlFetch omits signal cleanly when none is given', async () => {
     const r = await lnurlFetch('https://pay.example/x')
     assert.equal(r.ok, true)
   } finally { restoreFetch() }
+})
+
+// ── On a phone ─────────────────────────────────────────────────────────────
+
+/**
+ * The module as a phone runs it: '@capacitor/core' is a native platform whose
+ * CapacitorHttp records each request it is handed.
+ */
+function onPhone(answer = { status: 200, data: { tag: 'payRequest' }, headers: {} }) {
+  const sent = []
+  const source = readFileSync(new URL('../lnurlHttp.js', import.meta.url), 'utf8')
+  const { code } = transformSync(source, { format: 'cjs', supported: { 'dynamic-import': false } })
+  const module = { exports: {} }
+  const capacitor = {
+    Capacitor: { isNativePlatform: () => true },
+    CapacitorHttp: { get: async (options) => { sent.push(options); return answer } },
+  }
+  new Function('require', 'module', 'exports', code)(
+    (name) => { if (name === '@capacitor/core') return capacitor; throw new Error(`unexpected import ${name}`) },
+    module, module.exports,
+  )
+  return { ...module.exports, sent }
+}
+
+test('on a phone, the URL goes to the platform as built: an encoded "/" in a till code stays encoded', async () => {
+  // A till code's name holds `%2F`. Handed `params`, the Android plugin
+  // rebuilds the URL from its decoded path, so `%2F` would leave as `/` and
+  // the provider would answer 404 (live check E). Without them, Android and
+  // iOS both send the string as given.
+  const { lnurlGetJson, sent } = onPhone()
+  const url = 'https://cryptoqr.net/.well-known/lnurlp/00020129530023za.co.electrum.picknpay0122TSHP6SJNKTR3IY%2Fconfirm52045812%21%2A'
+  const callback = 'https://api.cryptoqr.net/lnurl/cb?amount=81000&payerdata=%7B%22identifier%22%3A%22a%40b.example%22%7D'
+  await lnurlGetJson(url)
+  await lnurlGetJson(callback, { disableRedirects: true })
+  assert.deepEqual(sent.map((options) => options.url), [url, callback], 'each URL exactly as built')
+  for (const options of sent) {
+    assert.equal('params' in options, false, 'never params: the plugin would rebuild the URL')
+    assert.equal('shouldEncodeUrlParams' in options, false)
+    assert.equal('data' in options, false)
+  }
+  assert.equal(sent[1].disableRedirects, true)
 })
 
 ;(async () => {
