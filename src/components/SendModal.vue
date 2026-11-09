@@ -304,10 +304,11 @@
              button. The parent closes the sheet on success or pushes an
              inline error above on failure. -->
         <ProgressCta v-if="ctaBusy" :label="$t('Fetching…')" />
-        <!-- 075-078 are valid mobile prefixes in BOTH Kenya and Zambia.
-             Rather than silently guess (and risk paying the wrong country),
-             let the user pick. Unambiguous numbers and +CC input skip
-             straight to Continue / auto-advance. -->
+        <!-- A local number valid in more than one payout country (075 is
+             Kenya, Zambia and Tanzania). Rather than guess (a payout to the
+             wrong country cannot be undone), the person picks. A number in
+             one country, or with its calling code, goes straight to
+             Continue / auto-advance. -->
         <div v-else-if="phoneNeedsCountryChoice" class="country-choice">
           <div class="country-choice-label">{{ $t('Which country?') }}</div>
           <div class="country-choice-list">
@@ -368,7 +369,8 @@ import QrScanSheet from './QrScanSheet.vue';
 import { useAddressBookStore } from '../stores/addressBook';
 import { useWalletStore } from '../stores/wallet';
 import { readClipboardCrossPlatform } from '../utils/shopClipboard.js';
-import { convertToLightningAddress, lightningAddressCase, SA_RETAIL_SOURCE } from '../utils/merchantQR';
+import { isTelUri } from '../utils/telUri.js';
+import { convertToLightningAddress, getMerchantInfo, lightningAddressCase, SA_RETAIL_SOURCE } from '../utils/merchantQR';
 import { parseBip21, extractLnFallbackParam } from '../utils/bip21';
 import {
   isSparkAddress,
@@ -448,6 +450,9 @@ export default {
       mmCountry: null,
       payoutCountries: payoutCountryOptions(),
       manualInput: '',
+      // The text the last scan put in the field, until the field is edited
+      // (fieldHoldsScan). It decides whether ten digits are a till code.
+      scannedText: '',
       // First-open contact hydration (store.initialize reads localStorage).
       contactsLoading: false,
       // Payable string found on the clipboard at open (web peek only).
@@ -523,9 +528,9 @@ export default {
       if (isLightningAddress(cleaned)) return 'lightning_address';
       if (isLnurl(cleaned)) return 'lnurl';
       if (isBitcoinAddress(cleaned)) return 'bitcoin_address';
-      // A bare phone number we can route to a fiat-payout provider
-      // (Zambia → Bitzed, Kenya → Tando). Strict: only a complete, valid
-      // KE/ZM mobile number matches, so partial digits never false-positive.
+      // A phone number in a payout country, or a `tel:` link that calls
+      // one. Strict: only a complete, valid mobile number matches, so
+      // partial digits never false-positive.
       if (this.recognizedPhone) return 'phone_number';
       return null;
     },
@@ -603,6 +608,12 @@ export default {
       return walletSwitchHint(paymentType, this.$t.bind(this));
     },
 
+    // The field holds exactly what a scan put there. Edited, even back to
+    // the same text, it is the person's own (the manualInput watcher).
+    fieldHoldsScan() {
+      return this.scannedText !== '' && this.manualInput === this.scannedText;
+    },
+
     // Full phone-number recognition for the current input (or null). Drives
     // the 'phone_number' chip and the ambiguous-country chooser. With a
     // Mobile Money country picked, recognition locks to that country (which
@@ -611,14 +622,17 @@ export default {
     recognizedPhone() {
       const raw = (this.manualInput || '').trim();
       if (!raw) return null;
-      const cleaned = raw.toLowerCase().startsWith('lightning:')
-        ? raw.substring(10).trim()
-        : raw;
+      // A scanned till code is the till's, even where its digits read as a
+      // local number too (see processPaymentData).
+      if (this.fieldHoldsScan && getMerchantInfo(raw)) return null;
+      // The text as it is, the way the send step reads it, so the field
+      // only shows a number it would pay: wrapped in another link
+      // (`lightning:0712345678`), digits are not a phone number.
       if (this.mobileMoneyMode && this.mmCountry) {
-        return recognizePhoneNumberForCountry(this.mmCountry, cleaned)
-          || recognizePhoneNumber(cleaned);
+        return recognizePhoneNumberForCountry(this.mmCountry, raw)
+          || recognizePhoneNumber(raw);
       }
-      return recognizePhoneNumber(cleaned);
+      return recognizePhoneNumber(raw);
     },
 
     mmCountryOption() {
@@ -640,8 +654,9 @@ export default {
       return 3;
     },
 
-    // True when the number is valid in more than one country (075-078 KE/ZM
-    // overlap) and no calling code was given — the user must pick.
+    // True when the number is valid in more than one country and nothing
+    // (a calling code, a tel: link's phone-context) names one: the person
+    // must pick.
     phoneNeedsCountryChoice() {
       return this.detectedInputType === 'phone_number'
         && !!this.recognizedPhone
@@ -745,7 +760,9 @@ export default {
     // (see pasteFromClipboard) since it arrives complete. The confirm
     // sheet stays the review/commit gate either way — this fetches and
     // validates, it never sends.
-    manualInput() {
+    manualInput(value) {
+      // Once edited, the text is the person's, never the scan's again.
+      if (this.scannedText && value !== this.scannedText) this.scannedText = '';
       // Editing clears a stale "couldn't resolve" error from the previous try.
       if (this.resolveError) this.$emit('update:resolveError', '');
       clearTimeout(this.phoneAdvanceTimer);
@@ -758,6 +775,12 @@ export default {
     // spinner so the CTA leaves "Fetching…". The field is always present on
     // this sheet, so failures stay inline; we never auto-close here (success
     // closes us from the parent).
+    // Pasted over with the same text, the field no longer holds the scan
+    // and reads it as typed (fieldHoldsScan): an error the scan's reading
+    // left under it no longer applies. An edit clears it in manualInput.
+    fieldHoldsScan(holds, held) {
+      if (held && !holds && this.resolveError) this.$emit('update:resolveError', '');
+    },
     resolving(now, was) {
       if (was && !now) this.isProcessing = false;
     },
@@ -845,6 +868,7 @@ export default {
     useDestination(value) {
       this.clipboardSuggestion = null;
       if (this.resolveError) this.$emit('update:resolveError', '');
+      this.scannedText = '';
       this.manualInput = value;
       this.$nextTick(() => {
         this.$refs.manualTextarea?.focus();
@@ -865,6 +889,7 @@ export default {
      * on every edit, and this assignment counts as one.
      */
     revealFailed(value, message) {
+      this.scannedText = '';
       this.manualInput = value;
       this.$nextTick(() => {
         clearTimeout(this.phoneAdvanceTimer);
@@ -886,12 +911,13 @@ export default {
       // The scan sheet has already closed itself — land the decoded string
       // in the field, so the user always sees exactly what is being
       // resolved, and can edit it in place if resolution fails.
+      this.scannedText = qrContent;
       this.manualInput = qrContent;
 
       this.isProcessing = true;
 
       try {
-        await this.processPaymentData(qrContent);
+        await this.processPaymentData(qrContent, { scanned: true });
       } catch (error) {
         console.error('QR processing error:', error);
         this.$q.notify({
@@ -903,7 +929,13 @@ export default {
       }
     },
 
-    async processPaymentData(paymentData) {
+    /**
+     * Read what was scanned, typed or pasted and hand it to the Wallet page.
+     * @param {string|object} paymentData
+     * @param {{ scanned?: boolean }} [options] - `scanned`: it came from the
+     *   camera, so ten digits that make a till code are the till's
+     */
+    async processPaymentData(paymentData, { scanned = false } = {}) {
       try {
         const inputData = typeof paymentData === 'string'
           ? paymentData
@@ -923,18 +955,44 @@ export default {
         }
         let trimmedData = inputData.trim();
 
-        // A recognized Kenyan/Zambian phone number is a fiat-payout destination
-        // — resolve it to its provider Lightning Address (Zambia → @bitzed.xyz,
-        // Kenya → @bitcoin.co.ke) up front, BEFORE the SA-retail QR check, whose
-        // numeric codes would otherwise swallow a 10-digit phone number. The
-        // built address then flows through the normal Lightning-address rails
-        // (which brand it).
-        const phone = recognizePhoneNumber(trimmedData);
+        // A phone number in a payout country, typed or in a `tel:` link, is a
+        // fiat-payout destination: resolve it to its provider's Lightning
+        // address (Kenya → @bitcoin.co.ke, Zambia → @bitzed.xyz, ...) up
+        // front, before the till check, whose ten-digit codes would
+        // otherwise take a local number. The built address then flows
+        // through the normal Lightning-address rails (which brand it).
+        //
+        // Scanned, ten digits that make a till code are the till's. A Scan
+        // to Pay till prints its code as ten bare digits, the length of a
+        // local number (`0` and nine), while a phone number belongs in a QR
+        // code as a `tel:` link. Typed or pasted, they are a phone number:
+        // that is how people enter one. Sources: docs/notes/PnP_honeybadger.md.
+        const phone = scanned && getMerchantInfo(trimmedData) ? null : recognizePhoneNumber(trimmedData);
+        if (phone?.ambiguous) {
+          // Valid in more than one country: the field asks which
+          // (phoneNeedsCountryChoice), since a payout to the wrong country
+          // cannot be undone. Typing waits for that choice before it gets
+          // here; a scan arrives at once.
+          this.isProcessing = false;
+          return;
+        }
         if (phone) {
           this.$emit('payment-detected', {
             data: phone.lightningAddress,
             type: 'lightning_address',
             rawInput: trimmedData,
+          });
+          return;
+        }
+        // A phone number, but not one a payout service here takes, or a
+        // `tel:` link not in a form that says which country it is in.
+        if (isTelUri(trimmedData)) {
+          this.isProcessing = false;
+          this.$q.notify({
+            type: 'negative',
+            message: this.$t("You can't pay this phone number"),
+            caption: this.$t('Mobile Money shows which numbers you can pay'),
+            timeout: 4000,
           });
           return;
         }
@@ -1092,6 +1150,7 @@ export default {
       // Always land the clipboard in the visible field for the user to
       // verify before committing. No silent fire-and-forget — too easy
       // to send to a stale or wrong address otherwise.
+      this.scannedText = '';
       this.manualInput = (clipboardText || '').trim();
       this.$nextTick(() => {
         this.$refs.manualTextarea?.focus();
@@ -1115,6 +1174,7 @@ export default {
     },
 
     onTextareaPaste() {
+      this.scannedText = '';
       clearTimeout(this.pasteAdvanceTimer);
       this.pasteAdvanceTimer = setTimeout(() => this.autoAdvance(), 200);
     },
@@ -1261,8 +1321,9 @@ export default {
       }[code] || code;
     },
 
-    // Ambiguous-number chooser: emit the picked country's constructed address
-    // directly, bypassing the default-country resolution in processPaymentData.
+    // Ambiguous-number chooser: emit the picked country's constructed
+    // address. Nothing else picks a country for such a number:
+    // processPaymentData stops on one and leaves the choice to this.
     selectPhoneCountry(candidate) {
       if (!candidate) return;
       // Remember the choice so the chooser leads with this country next time.
@@ -1299,9 +1360,9 @@ export default {
       if (!this.isValidManualInput || this.ctaBusy || this.capabilityBlocked) return;
 
       // Resolved Mobile Money number: it is already bound to one provider
-      // address, so emit that directly. Re-deriving in processPaymentData
-      // would re-apply the ambiguous-country default and could flip a
-      // country-locked number to the wrong corridor.
+      // address, so emit that directly. processPaymentData does not know
+      // the chosen country, which a bare number, or one valid in more than
+      // one country, needs.
       const phone = this.mobileMoneyMode ? this.recognizedPhone : null;
       if (phone && !phone.ambiguous) {
         this.preferredPayoutCountry = phone.country.code;
@@ -1341,6 +1402,7 @@ export default {
       clearTimeout(this.phoneAdvanceTimer);
       clearTimeout(this.pasteAdvanceTimer);
       this.isProcessing = false;
+      this.scannedText = '';
       this.manualInput = '';
       this.mobileMoneyMode = false;
       this.mmCountry = null;

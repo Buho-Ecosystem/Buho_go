@@ -2534,6 +2534,8 @@ export default {
   "Vodacom M-Pesa only": "Vodacom M-Pesa only",
   "Phone number": "Phone number",
   "Which country?": "Which country?",
+  "You can't pay this phone number": "You can't pay this phone number",
+  "Mobile Money shows which numbers you can pay": "Mobile Money shows which numbers you can pay",
   "Kenya": "Kenya",
   "Zambia": "Zambia",
   "Tanzania": "Tanzania",

@@ -1,33 +1,39 @@
 /**
- * Recognize a raw phone number a user types into the send field and build
- * the fiat-payout Lightning Address for it (Tando in Kenya, Bitzed in
- * Zambia). This is the construction counterpart to matchLnAddressService()
- * in ./index.js, which only recognizes an already-formed `<phone>@<domain>`.
+ * Recognize a phone number in a payout country, typed or in a `tel:` link,
+ * and build the fiat-payout Lightning Address for it (one provider per
+ * country, ./countries.js). This is the construction counterpart to
+ * matchLnAddressService() in ./index.js, which only recognizes an
+ * already-formed `<phone>@<domain>`.
  *
- * Pure and synchronous — no network. The send flow runs this only after the
- * other identifier predicates (Spark / invoice / LNURL / Bitcoin / Lightning
- * address) miss, so a recognized number is unambiguously a phone number.
+ * Pure and synchronous, no network. Only digits with phone punctuation, or
+ * a `tel:` link, are read as a number, which no other destination the send
+ * field takes looks like. The one overlap, ten digits that are also a
+ * scanned till code, is decided in the send field (SendModal
+ * processPaymentData; docs/notes/PnP_honeybadger.md).
  *
  * Design notes:
  *   - We accept international (`+254...`, `254...`, `00254...`) and national
- *     trunk (`0...`) forms. A bare national significant number (no "+", no
- *     trunk "0") is deliberately NOT accepted: in a payment field a naked
- *     9-digit string is too weak a signal and would invite false positives.
- *   - Kenya and Zambia both use a 9-digit NSN and collide on the local
- *     prefixes 075 / 076 / 077 / 078 (valid mobile in BOTH countries). When
- *     the user gives a calling code the result is exact; for a colliding
- *     local number we return BOTH candidates and preselect
- *     AMBIGUOUS_DEFAULT_CODE so the UI can show a one-tap country switch.
+ *     trunk (`0...`) forms, typed or in a `tel:` link (readNumberText). A
+ *     bare national significant number (no "+", no trunk "0") is
+ *     deliberately NOT accepted: in a payment field a naked 9-digit string
+ *     is too weak a signal and would invite false positives.
+ *   - Every payout country writes a local number as `0` and nine digits,
+ *     and some prefixes are mobile ranges in more than one of them (075/076:
+ *     KE, ZM and TZ; 077/078: KE and ZM; 074/079: KE and TZ). A calling code
+ *     makes the result exact. A colliding local number comes back
+ *     `ambiguous`, with one candidate per country, and is never paid until
+ *     the person picks one (SendModal's "Which country?").
  *   - All numbering rules live in ./countries.js (operator tables, calling
  *     codes, NSN length) so this stays generic.
  */
 import { PAYOUT_COUNTRIES } from './countries.js'
+import { isTelUri, parseTelUri } from '../../utils/telUri.js'
 
 /**
- * Preselected country when a bare local number is valid in more than one
- * country (the 075-078 collision). The UI still shows the alternative as a
- * one-tap switch, and the international number + flag make the choice obvious
- * before sending. Flip this single constant to change the default.
+ * The candidate listed first for a local number valid in more than one
+ * country. Only an order, never a choice: an ambiguous result is not paid as
+ * it is (its own lightningAddress is this first candidate's), the person
+ * picks the country, and the chooser leads with the one they last picked.
  */
 export const AMBIGUOUS_DEFAULT_CODE = 'KE'
 
@@ -83,6 +89,35 @@ export function isValidMobile(country, nsn) {
 // ----------------------------------------------------------------------------
 // Normalization
 // ----------------------------------------------------------------------------
+
+/**
+ * The text to read as a number. A `tel:` link (utils/telUri.js) gives the
+ * number it calls, read the way the same number typed would be.
+ *
+ * A local number in a link carries its `phone-context`, which "does NOT
+ * indicate a prefix that turns the local number into a global (E.164)
+ * number" (RFC 3966 5.1.5): it names where the number is valid, so it only
+ * picks the country among the ones the number is already valid in. To call
+ * a local number, a reader "MUST understand the context": a context that is
+ * not a payout country's calling code (a region inside a country, say) is
+ * one this cannot place, so the link is not read. Separators in a context
+ * do not count (RFC 3966 4).
+ *
+ * A `tel:` link telUri.js does not read is not read here either; any other
+ * text is read as it is.
+ *
+ * @param {unknown} raw
+ * @returns {{ text: unknown, contextCode: string|null } | null}
+ *   `contextCode`: the payout country a link's context names
+ */
+function readNumberText(raw) {
+  const tel = parseTelUri(raw)
+  if (!tel) return isTelUri(raw) ? null : { text: raw, contextCode: null }
+  if (tel.phoneContext === null) return { text: tel.number, contextCode: null }
+  const context = tel.phoneContext.replace(/[().-]/g, '')
+  const country = PAYOUT_COUNTRIES.find((c) => context === `+${c.callingCode}`)
+  return country ? { text: tel.number, contextCode: country.code } : null
+}
 
 /**
  * Strip the human punctuation (spaces, dashes, parens, dots) and surface a
@@ -235,8 +270,10 @@ function buildResult(country, nsn, { confidence, ambiguous, source }) {
  */
 export function recognizePhoneNumberForCountry(countryCode, raw) {
   const country = PAYOUT_COUNTRIES.find((c) => c.code === countryCode)
-  const parsed = parseRaw(raw)
-  if (!country || !parsed) return null
+  const read = readNumberText(raw)
+  if (!country || !read || (read.contextCode !== null && read.contextCode !== countryCode)) return null
+  const parsed = parseRaw(read.text)
+  if (!parsed) return null
   const { digits, hadInternationalMarker } = parsed
 
   let nsn = null
@@ -259,14 +296,15 @@ export function recognizePhoneNumberForCountry(countryCode, raw) {
 }
 
 /**
- * Recognize a typed phone number and resolve it to a fiat-payout country plus
- * a constructed Lightning Address. Returns null when the input isn't a
- * recognized Kenyan / Zambian mobile number.
+ * Recognize a phone number, typed or in a `tel:` link, and resolve it to a
+ * fiat-payout country plus a constructed Lightning Address. Returns null when
+ * the input isn't a recognized mobile number in a payout country.
  *
  * Result shape (see buildResult): { country, operator, operatorSpecial, nsn,
  * e164, display, lightningAddress, localPartVerified, confidence, ambiguous,
  * source }. When `ambiguous` is true, `candidates` holds one fully-built
- * result per possible country (the preselected entry first).
+ * result per possible country (AMBIGUOUS_DEFAULT_CODE's first), and the
+ * result itself must not be paid: the person picks a candidate.
  *
  * confidence:
  *   'exact'     — a calling code was given; single country, no ambiguity.
@@ -277,6 +315,17 @@ export function recognizePhoneNumberForCountry(countryCode, raw) {
  * @returns {object | null}
  */
 export function recognizePhoneNumber(raw) {
+  const read = readNumberText(raw)
+  if (!read) return null
+  const result = recognizeNumber(read.text)
+  if (!result || read.contextCode === null) return result
+  // Of the countries the number is valid in, the context names one.
+  const inContext = (result.candidates ?? [result]).find((r) => r.country.code === read.contextCode)
+  return inContext ? { ...inContext, confidence: 'exact', ambiguous: false } : null
+}
+
+/** recognizePhoneNumber for the number itself, once readNumberText has it. */
+function recognizeNumber(raw) {
   const parsed = parseRaw(raw)
   if (!parsed) return null
   const { digits, hadInternationalMarker } = parsed
@@ -305,8 +354,8 @@ export function recognizePhoneNumber(raw) {
     return buildResult(matches[0], local, { confidence: 'high', ambiguous: false, source: 'national' })
   }
 
-  // Collision (075-078): the same local number is valid in more than one
-  // country. Preselect AMBIGUOUS_DEFAULT_CODE, expose both as candidates.
+  // Collision: the same local number is valid in more than one country.
+  // Every one is a candidate, AMBIGUOUS_DEFAULT_CODE's first.
   const ordered = [
     ...matches.filter((country) => country.code === AMBIGUOUS_DEFAULT_CODE),
     ...matches.filter((country) => country.code !== AMBIGUOUS_DEFAULT_CODE),
