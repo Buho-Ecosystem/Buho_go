@@ -146,6 +146,22 @@
                 <div class="frame-corner bottom-right"></div>
               </div>
             </div>
+
+            <div class="column items-center q-mt-md">
+              <QrPhotoButton
+                tone="page"
+                @open="onPhotoOpen"
+                @closed="resumeCamera"
+                @read="onPhotoRead"
+                @fail="onPhotoFail"
+              />
+              <p
+                v-if="photoNote"
+                class="text-center q-mt-sm q-mb-none"
+                :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'"
+                aria-live="polite"
+              >{{ photoNote }}</p>
+            </div>
           </div>
         </div>
 
@@ -180,6 +196,7 @@ import { isAddressRequest } from '../utils/lud23.js';
 import QrScanner from 'qr-scanner'
 import { createQrScanner } from '../utils/qrScanner'
 import { isNativeScannerAvailable } from '../utils/nativeScanner'
+import QrPhotoButton from '../components/QrPhotoButton.vue'
 import ScannerOverlay from '../components/ScannerOverlay.vue'
 import NWCConnectStep from '../components/nwc/NWCConnectStep.vue'
 import NWCWalletFound from '../components/nwc/NWCWalletFound.vue'
@@ -248,6 +265,7 @@ function readOwnAddresses() {
 export default {
   name: 'NWCSetupPage',
   components: {
+    QrPhotoButton,
     ScannerOverlay,
     NWCConnectStep,
     NWCWalletFound,
@@ -300,6 +318,9 @@ export default {
       nativeScannerActive: false,
       cameraError: false,
       cameraErrorMessage: '',
+      // Choose photo: the picker is open (camera off), and what the last photo gave instead of a code.
+      photoOpen: false,
+      photoNote: '',
       cameraLoading: true,
       qrScanner: null,
     }
@@ -774,6 +795,8 @@ export default {
 
     closeScanner() {
       this.stopQrScanner();
+      this.photoOpen = false;
+      this.photoNote = '';
       this.nativeScannerActive = false;
       this.showScanner = false;
       this.cameraError = false;
@@ -848,6 +871,35 @@ export default {
         message: this.$t('Invalid QR code'),
         caption: this.$t(reasonKey),
       });
+    },
+
+    /** Choose photo: the camera goes off while the picker is open. */
+    onPhotoOpen() {
+      this.photoNote = '';
+      this.photoOpen = true;
+      // pause(true) turns the camera off at once and keeps the scanner for
+      // start(). Not stop(): that lets go of the stream 300 ms later, by
+      // which time a restarted scanner on the same <video> may own it.
+      this.qrScanner?.pause(true);
+    },
+
+    onPhotoRead(text) {
+      this.handleQrScan(text);
+      this.resumeCamera();
+    },
+
+    onPhotoFail({ message }) {
+      this.photoNote = message;
+      this.resumeCamera();
+    },
+
+    /** The camera back on after a photo, while the scanner is still open. */
+    resumeCamera() {
+      if (!this.photoOpen) return;
+      this.photoOpen = false;
+      if (!this.showScanner || this.cameraError) return;
+      if (!this.qrScanner) { this.startQrScanner(); return; }
+      this.qrScanner.start().catch((error) => this.onCameraError(error));
     },
 
     onCameraError(error) {

@@ -39,9 +39,20 @@
     - prompt      hint text shown above the action slot
     - continuous  keep scanning after a detect (multi-field capture, e.g. LNbits).
                   Default false: stop after the first code so the parent can close.
+    - note        the caller's own line in place of the prompt, e.g. that the
+                  code in a photo is not one it can use
+
+  Choose photo (QrPhotoButton) reads the code in a picture instead. The
+  camera is off while the picker is open and comes back when it closes
+  without a code; a code from a photo takes the same path as one from the
+  camera. When the camera cannot be used at all, the button stays, as the
+  way left to read a code.
 
   Emits:
-    - scanned(value)  a decoded QR string — identical for both engines
+    - scanned(value, { fromPhoto })  a decoded QR string — identical for
+                      both engines and photos; fromPhoto when it came from a
+                      picture, so a caller that skips codes it cannot use can
+                      say so instead of staying silent
     - close           user dismissed the scanner (X / back / camera error)
 -->
 <template>
@@ -51,6 +62,7 @@
       :class="{
         'scanner-overlay--error': error,
         'scanner-overlay--web': engine === 'web',
+        'scanner-overlay--paused': photoOpen,
       }"
     >
       <!-- Web engine only: the camera stream lives inside the overlay. The
@@ -106,9 +118,18 @@
       <!-- Bottom: prompt + caller actions (e.g. Manual / Paste / Contacts).
            Sits on a dark scrim so it reads over any camera scene. -->
       <div class="so-bottom">
-        <p v-if="!error" class="so-prompt">
-          {{ prompt || $t('Point your camera at a QR code') }}
+        <p v-if="!error || photoNote || note" class="so-prompt" aria-live="polite">
+          {{ photoNote || note || prompt || $t('Point your camera at a QR code') }}
         </p>
+        <div class="so-photo">
+          <QrPhotoButton
+            tone="camera"
+            @open="onPhotoOpen"
+            @closed="onPhotoClosed"
+            @read="onPhotoRead"
+            @fail="onPhotoFail"
+          />
+        </div>
         <div v-if="$slots.actions" class="so-actions">
           <slot name="actions" />
         </div>
@@ -130,17 +151,20 @@ import {
   shouldRetryNativeAfterWebFailure,
 } from '../utils/scannerEngine';
 import { EventBus } from '../utils/eventBus.js';
+import { awayForPickerTooLong } from '../utils/appLock.js';
+import QrPhotoButton from './QrPhotoButton.vue';
 
 export default {
   name: 'ScannerOverlay',
 
-  components: { Icon },
+  components: { Icon, QrPhotoButton },
 
   props: {
     active: { type: Boolean, default: false },
     title: { type: String, default: '' },
     prompt: { type: String, default: '' },
     continuous: { type: Boolean, default: false },
+    note: { type: String, default: '' },
   },
 
   emits: ['scanned', 'close'],
@@ -163,6 +187,10 @@ export default {
       detected: false,
       lastValue: '',
       lastAt: 0,
+      // The photo picker is open, or its photo is being read: camera off.
+      photoOpen: false,
+      // What the last photo gave instead of a code, shown in place of the prompt.
+      photoNote: '',
     };
   },
 
@@ -184,6 +212,7 @@ export default {
   },
 
   beforeUnmount() {
+    this.unmounting = true;
     EventBus.off('app:locked', this.onAppLocked);
     this.stop();
   },
@@ -372,7 +401,45 @@ export default {
       }
     },
 
-    onResult(value) {
+    /** The picker is opening: the camera goes off until it closes. */
+    onPhotoOpen() {
+      this.photoNote = '';
+      this.photoOpen = true;
+      if (!this.error) this.stop();
+    },
+
+    onPhotoClosed() {
+      if (!this.photoOpen) return;
+      this.photoOpen = false;
+      this.resumeCamera();
+    },
+
+    onPhotoRead(value) {
+      this.photoOpen = false;
+      this.photoNote = '';
+      this.onResult(value, { fromPhoto: true });
+      // One-shot: the parent closes the scanner now. Several codes: go on,
+      // once the parent has had its turn; a parent that took the code and
+      // closes the scanner must not see the camera flick on first.
+      if (this.continuous) this.$nextTick(() => this.resumeCamera());
+    },
+
+    onPhotoFail({ message }) {
+      this.photoOpen = false;
+      this.photoNote = message;
+      this.resumeCamera();
+    },
+
+    /** The camera back on after a photo, unless it could not run or the scan is over. */
+    resumeCamera() {
+      if (this.unmounting || this.error || !this.active || this.engine) return;
+      // Back from the picker too late: the lock engages and closes the scanner.
+      if (awayForPickerTooLong()) return;
+      if (this.detected && !this.continuous) return;
+      this.start();
+    },
+
+    onResult(value, { fromPhoto = false } = {}) {
       if (!value) return;
 
       if (!this.continuous) {
@@ -381,19 +448,20 @@ export default {
         if (this.detected) return;
         this.detected = true;
         haptics.tap();
-        this.$emit('scanned', value);
+        this.$emit('scanned', value, { fromPhoto });
         return;
       }
 
       // Continuous: de-dupe the same code held in view, but allow a different
       // code (or the same one after a beat) so multi-field capture keeps going.
+      // A photo chosen on purpose always counts.
       const now = Date.now();
-      if (value === this.lastValue && now - this.lastAt < 2000) return;
+      if (!fromPhoto && value === this.lastValue && now - this.lastAt < 2000) return;
       // A new code is felt; the same one held in view again is not.
       if (value !== this.lastValue) haptics.tap();
       this.lastValue = value;
       this.lastAt = now;
-      this.$emit('scanned', value);
+      this.$emit('scanned', value, { fromPhoto });
     },
 
     async onToggleTorch() {
@@ -455,6 +523,11 @@ export default {
    instead of leaving the error floating over a transparent webview. */
 .scanner-overlay--error {
   background: #0c0c0c;
+}
+
+/* Camera off for the photo picker: nothing of the page underneath shows. */
+.scanner-overlay--paused {
+  background: #000;
 }
 
 /* Top bar */
@@ -538,6 +611,11 @@ export default {
     rgba(0, 0, 0, 0.45) 55%,
     rgba(0, 0, 0, 0) 100%
   );
+}
+
+.so-photo {
+  display: flex;
+  justify-content: center;
 }
 
 /* Block so the slotted action row (a flex container) spans the full width

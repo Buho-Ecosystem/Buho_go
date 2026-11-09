@@ -86,6 +86,22 @@
             </div>
           </div>
 
+          <div v-if="!detected" class="column items-center q-mt-md">
+            <QrPhotoButton
+              tone="page"
+              @open="onPhotoOpen"
+              @closed="resumeCamera"
+              @read="onPhotoRead"
+              @fail="onPhotoFail"
+            />
+            <p
+              v-if="photoNote"
+              class="text-center q-mt-sm q-mb-none"
+              :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'"
+              aria-live="polite"
+            >{{ photoNote }}</p>
+          </div>
+
           <button
             type="button"
             class="add-site-switch"
@@ -190,6 +206,7 @@
       :title="$t('Scan the code')"
       :prompt="$t('Point your camera at the code the website shows.')"
       continuous
+      :note="photoNote"
       @scanned="onQRDetect"
       @close="switchTo('paste')"
     />
@@ -205,12 +222,13 @@ import QrScanner from 'qr-scanner';
 import { createQrScanner } from '../utils/qrScanner';
 import { isNativeScannerAvailable } from '../utils/nativeScanner';
 import ScannerOverlay from './ScannerOverlay.vue';
+import QrPhotoButton from './QrPhotoButton.vue';
 import { LUD04_ERROR, looksLikeLud04, parseLud04Input } from '../utils/lud4';
 
 export default {
   name: 'AddSiteSheet',
 
-  components: { Icon, ScannerOverlay },
+  components: { Icon, ScannerOverlay, QrPhotoButton },
 
   props: {
     modelValue: { type: Boolean, required: true },
@@ -238,6 +256,9 @@ export default {
       // multiple times if the scanner keeps decoding the same QR for
       // a few frames before we stop it.
       detected: false,
+      // Choose photo: the picker is open (camera off), and what the last photo gave instead of a sign-in code.
+      photoOpen: false,
+      photoNote: '',
       // Help-sheet visibility. Opened by the (?) icon in the header,
       // shows curated example sites for first-time users.
     };
@@ -356,6 +377,8 @@ export default {
     switchTo(target) {
       if (this.mode === target) return;
       this.mode = target;
+      this.photoOpen = false;
+      this.photoNote = '';
       if (target === 'scan') {
         this.initializeCamera();
       } else {
@@ -459,17 +482,50 @@ export default {
       }
     },
 
-    onQRDetect(text) {
+    onQRDetect(text, { fromPhoto = false } = {}) {
       if (this.detected || !text) return;
       // Pre-filter so a stray Lightning invoice / Bitcoin address
       // doesn't trigger our error path. LUD-04 and LUD-23 carriers can
       // open their respective consent flows; payments belong in Send.
-      if (!isAddressRequest(text) && !looksLikeLud04(text)) return;
+      // The camera keeps looking; a photo chosen on purpose gets an answer.
+      if (!isAddressRequest(text) && !looksLikeLud04(text)) {
+        if (fromPhoto) this.photoNote = this.$t('That code is not a sign-in code. Choose a photo of the code the website shows.');
+        return;
+      }
       this.detected = true;
       // Stop scanning immediately so the camera doesn't keep firing
       // detects while we hand off to the auth dialog.
       this.stopScanner();
       this.submitText(text);
+    },
+
+    /** Choose photo (web): the camera goes off while the picker is open. */
+    onPhotoOpen() {
+      this.photoNote = '';
+      this.photoOpen = true;
+      // pause(true) turns the camera off at once and keeps the scanner for
+      // start(). Not stop(): that lets go of the stream 300 ms later, by
+      // which time a restarted scanner on the same <video> may own it.
+      this.qrScanner?.pause(true);
+    },
+
+    onPhotoRead(text) {
+      this.onQRDetect(text, { fromPhoto: true });
+      this.resumeCamera();
+    },
+
+    onPhotoFail({ message }) {
+      this.photoNote = message;
+      this.resumeCamera();
+    },
+
+    /** The camera back on after a photo, unless a code was taken meanwhile. */
+    resumeCamera() {
+      if (!this.photoOpen) return;
+      this.photoOpen = false;
+      if (!this.showCamera || this.cameraError || this.detected) return;
+      if (!this.qrScanner) { this.startQrScanner(); return; }
+      this.qrScanner.start().catch((error) => this.handleCameraError(error));
     },
 
     close() {
@@ -489,6 +545,8 @@ export default {
       this.rawInput = '';
       this.errorText = '';
       this.detected = false;
+      this.photoOpen = false;
+      this.photoNote = '';
       this.mode = 'scan';
       this.cameraError = '';
     },

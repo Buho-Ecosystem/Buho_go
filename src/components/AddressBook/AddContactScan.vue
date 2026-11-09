@@ -81,6 +81,23 @@
       @copy-npub="onCopyNpub"
     />
 
+    <!-- Choose photo, under the camera (web; the app's scanner has its own). -->
+    <div v-if="!detected" class="column items-center q-mt-md">
+      <QrPhotoButton
+        tone="page"
+        @open="onPhotoOpen"
+        @closed="resumeCamera"
+        @read="onPhotoRead"
+        @fail="onPhotoFail"
+      />
+      <p
+        v-if="photoNote"
+        class="text-center q-mt-sm q-mb-none"
+        :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'"
+        aria-live="polite"
+      >{{ photoNote }}</p>
+    </div>
+
     <!-- Footer actions. "Scan again" shows as soon as a code has stopped
          the scanner; "Paste instead" is always offered as the escape
          hatch (the parent tab control reuses it to flip to Search). -->
@@ -114,6 +131,7 @@
       :title="$t('Scan QR Code')"
       :prompt="$t('Point your camera at a Nostr profile, or a Lightning, Spark, or Bitcoin address.')"
       continuous
+      :note="photoNote"
       @scanned="onDetect"
       @close="$emit('switch-to-search')"
     />
@@ -127,6 +145,7 @@ import QrScanner from 'qr-scanner';
 import { createQrScanner } from '../../utils/qrScanner';
 import { isNativeScannerAvailable } from '../../utils/nativeScanner';
 import ScannerOverlay from '../ScannerOverlay.vue';
+import QrPhotoButton from '../QrPhotoButton.vue';
 import { useAddressBookStore } from '../../stores/addressBook';
 import { mapActions } from 'pinia';
 import { classifyIdentifier, lookupIdentifier } from '../../utils/nostrLookup.js';
@@ -139,7 +158,7 @@ import { parseProfileLink } from '../../utils/profileLink.js';
 export default {
   name: 'AddContactScan',
 
-  components: { Icon, NostrContactPreview, ScannerOverlay },
+  components: { Icon, NostrContactPreview, ScannerOverlay, QrPhotoButton },
 
   props: {
     /**
@@ -160,6 +179,9 @@ export default {
       cameraError: '',
       qrScanner: null,
       detected: false,
+      // Choose photo: the picker is open (camera off), and what the last photo gave instead of a contact.
+      photoOpen: false,
+      photoNote: '',
       // Result state mirrors AddContactSearch so the preview can
       // render identically regardless of how we got here.
       resolved: null,
@@ -285,6 +307,7 @@ export default {
       this.resolved = null;
       this.profileEvent = null;
       this.resultError = '';
+      this.photoNote = '';
     },
 
     async restart() {
@@ -313,7 +336,7 @@ export default {
      * as `nip05`, which we deliberately skip in step 1 so step 2's
      * Lightning-address check can claim it instead.
      */
-    onDetect(text) {
+    onDetect(text, { fromPhoto = false } = {}) {
       if (this.detected || !text) return;
       if (isAddressRequest(text)) {
         this.detected = true; this.stopScanner(); this.showCamera = false;
@@ -356,6 +379,38 @@ export default {
         this.$emit('detected-address', candidate);
         return;
       }
+
+      // The camera keeps looking; a photo chosen on purpose gets an answer.
+      if (fromPhoto) this.photoNote = this.$t('That code is not a profile or an address.');
+    },
+
+    /** Choose photo (web): the camera goes off while the picker is open. */
+    onPhotoOpen() {
+      this.photoNote = '';
+      this.photoOpen = true;
+      // pause(true) turns the camera off at once and keeps the scanner for
+      // start(). Not stop(): that lets go of the stream 300 ms later, by
+      // which time a restarted scanner on the same <video> may own it.
+      this.qrScanner?.pause(true);
+    },
+
+    onPhotoRead(text) {
+      this.onDetect(text, { fromPhoto: true });
+      this.resumeCamera();
+    },
+
+    onPhotoFail({ message }) {
+      this.photoNote = message;
+      this.resumeCamera();
+    },
+
+    /** The camera back on after a photo, unless a code was taken meanwhile. */
+    resumeCamera() {
+      if (!this.photoOpen) return;
+      this.photoOpen = false;
+      if (!this.showCamera || this.cameraError || this.detected) return;
+      if (!this.qrScanner) { this.startQrScanner(); return; }
+      this.qrScanner.start().catch((error) => this.handleCameraError(error));
     },
 
     async resolveAndFetch(text) {

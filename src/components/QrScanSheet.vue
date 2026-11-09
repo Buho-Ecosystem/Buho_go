@@ -13,6 +13,10 @@
     - Web/PWA: fullscreen dialog with a qr-scanner <video>, including the
       camera-permission error state and retry.
 
+  Both offer Choose photo (QrPhotoButton): the code in a picked picture
+  takes the same path as a scanned one. The camera is off while the picker
+  is open; without a camera, the button is the way left to read a code.
+
   Contract:
     - v-model         open/close
     - title           optional headline; payment flows pass none so the
@@ -79,9 +83,18 @@
               unelevated
             />
           </div>
-          <p v-if="!cameraError" class="ws-prompt">
-            {{ prompt || $t('Point your camera at a QR code') }}
-          </p>
+          <div class="ws-bottom">
+            <p v-if="!cameraError || photoNote" class="ws-prompt" aria-live="polite">
+              {{ photoNote || prompt || $t('Point your camera at a QR code') }}
+            </p>
+            <QrPhotoButton
+              tone="camera"
+              @open="onPhotoOpen"
+              @closed="onPhotoClosed"
+              @read="onScanned"
+              @fail="onPhotoFail"
+            />
+          </div>
         </div>
       </div>
     </q-dialog>
@@ -93,10 +106,11 @@ import QrScanner from 'qr-scanner';
 import { createQrScanner } from '../utils/qrScanner';
 import { isNativeScannerAvailable } from '../utils/nativeScanner';
 import ScannerOverlay from './ScannerOverlay.vue';
+import QrPhotoButton from './QrPhotoButton.vue';
 
 export default {
   name: 'QrScanSheet',
-  components: { ScannerOverlay },
+  components: { ScannerOverlay, QrPhotoButton },
   props: {
     modelValue: { type: Boolean, default: false },
     title: { type: String, default: '' },
@@ -113,6 +127,10 @@ export default {
       // torn down, so without this a busy QR would emit several times
       // before the close settles.
       hasEmitted: false,
+      // The photo picker is open (camera off), and what the last photo gave
+      // instead of a code.
+      photoOpen: false,
+      photoNote: '',
     };
   },
   computed: {
@@ -128,7 +146,11 @@ export default {
   watch: {
     // Re-arm the single-shot latch on every open.
     modelValue(open) {
-      if (open) this.hasEmitted = false;
+      if (open) {
+        this.hasEmitted = false;
+        this.photoNote = '';
+        this.photoOpen = false;
+      }
     }
   },
   beforeUnmount() {
@@ -150,6 +172,34 @@ export default {
 
     close() {
       this.show = false;
+    },
+
+    /** The picker is opening: the camera goes off until it closes. */
+    onPhotoOpen() {
+      this.photoNote = '';
+      this.photoOpen = true;
+      // pause(true) turns the camera off at once and keeps the scanner for
+      // start(). Not stop(): that lets go of the stream 300 ms later, by
+      // which time a restarted scanner on the same <video> may own it.
+      this.qrScanner?.pause(true);
+    },
+
+    onPhotoClosed() {
+      if (!this.photoOpen) return;
+      this.photoOpen = false;
+      this.resumeCamera();
+    },
+
+    onPhotoFail({ message }) {
+      this.photoOpen = false;
+      this.photoNote = message;
+      this.resumeCamera();
+    },
+
+    resumeCamera() {
+      if (this.cameraError || !this.show || this.hasEmitted) return;
+      if (!this.qrScanner) { this.startQrScanner(); return; }
+      this.qrScanner.start().catch((error) => this.handleCameraError(error));
     },
 
     async initializeCamera() {
@@ -287,17 +337,28 @@ export default {
   fill: rgba(26, 26, 26, 0.18) !important;
 }
 
-.ws-prompt {
+/* Prompt and Choose photo, over the camera and over its error state alike. */
+.ws-bottom {
   position: absolute;
   left: 0;
   right: 0;
-  bottom: max(28px, var(--safe-bottom, 28px));
+  bottom: 0;
+  padding: 40px 16px max(28px, var(--safe-bottom, 28px));
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  z-index: 3;
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.6) 0%, rgba(0, 0, 0, 0) 100%);
+}
+
+.ws-prompt {
   margin: 0;
+  max-width: 320px;
   text-align: center;
   font-family: 'Manrope', sans-serif;
   font-size: 13.5px;
-  color: rgba(255, 255, 255, 0.75);
-  z-index: 2;
+  color: rgba(255, 255, 255, 0.85);
 }
 
 .camera-error {
