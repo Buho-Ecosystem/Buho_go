@@ -2008,11 +2008,13 @@ export default {
     },
 
     async loadNWCTransactionsBatch() {
-      const activeWallet = this.walletState.connectedWallets?.find(
+      // The store's wallet: the saved copy for old versions no longer
+      // carries the connection string.
+      const activeWallet = this.walletStore.wallets.find(
         w => w.id === this.walletState.activeWalletId
       );
 
-      if (!activeWallet?.nwcString) {
+      if (!activeWallet?.nwcUrl) {
         throw new Error('No active NWC wallet found');
       }
 

@@ -212,6 +212,7 @@ import {
 } from '../utils/userErrors';
 import { diagnoseConnection } from '../utils/connectivity.js';
 import * as deviceCrypto from '../utils/deviceCrypto';
+import { createNwcAtRest } from '../utils/nwcAtRest.js';
 import { clearCachedTransactions } from '../utils/txCache.js';
 import { i18n } from '../boot/i18n';
 import { canWalletPay, canWalletReceiveLightning } from '../utils/walletCapabilities.js';
@@ -283,6 +284,14 @@ const CLAIM_MARK_SETTLE_MS = 10 * 60 * 1000;
  * this 2.5k-line file doesn't churn. New code should import the shared
  * helpers from `utils/deviceCrypto` directly.
  */
+// NWC connection strings are saved encrypted with the device key, and kept
+// plain in memory (utils/nwcAtRest).
+const nwcAtRest = createNwcAtRest({
+  encrypt: (plain) => deviceCrypto.encryptString(plain),
+  decrypt: (envelope) => deviceCrypto.decryptString(envelope),
+  warn: (...args) => console.warn(...args),
+});
+
 const CryptoUtils = {
   encryptMnemonic: deviceCrypto.encryptString,
   decryptMnemonic: deviceCrypto.decryptString,
@@ -1351,9 +1360,14 @@ export const useWalletStore = defineStore('wallet', {
               ratesStillValid = lastUpdate > new Date(Date.now() - RATE_MAX_AGE_MS);
             }
 
+            // Connection strings are saved encrypted (utils/nwcAtRest); one
+            // saved plain by an earlier version is sealed by the save below.
+            const opened = await Promise.all((parsed.wallets || []).map((wallet) => nwcAtRest.fromSaved(wallet)));
+            if (opened.some((entry) => entry.plain)) migrationNeedsPersist = true;
+
             // Migrate old wallets without type field
             const storeBackedUp = parsed.hasBackedUp || false;
-            const migratedWallets = (parsed.wallets || []).map(wallet => {
+            const migratedWallets = opened.map(({ wallet }) => {
               const migrated = {
                 ...wallet,
                 type: wallet.type || inferWalletType(wallet)
@@ -4458,9 +4472,14 @@ export const useWalletStore = defineStore('wallet', {
      */
     async persistState({ requireDurable = false, admit = [] } = {}) {
       try {
+        // Every connection string is sealed first (asynchronous, once per
+        // string), so that from here the state is read and written in one
+        // step: a slower save can never write an older state over a newer
+        // one. A wallet added while sealing is sealed in the next pass.
+        while (!nwcAtRest.isSealed(this.wallets)) await nwcAtRest.seal(this.wallets);
         this._assertSavable();
         const listed = this.wallets.filter((w) => !addingWallets.has(w.id) || admit.includes(w.id));
-        const wallets = [...listed, ...this._unusableWallets];
+        const wallets = [...listed.map((w) => nwcAtRest.toSaved(w)), ...this._unusableWallets];
 
         // Save new format
         const stateToSave = {
@@ -4501,7 +4520,6 @@ export const useWalletStore = defineStore('wallet', {
             id: w.id,
             name: w.name,
             type: w.type || 'nwc',
-            nwcString: w.nwcUrl,
             balance: this.balances[w.id] || 0,
           })),
           activeWalletId: this.activeWalletId,

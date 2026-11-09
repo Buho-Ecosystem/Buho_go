@@ -5,6 +5,7 @@ import { transformSync } from 'esbuild';
 import { parse } from '@vue/compiler-sfc';
 import * as nwcPayment from '../../services/nwcPayment.js';
 import * as userErrors from '../../utils/userErrors.js';
+import * as nwcAtRest from '../../utils/nwcAtRest.js';
 
 // Load the real handlers and store accessor without starting wallet SDKs.
 function load(file, dependencies = {}) {
@@ -24,6 +25,7 @@ const walletOptions = load('../../stores/wallet.js', {
     WALLET_TYPES: { SPARK: 'spark', LNBITS: 'lnbits', ARKADE: 'arkade', NWC: 'nwc' },
   },
   '../utils/claimedDeposits.js': { createClaimedDepositRegistry: () => ({}) },
+  '../utils/nwcAtRest.js': nwcAtRest,
 }).useWalletStore;
 // NWC pays through the real proof-checking helper (services/nwcPayment).
 const shop = load('../shop/PurchaseSheet.vue', { '../../services/nwcPayment.js': nwcPayment, '../../utils/userErrors.js': userErrors }).default;

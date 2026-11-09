@@ -16,6 +16,7 @@ import * as payAgain from '../../utils/payAgain.js';
 import * as recipientPayments from '../../services/recipientPayments.js';
 import * as haptics from '../../utils/haptics.js';
 import * as nwcErrors from '../../utils/nwcErrors.js';
+import * as nwcAtRest from '../../utils/nwcAtRest.js';
 import * as userErrors from '../../utils/userErrors.js';
 import * as refundAddress from '../../utils/refundAddress.js';
 import * as lud18 from '../../utils/lud18.js';
@@ -67,6 +68,7 @@ function balanceHarness() {
     '../providers/WalletFactory': { WALLET_TYPES: { SPARK: 'spark' } },
     '../stores/autoWithdraw': { useAutoWithdrawStore: () => ({ checkAndExecute() {} }) },
     '../utils/claimedDeposits.js': { createClaimedDepositRegistry: () => ({}) },
+    '../utils/nwcAtRest.js': nwcAtRest,
     './notifications': { useNotificationsStore: () => ({ canNotifyPayments: true, notifyIfEnabled: async message => notices.push(message) }) },
     '../utils/amountFormatting.js': { formatAmount: n => `${n} sats` },
     '../boot/i18n': { i18n: { global: { t } } },

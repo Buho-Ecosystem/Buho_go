@@ -5,7 +5,7 @@
  */
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { createHarness } from './sparkWalletHarness.js';
+import { createHarness, decrypt } from './sparkWalletHarness.js';
 import * as internalTransferDetails from '../../utils/internalTransferDetails.js';
 import * as userErrors from '../../utils/userErrors.js';
 
@@ -289,5 +289,37 @@ test('a connection saved with upper-case hex is stored once in lower case, the o
   store.connectWallet = async () => null; // no relay in a unit test
   await store.initialize();
   assert.equal(store.wallets[0].nwcUrl, URL_A);
-  assert.equal(saved().wallets[0].nwcUrl, URL_A, 'written back, so the next start reads it as it is');
+  assert.equal(await decrypt(saved().wallets[0].sealedNwcUrl), URL_A, 'written back, so the next start reads it as it is');
+});
+
+// ── Connection strings at rest ────────────────────────────────────────────
+
+test('a connection string is saved encrypted and opened again on the next start', async () => {
+  const plainSave = JSON.stringify({ wallets: [{ id: 'hub', type: 'nwc', name: 'Hub', nwcUrl: URL_A, metadata: {} }], activeWalletId: 'hub' });
+  const first = createHarness({ storage: { buhoGO_wallet_store: plainSave } });
+  first.store.connectWallet = async () => null;
+  await first.store.initialize();
+  assert.equal(first.store.wallets[0].nwcUrl, URL_A, 'plain in memory, for every screen');
+  const written = first.local.getItem('buhoGO_wallet_store');
+  // The harness's envelope stand-in stays readable; utils/nwcAtRest.spec proves real encryption.
+  assert.equal(first.saved().wallets[0].nwcUrl, undefined, 'the plain string is not saved');
+  assert.equal(await decrypt(first.saved().wallets[0].sealedNwcUrl), URL_A, 'its envelope is');
+  const legacy = JSON.parse(first.local.getItem('buhoGO_wallet_state'));
+  assert.equal(legacy.connectedWallets[0].nwcString, undefined, 'nor in the copy for old versions');
+
+  const next = createHarness({ storage: { buhoGO_wallet_store: written } });
+  next.store.connectWallet = async () => null;
+  await next.store.initialize();
+  assert.equal(next.store.wallets[0].nwcUrl, URL_A);
+  assert.equal(next.store.wallets[0].sealedNwcUrl, undefined, 'the envelope stays on disk');
+});
+
+test('a connection that cannot be opened stays saved, set aside, never lost', async () => {
+  const sealed = JSON.stringify({ wallets: [{ id: 'hub', type: 'nwc', name: 'Hub', sealedNwcUrl: 'not-an-envelope', metadata: {} }], activeWalletId: 'hub' });
+  const { store, saved } = createHarness({ storage: { buhoGO_wallet_store: sealed }, validate: true });
+  store.connectWallet = async () => null;
+  await store.initialize();
+  assert.equal(store.wallets.length, 0, 'not offered: it cannot be used');
+  await store.persistState();
+  assert.equal(saved().wallets[0].sealedNwcUrl, 'not-an-envelope', 'kept as it was read');
 });
