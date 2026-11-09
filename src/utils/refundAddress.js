@@ -24,8 +24,11 @@
  * Which address, first match wins:
  *   1. the paying wallet's own,
  *   2. another wallet's, oldest first,
- *   3. the profile's payment address (the Social Bucket when nothing else).
+ *   3. the profile's payment address,
+ *   4. the identity's Social Bucket, whatever the profile says.
  * A wallet's comes first so a refund lands somewhere visible on this phone.
+ * The bucket comes last and is always there for an identity whose key is on
+ * this phone, so with no wallet address a refund still has a place to land.
  *
  * Pure: the caller passes the store's facts in.
  */
@@ -95,10 +98,12 @@ export function payerAddressRule(payerData, { tillPayment = false } = {}) {
  * @param {string|null} facts.payerWalletId  the wallet that pays
  * @param {(wallet: object) => string|null} facts.addressOf  a wallet's own address
  * @param {string|null} [facts.profileAddress]  the profile's payment address
+ * @param {string|null} [facts.bucketAddress]  the identity's Social Bucket
+ *   address, when this phone can empty it
  * @param {string|null} [facts.entered]  an address typed in for this payment
  * @returns {Array<{ address: string, source: string, walletId?: string, name?: string }>}
  */
-export function refundAddressOptions({ wallets = [], payerWalletId = null, addressOf, profileAddress = null, entered = null }) {
+export function refundAddressOptions({ wallets = [], payerWalletId = null, addressOf, profileAddress = null, bucketAddress = null, entered = null }) {
   const options = []
   const seen = new Set()
   // Only an address that can be shared (utils/lud18.payerIdentifier) is
@@ -125,6 +130,11 @@ export function refundAddressOptions({ wallets = [], payerWalletId = null, addre
     })
   }
   add(profileAddress, { source: isNpubCashAddress(profileAddress) ? REFUND_SOURCE.BUCKET : REFUND_SOURCE.PROFILE })
+  // One bucket on the list: a profile pointing at it already (a claimed name
+  // reads better than the key) keeps that form.
+  if (isNpubCashAddress(bucketAddress) && !options.some((option) => option.source === REFUND_SOURCE.BUCKET)) {
+    add(bucketAddress, { source: REFUND_SOURCE.BUCKET })
+  }
   // A typed address stays listed after it was used, last, so going back to
   // a suggested one is one tap.
   add(entered, { source: REFUND_SOURCE.ENTERED })

@@ -767,6 +767,7 @@ import { useBitcoinDepositsStore } from '../stores/bitcoinDeposits';
 import {MERCHANT_PROVIDER, SA_RETAIL_SOURCE, isMerchantProviderUrl, parseZARFromMetadata} from '../utils/merchantQR.js';
 import {PAYER_ADDRESS_PURPOSE, REFUND_PROBLEM, chosenRefundAddress, payerAddressRule, refundAddressOptions, refundRefusal, sameRefundAddress} from '../utils/refundAddress.js';
 import {payerIdentifier} from '../utils/lud18.js';
+import {npubCashAddress} from '../utils/npubCashAddress.js';
 import {useProfileStore} from '../stores/profile';
 import { namesOneOrder, sendsPayoutAmount } from '../utils/payAgain.js';
 import {BRANTA_HOLD_MS, BRANTA_LOOKUP_TIMEOUT_MS, BRANTA_STATUS, brantaAvatar, brantaLookupText, checkWithBranta} from '../utils/branta.js';
@@ -1850,6 +1851,18 @@ export default {
       return payerIdentifier(profile.lud16);
     },
 
+    /**
+     * The identity's Social Bucket address, the row's last resort. Only an
+     * identity whose key is on this phone has one: the bucket is emptied by
+     * signing with that key, which a signer app cannot do here, and a refund
+     * must land where this phone can collect it.
+     */
+    socialBucketAddress() {
+      const identity = this.identityStore;
+      if (!identity?.bootstrapped || identity.identityCapabilities?.rawKey !== true) return null;
+      return payerIdentifier(npubCashAddress(identity.nostrNpub));
+    },
+
     /** The addresses the row offers, for the wallet that pays. */
     refundOptions() {
       if (!this.payerRule.show) return [];
@@ -1858,6 +1871,7 @@ export default {
         payerWalletId: this.payerWalletId,
         addressOf: (wallet) => this.walletStore.lightningAddressOf(wallet),
         profileAddress: this.profilePaymentAddress,
+        bucketAddress: this.socialBucketAddress,
         entered: this.refundEntered,
       });
     },

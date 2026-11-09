@@ -114,6 +114,33 @@ describe('which address is offered', () => {
     assert.equal(own[0].source, REFUND_SOURCE.PROFILE, 'only the bucket\'s own domain counts');
   });
 
+  const BUCKET = 'npub1az708q3kd9zy6z6f44zav5ygvdwelkzspf6mtusttx47lft2z38sghk0w7@npub.cash';
+
+  test('with no wallet address and no profile address, the Social Bucket takes the refund', () => {
+    const options = refundAddressOptions({ wallets: [{ id: 'ark', createdAt: 1 }], addressOf: () => null, bucketAddress: BUCKET });
+    assert.deepEqual(options, [{ address: BUCKET, source: REFUND_SOURCE.BUCKET }]);
+    assert.equal(chosenRefundAddress({ show: true, canDecline: true }, options, null), BUCKET, 'it is the default');
+  });
+
+  test('the Social Bucket is always on the list, last before a typed address', () => {
+    const options = refundAddressOptions({ wallets: WALLETS, payerWalletId: 'hub', addressOf, profileAddress: 'maria@buho.example', bucketAddress: BUCKET, entered: 'typed@else.example' });
+    assert.deepEqual(options.map((o) => o.source), ['wallet', 'wallet', 'wallet', 'profile', 'bucket', 'entered']);
+    assert.equal(options[0].address, 'me@hub.example', 'a wallet\'s address stays the default');
+  });
+
+  test('one Social Bucket on the list: a profile already pointing at it keeps its form', () => {
+    for (const profileAddress of ['maria@npub.cash', BUCKET.toUpperCase()]) {
+      const options = refundAddressOptions({ wallets: [], addressOf, profileAddress, bucketAddress: BUCKET });
+      assert.deepEqual(options, [{ address: profileAddress, source: REFUND_SOURCE.BUCKET }], profileAddress);
+    }
+  });
+
+  test('only a real bucket address counts as the bucket', () => {
+    for (const bucketAddress of ['me@hub.example', 'npub1x@npub.cash.example', `${'x'.repeat(320)}@npub.cash`, '', null, 42]) {
+      assert.deepEqual(refundAddressOptions({ wallets: [], addressOf, bucketAddress }), [], String(bucketAddress).slice(0, 40));
+    }
+  });
+
   test('no wallets, no profile, nothing typed: nothing to offer', () => {
     assert.deepEqual(refundAddressOptions({ wallets: [], addressOf }), []);
     assert.deepEqual(refundAddressOptions({ wallets: null, addressOf: null, profileAddress: '  ' }), []);

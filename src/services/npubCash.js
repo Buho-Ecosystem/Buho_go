@@ -48,9 +48,9 @@
  */
 
 import { createHttpAuthEvent, getAuthorizationHeader } from 'nostr-core';
-import { NPUBCASH_DOMAIN, isNpubCashAddress } from '../utils/npubCashAddress.js';
+import { NPUBCASH_DOMAIN, isNpubCashAddress, npubCashAddress } from '../utils/npubCashAddress.js';
 
-export { NPUBCASH_DOMAIN, isNpubCashAddress };
+export { NPUBCASH_DOMAIN, isNpubCashAddress, npubCashAddress };
 
 /** v2 API host. The `npub.cash` host serves only the web app. */
 export const NPUBCASH_API = 'https://npubx.cash';
@@ -75,12 +75,6 @@ export class NpubCashError extends Error {
     this.code = code;
     this.status = status;
   }
-}
-
-/** The Lightning address for a key. Payable immediately, no registration. */
-export function npubCashAddress(npub) {
-  if (typeof npub !== 'string' || !npub.startsWith('npub1')) return '';
-  return `${npub}@${NPUBCASH_DOMAIN}`;
 }
 
 /**
