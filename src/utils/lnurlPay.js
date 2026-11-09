@@ -18,10 +18,10 @@
  *     service cannot charge more than was shown. In the recipient's currency
  *     (LUD-21) the service adds its fee to the estimate the person saw, so
  *     the invoice may be above it, but only by PAYOUT_FEE_ALLOWANCE_PERCENT.
- *   - The invoice must be for this pay request: one whose description hash
- *     names other metadata is refused (LUD-06), as it was made for another
- *     payment. One with a plain description instead is accepted; payout
- *     services send those, and nothing in it can be checked.
+ *   - The invoice's description and its hash are not checked. LUD-06 and
+ *     LUD-18 no longer bind the invoice to the metadata (lnurl/luds#234):
+ *     the hash proves nothing the service could not make up, and a service
+ *     may now set it to anything. The amount is what binds the invoice.
  *   - An invoice that had long expired when it arrived is refused.
  *   - The callback is asked without following redirects off its host, so the
  *     amount and the note reach the host that was checked, and no other. A
@@ -32,8 +32,6 @@
  * service's own reason: that one is marked as the service's words
  * (utils/errorOrigin.js) and keeps them as its message.
  */
-import { sha256 } from '@noble/hashes/sha2.js'
-import { bytesToHex } from '@noble/hashes/utils.js'
 import { lnurlGetJson } from './lnurlHttp.js'
 import { ONION_HOST_RE } from './addressUtils.js'
 import { counterpartyError } from './errorOrigin.js'
@@ -61,8 +59,6 @@ export const PAY_REQUEST_ERROR = Object.freeze({
   INVOICE_MISSING: 'LNURL_INVOICE_MISSING',
   /** The invoice is for another amount than the one asked for. */
   INVOICE_MISMATCH: 'LNURL_INVOICE_MISMATCH',
-  /** The invoice's description hash names another pay request's metadata. */
-  INVOICE_NOT_FOR_REQUEST: 'LNURL_INVOICE_NOT_FOR_REQUEST',
   /** The invoice had expired long before it arrived. */
   INVOICE_EXPIRED: 'LNURL_INVOICE_EXPIRED',
 })
@@ -462,11 +458,6 @@ function serviceClockSeconds(response) {
   return Number.isFinite(at) ? at / 1000 : null
 }
 
-/** SHA-256 of a pay request's metadata, as an invoice for it carries it (LUD-06). */
-function metadataHash(metadata) {
-  return bytesToHex(sha256(new TextEncoder().encode(metadata)))
-}
-
 /** The invoice in a callback answer, decoded. */
 function readInvoice(data, decode) {
   const missing = (message) => payRequestError(PAY_REQUEST_ERROR.INVOICE_MISSING, message)
@@ -483,7 +474,6 @@ function readInvoice(data, decode) {
   return {
     pr: typeof decoded.invoice === 'string' && decoded.invoice ? decoded.invoice : pr,
     amountSats,
-    descriptionHash: typeof decoded.descriptionHash === 'string' ? decoded.descriptionHash.toLowerCase() : null,
     expiresAt: Number.isFinite(decoded.expiry) ? decoded.expiry : null,
   }
 }
@@ -497,10 +487,9 @@ function readInvoice(data, decode) {
  * the person confirmed: the service adds its fee, so the invoice may be above
  * it, but never past payoutCeilingSats.
  *
- * The invoice must also be for this pay request when it says what it is for
- * (a description hash), and must not have long expired. The hash is checked
- * against `payRequest.metadata` as the service sent it; a kept copy without
- * it skips that check.
+ * The invoice must also not have long expired. What it says it is for (its
+ * description, or a hash in its place) is not checked: see the top of this
+ * file.
  *
  * @param {object} payRequest  from fetchPayRequest, or a kept copy of its terms
  * @param {{ amountSats: number, payout?: {code:string, amount:number}|null, comment?: string }} args
@@ -559,10 +548,6 @@ export async function requestPayInvoice(
   }
   const data = serviceAnswer(response)
   const invoice = readInvoice(data, decode)
-  if (invoice.descriptionHash && typeof payRequest.metadata === 'string'
-      && invoice.descriptionHash !== metadataHash(payRequest.metadata)) {
-    throw payRequestError(PAY_REQUEST_ERROR.INVOICE_NOT_FOR_REQUEST, 'The invoice was made for another payment request')
-  }
   const tooMuch = sats === null ? invoice.amountSats > payoutCeilingSats(confirmed) : invoice.amountSats !== sats
   if (tooMuch) {
     throw payRequestError(
