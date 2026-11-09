@@ -5,7 +5,7 @@
  */
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { QUIET_INTERVAL_MS, RESUME_SETTLE_MS, RETRY_MS, WATCH_INTERVAL_MS, PAGE_SIZE, PAYMENTS, createWalletWatch } from '../walletWatch.js';
+import { HISTORY_PAUSE_MS, QUIET_INTERVAL_MS, RESUME_SETTLE_MS, RETRY_MS, WATCH_INTERVAL_MS, PAGE_SIZE, PAYMENTS, createWalletWatch } from '../walletWatch.js';
 import { createReceiptLedger } from '../paymentReceipts.js';
 
 const T0 = 1_790_000_000; // unix s
@@ -406,9 +406,18 @@ test('history that never answers while the network does: the balance takes over,
     h.timers.filter((t) => t.ms === WATCH_INTERVAL_MS && !t.cleared).at(-1).fn();
     await flush();
   }
-  assert.equal(h.watch.hint('hub'), false, 'its balance rise is announced by the store from now on');
-  assert.equal(h.ledger.isPrimed('hub'), false, 'forgotten: a later session primes again instead of repeating');
+  assert.equal(h.watch.hint('hub'), false, 'its balance rise is announced by the store for now');
+  assert.equal(h.ledger.isPrimed('hub'), false, 'forgotten: the return to its history primes again instead of repeating');
   assert.equal(h.delivered.length, 0);
+
+  // Not for the whole session: after the pause its history is read again.
+  h.fail.hub = false;
+  h.clock.t += HISTORY_PAUSE_MS;
+  h.timers.filter((t) => t.ms === WATCH_INTERVAL_MS && !t.cleared).at(-1).fn();
+  await flush();
+  assert.equal(h.watch.hint('hub'), true, 'its history tells again');
+  assert.equal(h.ledger.isPrimed('hub'), true, 'from a new baseline');
+  assert.equal(h.delivered.length, 0, 'what the balance already said is not repeated');
 });
 
 test('a flood of channel messages runs at most once per spacing', async () => {

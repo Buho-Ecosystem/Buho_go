@@ -73,6 +73,12 @@ export const CHANNEL_RETRY_MS = 5 * 60 * 1000;
 export const HINT_SPACING_MS = 3000;
 /** History reads that fail in a row, online, before the balance takes over. */
 export const HISTORY_GIVE_UP = 3;
+/**
+ * How long the balance stands in for a history that went silent. A wallet
+ * on a phone can be slow or asleep for a while without refusing anything,
+ * so its history is asked for again after this, from a new baseline.
+ */
+export const HISTORY_PAUSE_MS = 15 * 60 * 1000;
 
 /** Triggers worth one follow-up run when they land during a run. */
 const URGENT = new Set(['hint', 'resume', 'online', 'added']);
@@ -173,7 +179,7 @@ export function createWalletWatch({
       r = {
         walletId, generation: ++generations, inflight: null, rerun: null, retryTimer: null, failures: 0,
         channel: null, channelOwner: null, channelFailedAt: 0, hints: new Set(),
-        historyFailures: 0, historyRefused: false, lastHintRunAt: 0, hintTimer: null, lastRunAt: -Infinity,
+        historyFailures: 0, historyRefused: false, historyPausedUntil: 0, lastHintRunAt: 0, hintTimer: null, lastRunAt: -Infinity,
       };
       records.set(walletId, r);
     }
@@ -276,7 +282,8 @@ export function createWalletWatch({
 
   /** True when the watch announces this wallet's payments from its history. */
   function readsHistoryOf(wallet, r = records.get(wallet.id)) {
-    return !!paymentsOf(wallet)?.readPage && canReadHistory(wallet) && !r?.historyRefused;
+    if (!paymentsOf(wallet)?.readPage || !canReadHistory(wallet) || r?.historyRefused) return false;
+    return now() >= (r?.historyPausedUntil || 0);
   }
 
   async function runOnce(r, reason) {
@@ -318,16 +325,19 @@ export function createWalletWatch({
           failure = error;
           r.historyFailures += 1;
           diag(wallet.id, 'catchup-failed', { error: errClass(error) });
-          // A wallet that says no to its history (not granted, not built),
-          // or whose history never answers while the network does, is left
-          // to its balance for this session. Its ledger goes: a later
-          // return to its history starts from a new baseline instead of
-          // announcing again what the balance announced.
-          if (REFUSED.has(error?.code) || (online() && r.historyFailures >= HISTORY_GIVE_UP)) {
-            r.historyRefused = true;
+          // A wallet that says no to its history (not granted, not built)
+          // is left to its balance for this session; one whose history does
+          // not answer while the network does, for HISTORY_PAUSE_MS. Its
+          // ledger goes either way: the return to its history starts from a
+          // new baseline instead of announcing again what the balance did.
+          const refused = REFUSED.has(error?.code);
+          if (refused || (online() && r.historyFailures >= HISTORY_GIVE_UP)) {
+            if (refused) r.historyRefused = true;
+            else r.historyPausedUntil = now() + HISTORY_PAUSE_MS;
+            r.historyFailures = 0;
             ledger.forget(wallet.id);
             failure = null; // nothing left to retry: the balance tells from here
-            diag(wallet.id, 'history-given-up');
+            diag(wallet.id, refused ? 'history-refused' : 'history-paused');
           }
         }
       }
