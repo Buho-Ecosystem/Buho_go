@@ -315,6 +315,18 @@ test('a connection string is saved encrypted and opened again on the next start'
   assert.equal(next.store.wallets[0].sealedNwcUrl, undefined, 'the envelope stays on disk');
 });
 
+test('a wallet set aside for a string that is not quite right is saved sealed too', async () => {
+  const odd = URL_A.replace('nostr+walletconnect://', 'walletconnect: ');
+  const plain = JSON.stringify({ wallets: [{ id: 'odd', type: 'nwc', name: 'Odd', nwcUrl: odd, metadata: {} }], activeWalletId: 'odd' });
+  const { store, saved } = createHarness({ storage: { buhoGO_wallet_store: plain }, validate: true });
+  store.connectWallet = async () => null;
+  await store.initialize();
+  assert.equal(store.wallets.length, 0, 'set aside');
+  await store.persistState();
+  assert.equal(saved().wallets[0].nwcUrl, withStandInSecret(odd), 'its secret is not saved plain');
+  assert.equal(await decrypt(saved().wallets[0].sealedNwcUrl), odd, 'its string can still be reached');
+});
+
 test('a connection that cannot be opened stays saved, set aside, never lost', async () => {
   const sealed = JSON.stringify({ wallets: [{ id: 'hub', type: 'nwc', name: 'Hub', sealedNwcUrl: 'not-an-envelope', metadata: {} }], activeWalletId: 'hub' });
   const { store, saved } = createHarness({ storage: { buhoGO_wallet_store: sealed }, validate: true });

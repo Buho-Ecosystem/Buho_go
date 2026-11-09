@@ -3852,7 +3852,8 @@ export const useWalletStore = defineStore('wallet', {
      * Keep the wallets this version can use. An entry it cannot use (a
      * missing secret, a type it does not know) leaves the list but never the
      * disk: it moves to `_unusableWallets`, which every save writes back as
-     * it was read, so a newer version or a repair can still reach it.
+     * it was read (an NWC string sealed, see persistState), so a newer
+     * version or a repair can still reach it.
      */
     async validateWallets() {
       const unusable = [];
@@ -4480,12 +4481,15 @@ export const useWalletStore = defineStore('wallet', {
         // one. A wallet added while sealing is sealed in the next pass; one
         // still added after the last is saved plain by this save and sealed
         // by the next, so a save always ends.
-        for (let pass = 0; pass < SEAL_PASSES && !nwcAtRest.isSealed(this.wallets); pass += 1) {
-          await nwcAtRest.seal(this.wallets);
+        // Wallets set aside are sealed too: one is often set aside for a
+        // string that is not quite right, which can still hold a secret.
+        const kept = () => [...this.wallets, ...this._unusableWallets];
+        for (let pass = 0; pass < SEAL_PASSES && !nwcAtRest.isSealed(kept()); pass += 1) {
+          await nwcAtRest.seal(kept());
         }
         this._assertSavable();
         const listed = this.wallets.filter((w) => !addingWallets.has(w.id) || admit.includes(w.id));
-        const wallets = [...listed.map((w) => nwcAtRest.toSaved(w)), ...this._unusableWallets];
+        const wallets = [...listed, ...this._unusableWallets].map((w) => nwcAtRest.toSaved(w));
 
         // Save new format
         const stateToSave = {
