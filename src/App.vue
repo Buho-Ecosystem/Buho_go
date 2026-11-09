@@ -48,7 +48,7 @@ import { useAddressRequestStore } from 'src/stores/addressRequest.js'
 import { useNotificationsStore } from 'src/stores/notifications'
 import { isInternalRoute, onNotificationTap } from 'src/services/paymentNotifications'
 import { EventBus } from 'src/utils/eventBus'
-import { setAppLocked } from 'src/utils/appLock'
+import { setAppLocked, leavingForPicker, backFromPickerTooLate } from 'src/utils/appLock'
 
 export default defineComponent({
   name: 'App',
@@ -211,7 +211,14 @@ export default defineComponent({
         if (!isActive) {
           // Ignore if biometric dialog is showing or just dismissed
           if (isPrompting || (Date.now() - lastPromptEnd < 1500)) return
+          // A photo picker the app opened is not leaving the app
+          // (utils/appLock.js, openingSystemPicker).
+          if (leavingForPicker()) return
           locked.value = true
+        } else if (backFromPickerTooLate()) {
+          // Away in that picker for longer than it takes to choose a photo.
+          locked.value = true
+          setTimeout(() => promptUnlock(), 300)
         } else if (locked.value) {
           // Came back — only prompt if not still within the cooldown window
           if (isPrompting || (Date.now() - lastPromptEnd < 1500)) return

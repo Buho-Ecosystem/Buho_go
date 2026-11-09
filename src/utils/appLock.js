@@ -14,6 +14,11 @@
 
 let known = false;
 let locked = false;
+/** When the open system picker was opened (null: none), and its token. */
+let pickerOpenedAt = null;
+let pickerToken = 0;
+/** When the app went to the background for that picker (null: it did not). */
+let leftForPickerAt = null;
 /** @type {Array<() => void>} */
 let waiting = [];
 /** @type {Array<() => void>} */
@@ -63,10 +68,76 @@ export function whenAppUnlocked() {
   return known && !locked ? Promise.resolve() : new Promise((resolve) => { waitingForUnlock.push(resolve); });
 }
 
+/**
+ * How long a system picker the app opened may keep it in the background
+ * before coming back counts as coming back from somewhere else.
+ */
+export const PICKER_AWAY_MS = 2 * 60 * 1000;
+
+/**
+ * A system picker the app opens itself (the photo picker) is part of what the
+ * person is doing in the app, not leaving it. On some phones it still sends
+ * the app to the background, and the lock would engage and close the screen
+ * that is waiting for the photo. Call this just before opening the picker;
+ * call what it returns once the picker closed.
+ *
+ * The lock is held back for one trip to the picker, and only for
+ * PICKER_AWAY_MS: a phone left in the picker, or a person who went from it to
+ * another app, finds the lock when coming back later than that.
+ *
+ * @param {number} [now]
+ * @returns {() => void} closed: the picker is gone
+ */
+export function openingSystemPicker(now = Date.now()) {
+  const token = ++pickerToken;
+  pickerOpenedAt = now;
+  leftForPickerAt = null;
+  return () => {
+    if (token === pickerToken) pickerOpenedAt = null;
+  };
+}
+
+/**
+ * App.vue asks this when the app goes to the background: is that the picker
+ * it opened (so the lock stays off)? Remembers when, for `backFromPicker`.
+ * @param {number} [now]
+ */
+export function leavingForPicker(now = Date.now()) {
+  if (pickerOpenedAt === null || now - pickerOpenedAt > PICKER_AWAY_MS) return false;
+  leftForPickerAt = now;
+  return true;
+}
+
+/**
+ * App.vue asks this when the app comes back: was it away for the picker
+ * longer than PICKER_AWAY_MS, so the lock engages now? False when it was not
+ * away for a picker at all.
+ * @param {number} [now]
+ */
+export function backFromPickerTooLate(now = Date.now()) {
+  if (leftForPickerAt === null) return false;
+  const away = now - leftForPickerAt;
+  leftForPickerAt = null;
+  return away > PICKER_AWAY_MS;
+}
+
+/**
+ * Away for the picker longer than PICKER_AWAY_MS, and the lock is about to
+ * engage? Unlike backFromPickerTooLate this only asks: the screen that waits
+ * for the photo keeps its camera off, since the picker's own "closed" can
+ * arrive a moment before App.vue hears that the app is back.
+ * @param {number} [now]
+ */
+export function awayForPickerTooLong(now = Date.now()) {
+  return leftForPickerAt !== null && now - leftForPickerAt > PICKER_AWAY_MS;
+}
+
 /** Forget everything. For tests. */
 export function resetAppLock() {
   known = false;
   locked = false;
   waiting = [];
   waitingForUnlock = [];
+  pickerOpenedAt = null;
+  leftForPickerAt = null;
 }
