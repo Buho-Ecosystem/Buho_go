@@ -2718,7 +2718,7 @@ export default {
      * guard — so the strip reaches the confirm sheet by exactly the rails
      * a paste would take, minus the sheet. Anything else returns null and
      * the sheet resolves it the long way, which keeps the rarer shapes
-     * (SA-retail QR text, a wrapped address request) on one code path.
+     * (a wrapped address request) on one code path.
      */
     clipboardPaymentPayload(text) {
       const rawInput = (text || '').trim();
