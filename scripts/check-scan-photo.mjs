@@ -4,7 +4,9 @@
  * camera the button is still there. The camera is Chromium's stand-in camera
  * showing a generated scene; the pictures are generated too, so nothing
  * leaves the machine. Start `npx quasar dev --port 9031` first (or set
- * SCAN_PHOTO_BASE_URL). Screenshots go to output/scan-photo (SCAN_PHOTO_OUTPUT). */
+ * SCAN_PHOTO_BASE_URL). Screenshots go to output/scan-photo (SCAN_PHOTO_OUTPUT).
+ * SCAN_PHOTO_ONLY=site,contact runs only those cases (send, no-camera, short,
+ * nwc, contact, site, german). */
 import { chromium } from '@playwright/test';
 import assert from 'node:assert/strict';
 import { mkdir, writeFile } from 'node:fs/promises';
@@ -13,6 +15,8 @@ import QRCode from 'qrcode';
 const base = process.env.SCAN_PHOTO_BASE_URL || 'http://localhost:9031';
 const output = process.env.SCAN_PHOTO_OUTPUT || new URL('../output/scan-photo', import.meta.url).pathname;
 const assets = `${output}/assets`;
+const only = (process.env.SCAN_PHOTO_ONLY || '').split(',').filter(Boolean);
+const wanted = (name) => only.length === 0 || only.includes(name);
 await mkdir(assets, { recursive: true });
 
 const ADDRESS = 'alice@example.com';
@@ -62,6 +66,8 @@ const pause = (ms) => new Promise((done) => setTimeout(done, ms));
   await save('nwc-screenshot.png', await make({ w: 1179, h: 2556, title: 'Connect a wallet', qr: await qr(NWC), x: 190, y: 700, size: 800 }));
   await save('menu-screenshot.png', await make({ w: 1179, h: 2556, title: 'Our menu', qr: await qr('https://example.com/menu'), x: 190, y: 700, size: 800 }));
   await save('no-code.jpg', await make({ w: 2016, h: 1512, scene: true, type: 'image/jpeg' }));
+  await save('big-no-code.jpg', await make({ w: 8064, h: 6048, scene: true, type: 'image/jpeg' }));
+  await save('lnurl-screenshot.png', await make({ w: 1179, h: 2556, title: 'Sign in', qr: await qr('lnurl1notasigninlinkatall'), x: 190, y: 700, size: 800 }));
   await writeFile(`${assets}/broken.heic`, Buffer.from('this is not a picture'));
   await browser.close();
 }
@@ -79,8 +85,8 @@ async function shot(page, name) {
   console.log('shot', file);
 }
 
-async function open(browser, { theme = 'light', language = 'en-US', width = 390 } = {}) {
-  const context = await browser.newContext({ viewport: { width, height: 844 }, deviceScaleFactor: 2 });
+async function open(browser, { theme = 'light', language = 'en-US', width = 390, height = 844 } = {}) {
+  const context = await browser.newContext({ viewport: { width, height }, deviceScaleFactor: 2 });
   const page = await context.newPage();
   const errors = [];
   page.on('pageerror', (error) => { if (!/reading 'send'/.test(error.message)) errors.push(error.message); });
@@ -102,6 +108,17 @@ async function open(browser, { theme = 'light', language = 'en-US', width = 390 
   });
   await page.addInitScript(({ theme, language }) => {
     window.__AUDIT__ = { theme, noExitMonitor: true };
+    // Every camera stream the page opens, so a check can see one left running
+    // where no <video> shows it.
+    window.__streams = [];
+    const getUserMedia = navigator.mediaDevices?.getUserMedia?.bind(navigator.mediaDevices);
+    if (getUserMedia) {
+      navigator.mediaDevices.getUserMedia = async (constraints) => {
+        const stream = await getUserMedia(constraints);
+        window.__streams.push(stream);
+        return stream;
+      };
+    }
     localStorage.setItem('buhoGO_language', language);
     localStorage.setItem('buho-theme-mode', theme);
   }, { theme, language });
@@ -130,9 +147,44 @@ const vmOf = (page, selector, name) => page.evaluateHandle(({ selector, name }) 
   return null;
 }, { selector, name });
 
-/** Tap Choose photo and pick `file` in the system picker. */
+/** The component called `name`, found through the app's tree (also behind teleports). */
+const componentVm = (page, name) => page.evaluateHandle((name) => {
+  const seen = new Set();
+  const inVNode = (vnode) => {
+    if (!vnode || typeof vnode !== 'object') return null;
+    if (vnode.component) { const found = inInstance(vnode.component); if (found) return found; }
+    if (vnode.suspense?.activeBranch) { const found = inVNode(vnode.suspense.activeBranch); if (found) return found; }
+    for (const list of [vnode.children, vnode.dynamicChildren]) {
+      if (Array.isArray(list)) for (const child of list) { const found = inVNode(child); if (found) return found; }
+    }
+    return null;
+  };
+  const inInstance = (instance) => {
+    if (!instance || seen.has(instance)) return null;
+    seen.add(instance);
+    return instance.type?.name === name ? instance.proxy : inVNode(instance.subTree);
+  };
+  return inInstance(window.__audit.app._instance);
+}, name);
+
+/** How many camera streams the page holds open, shown or not. */
+const liveStreams = (page) => page.evaluate(() => window.__streams.filter((stream) => stream.getVideoTracks().some((track) => track.readyState === 'live')).length);
+
+/** Is the point at the middle of `locator` taken by it (nothing on top)? */
+const tappable = (locator) => locator.evaluate((el) => {
+  const box = el.getBoundingClientRect();
+  const top = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
+  return !!top && (top === el || el.contains(top));
+});
+
+/**
+ * Tap Choose photo and pick `file` in the system picker. A person takes a
+ * moment in the picker; an instant pick would hide what happens once the
+ * scanner's own 300 ms stop has passed.
+ */
 async function choosePhoto(page, file, scope = page) {
   const [chooser] = await Promise.all([page.waitForEvent('filechooser'), scope.getByRole('button', { name: /Choose photo|Foto auswählen/ }).first().click()]);
+  await pause(500);
   await chooser.setFiles(file ? `${assets}/${file}` : []);
 }
 
@@ -156,16 +208,22 @@ async function openSendScanner(page) {
 }
 
 // 1. Send: the camera runs, Choose photo sits under the prompt.
-{
+if (wanted('send')) {
   const { page, context, errors } = await open(withCamera);
   await openSendScanner(page);
   assert.equal(await cameraOn(page), true);
   await shot(page, 'send-scanner');
 
-  // The camera is off while the picker is open.
+  // The camera is off while the picker is open, and stays off when the
+  // page gets focus or turns visible meanwhile: this engine says when the
+  // picker closes, so neither is taken for the person being back.
   const [chooser] = await Promise.all([page.waitForEvent('filechooser'), page.getByRole('button', { name: 'Choose photo' }).click()]);
   await pause(100);
   assert.equal(await cameraOn(page), false, 'camera off at once while the picker is open');
+  await page.evaluate(() => { window.dispatchEvent(new Event('focus')); document.dispatchEvent(new Event('visibilitychange')); });
+  await pause(4500);
+  assert.equal(await cameraOn(page), false, 'camera still off after focus and visibility, 4.5 s in');
+  assert.equal(await liveStreams(page), 0, 'no camera stream held anywhere while the picker is open');
   // A picture without a code: one line says so, the camera comes back.
   await chooser.setFiles(`${assets}/no-code.jpg`);
   await page.getByText('No QR code in this photo. Choose one that shows the whole code.').waitFor({ timeout: 20000 });
@@ -173,13 +231,22 @@ async function openSendScanner(page) {
   assert.equal(await cameraOn(page), true, 'camera back on after a photo without a code');
   await shot(page, 'send-scanner-no-code');
 
-  // While a photo is read, the button says so.
-  const button = await vmOf(page, '.qpb', 'QrPhotoButton');
-  await button.evaluate((vm) => { vm.reading = true; });
-  await page.getByRole('button', { name: 'Reading photo…' }).waitFor();
-  assert.equal(await page.getByRole('button', { name: 'Reading photo…' }).isDisabled(), true);
+  // While a large photo is read, the button says so, keeps the focus and
+  // takes no second tap.
+  await choosePhoto(page, 'big-no-code.jpg');
+  const reading = page.getByRole('button', { name: 'Reading photo…' });
+  await reading.waitFor({ timeout: 5000 });
   await shot(page, 'send-scanner-reading');
-  await button.evaluate((vm) => { vm.reading = false; });
+  assert.deepEqual(await reading.evaluate((el) => ({
+    busy: el.getAttribute('aria-busy'),
+    disabled: el.getAttribute('aria-disabled'),
+    focused: document.activeElement === el,
+  })), { busy: 'true', disabled: 'true', focused: true });
+  const secondPicker = page.waitForEvent('filechooser', { timeout: 600 }).then(() => true, () => false);
+  await reading.evaluate((el) => el.click());
+  assert.equal(await secondPicker, false, 'a tap while reading opens no second picker');
+  await page.getByText('No QR code in this photo. Choose one that shows the whole code.').waitFor({ timeout: 30000 });
+  await page.getByRole('button', { name: 'Choose photo' }).waitFor();
 
   // Closed without a photo: the camera comes back, nothing else changes.
   await choosePhoto(page, null);
@@ -201,7 +268,7 @@ async function openSendScanner(page) {
 }
 
 // 2. No camera: Choose photo is the way left, and it works.
-{
+if (wanted('no-camera')) {
   const { page, context, errors } = await open(withoutCamera);
   await page.evaluate(() => {
     for (const el of document.querySelectorAll('*')) {
@@ -213,6 +280,7 @@ async function openSendScanner(page) {
   await send.evaluate((vm) => vm.openScanner());
   await page.getByText('Camera Access Required').waitFor({ timeout: 15000 });
   assert.equal(await page.getByRole('button', { name: 'Choose photo' }).isVisible(), true);
+  assert.equal(await tappable(page.getByRole('button', { name: 'Retry' })), true, 'Retry is not covered');
   await shot(page, 'send-no-camera');
   await choosePhoto(page, 'address-screenshot.png');
   await page.waitForFunction((address) => document.body.innerText.includes(address) || document.querySelector('[data-audit="send-input"]')?.value === address, ADDRESS, { timeout: 15000 });
@@ -221,8 +289,28 @@ async function openSendScanner(page) {
   console.log('ok  no camera: Choose photo still reads the code');
 }
 
+// 2b. No camera on a short screen: Retry and Choose photo are both there to tap.
+if (wanted('short')) {
+  const { page, context, errors } = await open(withoutCamera, { width: 320, height: 568 });
+  await page.evaluate(() => {
+    for (const el of document.querySelectorAll('*')) {
+      for (let c = el.__vueParentComponent; c; c = c.parent) if (c.type?.name === 'WalletPage') { c.proxy.openSend(); return; }
+    }
+  });
+  await page.locator('[data-audit="send-input"]').waitFor();
+  const send = await vmOf(page, '[data-audit="send-input"]', 'SendModal');
+  await send.evaluate((vm) => vm.openScanner());
+  await page.getByText('Camera Access Required').waitFor({ timeout: 15000 });
+  assert.equal(await tappable(page.getByRole('button', { name: 'Retry' })), true, 'Retry is not covered at 320 x 568');
+  assert.equal(await tappable(page.getByRole('button', { name: 'Choose photo' })), true, 'Choose photo is not covered at 320 x 568');
+  await shot(page, 'send-no-camera-320x568');
+  assert.deepEqual(errors, []);
+  await context.close();
+  console.log('ok  no camera, 320 x 568: Retry and Choose photo both take a tap');
+}
+
 // 3. Connect a wallet (NWC), light and dark: the code in a screenshot fills the connection.
-for (const theme of ['light', 'dark']) {
+if (wanted('nwc')) for (const theme of ['light', 'dark']) {
   const { page, context, errors } = await open(withCamera, { theme });
   await page.evaluate(() => window.__audit.app.config.globalProperties.$router.push('/nwc-setup'));
   await page.locator('.iform-sheet').first().waitFor({ timeout: 20000 });
@@ -239,21 +327,25 @@ for (const theme of ['light', 'dark']) {
   assert.deepEqual(errors, []);
   await context.close();
 }
-console.log('ok  NWC setup: a photo of a connection code fills it and tests it');
+if (wanted('nwc')) console.log('ok  NWC setup: a photo of a connection code fills it and tests it');
 
 // 4. Add a contact: a code that is no contact gets an answer, not silence.
-{
+if (wanted('contact')) {
   const { page, context, errors } = await open(withCamera);
   await page.evaluate(() => window.__audit.app.config.globalProperties.$router.push('/address-book'));
-  const book = await vmOf(page, '.q-page', 'AddressBookPage').catch(() => null);
   await page.evaluate(() => {
     for (const el of document.querySelectorAll('*')) {
       for (let c = el.__vueParentComponent; c; c = c.parent) if (typeof c.proxy?.showAddModal === 'function') { c.proxy.showAddModal(); return; }
     }
   });
-  void book;
   await page.getByRole('tab', { name: 'Scan' }).click();
   await page.getByRole('button', { name: 'Choose photo' }).waitFor({ timeout: 15000 });
+  // Choose photo and Paste instead: a pair, the same size and weight.
+  const [photoBox, pasteBox] = await Promise.all([
+    page.getByRole('button', { name: 'Choose photo' }).boundingBox(),
+    page.getByRole('button', { name: 'Paste instead' }).boundingBox(),
+  ]);
+  assert.ok(Math.abs(photoBox.x - pasteBox.x) < 1 && Math.abs(photoBox.width - pasteBox.width) < 1 && photoBox.height >= 44 && pasteBox.height >= 44, 'one width, 44 pt each');
   const contactCamera = () => page.evaluate(() => {
     const video = document.querySelector('.scan-frame video');
     return { video: !!video, ready: video?.readyState ?? -1 };
@@ -263,7 +355,7 @@ console.log('ok  NWC setup: a photo of a connection code fills it and tests it')
   await pause(100);
   assert.equal(await cameraOn(page, '.scan-frame video'), false, 'camera off while the picker is open');
   await chooser.setFiles(`${assets}/menu-screenshot.png`);
-  await page.getByText('That code is not a profile or an address.').waitFor({ timeout: 15000 });
+  await page.getByText('That code is not a profile or an address. Choose a photo of the code you want to add.').waitFor({ timeout: 15000 });
   await page.waitForFunction(() => document.querySelector('.scan-frame video')?.readyState >= 2, null, { timeout: 15000 })
     .catch(async () => assert.fail(`the camera did not come back: ${JSON.stringify(await contactCamera())}`));
   assert.equal(await cameraOn(page, '.scan-frame video'), true, 'camera back on a moment after a quick read');
@@ -273,8 +365,35 @@ console.log('ok  NWC setup: a photo of a connection code fills it and tests it')
   console.log('ok  Add contact: a photo of another kind of code says so');
 }
 
+// 4b. Add a site: a code that looks like a sign-in code but is none hands
+// over to paste, and the camera it left behind is off for good.
+if (wanted('site')) {
+  const { page, context, errors } = await open(withCamera);
+  await page.evaluate(() => window.__audit.app.config.globalProperties.$router.push('/identity'));
+  await page.waitForFunction(() => document.querySelector('.q-page'), null, { timeout: 30000 });
+  await pause(1500);
+  const signIn = await componentVm(page, 'IdentitySignInSheet');
+  assert.equal(await signIn.evaluate((vm) => !!vm), true, 'the sign-in sheet is on the identity page');
+  await signIn.evaluate((vm) => { vm.showAddSite = true; });
+  await page.waitForFunction(() => document.querySelector('.add-site-sheet video')?.readyState >= 2, null, { timeout: 20000 });
+  const [photoBox, pasteBox] = await Promise.all([
+    page.getByRole('button', { name: 'Choose photo' }).boundingBox(),
+    page.getByRole('button', { name: 'Paste a link instead' }).boundingBox(),
+  ]);
+  assert.ok(Math.abs(photoBox.y - pasteBox.y) < 1 && photoBox.height >= 44 && pasteBox.height >= 44, 'side by side, 44 pt each');
+  await shot(page, 'site-scanner');
+  await choosePhoto(page, 'lnurl-screenshot.png');
+  await page.waitForFunction(() => !document.querySelector('.add-site-sheet video'), null, { timeout: 15000 });
+  await pause(3000);
+  assert.equal(await liveStreams(page), 0, 'no camera left running once the sheet is in paste');
+  await shot(page, 'site-not-a-sign-in-code');
+  assert.deepEqual(errors, []);
+  await context.close();
+  console.log('ok  Add a site: a code that is no sign-in code leaves no camera running');
+}
+
 // 5. German at 320 px: the label fits.
-{
+if (wanted('german')) {
   const { page, context, errors } = await open(withCamera, { language: 'de', width: 320 });
   await openSendScanner(page);
   const box = await page.getByRole('button', { name: 'Foto auswählen' }).boundingBox();
