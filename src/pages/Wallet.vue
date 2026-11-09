@@ -2796,7 +2796,9 @@ export default {
      * text and the reason inline, where fixing it belongs.
      */
     async useClipboardDestination(text) {
-      if (this.clipboardResolving) return;
+      // One destination resolves at a time: a lookup the Send sheet started
+      // carries on after the sheet closes, and its confirm sheet is next.
+      if (this.clipboardResolving || this.sendResolving) return;
       if (offerAddressRequest(text, { t: this.$t.bind(this) })) return;
 
       const payload = this.clipboardPaymentPayload(text);

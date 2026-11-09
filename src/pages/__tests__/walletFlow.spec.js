@@ -2245,6 +2245,30 @@ test('Refunds to: the profile\'s address counts only once the active identity\'s
   assert.equal(vm.canConfirmPayment, true);
 });
 
+test('the Home strip waits while a destination the Send sheet started still resolves', async () => {
+  const { methods } = component({ '../services/addressRequestIntake.js': { offerAddressRequest: () => false } });
+  const looked = [];
+  const vm = {
+    ...methods,
+    clipboardPaymentPayload: (text) => ({ data: text, type: 'lightning_address', rawInput: text }),
+    $t: (key) => key,
+    $nextTick: (next) => next(),
+    $refs: {},
+    walletStore: { activeWalletType: 'spark' },
+    clipboardResolving: false,
+    sendResolving: true, // the person closed the sheet mid-lookup (it carries on)
+    sendResolveError: '',
+    showSendModal: false,
+    onPaymentDetected: async (payload) => { looked.push(payload.data); },
+  };
+  await vm.useClipboardDestination('bob@example.org');
+  assert.deepEqual(looked, [], 'no second lookup, whose confirm sheet could take the first one\'s place');
+  assert.equal(vm.showSendModal, false, 'nor the sheet opened over it');
+  vm.sendResolving = false;
+  await vm.useClipboardDestination('bob@example.org');
+  assert.deepEqual(looked, ['bob@example.org'], 'once it has landed, the strip goes on');
+});
+
 test('the Home strip pays a copied phone number it can place, and hands one valid in more than one country to the sheet', () => {
   const { methods } = component({ '../services/lnAddressServices': { matchLnAddressService: () => null, recognizePhoneNumber } });
   const payload = (text) => methods.clipboardPaymentPayload.call({ walletStore: { activeWalletType: 'spark' } }, text);
