@@ -5,7 +5,7 @@
  */
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { RESUME_SETTLE_MS, RETRY_MS, WATCH_INTERVAL_MS, PAGE_SIZE, PAYMENTS, createWalletWatch } from '../walletWatch.js';
+import { QUIET_INTERVAL_MS, RESUME_SETTLE_MS, RETRY_MS, WATCH_INTERVAL_MS, PAGE_SIZE, PAYMENTS, createWalletWatch } from '../walletWatch.js';
 import { createReceiptLedger } from '../paymentReceipts.js';
 
 const T0 = 1_790_000_000; // unix s
@@ -19,7 +19,7 @@ function memory() {
   return { getItem: (k) => m.get(k) ?? null, setItem: (k, v) => m.set(k, String(v)) };
 }
 
-function setup({ storage = memory(), wallets: initial, online = true } = {}) {
+function setup({ storage = memory(), wallets: initial, online = true, interval = null } = {}) {
   const clock = { t: T0 * 1000 };
   const s = () => Math.floor(clock.t / 1000);
   const wallets = initial || [
@@ -55,6 +55,7 @@ function setup({ storage = memory(), wallets: initial, online = true } = {}) {
       calls.finds.push([wallet.id, paymentHash]);
       return lookup[paymentHash] || null;
     },
+    interval: (wallet) => (typeof interval === 'function' ? interval(wallet) : interval),
   });
 
   const ledger = createReceiptLedger({ storage, now: () => clock.t });
@@ -430,4 +431,28 @@ test('a payment right after a round is read at once; only hinted runs are spaced
   h.channel('kitty').onHint({});
   await flush();
   assert.deepEqual(h.delivered.map((r) => r.id), ['now'], 'no wait after the start or minute round');
+});
+
+test('a wallet that does not announce payments is read every five minutes, and at once on return', async () => {
+  const h = setup({ interval: (wallet) => (wallet.id === 'hub' ? QUIET_INTERVAL_MS : null) });
+  await h.watch.start();
+  const reads = (id) => h.calls.pages.filter(([walletId]) => walletId === id).length;
+  const tick = async () => {
+    h.clock.t += WATCH_INTERVAL_MS;
+    h.timers.filter((t) => t.ms === WATCH_INTERVAL_MS && !t.cleared).at(-1).fn();
+    await flush();
+  };
+  for (let minute = 1; minute <= 4; minute += 1) await tick();
+  assert.deepEqual([reads('hub'), reads('kitty')], [1, 5], 'the quiet one only at start, the others every minute');
+  await tick();
+  assert.equal(reads('hub'), 2, 'five minutes after its last read');
+  h.clock.t += RESUME_SETTLE_MS + 1000;
+  await h.watch.resume();
+  assert.equal(reads('hub'), 3, 'coming back reads it at once');
+});
+
+test('only an NWC connection without payment notifications is quiet', () => {
+  assert.equal(PAYMENTS.nwc.interval({ type: 'nwc', metadata: { notifications: ['payment_received'] } }), null);
+  assert.equal(PAYMENTS.nwc.interval({ type: 'nwc', metadata: { notifications: ['payment_sent'] } }), QUIET_INTERVAL_MS);
+  assert.equal(PAYMENTS.lnbits.interval, undefined);
 });

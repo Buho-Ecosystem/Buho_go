@@ -14,9 +14,10 @@
  *    switched-on rule has its balance read on every round.
  *
  * Triggers: start (a cold start after the app was closed), every minute
- * while the app runs, return to the app, back online, a channel's hint, a
- * balance seen rising elsewhere (store.noticeIncomingPayment), and wallets
- * added. Per wallet, overlapping triggers coalesce into one run plus at
+ * while the app runs (every five for a wallet that has no live channel and
+ * may tell its owner about each read, see QUIET_INTERVAL_MS), return to the
+ * app, back online, a channel's hint, a balance seen rising elsewhere
+ * (store.noticeIncomingPayment), and wallets added. Per wallet, overlapping triggers coalesce into one run plus at
  * most one follow-up; a failed run retries with backoff, a few times, then
  * waits for the next round. The minute round is the safety net for a live
  * channel that died without closing: none of the three replays what it
@@ -44,9 +45,19 @@ import { capabilitiesOf } from '../utils/nwcWallet.js';
 import { onAppVisibility } from '../utils/appVisibility.js';
 
 export const WATCH_INTERVAL_MS = 60 * 1000;
+/**
+ * The round for an NWC wallet that does not announce payments: nothing
+ * tells the app to look, so each round is a request the wallet answers, and
+ * a wallet on a phone may show its owner a notification for every one. It
+ * is read every five minutes instead of every minute, and at once whenever
+ * the app comes back, goes online or Receive asks.
+ */
+export const QUIET_INTERVAL_MS = 5 * 60 * 1000;
 // Coming back to the app raises several events at once (visibility, app
 // state, resume) while the thawed timer fires too: one round covers them.
 export const RESUME_SETTLE_MS = 5 * 1000;
+/** A timer round this close to a wallet's interval counts as on time (timers fire a little late or early). */
+const TIMER_SLACK_MS = 5 * 1000;
 /** A failed run is tried again after these waits, then left to the round. */
 export const RETRY_MS = [2000, 5000, 15000, 30000];
 /** History is read this many payments at a time. */
@@ -77,6 +88,7 @@ const isSpark = (wallet) => (wallet?.type || 'nwc') === 'spark';
  *   watch(owner, onHint, wallet)    -> { stop, revive? } | null (no channel)
  *   readPage(owner, offset, limit)  -> rows newest first; throws on failure
  *   find(owner, paymentHash, wallet) -> one row | null, for a hint the pages did not reach
+ *   interval(wallet)                 -> ms between its timer runs when longer than the round; null: every round
  * `owner` is what the store connects: the provider, or the NWC connection.
  */
 export const PAYMENTS = Object.freeze({
@@ -93,6 +105,7 @@ export const PAYMENTS = Object.freeze({
     watch: (connection, onHint, wallet) => (notifiesPayments(wallet) ? watchNwcPayments(connection, onHint) : null),
     readPage: (connection, offset, limit) => listNwcPayments(connection, { offset, limit }),
     find: (connection, paymentHash, wallet) => findNwcPayment(connection, paymentHash, { methods: wallet.metadata?.methods }),
+    interval: (wallet) => (notifiesPayments(wallet) ? null : QUIET_INTERVAL_MS),
   },
 });
 
@@ -160,7 +173,7 @@ export function createWalletWatch({
       r = {
         walletId, generation: ++generations, inflight: null, rerun: null, retryTimer: null, failures: 0,
         channel: null, channelOwner: null, channelFailedAt: 0, hints: new Set(),
-        historyFailures: 0, historyRefused: false, lastHintRunAt: 0, hintTimer: null,
+        historyFailures: 0, historyRefused: false, lastHintRunAt: 0, hintTimer: null, lastRunAt: -Infinity,
       };
       records.set(walletId, r);
     }
@@ -360,6 +373,7 @@ export function createWalletWatch({
       return r.inflight;
     }
     if (reason === 'hint') r.lastHintRunAt = now();
+    r.lastRunAt = now();
     const run = runOnce(r, reason).finally(() => {
       r.inflight = null;
       const again = r.rerun;
@@ -380,12 +394,25 @@ export function createWalletWatch({
     for (const walletId of [...records.keys()]) if (!ids.has(walletId)) forget(walletId);
   }
 
+  /**
+   * Whether the minute timer reaches this wallet now: a wallet read less
+   * often waits until its own interval has passed since its last run, of
+   * whatever kind. Every other trigger reads every wallet.
+   */
+  function dueOnTimer(wallet) {
+    const interval = paymentsOf(wallet)?.interval?.(wallet);
+    if (!interval) return true;
+    const lastRunAt = records.get(wallet.id)?.lastRunAt ?? -Infinity;
+    return now() - lastRunAt >= interval - TIMER_SLACK_MS;
+  }
+
   /** One round at a time: a call while one runs shares it. */
   function runRound(reason) {
     if (round) return round;
     lastRoundAt = now();
     dropRemoved();
-    round = Promise.allSettled(watched().map((w) => check(w.id, reason))).finally(() => { round = null; });
+    const due = watched().filter((w) => reason !== 'timer' || dueOnTimer(w));
+    round = Promise.allSettled(due.map((w) => check(w.id, reason))).finally(() => { round = null; });
     return round;
   }
 
