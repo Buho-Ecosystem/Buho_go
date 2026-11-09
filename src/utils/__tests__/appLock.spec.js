@@ -67,13 +67,27 @@ test('away in the picker longer than choosing a photo takes, the lock engages on
 
 test('the screen waiting for the photo can ask, without using up the answer, whether the lock is coming', () => {
   openingSystemPicker(0);
-  assert.equal(awayForPickerTooLong(500 + PICKER_AWAY_MS), false, 'the picker never sent the app away');
+  assert.equal(awayForPickerTooLong(PICKER_AWAY_MS + 1), false, 'the picker never sent the app away');
   leavingForPicker(500);
-  assert.equal(awayForPickerTooLong(500 + PICKER_AWAY_MS), false, 'exactly the limit is still in time');
-  assert.equal(awayForPickerTooLong(500 + PICKER_AWAY_MS + 1), true);
-  assert.equal(awayForPickerTooLong(500 + PICKER_AWAY_MS + 1), true, 'asking again gives the same answer');
-  assert.equal(backFromPickerTooLate(500 + PICKER_AWAY_MS + 1), true, 'App.vue still gets its answer');
-  assert.equal(awayForPickerTooLong(500 + PICKER_AWAY_MS + 2), false, 'once App.vue heard it, nothing is pending');
+  assert.equal(awayForPickerTooLong(PICKER_AWAY_MS), false, 'exactly the limit is still in time');
+  assert.equal(awayForPickerTooLong(PICKER_AWAY_MS + 1), true);
+  assert.equal(awayForPickerTooLong(PICKER_AWAY_MS + 1), true, 'asking again gives the same answer');
+  assert.equal(backFromPickerTooLate(PICKER_AWAY_MS + 1), true, 'App.vue still gets its answer');
+  assert.equal(awayForPickerTooLong(PICKER_AWAY_MS + 2), false, 'once App.vue heard it, nothing is pending');
+});
+
+test('the two minutes count from opening the picker, not from leaving', () => {
+  openingSystemPicker(0);
+  assert.equal(leavingForPicker(114_000), true, 'left at 1:54, still within the hold');
+  assert.equal(backFromPickerTooLate(231_000), true, 'back at 3:51: the trip took longer than two minutes');
+});
+
+test('one hold covers one departure: back from the picker, leaving again is leaving', () => {
+  openingSystemPicker(0);
+  assert.equal(leavingForPicker(500), true);
+  assert.equal(backFromPickerTooLate(20_000), false, 'back in time, the photo still on its way');
+  assert.equal(leavingForPicker(21_000), false, 'the picker trip is not over yet, but this is another departure');
+  assert.equal(backFromPickerTooLate(121_000), false, 'nothing held back, so nothing to report');
 });
 
 test('a picker opened long ago holds nothing back, and an old close leaves a new picker open', () => {

@@ -17,8 +17,8 @@ let locked = false;
 /** When the open system picker was opened (null: none), and its token. */
 let pickerOpenedAt = null;
 let pickerToken = 0;
-/** When the app went to the background for that picker (null: it did not). */
-let leftForPickerAt = null;
+/** The app is in the background for that picker: when the picker was opened (null: it is not). */
+let awayForPickerSince = null;
 /** @type {Array<() => void>} */
 let waiting = [];
 /** @type {Array<() => void>} */
@@ -69,8 +69,8 @@ export function whenAppUnlocked() {
 }
 
 /**
- * How long a system picker the app opened may keep it in the background
- * before coming back counts as coming back from somewhere else.
+ * How long after opening a system picker the app may come back from the
+ * background without the lock: the whole trip, not the time away.
  */
 export const PICKER_AWAY_MS = 2 * 60 * 1000;
 
@@ -81,9 +81,11 @@ export const PICKER_AWAY_MS = 2 * 60 * 1000;
  * that is waiting for the photo. Call this just before opening the picker;
  * call what it returns once the picker closed.
  *
- * The lock is held back for one trip to the picker, and only for
- * PICKER_AWAY_MS: a phone left in the picker, or a person who went from it to
- * another app, finds the lock when coming back later than that.
+ * The lock is held back for one trip to the picker and one departure: once
+ * the app is back, leaving again is leaving, even before the photo arrived.
+ * And only within PICKER_AWAY_MS of opening it: a phone left in the picker,
+ * or a person who went from it to another app, finds the lock when coming
+ * back later than that.
  *
  * @param {number} [now]
  * @returns {() => void} closed: the picker is gone
@@ -91,7 +93,7 @@ export const PICKER_AWAY_MS = 2 * 60 * 1000;
 export function openingSystemPicker(now = Date.now()) {
   const token = ++pickerToken;
   pickerOpenedAt = now;
-  leftForPickerAt = null;
+  awayForPickerSince = null;
   return () => {
     if (token === pickerToken) pickerOpenedAt = null;
   };
@@ -99,37 +101,40 @@ export function openingSystemPicker(now = Date.now()) {
 
 /**
  * App.vue asks this when the app goes to the background: is that the picker
- * it opened (so the lock stays off)? Remembers when, for `backFromPicker`.
+ * it opened (so the lock stays off)? Remembers it for backFromPickerTooLate.
  * @param {number} [now]
  */
 export function leavingForPicker(now = Date.now()) {
   if (pickerOpenedAt === null || now - pickerOpenedAt > PICKER_AWAY_MS) return false;
-  leftForPickerAt = now;
+  // Counted from opening the picker, so the trip as a whole is capped.
+  awayForPickerSince = pickerOpenedAt;
   return true;
 }
 
 /**
- * App.vue asks this when the app comes back: was it away for the picker
- * longer than PICKER_AWAY_MS, so the lock engages now? False when it was not
- * away for a picker at all.
+ * App.vue asks this when the app comes back: did the trip to the picker take
+ * longer than PICKER_AWAY_MS from opening it, so the lock engages now? False
+ * when it was not away for a picker at all.
  * @param {number} [now]
  */
 export function backFromPickerTooLate(now = Date.now()) {
-  if (leftForPickerAt === null) return false;
-  const away = now - leftForPickerAt;
-  leftForPickerAt = null;
-  return away > PICKER_AWAY_MS;
+  if (awayForPickerSince === null) return false;
+  const trip = now - awayForPickerSince;
+  awayForPickerSince = null;
+  // Back: the hold is used up, whether or not the photo has arrived yet.
+  pickerOpenedAt = null;
+  return trip > PICKER_AWAY_MS;
 }
 
 /**
- * Away for the picker longer than PICKER_AWAY_MS, and the lock is about to
- * engage? Unlike backFromPickerTooLate this only asks: the screen that waits
+ * Away for the picker, and longer than PICKER_AWAY_MS since opening it, so
+ * the lock is about to engage? Unlike backFromPickerTooLate this only asks: the screen that waits
  * for the photo keeps its camera off, since the picker's own "closed" can
  * arrive a moment before App.vue hears that the app is back.
  * @param {number} [now]
  */
 export function awayForPickerTooLong(now = Date.now()) {
-  return leftForPickerAt !== null && now - leftForPickerAt > PICKER_AWAY_MS;
+  return awayForPickerSince !== null && now - awayForPickerSince > PICKER_AWAY_MS;
 }
 
 /** Forget everything. For tests. */
@@ -139,5 +144,5 @@ export function resetAppLock() {
   waiting = [];
   waitingForUnlock = [];
   pickerOpenedAt = null;
-  leftForPickerAt = null;
+  awayForPickerSince = null;
 }
