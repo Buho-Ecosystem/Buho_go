@@ -16,8 +16,8 @@ const CRAFTED = `1.zap.pe${'a'.repeat(2038)}\rX`;
 const browser = await chromium.launch({ headless: true });
 const pause = (ms) => new Promise((done) => setTimeout(done, ms));
 
-/** The browser, with every lookup answered by `answer` over a plain pay request. */
-async function open({ answer = {} } = {}) {
+/** The browser, with every lookup answered by `answer` over a plain pay request, after `delay` ms. */
+async function open({ answer = {}, delay = 0 } = {}) {
   const context = await browser.newContext({ viewport: { width: 390, height: 844 } });
   const page = await context.newPage();
   const errors = [];
@@ -27,6 +27,7 @@ async function open({ answer = {} } = {}) {
     const url = new URL(route.request().url());
     if (url.pathname.startsWith('/.well-known/lnurlp/')) {
       lookups.push(url.href);
+      if (delay) await pause(delay);
       return route.fulfill({
         headers: { 'access-control-allow-origin': '*' },
         json: {
@@ -210,6 +211,21 @@ for (const link of ['tel:+12125551212', 'tel:0712345678']) {
   assert.deepEqual(errors, []);
   await context.close();
   console.log(`ok  scanned ${link} says it can't be paid`);
+}
+
+{
+  // Issue #480: while a scanned till code resolves, Paste and the contacts give way.
+  const { page, context, errors, lookups } = await open({ delay: 4000 });
+  await openSend(page);
+  await scan(page, '0712345678');
+  await page.locator('.progress-cta').waitFor(); // the loading button: resolving
+  assert.equal(await page.locator('[data-audit="send-paste"]').count(), 0, 'no Paste while resolving');
+  assert.equal(await page.locator('[data-audit="send-scan"]').count(), 0, 'no Scan while resolving');
+  assert.equal(await page.locator('.contacts-section').count(), 0, 'no contacts while resolving');
+  assert.equal(tillLookups(lookups).length, 1);
+  assert.deepEqual(errors, []);
+  await context.close();
+  console.log('ok  while a scanned till code resolves, Paste, Scan and the contacts give way');
 }
 
 for (const code of ['0821234567', 'https://pos.snapscan.io/qr/TEST', 'https://www.zapper.com/url/TEST']) {

@@ -1,7 +1,7 @@
 /** Browser check for Mobile Money in the Send sheet: the country the person
  * picks decides a national number, a number it can't take says so in the
- * field, and nothing goes to another country. Every lookup is answered
- * locally.
+ * field, nothing goes to another country, and the chosen country stays while
+ * its number resolves. Every lookup is answered locally.
  * Start `npx quasar dev --port 9047` first (or set MOBILE_MONEY_BASE_URL). */
 import { chromium } from '@playwright/test';
 import assert from 'node:assert/strict';
@@ -11,8 +11,8 @@ const base = process.env.MOBILE_MONEY_BASE_URL || 'http://localhost:9047';
 const browser = await chromium.launch({ headless: true });
 const pause = (ms) => new Promise((done) => setTimeout(done, ms));
 
-/** The wallet page, every lookup answered over a plain pay request. */
-async function open() {
+/** The wallet page, every lookup answered over a plain pay request after `delay` ms. */
+async function open({ delay = 0 } = {}) {
   const context = await browser.newContext({ viewport: { width: 390, height: 844 } });
   const page = await context.newPage();
   const errors = [];
@@ -22,6 +22,7 @@ async function open() {
     const url = new URL(route.request().url());
     if (url.pathname.startsWith('/.well-known/lnurlp/')) {
       lookups.push(url.href);
+      if (delay) await pause(delay);
       return route.fulfill({
         headers: { 'access-control-allow-origin': '*' },
         json: { tag: 'payRequest', callback: `${url.origin}/callback`, minSendable: 1000, maxSendable: 100000000, metadata: '[["text/plain","Payout"]]' },
@@ -158,6 +159,44 @@ for (const [country, host] of [['tz', 'chapsmart.com'], ['zm', 'bitzed.xyz']]) {
   assert.deepEqual(errors, []);
   await context.close();
   console.log('ok  Tanzania chosen, +254712345678 is a Kenyan payout, as its calling code says');
+}
+
+{
+  // Issue #480: while Zambia's lookup runs, the other countries can't be tapped.
+  const { page, context, errors, lookups } = await open({ delay: 4000 });
+  await mobileMoney(page, 'zm');
+  await page.locator('[data-audit="send-input"]').fill('0751234567');
+  await page.locator('.progress-cta').waitFor(); // the loading button: resolving
+  const tile = (code) => page.locator(`[data-audit="send-mm-country-${code}"]`);
+  for (const code of ['ke', 'tz', 'zm']) assert.equal(await tile(code).isDisabled(), true, `${code} tile while resolving`);
+  // The tiles fade (0.15 s): read them once they have settled.
+  const opacity = (code, settled) => page.waitForFunction(
+    ([selector, value]) => getComputedStyle(document.querySelector(selector)).opacity === value,
+    [`[data-audit="send-mm-country-${code}"]`, settled],
+    { timeout: 2000 },
+  );
+  await opacity('ke', '0.6'); // the others dim, as any disabled control
+  await opacity('zm', '1'); // the chosen country stays lit
+  assert.deepEqual(hosts(lookups), ['bitzed.xyz']);
+  assert.deepEqual(errors, []);
+  await context.close();
+  console.log('ok  while Zambia\'s number resolves, the other countries dim and can\'t be tapped');
+}
+
+{
+  // While Kenya's number resolves, the back arrow is the way out of the
+  // sheet: the lookup carries on, and nothing else is offered meanwhile.
+  const { page, context, errors, lookups } = await open({ delay: 3000 });
+  await mobileMoney(page, 'ke');
+  await page.locator('[data-audit="send-input"]').fill('0712345678');
+  await page.locator('.progress-cta').waitFor();
+  await page.locator('.mm-back').click();
+  await page.locator('[data-audit="send-input"]').waitFor({ state: 'detached' });
+  assert.equal(await page.locator('[data-audit="send-mobile-money"]').count(), 0, 'no resting sheet over the lookup');
+  assert.deepEqual(hosts(lookups), ['bitcoin.co.ke']);
+  assert.deepEqual(errors, []);
+  await context.close();
+  console.log('ok  the back arrow mid-lookup closes the sheet; the lookup carries on');
 }
 
 await browser.close();

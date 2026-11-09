@@ -20,9 +20,12 @@ import * as nwcConnection from '../../utils/nwcConnection.js';
 
 /** What the clipboard holds when the sheet's Paste button reads it. */
 let clipboardText = '';
+let clipboardReads = 0;
 export function setClipboard(text) {
   clipboardText = text;
 }
+/** How many times the sheet has read the clipboard. */
+export const clipboardReadCount = () => clipboardReads;
 
 /**
  * The services package as the sheet imports it. Its index resolves flag and
@@ -59,7 +62,12 @@ function loadSheet() {
     '../utils/walletCapabilities': walletCapabilities,
     '../utils/clipboardSuggestion.js': clipboardSuggestion,
     '../utils/nwcConnection.js': nwcConnection,
-    '../utils/shopClipboard.js': { readClipboardCrossPlatform: async () => clipboardText },
+    '../utils/shopClipboard.js': {
+      readClipboardCrossPlatform: async () => {
+        clipboardReads += 1;
+        return clipboardText;
+      },
+    },
     '../services/addressRequestIntake.js': { offerAddressRequest: () => false },
     '../services/nwcConnectionIntake.js': { offerNwcConnection: () => false },
     '../services/nostrPaymentTarget': {

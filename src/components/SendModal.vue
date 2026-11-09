@@ -50,7 +50,8 @@
       </q-btn>
 
       <!-- Mobile Money mode header: back arrow + label. The field below
-           switches to phone entry; everything else yields to it. -->
+           switches to phone entry; everything else yields to it. While a
+           number resolves, the arrow is the sheet's way out, as above. -->
       <header v-if="mobileMoneyMode" class="mm-head">
         <q-btn flat round dense class="mm-back" :aria-label="$t('Back')" @click="exitMobileMoney">
           <Icon icon="tabler:chevron-left" width="20" height="20" />
@@ -168,6 +169,8 @@
           type="button"
           class="mm-country"
           :class="{ 'mm-country--active': mmCountry === c.code }"
+          :aria-pressed="mmCountry === c.code"
+          :disabled="ctaBusy"
           :data-audit="`send-mm-country-${c.code.toLowerCase()}`"
           @click="selectMmCountry(c.code)"
         >
@@ -178,7 +181,7 @@
       </div>
 
       <!-- ─────────────  PASTE / SCAN  ───────────── -->
-      <div v-if="!mobileMoneyMode && !isValidManualInput" class="quick-actions">
+      <div v-if="awaitingDestination" class="quick-actions">
         <button type="button" class="quick-btn" data-audit="send-paste" @click="pasteFromClipboard">
           <Icon icon="tabler:clipboard" width="19" height="19" class="quick-icon" />
           <span>{{ $t('Paste') }}</span>
@@ -229,7 +232,7 @@
       </div>
 
       <!-- ─────────────  CONTACTS  ───────────── -->
-      <section v-if="showContactsSection" class="contacts-section">
+      <section v-if="awaitingDestination" class="contacts-section">
         <div class="section-head">
           <span class="section-label">{{ $t('Send to a contact') }}</span>
           <button type="button" class="manage-btn" data-audit="send-manage-contacts" @click="goToAddressBook">
@@ -698,22 +701,26 @@ export default {
       });
     },
 
+    // Paste, Scan and the contacts are the ways to give a destination, so
+    // they show while the person is still giving one: nothing in the field
+    // reads as a destination, and nothing is resolving. While one resolves,
+    // the sheet looks the way it does for a typed address (the field, the
+    // skeleton, the loading button): a scanned till code never reads as
+    // one, and Paste or a contact would change what is being resolved.
+    awaitingDestination() {
+      return !this.mobileMoneyMode && !this.isValidManualInput && !this.ctaBusy;
+    },
+
     // Method rows (Mobile Money / Batch Send) show only on the resting sheet:
     // any typing hands their space to the contact filter or the preview card.
     showMethods() {
-      return !this.mobileMoneyMode && !(this.manualInput || '').trim();
+      return this.awaitingDestination && !(this.manualInput || '').trim();
     },
 
-    showContactsSection() {
-      return !this.mobileMoneyMode && !this.isValidManualInput;
-    },
-
-    // The clipboard chip shows only on the resting sheet: any typing (or
-    // Mobile Money mode) means the user has chosen their own path.
+    // The clipboard chip, too, shows only on the resting sheet: any typing
+    // (or Mobile Money mode) means the user has chosen their own path.
     showClipboardSuggestion() {
-      return !!this.clipboardSuggestion
-        && !this.mobileMoneyMode
-        && !(this.manualInput || '').trim();
+      return !!this.clipboardSuggestion && this.showMethods;
     },
 
     clipboardPreview() {
@@ -1157,11 +1164,16 @@ export default {
     },
 
     async pasteFromClipboard() {
+      // Not even a read while busy: on the web, a read can ask for permission.
+      if (this.ctaBusy) return;
       // Native plugin first, WebView APIs as fallback: on Android the
       // WebView rejects programmatic reads, which used to leave the Paste
       // button focusing an empty field and coaching a long-press instead
       // of pasting.
       const clipboardText = await readClipboardCrossPlatform();
+      // A lookup may have started while the clipboard was read (a contact,
+      // a scan): the field is its destination now.
+      if (this.ctaBusy) return;
 
       // Always land the clipboard in the visible field for the user to
       // verify before committing. No silent fire-and-forget — too easy
@@ -1208,7 +1220,15 @@ export default {
       });
     },
 
+    // Back to the Send sheet. While a number resolves there is nothing to go
+    // back to (the field and the tiles wait for it), so the arrow closes the
+    // sheet, as the close button does elsewhere: the lookup carries on to
+    // the confirm sheet, which names the number.
     exitMobileMoney() {
+      if (this.ctaBusy) {
+        this.closeModal();
+        return;
+      }
       this.mobileMoneyMode = false;
       this.manualInput = '';
       this.mmCountry = null;
@@ -1222,6 +1242,7 @@ export default {
     // waits for Continue rather than going to a country nobody picked.
     // Either way the number is read anew, so the last country's error goes.
     selectMmCountry(code) {
+      if (this.ctaBusy) return;
       this.mmCountry = this.mmCountry === code ? null : code;
       if (this.resolveError) this.$emit('update:resolveError', '');
       this.$nextTick(() => {
@@ -1243,6 +1264,7 @@ export default {
     },
 
     onContactPicked(contact) {
+      if (this.ctaBusy) return;
       // Identity-only Nostr contact — saved, but no Lightning address
       // published yet. Explain instead of emitting a payment the send
       // flow can't complete.
@@ -1807,7 +1829,7 @@ export default {
   cursor: pointer;
   font-family: 'Manrope', sans-serif;
   transition: box-shadow 0.15s ease, background-color 0.15s ease,
-    border-color 0.15s ease, transform 0.08s ease;
+    border-color 0.15s ease, opacity 0.15s ease, transform 0.08s ease;
 }
 
 .body--dark .mm-country {
@@ -1815,8 +1837,16 @@ export default {
   border-color: rgba(255, 255, 255, 0.08);
 }
 
-.mm-country:active {
+.mm-country:active:not(:disabled) {
   transform: scale(0.97);
+}
+
+/* While a number resolves, the other countries dim like any disabled
+   control; the chosen one stays lit, so the country being paid still reads.
+   `!important` because Quasar sets `opacity: .6 !important` on every
+   [disabled] element. */
+.mm-country--active:disabled {
+  opacity: 1 !important;
 }
 
 /* Light mode: selection reads as near-black, not green. */
