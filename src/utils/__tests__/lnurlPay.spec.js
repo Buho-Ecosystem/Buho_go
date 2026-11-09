@@ -358,42 +358,43 @@ describe('asking for the invoice', () => {
   });
 });
 
-describe('the invoice is the one for this payment', () => {
+// LUD-06 and LUD-18 no longer bind the invoice to the metadata
+// (lnurl/luds#234): a service may describe it however it likes, so only the
+// amount decides.
+describe('what the invoice says it is for is not checked, its amount is', () => {
   const payRequest = readPayRequest(PAY_REQUEST);
   const madeFor = (metadata, sats = 81) => invoiceFor(sats, { descriptionHash: metadataHash(metadata) });
 
-  test('an invoice made for this pay request is paid', async () => {
+  test('an invoice whose hash is of this pay request is paid', async () => {
     const { get } = fakeService(ok({ pr: madeFor(PAY_REQUEST.metadata) }));
     assert.equal((await requestPayInvoice(payRequest, { amountSats: 81 }, { get })).pr, madeFor(PAY_REQUEST.metadata));
   });
 
-  test('an invoice made for another pay request is refused, even for the right amount', async () => {
-    const { get } = fakeService(ok({ pr: madeFor('[["text/plain","Mallory"]]') }));
-    await assert.rejects(requestPayInvoice(payRequest, { amountSats: 81 }, { get }),
-      (error) => error.code === PAY_REQUEST_ERROR.INVOICE_NOT_FOR_REQUEST && !isCounterpartyError(error));
+  test('an invoice whose hash is of anything else is paid for the right amount', async () => {
+    for (const other of ['[["text/plain","Somebody else"]]', '[["text/plain", "Alice"]]', `${PAY_REQUEST.metadata}{"identifier":"a@b.example"}`]) {
+      const { get } = fakeService(ok({ pr: madeFor(other) }));
+      assert.equal((await requestPayInvoice(payRequest, { amountSats: 81 }, { get })).amountSats, 81, other);
+    }
   });
 
-  test('the hash is of the metadata exactly as the service sent it', async () => {
-    // The same JSON with other spacing is another text, so another hash.
-    const { get } = fakeService(ok({ pr: madeFor('[["text/plain", "Alice"]]') }));
-    await assert.rejects(requestPayInvoice(payRequest, { amountSats: 81 }, { get }), withCode(PAY_REQUEST_ERROR.INVOICE_NOT_FOR_REQUEST));
-  });
-
-  test('an invoice with a plain description is paid: payout services send those, and it names nothing to check', async () => {
+  test('an invoice with a plain description is paid', async () => {
     const { get } = fakeService(ok({ pr: invoiceFor(81) }));
     assert.equal((await requestPayInvoice(payRequest, { amountSats: 81 }, { get })).amountSats, 81);
   });
 
-  test('kept terms without the metadata pay without the check, as before', async () => {
+  test('kept terms without the metadata pay the same way', async () => {
     const { metadata, ...terms } = payRequest;
     assert.equal(typeof metadata, 'string');
-    const { get } = fakeService(ok({ pr: madeFor('[["text/plain","Mallory"]]') }));
+    const { get } = fakeService(ok({ pr: madeFor('[["text/plain","Somebody else"]]') }));
     assert.equal((await requestPayInvoice(terms, { amountSats: 81 }, { get })).amountSats, 81);
   });
 
-  test('an invoice for another pay request and another amount says it is for another payment', async () => {
-    const { get } = fakeService(ok({ pr: madeFor('[["text/plain","Mallory"]]', 8100) }));
-    await assert.rejects(requestPayInvoice(payRequest, { amountSats: 81 }, { get }), withCode(PAY_REQUEST_ERROR.INVOICE_NOT_FOR_REQUEST));
+  test('whatever its hash, an invoice for another amount is refused as the wrong amount', async () => {
+    for (const pr of [madeFor(PAY_REQUEST.metadata, 8100), madeFor('[["text/plain","Somebody else"]]', 82), invoiceFor(80)]) {
+      const { get } = fakeService(ok({ pr }));
+      await assert.rejects(requestPayInvoice(payRequest, { amountSats: 81 }, { get }),
+        (error) => error.code === PAY_REQUEST_ERROR.INVOICE_MISMATCH && !isCounterpartyError(error));
+    }
   });
 });
 
@@ -745,26 +746,18 @@ describe('payer details go with the invoice request (LUD-18)', () => {
       withCode(PAY_REQUEST_ERROR.AMOUNT_OUT_OF_RANGE));
   });
 
-  test('the invoice may be for the metadata, or for the metadata with the details sent', async () => {
+  // The first LUD-18 asked services to hash the metadata with the details
+  // appended; that rule is gone too (lnurl/luds#234). With details sent or
+  // not, only the amount decides.
+  test('with details sent, an invoice pays for the right amount whatever its hash', async () => {
     const request = asking({ identifier: {} });
-    for (const text of [PAY_REQUEST.metadata, PAY_REQUEST.metadata + SENT]) {
+    for (const text of [PAY_REQUEST.metadata, PAY_REQUEST.metadata + SENT, `${PAY_REQUEST.metadata}{"identifier": "alice@buho.example"}`]) {
       const { get } = fakeService(ok({ pr: madeFor(text) }));
       assert.equal((await requestPayInvoice(request, { amountSats: 81, payerData: { identifier: ALICE } }, { get })).pr, madeFor(text));
     }
-  });
-
-  test('details that were not sent cannot vouch for an invoice', async () => {
-    const { get } = fakeService(ok({ pr: madeFor(PAY_REQUEST.metadata + SENT) }));
-    await assert.rejects(requestPayInvoice(asking({ identifier: {} }), { amountSats: 81 }, { get }),
-      withCode(PAY_REQUEST_ERROR.INVOICE_NOT_FOR_REQUEST));
-  });
-
-  test('other details, or the same details written another way, are another payment', async () => {
-    for (const text of [PAY_REQUEST.metadata + '{"identifier":"mallory@x.example"}', PAY_REQUEST.metadata + '{"identifier": "alice@buho.example"}']) {
-      const { get } = fakeService(ok({ pr: madeFor(text) }));
-      await assert.rejects(requestPayInvoice(asking({ identifier: {} }), { amountSats: 81, payerData: { identifier: ALICE } }, { get }),
-        withCode(PAY_REQUEST_ERROR.INVOICE_NOT_FOR_REQUEST), text);
-    }
+    const { get } = fakeService(ok({ pr: madeFor(PAY_REQUEST.metadata + SENT, 82) }));
+    await assert.rejects(requestPayInvoice(request, { amountSats: 81, payerData: { identifier: ALICE } }, { get }),
+      withCode(PAY_REQUEST_ERROR.INVOICE_MISMATCH));
   });
 
   test('a callback that already carries `payerdata` is refused, in any case', () => {

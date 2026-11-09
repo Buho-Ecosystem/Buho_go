@@ -9,7 +9,6 @@ export default {
   "The recipient no longer takes payments in {currency}. Send the amount in Bitcoin instead.": "Der Empfänger nimmt keine Zahlungen in {currency} mehr an. Gib den Betrag stattdessen in Bitcoin ein.",
   "The recipient didn't send a valid payment request. Nothing was sent.": "Der Empfänger hat keine gültige Zahlungsanfrage gesendet. Es wurde nichts gesendet.",
   "The recipient asked for a different amount than you confirmed. Nothing was sent.": "Der Empfänger hat einen anderen Betrag angefordert, als du bestätigt hast. Es wurde nichts gesendet.",
-  "The recipient's payment request doesn't match this payment. Nothing was sent.": "Die Zahlungsanfrage des Empfängers passt nicht zu dieser Zahlung. Es wurde nichts gesendet.",
   "The recipient's payment request had expired. Nothing was sent. Try again.": "Die Zahlungsanfrage des Empfängers war abgelaufen. Es wurde nichts gesendet. Versuch es noch einmal.",
   "The recipient's service tried to redirect this payment. Nothing was sent. Ask them for another way to pay.": "Der Dienst des Empfängers wollte diese Zahlung umleiten. Es wurde nichts gesendet. Bitte den Empfänger um eine andere Zahlungsmöglichkeit.",
   "The service is busy. Wait a few minutes, then try again.": "Der Dienst ist gerade ausgelastet. Warte ein paar Minuten und versuch es dann noch einmal.",

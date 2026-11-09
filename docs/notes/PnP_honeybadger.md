@@ -103,7 +103,7 @@ For a refund, the Social Bucket is always offered to an identity whose key is on
 Against `cryptoqr.net` with MoneyBadger's public test code. GET requests only, nothing paid.
 
 - The pay request answers with `Access-Control-Allow-Origin: *`, so the web build works too.
-- The metadata is just the store's name (`Pick n Pay`). The invoice description is `MBadger: cryptoqrtestscan - R1.00`, it has no description hash, and it expires in about a minute.
+- The metadata is just the store's name (`Pick n Pay`). The invoice description is `MBadger: cryptoqrtestscan - R1.00`, and it expires in about a minute. What an invoice says it is for is not checked: LUD-06 and LUD-18 no longer tie it to the metadata ([lnurl/luds#234](https://github.com/lnurl/luds/pull/234)). Its amount is.
 - A refund address that does not resolve is refused with HTTP 500 `Could not validate refund address`, even where the field is optional.
 - A made-up SnapScan code gives `UNSUPPORTED_QR_CODE`. Made-up codes of other networks give `UNKNOWN_CODE`, which proves nothing.
 - The service rate-limits after about 30 requests (HTTP 429, still limited 5 minutes later). Keep manual checks short.
@@ -112,7 +112,7 @@ Against `cryptoqr.net` with MoneyBadger's public test code. GET requests only, n
 
 Through BuhoGO's own `requestPayInvoice`, four GET requests, nothing paid.
 
-- A Social Bucket address, of a key made for the check, is accepted. The invoice passes the amount and expiry checks. Like the provider's other test invoices, it is not checked against a description hash.
+- A Social Bucket address, of a key made for the check, is accepted. The invoice passes the amount and expiry checks.
 - An address that cannot resolve is refused (`Could not validate refund address`) and read as refused, so the row says so.
 
 ## On a phone

@@ -6496,9 +6496,6 @@ export default {
           fixedAmountSats: isFixedAmount ? Math.floor(minSendable / 1000) : null,
           commentAllowed: payRequest.commentAllowed,
           callback: payRequest.callback,
-          // As the service sent it: the invoice's description hash is checked
-          // against it (requestPayInvoice), also when NWC pays from these terms.
-          metadata: typeof data.metadata === 'string' ? data.metadata : null,
           description: data.metadata ? this.parseLnurlMetadata(data.metadata) : null,
           serviceMeta: parsePayRequestMetadata(data.metadata),
           // LUD-18: what the service asks to know about the payer, as sent.
