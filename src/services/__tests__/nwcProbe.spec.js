@@ -20,20 +20,29 @@ function client(script) {
   };
 }
 
+const NODE = `02${'ab'.repeat(32)}`;
+
 test('a full answer: name, balance, address, grants, limit, every relay', async () => {
   const c = client({
-    info: () => ({ alias: 'Alby Hub', pubkey: '02node', network: 'mainnet', methods: ['pay_invoice', 'make_invoice', 'get_balance', 'get_budget'], notifications: ['payment_received'] }),
+    info: () => ({ alias: 'Alby Hub', pubkey: NODE, network: 'mainnet', methods: ['pay_invoice', 'make_invoice', 'get_balance', 'get_budget'], notifications: ['payment_received'] }),
     balance: () => ({ balance: 48_210_000 }),
     budget: () => ({ total_budget: 100_000_000, used_budget: 12_400_000, renews_at: 1_800_000_000 }),
   });
   const probe = await probeNwcConnection(URL1, { createClient: () => c });
   assert.equal(probe.alias, 'Alby Hub');
+  assert.equal(probe.nodePubkey, NODE);
   assert.equal(probe.balanceSats, 48210);
   assert.equal(probe.lud16, 'shop@getalby.com');
   assert.equal(probe.limit.remainingSats, 87600);
   assert.deepEqual(probe.relays, ['wss://relay.getalby.com/v1', 'wss://relay.backup.example']);
   assert.match(probe.normalized, /relay=.*relay=/, 'the stored form keeps both relays');
   assert.equal(c.calls.closed, true);
+});
+
+test('a placeholder for the wallet key is no key', async () => {
+  const c = client({ info: () => ({ alias: 'N/A', pubkey: 'N/A', methods: ['pay_invoice'] }) });
+  const probe = await probeNwcConnection(URL1, { createClient: () => c });
+  assert.equal(probe.nodePubkey, '');
 });
 
 test('a connection without balance access is still a connection', async () => {

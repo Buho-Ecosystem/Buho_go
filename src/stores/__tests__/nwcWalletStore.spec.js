@@ -30,13 +30,21 @@ test('a wallet that misses one reply stays connected; its status says it was sil
 test('an answer refreshes the name, the grants and the limit', async () => {
   const { store } = createHarness();
   nwcWallet(store, {
-    getInfo: async () => ({ alias: 'Alby Hub', pubkey: '02ab', methods: ['pay_invoice', 'make_invoice', 'get_budget'] }),
+    getInfo: async () => ({ alias: 'Alby Hub', pubkey: `02${'ab'.repeat(32)}`, methods: ['pay_invoice', 'make_invoice', 'get_budget'] }),
     getBudget: async () => ({ total_budget: 10_000_000, used_budget: 4_000_000, renews_at: 4_000_000_000 }),
   });
   assert.equal(await store.refreshNwcDetails('hub'), 'answering');
   assert.equal(store.wallets[0].metadata.alias, 'Alby Hub');
   assert.deepEqual(store.wallets[0].metadata.methods, ['pay_invoice', 'make_invoice', 'get_budget']);
   assert.equal(store.nwcLimitFor('hub').remainingSats, 6000);
+});
+
+test('a placeholder key a wallet answers is not saved as its key', async () => {
+  const { store } = createHarness();
+  nwcWallet(store, { getInfo: async () => ({ alias: 'N/A', pubkey: 'N/A', methods: ['pay_invoice'] }) });
+  store.wallets[0].metadata.pubkey = 'N/A'; // saved by an earlier version
+  await store.refreshNwcDetails('hub');
+  assert.equal(store.wallets[0].metadata.pubkey, '');
 });
 
 test('a limit whose period has ended no longer holds a payment back', () => {

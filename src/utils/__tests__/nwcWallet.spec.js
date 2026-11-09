@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
-  nip47Methods, nwcCapabilities, capabilitiesOf, suggestedWalletName, findSameWallet, spendingLimitFrom, relayHost,
+  nip47Methods, nwcCapabilities, capabilitiesOf, suggestedWalletName, findSameWallet, spendingLimitFrom, relayHost, walletKeyOf,
 } from '../nwcWallet.js';
 
 test('both method vocabularies read the same; unknown names are kept, empties dropped', () => {
@@ -33,12 +33,29 @@ test('a wallet names itself, unless it says nothing useful', () => {
   assert.equal(suggestedWalletName({ alias: 'x'.repeat(60) }).length, 40);
 });
 
+const NODE = `02${'ab'.repeat(32)}`;
+
+test('a wallet key is a real key; placeholders are none', () => {
+  assert.equal(walletKeyOf(NODE.toUpperCase()), NODE);
+  assert.equal(walletKeyOf('cd'.repeat(32)), 'cd'.repeat(32), 'x-only keys count');
+  for (const placeholder of ['N/A', 'n/a', 'Unknown', '', null, undefined, '02abc', `04${'ab'.repeat(32)}`]) {
+    assert.equal(walletKeyOf(placeholder), '', String(placeholder));
+  }
+});
+
+test('two wallets that both answer a placeholder key are not the same wallet', () => {
+  const wallets = [{ id: 'first', type: 'nwc', metadata: { pubkey: 'N/A', lud16: null, walletPubkey: 'c1' } }];
+  assert.equal(findSameWallet(wallets, { nodePubkey: 'N/A', connectionPubkey: 'c2' }), null);
+  assert.equal(findSameWallet(wallets, { nodePubkey: '', connectionPubkey: 'c2' }), null);
+  assert.equal(findSameWallet(wallets, { nodePubkey: 'N/A', connectionPubkey: 'c1' })?.id, 'first', 'the same connection still is');
+});
+
 test('the same wallet is found by its key or its address, not by the connection text', () => {
   const wallets = [
-    { id: 'a', type: 'nwc', metadata: { pubkey: '02abc', lud16: 'shop@getalby.com', walletPubkey: 'c1' } },
+    { id: 'a', type: 'nwc', metadata: { pubkey: NODE, lud16: 'shop@getalby.com', walletPubkey: 'c1' } },
     { id: 'b', type: 'spark', metadata: { lud16: 'tips@getalby.com' } },
   ];
-  assert.equal(findSameWallet(wallets, { nodePubkey: '02ABC' })?.id, 'a');
+  assert.equal(findSameWallet(wallets, { nodePubkey: NODE.toUpperCase() })?.id, 'a');
   assert.equal(findSameWallet(wallets, { lud16: 'Shop@GetAlby.com' })?.id, 'a');
   assert.equal(findSameWallet(wallets, { connectionPubkey: 'c1' })?.id, 'a');
   assert.equal(findSameWallet(wallets, { lud16: 'tips@getalby.com' }), null, 'only NWC wallets compare');

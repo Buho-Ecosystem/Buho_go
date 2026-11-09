@@ -83,24 +83,36 @@ export function suggestedWalletName({ alias, lud16 } = {}, fallback = 'Lightning
 }
 
 /**
+ * The wallet's own key from `get_info` (NIP-47: the node's public key),
+ * lower-cased, or '' when it gave none. A secp256k1 key is 33 bytes
+ * compressed or 32 x-only, in hex. Anything else is a placeholder ("N/A",
+ * "Unknown", an empty field) from a wallet without a node of its own, and
+ * two wallets that say the same placeholder are not the same wallet.
+ */
+export function walletKeyOf(value) {
+  const key = String(value || '').trim().toLowerCase();
+  return /^(?:0[23])?[0-9a-f]{64}$/.test(key) ? key : '';
+}
+
+/**
  * An existing wallet that is the same wallet as a new connection: same
- * node or account (`get_info` pubkey) or the same Lightning address. A new
- * connection string to the same wallet is a different text, so comparing
- * strings alone misses it.
+ * node or account (`get_info` pubkey, when it is a real key) or the same
+ * Lightning address. A new connection string to the same wallet is a
+ * different text, so comparing strings alone misses it.
  *
  * @param {Array} wallets the store's wallets
  * @param {{ nodePubkey?: string, lud16?: string, connectionPubkey?: string }} probe
  * @returns {object|null}
  */
 export function findSameWallet(wallets, { nodePubkey, lud16, connectionPubkey } = {}) {
-  const node = String(nodePubkey || '').toLowerCase();
+  const node = walletKeyOf(nodePubkey);
   const address = String(lud16 || '').toLowerCase();
   const connection = String(connectionPubkey || '').toLowerCase();
   for (const w of Array.isArray(wallets) ? wallets : []) {
     if ((w?.type || 'nwc') !== 'nwc') continue;
     const meta = w.metadata || {};
     if (connection && String(meta.walletPubkey || '').toLowerCase() === connection) return w;
-    if (node && String(meta.pubkey || '').toLowerCase() === node) return w;
+    if (node && walletKeyOf(meta.pubkey) === node) return w;
     if (address && String(meta.lud16 || '').toLowerCase() === address) return w;
   }
   return null;

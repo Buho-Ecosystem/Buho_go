@@ -10,7 +10,7 @@ import { walletLightningAddress } from '../utils/walletLightningAddress.js';
 import { defineStore } from 'pinia';
 import { createNwcProvider } from '../services/nwcClient.js';
 import { parseNwcConnection } from '../utils/nwcConnection.js';
-import { capabilitiesOf, nip47Methods, spendingLimitFrom, suggestedWalletName } from '../utils/nwcWallet.js';
+import { capabilitiesOf, nip47Methods, spendingLimitFrom, suggestedWalletName, walletKeyOf } from '../utils/nwcWallet.js';
 import { NWC_ERROR, isRelayFailure, nwcError } from '../utils/nwcErrors.js';
 import { probeNwcConnection } from '../services/nwcProbe.js';
 import { payWithNwc } from '../services/nwcPayment.js';
@@ -2815,7 +2815,8 @@ export const useWalletStore = defineStore('wallet', {
         const next = {
           ...meta,
           alias: String(info?.alias || ''),
-          pubkey: String(info?.pubkey || meta.pubkey || ''),
+          // A placeholder saved before keys were checked is dropped here.
+          pubkey: walletKeyOf(info?.pubkey) || walletKeyOf(meta.pubkey),
           walletPubkey: meta.walletPubkey || parseNwcConnection(wallet.nwcUrl).pubkey || '',
           network: info?.network || meta.network || 'mainnet',
           // No methods in the answer: keep what was saved, as saved.
