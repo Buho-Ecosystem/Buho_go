@@ -1854,10 +1854,10 @@ export default {
     },
 
     /**
-     * The identity's Social Bucket address, the row's last resort. Only an
-     * identity whose key is on this phone has one: the bucket is emptied by
-     * signing with that key, which a signer app cannot do here, and a refund
-     * must land where this phone can collect it.
+     * The identity's Social Bucket address, the refund row's last resort.
+     * Offered only for an identity whose key is on this phone: the bucket is
+     * emptied by signing with that key, which a signer app cannot do here,
+     * and a refund must land where this phone can collect it.
      */
     socialBucketAddress() {
       const identity = this.identityStore;
@@ -1873,7 +1873,9 @@ export default {
         payerWalletId: this.payerWalletId,
         addressOf: (wallet) => this.walletStore.lightningAddressOf(wallet),
         profileAddress: this.profilePaymentAddress,
-        bucketAddress: this.socialBucketAddress,
+        // Only a refund falls back to the bucket. A service that merely
+        // wants to know who paid never gets the public code unasked.
+        bucketAddress: this.payerRule.purpose === PAYER_ADDRESS_PURPOSE.REFUND ? this.socialBucketAddress : null,
         entered: this.refundEntered,
       });
     },

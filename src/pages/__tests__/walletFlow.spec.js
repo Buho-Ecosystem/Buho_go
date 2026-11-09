@@ -1756,6 +1756,11 @@ const tillPayment = (extra = {}) => lnAddressPayment({
 /** What a wallet path was handed, without the host test (`guarded` says whether it had one). */
 const shared = (payerData) => (payerData ? { identifier: payerData.identifier } : null);
 
+/** An identity whose key is on this phone, so its Social Bucket can be emptied here. */
+const BUCKET_NPUB = 'npub1az708q3kd9zy6z6f44zav5ygvdwelkzspf6mtusttx47lft2z38sghk0w7';
+const BUCKET_ADDRESS = `${BUCKET_NPUB}@npub.cash`;
+const identityHere = (extra = {}) => ({ bootstrapped: true, nostrNpub: BUCKET_NPUB, identityCapabilities: { rawKey: true }, ...extra });
+
 /** A paying harness whose every wallet path reports the payer details it was handed. */
 function refundHarness(options = {}) {
   const handed = []; // [walletId, { identifier } | null]
@@ -2099,6 +2104,7 @@ test('Refunds to: an ordinary refusal that mentions refunds is the usual error',
 
 test('Refunds to: a code that only looks like a till code never shares the address unasked', () => {
   const { vm } = refundHarness({ active: 'biz' });
+  vm.identityStore = identityHere(); // the Social Bucket always at hand
   for (const extra of [
     { callbackOnTillProvider: false },
     { callbackOnTillProvider: false, callback: 'https://cryptoqr.net.evil.example/cb' },
@@ -2116,6 +2122,7 @@ test('Refunds to: a code that only looks like a till code never shares the addre
 
 test('Refunds to: a withdrawal, an invoice or a Spark transfer never has the row', () => {
   const { vm } = refundHarness({ active: 'biz' });
+  vm.identityStore = identityHere();
   for (const pendingPayment of [
     { ...tillPayment(), type: 'lnurl_withdraw' },
     { ...invoicePayment(), payerData: { identifier: { mandatory: true } } },
@@ -2124,11 +2131,13 @@ test('Refunds to: a withdrawal, an invoice or a Spark transfer never has the row
     Object.assign(vm, { pendingPayment, sendingWalletId: 'biz' });
     assert.equal(vm.payerRule.show, false, pendingPayment.type);
     assert.equal(vm.payerRule.blocked, false);
+    assert.equal(vm.refundAddress, null);
   }
 });
 
 test('Refunds to: a service that requires details BuhoGO never shares cannot be paid', async () => {
   const { vm, handed } = refundHarness({ active: 'biz' });
+  vm.identityStore = identityHere();
   Object.assign(vm, { pendingPayment: lnAddressPayment({ payerData: { identifier: { mandatory: true }, email: { mandatory: true } } }), sendingWalletId: 'lnb', paymentAmount: '2500', sendSheetAmountSats: 2500 });
   assert.equal(vm.paymentSheetProps.payerBlocked, true);
   assert.equal(vm.paymentSheetProps.refund, null);
@@ -2136,10 +2145,6 @@ test('Refunds to: a service that requires details BuhoGO never shares cannot be 
   await quietly(() => vm.confirmPayment());
   assert.deepEqual(handed, [], 'nothing was asked of the service');
 });
-
-const BUCKET_NPUB = 'npub1az708q3kd9zy6z6f44zav5ygvdwelkzspf6mtusttx47lft2z38sghk0w7';
-const BUCKET_ADDRESS = `${BUCKET_NPUB}@npub.cash`;
-const identityHere = (extra = {}) => ({ bootstrapped: true, nostrNpub: BUCKET_NPUB, identityCapabilities: { rawKey: true }, ...extra });
 
 test('Refunds to: with no address on any wallet or the profile, the Social Bucket takes the refund', async () => {
   const { vm, store, handed, sent } = refundHarness({ active: 'biz' });
@@ -2179,6 +2184,30 @@ test('Refunds to: no Social Bucket where this phone cannot empty it', () => {
   }
 });
 
+test('Refunds to: a bucket a signer app holds is the profile\'s address, never called the Social Bucket', () => {
+  const { vm, store } = refundHarness({ active: 'biz' });
+  store.lightningAddressOf = () => null;
+  vm.identityStore = identityHere({ identityCapabilities: { rawKey: false } });
+  vm.profileStore = { hydrated: true, hydratedProfileKey: 'a', _profileStorageKey: () => 'a', lud16: BUCKET_ADDRESS };
+  Object.assign(vm, { pendingPayment: tillPayment(), sendingWalletId: 'biz', paymentAmount: '2500' });
+  assert.deepEqual(vm.refundOptions, [{ address: BUCKET_ADDRESS, source: 'profile' }]);
+  vm.identityStore = identityHere();
+  assert.deepEqual(vm.refundOptions, [{ address: BUCKET_ADDRESS, source: 'bucket' }], 'with the key here it is the bucket, listed once');
+});
+
+test('Refunds to: a service that only wants to know who paid never gets the Social Bucket unasked', async () => {
+  const { vm, store, handed } = refundHarness({ active: 'biz' });
+  store.lightningAddressOf = () => null;
+  vm.identityStore = identityHere();
+  Object.assign(vm, { pendingPayment: lnAddressPayment({ payerData: { identifier: { mandatory: true } } }), sendingWalletId: 'lnb', paymentAmount: '2500', sendSheetAmountSats: 2500 });
+  assert.equal(vm.payerRule.purpose, 'identify');
+  assert.deepEqual(vm.refundOptions, [], 'the bucket is for refunds only');
+  assert.equal(vm.refundAddress, null);
+  assert.equal(vm.canConfirmPayment, false, 'the person adds the address that goes');
+  await quietly(() => vm.confirmPayment());
+  assert.deepEqual(handed, []);
+});
+
 test('Refunds to: the profile\'s address counts only once the active identity\'s profile is read', () => {
   const { vm, store } = refundHarness({ active: 'biz' });
   store.lightningAddressOf = () => null;
@@ -2186,6 +2215,6 @@ test('Refunds to: the profile\'s address counts only once the active identity\'s
   vm.profileStore = { hydrated: true, hydratedProfileKey: 'b', _profileStorageKey: () => 'a', lud16: 'npub1abc@npub.cash' };
   assert.equal(vm.refundAddress, null, 'another identity\'s profile');
   vm.profileStore = { hydrated: true, hydratedProfileKey: 'a', _profileStorageKey: () => 'a', lud16: 'npub1abc@npub.cash' };
-  assert.deepEqual(vm.refundOptions, [{ address: 'npub1abc@npub.cash', source: 'bucket' }]);
+  assert.deepEqual(vm.refundOptions, [{ address: 'npub1abc@npub.cash', source: 'profile' }]);
   assert.equal(vm.canConfirmPayment, true);
 });

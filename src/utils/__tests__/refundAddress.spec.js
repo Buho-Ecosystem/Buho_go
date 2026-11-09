@@ -107,11 +107,14 @@ describe('which address is offered', () => {
     assert.deepEqual(options, [{ address: 'Same@Example.com', source: REFUND_SOURCE.WALLET, walletId: 'one', name: '' }]);
   });
 
-  test('a Social Bucket address is labelled as one, a profile\'s own as the profile\'s', () => {
-    const bucket = refundAddressOptions({ wallets: [], addressOf, profileAddress: 'npub1abc@npub.cash' });
-    assert.deepEqual(bucket, [{ address: 'npub1abc@npub.cash', source: REFUND_SOURCE.BUCKET }]);
-    const own = refundAddressOptions({ wallets: [], addressOf, profileAddress: 'maria@npub.cash.example' });
-    assert.equal(own[0].source, REFUND_SOURCE.PROFILE, 'only the bucket\'s own domain counts');
+  test('a profile on npub.cash is called the Social Bucket only when it is this phone\'s own bucket', () => {
+    const KEY = 'npub1az708q3kd9zy6z6f44zav5ygvdwelkzspf6mtusttx47lft2z38sghk0w7@npub.cash';
+    const own = refundAddressOptions({ wallets: [], addressOf, profileAddress: KEY, bucketAddress: KEY });
+    assert.deepEqual(own, [{ address: KEY, source: REFUND_SOURCE.BUCKET }]);
+    const noKeyHere = refundAddressOptions({ wallets: [], addressOf, profileAddress: KEY });
+    assert.deepEqual(noKeyHere, [{ address: KEY, source: REFUND_SOURCE.PROFILE }], 'a signer app holds the key: just the profile\'s');
+    const lookalike = refundAddressOptions({ wallets: [], addressOf, profileAddress: 'maria@npub.cash.example', bucketAddress: KEY });
+    assert.equal(lookalike[0].source, REFUND_SOURCE.PROFILE, 'only the bucket\'s own domain counts');
   });
 
   const BUCKET = 'npub1az708q3kd9zy6z6f44zav5ygvdwelkzspf6mtusttx47lft2z38sghk0w7@npub.cash';
@@ -128,10 +131,18 @@ describe('which address is offered', () => {
     assert.equal(options[0].address, 'me@hub.example', 'a wallet\'s address stays the default');
   });
 
-  test('one Social Bucket on the list: a profile already pointing at it keeps its form', () => {
-    for (const profileAddress of ['maria@npub.cash', BUCKET.toUpperCase()]) {
+  test('one Social Bucket on the list: a profile on it already keeps its form', () => {
+    const options = refundAddressOptions({ wallets: [], addressOf, profileAddress: BUCKET.toUpperCase(), bucketAddress: BUCKET });
+    assert.deepEqual(options, [{ address: BUCKET.toUpperCase(), source: REFUND_SOURCE.BUCKET }]);
+  });
+
+  test('another address on npub.cash is the profile\'s, and this phone\'s own bucket still follows', () => {
+    for (const profileAddress of ['maria@npub.cash', 'npub1zutzeysacnf9rru6zqwmxd54mud0k44tst6l70ja5mhv8jjumytsd2x7nu@npub.cash']) {
       const options = refundAddressOptions({ wallets: [], addressOf, profileAddress, bucketAddress: BUCKET });
-      assert.deepEqual(options, [{ address: profileAddress, source: REFUND_SOURCE.BUCKET }], profileAddress);
+      assert.deepEqual(options, [
+        { address: profileAddress, source: REFUND_SOURCE.PROFILE },
+        { address: BUCKET, source: REFUND_SOURCE.BUCKET },
+      ], profileAddress);
     }
   });
 
