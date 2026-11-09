@@ -615,10 +615,12 @@ export default {
   display: flex;
   flex-direction: column;
   gap: 14px;
+  /* Dark up to the prompt's line, so it reads over white paper too, then a
+     short fade into the camera. */
   background: linear-gradient(
     to top,
     rgba(0, 0, 0, 0.72) 0%,
-    rgba(0, 0, 0, 0.45) 55%,
+    rgba(0, 0, 0, 0.6) calc(100% - 32px),
     rgba(0, 0, 0, 0) 100%
   );
 }

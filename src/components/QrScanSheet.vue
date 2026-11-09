@@ -355,12 +355,13 @@ export default {
   align-items: center;
   gap: 14px;
   z-index: 3;
-  /* The scrim takes no taps: only what is on it does. */
+  /* The scrim takes no taps: only what is on it does. Dark up to the
+     prompt's line, so it reads over white paper too, then a short fade. */
   pointer-events: none;
   background: linear-gradient(
     to top,
     rgba(0, 0, 0, 0.72) 0%,
-    rgba(0, 0, 0, 0.45) 55%,
+    rgba(0, 0, 0, 0.6) calc(100% - 32px),
     rgba(0, 0, 0, 0) 100%
   );
 }
