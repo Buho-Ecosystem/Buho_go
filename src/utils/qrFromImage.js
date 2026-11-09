@@ -14,8 +14,10 @@
  * its squares are neither too small nor too blurred at the size it reads, so
  * one size misses codes another finds (measured on screenshots, chat images
  * and 12 and 48 megapixel photos: three sizes found 51 of 55, two sizes at
- * most 47). Each look also tries inverted colours. The largest look is
- * capped, so a 50-megapixel photo cannot exhaust a small phone's memory.
+ * most 47). Each look also tries inverted colours. The looks are capped at
+ * 3200 px; the picture itself is opened at its full size (about 48 MB for a
+ * 12-megapixel photo, four times that for 48), and a picture the device has
+ * no memory for ends as one it cannot open.
  *
  * Everything that touches the browser or the app (decoding the file, the QR
  * engines) is injected, so the plan and the outcomes are testable with Node.
@@ -39,6 +41,13 @@ export const LOOK_SIDES = Object.freeze([800, 1600, 3200]);
 
 /** The quick look after the native decoder found nothing: a screenshot's size. */
 export const AFTER_NATIVE_SIDES = Object.freeze([1600]);
+
+/**
+ * How long the native decoder may take before the web view's looks take
+ * over. A 48-megapixel photo reads in about a second; a decoder that never
+ * answers must not leave "Reading photo" spinning.
+ */
+export const NATIVE_READ_MS = 10_000;
 
 /**
  * The sizes to read a `width` x `height` picture at: each look scaled to
@@ -135,16 +144,26 @@ async function lookThrough(file, { open = openPicture, look = lookAt, sides = LO
  *   open?: (file: Blob) => Promise<{ width: number, height: number, close?: () => void }>,
  *   look?: (picture: any, size: { width: number, height: number }, width: number, height: number) => Promise<string | null>,
  *   sides?: readonly number[],
+ *   nativeTimeoutMs?: number,
  * }} [deps] readNative: the app's native decoder (nativeScanner.readQrFromPicture), none on the web
  * @returns {Promise<string>}
  */
-export async function readQrFromImage(file, { readNative = null, ...looks } = {}) {
+export async function readQrFromImage(file, { readNative = null, nativeTimeoutMs = NATIVE_READ_MS, ...looks } = {}) {
   if (!readNative) return lookThrough(file, looks);
   let found;
+  let timer;
   try {
-    found = await readNative(file);
+    found = await Promise.race([
+      readNative(file),
+      new Promise((_, reject) => {
+        timer = setTimeout(() => reject(coded(PHOTO_SCAN_ERROR.UNREADABLE, 'The native decoder did not answer.')), nativeTimeoutMs);
+      }),
+    ]);
   } catch {
-    return lookThrough(file, looks); // the native decoder cannot run here, or cannot open this file
+    // The native decoder cannot run here, cannot open this file, or did not answer.
+    return lookThrough(file, looks);
+  } finally {
+    clearTimeout(timer);
   }
   const text = typeof found === 'string' ? found.trim() : '';
   if (text) return text;

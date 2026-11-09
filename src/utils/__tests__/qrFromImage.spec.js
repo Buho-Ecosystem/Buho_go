@@ -101,3 +101,25 @@ test('the native decoder cannot run here: the full looks read the picture', asyn
   assert.equal(text, 'found');
   assert.deepEqual(seen, [800, 1600, 3200]);
 });
+
+test('a native decoder that never answers: the web looks take over, the button does not spin on', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const { look, seen } = looks('found', [800]);
+  const reading = readQrFromImage({}, {
+    readNative: () => new Promise(() => {}),
+    nativeTimeoutMs: 10_000,
+    open: async () => picture(1179, 2556),
+    look,
+  });
+  t.mock.timers.tick(10_000);
+  assert.equal(await reading, 'found');
+  assert.deepEqual(seen, [800], 'the full looks, as when the native decoder cannot run');
+});
+
+test('a native decoder that answers in time is not raced off', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const { look, seen } = looks('web', [800]);
+  const text = await readQrFromImage({}, { readNative: async () => 'native', open: async () => picture(800, 600), look });
+  assert.equal(text, 'native');
+  assert.deepEqual(seen, []);
+});

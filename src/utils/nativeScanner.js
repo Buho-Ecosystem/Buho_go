@@ -262,6 +262,7 @@ export async function startLiveScan({
 }
 
 /** The one file a chosen picture is copied to for the native decoder (app cache, removed after). */
+/** The start of each cache copy's name; every read has its own copy. */
 export const PICTURE_COPY = 'scanned-picture';
 
 /** A Blob as base64, without the data-URL prefix. */
@@ -302,7 +303,10 @@ export async function readQrFromPicture(picture) {
   } catch (err) {
     throw codedError(NATIVE_ERROR.UNAVAILABLE, 'Native scanner plugin failed to load.', err);
   }
-  const copy = { path: PICTURE_COPY, directory: Directory.Cache };
+  // Its own name: a read still running from a scanner that was closed must
+  // not remove the copy a new read is using.
+  const name = `${PICTURE_COPY}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+  const copy = { path: name, directory: Directory.Cache };
   try {
     const { uri } = await Filesystem.writeFile({ ...copy, data: await blobToBase64(picture) });
     const { barcodes } = await BarcodeScanner.readBarcodesFromImage({ path: uri, formats: [BarcodeFormat.QrCode] });
