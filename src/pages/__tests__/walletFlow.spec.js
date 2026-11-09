@@ -591,7 +591,7 @@ function payingHarness({ wallets = PAY_WALLETS, active = 'biz', funds = PAY_FUND
     getLightningSendFeeEstimate: async () => { calls.push([id, 'getLightningSendFeeEstimate']); return { estimatedFeeSats: 7 }; },
   });
   const store = {
-    nwcLimitFor: () => null,
+    nwcPayOptions: () => ({ limit: null }),
     // The wallet's one NWC connection (#395), named by its wallet.
     nwcConnection: async (id) => ({ walletId: id }),
     wallets, activeWalletId: active, connectionStates, balances: funds,

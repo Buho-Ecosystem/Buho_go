@@ -56,6 +56,11 @@ function decode(invoice) {
  *   the connection's spending limit as last read, when the wallet shares
  *   it: a payment above it is stopped here, with the reason, once the
  *   wallet confirms the limit still stands
+ * @param {(spent: { amountSats: number }) => void} [options.onSpent] told
+ *   once the payment is proven, so a shared limit can be read again
+ * @param {(refused: { amountSats: number }) => void} [options.onLimitRefused]
+ *   told when the wallet refused the payment over a limit (QUOTA_EXCEEDED),
+ *   also one it keeps to itself
  * @param {number[]} [options.lookupDelays]
  * @param {number} [options.lookupWait] longest wait for one lookup's answer
  * @param {(ms: number) => Promise<void>} [options.sleep]
@@ -65,6 +70,8 @@ function decode(invoice) {
  */
 export async function payWithNwc(nwc, invoice, {
   limit = null,
+  onSpent = null,
+  onLimitRefused = null,
   lookupDelays = LOOKUP_DELAYS_MS,
   lookupWait = LOOKUP_WAIT_MS,
   sleep = (ms) => new Promise((r) => setTimeout(r, ms)),
@@ -86,13 +93,24 @@ export async function payWithNwc(nwc, invoice, {
   try {
     answer = await nwc.sendPayment(invoice);
   } catch (error) {
+    if (error?.code === 'QUOTA_EXCEEDED') tell(onLimitRefused, { amountSats });
     if (!paymentHash || !isUncertainPaymentError(error)) throw error;
   }
 
   if (answer && (!paymentHash || await provesPayment(answer.preimage, paymentHash))) {
+    tell(onSpent, { amountSats });
     return { preimage: answer.preimage, paymentHash };
   }
-  return { ...await confirmByLookup(nwc, paymentHash, { lookupDelays, lookupWait, sleep }), paymentHash };
+  const confirmed = await confirmByLookup(nwc, paymentHash, { lookupDelays, lookupWait, sleep });
+  tell(onSpent, { amountSats });
+  return { ...confirmed, paymentHash };
+}
+
+/** A caller's callback never changes how a payment ended. */
+function tell(callback, info) {
+  try {
+    callback?.(info);
+  } catch { /* the payment's outcome stands */ }
 }
 
 /**

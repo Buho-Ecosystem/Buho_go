@@ -47,6 +47,32 @@ test('a placeholder key a wallet answers is not saved as its key', async () => {
   assert.equal(store.wallets[0].metadata.pubkey, '');
 });
 
+test('a payment refused over a limit the wallet keeps to itself is remembered for Settings', async () => {
+  const { store } = createHarness();
+  nwcWallet(store, { getBudget: async () => assert.fail('not granted') });
+  store.wallets[0].metadata.methods = ['pay_invoice', 'get_info'];
+  const options = store.nwcPayOptions('hub');
+  assert.equal(options.limit, null);
+  options.onLimitRefused({ amountSats: 300 });
+  assert.equal(store.nwcLimitRefusals.hub.amountSats, 300);
+  options.onSpent({ amountSats: 120 });
+  assert.equal(store.nwcLimitRefusals.hub.amountSats, 300, 'a smaller payment says nothing about it');
+  options.onSpent({ amountSats: 300 });
+  assert.equal(store.nwcLimitRefusals.hub, undefined, 'as much went through: no longer known to be lower');
+});
+
+test('after a payment the shared limit is read again', async () => {
+  const { store } = createHarness();
+  let used = 4_000_000;
+  nwcWallet(store, { getBudget: async () => ({ total_budget: 10_000_000, used_budget: used }) });
+  await store.refreshNwcLimit('hub');
+  assert.equal(store.nwcLimitFor('hub').remainingSats, 6000);
+  used = 9_000_000;
+  store.nwcPayOptions('hub').onSpent({ amountSats: 5000 });
+  await new Promise((r) => setImmediate(r));
+  assert.equal(store.nwcLimitFor('hub').remainingSats, 1000);
+});
+
 test('a limit whose period has ended no longer holds a payment back', () => {
   const { store } = createHarness();
   store.nwcLimits.hub = { totalSats: 10_000, usedSats: 10_000, remainingSats: 0, renewsAt: Date.now() - 1000, period: 'monthly' };

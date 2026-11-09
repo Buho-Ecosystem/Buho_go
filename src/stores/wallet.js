@@ -333,10 +333,12 @@ export const useWalletStore = defineStore('wallet', {
     balanceDetails: {},
     walletInfos: {},
     // NWC connections, runtime only: the spending limit the wallet shares
-    // (utils/nwcWallet spendingLimitFrom, null = no limit or not shared) and
-    // whether it answered last time it was asked: 'answering' | 'no-answer'
-    // | 'relay' (its relay could not be reached).
+    // (utils/nwcWallet spendingLimitFrom, null = no limit or not shared),
+    // the last payment a limit it keeps to itself refused ({ amountSats, at }),
+    // and whether it answered last time it was asked: 'answering' |
+    // 'no-answer' | 'relay' (its relay could not be reached).
     nwcLimits: {},
+    nwcLimitRefusals: {},
     nwcStatus: {},
 
     // User preferences
@@ -2828,9 +2830,7 @@ export const useWalletStore = defineStore('wallet', {
           wallet.metadata = next;
           this._schedulePersist();
         }
-        this.nwcLimits[walletId] = capabilitiesOf(wallet).limit
-          ? await client.getBudget().then(spendingLimitFrom).catch(() => this.nwcLimits[walletId] ?? null)
-          : null;
+        await this.refreshNwcLimit(walletId);
       } catch (error) {
         // A connection that may not ask who it is still answered.
         if (error?.code === 'RESTRICTED' || error?.code === 'NOT_IMPLEMENTED') status = 'answering';
@@ -2844,6 +2844,48 @@ export const useWalletStore = defineStore('wallet', {
       // wallet lists. Settings shows the status and offers Reconnect.
       this.nwcStatus[walletId] = status;
       return status;
+    },
+
+    /**
+     * Read the spending limit an NWC connection shares (NWC-13 get_budget)
+     * again. A connection that may not ask has none to show; an unanswered
+     * read keeps the last one.
+     */
+    async refreshNwcLimit(walletId) {
+      const wallet = this.wallets.find((w) => w.id === walletId);
+      const client = this.connectionStates[walletId]?.nwcInstance?.client;
+      if (!wallet || !capabilitiesOf(wallet).limit) {
+        this.nwcLimits[walletId] = null;
+        return null;
+      }
+      if (!client) return this.nwcLimits[walletId] ?? null;
+      try {
+        this.nwcLimits[walletId] = spendingLimitFrom(await client.getBudget());
+      } catch { /* the last known limit stands */ }
+      return this.nwcLimits[walletId] ?? null;
+    },
+
+    /**
+     * What a payment from an NWC wallet passes to services/nwcPayment: the
+     * limit the wallet shares, so a payment above it stops before it is sent,
+     * and what the payment teaches back. After a payment the shared limit is
+     * read again, so Settings shows what is left; a refusal over a limit the
+     * wallet keeps to itself is remembered, so Settings can say one exists.
+     * Every NWC payment path takes these.
+     */
+    nwcPayOptions(walletId) {
+      return {
+        limit: this.nwcLimitFor(walletId),
+        onSpent: ({ amountSats }) => {
+          const refusal = this.nwcLimitRefusals[walletId];
+          if (refusal && amountSats >= refusal.amountSats) delete this.nwcLimitRefusals[walletId];
+          this.refreshNwcLimit(walletId).catch(() => {});
+        },
+        onLimitRefused: ({ amountSats }) => {
+          this.nwcLimitRefusals[walletId] = { amountSats, at: Date.now() };
+          this.refreshNwcLimit(walletId).catch(() => {});
+        },
+      };
     },
 
     /**
@@ -4183,7 +4225,7 @@ export const useWalletStore = defineStore('wallet', {
             paymentResult = await fromProvider.payInvoice({ invoice });
           } else {
             // NWC: proof-checked, never resent on its own (services/nwcPayment).
-            paymentResult = await payWithNwc(fromProvider, invoice, { limit: this.nwcLimitFor(fromWalletId) });
+            paymentResult = await payWithNwc(fromProvider, invoice, this.nwcPayOptions(fromWalletId));
           }
         } catch (payError) {
           console.error('Payment error:', payError);

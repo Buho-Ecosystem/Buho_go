@@ -392,7 +392,7 @@ export const useAutoWithdrawStore = defineStore('autoWithdraw', {
       }
       // The wallet's one connection, rebuilt if it was dropped (#395).
       const nwc = await walletStore.nwcConnection(walletId)
-      const result = await payWithNwc(nwc, invoice, { limit: walletStore.nwcLimitFor(walletId) })
+      const result = await payWithNwc(nwc, invoice, walletStore.nwcPayOptions(walletId))
       return { id: result.payment_hash || result.paymentHash || result.preimage || null }
     },
 

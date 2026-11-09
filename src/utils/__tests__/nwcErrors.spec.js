@@ -36,7 +36,7 @@ test('only NWC-shaped errors are read by message', () => {
 
 test('every NWC failure has a sentence with a next step', () => {
   const ctx = { walletName: 'Alby Hub', locale: 'en-US' };
-  assert.match(nwcErrorText(sdk('', 'QUOTA_EXCEEDED'), t, ctx), /spending limit.*Alby Hub/);
+  assert.match(nwcErrorText(sdk('', 'QUOTA_EXCEEDED'), t, ctx), /over what this connection may spend.*raise the limit in Alby Hub/, 'right for a cap per payment and for a budget used up');
   assert.match(nwcErrorText(sdk('', 'RESTRICTED'), t, ctx), /does not allow/);
   assert.match(nwcErrorText(sdk('', 'UNAUTHORIZED'), t, ctx), /removed or has expired/);
   assert.match(nwcErrorText(sdk('', 'RATE_LIMITED'), t, ctx), /Wait a moment/);

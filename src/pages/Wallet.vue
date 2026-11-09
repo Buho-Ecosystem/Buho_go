@@ -5862,7 +5862,7 @@ export default {
         throw new Error('No active NWC wallet found');
       }
       const nwc = await this.walletStore.nwcConnection(id);
-      const lightningService = new LightningPaymentService(nwc, { limit: this.walletStore.nwcLimitFor(id) });
+      const lightningService = new LightningPaymentService(nwc, this.walletStore.nwcPayOptions(id));
       return await lightningService.sendPayment(this.getNwcPaymentData(), amount, comment, { payerData });
     },
 

@@ -111,7 +111,8 @@ export function nwcErrorText(error, t, { walletName = '', locale } = {}) {
   const wallet = walletName || t('your wallet app');
   switch (error?.code) {
     case 'QUOTA_EXCEEDED':
-      return t('This connection has used up its spending limit. Raise it in {wallet}, or wait until it resets.', { wallet });
+      // A limit per payment and a budget used up both answer this.
+      return t('This payment is over what this connection may spend right now. Pay less, or raise the limit in {wallet}.', { wallet });
     case NWC_ERROR.LIMIT_TOO_LOW:
       return error.renewsAt
         ? t('This connection has {amount} sats left until {date}. Raise the limit in {wallet}, or pay less.', { amount: Number(error.remainingSats || 0).toLocaleString(locale), date: dayOf(error.renewsAt, locale), wallet })

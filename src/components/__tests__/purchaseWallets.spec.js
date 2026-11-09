@@ -47,7 +47,7 @@ function harness(flow, type = 'nwc', { available = true, failPayment = false, se
       [wallet.id]: { connected: available, nwcInstance: type === 'nwc' && available ? provider : null },
     },
     getProvider: walletOptions.actions.getProvider,
-    nwcLimitFor: () => null,
+    nwcPayOptions: () => ({ limit: null }),
   };
   const vm = {
     walletStore,

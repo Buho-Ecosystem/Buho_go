@@ -76,6 +76,7 @@
         v-if="isNwc"
         :wallet="wallet"
         :limit="nwcLimit"
+        :limit-refusal="nwcLimitRefusal"
         :status="nwcStatus"
         @copy-address="$emit('copy-address', $event)"
       />
@@ -173,6 +174,8 @@ const props = defineProps({
   canMoveAddress: Boolean,
   /** NWC only: the spending limit the wallet shares (store.nwcLimitFor), or null. */
   nwcLimit: { type: Object, default: null },
+  /** NWC only: the last payment a limit the wallet keeps to itself refused (store.nwcLimitRefusals), or null. */
+  nwcLimitRefusal: { type: Object, default: null },
   /** NWC only: whether the wallet answered when last asked (store.nwcStatus). */
   nwcStatus: { type: String, default: '' },
   /** Spark, Arkade: the wallet's recovery phrase is confirmed backed up. */

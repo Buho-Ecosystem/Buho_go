@@ -1193,7 +1193,7 @@ function getActiveWalletType() {
 async function nwcPaymentService() {
   const walletId = walletStore.activeWalletId
   const nwc = await walletStore.nwcConnection(walletId)
-  return new LightningPaymentService(nwc, { limit: walletStore.nwcLimitFor(walletId) })
+  return new LightningPaymentService(nwc, walletStore.nwcPayOptions(walletId))
 }
 
 // ─────────────────────────────────────────────────────────────

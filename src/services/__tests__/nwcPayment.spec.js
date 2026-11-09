@@ -72,6 +72,26 @@ test('a clear refusal passes straight through, without lookups', async () => {
   assert.equal(w.calls.lookup, 0);
 });
 
+test('a payment tells what it learned about the limit: spent, or refused over one', async () => {
+  const told = [];
+  const listen = { onSpent: (info) => told.push(['spent', info]), onLimitRefused: (info) => told.push(['refused', info]) };
+  await payWithNwc(wallet({ pay: () => ({ preimage: PREIMAGE }) }), 'lnbc1', { ...fast, ...listen });
+  const late = wallet({ pay: () => { throw sdk('reply timeout: x', 'INTERNAL'); }, lookups: [{ state: 'settled', preimage: PREIMAGE }] });
+  await payWithNwc(late, 'lnbc1', { ...fast, ...listen });
+  // A limit the wallet keeps to itself, per payment (as the wallet words it).
+  const capped = wallet({ pay: () => { throw sdk('exceeds per-payment limit of 299 sats', 'QUOTA_EXCEEDED'); } });
+  await assert.rejects(payWithNwc(capped, 'lnbc1', { ...fast, ...listen }), (e) => e.code === 'QUOTA_EXCEEDED');
+  const unconfirmed = wallet({ pay: () => { throw sdk('reply timeout: x', 'INTERNAL'); }, lookups: [{ state: 'pending' }] });
+  await assert.rejects(payWithNwc(unconfirmed, 'lnbc1', { ...fast, ...listen }));
+  assert.deepEqual(told, [['spent', { amountSats: 5000 }], ['spent', { amountSats: 5000 }], ['refused', { amountSats: 5000 }]], 'nothing for an unknown outcome');
+});
+
+test('a listener that throws never changes how a payment ended', async () => {
+  const boom = () => { throw new Error('listener'); };
+  const result = await payWithNwc(wallet({ pay: () => ({ preimage: PREIMAGE }) }), 'lnbc1', { ...fast, onSpent: boom });
+  assert.equal(result.preimage, PREIMAGE);
+});
+
 test('a payment above the shared spending limit stops before it is sent', async () => {
   const w = wallet({ pay: () => ({ preimage: PREIMAGE }) });
   await assert.rejects(

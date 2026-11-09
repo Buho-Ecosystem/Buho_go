@@ -732,6 +732,7 @@
           :lightning-address="detailWallet.type === 'spark' ? (walletInfos[detailWallet.id]?.lightningAddress || detailWallet.metadata?.lud16 || '') : ''"
           :can-move-address="sparkWallets.length > 1"
           :nwc-limit="walletStore.nwcLimitFor(detailWallet.id)"
+          :nwc-limit-refusal="walletStore.nwcLimitRefusals[detailWallet.id] || null"
           :nwc-status="walletStore.nwcStatus[detailWallet.id] || ''"
           @back="closeWalletDetail"
           @switch="handleSwitchWallet"
