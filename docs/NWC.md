@@ -56,9 +56,11 @@ Screens (`docs/images/connect-wallet/`, from `scripts/check-nwc-pairing.mjs`):
 
 The return route with nothing waiting for it says so ("Nothing is waiting for this approval"), or, in an Android browser, offers to finish in the app. In kiosk mode these routes stay setup routes and links do nothing, as before.
 
-## Every request expires
+## Payments expire
 
-Every NWC connection is built by `src/services/nwcClient.js` (`createNwcProvider`, `createNwcClient`); nothing else calls the SDK's constructors. Its clients sign each request (kind 23194) with a NIP-40 `expiration` tag, after which NIP-47 says the wallet must not act on it. The window is `REQUEST_TTL_S`, 90 s: the SDK's 60 s wait for a payment's answer plus the lookups that follow an unanswered one (`nwcPayment.LOOKUP_DELAYS_MS`). A wallet that wakes late (an app on a phone, woken by a push) therefore refuses a payment BuhoGO has stopped watching, instead of paying after the person was told it was not confirmed. The tag goes on in `signEvent`, the SDK's public last step before a request leaves; the request is encrypted by then, so one window covers every method. A wallet that ignores the tag behaves as before.
+Every NWC connection is built by `src/services/nwcClient.js` (`createNwcProvider`, `createNwcClient`); nothing else calls the SDK's constructors. Its clients sign each payment request (`pay_invoice`, `pay_keysend` and the multi forms) with a NIP-40 `expiration` tag; NIP-47 says a request received after it should be ignored. The window is `REQUEST_TTL_S`, 90 s: the SDK's 60 s wait for a payment's answer plus the lookups that follow an unanswered one (`nwcPayment.LOOKUP_DELAYS_MS`). A wallet that honours the tag and wakes late (an app on a phone, woken by a push) therefore drops a payment BuhoGO has stopped watching, instead of paying after the person was told it was not confirmed. Not every wallet honours it: Alby Hub, for one, reads no `expiration` and refuses only payments older than six hours. A wallet that ignores the tag behaves as before.
+
+Only payments carry the tag. The method is readable only before the request is encrypted, so the client's `encrypt` notes which ciphertexts carry a payment and `signEvent`, the last step before a request leaves, tags those. Reads and invoices answered late do no harm, and the expiration counts on the phone's clock: a phone whose clock is behind the wallet's by more than the window has its tagged requests ignored. Leaving reads untagged keeps such a phone able to see its balance and receive; its payments end as not confirmed, never paid twice. `nwcClient.spec.js` checks the tags through the SDK's own `payInvoice` and `getBalance`, so an SDK update that signs another way fails it.
 
 ## One relay connection per wallet
 
@@ -142,7 +144,7 @@ What 9 changed for BuhoGO:
 - **Amounts** must be whole, positive millisats. BuhoGO only asks for whole sats.
 - **Gone:** the multi-pay methods, which BuhoGO never used.
 - **Still missing:** a heartbeat. A socket that dies without closing is noticed only by the next request or resubscribe; [Incoming payments](INCOMING_PAYMENTS.md) covers that with its catch-up read.
-- **Request expiration** is ours: the SDK sends none, so `src/services/nwcClient.js` adds it (below).
+- **Payment expiration** is ours: the SDK sends none, so `src/services/nwcClient.js` adds it (above).
 
 ## Checks
 
