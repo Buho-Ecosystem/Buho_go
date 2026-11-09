@@ -804,11 +804,15 @@ export default {
     // ───── The till's rand amount (till codes) ─────
     // The code prints the price in rand. It stays in view beside the
     // person's display currency, written like the line above it, so the
-    // conversion can be checked. Hidden when rand is the display currency.
+    // conversion can be checked. Hidden only while the line above already
+    // reads in rand: without exchange rates, or with that line in Bitcoin,
+    // the till's own price is the one figure left to check against.
     zarSecondary() {
       const z = this.payment?.zarAmount
       if (!z) return ''
-      if (this.fiatCurrencyCode === 'ZAR') return ''
+      const randAbove = this.fiatCurrencyCode === 'ZAR' && this.currentCurrency === 'sats'
+        && !this.isLocalDenomination && !!this.fiatEquivalent
+      if (randAbove) return ''
       return `${FIAT_SYMBOLS.ZAR || 'R'}${z}`
     },
 

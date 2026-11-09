@@ -157,3 +157,30 @@ test('a payout phone number comes before a ten digit till code', async () => {
   assert.deepEqual(notices, []);
   assert.equal(emitted[0].data, '260971234567@bitzed.xyz');
 });
+
+// ── The till's rand price on the confirm sheet ──────────────────────────────
+
+function confirmSheetComputed() {
+  const source = readFileSync(new URL('../PaymentConfirmSheet.vue', import.meta.url), 'utf8');
+  const script = source.match(/<script>([\s\S]*?)<\/script>/)[1];
+  const { code } = transformSync(script, { format: 'cjs', supported: { 'dynamic-import': false } });
+  const module = { exports: {} };
+  const dependencies = {
+    pinia: { mapState: () => ({}) },
+    '../utils/fiatCurrencies.js': { FIAT_SYMBOLS: { ZAR: 'R', EUR: '€' } },
+  };
+  new Function('require', 'module', 'exports', code)((name) => dependencies[name] || {}, module, module.exports);
+  return module.exports.default.computed;
+}
+
+test('the till\'s rand price stays in view unless the line above already reads in rand', () => {
+  const { zarSecondary } = confirmSheetComputed();
+  const sheet = (facts) => zarSecondary.call({
+    payment: { zarAmount: '1.00' }, fiatCurrencyCode: 'ZAR', currentCurrency: 'sats', isLocalDenomination: false, fiatEquivalent: '≈ R1.02', ...facts,
+  });
+  assert.equal(sheet({}), '', 'in rand with rates: the line above says it');
+  assert.equal(sheet({ fiatEquivalent: '' }), 'R1.00', 'no exchange rates: the till\'s price is the one figure left');
+  assert.equal(sheet({ currentCurrency: 'zar', fiatEquivalent: '≈ 83 sats' }), 'R1.00', 'the line above in Bitcoin');
+  assert.equal(sheet({ fiatCurrencyCode: 'EUR', fiatEquivalent: '≈ €0.05' }), 'R1.00', 'another display currency');
+  assert.equal(sheet({ payment: { zarAmount: null } }), '', 'no price in the code');
+});
