@@ -278,20 +278,22 @@ const claimedDepositRegistry = createClaimedDepositRegistry({
 const recentDepositClaims = new Map();
 const CLAIM_MARK_SETTLE_MS = 10 * 60 * 1000;
 
-/**
- * Thin adapter exposing the device-key crypto under the historical
- * `CryptoUtils.encryptMnemonic` / `decryptMnemonic` shape so the rest of
- * this 2.5k-line file doesn't churn. New code should import the shared
- * helpers from `utils/deviceCrypto` directly.
- */
 // NWC connection strings are saved encrypted with the device key, and kept
-// plain in memory (utils/nwcAtRest).
+// plain in memory (utils/nwcAtRest). SEAL_PASSES bounds the sealing a save
+// waits for (persistState).
+const SEAL_PASSES = 3;
 const nwcAtRest = createNwcAtRest({
   encrypt: (plain) => deviceCrypto.encryptString(plain),
   decrypt: (envelope) => deviceCrypto.decryptString(envelope),
   warn: (...args) => console.warn(...args),
 });
 
+/**
+ * Thin adapter exposing the device-key crypto under the historical
+ * `CryptoUtils.encryptMnemonic` / `decryptMnemonic` shape so the rest of
+ * this 2.5k-line file doesn't churn. New code should import the shared
+ * helpers from `utils/deviceCrypto` directly.
+ */
 const CryptoUtils = {
   encryptMnemonic: deviceCrypto.encryptString,
   decryptMnemonic: deviceCrypto.decryptString,
@@ -4475,8 +4477,12 @@ export const useWalletStore = defineStore('wallet', {
         // Every connection string is sealed first (asynchronous, once per
         // string), so that from here the state is read and written in one
         // step: a slower save can never write an older state over a newer
-        // one. A wallet added while sealing is sealed in the next pass.
-        while (!nwcAtRest.isSealed(this.wallets)) await nwcAtRest.seal(this.wallets);
+        // one. A wallet added while sealing is sealed in the next pass; one
+        // still added after the last is saved plain by this save and sealed
+        // by the next, so a save always ends.
+        for (let pass = 0; pass < SEAL_PASSES && !nwcAtRest.isSealed(this.wallets); pass += 1) {
+          await nwcAtRest.seal(this.wallets);
+        }
         this._assertSavable();
         const listed = this.wallets.filter((w) => !addingWallets.has(w.id) || admit.includes(w.id));
         const wallets = [...listed.map((w) => nwcAtRest.toSaved(w)), ...this._unusableWallets];

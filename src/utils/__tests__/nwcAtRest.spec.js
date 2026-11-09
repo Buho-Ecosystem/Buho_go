@@ -107,3 +107,11 @@ test('the stand-in replaces every secret and keeps the rest of the string', () =
   assert.equal(withStandInSecret(url), url.replace(SECRET, STAND_IN_SECRET));
   assert.equal(withStandInSecret(`${url}&Secret=${SECRET}`).includes(SECRET), false);
 });
+
+test('an entry whose string is not text is never waited for', async () => {
+  const atRest = createNwcAtRest(await aes());
+  const odd = [{ id: 'odd', type: 'nwc', nwcUrl: { not: 'text' } }, { id: 'num', type: 'nwc', nwcUrl: 7 }];
+  await atRest.seal(odd);
+  assert.equal(atRest.isSealed(odd), true, 'a save loop on it ends at once');
+  assert.deepEqual(odd.map((w) => atRest.toSaved(w)), odd, 'saved as it is');
+});

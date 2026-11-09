@@ -26,6 +26,9 @@
 
 const isNwc = (wallet) => (wallet?.type || 'nwc') === 'nwc';
 
+/** The plain string a wallet carries, or null: one rule for sealing and for asking whether all is sealed. */
+const plainUrlOf = (wallet) => (isNwc(wallet) && typeof wallet.nwcUrl === 'string' && wallet.nwcUrl) || null;
+
 /**
  * The secret an older version finds: the private key 1. A valid key, so the
  * connection still builds, that no wallet service has granted anything.
@@ -54,7 +57,7 @@ export function createNwcAtRest({ encrypt, decrypt, warn = () => {} }) {
      * than not at all.
      */
     async seal(wallets) {
-      const current = new Set(wallets.filter(isNwc).map((w) => w.nwcUrl).filter((url) => typeof url === 'string' && url));
+      const current = new Set(wallets.map(plainUrlOf).filter(Boolean));
       envelopes = new Map([...envelopes].filter(([url]) => current.has(url)));
       for (const url of current) {
         if (envelopes.has(url) || unsealable.has(url)) continue;
@@ -69,7 +72,7 @@ export function createNwcAtRest({ encrypt, decrypt, warn = () => {} }) {
 
     /** True when every string of `wallets` was sealed, or cannot be. */
     isSealed(wallets) {
-      return wallets.filter(isNwc).every((w) => !w.nwcUrl || envelopes.has(w.nwcUrl) || unsealable.has(w.nwcUrl));
+      return wallets.map(plainUrlOf).every((url) => !url || envelopes.has(url) || unsealable.has(url));
     },
 
     /** The wallet as it is written to storage. Synchronous: see `seal`. */
