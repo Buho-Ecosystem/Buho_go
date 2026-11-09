@@ -1,4 +1,5 @@
 import { isAddressRequest } from '../utils/lud23.js';
+import { lightningAddressCase } from '../utils/merchantQR.js';
 /**
  * WalletFactory - Creates wallet provider instances
  *
@@ -233,10 +234,11 @@ export function parsePaymentDestination(input) {
 
   // A description inside a withdraw URL may contain @. Only normalize
   // actual Lightning addresses; callback paths and challenges are opaque.
+  // A till code's address keeps the case of its name (lightningAddressCase).
   if (isLightningAddress(cleaned)) {
     return withBip21({
       type: 'lightning_address',
-      address: cleaned.toLowerCase(),
+      address: lightningAddressCase(cleaned),
       valid: true,
     });
   }

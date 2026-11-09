@@ -17,6 +17,7 @@ import * as deepLinkRouting from '../../utils/deepLinkRouting.js';
 import * as paymentLink from '../../utils/paymentLink.js';
 import * as lnurlPay from '../../utils/lnurlPay.js';
 import * as errorOrigin from '../../utils/errorOrigin.js';
+import * as merchantQR from '../../utils/merchantQR.js';
 
 // Execute the production Options-API methods, replacing provider/UI imports
 // that these paths never use. IO is explicit so an accidental GET fails.
@@ -36,6 +37,7 @@ const addressRequests = existsSync(new URL('../../utils/lud23.js', import.meta.u
 const factory = evaluate('../../providers/WalletFactory.js', {
   '../utils/addressUtils': addresses, '../utils/bip21': bip21,
   '../utils/lud23.js': addressRequests,
+  '../utils/merchantQR.js': merchantQR,
 });
 const metadata = { tag: 'withdrawRequest', k1: 'Voucher-A+B', callback: 'https://cash.example/Callback?session=KeepCase',
   minWithdrawable: 1000, maxWithdrawable: 25000, defaultDescription: 'Rewards for Alice@Example.com' };
@@ -153,6 +155,14 @@ test('LUD-17 requests containing @ retain case-sensitive values in dispatch', ()
   const parsed = factory.parsePaymentDestination(input);
   assert.equal(parsed.type, 'lnurl'); assert.equal(parsed.lnurl, input);
   assert.equal(factory.parsePaymentDestination(url.replace('%40', '@')).type, 'unknown', 'HTTPS NFC must reach the URL fallback, not become an address');
+});
+
+test('a link or a card with a till code\'s address keeps the case of its name; any other is lowered', () => {
+  const till = 'TSHP6SJNKTR3IY%2Fconfirm@cryptoqr.net';
+  for (const input of [`lightning:${till}`, till, `LIGHTNING:${till.replace('cryptoqr.net', 'CryptoQR.net')}`]) {
+    assert.deepEqual(factory.parsePaymentDestination(input), { type: 'lightning_address', address: till, valid: true }, input);
+  }
+  assert.equal(factory.parsePaymentDestination('lightning:Maria@Example.COM').address, 'maria@example.com');
 });
 
 test('callback still uses one 90-second request with the same challenge and invoice', async () => {

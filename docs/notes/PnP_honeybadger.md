@@ -21,7 +21,7 @@ MoneyBadger takes "the entire QR code payload" as the name and decodes it exactl
 
 - **Encoded once:** everything except letters, digits and `- _ .` is percent-encoded, including `! ' ( ) * ~`, which `encodeURIComponent` leaves alone. Then every path accepts the name, NWC's address check included.
 - **Never decoded first:** a `%41` in the code goes out as `%2541`. Encoding twice gives `UNKNOWN_CODE`, and an unencoded `/` gives 404.
-- **Case kept:** codes are case-sensitive. Addresses are paid in lower case, except a name on `cryptoqr.net` (`lightningAddressCase`). This holds in the Send field and in the clipboard strip.
+- **Case kept:** codes are case-sensitive. Addresses are paid in lower case, except a name on `cryptoqr.net` (`lightningAddressCase`). This holds in the Send field, the clipboard strip, and a `lightning:` link or a card tap.
 - **Length:** a code longer than 2048 characters is never treated as a till code.
 
 ## Which codes
