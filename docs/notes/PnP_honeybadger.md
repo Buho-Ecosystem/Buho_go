@@ -79,7 +79,7 @@ When it says this while the code is read, the words show in the Send field and n
   - there is no tip or fee (tag 55), since then tag 54 is not the total.
 
   MoneyBadger's test code reads R1.00 and its example R1.23.
-- **Amount in sats:** the pay request sets it. A fixed amount is paid as it is. A narrow range (at most 5 % wide, the rate moving) is filled in at its top (`tillPrefillSats`). A wider range is left for the person to enter: the CRC is a checksum, not a signature, so an amount printed in the code never picks one.
+- **Amount in sats:** the pay request sets it. A fixed amount is paid as it is. With a narrow range (at most 5 % wide, the rate moving) the confirm sheet opens at its top (`tillPrefillSats`), and the person confirms it. A wider range is left for the person to enter: the CRC is a checksum, not a signature, so an amount printed in the code never picks one. An amount left over from an earlier payment never counts toward whether the wallet can cover this one.
 
 ## Refunds
 
@@ -132,7 +132,7 @@ So `%2F` reaches MoneyBadger as `%2F`. With non-empty `params`, the Android plug
   - Nothing public ties Woolworths to MoneyBadger yet.
 
   A till of theirs on another network shows the storefront mark.
-- Zapper codes with a line break: the address check refuses control characters in a name, so such a code is refused before it is sent.
+- Zapper codes with a line break: the address check refuses control characters in a name, so such a code never leaves the phone. The Send field says "This store's code isn't supported yet. Pay another way.", never "try again".
 - That a refund arrives. That needs a real payment with the test code and `completion=cancel`.
 
 ## Checks

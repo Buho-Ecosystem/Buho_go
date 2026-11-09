@@ -764,7 +764,7 @@ import {
   BITCOIN_DEPOSIT_POLL_MS
 } from '../stores/bitcoinPreferences';
 import { useBitcoinDepositsStore } from '../stores/bitcoinDeposits';
-import {MERCHANT_PROVIDER, SA_RETAIL_SOURCE, describeMerchantFailure, describeTillLookupFailure, isMerchantProviderUrl, isTillAddress, lightningAddressCase, tillMerchant, tillPrefillSats} from '../utils/merchantQR.js';
+import {MERCHANT_FAILURE, MERCHANT_PROVIDER, SA_RETAIL_SOURCE, describeMerchantFailure, describeTillLookupFailure, isMerchantProviderUrl, isTillAddress, lightningAddressCase, tillMerchant, tillPrefillSats} from '../utils/merchantQR.js';
 import {PAYER_ADDRESS_PURPOSE, REFUND_PROBLEM, chosenRefundAddress, payerAddressRule, refundAddressOptions, refundRefusal, sameRefundAddress} from '../utils/refundAddress.js';
 import {payerIdentifier} from '../utils/lud18.js';
 import {npubCashAddress} from '../utils/npubCashAddress.js';
@@ -4766,7 +4766,11 @@ export default {
           if (!lnurlInfo.minSendable) {
             resolved = false;
             if (paymentData.source === SA_RETAIL_SOURCE) {
-              const { reason, attribution } = describeTillLookupFailure(lnurlInfo, this.$t.bind(this));
+              // A code whose address cannot be asked for (a line break or a
+              // backslash in it) never left the phone: trying again cannot help.
+              const { reason, attribution } = lightningAddressUrl(paymentData.data)
+                ? describeTillLookupFailure(lnurlInfo, this.$t.bind(this))
+                : { reason: describeMerchantFailure(MERCHANT_FAILURE.UNSUPPORTED_QR_CODE, this.$t.bind(this)), attribution: null };
               this.failSendResolution(reason, fromField, { attribution });
               return;
             }
@@ -4817,15 +4821,18 @@ export default {
               ? paymentData.randAmount
               : null;
             this.pendingPayment.zarAmount = randAmount;
-            // The provider's price when its range only spreads with the rate.
-            const prefill = this.pendingPayment.fixedAmountSats
+            // The provider's price when its range only spreads with the rate:
+            // the sheet opens with it filled in (paymentSheetProps).
+            const prefillSats = this.pendingPayment.fixedAmountSats
               ? null
               : tillPrefillSats(this.pendingPayment.minSendable, this.pendingPayment.maxSendable);
-            if (prefill) this.paymentAmount = String(prefill);
+            if (prefillSats) this.pendingPayment.prefill = { ...this.pendingPayment.prefill, amountSats: prefillSats };
 
-            // Insufficient balance check — use fixedAmountSats, or pre-filled amount
+            // Insufficient balance check: the fixed amount, the one filled in,
+            // or the only one the range allows. Never an amount left over from
+            // an earlier payment.
             const paymentSats = this.pendingPayment.fixedAmountSats ||
-              parseInt(this.paymentAmount) ||
+              prefillSats ||
               (this.pendingPayment.minSendable === this.pendingPayment.maxSendable
                 ? Math.floor(this.pendingPayment.minSendable / 1000)
                 : 0);

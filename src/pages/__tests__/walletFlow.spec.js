@@ -625,6 +625,8 @@ function payingHarness({ wallets = PAY_WALLETS, active = 'biz', funds = PAY_FUND
     '../utils/lud4.js': { looksLikeLud04: () => false },
     '../utils/bip21.js': { parseBip21: () => null, bip21AmountToSats: () => 0 },
     '../utils/merchantQR.js': merchantQR,
+    // Only the pure address check: a request from here would be a real one.
+    '../utils/lnurlPay.js': { lightningAddressUrl: lnurlPay.lightningAddressUrl },
     '../utils/l1WithdrawErrors.js': { describeL1WithdrawError: error => ({ title: 'error', description: error.message }) },
     ...deps,
   });
@@ -739,14 +741,37 @@ test('till code: a brand name on another network gets no logo', async () => {
   assert.deepEqual([vm.paymentSheetProps.recipient.logoUrl, vm.paymentSheetProps.recipient.service], [null, true]);
 });
 
-test('till code: the amount is filled in only for a narrow range; an amount printed in the code never picks one', async () => {
+test('till code: the sheet opens with the amount only for a narrow range; an amount printed in the code never picks one', async () => {
   const open = { ...PROVIDER_ANSWER, isFixedAmount: false, fixedAmountSats: 0 };
   const narrow = await setUpTill({ ...open, minSendable: 80000, maxSendable: 81000, minSats: 80, maxSats: 81 });
-  assert.equal(narrow.vm.paymentAmount, '81');
+  assert.deepEqual(narrow.vm.paymentSheetProps.amount, { mode: 'range', minSats: 80, maxSats: 81, defaultAmount: 81 });
   const wide = await setUpTill({ ...open, minSendable: 1000, maxSendable: 1000000000, minSats: 1, maxSats: 1000000 });
   assert.equal(wide.vm.pendingPayment.zarAmount, '1.00', 'the code prints R1.00');
-  assert.notEqual(wide.vm.paymentAmount, '1000000', 'never the top of a range the code does not fix');
+  assert.deepEqual(wide.vm.paymentSheetProps.amount, { mode: 'range', minSats: 1, maxSats: 1000000 }, 'never the top of a range the code does not fix');
   assert.equal(wide.vm.showSendSheet, true, 'the person enters the amount');
+});
+
+test('till code: an amount left from an earlier payment never decides whether it can be paid', async () => {
+  const open = { ...PROVIDER_ANSWER, isFixedAmount: false, fixedAmountSats: 0, minSendable: 1000, maxSendable: 1000000000, minSats: 1, maxSats: 1000000 };
+  const harness = payingHarness({ active: 'biz' });
+  const { vm } = harness;
+  Object.assign(vm, { showSendModal: true, $t: t, paymentAmount: '900000000' });
+  vm.fetchLightningAddressInfo = async () => open;
+  vm.resolveWalletBrand = () => null;
+  Object.defineProperty(vm, 'ratesStale', { get: () => false, configurable: true });
+  await quietly(() => vm.onPaymentDetected(scannedTill()));
+  assert.equal(vm.showSendSheet, true, 'no "Insufficient balance" for an amount nobody entered for it');
+});
+
+test('till code: a code whose address cannot be asked for says it is not supported, never "try again"', async () => {
+  for (const code of ['http://2.zap.pe?t=6\ni=1:2:7', 'https://pay.zapper.com/?i=a\\b']) {
+    const till = merchantQR.convertToLightningAddress(code);
+    assert.ok(till, code);
+    const { vm } = await setUpTill({}, { type: 'lightning_address', data: till.lightningAddress, source: merchantQR.SA_RETAIL_SOURCE, merchant: till.merchant, randAmount: null });
+    assert.equal(vm.sendResolveError, "This store's code isn't supported yet. Pay another way.", code);
+  }
+  const busy = await setUpTill({});
+  assert.equal(busy.vm.sendResolveError, "The store's payment service isn't answering. Try again in a moment.", 'a code that was asked for and got no answer');
 });
 
 test('till code: an address on the provider\'s domain, pasted or linked, is one', async () => {
