@@ -83,7 +83,8 @@ async function render(component, props, { data } = {}) {
   return ServerRenderer.renderToString(app)
 }
 
-const text = (html) => html.replace(/<!--[\s\S]*?-->/g, '').replace(/<[^>]+>/g, ' ')
+// An address's domain sits in its own span (it never breaks): read joined.
+const text = (html) => html.replace(/<!--[\s\S]*?-->/g, '').replace(/<span class="refund-option-domain">([^<]*)<\/span>/g, '$1').replace(/<[^>]+>/g, ' ')
   .replace(/&#39;/g, "'").replace(/&quot;/g, '"').replace(/&amp;/g, '&').replace(/\s+/g, ' ').trim()
 /** The class list of the refund row's button. */
 const rowClasses = (html) => html.match(/<button[^>]*class="([^"]*\brefund-row\b[^"]*)"/)[1].split(/\s+/)
@@ -185,6 +186,15 @@ test('expanded: each address once with where it comes from, the chosen one check
   }
 })
 
+test('a long address wraps in its name, never inside its domain', async () => {
+  const html = await render(RefundAddressField, { refund: row() }, { data: { open: true } })
+  assert.match(html, new RegExp(`>${NPUB}<span class="refund-option-domain">@npub\\.cash</span></strong>`))
+  assert.match(html, /<strong class="refund-option-address">maria<span class="refund-option-domain">@spark\.example<\/span><\/strong>/)
+  const long = `name@${'very-long-domain-'.repeat(2)}example.com`
+  const wide = await render(RefundAddressField, { refund: row({ options: [{ address: long, source: 'entered' }], selected: long }) }, { data: { open: true } })
+  assert.ok(wide.replace(/<!--[\s\S]*?-->/g, '').includes(`<strong class="refund-option-address">${long}</strong>`), 'a domain too long for a line wraps with the name')
+})
+
 test('the listbox holds only the choices: "Use another address" is an action after it', async () => {
   const html = await render(RefundAddressField, { refund: row() }, { data: { open: true } })
   const listbox = html.match(/<div[^>]*role="listbox"[^>]*>/)[0]
@@ -238,6 +248,7 @@ test('markup contract: touch targets, no zoom, tokens, reduced motion', () => {
   assert.match(source, /@media \(prefers-reduced-motion: reduce\)/)
   assert.match(source, /prefers-reduced-motion: reduce\)'\)\?\.matches/, 'the list scrolls into view without motion then')
   assert.match(source, /\.refund-option-address \{[^}]*overflow-wrap: anywhere/, 'a long address wraps in the list')
+  assert.match(source, /\.refund-option-domain \{[^}]*white-space: nowrap/, 'its domain stays whole')
   for (const token of ['--bg-input', '--bg-card', '--border-card', '--text-primary', '--text-secondary', '--brand-accent-text', '--color-warn']) {
     assert.ok(source.includes(`var(${token})`), token)
   }

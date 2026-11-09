@@ -69,7 +69,7 @@
               @click="pickAddress(option.address)"
             >
               <span class="refund-option-copy">
-                <strong class="refund-option-address">{{ option.address }}</strong>
+                <strong class="refund-option-address">{{ wrapParts(option.address).name }}<span v-if="wrapParts(option.address).domain" class="refund-option-domain">{{ wrapParts(option.address).domain }}</span></strong>
                 <small :class="{ 'refund-option-warn': isRefused(option.address) }">{{ sourceText(option) }}</small>
               </span>
               <Icon v-if="isSelected(option.address)" icon="tabler:check" width="18" height="18" class="refund-check" aria-hidden="true" />
@@ -218,6 +218,18 @@ export default {
     isSelected(address) { return sameRefundAddress(this.selected, address) },
 
     isRefused(address) { return sameRefundAddress(address, this.refund.refusedAddress) },
+
+    /**
+     * An address split where it may wrap: a long name wraps anywhere, the
+     * domain stays whole on its line (`npub.cash`, never `npub.cas` + `h`).
+     * A domain too long for a narrow line wraps with the name.
+     */
+    wrapParts(address) {
+      const text = String(address || '')
+      const at = text.lastIndexOf('@')
+      const domain = at > 0 ? text.slice(at) : ''
+      return domain && domain.length <= 24 ? { name: text.slice(0, at), domain } : { name: text, domain: '' }
+    },
 
     sourceText(option) {
       if (this.isRefused(option.address)) return this.$t("Can't receive refunds")
@@ -437,8 +449,10 @@ export default {
 .refund-option-copy strong,
 .refund-option-copy small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .refund-option-copy strong { font-size: 0.90625rem; font-weight: 650; color: var(--text-primary); }
-/* The list says exactly what leaves the phone: a long address wraps. */
+/* The list says exactly what leaves the phone: a long address wraps, its
+   domain kept whole. */
 .refund-option-copy .refund-option-address { white-space: normal; overflow-wrap: anywhere; }
+.refund-option-domain { white-space: nowrap; }
 .refund-option-copy small { margin-top: 2px; font-size: 0.75rem; line-height: 1.35; color: var(--text-secondary); }
 .refund-option-copy .refund-option-warn { font-weight: 600; color: var(--color-warn); }
 .refund-check { flex: none; color: var(--brand-accent-text); }
