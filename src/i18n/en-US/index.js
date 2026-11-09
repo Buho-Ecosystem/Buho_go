@@ -13,6 +13,7 @@ import boltCard from './boltCard.js';
 import walletApps from './walletApps.js';
 import payRequests from './payRequests.js';
 import refundAddress from './refundAddress.js';
+import tillCodes from './tillCodes.js';
 export default {
   ...requests,
   ...profilePayment,
@@ -67,6 +68,7 @@ export default {
   ...walletApps,
   ...payRequests,
   ...refundAddress,
+  ...tillCodes,
   // Spend: Bitrefill door
   "Gift cards, mobile top-ups and more": "Gift cards, mobile top-ups and more",
   "Bitrefill is on its way": "Bitrefill is on its way",
@@ -1913,7 +1915,6 @@ export default {
   "Network error": "Connection problem",
   "Network fees apply": "Network fees apply",
   "No wallet connected": "No wallet connected",
-  "not yet supported": "not yet supported",
   "Open transaction history": "Open transaction history",
   "Other Contacts": "Other contacts",
   "Paste an invoice or enter an address from your friend or shop": "Paste an invoice or enter an address from your friend or shop",
@@ -1927,7 +1928,6 @@ export default {
   "Processing payment...": "Processing payment…",
   "Receive payment": "Receive payment",
   "Retry": "Retry",
-  "SA Retailer QR detected": "SA retailer QR detected",
   "Save contacts in the Address Book to send to multiple people at once.": "Save contacts in the Address Book to send to multiple people at once.",
   "Security Upgrade": "Security upgrade",
   "Send payment": "Send payment",
@@ -1941,7 +1941,6 @@ export default {
   "Switch to your Spark wallet to pay Spark addresses": "Switch to your Spark wallet to pay Spark addresses",
   "Switch to your Spark wallet to send Bitcoin": "Switch to your Spark wallet to send Bitcoin",
   "Switch to your Spark wallet to send to this address": "Switch to your Spark wallet to send to this address",
-  "This retailer is not yet supported": "This retailer is not yet supported",
   "Unsupported payment format": "We don't support this payment format yet",
   "Use a Lightning invoice, address, or LNURL": "Use a Lightning invoice, address, or payment link",
   "Use sats denomination or refresh the app to load exchange rates": "Switch to sats or refresh the app to load exchange rates",

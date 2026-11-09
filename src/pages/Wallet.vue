@@ -764,7 +764,7 @@ import {
   BITCOIN_DEPOSIT_POLL_MS
 } from '../stores/bitcoinPreferences';
 import { useBitcoinDepositsStore } from '../stores/bitcoinDeposits';
-import {MERCHANT_PROVIDER, SA_RETAIL_SOURCE, isMerchantProviderUrl, parseZARFromMetadata} from '../utils/merchantQR.js';
+import {MERCHANT_FAILURE, MERCHANT_PROVIDER, SA_RETAIL_SOURCE, describeMerchantFailure, describeTillLookupFailure, isMerchantProviderUrl, isTillAddress, lightningAddressCase, tillMerchant, tillPrefillSats} from '../utils/merchantQR.js';
 import {PAYER_ADDRESS_PURPOSE, REFUND_PROBLEM, chosenRefundAddress, payerAddressRule, refundAddressOptions, refundRefusal, sameRefundAddress} from '../utils/refundAddress.js';
 import {payerIdentifier} from '../utils/lud18.js';
 import {npubCashAddress} from '../utils/npubCashAddress.js';
@@ -1520,8 +1520,9 @@ export default {
       const nostrNpub = npubIds?.npub || p.nostrNpub || null;
 
       // ── Recipient ─────────────────────────────────────────────
-      // Merchant payments (SA retail QR) get the merchant logo + name as
-      // hero. Otherwise we use the address itself as the display name —
+      // A till payment gets the store as hero: its logo, or the storefront
+      // mark when there is none (or it fails to load). Otherwise we use
+      // the address itself as the display name:
       // for Lightning addresses that already reads cleanly ("alice@…"),
       // and for Spark/invoice we surface a generic "Lightning Invoice"
       // label so the user knows what they're paying.
@@ -1530,6 +1531,7 @@ export default {
         recipient = {
           name: p.merchant.displayName,
           logoUrl: p.merchant.logo,
+          service: true,
           color: '#3B82F6',
           addressType: 'lightning',
           address: ''
@@ -2850,7 +2852,7 @@ export default {
 
       const { cleaned, bip21 } = normalizeDestination(rawInput, walletType);
       if (!cleaned) return null;
-      const data = isLightningAddressShared(cleaned) ? cleaned.toLowerCase() : cleaned;
+      const data = isLightningAddressShared(cleaned) ? lightningAddressCase(cleaned) : cleaned;
 
       // Bare npub / nprofile: onPaymentDetected resolves the profile to its
       // Lightning target and carries the person onto the confirm sheet.
@@ -4718,6 +4720,12 @@ export default {
             }
           }
         } else if (paymentData.type === 'lightning_address' && paymentData.data) {
+          // An address on the provider's domain is a till code however it
+          // came (pasted, a link): paid, shown and kept as one.
+          if (paymentData.source !== SA_RETAIL_SOURCE && isTillAddress(paymentData.data)) {
+            paymentData = { ...paymentData, source: SA_RETAIL_SOURCE, merchant: { id: 'provider', displayName: null }, randAmount: null };
+          }
+
           // Fetch LNURL info for all wallet types
           const lnurlInfo = await this.fetchLightningAddressInfo(paymentData.data);
 
@@ -4725,7 +4733,7 @@ export default {
           // Address (empty lnurlInfo) might be a NIP-05 identifier instead —
           // resolve it to the lud16 on the person's Nostr profile and pay that.
           // Lightning-address interpretation always wins; this only rescues a
-          // miss. Skipped for SA-retail merchants (curated rails), and guarded
+          // miss. Skipped for till codes (no one has a profile there), and guarded
           // (_nostrResolved + address-changed) so it runs once and can't loop.
           if (!lnurlInfo.minSendable
               && !paymentData._nostrResolved
@@ -4749,26 +4757,26 @@ export default {
           }
 
           // The address didn't resolve as a Lightning Address, and the NIP-05
-          // rescue found nothing either — fail early, in the field, rather than
-          // open a confirm sheet that can only fail at send time. (SA-retail
-          // merchants are curated and keep their existing handling below.)
-          // A transport failure (timeout, DNS, CORS on web) carries its own
-          // reason: the address may be perfectly valid, so don't claim it
-          // doesn't exist — mirror the bech32-LNURL branch above.
-          if (!lnurlInfo.minSendable && paymentData.source !== SA_RETAIL_SOURCE) {
+          // rescue found nothing either: fail early, in the field, rather than
+          // open a confirm sheet that can only fail at send time. A transport
+          // failure (timeout, DNS, CORS on web) carries its own reason: the
+          // address may be perfectly valid, so don't claim it doesn't exist
+          // (mirrors the bech32-LNURL branch above). A till code says what
+          // the provider answered, or that it did not (utils/merchantQR).
+          if (!lnurlInfo.minSendable) {
             resolved = false;
-            const reason = lnurlInfo.error && lnurlInfo.reason
-              ? lnurlInfo.reason
-              : this.$t("We couldn't find this Lightning address");
+            if (paymentData.source === SA_RETAIL_SOURCE) {
+              // A code whose address cannot be asked for (a line break or a
+              // backslash in it) never left the phone: trying again cannot help.
+              const { reason, attribution } = lightningAddressUrl(paymentData.data)
+                ? describeTillLookupFailure(lnurlInfo, this.$t.bind(this))
+                : { reason: describeMerchantFailure(MERCHANT_FAILURE.UNSUPPORTED_QR_CODE, this.$t.bind(this)), attribution: null };
+              this.failSendResolution(reason, fromField, { attribution });
+              return;
+            }
+            const reason = lnurlInfo.error && lnurlInfo.reason ? lnurlInfo.reason : this.$t("We couldn't find this Lightning address");
             this.failSendResolution(reason, fromField, { attribution: lnurlInfo.error ? lnurlInfo.attribution : null });
             return;
-          }
-
-          // Past the guard the info is spread into pendingPayment; strip the
-          // failure markers so a curated SA-retail miss doesn't carry them.
-          if (lnurlInfo.error) {
-            delete lnurlInfo.error;
-            delete lnurlInfo.reason;
           }
 
           // The payload takes the shape the paying wallet's backend wants (see
@@ -4801,28 +4809,30 @@ export default {
             };
           }
 
-          // Enrich with SA retail merchant context
-          if (paymentData.source === SA_RETAIL_SOURCE && paymentData.merchant) {
-            this.pendingPayment.merchant = paymentData.merchant;
+          // A till code: the store as the provider names it (its logo only
+          // where the store's own network carries it), and the rand amount
+          // printed in the code itself (utils/merchantQR.readEmvAmount).
+          if (paymentData.source === SA_RETAIL_SOURCE) {
+            const merchant = tillMerchant(paymentData.merchant, lnurlInfo.description, this.$t('Store'));
+            this.pendingPayment.merchant = merchant;
+            this.pendingPayment.description = merchant.displayName;
 
-            // Parse ZAR amount from LNURL metadata description
-            const zarAmount = parseZARFromMetadata(this.pendingPayment.description);
-            if (zarAmount) {
-              this.pendingPayment.zarAmount = zarAmount;
-              this.pendingPayment.description = `${paymentData.merchant.displayName} - R${zarAmount}`;
+            const randAmount = typeof paymentData.randAmount === 'string' && /^\d{1,10}\.\d{2}$/.test(paymentData.randAmount)
+              ? paymentData.randAmount
+              : null;
+            this.pendingPayment.zarAmount = randAmount;
+            // The provider's price when its range only spreads with the rate:
+            // the sheet opens with it filled in (paymentSheetProps).
+            const prefillSats = this.pendingPayment.fixedAmountSats
+              ? null
+              : tillPrefillSats(this.pendingPayment.minSendable, this.pendingPayment.maxSendable);
+            if (prefillSats) this.pendingPayment.prefill = { ...this.pendingPayment.prefill, amountSats: prefillSats };
 
-              // Pre-fill amount for merchant payments when min !== max (rate spread).
-              // Use maxSendable to cover the full ZAR amount the merchant expects.
-              if (!this.pendingPayment.fixedAmountSats && this.pendingPayment.maxSendable) {
-                this.paymentAmount = String(Math.floor(this.pendingPayment.maxSendable / 1000));
-              }
-            } else {
-              this.pendingPayment.description = paymentData.merchant.displayName;
-            }
-
-            // Insufficient balance check — use fixedAmountSats, or pre-filled amount
+            // Insufficient balance check: the fixed amount, the one filled in,
+            // or the only one the range allows. Never an amount left over from
+            // an earlier payment.
             const paymentSats = this.pendingPayment.fixedAmountSats ||
-              parseInt(this.paymentAmount) ||
+              prefillSats ||
               (this.pendingPayment.minSendable === this.pendingPayment.maxSendable
                 ? Math.floor(this.pendingPayment.minSendable / 1000)
                 : 0);
@@ -4998,8 +5008,8 @@ export default {
      *   - no answer, a miss or an error: the normal recipient, nothing more;
      *   - a changed code: the sheet stops the payment. This one answer still
      *     counts after the hold, until the payment is on its way.
-     * Your own users' invoices (`firstParty`) and curated retail merchants
-     * are not looked up: they are never on Branta.
+     * Your own users' invoices (`firstParty`) and till codes are not
+     * looked up: they are never on Branta.
      */
     runBrantaVerification(payment) {
       if (!payment || !this.bitcoinPrefsStore.brantaVerificationEnabled) return;
@@ -5260,6 +5270,7 @@ export default {
           && this.addressBookStore.getEntryById(this.pendingPayment.paymentContactId)
           ? this.pendingPayment.paymentContactId : null;
         const shouldOfferSave = isCompletedSend && !!(recipientAddress && !existingContact);
+        const tillStoreName = this.pendingPayment?.source === SA_RETAIL_SOURCE ? (this.pendingPayment.merchant?.displayName || null) : null;
         const recipientLabel = isServiceSend && !existingContact
           ? serviceName
           : this.getRecipientDisplayLabel(existingContact);
@@ -5311,7 +5322,7 @@ export default {
           } catch (err) {
             console.warn('[wallet] could not queue contact link:', err);
           }
-        } else if (recipientAddress || successAction || verifyUrl || paymentSource || merchantVerification || payLink || sharedRefundAddress) {
+        } else if (recipientAddress || successAction || verifyUrl || paymentSource || merchantVerification || payLink || sharedRefundAddress || tillStoreName) {
           try {
             // A resolved Nostr send carries the person's avatar + display
             // name so the tx row/hero show who was actually paid instead of
@@ -5323,6 +5334,9 @@ export default {
               const picture = sanitizeImageUrl(this.pendingPayment?.nostrProfile?.picture) || null;
               counterpartyAvatar = { kind: 'nostr', npub, picture };
               counterpartyLabel = profileDisplayName(this.pendingPayment?.nostrProfile) || shortenNpub(npub) || null;
+            } else if (tillStoreName) {
+              // A till payment: the store's name on the row, never the code.
+              counterpartyLabel = tillStoreName;
             } else if (isServiceSend) {
               // A storeable service: its LUD-06 name on the row, and its logo
               // resolved live from the local image registry by address, so
@@ -5483,7 +5497,13 @@ export default {
         // A payment whose outcome is unknown needs attention; it has not failed.
         if (error?.code === NWC_ERROR.UNCONFIRMED) haptics.warning();
         else haptics.error();
+        // The provider's refusal of a till code, in plain words where its
+        // code has some; any other refusal stays in the service's own words.
+        const tillReason = payment?.source === SA_RETAIL_SOURCE && isCounterpartyError(error)
+          ? describeMerchantFailure(error.message, this.$t.bind(this))
+          : null;
         this.walletStore.showPaymentError(error, {
+          ...(tillReason ? { reason: tillReason } : {}),
           context: 'payment',
           walletType,
           walletName: this.getWalletById(sendingWalletId)?.name,
@@ -5909,6 +5929,9 @@ export default {
     // Helper: Get recipient address from pending payment
     getRecipientAddress() {
       if (!this.pendingPayment) return null;
+      // A till code pays one sale: never an address to save, find a contact
+      // by, or keep with the payment. The store's name is kept instead.
+      if (this.pendingPayment.source === SA_RETAIL_SOURCE) return null;
       // Lightning address
       if (this.pendingPayment.lightningAddress) return this.pendingPayment.lightningAddress;
       // Spark address
@@ -5978,9 +6001,10 @@ export default {
      * Build the human-readable recipient string for the success
      * modal's "To {recipient}" line. Order of preference:
      *   1. Existing contact name (most personal)
-     *   2. Lightning address (already human-readable)
-     *   3. Spark address (truncated, machine-y but identifies a peer)
-     *   4. '' → modal omits the line entirely (raw bolt11 / generic
+     *   2. The store of a till payment (its address is a one-sale code)
+     *   3. Lightning address (already human-readable)
+     *   4. Spark or Arkade address (truncated, machine-y but identifies a peer)
+     *   5. '' → modal omits the line entirely (raw bolt11 / generic
      *      LNURL have no stable counterparty identity to show)
      *
      * @param {object|null} existingContact - May be null for new recipients.
@@ -5989,6 +6013,7 @@ export default {
     getRecipientDisplayLabel(existingContact) {
       if (existingContact?.name) return existingContact.name;
       if (!this.pendingPayment) return '';
+      if (this.pendingPayment.merchant?.displayName) return this.pendingPayment.merchant.displayName;
       if (this.pendingPayment.lightningAddress) {
         return this.pendingPayment.lightningAddress;
       }
@@ -6319,7 +6344,7 @@ export default {
      * Fetch LNURL info from a Lightning address
      * Returns min/max amounts and whether it's a fixed amount.
      * A server that answers but doesn't serve the address yields {} ("not
-     * found"); a transport failure (timeout, DNS, CORS on web) yields
+     * found"), with `httpStatus` when it said so in HTTP; a transport failure (timeout, DNS, CORS on web) yields
      * { error: true, reason } so the caller doesn't misreport a reachable
      * address as nonexistent. Bounded to 10s so a hung server can't leave
      * the Send sheet spinning forever.
@@ -6372,13 +6397,21 @@ export default {
       } catch (error) {
         // An HTTP error, or something other than a pay request: nothing to
         // pay at this address, so "not found" (the caller tries NIP-05).
-        if (error?.code === PAY_REQUEST_ERROR.HTTP || error?.code === PAY_REQUEST_ERROR.NOT_PAY_REQUEST) {
+        if (error?.code === PAY_REQUEST_ERROR.HTTP) {
+          return Number.isInteger(error.status) ? { httpStatus: error.status } : {};
+        }
+        if (error?.code === PAY_REQUEST_ERROR.NOT_PAY_REQUEST) {
           return {};
         }
         // A refusal, terms that cannot be paid, or no answer at all (on the
         // phone a network failure carries the platform's own code): say which.
         console.warn('Failed to fetch Lightning address info:', error?.message);
-        return { error: true, ...this.describeLnurlFailure(error, 'payment') };
+        return {
+          error: true,
+          ...this.describeLnurlFailure(error, 'payment'),
+          // The service's own words, for a till code's plain reason.
+          serviceReason: isCounterpartyError(error) ? error.message : null,
+        };
       }
     },
 

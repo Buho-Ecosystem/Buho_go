@@ -50,6 +50,7 @@ const component = (dependencies = {}) => evaluate('../Wallet.vue', {
   '../utils/refundAddress.js': refundAddress,
   '../utils/lud18.js': lud18,
   '../utils/merchantQR.js': merchantQR,
+  '../utils/errorOrigin.js': errorOrigin,
   '../utils/npubCashAddress.js': npubCashAddress,
   '../utils/haptics.js': haptics,
   '../utils/nwcErrors.js': nwcErrors,
@@ -224,12 +225,13 @@ test('a Lightning address that refuses says why, labelled as theirs; one that is
     return methods.fetchLightningAddressInfo.call({ ...methods, $t: t, walletStore: { useBip177Format: true } }, address);
   };
   assert.deepEqual(await infoWith(failed(500, { status: 'ERROR', reason: 'This account is suspended' })),
-    { error: true, reason: 'This account is suspended', attribution: 'Reported by the recipient' });
+    { error: true, reason: 'This account is suspended', attribution: 'Reported by the recipient', serviceReason: 'This account is suspended' });
   assert.deepEqual(await infoWith(ok({ ...PAY_REQUEST, callback: 'http://pay.example/cb' })),
-    { error: true, reason: "The recipient's payment details aren't valid. Ask them for another way to pay.", attribution: null });
+    { error: true, reason: "The recipient's payment details aren't valid. Ask them for another way to pay.", attribution: null, serviceReason: null });
   assert.deepEqual(await infoWith(ok({ status: 'ERROR' })),
-    { error: true, reason: "The recipient's service declined. Nothing was sent.", attribution: null }, 'a refusal without words is said in ours');
-  assert.deepEqual(await infoWith(failed(404)), {});
+    { error: true, reason: "The recipient's service declined. Nothing was sent.", attribution: null, serviceReason: null }, 'a refusal without words is said in ours');
+  assert.deepEqual(await infoWith(failed(404)), { httpStatus: 404 }, 'not found, and how the server said so');
+  assert.deepEqual(await infoWith(failed(429)), { httpStatus: 429 });
   assert.deepEqual(await infoWith(ok({ tag: 'withdrawRequest' })), {});
   const found = await infoWith(ok(PAY_REQUEST));
   assert.deepEqual([found.minSats, found.maxSats, found.commentAllowed, found.isFixedAmount], [1, 100000, 32, false]);
@@ -254,7 +256,7 @@ test('on the phone, no network reads as no network, never as "not found"', async
       '@capacitor/core': { Capacitor: { isNativePlatform: () => true } },
     }).methods;
     const info = await methods.fetchLightningAddressInfo.call({ ...methods, $t: t, walletStore: {} }, 'alice@example.com');
-    assert.deepEqual(info, { error: true, reason: "Couldn't reach the network. Please check your internet and try again.", attribution: null }, failure.message);
+    assert.deepEqual(info, { error: true, reason: "Couldn't reach the network. Please check your internet and try again.", attribution: null, serviceReason: null }, failure.message);
   }
 });
 
@@ -622,7 +624,9 @@ function payingHarness({ wallets = PAY_WALLETS, active = 'biz', funds = PAY_FUND
     '../utils/sparkPayment.js': { decodeSparkDestination: value => ({ kind: 'address', receiverAddress: value }) },
     '../utils/lud4.js': { looksLikeLud04: () => false },
     '../utils/bip21.js': { parseBip21: () => null, bip21AmountToSats: () => 0 },
-    '../utils/merchantQR.js': { ...merchantQR, parseZARFromMetadata: () => null },
+    '../utils/merchantQR.js': merchantQR,
+    // Only the pure address check: a request from here would be a real one.
+    '../utils/lnurlPay.js': { lightningAddressUrl: lnurlPay.lightningAddressUrl },
     '../utils/l1WithdrawErrors.js': { describeL1WithdrawError: error => ({ title: 'error', description: error.message }) },
     ...deps,
   });
@@ -664,6 +668,139 @@ const quietly = async fn => {
   try { return await fn(); } finally { console.log = log; }
 };
 const callsTo = (calls, method) => calls.filter(call => call[1] === method);
+
+// ── Till codes (utils/merchantQR.js) ───────────────────────────────────
+const PROVIDER_TEST_CODE = '00020129530023za.co.electrum.picknpay0122TSHP6SJNKTR3IY/confirm520458125303710540115802ZA5916cryptoqrtestscan6002CT6304821D';
+/** A till code as the Send field hands it over. */
+const scannedTill = (code = PROVIDER_TEST_CODE) => {
+  const till = merchantQR.convertToLightningAddress(code);
+  return { type: 'lightning_address', data: till.lightningAddress, source: merchantQR.SA_RETAIL_SOURCE, merchant: till.merchant, randAmount: till.randAmount };
+};
+/** Set up a till payment from the Send field with what the provider answered. */
+async function setUpTill(info, payment = scannedTill()) {
+  const harness = payingHarness({ active: 'biz' });
+  const { vm } = harness;
+  Object.assign(vm, { showSendModal: true, $t: t });
+  harness.store.lightningAddressOf = (wallet) => (wallet.id === 'biz' ? 'me@spark.example' : null);
+  vm.fetchLightningAddressInfo = async () => info;
+  vm.resolveNostrTarget = async () => assert.fail('a till code is never looked up as a Nostr name');
+  vm.resolveWalletBrand = () => null;
+  Object.defineProperty(vm, 'ratesStale', { get: () => false, configurable: true });
+  await quietly(() => vm.onPaymentDetected(payment));
+  return harness;
+}
+const PROVIDER_ANSWER = { minSendable: 81000, maxSendable: 81000, minSats: 81, maxSats: 81, isFixedAmount: true, fixedAmountSats: 81,
+  commentAllowed: 0, description: 'Pick n Pay', payerData: { identifier: { mandatory: false } }, callbackOnTillProvider: true };
+
+test('till code: the provider\'s refusal is said in plain words in the Send field, never a sheet', async () => {
+  for (const [serviceReason, said] of [
+    ['[GET /scan][400] getQrInfoBadRequest {"code":"UNKNOWN_CODE"}', "This code can't be paid. Ask the cashier for a new one."],
+    ['[GET /scan][400] getQrInfoBadRequest {"code":"NEW_CODE"}', "This code can't be paid. Ask the cashier for a new one."],
+    ['UNSUPPORTED_QR_CODE: SnapScan not supported yet.', "This store's code isn't supported yet. Pay another way."],
+    ['SMART_SHOPPER_SCANNED', "That's a rewards code. Ask the cashier for the payment QR code."],
+    ['AMOUNT_TOO_HIGH', 'This amount is over the limit. Pay another way.'],
+  ]) {
+    const { vm } = await setUpTill({ error: true, reason: serviceReason, attribution: 'Reported by the recipient', serviceReason });
+    assert.equal(vm.sendResolveError, said, serviceReason);
+    assert.equal(vm.sendResolveSource, '', 'our plain words, not labelled as theirs');
+    assert.equal(vm.showSendSheet, false);
+    assert.equal(vm.pendingPayment, null);
+  }
+});
+
+test('till code: words the app has nothing plainer for stay the provider\'s, labelled; silence is told by what it means', async () => {
+  const theirs = await setUpTill({ error: true, reason: 'Store is offline', attribution: 'Reported by the recipient', serviceReason: 'Store is offline' });
+  assert.deepEqual([theirs.vm.sendResolveError, theirs.vm.sendResolveSource], ['Store is offline', 'Reported by the recipient']);
+  const offline = await setUpTill({ error: true, reason: 'No internet connection', attribution: null, serviceReason: null });
+  assert.equal(offline.vm.sendResolveError, 'No internet connection');
+  const unknown = await setUpTill({ httpStatus: 404 });
+  assert.equal(unknown.vm.sendResolveError, "This code can't be paid. Ask the cashier for a new one.");
+  assert.equal(unknown.vm.showSendSheet, false);
+  for (const busy of [{ httpStatus: 429 }, { httpStatus: 503 }, {}]) {
+    const { vm } = await setUpTill(busy);
+    assert.equal(vm.sendResolveError, "The store's payment service isn't answering. Try again in a moment.", JSON.stringify(busy));
+    assert.equal(vm.sendResolveSource, '');
+  }
+});
+
+test('till code: the store as the provider names it, its logo, and the rand amount from the code', async () => {
+  const { vm } = await setUpTill(PROVIDER_ANSWER);
+  assert.equal(vm.showSendSheet, true);
+  assert.deepEqual(vm.pendingPayment.merchant, { id: 'picknpay', displayName: 'Pick n Pay', logo: '/sa_retailers/picknpay.png' });
+  assert.equal(vm.pendingPayment.description, 'Pick n Pay');
+  assert.equal(vm.pendingPayment.zarAmount, '1.00');
+  assert.equal(vm.pendingPayment.lightningAddress, scannedTill().data, 'the code as scanned, never lowered');
+  const props = vm.paymentSheetProps;
+  assert.deepEqual([props.recipient.name, props.recipient.logoUrl, props.zarAmount], ['Pick n Pay', '/sa_retailers/picknpay.png', '1.00']);
+  assert.equal(props.recipient.service, true, 'the storefront mark if the logo fails, never a coloured letter');
+});
+
+test('till code: a brand name on another network gets no logo', async () => {
+  const { vm } = await setUpTill({ ...PROVIDER_ANSWER, description: 'Woolworths Food Court' }, scannedTill('https://pos.snapscan.io/qr/ABC123'));
+  assert.deepEqual(vm.pendingPayment.merchant, { id: 'snapscan', displayName: 'Woolworths Food Court', logo: null });
+  assert.deepEqual([vm.paymentSheetProps.recipient.logoUrl, vm.paymentSheetProps.recipient.service], [null, true]);
+});
+
+test('till code: the sheet opens with the amount only for a narrow range; an amount printed in the code never picks one', async () => {
+  const open = { ...PROVIDER_ANSWER, isFixedAmount: false, fixedAmountSats: 0 };
+  const narrow = await setUpTill({ ...open, minSendable: 80000, maxSendable: 81000, minSats: 80, maxSats: 81 });
+  assert.deepEqual(narrow.vm.paymentSheetProps.amount, { mode: 'range', minSats: 80, maxSats: 81, defaultAmount: 81 });
+  const wide = await setUpTill({ ...open, minSendable: 1000, maxSendable: 1000000000, minSats: 1, maxSats: 1000000 });
+  assert.equal(wide.vm.pendingPayment.zarAmount, '1.00', 'the code prints R1.00');
+  assert.deepEqual(wide.vm.paymentSheetProps.amount, { mode: 'range', minSats: 1, maxSats: 1000000 }, 'never the top of a range the code does not fix');
+  assert.equal(wide.vm.showSendSheet, true, 'the person enters the amount');
+});
+
+test('till code: an amount left from an earlier payment never decides whether it can be paid', async () => {
+  const open = { ...PROVIDER_ANSWER, isFixedAmount: false, fixedAmountSats: 0, minSendable: 1000, maxSendable: 1000000000, minSats: 1, maxSats: 1000000 };
+  const harness = payingHarness({ active: 'biz' });
+  const { vm } = harness;
+  Object.assign(vm, { showSendModal: true, $t: t, paymentAmount: '900000000' });
+  vm.fetchLightningAddressInfo = async () => open;
+  vm.resolveWalletBrand = () => null;
+  Object.defineProperty(vm, 'ratesStale', { get: () => false, configurable: true });
+  await quietly(() => vm.onPaymentDetected(scannedTill()));
+  assert.equal(vm.showSendSheet, true, 'no "Insufficient balance" for an amount nobody entered for it');
+});
+
+test('till code: a code whose address cannot be asked for says it is not supported, never "try again"', async () => {
+  for (const code of ['http://2.zap.pe?t=6\ni=1:2:7', 'https://pay.zapper.com/?i=a\\b']) {
+    const till = merchantQR.convertToLightningAddress(code);
+    assert.ok(till, code);
+    const { vm } = await setUpTill({}, { type: 'lightning_address', data: till.lightningAddress, source: merchantQR.SA_RETAIL_SOURCE, merchant: till.merchant, randAmount: null });
+    assert.equal(vm.sendResolveError, "This store's code isn't supported yet. Pay another way.", code);
+  }
+  const busy = await setUpTill({});
+  assert.equal(busy.vm.sendResolveError, "The store's payment service isn't answering. Try again in a moment.", 'a code that was asked for and got no answer');
+});
+
+test('till code: an address on the provider\'s domain, pasted or linked, is one', async () => {
+  const { vm } = await setUpTill(PROVIDER_ANSWER, { type: 'lightning_address', data: 'TSHP6SJNKTR3IY%2Fconfirm@cryptoqr.net' });
+  assert.equal(vm.pendingPayment.source, merchantQR.SA_RETAIL_SOURCE);
+  assert.deepEqual(vm.pendingPayment.merchant, { id: 'provider', displayName: 'Pick n Pay', logo: null });
+  assert.equal(vm.pendingPayment.lightningAddress, 'TSHP6SJNKTR3IY%2Fconfirm@cryptoqr.net');
+  const missing = await setUpTill({ httpStatus: 404 }, { type: 'lightning_address', data: 'GONE@cryptoqr.net' });
+  assert.equal(missing.vm.sendResolveError, "This code can't be paid. Ask the cashier for a new one.", 'and never a Nostr name');
+});
+
+test('till code: another store\'s name gets no logo; a store with no name is "Store"; a forged amount is ignored', async () => {
+  const cafe = await setUpTill({ ...PROVIDER_ANSWER, description: 'Kaffeehaus am Markt' }, scannedTill('00020126230019za.co.electrum.TEST6304ABCD'));
+  assert.deepEqual(cafe.vm.pendingPayment.merchant, { id: 'electrum', displayName: 'Kaffeehaus am Markt', logo: null });
+  assert.equal(cafe.vm.pendingPayment.zarAmount, null, 'that code prints no amount');
+  const unnamed = await setUpTill({ ...PROVIDER_ANSWER, description: null }, scannedTill('https://www.zapper.com/url/TEST'));
+  assert.equal(unnamed.vm.pendingPayment.merchant.displayName, 'Store');
+  const forged = await setUpTill(PROVIDER_ANSWER, { ...scannedTill(), randAmount: '1,000,000' });
+  assert.equal(forged.vm.pendingPayment.zarAmount, null);
+});
+
+test('any other address that does not resolve still says so, in its own words', async () => {
+  const { vm } = payingHarness({ active: 'biz' });
+  Object.assign(vm, { showSendModal: true, $t: t });
+  vm.fetchLightningAddressInfo = async () => ({});
+  vm.resolveNostrTarget = async () => null;
+  await quietly(() => vm.onPaymentDetected({ type: 'lightning_address', data: 'nobody@example.com' }));
+  assert.equal(vm.sendResolveError, "We couldn't find this Lightning address");
+});
 
 test('Arkade onchain requires a quote for this wallet, destination and recipient amount', async () => {
   const { vm, store, options } = payingHarness({ active: 'ark' });
@@ -1806,6 +1943,49 @@ test('Refunds to: an address the store turns down is said on the row, the sheet 
   };
   await quietly(() => vm.confirmPayment());
   assert.deepEqual(handed.at(-1), ['lnb', { identifier: 'biz@spark.example' }]);
+});
+
+test('till code: paid, it offers no contact, keeps the store\'s name and never the code', async () => {
+  const { vm, sent } = refundHarness({ active: 'biz' });
+  const merchant = { id: 'picknpay', displayName: 'Pick n Pay', logo: '/sa_retailers/picknpay.png' };
+  Object.assign(vm, { pendingPayment: tillPayment({ merchant }), sendingWalletId: 'lnb', paymentAmount: '2500', sendSheetAmountSats: 2500 });
+  await quietly(() => vm.confirmPayment());
+  assert.equal(sent.success.recipient, 'Pick n Pay', 'the success screen names the store');
+  assert.equal(sent.success.showSaveContact, false);
+  const link = sent.links?.[0];
+  assert.equal(link.recipientAddress ?? null, null, 'the one-time code is not kept as an address');
+  assert.equal(link.label, 'Pick n Pay');
+  assert.equal(link.payAgain ?? null, null);
+  assert.equal(link.refundAddress, 'shop@lnbits.example', 'the refund address still goes with it');
+});
+
+test('till code: the provider\'s refusal at payment time is said in plain words; other words stay theirs', async () => {
+  for (const [message, reason] of [
+    ['[GET /scan][400] getQrInfoBadRequest {"code":"UNKNOWN_CODE"}', "This code can't be paid. Ask the cashier for a new one."],
+    ['[GET /scan][500] {"code":"NEW_CODE"}', "This code can't be paid. Ask the cashier for a new one."],
+    ['AMOUNT_TOO_HIGH', 'This amount is over the limit. Pay another way.'],
+    ['invalid scan request', undefined],
+  ]) {
+    const { vm, store } = refundHarness({ active: 'biz' });
+    const shown = [];
+    store.showPaymentError = (error, ctx) => { shown.push([error.message, ctx.reason]); };
+    Object.assign(vm, { pendingPayment: tillPayment({ payerData: null }), sendingWalletId: 'lnb', paymentAmount: '2500', sendSheetAmountSats: 2500 });
+    vm.fetchLightningAddressInvoice = async () => { throw errorOrigin.counterpartyError(message, ''); };
+    const error = console.error;
+    console.error = () => {};
+    try { await quietly(() => vm.confirmPayment()); } finally { console.error = error; }
+    assert.deepEqual(shown, [[message, reason]], message);
+  }
+  // The same words from any other service are left as they are.
+  const { vm, store } = refundHarness({ active: 'biz' });
+  const shown = [];
+  store.showPaymentError = (error, ctx) => { shown.push(ctx.reason); };
+  Object.assign(vm, { pendingPayment: lnAddressPayment(), sendingWalletId: 'lnb', paymentAmount: '2500', sendSheetAmountSats: 2500 });
+  vm.fetchLightningAddressInvoice = async () => { throw errorOrigin.counterpartyError('UNKNOWN_CODE', ''); };
+  const error = console.error;
+  console.error = () => {};
+  try { await quietly(() => vm.confirmPayment()); } finally { console.error = error; }
+  assert.deepEqual(shown, [undefined]);
 });
 
 test('Refunds to: the warning stays with the refused address; Pay with another wallet clears it', async () => {

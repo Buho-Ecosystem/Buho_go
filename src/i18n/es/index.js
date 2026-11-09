@@ -13,6 +13,7 @@ import boltCard from './boltCard.js';
 import walletApps from './walletApps.js';
 import payRequests from './payRequests.js';
 import refundAddress from './refundAddress.js';
+import tillCodes from './tillCodes.js';
 export default {
   ...requests,
   ...profilePayment,
@@ -67,6 +68,7 @@ export default {
   ...walletApps,
   ...payRequests,
   ...refundAddress,
+  ...tillCodes,
   // Spend: Bitrefill door
   "Gift cards, mobile top-ups and more": "Tarjetas regalo, recargas móviles y más",
   "Bitrefill is on its way": "Bitrefill está en camino",
@@ -1926,7 +1928,6 @@ export default {
   "Network error": "Problema de conexión",
   "Network fees apply": "Se aplican comisiones de red",
   "No wallet connected": "Sin cartera conectada",
-  "not yet supported": "aún no soportado",
   "Open transaction history": "Abrir historial de transacciones",
   "Other Contacts": "Otros contactos",
   "Paste an invoice or enter an address from your friend or shop": "Pega una factura o introduce una dirección de tu amigo o tienda",
@@ -1940,7 +1941,6 @@ export default {
   "Processing payment...": "Procesando pago…",
   "Receive payment": "Recibir pago",
   "Retry": "Reintentar",
-  "SA Retailer QR detected": "QR de tienda SA detectado",
   "Save contacts in the Address Book to send to multiple people at once.": "Guarda contactos en la Agenda para enviar a varias personas a la vez.",
   "Security Upgrade": "Mejora de seguridad",
   "Send payment": "Enviar pago",
@@ -1954,7 +1954,6 @@ export default {
   "Switch to your Spark wallet to pay Spark addresses": "Cambia a tu cartera Spark para pagar direcciones Spark",
   "Switch to your Spark wallet to send Bitcoin": "Cambia a tu cartera Spark para enviar Bitcoin",
   "Switch to your Spark wallet to send to this address": "Cambia a tu cartera Spark para enviar a esta dirección",
-  "This retailer is not yet supported": "Esta tienda aún no está soportada",
   "Unsupported payment format": "Aún no soportamos este formato de pago",
   "Use a Lightning invoice, address, or LNURL": "Usa una factura Lightning, dirección o enlace de pago",
   "Use sats denomination or refresh the app to load exchange rates": "Cambia a sats o recarga la app para cargar los tipos de cambio",

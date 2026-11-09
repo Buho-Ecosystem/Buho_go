@@ -6,12 +6,12 @@
  * Start `npx quasar dev --port 9047` first (or set MERCHANT_QR_BASE_URL). */
 import { chromium } from '@playwright/test';
 import assert from 'node:assert/strict';
+import { encodeTillCode } from '../src/utils/merchantQR.js';
 
 const base = process.env.MERCHANT_QR_BASE_URL || 'http://localhost:9047';
 
 const TILL_CODE = '00020129530023za.co.electrum.picknpay0122TSHP6SJNKTR3IY/confirm520458125303710540115802ZA5916cryptoqrtestscan6002CT6304821D';
 const CRAFTED = `1.zap.pe${'a'.repeat(2038)}\rX`;
-const WARNING = 'SA Retailer QR detected';
 
 const browser = await chromium.launch({ headless: true });
 const pause = (ms) => new Promise((done) => setTimeout(done, ms));
@@ -94,7 +94,8 @@ const scan = (page, text) => page.evaluate(async (value) => {
   return performance.now() - started;
 }, text);
 
-const warning = (page) => page.getByText(WARNING).count();
+/** The lookups that went to the till provider. */
+const tillLookups = (lookups) => lookups.filter((url) => new URL(url).hostname === 'cryptoqr.net');
 
 {
   const { page, context, errors, lookups } = await open();
@@ -102,7 +103,7 @@ const warning = (page) => page.getByText(WARNING).count();
   await page.locator('[data-audit="send-input"]').fill('snapscan@example.com');
   await page.locator('[data-audit="send-continue"]').click();
   await pause(1200);
-  assert.equal(await warning(page), 0, 'a Lightning address named after a retailer is not a till code');
+  assert.deepEqual(tillLookups(lookups), [], 'a Lightning address named after a retailer is not a till code');
   assert.ok(lookups.some((url) => url.includes('/.well-known/lnurlp/snapscan')), 'the address itself is resolved');
   assert.deepEqual(errors, []);
   await context.close();
@@ -115,7 +116,7 @@ const warning = (page) => page.getByText(WARNING).count();
   await page.locator('[data-audit="send-input"]').fill('0821234567');
   await pause(500);
   assert.equal(await page.locator('[data-audit="send-continue"]').count(), 0, 'a typed number offers nothing to continue');
-  assert.equal(await warning(page), 0, 'a typed number shows no retailer warning');
+  assert.equal(await page.getByText('Pick n Pay').count(), 0, 'a typed number opens no till payment');
   assert.deepEqual(errors, []);
   await context.close();
   console.log('ok  typed ten digits stay a number');
@@ -126,25 +127,36 @@ const warning = (page) => page.getByText(WARNING).count();
   await openSend(page);
   await scan(page, TILL_CODE);
   await pause(1200);
-  assert.equal(await warning(page), 0, 'a shop the provider takes shows no warning');
   assert.equal(lookups.length, 1);
+  assert.equal(tillLookups(lookups).length, 1);
   assert.ok(lookups[0].includes('TSHP6SJNKTR3IY%2Fconfirm'), 'the code goes out encoded once, with its case');
   assert.deepEqual(errors, []);
   await context.close();
   console.log('ok  scanned shop code goes to the provider');
 }
 
-for (const [code, shop] of [['0821234567', 'Scan to Pay'], ['https://pos.snapscan.io/qr/TEST', 'SnapScan']]) {
+{
+  // Everything that matches is sent at once: a Wi-Fi code that names a network stays on the phone.
+  const { page, context, errors, lookups } = await open();
+  await openSend(page);
+  await scan(page, 'WIFI:T:WPA;S:snapscan-guest;P:hunter2;;');
+  await pause(1200);
+  assert.deepEqual(tillLookups(lookups), [], 'a Wi-Fi code never reaches the provider');
+  assert.deepEqual(errors, []);
+  await context.close();
+  console.log('ok  scanned Wi-Fi code stays on the phone');
+}
+
+for (const code of ['0821234567', 'https://pos.snapscan.io/qr/TEST', 'https://www.zapper.com/url/TEST']) {
   const { page, context, errors, lookups } = await open();
   await openSend(page);
   await scan(page, code);
-  await pause(600);
-  assert.equal(await warning(page), 1, `${code} still gets the retailer warning`);
-  assert.equal(await page.getByText(`${shop} - not yet supported`).count(), 1);
-  assert.deepEqual(lookups, []);
+  await pause(1200);
+  assert.equal(tillLookups(lookups).length, 1, `${code} goes to the provider, which says whether it takes it`);
+  assert.ok(tillLookups(lookups)[0].endsWith(`/.well-known/lnurlp/${encodeTillCode(code)}`), 'encoded once, as scanned');
   assert.deepEqual(errors, []);
   await context.close();
-  console.log(`ok  scanned ${code} says ${shop} is not yet supported`);
+  console.log(`ok  scanned ${code} goes to the provider`);
 }
 
 {
