@@ -281,10 +281,14 @@ export function createWalletWatch({
     return found;
   }
 
-  /** True when the watch announces this wallet's payments from its history. */
+  /**
+   * True when the watch announces this wallet's payments from its history.
+   * A pause holds until the run that ends it (runOnce), not merely until
+   * its time is up: see there.
+   */
   function readsHistoryOf(wallet, r = records.get(wallet.id)) {
     if (!paymentsOf(wallet)?.readPage || !canReadHistory(wallet) || r?.historyRefused) return false;
-    return now() >= (r?.historyPausedUntil || 0);
+    return !r?.historyPausedUntil;
   }
 
   async function runOnce(r, reason) {
@@ -299,6 +303,17 @@ export function createWalletWatch({
       const payments = paymentsOf(wallet);
       await armChannel(r, gen, wallet, owner, payments, reason);
       if (!isCurrent(r, gen)) return;
+
+      // The end of a pause. Its history comes back as a fresh baseline,
+      // which announces nothing, so the balance speaks once more first,
+      // while the wallet still counts as paused: a payment that arrived
+      // since the last paused read is announced by the store's balance
+      // rule, not taken in silently by the baseline.
+      if (r.historyPausedUntil && now() >= r.historyPausedUntil) {
+        await within(refreshBalance(wallet.id), 'balance');
+        if (!isCurrent(r, gen)) return;
+        r.historyPausedUntil = 0;
+      }
 
       let activity = false;
       if (readsHistoryOf(wallet, r)) {

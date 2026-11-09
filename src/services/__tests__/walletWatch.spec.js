@@ -19,7 +19,7 @@ function memory() {
   return { getItem: (k) => m.get(k) ?? null, setItem: (k, v) => m.set(k, String(v)) };
 }
 
-function setup({ storage = memory(), wallets: initial, online = true, interval = null } = {}) {
+function setup({ storage = memory(), wallets: initial, online = true, interval = null, onBalance = null } = {}) {
   const clock = { t: T0 * 1000 };
   const s = () => Math.floor(clock.t / 1000);
   const wallets = initial || [
@@ -69,7 +69,7 @@ function setup({ storage = memory(), wallets: initial, online = true, interval =
     paymentsOf,
     canReadHistory: (wallet) => !noHistory.has(wallet.id),
     ruleFor: (walletId) => rules[walletId] || null,
-    refreshBalance: async (walletId) => { calls.balances.push(walletId); },
+    refreshBalance: async (walletId) => { calls.balances.push(walletId); await onBalance?.(walletId); },
     ledger,
     deliver: (receipt) => delivered.push(receipt),
     isInternal: (walletId, payment) => payment.paymentHash === 'mine',
@@ -397,7 +397,8 @@ test('each wallet type is read and watched through its own entry points', async 
 });
 
 test('history that never answers while the network does: the balance takes over, and its ledger starts afresh', async () => {
-  const h = setup();
+  const hintAtBalance = [];
+  const h = setup({ onBalance: (walletId) => { if (walletId === 'hub') hintAtBalance.push(h.watch.hint('hub')); } });
   await h.watch.start();
   h.clock.t += 10_000;
   h.history.hub.unshift(receive('n1', 3, h.s()));
@@ -411,10 +412,15 @@ test('history that never answers while the network does: the balance takes over,
   assert.equal(h.delivered.length, 0);
 
   // Not for the whole session: after the pause its history is read again.
+  // A payment just before it ends is the balance's to announce: the fresh
+  // baseline would take it in without a word.
   h.fail.hub = false;
   h.clock.t += HISTORY_PAUSE_MS;
+  h.history.hub.unshift(receive('n2', 4, h.s()));
+  hintAtBalance.length = 0;
   h.timers.filter((t) => t.ms === WATCH_INTERVAL_MS && !t.cleared).at(-1).fn();
   await flush();
+  assert.deepEqual(hintAtBalance, [false], 'the balance is read once more while the store still announces its rise');
   assert.equal(h.watch.hint('hub'), true, 'its history tells again');
   assert.equal(h.ledger.isPrimed('hub'), true, 'from a new baseline');
   assert.equal(h.delivered.length, 0, 'what the balance already said is not repeated');
