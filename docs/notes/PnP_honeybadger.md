@@ -26,14 +26,26 @@ MoneyBadger takes "the entire QR code payload" as the name and decodes it exactl
 
 ## Which codes
 
-BuhoGO recognises the networks MoneyBadger names, by how their codes look (`NETWORKS` in `merchantQR.js`). It does not decide which ones work. A recognised code goes to MoneyBadger as soon as it is scanned, so what counts is narrow (`tillSubject`):
+BuhoGO recognises the networks MoneyBadger names, by how their codes look (`NETWORKS` in `merchantQR.js`). It does not decide which ones work. A recognised code goes to MoneyBadger as soon as it is scanned, so every rule is exact (`tillNetwork`). A word that only appears somewhere in a text proves nothing: a secret key or a token can hold one by chance.
 
-- an EMV merchant code (`000201…`) is read whole, since its network sits inside it;
-- a web link is read by its host only: a page or a query that mentions a network proves nothing;
-- any other link or card (Wi-Fi, contact cards, sign-in codes, mail, phone) is never a till code;
-- other text counts only when it is one word.
+| The code | Counts when | Networks |
+|---|---|---|
+| EMV merchant code (`000201…`) | a merchant account (templates 26 to 51) names the network in its sub-tag 00, and every field fits | Pick n Pay (`za.co.electrum.picknpay`), Electrum (`za.co.electrum…`), Ecentric (`za.co.ecentric…`) |
+| Web link | its host is the network's domain or below it | SnapScan (`snapscan.io`, `snapscan.co.za`), Yoyo (`wigroup.co`, `yoyogroup.co`), Zapper (`zapper.com`, `<digits>.zap.pe`), Pay@ (`payat.io`), Netcash and Sage Pay (`paynow.….co.za`), Transaction Junction, Scan to Pay (`scantopay.io`, `oltio.co.za`), MoneyBadger (`cryptoqr.net`) |
+| Any other one-word text | it is one of these shapes, whole | Scan to Pay: 10 digits. Zapper: 20 digits. Pay@: `xx/xxxx/` and 20 characters. Standard Bank: `SK-<digits>-<23 digits>`. Parking: `CRSTPC-` and five numbers |
 
-Bare 10 and 20 digit numbers are Scan to Pay and Zapper codes, so a scanned number of that length goes to MoneyBadger too. MoneyBadger's answer is said in plain words:
+Any other link or card (Wi-Fi, contact cards, sign-in codes, mail, phone) is never a till code. A network named in an EMV code's reference or name is not its network, so such a code never gets that store's logo.
+
+Where the shapes come from:
+- **Scan to Pay's operator:** its developer docs say a scanned code is "the decoded ten-digit masterpass QRCode", or a link such as `https://regstest.oltio.co.za/qr/?c=…` ([payments use cases](https://developer.eftcorp.com/docs/payments-use-cases)). Each of the five ten-digit codes in its examples goes to MoneyBadger here, and so does the link.
+- **An open-source integration with MoneyBadger:** of its 28 sample texts, 18 codes give the same address here, among them Zapper links holding quotes, `@` and `%`, and the 6 it refuses are refused here too. The other 4 are EMV samples edited by hand, so their lengths no longer add up. A code whose fields don't fit is not read as one here.
+- **MoneyBadger's own test code and spec example**, and a Pick n Pay till code of the same form: every field fits, and its checksum is valid.
+
+Two older patterns, `UMPQR` or `easypay` anywhere in a text, are gone: no public source shows what such a code looks like.
+
+A Kenyan or Zambian mobile number (10 digits from `07`, `01` or `09`) is read first and opens a phone payout (`SendModal.vue`). None of the operator's examples starts with `0`.
+
+MoneyBadger's answer is said in plain words:
 
 | MoneyBadger's answer | What the person reads |
 |---|---|

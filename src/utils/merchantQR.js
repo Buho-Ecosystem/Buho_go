@@ -21,27 +21,36 @@ const CRYPTOQR_DOMAIN = 'cryptoqr.net';
 const MAX_QR_LENGTH = 2048;
 
 /**
- * The till networks the provider names, by how their codes look. Patterns
- * run on whatever a camera reads: repeats are never nested, and text past
- * MAX_QR_LENGTH never reaches them. Order matters: the specific Electrum
- * code (Pick n Pay) before the generic one.
+ * The till networks the provider names, and how each one's codes look.
+ * Whatever matches is sent to the provider as soon as it is scanned, so a
+ * word that merely appears in a text proves nothing (a secret key or a
+ * token can hold one by chance). Each rule is exact (tillNetwork):
+ *   - `account`: an EMV merchant code names its network in a merchant
+ *     account (templates 26 to 51), by the reverse domain in sub-tag 00.
+ *     Anywhere else in the code (a reference, a name) it names nothing.
+ *   - `host`: a web link is the network's when its host is the network's
+ *     domain or below it.
+ *   - `code`: any other code is one of these shapes, whole.
+ * Order matters: Pick n Pay's own Electrum code before Electrum's. Patterns
+ * never nest repeats, and text past MAX_QR_LENGTH never reaches them.
  *
  * `name` is shown only when the provider names no store, and only where the
  * code itself names one: a network is not a shop.
  */
 const NETWORKS = [
-  { id: 'picknpay', name: 'Pick n Pay', pattern: /za\.co\.electrum\.picknpay/i },
-  { id: 'ecentric', name: null, pattern: /za\.co\.ecentric/i },
-  { id: 'electrum', name: null, pattern: /za\.co\.electrum/i },
-  { id: 'snapscan', name: null, pattern: /snapscan/i },
-  { id: 'yoyo', name: null, pattern: /wigroup\.co|yoyogroup\.co/i },
+  { id: 'picknpay', name: 'Pick n Pay', account: /^za\.co\.electrum\.picknpay$/i },
+  { id: 'ecentric', name: null, account: /^za\.co\.ecentric(?:\.|$)/i },
+  { id: 'electrum', name: null, account: /^za\.co\.electrum(?:\.|$)/i },
+  { id: 'snapscan', name: null, host: /(?:^|\.)snapscan\.(?:io|co\.za)$/i },
+  { id: 'yoyo', name: null, host: /(?:^|\.)(?:wigroup|yoyogroup)\.co$/i },
   {
     id: 'zapper',
     name: null,
-    pattern: /^(?:.*(?:zapper\.com|\.wigroup\.|payat\.io|paynow\.(?:netcash|sagepay)\.co\.za|transactionjunction\.co\.za).*|.{2}\/.{4}\/.{20}|SK-\d+-\d{23}|\d{20}|CRSTPC-\d+-\d+-\d+-\d+-\d+)$|^.*\d\.zap\.pe/i,
+    host: /(?:^|\.)(?:zapper\.com|payat\.io|paynow\.netcash\.co\.za|paynow\.sagepay\.co\.za|transactionjunction\.co\.za)$|^\d+\.zap\.pe$/i,
+    code: /^(?:.{2}\/.{4}\/.{20}|SK-\d+-\d{23}|\d{20}|CRSTPC-\d+-\d+-\d+-\d+-\d+)$/i,
   },
-  { id: 'scantopay', name: null, pattern: /scantopay\.io|^\d{10}$|payat\.io|UMPQR|\.oltio\.co\.za|easypay/i },
-  { id: 'provider', name: null, pattern: /cryptoqr\.net/i },
+  { id: 'scantopay', name: null, host: /(?:^|\.)(?:scantopay\.io|oltio\.co\.za)$/i, code: /^\d{10}$/ },
+  { id: 'provider', name: null, host: /(?:^|\.)cryptoqr\.net$/i },
 ];
 
 /**
@@ -76,27 +85,58 @@ function tillCode(data) {
 }
 
 /**
- * The part of a code the network patterns read, or null when the code
- * cannot be a till code. Everything that matches leaves the phone, so:
- *   - an EMV merchant code is read whole (its network sits inside it);
- *   - a web link is read by its host only: a page or a query that mentions
- *     a network proves nothing;
- *   - any other link or card (Wi-Fi, contact cards, sign-in codes, mail,
- *     phone) is never a till code;
- *   - other text is read whole when it is one word.
+ * The fields of an EMV merchant code, or of a template inside one: each a
+ * two-digit id, a two-digit length and the value, in order. Null unless they
+ * fill the text exactly, each id once.
  */
-function tillSubject(code) {
-  if (code.startsWith('000201')) return code;
+function emvFields(text) {
+  const fields = new Map();
+  let at = 0;
+  while (at < text.length) {
+    const head = text.slice(at, at + 4);
+    if (!/^\d{4}$/.test(head)) return null;
+    const id = head.slice(0, 2);
+    const length = Number(head.slice(2));
+    const value = text.slice(at + 4, at + 4 + length);
+    if (value.length !== length || fields.has(id)) return null;
+    fields.set(id, value);
+    at += 4 + length;
+  }
+  return fields;
+}
+
+/** The ids of an EMV code's merchant accounts (templates 26 to 51, sub-tag 00). */
+function emvAccountIds(code) {
+  const ids = [];
+  for (const [id, value] of emvFields(code) || []) {
+    const account = id >= '26' && id <= '51' ? emvFields(value)?.get('00') : null;
+    if (account) ids.push(account);
+  }
+  return ids;
+}
+
+/**
+ * The network a till code belongs to (the rules at NETWORKS), or null when
+ * the text cannot be one. Any other link or card (Wi-Fi, contact cards,
+ * sign-in codes, mail, phone) and any text with a space in it is never one.
+ */
+function tillNetwork(code) {
+  if (code.startsWith('000201')) {
+    const accounts = emvAccountIds(code);
+    return NETWORKS.find((n) => n.account && accounts.some((id) => n.account.test(id))) || null;
+  }
   const scheme = /^([a-z][a-z0-9+.-]*):/i.exec(code)?.[1].toLowerCase();
   if (scheme === 'http' || scheme === 'https') {
+    let host;
     try {
-      return new URL(code).hostname || null;
+      host = new URL(code).hostname;
     } catch {
       return null;
     }
+    return (host && NETWORKS.find((n) => n.host?.test(host))) || null;
   }
   if (scheme || /\s/.test(code)) return null;
-  return code;
+  return NETWORKS.find((n) => n.code?.test(code)) || null;
 }
 
 /**
@@ -109,9 +149,7 @@ function tillSubject(code) {
  */
 export function getMerchantInfo(data) {
   const code = tillCode(data);
-  const subject = code && tillSubject(code);
-  if (!subject) return null;
-  const network = NETWORKS.find((n) => n.pattern.test(subject));
+  const network = code && tillNetwork(code);
   return network ? { id: network.id, displayName: network.name } : null;
 }
 
@@ -175,21 +213,11 @@ function emvCrc(text) {
 export function readEmvAmount(data) {
   const code = tillCode(data);
   if (!code || !code.startsWith('000201')) return null;
-  const tags = new Map();
-  let at = 0;
-  while (at < code.length) {
-    const head = code.slice(at, at + 4);
-    if (!/^\d{4}$/.test(head)) return null;
-    const id = head.slice(0, 2);
-    const length = Number(head.slice(2));
-    const value = code.slice(at + 4, at + 4 + length);
-    if (value.length !== length || tags.has(id)) return null;
-    tags.set(id, value);
-    at += 4 + length;
-    if (id === '63') break;
-  }
-  if (at !== code.length || !/^[0-9A-F]{4}$/i.test(tags.get('63') || '')) return null;
-  if (emvCrc(code.slice(0, -4)) !== tags.get('63').toUpperCase()) return null;
+  const tags = emvFields(code);
+  const crc = tags?.get('63');
+  // The checksum is the last field and covers everything before its value.
+  if (!crc || [...tags.keys()].pop() !== '63' || !/^[0-9A-F]{4}$/i.test(crc)) return null;
+  if (emvCrc(code.slice(0, -4)) !== crc.toUpperCase()) return null;
   if (tags.get('53') !== '710' || tags.has('55')) return null;
   const amount = tags.get('54');
   if (!amount || !/^\d{1,10}(?:\.\d{1,2})?$/.test(amount) || !(Number(amount) > 0)) return null;

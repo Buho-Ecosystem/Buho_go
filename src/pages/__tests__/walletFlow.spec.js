@@ -759,7 +759,7 @@ test('till code: an address on the provider\'s domain, pasted or linked, is one'
 });
 
 test('till code: another store\'s name gets no logo; a store with no name is "Store"; a forged amount is ignored', async () => {
-  const cafe = await setUpTill({ ...PROVIDER_ANSWER, description: 'Kaffeehaus am Markt' }, scannedTill('00020126270021za.co.electrum.TEST6304ABCD'));
+  const cafe = await setUpTill({ ...PROVIDER_ANSWER, description: 'Kaffeehaus am Markt' }, scannedTill('00020126230019za.co.electrum.TEST6304ABCD'));
   assert.deepEqual(cafe.vm.pendingPayment.merchant, { id: 'electrum', displayName: 'Kaffeehaus am Markt', logo: null });
   assert.equal(cafe.vm.pendingPayment.zarAmount, null, 'that code prints no amount');
   const unnamed = await setUpTill({ ...PROVIDER_ANSWER, description: null }, scannedTill('https://www.zapper.com/url/TEST'));

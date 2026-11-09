@@ -20,6 +20,8 @@ import {
   tillMerchant,
   tillPrefillSats,
 } from '../merchantQR.js';
+import { lightningAddressUrl } from '../lnurlPay.js';
+import { bech32 } from 'bech32';
 
 // From the provider: its test QR, and the example in its scanner spec.
 const PROVIDER_TEST_CODE = '00020129530023za.co.electrum.picknpay0122TSHP6SJNKTR3IY/confirm520458125303710540115802ZA5916cryptoqrtestscan6002CT6304821D';
@@ -34,6 +36,25 @@ const GIVE_UP_MS = 5000;
 
 /** True for text that reads as a till code. */
 const isTillCode = (text) => getMerchantInfo(text) !== null;
+
+/** EMV fields, each [id, value], as a code writes them: id, two-digit length, value. */
+const emv = (...fields) => fields.map(([id, value]) => `${id}${String(value.length).padStart(2, '0')}${value}`).join('');
+/** A whole EMV merchant code with these fields after the format indicator (its checksum is not worked out). */
+const emvCode = (...fields) => `${emv(['00', '01'], ...fields)}6304ABCD`;
+/** A merchant account (templates 26 to 51) of the network with this id. */
+const account = (id, reference = 'TEST') => emv(['00', id], ['01', reference]);
+const ECENTRIC_CODE = emvCode(['26', account('za.co.ecentric.payment')]);
+const ELECTRUM_CODE = emvCode(['26', account('za.co.electrum.checkers')]);
+/**
+ * A secret key in the form a Nostr app shows it, holding letters a pattern
+ * once matched anywhere ("umpqr"). Made up for the test: nobody's key.
+ */
+const NSEC_WITH_NETWORK_LETTERS = (() => {
+  const words = Array.from({ length: 52 }, (_, i) => (i * 7) % 32);
+  words.splice(10, 5, 28, 27, 1, 0, 3); // u m p q r
+  words[51] = 0; // 256 bits fill 52 words with 4 bits to spare
+  return bech32.encode('nsec', words);
+})();
 const MATCHER_URL = new URL('../merchantQR.js', import.meta.url).href;
 const WORKER_SOURCE = `
   const { parentPort, workerData } = require('node:worker_threads');
@@ -68,14 +89,14 @@ describe('recognising a till code', () => {
   const families = [
     [PROVIDER_TEST_CODE, 'picknpay'],
     [PROVIDER_EXAMPLE, 'picknpay'],
-    ['00020126270021za.co.ecentric.TEST6304ABCD', 'ecentric'],
-    ['00020126270021za.co.electrum.TEST6304ABCD', 'electrum'],
+    [ECENTRIC_CODE, 'ecentric'],
+    [ELECTRUM_CODE, 'electrum'],
+    [emvCode(['26', account('za.co.mp', '0123456789')], ['27', account('za.co.electrum.picknpay')]), 'picknpay'],
     ['https://pos.snapscan.io/qr/TEST', 'snapscan'],
     ['https://snapscan.co.za/qr/TEST', 'snapscan'],
     ['https://wigroup.co/TEST', 'yoyo'],
     ['https://yoyogroup.co/TEST', 'yoyo'],
     ['https://www.zapper.com/url/TEST', 'zapper'],
-    ['https://x.wigroup.example/TEST', 'zapper'],
     ['ab/cdef/ghijklmnopqrstuvwxyz', 'zapper'],
     ['https://payat.io/qr/TEST', 'zapper'],
     ['https://paynow.netcash.co.za/TEST', 'zapper'],
@@ -89,9 +110,7 @@ describe('recognising a till code', () => {
     ['CRSTPC-1-2-3-4-5', 'zapper'],
     ['https://scantopay.io/TEST', 'scantopay'],
     ['0821234567', 'scantopay'],
-    ['UMPQR123', 'scantopay'],
     ['https://x.oltio.co.za/TEST', 'scantopay'],
-    ['easypay-TEST', 'scantopay'],
     ['https://cryptoqr.net/TEST', 'provider'],
   ];
 
@@ -136,12 +155,44 @@ describe('text that is not a till code', () => {
     'MECARD:N:Ann;EMAIL:ann@zapper.com;;',
     'geo:0,0?q=snapscan',
     'pay with snapscan',
+    // A host is the network's only when it is the network's domain or below it.
+    'https://x.wigroup.example/TEST',
+    'https://www.easypayindia.example/reset?session=SECRET123',
+    'https://login.mysnapscanner.example/auth?code=SECRET123',
+    'https://zapper.com.evil.example/x',
+    'https://evilzapper.com/x',
+    'https://zapper.com@evil.example/x',
+    'https://1.zap.pe.evil.example/x',
+    // Any other text is a network's only in one of its shapes, whole.
+    NSEC_WITH_NETWORK_LETTERS,
+    'cashuBo2FteCJodHRwczovL21pbnQuZXhhbXBsZS5jb21hdWNzYXRhdIGiYWlIAJumPQR1',
+    'L1aW4aubDFB7yfras2S1mN3bqgUmPqR8nkoLmJebSLD5BWv3ENZ',
+    'xsnapscanx',
+    'pay.zapper.com/TEST',
+    'UMPQR123',
+    'easypay-TEST',
+    'SK-1-00000000000000000000000-more',
+    'x0821234567',
+    // An EMV code names its network in a merchant account, nowhere else.
+    emvCode(['26', account('za.co.example.shared')], ['62', emv(['05', 'za.co.electrum.picknpay'])]),
+    emvCode(['26', account('za.co.example.shared')], ['59', 'za.co.ecentric']),
+    emvCode(['26', account('ZA.CO.ELECTRUM-PICKNPAY')]),
+    emvCode(['26', emv(['01', 'za.co.electrum.picknpay'])]),
+    // Nor does a code whose fields do not fit.
+    '00020129530019za.co.ecentric.payment0122TEST/confirm5303710540115802ZA6304ABCD',
+    `${emvCode(['26', account('za.co.electrum.picknpay')])}X`,
   ]) {
     test(`a code that only mentions a network: ${JSON.stringify(text.slice(0, 40))}`, () => {
       assert.equal(getMerchantInfo(text), null);
       assert.equal(convertToLightningAddress(text), null);
     });
   }
+
+  test('a network named outside a merchant account is not the code\'s network', () => {
+    const code = emvCode(['26', account('za.co.electrum.checkers')], ['62', emv(['05', 'za.co.electrum.picknpay'])]);
+    assert.equal(getMerchantInfo(code).id, 'electrum');
+    assert.equal(tillMerchant(getMerchantInfo(code), 'Pick n Pay', 'Store').logo, null, 'no Pick n Pay logo for it');
+  });
 
   for (const text of ['hello', '123456789', '12345678901', 'Visit us\nwww.zapper.com', 'BEGIN:VCARD\nEMAIL:ann@zapper.com\nEND:VCARD']) {
     test(`ordinary text: ${JSON.stringify(text)}`, () => {
@@ -178,7 +229,7 @@ describe('turning a till code into an address', () => {
       ['https://www.zapper.com/url/TEST', 'https%3A%2F%2Fwww.zapper.com%2Furl%2FTEST@cryptoqr.net'],
       ['https://pos.snapscan.io/qr/TEST', 'https%3A%2F%2Fpos.snapscan.io%2Fqr%2FTEST@cryptoqr.net'],
       ['0821234567', '0821234567@cryptoqr.net'],
-      ['00020126270021za.co.ecentric.TEST6304ABCD', '00020126270021za.co.ecentric.TEST6304ABCD@cryptoqr.net'],
+      [ECENTRIC_CODE, `${ECENTRIC_CODE}@cryptoqr.net`],
     ]) {
       assert.equal(convertToLightningAddress(code).lightningAddress, address, code);
     }
@@ -195,12 +246,13 @@ describe('turning a till code into an address', () => {
   });
 
   test('the address is one every path accepts: only letters, digits, - _ . and %XX', () => {
-    const tricky = `000201za.co.electrum.picknpay ${"!'()*~/\\?#[]@:;,$&=+ äöü 💸"}${'Z'.repeat(300)}`;
+    const tricky = `https://pay.zapper.com/?t=6&i=${"!'()*~/?#[]@:;,$&=+ äöü 💸"}${'Z'.repeat(300)}`;
     const { lightningAddress } = convertToLightningAddress(tricky);
     const name = lightningAddress.slice(0, lightningAddress.lastIndexOf('@'));
     assert.match(name, /^(?:[A-Za-z0-9._-]|%[0-9A-F]{2})+$/);
     assert.equal(decodeURIComponent(name), tricky.trim());
     assert.ok(name.endsWith('Z'.repeat(300)), 'a long code is kept whole');
+    assert.equal(lightningAddressUrl(lightningAddress), `https://cryptoqr.net/.well-known/lnurlp/${name}`);
   });
 
   test('carries the rand amount printed in the code', () => {
@@ -271,7 +323,7 @@ describe('the rand amount printed in the code (EMV tags 53 and 54)', () => {
 
 describe('the store on the sheet', () => {
   const network = getMerchantInfo(PROVIDER_TEST_CODE);
-  const other = getMerchantInfo('00020126270021za.co.electrum.TEST6304ABCD');
+  const other = getMerchantInfo(ELECTRUM_CODE);
 
   test('the provider\'s name, with a logo only for a store BuhoGO holds one for', () => {
     assert.deepEqual(tillMerchant(network, 'Pick n Pay', 'Store'), { id: 'picknpay', displayName: 'Pick n Pay', logo: '/sa_retailers/picknpay.png' });
@@ -285,7 +337,7 @@ describe('the store on the sheet', () => {
     assert.deepEqual(tillMerchant(snapscan, 'Woolworths Food Court', 'Store'), { id: 'snapscan', displayName: 'Woolworths Food Court', logo: null });
     assert.equal(tillMerchant(other, 'Pick n Pay', 'Store').logo, null, 'Pick n Pay tills are their own network');
     assert.equal(tillMerchant({ id: 'provider', displayName: null }, 'Checkers', 'Store').logo, null);
-    assert.equal(tillMerchant(getMerchantInfo('00020126250019za.co.ecentric.TEST6304ABCD'), 'Woolworths', 'Store').logo, '/sa_retailers/woolworths.png');
+    assert.equal(tillMerchant(getMerchantInfo(ECENTRIC_CODE), 'Woolworths', 'Store').logo, '/sa_retailers/woolworths.png');
     assert.equal(tillMerchant(other, 'Shoprite Usave', 'Store').logo, '/sa_retailers/shoprite.png');
   });
 
@@ -437,6 +489,8 @@ describe('hostile input', () => {
     ['endless slashes', '/'.repeat(CAP)],
     ['a broken Bitcoin link', `bitcoin:${'%'.repeat(CAP - 8)}`],
     ['a broken LNURL', `lnurl1${'q'.repeat(CAP - 6)}`],
+    ['an EMV code of endless fields', `000201${'2604'.repeat(CAP / 4 - 2)}`],
+    ['an EMV code of endless accounts', `000201${'2608000400000'.repeat(150)}`],
   ];
 
   for (const [name, text] of hostile) {
@@ -446,14 +500,14 @@ describe('hostile input', () => {
     });
   }
 
+  const padded = (length) => `https://www.zapper.com/${'a'.repeat(length - 23)}`;
+
   test('text past the limit is not looked at', () => {
-    const padded = (length) => `za.co.electrum.picknpay${'a'.repeat(length - 23)}`;
     assert.equal(isTillCode(padded(CAP)), true);
     assert.equal(isTillCode(padded(CAP + 1)), false);
   });
 
   test('the limit applies after trimming', () => {
-    const code = `za.co.electrum.picknpay${'a'.repeat(CAP - 23)}`;
-    assert.equal(isTillCode(`   ${code}   `), true);
+    assert.equal(isTillCode(`   ${padded(CAP)}   `), true);
   });
 });

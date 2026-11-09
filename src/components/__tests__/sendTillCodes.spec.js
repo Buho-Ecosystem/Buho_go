@@ -8,6 +8,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { readFileSync } from 'node:fs';
 import { transformSync } from 'esbuild';
+import { bech32 } from 'bech32';
 import * as lud23 from '../../utils/lud23.js';
 import * as merchantQR from '../../utils/merchantQR.js';
 import * as bip21 from '../../utils/bip21.js';
@@ -20,6 +21,13 @@ import * as clipboardSuggestion from '../../utils/clipboardSuggestion.js';
 const TILL_CODE = '00020129530023za.co.electrum.picknpay0122TSHP6SJNKTR3IY/confirm520458125303710540115802ZA5916cryptoqrtestscan6002CT6304821D';
 const NPUB_WITH_RETAILER_WORD = 'npub1qf8znth8248fx577w3z7ggf4tr4p7geyghu05y3tfejma3a7umpqr9x855';
 const SPARK_ADDRESS = 'spark1abcdef';
+/** A secret key holding letters a pattern once matched anywhere ("umpqr"). Made up: nobody's key. */
+const NSEC_WITH_NETWORK_LETTERS = (() => {
+  const words = Array.from({ length: 52 }, (_, i) => (i * 7) % 32);
+  words.splice(10, 5, 28, 27, 1, 0, 3); // u m p q r
+  words[51] = 0;
+  return bech32.encode('nsec', words);
+})();
 
 function sendSheet() {
   const source = readFileSync(new URL('../SendModal.vue', import.meta.url), 'utf8');
@@ -98,6 +106,18 @@ test('the rand amount printed in the code goes along', async () => {
 // mentions a network stays on the phone.
 for (const text of ['WIFI:T:WPA;S:snapscan-guest;P:hunter2;;', 'otpauth://totp/Snapscan:me?secret=JBSWY3DPEHPK3PXP', 'https://example.com/reset?token=SECRET&ref=snapscan']) {
   test(`${text.slice(0, 28)}... never goes to the provider`, async () => {
+    const { emitted, notices, processing } = await scan(text);
+    assert.deepEqual(emitted, []);
+    assert.equal(notices[0]?.message, "We don't recognize this code");
+    assert.equal(processing, false);
+  });
+}
+
+// A secret key or a token can hold a network's letters by chance. It is no
+// till code, and it never leaves the phone as one.
+for (const text of [NSEC_WITH_NETWORK_LETTERS, 'cashuBo2FteCJodHRwczovL21pbnQuZXhhbXBsZS5jb21hdWNzYXRhdIGiYWlIAJumPQR1']) {
+  test(`${text.slice(0, 16)}... holds a network's letters and still never goes to the provider`, async () => {
+    assert.match(text, /umpqr/i);
     const { emitted, notices, processing } = await scan(text);
     assert.deepEqual(emitted, []);
     assert.equal(notices[0]?.message, "We don't recognize this code");
