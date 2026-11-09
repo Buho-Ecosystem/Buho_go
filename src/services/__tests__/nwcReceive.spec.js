@@ -203,6 +203,36 @@ test('notifications are only a hint to look, with the payment hash when it is on
   assert.equal(hints.length, 3, 'a stopped watch says nothing');
 });
 
+/** An invoice, its hash as the invoice names it, and a hash a wallet could claim instead. */
+async function invoiceWithWrongClaim() {
+  const invoice = profileInvoiceFixture(21, 1_800_000_000_000);
+  const { paymentHash } = await makeNwcInvoice(connection({ make: () => ({ invoice }) }).nwc, { amountSats: 21 });
+  return { invoice, paymentHash, claimed: 'ef'.repeat(32) };
+}
+
+test('a notification names the payment by its invoice\'s hash, whatever hash it claims', async () => {
+  const { invoice, paymentHash, claimed } = await invoiceWithWrongClaim();
+  const { nwc, subs } = notifyingClient();
+  const hints = [];
+  const watch = await watchNwcPayments(nwc, (hint) => hints.push(hint));
+  subs[0].onNotification({ notification_type: 'payment_received', notification: { invoice, payment_hash: claimed } });
+  assert.deepEqual(hints, [{ paymentHash }]);
+  watch.stop();
+});
+
+test('a new invoice is watched under the hash it names, whatever hash the wallet answers with', async () => {
+  const { invoice, paymentHash, claimed } = await invoiceWithWrongClaim();
+  const made = await makeNwcInvoice(connection({ make: () => ({ invoice, payment_hash: claimed }) }).nwc, { amountSats: 21 });
+  assert.equal(made.paymentHash, paymentHash);
+});
+
+test('a wallet that can only list finds a paid invoice by the hash it names', async () => {
+  const { invoice, paymentHash, claimed } = await invoiceWithWrongClaim();
+  const client = { listTransactions: async () => ({ transactions: [{ type: 'incoming', invoice, payment_hash: claimed, amount: 21000, state: 'settled', settled_at: 1_800_000_050 }] }) };
+  assert.equal((await lookupNwcInvoice({ client }, paymentHash, { methods: ['list_transactions'] })).paid, true);
+  assert.equal((await lookupNwcInvoice({ client }, claimed, { methods: ['list_transactions'] })).paid, false, 'not under the claimed one');
+});
+
 test('back in front: one fresh subscription replaces the old; otherwise only when no relay is connected', async () => {
   const { nwc, client, subs } = notifyingClient();
   const watch = await watchNwcPayments(nwc, () => {});
@@ -237,6 +267,14 @@ test('the list read gives settled rows, and a failure is never an empty list', a
   assert.deepEqual([row.id, row.type, row.status, row.amount, row.settled_at, row.created_at], [HASH, 'receive', 'completed', 21, 1790000600, 1790000000]);
   const failing = { listTransactions: async () => { throw sdk('reply timeout: x', 'INTERNAL'); } };
   await assert.rejects(listNwcPayments(failing), /reply timeout/);
+});
+
+test('a listed payment is found by its invoice\'s hash, whatever hash the record claims', async () => {
+  const invoice = profileInvoiceFixture(21, 1_800_000_000_000);
+  const { paymentHash } = await makeNwcInvoice(connection({ make: () => ({ invoice }) }).nwc, { amountSats: 21 });
+  const nwc = { listTransactions: async () => ({ transactions: [{ type: 'incoming', invoice, payment_hash: 'ef'.repeat(32), amount: 21, state: 'settled', settled_at: 1_800_000_050 }] }) };
+  const [row] = await listNwcPayments(nwc);
+  assert.equal(row.id, paymentHash);
 });
 
 test('one payment by its hash: amounts in sats; a record without state, or no lookup grant, decides nothing', async () => {

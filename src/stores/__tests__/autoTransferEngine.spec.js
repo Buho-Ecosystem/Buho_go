@@ -295,7 +295,7 @@ test('from LNbits or NWC, a Lightning address is paid only with an invoice for t
       provider.getBalance = async () => ({ balance: 50_000 });
       walletStore.ensureLNBitsConnected = async () => ({ payInvoice: async ({ invoice }) => { paid.push(invoice); return { payment_hash: 'h' }; } });
       walletStore.nwcConnection = async () => ({});
-      walletStore.nwcLimitFor = () => null;
+      walletStore.nwcPayOptions = () => ({ limit: null });
       await aw.checkAndExecute(id, 50_000, walletStore);
       const [event] = aw.configs[id].events;
       assert.equal(event.outcome, outcome, `${shopType} ${answer}`);

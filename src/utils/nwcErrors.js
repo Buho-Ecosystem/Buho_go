@@ -33,6 +33,25 @@ const DEFINITE_FAILURES = new Set([
   'FEE_LIMIT_EXCEEDED', NWC_ERROR.LIMIT_TOO_LOW, NWC_ERROR.RECEIVE_NOT_ALLOWED,
 ]);
 
+/**
+ * The wallet will not run this method for this connection. NIP-47 has two
+ * codes for it, RESTRICTED (not granted) and NOT_IMPLEMENTED (not built),
+ * and wallets use them interchangeably: some answer RESTRICTED for a method
+ * they do not have at all. Either way, asking again changes nothing.
+ */
+export function isNotOffered(error) {
+  return error?.code === 'RESTRICTED' || error?.code === 'NOT_IMPLEMENTED';
+}
+
+/**
+ * The wallet will not do this for this connection, now or later: the
+ * method is not offered, or the wallet does not know the connection
+ * (UNAUTHORIZED). Readers stop asking instead of retrying.
+ */
+export function isRefusal(error) {
+  return isNotOffered(error) || error?.code === 'UNAUTHORIZED';
+}
+
 function messageOf(error) {
   return String(error?.message || error || '');
 }
@@ -111,7 +130,8 @@ export function nwcErrorText(error, t, { walletName = '', locale } = {}) {
   const wallet = walletName || t('your wallet app');
   switch (error?.code) {
     case 'QUOTA_EXCEEDED':
-      return t('This connection has used up its spending limit. Raise it in {wallet}, or wait until it resets.', { wallet });
+      // A limit per payment and a budget used up both answer this.
+      return t('This payment is over what this connection may spend right now. Pay less, or raise the limit in {wallet}.', { wallet });
     case NWC_ERROR.LIMIT_TOO_LOW:
       return error.renewsAt
         ? t('This connection has {amount} sats left until {date}. Raise the limit in {wallet}, or pay less.', { amount: Number(error.remainingSats || 0).toLocaleString(locale), date: dayOf(error.renewsAt, locale), wallet })

@@ -843,7 +843,7 @@ export default {
         const pr = this.invoice.paymentRequest;
         // Mirror the wallet store's cross-wallet transfer branching:
         // NWC takes a bare string; Spark / LNbits take an object.
-        if (wallet.type === 'nwc') await payWithNwc(provider, pr, { limit: this.walletStore.nwcLimitFor(wallet.id) });
+        if (wallet.type === 'nwc') await payWithNwc(provider, pr, this.walletStore.nwcPayOptions(wallet.id));
         else await provider.payInvoice({ invoice: pr });
       } catch (err) {
         // The wallet threw. Usually nothing was sent, but an errored-yet-settled

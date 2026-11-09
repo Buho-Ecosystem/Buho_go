@@ -8,13 +8,13 @@
 import { normalizeTx } from './txNormalizer.js';
 import { paymentTimeMs } from './recipientPayments.js';
 import { readCachedTransactions, mergeCachedTransactions } from '../utils/txCache.js';
+import { isRefusal } from '../utils/nwcErrors.js';
 
 export const PREVIEW_READ_TIMEOUT_MS = 4000;
 export const PREVIEW_METADATA_TIMEOUT_MS = 750;
 export const PREVIEW_RECONCILE_MS = 15000;
 export const PREVIEW_RETRY_MS = [250, 750, 1500, 3000];
 
-const unavailable = (error) => ['RESTRICTED', 'NOT_IMPLEMENTED', 'UNAUTHORIZED'].includes(error?.code);
 const completed = (row) => row?.status === 'completed';
 // Observation is only an upper bound on when receipt settlement happened.
 // It can prove a later send is newer, but must never become a row timestamp.
@@ -228,7 +228,7 @@ export function createLatestTransactionPreview({
       publish({ phase: latest ? 'ready' : 'empty', transaction: latest, receipt: null, busy: false, error: null });
     } catch (error) {
       if (!owns() || error?.code === 'SUPERSEDED' || version !== activityVersion) return;
-      if (unavailable(error)) settleUnavailable('unsupported');
+      if (isRefusal(error)) settleUnavailable('unsupported');
       else if (receipt && !receiptResolved && state.phase !== 'unavailable') scheduleRetry();
       else settleUnavailable(error?.code === 'TIMEOUT' ? 'timeout' : 'failed');
     } finally {

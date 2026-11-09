@@ -742,6 +742,7 @@ import { zapInfoFromTx } from '../utils/zaps';
 import { getTxDescription, getTxMessage, isPlaceholderDescription } from '../utils/txMessage.js';
 import { zapperProfile, zapperProfileEvent } from '../services/zapperProfiles';
 import { NOSTRICH_HEAD_ICON } from '../utils/nostrIcon.js';
+import { nwcPaymentHash } from '../utils/nwcWallet.js';
 import { EARN_BRAND, earnRewardKind } from '../services/earnBrand';
 import RequestMoneyFlow from '../components/chat/RequestMoneyFlow.vue';
 import RecipientPaymentsSheet from '../components/RecipientPaymentsSheet.vue';
@@ -1527,11 +1528,17 @@ export default {
       for (let page = 0; page < NWC_LOOKUP_PAGES; page += 1) {
         const response = await nwc.listTransactions({ limit: NWC_PAGE_SIZE, offset: page * NWC_PAGE_SIZE });
         const transactions = response?.transactions || [];
-        const found = transactions.find(tx => tx.id === txId || tx.payment_hash === txId);
+        // By the hash its invoice names (utils/nwcWallet), as History and
+        // every notification name it; the wallet's own fields still match
+        // an id saved before.
+        const wanted = String(txId).toLowerCase();
+        const found = transactions.find(tx => nwcPaymentHash(tx) === wanted || tx.id === txId || tx.payment_hash === txId);
         if (found) {
+          const paymentHash = nwcPaymentHash(found);
           this.transaction = this.normalizeForDetails({
             ...found,
-            id: found.id || found.payment_hash || txId,
+            id: paymentHash || found.id || found.payment_hash || txId,
+            payment_hash: paymentHash || found.payment_hash,
             fee: found.fee || found.fees_paid || 0,
             payment_request: found.payment_request || found.invoice || null
           }, 'nwc');

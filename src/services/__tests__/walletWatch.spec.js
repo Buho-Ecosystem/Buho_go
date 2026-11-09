@@ -5,7 +5,7 @@
  */
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { RESUME_SETTLE_MS, RETRY_MS, WATCH_INTERVAL_MS, PAGE_SIZE, PAYMENTS, createWalletWatch } from '../walletWatch.js';
+import { HISTORY_PAUSE_MS, QUIET_INTERVAL_MS, RESUME_SETTLE_MS, RETRY_MS, WATCH_INTERVAL_MS, PAGE_SIZE, PAYMENTS, createWalletWatch } from '../walletWatch.js';
 import { createReceiptLedger } from '../paymentReceipts.js';
 
 const T0 = 1_790_000_000; // unix s
@@ -19,7 +19,7 @@ function memory() {
   return { getItem: (k) => m.get(k) ?? null, setItem: (k, v) => m.set(k, String(v)) };
 }
 
-function setup({ storage = memory(), wallets: initial, online = true } = {}) {
+function setup({ storage = memory(), wallets: initial, online = true, interval = null, onBalance = null } = {}) {
   const clock = { t: T0 * 1000 };
   const s = () => Math.floor(clock.t / 1000);
   const wallets = initial || [
@@ -55,6 +55,7 @@ function setup({ storage = memory(), wallets: initial, online = true } = {}) {
       calls.finds.push([wallet.id, paymentHash]);
       return lookup[paymentHash] || null;
     },
+    interval: (wallet) => (typeof interval === 'function' ? interval(wallet) : interval),
   });
 
   const ledger = createReceiptLedger({ storage, now: () => clock.t });
@@ -68,7 +69,7 @@ function setup({ storage = memory(), wallets: initial, online = true } = {}) {
     paymentsOf,
     canReadHistory: (wallet) => !noHistory.has(wallet.id),
     ruleFor: (walletId) => rules[walletId] || null,
-    refreshBalance: async (walletId) => { calls.balances.push(walletId); },
+    refreshBalance: async (walletId) => { calls.balances.push(walletId); await onBalance?.(walletId); },
     ledger,
     deliver: (receipt) => delivered.push(receipt),
     isInternal: (walletId, payment) => payment.paymentHash === 'mine',
@@ -396,7 +397,8 @@ test('each wallet type is read and watched through its own entry points', async 
 });
 
 test('history that never answers while the network does: the balance takes over, and its ledger starts afresh', async () => {
-  const h = setup();
+  const hintAtBalance = [];
+  const h = setup({ onBalance: (walletId) => { if (walletId === 'hub') hintAtBalance.push(h.watch.hint('hub')); } });
   await h.watch.start();
   h.clock.t += 10_000;
   h.history.hub.unshift(receive('n1', 3, h.s()));
@@ -405,9 +407,23 @@ test('history that never answers while the network does: the balance takes over,
     h.timers.filter((t) => t.ms === WATCH_INTERVAL_MS && !t.cleared).at(-1).fn();
     await flush();
   }
-  assert.equal(h.watch.hint('hub'), false, 'its balance rise is announced by the store from now on');
-  assert.equal(h.ledger.isPrimed('hub'), false, 'forgotten: a later session primes again instead of repeating');
+  assert.equal(h.watch.hint('hub'), false, 'its balance rise is announced by the store for now');
+  assert.equal(h.ledger.isPrimed('hub'), false, 'forgotten: the return to its history primes again instead of repeating');
   assert.equal(h.delivered.length, 0);
+
+  // Not for the whole session: after the pause its history is read again.
+  // A payment just before it ends is the balance's to announce: the fresh
+  // baseline would take it in without a word.
+  h.fail.hub = false;
+  h.clock.t += HISTORY_PAUSE_MS;
+  h.history.hub.unshift(receive('n2', 4, h.s()));
+  hintAtBalance.length = 0;
+  h.timers.filter((t) => t.ms === WATCH_INTERVAL_MS && !t.cleared).at(-1).fn();
+  await flush();
+  assert.deepEqual(hintAtBalance, [false], 'the balance is read once more while the store still announces its rise');
+  assert.equal(h.watch.hint('hub'), true, 'its history tells again');
+  assert.equal(h.ledger.isPrimed('hub'), true, 'from a new baseline');
+  assert.equal(h.delivered.length, 0, 'what the balance already said is not repeated');
 });
 
 test('a flood of channel messages runs at most once per spacing', async () => {
@@ -430,4 +446,46 @@ test('a payment right after a round is read at once; only hinted runs are spaced
   h.channel('kitty').onHint({});
   await flush();
   assert.deepEqual(h.delivered.map((r) => r.id), ['now'], 'no wait after the start or minute round');
+});
+
+test('a wallet that does not announce payments is read every five minutes, and at once on return', async () => {
+  const h = setup({ interval: (wallet) => (wallet.id === 'hub' ? QUIET_INTERVAL_MS : null) });
+  await h.watch.start();
+  const reads = (id) => h.calls.pages.filter(([walletId]) => walletId === id).length;
+  const tick = async () => {
+    h.clock.t += WATCH_INTERVAL_MS;
+    h.timers.filter((t) => t.ms === WATCH_INTERVAL_MS && !t.cleared).at(-1).fn();
+    await flush();
+  };
+  for (let minute = 1; minute <= 4; minute += 1) await tick();
+  assert.deepEqual([reads('hub'), reads('kitty')], [1, 5], 'the quiet one only at start, the others every minute');
+  await tick();
+  assert.equal(reads('hub'), 2, 'five minutes after its last read');
+  h.clock.t += RESUME_SETTLE_MS + 1000;
+  await h.watch.resume();
+  assert.equal(reads('hub'), 3, 'coming back reads it at once');
+});
+
+test('only an NWC connection without payment notifications is quiet', () => {
+  assert.equal(PAYMENTS.nwc.interval({ type: 'nwc', metadata: { notifications: ['payment_received'] } }), null);
+  assert.equal(PAYMENTS.nwc.interval({ type: 'nwc', metadata: { notifications: ['payment_sent'] } }), QUIET_INTERVAL_MS);
+  assert.equal(PAYMENTS.lnbits.interval, undefined);
+});
+
+test('coming back reads a wallet read less often, also when the thawed timer just ran without it', async () => {
+  const h = setup({ interval: (wallet) => (wallet.id === 'hub' ? QUIET_INTERVAL_MS : null) });
+  await h.watch.start();
+  const hubReads = () => h.calls.pages.filter(([id]) => id === 'hub').length;
+  const before = hubReads();
+  // Three minutes in the background: on return the frozen minute timer
+  // fires first (the quiet wallet is not due), then the return itself.
+  h.clock.t += 3 * 60_000;
+  h.timers.filter((t) => t.ms === WATCH_INTERVAL_MS && !t.cleared).at(-1).fn();
+  h.clock.t += 1000;
+  await h.watch.resume('resume');
+  await flush();
+  assert.equal(hubReads(), before + 1, 'read on return');
+  await h.watch.resume('resume');
+  await flush();
+  assert.equal(hubReads(), before + 1, 'once');
 });

@@ -130,13 +130,13 @@ export class LightningPaymentService {
   /**
    * @param {object|null} [nwc] the wallet's NostrWebLNProvider from
    *   `store.nwcConnection`; none when only reading payment inputs
-   * @param {object} [options]
-   * @param {object|null} [options.limit] the connection's spending limit
-   *   (store.nwcLimitFor): a payment above it stops before it is sent
+   * @param {object} [payOptions] what each payment passes to
+   *   services/nwcPayment (store.nwcPayOptions): the connection's spending
+   *   limit, and what a payment tells back
    */
-  constructor(nwc = null, { limit = null } = {}) {
+  constructor(nwc = null, payOptions = {}) {
     this.nwc = nwc;
-    this.limit = limit;
+    this.payOptions = payOptions || {};
   }
 
   /** The wallet's connection, for anything that talks to the wallet. */
@@ -334,7 +334,7 @@ export class LightningPaymentService {
    * @returns {Promise<Object>} Payment result with preimage
    */
   async payInvoice(invoice) {
-    return payWithNwc(this.requireNwc(), invoice, { limit: this.limit });
+    return payWithNwc(this.requireNwc(), invoice, this.payOptions);
   }
 
   /**
@@ -360,7 +360,7 @@ export class LightningPaymentService {
     // whose answer drops `successAction`. The shared request keeps the LUD-09
     // message, including the `aes` variant, and checks the invoice's amount.
     const invoice = await requestPayInvoice(payRequest, { amountSats: amount, comment, payerData });
-    const result = await payWithNwc(this.requireNwc(), invoice.pr, { limit: this.limit });
+    const result = await payWithNwc(this.requireNwc(), invoice.pr, this.payOptions);
     // Preserve the recipient's LUD-09 post-payment message so the caller can
     // surface it once the payment settles, and the payer details that went
     // with the payment.
@@ -394,7 +394,7 @@ export class LightningPaymentService {
     }
 
     const invoice = await requestPayInvoice(paymentData, { amountSats: amount, comment, payerData });
-    const result = await payWithNwc(this.requireNwc(), invoice.pr, { limit: this.limit });
+    const result = await payWithNwc(this.requireNwc(), invoice.pr, this.payOptions);
     // Preserve the LUD-09 successAction (recipient's post-payment message) so
     // the caller can show it once the payment settles, and the LUD-11 verdict
     // on the link itself: `disposable: false` means this LNURL may be kept and

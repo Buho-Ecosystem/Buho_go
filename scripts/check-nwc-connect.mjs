@@ -25,7 +25,8 @@ const PROBES = {
     alias: 'Alby Hub', nodePubkey: '02aa11', network: 'mainnet',
     methods: ['pay_invoice', 'make_invoice', 'get_balance', 'list_transactions', 'lookup_invoice', 'get_info', 'get_budget'],
     notifications: ['payment_received'], lud16: 'shop@getalby.com', balanceSats: 48210,
-    limit: { totalSats: 100000, usedSats: 12400, remainingSats: 87600, renewsAt: Date.UTC(2026, 10, 1), period: 'monthly' },
+    // Renews three weeks from the run, so the limit never reads as lapsed.
+    limit: { totalSats: 100000, usedSats: 12400, remainingSats: 87600, renewsAt: Date.now() + 21 * 86400000, period: 'monthly' },
   },
   receiveOnly: {
     normalized: connectionFor('c'.repeat(64)), connectionPubkey: 'c'.repeat(64), relays: ['wss://relay.coinos.io'],
@@ -146,7 +147,7 @@ try {
   await page.getByRole('button', { name: 'Edit connection', exact: true }).click();
   await standIn({ fail: { code: 'QUOTA_EXCEEDED', message: 'quota' } });
   await continueButton().click();
-  await page.getByText(/used up its spending limit/).waitFor();
+  await page.getByText(/over what this connection may spend right now/).waitFor();
   console.log('✓ problems: no answer, relay, and the wallet\'s own refusals in words');
 
   // 5 · Add it, then the same wallet again.
@@ -181,12 +182,13 @@ try {
     const store = window.__audit.app.config.globalProperties.$pinia._s.get('wallet');
     const wallet = store.wallets.find((w) => w.type === 'nwc');
     store.nwcStatus[wallet.id] = 'answering';
-    store.nwcLimits[wallet.id] = { totalSats: 100000, usedSats: 12400, remainingSats: 87600, renewsAt: Date.UTC(2026, 10, 1) };
+    store.nwcLimits[wallet.id] = { totalSats: 100000, usedSats: 12400, remainingSats: 87600, renewsAt: Date.now() + 21 * 86400000 };
     c.proxy.showWalletsDialog = true;
     c.proxy.detailWalletId = wallet.id;
   });
   await page.getByText('Answering', { exact: true }).waitFor();
   await page.getByText('This connection can', { exact: true }).first().waitFor();
+  await page.getByText(/^\D*87,600 left$/).waitFor();
   await shot('settings-details');
   console.log('✓ Settings: address, limit, grants, answering');
 
@@ -194,6 +196,20 @@ try {
   await page.evaluate(() => window.__audit.setDark(true));
   await shot('settings-details-dark');
   await page.evaluate(() => window.__audit.setDark(false));
+
+  // A limit the wallet keeps to itself, once a payment ran into it.
+  await page.evaluate(() => {
+    const store = window.__audit.app.config.globalProperties.$pinia._s.get('wallet');
+    const wallet = store.wallets.find((w) => w.type === 'nwc');
+    store.nwcLimits[wallet.id] = null;
+    store.nwcLimitRefusals[wallet.id] = { amountSats: 300, at: Date.now() };
+  });
+  await page.getByText(/^Under \D*300$/).waitFor();
+  await shot('settings-hidden-limit');
+  await page.evaluate(() => window.__audit.setDark(true));
+  await shot('settings-hidden-limit-dark');
+  await page.evaluate(() => window.__audit.setDark(false));
+  console.log('✓ Settings: a hidden limit shows once a payment ran into it');
 
   // 7 · Home with a receive-only connection: a calm dash, no endless placeholder,
   // and it is never offered to pay.

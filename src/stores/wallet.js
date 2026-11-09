@@ -8,10 +8,10 @@ import { walletLightningAddress } from '../utils/walletLightningAddress.js';
  */
 
 import { defineStore } from 'pinia';
-import { NostrWebLNProvider } from '@getalby/sdk';
+import { createNwcProvider } from '../services/nwcClient.js';
 import { parseNwcConnection } from '../utils/nwcConnection.js';
-import { capabilitiesOf, nip47Methods, spendingLimitFrom, suggestedWalletName } from '../utils/nwcWallet.js';
-import { NWC_ERROR, isRelayFailure, nwcError } from '../utils/nwcErrors.js';
+import { capabilitiesOf, cleanWalletText, nip47Methods, spendingLimitFrom, suggestedWalletName, walletAddressOf, walletKeyOf } from '../utils/nwcWallet.js';
+import { NWC_ERROR, isNotOffered, isRelayFailure, nwcError } from '../utils/nwcErrors.js';
 import { probeNwcConnection } from '../services/nwcProbe.js';
 import { payWithNwc } from '../services/nwcPayment.js';
 import { lookupNwcInvoice, makeNwcInvoice } from '../services/nwcReceive.js';
@@ -212,6 +212,7 @@ import {
 } from '../utils/userErrors';
 import { diagnoseConnection } from '../utils/connectivity.js';
 import * as deviceCrypto from '../utils/deviceCrypto';
+import { createNwcAtRest } from '../utils/nwcAtRest.js';
 import { clearCachedTransactions } from '../utils/txCache.js';
 import { i18n } from '../boot/i18n';
 import { canWalletPay, canWalletReceiveLightning } from '../utils/walletCapabilities.js';
@@ -277,6 +278,19 @@ const claimedDepositRegistry = createClaimedDepositRegistry({
 const recentDepositClaims = new Map();
 const CLAIM_MARK_SETTLE_MS = 10 * 60 * 1000;
 
+// NWC connection strings are saved encrypted with the device key, and kept
+// plain in memory (utils/nwcAtRest). SEAL_PASSES bounds the sealing a save
+// waits for (persistState).
+const SEAL_PASSES = 3;
+
+/** NWC wallets that list get_budget but will not run it: see refreshNwcLimit. */
+const budgetNotOffered = new Set();
+const nwcAtRest = createNwcAtRest({
+  encrypt: (plain) => deviceCrypto.encryptString(plain),
+  decrypt: (envelope) => deviceCrypto.decryptString(envelope),
+  warn: (...args) => console.warn(...args),
+});
+
 /**
  * Thin adapter exposing the device-key crypto under the historical
  * `CryptoUtils.encryptMnemonic` / `decryptMnemonic` shape so the rest of
@@ -333,10 +347,12 @@ export const useWalletStore = defineStore('wallet', {
     balanceDetails: {},
     walletInfos: {},
     // NWC connections, runtime only: the spending limit the wallet shares
-    // (utils/nwcWallet spendingLimitFrom, null = no limit or not shared) and
-    // whether it answered last time it was asked: 'answering' | 'no-answer'
-    // | 'relay' (its relay could not be reached).
+    // (utils/nwcWallet spendingLimitFrom, null = no limit or not shared),
+    // the last payment a limit it keeps to itself refused ({ amountSats, at }),
+    // and whether it answered last time it was asked: 'answering' |
+    // 'no-answer' | 'relay' (its relay could not be reached).
     nwcLimits: {},
+    nwcLimitRefusals: {},
     nwcStatus: {},
 
     // User preferences
@@ -1349,9 +1365,14 @@ export const useWalletStore = defineStore('wallet', {
               ratesStillValid = lastUpdate > new Date(Date.now() - RATE_MAX_AGE_MS);
             }
 
+            // Connection strings are saved encrypted (utils/nwcAtRest); one
+            // saved plain by an earlier version is sealed by the save below.
+            const opened = await Promise.all((parsed.wallets || []).map((wallet) => nwcAtRest.fromSaved(wallet)));
+            if (opened.some((entry) => entry.plain)) migrationNeedsPersist = true;
+
             // Migrate old wallets without type field
             const storeBackedUp = parsed.hasBackedUp || false;
-            const migratedWallets = (parsed.wallets || []).map(wallet => {
+            const migratedWallets = opened.map(({ wallet }) => {
               const migrated = {
                 ...wallet,
                 type: wallet.type || inferWalletType(wallet)
@@ -2738,7 +2759,7 @@ export const useWalletStore = defineStore('wallet', {
         // other callers (cloud restore) test here.
         const tested = walletData.probe || await probeNwcConnection(parsed.normalized);
 
-        const nwc = new NostrWebLNProvider({ nostrWalletConnectUrl: tested.normalized });
+        const nwc = createNwcProvider(tested.normalized);
         await nwc.enable();
 
         const wallet = {
@@ -2814,25 +2835,25 @@ export const useWalletStore = defineStore('wallet', {
         const meta = wallet.metadata || {};
         const next = {
           ...meta,
-          alias: String(info?.alias || ''),
-          pubkey: String(info?.pubkey || meta.pubkey || ''),
+          alias: cleanWalletText(info?.alias),
+          // A placeholder saved before keys were checked is dropped here.
+          pubkey: walletKeyOf(info?.pubkey) || walletKeyOf(meta.pubkey),
           walletPubkey: meta.walletPubkey || parseNwcConnection(wallet.nwcUrl).pubkey || '',
           network: info?.network || meta.network || 'mainnet',
           // No methods in the answer: keep what was saved, as saved.
           methods: methods.length ? methods : (meta.methods || []),
           notifications: Array.isArray(info?.notifications) ? info.notifications : (meta.notifications || []),
-          lud16: meta.lud16 || info?.lud16 || null,
+          // Checked here too: one saved before addresses were checked is dropped.
+          lud16: walletAddressOf(meta.lud16) || walletAddressOf(info?.lud16),
         };
         if (JSON.stringify(next) !== JSON.stringify(meta)) {
           wallet.metadata = next;
           this._schedulePersist();
         }
-        this.nwcLimits[walletId] = capabilitiesOf(wallet).limit
-          ? await client.getBudget().then(spendingLimitFrom).catch(() => this.nwcLimits[walletId] ?? null)
-          : null;
+        await this.refreshNwcLimit(walletId);
       } catch (error) {
         // A connection that may not ask who it is still answered.
-        if (error?.code === 'RESTRICTED' || error?.code === 'NOT_IMPLEMENTED') status = 'answering';
+        if (isNotOffered(error)) status = 'answering';
         else status = isRelayFailure(error) ? 'relay' : 'no-answer';
         if (status !== 'answering') console.warn('[nwc] wallet did not answer:', error?.message || error);
       }
@@ -2843,6 +2864,56 @@ export const useWalletStore = defineStore('wallet', {
       // wallet lists. Settings shows the status and offers Reconnect.
       this.nwcStatus[walletId] = status;
       return status;
+    },
+
+    /**
+     * Read the spending limit an NWC connection shares (NWC-13 get_budget)
+     * again. A connection that may not ask has none to show; an unanswered
+     * read keeps the last one. A wallet that lists get_budget yet will not
+     * run it is not asked again this session: each ask after a payment
+     * would be a wasted request, and on a phone wallet perhaps a notice.
+     */
+    async refreshNwcLimit(walletId) {
+      const wallet = this.wallets.find((w) => w.id === walletId);
+      const client = this.connectionStates[walletId]?.nwcInstance?.client;
+      if (!wallet || !capabilitiesOf(wallet).limit || budgetNotOffered.has(walletId)) {
+        this.nwcLimits[walletId] = null;
+        return null;
+      }
+      if (!client) return this.nwcLimits[walletId] ?? null;
+      try {
+        this.nwcLimits[walletId] = spendingLimitFrom(await client.getBudget());
+      } catch (error) {
+        // Otherwise the last known limit stands.
+        if (isNotOffered(error)) {
+          budgetNotOffered.add(walletId);
+          this.nwcLimits[walletId] = null;
+        }
+      }
+      return this.nwcLimits[walletId] ?? null;
+    },
+
+    /**
+     * What a payment from an NWC wallet passes to services/nwcPayment: the
+     * limit the wallet shares, so a payment above it stops before it is sent,
+     * and what the payment teaches back. After a payment the shared limit is
+     * read again, so Settings shows what is left; a refusal over a limit the
+     * wallet keeps to itself is remembered, so Settings can say one exists.
+     * Every NWC payment path takes these.
+     */
+    nwcPayOptions(walletId) {
+      return {
+        limit: this.nwcLimitFor(walletId),
+        onSpent: ({ amountSats }) => {
+          const refusal = this.nwcLimitRefusals[walletId];
+          if (refusal && amountSats >= refusal.amountSats) delete this.nwcLimitRefusals[walletId];
+          this.refreshNwcLimit(walletId).catch(() => {});
+        },
+        onLimitRefused: ({ amountSats }) => {
+          this.nwcLimitRefusals[walletId] = { amountSats };
+          this.refreshNwcLimit(walletId).catch(() => {});
+        },
+      };
     },
 
     /**
@@ -3346,7 +3417,7 @@ export const useWalletStore = defineStore('wallet', {
       const attempt = (async () => {
         if (removingWallets.has(walletId)) throw new Error('Wallet is being removed');
         const epoch = epochOf(walletId);
-        const nwc = new NostrWebLNProvider({ nostrWalletConnectUrl: wallet.nwcUrl });
+        const nwc = createNwcProvider(wallet.nwcUrl);
         try {
           await nwc.enable();
           if (epochOf(walletId) !== epoch) throw new Error('Wallet was disconnected');
@@ -3793,7 +3864,8 @@ export const useWalletStore = defineStore('wallet', {
      * Keep the wallets this version can use. An entry it cannot use (a
      * missing secret, a type it does not know) leaves the list but never the
      * disk: it moves to `_unusableWallets`, which every save writes back as
-     * it was read, so a newer version or a repair can still reach it.
+     * it was read (an NWC string sealed, see persistState), so a newer
+     * version or a repair can still reach it.
      */
     async validateWallets() {
       const unusable = [];
@@ -4182,7 +4254,7 @@ export const useWalletStore = defineStore('wallet', {
             paymentResult = await fromProvider.payInvoice({ invoice });
           } else {
             // NWC: proof-checked, never resent on its own (services/nwcPayment).
-            paymentResult = await payWithNwc(fromProvider, invoice, { limit: this.nwcLimitFor(fromWalletId) });
+            paymentResult = await payWithNwc(fromProvider, invoice, this.nwcPayOptions(fromWalletId));
           }
         } catch (payError) {
           console.error('Payment error:', payError);
@@ -4415,9 +4487,21 @@ export const useWalletStore = defineStore('wallet', {
      */
     async persistState({ requireDurable = false, admit = [] } = {}) {
       try {
+        // Every connection string is sealed first (asynchronous, once per
+        // string), so that from here the state is read and written in one
+        // step: a slower save can never write an older state over a newer
+        // one. A wallet added while sealing is sealed in the next pass; one
+        // still added after the last is saved plain by this save and sealed
+        // by the next, so a save always ends.
+        // Wallets set aside are sealed too: one is often set aside for a
+        // string that is not quite right, which can still hold a secret.
+        const kept = () => [...this.wallets, ...this._unusableWallets];
+        for (let pass = 0; pass < SEAL_PASSES && !nwcAtRest.isSealed(kept()); pass += 1) {
+          await nwcAtRest.seal(kept());
+        }
         this._assertSavable();
         const listed = this.wallets.filter((w) => !addingWallets.has(w.id) || admit.includes(w.id));
-        const wallets = [...listed, ...this._unusableWallets];
+        const wallets = [...listed, ...this._unusableWallets].map((w) => nwcAtRest.toSaved(w));
 
         // Save new format
         const stateToSave = {
@@ -4458,7 +4542,6 @@ export const useWalletStore = defineStore('wallet', {
             id: w.id,
             name: w.name,
             type: w.type || 'nwc',
-            nwcString: w.nwcUrl,
             balance: this.balances[w.id] || 0,
           })),
           activeWalletId: this.activeWalletId,

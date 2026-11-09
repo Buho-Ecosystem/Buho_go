@@ -1,8 +1,17 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
-  nip47Methods, nwcCapabilities, capabilitiesOf, suggestedWalletName, findSameWallet, spendingLimitFrom, relayHost,
+  nip47Methods, nwcCapabilities, capabilitiesOf, suggestedWalletName, findSameWallet, spendingLimitFrom, relayHost, walletKeyOf,
+  nwcPaymentHash, nwcTransactionRow, cleanWalletText, walletAddressOf,
 } from '../nwcWallet.js';
+import { Invoice } from '@getalby/lightning-tools';
+import { createReceiptLedger } from '../../services/paymentReceipts.js';
+import { profileInvoiceFixture } from '../../../scripts/fixtures/profileInvoice.mjs';
+
+const INVOICE = profileInvoiceFixture(21, 1_800_000_000_000);
+const INVOICE_HASH = new Invoice({ pr: INVOICE }).paymentHash;
+/** sha256 of a preimage's hex TEXT instead of its bytes: a wrong hash a wallet may report. */
+const WRONG_HASH = 'c386d8e8d07342f2e39e189c8e6c57bb205bb373fe4e3a6f69404a8bb767b417';
 
 test('both method vocabularies read the same; unknown names are kept, empties dropped', () => {
   assert.deepEqual(nip47Methods(['sendPayment', 'makeInvoice', 'getBalance', 'pay_invoice', '', null, 'get_budget']),
@@ -33,12 +42,57 @@ test('a wallet names itself, unless it says nothing useful', () => {
   assert.equal(suggestedWalletName({ alias: 'x'.repeat(60) }).length, 40);
 });
 
+const NODE = `02${'ab'.repeat(32)}`;
+
+test('a wallet key is a real key; placeholders are none', () => {
+  assert.equal(walletKeyOf(NODE.toUpperCase()), NODE);
+  assert.equal(walletKeyOf('cd'.repeat(32)), 'cd'.repeat(32), 'x-only keys count');
+  for (const placeholder of ['N/A', 'n/a', 'Unknown', '', null, undefined, '02abc', `04${'ab'.repeat(32)}`]) {
+    assert.equal(walletKeyOf(placeholder), '', String(placeholder));
+  }
+});
+
+test('two wallets that both answer a placeholder key are not the same wallet', () => {
+  const wallets = [{ id: 'first', type: 'nwc', metadata: { pubkey: 'N/A', lud16: null, walletPubkey: 'c1' } }];
+  assert.equal(findSameWallet(wallets, { nodePubkey: 'N/A', connectionPubkey: 'c2' }), null);
+  assert.equal(findSameWallet(wallets, { nodePubkey: '', connectionPubkey: 'c2' }), null);
+  assert.equal(findSameWallet(wallets, { nodePubkey: 'N/A', connectionPubkey: 'c1' })?.id, 'first', 'the same connection still is');
+});
+
+test('a wallet\'s name loses the characters that hide or flip text', () => {
+  const name = suggestedWalletName({ alias: 'My\u202EtellaW\u200B\u0007 Hub' });
+  assert.equal(name, 'MytellaW Hub');
+  assert.equal(cleanWalletText('Shop\n\tTill\u2066 2\u2069'), 'Shop Till 2');
+  assert.equal(cleanWalletText('\u200E\u200F\uFEFF'), '', 'nothing left is no name');
+  assert.equal(cleanWalletText('کار\u200Cگاه 👩\u200D💻'), 'کار\u200Cگاه 👩\u200D💻', 'joiners that scripts and emoji need stay');
+  assert.equal(suggestedWalletName({ alias: '\u202E', lud16: 'shop\u202E@blink.sv' }), 'shop', 'the address name is cleaned too');
+  assert.equal(Array.from(suggestedWalletName({ alias: '😀'.repeat(50) })).length, 40, 'cut by characters, not halves of one');
+});
+
+test('a name that only looks empty, or hides letters, is cleaned too', () => {
+  assert.equal(cleanWalletText('\u3164\u3164\u3164'), '', 'blank letters are no name');
+  assert.equal(suggestedWalletName({ alias: '\u3164\u2800', lud16: 'tips@example.com' }), 'tips');
+  assert.equal(cleanWalletText('Al\u00ADby\u180E Hub\u{E0041}\u{E0042}'), 'Alby Hub', 'soft hyphen, separator, tag characters');
+  assert.equal(cleanWalletText('A \u200B B'), 'A B', 'no double space where one was hidden');
+  const flags = '🇩🇪'.repeat(41);
+  assert.equal(suggestedWalletName({ alias: flags }), '🇩🇪'.repeat(40), 'a flag is never cut in half');
+  const family = '👩\u200D👩\u200D👧';
+  assert.equal(suggestedWalletName({ alias: `${'x'.repeat(39)}${family}` }), `${'x'.repeat(39)}${family}`);
+});
+
+test('a wallet\'s address is kept only when it is a plain Lightning address', () => {
+  assert.equal(walletAddressOf(' shop@getalby.com '), 'shop@getalby.com');
+  assert.equal(walletAddressOf('sh\u202Eop@getalby.com'), null);
+  assert.equal(walletAddressOf('null'), null);
+  assert.equal(walletAddressOf(undefined), null);
+});
+
 test('the same wallet is found by its key or its address, not by the connection text', () => {
   const wallets = [
-    { id: 'a', type: 'nwc', metadata: { pubkey: '02abc', lud16: 'shop@getalby.com', walletPubkey: 'c1' } },
+    { id: 'a', type: 'nwc', metadata: { pubkey: NODE, lud16: 'shop@getalby.com', walletPubkey: 'c1' } },
     { id: 'b', type: 'spark', metadata: { lud16: 'tips@getalby.com' } },
   ];
-  assert.equal(findSameWallet(wallets, { nodePubkey: '02ABC' })?.id, 'a');
+  assert.equal(findSameWallet(wallets, { nodePubkey: NODE.toUpperCase() })?.id, 'a');
   assert.equal(findSameWallet(wallets, { lud16: 'Shop@GetAlby.com' })?.id, 'a');
   assert.equal(findSameWallet(wallets, { connectionPubkey: 'c1' })?.id, 'a');
   assert.equal(findSameWallet(wallets, { lud16: 'tips@getalby.com' }), null, 'only NWC wallets compare');
@@ -67,4 +121,22 @@ test('the SDK\'s stand-in answer for a failed get_info says nothing about the gr
   assert.deepEqual(nwcCapabilities(['pay_invoice']).receive, false);
   assert.deepEqual(nwcCapabilities(['sendPayment', 'getBalance']).receive, false);
   assert.equal(capabilitiesOf({ type: 'nwc', metadata: { methods: ['sendPayment'] } }).receive, true);
+});
+
+test('a record\'s payment hash is the one its invoice names', () => {
+  assert.equal(nwcPaymentHash({ invoice: INVOICE, payment_hash: WRONG_HASH }), INVOICE_HASH, 'the invoice decides');
+  assert.equal(nwcPaymentHash({ invoice: 'not-a-bolt11', payment_hash: 'AB'.repeat(32) }), 'ab'.repeat(32), 'without one, the record');
+  assert.equal(nwcPaymentHash({ paymentHash: 'cd'.repeat(32) }), 'cd'.repeat(32));
+  assert.equal(nwcPaymentHash({ payment_hash: 'false' }), null, 'a field that is not a hash is none');
+  assert.equal(nwcPaymentHash({}), null);
+});
+
+test('a history row with a wrongly computed hash is the payment Receive already showed', () => {
+  const ledger = createReceiptLedger({ storage: { getItem: () => null, setItem() {}, removeItem() {} }, now: () => 1_800_000_100_000 });
+  ledger.prime('w1', []);
+  ledger.markSeen('w1', INVOICE_HASH); // the Receive sheet confirmed it under the invoice's hash
+  const row = nwcTransactionRow({ type: 'incoming', invoice: INVOICE, payment_hash: WRONG_HASH, amount: 21, settled_at: 1_800_000_050 });
+  assert.deepEqual([row.id, row.paymentHash, row.payment_hash], [INVOICE_HASH, INVOICE_HASH, INVOICE_HASH]);
+  assert.equal(nwcTransactionRow({ type: 'incoming', payment_hash: 'odd-id', amount: 1 }).id, 'odd-id', 'a row keeps an id that is not a hash');
+  assert.equal(ledger.ingest('w1', row, { origin: 'catchup' }), null, 'never announced a second time');
 });

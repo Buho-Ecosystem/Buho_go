@@ -1,12 +1,13 @@
 <!--
   NWCWalletDetails: an NWC wallet's details in Settings, the same facts the
   connect step showed: its Lightning address, its spending limit, what this
-  connection may do, and whether the wallet answered when last asked.
+  connection may do, and whether the wallet answered when last asked. A
+  limit the wallet does not share shows once a payment ran into it.
   Styled through the wallet detail panel's own tokens (--detail-*).
 -->
 <template>
   <section class="nwc-details" :aria-label="$t('Nostr Wallet Connect')">
-    <div v-if="address || limit" class="nwc-details__group">
+    <div v-if="address || limit || limitRefusal" class="nwc-details__group">
       <div v-if="address" class="nwc-details__row">
         <span class="nwc-details__label">{{ $t('Address') }}</span>
         <span class="nwc-details__value">{{ address }}</span>
@@ -17,6 +18,10 @@
       <div v-if="limit" class="nwc-details__row">
         <span class="nwc-details__label">{{ $t('Spending limit') }}<small v-if="renewsText">{{ renewsText }}</small></span>
         <span class="nwc-details__value">{{ $t('{amount} left', { amount: amountText(limit.remainingSats) }) }}</span>
+      </div>
+      <div v-else-if="limitRefusal" class="nwc-details__row">
+        <span class="nwc-details__label">{{ $t('Spending limit') }}<small>{{ $t('Not shared') }}</small></span>
+        <span class="nwc-details__value">{{ $t('Under {amount}', { amount: amountText(limitRefusal.amountSats) }) }}</span>
       </div>
     </div>
 
@@ -48,6 +53,11 @@ const props = defineProps({
   wallet: { type: Object, required: true },
   /** store.nwcLimitFor(): the spending limit the wallet shares, or null. */
   limit: { type: Object, default: null },
+  /**
+   * store.nwcLimitRefusals: a payment of this many sats was over a limit the
+   * wallet does not share, so the limit is lower, or null.
+   */
+  limitRefusal: { type: Object, default: null },
   /** store.nwcStatus: 'answering' | 'no-answer' | 'relay', or '' while not asked yet. */
   status: { type: String, default: '' },
 });

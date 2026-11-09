@@ -13,9 +13,8 @@
  *
  * Amounts: NIP-47 speaks millisats; everything returned here is in sats.
  */
-import { Invoice } from '@getalby/lightning-tools';
 import { NWC_ERROR, nwcError } from '../utils/nwcErrors.js';
-import { nwcCapabilities, nwcTransactionRow } from '../utils/nwcWallet.js';
+import { nwcCapabilities, nwcPaymentHash, nwcTransactionRow, readInvoice } from '../utils/nwcWallet.js';
 import { checkNWCPaymentStatus } from '../utils/paymentMonitor.js';
 
 /** How many recent incoming payments to scan when the wallet has no lookup. */
@@ -31,17 +30,6 @@ function clientOf(nwc) {
   const client = nwc?.client;
   if (!client) throw new Error('Wallet is not connected');
   return client;
-}
-
-/** The payment hash and expiry (Unix seconds) written in the invoice itself. */
-function decodeInvoice(invoice) {
-  try {
-    const decoded = new Invoice({ pr: invoice });
-    const expiry = decoded.expiryDate instanceof Date ? Math.floor(decoded.expiryDate.getTime() / 1000) : null;
-    return { paymentHash: decoded.paymentHash || null, expiresAt: expiry > 0 ? expiry : null };
-  } catch {
-    return { paymentHash: null, expiresAt: null };
-  }
 }
 
 /** The answer, or a NO_ANSWER error once `ms` passed (the request itself runs on). */
@@ -68,11 +56,11 @@ export async function makeNwcInvoice(nwc, { amountSats, description = '' }) {
     ...(description ? { description } : {}),
   });
   if (!tx?.invoice) throw new Error('Wallet did not return an invoice');
-  const written = decodeInvoice(tx.invoice);
   return {
     paymentRequest: tx.invoice,
-    paymentHash: tx.payment_hash || written.paymentHash,
-    expiresAt: Number(tx.expires_at) > 0 ? Number(tx.expires_at) : written.expiresAt,
+    // The invoice's own hash; a wallet may answer with the invoice alone.
+    paymentHash: nwcPaymentHash(tx),
+    expiresAt: Number(tx.expires_at) > 0 ? Number(tx.expires_at) : (readInvoice(tx.invoice)?.expiresAt ?? null),
   };
 }
 
@@ -152,7 +140,8 @@ function paidFrom(tx) {
 /** The invoice among the recent incoming payments, paid only when settled there. */
 async function fromRecentIncoming(client, paymentHash) {
   const { transactions = [] } = await client.listTransactions({ limit: RECENT_INCOMING, unpaid: false, type: 'incoming' }) || {};
-  const tx = transactions.find((t) => t?.payment_hash === paymentHash);
+  const wanted = String(paymentHash || '').toLowerCase();
+  const tx = transactions.find((t) => nwcPaymentHash(t) === wanted);
   return tx && checkNWCPaymentStatus(tx) ? paidFrom(tx) : { paid: false };
 }
 
@@ -189,8 +178,8 @@ export async function watchNwcPayments(nwc, onActivity) {
   const subscribe = async () => {
     const next = await client.subscribeNotifications((notification) => {
       if (stopped) return;
-      const hash = String(notification?.notification?.payment_hash || '').toLowerCase();
-      onActivity(/^[0-9a-f]{64}$/.test(hash) ? { paymentHash: hash } : {});
+      const hash = nwcPaymentHash(notification?.notification);
+      onActivity(hash ? { paymentHash: hash } : {});
     }, ['payment_received']);
     if (stopped) { next(); return; }
     const previous = unsubscribe;

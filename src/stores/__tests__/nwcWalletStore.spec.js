@@ -5,7 +5,8 @@
  */
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { createHarness } from './sparkWalletHarness.js';
+import { createHarness, decrypt } from './sparkWalletHarness.js';
+import { withStandInSecret } from '../../utils/nwcAtRest.js';
 import * as internalTransferDetails from '../../utils/internalTransferDetails.js';
 import * as userErrors from '../../utils/userErrors.js';
 
@@ -30,13 +31,67 @@ test('a wallet that misses one reply stays connected; its status says it was sil
 test('an answer refreshes the name, the grants and the limit', async () => {
   const { store } = createHarness();
   nwcWallet(store, {
-    getInfo: async () => ({ alias: 'Alby Hub', pubkey: '02ab', methods: ['pay_invoice', 'make_invoice', 'get_budget'] }),
+    getInfo: async () => ({ alias: 'Alby Hub', pubkey: `02${'ab'.repeat(32)}`, methods: ['pay_invoice', 'make_invoice', 'get_budget'] }),
     getBudget: async () => ({ total_budget: 10_000_000, used_budget: 4_000_000, renews_at: 4_000_000_000 }),
   });
   assert.equal(await store.refreshNwcDetails('hub'), 'answering');
   assert.equal(store.wallets[0].metadata.alias, 'Alby Hub');
   assert.deepEqual(store.wallets[0].metadata.methods, ['pay_invoice', 'make_invoice', 'get_budget']);
   assert.equal(store.nwcLimitFor('hub').remainingSats, 6000);
+});
+
+test('a details refresh keeps the wallet\'s name and address only as they can be shown', async () => {
+  const { store } = createHarness();
+  nwcWallet(store, { getInfo: async () => ({ alias: '\u202EbuH', pubkey: '', methods: ['pay_invoice'], lud16: 'a\u2066b@getalby.com' }) });
+  store.wallets[0].metadata.lud16 = 'x\u202E@getalby.com'; // saved before addresses were checked
+  await store.refreshNwcDetails('hub');
+  assert.equal(store.wallets[0].metadata.alias, 'buH');
+  assert.equal(store.wallets[0].metadata.lud16, null);
+});
+
+test('a placeholder key a wallet answers is not saved as its key', async () => {
+  const { store } = createHarness();
+  nwcWallet(store, { getInfo: async () => ({ alias: 'N/A', pubkey: 'N/A', methods: ['pay_invoice'] }) });
+  store.wallets[0].metadata.pubkey = 'N/A'; // saved by an earlier version
+  await store.refreshNwcDetails('hub');
+  assert.equal(store.wallets[0].metadata.pubkey, '');
+});
+
+test('a payment refused over a limit the wallet keeps to itself is remembered for Settings', async () => {
+  const { store } = createHarness();
+  nwcWallet(store, { getBudget: async () => assert.fail('not granted') });
+  store.wallets[0].metadata.methods = ['pay_invoice', 'get_info'];
+  const options = store.nwcPayOptions('hub');
+  assert.equal(options.limit, null);
+  options.onLimitRefused({ amountSats: 300 });
+  assert.equal(store.nwcLimitRefusals.hub.amountSats, 300);
+  options.onSpent({ amountSats: 120 });
+  assert.equal(store.nwcLimitRefusals.hub.amountSats, 300, 'a smaller payment says nothing about it');
+  options.onSpent({ amountSats: 300 });
+  assert.equal(store.nwcLimitRefusals.hub, undefined, 'as much went through: no longer known to be lower');
+});
+
+test('after a payment the shared limit is read again', async () => {
+  const { store } = createHarness();
+  let used = 4_000_000;
+  nwcWallet(store, { getBudget: async () => ({ total_budget: 10_000_000, used_budget: used }) });
+  await store.refreshNwcLimit('hub');
+  assert.equal(store.nwcLimitFor('hub').remainingSats, 6000);
+  used = 9_000_000;
+  store.nwcPayOptions('hub').onSpent({ amountSats: 5000 });
+  await new Promise((r) => setImmediate(r));
+  assert.equal(store.nwcLimitFor('hub').remainingSats, 1000);
+});
+
+test('a wallet that lists get_budget but will not run it is not asked again', async () => {
+  const { store } = createHarness();
+  let asked = 0;
+  nwcWallet(store, { getBudget: async () => { asked += 1; throw Object.assign(new Error('not allowed'), { code: 'RESTRICTED' }); } });
+  store.wallets[0].metadata.methods = ['pay_invoice', 'get_budget'];
+  assert.equal(await store.refreshNwcLimit('hub'), null);
+  store.nwcPayOptions('hub').onSpent({ amountSats: 5 });
+  await store.refreshNwcLimit('hub');
+  assert.equal(asked, 1);
 });
 
 test('a limit whose period has ended no longer holds a payment back', () => {
@@ -182,7 +237,7 @@ function connectionHarness() {
     async enable() {}
     close() { this.closed = true; }
   }
-  const { store } = createHarness({ deps: { '@getalby/sdk': { NostrWebLNProvider: FakeNWC } } });
+  const { store } = createHarness({ deps: { '../services/nwcClient.js': { createNwcProvider: (url) => new FakeNWC({ nostrWalletConnectUrl: url }) } } });
   store.wallets = [{ id: 'hub', type: 'nwc', name: 'Hub', nwcUrl: URL_A, metadata: {} }];
   store.refreshWalletData = async () => {};
   store._schedulePersist = () => {};
@@ -255,5 +310,49 @@ test('a connection saved with upper-case hex is stored once in lower case, the o
   store.connectWallet = async () => null; // no relay in a unit test
   await store.initialize();
   assert.equal(store.wallets[0].nwcUrl, URL_A);
-  assert.equal(saved().wallets[0].nwcUrl, URL_A, 'written back, so the next start reads it as it is');
+  assert.equal(await decrypt(saved().wallets[0].sealedNwcUrl), URL_A, 'written back, so the next start reads it as it is');
+});
+
+// ── Connection strings at rest ────────────────────────────────────────────
+
+test('a connection string is saved encrypted and opened again on the next start', async () => {
+  const plainSave = JSON.stringify({ wallets: [{ id: 'hub', type: 'nwc', name: 'Hub', nwcUrl: URL_A, metadata: {} }], activeWalletId: 'hub' });
+  const first = createHarness({ storage: { buhoGO_wallet_store: plainSave } });
+  first.store.connectWallet = async () => null;
+  await first.store.initialize();
+  assert.equal(first.store.wallets[0].nwcUrl, URL_A, 'plain in memory, for every screen');
+  const written = first.local.getItem('buhoGO_wallet_store');
+  // The harness's envelope stand-in stays readable; utils/nwcAtRest.spec proves real encryption.
+  assert.equal(first.saved().wallets[0].nwcUrl, withStandInSecret(URL_A), 'the string is saved only with a stand-in for its secret');
+  assert.equal(await decrypt(first.saved().wallets[0].sealedNwcUrl), URL_A, 'its envelope is');
+  const legacy = JSON.parse(first.local.getItem('buhoGO_wallet_state'));
+  assert.equal(legacy.connectedWallets[0].nwcString, undefined, 'nor in the copy for old versions');
+
+  const next = createHarness({ storage: { buhoGO_wallet_store: written } });
+  next.store.connectWallet = async () => null;
+  await next.store.initialize();
+  assert.equal(next.store.wallets[0].nwcUrl, URL_A);
+  assert.equal(next.store.wallets[0].sealedNwcUrl, undefined, 'the envelope stays on disk');
+});
+
+test('a wallet set aside for a string that is not quite right is saved sealed too', async () => {
+  const odd = URL_A.replace('nostr+walletconnect://', 'walletconnect: ');
+  const plain = JSON.stringify({ wallets: [{ id: 'odd', type: 'nwc', name: 'Odd', nwcUrl: odd, metadata: {} }], activeWalletId: 'odd' });
+  const { store, saved } = createHarness({ storage: { buhoGO_wallet_store: plain }, validate: true });
+  store.connectWallet = async () => null;
+  await store.initialize();
+  assert.equal(store.wallets.length, 0, 'set aside');
+  await store.persistState();
+  assert.equal(saved().wallets[0].nwcUrl, withStandInSecret(odd), 'its secret is not saved plain');
+  assert.equal(await decrypt(saved().wallets[0].sealedNwcUrl), odd, 'its string can still be reached');
+});
+
+test('a connection that cannot be opened stays saved, set aside, never lost', async () => {
+  const sealed = JSON.stringify({ wallets: [{ id: 'hub', type: 'nwc', name: 'Hub', sealedNwcUrl: 'not-an-envelope', metadata: {} }], activeWalletId: 'hub' });
+  const { store, saved } = createHarness({ storage: { buhoGO_wallet_store: sealed }, validate: true });
+  store.connectWallet = async () => null;
+  await store.initialize();
+  assert.equal(store.wallets.length, 0, 'not offered: it cannot be used');
+  await store.persistState();
+  assert.equal(saved().wallets[0].sealedNwcUrl, 'not-an-envelope', 'kept as it was read');
 });

@@ -11,13 +11,15 @@
  *    never proof: anyone can post into an LNbits channel, and Arkade's
  *    stream also reports change and renewals.
  *  - Auto-Transfer. A rule runs on a verified balance, so a wallet with a
- *    switched-on rule has its balance read on every round.
+ *    switched-on rule has its balance read on every round that reads it
+ *    (a wallet read every five minutes runs its rule within five).
  *
  * Triggers: start (a cold start after the app was closed), every minute
- * while the app runs, return to the app, back online, a channel's hint, a
- * balance seen rising elsewhere (store.noticeIncomingPayment), and wallets
- * added. Per wallet, overlapping triggers coalesce into one run plus at
- * most one follow-up; a failed run retries with backoff, a few times, then
+ * while the app runs (every five for a wallet that has no live channel and
+ * may tell its owner about each read, see QUIET_INTERVAL_MS), return to the
+ * app, back online, a channel's hint, a balance seen rising elsewhere
+ * (store.noticeIncomingPayment), and wallets added. Per wallet, overlapping
+ * triggers coalesce into one run plus at most one follow-up; a failed run retries with backoff, a few times, then
  * waits for the next round. The minute round is the safety net for a live
  * channel that died without closing: none of the three replays what it
  * missed.
@@ -41,12 +43,23 @@ import { catchUpReceipts } from './paymentReceipts.js';
 import { receiptLedger, deliverReceipt, trackAppVisibility } from './paymentReceiptsApp.js';
 import { notifiesPayments, watchNwcPayments, listNwcPayments, findNwcPayment } from './nwcReceive.js';
 import { capabilitiesOf } from '../utils/nwcWallet.js';
+import { isRefusal } from '../utils/nwcErrors.js';
 import { onAppVisibility } from '../utils/appVisibility.js';
 
 export const WATCH_INTERVAL_MS = 60 * 1000;
+/**
+ * The round for an NWC wallet that does not announce payments: nothing
+ * tells the app to look, so each round is a request the wallet answers, and
+ * a wallet on a phone may show its owner a notification for every one. It
+ * is read every five minutes instead of every minute, and at once whenever
+ * the app comes back, goes online or Receive asks.
+ */
+export const QUIET_INTERVAL_MS = 5 * 60 * 1000;
 // Coming back to the app raises several events at once (visibility, app
 // state, resume) while the thawed timer fires too: one round covers them.
 export const RESUME_SETTLE_MS = 5 * 1000;
+/** A timer round this close to a wallet's interval counts as on time (timers fire a little late or early). */
+const TIMER_SLACK_MS = 5 * 1000;
 /** A failed run is tried again after these waits, then left to the round. */
 export const RETRY_MS = [2000, 5000, 15000, 30000];
 /** History is read this many payments at a time. */
@@ -62,13 +75,17 @@ export const CHANNEL_RETRY_MS = 5 * 60 * 1000;
 export const HINT_SPACING_MS = 3000;
 /** History reads that fail in a row, online, before the balance takes over. */
 export const HISTORY_GIVE_UP = 3;
+/**
+ * How long the balance stands in for a history that went silent. A wallet
+ * on a phone can be slow or asleep for a while without refusing anything,
+ * so its history is asked for again after this, from a new baseline.
+ */
+export const HISTORY_PAUSE_MS = 15 * 60 * 1000;
 
 /** Triggers worth one follow-up run when they land during a run. */
 const URGENT = new Set(['hint', 'resume', 'online', 'added']);
 /** Triggers after which a channel may have died while the app was away. */
 const RETURNED = new Set(['resume', 'online']);
-/** A wallet's answers that its history will not be read, now or later. */
-const REFUSED = new Set(['RESTRICTED', 'NOT_IMPLEMENTED', 'UNAUTHORIZED']);
 
 const isSpark = (wallet) => (wallet?.type || 'nwc') === 'spark';
 
@@ -77,6 +94,7 @@ const isSpark = (wallet) => (wallet?.type || 'nwc') === 'spark';
  *   watch(owner, onHint, wallet)    -> { stop, revive? } | null (no channel)
  *   readPage(owner, offset, limit)  -> rows newest first; throws on failure
  *   find(owner, paymentHash, wallet) -> one row | null, for a hint the pages did not reach
+ *   interval(wallet)                 -> ms between its timer runs when longer than the round; null: every round
  * `owner` is what the store connects: the provider, or the NWC connection.
  */
 export const PAYMENTS = Object.freeze({
@@ -93,6 +111,7 @@ export const PAYMENTS = Object.freeze({
     watch: (connection, onHint, wallet) => (notifiesPayments(wallet) ? watchNwcPayments(connection, onHint) : null),
     readPage: (connection, offset, limit) => listNwcPayments(connection, { offset, limit }),
     find: (connection, paymentHash, wallet) => findNwcPayment(connection, paymentHash, { methods: wallet.metadata?.methods }),
+    interval: (wallet) => (notifiesPayments(wallet) ? null : QUIET_INTERVAL_MS),
   },
 });
 
@@ -134,6 +153,8 @@ export function createWalletWatch({
   let timer = null;
   let round = null;
   let lastRoundAt = -Infinity;
+  /** Wallets the last round left out: a timer round skips those read less often. */
+  let leftOut = [];
 
   const walletOf = (walletId) => wallets().find((w) => w.id === walletId) || null;
   /** Every wallet the watch keeps current. */
@@ -160,7 +181,7 @@ export function createWalletWatch({
       r = {
         walletId, generation: ++generations, inflight: null, rerun: null, retryTimer: null, failures: 0,
         channel: null, channelOwner: null, channelFailedAt: 0, hints: new Set(),
-        historyFailures: 0, historyRefused: false, lastHintRunAt: 0, hintTimer: null,
+        historyFailures: 0, historyRefused: false, historyPausedUntil: 0, lastHintRunAt: 0, hintTimer: null, lastRunAt: -Infinity,
       };
       records.set(walletId, r);
     }
@@ -261,9 +282,14 @@ export function createWalletWatch({
     return found;
   }
 
-  /** True when the watch announces this wallet's payments from its history. */
+  /**
+   * True when the watch announces this wallet's payments from its history.
+   * A pause holds until the run that ends it (runOnce), not merely until
+   * its time is up: see there.
+   */
   function readsHistoryOf(wallet, r = records.get(wallet.id)) {
-    return !!paymentsOf(wallet)?.readPage && canReadHistory(wallet) && !r?.historyRefused;
+    if (!paymentsOf(wallet)?.readPage || !canReadHistory(wallet) || r?.historyRefused) return false;
+    return !r?.historyPausedUntil;
   }
 
   async function runOnce(r, reason) {
@@ -278,6 +304,17 @@ export function createWalletWatch({
       const payments = paymentsOf(wallet);
       await armChannel(r, gen, wallet, owner, payments, reason);
       if (!isCurrent(r, gen)) return;
+
+      // The end of a pause. Its history comes back as a fresh baseline,
+      // which announces nothing, so the balance speaks once more first,
+      // while the wallet still counts as paused: a payment that arrived
+      // since the last paused read is announced by the store's balance
+      // rule, not taken in silently by the baseline.
+      if (r.historyPausedUntil && now() >= r.historyPausedUntil) {
+        await within(refreshBalance(wallet.id), 'balance');
+        if (!isCurrent(r, gen)) return;
+        r.historyPausedUntil = 0;
+      }
 
       let activity = false;
       if (readsHistoryOf(wallet, r)) {
@@ -305,16 +342,19 @@ export function createWalletWatch({
           failure = error;
           r.historyFailures += 1;
           diag(wallet.id, 'catchup-failed', { error: errClass(error) });
-          // A wallet that says no to its history (not granted, not built),
-          // or whose history never answers while the network does, is left
-          // to its balance for this session. Its ledger goes: a later
-          // return to its history starts from a new baseline instead of
-          // announcing again what the balance announced.
-          if (REFUSED.has(error?.code) || (online() && r.historyFailures >= HISTORY_GIVE_UP)) {
-            r.historyRefused = true;
+          // A wallet that says no to its history (not granted, not built)
+          // is left to its balance for this session; one whose history does
+          // not answer while the network does, for HISTORY_PAUSE_MS. Its
+          // ledger goes either way: the return to its history starts from a
+          // new baseline instead of announcing again what the balance did.
+          const refused = isRefusal(error);
+          if (refused || (online() && r.historyFailures >= HISTORY_GIVE_UP)) {
+            if (refused) r.historyRefused = true;
+            else r.historyPausedUntil = now() + HISTORY_PAUSE_MS;
+            r.historyFailures = 0;
             ledger.forget(wallet.id);
             failure = null; // nothing left to retry: the balance tells from here
-            diag(wallet.id, 'history-given-up');
+            diag(wallet.id, refused ? 'history-refused' : 'history-paused');
           }
         }
       }
@@ -360,6 +400,7 @@ export function createWalletWatch({
       return r.inflight;
     }
     if (reason === 'hint') r.lastHintRunAt = now();
+    r.lastRunAt = now();
     const run = runOnce(r, reason).finally(() => {
       r.inflight = null;
       const again = r.rerun;
@@ -380,12 +421,27 @@ export function createWalletWatch({
     for (const walletId of [...records.keys()]) if (!ids.has(walletId)) forget(walletId);
   }
 
+  /**
+   * Whether the minute timer reaches this wallet now: a wallet read less
+   * often waits until its own interval has passed since its last run, of
+   * whatever kind. Every other trigger reads every wallet.
+   */
+  function dueOnTimer(wallet) {
+    const interval = paymentsOf(wallet)?.interval?.(wallet);
+    if (!interval) return true;
+    const lastRunAt = records.get(wallet.id)?.lastRunAt ?? -Infinity;
+    return now() - lastRunAt >= interval - TIMER_SLACK_MS;
+  }
+
   /** One round at a time: a call while one runs shares it. */
   function runRound(reason) {
     if (round) return round;
     lastRoundAt = now();
     dropRemoved();
-    round = Promise.allSettled(watched().map((w) => check(w.id, reason))).finally(() => { round = null; });
+    const all = watched();
+    const due = all.filter((w) => reason !== 'timer' || dueOnTimer(w));
+    leftOut = all.filter((w) => !due.includes(w)).map((w) => w.id);
+    round = Promise.allSettled(due.map((w) => check(w.id, reason))).finally(() => { round = null; });
     return round;
   }
 
@@ -427,7 +483,14 @@ export function createWalletWatch({
     /** Back in front of the person, or back online: read now instead of at the next tick. */
     resume(reason = 'resume') {
       if (!started) return Promise.resolve();
-      if (round || now() - lastRoundAt < RESUME_SETTLE_MS) return round || Promise.resolve();
+      if (round || now() - lastRoundAt < RESUME_SETTLE_MS) {
+        // That round, running or just run, is usually the thawed timer's,
+        // which leaves out the wallets read less often: coming back reads
+        // those too.
+        const missed = leftOut;
+        leftOut = [];
+        return Promise.allSettled([round, ...missed.map((walletId) => check(walletId, reason))]);
+      }
       if (timer) clearTimer(timer);
       timer = null;
       return runRound(reason).finally(schedule);

@@ -661,7 +661,6 @@ import { offerAddressRequest } from '../services/addressRequestIntake.js';
 import { assertPaymentInput } from '../utils/lud23.js';
 import { withdrawInfo, withdrawRecipient, isCardRequest, isCardLink, withdrawLinkHost } from '../utils/lnurlWithdraw.js';
 import { fetchLnurlRequest, safeWithdrawError } from '../services/lnurlWithdraw.js';
-import { NostrWebLNProvider } from "@getalby/sdk";
 import {LightningPaymentService, resolveLUD17URL} from '../utils/lightning.js';
 import {resolveSuccessAction} from '../utils/successAction.js';
 import {pollVerify} from '../utils/lnurlVerify.js';
@@ -5862,7 +5861,7 @@ export default {
         throw new Error('No active NWC wallet found');
       }
       const nwc = await this.walletStore.nwcConnection(id);
-      const lightningService = new LightningPaymentService(nwc, { limit: this.walletStore.nwcLimitFor(id) });
+      const lightningService = new LightningPaymentService(nwc, this.walletStore.nwcPayOptions(id));
       return await lightningService.sendPayment(this.getNwcPaymentData(), amount, comment, { payerData });
     },
 
