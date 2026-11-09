@@ -20,6 +20,7 @@ import * as userErrors from '../../utils/userErrors.js';
 import * as refundAddress from '../../utils/refundAddress.js';
 import * as lud18 from '../../utils/lud18.js';
 import * as merchantQR from '../../utils/merchantQR.js';
+import * as npubCashAddress from '../../utils/npubCashAddress.js';
 
 // Run the production Options-API methods with controlled provider promises.
 function evaluate(file, dependencies = {}) {
@@ -50,6 +51,7 @@ const component = (dependencies = {}) => evaluate('../Wallet.vue', {
   '../utils/lud18.js': lud18,
   '../utils/merchantQR.js': merchantQR,
   '../utils/errorOrigin.js': errorOrigin,
+  '../utils/npubCashAddress.js': npubCashAddress,
   '../utils/haptics.js': haptics,
   '../utils/nwcErrors.js': nwcErrors,
     '../utils/userErrors.js': userErrors,
@@ -2133,6 +2135,48 @@ test('Refunds to: a service that requires details BuhoGO never shares cannot be 
   assert.equal(vm.canConfirmPayment, false);
   await quietly(() => vm.confirmPayment());
   assert.deepEqual(handed, [], 'nothing was asked of the service');
+});
+
+const BUCKET_NPUB = 'npub1az708q3kd9zy6z6f44zav5ygvdwelkzspf6mtusttx47lft2z38sghk0w7';
+const BUCKET_ADDRESS = `${BUCKET_NPUB}@npub.cash`;
+const identityHere = (extra = {}) => ({ bootstrapped: true, nostrNpub: BUCKET_NPUB, identityCapabilities: { rawKey: true }, ...extra });
+
+test('Refunds to: with no address on any wallet or the profile, the Social Bucket takes the refund', async () => {
+  const { vm, store, handed, sent } = refundHarness({ active: 'biz' });
+  store.lightningAddressOf = () => null;
+  vm.identityStore = identityHere();
+  Object.assign(vm, { pendingPayment: tillPayment(), sendingWalletId: 'biz', paymentAmount: '2500', sendSheetAmountSats: 2500 });
+  assert.deepEqual(vm.refundOptions, [{ address: BUCKET_ADDRESS, source: 'bucket' }]);
+  assert.equal(vm.paymentSheetProps.refund.selected, BUCKET_ADDRESS, 'the row shows it before the slide');
+  await quietly(() => vm.confirmPayment());
+  assert.deepEqual(handed, [['biz', { identifier: BUCKET_ADDRESS }]]);
+  assert.equal(sent.links?.[0]?.refundAddress, BUCKET_ADDRESS);
+});
+
+test('Refunds to: the Social Bucket is listed last, and a wallet\'s address stays the default', () => {
+  const { vm } = refundHarness({ active: 'biz' });
+  vm.identityStore = identityHere();
+  Object.assign(vm, { pendingPayment: tillPayment(), sendingWalletId: 'lnb', paymentAmount: '2500' });
+  assert.equal(vm.refundAddress, OWN_ADDRESSES.lnb);
+  assert.deepEqual(vm.refundOptions.at(-1), { address: BUCKET_ADDRESS, source: 'bucket' }, 'one tap away');
+});
+
+test('Refunds to: no Social Bucket where this phone cannot empty it', () => {
+  const { vm, store } = refundHarness({ active: 'biz' });
+  store.lightningAddressOf = () => null;
+  Object.assign(vm, { pendingPayment: tillPayment(), sendingWalletId: 'biz', paymentAmount: '2500' });
+  for (const [label, identityStore] of [
+    ['a signer app holds the key', identityHere({ identityCapabilities: { rawKey: false } })],
+    ['capabilities unknown', identityHere({ identityCapabilities: undefined })],
+    ['no identity yet', identityHere({ bootstrapped: false })],
+    ['no public code', identityHere({ nostrNpub: null })],
+    ['not an npub', identityHere({ nostrNpub: 'nsec1secret' })],
+    ['no identity store', undefined],
+  ]) {
+    vm.identityStore = identityStore;
+    assert.equal(vm.socialBucketAddress, null, label);
+    assert.equal(vm.refundAddress, null, label);
+  }
 });
 
 test('Refunds to: the profile\'s address counts only once the active identity\'s profile is read', () => {
