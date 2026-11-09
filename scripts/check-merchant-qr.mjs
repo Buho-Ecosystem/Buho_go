@@ -1,6 +1,6 @@
 /** Browser check for South African till codes in the Send sheet: what a typed
- * address does, what the camera does, and that a crafted code cannot freeze the
- * app. The provider and the example Lightning address are local stand-ins, so
+ * address does, what the camera does, that a scanned `tel:` link is the
+ * phone number it calls, and that a crafted code cannot freeze the app. The provider and the example Lightning address are local stand-ins, so
  * nothing leaves the machine. The camera is stood in for by the same handler
  * its `scanned` event calls.
  * Start `npx quasar dev --port 9047` first (or set MERCHANT_QR_BASE_URL). */
@@ -173,6 +173,43 @@ const tillLookups = (lookups) => lookups.filter((url) => new URL(url).hostname =
   assert.deepEqual(errors, []);
   await context.close();
   console.log('ok  typed 0712345678 is a Kenyan phone payout');
+}
+
+{
+  // A phone number in a QR code is a tel: link: the number it calls.
+  const { page, context, errors, lookups } = await open();
+  await openSend(page);
+  await scan(page, 'tel:+254712345678');
+  await pause(1500);
+  assert.deepEqual(lookups.map((url) => new URL(url).hostname), ['bitcoin.co.ke'], 'a Kenyan phone payout');
+  assert.deepEqual(errors, []);
+  await context.close();
+  console.log('ok  scanned tel:+254712345678 is a Kenyan phone payout');
+}
+
+{
+  // Valid in Kenya, Zambia and Tanzania: the link's context says Zambia.
+  const { page, context, errors, lookups } = await open();
+  await openSend(page);
+  await scan(page, 'tel:0751234567;phone-context=+260');
+  await pause(1500);
+  assert.deepEqual(lookups.map((url) => new URL(url).hostname), ['bitzed.xyz'], 'the country the link names');
+  assert.deepEqual(errors, []);
+  await context.close();
+  console.log('ok  scanned tel:0751234567;phone-context=+260 is a Zambian phone payout');
+}
+
+// No payout service takes it, or the link does not say which country it is in.
+for (const link of ['tel:+12125551212', 'tel:0712345678']) {
+  const { page, context, errors, lookups } = await open();
+  await openSend(page);
+  await scan(page, link);
+  await page.getByText("You can't pay this phone number").waitFor();
+  await pause(800);
+  assert.deepEqual(lookups, [], 'nothing looked up, nothing sent to the till provider');
+  assert.deepEqual(errors, []);
+  await context.close();
+  console.log(`ok  scanned ${link} says it can't be paid`);
 }
 
 for (const code of ['0821234567', 'https://pos.snapscan.io/qr/TEST', 'https://www.zapper.com/url/TEST']) {

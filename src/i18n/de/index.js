@@ -2523,6 +2523,8 @@ export default {
   "Vodacom M-Pesa only": "Nur Vodacom M-Pesa",
   "Phone number": "Telefonnummer",
   "Which country?": "Welches Land?",
+  "You can't pay this phone number": "An diese Telefonnummer kannst du nicht zahlen",
+  "Mobile Money shows which numbers you can pay": "Unter Mobile Money siehst du, an welche Nummern du zahlen kannst",
   "Kenya": "Kenia",
   "Zambia": "Sambia",
   "Tanzania": "Tansania",

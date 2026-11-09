@@ -21,6 +21,7 @@ import * as refundAddress from '../../utils/refundAddress.js';
 import * as lud18 from '../../utils/lud18.js';
 import * as merchantQR from '../../utils/merchantQR.js';
 import * as npubCashAddress from '../../utils/npubCashAddress.js';
+import { recognizePhoneNumber } from '../../services/lnAddressServices/phoneNumbers.js';
 
 // Run the production Options-API methods with controlled provider promises.
 function evaluate(file, dependencies = {}) {
@@ -2242,4 +2243,18 @@ test('Refunds to: the profile\'s address counts only once the active identity\'s
   vm.profileStore = { hydrated: true, hydratedProfileKey: 'a', _profileStorageKey: () => 'a', lud16: 'npub1abc@npub.cash' };
   assert.deepEqual(vm.refundOptions, [{ address: 'npub1abc@npub.cash', source: 'profile' }]);
   assert.equal(vm.canConfirmPayment, true);
+});
+
+test('the Home strip pays a copied phone number it can place, and hands one valid in more than one country to the sheet', () => {
+  const { methods } = component({ '../services/lnAddressServices': { matchLnAddressService: () => null, recognizePhoneNumber } });
+  const payload = (text) => methods.clipboardPaymentPayload.call({ walletStore: { activeWalletType: 'spark' } }, text);
+  for (const text of ['0712345678', '+254712345678', 'tel:+254712345678', 'tel:0712345678;phone-context=+254']) {
+    assert.deepEqual(payload(text), { data: '254712345678@bitcoin.co.ke', type: 'lightning_address', rawInput: text }, text);
+  }
+  // Valid in Kenya, Zambia and Tanzania: no country is picked here. The sheet
+  // takes the text (useDestination) and asks which.
+  for (const text of ['0751234567', '075 123 4567']) {
+    assert.equal(payload(text), null, text);
+  }
+  assert.deepEqual(payload('tel:0751234567;phone-context=+260')?.data, '260751234567@bitzed.xyz', 'the link names the country');
 });

@@ -2844,10 +2844,13 @@ export default {
       if (!rawInput) return null;
       const walletType = this.walletStore.activeWalletType;
 
-      // A recognized KE/ZM mobile number is a fiat payout: resolve it to
-      // its provider Lightning address before any other classifier sees
-      // the digits.
+      // A mobile number in a payout country, as digits or a `tel:` link, is
+      // a fiat payout: resolve it to its provider Lightning address before
+      // any other classifier sees the digits. One valid in more than one
+      // country goes to the sheet, which asks which: a payout to the wrong
+      // country cannot be undone.
       const phone = recognizePhoneNumber(rawInput);
+      if (phone?.ambiguous) return null;
       if (phone) return { data: phone.lightningAddress, type: 'lightning_address', rawInput };
 
       const { cleaned, bip21 } = normalizeDestination(rawInput, walletType);

@@ -51,6 +51,15 @@ Ten digits can be both: a Scan to Pay till code, and a local mobile number in a 
 
 A number with its country code (`+254…`, `254…`, `00254…`) has no till code's shape and stays a phone number either way.
 
+A `tel:` link, scanned, typed or pasted, is the phone number it calls (`utils/telUri.js`, read by `phoneNumbers.js`). It is read only in the form [RFC 3966](https://www.rfc-editor.org/rfc/rfc3966) writes it, and then the way the same number typed would be:
+
+- `tel:+254712345678`, `TEL:+254-712-345-678`: a phone payout. A global number is the form the RFC says SHOULD be used (5.1.4); it MAY carry the visual separators `-` `.` `(` `)` (5.1.1), and "URI comparisons are case-insensitive" (4).
+- `tel:0751234567;phone-context=+260`: Zambia. "Local numbers MUST have a 'phone-context' parameter", which "does NOT indicate a prefix that turns the local number into a global (E.164) number" (5.1.5). So the context only picks among the countries the number is valid in (`0751234567` is valid in Kenya, Zambia and Tanzania), and a context that is not a payout country's calling code is not read: a reader that calls a local number "MUST understand the context".
+- `tel:0712345678`, a local number without a context: not read. The RFC forbids it, and the digits alone do not say the country: `0723891234` is a valid Kenyan number and, in the Scan to Pay operator's own docs, a South African one (`"cardPhone": "27723891234"`).
+- An extension (`;ext=`), a sub-address, any other parameter, a space, a percent-encoded character, `tel://`: not read.
+
+Scanned, a `tel:` link that is not read, or that no payout service takes, says "You can't pay this phone number" and goes nowhere, never to the till provider. Typed or pasted, the field shows no number for it and offers nothing to continue.
+
 MoneyBadger's answer is said in plain words:
 
 | MoneyBadger's answer | What the person reads |

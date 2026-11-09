@@ -13,7 +13,8 @@ import * as lud23 from '../../utils/lud23.js';
 import * as merchantQR from '../../utils/merchantQR.js';
 import * as bip21 from '../../utils/bip21.js';
 import * as addressUtils from '../../utils/addressUtils.js';
-import { recognizePhoneNumber } from '../../services/lnAddressServices/phoneNumbers.js';
+import { recognizePhoneNumber, recognizePhoneNumberForCountry } from '../../services/lnAddressServices/phoneNumbers.js';
+import * as telUri from '../../utils/telUri.js';
 import * as nostrLookup from '../../utils/nostrLookup.js';
 import * as walletCapabilities from '../../utils/walletCapabilities.js';
 import * as clipboardSuggestion from '../../utils/clipboardSuggestion.js';
@@ -40,7 +41,9 @@ function sendSheet() {
     '../utils/merchantQR': merchantQR,
     '../utils/bip21': bip21,
     '../utils/addressUtils': addressUtils,
-    '../services/lnAddressServices': { recognizePhoneNumber },
+    '../services/lnAddressServices': { recognizePhoneNumber, recognizePhoneNumberForCountry },
+    '../utils/payoutCountryPreference': { getPreferredPayoutCountry: () => null, rememberPayoutCountry() {} },
+    '../utils/telUri.js': telUri,
     '../utils/nostrLookup': nostrLookup,
     '../utils/walletCapabilities': walletCapabilities,
     '../utils/clipboardSuggestion.js': clipboardSuggestion,
@@ -222,6 +225,8 @@ function sendField() {
     mobileMoneyMode: false,
     mmCountry: null,
     resolveError: '',
+    isProcessing: false,
+    show: true,
     clipboardSuggestion: null,
     phoneAdvanceTimer: null,
     pasteAdvanceTimer: null,
@@ -229,15 +234,35 @@ function sendField() {
   for (const name of ['fieldHoldsScan', 'recognizedPhone', 'detectedInputType', 'isValidManualInput', 'phoneNeedsCountryChoice', 'capabilityBlocked']) {
     Object.defineProperty(vm, name, { get: sheet.computed[name].bind(vm) });
   }
-  /** The field's text changes, and its watcher sees it, as in the running sheet. */
+  // What Vue does after a change: each of these watchers whose value changed
+  // runs, until nothing changes.
+  const WATCHED = ['manualInput', 'fieldHoldsScan'];
+  const seen = Object.fromEntries(WATCHED.map((key) => [key, vm[key]]));
+  vm.flush = () => {
+    for (let changed = true; changed;) {
+      changed = false;
+      for (const key of WATCHED) {
+        const now = vm[key];
+        const before = seen[key];
+        if (now === before) continue;
+        seen[key] = now;
+        changed = true;
+        sheet.watch[key].call(vm, now, before);
+      }
+    }
+  };
+  /** The person changes the field's text. */
   vm.set = (value) => {
     vm.manualInput = value;
-    sheet.watch.manualInput.call(vm, value);
+    vm.flush();
   };
-  /** What a scan does to the field before it resolves (onQRDetect). */
-  vm.scanInto = (value) => {
-    vm.scannedText = value;
-    vm.set(value);
+  /** A scan lands in the field: the camera's own handler, the hand-off to the Wallet page held back. */
+  vm.scanInto = async (value) => {
+    vm.processPaymentData = async () => {};
+    await vm.onQRDetect(value);
+    vm.processPaymentData = methods.processPaymentData;
+    vm.isProcessing = false;
+    vm.flush();
   };
   vm.stopTimers = () => {
     clearTimeout(vm.phoneAdvanceTimer);
@@ -259,10 +284,15 @@ for (const [country, number] of LOCAL_NUMBERS) {
   });
 
   test(`typed or pasted, ${number} is a phone number in ${country}`, async () => {
-    const emitted = await typed(number);
-    assert.equal(emitted.length, 1);
-    assert.equal(emitted[0].data, recognizePhoneNumber(number).lightningAddress);
-    assert.equal(emitted[0].source, undefined, 'not a till');
+    const phone = recognizePhoneNumber(number);
+    const field = sendField();
+    field.set(number);
+    assert.equal(field.detectedInputType, 'phone_number');
+    field.stopTimers();
+    // In one country it goes on as that number; in more than one, the field
+    // asks which, and nothing goes on until the person says.
+    assert.equal(field.phoneNeedsCountryChoice, phone.ambiguous);
+    assert.deepEqual((await typed(number)).map((payload) => payload.data), phone.ambiguous ? [] : [phone.lightningAddress]);
   });
 }
 
@@ -275,31 +305,27 @@ test('a scanned number with its country code is still a phone number: no till co
   }
 });
 
-test('a scanned tel: link never goes to the till provider', async () => {
-  const { emitted } = await scan('tel:+254712345678');
-  assert.ok(emitted.every((payload) => payload.source !== merchantQR.SA_RETAIL_SOURCE));
-});
-
-test('after a scan, the field reads a till code as a till code, not as a phone number', () => {
+test('after a scan, the field reads a till code as a till code, not as a phone number', async () => {
   const field = sendField();
-  field.scanInto('0712345678');
+  await field.scanInto('0712345678');
   assert.equal(field.fieldHoldsScan, true);
   assert.equal(field.recognizedPhone, null, 'no Kenyan number shown for the till');
   assert.equal(field.detectedInputType, null);
-  field.scanInto('+254712345678');
+  await field.scanInto('+254712345678');
   assert.equal(field.detectedInputType, 'phone_number', 'a scanned international number still reads as one');
+  field.stopTimers();
 });
 
-test('after a scan, the typing beat never runs a till code again as a phone number', () => {
+test('after a scan, the typing beat never runs a till code again as a phone number', async () => {
   const field = sendField();
-  field.scanInto('0712345678');
+  await field.scanInto('0712345678');
   assert.equal(field.isValidManualInput, false);
   assert.equal(field.phoneAdvanceTimer, null, 'nothing armed: the field does not read it as typed');
 });
 
-test('edited, the text is the person\'s: the same digits typed back are a phone number', () => {
+test('edited, the text is the person\'s: the same digits typed back are a phone number', async () => {
   const field = sendField();
-  field.scanInto('0712345678');
+  await field.scanInto('0712345678');
   field.set('071234567');
   field.set('0712345678');
   assert.equal(field.fieldHoldsScan, false);
@@ -316,11 +342,169 @@ test('pasted over a scan, the same digits are a phone number', async () => {
     (field) => field.onTextareaPaste(),
   ]) {
     const field = sendField();
-    field.scanInto('0712345678');
+    await field.scanInto('0712345678');
     await paste(field);
+    field.flush();
     assert.equal(field.fieldHoldsScan, false, String(paste));
     assert.equal(field.detectedInputType, 'phone_number', String(paste));
     field.stopTimers();
+  }
+});
+
+test('pasted over a scan with the same digits, the till\'s error goes with the scan', async () => {
+  for (const paste of [
+    async (field) => { clipboardText = '0712345678'; await field.pasteFromClipboard(); },
+    (field) => field.onTextareaPaste(),
+  ]) {
+    const field = sendField();
+    await field.scanInto('0712345678');
+    field.resolveError = "This code can't be paid. Ask the cashier for a new one.";
+    const errors = [];
+    field.$emit = (name, value) => { if (name === 'update:resolveError') errors.push(value); };
+    await paste(field);
+    field.flush();
+    assert.deepEqual(errors, [''], String(paste));
+    field.stopTimers();
+  }
+});
+
+// ── A tel: link: the phone number it calls ─────────────────────────────────
+//
+// A phone number belongs in a QR code as a `tel:` link (RFC 3966; zxing's
+// barcode contents guide). Read in the RFC's form, it is the number it calls,
+// read the way the same number typed would be, and never a till code.
+
+/** An international number in each payout country, in its `tel:` link. */
+const TEL_LINKS = [['KE', 'tel:+254712345678'], ['ZM', 'tel:+260971234567'], ['TZ', 'tel:+255741234567'], ['GH', 'tel:+233241234567']];
+const CALLING_CODES = { KE: '254', ZM: '260', TZ: '255', GH: '233' };
+
+for (const [country, link] of TEL_LINKS) {
+  test(`scanned, ${link} is a phone payout in ${country}`, async () => {
+    const { emitted, notices } = await scan(link);
+    assert.deepEqual(notices, []);
+    assert.equal(emitted.length, 1);
+    assert.equal(emitted[0].type, 'lightning_address');
+    assert.equal(emitted[0].data, recognizePhoneNumber(link.slice('tel:'.length)).lightningAddress);
+    assert.equal(emitted[0].source, undefined, 'not a till');
+    assert.equal(recognizePhoneNumber(link).country.code, country);
+  });
+}
+
+test('scanned, a tel: link is read in the forms the RFC writes it', async () => {
+  for (const link of ['TEL:+254712345678', 'tel:+254-712-345-678', 'tel:+254(712)345.678', 'tel:0712345678;phone-context=+254', 'tel:0712345678;phone-context=+2-5-4']) {
+    const { emitted, notices } = await scan(link);
+    assert.deepEqual(notices, [], link);
+    assert.deepEqual(emitted.map((payload) => payload.data), ['254712345678@bitcoin.co.ke'], link);
+  }
+});
+
+test('scanned, ten digits in a tel: link are a phone number in the country it names, never the till\'s', async () => {
+  for (const [country, number] of LOCAL_NUMBERS) {
+    const { emitted, notices } = await scan(`tel:${number};phone-context=+${CALLING_CODES[country]}`);
+    assert.deepEqual(notices, [], number);
+    assert.deepEqual(emitted.map((payload) => payload.data), [recognizePhoneNumberForCountry(country, number).lightningAddress], number);
+  }
+});
+
+test('the country a tel: link names picks among the ones its number is valid in', async () => {
+  const { emitted } = await scan('tel:0751234567;phone-context=+260');
+  assert.deepEqual(emitted.map((payload) => payload.data), ['260751234567@bitzed.xyz']);
+});
+
+test('scanned, a tel: link no payout service takes, or that does not say its country, is refused and goes nowhere', async () => {
+  for (const link of [
+    'tel:+12125551212',
+    'tel:0712345678',
+    'tel:0751234567',
+    'tel:0723891234',
+    'tel:0821234567',
+    'tel:+254712345678;ext=101',
+    'tel:0712345678;phone-context=+260',
+    'tel:0712345678;phone-context=example.com',
+    'tel:+254 712 345 678',
+  ]) {
+    const { emitted, notices, processing } = await scan(link);
+    assert.deepEqual(emitted, [], `${link}: nothing is paid, and nothing goes to the till provider`);
+    assert.equal(notices.length, 1, link);
+    assert.equal(notices[0].message, "You can't pay this phone number", link);
+    assert.equal(notices[0].caption, 'Mobile Money shows which numbers you can pay', link);
+    assert.equal(processing, false, link);
+  }
+});
+
+test('typed or pasted, a tel: link reads as the phone number it calls and goes on as one', async () => {
+  const field = sendField();
+  field.set('tel:+254712345678');
+  assert.equal(field.detectedInputType, 'phone_number');
+  assert.equal(field.recognizedPhone.lightningAddress, '254712345678@bitcoin.co.ke');
+  assert.ok(field.phoneAdvanceTimer, 'it advances on the typing beat');
+  field.stopTimers();
+
+  await field.scanInto('tel:0712345678;phone-context=+254');
+  assert.equal(field.detectedInputType, 'phone_number', 'scanned, the field shows the number, not a till');
+  field.stopTimers();
+
+  field.set('tel:0712345678');
+  assert.equal(field.recognizedPhone, null, 'a local link that does not say its country shows no number');
+  assert.equal(field.isValidManualInput, false);
+});
+
+test('in Mobile Money, a tel: link is read in the country chosen there, if it says no other', () => {
+  const field = sendField();
+  field.mobileMoneyMode = true;
+  field.mmCountry = 'ZM';
+  field.set('tel:0751234567;phone-context=+260');
+  assert.equal(field.recognizedPhone.country.code, 'ZM');
+  assert.equal(field.phoneNeedsCountryChoice, false, 'the country is already chosen');
+  field.stopTimers();
+  field.set('tel:0751234567');
+  assert.equal(field.recognizedPhone, null, 'not in the RFC\'s form, not even here');
+});
+
+test('the field shows only a number it would pay: inside a lightning: link, digits are not a phone number', async () => {
+  const field = sendField();
+  for (const text of ['lightning:0712345678', 'lightning:+254712345678', 'LIGHTNING:tel:+254712345678']) {
+    field.set(text);
+    assert.equal(field.recognizedPhone, null, text);
+    assert.notEqual(field.detectedInputType, 'phone_number', text);
+    field.stopTimers();
+    const { emitted } = await scan(text);
+    assert.deepEqual(emitted, [], `${text}: nor does sending it pay one`);
+  }
+});
+
+// ── A number valid in more than one country ─────────────────────────────────
+
+test('typed, a number valid in more than one country waits for the person to say which', () => {
+  const field = sendField();
+  field.set('0751234567');
+  assert.equal(field.phoneNeedsCountryChoice, true, 'the field asks: Which country?');
+  assert.deepEqual(field.recognizedPhone.candidates.map((c) => c.country.code), ['KE', 'ZM', 'TZ']);
+  field.stopTimers();
+
+  const chosen = [];
+  field.$emit = (name, payload) => { if (name === 'payment-detected') chosen.push(payload); };
+  field.autoAdvance();
+  assert.deepEqual(chosen, [], 'the typing beat goes on with nothing');
+  field.selectPhoneCountry(field.recognizedPhone.candidates.find((c) => c.country.code === 'ZM'));
+  assert.deepEqual(chosen.map((payload) => payload.data), ['260751234567@bitzed.xyz']);
+});
+
+test('copied from the Home strip, such a number lands in the field, which asks too', () => {
+  const field = sendField();
+  const emitted = [];
+  field.$emit = (name, payload) => { if (name === 'payment-detected') emitted.push(payload); };
+  field.useDestination('0751234567');
+  field.flush();
+  assert.equal(field.phoneNeedsCountryChoice, true);
+  field.autoAdvance();
+  assert.deepEqual(emitted, [], 'the paste beat goes on with nothing');
+  field.stopTimers();
+});
+
+test('whatever calls the send step with such a number, it is never sent on to a default country', async () => {
+  for (const number of ['0751234567', '075 123 4567', '0741234567']) {
+    assert.deepEqual(await typed(number), [], number);
   }
 });
 
