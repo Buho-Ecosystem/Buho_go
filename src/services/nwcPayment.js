@@ -13,7 +13,7 @@
  * `code` otherwise (utils/nwcErrors explains it).
  */
 import { Invoice } from '@getalby/lightning-tools';
-import { NWC_ERROR, isUncertainPaymentError, nwcError } from '../utils/nwcErrors.js';
+import { NWC_ERROR, isNotOffered, isUncertainPaymentError, nwcError } from '../utils/nwcErrors.js';
 import { spendingLimitFrom } from '../utils/nwcWallet.js';
 
 /** Waits between lookups of an unconfirmed payment, half a minute in all. */
@@ -152,7 +152,7 @@ async function confirmByLookup(nwc, paymentHash, { lookupDelays, lookupWait, sle
       try {
         tx = await withinWait(client.lookupInvoice({ payment_hash: paymentHash }), lookupWait);
       } catch (error) {
-        if (error?.code === 'NOT_IMPLEMENTED' || error?.code === 'RESTRICTED') break;
+        if (isNotOffered(error)) break;
         continue; // NOT_FOUND or no answer yet: the wallet may still be paying
       }
       if (tx?.state === 'failed') throw nwcError('PAYMENT_FAILED', 'Payment failed');

@@ -10,7 +10,7 @@
 import { createNwcClient } from './nwcClient.js';
 import { parseNwcConnection } from '../utils/nwcConnection.js';
 import { cleanWalletText, nip47Methods, spendingLimitFrom, walletKeyOf } from '../utils/nwcWallet.js';
-import { NWC_ERROR, isNoAnswer, isRelayFailure, nwcError } from '../utils/nwcErrors.js';
+import { NWC_ERROR, isNoAnswer, isNotOffered, isRelayFailure, nwcError } from '../utils/nwcErrors.js';
 
 /**
  * @typedef {object} NwcProbe
@@ -83,7 +83,7 @@ async function walletInfo(client, onWaiting) {
       onWaiting?.();
       return client.getInfo();
     }
-    if (error?.code === 'RESTRICTED' || error?.code === 'NOT_IMPLEMENTED') {
+    if (isNotOffered(error)) {
       const service = await client.getWalletServiceInfo();
       return { methods: service?.capabilities || [], notifications: service?.notifications || [] };
     }

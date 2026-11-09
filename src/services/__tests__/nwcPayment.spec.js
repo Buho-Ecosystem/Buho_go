@@ -60,10 +60,12 @@ test('still unknown after every lookup: the person checks before paying again', 
   assert.equal(w.calls.lookup, 3);
 });
 
-test('a wallet that cannot look up stops early, still unconfirmed', async () => {
-  const w = wallet({ pay: () => { throw sdk('reply timeout: x', 'INTERNAL'); }, lookups: [sdk('no', 'NOT_IMPLEMENTED')] });
-  await assert.rejects(payWithNwc(w, 'lnbc1', fast), (e) => e.code === NWC_ERROR.UNCONFIRMED);
-  assert.equal(w.calls.lookup, 1);
+test('a wallet that cannot look up stops early, still unconfirmed, whichever code it answers', async () => {
+  for (const code of ['NOT_IMPLEMENTED', 'RESTRICTED']) {
+    const w = wallet({ pay: () => { throw sdk('reply timeout: x', 'INTERNAL'); }, lookups: [sdk('no', code)] });
+    await assert.rejects(payWithNwc(w, 'lnbc1', fast), (e) => e.code === NWC_ERROR.UNCONFIRMED);
+    assert.equal(w.calls.lookup, 1, code);
+  }
 });
 
 test('a clear refusal passes straight through, without lookups', async () => {

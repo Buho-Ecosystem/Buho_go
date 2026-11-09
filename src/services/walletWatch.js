@@ -42,6 +42,7 @@ import { catchUpReceipts } from './paymentReceipts.js';
 import { receiptLedger, deliverReceipt, trackAppVisibility } from './paymentReceiptsApp.js';
 import { notifiesPayments, watchNwcPayments, listNwcPayments, findNwcPayment } from './nwcReceive.js';
 import { capabilitiesOf } from '../utils/nwcWallet.js';
+import { isNotOffered } from '../utils/nwcErrors.js';
 import { onAppVisibility } from '../utils/appVisibility.js';
 
 export const WATCH_INTERVAL_MS = 60 * 1000;
@@ -84,8 +85,8 @@ export const HISTORY_PAUSE_MS = 15 * 60 * 1000;
 const URGENT = new Set(['hint', 'resume', 'online', 'added']);
 /** Triggers after which a channel may have died while the app was away. */
 const RETURNED = new Set(['resume', 'online']);
-/** A wallet's answers that its history will not be read, now or later. */
-const REFUSED = new Set(['RESTRICTED', 'NOT_IMPLEMENTED', 'UNAUTHORIZED']);
+/** A wallet's answer that its history will not be read, now or later. */
+const refusesHistory = (error) => isNotOffered(error) || error?.code === 'UNAUTHORIZED';
 
 const isSpark = (wallet) => (wallet?.type || 'nwc') === 'spark';
 
@@ -330,7 +331,7 @@ export function createWalletWatch({
           // not answer while the network does, for HISTORY_PAUSE_MS. Its
           // ledger goes either way: the return to its history starts from a
           // new baseline instead of announcing again what the balance did.
-          const refused = REFUSED.has(error?.code);
+          const refused = refusesHistory(error);
           if (refused || (online() && r.historyFailures >= HISTORY_GIVE_UP)) {
             if (refused) r.historyRefused = true;
             else r.historyPausedUntil = now() + HISTORY_PAUSE_MS;

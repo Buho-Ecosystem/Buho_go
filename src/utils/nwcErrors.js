@@ -33,6 +33,16 @@ const DEFINITE_FAILURES = new Set([
   'FEE_LIMIT_EXCEEDED', NWC_ERROR.LIMIT_TOO_LOW, NWC_ERROR.RECEIVE_NOT_ALLOWED,
 ]);
 
+/**
+ * The wallet will not run this method for this connection. NIP-47 has two
+ * codes for it, RESTRICTED (not granted) and NOT_IMPLEMENTED (not built),
+ * and wallets use them interchangeably: some answer RESTRICTED for a method
+ * they do not have at all. Either way, asking again changes nothing.
+ */
+export function isNotOffered(error) {
+  return error?.code === 'RESTRICTED' || error?.code === 'NOT_IMPLEMENTED';
+}
+
 function messageOf(error) {
   return String(error?.message || error || '');
 }

@@ -11,7 +11,7 @@ import { defineStore } from 'pinia';
 import { createNwcProvider } from '../services/nwcClient.js';
 import { parseNwcConnection } from '../utils/nwcConnection.js';
 import { capabilitiesOf, cleanWalletText, nip47Methods, spendingLimitFrom, suggestedWalletName, walletKeyOf } from '../utils/nwcWallet.js';
-import { NWC_ERROR, isRelayFailure, nwcError } from '../utils/nwcErrors.js';
+import { NWC_ERROR, isNotOffered, isRelayFailure, nwcError } from '../utils/nwcErrors.js';
 import { probeNwcConnection } from '../services/nwcProbe.js';
 import { payWithNwc } from '../services/nwcPayment.js';
 import { lookupNwcInvoice, makeNwcInvoice } from '../services/nwcReceive.js';
@@ -2847,7 +2847,7 @@ export const useWalletStore = defineStore('wallet', {
         await this.refreshNwcLimit(walletId);
       } catch (error) {
         // A connection that may not ask who it is still answered.
-        if (error?.code === 'RESTRICTED' || error?.code === 'NOT_IMPLEMENTED') status = 'answering';
+        if (isNotOffered(error)) status = 'answering';
         else status = isRelayFailure(error) ? 'relay' : 'no-answer';
         if (status !== 'answering') console.warn('[nwc] wallet did not answer:', error?.message || error);
       }

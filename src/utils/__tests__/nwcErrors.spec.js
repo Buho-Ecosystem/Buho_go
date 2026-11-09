@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import {
   Nip47NetworkError, Nip47PublishError, Nip47PublishTimeoutError, Nip47ReplyTimeoutError, Nip47WalletError,
 } from '@getalby/sdk';
-import { NWC_ERROR, isNoAnswer, isRelayFailure, isUncertainPaymentError, nwcError, nwcErrorText } from '../nwcErrors.js';
+import { NWC_ERROR, isNoAnswer, isNotOffered, isRelayFailure, isUncertainPaymentError, nwcError, nwcErrorText } from '../nwcErrors.js';
 
 const t = (key, params = {}) => key.replace(/\{(\w+)\}/g, (_, k) => String(params[k]));
 // The SDK's own shapes: timeouts and network failures carry INTERNAL / OTHER.
@@ -96,4 +96,12 @@ test('the SDK\'s own error classes are read as documented (docs/NWC.md, SDK)', (
 
   assert.equal(isUncertainPaymentError(new Nip47WalletError('insufficient balance', 'INSUFFICIENT_BALANCE')), false);
   assert.equal(isUncertainPaymentError(new Nip47WalletError('unknown Error', 'INTERNAL')), true);
+});
+
+test('a method the wallet will not run reads the same, whichever of the two codes it answers', () => {
+  // A real wallet answers get_budget, which it does not have, with RESTRICTED.
+  assert.equal(isNotOffered(Object.assign(new Error('not allowed'), { code: 'RESTRICTED' })), true);
+  assert.equal(isNotOffered(Object.assign(new Error('nope'), { code: 'NOT_IMPLEMENTED' })), true);
+  assert.equal(isNotOffered(Object.assign(new Error('limit'), { code: 'QUOTA_EXCEEDED' })), false);
+  assert.equal(isNotOffered(null), false);
 });

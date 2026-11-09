@@ -10,6 +10,7 @@
 import { Relay, verifyEvent } from 'nostr-core';
 import { decryptString, encryptString } from '../utils/deviceCrypto.js';
 import { WALLET_INFO_KIND, isPairingExpired, readWalletAnswer } from '../utils/nwcPairing.js';
+import { isNotOffered } from '../utils/nwcErrors.js';
 
 const STORAGE_KEY = 'buhoGO_nwc_pairing';
 
@@ -117,7 +118,7 @@ export async function walletKnowsConnection(connection, { createClient }) {
     await client.getInfo();
     return true;
   } catch (error) {
-    return error?.code === 'RESTRICTED' || error?.code === 'NOT_IMPLEMENTED';
+    return isNotOffered(error); // it knows the connection, it just may not tell
   } finally {
     try { client.close?.(); } catch { /* already closed */ }
   }
