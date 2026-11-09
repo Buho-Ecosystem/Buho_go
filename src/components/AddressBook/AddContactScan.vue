@@ -142,7 +142,7 @@
 import { isAddressRequest } from '../../utils/lud23.js';
 import { Icon } from '@iconify/vue';
 import QrScanner from 'qr-scanner';
-import { createQrScanner } from '../../utils/qrScanner';
+import { createQrScanner, pauseForPhoto } from '../../utils/qrScanner';
 import { isNativeScannerAvailable } from '../../utils/nativeScanner';
 import ScannerOverlay from '../ScannerOverlay.vue';
 import QrPhotoButton from '../QrPhotoButton.vue';
@@ -248,9 +248,22 @@ export default {
     },
 
     async startQrScanner() {
+      // The photo picker is open: the camera starts once it closes (resumeCamera).
+      if (this.photoOpen) return;
       try {
         const videoEl = this.$refs.videoEl;
         if (!videoEl) throw new Error('Video element not found');
+
+        // One scanner per screen: the same <video> keeps its scanner, a new
+        // one replaces it. Two would leave one running that nothing stops.
+        if (this.qrScanner) {
+          if (this.qrScanner.$video === videoEl) {
+            await this.qrScanner.start();
+            return;
+          }
+          try { this.qrScanner.destroy(); } catch { /* already gone */ }
+          this.qrScanner = null;
+        }
 
         this.qrScanner = createQrScanner(
           videoEl,
@@ -266,6 +279,8 @@ export default {
           },
         );
         await this.qrScanner.start();
+        // Choose photo was tapped while the camera was still starting.
+        if (this.photoOpen) pauseForPhoto(this.qrScanner);
       } catch (err) {
         console.error('[AddContactScan] start error:', err);
         this.handleCameraError(err);
@@ -388,10 +403,7 @@ export default {
     onPhotoOpen() {
       this.photoNote = '';
       this.photoOpen = true;
-      // pause(true) turns the camera off at once and keeps the scanner for
-      // start(). Not stop(): that lets go of the stream 300 ms later, by
-      // which time a restarted scanner on the same <video> may own it.
-      this.qrScanner?.pause(true);
+      pauseForPhoto(this.qrScanner);
     },
 
     onPhotoRead(text) {

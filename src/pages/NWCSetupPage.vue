@@ -194,7 +194,7 @@
 <script>
 import { isAddressRequest } from '../utils/lud23.js';
 import QrScanner from 'qr-scanner'
-import { createQrScanner } from '../utils/qrScanner'
+import { createQrScanner, pauseForPhoto } from '../utils/qrScanner'
 import { isNativeScannerAvailable } from '../utils/nativeScanner'
 import QrPhotoButton from '../components/QrPhotoButton.vue'
 import ScannerOverlay from '../components/ScannerOverlay.vue'
@@ -805,6 +805,8 @@ export default {
     },
 
     async startQrScanner() {
+      // The photo picker is open: the camera starts once it closes (resumeCamera).
+      if (this.photoOpen) return;
       try {
         if (!this.$refs.videoElement) {
           throw new Error('Video element not found');
@@ -827,6 +829,8 @@ export default {
         );
 
         await this.qrScanner.start();
+        // Choose photo was tapped while the camera was still starting.
+        if (this.photoOpen) pauseForPhoto(this.qrScanner);
         this.cameraLoading = false;
         this.cameraError = false;
 
@@ -877,10 +881,7 @@ export default {
     onPhotoOpen() {
       this.photoNote = '';
       this.photoOpen = true;
-      // pause(true) turns the camera off at once and keeps the scanner for
-      // start(). Not stop(): that lets go of the stream 300 ms later, by
-      // which time a restarted scanner on the same <video> may own it.
-      this.qrScanner?.pause(true);
+      pauseForPhoto(this.qrScanner);
     },
 
     onPhotoRead(text) {

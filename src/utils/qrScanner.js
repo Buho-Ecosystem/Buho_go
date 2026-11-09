@@ -28,3 +28,26 @@ export function createQrScanner(videoEl, onResult, options = {}) {
   scanner.setInversionMode('both');
   return scanner;
 }
+
+/**
+ * The camera off at once for a trip to the photo picker, the scanner kept so
+ * start() can turn it back on.
+ *
+ * pause(true) lets go of the stream now. stop() then marks the scanner
+ * inactive: a paused but active scanner starts itself again as soon as the
+ * page is visible, which would light the camera behind the open picker or
+ * while the photo is read. Not stop() alone: it lets go of the stream 300 ms
+ * later, by when a restarted scanner on the same <video> owns it.
+ *
+ * stop() still leaves that 300 ms timer behind. It passes over this scanner
+ * once start() runs again, but would stop a second scanner's stream on the
+ * same <video>: so a screen restarts the scanner it has (startQrScanner)
+ * and never gives its <video> to another.
+ *
+ * @param {QrScanner | null | undefined} scanner
+ */
+export function pauseForPhoto(scanner) {
+  if (!scanner) return;
+  scanner.pause(true);
+  scanner.stop();
+}
