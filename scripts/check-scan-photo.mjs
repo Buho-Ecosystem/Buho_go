@@ -79,6 +79,8 @@ const withoutCamera = await chromium.launch({ headless: true });
 
 let n = 0;
 async function shot(page, name) {
+  // A phone has no pointer resting on the page: no hover in the pictures.
+  await page.mouse.move(0, 0);
   await pause(500);
   const file = `${String(++n).padStart(2, '0')}-${name}.png`;
   await page.screenshot({ path: `${output}/${file}` });
