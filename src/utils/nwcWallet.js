@@ -7,6 +7,7 @@
  * the balance. The app follows those grants instead of failing later.
  */
 import { Invoice } from '@getalby/lightning-tools';
+import { isLightningAddress } from './addressUtils.js';
 
 /** Older wallets were saved with WebLN method names; read both vocabularies. */
 const WEBLN_TO_NIP47 = Object.freeze({
@@ -71,25 +72,45 @@ export function capabilitiesOf(wallet) {
 }
 
 /**
- * Characters that change how text around them shows without being seen:
- * controls, direction marks and overrides, zero-width spaces, word joiners
- * and the byte order mark. Joiners (U+200C, U+200D) stay, since scripts and
- * emoji need them.
+ * Characters that show nothing or change how the text around them shows:
+ * controls, and every format character (direction marks and overrides,
+ * zero-width spaces, word joiners, the soft hyphen, tag characters, the
+ * byte order mark), plus the blank letters that draw as empty space (the
+ * Hangul fillers, the blank Braille pattern). The joiners U+200C and
+ * U+200D stay: scripts and emoji need them. A flag built from tag
+ * characters shows as its plain black flag.
  */
-const HIDDEN = /[\p{Cc}\u061C\u200B\u200E\u200F\u202A-\u202E\u2060-\u2064\u2066-\u2069\uFEFF]/gu;
+const HIDDEN = /(?![\u200C\u200D])[\p{Cc}\p{Cf}\u115F\u1160\u3164\uFFA0\u2800]/gu;
 
 /**
  * Text a wallet says about itself (its alias), fit to show: hidden
  * characters removed, spaces collapsed. A hidden right-to-left override
  * would show the rest of a name reversed, which can make one wallet look
- * like another.
+ * like another; blank letters make a name that looks empty.
  */
 export function cleanWalletText(text) {
-  return String(text ?? '').replace(/\s+/g, ' ').replace(HIDDEN, '').trim();
+  return String(text ?? '').replace(/\s+/g, ' ').replace(HIDDEN, '').replace(/ {2,}/g, ' ').trim();
 }
 
-/** At most `max` characters, never cutting one in half. */
-const clip = (text, max) => Array.from(text).slice(0, max).join('');
+/** Splits text into characters as a person counts them, where the platform can. */
+const graphemes = typeof Intl !== 'undefined' && typeof Intl.Segmenter === 'function'
+  ? new Intl.Segmenter(undefined, { granularity: 'grapheme' })
+  : null;
+
+/** At most `max` characters, never cutting one (a flag, a family emoji) in half. */
+const clip = (text, max) => (graphemes ? Array.from(graphemes.segment(text), (part) => part.segment) : Array.from(text))
+  .slice(0, max)
+  .join('');
+
+/**
+ * A Lightning address a wallet gives about itself (in its connection
+ * string or get_info), or null when it is not one. Only plain address
+ * characters pass, so nothing hidden reaches the address Settings shows.
+ */
+export function walletAddressOf(value) {
+  const address = String(value ?? '').trim();
+  return isLightningAddress(address) ? address : null;
+}
 
 /**
  * The name to suggest for a new connection: what the wallet calls itself,

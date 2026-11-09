@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
   nip47Methods, nwcCapabilities, capabilitiesOf, suggestedWalletName, findSameWallet, spendingLimitFrom, relayHost, walletKeyOf,
-  nwcPaymentHash, nwcTransactionRow, cleanWalletText,
+  nwcPaymentHash, nwcTransactionRow, cleanWalletText, walletAddressOf,
 } from '../nwcWallet.js';
 import { Invoice } from '@getalby/lightning-tools';
 import { createReceiptLedger } from '../../services/paymentReceipts.js';
@@ -67,6 +67,24 @@ test('a wallet\'s name loses the characters that hide or flip text', () => {
   assert.equal(cleanWalletText('کار\u200Cگاه 👩\u200D💻'), 'کار\u200Cگاه 👩\u200D💻', 'joiners that scripts and emoji need stay');
   assert.equal(suggestedWalletName({ alias: '\u202E', lud16: 'shop\u202E@blink.sv' }), 'shop', 'the address name is cleaned too');
   assert.equal(Array.from(suggestedWalletName({ alias: '😀'.repeat(50) })).length, 40, 'cut by characters, not halves of one');
+});
+
+test('a name that only looks empty, or hides letters, is cleaned too', () => {
+  assert.equal(cleanWalletText('\u3164\u3164\u3164'), '', 'blank letters are no name');
+  assert.equal(suggestedWalletName({ alias: '\u3164\u2800', lud16: 'tips@example.com' }), 'tips');
+  assert.equal(cleanWalletText('Al\u00ADby\u180E Hub\u{E0041}\u{E0042}'), 'Alby Hub', 'soft hyphen, separator, tag characters');
+  assert.equal(cleanWalletText('A \u200B B'), 'A B', 'no double space where one was hidden');
+  const flags = '🇩🇪'.repeat(41);
+  assert.equal(suggestedWalletName({ alias: flags }), '🇩🇪'.repeat(40), 'a flag is never cut in half');
+  const family = '👩\u200D👩\u200D👧';
+  assert.equal(suggestedWalletName({ alias: `${'x'.repeat(39)}${family}` }), `${'x'.repeat(39)}${family}`);
+});
+
+test('a wallet\'s address is kept only when it is a plain Lightning address', () => {
+  assert.equal(walletAddressOf(' shop@getalby.com '), 'shop@getalby.com');
+  assert.equal(walletAddressOf('sh\u202Eop@getalby.com'), null);
+  assert.equal(walletAddressOf('null'), null);
+  assert.equal(walletAddressOf(undefined), null);
 });
 
 test('the same wallet is found by its key or its address, not by the connection text', () => {

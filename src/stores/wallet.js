@@ -10,7 +10,7 @@ import { walletLightningAddress } from '../utils/walletLightningAddress.js';
 import { defineStore } from 'pinia';
 import { createNwcProvider } from '../services/nwcClient.js';
 import { parseNwcConnection } from '../utils/nwcConnection.js';
-import { capabilitiesOf, cleanWalletText, nip47Methods, spendingLimitFrom, suggestedWalletName, walletKeyOf } from '../utils/nwcWallet.js';
+import { capabilitiesOf, cleanWalletText, nip47Methods, spendingLimitFrom, suggestedWalletName, walletAddressOf, walletKeyOf } from '../utils/nwcWallet.js';
 import { NWC_ERROR, isNotOffered, isRelayFailure, nwcError } from '../utils/nwcErrors.js';
 import { probeNwcConnection } from '../services/nwcProbe.js';
 import { payWithNwc } from '../services/nwcPayment.js';
@@ -2843,7 +2843,8 @@ export const useWalletStore = defineStore('wallet', {
           // No methods in the answer: keep what was saved, as saved.
           methods: methods.length ? methods : (meta.methods || []),
           notifications: Array.isArray(info?.notifications) ? info.notifications : (meta.notifications || []),
-          lud16: meta.lud16 || info?.lud16 || null,
+          // Checked here too: one saved before addresses were checked is dropped.
+          lud16: walletAddressOf(meta.lud16) || walletAddressOf(info?.lud16),
         };
         if (JSON.stringify(next) !== JSON.stringify(meta)) {
           wallet.metadata = next;
