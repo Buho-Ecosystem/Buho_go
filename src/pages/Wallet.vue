@@ -450,6 +450,7 @@
       :takeover="brantaTampered"
       @amount-changed="sendSheetAmountSats = $event"
       @update:sending-wallet-id="onSendingWalletChange"
+      @refund-pick="onRefundPick"
       @confirm="onSendSheetConfirm"
       @cancel="onSendSheetCancel"
       @takeover-cancel="onSendSheetCancel"
@@ -763,7 +764,10 @@ import {
   BITCOIN_DEPOSIT_POLL_MS
 } from '../stores/bitcoinPreferences';
 import { useBitcoinDepositsStore } from '../stores/bitcoinDeposits';
-import {SA_RETAIL_SOURCE, parseZARFromMetadata} from '../utils/merchantQR.js';
+import {MERCHANT_PROVIDER, SA_RETAIL_SOURCE, isMerchantProviderUrl, parseZARFromMetadata} from '../utils/merchantQR.js';
+import {PAYER_ADDRESS_PURPOSE, REFUND_PROBLEM, chosenRefundAddress, payerAddressRule, refundAddressOptions, refundRefusal, sameRefundAddress} from '../utils/refundAddress.js';
+import {payerIdentifier} from '../utils/lud18.js';
+import {useProfileStore} from '../stores/profile';
 import { namesOneOrder, sendsPayoutAmount } from '../utils/payAgain.js';
 import {BRANTA_HOLD_MS, BRANTA_LOOKUP_TIMEOUT_MS, BRANTA_STATUS, brantaAvatar, brantaLookupText, checkWithBranta} from '../utils/branta.js';
 import { readCachedTransactions, mergeCachedTransactions } from '../utils/txCache.js';
@@ -834,7 +838,9 @@ export default {
     const socialBucketStore = useSocialBucketStore();
     const withdrawVouchersStore = useWithdrawVouchersStore();
     const serviceImagesStore = useServiceImagesStore();
+    const profileStore = useProfileStore();
     return {
+      profileStore,
       // Something waits (a request, a voucher): the Home line shows, and the content makes room.
       somethingWaits: useWaiting().hasAny,
       bitcoinDepositsStore: useBitcoinDepositsStore(),
@@ -925,6 +931,17 @@ export default {
       pendingPayment: null,
       merchantCountdown: 0,
       merchantCountdownTimer: null,
+      // The refund address row (utils/refundAddress.js), for the payment on
+      // screen only: the person's pick ({ address } or { declined: true }),
+      // an address they typed, what the service said about the last one,
+      // whether it insisted on one after the sheet opened, and whether the
+      // person has to choose one before the slide works again.
+      refundPick: null,
+      refundEntered: null,
+      refundProblem: null,
+      refundRefusedAddress: null,
+      refundRequiredByService: false,
+      refundAwaitingPick: false,
       paymentAmount: '',
       paymentComment: '',
       // Currency mode for the user-entered amount when bridging into
@@ -1446,6 +1463,11 @@ export default {
       // The sheet disables the slide for a wallet that cannot pay; the
       // pipeline refuses it too, so no stray event can send from one.
       if (this.sendingWalletBlock) return false;
+      // The same for the refund row: details BuhoGO cannot share, a needed
+      // address missing, or the one the service just refused.
+      if (this.payerRule.blocked) return false;
+      if (this.payerRule.show && this.payerRule.required && !this.refundAddress) return false;
+      if (sameRefundAddress(this.refundAddress, this.refundRefusedAddress)) return false;
       if (this.needsAmountInput) {
         const sats = this.sendAmountSats;
         if (sats <= 0) return false;
@@ -1793,7 +1815,78 @@ export default {
         ratesStale: !!(p.merchant && this.ratesStale),
         connectionNotice: this.connectionNotice,
         feeEstimate,
-        payoutCurrency
+        payoutCurrency,
+        refund: this.refundSheet,
+        // LUD-18: the service requires details BuhoGO never shares.
+        payerBlocked: this.payerRule.blocked
+      };
+    },
+
+    // ───── Refunds to (LUD-18) ─────
+
+    /** How the sheet handles what the service asks about the payer. */
+    payerRule() {
+      const p = this.pendingPayment;
+      const isPayRequest = !!p && p.type !== 'lnurl_withdraw' && !!(p.lightningAddress || p.lnurl);
+      const rule = payerAddressRule(isPayRequest ? p.payerData : null, { tillPayment: this.isTillPayment(p) });
+      // The service turned it down without an address after the sheet
+      // opened: from here on it is needed, whatever it said at first.
+      if (isPayRequest && this.refundRequiredByService && !rule.blocked) {
+        return {
+          ...rule,
+          show: true,
+          required: true,
+          canDecline: false,
+          purpose: rule.purpose || (this.isTillPayment(p) ? PAYER_ADDRESS_PURPOSE.REFUND : PAYER_ADDRESS_PURPOSE.IDENTIFY),
+        };
+      }
+      return rule;
+    },
+
+    /** The profile's payment address, once the active identity's profile is read. */
+    profilePaymentAddress() {
+      const profile = this.profileStore;
+      if (!profile?.hydrated || profile.hydratedProfileKey !== profile._profileStorageKey?.()) return null;
+      return payerIdentifier(profile.lud16);
+    },
+
+    /** The addresses the row offers, for the wallet that pays. */
+    refundOptions() {
+      if (!this.payerRule.show) return [];
+      return refundAddressOptions({
+        wallets: this.walletStore.wallets,
+        payerWalletId: this.payerWalletId,
+        addressOf: (wallet) => this.walletStore.lightningAddressOf(wallet),
+        profileAddress: this.profilePaymentAddress,
+        entered: this.refundEntered,
+      });
+    },
+
+    /**
+     * The address that goes with the payment, or null. After the service
+     * turned the payment down for want of one, none is chosen for the
+     * person: they pick, even the address they declined a moment ago.
+     */
+    refundAddress() {
+      if (this.refundAwaitingPick) return null;
+      return chosenRefundAddress(this.payerRule, this.refundOptions, this.refundPick);
+    },
+
+    /** The row as the sheet draws it, or null when there is none. */
+    refundSheet() {
+      const rule = this.payerRule;
+      if (!rule.show) return null;
+      return {
+        purpose: rule.purpose,
+        options: this.refundOptions,
+        selected: this.refundAddress,
+        required: rule.required,
+        canDecline: rule.canDecline,
+        declined: rule.canDecline && !!this.refundPick?.declined,
+        problem: this.refundProblem,
+        refusedAddress: this.refundRefusedAddress,
+        // Who keeps the address: the till's payment partner, or the service.
+        holder: rule.purpose === PAYER_ADDRESS_PURPOSE.REFUND ? MERCHANT_PROVIDER.name : this.payerServiceName(this.pendingPayment),
       };
     },
 
@@ -2344,6 +2437,8 @@ export default {
       } else {
         this.stopMerchantCountdown();
       }
+      // A refund address is chosen for one payment, never remembered.
+      this.resetRefundAddress();
       if (!open) {
         this.sendDenomination = 'sats';
       }
@@ -2355,11 +2450,17 @@ export default {
      * changes. PaymentConfirmSheet reads `estimatedFee` / `isEstimatingFee`
      * via `paymentSheetProps.feeEstimate` and renders the row from there.
      */
-    pendingPayment: {
-      handler: 'updateFeeEstimate',
-      immediate: true,
-      deep: true
-    },
+    pendingPayment: [
+      {
+        handler: 'updateFeeEstimate',
+        immediate: true,
+        deep: true
+      },
+      // Another payment on the sheet (a deep link or a tap can replace it
+      // while it is open): its refund row starts from nothing, so a pick, a
+      // decline or a refusal never carries over.
+      'resetRefundAddress',
+    ],
 
     paymentAmount: {
       handler: 'updateFeeEstimate',
@@ -4305,6 +4406,9 @@ export default {
       this.merchantCountdownTimer = setInterval(() => {
         this.merchantCountdown--;
         if (this.merchantCountdown <= 0) {
+          // A payment already on its way finishes first; its outcome is
+          // said on this sheet, then the code may expire.
+          if (this.isSendingPayment) return;
           this.stopMerchantCountdown();
           this.showSendSheet = false;
           this.pendingPayment = null;
@@ -5007,6 +5111,18 @@ export default {
       // bound to it, whatever the UI does meanwhile. It is never made active.
       const sendingWalletId = this.getSendingWallet()?.id || this.activeWallet?.id || null;
       const walletType = this.walletTypeOf(sendingWalletId);
+      // The refund address is bound the same way: the one on the row now is
+      // the one that goes, and the only one a refusal can be about. A till's
+      // address goes only to the till's own service: if its terms name
+      // another callback by the time the invoice is asked for, the request
+      // stops (utils/lnurlPay.js).
+      const payment = this.pendingPayment;
+      const refundShown = this.payerRule.show;
+      const refundPurpose = this.payerRule.purpose;
+      const refundAddress = this.refundAddress;
+      const payerData = refundAddress
+        ? { identifier: refundAddress, ...(refundPurpose === PAYER_ADDRESS_PURPOSE.REFUND ? { onlyTo: isMerchantProviderUrl } : {}) }
+        : null;
 
       // Lifted out of the try block so the catch can hand the
       // attempted amount to the payment-error dialog (used by the
@@ -5042,13 +5158,13 @@ export default {
         // executor that wallet's id: it connects that wallet on demand and
         // sends through its provider, so the active wallet is never involved.
         if (walletType === 'spark') {
-          result = await this.sendSparkPayment(amount, comment, this.sendPayout, sendingWalletId);
+          result = await this.sendSparkPayment(amount, comment, this.sendPayout, sendingWalletId, payerData);
         } else if (walletType === 'arkade') {
-          result = await this.sendArkadePayment(amount, comment, this.sendPayout, sendingWalletId);
+          result = await this.sendArkadePayment(amount, comment, this.sendPayout, sendingWalletId, payerData);
         } else if (walletType === 'lnbits') {
-          result = await this.sendLNBitsPayment(amount, comment, this.sendPayout, sendingWalletId);
+          result = await this.sendLNBitsPayment(amount, comment, this.sendPayout, sendingWalletId, payerData);
         } else {
-          result = await this.sendNWCPayment(amount, comment, sendingWalletId);
+          result = await this.sendNWCPayment(amount, comment, sendingWalletId, payerData);
         }
 
         // What went to the recipient: the invoice's amount. In the recipient's
@@ -5058,6 +5174,12 @@ export default {
         // amount confirmed (requestPayInvoice holds the invoice to it).
         const invoiceSats = Number(result?.invoiceSats);
         const sentSats = Number.isFinite(invoiceSats) && invoiceSats > 0 ? Math.ceil(invoiceSats) : amount;
+        // Where a refund goes, as the request path reports it went (none
+        // when the service no longer asked): kept for Transaction Details.
+        // An address that only said who paid is not a refund address.
+        const sharedRefundAddress = refundPurpose === PAYER_ADDRESS_PURPOSE.REFUND && typeof result?.payerData?.identifier === 'string'
+          ? result.payerData.identifier
+          : null;
 
 
         // LUD-09: the recipient may have returned a successAction alongside the
@@ -5173,7 +5295,7 @@ export default {
           } catch (err) {
             console.warn('[wallet] could not queue contact link:', err);
           }
-        } else if (recipientAddress || successAction || verifyUrl || paymentSource || merchantVerification || payLink) {
+        } else if (recipientAddress || successAction || verifyUrl || paymentSource || merchantVerification || payLink || sharedRefundAddress) {
           try {
             // A resolved Nostr send carries the person's avatar + display
             // name so the tx row/hero show who was actually paid instead of
@@ -5214,6 +5336,8 @@ export default {
               // Branta-verified sends only: the business, for History and details.
               merchantVerification,
               payAgain: addressPayAgain,
+              // The address a refund goes to (LUD-18), as it was sent.
+              refundAddress: sharedRefundAddress,
               // The wallet this send went out on, so the link is only ever
               // drained by that wallet's own tx-list refresh.
               walletId: sendingWalletId,
@@ -5331,6 +5455,15 @@ export default {
 
       } catch (error) {
         console.error('Payment failed:', error);
+        // The service turned down the refund address, or wants one: said on
+        // the row, with the sheet open, and never tried again by itself (a
+        // retry without the address would quietly give up the refund). Only
+        // while this payment is still the one on the sheet: a refusal that
+        // arrives after it closed is said in the usual dialog instead.
+        if (this.showSendSheet && this.pendingPayment === payment && this.noteRefundRefusal(error, { shown: refundShown, sent: refundAddress })) {
+          haptics.warning();
+          return;
+        }
         // A payment whose outcome is unknown needs attention; it has not failed.
         if (error?.code === NWC_ERROR.UNCONFIRMED) haptics.warning();
         else haptics.error();
@@ -5411,6 +5544,72 @@ export default {
       else this.$router.replace(to);
     },
 
+    /**
+     * A till payment: a merchant code whose callback is on the provider's
+     * own host (utils/merchantQR.isMerchantProviderUrl). Only there is a
+     * refund address shared by default.
+     */
+    isTillPayment(p) {
+      if (!p || p.source !== SA_RETAIL_SOURCE) return false;
+      return p.callbackOnTillProvider === true || isMerchantProviderUrl(p.callback);
+    },
+
+    /** The domain of the service a payment goes to, for the row's footer. */
+    payerServiceName(p) {
+      if (p?.lightningAddress) return String(p.lightningAddress).split('@').pop().toLowerCase();
+      return p?.lnurl ? lnurlDomain(p.lnurl) : '';
+    },
+
+    /** Forget the refund row's state: it belongs to one payment. */
+    resetRefundAddress() {
+      this.refundPick = null;
+      this.refundEntered = null;
+      this.refundProblem = null;
+      this.refundRefusedAddress = null;
+      this.refundRequiredByService = false;
+      this.refundAwaitingPick = false;
+    },
+
+    /**
+     * The person chose on the row: an address (listed, or typed in for this
+     * payment) or, where the store allows it, none. Never mid-send.
+     * @param {{ address?: string, entered?: boolean, declined?: boolean }} pick
+     */
+    onRefundPick(pick) {
+      if (this.isSendingPayment || !this.payerRule.show) return;
+      if (pick?.declined) {
+        if (!this.payerRule.canDecline) return;
+        this.refundPick = { declined: true };
+      } else {
+        const address = payerIdentifier(pick?.address);
+        if (!address) return;
+        if (pick.entered) this.refundEntered = address;
+        this.refundPick = { address };
+      }
+      this.refundProblem = null;
+      this.refundAwaitingPick = false;
+    },
+
+    /**
+     * Whether a failed payment was about the refund address, and if so,
+     * mark the row: the address was refused (the slide waits for another),
+     * or one is needed (from now on the row cannot be declined, and the
+     * slide waits until the person picks one).
+     * @returns {boolean} true when the row now says it
+     */
+    noteRefundRefusal(error, { shown, sent }) {
+      const problem = refundRefusal(error, { sent, shown });
+      if (!problem) return false;
+      this.refundProblem = problem;
+      if (problem === REFUND_PROBLEM.REFUSED) this.refundRefusedAddress = sent;
+      else {
+        this.refundRequiredByService = true;
+        this.refundPick = null;
+        this.refundAwaitingPick = true;
+      }
+      return true;
+    },
+
     onSendSheetCancel() {
       this.returnAfterPayment();
       this.cancelBrantaLookup();
@@ -5477,8 +5676,10 @@ export default {
      * ensure*Connected path the active wallet always took - so paying from
      * another wallet never needs the active wallet to change. Without an id
      * they pay from the active wallet, as before "Pay with" existed.
+     * `payerData` holds the LUD-18 details the person agreed to share (the
+     * refund address), for a Lightning address or a link.
      */
-    async sendSparkPayment(amount, comment, payout = null, walletId = null) {
+    async sendSparkPayment(amount, comment, payout = null, walletId = null, payerData = null) {
       // Ensure Spark wallet is connected (auto-connects if session PIN available)
       const provider = await this.walletStore.ensureSparkConnected(walletId);
 
@@ -5526,13 +5727,13 @@ export default {
 
       // Lightning address
       if (this.pendingPayment.lightningAddress) {
-        return await provider.payLightningAddress(this.pendingPayment.lightningAddress, amount, comment || '', payout);
+        return await provider.payLightningAddress(this.pendingPayment.lightningAddress, amount, comment || '', payout, { payerData });
       }
 
       // LNURL - decode and fetch invoice, then pay
       // Note: LNURL invoices already have amount encoded, so don't pass amountSats
       if (this.pendingPayment.lnurl) {
-        const { pr, invoiceSats, successAction, verify, payLink, serviceMeta } = await this.fetchLNURLInvoice(this.pendingPayment.lnurl, amount, payout, comment);
+        const { pr, invoiceSats, successAction, verify, payLink, serviceMeta, payerData: shared } = await this.fetchLNURLInvoice(this.pendingPayment.lnurl, amount, payout, comment, payerData);
         const result = await provider.payInvoice({
           invoice: pr,
           preferSpark: true,
@@ -5540,7 +5741,7 @@ export default {
           feeLimitSats: unquotedFeeLimitSats(amount),
           // amountSats intentionally omitted - LNURL invoice has amount encoded
         });
-        return { ...result, invoiceSats, successAction, verify, payLink, serviceMeta };
+        return { ...result, invoiceSats, successAction, verify, payLink, serviceMeta, payerData: shared };
       }
 
       throw new Error('Unsupported payment type for Spark wallet');
@@ -5558,7 +5759,7 @@ export default {
      * fetch exactly like the LNbits path: the swap pays whatever bolt11 the
      * provider returned, and the metadata is threaded onto the result.
      */
-    async sendArkadePayment(amount, comment, payout = null, walletId = null) {
+    async sendArkadePayment(amount, comment, payout = null, walletId = null, payerData = null) {
       const maxFee = this.currentArkadeFeeQuote?.fee;
       const provider = await this.walletStore.ensureArkadeConnected(walletId);
 
@@ -5577,21 +5778,22 @@ export default {
 
       // Lightning address → fetch a bolt11 for the amount, then swap.
       if (this.pendingPayment.lightningAddress) {
-        const { pr, invoiceSats, successAction, verify } = await this.fetchLightningAddressInvoice(
+        const { pr, invoiceSats, successAction, verify, payerData: shared } = await this.fetchLightningAddressInvoice(
           this.pendingPayment.lightningAddress,
           amount,
           comment,
-          payout
+          payout,
+          payerData
         );
         const result = await provider.payInvoice({ invoice: pr });
-        return { ...result, invoiceSats, successAction, verify };
+        return { ...result, invoiceSats, successAction, verify, payerData: shared };
       }
 
       // LNURL-pay → fetch the encoded-amount invoice, then swap.
       if (this.pendingPayment.lnurl) {
-        const { pr, invoiceSats, successAction, verify, payLink, serviceMeta } = await this.fetchLNURLInvoice(this.pendingPayment.lnurl, amount, payout, comment);
+        const { pr, invoiceSats, successAction, verify, payLink, serviceMeta, payerData: shared } = await this.fetchLNURLInvoice(this.pendingPayment.lnurl, amount, payout, comment, payerData);
         const result = await provider.payInvoice({ invoice: pr });
-        return { ...result, invoiceSats, successAction, verify, payLink, serviceMeta };
+        return { ...result, invoiceSats, successAction, verify, payLink, serviceMeta, payerData: shared };
       }
 
       // On-chain (bc1…): collaborative exit (offboard) via Ramps.
@@ -5612,7 +5814,7 @@ export default {
       throw new Error('Unsupported payment type for Arkade wallet');
     },
 
-    async sendNWCPayment(amount, comment, walletId = null) {
+    async sendNWCPayment(amount, comment, walletId = null, payerData = null) {
       // Over the wallet's one relay connection (store.nwcConnection, #395).
       const id = walletId || this.walletStore.activeWalletId;
       if (!this.getNwcUrl(id)) {
@@ -5620,7 +5822,7 @@ export default {
       }
       const nwc = await this.walletStore.nwcConnection(id);
       const lightningService = new LightningPaymentService(nwc, { limit: this.walletStore.nwcLimitFor(id) });
-      return await lightningService.sendPayment(this.getNwcPaymentData(), amount, comment);
+      return await lightningService.sendPayment(this.getNwcPaymentData(), amount, comment, { payerData });
     },
 
     /**
@@ -5639,7 +5841,7 @@ export default {
       return p;
     },
 
-    async sendLNBitsPayment(amount, comment, payout = null, walletId = null) {
+    async sendLNBitsPayment(amount, comment, payout = null, walletId = null, payerData = null) {
       // Route through ensureLNBitsConnected so a stale `isConnected` flag
       // (e.g. cleared by a prior 401) self-heals before the send rather than
       // failing with "wallet is not connected" until app restart.
@@ -5654,21 +5856,22 @@ export default {
 
       // Lightning address - fetch invoice first then pay
       if (this.pendingPayment.lightningAddress) {
-        const { pr, invoiceSats, successAction, verify } = await this.fetchLightningAddressInvoice(
+        const { pr, invoiceSats, successAction, verify, payerData: shared } = await this.fetchLightningAddressInvoice(
           this.pendingPayment.lightningAddress,
           amount,
           comment,
-          payout
+          payout,
+          payerData
         );
         const result = await provider.payInvoice({ invoice: pr });
-        return { ...result, invoiceSats, successAction, verify };
+        return { ...result, invoiceSats, successAction, verify, payerData: shared };
       }
 
       // LNURL - fetch invoice then pay
       if (this.pendingPayment.lnurl) {
-        const { pr, invoiceSats, successAction, verify, payLink, serviceMeta } = await this.fetchLNURLInvoice(this.pendingPayment.lnurl, amount, payout, comment);
+        const { pr, invoiceSats, successAction, verify, payLink, serviceMeta, payerData: shared } = await this.fetchLNURLInvoice(this.pendingPayment.lnurl, amount, payout, comment, payerData);
         const result = await provider.payInvoice({ invoice: pr });
-        return { ...result, invoiceSats, successAction, verify, payLink, serviceMeta };
+        return { ...result, invoiceSats, successAction, verify, payLink, serviceMeta, payerData: shared };
       }
 
       throw new Error('Unsupported payment type for LNbits wallet');
@@ -6034,17 +6237,19 @@ export default {
      * same merchant again means finding the code again. `payLink` is null
      * for every ordinary (single-use) link.
      */
-    async fetchLNURLInvoice(lnurl, amountSats, payout = null, comment = '') {
+    async fetchLNURLInvoice(lnurl, amountSats, payout = null, comment = '', payerData = null) {
       assertPaymentInput(lnurl);
       const url = lnurlToUrl(lnurl);
       if (!url) throw new Error('Invalid LNURL');
       const payRequest = await fetchPayRequest(url);
-      const { pr, amountSats: invoiceSats, successAction, verify, storeable } = await requestPayInvoice(payRequest, { amountSats, payout, comment });
+      const { pr, amountSats: invoiceSats, successAction, verify, storeable, payerData: shared } = await requestPayInvoice(payRequest, { amountSats, payout, comment, payerData });
       return {
         pr,
         invoiceSats,
         successAction,
         verify,
+        // The LUD-18 details that went with it (null: none).
+        payerData: shared,
         payLink: storeable ? lnurl : null,
         // What the service says about itself (LUD-06 metadata), kept only
         // for a storeable link: that is the one that becomes a payee.
@@ -6140,7 +6345,13 @@ export default {
           // LUD-21 currency extension (#207): the recipient's local payout
           // currency (e.g. TZS for ChapSmart), so the sender can denominate in
           // it. Absent on ordinary Lightning addresses. Kept verbatim.
-          currency: data.currency || null
+          currency: data.currency || null,
+          // LUD-18: what the service asks to know about the payer, as sent,
+          // and whether its callback is on the till provider's host. Not kept
+          // as `callback`: with one, an NWC payment would take these fields
+          // as its terms, and they are not all of them.
+          payerData: data.payerData ?? null,
+          callbackOnTillProvider: isMerchantProviderUrl(data.callback),
         };
       } catch (error) {
         // An HTTP error, or something other than a pay request: nothing to
@@ -6241,6 +6452,8 @@ export default {
           metadata: typeof data.metadata === 'string' ? data.metadata : null,
           description: data.metadata ? this.parseLnurlMetadata(data.metadata) : null,
           serviceMeta: parsePayRequestMetadata(data.metadata),
+          // LUD-18: what the service asks to know about the payer, as sent.
+          payerData: payRequest.payerData ?? null,
         };
       } catch (error) {
         console.warn('Failed to fetch LNURL info:', safeWithdrawError(error.message));
@@ -6258,17 +6471,19 @@ export default {
      * @param {number} amountSats - Amount in satoshis
      * @param {string} [comment] - Optional comment
      * @param {{code: string, amount: number}|null} [payout] - LUD-21 amount in the recipient's currency
-     * @returns {Promise<{pr: string, invoiceSats: number, successAction: object|null, verify: string|null}>}
-     *   `invoiceSats` is what the invoice asks for (see requestPayInvoice)
+     * @param {{identifier?: string|null}|null} [payerData] - LUD-18 details the person agreed to share
+     * @returns {Promise<{pr: string, invoiceSats: number, successAction: object|null, verify: string|null,
+     *   payerData: object|null}>} `invoiceSats` is what the invoice asks for and
+     *   `payerData` what went with it (see requestPayInvoice)
      */
-    async fetchLightningAddressInvoice(address, amountSats, comment, payout = null) {
+    async fetchLightningAddressInvoice(address, amountSats, comment, payout = null, payerData = null) {
       const url = lightningAddressUrl(address);
       if (!url) {
         throw new Error('Invalid Lightning address');
       }
       const payRequest = await fetchPayRequest(url);
-      const { pr, amountSats: invoiceSats, successAction, verify } = await requestPayInvoice(payRequest, { amountSats, payout, comment });
-      return { pr, invoiceSats, successAction, verify };
+      const { pr, amountSats: invoiceSats, successAction, verify, payerData: shared } = await requestPayInvoice(payRequest, { amountSats, payout, comment, payerData });
+      return { pr, invoiceSats, successAction, verify, payerData: shared };
     },
 
     /**

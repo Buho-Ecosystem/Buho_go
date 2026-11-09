@@ -21,7 +21,13 @@
  *   - The invoice must be for this pay request: one whose description hash
  *     names other metadata is refused (LUD-06), as it was made for another
  *     payment. One with a plain description instead is accepted; payout
- *     services send those, and nothing in it can be checked.
+ *     services send those, and nothing in it can be checked. With payer
+ *     details sent, the metadata with those details appended is accepted
+ *     too: the first version of LUD-18 asked services to hash that.
+ *   - Payer details (LUD-18) go only where the service asked for them, and
+ *     only the Lightning address the person agreed to share (utils/lud18.js).
+ *     A service that requires details the wallet does not share, or an
+ *     address the person did not give, is not asked for an invoice.
  *   - An invoice that had long expired when it arrived is refused.
  *   - The callback is asked without following redirects off its host, so the
  *     amount and the note reach the host that was checked, and no other. A
@@ -38,6 +44,7 @@ import { lnurlGetJson } from './lnurlHttp.js'
 import { ONION_HOST_RE } from './addressUtils.js'
 import { counterpartyError } from './errorOrigin.js'
 import { parseLightningInvoice } from './lightningInvoice.js'
+import { PAYER_DATA_PROBLEM, payerDataFor } from './lud18.js'
 import { parseSuccessAction } from './successAction.js'
 import { validateVerifyUrl } from './lnurlVerify.js'
 
@@ -65,6 +72,12 @@ export const PAY_REQUEST_ERROR = Object.freeze({
   INVOICE_NOT_FOR_REQUEST: 'LNURL_INVOICE_NOT_FOR_REQUEST',
   /** The invoice had expired long before it arrived. */
   INVOICE_EXPIRED: 'LNURL_INVOICE_EXPIRED',
+  /** The service requires payer details the wallet never shares (LUD-18). */
+  PAYER_DATA_UNSUPPORTED: 'LNURL_PAYER_DATA_UNSUPPORTED',
+  /** The service requires the payer's Lightning address, and none was given. */
+  PAYER_DATA_REQUIRED: 'LNURL_PAYER_DATA_REQUIRED',
+  /** The address given to share is not a Lightning address. */
+  PAYER_DATA_INVALID: 'LNURL_PAYER_DATA_INVALID',
 })
 
 // Limits a service leaves out (or sends as 0), as every path has always assumed.
@@ -167,6 +180,15 @@ export function fitComment(comment, allowed) {
   return fitted.trim()
 }
 
+// `encodeURIComponent` leaves these as they are; payer details encode them
+// too, so the service reads back exactly the text that was hashed.
+const STRICT_ESCAPE = /[!'()*]/g
+
+/** URL-encode every character outside the unreserved set (RFC 3986). */
+function strictEncode(text) {
+  return encodeURIComponent(text).replace(STRICT_ESCAPE, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`)
+}
+
 /**
  * Build an LNURL-pay callback URL for requesting the invoice.
  *
@@ -187,9 +209,10 @@ export function fitComment(comment, allowed) {
  * @param {{code:string, amount:number}|null} [args.payout]  local-currency request (Option A)
  * @param {string} [args.comment]     optional LUD-12 comment
  * @param {number} [args.commentAllowed]  max comment length the endpoint accepts
+ * @param {string|null} [args.payerdata]  LUD-18 payer details, as the JSON text to send
  * @returns {string} the fully-built callback URL
  */
-export function buildLnurlPayCallbackUrl({ callback, amountSats, payout = null, comment = '', commentAllowed = 0 }) {
+export function buildLnurlPayCallbackUrl({ callback, amountSats, payout = null, comment = '', commentAllowed = 0, payerdata = null }) {
   const sep = callback.includes('?') ? '&' : '?'
   let url
   if (payout && payout.code && payout.amount > 0) {
@@ -200,6 +223,9 @@ export function buildLnurlPayCallbackUrl({ callback, amountSats, payout = null, 
   const note = fitComment(comment, commentAllowed)
   if (note) {
     url += `&comment=${encodeURIComponent(note)}`
+  }
+  if (typeof payerdata === 'string' && payerdata) {
+    url += `&payerdata=${strictEncode(payerdata)}`
   }
   return url
 }
@@ -359,7 +385,8 @@ function payTerms(payRequest) {
 /**
  * Check a service's answer to the first request and return it with its
  * terms normalised (`currency` is null when none can be used). Unknown
- * fields (metadata, LUD-18 `payerData`, ...) are kept for the caller.
+ * fields (metadata, LUD-18 `payerData`, ...) are kept for the caller, as
+ * sent: utils/lud18.js reads `payerData` however it arrives.
  * @param {object|null} data  the decoded JSON answer
  * @throws {Error} a refusal, or code NOT_PAY_REQUEST or INVALID
  */
@@ -467,6 +494,44 @@ function metadataHash(metadata) {
   return bytesToHex(sha256(new TextEncoder().encode(metadata)))
 }
 
+/**
+ * The description hashes an invoice for this request may carry: of the
+ * metadata (LUD-06), and with payer details sent, of the metadata with their
+ * text appended (the first version of LUD-18). Null when the metadata is not
+ * known, as in a kept copy of the terms.
+ */
+function expectedDescriptionHashes(metadata, payerdata) {
+  if (typeof metadata !== 'string') return null
+  const hashes = [metadataHash(metadata)]
+  if (payerdata) hashes.push(metadataHash(metadata + payerdata))
+  return hashes
+}
+
+/**
+ * The payer details to send, or why the payment must not go ahead.
+ * `payerData.onlyTo`, when given, is the test the callback must pass for the
+ * address to go: an address agreed for one service never reaches another
+ * because the terms changed after the person saw them.
+ */
+function payerDetails(payRequest, payerData, callback) {
+  const shared = payerData && typeof payerData === 'object' ? payerData : {}
+  const details = payerDataFor(payRequest?.payerData, { identifier: shared.identifier ?? null })
+  if (details.sent && typeof shared.onlyTo === 'function' && !shared.onlyTo(callback)) {
+    throw payRequestError(PAY_REQUEST_ERROR.INVALID, 'The pay request moved to another service than the one the address was agreed for')
+  }
+  switch (details.problem) {
+    case PAYER_DATA_PROBLEM.UNSUPPORTED:
+      throw payRequestError(PAY_REQUEST_ERROR.PAYER_DATA_UNSUPPORTED,
+        'The service requires payer details this wallet does not share', { kinds: details.kinds })
+    case PAYER_DATA_PROBLEM.REQUIRED:
+      throw payRequestError(PAY_REQUEST_ERROR.PAYER_DATA_REQUIRED, "The service requires the payer's Lightning address")
+    case PAYER_DATA_PROBLEM.INVALID:
+      throw payRequestError(PAY_REQUEST_ERROR.PAYER_DATA_INVALID, 'The address to share is not a Lightning address')
+    default:
+      return details
+  }
+}
+
 /** The invoice in a callback answer, decoded. */
 function readInvoice(data, decode) {
   const missing = (message) => payRequestError(PAY_REQUEST_ERROR.INVOICE_MISSING, message)
@@ -502,21 +567,29 @@ function readInvoice(data, decode) {
  * against `payRequest.metadata` as the service sent it; a kept copy without
  * it skips that check.
  *
+ * Payer details (LUD-18) are read from `payRequest.payerData`: `payerData`
+ * holds what the person agreed to share (and, with `onlyTo`, the service it
+ * may go to), and only the kinds the service lists are sent. Without it, a
+ * service that requires an address is refused here, so every path that asks
+ * through this function (batch, Auto-Transfer) stops safely on its own.
+ *
  * @param {object} payRequest  from fetchPayRequest, or a kept copy of its terms
- * @param {{ amountSats: number, payout?: {code:string, amount:number}|null, comment?: string }} args
+ * @param {{ amountSats: number, payout?: {code:string, amount:number}|null, comment?: string,
+ *   payerData?: { identifier?: string|null, onlyTo?: (callback: string) => boolean }|null }} args
  * @param {{ get?: Function, decode?: Function, timeoutMs?: number, signal?: AbortSignal,
  *   now?: () => number }} [options]  `now` is the phone's clock in milliseconds
  * @returns {Promise<{ pr: string, amountSats: number, successAction: object|null,
- *   verify: string|null, storeable: boolean }>} `amountSats` is the invoice's;
- *   `successAction` is the LUD-09 action as utils/successAction.js reads it,
- *   `verify` the LUD-21 URL on the callback's own host, and `storeable` the
- *   LUD-11 verdict (isStoreablePayLink).
+ *   verify: string|null, storeable: boolean, payerData: { identifier: string }|null }>}
+ *   `amountSats` is the invoice's; `successAction` is the LUD-09 action as
+ *   utils/successAction.js reads it, `verify` the LUD-21 URL on the
+ *   callback's own host, `storeable` the LUD-11 verdict (isStoreablePayLink),
+ *   and `payerData` the payer details that went with it (null: none).
  * @throws {Error} a transport failure, a refusal, or a PAY_REQUEST_ERROR code.
  *   A failure here means nothing was paid.
  */
 export async function requestPayInvoice(
   payRequest,
-  { amountSats, payout = null, comment = '' } = {},
+  { amountSats, payout = null, comment = '', payerData = null } = {},
   { get = lnurlGetJson, decode = parseLightningInvoice, timeoutMs, signal, now = Date.now } = {},
 ) {
   const terms = payTerms(payRequest)
@@ -536,12 +609,15 @@ export async function requestPayInvoice(
     }
   }
 
+  const payer = payerDetails(payRequest, payerData, terms.callback)
+
   const url = buildLnurlPayCallbackUrl({
     callback: terms.callback,
     amountSats: sats,
     payout: currency,
     comment,
     commentAllowed: terms.commentAllowed,
+    payerdata: payer.json,
   })
   const ask = (target) => get(target, { timeoutMs, signal, disableRedirects: true })
   let target = url
@@ -559,8 +635,8 @@ export async function requestPayInvoice(
   }
   const data = serviceAnswer(response)
   const invoice = readInvoice(data, decode)
-  if (invoice.descriptionHash && typeof payRequest.metadata === 'string'
-      && invoice.descriptionHash !== metadataHash(payRequest.metadata)) {
+  const hashes = expectedDescriptionHashes(payRequest.metadata, payer.json)
+  if (invoice.descriptionHash && hashes && !hashes.includes(invoice.descriptionHash)) {
     throw payRequestError(PAY_REQUEST_ERROR.INVOICE_NOT_FOR_REQUEST, 'The invoice was made for another payment request')
   }
   const tooMuch = sats === null ? invoice.amountSats > payoutCeilingSats(confirmed) : invoice.amountSats !== sats
@@ -581,5 +657,6 @@ export async function requestPayInvoice(
     successAction: parseSuccessAction(data.successAction, terms.callback),
     verify: validateVerifyUrl(data.verify, terms.callback),
     storeable: isStoreablePayLink(data),
+    payerData: payer.sent,
   }
 }

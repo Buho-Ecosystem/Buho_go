@@ -4,6 +4,7 @@ export default {
   "There was no connection.": "No había conexión.",
   "There wasn't enough left for the fee.": "No quedó suficiente para la comisión.",
   "The network fee was higher than allowed.": "La comisión de red era más alta de lo permitido.",
+  "{name} asks for details Auto-Transfer can't share.": "{name} pide datos que Auto-Transfer no puede compartir.",
   "{name} refused it.": "{name} la rechazó.",
   "It may have gone through, so check {name} first.": "Puede que haya llegado, así que revisa primero {name}.",
   "The balance couldn't be checked.": "No se pudo comprobar el saldo.",

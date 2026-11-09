@@ -12,6 +12,7 @@ import autoTransfer from './autoTransfer.js';
 import boltCard from './boltCard.js';
 import walletApps from './walletApps.js';
 import payRequests from './payRequests.js';
+import refundAddress from './refundAddress.js';
 export default {
   ...requests,
   ...profilePayment,
@@ -65,6 +66,7 @@ export default {
   ...boltCard,
   ...walletApps,
   ...payRequests,
+  ...refundAddress,
   // Spend: Bitrefill door
   "Gift cards, mobile top-ups and more": "Tarjetas regalo, recargas móviles y más",
   "Bitrefill is on its way": "Bitrefill está en camino",

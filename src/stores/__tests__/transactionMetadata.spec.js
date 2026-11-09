@@ -735,6 +735,7 @@ await test('every write loads the saved entries first, whichever comes first aft
     ['setSourceForTransaction', (store) => store.setSourceForTransaction('new', 'w1', 'internal-transfer')],
     ['setCounterpartyAvatarForTransaction', (store) => store.setCounterpartyAvatarForTransaction('new', 'w1', { kind: 'nostr', npub: 'npub1example', picture: null })],
     ['setMerchantVerificationForTransaction', (store) => store.setMerchantVerificationForTransaction('new', 'w1', { name: 'Corner Shop' })],
+    ['setRefundAddressForTransaction', (store) => store.setRefundAddressForTransaction('new', 'w1', 'maria@buho.example')],
     ['setSaleBreakdownForTransaction', (store) => store.setSaleBreakdownForTransaction('new', 'w1', { totalSats: 100 })],
     ['clearContactForTransaction', (store) => store.clearContactForTransaction('new', 'w1')],
     ['setNoteForTransaction', (store) => store.setNoteForTransaction('new', 'w1', 'Lunch')],
@@ -853,6 +854,61 @@ await test('a payment stamped with a verified business is not claimed again', as
   await store.enqueuePendingContactLink({ amountSats: 4200, label: 'Transfer to Savings', source: 'internal-transfer', walletId: 'w1' });
   assert.equal(await store.consumePendingContactLinks([makeTx('coffee', { amount: -4200 })], 'w1'), 0);
   assert.equal(store.getLabelForTransaction('coffee', 'w1'), null);
+});
+
+await test('the refund address that went with a payment is kept with it, scoped to its wallet', async () => {
+  const store = freshStore();
+  await store.enqueuePendingContactLink({ recipientAddress: 'till@cryptoqr.net', amountSats: 2500, refundAddress: '  maria@buho.example ', walletId: 'w1' });
+  assert.equal(await store.consumePendingContactLinks([makeTx('till', { amount: -2500 })], 'w2'), 0, 'another wallet\'s payment is not it');
+  assert.equal(await store.consumePendingContactLinks([makeTx('till', { amount: -2500 })], 'w1'), 1);
+  assert.equal(store.getRefundAddressForTransaction('till', 'w1'), 'maria@buho.example');
+  assert.equal(store.getRefundAddressForTransaction('till', 'w2'), null);
+  assert.equal(store.getMetadataForTransaction('till', 'w1').recipientAddress, 'till@cryptoqr.net');
+});
+
+await test('a refund address alone is stamped only on the payment with its amount', async () => {
+  const store = freshStore();
+  await store.enqueuePendingContactLink({ amountSats: 2500, refundAddress: 'maria@buho.example', walletId: 'w1' });
+  assert.equal(await store.consumePendingContactLinks([makeTx('other', { amount: -900 })], 'w1'), 0);
+  assert.equal(store.getRefundAddressForTransaction('other', 'w1'), null);
+  assert.equal(await store.consumePendingContactLinks([makeTx('other', { amount: -900 }), makeTx('till', { amount: -2500 })], 'w1'), 1);
+  assert.equal(store.getRefundAddressForTransaction('till', 'w1'), 'maria@buho.example');
+});
+
+await test('a till code alone never carries its refund address onto another payment', async () => {
+  const store = freshStore();
+  // The till's address is stamped on the newest send in the window, as it
+  // always was; where a refund goes is said only on the payment its amount
+  // (or its id) names.
+  await store.enqueuePendingContactLink({ recipientAddress: 'till@cryptoqr.net', amountSats: 2500, refundAddress: 'maria@buho.example', walletId: 'w1' });
+  assert.equal(await store.consumePendingContactLinks([makeTx('coffee', { amount: -900 })], 'w1'), 1);
+  assert.equal(store.getMetadataForTransaction('coffee', 'w1').recipientAddress, 'till@cryptoqr.net');
+  assert.equal(store.getRefundAddressForTransaction('coffee', 'w1'), null);
+
+  const byId = freshStore();
+  await byId.enqueuePendingContactLink({ recipientAddress: 'till@cryptoqr.net', amountSats: 2500, refundAddress: 'maria@buho.example', transactionId: 'till', walletId: 'w1' });
+  assert.equal(await byId.consumePendingContactLinks([makeTx('coffee', { amount: -900 }), makeTx('till', { amount: -2510 })], 'w1'), 1);
+  assert.equal(byId.getRefundAddressForTransaction('till', 'w1'), 'maria@buho.example', 'the id names it, whatever the fee did to the amount');
+});
+
+await test('what went with a payment never changes: the first stamp wins, blanks are ignored', async () => {
+  const store = freshStore();
+  assert.equal(await store.setRefundAddressForTransaction('till', 'w1', '   '), null);
+  assert.equal(store.getMetadataForTransaction('till', 'w1'), null, 'nothing written for a blank');
+  await store.setRefundAddressForTransaction('till', 'w1', 'maria@buho.example');
+  await store.setRefundAddressForTransaction('till', 'w1', 'mallory@evil.example');
+  assert.equal(store.getRefundAddressForTransaction('till', 'w1'), 'maria@buho.example');
+  const warn = console.warn;
+  console.warn = () => {};
+  try { assert.equal(await store.setRefundAddressForTransaction('till', null, 'maria@buho.example'), null, 'no wallet, no write'); } finally { console.warn = warn; }
+  store.metadata['w1::odd'] = { contactId: null, customNote: '', tags: [], refundAddress: 42 };
+  assert.equal(store.getRefundAddressForTransaction('odd', 'w1'), null, 'only text is read back');
+});
+
+await test('a blank refund address on a link counts for nothing', async () => {
+  const store = freshStore();
+  await store.enqueuePendingContactLink({ amountSats: 2500, refundAddress: '  ', walletId: 'w1' });
+  assert.deepEqual(store.pendingContactLinks, [], 'nothing to keep, nothing queued');
 });
 
 // ---------------------------------------------------------------------------

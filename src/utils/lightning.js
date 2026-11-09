@@ -101,6 +101,8 @@ function payParams(payRequest) {
     amount: fixedAmountSats, // Pre-fill amount if fixed
     commentAllowed: payRequest.commentAllowed,
     metadata: payRequest.metadata,
+    // LUD-18: what the service asks to know about the payer, as sent.
+    payerData: payRequest.payerData ?? null,
   };
 }
 
@@ -302,9 +304,11 @@ export class LightningPaymentService {
    * @param {Object} paymentData - The payment data from processPaymentInput
    * @param {number} [amount] - Amount in sats (required for LNURL/Lightning Address)
    * @param {string} [comment] - Optional comment for the payment
+   * @param {{ payerData?: { identifier?: string|null }|null }} [options] - LUD-18
+   *   details the person agreed to share (see requestPayInvoice)
    * @returns {Promise<Object>} Payment result with preimage
    */
-  async sendPayment(paymentData, amount = null, comment = null) {
+  async sendPayment(paymentData, amount = null, comment = null, { payerData = null } = {}) {
     this.requireNwc();
 
     switch (paymentData.type) {
@@ -313,11 +317,11 @@ export class LightningPaymentService {
         return this.payInvoice(paymentData.invoice);
 
       case PaymentType.LIGHTNING_ADDRESS:
-        return this.payLightningAddress(paymentData, amount, comment);
+        return this.payLightningAddress(paymentData, amount, comment, { payerData });
 
       case PaymentType.LNURL_PAY:
       case 'lnurl':
-        return this.payLNURL(paymentData, amount, comment);
+        return this.payLNURL(paymentData, amount, comment, { payerData });
 
       default:
         throw new Error(`Unsupported payment type: ${paymentData.type}`);
@@ -338,9 +342,10 @@ export class LightningPaymentService {
    * @param {Object} paymentData - Payment data with address and limits
    * @param {number} amount - Amount in sats
    * @param {string} [comment] - Optional comment
+   * @param {{ payerData?: object|null }} [options] - LUD-18 details to share
    * @returns {Promise<Object>} Payment result with preimage
    */
-  async payLightningAddress(paymentData, amount, comment) {
+  async payLightningAddress(paymentData, amount, comment, { payerData = null } = {}) {
     if (!amount || amount <= 0) {
       throw new Error('Amount is required for Lightning Address payments');
     }
@@ -354,11 +359,12 @@ export class LightningPaymentService {
     // Asked for directly rather than through lightning-tools' requestInvoice,
     // whose answer drops `successAction`. The shared request keeps the LUD-09
     // message, including the `aes` variant, and checks the invoice's amount.
-    const invoice = await requestPayInvoice(payRequest, { amountSats: amount, comment });
+    const invoice = await requestPayInvoice(payRequest, { amountSats: amount, comment, payerData });
     const result = await payWithNwc(this.requireNwc(), invoice.pr, { limit: this.limit });
     // Preserve the recipient's LUD-09 post-payment message so the caller can
-    // surface it once the payment settles.
-    return { ...result, successAction: invoice.successAction };
+    // surface it once the payment settles, and the payer details that went
+    // with the payment.
+    return { ...result, successAction: invoice.successAction, payerData: invoice.payerData };
   }
 
   /**
@@ -366,9 +372,10 @@ export class LightningPaymentService {
    * @param {Object} paymentData - Payment data with callback and limits
    * @param {number} amount - Amount in sats
    * @param {string} [comment] - Optional comment
+   * @param {{ payerData?: object|null }} [options] - LUD-18 details to share
    * @returns {Promise<Object>} Payment result with preimage
    */
-  async payLNURL(paymentData, amount, comment) {
+  async payLNURL(paymentData, amount, comment, { payerData = null } = {}) {
     if (!amount || amount <= 0) {
       throw new Error('Amount is required for LNURL payments');
     }
@@ -382,10 +389,11 @@ export class LightningPaymentService {
         { ...decoded, lnurl: paymentData.lnurl || paymentData.data },
         amount,
         comment,
+        { payerData },
       );
     }
 
-    const invoice = await requestPayInvoice(paymentData, { amountSats: amount, comment });
+    const invoice = await requestPayInvoice(paymentData, { amountSats: amount, comment, payerData });
     const result = await payWithNwc(this.requireNwc(), invoice.pr, { limit: this.limit });
     // Preserve the LUD-09 successAction (recipient's post-payment message) so
     // the caller can show it once the payment settles, and the LUD-11 verdict
@@ -396,6 +404,7 @@ export class LightningPaymentService {
       ...result,
       successAction: invoice.successAction,
       payLink: (invoice.storeable && sourceLnurl) ? sourceLnurl : null,
+      payerData: invoice.payerData,
     };
   }
 

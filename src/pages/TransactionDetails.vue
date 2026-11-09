@@ -214,6 +214,13 @@
             </span>
           </component>
 
+          <!-- Where a refund for this payment goes: the address that went
+               with it when the store asked for one (LUD-18). -->
+          <div v-if="refundAddress" class="tx-row">
+            <span class="tx-row-label">{{ $t('Refunds to') }}</span>
+            <span class="tx-row-value">{{ refundAddress }}</span>
+          </div>
+
           <!-- How this payment was made, when an auxiliary path stamped a
                source (internal transfer, batch send, kiosk sale). -->
           <!-- An Auto-Transfer leads to the rule that sent it. -->
@@ -1035,6 +1042,12 @@ export default {
       if (!this.transaction || !this.metadataStore) return null;
       if (this.transaction.type !== 'outgoing') return null;
       return this.metadataStore.getMerchantVerificationForTransaction(this.transaction.id, this.metadataWalletId);
+    },
+
+    /** The address this payment shared for a refund (LUD-18), or null. */
+    refundAddress() {
+      if (!this.transaction || this.transaction.type !== 'outgoing') return null;
+      return this.metadataStore?.getRefundAddressForTransaction?.(this.transaction.id, this.metadataWalletId) || null;
     },
 
     /** What a screen reader hears on the verification row, when it opens a page. */

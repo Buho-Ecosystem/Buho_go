@@ -4,6 +4,7 @@ export default {
   "There was no connection.": "There was no connection.",
   "There wasn't enough left for the fee.": "There wasn't enough left for the fee.",
   "The network fee was higher than allowed.": "The network fee was higher than allowed.",
+  "{name} asks for details Auto-Transfer can't share.": "{name} asks for details Auto-Transfer can't share.",
   "{name} refused it.": "{name} refused it.",
   "It may have gone through, so check {name} first.": "It may have gone through, so check {name} first.",
   "The balance couldn't be checked.": "The balance couldn't be checked.",

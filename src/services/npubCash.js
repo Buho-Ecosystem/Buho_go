@@ -48,12 +48,12 @@
  */
 
 import { createHttpAuthEvent, getAuthorizationHeader } from 'nostr-core';
+import { NPUBCASH_DOMAIN, isNpubCashAddress } from '../utils/npubCashAddress.js';
+
+export { NPUBCASH_DOMAIN, isNpubCashAddress };
 
 /** v2 API host. The `npub.cash` host serves only the web app. */
 export const NPUBCASH_API = 'https://npubx.cash';
-
-/** Domain the addresses live on. Kept separate: the API moved once already. */
-export const NPUBCASH_DOMAIN = 'npub.cash';
 
 /** Requests are cheap but the service is someone else's; keep the leash short. */
 const REQUEST_TIMEOUT_MS = 12000;
@@ -94,12 +94,6 @@ export function npubCashAddress(npub) {
 export function npubCashNameAddress(username) {
   const name = String(username || '').trim().toLowerCase();
   return name ? `${name}@${NPUBCASH_DOMAIN}` : '';
-}
-
-/** True if an address points at npub.cash, so we can tell ours from a user's own. */
-export function isNpubCashAddress(address) {
-  if (typeof address !== 'string') return false;
-  return address.trim().toLowerCase().endsWith(`@${NPUBCASH_DOMAIN}`);
 }
 
 /** The raw-key form, which is what we replace as soon as a name is claimed. */

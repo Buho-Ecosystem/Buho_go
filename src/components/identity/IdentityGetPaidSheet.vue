@@ -675,21 +675,7 @@ export default {
 
     /** The wallet's advertised address, used only to attribute a receipt. */
     walletLightningAddress(wallet) {
-      const spark = this.walletStore.sparkLightningAddressOf(wallet);
-      if (spark) return spark;
-
-      const stored = String(wallet?.metadata?.lud16 || '').trim().toLowerCase();
-      if (isLightningAddress(stored)) return stored;
-
-      const nwcUrl = wallet?.nwcUrl || wallet?.connectionData?.nwcUrl;
-      if (!nwcUrl) return '';
-      try {
-        const parsed = new URL(String(nwcUrl).replace('nostr+walletconnect://', 'http://'));
-        const value = String(parsed.searchParams.get('lud16') || '').trim().toLowerCase();
-        return isLightningAddress(value) ? value : '';
-      } catch {
-        return '';
-      }
+      return (this.walletStore.lightningAddressOf(wallet) || '').toLowerCase();
     },
 
     formatIncomingDate(tx) {

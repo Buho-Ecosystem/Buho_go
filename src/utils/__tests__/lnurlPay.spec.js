@@ -222,7 +222,7 @@ describe('asking for the invoice', () => {
     const invoice = await requestPayInvoice(payRequest, { amountSats: 21, comment: '  for coffee ' }, { get, timeoutMs: 5000 });
     assert.equal(asked[0].url, 'https://pay.example/lnurlp/cb/alice?amount=21000&comment=for%20coffee');
     assert.equal(asked[0].options.timeoutMs, 5000);
-    assert.deepEqual(invoice, { pr: invoiceFor(21), amountSats: 21, successAction: null, verify: null, storeable: false });
+    assert.deepEqual(invoice, { pr: invoiceFor(21), amountSats: 21, successAction: null, verify: null, storeable: false, payerData: null });
   });
 
   test('the callback requested is the callback checked, as parsed', async () => {
@@ -638,5 +638,143 @@ describe('one request path', () => {
     const allowed = ['utils/lnurlPay.js', 'services/publicProfileInvoice.js', 'services/lnurlWithdraw.js', 'services/addressRequest.js', 'stores/withdrawVouchers.js', 'utils/lnurlHttp.js'];
     const users = files.filter(([, text]) => /\blnurlGetJson\b/.test(text)).map(([file]) => file);
     assert.deepEqual(users.sort(), allowed.sort());
+  });
+});
+
+describe('payer details go with the invoice request (LUD-18)', () => {
+  const ALICE = 'alice@buho.example';
+  const SENT = '{"identifier":"alice@buho.example"}';
+  const asking = (payerData, extra = {}) => readPayRequest({ ...PAY_REQUEST, payerData, ...extra });
+  const madeFor = (text, sats = 81) => invoiceFor(sats, { descriptionHash: metadataHash(text) });
+  const query = (url, name) => new URL(url).searchParams.get(name);
+
+  test('the address is appended as `payerdata`, one strictly encoded JSON text', async () => {
+    const { get, asked } = fakeService(ok({ pr: invoiceFor(81) }));
+    const invoice = await requestPayInvoice(asking({ identifier: { mandatory: false } }), { amountSats: 81, payerData: { identifier: ALICE } }, { get });
+    assert.equal(asked[0].url, `https://pay.example/lnurlp/cb/alice?amount=81000&payerdata=${encodeURIComponent(SENT)}`);
+    assert.equal(query(asked[0].url, 'payerdata'), SENT, 'the service reads back exactly the text sent');
+    assert.deepEqual(invoice.payerData, { identifier: ALICE });
+  });
+
+  test('characters a plain URL encoding leaves alone are encoded too', () => {
+    const url = buildLnurlPayCallbackUrl({ callback: 'https://pay.example/cb', amountSats: 1, payerdata: `{"identifier":"o'neil(*)!@x.example"}` });
+    assert.match(url, /payerdata=[^!'()*]+$/);
+    assert.equal(new URL(url).searchParams.get('payerdata'), `{"identifier":"o'neil(*)!@x.example"}`);
+  });
+
+  test('a callback with its own query keeps it, the details come last, after the comment', async () => {
+    const { get, asked } = fakeService(ok({ pr: invoiceFor(81) }));
+    const request = asking({ identifier: {} }, { callback: 'https://pay.example/cb?k1=a%2Fb' });
+    await requestPayInvoice(request, { amountSats: 81, comment: 'hi', payerData: { identifier: ALICE } }, { get });
+    assert.equal(asked[0].url, `https://pay.example/cb?k1=a%2Fb&amount=81000&comment=hi&payerdata=${encodeURIComponent(SENT)}`);
+  });
+
+  test('in the recipient\'s currency (LUD-21) the details go as well', async () => {
+    const { get, asked } = fakeService(ok({ pr: invoiceFor(84) }));
+    const request = asking({ identifier: {} }, { currency: { code: 'ZAR', multiplier: 1000, decimals: 2 } });
+    await requestPayInvoice(request, { amountSats: 81, payout: { code: 'ZAR', amount: 100 }, payerData: { identifier: ALICE } }, { get });
+    assert.equal(query(asked[0].url, 'currency'), 'ZAR');
+    assert.equal(query(asked[0].url, 'payerdata'), SENT);
+  });
+
+  test('a service that asks for nothing gets nothing, whatever the sheet holds', async () => {
+    for (const payerData of [undefined, null, {}, { name: {}, email: {} }]) {
+      const { get, asked } = fakeService(ok({ pr: invoiceFor(81) }));
+      const invoice = await requestPayInvoice(asking(payerData), { amountSats: 81, payerData: { identifier: ALICE } }, { get });
+      assert.equal(query(asked[0].url, 'payerdata'), null, JSON.stringify(payerData));
+      assert.equal(invoice.payerData, null);
+    }
+  });
+
+  test('an optional address left out sends nothing and pays', async () => {
+    const { get, asked } = fakeService(ok({ pr: invoiceFor(81) }));
+    const invoice = await requestPayInvoice(asking({ identifier: { mandatory: false } }), { amountSats: 81 }, { get });
+    assert.equal(query(asked[0].url, 'payerdata'), null);
+    assert.equal(invoice.payerData, null);
+  });
+
+  test('only the identifier is sent, even if more was handed over', async () => {
+    const { get, asked } = fakeService(ok({ pr: invoiceFor(81) }));
+    await requestPayInvoice(asking({ identifier: {}, name: {}, email: {} }),
+      { amountSats: 81, payerData: { identifier: ALICE, name: 'Alice', email: 'alice@mail.example' } }, { get });
+    assert.equal(query(asked[0].url, 'payerdata'), SENT);
+  });
+
+  test('nothing is asked of the service when the payment cannot go ahead', async () => {
+    const cases = [
+      [asking({ identifier: { mandatory: true } }), null, PAY_REQUEST_ERROR.PAYER_DATA_REQUIRED],
+      [asking({ identifier: { mandatory: true } }), { identifier: '  ' }, PAY_REQUEST_ERROR.PAYER_DATA_REQUIRED],
+      [asking({ identifier: {} }), { identifier: 'not-an-address' }, PAY_REQUEST_ERROR.PAYER_DATA_INVALID],
+      [asking({ email: { mandatory: true } }), { identifier: ALICE }, PAY_REQUEST_ERROR.PAYER_DATA_UNSUPPORTED],
+      [asking({ identifier: { mandatory: true }, auth: { mandatory: true, k1: 'ab' } }), { identifier: ALICE }, PAY_REQUEST_ERROR.PAYER_DATA_UNSUPPORTED],
+    ];
+    for (const [request, payerData, code] of cases) {
+      const { get, asked } = fakeService();
+      await assert.rejects(requestPayInvoice(request, { amountSats: 81, payerData }, { get }),
+        (error) => error.code === code && !isCounterpartyError(error), code);
+      assert.equal(asked.length, 0, code);
+    }
+  });
+
+  test('an address agreed for one service goes only to it', async () => {
+    const onlyTo = (callback) => new URL(callback).hostname === 'pay.example';
+    const fine = fakeService(ok({ pr: invoiceFor(81) }));
+    await requestPayInvoice(asking({ identifier: {} }), { amountSats: 81, payerData: { identifier: ALICE, onlyTo } }, { get: fine.get });
+    assert.equal(query(fine.asked[0].url, 'payerdata'), SENT);
+
+    const moved = fakeService();
+    await assert.rejects(
+      requestPayInvoice(asking({ identifier: {} }, { callback: 'https://elsewhere.example/cb' }), { amountSats: 81, payerData: { identifier: ALICE, onlyTo } }, { get: moved.get }),
+      (error) => error.code === PAY_REQUEST_ERROR.INVALID && !isCounterpartyError(error));
+    assert.equal(moved.asked.length, 0, 'the other service is never asked');
+
+    const silent = fakeService(ok({ pr: invoiceFor(81) }));
+    await requestPayInvoice(asking({}, { callback: 'https://elsewhere.example/cb' }), { amountSats: 81, payerData: { identifier: ALICE, onlyTo } }, { get: silent.get });
+    assert.equal(query(silent.asked[0].url, 'payerdata'), null, 'nothing to share: the test does not apply');
+  });
+
+  test('a refusal for unshareable details names what was asked for', async () => {
+    const { get } = fakeService();
+    await assert.rejects(requestPayInvoice(asking({ email: { mandatory: true }, name: { mandatory: true } }), { amountSats: 81 }, { get }),
+      (error) => error.code === PAY_REQUEST_ERROR.PAYER_DATA_UNSUPPORTED && error.kinds.join() === 'email,name');
+  });
+
+  test('an amount out of range is still said first', async () => {
+    const { get } = fakeService();
+    await assert.rejects(requestPayInvoice(asking({ identifier: { mandatory: true } }), { amountSats: 1e9 }, { get }),
+      withCode(PAY_REQUEST_ERROR.AMOUNT_OUT_OF_RANGE));
+  });
+
+  test('the invoice may be for the metadata, or for the metadata with the details sent', async () => {
+    const request = asking({ identifier: {} });
+    for (const text of [PAY_REQUEST.metadata, PAY_REQUEST.metadata + SENT]) {
+      const { get } = fakeService(ok({ pr: madeFor(text) }));
+      assert.equal((await requestPayInvoice(request, { amountSats: 81, payerData: { identifier: ALICE } }, { get })).pr, madeFor(text));
+    }
+  });
+
+  test('details that were not sent cannot vouch for an invoice', async () => {
+    const { get } = fakeService(ok({ pr: madeFor(PAY_REQUEST.metadata + SENT) }));
+    await assert.rejects(requestPayInvoice(asking({ identifier: {} }), { amountSats: 81 }, { get }),
+      withCode(PAY_REQUEST_ERROR.INVOICE_NOT_FOR_REQUEST));
+  });
+
+  test('other details, or the same details written another way, are another payment', async () => {
+    for (const text of [PAY_REQUEST.metadata + '{"identifier":"mallory@x.example"}', PAY_REQUEST.metadata + '{"identifier": "alice@buho.example"}']) {
+      const { get } = fakeService(ok({ pr: madeFor(text) }));
+      await assert.rejects(requestPayInvoice(asking({ identifier: {} }), { amountSats: 81, payerData: { identifier: ALICE } }, { get }),
+        withCode(PAY_REQUEST_ERROR.INVOICE_NOT_FOR_REQUEST), text);
+    }
+  });
+
+  test('a callback that already carries `payerdata` is refused, in any case', () => {
+    for (const callback of ['https://pay.example/cb?payerdata=x', 'https://pay.example/cb?PayerData=x']) {
+      assert.throws(() => readPayRequest({ ...PAY_REQUEST, callback, payerData: { identifier: {} } }), withCode(PAY_REQUEST_ERROR.INVALID));
+    }
+  });
+
+  test('the pay request keeps payerData as the service sent it', () => {
+    const payerData = { identifier: { mandatory: false }, futureKind: { x: 1 } };
+    assert.deepEqual(readPayRequest({ ...PAY_REQUEST, payerData }).payerData, payerData);
   });
 });

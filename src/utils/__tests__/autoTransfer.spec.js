@@ -122,6 +122,10 @@ test('failures are named in a few words', () => {
   // A transfer between wallets says this in our words, which mention the
   // network: the code decides, so it never reads as a lost connection.
   assert.equal(failureReason({ code: 'LIGHTNING_FEE_ABOVE_LIMIT', message: 'The network fee would be ₿ 12, more than the ₿ 10 limit. (Spark → Savings)' }), 'fee');
+  // A destination that will not be paid without details about the payer
+  // (LUD-18): nobody is there to give them, and it is not a refusal of the amount.
+  assert.equal(failureReason({ code: 'LNURL_PAYER_DATA_REQUIRED', message: "The service requires the payer's Lightning address" }), 'details');
+  assert.equal(failureReason({ code: 'LNURL_PAYER_DATA_UNSUPPORTED', message: 'The service requires payer details this wallet does not share' }), 'details');
   assert.equal(failureReason(new Error('Insufficient balance')), 'insufficient');
   assert.equal(failureReason(new Error('Could not resolve Lightning address')), 'unreachable');
   assert.equal(failureReason(new Error('Request timed out')), 'offline');
@@ -207,7 +211,7 @@ test('a status is a few words; times are relative and translated', () => {
 });
 
 test('every reason is one short sentence, and never says "withdrawal" or names a route', () => {
-  const reasons = ['unreachable', 'offline', 'insufficient', 'fee', 'refused', 'unconfirmed', 'balance_unverified', 'no_rate', 'below_minimum', 'cannot_pay', 'cannot_receive', 'missing', 'loop', 'self', 'unknown', 'other'];
+  const reasons = ['unreachable', 'offline', 'insufficient', 'fee', 'details', 'refused', 'unconfirmed', 'balance_unverified', 'no_rate', 'below_minimum', 'cannot_pay', 'cannot_receive', 'missing', 'loop', 'self', 'unknown', 'other'];
   for (const reason of reasons) {
     const text = reasonText(reason, { t, wallet: 'Shop', destination: 'Savings' });
     assert.match(text, /^[^.]+\.$/, `${reason}: one sentence`);

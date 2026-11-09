@@ -220,6 +220,33 @@ await test('an address that cannot be one is never requested', async () => {
   }
 });
 
+await test('a till that asks for a refund address gets the one the person chose, and says it went', async () => {
+  const asks = { ...PAY_REQUEST, minSendable: 81000, maxSendable: 81000, payerData: { identifier: { mandatory: false } } };
+  reset(answer(asks), answer({ pr: invoiceFor(81) }));
+  const spark = sparkWallet();
+  const result = await spark.payLightningAddress('0002010122TSHP6SJNKTR3IY%2Fconfirm6304821D@cryptoqr.net', 81, '', null,
+    { payerData: { identifier: 'maria@buho.example' } });
+  assert.equal(asked[1], `${PAY_REQUEST.callback}?amount=81000&payerdata=${encodeURIComponent('{"identifier":"maria@buho.example"}')}`);
+  assert.deepEqual(spark.paid, [invoiceFor(81)]);
+  assert.deepEqual(result.payerData, { identifier: 'maria@buho.example' });
+
+  reset(answer(asks), answer({ pr: invoiceFor(81) }));
+  const declined = await sparkWallet().payLightningAddress('0002010122TSHP6SJNKTR3IY%2Fconfirm6304821D@cryptoqr.net', 81);
+  assert.equal(asked[1], `${PAY_REQUEST.callback}?amount=81000`, 'declined: nothing goes');
+  assert.equal(declined.payerData, null);
+});
+
+await test('a service that insists on details is refused before an invoice is asked for, and nothing is paid', async () => {
+  for (const payerData of [{ identifier: { mandatory: true } }, { email: { mandatory: true } }]) {
+    reset(answer({ ...PAY_REQUEST, payerData }));
+    const spark = sparkWallet();
+    const error = await spark.payLightningAddress('alice@example.com', 21).catch((e) => e);
+    assert.ok([PAY_REQUEST_ERROR.PAYER_DATA_REQUIRED, PAY_REQUEST_ERROR.PAYER_DATA_UNSUPPORTED].includes(error.code), error.message);
+    assert.equal(asked.length, 1, 'only the pay request was read');
+    assert.deepEqual(spark.paid, []);
+  }
+});
+
 console.log(`\n${passed} passed, ${failed} failed`);
 // Explicit exit either way: the fiat-rate service's module-scope refresh
 // interval holds the event loop open.

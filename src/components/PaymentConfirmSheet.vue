@@ -20,6 +20,12 @@
       arrives through the same `walletCanPay` / `walletHint` pair the rail
       check always used, so a wallet that cannot pay disables the commit
       control and shows its reason in the existing banner.
+    - "Refunds to" (`payment.refund`, RefundAddressField): the address that
+      goes with the payment when the service asks for one (LUD-18), in one
+      group with the network fee. A needed address that is missing, or one
+      the service just refused, holds the commit control. A service that
+      requires details BuhoGO never shares (`payment.payerBlocked`) holds it
+      too, with the reason above.
 
   It does NOT route to Spark / LNbits / NWC, fetch LNURL data, or talk to
   fiat-rate services beyond the small util import — the parent owns the
@@ -74,7 +80,7 @@
         <slot name="takeover" />
       </div>
 
-      <div v-if="!isReading" v-show="!takeover" class="stage stage-compose">
+      <div v-if="!isReading" v-show="!takeover" class="stage stage-compose" :class="{ 'stage--refund': !!refundRow }">
           <!-- Amount leads: the recipient was chosen on the screen before,
                so the number is this screen's job and takes the stage.
                Locked, range, or free depending on mode. -->
@@ -254,6 +260,13 @@
             <span>{{ walletHint }}</span>
           </div>
 
+          <!-- LUD-18: the service will not take the payment without details
+               BuhoGO never shares, so the protocol says not to pay. -->
+          <div v-if="payerBlocked" class="wallet-hint" role="status">
+            <Icon icon="tabler:alert-triangle" width="14" height="14" />
+            <span>{{ $t("This service asks for details BuhoGO can't share. Ask them for another way to pay.") }}</span>
+          </div>
+
           <!-- Stale-rates warning. Surfaced for merchant payments where
                the displayed sats / fiat amount was computed against a
                cached rate that's now older than the freshness window. -->
@@ -289,16 +302,27 @@
                stays out of the way. -->
           <slot name="extras" />
 
-          <!-- Fee row: surfaced when the parent supplies an estimate or a
+          <!-- Facts about the payment, read as one group: the network fee and,
+               when the service asks for one, the refund address.
+               Fee row: surfaced when the parent supplies an estimate or a
                static label (e.g. "Free (Spark transfer)"). NWC/LNbits
                can't pre-estimate fees, so the parent simply omits this
                object on those paths and we show nothing. -->
-          <div v-if="feeRowVisible" class="fee-row">
-            <span class="fee-row-label">{{ $t('Network fee') }}</span>
-            <span class="fee-row-value">
-              <q-spinner-dots v-if="payment?.feeEstimate?.isEstimating" size="14px" />
-              <span v-else>{{ feeRowValueText }}</span>
-            </span>
+          <div v-if="feeRowVisible || refundRow" class="fact-group">
+            <div v-if="feeRowVisible" class="fee-row" :class="{ 'fee-row--joined': !!refundRow }">
+              <span class="fee-row-label">{{ $t('Network fee') }}</span>
+              <span class="fee-row-value">
+                <q-spinner-dots v-if="payment?.feeEstimate?.isEstimating" size="14px" />
+                <span v-else>{{ feeRowValueText }}</span>
+              </span>
+            </div>
+            <RefundAddressField
+              v-if="refundRow"
+              :refund="refundRow"
+              :joined="feeRowVisible"
+              :disabled="isSending || isComplete"
+              @pick="onRefundPick"
+            />
           </div>
 
           <!-- Pay with: which connected wallet pays. Last in the scroll
@@ -377,6 +401,7 @@ import SlideToSend from './SlideToSend.vue'
 import BrantaVerifiedBadge from './BrantaVerifiedBadge.vue'
 import ProgressCta from './ProgressCta.vue'
 import PayWithField from './PayWithField.vue'
+import RefundAddressField from './RefundAddressField.vue'
 import CardFace from './CardFace.vue'
 import { onAndroidBack } from '../utils/androidBack.js'
 
@@ -386,7 +411,7 @@ const SLIDE_THRESHOLD_SATS = 10000
 
 export default {
   name: 'PaymentConfirmSheet',
-  components: { SlideToSend, BrantaVerifiedBadge, ProgressCta, PayWithField, CardFace },
+  components: { SlideToSend, BrantaVerifiedBadge, ProgressCta, PayWithField, RefundAddressField, CardFace },
   props: {
     modelValue: { type: Boolean, default: false },
     /**
@@ -453,7 +478,7 @@ export default {
     takeoverTitle: { type: String, default: '' },
     takeoverLocked: { type: Boolean, default: false }
   },
-  emits: ['update:modelValue', 'confirm', 'cancel', 'amount-changed', 'update:sendingWalletId', 'takeover-cancel'],
+  emits: ['update:modelValue', 'confirm', 'cancel', 'amount-changed', 'update:sendingWalletId', 'refund-pick', 'takeover-cancel'],
   data() {
     return {
       showAddress: false,
@@ -682,6 +707,26 @@ export default {
 
     canSubmit() {
       return this.walletCanPay && this.isAmountAcceptable && this.commitGate && !this.recipientChecking
+        && !this.payerBlocked && !this.refundHolds
+    },
+
+    // ───── Refunds to (LUD-18) ─────
+    /** The refund row as the parent built it, or null for none. */
+    refundRow() {
+      const refund = this.payment?.refund
+      return refund && typeof refund === 'object' ? refund : null
+    },
+    /** The service requires details BuhoGO never shares. */
+    payerBlocked() {
+      return this.payment?.payerBlocked === true
+    },
+    /** A needed address is missing, or the one chosen was just refused (in any case). */
+    refundHolds() {
+      const refund = this.refundRow
+      if (!refund) return false
+      if (refund.required && !refund.selected) return true
+      const same = (a, b) => typeof a === 'string' && typeof b === 'string' && a.trim().toLowerCase() === b.trim().toLowerCase()
+      return !!refund.selected && same(refund.selected, refund.refusedAddress)
     },
 
     // The left half of the amount helper row. Only range mode has bounds
@@ -1009,6 +1054,12 @@ export default {
       this.$emit('update:sendingWalletId', walletId)
     },
 
+    /** The person chose on the refund row; the parent owns the choice. */
+    onRefundPick(pick) {
+      if (this.isSending || this.isComplete) return
+      this.$emit('refund-pick', pick)
+    },
+
     onTopAction() {
       if (this.takeover) {
         if (!this.takeoverLocked) this.$emit('takeover-cancel')
@@ -1225,10 +1276,8 @@ export default {
   }
 }
 /* ─── Recipient ───
-   Borderless, airy hero (Apple/Blitz-elegant): the recipient reads as
-   content, not a chunky filled card. No fill, no border, minimal padding —
-   the avatar + name carry it, verification lives in the top-right corner. */
-/* The recipient cell: one quiet chip row below the amount. */
+   The recipient cell: one quiet chip row below the amount. The avatar and
+   name carry it; verification lives in the top-right corner. */
 .recipient-cell {
   display: flex;
   align-items: center;
@@ -1482,6 +1531,10 @@ export default {
   color: #B45309;
   box-shadow: inset 0 0 0 1px rgba(245, 158, 11, 0.22);
 }
+/* A hint that wraps keeps its icon whole, beside the first line (one
+   line of 12.5px text is 17.5px tall: 2px above centres the 14px icon). */
+.wallet-hint { align-items: flex-start; }
+.wallet-hint > svg { flex-shrink: 0; margin-top: 2px; }
 .body--dark .wallet-hint {
   background: rgba(245, 158, 11, 0.12);
   color: #F59E0B;
@@ -1607,6 +1660,15 @@ export default {
   min-height: 32px;
 }
 
+/* With the refund row right below, the two read as one group of facts:
+   the same height, one surface, a hairline between them. */
+.fact-group { display: flex; flex-direction: column; }
+.fee-row--joined {
+  min-height: 44px;
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
 .fee-row-label {
   font-weight: 500;
   letter-spacing: 0.01em;
@@ -1719,6 +1781,15 @@ export default {
   .amount-input { font-size: 40px; }
   .primary-cta { height: 50px; font-size: 14.5px; }
 }
+/* Short phones with the refund row: a little less air, so Pay with stays on
+   screen with the row and the slide below it. Other sheets keep theirs. */
+@media (max-height: 600px) {
+  .stage--refund { gap: 8px; padding-top: 2px; }
+  .stage--refund .amount-stage { gap: 4px; }
+  .stage--refund .amount-input { font-size: 36px; }
+  .stage--refund .recipient-cell { padding: 8px 12px; }
+}
+
 /* Redeem keeps the familiar review surface and scales with larger text. */
 .sheet-card--redeem .top-title { font-size: 1rem; }
 .sheet-card--redeem .top-row { padding-top: 12px; }

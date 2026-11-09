@@ -245,6 +245,9 @@ test('a pay request that cannot be paid is explained by BuhoGO, and says nothing
     [{ code: 'LNURL_INVOICE_NOT_FOR_REQUEST' }, "The recipient's payment request doesn't match this payment. Nothing was sent."],
     [{ code: 'LNURL_INVOICE_EXPIRED' }, "The recipient's payment request had expired. Nothing was sent. Try again."],
     [{ code: 'LNURL_REDIRECTED', status: 302 }, "The recipient's service tried to redirect this payment. Nothing was sent. Ask them for another way to pay."],
+    [{ code: 'LNURL_PAYER_DATA_UNSUPPORTED', kinds: ['email'] }, "The recipient's service asks for details BuhoGO can't share. Nothing was sent. Ask them for another way to pay."],
+    [{ code: 'LNURL_PAYER_DATA_REQUIRED' }, "The recipient's service needs your address for this payment. Nothing was sent. Pay them from Send to choose one."],
+    [{ code: 'LNURL_PAYER_DATA_INVALID' }, "This address can't be shared. Nothing was sent."],
   ];
   const t = (key, values = {}) => key.replace(/\{(\w+)\}/g, (_, name) => values[name] ?? name);
   for (const [fields, reason] of cases) {

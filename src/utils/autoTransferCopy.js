@@ -70,6 +70,7 @@ export function reasonText(reason, { t, wallet = '', destination = '', detail = 
     case 'offline': return t('There was no connection.');
     case 'insufficient': return t('There wasn\'t enough left for the fee.');
     case 'fee': return t('The network fee was higher than allowed.');
+    case 'details': return t('{name} asks for details Auto-Transfer can\'t share.', { name: destination });
     case 'refused': return t('{name} refused it.', { name: destination });
     case 'unconfirmed': return t('It may have gone through, so check {name} first.', { name: destination });
     case 'balance_unverified': return balanceUnverifiedText(detail, { t, wallet });

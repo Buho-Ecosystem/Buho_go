@@ -1,4 +1,5 @@
 import { preferredProfileLightningAddress as preferredProfileAddress } from '../utils/profilePaymentAddress.js';
+import { walletLightningAddress } from '../utils/walletLightningAddress.js';
 /**
  * Wallet Store
  *
@@ -610,74 +611,19 @@ export const useWalletStore = defineStore('wallet', {
     },
 
     /**
-     * Lightning address of the active wallet (user@domain), if any.
-     *
-     * Resolution order (wallet-type agnostic):
-     *   1. `wallet.metadata.lud16` — the canonical storage slot, set by any flow
-     *      that configures a lightning address (NWC lud16 param, LNBits lnurlp setup, etc.)
-     *   2. For NWC wallets only: parse the `lud16` query param from `nwcUrl` as a fallback
-     *      so wallets added before lud16 extraction was implemented still light up.
-     *
-     * Always returns a validated `user@domain` string or null. Spark
-     * wallets carry a Breez-hosted address registered server-side against
-     * the wallet identity.
+     * Lightning address of the active wallet (user@domain), if any
+     * (utils/walletLightningAddress.js says where it is read from).
      */
-    activeWalletLightningAddress: (state) => {
-      const activeWallet = state.wallets.find((w) => w.id === state.activeWalletId);
-      if (!activeWallet) return null;
+    activeWalletLightningAddress: (state) => walletLightningAddress(
+      state.wallets.find((w) => w.id === state.activeWalletId),
+      state.walletInfos,
+    ),
 
-      // Helper: validate lightning address format (user@domain)
-      const isValidLnAddress = (addr) => {
-        if (!addr || typeof addr !== 'string') return false;
-        const parts = addr.split('@');
-        return parts.length === 2 && parts[0].length > 0 && parts[1].includes('.') && !addr.includes('://');
-      };
-
-      // Spark: live wallet info wins; the persisted metadata copy keeps
-      // the address visible while the wallet is locked or not yet
-      // connected.
-      if (activeWallet.type === 'spark') {
-        const breezAddress = state.walletInfos?.[activeWallet.id]?.lightningAddress
-          || activeWallet.metadata?.lud16;
-        return isValidLnAddress(breezAddress) ? breezAddress : null;
-      }
-
-      // Helper: extract lud16 from NWC URL string
-      const extractLud16FromUrl = (url) => {
-        if (!url) return null;
-        try {
-          const parsed = new URL(url.replace('nostr+walletconnect://', 'http://'));
-          const lud16Raw = parsed.searchParams.get('lud16');
-          if (lud16Raw && lud16Raw !== 'null' && isValidLnAddress(lud16Raw)) {
-            return lud16Raw;
-          }
-        } catch (e) { /* ignore */ }
-        return null;
-      };
-
-      // Check if already in metadata
-      if (activeWallet.metadata?.lud16) {
-        const stored = activeWallet.metadata.lud16;
-        // Validate it's actually a clean lightning address
-        if (isValidLnAddress(stored)) {
-          return stored;
-        }
-        // metadata.lud16 might be corrupted (lud16 + NWC URI concatenated)
-        // Extract the lightning address part before any protocol scheme
-        if (stored.includes('@')) {
-          const cleaned = stored.split(/nostr[+\s]/)[0];
-          if (cleaned && isValidLnAddress(cleaned)) {
-            return cleaned;
-          }
-        }
-      }
-
-      // Extract from nwcUrl for wallets added before lud16 extraction was implemented
-      const extracted = extractLud16FromUrl(activeWallet.nwcUrl);
-      if (extracted) return extracted;
-
-      return null;
-    },
+    /**
+     * Any wallet's own Lightning address, as written, or null. The refund row
+     * of the confirm sheet and the profile's Get paid sheet read it here.
+     */
+    lightningAddressOf: (state) => (wallet) => walletLightningAddress(wallet, state.walletInfos),
 
     /**
      * Check if any Spark wallet exists
