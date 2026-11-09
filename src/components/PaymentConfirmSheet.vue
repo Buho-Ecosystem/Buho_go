@@ -115,12 +115,10 @@
               <span>{{ limitsHelperText }}</span>
               <span class="amount-helper-convert">{{ fiatEquivalent }}</span>
             </div>
-            <!-- Secondary ZAR line for SA-retail merchants when the
-                 user's preferred fiat isn't ZAR. The merchant QR carries
-                 a ZAR amount that we want to remain visible alongside
-                 the user's chosen display currency. -->
+            <!-- A till code's own rand amount, beside the person's display
+                 currency, so the price at the till stays in view. -->
             <div v-if="zarSecondary" class="zar-secondary">
-              R{{ zarSecondary }} ZAR
+              {{ $t('{amount} at the till', { amount: zarSecondary }) }}
             </div>
             <!-- Said before the slide, not after: from this amount on, the
                  card asks for its PIN. Appears only once the amount reaches
@@ -803,16 +801,15 @@ export default {
       return `${m}:${String(r).padStart(2, '0')}`
     },
 
-    // ───── ZAR secondary (SA-retail merchant payments) ─────
-    // The merchant QR carries a ZAR amount that we want visible alongside
-    // whatever currency the user has set as their preferred display, so
-    // they can sanity-check the conversion. We hide it when ZAR *is* the
-    // user's preferred currency (in that case it's the primary line).
+    // ───── The till's rand amount (till codes) ─────
+    // The code prints the price in rand. It stays in view beside the
+    // person's display currency, written like the line above it, so the
+    // conversion can be checked. Hidden when rand is the display currency.
     zarSecondary() {
       const z = this.payment?.zarAmount
       if (!z) return ''
       if (this.fiatCurrencyCode === 'ZAR') return ''
-      return z
+      return `${FIAT_SYMBOLS.ZAR || 'R'}${z}`
     },
 
     // ───── Fee estimate ─────

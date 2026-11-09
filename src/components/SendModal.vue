@@ -368,7 +368,7 @@ import QrScanSheet from './QrScanSheet.vue';
 import { useAddressBookStore } from '../stores/addressBook';
 import { useWalletStore } from '../stores/wallet';
 import { readClipboardCrossPlatform } from '../utils/shopClipboard.js';
-import { isSARetailerQR, convertToLightningAddress, getMerchantInfo, SA_RETAIL_SOURCE } from '../utils/merchantQR';
+import { convertToLightningAddress, lightningAddressCase, SA_RETAIL_SOURCE } from '../utils/merchantQR';
 import { parseBip21, extractLnFallbackParam } from '../utils/bip21';
 import {
   isSparkAddress,
@@ -948,8 +948,10 @@ export default {
         }
         let cleanData = resolved;
 
+        // Addresses are paid in lower case, except a till code on the
+        // provider's domain, which is read exactly as printed.
         if (isLightningAddress(cleanData)) {
-          cleanData = cleanData.toLowerCase();
+          cleanData = lightningAddressCase(cleanData);
         }
 
         // Bare Nostr key (npub / nprofile, optionally nostr:-prefixed): resolve
@@ -987,31 +989,19 @@ export default {
         // for inspection; the toast explains why nothing happened (this path
         // is practically scan-only — typing is gated by isValidManualInput).
         if (paymentType === 'unknown') {
-          // Check for SA retailer QR codes (PnP, Checkers, Woolworths, etc.)
-          // last of all, so a retailer's name inside an address or a Bitcoin
-          // link never counts. A till code is a bare code: inside a
-          // `bitcoin:` or `lightning:` link it is not one.
-          if (cleanData === trimmedData && isSARetailerQR(cleanData)) {
-            const result = convertToLightningAddress(cleanData);
-            if (result) {
-              this.$emit('payment-detected', {
-                data: result.lightningAddress,
-                type: 'lightning_address',
-                source: SA_RETAIL_SOURCE,
-                merchant: result.merchant,
-              });
-              return;
-            }
-            const merchant = getMerchantInfo(cleanData);
-            this.$q.notify({
-              type: 'warning',
-              message: this.$t('SA Retailer QR detected'),
-              caption: merchant
-                ? `${merchant.displayName} - ${this.$t('not yet supported')}`
-                : this.$t('This retailer is not yet supported'),
-              timeout: 4000,
+          // A till code, last of all, so a shop's name inside an address or
+          // a Bitcoin link never counts. A till code is a bare code: inside a
+          // `bitcoin:` or `lightning:` link it is not one. Every till code
+          // goes to the provider, which says whether it takes it.
+          const till = cleanData === trimmedData ? convertToLightningAddress(cleanData) : null;
+          if (till) {
+            this.$emit('payment-detected', {
+              data: till.lightningAddress,
+              type: 'lightning_address',
+              source: SA_RETAIL_SOURCE,
+              merchant: till.merchant,
+              randAmount: till.randAmount,
             });
-            this.isProcessing = false;
             return;
           }
 

@@ -61,7 +61,7 @@ Earlier plans and research, kept for context. Not a description of the app as it
 | Note | Status |
 |---|---|
 | [Android App Links](notes/android-app-links.md) | Open: verified links for shared cards |
-| [MoneyBadger / CryptoQR](notes/PnP_honeybadger.md) | Not built |
+| [Till codes (MoneyBadger)](notes/PnP_honeybadger.md) | Built: every till code goes to cryptoqr.net |
 | [Cloud backup plan](notes/cloud_backup.md) | Superseded by [Cloud backup setup](CLOUD_BACKUP_SETUP.md) |
 | [NWC connection refactor](notes/nwc_store_refactor.md) | Superseded by [Nostr Wallet Connect](NWC.md) |
 

@@ -77,16 +77,40 @@ for (const walletType of ['spark', 'arkade', 'nwc', 'lnbits', null]) {
   });
 }
 
-for (const [code, shop] of [['0821234567', 'Scan to Pay'], ['https://pos.snapscan.io/qr/TEST', 'SnapScan']]) {
-  test(`${code} says ${shop} is not supported yet, and stops`, async () => {
-    const { emitted, notices, processing } = await scan(code);
+for (const [code, network] of [['0821234567', 'scantopay'], ['https://pos.snapscan.io/qr/TEST', 'snapscan'], ['https://www.zapper.com/url/TEST', 'zapper']]) {
+  test(`${code} goes to the provider too, which says whether it takes it`, async () => {
+    const { emitted, notices } = await scan(code);
+    assert.deepEqual(notices, [], 'nothing is decided here');
+    assert.equal(emitted.length, 1);
+    assert.equal(emitted[0].source, merchantQR.SA_RETAIL_SOURCE);
+    assert.equal(emitted[0].merchant.id, network);
+    assert.equal(emitted[0].data, `${merchantQR.encodeTillCode(code)}@cryptoqr.net`);
+    assert.equal(emitted[0].randAmount, null);
+  });
+}
+
+test('the rand amount printed in the code goes along', async () => {
+  const { emitted } = await scan(TILL_CODE);
+  assert.equal(emitted[0].randAmount, '1.00');
+});
+
+// Everything handed on is sent to the provider at once: a code that only
+// mentions a network stays on the phone.
+for (const text of ['WIFI:T:WPA;S:snapscan-guest;P:hunter2;;', 'otpauth://totp/Snapscan:me?secret=JBSWY3DPEHPK3PXP', 'https://example.com/reset?token=SECRET&ref=snapscan']) {
+  test(`${text.slice(0, 28)}... never goes to the provider`, async () => {
+    const { emitted, notices, processing } = await scan(text);
     assert.deepEqual(emitted, []);
-    assert.equal(notices.length, 1);
-    assert.equal(notices[0].message, 'SA Retailer QR detected');
-    assert.equal(notices[0].caption, `${shop} - not yet supported`);
+    assert.equal(notices[0]?.message, "We don't recognize this code");
     assert.equal(processing, false);
   });
 }
+
+test('an address on the provider\'s domain keeps the case of its name; any other is lowered', async () => {
+  const till = await scan('TSHP6SJNKTR3IY%2Fconfirm@CryptoQR.net');
+  assert.equal(till.emitted[0]?.data, 'TSHP6SJNKTR3IY%2Fconfirm@cryptoqr.net');
+  const plain = await scan('Maria@Example.COM');
+  assert.equal(plain.emitted[0]?.data, 'maria@example.com');
+});
 
 test('anything else is simply not recognized', async () => {
   const { emitted, notices, processing } = await scan('hello');

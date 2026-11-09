@@ -13,6 +13,7 @@ import boltCard from './boltCard.js';
 import walletApps from './walletApps.js';
 import payRequests from './payRequests.js';
 import refundAddress from './refundAddress.js';
+import tillCodes from './tillCodes.js';
 export default {
   ...requests,
   ...profilePayment,
@@ -67,6 +68,7 @@ export default {
   ...walletApps,
   ...payRequests,
   ...refundAddress,
+  ...tillCodes,
   // Spend: Bitrefill door
   "Gift cards, mobile top-ups and more": "Geschenkkarten, Handy-Guthaben und mehr",
   "Bitrefill is on its way": "Bitrefill kommt bald",
@@ -1926,7 +1928,6 @@ export default {
   "Network error": "Verbindungsproblem",
   "Network fees apply": "Netzwerkgebühr fällt an",
   "No wallet connected": "Keine Wallet verbunden",
-  "not yet supported": "noch nicht unterstützt",
   "Open transaction history": "Transaktionsverlauf öffnen",
   "Other Contacts": "Weitere Kontakte",
   "Paste an invoice or enter an address from your friend or shop": "Füge eine Rechnung ein oder gib eine Adresse von Freunden oder einem Shop ein",
@@ -1940,7 +1941,6 @@ export default {
   "Processing payment...": "Zahlung wird verarbeitet…",
   "Receive payment": "Zahlung empfangen",
   "Retry": "Erneut versuchen",
-  "SA Retailer QR detected": "SA-Händler-QR erkannt",
   "Save contacts in the Address Book to send to multiple people at once.": "Speichere Kontakte im Adressbuch, um an mehrere Personen gleichzeitig zu senden.",
   "Security Upgrade": "Sicherheits-Upgrade",
   "Send payment": "Zahlung senden",
@@ -1954,7 +1954,6 @@ export default {
   "Switch to your Spark wallet to pay Spark addresses": "Wechsle zu deiner Spark-Wallet, um Spark-Adressen zu bezahlen",
   "Switch to your Spark wallet to send Bitcoin": "Wechsle zu deiner Spark-Wallet, um Bitcoin zu senden",
   "Switch to your Spark wallet to send to this address": "Wechsle zu deiner Spark-Wallet, um an diese Adresse zu senden",
-  "This retailer is not yet supported": "Dieser Händler wird noch nicht unterstützt",
   "Unsupported payment format": "Dieses Zahlungsformat wird noch nicht unterstützt",
   "Use a Lightning invoice, address, or LNURL": "Nutze eine Lightning-Rechnung, Adresse oder einen Zahlungslink",
   "Use sats denomination or refresh the app to load exchange rates": "Wechsle zu Sats oder lade die App neu, um Wechselkurse zu laden",
