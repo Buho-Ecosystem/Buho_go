@@ -81,7 +81,10 @@ Which address the row offers, the first by default:
 4. the identity's Social Bucket (`npub…@npub.cash`);
 5. one typed for this payment.
 
-The Social Bucket is always there for an identity whose key is on the phone, so a refund has a place to land when no Spark, LNbits or NWC wallet has an address. An identity held by a signer app has none: the bucket is emptied by signing with the key itself.
+For a refund, the Social Bucket is always offered to an identity whose key is on the phone, so a refund has a place to land when no Spark, LNbits or NWC wallet has an address.
+- **A signer-app identity:** none is offered, because the bucket is emptied by signing with the key itself.
+- **The profile's address:** it is called the Social Bucket only when it is this identity's own bucket. Any other address on `npub.cash` is shown as the profile's.
+- **A service that only wants to know who paid:** it never gets the bucket unasked.
 
 ## Live checks (2026-11-07, read-only)
 
@@ -97,17 +100,26 @@ Against `cryptoqr.net` with MoneyBadger's public test code. GET requests only, n
 
 Through BuhoGO's own `requestPayInvoice`, four GET requests, nothing paid.
 
-- A Social Bucket address, of a key made for the check, is accepted. The invoice passes the amount, hash and expiry checks.
+- A Social Bucket address, of a key made for the check, is accepted. The invoice passes the amount and expiry checks. Like the provider's other test invoices, it is not checked against a description hash.
 - An address that cannot resolve is refused (`Could not validate refund address`) and read as refused, so the row says so.
 
 ## On a phone
 
-The request goes through the platform's HTTP plugin (`src/utils/lnurlHttp.js`) with the URL as built and no `params`. Android then sends it as given (`new URL`). iOS sends it as given too, because it re-encodes only a URL that holds no `%` at all, and a till code's always does. So `%2F` reaches MoneyBadger as `%2F`. Handed `params`, the Android plugin would rebuild the path decoded, and `/` would get a 404. `lnurlHttp.spec.js` fails if `params` are ever added. Read from the plugin source (Capacitor 8.3.1); a payment on a device is the final proof.
+The request goes through the platform's HTTP plugin (`src/utils/lnurlHttp.js`) with the URL as built and no `params`.
+- **Android** sends it as given (`new URL`).
+- **iOS** re-encodes only a URL that holds no `%` at all. A till code with a `/` or any other encoded character has one, so it is sent as given. A code of only letters, digits and `- _ .` has none, and re-encoding leaves it unchanged.
+
+So `%2F` reaches MoneyBadger as `%2F`. With non-empty `params`, the Android plugin would rebuild the path decoded, and `/` would get a 404. `lnurlHttp.spec.js` fails if `params` are ever added. Read from the plugin source (Capacitor 8.3.1); a payment on a device is the final proof.
 
 ## Not proven yet
 
 - Real Zapper, Scan to Pay, Ecentric and Yoyo codes through this route. Only the Pick n Pay style is tested. A family whose codes have a scheme other than http(s), or spaces outside an EMV code, would need its own rule.
-- Which networks Checkers, Shoprite and Woolworths tills use today. The table above is the earlier research. Shoprite Group launched EMV till codes built with Electrum in 2020, which fits the table. Reports from 2026 say Bitcoin at Checkers and Shoprite also runs through Scan to Pay. A till of theirs on another network shows the storefront mark. Nothing public ties Woolworths to MoneyBadger yet.
+- Which networks Checkers, Shoprite and Woolworths tills use today. The table above is the earlier research.
+  - Shoprite Group's till codes have been EMV codes built with Electrum, the South African payments switch, since 2020 ([Shoprite](https://www.shopriteholdings.co.za/articles/Newsroom/2020/shoprite-the-first-retailer-to-offer-contactless-qr-payments.html)). That fits the table.
+  - Reports of the Scan to Pay partnership name Checkers and Shoprite among the stores where Bitcoin works through Scan to Pay ([Cointelegraph](https://cointelegraph.com/news/south-africa-crypto-payments-scan-to-pay-moneybadger)).
+  - Nothing public ties Woolworths to MoneyBadger yet.
+
+  A till of theirs on another network shows the storefront mark.
 - Zapper codes with a line break: the address check refuses control characters in a name, so such a code is refused before it is sent.
 - That a refund arrives. That needs a real payment with the test code and `completion=cancel`.
 

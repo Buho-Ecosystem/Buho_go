@@ -160,10 +160,11 @@ function onPhone(answer = { status: 200, data: { tag: 'payRequest' }, headers: {
 }
 
 test('on a phone, the URL goes to the platform as built: an encoded "/" in a till code stays encoded', async () => {
-  // A till code's name holds `%2F`. Handed `params`, the Android plugin
-  // rebuilds the URL from its decoded path, so `%2F` would leave as `/` and
-  // the provider would answer 404 (live check E). Without them, Android and
-  // iOS both send the string as given.
+  // A till code's name holds `%2F`. Handed non-empty `params`, the Android
+  // plugin rebuilds the URL from its decoded path, so `%2F` would leave as
+  // `/` and the provider would answer 404 (docs/notes/PnP_honeybadger.md,
+  // "The code as an address"). Without them, Android and iOS both send the
+  // string as given.
   const { lnurlGetJson, sent } = onPhone()
   const url = 'https://cryptoqr.net/.well-known/lnurlp/00020129530023za.co.electrum.picknpay0122TSHP6SJNKTR3IY%2Fconfirm52045812%21%2A'
   const callback = 'https://api.cryptoqr.net/lnurl/cb?amount=81000&payerdata=%7B%22identifier%22%3A%22a%40b.example%22%7D'
