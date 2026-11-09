@@ -40,6 +40,15 @@ test('an answer refreshes the name, the grants and the limit', async () => {
   assert.equal(store.nwcLimitFor('hub').remainingSats, 6000);
 });
 
+test('a details refresh keeps the wallet\'s name and address only as they can be shown', async () => {
+  const { store } = createHarness();
+  nwcWallet(store, { getInfo: async () => ({ alias: '\u202EbuH', pubkey: '', methods: ['pay_invoice'], lud16: 'a\u2066b@getalby.com' }) });
+  store.wallets[0].metadata.lud16 = 'x\u202E@getalby.com'; // saved before addresses were checked
+  await store.refreshNwcDetails('hub');
+  assert.equal(store.wallets[0].metadata.alias, 'buH');
+  assert.equal(store.wallets[0].metadata.lud16, null);
+});
+
 test('a placeholder key a wallet answers is not saved as its key', async () => {
   const { store } = createHarness();
   nwcWallet(store, { getInfo: async () => ({ alias: 'N/A', pubkey: 'N/A', methods: ['pay_invoice'] }) });

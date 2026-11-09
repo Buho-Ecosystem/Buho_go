@@ -23,6 +23,7 @@ import { PAY_REQUEST, failed, fakeService, invoiceFor, lnurlPayWith, ok } from '
 function serviceWith(...answers) {
   const { get, asked } = fakeService(...answers);
   const paid = [];
+  const options = [];
   const source = readFileSync(new URL('../lightning.js', import.meta.url), 'utf8');
   const { code } = transformSync(source, { format: 'cjs' });
   const module = { exports: {} };
@@ -32,12 +33,15 @@ function serviceWith(...answers) {
     './lnurlPay.js': lnurlPayWith(get),
     '@getalby/lightning-tools': lightningTools,
     bech32: { bech32 },
-    '../services/nwcPayment.js': { payWithNwc: async (nwc, invoice) => { paid.push(invoice); return { preimage: 'ff' }; } },
+    '../services/nwcPayment.js': { payWithNwc: async (nwc, invoice, payOptions) => { paid.push(invoice); options.push(payOptions); return { preimage: 'ff' }; } },
   };
   new Function('require', 'module', 'exports', code)((name) => dependencies[name] || {}, module, module.exports);
-  const service = new module.exports.LightningPaymentService({ walletId: 'nwc' });
-  return { service, asked, paid };
+  const service = new module.exports.LightningPaymentService({ walletId: 'nwc' }, PAY_OPTIONS);
+  return { service, asked, paid, options };
 }
+
+/** What a wallet store gives a payment (store.nwcPayOptions): its limit, and what to tell after. */
+const PAY_OPTIONS = { limit: null, onSpent: () => {}, onLimitRefused: () => {} };
 
 const lnurl = (url) => bech32.encode('lnurl', bech32.toWords(new TextEncoder().encode(url)), 1023);
 
@@ -73,6 +77,13 @@ test('paying an address uses the pay request already read, and the invoice it as
   assert.equal(asked[1].url, `${PAY_REQUEST.callback}?amount=21000&comment=hi`);
   assert.deepEqual(paid, [invoiceFor(21)]);
   assert.deepEqual(result.successAction, { tag: 'message', message: 'Thanks' });
+});
+
+test('every payment carries the options its wallet gave, so its limit stays current', async () => {
+  const { service, options } = serviceWith(ok(PAY_REQUEST), ok({ pr: invoiceFor(21) }));
+  await service.sendPayment(await service.processPaymentInput('alice@example.com'), 21);
+  await service.payInvoice(invoiceFor(5));
+  assert.deepEqual(options, [PAY_OPTIONS, PAY_OPTIONS]);
 });
 
 test('an invoice for another amount never reaches the wallet', async () => {

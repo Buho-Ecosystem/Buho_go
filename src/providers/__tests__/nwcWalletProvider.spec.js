@@ -8,6 +8,7 @@ import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { transformSync } from 'esbuild';
 import * as nwcWallet from '../../utils/nwcWallet.js';
+import { profileInvoiceFixture } from '../../../scripts/fixtures/profileInvoice.mjs';
 
 const HASH = 'ab'.repeat(32);
 
@@ -63,4 +64,39 @@ test('disconnecting closes the connection once', async () => {
   assert.equal(built.closed, 1);
   assert.equal(provider.getNWCClient(), null);
   assert.equal(provider.isConnected, false);
+});
+
+test('an invoice, a paid check and a notification all name the payment by its invoice\'s hash', async () => {
+  const invoice = profileInvoiceFixture(21, 1_800_000_000_000);
+  const named = nwcWallet.nwcPaymentHash({ invoice });
+  const claimed = 'ef'.repeat(32); // what a wallet that computes it wrongly answers
+  class NWCClient {
+    close() {}
+    async subscribeNotifications(onNotification) {
+      onNotification({ notification_type: 'payment_received', notification: { invoice, payment_hash: claimed, amount: 21000, state: 'settled' } });
+      return () => {};
+    }
+  }
+  class NostrWebLNProvider {
+    constructor() { this.client = new NWCClient(); }
+    async enable() {}
+    close() {}
+    async makeInvoice() { return { paymentRequest: invoice, payment_hash: claimed }; }
+    async lookupInvoice() { throw new Error('not supported'); }
+    async listTransactions() { return { transactions: [{ invoice, payment_hash: claimed, type: 'incoming', state: 'settled', settled_at: 1_800_000_050, amount: 21 }] }; }
+  }
+  const NWCWalletProvider = loadProvider({ NostrWebLNProvider, NWCClient });
+  const provider = new NWCWalletProvider('w1', { nwcUrl: 'nostr+walletconnect://x' });
+  await provider.connect();
+  const warn = console.warn;
+  console.warn = () => {};
+  try {
+    assert.equal((await provider.createInvoice({ amount: 21 })).paymentHash, named);
+    assert.equal((await provider.lookupInvoice(named)).paid, true, 'found by the hash its invoice names');
+  } finally {
+    console.warn = warn;
+  }
+  const seen = [];
+  await provider.subscribeToPaymentNotifications((payment) => seen.push(payment.paymentHash));
+  assert.deepEqual(seen, [named]);
 });

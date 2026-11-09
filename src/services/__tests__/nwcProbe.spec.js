@@ -39,6 +39,14 @@ test('a full answer: name, balance, address, grants, limit, every relay', async 
   assert.equal(c.calls.closed, true);
 });
 
+test('the wallet\'s name and address are kept only as they can be shown', async () => {
+  const c = client({ info: () => ({ alias: 'My\u202EtellaW', pubkey: NODE, methods: ['pay_invoice'], lud16: 'sh\u200Bop@getalby.com' }) });
+  const plain = URL1.replace('&lud16=shop%40getalby.com', '');
+  const probe = await probeNwcConnection(plain, { createClient: () => c });
+  assert.equal(probe.alias, 'MytellaW');
+  assert.equal(probe.lud16, null, 'an address with a hidden character is no address');
+});
+
 test('a placeholder for the wallet key is no key', async () => {
   const c = client({ info: () => ({ alias: 'N/A', pubkey: 'N/A', methods: ['pay_invoice'] }) });
   const probe = await probeNwcConnection(URL1, { createClient: () => c });
