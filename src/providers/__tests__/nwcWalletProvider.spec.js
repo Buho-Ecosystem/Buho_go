@@ -7,6 +7,9 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { transformSync } from 'esbuild';
+import * as nwcWallet from '../../utils/nwcWallet.js';
+
+const HASH = 'ab'.repeat(32);
 
 function loadProvider(sdk) {
   const load = (file, deps) => {
@@ -17,7 +20,7 @@ function loadProvider(sdk) {
   };
   const base = load('../WalletProvider.js', {});
   const nwcClient = { createNwcProvider: (url) => new sdk.NostrWebLNProvider({ nostrWalletConnectUrl: url }) };
-  return load('../NWCWalletProvider.js', { './WalletProvider': base, '../services/nwcClient.js': nwcClient }).NWCWalletProvider;
+  return load('../NWCWalletProvider.js', { './WalletProvider': base, '../services/nwcClient.js': nwcClient, '../utils/nwcWallet.js': nwcWallet }).NWCWalletProvider;
 }
 
 function fakeSdk() {
@@ -26,7 +29,7 @@ function fakeSdk() {
     constructor() { built.clients += 1; }
     close() { built.closed += 1; }
     async subscribeNotifications(onNotification) {
-      onNotification({ notification_type: 'payment_received', notification: { payment_hash: 'h1', amount: 21000, state: 'settled' } });
+      onNotification({ notification_type: 'payment_received', notification: { payment_hash: HASH, amount: 21000, state: 'settled' } });
       return () => {};
     }
   }
@@ -48,7 +51,7 @@ test('connecting opens one client, and notifications use it', async () => {
 
   const seen = [];
   await provider.subscribeToPaymentNotifications((payment) => seen.push(payment.paymentHash));
-  assert.deepEqual(seen, ['h1']);
+  assert.deepEqual(seen, [HASH]);
 });
 
 test('disconnecting closes the connection once', async () => {

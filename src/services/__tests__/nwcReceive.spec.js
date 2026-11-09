@@ -239,6 +239,14 @@ test('the list read gives settled rows, and a failure is never an empty list', a
   await assert.rejects(listNwcPayments(failing), /reply timeout/);
 });
 
+test('a listed payment is found by its invoice\'s hash, whatever hash the record claims', async () => {
+  const invoice = profileInvoiceFixture(21, 1_800_000_000_000);
+  const { paymentHash } = await makeNwcInvoice(connection({ make: () => ({ invoice }) }).nwc, { amountSats: 21 });
+  const nwc = { listTransactions: async () => ({ transactions: [{ type: 'incoming', invoice, payment_hash: 'ef'.repeat(32), amount: 21, state: 'settled', settled_at: 1_800_000_050 }] }) };
+  const [row] = await listNwcPayments(nwc);
+  assert.equal(row.id, paymentHash);
+});
+
 test('one payment by its hash: amounts in sats; a record without state, or no lookup grant, decides nothing', async () => {
   const settled = connection({ lookup: () => ({ type: 'incoming', state: 'settled', payment_hash: HASH, amount: 21000, settled_at: 5 }) });
   const row = await findNwcPayment(settled.nwc, HASH, { methods: ['lookup_invoice'] });

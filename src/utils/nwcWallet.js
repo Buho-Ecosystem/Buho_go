@@ -6,6 +6,7 @@
  * make_invoice but not pay_invoice, a "read only" one may not even share
  * the balance. The app follows those grants instead of failing later.
  */
+import { Invoice } from '@getalby/lightning-tools';
 
 /** Older wallets were saved with WebLN method names; read both vocabularies. */
 const WEBLN_TO_NIP47 = Object.freeze({
@@ -167,6 +168,36 @@ export function resolveNwcStatus(tx) {
   return tx?.settled_at || tx?.settledAt ? 'completed' : 'pending';
 }
 
+const HASH = /^[0-9a-f]{64}$/;
+
+/** The payment hash an invoice names, or null when it is not a readable BOLT11 invoice. */
+function invoicePaymentHash(invoice) {
+  if (typeof invoice !== 'string' || !invoice) return null;
+  try {
+    const hash = String(new Invoice({ pr: invoice }).paymentHash || '').toLowerCase();
+    return HASH.test(hash) ? hash : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The payment hash of a NIP-47 transaction record (a list or lookup row, a
+ * make_invoice answer, a notification). The invoice decides: the receiver
+ * signed it, and the hash is written in it. The record's own `payment_hash`
+ * counts only when there is no readable invoice. A wallet that fills the
+ * field wrongly would otherwise list one payment under two ids, its own and
+ * the invoice's, and the app would announce it twice.
+ *
+ * @returns {string|null} lower-case hex
+ */
+export function nwcPaymentHash(tx) {
+  const fromInvoice = invoicePaymentHash(tx?.invoice || tx?.bolt11 || tx?.payment_request || tx?.paymentRequest);
+  if (fromInvoice) return fromInvoice;
+  const claimed = String(tx?.payment_hash || tx?.paymentHash || '').toLowerCase();
+  return HASH.test(claimed) ? claimed : null;
+}
+
 /**
  * One NIP-47 transaction, amounts already in sats (the SDK's WebLN layer
  * converts them), as the app's transaction row. The raw record is spread
@@ -174,9 +205,12 @@ export function resolveNwcStatus(tx) {
  * adds) is lost; the canonical names go on top.
  */
 export function nwcTransactionRow(tx) {
+  // The invoice's hash, else the record's own id even when it is not a
+  // hash: a row must keep an id to be announced at all.
+  const paymentHash = nwcPaymentHash(tx) || tx.payment_hash || tx.paymentHash || null;
   return {
     ...tx,
-    id: tx.payment_hash || tx.paymentHash || tx.id,
+    id: paymentHash || tx.id,
     // NIP-47 states the direction itself, and its `amount` is UNSIGNED.
     // Falling back to `amount > 0` therefore matched every row, including
     // sends, and reported a spent bitcoin as income.
@@ -195,7 +229,8 @@ export function nwcTransactionRow(tx) {
     // that omits it.
     status: resolveNwcStatus(tx),
     fee: tx.fees_paid || tx.feesPaid || 0,
-    paymentHash: tx.payment_hash || tx.paymentHash || null,
+    paymentHash,
+    payment_hash: paymentHash,
     preimage: tx.preimage || null,
     bolt11: tx.invoice || tx.bolt11 || tx.payment_request || null,
     descriptionHash: tx.description_hash || tx.descriptionHash || null,

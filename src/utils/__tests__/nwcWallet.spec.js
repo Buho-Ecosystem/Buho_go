@@ -2,7 +2,16 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
   nip47Methods, nwcCapabilities, capabilitiesOf, suggestedWalletName, findSameWallet, spendingLimitFrom, relayHost, walletKeyOf,
+  nwcPaymentHash, nwcTransactionRow,
 } from '../nwcWallet.js';
+import { Invoice } from '@getalby/lightning-tools';
+import { createReceiptLedger } from '../../services/paymentReceipts.js';
+import { profileInvoiceFixture } from '../../../scripts/fixtures/profileInvoice.mjs';
+
+const INVOICE = profileInvoiceFixture(21, 1_800_000_000_000);
+const INVOICE_HASH = new Invoice({ pr: INVOICE }).paymentHash;
+/** sha256 of a preimage's hex TEXT instead of its bytes: a wrong hash a wallet may report. */
+const WRONG_HASH = 'c386d8e8d07342f2e39e189c8e6c57bb205bb373fe4e3a6f69404a8bb767b417';
 
 test('both method vocabularies read the same; unknown names are kept, empties dropped', () => {
   assert.deepEqual(nip47Methods(['sendPayment', 'makeInvoice', 'getBalance', 'pay_invoice', '', null, 'get_budget']),
@@ -84,4 +93,22 @@ test('the SDK\'s stand-in answer for a failed get_info says nothing about the gr
   assert.deepEqual(nwcCapabilities(['pay_invoice']).receive, false);
   assert.deepEqual(nwcCapabilities(['sendPayment', 'getBalance']).receive, false);
   assert.equal(capabilitiesOf({ type: 'nwc', metadata: { methods: ['sendPayment'] } }).receive, true);
+});
+
+test('a record\'s payment hash is the one its invoice names', () => {
+  assert.equal(nwcPaymentHash({ invoice: INVOICE, payment_hash: WRONG_HASH }), INVOICE_HASH, 'the invoice decides');
+  assert.equal(nwcPaymentHash({ invoice: 'not-a-bolt11', payment_hash: 'AB'.repeat(32) }), 'ab'.repeat(32), 'without one, the record');
+  assert.equal(nwcPaymentHash({ paymentHash: 'cd'.repeat(32) }), 'cd'.repeat(32));
+  assert.equal(nwcPaymentHash({ payment_hash: 'false' }), null, 'a field that is not a hash is none');
+  assert.equal(nwcPaymentHash({}), null);
+});
+
+test('a history row with a wrongly computed hash is the payment Receive already showed', () => {
+  const ledger = createReceiptLedger({ storage: { getItem: () => null, setItem() {}, removeItem() {} }, now: () => 1_800_000_100_000 });
+  ledger.prime('w1', []);
+  ledger.markSeen('w1', INVOICE_HASH); // the Receive sheet confirmed it under the invoice's hash
+  const row = nwcTransactionRow({ type: 'incoming', invoice: INVOICE, payment_hash: WRONG_HASH, amount: 21, settled_at: 1_800_000_050 });
+  assert.deepEqual([row.id, row.paymentHash, row.payment_hash], [INVOICE_HASH, INVOICE_HASH, INVOICE_HASH]);
+  assert.equal(nwcTransactionRow({ type: 'incoming', payment_hash: 'odd-id', amount: 1 }).id, 'odd-id', 'a row keeps an id that is not a hash');
+  assert.equal(ledger.ingest('w1', row, { origin: 'catchup' }), null, 'never announced a second time');
 });

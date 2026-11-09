@@ -15,7 +15,7 @@
  */
 import { Invoice } from '@getalby/lightning-tools';
 import { NWC_ERROR, nwcError } from '../utils/nwcErrors.js';
-import { nwcCapabilities, nwcTransactionRow } from '../utils/nwcWallet.js';
+import { nwcCapabilities, nwcPaymentHash, nwcTransactionRow } from '../utils/nwcWallet.js';
 import { checkNWCPaymentStatus } from '../utils/paymentMonitor.js';
 
 /** How many recent incoming payments to scan when the wallet has no lookup. */
@@ -33,14 +33,14 @@ function clientOf(nwc) {
   return client;
 }
 
-/** The payment hash and expiry (Unix seconds) written in the invoice itself. */
-function decodeInvoice(invoice) {
+/** The expiry (Unix seconds) written in the invoice itself, or null. */
+function invoiceExpiry(invoice) {
   try {
     const decoded = new Invoice({ pr: invoice });
     const expiry = decoded.expiryDate instanceof Date ? Math.floor(decoded.expiryDate.getTime() / 1000) : null;
-    return { paymentHash: decoded.paymentHash || null, expiresAt: expiry > 0 ? expiry : null };
+    return expiry > 0 ? expiry : null;
   } catch {
-    return { paymentHash: null, expiresAt: null };
+    return null;
   }
 }
 
@@ -68,11 +68,11 @@ export async function makeNwcInvoice(nwc, { amountSats, description = '' }) {
     ...(description ? { description } : {}),
   });
   if (!tx?.invoice) throw new Error('Wallet did not return an invoice');
-  const written = decodeInvoice(tx.invoice);
   return {
     paymentRequest: tx.invoice,
-    paymentHash: tx.payment_hash || written.paymentHash,
-    expiresAt: Number(tx.expires_at) > 0 ? Number(tx.expires_at) : written.expiresAt,
+    // The invoice's own hash; a wallet may answer with the invoice alone.
+    paymentHash: nwcPaymentHash(tx),
+    expiresAt: Number(tx.expires_at) > 0 ? Number(tx.expires_at) : invoiceExpiry(tx.invoice),
   };
 }
 
@@ -152,7 +152,8 @@ function paidFrom(tx) {
 /** The invoice among the recent incoming payments, paid only when settled there. */
 async function fromRecentIncoming(client, paymentHash) {
   const { transactions = [] } = await client.listTransactions({ limit: RECENT_INCOMING, unpaid: false, type: 'incoming' }) || {};
-  const tx = transactions.find((t) => t?.payment_hash === paymentHash);
+  const wanted = String(paymentHash || '').toLowerCase();
+  const tx = transactions.find((t) => nwcPaymentHash(t) === wanted);
   return tx && checkNWCPaymentStatus(tx) ? paidFrom(tx) : { paid: false };
 }
 

@@ -13,6 +13,7 @@
 import { WalletProvider } from './WalletProvider';
 import { createNwcProvider } from '../services/nwcClient.js';
 import { listNwcPayments } from '../services/nwcReceive.js';
+import { nwcPaymentHash } from '../utils/nwcWallet.js';
 
 
 export class NWCWalletProvider extends WalletProvider {
@@ -156,7 +157,7 @@ export class NWCWalletProvider extends WalletProvider {
 
       return {
         paymentRequest: paymentRequest,
-        paymentHash: invoice.payment_hash || invoice.paymentHash,
+        paymentHash: nwcPaymentHash({ ...invoice, invoice: paymentRequest }),
         expiresAt: invoice.expires_at || invoice.expiresAt
       };
     } catch (error) {
@@ -256,10 +257,8 @@ export class NWCWalletProvider extends WalletProvider {
         });
 
         if (txResponse?.transactions) {
-          const found = txResponse.transactions.find(tx =>
-            tx.payment_hash === paymentHash ||
-            tx.paymentHash === paymentHash
-          );
+          const wanted = String(paymentHash || '').toLowerCase();
+          const found = txResponse.transactions.find((tx) => nwcPaymentHash(tx) === wanted);
 
           if (found) {
             return {
@@ -320,7 +319,7 @@ export class NWCWalletProvider extends WalletProvider {
         if (notification.notification_type === 'payment_received') {
           const tx = notification.notification;
           callback({
-            paymentHash: tx.payment_hash,
+            paymentHash: nwcPaymentHash(tx),
             amount: tx.amount,
             settledAt: tx.settled_at,
             preimage: tx.preimage,
