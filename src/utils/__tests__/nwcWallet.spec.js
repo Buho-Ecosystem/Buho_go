@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
   nip47Methods, nwcCapabilities, capabilitiesOf, suggestedWalletName, findSameWallet, spendingLimitFrom, relayHost, walletKeyOf,
-  nwcPaymentHash, nwcTransactionRow,
+  nwcPaymentHash, nwcTransactionRow, cleanWalletText,
 } from '../nwcWallet.js';
 import { Invoice } from '@getalby/lightning-tools';
 import { createReceiptLedger } from '../../services/paymentReceipts.js';
@@ -57,6 +57,16 @@ test('two wallets that both answer a placeholder key are not the same wallet', (
   assert.equal(findSameWallet(wallets, { nodePubkey: 'N/A', connectionPubkey: 'c2' }), null);
   assert.equal(findSameWallet(wallets, { nodePubkey: '', connectionPubkey: 'c2' }), null);
   assert.equal(findSameWallet(wallets, { nodePubkey: 'N/A', connectionPubkey: 'c1' })?.id, 'first', 'the same connection still is');
+});
+
+test('a wallet\'s name loses the characters that hide or flip text', () => {
+  const name = suggestedWalletName({ alias: 'My\u202EtellaW\u200B\u0007 Hub' });
+  assert.equal(name, 'MytellaW Hub');
+  assert.equal(cleanWalletText('Shop\n\tTill\u2066 2\u2069'), 'Shop Till 2');
+  assert.equal(cleanWalletText('\u200E\u200F\uFEFF'), '', 'nothing left is no name');
+  assert.equal(cleanWalletText('کار\u200Cگاه 👩\u200D💻'), 'کار\u200Cگاه 👩\u200D💻', 'joiners that scripts and emoji need stay');
+  assert.equal(suggestedWalletName({ alias: '\u202E', lud16: 'shop\u202E@blink.sv' }), 'shop', 'the address name is cleaned too');
+  assert.equal(Array.from(suggestedWalletName({ alias: '😀'.repeat(50) })).length, 40, 'cut by characters, not halves of one');
 });
 
 test('the same wallet is found by its key or its address, not by the connection text', () => {

@@ -71,15 +71,36 @@ export function capabilitiesOf(wallet) {
 }
 
 /**
+ * Characters that change how text around them shows without being seen:
+ * controls, direction marks and overrides, zero-width spaces, word joiners
+ * and the byte order mark. Joiners (U+200C, U+200D) stay, since scripts and
+ * emoji need them.
+ */
+const HIDDEN = /[\p{Cc}\u061C\u200B\u200E\u200F\u202A-\u202E\u2060-\u2064\u2066-\u2069\uFEFF]/gu;
+
+/**
+ * Text a wallet says about itself (its alias), fit to show: hidden
+ * characters removed, spaces collapsed. A hidden right-to-left override
+ * would show the rest of a name reversed, which can make one wallet look
+ * like another.
+ */
+export function cleanWalletText(text) {
+  return String(text ?? '').replace(/\s+/g, ' ').replace(HIDDEN, '').trim();
+}
+
+/** At most `max` characters, never cutting one in half. */
+const clip = (text, max) => Array.from(text).slice(0, max).join('');
+
+/**
  * The name to suggest for a new connection: what the wallet calls itself,
  * else the name in its Lightning address, else a plain fallback. Wallets
  * that answer with a placeholder ("N/A", "Unknown") get no say.
  */
 export function suggestedWalletName({ alias, lud16 } = {}, fallback = 'Lightning wallet') {
-  const name = String(alias || '').trim();
-  if (name && !/^(n\/a|unknown|null|undefined|-+)$/i.test(name)) return name.slice(0, 40);
-  const user = String(lud16 || '').split('@')[0].trim();
-  if (user) return user.slice(0, 40);
+  const name = cleanWalletText(alias);
+  if (name && !/^(n\/a|unknown|null|undefined|-+)$/i.test(name)) return clip(name, 40);
+  const user = cleanWalletText(String(lud16 || '').split('@')[0]);
+  if (user) return clip(user, 40);
   return fallback;
 }
 

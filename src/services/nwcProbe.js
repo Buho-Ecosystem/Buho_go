@@ -9,7 +9,7 @@
  */
 import { createNwcClient } from './nwcClient.js';
 import { parseNwcConnection } from '../utils/nwcConnection.js';
-import { nip47Methods, spendingLimitFrom, walletKeyOf } from '../utils/nwcWallet.js';
+import { cleanWalletText, nip47Methods, spendingLimitFrom, walletKeyOf } from '../utils/nwcWallet.js';
 import { NWC_ERROR, isNoAnswer, isRelayFailure, nwcError } from '../utils/nwcErrors.js';
 
 /**
@@ -54,7 +54,7 @@ export async function probeNwcConnection(nwcUrl, { createClient = createNwcClien
       normalized: parsed.normalized,
       connectionPubkey: parsed.pubkey,
       relays: parsed.relays,
-      alias: String(info.alias || ''),
+      alias: cleanWalletText(info.alias),
       nodePubkey: walletKeyOf(info.pubkey),
       network: info.network || 'mainnet',
       methods,

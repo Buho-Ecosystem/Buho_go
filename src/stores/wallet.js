@@ -10,7 +10,7 @@ import { walletLightningAddress } from '../utils/walletLightningAddress.js';
 import { defineStore } from 'pinia';
 import { createNwcProvider } from '../services/nwcClient.js';
 import { parseNwcConnection } from '../utils/nwcConnection.js';
-import { capabilitiesOf, nip47Methods, spendingLimitFrom, suggestedWalletName, walletKeyOf } from '../utils/nwcWallet.js';
+import { capabilitiesOf, cleanWalletText, nip47Methods, spendingLimitFrom, suggestedWalletName, walletKeyOf } from '../utils/nwcWallet.js';
 import { NWC_ERROR, isRelayFailure, nwcError } from '../utils/nwcErrors.js';
 import { probeNwcConnection } from '../services/nwcProbe.js';
 import { payWithNwc } from '../services/nwcPayment.js';
@@ -2814,7 +2814,7 @@ export const useWalletStore = defineStore('wallet', {
         const meta = wallet.metadata || {};
         const next = {
           ...meta,
-          alias: String(info?.alias || ''),
+          alias: cleanWalletText(info?.alias),
           // A placeholder saved before keys were checked is dropped here.
           pubkey: walletKeyOf(info?.pubkey) || walletKeyOf(meta.pubkey),
           walletPubkey: meta.walletPubkey || parseNwcConnection(wallet.nwcUrl).pubkey || '',
