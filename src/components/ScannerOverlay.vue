@@ -118,9 +118,8 @@
       <!-- Bottom: prompt + caller actions (e.g. Manual / Paste / Contacts).
            Sits on a dark scrim so it reads over any camera scene. -->
       <div class="so-bottom">
-        <p v-if="!error || photoNote || note" class="so-prompt" aria-live="polite">
-          {{ photoNote || note || prompt || $t('Point your camera at a QR code') }}
-        </p>
+        <!-- Always there, so a note that appears is announced. -->
+        <p class="so-prompt" :class="{ 'so-prompt--empty': !promptText }" aria-live="polite">{{ promptText }}</p>
         <div class="so-photo">
           <QrPhotoButton
             tone="camera"
@@ -167,7 +166,7 @@ export default {
     note: { type: String, default: '' },
   },
 
-  emits: ['scanned', 'close'],
+  emits: ['scanned', 'close', 'photo-open'],
 
   data() {
     return {
@@ -192,6 +191,15 @@ export default {
       // What the last photo gave instead of a code, shown in place of the prompt.
       photoNote: '',
     };
+  },
+
+  computed: {
+    /** The line under the frame; nothing when the camera could not run and there is no note. */
+    promptText() {
+      if (this.photoNote || this.note) return this.photoNote || this.note;
+      if (this.error) return '';
+      return this.prompt || this.$t('Point your camera at a QR code');
+    },
   },
 
   watch: {
@@ -405,6 +413,8 @@ export default {
     onPhotoOpen() {
       this.photoNote = '';
       this.photoOpen = true;
+      // The parent clears its own note, so the same note twice is announced twice.
+      this.$emit('photo-open');
       if (!this.error) this.stop();
     },
 
@@ -633,6 +643,15 @@ export default {
   color: rgba(255, 255, 255, 0.9);
   text-shadow: 0 1px 4px rgba(0, 0, 0, 0.7);
 }
+.so-prompt--empty {
+  /* Nothing to say: out of sight, still in place for the next note. */
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
 
 /* Error */
 .so-error {
@@ -653,12 +672,15 @@ export default {
   font-weight: 500;
   max-width: 280px;
 }
+/* Tinted, not filled: with no camera, Choose photo is the way on and
+   Close only the way out. */
 .so-error-btn {
   border: none;
   border-radius: 14px;
+  min-height: 44px;
   padding: 10px 22px;
-  background: #fff;
-  color: #111;
+  background: rgba(255, 255, 255, 0.14);
+  color: #fff;
   font-family: 'Manrope', sans-serif;
   font-size: 13px;
   font-weight: 600;

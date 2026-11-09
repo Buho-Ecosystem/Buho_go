@@ -84,9 +84,8 @@
             />
           </div>
           <div class="ws-bottom">
-            <p v-if="!cameraError || photoNote" class="ws-prompt" aria-live="polite">
-              {{ photoNote || prompt || $t('Point your camera at a QR code') }}
-            </p>
+            <!-- Always there, so a note that appears is announced. -->
+            <p class="ws-prompt" :class="{ 'ws-prompt--empty': !promptText }" aria-live="polite">{{ promptText }}</p>
             <QrPhotoButton
               tone="camera"
               @open="onPhotoOpen"
@@ -134,6 +133,12 @@ export default {
     };
   },
   computed: {
+    /** The line above Choose photo; nothing when the camera could not run and there is no note. */
+    promptText() {
+      if (this.photoNote) return this.photoNote;
+      if (this.cameraError) return '';
+      return this.prompt || this.$t('Point your camera at a QR code');
+    },
     show: {
       get() {
         return this.modelValue;
@@ -350,7 +355,17 @@ export default {
   align-items: center;
   gap: 14px;
   z-index: 3;
-  background: linear-gradient(to top, rgba(0, 0, 0, 0.6) 0%, rgba(0, 0, 0, 0) 100%);
+  /* The scrim takes no taps: only what is on it does. */
+  pointer-events: none;
+  background: linear-gradient(
+    to top,
+    rgba(0, 0, 0, 0.72) 0%,
+    rgba(0, 0, 0, 0.45) 55%,
+    rgba(0, 0, 0, 0) 100%
+  );
+}
+.ws-bottom > * {
+  pointer-events: auto;
 }
 
 .ws-prompt {
@@ -359,7 +374,17 @@ export default {
   text-align: center;
   font-family: 'Manrope', sans-serif;
   font-size: 13.5px;
-  color: rgba(255, 255, 255, 0.85);
+  color: rgba(255, 255, 255, 0.9);
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.7);
+}
+.ws-prompt--empty {
+  /* Nothing to say: out of sight, still in place for the next note. */
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
 }
 
 .camera-error {
@@ -370,7 +395,8 @@ export default {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 2rem;
+  /* Clear of Choose photo below, on a short screen too. */
+  padding: 2rem 2rem 176px;
   text-align: center;
 }
 

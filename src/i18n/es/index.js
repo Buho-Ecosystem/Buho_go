@@ -3501,6 +3501,6 @@ export default {
   "Reading photo…": "Leyendo la foto…",
   "No QR code in this photo. Choose one that shows the whole code.": "No hay ningún código QR en esta foto. Elige una en la que se vea el código entero.",
   "This photo can't be opened. Choose another one.": "No se puede abrir esta foto. Elige otra.",
-  "That code is not a profile or an address.": "Ese código no es un perfil ni una dirección.",
-  "That code is not a sign-in code. Choose a photo of the code the website shows.": "Ese código no es de acceso. Elige una foto del código que muestra la web.",
+  "That code is not a profile or an address. Choose a photo of the code you want to add.": "Ese código no es un perfil ni una dirección. Elige una foto del código que quieres añadir.",
+  "That code is not a sign-in code. Choose a photo of the code the website shows.": "Ese código no sirve para iniciar sesión. Elige una foto del código que muestra la web.",
 }

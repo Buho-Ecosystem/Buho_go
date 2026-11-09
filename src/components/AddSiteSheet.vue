@@ -86,31 +86,34 @@
             </div>
           </div>
 
-          <div v-if="!detected" class="column items-center q-mt-md">
-            <QrPhotoButton
-              tone="page"
-              @open="onPhotoOpen"
-              @closed="resumeCamera"
-              @read="onPhotoRead"
-              @fail="onPhotoFail"
-            />
+          <div>
+            <!-- The two ways besides the camera, side by side and alike. -->
+            <div class="add-site-alts">
+              <QrPhotoButton
+                v-if="!detected"
+                tone="link"
+                @open="onPhotoOpen"
+                @closed="resumeCamera"
+                @read="onPhotoRead"
+                @fail="onPhotoFail"
+              />
+              <button
+                type="button"
+                class="add-site-switch"
+                :class="$q.dark.isActive ? 'add-site-switch-dark' : 'add-site-switch-light'"
+                @click="switchTo('paste')"
+              >
+                <Icon icon="tabler:clipboard" width="14" height="14" />
+                <span>{{ $t('Paste a link instead') }}</span>
+              </button>
+            </div>
+            <!-- Always there, so a note that appears is announced. -->
             <p
-              v-if="photoNote"
-              class="text-center q-mt-sm q-mb-none"
-              :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'"
+              class="text-center q-mb-none"
+              :class="[photoNote ? 'q-mt-sm' : '', $q.dark.isActive ? 'text-grey-4' : 'text-grey-7']"
               aria-live="polite"
             >{{ photoNote }}</p>
           </div>
-
-          <button
-            type="button"
-            class="add-site-switch"
-            :class="$q.dark.isActive ? 'add-site-switch-dark' : 'add-site-switch-light'"
-            @click="switchTo('paste')"
-          >
-            <Icon icon="tabler:clipboard" width="14" height="14" />
-            <span>{{ $t('Paste a link instead') }}</span>
-          </button>
         </q-card-section>
       </template>
 
@@ -207,6 +210,7 @@
       :prompt="$t('Point your camera at the code the website shows.')"
       continuous
       :note="photoNote"
+      @photo-open="photoNote = ''"
       @scanned="onQRDetect"
       @close="switchTo('paste')"
     />
@@ -798,12 +802,20 @@ export default {
 
 /* ----- Mode switch link ----- */
 
+.add-site-alts {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 4px;
+  margin-top: 4px;
+}
+
 .add-site-switch {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  margin: 12px auto 0;
-  padding: 6px 12px;
+  min-height: 44px;
+  padding: 0 12px;
   background: transparent;
   border: none;
   cursor: pointer;

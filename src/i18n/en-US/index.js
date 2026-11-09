@@ -3492,6 +3492,6 @@ export default {
   "Reading photo…": "Reading photo…",
   "No QR code in this photo. Choose one that shows the whole code.": "No QR code in this photo. Choose one that shows the whole code.",
   "This photo can't be opened. Choose another one.": "This photo can't be opened. Choose another one.",
-  "That code is not a profile or an address.": "That code is not a profile or an address.",
+  "That code is not a profile or an address. Choose a photo of the code you want to add.": "That code is not a profile or an address. Choose a photo of the code you want to add.",
   "That code is not a sign-in code. Choose a photo of the code the website shows.": "That code is not a sign-in code. Choose a photo of the code the website shows.",
 }

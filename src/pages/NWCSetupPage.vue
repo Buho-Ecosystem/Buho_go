@@ -155,10 +155,10 @@
                 @read="onPhotoRead"
                 @fail="onPhotoFail"
               />
+              <!-- Always there, so a note that appears is announced. -->
               <p
-                v-if="photoNote"
-                class="text-center q-mt-sm q-mb-none"
-                :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'"
+                class="text-center q-mb-none"
+                :class="[photoNote ? 'q-mt-sm' : '', $q.dark.isActive ? 'text-grey-4' : 'text-grey-7']"
                 aria-live="polite"
               >{{ photoNote }}</p>
             </div>

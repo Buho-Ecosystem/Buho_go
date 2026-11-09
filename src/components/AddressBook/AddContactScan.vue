@@ -81,45 +81,46 @@
       @copy-npub="onCopyNpub"
     />
 
-    <!-- Choose photo, under the camera (web; the app's scanner has its own). -->
-    <div v-if="!detected" class="column items-center q-mt-md">
-      <QrPhotoButton
-        tone="page"
-        @open="onPhotoOpen"
-        @closed="resumeCamera"
-        @read="onPhotoRead"
-        @fail="onPhotoFail"
-      />
+    <!-- Footer actions. "Scan again" shows as soon as a code has stopped
+         the scanner. Before that the two ways besides the camera are a
+         pair, alike and as wide as each other: Choose photo (web; the
+         app's scanner has its own) and Paste instead (the parent tab
+         control reuses it to flip to Search). -->
+    <div>
+      <div class="scan-actions">
+        <button
+          v-if="detected"
+          type="button"
+          class="scan-secondary-btn"
+          @click="restart"
+        >
+          <Icon icon="tabler:refresh" width="14" height="14" />
+          <span>{{ $t('Scan again') }}</span>
+        </button>
+        <template v-else>
+          <QrPhotoButton
+            tone="outline"
+            @open="onPhotoOpen"
+            @closed="resumeCamera"
+            @read="onPhotoRead"
+            @fail="onPhotoFail"
+          />
+          <button
+            type="button"
+            class="scan-secondary-btn"
+            @click="$emit('switch-to-search')"
+          >
+            <Icon icon="tabler:keyboard" width="14" height="14" />
+            <span>{{ $t('Paste instead') }}</span>
+          </button>
+        </template>
+      </div>
+      <!-- Always there, so a note that appears is announced. -->
       <p
-        v-if="photoNote"
-        class="text-center q-mt-sm q-mb-none"
-        :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'"
+        class="text-center q-mb-none"
+        :class="[photoNote ? 'q-mt-sm' : '', $q.dark.isActive ? 'text-grey-4' : 'text-grey-7']"
         aria-live="polite"
       >{{ photoNote }}</p>
-    </div>
-
-    <!-- Footer actions. "Scan again" shows as soon as a code has stopped
-         the scanner; "Paste instead" is always offered as the escape
-         hatch (the parent tab control reuses it to flip to Search). -->
-    <div class="scan-actions">
-      <button
-        v-if="detected"
-        type="button"
-        class="scan-secondary-btn"
-        @click="restart"
-      >
-        <Icon icon="tabler:refresh" width="14" height="14" />
-        <span>{{ $t('Scan again') }}</span>
-      </button>
-      <button
-        v-else
-        type="button"
-        class="scan-secondary-btn"
-        @click="$emit('switch-to-search')"
-      >
-        <Icon icon="tabler:keyboard" width="14" height="14" />
-        <span>{{ $t('Paste instead') }}</span>
-      </button>
     </div>
 
     <!-- Native MLKit scanner (iOS/Android). Continuous: keeps scanning until a
@@ -132,6 +133,7 @@
       :prompt="$t('Point your camera at a Nostr profile, or a Lightning, Spark, or Bitcoin address.')"
       continuous
       :note="photoNote"
+      @photo-open="photoNote = ''"
       @scanned="onDetect"
       @close="$emit('switch-to-search')"
     />
@@ -396,7 +398,7 @@ export default {
       }
 
       // The camera keeps looking; a photo chosen on purpose gets an answer.
-      if (fromPhoto) this.photoNote = this.$t('That code is not a profile or an address.');
+      if (fromPhoto) this.photoNote = this.$t('That code is not a profile or an address. Choose a photo of the code you want to add.');
     },
 
     /** Choose photo (web): the camera goes off while the picker is open. */
@@ -665,16 +667,27 @@ export default {
   }
 }
 
+/* A column as wide as its widest button: the sheet is too narrow for a
+   row in most languages. */
 .scan-actions {
   display: flex;
-  justify-content: center;
+  flex-direction: column;
+  align-items: stretch;
+  width: fit-content;
+  margin: 0 auto;
+  gap: 8px;
+}
+.scan-actions :deep(.qpb) {
+  width: 100%;
 }
 
 .scan-secondary-btn {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 0.4rem;
-  padding: 0.5rem 0.9rem;
+  min-height: 44px;
+  padding: 0 0.9rem;
   border-radius: var(--radius-pill);
   background: transparent;
   border: 1px solid var(--border-card);

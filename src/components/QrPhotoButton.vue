@@ -11,8 +11,10 @@
   not lit while someone looks through their photos.
 
   Props:
-    - tone  'camera' on a camera surface (dark, glass); 'page' on a page or
-            sheet (follows light and dark)
+    - tone  'camera' on a camera surface (dark glass, legible over a bright
+            scene); 'page' on a page or sheet (follows light and dark);
+            'outline' and 'link' take the look of the quiet button next to
+            it (Paste instead), so the two alternatives weigh the same
 
   Emits:
     - open         the picker is opening: turn the camera off
@@ -21,22 +23,24 @@
     - fail({ code, message })  no code in it, or not a picture this device
                    opens; `message` is the sentence to show
 
-  A touch anywhere while the picker counts as open means it is gone: older
-  engines never say that it closed without a photo. In the app, the person is
-  back when the app resumes (see utils/photoPick.js).
+  On older engines, which never say that the picker closed without a photo,
+  a touch anywhere while it counts as open means it is gone, and on Android
+  the person is back when the app resumes (see utils/photoPick.js). While it
+  reads, the button stays focused and ignores taps (aria-disabled, not
+  disabled, which would throw focus to the page).
 -->
 <template>
   <span class="qpb-wrap">
     <button
       type="button"
       class="qpb"
-      :class="[`qpb--${tone}`, { 'qpb--reading': reading, 'qpb--dark': tone === 'page' && $q.dark.isActive }]"
-      :disabled="reading"
+      :class="[`qpb--${tone}`, { 'qpb--reading': reading, 'qpb--dark': tone !== 'camera' && $q.dark.isActive }]"
+      :aria-disabled="reading ? 'true' : 'false'"
       :aria-busy="reading ? 'true' : 'false'"
       @click="choose"
     >
-      <q-spinner v-if="reading" class="qpb-spinner" size="18px" :thickness="3" />
-      <Icon v-else icon="tabler:photo" width="20" height="20" aria-hidden="true" />
+      <q-spinner v-if="reading" class="qpb-spinner" :size="`${iconSize - 2}px`" :thickness="3" />
+      <Icon v-else icon="tabler:photo" :width="iconSize" :height="iconSize" aria-hidden="true" />
       <span class="qpb-label">{{ reading ? $t('Reading photo…') : $t('Choose photo') }}</span>
     </button>
     <input
@@ -81,13 +85,19 @@ export default {
   components: { Icon },
 
   props: {
-    tone: { type: String, default: 'camera', validator: (v) => v === 'camera' || v === 'page' },
+    tone: { type: String, default: 'camera', validator: (v) => ['camera', 'page', 'outline', 'link'].includes(v) },
   },
 
   emits: ['open', 'closed', 'read', 'fail'],
 
   data() {
     return { reading: false };
+  },
+
+  computed: {
+    iconSize() {
+      return this.tone === 'outline' || this.tone === 'link' ? 14 : 20;
+    },
   },
 
   created() {
@@ -175,31 +185,58 @@ export default {
   -webkit-tap-highlight-color: transparent;
   transition: transform 0.12s ease, background-color 0.12s ease;
 }
-.qpb:active:not(:disabled) { transform: scale(0.97); }
-.qpb:disabled { cursor: default; }
+.qpb:active:not([aria-disabled='true']) { transform: scale(0.97); }
+.qpb[aria-disabled='true'] { cursor: default; }
 .qpb:focus-visible { outline: 2px solid currentColor; outline-offset: 3px; }
 
-/* On the camera: glass that reads over any scene. */
+/* On the camera: dark glass, like the scanner's other controls. White on it
+   stays above 4.5:1 even over white paper. */
 .qpb--camera {
   color: #fff;
-  background: rgba(255, 255, 255, 0.16);
+  background: rgba(0, 0, 0, 0.55);
   -webkit-backdrop-filter: blur(12px);
   backdrop-filter: blur(12px);
-  box-shadow: inset 0 0 0 0.5px rgba(255, 255, 255, 0.22);
+  box-shadow: inset 0 0 0 0.5px rgba(255, 255, 255, 0.2);
 }
-.qpb--camera:active:not(:disabled) { background: rgba(255, 255, 255, 0.24); }
+.qpb--camera:active:not([aria-disabled='true']) { background: rgba(0, 0, 0, 0.68); }
 
 /* On a page or sheet: a tinted secondary button. */
 .qpb--page {
   color: #111;
   background: rgba(17, 17, 17, 0.06);
 }
-.qpb--page:active:not(:disabled) { background: rgba(17, 17, 17, 0.1); }
+.qpb--page:active:not([aria-disabled='true']) { background: rgba(17, 17, 17, 0.1); }
 .qpb--page.qpb--dark {
   color: #fff;
   background: rgba(255, 255, 255, 0.1);
 }
-.qpb--page.qpb--dark:active:not(:disabled) { background: rgba(255, 255, 255, 0.16); }
+.qpb--page.qpb--dark:active:not([aria-disabled='true']) { background: rgba(255, 255, 255, 0.16); }
+
+/* Next to an outlined "Paste instead": the same outlined pill. */
+.qpb--outline {
+  gap: 0.4rem;
+  padding: 0 0.9rem;
+  border: 1px solid var(--border-card);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0;
+}
+
+/* Next to a text button ("Paste a link instead"): the same text button. */
+.qpb--link {
+  gap: 6px;
+  padding: 0 12px;
+  background: transparent;
+  color: #475569;
+  font-size: 12.5px;
+  font-weight: 500;
+  letter-spacing: 0;
+}
+.qpb--link.qpb--dark { color: #cbd5e1; }
+.qpb--link:active:not([aria-disabled='true']) { background: rgba(15, 23, 42, 0.06); }
+.qpb--link.qpb--dark:active:not([aria-disabled='true']) { background: rgba(255, 255, 255, 0.06); }
 
 .qpb--reading { opacity: 0.85; }
 .qpb-spinner { color: currentColor; }
