@@ -11,14 +11,15 @@
  *    never proof: anyone can post into an LNbits channel, and Arkade's
  *    stream also reports change and renewals.
  *  - Auto-Transfer. A rule runs on a verified balance, so a wallet with a
- *    switched-on rule has its balance read on every round.
+ *    switched-on rule has its balance read on every round that reads it
+ *    (a wallet read every five minutes runs its rule within five).
  *
  * Triggers: start (a cold start after the app was closed), every minute
  * while the app runs (every five for a wallet that has no live channel and
  * may tell its owner about each read, see QUIET_INTERVAL_MS), return to the
  * app, back online, a channel's hint, a balance seen rising elsewhere
- * (store.noticeIncomingPayment), and wallets added. Per wallet, overlapping triggers coalesce into one run plus at
- * most one follow-up; a failed run retries with backoff, a few times, then
+ * (store.noticeIncomingPayment), and wallets added. Per wallet, overlapping
+ * triggers coalesce into one run plus at most one follow-up; a failed run retries with backoff, a few times, then
  * waits for the next round. The minute round is the safety net for a live
  * channel that died without closing: none of the three replays what it
  * missed.
@@ -42,7 +43,7 @@ import { catchUpReceipts } from './paymentReceipts.js';
 import { receiptLedger, deliverReceipt, trackAppVisibility } from './paymentReceiptsApp.js';
 import { notifiesPayments, watchNwcPayments, listNwcPayments, findNwcPayment } from './nwcReceive.js';
 import { capabilitiesOf } from '../utils/nwcWallet.js';
-import { isNotOffered } from '../utils/nwcErrors.js';
+import { isRefusal } from '../utils/nwcErrors.js';
 import { onAppVisibility } from '../utils/appVisibility.js';
 
 export const WATCH_INTERVAL_MS = 60 * 1000;
@@ -85,8 +86,6 @@ export const HISTORY_PAUSE_MS = 15 * 60 * 1000;
 const URGENT = new Set(['hint', 'resume', 'online', 'added']);
 /** Triggers after which a channel may have died while the app was away. */
 const RETURNED = new Set(['resume', 'online']);
-/** A wallet's answer that its history will not be read, now or later. */
-const refusesHistory = (error) => isNotOffered(error) || error?.code === 'UNAUTHORIZED';
 
 const isSpark = (wallet) => (wallet?.type || 'nwc') === 'spark';
 
@@ -348,7 +347,7 @@ export function createWalletWatch({
           // not answer while the network does, for HISTORY_PAUSE_MS. Its
           // ledger goes either way: the return to its history starts from a
           // new baseline instead of announcing again what the balance did.
-          const refused = refusesHistory(error);
+          const refused = isRefusal(error);
           if (refused || (online() && r.historyFailures >= HISTORY_GIVE_UP)) {
             if (refused) r.historyRefused = true;
             else r.historyPausedUntil = now() + HISTORY_PAUSE_MS;

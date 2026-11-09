@@ -43,6 +43,15 @@ export function isNotOffered(error) {
   return error?.code === 'RESTRICTED' || error?.code === 'NOT_IMPLEMENTED';
 }
 
+/**
+ * The wallet will not do this for this connection, now or later: the
+ * method is not offered, or the wallet does not know the connection
+ * (UNAUTHORIZED). Readers stop asking instead of retrying.
+ */
+export function isRefusal(error) {
+  return isNotOffered(error) || error?.code === 'UNAUTHORIZED';
+}
+
 function messageOf(error) {
   return String(error?.message || error || '');
 }

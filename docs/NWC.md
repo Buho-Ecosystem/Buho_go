@@ -117,9 +117,9 @@ The kiosk only offers wallets that can take a payment (`walletCapabilities.kiosk
 
 ## Errors in words
 
-A method the wallet will not run for a connection has two NIP-47 codes, `RESTRICTED` (not granted) and `NOT_IMPLEMENTED` (not built), and wallets use them interchangeably (a real one answers `get_budget`, which it lacks, with `RESTRICTED`). `nwcErrors.isNotOffered` is the one rule for both: the connection test, the pairing check, the details refresh, payment lookups and the history watch all read it.
+A method the wallet will not run for a connection has two NIP-47 codes, `RESTRICTED` (not granted) and `NOT_IMPLEMENTED` (not built), and wallets use them interchangeably (a real one answers `get_budget`, which it lacks, with `RESTRICTED`). `nwcErrors.isNotOffered` is the one rule for both: the connection test, the pairing check, the details refresh, the limit refresh and payment lookups read it. `isRefusal` adds `UNAUTHORIZED` for readers that stop for good, the history watch and the latest-payment preview.
 
-`src/utils/nwcErrors.js` gives every NIP-47 error code a sentence and a next step (spending limit used up, not allowed, connection removed, rate limited, no answer, relay unreachable, not confirmed). `utils/userErrors.translateErrorCode` asks it first, so every error surface shows the same words. Only errors carrying the SDK's NWC codes are read by message, so an unrelated timeout is never taken for an NWC one.
+`src/utils/nwcErrors.js` gives every NIP-47 error code a sentence and a next step (over the spending limit, not allowed, connection removed, rate limited, no answer, relay unreachable, not confirmed). `utils/userErrors.translateErrorCode` asks it first, so every error surface shows the same words. Only errors carrying the SDK's NWC codes are read by message, so an unrelated timeout is never taken for an NWC one.
 
 ## SDK
 

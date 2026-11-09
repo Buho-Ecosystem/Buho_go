@@ -212,12 +212,23 @@ export function resolveNwcStatus(tx) {
 
 const HASH = /^[0-9a-f]{64}$/;
 
-/** The payment hash an invoice names, or null when it is not a readable BOLT11 invoice. */
-function invoicePaymentHash(invoice) {
+/**
+ * What a BOLT11 invoice says about itself: its payment hash (lower-case
+ * hex, or null), amount in sats (0 when it names none) and expiry in unix
+ * seconds (or null). Null when it is not a readable invoice. The one place
+ * NWC code decodes an invoice.
+ */
+export function readInvoice(invoice) {
   if (typeof invoice !== 'string' || !invoice) return null;
   try {
-    const hash = String(new Invoice({ pr: invoice }).paymentHash || '').toLowerCase();
-    return HASH.test(hash) ? hash : null;
+    const decoded = new Invoice({ pr: invoice });
+    const hash = String(decoded.paymentHash || '').toLowerCase();
+    const expiresAt = decoded.expiryDate instanceof Date ? Math.floor(decoded.expiryDate.getTime() / 1000) : 0;
+    return {
+      paymentHash: HASH.test(hash) ? hash : null,
+      amountSats: Number(decoded.satoshi) || 0,
+      expiresAt: expiresAt > 0 ? expiresAt : null,
+    };
   } catch {
     return null;
   }
@@ -234,7 +245,7 @@ function invoicePaymentHash(invoice) {
  * @returns {string|null} lower-case hex
  */
 export function nwcPaymentHash(tx) {
-  const fromInvoice = invoicePaymentHash(tx?.invoice || tx?.bolt11 || tx?.payment_request || tx?.paymentRequest);
+  const fromInvoice = readInvoice(tx?.invoice || tx?.bolt11 || tx?.payment_request || tx?.paymentRequest)?.paymentHash;
   if (fromInvoice) return fromInvoice;
   const claimed = String(tx?.payment_hash || tx?.paymentHash || '').toLowerCase();
   return HASH.test(claimed) ? claimed : null;

@@ -13,9 +13,8 @@
  *
  * Amounts: NIP-47 speaks millisats; everything returned here is in sats.
  */
-import { Invoice } from '@getalby/lightning-tools';
 import { NWC_ERROR, nwcError } from '../utils/nwcErrors.js';
-import { nwcCapabilities, nwcPaymentHash, nwcTransactionRow } from '../utils/nwcWallet.js';
+import { nwcCapabilities, nwcPaymentHash, nwcTransactionRow, readInvoice } from '../utils/nwcWallet.js';
 import { checkNWCPaymentStatus } from '../utils/paymentMonitor.js';
 
 /** How many recent incoming payments to scan when the wallet has no lookup. */
@@ -31,17 +30,6 @@ function clientOf(nwc) {
   const client = nwc?.client;
   if (!client) throw new Error('Wallet is not connected');
   return client;
-}
-
-/** The expiry (Unix seconds) written in the invoice itself, or null. */
-function invoiceExpiry(invoice) {
-  try {
-    const decoded = new Invoice({ pr: invoice });
-    const expiry = decoded.expiryDate instanceof Date ? Math.floor(decoded.expiryDate.getTime() / 1000) : null;
-    return expiry > 0 ? expiry : null;
-  } catch {
-    return null;
-  }
 }
 
 /** The answer, or a NO_ANSWER error once `ms` passed (the request itself runs on). */
@@ -72,7 +60,7 @@ export async function makeNwcInvoice(nwc, { amountSats, description = '' }) {
     paymentRequest: tx.invoice,
     // The invoice's own hash; a wallet may answer with the invoice alone.
     paymentHash: nwcPaymentHash(tx),
-    expiresAt: Number(tx.expires_at) > 0 ? Number(tx.expires_at) : invoiceExpiry(tx.invoice),
+    expiresAt: Number(tx.expires_at) > 0 ? Number(tx.expires_at) : (readInvoice(tx.invoice)?.expiresAt ?? null),
   };
 }
 

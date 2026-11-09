@@ -5,7 +5,7 @@
  */
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { createNwcClient, createNwcProvider, expirePayments, REQUEST_TTL_S, withExpiration } from '../nwcClient.js';
+import { createNwcClient, createNwcProvider, expirePayments, REQUEST_TTL_S, SDK_PAY_REPLY_WAIT_S, withExpiration } from '../nwcClient.js';
 import { LOOKUP_DELAYS_MS } from '../nwcPayment.js';
 
 /** A real public key (the curve's generator, private key 1), so the SDK's encryption works. */
@@ -71,11 +71,19 @@ test('through the SDK itself: a payment leaves with an expiration, a read withou
   t.mock.method(console, 'error', () => {}); // the SDK reports each unanswered request
   for (const client of [createNwcClient(URL), createNwcProvider(URL).client]) {
     const published = offline(client);
-    const pay = client.payInvoice({ invoice: 'lnbc1' }).catch((error) => error);
+    let payEnded = false;
+    const pay = client.payInvoice({ invoice: 'lnbc1' }).catch((error) => error).finally(() => { payEnded = true; });
     await until(() => published.length === 1);
     const read = client.getBalance().catch((error) => error);
     await until(() => published.length === 2);
-    t.mock.timers.tick(61_000); // the SDK's reply waits run out
+    // The SDK waits for a payment's answer exactly as long as REQUEST_TTL_S
+    // counts on: an SDK update that changes it fails here.
+    t.mock.timers.tick(SDK_PAY_REPLY_WAIT_S * 1000 - 1);
+    for (let i = 0; i < 20; i += 1) await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(payEnded, false, 'still waiting for the payment\'s answer');
+    t.mock.timers.tick(1);
+    for (let i = 0; i < 20; i += 1) await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(payEnded, true, 'and not a moment longer');
     await Promise.all([pay, read]);
 
     const [payment, balance] = published;

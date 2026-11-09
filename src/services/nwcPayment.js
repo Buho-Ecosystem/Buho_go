@@ -12,9 +12,8 @@
  * Callers keep the old shape: `{ preimage }` on success, an Error with a
  * `code` otherwise (utils/nwcErrors explains it).
  */
-import { Invoice } from '@getalby/lightning-tools';
 import { NWC_ERROR, isNotOffered, isUncertainPaymentError, nwcError } from '../utils/nwcErrors.js';
-import { spendingLimitFrom } from '../utils/nwcWallet.js';
+import { readInvoice, spendingLimitFrom } from '../utils/nwcWallet.js';
 
 /** Waits between lookups of an unconfirmed payment, half a minute in all. */
 export const LOOKUP_DELAYS_MS = Object.freeze([2000, 5000, 8000, 15000]);
@@ -40,12 +39,8 @@ export async function provesPayment(preimage, paymentHash) {
 }
 
 function decode(invoice) {
-  try {
-    const decoded = new Invoice({ pr: invoice });
-    return { paymentHash: decoded.paymentHash, amountSats: Number(decoded.satoshi) || 0 };
-  } catch {
-    return { paymentHash: null, amountSats: 0 };
-  }
+  const read = readInvoice(invoice);
+  return { paymentHash: read?.paymentHash ?? null, amountSats: read?.amountSats ?? 0 };
 }
 
 /**
