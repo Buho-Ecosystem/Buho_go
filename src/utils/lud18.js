@@ -77,9 +77,8 @@ export function payerIdentifier(value) {
  * What goes with a payment: the details the person agreed to share, cut to
  * what the service asked for, or why the payment must not go ahead.
  *
- * `json` is the exact text sent. A service that follows the first version of
- * LUD-18 hashes the metadata with this text appended, so the invoice is
- * checked against it as sent.
+ * `json` is the exact text sent, as the `payerdata` parameter
+ * (utils/lnurlPay.js).
  *
  * @param {unknown} payerData  the pay request's `payerData`
  * @param {{ identifier?: string|null }} [shared]  what the person agreed to share

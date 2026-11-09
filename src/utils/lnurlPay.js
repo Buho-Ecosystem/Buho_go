@@ -18,12 +18,10 @@
  *     service cannot charge more than was shown. In the recipient's currency
  *     (LUD-21) the service adds its fee to the estimate the person saw, so
  *     the invoice may be above it, but only by PAYOUT_FEE_ALLOWANCE_PERCENT.
- *   - The invoice must be for this pay request: one whose description hash
- *     names other metadata is refused (LUD-06), as it was made for another
- *     payment. One with a plain description instead is accepted; payout
- *     services send those, and nothing in it can be checked. With payer
- *     details sent, the metadata with those details appended is accepted
- *     too: the first version of LUD-18 asked services to hash that.
+ *   - The invoice's description and its hash are not checked. LUD-06 and
+ *     LUD-18 no longer bind the invoice to the metadata (lnurl/luds#234):
+ *     the hash proves nothing the service could not make up, and a service
+ *     may now set it to anything. The amount is what binds the invoice.
  *   - Payer details (LUD-18) go only where the service asked for them, and
  *     only the Lightning address the person agreed to share (utils/lud18.js).
  *     A service that requires details the wallet does not share, or an
@@ -38,8 +36,6 @@
  * service's own reason: that one is marked as the service's words
  * (utils/errorOrigin.js) and keeps them as its message.
  */
-import { sha256 } from '@noble/hashes/sha2.js'
-import { bytesToHex } from '@noble/hashes/utils.js'
 import { lnurlGetJson } from './lnurlHttp.js'
 import { ONION_HOST_RE } from './addressUtils.js'
 import { counterpartyError } from './errorOrigin.js'
@@ -68,8 +64,6 @@ export const PAY_REQUEST_ERROR = Object.freeze({
   INVOICE_MISSING: 'LNURL_INVOICE_MISSING',
   /** The invoice is for another amount than the one asked for. */
   INVOICE_MISMATCH: 'LNURL_INVOICE_MISMATCH',
-  /** The invoice's description hash names another pay request's metadata. */
-  INVOICE_NOT_FOR_REQUEST: 'LNURL_INVOICE_NOT_FOR_REQUEST',
   /** The invoice had expired long before it arrived. */
   INVOICE_EXPIRED: 'LNURL_INVOICE_EXPIRED',
   /** The service requires payer details the wallet never shares (LUD-18). */
@@ -181,7 +175,7 @@ export function fitComment(comment, allowed) {
 }
 
 // `encodeURIComponent` leaves these as they are; payer details encode them
-// too, so the service reads back exactly the text that was hashed.
+// too, so the service reads back exactly the text that was sent.
 const STRICT_ESCAPE = /[!'()*]/g
 
 /** URL-encode every character outside the unreserved set (RFC 3986). */
@@ -489,24 +483,6 @@ function serviceClockSeconds(response) {
   return Number.isFinite(at) ? at / 1000 : null
 }
 
-/** SHA-256 of a pay request's metadata, as an invoice for it carries it (LUD-06). */
-function metadataHash(metadata) {
-  return bytesToHex(sha256(new TextEncoder().encode(metadata)))
-}
-
-/**
- * The description hashes an invoice for this request may carry: of the
- * metadata (LUD-06), and with payer details sent, of the metadata with their
- * text appended (the first version of LUD-18). Null when the metadata is not
- * known, as in a kept copy of the terms.
- */
-function expectedDescriptionHashes(metadata, payerdata) {
-  if (typeof metadata !== 'string') return null
-  const hashes = [metadataHash(metadata)]
-  if (payerdata) hashes.push(metadataHash(metadata + payerdata))
-  return hashes
-}
-
 /**
  * The payer details to send, or why the payment must not go ahead.
  * `payerData.onlyTo`, when given, is the test the callback must pass for the
@@ -548,7 +524,6 @@ function readInvoice(data, decode) {
   return {
     pr: typeof decoded.invoice === 'string' && decoded.invoice ? decoded.invoice : pr,
     amountSats,
-    descriptionHash: typeof decoded.descriptionHash === 'string' ? decoded.descriptionHash.toLowerCase() : null,
     expiresAt: Number.isFinite(decoded.expiry) ? decoded.expiry : null,
   }
 }
@@ -562,10 +537,9 @@ function readInvoice(data, decode) {
  * the person confirmed: the service adds its fee, so the invoice may be above
  * it, but never past payoutCeilingSats.
  *
- * The invoice must also be for this pay request when it says what it is for
- * (a description hash), and must not have long expired. The hash is checked
- * against `payRequest.metadata` as the service sent it; a kept copy without
- * it skips that check.
+ * The invoice must also not have long expired. What it says it is for (its
+ * description, or a hash in its place) is not checked: see the top of this
+ * file.
  *
  * Payer details (LUD-18) are read from `payRequest.payerData`: `payerData`
  * holds what the person agreed to share (and, with `onlyTo`, the service it
@@ -635,10 +609,6 @@ export async function requestPayInvoice(
   }
   const data = serviceAnswer(response)
   const invoice = readInvoice(data, decode)
-  const hashes = expectedDescriptionHashes(payRequest.metadata, payer.json)
-  if (invoice.descriptionHash && hashes && !hashes.includes(invoice.descriptionHash)) {
-    throw payRequestError(PAY_REQUEST_ERROR.INVOICE_NOT_FOR_REQUEST, 'The invoice was made for another payment request')
-  }
   const tooMuch = sats === null ? invoice.amountSats > payoutCeilingSats(confirmed) : invoice.amountSats !== sats
   if (tooMuch) {
     throw payRequestError(
