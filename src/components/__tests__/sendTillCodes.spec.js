@@ -9,16 +9,9 @@ import { test } from 'node:test';
 import { readFileSync } from 'node:fs';
 import { transformSync } from 'esbuild';
 import { bech32 } from 'bech32';
-import * as lud23 from '../../utils/lud23.js';
 import * as merchantQR from '../../utils/merchantQR.js';
-import * as bip21 from '../../utils/bip21.js';
-import * as addressUtils from '../../utils/addressUtils.js';
 import { recognizePhoneNumber, recognizePhoneNumberForCountry } from '../../services/lnAddressServices/phoneNumbers.js';
-import * as telUri from '../../utils/telUri.js';
-import * as nostrLookup from '../../utils/nostrLookup.js';
-import * as walletCapabilities from '../../utils/walletCapabilities.js';
-import * as clipboardSuggestion from '../../utils/clipboardSuggestion.js';
-import * as nwcConnection from '../../utils/nwcConnection.js';
+import { scan, sendField, setClipboard, typed } from './sendSheetHarness.js';
 
 const TILL_CODE = '00020129530023za.co.electrum.picknpay0122TSHP6SJNKTR3IY/confirm520458125303710540115802ZA5916cryptoqrtestscan6002CT6304821D';
 const NPUB_WITH_RETAILER_WORD = 'npub1qf8znth8248fx577w3z7ggf4tr4p7geyghu05y3tfejma3a7umpqr9x855';
@@ -30,58 +23,6 @@ const NSEC_WITH_NETWORK_LETTERS = (() => {
   words[51] = 0;
   return bech32.encode('nsec', words);
 })();
-
-/** The Send sheet's options (methods, computed, watch), with the real classifiers. */
-function sendSheet() {
-  const source = readFileSync(new URL('../SendModal.vue', import.meta.url), 'utf8');
-  const script = source.match(/<script>([\s\S]*?)<\/script>/)[1];
-  const { code } = transformSync(script, { format: 'cjs', supported: { 'dynamic-import': false } });
-  const dependencies = {
-    '../utils/lud23.js': lud23,
-    '../utils/merchantQR': merchantQR,
-    '../utils/bip21': bip21,
-    '../utils/addressUtils': addressUtils,
-    '../services/lnAddressServices': { recognizePhoneNumber, recognizePhoneNumberForCountry },
-    '../utils/payoutCountryPreference': { getPreferredPayoutCountry: () => null, rememberPayoutCountry() {} },
-    '../utils/telUri.js': telUri,
-    '../utils/nostrLookup': nostrLookup,
-    '../utils/walletCapabilities': walletCapabilities,
-    '../utils/clipboardSuggestion.js': clipboardSuggestion,
-    '../utils/nwcConnection.js': nwcConnection,
-    '../utils/shopClipboard.js': { readClipboardCrossPlatform: async () => clipboardText },
-    '../services/addressRequestIntake.js': { offerAddressRequest: () => false },
-    '../services/nwcConnectionIntake.js': { offerNwcConnection: () => false },
-    '../services/nostrPaymentTarget': {
-      resolveNostrLightningTarget: async () => ({ address: 'resolved@example.com', kind: 'lightning_address' }),
-    },
-    '../services/nip05': { usernameAddressFromInput: (input) => (input.startsWith('@') ? `${input.slice(1)}@example.com` : null) },
-  };
-  const module = { exports: {} };
-  new Function('require', 'module', 'exports', code)((name) => dependencies[name] || {}, module, module.exports);
-  return module.exports.default;
-}
-
-/** What the clipboard holds when the sheet's Paste button reads it. */
-let clipboardText = '';
-const sheet = sendSheet();
-const { methods } = sheet;
-
-async function scan(text, walletType = 'spark') {
-  const emitted = [];
-  const notices = [];
-  const vm = {
-    ...methods,
-    $t: (key) => key,
-    $q: { notify: (notice) => notices.push(notice) },
-    $emit: (name, payload) => { if (name === 'payment-detected') emitted.push(payload); },
-    walletStore: { activeWalletType: walletType, canAnyWalletPay: () => true },
-    isProcessing: false,
-    manualInput: '',
-    show: true,
-  };
-  await vm.onQRDetect(text);
-  return { emitted, notices, processing: vm.isProcessing };
-}
 
 for (const walletType of ['spark', 'arkade', 'nwc', 'lnbits', null]) {
   test(`a shop the provider takes goes out as its address, marked as a shop (${walletType} wallet)`, async () => {
@@ -193,84 +134,6 @@ for (const [name, text, type] of payments) {
 /** A local number in each payout country, each also the shape of a till code. */
 const LOCAL_NUMBERS = [['KE', '0712345678'], ['ZM', '0971234567'], ['TZ', '0741234567'], ['GH', '0241234567']];
 
-/** What a typed or pasted text emits: the same method, without the camera. */
-async function typed(text) {
-  const emitted = [];
-  const vm = {
-    ...methods,
-    $t: (key) => key,
-    $q: { notify: () => assert.fail('nothing to explain') },
-    $emit: (name, payload) => { if (name === 'payment-detected') emitted.push(payload); },
-    walletStore: { activeWalletType: 'spark', canAnyWalletPay: () => true },
-    isProcessing: true,
-    manualInput: text,
-    show: true,
-  };
-  await vm.processPaymentData(text);
-  return emitted;
-}
-
-/** The field the person sees: its live reading and its typing beat. */
-function sendField() {
-  const vm = {
-    ...methods,
-    $t: (key) => key,
-    $emit() {},
-    $nextTick: (next) => next(),
-    $refs: {},
-    $q: { notify() {} },
-    walletStore: { activeWalletType: 'spark', canAnyWalletPay: () => true },
-    manualInput: '',
-    scannedText: '',
-    mobileMoneyMode: false,
-    mmCountry: null,
-    resolveError: '',
-    isProcessing: false,
-    show: true,
-    clipboardSuggestion: null,
-    phoneAdvanceTimer: null,
-    pasteAdvanceTimer: null,
-  };
-  for (const name of ['fieldHoldsScan', 'recognizedPhone', 'detectedInputType', 'isValidManualInput', 'phoneNeedsCountryChoice', 'capabilityBlocked']) {
-    Object.defineProperty(vm, name, { get: sheet.computed[name].bind(vm) });
-  }
-  // What Vue does after a change: each of these watchers whose value changed
-  // runs, until nothing changes.
-  const WATCHED = ['manualInput', 'fieldHoldsScan'];
-  const seen = Object.fromEntries(WATCHED.map((key) => [key, vm[key]]));
-  vm.flush = () => {
-    for (let changed = true; changed;) {
-      changed = false;
-      for (const key of WATCHED) {
-        const now = vm[key];
-        const before = seen[key];
-        if (now === before) continue;
-        seen[key] = now;
-        changed = true;
-        sheet.watch[key].call(vm, now, before);
-      }
-    }
-  };
-  /** The person changes the field's text. */
-  vm.set = (value) => {
-    vm.manualInput = value;
-    vm.flush();
-  };
-  /** A scan lands in the field: the camera's own handler, the hand-off to the Wallet page held back. */
-  vm.scanInto = async (value) => {
-    vm.processPaymentData = async () => {};
-    await vm.onQRDetect(value);
-    vm.processPaymentData = methods.processPaymentData;
-    vm.isProcessing = false;
-    vm.flush();
-  };
-  vm.stopTimers = () => {
-    clearTimeout(vm.phoneAdvanceTimer);
-    clearTimeout(vm.pasteAdvanceTimer);
-  };
-  return vm;
-}
-
 for (const [country, number] of LOCAL_NUMBERS) {
   test(`scanned, ${number} goes to the till, though it is also a phone number in ${country}`, async () => {
     const phone = recognizePhoneNumber(number);
@@ -338,7 +201,7 @@ test('pasted over a scan, the same digits are a phone number', async () => {
   for (const paste of [
     (field) => field.useDestination('0712345678'),
     (field) => field.revealFailed('0712345678', ''),
-    async (field) => { clipboardText = '0712345678'; await field.pasteFromClipboard(); },
+    async (field) => { setClipboard('0712345678'); await field.pasteFromClipboard(); },
     (field) => field.onTextareaPaste(),
   ]) {
     const field = sendField();
@@ -353,7 +216,7 @@ test('pasted over a scan, the same digits are a phone number', async () => {
 
 test('pasted over a scan with the same digits, the till\'s error goes with the scan', async () => {
   for (const paste of [
-    async (field) => { clipboardText = '0712345678'; await field.pasteFromClipboard(); },
+    async (field) => { setClipboard('0712345678'); await field.pasteFromClipboard(); },
     (field) => field.onTextareaPaste(),
   ]) {
     const field = sendField();

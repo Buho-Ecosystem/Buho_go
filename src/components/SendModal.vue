@@ -96,10 +96,11 @@
         <div class="field-meta">
           <div
             class="input-helper"
+            aria-live="polite"
             :class="{
               'input-helper--error': !!resolveError,
               'input-helper--reported': !!resolveError && !!resolveErrorSource,
-              'input-helper--warn': !resolveError && !!capabilityBlocked
+              'input-helper--warn': !resolveError && (!!capabilityBlocked || mmNumberUnpayable)
             }"
           >
             <template v-if="resolveError">
@@ -114,11 +115,19 @@
               <Icon icon="tabler:arrows-exchange" width="13" height="13" class="helper-icon-warn" />
               <span>{{ capabilityBlocked }}</span>
             </template>
+            <template v-else-if="mmNumberUnpayable">
+              <Icon icon="tabler:device-mobile-x" width="13" height="13" class="helper-icon-warn" />
+              <span data-audit="send-mm-unpayable">{{ $t("You can't pay this number in {country}", { country: countryName(mmCountryOption.code) }) }}<span
+                v-if="mmCountryOption.networkNote"
+                class="helper-note"
+              > · {{ $t(mmCountryOption.networkNote) }}</span></span>
+            </template>
             <template v-else-if="mobileMoneyMode">
               <span v-if="mmCountryOption">
-                {{ countryName(mmCountryOption.code) }} · +{{ mmCountryOption.callingCode }}<template
+                {{ countryName(mmCountryOption.code) }} · +{{ mmCountryOption.callingCode }}<span
                   v-if="mmCountryOption.networkNote"
-                > · {{ $t(mmCountryOption.networkNote) }}</template>
+                  class="helper-note"
+                > · {{ $t(mmCountryOption.networkNote) }}</span>
               </span>
               <span v-else>{{ $t('Type the number, or pick the country first') }}</span>
             </template>
@@ -144,9 +153,10 @@
 
       <!-- ─────────────  MOBILE MONEY COUNTRY SELECTOR  ─────────────
            Optional, not a gate: typing a full number still resolves on its
-           own. Picking a country locks recognition to it — which also lets
-           us accept the bare local number and removes the KE/ZM 07x
-           ambiguity before it can appear. -->
+           own. Picking a country locks recognition to it: a national number
+           is read there only (never in another country), the bare national
+           number is accepted too, and no country question can appear. A
+           number with its own calling code still reads where it says. -->
       <div
         v-if="mobileMoneyMode"
         class="mm-countries"
@@ -384,7 +394,8 @@ import {
 } from '../utils/addressUtils';
 import {
   recognizePhoneNumber,
-  recognizePhoneNumberForCountry,
+  recognizeInChosenCountry,
+  isCompleteNumberIn,
   matchLnAddressService,
   payoutCountryOptions,
 } from '../services/lnAddressServices';
@@ -628,11 +639,16 @@ export default {
       // The text as it is, the way the send step reads it, so the field
       // only shows a number it would pay: wrapped in another link
       // (`lightning:0712345678`), digits are not a phone number.
-      if (this.mobileMoneyMode && this.mmCountry) {
-        return recognizePhoneNumberForCountry(this.mmCountry, raw)
-          || recognizePhoneNumber(raw);
-      }
+      if (this.mobileMoneyMode && this.mmCountry) return recognizeInChosenCountry(this.mmCountry, raw);
       return recognizePhoneNumber(raw);
+    },
+
+    // Mobile Money, a country chosen: a complete number that country can't
+    // take. The field says so instead of going quiet, since the number is
+    // never read in another country (recognizeInChosenCountry).
+    mmNumberUnpayable() {
+      return this.mobileMoneyMode && !!this.mmCountry && !this.recognizedPhone
+        && isCompleteNumberIn(this.mmCountry, (this.manualInput || '').trim());
     },
 
     mmCountryOption() {
@@ -1200,13 +1216,17 @@ export default {
     },
 
     // Tap toggles: selecting locks recognition to the country, tapping the
-    // active chip returns to auto-detect. A complete number plus an explicit
-    // country is a full destination — advance without further ceremony.
+    // active tile returns to auto-detect. A complete number plus a chosen
+    // country is a full destination, so it advances. Turning the country
+    // off chooses none: the number then reads as in the Send field, and
+    // waits for Continue rather than going to a country nobody picked.
+    // Either way the number is read anew, so the last country's error goes.
     selectMmCountry(code) {
       this.mmCountry = this.mmCountry === code ? null : code;
+      if (this.resolveError) this.$emit('update:resolveError', '');
       this.$nextTick(() => {
         this.$refs.manualTextarea?.focus();
-        this.autoAdvance();
+        if (this.mmCountry) this.autoAdvance();
       });
     },
 
@@ -1663,8 +1683,9 @@ export default {
   font-weight: 500;
 }
 
-/* Capability hint (amber, not red): the destination is valid, the wallet
-   just rides a different rail — a constraint, not a failure. */
+/* Amber, not red: a constraint, not a failure. Either the destination is
+   valid and the wallet just rides a different rail, or the number is one
+   the chosen Mobile Money country's service doesn't pay. */
 .helper-icon-warn {
   color: #B45309;
   flex-shrink: 0;
@@ -1677,6 +1698,11 @@ export default {
 .body--dark .helper-icon-warn,
 .body--dark .input-helper--warn {
   color: #F59E0B;
+}
+
+/* "· Vodacom M-Pesa only" stays whole when the line wraps. */
+.helper-note {
+  white-space: nowrap;
 }
 
 /* Auto-detection chip — same vocabulary as AddressBookModal so users
