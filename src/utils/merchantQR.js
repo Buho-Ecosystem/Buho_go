@@ -15,8 +15,14 @@ export const SA_RETAIL_SOURCE = 'sa_retail';
 
 const CRYPTOQR_DOMAIN = 'cryptoqr.net';
 
+/** Longer than any till code. */
+const MAX_QR_LENGTH = 2048;
+
 /**
  * Merchant configurations with detection patterns, display info, and logo paths.
+ *
+ * Patterns run on whatever a camera reads: repeats are never nested, and text
+ * past MAX_QR_LENGTH never reaches them.
  *
  * `emvco: true` means the QR contains EMVCo MPM data that can be converted
  * to a lightning address directly (Phase 1 - PnP Path).
@@ -29,42 +35,42 @@ const merchants = [
     id: 'picknpay',
     displayName: 'Pick n Pay',
     logo: '/sa_retailers/picknpay.png',
-    pattern: /(.*)(za\.co\.electrum\.picknpay)(.*)/i,
+    pattern: /za\.co\.electrum\.picknpay/i,
     emvco: true,
   },
   {
     id: 'ecentric',
     displayName: 'Ecentric Retailer',
     logo: '/sa_retailers/woolworths.png',
-    pattern: /(.*)(za\.co\.ecentric)(.*)/i,
+    pattern: /za\.co\.ecentric/i,
     emvco: true,
   },
   {
     id: 'checkers_shoprite',
     displayName: 'Checkers / Shoprite',
     logo: '/sa_retailers/checkers.png',
-    pattern: /(.*)(za\.co\.electrum)(.*)/i,
+    pattern: /za\.co\.electrum/i,
     emvco: true,
   },
   {
     id: 'snapscan',
     displayName: 'SnapScan',
     logo: '/sa_retailers/snapscan.png',
-    pattern: /(.*)snapscan(.*)/i,
+    pattern: /snapscan/i,
     emvco: false,
   },
   {
     id: 'yoyo',
     displayName: 'Yoyo',
     logo: '/sa_retailers/moneybadger.png',
-    pattern: /(.*)(wigroup\.co|yoyogroup\.co)(.*)/i,
+    pattern: /wigroup\.co|yoyogroup\.co/i,
     emvco: false,
   },
   {
     id: 'zapper',
     displayName: 'Zapper',
     logo: '/sa_retailers/zapper.png',
-    pattern: /^((.*zapper\.com.*)|(.*\.wigroup\..*)|(.{2}\/.{4}\/.{20})|(.*payat\.io.*)|(.*(paynow\.netcash|paynow\.sagepay)\.co\.za.*)|(SK-\d{1,}-\d{23})|(\d{20})|(.*\d+\.zap\.pe(.*\n?)*)|(.*transactionjunction\.co\.za.*)|(CRSTPC-\d+-\d+-\d+-\d+-\d+))$/i,
+    pattern: /^(?:.*(?:zapper\.com|\.wigroup\.|payat\.io|paynow\.(?:netcash|sagepay)\.co\.za|transactionjunction\.co\.za).*|.{2}\/.{4}\/.{20}|SK-\d+-\d{23}|\d{20}|CRSTPC-\d+-\d+-\d+-\d+-\d+)$|^.*\d\.zap\.pe/i,
     emvco: false,
   },
   {
@@ -78,10 +84,17 @@ const merchants = [
     id: 'moneybadger',
     displayName: 'MoneyBadger',
     logo: '/sa_retailers/moneybadger.png',
-    pattern: /(.*)(cryptoqr\.net)(.*)/i,
+    pattern: /cryptoqr\.net/i,
     emvco: false,
   },
 ];
+
+/** The text to match, or null when it cannot be a till code. */
+function tillCode(data) {
+  if (typeof data !== 'string') return null;
+  const code = data.trim();
+  return code && code.length <= MAX_QR_LENGTH ? code : null;
+}
 
 /**
  * Check if scanned QR data matches any known SA retailer pattern.
@@ -91,9 +104,7 @@ const merchants = [
  * @returns {boolean}
  */
 export function isSARetailerQR(data) {
-  if (!data) return false;
-  const trimmed = data.trim();
-  return merchants.some((m) => m.pattern.test(trimmed));
+  return getMerchantInfo(data) !== null;
 }
 
 /**
@@ -106,10 +117,10 @@ export function isSARetailerQR(data) {
  * @returns {object|null} Merchant config or null if no match
  */
 export function getMerchantInfo(data) {
-  if (!data) return null;
-  const trimmed = data.trim();
+  const code = tillCode(data);
+  if (!code) return null;
   for (const merchant of merchants) {
-    if (merchant.pattern.test(trimmed)) {
+    if (merchant.pattern.test(code)) {
       return {
         id: merchant.id,
         displayName: merchant.displayName,
@@ -137,10 +148,7 @@ export function getMerchantInfo(data) {
  * @returns {{ lightningAddress: string, merchant: object } | null}
  */
 export function convertToLightningAddress(qrContent) {
-  if (!qrContent) return null;
-
-  const trimmed = qrContent.trim();
-  const merchant = getMerchantInfo(trimmed);
+  const merchant = getMerchantInfo(qrContent);
 
   if (!merchant) return null;
 
@@ -149,7 +157,7 @@ export function convertToLightningAddress(qrContent) {
     return null;
   }
 
-  const lightningAddress = `${encodeURIComponent(trimmed)}@${CRYPTOQR_DOMAIN}`;
+  const lightningAddress = `${encodeURIComponent(qrContent.trim())}@${CRYPTOQR_DOMAIN}`;
 
   return {
     lightningAddress,
