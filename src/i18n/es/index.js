@@ -2524,6 +2524,7 @@ export default {
   "Which country?": "¿Qué país?",
   "You can't pay this phone number": "No puedes pagar a este número de teléfono",
   "Mobile Money shows which numbers you can pay": "En Mobile Money ves a qué números puedes pagar",
+  "You can't pay this number in {country}": "No puedes pagar a este número en {country}",
   "Kenya": "Kenia",
   "Zambia": "Zambia",
   "Tanzania": "Tanzania",

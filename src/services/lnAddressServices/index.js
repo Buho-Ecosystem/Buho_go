@@ -54,6 +54,8 @@ export function matchLnAddressService(lightningAddress) {
 export {
   recognizePhoneNumber,
   recognizePhoneNumberForCountry,
+  recognizeInChosenCountry,
+  isCompleteNumberIn,
   buildLightningAddress,
   formatInternational,
   formatE164,

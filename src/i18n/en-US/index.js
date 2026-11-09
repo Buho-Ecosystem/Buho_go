@@ -2536,6 +2536,7 @@ export default {
   "Which country?": "Which country?",
   "You can't pay this phone number": "You can't pay this phone number",
   "Mobile Money shows which numbers you can pay": "Mobile Money shows which numbers you can pay",
+  "You can't pay this number in {country}": "You can't pay this number in {country}",
   "Kenya": "Kenya",
   "Zambia": "Zambia",
   "Tanzania": "Tanzania",

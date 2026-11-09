@@ -296,6 +296,58 @@ export function recognizePhoneNumberForCountry(countryCode, raw) {
 }
 
 /**
+ * Mobile Money, a country chosen: the number read in that country, or in
+ * the country it names itself (a calling code, a `tel:` link's
+ * phone-context), as its label then shows.
+ *
+ * A national number is never read in another country. Choosing a country is
+ * the person's answer to "Which country?", and a number its payout service
+ * can't take may still be a number there: Tanzania's service pays Vodacom
+ * only, yet 0712345678 is a Tanzanian number on Yas as well as a Kenyan one
+ * on Safaricom (countries.js).
+ *
+ * @param {string} countryCode  the chosen country, ISO 3166-1 alpha-2
+ * @param {unknown} raw
+ * @returns {object | null}  same shape as recognizePhoneNumber
+ */
+export function recognizeInChosenCountry(countryCode, raw) {
+  const inChosen = recognizePhoneNumberForCountry(countryCode, raw)
+  if (inChosen) return inChosen
+  const named = recognizePhoneNumber(raw)
+  return named?.confidence === 'exact' ? named : null
+}
+
+/**
+ * Whether `raw` has every digit of a number in the country, in a form
+ * recognizePhoneNumberForCountry reads there: the calling code and the
+ * national number, `0` and the national number, or the national number
+ * alone. Only then can the field say a number can't be paid, instead of
+ * while it is still being typed.
+ *
+ * Not complete there: a number with another country's calling code, or a
+ * `tel:` link naming another country (it reads where it says), and digits
+ * that begin a payout country's calling code (`254 712 345`, a pause in
+ * typing a Kenyan number).
+ *
+ * @param {string} countryCode  ISO 3166-1 alpha-2
+ * @param {unknown} raw
+ * @returns {boolean}
+ */
+export function isCompleteNumberIn(countryCode, raw) {
+  const country = PAYOUT_COUNTRIES.find((c) => c.code === countryCode)
+  const read = readNumberText(raw)
+  if (!country || !read || (read.contextCode !== null && read.contextCode !== countryCode)) return false
+  const parsed = parseRaw(read.text)
+  if (!parsed) return false
+  const { digits, hadInternationalMarker } = parsed
+  const { trunkPrefix, callingCode, nsnLength } = country
+  if (digits.startsWith(callingCode)) return digits.length === callingCode.length + nsnLength
+  if (hadInternationalMarker) return false
+  if (digits.startsWith(trunkPrefix)) return digits.length === trunkPrefix.length + nsnLength
+  return digits.length === nsnLength && !PAYOUT_COUNTRIES.some((c) => digits.startsWith(c.callingCode))
+}
+
+/**
  * Recognize a phone number, typed or in a `tel:` link, and resolve it to a
  * fiat-payout country plus a constructed Lightning Address. Returns null when
  * the input isn't a recognized mobile number in a payout country.
