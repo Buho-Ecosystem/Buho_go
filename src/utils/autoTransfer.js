@@ -254,6 +254,9 @@ export function failureReason(error) {
   // (providers/BreezSparkWalletProvider.js). Named before the words are
   // read: its copy mentions the network, which is not a lost connection.
   if (code === 'LIGHTNING_FEE_ABOVE_LIMIT') return 'fee';
+  // The destination will not take a payment without details about the
+  // payer (LUD-18); nobody is there to give them, so it stops.
+  if (code === 'LNURL_PAYER_DATA_UNSUPPORTED' || code === 'LNURL_PAYER_DATA_REQUIRED') return 'details';
   // The destination's service said no: its own reason (utils/errorOrigin.js),
   // a refusal that came without one, or an amount outside what it accepts
   // (utils/lnurlPay.js).

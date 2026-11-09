@@ -180,3 +180,29 @@ export function parseZARFromMetadata(description) {
   const match = description.match(/R(\d+(?:\.\d{2})?)/);
   return match ? match[1] : null;
 }
+
+/**
+ * The business behind every till code. It keeps the refund address a till
+ * payment shares, so the confirm sheet names it beside the store (a payment
+ * partner is named along with the merchant).
+ */
+export const MERCHANT_PROVIDER = Object.freeze({ name: 'MoneyBadger' });
+
+/**
+ * True for an https URL on the provider's own host. A till payment shares a
+ * refund address by default only when its callback is one of these: a code
+ * that only looks like a till code never gets the address unasked.
+ *
+ * @param {string} url
+ * @returns {boolean}
+ */
+export function isMerchantProviderUrl(url) {
+  if (typeof url !== 'string') return false;
+  try {
+    const { protocol, hostname, username, password } = new URL(url);
+    if (protocol !== 'https:' || username || password) return false;
+    return hostname === CRYPTOQR_DOMAIN || hostname.endsWith(`.${CRYPTOQR_DOMAIN}`);
+  } catch {
+    return false;
+  }
+}

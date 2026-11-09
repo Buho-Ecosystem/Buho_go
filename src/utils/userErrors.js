@@ -441,6 +441,13 @@ export function translateErrorCode(error, t, { walletName = '', useBip177Format 
       return t("The recipient's service tried to redirect this payment. Nothing was sent. Ask them for another way to pay.");
     case 'LNURL_INVOICE_EXPIRED':
       return t("The recipient's payment request had expired. Nothing was sent. Try again.");
+    // LUD-18: what the service asks to know about the payer (utils/lud18.js).
+    case 'LNURL_PAYER_DATA_UNSUPPORTED':
+      return t("The recipient's service asks for details BuhoGO can't share. Nothing was sent. Ask them for another way to pay.");
+    case 'LNURL_PAYER_DATA_REQUIRED':
+      return t("The recipient's service needs your address for this payment. Nothing was sent. Pay them from Send to choose one.");
+    case 'LNURL_PAYER_DATA_INVALID':
+      return t("This address can't be shared. Nothing was sent.");
     // A Spark route that costs more than the limit the payment allows
     // (providers/BreezSparkWalletProvider.js payInvoice).
     case 'LIGHTNING_FEE_ABOVE_LIMIT':

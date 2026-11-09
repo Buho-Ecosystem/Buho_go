@@ -246,6 +246,7 @@ import { useAutoWithdrawStore } from '../../stores/autoWithdraw';
 import { useAddressBookStore } from '../../stores/addressBook';
 import { keypadSats } from '../../utils/amountKeypad.js';
 import { fetchPayRequest, lightningAddressUrl } from '../../utils/lnurlPay.js';
+import { readPayerRequest } from '../../utils/lud18.js';
 import { readClipboardCrossPlatform } from '../../utils/shopClipboard.js';
 import {
   DESTINATION_KIND,
@@ -282,7 +283,7 @@ export default {
       keypad: { value: '', fiat: false, currency: 'USD' },
       keepSome: false,
       candidate: null,
-      candidateState: null, // 'checking' | 'unknown' | 'problem' | 'silent'
+      candidateState: null, // 'checking' | 'unknown' | 'problem' | 'silent' | 'details'
       candidateAttempt: 0,
       scanning: false,
       saving: false,
@@ -408,6 +409,7 @@ export default {
       if (this.candidateState === 'checking') return this.$t('Checking…');
       if (this.candidateState === 'unknown') return this.$t('That is not an address this wallet can send to.');
       if (this.candidateState === 'silent') return this.reason('unreachable', this.candidate);
+      if (this.candidateState === 'details') return this.reason('details', this.candidate);
       return this.reason(destinationProblem({ source: this.wallet, destination: this.candidate, wallets: this.walletStore.wallets, rules: this.otherRules }), this.candidate);
     },
   },
@@ -567,26 +569,33 @@ export default {
       }
       if (read.kind === DESTINATION_KIND.LIGHTNING) {
         this.candidateState = 'checking';
-        const answers = await this.lightningAddressAnswers(read.address);
+        const problem = await this.lightningAddressProblem(read.address);
         if (attempt !== this.candidateAttempt) return;
-        if (!answers) {
-          this.candidateState = 'silent';
+        if (problem) {
+          this.candidateState = problem;
           return;
         }
       }
       this.candidateState = null;
       this.choose(read);
     },
-    async lightningAddressAnswers(address) {
+    /**
+     * Why a rule could not pay this address, or null when it can: 'silent'
+     * when it does not answer, 'details' when it will not take a payment
+     * without details about the payer (LUD-18), which no one is there to
+     * give when a transfer runs.
+     */
+    async lightningAddressProblem(address) {
       const url = lightningAddressUrl(address);
-      if (!url) return false;
+      if (!url) return 'silent';
       try {
         // The check a transfer makes, so an address accepted here is one the
         // rule can pay. A person is waiting: give up sooner than a payment would.
-        await fetchPayRequest(url, { timeoutMs: 8000 });
-        return true;
+        const payRequest = await fetchPayRequest(url, { timeoutMs: 8000 });
+        const asks = readPayerRequest(payRequest?.payerData);
+        return asks.identifierRequired || asks.unmetRequired.length ? 'details' : null;
       } catch {
-        return false;
+        return 'silent';
       }
     },
 

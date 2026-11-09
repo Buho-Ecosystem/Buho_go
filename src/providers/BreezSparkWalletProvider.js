@@ -1105,7 +1105,18 @@ export class BreezSparkWalletProvider extends WalletProvider {
     throw new Error('Payment status check timed out');
   }
 
-  async payLightningAddress(lightningAddress, amountSats, comment = '', payout = null) {
+  /**
+   * Pay a Lightning address: its invoice asked for and checked by
+   * utils/lnurlPay.js, then paid with the fee limit the Send sheet shows.
+   * @param {string} lightningAddress
+   * @param {number} amountSats  the amount confirmed (in the recipient's
+   *   currency, the estimate)
+   * @param {string} [comment]
+   * @param {{code: string, amount: number}|null} [payout]  LUD-21 amount
+   * @param {{ payerData?: { identifier?: string|null }|null }} [options]  LUD-18
+   *   details the person agreed to share
+   */
+  async payLightningAddress(lightningAddress, amountSats, comment = '', payout = null, { payerData = null } = {}) {
     this._ensureConnected();
 
     try {
@@ -1116,7 +1127,7 @@ export class BreezSparkWalletProvider extends WalletProvider {
         throw new Error('Invalid Lightning address format');
       }
       const payRequest = await fetchPayRequest(url);
-      const invoice = await requestPayInvoice(payRequest, { amountSats, payout, comment });
+      const invoice = await requestPayInvoice(payRequest, { amountSats, payout, comment, payerData });
 
       // Invoice already carries the amount — passing amountSats would be
       // rejected (zero-amount invoices only). No fee could be quoted before
@@ -1136,6 +1147,7 @@ export class BreezSparkWalletProvider extends WalletProvider {
         invoiceSats: invoice.amountSats,
         successAction: invoice.successAction,
         verify: invoice.verify,
+        payerData: invoice.payerData,
       };
     } catch (error) {
       this.setError(error);

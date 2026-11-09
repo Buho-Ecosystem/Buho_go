@@ -31,7 +31,7 @@ haptic without a visible change at the same moment.
 | A payment sent (once it completed), a batch sent (as its summary counts it), a transfer done | `success` |
 | A payment received while you watch, a voucher or card redeemed, a kiosk sale paid (also a parked one) | `success` |
 | A payment, an on-chain withdrawal, a batch, a transfer, a redeem or a kiosk card payment failed; a wrong card PIN; a card locked | `error` |
-| A payment whose outcome is unknown, a batch where some failed | `warning` |
+| A payment whose outcome is unknown, a batch where some failed, a refund address the store turned down or needs | `warning` |
 | The slide reaching its commit point (or committed by a flick), a kiosk sale parked | `medium` |
 | A card read, a QR code recognised (a new one, when scanning several), the History swipe past Pay again, turning haptics on | `tap` |
 

@@ -355,6 +355,18 @@ export const useTransactionMetadataStore = defineStore('transactionMetadata', {
     },
 
     /**
+     * The address a payment shared for a refund (LUD-18 `identifier`), as it
+     * went with the payment, scoped to `walletId`. null when none went.
+     * @param {string} txId
+     * @param {string} [walletId]
+     * @returns {string|null}
+     */
+    getRefundAddressForTransaction: (state) => (txId, walletId) => {
+      const metadata = _resolveMetadata(state, txId, walletId)
+      return typeof metadata?.refundAddress === 'string' ? metadata.refundAddress : null
+    },
+
+    /**
      * Get all transactions that have a specific tag, across every wallet.
      * Storage keys are wallet-scoped composite keys (or legacy bare
      * txIds), so a bare txId string is no longer enough on its own to
@@ -485,6 +497,9 @@ export const useTransactionMetadataStore = defineStore('transactionMetadata', {
      * `payAgain` (utils/payAgain) is what the user chose to pay, with `proof`,
      * the ids the send returned; it is stamped only on a payment carrying one.
      *
+     * `refundAddress` is the Lightning address the payment shared for a
+     * refund (LUD-18), as it was sent. Per-payment like merchantVerification.
+     *
      * `perPayment` opts an otherwise plain address/contact link out of
      * de-duplication. Interactive contact sends use it because two valid
      * sends can have the same recipient and amount.
@@ -511,6 +526,7 @@ export const useTransactionMetadataStore = defineStore('transactionMetadata', {
       merchantVerification = null,
       saleBreakdown = null,
       payAgain = null,
+      refundAddress = null,
       perPayment = false,
       direction = 'outgoing',
       walletId = null,
@@ -528,7 +544,8 @@ export const useTransactionMetadataStore = defineStore('transactionMetadata', {
       // An address-less per-payment link that names its contact is queued too
       // (a paid invoice carries no address; the amount is its proof).
       const isContactOnlyLink = !!contactId && !!perPayment && Number(amountSats) > 0
-      if (!recipientAddress && !successAction && !verifyUrl && !payLink && !label && !source && !counterpartyAvatar && !merchantVerification && !saleBreakdown && !payAgainLink && !isContactOnlyLink) return
+      const refund = typeof refundAddress === 'string' && refundAddress.trim() ? refundAddress.trim() : null
+      if (!recipientAddress && !successAction && !verifyUrl && !payLink && !label && !source && !counterpartyAvatar && !merchantVerification && !saleBreakdown && !payAgainLink && !refund && !isContactOnlyLink) return
       const now = Date.now()
       const normalisedAddress = recipientAddress
         ? String(recipientAddress).toLowerCase().trim()
@@ -549,7 +566,7 @@ export const useTransactionMetadataStore = defineStore('transactionMetadata', {
       // merchant, or POS breakdown), so it must never be merged or collapsed.
       // This matters especially for batch/kiosk, where two unrelated payments
       // can easily share the same recipient + amount.
-      const isPerPayment = !!transactionId || !!perPayment || !!successAction || !!verifyUrl || !!payLink || !!label || !!source || !!counterpartyAvatar || !!merchantVerification || !!saleBreakdown || !!payAgainLink
+      const isPerPayment = !!transactionId || !!perPayment || !!successAction || !!verifyUrl || !!payLink || !!label || !!source || !!counterpartyAvatar || !!merchantVerification || !!saleBreakdown || !!payAgainLink || !!refund
       if (!isPerPayment) {
         // A plain link (recipient address, maybe a contactId) is either a
         // double-submit or a post-save "add the contactId" upgrade. Merge it
@@ -586,6 +603,7 @@ export const useTransactionMetadataStore = defineStore('transactionMetadata', {
         saleBreakdown: saleBreakdown || null,
         payAgain: payAgainLink,
         payAgainProof: payAgainLink ? payAgainProofIds : [],
+        refundAddress: refund,
         perPayment: !!perPayment,
         direction: normalisedDirection,
         walletId: normalisedWalletId,
@@ -656,13 +674,14 @@ export const useTransactionMetadataStore = defineStore('transactionMetadata', {
       let mutated = remaining.length !== this.pendingContactLinks.length
 
       // A tx is "stamped" once it has a contactId, a recipientAddress, a
-      // successAction, a label, a source or a verified business, so a later link can't re-claim
+      // successAction, a label, a source, a verified business or a refund
+      // address, so a later link can't re-claim
       // a tx an earlier link already resolved. Scoped to `walletId` so a
       // record belonging to a DIFFERENT wallet that happens to share this
       // tx id is never consulted.
       const isStamped = (tx) => {
         const m = _resolveMetadata(this, tx.id, walletId)
-        return !!(m?.contactId || m?.recipientAddress || m?.successAction || m?.payLink || m?.label || m?.source || m?.merchantVerification || m?.payAgain)
+        return !!(m?.contactId || m?.recipientAddress || m?.successAction || m?.payLink || m?.label || m?.source || m?.merchantVerification || m?.payAgain || m?.refundAddress)
       }
 
       const isOutgoingTx = (tx) => {
@@ -741,7 +760,7 @@ export const useTransactionMetadataStore = defineStore('transactionMetadata', {
         // would offer "Pay again" for a service the user never paid.
         // So does a verified business (an invoice or on-chain send has no
         // address form to stamp): it must never name an unrelated payment.
-        const needsAmountProof = !link.recipientAddress && (link.label || link.source || link.payLink || link.contactId || link.merchantVerification)
+        const needsAmountProof = !link.recipientAddress && (link.label || link.source || link.payLink || link.contactId || link.merchantVerification || link.refundAddress)
         const exact = eligible.find(amountMatches)
         // A send that carries a Pay again record names its payment's ids:
         // that payment is the match, before any amount or time heuristic.
@@ -786,6 +805,12 @@ export const useTransactionMetadataStore = defineStore('transactionMetadata', {
           }
           if (link.saleBreakdown) {
             await this.setSaleBreakdownForTransaction(pick.tx.id, walletId, link.saleBreakdown)
+          }
+          // Where a refund goes is said only on a payment the link can name
+          // for sure (its amount, its id): a till code's address alone would
+          // let it land on another send made in the same minutes.
+          if (link.refundAddress && (link.transactionId || proven || exact)) {
+            await this.setRefundAddressForTransaction(pick.tx.id, walletId, link.refundAddress)
           }
           // Pay again pays this recipient again, so its record goes only on
           // the payment its ids name; matched any other way, none is offered.
@@ -1093,6 +1118,45 @@ export const useTransactionMetadataStore = defineStore('transactionMetadata', {
         return this.metadata[key]
       } catch (error) {
         console.error('Error setting merchantVerification for transaction:', error)
+        return null
+      }
+    },
+
+    /**
+     * Stamp the address a payment shared for a refund (LUD-18) on a
+     * transaction, scoped to `walletId`. The first stamp wins. Requires a
+     * walletId: a missing one warns and no-ops.
+     *
+     * @param {string} txId
+     * @param {string} walletId
+     * @param {string} address
+     * @returns {Promise<object|null>}
+     */
+    async setRefundAddressForTransaction(txId, walletId, address) {
+      try {
+        await this._ensureLoaded()
+        if (!txId || typeof address !== 'string' || !address.trim()) return null
+        if (!walletId) {
+          console.warn('[txMetadata] setRefundAddressForTransaction: missing walletId, skipping write', { txId })
+          return null
+        }
+        const key = _key(txId, walletId)
+        if (!this.metadata[key]) {
+          this.metadata[key] = {
+            contactId: null,
+            customNote: '',
+            tags: [],
+            updatedAt: Date.now(),
+          }
+        }
+        // What went with the payment never changes: the first stamp wins.
+        if (this.metadata[key].refundAddress) return this.metadata[key]
+        this.metadata[key].refundAddress = address.trim()
+        this.metadata[key].updatedAt = Date.now()
+        await this.persistMetadata()
+        return this.metadata[key]
+      } catch (error) {
+        console.error('Error setting refundAddress for transaction:', error)
         return null
       }
     },

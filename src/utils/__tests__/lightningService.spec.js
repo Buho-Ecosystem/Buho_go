@@ -112,3 +112,41 @@ test('an LNURL that points at plain http is never asked', async () => {
   await assert.rejects(service.sendPayment({ type: 'lnurl', data: lnurl('http://shop.example/lnurlp/coffee') }, 7), /Invalid LNURL/);
   assert.deepEqual(asked, []);
 });
+
+// LUD-18: the address the person agreed to share goes with the invoice
+// request on NWC exactly as on every other wallet type.
+const ASKS = { ...PAY_REQUEST, payerData: { identifier: { mandatory: false } } };
+const SHARED = encodeURIComponent('{"identifier":"maria@buho.example"}');
+
+test('an address read once keeps what the service asks about the payer, and sends it', async () => {
+  const { service, asked, paid } = serviceWith(ok(ASKS), ok({ pr: invoiceFor(21) }));
+  const data = await service.processPaymentInput('alice@example.com');
+  assert.deepEqual(data.payerData, ASKS.payerData, 'the sheet reads the same terms the payment uses');
+  const result = await service.sendPayment(data, 21, null, { payerData: { identifier: 'maria@buho.example' } });
+  assert.equal(asked[1].url, `${PAY_REQUEST.callback}?amount=21000&payerdata=${SHARED}`);
+  assert.deepEqual(paid, [invoiceFor(21)]);
+  assert.deepEqual(result.payerData, { identifier: 'maria@buho.example' });
+});
+
+test('an LNURL that asks gets the address too, also once decoded', async () => {
+  const { service, asked, paid } = serviceWith(ok(ASKS), ok({ pr: invoiceFor(7) }));
+  const result = await service.sendPayment({ type: 'lnurl', data: lnurl('https://shop.example/lnurlp/coffee') }, 7, null,
+    { payerData: { identifier: 'maria@buho.example' } });
+  assert.equal(asked[1].url, `${PAY_REQUEST.callback}?amount=7000&payerdata=${SHARED}`);
+  assert.deepEqual(paid, [invoiceFor(7)]);
+  assert.deepEqual(result.payerData, { identifier: 'maria@buho.example' });
+});
+
+test('a service that does not ask gets nothing; one that insists is never asked without it', async () => {
+  const quiet = serviceWith(ok(PAY_REQUEST), ok({ pr: invoiceFor(21) }));
+  const data = await quiet.service.processPaymentInput('alice@example.com');
+  const result = await quiet.service.sendPayment(data, 21, null, { payerData: { identifier: 'maria@buho.example' } });
+  assert.equal(quiet.asked[1].url, `${PAY_REQUEST.callback}?amount=21000`);
+  assert.equal(result.payerData, null);
+
+  const strict = serviceWith(ok({ ...PAY_REQUEST, payerData: { identifier: { mandatory: true } } }));
+  const terms = await strict.service.processPaymentInput('alice@example.com');
+  await assert.rejects(strict.service.sendPayment(terms, 21), (error) => error.code === PAY_REQUEST_ERROR.PAYER_DATA_REQUIRED);
+  assert.equal(strict.asked.length, 1, 'no invoice was asked for');
+  assert.deepEqual(strict.paid, []);
+});
