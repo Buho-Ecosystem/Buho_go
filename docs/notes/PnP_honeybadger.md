@@ -43,7 +43,13 @@ Where the shapes come from:
 
 Two older patterns, `UMPQR` or `easypay` anywhere in a text, are gone: no public source shows what such a code looks like.
 
-A Kenyan or Zambian mobile number (10 digits from `07`, `01` or `09`) is read first and opens a phone payout (`SendModal.vue`). None of the operator's examples starts with `0`.
+Ten digits can be both: a Scan to Pay till code, and a local mobile number in a payout country (Kenya, Zambia, Tanzania, Ghana: `0` and nine digits). What decides is how the digits arrived (`SendModal.vue`):
+
+- **Scanned:** a till code. Scan to Pay's operator says "A Scan to Pay merchant identified by 10 digit QR" ([payments use cases](https://developer.eftcorp.com/docs/payments-use-cases)), while a phone number belongs in a QR code as a `tel:` link ([barcode contents](https://github.com/zxing/zxing/wiki/Barcode-Contents#telephone-numbers), [RFC 3966](https://www.rfc-editor.org/rfc/rfc3966)). A `tel:` link is never a till code.
+- **Typed or pasted:** a phone number. That is how people enter one.
+- **Scanned, then edited:** the person's own text, so typed.
+
+A number with its country code (`+254…`, `254…`, `00254…`) has no till code's shape and stays a phone number either way.
 
 MoneyBadger's answer is said in plain words:
 

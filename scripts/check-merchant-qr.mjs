@@ -16,7 +16,8 @@ const CRAFTED = `1.zap.pe${'a'.repeat(2038)}\rX`;
 const browser = await chromium.launch({ headless: true });
 const pause = (ms) => new Promise((done) => setTimeout(done, ms));
 
-async function open() {
+/** The browser, with every lookup answered by `answer` over a plain pay request. */
+async function open({ answer = {} } = {}) {
   const context = await browser.newContext({ viewport: { width: 390, height: 844 } });
   const page = await context.newPage();
   const errors = [];
@@ -34,6 +35,7 @@ async function open() {
           minSendable: 1000,
           maxSendable: 100000000,
           metadata: '[["text/plain","Pick n Pay"]]',
+          ...answer,
         },
       });
     }
@@ -145,6 +147,32 @@ const tillLookups = (lookups) => lookups.filter((url) => new URL(url).hostname =
   assert.deepEqual(errors, []);
   await context.close();
   console.log('ok  scanned Wi-Fi code stays on the phone');
+}
+
+{
+  // Ten digits that are also a Kenyan number: scanned, the till's. The till
+  // asks for more than the wallet holds: a failure with only a notice, which
+  // leaves the field open on the code. The field must not then read it as a
+  // typed phone number and pay that.
+  const { page, context, errors, lookups } = await open({ answer: { minSendable: 1000000000, maxSendable: 1000000000 } });
+  await openSend(page);
+  await scan(page, '0712345678');
+  await pause(1500);
+  assert.deepEqual(lookups.map((url) => new URL(url).hostname), ['cryptoqr.net'], 'one lookup, the till\'s');
+  assert.deepEqual(errors, []);
+  await context.close();
+  console.log('ok  scanned 0712345678 goes to the till once, never to a phone payout');
+}
+
+{
+  const { page, context, errors, lookups } = await open();
+  await openSend(page);
+  await page.locator('[data-audit="send-input"]').fill('0712345678');
+  await pause(1500);
+  assert.deepEqual(lookups.map((url) => new URL(url).hostname), ['bitcoin.co.ke'], 'typed, a Kenyan number');
+  assert.deepEqual(errors, []);
+  await context.close();
+  console.log('ok  typed 0712345678 is a Kenyan phone payout');
 }
 
 for (const code of ['0821234567', 'https://pos.snapscan.io/qr/TEST', 'https://www.zapper.com/url/TEST']) {

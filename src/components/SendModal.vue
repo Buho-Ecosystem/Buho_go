@@ -368,7 +368,7 @@ import QrScanSheet from './QrScanSheet.vue';
 import { useAddressBookStore } from '../stores/addressBook';
 import { useWalletStore } from '../stores/wallet';
 import { readClipboardCrossPlatform } from '../utils/shopClipboard.js';
-import { convertToLightningAddress, lightningAddressCase, SA_RETAIL_SOURCE } from '../utils/merchantQR';
+import { convertToLightningAddress, getMerchantInfo, lightningAddressCase, SA_RETAIL_SOURCE } from '../utils/merchantQR';
 import { parseBip21, extractLnFallbackParam } from '../utils/bip21';
 import {
   isSparkAddress,
@@ -448,6 +448,9 @@ export default {
       mmCountry: null,
       payoutCountries: payoutCountryOptions(),
       manualInput: '',
+      // The text the last scan put in the field, until the field is edited
+      // (fieldHoldsScan). It decides whether ten digits are a till code.
+      scannedText: '',
       // First-open contact hydration (store.initialize reads localStorage).
       contactsLoading: false,
       // Payable string found on the clipboard at open (web peek only).
@@ -603,6 +606,12 @@ export default {
       return walletSwitchHint(paymentType, this.$t.bind(this));
     },
 
+    // The field holds exactly what a scan put there. Edited, even back to
+    // the same text, it is the person's own (the manualInput watcher).
+    fieldHoldsScan() {
+      return this.scannedText !== '' && this.manualInput === this.scannedText;
+    },
+
     // Full phone-number recognition for the current input (or null). Drives
     // the 'phone_number' chip and the ambiguous-country chooser. With a
     // Mobile Money country picked, recognition locks to that country (which
@@ -611,6 +620,9 @@ export default {
     recognizedPhone() {
       const raw = (this.manualInput || '').trim();
       if (!raw) return null;
+      // A scanned till code is the till's, even where its digits read as a
+      // local number too (see processPaymentData).
+      if (this.fieldHoldsScan && getMerchantInfo(raw)) return null;
       const cleaned = raw.toLowerCase().startsWith('lightning:')
         ? raw.substring(10).trim()
         : raw;
@@ -745,7 +757,9 @@ export default {
     // (see pasteFromClipboard) since it arrives complete. The confirm
     // sheet stays the review/commit gate either way — this fetches and
     // validates, it never sends.
-    manualInput() {
+    manualInput(value) {
+      // Once edited, the text is the person's, never the scan's again.
+      if (this.scannedText && value !== this.scannedText) this.scannedText = '';
       // Editing clears a stale "couldn't resolve" error from the previous try.
       if (this.resolveError) this.$emit('update:resolveError', '');
       clearTimeout(this.phoneAdvanceTimer);
@@ -845,6 +859,7 @@ export default {
     useDestination(value) {
       this.clipboardSuggestion = null;
       if (this.resolveError) this.$emit('update:resolveError', '');
+      this.scannedText = '';
       this.manualInput = value;
       this.$nextTick(() => {
         this.$refs.manualTextarea?.focus();
@@ -865,6 +880,7 @@ export default {
      * on every edit, and this assignment counts as one.
      */
     revealFailed(value, message) {
+      this.scannedText = '';
       this.manualInput = value;
       this.$nextTick(() => {
         clearTimeout(this.phoneAdvanceTimer);
@@ -886,12 +902,13 @@ export default {
       // The scan sheet has already closed itself — land the decoded string
       // in the field, so the user always sees exactly what is being
       // resolved, and can edit it in place if resolution fails.
+      this.scannedText = qrContent;
       this.manualInput = qrContent;
 
       this.isProcessing = true;
 
       try {
-        await this.processPaymentData(qrContent);
+        await this.processPaymentData(qrContent, { scanned: true });
       } catch (error) {
         console.error('QR processing error:', error);
         this.$q.notify({
@@ -903,7 +920,13 @@ export default {
       }
     },
 
-    async processPaymentData(paymentData) {
+    /**
+     * Read what was scanned, typed or pasted and hand it to the Wallet page.
+     * @param {string|object} paymentData
+     * @param {{ scanned?: boolean }} [options] - `scanned`: it came from the
+     *   camera, so ten digits that make a till code are the till's
+     */
+    async processPaymentData(paymentData, { scanned = false } = {}) {
       try {
         const inputData = typeof paymentData === 'string'
           ? paymentData
@@ -923,13 +946,19 @@ export default {
         }
         let trimmedData = inputData.trim();
 
-        // A recognized Kenyan/Zambian phone number is a fiat-payout destination
-        // — resolve it to its provider Lightning Address (Zambia → @bitzed.xyz,
-        // Kenya → @bitcoin.co.ke) up front, BEFORE the SA-retail QR check, whose
-        // numeric codes would otherwise swallow a 10-digit phone number. The
-        // built address then flows through the normal Lightning-address rails
-        // (which brand it).
-        const phone = recognizePhoneNumber(trimmedData);
+        // A phone number in a payout country is a fiat-payout destination:
+        // resolve it to its provider's Lightning address (Kenya →
+        // @bitcoin.co.ke, Zambia → @bitzed.xyz, ...) up front, before the till
+        // check, whose ten-digit codes would otherwise take a local number.
+        // The built address then flows through the normal Lightning-address
+        // rails (which brand it).
+        //
+        // Scanned, ten digits that make a till code are the till's. A Scan
+        // to Pay till prints its code as ten bare digits, the length of a
+        // local number (`0` and nine), while a phone number belongs in a QR
+        // code as a `tel:` link. Typed or pasted, they are a phone number:
+        // that is how people enter one. Sources: docs/notes/PnP_honeybadger.md.
+        const phone = scanned && getMerchantInfo(trimmedData) ? null : recognizePhoneNumber(trimmedData);
         if (phone) {
           this.$emit('payment-detected', {
             data: phone.lightningAddress,
@@ -1092,6 +1121,7 @@ export default {
       // Always land the clipboard in the visible field for the user to
       // verify before committing. No silent fire-and-forget — too easy
       // to send to a stale or wrong address otherwise.
+      this.scannedText = '';
       this.manualInput = (clipboardText || '').trim();
       this.$nextTick(() => {
         this.$refs.manualTextarea?.focus();
@@ -1115,6 +1145,7 @@ export default {
     },
 
     onTextareaPaste() {
+      this.scannedText = '';
       clearTimeout(this.pasteAdvanceTimer);
       this.pasteAdvanceTimer = setTimeout(() => this.autoAdvance(), 200);
     },
@@ -1341,6 +1372,7 @@ export default {
       clearTimeout(this.phoneAdvanceTimer);
       clearTimeout(this.pasteAdvanceTimer);
       this.isProcessing = false;
+      this.scannedText = '';
       this.manualInput = '';
       this.mobileMoneyMode = false;
       this.mmCountry = null;
