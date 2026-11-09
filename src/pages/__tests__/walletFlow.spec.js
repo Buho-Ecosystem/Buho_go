@@ -17,6 +17,8 @@ import * as recipientPayments from '../../services/recipientPayments.js';
 import * as haptics from '../../utils/haptics.js';
 import * as nwcErrors from '../../utils/nwcErrors.js';
 import * as nwcAtRest from '../../utils/nwcAtRest.js';
+import * as nwcWallet from '../../utils/nwcWallet.js';
+import { profileInvoiceFixture } from '../../../scripts/fixtures/profileInvoice.mjs';
 import * as userErrors from '../../utils/userErrors.js';
 import * as refundAddress from '../../utils/refundAddress.js';
 import * as lud18 from '../../utils/lud18.js';
@@ -308,7 +310,7 @@ test('pending service sends retain payment identity without offering completed-p
 });
 
 test('Pay again is unavailable until a payment completes, including failed payments', () => {
-  const details = evaluate('../TransactionDetails.vue', { pinia: { mapState: () => ({}) }, '../utils/payAgain.js': payAgain }).default;
+  const details = evaluate('../TransactionDetails.vue', { pinia: { mapState: () => ({}) }, '../utils/payAgain.js': payAgain, '../utils/nwcWallet.js': nwcWallet }).default;
   for (const status of ['pending', 'failed', 'completed']) {
     const target = details.computed.payAgainTarget.call({ transaction: { id: 'p', type: 'outgoing', status },
       metadataWalletId: 'A', metadataStore: { getMetadataForTransaction: (id, walletId) => (id === 'p' && walletId === 'A' ? { payLink: 'lnurl1service' } : null) } });
@@ -318,7 +320,7 @@ test('Pay again is unavailable until a payment completes, including failed payme
 
 
 test('an NWC receipt opened from History loads from the wallet store\'s wallet, also a few pages down', async () => {
-  const details = evaluate('../TransactionDetails.vue', { pinia: { mapState: () => ({}) }, '../utils/payAgain.js': payAgain }).default;
+  const details = evaluate('../TransactionDetails.vue', { pinia: { mapState: () => ({}) }, '../utils/payAgain.js': payAgain, '../utils/nwcWallet.js': nwcWallet }).default;
   const listed = Array.from({ length: 130 }, (_, i) => ({ payment_hash: `h${i}`, type: 'outgoing', amount: 100 + i, fees_paid: 1, settled_at: 1791300000 - i }));
   const asked = [];
   const nwc = { listTransactions: async ({ limit, offset }) => { asked.push(offset); return { transactions: listed.slice(offset, offset + limit) }; } };
@@ -339,6 +341,15 @@ test('an NWC receipt opened from History loads from the wallet store\'s wallet, 
   await vm.fetchNWCTransaction('h120', wallet);
   assert.equal(vm.transaction.id, 'h120', 'found on the second page');
   assert.deepEqual(asked, [0, 100]);
+
+  // A wallet that claims another hash: found by the one its invoice names,
+  // the id every notification and History use.
+  const invoice = profileInvoiceFixture(21, 1_800_000_000_000);
+  const named = nwcWallet.nwcPaymentHash({ invoice });
+  listed.unshift({ invoice, payment_hash: 'ef'.repeat(32), type: 'incoming', amount: 21, settled_at: 1791300001 });
+  await vm.fetchNWCTransaction(named, wallet);
+  assert.equal(vm.transaction.id, named);
+  listed.shift();
 
   asked.length = 0;
   vm.transaction = null;

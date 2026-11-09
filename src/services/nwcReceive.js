@@ -190,8 +190,8 @@ export async function watchNwcPayments(nwc, onActivity) {
   const subscribe = async () => {
     const next = await client.subscribeNotifications((notification) => {
       if (stopped) return;
-      const hash = String(notification?.notification?.payment_hash || '').toLowerCase();
-      onActivity(/^[0-9a-f]{64}$/.test(hash) ? { paymentHash: hash } : {});
+      const hash = nwcPaymentHash(notification?.notification);
+      onActivity(hash ? { paymentHash: hash } : {});
     }, ['payment_received']);
     if (stopped) { next(); return; }
     const previous = unsubscribe;
