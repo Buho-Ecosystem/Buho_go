@@ -54,6 +54,10 @@ Screens (`docs/images/connect-wallet/`, from `scripts/check-nwc-pairing.mjs`):
 
 The return route with nothing waiting for it says so ("Nothing is waiting for this approval"), or, in an Android browser, offers to finish in the app. In kiosk mode these routes stay setup routes and links do nothing, as before.
 
+## Every request expires
+
+Every NWC connection is built by `src/services/nwcClient.js` (`createNwcProvider`, `createNwcClient`); nothing else calls the SDK's constructors. Its clients sign each request (kind 23194) with a NIP-40 `expiration` tag, after which NIP-47 says the wallet must not act on it. The window is `REQUEST_TTL_S`, 90 s: the SDK's 60 s wait for a payment's answer plus the lookups that follow an unanswered one (`nwcPayment.LOOKUP_DELAYS_MS`). A wallet that wakes late (an app on a phone, woken by a push) therefore refuses a payment BuhoGO has stopped watching, instead of paying after the person was told it was not confirmed. The tag goes on in `signEvent`, the SDK's public last step before a request leaves; the request is encrypted by then, so one window covers every method. A wallet that ignores the tag behaves as before.
+
 ## One relay connection per wallet
 
 An NWC wallet keeps one relay connection while the app runs (#395). The store owns it (`connectionStates[id].nwcInstance`), and every screen and service asks for it with `store.nwcConnection(walletId)` instead of building a `NostrWebLNProvider` of its own: Home, history and its pages, a transaction, Receive (invoice and payment check), sends, batch sends, Auto-Transfer, internal transfer, kiosk, Social Bucket and Learn & Earn. `LightningPaymentService` takes that connection and never closes it; reading a payment input (Lightning address, LNURL, invoice) needs none.
@@ -130,7 +134,8 @@ What 9 changed for BuhoGO:
 - **Reconnecting pool.** Each relay reconnects on its own, 1 s doubling to 5 min, and `close()` stops every loop, so closing a connection also ends its notification subscription.
 - **Amounts** must be whole, positive millisats. BuhoGO only asks for whole sats.
 - **Gone:** the multi-pay methods, which BuhoGO never used.
-- **Still missing:** a request `expiration` tag, and a heartbeat. A socket that dies without closing is noticed only by the next request or resubscribe; [Incoming payments](INCOMING_PAYMENTS.md) covers that with its catch-up read.
+- **Still missing:** a heartbeat. A socket that dies without closing is noticed only by the next request or resubscribe; [Incoming payments](INCOMING_PAYMENTS.md) covers that with its catch-up read.
+- **Request expiration** is ours: the SDK sends none, so `src/services/nwcClient.js` adds it (below).
 
 ## Checks
 

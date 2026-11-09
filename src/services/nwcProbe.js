@@ -7,7 +7,7 @@
  * Wallets that run on a phone wake by push, so a first silence is not the
  * end: `get_info` is asked once more before the wallet counts as silent.
  */
-import { NWCClient } from '@getalby/sdk';
+import { createNwcClient } from './nwcClient.js';
 import { parseNwcConnection } from '../utils/nwcConnection.js';
 import { nip47Methods, spendingLimitFrom } from '../utils/nwcWallet.js';
 import { NWC_ERROR, isNoAnswer, isRelayFailure, nwcError } from '../utils/nwcErrors.js';
@@ -34,7 +34,7 @@ import { NWC_ERROR, isNoAnswer, isRelayFailure, nwcError } from '../utils/nwcErr
  * @param {() => void} [options.onWaiting] called when the first ask went unanswered
  * @returns {Promise<NwcProbe>}
  */
-export async function probeNwcConnection(nwcUrl, { createClient = (url) => new NWCClient({ nostrWalletConnectUrl: url }), onWaiting } = {}) {
+export async function probeNwcConnection(nwcUrl, { createClient = createNwcClient, onWaiting } = {}) {
   const parsed = parseNwcConnection(nwcUrl);
   if (!parsed.ok) throw nwcError('NWC_INVALID', parsed.reason, { reason: parsed.reason });
 

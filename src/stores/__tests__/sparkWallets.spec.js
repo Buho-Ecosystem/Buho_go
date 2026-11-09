@@ -540,7 +540,7 @@ function otherProviders({ arkadeConnect = null, lnbitsConnect = null } = {}) {
   }
   return {
     '../providers/LNBitsWalletProvider': { LNBitsWalletProvider },
-    '@getalby/sdk': { NostrWebLNProvider },
+    '../services/nwcClient.js': { createNwcProvider: (url) => new NostrWebLNProvider({ nostrWalletConnectUrl: url }) },
     // The connection test (services/nwcProbe): the same wallet as above answers.
     '../services/nwcProbe.js': {
       probeNwcConnection: async (url) => ({

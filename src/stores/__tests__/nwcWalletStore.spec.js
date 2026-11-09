@@ -182,7 +182,7 @@ function connectionHarness() {
     async enable() {}
     close() { this.closed = true; }
   }
-  const { store } = createHarness({ deps: { '@getalby/sdk': { NostrWebLNProvider: FakeNWC } } });
+  const { store } = createHarness({ deps: { '../services/nwcClient.js': { createNwcProvider: (url) => new FakeNWC({ nostrWalletConnectUrl: url }) } } });
   store.wallets = [{ id: 'hub', type: 'nwc', name: 'Hub', nwcUrl: URL_A, metadata: {} }];
   store.refreshWalletData = async () => {};
   store._schedulePersist = () => {};

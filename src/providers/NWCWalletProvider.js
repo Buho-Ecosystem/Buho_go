@@ -11,7 +11,7 @@
  */
 
 import { WalletProvider } from './WalletProvider';
-import { NostrWebLNProvider } from '@getalby/sdk';
+import { createNwcProvider } from '../services/nwcClient.js';
 import { listNwcPayments } from '../services/nwcReceive.js';
 
 
@@ -39,9 +39,7 @@ export class NWCWalletProvider extends WalletProvider {
     }
 
     try {
-      this.nwc = new NostrWebLNProvider({
-        nostrWalletConnectUrl: this.nwcUrl,
-      });
+      this.nwc = createNwcProvider(this.nwcUrl);
       // Only marks the provider enabled; nothing goes over the network, so
       // there is nothing to retry. A wallet that does not answer shows up on
       // the first real request instead.

@@ -8,7 +8,7 @@ import { walletLightningAddress } from '../utils/walletLightningAddress.js';
  */
 
 import { defineStore } from 'pinia';
-import { NostrWebLNProvider } from '@getalby/sdk';
+import { createNwcProvider } from '../services/nwcClient.js';
 import { parseNwcConnection } from '../utils/nwcConnection.js';
 import { capabilitiesOf, nip47Methods, spendingLimitFrom, suggestedWalletName } from '../utils/nwcWallet.js';
 import { NWC_ERROR, isRelayFailure, nwcError } from '../utils/nwcErrors.js';
@@ -2738,7 +2738,7 @@ export const useWalletStore = defineStore('wallet', {
         // other callers (cloud restore) test here.
         const tested = walletData.probe || await probeNwcConnection(parsed.normalized);
 
-        const nwc = new NostrWebLNProvider({ nostrWalletConnectUrl: tested.normalized });
+        const nwc = createNwcProvider(tested.normalized);
         await nwc.enable();
 
         const wallet = {
@@ -3346,7 +3346,7 @@ export const useWalletStore = defineStore('wallet', {
       const attempt = (async () => {
         if (removingWallets.has(walletId)) throw new Error('Wallet is being removed');
         const epoch = epochOf(walletId);
-        const nwc = new NostrWebLNProvider({ nostrWalletConnectUrl: wallet.nwcUrl });
+        const nwc = createNwcProvider(wallet.nwcUrl);
         try {
           await nwc.enable();
           if (epochOf(walletId) !== epoch) throw new Error('Wallet was disconnected');

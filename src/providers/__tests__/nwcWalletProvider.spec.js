@@ -16,7 +16,8 @@ function loadProvider(sdk) {
     return module.exports;
   };
   const base = load('../WalletProvider.js', {});
-  return load('../NWCWalletProvider.js', { './WalletProvider': base, '@getalby/sdk': sdk }).NWCWalletProvider;
+  const nwcClient = { createNwcProvider: (url) => new sdk.NostrWebLNProvider({ nostrWalletConnectUrl: url }) };
+  return load('../NWCWalletProvider.js', { './WalletProvider': base, '../services/nwcClient.js': nwcClient }).NWCWalletProvider;
 }
 
 function fakeSdk() {

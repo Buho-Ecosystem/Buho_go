@@ -194,7 +194,7 @@ import { NWC_ERROR } from '../utils/nwcErrors.js'
 import { probeNwcConnection } from '../services/nwcProbe.js'
 import { readClipboardCrossPlatform } from '../utils/shopClipboard.js'
 import { listenForNwcConnection, listenForPairingReturn, takeNwcConnection } from '../services/nwcConnectionIntake.js'
-import { NWCClient } from '@getalby/sdk'
+import { createNwcClient } from '../services/nwcClient.js'
 import { Capacitor } from '@capacitor/core'
 import ConnectWalletChooser from '../components/nwc/ConnectWalletChooser.vue'
 import WalletApproveStep from '../components/nwc/WalletApproveStep.vue'
@@ -546,7 +546,7 @@ export default {
 
     /** Does the wallet know this connection yet (approve-known)? Replaceable in a test harness. */
     askWallet(connection) {
-      return walletKnowsConnection(connection, { createClient: (url) => new NWCClient({ nostrWalletConnectUrl: url }) });
+      return walletKnowsConnection(connection, { createClient: createNwcClient });
     },
 
     /**
