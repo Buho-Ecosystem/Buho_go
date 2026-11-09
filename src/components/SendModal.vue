@@ -928,31 +928,6 @@ export default {
           return;
         }
 
-        // Check for SA retailer QR codes (PnP, Checkers, Woolworths, etc.)
-        if (isSARetailerQR(trimmedData)) {
-          const result = convertToLightningAddress(trimmedData);
-          if (result) {
-            this.$emit('payment-detected', {
-              data: result.lightningAddress,
-              type: 'lightning_address',
-              source: SA_RETAIL_SOURCE,
-              merchant: result.merchant,
-            });
-            return;
-          }
-          const merchant = getMerchantInfo(trimmedData);
-          this.$q.notify({
-            type: 'warning',
-            message: this.$t('SA Retailer QR detected'),
-            caption: merchant
-              ? `${merchant.displayName} - ${this.$t('not yet supported')}`
-              : this.$t('This retailer is not yet supported'),
-            timeout: 4000,
-          });
-          this.isProcessing = false;
-          return;
-        }
-
         // Resolve URI wrappers: strip `lightning:`, and for BIP21
         // (`bitcoin:<addr>?amount=...&lightning=lnbc...`) prefer the embedded
         // BOLT11 invoice over the on-chain address.
@@ -1001,6 +976,34 @@ export default {
         // for inspection; the toast explains why nothing happened (this path
         // is practically scan-only — typing is gated by isValidManualInput).
         if (paymentType === 'unknown') {
+          // Check for SA retailer QR codes (PnP, Checkers, Woolworths, etc.)
+          // last of all, so a retailer's name inside an address or a Bitcoin
+          // link never counts. A till code is a bare code: inside a
+          // `bitcoin:` or `lightning:` link it is not one.
+          if (cleanData === trimmedData && isSARetailerQR(cleanData)) {
+            const result = convertToLightningAddress(cleanData);
+            if (result) {
+              this.$emit('payment-detected', {
+                data: result.lightningAddress,
+                type: 'lightning_address',
+                source: SA_RETAIL_SOURCE,
+                merchant: result.merchant,
+              });
+              return;
+            }
+            const merchant = getMerchantInfo(cleanData);
+            this.$q.notify({
+              type: 'warning',
+              message: this.$t('SA Retailer QR detected'),
+              caption: merchant
+                ? `${merchant.displayName} - ${this.$t('not yet supported')}`
+                : this.$t('This retailer is not yet supported'),
+              timeout: 4000,
+            });
+            this.isProcessing = false;
+            return;
+          }
+
           this.isProcessing = false;
           this.$q.notify({
             type: 'negative',
