@@ -154,6 +154,8 @@ export function createWalletWatch({
   let timer = null;
   let round = null;
   let lastRoundAt = -Infinity;
+  /** Wallets the last round left out: a timer round skips those read less often. */
+  let leftOut = [];
 
   const walletOf = (walletId) => wallets().find((w) => w.id === walletId) || null;
   /** Every wallet the watch keeps current. */
@@ -437,7 +439,9 @@ export function createWalletWatch({
     if (round) return round;
     lastRoundAt = now();
     dropRemoved();
-    const due = watched().filter((w) => reason !== 'timer' || dueOnTimer(w));
+    const all = watched();
+    const due = all.filter((w) => reason !== 'timer' || dueOnTimer(w));
+    leftOut = all.filter((w) => !due.includes(w)).map((w) => w.id);
     round = Promise.allSettled(due.map((w) => check(w.id, reason))).finally(() => { round = null; });
     return round;
   }
@@ -480,7 +484,14 @@ export function createWalletWatch({
     /** Back in front of the person, or back online: read now instead of at the next tick. */
     resume(reason = 'resume') {
       if (!started) return Promise.resolve();
-      if (round || now() - lastRoundAt < RESUME_SETTLE_MS) return round || Promise.resolve();
+      if (round || now() - lastRoundAt < RESUME_SETTLE_MS) {
+        // That round, running or just run, is usually the thawed timer's,
+        // which leaves out the wallets read less often: coming back reads
+        // those too.
+        const missed = leftOut;
+        leftOut = [];
+        return Promise.allSettled([round, ...missed.map((walletId) => check(walletId, reason))]);
+      }
       if (timer) clearTimer(timer);
       timer = null;
       return runRound(reason).finally(schedule);

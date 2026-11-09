@@ -471,3 +471,21 @@ test('only an NWC connection without payment notifications is quiet', () => {
   assert.equal(PAYMENTS.nwc.interval({ type: 'nwc', metadata: { notifications: ['payment_sent'] } }), QUIET_INTERVAL_MS);
   assert.equal(PAYMENTS.lnbits.interval, undefined);
 });
+
+test('coming back reads a wallet read less often, also when the thawed timer just ran without it', async () => {
+  const h = setup({ interval: (wallet) => (wallet.id === 'hub' ? QUIET_INTERVAL_MS : null) });
+  await h.watch.start();
+  const hubReads = () => h.calls.pages.filter(([id]) => id === 'hub').length;
+  const before = hubReads();
+  // Three minutes in the background: on return the frozen minute timer
+  // fires first (the quiet wallet is not due), then the return itself.
+  h.clock.t += 3 * 60_000;
+  h.timers.filter((t) => t.ms === WATCH_INTERVAL_MS && !t.cleared).at(-1).fn();
+  h.clock.t += 1000;
+  await h.watch.resume('resume');
+  await flush();
+  assert.equal(hubReads(), before + 1, 'read on return');
+  await h.watch.resume('resume');
+  await flush();
+  assert.equal(hubReads(), before + 1, 'once');
+});
