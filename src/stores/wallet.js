@@ -282,6 +282,9 @@ const CLAIM_MARK_SETTLE_MS = 10 * 60 * 1000;
 // plain in memory (utils/nwcAtRest). SEAL_PASSES bounds the sealing a save
 // waits for (persistState).
 const SEAL_PASSES = 3;
+
+/** NWC wallets that list get_budget but will not run it: see refreshNwcLimit. */
+const budgetNotOffered = new Set();
 const nwcAtRest = createNwcAtRest({
   encrypt: (plain) => deviceCrypto.encryptString(plain),
   decrypt: (envelope) => deviceCrypto.decryptString(envelope),
@@ -2865,19 +2868,27 @@ export const useWalletStore = defineStore('wallet', {
     /**
      * Read the spending limit an NWC connection shares (NWC-13 get_budget)
      * again. A connection that may not ask has none to show; an unanswered
-     * read keeps the last one.
+     * read keeps the last one. A wallet that lists get_budget yet will not
+     * run it is not asked again this session: each ask after a payment
+     * would be a wasted request, and on a phone wallet perhaps a notice.
      */
     async refreshNwcLimit(walletId) {
       const wallet = this.wallets.find((w) => w.id === walletId);
       const client = this.connectionStates[walletId]?.nwcInstance?.client;
-      if (!wallet || !capabilitiesOf(wallet).limit) {
+      if (!wallet || !capabilitiesOf(wallet).limit || budgetNotOffered.has(walletId)) {
         this.nwcLimits[walletId] = null;
         return null;
       }
       if (!client) return this.nwcLimits[walletId] ?? null;
       try {
         this.nwcLimits[walletId] = spendingLimitFrom(await client.getBudget());
-      } catch { /* the last known limit stands */ }
+      } catch (error) {
+        // Otherwise the last known limit stands.
+        if (isNotOffered(error)) {
+          budgetNotOffered.add(walletId);
+          this.nwcLimits[walletId] = null;
+        }
+      }
       return this.nwcLimits[walletId] ?? null;
     },
 
@@ -2898,7 +2909,7 @@ export const useWalletStore = defineStore('wallet', {
           this.refreshNwcLimit(walletId).catch(() => {});
         },
         onLimitRefused: ({ amountSats }) => {
-          this.nwcLimitRefusals[walletId] = { amountSats, at: Date.now() };
+          this.nwcLimitRefusals[walletId] = { amountSats };
           this.refreshNwcLimit(walletId).catch(() => {});
         },
       };

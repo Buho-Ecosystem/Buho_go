@@ -93,7 +93,8 @@ export async function payWithNwc(nwc, invoice, {
   try {
     answer = await nwc.sendPayment(invoice);
   } catch (error) {
-    if (error?.code === 'QUOTA_EXCEEDED') tell(onLimitRefused, { amountSats });
+    // An invoice without an amount says nothing about how low the limit is.
+    if (error?.code === 'QUOTA_EXCEEDED' && amountSats > 0) tell(onLimitRefused, { amountSats });
     if (!paymentHash || !isUncertainPaymentError(error)) throw error;
   }
 

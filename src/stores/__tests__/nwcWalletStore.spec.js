@@ -74,6 +74,17 @@ test('after a payment the shared limit is read again', async () => {
   assert.equal(store.nwcLimitFor('hub').remainingSats, 1000);
 });
 
+test('a wallet that lists get_budget but will not run it is not asked again', async () => {
+  const { store } = createHarness();
+  let asked = 0;
+  nwcWallet(store, { getBudget: async () => { asked += 1; throw Object.assign(new Error('not allowed'), { code: 'RESTRICTED' }); } });
+  store.wallets[0].metadata.methods = ['pay_invoice', 'get_budget'];
+  assert.equal(await store.refreshNwcLimit('hub'), null);
+  store.nwcPayOptions('hub').onSpent({ amountSats: 5 });
+  await store.refreshNwcLimit('hub');
+  assert.equal(asked, 1);
+});
+
 test('a limit whose period has ended no longer holds a payment back', () => {
   const { store } = createHarness();
   store.nwcLimits.hub = { totalSats: 10_000, usedSats: 10_000, remainingSats: 0, renewsAt: Date.now() - 1000, period: 'monthly' };

@@ -88,6 +88,14 @@ test('a payment tells what it learned about the limit: spent, or refused over on
   assert.deepEqual(told, [['spent', { amountSats: 5000 }], ['spent', { amountSats: 5000 }], ['refused', { amountSats: 5000 }]], 'nothing for an unknown outcome');
 });
 
+test('an invoice without an amount, refused over a limit, teaches nothing about the limit', async () => {
+  const told = [];
+  const capped = wallet({ pay: () => { throw sdk('limit', 'QUOTA_EXCEEDED'); } });
+  const options = { ...fast, decodeInvoice: () => ({ paymentHash: HASH, amountSats: 0 }), onLimitRefused: (info) => told.push(info) };
+  await assert.rejects(payWithNwc(capped, 'lnbc1', options), (e) => e.code === 'QUOTA_EXCEEDED');
+  assert.deepEqual(told, [], 'never "Under 0"');
+});
+
 test('a listener that throws never changes how a payment ended', async () => {
   const boom = () => { throw new Error('listener'); };
   const result = await payWithNwc(wallet({ pay: () => ({ preimage: PREIMAGE }) }), 'lnbc1', { ...fast, onSpent: boom });
