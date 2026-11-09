@@ -12,6 +12,7 @@ import { test } from 'node:test';
 import { readFileSync } from 'node:fs';
 import { transformSync } from 'esbuild';
 import * as rules from '../../utils/autoTransfer.js';
+import { PAY_REQUEST, invoiceFor, lnurlPayWith } from '../../utils/__tests__/lnurlPayFixtures.js';
 
 const LN = 'shop@getalby.com';
 const BTC = 'bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh';
@@ -24,7 +25,7 @@ globalThis.localStorage = {
   removeItem: (key) => storage.delete(key),
 };
 
-function load({ rates = { USD: 50_000 }, rateAge = 2 } = {}) {
+function load({ rates = { USD: 50_000 }, rateAge = 2, deps: extra = {} } = {}) {
   const { code } = transformSync(readFileSync(new URL('../autoWithdraw.js', import.meta.url), 'utf8'), { format: 'cjs' });
   const stamps = [];
   const deps = {
@@ -47,6 +48,7 @@ function load({ rates = { USD: 50_000 }, rateAge = 2 } = {}) {
       },
     },
     '../utils/autoTransfer.js': rules,
+    ...extra,
   };
   const module = { exports: {} };
   new Function('require', 'module', 'exports', code)((name) => deps[name] || {}, module, module.exports);
@@ -58,8 +60,8 @@ function load({ rates = { USD: 50_000 }, rateAge = 2 } = {}) {
 
 let nextId = 0;
 /** One Spark wallet "Shop" with a rule, a second Spark wallet "Savings". */
-function setup({ rule = {}, rates, rateAge, shopType = 'spark' } = {}) {
-  const aw = load({ rates, rateAge });
+function setup({ rule = {}, rates, rateAge, shopType = 'spark', deps } = {}) {
+  const aw = load({ rates, rateAge, deps });
   const id = `shop-${nextId++}`; // the engine's cooldowns are module-wide
   const read = deferred();
   const sent = [];
@@ -270,4 +272,40 @@ test('saving a rule switches it on and lifts a pause; old saved rules load in to
   assert.deepEqual(fresh.configs.old.threshold, { sats: 100000 });
   assert.deepEqual(fresh.configs.old.destination, { kind: 'lightning', address: LN });
   assert.ok(storage.get('buhoGO_auto_withdraw').includes('"destination"'), 'saved back in the new shape');
+});
+
+test('from LNbits or NWC, a Lightning address is paid only with an invoice for the rule\'s amount', async () => {
+  // The service answers the pay request, then an invoice: for the amount
+  // asked, for more, or with a refusal sent as an HTTP 500.
+  for (const shopType of ['lnbits', 'nwc']) {
+    for (const [answer, outcome] of [['honest', 'sent'], ['greedy', 'failed'], ['refusal', 'failed']]) {
+      const asked = [];
+      const get = async (url) => {
+        asked.push(url);
+        if (asked.length === 1) return { ok: true, status: 200, data: PAY_REQUEST };
+        if (answer === 'refusal') return { ok: false, status: 500, data: { status: 'ERROR', reason: 'Wallet frozen' } };
+        const sats = Number(new URL(url).searchParams.get('amount')) / 1000;
+        return { ok: true, status: 200, data: { pr: invoiceFor(answer === 'greedy' ? sats * 10 : sats) } };
+      };
+      const paid = [];
+      const { aw, id, provider, walletStore } = setup({ shopType, deps: {
+        '../utils/lnurlPay.js': lnurlPayWith(get),
+        '../services/nwcPayment.js': { payWithNwc: async (nwc, invoice) => { paid.push(invoice); return { payment_hash: 'h' }; } },
+      } });
+      provider.getBalance = async () => ({ balance: 50_000 });
+      walletStore.ensureLNBitsConnected = async () => ({ payInvoice: async ({ invoice }) => { paid.push(invoice); return { payment_hash: 'h' }; } });
+      walletStore.nwcConnection = async () => ({});
+      walletStore.nwcLimitFor = () => null;
+      await aw.checkAndExecute(id, 50_000, walletStore);
+      const [event] = aw.configs[id].events;
+      assert.equal(event.outcome, outcome, `${shopType} ${answer}`);
+      assert.equal(asked[0], 'https://getalby.com/.well-known/lnurlp/shop');
+      if (answer === 'honest') {
+        assert.deepEqual(paid, [invoiceFor(event.amount)], 'the invoice for exactly the amount moved');
+      } else {
+        assert.deepEqual(paid, [], `${shopType} ${answer}: nothing was paid`);
+        assert.equal(event.reason, answer === 'refusal' ? 'refused' : 'other');
+      }
+    }
+  }
 });

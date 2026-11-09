@@ -41,7 +41,7 @@ function makeAbortError(message) {
 
 /**
  * Normalize a CapacitorHttp response into the minimal fetch-Response
- * surface the LNURL call sites use ({ ok, status, json() }). The plugin
+ * surface the LNURL call sites use ({ ok, status, headers, json() }). The plugin
  * auto-parses JSON bodies; when a service mislabels its content type the
  * body arrives as a string, so json() parses it the way Response.json()
  * would (and, like it, throws on an empty or non-JSON body).
@@ -49,9 +49,18 @@ function makeAbortError(message) {
 function wrapNativeResponse(response) {
   const status = Number(response?.status) || 0;
   const body = response?.data;
+  const raw = response?.headers && typeof response.headers === 'object' ? response.headers : {};
+  // Header names arrive in whatever case the platform reports them.
+  const headers = new Map(Object.entries(raw).map(([name, value]) => [name.toLowerCase(), value]));
   return {
     ok: status >= 200 && status < 300,
     status,
+    headers: {
+      get: (name) => {
+        const value = headers.get(String(name).toLowerCase());
+        return value === undefined || value === null ? null : String(value);
+      },
+    },
     json: async () => {
       if (body && typeof body === 'object') return body;
       if (typeof body === 'string' && body.trim()) return JSON.parse(body);
@@ -117,12 +126,20 @@ export async function lnurlFetch(url, opts = {}) {
     method: 'GET',
     headers: { Accept: 'application/json' },
     ...(opts.signal ? { signal: opts.signal } : {}),
-    ...(opts.disableRedirects ? { redirect: 'error', credentials: 'omit', referrerPolicy: 'no-referrer' } : {}),
+    // A redirect is not followed. 'manual' answers it as a response that is
+    // not ok (status 0), as the native plugin answers with the 3xx itself, so
+    // it reads as a service problem, not as a lost connection.
+    ...(opts.disableRedirects ? { redirect: 'manual', credentials: 'omit', referrerPolicy: 'no-referrer' } : {}),
   });
 }
 
 /**
  * GET an LNURL endpoint and read its JSON body, bounded by a timeout.
+ *
+ * Two headers come back with it, null when absent or unreadable: `location`
+ * (where a redirect that was not followed points; a browser never reveals
+ * it) and `date` (the service's clock, which a browser shows only when the
+ * service allows it).
  *
  * Mirrors the call sites' historical `fetch` + `response.json()` pair:
  * HTTP error statuses resolve (ok: false) so each caller keeps its own
@@ -131,7 +148,8 @@ export async function lnurlFetch(url, opts = {}) {
  *
  * @param {string} url
  * @param {{ timeoutMs?: number, disableRedirects?: boolean, signal?: AbortSignal }} [opts]
- * @returns {Promise<{ ok: boolean, status: number, data: object|null }>}
+ * @returns {Promise<{ ok: boolean, status: number, data: object|null,
+ *   location: string|null, date: string|null }>}
  * @throws {Error} network failure, or an AbortError-named 'The server did
  *   not respond in time' on timeout
  */
@@ -157,7 +175,15 @@ export async function lnurlGetJson(url, { timeoutMs = 30000, disableRedirects = 
       data = null;
     }
     if (data && typeof data !== 'object') data = null;
-    return { ok: !!response.ok, status: Number(response.status) || 0, data };
+    const header = (name) => {
+      try {
+        const value = response.headers?.get?.(name);
+        return typeof value === 'string' && value ? value : null;
+      } catch {
+        return null;
+      }
+    };
+    return { ok: !!response.ok, status: Number(response.status) || 0, data, location: header('location'), date: header('date') };
   } catch (error) {
     if (error?.name === 'AbortError') {
       throw makeAbortError('The server did not respond in time');

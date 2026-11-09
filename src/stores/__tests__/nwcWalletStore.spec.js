@@ -105,6 +105,27 @@ test('an internal transfer into an NWC wallet takes the same path', async () => 
   assert.deepEqual(paid, ['lnbc210n1nwc']);
 });
 
+test('a transfer that fails keeps its code and says its amounts, so the dialog and Auto-Transfer know why', async () => {
+  const { store, setBalance } = receivingStore();
+  const lnbits = { payInvoice: async () => {
+    throw Object.assign(new Error('Lightning payment failed: fee 21 sats exceeds the 10 sats limit'), { code: 'LIGHTNING_FEE_ABOVE_LIMIT', feeSats: 21, limitSats: 10, origin: 'counterparty' });
+  } };
+  setBalance('kitty', 5000);
+  store.wallets.find((w) => w.id === 'kitty').name = 'Kitty';
+  store.ensureWalletConnectedForTransfer = async (id) => (id === 'kitty' ? lnbits : store.connectionStates[id].nwcInstance);
+  store.refreshWalletData = async () => {};
+  const quiet = console.error;
+  console.error = () => {};
+  try {
+    const error = await store.transferBetweenWallets('kitty', 'hub', 21, 'Rent').catch((e) => e);
+    assert.equal(error.message, 'The network fee would be ₿ 21, more than the ₿ 10 limit. Nothing was sent. Try again later. (Kitty → Hub)');
+    assert.deepEqual([error.code, error.feeSats, error.limitSats], ['LIGHTNING_FEE_ABOVE_LIMIT', 21, 10]);
+    assert.equal(error.origin, undefined, 'our words now, not a service\'s');
+  } finally {
+    console.error = quiet;
+  }
+});
+
 test('wallet lists say what each wallet may do: receive-only and send-only connections', () => {
   const { store } = createHarness();
   store.wallets = [

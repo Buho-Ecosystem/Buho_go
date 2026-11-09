@@ -358,6 +358,16 @@ test('a wallet that cannot pay disables the commit control and its hint shows in
   assert.doesNotMatch(open, /wallet-hint/)
 })
 
+test('the fee row writes amounts as settings does, and a limit as "Up to"', () => {
+  const row = (feeEstimate, useBip177Format = true) => ConfirmSheet.computed.feeRowValueText.call({ payment: { feeEstimate }, useBip177Format, $t: t })
+  assert.equal(row({ sats: 1234 }), `₿ ${n(1234)}`)
+  assert.equal(row({ sats: 1234 }, false), `${n(1234)} sats`)
+  assert.equal(row({ sats: 25, isLimit: true }), 'Up to ₿ 25')
+  assert.equal(row({ sats: 25, isLimit: true }, false), 'Up to 25 sats')
+  assert.equal(row({ sats: 0 }), 'Free')
+  assert.equal(row({ sats: 0, label: 'Free · instant' }), 'Free · instant')
+})
+
 test('canSubmit follows walletCanPay for every amount', () => {
   const vm = (walletCanPay) => ({ walletCanPay, isAmountAcceptable: true, commitGate: true })
   assert.equal(ConfirmSheet.computed.canSubmit.call(vm(true)), true)

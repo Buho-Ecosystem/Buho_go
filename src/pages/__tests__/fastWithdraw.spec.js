@@ -15,6 +15,8 @@ import * as lnurlMetadata from '../../utils/lnurlMetadata.js';
 import * as userErrors from '../../utils/userErrors.js';
 import * as deepLinkRouting from '../../utils/deepLinkRouting.js';
 import * as paymentLink from '../../utils/paymentLink.js';
+import * as lnurlPay from '../../utils/lnurlPay.js';
+import * as errorOrigin from '../../utils/errorOrigin.js';
 
 // Execute the production Options-API methods, replacing provider/UI imports
 // that these paths never use. IO is explicit so an accidental GET fails.
@@ -47,12 +49,12 @@ function harness(get = () => assert.fail('unexpected network request')) {
     '../utils/lnurlWithdraw.js': withdraw, '../utils/addressUtils.js': addresses,
     '../utils/lud23.js': addressRequests,
     '../utils/lnurlMetadata.js': lnurlMetadata,
-    '../utils/userErrors.js': userErrors,
+    '../utils/userErrors.js': userErrors, '../utils/errorOrigin.js': errorOrigin,
     '../services/addressRequestIntake.js': { offerAddressRequest: input => {
       assert.notEqual(addressRequests.isAddressRequest?.(input), true, 'withdrawal must not enter address-sharing consent');
       return false;
     } },
-    '../utils/lightning.js': lightning, '../utils/lud4.js': lud4,
+    '../utils/lightning.js': lightning, '../utils/lud4.js': lud4, '../utils/lnurlPay.js': lnurlPay,
     '../utils/lnurlHttp.js': { lnurlGetJson: async (...args) => { calls.push(args); return get(...args); } },
   }).default;
   const vm = { $t: text => text, ...component.methods, $refs: {},
@@ -90,7 +92,8 @@ test('missing/malformed parameters make exactly one normal GET and trust its res
 
 test('fallback preserves endpoint errors and normal payment metadata', async () => {
   const h = harness(async () => ({ ok: true, data: { status: 'ERROR', reason: 'Expired voucher' } }));
-  assert.deepEqual(await h.vm.fetchLNURLInfo('https://cash.example/ordinary'), { error: true, reason: 'Expired voucher' });
+  // The service's own words, labelled as theirs.
+  assert.deepEqual(await h.vm.fetchLNURLInfo('https://cash.example/ordinary'), { error: true, reason: 'Expired voucher', attribution: 'Reported by the server' });
   const pay = harness(async () => ({ ok: true, data: { tag: 'payRequest', minSendable: 1000, maxSendable: 2000, callback: metadata.callback } }));
   const result = await pay.vm.fetchLNURLInfo('https://cash.example/pay');
   assert.equal(result.lnurlType, 'payRequest');

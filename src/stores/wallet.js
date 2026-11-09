@@ -207,8 +207,6 @@ import {
   classifyTransportFailure,
   getUnsupportedBolt12OfferCopy,
   getUnsupportedSilentPaymentCopy,
-  getUserFriendlyError,
-  getUserFriendlyErrorMessage,
   unreachableReason,
 } from '../utils/userErrors';
 import { diagnoseConnection } from '../utils/connectivity.js';
@@ -999,7 +997,7 @@ export const useWalletStore = defineStore('wallet', {
      */
     showPaymentError(error, ctx = {}) {
       const t = ctx.t || ((key) => key);
-      const built = buildPaymentError(error, ctx, t);
+      const built = buildPaymentError(error, { useBip177Format: this.useBip177Format, ...ctx }, t);
       // No server answered: say whether the phone is offline, its network
       // has no internet, or only that service is down. A caller's own
       // reason still wins.
@@ -4121,17 +4119,38 @@ export const useWalletStore = defineStore('wallet', {
      * reason, NWC message, LNbits detail) verbatim when it's safe, so
      * the modal shows "Insufficient balance (A → B)" instead of the
      * generic "Transfer failed (A → B)". Tech-only failures fall back
-     * to a curated string inside getUserFriendlyError.
+     * to a curated string inside buildPaymentError.
      *
      * The raw error is logged at the call site via `console.error` for
      * debugging; the return value here is what the user actually sees.
      */
     _friendlyTransferError(error, fromWallet, toWallet, phase = 'transfer') {
-      const { description } = getUserFriendlyError(error, 'transfer');
+      // Translated, and with amounts as settings writes them: coded copy
+      // fills in figures ("The network fee would be ₿ 12, ...").
+      const { reason: description } = buildPaymentError(error, {
+        context: 'transfer',
+        useBip177Format: this.useBip177Format,
+      }, i18n.global.t.bind(i18n.global));
       const suffix = phase === 'invoice'
         ? `(${toWallet.name})`
         : `(${fromWallet.name} → ${toWallet.name})`;
       return `${description} ${suffix}`;
+    },
+
+    /**
+     * The error a failed transfer throws: _friendlyTransferError's text,
+     * with the original's code and the figures its copy reads. The payment
+     * dialog then says the same as for any payment, and Auto-Transfer still
+     * knows what happened (utils/autoTransfer.js failureReason) instead of
+     * guessing from the words. The text is ours, so it carries no
+     * service's mark (utils/errorOrigin.js).
+     */
+    _transferError(error, fromWallet, toWallet, phase = 'transfer') {
+      const friendly = new Error(this._friendlyTransferError(error, fromWallet, toWallet, phase));
+      for (const field of ['code', 'feeSats', 'limitSats', 'minSats', 'maxSats']) {
+        if (error?.[field] !== undefined) friendly[field] = error[field];
+      }
+      return friendly;
     },
 
     /**
@@ -4192,7 +4211,7 @@ export const useWalletStore = defineStore('wallet', {
           paymentResult = await fromProvider.transferToSparkAddress(sparkAddress, amountSats);
         } catch (sparkError) {
           console.error('Spark-native transfer error:', sparkError);
-          throw new Error(this._friendlyTransferError(sparkError, fromWallet, toWallet));
+          throw this._transferError(sparkError, fromWallet, toWallet);
         }
       } else {
         // Lightning path: create invoice on destination, pay from source
@@ -4200,7 +4219,7 @@ export const useWalletStore = defineStore('wallet', {
           invoice = await this.createInvoiceOnWallet(toWalletId, amountSats, transferMemo);
         } catch (invoiceError) {
           console.error('Invoice creation error:', invoiceError);
-          throw new Error(this._friendlyTransferError(invoiceError, fromWallet, toWallet, 'invoice'));
+          throw this._transferError(invoiceError, fromWallet, toWallet, 'invoice');
         }
 
         // The receiving half will settle this invoice: identify that
@@ -4221,7 +4240,7 @@ export const useWalletStore = defineStore('wallet', {
           }
         } catch (payError) {
           console.error('Payment error:', payError);
-          throw new Error(this._friendlyTransferError(payError, fromWallet, toWallet, 'pay'));
+          throw this._transferError(payError, fromWallet, toWallet, 'pay');
         }
       }
 

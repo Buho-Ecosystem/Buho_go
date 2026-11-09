@@ -23,6 +23,7 @@
  */
 
 import { isCounterpartyError } from './errorOrigin.js';
+import { formatAmount } from './amountFormatting.js';
 import { nwcErrorText } from './nwcErrors.js';
 
 const REASON_MAX_LENGTH = 280;
@@ -93,6 +94,8 @@ export function getUnsupportedSilentPaymentCopy($t = null) {
  * @param {number} [ctx.amountSats]
  * @param {string} [ctx.walletName] The paying wallet's name, for a shortfall
  *                                  it reported ("Not enough balance in X.").
+ * @param {boolean} [ctx.useBip177Format] How amounts in the copy are written:
+ *                                  ₿ (the default, as in settings) or sats.
  * @param {string} [ctx.title]      Pre-translated headline override. Use
  *                                  sparingly: the title is the dialog's
  *                                  identity, and overriding it weakens the
@@ -142,16 +145,20 @@ export function buildPaymentError(error, ctx = {}, $t = null) {
     reason = ctx.reason.trim();
     reasonSource = 'curated';
   } else {
-    const byCode = translateErrorCode(error, t, { walletName: ctx.walletName });
-    const breakdown = expandInsufficientFunds(raw, ctx.amountSats, t);
-    const translated = translateTechJargon(raw, t);
+    const byCode = translateErrorCode(error, t, { walletName: ctx.walletName, useBip177Format: ctx.useBip177Format });
+    // A service's own words are theirs: "insufficient balance" from a
+    // recipient is their shortfall, not the person's, and their prose is
+    // never rewritten into ours.
+    const theirs = isCounterpartyError(error);
+    const breakdown = theirs ? null : expandInsufficientFunds(raw, ctx.amountSats, t);
+    const translated = theirs ? null : translateTechJargon(raw, t);
     if (byCode) {
       reason = byCode;
       reasonSource = 'curated';
     } else if (breakdown) {
       reason = breakdown;
       reasonSource = 'curated';
-    } else if (OWN_WALLET_PAYS.has(context) && isInsufficientFunds(error, raw)) {
+    } else if (!theirs && OWN_WALLET_PAYS.has(context) && isInsufficientFunds(error, raw)) {
       // The paying wallet's own refusal: said in our words, never passed
       // through as if the recipient had said it.
       reason = ctx.walletName
@@ -161,7 +168,7 @@ export function buildPaymentError(error, ctx = {}, $t = null) {
     } else if (translated) {
       reason = translated;
       reasonSource = 'curated';
-    } else if (isUserSafeMessage(raw)) {
+    } else if (isUserSafeMessage(raw) && !(theirs && speaksForBuhoGo(raw))) {
       reason = truncate(raw.trim(), REASON_MAX_LENGTH);
       reasonSource = isCounterpartyError(error) ? 'upstream' : 'passthrough';
     } else {
@@ -381,7 +388,7 @@ export function formatInsufficientBalanceBreakdown(parts, t) {
  * It also explains the wallet store's WALLET_STATE_* refusals and a wallet
  * that is already connected. Exported for error surfaces that show one line.
  */
-export function translateErrorCode(error, t, { walletName = '' } = {}) {
+export function translateErrorCode(error, t, { walletName = '', useBip177Format = true } = {}) {
   // Nostr Wallet Connect: limits, permissions, no answer (utils/nwcErrors).
   // Asked first: the SDK's "no info event" failure carries no code.
   const nwc = error && typeof error === 'object' ? nwcErrorText(error, t, { walletName }) : null;
@@ -409,6 +416,38 @@ export function translateErrorCode(error, t, { walletName = '' } = {}) {
       return t('The Bitcoin fee changed. Review the updated fee and try again.');
     case 'ARKADE_OFFBOARD_FAILED':
       return t("Sending to a Bitcoin address didn't go through. Please try again.");
+    // LNURL-pay (utils/lnurlPay.js). Each of these stops before anything is paid.
+    case 'LNURL_REFUSED':
+      return t("The recipient's service declined. Nothing was sent.");
+    case 'LNURL_NOT_PAY_REQUEST':
+      return t("This link can't receive a payment.");
+    case 'LNURL_PAY_REQUEST_INVALID':
+      return t("The recipient's payment details aren't valid. Ask them for another way to pay.");
+    case 'LNURL_AMOUNT_OUT_OF_RANGE': {
+      const min = Number(error.minSats) || 0;
+      const max = Number(error.maxSats) || 0;
+      const amount = (sats) => formatAmount(sats, useBip177Format);
+      return min === max
+        ? t('This recipient only accepts {amount}.', { amount: amount(min) })
+        : t('This recipient accepts {min} to {max}.', { min: amount(min), max: amount(max) });
+    }
+    case 'LNURL_CURRENCY_UNAVAILABLE':
+      return t('The recipient no longer takes payments in {currency}. Send the amount in Bitcoin instead.', { currency: error.currency || '' });
+    case 'LNURL_INVOICE_MISSING':
+      return t("The recipient didn't send a valid payment request. Nothing was sent.");
+    case 'LNURL_INVOICE_MISMATCH':
+      return t('The recipient asked for a different amount than you confirmed. Nothing was sent.');
+    case 'LNURL_REDIRECTED':
+      return t("The recipient's service tried to redirect this payment. Nothing was sent. Ask them for another way to pay.");
+    case 'LNURL_INVOICE_EXPIRED':
+      return t("The recipient's payment request had expired. Nothing was sent. Try again.");
+    // A Spark route that costs more than the limit the payment allows
+    // (providers/BreezSparkWalletProvider.js payInvoice).
+    case 'LIGHTNING_FEE_ABOVE_LIMIT':
+      return t('The network fee would be {fee}, more than the {limit} limit. Nothing was sent. Try again later.', {
+        fee: formatAmount(Number(error.feeSats) || 0, useBip177Format),
+        limit: formatAmount(Number(error.limitSats) || 0, useBip177Format),
+      });
     default:
       return null;
   }
@@ -471,6 +510,9 @@ function translateTechJargon(msg, t) {
     }
     if (status === 401 || status === 403) {
       return t("This link doesn't accept this request.");
+    }
+    if (status === 429) {
+      return t('The service is busy. Wait a few minutes, then try again.');
     }
     if (status >= 500 && status <= 599) {
       return t('The server is having trouble. Try again in a moment.');
@@ -570,6 +612,18 @@ function isUserSafeMessage(msg) {
   // gRPC service paths.
   if (/\/[a-z.]+\.[a-z]+service\//i.test(trimmed)) return false;
   return true;
+}
+
+/**
+ * True when a service's text speaks as BuhoGO or asks for what only the
+ * person may hold: their recovery phrase or keys. No honest refusal does
+ * either, so such text is never shown as the service's reason (it stays in
+ * the technical details). Checked for a service's words only.
+ */
+const SPEAKS_FOR_BUHOGO = /\bbuho\s*go\b|recovery\s+phrase|seed\s+(?:phrase|words)|secret\s+(?:key|phrase|words)|private\s+key|mnemonic|\b(?:12|24)[\s-]+words?\b|wiederherstellungs|frase\s+de\s+recuperaci/i;
+
+function speaksForBuhoGo(msg) {
+  return SPEAKS_FOR_BUHOGO.test(msg);
 }
 
 function truncate(s, max) {

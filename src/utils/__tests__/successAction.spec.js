@@ -141,6 +141,17 @@ await test('format: url label drops the scheme and keeps the host visible', () =
   assert.ok(long.startsWith('shop.example.com'), `host kept: ${long}`);
   assert.ok(long.includes('…'), `ellipsized: ${long}`);
   assert.ok(long.length <= 42, `within budget: ${long.length}`);
+
+  // A host too long for the line keeps the end that names its site.
+  const lookalike = formatSuccessActionUrl('https://shop.example.com.account-verify-session.other.example/claim');
+  assert.ok(lookalike.startsWith('…') && lookalike.endsWith('.other.example'), lookalike);
+  assert.ok(lookalike.length <= 42, `within budget: ${lookalike.length}`);
+});
+
+await test('parse: a url action cannot hide its host behind credentials', () => {
+  for (const url of ['https://shop.example.com:x@other.example/claim', 'https://user@other.example/', 'http://:pw@other.example/']) {
+    assert.equal(parseSuccessAction({ tag: 'url', url, description: 'Your ticket' }), null, url);
+  }
 });
 
 await test('parse: aes requires ciphertext + iv', () => {

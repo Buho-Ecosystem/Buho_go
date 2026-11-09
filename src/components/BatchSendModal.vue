@@ -640,13 +640,12 @@ import { useWalletStore } from '../stores/wallet'
 import { fiatSymbol } from '../utils/fiatCurrencies.js'
 import { useAddressBookStore } from '../stores/addressBook'
 import { useTransactionMetadataStore } from '../stores/transactionMetadata'
-import LightningPaymentService, { resolveLUD17URL } from '../utils/lightning.js'
-import { lnurlGetJson } from '../utils/lnurlHttp.js'
-import { stripWrapperScheme } from '../utils/addressUtils'
-import { parseSuccessAction, resolveSuccessAction, formatSuccessActionUrl } from '../utils/successAction.js'
+import LightningPaymentService from '../utils/lightning.js'
+import { fetchPayRequest, lightningAddressUrl, linkAmountSats, requestPayInvoice } from '../utils/lnurlPay.js'
+import { lnurlToUrl } from '../utils/addressUtils'
+import { resolveSuccessAction, formatSuccessActionUrl } from '../utils/successAction.js'
 import { openInAppBrowser } from '../utils/inAppBrowser.js'
-import { bech32 } from 'bech32'
-import { getUserFriendlyError, formatInsufficientBalanceBreakdown } from '../utils/userErrors'
+import { buildPaymentError, formatInsufficientBalanceBreakdown } from '../utils/userErrors'
 import ContactAvatar from './AddressBook/ContactAvatar.vue'
 import SuccessCheckmark from './SuccessCheckmark.vue'
 import { haptics } from '../utils/haptics.js'
@@ -1129,13 +1128,15 @@ function onBeforeHide() {
 // Methods - Execution Helpers
 // ─────────────────────────────────────────────────────────────
 /**
- * Resolve a Lightning address to a payable invoice.
+ * The invoice for a Lightning address, asked for and checked by
+ * utils/lnurlPay.js like every other send: a refusal keeps the service's
+ * reason, and the invoice must be for the row's amount.
  *
  * Returns the LUD-09 `successAction` alongside the invoice because the raw
  * callback response is the only place it exists — the caller pays a bare
  * bolt11 and would otherwise never see the recipient's post-payment message.
- * It is parsed (validated) here and resolved after the payment settles, since
- * an `aes` secret needs the preimage.
+ * It is parsed (validated) there and resolved after the payment settles,
+ * since an `aes` secret needs the preimage.
  *
  * @returns {Promise<{pr: string, successAction: object|null}>}
  */
@@ -1143,124 +1144,35 @@ async function fetchLightningAddressInvoice(address, amountSats) {
   // LUD-11 (`disposable`) is ignored here on purpose: a batch fans out to
   // addresses that are already durable, and there is no per-payment surface
   // to offer a repeat from. The single-send path in Wallet.vue reads it.
-  const [username, domain] = address.split('@')
-  if (!username || !domain) {
+  const url = lightningAddressUrl(address)
+  if (!url) {
     throw new Error('Invalid Lightning address')
   }
-
-  // Fetch LNURL endpoint info
-  const endpoint = `https://${domain}/.well-known/lnurlp/${username}`
-  const response = await lnurlGetJson(endpoint)
-
-  if (!response.ok) {
-    throw new Error('Failed to fetch Lightning address info')
-  }
-
-  const data = response.data
-  if (!data || data.tag !== 'payRequest' || !data.callback || data.status === 'ERROR') {
-    throw new Error(data?.reason || 'Lightning address error')
-  }
-
-  // Validate amount
-  const amountMs = amountSats * 1000
-  if (data.minSendable && amountMs < data.minSendable) {
-    throw new Error(`Minimum: ${Math.ceil(data.minSendable / 1000)} sats`)
-  }
-  if (data.maxSendable && amountMs > data.maxSendable) {
-    throw new Error(`Maximum: ${Math.floor(data.maxSendable / 1000)} sats`)
-  }
-
-  // Request invoice - use & if callback already has query params
-  const separator = data.callback.includes('?') ? '&' : '?'
-  const callbackUrl = `${data.callback}${separator}amount=${amountMs}`
-  const invoiceResponse = await lnurlGetJson(callbackUrl)
-  if (!invoiceResponse.ok) {
-    throw new Error('Failed to get invoice')
-  }
-
-  const invoiceData = invoiceResponse.data
-  if (!invoiceData || invoiceData.status === 'ERROR') {
-    throw new Error(invoiceData?.reason || 'Invoice error')
-  }
-
-  return {
-    pr: invoiceData.pr,
-    successAction: parseSuccessAction(invoiceData.successAction, data.callback),
-  }
+  const payRequest = await fetchPayRequest(url)
+  const { pr, successAction } = await requestPayInvoice(payRequest, { amountSats })
+  return { pr, successAction }
 }
 
 // Resolve an LNURL-pay link (bech32 LNURL1… or LUD-17 lnurlp://…) to a payable
-// BOLT11 invoice. Same callback flow as fetchLightningAddressInvoice, differing
-// in two ways:
+// BOLT11 invoice. Same request as fetchLightningAddressInvoice, differing in
+// two ways:
 //   1. a Lightning address derives its endpoint from user@domain, whereas an
 //      LNURL must be decoded to its endpoint URL first;
-//   2. fixed-amount links (minSendable === maxSendable) are honored — the
-//      server dictates the amount, so `requestedSats` is overridden by the
-//      fixed amount rather than rejected.
+//   2. a fixed-amount link (minSendable === maxSendable) is paid its fixed
+//      amount when that is no more than the row's: the person confirmed the
+//      row's amount in the total, so a link never takes more than that. One
+//      that asks for more is refused with what it accepts.
 // Returns { pr, amountSats, successAction } so the caller can record the amount
 // actually sent and surface the recipient's LUD-09 message.
 async function fetchLnurlInvoice(lnurl, requestedSats) {
-  assertPaymentInput(lnurl);
-  const clean = stripWrapperScheme(lnurl)
-
-  // LUD-17 scheme (lnurlp://…) maps straight to https; otherwise bech32-decode.
-  let endpoint = resolveLUD17URL(clean)
-  if (!endpoint) {
-    try {
-      const decoded = bech32.decode(clean.toLowerCase(), 2000)
-      const bytes = bech32.fromWords(decoded.words)
-      endpoint = new TextDecoder().decode(new Uint8Array(bytes))
-    } catch (error) {
-      throw new Error(`Failed to decode LNURL: ${error.message}`)
-    }
+  assertPaymentInput(lnurl)
+  const url = lnurlToUrl(lnurl)
+  if (!url) {
+    throw new Error('Invalid LNURL')
   }
-
-  const response = await lnurlGetJson(endpoint)
-  if (!response.ok) {
-    throw new Error('Failed to fetch LNURL info')
-  }
-
-  const data = response.data
-  if (!data || data.status === 'ERROR') {
-    throw new Error(data?.reason || 'LNURL error')
-  }
-  if (data.tag !== 'payRequest') {
-    throw new Error('Not an LNURL-pay link')
-  }
-
-  // Honor fixed-amount links: when min === max the server fixes the amount, so
-  // we send exactly that and ignore the batch amount the user entered.
-  const isFixedAmount = data.minSendable === data.maxSendable
-  const amountSats = isFixedAmount
-    ? Math.floor(data.minSendable / 1000)
-    : requestedSats
-
-  const amountMs = amountSats * 1000
-  if (data.minSendable && amountMs < data.minSendable) {
-    throw new Error(`Minimum: ${Math.ceil(data.minSendable / 1000)} sats`)
-  }
-  if (data.maxSendable && amountMs > data.maxSendable) {
-    throw new Error(`Maximum: ${Math.floor(data.maxSendable / 1000)} sats`)
-  }
-
-  // Request invoice - use & if callback already has query params
-  const separator = data.callback.includes('?') ? '&' : '?'
-  const callbackUrl = `${data.callback}${separator}amount=${amountMs}`
-  const invoiceResponse = await lnurlGetJson(callbackUrl)
-  if (!invoiceResponse.ok) {
-    throw new Error('Failed to get invoice')
-  }
-
-  const invoiceData = invoiceResponse.data
-  if (!invoiceData || invoiceData.status === 'ERROR') {
-    throw new Error(invoiceData?.reason || 'Invoice error')
-  }
-
-  return {
-    pr: invoiceData.pr,
-    amountSats,
-    successAction: parseSuccessAction(invoiceData.successAction, data.callback),
-  }
+  const payRequest = await fetchPayRequest(url)
+  const invoice = await requestPayInvoice(payRequest, { amountSats: linkAmountSats(payRequest, requestedSats) })
+  return { pr: invoice.pr, amountSats: invoice.amountSats, successAction: invoice.successAction }
 }
 
 function getActiveWallet() {
@@ -1465,8 +1377,8 @@ async function startBatch() {
       // settle it the same way: pay the invoice.
       else if (addressType === 'lnurl') {
         const { pr: invoice, amountSats, successAction } = await fetchLnurlInvoice(address, result.amount)
-        // Record the amount actually sent — a fixed-amount link overrides the
-        // batch amount, so the summary must reflect what really went out.
+        // Record the amount actually sent: a fixed-amount link may take less
+        // than the row (never more), and the summary says what went out.
         result.amount = amountSats
         action = successAction
 
@@ -1518,7 +1430,7 @@ async function startBatch() {
       // summary lists what actually went wrong per address, not 20
       // copies of "Payment failed". Fires no global dialog: batch
       // failures are surfaced inline in the summary step.
-      result.error = getUserFriendlyError(error, 'payment', t).description
+      result.error = buildPaymentError(error, { context: 'payment', useBip177Format: walletStore.useBip177Format }, t).reason
     }
 
     // Small delay for UI feedback

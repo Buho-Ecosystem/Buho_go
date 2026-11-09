@@ -3,6 +3,7 @@ export default {
   "{name} didn't answer.": "{name} hat nicht geantwortet.",
   "There was no connection.": "Es gab keine Verbindung.",
   "There wasn't enough left for the fee.": "Für die Gebühr blieb nicht genug übrig.",
+  "The network fee was higher than allowed.": "Die Netzwerkgebühr war höher als erlaubt.",
   "{name} refused it.": "{name} hat sie abgelehnt.",
   "It may have gone through, so check {name} first.": "Sie ist vielleicht angekommen, also prüfe zuerst {name}.",
   "The balance couldn't be checked.": "Das Guthaben konnte nicht geprüft werden.",
