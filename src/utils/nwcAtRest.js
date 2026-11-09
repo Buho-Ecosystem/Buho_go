@@ -12,12 +12,30 @@
  * the same envelope serves every later save.
  *
  * The device key sits in the same storage, so this keeps the secret out of
- * anything that copies or shows the saved state (a storage dump, a support
- * export, a glance at developer tools), not out of code running in the app.
- * A lock with a PIN or passkey is what closes that.
+ * a copy of the saved wallets on their own (a support export, a glance at
+ * developer tools), not out of a copy of the whole storage, nor away from
+ * code running in the app. A lock with a PIN or passkey is what closes that.
+ *
+ * Older versions read only `nwcUrl`. One that finds none drops the wallet,
+ * then refuses to save fewer wallets than are stored, and after a removal
+ * saves without it. So the saved wallet keeps an `nwcUrl` too, with a
+ * stand-in for its secret: an older version keeps the wallet, shows it as
+ * not answering, and saves `sealedNwcUrl` back untouched, and the next
+ * newer version opens it again.
  */
 
 const isNwc = (wallet) => (wallet?.type || 'nwc') === 'nwc';
+
+/**
+ * The secret an older version finds: the private key 1. A valid key, so the
+ * connection still builds, that no wallet service has granted anything.
+ */
+export const STAND_IN_SECRET = `${'0'.repeat(63)}1`;
+
+/** The connection string with the stand-in for its secret. */
+export function withStandInSecret(nwcUrl) {
+  return String(nwcUrl).replace(/([?&]secret=)[^&#]*/gi, `$1${STAND_IN_SECRET}`);
+}
 
 /**
  * @param {{ encrypt: (plain: string) => Promise<string>, decrypt: (envelope: string) => Promise<string>, warn?: Function }} crypto
@@ -57,28 +75,29 @@ export function createNwcAtRest({ encrypt, decrypt, warn = () => {} }) {
     /** The wallet as it is written to storage. Synchronous: see `seal`. */
     toSaved(wallet) {
       if (!isNwc(wallet) || !envelopes.has(wallet.nwcUrl)) return wallet;
-      const { nwcUrl, ...rest } = wallet;
-      return { ...rest, sealedNwcUrl: envelopes.get(nwcUrl) };
+      return { ...wallet, nwcUrl: withStandInSecret(wallet.nwcUrl), sealedNwcUrl: envelopes.get(wallet.nwcUrl) };
     },
 
     /**
      * The wallet as read from storage, its string opened. One that cannot be
-     * opened (the device key is gone) comes back as it was saved, without
-     * `nwcUrl`, so the store sets it aside unchanged instead of losing it.
-     * `plain` tells that it was saved before strings were sealed.
+     * opened (the device key is gone) comes back without `nwcUrl`, the
+     * stand-in dropped, so the store sets it aside instead of connecting
+     * with a string that can do nothing, or losing it. `plain` tells that it
+     * was saved before strings were sealed.
      */
     async fromSaved(wallet) {
       if (!isNwc(wallet) || typeof wallet.sealedNwcUrl !== 'string') {
         return { wallet, plain: isNwc(wallet) && typeof wallet.nwcUrl === 'string' && !!wallet.nwcUrl };
       }
+      const { sealedNwcUrl, ...rest } = wallet;
+      delete rest.nwcUrl; // the stand-in, which can do nothing
       try {
-        const nwcUrl = await decrypt(wallet.sealedNwcUrl);
-        const { sealedNwcUrl, ...rest } = wallet;
+        const nwcUrl = await decrypt(sealedNwcUrl);
         envelopes.set(nwcUrl, sealedNwcUrl);
         return { wallet: { ...rest, nwcUrl }, plain: false };
       } catch (error) {
         warn(`[nwc] the connection of "${wallet.name || wallet.id}" could not be opened; it stays saved, unused:`, error?.message || error);
-        return { wallet, plain: false };
+        return { wallet: { ...rest, sealedNwcUrl }, plain: false };
       }
     },
   };

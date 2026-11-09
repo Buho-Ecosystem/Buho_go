@@ -6,6 +6,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { createHarness, decrypt } from './sparkWalletHarness.js';
+import { withStandInSecret } from '../../utils/nwcAtRest.js';
 import * as internalTransferDetails from '../../utils/internalTransferDetails.js';
 import * as userErrors from '../../utils/userErrors.js';
 
@@ -302,7 +303,7 @@ test('a connection string is saved encrypted and opened again on the next start'
   assert.equal(first.store.wallets[0].nwcUrl, URL_A, 'plain in memory, for every screen');
   const written = first.local.getItem('buhoGO_wallet_store');
   // The harness's envelope stand-in stays readable; utils/nwcAtRest.spec proves real encryption.
-  assert.equal(first.saved().wallets[0].nwcUrl, undefined, 'the plain string is not saved');
+  assert.equal(first.saved().wallets[0].nwcUrl, withStandInSecret(URL_A), 'the string is saved only with a stand-in for its secret');
   assert.equal(await decrypt(first.saved().wallets[0].sealedNwcUrl), URL_A, 'its envelope is');
   const legacy = JSON.parse(first.local.getItem('buhoGO_wallet_state'));
   assert.equal(legacy.connectedWallets[0].nwcString, undefined, 'nor in the copy for old versions');
