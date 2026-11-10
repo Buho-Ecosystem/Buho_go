@@ -7,7 +7,8 @@
  */
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { browserReturn, engineSendsCancel, pickPhoto, RETURN_GRACE_MS, TOUCH_SETTLE_MS } from '../photoPick.js';
+import { appResumeReturn, browserReturn, engineSendsCancel, pickPhoto, RETURN_GRACE_MS, TOUCH_SETTLE_MS } from '../photoPick.js';
+import { leavingForPicker, resetAppLock } from '../appLock.js';
 
 /** Minimal event target. */
 function target(extra = {}) {
@@ -21,7 +22,7 @@ function target(extra = {}) {
   };
 }
 
-function trip(t, overrides = {}) {
+function trip(overrides = {}) {
   const input = target({ files: [], value: 'old', clicks: 0 });
   input.click = () => { input.clicks += 1; };
   const win = target();
@@ -42,15 +43,15 @@ function trip(t, overrides = {}) {
   return { input, win, doc, events, lock, clock, handle, choose };
 }
 
-test('the picker opens from the tap, cleared so the same photo twice is still a change', (t) => {
-  const { input, lock } = trip(t);
+test('the picker opens from the tap, cleared so the same photo twice is still a change', () => {
+  const { input, lock } = trip();
   assert.equal(input.clicks, 1);
   assert.equal(input.value, '');
   assert.equal(lock.held, 1);
 });
 
-test('a chosen photo is delivered once; the lock is let go; nothing listens any more', (t) => {
-  const { input, win, doc, events, lock, choose } = trip(t);
+test('a chosen photo is delivered once; the lock is let go; nothing listens any more', () => {
+  const { input, win, doc, events, lock, choose } = trip();
   choose('qr.png');
   choose('qr.png');
   assert.deepEqual(events, [['picked', 'qr.png']]);
@@ -59,20 +60,20 @@ test('a chosen photo is delivered once; the lock is let go; nothing listens any 
   assert.equal(doc.count('visibilitychange'), 0);
 });
 
-test('closed without a photo, as the engine says (cancel, or a change with no file)', (t) => {
-  const a = trip(t);
+test('closed without a photo, as the engine says (cancel, or a change with no file)', () => {
+  const a = trip();
   a.input.fire('cancel');
   a.input.fire('cancel');
   assert.deepEqual(a.events, [['closed']]);
   assert.ok(a.lock.released >= 1);
-  const b = trip(t);
+  const b = trip();
   b.choose(null);
   assert.deepEqual(b.events, [['closed']]);
 });
 
 test('an engine that never says so: back in front with no photo within a moment is closed', (t) => {
   t.mock.timers.enable({ apis: ['setTimeout'] });
-  const { win, events, lock } = trip(t, { setTimer: setTimeout, clearTimer: clearTimeout });
+  const { win, events, lock } = trip({ setTimer: setTimeout, clearTimer: clearTimeout });
   win.fire('focus');
   t.mock.timers.tick(RETURN_GRACE_MS - 1);
   assert.deepEqual(events, []);
@@ -83,7 +84,7 @@ test('an engine that never says so: back in front with no photo within a moment 
 
 test('back in front and the photo arrives within the moment: picked, never closed', (t) => {
   t.mock.timers.enable({ apis: ['setTimeout'] });
-  const { win, events, choose } = trip(t, { setTimer: setTimeout, clearTimer: clearTimeout });
+  const { win, events, choose } = trip({ setTimer: setTimeout, clearTimer: clearTimeout });
   win.fire('focus');
   choose('late.jpg');
   t.mock.timers.tick(RETURN_GRACE_MS * 2);
@@ -92,7 +93,7 @@ test('back in front and the photo arrives within the moment: picked, never close
 
 test('a photo slower than the moment still arrives after "closed"', (t) => {
   t.mock.timers.enable({ apis: ['setTimeout'] });
-  const { doc, events, choose } = trip(t, { setTimer: setTimeout, clearTimer: clearTimeout });
+  const { doc, events, choose } = trip({ setTimer: setTimeout, clearTimer: clearTimeout });
   doc.fire('visibilitychange');
   t.mock.timers.tick(RETURN_GRACE_MS);
   choose('slow.jpg');
@@ -101,20 +102,20 @@ test('a photo slower than the moment still arrives after "closed"', (t) => {
 
 test('the page going to the background is not a return', (t) => {
   t.mock.timers.enable({ apis: ['setTimeout'] });
-  const { doc, events } = trip(t, { setTimer: setTimeout, clearTimer: clearTimeout });
+  const { doc, events } = trip({ setTimer: setTimeout, clearTimer: clearTimeout });
   doc.visibilityState = 'hidden';
   doc.fire('visibilitychange');
   t.mock.timers.tick(RETURN_GRACE_MS * 3);
   assert.deepEqual(events, []);
 });
 
-test('a touch on the scanner means the picker is gone; stop forgets the trip', (t) => {
-  const a = trip(t);
+test('a touch on the scanner means the picker is gone; stop forgets the trip', () => {
+  const a = trip();
   a.clock.now += TOUCH_SETTLE_MS;
   a.handle.back();
   a.handle.back();
   assert.deepEqual(a.events, [['closed']]);
-  const b = trip(t);
+  const b = trip();
   b.handle.stop();
   b.choose('after-close.jpg');
   b.input.fire('cancel');
@@ -125,7 +126,7 @@ test('a touch on the scanner means the picker is gone; stop forgets the trip', (
 test('in the app, back means the app resumed: a focus while the picker opens is not a return', (t) => {
   t.mock.timers.enable({ apis: ['setTimeout'] });
   const resumed = target();
-  const { win, events, choose } = trip(t, {
+  const { win, events, choose } = trip({
     setTimer: setTimeout,
     clearTimer: clearTimeout,
     watchReturn: (callback) => {
@@ -143,8 +144,8 @@ test('in the app, back means the app resumed: a focus while the picker opens is 
   assert.equal(resumed.count('resume'), 0, 'nothing listens once the trip is over');
 });
 
-test('the lock is held for the whole trip and let go only when it ends', (t) => {
-  const { lock, events, clock, handle } = trip(t);
+test('the lock is held for the whole trip and let go only when it ends', () => {
+  const { lock, events, clock, handle } = trip();
   assert.deepEqual(lock, { held: 1, released: 0 }, 'held from the moment the picker opens');
   clock.now += TOUCH_SETTLE_MS - 1;
   handle.back();
@@ -156,8 +157,8 @@ test('the lock is held for the whole trip and let go only when it ends', (t) => 
   assert.ok(lock.released >= 1, 'let go once the trip is over');
 });
 
-test('a touch while the picker is still opening is not the person back', (t) => {
-  const { events, clock, handle } = trip(t);
+test('a touch while the picker is still opening is not the person back', () => {
+  const { events, clock, handle } = trip();
   handle.back();
   clock.now += TOUCH_SETTLE_MS - 1;
   handle.back();
@@ -166,7 +167,7 @@ test('a touch while the picker is still opening is not the person back', (t) => 
 
 test('an engine that sends cancel is taken at its word: no guessing from focus or touches', (t) => {
   t.mock.timers.enable({ apis: ['setTimeout'] });
-  const { input, win, doc, events, clock, handle } = trip(t, {
+  const { input, win, doc, events, clock, handle } = trip({
     trustCancel: true, setTimer: setTimeout, clearTimer: clearTimeout,
   });
   assert.equal(handle.guesses, false);
@@ -190,6 +191,10 @@ test('which engines send cancel: from 2023 on, unknown ones count as older', () 
     desktop163: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.3 Safari/605.1.15',
     desktop172: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2.1 Safari/605.1.15',
     gecko: 'Mozilla/5.0 (X11; Linux x86_64; rv:120.0) Gecko/20100101 Firefox/120.0',
+    chromium112: 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/112.0.5615.49 Safari/537.36',
+    chromium113: 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/113.0.5672.63 Safari/537.36',
+    gecko90: 'Mozilla/5.0 (X11; Linux x86_64; rv:90.0) Gecko/20100101 Firefox/90.0',
+    gecko91: 'Mozilla/5.0 (X11; Linux x86_64; rv:91.0) Gecko/20100101 Firefox/91.0',
     unknown: 'SomeEngine/1.0',
   };
   const sends = Object.fromEntries(Object.entries(ua).map(([k, v]) => [k, engineSendsCancel(v)]));
@@ -202,6 +207,60 @@ test('which engines send cancel: from 2023 on, unknown ones count as older', () 
     desktop163: false,
     desktop172: true,
     gecko: true,
+    chromium112: false,
+    chromium113: true,
+    gecko90: false,
+    gecko91: true,
     unknown: false,
   });
+});
+
+test('no app lock is held unless the caller asks for it', () => {
+  resetAppLock();
+  pickPhoto(target({ files: [], value: '', click() {} }), {
+    onPicked() {}, onClosed() {}, trustCancel: true,
+  });
+  assert.equal(leavingForPicker(), false, 'going to the background now is leaving the app');
+});
+
+/** An app plugin whose addListener resolves when the test says so. */
+function appPlugin() {
+  const app = { listeners: 0, removed: 0, pending: [] };
+  app.addListener = (event, callback) => new Promise((resolve) => {
+    app.pending.push(() => {
+      app.listeners += 1;
+      app.fire = callback;
+      resolve({ remove() { app.removed += 1; } });
+    });
+  });
+  app.settle = async () => { for (const add of app.pending.splice(0)) add(); await new Promise((r) => setImmediate(r)); };
+  return app;
+}
+
+test('in the app, back is the app resuming, and unsubscribing removes the listener', async () => {
+  const app = appPlugin();
+  let backs = 0;
+  const unsubscribe = appResumeReturn(app)(() => { backs += 1; });
+  await new Promise((r) => setImmediate(r));
+  await app.settle();
+  app.fire();
+  assert.equal(backs, 1);
+  unsubscribe();
+  assert.equal(app.removed, 1);
+});
+
+test('unsubscribed before the listener was in place: it is removed once it is', async () => {
+  const app = appPlugin();
+  const unsubscribe = appResumeReturn(app)(() => {});
+  await new Promise((r) => setImmediate(r));
+  unsubscribe();
+  assert.equal(app.removed, 0, 'nothing to remove yet');
+  await app.settle();
+  assert.equal(app.removed, 1);
+});
+
+test('without the app plugin, watching for the return fails quietly', async () => {
+  const unsubscribe = appResumeReturn({ addListener: () => Promise.reject(new Error('not implemented')) })(() => {});
+  await new Promise((r) => setImmediate(r));
+  unsubscribe();
 });

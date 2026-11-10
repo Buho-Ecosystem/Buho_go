@@ -58,26 +58,10 @@
 import { Icon } from '@iconify/vue';
 import { Capacitor } from '@capacitor/core';
 import { App } from '@capacitor/app';
-import { browserReturn, pickPhoto } from '../utils/photoPick.js';
+import { appResumeReturn, browserReturn, pickPhoto } from '../utils/photoPick.js';
 import { openingSystemPicker } from '../utils/appLock.js';
 import { PHOTO_SCAN_ERROR, readQrFromImage } from '../utils/qrFromImage.js';
 import { isNativeScannerAvailable, readQrFromPicture } from '../utils/nativeScanner.js';
-
-/**
- * "Back" on Android: the app resumed. As `watchReturn` for pickPhoto. The
- * window gets focus back for a moment while the picker is still opening.
- */
-function appReturn(callback) {
-  let handle = null;
-  let gone = false;
-  App.addListener('resume', callback)
-    .then((h) => { if (gone) h.remove(); else handle = h; })
-    .catch(() => { /* no app plugin: only cancel and a touch end the trip */ });
-  return () => {
-    gone = true;
-    handle?.remove();
-  };
-}
 
 export default {
   name: 'QrPhotoButton',
@@ -116,15 +100,17 @@ export default {
     choose() {
       if (this.reading || !this.$refs.input) return;
       this.endTrip();
-      // Only Android sends the app to the background for the picker;
-      // elsewhere it is a sheet inside the app, and holding the lock back
-      // there would only let other ways of leaving go unlocked.
       const android = Capacitor.getPlatform() === 'android';
       this.trip = pickPhoto(this.$refs.input, {
         onPicked: (file) => { this.stopWatchingTouch(); this.read(file); },
         onClosed: () => { this.stopWatchingTouch(); if (this.alive) this.$emit('closed'); },
-        watchReturn: android ? appReturn : browserReturn(),
-        holdLock: android ? openingSystemPicker : () => () => {},
+        // On Android the window gets focus back for a moment while the
+        // picker is still opening: there the app resuming is the return.
+        watchReturn: android ? appResumeReturn(App) : browserReturn(),
+        // Only Android sends the app to the background for the picker;
+        // elsewhere it is a sheet inside the app, and holding the lock back
+        // there would only let other ways of leaving go unlocked.
+        holdLock: android ? openingSystemPicker : undefined,
       });
       if (this.trip.guesses) document.addEventListener('pointerdown', this.onTouchWhileOpen, true);
       this.$emit('open');

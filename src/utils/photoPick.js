@@ -17,14 +17,15 @@
  * again or the page is visible again (`browserReturn`). Not in the app: on
  * Android the window gets focus back for a moment while the picker is still
  * opening, and the page never turns hidden; there the app resuming is the
- * return.
+ * return (`appResumeReturn`).
  *
- * The app lock is held back for the trip (appLock.openingSystemPicker), since
- * on some phones the picker sends the app to the background.
+ * A caller whose picker can send the app to the background passes `holdLock`
+ * (appLock.openingSystemPicker), so the app lock does not engage for the
+ * trip. By default nothing is held.
  *
- * Browser objects are injected, so the rules are testable with Node alone.
+ * Browser and app objects are injected, so the rules are testable with Node
+ * alone.
  */
-import { openingSystemPicker } from './appLock.js';
 
 /**
  * After the person is back, how long a photo still has to arrive before the
@@ -82,6 +83,32 @@ export function browserReturn(win = globalThis.window, doc = globalThis.document
 }
 
 /**
+ * "Back" in the app: the app resumed. As `watchReturn` for pickPhoto.
+ *
+ * @param {{ addListener: (event: 'resume', callback: () => void) => Promise<{ remove: () => unknown }> }} app
+ *   the app plugin
+ * @returns {(callback: () => void) => () => void}
+ */
+export function appResumeReturn(app) {
+  return (callback) => {
+    let handle = null;
+    let unsubscribed = false;
+    Promise.resolve()
+      .then(() => app.addListener('resume', callback))
+      // Unsubscribed before the listener was in place: remove it once it is.
+      .then((h) => { if (unsubscribed) h.remove(); else handle = h; })
+      .catch(() => { /* no app plugin: only cancel and a touch end the trip */ });
+    return () => {
+      unsubscribed = true;
+      handle?.remove();
+    };
+  };
+}
+
+/** No lock to hold: pickPhoto's default. */
+const holdNothing = () => () => {};
+
+/**
  * Open the picker and report how the trip ends.
  *
  * Must be called from the person's tap: browsers open a picker only from one.
@@ -98,6 +125,7 @@ export function browserReturn(win = globalThis.window, doc = globalThis.document
  *   clearTimer?: typeof clearTimeout,
  *   holdLock?: () => () => void,
  * }} handlers
+ *   holdLock: hold the app lock back now; returns the release
  * @returns {{ back: () => void, stop: () => void, guesses: boolean }}
  *   back: the person touched the caller's screen, so the picker is gone
  *         (only on engines that guess, and not while it is still opening).
@@ -114,17 +142,18 @@ export function pickPhoto(input, {
   now = Date.now,
   setTimer = setTimeout,
   clearTimer = clearTimeout,
-  holdLock = openingSystemPicker,
+  holdLock = holdNothing,
 }) {
-  let closed = false;
-  let picked = false;
+  // 'open', then 'closed' (cancel, or a guess: a photo may still follow) or
+  // 'picked'; 'stopped' once the caller forgot the trip.
+  let state = 'open';
   let timer = null;
   const openedAt = now();
   const releaseLock = holdLock();
 
   const close = () => {
-    if (closed) return;
-    closed = true;
+    if (state !== 'open') return;
+    state = 'closed';
     clearTimer(timer);
     releaseLock();
     onClosed();
@@ -132,8 +161,8 @@ export function pickPhoto(input, {
   const onChange = () => {
     const file = input.files?.[0];
     if (!file) { close(); return; }
-    if (picked) return;
-    picked = true;
+    if (state === 'picked' || state === 'stopped') return;
+    state = 'picked';
     clearTimer(timer);
     releaseLock();
     stopListening();
@@ -141,7 +170,7 @@ export function pickPhoto(input, {
   };
   const onCancel = () => close();
   const onReturn = () => {
-    if (closed || picked) return;
+    if (state !== 'open') return;
     clearTimer(timer);
     timer = setTimer(close, graceMs);
   };
@@ -163,13 +192,12 @@ export function pickPhoto(input, {
   return {
     guesses: !trustCancel,
     back() {
-      if (trustCancel || closed || picked) return;
+      if (trustCancel || state !== 'open') return;
       if (now() - openedAt < TOUCH_SETTLE_MS) return;
       close();
     },
     stop() {
-      closed = true;
-      picked = true;
+      state = 'stopped';
       clearTimer(timer);
       releaseLock();
       stopListening();
