@@ -146,6 +146,22 @@
                 <div class="frame-corner bottom-right"></div>
               </div>
             </div>
+
+            <div class="column items-center q-mt-md">
+              <QrPhotoButton
+                tone="page"
+                @open="onPhotoOpen"
+                @closed="onPhotoClosed"
+                @read="onPhotoRead"
+                @fail="onPhotoFail"
+              />
+              <!-- Always there, so a note that appears is announced. -->
+              <p
+                class="text-center q-mb-none"
+                :class="[photoNote ? 'q-mt-sm' : '', $q.dark.isActive ? 'text-grey-4' : 'text-grey-7']"
+                aria-live="polite"
+              >{{ photoNote }}</p>
+            </div>
           </div>
         </div>
 
@@ -178,8 +194,9 @@
 <script>
 import { isAddressRequest } from '../utils/lud23.js';
 import QrScanner from 'qr-scanner'
-import { createQrScanner } from '../utils/qrScanner'
+import { createPhotoPause, createQrScanner, pauseForPhoto, scannerFor } from '../utils/qrScanner'
 import { isNativeScannerAvailable } from '../utils/nativeScanner'
+import QrPhotoButton from '../components/QrPhotoButton.vue'
 import ScannerOverlay from '../components/ScannerOverlay.vue'
 import NWCConnectStep from '../components/nwc/NWCConnectStep.vue'
 import NWCWalletFound from '../components/nwc/NWCWalletFound.vue'
@@ -248,6 +265,7 @@ function readOwnAddresses() {
 export default {
   name: 'NWCSetupPage',
   components: {
+    QrPhotoButton,
     ScannerOverlay,
     NWCConnectStep,
     NWCWalletFound,
@@ -300,6 +318,8 @@ export default {
       nativeScannerActive: false,
       cameraError: false,
       cameraErrorMessage: '',
+      // Choose photo: what the last photo gave instead of a code.
+      photoNote: '',
       cameraLoading: true,
       qrScanner: null,
     }
@@ -328,6 +348,13 @@ export default {
     nwcString() {
       this.errorMessage = '';
     },
+  },
+  created() {
+    this.photoPause = createPhotoPause({
+      scanner: () => this.qrScanner,
+      canResume: () => this.showScanner && !this.cameraError,
+      restart: () => this.startQrScanner(),
+    });
   },
   // A connection opened from another app, or scanned or pasted on Home,
   // arrives here and is tested at once; while the sheet is open, a new one
@@ -774,6 +801,7 @@ export default {
 
     closeScanner() {
       this.stopQrScanner();
+      this.photoNote = '';
       this.nativeScannerActive = false;
       this.showScanner = false;
       this.cameraError = false;
@@ -782,8 +810,11 @@ export default {
     },
 
     async startQrScanner() {
+      // The photo picker is open: the camera comes back once it closes.
+      if (this.photoPause.paused) return;
       try {
-        if (!this.$refs.videoElement) {
+        const videoEl = this.$refs.videoElement;
+        if (!videoEl) {
           throw new Error('Video element not found');
         }
 
@@ -792,8 +823,8 @@ export default {
           throw new Error('No camera found on this device.');
         }
 
-        this.qrScanner = createQrScanner(
-          this.$refs.videoElement,
+        this.qrScanner = scannerFor(videoEl, this.qrScanner, () => createQrScanner(
+          videoEl,
           (result) => this.handleQrScan(result.data),
           {
             returnDetailedScanResult: false,
@@ -801,9 +832,11 @@ export default {
             highlightCodeOutline: true,
             preferredCamera: 'environment'
           }
-        );
+        ));
 
         await this.qrScanner.start();
+        // Choose photo was tapped while the camera was still starting.
+        if (this.photoPause.paused) pauseForPhoto(this.qrScanner);
         this.cameraLoading = false;
         this.cameraError = false;
 
@@ -814,6 +847,7 @@ export default {
     },
 
     stopQrScanner() {
+      this.photoPause.forget();
       if (this.qrScanner) {
         this.qrScanner.stop();
         this.qrScanner.destroy();
@@ -848,6 +882,26 @@ export default {
         message: this.$t('Invalid QR code'),
         caption: this.$t(reasonKey),
       });
+    },
+
+    /** Choose photo: the camera goes off while the picker is open. */
+    onPhotoOpen() {
+      this.photoNote = '';
+      this.photoPause.pause();
+    },
+
+    onPhotoClosed() {
+      this.photoPause.resume();
+    },
+
+    onPhotoRead(text) {
+      this.handleQrScan(text);
+      this.photoPause.resume();
+    },
+
+    onPhotoFail({ message }) {
+      this.photoNote = message;
+      this.photoPause.resume();
     },
 
     onCameraError(error) {

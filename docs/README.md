@@ -34,6 +34,7 @@ How each feature works and the rules that keep it right, written for developers 
 | [Payment links](PAYMENT_LINKS.md) | `buhogo://pay?request=…`: links that open BuhoGO in particular, for checkouts that list wallets |
 | [Pay from another wallet](PAY_FROM_ANOTHER_WALLET.md) | Receive opens another wallet app on the phone with the request; the wallet catalog for iPhone and where each link comes from |
 | [QR scanning without Play services](QR_SCANNER_FALLBACK.md) | Scanning on phones without Google Play services |
+| [Reading a QR code from a photo](SCAN_FROM_PHOTO.md) | Choose photo in every scanner: the picker, the camera, the app lock, how a picture is read |
 
 ## Backup and identity
 
