@@ -234,18 +234,22 @@ if (wanted('send')) {
   await shot(page, 'send-scanner-no-code');
 
   // While a large photo is read, the button says so, keeps the focus and
-  // takes no second tap.
+  // takes no second tap. Seen and tapped in the frame the state shows: on a
+  // fast machine the read is over within a screenshot's time.
   await choosePhoto(page, 'big-no-code.jpg');
-  const reading = page.getByRole('button', { name: 'Reading photo…' });
-  await reading.waitFor({ timeout: 5000 });
-  await shot(page, 'send-scanner-reading');
-  assert.deepEqual(await reading.evaluate((el) => ({
-    busy: el.getAttribute('aria-busy'),
-    disabled: el.getAttribute('aria-disabled'),
-    focused: document.activeElement === el,
-  })), { busy: 'true', disabled: 'true', focused: true });
-  const secondPicker = page.waitForEvent('filechooser', { timeout: 600 }).then(() => true, () => false);
-  await reading.evaluate((el) => el.click());
+  const secondPicker = page.waitForEvent('filechooser', { timeout: 1500 }).then(() => true, () => false);
+  const whileReading = await page.waitForFunction(() => {
+    const el = document.querySelector('.web-scan-surface button[aria-busy="true"]');
+    if (!el) return null;
+    const state = {
+      label: el.textContent.trim(),
+      disabled: el.getAttribute('aria-disabled'),
+      focused: document.activeElement === el,
+    };
+    el.click();
+    return state;
+  }, null, { timeout: 5000, polling: 'raf' });
+  assert.deepEqual(await whileReading.jsonValue(), { label: 'Reading photo…', disabled: 'true', focused: true });
   assert.equal(await secondPicker, false, 'a tap while reading opens no second picker');
   await page.getByText('No QR code in this photo. Choose one that shows the whole code.').waitFor({ timeout: 30000 });
   await page.getByRole('button', { name: 'Choose photo' }).waitFor();
