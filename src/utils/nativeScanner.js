@@ -261,9 +261,8 @@ export async function startLiveScan({
   };
 }
 
-/** The one file a chosen picture is copied to for the native decoder (app cache, removed after). */
 /** The start of each cache copy's name; every read has its own copy. */
-export const PICTURE_COPY = 'scanned-picture';
+const PICTURE_COPY = 'scanned-picture';
 
 /** A Blob as base64, without the data-URL prefix. */
 function blobToBase64(blob) {

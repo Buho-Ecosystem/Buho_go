@@ -37,17 +37,17 @@ export const PHOTO_SCAN_ERROR = Object.freeze({
  * screenshot's code in a moment, the last a code that is small in a large
  * photo. A picture smaller than a look is read at its own size, once.
  */
-export const LOOK_SIDES = Object.freeze([800, 1600, 3200]);
+const LOOK_SIDES = Object.freeze([800, 1600, 3200]);
 
 /** The quick look after the native decoder found nothing: a screenshot's size. */
-export const AFTER_NATIVE_SIDES = Object.freeze([1600]);
+const AFTER_NATIVE_SIDES = Object.freeze([1600]);
 
 /**
  * How long the native decoder may take before the web view's looks take
  * over. A 48-megapixel photo reads in about a second; a decoder that never
  * answers must not leave "Reading photo" spinning.
  */
-export const NATIVE_READ_MS = 10_000;
+const NATIVE_READ_MS = 10_000;
 
 /**
  * The sizes to read a `width` x `height` picture at: each look scaled to
@@ -156,11 +156,14 @@ export async function readQrFromImage(file, { readNative = null, nativeTimeoutMs
     found = await Promise.race([
       readNative(file),
       new Promise((_, reject) => {
-        timer = setTimeout(() => reject(coded(PHOTO_SCAN_ERROR.UNREADABLE, 'The native decoder did not answer.')), nativeTimeoutMs);
+        timer = setTimeout(() => reject(new Error('The native decoder did not answer.')), nativeTimeoutMs);
       }),
     ]);
-  } catch {
-    // The native decoder cannot run here, cannot open this file, or did not answer.
+  } catch (err) {
+    // The native decoder cannot run here, cannot open this file, or did not
+    // answer: the web view reads it. Said once, so a device where the native
+    // read never works can be told apart from one with unreadable photos.
+    console.warn('[qrFromImage] native read failed, reading in the web view:', err?.message || err);
     return lookThrough(file, looks);
   } finally {
     clearTimeout(timer);

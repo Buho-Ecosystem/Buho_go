@@ -7,7 +7,7 @@
  */
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { AFTER_NATIVE_SIDES, LOOK_SIDES, PHOTO_SCAN_ERROR, lookSizes, readQrFromImage } from '../qrFromImage.js';
+import { PHOTO_SCAN_ERROR, lookSizes, readQrFromImage } from '../qrFromImage.js';
 
 /** A picture of the given size; `closed` tells whether it was released. */
 function picture(width, height) {
@@ -36,7 +36,6 @@ test('the looks grow from a screenshot\'s size to a large photo\'s, never past t
   assert.deepEqual(lookSizes(600, 400), [{ width: 600, height: 400 }], 'a small picture is read once, at its size');
   assert.deepEqual(lookSizes(8064, 6048).at(-1), { width: 3200, height: 2400 }, 'a 48-megapixel photo is capped');
   assert.deepEqual(lookSizes(0, 0), []);
-  assert.deepEqual(LOOK_SIDES, [800, 1600, 3200]);
 });
 
 test('the first look that finds a code answers; the picture is released', async () => {
@@ -80,7 +79,6 @@ test('the native decoder found nothing: one quick look for a light code on a dar
   const text = await readQrFromImage({}, { readNative: async () => null, open: async () => picture(1179, 2556), look });
   assert.equal(text, 'inverted');
   assert.deepEqual(seen, [1600]);
-  assert.deepEqual(AFTER_NATIVE_SIDES, [1600]);
 });
 
 test('the native decoder found nothing and the quick look cannot open it either: still "no code"', async () => {
@@ -91,7 +89,8 @@ test('the native decoder found nothing and the quick look cannot open it either:
   );
 });
 
-test('the native decoder cannot run here: the full looks read the picture', async () => {
+test('the native decoder cannot run here: the full looks read the picture, and the log says why', async (t) => {
+  const warn = t.mock.method(console, 'warn', () => {});
   const { look, seen } = looks('found', [3200]);
   const text = await readQrFromImage({}, {
     readNative: async () => { throw Object.assign(new Error('no plugin'), { code: 'NATIVE_UNAVAILABLE' }); },
@@ -100,10 +99,24 @@ test('the native decoder cannot run here: the full looks read the picture', asyn
   });
   assert.equal(text, 'found');
   assert.deepEqual(seen, [800, 1600, 3200]);
+  assert.equal(warn.mock.callCount(), 1);
+  assert.match(String(warn.mock.calls[0].arguments.at(-1)), /no plugin/);
+});
+
+test('the native decoder cannot run, and the web view cannot open the file either: UNREADABLE', async (t) => {
+  t.mock.method(console, 'warn', () => {});
+  await assert.rejects(
+    readQrFromImage({}, {
+      readNative: async () => { throw new Error('no plugin'); },
+      open: async () => { throw new Error('not a picture'); },
+    }),
+    (err) => err.code === PHOTO_SCAN_ERROR.UNREADABLE,
+  );
 });
 
 test('a native decoder that never answers: the web looks take over, the button does not spin on', async (t) => {
   t.mock.timers.enable({ apis: ['setTimeout'] });
+  t.mock.method(console, 'warn', () => {});
   const { look, seen } = looks('found', [800]);
   const reading = readQrFromImage({}, {
     readNative: () => new Promise(() => {}),

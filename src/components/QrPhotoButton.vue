@@ -134,6 +134,9 @@ export default {
         });
         if (this.alive) this.$emit('read', text);
       } catch (err) {
+        // No code, or not a picture, is the person's to read; anything else
+        // is a fault, and the person still gets the plain sentence.
+        if (!Object.values(PHOTO_SCAN_ERROR).includes(err?.code)) console.warn('[QrPhotoButton] reading the photo failed:', err);
         if (this.alive) this.$emit('fail', { code: err?.code, message: this.messageFor(err?.code) });
       } finally {
         this.reading = false;
