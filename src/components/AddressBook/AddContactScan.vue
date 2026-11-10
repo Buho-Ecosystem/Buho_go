@@ -132,8 +132,7 @@
       :title="$t('Scan QR Code')"
       :prompt="$t('Point your camera at a Nostr profile, or a Lightning, Spark, or Bitcoin address.')"
       continuous
-      :note="photoNote"
-      @photo-open="photoNote = ''"
+      v-model:note="photoNote"
       @scanned="onDetect"
       @close="$emit('switch-to-search')"
     />

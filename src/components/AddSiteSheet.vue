@@ -209,8 +209,7 @@
       :title="$t('Scan the code')"
       :prompt="$t('Point your camera at the code the website shows.')"
       continuous
-      :note="photoNote"
-      @photo-open="photoNote = ''"
+      v-model:note="photoNote"
       @scanned="onQRDetect"
       @close="switchTo('paste')"
     />

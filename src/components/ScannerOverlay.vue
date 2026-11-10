@@ -39,8 +39,10 @@
     - prompt      hint text shown above the action slot
     - continuous  keep scanning after a detect (multi-field capture, e.g. LNbits).
                   Default false: stop after the first code so the parent can close.
-    - note        the caller's own line in place of the prompt, e.g. that the
-                  code in a photo is not one it can use
+    - note        (v-model:note) the caller's own line in place of the
+                  prompt, e.g. that the code in a photo is not one it can use.
+                  Cleared when Choose photo is tapped again, so the same note
+                  twice is announced twice.
 
   Choose photo (QrPhotoButton) reads the code in a picture instead. The
   camera is off while the picker is open and comes back when it closes
@@ -54,6 +56,7 @@
                       picture, so a caller that skips codes it cannot use can
                       say so instead of staying silent
     - close           user dismissed the scanner (X / back / camera error)
+    - update:note     '' when a new photo trip starts (v-model:note)
 -->
 <template>
   <teleport to="body">
@@ -166,7 +169,7 @@ export default {
     note: { type: String, default: '' },
   },
 
-  emits: ['scanned', 'close', 'photo-open'],
+  emits: ['scanned', 'close', 'update:note'],
 
   data() {
     return {
@@ -196,7 +199,8 @@ export default {
   computed: {
     /** The line under the frame; nothing when the camera could not run and there is no note. */
     promptText() {
-      if (this.photoNote || this.note) return this.photoNote || this.note;
+      const note = this.photoNote || this.note;
+      if (note) return note;
       if (this.error) return '';
       return this.prompt || this.$t('Point your camera at a QR code');
     },
@@ -207,6 +211,12 @@ export default {
       if (now) this.start();
       else this.stop();
     },
+  },
+
+  created() {
+    // Set once the overlay is on its way out: a photo trip that ends after
+    // that must not start the camera again.
+    this.unmounting = false;
   },
 
   mounted() {
@@ -413,8 +423,8 @@ export default {
     onPhotoOpen() {
       this.photoNote = '';
       this.photoOpen = true;
-      // The parent clears its own note, so the same note twice is announced twice.
-      this.$emit('photo-open');
+      // The parent's note too, so the same note twice is announced twice.
+      this.$emit('update:note', '');
       if (!this.error) this.stop();
     },
 
