@@ -9,16 +9,23 @@
  * that must not start while the app is locked (the contact chat's key and
  * relay connections) asks here instead of guessing.
  *
+ * It also holds the lock back while a system picker the app opened is open
+ * (openingSystemPicker): App.vue asks leavingForPicker when the app goes to
+ * the background and backFromPickerTooLate when it comes back.
+ *
  * Plain module state, no Vue: usable from boot files and unit tests alike.
  */
 
 let known = false;
 let locked = false;
-/** When the open system picker was opened (null: none), and its token. */
+/** When the system picker the lock is held back for was opened (null: none), and its token. */
 let pickerOpenedAt = null;
 let pickerToken = 0;
-/** The app is in the background for that picker: when the picker was opened (null: it is not). */
-let awayForPickerSince = null;
+/**
+ * The app is in the background for that picker: when the trip there started,
+ * the moment the picker was opened (null: it is not away for a picker).
+ */
+let awayTripStartedAt = null;
 /** @type {Array<() => void>} */
 let waiting = [];
 /** @type {Array<() => void>} */
@@ -93,7 +100,7 @@ export const PICKER_AWAY_MS = 2 * 60 * 1000;
 export function openingSystemPicker(now = Date.now()) {
   const token = ++pickerToken;
   pickerOpenedAt = now;
-  awayForPickerSince = null;
+  awayTripStartedAt = null;
   return () => {
     if (token === pickerToken) pickerOpenedAt = null;
   };
@@ -107,7 +114,7 @@ export function openingSystemPicker(now = Date.now()) {
 export function leavingForPicker(now = Date.now()) {
   if (pickerOpenedAt === null || now - pickerOpenedAt > PICKER_AWAY_MS) return false;
   // Counted from opening the picker, so the trip as a whole is capped.
-  awayForPickerSince = pickerOpenedAt;
+  awayTripStartedAt = pickerOpenedAt;
   return true;
 }
 
@@ -123,21 +130,22 @@ export function leavingForPicker(now = Date.now()) {
  * @param {number} [now]
  */
 export function backFromPickerTooLate(now = Date.now()) {
-  const tripStartedAt = awayForPickerSince;
-  awayForPickerSince = null;
+  const startedAt = awayTripStartedAt;
+  awayTripStartedAt = null;
   pickerOpenedAt = null;
-  return tripStartedAt !== null && now - tripStartedAt > PICKER_AWAY_MS;
+  return startedAt !== null && now - startedAt > PICKER_AWAY_MS;
 }
 
 /**
  * Away for the picker, and longer than PICKER_AWAY_MS since opening it, so
- * the lock is about to engage? Unlike backFromPickerTooLate this only asks: the screen that waits
- * for the photo keeps its camera off, since the picker's own "closed" can
- * arrive a moment before App.vue hears that the app is back.
+ * the lock is about to engage? Unlike backFromPickerTooLate this only asks:
+ * the screen that waits for the photo keeps its camera off, since the
+ * picker's own "closed" can arrive a moment before App.vue hears that the
+ * app is back.
  * @param {number} [now]
  */
 export function awayForPickerTooLong(now = Date.now()) {
-  return awayForPickerSince !== null && now - awayForPickerSince > PICKER_AWAY_MS;
+  return awayTripStartedAt !== null && now - awayTripStartedAt > PICKER_AWAY_MS;
 }
 
 /** Forget everything. For tests. */
@@ -147,5 +155,5 @@ export function resetAppLock() {
   waiting = [];
   waitingForUnlock = [];
   pickerOpenedAt = null;
-  awayForPickerSince = null;
+  awayTripStartedAt = null;
 }

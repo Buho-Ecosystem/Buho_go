@@ -107,6 +107,18 @@ export default defineComponent({
       return appLockEnabled() && !kioskActive()
     }
 
+    // The system prompt opens a beat after the lock screen shows.
+    const PROMPT_DELAY_MS = 300
+
+    function promptUnlockSoon () {
+      setTimeout(() => promptUnlock(), PROMPT_DELAY_MS)
+    }
+
+    function lockAndPrompt () {
+      locked.value = true
+      promptUnlockSoon()
+    }
+
     async function promptUnlock () {
       if (isPrompting) return
       isPrompting = true
@@ -187,10 +199,7 @@ export default defineComponent({
       const { App: CapApp } = await import('@capacitor/app')
 
       // Prompt biometric on cold start if enabled
-      if (appLockActive()) {
-        locked.value = true
-        setTimeout(() => promptUnlock(), 300)
-      }
+      if (appLockActive()) lockAndPrompt()
 
       // Re-read the OS permission on every return to the front: it can be
       // revoked in system settings while we are away, and a row that still
@@ -217,12 +226,11 @@ export default defineComponent({
           locked.value = true
         } else if (backFromPickerTooLate()) {
           // Away in that picker for longer than it takes to choose a photo.
-          locked.value = true
-          setTimeout(() => promptUnlock(), 300)
+          lockAndPrompt()
         } else if (locked.value) {
           // Came back — only prompt if not still within the cooldown window
           if (isPrompting || (Date.now() - lastPromptEnd < 1500)) return
-          setTimeout(() => promptUnlock(), 300)
+          promptUnlockSoon()
         }
       })
     })
