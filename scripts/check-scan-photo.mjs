@@ -11,6 +11,7 @@ import { chromium } from '@playwright/test';
 import assert from 'node:assert/strict';
 import { mkdir, writeFile } from 'node:fs/promises';
 import QRCode from 'qrcode';
+import { RETURN_GRACE_MS } from '../src/utils/photoPick.js';
 
 const base = process.env.SCAN_PHOTO_BASE_URL || 'http://localhost:9031';
 const output = process.env.SCAN_PHOTO_OUTPUT || new URL('../output/scan-photo', import.meta.url).pathname;
@@ -91,6 +92,8 @@ async function open(browser, { theme = 'light', language = 'en-US', width = 390,
   const context = await browser.newContext({ viewport: { width, height }, deviceScaleFactor: 2 });
   const page = await context.newPage();
   const errors = [];
+  // Every outside socket (relays) is closed below; a dependency then throws
+  // "reading 'send'" now and then from the socket it lost. Nothing of ours.
   page.on('pageerror', (error) => { if (!/reading 'send'/.test(error.message)) errors.push(error.message); });
   await page.route('**/*', async (route) => {
     const url = new URL(route.request().url());
@@ -196,7 +199,8 @@ const cameraOn = (page, selector = '.web-scan-surface video') => page.evaluate((
   return !!stream && stream.active && stream.getVideoTracks().some((track) => track.readyState === 'live');
 }, selector);
 
-async function openSendScanner(page) {
+/** Open Send, then its scanner; with a camera, wait until it shows a picture. */
+async function openSendScanner(page, { waitForCamera = true } = {}) {
   await page.evaluate(() => {
     for (const el of document.querySelectorAll('*')) {
       for (let c = el.__vueParentComponent; c; c = c.parent) if (c.type?.name === 'WalletPage') { c.proxy.openSend(); return; }
@@ -205,6 +209,7 @@ async function openSendScanner(page) {
   await page.locator('[data-audit="send-input"]').waitFor();
   const send = await vmOf(page, '[data-audit="send-input"]', 'SendModal');
   await send.evaluate((vm) => vm.openScanner());
+  if (!waitForCamera) return;
   await page.locator('.web-scan-surface').waitFor();
   await page.waitForFunction(() => document.querySelector('.web-scan-surface video')?.readyState >= 2, null, { timeout: 15000 });
 }
@@ -223,8 +228,9 @@ if (wanted('send')) {
   await pause(100);
   assert.equal(await cameraOn(page), false, 'camera off at once while the picker is open');
   await page.evaluate(() => { window.dispatchEvent(new Event('focus')); document.dispatchEvent(new Event('visibilitychange')); });
-  await pause(4500);
-  assert.equal(await cameraOn(page), false, 'camera still off after focus and visibility, 4.5 s in');
+  // Past the moment an engine that guesses would have taken as "closed".
+  await pause(RETURN_GRACE_MS + 500);
+  assert.equal(await cameraOn(page), false, 'camera still off after focus and visibility, past the grace');
   assert.equal(await liveStreams(page), 0, 'no camera stream held anywhere while the picker is open');
   // A picture without a code: one line says so, the camera comes back.
   await chooser.setFiles(`${assets}/no-code.jpg`);
@@ -276,14 +282,7 @@ if (wanted('send')) {
 // 2. No camera: Choose photo is the way left, and it works.
 if (wanted('no-camera')) {
   const { page, context, errors } = await open(withoutCamera);
-  await page.evaluate(() => {
-    for (const el of document.querySelectorAll('*')) {
-      for (let c = el.__vueParentComponent; c; c = c.parent) if (c.type?.name === 'WalletPage') { c.proxy.openSend(); return; }
-    }
-  });
-  await page.locator('[data-audit="send-input"]').waitFor();
-  const send = await vmOf(page, '[data-audit="send-input"]', 'SendModal');
-  await send.evaluate((vm) => vm.openScanner());
+  await openSendScanner(page, { waitForCamera: false });
   await page.getByText('Camera Access Required').waitFor({ timeout: 15000 });
   assert.equal(await page.getByRole('button', { name: 'Choose photo' }).isVisible(), true);
   assert.equal(await tappable(page.getByRole('button', { name: 'Retry' })), true, 'Retry is not covered');
@@ -298,14 +297,7 @@ if (wanted('no-camera')) {
 // 2b. No camera on a short screen: Retry and Choose photo are both there to tap.
 if (wanted('short')) {
   const { page, context, errors } = await open(withoutCamera, { width: 320, height: 568 });
-  await page.evaluate(() => {
-    for (const el of document.querySelectorAll('*')) {
-      for (let c = el.__vueParentComponent; c; c = c.parent) if (c.type?.name === 'WalletPage') { c.proxy.openSend(); return; }
-    }
-  });
-  await page.locator('[data-audit="send-input"]').waitFor();
-  const send = await vmOf(page, '[data-audit="send-input"]', 'SendModal');
-  await send.evaluate((vm) => vm.openScanner());
+  await openSendScanner(page, { waitForCamera: false });
   await page.getByText('Camera Access Required').waitFor({ timeout: 15000 });
   assert.equal(await tappable(page.getByRole('button', { name: 'Retry' })), true, 'Retry is not covered at 320 x 568');
   assert.equal(await tappable(page.getByRole('button', { name: 'Choose photo' })), true, 'Choose photo is not covered at 320 x 568');
