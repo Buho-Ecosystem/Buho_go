@@ -112,18 +112,21 @@ export function leavingForPicker(now = Date.now()) {
 }
 
 /**
- * App.vue asks this when the app comes back: did the trip to the picker take
- * longer than PICKER_AWAY_MS from opening it, so the lock engages now? False
- * when it was not away for a picker at all.
+ * App.vue asks this every time the app comes to the front: did a trip away
+ * for the picker take longer than PICKER_AWAY_MS from opening it, so the lock
+ * engages now? False when it was not away for a picker at all.
+ *
+ * Either way the hold is used up, whether or not the photo has arrived yet:
+ * a picker shown over the app only pauses it and never sends it away, but
+ * the app still comes to the front when that picker closes, a moment before
+ * the photo reaches the page. Leaving in that moment is leaving.
  * @param {number} [now]
  */
 export function backFromPickerTooLate(now = Date.now()) {
-  if (awayForPickerSince === null) return false;
-  const trip = now - awayForPickerSince;
+  const tripStartedAt = awayForPickerSince;
   awayForPickerSince = null;
-  // Back: the hold is used up, whether or not the photo has arrived yet.
   pickerOpenedAt = null;
-  return trip > PICKER_AWAY_MS;
+  return tripStartedAt !== null && now - tripStartedAt > PICKER_AWAY_MS;
 }
 
 /**

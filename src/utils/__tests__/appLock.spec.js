@@ -90,6 +90,19 @@ test('one hold covers one departure: back from the picker, leaving again is leav
   assert.equal(backFromPickerTooLate(121_000), false, 'nothing held back, so nothing to report');
 });
 
+test('a picker over the app that never sent it away: back in front, leaving is leaving', () => {
+  openingSystemPicker(0);
+  assert.equal(backFromPickerTooLate(5_000), false, 'the picker closed; it only paused the app');
+  assert.equal(leavingForPicker(6_000), false, 'the photo is still on its way, but this is a departure');
+});
+
+test('away too long: the lock engages even when the picker closed while the app was away', () => {
+  const closed = openingSystemPicker(0);
+  assert.equal(leavingForPicker(500), true);
+  closed();
+  assert.equal(backFromPickerTooLate(PICKER_AWAY_MS + 1), true);
+});
+
 test('a picker opened long ago holds nothing back, and an old close leaves a new picker open', () => {
   const first = openingSystemPicker(0);
   assert.equal(leavingForPicker(PICKER_AWAY_MS + 1), false, 'the picker was opened too long ago');
