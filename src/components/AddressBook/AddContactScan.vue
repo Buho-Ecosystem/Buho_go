@@ -101,7 +101,7 @@
           <QrPhotoButton
             tone="outline"
             @open="onPhotoOpen"
-            @closed="resumeCamera"
+            @closed="onPhotoClosed"
             @read="onPhotoRead"
             @fail="onPhotoFail"
           />
@@ -144,7 +144,7 @@
 import { isAddressRequest } from '../../utils/lud23.js';
 import { Icon } from '@iconify/vue';
 import QrScanner from 'qr-scanner';
-import { createQrScanner, pauseForPhoto } from '../../utils/qrScanner';
+import { createPhotoPause, createQrScanner, pauseForPhoto, scannerFor } from '../../utils/qrScanner';
 import { isNativeScannerAvailable } from '../../utils/nativeScanner';
 import ScannerOverlay from '../ScannerOverlay.vue';
 import QrPhotoButton from '../QrPhotoButton.vue';
@@ -181,8 +181,7 @@ export default {
       cameraError: '',
       qrScanner: null,
       detected: false,
-      // Choose photo: the picker is open (camera off), and what the last photo gave instead of a contact.
-      photoOpen: false,
+      // Choose photo: what the last photo gave instead of a contact.
       photoNote: '',
       // Result state mirrors AddContactSearch so the preview can
       // render identically regardless of how we got here.
@@ -211,6 +210,14 @@ export default {
       if (isActive) this.startCamera();
       else this.teardown();
     },
+  },
+
+  created() {
+    this.photoPause = createPhotoPause({
+      scanner: () => this.qrScanner,
+      canResume: () => this.showCamera && !this.cameraError && !this.detected,
+      restart: () => this.startQrScanner(),
+    });
   },
 
   mounted() {
@@ -250,24 +257,13 @@ export default {
     },
 
     async startQrScanner() {
-      // The photo picker is open: the camera starts once it closes (resumeCamera).
-      if (this.photoOpen) return;
+      // The photo picker is open: the camera comes back once it closes.
+      if (this.photoPause.paused) return;
       try {
         const videoEl = this.$refs.videoEl;
         if (!videoEl) throw new Error('Video element not found');
 
-        // One scanner per screen: the same <video> keeps its scanner, a new
-        // one replaces it. Two would leave one running that nothing stops.
-        if (this.qrScanner) {
-          if (this.qrScanner.$video === videoEl) {
-            await this.qrScanner.start();
-            return;
-          }
-          try { this.qrScanner.destroy(); } catch { /* already gone */ }
-          this.qrScanner = null;
-        }
-
-        this.qrScanner = createQrScanner(
+        this.qrScanner = scannerFor(videoEl, this.qrScanner, () => createQrScanner(
           videoEl,
           (result) => {
             const text = typeof result === 'string' ? result : (result?.data || result?.text || '');
@@ -279,10 +275,10 @@ export default {
             highlightCodeOutline: true,
             preferredCamera: 'environment',
           },
-        );
+        ));
         await this.qrScanner.start();
         // Choose photo was tapped while the camera was still starting.
-        if (this.photoOpen) pauseForPhoto(this.qrScanner);
+        if (this.photoPause.paused) pauseForPhoto(this.qrScanner);
       } catch (err) {
         console.error('[AddContactScan] start error:', err);
         this.handleCameraError(err);
@@ -303,6 +299,7 @@ export default {
     },
 
     stopScanner() {
+      this.photoPause.forget();
       this.nativeScannerActive = false;
       if (this.qrScanner) {
         try {
@@ -404,27 +401,21 @@ export default {
     /** Choose photo (web): the camera goes off while the picker is open. */
     onPhotoOpen() {
       this.photoNote = '';
-      this.photoOpen = true;
-      pauseForPhoto(this.qrScanner);
+      this.photoPause.pause();
+    },
+
+    onPhotoClosed() {
+      this.photoPause.resume();
     },
 
     onPhotoRead(text) {
       this.onDetect(text, { fromPhoto: true });
-      this.resumeCamera();
+      this.photoPause.resume();
     },
 
     onPhotoFail({ message }) {
       this.photoNote = message;
-      this.resumeCamera();
-    },
-
-    /** The camera back on after a photo, unless a code was taken meanwhile. */
-    resumeCamera() {
-      if (!this.photoOpen) return;
-      this.photoOpen = false;
-      if (!this.showCamera || this.cameraError || this.detected) return;
-      if (!this.qrScanner) { this.startQrScanner(); return; }
-      this.qrScanner.start().catch((error) => this.handleCameraError(error));
+      this.photoPause.resume();
     },
 
     async resolveAndFetch(text) {

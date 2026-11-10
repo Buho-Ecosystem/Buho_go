@@ -90,7 +90,7 @@
               tone="camera"
               @open="onPhotoOpen"
               @closed="onPhotoClosed"
-              @read="onScanned"
+              @read="onPhotoRead"
               @fail="onPhotoFail"
             />
           </div>
@@ -102,7 +102,7 @@
 
 <script>
 import QrScanner from 'qr-scanner';
-import { createQrScanner, pauseForPhoto } from '../utils/qrScanner';
+import { createPhotoPause, createQrScanner, pauseForPhoto, scannerFor } from '../utils/qrScanner';
 import { isNativeScannerAvailable } from '../utils/nativeScanner';
 import ScannerOverlay from './ScannerOverlay.vue';
 import QrPhotoButton from './QrPhotoButton.vue';
@@ -126,9 +126,7 @@ export default {
       // torn down, so without this a busy QR would emit several times
       // before the close settles.
       hasEmitted: false,
-      // The photo picker is open (camera off), and what the last photo gave
-      // instead of a code.
-      photoOpen: false,
+      // What the last photo gave instead of a code.
       photoNote: '',
     };
   },
@@ -154,9 +152,15 @@ export default {
       if (open) {
         this.hasEmitted = false;
         this.photoNote = '';
-        this.photoOpen = false;
       }
     }
+  },
+  created() {
+    this.photoPause = createPhotoPause({
+      scanner: () => this.qrScanner,
+      canResume: () => this.show && !this.cameraError && !this.hasEmitted,
+      restart: () => this.startQrScanner(),
+    });
   },
   beforeUnmount() {
     this.stopQrScanner();
@@ -179,29 +183,24 @@ export default {
       this.show = false;
     },
 
-    /** The picker is opening: the camera goes off until it closes. */
+    /** Choose photo: the camera goes off while the picker is open. */
     onPhotoOpen() {
       this.photoNote = '';
-      this.photoOpen = true;
-      pauseForPhoto(this.qrScanner);
+      this.photoPause.pause();
     },
 
     onPhotoClosed() {
-      if (!this.photoOpen) return;
-      this.photoOpen = false;
-      this.resumeCamera();
+      this.photoPause.resume();
+    },
+
+    onPhotoRead(text) {
+      this.onScanned(text);
+      this.photoPause.resume();
     },
 
     onPhotoFail({ message }) {
-      this.photoOpen = false;
       this.photoNote = message;
-      this.resumeCamera();
-    },
-
-    resumeCamera() {
-      if (this.cameraError || !this.show || this.hasEmitted) return;
-      if (!this.qrScanner) { this.startQrScanner(); return; }
-      this.qrScanner.start().catch((error) => this.handleCameraError(error));
+      this.photoPause.resume();
     },
 
     async initializeCamera() {
@@ -222,15 +221,16 @@ export default {
     },
 
     async startQrScanner() {
-      // The photo picker is open: the camera starts once it closes (resumeCamera).
-      if (this.photoOpen) return;
+      // The photo picker is open: the camera comes back once it closes.
+      if (this.photoPause.paused) return;
       try {
-        if (!this.$refs.videoElement) {
+        const videoEl = this.$refs.videoElement;
+        if (!videoEl) {
           throw new Error('Video element not found');
         }
 
-        this.qrScanner = createQrScanner(
-          this.$refs.videoElement,
+        this.qrScanner = scannerFor(videoEl, this.qrScanner, () => createQrScanner(
+          videoEl,
           (result) => this.onScanned(result),
           {
             returnDetailedScanResult: true,
@@ -238,11 +238,11 @@ export default {
             highlightCodeOutline: true,
             preferredCamera: 'environment'
           }
-        );
+        ));
 
         await this.qrScanner.start();
         // Choose photo was tapped while the camera was still starting.
-        if (this.photoOpen) pauseForPhoto(this.qrScanner);
+        if (this.photoPause.paused) pauseForPhoto(this.qrScanner);
       } catch (error) {
         console.error('Error starting QR scanner:', error);
         this.handleCameraError(error);
@@ -250,6 +250,7 @@ export default {
     },
 
     stopQrScanner() {
+      this.photoPause.forget();
       if (this.qrScanner) {
         this.qrScanner.stop();
         this.qrScanner.destroy();

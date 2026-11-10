@@ -93,7 +93,7 @@
                 v-if="!detected"
                 tone="link"
                 @open="onPhotoOpen"
-                @closed="resumeCamera"
+                @closed="onPhotoClosed"
                 @read="onPhotoRead"
                 @fail="onPhotoFail"
               />
@@ -223,7 +223,7 @@ import { offerAddressRequest } from '../services/addressRequestIntake.js';
 import { Icon } from '@iconify/vue';
 import { readClipboardCrossPlatform } from '../utils/shopClipboard.js';
 import QrScanner from 'qr-scanner';
-import { createQrScanner, pauseForPhoto } from '../utils/qrScanner';
+import { createPhotoPause, createQrScanner, pauseForPhoto, scannerFor } from '../utils/qrScanner';
 import { isNativeScannerAvailable } from '../utils/nativeScanner';
 import ScannerOverlay from './ScannerOverlay.vue';
 import QrPhotoButton from './QrPhotoButton.vue';
@@ -260,8 +260,7 @@ export default {
       // multiple times if the scanner keeps decoding the same QR for
       // a few frames before we stop it.
       detected: false,
-      // Choose photo: the picker is open (camera off), and what the last photo gave instead of a sign-in code.
-      photoOpen: false,
+      // Choose photo: what the last photo gave instead of a sign-in code.
       photoNote: '',
       // Help-sheet visibility. Opened by the (?) icon in the header,
       // shows curated example sites for first-time users.
@@ -298,6 +297,16 @@ export default {
         this.showCamera = false;
       }
     },
+  },
+
+  created() {
+    this.photoPause = createPhotoPause({
+      scanner: () => this.qrScanner,
+      // A photo's code that looks like a sign-in link but does not parse
+      // moves the sheet to paste (submitText): no camera to come back to.
+      canResume: () => this.mode === 'scan' && this.showCamera && !this.cameraError && !this.detected,
+      restart: () => this.startQrScanner(),
+    });
   },
 
   beforeUnmount() {
@@ -381,7 +390,6 @@ export default {
     switchTo(target) {
       if (this.mode === target) return;
       this.mode = target;
-      this.photoOpen = false;
       this.photoNote = '';
       if (target === 'scan') {
         this.initializeCamera();
@@ -429,26 +437,15 @@ export default {
     },
 
     async startQrScanner() {
-      // The photo picker is open: the camera starts once it closes (resumeCamera).
-      if (this.photoOpen) return;
+      // The photo picker is open: the camera comes back once it closes.
+      if (this.photoPause.paused) return;
       try {
         const videoEl = this.$refs.videoEl;
         if (!videoEl) {
           throw new Error('Video element not found');
         }
 
-        // One scanner per screen: the same <video> keeps its scanner, a new
-        // one replaces it. Two would leave one running that nothing stops.
-        if (this.qrScanner) {
-          if (this.qrScanner.$video === videoEl) {
-            await this.qrScanner.start();
-            return;
-          }
-          try { this.qrScanner.destroy(); } catch { /* already gone */ }
-          this.qrScanner = null;
-        }
-
-        this.qrScanner = createQrScanner(
+        this.qrScanner = scannerFor(videoEl, this.qrScanner, () => createQrScanner(
           videoEl,
           (result) => {
             const text = typeof result === 'string' ? result : (result?.data || result?.text || '');
@@ -460,11 +457,11 @@ export default {
             highlightCodeOutline: true,
             preferredCamera: 'environment',
           },
-        );
+        ));
 
         await this.qrScanner.start();
         // Choose photo was tapped while the camera was still starting.
-        if (this.photoOpen) pauseForPhoto(this.qrScanner);
+        if (this.photoPause.paused) pauseForPhoto(this.qrScanner);
       } catch (error) {
         console.error('[AddSiteSheet] error starting QR scanner:', error);
         this.handleCameraError(error);
@@ -489,6 +486,7 @@ export default {
     },
 
     stopScanner() {
+      this.photoPause.forget();
       this.nativeScannerActive = false;
       if (this.qrScanner) {
         try {
@@ -521,29 +519,21 @@ export default {
     /** Choose photo (web): the camera goes off while the picker is open. */
     onPhotoOpen() {
       this.photoNote = '';
-      this.photoOpen = true;
-      pauseForPhoto(this.qrScanner);
+      this.photoPause.pause();
+    },
+
+    onPhotoClosed() {
+      this.photoPause.resume();
     },
 
     onPhotoRead(text) {
       this.onQRDetect(text, { fromPhoto: true });
-      this.resumeCamera();
+      this.photoPause.resume();
     },
 
     onPhotoFail({ message }) {
       this.photoNote = message;
-      this.resumeCamera();
-    },
-
-    /** The camera back on after a photo, unless a code was taken meanwhile. */
-    resumeCamera() {
-      if (!this.photoOpen) return;
-      this.photoOpen = false;
-      // A photo's code that is no sign-in code switched the sheet to paste,
-      // where there is no camera to come back to.
-      if (this.mode !== 'scan' || !this.showCamera || this.cameraError || this.detected) return;
-      if (!this.qrScanner) { this.startQrScanner(); return; }
-      this.qrScanner.start().catch((error) => this.handleCameraError(error));
+      this.photoPause.resume();
     },
 
     close() {
@@ -563,7 +553,6 @@ export default {
       this.rawInput = '';
       this.errorText = '';
       this.detected = false;
-      this.photoOpen = false;
       this.photoNote = '';
       this.mode = 'scan';
       this.cameraError = '';
