@@ -201,7 +201,8 @@ export default {
 }
 .qpb--page.qpb--dark:active:not([aria-disabled='true']) { background: rgba(255, 255, 255, 0.16); }
 
-/* Next to an outlined "Paste instead": the same outlined pill. */
+/* Next to an outlined "Paste instead": the same outlined pill. Mirrors
+   AddContactScan's .scan-secondary-btn; change both together. */
 .qpb--outline {
   gap: 0.4rem;
   padding: 0 0.9rem;
@@ -213,7 +214,8 @@ export default {
   letter-spacing: 0;
 }
 
-/* Next to a text button ("Paste a link instead"): the same text button. */
+/* Next to a text button ("Paste a link instead"): the same text button.
+   Mirrors AddSiteSheet's .add-site-switch; change both together. */
 .qpb--link {
   gap: 6px;
   padding: 0 12px;
@@ -226,6 +228,13 @@ export default {
 .qpb--link.qpb--dark { color: #cbd5e1; }
 .qpb--link:active:not([aria-disabled='true']) { background: rgba(15, 23, 42, 0.06); }
 .qpb--link.qpb--dark:active:not([aria-disabled='true']) { background: rgba(255, 255, 255, 0.06); }
+
+/* The neighbours' hover fill, where there is a pointer to hover with. */
+@media (hover: hover) {
+  .qpb--outline:hover:not([aria-disabled='true']) { background: rgba(120, 120, 120, 0.06); }
+  .qpb--link:hover:not([aria-disabled='true']) { background: rgba(15, 23, 42, 0.06); }
+  .qpb--link.qpb--dark:hover:not([aria-disabled='true']) { background: rgba(255, 255, 255, 0.06); }
+}
 
 .qpb--reading { opacity: 0.85; }
 .qpb-spinner { color: currentColor; }
