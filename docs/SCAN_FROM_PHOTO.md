@@ -34,9 +34,11 @@ Take Photo or Choose File.
   turns visible, which lit the camera behind the open picker. The scanner
   itself is kept and restarted with `start()`: qr-scanner lets go of a stream
   300 ms after `stop()`, so a second scanner on the same `<video>` would lose
-  its stream. A screen restarts the scanner it has and never gives its
-  `<video>` to another. No camera start begins while the picker is open, and
-  one that was already on its way is turned off once it has started.
+  its stream. Each screen keeps one scanner per `<video>` (`scannerFor`) and
+  holds its trip in one `createPhotoPause`, both in `utils/qrScanner.js`: no
+  camera start begins while the picker is open, one that was already on its
+  way is turned off once it has started, and stopping the camera forgets the
+  trip.
 - **Closing the picker without a photo** is reported by the `cancel` event on
   web engines from 2023 on (`engineSendsCancel`), and there the trip ends only
   on `change` or `cancel`. Older engines never say it, so the trip also ends
@@ -61,7 +63,8 @@ Take Photo or Choose File.
   closed the scanner before the photo arrived. Going to the background for
   the picker the app opened is not leaving the app, for one departure and
   within 2 minutes of opening the picker (`PICKER_AWAY_MS`). Once the app is
-  back, leaving again locks as usual, even before the photo arrived. Back
+  back in front, leaving again locks as usual, even before the photo
+  arrived, and also after a picker that only paused the app. Back
   later than that, the lock engages on return, and the scanner keeps its
   camera off meanwhile (`awayForPickerTooLong`): the picker's "closed" can
   reach the page a moment before App.vue hears that the app is back. Where
@@ -122,7 +125,8 @@ in the haptics map.
 
 ## Checks
 
-- `utils/__tests__/qrFromImage.spec.js`, `photoPick.spec.js`, `appLock.spec.js`.
+- `utils/__tests__/qrFromImage.spec.js`, `photoPick.spec.js`, `appLock.spec.js`,
+  `qrScanner.spec.js`.
 - `scripts/check-scan-photo.mjs`: Chromium's stand-in camera and generated
   pictures. Send (the camera off while the picker is open, also through focus
   and visibility; a real "Reading photo"), no camera (also at 320 x 568, Retry
@@ -159,6 +163,23 @@ reviewed the first version. Fixed:
 Kept, on purpose: a wrong code in wallet setup still gets the toast a
 scanned one gets; the torch stays off after a photo (the person turns it on
 again if they want it).
+
+A second review looked at security and clean code. No vulnerability was
+found: the picture is read on the device, the cache copy's name is the
+app's own, and a code from a photo takes exactly the path a scanned one
+takes. Changed after it:
+
+- The lock hold ends every time the app comes back to the front. A picker
+  shown over the app only pauses it, so before, the hold stayed until the
+  photo reached the page (up to 2.3 s), and leaving in that moment did not
+  lock.
+- The five web scanners share `createPhotoPause` and `scannerFor` instead
+  of five copies that had drifted apart; every one now forgets a trip when
+  it lets go of its camera (Add contact did not).
+- `photoPick` holds no lock unless asked; the button asks on Android.
+  `appResumeReturn` moved next to `browserReturn`, with a spec.
+- A failed native read and a fault while reading are logged (never the
+  decoded text). The scanner overlay's note is a `v-model:note`.
 
 ## Limits
 
