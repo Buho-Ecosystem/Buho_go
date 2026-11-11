@@ -58,7 +58,7 @@ const props = defineProps({
    * wallet does not share, so the limit is lower, or null.
    */
   limitRefusal: { type: Object, default: null },
-  /** store.nwcStatus: 'answering' | 'no-answer' | 'relay', or '' while not asked yet. */
+  /** store.nwcStatus: 'answering' | 'no-answer' | 'relay' | 'ended', or '' while not asked yet. */
   status: { type: String, default: '' },
 });
 defineEmits(['copy-address']);
@@ -75,8 +75,9 @@ const statusText = computed(() => ({
   answering: t('Answering'),
   'no-answer': t('No reply'),
   relay: t('Not reachable'),
+  ended: t('Connection ended'),
 }[props.status] || t('Checking…')));
-const statusTone = computed(() => ({ answering: 'good', 'no-answer': 'warn', relay: 'warn' }[props.status] || 'neutral'));
+const statusTone = computed(() => ({ answering: 'good', 'no-answer': 'warn', relay: 'warn', ended: 'warn' }[props.status] || 'neutral'));
 
 const renewsText = computed(() => {
   const at = props.limit?.renewsAt;

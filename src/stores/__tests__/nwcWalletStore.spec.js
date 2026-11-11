@@ -356,3 +356,44 @@ test('a connection that cannot be opened stays saved, set aside, never lost', as
   await store.persistState();
   assert.equal(saved().wallets[0].sealedNwcUrl, 'not-an-envelope', 'kept as it was read');
 });
+
+// ── Connection ended ──────────────────────────────────────────────────────
+
+test('a connection the wallet no longer knows reads as ended, not silent, until it answers again', async () => {
+  const { store } = createHarness();
+  let answer = Object.assign(new Error('retired'), { code: 'UNAUTHORIZED' });
+  nwcWallet(store, {
+    getInfo: async () => { if (answer) throw answer; return { alias: 'Hub', methods: ['pay_invoice'] }; },
+    getBudget: async () => ({}),
+  });
+  assert.equal(await store.refreshNwcDetails('hub'), 'ended');
+  assert.equal(store.connectionEnded.hub, true);
+
+  // A timeout afterwards says nothing new about the connection.
+  answer = timeout();
+  assert.equal(await store.refreshNwcDetails('hub'), 'ended');
+
+  answer = null;
+  assert.equal(await store.refreshNwcDetails('hub'), 'answering');
+  assert.equal(store.connectionEnded.hub, undefined);
+});
+
+test('an LNbits wallet its server no longer finds reads as ended', async () => {
+  const { store } = createHarness();
+  store.wallets = [{ id: 'kitty', type: 'lnbits', name: 'Kitty', metadata: {} }];
+  store.connectionStates.kitty = { connected: true, error: null };
+  store.persistState = async () => {}; // a balance is saved with the wallets; not under test here
+  let fail = Object.assign(new Error('LNBits API error: Wallet not found.'), { status: 404 });
+  store.ensureWalletConnectedForTransfer = async () => ({ getBalance: async () => { if (fail) throw fail; return { balance: 21 }; } });
+
+  assert.equal(await store.refreshBalance('kitty'), false);
+  assert.equal(store.connectionEnded.kitty, true);
+
+  fail = Object.assign(new Error('Network error: Unable to reach LNBits server'), { isNetworkError: true });
+  await store.refreshBalance('kitty');
+  assert.equal(store.connectionEnded.kitty, true, 'being offline does not undo it');
+
+  fail = null;
+  await store.refreshBalance('kitty');
+  assert.equal(store.connectionEnded.kitty, undefined);
+});

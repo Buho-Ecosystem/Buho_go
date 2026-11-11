@@ -730,7 +730,8 @@
           :connected="isWalletLive(detailWallet)"
           :switching="walletSwitching"
           :reconnecting="!!isReconnecting[detailWallet.id]"
-          :connection-error="connectionStates[detailWallet.id]?.error ? $t('This wallet is offline right now. Check your connection, then tap Reconnect.') : ''"
+          :connection-error="connectionProblemText(detailWallet)"
+          :connection-ended="!!walletStore.connectionEnded[detailWallet.id]"
           :rename-wallet="walletStore.updateWalletName"
           :lightning-address="detailWallet.type === 'spark' ? (walletInfos[detailWallet.id]?.lightningAddress || detailWallet.metadata?.lud16 || '') : ''"
           :can-move-address="sparkWallets.length > 1"
@@ -861,6 +862,7 @@
                     <span v-if="wallet.id === activeWalletId" class="row-sub-active" :class="$q.dark.isActive ? 'sub-active-dark' : 'sub-active-light'"> · {{ $t('Active') }}</span>
                     <!-- What it received since the user last looked at it (stores/unseenReceipts). -->
                     <span v-else-if="unseenReceipts.forWallet(wallet.id)" class="row-sub-unseen"> · <HiddenAmount aria-hidden="true">+ {{ formatBalance(unseenReceipts.forWallet(wallet.id).sats) }}</HiddenAmount><span class="sr-only">{{ $t('Received {amount} since you last looked', { amount: formatBalance(unseenReceipts.forWallet(wallet.id).sats) }) }}</span></span>
+                    <span v-else-if="walletStore.connectionEnded[wallet.id]"> · {{ $t('Connection ended') }}</span>
                     <span v-else-if="!connectionStates[wallet.id]?.connected"> · {{ $t('Offline') }}</span>
                   </div>
                 </div>
@@ -2331,8 +2333,24 @@ export default {
      */
     isWalletLive(wallet) {
       if (!this.connectionStates[wallet.id]?.connected) return false;
+      if (this.walletStore.connectionEnded[wallet.id]) return false;
       if ((wallet.type || 'nwc') !== 'nwc') return true;
-      return !['no-answer', 'relay'].includes(this.walletStore.nwcStatus[wallet.id]);
+      return !['no-answer', 'relay', 'ended'].includes(this.walletStore.nwcStatus[wallet.id]);
+    },
+
+    /**
+     * The detail panel's line about a connection that is not working: what
+     * ended it and what brings it back, or that the wallet is offline.
+     */
+    connectionProblemText(wallet) {
+      if (this.walletStore.connectionEnded[wallet.id]) {
+        return wallet.type === 'lnbits'
+          ? this.$t('LNbits no longer finds this wallet. It was deleted or its key was reset. Add it again with its new key.')
+          : this.$t('This connection was removed or has expired. Create a new one in {wallet}.', { wallet: wallet.name });
+      }
+      return this.connectionStates[wallet.id]?.error
+        ? this.$t('This wallet is offline right now. Check your connection, then tap Reconnect.')
+        : '';
     },
 
     async reconnectWallet(walletId) {

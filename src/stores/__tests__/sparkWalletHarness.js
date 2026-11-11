@@ -18,6 +18,7 @@ import * as lightningAddressNames from '../../utils/lightningAddressNames.js';
 import * as nwcWallet from '../../utils/nwcWallet.js';
 import * as nwcConnection from '../../utils/nwcConnection.js';
 import * as nwcErrors from '../../utils/nwcErrors.js';
+import * as connectionEnded from '../../utils/connectionEnded.js';
 import * as walletCapabilities from '../../utils/walletCapabilities.js';
 import * as kioskPin from '../../utils/kioskPin.js';
 import * as nwcReceive from '../../services/nwcReceive.js';
@@ -137,6 +138,7 @@ export function createHarness({ evidence = {}, connect = null, storage = {}, exi
     '../utils/nwcWallet.js': nwcWallet,
     '../utils/nwcConnection.js': nwcConnection,
     '../utils/nwcErrors.js': nwcErrors,
+    '../utils/connectionEnded.js': connectionEnded,
     '../utils/nwcAtRest.js': nwcAtRest,
     '../utils/walletCapabilities.js': walletCapabilities,
     '../utils/kioskPin.js': kioskPin,

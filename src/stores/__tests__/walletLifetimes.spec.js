@@ -20,6 +20,7 @@ import * as exitLedger from '../../utils/exitLedger.js';
 import * as nwcWallet from '../../utils/nwcWallet.js';
 import * as nwcConnection from '../../utils/nwcConnection.js';
 import * as nwcErrors from '../../utils/nwcErrors.js';
+import * as connectionEnded from '../../utils/connectionEnded.js';
 import * as nwcAtRest from '../../utils/nwcAtRest.js';
 
 globalThis.localStorage = { getItem: () => null, setItem() {}, removeItem() {} };
@@ -38,6 +39,7 @@ function load({ createProvider, extraDeps = {} }) {
     '../utils/nwcWallet.js': nwcWallet,
     '../utils/nwcConnection.js': nwcConnection,
     '../utils/nwcErrors.js': nwcErrors,
+    '../utils/connectionEnded.js': connectionEnded,
     '../utils/nwcAtRest.js': nwcAtRest,
     '../stores/autoWithdraw': {},
     './autoWithdraw': { useAutoWithdrawStore: () => ({ checkAndExecute() {}, forgetWallet: async () => {} }) },

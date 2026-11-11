@@ -31,6 +31,7 @@ export default {
   "Reachable": "Reachable",
   "Not reachable": "Not reachable",
   "No reply": "No reply",
+  "Connection ended": "Connection ended",
   "Not asked": "Not asked",
   "Check your internet or VPN, then try again.": "Check your internet or VPN, then try again.",
   "Is your node or wallet app running? Then try again.": "Is your node or wallet app running? Then try again.",
