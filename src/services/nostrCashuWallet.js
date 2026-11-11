@@ -20,7 +20,9 @@ import {
   createTokenEvent,
   createWalletEvent,
   generateSecretKey,
+  getPublicKey,
   getWalletFilters,
+  nip44,
   parseTokenEvent,
   parseWalletEvent,
   TOKEN_KIND,
@@ -33,11 +35,49 @@ import {
   publishToRelaysEager,
 } from '../utils/nostrRelays.js';
 import { compareEventFreshness } from '../utils/nostrFetch.js';
+import { plainProofs } from '../utils/cashuProofs.js';
 
 export const DEFAULT_NIP60_TIMEOUT_MS = 4000;
 
 function toHex(bytes) {
   return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
+}
+
+/**
+ * One token event, with its proofs made plain (utils/cashuProofs).
+ *
+ * Backups written while proofs were still cashu-ts `Amount` objects hold
+ * each amount as text ("8"). nostr-core's reader rejects that, so such an
+ * event is read here instead; the next backup replaces it with numbers.
+ */
+function readTokenEvent(event, secretKey) {
+  let token;
+  try {
+    token = parseTokenEvent(event, secretKey);
+  } catch (err) {
+    token = readTextAmountToken(event, secretKey);
+    if (!token) throw err;
+  }
+  return { ...token, proofs: plainProofs(token.proofs) };
+}
+
+function readTextAmountToken(event, secretKey) {
+  try {
+    const selfKey = nip44.getConversationKey(secretKey, getPublicKey(secretKey));
+    const data = JSON.parse(nip44.decrypt(event.content, selfKey));
+    if (typeof data?.mint !== 'string' || !Array.isArray(data.proofs)) return null;
+    const proofs = plainProofs(data.proofs);
+    // As strict as nostr-core about everything except how an amount is written.
+    if (proofs.length !== data.proofs.length) return null;
+    return {
+      mint: data.mint,
+      proofs,
+      unit: data.unit || undefined,
+      del: Array.isArray(data.del) ? data.del : undefined,
+    };
+  } catch {
+    return null;
+  }
 }
 
 function normalizeRelays(relays) {
@@ -160,7 +200,7 @@ export async function fetchNip60WalletState({
     if (!validOwnedEvent(event, pubkey, TOKEN_KIND) || seenTokenIds.has(event.id)) continue;
     seenTokenIds.add(event.id);
     try {
-      const token = parseTokenEvent(event, secretKey);
+      const token = readTokenEvent(event, secretKey);
       parsedTokens.push({ event, token });
       for (const id of token.del || []) removedIds.add(id);
     } catch (err) {
@@ -234,6 +274,8 @@ export async function publishNip60WalletState({
     throw new TypeError('mint must be an https URL');
   }
   if (!Array.isArray(proofs)) throw new TypeError('proofs must be an array');
+  // NIP-60 amounts are numbers; a cashu-ts Amount would be written as text.
+  const tokenProofs = plainProofs(proofs);
   if (!pool || typeof pool.ensureRelay !== 'function') {
     throw new TypeError('pool must implement ensureRelay');
   }
@@ -246,10 +288,10 @@ export async function publishNip60WalletState({
 
   let tokenEvent = null;
   let tokenAccepted = null;
-  if (proofs.length) {
+  if (tokenProofs.length) {
     tokenEvent = createTokenEvent({
       mint,
-      proofs,
+      proofs: tokenProofs,
       unit: 'sat',
       del: oldIds.length ? oldIds : undefined,
     }, secretKey);
@@ -289,7 +331,7 @@ export async function publishNip60WalletState({
     void firstRelayAccept(pool, urls, historyEvent, timeoutMs);
   }
 
-  const stateAccepted = proofs.length ? Boolean(tokenAccepted) : deletionAccepted;
+  const stateAccepted = tokenProofs.length ? Boolean(tokenAccepted) : deletionAccepted;
   return {
     ok: stateAccepted && walletAccepted,
     stateAccepted,

@@ -8,6 +8,7 @@
 
 import { strict as assert } from 'node:assert';
 import { test } from 'node:test';
+import { Amount } from '@cashu/cashu-ts';
 import { secp256k1 } from '@noble/curves/secp256k1.js';
 import { mintQuotes } from '../socialBucket.js';
 
@@ -25,7 +26,8 @@ function fakeWallet(canonicalQuotes) {
     },
     async mintProofsBolt11(amount, quote, config) {
       calls.minted.push({ amount, quote, config });
-      return [{ amount, id: `proof:${quote.quote}` }];
+      // cashu-ts 4 proofs carry an Amount; the bucket keeps a plain number.
+      return [{ id: `proof:${quote.quote}`, amount: Amount.from(amount), secret: `secret:${quote.quote}`, C: '02c0' }];
     },
   };
 }
@@ -59,6 +61,7 @@ test('unlocked quote is re-checked and minted without a signature', async () => 
   );
   assert.equal(wallet.calls.minted[0].config, undefined, 'no signature for unlocked quote');
   assert.deepEqual(result.minted, ['quote-unlocked']);
+  // A number, so JSON and NIP-60 keep it a number.
   assert.equal(result.proofs[0].amount, 200);
   assert.deepEqual(result.failed, []);
 });

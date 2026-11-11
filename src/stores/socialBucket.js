@@ -43,6 +43,7 @@ import {
   mergeCashuProofs,
   publishNip60WalletState,
 } from '../services/nostrCashuWallet.js';
+import { plainProofs } from '../utils/cashuProofs.js';
 
 const STORAGE_KEYS = Object.freeze({
   META: 'buhoGO_social_bucket_v1',
@@ -299,8 +300,15 @@ export const useSocialBucketStore = defineStore('socialBucket', {
             releaseLegacyClaim();
             return;
           }
-          const proofs = JSON.parse(json);
-          if (Array.isArray(proofs)) this.heldProofs = proofs;
+          const stored = JSON.parse(json);
+          if (Array.isArray(stored)) {
+            // Proofs saved by cashu-ts 4 hold their amounts as text.
+            const proofs = plainProofs(stored);
+            if (proofs.length !== stored.length) {
+              console.warn(`[social-bucket] ${stored.length - proofs.length} unreadable proof(s) left out`);
+            }
+            this.heldProofs = proofs;
+          }
         }
 
         const nip60Envelope = localStorage.getItem(
