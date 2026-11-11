@@ -364,3 +364,24 @@ test('unreadable proofs from the legacy storage stay set aside after the migrati
   migrated.reset();
   assert.equal(localStorage.getItem(`buhoGO_social_bucket_proofs_set_aside_v1:${PROFILE_A}`), null, 'erase takes it too');
 });
+
+test('proofs set aside before there was a profile move to it and leave with erase', async () => {
+  const store = freshStore();
+  const envelope = await encryptString(JSON.stringify([proof(21, 'legacy'), { ...proof(5, 'broken'), C: null }]));
+  localStorage.setItem('buhoGO_social_bucket_proofs_v1', envelope);
+  await store.hydrate();
+  store.mintUrl = MINT;
+  store._persistMeta();
+  await store._persistProofs(); // the legacy file now holds only the readable proof
+  assert.equal(localStorage.getItem('buhoGO_social_bucket_proofs_set_aside_v1'), envelope);
+
+  setActivePinia(createPinia());
+  const migrated = useSocialBucketStore();
+  await migrated.hydrate({ pubkey: PROFILE_A });
+  assert.equal(migrated.heldSats, 21);
+  assert.equal(localStorage.getItem(`buhoGO_social_bucket_proofs_set_aside_v1:${PROFILE_A}`), envelope);
+  assert.equal(localStorage.getItem('buhoGO_social_bucket_proofs_set_aside_v1'), null);
+
+  migrated.reset();
+  assert.deepEqual([...localStorage.data.keys()].filter((key) => key.includes('set_aside')), []);
+});

@@ -385,9 +385,17 @@ export const useSocialBucketStore = defineStore('socialBucket', {
               walletEnvelope,
             );
           }
+          // Proofs set aside before there was a profile go along with the
+          // bucket; one the profile already has is the newer.
+          const legacyAside = localStorage.getItem(PROOFS_SET_ASIDE_KEY);
+          const scopedAsideKey = profileStorageKey(PROOFS_SET_ASIDE_KEY, requestedOwner);
+          if (legacyAside && !localStorage.getItem(scopedAsideKey)) {
+            localStorage.setItem(scopedAsideKey, legacyAside);
+          }
           // Metadata is the migration commit marker and is written last.
           localStorage.setItem(profileStorageKey(STORAGE_KEYS.META, requestedOwner), meta);
           for (const base of Object.values(STORAGE_KEYS)) localStorage.removeItem(base);
+          localStorage.removeItem(PROOFS_SET_ASIDE_KEY);
         } catch (err) {
           // Remove a partial scoped write and keep the legacy copy intact so
           // migration can retry without selecting an incomplete destination.
