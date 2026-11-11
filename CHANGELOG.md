@@ -88,7 +88,7 @@ Still on a BuhoGO from GitHub or Zapstore older than 1.9.1? It was signed with a
 - Fixed a kiosk on an NWC wallet not taking any payment, two ways an unpaid sale could show as paid, the kiosk staying set to a wallet that had been disconnected, and parking a second sale replacing the first.
 - Fixed a fiat register charging the typed number as Bitcoin when it had no exchange rate. It now charges only with a price from the last hour and says why when it can't.
 - Fixed a Bolt Card that never pays leaving the kiosk on "Paying…". After a minute the sale goes back to the QR code, ready for another try.
-- Fixed bottom sheets losing their bottom spacing on Android, and the register saying "sats".
+- Fixed bottom sheets losing their bottom spacing on Android, and the register showing amounts in sats whatever Bitcoin format you chose in Settings.
 - Fixed a link that opened a closed BuhoGO, such as a shared card, landing on the start screen instead of the linked page.
 - Fixed the business verification not being saved for Spark on-chain payments, and sometimes attaching to the wrong payment.
 - An Arkade wallet that holds money can now be removed only once its recovery phrase is backed up.
