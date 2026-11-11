@@ -17,7 +17,7 @@
           <div class="detail-status">
             <span>{{ typeLabel }}</span>
             <span aria-hidden="true">·</span>
-            <span class="connection-status"><span class="connection-dot" :class="{ 'connection-dot--online': connected }" aria-hidden="true" />{{ connected ? $t('Online') : $t('Offline') }}</span>
+            <span class="connection-status"><span class="connection-dot" :class="{ 'connection-dot--online': connected }" aria-hidden="true" />{{ connected ? $t('Online') : connectionEnded ? $t('Connection ended') : $t('Offline') }}</span>
           </div>
         </div>
         <button v-if="!editing" ref="editButton" type="button" class="detail-icon-button detail-edit" :aria-label="$t('Rename wallet')" @click="startEditing">
@@ -167,6 +167,8 @@ const props = defineProps({
   switching: Boolean,
   reconnecting: Boolean,
   connectionError: { type: String, default: '' },
+  /** The other side ended the connection (store.connectionEnded): Reconnect cannot bring it back. */
+  connectionEnded: Boolean,
   renameWallet: { type: Function, required: true },
   /** Spark only: the wallet's Lightning address, when it has one. */
   lightningAddress: { type: String, default: '' },
@@ -195,8 +197,10 @@ const maxNameLength = MAX_WALLET_NAME_LENGTH;
 const backButton = ref(null), editButton = ref(null), nameInput = ref(null);
 const editing = ref(false), saving = ref(false), nameDraft = ref(''), nameError = ref('');
 // Every wallet that is offline can be reconnected from here (all Spark
-// wallets stay live, so none of them needs to be selected first).
-const canReconnect = computed(() => !props.connected);
+// wallets stay live, so none of them needs to be selected first), except
+// one whose connection was ended on the other side: only a new connection
+// brings that back, and the message above says how.
+const canReconnect = computed(() => !props.connected && !props.connectionEnded);
 
 async function startEditing() {
   nameDraft.value = props.wallet.name;

@@ -31,6 +31,7 @@ export default {
   "Reachable": "Erreichbar",
   "Not reachable": "Nicht erreichbar",
   "No reply": "Keine Antwort",
+  "Connection ended": "Verbindung beendet",
   "Not asked": "Nicht gefragt",
   "Check your internet or VPN, then try again.": "Prüfe dein Internet oder VPN und versuch es dann erneut.",
   "Is your node or wallet app running? Then try again.": "Läuft dein Node oder deine Wallet-App? Dann versuch es erneut.",

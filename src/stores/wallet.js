@@ -12,6 +12,7 @@ import { createNwcProvider } from '../services/nwcClient.js';
 import { parseNwcConnection } from '../utils/nwcConnection.js';
 import { capabilitiesOf, cleanWalletText, nip47Methods, spendingLimitFrom, suggestedWalletName, walletAddressOf, walletKeyOf } from '../utils/nwcWallet.js';
 import { NWC_ERROR, isNotOffered, isRelayFailure, nwcError } from '../utils/nwcErrors.js';
+import { isConnectionEnded } from '../utils/connectionEnded.js';
 import { probeNwcConnection } from '../services/nwcProbe.js';
 import { payWithNwc } from '../services/nwcPayment.js';
 import { lookupNwcInvoice, makeNwcInvoice } from '../services/nwcReceive.js';
@@ -370,10 +371,15 @@ export const useWalletStore = defineStore('wallet', {
     // (utils/nwcWallet spendingLimitFrom, null = no limit or not shared),
     // the last payment a limit it keeps to itself refused ({ amountSats, at }),
     // and whether it answered last time it was asked: 'answering' |
-    // 'no-answer' | 'relay' (its relay could not be reached).
+    // 'no-answer' | 'relay' (its relay could not be reached) | 'ended'
+    // (the wallet no longer knows this connection).
     nwcLimits: {},
     nwcLimitRefusals: {},
     nwcStatus: {},
+    // Connected wallets (NWC, LNbits) whose other side ended the
+    // connection (utils/connectionEnded), runtime only: walletId -> true.
+    // Cleared by the next answer.
+    connectionEnded: {},
 
     // User preferences
     preferredFiatCurrency: 'USD',
@@ -2850,7 +2856,7 @@ export const useWalletStore = defineStore('wallet', {
      * connection's grants in their wallet app) and repairs wallets saved
      * before these details were read correctly.
      *
-     * @returns {Promise<'answering'|'no-answer'|'relay'>}
+     * @returns {Promise<'answering'|'no-answer'|'relay'|'ended'>}
      */
     async refreshNwcDetails(walletId) {
       const wallet = this.wallets.find((w) => w.id === walletId);
@@ -2880,9 +2886,13 @@ export const useWalletStore = defineStore('wallet', {
           this._schedulePersist();
         }
         await this.refreshNwcLimit(walletId);
+        this._noteConnection(walletId);
       } catch (error) {
-        // A connection that may not ask who it is still answered.
+        // A connection that may not ask who it is still answered, so the
+        // wallet knows it.
+        this._noteConnection(walletId, isNotOffered(error) ? null : error);
         if (isNotOffered(error)) status = 'answering';
+        else if (this.connectionEnded[walletId]) status = 'ended';
         else status = isRelayFailure(error) ? 'relay' : 'no-answer';
         if (status !== 'answering') console.warn('[nwc] wallet did not answer:', error?.message || error);
       }
@@ -3107,8 +3117,10 @@ export const useWalletStore = defineStore('wallet', {
         // Get info
         const info = await provider.getInfo();
         this.walletInfos[walletId] = info;
+        this._noteConnection(walletId);
 
       } catch (error) {
+        this._noteConnection(walletId, error);
         this.connectionStates[walletId] = {
           connected: false,
           lastConnected: Date.now(),
@@ -3287,6 +3299,8 @@ export const useWalletStore = defineStore('wallet', {
       if (wallet.type === WALLET_TYPES.SPARK) forgetSparkWallet?.(walletId);
       else forgetWalletReceipts?.(walletId);
       delete this.walletInfos[walletId];
+      delete this.connectionEnded[walletId];
+      delete this.nwcStatus[walletId];
       try { useExitKitStore().remove(walletId); } catch { /* metadata only */ }
       await useAutoWithdrawStore().forgetWallet(walletId);
       if (this.kioskWalletId === walletId) this.kioskWalletId = null;
@@ -3542,6 +3556,7 @@ export const useWalletStore = defineStore('wallet', {
         if (!this.isBalanceReadCurrent(read)) return false;
         const result = await provider.getBalance();
         if (!this.isBalanceReadCurrent(read)) return false;
+        this._noteConnection(walletId);
         const accepted = this.applyBalance(walletId, result.balance, {
           read, source: result.fresh === false ? 'cache' : source,
           fresh: result.fresh !== false, error: result.syncError || null,
@@ -3554,7 +3569,10 @@ export const useWalletStore = defineStore('wallet', {
         }
         return accepted;
       } catch (error) {
-        if (this.isBalanceReadCurrent(read)) this.markBalanceError(walletId, error.message || 'Balance could not be refreshed');
+        if (this.isBalanceReadCurrent(read)) {
+          this._noteConnection(walletId, error);
+          this.markBalanceError(walletId, error.message || 'Balance could not be refreshed');
+        }
         return false;
       } finally {
         if (this.isBalanceReadCurrent(read)) this.markBalanceRefresh(walletId, false);
@@ -4497,6 +4515,27 @@ export const useWalletStore = defineStore('wallet', {
         ...[...this.wallets, ...this._unusableWallets].map((w) => w.id),
         ...setAsideSparkWalletIds(),
       ]);
+    },
+
+    /**
+     * Record what a connected wallet's last answer says about its
+     * connection: an answer clears "ended"; an error that says the other
+     * side ended it sets it (utils/connectionEnded); any other error says
+     * nothing about it and leaves it as it was.
+     */
+    _noteConnection(walletId, error = null) {
+      const wallet = this.wallets.find((w) => w.id === walletId);
+      const type = wallet?.type || WALLET_TYPES.NWC;
+      if (!error) {
+        if (!this.connectionEnded[walletId]) return;
+        delete this.connectionEnded[walletId];
+        // The NWC status says the same as the flag, whichever read saw it.
+        if (type === WALLET_TYPES.NWC && this.nwcStatus[walletId] === 'ended') this.nwcStatus[walletId] = 'answering';
+        return;
+      }
+      if (!wallet || !isConnectionEnded(type, error)) return;
+      this.connectionEnded[walletId] = true;
+      if (type === WALLET_TYPES.NWC) this.nwcStatus[walletId] = 'ended';
     },
 
     /**

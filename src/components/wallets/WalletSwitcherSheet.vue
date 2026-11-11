@@ -65,7 +65,7 @@
             <div class="switch-details">
               <div class="switch-name" :class="$q.dark.isActive ? 'switch-name-dark' : 'switch-name-light'">
                 {{ wallet.name }}
-                <span class="switch-sr-only">{{ connected(wallet.id) ? $t('Online') : $t('Offline') }}</span>
+                <span class="switch-sr-only">{{ connected(wallet.id) ? $t('Online') : store.connectionEnded[wallet.id] ? $t('Connection ended') : $t('Offline') }}</span>
               </div>
               <WalletTypeChip :type="wallet.type" class="switch-type-chip" />
               <div
@@ -165,7 +165,8 @@ const totalInfo = computed(() => store.totalBalanceInfo);
 const discovering = computed(() => store.sparkDiscoveryRunning);
 const anyRefreshing = computed(() => totalInfo.value.refreshing);
 
-const connected = (walletId) => !!store.connectionStates[walletId]?.connected;
+// A connection ended on the other side is set up but cannot be used.
+const connected = (walletId) => !!store.connectionStates[walletId]?.connected && !store.connectionEnded[walletId];
 const unseenOf = (walletId) => unseen.forWallet(walletId);
 const display = (walletId) => store.getDisplayBalance(walletId);
 const formatBalance = (sats) => formatMainBalance(sats, store.useBip177Format);

@@ -11,6 +11,7 @@ import { createSparkLifecycle } from '../../services/sparkLifecycle.js';
 import * as nwcWallet from '../../utils/nwcWallet.js';
 import * as nwcConnection from '../../utils/nwcConnection.js';
 import * as nwcErrors from '../../utils/nwcErrors.js';
+import * as connectionEnded from '../../utils/connectionEnded.js';
 import * as nwcAtRest from '../../utils/nwcAtRest.js';
 
 const deferred = () => { let resolve, reject; const promise = new Promise((yes, no) => { resolve = yes; reject = no; }); return { promise, resolve, reject }; };
@@ -42,6 +43,7 @@ function harness(ctx, type = 'lnbits') {
     '../utils/nwcWallet.js': nwcWallet,
     '../utils/nwcConnection.js': nwcConnection,
     '../utils/nwcErrors.js': nwcErrors,
+    '../utils/connectionEnded.js': connectionEnded,
     '../utils/nwcAtRest.js': nwcAtRest,
     '../utils/claimedDeposits.js': { createClaimedDepositRegistry: () => ({}) },
     './autoWithdraw': { useAutoWithdrawStore: () => ({ checkAndExecute() {}, async initialize() {} }) },
