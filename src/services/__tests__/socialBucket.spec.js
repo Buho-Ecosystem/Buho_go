@@ -10,7 +10,7 @@ import { strict as assert } from 'node:assert';
 import { test } from 'node:test';
 import { Amount } from '@cashu/cashu-ts';
 import { secp256k1 } from '@noble/curves/secp256k1.js';
-import { mintQuotes } from '../socialBucket.js';
+import { meltToInvoice, mintQuotes } from '../socialBucket.js';
 
 const PRIVKEY = '01'.padStart(64, '0');
 
@@ -114,4 +114,26 @@ test('one unready or unreachable quote does not block the rest of the batch', as
   assert.deepEqual(result.minted, ['paid']);
   assert.equal(result.proofs.length, 1);
   assert.deepEqual(result.failed.map((failure) => failure.quoteId), ['pending', 'broken']);
+});
+
+test('change from a payment out is kept with number amounts', async () => {
+  const proofs = [
+    { id: 'k', amount: 512, secret: 's1', C: '02c1' },
+    { id: 'k', amount: 512, secret: 's2', C: '02c2' },
+  ];
+  const wallet = {
+    async createMeltQuoteBolt11() { return { quote: 'melt', amount: 1000, fee_reserve: 10 }; },
+    async meltProofsBolt11() {
+      return { change: [{ id: 'k', amount: Amount.from(8), secret: 's3', C: '02c3' }] };
+    },
+  };
+  const result = await meltToInvoice({
+    proofs,
+    mintUrl: 'https://mint.example',
+    privkeyHex: PRIVKEY,
+    createInvoice: async () => 'lnbc1',
+    walletFactory: async () => wallet,
+  });
+  assert.equal(result.change[0].amount, 8);
+  assert.equal(result.fee, 16, "1024 held, 1000 paid, 8 back");
 });

@@ -25,6 +25,7 @@ globalThis.localStorage = new MemoryStorage();
 
 const { createPinia, setActivePinia } = await import('pinia');
 const { useSocialBucketStore } = await import('../socialBucket.js');
+const { encryptString } = await import('../../utils/deviceCrypto.js');
 
 const PROFILE_A = 'a'.repeat(64);
 const PROFILE_B = 'b'.repeat(64);
@@ -321,4 +322,23 @@ test('a backup reads the current wallet first and keeps its key', async () => {
   assert.equal(unchecked.reason, 'NIP60_UNCHECKED', 'no blind write while the current wallet is unknown');
   assert.equal(store.nip60BackupPending, true);
   assert.equal(store.nip60Wallet, null);
+});
+
+test('proofs saved with text amounts load as numbers; unreadable ones are set aside', async () => {
+  const store = freshStore();
+  await store.hydrate({ pubkey: PROFILE_A });
+  store.mintUrl = MINT;
+  store._persistMeta();
+  const saved = [proof('21', 'text'), proof(8, 'number'), { ...proof(5, 'broken'), C: null }];
+  const envelope = await encryptString(JSON.stringify(saved));
+  localStorage.setItem(`buhoGO_social_bucket_proofs_v1:${PROFILE_A}`, envelope);
+
+  setActivePinia(createPinia());
+  const reloaded = useSocialBucketStore();
+  await reloaded.hydrate({ pubkey: PROFILE_A });
+
+  assert.deepEqual(reloaded.heldProofs.map((p) => p.amount), [21, 8]);
+  assert.equal(reloaded.heldSats, 29);
+  assert.equal(localStorage.getItem(`buhoGO_social_bucket_proofs_set_aside_v1:${PROFILE_A}`), envelope,
+    'the file as found is kept, still encrypted');
 });

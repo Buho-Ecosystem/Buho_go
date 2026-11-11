@@ -157,13 +157,13 @@ export async function mintQuotes({
  * @param {(sats:number) => Promise<string>} createInvoice
  * @returns {Promise<{paid:number, fee:number, change:Array, invoice:string}>}
  */
-export async function meltToInvoice({ proofs, mintUrl, privkeyHex, createInvoice }) {
+export async function meltToInvoice({ proofs, mintUrl, privkeyHex, createInvoice, walletFactory = walletFor }) {
   const available = sumProofs(proofs);
   if (available < MIN_SWEEP_SATS) {
     throw new SweepError('Too little to move', 'TOO_SMALL');
   }
 
-  const wallet = await walletFor(mintUrl);
+  const wallet = await walletFactory(mintUrl);
 
   let target = available - feeBuffer(available);
   let invoice;

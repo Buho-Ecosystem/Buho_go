@@ -206,3 +206,17 @@ test('cashu-ts Amount proofs are published with number amounts', async () => {
   // The standard reader, as any NIP-60 wallet would read it.
   assert.deepEqual(parseTokenEvent(tokenEvent, SECRET).proofs, [proof(16, 'amount')]);
 });
+
+test('a snapshot that would leave a proof out is never published', async () => {
+  const published = [];
+  const pool = { async ensureRelay() { return { async publish(event) { published.push(event); } }; } };
+  await assert.rejects(publishNip60WalletState({
+    secretKey: SECRET,
+    mint: MINT,
+    proofs: [{ ...proof(8, 'broken'), C: null }],
+    previousTokenEventIds: ['a'.repeat(64)],
+    pool,
+    relays: ['wss://relay.example'],
+  }), TypeError);
+  assert.deepEqual(published, [], 'no deletion of the earlier backup either');
+});

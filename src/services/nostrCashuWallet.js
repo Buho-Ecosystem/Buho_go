@@ -49,6 +49,8 @@ function toHex(bytes) {
  * Backups written while proofs were still cashu-ts `Amount` objects hold
  * each amount as text ("8"). nostr-core's reader rejects that, so such an
  * event is read here instead; the next backup replaces it with numbers.
+ * readTextAmountToken goes once nostr-core reads text amounts itself
+ * (nostr-core-org/nostr-core#87).
  */
 function readTokenEvent(event, secretKey) {
   let token;
@@ -65,7 +67,7 @@ function readTextAmountToken(event, secretKey) {
   try {
     const selfKey = nip44.getConversationKey(secretKey, getPublicKey(secretKey));
     const data = JSON.parse(nip44.decrypt(event.content, selfKey));
-    if (typeof data?.mint !== 'string' || !Array.isArray(data.proofs)) return null;
+    if (typeof data?.mint !== 'string' || !data.mint || !Array.isArray(data.proofs)) return null;
     const proofs = plainProofs(data.proofs);
     // As strict as nostr-core about everything except how an amount is written.
     if (proofs.length !== data.proofs.length) return null;
@@ -274,10 +276,14 @@ export async function publishNip60WalletState({
     throw new TypeError('mint must be an https URL');
   }
   if (!Array.isArray(proofs)) throw new TypeError('proofs must be an array');
-  // NIP-60 amounts are numbers; a cashu-ts Amount would be written as text.
-  const tokenProofs = plainProofs(proofs);
   if (!pool || typeof pool.ensureRelay !== 'function') {
     throw new TypeError('pool must implement ensureRelay');
+  }
+  // NIP-60 amounts are numbers; a cashu-ts Amount would be written as text.
+  // A snapshot replaces every earlier one, so it never leaves a proof out.
+  const tokenProofs = plainProofs(proofs);
+  if (tokenProofs.length !== proofs.length) {
+    throw new TypeError('every proof needs an id, a secret, a C and a whole-number amount');
   }
 
   const urls = normalizeRelays(relays);
