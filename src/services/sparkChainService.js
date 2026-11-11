@@ -51,14 +51,17 @@ function failureText(error) {
 }
 
 /**
- * A server's verdict, as opposed to a server in trouble: a 4xx (the
- * transaction is not known, the broadcast is refused). Asking the next
- * server would only repeat it. A 5xx, a rate limit or a timeout says
- * nothing about the question, so the next server is asked.
+ * A server's verdict on the question, as opposed to a server in trouble:
+ * 400 (a broadcast refused), 404 (no such transaction) or 422 (a request
+ * it cannot process). Asking the next server would only repeat it. Any
+ * other answer says nothing about the question and the next server is
+ * asked: 5xx, a rate limit (429), a timeout, or a block in front of the
+ * server (401, 403, 407, 451 from a proxy, a CDN or a region block).
  */
+const VERDICTS = new Set([400, 404, 422]);
+
 export function isVerdict(text) {
-  const status = Number(/Status error: (\d{3})/.exec(text)?.[1]);
-  return status >= 400 && status < 500 && status !== 408 && status !== 429;
+  return VERDICTS.has(Number(/Status error: (\d{3})/.exec(text)?.[1]));
 }
 
 const timedOut = Symbol('timed out');

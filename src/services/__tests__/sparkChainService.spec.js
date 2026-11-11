@@ -81,9 +81,11 @@ test('a server\'s verdict is the answer: the next server is not asked to repeat 
   await assert.rejects(chain.getTransactionStatus('tx'), (error) => error === notFound);
   assert.equal(dead.calls.length, 0);
 
-  const limited = server('limited', { fail: statusError(429, 'rate_limited') });
-  const other = server('other');
-  assert.equal(await createFallbackChainService([limited, other]).tipHeight(), 900_000, 'a rate limit asks the next');
+  for (const status of [429, 403, 451, 401, 502]) {
+    const blocked = server('blocked', { fail: statusError(status, 'no') });
+    const other = server('other');
+    assert.equal(await createFallbackChainService([blocked, other]).tipHeight(), 900_000, `${status} asks the next`);
+  }
 });
 
 test('an Error object from a server reaches the SDK as its message', async () => {
