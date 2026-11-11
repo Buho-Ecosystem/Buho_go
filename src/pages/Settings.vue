@@ -332,23 +332,26 @@
 
         <!--
           Quick access: the Quick Settings tiles and the Home screen
-          shortcuts, in a sheet. Android only.
+          shortcuts, in a sheet. Android only; on the web the row is there
+          so people find it, and opens the Get-the-App dialog. The iOS app
+          has no tiles or shortcuts, so it has no row.
         -->
         <SettingsRow
-          v-if="quickAccessSupported"
+          v-if="quickAccessSupported || !isNativeApp"
           icon="tabler:layout-grid-add"
           :label="$t('Quick access')"
           :caption="$t('Open Send, Receive or Scan QR in one tap')"
-          @click="showQuickAccessSheet = true"
+          @click="openQuickAccess"
         />
 
         <!--
           Haptics: on by default, in the app only (a browser cannot play
           them). Off silences every haptic in the app; the phone's own
-          vibration setting still applies on top.
+          vibration setting still applies on top. On the web the toggle
+          stays off and switching it on opens the Get-the-App dialog, like
+          Screen Privacy.
         -->
         <SettingsRow
-          v-if="hapticsSupported"
           icon="tabler:device-mobile-vibration"
           :label="$t('Haptics')"
           :caption="$t('Feel a tap for payments, errors and other key moments')"
@@ -356,7 +359,7 @@
         >
           <template #right>
             <q-toggle
-              :model-value="hapticsOn"
+              :model-value="hapticsSupported && hapticsOn"
               :aria-label="$t('Haptics')"
               @update:model-value="updateHaptics"
               :color="$q.dark.isActive ? 'brand-green' : 'brand-green-dark'"
@@ -2119,6 +2122,14 @@ export default {
 
     /** Haptics on or off; turning them on answers with one tap, so the user feels what they chose. */
     updateHaptics(value) {
+      if (!this.hapticsSupported) {
+        if (value) {
+          this.promptForApp(
+            this.$t('Haptics are felt through the phone and are only available in the BuhoGO Android app. Install it from Google Play to feel a tap for payments, errors and other key moments.')
+          )
+        }
+        return
+      }
       setHapticsEnabled(value)
       this.hapticsOn = value
       if (value) haptics.tap()
@@ -2263,6 +2274,17 @@ export default {
      * @param {string} message - already-localized body line
      *   describing the feature being requested.
      */
+    /** Quick access in the app; the Get-the-App dialog on the web. */
+    openQuickAccess() {
+      if (this.quickAccessSupported) {
+        this.showQuickAccessSheet = true;
+        return;
+      }
+      this.promptForApp(
+        this.$t('Quick access puts Send, Receive and Scan QR on your Home screen and in Quick Settings, and is only available in the BuhoGO Android app. Install it from Google Play to open them in one tap.')
+      );
+    },
+
     promptForApp(message) {
       this.getAppDialogMessage = message;
       this.showGetAppDialog = true;
