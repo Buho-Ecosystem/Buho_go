@@ -52,6 +52,7 @@ test('package broadcast sends both transactions and treats an already-known repl
   const known = createEsploraClient({ endpoints, fetchImpl: fakeFetch([['txs/package', { status: 400, body: 'txn-already-known' }]]).fetchImpl });
   assert.deepEqual(await known.broadcastPackage(['aa', 'bb']), { alreadyKnown: true });
   assert.equal(isAlreadyKnownMessage('Transaction already in block chain'), true);
+  assert.equal(isAlreadyKnownMessage('Transaction outputs already in utxo set'), true, 'Bitcoin Core\'s current wording');
 });
 
 test('a rejected package is surfaced, not retried on another node', async () => {
