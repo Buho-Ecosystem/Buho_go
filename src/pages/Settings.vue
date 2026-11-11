@@ -337,7 +337,7 @@
           has no tiles or shortcuts, so it has no row.
         -->
         <SettingsRow
-          v-if="quickAccessSupported || !isNativeApp"
+          v-if="showQuickAccessRow"
           icon="tabler:layout-grid-add"
           :label="$t('Quick access')"
           :caption="$t('Open Send, Receive or Scan QR in one tap')"
@@ -1503,6 +1503,11 @@ export default {
       return Capacitor.isNativePlatform();
     },
 
+    /** Quick access in the Android app, and on the web to point there; never in the iOS app. */
+    showQuickAccessRow() {
+      return this.quickAccessSupported || !this.isNativeApp;
+    },
+
     bitcoinPrefsStore() {
       return useBitcoinPreferencesStore();
     },
@@ -2264,16 +2269,6 @@ export default {
       }
     },
 
-    /**
-     * Open the shared Get-the-App dialog with a feature-specific
-     * message. Used by every native-only feature that wants to
-     * surface honestly on web instead of being silently disabled —
-     * screen privacy, biometric app lock, future Android-only
-     * protections.
-     *
-     * @param {string} message - already-localized body line
-     *   describing the feature being requested.
-     */
     /** Quick access in the app; the Get-the-App dialog on the web. */
     openQuickAccess() {
       if (this.quickAccessSupported) {
@@ -2285,6 +2280,16 @@ export default {
       );
     },
 
+    /**
+     * Open the shared Get-the-App dialog with a feature-specific
+     * message. Used by every native-only feature that wants to
+     * surface honestly on web instead of being silently disabled —
+     * screen privacy, biometric app lock, haptics, Quick access,
+     * future Android-only protections.
+     *
+     * @param {string} message - already-localized body line
+     *   describing the feature being requested.
+     */
     promptForApp(message) {
       this.getAppDialogMessage = message;
       this.showGetAppDialog = true;
