@@ -44,7 +44,7 @@
       <span class="chat-header__copy">
         <span class="chat-header__title">
           <span class="chat-header__name">{{ name }}</span>
-          <Icon v-if="muted" icon="tabler:bell-off" width="14" height="14" class="chat-header__muted" :aria-label="$t('Muted')" role="img" />
+          <Icon v-if="muted" icon="tabler:bell-off" width="14" height="14" class="chat-header__muted" :aria-label="$t('Muted')" :aria-hidden="false" />
         </span>
         <span class="chat-header__sub" :class="`chat-header__sub--${tone}`">
           <Icon :icon="subtitleIcon" width="12" height="12" />

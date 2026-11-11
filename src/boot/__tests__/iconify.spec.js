@@ -73,5 +73,14 @@ test('an icon is hidden from screen readers by the component, not by each use', 
   assert.deepEqual(repeated, []);
 });
 
+test('an icon with a label is shown to screen readers, or its label is never read', () => {
+  const unread = files.flatMap(({ file, text }) =>
+    [...text.matchAll(/<Icon(?=[\s/>])[^>]*?>/g)]
+      .map((m) => m[0])
+      .filter((tag) => /\s:?aria-label=/.test(tag) && !/\s:aria-hidden="false"/.test(tag))
+      .map((tag) => `${file}: ${tag.slice(0, 80)}`));
+  assert.deepEqual(unread, []);
+});
+
 console.log(`\n  ${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);
