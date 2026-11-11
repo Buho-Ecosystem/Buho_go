@@ -90,7 +90,6 @@
               height="20"
               class="switch-check-icon"
               :class="$q.dark.isActive ? 'check-accent-dark' : 'check-accent-light'"
-              :aria-hidden="true"
             />
             <!-- What the wallet received since the user last looked at it
                  (stores/unseenReceipts). The balance already includes it. -->

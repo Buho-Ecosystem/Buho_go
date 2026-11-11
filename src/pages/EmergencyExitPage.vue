@@ -39,7 +39,7 @@
         </IdentityGroup>
 
         <div class="exit-callout">
-          <Icon icon="tabler:info-circle" width="18" height="18" aria-hidden="true" />
+          <Icon icon="tabler:info-circle" width="18" height="18" />
           <span>{{ $t('While Spark is running, a normal withdrawal is faster and cheaper.') }}</span>
         </div>
 

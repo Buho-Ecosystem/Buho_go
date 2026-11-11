@@ -5,7 +5,7 @@
 -->
 <template>
   <img v-if="wallet.logo" :src="wallet.logo" alt="" class="connect-mark" :width="size" :height="size">
-  <Icon v-else :icon="wallet.icon || 'tabler:wallet'" :width="size * 0.7" :height="size * 0.7" :aria-hidden="true" />
+  <Icon v-else :icon="wallet.icon || 'tabler:wallet'" :width="size * 0.7" :height="size * 0.7" />
 </template>
 
 <script>

@@ -47,7 +47,7 @@
           >
             <template #right>
               <span v-if="tiles.added[tile.kind]" class="qa-added">
-                <Icon icon="tabler:check" width="16" height="16" aria-hidden="true" />
+                <Icon icon="tabler:check" width="16" height="16" />
                 {{ $t('Added') }}
               </span>
               <button
@@ -74,7 +74,7 @@
           >
             <template #right>
               <span v-if="scanPinned" class="qa-added">
-                <Icon icon="tabler:check" width="16" height="16" aria-hidden="true" />
+                <Icon icon="tabler:check" width="16" height="16" />
                 {{ $t('Added') }}
               </span>
               <button

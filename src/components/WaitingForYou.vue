@@ -7,9 +7,9 @@
 -->
 <template>
   <button v-if="summary" type="button" class="waiting-line" data-audit="waiting-line" @click="open = true">
-    <Icon :icon="requests.length ? 'buho:request' : 'tabler:ticket'" width="17" height="17" class="waiting-line__icon" aria-hidden="true" />
+    <Icon :icon="requests.length ? 'buho:request' : 'tabler:ticket'" width="17" height="17" class="waiting-line__icon" />
     <span class="waiting-line__text">{{ summary }}</span>
-    <Icon icon="tabler:chevron-right" width="14" height="14" class="waiting-line__chevron" aria-hidden="true" />
+    <Icon icon="tabler:chevron-right" width="14" height="14" class="waiting-line__chevron" />
   </button>
 
   <q-dialog v-model="open" position="bottom">

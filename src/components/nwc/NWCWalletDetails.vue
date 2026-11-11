@@ -12,7 +12,7 @@
         <span class="nwc-details__label">{{ $t('Address') }}</span>
         <span class="nwc-details__value">{{ address }}</span>
         <button type="button" class="nwc-details__icon" :aria-label="$t('Copy address')" @click="$emit('copy-address', address)">
-          <Icon icon="tabler:copy" width="17" height="17" aria-hidden="true" />
+          <Icon icon="tabler:copy" width="17" height="17" />
         </button>
       </div>
       <div v-if="limit" class="nwc-details__row">
@@ -31,7 +31,7 @@
     <p class="nwc-details__heading">{{ $t('Connection') }}</p>
     <div class="nwc-details__group">
       <div class="nwc-details__row">
-        <Icon icon="tabler:wifi" width="17" height="17" class="nwc-details__lead" aria-hidden="true" />
+        <Icon icon="tabler:wifi" width="17" height="17" class="nwc-details__lead" />
         <span class="nwc-details__label">{{ relay || $t('Relay') }}</span>
         <span class="nwc-details__value nwc-details__status" :class="`is-${statusTone}`">{{ statusText }}</span>
       </div>

@@ -20,7 +20,7 @@
                 <span v-if="summaryCaption(entry)" class="exit-kit-summary-caption">{{ summaryCaption(entry) }}</span>
                 <span class="exit-kit-summary-hint">{{ $t('Kit details') }}</span>
               </span>
-              <Icon icon="tabler:chevron-down" class="exit-kit-chevron" width="18" height="18" aria-hidden="true" />
+              <Icon icon="tabler:chevron-down" class="exit-kit-chevron" width="18" height="18" />
             </summary>
             <div class="exit-kit-detail-rows">
               <IdentityRow
