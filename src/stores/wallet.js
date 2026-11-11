@@ -142,6 +142,17 @@ function setAsideOtherPhrases() {
   }
 }
 
+/** Ids of every Spark entry set aside, for whatever reason. */
+function setAsideSparkWalletIds() {
+  try {
+    return JSON.parse(localStorage.getItem(SPARK_SET_ASIDE_KEY) || '[]')
+      .map((entry) => entry?.wallet?.id)
+      .filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
 /** Store entries the migration could not keep. False when they could not be stored. */
 function setAsideSparkWallets(entries) {
   try {
@@ -248,6 +259,15 @@ function setAsideUnreadableState(raw) {
   localStorage.setItem(key, raw);
   localStorage.removeItem(STORAGE_KEYS.WALLET_STORE);
   console.warn(`[wallet-store] The saved wallets could not be read; kept as ${key}`);
+}
+
+/** Is a saved wallet list kept aside as unreadable, from this or an earlier start? */
+function hasUnreadableWalletState() {
+  const prefix = `${STORAGE_KEYS.UNREADABLE_WALLET_STORE}_`;
+  for (let i = 0; i < localStorage.length; i += 1) {
+    if (localStorage.key(i)?.startsWith(prefix)) return true;
+  }
+  return false;
 }
 
 /**
@@ -1484,7 +1504,16 @@ export const useWalletStore = defineStore('wallet', {
           // Auto-Transfer: the saved rules (the wallet watch below keeps
           // the balances of their wallets current).
           const autoWithdrawStore = useAutoWithdrawStore();
-          await autoWithdrawStore.initialize({ wallets: this.wallets });
+          // Rules of removed wallets are settled only against a wallet list
+          // read from disk. None was read, or one was set aside as
+          // unreadable (now or on an earlier start): its wallets may come
+          // back, so their rules stay (rulesOf keeps them out of every
+          // count and list meanwhile).
+          const walletsRead = Array.isArray(parsed?.wallets) && !hasUnreadableWalletState();
+          await autoWithdrawStore.initialize({
+            wallets: this.wallets,
+            heldWalletIds: walletsRead ? this._heldWalletIds() : null,
+          });
 
           // Auto-connect Spark wallets — detect if migration from PIN is needed
           if (this.sparkWallets.length > 0) {
@@ -4455,6 +4484,19 @@ export const useWalletStore = defineStore('wallet', {
      */
     generateWalletId() {
       return `wallet-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`;
+    },
+
+    /**
+     * Every wallet this device holds: the list, the entries it cannot use
+     * now (validateWallets), and Spark entries set aside by the migration.
+     * Only read once the saved state is loaded; a wallet that may come back
+     * is held.
+     */
+    _heldWalletIds() {
+      return new Set([
+        ...[...this.wallets, ...this._unusableWallets].map((w) => w.id),
+        ...setAsideSparkWalletIds(),
+      ]);
     },
 
     /**

@@ -1635,16 +1635,13 @@ export default {
       return warnings.filter((w) => !this.dismissedWarnings.includes(w.id));
     },
 
-    /** Rules that are switched on. */
-    autoTransferOn() {
-      return Object.values(useAutoWithdrawStore().configs).filter((rule) => rule.enabled).length;
-    },
-    /** The Auto-Transfer row's value: where the rules stand, in a few words. */
+    /** The Auto-Transfer row's value: where its page's rules stand, in a few words. */
     autoTransferMeta() {
-      const store = useAutoWithdrawStore();
-      if (store.needingAttention.length) return this.$t('Needs attention');
-      if (this.autoTransferOn) return this.$t('{count} on', { count: this.autoTransferOn });
-      return Object.keys(store.configs).length ? this.$t('Paused') : this.$t('No rules yet');
+      const rules = useAutoWithdrawStore().rulesOf(this.walletStore.wallets);
+      if (rules.some((entry) => entry.status.kind === 'attention')) return this.$t('Needs attention');
+      const on = rules.filter((entry) => entry.rule.enabled).length;
+      if (on) return this.$t('{count} on', { count: on });
+      return rules.length ? this.$t('Paused') : this.$t('No rules yet');
     },
 
     /**

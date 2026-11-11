@@ -12,6 +12,7 @@ import { test } from 'node:test';
 import { readFileSync } from 'node:fs';
 import { transformSync } from 'esbuild';
 import * as rules from '../../utils/autoTransfer.js';
+import { settleRulesForWallets } from '../../utils/autoWithdrawKeys.js';
 import { PAY_REQUEST, invoiceFor, lnurlPayWith } from '../../utils/__tests__/lnurlPayFixtures.js';
 
 const LN = 'shop@getalby.com';
@@ -38,7 +39,7 @@ function load({ rates = { USD: 50_000 }, rateAge = 2, deps: extra = {} } = {}) {
       }),
     },
     '../providers/WalletFactory': { WALLET_TYPES: { SPARK: 'spark', ARKADE: 'arkade', NWC: 'nwc', LNBITS: 'lnbits' } },
-    '../utils/autoWithdrawKeys.js': { migratePocketConfigKeys: (configs) => ({ configs, moved: [], dropped: [] }) },
+    '../utils/autoWithdrawKeys.js': { migratePocketConfigKeys: (configs) => ({ configs, moved: [], dropped: [] }), settleRulesForWallets },
     '../utils/nwcErrors.js': { NWC_ERROR: { UNCONFIRMED: 'NWC_PAYMENT_UNCONFIRMED' } },
     '../utils/fiatRates.js': {
       fiatRatesService: {
@@ -54,6 +55,9 @@ function load({ rates = { USD: 50_000 }, rateAge = 2, deps: extra = {} } = {}) {
   new Function('require', 'module', 'exports', code)((name) => deps[name] || {}, module, module.exports);
   const options = module.exports.useAutoWithdrawStore;
   const store = { ...options.state(), ...options.actions };
+  for (const [name, getter] of Object.entries(options.getters)) {
+    Object.defineProperty(store, name, { get: () => getter(store) });
+  }
   store.stamps = stamps;
   return store;
 }
@@ -308,4 +312,33 @@ test('from LNbits or NWC, a Lightning address is paid only with an invoice for t
       }
     }
   }
+});
+
+test('rules left behind by removed wallets are settled when the rules load', async () => {
+  const saved = {
+    shop: { enabled: true, threshold: { sats: 5 }, destination: { kind: 'wallet', walletId: 'old-savings' } },
+    'old-savings': { enabled: true, threshold: { sats: 5 }, destination: { kind: 'lightning', address: LN } },
+    'set-aside': { enabled: true, threshold: { sats: 5 }, destination: { kind: 'lightning', address: LN } },
+  };
+  storage.set('buhoGO_auto_withdraw', JSON.stringify({ configs: saved }));
+  const aw = load();
+  await aw.initialize({ wallets: [{ id: 'shop' }], heldWalletIds: new Set(['shop', 'set-aside']) });
+  assert.deepEqual(Object.keys(aw.configs).sort(), ['set-aside', 'shop'], 'a wallet that may come back keeps its rule');
+  assert.deepEqual([aw.configs.shop.enabled, aw.configs.shop.pausedReason], [false, 'destination_removed']);
+  assert.deepEqual(Object.keys(JSON.parse(storage.get('buhoGO_auto_withdraw')).configs).sort(), ['set-aside', 'shop'], 'saved back without the dropped rule');
+
+  // Without the held wallets (the wallet list could not be read), nothing goes.
+  storage.set('buhoGO_auto_withdraw', JSON.stringify({ configs: saved }));
+  const unsure = load();
+  await unsure.initialize({ wallets: [] });
+  assert.equal(Object.keys(unsure.configs).length, 3);
+});
+
+test('Settings, the page and Home count only the rules of wallets on screen', () => {
+  const { aw, id } = setup();
+  aw.configs.ghost = rules.normalizeRule({ enabled: true, threshold: { sats: 5 }, destination: { kind: 'lightning', address: LN } });
+  const listed = aw.rulesOf([{ id, name: 'Shop' }, { id: 'savings', name: 'Savings' }]);
+  assert.deepEqual(listed.map((entry) => entry.walletId), [id]);
+  assert.equal(listed[0].status.kind, rules.ruleStatus(aw.configs[id]).kind);
+  assert.deepEqual(aw.rulesOf(), []);
 });
