@@ -49,4 +49,6 @@ test('an unreadable wallet list leaves the rules alone, on that start and every 
 test('with no saved wallet list at all, nothing is settled', async () => {
   const { calls } = await start({});
   assert.equal(calls.rulesLoaded[0].heldWalletIds, null);
+  const empty = await start({ buhoGO_wallet_store: '{}' });
+  assert.equal(empty.calls.rulesLoaded[0].heldWalletIds, null, 'saved state without a wallet list');
 });

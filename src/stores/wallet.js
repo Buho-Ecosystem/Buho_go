@@ -1507,8 +1507,9 @@ export const useWalletStore = defineStore('wallet', {
           // Rules of removed wallets are settled only against a wallet list
           // read from disk. None was read, or one was set aside as
           // unreadable (now or on an earlier start): its wallets may come
-          // back, so their rules stay.
-          const walletsRead = parsed !== null && !hasUnreadableWalletState();
+          // back, so their rules stay (rulesOf keeps them out of every
+          // count and list meanwhile).
+          const walletsRead = Array.isArray(parsed?.wallets) && !hasUnreadableWalletState();
           await autoWithdrawStore.initialize({
             wallets: this.wallets,
             heldWalletIds: walletsRead ? this._heldWalletIds() : null,
