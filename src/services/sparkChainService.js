@@ -10,7 +10,19 @@
  * one that answered.
  */
 
-import { DEFAULT_ESPLORA_ENDPOINTS, isAlreadyKnownMessage } from './esplora.js';
+import { isAlreadyKnownMessage } from './esplora.js';
+
+/**
+ * The servers, in the order they are asked: the emergency exit's
+ * (esplora.js DEFAULT_ESPLORA_ENDPOINTS). Mempool servers are asked as
+ * Mempool, which gives the SDK their recommended fees, as its own default
+ * does; Blockstream speaks plain Esplora.
+ */
+export const SPARK_CHAIN_SERVERS = Object.freeze([
+  Object.freeze({ url: 'https://mempool.space/api', api: 'mempoolSpace' }),
+  Object.freeze({ url: 'https://blockstream.info/api', api: 'esplora' }),
+  Object.freeze({ url: 'https://mempool.emzy.de/api', api: 'mempoolSpace' }),
+]);
 
 /** How long one server gets for one lookup before the next is asked: one
  * server that never answers and one that does fit in one Spark sync. */
@@ -28,16 +40,32 @@ const LOOKUPS = Object.freeze([
   'recommendedFees',
 ]);
 
-class ChainLookupTimeout extends Error {
-  constructor() {
-    super('The chain server did not answer in time');
-    this.name = 'ChainLookupTimeout';
-  }
+// The SDK reads a chain service's failure as text only (an Error object
+// reaches it as "Chain service error occurred"), as its own servers fail.
+const TIMED_OUT = 'Service connectivity: the chain server did not answer in time';
+
+/** A failure as the SDK reads it: text, with the server's own words. */
+function failureText(error) {
+  if (typeof error === 'string') return error;
+  return String(error?.message || error || 'Chain service error');
 }
+
+/**
+ * A server's verdict, as opposed to a server in trouble: a 4xx (the
+ * transaction is not known, the broadcast is refused). Asking the next
+ * server would only repeat it. A 5xx, a rate limit or a timeout says
+ * nothing about the question, so the next server is asked.
+ */
+export function isVerdict(text) {
+  const status = Number(/Status error: (\d{3})/.exec(text)?.[1]);
+  return status >= 400 && status < 500 && status !== 408 && status !== 429;
+}
+
+const timedOut = Symbol('timed out');
 
 function withTimeout(promise, ms) {
   let timer;
-  const timeout = new Promise((_, reject) => { timer = setTimeout(() => reject(new ChainLookupTimeout()), ms); });
+  const timeout = new Promise((resolve) => { timer = setTimeout(() => resolve(timedOut), ms); });
   return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
 }
 
@@ -72,30 +100,38 @@ export function createFallbackChainService(servers, {
   }
 
   async function ask(method, args, { accept = () => false } = {}) {
-    let lastError;
+    // What a server said beats a server that said nothing: it may carry the
+    // answer the SDK looks for ("already in the mempool", "not found").
+    let refusal = null;
     for (const index of order()) {
+      let result;
       try {
-        const result = await withTimeout(servers[index][method](...args), timeoutMs);
-        answered(index);
-        return result;
+        result = await withTimeout(servers[index][method](...args), timeoutMs);
       } catch (error) {
-        if (accept(error)) {
+        const text = failureText(error);
+        if (accept(text)) {
           answered(index);
           return undefined;
         }
-        lastError = error;
+        if (isVerdict(text)) {
+          answered(index);
+          throw text;
+        }
+        refusal = text;
+        continue;
       }
+      if (result === timedOut) continue;
+      answered(index);
+      return result;
     }
-    throw lastError;
+    throw refusal ?? TIMED_OUT;
   }
 
   const service = {};
   for (const method of LOOKUPS) service[method] = (...args) => ask(method, args);
   // A transaction a server already has is a broadcast that worked: an
   // earlier server may have taken it before it ran out of time.
-  service.broadcastTransaction = (tx) => ask('broadcastTransaction', [tx], {
-    accept: (error) => isAlreadyKnownMessage(error?.message || error),
-  });
+  service.broadcastTransaction = (tx) => ask('broadcastTransaction', [tx], { accept: isAlreadyKnownMessage });
   return service;
 }
 
@@ -113,7 +149,7 @@ const shared = new Map();
 export function sparkChainService(mod, network) {
   if (network !== 'mainnet' || typeof mod?.newRestChainService !== 'function') return Promise.resolve(null);
   if (!shared.has(network)) {
-    const built = Promise.all(DEFAULT_ESPLORA_ENDPOINTS.map((url) => mod.newRestChainService(url, network, 'esplora')))
+    const built = Promise.all(SPARK_CHAIN_SERVERS.map(({ url, api }) => mod.newRestChainService(url, network, api)))
       .then((servers) => createFallbackChainService(servers));
     // A failed build is tried again by the next wallet, not remembered.
     built.catch(() => shared.delete(network));

@@ -16,7 +16,9 @@ export const DEFAULT_ESPLORA_ENDPOINTS = Object.freeze([
   'https://mempool.emzy.de/api',
 ]);
 
-const ALREADY_KNOWN = /already[- ]known|already in block chain|txn-already-in-mempool|already-in-mempool/i;
+// Bitcoin Core's wordings over the years, as relayed by Esplora and Mempool
+// servers: in the mempool already, or already confirmed.
+const ALREADY_KNOWN = /already[- ]known|already in block chain|already in utxo set|txn-already-in-mempool|already-in-mempool/i;
 
 export class EsploraError extends Error {
   constructor(message, { code = 'ESPLORA_ERROR', status = 0, endpoint = '' } = {}) {

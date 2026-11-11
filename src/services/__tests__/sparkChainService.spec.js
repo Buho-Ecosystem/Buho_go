@@ -2,17 +2,20 @@
 
 import { strict as assert } from 'node:assert';
 import { test } from 'node:test';
-import { createFallbackChainService, sparkChainService } from '../sparkChainService.js';
+import { SPARK_CHAIN_SERVERS, createFallbackChainService, sparkChainService } from '../sparkChainService.js';
 import { DEFAULT_ESPLORA_ENDPOINTS } from '../esplora.js';
 
 const never = () => new Promise(() => {});
+
+// The SDK's own servers fail with text, never an Error object.
+const statusError = (status, body) => `Service connectivity: Status error: ${status} - ${body}`;
 
 function server(name, { fail = false, hang = false, broadcastError = null } = {}) {
   const calls = [];
   const answer = (method, value) => (...args) => {
     calls.push([method, ...args]);
     if (hang) return never();
-    if (fail) return Promise.reject(new Error(`${name} is down`));
+    if (fail) return Promise.reject(typeof fail === 'string' ? fail : `Service connectivity: ${name} is down`);
     return Promise.resolve(value);
   };
   return {
@@ -26,7 +29,8 @@ function server(name, { fail = false, hang = false, broadcastError = null } = {}
     recommendedFees: answer('recommendedFees', { fastestFee: 3 }),
     broadcastTransaction: (tx) => {
       calls.push(['broadcastTransaction', tx]);
-      return broadcastError ? Promise.reject(new Error(broadcastError)) : Promise.resolve();
+      if (hang) return never();
+      return broadcastError ? Promise.reject(statusError(400, broadcastError)) : Promise.resolve();
     },
   };
 }
@@ -56,19 +60,58 @@ test('the first server is tried again after a while', async () => {
   assert.equal(first.calls.length, 2);
 });
 
-test('when every server fails, the last error is passed on', async () => {
-  const chain = createFallbackChainService([server('a', { fail: true }), server('b', { fail: true })]);
-  await assert.rejects(chain.recommendedFees(), /b is down/);
+test('when every server fails, the SDK gets text, and a server\'s own answer beats a later silence', async () => {
+  const both = createFallbackChainService([server('a', { fail: true }), server('b', { fail: true })]);
+  await assert.rejects(both.recommendedFees(), (error) => error === 'Service connectivity: b is down');
+
+  const busy = statusError(503, 'Service Unavailable');
+  const busyThenSilence = createFallbackChainService(
+    [server('a', { fail: busy }), server('b', { hang: true })], { timeoutMs: 20 });
+  await assert.rejects(busyThenSilence.getTransactionStatus('tx'), (error) => error === busy);
+
+  const silent = createFallbackChainService([server('a', { hang: true })], { timeoutMs: 20 });
+  await assert.rejects(silent.tipHeight(), (error) => typeof error === 'string' && /did not answer in time/.test(error));
 });
 
-test('a broadcast a server already has counts as sent; any other refusal tries the next', async () => {
+test('a server\'s verdict is the answer: the next server is not asked to repeat it', async () => {
+  const notFound = `Not found: ${statusError(404, 'Transaction not found')}`;
+  const answering = server('answering', { fail: notFound });
+  const dead = server('dead', { hang: true });
+  const chain = createFallbackChainService([answering, dead], { timeoutMs: 20 });
+  await assert.rejects(chain.getTransactionStatus('tx'), (error) => error === notFound);
+  assert.equal(dead.calls.length, 0);
+
+  const limited = server('limited', { fail: statusError(429, 'rate_limited') });
+  const other = server('other');
+  assert.equal(await createFallbackChainService([limited, other]).tipHeight(), 900_000, 'a rate limit asks the next');
+});
+
+test('an Error object from a server reaches the SDK as its message', async () => {
+  const thrower = { ...server('x'), tipHeight: () => Promise.reject(new Error('socket hang up')) };
+  await assert.rejects(createFallbackChainService([thrower]).tipHeight(), (error) => error === 'socket hang up');
+});
+
+test('a broadcast a server already has counts as sent; a refusal is final; a server in trouble passes it on', async () => {
   const known = server('known', { broadcastError: 'sendrawtransaction RPC error: txn-already-in-mempool' });
   const next = server('next');
   assert.equal(await createFallbackChainService([known, next]).broadcastTransaction('tx'), undefined);
   assert.equal(next.calls.length, 0);
 
-  const refusing = server('refusing', { broadcastError: 'bad-txns-inputs-missingorspent' });
-  await createFallbackChainService([refusing, next]).broadcastTransaction('tx');
+  const confirmed = server('confirmed', { broadcastError: 'sendrawtransaction RPC error: Transaction outputs already in utxo set' });
+  assert.equal(await createFallbackChainService([confirmed, next]).broadcastTransaction('tx'), undefined, 'already confirmed');
+  assert.equal(next.calls.length, 0);
+
+  // A refusal is the network's verdict: the SDK reads it, no server is asked again.
+  const refusal = statusError(400, 'bad-txns-inputs-missingorspent');
+  await assert.rejects(
+    createFallbackChainService([server('r', { broadcastError: 'bad-txns-inputs-missingorspent' }), next]).broadcastTransaction('tx'),
+    (error) => error === refusal,
+  );
+  assert.equal(next.calls.length, 0);
+
+  // A server in trouble passes the broadcast on.
+  const down = { ...server('down'), broadcastTransaction: () => Promise.reject(statusError(502, 'Bad Gateway')) };
+  await createFallbackChainService([down, next]).broadcastTransaction('tx');
   assert.deepEqual(next.calls, [['broadcastTransaction', 'tx']]);
 });
 
@@ -77,7 +120,12 @@ test('every Spark wallet on mainnet shares one chain service over the exit serve
   const mod = { newRestChainService: async (url, network, api) => { built.push([url, network, api]); return server(url); } };
   const [a, b] = await Promise.all([sparkChainService(mod, 'mainnet'), sparkChainService(mod, 'mainnet')]);
   assert.equal(a, b);
-  assert.deepEqual(built, DEFAULT_ESPLORA_ENDPOINTS.map((url) => [url, 'mainnet', 'esplora']));
+  assert.deepEqual(built, [
+    ['https://mempool.space/api', 'mainnet', 'mempoolSpace'],
+    ['https://blockstream.info/api', 'mainnet', 'esplora'],
+    ['https://mempool.emzy.de/api', 'mainnet', 'mempoolSpace'],
+  ]);
+  assert.deepEqual(SPARK_CHAIN_SERVERS.map(({ url }) => url), [...DEFAULT_ESPLORA_ENDPOINTS], 'the emergency exit\'s servers, in its order');
   assert.equal(await sparkChainService(mod, 'regtest'), null, 'other networks keep the SDK default');
   assert.equal(await sparkChainService({}, 'mainnet'), null, 'an SDK without the factory keeps its default');
 });
