@@ -3569,8 +3569,10 @@ export const useWalletStore = defineStore('wallet', {
         }
         return accepted;
       } catch (error) {
-        this._noteConnection(walletId, error);
-        if (this.isBalanceReadCurrent(read)) this.markBalanceError(walletId, error.message || 'Balance could not be refreshed');
+        if (this.isBalanceReadCurrent(read)) {
+          this._noteConnection(walletId, error);
+          this.markBalanceError(walletId, error.message || 'Balance could not be refreshed');
+        }
         return false;
       } finally {
         if (this.isBalanceReadCurrent(read)) this.markBalanceRefresh(walletId, false);
