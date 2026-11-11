@@ -47,7 +47,7 @@
           @click="$emit('update:location', place.id)"
         >
           <span class="iform-line-label">{{ place.name }}<small>{{ hostOf(place.url) }}</small></span>
-          <Icon v-if="location === place.id" icon="tabler:check" width="18" height="18" class="approve-check" :aria-hidden="true" />
+          <Icon v-if="location === place.id" icon="tabler:check" width="18" height="18" class="approve-check" />
         </button>
         <template v-if="approval.selfHosted">
           <button
@@ -58,7 +58,7 @@
             @click="chooseOwn"
           >
             <span class="iform-line-label">{{ $t(approval.ownLabel) }}<small>{{ $t(approval.ownHint) }}</small></span>
-            <Icon v-if="location === 'own'" icon="tabler:check" width="18" height="18" class="approve-check" :aria-hidden="true" />
+            <Icon v-if="location === 'own'" icon="tabler:check" width="18" height="18" class="approve-check" />
           </button>
           <div v-if="location === 'own'" class="iform-row">
             <label class="iform-label" :for="inputId">{{ $t('Address') }}</label>

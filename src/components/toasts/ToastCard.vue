@@ -27,7 +27,7 @@
       </div>
       <span v-if="toast.count > 1" class="app-toast__count" :aria-label="`${toast.count}`">{{ toast.count }}</span>
       <!-- A toast that opens something shows it: the tap target above is invisible. -->
-      <Icon v-if="simple && toast.config.onOpen" icon="tabler:chevron-right" width="16" height="16" class="app-toast__chevron" aria-hidden="true" />
+      <Icon v-if="simple && toast.config.onOpen" icon="tabler:chevron-right" width="16" height="16" class="app-toast__chevron" />
     </div>
     <div v-if="!simple" class="app-toast__actions">
       <button type="button" class="app-toast__dismiss" :aria-describedby="`toast-copy-${toast.id}`" @click="dismiss">{{ dismissLabel }}</button>

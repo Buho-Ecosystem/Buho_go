@@ -167,7 +167,7 @@
                 @error="logoFailed = true"
               />
               <!-- A service keeps its storefront fallback if its logo fails. -->
-              <Icon v-else-if="isServiceRecipient" icon="tabler:building-store" width="24" height="24" aria-hidden="true" />
+              <Icon v-else-if="isServiceRecipient" icon="tabler:building-store" width="24" height="24" />
               <svg
                 v-else-if="isSilhouetteRecipient"
                 class="recipient-glyph"

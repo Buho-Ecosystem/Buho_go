@@ -437,7 +437,7 @@
                 >
                   <template v-if="payAgainTargets[tx.id]" #right>
                     <span class="tx-slide-action">
-                      <Icon icon="tabler:repeat" width="22" height="22" aria-hidden="true" />
+                      <Icon icon="tabler:repeat" width="22" height="22" />
                       <span>{{ $t('Pay again') }}</span>
                     </span>
                   </template>

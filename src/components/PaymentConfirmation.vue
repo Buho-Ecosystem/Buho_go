@@ -56,7 +56,7 @@
               <img :src="verifiedRecipient.avatar.url" alt="" @error="verifiedLogoFailed = true" />
             </span>
             <span class="verified-recipient-name" aria-hidden="true">{{ recipientPrefix }}{{ verifiedRecipient.name }}</span>
-            <Icon icon="tabler:rosette-discount-check-filled" width="15" height="15" class="verified-recipient-seal" aria-hidden="true" />
+            <Icon icon="tabler:rosette-discount-check-filled" width="15" height="15" class="verified-recipient-seal" />
           </div>
           <div
             v-else-if="recipient"

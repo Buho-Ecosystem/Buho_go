@@ -154,7 +154,7 @@
         <!-- Default wallet icon -->
         <Icon v-else icon="tabler:wallet" width="12" height="12" class="wallet-chip-icon" />
         {{ walletDisplayName }}
-        <Icon icon="tabler:chevron-down" width="10" height="10" class="wallet-chip-disclosure" :aria-hidden="true" />
+        <Icon icon="tabler:chevron-down" width="10" height="10" class="wallet-chip-disclosure" />
       </q-chip>
 
       <!-- Subtle background-maintenance indicator (Arkade VTXO renew/recover) -->
