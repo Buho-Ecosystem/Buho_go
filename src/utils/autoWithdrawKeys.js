@@ -78,7 +78,7 @@ export function settleRulesForWallets(configs, holds) {
     }
     const destination = rule?.destination;
     const destinationGone = destination?.kind === DESTINATION_KIND.WALLET && !holds(destination.walletId);
-    const alreadySaysSo = rule.enabled === false && rule.pausedReason === PAUSED.DESTINATION_REMOVED;
+    const alreadySaysSo = rule?.enabled === false && rule?.pausedReason === PAUSED.DESTINATION_REMOVED;
     if (destinationGone && !alreadySaysSo) {
       result[walletId] = { ...rule, enabled: false, pausedReason: PAUSED.DESTINATION_REMOVED };
       paused.push(walletId);

@@ -261,6 +261,15 @@ function setAsideUnreadableState(raw) {
   console.warn(`[wallet-store] The saved wallets could not be read; kept as ${key}`);
 }
 
+/** Is a saved wallet list kept aside as unreadable, from this or an earlier start? */
+function hasUnreadableWalletState() {
+  const prefix = `${STORAGE_KEYS.UNREADABLE_WALLET_STORE}_`;
+  for (let i = 0; i < localStorage.length; i += 1) {
+    if (localStorage.key(i)?.startsWith(prefix)) return true;
+  }
+  return false;
+}
+
 /**
  * The wallet entries saved right now. This store only ever writes JSON it
  * built, so a value it cannot read was written elsewhere: it counts as a
@@ -1496,8 +1505,10 @@ export const useWalletStore = defineStore('wallet', {
           // the balances of their wallets current).
           const autoWithdrawStore = useAutoWithdrawStore();
           // Rules of removed wallets are settled only against a wallet list
-          // read from disk: an unreadable one was set aside, not emptied.
-          const walletsRead = !savedState || parsed !== null;
+          // read from disk. None was read, or one was set aside as
+          // unreadable (now or on an earlier start): its wallets may come
+          // back, so their rules stay.
+          const walletsRead = parsed !== null && !hasUnreadableWalletState();
           await autoWithdrawStore.initialize({
             wallets: this.wallets,
             heldWalletIds: walletsRead ? this._heldWalletIds() : null,
@@ -4475,16 +4486,6 @@ export const useWalletStore = defineStore('wallet', {
     },
 
     /**
-     * Refuse, with the code a save would give, when saving cannot be done
-     * safely now. A save replaces everything on disk, so two rules keep it
-     * from destroying what it replaces: nothing is written before the saved
-     * state is in memory (a screen opened straight after a reload, a boot
-     * task, a failed load), and a saved wallet this store never read or
-     * wrote (another window added it) is never dropped. persistState checks
-     * this before every write; a removal checks it before it tears anything
-     * down, so a removal that could not be saved leaves the wallet whole.
-     */
-    /**
      * Every wallet this device holds: the list, the entries it cannot use
      * now (validateWallets), and Spark entries set aside by the migration.
      * Only read once the saved state is loaded; a wallet that may come back
@@ -4497,6 +4498,16 @@ export const useWalletStore = defineStore('wallet', {
       ]);
     },
 
+    /**
+     * Refuse, with the code a save would give, when saving cannot be done
+     * safely now. A save replaces everything on disk, so two rules keep it
+     * from destroying what it replaces: nothing is written before the saved
+     * state is in memory (a screen opened straight after a reload, a boot
+     * task, a failed load), and a saved wallet this store never read or
+     * wrote (another window added it) is never dropped. persistState checks
+     * this before every write; a removal checks it before it tears anything
+     * down, so a removal that could not be saved leaves the wallet whole.
+     */
     _assertSavable() {
       if (!this.savedStateLoaded) {
         throw codedError('WALLET_STATE_UNAVAILABLE', 'The saved wallets are not loaded; nothing was saved');
