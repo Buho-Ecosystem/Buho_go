@@ -83,13 +83,13 @@
         :aria-label="$t('Retry')"
         @click="$emit('retry')"
       >
-        <Icon icon="tabler:refresh" width="12" height="12" aria-hidden="true" />
+        <Icon icon="tabler:refresh" width="12" height="12" />
         <span>{{ $t('Retry') }}</span>
       </button>
     </div>
 
     <button type="button" class="history-link" data-audit="history-link" @click="$emit('open-history')">
-      <Icon icon="tabler:list" width="16" height="16" aria-hidden="true" />
+      <Icon icon="tabler:list" width="16" height="16" />
       <span>{{ $t('History') }}</span>
     </button>
   </div>

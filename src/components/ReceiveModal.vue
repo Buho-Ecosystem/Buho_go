@@ -70,7 +70,7 @@
           <strong class="disclosure-row-title">{{ voucherSummaryTitle }}</strong>
           <small class="disclosure-row-sub">{{ voucherSummaryLeft }}</small>
         </span>
-        <Icon icon="tabler:chevron-right" width="18" height="18" class="disclosure-row-chevron" aria-hidden="true" />
+        <Icon icon="tabler:chevron-right" width="18" height="18" class="disclosure-row-chevron" />
       </button>
 
       <!-- Another wallet app on this phone pays this request. Beside the

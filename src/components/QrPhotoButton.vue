@@ -40,7 +40,7 @@
       @click="choose"
     >
       <q-spinner v-if="reading" class="qpb-spinner" :size="`${iconSize - 2}px`" :thickness="3" />
-      <Icon v-else icon="tabler:photo" :width="iconSize" :height="iconSize" aria-hidden="true" />
+      <Icon v-else icon="tabler:photo" :width="iconSize" :height="iconSize" />
       <span class="qpb-label">{{ reading ? $t('Reading photo…') : $t('Choose photo') }}</span>
     </button>
     <input

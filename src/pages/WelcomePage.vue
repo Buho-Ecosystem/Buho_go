@@ -174,7 +174,7 @@
              asks which. -->
         <button class="bgo-srow" type="button" data-audit="welcome-connect-wallet" @click="goToConnectWallet">
           <span class="bgo-tile">
-            <Icon icon="tabler:plug-connected" width="24" height="24" :aria-hidden="true" />
+            <Icon icon="tabler:plug-connected" width="24" height="24" />
           </span>
           <span class="bgo-st">
             <span class="bgo-t">{{ $t('Connect a wallet you already use') }}</span>

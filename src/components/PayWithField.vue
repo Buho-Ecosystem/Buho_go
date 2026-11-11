@@ -48,7 +48,6 @@
         height="19"
         class="pay-with-chevron"
         :class="{ 'pay-with-chevron--open': open }"
-        aria-hidden="true"
       />
     </button>
 
@@ -92,7 +91,6 @@
             width="18"
             height="18"
             class="pay-with-check"
-            aria-hidden="true"
           />
         </button>
       </div>

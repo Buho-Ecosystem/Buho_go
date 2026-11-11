@@ -10,9 +10,9 @@
 -->
 <template>
   <button v-if="entry" type="button" class="at-line" data-audit="auto-transfer-line" @click="open = true">
-    <Icon icon="tabler:arrow-autofit-right" width="16" height="16" class="at-line__icon" aria-hidden="true" />
+    <Icon icon="tabler:arrow-autofit-right" width="16" height="16" class="at-line__icon" />
     <span class="at-line__text">{{ copy.line }}</span>
-    <Icon icon="tabler:chevron-right" width="14" height="14" class="at-line__chevron" aria-hidden="true" />
+    <Icon icon="tabler:chevron-right" width="14" height="14" class="at-line__chevron" />
   </button>
 
   <q-dialog v-model="open" position="bottom">

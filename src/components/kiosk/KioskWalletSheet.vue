@@ -38,7 +38,7 @@
               <span class="kws-glyph" aria-hidden="true"><WalletBrandMark :type="option.type" :size="16" color="currentColor" /></span>
             </template>
             <template #trailing>
-              <Icon v-if="option.id === selected" icon="tabler:check" width="20" height="20" class="kws-check" :aria-label="$t('Selected')" />
+              <Icon v-if="option.id === selected" icon="tabler:check" width="20" height="20" class="kws-check" :aria-label="$t('Selected')" :aria-hidden="false" />
             </template>
           </IdentityRow>
         </IdentityGroup>

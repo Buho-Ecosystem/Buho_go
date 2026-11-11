@@ -47,7 +47,7 @@
               {{ $t('Emergency exit') }}
               <small>{{ exit.cost }}</small>
             </span>
-            <Icon icon="tabler:chevron-right" width="16" height="16" class="spark-row__chevron" aria-hidden="true" />
+            <Icon icon="tabler:chevron-right" width="16" height="16" class="spark-row__chevron" />
           </button>
           <div v-else class="spark-row">
             <span class="spark-row__tile" aria-hidden="true"><Icon icon="tabler:fire-extinguisher" width="17" height="17" /></span>

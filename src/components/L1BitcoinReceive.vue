@@ -66,7 +66,7 @@
       @click="copyValue(lightningAddress, $t('Lightning address copied'))"
     >
       <span class="ln-address-text">{{ lightningAddress }}</span>
-      <Icon icon="tabler:copy" width="13" height="13" class="ln-address-copy" aria-hidden="true" />
+      <Icon icon="tabler:copy" width="13" height="13" class="ln-address-copy" />
     </button>
     </div>
 
@@ -275,7 +275,7 @@
                 data-audit="deposit-speed-up"
                 @click="openSpeedUp"
               >
-                <Icon icon="tabler:gauge" width="19" height="19" aria-hidden="true" />
+                <Icon icon="tabler:gauge" width="19" height="19" />
                 {{ $t('Speed up') }}
               </button>
             </div>
