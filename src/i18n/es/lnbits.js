@@ -21,5 +21,5 @@ export default {
   "Could you turn on Pay Links on {domain}? I would like a Lightning address.": "¿Puedes activar Pay Links en {domain}? Me gustaría tener una dirección Lightning.",
   "Needs Pay Links": "Necesita Pay Links",
   "Couldn't reach the server": "No se pudo conectar con el servidor",
-  "LNbits no longer finds this wallet. It was deleted or its key was reset. Add it again with its new key.": "LNbits ya no encuentra esta billetera. Se eliminó o se restableció su clave. Añádela de nuevo con su nueva clave.",
+  "LNbits no longer opens this wallet with its key. Disconnect it here, then add it again with a current key.": "LNbits ya no abre esta billetera con su clave. Desconéctala aquí y luego añádela de nuevo con una clave actual.",
 };

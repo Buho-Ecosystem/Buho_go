@@ -17,7 +17,7 @@
           <div class="detail-status">
             <span>{{ typeLabel }}</span>
             <span aria-hidden="true">·</span>
-            <span class="connection-status"><span class="connection-dot" :class="{ 'connection-dot--online': connected }" aria-hidden="true" />{{ connected ? $t('Online') : $t('Offline') }}</span>
+            <span class="connection-status"><span class="connection-dot" :class="{ 'connection-dot--online': connected }" aria-hidden="true" />{{ connected ? $t('Online') : connectionEnded ? $t('Connection ended') : $t('Offline') }}</span>
           </div>
         </div>
         <button v-if="!editing" ref="editButton" type="button" class="detail-icon-button detail-edit" :aria-label="$t('Rename wallet')" @click="startEditing">

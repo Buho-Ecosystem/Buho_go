@@ -2345,7 +2345,7 @@ export default {
     connectionProblemText(wallet) {
       if (this.walletStore.connectionEnded[wallet.id]) {
         return wallet.type === 'lnbits'
-          ? this.$t('LNbits no longer finds this wallet. It was deleted or its key was reset. Add it again with its new key.')
+          ? this.$t('LNbits no longer opens this wallet with its key. Disconnect it here, then add it again with a current key.')
           : this.$t('This connection was removed or has expired. Create a new one in {wallet}.', { wallet: wallet.name });
       }
       return this.connectionStates[wallet.id]?.error
@@ -2370,6 +2370,7 @@ export default {
           // only call it reconnected when it answered.
           if ((wallet?.type || 'nwc') === 'nwc') {
             const status = await this.walletStore.refreshNwcDetails(walletId)
+            if (status === 'ended') throw nwcError('UNAUTHORIZED')
             if (status !== 'answering') {
               throw nwcError(status === 'relay' ? NWC_ERROR.RELAY_UNREACHABLE : NWC_ERROR.NO_ANSWER)
             }

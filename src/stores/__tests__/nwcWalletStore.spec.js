@@ -397,3 +397,29 @@ test('an LNbits wallet its server no longer finds reads as ended', async () => {
   await store.refreshBalance('kitty');
   assert.equal(store.connectionEnded.kitty, undefined);
 });
+
+test('an ended connection seen by a balance read shows in the NWC status too, and an answer clears both', async () => {
+  const { store } = createHarness();
+  nwcWallet(store, { getInfo: async () => ({ alias: 'Hub', methods: ['pay_invoice'] }), getBudget: async () => ({}) });
+  store.wallets[0].metadata.methods.push('get_balance'); // so the balance is read at all
+  store.persistState = async () => {};
+  store.nwcStatus.hub = 'answering';
+  let fail = Object.assign(new Error('retired'), { code: 'UNAUTHORIZED' });
+  store.ensureWalletConnectedForTransfer = async () => ({ getBalance: async () => { if (fail) throw fail; return { balance: 5 }; } });
+
+  await store.refreshBalance('hub');
+  assert.deepEqual([store.connectionEnded.hub, store.nwcStatus.hub], [true, 'ended']);
+
+  fail = null;
+  await store.refreshBalance('hub');
+  assert.deepEqual([store.connectionEnded.hub, store.nwcStatus.hub], [undefined, 'answering']);
+});
+
+test('a refusal to say who it is proves the wallet still knows the connection', async () => {
+  const { store } = createHarness();
+  nwcWallet(store, { getInfo: async () => { throw Object.assign(new Error('not allowed'), { code: 'RESTRICTED' }); } });
+  store.connectionEnded.hub = true;
+  store.nwcStatus.hub = 'ended';
+  assert.equal(await store.refreshNwcDetails('hub'), 'answering');
+  assert.equal(store.connectionEnded.hub, undefined);
+});
