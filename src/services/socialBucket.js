@@ -26,6 +26,7 @@
 
 import { Wallet } from '@cashu/cashu-ts';
 import { secp256k1 } from '@noble/curves/secp256k1.js';
+import { plainProofs } from '../utils/cashuProofs.js';
 
 /** Nothing below this is worth a melt: the fee would eat it. */
 export const MIN_SWEEP_SATS = 10;
@@ -133,7 +134,7 @@ export async function mintQuotes({
         ? { privkey: signingKeyCandidates(privkeyHex) }
         : undefined;
       const got = await wallet.mintProofsBolt11(amount, redeemableQuote, config);
-      proofs.push(...got);
+      proofs.push(...plainProofs(got));
       minted.push(quote.quoteId);
     } catch (err) {
       console.warn('[social-bucket] could not mint quote', quote.quoteId, err);
@@ -156,13 +157,13 @@ export async function mintQuotes({
  * @param {(sats:number) => Promise<string>} createInvoice
  * @returns {Promise<{paid:number, fee:number, change:Array, invoice:string}>}
  */
-export async function meltToInvoice({ proofs, mintUrl, privkeyHex, createInvoice }) {
+export async function meltToInvoice({ proofs, mintUrl, privkeyHex, createInvoice, walletFactory = walletFor }) {
   const available = sumProofs(proofs);
   if (available < MIN_SWEEP_SATS) {
     throw new SweepError('Too little to move', 'TOO_SMALL');
   }
 
-  const wallet = await walletFor(mintUrl);
+  const wallet = await walletFactory(mintUrl);
 
   let target = available - feeBuffer(available);
   let invoice;
@@ -193,7 +194,7 @@ export async function meltToInvoice({ proofs, mintUrl, privkeyHex, createInvoice
     privkey: privkeyHex,
   });
 
-  const change = result?.change || [];
+  const change = plainProofs(result?.change);
   return {
     paid: Number(meltQuote.amount) || 0,
     fee: Math.max(0, available - (Number(meltQuote.amount) || 0) - sumProofs(change)),
