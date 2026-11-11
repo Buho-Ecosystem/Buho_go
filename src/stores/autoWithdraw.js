@@ -13,7 +13,7 @@ import { defineStore } from 'pinia'
 import { useTransactionMetadataStore } from './transactionMetadata'
 import { WALLET_TYPES } from '../providers/WalletFactory'
 import { fetchPayRequest, lightningAddressUrl, requestPayInvoice } from '../utils/lnurlPay.js'
-import { migratePocketConfigKeys } from '../utils/autoWithdrawKeys.js'
+import { migratePocketConfigKeys, settleRulesForWallets } from '../utils/autoWithdrawKeys.js'
 import { payWithNwc } from '../services/nwcPayment.js'
 import { NWC_ERROR } from '../utils/nwcErrors.js'
 import { fiatRatesService } from '../utils/fiatRates.js'
@@ -80,19 +80,29 @@ export const useAutoWithdrawStore = defineStore('autoWithdraw', {
   getters: {
     getConfig: (state) => (walletId) => state.configs[walletId] || null,
 
-    /** Rules that need the person, oldest wallet first: Home shows the first. */
-    needingAttention: (state) => Object.entries(state.configs)
-      .map(([walletId, rule]) => ({ walletId, rule, status: ruleStatus(rule) }))
-      .filter((entry) => entry.status.kind === 'attention'),
+    /**
+     * The rules of these wallets, in the wallets' order, each with its
+     * status. Every screen that lists or counts rules reads them here, with
+     * the wallets on screen, so a count can never include a rule the
+     * Auto-Transfer page does not show.
+     */
+    rulesOf: (state) => (wallets = []) => wallets
+      .filter((wallet) => state.configs[wallet.id])
+      .map((wallet) => {
+        const rule = state.configs[wallet.id]
+        return { walletId: wallet.id, wallet, rule, status: ruleStatus(rule) }
+      }),
   },
 
   actions: {
     /**
      * Load the saved rules in today's shape. With the device's wallets,
      * rules saved for a former Spark "pocket" move to the wallet that holds
-     * that account now (utils/autoWithdrawKeys.js).
+     * that account now (utils/autoWithdrawKeys.js). With the ids of every
+     * wallet the device holds (also those set aside), rules left behind by a
+     * wallet that is gone are settled as its removal would have.
      */
-    async initialize({ wallets = null } = {}) {
+    async initialize({ wallets = null, heldWalletIds = null } = {}) {
       let raw = {}
       try {
         raw = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}').configs || {}
@@ -108,10 +118,18 @@ export const useAutoWithdrawStore = defineStore('autoWithdraw', {
           if (dropped.length) console.warn(`[Auto-Transfer] ${dropped.length} rule(s) for removed accounts dropped`)
         }
       }
-      const configs = {}
+      let configs = {}
       for (const [walletId, rule] of Object.entries(raw)) {
         configs[walletId] = normalizeRule(rule)
         if (!rule.destination || rule.payoutType !== undefined) changed = true
+      }
+      if (heldWalletIds) {
+        const settled = settleRulesForWallets(configs, (walletId) => heldWalletIds.has(walletId))
+        if (settled.dropped.length || settled.paused.length) {
+          configs = settled.configs
+          changed = true
+          console.info(`[Auto-Transfer] rules of removed wallets: ${settled.dropped.length} dropped, ${settled.paused.length} paused`)
+        }
       }
       this.configs = configs
       if (changed) this.persistConfigs()
@@ -158,14 +176,9 @@ export const useAutoWithdrawStore = defineStore('autoWithdraw', {
      * it pause and say why, rather than failing at every balance tick.
      */
     async forgetWallet(walletId) {
-      delete this.configs[walletId]
+      this.configs = settleRulesForWallets(this.configs, (id) => id !== walletId).configs
       _running.delete(walletId)
       _lastTriggerTime.delete(walletId)
-      for (const [id, rule] of Object.entries(this.configs)) {
-        if (rule.destination?.kind === DESTINATION_KIND.WALLET && rule.destination.walletId === walletId) {
-          this.configs[id] = { ...rule, enabled: false, pausedReason: PAUSED.DESTINATION_REMOVED }
-        }
-      }
       await this.persistConfigs()
     },
 

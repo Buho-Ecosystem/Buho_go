@@ -38,7 +38,7 @@ function mountAt(query) {
     '../components/WalletBrandMark.vue': stub,
     '../components/autoTransfer/AutoTransferSheet.vue': stub,
     '../stores/wallet': { useWalletStore: () => ({ wallets: [{ id: 'shop', name: 'Shop', type: 'spark' }], useBip177Format: true }) },
-    '../stores/autoWithdraw': { useAutoWithdrawStore: () => ({ getConfig: () => null }) },
+    '../stores/autoWithdraw': { useAutoWithdrawStore: () => ({ getConfig: () => null, rulesOf: () => [] }) },
     '../utils/autoTransferCopy.js': { destinationLabel: () => '', statusText: () => ({ text: '', tone: '' }) },
   };
   const module = { exports: {} };

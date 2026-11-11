@@ -142,6 +142,17 @@ function setAsideOtherPhrases() {
   }
 }
 
+/** Ids of every Spark entry set aside, for whatever reason. */
+function setAsideSparkWalletIds() {
+  try {
+    return JSON.parse(localStorage.getItem(SPARK_SET_ASIDE_KEY) || '[]')
+      .map((entry) => entry?.wallet?.id)
+      .filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
 /** Store entries the migration could not keep. False when they could not be stored. */
 function setAsideSparkWallets(entries) {
   try {
@@ -1484,7 +1495,13 @@ export const useWalletStore = defineStore('wallet', {
           // Auto-Transfer: the saved rules (the wallet watch below keeps
           // the balances of their wallets current).
           const autoWithdrawStore = useAutoWithdrawStore();
-          await autoWithdrawStore.initialize({ wallets: this.wallets });
+          // Rules of removed wallets are settled only against a wallet list
+          // read from disk: an unreadable one was set aside, not emptied.
+          const walletsRead = !savedState || parsed !== null;
+          await autoWithdrawStore.initialize({
+            wallets: this.wallets,
+            heldWalletIds: walletsRead ? this._heldWalletIds() : null,
+          });
 
           // Auto-connect Spark wallets — detect if migration from PIN is needed
           if (this.sparkWallets.length > 0) {
@@ -4467,6 +4484,19 @@ export const useWalletStore = defineStore('wallet', {
      * this before every write; a removal checks it before it tears anything
      * down, so a removal that could not be saved leaves the wallet whole.
      */
+    /**
+     * Every wallet this device holds: the list, the entries it cannot use
+     * now (validateWallets), and Spark entries set aside by the migration.
+     * Only read once the saved state is loaded; a wallet that may come back
+     * is held.
+     */
+    _heldWalletIds() {
+      return new Set([
+        ...[...this.wallets, ...this._unusableWallets].map((w) => w.id),
+        ...setAsideSparkWalletIds(),
+      ]);
+    },
+
     _assertSavable() {
       if (!this.savedStateLoaded) {
         throw codedError('WALLET_STATE_UNAVAILABLE', 'The saved wallets are not loaded; nothing was saved');
