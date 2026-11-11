@@ -6,7 +6,7 @@
 <template>
   <ul class="nwc-caps" :aria-label="$t('This connection can')">
     <li v-for="item in items" :key="item.key" class="nwc-caps__item" :class="{ 'is-off': !item.on }">
-      <Icon :icon="item.icon" width="17" height="17" aria-hidden="true" />
+      <Icon :icon="item.icon" width="17" height="17" />
       <span>{{ item.label }}</span>
       <span class="sr-only">{{ item.on ? $t('Allowed') : $t('Not allowed') }}</span>
     </li>

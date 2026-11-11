@@ -192,7 +192,7 @@
           >
             <span class="tx-row-label">{{ transaction.type === 'outgoing' ? $t('To') : $t('Paid to') }}</span>
             <span class="tx-row-value">{{ counterpartyAddressDisplay }}</span>
-            <Icon v-if="payAgainTarget" icon="tabler:chevron-right" width="16" height="16" class="tx-row-chevron" aria-hidden="true" />
+            <Icon v-if="payAgainTarget" icon="tabler:chevron-right" width="16" height="16" class="tx-row-chevron" />
           </component>
 
           <!-- The confirm sheet's seal, kept with the payment: opens Branta's
@@ -325,7 +325,7 @@
             <span class="pay-again-copy">
               <strong class="pay-again-title">{{ $t('Pay again') }}</strong>
             </span>
-            <Icon icon="tabler:chevron-right" width="18" height="18" class="pay-again-chevron" aria-hidden="true" />
+            <Icon icon="tabler:chevron-right" width="18" height="18" class="pay-again-chevron" />
           </button>
         </div>
       </div>

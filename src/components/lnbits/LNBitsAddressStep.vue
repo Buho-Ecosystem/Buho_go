@@ -86,7 +86,7 @@
         <button v-else type="button" class="ln-row" @click="openMessage">
           <span class="ln-row__tile" aria-hidden="true"><Icon icon="tabler:message-2" width="16" height="16" /></span>
           <span class="ln-row__text">{{ $t('Thank-you message') }}<small>{{ $t('Optional') }}</small></span>
-          <Icon icon="tabler:chevron-right" width="16" height="16" class="ln-row__chevron" aria-hidden="true" />
+          <Icon icon="tabler:chevron-right" width="16" height="16" class="ln-row__chevron" />
         </button>
       </div>
       <p v-if="inputError || createError" class="ln-error" role="alert">{{ inputError || createError }}</p>

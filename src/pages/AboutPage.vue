@@ -56,7 +56,6 @@
               width="16"
               height="16"
               class="about-update-check"
-              aria-hidden="true"
             />
             <!-- Tapping checks again rather than opening a screen: no chevron. -->
             <span v-else aria-hidden="true"></span>

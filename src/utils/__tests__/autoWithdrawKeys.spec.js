@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { migratePocketConfigKeys } from '../autoWithdrawKeys.js';
+import { migratePocketConfigKeys, settleRulesForWallets } from '../autoWithdrawKeys.js';
 
 const spark = (id, accountNumber, envelope = 'env-1') => ({ id, type: 'spark', connectionData: { accountNumber, encryptedMnemonic: envelope } });
 
@@ -26,4 +26,22 @@ test('rules no wallet can run are dropped, and a rule already on the new wallet 
 test('nothing to migrate leaves the rules as they are', () => {
   const configs = { a: { enabled: true } };
   assert.deepEqual(migratePocketConfigKeys(configs, [spark('a', 1)]), { configs, moved: [], dropped: [] });
+});
+
+test('rules of a wallet that left go; rules sending to it pause and say why', () => {
+  const toGone = { enabled: true, destination: { kind: 'wallet', walletId: 'gone' } };
+  const saved = {
+    gone: { enabled: true, destination: { kind: 'lightning', address: 'a@b.c' } },
+    shop: toGone,
+    tips: { enabled: true, destination: { kind: 'wallet', walletId: 'shop' } },
+    paid: { enabled: false, pausedReason: 'destination_removed', destination: { kind: 'wallet', walletId: 'gone' } },
+  };
+  const { configs, dropped, paused } = settleRulesForWallets(saved, (id) => id !== 'gone');
+  assert.deepEqual(Object.keys(configs), ['shop', 'tips', 'paid']);
+  assert.deepEqual(configs.shop, { ...toGone, enabled: false, pausedReason: 'destination_removed' });
+  assert.equal(configs.tips, saved.tips, 'a rule with nothing gone is kept as it is');
+  assert.equal(configs.paid, saved.paid, 'one that already says so is not touched again');
+  assert.deepEqual(dropped, ['gone']);
+  assert.deepEqual(paused, ['shop']);
+  assert.equal(toGone.enabled, true, 'the saved rule is not mutated');
 });

@@ -3,7 +3,7 @@
     @keydown.esc.stop.prevent @keyup.esc.stop.prevent="goBack">
     <header class="detail-header">
       <button ref="backButton" type="button" class="detail-icon-button" :aria-label="$t('Back')" :disabled="saving" @click="goBack">
-        <Icon icon="tabler:chevron-left" width="22" height="22" :aria-hidden="true" />
+        <Icon icon="tabler:chevron-left" width="22" height="22" />
       </button>
       <span>{{ $t('Wallet') }}</span>
       <span class="header-spacer" aria-hidden="true" />
@@ -21,7 +21,7 @@
           </div>
         </div>
         <button v-if="!editing" ref="editButton" type="button" class="detail-icon-button detail-edit" :aria-label="$t('Rename wallet')" @click="startEditing">
-          <Icon icon="tabler:pencil" width="20" height="20" :aria-hidden="true" />
+          <Icon icon="tabler:pencil" width="20" height="20" />
         </button>
       </div>
 
@@ -42,7 +42,7 @@
       <div class="detail-balance-card">
         <div class="detail-balance-heading">
           <span>{{ $t('Balance') }}</span>
-          <span v-if="active" class="detail-active"><Icon icon="tabler:check" width="14" height="14" :aria-hidden="true" />{{ $t('Active') }}</span>
+          <span v-if="active" class="detail-active"><Icon icon="tabler:check" width="14" height="14" />{{ $t('Active') }}</span>
         </div>
         <div class="detail-balance">
           <!-- An NWC connection that may not read the balance has none to wait for. -->
@@ -64,7 +64,7 @@
             <span class="detail-group-value is-placeholder">{{ $t('On this phone') }}</span>
           </span>
           <span v-if="phraseBackedUp" class="detail-backed-up">
-            <Icon icon="tabler:check" width="16" height="16" :aria-hidden="true" />{{ $t('Backed up') }}
+            <Icon icon="tabler:check" width="16" height="16" />{{ $t('Backed up') }}
           </span>
         </div>
         <button v-if="!phraseBackedUp" type="button" class="detail-group-action" @click="$emit('backup', wallet.id)">
@@ -90,7 +90,7 @@
             <span class="detail-group-value" :class="{ 'is-placeholder': !lightningAddress }">{{ lightningAddress || $t('Assigned when the wallet connects') }}</span>
           </span>
           <button v-if="lightningAddress" type="button" class="detail-icon-button" :aria-label="$t('Copy address')" @click="$emit('copy-address', lightningAddress)">
-            <Icon icon="tabler:copy" width="18" height="18" :aria-hidden="true" />
+            <Icon icon="tabler:copy" width="18" height="18" />
           </button>
         </div>
         <button type="button" class="detail-group-action" :disabled="!connected" @click="$emit('change-address', wallet.id)">
@@ -109,18 +109,18 @@
           <span class="detail-group-label">{{ $t('Auto-Transfer') }}</span>
           <span class="detail-group-value is-placeholder">{{ autoTransfer || $t('Set Up') }}</span>
         </span>
-        <Icon icon="tabler:chevron-right" width="18" height="18" class="detail-link-chevron" :aria-hidden="true" />
+        <Icon icon="tabler:chevron-right" width="18" height="18" class="detail-link-chevron" />
       </button>
 
       <div v-if="!active || canReconnect" class="detail-actions">
         <button v-if="!active" type="button" class="detail-button detail-primary" :disabled="switching || reconnecting || saving" @click="$emit('switch', wallet.id)">
           <q-spinner v-if="switching" size="20px" :aria-hidden="true" />
-          <Icon icon="tabler:circle-check" width="20" height="20" v-else :aria-hidden="true" />
+          <Icon icon="tabler:circle-check" width="20" height="20" v-else />
           {{ $t('Use this wallet') }}
         </button>
         <button v-if="canReconnect" type="button" class="detail-button detail-secondary" :disabled="reconnecting || switching || saving" @click="$emit('reconnect', wallet.id)">
           <q-spinner v-if="reconnecting" size="20px" :aria-hidden="true" />
-          <Icon icon="tabler:refresh" width="20" height="20" v-else :aria-hidden="true" />
+          <Icon icon="tabler:refresh" width="20" height="20" v-else />
           {{ reconnecting ? $t('Reconnecting...') : $t('Reconnect') }}
         </button>
       </div>

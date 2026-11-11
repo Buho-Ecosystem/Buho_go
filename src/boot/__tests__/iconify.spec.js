@@ -63,5 +63,24 @@ test('every icon written in a template comes from a bundled set', () => {
   assert.deepEqual(foreign, []);
 });
 
+test('an icon is hidden from screen readers by the component, not by each use', () => {
+  // The component sets aria-hidden on every icon it draws. An icon that
+  // means something gets a label on its button or row, not on itself.
+  const offline = readFileSync(createRequire(import.meta.url).resolve('@iconify/vue/offline'), 'utf8');
+  assert.match(offline, /'aria-hidden': true/, 'the bundled build still hides icons by default');
+  const repeated = files.flatMap(({ file, text }) =>
+    [...text.matchAll(/<Icon(?=[\s/>])[^>]*?\s:?aria-hidden="true"/g)].map(() => file));
+  assert.deepEqual(repeated, []);
+});
+
+test('an icon with a label is shown to screen readers, or its label is never read', () => {
+  const unread = files.flatMap(({ file, text }) =>
+    [...text.matchAll(/<Icon(?=[\s/>])[^>]*?>/g)]
+      .map((m) => m[0])
+      .filter((tag) => /\s:?aria-label=/.test(tag) && !/\s:aria-hidden="false"/.test(tag))
+      .map((tag) => `${file}: ${tag.slice(0, 80)}`));
+  assert.deepEqual(unread, []);
+});
+
 console.log(`\n  ${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

@@ -37,12 +37,12 @@
       <span :id="labelId" class="refund-row-label">{{ label }}</span>
       <span class="refund-row-value">
         <span class="refund-row-text">{{ valueText }}</span>
-        <Icon icon="tabler:chevron-down" width="16" height="16" class="refund-row-chevron" aria-hidden="true" />
+        <Icon icon="tabler:chevron-down" width="16" height="16" class="refund-row-chevron" />
       </span>
     </button>
 
     <div v-if="hint && !open" :id="hintId" class="refund-hint" role="status">
-      <Icon icon="tabler:alert-triangle" width="14" height="14" aria-hidden="true" />
+      <Icon icon="tabler:alert-triangle" width="14" height="14" />
       <span>{{ hint }}</span>
     </div>
 
@@ -72,7 +72,7 @@
                 <strong class="refund-option-address">{{ wrapParts(option.address).name }}<span v-if="wrapParts(option.address).domain" class="refund-option-domain">{{ wrapParts(option.address).domain }}</span></strong>
                 <small :class="{ 'refund-option-warn': isRefused(option.address) }">{{ sourceText(option) }}</small>
               </span>
-              <Icon v-if="isSelected(option.address)" icon="tabler:check" width="18" height="18" class="refund-check" aria-hidden="true" />
+              <Icon v-if="isSelected(option.address)" icon="tabler:check" width="18" height="18" class="refund-check" />
             </button>
             <button
               v-if="refund.canDecline"
@@ -88,7 +88,7 @@
                 <strong>{{ $t('No refund address') }}</strong>
                 <small>{{ $t('A refund may not reach you') }}</small>
               </span>
-              <Icon v-if="declined" icon="tabler:check" width="18" height="18" class="refund-check" aria-hidden="true" />
+              <Icon v-if="declined" icon="tabler:check" width="18" height="18" class="refund-check" />
             </button>
           </div>
           <!-- An action, not a choice: it sits outside the listbox. -->
