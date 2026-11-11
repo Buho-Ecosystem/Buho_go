@@ -175,11 +175,12 @@ test('a backup written with text amounts is read back as numbers', async () => {
 test('a token event that is not ours to read stays unread', async () => {
   const foreign = createTokenEvent({ mint: MINT, proofs: [proof('8', 'foreign')] }, OTHER_SECRET);
   const broken = createTokenEvent({ mint: MINT, proofs: [{ id: 'k', amount: '8', secret: 's' }] }, SECRET);
+  const noMint = createTokenEvent({ mint: '', proofs: [proof('8', 'no-mint')] }, SECRET);
 
   const state = await fetchNip60WalletState({
     secretKey: SECRET,
     pubkey: PUBKEY,
-    pool: queryPool([foreign, broken]),
+    pool: queryPool([foreign, broken, noMint]),
     relays: ['wss://relay.example'],
   });
 

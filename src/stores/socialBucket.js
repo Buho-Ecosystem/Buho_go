@@ -48,10 +48,13 @@ import { plainProofs } from '../utils/cashuProofs.js';
 const STORAGE_KEYS = Object.freeze({
   META: 'buhoGO_social_bucket_v1',
   PROOFS: 'buhoGO_social_bucket_proofs_v1',
-  // The encrypted proofs as found, when some of them could not be read.
-  PROOFS_SET_ASIDE: 'buhoGO_social_bucket_proofs_set_aside_v1',
   NIP60_WALLET: 'buhoGO_social_bucket_nip60_wallet_v1',
 });
+
+// The encrypted proofs as found, when some of them could not be read. Kept
+// apart from STORAGE_KEYS: it is not a bucket, so it never counts as one,
+// and the legacy migration's cleanup never removes it. Erase does.
+const PROOFS_SET_ASIDE_KEY = 'buhoGO_social_bucket_proofs_set_aside_v1';
 
 /** Bump on a breaking change to the persisted shape. */
 const META_VERSION = 1;
@@ -309,7 +312,9 @@ export const useSocialBucketStore = defineStore('socialBucket', {
             if (proofs.length !== stored.length) {
               // Bearer money: the next save rewrites the proofs, so the file
               // as found is kept, still encrypted, before that can happen.
-              const asideKey = profileStorageKey(STORAGE_KEYS.PROOFS_SET_ASIDE, sourceOwner);
+              // Under the profile that will own the proofs, also when they
+              // come from the legacy storage.
+              const asideKey = profileStorageKey(PROOFS_SET_ASIDE_KEY, requestedOwner);
               if (!localStorage.getItem(asideKey)) localStorage.setItem(asideKey, envelope);
               console.warn(`[social-bucket] ${stored.length - proofs.length} unreadable proof(s) set aside`);
             }
@@ -831,7 +836,7 @@ export const useSocialBucketStore = defineStore('socialBucket', {
      */
     reset() {
       const owner = this.ownerPubkey;
-      for (const base of Object.values(STORAGE_KEYS)) {
+      for (const base of [...Object.values(STORAGE_KEYS), PROOFS_SET_ASIDE_KEY]) {
         localStorage.removeItem(profileStorageKey(base, owner));
       }
       this._clearHydratedState();

@@ -342,3 +342,25 @@ test('proofs saved with text amounts load as numbers; unreadable ones are set as
   assert.equal(localStorage.getItem(`buhoGO_social_bucket_proofs_set_aside_v1:${PROFILE_A}`), envelope,
     'the file as found is kept, still encrypted');
 });
+
+test('unreadable proofs from the legacy storage stay set aside after the migration', async () => {
+  const store = freshStore();
+  await store.hydrate();
+  store.mintUrl = MINT;
+  store.heldProofs = [proof(21, 'legacy')];
+  await store._persistProofs();
+  store._persistMeta();
+  const envelope = await encryptString(JSON.stringify([proof(21, 'legacy'), { ...proof(5, 'broken'), C: null }]));
+  localStorage.setItem('buhoGO_social_bucket_proofs_v1', envelope);
+
+  setActivePinia(createPinia());
+  const migrated = useSocialBucketStore();
+  await migrated.hydrate({ pubkey: PROFILE_A });
+
+  assert.equal(migrated.heldSats, 21);
+  assert.equal(localStorage.getItem('buhoGO_social_bucket_v1'), null, 'the legacy bucket moved');
+  assert.equal(localStorage.getItem(`buhoGO_social_bucket_proofs_set_aside_v1:${PROFILE_A}`), envelope);
+
+  migrated.reset();
+  assert.equal(localStorage.getItem(`buhoGO_social_bucket_proofs_set_aside_v1:${PROFILE_A}`), null, 'erase takes it too');
+});
