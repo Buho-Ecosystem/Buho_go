@@ -213,10 +213,6 @@
             <div v-else class="recipient-meta">
               <div class="recipient-name-row">
                 <div class="recipient-name">{{ recipientName }}</div>
-                <span v-if="verb === 'send' && recipientUsesIdentity" class="recipient-method-cue" :class="{ 'recipient-method-cue--brand': !!recipientMethodMark, 'recipient-method-cue--arkade': recipientMethodMark === 'arkade' }" role="img" :aria-label="paymentDetails.typeLabel || $t('Payment details')">
-                  <WalletBrandMark v-if="recipientMethodMark" :type="recipientMethodMark" :size="12" />
-                  <Icon v-else :icon="recipientTypeIcon" width="13" height="13" />
-                </span>
                 <!-- Countdown chip — present for time-bounded merchant QRs.
                      Flips to an urgent red state once the remaining time
                      drops below the supplied threshold (defaults to 20s),
@@ -675,21 +671,6 @@ export default {
       const recipient = this.payment?.recipient
       return !!(recipient?.matchedContact || recipient?.silhouette || recipient?.service || this.showRecipientLogo)
     },
-    recipientMethod() {
-      const network = String(this.payment?.details?.networkLabel || '').toLowerCase()
-      if (network.includes('spark')) return 'spark'
-      if (network.includes('ark')) return 'arkade'
-      if (network.includes('lightning')) return 'lightning'
-      if (network.includes('bitcoin')) return 'bitcoin'
-      return this.payment?.recipient?.addressType || 'bitcoin'
-    },
-    recipientMethodMark() {
-      return ['spark', 'arkade'].includes(this.recipientMethod) ? this.recipientMethod : null
-    },
-    recipientTypeIcon() {
-      return ['lightning', 'invoice', 'lnurl'].includes(this.recipientMethod)
-        ? 'tabler:bolt' : 'tabler:currency-bitcoin'
-    },
 
     // ───── Recipient ─────
     recipientName() {
@@ -742,10 +723,8 @@ export default {
         if (this.payment?.recipient?.addressType === 'lightning') {
           return this.payment?.recipient?.addressLabel || this.recipientAddress
         }
-        // Encoded destinations belong in Payment details, even shortened.
-        // A quiet method label keeps the route recognizable on the review.
-        const label = { spark: 'Spark', arkade: 'Arkade', bitcoin: 'On-chain', lightning: 'Lightning', invoice: 'Lightning', lnurl: 'Lightning' }[this.recipientMethod]
-        return label ? this.$t(label) : ''
+        // Protocol names and encoded destinations belong in Payment details.
+        return ''
       }
       return this.payment?.recipient?.addressLabel || this.recipientAddress
     },
@@ -1675,9 +1654,6 @@ export default {
 .sheet-card--send .note-input { font-size: 1rem; min-width: 0; }
 .sheet-card--send .recipient-avatar--type { background: transparent !important; box-shadow: none; text-shadow: none; }
 .recipient-bitcoin-logo { width: 44px; height: 44px; display: block; }
-.recipient-method-cue { display: grid; place-items: center; flex: 0 0 20px; width: 20px; height: 20px; border-radius: 6px; color: var(--text-secondary); }
-.recipient-method-cue--brand { background: #202020; }
-.recipient-method-cue--arkade { background: var(--arkade-tile, #202020); }
 .payment-details-view { padding-top: 12px; }
 .payment-details-list { margin: 0; }
 .payment-details-list > div { padding: 15px 0; border-bottom: 1px solid var(--border-card); }

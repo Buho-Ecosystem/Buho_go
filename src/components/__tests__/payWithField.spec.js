@@ -716,26 +716,26 @@ test('root dismiss uses Cancel and x; child return uses Back and chevron', async
 })
 
 test('generic payments use the original Bitcoin logo and keep encoded requests exclusively in details', async () => {
-  for (const [network, label] of [['Spark', 'Spark'], ['Arkade', 'Arkade'], ['Lightning', 'Lightning'], ['Bitcoin', 'On-chain']]) {
+  for (const network of ['Spark', 'Arkade', 'Lightning', 'Bitcoin']) {
     const address = 'lnbc24000n1' + 'rawsignedrequest'.repeat(8)
     const payment = { recipient: { name: 'Bitcoin payment', addressType: 'invoice', address }, amount: { mode: 'fixed', fixedSats: 1000 }, details: { networkLabel: network, address } }
     const html = await render(ConfirmSheet, sheetProps({ payment, payingWallets: [] }), { directives: sheetDirectives })
     assert.match(html, /class="recipient-name">Bitcoin payment/)
     assert.match(html, /src="\/icons\/bitcoin.svg" alt(?:="")? class="recipient-bitcoin-logo"/)
-    assert.match(html, new RegExp(`class="recipient-addr">${label}<`))
+    assert.doesNotMatch(html, /class="recipient-addr"/, 'protocol wording stays in Payment details')
     assert.ok(!html.includes(address.slice(0, 17)), 'even a shortened invoice stays out of the main review')
     assert.doesNotMatch(html, /class="recipient-method-cue"/, 'anonymous payment uses the existing icon area')
   }
 })
 
-test('a known contact keeps its avatar and name with a small method cue', async () => {
+test('a known contact keeps its avatar and name without a protocol badge', async () => {
   const payment = {
-    recipient: { name: 'Alice', addressType: 'spark', address: 'spark-request', matchedContact: true, logoUrl: 'https://example.com/alice.jpg' },
-    amount: { mode: 'fixed', fixedSats: 1000 }, details: { networkLabel: 'Spark', typeLabel: 'Spark payment' },
+    recipient: { name: 'Alice', addressType: 'lightning', address: 'alice@example.com', matchedContact: true, logoUrl: 'https://example.com/alice.jpg' },
+    amount: { mode: 'fixed', fixedSats: 1000 }, details: { networkLabel: 'Lightning', typeLabel: 'Lightning address' },
   }
   const html = await render(ConfirmSheet, sheetProps({ payment, payingWallets: [] }), { directives: sheetDirectives })
   assert.match(html, /src="https:\/\/example.com\/alice.jpg" alt="Alice"/)
   assert.match(html, /class="recipient-name">Alice/)
-  assert.match(html, /recipient-method-cue[^>]*role="img"[^>]*aria-label="Spark payment"/)
-  assert.match(html, /data-mark="spark"/)
+  assert.match(html, /class="recipient-addr">alice@example.com/)
+  assert.doesNotMatch(html, /recipient-method-cue|data-mark="spark"|data-icon="tabler:bolt"/)
 })

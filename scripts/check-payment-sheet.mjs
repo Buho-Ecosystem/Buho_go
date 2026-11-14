@@ -178,7 +178,7 @@ try {
     await page.waitForFunction(() => document.querySelector('.sheet-card .fee-row-value')?.textContent.includes('7'));
     assert.ok(!(await sheet().locator('.recipient-cell').innerText()).includes(invoice));
     assert.ok(!(await sheet().locator('.recipient-cell').innerText()).includes(invoice.slice(0, 17)), 'no shortened invoice on the main screen');
-    assert.equal((await sheet().locator('.recipient-addr').innerText()).trim(), 'Lightning');
+    assert.equal(await sheet().locator('.recipient-addr').count(), 0, 'protocol wording stays in Payment details');
     assert.equal(await sheet().locator('.recipient-bitcoin-logo').getAttribute('src'), '/icons/bitcoin.svg');
     const layout = await sheet().evaluate(card => {
       const bounds = selector => card.querySelector(selector).getBoundingClientRect();
