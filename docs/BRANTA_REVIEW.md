@@ -23,3 +23,19 @@ The review covered payment correctness, business attribution and the existing pa
 | SDK update accidentally changes on-chain payment behavior | Preserve existing speed selection, SDK fee breakdown, routing preferences and execution fee limits; exercise their existing browser/provider regressions. |
 
 Validation commands and screenshot evidence are recorded in [BRANTA.md](BRANTA.md). Browser keyboard and enlarged-text checks complement unit coverage; funded payments and native-device acceptance remain separate release checks.
+
+## Subsequent open-PR review, 2026-11-14
+
+Reproduced a route-switching race after the first verification had already
+settled without an answer: switch to another route while the shared lookup is
+pending, then return to the settled route. The cache shortcut returned the
+intervening Checking state without superseding its binding, allowing that
+other route's result to publish later.
+
+Every bind now supersedes an older wait, including the settled-result shortcut.
+The cached settled presentation is stored separately from the transient view.
+A regression verifies that returning to the first route retains its ordinary
+presentation and prevents the other destination's merchant from appearing.
+
+The focused payment, verifier, amount-entry, provider and transaction-metadata
+suites passed: 118 tests. Production build passed.

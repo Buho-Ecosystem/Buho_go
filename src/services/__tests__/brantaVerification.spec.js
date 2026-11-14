@@ -62,6 +62,22 @@ test('wallet and amount ABA rebinding cannot make an older binding publish', asy
   assert.equal((await current).status, BRANTA_STATUS.VERIFIED)
   assert.equal(changes.filter(answer => answer.status === BRANTA_STATUS.VERIFIED).length, 1)
 })
+test('returning to a settled route cancels an intervening pending binding', async () => {
+  const response = deferred()
+  const { session, changes } = check(() => response.promise, { timeoutMs: 1000 })
+  assert.equal((await session.bind(target, 'wallet-A:100')).status, BRANTA_STATUS.NONE)
+  const otherTarget = { kind: 'bitcoin', value: 'bc1qother' }
+  const other = session.bind(otherTarget, 'wallet-B:200')
+  assert.equal((await session.bind(target, 'wallet-A:100')).status, BRANTA_STATUS.NONE)
+  response.resolve({
+    status: 'match',
+    matchedDestinations: [{ type: 'bitcoin_address', value: otherTarget.value, isEncrypted: false }],
+    payments: [{ platform: 'Other route business', destinations: [{ type: 'bitcoin_address', value: otherTarget.value, isEncrypted: false }] }],
+  })
+  assert.equal((await other).status, BRANTA_STATUS.NONE)
+  assert.equal(changes.at(-1).status, BRANTA_STATUS.NONE)
+  assert.equal(changes.some(answer => answer.status === BRANTA_STATUS.VERIFIED), false)
+})
 test('stale/resumed checks refresh and keep original checked time until another lookup completes', async () => {
   let now = 100, calls = 0
   const { session } = check(async ({ fresh }) => { calls += 1; assert.equal(fresh, calls > 1); return result(calls === 1 ? 'Before' : 'After') }, { now: () => now })

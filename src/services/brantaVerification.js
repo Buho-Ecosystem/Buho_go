@@ -3,7 +3,7 @@ import { BRANTA_ENVIRONMENT, BRANTA_STATUS, BRANTA_HOLD_MS, BRANTA_LOOKUP_TIMEOU
 /** One original payment request; changing its selected route never clears a tamper result. */
 export function createBrantaVerification({ verify = checkWithBranta, environment = BRANTA_ENVIRONMENT, now = Date.now, holdMs = BRANTA_HOLD_MS, timeoutMs = BRANTA_LOOKUP_TIMEOUT_MS, onChange = () => {} } = {}) {
   let generation = 0, binding = 0, original = '', startedAt = 0, controller, deadline, releaseCancel, task
-  let raw = null, pending = false, tampered = false, settledKey = null, invalidated = false
+  let raw = null, pending = false, tampered = false, settledKey = null, settledView = null, invalidated = false
   let view = { status: BRANTA_STATUS.NONE }
   const publish = value => { view = value; onChange(value); return value }
   function stop() {
@@ -13,7 +13,7 @@ export function createBrantaVerification({ verify = checkWithBranta, environment
   }
   function start(input, fresh = false) {
     if (original === input && tampered) return
-    stop(); original = input; startedAt = now(); raw = null; settledKey = null; invalidated = false
+    stop(); original = input; startedAt = now(); raw = null; settledKey = null; settledView = null; invalidated = false
     if (!original) return
     controller = new AbortController()
     const signal = controller.signal, ticket = generation, request = original
@@ -33,7 +33,7 @@ export function createBrantaVerification({ verify = checkWithBranta, environment
   }
   return {
     start(input) { if (input !== original) { tampered = false; start(input) } },
-    cancel() { stop(); original = ''; raw = null; tampered = false; settledKey = null },
+    cancel() { stop(); original = ''; raw = null; tampered = false; settledKey = null; settledView = null },
     stale() { invalidated = true },
     get tampered() { return tampered },
     get original() { return original },
@@ -43,9 +43,10 @@ export function createBrantaVerification({ verify = checkWithBranta, environment
       const expired = view.verification?.expiresAt && view.verification.expiresAt <= now()
       if (refresh && (invalidated || now() - (raw?.checkedAt ?? startedAt) >= BRANTA_MAX_AGE_MS || expired)) start(original, true)
       const key = JSON.stringify([context, target?.kind || '', target?.value || ''])
-      // A late normal response cannot replace the identity already shown for this binding.
-      if (key === settledKey && !refresh) return view
       const ticket = generation, selected = ++binding
+      // A late normal response cannot replace the identity already shown for this binding.
+      // Returning to a settled route also invalidates any intervening wait.
+      if (key === settledKey && !refresh) return publish(settledView)
       if (pending) {
         publish({ status: BRANTA_STATUS.CHECKING })
         let foreground
@@ -56,7 +57,8 @@ export function createBrantaVerification({ verify = checkWithBranta, environment
       settledKey = key
       if (tampered) return publish({ status: BRANTA_STATUS.TAMPERED })
       const verification = pending ? null : normalizeBrantaResult(raw, target, { environment, now: now(), checkedAt: raw?.checkedAt ?? now() })
-      return publish(verification ? { status: BRANTA_STATUS.VERIFIED, verification } : { status: BRANTA_STATUS.NONE })
+      settledView = verification ? { status: BRANTA_STATUS.VERIFIED, verification } : { status: BRANTA_STATUS.NONE }
+      return publish(settledView)
     },
   }
 }
