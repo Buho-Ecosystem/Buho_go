@@ -38,22 +38,30 @@
     :persistent="!isRedeem || isSending || isComplete"
     :aria-labelledby="titleId"
     :class="$q.dark.isActive ? 'dialog_dark' : 'dialog_light'"
+    @escape-key="onEscape"
   >
-    <q-card ref="card" class="sheet-card" :class="[{ 'sheet-card--redeem': isRedeem }, $q.dark.isActive ? 'sheet-card-dark' : 'sheet-card-light']">
+    <q-card ref="card" class="sheet-card" :class="[{ 'sheet-card--redeem': isRedeem, 'sheet-card--contextual': contextual }, $q.dark.isActive ? 'sheet-card-dark' : 'sheet-card-light']">
       <!-- Swipe down anywhere on the grab bar or the header to close. -->
       <div class="sheet-top" v-touch-swipe.mouse.down="onHeaderSwipe">
         <div v-if="!isRedeem" class="grab-bar"></div>
 
         <header class="top-row">
-          <q-btn flat round dense @click="onTopAction" class="top-btn glass-back-btn" :disable="takeover ? takeoverLocked : isRedeem && (isSending || isComplete)" :aria-label="$t(isRedeem ? 'Cancel' : 'Back')">
+          <button
+            v-if="contextual"
+            type="button"
+            class="top-btn contextual-top-btn"
+            :disabled="isSending || isComplete"
+            @click="onTopAction"
+          >{{ $t(walletPickerOpen ? 'Back' : 'Cancel') }}</button>
+          <q-btn v-else flat round dense @click="onTopAction" class="top-btn glass-back-btn" :disable="takeover ? takeoverLocked : isRedeem && (isSending || isComplete)" :aria-label="$t(isRedeem ? 'Cancel' : 'Back')">
             <svg v-if="isRedeem" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="m6 6 12 12M6 18 18 6" /></svg>
             <Icon v-else icon="tabler:chevron-left" width="20" height="20" />
           </q-btn>
-          <h2 class="top-title" :id="titleId">{{ takeover ? takeoverTitle : topTitle }}</h2>
+          <h2 class="top-title" :id="titleId">{{ walletPickerOpen ? $t('Pay with') : takeover ? takeoverTitle : topTitle }}</h2>
           <!-- A verified business: its seal, opening Branta's page. -->
           <div class="top-action">
             <BrantaVerifiedBadge
-              v-if="recipientVerification && !takeover"
+              v-if="recipientVerification && !takeover && !walletPickerOpen"
               :verify-url="recipientVerification.verifyUrl"
             />
           </div>
@@ -80,7 +88,7 @@
         <slot name="takeover" />
       </div>
 
-      <div v-if="!isReading" v-show="!takeover" class="stage stage-compose" :class="{ 'stage--refund': !!refundRow }">
+      <div v-if="!isReading" v-show="!takeover && !walletPickerOpen" class="stage stage-compose" :class="{ 'stage--refund': !!refundRow }">
           <!-- Amount leads: the recipient was chosen on the screen before,
                so the number is this screen's job and takes the stage.
                Locked, range, or free depending on mode. -->
@@ -97,7 +105,7 @@
               :placeholder="amountPlaceholder"
               :readonly="amountMode === 'fixed'"
               :tabindex="amountMode === 'fixed' ? -1 : undefined"
-              autofocus
+              :autofocus="!contextual"
             />
             <button
               type="button"
@@ -253,7 +261,7 @@
           </div>
 
           <!-- Wallet capability hint (e.g. Bitcoin/Spark needs Spark wallet). -->
-          <div v-if="!walletCanPay && walletHint" class="wallet-hint">
+          <div v-if="!preparationActive && !walletCanPay && walletHint" class="wallet-hint">
             <Icon icon="tabler:info-circle" width="14" height="14" />
             <span>{{ walletHint }}</span>
           </div>
@@ -286,6 +294,7 @@
             <Icon icon="tabler:message-circle" width="14" height="14" class="note-icon" />
             <input
               v-model="comment"
+              @input="commentEdited = true"
               type="text"
               :placeholder="$t('Add a note')"
               class="note-input"
@@ -298,7 +307,40 @@
                inside the stage so it inherits the sheet's rhythm; when
                present it owns fee display, so the generic footnote below
                stays out of the way. -->
-          <slot name="extras" />
+          <slot v-if="!preparationActive" name="extras" />
+
+          <div
+            v-if="preparationActive"
+            class="payment-preparation-details"
+            :aria-busy="preparing ? 'true' : null"
+            :aria-label="$t('Payment details pending')"
+          >
+            <div class="preparation-wallet">
+              <Icon icon="tabler:wallet" width="23" height="23" />
+              <span>
+                <small>{{ $t('Pay with') }}</small>
+                <i class="preparation-placeholder preparation-placeholder--name" aria-hidden="true"></i>
+                <i class="preparation-placeholder preparation-placeholder--balance" aria-hidden="true"></i>
+              </span>
+            </div>
+            <div class="preparation-fee">
+              <span>{{ $t('Network fee') }}</span>
+              <i class="preparation-placeholder preparation-placeholder--fee" aria-hidden="true"></i>
+            </div>
+          </div>
+
+          <!-- Choosing the wallet determines the payment's balance and fee gates. -->
+          <PayWithField
+            v-if="!preparationActive && showPayWith"
+            ref="payWithField"
+            :wallets="payingWallets"
+            :model-value="sendingWalletId"
+            :disabled="isSending || isComplete"
+            :navigate="contextual"
+            :preferred-wallet-id="preferredWalletId"
+            @open="openWalletPicker"
+            @update:model-value="onPayWithPick"
+          />
 
           <!-- Facts about the payment, read as one group: the network fee and,
                when the service asks for one, the refund address.
@@ -306,7 +348,7 @@
                static label (e.g. "Free (Spark transfer)"). NWC/LNbits
                can't pre-estimate fees, so the parent simply omits this
                object on those paths and we show nothing. -->
-          <div v-if="feeRowVisible || refundRow" class="fact-group">
+          <div v-if="!preparationActive && (feeRowVisible || refundRow)" class="fact-group">
             <div v-if="feeRowVisible" class="fee-row" :class="{ 'fee-row--joined': !!refundRow }">
               <span class="fee-row-label">{{ $t('Network fee') }}</span>
               <span class="fee-row-value">
@@ -323,19 +365,85 @@
             />
           </div>
 
-          <!-- Pay with: which connected wallet pays. Last in the scroll
-               region, directly above the pinned commit control, so the
-               choice is made right before the slide. Only the send verb
-               has one (redeem / charge never pass wallets), and the field
-               itself renders nothing for fewer than two wallets. -->
-          <PayWithField
-            v-if="verb === 'send' && payingWallets.length > 1"
-            :wallets="payingWallets"
-            :model-value="sendingWalletId"
-            :disabled="isSending || isComplete"
-            @update:model-value="onPayWithPick"
-          />
+          <section v-if="walletPreferencePromptVisible" class="wallet-preference-prompt" :aria-labelledby="preferencePromptId">
+            <h3 :id="preferencePromptId">{{ $t('Use {name} next time?', { name: selectedPayingWallet.name || $t('Wallet') }) }}</h3>
+            <div class="wallet-preference-actions"><button type="button" @click="preferSelectedWallet">{{ $t('Make preferred') }}</button><button type="button" @click="$emit('dismiss-wallet-preference')">{{ $t('Not now') }}</button></div>
+          </section>
+          <p v-if="walletPreferenceError" class="wallet-preference-error" role="status">{{ walletPreferenceError }}</p>
 
+        </div>
+
+        <div v-if="walletPickerOpen" class="stage payment-wallet-picker">
+          <p class="payment-wallet-intro">{{ $t('Choose a wallet for this payment.') }}</p>
+          <div class="payment-wallet-options" role="radiogroup" :aria-label="$t('Pay with')" @keydown="onWalletPickerKeydown">
+            <button
+              v-for="wallet in payingWallets"
+              :key="wallet.id"
+              type="button"
+              role="radio"
+              class="payment-wallet-option"
+              :data-wallet-id="wallet.id"
+              :tabindex="wallet.id === walletPickerTabId ? 0 : -1"
+              :class="{ 'payment-wallet-option--selected': wallet.id === walletDraftId }"
+              :aria-checked="wallet.id === walletDraftId ? 'true' : 'false'"
+              :aria-disabled="walletSelectable(wallet) ? undefined : 'true'"
+              @click="chooseWalletDraft(wallet)"
+            >
+              <span class="payment-wallet-tile" :class="{ 'payment-wallet-tile--arkade': wallet.type === 'arkade' }">
+                <WalletBrandMark :type="wallet.type" :size="20" />
+              </span>
+              <span class="payment-wallet-copy">
+                <span class="payment-wallet-name">
+                  <strong>{{ wallet.name || $t('Wallet') }}</strong>
+                  <span v-if="wallet.id === preferredWalletId" class="payment-wallet-preferred">{{ $t('Preferred') }}</span>
+                </span>
+                <small>
+                  {{ walletPickerDetail(wallet) }}<template v-if="walletPickerBalance(wallet) !== null"> · <HiddenAmount>{{ walletPickerBalance(wallet) }}</HiddenAmount></template>
+                </small>
+              </span>
+              <Icon
+                :icon="wallet.id === walletDraftId ? 'tabler:circle-check-filled' : 'tabler:circle'"
+                width="21"
+                height="21"
+                class="payment-wallet-radio"
+              />
+            </button>
+          </div>
+          <p v-if="!payingWallets.length" class="payment-wallet-note">{{ $t('No wallet is available for this payment.') }}</p>
+          <label v-if="walletDraftId && walletDraftId !== preferredWalletId && walletSelectable(walletDraft)" class="payment-wallet-prefer">
+            <input v-model="preferWalletDraft" type="checkbox">
+            <span>
+              <strong>{{ $t('Make this my preferred wallet') }}</strong>
+              <small>{{ $t('Use it first for future contact payments and requests.') }}</small>
+            </span>
+          </label>
+          <p class="payment-wallet-note">{{ preferWalletDraft ? $t('This also updates your preferred wallet for future contact payments.') : $t('This choice applies to this payment. Your saved preference stays the same.') }}</p>
+          <p v-if="walletPreferenceError" class="wallet-preference-error" role="status">{{ walletPreferenceError }}</p>
+        </div>
+
+        <div v-if="walletPickerOpen" class="cta-row confirm-cta">
+          <button type="button" class="primary-cta payment-wallet-apply" :disabled="!walletSelectable(walletDraft)" @click="applyWalletDraft">
+            {{ $t('Use {name}', { name: walletDraft?.name || $t('Wallet') }) }}
+          </button>
+        </div>
+
+        <div v-else-if="preparationActive" class="cta-row confirm-cta preparation-cta">
+          <div v-if="preparationFailed" class="preparation-error" role="status">
+            <Icon icon="tabler:alert-circle" width="17" height="17" />
+            <span>
+              <strong>{{ $t('Payment details unavailable') }}</strong>
+              <small>{{ preparationError }}</small>
+            </span>
+          </div>
+          <div v-else class="preparation-status" role="status" aria-live="polite">
+            <q-spinner size="16px" aria-hidden="true" />
+            <span>
+              {{ $t('Getting payment details…') }}
+              <small v-if="preparationSlow">{{ $t('This is taking a little longer. You can cancel and try again later.') }}</small>
+            </span>
+          </div>
+          <button v-if="preparationFailed" type="button" class="primary-cta preparation-retry" @click="$emit('retry-preparation')">{{ $t('Try again') }}</button>
+          <button v-else type="button" class="primary-cta" disabled>{{ $t('Send') }}</button>
         </div>
 
         <!-- Commit control — pinned OUTSIDE the scroll region so the commit
@@ -345,7 +453,7 @@
              the filling ProgressCta — trickle while in flight, then 100% +
              check on success — bridging cleanly into the confirmation screen
              with no separate confirm step and no blank in between. -->
-        <div v-if="!isReading" v-show="!takeover" class="cta-row confirm-cta">
+        <div v-else-if="!isReading" v-show="!takeover" class="cta-row confirm-cta">
             <transition name="cta-swap" mode="out-in">
               <ProgressCta
                 v-if="isSending || isComplete"
@@ -354,6 +462,7 @@
                 :done="isComplete"
                 :tall="requiresSlide"
               />
+              <button v-else-if="contextual && !walletCanPay && payingWallets.length" key="choose-wallet" type="button" class="primary-cta choose-wallet-cta" @click="openWalletPicker">{{ $t('Choose another wallet') }}</button>
               <SlideToSend
                 v-else-if="requiresSlide"
                 key="slide"
@@ -399,6 +508,10 @@ import SlideToSend from './SlideToSend.vue'
 import BrantaVerifiedBadge from './BrantaVerifiedBadge.vue'
 import ProgressCta from './ProgressCta.vue'
 import PayWithField from './PayWithField.vue'
+import WalletBrandMark from './WalletBrandMark.vue'
+import HiddenAmount from './HiddenAmount.vue'
+import { WALLET_TYPE_LABELS } from '../providers/WalletFactory'
+import { payingWalletReasonText } from '../utils/payingWallets.js'
 import RefundAddressField from './RefundAddressField.vue'
 import CardFace from './CardFace.vue'
 import { onAndroidBack } from '../utils/androidBack.js'
@@ -409,7 +522,7 @@ const SLIDE_THRESHOLD_SATS = 10000
 
 export default {
   name: 'PaymentConfirmSheet',
-  components: { SlideToSend, BrantaVerifiedBadge, ProgressCta, PayWithField, RefundAddressField, CardFace },
+  components: { SlideToSend, BrantaVerifiedBadge, ProgressCta, PayWithField, WalletBrandMark, HiddenAmount, RefundAddressField, CardFace },
   props: {
     modelValue: { type: Boolean, default: false },
     /**
@@ -417,6 +530,14 @@ export default {
      * The component is presentational — the parent owns this object.
      */
     payment: { type: Object, default: null },
+    /** A contact handoff opens this same sheet before its payment details arrive. */
+    contextual: { type: Boolean, default: false },
+    preparing: { type: Boolean, default: false },
+    preparationError: { type: String, default: '' },
+    preparationSlow: { type: Boolean, default: false },
+    preferredWalletId: { type: String, default: null },
+    showWalletPreferencePrompt: { type: Boolean, default: false },
+    walletPreferenceError: { type: String, default: '' },
     /**
      * Whether the wallet that pays can pay this payment. The parent derives it
      * from the SELECTED wallet (`sendingWalletId`), so picking a wallet that
@@ -476,21 +597,28 @@ export default {
     takeoverTitle: { type: String, default: '' },
     takeoverLocked: { type: Boolean, default: false }
   },
-  emits: ['update:modelValue', 'confirm', 'cancel', 'amount-changed', 'update:sendingWalletId', 'refund-pick', 'takeover-cancel'],
+  emits: ['update:modelValue', 'confirm', 'cancel', 'amount-changed', 'update:sendingWalletId', 'refund-pick', 'takeover-cancel', 'retry-preparation', 'update:preferredWalletId', 'dismiss-wallet-preference'],
   data() {
     return {
       showAddress: false,
       addressCopied: false,
-      displayAmount: '',
+      displayAmount: this.payment?.amount?.mode === 'fixed' ? String(this.payment.amount.fixedSats || 0) : '',
       currentCurrency: 'sats',
       comment: '',
       fiatRates: {},
       logoFailed: false,
-      _copyTimer: null
+      _copyTimer: null,
+      walletPickerOpen: false,
+      walletDraftId: null,
+      preferWalletDraft: false,
+      amountEdited: false,
+      denominationChanged: false,
+      commentEdited: false
     }
   },
   computed: {
     titleId() { return `payment-confirm-title-${this.$.uid}` },
+    preferencePromptId() { return `payment-wallet-preference-${this.$.uid}` },
     ...mapState(useWalletStore, ['preferredFiatCurrency', 'denominationCurrency', 'useBip177Format']),
 
     show: {
@@ -499,6 +627,23 @@ export default {
         this.$emit('update:modelValue', v)
         if (!v && this.isRedeem) this.$emit('cancel')
       }
+    },
+
+    preparationActive() { return this.verb === 'send' && (this.preparing || !!this.preparationError) },
+    preparationFailed() { return !this.preparing && !!this.preparationError },
+    selectedPayingWallet() { return this.payingWallets.find(wallet => wallet.id === this.sendingWalletId) || null },
+    walletDraft() { return this.payingWallets.find(wallet => wallet.id === this.walletDraftId) || null },
+    walletPickerTabId() {
+      return this.walletSelectable(this.walletDraft) ? this.walletDraftId : this.payingWallets.find(wallet => this.walletSelectable(wallet))?.id
+    },
+    showPayWith() {
+      return this.verb === 'send' && (this.payingWallets.length > 1
+        || (this.contextual && this.preferredWalletId && this.sendingWalletId === this.preferredWalletId && !this.selectedPayingWallet))
+    },
+    walletPreferencePromptVisible() {
+      return this.contextual && !this.preparationActive && !this.isSending && !this.isComplete
+        && this.showWalletPreferencePrompt && !this.preferredWalletId && this.payingWallets.length > 1
+        && this.walletSelectable(this.selectedPayingWallet)
     },
 
     // ───── Recipient ─────
@@ -705,7 +850,7 @@ export default {
 
     canSubmit() {
       return this.walletCanPay && this.isAmountAcceptable && this.commitGate && !this.recipientChecking
-        && !this.payerBlocked && !this.refundHolds
+        && !this.payerBlocked && !this.refundHolds && !this.preparationActive && !this.walletPickerOpen
     },
 
     // ───── Refunds to (LUD-18) ─────
@@ -917,6 +1062,7 @@ export default {
     topTitle() {
       if (this.isCard || this.isReading) return this.$t('Receive from card')
       if (this.verb === 'charge') return this.$t('Charge card')
+      if (this.contextual) return this.$t(this.amountMode === 'fixed' ? 'Pay request' : 'Send Bitcoin')
       return this.isRedeem ? this.$t('Redeem from') : this.$t('Send to')
     },
 
@@ -961,8 +1107,13 @@ export default {
       if (v) {
         this.resetForFreshOpen()
         this.loadFiatRates()
-      }
+      } else this.walletPickerOpen = false
       this.listenForBack(v)
+    },
+    preparing(pending, wasPending) {
+      // Resolving metadata must never erase an amount typed while waiting.
+      // A newly known fixed invoice is the sole exception: its amount wins.
+      if (wasPending && !pending && this.show && !this.preparationError) this.initializeResolvedDetails()
     },
     // A new/changed logo URL (e.g. a Branta verification arriving async
     // after the sheet opened) gets a fresh chance to load.
@@ -980,6 +1131,14 @@ export default {
     /** The card's answer arrived in an open sheet: start it like a fresh open. */
     isReading(reading, wasReading) {
       if (wasReading && !reading && this.show) this.resetForFreshOpen()
+    }
+  },
+  mounted() {
+    // The contextual host can mount directly into its first visible payment.
+    if (this.show) {
+      this.resetForFreshOpen()
+      this.loadFiatRates()
+      this.listenForBack(true)
     }
   },
   beforeUnmount() {
@@ -1010,8 +1169,14 @@ export default {
     },
 
     resetForFreshOpen() {
+      this.walletPickerOpen = false
+      this.walletDraftId = null
+      this.preferWalletDraft = false
       this.showAddress = false
       this.addressCopied = false
+      this.amountEdited = false
+      this.denominationChanged = false
+      this.commentEdited = false
       // A payment made for a request starts with that request's note (the recipient must accept comments).
       this.comment = this.payment?.commentAllowed
         ? String(this.payment.defaultComment || '').slice(0, this.payment.commentMaxLength || 100)
@@ -1044,6 +1209,28 @@ export default {
       this.$nextTick(() => this.$emit('amount-changed', this.amountInSats))
     },
 
+    initializeResolvedDetails() {
+      // Terms arrive after the sheet opens. Fill only defaults the person
+      // has not already edited, including an intentionally cleared draft.
+      if (!this.commentEdited && this.payment?.commentAllowed) {
+        this.comment = String(this.payment.defaultComment || '').slice(0, this.payment.commentMaxLength || 100)
+      }
+      if (this.amountMode === 'fixed') {
+        this.displayAmount = String(this.fixedSats)
+        this.currentCurrency = 'sats'
+      } else if (!this.amountEdited && !this.denominationChanged) {
+        if (this.payoutCurrency && this.payment?.amount?.defaultPayout > 0) {
+          this.displayAmount = String(this.payment.amount.defaultPayout)
+          this.currentCurrency = this.payoutCurrency.code
+        } else if (!this.displayAmount && this.payment?.amount?.defaultAmount > 0) {
+          this.displayAmount = String(this.payment.amount.defaultAmount)
+          this.currentCurrency = 'sats'
+        } else if (!this.displayAmount && this.payoutCurrency) {
+          this.currentCurrency = this.payoutCurrency.code
+        }
+      }
+    },
+
     /**
      * The user picked another wallet in "Pay with". The parent owns the
      * selection (it re-evaluates capability, balance and fees for it), so this
@@ -1055,6 +1242,73 @@ export default {
       this.$emit('update:sendingWalletId', walletId)
     },
 
+    walletSelectable(wallet) { return !!wallet?.usable && !wallet.connectionFailed },
+
+    walletPickerDetail(wallet) {
+      if (wallet.connectionFailed) return this.$t('Unavailable right now')
+      if (wallet.hint) return wallet.hint
+      if (wallet.reason) return payingWalletReasonText(wallet.reason, this.$t.bind(this))
+      return WALLET_TYPE_LABELS[wallet.type] || wallet.type || this.$t('Wallet')
+    },
+
+    walletPickerBalance(wallet) {
+      if (!this.walletSelectable(wallet)) return null
+      const balance = useWalletStore().getDisplayBalance(wallet.id)
+      return balance?.known ? formatAmount(balance.balance, this.useBip177Format) : null
+    },
+
+    openWalletPicker() {
+      if (!this.contextual || this.preparationActive || this.isSending || this.isComplete) return
+      this.walletDraftId = this.sendingWalletId
+      this.preferWalletDraft = false
+      this.walletPickerOpen = true
+      this.$nextTick(() => this.$refs.card?.$el.querySelector('.payment-wallet-option[tabindex="0"]')?.focus())
+    },
+
+    chooseWalletDraft(wallet) {
+      if (!this.walletSelectable(wallet)) return
+      this.walletDraftId = wallet.id
+      this.preferWalletDraft = false
+    },
+
+    closeWalletPicker() {
+      this.walletPickerOpen = false
+      this.walletDraftId = null
+      this.preferWalletDraft = false
+      this.$nextTick(() => this.$refs.payWithField?.focusField?.())
+    },
+
+    applyWalletDraft() {
+      if (this.isSending || this.isComplete || !this.walletSelectable(this.walletDraft)) return
+      const id = this.walletDraftId
+      this.$emit('update:sendingWalletId', id)
+      if (this.preferWalletDraft && id !== this.preferredWalletId) this.$emit('update:preferredWalletId', id)
+      else if (!this.preferredWalletId) this.$emit('dismiss-wallet-preference')
+      this.closeWalletPicker()
+    },
+
+    preferSelectedWallet() {
+      if (this.isSending || this.isComplete || !this.walletSelectable(this.selectedPayingWallet)) return
+      this.$emit('update:preferredWalletId', this.sendingWalletId)
+    },
+
+    onWalletPickerKeydown(event) {
+      if (!['ArrowDown', 'ArrowUp', 'ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return
+      const options = Array.from(event.currentTarget.querySelectorAll('[role="radio"]:not([aria-disabled="true"])'))
+      if (!options.length) return
+      const at = options.indexOf(document.activeElement)
+      const next = event.key === 'Home' ? 0 : event.key === 'End' ? options.length - 1
+        : ['ArrowDown', 'ArrowRight'].includes(event.key) ? (at + 1) % options.length : at < 0 ? options.length - 1 : (at - 1 + options.length) % options.length
+      event.preventDefault()
+      const wallet = this.payingWallets.find(wallet => wallet.id === options[next].dataset.walletId)
+      this.chooseWalletDraft(wallet)
+      options[next].focus()
+    },
+
+    onEscape() {
+      if (this.contextual && !this.isSending && !this.isComplete) this.onTopAction()
+    },
+
     /** The person chose on the refund row; the parent owns the choice. */
     onRefundPick(pick) {
       if (this.isSending || this.isComplete) return
@@ -1062,11 +1316,12 @@ export default {
     },
 
     onTopAction() {
+      if (this.walletPickerOpen) { this.closeWalletPicker(); return }
       if (this.takeover) {
         if (!this.takeoverLocked) this.$emit('takeover-cancel')
         return
       }
-      if (this.isRedeem && (this.isSending || this.isComplete)) return
+      if ((this.isRedeem || this.contextual) && (this.isSending || this.isComplete)) return
       this.show = false
       if (!this.isRedeem) this.$emit('cancel')
     },
@@ -1103,6 +1358,7 @@ export default {
     },
 
     onAmountChange() {
+      this.amountEdited = true
       // Sanitize as the user types so parseFloat can never silently truncate at
       // a grouping separator (e.g. "2,500" → 2500, or "2500,000" → 2500 → a
       // 1000x underpayment). Keep only digits and a single decimal point, and
@@ -1135,6 +1391,7 @@ export default {
 
     toggleCurrency() {
       if (this.amountMode === 'fixed') return
+      this.denominationChanged = true
       // Fiat-payout addresses toggle between the recipient's currency and sats;
       // everything else toggles between sats and the user's global fiat.
       const order = this.payoutCurrency
@@ -1155,6 +1412,8 @@ export default {
      */
     setAmountSats(sats) {
       if (this.amountMode === 'fixed') return
+      this.amountEdited = true
+      this.denominationChanged = true
       this.currentCurrency = 'sats'
       this.displayAmount = String(Math.max(0, Math.floor(sats)))
     },
@@ -1254,6 +1513,78 @@ export default {
   align-items: center;
   justify-content: flex-end;
 }
+
+/* Contact payments keep the source screen underneath one sheet. Its middle
+   scrolls independently so Cancel and the primary action remain reachable. */
+.sheet-card--contextual .top-row { gap: 8px; }
+.contextual-top-btn {
+  min-width: 44px;
+  min-height: 44px;
+  padding: 6px 4px;
+  border: 0;
+  background: transparent;
+  color: var(--brand-accent-text);
+  font: inherit;
+  font-size: .875rem;
+  cursor: pointer;
+}
+.contextual-top-btn:disabled { opacity: .5; cursor: default; }
+.sheet-card--contextual .top-title { font-size: .9375rem; overflow-wrap: anywhere; }
+.sheet-card--contextual .top-action { flex: 0 0 24px; width: 24px; }
+.sheet-card--contextual .primary-cta { height: auto; min-height: 48px; padding: 12px; font-size: 1rem; overflow-wrap: anywhere; }
+.sheet-card--contextual .recipient-name { font-size: 1rem; white-space: normal; overflow-wrap: anywhere; }
+.sheet-card--contextual .recipient-addr { font-size: .8125rem; }
+.sheet-card--contextual .amount-helper,
+.sheet-card--contextual .wallet-hint,
+.sheet-card--contextual .fee-footnote { font-size: .8125rem; }
+.sheet-card--contextual .unit-pill { min-height: 44px; font-size: .8125rem; }
+.sheet-card--contextual button:focus-visible,
+.payment-wallet-prefer input:focus-visible { outline: 2px solid var(--brand-accent-text); outline-offset: 3px; }
+
+.payment-preparation-details { display: flex; flex-direction: column; gap: 12px; }
+.preparation-wallet { display: flex; align-items: center; gap: 12px; padding: 14px; border: 1px solid var(--border-card); border-radius: var(--radius-md); color: var(--text-secondary); }
+.preparation-wallet > span { flex: 1; min-width: 0; }
+.preparation-wallet small { display: block; margin-bottom: 8px; font-size: .75rem; }
+.preparation-placeholder { display: block; height: 10px; border-radius: 4px; background: var(--border-card); }
+.preparation-placeholder--name { width: 48%; height: 13px; }
+.preparation-placeholder--balance { width: 68%; margin-top: 8px; }
+.preparation-placeholder--fee { width: 46px; }
+.preparation-fee { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 2px; color: var(--text-secondary); font-size: .8125rem; }
+.preparation-status,
+.preparation-error { display: flex; align-items: flex-start; gap: 9px; color: var(--text-secondary); font-size: .8125rem; line-height: 1.5; text-align: left; padding: 0 2px 12px; }
+.preparation-status > :first-child,
+.preparation-error > :first-child { flex-shrink: 0; margin-top: 3px; }
+.preparation-status small,
+.preparation-error small { display: block; margin-top: 4px; font-size: .75rem; color: var(--text-muted); }
+.preparation-error strong { font-weight: 600; color: var(--text-primary); }
+.wallet-preference-prompt { padding: 12px 14px 4px; border-radius: var(--radius-md); background: var(--bg-input); }
+.wallet-preference-prompt h3 { margin: 0; font-size: .8125rem; line-height: 1.5; font-weight: 600; color: var(--text-primary); overflow-wrap: anywhere; }
+.wallet-preference-actions { display: flex; flex-wrap: wrap; column-gap: 20px; }
+.wallet-preference-actions button { min-height: 44px; padding: 6px 0; border: 0; background: transparent; font: inherit; font-size: .8125rem; font-weight: 600; color: var(--brand-accent-text); cursor: pointer; }
+.wallet-preference-actions button + button { color: var(--text-secondary); font-weight: 400; }
+.wallet-preference-error { margin: 0; color: var(--text-secondary); font-size: .8125rem; line-height: 1.5; }
+.payment-wallet-intro,
+.payment-wallet-note { margin: 0; font-size: .8125rem; line-height: 1.5; color: var(--text-secondary); }
+.payment-wallet-note { color: var(--text-muted); }
+.payment-wallet-options { overflow: hidden; flex-shrink: 0; border: 1px solid var(--border-card); border-radius: var(--radius-md); }
+.payment-wallet-option { display: flex; align-items: center; gap: 11px; width: 100%; min-height: 76px; padding: 14px 12px; border: 0; background: transparent; text-align: left; font: inherit; color: var(--text-primary); cursor: pointer; }
+.payment-wallet-option + .payment-wallet-option { border-top: 1px solid var(--border-card); }
+.payment-wallet-option--selected { background: var(--bg-input); }
+.payment-wallet-option[aria-disabled="true"] { color: var(--text-muted); cursor: default; }
+.payment-wallet-tile { width: 36px; height: 36px; flex: 0 0 36px; display: flex; align-items: center; justify-content: center; border-radius: 10px; background: linear-gradient(135deg, #2A2A2A, #1A1A1A); }
+.payment-wallet-tile--arkade { background: var(--arkade-tile, #101010); }
+.payment-wallet-copy { flex: 1; min-width: 0; }
+.payment-wallet-name { display: flex; align-items: baseline; flex-wrap: wrap; gap: 5px 8px; }
+.payment-wallet-name strong { font-size: .9375rem; font-weight: 600; line-height: 1.4; overflow-wrap: anywhere; }
+.payment-wallet-copy small { display: block; margin-top: 4px; font-size: .75rem; line-height: 1.5; color: var(--text-secondary); overflow-wrap: anywhere; }
+.payment-wallet-preferred { font-size: .6875rem; color: var(--brand-accent-text); }
+.payment-wallet-radio { flex: 0 0 21px; color: var(--brand-accent-text); }
+.payment-wallet-option[aria-disabled="true"] .payment-wallet-radio { color: var(--text-muted); }
+.payment-wallet-prefer { display: flex; align-items: flex-start; gap: 10px; min-height: 44px; padding: 10px 0; cursor: pointer; }
+.payment-wallet-prefer input { width: 20px; height: 20px; flex: 0 0 20px; margin: 2px 0 0; accent-color: var(--brand-accent-text); }
+.payment-wallet-prefer strong { display: block; font-size: .8125rem; line-height: 1.5; font-weight: 600; color: var(--text-primary); }
+.payment-wallet-prefer small { display: block; margin-top: 3px; font-size: .75rem; line-height: 1.5; color: var(--text-secondary); }
+@media (prefers-reduced-motion: reduce) { .preparation-status :deep(.q-spinner) { animation: none; } }
 
 /* ─── Stages ───
    The stage is the ONLY scroll region, and with the compressed rhythm

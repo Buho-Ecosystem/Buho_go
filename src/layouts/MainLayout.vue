@@ -47,13 +47,16 @@
       <router-view v-slot="{ Component, route }">
         <component :is="Component" :key="route.path.startsWith('/transaction/') ? route.fullPath : undefined" />
       </router-view>
+      <ContactPaymentHost :suspended="paymentSuspended" />
     </q-page-container>
   </q-layout>
 </template>
 
 <script>
-import { defineComponent, ref } from 'vue'
+import { computed, defineComponent, inject, ref } from 'vue'
 import EssentialLink from 'components/EssentialLink.vue'
+import ContactPaymentHost from 'components/ContactPaymentHost.vue'
+import { useAddressRequestStore } from '../stores/addressRequest.js'
 
 const linksList = [
   {
@@ -104,7 +107,14 @@ export default defineComponent({
   name: 'MainLayout',
 
   components: {
-    EssentialLink
+    EssentialLink,
+    ContactPaymentHost
+  },
+
+  setup () {
+    const appLocked = inject('appLocked', ref(false))
+    const addressRequest = useAddressRequestStore()
+    return { paymentSuspended: computed(() => appLocked.value || addressRequest.state.stage !== 'idle') }
   },
 
   data () {

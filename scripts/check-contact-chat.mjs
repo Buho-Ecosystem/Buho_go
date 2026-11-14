@@ -477,7 +477,7 @@ try {
 
   await step('Bob taps "Send anyway": the send flow with amount and note, linked to the request; both see Paid', async () => {
     await chatCard(bob.page, /^Alice requests.*Old pizza/).filter({ hasText: 'Expired' }).getByRole('button', { name: 'Send anyway' }).click();
-    await bob.page.getByText('Pay with', { exact: true }).waitFor();
+    await bob.page.locator('.sheet-card:visible .pay-with-field').waitFor();
     await snap(bob, '17-send-anyway-prefilled');
     await confirmPayment(bob.page);
     await expectPaidFrom(bob, 'bob-spark', 4);
@@ -582,7 +582,7 @@ try {
         await alice.page.waitForTimeout(300);
         await assertFits(alice.page, `request sheet ${label}`);
         await snap(alice, `10-request-sheet-${label}`);
-        await alice.page.getByRole('button', { name: /^(Cancel|Abbrechen|Cancelar)$/ }).click();
+        await alice.page.locator('.request-sheet__back').click();
 
         // The stranger's chat: banner, an untrusted request, then its confirm sheet.
         await navigate(alice.page, `/messages/${CAROL.pubkey}`);
@@ -637,18 +637,20 @@ function expectAuth(who) {
 async function requestMoney(page, sats, note) {
   await page.getByRole('button', { name: 'Request', exact: true }).click();
   const sheet = page.getByRole('region', { name: /^Request from/ });
-  await sheet.getByRole('textbox', { name: 'Amount in sats' }).fill(sats);
+  for (const digit of sats) await sheet.locator('.amount-keypad__key').filter({ hasText: new RegExp(`^${digit}$`) }).click();
+  await sheet.getByRole('button', { name: 'Add a note', exact: true }).click();
   await sheet.getByRole('textbox', { name: 'Note (optional)' }).fill(note);
-  await sheet.getByRole('button', { name: /^To / }).waitFor();
+  await sheet.getByRole('button', { name: /^Paid to / }).waitFor();
   assert.equal(await sheet.getByText('Receive in').count(), 0, 'the money always goes to the profile address');
-  await sheet.getByRole('button', { name: /^Request .*\d/ }).click();
+  await sheet.locator('.request-sheet__cta').click();
   await sheet.waitFor({ state: 'hidden' });
 }
 
 /** Bob taps Pay on a request card and lands on the confirm sheet. */
 async function payRequestFromChat({ page }, cardName) {
   await chatCard(page, cardName).getByRole('button', { name: 'Pay' }).click();
-  await page.getByText('Pay with', { exact: true }).waitFor();
+  await page.locator('.sheet-card:visible .pay-with-field').waitFor();
+  await page.waitForFunction(() => !document.querySelector('.sheet-card .preparation-status'));
 }
 
 /** After the confirm sheet: the success screen shows and exactly the expected wallet paid. */
@@ -667,7 +669,14 @@ async function openMenuBadge(page) {
 /** Choose a wallet in the "Pay with" field of the confirm sheet. */
 async function payWith(page, name) {
   await page.getByRole('button', { name: /Pay with/ }).click();
-  await page.getByRole('listbox').getByRole('option', { name: new RegExp(name) }).click();
+  await page.locator('.payment-wallet-picker, [role="listbox"]').waitFor();
+  const picker = page.locator('.payment-wallet-picker');
+  if (await picker.count()) {
+    await picker.getByRole('radio', { name: new RegExp(name) }).click();
+    await page.locator('.payment-wallet-apply').click();
+  } else {
+    await page.getByRole('listbox').getByRole('option', { name: new RegExp(name) }).click();
+  }
 }
 
 /**
@@ -676,17 +685,21 @@ async function payWith(page, name) {
  */
 async function payWithOptionsMatrix(page) {
   await page.getByRole('button', { name: /Pay with/ }).click();
-  const list = page.getByRole('listbox');
-  const option = (name) => list.getByRole('option', { name: new RegExp(name) });
-  assert.equal(await list.getByRole('option').count(), 4, 'every connected wallet is listed');
-  assert.match(await list.getByRole('option').first().innerText(), /Personal/, 'the active wallet leads');
-  assert.equal(await option('Personal').getAttribute('aria-selected'), 'true');
+  await page.locator('.payment-wallet-picker, [role="listbox"]').waitFor();
+  const contextual = await page.locator('.payment-wallet-picker').count() > 0;
+  const list = contextual ? page.locator('.payment-wallet-picker') : page.getByRole('listbox');
+  const role = contextual ? 'radio' : 'option';
+  const option = (name) => list.getByRole(role, { name: new RegExp(name) });
+  assert.equal(await list.getByRole(role).count(), 4, 'every connected wallet is listed');
+  assert.match(await list.getByRole(role).first().innerText(), /Personal/, 'the active wallet leads');
+  assert.equal(await option('Personal').getAttribute(contextual ? 'aria-checked' : 'aria-selected'), 'true');
   for (const name of ['Personal', 'Alby Hub', 'Shop']) {
     assert.notEqual(await option(name).getAttribute('aria-disabled'), 'true', `${name} can pay`);
   }
   assert.equal(await option('Ark').getAttribute('aria-disabled'), 'true', 'Arkade cannot pay Lightning');
   await option('Ark').getByText("Can't pay this").waitFor();
   await option('Personal').click();
+  if (contextual) await page.locator('.payment-wallet-apply').click();
 }
 
 async function confirmPayment(page) {

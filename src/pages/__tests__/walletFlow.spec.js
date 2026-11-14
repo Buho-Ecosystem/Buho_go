@@ -162,7 +162,8 @@ test('reading an address notes whether its callback is the till provider\'s, and
   };
   const till = await read({ ...PAY_REQUEST, callback: 'https://cryptoqr.net/api/cb', payerData: { identifier: { mandatory: false } } });
   assert.deepEqual([till.callbackOnTillProvider, till.payerData], [true, { identifier: { mandatory: false } }]);
-  assert.equal('callback' in till, false, 'never kept as the terms');
+  assert.equal(till.callback, 'https://cryptoqr.net/api/cb', 'the checked callback is available to NWC without a second read');
+  assert.equal(till.metadata, PAY_REQUEST.metadata, 'complete metadata accompanies the checked terms');
   const other = await read({ ...PAY_REQUEST, callback: 'https://cryptoqr.net.evil.example/cb' });
   assert.deepEqual([other.callbackOnTillProvider, other.payerData], [false, null]);
 });
@@ -1075,11 +1076,11 @@ test('a handed-over payment steps back to the screen right behind it, so Back is
   }
 });
 
-test('Pay with: the payload takes the shape of the paying wallet\'s backend', async () => {
+test('Pay with: checked metadata is reused for every paying wallet without a second read', async () => {
   // Paid by an NWC wallet: resolved for NWC, and reading the address needs no connection.
   const nwc = payingHarness({ active: 'biz' });
   await nwc.vm.onPaymentDetected({ type: 'lightning_address', data: 'bob@example.com', sendingWalletId: 'hub' });
-  assert.deepEqual(nwc.lightning, [['new', null], ['process', null, 'bob@example.com']]);
+  assert.deepEqual(nwc.lightning, [], 'recipient preparation never connects a wallet or fetches metadata twice');
   assert.equal(nwc.vm.pendingPayment.address, 'bob@example.com');
   assert.equal(nwc.vm.sendingWalletId, 'hub');
 

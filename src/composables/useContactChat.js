@@ -316,9 +316,7 @@ export function describeDmError(error, { t, name = '' }) {
  * @property {unknown} [contact] Ref, getter or value: the address book entry, if any.
  * @property {object} store The messages store.
  * @property {ReturnType<import('./useChatRuntime.js').useChatRuntime>} runtime
- * @property {{ payContact: Function, payInvoice: Function, payAddress: Function }} pay `usePayContact(ctx)`.
- * @property {(sats: number, destinationType?: string) => ({ id: string, usable: boolean, reason: string | null } | null)} payingWalletFor
- *   The wallet that would pay `sats` (the default pick of the "Pay with" field).
+ * @property {{ payContact: Function, preparePayment: Function }} pay `usePayContact(ctx)`.
  * @property {(sats: number) => Payability} [payability] Whether a request of `sats` can be paid now.
  * @property {(walletId: string | null) => string} [walletNameOf] Display name of one of the user's wallets.
  * @property {() => Promise<import('../services/dm/paymentConfirmation.js').IncomingTransaction[]>} [loadIncomingTransactions]
@@ -334,7 +332,7 @@ export function describeDmError(error, { t, name = '' }) {
  */
 export function useContactChat(options) {
   const {
-    store, runtime, pay, payingWalletFor, t, formatFiat,
+    store, runtime, pay, t, formatFiat,
     payability = () => ({ loading: false, reason: '' }),
     walletNameOf = () => '',
     loadIncomingTransactions = async () => [],
@@ -611,17 +609,22 @@ export function useContactChat(options) {
     if (!message || message.type !== MESSAGE_TYPE.REQUEST || message.outgoing) return { ok: false, error: null };
     const paid = alreadyPaid(id);
     if (paid) return paid;
-    const fetched = await guarded(id, () => runtime.fetchRequestInvoice(partner(), id));
-    if (!fetched.ok) return fetched;
-    pay.payInvoice(...requestPaymentHandover({
-      partner: partner(),
-      message,
-      invoice: fetched.value,
-      name: partnerName(),
-      contactId: contact()?.id,
-      payer: payingWalletFor(message.request.amountSats, 'lightning'),
-    }));
-    return { ok: true };
+    const recipient = partner(), name = partnerName(), entry = contact();
+    const handedOver = pay.preparePayment({
+      key: `request:${recipient}:${id}`,
+      name,
+      address: message.request.lud16 || entry?.address || '',
+      amountSats: message.request.amountSats,
+      fixedAmount: true,
+      note: message.request.note || '',
+      contactId: entry?.id,
+      resolve: async () => {
+        const invoice = await runtime.fetchRequestInvoice(recipient, id);
+        const [target, options] = requestPaymentHandover({ partner: recipient, message, invoice, name, contactId: entry?.id });
+        return { address: target.bolt11, addressType: 'invoice', name: target.name, ...options };
+      },
+    });
+    return handedOver === false ? { ok: false, error: null } : { ok: true };
   }
 
   /**
@@ -636,18 +639,19 @@ export function useContactChat(options) {
     if (!message || message.type !== MESSAGE_TYPE.REQUEST || message.outgoing) return { ok: false, error: null };
     const paid = alreadyPaid(id);
     if (paid) return paid;
-    const resolved = await guarded(id, () => runtime.requestAddress(partner(), id));
-    if (!resolved.ok) return resolved;
     const { amountSats, note } = message.request;
-    const payer = payingWalletFor(amountSats, 'lightning');
-    pay.payAddress({ address: resolved.value, addressType: 'lightning', name: partnerName() }, {
-      walletId: payer?.usable ? payer.id : undefined,
-      context: buildChatPaymentContext(partner(), message.id),
+    const recipient = partner(), name = partnerName();
+    const handedOver = pay.preparePayment({
+      key: `expired-request:${recipient}:${id}`,
+      name,
+      contactId: contact()?.id,
+      address: message.request.lud16 || '',
+      context: buildChatPaymentContext(recipient, message.id),
       amountSats,
       note: note || undefined,
-      returnHere: true,
+      resolve: async () => ({ address: await runtime.requestAddress(recipient, id), addressType: 'lightning', name }),
     });
-    return { ok: true };
+    return handedOver === false ? { ok: false, error: null } : { ok: true };
   }
 
   /** The user's own request is over: the same amount and note, one new request. */
@@ -663,13 +667,11 @@ export function useContactChat(options) {
   function sendMoney() {
     const entry = contact();
     if (!entry) return { ok: false, error: null };
-    const payer = payingWalletFor(0, entry.addressType || 'lightning');
-    pay.payContact(entry, {
-      walletId: payer?.usable ? payer.id : undefined,
+    const handedOver = pay.payContact(entry, {
       context: buildChatPaymentContext(partner()),
       returnHere: true,
     });
-    return { ok: true };
+    return handedOver === false ? { ok: false, error: null } : { ok: true };
   }
 
   return {

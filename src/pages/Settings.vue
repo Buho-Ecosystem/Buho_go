@@ -205,6 +205,14 @@
           @click="showWalletsDialog = true"
         />
         <SettingsRow
+          icon="tabler:wallet"
+          :label="$t('Payment wallet')"
+          :caption="$t('Preferred for contact payments')"
+          :inline-value="paymentWalletLabel"
+          data-audit="settings-payment-wallet"
+          @click="showPaymentWalletSheet = true"
+        />
+        <SettingsRow
           icon="tabler:arrow-autofit-right"
           :label="$t('Auto-Transfer')"
           :inline-value="autoTransferMeta"
@@ -1177,6 +1185,7 @@
     />
 
 
+    <PreferredPaymentWalletSheet v-model="showPaymentWalletSheet" />
     <SettingsHubNav />
   </q-page>
 </template>
@@ -1190,6 +1199,7 @@ import {useBitcoinPreferencesStore} from '../stores/bitcoinPreferences'
 import {useIdentityStore} from '../stores/identity'
 import {useProfileStore} from '../stores/profile'
 import {useNotificationsStore} from '../stores/notifications'
+import {usePaymentPreferencesStore} from '../stores/paymentPreferences.js'
 import {useChatRuntime} from '../composables/useChatRuntime'
 import {mapState, mapActions} from 'pinia'
 import {fiatRatesService, checkMempoolServer} from '../utils/fiatRates.js'
@@ -1218,6 +1228,7 @@ import InternalTransferModal from '../components/InternalTransferModal.vue'
 import WalletDetailPanel from '../components/settings/WalletDetailPanel.vue'
 import AddSparkWalletSheet from '../components/wallets/AddSparkWalletSheet.vue'
 import NotificationsSheet from '../components/settings/NotificationsSheet.vue'
+import PreferredPaymentWalletSheet from '../components/settings/PreferredPaymentWalletSheet.vue'
 import QuickAccessSheet from '../components/settings/QuickAccessSheet.vue'
 import { quickAccessSupported } from '../services/quickAccess.js'
 import MoveLightningAddressSheet from '../components/wallets/MoveLightningAddressSheet.vue'
@@ -1244,7 +1255,9 @@ export default {
   name: 'SettingsPage',
   directives: { balanceUpdating },
   setup() {
-    return { chatAvailable: useChatRuntime().available };
+    const paymentPreferences = usePaymentPreferencesStore();
+    paymentPreferences.initialize();
+    return { chatAvailable: useChatRuntime().available, paymentPreferences };
   },
   components: {
     ArkadeLogo,
@@ -1258,6 +1271,7 @@ export default {
     WalletDetailPanel,
     AddSparkWalletSheet,
     NotificationsSheet,
+    PreferredPaymentWalletSheet,
     QuickAccessSheet,
     MoveLightningAddressSheet,
     GetAppDialog,
@@ -1276,6 +1290,7 @@ export default {
       hapticsSupported: hapticsSupported(),
       quickAccessSupported: quickAccessSupported(),
       showWalletsDialog: false,
+      showPaymentWalletSheet: false,
       showSparkLnAddressSheet: false,
       showAddWalletDialog: false,
       // A wallet's details, pushed inside the Manage Wallets sheet.
@@ -1390,6 +1405,11 @@ export default {
     }
   },
   computed: {
+    paymentWalletLabel() {
+      const id = this.paymentPreferences.preferredWalletId;
+      if (!id) return this.$t('Automatic');
+      return this.wallets.find(wallet => wallet.id === id)?.name || this.$t('Wallet unavailable');
+    },
     /** Wallets set aside on another recovery phrase (see the wallet store). */
     setAsideWallets() {
       return this.showWalletsDialog ? this.walletStore.setAsideSparkWallets() : [];

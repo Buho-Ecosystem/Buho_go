@@ -387,3 +387,212 @@ test('the sheet forwards the pick, except mid-send', () => {
   assert.equal(emitted.length, 1)
   assert.ok(ConfirmSheet.emits.includes('update:sendingWalletId'))
 })
+
+// Contextual payments begin in this same sheet while recipient details load.
+test('preparation shows known recipient and amount, placeholders, status and a disabled send', async () => {
+  const html = await render(ConfirmSheet, sheetProps({ contextual: true, preparing: true }), {
+    directives: sheetDirectives,
+  })
+  assert.match(html, /Alice/)
+  assert.match(html, /value="1000"/)
+  assert.match(html, />Cancel<\/button>/)
+  assert.match(html, /payment-preparation-details/)
+  assert.match(html, /Getting payment details…/)
+  assert.match(html, /class="primary-cta"[^>]*disabled/)
+  assert.doesNotMatch(html, /class="pay-with"/)
+  assert.doesNotMatch(html, /wallet-preference-prompt/)
+})
+
+test('a failed preparation keeps the draft and exposes an inline retry with Cancel', async () => {
+  const html = await render(ConfirmSheet, sheetProps({
+    contextual: true, preparationError: 'Could not get payment details. Try again.',
+    payment: { recipient: { name: 'Alice' }, amount: { mode: 'free' } },
+  }), { directives: sheetDirectives, data: { displayAmount: '751' } })
+  assert.match(html, /value="751"/)
+  assert.match(html, /preparation-error[^>]*role="status"/)
+  assert.match(html, /Could not get payment details. Try again./)
+  assert.match(html, /preparation-retry/)
+  assert.match(html, />Cancel<\/button>/)
+})
+
+test('resolving or retrying preparation preserves a free amount; a fixed invoice owns its amount', () => {
+  const vm = { show: true, amountMode: 'free', displayAmount: '751', currentCurrency: 'fiat', fixedSats: 1000, initializeResolvedDetails: ConfirmSheet.methods.initializeResolvedDetails }
+  ConfirmSheet.watch.preparing.call(vm, false, true)
+  assert.equal(vm.displayAmount, '751')
+  assert.equal(vm.currentCurrency, 'fiat')
+  ConfirmSheet.watch.preparing.call(vm, true, false)
+  assert.equal(vm.displayAmount, '751')
+  vm.amountMode = 'fixed'
+  ConfirmSheet.watch.preparing.call(vm, false, true)
+  assert.equal(vm.displayAmount, '1000')
+  assert.equal(vm.currentCurrency, 'sats')
+})
+
+test('preparation and the wallet chooser each hold the commit gate', () => {
+  const vm = { walletCanPay: true, isAmountAcceptable: true, commitGate: true, preparationActive: true, walletPickerOpen: false }
+  assert.equal(ConfirmSheet.computed.canSubmit.call(vm), false)
+  vm.preparationActive = false
+  vm.walletPickerOpen = true
+  assert.equal(ConfirmSheet.computed.canSubmit.call(vm), false)
+})
+
+test('a missing preferred wallet is shown honestly even with only one alternative', async () => {
+  const html = await render(ConfirmSheet, sheetProps({
+    contextual: true, preferredWalletId: 'deleted', sendingWalletId: 'deleted',
+    payingWallets: [WALLETS[0]], walletCanPay: false,
+    walletHint: 'Your payment wallet is unavailable. Choose another wallet.',
+  }), { directives: sheetDirectives })
+  assert.match(html, /Wallet unavailable/)
+  assert.match(html, /Choose another wallet/)
+  assert.match(html, /choose-wallet-cta/)
+  assert.doesNotMatch(html, /<strong>Business<\/strong>/, 'never silently shows the alternative as selected')
+})
+
+test('the contextual chooser uses the same sheet and has a separate explicit apply action', async () => {
+  const html = await render(ConfirmSheet, sheetProps({ contextual: true, preferredWalletId: 'biz' }), {
+    directives: sheetDirectives, data: { walletPickerOpen: true, walletDraftId: 'personal' },
+  })
+  assert.match(html, />Back<\/button>/)
+  assert.match(html, /role="radiogroup"/)
+  assert.match(html, /data-wallet-id="personal" tabindex="0"[^>]*aria-checked="true"/)
+  assert.match(html, /payment-wallet-apply[^>]*>Use Personal/)
+  assert.match(html, /Make this my preferred wallet/)
+  assert.match(html, /type="checkbox"/)
+  assert.doesNotMatch(html, /type="checkbox"[^>]*checked/)
+  assert.doesNotMatch(html, /Getting payment details/)
+  assert.equal((readFileSync(new URL('../PaymentConfirmSheet.vue', import.meta.url), 'utf8').match(/<q-dialog\b/g) || []).length, 1)
+})
+
+test('picker changes remain a draft; applying changes only this payment unless preference is opted in', () => {
+  const emitted = []
+  const vm = {
+    walletDraftId: 'biz', preferWalletDraft: true, preferredWalletId: 'biz',
+    walletSelectable: ConfirmSheet.methods.walletSelectable,
+    $emit: (...event) => emitted.push(event), closeWalletPicker() { this.closed = true },
+  }
+  ConfirmSheet.methods.chooseWalletDraft.call(vm, WALLETS[1])
+  assert.equal(vm.walletDraftId, 'personal')
+  assert.equal(vm.preferWalletDraft, false)
+  assert.deepEqual(emitted, [])
+  vm.walletDraft = WALLETS[1]
+  ConfirmSheet.methods.applyWalletDraft.call(vm)
+  assert.deepEqual(emitted, [['update:sendingWalletId', 'personal']])
+  emitted.length = 0
+  vm.preferWalletDraft = true
+  ConfirmSheet.methods.applyWalletDraft.call(vm)
+  assert.deepEqual(emitted, [['update:sendingWalletId', 'personal'], ['update:preferredWalletId', 'personal']])
+  emitted.length = 0
+  vm.walletDraft = { ...WALLETS[1], connectionFailed: true }
+  ConfirmSheet.methods.applyWalletDraft.call(vm)
+  assert.deepEqual(emitted, [])
+})
+
+test('Back in the chooser discards its draft without cancelling the payment', () => {
+  let closed = false
+  const vm = { walletPickerOpen: true, closeWalletPicker: () => { closed = true }, $emit: () => assert.fail('no cancel or wallet event') }
+  ConfirmSheet.methods.onTopAction.call(vm)
+  assert.equal(closed, true)
+})
+
+test('wallet preference prompt is optional and appears only for an available choice after preparation', () => {
+  const vm = {
+    contextual: true, preparationActive: false, showWalletPreferencePrompt: true,
+    preferredWalletId: null, payingWallets: WALLETS, selectedPayingWallet: WALLETS[0],
+    walletSelectable: ConfirmSheet.methods.walletSelectable,
+  }
+  assert.equal(ConfirmSheet.computed.walletPreferencePromptVisible.call(vm), true)
+  vm.preparationActive = true
+  assert.equal(ConfirmSheet.computed.walletPreferencePromptVisible.call(vm), false)
+  vm.preparationActive = false
+  vm.selectedPayingWallet = { ...WALLETS[0], connectionFailed: true }
+  assert.equal(ConfirmSheet.computed.walletPreferencePromptVisible.call(vm), false)
+})
+
+test('radio keyboard navigation selects a draft, skips unavailable wallets and never applies it', () => {
+  const first = { dataset: { walletId: 'biz' }, focus() { globalThis.document.activeElement = this } }
+  const second = { dataset: { walletId: 'personal' }, focus() { globalThis.document.activeElement = this } }
+  const vm = {
+    payingWallets: WALLETS, walletDraftId: 'biz', preferWalletDraft: true,
+    walletSelectable: ConfirmSheet.methods.walletSelectable,
+    chooseWalletDraft: ConfirmSheet.methods.chooseWalletDraft,
+    $emit: () => assert.fail('arrow navigation does not apply'),
+  }
+  globalThis.document = { activeElement: first }
+  try {
+    let prevented = false
+    ConfirmSheet.methods.onWalletPickerKeydown.call(vm, {
+      key: 'ArrowRight', preventDefault() { prevented = true },
+      currentTarget: { querySelectorAll(selector) { assert.match(selector, /:not\(\[aria-disabled/); return [first, second] } },
+    })
+    assert.equal(prevented, true)
+    assert.equal(vm.walletDraftId, 'personal')
+    assert.equal(vm.preferWalletDraft, false)
+    assert.equal(globalThis.document.activeElement, second)
+  } finally { delete globalThis.document }
+})
+
+test('a newly mounted open sheet initializes its amount and cancellation listener immediately', () => {
+  const calls = []
+  ConfirmSheet.mounted.call({
+    show: true,
+    resetForFreshOpen() { calls.push('amount') },
+    loadFiatRates() { calls.push('rates') },
+    listenForBack(open) { calls.push(['back', open]) },
+  })
+  assert.deepEqual(calls, ['amount', 'rates', ['back', true]])
+})
+
+test('resolved terms initialize the request note and payment-again payout default', () => {
+  const vm = {
+    show: true, amountMode: 'range', displayAmount: '2500', currentCurrency: 'sats',
+    payment: { commentAllowed: true, defaultComment: 'Lunch for us', commentMaxLength: 7, amount: { defaultPayout: 10000 } },
+    payoutCurrency: { code: 'TZS' },
+    initializeResolvedDetails: ConfirmSheet.methods.initializeResolvedDetails,
+  }
+  ConfirmSheet.watch.preparing.call(vm, false, true)
+  assert.equal(vm.comment, 'Lunch f', 'the recipient comment limit applies')
+  assert.equal(vm.displayAmount, '10000')
+  assert.equal(vm.currentCurrency, 'TZS')
+})
+
+test('resolved payout terms preserve user amount, denomination and note edits, including cleared amounts', () => {
+  for (const over of [
+    { amountEdited: true, displayAmount: '751', currentCurrency: 'sats' },
+    { amountEdited: true, displayAmount: '', currentCurrency: 'sats' },
+    { denominationChanged: true, displayAmount: '', currentCurrency: 'usd' },
+  ]) {
+    const vm = {
+      amountMode: 'range', commentEdited: true, comment: 'My own note',
+      payment: { commentAllowed: true, defaultComment: 'Request note', amount: { defaultPayout: 10000 } },
+      payoutCurrency: { code: 'TZS' }, ...over,
+    }
+    ConfirmSheet.methods.initializeResolvedDetails.call(vm)
+    assert.equal(vm.displayAmount, over.displayAmount)
+    assert.equal(vm.currentCurrency, over.currentCurrency)
+    assert.equal(vm.comment, 'My own note')
+  }
+})
+
+test('new payout currency becomes the default for an untouched empty amount only', () => {
+  const vm = { amountMode: 'range', displayAmount: '', currentCurrency: 'sats', payoutCurrency: { code: 'TZS' } }
+  ConfirmSheet.methods.initializeResolvedDetails.call(vm)
+  assert.equal(vm.currentCurrency, 'TZS')
+  vm.displayAmount = '251'
+  vm.currentCurrency = 'sats'
+  ConfirmSheet.methods.initializeResolvedDetails.call(vm)
+  assert.equal(vm.currentCurrency, 'sats', 'never reinterpret an existing sat value as local currency')
+  assert.equal(vm.displayAmount, '251')
+})
+
+test('known fixed amount is visible on the first preparing frame', () => {
+  const emitted = []
+  const vm = {
+    amountMode: 'fixed', fixedSats: 2100, amountInSats: 2100,
+    payment: { amount: { mode: 'fixed', fixedSats: 2100 } },
+    $nextTick(callback) { callback() }, $emit: (...event) => emitted.push(event),
+  }
+  ConfirmSheet.methods.resetForFreshOpen.call(vm)
+  assert.equal(vm.displayAmount, '2100')
+  assert.equal(vm.currentCurrency, 'sats')
+  assert.deepEqual(emitted, [['amount-changed', 2100]])
+})

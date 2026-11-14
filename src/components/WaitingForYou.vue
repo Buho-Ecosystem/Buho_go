@@ -87,7 +87,6 @@ import { useWalletStore } from '../stores/wallet.js'
 import { useWithdrawVouchersStore } from '../stores/withdrawVouchers.js'
 import { requestPaymentHandover } from '../services/dm/paymentContext.js'
 import { contactChatRoute } from '../services/dm/routes.js'
-import { payingWalletsInStore, pickDefaultPayingWallet } from '../utils/payingWallets.js'
 import { formatAmount } from '../utils/amountFormatting.js'
 import { waitingSummary } from '../utils/waitingSummary.js'
 
@@ -144,18 +143,22 @@ async function payRequest(message) {
   error.value = ''
   const contact = contactOf(message.partner)
   try {
-    const invoice = await runtime.fetchRequestInvoice(message.partner, message.id)
-    // Closed while the invoice was on its way: the user left, so nothing opens.
-    if (!open.value) return
     open.value = false
-    payContact.payInvoice(...requestPaymentHandover({
-      partner: message.partner,
-      message,
-      invoice,
+    payContact.preparePayment({
+      key: `request:${message.partner}:${message.id}`,
       name: contact?.name || '',
       contactId: contact?.id,
-      payer: pickDefaultPayingWallet(payingWalletsInStore(walletStore, message.request.amountSats)),
-    }))
+      address: message.request.lud16 || contact?.address || '',
+      amountSats: message.request.amountSats,
+      fixedAmount: true,
+      note: message.request.note || '',
+      resolve: async () => {
+        const invoice = await runtime.fetchRequestInvoice(message.partner, message.id)
+        const [target, options] = requestPaymentHandover({ partner: message.partner, message, invoice,
+          name: contact?.name || '', contactId: contact?.id })
+        return { address: target.bolt11, addressType: 'invoice', name: target.name, ...options }
+      },
+    })
   } catch (cause) {
     error.value = describeDmError(cause, { t, name: contact?.name || '' }).message
   } finally {

@@ -304,9 +304,11 @@ function fakeRuntime(overrides = {}) {
   return runtime;
 }
 
-function setup({ runtime = fakeRuntime(), payer = { id: 'biz', usable: true, reason: null }, payability = { loading: false, reason: '' }, loadIncomingTransactions, unknown = false, contact } = {}) {
-  const pay = { calls: [], payInvoice(...args) { this.calls.push(['payInvoice', ...args]); }, payContact(...args) { this.calls.push(['payContact', ...args]); }, payAddress(...args) { this.calls.push(['payAddress', ...args]); } };
-  const payers = [];
+function setup({ runtime = fakeRuntime(), payability = { loading: false, reason: '' }, loadIncomingTransactions, unknown = false, contact } = {}) {
+  const pay = { calls: [], accepts: true,
+    preparePayment(...args) { this.calls.push(['preparePayment', ...args]); return this.accepts; },
+    payContact(...args) { this.calls.push(['payContact', ...args]); return this.accepts; },
+  };
   const chat = useContactChat({
     partner: ANNA,
     partnerName: 'Anna',
@@ -315,7 +317,6 @@ function setup({ runtime = fakeRuntime(), payer = { id: 'biz', usable: true, rea
     store,
     runtime,
     pay,
-    payingWalletFor: (amount, type) => { payers.push([amount, type]); return typeof payer === 'function' ? payer(amount, type) : payer; },
     payability: (amount) => (typeof payability === 'function' ? payability(amount) : payability),
     loadIncomingTransactions,
     t,
@@ -324,7 +325,7 @@ function setup({ runtime = fakeRuntime(), payer = { id: 'biz', usable: true, rea
     setTimer: clock.setTimer,
     clearTimer: clock.clearTimer,
   });
-  return { chat, runtime, pay, payers };
+  return { chat, runtime, pay };
 }
 
 const seconds = () => Math.floor(clock.ms / 1000);
@@ -537,29 +538,43 @@ test('react: an emoji already chosen changes nothing, a stranger cannot be react
   assert.equal(stranger.runtime.calls.length, 0);
 });
 
-test('pay a request: the invoice is fetched now and the existing pipeline gets it, the paying wallet and a chat context', async () => {
+test('pay a request: preview opens before lookup; resolving preserves invoice, note, history link and verified chat context', async () => {
   const theirs = request({ createdAt: seconds() - 10 });
   ingest(theirs);
   const fetched = [];
   const runtime = fakeRuntime({ fetchRequestInvoice: async (partner, id) => { fetched.push([partner, id]); return { bolt11: 'lnbc-fresh', verifyUrl: VERIFY }; } });
   const { chat, pay } = setup({ runtime, contact: { id: 'c1', name: 'Anna' } });
-  assert.deepEqual(await chat.payRequest(theirs.id), { ok: true });
-  assert.deepEqual(fetched, [[ANNA, theirs.id]]);
+  const handoff = chat.payRequest(theirs.id);
   assert.equal(pay.calls.length, 1);
-  const [name, invoice, options] = pay.calls[0];
-  assert.equal(name, 'payInvoice');
-  assert.deepEqual(invoice, { bolt11: 'lnbc-fresh', name: 'Anna' });
-  assert.equal(options.walletId, 'biz');
-  assert.equal(options.contactId, 'c1');
-  assert.deepEqual(parseChatPaymentContext(options.context), { partner: ANNA, requestId: theirs.id, verifyUrl: VERIFY });
+  assert.deepEqual(fetched, [], 'no invoice lookup delays the sheet');
+  assert.deepEqual(await handoff, { ok: true });
+  const [name, preview] = pay.calls[0];
+  assert.equal(name, 'preparePayment');
+  assert.equal(preview.name, 'Anna');
+  assert.equal(preview.address, 'anna@x.org');
+  assert.equal(preview.amountSats, 25000);
+  assert.equal(preview.fixedAmount, true);
+  assert.equal(preview.note, 'Pizza');
+  assert.equal(preview.contactId, 'c1');
+  assert.equal('walletId' in preview, false);
+  const resolved = await preview.resolve();
+  assert.deepEqual(fetched, [[ANNA, theirs.id]]);
+  assert.equal(resolved.address, 'lnbc-fresh');
+  assert.equal(resolved.addressType, 'invoice');
+  assert.equal(resolved.name, 'Anna');
+  assert.equal(resolved.contactId, 'c1');
+  assert.equal(resolved.note, 'Pizza');
+  assert.equal(resolved.walletId, undefined);
+  assert.deepEqual(parseChatPaymentContext(resolved.context), { partner: ANNA, requestId: theirs.id, verifyUrl: VERIFY });
 });
 
-test('pay a request: an unusable pick is left to the wallet page, requests of your own are not payable', async () => {
+test('pay a request: selection belongs to the contextual payment; requests of your own are not payable', async () => {
   const theirs = request({ createdAt: seconds() - 10 });
   ingest(theirs);
-  const unusable = setup({ payer: { id: 'x', usable: false, reason: 'insufficient-balance' } });
+  const unusable = setup();
   await unusable.chat.payRequest(theirs.id);
-  assert.equal(unusable.pay.calls[0][2].walletId, undefined);
+  assert.equal('walletId' in unusable.pay.calls[0][1], false);
+  assert.equal((await unusable.pay.calls[0][1].resolve()).walletId, undefined);
 
   const mine = request({ outgoing: true, createdAt: seconds() - 5 });
   ingest(mine);
@@ -569,35 +584,33 @@ test('pay a request: an unusable pick is left to the wallet page, requests of yo
   assert.equal(none.pay.calls.length, 0);
 });
 
-test('pay a request: no invoice is an error in words and nothing is paid', async () => {
+test('pay a request: lookup failures reach the contextual sheet; the card does not stay busy', async () => {
   const theirs = request({ createdAt: seconds() - 10 });
   ingest(theirs);
   for (const code of [DM_ERROR.INVOICE_FETCH_FAILED, DM_ERROR.AMOUNT_OUT_OF_RANGE]) {
     const runtime = fakeRuntime({ fetchRequestInvoice: async () => { throw new DmError(code, 'no'); } });
     const { chat, pay } = setup({ runtime });
     const result = await chat.payRequest(theirs.id);
-    assert.equal(result.ok, false);
-    assert.equal(result.error.code, code);
-    assert.ok(result.error.message);
-    assert.equal(pay.calls.length, 0);
+    assert.equal(result.ok, true, 'opening the sheet succeeds before lookup');
+    assert.equal(pay.calls.length, 1);
+    await assert.rejects(pay.calls[0][1].resolve(), error => error.code === code);
     assert.equal(chat.busyIds.value.size, 0, 'the card is free again');
   }
 });
 
-test('send money: the contact\'s address goes through payContact with the chat context and no request id', () => {
+test('send money: contact and chat context hand over without overriding the payment preference', () => {
   const contact = { id: 'c1', name: 'Anna', address: 'anna@x.org', addressType: 'lightning' };
-  const { chat, pay, payers } = setup({ contact });
+  const { chat, pay } = setup({ contact });
   assert.deepEqual(chat.sendMoney(), { ok: true });
-  assert.deepEqual(payers[0], [0, 'lightning']);
   const [name, entry, options] = pay.calls[0];
   assert.equal(name, 'payContact');
   assert.equal(entry, contact);
-  assert.equal(options.walletId, 'biz');
+  assert.equal('walletId' in options, false);
   assert.deepEqual(parseChatPaymentContext(options.context), { partner: ANNA, requestId: null, verifyUrl: null });
 
   const spark = setup({ contact: { ...contact, addressType: 'spark' } });
   spark.chat.sendMoney();
-  assert.equal(spark.payers[0][1], 'spark', 'the rail decides which wallets can pay');
+  assert.equal(spark.pay.calls[0][1].addressType, 'spark', 'the destination still supplies the rail');
 
   const stranger = setup({ unknown: true });
   assert.equal(stranger.chat.sendMoney().ok, false, 'a stranger has no address to pay');
@@ -641,7 +654,7 @@ test('incoming payment claims: lookups stop after the retries and a failing wall
   chat.dispose();
 });
 
-test('send anyway: the ordinary send flow to the current address with amount and note prefilled and the request in the context', async () => {
+test('send anyway: opens a stable preview, then resolves current address with amount, note and chat context retained', async () => {
   const theirs = request({ createdAt: seconds() - 100 });
   theirs.request.validUntil = seconds() - 5;
   ingest(theirs);
@@ -649,15 +662,23 @@ test('send anyway: the ordinary send flow to the current address with amount and
   const runtime = fakeRuntime({ requestAddress: async (partner, id) => { asked.push([partner, id]); return 'anna@current.example'; } });
   const { chat, pay } = setup({ runtime, contact: { id: 'c1', name: 'Anna', address: 'saved@x.org' } });
   assert.equal(chat.items.value.find((i) => i.type === 'request').request.state, 'expired');
-  assert.deepEqual(await chat.sendAnyway(theirs.id), { ok: true });
+  const handoff = chat.sendAnyway(theirs.id);
+  assert.equal(pay.calls.length, 1);
+  assert.deepEqual(asked, []);
+  assert.deepEqual(await handoff, { ok: true });
+  const [name, preview] = pay.calls[0];
+  assert.equal(name, 'preparePayment');
+  assert.equal(preview.name, 'Anna');
+  assert.equal(preview.amountSats, 25_000);
+  assert.equal(preview.note, 'Pizza');
+  assert.equal(preview.contactId, 'c1');
+  assert.equal('walletId' in preview, false);
+  assert.deepEqual(parseChatPaymentContext(preview.context), { partner: ANNA, requestId: theirs.id, verifyUrl: null });
+  const target = await preview.resolve();
   assert.deepEqual(asked, [[ANNA, theirs.id]]);
-  const [name, target, options] = pay.calls[0];
-  assert.equal(name, 'payAddress');
   assert.equal(target.address, 'anna@current.example', 'what the runtime resolved, not the saved contact');
-  assert.equal(options.amountSats, 25_000);
-  assert.equal(options.note, 'Pizza');
-  assert.equal(options.walletId, 'biz');
-  assert.deepEqual(parseChatPaymentContext(options.context), { partner: ANNA, requestId: theirs.id, verifyUrl: null });
+  assert.equal(target.addressType, 'lightning');
+  assert.equal(target.name, 'Anna');
 });
 
 test('send anyway: only the payer sends, and a failing lookup pays nothing', async () => {
@@ -670,8 +691,25 @@ test('send anyway: only the payer sends, and a failing lookup pays nothing', asy
   assert.equal((await chat.sendAnyway(rid(3))).ok, false);
 
   const broken = setup({ runtime: fakeRuntime({ requestAddress: async () => { throw new DmError(DM_ERROR.INVALID_ARGUMENT, 'x'); } }) });
-  assert.equal((await broken.chat.sendAnyway(theirs.id)).ok, false);
-  assert.equal(pay.calls.length + broken.pay.calls.length, 0);
+  assert.equal((await broken.chat.sendAnyway(theirs.id)).ok, true);
+  await assert.rejects(broken.pay.calls[0][1].resolve(), error => error.code === DM_ERROR.INVALID_ARGUMENT);
+  assert.equal(pay.calls.length, 0);
+});
+
+test('an occupied committed payment rejects chat handoffs without starting another lookup', async () => {
+  const theirs = request({ createdAt: seconds() - 10 });
+  ingest(theirs);
+  let lookups = 0;
+  const runtime = fakeRuntime({
+    fetchRequestInvoice: async () => { lookups += 1; },
+    requestAddress: async () => { lookups += 1; },
+  });
+  const { chat, pay } = setup({ runtime, contact: { id: 'c1', address: 'anna@example.com' } });
+  pay.accepts = false;
+  assert.deepEqual(await chat.payRequest(theirs.id), { ok: false, error: null });
+  assert.deepEqual(await chat.sendAnyway(theirs.id), { ok: false, error: null });
+  assert.deepEqual(chat.sendMoney(), { ok: false, error: null });
+  assert.equal(lookups, 0);
 });
 
 test('request again: one call with the same amount and note, only for the own request', async () => {

@@ -25,25 +25,26 @@
       class="pay-with-field"
       :class="{ 'pay-with-field--blocked': !!selected.reason }"
       :disabled="disabled"
-      aria-haspopup="listbox"
-      :aria-expanded="open ? 'true' : 'false'"
+      :aria-haspopup="navigate ? undefined : 'listbox'"
+      :aria-expanded="navigate ? undefined : open ? 'true' : 'false'"
       :aria-controls="open ? listId : undefined"
       :aria-labelledby="`${labelId} ${valueId}`"
       @click="toggle"
       @keydown.down.prevent="openList"
     >
       <span class="pay-with-tile" :class="{ 'pay-with-tile--arkade': selected.type === 'arkade' }" aria-hidden="true">
-        <WalletBrandMark :type="selected.type" :size="18" />
+        <Icon v-if="selected.missing" icon="tabler:wallet" width="18" height="18" />
+        <WalletBrandMark v-else :type="selected.type" :size="18" />
       </span>
       <span :id="valueId" class="pay-with-copy">
-        <strong>{{ walletName(selected) }}</strong>
+        <span class="pay-with-name-row"><strong>{{ walletName(selected) }}</strong><span v-if="selected.id === preferredWalletId" class="pay-with-preferred">{{ $t('Preferred') }}</span></span>
         <small v-balance-updating="isRefreshPending(selected)">
           {{ typeLabel(selected) }}<template v-if="balanceOf(selected).known"> · <HiddenAmount :class="{ 'balance-stale': balanceOf(selected).outdated }">{{ formatBalance(selected) }}</HiddenAmount><template v-if="fiatOf(selected)"> · <HiddenAmount :class="{ 'balance-stale': balanceOf(selected).outdated }">{{ fiatOf(selected) }}</HiddenAmount></template></template>
         </small>
         <small v-if="selected.reason" class="pay-with-reason">{{ reasonText(selected) }}</small>
       </span>
       <Icon
-        icon="tabler:chevron-down"
+        :icon="navigate ? 'tabler:chevron-right' : 'tabler:chevron-down'"
         width="19"
         height="19"
         class="pay-with-chevron"
@@ -79,7 +80,7 @@
             <WalletBrandMark :type="wallet.type" :size="16" />
           </span>
           <span class="pay-with-copy">
-            <strong>{{ walletName(wallet) }}</strong>
+            <span class="pay-with-name-row"><strong>{{ walletName(wallet) }}</strong><span v-if="wallet.id === preferredWalletId" class="pay-with-preferred">{{ $t('Preferred') }}</span></span>
             <small v-balance-updating="isRefreshPending(wallet)">
               {{ typeLabel(wallet) }}<template v-if="balanceOf(wallet).known"> · <HiddenAmount :class="{ 'balance-stale': balanceOf(wallet).outdated }">{{ formatBalance(wallet) }}</HiddenAmount><template v-if="fiatOf(wallet)"> · <HiddenAmount :class="{ 'balance-stale': balanceOf(wallet).outdated }">{{ fiatOf(wallet) }}</HiddenAmount></template></template>
             </small>
@@ -122,9 +123,12 @@ export default {
     /** Id of the selected wallet. */
     modelValue: { type: String, default: null },
     /** Freezes the field while the payment is in flight. */
-    disabled: { type: Boolean, default: false }
+    disabled: { type: Boolean, default: false },
+    /** A contextual payment chooses in the sheet's child view, not a stacked dialog. */
+    navigate: { type: Boolean, default: false },
+    preferredWalletId: { type: String, default: null }
   },
-  emits: ['update:modelValue'],
+  emits: ['update:modelValue', 'open'],
   data() {
     return { open: false }
   },
@@ -136,11 +140,16 @@ export default {
     valueId() { return `pay-with-value-${this.$.uid}` },
 
     visible() {
-      return this.wallets.length >= 2
+      return this.wallets.length >= 2 || (this.preferredWalletId && this.modelValue === this.preferredWalletId
+        && !this.wallets.some(wallet => wallet.id === this.preferredWalletId))
     },
 
     /** The shown row. A missing or stale id falls back to the active wallet. */
     selected() {
+      if (this.preferredWalletId && this.modelValue === this.preferredWalletId
+        && !this.wallets.some(wallet => wallet.id === this.preferredWalletId)) {
+        return { id: this.preferredWalletId, name: this.$t('Wallet unavailable'), type: '', usable: false, reason: 'missing-preferred-wallet', missing: true }
+      }
       return this.wallets.find((w) => w.id === this.modelValue)
         || this.wallets.find((w) => w.isActive)
         || this.wallets[0]
@@ -190,17 +199,20 @@ export default {
     },
 
     reasonText(wallet) {
+      if (wallet.missing) return this.$t('Choose another wallet')
       return payingWalletReasonText(wallet.reason, this.$t.bind(this))
     },
 
     toggle() {
       if (this.disabled) return
+      if (this.navigate) { this.$emit('open'); return }
       if (this.open) this.close()
       else this.openList()
     },
 
     openList() {
       if (this.disabled || !this.visible) return
+      if (this.navigate) { this.$emit('open'); return }
       this.open = true
       // Keyboard and screen-reader users land on the current choice.
       this.$nextTick(() => {
@@ -214,6 +226,8 @@ export default {
       this.open = false
       if (refocus) this.$nextTick(() => this.$refs.field?.focus?.())
     },
+
+    focusField() { this.$refs.field?.focus?.() },
 
     /** A wallet that cannot pay is listed with its reason but cannot be picked. */
     choose(wallet) {
@@ -301,6 +315,8 @@ body.body--light .pay-with-tile--arkade {
 }
 
 .pay-with-copy { min-width: 0; flex: 1; }
+.pay-with-name-row { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
+.pay-with-preferred { padding: 2px 5px; border-radius: 5px; font-size: 0.625rem; line-height: 1.4; background: var(--brand-accent-soft); color: var(--brand-accent-text); font-weight: 700; }
 .pay-with-copy strong,
 .pay-with-copy small { display: block; }
 .pay-with-copy strong {
