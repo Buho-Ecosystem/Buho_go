@@ -121,21 +121,24 @@
               :tabindex="amountMode === 'fixed' ? -1 : undefined"
               :autofocus="!contextual"
             />
-            <button
-              type="button"
-              class="unit-pill"
-              :disabled="amountMode === 'fixed'"
-              @click="toggleCurrency"
-            >
-              <span>{{ unitPillLabel }}</span>
-              <Icon v-if="amountMode !== 'fixed'" icon="tabler:arrows-up-down" width="11" height="11" />
-              <Icon v-else icon="tabler:lock" width="11" height="11" />
-            </button>
-            <!-- One helper row in the banking manner: limits on the left,
-                 the conversion on the right. Either side may be empty. -->
-            <div v-if="limitsHelperText || fiatEquivalent" class="amount-helper">
+            <div class="amount-denomination">
+              <button
+                type="button"
+                class="unit-pill"
+                :disabled="amountMode === 'fixed'"
+                @click="toggleCurrency"
+              >
+                <span>{{ unitPillLabel }}</span>
+                <Icon v-if="amountMode !== 'fixed'" icon="tabler:arrows-up-down" width="11" height="11" />
+                <Icon v-else icon="tabler:lock" width="11" height="11" />
+              </button>
+              <span v-if="verb === 'send' && fiatEquivalent" class="amount-conversion">{{ fiatEquivalent }}</span>
+            </div>
+            <!-- Keep the denomination and its conversion together; limits
+                 remain a separate helper so neither pushes the other away. -->
+            <div v-if="limitsHelperText || (verb !== 'send' && fiatEquivalent)" class="amount-helper">
               <span>{{ limitsHelperText }}</span>
-              <span class="amount-helper-convert">{{ fiatEquivalent }}</span>
+              <span v-if="verb !== 'send'" class="amount-helper-convert">{{ fiatEquivalent }}</span>
             </div>
             <!-- A till code's own rand amount, beside the person's display
                  currency, so the price at the till stays in view. -->
@@ -172,8 +175,6 @@
               :class="{
                 'has-logo': showRecipientLogo,
                 'recipient-avatar--type': verb === 'send' && !recipientUsesIdentity,
-                'recipient-avatar--brand': verb === 'send' && !recipientUsesIdentity && !!recipientMethodMark,
-                'recipient-avatar--arkade': verb === 'send' && !recipientUsesIdentity && recipientMethodMark === 'arkade',
                 'recipient-avatar--silhouette': isSilhouetteRecipient || isServiceRecipient
               }"
               :style="showRecipientLogo
@@ -192,8 +193,7 @@
                 @error="logoFailed = true"
               />
               <!-- A service keeps its storefront fallback if its logo fails. -->
-              <WalletBrandMark v-else-if="verb === 'send' && !recipientUsesIdentity && recipientMethodMark" :type="recipientMethodMark" :size="24" />
-              <Icon v-else-if="verb === 'send' && !recipientUsesIdentity" :icon="recipientTypeIcon" width="24" height="24" />
+              <img v-else-if="verb === 'send' && !recipientUsesIdentity" src="/icons/bitcoin.svg" alt="" class="recipient-bitcoin-logo" />
               <Icon v-else-if="isServiceRecipient" icon="tabler:building-store" width="24" height="24" />
               <svg
                 v-else-if="isSilhouetteRecipient"
@@ -738,7 +738,15 @@ export default {
     // stays one tap away behind the info button.
     recipientAddressLabel() {
       if (this.recipientVerification) return ''
-      if (this.verb === 'send' && !this.recipientLnService) return this.recipientAddress
+      if (this.verb === 'send') {
+        if (this.payment?.recipient?.addressType === 'lightning') {
+          return this.payment?.recipient?.addressLabel || this.recipientAddress
+        }
+        // Encoded destinations belong in Payment details, even shortened.
+        // A quiet method label keeps the route recognizable on the review.
+        const label = { spark: 'Spark', arkade: 'Arkade', bitcoin: 'On-chain', lightning: 'Lightning', invoice: 'Lightning', lnurl: 'Lightning' }[this.recipientMethod]
+        return label ? this.$t(label) : ''
+      }
       return this.payment?.recipient?.addressLabel || this.recipientAddress
     },
     isServiceRecipient() {
@@ -1636,7 +1644,9 @@ export default {
   align-items: center;
   justify-content: flex-end;
   gap: 6px;
-  width: 100%;
+  width: fit-content;
+  max-width: 100%;
+  justify-self: end;
   min-width: 0;
   min-height: 44px;
   padding: 6px;
@@ -1663,9 +1673,8 @@ export default {
 .sheet-card--send .stage-compose > * { flex-shrink: 0; }
 .sheet-card--send .amount-stage { padding: 18px 0 12px; }
 .sheet-card--send .note-input { font-size: 1rem; min-width: 0; }
-.sheet-card--send .recipient-avatar--type { background: var(--brand-accent-soft) !important; color: var(--brand-accent-text); box-shadow: none; text-shadow: none; }
-.sheet-card--send .recipient-avatar--brand { background: #202020 !important; }
-.sheet-card--send .recipient-avatar--arkade { background: var(--arkade-tile, #202020) !important; }
+.sheet-card--send .recipient-avatar--type { background: transparent !important; box-shadow: none; text-shadow: none; }
+.recipient-bitcoin-logo { width: 44px; height: 44px; display: block; }
 .recipient-method-cue { display: grid; place-items: center; flex: 0 0 20px; width: 20px; height: 20px; border-radius: 6px; color: var(--text-secondary); }
 .recipient-method-cue--brand { background: #202020; }
 .recipient-method-cue--arkade { background: var(--arkade-tile, #202020); }
@@ -1687,11 +1696,16 @@ export default {
 .sheet-card--send .top-action { flex: 0 0 24px; width: 24px; }
 .sheet-card--send .primary-cta { height: auto; min-height: 48px; padding: 12px; font-size: 1rem; overflow-wrap: anywhere; }
 .sheet-card--send .recipient-name { font-size: 1rem; white-space: normal; overflow-wrap: anywhere; }
-.sheet-card--send .recipient-addr { font-size: .8125rem; }
+.sheet-card--send .recipient-addr { font-size: .8125rem; font-family: inherit; }
 .sheet-card--send .amount-helper,
 .sheet-card--send .wallet-hint,
 .sheet-card--send .fee-footnote { font-size: .8125rem; }
 .sheet-card--send .unit-pill { min-height: 44px; font-size: .8125rem; }
+.amount-denomination { display: contents; }
+.sheet-card--send .amount-denomination { display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 4px 12px; max-width: 100%; }
+.sheet-card--send .amount-conversion { font-size: .875rem; line-height: 1.5; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+.sheet-card--send .amount-helper { justify-content: center; text-align: center; }
+.sheet-card--send .unit-pill:disabled { opacity: 1; }
 .sheet-card--send button:focus-visible { outline: 2px solid var(--brand-accent-text); outline-offset: 3px; }
 
 .payment-preparation-details { display: flex; flex-direction: column; gap: 12px; }

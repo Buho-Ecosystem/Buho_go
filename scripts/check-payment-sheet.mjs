@@ -177,6 +177,20 @@ try {
     assert.equal(await amount().getAttribute('readonly'), '');
     await page.waitForFunction(() => document.querySelector('.sheet-card .fee-row-value')?.textContent.includes('7'));
     assert.ok(!(await sheet().locator('.recipient-cell').innerText()).includes(invoice));
+    assert.ok(!(await sheet().locator('.recipient-cell').innerText()).includes(invoice.slice(0, 17)), 'no shortened invoice on the main screen');
+    assert.equal((await sheet().locator('.recipient-addr').innerText()).trim(), 'Lightning');
+    assert.equal(await sheet().locator('.recipient-bitcoin-logo').getAttribute('src'), '/icons/bitcoin.svg');
+    const layout = await sheet().evaluate(card => {
+      const bounds = selector => card.querySelector(selector).getBoundingClientRect();
+      const group = bounds('.amount-denomination'), stage = bounds('.amount-stage');
+      const wallet = bounds('.payment-wallet-trigger'), header = bounds('.top-row');
+      const conversion = bounds('.amount-conversion'), unit = bounds('.unit-pill');
+      return { centered: Math.abs((group.left + group.right - stage.left - stage.right) / 2),
+        aligned: Math.abs((conversion.top + conversion.bottom - unit.top - unit.bottom) / 2),
+        walletWidth: wallet.width, headerWidth: header.width, walletHeight: wallet.height };
+    });
+    assert.ok(layout.centered < 2 && layout.aligned < 2, 'amount unit and fiat conversion form one centered group');
+    assert.ok(layout.walletWidth < layout.headerWidth * .4 && layout.walletHeight >= 44, 'compact wallet selector preserves its touch target');
     assert.equal(await sheet().locator('.recipient-details').count(), 0, 'no inline long destination');
     const before = await state(); await details(invoice, /Lightning invoice/, '01b-invoice-details'); assert.deepEqual(await state(), before);
     await shot('01-invoice'); await cancel();
@@ -213,6 +227,7 @@ try {
       assert.ok(await page.evaluate(target => (window.__matrixSparkQuotes || []).some(quote => quote.request === target), request), 'Free follows an actual SDK preparation call');
       assert.equal((await sheet().locator('.recipient-name').innerText()).trim(), 'Bitcoin payment');
       assert.ok(!(await sheet().locator('.recipient-cell').innerText()).includes(request));
+      assert.ok(!(await sheet().locator('.recipient-cell').innerText()).includes(request.slice(0, 17)), 'encoded Spark destinations stay in details');
       await details(request, request === sparkAddress ? /Spark payment/ : /Spark invoice/);
       await shot(request === sparkAddress ? '05-spark-address' : '06-spark-invoice'); await cancel();
     }

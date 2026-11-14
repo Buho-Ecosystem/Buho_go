@@ -715,13 +715,15 @@ test('root dismiss uses Cancel and x; child return uses Back and chevron', async
   }
 })
 
-test('anonymous method icons stay secondary to the generic recipient name', async () => {
-  for (const [network, mark, icon] of [['Spark', 'spark', null], ['Arkade', 'arkade', null], ['Lightning', null, 'tabler:bolt'], ['Bitcoin', null, 'tabler:currency-bitcoin']]) {
-    const payment = { recipient: { name: 'Bitcoin payment', addressType: 'invoice', address: 'payment-request' }, amount: { mode: 'fixed', fixedSats: 1000 }, details: { networkLabel: network } }
+test('generic payments use the original Bitcoin logo and keep encoded requests exclusively in details', async () => {
+  for (const [network, label] of [['Spark', 'Spark'], ['Arkade', 'Arkade'], ['Lightning', 'Lightning'], ['Bitcoin', 'On-chain']]) {
+    const address = 'lnbc24000n1' + 'rawsignedrequest'.repeat(8)
+    const payment = { recipient: { name: 'Bitcoin payment', addressType: 'invoice', address }, amount: { mode: 'fixed', fixedSats: 1000 }, details: { networkLabel: network, address } }
     const html = await render(ConfirmSheet, sheetProps({ payment, payingWallets: [] }), { directives: sheetDirectives })
     assert.match(html, /class="recipient-name">Bitcoin payment/)
-    if (mark) assert.match(html, new RegExp(`data-mark="${mark}"`))
-    else assert.match(html, new RegExp(`data-icon="${icon}"`))
+    assert.match(html, /src="\/icons\/bitcoin.svg" alt(?:="")? class="recipient-bitcoin-logo"/)
+    assert.match(html, new RegExp(`class="recipient-addr">${label}<`))
+    assert.ok(!html.includes(address.slice(0, 17)), 'even a shortened invoice stays out of the main review')
     assert.doesNotMatch(html, /class="recipient-method-cue"/, 'anonymous payment uses the existing icon area')
   }
 })
