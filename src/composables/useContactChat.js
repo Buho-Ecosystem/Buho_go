@@ -175,6 +175,7 @@ export function buildThreadItems(input) {
             fiatText: formatFiat(request.amountSats) || '',
             note: request.note || '',
             outgoing: message.outgoing,
+            delivery: message.outgoing ? (message.delivery || 'sent') : 'sent',
             state,
             validUntil: request.validUntil,
             settlement,
@@ -588,7 +589,7 @@ export function useContactChat(options) {
   }
 
   /** Send a failed or waiting message again. */
-  const retry = (id) => guarded(null, () => runtime.retry(id));
+  const retry = (id) => guarded(id, () => runtime.retry(id));
 
   const decline = (id) => guarded(id, () => runtime.declineRequest(partner(), id));
   const withdraw = (id) => guarded(id, () => runtime.cancelRequest(partner(), id));

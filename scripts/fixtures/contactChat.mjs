@@ -31,6 +31,8 @@ export class SimRelay {
     /** Observable facts for assertions. */
     this.log = { auths: [], authRefusals: [], connections: [] };
     this.sockets = new Set();
+    /** Host -> NIP-01 refusal for gift wraps; scripts can reproduce private inbox policies. */
+    this.writeRefusals = new Map();
     this._challenge = 0;
   }
 
@@ -112,6 +114,9 @@ export class SimRelay {
   _event(socket, event) {
     if (!event || typeof event.id !== 'string') return;
     if (!verifyEvent(event)) return socket.send(['OK', event.id, false, 'invalid: bad signature']);
+    if (event.kind === KIND_GIFT_WRAP && this.writeRefusals.has(socket.host)) {
+      return socket.send(['OK', event.id, false, this.writeRefusals.get(socket.host)]);
+    }
     if (socket.requiresAuth && event.kind === KIND_GIFT_WRAP && !socket.pubkey) {
       this.log.authRefusals.push({ host: socket.host, op: 'write' });
       return socket.send(['OK', event.id, false, AUTH_REQUIRED]);

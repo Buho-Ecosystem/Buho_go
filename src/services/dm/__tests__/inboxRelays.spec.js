@@ -640,6 +640,18 @@ test('hints are capped', async () => {
   assert.equal(listQueries(net).length, MAX_INBOX_RELAYS_PER_CONTACT);
 });
 
+test('forced recovery finds a newer inbox on write relays even when discovery still has an old list', async () => {
+  const old = listEvent(['wss://old-inbox.example.com'], { created_at: 1000 });
+  const current = listEvent(['wss://current-inbox.example.com'], { created_at: 2000 });
+  const writes = listEvent([], { kind: 10002, tags: [['r', 'wss://home.example.com']] });
+  const { resolver } = createHarness({ behaviours: {
+    [D1]: { events: [old, writes] },
+    'wss://home.example.com/': { events: [current] },
+  } });
+  assert.deepEqual((await resolver.resolve(PUBKEY)).relays, ['wss://old-inbox.example.com/']);
+  assert.deepEqual((await resolver.resolve(PUBKEY, { force: true })).relays, ['wss://current-inbox.example.com/']);
+});
+
 test('a hostile hints value is ignored', async () => {
   const { resolver, net } = createHarness();
   await resolver.resolve(PUBKEY, { hints: 'wss://hint.example.com' });

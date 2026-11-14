@@ -59,6 +59,11 @@
       {{ stateLine }}
     </p>
 
+    <p v-if="outgoing && state === 'pending' && delivery !== 'sent'" class="request-card__state" :class="{ 'request-card__delivery--failed': delivery === 'failed' }" role="status">
+      <Icon :icon="delivery === 'failed' ? 'tabler:alert-circle' : 'tabler:clock'" width="15" height="15" />
+      {{ delivery === 'failed' ? $t('Not sent') : delivery === 'sending' ? $t('Sending…') : $t('Waiting to send') }}
+    </p>
+
     <p v-if="receivedText" class="request-card__hint">
       <Icon icon="tabler:wallet" width="14" height="14" />
       {{ receivedText }}
@@ -90,9 +95,19 @@
     <div v-else-if="state === 'pending' && outgoing" class="request-card__actions request-card__actions--even">
       <!-- One reminder a day: after it, the button says so instead of nagging. -->
       <button
+        v-if="delivery === 'failed'"
         type="button"
         class="request-btn request-btn--quiet"
-        :disabled="busy || remindedRecently"
+        :disabled="busy"
+        @click="$emit('retry')"
+      >
+        {{ $t('Send again') }}
+      </button>
+      <button
+        v-else
+        type="button"
+        class="request-btn request-btn--quiet"
+        :disabled="busy || remindedRecently || delivery !== 'sent'"
         @click="$emit('remind')"
       >
         {{ remindedRecently ? $t('Reminded') : $t('Remind') }}
@@ -143,6 +158,8 @@ export default {
     note: { type: String, default: '' },
     /** True when the user is the requester. */
     outgoing: { type: Boolean, default: false },
+    /** Delivery of an outgoing request is separate from its payment state. */
+    delivery: { type: String, default: 'sent' },
     /** 'pending' | 'paying' | 'paid' | 'declined' | 'cancelled' | 'expired' (REQUEST_STATE). */
     state: {
       type: String,
@@ -175,7 +192,7 @@ export default {
     /** ₿ 1,234 (true) or 1,234 sats (false). */
     bip177: { type: Boolean, default: true }
   },
-  emits: ['pay', 'decline', 'remind', 'withdraw', 'send-anyway', 'request-again'],
+  emits: ['pay', 'decline', 'remind', 'withdraw', 'send-anyway', 'request-again', 'retry'],
   computed: {
     reasonId() { return `request-reason-${this.$.uid}` },
     amount() {
@@ -329,6 +346,7 @@ export default {
 .request-card__state :deep(svg) { flex: 0 0 auto; margin-top: 0.1em; }
 .request-card__state { margin-top: 10px; font-size: 0.8125rem; font-weight: 700; }
 .request-card__state--ok { color: var(--brand-accent-text); }
+.request-card__delivery--failed { color: var(--chat-danger); }
 .request-card__reason { color: var(--color-warn); font-weight: 650; }
 
 .request-card__actions {
