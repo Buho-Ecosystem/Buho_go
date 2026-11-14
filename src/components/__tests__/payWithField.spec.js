@@ -397,7 +397,7 @@ test('preparation shows known recipient and amount, placeholders, status and a d
   assert.match(html, /value="1000"/)
   assert.match(html, />Cancel<\/button>/)
   assert.match(html, /payment-preparation-details/)
-  assert.match(html, /Getting payment details…/)
+  assert.match(html, /Getting ready to pay…/)
   assert.match(html, /class="primary-cta"[^>]*disabled/)
   assert.doesNotMatch(html, /class="pay-with"/)
   assert.doesNotMatch(html, /wallet-preference-prompt/)
@@ -456,14 +456,14 @@ test('the contextual chooser uses the same sheet and has a separate explicit app
   assert.match(html, /role="radiogroup"/)
   assert.match(html, /data-wallet-id="personal" tabindex="0"[^>]*aria-checked="true"/)
   assert.match(html, /payment-wallet-apply[^>]*>Use Personal/)
-  assert.match(html, /Make this my preferred wallet/)
-  assert.match(html, /type="checkbox"/)
-  assert.doesNotMatch(html, /type="checkbox"[^>]*checked/)
-  assert.doesNotMatch(html, /Getting payment details/)
+  assert.match(html, /This is just for this payment/)
+  assert.doesNotMatch(html, /type="checkbox"/)
+  assert.doesNotMatch(html, /future payments|Make preferred|wallet-preference-prompt/)
+  assert.doesNotMatch(html, /Getting ready to pay/)
   assert.equal((readFileSync(new URL('../PaymentConfirmSheet.vue', import.meta.url), 'utf8').match(/<q-dialog\b/g) || []).length, 1)
 })
 
-test('picker changes remain a draft; applying changes only this payment unless preference is opted in', () => {
+test('picker changes remain a draft and applying changes only this payment', () => {
   const emitted = []
   const vm = {
     walletDraftId: 'biz', preferWalletDraft: true, preferredWalletId: 'biz',
@@ -472,15 +472,10 @@ test('picker changes remain a draft; applying changes only this payment unless p
   }
   ConfirmSheet.methods.chooseWalletDraft.call(vm, WALLETS[1])
   assert.equal(vm.walletDraftId, 'personal')
-  assert.equal(vm.preferWalletDraft, false)
   assert.deepEqual(emitted, [])
   vm.walletDraft = WALLETS[1]
   ConfirmSheet.methods.applyWalletDraft.call(vm)
   assert.deepEqual(emitted, [['update:sendingWalletId', 'personal']])
-  emitted.length = 0
-  vm.preferWalletDraft = true
-  ConfirmSheet.methods.applyWalletDraft.call(vm)
-  assert.deepEqual(emitted, [['update:sendingWalletId', 'personal'], ['update:preferredWalletId', 'personal']])
   emitted.length = 0
   vm.walletDraft = { ...WALLETS[1], connectionFailed: true }
   ConfirmSheet.methods.applyWalletDraft.call(vm)
@@ -494,18 +489,11 @@ test('Back in the chooser discards its draft without cancelling the payment', ()
   assert.equal(closed, true)
 })
 
-test('wallet preference prompt is optional and appears only for an available choice after preparation', () => {
-  const vm = {
-    contextual: true, preparationActive: false, showWalletPreferencePrompt: true,
-    preferredWalletId: null, payingWallets: WALLETS, selectedPayingWallet: WALLETS[0],
-    walletSelectable: ConfirmSheet.methods.walletSelectable,
+test('the payment review never asks to save a default wallet inline', async () => {
+  for (const preparing of [true, false]) {
+    const html = await render(ConfirmSheet, sheetProps({ contextual: true, preparing }), { directives: sheetDirectives })
+    assert.doesNotMatch(html, /wallet-preference-prompt|future payments|Make preferred|type="checkbox"/)
   }
-  assert.equal(ConfirmSheet.computed.walletPreferencePromptVisible.call(vm), true)
-  vm.preparationActive = true
-  assert.equal(ConfirmSheet.computed.walletPreferencePromptVisible.call(vm), false)
-  vm.preparationActive = false
-  vm.selectedPayingWallet = { ...WALLETS[0], connectionFailed: true }
-  assert.equal(ConfirmSheet.computed.walletPreferencePromptVisible.call(vm), false)
 })
 
 test('radio keyboard navigation selects a draft, skips unavailable wallets and never applies it', () => {
@@ -526,8 +514,7 @@ test('radio keyboard navigation selects a draft, skips unavailable wallets and n
     })
     assert.equal(prevented, true)
     assert.equal(vm.walletDraftId, 'personal')
-    assert.equal(vm.preferWalletDraft, false)
-    assert.equal(globalThis.document.activeElement, second)
+      assert.equal(globalThis.document.activeElement, second)
   } finally { delete globalThis.document }
 })
 

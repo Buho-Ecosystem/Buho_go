@@ -6,6 +6,7 @@
     transition-show="fade"
     transition-hide="fade"
     class="payment-confirmation"
+    @hide="$emit('hidden')"
   >
     <!--
       The whole surface is the dismiss target: one tap anywhere closes it.
@@ -345,7 +346,7 @@ export default {
       default: null
     }
   },
-  emits: ['update:modelValue', 'closed', 'save-contact-clicked'],
+  emits: ['update:modelValue', 'closed', 'hidden', 'save-contact-clicked'],
   setup() {
     const walletStore = useWalletStore();
     return {

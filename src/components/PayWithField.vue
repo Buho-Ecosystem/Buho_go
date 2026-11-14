@@ -37,7 +37,7 @@
         <WalletBrandMark v-else :type="selected.type" :size="18" />
       </span>
       <span :id="valueId" class="pay-with-copy">
-        <span class="pay-with-name-row"><strong>{{ walletName(selected) }}</strong><span v-if="selected.id === preferredWalletId" class="pay-with-preferred">{{ $t('Preferred') }}</span></span>
+        <span class="pay-with-name-row"><strong>{{ walletName(selected) }}</strong><span v-if="selected.id === preferredWalletId" class="pay-with-preferred">{{ $t('Default') }}</span></span>
         <small v-balance-updating="isRefreshPending(selected)">
           {{ typeLabel(selected) }}<template v-if="balanceOf(selected).known"> · <HiddenAmount :class="{ 'balance-stale': balanceOf(selected).outdated }">{{ formatBalance(selected) }}</HiddenAmount><template v-if="fiatOf(selected)"> · <HiddenAmount :class="{ 'balance-stale': balanceOf(selected).outdated }">{{ fiatOf(selected) }}</HiddenAmount></template></template>
         </small>
@@ -80,7 +80,7 @@
             <WalletBrandMark :type="wallet.type" :size="16" />
           </span>
           <span class="pay-with-copy">
-            <span class="pay-with-name-row"><strong>{{ walletName(wallet) }}</strong><span v-if="wallet.id === preferredWalletId" class="pay-with-preferred">{{ $t('Preferred') }}</span></span>
+            <span class="pay-with-name-row"><strong>{{ walletName(wallet) }}</strong><span v-if="wallet.id === preferredWalletId" class="pay-with-preferred">{{ $t('Default') }}</span></span>
             <small v-balance-updating="isRefreshPending(wallet)">
               {{ typeLabel(wallet) }}<template v-if="balanceOf(wallet).known"> · <HiddenAmount :class="{ 'balance-stale': balanceOf(wallet).outdated }">{{ formatBalance(wallet) }}</HiddenAmount><template v-if="fiatOf(wallet)"> · <HiddenAmount :class="{ 'balance-stale': balanceOf(wallet).outdated }">{{ fiatOf(wallet) }}</HiddenAmount></template></template>
             </small>

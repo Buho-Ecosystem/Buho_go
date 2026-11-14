@@ -3,40 +3,40 @@
     <q-card class="payment-wallet-sheet">
       <header class="form-sheet-header payment-wallet-header">
         <button type="button" class="form-sheet-cancel" @click="open = false">{{ $t('Cancel') }}</button>
-        <h2 :id="titleId" class="form-sheet-title">{{ $t('Payment wallet') }}</h2>
+        <h2 :id="titleId" class="form-sheet-title">{{ $t('Default wallet') }}</h2>
         <span class="header-spacer" aria-hidden="true" />
       </header>
 
       <div class="payment-wallet-body">
-        <p class="payment-wallet-intro">{{ $t('Your first choice for contact payments and requests. You can choose a different wallet before sending.') }}</p>
+        <p class="payment-wallet-intro">{{ $t('Choose a wallet for payments to contacts. You can pick another before you pay.') }}</p>
         <p v-if="missingPreference" class="payment-wallet-warning" role="status">
-          {{ $t('Your preferred wallet is no longer available. Choose another wallet or Automatic.') }}
+          {{ $t('This wallet is no longer available. Choose another wallet or Automatic.') }}
         </p>
 
         <fieldset class="payment-wallet-options">
-          <legend class="sr-only">{{ $t('Payment wallet') }}</legend>
+          <legend class="sr-only">{{ $t('Default wallet') }}</legend>
           <label class="payment-wallet-option">
             <input type="radio" :name="radioName" data-wallet-id="automatic" :checked="draft === null" @change="choose(null)">
             <span class="payment-wallet-mark"><Icon icon="tabler:wallet" width="21" height="21" /></span>
-            <span class="payment-wallet-copy"><strong>{{ $t('Automatic') }}</strong><small>{{ $t('Use the current wallet when it can pay.') }}</small></span>
+            <span class="payment-wallet-copy"><strong>{{ $t('Automatic') }}</strong><small>{{ $t('Use the wallet on Home when it can pay.') }}</small></span>
             <span class="payment-wallet-check" aria-hidden="true"><Icon icon="tabler:check" width="15" height="15" /></span>
           </label>
           <label v-for="wallet in walletStore.wallets" :key="wallet.id" class="payment-wallet-option">
             <input type="radio" :name="radioName" :data-wallet-id="wallet.id" :checked="draft === wallet.id" @change="choose(wallet.id)">
             <span class="payment-wallet-mark"><WalletBrandMark :type="wallet.type || 'nwc'" :size="21" color="currentColor" /></span>
             <span class="payment-wallet-copy">
-              <span class="payment-wallet-name"><strong>{{ wallet.name || $t('Wallet') }}</strong><span v-if="wallet.id === preferences.preferredWalletId" class="payment-wallet-badge">{{ $t('Preferred') }}</span></span>
+              <span class="payment-wallet-name"><strong>{{ wallet.name || $t('Wallet') }}</strong><span v-if="wallet.id === preferences.preferredWalletId" class="payment-wallet-badge">{{ $t('Default') }}</span></span>
               <small>{{ typeLabel(wallet) }}<template v-if="displayBalance(wallet) !== null"> · <HiddenAmount>{{ displayBalance(wallet) }}</HiddenAmount></template><template v-else> · {{ $t('Balance not loaded yet') }}</template></small>
             </span>
             <span class="payment-wallet-check" aria-hidden="true"><Icon icon="tabler:check" width="15" height="15" /></span>
           </label>
         </fieldset>
-        <p class="payment-wallet-note">{{ $t('You still review every payment before sending.') }}</p>
+        <p class="payment-wallet-note">{{ $t('You still check each payment before sending.') }}</p>
         <p v-if="error" class="payment-wallet-error" role="alert">{{ error }}</p>
       </div>
 
       <footer class="payment-wallet-footer">
-        <button type="button" class="form-sheet-primary" :disabled="!canSave" @click="save">{{ $t('Save preference') }}</button>
+        <button type="button" class="form-sheet-primary" :disabled="!canSave" @click="save">{{ $t('Save') }}</button>
       </footer>
     </q-card>
   </q-dialog>
@@ -102,7 +102,7 @@ export default {
     save() {
       if (!this.canSave) return
       if (!this.preferences.setPreferred(this.draft)) {
-        this.error = this.$t('Could not save your preference. Try again.')
+        this.error = this.$t("Couldn't save this choice. Try again.")
         return
       }
       this.$emit('saved', this.draft)

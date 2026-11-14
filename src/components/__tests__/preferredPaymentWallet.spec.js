@@ -90,7 +90,7 @@ test('settings picker renders Automatic plus real wallets, native radios, brands
   assert.match(html, /Everyday/)
   assert.match(html, /Travel/)
   assert.match(html, /Balance not loaded yet/)
-  assert.match(html, /Save preference/)
+  assert.match(html, />Save</)
   walletStore.balanceHidden = true
   const privateHtml = await render()
   assert.match(privateHtml, /••••/)
@@ -135,7 +135,7 @@ test('removing the chosen wallet while the picker is open prevents saving a stal
 test('a missing preferred wallet is explained and waits for an explicit replacement', async () => {
   preferences.setPreferred('removed')
   const html = await render()
-  assert.match(html, /Your preferred wallet is no longer available/)
+  assert.match(html, /This wallet is no longer available/)
   assert.match(html, /class="form-sheet-primary"[^>]*disabled/)
   assert.equal(preferences.preferredWalletId, 'removed')
   const { instance } = vm()
@@ -149,7 +149,35 @@ test('failed persistence stays in the picker and reports an actionable error', (
   instance.choose('travel')
   localStorage.fail = true
   instance.save()
-  assert.equal(instance.error, 'Could not save your preference. Try again.')
+  assert.equal(instance.error, "Couldn't save this choice. Try again.")
   assert.equal(preferences.preferredWalletId, 'home')
   assert.deepEqual(events, [])
+})
+
+
+const promptSource = readFileSync(new URL('../DefaultPaymentWalletDialog.vue', import.meta.url), 'utf8')
+const promptDescriptor = sfc.parse(promptSource).descriptor
+const prompt = evaluate(promptDescriptor.script.content, { '@iconify/vue': { Icon: { render() { return Vue.h('i') } } } }).default
+const promptTemplate = sfc.compileTemplate({ source: promptDescriptor.template.content, filename: 'DefaultPaymentWalletDialog.vue', id: 'prompt-test', ssr: true, ssrCssVars: [] })
+assert.deepEqual(promptTemplate.errors, [])
+prompt.ssrRender = evaluate(promptTemplate.code, { vue: Vue, 'vue/server-renderer': SSR }).ssrRender
+
+test('default-wallet popup uses short actionable copy and keeps a failed save in the same popup', async () => {
+  const app = Vue.createSSRApp(prompt, { modelValue: true, walletName: 'Travel', error: "Couldn't save this choice. Try again." })
+  app.config.globalProperties.$t = (key, values = {}) => key.replace(/\{(\w+)\}/g, (_, name) => values[name] || name)
+  const shell = { render() { return Vue.h('div', {}, this.$slots.default?.()) } }
+  app.component('q-dialog', shell); app.component('q-card', shell)
+  const html = await SSR.renderToString(app)
+  assert.match(html, /Use Travel for future payments\?/)
+  assert.match(html, /You can change this in Settings/)
+  assert.match(html, />Use Travel</)
+  assert.match(html, />Not now</)
+  assert.match(html, /role="alert"/)
+  assert.doesNotMatch(html, /preferred|preference|automatically sends/)
+})
+
+test('Escape or backdrop dismissal uses the same Not now action', () => {
+  const emitted = []
+  prompt.computed.open.set.call({ $emit: (...event) => emitted.push(event) }, false)
+  assert.deepEqual(emitted, [['dismiss']])
 })

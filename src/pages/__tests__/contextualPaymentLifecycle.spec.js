@@ -12,7 +12,10 @@ import * as walletCapabilities from '../../utils/walletCapabilities.js'
 const source = readFileSync(new URL('../Wallet.vue', import.meta.url), 'utf8').match(/<script>([\s\S]*?)<\/script>/)[1]
 const { code } = transformSync(source, { format: 'cjs', supported: { 'dynamic-import': false } })
 const module = { exports: {} }
-const dependencies = { '../utils/payingWallets.js': payingWallets, '../utils/walletCapabilities.js': walletCapabilities }
+const dependencies = { '../utils/payingWallets.js': payingWallets, '../utils/walletCapabilities.js': walletCapabilities,
+  '../utils/haptics.js': { haptics: { success() {} } },
+  '../utils/fiatRates.js': { fiatRatesService: { convertSatsToFiat: async () => null } },
+}
 new Function('require', 'module', 'exports', code)(name => dependencies[name] || {}, module, module.exports)
 const options = module.exports.default
 const t = key => key
@@ -158,7 +161,7 @@ test('failed readiness or resolution becomes a brief retry message inside the ex
     else ready.resolve()
     await vm.preparationPromise
     assert.equal(vm.preparationState, 'error')
-    assert.equal(vm.preparationError, 'Could not get payment details. Try again.')
+    assert.equal(vm.preparationError, 'Please try again in a moment.')
     assert.equal(vm.showSendSheet, true)
     assert.deepEqual(payloads, [])
   }
@@ -272,23 +275,23 @@ test('confirmation refuses a preparing, unavailable or stale payment before invo
   }
 })
 
-test('preference write failure preserves saved preference and one-off choice with a short retry message', () => {
-  const { vm, paymentPreferences } = readyToConfirm()
-  paymentPreferences.setPreferred('home')
-  vm.onSendingWalletChange('travel')
-  assert.equal(vm.sendingWalletId, 'travel')
-  localStorage.fail = true
-  vm.savePaymentWalletPreference('travel')
-  assert.equal(paymentPreferences.preferredWalletId, 'home')
-  assert.equal(vm.sendingWalletId, 'travel')
-  assert.equal(vm.walletPreferenceError, 'Could not save your preference. Try again.')
-  localStorage.fail = false
-  vm.savePaymentWalletPreference('travel')
+test('a default-wallet popup keeps a failed save open and lets the user retry', () => {
+  const { vm, paymentPreferences, paymentFlow } = readyToConfirm()
+  vm._paymentIdentity = 'alice'
+  paymentPreferences.initialize()
+  vm.defaultWalletCandidate = { id: 'travel', name: 'Travel' }
+  vm.showDefaultWalletPrompt = true
+  paymentFlow.setStage(vm.paymentIntent.id, 'choosing-default')
+  globalThis.localStorage.fail = true
+  assert.equal(vm.savePaymentWalletPreference('travel'), false)
+  assert.equal(paymentPreferences.preferredWalletId, null)
+  assert.equal(vm.showDefaultWalletPrompt, true)
+  assert.equal(vm.walletPreferenceError, "Couldn't save this choice. Try again.")
+  globalThis.localStorage.fail = false
+  assert.equal(vm.savePaymentWalletPreference('travel'), true)
   assert.equal(paymentPreferences.preferredWalletId, 'travel')
+  assert.equal(vm.showDefaultWalletPrompt, false)
   assert.equal(vm.walletPreferenceError, '')
-  vm.isSendingPayment = true
-  vm.savePaymentWalletPreference('home')
-  assert.equal(paymentPreferences.preferredWalletId, 'travel')
 })
 
 
@@ -308,4 +311,61 @@ test('a changed identity cannot announce or save the old payment under its signe
   vm.onSendSaveContactClicked()
   assert.equal(vm.showSaveContactDialog, false)
   assert.equal(paymentFlow.active, false)
+})
+
+
+async function successfulPayment(input = {}, status = 'completed') {
+  const h = controller(input)
+  await h.start(); await h.vm.preparationPromise
+  h.vm.sendingWalletId = 'travel'
+  await h.vm.openSendSuccess({ amount: 500, recipient: 'Anna', status })
+  h.paymentFlow.setStage(h.vm.paymentIntent.id, 'complete')
+  return h
+}
+
+test('the default question waits until the successful receipt is fully hidden and remembers the actual payer', async () => {
+  const { vm, paymentFlow, walletStore } = await successfulPayment()
+  assert.equal(vm.showDefaultWalletPrompt, false)
+  assert.deepEqual(vm.defaultWalletCandidate, { id: 'travel', name: 'Travel' })
+  vm.sendingWalletId = null // the executor clears it behind the receipt
+  walletStore.activeWalletId = 'home'
+  vm.onSendSuccessClosed()
+  assert.equal(vm.showDefaultWalletPrompt, false, 'no overlapping dialogs during the receipt transition')
+  assert.equal(paymentFlow.stage, 'choosing-default')
+  vm.onSendFollowupHidden()
+  assert.equal(vm.showDefaultWalletPrompt, true)
+  options.watch.isSendingPayment.call(vm, false)
+  assert.equal(paymentFlow.stage, 'choosing-default', 'late balance refresh cannot downgrade the optional popup to ready')
+  vm.dismissDefaultWalletPrompt()
+  assert.equal(vm.paymentPreferences.promptDismissed, true)
+  assert.equal(vm.paymentPreferences.preferredWalletId, null)
+  vm.returnAfterPayment() // popup hide transition finished
+  assert.equal(paymentFlow.active, false)
+})
+
+test('pending, explicit-wallet and already-answered payments do not ask the default question', async () => {
+  for (const reason of ['pending', 'explicit', 'answered', 'identity', 'deleted']) {
+    const { vm, paymentPreferences, paymentFlow, walletStore } = await successfulPayment(reason === 'explicit' ? { walletId: 'travel' } : {}, reason === 'pending' ? 'pending' : 'completed')
+    if (reason === 'answered') paymentPreferences.dismissPrompt()
+    if (reason === 'identity') vm.identityStore.nostrPubkeyHex = 'carol'
+    if (reason === 'deleted') walletStore.wallets = [walletStore.wallets[0]]
+    vm.onSendSuccessClosed(); vm.onSendFollowupHidden()
+    assert.equal(vm.showDefaultWalletPrompt, false, reason)
+    assert.equal(paymentFlow.active, false, reason)
+  }
+})
+
+test('Save Contact finishes before the default popup, and cancellation cannot reopen it', async () => {
+  const { vm, paymentFlow } = await successfulPayment()
+  vm.onSendSaveContactClicked()
+  vm.onSendFollowupHidden()
+  assert.equal(vm.showDefaultWalletPrompt, false)
+  vm.showSaveContactDialog = false
+  options.watch.showSaveContactDialog.call(vm, false, true)
+  assert.equal(vm.showDefaultWalletPrompt, false)
+  assert.equal(paymentFlow.stage, 'choosing-default')
+  paymentFlow.cancel() // navigation, lock, or another intent supersedes the optional question
+  vm.onSendFollowupHidden()
+  assert.equal(vm.showDefaultWalletPrompt, false)
+  assert.equal(vm.paymentPreferences.promptDismissed, false, 'automatic dismissal is not a user choice')
 })

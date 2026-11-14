@@ -313,7 +313,7 @@
             v-if="preparationActive"
             class="payment-preparation-details"
             :aria-busy="preparing ? 'true' : null"
-            :aria-label="$t('Payment details pending')"
+            :aria-label="$t('Getting ready to pay')"
           >
             <div class="preparation-wallet">
               <Icon icon="tabler:wallet" width="23" height="23" />
@@ -365,12 +365,6 @@
             />
           </div>
 
-          <section v-if="walletPreferencePromptVisible" class="wallet-preference-prompt" :aria-labelledby="preferencePromptId">
-            <h3 :id="preferencePromptId">{{ $t('Use {name} next time?', { name: selectedPayingWallet.name || $t('Wallet') }) }}</h3>
-            <div class="wallet-preference-actions"><button type="button" @click="preferSelectedWallet">{{ $t('Make preferred') }}</button><button type="button" @click="$emit('dismiss-wallet-preference')">{{ $t('Not now') }}</button></div>
-          </section>
-          <p v-if="walletPreferenceError" class="wallet-preference-error" role="status">{{ walletPreferenceError }}</p>
-
         </div>
 
         <div v-if="walletPickerOpen" class="stage payment-wallet-picker">
@@ -395,7 +389,7 @@
               <span class="payment-wallet-copy">
                 <span class="payment-wallet-name">
                   <strong>{{ wallet.name || $t('Wallet') }}</strong>
-                  <span v-if="wallet.id === preferredWalletId" class="payment-wallet-preferred">{{ $t('Preferred') }}</span>
+                  <span v-if="wallet.id === preferredWalletId" class="payment-wallet-preferred">{{ $t('Default') }}</span>
                 </span>
                 <small>
                   {{ walletPickerDetail(wallet) }}<template v-if="walletPickerBalance(wallet) !== null"> · <HiddenAmount>{{ walletPickerBalance(wallet) }}</HiddenAmount></template>
@@ -409,16 +403,8 @@
               />
             </button>
           </div>
-          <p v-if="!payingWallets.length" class="payment-wallet-note">{{ $t('No wallet is available for this payment.') }}</p>
-          <label v-if="walletDraftId && walletDraftId !== preferredWalletId && walletSelectable(walletDraft)" class="payment-wallet-prefer">
-            <input v-model="preferWalletDraft" type="checkbox">
-            <span>
-              <strong>{{ $t('Make this my preferred wallet') }}</strong>
-              <small>{{ $t('Use it first for future contact payments and requests.') }}</small>
-            </span>
-          </label>
-          <p class="payment-wallet-note">{{ preferWalletDraft ? $t('This also updates your preferred wallet for future contact payments.') : $t('This choice applies to this payment. Your saved preference stays the same.') }}</p>
-          <p v-if="walletPreferenceError" class="wallet-preference-error" role="status">{{ walletPreferenceError }}</p>
+          <p v-if="!payingWallets.length" class="payment-wallet-note">{{ $t('No wallet can make this payment.') }}</p>
+          <p class="payment-wallet-note">{{ $t('This is just for this payment.') }}</p>
         </div>
 
         <div v-if="walletPickerOpen" class="cta-row confirm-cta">
@@ -431,15 +417,15 @@
           <div v-if="preparationFailed" class="preparation-error" role="status">
             <Icon icon="tabler:alert-circle" width="17" height="17" />
             <span>
-              <strong>{{ $t('Payment details unavailable') }}</strong>
+              <strong>{{ $t('Can\'t get this payment ready') }}</strong>
               <small>{{ preparationError }}</small>
             </span>
           </div>
           <div v-else class="preparation-status" role="status" aria-live="polite">
             <q-spinner size="16px" aria-hidden="true" />
             <span>
-              {{ $t('Getting payment details…') }}
-              <small v-if="preparationSlow">{{ $t('This is taking a little longer. You can cancel and try again later.') }}</small>
+              {{ $t('Getting ready to pay…') }}
+              <small v-if="preparationSlow">{{ $t('This is taking longer than usual. You can try again later.') }}</small>
             </span>
           </div>
           <button v-if="preparationFailed" type="button" class="primary-cta preparation-retry" @click="$emit('retry-preparation')">{{ $t('Try again') }}</button>
@@ -536,8 +522,6 @@ export default {
     preparationError: { type: String, default: '' },
     preparationSlow: { type: Boolean, default: false },
     preferredWalletId: { type: String, default: null },
-    showWalletPreferencePrompt: { type: Boolean, default: false },
-    walletPreferenceError: { type: String, default: '' },
     /**
      * Whether the wallet that pays can pay this payment. The parent derives it
      * from the SELECTED wallet (`sendingWalletId`), so picking a wallet that
@@ -597,7 +581,7 @@ export default {
     takeoverTitle: { type: String, default: '' },
     takeoverLocked: { type: Boolean, default: false }
   },
-  emits: ['update:modelValue', 'confirm', 'cancel', 'amount-changed', 'update:sendingWalletId', 'refund-pick', 'takeover-cancel', 'retry-preparation', 'update:preferredWalletId', 'dismiss-wallet-preference'],
+  emits: ['update:modelValue', 'confirm', 'cancel', 'amount-changed', 'update:sendingWalletId', 'refund-pick', 'takeover-cancel', 'retry-preparation'],
   data() {
     return {
       showAddress: false,
@@ -610,7 +594,6 @@ export default {
       _copyTimer: null,
       walletPickerOpen: false,
       walletDraftId: null,
-      preferWalletDraft: false,
       amountEdited: false,
       denominationChanged: false,
       commentEdited: false
@@ -618,7 +601,6 @@ export default {
   },
   computed: {
     titleId() { return `payment-confirm-title-${this.$.uid}` },
-    preferencePromptId() { return `payment-wallet-preference-${this.$.uid}` },
     ...mapState(useWalletStore, ['preferredFiatCurrency', 'denominationCurrency', 'useBip177Format']),
 
     show: {
@@ -639,11 +621,6 @@ export default {
     showPayWith() {
       return this.verb === 'send' && (this.payingWallets.length > 1
         || (this.contextual && this.preferredWalletId && this.sendingWalletId === this.preferredWalletId && !this.selectedPayingWallet))
-    },
-    walletPreferencePromptVisible() {
-      return this.contextual && !this.preparationActive && !this.isSending && !this.isComplete
-        && this.showWalletPreferencePrompt && !this.preferredWalletId && this.payingWallets.length > 1
-        && this.walletSelectable(this.selectedPayingWallet)
     },
 
     // ───── Recipient ─────
@@ -1171,7 +1148,6 @@ export default {
     resetForFreshOpen() {
       this.walletPickerOpen = false
       this.walletDraftId = null
-      this.preferWalletDraft = false
       this.showAddress = false
       this.addressCopied = false
       this.amountEdited = false
@@ -1260,7 +1236,6 @@ export default {
     openWalletPicker() {
       if (!this.contextual || this.preparationActive || this.isSending || this.isComplete) return
       this.walletDraftId = this.sendingWalletId
-      this.preferWalletDraft = false
       this.walletPickerOpen = true
       this.$nextTick(() => this.$refs.card?.$el.querySelector('.payment-wallet-option[tabindex="0"]')?.focus())
     },
@@ -1268,13 +1243,11 @@ export default {
     chooseWalletDraft(wallet) {
       if (!this.walletSelectable(wallet)) return
       this.walletDraftId = wallet.id
-      this.preferWalletDraft = false
     },
 
     closeWalletPicker() {
       this.walletPickerOpen = false
       this.walletDraftId = null
-      this.preferWalletDraft = false
       this.$nextTick(() => this.$refs.payWithField?.focusField?.())
     },
 
@@ -1282,14 +1255,7 @@ export default {
       if (this.isSending || this.isComplete || !this.walletSelectable(this.walletDraft)) return
       const id = this.walletDraftId
       this.$emit('update:sendingWalletId', id)
-      if (this.preferWalletDraft && id !== this.preferredWalletId) this.$emit('update:preferredWalletId', id)
-      else if (!this.preferredWalletId) this.$emit('dismiss-wallet-preference')
       this.closeWalletPicker()
-    },
-
-    preferSelectedWallet() {
-      if (this.isSending || this.isComplete || !this.walletSelectable(this.selectedPayingWallet)) return
-      this.$emit('update:preferredWalletId', this.sendingWalletId)
     },
 
     onWalletPickerKeydown(event) {
@@ -1538,8 +1504,7 @@ export default {
 .sheet-card--contextual .wallet-hint,
 .sheet-card--contextual .fee-footnote { font-size: .8125rem; }
 .sheet-card--contextual .unit-pill { min-height: 44px; font-size: .8125rem; }
-.sheet-card--contextual button:focus-visible,
-.payment-wallet-prefer input:focus-visible { outline: 2px solid var(--brand-accent-text); outline-offset: 3px; }
+.sheet-card--contextual button:focus-visible { outline: 2px solid var(--brand-accent-text); outline-offset: 3px; }
 
 .payment-preparation-details { display: flex; flex-direction: column; gap: 12px; }
 .preparation-wallet { display: flex; align-items: center; gap: 12px; padding: 14px; border: 1px solid var(--border-card); border-radius: var(--radius-md); color: var(--text-secondary); }
@@ -1557,12 +1522,6 @@ export default {
 .preparation-status small,
 .preparation-error small { display: block; margin-top: 4px; font-size: .75rem; color: var(--text-muted); }
 .preparation-error strong { font-weight: 600; color: var(--text-primary); }
-.wallet-preference-prompt { padding: 12px 14px 4px; border-radius: var(--radius-md); background: var(--bg-input); }
-.wallet-preference-prompt h3 { margin: 0; font-size: .8125rem; line-height: 1.5; font-weight: 600; color: var(--text-primary); overflow-wrap: anywhere; }
-.wallet-preference-actions { display: flex; flex-wrap: wrap; column-gap: 20px; }
-.wallet-preference-actions button { min-height: 44px; padding: 6px 0; border: 0; background: transparent; font: inherit; font-size: .8125rem; font-weight: 600; color: var(--brand-accent-text); cursor: pointer; }
-.wallet-preference-actions button + button { color: var(--text-secondary); font-weight: 400; }
-.wallet-preference-error { margin: 0; color: var(--text-secondary); font-size: .8125rem; line-height: 1.5; }
 .payment-wallet-intro,
 .payment-wallet-note { margin: 0; font-size: .8125rem; line-height: 1.5; color: var(--text-secondary); }
 .payment-wallet-note { color: var(--text-muted); }
@@ -1580,10 +1539,6 @@ export default {
 .payment-wallet-preferred { font-size: .6875rem; color: var(--brand-accent-text); }
 .payment-wallet-radio { flex: 0 0 21px; color: var(--brand-accent-text); }
 .payment-wallet-option[aria-disabled="true"] .payment-wallet-radio { color: var(--text-muted); }
-.payment-wallet-prefer { display: flex; align-items: flex-start; gap: 10px; min-height: 44px; padding: 10px 0; cursor: pointer; }
-.payment-wallet-prefer input { width: 20px; height: 20px; flex: 0 0 20px; margin: 2px 0 0; accent-color: var(--brand-accent-text); }
-.payment-wallet-prefer strong { display: block; font-size: .8125rem; line-height: 1.5; font-weight: 600; color: var(--text-primary); }
-.payment-wallet-prefer small { display: block; margin-top: 3px; font-size: .75rem; line-height: 1.5; color: var(--text-secondary); }
 @media (prefers-reduced-motion: reduce) { .preparation-status :deep(.q-spinner) { animation: none; } }
 
 /* ─── Stages ───

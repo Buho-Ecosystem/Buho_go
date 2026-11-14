@@ -206,8 +206,8 @@
         />
         <SettingsRow
           icon="tabler:wallet"
-          :label="$t('Payment wallet')"
-          :caption="$t('Preferred for contact payments')"
+          :label="$t('Default wallet')"
+          :caption="$t('For payments to contacts')"
           :inline-value="paymentWalletLabel"
           data-audit="settings-payment-wallet"
           @click="showPaymentWalletSheet = true"

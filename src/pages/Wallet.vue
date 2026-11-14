@@ -446,8 +446,6 @@
       :preparation-error="preparationError"
       :preparation-slow="preparationSlow"
       :preferred-wallet-id="paymentPreferences.preferredWalletId"
-      :show-wallet-preference-prompt="paymentOnly && paymentPreferences.shouldPrompt && !paymentIntent?.walletId"
-      :wallet-preference-error="walletPreferenceError"
       :wallet-can-pay="paymentSheetWalletCanPay"
       :wallet-hint="paymentSheetWalletHint"
       :paying-wallets="payingWalletEntries"
@@ -460,8 +458,6 @@
       @amount-changed="sendSheetAmountSats = $event"
       @update:sending-wallet-id="onSendingWalletChange"
       @retry-preparation="prepareContextualPayment"
-      @update:preferred-wallet-id="savePaymentWalletPreference"
-      @dismiss-wallet-preference="paymentPreferences.dismissPrompt()"
       @refund-pick="onRefundPick"
       @confirm="onSendSheetConfirm"
       @cancel="onSendSheetCancel"
@@ -561,7 +557,18 @@
       :success-action="sendSuccessAction"
       :delivery-status="sendDeliveryStatus"
       @closed="onSendSuccessClosed"
+      @hidden="onSendFollowupHidden"
       @save-contact-clicked="onSendSaveContactClicked"
+    />
+
+    <DefaultPaymentWalletDialog
+      v-if="paymentOnly"
+      :model-value="showDefaultWalletPrompt"
+      :wallet-name="defaultWalletCandidate?.name || ''"
+      :error="walletPreferenceError"
+      @accept="savePaymentWalletPreference(defaultWalletCandidate.id)"
+      @dismiss="dismissDefaultWalletPrompt"
+      @hidden="returnAfterPayment"
     />
 
     <!-- LUD-04 (LNURL-auth) identity dialog. Mounted at the wallet page
@@ -573,7 +580,7 @@
     />
 
     <!-- Save Contact Dialog -->
-    <q-dialog v-model="showSaveContactDialog" persistent class="save-contact-dialog">
+    <q-dialog v-model="showSaveContactDialog" persistent class="save-contact-dialog" @hide="onSendFollowupHidden">
       <q-card class="save-contact-card" :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'">
         <q-card-section class="save-contact-header" :class="$q.dark.isActive ? 'dialog_header_dark' : 'dialog_header_light'">
           <div :class="$q.dark.isActive ? 'dialog_title_dark' : 'dialog_title_light'">
@@ -734,6 +741,7 @@ import BrantaChangedCode from '../components/BrantaChangedCode.vue';
 import LaunchMark from '../components/LaunchMark.vue';
 import {claimLaunch} from '../utils/launch.js';
 import {useWalletStore} from '../stores/wallet';
+import DefaultPaymentWalletDialog from '../components/DefaultPaymentWalletDialog.vue';
 import {usePaymentFlowStore} from '../stores/paymentFlow';
 import {usePaymentPreferencesStore} from '../stores/paymentPreferences';
 import {useUpdateStore} from '../stores/update';
@@ -818,6 +826,7 @@ export default {
     paymentIntent: { type: Object, default: null },
   },
   components: {
+    DefaultPaymentWalletDialog,
     WalletBrandMark,
     WalletSwitcherSheet,
     ReceiveModal,
@@ -882,6 +891,9 @@ export default {
       preparationError: '',
       preparationSlow: false,
       walletPreferenceError: '',
+      defaultWalletCandidate: null,
+      awaitingDefaultWalletPrompt: false,
+      showDefaultWalletPrompt: false,
       // Where a handed-over payment returns to when it is done or cancelled
       // (the contact chat); null: stay on the wallet page.
       payReturnTo: null,
@@ -2082,7 +2094,7 @@ export default {
     paymentSheetWalletHint() {
       const block = this.sendingWalletBlock;
       if (!block) return '';
-      if (block.reason === 'unavailable') return this.$t('Your payment wallet is unavailable. Choose another wallet.');
+      if (block.reason === 'unavailable') return this.$t("This wallet isn't available. Choose another wallet.");
       if (block.reason === 'spark_sender_mismatch') return this.sparkInvoiceProblemMessage('sender_mismatch');
       const hasAlternative = this.payingWalletEntries.some((w) => w.usable && w.id !== block.id);
       return payingWalletHint(block, this.pendingDestinationType, this.$t.bind(this), { hasAlternative });
@@ -2430,7 +2442,7 @@ export default {
       else if (status === 'error') haptics.error();
     },
     isSendingPayment(sending) {
-      if (this.paymentOnly) this.paymentFlow.setStage(this.paymentIntent.id, sending ? 'sending' : (this.sendDidSucceed || this.showSendSuccess || this.showSaveContactDialog ? 'complete' : 'ready'));
+      if (this.paymentOnly && this.paymentFlow.stage !== 'choosing-default') this.paymentFlow.setStage(this.paymentIntent.id, sending ? 'sending' : (this.sendDidSucceed || this.showSendSuccess || this.showSaveContactDialog ? 'complete' : 'ready'));
       clearTimeout(this._nwcWaitTimer);
       this.nwcSendWaiting = false;
       if (sending && this.getSendingWalletType() === 'nwc') {
@@ -2600,7 +2612,7 @@ export default {
       if (this.paymentOnly && open) this.paymentFlow.setStage(this.paymentIntent.id, 'complete');
     },
     showSaveContactDialog(open, before) {
-      if (this.paymentOnly && before && !open && !this.showSendSuccess) this.returnAfterPayment();
+      if (this.paymentOnly && before && !open && !this.showSendSuccess && !this.prepareDefaultWalletPrompt()) this.returnAfterPayment();
     },
   },
   methods: {
@@ -2657,14 +2669,44 @@ export default {
       clearTimeout(this._preparationSlowTimer);
       this.preparationSlow = false;
       this.preparationState = resolved ? 'ready' : 'error';
-      this.preparationError = resolved ? '' : this.$t('Could not get payment details. Try again.');
+      this.preparationError = resolved ? '' : this.$t("Please try again in a moment.");
       this.paymentFlow.setStage(this.paymentIntent.id, this.preparationState);
     },
 
+    canOfferDefaultWallet() {
+      return this.paymentOnly && this.isContextualAttemptCurrent() && this.isPaymentIdentityCurrent()
+        && this.paymentPreferences.shouldPrompt && this.defaultWalletCandidate
+        && this.walletStore.wallets.length > 1 && !!this.getWalletById(this.defaultWalletCandidate.id);
+    },
+
+    prepareDefaultWalletPrompt() {
+      if (!this.canOfferDefaultWallet()) return false;
+      this.awaitingDefaultWalletPrompt = true;
+      this.paymentFlow.setStage(this.paymentIntent.id, 'choosing-default');
+      // A route/identity/lock change recorded during settlement cancels here.
+      return this.paymentFlow.isCurrent(this.paymentIntent.id);
+    },
+
+    onSendFollowupHidden() {
+      if (!this.awaitingDefaultWalletPrompt || this.showSaveContactDialog || this.showSendSuccess) return;
+      this.awaitingDefaultWalletPrompt = false;
+      if (!this.canOfferDefaultWallet()) { this.returnAfterPayment(); return; }
+      this.walletPreferenceError = '';
+      this.showDefaultWalletPrompt = true;
+    },
+
+    dismissDefaultWalletPrompt() {
+      if (!this.showDefaultWalletPrompt || !this.isContextualAttemptCurrent()) return;
+      this.paymentPreferences.dismissPrompt();
+      this.showDefaultWalletPrompt = false;
+    },
+
     savePaymentWalletPreference(walletId) {
-      if (this.isSendingPayment) return;
+      if (!this.showDefaultWalletPrompt || !this.canOfferDefaultWallet() || walletId !== this.defaultWalletCandidate.id) return false;
       const saved = this.paymentPreferences.setPreferred(walletId);
-      this.walletPreferenceError = saved ? '' : this.$t('Could not save your preference. Try again.');
+      this.walletPreferenceError = saved ? '' : this.$t("Couldn't save this choice. Try again.");
+      if (saved) this.showDefaultWalletPrompt = false;
+      return saved;
     },
     onAppLogoClick() {
       if (this.updateStore.stage) {
@@ -5132,7 +5174,7 @@ export default {
           return;
         }
         if (this.paymentOnly && !delegated) {
-          this.finishContextualPreparation(resolved, resolved ? '' : this.sendResolveError || this.$t('Could not get payment details. Try again.'));
+          this.finishContextualPreparation(resolved, resolved ? '' : this.sendResolveError || this.$t("Please try again in a moment."));
         }
         // The nested NIP-05 rescue call already settled the outcome (closed the
         // sheet or set the inline error); don't clobber it from the outer call.
@@ -5738,7 +5780,7 @@ export default {
         }
       } finally {
         // Validation/PIN may return before the executor ever marks itself busy.
-        if (this.paymentOnly && this.paymentFlow.isCurrent(this.paymentIntent.id) && !this.isSendingPayment) {
+        if (this.paymentOnly && this.paymentFlow.isCurrent(this.paymentIntent.id) && !this.isSendingPayment && this.paymentFlow.stage !== 'choosing-default') {
           this.paymentFlow.setStage(this.paymentIntent.id, this.showSendSuccess || this.showSaveContactDialog ? 'complete' : 'ready');
         }
       }
@@ -6223,6 +6265,11 @@ export default {
      */
     async openSendSuccess({ amount, recipient, status, showSaveContact, successAction = null, verifyUrl = null, verifiedBusiness = null }) {
       const isCompleted = status !== 'pending';
+      // Capture the wallet that actually paid, before the executor clears it.
+      const payer = this.paymentOnly ? this.getSendingWallet() : null;
+      this.defaultWalletCandidate = this.paymentOnly && isCompleted && !this.paymentIntent?.walletId
+        && this.paymentPreferences.shouldPrompt && this.walletStore.wallets.length > 1 && this.isPaymentIdentityCurrent()
+        && payer ? { id: payer.id, name: payer.name || this.$t('Wallet') } : null;
       // Money left: felt once the payment completed, never while it routes.
       if (isCompleted) haptics.success();
 
@@ -6295,7 +6342,7 @@ export default {
      */
     onSendSuccessClosed() {
       this.showSendSuccess = false;
-      this.returnAfterPayment();
+      if (!this.prepareDefaultWalletPrompt()) this.returnAfterPayment();
       // Stop any in-flight delivery poll (abort the request + ignore late
       // results) and clear the status so the next send starts clean.
       this._stopDeliveryPoll();

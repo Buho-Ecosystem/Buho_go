@@ -97,11 +97,24 @@ const payBob = async () => {
   await navigate('/address-book');
   await page.locator('.payee-row').filter({ hasText: 'Bob' }).getByRole('button', { name: 'Pay Bob', exact: true }).click();
 };
-const chooseWallet = async (name, { prefer = false } = {}) => {
+const chooseWallet = async name => {
   await sheet().locator('.pay-with-field').click();
   await sheet().locator('.payment-wallet-picker').getByRole('radio', { name: new RegExp(name) }).click();
-  if (prefer) await sheet().getByRole('checkbox').check();
   await sheet().locator('.payment-wallet-apply').click();
+};
+const finishPaymentForDefaultPopup = async wallet => {
+  const { bolt11 } = ledger.mint({ amountSats: 500 });
+  await startPayment('payInvoice', { bolt11, name: 'Bob' }); await ready();
+  if (wallet) await chooseWallet(wallet);
+  assert.equal(await page.locator('.default-wallet-dialog:visible').count(), 0);
+  await sheet().locator('button.primary-cta').click();
+  const receiptLabel = page.locator('.payment-confirmation:visible .amount-label');
+  await receiptLabel.waitFor();
+  assert.ok((await receiptLabel.innerText()).trim(), 'completed receipt is visible');
+  assert.equal(await page.locator('.default-wallet-dialog:visible').count(), 0, 'success is shown without another popup over it');
+  await receiptLabel.click();
+  await page.locator('.default-wallet-dialog:visible').waitFor();
+  assert.equal(await page.locator('.payment-confirmation:visible').count(), 0, 'receipt has fully closed');
 };
 const assertFits = async label => {
   await page.waitForTimeout(350);
@@ -113,7 +126,7 @@ const assertFits = async label => {
     }).map(node => `${node.tagName}.${typeof node.className === 'string' ? node.className : ''}`).slice(0, 8);
   });
   assert.deepEqual(overflow, [], label);
-  const hiddenControls = await page.evaluate(() => [...document.querySelectorAll('.sheet-card .top-row, .sheet-card .confirm-cta, .payment-wallet-header, .payment-wallet-footer')]
+  const hiddenControls = await page.evaluate(() => [...document.querySelectorAll('.sheet-card .top-row, .sheet-card .confirm-cta, .payment-wallet-header, .payment-wallet-footer, .default-wallet-actions')]
     .filter(node => { const rect = node.getBoundingClientRect(); return rect.height > 0 && (rect.top < -1 || rect.bottom > window.innerHeight + 1); })
     .map(node => node.className));
   assert.deepEqual(hiddenControls, [], `${label}: pinned cancellation and primary controls remain on screen`);
@@ -239,16 +252,24 @@ try {
     await assertSource('/address-book'); await cancel();
   });
 
-  await step('The optional preference prompt can be dismissed or accepted', async () => {
+  await step('The default-wallet popup waits for success, then supports Not now or Use wallet', async () => {
     await resetPrompt(); await payBob(); await ready();
-    await snapshot('12-preference-prompt');
-    await sheet().locator('.wallet-preference-prompt').getByRole('button', { name: 'Not now', exact: true }).click();
+    assert.equal(await page.locator('.default-wallet-dialog:visible').count(), 0);
     assert.equal(await sheet().locator('.wallet-preference-prompt').count(), 0);
-    await cancel(); await payBob(); await ready();
-    assert.equal(await sheet().locator('.wallet-preference-prompt').count(), 0, 'Not now stays dismissed on the next payment');
-    await cancel(); await resetPrompt(); await payBob(); await ready();
-    await sheet().locator('.wallet-preference-prompt').getByRole('button', { name: 'Make preferred', exact: true }).click();
-    assert.equal(await preference(), 'everyday'); await cancel();
+    await cancel();
+    assert.equal(await page.locator('.default-wallet-dialog:visible').count(), 0, 'cancellation never asks for a default');
+
+    await finishPaymentForDefaultPopup(); await snapshot('12-default-wallet-popup');
+    await page.locator('.default-wallet-dialog').getByRole('button', { name: 'Not now', exact: true }).click();
+    await page.locator('.default-wallet-dialog').waitFor({ state: 'hidden' });
+    assert.equal(await preference(), null);
+    await payBob(); await ready();
+    assert.equal(await sheet().locator('.wallet-preference-prompt').count(), 0);
+    await cancel();
+    await resetPrompt(); await finishPaymentForDefaultPopup('Travel');
+    await page.locator('.default-wallet-dialog').getByRole('button', { name: 'Use Travel', exact: true }).click();
+    await page.locator('.default-wallet-dialog').waitFor({ state: 'hidden' });
+    assert.equal(await preference(), 'travel'); assert.equal(await activeWallet(), 'everyday');
   });
 
   await step('Preferred wallet is first choice and a one-off switch does not alter it or Home', async () => {
@@ -278,8 +299,8 @@ try {
     await sheet().locator('.choose-wallet-cta').waitFor();
     assert.match(await sheet().locator('.pay-with-field').innerText(), /Wallet unavailable/);
     assert.equal(await preference(), 'deleted-wallet');
-    await chooseWallet('Reserve', { prefer: true });
-    assert.equal(await preference(), 'reserve'); assert.equal(await activeWallet(), 'everyday'); await cancel();
+    await chooseWallet('Reserve');
+    assert.equal(await preference(), 'deleted-wallet', 'one-off wallet choice never changes the default'); assert.equal(await activeWallet(), 'everyday'); await cancel();
     await setPreference('travel');
   });
 
@@ -298,11 +319,11 @@ try {
     await settings.getByRole('button', { name: 'Cancel', exact: true }).click(); assert.equal(await preference(), 'travel');
     await page.locator('[data-audit="settings-payment-wallet"]').click();
     await settings.locator('input[data-wallet-id="reserve"]').check();
-    await settings.getByRole('button', { name: 'Save preference', exact: true }).click(); assert.equal(await preference(), 'reserve');
+    await settings.getByRole('button', { name: 'Save', exact: true }).click(); assert.equal(await preference(), 'reserve');
     await snapshot('05-settings');
     await page.locator('[data-audit="settings-payment-wallet"]').click();
     await settings.locator('input[data-wallet-id="automatic"]').check();
-    await settings.getByRole('button', { name: 'Save preference', exact: true }).click(); assert.equal(await preference(), null);
+    await settings.getByRole('button', { name: 'Save', exact: true }).click(); assert.equal(await preference(), null);
   });
 
   await step('Chat request Pay shows preparation before the invoice callback resolves', async () => {
@@ -366,6 +387,7 @@ try {
 
   await step('A committed send settles once from its pinned wallet despite route and Home changes', async () => {
     await navigate('/address-book'); await setPreference('travel');
+    const beforePayments = await page.evaluate(() => (window.__prepPayments || []).length);
     const { bolt11 } = ledger.mint({ amountSats: 500 });
     await startPayment('payInvoice', { bolt11, name: 'Bob' }); await ready();
     assert.match(await sheet().locator('.pay-with-field').innerText(), /Travel/);
@@ -379,7 +401,7 @@ try {
     assert.equal(await startPayment('payAddress', { address: 'bob@wallet.example', name: 'Bob' }), false, 'new intent cannot supersede a committed payment');
     releaseSend(); await page.getByText('Payment Sent', { exact: true }).waitFor();
     const paid = await page.evaluate(() => window.__prepPayments || []);
-    assert.equal(paid.length, 1); assert.equal(paid[0].walletId, 'travel');
+    assert.equal(paid.length, beforePayments + 1); assert.equal(paid.at(-1).walletId, 'travel');
     await page.getByText('Payment Sent', { exact: true }).click();
     await page.waitForFunction(async () => {
       const { usePaymentFlowStore } = await import('/src/stores/paymentFlow.js');
@@ -407,11 +429,16 @@ try {
       await snapshot(`09-large-picker-${locale}`);
       await sheet().locator('.top-btn').click(); await cancel();
       await navigate('/settings'); await page.locator('[data-audit="settings-payment-wallet"]').click();
-      assert.equal(await page.locator('.payment-wallet-sheet .form-sheet-title').innerText(), ({ 'en-US': 'Payment wallet', de: 'Zahlungs-Wallet', es: 'Wallet de pago' })[locale]);
+      assert.equal(await page.locator('.payment-wallet-sheet .form-sheet-title').innerText(), ({ 'en-US': 'Default wallet', de: 'Standard-Wallet', es: 'Cartera predeterminada' })[locale]);
       await assertFits(`${locale} Settings picker, 320px, 200% root text`);
       await snapshot(`10-large-settings-${locale}`);
       await page.locator('.payment-wallet-sheet .form-sheet-cancel').click();
       await navigate('/address-book');
+      await resetPrompt(); await finishPaymentForDefaultPopup();
+      await assertFits(`${locale} default-wallet popup, 320px, 200% root text`);
+      await snapshot(`15-large-default-popup-${locale}`);
+      await page.locator('.default-wallet-later').click();
+      await page.locator('.default-wallet-dialog').waitFor({ state: 'hidden' });
     }
   });
   assert.deepEqual(pageErrors, []);

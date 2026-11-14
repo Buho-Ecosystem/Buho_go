@@ -7,7 +7,7 @@ import { computed, markRaw, ref, shallowRef } from 'vue'
 import { defineStore } from 'pinia'
 
 const COMMITTED = new Set(['sending', 'complete'])
-const PHASES = new Set(['preparing', 'error', 'ready', 'sending', 'complete'])
+const PHASES = new Set(['preparing', 'error', 'ready', 'sending', 'complete', 'choosing-default'])
 
 function positiveSats(value) {
   return Number.isSafeInteger(value) && value > 0 ? value : null
