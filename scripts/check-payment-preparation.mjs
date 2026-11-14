@@ -259,7 +259,19 @@ try {
     await cancel();
     assert.equal(await page.locator('.default-wallet-dialog:visible').count(), 0, 'cancellation never asks for a default');
 
-    await finishPaymentForDefaultPopup(); await snapshot('12-default-wallet-popup');
+    await finishPaymentForDefaultPopup();
+    const hierarchy = await page.locator('.default-wallet-dialog').evaluate(dialog => {
+      const style = selector => getComputedStyle(dialog.querySelector(selector));
+      return {
+        question: Number(style('h2').fontWeight), wallet: Number(style('h2 strong').fontWeight),
+        primary: Number(style('.default-wallet-use').fontWeight), secondary: Number(style('.default-wallet-later').fontWeight),
+        titleSize: parseFloat(style('h2').fontSize), descriptionSize: parseFloat(style('p').fontSize),
+      };
+    });
+    assert.ok(hierarchy.wallet > hierarchy.question, 'the wallet name stands out from the question');
+    assert.ok(hierarchy.primary > hierarchy.secondary, 'the main action has stronger emphasis than Not now');
+    assert.ok(hierarchy.titleSize > hierarchy.descriptionSize, 'the explanation stays visually secondary');
+    await snapshot('12-default-wallet-popup');
     await page.locator('.default-wallet-dialog').getByRole('button', { name: 'Not now', exact: true }).click();
     await page.locator('.default-wallet-dialog').waitFor({ state: 'hidden' });
     assert.equal(await preference(), null);

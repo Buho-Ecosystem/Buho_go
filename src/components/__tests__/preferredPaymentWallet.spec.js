@@ -5,6 +5,7 @@ import { createRequire } from 'node:module'
 import { transformSync } from 'esbuild'
 import * as Vue from 'vue'
 import * as SSR from 'vue/server-renderer'
+import * as VueI18n from 'vue-i18n'
 import { createPinia, setActivePinia } from 'pinia'
 import { usePaymentPreferencesStore } from '../../stores/paymentPreferences.js'
 import * as amountFormatting from '../../utils/amountFormatting.js'
@@ -157,18 +158,23 @@ test('failed persistence stays in the picker and reports an actionable error', (
 
 const promptSource = readFileSync(new URL('../DefaultPaymentWalletDialog.vue', import.meta.url), 'utf8')
 const promptDescriptor = sfc.parse(promptSource).descriptor
-const prompt = evaluate(promptDescriptor.script.content, { '@iconify/vue': { Icon: { render() { return Vue.h('i') } } } }).default
+const prompt = evaluate(promptDescriptor.script.content, { '@iconify/vue': { Icon: { render() { return Vue.h('i') } } }, 'vue-i18n': VueI18n }).default
 const promptTemplate = sfc.compileTemplate({ source: promptDescriptor.template.content, filename: 'DefaultPaymentWalletDialog.vue', id: 'prompt-test', ssr: true, ssrCssVars: [] })
 assert.deepEqual(promptTemplate.errors, [])
 prompt.ssrRender = evaluate(promptTemplate.code, { vue: Vue, 'vue/server-renderer': SSR }).ssrRender
 
 test('default-wallet popup uses short actionable copy and keeps a failed save in the same popup', async () => {
   const app = Vue.createSSRApp(prompt, { modelValue: true, walletName: 'Travel', error: "Couldn't save this choice. Try again." })
-  app.config.globalProperties.$t = (key, values = {}) => key.replace(/\{(\w+)\}/g, (_, name) => values[name] || name)
+  app.use(VueI18n.createI18n({ legacy: true, locale: 'en', messages: { en: {
+    'Use {name} for future payments?': 'Use {name} for future payments?',
+    'You can change this in Settings.': 'You can change this in Settings.',
+    'Use {name}': 'Use {name}', 'Not now': 'Not now',
+  } } }))
   const shell = { render() { return Vue.h('div', {}, this.$slots.default?.()) } }
   app.component('q-dialog', shell); app.component('q-card', shell)
   const html = await SSR.renderToString(app)
-  assert.match(html, /Use Travel for future payments\?/)
+  assert.match(html, /<strong[^>]*>Travel<\/strong>/)
+  assert.match(html.replace(/<[^>]*>/g, ''), /Use Travel for future payments\?/)
   assert.match(html, /You can change this in Settings/)
   assert.match(html, />Use Travel</)
   assert.match(html, />Not now</)

@@ -4,7 +4,7 @@
 
 Paying a contact opens the payment sheet on the screen where the person tapped. The recipient and a request’s known amount appear immediately. The same sheet moves from preparing to review; Home never appears in between. A free amount can be entered while details load.
 
-The design follows Apple’s guidance for [writing](https://developer.apple.com/design/human-interface-guidelines/writing), [loading](https://developer.apple.com/design/human-interface-guidelines/loading), [progress indicators](https://developer.apple.com/design/human-interface-guidelines/progress-indicators), [sheets](https://developer.apple.com/design/human-interface-guidelines/sheets), and [settings](https://developer.apple.com/design/human-interface-guidelines/settings): preserve context, use indeterminate progress for unknown work, keep the wallet chooser inside the task, and provide a persistent setting for an infrequent choice.
+The design follows Apple’s guidance for [typography](https://developer.apple.com/design/human-interface-guidelines/typography), [writing](https://developer.apple.com/design/human-interface-guidelines/writing), [loading](https://developer.apple.com/design/human-interface-guidelines/loading), [progress indicators](https://developer.apple.com/design/human-interface-guidelines/progress-indicators), [sheets](https://developer.apple.com/design/human-interface-guidelines/sheets), and [settings](https://developer.apple.com/design/human-interface-guidelines/settings): preserve context, use indeterminate progress for unknown work, keep the wallet chooser inside the task, and provide a persistent setting for an infrequent choice.
 
 ## Entry points
 
@@ -59,6 +59,6 @@ Screenshots live in [images/payment-preparation](images/payment-preparation/).
 | Wallet chooser | [View](images/payment-preparation/13-wallet-picker-light.png) | [View](images/payment-preparation/13-wallet-picker-dark.png) |
 | Settings picker | [View](images/payment-preparation/14-settings-picker-light.png) | [View](images/payment-preparation/14-settings-picker-dark.png) |
 
-The question and buttons use short, familiar words. This is an optional settings choice, so the popup waits until the payment task is complete; it uses no warning or error styling.
+The question and buttons use short, familiar words. Regular question text surrounds a bold wallet name; the main action is bold, while the explanation and Not now stay regular. This makes the wallet and the decision easy to scan. This is an optional settings choice, so the popup waits until the payment task is complete; it uses no warning or error styling.
 
 Enlarged text examples: [German wallet chooser](images/payment-preparation/09-large-picker-de-light.png), [Spanish Settings](images/payment-preparation/10-large-settings-es-dark.png), [German popup](images/payment-preparation/15-large-default-popup-de-light.png), [Spanish popup](images/payment-preparation/15-large-default-popup-es-dark.png).
