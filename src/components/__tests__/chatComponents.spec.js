@@ -21,6 +21,8 @@ import * as Vue from 'vue'
 import * as ServerRenderer from 'vue/server-renderer'
 import * as amountFormatting from '../../utils/amountFormatting.js'
 import * as constants from '../../services/dm/constants.js'
+import * as emojiCatalog from '../../utils/emojiCatalog.js'
+import * as emojiSearch from '../../utils/emojiSearch.js'
 import * as amountKeypad from '../../utils/amountKeypad.js'
 import { LOOKUP_ERROR, NIP05_ERROR } from '../../utils/nostrLookup.js'
 
@@ -68,6 +70,7 @@ const MessageBubble = loadSfc('MessageBubble.vue', { ...base, './MessageMenu.vue
 const RequestCard = loadSfc('RequestCard.vue', base)
 const MoneyBar = loadSfc('MoneyBar.vue', base)
 const Composer = loadSfc('Composer.vue', { ...base, '../../services/dm/constants.js': constants })
+const EmojiPicker = loadSfc('EmojiPicker.vue', { ...base, '../../utils/emojiCatalog.js': emojiCatalog, '../../utils/emojiSearch.js': emojiSearch })
 // The keypad is AmountKeypad.vue (its rules: utils/amountKeypad.js, tested below); a marker stands in for it.
 const AmountKeypadStub = { props: ['modelValue', 'fiat', 'fiatCode', 'fiatRate'], render() { return Vue.h('div', { class: 'keypad-stub' }, this.$slots.default?.()) } }
 const RequestSheet = loadSfc('RequestSheet.vue', {
@@ -340,7 +343,7 @@ test('bubble: long press opens the menu for touch, never for a mouse, and scroll
 })
 
 test('bubble: the menu forwards react, reply, copy (with the text) and retry', () => {
-  assert.deepEqual(MessageBubble.emits, ['react', 'reply', 'copy', 'retry'])
+  assert.deepEqual(MessageBubble.emits, ['react', 'reply', 'copy', 'retry', 'more-reactions'])
   const source = read('MessageBubble.vue')
   assert.match(source, /@copy="\$emit\('copy', text\)"/)
   assert.match(source, /:can-retry="outgoing && delivery === 'failed'"/)
@@ -568,6 +571,48 @@ test('money bar: disabled buttons are real disabled buttons', async () => {
 
 // ── Composer ─────────────────────────────────────────────────────────
 
+test('emoji search ranks exact matches globally, deduplicates recents, and accepts localized terms', () => {
+  const { vm } = vmOf(EmojiPicker, {}, { recents: ['😃', '⭐'] })
+  for (const [query, first] of [['eyes', '👀'], ['tongue', '👅'], ['star', '⭐']]) {
+    vm.query = query
+    assert.equal(vm.sections[0].emojis[0].char, first)
+    const chars = vm.sections.flatMap(section => section.emojis.map(e => e.char))
+    assert.equal(new Set(chars).size, chars.length)
+  }
+  for (const query of ['lachen', 'glücklich', 'feliz', 'corazón', '🦉']) {
+    vm.query = query
+    assert.ok(vm.sections[0]?.emojis.length, query)
+  }
+  vm.query = 'unfindablezzzz'
+  assert.deepEqual(vm.sections, [])
+})
+
+test('emoji search does not select on IME confirmation', () => {
+  const { vm, emitted } = vmOf(EmojiPicker)
+  vm.onSearchKeydown({ key: 'Enter', isComposing: true })
+  assert.deepEqual(emitted, [])
+})
+
+test('composer inserts at a UTF-16 selection, replaces text, and respects disabled state', () => {
+  const { vm, emitted } = vmOf(Composer, { modelValue: 'Hi 🦉 Bob' })
+  vm.rememberSelection({ target: { selectionStart: 6, selectionEnd: 9 } })
+  vm.insertEmoji('❤️')
+  assert.deepEqual(emitted, [['update:modelValue', 'Hi 🦉 ❤️']])
+  assert.deepEqual(vm.selection, { start: 8, end: 8 })
+  vm.disabled = true
+  vm.insertEmoji('😀')
+  assert.equal(emitted.length, 1)
+})
+
+test('more reactions waits for the action sheet to hide before opening another surface', () => {
+  const { vm, emitted } = vmOf(MessageMenu)
+  vm.pick('more-reactions')
+  assert.deepEqual(emitted, [['update:modelValue', false]])
+  vm.onHide()
+  vm.onHide()
+  assert.deepEqual(emitted, [['update:modelValue', false], ['more-reactions']])
+})
+
 test('composer: a labelled field and a labelled send button, disabled while empty', async () => {
   const html = await render(Composer, {})
   assert.match(html, /<textarea[^>]*rows="1"[^>]*aria-label="Message"/, 'one line that grows with the text')
@@ -614,7 +659,7 @@ test('composer: the reply preview names the author and can be cancelled', async 
   assert.match(html, /Reply to Anna/)
   assert.match(html, /See you at 7/)
   assert.match(html, /aria-label="Cancel reply"/)
-  assert.deepEqual(Composer.emits, ['update:modelValue', 'send', 'cancel-reply'])
+  assert.deepEqual(Composer.emits, ['update:modelValue', 'send', 'cancel-reply', 'emoji'])
 })
 
 test('composer: Enter sends, except while an IME is composing or with Shift (a new line); it never clears the text itself', () => {

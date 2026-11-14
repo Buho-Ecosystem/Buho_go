@@ -45,7 +45,8 @@
       </div>
     </div>
 
-    <div v-else class="chat" :style="viewportStyle">
+    <div v-else class="chat-workspace" :style="viewportStyle">
+    <div class="chat">
       <ChatHeader
         ref="header"
         :name="displayName"
@@ -103,6 +104,7 @@
         :partner-name="displayName"
         :bip177="bip177"
         @react="onReact"
+        @more-reactions="openReactionPicker"
         @reply="onReply"
         @copy="onCopy"
         @retry="onRetry"
@@ -163,10 +165,15 @@
           v-model="draft"
           :secret-key-warning="secretKeyWarning"
           :reply="replyPreview"
+          :emoji-open="emojiMode === 'compose'"
+          @emoji="toggleEmojiPicker"
           @send="onSendText"
           @cancel-reply="replyToId = null"
         />
       </MoneyBar>
+    </div>
+    <EmojiPanel :model-value="!!emojiMode" :reaction="emojiMode === 'react'" :session-key="emojiSession"
+      @update:model-value="open => { if (!open) closeEmojiPicker() }" @select="onEmoji" @closed="restoreEmojiFocus" />
     </div>
 
     <RequestSheet
@@ -237,6 +244,7 @@ import ChatHeader from '../components/chat/ChatHeader.vue'
 import ChatThread from '../components/chat/ChatThread.vue'
 import MoneyBar from '../components/chat/MoneyBar.vue'
 import Composer from '../components/chat/Composer.vue'
+import EmojiPanel from '../components/chat/EmojiPanel.vue'
 import RequestSheet from '../components/chat/RequestSheet.vue'
 import { requestIdsOf } from '../services/dm/requestGoals.js'
 import { useRequests } from '../composables/useRequests.js'
@@ -274,7 +282,7 @@ export default {
   name: 'ContactChatPage',
 
   components: {
-    Icon, ChatHeader, ChatThread, MoneyBar, Composer, RequestSheet, UnknownSenderBanner, SignerAppNotice,
+    Icon, ChatHeader, ChatThread, MoneyBar, Composer, EmojiPanel, RequestSheet, UnknownSenderBanner, SignerAppNotice,
     ContactAvatar, AddressBookModal, IdentityGetPaidSheet,
   },
 
@@ -385,6 +393,10 @@ export default {
       bookReady: false,
       /** 'money' | 'text' (MoneyBar). */
       draft: '',
+      emojiMode: null,
+      emojiSession: 0,
+      emojiReactionId: null,
+      emojiFocusTarget: null,
       replyToId: null,
       requestOpen: false,
       requestSubmitting: false,
@@ -478,8 +490,11 @@ export default {
       this.activate()
     },
     view() {
+      if (this.view !== 'chat') this.emojiMode = null
       this.activate()
     },
+    blocked(value) { if (value) this.emojiMode = null },
+    paymentsOnly(value) { if (value) this.emojiMode = null },
     // A sender who gets saved moves to the contact route.
     contactEntry(entry) {
       if (entry && this.$route.params.pubkey) this.$router.replace(contactChatRoute(entry.id))
@@ -560,6 +575,9 @@ export default {
 
     resetConversationState() {
       this.draft = ''
+      this.emojiMode = null
+      this.emojiReactionId = null
+      this.emojiFocusTarget = null
       this.replyToId = null
       this.requestOpen = false
       this.menuOpen = false
@@ -639,6 +657,36 @@ export default {
 
     async onReact({ id, emoji }) {
       this.report(await this.chat.react(id, emoji))
+    },
+
+    toggleEmojiPicker() {
+      if (this.emojiMode === 'compose') this.closeEmojiPicker()
+      else { this.emojiSession++; this.emojiReactionId = null; this.emojiMode = 'compose' }
+    },
+    openReactionPicker({ id }) {
+      if (this.unknown || this.blocked) return
+      this.emojiSession++
+      this.emojiReactionId = id
+      this.emojiMode = 'react'
+    },
+    closeEmojiPicker() {
+      this.emojiFocusTarget = this.emojiMode === 'react' ? this.emojiReactionId : 'compose'
+      this.emojiMode = null
+      this.emojiReactionId = null
+    },
+    restoreEmojiFocus() {
+      const target = this.emojiFocusTarget
+      this.emojiFocusTarget = null
+      if (target === 'compose') this.$refs.composer?.focusEmojiButton?.()
+      else if (target) this.$refs.thread?.focusMessage?.(target)
+    },
+    onEmoji(emoji) {
+      if (this.blocked || this.paymentsOnly) return
+      if (this.emojiMode === 'react') {
+        const id = this.emojiReactionId
+        this.closeEmojiPicker()
+        if (id && !this.unknown) this.onReact({ id, emoji })
+      } else if (this.emojiMode === 'compose') this.$refs.composer?.insertEmoji(emoji)
     },
 
     async onRetry({ id }) {
@@ -836,8 +884,15 @@ function shortNpubOf(pubkey) {
 
 /* One column: header, scrolling thread, money bar. Its height follows the
    visible viewport (the keyboard shrinks it), set inline by the page. */
-.chat {
+.chat-workspace {
   height: 100dvh;
+  display: flex;
+  min-height: 0;
+  overflow: hidden;
+}
+.chat {
+  flex: 1;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   min-height: 0;

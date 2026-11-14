@@ -89,6 +89,7 @@
       :can-retry="outgoing && delivery === 'failed'"
       :my-reaction="myReaction"
       @react="$emit('react', $event)"
+      @more-reactions="$emit('more-reactions')"
       @reply="$emit('reply')"
       @copy="$emit('copy', text)"
       @retry="$emit('retry')"
@@ -125,7 +126,7 @@ export default {
     /** False for strangers: no reactions. */
     canReact: { type: Boolean, default: true }
   },
-  emits: ['react', 'reply', 'copy', 'retry'],
+  emits: ['react', 'reply', 'copy', 'retry', 'more-reactions'],
   data() {
     // The menu is created on first use and then kept, so it can animate closed.
     return { menuOpen: false, menuMounted: false, pressTimer: null, pressOrigin: null }

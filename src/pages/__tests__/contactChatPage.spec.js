@@ -160,6 +160,33 @@ function pageOf({ route = { params: { id: 'addr-1' } }, available = true, scope 
 
 const flush = () => new Promise((resolve) => setImmediate(resolve))
 
+test('emoji panel: each opening gets a fresh session and reaction focus returns after closing', () => {
+  const { vm } = pageOf()
+  const focused = []
+  vm.$refs = { thread: { focusMessage: id => focused.push(id) }, composer: { focusEmojiButton: () => focused.push('compose') } }
+  vm.toggleEmojiPicker()
+  assert.equal(vm.emojiMode, 'compose')
+  const first = vm.emojiSession
+  vm.openReactionPicker({ id: 'message-1' })
+  assert.ok(vm.emojiSession > first)
+  const second = vm.emojiSession
+  vm.openReactionPicker({ id: 'message-1' })
+  assert.ok(vm.emojiSession > second)
+  vm.closeEmojiPicker()
+  assert.equal(vm.emojiMode, null)
+  assert.deepEqual(focused, [])
+  vm.restoreEmojiFocus()
+  assert.deepEqual(focused, ['message-1'])
+})
+
+test('emoji panel: conversation changes discard pending reaction and focus state', () => {
+  const { vm } = pageOf()
+  vm.openReactionPicker({ id: 'old-message' })
+  vm.closeEmojiPicker()
+  vm.resetConversationState()
+  assert.deepEqual([vm.emojiMode, vm.emojiReactionId, vm.emojiFocusTarget], [null, null, null])
+})
+
 // ── view state ───────────────────────────────────────────────────────
 
 test('view: no runtime means no identity; waiting for the address book or the store scope means loading', () => {

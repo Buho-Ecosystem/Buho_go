@@ -1,0 +1,21 @@
+export default {
+  "Emoji": "Emoji",
+  "Choose emoji": "Choose emoji",
+  "Close emoji picker": "Close emoji picker",
+  "Search emoji": "Search emoji",
+  "Emoji categories": "Emoji categories",
+  "More emojis": "More emojis",
+  "Recently used": "Recently used",
+  "Quick reactions": "Quick reactions",
+  "Smileys": "Smileys",
+  "Gestures": "Gestures",
+  "Hearts": "Hearts",
+  "Animals & Nature": "Animals & Nature",
+  "Food & Drink": "Food & Drink",
+  "Activity & Travel": "Activity & Travel",
+  "Objects": "Objects",
+  "Symbols": "Symbols",
+  "No emoji found": "No emoji found",
+  "Try another word, like happy or heart.": "Try another word, like happy or heart.",
+  "A little expression goes a long way": "A little expression goes a long way"
+};

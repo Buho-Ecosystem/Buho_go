@@ -36,6 +36,11 @@
     </div>
 
     <div class="composer__row">
+      <button ref="emojiButton" type="button" class="composer__icon-btn" :disabled="disabled"
+        :aria-label="$t('Choose emoji')" :aria-expanded="emojiOpen" aria-controls="chat-emoji-panel"
+        @click="$emit('emoji')">
+        <Icon icon="tabler:mood-smile" width="23" height="23" />
+      </button>
       <textarea
         ref="input"
         class="composer__input"
@@ -49,7 +54,11 @@
         :aria-invalid="invalid ? 'true' : undefined"
         :aria-describedby="showCounter ? counterId : undefined"
         :disabled="disabled"
-        @input="$emit('update:modelValue', $event.target.value)"
+        @input="onInput"
+        @select="rememberSelection"
+        @keyup="rememberSelection"
+        @click="rememberSelection"
+        @blur="rememberSelection"
         @keydown.enter="onEnter"
       />
       <button
@@ -89,10 +98,12 @@ export default {
     /** { author, text } of the message being answered. */
     reply: { type: Object, default: null },
     disabled: { type: Boolean, default: false },
+    emojiOpen: { type: Boolean, default: false },
     /** Focus the field when it appears. Off by default: opening a chat must not raise the keyboard over the money buttons. */
     autofocus: { type: Boolean, default: false }
   },
-  emits: ['update:modelValue', 'send', 'cancel-reply'],
+  emits: ['update:modelValue', 'send', 'cancel-reply', 'emoji'],
+  data() { return { selection: null } },
   computed: {
     counterId() { return `composer-counter-${this.$.uid}` },
     length() { return countChars(this.modelValue) },
@@ -115,6 +126,24 @@ export default {
     if (this.autofocus) this.focus()
   },
   methods: {
+    onInput(event) {
+      this.rememberSelection(event)
+      this.$emit('update:modelValue', event.target.value)
+    },
+    rememberSelection(event) {
+      this.selection = { start: event.target.selectionStart, end: event.target.selectionEnd }
+    },
+    insertEmoji(char) {
+      if (this.disabled) return
+      const text = this.modelValue
+      const start = Math.min(this.selection?.start ?? text.length, text.length)
+      const end = Math.min(this.selection?.end ?? start, text.length)
+      this.$emit('update:modelValue', text.slice(0, start) + char + text.slice(end))
+      const caret = start + char.length
+      this.selection = { start: caret, end: caret }
+      this.$nextTick(() => this.$refs.input?.setSelectionRange(caret, caret))
+    },
+    focusEmojiButton() { this.$refs.emojiButton?.focus({ preventScroll: true }) },
     focus() {
       this.$refs.input?.focus?.()
     },
