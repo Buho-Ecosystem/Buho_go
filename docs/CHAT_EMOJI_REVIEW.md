@@ -69,8 +69,12 @@ behavior. The overlapping-target and hover-gap findings above were fixed.
 - Focused chat components, ContactChatPage, useContactChat, and protocol suites:
   387 passed, including picker emoji round trips and standard peer sequences.
 - Scoped style and safe-area checks: 4 passed.
-- `node scripts/check-chat-emoji.mjs`: 13 real-browser scenarios passed using
+- `node scripts/check-chat-emoji.mjs`: 14 real-browser scenarios passed using
   isolated test identities and simulated relays, with no uncaught page errors.
+- A subsequent edge-case review reproduced a wrapped draft needing 88px after
+  opening the desktop dock while its textarea still showed only 66px. The
+  composer now observes width changes and refits unchanged text, with observer
+  cleanup on unmount. The browser regression checks this exact case.
 - Full `node scripts/check-contact-chat.mjs` browser regression passed, including
   replies, payments, unknown senders, blocking, translated/large-text layouts,
   permanent delivery refusal, manual retry, and automatic temporary-error recovery.

@@ -125,8 +125,20 @@ export default {
   },
   mounted() {
     this.fitHeight()
+    // Opening the dock or rotating a phone can wrap an unchanged draft.
+    // Observe width only, so growing the field does not create a resize loop.
+    if (typeof ResizeObserver === 'function') {
+      this.sizeObserver = new ResizeObserver(([entry]) => {
+        const width = entry.contentRect.width
+        if (width === this.observedWidth) return
+        this.observedWidth = width
+        this.fitHeight()
+      })
+      this.sizeObserver.observe(this.$refs.input)
+    }
     if (this.autofocus) this.focus()
   },
+  beforeUnmount() { this.sizeObserver?.disconnect() },
   methods: {
     onInput(event) {
       this.rememberSelection(event)

@@ -149,6 +149,18 @@ try {
     await setTheme(false)
   })
 
+  await test('opening the side panel resizes an existing wrapped draft without hiding its lines', async () => {
+    await close()
+    await field().fill('A draft should remain readable when the emoji panel opens. '.repeat(5))
+    await open()
+    await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))
+    const size = await field().evaluate(el => ({ visible: el.clientHeight, needed: el.scrollHeight }))
+    assert.ok(size.visible >= Math.min(size.needed, 134), `draft needs ${size.needed}px but shows ${size.visible}px`)
+    await close()
+    await field().fill('')
+    await open()
+  })
+
   await test('cursor insertion replaces selected text and supports consecutive picks', async () => {
     await close()
     await field().fill('Hello Bob!')
