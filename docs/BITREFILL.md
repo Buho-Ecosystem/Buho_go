@@ -40,6 +40,11 @@ Approval must cover the web app (`https://go.mybuho.de`) and the Android app, wh
 
 ## Checks
 
+The [2026-11-14 edge-case review](BITREFILL_REVIEW.md) adds durable attempt
+checks, paid-state and expiry guards, and email-editing regression coverage.
+For a local check without contacting the real storefront, set
+`BITREFILL_MOCK_ONLY=1` when running the browser script.
+
 - `src/services/bitrefill/__tests__/widget.spec.js` (in `npm test`): the URL, the message filter, the invoice of an intent, the ledger, the email at rest.
 - `npm run check:bitrefill`: the real widget (email step, documented parameters, encrypted email), then a stand-in widget at the real origin for the payment: paid once, refused, the widget's "paid" winning over a wallet error, an expired price, forged messages. Start the dev server with `VITE_BITREFILL_UTM_SOURCE=bitrefill_demo` first.
 

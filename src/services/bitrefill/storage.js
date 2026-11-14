@@ -16,7 +16,7 @@ export const EMAIL_KEY = 'buhoGO_bitrefill_email'
 export const EMAIL_ASKED_KEY = 'buhoGO_bitrefill_email_asked'
 export const LEDGER_KEY = 'buhoGO_bitrefill_invoices'
 
-/** Ledger entries kept; the oldest go first. Invoices expire within the hour. */
+/** Maximum ledger size. Unresolved attempts are never evicted for history. */
 export const LEDGER_LIMIT = 100
 
 export const PAY_STATE = Object.freeze({
@@ -31,23 +31,11 @@ export const PAY_STATE = Object.freeze({
 export const PAY_BLOCK = Object.freeze({
   PAID: 'paid',
   IN_FLIGHT: 'in_flight',
+  UNAVAILABLE: 'unavailable',
 })
 
 function defaultStorage() {
   try { return globalThis.localStorage || null } catch { return null }
-}
-
-function readJson(storage, key, fallback) {
-  try {
-    const raw = storage?.getItem(key)
-    return raw ? JSON.parse(raw) : fallback
-  } catch {
-    return fallback
-  }
-}
-
-function writeJson(storage, key, value) {
-  try { storage?.setItem(key, JSON.stringify(value)) } catch { /* storage full or blocked */ }
 }
 
 /**
@@ -56,8 +44,13 @@ function writeJson(storage, key, value) {
  */
 export function createInvoiceLedger({ storage = defaultStorage(), now = () => Date.now() } = {}) {
   const read = () => {
-    const list = readJson(storage, LEDGER_KEY, [])
-    return Array.isArray(list) ? list.filter((e) => e && typeof e.invoiceId === 'string') : []
+    if (!storage?.getItem || !storage?.setItem) throw new Error('Invoice ledger unavailable')
+    const raw = storage.getItem(LEDGER_KEY)
+    const list = raw === null ? [] : JSON.parse(raw)
+    if (!Array.isArray(list) || list.some(e => !e || typeof e.invoiceId !== 'string' || !Object.values(PAY_STATE).includes(e.state))) {
+      throw new Error('Invoice ledger unreadable')
+    }
+    return list
   }
 
   return {
@@ -71,7 +64,8 @@ export function createInvoiceLedger({ storage = defaultStorage(), now = () => Da
      * closed mid-send). Only FAILED or unknown invoices may be paid.
      */
     canPay(invoiceId) {
-      const entry = this.get(invoiceId)
+      let entry
+      try { entry = this.get(invoiceId) } catch { return { ok: false, reason: PAY_BLOCK.UNAVAILABLE } }
       if (!entry || entry.state === PAY_STATE.FAILED) return { ok: true }
       if (entry.state === PAY_STATE.PAID) return { ok: false, reason: PAY_BLOCK.PAID }
       return { ok: false, reason: PAY_BLOCK.IN_FLIGHT }
@@ -82,10 +76,22 @@ export function createInvoiceLedger({ storage = defaultStorage(), now = () => Da
       const list = read()
       const at = now()
       const index = list.findIndex((e) => e.invoiceId === invoiceId)
+      // A late wallet failure cannot undo an already observed payment.
+      if (index >= 0 && list[index].state === PAY_STATE.PAID) return list[index]
+      if (state === PAY_STATE.ATTEMPTED && (index < 0 || list[index].state !== PAY_STATE.ATTEMPTED)
+        && list.filter(e => e.state === PAY_STATE.ATTEMPTED).length >= LEDGER_LIMIT) {
+        throw new Error('Invoice ledger full')
+      }
       const entry = { ...(index >= 0 ? list[index] : { invoiceId, createdAt: at }), ...extra, state, updatedAt: at }
       if (index >= 0) list.splice(index, 1)
       list.push(entry)
-      writeJson(storage, LEDGER_KEY, list.slice(-LEDGER_LIMIT))
+      // Pruning history must never free an unresolved payment for another send.
+      const pending = list.filter(e => e.state === PAY_STATE.ATTEMPTED)
+      const historySlots = Math.max(0, LEDGER_LIMIT - pending.length)
+      const history = historySlots ? list.filter(e => e.state !== PAY_STATE.ATTEMPTED).slice(-historySlots) : []
+      const encoded = JSON.stringify([...pending, ...history])
+      storage.setItem(LEDGER_KEY, encoded)
+      if (storage.getItem(LEDGER_KEY) !== encoded) throw new Error('Invoice ledger write failed')
       return entry
     },
   }

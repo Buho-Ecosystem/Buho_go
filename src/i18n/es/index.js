@@ -11,6 +11,7 @@ import walletRemoval from './walletRemoval.js';
 import autoTransfer from './autoTransfer.js';
 import boltCard from './boltCard.js';
 export default {
+  "Couldn't prepare this payment. Please try again.": "No se pudo preparar el pago. Inténtalo de nuevo.",
   ...requests,
   ...profilePayment,
   "Charge card": "Cobrar a la tarjeta",

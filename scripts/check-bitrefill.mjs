@@ -122,7 +122,7 @@ const slide = async (page) => {
 const toastText = (page) => page.locator('.q-notification, .toast, [role="status"]').allInnerTexts();
 
 // ── Part 1 · the real widget ──────────────────────────────────────────────
-{
+if (process.env.BITREFILL_MOCK_ONLY !== '1') {
   const { page, context, errors, widgetUrls } = await open({ theme: 'dark' });
   // First open: the email step, before anything loads.
   await page.getByText('Email for your vouchers').waitFor({ timeout: 30000 });
@@ -159,8 +159,8 @@ const toastText = (page) => page.locator('.q-notification, .toast, [role="status
   console.log(`  widget loaded from ${widgetUrls[0] || src.href}`);
   assert.deepEqual(errors, []);
   await context.close();
-}
 console.log('✓ real widget: the email step comes first, then the widget opens with the documented parameters and the email, stored encrypted');
+}
 
 // ── Part 1b · "Not now" and editing ──────────────────────────────────────
 {
@@ -194,6 +194,13 @@ console.log('✓ "Not now" opens the shop without an email and is not asked agai
   await page.evaluate((m) => window.postMessage(JSON.stringify(m), '*'), intent('forged'));
   await pause(600);
   assert.equal(await page.locator('.sheet-card').count(), 0, 'a message from the page itself opens nothing');
+
+  // Payment may have happened elsewhere before this page tried it.
+  await post(page, { event: 'invoice_update', invoiceId: 'already-paid-elsewhere', status: 'payment_detected' });
+  await post(page, intent('already-paid-elsewhere'));
+  await pause(500);
+  assert.equal(await page.locator('.sheet-card').count(), 0, 'an earlier paid update prevents a later payment intent');
+  assert.equal(await page.evaluate(() => window.__payments.length), 0);
 
   // The widget hands over the invoice: the confirm sheet, Bitrefill as recipient.
   await post(page, intent('inv-1'));

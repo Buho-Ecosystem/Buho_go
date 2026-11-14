@@ -2,10 +2,10 @@
   <q-dialog
     :model-value="modelValue"
     position="bottom"
+    :persistent="busy"
     transition-show="slide-up"
     transition-hide="slide-down"
     @update:model-value="onDialogModel"
-    @show="onShow"
   >
     <q-card
       class="brmail-sheet"
@@ -63,10 +63,10 @@
           :disable="busy || !email.trim()"
           :label="editing ? $t('Save') : $t('Use this email')"
         />
-        <button v-if="editing && hasSaved" type="button" class="brmail-secondary brmail-secondary--destructive" @click="$emit('remove')">
+        <button v-if="editing && hasSaved" type="button" class="brmail-secondary brmail-secondary--destructive" :disabled="busy" @click="$emit('remove')">
           {{ $t('Remove email') }}
         </button>
-        <button v-else-if="!editing" type="button" class="brmail-secondary" @click="$emit('skip')">
+        <button v-else-if="!editing" type="button" class="brmail-secondary" :disabled="busy" @click="$emit('skip')">
           {{ $t('Not now') }}
         </button>
       </form>
@@ -110,17 +110,26 @@ export default {
     leadId() { return `brmail-lead-${this.$.uid}`; },
     showError() { return this.submitted && !isValidEmail(this.email); },
   },
-  methods: {
-    onShow() {
-      this.email = this.initialEmail || '';
-      this.submitted = false;
+  watch: {
+    modelValue: {
+      immediate: true,
+      handler(open) {
+        if (!open) return;
+        // Initialize before the opening animation; its end must not erase typing.
+        this.email = this.initialEmail || '';
+        this.submitted = false;
+      },
     },
+  },
+  methods: {
     onDialogModel(value) {
+      if (this.busy) return;
       this.$emit('update:modelValue', value);
       // Swiping the sheet away on first open means "Not now", like the button.
       if (!value && !this.editing) this.$emit('skip');
     },
     onSubmit() {
+      if (this.busy) return;
       this.submitted = true;
       if (!isValidEmail(this.email)) {
         this.$refs.input?.focus();

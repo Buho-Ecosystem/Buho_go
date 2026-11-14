@@ -158,12 +158,42 @@ test('ledger: survives a reload and stays bounded', () => {
   assert.equal(ledger.mark('x', 'bogus'), null, 'unknown states are refused')
 })
 
-test('ledger: unreadable storage reads as empty, never throws', () => {
+test('ledger: unreadable or unavailable storage blocks payment', () => {
   const storage = memoryStorage()
   storage.setItem(LEDGER_KEY, '{oops')
   const ledger = createInvoiceLedger({ storage })
-  assert.deepEqual(ledger.canPay('a'), { ok: true })
-  assert.equal(createInvoiceLedger({ storage: null }).canPay('a').ok, true)
+  assert.deepEqual(ledger.canPay('a'), { ok: false, reason: PAY_BLOCK.UNAVAILABLE })
+  assert.equal(createInvoiceLedger({ storage: null }).canPay('a').ok, false)
+})
+
+test('ledger: a failed or silently ignored write never claims the attempt was recorded', () => {
+  for (const setItem of [() => { throw new Error('quota') }, () => {}]) {
+    const ledger = createInvoiceLedger({ storage: { getItem: () => null, setItem } })
+    assert.throws(() => ledger.mark('a', PAY_STATE.ATTEMPTED))
+  }
+})
+
+test('ledger: paid remains paid after a late wallet refusal', () => {
+  const ledger = createInvoiceLedger({ storage: memoryStorage() })
+  ledger.mark('a', PAY_STATE.PAID)
+  ledger.mark('a', PAY_STATE.FAILED)
+  assert.deepEqual(ledger.canPay('a'), { ok: false, reason: PAY_BLOCK.PAID })
+})
+
+test('ledger: history pruning never forgets an unresolved payment', () => {
+  const storage = memoryStorage()
+  const ledger = createInvoiceLedger({ storage })
+  ledger.mark('pending', PAY_STATE.ATTEMPTED)
+  for (let i = 0; i < LEDGER_LIMIT + 5; i++) ledger.mark(`paid${i}`, PAY_STATE.PAID)
+  assert.deepEqual(ledger.canPay('pending'), { ok: false, reason: PAY_BLOCK.IN_FLIGHT })
+  assert.equal(JSON.parse(storage.getItem(LEDGER_KEY)).length, LEDGER_LIMIT)
+})
+
+test('ledger: a full set of unresolved attempts refuses another payment', () => {
+  const ledger = createInvoiceLedger({ storage: memoryStorage() })
+  for (let i = 0; i < LEDGER_LIMIT; i++) ledger.mark(`pending${i}`, PAY_STATE.ATTEMPTED)
+  assert.throws(() => ledger.mark('extra', PAY_STATE.ATTEMPTED))
+  assert.equal(ledger.canPay('pending0').ok, false)
 })
 
 test('email: stored encrypted, asked once, removable', async () => {

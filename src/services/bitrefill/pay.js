@@ -15,13 +15,20 @@ import { internalTransferTransactionId } from '../../utils/internalTransferDetai
 import { useTransactionMetadataStore } from '../../stores/transactionMetadata.js'
 
 export const BITREFILL_TX_LABEL = 'Bitrefill'
+export const BITREFILL_PRICE_EXPIRED = 'BITREFILL_PRICE_EXPIRED'
 
-export async function payBitrefillInvoice(walletStore, walletId, invoice, { amountSats = 0 } = {}) {
+export async function payBitrefillInvoice(walletStore, walletId, invoice, { amountSats = 0, expiresAt = null } = {}) {
   const wallet = walletStore.wallets.find((w) => w.id === walletId)
   if (!wallet) throw new Error('Wallet not found')
   const type = wallet.type || 'nwc'
 
   const provider = await walletStore.ensureWalletConnectedForTransfer(walletId)
+  // Connecting a wallet can outlast the price shown on the confirmation sheet.
+  if (expiresAt && expiresAt <= Math.floor(Date.now() / 1000)) {
+    const error = new Error('The price ran out. Choose the card again for a new price.')
+    error.code = BITREFILL_PRICE_EXPIRED
+    throw error
+  }
   const result = type === 'nwc'
     ? await payWithNwc(provider, invoice, { limit: walletStore.nwcLimitFor(walletId) })
     : await provider.payInvoice({ invoice })
@@ -36,7 +43,7 @@ export async function payBitrefillInvoice(walletStore, walletId, invoice, { amou
   } catch (err) {
     console.warn('[bitrefill] could not label the payment:', err)
   }
-  walletStore.refreshWalletData?.(walletId)?.catch?.(() => {})
+  try { walletStore.refreshWalletData?.(walletId)?.catch?.(() => {}) } catch { /* payment already succeeded */ }
 
   return result
 }

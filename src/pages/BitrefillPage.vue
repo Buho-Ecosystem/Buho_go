@@ -100,7 +100,7 @@ import {
   wasEmailAsked,
   markEmailAsked,
 } from '../services/bitrefill/storage.js';
-import { payBitrefillInvoice } from '../services/bitrefill/pay.js';
+import { payBitrefillInvoice, BITREFILL_PRICE_EXPIRED } from '../services/bitrefill/pay.js';
 
 /** How long a refused payment waits for the widget to report it paid anyway. */
 const SETTLE_WAIT_MS = 4000;
@@ -271,8 +271,17 @@ export default {
       // swapping it in could change what a finger already on the slide pays.
       if (this.paySheetOpen || this.isSending) return;
 
+      if (this.paidInvoiceIds.includes(message.invoiceId)) {
+        this.$q.notify({ type: 'positive', message: this.$t('This order is already paid.'), timeout: 2500 });
+        return;
+      }
+
       const verdict = this.ledger.canPay(message.invoiceId);
       if (!verdict.ok) {
+        if (verdict.reason === PAY_BLOCK.UNAVAILABLE) {
+          this.$q.notify({ type: 'negative', message: this.$t("Couldn't prepare this payment. Please try again."), timeout: 3500 });
+          return;
+        }
         this.$q.notify(verdict.reason === PAY_BLOCK.PAID
           ? { type: 'positive', message: this.$t('This order is already paid.'), timeout: 2500 }
           : { type: 'warning', message: this.$t('A payment for this order may still be on its way. Check the order in the shop before paying again.'), timeout: 5000 });
@@ -307,8 +316,7 @@ export default {
     /** The widget saw the payment: true whatever our wallet call said. */
     onWidgetPaid(invoiceId) {
       if (!this.paidInvoiceIds.includes(invoiceId)) this.paidInvoiceIds.push(invoiceId);
-      const entry = this.ledger.get(invoiceId);
-      if (entry && entry.state !== PAY_STATE.PAID) this.ledger.mark(invoiceId, PAY_STATE.PAID);
+      try { this.ledger.mark(invoiceId, PAY_STATE.PAID); } catch { /* retained in memory; unreadable ledgers block payment */ }
     },
 
     // ───── Paying ─────
@@ -316,8 +324,17 @@ export default {
       const intent = this.intent;
       const walletId = this.sendingWalletId;
       if (!intent || !walletId || this.isSending) return;
-      if (!this.ledger.canPay(intent.invoiceId).ok) {
+      if (intent.expiresAt && intent.expiresAt <= Math.floor(Date.now() / 1000)) {
         this.closePaySheet();
+        this.$q.notify({ type: 'warning', message: this.$t('The price ran out. Choose the card again for a new price.'), timeout: 3500 });
+        return;
+      }
+      const verdict = this.ledger.canPay(intent.invoiceId);
+      if (this.paidInvoiceIds.includes(intent.invoiceId) || !verdict.ok) {
+        this.closePaySheet();
+        if (verdict.reason === PAY_BLOCK.UNAVAILABLE) {
+          this.$q.notify({ type: 'negative', message: this.$t("Couldn't prepare this payment. Please try again."), timeout: 3500 });
+        }
         return;
       }
 
@@ -327,12 +344,25 @@ export default {
       // Recorded before the invoice reaches the wallet: from here on this
       // invoice is never handed to a wallet again unless it is known to
       // have failed.
-      this.ledger.mark(intent.invoiceId, PAY_STATE.ATTEMPTED, { walletId, amountSats: intent.amountSats });
+      try {
+        this.ledger.mark(intent.invoiceId, PAY_STATE.ATTEMPTED, { walletId, amountSats: intent.amountSats });
+      } catch {
+        this.isSending = false;
+        this.$refs.paySheet?.resetSlide();
+        this.$q.notify({ type: 'negative', message: this.$t("Couldn't prepare this payment. Please try again."), timeout: 3500 });
+        return;
+      }
 
       try {
-        await payBitrefillInvoice(this.walletStore, walletId, intent.invoice, { amountSats: intent.amountSats });
+        await payBitrefillInvoice(this.walletStore, walletId, intent.invoice, { amountSats: intent.amountSats, expiresAt: intent.expiresAt });
         this.finishPaid(intent);
       } catch (error) {
+        if (error?.code === BITREFILL_PRICE_EXPIRED && !this.paidInvoiceIds.includes(intent.invoiceId)) {
+          try { this.ledger.mark(intent.invoiceId, PAY_STATE.FAILED); } catch { /* original attempt stays blocked */ }
+          this.closePaySheet();
+          this.$q.notify({ type: 'warning', message: this.$t('The price ran out. Choose the card again for a new price.'), timeout: 3500 });
+          return;
+        }
         // A wallet can report failure on a payment that landed: give the
         // widget a moment to say it saw the money before calling it failed.
         if (await this.waitForWidgetPaid(intent.invoiceId)) {
@@ -341,7 +371,9 @@ export default {
         }
         const unknown = error?.code === NWC_ERROR.UNCONFIRMED;
         // An unknown outcome keeps the invoice blocked; a refusal frees it.
-        if (!unknown) this.ledger.mark(intent.invoiceId, PAY_STATE.FAILED);
+        if (!unknown) {
+          try { this.ledger.mark(intent.invoiceId, PAY_STATE.FAILED); } catch { /* original attempted entry remains blocked */ }
+        }
         this.isSending = false;
         if (unknown) haptics.warning();
         else haptics.error();
@@ -358,7 +390,8 @@ export default {
     },
 
     finishPaid(intent) {
-      this.ledger.mark(intent.invoiceId, PAY_STATE.PAID);
+      if (!this.paidInvoiceIds.includes(intent.invoiceId)) this.paidInvoiceIds.push(intent.invoiceId);
+      try { this.ledger.mark(intent.invoiceId, PAY_STATE.PAID); } catch { /* original attempted entry remains blocked */ }
       this.isSending = false;
       this.isComplete = true;
       haptics.success();
@@ -395,6 +428,7 @@ export default {
       this.emailSheetOpen = true;
     },
     async onEmailSave(email) {
+      if (this.emailBusy) return;
       this.emailBusy = true;
       try {
         await saveEmail(email);
@@ -411,11 +445,13 @@ export default {
       }
     },
     onEmailSkip() {
+      if (this.emailBusy) return;
       markEmailAsked();
       this.emailSheetOpen = false;
       if (!this.widgetSrc) this.loadWidget();
     },
     onEmailRemove() {
+      if (this.emailBusy) return;
       clearEmail();
       this.savedEmail = '';
       this.emailSheetOpen = false;
