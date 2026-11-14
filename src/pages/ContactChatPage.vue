@@ -45,7 +45,7 @@
       </div>
     </div>
 
-    <div v-else class="chat-workspace" :style="viewportStyle">
+    <div v-else class="chat-workspace" :style="viewportStyle" @keydown.esc="onEmojiEscape">
     <div class="chat">
       <ChatHeader
         ref="header"
@@ -670,7 +670,8 @@ export default {
       this.emojiMode = 'react'
     },
     closeEmojiPicker() {
-      this.emojiFocusTarget = this.emojiMode === 'react' ? this.emojiReactionId : 'compose'
+      this.emojiFocusTarget = this.emojiMode === 'react' ? this.emojiReactionId
+        : this.$refs.composer?.hasInputFocus?.() ? 'compose-input' : 'compose'
       this.emojiMode = null
       this.emojiReactionId = null
     },
@@ -678,7 +679,14 @@ export default {
       const target = this.emojiFocusTarget
       this.emojiFocusTarget = null
       if (target === 'compose') this.$refs.composer?.focusEmojiButton?.()
+      else if (target === 'compose-input') this.$refs.composer?.focus?.()
       else if (target) this.$refs.thread?.focusMessage?.(target)
+    },
+    onEmojiEscape(event) {
+      if (!this.emojiMode || this.$q.screen.width < 1024) return
+      event.stopPropagation()
+      event.preventDefault()
+      this.closeEmojiPicker()
     },
     onEmoji(emoji) {
       if (this.blocked || this.paymentsOnly) return
@@ -686,7 +694,7 @@ export default {
         const id = this.emojiReactionId
         this.closeEmojiPicker()
         if (id && !this.unknown) this.onReact({ id, emoji })
-      } else if (this.emojiMode === 'compose') this.$refs.composer?.insertEmoji(emoji)
+      } else if (this.emojiMode === 'compose') this.$refs.composer?.insertEmoji(emoji, { focus: this.$q.screen.width >= 1024 })
     },
 
     async onRetry({ id }) {

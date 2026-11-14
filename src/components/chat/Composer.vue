@@ -36,31 +36,33 @@
     </div>
 
     <div class="composer__row">
-      <button ref="emojiButton" type="button" class="composer__icon-btn" :disabled="disabled"
-        :aria-label="$t('Choose emoji')" :aria-expanded="emojiOpen" aria-controls="chat-emoji-panel"
-        @click="$emit('emoji')">
-        <Icon icon="tabler:mood-smile" width="23" height="23" />
-      </button>
-      <textarea
-        ref="input"
-        class="composer__input"
-        rows="1"
-        enterkeyhint="send"
-        autocomplete="off"
-        autocapitalize="sentences"
-        :value="modelValue"
-        :placeholder="$t('Message')"
-        :aria-label="$t('Message')"
-        :aria-invalid="invalid ? 'true' : undefined"
-        :aria-describedby="showCounter ? counterId : undefined"
-        :disabled="disabled"
-        @input="onInput"
-        @select="rememberSelection"
-        @keyup="rememberSelection"
-        @click="rememberSelection"
-        @blur="rememberSelection"
-        @keydown.enter="onEnter"
-      />
+      <div class="composer__field" :class="{ 'composer__field--invalid': invalid, 'composer__field--disabled': disabled }">
+        <textarea
+          ref="input"
+          class="composer__input"
+          rows="1"
+          enterkeyhint="send"
+          autocomplete="off"
+          autocapitalize="sentences"
+          :value="modelValue"
+          :placeholder="$t('Message')"
+          :aria-label="$t('Message')"
+          :aria-invalid="invalid ? 'true' : undefined"
+          :aria-describedby="showCounter ? counterId : undefined"
+          :disabled="disabled"
+          @input="onInput"
+          @select="rememberSelection"
+          @keyup="rememberSelection"
+          @click="rememberSelection"
+          @blur="rememberSelection"
+          @keydown.enter="onEnter"
+        />
+        <button ref="emojiButton" type="button" class="composer__icon-btn composer__emoji" :disabled="disabled"
+          :aria-label="$t('Choose emoji')" :aria-expanded="emojiOpen" :aria-controls="emojiOpen ? 'chat-emoji-panel' : undefined"
+          :title="$t('Choose emoji')" @click="$emit('emoji')">
+          <Icon icon="tabler:mood-smile" width="22" height="22" />
+        </button>
+      </div>
       <button
         type="button"
         class="composer__send"
@@ -133,7 +135,7 @@ export default {
     rememberSelection(event) {
       this.selection = { start: event.target.selectionStart, end: event.target.selectionEnd }
     },
-    insertEmoji(char) {
+    insertEmoji(char, { focus = false } = {}) {
       if (this.disabled) return
       const text = this.modelValue
       const start = Math.min(this.selection?.start ?? text.length, text.length)
@@ -141,11 +143,15 @@ export default {
       this.$emit('update:modelValue', text.slice(0, start) + char + text.slice(end))
       const caret = start + char.length
       this.selection = { start: caret, end: caret }
-      this.$nextTick(() => this.$refs.input?.setSelectionRange(caret, caret))
+      this.$nextTick(() => {
+        if (focus) this.$refs.input?.focus({ preventScroll: true })
+        this.$refs.input?.setSelectionRange(caret, caret)
+      })
     },
     focusEmojiButton() { this.$refs.emojiButton?.focus({ preventScroll: true }) },
+    hasInputFocus() { return typeof document !== 'undefined' && document.activeElement === this.$refs.input },
     focus() {
-      this.$refs.input?.focus?.()
+      this.$refs.input?.focus?.({ preventScroll: true })
     },
     submit() {
       if (this.canSend) this.$emit('send')
@@ -224,20 +230,41 @@ export default {
 
 .composer__row { display: flex; align-items: flex-end; gap: 8px; }
 
+.composer__field {
+  display: flex;
+  align-items: flex-end;
+  flex: 1;
+  min-width: 0;
+  min-height: 48px;
+  padding: 1px 3px 1px 0;
+  border: 1px solid var(--border-card);
+  border-radius: 24px;
+  background: var(--bg-input);
+}
+.composer__field:focus-within { border-color: var(--chat-focus); box-shadow: 0 0 0 1px var(--chat-focus); }
+.composer__field--invalid { border-color: var(--chat-danger); }
+.composer__field--invalid:focus-within { box-shadow: 0 0 0 1px var(--chat-danger); }
+.composer__field--disabled { opacity: .6; }
+.composer__emoji { align-self: flex-end; }
+.composer__emoji:hover:not(:disabled) { color: var(--text-primary); background: var(--bg-card); }
+.composer__emoji[aria-expanded='true'] { color: var(--brand-accent-text); background: var(--brand-accent-soft); }
+.composer__field .composer__emoji:focus-visible { outline-offset: -3px; }
+.composer__icon-btn:disabled { cursor: default; }
+
 .composer__input {
   flex: 1;
   min-width: 0;
   min-height: 44px;
-  /* Five lines, then it scrolls: (11 + 11) padding + 2 border + 5 x 22 line. */
+  /* Five lines, then it scrolls. The shared field paints the border. */
   max-height: 134px;
   box-sizing: border-box;
-  padding: 11px 16px;
-  border: 1px solid var(--border-card);
+  padding: 11px 8px 11px 14px;
+  border: 0;
   border-radius: 22px;
   line-height: 22px;
   resize: none;
   overflow-y: auto;
-  background: var(--bg-input);
+  background: transparent;
   color: var(--text-primary);
   font-family: inherit;
   /* 16px: below this iOS zooms the page on focus. */
@@ -245,8 +272,6 @@ export default {
   outline: none;
 }
 .composer__input::placeholder { color: var(--text-muted); }
-.composer__input:focus-visible { border-color: var(--chat-focus); box-shadow: 0 0 0 2px var(--chat-focus); }
-.composer__input[aria-invalid='true'] { border-color: var(--chat-danger); }
 
 .composer__send {
   flex: 0 0 auto;

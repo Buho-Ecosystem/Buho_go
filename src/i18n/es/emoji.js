@@ -1,4 +1,6 @@
 export default {
+  "Add reaction": "Añadir reacción",
+  "Change reaction": "Cambiar reacción",
   "Emoji": "Emojis",
   "Choose emoji": "Elegir emoji",
   "Close emoji picker": "Cerrar selector de emojis",

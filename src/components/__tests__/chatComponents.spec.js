@@ -310,6 +310,13 @@ test('header: the second line may wrap to two lines, the name stays on one', () 
 test('bubble: strangers get no reactions, but may see existing ones', async () => {
   const html = await render(MessageBubble, { text: 'Hi', canReact: false, reactions: [{ emoji: '👍', count: 1, mine: false }] })
   assert.match(html, /bubble__reaction"[^>]*disabled/)
+  assert.doesNotMatch(html, /bubble__react-button|bubble__add-reaction/)
+})
+
+test('bubble: own reaction offers to change it, and existing reactions have a direct add action', async () => {
+  const html = await render(MessageBubble, { text: 'Hi', reactions: [{ emoji: '❤️', count: 1, mine: true }] })
+  assert.match(html, /aria-label="❤️ 1 reaction, Change reaction"/)
+  assert.match(html, /aria-label="Add reaction"/)
 })
 
 test('bubble: long press opens the menu for touch, never for a mouse, and scrolling cancels it', () => {
