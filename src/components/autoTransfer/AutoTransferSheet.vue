@@ -23,9 +23,9 @@
       <!-- ── The rule ─────────────────────────────────────────────── -->
       <template v-if="view === 'rule'">
         <header class="iform-sheet-top">
-          <button type="button" class="at-bar-action" @click="close">{{ $t('Cancel') }}</button>
+          <button type="button" class="sheet-nav-icon" :aria-label="$t('Cancel')" @click="close"><Icon icon="tabler:x" width="20" height="20" /></button>
           <div class="iform-sheet-title">{{ title }}</div>
-          <span class="at-bar-action at-bar-action--ghost" aria-hidden="true">{{ $t('Cancel') }}</span>
+          <span class="sheet-nav-icon at-bar-action--ghost" aria-hidden="true" />
         </header>
         <div class="iform-sheet-scroll">
           <div class="iform-body">
@@ -624,18 +624,6 @@ export default {
 .at-sheet {
   pointer-events: all;
   height: min(760px, calc(100dvh - var(--safe-top, 0px) - 10px));
-}
-.at-bar-action {
-  flex-shrink: 0;
-  min-width: 64px;
-  min-height: 40px;
-  padding: 0 6px;
-  border: 0;
-  background: none;
-  color: var(--brand-accent-text);
-  font: 600 15px 'Manrope', sans-serif;
-  text-align: left;
-  cursor: pointer;
 }
 .at-bar-action--ghost { visibility: hidden; }
 .at-seclabel { margin: 18px 4px 8px; }

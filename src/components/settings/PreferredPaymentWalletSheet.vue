@@ -2,7 +2,7 @@
   <q-dialog v-model="open" position="bottom" :aria-labelledby="titleId">
     <q-card class="payment-wallet-sheet">
       <header class="form-sheet-header payment-wallet-header">
-        <button type="button" class="form-sheet-cancel" @click="open = false">{{ $t('Cancel') }}</button>
+        <button type="button" class="sheet-nav-icon" :aria-label="$t('Cancel')" @click="open = false"><Icon icon="tabler:x" width="20" height="20" /></button>
         <h2 :id="titleId" class="form-sheet-title">{{ $t('Default wallet') }}</h2>
         <span class="header-spacer" aria-hidden="true" />
       </header>
@@ -116,7 +116,7 @@ export default {
 .payment-wallet-sheet { pointer-events: all; width: 100%; max-width: 520px; max-height: min(92dvh, calc(100dvh - var(--safe-top, 0px) - 8px)); display: flex; flex-direction: column; border-radius: var(--radius-xl) var(--radius-xl) 0 0; background: var(--bg-card); color: var(--text-primary); border-top: 1px solid var(--border-card); }
 .payment-wallet-header { flex-shrink: 0; padding-top: 14px; grid-template-columns: auto minmax(0, 1fr) 44px; gap: 12px; }
 .form-sheet-title { font-size: 1.0625rem; overflow-wrap: anywhere; }
-.form-sheet-cancel, .form-sheet-primary { font-size: 1rem; }
+.form-sheet-primary { font-size: 1rem; }
 .payment-wallet-body { min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 12px 20px 22px; }
 .payment-wallet-intro, .payment-wallet-note, .payment-wallet-warning { font: 400 .8125rem/1.8 'Manrope', sans-serif; color: var(--text-secondary); margin: 4px 0 20px; overflow-wrap: anywhere; }
 .payment-wallet-note { font-size: .75rem; margin: 16px 2px 0; }
@@ -143,7 +143,7 @@ input:checked ~ .payment-wallet-check :deep(svg) { opacity: 1; }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 @media (max-width: 360px) {
   .payment-wallet-header { grid-template-columns: minmax(0, 1fr); gap: 4px; }
-  .payment-wallet-header .form-sheet-cancel { grid-row: 1; }
+  .payment-wallet-header .sheet-nav-icon { grid-row: 1; }
   .payment-wallet-header .form-sheet-title { grid-row: 2; }
   .payment-wallet-header .header-spacer { display: none; }
 }

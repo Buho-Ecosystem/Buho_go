@@ -323,26 +323,25 @@ const sheetProps = (over = {}) => ({
 })
 const sheetDirectives = ['touch-swipe']
 
-test('the sheet shows "Pay with" above the commit control for a send with a choice', async () => {
-  const html = await render(ConfirmSheet, sheetProps(), { directives: sheetDirectives })
-  assert.match(html, /class="pay-with"/)
-  const field = html.indexOf('class="pay-with"')
-  assert.ok(field > html.indexOf('class="stage stage-compose"'), 'inside the scroll region')
-  assert.ok(field < html.indexOf('cta-row confirm-cta'), 'above the pinned commit control')
+test('every shared send review shows the compact wallet choice in the header only', async () => {
+  for (const contextual of [false, true]) {
+    const html = await render(ConfirmSheet, sheetProps({ contextual }), { directives: sheetDirectives })
+    assert.match(html, /class="payment-wallet-trigger pay-with-field"/)
+    assert.match(html, /aria-label="Pay with Business"/)
+    const field = html.indexOf('class="payment-wallet-trigger pay-with-field"')
+    assert.ok(field < html.indexOf('class="stage stage-compose"'), 'wallet choice is in the header')
+    assert.doesNotMatch(html, /class="pay-with"/, 'no second selector below the recipient')
+    assert.match(html, /<h2[^>]*>Send<\/h2>/)
+  }
 })
 
-test('the sheet shows no field for a single wallet, for redeem / charge, or without wallets', async () => {
-  for (const over of [
-    { payingWallets: [WALLETS[0]] },
-    { payingWallets: [] },
-    { verb: 'redeem' },
-    { verb: 'charge' },
-  ]) {
-    const html = await render(ConfirmSheet, sheetProps(over), { directives: sheetDirectives })
-    assert.doesNotMatch(html, /class="pay-with"/, JSON.stringify(over))
+test('single-wallet sends retain their wallet identity; incoming card flows keep their original header', async () => {
+  const single = await render(ConfirmSheet, sheetProps({ payingWallets: [WALLETS[0]] }), { directives: sheetDirectives })
+  assert.match(single, /class="payment-wallet-trigger pay-with-field"/)
+  for (const verb of ['redeem', 'charge']) {
+    const html = await render(ConfirmSheet, sheetProps({ verb }), { directives: sheetDirectives })
+    assert.doesNotMatch(html, /payment-wallet-trigger/)
   }
-  const html = await render(ConfirmSheet, { modelValue: true, payment: sheetProps().payment }, { directives: sheetDirectives })
-  assert.doesNotMatch(html, /class="pay-with"/, 'default props: the field is opt-in')
 })
 
 test('a wallet that cannot pay disables the commit control and its hint shows in the existing banner', async () => {
@@ -352,18 +351,18 @@ test('a wallet that cannot pay disables the commit control and its hint shows in
   }), { directives: sheetDirectives })
   assert.match(blocked, /wallet-hint/)
   assert.match(blocked, /Lightning is temporarily unavailable on Arkade/)
-  assert.match(blocked, /class="primary-cta"[^>]*disabled/)
+  assert.match(blocked, /choose-wallet-cta/, 'an unavailable source offers the same wallet chooser for every send')
   const open = await render(ConfirmSheet, sheetProps(), { directives: sheetDirectives })
   assert.doesNotMatch(open, /class="primary-cta"[^>]*disabled/)
   assert.doesNotMatch(open, /wallet-hint/)
 })
 
-test('the fee row writes amounts as settings does, and a limit as "Up to"', () => {
+test('the fee row writes known amounts as settings does and never exposes a spending cap', () => {
   const row = (feeEstimate, useBip177Format = true) => ConfirmSheet.computed.feeRowValueText.call({ payment: { feeEstimate }, useBip177Format, $t: t })
   assert.equal(row({ sats: 1234 }), `₿ ${n(1234)}`)
   assert.equal(row({ sats: 1234 }, false), `${n(1234)} sats`)
-  assert.equal(row({ sats: 25, isLimit: true }), 'Up to ₿ 25')
-  assert.equal(row({ sats: 25, isLimit: true }, false), 'Up to 25 sats')
+  assert.equal(row({ sats: 25, isLimit: true }), '')
+  assert.equal(row({ sats: 25, isLimit: true }, false), '')
   assert.equal(row({ sats: 0 }), 'Free')
   assert.equal(row({ sats: 0, label: 'Free · instant' }), 'Free · instant')
 })
@@ -395,7 +394,7 @@ test('preparation shows known recipient and amount, placeholders, status and a d
   })
   assert.match(html, /Alice/)
   assert.match(html, /value="1000"/)
-  assert.match(html, />Cancel<\/button>/)
+  assert.match(html, /class="top-btn send-back-btn sheet-nav-icon"[^>]*aria-label="Cancel"/)
   assert.match(html, /payment-preparation-details/)
   assert.match(html, /Getting ready to pay…/)
   assert.match(html, /class="primary-cta"[^>]*disabled/)
@@ -403,7 +402,7 @@ test('preparation shows known recipient and amount, placeholders, status and a d
   assert.doesNotMatch(html, /wallet-preference-prompt/)
 })
 
-test('a failed preparation keeps the draft and exposes an inline retry with Cancel', async () => {
+test('a failed preparation keeps the draft and exposes an inline retry with Back', async () => {
   const html = await render(ConfirmSheet, sheetProps({
     contextual: true, preparationError: 'Could not get payment details. Try again.',
     payment: { recipient: { name: 'Alice' }, amount: { mode: 'free' } },
@@ -412,7 +411,7 @@ test('a failed preparation keeps the draft and exposes an inline retry with Canc
   assert.match(html, /preparation-error[^>]*role="status"/)
   assert.match(html, /Could not get payment details. Try again./)
   assert.match(html, /preparation-retry/)
-  assert.match(html, />Cancel<\/button>/)
+  assert.match(html, /class="top-btn send-back-btn sheet-nav-icon"[^>]*aria-label="Cancel"/)
 })
 
 test('resolving or retrying preparation preserves a free amount; a fixed invoice owns its amount', () => {
@@ -452,7 +451,7 @@ test('the contextual chooser uses the same sheet and has a separate explicit app
   const html = await render(ConfirmSheet, sheetProps({ contextual: true, preferredWalletId: 'biz' }), {
     directives: sheetDirectives, data: { walletPickerOpen: true, walletDraftId: 'personal' },
   })
-  assert.match(html, />Back<\/button>/)
+  assert.match(html, /class="top-btn send-back-btn sheet-nav-icon"[^>]*aria-label="Back"/)
   assert.match(html, /role="radiogroup"/)
   assert.match(html, /data-wallet-id="personal" tabindex="0"[^>]*aria-checked="true"/)
   assert.match(html, /payment-wallet-apply[^>]*>Use Personal/)
@@ -522,11 +521,12 @@ test('a newly mounted open sheet initializes its amount and cancellation listene
   const calls = []
   ConfirmSheet.mounted.call({
     show: true,
+    startViewportTracking() { calls.push('viewport') },
     resetForFreshOpen() { calls.push('amount') },
     loadFiatRates() { calls.push('rates') },
     listenForBack(open) { calls.push(['back', open]) },
   })
-  assert.deepEqual(calls, ['amount', 'rates', ['back', true]])
+  assert.deepEqual(calls, ['viewport', 'amount', 'rates', ['back', true]])
 })
 
 test('resolved terms initialize the request note and payment-again payout default', () => {
@@ -582,4 +582,158 @@ test('known fixed amount is visible on the first preparing frame', () => {
   assert.equal(vm.displayAmount, '2100')
   assert.equal(vm.currentCurrency, 'sats')
   assert.deepEqual(emitted, [['amount-changed', 2100]])
+})
+
+test('payment details are a dedicated child view with exact destination and useful metadata', async () => {
+  const address = 'spark1' + '0123456789abcdef'.repeat(8)
+  const payment = {
+    recipient: { name: 'Spark payment', addressType: 'spark', address },
+    amount: { mode: 'free' }, description: 'A long provider description belongs in details.',
+    details: { typeLabel: 'Spark payment', networkLabel: 'Bitcoin', address, description: 'Lunch', metadata: [{ label: 'Expires', value: 'Tomorrow' }] },
+  }
+  const main = await render(ConfirmSheet, sheetProps({ payment }), { directives: sheetDirectives })
+  assert.match(main, /aria-label="Payment details"/)
+  assert.doesNotMatch(main, /class="payment-details-view"/)
+  assert.doesNotMatch(main, new RegExp(address))
+  assert.doesNotMatch(main, /A long provider description belongs in details/)
+  const details = await render(ConfirmSheet, sheetProps({ payment }), {
+    directives: sheetDirectives, data: { detailsOpen: true, displayAmount: '751', comment: 'My note' },
+  })
+  assert.match(details, /class="stage payment-details-view"/)
+  assert.ok(details.includes(address), 'exact destination is available for verification and copy')
+  assert.match(details, /Network<\/dt><dd>Bitcoin/)
+  assert.match(details, /Description<\/dt><dd>Lunch/)
+  assert.match(details, /Expires<\/dt><dd>Tomorrow/)
+  assert.match(details, /payment-details-copy/)
+  assert.match(details, /class="stage stage-compose" style="display:none;"/)
+  assert.match(details, /value="751"/, 'the compose draft stays mounted')
+})
+
+test('details Back restores the review without changing amount, currency, comment or wallet', () => {
+  const vm = {
+    detailsOpen: true, walletPickerOpen: false, displayAmount: '751', currentCurrency: 'usd', comment: 'My note', sendingWalletId: 'alby',
+    closePaymentDetails: ConfirmSheet.methods.closePaymentDetails,
+    $nextTick() {}, $emit: () => assert.fail('Back from details never submits or cancels'),
+  }
+  ConfirmSheet.methods.onTopAction.call(vm)
+  assert.equal(vm.detailsOpen, false)
+  assert.deepEqual([vm.displayAmount, vm.currentCurrency, vm.comment, vm.sendingWalletId], ['751', 'usd', 'My note', 'alby'])
+  assert.equal(ConfirmSheet.computed.canSubmit.call({ walletCanPay: true, isAmountAcceptable: true, commitGate: true, detailsOpen: true }), false)
+})
+
+test('ordinary scanned sends and contextual sends open the same wallet chooser without changing drafts', () => {
+  for (const contextual of [false, true]) {
+    const vm = {
+      verb: 'send', contextual, sendingWalletId: 'biz', displayAmount: '900', comment: 'Coffee', currentCurrency: 'sats',
+      $nextTick() {},
+    }
+    ConfirmSheet.methods.openWalletPicker.call(vm)
+    assert.equal(vm.walletPickerOpen, true)
+    assert.equal(vm.walletDraftId, 'biz')
+    assert.deepEqual([vm.displayAmount, vm.comment, vm.currentCurrency], ['900', 'Coffee', 'sats'])
+  }
+})
+
+test('only known fees produce a total; unknown fees stay explicit without invented numbers', async () => {
+  for (const feeEstimate of [{ sats: 42, isGuess: true }, { sats: 42, isEstimated: true }, { sats: 42, isLimit: true }]) {
+    assert.equal(ConfirmSheet.computed.feeRowVisible.call({ payment: { feeEstimate } }), false)
+    assert.equal(ConfirmSheet.computed.feeRowValueText.call({ payment: { feeEstimate } }), '')
+  }
+  const known = await render(ConfirmSheet, sheetProps({ payment: { ...sheetProps().payment, feeEstimate: { sats: 12 } } }), { directives: sheetDirectives })
+  assert.match(known, /payment-total-row/)
+  assert.match(known, new RegExp(`₿ ${n(1012)}`))
+  const unknown = await render(ConfirmSheet, sheetProps({ payment: { ...sheetProps().payment, feeNotice: 'Fee calculated when sending.' } }), { directives: sheetDirectives })
+  assert.match(unknown, /payment-fee-notice[^>]*role="status"/)
+  assert.match(unknown, /Fee calculated when sending/)
+  assert.doesNotMatch(unknown, /payment-total-row/)
+})
+
+test('malformed numeric fees never appear as a price or a total', () => {
+  for (const sats of [NaN, Infinity, -1, 1.5, Number.MAX_SAFE_INTEGER + 1]) {
+    const vm = { payment: { feeEstimate: { sats } } }
+    assert.equal(ConfirmSheet.computed.feeRowVisible.call(vm), false)
+    assert.equal(ConfirmSheet.computed.feeRowValueText.call(vm), '')
+  }
+})
+
+test('the visual viewport owns the keyboard inset without applying a second inset on pinch zoom', () => {
+  const vm = {}
+  globalThis.window = { innerHeight: 844, visualViewport: { height: 460, offsetTop: 0, scale: 1 } }
+  try {
+    ConfirmSheet.methods.syncVisualViewport.call(vm)
+    assert.deepEqual([vm.visualViewportHeight, vm.visualViewportBottom], [460, 384])
+    assert.deepEqual(ConfirmSheet.computed.sendViewportStyle.call({ ...vm, verb: 'send' }), {
+      '--payment-viewport-height': '460px', '--payment-viewport-bottom': '384px',
+    })
+    globalThis.window.visualViewport.scale = 2
+    ConfirmSheet.methods.syncVisualViewport.call(vm)
+    assert.deepEqual([vm.visualViewportHeight, vm.visualViewportBottom], [null, 0])
+    assert.equal(ConfirmSheet.computed.sendViewportStyle.call({ ...vm, verb: 'send' }), undefined)
+  } finally { delete globalThis.window }
+})
+
+test('viewport resize listeners are removed with the payment sheet', () => {
+  const listeners = new Set()
+  const viewport = { height: 844, scale: 1, addEventListener(type, callback) { listeners.add(`${type}:${callback}`) }, removeEventListener(type, callback) { listeners.delete(`${type}:${callback}`) } }
+  globalThis.window = { innerHeight: 844, visualViewport: viewport, addEventListener() {}, removeEventListener() {} }
+  const vm = { verb: 'send', syncVisualViewport: ConfirmSheet.methods.syncVisualViewport }
+  try {
+    ConfirmSheet.methods.startViewportTracking.call(vm)
+    assert.equal(listeners.size, 2)
+    ConfirmSheet.methods.stopViewportTracking.call(vm)
+    assert.equal(listeners.size, 0)
+  } finally { delete globalThis.window }
+})
+
+test('wallet chooser keeps known balances beside restriction reasons without inventing unknown balances', () => {
+  const vm = { useBip177Format: true }
+  assert.equal(ConfirmSheet.methods.walletPickerBalance.call(vm, { ...WALLETS[0], usable: false }), `₿ ${n(1200)}`)
+  assert.equal(ConfirmSheet.methods.walletPickerBalance.call(vm, { ...WALLETS[0], connectionFailed: true }), `₿ ${n(1200)}`)
+  assert.equal(ConfirmSheet.methods.walletPickerBalanceOutdated.call(vm, { ...WALLETS[0], connectionFailed: true }), true)
+  assert.equal(ConfirmSheet.methods.walletPickerBalance.call(vm, { id: 'unknown', usable: false }), null)
+})
+
+test('an in-flight SDK fee quote blocks confirmation until its result is reviewable', async () => {
+  const vm = { walletCanPay: true, isAmountAcceptable: true, commitGate: true, payment: { feeEstimate: { isEstimating: true } } }
+  assert.equal(ConfirmSheet.computed.canSubmit.call(vm), false)
+  vm.payment.feeEstimate = { sats: 7, isEstimating: false }
+  assert.equal(ConfirmSheet.computed.canSubmit.call(vm), true)
+  vm.payment = { feeNotice: 'Fee calculated when sending.' }
+  assert.equal(ConfirmSheet.computed.canSubmit.call(vm), true, 'a settled unknown fee retains the existing payment path')
+  const html = await render(ConfirmSheet, sheetProps({ payment: { ...sheetProps().payment, feeEstimate: { isEstimating: true } } }), { directives: sheetDirectives })
+  assert.match(html, /class="primary-cta"[^>]*disabled/)
+})
+
+test('root dismiss uses Cancel and x; child return uses Back and chevron', async () => {
+  const main = await render(ConfirmSheet, sheetProps(), { directives: sheetDirectives })
+  assert.match(main, /class="top-btn send-back-btn sheet-nav-icon"[^>]*aria-label="Cancel"/)
+  assert.match(main, /data-icon="tabler:x"/)
+  for (const data of [{ walletPickerOpen: true, walletDraftId: 'biz' }, { detailsOpen: true }]) {
+    const child = await render(ConfirmSheet, sheetProps(), { directives: sheetDirectives, data })
+    assert.match(child, /class="top-btn send-back-btn sheet-nav-icon"[^>]*aria-label="Back"/)
+    assert.match(child, /data-icon="tabler:chevron-left"/)
+  }
+})
+
+test('anonymous method icons stay secondary to the generic recipient name', async () => {
+  for (const [network, mark, icon] of [['Spark', 'spark', null], ['Arkade', 'arkade', null], ['Lightning', null, 'tabler:bolt'], ['Bitcoin', null, 'tabler:currency-bitcoin']]) {
+    const payment = { recipient: { name: 'Bitcoin payment', addressType: 'invoice', address: 'payment-request' }, amount: { mode: 'fixed', fixedSats: 1000 }, details: { networkLabel: network } }
+    const html = await render(ConfirmSheet, sheetProps({ payment, payingWallets: [] }), { directives: sheetDirectives })
+    assert.match(html, /class="recipient-name">Bitcoin payment/)
+    if (mark) assert.match(html, new RegExp(`data-mark="${mark}"`))
+    else assert.match(html, new RegExp(`data-icon="${icon}"`))
+    assert.doesNotMatch(html, /class="recipient-method-cue"/, 'anonymous payment uses the existing icon area')
+  }
+})
+
+test('a known contact keeps its avatar and name with a small method cue', async () => {
+  const payment = {
+    recipient: { name: 'Alice', addressType: 'spark', address: 'spark-request', matchedContact: true, logoUrl: 'https://example.com/alice.jpg' },
+    amount: { mode: 'fixed', fixedSats: 1000 }, details: { networkLabel: 'Spark', typeLabel: 'Spark payment' },
+  }
+  const html = await render(ConfirmSheet, sheetProps({ payment, payingWallets: [] }), { directives: sheetDirectives })
+  assert.match(html, /src="https:\/\/example.com\/alice.jpg" alt="Alice"/)
+  assert.match(html, /class="recipient-name">Alice/)
+  assert.match(html, /recipient-method-cue[^>]*role="img"[^>]*aria-label="Spark payment"/)
+  assert.match(html, /data-mark="spark"/)
 })

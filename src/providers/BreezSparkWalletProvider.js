@@ -34,7 +34,7 @@ import { Invoice } from '@getalby/lightning-tools';
 import { fetchPayRequest, lightningAddressUrl, requestPayInvoice } from '../utils/lnurlPay.js';
 import { fiatRatesService } from '../utils/fiatRates.js';
 import { isBitcoinAddress } from '../utils/addressUtils.js';
-import { identityPublicKeyFromSparkAddress } from '../utils/sparkPayment.js';
+import { decodeSparkDestination, identityPublicKeyFromSparkAddress } from '../utils/sparkPayment.js';
 import { registerRandomLightningAddress } from '../utils/lightningAddressNames.js';
 import * as breezSdk from '../services/breezSdk.js';
 import {
@@ -1173,6 +1173,29 @@ export class BreezSparkWalletProvider extends WalletProvider {
     }
   }
 
+  /** Quote only the fee the SDK prepared, never an assumed native fee. */
+  async getSparkSendFeeEstimate(input, amountSats = null) {
+    this._ensureConnected();
+    const request = String(input || '').trim();
+    const destination = decodeSparkDestination(request);
+    if (destination.kind === 'token_invoice') throw new Error('Spark token payments are not supported');
+    const fixedInvoice = destination.kind === 'sats_invoice' && destination.amountSats > 0;
+    if (!fixedInvoice && (!Number.isSafeInteger(amountSats) || amountSats <= 0)) {
+      throw new Error('Amount must be a positive whole number of sats');
+    }
+    const prep = await this._prepareSend(request, { amountSats: fixedInvoice ? null : amountSats });
+    const method = prep?.paymentMethod;
+    const expectedType = destination.kind === 'address' ? 'sparkAddress' : 'sparkInvoice';
+    if (method?.type !== expectedType) throw new Error('No Spark fee quote available');
+    const rawFee = method.fee;
+    const numeric = typeof rawFee === 'number' || typeof rawFee === 'bigint'
+      || (typeof rawFee === 'string' && /^\d+$/.test(rawFee));
+    const fee = numeric ? Number(rawFee) : NaN;
+    if (!Number.isSafeInteger(fee) || fee < 0) throw new Error('No Spark fee quote available');
+    this._assertZeroSparkFee(method);
+    return { estimatedFeeSats: fee, isEstimated: false, request };
+  }
+
   async transferToSparkAddress(sparkAddress, amount) {
     this._ensureConnected();
 
@@ -1807,7 +1830,17 @@ export class BreezSparkWalletProvider extends WalletProvider {
 
     const pm = prep?.paymentMethod;
     const feeQuote = pm?.type === 'bitcoinAddress' ? pm.feeQuote : null;
-    if (!feeQuote) {
+    // The legacy display mapper tolerates absent legs by filling zeros.
+    // A live SDK quote must be complete before showing it or retaining it
+    // as a withdrawal quote that can authorize the eventual send.
+    const validFee = value => Number.isSafeInteger(value) && value >= 0;
+    const validQuote = feeQuote && typeof feeQuote.id === 'string' && feeQuote.id.trim().length > 0
+      && ['speedSlow', 'speedMedium', 'speedFast'].every(speed => {
+        const leg = feeQuote[speed];
+        return leg && validFee(leg.userFeeSat) && validFee(leg.l1BroadcastFeeSat)
+          && Number.isSafeInteger(leg.userFeeSat + leg.l1BroadcastFeeSat);
+      });
+    if (!validQuote) {
       throw new Error('No withdrawal fee quote available right now. Please try again.');
     }
 

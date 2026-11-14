@@ -1,3 +1,4 @@
+import paymentSheetReview from './paymentSheetReview.js';
 import paymentPreparation from './paymentPreparation.js';
 import requests from './requests.js';
 import profilePayment from './profilePayment.js';
@@ -16,6 +17,7 @@ import payRequests from './payRequests.js';
 import refundAddress from './refundAddress.js';
 import tillCodes from './tillCodes.js';
 export default {
+  ...paymentSheetReview,
   ...paymentPreparation,
   ...requests,
   ...profilePayment,

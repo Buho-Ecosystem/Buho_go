@@ -591,7 +591,7 @@ try {
         await assertFits(alice.page, `unknown sender ${label}`);
         await snap(alice, `11-unknown-sender-${label}`);
         await alice.page.locator('.request-btn--outline:not([aria-disabled])').click();
-        await alice.page.locator('.pay-with').waitFor();
+        await alice.page.locator('.pay-with-field').waitFor();
         await assertFits(alice.page, `confirm sheet ${label}`);
         await snap(alice, `12-confirm-sheet-${label}`);
         await navigate(alice.page, '/address-book');

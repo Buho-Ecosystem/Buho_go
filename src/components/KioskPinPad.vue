@@ -12,15 +12,16 @@
     <div v-else class="pin-error-spacer" />
 
     <div class="pin-keypad">
-      <button v-for="btn in keypadButtons" :key="btn" class="pin-key"
+      <button v-for="btn in keypadButtons" :key="btn" type="button" class="pin-key"
         :class="{
           'pin-key-num': btn !== 'delete' && btn !== '',
           'pin-key-action': btn === 'delete',
           'pin-key-empty': btn === ''
         }"
         :disabled="btn === '' || disabled"
+        :aria-label="btn === 'delete' ? $t('Delete') : btn"
         @click="handleKey(btn)">
-        <q-icon v-if="btn === 'delete'" name="backspace" size="22px" />
+        <Icon v-if="btn === 'delete'" icon="tabler:backspace" width="22" height="22" />
         <span v-else>{{ btn }}</span>
       </button>
     </div>
@@ -29,9 +30,11 @@
 
 <script>
 import { defineComponent, ref, watch } from 'vue'
+import { Icon } from '@iconify/vue'
 
 export default defineComponent({
   name: 'KioskPinPad',
+  components: { Icon },
   props: {
     title: { type: String, default: 'Enter PIN' },
     subtitle: { type: String, default: '' },

@@ -444,7 +444,7 @@ try {
       assert.equal(await page.locator('.payment-wallet-sheet .form-sheet-title').innerText(), ({ 'en-US': 'Default wallet', de: 'Standard-Wallet', es: 'Cartera predeterminada' })[locale]);
       await assertFits(`${locale} Settings picker, 320px, 200% root text`);
       await snapshot(`10-large-settings-${locale}`);
-      await page.locator('.payment-wallet-sheet .form-sheet-cancel').click();
+      await page.locator('.payment-wallet-sheet .sheet-nav-icon').click();
       await navigate('/address-book');
       await resetPrompt(); await finishPaymentForDefaultPopup();
       await assertFits(`${locale} default-wallet popup, 320px, 200% root text`);

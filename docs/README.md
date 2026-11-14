@@ -23,7 +23,7 @@ How each feature works and the rules that keep it right, written for developers 
 | [Kiosk Mode](KIOSK_MODE.md) | The register for staff: its settings page, the PIN, and leaving the register |
 | [Merchant verification](BRANTA.md) | Showing the business you pay, and stopping a changed code (Branta) |
 | [Shared payment requests](SHARED_REQUESTS.md) | Requests from Receive and repayments from receipts |
-| [Contact payment preparation](PAYMENT_PREPARATION.md) | Immediate contextual payment review, cancellation ownership and preferred payment wallets |
+| [Payment review and default wallet](PAYMENT_PREPARATION.md) | Shared payment sheet, header wallet choice, optional details, immediate contact preparation and default payment wallets |
 | [Contact chat](CONTACT_CHAT.md) | Money requests and encrypted messages between contacts |
 | [LUD-08 fast withdrawal](LUD08_FAST_WITHDRAW.md) | Redeeming withdraw links in one step |
 | [Pay again](PAY_AGAIN.md) | Paying a past recipient again from History or the receipt |

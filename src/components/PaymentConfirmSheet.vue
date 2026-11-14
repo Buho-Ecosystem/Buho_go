@@ -37,33 +37,47 @@
     :position="isRedeem && !$q.screen.lt.sm ? 'standard' : 'bottom'"
     :persistent="!isRedeem || isSending || isComplete"
     :aria-labelledby="titleId"
-    :class="$q.dark.isActive ? 'dialog_dark' : 'dialog_light'"
+    :class="[$q.dark.isActive ? 'dialog_dark' : 'dialog_light', { 'payment-send-dialog': verb === 'send' }]"
+    :style="sendViewportStyle"
     @escape-key="onEscape"
   >
-    <q-card ref="card" class="sheet-card" :class="[{ 'sheet-card--redeem': isRedeem, 'sheet-card--contextual': contextual }, $q.dark.isActive ? 'sheet-card-dark' : 'sheet-card-light']">
+    <q-card ref="card" class="sheet-card" :class="[{ 'sheet-card--redeem': isRedeem, 'sheet-card--contextual': contextual, 'sheet-card--send': verb === 'send' }, $q.dark.isActive ? 'sheet-card-dark' : 'sheet-card-light']">
       <!-- Swipe down anywhere on the grab bar or the header to close. -->
       <div class="sheet-top" v-touch-swipe.mouse.down="onHeaderSwipe">
         <div v-if="!isRedeem" class="grab-bar"></div>
 
-        <header class="top-row">
+        <header class="top-row" :class="{ 'top-row--send': verb === 'send', 'top-row--child': walletPickerOpen || detailsOpen || takeover }">
           <button
-            v-if="contextual"
+            v-if="verb === 'send'"
             type="button"
-            class="top-btn contextual-top-btn"
-            :disabled="isSending || isComplete"
+            class="top-btn send-back-btn sheet-nav-icon"
+            :disabled="isSending || isComplete || (takeover && takeoverLocked)"
+            :aria-label="$t(walletPickerOpen || detailsOpen ? 'Back' : 'Cancel')"
             @click="onTopAction"
-          >{{ $t(walletPickerOpen ? 'Back' : 'Cancel') }}</button>
-          <q-btn v-else flat round dense @click="onTopAction" class="top-btn glass-back-btn" :disable="takeover ? takeoverLocked : isRedeem && (isSending || isComplete)" :aria-label="$t(isRedeem ? 'Cancel' : 'Back')">
-            <svg v-if="isRedeem" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="m6 6 12 12M6 18 18 6" /></svg>
-            <Icon v-else icon="tabler:chevron-left" width="20" height="20" />
+          ><Icon :icon="walletPickerOpen || detailsOpen ? 'tabler:chevron-left' : 'tabler:x'" width="22" height="22" /></button>
+          <q-btn v-else flat round dense @click="onTopAction" class="top-btn glass-back-btn" :disable="takeover ? takeoverLocked : isRedeem && (isSending || isComplete)" :aria-label="$t('Cancel')">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="m6 6 12 12M6 18 18 6" /></svg>
           </q-btn>
-          <h2 class="top-title" :id="titleId">{{ walletPickerOpen ? $t('Pay with') : takeover ? takeoverTitle : topTitle }}</h2>
-          <!-- A verified business: its seal, opening Branta's page. -->
-          <div class="top-action">
-            <BrantaVerifiedBadge
-              v-if="recipientVerification && !takeover && !walletPickerOpen"
-              :verify-url="recipientVerification.verifyUrl"
-            />
+          <h2 class="top-title" :id="titleId">{{ walletPickerOpen ? $t('Pay with') : detailsOpen ? $t('Payment details') : takeover ? takeoverTitle : topTitle }}</h2>
+          <button
+            v-if="verb === 'send' && !walletPickerOpen && !detailsOpen && !takeover"
+            ref="walletTrigger"
+            type="button"
+            class="payment-wallet-trigger pay-with-field"
+            :disabled="preparationActive || isSending || isComplete || !payingWallets.length"
+            :aria-label="selectedPayingWallet ? $t('Pay with {name}', { name: selectedPayingWallet.name || $t('Wallet') }) : $t('Choose wallet')"
+            @click="openWalletPicker"
+          >
+            <span class="payment-wallet-mark" :class="{ 'payment-wallet-mark--arkade': selectedPayingWallet?.type === 'arkade' }" aria-hidden="true">
+              <WalletBrandMark v-if="selectedPayingWallet" :type="selectedPayingWallet.type" :size="18" />
+              <Icon v-else icon="tabler:wallet" width="18" height="18" />
+            </span>
+            <span>{{ headerWalletName }}</span>
+            <q-spinner v-if="preparationActive && !preparationFailed" size="13px" />
+            <Icon v-else icon="tabler:chevron-down" width="13" height="13" />
+          </button>
+          <div v-else class="top-action">
+            <BrantaVerifiedBadge v-if="verb !== 'send' && recipientVerification && !takeover" :verify-url="recipientVerification.verifyUrl" />
           </div>
         </header>
       </div>
@@ -88,7 +102,7 @@
         <slot name="takeover" />
       </div>
 
-      <div v-if="!isReading" v-show="!takeover && !walletPickerOpen" class="stage stage-compose" :class="{ 'stage--refund': !!refundRow }">
+      <div v-if="!isReading" v-show="!takeover && !walletPickerOpen && !detailsOpen" class="stage stage-compose" :class="{ 'stage--refund': !!refundRow }">
           <!-- Amount leads: the recipient was chosen on the screen before,
                so the number is this screen's job and takes the stage.
                Locked, range, or free depending on mode. -->
@@ -157,6 +171,9 @@
               class="recipient-avatar"
               :class="{
                 'has-logo': showRecipientLogo,
+                'recipient-avatar--type': verb === 'send' && !recipientUsesIdentity,
+                'recipient-avatar--brand': verb === 'send' && !recipientUsesIdentity && !!recipientMethodMark,
+                'recipient-avatar--arkade': verb === 'send' && !recipientUsesIdentity && recipientMethodMark === 'arkade',
                 'recipient-avatar--silhouette': isSilhouetteRecipient || isServiceRecipient
               }"
               :style="showRecipientLogo
@@ -175,6 +192,8 @@
                 @error="logoFailed = true"
               />
               <!-- A service keeps its storefront fallback if its logo fails. -->
+              <WalletBrandMark v-else-if="verb === 'send' && !recipientUsesIdentity && recipientMethodMark" :type="recipientMethodMark" :size="24" />
+              <Icon v-else-if="verb === 'send' && !recipientUsesIdentity" :icon="recipientTypeIcon" width="24" height="24" />
               <Icon v-else-if="isServiceRecipient" icon="tabler:building-store" width="24" height="24" />
               <svg
                 v-else-if="isSilhouetteRecipient"
@@ -194,6 +213,10 @@
             <div v-else class="recipient-meta">
               <div class="recipient-name-row">
                 <div class="recipient-name">{{ recipientName }}</div>
+                <span v-if="verb === 'send' && recipientUsesIdentity" class="recipient-method-cue" :class="{ 'recipient-method-cue--brand': !!recipientMethodMark, 'recipient-method-cue--arkade': recipientMethodMark === 'arkade' }" role="img" :aria-label="paymentDetails.typeLabel || $t('Payment details')">
+                  <WalletBrandMark v-if="recipientMethodMark" :type="recipientMethodMark" :size="12" />
+                  <Icon v-else :icon="recipientTypeIcon" width="13" height="13" />
+                </span>
                 <!-- Countdown chip — present for time-bounded merchant QRs.
                      Flips to an urgent red state once the remaining time
                      drops below the supplied threshold (defaults to 20s),
@@ -207,25 +230,25 @@
                   <span>{{ formattedCountdown }}</span>
                 </div>
               </div>
-              <div v-if="recipientAddressLabel" class="recipient-addr">{{ recipientAddressLabel }}</div>
+              <div v-if="recipientAddressLabel" class="recipient-addr">{{ compactRecipientIdentifier }}</div>
             </div>
             <button
-              v-if="addressNeedsDetails && !recipientChecking"
+              v-if="!recipientChecking && (verb === 'send' || addressNeedsDetails)"
               type="button"
               class="recipient-info"
-              :aria-label="$t('Details')"
-              :aria-expanded="showAddress ? 'true' : 'false'"
-              @click="showAddress = !showAddress"
+              :aria-label="$t('Payment details')"
+              @click="openPaymentDetails"
             >
               <Icon icon="tabler:info-circle" width="17" height="17" />
             </button>
+            <BrantaVerifiedBadge v-if="verb === 'send' && recipientVerification" :verify-url="recipientVerification.verifyUrl" />
           </section>
 
           <!-- The labeled detail panel behind the info glyph, with copy
                for manual verification against another surface. Only for
                destinations the cell's line cannot show whole. -->
           <transition name="fade-collapse">
-            <div v-if="showAddress && addressNeedsDetails" class="recipient-details">
+            <div v-if="verb !== 'send' && showAddress && addressNeedsDetails" class="recipient-details">
               <div class="recipient-details-copy">
                 <div class="recipient-details-label">{{ $t('Address') }}</div>
                 <div class="recipient-details-value">{{ recipientAddress }}</div>
@@ -244,19 +267,19 @@
           <!-- Rare context keeps its quiet lines under the cell: the
                fiat-payout delivery hint, the hosting-wallet name, the
                invoice's own description, the redeem rail override. -->
-          <div v-if="recipientLnService" class="ln-service-hint">
+          <div v-if="verb !== 'send' && recipientLnService" class="ln-service-hint">
             <Icon icon="tabler:device-mobile" width="13" height="13" />
             <span>{{ recipientLnService.hint }}</span>
           </div>
-          <div v-else-if="recipientWalletBrand" class="wallet-brand-hint">
+          <div v-else-if="verb !== 'send' && recipientWalletBrand" class="wallet-brand-hint">
             <Icon icon="tabler:wallet" width="13" height="13" />
             <span>{{ recipientWalletBrand }}</span>
           </div>
-          <div v-if="payment?.description" class="payment-desc">
+          <div v-if="verb !== 'send' && payment?.description" class="payment-desc">
             <Icon icon="tabler:file-description" width="14" height="14" />
             <span>{{ payment.description }}</span>
           </div>
-          <div v-if="payment?.recipient?.viaOverride" class="amount-confirm-via">
+          <div v-if="verb !== 'send' && payment?.recipient?.viaOverride" class="amount-confirm-via">
             {{ payment.recipient.viaOverride }}
           </div>
 
@@ -315,32 +338,11 @@
             :aria-busy="preparing ? 'true' : null"
             :aria-label="$t('Getting ready to pay')"
           >
-            <div class="preparation-wallet">
-              <Icon icon="tabler:wallet" width="23" height="23" />
-              <span>
-                <small>{{ $t('Pay with') }}</small>
-                <i class="preparation-placeholder preparation-placeholder--name" aria-hidden="true"></i>
-                <i class="preparation-placeholder preparation-placeholder--balance" aria-hidden="true"></i>
-              </span>
-            </div>
             <div class="preparation-fee">
               <span>{{ $t('Network fee') }}</span>
               <i class="preparation-placeholder preparation-placeholder--fee" aria-hidden="true"></i>
             </div>
           </div>
-
-          <!-- Choosing the wallet determines the payment's balance and fee gates. -->
-          <PayWithField
-            v-if="!preparationActive && showPayWith"
-            ref="payWithField"
-            :wallets="payingWallets"
-            :model-value="sendingWalletId"
-            :disabled="isSending || isComplete"
-            :navigate="contextual"
-            :preferred-wallet-id="preferredWalletId"
-            @open="openWalletPicker"
-            @update:model-value="onPayWithPick"
-          />
 
           <!-- Facts about the payment, read as one group: the network fee and,
                when the service asks for one, the refund address.
@@ -348,11 +350,12 @@
                static label (e.g. "Free (Spark transfer)"). NWC/LNbits
                can't pre-estimate fees, so the parent simply omits this
                object on those paths and we show nothing. -->
+          <p v-if="!preparationActive && payment?.feeNotice" class="payment-fee-notice" role="status">{{ payment.feeNotice }}</p>
           <div v-if="!preparationActive && (feeRowVisible || refundRow)" class="fact-group">
             <div v-if="feeRowVisible" class="fee-row" :class="{ 'fee-row--joined': !!refundRow }">
-              <span class="fee-row-label">{{ $t('Network fee') }}</span>
+              <span class="fee-row-label">{{ payment?.feeEstimate?.title || $t('Network fee') }}</span>
               <span class="fee-row-value">
-                <q-spinner-dots v-if="payment?.feeEstimate?.isEstimating" size="14px" />
+                <q-spinner-dots v-if="payment?.feeEstimate?.isEstimating" class="fee-pending" size="14px" />
                 <span v-else>{{ feeRowValueText }}</span>
               </span>
             </div>
@@ -363,8 +366,22 @@
               :disabled="isSending || isComplete"
               @pick="onRefundPick"
             />
+            <div v-if="totalRowVisible" class="payment-total-row"><span>{{ $t('Total') }}</span><strong>{{ totalRowValueText }}</strong></div>
           </div>
 
+        </div>
+
+        <div v-if="detailsOpen" class="stage payment-details-view" tabindex="-1" ref="detailsView">
+          <dl class="payment-details-list">
+            <div v-if="paymentDetails.typeLabel"><dt>{{ $t('Payment type') }}</dt><dd>{{ paymentDetails.typeLabel }}</dd></div>
+            <div v-if="paymentDetails.networkLabel"><dt>{{ $t('Network') }}</dt><dd>{{ paymentDetails.networkLabel }}</dd></div>
+            <div v-if="detailsAddress" class="payment-details-destination">
+              <dt>{{ paymentDetails.addressLabel || $t(payment?.recipient?.addressType === 'invoice' ? 'Payment request' : 'Address') }}<button type="button" class="payment-details-copy" :aria-label="$t('Copy')" @click="copyAddress"><Icon :icon="addressCopied ? 'tabler:check' : 'tabler:copy'" width="18" height="18" /></button></dt>
+              <dd class="payment-details-address">{{ detailsAddress }}</dd>
+            </div>
+            <div v-if="paymentDetails.description"><dt>{{ $t('Description') }}</dt><dd>{{ paymentDetails.description }}</dd></div>
+            <div v-for="(item, index) in detailsMetadata" :key="index"><dt>{{ item.label }}</dt><dd>{{ item.value }}</dd></div>
+          </dl>
         </div>
 
         <div v-if="walletPickerOpen" class="stage payment-wallet-picker">
@@ -392,7 +409,7 @@
                   <span v-if="wallet.id === preferredWalletId" class="payment-wallet-preferred">{{ $t('Default') }}</span>
                 </span>
                 <small>
-                  {{ walletPickerDetail(wallet) }}<template v-if="walletPickerBalance(wallet) !== null"> · <HiddenAmount>{{ walletPickerBalance(wallet) }}</HiddenAmount></template>
+                  {{ walletPickerDetail(wallet) }}<template v-if="walletPickerBalance(wallet) !== null"> · <HiddenAmount :class="{ 'balance-stale': walletPickerBalanceOutdated(wallet) }">{{ walletPickerBalance(wallet) }}</HiddenAmount></template>
                 </small>
               </span>
               <Icon
@@ -413,7 +430,7 @@
           </button>
         </div>
 
-        <div v-else-if="preparationActive" class="cta-row confirm-cta preparation-cta">
+        <div v-else-if="preparationActive && !detailsOpen" class="cta-row confirm-cta preparation-cta">
           <div v-if="preparationFailed" class="preparation-error" role="status">
             <Icon icon="tabler:alert-circle" width="17" height="17" />
             <span>
@@ -439,7 +456,7 @@
              the filling ProgressCta — trickle while in flight, then 100% +
              check on success — bridging cleanly into the confirmation screen
              with no separate confirm step and no blank in between. -->
-        <div v-else-if="!isReading" v-show="!takeover" class="cta-row confirm-cta">
+        <div v-else-if="!isReading" v-show="!takeover && !detailsOpen" class="cta-row confirm-cta">
             <transition name="cta-swap" mode="out-in">
               <ProgressCta
                 v-if="isSending || isComplete"
@@ -448,7 +465,7 @@
                 :done="isComplete"
                 :tall="requiresSlide"
               />
-              <button v-else-if="contextual && !walletCanPay && payingWallets.length" key="choose-wallet" type="button" class="primary-cta choose-wallet-cta" @click="openWalletPicker">{{ $t('Choose another wallet') }}</button>
+              <button v-else-if="verb === 'send' && !walletCanPay && payingWallets.length" key="choose-wallet" type="button" class="primary-cta choose-wallet-cta" @click="openWalletPicker">{{ $t('Choose another wallet') }}</button>
               <SlideToSend
                 v-else-if="requiresSlide"
                 key="slide"
@@ -476,7 +493,7 @@
             <div v-if="isSending && statusMessage && statusMessage !== sendingLabel" class="fee-footnote status-line">
               {{ statusMessage }}
             </div>
-            <div v-else-if="!isSending && !isComplete && !feeRowVisible && !hasExtras && verb === 'send'" class="fee-footnote">
+            <div v-else-if="!isSending && !isComplete && !feeRowVisible && !payment?.feeNotice && !hasExtras && verb === 'send'" class="fee-footnote">
               {{ $t('Network fees apply') }}
             </div>
         </div>
@@ -493,7 +510,6 @@ import { FIAT_SYMBOLS } from '../utils/fiatCurrencies.js'
 import SlideToSend from './SlideToSend.vue'
 import BrantaVerifiedBadge from './BrantaVerifiedBadge.vue'
 import ProgressCta from './ProgressCta.vue'
-import PayWithField from './PayWithField.vue'
 import WalletBrandMark from './WalletBrandMark.vue'
 import HiddenAmount from './HiddenAmount.vue'
 import { WALLET_TYPE_LABELS } from '../providers/WalletFactory'
@@ -508,7 +524,7 @@ const SLIDE_THRESHOLD_SATS = 10000
 
 export default {
   name: 'PaymentConfirmSheet',
-  components: { SlideToSend, BrantaVerifiedBadge, ProgressCta, PayWithField, WalletBrandMark, HiddenAmount, RefundAddressField, CardFace },
+  components: { SlideToSend, BrantaVerifiedBadge, ProgressCta, WalletBrandMark, HiddenAmount, RefundAddressField, CardFace },
   props: {
     modelValue: { type: Boolean, default: false },
     /**
@@ -593,14 +609,23 @@ export default {
       logoFailed: false,
       _copyTimer: null,
       walletPickerOpen: false,
+      detailsOpen: false,
       walletDraftId: null,
       amountEdited: false,
       denominationChanged: false,
-      commentEdited: false
+      commentEdited: false,
+      visualViewportHeight: null,
+      visualViewportBottom: 0
     }
   },
   computed: {
     titleId() { return `payment-confirm-title-${this.$.uid}` },
+    sendViewportStyle() {
+      return this.verb === 'send' && this.visualViewportHeight ? {
+        '--payment-viewport-height': `${this.visualViewportHeight}px`,
+        '--payment-viewport-bottom': `${this.visualViewportBottom}px`,
+      } : undefined
+    },
     ...mapState(useWalletStore, ['preferredFiatCurrency', 'denominationCurrency', 'useBip177Format']),
 
     show: {
@@ -614,13 +639,56 @@ export default {
     preparationActive() { return this.verb === 'send' && (this.preparing || !!this.preparationError) },
     preparationFailed() { return !this.preparing && !!this.preparationError },
     selectedPayingWallet() { return this.payingWallets.find(wallet => wallet.id === this.sendingWalletId) || null },
+    headerWalletName() {
+      if (this.selectedPayingWallet) return this.selectedPayingWallet.name || this.$t('Wallet')
+      return this.sendingWalletId ? this.$t('Wallet unavailable') : this.$t('Wallet')
+    },
     walletDraft() { return this.payingWallets.find(wallet => wallet.id === this.walletDraftId) || null },
     walletPickerTabId() {
       return this.walletSelectable(this.walletDraft) ? this.walletDraftId : this.payingWallets.find(wallet => this.walletSelectable(wallet))?.id
     },
-    showPayWith() {
-      return this.verb === 'send' && (this.payingWallets.length > 1
-        || (this.contextual && this.preferredWalletId && this.sendingWalletId === this.preferredWalletId && !this.selectedPayingWallet))
+    paymentDetails() {
+      const fallbackType = {
+        bitcoin: 'Bitcoin on-chain payment', spark: 'Spark payment', arkade: 'Arkade payment',
+        lightning: 'Lightning address', invoice: 'Lightning invoice', lnurl: 'LNURL payment',
+      }[this.payment?.recipient?.addressType]
+      return this.payment?.details || {
+        typeLabel: fallbackType ? this.$t(fallbackType) : '',
+        address: this.recipientAddress,
+        description: this.payment?.description || '',
+      }
+    },
+    detailsAddress() { return this.paymentDetails.address || this.recipientAddress },
+    detailsMetadata() {
+      const metadata = Array.isArray(this.paymentDetails.metadata) ? this.paymentDetails.metadata : [
+        ...(this.recipientLnService?.hint ? [{ label: this.$t('Details'), value: this.recipientLnService.hint }] : []),
+        ...(this.recipientWalletBrand ? [{ label: this.$t('Wallet'), value: this.recipientWalletBrand }] : []),
+      ]
+      return metadata.filter(item => item && typeof item.label === 'string' && item.label.trim()
+        && (typeof item.value === 'string' && item.value.trim() || typeof item.value === 'number' && Number.isFinite(item.value)))
+    },
+    compactRecipientIdentifier() {
+      const identifier = this.recipientAddressLabel
+      return identifier.length > 36 ? `${identifier.slice(0, 17)}…${identifier.slice(-12)}` : identifier
+    },
+    recipientUsesIdentity() {
+      const recipient = this.payment?.recipient
+      return !!(recipient?.matchedContact || recipient?.silhouette || recipient?.service || this.showRecipientLogo)
+    },
+    recipientMethod() {
+      const network = String(this.payment?.details?.networkLabel || '').toLowerCase()
+      if (network.includes('spark')) return 'spark'
+      if (network.includes('ark')) return 'arkade'
+      if (network.includes('lightning')) return 'lightning'
+      if (network.includes('bitcoin')) return 'bitcoin'
+      return this.payment?.recipient?.addressType || 'bitcoin'
+    },
+    recipientMethodMark() {
+      return ['spark', 'arkade'].includes(this.recipientMethod) ? this.recipientMethod : null
+    },
+    recipientTypeIcon() {
+      return ['lightning', 'invoice', 'lnurl'].includes(this.recipientMethod)
+        ? 'tabler:bolt' : 'tabler:currency-bitcoin'
     },
 
     // ───── Recipient ─────
@@ -670,6 +738,7 @@ export default {
     // stays one tap away behind the info button.
     recipientAddressLabel() {
       if (this.recipientVerification) return ''
+      if (this.verb === 'send' && !this.recipientLnService) return this.recipientAddress
       return this.payment?.recipient?.addressLabel || this.recipientAddress
     },
     isServiceRecipient() {
@@ -827,7 +896,8 @@ export default {
 
     canSubmit() {
       return this.walletCanPay && this.isAmountAcceptable && this.commitGate && !this.recipientChecking
-        && !this.payerBlocked && !this.refundHolds && !this.preparationActive && !this.walletPickerOpen
+        && !this.payerBlocked && !this.refundHolds && !this.preparationActive && !this.walletPickerOpen && !this.detailsOpen
+        && !this.payment?.feeEstimate?.isEstimating
     },
 
     // ───── Refunds to (LUD-18) ─────
@@ -942,6 +1012,8 @@ export default {
     feeRowVisible() {
       const fe = this.payment?.feeEstimate
       if (!fe) return false
+      if (fe.isGuess || fe.isEstimated || fe.guessed || fe.isLimit) return false
+      if (fe.sats != null && (!Number.isSafeInteger(fe.sats) || fe.sats < 0)) return false
       if (fe.isEstimating) return true
       if (fe.label) return true
       return typeof fe.sats === 'number'
@@ -950,13 +1022,21 @@ export default {
     feeRowValueText() {
       const fe = this.payment?.feeEstimate
       if (!fe) return ''
+      if (fe.isGuess || fe.isEstimated || fe.guessed || fe.isLimit) return ''
+      if (fe.sats != null && (!Number.isSafeInteger(fe.sats) || fe.sats < 0)) return ''
       if (fe.label) return fe.label
       if (typeof fe.sats !== 'number') return ''
       if (fe.sats === 0) return this.$t('Free')
       const amount = formatAmount(fe.sats, this.useBip177Format)
-      // A limit, not a quote: the most the payment may cost (Lightning
-      // addresses and links have no invoice to quote until after the slide).
-      return fe.isLimit ? this.$t('Up to {amount}', { amount }) : amount
+      return amount
+    },
+    totalRowVisible() {
+      const fee = this.payment?.feeEstimate
+      return this.verb === 'send' && this.feeRowVisible && !fee.isEstimating && !this.hasExtras
+        && Number.isSafeInteger(fee.sats) && fee.sats >= 0 && this.amountInSats > 0
+    },
+    totalRowValueText() {
+      return formatAmount(this.amountInSats + this.payment.feeEstimate.sats, this.useBip177Format)
     },
 
     requiresSlide() {
@@ -1039,8 +1119,7 @@ export default {
     topTitle() {
       if (this.isCard || this.isReading) return this.$t('Receive from card')
       if (this.verb === 'charge') return this.$t('Charge card')
-      if (this.contextual) return this.$t(this.amountMode === 'fixed' ? 'Pay request' : 'Send Bitcoin')
-      return this.isRedeem ? this.$t('Redeem from') : this.$t('Send to')
+      return this.isRedeem ? this.$t('Redeem from') : this.$t('Send')
     },
 
     confirmSendLabel() {
@@ -1084,7 +1163,7 @@ export default {
       if (v) {
         this.resetForFreshOpen()
         this.loadFiatRates()
-      } else this.walletPickerOpen = false
+      } else { this.walletPickerOpen = false; this.detailsOpen = false }
       this.listenForBack(v)
     },
     preparing(pending, wasPending) {
@@ -1111,6 +1190,7 @@ export default {
     }
   },
   mounted() {
+    this.startViewportTracking()
     // The contextual host can mount directly into its first visible payment.
     if (this.show) {
       this.resetForFreshOpen()
@@ -1120,8 +1200,47 @@ export default {
   },
   beforeUnmount() {
     this._stopBackListener?.()
+    this.stopViewportTracking()
   },
   methods: {
+    syncVisualViewport() {
+      const viewport = window.visualViewport
+      if (!viewport || Math.abs((viewport.scale || 1) - 1) > .01 || !Number.isFinite(viewport.height) || viewport.height <= 0) {
+        this.visualViewportHeight = null
+        this.visualViewportBottom = 0
+        return
+      }
+      this.visualViewportHeight = Math.round(viewport.height)
+      this.visualViewportBottom = Math.max(0, Math.round(window.innerHeight - (viewport.offsetTop || 0) - viewport.height))
+    },
+    startViewportTracking() {
+      if (this.verb !== 'send' || typeof window === 'undefined') return
+      this._viewportListener = () => this.syncVisualViewport()
+      window.visualViewport?.addEventListener('resize', this._viewportListener, { passive: true })
+      window.visualViewport?.addEventListener('scroll', this._viewportListener, { passive: true })
+      window.addEventListener('resize', this._viewportListener, { passive: true })
+      this.syncVisualViewport()
+    },
+    stopViewportTracking() {
+      if (!this._viewportListener || typeof window === 'undefined') return
+      window.visualViewport?.removeEventListener('resize', this._viewportListener)
+      window.visualViewport?.removeEventListener('scroll', this._viewportListener)
+      window.removeEventListener('resize', this._viewportListener)
+      this._viewportListener = null
+    },
+    openPaymentDetails() {
+      if (this.verb !== 'send') { this.showAddress = !this.showAddress; return }
+      if (this.isSending || this.isComplete) return
+      this.walletPickerOpen = false
+      this.detailsOpen = true
+      this.$nextTick(() => this.$refs.detailsView?.focus())
+    },
+
+    closePaymentDetails() {
+      this.detailsOpen = false
+      this.$nextTick(() => this.$refs.card?.$el.querySelector('.recipient-info')?.focus())
+    },
+
     async loadFiatRates() {
       try {
         await fiatRatesService.ensureRatesLoaded()
@@ -1133,9 +1252,10 @@ export default {
 
     /** From the detail panel: copy the raw destination for cross-checking. */
     async copyAddress() {
-      if (!this.recipientAddress) return
+      const address = this.detailsAddress || this.recipientAddress
+      if (!address) return
       try {
-        await navigator.clipboard.writeText(this.recipientAddress)
+        await navigator.clipboard.writeText(address)
         this.addressCopied = true
         if (this._copyTimer) clearTimeout(this._copyTimer)
         this._copyTimer = setTimeout(() => { this.addressCopied = false }, 1600)
@@ -1147,6 +1267,7 @@ export default {
 
     resetForFreshOpen() {
       this.walletPickerOpen = false
+      this.detailsOpen = false
       this.walletDraftId = null
       this.showAddress = false
       this.addressCopied = false
@@ -1228,13 +1349,17 @@ export default {
     },
 
     walletPickerBalance(wallet) {
-      if (!this.walletSelectable(wallet)) return null
       const balance = useWalletStore().getDisplayBalance(wallet.id)
       return balance?.known ? formatAmount(balance.balance, this.useBip177Format) : null
     },
+    walletPickerBalanceOutdated(wallet) {
+      const balance = useWalletStore().getDisplayBalance(wallet.id)
+      return wallet.connectionFailed || balance?.outdated || balance?.isCached
+    },
 
     openWalletPicker() {
-      if (!this.contextual || this.preparationActive || this.isSending || this.isComplete) return
+      if (this.verb !== 'send' || this.preparationActive || this.isSending || this.isComplete) return
+      this.detailsOpen = false
       this.walletDraftId = this.sendingWalletId
       this.walletPickerOpen = true
       this.$nextTick(() => this.$refs.card?.$el.querySelector('.payment-wallet-option[tabindex="0"]')?.focus())
@@ -1248,7 +1373,7 @@ export default {
     closeWalletPicker() {
       this.walletPickerOpen = false
       this.walletDraftId = null
-      this.$nextTick(() => this.$refs.payWithField?.focusField?.())
+      this.$nextTick(() => this.$refs.walletTrigger?.focus())
     },
 
     applyWalletDraft() {
@@ -1272,7 +1397,7 @@ export default {
     },
 
     onEscape() {
-      if (this.contextual && !this.isSending && !this.isComplete) this.onTopAction()
+      if (this.verb === 'send' && !this.isSending && !this.isComplete) this.onTopAction()
     },
 
     /** The person chose on the refund row; the parent owns the choice. */
@@ -1283,11 +1408,12 @@ export default {
 
     onTopAction() {
       if (this.walletPickerOpen) { this.closeWalletPicker(); return }
+      if (this.detailsOpen) { this.closePaymentDetails(); return }
       if (this.takeover) {
         if (!this.takeoverLocked) this.$emit('takeover-cancel')
         return
       }
-      if ((this.isRedeem || this.contextual) && (this.isSending || this.isComplete)) return
+      if (this.isSending || this.isComplete) return
       this.show = false
       if (!this.isRedeem) this.$emit('cancel')
     },
@@ -1430,6 +1556,7 @@ export default {
   overflow: hidden;
   font-family: 'Manrope', sans-serif;
   padding-bottom: max(1rem, var(--safe-bottom, 0px));
+  container-type: inline-size;
 }
 
 .sheet-card-dark { box-shadow: 0 -20px 60px rgba(0, 0, 0, 0.55); }
@@ -1437,6 +1564,10 @@ export default {
   border-top: 1px solid var(--border-card);
   box-shadow: 0 -20px 50px rgba(40, 34, 20, 0.12);
 }
+/* Mobile keyboards can shrink only the visual viewport. Keep both the
+   bottom-anchored dialog and its scroll region above that keyboard. */
+:global(.payment-send-dialog .q-dialog__inner--bottom) { bottom: var(--payment-viewport-bottom, 0px); }
+.sheet-card--send { max-height: calc(var(--payment-viewport-height, 94vh) - var(--safe-top, 0px) - 8px); }
 
 .grab-bar {
   width: 36px;
@@ -1480,39 +1611,91 @@ export default {
   justify-content: flex-end;
 }
 
-/* Contact payments keep the source screen underneath one sheet. Its middle
-   scrolls independently so Cancel and the primary action remain reachable. */
-.sheet-card--contextual .top-row { gap: 8px; }
-.contextual-top-btn {
-  min-width: 44px;
-  min-height: 44px;
-  padding: 6px 4px;
+.top-row--send {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  gap: 6px;
+  padding: 6px 12px 10px;
+}
+.top-row--send.top-row--child { grid-template-columns: 44px minmax(0, 1fr) 44px; }
+.send-back-btn {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
   border: 0;
+  border-radius: 50%;
   background: transparent;
-  color: var(--brand-accent-text);
-  font: inherit;
-  font-size: .875rem;
+  color: var(--text-primary);
   cursor: pointer;
 }
-.contextual-top-btn:disabled { opacity: .5; cursor: default; }
-.sheet-card--contextual .top-title { font-size: .9375rem; overflow-wrap: anywhere; }
-.sheet-card--contextual .top-action { flex: 0 0 24px; width: 24px; }
-.sheet-card--contextual .primary-cta { height: auto; min-height: 48px; padding: 12px; font-size: 1rem; overflow-wrap: anywhere; }
-.sheet-card--contextual .recipient-name { font-size: 1rem; white-space: normal; overflow-wrap: anywhere; }
-.sheet-card--contextual .recipient-addr { font-size: .8125rem; }
-.sheet-card--contextual .amount-helper,
-.sheet-card--contextual .wallet-hint,
-.sheet-card--contextual .fee-footnote { font-size: .8125rem; }
-.sheet-card--contextual .unit-pill { min-height: 44px; font-size: .8125rem; }
-.sheet-card--contextual button:focus-visible { outline: 2px solid var(--brand-accent-text); outline-offset: 3px; }
+.send-back-btn:disabled { opacity: .5; cursor: default; }
+.payment-wallet-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  padding: 6px;
+  border: 0;
+  border-radius: 12px;
+  background: var(--bg-input);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: .875rem;
+  line-height: 1.35;
+  cursor: pointer;
+}
+.payment-wallet-trigger > :not(span) { flex-shrink: 0; }
+.payment-wallet-trigger span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.payment-wallet-mark { display: grid; place-items: center; flex: 0 0 26px; width: 26px; height: 26px; border-radius: 8px; background: #202020; color: #fff; }
+.payment-wallet-mark--arkade { background: var(--arkade-tile, #202020); }
+.payment-wallet-trigger:disabled { cursor: default; opacity: .65; }
+@container (max-width: 18rem) {
+  .top-row--send:not(.top-row--child) { grid-template-columns: 44px minmax(0, 1fr) 44px; }
+  .top-row--send:not(.top-row--child) .payment-wallet-trigger { grid-column: 1 / -1; justify-self: end; width: auto; max-width: 100%; }
+  .top-row--send:not(.top-row--child) .payment-wallet-trigger > span:not(.payment-wallet-mark) { white-space: normal; overflow-wrap: anywhere; }
+}
+.sheet-card--send .recipient-info { flex: 0 0 44px; width: 44px; min-height: 44px; }
+.sheet-card--send .stage-compose > * { flex-shrink: 0; }
+.sheet-card--send .amount-stage { padding: 18px 0 12px; }
+.sheet-card--send .note-input { font-size: 1rem; min-width: 0; }
+.sheet-card--send .recipient-avatar--type { background: var(--brand-accent-soft) !important; color: var(--brand-accent-text); box-shadow: none; text-shadow: none; }
+.sheet-card--send .recipient-avatar--brand { background: #202020 !important; }
+.sheet-card--send .recipient-avatar--arkade { background: var(--arkade-tile, #202020) !important; }
+.recipient-method-cue { display: grid; place-items: center; flex: 0 0 20px; width: 20px; height: 20px; border-radius: 6px; color: var(--text-secondary); }
+.recipient-method-cue--brand { background: #202020; }
+.recipient-method-cue--arkade { background: var(--arkade-tile, #202020); }
+.payment-details-view { padding-top: 12px; }
+.payment-details-list { margin: 0; }
+.payment-details-list > div { padding: 15px 0; border-bottom: 1px solid var(--border-card); }
+.payment-details-list dt { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 0; font-size: .8125rem; line-height: 1.5; color: var(--text-secondary); }
+.payment-details-list dd { margin: 6px 0 0; font-size: .9375rem; line-height: 1.65; color: var(--text-primary); overflow-wrap: anywhere; white-space: pre-wrap; }
+.payment-details-list .payment-details-address { font-family: ui-monospace, SFMono-Regular, monospace; font-size: .8125rem; user-select: text; }
+.payment-details-copy { display: grid; place-items: center; width: 44px; height: 44px; padding: 0; flex-shrink: 0; border: 0; border-radius: 50%; background: var(--bg-input); color: var(--text-primary); cursor: pointer; }
+.payment-fee-notice { margin: 0; padding: 5px 2px; font-size: .8125rem; line-height: 1.5; color: var(--text-secondary); }
+.payment-total-row { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 13px 12px; border-top: 1px solid var(--border-card); color: var(--text-primary); font-size: .875rem; }
+.payment-total-row strong { font-weight: 650; text-align: right; }
+
+/* Send reviews keep the source screen underneath one sheet. Their middle
+   scrolls independently so Cancel and the primary action remain reachable. */
+.sheet-card--send .top-row { gap: 8px; }
+.sheet-card--send .top-title { font-size: .9375rem; overflow-wrap: anywhere; }
+.sheet-card--send .top-action { flex: 0 0 24px; width: 24px; }
+.sheet-card--send .primary-cta { height: auto; min-height: 48px; padding: 12px; font-size: 1rem; overflow-wrap: anywhere; }
+.sheet-card--send .recipient-name { font-size: 1rem; white-space: normal; overflow-wrap: anywhere; }
+.sheet-card--send .recipient-addr { font-size: .8125rem; }
+.sheet-card--send .amount-helper,
+.sheet-card--send .wallet-hint,
+.sheet-card--send .fee-footnote { font-size: .8125rem; }
+.sheet-card--send .unit-pill { min-height: 44px; font-size: .8125rem; }
+.sheet-card--send button:focus-visible { outline: 2px solid var(--brand-accent-text); outline-offset: 3px; }
 
 .payment-preparation-details { display: flex; flex-direction: column; gap: 12px; }
-.preparation-wallet { display: flex; align-items: center; gap: 12px; padding: 14px; border: 1px solid var(--border-card); border-radius: var(--radius-md); color: var(--text-secondary); }
-.preparation-wallet > span { flex: 1; min-width: 0; }
-.preparation-wallet small { display: block; margin-bottom: 8px; font-size: .75rem; }
 .preparation-placeholder { display: block; height: 10px; border-radius: 4px; background: var(--border-card); }
-.preparation-placeholder--name { width: 48%; height: 13px; }
-.preparation-placeholder--balance { width: 68%; margin-top: 8px; }
 .preparation-placeholder--fee { width: 46px; }
 .preparation-fee { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 2px; color: var(--text-secondary); font-size: .8125rem; }
 .preparation-status,
@@ -1560,6 +1743,9 @@ export default {
 @supports (height: 1dvh) {
   .sheet-card {
     max-height: min(94dvh, calc(100dvh - var(--safe-top, 0px) - 8px));
+  }
+  .sheet-card--send {
+    max-height: min(94dvh, calc(var(--payment-viewport-height, 100dvh) - var(--safe-top, 0px) - 8px));
   }
 }
 /* ─── Recipient ───

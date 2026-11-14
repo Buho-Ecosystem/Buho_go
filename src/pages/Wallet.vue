@@ -1073,7 +1073,7 @@ export default {
       const contact = this.addressBookStore.getEntryById(intent.contactId) || intent.contact;
       return {
         recipient: this.recipientFromContact(contact, {
-          fallbackName: intent.name || intent.address || this.$t('Send'),
+          fallbackName: intent.name || this.$t('Bitcoin payment'),
           fallbackColor: '#F59E0B', addressType: intent.addressType || 'lightning', address: intent.address || '',
         }),
         amount: intent.fixedAmount && intent.amountSats
@@ -1512,6 +1512,7 @@ export default {
     },
     canConfirmPayment() {
       if (!this.pendingPayment) return false;
+      if (this.isEstimatingFee) return false;
       // The sheet disables the slide for a wallet that cannot pay; the
       // pipeline refuses it too, so no stray event can send from one.
       if (this.sendingWalletBlock) return false;
@@ -1595,7 +1596,7 @@ export default {
         // the resolved address, not on how it arrived.
         const contact = this.addressBookStore.findContactByAddress(p.lightningAddress);
         recipient = this.recipientFromContact(contact, {
-          fallbackName: p.lightningAddress,
+          fallbackName: p.contactName || this.$t('Bitcoin payment'),
           fallbackColor: '#F59E0B',
           addressType: 'lightning',
           address: p.lightningAddress,
@@ -1729,6 +1730,8 @@ export default {
         });
       }
 
+      if (p.contactName && !recipient.matchedContact && !p.merchant) recipient.name = p.contactName;
+
       // ── Branta merchant verification (runBrantaVerification) ──
       // While the check runs, the row holds its place. A verified business
       // becomes the recipient, a saved contact's name included: the
@@ -1803,44 +1806,30 @@ export default {
         if ((!min || local >= min) && (!max || local <= max)) amount.defaultPayout = local;
       }
 
-      // ── Fee estimate ──────────────────────────────────────────
-      // Only Spark wallets expose pre-call fee data. NWC/LNbits omit the
-      // object entirely so the sheet renders nothing — better than
-      // showing an empty "—" row that implies missing information.
-      // The fee is the paying wallet's: "Pay with" can differ from the
-      // active wallet.
+      // A visible number comes from the provider's prepared payment. Fee
+      // guesses and execution caps remain internal; they are not quotes.
       let feeEstimate = null;
       const payerType = this.getSendingWalletType();
-      if (payerType === 'spark') {
-        if (p.sparkAddress) {
-          // Instant internal transfer — free. Named by outcome, not rail.
-          feeEstimate = { sats: 0, isEstimating: false, label: this.$t('Free · instant') };
-        } else if (this.isEstimatingFee) {
-          feeEstimate = { sats: null, isEstimating: true };
-        } else if (this.estimatedFee !== null && this.estimatedFee !== undefined) {
-          feeEstimate = { sats: this.estimatedFee, isEstimating: false };
-        } else if ((p.lightningAddress || p.lnurl) && p.type !== 'lnurl_withdraw') {
-          // No invoice to quote until after the slide: the most the route
-          // may cost, which the payment then holds to (sendSparkPayment).
-          const limit = unquotedFeeLimitSats(this.payingAmountSats);
-          if (limit > 0) feeEstimate = { sats: limit, isEstimating: false, isLimit: true };
-        }
-      } else if (payerType === 'arkade') {
-        if (p.arkadeAddress) {
-          // Instant internal transfer — free. Named by outcome, not rail.
-          feeEstimate = { sats: 0, isEstimating: false, label: this.$t('Free · instant') };
-        } else if (p.bitcoinAddress) {
-          feeEstimate = { sats: this.estimatedFee, isEstimating: this.isEstimatingFee };
-        } else {
-          // The swap layer charges a small fee, deducted automatically (no
-          // pre-call estimate). Plain-language note, no rail name, no number.
-          feeEstimate = { sats: null, isEstimating: false, label: this.$t('Includes a small network fee') };
-        }
+      const hasQuotedFee = !this.estimatedFeeIsGuess && Number.isFinite(this.estimatedFee) && this.estimatedFee >= 0;
+      const canQuote = (payerType === 'spark' && !p.bitcoinAddress)
+        || (payerType === 'arkade' && !!p.bitcoinAddress);
+      if (canQuote && this.isEstimatingFee) {
+        feeEstimate = { sats: null, isEstimating: true };
+      } else if (canQuote && hasQuotedFee) {
+        feeEstimate = {
+          sats: this.estimatedFee, isEstimating: false,
+          ...(payerType === 'spark' && p.sparkAddress && this.estimatedFee === 0
+            ? { label: this.$t('Free · instant') } : {}),
+        };
       }
+      const feeNotice = this.payingAmountSats > 0 && !feeEstimate && !p.bitcoinAddress
+        ? this.$t('Fee calculated when sending.') : '';
 
       return {
         recipient,
         amount,
+        details: this.paymentDetailsFor(p, recipient),
+        feeNotice,
         // On-chain sends always take the deliberate slide gesture — every
         // L1 transaction is irreversible, regardless of amount. So does a
         // payment made again: its amount was filled in, not typed.
@@ -2075,6 +2064,7 @@ export default {
     },
 
     sendSheetCommitGate() {
+      if (this.isEstimatingFee) return false;
       if (this.getSendingWalletType() === 'arkade' && this.pendingPayment?.bitcoinAddress) {
         return !!this.currentArkadeFeeQuote && !this.isEstimatingFee && !this.connectionNotice;
       }
@@ -2928,6 +2918,47 @@ export default {
      * avatar appears on the Send-to screen — same plumbing the
      * merchant QR flow uses.
      */
+    paymentDetailsFor(payment, recipient) {
+      const p = payment || {};
+      let typeLabel, networkLabel, address, addressLabel;
+      if (p.sparkInvoice || p.sparkAddress) {
+        typeLabel = this.$t(p.sparkInvoice ? 'Spark invoice' : 'Spark payment');
+        networkLabel = 'Spark';
+        address = p.sparkInvoice || p.sparkAddress;
+        addressLabel = this.$t(p.sparkInvoice ? 'Payment request' : 'Address');
+      } else if (p.arkadeAddress) {
+        typeLabel = this.$t('Arkade payment'); networkLabel = 'Arkade'; address = p.arkadeAddress;
+      } else if (p.bitcoinAddress) {
+        typeLabel = this.$t('Bitcoin on-chain payment'); networkLabel = 'Bitcoin'; address = p.bitcoinAddress;
+      } else if (p.lightningAddress) {
+        typeLabel = this.$t('Lightning address'); networkLabel = 'Lightning'; address = p.lightningAddress;
+      } else if (p.lnurl || p.type === 'lnurl' || p.type === 'lnurl_pay') {
+        typeLabel = this.$t('LNURL payment'); networkLabel = 'Lightning'; address = p.lnurl || p.data;
+        addressLabel = this.$t('Payment request');
+      } else {
+        typeLabel = this.$t('Lightning invoice'); networkLabel = 'Lightning'; address = p.invoice || p.data;
+        addressLabel = this.$t('Payment request');
+      }
+      const metadata = [];
+      if (recipient?.lnService?.hint) metadata.push({ label: this.$t('Details'), value: recipient.lnService.hint });
+      if (recipient?.walletBrand) metadata.push({ label: this.$t('Wallet'), value: recipient.walletBrand });
+      if (p.sparkInvoice && p.sparkAddress) metadata.push({ label: this.$t('Recipient address'), value: p.sparkAddress });
+      if (typeof p.rawInput === 'string' && /^bitcoin:/i.test(p.rawInput) && p.rawInput !== address) {
+        metadata.push({ label: this.$t('Payment request'), value: p.rawInput });
+      }
+      const expiresAt = p.sparkInvoiceExpiresAt || p.invoiceExpiresAt;
+      if (Number.isFinite(expiresAt) && expiresAt > 0) {
+        const locale = typeof this.$i18n?.locale === 'string' ? this.$i18n.locale : undefined;
+        metadata.push({ label: this.$t('Expires'), value: new Date(expiresAt).toLocaleString(locale) });
+      }
+      return {
+        typeLabel, networkLabel, address: typeof address === 'string' ? address : '',
+        addressLabel: addressLabel || this.$t('Address'),
+        description: p.description || p.defaultDescription || p.prefill?.note || '',
+        metadata,
+      };
+    },
+
     recipientFromContact(contact, fallback) {
       if (!contact) {
         return {
@@ -4825,7 +4856,8 @@ export default {
             ...paymentData,
             invoice: paymentData.data,
             amount: parsedInvoice.amount,
-            description: parsedInvoice.description
+            description: parsedInvoice.description,
+            invoiceExpiresAt: parsedInvoice.expiry * 1000,
           };
         } else if (paymentData.type === 'lnurl' && paymentData.data) {
           // LUD-04 (LNURL-auth) is identity, not payment. It uses the same
@@ -5747,6 +5779,7 @@ export default {
      * thumb so the user can try again without dismissing the sheet.
      */
     async onSendSheetConfirm({ amountSats, comment, payout = null }) {
+      if (this.isEstimatingFee) return;
       if (this.paymentOnly && (this.preparationState !== 'ready' || !this.isContextualAttemptCurrent() || !this.paymentSheetWalletCanPay || this.isSendingPayment)) return;
       // Acquire ownership synchronously, before an executor's first await.
       if (this.paymentOnly && this.paymentFlow.committed) return;
@@ -6064,7 +6097,7 @@ export default {
           });
         } catch (error) {
           // A changed fee must be reviewed before another attempt to send.
-          await this.updateFeeEstimate();
+          await this.updateFeeEstimate({ force: true });
           throw error;
         }
       }
@@ -6831,7 +6864,11 @@ export default {
       if (walletId === this.walletStore.activeWalletId && balance === this.activeCanonicalBalance) this.secondaryValue = value;
     },
 
-    async updateFeeEstimate() {
+    async updateFeeEstimate(options) {
+      // Implicit amount/metadata watchers must not replace the fee the
+      // person just approved while the provider is submitting the payment.
+      // A rejected Arkade fee explicitly requests a new quote for review.
+      if (this.isSendingPayment && options?.force !== true) return;
       // Reset fee state. Bumping the run number also orphans any estimate
       // still in flight for the previous payment or paying wallet: the last
       // call wins.
@@ -6897,47 +6934,37 @@ export default {
      * Only shows fees when SDK can provide actual estimate
      */
     async updateSparkFeeEstimate() {
-      // Spark-to-Spark transfers are free (no fee display needed)
-      if (this.pendingPayment.sparkAddress) {
+      const payment = this.pendingPayment;
+      const nativeRequest = payment.sparkInvoice || payment.sparkAddress;
+      const invoice = payment.invoice;
+      if (!nativeRequest && !invoice) return;
+      const amount = this.payingAmountSats;
+      // Amountless requests cannot have an accurate prepare before an amount.
+      if (!(amount > 0)) return;
+      const run = this._feeEstimateRun;
+      const walletId = this.getSendingWallet()?.id || null;
+      this.isEstimatingFee = true;
+      try {
+        const provider = await this.walletStore.ensureSparkConnected(walletId);
+        if (run !== this._feeEstimateRun) return;
+        const estimate = nativeRequest
+          ? await provider.getSparkSendFeeEstimate(nativeRequest, amount)
+          : await provider.getLightningSendFeeEstimate(invoice, amount);
+        if (run !== this._feeEstimateRun) return;
+        const fee = estimate?.estimatedFeeSats;
+        this.estimatedFee = typeof fee === 'number' && Number.isFinite(fee) && fee >= 0 ? fee : null;
+        this.estimatedFeeIsGuess = estimate?.isEstimated === true;
+      } catch (error) {
+        if (run !== this._feeEstimateRun) return;
         this.estimatedFee = null;
-        return;
-      }
-
-      // For Lightning invoices, get fee estimate from Spark SDK
-      if (this.pendingPayment.invoice) {
-        // Read before the first await: by the time the SDK answers, the sheet
-        // may show another payment or another paying wallet.
-        const run = this._feeEstimateRun;
-        const invoice = this.pendingPayment.invoice;
-        const walletId = this.getSendingWallet()?.id || null;
-        this.isEstimatingFee = true;
-        try {
-          const provider = await this.walletStore.ensureSparkConnected(walletId);
-          const estimate = await provider.getLightningSendFeeEstimate(invoice);
-          if (run !== this._feeEstimateRun) return;
-          this.estimatedFee = estimate.estimatedFeeSats;
-          this.estimatedFeeIsGuess = estimate.isEstimated === true;
-        } catch (error) {
-          if (run !== this._feeEstimateRun) return;
-          console.warn('Spark fee estimation failed:', error.message);
-          // No fallback - don't show estimated fee if SDK fails
-          this.estimatedFee = null;
-          // Nothing reached Spark: say why now rather than after the slide.
-          // The slide stays, so a connection that comes back can still pay.
-          const raw = error?.message || String(error);
-          if (classifyTransportFailure(raw) === 'offline') {
-            const kind = await diagnoseConnection();
-            if (run === this._feeEstimateRun) this.connectionNotice = unreachableReason(kind, raw, this.$t.bind(this));
-          }
-        } finally {
-          if (run === this._feeEstimateRun) this.isEstimatingFee = false;
+        const raw = error?.message || String(error);
+        if (classifyTransportFailure(raw) === 'offline') {
+          const kind = await diagnoseConnection();
+          if (run === this._feeEstimateRun) this.connectionNotice = unreachableReason(kind, raw, this.$t.bind(this));
         }
-        return;
+      } finally {
+        if (run === this._feeEstimateRun) this.isEstimatingFee = false;
       }
-
-      // For LNURL/Lightning Address, we cannot estimate fee without the invoice
-      // The fee will be estimated internally when paying (with buffer)
-      this.estimatedFee = null;
     },
 
     getPaymentAmountForFee() {

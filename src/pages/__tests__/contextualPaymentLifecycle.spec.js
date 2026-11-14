@@ -262,12 +262,13 @@ test('on-chain submission locks while pending, then releases only after the subm
 })
 
 test('confirmation refuses a preparing, unavailable or stale payment before invoking the executor', async () => {
-  for (const blockedBy of ['preparing', 'unavailable', 'stale']) {
+  for (const blockedBy of ['preparing', 'unavailable', 'stale', 'quoting']) {
     const { vm, paymentFlow } = readyToConfirm()
     let sends = 0
     vm.confirmPayment = async () => { sends += 1 }
     if (blockedBy === 'preparing') vm.preparationState = 'preparing'
     if (blockedBy === 'unavailable') vm.sendingWalletId = 'removed'
+    if (blockedBy === 'quoting') vm.isEstimatingFee = true
     if (blockedBy === 'stale') paymentFlow.begin({ address: 'bob@example.com' })
     await vm.onSendSheetConfirm({ amountSats: 25000 })
     assert.equal(sends, 0, blockedBy)
