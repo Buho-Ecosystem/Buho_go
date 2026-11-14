@@ -131,7 +131,7 @@ test('items: a request card carries state, valid_until, note, fiat and only pend
     busyIds: new Set([own.id]),
   });
   assert.deepEqual(items[0].request, {
-    id: incoming.id, amountSats: 25_000, fiatText: '≈ $25', note: 'Pizza', outgoing: false, state: 'pending',
+    id: incoming.id, amountSats: 25_000, fiatText: '≈ $25', note: 'Pizza', outgoing: false, delivery: 'sent', state: 'pending',
     validUntil: 2_000_000, settlement: null,
     disabledReason: 'None of your wallets can pay this.', walletsLoading: false, untrusted: false, busy: false, remindedRecently: false,
   });
@@ -145,6 +145,14 @@ test('items: a request without a known state is pending and shows its valid_unti
   const items = build([request()], { requestStateOf: () => null });
   assert.equal(items[0].request.state, 'pending');
   assert.equal(items[0].request.validUntil, 2_000_000);
+});
+
+test('items: request delivery stays separate from the payment state', () => {
+  for (const delivery of ['queued', 'sending', 'failed', 'sent']) {
+    const item = build([request({ outgoing: true, delivery })])[0];
+    assert.equal(item.request.delivery, delivery);
+    assert.equal(item.request.state, 'pending');
+  }
 });
 
 test('items: a paid own request says where it arrived only when the wallet showed it', () => {
@@ -488,6 +496,21 @@ test('actions: text, reply, request, decline, withdraw and remind go to the runt
     ['remindRequest', ANNA, theirs.id],
     ['retry', theirs.id],
   ]);
+});
+
+test('actions: repeated retry taps share one attempt and clear the busy state', async () => {
+  let release;
+  let attempts = 0;
+  const waiting = new Promise(resolve => { release = resolve; });
+  const { chat } = setup({ runtime: fakeRuntime({ retry: async () => { attempts += 1; await waiting; return true; } }) });
+  const first = chat.retry('retry-id');
+  assert.equal(chat.busyIds.value.has('retry-id'), true);
+  const repeated = await chat.retry('retry-id');
+  assert.equal(repeated.error.code, 'BUSY');
+  assert.equal(attempts, 1);
+  release();
+  assert.equal((await first).ok, true);
+  assert.equal(chat.busyIds.value.has('retry-id'), false);
 });
 
 test('actions: errors come back as words, never thrown', async () => {

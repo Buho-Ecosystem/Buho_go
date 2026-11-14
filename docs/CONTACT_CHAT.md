@@ -360,7 +360,28 @@ store, clock) so they can be unit tested without network or Pinia.
   unreadable, so it never holds back later messages.
 - A partner's inbox list is looked up on the discovery relays and contact
   hints, then, if they answered without one, on the partner's NIP-65 write
-  relays.
+  relays. A forced recovery also checks the write relays when discovery still
+  has an older usable list. A policy refusal triggers one fresh lookup; only
+  a changed signed inbox list justifies another publish. Unchanged refusals
+  stop, and manual retry reports a terminal failure to its caller.
+- Temporary network failures, server errors and rate limits keep the durable
+  message queued. After the fast retry budget they retry at the capped
+  five-minute interval, and reconnect
+  or resume can retry sooner. The rumor id stays the same across retries.
+  Text and outgoing request cards show delivery separately from payment
+  state: waiting, sending, or not sent with a retry action. Unsent requests
+  cannot send reminders. No relay names or technical reports enter this UI.
+- An author-whitelisted private relay can reject every NIP-59 gift wrap:
+  each wrap is signed by a fresh random key, not the sender's known key.
+  A `blocked: pubkey is not allowed to publish to this relay` refusal is a
+  relay admission-policy problem. Client retries cannot repair it. The inbox
+  owner must publish a signed kind 10050 with compatible messaging relays,
+  or the operator must support gift-wrap admission (for example, NIP-42
+  authentication of the sender and admission to the intended recipient's
+  inbox). Do not remove a private relay's access controls indiscriminately.
+  NIP-65 public write relays and the sender's relays are never delivery
+  fallbacks: NIP-17 restricts delivery to the recipient's kind 10050 list.
+  Existing inbox lists are never silently overwritten by BuhoGO.
 - History is paged: a relay answers one batch (we ask for
   `HISTORY_PAGE_LIMIT`, 500; relays cap it at their own limit), so after a
   relay's batch the inbox asks for older pages with `until` = the oldest wrap

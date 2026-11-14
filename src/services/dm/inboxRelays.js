@@ -469,16 +469,16 @@ export function createInboxRelayResolver({
 
   const ask = (urls, pubkey, kind) => queryNewest({ ensureRelay, urls, pubkey, kind, timeoutMs, setTimer, clearTimer });
 
-  async function lookup(pubkey, hints) {
+  async function lookup(pubkey, hints, force) {
     // Hints come from a contact's own data, so they are capped like a list.
     const hinted = normalizeUnique(hints).slice(0, MAX_INBOX_RELAYS_PER_CONTACT);
     const urls = [...new Set([...discovery, ...hinted])];
     let { best, anyAnswered } = await ask(urls, pubkey, KIND.DM_RELAYS);
 
-    // Relays answered without a list: it may live only where the person
-    // publishes (NIP-65, the outbox model). Ask their write relays for it.
+    // A list may live only where the person publishes (NIP-65). Recovery
+    // checks there too, even if discovery still carries an obsolete list.
     // Nobody answering (offline) is not worth a second round.
-    if (anyAnswered && (!best || parseInboxRelayList(best).length === 0)) {
+    if (anyAnswered && (force || !best || parseInboxRelayList(best).length === 0)) {
       const own = await ask(urls, pubkey, KIND.RELAY_LIST);
       const writes = parseWriteRelays(own.best).filter((url) => !urls.includes(url));
       if (writes.length > 0) {
@@ -517,7 +517,7 @@ export function createInboxRelayResolver({
       }
       let promise = inFlight.get(pubkey);
       if (!promise) {
-        const run = lookup(pubkey, Array.isArray(hints) ? hints : []).then((result) => {
+        const run = lookup(pubkey, Array.isArray(hints) ? hints : [], force).then((result) => {
           // `invalidate` removes the in-flight entry: that answer may predate the
           // reason for invalidating, so it is returned to its callers but not kept.
           if (inFlight.get(pubkey) === run) {

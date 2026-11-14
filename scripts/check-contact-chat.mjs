@@ -24,6 +24,7 @@ import { InvoiceLedger, LnurlServer, SimRelay } from './fixtures/contactChat.mjs
 const base = process.env.CONTACT_CHAT_BASE_URL || 'http://localhost:9012';
 const output = process.env.CONTACT_CHAT_OUTPUT || 'output/contact-chat';
 const AUTH_HOST = 'auth.nostr1.com';
+const INBOX_HOSTS = DM_INBOX_RELAYS.map(url => new URL(url).host);
 await mkdir(output, { recursive: true });
 
 // ---------------------------------------------------------------------------
@@ -582,7 +583,7 @@ try {
         await alice.page.waitForTimeout(300);
         await assertFits(alice.page, `request sheet ${label}`);
         await snap(alice, `10-request-sheet-${label}`);
-        await alice.page.getByRole('button', { name: /^(Cancel|Abbrechen|Cancelar)$/ }).click();
+        await alice.page.locator('.request-sheet__back').click();
 
         // The stranger's chat: banner, an untrusted request, then its confirm sheet.
         await navigate(alice.page, `/messages/${CAROL.pubkey}`);
@@ -612,6 +613,69 @@ try {
     assert.deepEqual(JSON.parse(nip44.decrypt(list.content, key)), [['p', CAROL.pubkey]]);
   });
 
+  console.log('9. Private-inbox refusal, honest request delivery, and automatic recovery');
+  await step('a private relay refuses wraps: text and request show Not sent with a retry', async () => {
+    for (const host of INBOX_HOSTS) relay.writeRefusals.set(host, 'blocked: pubkey is not allowed to publish to this relay');
+    await alice.page.evaluate(() => { document.documentElement.style.fontSize = ''; });
+    await openChatFromAddressBook(alice, 'Bob');
+    await alice.page.getByRole('textbox', { name: 'Message' }).fill('Private inbox check');
+    await alice.page.getByRole('button', { name: 'Send message' }).click();
+    const bubble = messageBubble(alice.page, 'Private inbox check');
+    await bubble.getByRole('status').filter({ hasText: 'Not sent' }).waitFor();
+    await bubble.getByRole('button', { name: 'Send again', exact: true }).click();
+    await bubble.getByRole('status').filter({ hasText: 'Not sent' }).waitFor();
+    assert.equal(await bubble.count(), 1);
+    await requestMoney(alice.page, '500', 'Private request check');
+    const card = chatCard(alice.page, /^You requested.*Private request check/);
+    await card.getByRole('status').filter({ hasText: 'Not sent' }).waitFor();
+    assert.equal(await card.getByRole('button', { name: 'Remind', exact: true }).count(), 0);
+    await card.getByRole('button', { name: 'Send again', exact: true }).waitFor();
+    await snap(alice, '16-private-inbox-not-sent');
+  });
+
+  await step('a corrected signed inbox list delivers the original messages on retry', async () => {
+    relay.inject(finalizeEvent({ kind: 10050, created_at: Math.floor(Date.now() / 1000) + 30,
+      tags: [['relay', 'wss://replacement-inbox.example']], content: '' }, BOB.secretKey));
+    relay.writeRefusals.clear();
+    const bubble = messageBubble(alice.page, 'Private inbox check');
+    await bubble.getByRole('button', { name: 'Send again', exact: true }).click();
+    await bubble.getByRole('status').filter({ hasText: 'Sent' }).waitFor();
+    const card = chatCard(alice.page, /^You requested.*Private request check/);
+    await card.getByRole('button', { name: 'Send again', exact: true }).click();
+    await card.getByRole('button', { name: 'Remind', exact: true }).waitFor();
+    assert.equal(await card.getByText('Not sent', { exact: true }).count(), 0);
+    assert.equal(await bubble.count(), 1);
+    await snap(alice, '17-private-inbox-recovered');
+  });
+
+  await step('a temporary inbox error queues and recovers without a retry tap', async () => {
+    relay.writeRefusals.set('replacement-inbox.example', 'error: temporary outage');
+    await alice.page.getByRole('textbox', { name: 'Message' }).fill('Waiting through outage');
+    await alice.page.getByRole('button', { name: 'Send message' }).click();
+    const bubble = messageBubble(alice.page, 'Waiting through outage');
+    await bubble.getByRole('status').filter({ hasText: 'Waiting to send' }).waitFor();
+    await snap(alice, '18-message-queued');
+    relay.writeRefusals.clear();
+    await bubble.getByRole('status').filter({ hasText: 'Sent' }).waitFor();
+    assert.equal(await bubble.count(), 1);
+  });
+
+  await step('settings navigation remains readable above scrolling content', async () => {
+    await navigate(alice.page, '/settings');
+    await alice.page.locator('.hub-nav').waitFor();
+    await alice.page.evaluate(() => window.scrollTo(0, 100));
+    // Recreate the original nav tint in the same session for a comparable baseline.
+    const originalTint = await alice.page.addStyleTag({ content: '.hub-nav-light { background: rgba(255, 255, 255, 0.52) !important; } .hub-nav-dark { background: rgba(18, 20, 24, 0.46) !important; }' });
+    await snap(alice, '19-settings-nav-before');
+    await originalTint.evaluate(node => node.remove());
+    await snap(alice, '19-settings-nav');
+    for (const dark of [false, true]) {
+      await setTheme(alice.page, dark);
+      const tint = await alice.page.locator('.hub-nav').evaluate(node => getComputedStyle(node).backgroundColor);
+      assert.match(tint, /0\.95\)/);
+    }
+  });
+
   assert.deepEqual(pageErrors, [], 'uncaught page errors');
   console.log('PASS: contact chat end to end');
 } catch (error) {
@@ -637,11 +701,12 @@ function expectAuth(who) {
 async function requestMoney(page, sats, note) {
   await page.getByRole('button', { name: 'Request', exact: true }).click();
   const sheet = page.getByRole('region', { name: /^Request from/ });
-  await sheet.getByRole('textbox', { name: 'Amount in sats' }).fill(sats);
+  for (const digit of sats) await sheet.locator('.amount-keypad__key').filter({ hasText: new RegExp(`^${digit}$`) }).click();
+  await sheet.getByRole('button', { name: 'Add a note', exact: true }).click();
   await sheet.getByRole('textbox', { name: 'Note (optional)' }).fill(note);
-  await sheet.getByRole('button', { name: /^To / }).waitFor();
+  await sheet.getByRole('button', { name: /^Paid to / }).waitFor();
   assert.equal(await sheet.getByText('Receive in').count(), 0, 'the money always goes to the profile address');
-  await sheet.getByRole('button', { name: /^Request .*\d/ }).click();
+  await sheet.locator('.request-sheet__cta').click();
   await sheet.waitFor({ state: 'hidden' });
 }
 

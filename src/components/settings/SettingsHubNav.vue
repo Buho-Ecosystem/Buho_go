@@ -99,8 +99,7 @@ export default {
   pointer-events: none; /* only the nav pill receives events */
 }
 
-/* Floating pill container. Translucent + backdrop blur gives the
-   modern "glass" look you see in current iOS and Android apps. */
+/* The tint carries legibility even in WebViews without backdrop blur. */
 .hub-nav {
   pointer-events: auto;
   display: flex;
@@ -115,7 +114,7 @@ export default {
 }
 
 .hub-nav-light {
-  background: rgba(255, 255, 255, 0.52);
+  background: rgba(255, 255, 255, 0.95);
   border: 1px solid rgba(255, 255, 255, 0.5);
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.6),
@@ -124,7 +123,7 @@ export default {
 }
 
 .hub-nav-dark {
-  background: rgba(18, 20, 24, 0.46);
+  background: rgba(18, 20, 24, 0.95);
   border: 1px solid rgba(255, 255, 255, 0.1);
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.08),
