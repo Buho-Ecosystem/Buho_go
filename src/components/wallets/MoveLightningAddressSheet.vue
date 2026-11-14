@@ -17,7 +17,7 @@
     <q-card class="move-card" :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'">
       <div class="form-sheet-grabber" aria-hidden="true"></div>
       <header class="form-sheet-header">
-        <button type="button" class="form-sheet-cancel" :disabled="moving" @click="open = false">{{ $t('Cancel') }}</button>
+        <button type="button" class="sheet-nav-icon" :disabled="moving" :aria-label="$t('Cancel')" @click="open = false"><Icon icon="tabler:x" width="20" height="20" /></button>
         <h2 class="form-sheet-title">{{ $t('Move address') }}</h2>
         <span aria-hidden="true"></span>
       </header>
@@ -67,6 +67,7 @@
 </template>
 
 <script setup>
+import { Icon } from '@iconify/vue';
 import { computed, getCurrentInstance, ref, watch } from 'vue';
 import { useWalletStore } from '../../stores/wallet';
 import WalletBrandMark from '../WalletBrandMark.vue';

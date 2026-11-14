@@ -21,10 +21,10 @@
     <q-card class="kps-card" :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'">
       <div class="form-sheet-grabber" aria-hidden="true"></div>
       <header class="form-sheet-header">
-        <button v-if="step === 'confirm'" type="button" class="form-sheet-cancel" @click="back">{{ $t('Back') }}</button>
+        <button v-if="step === 'confirm'" type="button" class="sheet-nav-icon" :aria-label="$t('Back')" @click="back"><Icon icon="tabler:chevron-left" width="20" height="20" /></button>
         <span v-else aria-hidden="true"></span>
         <h2 class="form-sheet-title">{{ heading }}</h2>
-        <button type="button" class="form-sheet-cancel kps-cancel" @click="$emit('update:modelValue', false)">{{ $t('Cancel') }}</button>
+        <button type="button" class="sheet-nav-icon kps-cancel" :aria-label="$t('Cancel')" @click="$emit('update:modelValue', false)"><Icon icon="tabler:x" width="20" height="20" /></button>
       </header>
       <div class="kps-body">
         <KioskPinPad
@@ -40,11 +40,12 @@
 </template>
 
 <script>
+import { Icon } from '@iconify/vue';
 import KioskPinPad from '../KioskPinPad.vue';
 
 export default {
   name: 'KioskPinSheet',
-  components: { KioskPinPad },
+  components: { Icon, KioskPinPad },
   props: {
     modelValue: { type: Boolean, default: false },
     /** The sheet's title: "Kiosk Mode" when turning it on, "Change PIN" otherwise. */

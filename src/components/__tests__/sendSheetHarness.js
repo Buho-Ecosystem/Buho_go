@@ -62,6 +62,9 @@ function loadSheet() {
     '../utils/walletCapabilities': walletCapabilities,
     '../utils/clipboardSuggestion.js': clipboardSuggestion,
     '../utils/nwcConnection.js': nwcConnection,
+    // The shared facade is tested with its real flow separately. Here its
+    // accepted/rejected synchronous handoff is the Send sheet's boundary.
+    '../composables/usePayContact.js': { usePayContact: ctx => ({ payContact: contact => ctx.contactPayment(contact) }) },
     '../utils/shopClipboard.js': {
       readClipboardCrossPlatform: async () => {
         clipboardReads += 1;
@@ -147,6 +150,7 @@ export function sendField(state = {}) {
     resolving: false,
     isProcessing: false,
     show: true,
+    contactPayment: () => true,
     clipboardSuggestion: null,
     phoneAdvanceTimer: null,
     pasteAdvanceTimer: null,

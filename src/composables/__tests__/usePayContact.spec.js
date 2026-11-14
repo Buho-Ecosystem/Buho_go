@@ -1,136 +1,127 @@
-/**
- * usePayContact: the hand-over of a payment to the wallet page, including what
- * the contact chat adds to it (the paying wallet, a context string, a request's
- * invoice as the destination).
- *
- * Run directly with Node:
- *   node --test src/composables/__tests__/usePayContact.spec.js
- */
-
+/** Contextual payment handoff: opens before any network work or navigation. */
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { readFileSync } from 'node:fs';
 import { transformSync } from 'esbuild';
 import * as payAgain from '../../utils/payAgain.js';
 
-// The composable imports the address book store through a path Node cannot
-// resolve (no extension); compile it the way the repo's other page specs do.
-function load(store) {
+function load(store, flow) {
   const source = readFileSync(new URL('../usePayContact.js', import.meta.url), 'utf8');
   const { code } = transformSync(source, { format: 'cjs' });
   const module = { exports: {} };
-  const modules = { '../utils/payAgain.js': payAgain };
-  new Function('require', 'module', 'exports', code)((name) => modules[name] || { useAddressBookStore: () => store }, module, module.exports);
+  const modules = {
+    '../utils/payAgain.js': payAgain,
+    '../stores/addressBook': { useAddressBookStore: () => store },
+    '../stores/paymentFlow.js': { usePaymentFlowStore: () => flow },
+  };
+  new Function('require', 'module', 'exports', code)((name) => {
+    assert.ok(name in modules, `Unexpected dependency ${name}`);
+    return modules[name];
+  }, module, module.exports);
   return module.exports.usePayContact;
 }
 
 function harness(contactOverrides = {}) {
-  const pushed = [];
-  const notices = [];
+  const begun = [], pushed = [], notices = [], used = [];
+  const flow = { accepts: true, begin(input) { if (!this.accepts) return false; begun.push(input); return begun.length; } };
   const store = {
     isEntryPayable: (entry) => Boolean(entry.address),
-    updateLastUsed: async () => {},
+    updateLastUsed: async id => { used.push(id); },
     refreshContact: async () => {},
   };
-  const ctx = {
-    $q: { notify: (notice) => notices.push(notice) },
-    $t: (key) => key,
-    $router: { push: (value) => pushed.push(value) },
-  };
+  const ctx = { $q: { notify: notice => notices.push(notice) }, $t: key => key, $router: { push: value => pushed.push(value) } };
   const contact = { id: 'c1', name: 'Bob', source: 'manual', address: 'bob@example.com', addressType: 'lightning', ...contactOverrides };
-  return { pay: load(store)(ctx), pushed, notices, contact };
+  return { pay: load(store, flow)(ctx), flow, begun, pushed, notices, used, contact };
 }
 
-test('payContact: the plain hand-over is unchanged', () => {
-  const { pay, pushed, contact } = harness();
-  pay.payContact(contact);
-  assert.deepEqual(pushed, [{
-    path: '/wallet',
-    query: { action: 'pay_contact', address: 'bob@example.com', addressType: 'lightning', contactName: 'Bob' },
-  }]);
+test('contact opens contextual payment synchronously with identity and no Home navigation', () => {
+  const { pay, begun, pushed, used, contact } = harness({ nostrProfile: { picture: 'https://example.com/avatar.jpg' } });
+  assert.equal(pay.payContact(contact), true);
+  assert.deepEqual(begun, [{ address: 'bob@example.com', addressType: 'lightning', name: 'Bob', contactId: 'c1', contact }]);
+  assert.deepEqual(pushed, []);
+  assert.deepEqual(used, ['c1']);
+  assert.equal('walletId' in begun[0], false, 'automatic choice is left to the payment controller');
 });
 
-test('payContact: a chosen wallet and a context ride along, empty ones do not', () => {
-  const { pay, pushed, contact } = harness();
+test('explicit wallet and chat context survive handoff; empty options do not select a wallet', () => {
+  const { pay, begun, contact } = harness();
   pay.payContact(contact, { walletId: 'lnb', context: 'chat:abc' });
   pay.payContact(contact, { walletId: '', context: undefined });
-  assert.deepEqual(pushed[0].query, {
-    action: 'pay_contact', address: 'bob@example.com', addressType: 'lightning', contactName: 'Bob', walletId: 'lnb', context: 'chat:abc',
-  });
-  assert.equal('walletId' in pushed[1].query, false);
-  assert.equal('context' in pushed[1].query, false);
+  assert.equal(begun[0].walletId, 'lnb');
+  assert.equal(begun[0].context, 'chat:abc');
+  assert.equal('walletId' in begun[1], false);
+  assert.equal('context' in begun[1], false);
 });
 
-test('payContact: an identity-only contact still stops with the explanation', () => {
-  const { pay, pushed, notices, contact } = harness({ source: 'nostr', address: '' });
-  pay.payContact(contact, { walletId: 'lnb', context: 'chat:abc' });
+test('identity-only and missing contacts stop with one plain explanation', () => {
+  for (const source of ['nostr', 'manual']) {
+    const { pay, begun, notices, contact } = harness({ source, address: '' });
+    assert.equal(pay.payContact(contact), false);
+    assert.deepEqual(begun, []);
+    assert.equal(notices[0].message, 'No Lightning address yet');
+    assert.equal(pay.payContact(null), false);
+  }
+});
+
+test('invoice request keeps its destination, explicit wallet, context, note and contact history link', () => {
+  const { pay, begun, pushed } = harness();
+  pay.payInvoice({ bolt11: '  lnbc1invoice  ', name: 'Anna' }, { walletId: 'biz', context: 'chat:abc:def', contactId: 'c1', note: 'Pizza' });
+  assert.deepEqual(begun, [{ address: 'lnbc1invoice', addressType: 'invoice', name: 'Anna', walletId: 'biz', context: 'chat:abc:def', contactId: 'c1', note: 'Pizza' }]);
   assert.deepEqual(pushed, []);
-  assert.equal(notices[0].message, 'No Lightning address yet');
 });
 
-test('payInvoice: a request\'s invoice is the destination, with the wallet and context', () => {
-  const { pay, pushed } = harness();
-  pay.payInvoice({ bolt11: '  lnbc1invoice  ', name: 'Anna' }, { walletId: 'biz', context: 'chat:abc:def' });
-  assert.deepEqual(pushed, [{
-    path: '/wallet',
-    query: { action: 'pay_contact', address: 'lnbc1invoice', addressType: 'invoice', contactName: 'Anna', walletId: 'biz', context: 'chat:abc:def' },
-  }]);
-});
-
-test('payInvoice: names the contact for the history link, only as a non-empty string', () => {
-  const { pay, pushed } = harness();
-  pay.payInvoice({ bolt11: 'lnbc1x' }, { contactId: 'c1' });
+test('invoice needs no contact address and ignores empty invoice/options', () => {
+  const { pay, begun } = harness();
   pay.payInvoice({ bolt11: 'lnbc1x' }, { contactId: '' });
-  assert.equal(pushed[0].query.contactId, 'c1');
-  assert.equal('contactId' in pushed[1].query, false);
-});
-
-test('payInvoice: needs no contact address and ignores an empty invoice', () => {
-  const { pay, pushed } = harness();
-  pay.payInvoice({ bolt11: 'lnbc1x' });
   pay.payInvoice({ bolt11: '   ' });
   pay.payInvoice({});
   pay.payInvoice();
-  assert.equal(pushed.length, 1);
-  assert.equal('contactName' in pushed[0].query, false);
+  assert.equal(begun.length, 1);
+  assert.equal('contactId' in begun[0], false);
+  assert.equal('walletId' in begun[0], false);
 });
 
-test('payContact: a prefilled amount and note ride along as query parameters, invalid ones do not', () => {
-  const { pay, pushed, contact } = harness();
+test('amount and note are typed prefills; negative, fractional and unsafe amounts are ignored', () => {
+  const { pay, begun, contact } = harness();
   pay.payContact(contact, { amountSats: 25000, note: 'Pizza' });
-  pay.payContact(contact, { amountSats: -5, note: '' });
-  assert.equal(pushed[0].query.prefillAmount, '25000');
-  assert.equal(pushed[0].query.prefillNote, 'Pizza');
-  assert.equal('prefillAmount' in pushed[1].query, false);
-  assert.equal('prefillNote' in pushed[1].query, false);
-});
-
-test('payAddress: pays an address that is no saved contact, with wallet, context and prefill', () => {
-  const { pay, pushed } = harness();
-  pay.payAddress({ address: ' anna@x.org ', name: 'Anna' }, { walletId: 'lnb', context: 'chat:abc', amountSats: 100, note: 'Hi' });
-  pay.payAddress({ address: '  ' });
-  assert.equal(pushed.length, 1);
-  assert.deepEqual(pushed[0], {
-    path: '/wallet',
-    query: {
-      action: 'pay_contact', address: 'anna@x.org', addressType: 'lightning', contactName: 'Anna',
-      walletId: 'lnb', context: 'chat:abc', prefillAmount: '100', prefillNote: 'Hi',
-    },
-  });
-});
-
-test('payAddress: Pay again carries the recipient currency amount and always ends on the slide', () => {
-  const { pay, pushed } = harness();
-  pay.payAddress({ address: 'shop@example.com' }, { amountSats: 15000, payout: { code: 'KES', amount: 1645 }, repeat: true });
-  assert.deepEqual(pushed[0].query, {
-    action: 'pay_contact', address: 'shop@example.com', addressType: 'lightning',
-    prefillAmount: '15000', prefillPayout: 'KES:1645', repeat: '1',
-  });
-  // Anything unsound is left out rather than passed on.
-  pay.payAddress({ address: 'shop@example.com' }, { payout: { code: 'kes', amount: 5 }, repeat: 'yes' });
-  pay.payAddress({ address: 'shop@example.com' }, { payout: { code: 'KES', amount: 0 } });
-  for (const { query } of pushed.slice(1)) {
-    assert.equal('prefillPayout' in query, false);
-    assert.equal('repeat' in query, false);
+  assert.equal(begun[0].amountSats, 25000);
+  assert.equal(begun[0].note, 'Pizza');
+  for (const amountSats of [-5, 0, 1.5, Number.MAX_SAFE_INTEGER + 1, '25']) {
+    pay.payContact(contact, { amountSats, note: '' });
+    assert.equal('amountSats' in begun.at(-1), false);
+    assert.equal('note' in begun.at(-1), false);
   }
+});
+
+test('unsaved address uses the same contextual handoff and preserves prefills', () => {
+  const { pay, begun } = harness();
+  pay.payAddress({ address: ' anna@x.org ', name: 'Anna' }, { context: 'chat:abc', amountSats: 100, note: 'Hi' });
+  pay.payAddress({ address: '  ' });
+  assert.deepEqual(begun, [{ address: 'anna@x.org', addressType: 'lightning', name: 'Anna', context: 'chat:abc', amountSats: 100, note: 'Hi' }]);
+});
+
+test('Pay again preserves the explicit past wallet and recipient currency amount', () => {
+  const { pay, begun, pushed } = harness();
+  pay.payAgain({ address: 'shop@example.com', addressType: 'lightning', amountSats: 15000, payout: { code: 'KES', amount: 1645 } }, { walletId: 'travel', name: 'Shop' });
+  assert.deepEqual(begun[0], { address: 'shop@example.com', addressType: 'lightning', name: 'Shop', walletId: 'travel', amountSats: 15000, payout: { code: 'KES', amount: 1645 }, repeat: true });
+  assert.deepEqual(pushed, []);
+  for (const payout of [{ code: 'kes', amount: 5 }, { code: 'KES', amount: 0 }]) {
+    pay.payAddress({ address: 'shop@example.com' }, { payout, repeat: 'yes' });
+    assert.equal('payout' in begun.at(-1), false);
+    assert.equal('repeat' in begun.at(-1), false);
+  }
+});
+
+test('deferred preparation hands the resolver over without running it and reports flow rejection', () => {
+  const { pay, flow, begun, pushed } = harness();
+  let lookups = 0;
+  const resolve = async () => { lookups += 1; return { address: 'lnbc1fresh' }; };
+  assert.equal(pay.preparePayment({ name: 'Anna', amountSats: 500, fixedAmount: true, resolve }), true);
+  assert.equal(begun[0].resolve, resolve);
+  assert.equal(begun[0].fixedAmount, true);
+  assert.equal(lookups, 0);
+  assert.deepEqual(pushed, []);
+  flow.accepts = false;
+  assert.equal(pay.preparePayment({ resolve }), false);
+  assert.equal(begun.length, 1);
 });

@@ -156,6 +156,8 @@ export default {
       isLoadingFeeQuote: false,
       selectedSpeed: 'medium',
       feeQuoteDebounceTimer: null,
+      feeQuoteRun: 0,
+      feeQuoteDisposed: false,
     };
   },
 
@@ -218,15 +220,9 @@ export default {
      * disables), then a fresh quote is fetched once typing settles.
      */
     amountSats: {
-      handler(sats) {
-        if (this.feeQuoteDebounceTimer) clearTimeout(this.feeQuoteDebounceTimer);
-        this.feeQuote = null;
-        this.emitFeeGate();
-        if (sats > 0) {
-          this.feeQuoteDebounceTimer = setTimeout(() => this.fetchFeeQuote(), 500);
-        }
-      },
-      immediate: true
+      handler() { this.refreshFeeQuote(true); },
+      immediate: true,
+      flush: 'sync',
     },
 
     selectedSpeed() {
@@ -235,11 +231,13 @@ export default {
 
     // A quote belongs to the wallet it was requested from. Another paying
     // wallet invalidates it at once (the gate closes) and asks again.
-    walletId() {
-      if (this.feeQuoteDebounceTimer) clearTimeout(this.feeQuoteDebounceTimer);
-      this.feeQuote = null;
-      this.emitFeeGate();
-      if (this.amountSats > 0) this.fetchFeeQuote();
+    walletId: {
+      handler() { this.refreshFeeQuote(false); },
+      flush: 'sync',
+    },
+    address: {
+      handler() { this.refreshFeeQuote(false); },
+      flush: 'sync',
     },
 
     // Balance changes (mid-typing refresh) can flip sufficiency.
@@ -249,10 +247,24 @@ export default {
   },
 
   beforeUnmount() {
+    this.feeQuoteDisposed = true;
+    this.feeQuoteRun += 1;
     if (this.feeQuoteDebounceTimer) clearTimeout(this.feeQuoteDebounceTimer);
   },
 
   methods: {
+    refreshFeeQuote(debounce) {
+      this.feeQuoteRun += 1;
+      if (this.feeQuoteDebounceTimer) clearTimeout(this.feeQuoteDebounceTimer);
+      this.feeQuoteDebounceTimer = null;
+      this.feeQuote = null;
+      this.isLoadingFeeQuote = false;
+      this.emitFeeGate();
+      if (this.feeQuoteDisposed || this.amountSats <= 0 || !this.address) return;
+      if (debounce) this.feeQuoteDebounceTimer = setTimeout(() => this.fetchFeeQuote(), 500);
+      else void this.fetchFeeQuote();
+    },
+
     emitUseMax() {
       const maxSendable = Math.max(0, this.availableBalance - USE_ALL_FEE_RESERVE_SATS);
       this.$emit('use-max', maxSendable);
@@ -273,23 +285,28 @@ export default {
     },
 
     async fetchFeeQuote() {
-      if (this.amountSats <= 0) return;
+      if (this.feeQuoteDisposed || this.amountSats <= 0 || !this.address) return;
 
       // The request this answer belongs to. A quote for another wallet or
       // amount (the user moved on while it was in flight) must never gate -
       // or price - the payment now on screen.
-      const { walletId, amountSats } = this;
+      const run = ++this.feeQuoteRun;
+      const { walletId, amountSats, address } = this;
+      const current = () => !this.feeQuoteDisposed && run === this.feeQuoteRun
+        && walletId === this.walletId && amountSats === this.amountSats && address === this.address;
       this.isLoadingFeeQuote = true;
       try {
         const provider = await this.walletStore.ensureSparkConnected(walletId);
+        if (!current()) return;
         if (!provider?.getWithdrawalFeeQuote) {
           throw new Error('Withdrawal not supported');
         }
-        const quote = await provider.getWithdrawalFeeQuote(amountSats, this.address);
-        if (walletId !== this.walletId || amountSats !== this.amountSats) return;
+        const quote = await provider.getWithdrawalFeeQuote(amountSats, address);
+        if (!current()) return;
         this.feeQuote = quote;
         this.emitFeeGate();
       } catch (error) {
+        if (!current()) return;
         console.error('Failed to fetch fee quote:', error);
         // The shared translator's titles ("Amount too small", "Connection
         // problem", "Wallet locked") are more accurate than the generic
@@ -306,7 +323,7 @@ export default {
         this.feeQuote = null;
         this.emitFeeGate();
       } finally {
-        this.isLoadingFeeQuote = false;
+        if (current()) this.isLoadingFeeQuote = false;
       }
     },
 

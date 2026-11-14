@@ -13,7 +13,9 @@ const MARIA = { id: 'maria', name: 'Maria', address: 'maria@example.com', addres
 
 /** The field, with an address book holding Maria, and what it sends. */
 function field(state = {}) {
+  const handoffs = [];
   const vm = sendField({
+    contactPayment(contact) { handoffs.push(contact); return state.acceptsPayment !== false; },
     addressBookStore: {
       isEntryPayable: () => true,
       getEntryAddress: (entry) => entry.address,
@@ -24,7 +26,7 @@ function field(state = {}) {
   });
   const sent = [];
   vm.$emit = (name, payload) => { if (name === 'payment-detected') sent.push(payload.data); };
-  return { vm, sent };
+  return { vm, sent, handoffs };
 }
 
 test('Paste, Scan and the contacts show while the person is still giving a destination', () => {
@@ -81,18 +83,59 @@ test('a paste that lands after a lookup started leaves the field to it', async (
   const pasting = vm.pasteFromClipboard(); // the clipboard is being read
   vm.onContactPicked(MARIA); // meanwhile, a contact
   await pasting;
-  assert.equal(vm.manualInput, 'maria@example.com', 'the field shows what is being resolved');
+  assert.equal(vm.show, false, 'the accepted contact opens its contextual payment');
+  assert.equal(vm.manualInput, '', 'the closing sheet is not overwritten by a late paste');
   assert.equal(vm.pasteAdvanceTimer, null, 'and the paste goes nowhere');
 });
 
 test('a contact starts no second payment while a destination resolves', () => {
-  const { vm, sent } = field({ resolving: true, manualInput: '0712345678' });
+  const { vm, sent, handoffs } = field({ resolving: true, manualInput: '0712345678' });
   vm.onContactPicked(MARIA);
   assert.deepEqual(sent, []);
+  assert.deepEqual(handoffs, []);
   assert.equal(vm.manualInput, '0712345678');
   vm.resolving = false;
   vm.onContactPicked(MARIA);
-  assert.deepEqual(sent, ['maria@example.com'], 'and goes on with the contact once nothing resolves');
+  assert.deepEqual(handoffs, [MARIA], 'the shared contact handoff owns payment-wallet choice');
+  assert.deepEqual(sent, [], 'no legacy payment event can race the contextual host');
+  assert.equal(vm.show, false);
+});
+
+test('accepted contact handoff closes synchronously; rejection keeps the destination sheet unchanged', () => {
+  const accepted = field({ manualInput: 'mar' });
+  accepted.vm.onContactPicked(MARIA);
+  assert.deepEqual(accepted.handoffs, [MARIA]);
+  assert.equal(accepted.vm.show, false);
+  assert.equal(accepted.vm.isProcessing, true, 'pending input work stays inert during close');
+  assert.deepEqual(accepted.sent, []);
+  accepted.vm.onContactPicked(MARIA);
+  assert.equal(accepted.handoffs.length, 1, 'repeated taps during close cannot open another flow');
+
+  const rejected = field({ acceptsPayment: false, manualInput: 'mar' });
+  rejected.vm.onContactPicked({ ...MARIA, source: 'nostr', address: '' });
+  assert.equal(rejected.handoffs.length, 1, 'identity/address guards belong to the shared facade');
+  assert.equal(rejected.vm.show, true);
+  assert.equal(rejected.vm.isProcessing, false);
+  assert.equal(rejected.vm.manualInput, 'mar');
+  assert.deepEqual(rejected.sent, []);
+});
+
+test('a clipboard result after the contact sheet finished hiding cannot refill it or start another payment', async () => {
+  let release;
+  setClipboard(new Promise(resolve => { release = resolve; }));
+  const { vm, handoffs, sent } = field();
+  const pasting = vm.pasteFromClipboard();
+  vm.onContactPicked(MARIA);
+  vm.resetState(); // q-dialog before-hide has now cleared the local busy flag
+  release('paste@example.com');
+  await pasting;
+  assert.equal(vm.show, false);
+  assert.equal(vm.manualInput, '');
+  assert.equal(vm.pasteAdvanceTimer, null);
+  assert.deepEqual(handoffs, [MARIA]);
+  assert.deepEqual(sent, []);
+  vm.stopTimers();
+  setClipboard('');
 });
 
 test('in Mobile Money, the back arrow closes the sheet while a number resolves', () => {

@@ -1459,6 +1459,30 @@ body.body--light .delete-confirm-card .cancel-btn {
 .form-sheet-cancel:focus-visible,
 .form-sheet-primary:focus-visible { outline: 2px solid currentColor; outline-offset: 3px; }
 
+/* Header navigation: a chevron returns within a task; an x dismisses it.
+   Keep a full touch target when the visible label is supplied by aria-label. */
+.sheet-nav-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  justify-self: start;
+  flex-shrink: 0;
+  width: 44px;
+  min-width: 44px;
+  height: 44px;
+  min-height: 44px;
+  padding: 0;
+  border: 1px solid var(--border-card);
+  border-radius: 50%;
+  background: var(--bg-input);
+  color: var(--text-primary);
+  cursor: pointer;
+}
+.sheet-nav-icon > svg { flex-shrink: 0; }
+.sheet-nav-icon:focus-visible { outline: 2px solid var(--brand-accent-text); outline-offset: 3px; }
+.sheet-nav-icon:active:not(:disabled) { opacity: .7; }
+.sheet-nav-icon:disabled { opacity: .5; cursor: default; }
+
 /* ─── Disclosure rows ─────────────────────────────────────────
    One tappable line that leads on: an icon, a title, one line under
    it, a chevron (Receive: saved vouchers, Pay from another wallet).

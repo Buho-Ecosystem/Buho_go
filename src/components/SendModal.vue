@@ -381,6 +381,7 @@ import { Capacitor } from '@capacitor/core';
 import QrScanSheet from './QrScanSheet.vue';
 import { useAddressBookStore } from '../stores/addressBook';
 import { useWalletStore } from '../stores/wallet';
+import { usePayContact } from '../composables/usePayContact.js';
 import { readClipboardCrossPlatform } from '../utils/shopClipboard.js';
 import { isTelUri } from '../utils/telUri.js';
 import { convertToLightningAddress, getMerchantInfo, lightningAddressCase, SA_RETAIL_SOURCE } from '../utils/merchantQR';
@@ -1173,7 +1174,7 @@ export default {
       const clipboardText = await readClipboardCrossPlatform();
       // A lookup may have started while the clipboard was read (a contact,
       // a scan): the field is its destination now.
-      if (this.ctaBusy) return;
+      if (!this.show || this.ctaBusy) return;
 
       // Always land the clipboard in the visible field for the user to
       // verify before committing. No silent fire-and-forget — too easy
@@ -1265,65 +1266,14 @@ export default {
 
     onContactPicked(contact) {
       if (this.ctaBusy) return;
-      // Identity-only Nostr contact — saved, but no Lightning address
-      // published yet. Explain instead of emitting a payment the send
-      // flow can't complete.
-      if (contact.source === 'nostr' && !this.addressBookStore.isEntryPayable(contact)) {
-        this.$q.notify({
-          type: 'info',
-          message: this.$t('No Lightning address yet'),
-          caption: this.$t(
-            "{name} hasn't published a Lightning address. Open Address Book to check again later.",
-            { name: contact.name },
-          ),
-          timeout: 4500,
-        });
-        return;
-      }
-
-      const address = this.getContactAddress(contact);
-      if (offerAddressRequest(address, { t: this.$t.bind(this), paymentOnly: true })) return;
-      const addressType = this.getContactAddressType(contact);
-
-      // Defensive: block payment paths no wallet can satisfy, with the same
-      // switch hint every other surface shows.
-      if (!this.walletStore.canAnyWalletPay(addressType)) {
-        this.$q.notify({
-          type: 'warning',
-          message: this.$t('Cannot pay this contact'),
-          caption: walletSwitchHint(addressType, this.$t.bind(this)),
-          timeout: 3500,
-        });
-        return;
-      }
-
-      const paymentTypeMap = {
-        spark: 'spark_address',
-        arkade: 'arkade_address',
-        bitcoin: 'bitcoin_address',
-        lightning: 'lightning_address',
-        // LNURL contacts emit the same payment type the manual/scan LNURL path
-        // uses, so Wallet.onPaymentDetected resolves them via fetchLNURLInfo.
-        lnurl: 'lnurl'
-      };
-      const paymentType = paymentTypeMap[addressType] || 'lightning_address';
-
-      // Feed the recents ordering the resting list leads with.
-      this.addressBookStore.updateLastUsed(contact.id);
-
-      // Land the address in the field: the user sees exactly what is being
-      // resolved, and a failure leaves it editable in place.
-      this.manualInput = address;
+      // Shared contact handoff opens the contextual sheet synchronously and
+      // owns identity/address guards, recency and payment-wallet preference.
+      if (!usePayContact(this).payContact(contact)) return;
+      // Keep pending clipboard/typing work inert during the close transition.
       this.isProcessing = true;
-      this.$emit('payment-detected', {
-        data: address,
-        type: paymentType,
-        paymentOnly: true
-      });
-      // Parent closes us on success / surfaces an inline error on failure.
+      this.show = false;
     },
 
-    // Contact helpers (used by the contact-row handler above).
     getContactAddress(contact) {
       return this.addressBookStore.getEntryAddress(contact);
     },

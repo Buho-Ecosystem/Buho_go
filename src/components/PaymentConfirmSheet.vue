@@ -37,25 +37,47 @@
     :position="isRedeem && !$q.screen.lt.sm ? 'standard' : 'bottom'"
     :persistent="!isRedeem || isSending || isComplete"
     :aria-labelledby="titleId"
-    :class="$q.dark.isActive ? 'dialog_dark' : 'dialog_light'"
+    :class="[$q.dark.isActive ? 'dialog_dark' : 'dialog_light', { 'payment-send-dialog': verb === 'send' }]"
+    :style="sendViewportStyle"
+    @escape-key="onEscape"
   >
-    <q-card ref="card" class="sheet-card" :class="[{ 'sheet-card--redeem': isRedeem }, $q.dark.isActive ? 'sheet-card-dark' : 'sheet-card-light']">
+    <q-card ref="card" class="sheet-card" :class="[{ 'sheet-card--redeem': isRedeem, 'sheet-card--contextual': contextual, 'sheet-card--send': verb === 'send' }, $q.dark.isActive ? 'sheet-card-dark' : 'sheet-card-light']">
       <!-- Swipe down anywhere on the grab bar or the header to close. -->
       <div class="sheet-top" v-touch-swipe.mouse.down="onHeaderSwipe">
         <div v-if="!isRedeem" class="grab-bar"></div>
 
-        <header class="top-row">
-          <q-btn flat round dense @click="onTopAction" class="top-btn glass-back-btn" :disable="takeover ? takeoverLocked : isRedeem && (isSending || isComplete)" :aria-label="$t(isRedeem ? 'Cancel' : 'Back')">
-            <svg v-if="isRedeem" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="m6 6 12 12M6 18 18 6" /></svg>
-            <Icon v-else icon="tabler:chevron-left" width="20" height="20" />
+        <header class="top-row" :class="{ 'top-row--send': verb === 'send', 'top-row--child': walletPickerOpen || detailsOpen || takeover }">
+          <button
+            v-if="verb === 'send'"
+            type="button"
+            class="top-btn send-back-btn sheet-nav-icon"
+            :disabled="isSending || isComplete || (takeover && takeoverLocked)"
+            :aria-label="$t(walletPickerOpen || detailsOpen ? 'Back' : 'Cancel')"
+            @click="onTopAction"
+          ><Icon :icon="walletPickerOpen || detailsOpen ? 'tabler:chevron-left' : 'tabler:x'" width="22" height="22" /></button>
+          <q-btn v-else flat round dense @click="onTopAction" class="top-btn glass-back-btn" :disable="takeover ? takeoverLocked : isRedeem && (isSending || isComplete)" :aria-label="$t('Cancel')">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="m6 6 12 12M6 18 18 6" /></svg>
           </q-btn>
-          <h2 class="top-title" :id="titleId">{{ takeover ? takeoverTitle : topTitle }}</h2>
-          <!-- A verified business: its seal, opening Branta's page. -->
-          <div class="top-action">
-            <BrantaVerifiedBadge
-              v-if="recipientVerification && !takeover"
-              :verify-url="recipientVerification.verifyUrl"
-            />
+          <h2 class="top-title" :id="titleId">{{ walletPickerOpen ? $t('Pay with') : detailsOpen ? $t('Payment details') : takeover ? takeoverTitle : topTitle }}</h2>
+          <button
+            v-if="verb === 'send' && !walletPickerOpen && !detailsOpen && !takeover"
+            ref="walletTrigger"
+            type="button"
+            class="payment-wallet-trigger pay-with-field"
+            :disabled="preparationActive || isSending || isComplete || !payingWallets.length"
+            :aria-label="selectedPayingWallet ? $t('Pay with {name}', { name: selectedPayingWallet.name || $t('Wallet') }) : $t('Choose wallet')"
+            @click="openWalletPicker"
+          >
+            <span class="payment-wallet-mark" :class="{ 'payment-wallet-mark--arkade': selectedPayingWallet?.type === 'arkade' }" aria-hidden="true">
+              <WalletBrandMark v-if="selectedPayingWallet" :type="selectedPayingWallet.type" :size="18" />
+              <Icon v-else icon="tabler:wallet" width="18" height="18" />
+            </span>
+            <span>{{ headerWalletName }}</span>
+            <q-spinner v-if="preparationActive && !preparationFailed" size="13px" />
+            <Icon v-else icon="tabler:chevron-down" width="13" height="13" />
+          </button>
+          <div v-else class="top-action">
+            <BrantaVerifiedBadge v-if="verb !== 'send' && recipientVerification && !takeover" :verify-url="recipientVerification.verifyUrl" />
           </div>
         </header>
       </div>
@@ -80,7 +102,7 @@
         <slot name="takeover" />
       </div>
 
-      <div v-if="!isReading" v-show="!takeover" class="stage stage-compose" :class="{ 'stage--refund': !!refundRow }">
+      <div v-if="!isReading" v-show="!takeover && !walletPickerOpen && !detailsOpen" class="stage stage-compose" :class="{ 'stage--refund': !!refundRow }">
           <!-- Amount leads: the recipient was chosen on the screen before,
                so the number is this screen's job and takes the stage.
                Locked, range, or free depending on mode. -->
@@ -97,23 +119,26 @@
               :placeholder="amountPlaceholder"
               :readonly="amountMode === 'fixed'"
               :tabindex="amountMode === 'fixed' ? -1 : undefined"
-              autofocus
+              :autofocus="!contextual"
             />
-            <button
-              type="button"
-              class="unit-pill"
-              :disabled="amountMode === 'fixed'"
-              @click="toggleCurrency"
-            >
-              <span>{{ unitPillLabel }}</span>
-              <Icon v-if="amountMode !== 'fixed'" icon="tabler:arrows-up-down" width="11" height="11" />
-              <Icon v-else icon="tabler:lock" width="11" height="11" />
-            </button>
-            <!-- One helper row in the banking manner: limits on the left,
-                 the conversion on the right. Either side may be empty. -->
-            <div v-if="limitsHelperText || fiatEquivalent" class="amount-helper">
+            <div class="amount-denomination">
+              <button
+                type="button"
+                class="unit-pill"
+                :disabled="amountMode === 'fixed'"
+                @click="toggleCurrency"
+              >
+                <span>{{ unitPillLabel }}</span>
+                <Icon v-if="amountMode !== 'fixed'" icon="tabler:arrows-up-down" width="11" height="11" />
+                <Icon v-else icon="tabler:lock" width="11" height="11" />
+              </button>
+              <span v-if="verb === 'send' && fiatEquivalent" class="amount-conversion">{{ fiatEquivalent }}</span>
+            </div>
+            <!-- Keep the denomination and its conversion together; limits
+                 remain a separate helper so neither pushes the other away. -->
+            <div v-if="limitsHelperText || (verb !== 'send' && fiatEquivalent)" class="amount-helper">
               <span>{{ limitsHelperText }}</span>
-              <span class="amount-helper-convert">{{ fiatEquivalent }}</span>
+              <span v-if="verb !== 'send'" class="amount-helper-convert">{{ fiatEquivalent }}</span>
             </div>
             <!-- A till code's own rand amount, beside the person's display
                  currency, so the price at the till stays in view. -->
@@ -149,6 +174,7 @@
               class="recipient-avatar"
               :class="{
                 'has-logo': showRecipientLogo,
+                'recipient-avatar--type': verb === 'send' && !recipientUsesIdentity,
                 'recipient-avatar--silhouette': isSilhouetteRecipient || isServiceRecipient
               }"
               :style="showRecipientLogo
@@ -167,6 +193,7 @@
                 @error="logoFailed = true"
               />
               <!-- A service keeps its storefront fallback if its logo fails. -->
+              <img v-else-if="verb === 'send' && !recipientUsesIdentity" src="/icons/bitcoin.svg" alt="" class="recipient-bitcoin-logo" />
               <Icon v-else-if="isServiceRecipient" icon="tabler:building-store" width="24" height="24" />
               <svg
                 v-else-if="isSilhouetteRecipient"
@@ -199,25 +226,25 @@
                   <span>{{ formattedCountdown }}</span>
                 </div>
               </div>
-              <div v-if="recipientAddressLabel" class="recipient-addr">{{ recipientAddressLabel }}</div>
+              <div v-if="recipientAddressLabel" class="recipient-addr">{{ compactRecipientIdentifier }}</div>
             </div>
             <button
-              v-if="addressNeedsDetails && !recipientChecking"
+              v-if="!recipientChecking && (verb === 'send' || addressNeedsDetails)"
               type="button"
               class="recipient-info"
-              :aria-label="$t('Details')"
-              :aria-expanded="showAddress ? 'true' : 'false'"
-              @click="showAddress = !showAddress"
+              :aria-label="$t('Payment details')"
+              @click="openPaymentDetails"
             >
               <Icon icon="tabler:info-circle" width="17" height="17" />
             </button>
+            <BrantaVerifiedBadge v-if="verb === 'send' && recipientVerification" :verify-url="recipientVerification.verifyUrl" />
           </section>
 
           <!-- The labeled detail panel behind the info glyph, with copy
                for manual verification against another surface. Only for
                destinations the cell's line cannot show whole. -->
           <transition name="fade-collapse">
-            <div v-if="showAddress && addressNeedsDetails" class="recipient-details">
+            <div v-if="verb !== 'send' && showAddress && addressNeedsDetails" class="recipient-details">
               <div class="recipient-details-copy">
                 <div class="recipient-details-label">{{ $t('Address') }}</div>
                 <div class="recipient-details-value">{{ recipientAddress }}</div>
@@ -236,24 +263,24 @@
           <!-- Rare context keeps its quiet lines under the cell: the
                fiat-payout delivery hint, the hosting-wallet name, the
                invoice's own description, the redeem rail override. -->
-          <div v-if="recipientLnService" class="ln-service-hint">
+          <div v-if="verb !== 'send' && recipientLnService" class="ln-service-hint">
             <Icon icon="tabler:device-mobile" width="13" height="13" />
             <span>{{ recipientLnService.hint }}</span>
           </div>
-          <div v-else-if="recipientWalletBrand" class="wallet-brand-hint">
+          <div v-else-if="verb !== 'send' && recipientWalletBrand" class="wallet-brand-hint">
             <Icon icon="tabler:wallet" width="13" height="13" />
             <span>{{ recipientWalletBrand }}</span>
           </div>
-          <div v-if="payment?.description" class="payment-desc">
+          <div v-if="verb !== 'send' && payment?.description" class="payment-desc">
             <Icon icon="tabler:file-description" width="14" height="14" />
             <span>{{ payment.description }}</span>
           </div>
-          <div v-if="payment?.recipient?.viaOverride" class="amount-confirm-via">
+          <div v-if="verb !== 'send' && payment?.recipient?.viaOverride" class="amount-confirm-via">
             {{ payment.recipient.viaOverride }}
           </div>
 
           <!-- Wallet capability hint (e.g. Bitcoin/Spark needs Spark wallet). -->
-          <div v-if="!walletCanPay && walletHint" class="wallet-hint">
+          <div v-if="!preparationActive && !walletCanPay && walletHint" class="wallet-hint">
             <Icon icon="tabler:info-circle" width="14" height="14" />
             <span>{{ walletHint }}</span>
           </div>
@@ -286,6 +313,7 @@
             <Icon icon="tabler:message-circle" width="14" height="14" class="note-icon" />
             <input
               v-model="comment"
+              @input="commentEdited = true"
               type="text"
               :placeholder="$t('Add a note')"
               class="note-input"
@@ -298,7 +326,19 @@
                inside the stage so it inherits the sheet's rhythm; when
                present it owns fee display, so the generic footnote below
                stays out of the way. -->
-          <slot name="extras" />
+          <slot v-if="!preparationActive" name="extras" />
+
+          <div
+            v-if="preparationActive"
+            class="payment-preparation-details"
+            :aria-busy="preparing ? 'true' : null"
+            :aria-label="$t('Getting ready to pay')"
+          >
+            <div class="preparation-fee">
+              <span>{{ $t('Network fee') }}</span>
+              <i class="preparation-placeholder preparation-placeholder--fee" aria-hidden="true"></i>
+            </div>
+          </div>
 
           <!-- Facts about the payment, read as one group: the network fee and,
                when the service asks for one, the refund address.
@@ -306,11 +346,12 @@
                static label (e.g. "Free (Spark transfer)"). NWC/LNbits
                can't pre-estimate fees, so the parent simply omits this
                object on those paths and we show nothing. -->
-          <div v-if="feeRowVisible || refundRow" class="fact-group">
+          <p v-if="!preparationActive && payment?.feeNotice" class="payment-fee-notice" role="status">{{ payment.feeNotice }}</p>
+          <div v-if="!preparationActive && (feeRowVisible || refundRow)" class="fact-group">
             <div v-if="feeRowVisible" class="fee-row" :class="{ 'fee-row--joined': !!refundRow }">
-              <span class="fee-row-label">{{ $t('Network fee') }}</span>
+              <span class="fee-row-label">{{ payment?.feeEstimate?.title || $t('Network fee') }}</span>
               <span class="fee-row-value">
-                <q-spinner-dots v-if="payment?.feeEstimate?.isEstimating" size="14px" />
+                <q-spinner-dots v-if="payment?.feeEstimate?.isEstimating" class="fee-pending" size="14px" />
                 <span v-else>{{ feeRowValueText }}</span>
               </span>
             </div>
@@ -321,21 +362,87 @@
               :disabled="isSending || isComplete"
               @pick="onRefundPick"
             />
+            <div v-if="totalRowVisible" class="payment-total-row"><span>{{ $t('Total') }}</span><strong>{{ totalRowValueText }}</strong></div>
           </div>
 
-          <!-- Pay with: which connected wallet pays. Last in the scroll
-               region, directly above the pinned commit control, so the
-               choice is made right before the slide. Only the send verb
-               has one (redeem / charge never pass wallets), and the field
-               itself renders nothing for fewer than two wallets. -->
-          <PayWithField
-            v-if="verb === 'send' && payingWallets.length > 1"
-            :wallets="payingWallets"
-            :model-value="sendingWalletId"
-            :disabled="isSending || isComplete"
-            @update:model-value="onPayWithPick"
-          />
+        </div>
 
+        <div v-if="detailsOpen" class="stage payment-details-view" tabindex="-1" ref="detailsView">
+          <dl class="payment-details-list">
+            <div v-if="paymentDetails.typeLabel"><dt>{{ $t('Payment type') }}</dt><dd>{{ paymentDetails.typeLabel }}</dd></div>
+            <div v-if="paymentDetails.networkLabel"><dt>{{ $t('Network') }}</dt><dd>{{ paymentDetails.networkLabel }}</dd></div>
+            <div v-if="detailsAddress" class="payment-details-destination">
+              <dt>{{ paymentDetails.addressLabel || $t(payment?.recipient?.addressType === 'invoice' ? 'Payment request' : 'Address') }}<button type="button" class="payment-details-copy" :aria-label="$t('Copy')" @click="copyAddress"><Icon :icon="addressCopied ? 'tabler:check' : 'tabler:copy'" width="18" height="18" /></button></dt>
+              <dd class="payment-details-address">{{ detailsAddress }}</dd>
+            </div>
+            <div v-if="paymentDetails.description"><dt>{{ $t('Description') }}</dt><dd>{{ paymentDetails.description }}</dd></div>
+            <div v-for="(item, index) in detailsMetadata" :key="index"><dt>{{ item.label }}</dt><dd>{{ item.value }}</dd></div>
+          </dl>
+        </div>
+
+        <div v-if="walletPickerOpen" class="stage payment-wallet-picker">
+          <p class="payment-wallet-intro">{{ $t('Choose a wallet for this payment.') }}</p>
+          <div class="payment-wallet-options" role="radiogroup" :aria-label="$t('Pay with')" @keydown="onWalletPickerKeydown">
+            <button
+              v-for="wallet in payingWallets"
+              :key="wallet.id"
+              type="button"
+              role="radio"
+              class="payment-wallet-option"
+              :data-wallet-id="wallet.id"
+              :tabindex="wallet.id === walletPickerTabId ? 0 : -1"
+              :class="{ 'payment-wallet-option--selected': wallet.id === walletDraftId }"
+              :aria-checked="wallet.id === walletDraftId ? 'true' : 'false'"
+              :aria-disabled="walletSelectable(wallet) ? undefined : 'true'"
+              @click="chooseWalletDraft(wallet)"
+            >
+              <span class="payment-wallet-tile" :class="{ 'payment-wallet-tile--arkade': wallet.type === 'arkade' }">
+                <WalletBrandMark :type="wallet.type" :size="20" />
+              </span>
+              <span class="payment-wallet-copy">
+                <span class="payment-wallet-name">
+                  <strong>{{ wallet.name || $t('Wallet') }}</strong>
+                  <span v-if="wallet.id === preferredWalletId" class="payment-wallet-preferred">{{ $t('Default') }}</span>
+                </span>
+                <small>
+                  {{ walletPickerDetail(wallet) }}<template v-if="walletPickerBalance(wallet) !== null"> · <HiddenAmount :class="{ 'balance-stale': walletPickerBalanceOutdated(wallet) }">{{ walletPickerBalance(wallet) }}</HiddenAmount></template>
+                </small>
+              </span>
+              <Icon
+                :icon="wallet.id === walletDraftId ? 'tabler:circle-check-filled' : 'tabler:circle'"
+                width="21"
+                height="21"
+                class="payment-wallet-radio"
+              />
+            </button>
+          </div>
+          <p v-if="!payingWallets.length" class="payment-wallet-note">{{ $t('No wallet can make this payment.') }}</p>
+          <p class="payment-wallet-note">{{ $t('This is just for this payment.') }}</p>
+        </div>
+
+        <div v-if="walletPickerOpen" class="cta-row confirm-cta">
+          <button type="button" class="primary-cta payment-wallet-apply" :disabled="!walletSelectable(walletDraft)" @click="applyWalletDraft">
+            {{ $t('Use {name}', { name: walletDraft?.name || $t('Wallet') }) }}
+          </button>
+        </div>
+
+        <div v-else-if="preparationActive && !detailsOpen" class="cta-row confirm-cta preparation-cta">
+          <div v-if="preparationFailed" class="preparation-error" role="status">
+            <Icon icon="tabler:alert-circle" width="17" height="17" />
+            <span>
+              <strong>{{ $t('Can\'t get this payment ready') }}</strong>
+              <small>{{ preparationError }}</small>
+            </span>
+          </div>
+          <div v-else class="preparation-status" role="status" aria-live="polite">
+            <q-spinner size="16px" aria-hidden="true" />
+            <span>
+              {{ $t('Getting ready to pay…') }}
+              <small v-if="preparationSlow">{{ $t('This is taking longer than usual. You can try again later.') }}</small>
+            </span>
+          </div>
+          <button v-if="preparationFailed" type="button" class="primary-cta preparation-retry" @click="$emit('retry-preparation')">{{ $t('Try again') }}</button>
+          <button v-else type="button" class="primary-cta" disabled>{{ $t('Send') }}</button>
         </div>
 
         <!-- Commit control — pinned OUTSIDE the scroll region so the commit
@@ -345,7 +452,7 @@
              the filling ProgressCta — trickle while in flight, then 100% +
              check on success — bridging cleanly into the confirmation screen
              with no separate confirm step and no blank in between. -->
-        <div v-if="!isReading" v-show="!takeover" class="cta-row confirm-cta">
+        <div v-else-if="!isReading" v-show="!takeover && !detailsOpen" class="cta-row confirm-cta">
             <transition name="cta-swap" mode="out-in">
               <ProgressCta
                 v-if="isSending || isComplete"
@@ -354,6 +461,7 @@
                 :done="isComplete"
                 :tall="requiresSlide"
               />
+              <button v-else-if="verb === 'send' && !walletCanPay && payingWallets.length" key="choose-wallet" type="button" class="primary-cta choose-wallet-cta" @click="openWalletPicker">{{ $t('Choose another wallet') }}</button>
               <SlideToSend
                 v-else-if="requiresSlide"
                 key="slide"
@@ -381,7 +489,7 @@
             <div v-if="isSending && statusMessage && statusMessage !== sendingLabel" class="fee-footnote status-line">
               {{ statusMessage }}
             </div>
-            <div v-else-if="!isSending && !isComplete && !feeRowVisible && !hasExtras && verb === 'send'" class="fee-footnote">
+            <div v-else-if="!isSending && !isComplete && !feeRowVisible && !payment?.feeNotice && !hasExtras && verb === 'send'" class="fee-footnote">
               {{ $t('Network fees apply') }}
             </div>
         </div>
@@ -398,7 +506,10 @@ import { FIAT_SYMBOLS } from '../utils/fiatCurrencies.js'
 import SlideToSend from './SlideToSend.vue'
 import BrantaVerifiedBadge from './BrantaVerifiedBadge.vue'
 import ProgressCta from './ProgressCta.vue'
-import PayWithField from './PayWithField.vue'
+import WalletBrandMark from './WalletBrandMark.vue'
+import HiddenAmount from './HiddenAmount.vue'
+import { WALLET_TYPE_LABELS } from '../providers/WalletFactory'
+import { payingWalletReasonText } from '../utils/payingWallets.js'
 import RefundAddressField from './RefundAddressField.vue'
 import CardFace from './CardFace.vue'
 import { onAndroidBack } from '../utils/androidBack.js'
@@ -409,7 +520,7 @@ const SLIDE_THRESHOLD_SATS = 10000
 
 export default {
   name: 'PaymentConfirmSheet',
-  components: { SlideToSend, BrantaVerifiedBadge, ProgressCta, PayWithField, RefundAddressField, CardFace },
+  components: { SlideToSend, BrantaVerifiedBadge, ProgressCta, WalletBrandMark, HiddenAmount, RefundAddressField, CardFace },
   props: {
     modelValue: { type: Boolean, default: false },
     /**
@@ -417,6 +528,12 @@ export default {
      * The component is presentational — the parent owns this object.
      */
     payment: { type: Object, default: null },
+    /** A contact handoff opens this same sheet before its payment details arrive. */
+    contextual: { type: Boolean, default: false },
+    preparing: { type: Boolean, default: false },
+    preparationError: { type: String, default: '' },
+    preparationSlow: { type: Boolean, default: false },
+    preferredWalletId: { type: String, default: null },
     /**
      * Whether the wallet that pays can pay this payment. The parent derives it
      * from the SELECTED wallet (`sendingWalletId`), so picking a wallet that
@@ -476,21 +593,35 @@ export default {
     takeoverTitle: { type: String, default: '' },
     takeoverLocked: { type: Boolean, default: false }
   },
-  emits: ['update:modelValue', 'confirm', 'cancel', 'amount-changed', 'update:sendingWalletId', 'refund-pick', 'takeover-cancel'],
+  emits: ['update:modelValue', 'confirm', 'cancel', 'amount-changed', 'update:sendingWalletId', 'refund-pick', 'takeover-cancel', 'retry-preparation'],
   data() {
     return {
       showAddress: false,
       addressCopied: false,
-      displayAmount: '',
+      displayAmount: this.payment?.amount?.mode === 'fixed' ? String(this.payment.amount.fixedSats || 0) : '',
       currentCurrency: 'sats',
       comment: '',
       fiatRates: {},
       logoFailed: false,
-      _copyTimer: null
+      _copyTimer: null,
+      walletPickerOpen: false,
+      detailsOpen: false,
+      walletDraftId: null,
+      amountEdited: false,
+      denominationChanged: false,
+      commentEdited: false,
+      visualViewportHeight: null,
+      visualViewportBottom: 0
     }
   },
   computed: {
     titleId() { return `payment-confirm-title-${this.$.uid}` },
+    sendViewportStyle() {
+      return this.verb === 'send' && this.visualViewportHeight ? {
+        '--payment-viewport-height': `${this.visualViewportHeight}px`,
+        '--payment-viewport-bottom': `${this.visualViewportBottom}px`,
+      } : undefined
+    },
     ...mapState(useWalletStore, ['preferredFiatCurrency', 'denominationCurrency', 'useBip177Format']),
 
     show: {
@@ -499,6 +630,46 @@ export default {
         this.$emit('update:modelValue', v)
         if (!v && this.isRedeem) this.$emit('cancel')
       }
+    },
+
+    preparationActive() { return this.verb === 'send' && (this.preparing || !!this.preparationError) },
+    preparationFailed() { return !this.preparing && !!this.preparationError },
+    selectedPayingWallet() { return this.payingWallets.find(wallet => wallet.id === this.sendingWalletId) || null },
+    headerWalletName() {
+      if (this.selectedPayingWallet) return this.selectedPayingWallet.name || this.$t('Wallet')
+      return this.sendingWalletId ? this.$t('Wallet unavailable') : this.$t('Wallet')
+    },
+    walletDraft() { return this.payingWallets.find(wallet => wallet.id === this.walletDraftId) || null },
+    walletPickerTabId() {
+      return this.walletSelectable(this.walletDraft) ? this.walletDraftId : this.payingWallets.find(wallet => this.walletSelectable(wallet))?.id
+    },
+    paymentDetails() {
+      const fallbackType = {
+        bitcoin: 'Bitcoin on-chain payment', spark: 'Spark payment', arkade: 'Arkade payment',
+        lightning: 'Lightning address', invoice: 'Lightning invoice', lnurl: 'LNURL payment',
+      }[this.payment?.recipient?.addressType]
+      return this.payment?.details || {
+        typeLabel: fallbackType ? this.$t(fallbackType) : '',
+        address: this.recipientAddress,
+        description: this.payment?.description || '',
+      }
+    },
+    detailsAddress() { return this.paymentDetails.address || this.recipientAddress },
+    detailsMetadata() {
+      const metadata = Array.isArray(this.paymentDetails.metadata) ? this.paymentDetails.metadata : [
+        ...(this.recipientLnService?.hint ? [{ label: this.$t('Details'), value: this.recipientLnService.hint }] : []),
+        ...(this.recipientWalletBrand ? [{ label: this.$t('Wallet'), value: this.recipientWalletBrand }] : []),
+      ]
+      return metadata.filter(item => item && typeof item.label === 'string' && item.label.trim()
+        && (typeof item.value === 'string' && item.value.trim() || typeof item.value === 'number' && Number.isFinite(item.value)))
+    },
+    compactRecipientIdentifier() {
+      const identifier = this.recipientAddressLabel
+      return identifier.length > 36 ? `${identifier.slice(0, 17)}…${identifier.slice(-12)}` : identifier
+    },
+    recipientUsesIdentity() {
+      const recipient = this.payment?.recipient
+      return !!(recipient?.matchedContact || recipient?.silhouette || recipient?.service || this.showRecipientLogo)
     },
 
     // ───── Recipient ─────
@@ -548,6 +719,13 @@ export default {
     // stays one tap away behind the info button.
     recipientAddressLabel() {
       if (this.recipientVerification) return ''
+      if (this.verb === 'send') {
+        if (this.payment?.recipient?.addressType === 'lightning') {
+          return this.payment?.recipient?.addressLabel || this.recipientAddress
+        }
+        // Protocol names and encoded destinations belong in Payment details.
+        return ''
+      }
       return this.payment?.recipient?.addressLabel || this.recipientAddress
     },
     isServiceRecipient() {
@@ -705,7 +883,8 @@ export default {
 
     canSubmit() {
       return this.walletCanPay && this.isAmountAcceptable && this.commitGate && !this.recipientChecking
-        && !this.payerBlocked && !this.refundHolds
+        && !this.payerBlocked && !this.refundHolds && !this.preparationActive && !this.walletPickerOpen && !this.detailsOpen
+        && !this.payment?.feeEstimate?.isEstimating
     },
 
     // ───── Refunds to (LUD-18) ─────
@@ -820,6 +999,8 @@ export default {
     feeRowVisible() {
       const fe = this.payment?.feeEstimate
       if (!fe) return false
+      if (fe.isGuess || fe.isEstimated || fe.guessed || fe.isLimit) return false
+      if (fe.sats != null && (!Number.isSafeInteger(fe.sats) || fe.sats < 0)) return false
       if (fe.isEstimating) return true
       if (fe.label) return true
       return typeof fe.sats === 'number'
@@ -828,13 +1009,21 @@ export default {
     feeRowValueText() {
       const fe = this.payment?.feeEstimate
       if (!fe) return ''
+      if (fe.isGuess || fe.isEstimated || fe.guessed || fe.isLimit) return ''
+      if (fe.sats != null && (!Number.isSafeInteger(fe.sats) || fe.sats < 0)) return ''
       if (fe.label) return fe.label
       if (typeof fe.sats !== 'number') return ''
       if (fe.sats === 0) return this.$t('Free')
       const amount = formatAmount(fe.sats, this.useBip177Format)
-      // A limit, not a quote: the most the payment may cost (Lightning
-      // addresses and links have no invoice to quote until after the slide).
-      return fe.isLimit ? this.$t('Up to {amount}', { amount }) : amount
+      return amount
+    },
+    totalRowVisible() {
+      const fee = this.payment?.feeEstimate
+      return this.verb === 'send' && this.feeRowVisible && !fee.isEstimating && !this.hasExtras
+        && Number.isSafeInteger(fee.sats) && fee.sats >= 0 && this.amountInSats > 0
+    },
+    totalRowValueText() {
+      return formatAmount(this.amountInSats + this.payment.feeEstimate.sats, this.useBip177Format)
     },
 
     requiresSlide() {
@@ -917,7 +1106,7 @@ export default {
     topTitle() {
       if (this.isCard || this.isReading) return this.$t('Receive from card')
       if (this.verb === 'charge') return this.$t('Charge card')
-      return this.isRedeem ? this.$t('Redeem from') : this.$t('Send to')
+      return this.isRedeem ? this.$t('Redeem from') : this.$t('Send')
     },
 
     confirmSendLabel() {
@@ -961,8 +1150,13 @@ export default {
       if (v) {
         this.resetForFreshOpen()
         this.loadFiatRates()
-      }
+      } else { this.walletPickerOpen = false; this.detailsOpen = false }
       this.listenForBack(v)
+    },
+    preparing(pending, wasPending) {
+      // Resolving metadata must never erase an amount typed while waiting.
+      // A newly known fixed invoice is the sole exception: its amount wins.
+      if (wasPending && !pending && this.show && !this.preparationError) this.initializeResolvedDetails()
     },
     // A new/changed logo URL (e.g. a Branta verification arriving async
     // after the sheet opened) gets a fresh chance to load.
@@ -982,10 +1176,58 @@ export default {
       if (wasReading && !reading && this.show) this.resetForFreshOpen()
     }
   },
+  mounted() {
+    this.startViewportTracking()
+    // The contextual host can mount directly into its first visible payment.
+    if (this.show) {
+      this.resetForFreshOpen()
+      this.loadFiatRates()
+      this.listenForBack(true)
+    }
+  },
   beforeUnmount() {
     this._stopBackListener?.()
+    this.stopViewportTracking()
   },
   methods: {
+    syncVisualViewport() {
+      const viewport = window.visualViewport
+      if (!viewport || Math.abs((viewport.scale || 1) - 1) > .01 || !Number.isFinite(viewport.height) || viewport.height <= 0) {
+        this.visualViewportHeight = null
+        this.visualViewportBottom = 0
+        return
+      }
+      this.visualViewportHeight = Math.round(viewport.height)
+      this.visualViewportBottom = Math.max(0, Math.round(window.innerHeight - (viewport.offsetTop || 0) - viewport.height))
+    },
+    startViewportTracking() {
+      if (this.verb !== 'send' || typeof window === 'undefined') return
+      this._viewportListener = () => this.syncVisualViewport()
+      window.visualViewport?.addEventListener('resize', this._viewportListener, { passive: true })
+      window.visualViewport?.addEventListener('scroll', this._viewportListener, { passive: true })
+      window.addEventListener('resize', this._viewportListener, { passive: true })
+      this.syncVisualViewport()
+    },
+    stopViewportTracking() {
+      if (!this._viewportListener || typeof window === 'undefined') return
+      window.visualViewport?.removeEventListener('resize', this._viewportListener)
+      window.visualViewport?.removeEventListener('scroll', this._viewportListener)
+      window.removeEventListener('resize', this._viewportListener)
+      this._viewportListener = null
+    },
+    openPaymentDetails() {
+      if (this.verb !== 'send') { this.showAddress = !this.showAddress; return }
+      if (this.isSending || this.isComplete) return
+      this.walletPickerOpen = false
+      this.detailsOpen = true
+      this.$nextTick(() => this.$refs.detailsView?.focus())
+    },
+
+    closePaymentDetails() {
+      this.detailsOpen = false
+      this.$nextTick(() => this.$refs.card?.$el.querySelector('.recipient-info')?.focus())
+    },
+
     async loadFiatRates() {
       try {
         await fiatRatesService.ensureRatesLoaded()
@@ -997,9 +1239,10 @@ export default {
 
     /** From the detail panel: copy the raw destination for cross-checking. */
     async copyAddress() {
-      if (!this.recipientAddress) return
+      const address = this.detailsAddress || this.recipientAddress
+      if (!address) return
       try {
-        await navigator.clipboard.writeText(this.recipientAddress)
+        await navigator.clipboard.writeText(address)
         this.addressCopied = true
         if (this._copyTimer) clearTimeout(this._copyTimer)
         this._copyTimer = setTimeout(() => { this.addressCopied = false }, 1600)
@@ -1010,8 +1253,14 @@ export default {
     },
 
     resetForFreshOpen() {
+      this.walletPickerOpen = false
+      this.detailsOpen = false
+      this.walletDraftId = null
       this.showAddress = false
       this.addressCopied = false
+      this.amountEdited = false
+      this.denominationChanged = false
+      this.commentEdited = false
       // A payment made for a request starts with that request's note (the recipient must accept comments).
       this.comment = this.payment?.commentAllowed
         ? String(this.payment.defaultComment || '').slice(0, this.payment.commentMaxLength || 100)
@@ -1044,6 +1293,28 @@ export default {
       this.$nextTick(() => this.$emit('amount-changed', this.amountInSats))
     },
 
+    initializeResolvedDetails() {
+      // Terms arrive after the sheet opens. Fill only defaults the person
+      // has not already edited, including an intentionally cleared draft.
+      if (!this.commentEdited && this.payment?.commentAllowed) {
+        this.comment = String(this.payment.defaultComment || '').slice(0, this.payment.commentMaxLength || 100)
+      }
+      if (this.amountMode === 'fixed') {
+        this.displayAmount = String(this.fixedSats)
+        this.currentCurrency = 'sats'
+      } else if (!this.amountEdited && !this.denominationChanged) {
+        if (this.payoutCurrency && this.payment?.amount?.defaultPayout > 0) {
+          this.displayAmount = String(this.payment.amount.defaultPayout)
+          this.currentCurrency = this.payoutCurrency.code
+        } else if (!this.displayAmount && this.payment?.amount?.defaultAmount > 0) {
+          this.displayAmount = String(this.payment.amount.defaultAmount)
+          this.currentCurrency = 'sats'
+        } else if (!this.displayAmount && this.payoutCurrency) {
+          this.currentCurrency = this.payoutCurrency.code
+        }
+      }
+    },
+
     /**
      * The user picked another wallet in "Pay with". The parent owns the
      * selection (it re-evaluates capability, balance and fees for it), so this
@@ -1055,6 +1326,67 @@ export default {
       this.$emit('update:sendingWalletId', walletId)
     },
 
+    walletSelectable(wallet) { return !!wallet?.usable && !wallet.connectionFailed },
+
+    walletPickerDetail(wallet) {
+      if (wallet.connectionFailed) return this.$t('Unavailable right now')
+      if (wallet.hint) return wallet.hint
+      if (wallet.reason) return payingWalletReasonText(wallet.reason, this.$t.bind(this))
+      return WALLET_TYPE_LABELS[wallet.type] || wallet.type || this.$t('Wallet')
+    },
+
+    walletPickerBalance(wallet) {
+      const balance = useWalletStore().getDisplayBalance(wallet.id)
+      return balance?.known ? formatAmount(balance.balance, this.useBip177Format) : null
+    },
+    walletPickerBalanceOutdated(wallet) {
+      const balance = useWalletStore().getDisplayBalance(wallet.id)
+      return wallet.connectionFailed || balance?.outdated || balance?.isCached
+    },
+
+    openWalletPicker() {
+      if (this.verb !== 'send' || this.preparationActive || this.isSending || this.isComplete) return
+      this.detailsOpen = false
+      this.walletDraftId = this.sendingWalletId
+      this.walletPickerOpen = true
+      this.$nextTick(() => this.$refs.card?.$el.querySelector('.payment-wallet-option[tabindex="0"]')?.focus())
+    },
+
+    chooseWalletDraft(wallet) {
+      if (!this.walletSelectable(wallet)) return
+      this.walletDraftId = wallet.id
+    },
+
+    closeWalletPicker() {
+      this.walletPickerOpen = false
+      this.walletDraftId = null
+      this.$nextTick(() => this.$refs.walletTrigger?.focus())
+    },
+
+    applyWalletDraft() {
+      if (this.isSending || this.isComplete || !this.walletSelectable(this.walletDraft)) return
+      const id = this.walletDraftId
+      this.$emit('update:sendingWalletId', id)
+      this.closeWalletPicker()
+    },
+
+    onWalletPickerKeydown(event) {
+      if (!['ArrowDown', 'ArrowUp', 'ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return
+      const options = Array.from(event.currentTarget.querySelectorAll('[role="radio"]:not([aria-disabled="true"])'))
+      if (!options.length) return
+      const at = options.indexOf(document.activeElement)
+      const next = event.key === 'Home' ? 0 : event.key === 'End' ? options.length - 1
+        : ['ArrowDown', 'ArrowRight'].includes(event.key) ? (at + 1) % options.length : at < 0 ? options.length - 1 : (at - 1 + options.length) % options.length
+      event.preventDefault()
+      const wallet = this.payingWallets.find(wallet => wallet.id === options[next].dataset.walletId)
+      this.chooseWalletDraft(wallet)
+      options[next].focus()
+    },
+
+    onEscape() {
+      if (this.verb === 'send' && !this.isSending && !this.isComplete) this.onTopAction()
+    },
+
     /** The person chose on the refund row; the parent owns the choice. */
     onRefundPick(pick) {
       if (this.isSending || this.isComplete) return
@@ -1062,11 +1394,13 @@ export default {
     },
 
     onTopAction() {
+      if (this.walletPickerOpen) { this.closeWalletPicker(); return }
+      if (this.detailsOpen) { this.closePaymentDetails(); return }
       if (this.takeover) {
         if (!this.takeoverLocked) this.$emit('takeover-cancel')
         return
       }
-      if (this.isRedeem && (this.isSending || this.isComplete)) return
+      if (this.isSending || this.isComplete) return
       this.show = false
       if (!this.isRedeem) this.$emit('cancel')
     },
@@ -1103,6 +1437,7 @@ export default {
     },
 
     onAmountChange() {
+      this.amountEdited = true
       // Sanitize as the user types so parseFloat can never silently truncate at
       // a grouping separator (e.g. "2,500" → 2500, or "2500,000" → 2500 → a
       // 1000x underpayment). Keep only digits and a single decimal point, and
@@ -1135,6 +1470,7 @@ export default {
 
     toggleCurrency() {
       if (this.amountMode === 'fixed') return
+      this.denominationChanged = true
       // Fiat-payout addresses toggle between the recipient's currency and sats;
       // everything else toggles between sats and the user's global fiat.
       const order = this.payoutCurrency
@@ -1155,6 +1491,8 @@ export default {
      */
     setAmountSats(sats) {
       if (this.amountMode === 'fixed') return
+      this.amountEdited = true
+      this.denominationChanged = true
       this.currentCurrency = 'sats'
       this.displayAmount = String(Math.max(0, Math.floor(sats)))
     },
@@ -1205,6 +1543,7 @@ export default {
   overflow: hidden;
   font-family: 'Manrope', sans-serif;
   padding-bottom: max(1rem, var(--safe-bottom, 0px));
+  container-type: inline-size;
 }
 
 .sheet-card-dark { box-shadow: 0 -20px 60px rgba(0, 0, 0, 0.55); }
@@ -1212,6 +1551,10 @@ export default {
   border-top: 1px solid var(--border-card);
   box-shadow: 0 -20px 50px rgba(40, 34, 20, 0.12);
 }
+/* Mobile keyboards can shrink only the visual viewport. Keep both the
+   bottom-anchored dialog and its scroll region above that keyboard. */
+:global(.payment-send-dialog .q-dialog__inner--bottom) { bottom: var(--payment-viewport-bottom, 0px); }
+.sheet-card--send { max-height: calc(var(--payment-viewport-height, 94vh) - var(--safe-top, 0px) - 8px); }
 
 .grab-bar {
   width: 36px;
@@ -1255,6 +1598,122 @@ export default {
   justify-content: flex-end;
 }
 
+.top-row--send {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  gap: 6px;
+  padding: 6px 12px 10px;
+}
+.top-row--send.top-row--child { grid-template-columns: 44px minmax(0, 1fr) 44px; }
+.send-back-btn {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-primary);
+  cursor: pointer;
+}
+.send-back-btn:disabled { opacity: .5; cursor: default; }
+.payment-wallet-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  width: fit-content;
+  max-width: 100%;
+  justify-self: end;
+  min-width: 0;
+  min-height: 44px;
+  padding: 6px;
+  border: 0;
+  border-radius: 12px;
+  background: var(--bg-input);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: .875rem;
+  line-height: 1.35;
+  cursor: pointer;
+}
+.payment-wallet-trigger > :not(span) { flex-shrink: 0; }
+.payment-wallet-trigger span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.payment-wallet-mark { display: grid; place-items: center; flex: 0 0 26px; width: 26px; height: 26px; border-radius: 8px; background: #202020; color: #fff; }
+.payment-wallet-mark--arkade { background: var(--arkade-tile, #202020); }
+.payment-wallet-trigger:disabled { cursor: default; opacity: .65; }
+@container (max-width: 18rem) {
+  .top-row--send:not(.top-row--child) { grid-template-columns: 44px minmax(0, 1fr) 44px; }
+  .top-row--send:not(.top-row--child) .payment-wallet-trigger { grid-column: 1 / -1; justify-self: end; width: auto; max-width: 100%; }
+  .top-row--send:not(.top-row--child) .payment-wallet-trigger > span:not(.payment-wallet-mark) { white-space: normal; overflow-wrap: anywhere; }
+}
+.sheet-card--send .recipient-info { flex: 0 0 44px; width: 44px; min-height: 44px; }
+.sheet-card--send .stage-compose > * { flex-shrink: 0; }
+.sheet-card--send .amount-stage { padding: 18px 0 12px; }
+.sheet-card--send .note-input { font-size: 1rem; min-width: 0; }
+.sheet-card--send .recipient-avatar--type { background: transparent !important; box-shadow: none; text-shadow: none; }
+.recipient-bitcoin-logo { width: 44px; height: 44px; display: block; }
+.payment-details-view { padding-top: 12px; }
+.payment-details-list { margin: 0; }
+.payment-details-list > div { padding: 15px 0; border-bottom: 1px solid var(--border-card); }
+.payment-details-list dt { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 0; font-size: .8125rem; line-height: 1.5; color: var(--text-secondary); }
+.payment-details-list dd { margin: 6px 0 0; font-size: .9375rem; line-height: 1.65; color: var(--text-primary); overflow-wrap: anywhere; white-space: pre-wrap; }
+.payment-details-list .payment-details-address { font-family: ui-monospace, SFMono-Regular, monospace; font-size: .8125rem; user-select: text; }
+.payment-details-copy { display: grid; place-items: center; width: 44px; height: 44px; padding: 0; flex-shrink: 0; border: 0; border-radius: 50%; background: var(--bg-input); color: var(--text-primary); cursor: pointer; }
+.payment-fee-notice { margin: 0; padding: 5px 2px; font-size: .8125rem; line-height: 1.5; color: var(--text-secondary); }
+.payment-total-row { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 13px 12px; border-top: 1px solid var(--border-card); color: var(--text-primary); font-size: .875rem; }
+.payment-total-row strong { font-weight: 650; text-align: right; }
+
+/* Send reviews keep the source screen underneath one sheet. Their middle
+   scrolls independently so Cancel and the primary action remain reachable. */
+.sheet-card--send .top-row { gap: 8px; }
+.sheet-card--send .top-title { font-size: .9375rem; overflow-wrap: anywhere; }
+.sheet-card--send .top-action { flex: 0 0 24px; width: 24px; }
+.sheet-card--send .primary-cta { height: auto; min-height: 48px; padding: 12px; font-size: 1rem; overflow-wrap: anywhere; }
+.sheet-card--send .recipient-name { font-size: 1rem; white-space: normal; overflow-wrap: anywhere; }
+.sheet-card--send .recipient-addr { font-size: .8125rem; font-family: inherit; }
+.sheet-card--send .amount-helper,
+.sheet-card--send .wallet-hint,
+.sheet-card--send .fee-footnote { font-size: .8125rem; }
+.sheet-card--send .unit-pill { min-height: 44px; font-size: .8125rem; }
+.amount-denomination { display: contents; }
+.sheet-card--send .amount-denomination { display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 4px 12px; max-width: 100%; }
+.sheet-card--send .amount-conversion { font-size: .875rem; line-height: 1.5; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+.sheet-card--send .amount-helper { justify-content: center; text-align: center; }
+.sheet-card--send .unit-pill:disabled { opacity: 1; }
+.sheet-card--send button:focus-visible { outline: 2px solid var(--brand-accent-text); outline-offset: 3px; }
+
+.payment-preparation-details { display: flex; flex-direction: column; gap: 12px; }
+.preparation-placeholder { display: block; height: 10px; border-radius: 4px; background: var(--border-card); }
+.preparation-placeholder--fee { width: 46px; }
+.preparation-fee { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 2px; color: var(--text-secondary); font-size: .8125rem; }
+.preparation-status,
+.preparation-error { display: flex; align-items: flex-start; gap: 9px; color: var(--text-secondary); font-size: .8125rem; line-height: 1.5; text-align: left; padding: 0 2px 12px; }
+.preparation-status > :first-child,
+.preparation-error > :first-child { flex-shrink: 0; margin-top: 3px; }
+.preparation-status small,
+.preparation-error small { display: block; margin-top: 4px; font-size: .75rem; color: var(--text-muted); }
+.preparation-error strong { font-weight: 600; color: var(--text-primary); }
+.payment-wallet-intro,
+.payment-wallet-note { margin: 0; font-size: .8125rem; line-height: 1.5; color: var(--text-secondary); }
+.payment-wallet-note { color: var(--text-muted); }
+.payment-wallet-options { overflow: hidden; flex-shrink: 0; border: 1px solid var(--border-card); border-radius: var(--radius-md); }
+.payment-wallet-option { display: flex; align-items: center; gap: 11px; width: 100%; min-height: 76px; padding: 14px 12px; border: 0; background: transparent; text-align: left; font: inherit; color: var(--text-primary); cursor: pointer; }
+.payment-wallet-option + .payment-wallet-option { border-top: 1px solid var(--border-card); }
+.payment-wallet-option--selected { background: var(--bg-input); }
+.payment-wallet-option[aria-disabled="true"] { color: var(--text-muted); cursor: default; }
+.payment-wallet-tile { width: 36px; height: 36px; flex: 0 0 36px; display: flex; align-items: center; justify-content: center; border-radius: 10px; background: linear-gradient(135deg, #2A2A2A, #1A1A1A); }
+.payment-wallet-tile--arkade { background: var(--arkade-tile, #101010); }
+.payment-wallet-copy { flex: 1; min-width: 0; }
+.payment-wallet-name { display: flex; align-items: baseline; flex-wrap: wrap; gap: 5px 8px; }
+.payment-wallet-name strong { font-size: .9375rem; font-weight: 600; line-height: 1.4; overflow-wrap: anywhere; }
+.payment-wallet-copy small { display: block; margin-top: 4px; font-size: .75rem; line-height: 1.5; color: var(--text-secondary); overflow-wrap: anywhere; }
+.payment-wallet-preferred { font-size: .6875rem; color: var(--brand-accent-text); }
+.payment-wallet-radio { flex: 0 0 21px; color: var(--brand-accent-text); }
+.payment-wallet-option[aria-disabled="true"] .payment-wallet-radio { color: var(--text-muted); }
+@media (prefers-reduced-motion: reduce) { .preparation-status :deep(.q-spinner) { animation: none; } }
+
 /* ─── Stages ───
    The stage is the ONLY scroll region, and with the compressed rhythm
    below it should never actually scroll in the normal states — the
@@ -1274,6 +1733,9 @@ export default {
 @supports (height: 1dvh) {
   .sheet-card {
     max-height: min(94dvh, calc(100dvh - var(--safe-top, 0px) - 8px));
+  }
+  .sheet-card--send {
+    max-height: min(94dvh, calc(var(--payment-viewport-height, 100dvh) - var(--safe-top, 0px) - 8px));
   }
 }
 /* ─── Recipient ───
