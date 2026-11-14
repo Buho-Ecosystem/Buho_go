@@ -9,8 +9,8 @@
     - One screen: recipient hero, amount (editable for free/range, locked for
       fixed), optional comment, fee. While the parent checks the recipient
       with Branta (`recipient.checking`) the row pulses in place and the
-      commit control waits; a verified business brings the seal to the
-      top-right corner.
+      commit control waits; a matched business brings its centered mark,
+      with its saved check available through Payment details.
     - The commit control morphs into the filling ProgressCta on submit:
       slide-to-confirm above the high-value threshold, a tap button below it.
     - Validates the entered amount against the supplied constraints before
@@ -41,26 +41,26 @@
     :style="sendViewportStyle"
     @escape-key="onEscape"
   >
-    <q-card ref="card" class="sheet-card" :class="[{ 'sheet-card--redeem': isRedeem, 'sheet-card--contextual': contextual, 'sheet-card--send': verb === 'send' }, $q.dark.isActive ? 'sheet-card-dark' : 'sheet-card-light']">
+    <q-card ref="card" class="sheet-card" :class="[{ 'sheet-card--redeem': isRedeem, 'sheet-card--contextual': contextual, 'sheet-card--send': verb === 'send' }, $q.dark.isActive ? 'sheet-card-dark' : 'sheet-card-light']" @keydown.esc="onEscape">
       <!-- Swipe down anywhere on the grab bar or the header to close. -->
       <div class="sheet-top" v-touch-swipe.mouse.down="onHeaderSwipe">
         <div v-if="!isRedeem" class="grab-bar"></div>
 
-        <header class="top-row" :class="{ 'top-row--send': verb === 'send', 'top-row--child': walletPickerOpen || detailsOpen || takeover }">
+        <header class="top-row" :class="{ 'top-row--send': verb === 'send', 'top-row--child': walletPickerOpen || detailsOpen || brantaDetailsOpen || takeover }">
           <button
             v-if="verb === 'send'"
             type="button"
             class="top-btn send-back-btn sheet-nav-icon"
             :disabled="isSending || isComplete || (takeover && takeoverLocked)"
-            :aria-label="$t(walletPickerOpen || detailsOpen ? 'Back' : 'Cancel')"
+            :aria-label="$t(walletPickerOpen || detailsOpen || brantaDetailsOpen ? 'Back' : 'Cancel')"
             @click="onTopAction"
-          ><Icon :icon="walletPickerOpen || detailsOpen ? 'tabler:chevron-left' : 'tabler:x'" width="22" height="22" /></button>
+          ><Icon :icon="walletPickerOpen || detailsOpen || brantaDetailsOpen ? 'tabler:chevron-left' : 'tabler:x'" width="22" height="22" /></button>
           <q-btn v-else flat round dense @click="onTopAction" class="top-btn glass-back-btn" :disable="takeover ? takeoverLocked : isRedeem && (isSending || isComplete)" :aria-label="$t('Cancel')">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="m6 6 12 12M6 18 18 6" /></svg>
           </q-btn>
-          <h2 class="top-title" :id="titleId">{{ walletPickerOpen ? $t('Pay with') : detailsOpen ? $t('Payment details') : takeover ? takeoverTitle : topTitle }}</h2>
+          <h2 class="top-title" :id="titleId">{{ walletPickerOpen ? $t('Pay with') : brantaDetailsOpen ? $t('Recipient check') : detailsOpen ? $t('Payment details') : takeover ? takeoverTitle : topTitle }}</h2>
           <button
-            v-if="verb === 'send' && !walletPickerOpen && !detailsOpen && !takeover"
+            v-if="verb === 'send' && !walletPickerOpen && !detailsOpen && !brantaDetailsOpen && !takeover"
             ref="walletTrigger"
             type="button"
             class="payment-wallet-trigger pay-with-field"
@@ -102,22 +102,27 @@
         <slot name="takeover" />
       </div>
 
-      <div v-if="!isReading" v-show="!takeover && !walletPickerOpen && !detailsOpen" class="stage stage-compose" :class="{ 'stage--refund': !!refundRow }">
+      <div v-if="!isReading" v-show="!takeover && !walletPickerOpen && !detailsOpen && !brantaDetailsOpen" class="stage stage-compose" :class="{ 'stage--refund': !!refundRow }">
+          <section v-if="verb === 'send' && recipientVerification" class="verified-merchant-stage">
+            <BrantaMerchantMark :verification="recipientVerification" :size="56" />
+            <button type="button" class="recipient-info" :aria-label="$t('Payment details')" @click="openPaymentDetails"><Icon icon="tabler:info-circle" width="20" height="20" /></button>
+          </section>
           <!-- Amount leads: the recipient was chosen on the screen before,
                so the number is this screen's job and takes the stage.
                Locked, range, or free depending on mode. -->
           <section class="amount-stage" :class="{ 'amount-stage--locked': amountMode === 'fixed' }">
             <input
-              v-model="displayAmount"
-              @input="onAmountChange"
+              :value="amountMode === 'fixed' ? fixedAmountDisplay : displayAmount"
+              @input="onAmountChange($event)"
               @blur="onAmountBlur"
               type="text"
               inputmode="decimal"
-              :aria-label="$t('Amount')"
+              :aria-label="amountMode === 'fixed' ? `${$t('Amount')}: ${formattedConfirmAmount}` : $t('Amount')"
               class="amount-input"
               :class="{ 'amount-input--invalid': amountInvalidReason }"
+              :aria-invalid="amountInputError ? 'true' : undefined"
               :placeholder="amountPlaceholder"
-              :readonly="amountMode === 'fixed'"
+              :readonly="amountMode === 'fixed' || isSending || isComplete"
               :tabindex="amountMode === 'fixed' ? -1 : undefined"
               :autofocus="!contextual"
             />
@@ -125,7 +130,7 @@
               <button
                 type="button"
                 class="unit-pill"
-                :disabled="amountMode === 'fixed'"
+                :disabled="amountMode === 'fixed' || isSending || isComplete"
                 @click="toggleCurrency"
               >
                 <span>{{ unitPillLabel }}</span>
@@ -165,6 +170,7 @@
                No ambiguous chevron and no verification marks the app
                cannot honestly make. -->
           <section
+            v-if="verb !== 'send' || !recipientVerification"
             class="recipient-cell"
             :class="{ 'recipient-cell--checking': recipientChecking }"
             :aria-busy="recipientChecking ? 'true' : null"
@@ -237,7 +243,6 @@
             >
               <Icon icon="tabler:info-circle" width="17" height="17" />
             </button>
-            <BrantaVerifiedBadge v-if="verb === 'send' && recipientVerification" :verify-url="recipientVerification.verifyUrl" />
           </section>
 
           <!-- The labeled detail panel behind the info glyph, with copy
@@ -306,21 +311,6 @@
             <span>{{ payment.connectionNotice }}</span>
           </div>
 
-          <!-- Comment: sits directly under the amount block, in the slot
-               the preset chips used to hold, so it stays visible above the
-               CTA even with the keyboard up. -->
-          <div v-if="payment?.commentAllowed" class="note-row">
-            <Icon icon="tabler:message-circle" width="14" height="14" class="note-icon" />
-            <input
-              v-model="comment"
-              @input="commentEdited = true"
-              type="text"
-              :placeholder="$t('Add a note')"
-              class="note-input"
-              :maxlength="payment?.commentMaxLength || 100"
-            />
-          </div>
-
           <!-- Flow-specific extras (e.g. the on-chain fee panel: balance
                row, speed cards, fee breakdown). Slot content renders
                inside the stage so it inherits the sheet's rhythm; when
@@ -346,8 +336,7 @@
                static label (e.g. "Free (Spark transfer)"). NWC/LNbits
                can't pre-estimate fees, so the parent simply omits this
                object on those paths and we show nothing. -->
-          <p v-if="!preparationActive && payment?.feeNotice" class="payment-fee-notice" role="status">{{ payment.feeNotice }}</p>
-          <div v-if="!preparationActive && (feeRowVisible || refundRow)" class="fact-group">
+          <div v-if="!preparationActive && (feeRowVisible || refundRow || payment?.commentAllowed || payment?.feeNotice)" class="fact-group" :class="{ 'payment-summary': verb === 'send' }">
             <div v-if="feeRowVisible" class="fee-row" :class="{ 'fee-row--joined': !!refundRow }">
               <span class="fee-row-label">{{ payment?.feeEstimate?.title || $t('Network fee') }}</span>
               <span class="fee-row-value">
@@ -355,6 +344,8 @@
                 <span v-else>{{ feeRowValueText }}</span>
               </span>
             </div>
+            <p v-if="payment?.feeNotice" class="payment-fee-notice" role="status">{{ payment.feeNotice }}</p>
+
             <RefundAddressField
               v-if="refundRow"
               :refund="refundRow"
@@ -362,12 +353,28 @@
               :disabled="isSending || isComplete"
               @pick="onRefundPick"
             />
+          <div v-if="payment?.commentAllowed" class="note-row">
+            <label :for="noteId" class="note-label">{{ $t('Note (optional)') }}</label>
+            <input
+              :id="noteId"
+              :value="comment"
+              :readonly="isSending || isComplete"
+              @input="onCommentChange"
+              type="text"
+              :placeholder="$t('Add a note')"
+              class="note-input"
+              :maxlength="payment?.commentMaxLength || 100"
+            />
+          </div>
             <div v-if="totalRowVisible" class="payment-total-row"><span>{{ $t('Total') }}</span><strong>{{ totalRowValueText }}</strong></div>
           </div>
 
         </div>
 
+        <div v-if="brantaDetailsOpen && recipientVerification" class="stage branta-verification-view" tabindex="-1" ref="brantaView"><BrantaVerificationDetails :verification="recipientVerification" context="current" /></div>
+
         <div v-if="detailsOpen" class="stage payment-details-view" tabindex="-1" ref="detailsView">
+          <button v-if="recipientVerification" type="button" class="branta-current-check" :aria-label="$t('Current business check')" @click="openBrantaDetails"><Icon icon="tabler:circle-check-filled" width="20" height="20" /><span>{{ $t('Recipient check') }}</span><Icon icon="tabler:chevron-right" width="16" height="16" /></button>
           <dl class="payment-details-list">
             <div v-if="paymentDetails.typeLabel"><dt>{{ $t('Payment type') }}</dt><dd>{{ paymentDetails.typeLabel }}</dd></div>
             <div v-if="paymentDetails.networkLabel"><dt>{{ $t('Network') }}</dt><dd>{{ paymentDetails.networkLabel }}</dd></div>
@@ -426,7 +433,7 @@
           </button>
         </div>
 
-        <div v-else-if="preparationActive && !detailsOpen" class="cta-row confirm-cta preparation-cta">
+        <div v-else-if="preparationActive && !detailsOpen && !brantaDetailsOpen" class="cta-row confirm-cta preparation-cta">
           <div v-if="preparationFailed" class="preparation-error" role="status">
             <Icon icon="tabler:alert-circle" width="17" height="17" />
             <span>
@@ -452,7 +459,7 @@
              the filling ProgressCta — trickle while in flight, then 100% +
              check on success — bridging cleanly into the confirmation screen
              with no separate confirm step and no blank in between. -->
-        <div v-else-if="!isReading" v-show="!takeover && !detailsOpen" class="cta-row confirm-cta">
+        <div v-else-if="!isReading" v-show="!takeover && !detailsOpen && !brantaDetailsOpen" class="cta-row confirm-cta">
             <transition name="cta-swap" mode="out-in">
               <ProgressCta
                 v-if="isSending || isComplete"
@@ -502,9 +509,12 @@ import { useWalletStore } from '../stores/wallet'
 import { mapState } from 'pinia'
 import { fiatRatesService } from '../utils/fiatRates.js'
 import { formatAmount } from '../utils/amountFormatting.js'
+import { normalizePaymentAmountInput } from '../utils/paymentAmountInput.js'
 import { FIAT_SYMBOLS } from '../utils/fiatCurrencies.js'
 import SlideToSend from './SlideToSend.vue'
 import BrantaVerifiedBadge from './BrantaVerifiedBadge.vue'
+import BrantaMerchantMark from './BrantaMerchantMark.vue'
+import BrantaVerificationDetails from './BrantaVerificationDetails.vue'
 import ProgressCta from './ProgressCta.vue'
 import WalletBrandMark from './WalletBrandMark.vue'
 import HiddenAmount from './HiddenAmount.vue'
@@ -518,9 +528,44 @@ import { onAndroidBack } from '../utils/androidBack.js'
 // the same filling ProgressCta once committed.
 const SLIDE_THRESHOLD_SATS = 10000
 
+// Only the presentation uses locale grouping/denominations. displayAmount
+// remains a plain decimal draft and amountInSats remains the executor value.
+function fiatPrecision(vm) {
+  try { return new Intl.NumberFormat(undefined, { style: 'currency', currency: vm.fiatCurrencyCode || vm.preferredFiatCurrency || 'USD' }).resolvedOptions().maximumFractionDigits }
+  catch { return 2 }
+}
+function reviewParts(vm, sats) {
+  const locale = typeof vm.$i18n?.locale === 'string' ? vm.$i18n.locale : undefined
+  const number = (value, digits = 0) => new Intl.NumberFormat(locale, { minimumFractionDigits: digits, maximumFractionDigits: digits }).format(value)
+  const small = (value, digits) => value > 0 && value < 10 ** -digits ? `< ${number(10 ** -digits, digits)}` : number(value, digits)
+  if (vm.currentCurrency === 'btc') {
+    // Keep all eight satoshi digits exact, including the largest supported
+    // integer. Dividing a Number first can round its final satoshi away.
+    if (!Number.isSafeInteger(sats)) return { number: number(NaN, 8), unit: 'BTC' }
+    const exact = BigInt(sats)
+    const decimal = new Intl.NumberFormat(locale).formatToParts(1.1).find(part => part.type === 'decimal')?.value || '.'
+    const fraction = new Intl.NumberFormat(locale, { useGrouping: false, minimumIntegerDigits: 8, maximumFractionDigits: 0 }).format(exact % 100000000n)
+    return { number: `${number(exact / 100000000n)}${decimal}${fraction}`, unit: 'BTC' }
+  }
+  if (vm.isLocalDenomination && vm.payoutCurrency?.multiplier > 0) {
+    return { number: small(sats * 1000 / vm.payoutCurrency.multiplier, vm.payoutCurrency.decimals || 0), unit: vm.payoutCurrency.code, approximate: true }
+  }
+  if (vm.currentCurrency && vm.currentCurrency !== 'sats' && vm.currentCurrency !== 'btc') {
+    const code = vm.fiatCurrencyCode || vm.preferredFiatCurrency || 'USD'
+    const rate = vm.fiatRates?.[code]
+    if (rate > 0) return { number: small(sats * rate / 100000000, fiatPrecision(vm)), unit: code, approximate: true }
+  }
+  return { number: number(sats), unit: vm.useBip177Format ? '₿' : 'sats' }
+}
+function reviewAmount(vm, sats) {
+  const result = reviewParts(vm, sats)
+  const value = result.unit === '₿' ? `₿ ${result.number}` : `${result.number} ${result.unit}`
+  return result.approximate ? `≈ ${value}` : value
+}
+
 export default {
   name: 'PaymentConfirmSheet',
-  components: { SlideToSend, BrantaVerifiedBadge, ProgressCta, WalletBrandMark, HiddenAmount, RefundAddressField, CardFace },
+  components: { SlideToSend, BrantaMerchantMark, BrantaVerificationDetails, BrantaVerifiedBadge, ProgressCta, WalletBrandMark, HiddenAmount, RefundAddressField, CardFace },
   props: {
     modelValue: { type: Boolean, default: false },
     /**
@@ -606,8 +651,11 @@ export default {
       _copyTimer: null,
       walletPickerOpen: false,
       detailsOpen: false,
+      brantaDetailsOpen: false,
       walletDraftId: null,
       amountEdited: false,
+      amountInputError: false,
+      amountInputPartial: false,
       denominationChanged: false,
       commentEdited: false,
       visualViewportHeight: null,
@@ -616,6 +664,7 @@ export default {
   },
   computed: {
     titleId() { return `payment-confirm-title-${this.$.uid}` },
+    noteId() { return `payment-note-${this.$.uid}` },
     sendViewportStyle() {
       return this.verb === 'send' && this.visualViewportHeight ? {
         '--payment-viewport-height': `${this.visualViewportHeight}px`,
@@ -812,8 +861,9 @@ export default {
       return FIAT_SYMBOLS[this.fiatCurrencyCode] || (this.fiatCurrencyCode + ' ')
     },
     unitPillLabel() {
+      if (this.amountMode === 'fixed') return reviewParts(this, this.fixedSats).unit
       if (this.isLocalDenomination) return this.payoutCurrency.code
-      if (this.currentCurrency === 'sats') return 'sats'
+      if (this.currentCurrency === 'sats') return this.useBip177Format ? '₿' : 'sats'
       if (this.currentCurrency === 'btc') return 'BTC'
       return this.fiatCurrencyCode
     },
@@ -821,6 +871,7 @@ export default {
     // The numeric amount in sats derived from the input + currency mode.
     amountInSats() {
       if (this.amountMode === 'fixed') return this.fixedSats
+      if (this.amountInputError || this.amountInputPartial) return 0
       const n = parseFloat(this.displayAmount)
       if (!isFinite(n) || n <= 0) return 0
       // Local payout currency: sats = localAmount × (millisats-per-unit) / 1000.
@@ -829,8 +880,13 @@ export default {
       if (this.isLocalDenomination) {
         return Math.floor((n * this.payoutCurrency.multiplier) / 1000)
       }
-      if (this.currentCurrency === 'sats') return Math.floor(n)
-      if (this.currentCurrency === 'btc')  return Math.floor(n * 100000000)
+      if (this.currentCurrency === 'sats') return Number.isSafeInteger(n) ? n : 0
+      if (this.currentCurrency === 'btc') {
+        const [whole = '0', fraction = ''] = String(this.displayAmount).split('.')
+        if (!/^\d*$/.test(whole) || !/^\d*$/.test(fraction)) return 0
+        const sats = BigInt(whole || '0') * 100000000n + BigInt(fraction.padEnd(8, '0').slice(0, 8))
+        return sats <= BigInt(Number.MAX_SAFE_INTEGER) ? Number(sats) : 0
+      }
       const rate = this.fiatRates[this.fiatCurrencyCode]
       if (!rate) return 0
       return Math.floor((n / rate) * 100000000)
@@ -848,6 +904,7 @@ export default {
     // registration vue-i18n skips placeholder substitution and the user
     // sees a literal "{n}" in the UI.
     amountInvalidReason() {
+      if (this.amountInputError) return this.$t('Check the amount format.')
       if (!this.displayAmount || this.amountMode === 'fixed') return ''
       // Local-currency mode: validate the entered LOCAL amount against the
       // provider's own min/max. Runs before the sats>0 check below so a
@@ -882,9 +939,9 @@ export default {
     },
 
     canSubmit() {
-      return this.walletCanPay && this.isAmountAcceptable && this.commitGate && !this.recipientChecking
-        && !this.payerBlocked && !this.refundHolds && !this.preparationActive && !this.walletPickerOpen && !this.detailsOpen
-        && !this.payment?.feeEstimate?.isEstimating
+      return !this.isSending && !this.isComplete && this.walletCanPay && this.isAmountAcceptable && this.commitGate && !this.recipientChecking
+        && !this.payerBlocked && !this.refundHolds && !this.preparationActive && !this.walletPickerOpen && !this.detailsOpen && !this.brantaDetailsOpen
+        && !this.payment?.feeEstimate?.isEstimating && !this.amountInputError && !this.amountInputPartial
     },
 
     // ───── Refunds to (LUD-18) ─────
@@ -1014,8 +1071,7 @@ export default {
       if (fe.label) return fe.label
       if (typeof fe.sats !== 'number') return ''
       if (fe.sats === 0) return this.$t('Free')
-      const amount = formatAmount(fe.sats, this.useBip177Format)
-      return amount
+      return reviewAmount(this, fe.sats)
     },
     totalRowVisible() {
       const fee = this.payment?.feeEstimate
@@ -1023,7 +1079,7 @@ export default {
         && Number.isSafeInteger(fee.sats) && fee.sats >= 0 && this.amountInSats > 0
     },
     totalRowValueText() {
-      return formatAmount(this.amountInSats + this.payment.feeEstimate.sats, this.useBip177Format)
+      return reviewAmount(this, this.amountInSats + this.payment.feeEstimate.sats)
     },
 
     requiresSlide() {
@@ -1059,13 +1115,14 @@ export default {
       // estimate for the amount (the recipient still receives the exact local
       // amount; the fee is added on top in the real invoice).
       if (this.isLocalDenomination) {
-        return `≈ ${formatAmount(sats, this.useBip177Format)}`
+        return `≈ ${reviewAmount({ currentCurrency: 'sats', useBip177Format: this.useBip177Format, $i18n: this.$i18n }, sats)}`
       }
       if (!this.fiatRates) return ''
       try {
         const currency = this.fiatCurrencyCode
-        if (this.currentCurrency === currency.toLowerCase()) {
-          return `≈ ${formatAmount(sats, this.useBip177Format)}`
+        if (this.denominationMode === 'fiat') {
+          if (!this.fiatRates?.[currency]) return ''
+          return `≈ ${reviewAmount({ currentCurrency: 'sats', useBip177Format: this.useBip177Format, $i18n: this.$i18n }, sats)}`
         }
         const fiatValue = fiatRatesService.convertSatsToFiatSync(sats, currency)
         if (fiatValue === null) return ''
@@ -1076,26 +1133,8 @@ export default {
       }
     },
 
-    formattedConfirmAmount() {
-      const sats = this.amountInSats
-      if (!sats) return ''
-      // Local-currency mode: the commit label MUST read in the recipient's
-      // currency (e.g. "10,000 TZS"), never the sender's global fiat symbol.
-      if (this.denominationMode === 'local') {
-        const n = parseFloat(this.displayAmount)
-        if (!isFinite(n) || n <= 0) return `${sats.toLocaleString()} sats`
-        const decimals = this.payoutCurrency.decimals || 0
-        const local = n.toLocaleString(undefined, { minimumFractionDigits: decimals, maximumFractionDigits: decimals })
-        return `${local} ${this.payoutCurrency.code}`
-      }
-      // Render sats/btc as sats (confirm is about reading at a glance).
-      if (this.denominationMode === 'sats' || this.denominationMode === 'btc') {
-        return `${sats.toLocaleString()} sats`
-      }
-      const n = parseFloat(this.displayAmount)
-      if (isFinite(n) && n > 0) return `${this.fiatSymbol}${n.toFixed(2)}`
-      return `${sats.toLocaleString()} sats`
-    },
+    fixedAmountDisplay() { return reviewParts(this, this.fixedSats).number },
+    formattedConfirmAmount() { return reviewAmount(this, this.amountInSats) },
 
     // ───── Verb-aware copy ─────
     // Centralized so the rest of the template stays oblivious to the
@@ -1127,7 +1166,7 @@ export default {
       if (!this.isAmountAcceptable && this.amountMode !== 'fixed') {
         return this.$t('Enter amount')
       }
-      return this.confirmSendLabel
+      return this.verb === 'send' ? this.$t('Send') : this.confirmSendLabel
     },
 
     // In-flight label shown inside the filling ProgressCta.
@@ -1137,6 +1176,15 @@ export default {
     }
   },
   watch: {
+    takeover(active) {
+      if (!active) return
+      // A late changed-code verdict takes priority over every child view.
+      this.walletPickerOpen = false
+      this.walletDraftId = null
+      this.detailsOpen = false
+      this.brantaDetailsOpen = false
+      this.$nextTick(() => this.$refs.card?.$el.querySelector('.changed-code-close')?.focus())
+    },
     /**
      * Reset only on the open transition. We deliberately do NOT watch
      * `payment` deeply: the parent rebuilds that object whenever any of
@@ -1150,7 +1198,7 @@ export default {
       if (v) {
         this.resetForFreshOpen()
         this.loadFiatRates()
-      } else { this.walletPickerOpen = false; this.detailsOpen = false }
+      } else { this.walletPickerOpen = false; this.detailsOpen = false; this.brantaDetailsOpen = false }
       this.listenForBack(v)
     },
     preparing(pending, wasPending) {
@@ -1188,6 +1236,7 @@ export default {
   beforeUnmount() {
     this._stopBackListener?.()
     this.stopViewportTracking()
+    if (this._copyTimer) clearTimeout(this._copyTimer)
   },
   methods: {
     syncVisualViewport() {
@@ -1215,10 +1264,22 @@ export default {
       window.removeEventListener('resize', this._viewportListener)
       this._viewportListener = null
     },
+    openBrantaDetails() {
+      if (!this.recipientVerification || this.isSending || this.isComplete) return
+      this.detailsOpen = false
+      this.brantaDetailsOpen = true
+      this.$nextTick(() => this.$refs.brantaView?.focus())
+    },
+    closeBrantaDetails() {
+      this.brantaDetailsOpen = false
+      this.detailsOpen = true
+      this.$nextTick(() => this.$refs.card?.$el.querySelector('.branta-current-check')?.focus())
+    },
     openPaymentDetails() {
       if (this.verb !== 'send') { this.showAddress = !this.showAddress; return }
       if (this.isSending || this.isComplete) return
       this.walletPickerOpen = false
+      this.brantaDetailsOpen = false
       this.detailsOpen = true
       this.$nextTick(() => this.$refs.detailsView?.focus())
     },
@@ -1255,10 +1316,13 @@ export default {
     resetForFreshOpen() {
       this.walletPickerOpen = false
       this.detailsOpen = false
+      this.brantaDetailsOpen = false
       this.walletDraftId = null
       this.showAddress = false
       this.addressCopied = false
       this.amountEdited = false
+      this.amountInputError = false
+      this.amountInputPartial = false
       this.denominationChanged = false
       this.commentEdited = false
       // A payment made for a request starts with that request's note (the recipient must accept comments).
@@ -1275,7 +1339,7 @@ export default {
       // keeps it un-editable.
       if (this.amountMode === 'fixed') {
         this.displayAmount = String(this.fixedSats)
-        this.currentCurrency = 'sats'
+        this.currentCurrency = this.denominationCurrency || 'sats'
       } else if (this.payoutCurrency && this.payment?.amount?.defaultPayout > 0) {
         // A payment made again starts with the amount the recipient was
         // sent, in their currency.
@@ -1300,8 +1364,10 @@ export default {
         this.comment = String(this.payment.defaultComment || '').slice(0, this.payment.commentMaxLength || 100)
       }
       if (this.amountMode === 'fixed') {
+        this.amountInputError = false
+        this.amountInputPartial = false
         this.displayAmount = String(this.fixedSats)
-        this.currentCurrency = 'sats'
+        if (!this.denominationChanged) this.currentCurrency = this.denominationCurrency || 'sats'
       } else if (!this.amountEdited && !this.denominationChanged) {
         if (this.payoutCurrency && this.payment?.amount?.defaultPayout > 0) {
           this.displayAmount = String(this.payment.amount.defaultPayout)
@@ -1383,8 +1449,13 @@ export default {
       options[next].focus()
     },
 
-    onEscape() {
-      if (this.verb === 'send' && !this.isSending && !this.isComplete) this.onTopAction()
+    onEscape(event) {
+      if (this.verb !== 'send') return // idle redeem/charge retain Quasar's native close
+      // Persistent QDialog suppresses its escape-key event. Handle the card
+      // event before Quasar's window listener, once, including while busy.
+      event?.stopPropagation()
+      event?.preventDefault()
+      if (!this.isSending && !this.isComplete) this.onTopAction()
     },
 
     /** The person chose on the refund row; the parent owns the choice. */
@@ -1394,6 +1465,7 @@ export default {
     },
 
     onTopAction() {
+      if (this.brantaDetailsOpen) { this.closeBrantaDetails(); return }
       if (this.walletPickerOpen) { this.closeWalletPicker(); return }
       if (this.detailsOpen) { this.closePaymentDetails(); return }
       if (this.takeover) {
@@ -1436,41 +1508,60 @@ export default {
       return !!own && dialogs[dialogs.length - 1] === own
     },
 
-    onAmountChange() {
-      this.amountEdited = true
-      // Sanitize as the user types so parseFloat can never silently truncate at
-      // a grouping separator (e.g. "2,500" → 2500, or "2500,000" → 2500 → a
-      // 1000x underpayment). Keep only digits and a single decimal point, and
-      // drop the fractional part entirely for integer units (sats, or a
-      // 0-decimal local currency like TZS).
-      let v = String(this.displayAmount || '').replace(/[^0-9.]/g, '')
-      const dot = v.indexOf('.')
-      const integerOnly = this.currentCurrency === 'sats' ||
-        (this.isLocalDenomination && this.payoutCurrency.decimals === 0)
-      if (dot !== -1) {
-        v = integerOnly
-          ? v.slice(0, dot)
-          : v.slice(0, dot + 1) + v.slice(dot + 1).replace(/\./g, '')
+    onAmountChange(event) {
+      if (this.isSending || this.isComplete || this.amountMode === 'fixed') {
+        if (event?.target) event.target.value = this.amountMode === 'fixed' ? this.fixedAmountDisplay : this.displayAmount
+        return
       }
-      if (v !== this.displayAmount) this.displayAmount = v
+      const previous = this.displayAmount
+      const decimalEdit = !this.amountInputError && /^\d+\.\d*$/.test(previous)
+        && ((event?.inputType === 'insertText' && /^\d$/.test(event.data || ''))
+          || ['deleteContentBackward', 'deleteContentForward', 'deleteByCut'].includes(event?.inputType))
+      if (event?.target) this.displayAmount = event.target.value
+      this.amountEdited = true
+      const precision = this.currentCurrency === 'sats' ? 0 : this.currentCurrency === 'btc' ? 8
+        : this.isLocalDenomination ? this.payoutCurrency.decimals || 0 : fiatPrecision(this)
+      const input = event?.target
+      const result = normalizePaymentAmountInput(this.displayAmount, {
+        locale: this.$i18n?.locale, precision, caret: input?.selectionStart, canonicalDecimal: decimalEdit,
+      })
+      this.amountInputError = !!result.error
+      this.amountInputPartial = !result.error && !result.complete
+      if (result.value !== this.displayAmount) {
+        this.displayAmount = result.value
+        if (input?.setSelectionRange && typeof result.caret === 'number') this.$nextTick(() => {
+          if (typeof document === 'undefined' || document.activeElement === input) input.setSelectionRange(result.caret, result.caret)
+        })
+      }
+    },
+    onCommentChange(event) {
+      if (this.isSending || this.isComplete) { event.target.value = this.comment; return }
+      this.comment = event.target.value
+      this.commentEdited = true
     },
     onAmountBlur() {
-      // Light formatting on blur — same UX as PaymentModal.
-      const n = parseFloat(this.displayAmount)
-      if (!isFinite(n)) return
-      if (this.isLocalDenomination) {
-        this.displayAmount = this.payoutCurrency.decimals > 0
-          ? n.toFixed(this.payoutCurrency.decimals)
-          : String(Math.floor(n))
+      if (this.isSending || this.isComplete || this.amountMode === 'fixed' || this.amountInputError) return
+      const value = String(this.displayAmount || '')
+      if (!value) return
+      const precision = this.currentCurrency === 'sats' ? 0 : this.currentCurrency === 'btc' ? 8
+        : this.isLocalDenomination ? this.payoutCurrency.decimals || 0 : fiatPrecision(this)
+      // Pad the accepted canonical decimal directly. A float round trip can
+      // move the last satoshi in a large BTC value or round extra precision.
+      const match = /^(\d*)(?:\.(\d*))?$/.exec(value)
+      if (!match || !match[1] && !match[2] || (match[2] || '').length > precision) {
+        this.amountInputError = true
+        return
       }
-      else if (this.currentCurrency === 'sats') this.displayAmount = String(Math.floor(n))
-      else if (this.currentCurrency === 'btc') this.displayAmount = n.toFixed(8)
-      else this.displayAmount = n.toFixed(2)
+      const whole = (match[1] || '0').replace(/^0+(?=\d)/, '')
+      this.displayAmount = precision ? `${whole}.${(match[2] || '').padEnd(precision, '0')}` : whole
+      this.amountInputPartial = false
     },
 
     toggleCurrency() {
-      if (this.amountMode === 'fixed') return
+      if (this.amountMode === 'fixed' || this.isSending || this.isComplete) return
       this.denominationChanged = true
+      this.amountInputError = false
+      this.amountInputPartial = false
       // Fiat-payout addresses toggle between the recipient's currency and sats;
       // everything else toggles between sats and the user's global fiat.
       const order = this.payoutCurrency
@@ -1490,9 +1581,11 @@ export default {
      * value means exactly what the caller computed.
      */
     setAmountSats(sats) {
-      if (this.amountMode === 'fixed') return
+      if (this.amountMode === 'fixed' || this.isSending || this.isComplete) return
       this.amountEdited = true
       this.denominationChanged = true
+      this.amountInputError = false
+      this.amountInputPartial = false
       this.currentCurrency = 'sats'
       this.displayAmount = String(Math.max(0, Math.floor(sats)))
     },
@@ -1511,7 +1604,7 @@ export default {
       // the recipient then receives exactly this amount, provider fee on top.
       // Round to the currency's decimals so the callback never receives an
       // over-precise value (the input may not have blurred before slide-to-send).
-      if (this.isLocalDenomination) {
+      if (this.isLocalDenomination && this.amountMode !== 'fixed') {
         const decimals = this.payoutCurrency.decimals || 0
         const amount = Number(parseFloat(this.displayAmount).toFixed(decimals))
         payload.payout = { code: this.payoutCurrency.code, amount }
@@ -1651,6 +1744,20 @@ export default {
 .sheet-card--send .recipient-info { flex: 0 0 44px; width: 44px; min-height: 44px; }
 .sheet-card--send .stage-compose > * { flex-shrink: 0; }
 .sheet-card--send .amount-stage { padding: 18px 0 12px; }
+.sheet-card--send .amount-stage { border: 1px solid var(--border-card); border-radius: 22px; padding: 22px 12px 18px; }
+.verified-merchant-stage { position: relative; display: flex; align-items: center; justify-content: center; min-height: 72px; margin: 2px 0 4px; }
+.verified-merchant-stage .recipient-info { position: absolute; right: 0; top: 14px; background: transparent; box-shadow: none; }
+.sheet-card--send .payment-summary { border: 1px solid var(--border-card); border-radius: 20px; background: var(--bg-card); padding: 2px 0; overflow: hidden; }
+.sheet-card--send .payment-summary .fee-row { min-height: 52px; padding: 14px 16px; border-radius: 0; background: transparent; font-size: .875rem; }
+.sheet-card--send .payment-summary .payment-total-row { margin: 0 16px; padding: 16px 0; font-size: 1rem; }
+.sheet-card--send .payment-summary .payment-total-row strong { font-weight: 700; }
+.sheet-card--send .payment-summary .note-row { min-height: 52px; padding: 12px 16px; border-radius: 0; background: transparent; flex-wrap: wrap; }
+.note-label { color: var(--text-secondary); font-size: .8125rem; line-height: 1.5; }
+.sheet-card--send .payment-summary .note-input { flex: 1 1 140px; text-align: right; font-size: 1rem; }
+.sheet-card--send .payment-summary .payment-fee-notice { padding: 14px 16px; }
+.branta-current-check { display: flex; align-items: center; gap: 9px; min-height: 48px; padding: 10px 0; border: 0; background: transparent; font: inherit; font-size: .875rem; color: var(--brand-accent-text); cursor: pointer; text-align: left; }
+.branta-current-check > :last-child { margin-left: auto; }
+.branta-current-check:focus-visible { outline: 2px solid var(--brand-accent-text); outline-offset: 3px; }
 .sheet-card--send .note-input { font-size: 1rem; min-width: 0; }
 .sheet-card--send .recipient-avatar--type { background: transparent !important; box-shadow: none; text-shadow: none; }
 .recipient-bitcoin-logo { width: 44px; height: 44px; display: block; }

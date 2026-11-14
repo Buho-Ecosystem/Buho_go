@@ -12,9 +12,9 @@
     <span class="changed-code-mark" aria-hidden="true">
       <Icon icon="tabler:shield-x" width="30" height="30" />
     </span>
-    <h3>{{ $t('This code was changed') }}</h3>
-    <p class="changed-code-body">{{ $t('The address in it is not the one the business registered with Branta. Sending could pay someone else.') }}</p>
-    <p class="changed-code-note">{{ $t('Nothing was sent. Ask the business for a new code.') }}</p>
+    <h3>{{ $t('Ask for a new code') }}</h3>
+    <p class="changed-code-body">{{ $t('This payment code has changed. Ask the business for a new one.') }}</p>
+    <p class="changed-code-note">{{ $t('Nothing was sent.') }}</p>
     <button type="button" class="changed-code-close" @click="$emit('close')">{{ $t('Close') }}</button>
   </div>
 </template>

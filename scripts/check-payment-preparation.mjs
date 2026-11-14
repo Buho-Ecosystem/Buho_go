@@ -403,7 +403,7 @@ try {
     const { bolt11 } = ledger.mint({ amountSats: 500 });
     await startPayment('payInvoice', { bolt11, name: 'Bob' }); await ready();
     assert.match(await sheet().locator('.pay-with-field').innerText(), /Travel/);
-    holdSend = true; await sheet().getByRole('button', { name: /^Send .*sats$/ }).click();
+    holdSend = true; await sheet().locator('.confirm-cta button.primary-cta').click();
     await page.waitForFunction(() => window.__prepCommitStarted);
     await page.evaluate(async () => {
       const { useWalletStore } = await import('/src/stores/wallet.js');
@@ -414,6 +414,7 @@ try {
     releaseSend(); await page.getByText('Payment Sent', { exact: true }).waitFor();
     const paid = await page.evaluate(() => window.__prepPayments || []);
     assert.equal(paid.length, beforePayments + 1); assert.equal(paid.at(-1).walletId, 'travel');
+    assert.equal(ledger.byInvoice(paid.at(-1).invoice)?.amountSats, 500, 'visible amount reaches the paying provider unchanged');
     await page.getByText('Payment Sent', { exact: true }).click();
     await page.waitForFunction(async () => {
       const { usePaymentFlowStore } = await import('/src/stores/paymentFlow.js');

@@ -1,21 +1,30 @@
 <template>
-  <q-page class="transaction-details-page">
+  <q-page class="transaction-details-page" @keydown.esc="onBrantaEscape">
     <!-- Header -->
-    <div class="page-header">
+    <div class="page-header" :class="{ 'page-header--branta': !!merchantVerification }">
       <q-btn
+        ref="receiptBack"
         flat
         round
         dense
-        @click="$router.back()"
+        @click="onReceiptBack"
         class="back-btn"
         :aria-label="$t('Back')"
       >
         <Icon icon="tabler:chevron-left" width="18" height="18" />
       </q-btn>
       <div class="header-title">
-        {{ $t('Transaction Details') }}
+        {{ $t(showBrantaVerification ? 'Verification' : merchantVerification ? 'Payment' : 'Transaction Details') }}
       </div>
-      <div class="header-actions">
+      <div v-if="!showBrantaVerification" class="header-actions">
+        <button
+          v-if="merchantVerification"
+          ref="brantaVerificationButton"
+          type="button"
+          class="receipt-verification-button"
+          :aria-label="$t('Verification by Branta')"
+          @click="showBrantaVerification = true"
+        ><Icon icon="tabler:rosette-discount-check-filled" width="22" height="22" /></button>
         <q-btn
           flat
           round
@@ -55,6 +64,13 @@
       </div>
     </div>
 
+    <BrantaVerificationDetails
+      v-if="showBrantaVerification && merchantVerification"
+      class="branta-verification-view receipt-verification-view"
+      :verification="merchantVerification"
+      context="historical"
+    />
+    <div v-show="!showBrantaVerification" class="receipt-content">
     <!-- Skeleton Loading State -->
     <div v-if="loading">
       <!-- Hero Card skeleton -->
@@ -193,25 +209,6 @@
             <span class="tx-row-label">{{ transaction.type === 'outgoing' ? $t('To') : $t('Paid to') }}</span>
             <span class="tx-row-value">{{ counterpartyAddressDisplay }}</span>
             <Icon v-if="payAgainTarget" icon="tabler:chevron-right" width="16" height="16" class="tx-row-chevron" />
-          </component>
-
-          <!-- The confirm sheet's seal, kept with the payment: opens Branta's
-               verification page again when Branta gave one. -->
-          <component
-            :is="merchantVerification.verifyUrl ? 'button' : 'div'"
-            v-if="merchantVerification"
-            :type="merchantVerification.verifyUrl ? 'button' : null"
-            class="tx-row tx-row-verified"
-            :class="{ 'tx-row-clickable': merchantVerification.verifyUrl }"
-            :aria-label="merchantVerifyLabel"
-            @click="openMerchantVerifyUrl"
-          >
-            <span class="tx-row-label">{{ $t('Verified by') }}</span>
-            <span class="tx-row-value tx-row-value-verified">
-              <Icon icon="tabler:rosette-discount-check-filled" width="14" height="14" class="verified-row-icon" />
-              <span>Branta</span>
-              <Icon v-if="merchantVerification.verifyUrl" icon="tabler:chevron-right" width="14" height="14" class="verified-row-chevron" />
-            </span>
           </component>
 
           <!-- Where a refund for this payment goes: the address that went
@@ -713,6 +710,7 @@
       :current-wallet-id="metadataWalletId || ''"
       :target="payAgainTarget"
     />
+    </div>
   </q-page>
 </template>
 
@@ -746,6 +744,7 @@ import { nwcPaymentHash } from '../utils/nwcWallet.js';
 import { EARN_BRAND, earnRewardKind } from '../services/earnBrand';
 import RequestMoneyFlow from '../components/chat/RequestMoneyFlow.vue';
 import RecipientPaymentsSheet from '../components/RecipientPaymentsSheet.vue';
+import BrantaVerificationDetails from '../components/BrantaVerificationDetails.vue';
 import { useChatRuntime } from '../composables/useChatRuntime.js';
 import { useMessagesStore } from '../stores/messages.js';
 import { useAutoWithdrawStore } from '../stores/autoWithdraw';
@@ -769,7 +768,7 @@ const NWC_LOOKUP_PAGES = 5;
 
 export default {
   name: 'TransactionDetailsPage',
-  components: { ContactAvatar, Icon, RecipientPaymentsSheet, RequestMoneyFlow },
+  components: { ContactAvatar, Icon, RecipientPaymentsSheet, RequestMoneyFlow, BrantaVerificationDetails },
   setup() {
     const runtime = useChatRuntime();
     return {
@@ -782,6 +781,10 @@ export default {
     return {
       loading: true,
       showDeveloperMode: false,
+      showBrantaVerification: false,
+      verificationPopPending: false,
+      loadedReceiptContext: '',
+      loadedReceiptWalletId: null,
       showNoteEditor: false,
       showRecipientPayments: false,
       repaymentOpen: false,
@@ -824,6 +827,7 @@ export default {
     await this.addressBookStore.initialize();
     await this.metadataStore.initialize();
 
+    if (this._receiptDisposed) return;
     this.initializeTransactionDetails();
     this.loadFiatRates();
     // Keep an open "Awaiting payment" receipt honest: flip it to expired
@@ -833,12 +837,39 @@ export default {
     }, 15000);
   },
 
+  mounted() {
+    // A local details view keeps its receipt mounted. Consume a history Back
+    // through the router guard, while ordinary navigation can still leave.
+    this._stopVerificationHistory = this.$router.options.history.listen((_to, _from, info) => {
+      this.verificationPopPending = this.showBrantaVerification && info.direction === 'back';
+    });
+  },
+  beforeRouteLeave(_to, _from, next) {
+    this.guardBrantaNavigation(next);
+  },
+  beforeRouteUpdate(_to, _from, next) {
+    this.guardBrantaNavigation(next);
+  },
   beforeUnmount() {
+    this._receiptDisposed = true;
+    this._stopVerificationHistory?.();
     if (this._zapProfileTimer) clearInterval(this._zapProfileTimer);
     if (this._invoiceExpiryTimer) clearInterval(this._invoiceExpiryTimer);
   },
 
   watch: {
+    showBrantaVerification: async function (showing) {
+      await this.$nextTick();
+      const target = showing ? this.$refs.receiptBack?.$el : this.$refs.brantaVerificationButton;
+      target?.focus();
+    },
+    brantaReceiptContext: {
+      flush: 'sync',
+      handler() { this.showBrantaVerification = false; },
+    },
+    merchantVerification(value, previous) {
+      if (value !== previous) this.showBrantaVerification = false;
+    },
     'fiatRates': {
       handler() {
         this.$forceUpdate();
@@ -848,6 +879,9 @@ export default {
   },
 
   computed: {
+    brantaReceiptContext() {
+      return [this.$route.fullPath, this.transaction?.id, this.metadataWalletId, this.walletStore?.activeWalletId].join('|');
+    },
     // Zapper display name — profile name when the relays answered, a
     // shortened npub until then. Honest, never invented.
     zapperName() {
@@ -1042,6 +1076,7 @@ export default {
     merchantVerification() {
       if (!this.transaction || !this.metadataStore) return null;
       if (this.transaction.type !== 'outgoing') return null;
+      if (this.loadedReceiptContext !== this.$route.fullPath || this.loadedReceiptWalletId !== this.metadataWalletId) return null;
       return this.metadataStore.getMerchantVerificationForTransaction(this.transaction.id, this.metadataWalletId);
     },
 
@@ -1049,14 +1084,6 @@ export default {
     refundAddress() {
       if (!this.transaction || this.transaction.type !== 'outgoing') return null;
       return this.metadataStore?.getRefundAddressForTransaction?.(this.transaction.id, this.metadataWalletId) || null;
-    },
-
-    /** What a screen reader hears on the verification row, when it opens a page. */
-    merchantVerifyLabel() {
-      const business = this.merchantVerification;
-      if (!business?.verifyUrl) return null;
-      const who = business.name ? `, ${business.name}` : '';
-      return `${this.$t('Verified by Branta')}${who}. ${this.$t("Opens Branta's verification.")}`;
     },
 
     filteredContacts() {
@@ -1351,8 +1378,15 @@ export default {
     },
 
     async initializeTransactionDetails() {
+      const context = this.$route.fullPath;
+      const walletId = this.metadataWalletId;
+      this.loadedReceiptContext = '';
+      this.loadedReceiptWalletId = null;
       try {
         await this.loadTransactionDetails();
+        if (this._receiptDisposed || this.$route.fullPath !== context || this.metadataWalletId !== walletId) return;
+        this.loadedReceiptContext = context;
+        this.loadedReceiptWalletId = walletId;
         this.loadDeveloperModePreference();
         this.showLoadingScreen = false;
         // Runs only after the transaction is loaded (cache hit OR async fetch),
@@ -1901,11 +1935,22 @@ export default {
       });
     },
 
-    // Open Branta's verification page for this merchant. Mirrors
-    // BrantaVerifiedBadge.open() — a record with no verifyUrl (name/logo
-    // only) makes the row a static seal, not a link.
-    openMerchantVerifyUrl() {
-      if (this.merchantVerification?.verifyUrl) openInAppBrowser(this.merchantVerification.verifyUrl);
+    onReceiptBack() {
+      if (this.showBrantaVerification) this.showBrantaVerification = false;
+      else this.$router.back();
+    },
+    onBrantaEscape(event) {
+      if (!this.showBrantaVerification) return;
+      event.preventDefault();
+      event.stopPropagation();
+      this.showBrantaVerification = false;
+    },
+    guardBrantaNavigation(next) {
+      const returning = this.verificationPopPending && this.showBrantaVerification;
+      this.verificationPopPending = false;
+      this.showBrantaVerification = false;
+      if (returning) next(false);
+      else next();
     },
 
     // LUD-21: show the fiat-delivery confirmation for this tx. Prefer a cached
@@ -1973,6 +2018,17 @@ export default {
 </script>
 
 <style scoped>
+.receipt-verification-button { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; width: 44px; height: 44px; border: 0; padding: 0; border-radius: 50%; color: var(--brand-accent-text); background: transparent; cursor: pointer; }
+.receipt-verification-button:focus-visible { outline: 2px solid var(--brand-accent-text); outline-offset: 2px; }
+.receipt-verification-button:active { background: var(--bg-input); }
+.transaction-details-page .receipt-verification-view { padding: 16px 20px 24px; }
+.transaction-details-page { container-type: inline-size; }
+.page-header--branta .back-btn, .page-header--branta .share-btn, .page-header--branta .receipt-more { min-width: 44px; min-height: 44px; flex-shrink: 0; }
+@container (max-width: 18rem) {
+  .page-header--branta { flex-wrap: wrap; }
+  .page-header--branta .header-title { order: 2; flex: 0 0 100%; margin-top: 8px; }
+  .page-header--branta .header-actions { margin-left: auto; }
+}
 .repayment-entry {
   padding: 0 20px 20px;
 }
@@ -2688,11 +2744,6 @@ button.tx-row:focus-visible {
   outline-offset: -2px;
 }
 
-.verified-row-chevron {
-  color: var(--text-secondary);
-  flex-shrink: 0;
-}
-
 .hero-business {
   margin-top: 8px;
   max-width: 100%;
@@ -2703,24 +2754,6 @@ button.tx-row:focus-visible {
   font-size: 15px;
   font-weight: 700;
   color: var(--text-primary);
-}
-
-.tx-row-value-verified {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 6px;
-}
-
-/* Monochrome, matching BrantaVerifiedBadge's seal exactly — a trust
-   signal, not a CTA, so no brand color here either. */
-.verified-row-icon {
-  color: var(--text-primary);
-  flex-shrink: 0;
-}
-
-body.body--dark .verified-row-icon {
-  color: #C7CCD4;
 }
 
 /* Sale breakdown's closing Total row — bolder value, same emphasis

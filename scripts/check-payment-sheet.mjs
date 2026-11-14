@@ -31,6 +31,7 @@ const releaseQuotes = () => { holdQuotes = false; const callbacks = heldQuotes; 
 const browser = await chromium.launch({ headless: true });
 const sheet = () => page.locator('.sheet-card:visible');
 const amount = () => sheet().locator('.amount-input');
+const displayedSats = async () => (await amount().inputValue()).replace(/[\s,]/g, '');
 const step = async (name, work) => {
   if (caseFilter && !name.toLowerCase().includes(caseFilter.toLowerCase())) return;
   stepName = name; await work(); console.log(`  ok  ${name}`);
@@ -172,7 +173,7 @@ try {
   }, wallets);
 
   await step('Pasted invoice keeps amount primary, shows real SDK fee and opens same-sheet complete details', async () => {
-    await open(invoice); assert.equal(await amount().inputValue(), '2400');
+    await open(invoice); assert.equal(await displayedSats(), '2400');
     assert.equal((await sheet().locator('.recipient-name').innerText()).trim(), 'Bitcoin payment');
     assert.equal(await amount().getAttribute('readonly'), '');
     await page.waitForFunction(() => document.querySelector('.sheet-card .fee-row-value')?.textContent.includes('7'));
@@ -222,7 +223,7 @@ try {
       if (request === sparkAddress) {
         assert.equal(await sheet().locator('.fee-row').count(), 0, 'native fee is unknown before an amount is entered');
         await amount().fill('5500');
-      } else assert.equal(await amount().inputValue(), '500');
+      } else assert.equal(await displayedSats(), '500');
       await page.waitForFunction(() => document.querySelector('.sheet-card .fee-row-value')?.textContent.trim().startsWith('Free'));
       assert.ok(await page.evaluate(target => (window.__matrixSparkQuotes || []).some(quote => quote.request === target), request), 'Free follows an actual SDK preparation call');
       assert.equal((await sheet().locator('.recipient-name').innerText()).trim(), 'Bitcoin payment');
@@ -234,7 +235,7 @@ try {
   });
 
   await step('Bitcoin BIP21 uses prepared per-wallet SDK quotes and preserves selected amount', async () => {
-    await open(`bitcoin:${bitcoin}?amount=0.00005`); assert.equal(await amount().inputValue(), '5000');
+    await open(`bitcoin:${bitcoin}?amount=0.00005`); assert.equal(await displayedSats(), '5000');
     assert.equal((await sheet().locator('.recipient-name').innerText()).trim(), 'Bitcoin payment');
     await sheet().locator('.onchain-panel .speed-card').first().waitFor();
     assert.match(await sheet().locator('.onchain-panel .summary').innerText(), /40/);
@@ -310,7 +311,7 @@ try {
   await step('Scanned-dispatch requests share confirmation; unsupported and malformed input cannot submit', async () => {
     await page.locator('[data-audit="fab-send"]').click();
     await page.evaluate(request => window.__matrixHome.$refs.sendModal.onQRDetect(request), invoice);
-    await ready(); assert.equal(await amount().inputValue(), '2400'); await cancel();
+    await ready(); assert.equal(await displayedSats(), '2400'); await cancel();
     await page.locator('[data-audit="fab-send"]').click(); await page.locator('[data-audit="send-input"]').fill('lnbc1invalid');
     await page.waitForTimeout(500); assert.equal(await sheet().count(), 0);
     await page.locator('.send-sheet .sheet-close').click();

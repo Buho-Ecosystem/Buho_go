@@ -21,7 +21,9 @@ import { transformSync } from 'esbuild'
 import * as Vue from 'vue'
 import * as ServerRenderer from 'vue/server-renderer'
 import * as amountFormatting from '../../utils/amountFormatting.js'
+import { normalizePaymentAmountInput } from '../../utils/paymentAmountInput.js'
 import * as payingWallets from '../../utils/payingWallets.js'
+import { safeBrantaUrl, brantaAvatar } from '../../utils/branta.js'
 
 const sfc = createRequire(import.meta.url)('@vue/compiler-sfc')
 
@@ -53,6 +55,7 @@ const baseDeps = {
   '../stores/wallet': { useWalletStore: () => walletState },
   '../providers/WalletFactory': { WALLET_TYPE_LABELS: { spark: 'Spark', nwc: 'NWC', lnbits: 'LNbits', arkade: 'Arkade' } },
   '../utils/amountFormatting.js': amountFormatting,
+  '../utils/paymentAmountInput.js': { normalizePaymentAmountInput },
   '../utils/payingWallets.js': payingWallets,
 }
 
@@ -75,7 +78,11 @@ function load(file, deps = {}) {
 }
 
 const PayWithField = load('../PayWithField.vue', baseDeps)
+const MerchantMark = load('../BrantaMerchantMark.vue', { '../utils/branta.js': { safeBrantaUrl, brantaAvatar } })
+const VerificationDetails = load('../BrantaVerificationDetails.vue', { '@capacitor/core': { Capacitor: { isNativePlatform: () => false } }, '@iconify/vue': { Icon }, './BrantaMerchantMark.vue': MerchantMark, '../utils/branta.js': { safeBrantaUrl }, '../utils/inAppBrowser.js': { openInAppBrowser: async () => {} } })
 const ConfirmSheet = load('../PaymentConfirmSheet.vue', {
+  './BrantaMerchantMark.vue': MerchantMark,
+  './BrantaVerificationDetails.vue': VerificationDetails,
   ...baseDeps,
   './PayWithField.vue': PayWithField,
   '../utils/amountFormatting.js': amountFormatting,
@@ -83,10 +90,11 @@ const ConfirmSheet = load('../PaymentConfirmSheet.vue', {
   '../utils/fiatRates.js': { fiatRatesService: {} },
 })
 
-async function render(component, props, { data, directives = [] } = {}) {
+async function render(component, props, { data, directives = [], locale } = {}) {
   const options = data ? { ...component, data: () => ({ ...(component.data?.() || {}), ...data }) } : component
   const app = Vue.createSSRApp(options, props)
   app.config.globalProperties.$t = t
+  if (locale) app.config.globalProperties.$i18n = { locale }
   app.config.globalProperties.$q = { dark: { isActive: false }, screen: { lt: { sm: false } } }
   app.config.warnHandler = () => {}
   for (const name of directives) app.directive(name, {})
@@ -393,7 +401,7 @@ test('preparation shows known recipient and amount, placeholders, status and a d
     directives: sheetDirectives,
   })
   assert.match(html, /Alice/)
-  assert.match(html, /value="1000"/)
+  assert.match(html, /value="1,000"/)
   assert.match(html, /class="top-btn send-back-btn sheet-nav-icon"[^>]*aria-label="Cancel"/)
   assert.match(html, /payment-preparation-details/)
   assert.match(html, /Getting ready to pay…/)
@@ -621,6 +629,27 @@ test('details Back restores the review without changing amount, currency, commen
   assert.equal(ConfirmSheet.computed.canSubmit.call({ walletCanPay: true, isAmountAcceptable: true, commitGate: true, detailsOpen: true }), false)
 })
 
+test('Escape handles persistent send child views once at the card and preserves native redeem behavior', () => {
+  const source = readFileSync(new URL('../PaymentConfirmSheet.vue', import.meta.url), 'utf8')
+  assert.match(source, /<q-card\b[^>]*@keydown\.esc="onEscape"/)
+  const calls = []
+  const event = { stopPropagation() { calls.push('stop') }, preventDefault() { calls.push('prevent') } }
+  const vm = { verb: 'send', brantaDetailsOpen: true, onTopAction: ConfirmSheet.methods.onTopAction, closeBrantaDetails() { calls.push('back'); this.brantaDetailsOpen = false; this.detailsOpen = true } }
+  ConfirmSheet.methods.onEscape.call(vm, event)
+  assert.deepEqual(calls, ['stop', 'prevent', 'back'])
+  assert.equal(vm.detailsOpen, true)
+  for (const busy of ['isSending', 'isComplete']) {
+    calls.length = 0
+    ConfirmSheet.methods.onEscape.call({ verb: 'send', [busy]: true, onTopAction() { assert.fail('busy payment cannot navigate') } }, event)
+    assert.deepEqual(calls, ['stop', 'prevent'])
+  }
+  for (const verb of ['redeem', 'charge']) {
+    calls.length = 0
+    ConfirmSheet.methods.onEscape.call({ verb, onTopAction() { assert.fail('Quasar owns idle redeem Escape') } }, event)
+    assert.deepEqual(calls, [])
+  }
+})
+
 test('ordinary scanned sends and contextual sends open the same wallet chooser without changing drafts', () => {
   for (const contextual of [false, true]) {
     const vm = {
@@ -738,4 +767,281 @@ test('a known contact keeps its avatar and name without a protocol badge', async
   assert.match(html, /class="recipient-name">Alice/)
   assert.match(html, /class="recipient-addr">alice@example.com/)
   assert.doesNotMatch(html, /recipient-method-cue|data-mark="spark"|data-icon="tabler:bolt"/)
+})
+
+const VERIFIED_BUSINESS = {
+  name: 'North Cafe', logoUrl: 'https://guardrail.branta.pro/merchant.png',
+  verifyUrl: 'https://guardrail.branta.pro/v1/verify/check-id#device-key',
+  checkedAt: 1763136000000, environment: 'Production',
+}
+
+test('verified daily review shows only the centered business mark; verification lives in same-sheet details', async () => {
+  const payment = { ...sheetProps().payment, recipient: { name: 'North Cafe', address: 'lnbc-request', verification: VERIFIED_BUSINESS } }
+  const html = await render(ConfirmSheet, sheetProps({ payment }), { directives: sheetDirectives })
+  assert.match(html, /verified-merchant-stage/)
+  assert.match(html, /branta-merchant-mark[^>]*aria-label="North Cafe"/)
+  assert.doesNotMatch(html, /class="recipient-cell"|branta-badge|class="recipient-name">North Cafe/)
+  assert.doesNotMatch(html, /branta-current-check/)
+  const details = await render(ConfirmSheet, sheetProps({ payment }), { directives: sheetDirectives, data: { detailsOpen: true } })
+  assert.match(details, /branta-current-check/)
+  const proof = await render(ConfirmSheet, sheetProps({ payment }), { directives: sheetDirectives, data: { brantaDetailsOpen: true } })
+  assert.match(proof, /branta-verification-view/)
+  assert.match(proof, /Branta matched this payment to the business below/)
+  assert.equal((readFileSync(new URL('../PaymentConfirmSheet.vue', import.meta.url), 'utf8').match(/<q-dialog\b/g) || []).length, 1)
+})
+
+test('business details Back preserves the entire payment draft and returns to payment details', () => {
+  const vm = { brantaDetailsOpen: true, displayAmount: '751', currentCurrency: 'btc', comment: 'Coffee', walletDraftId: 'personal', closeBrantaDetails: ConfirmSheet.methods.closeBrantaDetails, $nextTick() {} }
+  ConfirmSheet.methods.onTopAction.call(vm)
+  assert.equal(vm.brantaDetailsOpen, false)
+  assert.equal(vm.detailsOpen, true)
+  assert.deepEqual([vm.displayAmount, vm.currentCurrency, vm.comment, vm.walletDraftId], ['751', 'btc', 'Coffee', 'personal'])
+})
+
+test('fixed hero groups by app locale without formatting the exact sat state', async () => {
+  for (const [locale, grouped] of [['en-US', '2,400'], ['de', '2.400'], ['es', '12.400']]) {
+    const sats = locale === 'es' ? 12400 : 2400
+    const html = await render(ConfirmSheet, sheetProps({ payment: { ...sheetProps().payment, amount: { mode: 'fixed', fixedSats: sats } } }), { directives: sheetDirectives, locale })
+    assert.ok(html.includes(`value="${grouped}"`), locale)
+    assert.match(html, /<span>₿<\/span>/)
+    const vm = { amountMode: 'fixed', fixedSats: sats, displayAmount: String(sats) }
+    assert.equal(ConfirmSheet.computed.amountInSats.call(vm), sats)
+    assert.equal(vm.displayAmount, String(sats))
+  }
+})
+
+test('BTC hero, fee, total and deliberate slide use one denomination while send stays simple', () => {
+  const vm = { currentCurrency: 'btc', fixedSats: 2400, amountInSats: 2400, payment: { feeEstimate: { sats: 7 } }, useBip177Format: true, $t: t }
+  assert.equal(ConfirmSheet.computed.fixedAmountDisplay.call(vm), '0.00002400')
+  assert.equal(ConfirmSheet.computed.feeRowValueText.call(vm), '0.00000007 BTC')
+  assert.equal(ConfirmSheet.computed.totalRowValueText.call(vm), '0.00002407 BTC')
+  assert.equal(ConfirmSheet.computed.formattedConfirmAmount.call(vm), '0.00002400 BTC')
+  assert.equal(ConfirmSheet.computed.primaryCtaLabel.call({ verb: 'send', isAmountAcceptable: true, $t: t }), 'Send')
+})
+
+test('BTC presentation preserves every satoshi across the safe integer range and app locales', () => {
+  for (const [locale, maximum, small] of [
+    ['en-US', '90,071,992.54740991', '0.00000029'],
+    ['de', '90.071.992,54740991', '0,00000029'],
+    ['es', '90.071.992,54740991', '0,00000029'],
+  ]) {
+    const vm = { currentCurrency: 'btc', fixedSats: Number.MAX_SAFE_INTEGER, amountInSats: Number.MAX_SAFE_INTEGER - 29, payment: { feeEstimate: { sats: 29 } }, $i18n: { locale }, $t: t }
+    assert.equal(ConfirmSheet.computed.fixedAmountDisplay.call(vm), maximum, locale)
+    assert.equal(ConfirmSheet.computed.totalRowValueText.call(vm), `${maximum} BTC`, locale)
+    assert.equal(ConfirmSheet.computed.feeRowValueText.call(vm), `${small} BTC`, locale)
+    vm.amountInSats = 29
+    assert.equal(ConfirmSheet.computed.formattedConfirmAmount.call(vm), `${small} BTC`, locale)
+  }
+})
+
+test('legacy sats and BIP177 stay consistent and small converted fees never pretend to be zero', () => {
+  for (const useBip177Format of [false, true]) {
+    const vm = { currentCurrency: 'sats', amountMode: 'fixed', fixedSats: 2400, amountInSats: 2400, payment: { feeEstimate: { sats: 7 } }, useBip177Format, $t: t }
+    assert.equal(ConfirmSheet.computed.unitPillLabel.call(vm), useBip177Format ? '₿' : 'sats')
+    assert.equal(ConfirmSheet.computed.feeRowValueText.call(vm), useBip177Format ? '₿ 7' : '7 sats')
+    assert.equal(ConfirmSheet.computed.totalRowValueText.call(vm), useBip177Format ? '₿ 2,407' : '2,407 sats')
+  }
+  const fiat = { currentCurrency: 'usd', fiatCurrencyCode: 'USD', fiatRates: { USD: 85000 }, payment: { feeEstimate: { sats: 1 } } }
+  assert.equal(ConfirmSheet.computed.feeRowValueText.call(fiat), '≈ < 0.01 USD')
+})
+
+test('decimal BTC input converts exactly: 0.00000029 is 29 sats, not 28', () => {
+  const vm = { amountMode: 'free', currentCurrency: 'btc', displayAmount: '0.00000029' }
+  assert.equal(ConfirmSheet.computed.amountInSats.call(vm), 29)
+  vm.displayAmount = '0.000000299'
+  ConfirmSheet.methods.onAmountChange.call(vm)
+  assert.equal(vm.displayAmount, '0.000000299', 'extra precision remains visible for correction')
+  assert.equal(vm.amountInputError, true)
+  assert.equal(ConfirmSheet.computed.amountInSats.call(vm), 0)
+})
+
+test('incremental German BTC decimal entry survives normalization, blur and digit edits', () => {
+  const edit = (vm, value, inputType, data = null) => ConfirmSheet.methods.onAmountChange.call(vm, {
+    target: { value }, inputType, data,
+  })
+  for (const [typed, canonical, sats] of [['1,234', '1.234', 123400000], ['0,00000029', '0.00000029', 29]]) {
+    const vm = { amountMode: 'free', currentCurrency: 'btc', displayAmount: '', $i18n: { locale: 'de' } }
+    for (const digit of typed) {
+      edit(vm, vm.displayAmount + digit, 'insertText', digit)
+      assert.equal(vm.amountInputError, false, `${typed}: ${vm.displayAmount}`)
+    }
+    assert.equal(vm.displayAmount, canonical)
+    assert.equal(ConfirmSheet.computed.amountInSats.call(vm), sats)
+    ConfirmSheet.methods.onAmountBlur.call(vm)
+    assert.equal(ConfirmSheet.computed.amountInSats.call(vm), sats)
+    // Removing padded digits can land on the same ambiguous-looking draft.
+    while (vm.displayAmount.length > canonical.length) edit(vm, vm.displayAmount.slice(0, -1), 'deleteContentBackward')
+    const lastDigit = canonical.at(-1)
+    edit(vm, vm.displayAmount.slice(0, -1), 'deleteContentBackward')
+    edit(vm, vm.displayAmount + lastDigit, 'insertText', lastDigit)
+    assert.equal(vm.amountInputError, false)
+    assert.equal(vm.displayAmount, canonical)
+    assert.equal(ConfirmSheet.computed.amountInSats.call(vm), sats)
+    ConfirmSheet.methods.onAmountBlur.call(vm)
+    edit(vm, vm.displayAmount + '1', 'insertText', '1')
+    assert.equal(vm.amountInputError, true, 'canonical provenance never accepts excess precision')
+    assert.equal(ConfirmSheet.computed.amountInSats.call(vm), 0)
+  }
+  for (const [inputType, data] of [['insertFromPaste', '1.234'], ['insertFromDrop', '1.234'], ['insertText', '1.234'], [undefined, undefined]]) {
+    const vm = { currentCurrency: 'btc', displayAmount: '1.23', $i18n: { locale: 'de' } }
+    edit(vm, '1.234', inputType, data)
+    assert.equal(vm.amountInputError, true, `${inputType}: ambiguous new input stays rejected`)
+    assert.equal(ConfirmSheet.computed.amountInSats.call(vm), 0)
+  }
+})
+
+test('merchant mark missing artwork uses saved initials and supports old receipt snapshots', async () => {
+  const html = await render(MerchantMark, { merchant: { name: 'North Cafe' }, size: 40 })
+  assert.match(html, /aria-label="North Cafe"/)
+  assert.match(html, />NC<\/span>/)
+  const broken = await render(MerchantMark, { verification: VERIFIED_BUSINESS }, { data: { failed: true } })
+  assert.match(broken, /background:var\(--bg-input\)/)
+  assert.match(broken, />NC<\/span>/)
+})
+
+test('saved checks do not invent a date or claim current verification, and hostile links cannot open', async () => {
+  const old = await render(VerificationDetails, { context: 'historical', verification: { name: 'Old Cafe' } })
+  assert.match(old, /Saved business check/)
+  assert.match(old, /before you sent it/)
+  assert.doesNotMatch(old, /branta-proof-time|Branta matched this payment|branta-record-link/)
+  for (const verifyUrl of ['javascript:alert(1)', 'https://guardrail.branta.pro.evil.example/v1/verify/id', 'https://user@guardrail.branta.pro/v1/verify/id', 'https://guardrail.branta.pro/']) {
+    assert.equal(VerificationDetails.computed.recordUrl.call({ verification: { verifyUrl, environment: 'Production' } }), '')
+  }
+  assert.equal(VerificationDetails.computed.recordUrl.call({ verification: VERIFIED_BUSINESS }), VERIFIED_BUSINESS.verifyUrl)
+})
+
+test('offline record open fails quietly inside saved details', async () => {
+  const vm = { recordUrl: VERIFIED_BUSINESS.verifyUrl, opening: false, linkError: false }
+  const original = Object.getOwnPropertyDescriptor(globalThis, 'navigator')
+  Object.defineProperty(globalThis, 'navigator', { value: { onLine: false }, configurable: true })
+  try { await VerificationDetails.methods.openRecord.call(vm) }
+  finally { if (original) Object.defineProperty(globalThis, 'navigator', original); else delete globalThis.navigator }
+  assert.equal(vm.linkError, true)
+  assert.equal(vm.opening, false)
+})
+
+test('a late changed-code verdict closes child views without changing the payment draft', () => {
+  const vm = { walletPickerOpen: true, walletDraftId: 'biz', detailsOpen: true, brantaDetailsOpen: true, displayAmount: '751', comment: 'Lunch', $nextTick() {} }
+  ConfirmSheet.watch.takeover.call(vm, true)
+  assert.deepEqual([vm.walletPickerOpen, vm.walletDraftId, vm.detailsOpen, vm.brantaDetailsOpen], [false, null, false, false])
+  assert.deepEqual([vm.displayAmount, vm.comment], ['751', 'Lunch'])
+})
+
+test('a fixed request displayed in local currency never interprets its raw sats as a payout amount', () => {
+  const sent = []
+  const vm = { canSubmit: true, amountMode: 'fixed', amountInSats: 2400, displayAmount: '2400', isLocalDenomination: true, payoutCurrency: { code: 'KES', decimals: 0 }, $emit: (...event) => sent.push(event) }
+  ConfirmSheet.methods.emitConfirm.call(vm)
+  assert.deepEqual(sent, [['confirm', { amountSats: 2400, comment: '' }]])
+})
+
+test('merchant initials handle whitespace and camel-case saved names', () => {
+  assert.equal(MerchantMark.computed.initials.call({ businessName: '  Northstar   Coffee  ' }), 'NC')
+  assert.equal(MerchantMark.computed.initials.call({ businessName: 'NorthstarCoffee' }), 'NC')
+})
+
+test('locale editing normalizes explicit decimals/grouping and blocks malformed or fractional sats', () => {
+  for (const [locale, currentCurrency, input, expected, sats] of [
+    ['de', 'sats', '2.400', '2400', 2400], ['en-US', 'sats', '2,400', '2400', 2400],
+    ['de', 'btc', '0,00000029', '0.00000029', 29], ['de', 'btc', '0.00000029', '0.00000029', 29],
+  ]) {
+    const vm = { currentCurrency, displayAmount: input, $i18n: { locale } }
+    ConfirmSheet.methods.onAmountChange.call(vm)
+    assert.equal(vm.displayAmount, expected)
+    assert.equal(ConfirmSheet.computed.amountInSats.call(vm), sats)
+  }
+  const fiat = { currentCurrency: 'fiat', displayAmount: '10,5', $i18n: { locale: 'de' } }
+  ConfirmSheet.methods.onAmountChange.call(fiat)
+  assert.equal(fiat.displayAmount, '10.5')
+  for (const [locale, input] of [['de', '2,5'], ['de', '2.5'], ['de', '2.40'], ['en-US', '2.5'], ['en-US', '2,40']]) {
+    const vm = { currentCurrency: 'sats', displayAmount: input, $i18n: { locale }, $t: t, walletCanPay: true, isAmountAcceptable: true, commitGate: true }
+    ConfirmSheet.methods.onAmountChange.call(vm)
+    assert.equal(vm.displayAmount, input)
+    assert.equal(ConfirmSheet.computed.amountInSats.call(vm), 0)
+    assert.equal(ConfirmSheet.computed.canSubmit.call(vm), false)
+    assert.equal(ConfirmSheet.computed.amountInvalidReason.call(vm), 'Check the amount format.')
+  }
+})
+
+test('partial and payout drafts keep their precision without enabling a different payment', () => {
+  const vm = { currentCurrency: 'KES', displayAmount: '10,', isLocalDenomination: true, payoutCurrency: { code: 'KES', decimals: 2, multiplier: 1000 }, $i18n: { locale: 'de' } }
+  ConfirmSheet.methods.onAmountChange.call(vm)
+  assert.equal(vm.displayAmount, '10.')
+  assert.equal(vm.amountInputPartial, true)
+  assert.equal(ConfirmSheet.computed.amountInSats.call(vm), 0)
+  vm.displayAmount = '10,25'
+  ConfirmSheet.methods.onAmountChange.call(vm)
+  assert.equal(vm.displayAmount, '10.25')
+  assert.equal(ConfirmSheet.computed.amountInSats.call(vm), 10)
+  vm.displayAmount = '10,251'
+  ConfirmSheet.methods.onAmountChange.call(vm)
+  assert.equal(vm.amountInputError, true)
+  assert.equal(ConfirmSheet.computed.amountInSats.call(vm), 0)
+})
+
+test('committed amount, denomination and note cannot change through native or stray events', () => {
+  for (const busy of ['isSending', 'isComplete']) {
+    const vm = { [busy]: true, amountMode: 'free', displayAmount: '2400', currentCurrency: 'sats', comment: 'Coffee', walletCanPay: true, isAmountAcceptable: true, commitGate: true }
+    const amountEvent = { target: { value: '9999' } }, noteEvent = { target: { value: 'Changed' } }
+    ConfirmSheet.methods.onAmountChange.call(vm, amountEvent)
+    ConfirmSheet.methods.toggleCurrency.call(vm)
+    ConfirmSheet.methods.onAmountBlur.call(vm)
+    ConfirmSheet.methods.setAmountSats.call(vm, 9999)
+    ConfirmSheet.methods.onCommentChange.call(vm, noteEvent)
+    assert.deepEqual([vm.displayAmount, vm.currentCurrency, vm.comment], ['2400', 'sats', 'Coffee'])
+    assert.deepEqual([amountEvent.target.value, noteEvent.target.value], ['2400', 'Coffee'])
+    assert.equal(ConfirmSheet.computed.canSubmit.call(vm), false)
+  }
+})
+
+test('record links are safe anchors on web and do not pretend to detect popup failures', async () => {
+  const html = await render(VerificationDetails, { context: 'historical', verification: VERIFIED_BUSINESS })
+  assert.match(html, /<a[^>]*href="https:\/\/guardrail.branta.pro\/v1\/verify\/check-id#device-key"[^>]*target="_blank"[^>]*rel="noopener noreferrer"[^>]*referrerpolicy="no-referrer"/)
+  let prevented = false
+  const vm = { recordUrl: VERIFIED_BUSINESS.verifyUrl, opening: false, linkError: true }
+  await VerificationDetails.methods.openRecord.call(vm, { preventDefault() { prevented = true } })
+  assert.equal(prevented, false)
+  assert.equal(vm.linkError, false)
+})
+
+test('a late native record failure cannot replace another receipt context', async () => {
+  let reject
+  const opening = new Promise((_, no) => { reject = no })
+  const NativeDetails = load('../BrantaVerificationDetails.vue', {
+    '@capacitor/core': { Capacitor: { isNativePlatform: () => true } },
+    '@capacitor/browser': { Browser: { open: () => opening } },
+    '../utils/branta.js': { safeBrantaUrl },
+  })
+  const vm = { verification: VERIFIED_BUSINESS, context: 'current', recordUrl: VERIFIED_BUSINESS.verifyUrl, opening: false, linkError: false }
+  let prevented = false
+  const run = NativeDetails.methods.openRecord.call(vm, { preventDefault() { prevented = true } })
+  await Promise.resolve()
+  assert.equal(prevented, true)
+  vm.verification = { name: 'Another business' }
+  vm.context = 'historical'
+  vm.recordUrl = ''
+  NativeDetails.watch.verification.call(vm)
+  reject(new Error('native browser unavailable'))
+  await run
+  assert.equal(vm.linkError, false)
+  assert.equal(vm.opening, false)
+})
+
+test('blur pads canonical decimals without floating-point rounding or changing a fixed request', () => {
+  for (const [input, expected] of [['0.00000029', '0.00000029'], ['90071992.54740991', '90071992.54740991'], ['1.', '1.00000000']]) {
+    const vm = { currentCurrency: 'btc', displayAmount: input }
+    const before = ConfirmSheet.computed.amountInSats.call(vm)
+    ConfirmSheet.methods.onAmountBlur.call(vm)
+    assert.equal(vm.displayAmount, expected)
+    assert.equal(ConfirmSheet.computed.amountInSats.call(vm), before)
+    const emitted = []
+    ConfirmSheet.methods.emitConfirm.call({ ...vm, canSubmit: true, amountInSats: before, $emit: (...event) => emitted.push(event) })
+    assert.equal(emitted[0][1].amountSats, before)
+  }
+  const fixed = { amountMode: 'fixed', currentCurrency: 'btc', displayAmount: '2400' }
+  ConfirmSheet.methods.onAmountBlur.call(fixed)
+  assert.equal(fixed.displayAmount, '2400')
+  const unsafe = { currentCurrency: 'sats', displayAmount: '9007199254740992' }
+  ConfirmSheet.methods.onAmountBlur.call(unsafe)
+  assert.equal(unsafe.displayAmount, '9007199254740992')
+  assert.equal(ConfirmSheet.computed.amountInSats.call(unsafe), 0)
 })

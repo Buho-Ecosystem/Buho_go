@@ -12,8 +12,8 @@ importers:
         specifier: 0.4.79
         version: 0.4.79
       '@branta-ops/branta':
-        specifier: 3.2.2
-        version: 3.2.2
+        specifier: 4.3.0
+        version: 4.3.0
       '@breeztech/breez-sdk-spark':
         specifier: 0.26.1
         version: 0.26.1
@@ -54,8 +54,8 @@ importers:
         specifier: ^8.4.2
         version: 8.4.2(@capacitor/core@8.3.1)
       '@cashu/cashu-ts':
-        specifier: ^4.8.0
-        version: 4.9.0
+        specifier: ^4.13.1
+        version: 4.13.1
       '@chenfengyuan/vue-qrcode':
         specifier: ^2.0.0
         version: 2.0.0(qrcode@1.5.4)(vue@3.5.32)
@@ -738,8 +738,8 @@ packages:
   '@bitcoinerlab/miniscript@2.0.0':
     resolution: {integrity: sha512-P8yyubPf6lphmIZfyD/ZbhT/umJX7zH1mKjGql7z0Qt+xuffnz2AueQqq2/01VE2rTIq80VM0oRFdJClGBYx/g==}
 
-  '@branta-ops/branta@3.2.2':
-    resolution: {integrity: sha512-ruc2LyTxZqkRRqCdG3xcmkEZ7jZIwsl7rEptT40U0AIzSUEhs2BzQlo7oAoGmfDS4ZK4RNsrMMundnQ/YyUFJw==}
+  '@branta-ops/branta@4.3.0':
+    resolution: {integrity: sha512-xijIfesGAUot/2m/O7Jsz3+rprih2HtP3r7NPveeKX8Vs1Xapu//2CkvVk9tZkRGuvHVs/cphakTqeWNUj3TfQ==}
 
   '@breeztech/breez-sdk-spark@0.26.1':
     resolution: {integrity: sha512-mPHW7N+OZMay1uJ0ARAkczgiXB+iJGvuTsVxVsHLyP/S8OdidoxZVfLQm4ItOgyFaJAVFqKvQdsf7G40+3o1FA==}
@@ -809,8 +809,8 @@ packages:
     peerDependencies:
       '@capacitor/core': '>=8.0.0'
 
-  '@cashu/cashu-ts@4.9.0':
-    resolution: {integrity: sha512-cFJj4Pr4v0HVnh5vSRO4uzx4ts57NmvMV+XfziR0pBowcRlsqOpbas9K21XIqClqZw1ODFrGsWy5pL1iBHBFhw==}
+  '@cashu/cashu-ts@4.13.1':
+    resolution: {integrity: sha512-D8i6yKd8ZUszq0dh8BFnLQKfKcNKcqLxLQADZuh3io/huyp/+XfrNoJUzLQQw5n6RRV9IAKNBk/HUAdJmUYMbg==}
     engines: {node: '>=22.4.0'}
 
   '@chenfengyuan/vue-qrcode@2.0.0':
@@ -1633,6 +1633,9 @@ packages:
 
   '@scure/bip32@2.2.0':
     resolution: {integrity: sha512-zFr7t2F+a9+5tB7QbarF2HQNYrgjCNaoLAupZdKkrFMYMozJf5zqH2WJCQibMzm1qQ0QogrxVGO3qXfQDYMaQg==}
+
+  '@scure/bip32@2.4.0':
+    resolution: {integrity: sha512-i3DS0CptAocyvqE4n3SUkpzeQK4vJMFwWLofTwRiiKo2aWojBOfyMCgfKw9HVpO6fSY5AK86sHS/Uzn8kK9Few==}
 
   '@scure/bip39@1.6.0':
     resolution: {integrity: sha512-+lF0BbLiJNwVlev4eKelw1WWLaiKXw7sSl8T6FvBlWkdX+94aGJ4o8XjUdlyhTCjd8c+B3KT3JfS8P0bLRNU6A==}
@@ -5040,7 +5043,7 @@ snapshots:
     dependencies:
       bip68: 1.0.4
 
-  '@branta-ops/branta@3.2.2': {}
+  '@branta-ops/branta@4.3.0': {}
 
   '@breeztech/breez-sdk-spark@0.26.1':
     optionalDependencies:
@@ -5103,12 +5106,12 @@ snapshots:
     dependencies:
       '@capacitor/core': 8.3.1
 
-  '@cashu/cashu-ts@4.9.0':
+  '@cashu/cashu-ts@4.13.1':
     dependencies:
-      '@noble/curves': 2.2.0
-      '@noble/hashes': 2.2.0
-      '@scure/base': 2.2.0
-      '@scure/bip32': 2.2.0
+      '@noble/curves': 2.4.0
+      '@noble/hashes': 2.4.0
+      '@scure/base': 2.4.0
+      '@scure/bip32': 2.4.0
 
   '@chenfengyuan/vue-qrcode@2.0.0(qrcode@1.5.4)(vue@3.5.32)':
     dependencies:
@@ -5852,6 +5855,12 @@ snapshots:
       '@noble/curves': 2.2.0
       '@noble/hashes': 2.2.0
       '@scure/base': 2.2.0
+
+  '@scure/bip32@2.4.0':
+    dependencies:
+      '@noble/curves': 2.4.0
+      '@noble/hashes': 2.4.0
+      '@scure/base': 2.4.0
 
   '@scure/bip39@1.6.0':
     dependencies:

@@ -47,18 +47,8 @@
             context for the *amount*, not a footer afterthought. Used by
             the send-success flow; receive/withdraw don't pass it.
           -->
-          <!-- A verified business: its logo, its name and the Branta seal. -->
-          <div
-            v-if="verifiedRecipient"
-            class="verified-recipient"
-            :aria-label="`${recipientPrefix}${verifiedRecipient.name}, ${$t('Verified by Branta')}`"
-          >
-            <span v-if="verifiedRecipient.avatar && !verifiedLogoFailed" class="verified-recipient-logo" :style="verifiedRecipient.avatar.background ? { background: verifiedRecipient.avatar.background } : null">
-              <img :src="verifiedRecipient.avatar.url" alt="" @error="verifiedLogoFailed = true" />
-            </span>
-            <span class="verified-recipient-name" aria-hidden="true">{{ recipientPrefix }}{{ verifiedRecipient.name }}</span>
-            <Icon icon="tabler:rosette-discount-check-filled" width="15" height="15" class="verified-recipient-seal" />
-          </div>
+          <!-- The business mark stays quiet; its receipt keeps the saved details. -->
+          <BrantaMerchantMark v-if="verifiedRecipient" class="verified-recipient" :merchant="verifiedRecipient" :size="40" />
           <div
             v-else-if="recipient"
             class="recipient-line"
@@ -248,6 +238,7 @@ import { formatAmount as formatAmountUtil } from '../utils/amountFormatting.js';
 import { useWalletStore } from '../stores/wallet';
 import { copySensitive } from '../utils/sensitiveClipboard.js';
 import SuccessCheckmark from './SuccessCheckmark.vue';
+import BrantaMerchantMark from './BrantaMerchantMark.vue';
 import { openInAppBrowser } from '../utils/inAppBrowser.js';
 import { formatSuccessActionUrl } from '../utils/successAction.js';
 
@@ -257,7 +248,7 @@ const AUTO_CLOSE_SECONDS = 6.3;
 
 export default {
   name: 'PaymentConfirmation',
-  components: { Icon, SuccessCheckmark },
+  components: { Icon, SuccessCheckmark, BrantaMerchantMark },
   props: {
     modelValue: {
       type: Boolean,
@@ -303,9 +294,9 @@ export default {
       default: 'To '
     },
     /**
-     * A Branta-verified business that was paid: { name, avatar: { url,
-     * background } | null }. Shown as a pill with its logo and the seal in
-     * place of the plain recipient line.
+     * The business that was paid: { name, avatar: { url, background } | null }.
+     * Its accessible mark replaces the plain recipient line; the receipt
+     * retains its name and saved verification details.
      */
     verifiedRecipient: {
       type: Object,
@@ -361,7 +352,6 @@ export default {
       showConfetti: false,
       closeTimer: null,
       animationTimeout: null,
-      verifiedLogoFailed: false
     }
   },
   computed: {
@@ -391,9 +381,6 @@ export default {
     }
   },
   watch: {
-    verifiedRecipient() {
-      this.verifiedLogoFailed = false
-    },
     modelValue(newVal) {
       if (newVal) {
         this.startAnimationSequence()
@@ -626,49 +613,7 @@ export default {
   styling so the amount stays the visual anchor. Truncates with
   ellipsis on narrow viewports rather than wrapping into the layout.
 */
-.verified-recipient {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  max-width: 300px;
-  margin: 0.9rem auto 0;
-  padding: 6px 14px 6px 6px;
-  border-radius: 999px;
-  background: var(--bg-input);
-  color: var(--text-primary);
-  font-family: 'Manrope', sans-serif;
-  font-size: 14px;
-  font-weight: 650;
-}
-
-.verified-recipient-logo {
-  width: 28px;
-  height: 28px;
-  flex: none;
-  border-radius: 50%;
-  background: #fff;
-  overflow: hidden;
-  display: grid;
-  place-items: center;
-}
-
-.verified-recipient-logo img {
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
-  padding: 15%;
-  box-sizing: border-box;
-}
-
-.verified-recipient-name {
-  min-width: 0;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
-
-.verified-recipient-seal { flex: none; color: var(--text-primary); }
-body.body--dark .verified-recipient-seal { color: #C7CCD4; }
+.verified-recipient { margin: 0.9rem auto 0; }
 
 .recipient-line {
   font-family: 'Manrope', sans-serif;

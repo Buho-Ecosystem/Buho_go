@@ -10,6 +10,8 @@ Still on a BuhoGO from GitHub or Zapstore older than 1.9.1? It was signed with a
 
 ### Highlights
 
+- **Recognise the business.** When a payment matches a registered business, its logo appears before you send. A small check in payment details and the receipt explains who matched and when. A changed code stops the payment and asks for a new one.
+
 - **Contact chat.** Ask a contact for money, pay their request or send them money in a private, end-to-end encrypted chat. Tap a contact in the Address Book to open it. A request can be typed in your own currency, stays open for 30 days and shows as paid once BuhoGO has confirmed the money arrived. Short messages, replies and reactions sit next to it, and text that looks like a secret key or recovery phrase is never sent.
 - **Up to six Spark wallets.** One recovery phrase now holds up to six equal Spark wallets, to keep savings, a shop or the family apart, and one backup covers them all. Add, rename, switch and remove them in Settings, and move a wallet's Lightning address to another one. Your Business and Personal wallets become two ordinary wallets that keep their names, and a restore brings back every wallet you used.
 - **Split the bill.** Request, new in Receive, asks one person or several at once, in equal shares or by amount, and shows who has paid. Pick people from your contacts, search for anyone or scan the code on their profile. After paying for a group, Request repayment on the payment asks the others for their share, fees left out. Each person gets an ordinary private request; only you see the whole list.
@@ -24,6 +26,8 @@ Still on a BuhoGO from GitHub or Zapstore older than 1.9.1? It was signed with a
 - **Bolt Card on one sheet.** Tapping a card shows the card, the amount and the PIN on one sheet with a new slide, including the tries left. The kiosk says it takes cards, and every parked sale stays watched, also after a restart.
 
 ### UI/UX
+
+- **A clearer payment review.** Fees, the optional note and total sit together, amounts use one consistent format, and Send stays simple. Full requests and business checks remain in details. Bitcoin on-chain speed and fee controls stay directly visible.
 
 - **Quick access on Android.** Quick Settings tiles for Send and Receive, and a long-press menu on the app icon for Send, Receive, Scan QR and the last person you paid. Any entry can be dragged to the Home screen. Nothing is filled in or paid, and on a locked phone a tile asks to unlock first.
 - **Scan a QR code from a photo.** Every scanner has Choose photo, to read a screenshot of an invoice, a request sent in a chat or a saved connection code. BuhoGO asks for no access to your photo library, and the camera stays off while you choose.
@@ -52,6 +56,8 @@ Still on a BuhoGO from GitHub or Zapstore older than 1.9.1? It was signed with a
 - **App features on the web.** In the browser, Haptics and Quick access show in Settings and point to the Android app, like App lock already does.
 
 ### Bug Fixes
+
+- Fixed BTC amount entry losing a sat during decimal conversion, including 0.00000029 BTC. Decimal commas and grouped amounts no longer turn into a different amount, and the amount, fees and total use consistent units.
 
 - Fixed a web issue where adding a wallet straight after reloading its setup page erased every other wallet on the device, a Spark recovery phrase included, and reset settings such as currency and app lock. A tab that missed a change made in another tab now asks you to reload instead of overwriting it.
 - Fixed the Social Bucket's ecash backup on Nostr, which could not be read back, so a restore on another phone would have found nothing. Existing backups are read and replaced. The ecash on the phone itself was always safe.

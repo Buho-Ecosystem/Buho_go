@@ -78,12 +78,10 @@ export const useBitcoinPreferencesStore = defineStore('bitcoinPreferences', {
       autoAddIncomingBitcoin: persisted?.autoAddIncomingBitcoin ?? true,
 
       // When true, look up merchant verification (Branta) for the payment
-      // the user is about to send and show a "verified by Branta" badge on
-      // the confirm sheet when there is a match. Default on. Lives here
-      // with the other payment-side preferences. The lookup runs in strict
-      // privacy mode (the destination is never sent to Branta in the
-      // clear) and a no-match simply shows nothing. Surfaced in Settings
-      // under Advanced as "Merchant verification".
+      // the user is about to send. A matched business supplies its mark;
+      // verification details stay on demand. Default on, with the other
+      // payment-side preferences. A no-match simply shows nothing.
+      // Surfaced in Settings under Advanced as "Business check".
       brantaVerificationEnabled: persisted?.brantaVerificationEnabled ?? true
     }
   },

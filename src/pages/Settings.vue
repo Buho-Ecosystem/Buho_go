@@ -458,11 +458,11 @@
           </template>
         </SettingsRow>
 
-        <!-- Merchant verification (Branta), on by default. The section footer
-             says what it does when on; off follows from that. -->
+        <!-- The existing device preference, with a short description.
+             No separate payment mode or privacy guarantee is introduced. -->
         <SettingsRow
           icon="tabler:rosette-discount-check"
-          :label="$t('Merchant verification')"
+          :label="$t('Business check')"
           :interactive="false"
         >
           <template #right>
@@ -470,12 +470,12 @@
               :model-value="bitcoinPrefsStore.brantaVerificationEnabled"
               @update:model-value="bitcoinPrefsStore.setBrantaVerificationEnabled"
               :color="$q.dark.isActive ? 'brand-green' : 'brand-green-dark'"
-              :aria-label="$t('Merchant verification')"
+              :aria-label="$t('Business check')"
             />
           </template>
         </SettingsRow>
         <template #footer>
-          {{ $t("Shows a business's verified name and logo before you pay. Checked privately with Branta; your payment details are never shared.") }}
+          {{ $t("Shows the business behind a payment when a match is available. Checked with Branta.") }}
           <a href="https://branta.pro" class="settings-footer-link" @click.prevent="openBrantaSite">{{ $t('About Branta') }}</a>
         </template>
       </SettingsSection>

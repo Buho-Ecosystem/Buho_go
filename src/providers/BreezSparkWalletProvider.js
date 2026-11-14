@@ -70,6 +70,19 @@ const lastNetworkSync = new Map();
 
 export const FRESH_SYNC_TIMEOUT_MS = 20000;
 
+/** Verification follows the SDK-parsed destination, not merely the input. */
+function preparedBrantaTarget(method, input, useSpark = false) {
+  const value = method?.type === 'bolt11Invoice' ? method.invoiceDetails?.invoice?.bolt11
+    : method?.type === 'sparkAddress' ? method.address
+      : method?.type === 'sparkInvoice' ? method.sparkInvoiceDetails?.invoice : null;
+  const exposed = typeof value === 'string' && !!value;
+  return {
+    kind: useSpark ? 'optimizedSpark' : !exposed ? 'unknown'
+      : method.type === 'bolt11Invoice' ? 'lightning' : method.type,
+    value: exposed ? value : input,
+  };
+}
+
 function syncError(message, code) {
   const err = new Error(message);
   err.code = code;
@@ -944,12 +957,12 @@ export class BreezSparkWalletProvider extends WalletProvider {
       // in-app Spark send passes preferSpark, and this estimate flows back
       // in as payInvoice's fee cap, so a cheaper-rail estimate against a
       // preferred-rail send would refuse payable invoices.
-      const { routeFee } = pickBolt11Route({
+      const { useSpark, routeFee } = pickBolt11Route({
         sparkTransferFeeSats: pm.sparkTransferFeeSats,
         lightningFeeSats: pm.lightningFeeSats,
         preferSpark: true,
       });
-      return { estimatedFeeSats: routeFee, invoice: cleanInvoice };
+      return { estimatedFeeSats: routeFee, invoice: cleanInvoice, brantaTarget: preparedBrantaTarget(pm, cleanInvoice, useSpark) };
     } catch (error) {
       // Nothing reached Spark: there is no fee to tell, and the payment
       // cannot go through either. The caller says so instead of a guess.
@@ -990,7 +1003,8 @@ export class BreezSparkWalletProvider extends WalletProvider {
     preferSpark = false,
     amountSats = null,
     awaitCompletion = true,
-    completionTimeoutMs = 60000
+    completionTimeoutMs = 60000,
+    onPreparedDestination = null,
   }) {
     this._ensureConnected();
 
@@ -1026,6 +1040,12 @@ export class BreezSparkWalletProvider extends WalletProvider {
         );
       }
 
+      // Merchant identity is bound to this actual prepared route, including
+      // a cache-expiry reprepare. A review refusal happens before any debit.
+      if (typeof onPreparedDestination === 'function') {
+        await onPreparedDestination(preparedBrantaTarget(pm, cleanInvoice, useSpark));
+      }
+
       const sendResponse = await this.sdk.sendPayment({
         prepareResponse: prep,
         options: {
@@ -1059,7 +1079,7 @@ export class BreezSparkWalletProvider extends WalletProvider {
           : PAYMENT_STATUS.PENDING
       };
     } catch (error) {
-      this.setError(error);
+      if (error?.code !== 'BRANTA_REVIEW_REQUIRED') this.setError(error);
       throw error;
     }
   }
@@ -1193,7 +1213,7 @@ export class BreezSparkWalletProvider extends WalletProvider {
     const fee = numeric ? Number(rawFee) : NaN;
     if (!Number.isSafeInteger(fee) || fee < 0) throw new Error('No Spark fee quote available');
     this._assertZeroSparkFee(method);
-    return { estimatedFeeSats: fee, isEstimated: false, request };
+    return { estimatedFeeSats: fee, isEstimated: false, request, brantaTarget: preparedBrantaTarget(method, request) };
   }
 
   async transferToSparkAddress(sparkAddress, amount) {

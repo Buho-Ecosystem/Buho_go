@@ -767,7 +767,7 @@ async function payWithOptionsMatrix(page) {
 }
 
 async function confirmPayment(page) {
-  await page.getByRole('button', { name: /^Send .*sats$/ }).click();
+  await page.locator('.sheet-card:visible .confirm-cta button.primary-cta').click();
 }
 
 async function deliverFromCarol(template) {

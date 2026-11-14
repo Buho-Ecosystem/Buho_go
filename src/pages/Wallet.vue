@@ -791,7 +791,8 @@ import {payerIdentifier} from '../utils/lud18.js';
 import {npubCashAddress} from '../utils/npubCashAddress.js';
 import {useProfileStore} from '../stores/profile';
 import { namesOneOrder, sendsPayoutAmount } from '../utils/payAgain.js';
-import {BRANTA_HOLD_MS, BRANTA_LOOKUP_TIMEOUT_MS, BRANTA_STATUS, brantaAvatar, brantaLookupText, checkWithBranta} from '../utils/branta.js';
+import {BRANTA_STATUS, brantaAvatar, brantaLookupText, brantaIdentityKey, freezeBrantaReceipt, sameBrantaDestination} from '../utils/branta.js';
+import {createBrantaVerification} from '../services/brantaVerification.js';
 import { readCachedTransactions, mergeCachedTransactions } from '../utils/txCache.js';
 import { EventBus, PAYMENT_SENT } from '../utils/eventBus.js';
 import { whenAppUnlocked } from '../utils/appLock.js';
@@ -891,6 +892,8 @@ export default {
       preparationError: '',
       preparationSlow: false,
       walletPreferenceError: '',
+      brantaRouteTarget: null,
+      brantaConfirming: false,
       defaultWalletCandidate: null,
       awaitingDefaultWalletPrompt: false,
       showDefaultWalletPrompt: false,
@@ -1512,6 +1515,7 @@ export default {
     },
     canConfirmPayment() {
       if (!this.pendingPayment) return false;
+      if (this.brantaConfirming || this.pendingPayment.brantaMismatch || this.pendingPayment.branta?.status === BRANTA_STATUS.TAMPERED) return false;
       if (this.isEstimatingFee) return false;
       // The sheet disables the slide for a wallet that cannot pay; the
       // pipeline refuses it too, so no stray event can send from one.
@@ -1748,7 +1752,9 @@ export default {
           recipient.logoContain = true;
           recipient.logoInset = '';
         }
-        recipient.verification = { name: bv.name, verifyUrl: bv.verifyUrl };
+        // Keep the complete checked snapshot for current proof details:
+        // artwork, historical check time, environment and exact destination.
+        recipient.verification = { ...bv };
       }
 
       // ── Amount mode ───────────────────────────────────────────
@@ -2060,7 +2066,14 @@ export default {
     // other payment leaves the gate open.
     /** Branta found the visible address is not the business's: stop the payment. */
     brantaTampered() {
-      return this.pendingPayment?.branta?.status === BRANTA_STATUS.TAMPERED;
+      return !!this.pendingPayment?.brantaMismatch || this.pendingPayment?.branta?.status === BRANTA_STATUS.TAMPERED;
+    },
+
+    brantaBindingKey() {
+      const payment = this.pendingPayment;
+      if (!payment) return '';
+      const target = this.brantaTargetForPayment(payment);
+      return JSON.stringify([brantaLookupText(payment), this.getSendingWallet()?.id || '', this.payingAmountSats || 0, target?.kind || '', target?.value || '', !!this.bitcoinPrefsStore?.brantaVerificationEnabled]);
     },
 
     sendSheetCommitGate() {
@@ -2305,6 +2318,8 @@ export default {
   },
   async created() {
     this._paymentDisposed = false;
+    this._brantaOnVisibility = () => { if (document.visibilityState !== 'visible') this._brantaSession?.stale(); };
+    if (typeof document !== 'undefined') document.addEventListener('visibilitychange', this._brantaOnVisibility);
     if (this.paymentOnly) {
       this._paymentIdentity = this.identityStore.nostrPubkeyHex;
       this.paymentPreferences.initialize();
@@ -2400,6 +2415,7 @@ export default {
     );
   },
   beforeUnmount() {
+    if (typeof document !== 'undefined') document.removeEventListener('visibilitychange', this._brantaOnVisibility);
     this._paymentDisposed = true;
     this._preparationAttempt = (this._preparationAttempt || 0) + 1;
     clearTimeout(this._preparationSlowTimer);
@@ -2422,6 +2438,10 @@ export default {
     this.cancelBrantaLookup();
   },
   watch: {
+    brantaBindingKey: {
+      handler() { void this.runBrantaVerification(this.pendingPayment); },
+      flush: 'sync',
+    },
     // A cleared error clears its label with it, whoever cleared it.
     sendResolveError(message) {
       if (!message) this.sendResolveSource = '';
@@ -3337,6 +3357,8 @@ export default {
           this.transactionMetadataStore.enqueuePendingContactLink({
             amountSats,
             merchantVerification,
+            transactionId: result.requestId || null,
+            merchantProof: [result.requestId, result.id, result.txid],
             walletId,
           }).catch((err) => console.warn('[wallet] could not queue the verified business:', err));
         }
@@ -5154,10 +5176,6 @@ export default {
           this.pendingPayment = paymentData;
         }
 
-        // Merchant verification (Branta). Starts before the sheet opens, so
-        // a checkable payment opens in its checking state; see below.
-        this.runBrantaVerification(this.pendingPayment);
-
         // Nostr-profile enrichment for npub.cash-style addresses. Same
         // fire-and-forget contract: upgrades the recipient to the real person
         // (name + avatar) when relays answer, and does nothing on a miss.
@@ -5180,6 +5198,7 @@ export default {
           // tick it becomes visible, so nothing ever reads a payment whose
           // payer is still the previous one's.
           this.sendingWalletId = payerFor(this.getPaymentAmountForFee());
+          void this.runBrantaVerification(this.pendingPayment);
           this.showSendSheet = true;
         }
       } catch (error) {
@@ -5243,39 +5262,87 @@ export default {
      * Your own users' invoices (`firstParty`) and till codes are not
      * looked up: they are never on Branta.
      */
-    runBrantaVerification(payment) {
-      if (!payment || !this.bitcoinPrefsStore.brantaVerificationEnabled) return;
-      if (payment.firstParty || payment.source === SA_RETAIL_SOURCE) return;
-      const qrText = brantaLookupText(payment);
-      if (!qrText) return;
+    brantaTargetForPayment(payment) {
+      if (!payment) return null;
+      if (payment.bitcoinAddress) {
+        const bip21 = parseBip21(payment.bitcoinAddress);
+        return { kind: 'bitcoin', value: bip21?.address || payment.bitcoinAddress };
+      }
+      if (payment.arkadeAddress) return { kind: 'arkade', value: payment.arkadeAddress };
+      const request = payment.sparkInvoice || payment.sparkAddress || payment.invoice;
+      if (!request) return null;
+      if (this.getSendingWalletType() === 'spark') {
+        const prepared = this.brantaRouteTarget;
+        return prepared && prepared.payment === payment && prepared.walletId === this.getSendingWallet()?.id && prepared.request === request
+          && prepared.amount === this.payingAmountSats ? prepared.target : null;
+      }
+      return payment.invoice ? { kind: 'lightning', value: payment.invoice.replace(/^lightning:/i, '') } : null;
+    },
 
-      this.cancelBrantaLookup();
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), BRANTA_LOOKUP_TIMEOUT_MS);
-      const hold = setTimeout(() => settle({ status: BRANTA_STATUS.NONE }), BRANTA_HOLD_MS);
-      this._brantaAbort = controller;
+    runBrantaVerification(payment, { refresh = false } = {}) {
+      if (!payment || payment !== this.pendingPayment || this.isSendingPayment || this._paymentDisposed) return Promise.resolve(null);
+      if (payment.brantaMismatch) {
+        payment.branta = { status: BRANTA_STATUS.TAMPERED };
+        return Promise.resolve(payment.branta);
+      }
+      if (!this.bitcoinPrefsStore?.brantaVerificationEnabled || payment.firstParty || payment.source === SA_RETAIL_SOURCE) {
+        if (this._brantaPayment === payment) this.cancelBrantaLookup();
+        if (payment.branta?.status !== BRANTA_STATUS.NONE) payment.branta = { status: BRANTA_STATUS.NONE };
+        return Promise.resolve(payment.branta);
+      }
+      const input = brantaLookupText(payment);
+      if (!input) return Promise.resolve({ status: BRANTA_STATUS.NONE });
+      if (this._brantaPayment !== payment || this._brantaSession?.original !== input) {
+        this.cancelBrantaLookup();
+        this._brantaPayment = payment;
+        this._brantaSession = createBrantaVerification({ onChange: answer => {
+          if (payment !== this.pendingPayment || this._paymentDisposed || this.isSendingPayment) return;
+          if (answer.status === BRANTA_STATUS.TAMPERED) payment.brantaMismatch = true;
+          if (JSON.stringify(payment.branta) !== JSON.stringify(answer)) payment.branta = answer;
+        } });
+        this._brantaSession.start(input);
+      }
+      const context = JSON.stringify([this.getSendingWallet()?.id || '', this.payingAmountSats || 0]);
+      return this._brantaSession.bind(this.brantaTargetForPayment(payment), context, { refresh });
+    },
 
-      payment.branta = { status: BRANTA_STATUS.CHECKING };
-      // Each payment is a fresh object, so a late answer never lands on another.
-      const isCurrent = () => this.pendingPayment === payment;
-      const settle = (answer) => {
-        if (isCurrent() && payment.branta?.status === BRANTA_STATUS.CHECKING) payment.branta = answer;
-      };
+    async acceptBrantaForSend() {
+      const payment = this.pendingPayment;
+      if (!payment || this.brantaConfirming || payment.brantaMismatch) return false;
+      const before = brantaIdentityKey(this.brantaVerificationOf(payment));
+      const walletId = this.getSendingWallet()?.id;
+      const amount = this.payingAmountSats;
+      this.brantaConfirming = true;
+      try {
+        const answer = await this.runBrantaVerification(payment, { refresh: true });
+        if (payment !== this.pendingPayment || this._paymentDisposed || walletId !== this.getSendingWallet()?.id || amount !== this.payingAmountSats) return false;
+        if (payment.brantaMismatch || answer?.status === BRANTA_STATUS.TAMPERED || this._brantaSession?.tampered) return false;
+        const verification = answer?.status === BRANTA_STATUS.VERIFIED ? answer.verification : null;
+        if (before !== brantaIdentityKey(verification)) {
+          this.$refs.sendSheetRef?.resetSlide();
+          this.$q.notify({ type: 'info', message: this.$t('The recipient changed. Review it before sending.'), timeout: 3000 });
+          return false;
+        }
+        this._brantaAccepted = { payment, verification: freezeBrantaReceipt(verification) };
+        return true;
+      } finally { this.brantaConfirming = false; }
+    },
 
-      checkWithBranta({ qrText, signal: controller.signal })
-        .then((answer) => {
-          if (answer.status === BRANTA_STATUS.TAMPERED) {
-            if (isCurrent() && !this.isSendingPayment && !this.sendDidSucceed) payment.branta = answer;
-            return;
-          }
-          settle(answer);
-        })
-        .finally(() => {
-          clearTimeout(timeout);
-          clearTimeout(hold);
-          // Never leave a payment checking: an abort settles it too.
-          settle({ status: BRANTA_STATUS.NONE });
-        });
+    assertBrantaPreparedDestination(payment, target) {
+      if (payment !== this.pendingPayment) throw Object.assign(new Error('Payment changed'), { code: 'BRANTA_REVIEW_REQUIRED' });
+      if (payment.brantaMismatch || (this._brantaPayment === payment && this._brantaSession?.tampered)) {
+        payment.brantaMismatch = true;
+        payment.branta = { status: BRANTA_STATUS.TAMPERED };
+        throw Object.assign(new Error('Payment code changed'), { code: 'BRANTA_REVIEW_REQUIRED' });
+      }
+      const accepted = this._brantaAccepted?.payment === payment ? this._brantaAccepted.verification : null;
+      if (!accepted || (accepted.destination.kind === target?.kind && sameBrantaDestination(accepted.destination.value, target.value))) return;
+      // The actual prepared rail changed after review. Do not debit or keep
+      // the earlier business claim; the next explicit confirmation reviews it.
+      this.brantaRouteTarget = { payment, walletId: this.getSendingWallet()?.id, request: payment.invoice, amount: this.payingAmountSats, target };
+      payment.branta = { status: BRANTA_STATUS.NONE };
+      this._brantaAccepted = { payment, verification: null };
+      throw Object.assign(new Error('Review the recipient before sending'), { code: 'BRANTA_REVIEW_REQUIRED' });
     },
 
     /**
@@ -5318,17 +5385,13 @@ export default {
 
     /** What a verified payment keeps on its transaction; null when not verified. */
     brantaReceipt(payment) {
-      const bv = this.brantaVerificationOf(payment);
-      if (!bv) return null;
-      const { name, logoUrl, logoLightUrl, description, verifyUrl } = bv;
-      return { name, logoUrl, logoLightUrl, description, verifyUrl };
+      return this._brantaAccepted?.payment === payment ? freezeBrantaReceipt(this._brantaAccepted.verification) : null;
     },
 
     cancelBrantaLookup() {
-      if (this._brantaAbort) {
-        this._brantaAbort.abort();
-        this._brantaAbort = null;
-      }
+      this._brantaSession?.cancel();
+      this._brantaSession = null;
+      this._brantaPayment = null;
     },
 
     validatePaymentAmount(amount) {
@@ -5600,6 +5663,7 @@ export default {
               counterpartyAvatar,
               // Branta-verified sends only: the business, for History and details.
               merchantVerification,
+              merchantProof: merchantVerification ? [result?.id, result?.payment_hash, result?.paymentHash, result?.preimage] : [],
               payAgain: addressPayAgain,
               // The address a refund goes to (LUD-18), as it was sent.
               refundAddress: sharedRefundAddress,
@@ -5608,7 +5672,7 @@ export default {
               walletId: sendingWalletId,
               // Spark's invoice result carries the history payment ID even
               // while pending. Never match it to a different, later payment.
-              transactionId: walletType === 'spark' && payLink ? result?.id || null : null,
+              transactionId: merchantVerification ? result?.id || result?.payment_hash || result?.paymentHash || null : (walletType === 'spark' && payLink ? result?.id || null : null),
             });
           } catch (err) {
             console.warn('[wallet] could not queue contact link:', err);
@@ -5719,6 +5783,10 @@ export default {
         await this.refreshPayerBalance(sendingWalletId);
 
       } catch (error) {
+        if (error?.code === 'BRANTA_REVIEW_REQUIRED') {
+          this.$refs.sendSheetRef?.resetSlide();
+          return;
+        }
         console.error('Payment failed:', error);
         // The service turned down the refund address, or wants one: said on
         // the row, with the sheet open, and never tried again by itself (a
@@ -5779,8 +5847,13 @@ export default {
      * thumb so the user can try again without dismissing the sheet.
      */
     async onSendSheetConfirm({ amountSats, comment, payout = null }) {
-      if (this.isEstimatingFee) return;
+      if (this.isEstimatingFee || this.brantaConfirming || this.pendingPayment?.brantaMismatch) return;
       if (this.paymentOnly && (this.preparationState !== 'ready' || !this.isContextualAttemptCurrent() || !this.paymentSheetWalletCanPay || this.isSendingPayment)) return;
+      if (this.bitcoinPrefsStore?.brantaVerificationEnabled && this.pendingPayment && !this.pendingPayment.firstParty && this.pendingPayment.source !== SA_RETAIL_SOURCE) {
+        if (!await this.acceptBrantaForSend()) return;
+      } else if (this.pendingPayment) {
+        this._brantaAccepted = { payment: this.pendingPayment, verification: null };
+      }
       // Acquire ownership synchronously, before an executor's first await.
       if (this.paymentOnly && this.paymentFlow.committed) return;
       if (this.paymentOnly) this.paymentFlow.setStage(this.paymentIntent.id, 'sending');
@@ -5971,6 +6044,7 @@ export default {
      * refund address), for a Lightning address or a link.
      */
     async sendSparkPayment(amount, comment, payout = null, walletId = null, payerData = null) {
+      const payment = this.pendingPayment;
       // Ensure Spark wallet is connected (auto-connects if session PIN available)
       const provider = await this.walletStore.ensureSparkConnected(walletId);
 
@@ -6012,7 +6086,8 @@ export default {
           preferSpark: true, // Auto-use Spark transfer if recipient has Spark address
           amountSats: isZeroAmountInvoice ? amount : null, // Only pass amount for zero-amount invoices
           // The fee the sheet showed; a quote of 0 ("Free") is a quote too.
-          maxFee: this.estimatedFee ?? undefined
+          maxFee: this.estimatedFee ?? undefined,
+          onPreparedDestination: target => this.assertBrantaPreparedDestination(payment, target),
         });
       }
 
@@ -6954,6 +7029,10 @@ export default {
         const fee = estimate?.estimatedFeeSats;
         this.estimatedFee = typeof fee === 'number' && Number.isFinite(fee) && fee >= 0 ? fee : null;
         this.estimatedFeeIsGuess = estimate?.isEstimated === true;
+        if (this.bitcoinPrefsStore?.brantaVerificationEnabled) {
+          this.brantaRouteTarget = { payment, walletId, request: nativeRequest || invoice, amount, target: estimate?.isEstimated ? null : estimate?.brantaTarget || null };
+          void this.runBrantaVerification(payment);
+        }
       } catch (error) {
         if (run !== this._feeEstimateRun) return;
         this.estimatedFee = null;
