@@ -8,11 +8,13 @@ import { usePaymentFlowStore } from '../../stores/paymentFlow.js'
 import { usePaymentPreferencesStore } from '../../stores/paymentPreferences.js'
 import * as payingWallets from '../../utils/payingWallets.js'
 import * as walletCapabilities from '../../utils/walletCapabilities.js'
+import * as brantaReview from '../../services/brantaVerification.js'
 
 const source = readFileSync(new URL('../Wallet.vue', import.meta.url), 'utf8').match(/<script>([\s\S]*?)<\/script>/)[1]
 const { code } = transformSync(source, { format: 'cjs', supported: { 'dynamic-import': false } })
 const module = { exports: {} }
 const dependencies = { '../utils/payingWallets.js': payingWallets, '../utils/walletCapabilities.js': walletCapabilities,
+  '../services/brantaVerification.js': brantaReview,
   '../utils/haptics.js': { haptics: { success() {} } },
   '../utils/fiatRates.js': { fiatRatesService: { convertSatsToFiat: async () => null } },
 }

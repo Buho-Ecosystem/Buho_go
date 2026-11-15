@@ -70,8 +70,11 @@ const lastNetworkSync = new Map();
 
 export const FRESH_SYNC_TIMEOUT_MS = 20000;
 
-/** Verification follows the SDK-parsed destination, not merely the input. */
-function preparedBrantaTarget(method, input, useSpark = false) {
+/**
+ * The destination the SDK actually prepared, not merely the input: callers
+ * that showed the person a recipient compare it before the send.
+ */
+function preparedRouteOf(method, input, useSpark = false) {
   const value = method?.type === 'bolt11Invoice' ? method.invoiceDetails?.invoice?.bolt11
     : method?.type === 'sparkAddress' ? method.address
       : method?.type === 'sparkInvoice' ? method.sparkInvoiceDetails?.invoice : null;
@@ -962,7 +965,7 @@ export class BreezSparkWalletProvider extends WalletProvider {
         lightningFeeSats: pm.lightningFeeSats,
         preferSpark: true,
       });
-      return { estimatedFeeSats: routeFee, invoice: cleanInvoice, brantaTarget: preparedBrantaTarget(pm, cleanInvoice, useSpark) };
+      return { estimatedFeeSats: routeFee, invoice: cleanInvoice, preparedRoute: preparedRouteOf(pm, cleanInvoice, useSpark) };
     } catch (error) {
       // Nothing reached Spark: there is no fee to tell, and the payment
       // cannot go through either. The caller says so instead of a guess.
@@ -1004,7 +1007,7 @@ export class BreezSparkWalletProvider extends WalletProvider {
     amountSats = null,
     awaitCompletion = true,
     completionTimeoutMs = 60000,
-    onPreparedDestination = null,
+    onPreparedRoute = null,
   }) {
     this._ensureConnected();
 
@@ -1040,10 +1043,11 @@ export class BreezSparkWalletProvider extends WalletProvider {
         );
       }
 
-      // Merchant identity is bound to this actual prepared route, including
-      // a cache-expiry reprepare. A review refusal happens before any debit.
-      if (typeof onPreparedDestination === 'function') {
-        await onPreparedDestination(preparedBrantaTarget(pm, cleanInvoice, useSpark));
+      // What the person reviewed is bound to this actual prepared route,
+      // including a cache-expiry reprepare. The caller may refuse it
+      // (PAYMENT_REVIEW_REQUIRED) before any debit.
+      if (typeof onPreparedRoute === 'function') {
+        await onPreparedRoute(preparedRouteOf(pm, cleanInvoice, useSpark));
       }
 
       const sendResponse = await this.sdk.sendPayment({
@@ -1079,7 +1083,8 @@ export class BreezSparkWalletProvider extends WalletProvider {
           : PAYMENT_STATUS.PENDING
       };
     } catch (error) {
-      if (error?.code !== 'BRANTA_REVIEW_REQUIRED') this.setError(error);
+      // A caller asking for another review is not a wallet failure.
+      if (error?.code !== 'PAYMENT_REVIEW_REQUIRED') this.setError(error);
       throw error;
     }
   }
@@ -1213,7 +1218,7 @@ export class BreezSparkWalletProvider extends WalletProvider {
     const fee = numeric ? Number(rawFee) : NaN;
     if (!Number.isSafeInteger(fee) || fee < 0) throw new Error('No Spark fee quote available');
     this._assertZeroSparkFee(method);
-    return { estimatedFeeSats: fee, isEstimated: false, request, brantaTarget: preparedBrantaTarget(method, request) };
+    return { estimatedFeeSats: fee, isEstimated: false, request, preparedRoute: preparedRouteOf(method, request) };
   }
 
   async transferToSparkAddress(sparkAddress, amount) {

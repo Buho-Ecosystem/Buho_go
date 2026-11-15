@@ -2,8 +2,8 @@ import assert from 'node:assert/strict'
 import { beforeEach, test } from 'node:test'
 import { brantaFixture, proofUri, ADDRESS as REAL_ADDRESS, OTHER_ADDRESS } from '../../../scripts/fixtures/branta.mjs'
 import {
-  BRANTA_STATUS, BRANTA_SDK_VERSION, brantaAvatar, brantaLookupText, checkWithBranta, clearBrantaCache,
-  hasBrantaParams, invalidBrantaInput, normalizeBrantaResult, safeBrantaUrl, resolveBrantaEnvironment, freezeBrantaReceipt,
+  BRANTA_STATUS, brantaAvatar, brantaLookupText, checkWithBranta, clearBrantaCache,
+  hasBrantaParams, invalidBrantaInput, normalizeBrantaResult, safeBrantaUrl, resolveBrantaEnvironment, brantaReceiptOf,
 } from '../branta.js'
 const ADDRESS = REAL_ADDRESS, INVOICE = 'lnbc42u1invoice-under-test', ARK = 'ark1destination'
 const ORIGIN = 'https://guardrail.branta.pro'
@@ -48,8 +48,6 @@ test('only exact decrypted matches may own a verified recipient; unrelated payme
   const receipt = normalizeBrantaResult(result, target, { now: 100 })
   assert.equal(receipt.name, 'Actual owner')
   assert.equal(receipt.checkedAt, 100)
-  assert.equal(receipt.version, 1)
-  assert.equal(receipt.sdkVersion, BRANTA_SDK_VERSION)
   assert.deepEqual(receipt.destination, target)
   assert.equal(receipt.verifyUrl.endsWith('#local-secret'), true)
   assert.equal(Object.isFrozen(receipt), true)
@@ -90,13 +88,15 @@ test('expiry respects missing/zero TTL while malformed provided data never becom
     assert.equal(normalizeBrantaResult(match([{ ...valid, createdDate }]), target, { now }), null, String(createdDate))
   }
 })
-test('snapshot copies retain original checked time and destination even if the caller mutates its object', () => {
+test('a saved check keeps who and when, never the destination, and ignores later changes to its source', () => {
   const original = { ...normalizeBrantaResult(match(), target, { now: 10 }), destination: { ...target } }
-  const frozen = freezeBrantaReceipt(original)
+  const saved = brantaReceiptOf(original)
   original.name = 'Different'; original.destination.value = OTHER_ADDRESS
-  assert.equal(frozen.name, 'Coffee')
-  assert.equal(frozen.destination.value, ADDRESS)
-  assert.equal(frozen.checkedAt, 10)
+  assert.equal(saved.name, 'Coffee')
+  assert.equal(saved.checkedAt, 10)
+  assert.equal(Object.isFrozen(saved), true)
+  assert.deepEqual(Object.keys(saved).sort(), ['checkedAt', 'description', 'environment', 'logoLightUrl', 'logoUrl', 'name', 'verifyUrl'])
+  assert.equal(brantaReceiptOf(null), null)
 })
 test('public SDK verify uses a finite cache and never caches tampering or failures', async () => {
   let now = 1000, calls = 0
