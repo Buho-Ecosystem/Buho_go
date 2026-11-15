@@ -869,8 +869,8 @@ test('request sheet: a failure is shown as such', async () => {
 
 test('request sheet: without a profile address it explains and offers one button, no keypad', async () => {
   const html = await render(RequestSheet, { modelValue: true, partnerName: 'Anna' })
-  assert.match(html, /To request money you need a Lightning address in your profile\./)
-  assert.match(html, />\s*Set up Lightning address\s*</)
+  assert.match(html, /To request money you need a payment address in your profile\./)
+  assert.match(html, />\s*Set up payment address\s*</)
   assert.doesNotMatch(html, /keypad-stub|request-sheet__to"/)
   const { vm, emitted } = vmOf(RequestSheet, {})
   vm.$emit('open-address')

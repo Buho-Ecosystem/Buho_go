@@ -133,7 +133,7 @@ export default {
       return [
         this.$t('Browse or search shops by category and country.'),
         this.$t('Tap Visit shop to open their site in a secure in-app browser.'),
-        this.$t('Pay in Bitcoin at their checkout, or tap Pay with BuhoGO when a Lightning address is shown.'),
+        this.$t('Pay in Bitcoin at their checkout, or tap Pay with BuhoGO when a payment address is shown.'),
       ];
     },
     currentList() {

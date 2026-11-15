@@ -858,7 +858,7 @@ export default {
     handleQrScan(qrData) {
       if (isAddressRequest(qrData)) {
         this.closeScanner();
-        this.$q.notify({ type: 'info', message: this.$t('This code asks for your Lightning address. Scan it from Home after setting up your wallet.') });
+        this.$q.notify({ type: 'info', message: this.$t('This code asks for your payment address. Scan it from Home after setting up your wallet.') });
         return;
       }
       if (!qrData) return;

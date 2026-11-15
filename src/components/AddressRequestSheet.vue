@@ -26,7 +26,7 @@
           <p class="address-request-domain" dir="ltr">{{ state.request.domain }}</p>
           <p class="address-request-description">{{ state.request.description }}</p>
           <div class="address-request-address">
-            <span>{{ t('Your Lightning address') }}</span>
+            <span>{{ t('Your payment address') }}</span>
             <strong dir="ltr">{{ state.snapshot.address }}</strong>
           </div>
           <p class="address-request-help">{{ t('This lets the service send you payments.') }}</p>
@@ -107,9 +107,9 @@ watch(() => route.path, (path, previous) => {
 });
 
 const title = computed(() => ({ confirmed: 'Address shared', rejected: 'Address not accepted', unknown: 'Sharing not confirmed',
-  error: 'Could not open address request', changed: 'Your address changed', needsAddress: 'Set up your address' })[state.stage] || 'Share Lightning address?');
+  error: 'Could not open address request', changed: 'Your address changed', needsAddress: 'Set up your address' })[state.stage] || 'Share payment address?');
 const message = computed(() => {
-  if (state.stage === 'needsAddress') return 'Add a Lightning address to your profile, then return here to review the request.';
+  if (state.stage === 'needsAddress') return 'Add a payment address to your profile, then return here to review the request.';
   if (state.stage === 'changed') return 'Your identity or payment address changed. Review the address again before sharing.';
   if (state.stage === 'unknown') return 'The service may have received your address. Check there before opening a new request.';
   if (state.stage === 'rejected') return 'The service did not accept this request. Open a new request from the service.';

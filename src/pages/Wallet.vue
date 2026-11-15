@@ -5124,7 +5124,7 @@ export default {
               this.failSendResolution(reason, fromField, { attribution });
               return;
             }
-            const reason = lnurlInfo.error && lnurlInfo.reason ? lnurlInfo.reason : this.$t("We couldn't find this Lightning address");
+            const reason = lnurlInfo.error && lnurlInfo.reason ? lnurlInfo.reason : this.$t("We couldn't find this payment address");
             this.failSendResolution(reason, fromField, { attribution: lnurlInfo.error ? lnurlInfo.attribution : null });
             return;
           }

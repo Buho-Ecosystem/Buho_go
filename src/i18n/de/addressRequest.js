@@ -1,8 +1,8 @@
 export default {
-  "Review this request to share your Lightning address.": "Prüfe diese Anfrage, um deine Lightning-Adresse zu teilen.",
-  "Share Lightning address?": "Lightning-Adresse teilen?",
+  "Review this request to share your payment address.": "Prüfe diese Anfrage, um deine Zahlungsadresse zu teilen.",
+  "Share payment address?": "Zahlungsadresse teilen?",
   "Share address": "Adresse teilen",
-  "Your Lightning address": "Deine Lightning-Adresse",
+  "Your payment address": "Deine Zahlungsadresse",
   "This lets the service send you payments.": "Damit kann dir der Dienst Zahlungen senden.",
   "Opening address request…": "Adressanfrage wird geöffnet…",
   "Sharing with {domain}…": "Wird mit {domain} geteilt…",
@@ -19,7 +19,7 @@ export default {
   "Address request": "Adressanfrage",
   "Copied address request": "Adressanfrage kopiert",
   "Copied link": "Link kopiert",
-  "Add a Lightning address to your profile, then return here to review the request.": "Füge deinem Profil eine Lightning-Adresse hinzu und kehre zurück, um die Anfrage zu prüfen.",
+  "Add a payment address to your profile, then return here to review the request.": "Füge deinem Profil eine Zahlungsadresse hinzu und kehre zurück, um die Anfrage zu prüfen.",
   "Your identity or payment address changed. Review the address again before sharing.": "Deine Identität oder Zahlungsadresse hat sich geändert. Prüfe die Adresse erneut, bevor du sie teilst.",
   "The service may have received your address. Check there before opening a new request.": "Der Dienst hat deine Adresse möglicherweise erhalten. Prüfe das dort, bevor du eine neue Anfrage öffnest.",
   "The service did not accept this request. Open a new request from the service.": "Der Dienst hat diese Anfrage nicht angenommen. Öffne eine neue Anfrage vom Dienst.",
@@ -30,5 +30,5 @@ export default {
   "Could not reach the service. Check your connection and open the request again.": "Der Dienst konnte nicht erreicht werden. Prüfe deine Verbindung und öffne die Anfrage erneut.",
   "This link asks for your address. It cannot receive a payment.": "Dieser Link fragt nach deiner Adresse. Er kann keine Zahlung empfangen.",
   "Finish the current request, then open this one again.": "Schließe die aktuelle Anfrage ab und öffne diese danach erneut.",
-  "This code asks for your Lightning address. Scan it from Home after setting up your wallet.": "Dieser Code fragt nach deiner Lightning-Adresse. Scanne ihn nach der Wallet-Einrichtung auf der Startseite."
+  "This code asks for your payment address. Scan it from Home after setting up your wallet.": "Dieser Code fragt nach deiner Zahlungsadresse. Scanne ihn nach der Wallet-Einrichtung auf der Startseite."
 };
