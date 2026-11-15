@@ -737,7 +737,7 @@ import {fiatRatesService} from '../utils/fiatRates.js';
 import {fiatSymbol} from '../utils/fiatCurrencies.js';
 import {formatMainBalance as formatMainBalanceUtil, formatAmount} from '../utils/amountFormatting.js';
 import {haptics} from '../utils/haptics.js';
-import { PAYMENT_FAILED, PAYMENT_OUTCOME, beforePaymentLeaves, outcomeOfError, outcomeOfResult } from '../utils/paymentOutcome.js';
+import { PAYMENT_FAILED, PAYMENT_LOOKUP_WAIT_MS, PAYMENT_OUTCOME, beforePaymentLeaves, outcomeOfError, outcomeOfResult } from '../utils/paymentOutcome.js';
 import {isNfcAvailable} from '../utils/nfc.js';
 import NumberFlow from '@number-flow/vue';
 import LatestTransactionCard from '../components/LatestTransactionCard.vue';
@@ -7160,8 +7160,11 @@ export default {
       const run = this._feeEstimateRun;
       this.isEstimatingFee = true;
       try {
-        const provider = await beforePaymentLeaves(this.walletStore.ensureWalletConnectedForTransfer(walletId));
-        const limitSats = await provider.getFeeReserveSats(invoice);
+        // The figure is optional, so connecting and asking share one short
+        // wait. Without an answer the sheet says that the fee is calculated
+        // when sending, which is true, and the person can go on.
+        const ask = async () => (await this.walletStore.ensureWalletConnectedForTransfer(walletId)).getFeeReserveSats(invoice);
+        const limitSats = await beforePaymentLeaves(ask(), PAYMENT_LOOKUP_WAIT_MS);
         if (run === this._feeEstimateRun) this.serverFeeLimitSats = limitSats;
       } catch {
         // The wallet could not be reached: no figure, and the send says why.

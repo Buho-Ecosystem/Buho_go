@@ -316,7 +316,8 @@ export class LNBitsWalletProvider extends WalletProvider {
           const details = record.details && typeof record.details === 'object' ? record.details : record;
           status = this._outgoingStatus(record);
           preimage = record.preimage || details.preimage || preimage;
-          fee = details.fee ? Math.floor(Math.abs(details.fee) / 1000) : 0;
+          // A payment's fee is rounded up like its amount: never below what was charged.
+          fee = details.fee ? wholeSats(Math.abs(details.fee)) : 0;
         }
       } catch (e) {
         // The record could not be read: the pay call's own answer stands.
@@ -485,7 +486,8 @@ export class LNBitsWalletProvider extends WalletProvider {
       created_at: this._parseTimestamp(tx.created_at || tx.time),
       description: tx.memo || '',
       status,
-      fee: tx.fee ? Math.floor(Math.abs(tx.fee) / 1000) : 0,
+      // The fee of what left is rounded up like its amount; a received payment costs nothing here.
+      fee: tx.fee ? (tx.amount > 0 ? Math.floor(Math.abs(tx.fee) / 1000) : wholeSats(Math.abs(tx.fee))) : 0,
       bolt11: tx.bolt11 || tx.payment_request || null,
       preimage: tx.preimage || null,
       expiry: tx.expiry ?? null,

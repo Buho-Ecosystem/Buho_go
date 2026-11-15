@@ -2006,7 +2006,11 @@ export class BreezSparkWalletProvider extends WalletProvider {
     }
 
     try {
-      let prep = breezSdk.getWithdrawQuote(this.walletId, feeQuoteId)?.prepareResponse || null;
+      // A remembered quote is used only for the very amount and address it
+      // was made for; anything else is prepared afresh below.
+      const remembered = breezSdk.getWithdrawQuote(this.walletId, feeQuoteId);
+      let prep = remembered && remembered.amountSats === Number(amountSats)
+        && remembered.destinationAddress === destinationAddress ? remembered.prepareResponse : null;
 
       // A provider replacement between quote and confirm loses nothing: the
       // request itself carries everything needed to re-prepare.

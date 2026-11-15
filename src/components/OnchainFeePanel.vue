@@ -162,6 +162,8 @@ export default {
       useAllRun: 0,
       useAllQuote: null,
       useAllNote: '',
+      // The amount "Use all" last set, while it is still the one on the sheet.
+      useAllAmount: null,
     };
   },
 
@@ -231,6 +233,9 @@ export default {
       // What "Use all" said was about the speed chosen then.
       this.useAllNote = '';
       this.emitFeeGate();
+      // Another speed costs another fee: the amount that was "all" is not
+      // any more, so it is found again for this speed.
+      if (this.useAllAmount !== null && this.amountSats === this.useAllAmount) this.useAll();
     },
 
     // A quote belongs to the wallet it was requested from. Another paying
@@ -294,6 +299,7 @@ export default {
         && address === this.address && balance === this.availableBalance && speed === this.selectedSpeed;
       this.useAllBusy = true;
       this.useAllNote = '';
+      this.useAllAmount = null;
       try {
         const provider = await this.walletStore.ensureSparkConnected(walletId);
         if (!current()) return;
@@ -307,11 +313,14 @@ export default {
         }
         const quote = await provider.getWithdrawalFeeQuote(amountSats, address);
         if (!current()) return;
-        if (amountSats + quote[speed].totalFee !== balance) {
+        // "All" is said only of figures the wallet stands by: two quotes that
+        // come to exactly the balance, neither of them an estimate.
+        if (everything.isEstimate || quote.isEstimate || amountSats + quote[speed].totalFee !== balance) {
           this.useAllNote = this.$t('The amount for your whole balance could not be confirmed. Try again, or enter an amount.');
           return;
         }
         this.useAllQuote = { amountSats, walletId, address, quote };
+        this.useAllAmount = amountSats;
         this.$emit('use-max', amountSats);
         // The amount already on the sheet: no change will come to take the quote.
         if (this.amountSats === amountSats) this.refreshFeeQuote(false);
@@ -321,6 +330,13 @@ export default {
         this.reportQuoteError(error);
       } finally {
         if (run === this.useAllRun) this.useAllBusy = false;
+      }
+      // The balance or the speed moved while the wallet was asked, and nobody
+      // asked again since: the answer was for what is no longer there, so it
+      // is asked for what is. Otherwise the tap would end in nothing.
+      if (run === this.useAllRun && !this.feeQuoteDisposed && walletId === this.walletId && address === this.address
+        && (balance !== this.availableBalance || speed !== this.selectedSpeed) && this.useAllAmount === null && !this.useAllNote) {
+        return this.useAll();
       }
     },
 

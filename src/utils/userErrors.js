@@ -466,6 +466,8 @@ export function translateErrorCode(error, t, { walletName = '', useBip177Format 
       const min = Number(error.minSats) || 0;
       const max = Number(error.maxSats) || 0;
       const amount = (sats) => formatAmount(sats, useBip177Format);
+      // Above a maximum the recipient never named: that limit is the app's own.
+      if (error.ownMaximum && Number(error.amountSats) > max) return t('Maximum is {amount}', { amount: amount(max) });
       return min === max
         ? t('This recipient only accepts {amount}.', { amount: amount(min) })
         : t('This recipient accepts {min} to {max}.', { min: amount(min), max: amount(max) });

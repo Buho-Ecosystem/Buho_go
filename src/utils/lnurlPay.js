@@ -603,7 +603,8 @@ export async function requestPayInvoice(
       throw payRequestError(
         PAY_REQUEST_ERROR.AMOUNT_OUT_OF_RANGE,
         `Amount must be between ${minSats} and ${maxSats} sats`,
-        { minSats, maxSats, amountSats: sats },
+        // A maximum the service did not name is the app's own, and is said so.
+        { minSats, maxSats, amountSats: sats, ownMaximum: terms.maxSendable === DEFAULT_MAX_MSAT },
       )
     }
   }

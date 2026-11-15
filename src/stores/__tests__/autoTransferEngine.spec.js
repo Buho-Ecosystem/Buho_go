@@ -348,13 +348,16 @@ test('from LNbits, a transfer leaves the fee reserve the server states, so what 
     assert.equal(aw.configs[id].failureStreak, 0);
   }
 
-  // A wait for the server's reserve leaves no cooldown behind: nothing was
-  // tried, so the next balance that is enough moves at once.
+  // A wait for the server's reserve: nothing was tried, so no cooldown is
+  // left behind, and nothing is asked again (each asking leaves an unpaid
+  // invoice at the destination) until more can leave the wallet.
   let reserve = () => 94_995;
   const amountOf = new Map();
+  let invoicesAsked = 0;
   const get = async (url) => {
     const sats = Number(new URL(url).searchParams.get('amount')) / 1000;
     if (!sats) return { ok: true, status: 200, data: PAY_REQUEST };
+    invoicesAsked += 1;
     amountOf.set(invoiceFor(sats), sats);
     return { ok: true, status: 200, data: { pr: invoiceFor(sats) } };
   };
@@ -365,9 +368,13 @@ test('from LNbits, a transfer leaves the fee reserve the server states, so what 
     payInvoice: async ({ invoice }) => { paid.push(amountOf.get(invoice)); return { payment_hash: 'h' }; },
   });
   await aw.checkAndExecute(id, 100_000, walletStore);
-  reserve = (sats) => Math.ceil(sats * 0.01);
+  const askedWhileWaiting = invoicesAsked;
   await aw.checkAndExecute(id, 100_000, walletStore);
-  assert.deepEqual(paid, [94_050], 'sent on the very next run');
+  assert.equal(invoicesAsked, askedWhileWaiting, 'the same balance asks for no further invoice');
+  reserve = (sats) => Math.ceil(sats * 0.01);
+  await aw.checkAndExecute(id, 100_100, walletStore);
+  assert.equal(paid.length, 1, 'sent on the next balance that lets more leave, with no minute to wait');
+  assert.ok(paid[0] + reserve(paid[0]) <= 95_100, 'what was sent and the most it can cost leave the 5,000');
 });
 
 test('rules left behind by removed wallets are settled when the rules load', async () => {

@@ -65,6 +65,10 @@ const _running = new Set()
 const _lastTriggerTime = new Map()
 // walletId → { address, minSats, maxSats, readAt } (_limitsOf)
 const _addressLimits = new Map()
+// walletId → what could leave the wallet the last time that was too little
+// for its server's fee reserve. Finding that out costs an invoice at the
+// destination, so it is not asked again until more than that can leave.
+const _reserveWaits = new Map()
 
 /**
  * Why a balance check failed, short enough to keep with the entry: the
@@ -178,6 +182,7 @@ export const useAutoWithdrawStore = defineStore('autoWithdraw', {
       _running.delete(walletId)
       _lastTriggerTime.delete(walletId)
       _addressLimits.delete(walletId)
+      _reserveWaits.delete(walletId)
       await this.persistConfigs()
     },
 
@@ -190,6 +195,7 @@ export const useAutoWithdrawStore = defineStore('autoWithdraw', {
       _running.delete(walletId)
       _lastTriggerTime.delete(walletId)
       _addressLimits.delete(walletId)
+      _reserveWaits.delete(walletId)
       await this.persistConfigs()
     },
 
@@ -199,6 +205,7 @@ export const useAutoWithdrawStore = defineStore('autoWithdraw', {
       _running.clear()
       _lastTriggerTime.clear()
       _addressLimits.clear()
+      _reserveWaits.clear()
       localStorage.removeItem(STORAGE_KEY)
     },
 
@@ -221,6 +228,7 @@ export const useAutoWithdrawStore = defineStore('autoWithdraw', {
       if (!rule.enabled) await this.setEnabled(walletId, true)
       _lastTriggerTime.delete(walletId)
       _addressLimits.delete(walletId)
+      _reserveWaits.delete(walletId)
       const balance = walletStore.getDisplayBalance?.(walletId)?.balance ?? walletStore.balances?.[walletId] ?? 0
       await this.checkAndExecute(walletId, balance, walletStore)
     },
@@ -242,6 +250,8 @@ export const useAutoWithdrawStore = defineStore('autoWithdraw', {
 
       _running.add(walletId)
       let amount = 0
+      // What could leave the wallet when the server's reserve was asked for.
+      let heldAgainstReserve = null
       try {
         const wallet = walletStore.wallets.find((w) => w.id === walletId)
         if (!wallet) return
@@ -318,9 +328,15 @@ export const useAutoWithdrawStore = defineStore('autoWithdraw', {
         // the wallet or for the address, is a wait like any other.
         let invoice = null
         if (serverHoldsFee(walletType, route)) {
-          ({ amountSats: amount, invoice } = await this._invoiceWithinServerReserve(walletStore, wallet, rule, target, amount, verified - keepSats))
+          const canLeave = verified - keepSats
+          // Too little for the reserve last time, and no more can leave now:
+          // the wait stands, and no further invoice is left at the destination.
+          if (_reserveWaits.get(walletId) >= canLeave) return
+          heldAgainstReserve = canLeave;
+          ({ amountSats: amount, invoice } = await this._invoiceWithinServerReserve(walletStore, wallet, rule, target, amount, canLeave))
           if (this.configs[walletId] !== rule || !rule.enabled) return
           if (!invoice) {
+            _reserveWaits.set(walletId, canLeave)
             this._skip(walletId, 'below_minimum')
             return
           }
@@ -335,6 +351,7 @@ export const useAutoWithdrawStore = defineStore('autoWithdraw', {
         const txId = target ? result?.transactionId : result?.id
         await this._stampTransaction(txId, walletId, name)
 
+        _reserveWaits.delete(walletId)
         this._record(walletId, { at: Date.now(), outcome: OUTCOME.SENT, amount, txId: txId || null }, { success: true })
         this.lastResult = { walletId, amount, destinationName: name }
       } catch (error) {
@@ -346,7 +363,12 @@ export const useAutoWithdrawStore = defineStore('autoWithdraw', {
         if (refused) {
           // Too little for the address is a wait, whenever it turns out: no
           // payment was tried, so no cooldown is left behind either.
-          if (refused.reason === 'below_minimum') _lastTriggerTime.delete(walletId)
+          if (refused.reason === 'below_minimum') {
+            _lastTriggerTime.delete(walletId)
+            // The amount lowered for the server's reserve was too little for
+            // the address: the same wait, until more can leave.
+            if (heldAgainstReserve !== null) _reserveWaits.set(walletId, heldAgainstReserve)
+          }
           this._stopAtLimit(walletId, error.amountSats, refused)
           return
         }
