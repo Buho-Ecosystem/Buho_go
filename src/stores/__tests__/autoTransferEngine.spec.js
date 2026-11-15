@@ -298,7 +298,8 @@ test('from LNbits or NWC, a Lightning address is paid only with an invoice for t
         '../services/nwcPayment.js': { payWithNwc: async (nwc, invoice) => { paid.push(invoice); return { payment_hash: 'h' }; } },
       } });
       provider.getBalance = async () => ({ balance: 50_000 });
-      walletStore.ensureLNBitsConnected = async () => ({ payInvoice: async ({ invoice }) => { paid.push(invoice); return { payment_hash: 'h' }; } });
+      // An LNbits server from before the fee reserve could be asked for.
+      walletStore.ensureLNBitsConnected = async () => ({ getFeeReserveSats: async () => null, payInvoice: async ({ invoice }) => { paid.push(invoice); return { payment_hash: 'h' }; } });
       walletStore.nwcConnection = async () => ({});
       walletStore.nwcPayOptions = () => ({ limit: null });
       await aw.checkAndExecute(id, 50_000, walletStore);
@@ -312,6 +313,36 @@ test('from LNbits or NWC, a Lightning address is paid only with an invoice for t
         assert.equal(event.reason, answer === 'refusal' ? 'refused' : 'other');
       }
     }
+  }
+});
+
+test('from LNbits, a transfer leaves the fee reserve the server states, so what the rule keeps stays (#511)', async () => {
+  // LNbits wants its own reserve in the wallet beyond the invoice and may
+  // charge up to it. Balance 100,000, keep 5,000: 95,000 may leave in all.
+  // The rule's own reserve (1%) leaves 94,050 to send.
+  for (const [serverReserve, moved] of [
+    [(sats) => Math.ceil(sats * 0.01), 94_050], // the server's default: it fits, one invoice
+    [(sats) => Math.ceil(sats * 0.03), 92_178], // an operator's 3%: 94,050 + 2,822 is too much, so 95,000 - 2,822
+    [() => 94_995, null], // a reserve that leaves under 10: the rule waits
+  ]) {
+    const amountOf = new Map();
+    const get = async (url) => {
+      const sats = Number(new URL(url).searchParams.get('amount')) / 1000;
+      if (!sats) return { ok: true, status: 200, data: PAY_REQUEST };
+      amountOf.set(invoiceFor(sats), sats);
+      return { ok: true, status: 200, data: { pr: invoiceFor(sats) } };
+    };
+    const paid = [];
+    const { aw, id, walletStore } = setup({ shopType: 'lnbits', rule: { keep: { sats: 5_000 } }, deps: { '../utils/lnurlPay.js': lnurlPayWith(get) } });
+    walletStore.ensureLNBitsConnected = async () => ({
+      getFeeReserveSats: async (invoice) => serverReserve(amountOf.get(invoice)),
+      payInvoice: async ({ invoice }) => { paid.push(amountOf.get(invoice)); return { payment_hash: 'h' }; },
+    });
+    await aw.checkAndExecute(id, 100_000, walletStore);
+    assert.deepEqual(paid, moved ? [moved] : [], 'only the invoice that fits is paid');
+    assert.deepEqual(events(aw, id), [moved ? ['sent', moved] : ['skipped', 'below_minimum']]);
+    if (moved) assert.ok(moved + serverReserve(moved) <= 95_000, 'the amount and the most it can cost leave the 5,000');
+    assert.equal(aw.configs[id].failureStreak, 0);
   }
 });
 

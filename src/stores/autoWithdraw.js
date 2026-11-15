@@ -29,9 +29,11 @@ import {
   destinationName,
   destinationProblem,
   failureReason,
+  invoiceWithinReserve,
   normalizeRule,
   routeFor,
   ruleStatus,
+  serverHoldsFee,
   transferAmount,
 } from '../utils/autoTransfer.js'
 
@@ -293,9 +295,19 @@ export const useAutoWithdrawStore = defineStore('autoWithdraw', {
         _lastTriggerTime.set(walletId, Date.now())
 
         const name = destinationName(rule.destination, walletStore.wallets)
+        // A wallet whose server holds the fee wants that server's reserve
+        // left, not the route's: the amount follows the invoice it will pay.
+        let invoice = null
+        if (serverHoldsFee(walletType, route)) {
+          ({ amountSats: amount, invoice } = await this._invoiceWithinServerReserve(walletStore, wallet, rule, target, amount, verified - keepSats))
+          if (!invoice) {
+            this._skip(walletId, 'below_minimum')
+            return
+          }
+        }
         const result = target
-          ? await walletStore.transferBetweenWallets(walletId, target.id, amount, '', { source: 'auto-transfer', label: name })
-          : await this._sendToAddress(walletStore, wallet, walletType, rule, amount, quote)
+          ? await walletStore.transferBetweenWallets(walletId, target.id, amount, '', { source: 'auto-transfer', label: name, ...(invoice ? { invoice } : {}) })
+          : await this._sendToAddress(walletStore, wallet, walletType, rule, amount, quote, invoice)
         const txId = target ? result?.transactionId : result?.id
         await this._stampTransaction(txId, walletId, name)
 
@@ -358,7 +370,30 @@ export const useAutoWithdrawStore = defineStore('autoWithdraw', {
       return { ...quote, speed: key }
     },
 
-    async _sendToAddress(walletStore, wallet, walletType, rule, amount, quote) {
+    /**
+     * The invoice an LNbits wallet pays for this transfer, and its amount:
+     * `amount`, or less where the wallet's server reserves more for the fee
+     * than the route's own reserve left (utils/autoTransfer.js
+     * invoiceWithinReserve). `withinSats` is what may leave the wallet in
+     * all. The invoice comes from where the transfer goes: the destination
+     * wallet on this phone, or the address.
+     */
+    async _invoiceWithinServerReserve(walletStore, wallet, rule, target, amount, withinSats) {
+      // ensureLNBitsConnected heals a connection a 401 marked as lost.
+      const provider = await walletStore.ensureLNBitsConnected(wallet.id)
+      return invoiceWithinReserve({
+        amountSats: amount,
+        withinSats,
+        invoiceFor: target
+          // The memo transferBetweenWallets gives the invoices it asks for.
+          ? (sats) => walletStore.createInvoiceOnWallet(target.id, sats, `Transfer from ${wallet.name}`)
+          : (sats) => this._addressInvoice(rule.destination.address, sats),
+        reserveOf: (invoice) => provider.getFeeReserveSats(invoice),
+      })
+    },
+
+    /** `invoice`: the one already asked for (_invoiceWithinServerReserve), if any. */
+    async _sendToAddress(walletStore, wallet, walletType, rule, amount, quote, invoice = null) {
       const { kind, address } = rule.destination
       if (walletType === WALLET_TYPES.SPARK) {
         const provider = walletStore.getProvider(wallet.id)
@@ -383,11 +418,11 @@ export const useAutoWithdrawStore = defineStore('autoWithdraw', {
         const provider = await walletStore.ensureArkadeConnected(wallet.id)
         return provider.transferToArkadeAddress({ arkadeAddress: address, amount })
       }
-      return this._payLightningAddress(walletStore, wallet.id, walletType, address, amount)
+      return this._payLightningAddress(walletStore, wallet.id, walletType, invoice || await this._addressInvoice(address, amount))
     },
 
-    /** A Lightning address paid from an NWC or LNbits wallet. */
-    async _payLightningAddress(walletStore, walletId, walletType, address, amount) {
+    /** The invoice a Lightning address gives for `amount`. */
+    async _addressInvoice(address, amount) {
       const url = lightningAddressUrl(address)
       if (!url) throw new Error('Could not resolve Lightning address')
       // The same request every send makes (utils/lnurlPay.js). Nobody is
@@ -396,7 +431,11 @@ export const useAutoWithdrawStore = defineStore('autoWithdraw', {
       const payRequest = await fetchPayRequest(url)
       // A LUD-09 successAction is ignored: nobody is there to read it.
       const { pr: invoice } = await requestPayInvoice(payRequest, { amountSats: amount })
+      return invoice
+    },
 
+    /** A Lightning address's invoice paid from an NWC or LNbits wallet. */
+    async _payLightningAddress(walletStore, walletId, walletType, invoice) {
       if (walletType === WALLET_TYPES.LNBITS) {
         // ensureLNBitsConnected heals a connection a 401 marked as lost.
         const provider = await walletStore.ensureLNBitsConnected(walletId)

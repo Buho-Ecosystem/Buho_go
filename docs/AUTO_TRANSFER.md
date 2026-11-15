@@ -45,6 +45,16 @@ Words come from one place, `utils/autoTransferCopy.js`: a rule is a sentence, a 
 | Destination wallet removed | the rule pauses: "Paused: where it sent is no longer on this phone." |
 | Rule moved from an old Spark pocket | paused, and says so |
 
+## Who holds the fee
+
+What a rule holds back is a reserve. Whether the fee stays inside it depends on who holds the payment to a limit, which `feeLimitHolder` in `utils/payingWallets.js` says per wallet type:
+
+| Wallet | Who holds the fee | What the rule leaves |
+|---|---|---|
+| Spark | the app: the wallet refuses a route above 1% of the amount, at least 10 sats | its own reserve, which is that limit |
+| LNbits | its server: each payment is held to the server's own fee reserve, an operator's setting, and refused when the balance does not cover the amount plus that reserve | the server's figure for the invoice it is about to pay (`GET /api/v1/payments/fee-reserve`). When that is more than the rule's own reserve left room for, the rule asks for an invoice for less. A server that does not answer leaves the rule's own reserve, as before |
+| NWC | nobody: a pay request has no field for a limit | its own reserve, which the fee of the wallet behind the connection can exceed |
+
 ## Keeping balances current
 
 A rule only runs when a verified balance arrives. Spark wallets get them from the Spark lifecycle, all of them, all the time. Other wallets (NWC, LNbits, Arkade) were read only for the active wallet while Home was open, so a rule on any other of them never ran. `services/walletWatch.js`, which also watches every such wallet for incoming payments (docs/INCOMING_PAYMENTS.md), reads the balance of every wallet with a switched-on rule that Spark does not cover: right away when the app starts (the rules are saved, so they watch again after the app was closed), every 60 seconds while it runs, and once when it comes back to the front.

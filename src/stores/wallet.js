@@ -4459,7 +4459,10 @@ export const useWalletStore = defineStore('wallet', {
      * @param {number} amountSats - Amount in satoshis
      * @param {string} [memo] - Optional memo/description
      * @param {object} [stamp] - How the sending side's history names it:
-     *   `source` ('internal-transfer' unless given) and `label`
+     *   `source` ('internal-transfer' unless given) and `label`. `invoice`:
+     *   one the caller already asked the destination wallet for, for exactly
+     *   `amountSats` (Auto-Transfer, which fits the amount to the paying
+     *   server's fee reserve first); it is paid instead of a new one
      * @returns {Promise<Object>} Transfer result
      */
     async transferBetweenWallets(fromWalletId, toWalletId, amountSats, memo = '', stamp = {}) {
@@ -4514,7 +4517,10 @@ export const useWalletStore = defineStore('wallet', {
       } else {
         // Lightning path: create invoice on destination, pay from source
         try {
-          invoice = await this.createInvoiceOnWallet(toWalletId, amountSats, transferMemo);
+          invoice = stamp.invoice || await this.createInvoiceOnWallet(toWalletId, amountSats, transferMemo);
+          if (stamp.invoice && Number(new Invoice({ pr: String(invoice) }).satoshi) !== amountSats) {
+            throw new Error('The invoice is not for the amount of the transfer');
+          }
         } catch (invoiceError) {
           console.error('Invoice creation error:', invoiceError);
           throw this._transferError(invoiceError, fromWallet, toWallet, 'invoice');

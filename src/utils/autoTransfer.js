@@ -21,6 +21,7 @@
  */
 
 import { canWalletPay, canWalletReceiveLightning } from './walletCapabilities.js';
+import { FEE_LIMIT_HOLDER, feeLimitHolder } from './payingWallets.js';
 import { classifyDestination, normalizeDestination } from './clipboardSuggestion.js';
 import { isCounterpartyError } from './errorOrigin.js';
 
@@ -46,6 +47,13 @@ export const MIN_TRANSFER_SATS = 10;
  * Held back on routes whose fee is only known once paid (Lightning, Arkade):
  * 1% of the amount, at least 10 sats. Spark-to-Spark is free and quotes
  * nothing; on-chain uses the quote for the chosen speed instead.
+ *
+ * A reserve, not a limit: it covers the fee only as far as something holds
+ * the payment to it (payingWallets.js feeLimitHolder). A Spark wallet is
+ * held to the same 1% by the app. An LNbits wallet is held by its server to
+ * that server's own figure, which the rule leaves instead where the server
+ * states it (invoiceWithinReserve). An NWC wallet is held by nothing: its
+ * fee is whatever the wallet behind the connection pays.
  */
 export const ROUTE_RESERVE_RATE = 0.01;
 export const ROUTE_RESERVE_MIN_SATS = 10;
@@ -181,6 +189,48 @@ export function routeFor(sourceType, destination, destinationWallet = null) {
 export function routeReserve(route, amountSats) {
   if (route === ROUTE.SPARK || route === ROUTE.BITCOIN) return 0;
   return Math.max(ROUTE_RESERVE_MIN_SATS, Math.ceil(count(amountSats) * ROUTE_RESERVE_RATE));
+}
+
+/**
+ * Does the paying wallet's own server hold a transfer on this route to a fee
+ * reserve it can state (an LNbits wallet paying over Lightning)?
+ */
+export function serverHoldsFee(sourceType, route) {
+  return route === ROUTE.LIGHTNING && feeLimitHolder(sourceType) === FEE_LIMIT_HOLDER.SERVER;
+}
+
+/**
+ * The invoice a transfer pays from a wallet whose server holds the fee
+ * (serverHoldsFee). That server wants its own fee reserve in the wallet
+ * beyond the invoice's amount, or it refuses the payment, and it may charge
+ * up to that reserve. So the rule leaves the server's figure, not its own:
+ * the invoice for `amountSats` is asked for, the server states what it
+ * reserves for it, and when the two do not fit into `withinSats` an invoice
+ * for what does fit is asked for instead. A reserve does not grow as the
+ * amount shrinks (LNbits: a floor, a percentage, a capped service fee); the
+ * second invoice is checked all the same.
+ *
+ * Where the server states nothing (`reserveOf` answers null) the invoice is
+ * paid with the route's own reserve left, as before the server was asked.
+ *
+ * @param {object} input
+ * @param {number} input.amountSats  what the route's own reserve left
+ * @param {number} input.withinSats  what may leave the wallet in all: the
+ *   balance less what the rule keeps
+ * @param {(sats: number) => Promise<string>} input.invoiceFor
+ * @param {(invoice: string) => Promise<number|null>} input.reserveOf
+ * @returns {Promise<{ amountSats: number, invoice: string|null }>} no
+ *   invoice (and 0) when the server's reserve leaves nothing worth sending
+ */
+export async function invoiceWithinReserve({ amountSats, withinSats, invoiceFor, reserveOf }) {
+  let amount = amountSats;
+  for (let asked = 0; asked < 2 && amount >= MIN_TRANSFER_SATS; asked++) {
+    const invoice = await invoiceFor(amount);
+    const reserve = await reserveOf(invoice);
+    if (reserve == null || amount + reserve <= withinSats) return { amountSats: amount, invoice };
+    amount = withinSats - reserve;
+  }
+  return { amountSats: 0, invoice: null };
 }
 
 /**
