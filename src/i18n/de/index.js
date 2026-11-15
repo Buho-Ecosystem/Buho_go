@@ -2103,6 +2103,7 @@ export default {
   "Or paste a link instead": "Oder Link einfügen",
   "Or scan with camera": "Oder mit der Kamera scannen",
   "No camera found on this device.": "Auf diesem Gerät wurde keine Kamera gefunden.",
+  "Unable to access the camera.": "Kein Zugriff auf die Kamera.",
   "Camera permission denied. Allow access in settings or paste a link instead.": "Kameranutzung abgelehnt. Erlaube den Zugriff in den Einstellungen oder füge stattdessen einen Link ein.",
   "Couldn't open the camera. Try pasting a link instead.": "Die Kamera ließ sich nicht öffnen. Versuche, stattdessen einen Link einzufügen.",
   "Camera needs a secure connection. Paste a link instead.": "Die Kamera braucht eine sichere Verbindung. Füge stattdessen einen Link ein.",
@@ -2495,7 +2496,6 @@ export default {
   "This zapper hasn't published a profile yet": "Dieser Zapper hat noch kein Profil veröffentlicht",
 
   // ── Zahlungssprache vereinheitlicht (nur "Bitcoin-Zahlung") ──
-  "Show details": "Details anzeigen",
   "Change identity": "Identität wechseln",
   "Switch identities or create another one": "Identitäten wechseln oder eine weitere erstellen",
   "One recovery phrase backs every identity here. Each identity has its own profile and contacts.": "Eine Wiederherstellungsphrase sichert alle Identitäten hier. Jede Identität hat ihr eigenes Profil und ihre eigenen Kontakte.",

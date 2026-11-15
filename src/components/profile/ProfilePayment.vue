@@ -131,7 +131,7 @@ function openWallet(event) {
 async function payHere() {
   if (!checkInvoice()) return;
   if (!walletStore.activeWallet) {
-    actionError.value = t('Please set up a wallet first');
+    actionError.value = t('Set up a wallet first');
     return;
   }
   // A BuhoGO user's own invoice: never on Branta, so not looked up.
