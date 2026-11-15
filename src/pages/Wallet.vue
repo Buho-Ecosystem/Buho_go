@@ -712,6 +712,8 @@ import {
   knownFeeReserveSats,
   payingWalletHint,
   unquotedFeeLimitSats,
+  FEE_LIMIT_HOLDER,
+  feeLimitHolder,
 } from '../utils/payingWallets.js';
 import {
   decodeSparkDestination,
@@ -1042,6 +1044,9 @@ export default {
       estimatedFee: null,
       // The estimate is the provider's guess, not a route quote.
       estimatedFeeIsGuess: false,
+      // The most the paying wallet's server lets the invoice on the sheet
+      // cost (updateServerFeeLimit); null while it has stated none.
+      serverFeeLimitSats: null,
       // Why the fee check reached no server, said before the slide.
       connectionNotice: '',
       isEstimatingFee: false,
@@ -1851,7 +1856,9 @@ export default {
       //   - "Up to" is a limit the payment is then held to (a Spark wallet
       //     paying an address or a payment link, whose invoice exists only
       //     after the confirm, or an invoice it could not quote:
-      //     sendSparkPayment / payLightningAddress);
+      //     sendSparkPayment / payLightningAddress), or one the wallet's own
+      //     server holds the invoice to and stated for it (LNbits:
+      //     updateServerFeeLimit);
       //   - "Free" is said only from a quote of zero (a Spark transfer the
       //     SDK prepared). A transfer between Arkade addresses has no quote
       //     and nothing the app can hold it to, so no fee claim is made;
@@ -1863,20 +1870,26 @@ export default {
       const hasQuotedFee = !this.estimatedFeeIsGuess && Number.isFinite(this.estimatedFee) && this.estimatedFee >= 0;
       const canQuote = (payerType === 'spark' && !p.bitcoinAddress)
         || (payerType === 'arkade' && !!p.bitcoinAddress);
-      if (canQuote && this.isEstimatingFee) {
+      // "Up to" is said only of a wallet something holds to that limit.
+      const appHeld = feeLimitHolder(payerType) === FEE_LIMIT_HOLDER.APP;
+      const serverHeld = feeLimitHolder(payerType) === FEE_LIMIT_HOLDER.SERVER && !!p.invoice;
+      if ((canQuote || serverHeld) && this.isEstimatingFee) {
         feeEstimate = { sats: null, isEstimating: true };
+      } else if (serverHeld && Number.isSafeInteger(this.serverFeeLimitSats)) {
+        // A limit of nothing is a payment that cannot cost anything.
+        feeEstimate = { sats: this.serverFeeLimitSats, isEstimating: false, isLimit: this.serverFeeLimitSats > 0 };
       } else if (canQuote && hasQuotedFee) {
         feeEstimate = {
           sats: this.estimatedFee, isEstimating: false,
           ...(payerType === 'spark' && p.sparkAddress && this.estimatedFee === 0
             ? { label: this.$t('Free · instant') } : {}),
         };
-      } else if (payerType === 'spark' && p.invoice) {
+      } else if (appHeld && p.invoice) {
         // No quote for this invoice (the wallet could only guess): the
         // limit the send is then held to (sparkInvoiceFeeTerms).
         const { limitSats } = this.sparkInvoiceFeeTerms(this.payingAmountSats);
         if (limitSats > 0) feeEstimate = { sats: limitSats, isEstimating: false, isLimit: true };
-      } else if (payerType === 'spark' && (p.lightningAddress || p.lnurl) && p.type !== 'lnurl_withdraw') {
+      } else if (appHeld && (p.lightningAddress || p.lnurl) && p.type !== 'lnurl_withdraw') {
         const limit = unquotedFeeLimitSats(this.payingAmountSats);
         // An amount typed in the recipient's currency is only an estimate in
         // Bitcoin: the service adds its own fee to the invoice, and the
@@ -5944,6 +5957,7 @@ export default {
       this.sendPayout = null;
       this.estimatedFee = null;
       this.estimatedFeeIsGuess = false;
+      this.serverFeeLimitSats = null;
       this.isEstimatingFee = false;
       this.connectionNotice = '';
       this.sendDidSucceed = false;
@@ -7080,6 +7094,7 @@ export default {
       this._feeEstimateRun = (this._feeEstimateRun || 0) + 1;
       this.estimatedFee = null;
       this.estimatedFeeIsGuess = false;
+      this.serverFeeLimitSats = null;
       this.isEstimatingFee = false;
       this.connectionNotice = '';
       this.arkadeFeeQuote = null;
@@ -7124,18 +7139,39 @@ export default {
         return;
       }
 
-      // === NWC WALLET: No fee estimation available ===
-      // Alby SDK / NIP-47 does not provide fee estimation
-      if (walletType === 'nwc') {
-        this.estimatedFee = null;
+      // A wallet whose server holds each payment to a limit of its own
+      // (LNbits) quotes nothing, but states that limit for an invoice.
+      if (feeLimitHolder(walletType) === FEE_LIMIT_HOLDER.SERVER) {
+        await this.updateServerFeeLimit();
         return;
       }
 
-      // === LNBITS WALLET: No fee estimation available ===
-      // LNbits API does not provide routing fee estimation
-      if (walletType === 'lnbits') {
-        this.estimatedFee = null;
-        return;
+      // Any other wallet (NWC) can say nothing about the fee beforehand,
+      // and nothing holds it to a limit: the fields stay empty.
+    },
+
+    /**
+     * The limit the paying wallet's server holds the invoice on the sheet
+     * to, read from that server. Only an invoice has one: a payment address
+     * or a link gets its invoice after the confirm, when nothing can be
+     * shown any more. Where the server states none (an invoice without an
+     * amount, an older server, no answer) the review says, as before, that
+     * the fee is calculated when sending.
+     */
+    async updateServerFeeLimit() {
+      const invoice = this.pendingPayment.invoice;
+      const walletId = this.getSendingWallet()?.id;
+      if (!invoice || !walletId || !(this.getFixedPaymentSats() > 0)) return;
+      const run = this._feeEstimateRun;
+      this.isEstimatingFee = true;
+      try {
+        const provider = await this.walletStore.ensureWalletConnectedForTransfer(walletId);
+        const limitSats = await provider.getFeeReserveSats(invoice);
+        if (run === this._feeEstimateRun) this.serverFeeLimitSats = limitSats;
+      } catch {
+        // The wallet could not be reached: no figure, and the send says why.
+      } finally {
+        if (run === this._feeEstimateRun) this.isEstimatingFee = false;
       }
     },
 

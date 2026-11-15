@@ -608,6 +608,8 @@ function payingHarness({ wallets = PAY_WALLETS, active = 'biz', funds = PAY_FUND
     withdrawToL1: async args => { calls.push([id, 'withdrawToL1', args.destinationAddress, args.amountSats]); return { requestId: 'req-1' }; },
     waitForWithdrawalCompletion: async requestId => { calls.push([id, 'waitForWithdrawalCompletion', requestId]); return { isFailed: false, txId: 'tx' }; },
     getLightningSendFeeEstimate: async () => { calls.push([id, 'getLightningSendFeeEstimate']); return { estimatedFeeSats: 7 }; },
+    // An LNbits server from before the fee reserve could be asked for.
+    getFeeReserveSats: async () => null,
   });
   const store = {
     nwcPayOptions: () => ({ limit: null }),
@@ -623,6 +625,7 @@ function payingHarness({ wallets = PAY_WALLETS, active = 'biz', funds = PAY_FUND
     ensureSparkConnected: async (id = null) => { calls.push([id, 'ensureSparkConnected']); return providerFor(id || store.activeWalletId); },
     ensureLNBitsConnected: async id => { calls.push([id, 'ensureLNBitsConnected']); return providerFor(id || store.activeWalletId); },
     ensureArkadeConnected: async id => { calls.push([id, 'ensureArkadeConnected']); return providerFor(id || store.activeWalletId); },
+    ensureWalletConnectedForTransfer: async id => providerFor(id),
     getProvider: id => providerFor(id),
     getActiveProvider: () => providerFor(store.activeWalletId),
     reconcileSpark: async (ids, reason) => { calls.push(['*', 'reconcileSpark', ids, reason]); },
