@@ -1,6 +1,7 @@
 // Real Vue + Branta 4.3 cryptography. Guardrail, artwork and wallet SDK are
 // local fixtures. No publishing request, funds or external messages.
-// Start pnpm dev --port 9019. Optional BRANTA_BASE_URL/BRANTA_CASE/BRANTA_OUTPUT.
+// Start the dev server (npm run dev -- --port 9019), then npm run check:branta.
+// Optional BRANTA_BASE_URL/BRANTA_CASE/BRANTA_OUTPUT.
 import { chromium } from '@playwright/test';
 import assert from 'node:assert/strict';
 import { mkdir } from 'node:fs/promises';
@@ -79,8 +80,10 @@ const fits = async label => {
   }).map(node => node.className).slice(0, 8));
   assert.deepEqual(bad, [], label);
 };
-async function open({ answer = () => ({ json: [bolt.wire] }), enabled = true, bip177 = true, locale = 'en-US', denomination = 'sats', brokenLogo = false } = {}) {
-  const context = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+// `locale` is the app language; `deviceLocale` the phone's, which decides how
+// numbers are written and what the keypad's decimal key types.
+async function open({ answer = () => ({ json: [bolt.wire] }), enabled = true, bip177 = true, locale = 'en-US', deviceLocale = locale, denomination = 'sats', brokenLogo = false } = {}) {
+  const context = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, locale: deviceLocale });
   contexts.add(context); context.setDefaultTimeout(15000);
   const requests = [], logs = [];
   await context.route('**/*', async route => {
@@ -150,7 +153,7 @@ async function open({ answer = () => ({ json: [bolt.wire] }), enabled = true, bi
       if (!provider.sdk) throw new Error('Fixture SDK was not installed');
       const quote = provider.getLightningSendFeeEstimate.bind(provider);
       provider.getLightningSendFeeEstimate = async (...args) => {
-        try { const result = await quote(...args); window.__brantaQuotes.push({ fee: result.estimatedFeeSats, estimated: result.isEstimated, target: result.brantaTarget?.kind }); return result; }
+        try { const result = await quote(...args); window.__brantaQuotes.push({ fee: result.estimatedFeeSats, estimated: result.isEstimated, target: result.preparedRoute?.kind }); return result; }
         catch (error) { window.__brantaQuotes.push({ error: error.message }); throw error; }
       };
       provider.getBalance = async () => 184250; provider.getTransactions = async () => window.__brantaTransactions;
@@ -173,11 +176,18 @@ try {
   await step('Real 4.3 match gives a clean review and same-sheet proof with Back and focus restoration', async () => {
     const scenario = await open({ answer: () => ({ json: [bolt.wire], delay: 600 }) });
     await detect(); await ready(); await sheet().locator('.recipient-cell--checking').waitFor(); assert.equal(await primary().isDisabled(), true);
-    await sheet().locator('.verified-merchant-stage').waitFor(); assert.equal(await rawSats(), 2400); assert.equal(await amount().inputValue(), '2,400');
-    assert.equal(await sheet().locator('.branta-merchant-mark').getAttribute('aria-label'), MERCHANT);
-    await sheet().locator('.branta-merchant-mark img').waitFor();
-    assert.equal(await sheet().locator('.branta-merchant-mark img').getAttribute('src'), LOGO);
-    assert.equal((await primary().innerText()).trim(), 'Send'); await shot('01-review'); await showProof('01b-payment-details');
+    await sheet().locator('.recipient-verified').waitFor(); assert.equal(await rawSats(), 2400); assert.equal(await amount().inputValue(), '2,400');
+    // The business is named on the review itself: logo, name and the seal in words.
+    assert.equal((await sheet().locator('.recipient-name').innerText()).trim(), MERCHANT);
+    assert.match(await sheet().locator('.recipient-verified').innerText(), /Verified business/);
+    await sheet().locator('.recipient-logo').waitFor();
+    assert.equal(await sheet().locator('.recipient-logo').getAttribute('src'), LOGO);
+    assert.equal((await primary().innerText()).trim(), 'Send'); await shot('01-review');
+    // Tapping the row opens the check directly; Back returns to the review.
+    await sheet().locator('.recipient-identity').click(); await sheet().locator('.branta-verification-view').waitFor();
+    await sheet().locator('.top-btn').click(); await page.waitForFunction(() => document.activeElement?.classList.contains('recipient-identity'));
+    assert.equal(await rawSats(), 2400);
+    await showProof('01b-payment-details');
     assert.equal(await page.locator('.q-dialog:visible').count(), 1); assert.equal(scenario.context.pages().length, 1);
     assert.match(await sheet().locator('.branta-verification-details').innerText(), /Kaffeehaus Lindgren/); await shot('02-current-verification');
     assert.match(await sheet().locator('.branta-proof-time').innerText(), /Checked/);
@@ -198,13 +208,13 @@ try {
   await step('Unknown unavailable expired and ambiguous records never fake merchant branding', async () => {
     for (const answer of [() => ({ json: [] }), () => ({ offline: true }), () => ({ json: [{ ...bolt.wire, created_at: '2000-01-01T00:00:00Z', ttl: 1 }] }), () => ({ json: [bolt.wire, { ...bolt.wire, platform: 'Other merchant' }] })]) {
       const scenario = await open({ answer }); await detect(); await ready(); await page.waitForFunction(() => !document.querySelector('.recipient-cell--checking'));
-      assert.equal(await sheet().locator('.verified-merchant-stage').count(), 0); assert.ok(!(await sheet().innerText()).includes(MERCHANT)); assert.equal((await sends()).length, 0); await scenario.close();
+      assert.equal(await sheet().locator('.recipient-verified').count(), 0); assert.ok(!(await sheet().innerText()).includes(MERCHANT)); assert.equal((await sends()).length, 0); await scenario.close();
     }
   });
   await step('Changed codes encoded proof keys and duplicate keys hard-stop before any debit', async () => {
     const valid = await open({ answer: () => ({ json: [bitcoin.wire] }) });
     await detect({ type: 'bitcoin_address', data: ADDRESS, rawInput: proofUri(), bip21: { address: ADDRESS, amount: '0.000024' } });
-    await sheet().locator('.verified-merchant-stage').waitFor();
+    await sheet().locator('.recipient-verified').waitFor();
     await sheet().locator('.onchain-panel .summary').waitFor();
     assert.equal(await sheet().locator('.onchain-panel .speed-card').count(), 3, 'on-chain speed choices remain directly on review');
     assert.equal(await rawSats(), 2400); assert.match(await sheet().locator('.onchain-panel .summary').innerText(), /2,440/);
@@ -222,7 +232,7 @@ try {
     let scenario = await open({ answer: () => ({ json: [bolt.wire], delay: 900 }) });
     await detect(); await ready(); await cancel(); await page.waitForTimeout(1000); assert.equal(await sheet().count(), 0);
     await detect(); await ready(); await detect({ type: 'lightning_invoice', data: OTHER_INVOICE, rawInput: OTHER_INVOICE }); await page.waitForTimeout(1300);
-    assert.equal(await sheet().locator('.verified-merchant-stage').count(), 0); assert.equal(await rawSats(), 3900); await scenario.close();
+    assert.equal(await sheet().locator('.recipient-verified').count(), 0); assert.equal(await rawSats(), 3900); await scenario.close();
     scenario = await open({ answer: () => ({ json: [bitcoin.wire], delay: 2300 }) });
     await detect({ type: 'bitcoin_address', data: OTHER_ADDRESS, rawInput: proofUri(OTHER_ADDRESS, { encoded: true }), bip21: { address: OTHER_ADDRESS, amount: '0.000024' } });
     await ready(); await page.waitForFunction(() => !document.querySelector('.recipient-cell--checking'));
@@ -231,23 +241,28 @@ try {
   });
   await step('Optimized Spark cannot inherit Lightning identity and route drift requires fresh review', async () => {
     let scenario = await open(); await page.evaluate(() => { window.__brantaRoute = 'spark'; }); await detect(); await ready();
-    await page.waitForFunction(() => !document.querySelector('.recipient-cell--checking')); assert.equal(await sheet().locator('.verified-merchant-stage').count(), 0); await scenario.close();
-    scenario = await open(); await detect(); await sheet().locator('.verified-merchant-stage').waitFor();
+    await page.waitForFunction(() => !document.querySelector('.recipient-cell--checking')); assert.equal(await sheet().locator('.recipient-verified').count(), 0); await scenario.close();
+    scenario = await open(); await detect(); await sheet().locator('.recipient-verified').waitFor();
     await page.evaluate(async () => { const { useWalletStore } = await import('/src/stores/wallet.js'); window.__brantaRoute = 'spark'; useWalletStore().getProvider('main')._preparedSends.clear(); });
     await primary().click(); await page.waitForTimeout(500); assert.equal((await sends()).length, 0); assert.equal(await page.locator('.error-dialog:visible').count(), 0);
-    assert.equal(await sheet().locator('.verified-merchant-stage').count(), 0); assert.equal(await rawSats(), 2400); await scenario.close();
+    assert.match(await sheet().locator('.wallet-hint').innerText(), /business check is not available/i, 'the sheet says why it came back, in one line');
+    assert.equal(await page.locator('.q-notification:visible').count(), 0);
+    assert.equal(await sheet().locator('.recipient-verified').count(), 0); assert.equal(await rawSats(), 2400); await scenario.close();
   });
   await step('Artwork failure keeps a verified local fallback without changing amount', async () => {
-    const scenario = await open({ brokenLogo: true }); await detect(); await sheet().locator('.verified-merchant-stage').waitFor(); await page.waitForTimeout(400);
-    assert.equal(await sheet().locator('.branta-merchant-mark').count(), 1); assert.equal(await rawSats(), 2400); await shot('04-artwork-fallback'); await scenario.close();
+    const scenario = await open({ brokenLogo: true }); await detect(); await sheet().locator('.recipient-verified').waitFor(); await page.waitForTimeout(400);
+    assert.equal((await sheet().locator('.recipient-name').innerText()).trim(), MERCHANT);
+    assert.equal(await sheet().locator('.recipient-bitcoin-logo').count(), 0, 'its own initial, never the generic mark');
+    assert.equal(await rawSats(), 2400); await shot('04-artwork-fallback'); await scenario.close();
   });
   await step('Grouped hero units fees totals and decimal BTC preserve exact monetary values', async () => {
     for (const [locale, bip177, denomination] of [['en-US', true, 'sats'], ['de', true, 'sats'], ['es', false, 'sats'], ['en-US', false, 'sats'], ['en-US', true, 'btc'], ['de', true, 'btc'], ['en-US', true, 'fiat']]) {
-      const scenario = await open({ locale, bip177, denomination }); await detect(); await sheet().locator('.verified-merchant-stage').waitFor();
+      const scenario = await open({ locale, bip177, denomination }); await detect(); await sheet().locator('.recipient-verified').waitFor();
       const digits = denomination === 'btc' ? 8 : denomination === 'fiat' ? 2 : 0;
       const converted = sats => denomination === 'btc' ? sats / 100000000 : denomination === 'fiat' ? sats * 78000 / 100000000 : sats;
       const formatted = sats => new Intl.NumberFormat(locale, { minimumFractionDigits: digits, maximumFractionDigits: digits }).format(converted(sats));
-      assert.equal(await amount().inputValue(), formatted(2400)); assert.equal(await rawSats(), 2400);
+      // A fixed amount shown in fiat is a conversion, and says so on the anchor too.
+      assert.equal(await amount().inputValue(), (denomination === 'fiat' ? '≈\u00a0' : '') + formatted(2400)); assert.equal(await rawSats(), 2400);
       const unit = (await sheet().locator('.unit-pill').innerText()).trim();
       assert.ok(denomination === 'btc' ? unit === 'BTC' : denomination === 'fiat' ? unit === 'EUR' : bip177 ? unit.includes('₿') : /sats/i.test(unit));
       const fee = await sheet().locator('.fee-row-value').innerText();
@@ -258,6 +273,17 @@ try {
     }
     const scenario = await open({ denomination: 'btc', answer: () => ({ json: [] }) }); await detect({ type: 'lightning_invoice', data: AMOUNTLESS, rawInput: AMOUNTLESS }); await ready();
     assert.equal(await currency(), 'btc'); await amount().fill('0.00000029'); await amount().blur(); assert.equal(await rawSats(), 29, 'decimal BTC must not round down to 28 sats'); await scenario.close();
+  });
+  await step('App in English on a German phone: the comma key is a decimal and numbers read the German way', async () => {
+    const fiat = await open({ locale: 'en-US', deviceLocale: 'de', denomination: 'fiat', answer: () => ({ json: [] }) });
+    await detect({ type: 'lightning_invoice', data: AMOUNTLESS, rawInput: AMOUNTLESS }); await ready();
+    await selectCurrency('EUR'); await amount().fill(''); await amount().pressSequentially('1,5'); await amount().blur();
+    assert.equal(await rawSats(), Math.floor(1.5 / 78000 * 100000000), 'a comma keypad with the app in English means 1.5');
+    await amount().fill('1,234'); assert.equal(await rawSats(), 0); assert.equal(await primary().isDisabled(), true, 'thousands or decimal: refused, never guessed');
+    await fiat.close();
+    const fixed = await open({ locale: 'en-US', deviceLocale: 'de' }); await detect(); await sheet().locator('.recipient-verified').waitFor();
+    assert.equal(await amount().inputValue(), '2.400', 'grouped like the balance and the receipt on this phone');
+    assert.ok((await sheet().locator('.payment-total-row').innerText()).includes('2.407')); await fixed.close();
   });
   await step('Locale keyboards grouped pastes and payout precision never change the intended amount', async () => {
     for (const [locale, grouped, decimal, malformed] of [['en-US', '2,400', '.', '2,40'], ['de', '2.400', ',', '2.40']]) {
@@ -299,34 +325,37 @@ try {
       assert.equal((await sends()).length, 0); await payout.close();
     }
   });
-  await step('A real mocked send saves exact-payment historical proof and browser Back returns to receipt', async () => {
-    const scenario = await open(); await detect(); await sheet().locator('.verified-merchant-stage').waitFor(); await primary().click();
+  await step('A real mocked send saves exact-payment historical proof and the saved check is a sheet over the receipt', async () => {
+    const scenario = await open(); await detect(); await sheet().locator('.recipient-verified').waitFor(); await primary().click();
     await page.locator('.payment-confirmation:visible .amount-label').waitFor(); const paid = await sends();
     assert.equal(paid.length, 1); assert.equal(paid[0].amount, 2400); assert.equal(paid[0].invoice, INVOICE); assert.equal(paid[0].walletId, 'main');
+    assert.ok((await page.locator('.payment-confirmation:visible .verified-recipient').innerText()).includes(MERCHANT), 'the paid screen names the business');
     await shot('06-sent'); await page.locator('.payment-confirmation:visible .amount-label').click();
     await page.waitForFunction(async () => { const { useTransactionMetadataStore } = await import('/src/stores/transactionMetadata.js'); return !!useTransactionMetadataStore().getMerchantVerificationForTransaction('branta-main-1', 'main'); });
     const saved = await page.evaluate(async () => { const { useTransactionMetadataStore } = await import('/src/stores/transactionMetadata.js'); const s=useTransactionMetadataStore(); return { own:s.getMerchantVerificationForTransaction('branta-main-1','main'),other:s.getMerchantVerificationForTransaction('branta-main-1','savings') }; });
     assert.equal(saved.own.name, MERCHANT); assert.ok(saved.own.checkedAt > 0); assert.equal(saved.other, null);
-    assert.equal(saved.own.destination?.value, INVOICE); assert.equal(saved.own.matchedType, 'bolt11'); assert.equal(saved.own.sdkVersion, '4.3.0');
+    assert.equal('destination' in saved.own, false, 'the paid destination is not saved with the check'); assert.equal('sdkVersion' in saved.own, false);
     await go('/transaction/branta-main-1?wallet=main'); await page.locator('.receipt-verification-button').waitFor(); await shot('07-receipt');
-    const source = new URL(page.url()).hash; await page.locator('.receipt-verification-button').click(); await page.locator('.receipt-verification-view').waitFor();
-    assert.match(await page.locator('.branta-verification-details').innerText(), /saved|before|Checked on/i); await shot('08-saved-verification');
-    await page.goBack({ timeout: 3000 }).catch(error => { if (error.name !== 'TimeoutError') throw error; });
-    await page.locator('.receipt-verification-view').waitFor({ state: 'hidden' }); assert.equal(new URL(page.url()).hash, source);
-    await page.locator('.receipt-verification-button').click(); await go('/settings'); await page.locator('.receipt-verification-view').waitFor({ state: 'hidden' });
+    const source = new URL(page.url()).hash; const saveSheet = page.locator('.check-sheet');
+    await page.locator('.receipt-verification-button').click(); await saveSheet.waitFor();
+    assert.match(await page.locator('.branta-verification-details').innerText(), /saved|before|Checked/i); await shot('08-saved-verification');
+    await page.keyboard.press('Escape'); await saveSheet.waitFor({ state: 'hidden' }); assert.equal(new URL(page.url()).hash, source, 'closing the sheet keeps the receipt');
+    await page.locator('.receipt-verification-button').click(); await saveSheet.waitFor();
+    await page.locator('.check-sheet__done').click(); await saveSheet.waitFor({ state: 'hidden' }); assert.equal(new URL(page.url()).hash, source);
+    await page.locator('.receipt-verification-button').click(); await saveSheet.waitFor(); await go('/settings'); await saveSheet.waitFor({ state: 'hidden' });
     assert.equal(new URL(page.url()).hash.split('?')[0], '#/settings');
     assert.ok(!scenario.logs.some(message => message.includes(INVOICE) || /branta_secret=|#k-/.test(message)), 'request secrets and record fragments must not enter console logs'); await scenario.close();
   });
   await step('Opt-out and first-party invoices avoid lookups without claiming merchant verification', async () => {
     for (const firstParty of [false,true]) {
       const scenario = await open({ enabled:firstParty }); await detect({ type:'lightning_invoice',data:INVOICE,firstParty }); await ready(); await page.waitForTimeout(300);
-      assert.equal(scenario.requests.length,0); assert.equal(await sheet().locator('.verified-merchant-stage').count(),0); await scenario.close();
+      assert.equal(scenario.requests.length,0); assert.equal(await sheet().locator('.recipient-verified').count(),0); await scenario.close();
     }
   });
   await step('Review and both proof levels fit 320px 200 percent translated text', async () => {
     for (const locale of ['en-US','de','es']) {
       const scenario = await open({ locale }); await page.setViewportSize({width:320,height:844}); await page.evaluate(() => { document.documentElement.style.fontSize='200%'; });
-      await detect(); await sheet().locator('.verified-merchant-stage').waitFor(); await fits(`${locale}: review`); await shot(`09-large-review-${locale}`);
+      await detect(); await sheet().locator('.recipient-verified').waitFor(); await fits(`${locale}: review`); await shot(`09-large-review-${locale}`);
       await showProof(); await fits(`${locale}: proof`); await shot(`10-large-proof-${locale}`); await scenario.close();
     }
   });
@@ -337,6 +366,6 @@ try {
     walletId: window.__brantaWallet?.getSendingWallet()?.id, walletType: window.__brantaWallet?.getSendingWalletType(),
     amount: window.__brantaWallet?.payingAmountSats, hasInvoice: !!window.__brantaWallet?.pendingPayment?.invoice,
     pendingType: window.__brantaWallet?.pendingPayment?.type,
-    target: window.__brantaWallet?.brantaTargetForPayment(window.__brantaWallet?.pendingPayment)?.kind })).catch(() => null));
+    target: window.__brantaWallet?.brantaReview().target(window.__brantaWallet?.pendingPayment)?.kind })).catch(() => null));
   await page?.screenshot({path:`${output}/FAIL.png`}).catch(()=>{}); process.exitCode=1;
 } finally { await Promise.allSettled([...contexts].map(context=>context.close())); await browser.close(); }

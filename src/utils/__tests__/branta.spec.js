@@ -61,7 +61,7 @@ test('sibling rails, encrypted destinations, missing owner and conflicting owner
   assert.equal(normalizeBrantaResult(match([owner('One'), owner('Two')]), target), null)
   assert.equal(normalizeBrantaResult({ payments: [owner()] }, target), null, 'legacy getPayments response is not a verify match')
 })
-test('Ark address matching remains supported independently of CoinSnap route exclusions', () => {
+test('Ark address matching is supported on its own, whatever other routes are excluded', () => {
   const ark = destination(ARK, 'ark_address')
   assert.equal(normalizeBrantaResult({ ...match([owner('Ark merchant', [ark])]), matchedDestinations: [ark] }, { kind: 'arkade', value: ARK }).name, 'Ark merchant')
 })
