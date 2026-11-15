@@ -148,14 +148,14 @@ const seedBucket = (page) => page.evaluate(() => {
   await openSheet(page);
   await page.locator('.wallet-btn').first().waitFor();
   await page.locator('.wallet-btn').first().click();
-  await page.getByRole('heading', { name: 'Select Source Wallet' }).waitFor();
+  await page.getByRole('heading', { name: 'Select source wallet' }).waitFor();
   const from = await rowState(page, '.picker-row');
   assert.deepEqual(from.find((r) => r.name === 'Coinos'), { name: 'Coinos', disabled: true, note: 'Receive only' });
   await shot(page, 'transfer-source');
   await page.keyboard.press('Escape');
-  await page.getByRole('heading', { name: 'Select Source Wallet' }).waitFor({ state: 'hidden' });
+  await page.getByRole('heading', { name: 'Select source wallet' }).waitFor({ state: 'hidden' });
   await page.locator('.wallet-btn').nth(1).click();
-  await page.getByRole('heading', { name: 'Select Destination Wallet' }).waitFor();
+  await page.getByRole('heading', { name: 'Select destination wallet' }).waitFor();
   const to = await rowState(page, '.picker-row');
   assert.deepEqual(to.find((r) => r.name === 'Alby Hub'), { name: 'Alby Hub', disabled: true, note: "Can't receive" });
   assert.equal(to.find((r) => r.name === 'Coinos').disabled, false);

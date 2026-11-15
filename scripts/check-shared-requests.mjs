@@ -596,7 +596,7 @@ try {
     .click()
   await bob.page.screenshot({ path: `${output}/06-confirm-payment.png` })
   await bob.page.getByRole('button', { name: /^Send .*sats$/ }).click()
-  await bob.page.getByText('Payment Sent', { exact: true }).waitFor()
+  await bob.page.getByText('Payment sent', { exact: true }).waitFor()
   assert.equal(
     nwcPayments.length,
     1,
@@ -619,7 +619,7 @@ try {
       .click()
     await payer.page.getByText('Pay with', { exact: true }).waitFor()
     await confirmRealPayment(payer.page)
-    await payer.page.getByText('Payment Sent', { exact: true }).waitFor()
+    await payer.page.getByText('Payment sent', { exact: true }).waitFor()
   }
   await alice.page.getByText('Everyone has paid', { exact: true }).waitFor()
   await snap(alice, '06c-everyone-paid')
@@ -775,7 +775,7 @@ try {
     .click()
   await bob.page.getByText('Pay with', { exact: true }).waitFor()
   await confirmRealPayment(bob.page)
-  await bob.page.getByText('Payment Sent', { exact: true }).waitFor()
+  await bob.page.getByText('Payment sent', { exact: true }).waitFor()
   await single.getByText('Paid', { exact: true }).waitFor()
   await snap(alice, '14-one-person-paid-chat')
   await navigate(alice.page, '/requests')
