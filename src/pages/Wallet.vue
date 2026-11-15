@@ -5997,6 +5997,9 @@ export default {
       // before the executor has marked itself busy.
       if (this.isSendingPayment || this._sendConfirming) return;
       this._sendConfirming = true;
+      // Said app-wide from here until this send has ended, however it ends
+      // and whether or not this page is still there (stores/paymentFlow.js).
+      const sendEnded = this.paymentFlow.beginSend();
       try {
         // Spark on-chain rides its own submit lifecycle (withdrawal request
         // + background monitor), not the instant-payment pipeline.
@@ -6026,6 +6029,7 @@ export default {
         }
       } finally {
         this._sendConfirming = false;
+        sendEnded();
         // Validation/PIN may return before the executor ever marks itself busy.
         if (this.paymentOnly && this.paymentFlow.isCurrent(this.paymentIntent.id) && !this.isSendingPayment && this.paymentFlow.stage !== 'choosing-default') {
           this.paymentFlow.setStage(this.paymentIntent.id, this.showSendSuccess || this.showSaveContactDialog ? 'complete' : 'ready');

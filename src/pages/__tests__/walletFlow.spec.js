@@ -655,6 +655,8 @@ function payingHarness({ wallets = PAY_WALLETS, active = 'biz', funds = PAY_FUND
   const vm = {
     ...options.methods, ...options.data.call({}),
     $t: t, $refs: {}, walletStore: store,
+    // Home says app-wide that it is sending (stores/paymentFlow.js); nothing here reads it.
+    paymentFlow: { beginSend: () => () => {} },
     $q: { dark: { isActive: false }, notify: notice => notices.push(notice) },
     addressBookStore: { findContactByAddress: () => null, findContactByPubkey: () => null, getEntryById: id => (id === 'c1' ? { id: 'c1' } : undefined) },
     transactionMetadataStore: { enqueuePendingContactLink: async link => { (sent.links ||= []).push(link); } },
