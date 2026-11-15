@@ -166,9 +166,10 @@
               {{ getFormattedAmount() }}
             </div>
 
-            <!-- The fiat line prefers the value at settlement time (the rate
-                 this payment actually happened at); today's rate is only
-                 the fallback estimate. -->
+            <!-- The fiat line is the value at settlement time (the rate
+                 this payment actually happened at). Without one it is the
+                 value at today's rate, marked as that ("≈ … today"), or
+                 nothing when no current rate exists. -->
             <div class="hero-fiat">
               <q-skeleton v-if="loadingFiatRates && !transaction.fiatAtSettlement" type="text" width="60px" height="14px" style="margin: 0 auto;" />
               <template v-else-if="transaction.fiatAtSettlement && isSettled">
@@ -1773,8 +1774,8 @@ export default {
     getSettlementRateDisplay() {
       const snap = this.transaction?.fiatAtSettlement;
       if (!snap || !Number.isFinite(Number(snap.rate))) return null;
-      const locale = this.$i18n?.locale || 'en-US';
-      const formatted = Number(snap.rate).toLocaleString(locale, { maximumFractionDigits: 0 });
+      // The device's number format, as every fiat figure.
+      const formatted = Number(snap.rate).toLocaleString(undefined, { maximumFractionDigits: 0 });
       const symbol = snap.currency ? fiatSymbol(snap.currency) : '';
       return `${symbol}${formatted}`;
     },
@@ -1812,28 +1813,19 @@ export default {
       }
     },
 
+    /**
+     * For a payment without a value recorded when it happened: its value at
+     * today's rate, said as that ("≈ … today"), the same words History
+     * uses. Nothing while the rates load or when none is current: no value
+     * beats a wrong one.
+     */
     getFiatAmount() {
-      if (this.loadingFiatRates || !this.transaction) {
-        return '...';
-      }
-
-      try {
-        const currency = this.walletState.preferredFiatCurrency || 'USD';
-        // Fiat tracks the hero amount so the two never disagree.
-        // For an outgoing payment with a fee, both reflect what the
-        // recipient received (not the gross deducted).
-        const fiatValue = fiatRatesService.convertSatsToFiatSync(this.displayAmountSats, currency);
-
-        // Handle unavailable rates
-        if (fiatValue === null) {
-          return '--';
-        }
-
-        return fiatRatesService.formatFiatAmount(fiatValue, currency);
-      } catch (error) {
-        console.error('Error converting to fiat:', error);
-        return '--';
-      }
+      if (this.loadingFiatRates || !this.transaction) return '';
+      // Fiat tracks the hero amount so the two never disagree.
+      // For an outgoing payment with a fee, both reflect what the
+      // recipient received (not the gross deducted).
+      const value = fiatRatesService.formatSatsAsFiat(this.displayAmountSats, this.walletState?.preferredFiatCurrency || 'USD');
+      return value ? `≈\u00a0${this.$t('{amount} today', { amount: value })}` : '';
     },
 
     formatDateTime(timestamp) {
@@ -1976,7 +1968,7 @@ export default {
       const desc = this.txMessage;
 
       let text = `${direction} ${amount}`;
-      if (fiat && fiat !== '--' && fiat !== '...') text += ` (${fiat})`;
+      if (fiat) text += ` (${fiat})`;
       text += `\n${date}`;
       if (desc) text += `\n${desc}`;
       text += '\n\nvia BuhoGO\nhttps://home.mybuho.de/buhogo';

@@ -17,4 +17,5 @@ export default {
   "Fees come on top. Your balance may not cover every payment.": "Gebühren kommen noch dazu. Dein Guthaben reicht vielleicht nicht für jede Zahlung.",
   "The fee could not be calculated.": "Die Gebühr konnte nicht berechnet werden.",
   "{amount} stays in {wallet} for the fee.": "{amount} bleibt für die Gebühr in {wallet}.",
+  "{amount} today": "{amount} heute",
 };
