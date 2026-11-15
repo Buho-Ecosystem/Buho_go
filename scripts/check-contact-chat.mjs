@@ -737,7 +737,6 @@ async function payWith(page, name) {
   const picker = page.locator('.payment-wallet-picker');
   if (await picker.count()) {
     await picker.getByRole('radio', { name: new RegExp(name) }).click();
-    await page.locator('.payment-wallet-apply').click();
   } else {
     await page.getByRole('listbox').getByRole('option', { name: new RegExp(name) }).click();
   }
@@ -763,7 +762,6 @@ async function payWithOptionsMatrix(page) {
   assert.equal(await option('Ark').getAttribute('aria-disabled'), 'true', 'Arkade cannot pay Lightning');
   await option('Ark').getByText("Can't pay this").waitFor();
   await option('Personal').click();
-  if (contextual) await page.locator('.payment-wallet-apply').click();
 }
 
 async function confirmPayment(page) {

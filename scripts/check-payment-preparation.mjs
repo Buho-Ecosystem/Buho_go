@@ -100,7 +100,6 @@ const payBob = async () => {
 const chooseWallet = async name => {
   await sheet().locator('.pay-with-field').click();
   await sheet().locator('.payment-wallet-picker').getByRole('radio', { name: new RegExp(name) }).click();
-  await sheet().locator('.payment-wallet-apply').click();
 };
 const finishPaymentForDefaultPopup = async wallet => {
   const { bolt11 } = ledger.mint({ amountSats: 500 });
@@ -301,7 +300,7 @@ try {
     assert.match(await sheet().locator('.pay-with-field').innerText(), /Travel/);
     await sheet().locator('.choose-wallet-cta').click();
     assert.equal(await sheet().getByRole('radio', { name: /Travel/ }).getAttribute('aria-disabled'), 'true');
-    await sheet().getByRole('radio', { name: /Reserve/ }).click(); await sheet().locator('.payment-wallet-apply').click();
+    await sheet().getByRole('radio', { name: /Reserve/ }).click();
     assert.equal(await preference(), 'travel'); assert.equal(await activeWallet(), 'everyday');
     await snapshot('04-one-off-wallet'); await cancel();
   });
