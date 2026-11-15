@@ -8,6 +8,11 @@ import { addNfcListener, addNfcErrorListener, isNfcAvailable, consumePendingNfcS
 import { parsePaymentDestination } from '../providers/WalletFactory'
 import { triggerWalletStoreHydration } from '../utils/walletHydration'
 import { redactPaymentInput } from '../utils/logRedaction'
+import { i18n } from './i18n'
+
+// Toasts are shown outside any component, so they read the app's language
+// from the i18n instance itself (as deep-links.js does).
+const t = (key) => i18n.global.t(key)
 
 /**
  * NFC boot plugin for Android.
@@ -79,8 +84,8 @@ export default boot(async ({ router }) => {
       Notify.create({
         type: 'warning',
         icon: 'nfc',
-        message: 'NFC tag not recognized',
-        caption: 'Tag does not contain a Lightning payment',
+        message: t('NFC tag not recognized'),
+        caption: t("This tag doesn't hold a payment."),
         timeout: 3000
       })
       return
@@ -103,8 +108,7 @@ export default boot(async ({ router }) => {
       Notify.create({
         type: 'warning',
         icon: 'nfc',
-        message: 'No wallet set up',
-        caption: 'Please configure a wallet first',
+        message: t('Set up a wallet first'),
         timeout: 5000
       })
       return
@@ -130,14 +134,14 @@ export default boot(async ({ router }) => {
     }
   }
 
-  // NFC error listener — tag found but unreadable
+  // NFC error listener — tag found but unreadable. The reader's own error
+  // text is for the log; the toast says what happened in the app's language.
   addNfcErrorListener((message) => {
     console.warn('[nfc] Tag error:', message)
     Notify.create({
       type: 'warning',
       icon: 'nfc',
-      message: 'NFC tag not readable',
-      caption: message,
+      message: t('NFC tag not readable'),
       timeout: 3000
     })
   })

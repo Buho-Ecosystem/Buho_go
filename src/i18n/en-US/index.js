@@ -2477,6 +2477,9 @@ export default {
   // ── NFC-ready badge ──
   "NFC ready": "NFC ready",
   "Hold a Bolt Card or NFC tag to your phone to pay or redeem": "Hold a Bolt Card or NFC tag to your phone to pay or redeem",
+  "NFC tag not recognized": "NFC tag not recognized",
+  "This tag doesn't hold a payment.": "This tag doesn't hold a payment.",
+  "NFC tag not readable": "NFC tag not readable",
 
   // ── LNbits connect: LNDhub link support ──
   "Or paste an LNDhub link and we will fill both fields": "Or paste an LNDhub link and we will fill both fields",

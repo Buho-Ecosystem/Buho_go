@@ -2472,6 +2472,9 @@ export default {
   // ── NFC-bereit-Badge ──
   "NFC ready": "NFC bereit",
   "Hold a Bolt Card or NFC tag to your phone to pay or redeem": "Halte eine Bolt Card oder einen NFC-Tag an dein Telefon, um zu zahlen oder einzulösen",
+  "NFC tag not recognized": "NFC-Tag nicht erkannt",
+  "This tag doesn't hold a payment.": "Dieser NFC-Tag enthält keine Zahlung.",
+  "NFC tag not readable": "NFC-Tag nicht lesbar",
 
   // ── LNbits verbinden: LNDhub-Link-Unterstützung ──
   "Or paste an LNDhub link and we will fill both fields": "Oder füge einen LNDhub-Link ein, wir füllen beide Felder aus",

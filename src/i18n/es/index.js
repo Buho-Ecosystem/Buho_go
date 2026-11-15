@@ -2470,6 +2470,9 @@ export default {
   // ── Insignia NFC listo ──
   "NFC ready": "NFC listo",
   "Hold a Bolt Card or NFC tag to your phone to pay or redeem": "Acerca una Bolt Card o etiqueta NFC a tu teléfono para pagar o cobrar",
+  "NFC tag not recognized": "Etiqueta NFC no reconocida",
+  "This tag doesn't hold a payment.": "Esta etiqueta no contiene un pago.",
+  "NFC tag not readable": "No se pudo leer la etiqueta NFC",
 
   // ── Conectar LNbits: soporte de enlace LNDhub ──
   "Or paste an LNDhub link and we will fill both fields": "O pega un enlace LNDhub y rellenaremos ambos campos",
