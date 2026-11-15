@@ -16,4 +16,5 @@ export default {
   "Remaining before fees": "Remaining before fees",
   "Fees come on top. Your balance may not cover every payment.": "Fees come on top. Your balance may not cover every payment.",
   "The fee could not be calculated.": "The fee could not be calculated.",
+  "{amount} stays in {wallet} for the fee.": "{amount} stays in {wallet} for the fee.",
 };

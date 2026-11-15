@@ -16,4 +16,5 @@ export default {
   "Remaining before fees": "Restante antes de comisiones",
   "Fees come on top. Your balance may not cover every payment.": "Las comisiones se suman aparte. Puede que tu saldo no alcance para todos los pagos.",
   "The fee could not be calculated.": "No se pudo calcular la comisión.",
+  "{amount} stays in {wallet} for the fee.": "{amount} se queda en {wallet} para la comisión.",
 };
