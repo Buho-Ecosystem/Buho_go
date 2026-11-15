@@ -8,7 +8,9 @@
     'wallet'       which wallet the rule watches (new rules only)
     'threshold'    "holds more than", on the app's keypad, sats or fiat
     'move'         Everything, or Keep some (with its own keypad)
-    'destination'  my wallets, contacts, paste or scan; checked on choose
+    'destination'  my wallets, contacts, paste or scan; checked on choose.
+                   A pasted or scanned payment address also says how much
+                   it takes at a time, and the rule is held against that
     'speed'        how fast a Bitcoin address is paid (on-chain only)
 
   The one explanation is the footer under the groups, and it is live: what
@@ -245,13 +247,14 @@ import { useWalletStore } from '../../stores/wallet';
 import { useAutoWithdrawStore } from '../../stores/autoWithdraw';
 import { useAddressBookStore } from '../../stores/addressBook';
 import { keypadSats } from '../../utils/amountKeypad.js';
-import { fetchPayRequest, lightningAddressUrl } from '../../utils/lnurlPay.js';
+import { fetchPayRequest, lightningAddressUrl, payRequestLimits } from '../../utils/lnurlPay.js';
 import { readPayerRequest } from '../../utils/lud18.js';
 import { readClipboardCrossPlatform } from '../../utils/shopClipboard.js';
 import {
   DESTINATION_KIND,
   DESTINATION_PROBLEM,
   ROUTE,
+  amountLimit,
   amountSats,
   destinationProblem,
   readDestination,
@@ -285,6 +288,8 @@ export default {
       candidate: null,
       candidateState: null, // 'checking' | 'unknown' | 'problem' | 'silent' | 'details'
       candidateAttempt: 0,
+      // What the address read in this sheet takes: { address, minSats, maxSats }.
+      addressLimits: null,
       scanning: false,
       saving: false,
     };
@@ -321,7 +326,27 @@ export default {
       return destinationProblem({ source: this.wallet, destination: this.draft.destination, wallets: this.walletStore.wallets, rules: this.otherRules });
     },
     destinationProblemText() {
-      return this.problem ? this.reason(this.problem, this.draft.destination) : '';
+      if (this.problem) return this.reason(this.problem, this.draft.destination);
+      return this.limitProblem ? this.reason(this.limitProblem.reason, this.draft.destination, this.limitProblem.limitSats) : '';
+    },
+    /** What the chosen address takes, when it was read in this sheet (pasted or scanned). */
+    destinationLimits() {
+      const d = this.draft.destination;
+      return d?.kind === DESTINATION_KIND.LIGHTNING && this.addressLimits?.address === d.address ? this.addressLimits : null;
+    },
+    /**
+     * The rule could never move anything: the least it moves (what a balance
+     * just over "holds more than" leaves) is more than the destination takes
+     * at a time, and a transfer is not sent in parts. Null when it can, or
+     * when the destination's limits are not known here.
+     */
+    limitProblem() {
+      const threshold = amountSats(this.draft.threshold, this.rateFor);
+      const keep = amountSats(this.draft.keep, this.rateFor);
+      if (!this.destinationLimits || !threshold || keep == null) return null;
+      const least = transferAmount({ balanceSats: threshold + 1, thresholdSats: threshold, keepSats: keep, route: this.route });
+      const limit = amountLimit(least, this.destinationLimits);
+      return limit?.reason === 'above_maximum' ? limit : null;
     },
     destinationWallet() {
       const d = this.draft.destination;
@@ -341,6 +366,10 @@ export default {
       if (balance <= threshold) return this.$t('{holds}, so nothing moves yet.', { holds });
       const amount = transferAmount({ balanceSats: balance, thresholdSats: threshold, keepSats: keep, route: this.route });
       if (!amount || !this.draft.destination) return `${holds}.`;
+      // What would move is held against what the destination takes, as the rule itself does when it runs.
+      const limit = amountLimit(amount, this.destinationLimits);
+      if (limit?.reason === 'below_minimum') return this.$t('{holds}, so nothing moves yet.', { holds });
+      if (limit) return `${holds}. ${this.reason(limit.reason, this.draft.destination, limit.limitSats)}`;
       return this.$t('{holds}, so about {amount} moves once it is on.', { holds, amount: formatSats(amount, this.ctx) });
     },
     keepTooHigh() {
@@ -350,7 +379,7 @@ export default {
       return keep != null && threshold != null && keep >= threshold;
     },
     canSave() {
-      return !!(this.wallet && this.draft.threshold && this.draft.destination && !this.problem && !this.keepTooHigh);
+      return !!(this.wallet && this.draft.threshold && this.draft.destination && !this.problem && !this.limitProblem && !this.keepTooHigh);
     },
 
     // Keypad
@@ -434,6 +463,7 @@ export default {
       this.view = 'rule';
       this.candidate = null;
       this.candidateState = null;
+      this.addressLimits = null;
       this.scanning = false;
     },
     close() {
@@ -492,8 +522,8 @@ export default {
     speedLabel(speed) {
       return { low: this.$t('Within an hour'), medium: this.$t('About 30 minutes'), high: this.$t('Next block') }[speed];
     },
-    reason(problem, destination) {
-      return reasonText(problem, { t: this.$t.bind(this), wallet: this.wallet?.name || '', destination: destination ? destinationLabel(destination, this.ctx) : '' });
+    reason(problem, destination, detail = null) {
+      return reasonText(problem, { t: this.$t.bind(this), wallet: this.wallet?.name || '', destination: destination ? destinationLabel(destination, this.ctx) : '', detail, bip177: this.ctx.bip177 });
     },
     walletProblemShort(problem) {
       if (problem === DESTINATION_PROBLEM.LOOP) return this.$t('Sends here');
@@ -583,7 +613,8 @@ export default {
      * Why a rule could not pay this address, or null when it can: 'silent'
      * when it does not answer, 'details' when it will not take a payment
      * without details about the payer (LUD-18), which no one is there to
-     * give when a transfer runs.
+     * give when a transfer runs. An address that can be paid also says how
+     * much it takes at a time, which the rule is then held against.
      */
     async lightningAddressProblem(address) {
       const url = lightningAddressUrl(address);
@@ -593,7 +624,9 @@ export default {
         // rule can pay. A person is waiting: give up sooner than a payment would.
         const payRequest = await fetchPayRequest(url, { timeoutMs: 8000 });
         const asks = readPayerRequest(payRequest?.payerData);
-        return asks.identifierRequired || asks.unmetRequired.length ? 'details' : null;
+        if (asks.identifierRequired || asks.unmetRequired.length) return 'details';
+        this.addressLimits = { address, ...payRequestLimits(payRequest) };
+        return null;
       } catch {
         return 'silent';
       }

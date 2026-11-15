@@ -12,7 +12,7 @@
 import { defineStore } from 'pinia'
 import { useTransactionMetadataStore } from './transactionMetadata'
 import { WALLET_TYPES } from '../providers/WalletFactory'
-import { fetchPayRequest, lightningAddressUrl, requestPayInvoice } from '../utils/lnurlPay.js'
+import { fetchPayRequest, lightningAddressUrl, payRequestLimits, requestPayInvoice } from '../utils/lnurlPay.js'
 import { migratePocketConfigKeys, settleRulesForWallets } from '../utils/autoWithdrawKeys.js'
 import { payWithNwc } from '../services/nwcPayment.js'
 import { isUnconfirmedPayment } from '../utils/paymentOutcome.js'
@@ -25,6 +25,7 @@ import {
   PAUSE_AFTER_FAILURES,
   ROUTE,
   addEvent,
+  amountLimit,
   amountSats,
   destinationName,
   destinationProblem,
@@ -54,10 +55,16 @@ const UNCONFIRMED_HOLD_MS = 10 * 60_000
 // sync; starting a second full sync right behind it is what the operators
 // rate-limit or let time out on a funded wallet (#430).
 const RECENT_SYNC_MS = 60_000
+// What a Lightning address takes is asked again after this long: a service
+// can change its limits. Until then a rule that waits for the minimum, on
+// every balance, asks nobody.
+const LIMITS_FRESH_MS = 10 * 60_000
 
 // Outside Pinia state on purpose: bookkeeping, not something to render.
 const _running = new Set()
 const _lastTriggerTime = new Map()
+// walletId → { address, minSats, maxSats, readAt } (_limitsOf)
+const _addressLimits = new Map()
 
 /**
  * Why a balance check failed, short enough to keep with the entry: the
@@ -170,6 +177,7 @@ export const useAutoWithdrawStore = defineStore('autoWithdraw', {
       delete this.configs[walletId]
       _running.delete(walletId)
       _lastTriggerTime.delete(walletId)
+      _addressLimits.delete(walletId)
       await this.persistConfigs()
     },
 
@@ -181,6 +189,7 @@ export const useAutoWithdrawStore = defineStore('autoWithdraw', {
       this.configs = settleRulesForWallets(this.configs, (id) => id !== walletId).configs
       _running.delete(walletId)
       _lastTriggerTime.delete(walletId)
+      _addressLimits.delete(walletId)
       await this.persistConfigs()
     },
 
@@ -189,6 +198,7 @@ export const useAutoWithdrawStore = defineStore('autoWithdraw', {
       this.lastResult = null
       _running.clear()
       _lastTriggerTime.clear()
+      _addressLimits.clear()
       localStorage.removeItem(STORAGE_KEY)
     },
 
@@ -202,13 +212,15 @@ export const useAutoWithdrawStore = defineStore('autoWithdraw', {
 
     /**
      * "Try Again": run the rule now on the wallet's current balance, past
-     * its cooldown. A rule paused after failures is switched back on first.
+     * its cooldown and with the destination's limits read anew. A rule
+     * paused after failures is switched back on first.
      */
     async tryNow(walletId, walletStore) {
       const rule = this.configs[walletId]
       if (!rule) return
       if (!rule.enabled) await this.setEnabled(walletId, true)
       _lastTriggerTime.delete(walletId)
+      _addressLimits.delete(walletId)
       const balance = walletStore.getDisplayBalance?.(walletId)?.balance ?? walletStore.balances?.[walletId] ?? 0
       await this.checkAndExecute(walletId, balance, walletStore)
     },
@@ -288,7 +300,17 @@ export const useAutoWithdrawStore = defineStore('autoWithdraw', {
           this._skip(walletId, 'below_minimum')
           return
         }
+        // A Lightning address takes amounts within its own limits. They are
+        // read before any invoice is asked for, and held against what the
+        // rule would move, after its fee reserve.
+        const limit = rule.destination.kind === DESTINATION_KIND.LIGHTNING
+          ? amountLimit(amount, await this._limitsOf(walletId, rule.destination.address))
+          : null
         if (this.configs[walletId] !== rule || !rule.enabled) return
+        if (limit) {
+          this._stopAtLimit(walletId, amount, limit)
+          return
+        }
         // From here money moves: the cooldown starts now, not on every
         // check, so a rule just below its threshold still runs on the next
         // balance that passes it.
@@ -314,6 +336,15 @@ export const useAutoWithdrawStore = defineStore('autoWithdraw', {
         this._record(walletId, { at: Date.now(), outcome: OUTCOME.SENT, amount, txId: txId || null }, { success: true })
         this.lastResult = { walletId, amount, destinationName: name }
       } catch (error) {
+        // The next run reads the destination's limits anew: they may be why.
+        _addressLimits.delete(walletId)
+        // The address turned the amount down when its invoice was asked for:
+        // its limits changed after they were read. That ends the same way.
+        const refused = error?.code === 'LNURL_AMOUNT_OUT_OF_RANGE' ? amountLimit(error.amountSats, error) : null
+        if (refused) {
+          this._stopAtLimit(walletId, error.amountSats, refused)
+          return
+        }
         console.error('[Auto-Transfer] Failed:', error?.message || error)
         const holdMs = isUnconfirmedPayment(error) ? UNCONFIRMED_HOLD_MS : FAILURE_RETRY_MS
         _lastTriggerTime.set(walletId, Date.now() - COOLDOWN_MS + holdMs)
@@ -336,6 +367,36 @@ export const useAutoWithdrawStore = defineStore('autoWithdraw', {
         return provider.getCachedBalance()
       }
       return provider.getBalance({ requireFresh: true })
+    },
+
+    /**
+     * An amount outside what the destination takes (utils/autoTransfer.js
+     * amountLimit). Below its minimum the rule waits until enough can move:
+     * nothing failed, and the failure count stays. Above its maximum the
+     * transfer fails and its entry names the limit; it is never sent in parts.
+     */
+    _stopAtLimit(walletId, amount, limit) {
+      if (limit.reason === 'below_minimum') {
+        this._skip(walletId, limit.reason)
+        return
+      }
+      _lastTriggerTime.set(walletId, Date.now() - COOLDOWN_MS + FAILURE_RETRY_MS)
+      this._record(walletId, { at: Date.now(), outcome: OUTCOME.FAILED, amount, reason: limit.reason, detail: limit.limitSats })
+    },
+
+    /**
+     * What a Lightning address takes, in whole sats: `{ minSats, maxSats }`
+     * from its pay request (utils/lnurlPay.js), the same limits the payment
+     * itself is held to. Kept for LIMITS_FRESH_MS per wallet and address.
+     */
+    async _limitsOf(walletId, address) {
+      const kept = _addressLimits.get(walletId)
+      if (kept?.address === address && Date.now() - kept.readAt < LIMITS_FRESH_MS) return kept
+      const url = lightningAddressUrl(address)
+      if (!url) throw new Error('Could not resolve Lightning address')
+      const limits = { address, ...payRequestLimits(await fetchPayRequest(url)), readAt: Date.now() }
+      _addressLimits.set(walletId, limits)
+      return limits
     },
 
     /**
