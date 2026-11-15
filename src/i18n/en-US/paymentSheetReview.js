@@ -2,7 +2,6 @@ export default {
   "Payment details": "Payment details",
   "Payment type": "Payment type",
   "Choose wallet": "Choose wallet",
-  "Pay with {name}": "Pay with {name}",
   "Recipient address": "Recipient address",
   "Expires": "Expires",
   "Spark invoice": "Spark invoice",

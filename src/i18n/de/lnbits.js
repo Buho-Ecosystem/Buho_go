@@ -1,11 +1,9 @@
 // LNbits setup steps and the Lightning address sheet. Keep the same keys in all three locales.
 export default {
   "Wallet found": "Wallet gefunden",
-  "Add wallet": "Wallet hinzufügen",
   "Get paid by name, like email.": "Werde per Name bezahlt, wie bei E-Mail.",
   "Pick one for this wallet.": "Wähle eine für diese Wallet.",
   "New address": "Neue Adresse",
-  "Your address": "Deine Adresse",
   "Thank-you message": "Dankesnachricht",
   "Shown right after someone pays you": "Erscheint direkt nach einer Zahlung an dich",
   "Use an existing address": "Vorhandene Adresse nutzen",

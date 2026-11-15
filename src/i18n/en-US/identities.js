@@ -19,7 +19,6 @@ export default {
   "{name} removed from this phone": "{name} removed from this phone",
   "Couldn't remove the identity": "Couldn't remove the identity",
   "Secret key copied": "Secret key copied",
-  "Copy secret key": "Copy secret key",
   "Kept hidden for your privacy. Anyone with this key can use this identity.": "Kept hidden for your privacy. Anyone with this key can use this identity.",
   "Copy only to an app you trust. Never send it in a message.": "Copy only to an app you trust. Never send it in a message.",
   "Secret key could not be accessed. Please try again.": "Secret key could not be accessed. Please try again.",
