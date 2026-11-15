@@ -14,13 +14,15 @@ const FAKE_SDK_SOURCE = `
 const ctl = () => globalThis.__breezFakeCtl;
 export default function init() { return ctl().init(); }
 export function defaultConfig() { return {}; }
+export function defaultServerConfig() { return { backgroundTasksEnabled: false }; }
 export async function initLogging() {}
 export const SdkBuilder = {
-  new() {
+  new(config, seed) {
+    const options = { config, seed };
     const b = {
-      withAccountNumber() { return b; },
-      async withDefaultStorage() { return b; },
-      async build() { return ctl().build(); },
+      withAccountNumber(accountNumber) { options.accountNumber = accountNumber; return b; },
+      async withDefaultStorage(storageDir) { options.storageDir = storageDir; return b; },
+      async build() { return ctl().build(options); },
     };
     return b;
   },

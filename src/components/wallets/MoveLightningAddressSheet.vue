@@ -23,8 +23,8 @@
       </header>
 
       <div v-if="source" class="move-body">
-        <p class="move-address">{{ address }}</p>
-        <p class="move-lead">{{ $t('Choose the wallet that should receive payments sent to this address.') }}</p>
+        <p v-if="address" class="move-address">{{ address }}</p>
+        <p v-if="!needsCheck" class="move-lead">{{ $t('Choose the wallet that should receive payments sent to this address.') }}</p>
 
         <div class="move-list" role="radiogroup" :aria-label="$t('Receiving wallet')">
           <button
@@ -41,7 +41,7 @@
             <span class="move-option-mark" aria-hidden="true"><WalletBrandMark type="spark" :size="16" /></span>
             <span class="move-option-copy">
               <span class="move-option-name">{{ wallet.name }}</span>
-              <span class="move-option-sub" :class="{ 'is-placeholder': !connected(wallet.id) || !addressOf(wallet) }">{{ connected(wallet.id) ? (addressOf(wallet) || $t('No address yet')) : $t('Offline') }}</span>
+              <span class="move-option-sub" :class="{ 'is-placeholder': !connected(wallet.id) || !addressOf(wallet) }">{{ connected(wallet.id) ? (addressOf(wallet) || (wallet.metadata?.lightningAddressPending ? $t('Check address') : $t('No address yet'))) : $t('Offline') }}</span>
             </span>
             <q-icon v-if="wallet.id === targetId" name="check" size="20px" class="move-option-check" :aria-hidden="true" />
           </button>
@@ -50,14 +50,19 @@
         <p v-if="targets.length && targets.every((w) => !connected(w.id))" class="move-consequence" role="status">
           {{ notConnectedCopy }}
         </p>
-        <p v-if="target" class="move-consequence" :class="{ 'is-destructive': !!addressOf(target) }" role="status">
+        <p v-if="target && address && !needsCheck" class="move-consequence" :class="{ 'is-destructive': !!addressOf(target) }" role="status">
           {{ addressOf(target)
             ? $t('{target} receives at {address} instead of {old}, which stops working. {source} gets a new address, which you can change later.', { target: target.name, address, old: addressOf(target), source: source.name })
             : $t('{target} receives at {address}. {source} gets a new address, which you can change later.', { target: target.name, address, source: source.name }) }}
         </p>
         <p v-if="error" class="form-sheet-error move-error" role="alert">{{ error }}</p>
+        <p v-if="target" class="move-balance-note">{{ $t('Balances and existing payments stay in their current wallets.') }}</p>
+        <button v-if="needsCheck" type="button" class="form-sheet-primary move-primary" :disabled="moving" @click="checkAddresses">
+          <q-spinner v-if="moving" size="18px" aria-hidden="true" />
+          {{ $t('Check addresses') }}
+        </button>
 
-        <button type="button" class="form-sheet-primary move-primary" :disabled="!target || moving" @click="move">
+        <button v-else type="button" class="form-sheet-primary move-primary" :disabled="!target || !address || moving" @click="move">
           <q-spinner v-if="moving" size="18px" :aria-hidden="true" />
           {{ moving ? $t('Moving address...') : $t('Move address') }}
         </button>
@@ -87,12 +92,14 @@ const store = useWalletStore();
 const targetId = ref(null);
 const moving = ref(false);
 const error = ref('');
+const needsCheck = ref(false);
+const reviewed = ref(null);
 
 const open = computed({ get: () => props.modelValue, set: (value) => emit('update:modelValue', value) });
 const source = computed(() => store.sparkWallets.find((w) => w.id === props.fromWalletId) || null);
 const targets = computed(() => store.sparkWallets.filter((w) => w.id !== props.fromWalletId));
 const target = computed(() => targets.value.find((w) => w.id === targetId.value) || null);
-const addressOf = (wallet) => store.walletInfos[wallet.id]?.lightningAddress || wallet.metadata?.lud16 || '';
+const addressOf = (wallet) => (moving.value && reviewed.value?.[wallet.id]) || store.lightningAddressOf(wallet) || '';
 const address = computed(() => (source.value ? addressOf(source.value) : ''));
 const connected = (walletId) => !!store.connectionStates[walletId]?.connected;
 /** Every possible receiving wallet is offline: name them right for one or several. */
@@ -103,32 +110,62 @@ const notConnectedCopy = computed(() => (targets.value.length > 1
 watch(() => props.modelValue, (visible) => {
   if (!visible) return;
   error.value = '';
+  needsCheck.value = !!source.value?.metadata?.lightningAddressPending || targets.value.some(w => w.metadata?.lightningAddressPending);
   // One other wallet: nothing to choose.
   targetId.value = targets.value.length === 1 && connected(targets.value[0].id) ? targets.value[0].id : null;
+});
+watch(targetId, () => {
+  if (target.value?.metadata?.lightningAddressPending) needsCheck.value = true;
 });
 
 function describe(failure) {
   switch (failure?.code) {
     case 'LN_ADDRESS_NOT_CONNECTED': return t('Both wallets need to be connected. Check your connection and try again.');
     case 'LN_ADDRESS_NONE': return t('This wallet has no address to move right now.');
-    default: return t('The address could not be moved. Nothing changed, so you can try again.');
+    case 'LN_ADDRESS_UNCONFIRMED': return t('The move could not be confirmed. Check both wallets’ addresses before sharing them or trying again.');
+    case 'LN_ADDRESS_RATE_LIMITED': return t('Too many address changes. Wait before trying again.');
+    case 'LN_ADDRESS_CHANGED': return t('The addresses changed. Review both wallets before moving again.');
+    case 'LN_ADDRESS_BUSY': return t('An address change is already in progress. Check the current address in a moment.');
+    default: return t('Could not move the address. Check both wallets’ addresses before trying again.');
   }
 }
 
 async function move() {
-  if (!target.value || moving.value) return;
+  if (!target.value || !address.value || moving.value || needsCheck.value) return;
+  const receivingWallet = target.value;
+  const fromId = props.fromWalletId;
+  const expectedSourceAddress = address.value || null;
+  const expectedTargetAddress = addressOf(receivingWallet) || null;
+  reviewed.value = { [fromId]: expectedSourceAddress, [receivingWallet.id]: expectedTargetAddress };
   moving.value = true;
   error.value = '';
   try {
-    const result = await store.moveSparkLightningAddress(props.fromWalletId, target.value.id);
-    emit('moved', { ...result, target: target.value });
+    const result = await store.moveSparkLightningAddress(fromId, receivingWallet.id, {
+      expectedSourceAddress,
+      expectedTargetAddress,
+    });
+    emit('moved', { ...result, target: receivingWallet });
     open.value = false;
   } catch (failure) {
     console.warn('[move-address] not moved:', failure?.code || failure?.message || failure);
     error.value = describe(failure);
+    needsCheck.value = true;
   } finally {
     moving.value = false;
+    reviewed.value = null;
   }
+}
+
+async function checkAddresses() {
+  if (moving.value) return;
+  moving.value = true;
+  try {
+    await Promise.all([source.value, target.value].filter(Boolean).map(w => store.refreshSparkLightningAddress(w.id)));
+    needsCheck.value = false;
+    error.value = '';
+  } catch {
+    error.value = t('Could not verify the current address. Check your connection and try again.');
+  } finally { moving.value = false; }
 }
 </script>
 
@@ -146,7 +183,7 @@ async function move() {
 .move-option-name { font-size: 15px; font-weight: 600; overflow-wrap: anywhere; }
 .move-option-sub { color: var(--text-secondary); font-family: var(--font-mono, monospace); font-size: 12px; overflow-wrap: anywhere; }
 .move-option-check { flex-shrink: 0; color: var(--brand-accent-text, #15DE72); }
-.move-consequence { margin: 14px 0 0; color: var(--text-secondary); font-size: 13px; line-height: 1.5; }
+.move-consequence, .move-balance-note { margin: 14px 0 0; color: var(--text-secondary); font-size: 13px; line-height: 1.5; }
 .move-consequence.is-destructive { color: var(--color-negative); }
 .move-option-sub.is-placeholder { font-family: inherit; }
 .move-error { margin: 10px 0 0; }

@@ -81,19 +81,25 @@ await test('collision retries with a fresh name and returns the address', async 
   assert.equal(address, `${tried[2]}@btc.mybuho.de`);
 });
 
-await test('a failed registration attempt retries instead of aborting', async () => {
-  let registerCalls = 0;
+await test('a lost registration response never consumes another name', async () => {
+  const tried = [];
+  const failure = new Error('response lost after server commit');
   const provider = {
     async checkLightningAddressAvailable() { return true; },
-    async registerLightningAddress(username) {
-      registerCalls += 1;
-      if (registerCalls === 1) throw new Error('transient server error');
-      return { lightningAddress: `${username}@btc.mybuho.de` };
-    },
+    async registerLightningAddress(username) { tried.push(username); throw failure; },
   };
-  const address = await registerRandomLightningAddress(provider);
-  assert.equal(registerCalls, 2);
-  assert.match(address, /@btc\.mybuho\.de$/);
+  await assert.rejects(() => registerRandomLightningAddress(provider), error => error === failure);
+  assert.equal(tried.length, 1);
+});
+
+await test('a rate limit on the availability check stops without registration', async () => {
+  let checks = 0;
+  const provider = {
+    async checkLightningAddressAvailable() { checks += 1; throw new Error('Network error (status 429)'); },
+    async registerLightningAddress() { assert.fail('must not register'); },
+  };
+  await assert.rejects(() => registerRandomLightningAddress(provider), /429/);
+  assert.equal(checks, 1);
 });
 
 await test('gives up with the last error after max attempts', async () => {
