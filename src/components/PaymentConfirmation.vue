@@ -51,7 +51,7 @@
                with its mark and the seal. -->
           <div v-if="verifiedRecipient" class="verified-recipient">
             <BrantaMerchantMark :verification="verifiedRecipient" :size="28" decorative />
-            <span class="verified-recipient-name">{{ recipientPrefix }}{{ verifiedRecipient.name }}</span>
+            <span class="verified-recipient-name">{{ namedRecipient(verifiedRecipient.name) }}</span>
             <span class="verified-recipient-seal" role="img" :aria-label="$t('Verified business')">
               <Icon icon="tabler:rosette-discount-check-filled" width="16" height="16" />
             </span>
@@ -61,7 +61,7 @@
             class="recipient-line"
             :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'"
           >
-            {{ recipientPrefix }}{{ recipient }}
+            {{ namedRecipient(recipient) }}
           </div>
         </div>
 
@@ -292,13 +292,13 @@ export default {
       default: ''
     },
     /**
-     * Prefix shown before `recipient`. Defaults to "To " (with trailing
-     * space) but callers can override (e.g. "From " for an inbound
-     * variant later, or '' to render the recipient bare).
+     * Words before `recipient`. Left out, the line reads "To {name}" in the
+     * app's language. A caller can pass its own prefix, or '' to show the
+     * recipient bare.
      */
     recipientPrefix: {
       type: String,
-      default: 'To '
+      default: null
     },
     /**
      * The business that was paid, as its check was saved ({ name, logoUrl,
@@ -411,6 +411,11 @@ export default {
     this.cleanup()
   },
   methods: {
+    /** "To Anna": the recipient with the words before it (see `recipientPrefix`). */
+    namedRecipient(name) {
+      return this.recipientPrefix === null ? this.$t('To {name}', { name }) : `${this.recipientPrefix}${name}`
+    },
+
     startAnimationSequence() {
       this.showAnimation = false
       this.showAmount = false
