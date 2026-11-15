@@ -1825,7 +1825,9 @@ export default {
       //   - "Up to" is a limit the payment is then held to (a Spark wallet
       //     paying an address or a payment link, whose invoice exists only
       //     after the confirm: sendSparkPayment / payLightningAddress);
-      //   - "Free" is a transfer between two addresses of the same kind;
+      //   - "Free" is said only from a quote of zero (a Spark transfer the
+      //     SDK prepared). A transfer between Arkade addresses has no quote
+      //     and nothing the app can hold it to, so no fee claim is made;
       //   - only where the wallet can say nothing beforehand does the sheet
       //     say that the fee is calculated when sending.
       // A fee guess is never shown as a number.
@@ -1834,9 +1836,7 @@ export default {
       const hasQuotedFee = !this.estimatedFeeIsGuess && Number.isFinite(this.estimatedFee) && this.estimatedFee >= 0;
       const canQuote = (payerType === 'spark' && !p.bitcoinAddress)
         || (payerType === 'arkade' && !!p.bitcoinAddress);
-      if (payerType === 'arkade' && p.arkadeAddress) {
-        feeEstimate = { sats: 0, isEstimating: false, label: this.$t('Free · instant') };
-      } else if (canQuote && this.isEstimatingFee) {
+      if (canQuote && this.isEstimatingFee) {
         feeEstimate = { sats: null, isEstimating: true };
       } else if (canQuote && hasQuotedFee) {
         feeEstimate = {

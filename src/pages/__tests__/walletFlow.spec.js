@@ -1377,12 +1377,18 @@ test('Pay with: an estimate for the previous wallet cannot land on the new one',
   assert.equal(vm.isEstimatingFee, false);
 });
 
-test('a transfer between two Arkade addresses is free; Spark says so from its quote', () => {
+test('"Free" needs a quote of zero: Spark says so from its prepare, Arkade makes no fee claim', () => {
   const { vm, options } = payingHarness({ active: 'hub' });
   vm.resolveWalletBrand = () => null;
   const fee = () => options.computed.paymentSheetProps.call(vm).feeEstimate;
   Object.assign(vm, { pendingPayment: { type: 'arkade_address', data: 'ark1xyz', arkadeAddress: 'ark1xyz' }, sendingWalletId: 'ark' });
-  assert.deepEqual(fee(), { sats: 0, isEstimating: false, label: 'Free · instant' }, 'an Arkade wallet paying an Arkade address');
+  // No quote exists for a transfer between Arkade addresses and nothing holds
+  // it to a fee of zero, so the review does not promise one.
+  assert.equal(fee(), null, 'an Arkade wallet paying an Arkade address');
+  assert.equal(options.computed.paymentSheetProps.call(vm).feeNotice, '', 'no amount yet, so no fee line either');
+  vm.sendSheetAmountSats = 2500;
+  assert.equal(options.computed.paymentSheetProps.call(vm).feeNotice, 'Fee calculated when sending.');
+  vm.sendSheetAmountSats = 0;
   vm.sendingWalletId = 'hub';
   assert.equal(fee(), null, 'another kind of wallet cannot pay it, and says nothing about its fee');
   vm.pendingPayment = { type: 'spark_address', data: 'spark1abc', sparkAddress: 'spark1abc' };

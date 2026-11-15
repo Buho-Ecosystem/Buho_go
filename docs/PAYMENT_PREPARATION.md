@@ -22,8 +22,8 @@ What a payment costs is said before it is confirmed, in one fee slot with the to
 |---|---|---|
 | A valid SDK-prepared quote | the fee | amount plus fee |
 | A limit the payment is held to (a Spark wallet paying a payment address or a payment link, whose invoice exists only after the confirm) | Up to the limit | Up to amount plus limit |
-| A transfer between two addresses of the same kind (Spark confirmed by an SDK prepare, Arkade to Arkade) | Free · instant | the amount |
-| Nothing beforehand (a wallet that cannot quote) | “Fee calculated when sending.” | the amount “+ fee” |
+| A Spark transfer the SDK prepared with a fee of zero | Free · instant | the amount |
+| Nothing beforehand (a wallet that cannot quote, and a transfer between Arkade addresses, which has no quote) | “Fee calculated when sending.” | the amount “+ fee” |
 | A quote on its way, or the payment still being made ready | a placeholder in the same slot | a placeholder |
 
 A percentage guess is never shown as a number, and a fee that comes later is named, never added into the sum. The slot and the total keep their place through all of these states, so nothing below them moves when a quote lands. The existing zero-fee execution guard remains.
