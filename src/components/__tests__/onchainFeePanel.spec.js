@@ -18,7 +18,7 @@ const deferred = () => {
   return { promise, resolve, reject }
 }
 const quote = (id, fee = 17) => Object.fromEntries(['slow', 'medium', 'fast'].map(speed => [speed,
-  { feeQuoteId: id, serviceFee: 7, networkFee: fee - 7, totalFee: fee, timeEstimate: 'Next block' },
+  { feeQuoteId: id, serviceFee: 7, networkFee: fee - 7, totalFee: fee },
 ]))
 const panels = []
 afterEach(() => { for (const vm of panels.splice(0)) panel.beforeUnmount.call(vm) })
