@@ -33,13 +33,13 @@ Matching text Cancel/Back controls in form-sheet headers use familiar icons: an 
 | Phase | Behavior |
 |---|---|
 | Preparing | Recipient/known amount, skeleton details, indeterminate progress, Cancel. Additional explanatory text after eight seconds; no artificial delay. |
-| Error | Brief inline error and Retry; the entered amount remains. |
+| Error | The reason in its own words (the destination's, or the chat request's) and Try again; the entered amount remains. A reason another try cannot change (a link that is no payment, a request that is over) offers Close instead. |
 | Ready | Existing confirmation, fee, refund and slide rules. Wallet choice is a child view of the same sheet. |
 | Sending | The paying wallet is pinned; Cancel, duplicate confirmations and replacement intents are refused. |
 | Complete | Existing receipt and optional Save Contact flow retain ownership until dismissed. On-chain submission retains the existing provider notification monitor. |
 | Choosing default | Optional popup after the receipt has fully closed. It can be dismissed or replaced without affecting the completed payment. |
 
-Each preparation attempt captures a lease. Results are checked after every asynchronous resolution and before mutation. Cancel, navigation, identity changes, app lock and kiosk/address-sharing transitions invalidate uncommitted work. A retry owns a new attempt. Late responses cannot reopen or overwrite another payment. Once a send begins, context changes cannot move its debit to another wallet.
+Each preparation attempt captures a lease. Results are checked after every asynchronous resolution and before mutation. Cancel, navigation, identity changes, app lock and kiosk/address-sharing transitions invalidate uncommitted work. A retry owns a new attempt. Late responses cannot reopen or overwrite another payment. The intent's abort signal reaches the request lookup, so a cancelled payment asks the recipient's address for nothing more. Once a send begins, context changes cannot move its debit to another wallet.
 
 ## Default wallet
 

@@ -446,7 +446,8 @@
               <small v-if="preparationSlow">{{ $t('This is taking longer than usual. You can try again later.') }}</small>
             </span>
           </div>
-          <button v-if="preparationFailed" type="button" class="primary-cta preparation-retry" @click="$emit('retry-preparation')">{{ $t('Try again') }}</button>
+          <button v-if="preparationFailed && preparationRetryable" type="button" class="primary-cta preparation-retry" @click="$emit('retry-preparation')">{{ $t('Try again') }}</button>
+          <button v-else-if="preparationFailed" type="button" class="primary-cta preparation-retry" @click="onTopAction">{{ $t('Close') }}</button>
           <button v-else type="button" class="primary-cta" disabled>{{ $t('Send') }}</button>
         </div>
 
@@ -537,6 +538,8 @@ export default {
     contextual: { type: Boolean, default: false },
     preparing: { type: Boolean, default: false },
     preparationError: { type: String, default: '' },
+    /** False when asking again cannot change the answer: the sheet offers Close, not Try again. */
+    preparationRetryable: { type: Boolean, default: true },
     preparationSlow: { type: Boolean, default: false },
     preferredWalletId: { type: String, default: null },
     /**

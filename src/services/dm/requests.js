@@ -187,11 +187,14 @@ export function createRequestService({
    * @param {object} options
    * @param {string} options.lud16 Where to ask (`resolveRequesterAddress`).
    * @param {number} options.amountSats The requested amount, whole sats.
+   * @param {AbortSignal} [options.signal] The payer gave up: no invoice is asked for after that.
    * @returns {Promise<{ bolt11: string, verifyUrl: string | null }>} The BOLT-11 invoice and its LUD-21 verify URL.
    * @throws {DmError} INVALID_ARGUMENT, AMOUNT_OUT_OF_RANGE, INVOICE_FETCH_FAILED
    */
-  async function pullInvoice({ lud16, amountSats } = {}) {
+  async function pullInvoice({ lud16, amountSats, signal } = {}) {
+    signal?.throwIfAborted();
     const payRequest = await loadPayRequest(lud16, amountSats, DM_ERROR.INVOICE_FETCH_FAILED);
+    signal?.throwIfAborted();
     let response;
     try {
       response = await lnurl.requestInvoice(payRequest, amountSats * MSAT_PER_SAT);

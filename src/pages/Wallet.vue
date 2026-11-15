@@ -444,6 +444,7 @@
       :contextual="paymentOnly"
       :preparing="paymentOnly && preparationState === 'preparing'"
       :preparation-error="preparationError"
+      :preparation-retryable="preparationRetryable"
       :preparation-slow="preparationSlow"
       :preferred-wallet-id="paymentOnly ? paymentPreferences.preferredWalletId : null"
       :wallet-can-pay="paymentSheetWalletCanPay"
@@ -893,6 +894,8 @@ export default {
   },
   data() {
     return {
+      // False when another try cannot change the answer (a request that is over).
+      preparationRetryable: true,
       preparationState: this.paymentOnly ? 'preparing' : 'idle',
       preparationError: '',
       preparationSlow: false,
@@ -2646,8 +2649,10 @@ export default {
       const attempt = this._preparationAttempt = (this._preparationAttempt || 0) + 1;
       this.preparationState = 'preparing';
       this.preparationError = '';
+      this.preparationRetryable = true;
       this.preparationSlow = false;
       this.sendResolveError = '';
+      this._sendResolveFinal = false;
       this.paymentFlow.setStage(this.paymentIntent.id, 'preparing');
       clearTimeout(this._preparationSlowTimer);
       this._preparationSlowTimer = setTimeout(() => {
@@ -2659,8 +2664,17 @@ export default {
         // A default wallet that is no longer on this phone is Automatic again.
         this.paymentPreferences.forgetMissing(settledWalletIds(this.walletStore));
         const intent = this.paymentIntent;
-        const resolved = typeof intent.resolve === 'function'
-          ? await intent.resolve({ signal: intent.signal }) : intent;
+        let resolved = intent;
+        if (typeof intent.resolve === 'function') {
+          try {
+            resolved = await intent.resolve({ signal: intent.signal });
+          } catch (error) {
+            // The surface that handed the payment over knows what its own
+            // lookup failed on, and whether asking again can help.
+            if (this.isContextualAttemptCurrent(attempt)) this.finishContextualPreparation(false, this.describePreparationError(error));
+            return;
+          }
+        }
         if (!this.isContextualAttemptCurrent(attempt)) return;
         const target = { ...intent, ...resolved };
         if (!target.address) throw new Error('Missing destination');
@@ -2680,12 +2694,29 @@ export default {
       }
     },
 
-    finishContextualPreparation(resolved) {
+    /** What the handing-over surface says about its own failed lookup, if anything. */
+    describePreparationError(error) {
+      try {
+        const failure = this.paymentIntent?.describeError?.(error);
+        return failure && typeof failure.message === 'string' && failure.message ? failure : null;
+      } catch {
+        return null;
+      }
+    },
+
+    /**
+     * Preparation ended. A failure says its own reason when it has one, and
+     * offers another try only where trying again can change the answer.
+     * @param {boolean} resolved
+     * @param {{ message?: string, retryable?: boolean }|null} [failure]
+     */
+    finishContextualPreparation(resolved, failure = null) {
       if (!this.isContextualAttemptCurrent()) return;
       clearTimeout(this._preparationSlowTimer);
       this.preparationSlow = false;
       this.preparationState = resolved ? 'ready' : 'error';
-      this.preparationError = resolved ? '' : this.$t("Please try again in a moment.");
+      this.preparationError = resolved ? '' : failure?.message || this.$t("Please try again in a moment.");
+      this.preparationRetryable = resolved || failure?.retryable !== false;
       this.paymentFlow.setStage(this.paymentIntent.id, this.preparationState);
     },
 
@@ -2869,6 +2900,8 @@ export default {
       if (fromField) {
         this.sendResolveError = message;
         this.sendResolveSource = attribution;
+        // Asking again cannot change what this destination is.
+        this._sendResolveFinal = dialogOpts.retryable === false;
       } else {
         const error = attribution ? counterpartyError(message, message) : new Error(message);
         this.walletStore.showPaymentError(error, {
@@ -4824,7 +4857,7 @@ export default {
         // unexpected destination open authentication, receive or address UI.
         if (this.paymentOnly && !['lightning_invoice', 'lnurl', 'lightning_address', 'nostr_identifier', 'spark_address', 'arkade_address', 'bitcoin_address'].includes(paymentData.type)) {
           resolved = false;
-          this.failSendResolution(this.$t('This link cannot be used for a payment. Ask the recipient for a payment request.'), true);
+          this.failSendResolution(this.$t('This link cannot be used for a payment. Ask the recipient for a payment request.'), true, { retryable: false });
           return;
         }
 
@@ -4913,7 +4946,7 @@ export default {
           if (looksLikeLud04(paymentData.data)) {
             if (this.paymentOnly) {
               resolved = false;
-              this.failSendResolution(this.$t('This link cannot be used for a payment. Ask the recipient for a payment request.'), true);
+              this.failSendResolution(this.$t('This link cannot be used for a payment. Ask the recipient for a payment request.'), true, { retryable: false });
               return;
             }
             if (this.openIdentityAuthFromLnurl(paymentData.data)) return;
@@ -4952,7 +4985,7 @@ export default {
           if (lnurlInfo.lnurlType === 'withdrawRequest') {
             if (this.paymentOnly) {
               resolved = false;
-              this.failSendResolution(this.$t('This link cannot be used for a payment. Ask the recipient for a payment request.'), true);
+              this.failSendResolution(this.$t('This link cannot be used for a payment. Ask the recipient for a payment request.'), true, { retryable: false });
               return;
             }
             // LNURL-withdraw: set up withdraw flow
@@ -5126,7 +5159,7 @@ export default {
           } catch (decodeErr) {
             console.warn('Spark destination decode failed:', decodeErr?.message);
             resolved = false;
-            this.failSendResolution(this.$t('This payment code cannot be read.'), fromField);
+            this.failSendResolution(this.$t('This payment code cannot be read.'), fromField, { retryable: false });
             return;
           }
 
@@ -5151,7 +5184,7 @@ export default {
             const choosePinnedSender = this.paymentOnly && ['sender_unknown', 'sender_mismatch'].includes(problem);
             if (problem && !choosePinnedSender && !(problem === 'sender_unknown' && !ownAddress)) {
               resolved = false;
-              this.failSendResolution(this.sparkInvoiceProblemMessage(problem), fromField);
+              this.failSendResolution(this.sparkInvoiceProblemMessage(problem), fromField, { retryable: false });
               return;
             }
 
@@ -5250,7 +5283,7 @@ export default {
           return;
         }
         if (this.paymentOnly && !delegated) {
-          this.finishContextualPreparation(resolved, resolved ? '' : this.sendResolveError || this.$t("Please try again in a moment."));
+          this.finishContextualPreparation(resolved, resolved ? null : { message: this.sendResolveError, retryable: !this._sendResolveFinal });
         }
         // The nested NIP-05 rescue call already settled the outcome (closed the
         // sheet or set the inline error); don't clobber it from the outer call.
