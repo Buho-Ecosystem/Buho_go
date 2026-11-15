@@ -66,6 +66,32 @@ export function unquotedFeeLimitSats(amountSats) {
   return feeReserveSats(amountSats)
 }
 
+/** Who holds a Lightning payment to a fee limit (feeLimitHolder). */
+export const FEE_LIMIT_HOLDER = Object.freeze({ APP: 'app', SERVER: 'server', NONE: 'none' })
+
+/**
+ * Whether a Lightning payment from a wallet of `walletType` is held to a fee
+ * limit, and by whom. The one place that says so: a screen states "Up to",
+ * and a transfer counts on what it leaves behind, only on this answer.
+ *   'app'     Spark: the app names the limit (a quote, or
+ *             unquotedFeeLimitSats) and the wallet refuses a route that
+ *             costs more (providers/BreezSparkWalletProvider.js payInvoice).
+ *   'server'  LNbits: a pay call takes no limit, but the server holds each
+ *             payment to its own fee reserve and states it for an invoice
+ *             (providers/LNBitsWalletProvider.js getFeeReserveSats). Where
+ *             it does not answer, nothing is known and nothing is stated.
+ *   'none'    NWC: a pay request has no field for a limit, so the wallet
+ *             behind the connection alone decides what a route may cost.
+ *             Arkade: its Lightning is out of service (walletCapabilities).
+ * @param {string} [walletType] a wallet saved without one is an NWC connection
+ * @returns {'app'|'server'|'none'}
+ */
+export function feeLimitHolder(walletType) {
+  if (walletType === 'spark') return FEE_LIMIT_HOLDER.APP
+  if (walletType === 'lnbits') return FEE_LIMIT_HOLDER.SERVER
+  return FEE_LIMIT_HOLDER.NONE
+}
+
 /**
  * How a payment's fee is worded, the same on every screen that states one
  * (the payment review, batch send, a transfer between wallets): a quote as

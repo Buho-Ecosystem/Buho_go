@@ -670,7 +670,7 @@ import { assertPaymentInput } from '../utils/lud23.js';
 import { ref, computed, watch, nextTick, getCurrentInstance } from 'vue'
 import { normalizePaymentAmountInput } from '../utils/paymentAmountInput.js'
 import { formatPaymentAmount, fiatDecimals } from '../utils/amountFormatting.js'
-import { unquotedFeeLimitSats, feeReserveSats, paymentFeeText, paymentTotalText } from '../utils/payingWallets.js'
+import { FEE_LIMIT_HOLDER, feeLimitHolder, unquotedFeeLimitSats, feeReserveSats, paymentFeeText, paymentTotalText } from '../utils/payingWallets.js'
 import { canWalletPay } from '../utils/walletCapabilities'
 import { useQuasar } from 'quasar'
 import { useWalletStore } from '../stores/wallet'
@@ -880,12 +880,15 @@ const quoteKey = (contact) => `${contact.id}|${contact.address || contact.lightn
  * Never a guess:
  *   exact    an on-chain row: the quote on the review. The same quote is
  *            submitted, and the wallet refuses a fee above it.
- *   limit    a Spark wallet paying an address or a link: at most
+ *   limit    a wallet the app holds to a fee limit (feeLimitHolder: a Spark
+ *            wallet) paying an address or a link: at most
  *            unquotedFeeLimitSats of the amount; the wallet refuses a
  *            dearer route.
  *   free     a Spark wallet paying a Spark address: sent only when no fee
  *            is quoted for it.
- *   unknown  every other wallet: it cannot say before sending.
+ *   unknown  every other wallet: nothing can be said before sending. A limit
+ *            the wallet's server holds is stated for an invoice, and a row's
+ *            invoice is asked for when it is sent.
  *   loading / failed  an on-chain quote that is not on the review (yet).
  */
 function rowCost(contact) {
@@ -897,9 +900,9 @@ function rowCost(contact) {
       if (entry?.status === 'ready') return { kind: 'exact', sats: entry.quote.totalFee }
       return { kind: entry?.status === 'failed' ? 'failed' : 'loading', sats: null }
     }
-    if (type === 'lightning' || type === 'lnurl') {
-      return { kind: 'limit', sats: unquotedFeeLimitSats(getContactAmount(contact)) }
-    }
+  }
+  if ((type === 'lightning' || type === 'lnurl') && feeLimitHolder(walletStore.activeWalletType) === FEE_LIMIT_HOLDER.APP) {
+    return { kind: 'limit', sats: unquotedFeeLimitSats(getContactAmount(contact)) }
   }
   return { kind: 'unknown', sats: null }
 }

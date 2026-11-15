@@ -283,7 +283,7 @@
 import { ref, reactive, computed, watch, nextTick, h, getCurrentInstance } from 'vue';
 import { parsePaymentAmount } from '../utils/paymentAmountInput.js';
 import { formatPaymentAmount } from '../utils/amountFormatting.js';
-import { unquotedFeeLimitSats, feeReserveSats, paymentFeeText, paymentTotalText } from '../utils/payingWallets.js';
+import { FEE_LIMIT_HOLDER, feeLimitHolder, unquotedFeeLimitSats, feeReserveSats, paymentFeeText, paymentTotalText } from '../utils/payingWallets.js';
 import { useQuasar } from 'quasar';
 import { useWalletStore } from '../stores/wallet';
 import { haptics } from '../utils/haptics';
@@ -442,14 +442,17 @@ const bitcoinUnit = computed(() => (store.useBip177Format ? '₿' : 'sats'));
  * What the transfer can cost on top of its amount, by what the send is held
  * to. Never a guess:
  *   free     between two Spark wallets: sent only when no fee is quoted.
- *   limit    from a Spark wallet to another kind: the wallet refuses a
- *            route that costs more than unquotedFeeLimitSats of the amount.
- *   unknown  from any other wallet: it cannot say before sending.
+ *   limit    from a wallet the app holds to a fee limit (feeLimitHolder: a
+ *            Spark wallet) to another kind: the wallet refuses a route that
+ *            costs more than unquotedFeeLimitSats of the amount.
+ *   unknown  from any other wallet: nothing can be said before sending. A
+ *            limit the wallet's server holds is stated for an invoice, and
+ *            the transfer's invoice is made when it is sent.
  */
 const transferCost = computed(() => {
   const amount = amountSats() || 0;
   const from = walletKind(state.fromWallet);
-  if (from !== 'spark') {
+  if (feeLimitHolder(from) !== FEE_LIMIT_HOLDER.APP) {
     return {
       kind: 'unknown', feeText: '',
       feeNote: t('Fee calculated when sending.'),

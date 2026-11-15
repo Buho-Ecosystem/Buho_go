@@ -15,6 +15,8 @@
  * - PATCH /api/v1/wallet - With an empty body: the wallet's read-only invoice
  *   key, once (LNbits 0.12 to 1.6 change nothing but its "updated" time)
  * - POST /api/v1/payments - Create invoice (out: false) or pay invoice (out: true)
+ * - GET  /api/v1/payments/fee-reserve - What the server lets an invoice cost
+ *   on top of its amount (getFeeReserveSats)
  * - GET  /api/v1/payments/<hash> - Check payment status
  * - GET  /api/v1/payments - List payments
  * - POST /api/v1/payments/decode - Decode invoice
@@ -269,13 +271,18 @@ export class LNBitsWalletProvider extends WalletProvider {
    * itself refused (lnbitsRefusedPayment). A dropped connection, a wait
    * past PAYMENT_COMPLETION_TIMEOUT_MS or an answer that cannot be read
    * is PAYMENT_UNCONFIRMED: LNbits may have paid.
+   *
+   * There is no fee limit to pass: the pay call has no field for one. The
+   * server holds the payment to its own fee reserve (getFeeReserveSats).
    */
-  async payInvoice({ invoice, maxFee, completionTimeoutMs = PAYMENT_COMPLETION_TIMEOUT_MS }) {
+  async payInvoice({ invoice, completionTimeoutMs = PAYMENT_COMPLETION_TIMEOUT_MS }) {
     this._ensureConnected();
 
     try {
       const payload = {
         out: true,
+        // The field every LNbits version reads. Newer servers also take
+        // `payment_request` and call this one legacy; older ones know no other.
         bolt11: invoice
       };
 
@@ -327,6 +334,38 @@ export class LNBitsWalletProvider extends WalletProvider {
     } catch (error) {
       this.setError(error);
       throw error;
+    }
+  }
+
+  /**
+   * The most LNbits lets this invoice cost on top of its amount, in sats:
+   * the fee reserve its server holds the payment to (the routing fee limit
+   * it hands its funding source, plus its own service fee where the operator
+   * charges one). The same figure is what the server wants in the wallet
+   * beyond the invoice's amount before it pays at all.
+   *
+   * Asked of the server, never worked out here: both parts are the
+   * operator's settings. Rounded up to whole sats, so the figure is never
+   * below what can be charged.
+   *
+   * Null means the server gave no figure: an invoice without an amount (it
+   * has none for one), a server from before this endpoint, an error, no
+   * answer within PAYMENT_LOOKUP_WAIT_MS, or an answer that is not a count.
+   * Never throws and never guesses.
+   * @param {string} invoice BOLT11
+   * @returns {Promise<number|null>}
+   */
+  async getFeeReserveSats(invoice) {
+    if (!this.isConnected || !(readInvoice(invoice)?.amountSats > 0)) return null;
+    try {
+      const answer = await withinPaymentDeadline(
+        this._apiRequest(`/api/v1/payments/fee-reserve?invoice=${encodeURIComponent(invoice)}`),
+        PAYMENT_LOOKUP_WAIT_MS
+      );
+      const msat = answer?.fee_reserve;
+      return Number.isSafeInteger(msat) && msat >= 0 ? Math.ceil(msat / 1000) : null;
+    } catch {
+      return null;
     }
   }
 

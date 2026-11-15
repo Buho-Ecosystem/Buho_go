@@ -228,7 +228,7 @@ import {
   getUnsupportedSilentPaymentCopy,
   unreachableReason,
 } from '../utils/userErrors';
-import { unquotedFeeLimitSats } from '../utils/payingWallets.js';
+import { FEE_LIMIT_HOLDER, feeLimitHolder, unquotedFeeLimitSats } from '../utils/payingWallets.js';
 import { diagnoseConnection } from '../utils/connectivity.js';
 import * as deviceCrypto from '../utils/deviceCrypto';
 import { createNwcAtRest } from '../utils/nwcAtRest.js';
@@ -4531,9 +4531,12 @@ export const useWalletStore = defineStore('wallet', {
           if (fromType === 'spark' || fromType === 'lnbits' || fromType === 'arkade') {
             // Spark, LNBits and Arkade all use payInvoice({ invoice }). For
             // Arkade this is a Boltz submarine swap.
-            // Held to the limit the transfer's review states; a wallet that
-            // takes no limit ignores it.
-            paymentResult = await fromProvider.payInvoice({ invoice, feeLimitSats: unquotedFeeLimitSats(amountSats) });
+            // The limit the transfer's review states goes to the wallet the
+            // app can hold to one (feeLimitHolder); no other takes a limit.
+            paymentResult = await fromProvider.payInvoice({
+              invoice,
+              ...(feeLimitHolder(fromType) === FEE_LIMIT_HOLDER.APP ? { feeLimitSats: unquotedFeeLimitSats(amountSats) } : {}),
+            });
           } else {
             // NWC: proof-checked, never resent on its own (services/nwcPayment).
             paymentResult = await payWithNwc(fromProvider, invoice, this.nwcPayOptions(fromWalletId));
