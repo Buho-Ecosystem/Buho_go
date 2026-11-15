@@ -91,7 +91,7 @@ const openSwitcher = async (page) => {
   await page.waitForTimeout(900);
   await openSwitcher(page);
   const pill = page.locator('[data-wallet-id="w2"] .switch-unseen-pill');
-  assert.match(await pill.innerText(), /\+ ₿ 13/);
+  assert.match(await pill.innerText(), /\+ ₿\s13/);
   assert.equal(await page.locator('[data-wallet-id="w1"] .switch-unseen-pill').count(), 0);
   await shot(page, '02-switcher-pill');
   pass('Switch Wallet shows "+ ₿ 13" on Savings only');
@@ -131,7 +131,7 @@ const openSwitcher = async (page) => {
   await page.waitForTimeout(600);
   await page.evaluate(() => window.__go('/settings?section=wallets'));
   await page.locator('[data-wallet-id="w2"] .row-sub-unseen').waitFor();
-  assert.match(await page.locator('[data-wallet-id="w2"] .row-sub-unseen').innerText(), /\+ ₿ 13/);
+  assert.match(await page.locator('[data-wallet-id="w2"] .row-sub-unseen').innerText(), /\+ ₿\s13/);
   await shot(page, '06-manage-wallets-dark');
   pass('after a restart the mark is still on Savings, in the switcher and in Manage Wallets');
   await page.close();
@@ -146,7 +146,7 @@ const openSwitcher = async (page) => {
   await page.evaluate(() => window.__receive({ amountSats: 7, paymentId: 'tx4' }));
   const toast = page.locator('.app-toast', { hasText: 'Bitcoin received' });
   await toast.waitFor();
-  assert.match(await toast.innerText(), /₿ 20/);
+  assert.match(await toast.innerText(), /₿\s20/);
   // No Breez here: the switch's connect is a no-op, as it is for a live Spark wallet.
   await page.evaluate(() => { window.__store.connectSparkWallet = async () => {}; window.__store.persistState = async () => {}; });
   await page.locator('.app-toast__tap-dismiss').click();

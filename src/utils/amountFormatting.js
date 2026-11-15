@@ -4,6 +4,9 @@
  * Supports BIP-177 (₿) and Legacy (sats) formats
  */
 
+// Between a number and its unit, so the two never break apart at a line end.
+const NBSP = ' '
+
 /**
  * Format satoshi amount according to user preference
  * @param {number} amount - Amount in satoshis
@@ -26,11 +29,11 @@ export function formatSatoshis(amount, useBip177 = true, options = {}) {
   if (useBip177) {
     // BIP-177: ₿ 1,234 (with space for consistency and readability)
     const sign = showSign ? (isPositive ? '+' : '-') : ''
-    return '₿ ' + sign + formattedNumber
+    return '₿' + NBSP + sign + formattedNumber
   } else {
     // Legacy: 1,234 sats (space before sats)
     const prefix = showSign ? (isPositive ? '+' : '-') : ''
-    return prefix + formattedNumber + ' sats'
+    return prefix + formattedNumber + NBSP + 'sats'
   }
 }
 
@@ -69,10 +72,10 @@ export function formatAmount(amount, useBip177 = true) {
 
   if (useBip177) {
     // BIP-177: ₿ 1,234 (with space for consistency and readability)
-    return '₿ ' + formattedNumber
+    return '₿' + NBSP + formattedNumber
   } else {
     // Legacy: 1,234 sats (space before sats)
-    return formattedNumber + ' sats'
+    return formattedNumber + NBSP + 'sats'
   }
 }
 
@@ -89,14 +92,12 @@ export function formatAmountWithPrefix(amount, useBip177 = true, sign = '') {
 
   if (useBip177) {
     // BIP-177: ₿ +1,234 or ₿ -1,234
-    return '₿ ' + sign + formattedNumber
+    return '₿' + NBSP + sign + formattedNumber
   } else {
     // Legacy: +1,234 sats or -1,234 sats
-    return sign + formattedNumber + ' sats'
+    return sign + formattedNumber + NBSP + 'sats'
   }
 }
-
-const NBSP = ' '
 
 /**
  * The digits a fiat currency is written with (2 for EUR, 0 for JPY).
