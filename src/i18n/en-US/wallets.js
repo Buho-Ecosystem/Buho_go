@@ -41,7 +41,6 @@ export default {
   "Move address": "Move address",
   "Choose the wallet that should receive payments sent to this address.": "Choose the wallet that should receive payments sent to this address.",
   "Receiving wallet": "Receiving wallet",
-  "No address yet": "No address yet",
   "{target} receives at {address} instead of {old}, which stops working. {source} gets a new address, which you can change later.": "{target} receives at {address} instead of {old}, which stops working. {source} gets a new address, which you can change later.",
   "{target} receives at {address}. {source} gets a new address, which you can change later.": "{target} receives at {address}. {source} gets a new address, which you can change later.",
   "Moving address...": "Moving address...",

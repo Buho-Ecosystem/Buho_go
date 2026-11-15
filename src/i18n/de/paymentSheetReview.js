@@ -4,7 +4,6 @@ export default {
   "Choose wallet": "Wallet wählen",
   "Payment link": "Zahlungslink",
   "{amount} + fee": "{amount} + Gebühr",
-  "Pay with {name}": "Mit {name} bezahlen",
   "Recipient address": "Empfängeradresse",
   "Expires": "Gültig bis",
   "Fee calculated when sending.": "Die Gebühr wird beim Senden berechnet.",

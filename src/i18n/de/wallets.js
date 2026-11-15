@@ -41,7 +41,6 @@ export default {
   "Move address": "Adresse übertragen",
   "Choose the wallet that should receive payments sent to this address.": "Wähle das Wallet, das Zahlungen an diese Adresse empfangen soll.",
   "Receiving wallet": "Empfangendes Wallet",
-  "No address yet": "Noch keine Adresse",
   "{target} receives at {address} instead of {old}, which stops working. {source} gets a new address, which you can change later.": "{target} empfängt unter {address} statt unter {old}, die dann nicht mehr funktioniert. {source} bekommt eine neue Adresse, die du später ändern kannst.",
   "{target} receives at {address}. {source} gets a new address, which you can change later.": "{target} empfängt unter {address}. {source} bekommt eine neue Adresse, die du später ändern kannst.",
   "Moving address...": "Adresse wird übertragen ...",

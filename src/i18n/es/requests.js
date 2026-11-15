@@ -45,7 +45,6 @@ export default {
   '{n} of {total} paid': '{n} de {total} han pagado',
   'Your share: {amount}': 'Tu parte: {amount}',
   'Checking payment…': 'Comprobando el pago…',
-  'Not sent': 'No enviado',
   Requested: 'Solicitado',
   'Each person has a request in your private chat.':
     'Cada persona tiene una solicitud en vuestro chat privado.',

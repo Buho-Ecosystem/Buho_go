@@ -1,7 +1,6 @@
 export default {
   "Amount in {currency}": "Importe en {currency}",
   "Amount to send": "Importe a enviar",
-  "Note (optional)": "Nota (opcional)",
   "Switch to {currency}": "Cambiar a {currency}",
   "Creating invoice…": "Creando factura…",
   "Create invoice": "Crear factura",

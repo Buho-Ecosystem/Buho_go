@@ -15,7 +15,6 @@ export default {
   "Set up your address": "Configurar tu dirección",
   "Review address": "Revisar dirección",
   "Review request": "Revisar solicitud",
-  "Review": "Revisar",
   "Open": "Abrir",
   "Address request": "Solicitud de dirección",
   "Copied address request": "Solicitud de dirección copiada",

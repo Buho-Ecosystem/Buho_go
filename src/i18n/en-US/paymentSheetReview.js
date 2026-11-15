@@ -4,7 +4,6 @@ export default {
   "Choose wallet": "Choose wallet",
   "Payment link": "Payment link",
   "{amount} + fee": "{amount} + fee",
-  "Pay with {name}": "Pay with {name}",
   "Recipient address": "Recipient address",
   "Expires": "Expires",
   "Fee calculated when sending.": "Fee calculated when sending.",

@@ -19,7 +19,6 @@ export default {
   "{name} removed from this phone": "{name} se quitó de este teléfono",
   "Couldn't remove the identity": "No se pudo quitar la identidad",
   "Secret key copied": "Clave secreta copiada",
-  "Copy secret key": "Copiar clave secreta",
   "Kept hidden for your privacy. Anyone with this key can use this identity.": "Oculta por tu privacidad. Quien tenga esta clave puede usar esta identidad.",
   "Copy only to an app you trust. Never send it in a message.": "Cópiala solo en una app de confianza. Nunca la envíes en un mensaje.",
   "Secret key could not be accessed. Please try again.": "No se pudo acceder a la clave secreta. Inténtalo de nuevo.",

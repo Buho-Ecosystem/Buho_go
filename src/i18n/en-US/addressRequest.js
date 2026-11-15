@@ -15,7 +15,6 @@ export default {
   "Set up your address": "Set up your address",
   "Review address": "Review address",
   "Review request": "Review request",
-  "Review": "Review",
   "Open": "Open",
   "Address request": "Address request",
   "Copied address request": "Copied address request",

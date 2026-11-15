@@ -76,6 +76,8 @@ BuhoGO ships in **English, German, and Spanish** today. Want your language next?
 3. Register the locale in `src/i18n/index.js` and add it to `SUPPORTED_LOCALES` in `src/i18n/locales.js`
 4. Open a pull request. Even a partial translation is useful
 
+`node --test src/i18n/__tests__/locales.spec.js` tells you when a locale lacks a string, holds one that English does not, or defines one twice.
+
 > [!CAUTION]
 > In i18n strings, write a literal `@` as `{'@'}`, otherwise it breaks the Android build.
 
