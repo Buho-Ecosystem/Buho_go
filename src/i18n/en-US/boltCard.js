@@ -16,7 +16,6 @@ export default {
   "{n} of {total} digits entered": "{n} of {total} digits entered",
   "Pay another way": "Pay another way",
   "Paying…": "Paying…",
-  "Scan with any Bitcoin wallet": "Scan with any Bitcoin wallet",
   "Scan the code to pay instead.": "Scan the code to pay instead.",
   "Hold a Bolt Card here": "Hold a Bolt Card here",
   "Against the back of this phone": "Against the back of this phone",

@@ -42,7 +42,6 @@ export default {
   "When": "Cuando",
   "Choose a wallet": "Elige una cartera",
   "Holds more than": "Tiene más de",
-  "Choose": "Elegir",
   "Everything above": "Todo lo que pase de",
   "Arrives": "Llega",
   "Turn On": "Activar",

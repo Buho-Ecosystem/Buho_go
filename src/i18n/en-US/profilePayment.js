@@ -1,7 +1,6 @@
 export default {
   "Amount in {currency}": "Amount in {currency}",
   "Amount to send": "Amount to send",
-  "Note (optional)": "Note (optional)",
   "Switch to {currency}": "Switch to {currency}",
   "Creating invoice…": "Creating invoice…",
   "Create invoice": "Create invoice",

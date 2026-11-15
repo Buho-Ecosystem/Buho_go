@@ -8,7 +8,7 @@
       <button v-for="choice in choices" :key="choice.key" type="button" class="backup-choice" @click="$emit('select', choice)">
         <span class="backup-choice-icon"><BackupSubjectIcon :kind="choice.kind" :size="28" /></span>
         <span class="backup-choice-copy">
-          <strong>{{ $t(choice.kind === 'wallet' ? 'Bitcoin Backup' : 'Identity backup') }}</strong>
+          <strong>{{ $t(choice.kind === 'wallet' ? 'Bitcoin backup' : 'Identity backup') }}</strong>
           <WalletTypeChip v-if="choice.kind === 'wallet'" :type="choice.type" />
           <!-- One phrase restores every Spark wallet: say so once there is more than one. -->
           <span v-if="choice.kind === 'wallet' && choice.covers > 1" class="backup-choice-detail">{{ $t('Covers all {count} Spark wallets', { count: choice.covers }) }}</span>

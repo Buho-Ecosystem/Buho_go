@@ -44,7 +44,6 @@ export default {
   '{n} of {total} paid': '{n} of {total} paid',
   'Your share: {amount}': 'Your share: {amount}',
   'Checking payment…': 'Checking payment…',
-  'Not sent': 'Not sent',
   Requested: 'Requested',
   'Each person has a request in your private chat.':
     'Each person has a request in your private chat.',

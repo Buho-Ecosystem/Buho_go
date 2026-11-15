@@ -42,7 +42,6 @@ export default {
   "When": "When",
   "Choose a wallet": "Choose a wallet",
   "Holds more than": "Holds more than",
-  "Choose": "Choose",
   "Everything above": "Everything above",
   "Arrives": "Arrives",
   "Turn On": "Turn On",

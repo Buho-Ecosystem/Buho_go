@@ -16,7 +16,6 @@ export default {
   "{n} of {total} digits entered": "{n} von {total} Ziffern eingegeben",
   "Pay another way": "Anders bezahlen",
   "Paying…": "Wird bezahlt…",
-  "Scan with any Bitcoin wallet": "Mit jeder Bitcoin-Wallet scannen",
   "Scan the code to pay instead.": "Scanne stattdessen den Code, um zu bezahlen.",
   "Hold a Bolt Card here": "Bolt Card hier anhalten",
   "Against the back of this phone": "An die Rückseite dieses Telefons",
