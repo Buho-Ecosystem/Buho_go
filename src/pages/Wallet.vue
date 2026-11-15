@@ -1813,9 +1813,12 @@ export default {
       // sheet so the sender can denominate in the recipient's currency (TZS/
       // KES/ZMW). `multiplier` is millisats per 1 unit — the sheet derives the
       // sat estimate from it, so we need no external rate for TZS.
+      // Offered only for a wallet that sends such an amount as it is typed:
+      // an NWC wallet pays the estimate in Bitcoin, so the recipient would
+      // not get the amount in their currency the sheet showed.
       let payoutCurrency = null;
       const cur = p.currency;
-      if (cur && cur.code && Number(cur.multiplier) > 0) {
+      if (cur && cur.code && Number(cur.multiplier) > 0 && sendsPayoutAmount(this.getSendingWalletType())) {
         payoutCurrency = {
           code: cur.code,
           symbol: cur.symbol || cur.code,
@@ -4224,7 +4227,14 @@ export default {
       // A wallet that cannot pay is listed with its reason but never selectable.
       if (!entry?.usable || (this.paymentOnly && entry.connectionFailed)) return;
       if (this.paymentOnly) this.sendingWalletPicked = true;
+      const previousType = this.getSendingWalletType();
       this.sendingWalletId = walletId;
+      // The recipient's currency comes or goes with the wallet (see
+      // paymentSheetProps): an amount typed in the other unit is not this
+      // wallet's, so the sheet starts the amount again.
+      if (this.pendingPayment.currency && sendsPayoutAmount(previousType) !== sendsPayoutAmount(this.getSendingWalletType())) {
+        this.$nextTick(() => this.$refs.sendSheetRef?.resetForFreshOpen?.());
+      }
       // An on-chain fee quote was priced for the previous wallet.
       this.l1Fee = null;
     },

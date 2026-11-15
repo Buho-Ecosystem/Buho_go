@@ -2314,3 +2314,12 @@ test('a payment still on its way never gets the paid screen', async () => {
   await vm.openSendSuccess({ amount: 0, recipient: 'bob@example.com', status: 'pending', showSaveContact: true });
   assert.deepEqual([vm.sendSuccessPending, vm.sendSuccessLabel, vm.sendSuccessShowSaveContact, felt], [true, 'Payment on its way', false, []]);
 });
+
+test('the recipient\'s currency is offered only by a wallet that sends the amount typed in it', () => {
+  const { vm, options } = payingHarness({ active: 'biz' });
+  vm.resolveWalletBrand = () => null;
+  vm.pendingPayment = lnAddressPayment({ currency: { code: 'KES', multiplier: 7000, decimals: 0 } });
+  const offered = (payer) => { vm.sendingWalletId = payer; return options.computed.paymentSheetProps.call(vm).payoutCurrency?.code ?? null; };
+  // An NWC wallet pays the estimate in Bitcoin: the recipient would not get the amount shown.
+  assert.deepEqual(['biz', 'lnb', 'hub'].map(offered), ['KES', 'KES', null]);
+});
