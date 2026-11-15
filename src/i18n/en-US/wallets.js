@@ -1,6 +1,6 @@
 // Spark multi-wallet: creating, adding, naming, removing and restoring wallets.
 export default {
-  "Setting up your wallet...": "Setting up your wallet...",
+  "Setting up your wallet...": "Setting up your wallet…",
   "This recovery phrase is already on this device": "This recovery phrase is already on this device",
   "Any of its wallets that are missing here will appear in your wallet list.": "Any of its wallets that are missing here will appear in your wallet list.",
   "Another recovery phrase is in use": "Another recovery phrase is in use",
@@ -23,7 +23,7 @@ export default {
   "Your wallets changed after this backup. Back up again to include the changes.": "Your wallets changed after this backup. Back up again to include the changes.",
   "New Spark wallet": "New Spark wallet",
   "Made from your recovery phrase, so the backup you have already covers it.": "Made from your recovery phrase, so the backup you have already covers it.",
-  "Creating wallet...": "Creating wallet...",
+  "Creating wallet...": "Creating wallet…",
   "Create wallet": "Create wallet",
   "You already have the most Spark wallets this app supports.": "You already have the most Spark wallets this app supports.",
   "Couldn't create the wallet. Check your connection and try again.": "Couldn't create the wallet. Check your connection and try again.",
@@ -43,7 +43,7 @@ export default {
   "Receiving wallet": "Receiving wallet",
   "{target} receives at {address} instead of {old}, which stops working. {source} gets a new address, which you can change later.": "{target} receives at {address} instead of {old}, which stops working. {source} gets a new address, which you can change later.",
   "{target} receives at {address}. {source} gets a new address, which you can change later.": "{target} receives at {address}. {source} gets a new address, which you can change later.",
-  "Moving address...": "Moving address...",
+  "Moving address...": "Moving address…",
   "Both wallets need to be connected. Check your connection and try again.": "Both wallets need to be connected. Check your connection and try again.",
   "This wallet has no address to move right now.": "This wallet has no address to move right now.",
   "The address could not be moved. Nothing changed, so you can try again.": "The address could not be moved. Nothing changed, so you can try again.",

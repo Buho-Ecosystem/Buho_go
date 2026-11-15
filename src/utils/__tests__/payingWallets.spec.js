@@ -361,12 +361,11 @@ test('reason text is plain: the payment screen never names the rail', () => {
   assert.equal(payingWalletReasonText(undefined, t), '')
 })
 
-test('the banner hint keeps the shared switch words for rail problems', () => {
+test('the banner hint keeps the shared words for a destination the wallet cannot pay', () => {
   const rail = { name: 'Arkade', reason: 'unsupported-destination' }
-  assert.equal(payingWalletHint(rail, 'lightning_invoice', t),
-    'Lightning is temporarily unavailable on Arkade - switch to another wallet')
+  assert.equal(payingWalletHint(rail, 'lightning_invoice', t), 'This payment needs a different wallet.')
   assert.equal(payingWalletHint({ name: 'Alby', reason: 'unsupported-destination' }, 'spark_address', t),
-    'Switch to your Spark wallet to pay this address')
+    'This payment needs a different wallet.')
   assert.equal(payingWalletHint({ name: 'Business', reason: 'insufficient-balance' }, 'lightning_invoice', t),
     'Not enough balance in Business. Choose another wallet or send less.')
   // No other wallet can pay: no suggestion that leads nowhere.

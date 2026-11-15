@@ -17,6 +17,7 @@ for (const delivery of ['foreground', 'cold', 'resume']) {
     const pushes = [];
     const boot = load('../nfc.js', {
       'quasar/wrappers': { boot: fn => fn }, quasar: { Notify: { create: () => assert.fail('no warning expected') } },
+      './i18n': { i18n: { global: { t: key => `t:${key}` } } },
       '@capacitor/core': { Capacitor: { isNativePlatform: () => true } },
       '@capacitor/app': { App: { addListener: (_, fn) => { resume = fn; } } },
       '../stores/wallet': { useWalletStore: () => store },
@@ -61,4 +62,34 @@ test('receiving cards does not weaken kiosk route restrictions, including cold s
     assert.equal(guard({ path: '/kiosk' }), true);
     for (const path of ['/wallet', '/settings', '/identity']) assert.deepEqual(guard({ path }), { path: '/kiosk' });
   }
+});
+test('NFC toasts are translated, and a reader error never shows its own text', async () => {
+  const notices = [];
+  let scan, fail;
+  const store = { kioskEnabled: false, activeWallet: null };
+  const boot = load('../nfc.js', {
+    'quasar/wrappers': { boot: fn => fn }, quasar: { Notify: { create: notice => notices.push(notice) } },
+    './i18n': { i18n: { global: { t: key => `t:${key}` } } },
+    '@capacitor/core': { Capacitor: { isNativePlatform: () => true } },
+    '@capacitor/app': { App: { addListener() {} } },
+    '../stores/wallet': { useWalletStore: () => store },
+    '../services/kioskPaymentIntake.js': { offerKioskPayment },
+    '../services/addressRequestIntake.js': { offerAddressRequest: () => false },
+    '../providers/WalletFactory': { parsePaymentDestination: input => (input === 'lnbc1' ? { valid: true, type: 'lightning_invoice', invoice: input } : { valid: false, type: 'unknown' }) },
+    '../utils/walletHydration': { triggerWalletStoreHydration() {} },
+    '../utils/logRedaction': { redactPaymentInput: () => '[redacted]' },
+    '../utils/nfc': {
+      addNfcListener: fn => { scan = fn; }, addNfcErrorListener: fn => { fail = fn; }, isNfcAvailable: async () => true,
+      consumePendingNfcScan: async () => null,
+    },
+  });
+  await boot({ router: { currentRoute: { value: { path: '/wallet' } }, push: async () => {} } });
+  scan('hello');
+  scan('lnbc1');
+  fail('android.nfc.TagLostException: Tag was lost.');
+  assert.deepEqual(notices.map(notice => [notice.message, notice.caption]), [
+    ['t:NFC tag not recognized', "t:This tag doesn't hold a payment."],
+    ['t:Set up a wallet first', undefined],
+    ['t:NFC tag not readable', undefined],
+  ]);
 });

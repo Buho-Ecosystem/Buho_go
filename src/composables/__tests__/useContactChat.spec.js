@@ -661,8 +661,8 @@ test('pay a request: lookup failures reach the contextual sheet; the card does n
 
 test('a request that cannot be made ready: its own words, and a retry only where one can help', () => {
   const describe = (code) => describeRequestPaymentError(new DmError(code, 'dev text'), { t, name: 'Anna' });
-  assert.deepEqual(describe(DM_ERROR.INVOICE_FETCH_FAILED), { message: "Anna's Lightning address didn't answer. Try again in a moment.", retryable: true });
-  assert.deepEqual(describe(DM_ERROR.AMOUNT_OUT_OF_RANGE), { message: "The Lightning address doesn't take this amount. Try a different one.", retryable: false });
+  assert.deepEqual(describe(DM_ERROR.INVOICE_FETCH_FAILED), { message: "Anna's payment address didn't answer. Try again in a moment.", retryable: true });
+  assert.deepEqual(describe(DM_ERROR.AMOUNT_OUT_OF_RANGE), { message: "The payment address doesn't take this amount. Try a different amount.", retryable: false });
   // The request ended meanwhile (withdrawn, expired, paid elsewhere).
   assert.deepEqual(describe(DM_ERROR.INVALID_ARGUMENT), { message: 'This request can no longer be paid.', retryable: false });
   assert.equal(describe(DM_ERROR.TIMEOUT).retryable, true);

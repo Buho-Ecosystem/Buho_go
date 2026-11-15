@@ -934,7 +934,7 @@ test('Pay with: a caller can preselect the wallet; an unknown id is ignored', as
   await blocked.vm.onPaymentDetected({ type: 'lightning_invoice', data: 'inv-1000', sendingWalletId: 'ark' });
   assert.equal(blocked.vm.sendingWalletId, 'ark');
   assert.equal(blocked.vm.paymentSheetWalletCanPay, false);
-  assert.equal(blocked.vm.paymentSheetWalletHint, 'Lightning is temporarily unavailable on Arkade - switch to another wallet');
+  assert.equal(blocked.vm.paymentSheetWalletHint, 'This payment needs a different wallet.');
 });
 
 test('Pay with: the preselection survives the Nostr and NIP-05 re-dispatch', async () => {
@@ -1054,7 +1054,7 @@ test('Pay with: a single wallet that holds too little says so before the slide, 
   const arkadeOnly = payingHarness({ wallets: [PAY_WALLETS[4]], active: 'ark' });
   await arkadeOnly.vm.onPaymentDetected({ type: 'lightning_invoice', data: 'inv-1000' });
   assert.equal(arkadeOnly.vm.paymentSheetWalletCanPay, false, 'the rail gate is unchanged');
-  assert.equal(arkadeOnly.vm.paymentSheetWalletHint, 'Lightning is temporarily unavailable on Arkade - switch to another wallet');
+  assert.equal(arkadeOnly.vm.paymentSheetWalletHint, 'This payment needs a different wallet.');
 });
 
 test('Pay with: zero-fee rails reserve nothing, so a whole balance can be sent', async () => {

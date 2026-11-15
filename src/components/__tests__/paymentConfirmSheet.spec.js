@@ -164,10 +164,10 @@ test('single-wallet sends retain their wallet identity; incoming card flows keep
 test('a wallet that cannot pay disables the commit control and its hint shows in the existing banner', async () => {
   const blocked = await render(ConfirmSheet, sheetProps({
     walletCanPay: false,
-    walletHint: 'Lightning is temporarily unavailable on Arkade - switch to another wallet',
+    walletHint: 'This payment needs a different wallet.',
   }), { directives: sheetDirectives })
   assert.match(blocked, /wallet-hint/)
-  assert.match(blocked, /Lightning is temporarily unavailable on Arkade/)
+  assert.match(blocked, /This payment needs a different wallet\./)
   assert.match(blocked, /choose-wallet-cta/, 'an unavailable source offers the same wallet chooser for every send')
   const open = await render(ConfirmSheet, sheetProps(), { directives: sheetDirectives })
   assert.doesNotMatch(open, /class="primary-cta"[^>]*disabled/)
@@ -356,6 +356,11 @@ test('the contextual chooser uses the same sheet; the paying wallet is marked an
   assert.doesNotMatch(html, /payment-wallet-apply|Use Personal/, 'no second step after the tap')
   assert.match(html, /class="cta-row confirm-cta" style="display:none;"/, 'the commit control is not on screen while choosing')
   assert.match(html, /This is just for this payment/)
+  // A row's figure says what it is, and no row names the kind of wallet: its mark does.
+  const rows = html.slice(html.indexOf('role="radiogroup"')).replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ')
+  assert.match(rows, new RegExp(`Business Default Available · ₿\\s${n(1200)}`))
+  assert.match(rows, new RegExp(`Alby Hub Available · ₿\\s${n(9000)}`))
+  assert.doesNotMatch(rows, /Spark|LNbits|NWC|Lightning|· (spark|nwc|lnbits|arkade)/)
   assert.doesNotMatch(html, /type="checkbox"/)
   assert.doesNotMatch(html, /future payments|Make preferred|wallet-preference-prompt/)
   assert.doesNotMatch(html, /Getting ready to pay/)
@@ -697,6 +702,18 @@ test('the paid screen names the recipient in the app\'s language; a caller can s
   assert.equal(named(null, (key, values) => ({ 'To {name}': `An ${values.name}` })[key]), 'An Anna', 'German reads "An Anna", not "To Anna"')
   assert.equal(named(''), 'Anna')
   assert.equal(named('From '), 'From Anna')
+})
+
+test('the paid screen can be closed with a button, and closing reports once', async () => {
+  const Confirmation = load('../PaymentConfirmation.vue', baseDeps)
+  const html = await render(Confirmation, { modelValue: true, amount: 1000, label: 'Payment sent' })
+  assert.match(html, /<button type="button" class="done-btn[^"]*">\s*Done\s*<\/button>/)
+  const emitted = []
+  const vm = { cleanup() {}, show: true, $emit: (name) => emitted.push(name) }
+  Confirmation.methods.closeNow.call(vm)
+  assert.deepEqual([vm.show, emitted], [false, ['closed']])
+  // The button's tap stops at the button: the surface behind it closes on a tap too.
+  assert.match(readFileSync(new URL('../PaymentConfirmation.vue', import.meta.url), 'utf8'), /class="done-btn"[\s\S]{0,80}@click\.stop="closeNow"/)
 })
 
 test('limits speak the denomination of the amount, the fee and the total', () => {

@@ -94,6 +94,10 @@ test('settings picker renders Automatic plus real wallets, native radios, brands
   // A balance still loading is a stand-in that pulses, with its words only for a screen reader.
   assert.match(html, /class="balance-placeholder"[^>]*aria-label="Balance not loaded yet"/)
   assert.doesNotMatch(html.replace(/<[^>]*>/g, ''), /Balance not loaded yet/)
+  // The figure in a row says what it is; the kind of wallet is the mark's to say.
+  const words = html.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ')
+  assert.match(words, /Available · ₿\s84[,.]260/)
+  assert.doesNotMatch(words, /Spark|LNbits|NWC|Arkade|Lightning/)
   // Automatic has its own mark, not the generic wallet used by Manage Wallets.
   assert.match(html, /data-icon="tabler:settings-automation"/)
   assert.doesNotMatch(html, /data-icon="tabler:wallet"/)

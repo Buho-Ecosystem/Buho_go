@@ -74,24 +74,22 @@ export function canWalletPay(walletType, type) {
 }
 
 /**
- * The one localized "switch wallet" explanation per rail — every
- * surface shows the same words for the same constraint. Callers only
- * render this after canWalletPay() said no; since Arkade is the only
- * wallet that can fail the lightning rail (temporary outage), the
- * lightning fallback names it. Revisit if another wallet ever blocks
- * that rail.
- * @param {string} type  payment type or addressType
+ * The one localized explanation for a destination the wallet in question
+ * cannot pay: every surface shows the same words for the same constraint.
+ * Callers only render this after canWalletPay() said no.
+ *
+ * The words name no technology: which kind of wallet a destination needs is
+ * not something the person paying has to know, and the "Pay with" rows show
+ * which of their wallets can pay. One sentence is true for every caller: the
+ * review (the chosen wallet cannot pay, with or without another that can) and
+ * the Send field (none of the person's wallets can).
+ * @param {string} type  payment type or addressType; the words are the same
+ *   for every rail
  * @param {(key: string) => string} t  vue-i18n translate
  * @returns {string}
  */
 export function walletSwitchHint(type, t) {
-  const kind = destinationKind(type)
-  if (kind === 'spark') return t('Switch to your Spark wallet to pay this address')
-  if (kind === 'arkade') return t('Switch to your Arkade wallet to pay this address')
-  if (kind === 'bitcoin') return t('Switch to a Spark or Arkade wallet to send Bitcoin')
-  // Only Arkade ever fails the lightning kind (see canWalletPay), so the
-  // hint can name it.
-  return t('Lightning is temporarily unavailable on Arkade - switch to another wallet')
+  return t('This payment needs a different wallet.')
 }
 
 /**

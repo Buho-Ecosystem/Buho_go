@@ -266,12 +266,12 @@ export function describeDmError(error, { t, name = '' }) {
       message = t("Your Lightning address doesn't answer right now. Check it in your profile.");
       break;
     case DM_ERROR.AMOUNT_OUT_OF_RANGE:
-      message = t("The Lightning address doesn't take this amount. Try a different one.");
+      message = t("The payment address doesn't take this amount. Try a different amount.");
       break;
     case DM_ERROR.INVOICE_FETCH_FAILED:
       message = name
-        ? t("{name}'s Lightning address didn't answer. Try again in a moment.", { name })
-        : t("Their Lightning address didn't answer. Try again in a moment.");
+        ? t("{name}'s payment address didn't answer. Try again in a moment.", { name })
+        : t("Their payment address didn't answer. Try again in a moment.");
       break;
     case DM_ERROR.SECRET_KEY_IN_TEXT:
       message = t('Never share it. Sending is blocked.');

@@ -25,7 +25,7 @@
             <span class="payment-wallet-copy">
               <span class="payment-wallet-name"><strong>{{ wallet.name || $t('Wallet') }}</strong><span v-if="wallet.id === preferences.preferredWalletId" class="payment-wallet-badge">{{ $t('Default') }}</span></span>
               <!-- A balance still loading is a pulsing stand-in, never words beside it. -->
-              <small v-balance-updating="displayBalance(wallet) === null">{{ typeLabel(wallet) }} · <HiddenAmount v-if="displayBalance(wallet) !== null">{{ displayBalance(wallet) }}</HiddenAmount><span v-else class="balance-placeholder" role="img" :aria-label="$t('Balance not loaded yet')" /></small>
+              <small v-balance-updating="displayBalance(wallet) === null">{{ $t('Available') }} · <HiddenAmount v-if="displayBalance(wallet) !== null">{{ displayBalance(wallet) }}</HiddenAmount><span v-else class="balance-placeholder" role="img" :aria-label="$t('Balance not loaded yet')" /></small>
             </span>
             <span class="payment-wallet-check" aria-hidden="true"><Icon icon="tabler:check" width="15" height="15" /></span>
           </label>
@@ -47,7 +47,6 @@ import { useWalletStore } from '../../stores/wallet.js'
 import { usePaymentPreferencesStore, settledWalletIds } from '../../stores/paymentPreferences.js'
 import balanceUpdating from '../../directives/balanceUpdating.js'
 import { formatAmount } from '../../utils/amountFormatting.js'
-import { walletTypeLabel } from '../../utils/walletNames.js'
 import WalletBrandMark from '../WalletBrandMark.vue'
 import HiddenAmount from '../HiddenAmount.vue'
 
@@ -97,7 +96,6 @@ export default {
       return this.preferences.forgetMissing(settledWalletIds(this.walletStore))
     },
     choose(id) { this.draft = id; this.error = '' },
-    typeLabel: walletTypeLabel,
     displayBalance(wallet) {
       const balance = this.walletStore.getDisplayBalance(wallet.id)
       return balance.known ? formatAmount(balance.balance, this.walletStore.useBip177Format) : null
@@ -133,6 +131,8 @@ export default {
 .payment-wallet-copy { flex: 1; min-width: 0; }
 .payment-wallet-copy strong { display: block; font: 700 .875rem/1.5 'Manrope', sans-serif; overflow-wrap: anywhere; }
 .payment-wallet-copy small { display: block; color: var(--text-secondary); font: 400 .75rem/1.65 'Manrope', sans-serif; margin-top: 4px; overflow-wrap: anywhere; }
+/* The sign and its number stay on one line. */
+.payment-wallet-copy small .hidden-amount { white-space: nowrap; }
 .payment-wallet-name { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
 .payment-wallet-badge { font: 700 .625rem/1.4 'Manrope', sans-serif; background: var(--brand-accent-soft); color: var(--brand-accent-text); padding: 2px 5px; border-radius: 5px; }
 .payment-wallet-check { display: grid; place-items: center; width: 21px; height: 21px; border: 1px solid var(--border-card); border-radius: 50%; flex-shrink: 0; }

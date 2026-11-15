@@ -163,7 +163,7 @@ try {
 
   // Settings: the row leads somewhere in every state.
   await go('/settings');
-  await page.getByText('Lightning Address', { exact: true }).first().waitFor({ timeout: 30000 });
+  await page.getByText('Lightning address', { exact: true }).first().waitFor({ timeout: 30000 });
   await stubSettings({ status: 'off' });
   await page.getByText('Needs Pay Links', { exact: true }).waitFor();
   await page.getByText('Needs Pay Links', { exact: true }).scrollIntoViewIfNeeded();

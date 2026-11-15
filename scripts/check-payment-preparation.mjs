@@ -435,11 +435,11 @@ try {
     });
     await navigate('/settings');
     assert.equal(await startPayment('payAddress', { address: 'bob@wallet.example', name: 'Bob' }), false, 'new intent cannot supersede a committed payment');
-    releaseSend(); await page.getByText('Payment Sent', { exact: true }).waitFor();
+    releaseSend(); await page.getByText('Payment sent', { exact: true }).waitFor();
     const paid = await page.evaluate(() => window.__prepPayments || []);
     assert.equal(paid.length, beforePayments + 1); assert.equal(paid.at(-1).walletId, 'travel');
     assert.equal(ledger.byInvoice(paid.at(-1).invoice)?.amountSats, 500, 'visible amount reaches the paying provider unchanged');
-    await page.getByText('Payment Sent', { exact: true }).click();
+    await page.getByText('Payment sent', { exact: true }).click();
     await page.waitForFunction(async () => {
       const { usePaymentFlowStore } = await import('/src/stores/paymentFlow.js');
       return !usePaymentFlowStore().active;

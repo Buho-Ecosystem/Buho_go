@@ -61,7 +61,7 @@ test('identity-only and missing contacts stop with one plain explanation', () =>
     const { pay, begun, notices, contact } = harness({ source, address: '' });
     assert.equal(pay.payContact(contact), false);
     assert.deepEqual(begun, []);
-    assert.equal(notices[0].message, 'No Lightning address yet');
+    assert.equal(notices[0].message, 'No payment address yet');
     assert.equal(pay.payContact(null), false);
   }
 });

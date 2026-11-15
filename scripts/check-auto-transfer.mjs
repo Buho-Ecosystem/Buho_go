@@ -386,7 +386,7 @@ console.log('✓ dark: list, rule page, edit sheet');
   await page.locator('[data-audit="auto-transfer-line"]').click();
   await pause(600);
   await shot(page, 'real-paused-sheet');
-  await page.getByRole('button', { name: 'Try Again' }).click();
+  await page.getByRole('button', { name: 'Try again' }).click();
   await page.waitForFunction(() => !document.querySelector('[data-audit="auto-transfer-line"]'), null, { timeout: 5000 });
   state = await page.evaluate(async () => {
     const { useAutoWithdrawStore } = await import('/src/stores/autoWithdraw.js');

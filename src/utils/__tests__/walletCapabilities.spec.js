@@ -6,7 +6,7 @@
  *     addressTypes) collapse to the same rail
  *   - the wallet × rail matrix matches the product rules (Spark-only,
  *     Arkade-only, on-chain via Spark or Arkade, Lightning everywhere)
- *   - hints exist exactly for the rails that can be blocked
+ *   - the hint for a destination the wallet cannot pay names no rail
  *
  * Run directly with Node:
  *   node src/utils/__tests__/walletCapabilities.spec.js
@@ -82,20 +82,10 @@ test('contact addressTypes gate identically to payment types', () => {
   assert.equal(canWalletPay('lnbits', 'lnurl'), true);
 });
 
-test('switch hints exist exactly for blockable rails', () => {
-  assert.equal(walletSwitchHint('spark_address', t), 'Switch to your Spark wallet to pay this address');
-  assert.equal(walletSwitchHint('arkade', t), 'Switch to your Arkade wallet to pay this address')
-  assert.equal(
-    walletSwitchHint('lightning_invoice', t),
-    'Lightning is temporarily unavailable on Arkade - switch to another wallet'
-  );
-  assert.equal(walletSwitchHint('bitcoin_address', t), 'Switch to a Spark or Arkade wallet to send Bitcoin');;
-  // Unknown types collapse to the lightning rail (permissive), and only
-  // Arkade blocks that rail today - so they share its outage hint.
-  assert.equal(
-    walletSwitchHint('unknown', t),
-    'Lightning is temporarily unavailable on Arkade - switch to another wallet'
-  );
+test('the hint for a destination the wallet cannot pay is one sentence that names no technology', () => {
+  for (const type of ['spark_address', 'arkade', 'lightning_invoice', 'bitcoin_address', 'unknown']) {
+    assert.equal(walletSwitchHint(type, t), 'This payment needs a different wallet.');
+  }
 });
 
 test('receiving: Spark and LNbits can, Arkade cannot (Lightning paused), NWC follows its grants', () => {

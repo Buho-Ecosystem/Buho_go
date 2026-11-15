@@ -721,7 +721,7 @@ async function payRequestFromChat({ page }, cardName) {
 
 /** After the confirm sheet: the success screen shows and exactly the expected wallet paid. */
 async function expectPaidFrom({ page }, walletId, count) {
-  await page.getByText('Payment Sent', { exact: true }).waitFor();
+  await page.getByText('Payment sent', { exact: true }).waitFor();
   const payments = await page.evaluate(() => window.__e2ePayments);
   assert.equal(payments.length, count, 'one payment per request');
   assert.equal(payments.at(-1).walletId, walletId, 'the wallet chosen in "Pay with" paid');
