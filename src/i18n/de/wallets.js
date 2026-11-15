@@ -1,6 +1,6 @@
 // Spark multi-wallet: creating, adding, naming, removing and restoring wallets.
 export default {
-  "Setting up your wallet...": "Dein Wallet wird eingerichtet ...",
+  "Setting up your wallet...": "Dein Wallet wird eingerichtet…",
   "This recovery phrase is already on this device": "Diese Wiederherstellungsphrase ist schon auf diesem Gerät",
   "Any of its wallets that are missing here will appear in your wallet list.": "Wallets dieser Phrase, die hier noch fehlen, erscheinen in deiner Wallet-Liste.",
   "Another recovery phrase is in use": "Eine andere Wiederherstellungsphrase ist in Gebrauch",
@@ -23,7 +23,7 @@ export default {
   "Your wallets changed after this backup. Back up again to include the changes.": "Deine Wallets haben sich seit diesem Backup geändert. Sichere erneut, um die Änderungen aufzunehmen.",
   "New Spark wallet": "Neues Wallet",
   "Made from your recovery phrase, so the backup you have already covers it.": "Aus deiner Wiederherstellungsphrase erstellt, dein bestehendes Backup deckt es also schon ab.",
-  "Creating wallet...": "Wallet wird erstellt ...",
+  "Creating wallet...": "Wallet wird erstellt…",
   "Create wallet": "Wallet erstellen",
   "You already have the most Spark wallets this app supports.": "Du hast bereits so viele Spark Wallets, wie die App unterstützt.",
   "Couldn't create the wallet. Check your connection and try again.": "Das Wallet konnte nicht erstellt werden. Prüfe deine Verbindung und versuche es erneut.",
@@ -43,7 +43,7 @@ export default {
   "Receiving wallet": "Empfangendes Wallet",
   "{target} receives at {address} instead of {old}, which stops working. {source} gets a new address, which you can change later.": "{target} empfängt unter {address} statt unter {old}, die dann nicht mehr funktioniert. {source} bekommt eine neue Adresse, die du später ändern kannst.",
   "{target} receives at {address}. {source} gets a new address, which you can change later.": "{target} empfängt unter {address}. {source} bekommt eine neue Adresse, die du später ändern kannst.",
-  "Moving address...": "Adresse wird übertragen ...",
+  "Moving address...": "Adresse wird übertragen…",
   "Both wallets need to be connected. Check your connection and try again.": "Beide Wallets müssen verbunden sein. Prüfe deine Verbindung und versuche es erneut.",
   "This wallet has no address to move right now.": "Dieses Wallet hat gerade keine Adresse zum Übertragen.",
   "The address could not be moved. Nothing changed, so you can try again.": "Die Adresse konnte nicht übertragen werden. Nichts wurde geändert, du kannst es erneut versuchen.",

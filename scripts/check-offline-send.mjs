@@ -21,7 +21,7 @@ const SPARK_UNREACHABLE = 'SparkSdkError: Service error: service provider error:
 const ICON_HOSTS = ['api.iconify.design', 'api.simplesvg.com', 'api.unisvg.com'];
 const PROBE_HOSTS = ['go.mybuho.de', 'mempool.space'];
 const SAYS = {
-  checking: 'Checking your connection...',
+  checking: 'Checking your connection…',
   noInternet: 'No internet connection. Check your Wi-Fi, mobile data or VPN, then try again.',
   sparkDown: "Spark can't be reached right now. Your internet works, so try again in a moment.",
   offline: "You're offline. Connect to Wi-Fi or mobile data, then try again.",
