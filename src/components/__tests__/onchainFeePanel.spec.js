@@ -162,3 +162,29 @@ test('a current failure closes the fee gate and uses the existing concise error 
   assert.equal(errors.length, 1)
   assert.equal(errors[0][1].reason, 'Try again.')
 })
+
+test('"Use all" sets what the wallet\'s quote for the whole balance leaves, and only when a quote for that amount comes to the balance', async () => {
+  const useAll = async (confirmingFee) => {
+    const asked = [], used = []
+    const { vm, gates } = harness({ connect: async () => ({ getWithdrawalFeeQuote: async (amount, address, { wholeBalance = false } = {}) => {
+      asked.push([amount, wholeBalance])
+      return wholeBalance ? quote('everything', 300) : quote('confirming', confirmingFee)
+    } }) })
+    vm.amountSats = 0
+    vm.$emit = (event, value) => (event === 'use-max' ? used : gates).push(value)
+    await vm.useAll()
+    return { vm, asked, used, gates }
+  }
+  // 100,000 held and 300 to send all of it: 99,700 is quoted again and comes to the balance.
+  const offered = await useAll(300)
+  assert.deepEqual(offered.asked, [[100000, true], [99700, false]])
+  assert.deepEqual(offered.used, [99700])
+  offered.vm.change('amountSats', 99700) // the sheet takes the amount
+  assert.deepEqual(offered.gates.at(-1), { ready: true, speed: 'medium', feeQuoteId: 'confirming', totalFeeSats: 300, insufficient: false })
+  assert.equal(offered.asked.length, 2, 'the confirming quote stands as the one on the panel')
+  // A second quote that does not come to the balance: no figure, and a line saying so.
+  const refused = await useAll(301)
+  assert.deepEqual(refused.used, [])
+  assert.match(refused.vm.useAllNote, /could not be confirmed/)
+  assert.equal(refused.vm.useAllBusy, false)
+})

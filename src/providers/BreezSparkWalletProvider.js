@@ -938,9 +938,11 @@ export class BreezSparkWalletProvider extends WalletProvider {
    * Prepare a send for a raw payment request (bolt11 / spark address /
    * spark invoice / bitcoin address). Cached briefly per input so the
    * fee-estimate → pay sequence costs one SDK prepare, not two.
+   * `feePolicy` 'feesIncluded' takes the fee out of the amount instead of
+   * adding it on top (the SDK's default); it is part of what is cached.
    */
-  async _prepareSend(input, { amountSats = null, fresh = false } = {}) {
-    const key = `${input}::${amountSats ?? ''}`;
+  async _prepareSend(input, { amountSats = null, fresh = false, feePolicy = null } = {}) {
+    const key = `${input}::${amountSats ?? ''}::${feePolicy ?? ''}`;
     if (!fresh) {
       const cached = this._preparedSends.get(key);
       if (cached && Date.now() - cached.at < 30000) {
@@ -951,6 +953,7 @@ export class BreezSparkWalletProvider extends WalletProvider {
     const doPrepare = () => this.sdk.prepareSendPayment({
       paymentRequest: { type: 'input', input },
       amount: amountSats != null ? BigInt(Math.round(amountSats)) : undefined,
+      ...(feePolicy ? { feePolicy } : {}),
     });
 
     let prepareResponse;
@@ -1913,7 +1916,16 @@ export class BreezSparkWalletProvider extends WalletProvider {
   // L1 withdrawals
   // ==========================================
 
-  async getWithdrawalFeeQuote(amountSats, destinationAddress) {
+  /**
+   * The fee, per speed, for a Bitcoin-address payment of `amountSats`.
+   *
+   * With `wholeBalance`, `amountSats` is all the wallet holds and the quote
+   * is the SDK's own for sending all of it, the fee taken out of the amount
+   * (feePolicy 'feesIncluded'): what arrives is the amount less the fee of
+   * the speed chosen. Such a quote only prices. It is never kept to send
+   * with: the amount it leaves is quoted again as any other amount is.
+   */
+  async getWithdrawalFeeQuote(amountSats, destinationAddress, { wholeBalance = false } = {}) {
     this._ensureConnected();
 
     if (!this._isValidBitcoinAddress(destinationAddress)) {
@@ -1925,6 +1937,7 @@ export class BreezSparkWalletProvider extends WalletProvider {
       prep = await this._prepareSend(destinationAddress, {
         amountSats: Number(amountSats),
         fresh: true,
+        ...(wholeBalance ? { feePolicy: 'feesIncluded' } : {}),
       });
     } catch (error) {
       // Quoting here is a real send-prepare, so it can fail on balance.
@@ -1954,12 +1967,14 @@ export class BreezSparkWalletProvider extends WalletProvider {
       throw new Error('No withdrawal fee quote available right now. Please try again.');
     }
 
-    breezSdk.rememberWithdrawQuote(this.walletId, feeQuote.id, {
-      prepareResponse: prep,
-      amountSats: Number(amountSats),
-      destinationAddress,
-      expiresAt: feeQuote.expiresAt,
-    });
+    if (!wholeBalance) {
+      breezSdk.rememberWithdrawQuote(this.walletId, feeQuote.id, {
+        prepareResponse: prep,
+        amountSats: Number(amountSats),
+        destinationAddress,
+        expiresAt: feeQuote.expiresAt,
+      });
+    }
 
     return mapWithdrawFeeQuoteToTiers(feeQuote);
   }

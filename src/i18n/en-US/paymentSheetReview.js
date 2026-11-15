@@ -18,4 +18,6 @@ export default {
   "The fee could not be calculated.": "The fee could not be calculated.",
   "{amount} stays in {wallet} for the fee.": "{amount} stays in {wallet} for the fee.",
   "{amount} today": "{amount} today",
+  "Your balance does not cover the fee.": "Your balance does not cover the fee.",
+  "The amount for your whole balance could not be confirmed. Try again, or enter an amount.": "The amount for your whole balance could not be confirmed. Try again, or enter an amount.",
 };
