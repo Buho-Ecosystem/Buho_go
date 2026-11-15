@@ -728,7 +728,7 @@
 <script>
 import { fiatRatesService } from '../utils/fiatRates.js';
 import { fiatSymbol } from '../utils/fiatCurrencies.js';
-import { formatAmount, formatAmountWithPrefix } from '../utils/amountFormatting.js';
+import { formatAmount, formatAmountWithPrefix, plainSpaces } from '../utils/amountFormatting.js';
 import { useWalletStore } from '../stores/wallet';
 import { useAddressBookStore } from '../stores/addressBook';
 import { useTransactionMetadataStore } from '../stores/transactionMetadata';
@@ -1961,9 +1961,10 @@ export default {
     async shareTransaction() {
       if (!this.transaction) return;
 
-      const direction = this.transaction.type === 'incoming' ? 'Received' : 'Sent';
-      const amount = this.getFormattedAmount();
-      const fiat = this.getFiatAmount();
+      const direction = this.transaction.type === 'incoming' ? this.$t('Received') : this.$t('Sent');
+      // The text leaves the app: plain spaces, not the screen's non-breaking ones.
+      const amount = plainSpaces(this.getFormattedAmount());
+      const fiat = plainSpaces(this.getFiatAmount());
       const date = this.formatDateTime(this.transaction.settled_at);
       const desc = this.txMessage;
 

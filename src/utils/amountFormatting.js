@@ -4,8 +4,19 @@
  * Supports BIP-177 (₿) and Legacy (sats) formats
  */
 
-// Between a number and its unit, so the two never break apart at a line end.
-const NBSP = ' '
+// Between a figure and its sign or unit: the two never part at a line end.
+// Written as an escape so an editor cannot flatten it into a plain space.
+const NBSP = '\u00a0';
+
+/**
+ * Text with formatted amounts in it, for leaving the app (shared, copied,
+ * exported): with plain spaces. The non-breaking space is for a screen.
+ * @param {string} text
+ * @returns {string}
+ */
+export function plainSpaces(text) {
+  return String(text ?? '').replace(/[\u00a0\u202f]/g, ' ');
+}
 
 /**
  * The digits of a whole-number Bitcoin amount ("₿ 2,408", "2,408 sats"):
