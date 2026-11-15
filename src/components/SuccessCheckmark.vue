@@ -175,4 +175,20 @@ export default {
     opacity: 0;
   }
 }
+
+/* Reduced motion: the finished mark appears at once, with no zoom, no drawn
+   stroke and no ring. A parent's scoped rule cannot reach in here. */
+@media (prefers-reduced-motion: reduce) {
+  .success-checkmark.animate {
+    animation: none;
+    opacity: 1;
+  }
+  .success-checkmark.animate .checkmark-check {
+    animation: none;
+    stroke-dashoffset: 0;
+  }
+  .pulse-ring-once {
+    display: none;
+  }
+}
 </style>

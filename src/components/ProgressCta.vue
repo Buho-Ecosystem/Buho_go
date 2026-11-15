@@ -24,18 +24,21 @@
   >
     <div class="progress-cta-fill" :style="{ width: fillPct + '%' }"></div>
 
-    <!-- Completed: a single centred check on the full fill. -->
+    <!-- Completed: a single centred check on the full fill. The check is a
+         picture, so the outcome is also said in words to a screen reader. -->
     <span v-if="done" class="progress-cta-label progress-cta-label--solid">
       <Icon icon="tabler:check" width="22" height="22" />
+      <span class="progress-cta-spoken">{{ doneLabel || $t('Done') }}</span>
     </span>
 
     <!-- In flight: a two-tone label that reads on both the muted track and the
          growing fill — the fill-coloured copy is clipped to the fill width so
-         it always stays in sync with the bar. -->
+         it always stays in sync with the bar. Only one copy is spoken. -->
     <template v-else>
       <span class="progress-cta-label progress-cta-label--track">{{ label }}</span>
       <span
         class="progress-cta-label progress-cta-label--solid"
+        aria-hidden="true"
         :style="{ clipPath: `inset(0 ${100 - fillPct}% 0 0)` }"
       >{{ label }}</span>
     </template>
@@ -50,6 +53,8 @@ export default {
     label: { type: String, default: '' },
     /** Flip true when the work succeeded → snap fill to 100% + checkmark. */
     done: { type: Boolean, default: false },
+    /** What a screen reader hears once done, e.g. "Sent". "Done" when left out. */
+    doneLabel: { type: String, default: '' },
     /**
      * Match the height of the control being replaced: the slide-to-confirm
      * track (tall, 64px) or the tap button (default, 56px / 50px on mobile).
@@ -202,7 +207,18 @@ export default {
 }
 .progress-cta--done .progress-cta-label--solid { transition-duration: 0.32s; }
 
+/* Said to a screen reader, never drawn. */
+.progress-cta-spoken { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+
 @media (max-width: 480px) {
   .progress-cta:not(.progress-cta--tall) { height: 50px; }
+}
+
+/* Reduced motion: the bar still shows how far along it is, without the
+   sweeping highlight or the eased label. */
+@media (prefers-reduced-motion: reduce) {
+  .progress-cta-fill::after { animation: none; display: none; }
+  .progress-cta-fill,
+  .progress-cta-label--solid { transition: none; }
 }
 </style>
