@@ -11,4 +11,6 @@ export default {
   "Minimum is {amount}": "El mínimo es {amount}",
   "Maximum is {amount}": "El máximo es {amount}",
   "Change currency": "Cambiar moneda",
+  "No current exchange rate. Enter the amount in Bitcoin.": "No hay un tipo de cambio actual. Introduce el importe en Bitcoin.",
+  "{amount} + fees": "{amount} + comisiones",
 };
