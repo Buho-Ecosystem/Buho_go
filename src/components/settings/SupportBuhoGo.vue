@@ -183,7 +183,7 @@ export default {
         this.$q.notify({
           type: 'warning',
           message: this.$t("Couldn't generate invoice"),
-          caption: this.$t('Copy the lightning address instead: {address}', { address: this.donationAddress }),
+          caption: this.$t('Copy the payment address instead: {address}', { address: this.donationAddress }),
           timeout: 10000,
           actions: [
             {

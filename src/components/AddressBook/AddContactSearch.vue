@@ -639,7 +639,7 @@ export default {
         if (msg.includes('Lightning address')) {
           this.$q.notify({
             type: 'negative',
-            message: this.$t('No Lightning address'),
+            message: this.$t('No payment address'),
             caption: this.$t('This profile cannot receive payments yet.'),
             timeout: 4000,
           });

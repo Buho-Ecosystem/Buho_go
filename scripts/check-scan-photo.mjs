@@ -283,7 +283,7 @@ if (wanted('send')) {
 if (wanted('no-camera')) {
   const { page, context, errors } = await open(withoutCamera);
   await openSendScanner(page, { waitForCamera: false });
-  await page.getByText('Camera Access Required').waitFor({ timeout: 15000 });
+  await page.getByText('Camera access required').waitFor({ timeout: 15000 });
   assert.equal(await page.getByRole('button', { name: 'Choose photo' }).isVisible(), true);
   assert.equal(await tappable(page.getByRole('button', { name: 'Retry' })), true, 'Retry is not covered');
   await shot(page, 'send-no-camera');
@@ -298,7 +298,7 @@ if (wanted('no-camera')) {
 if (wanted('short')) {
   const { page, context, errors } = await open(withoutCamera, { width: 320, height: 568 });
   await openSendScanner(page, { waitForCamera: false });
-  await page.getByText('Camera Access Required').waitFor({ timeout: 15000 });
+  await page.getByText('Camera access required').waitFor({ timeout: 15000 });
   assert.equal(await tappable(page.getByRole('button', { name: 'Retry' })), true, 'Retry is not covered at 320 x 568');
   assert.equal(await tappable(page.getByRole('button', { name: 'Choose photo' })), true, 'Choose photo is not covered at 320 x 568');
   await shot(page, 'send-no-camera-320x568');

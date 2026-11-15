@@ -32,7 +32,7 @@
       <template v-if="kioskOn">
         <button type="button" class="btn-primary km-open" :disabled="starting" data-audit="kiosk-open-register" @click="openRegister">
           <q-spinner v-if="starting" size="18px" />
-          <template v-else>{{ $t('Open Register') }}</template>
+          <template v-else>{{ $t('Open register') }}</template>
         </button>
 
         <IdentityGroup :title="$t('Payments')">
@@ -41,9 +41,9 @@
               <span class="km-value" :class="{ 'km-value--warn': !receivingWallet || receivingWallet.blocked }">{{ receivingValue }}</span>
             </template>
           </IdentityRow>
-          <IdentityRow :label="$t('Show Amounts In')" :interactive="false">
+          <IdentityRow :label="$t('Show amounts in')" :interactive="false">
             <template #trailing>
-              <div class="km-seg" role="radiogroup" :aria-label="$t('Show Amounts In')">
+              <div class="km-seg" role="radiogroup" :aria-label="$t('Show amounts in')">
                 <button
                   v-for="option in displayOptions"
                   :key="option.value"
@@ -66,7 +66,7 @@
             </template>
           </IdentityRow>
           <div v-if="walletStore.kioskTipEnabled" class="km-tips">
-            <span class="km-tips-label">{{ $t('Tip Choices') }}</span>
+            <span class="km-tips-label">{{ $t('Tip choices') }}</span>
             <div class="km-tips-fields">
               <q-input
                 v-for="(value, idx) in walletStore.kioskTipValues"

@@ -64,7 +64,7 @@
 
         <button v-else type="button" class="form-sheet-primary move-primary" :disabled="!target || !address || moving" @click="move">
           <q-spinner v-if="moving" size="18px" :aria-hidden="true" />
-          {{ moving ? $t('Moving address...') : $t('Move address') }}
+          {{ moving ? $t('Moving address…') : $t('Move address') }}
         </button>
       </div>
     </q-card>

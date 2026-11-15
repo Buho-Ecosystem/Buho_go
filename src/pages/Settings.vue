@@ -58,7 +58,7 @@
           -->
           <SettingsRow
             icon="tabler:at"
-            :label="$t('Lightning Address')"
+            :label="$t('Lightning address')"
             :caption-mono="!!activeWalletLightningAddress"
             :interactive="true"
             :show-chevron="true"
@@ -84,7 +84,7 @@
         <template v-else-if="isActiveWalletArkade">
           <SettingsRow
             icon="tabler:qrcode"
-            :label="$t('Arkade Address')"
+            :label="$t('Arkade address')"
             :caption="truncateAddress(activeArkadeAddress) || $t('Not available')"
             caption-mono
             :interactive="false"
@@ -123,7 +123,7 @@
           <SettingsRow
             v-if="activeWalletLightningAddress"
             icon="tabler:bolt"
-            :label="$t('Lightning Address')"
+            :label="$t('Lightning address')"
             :caption="activeWalletLightningAddress"
             caption-mono
             :interactive="false"
@@ -168,7 +168,7 @@
           -->
           <SettingsRow
             icon="tabler:at"
-            :label="$t('Lightning Address')"
+            :label="$t('Lightning address')"
             :caption-mono="lnAddressRowState === 'set'"
             :interactive="lnAddressRowClickable"
             :show-chevron="lnAddressRowClickable"
@@ -2821,7 +2821,7 @@ export default {
       if (!this.activeArkadeAddress) return;
 
       const result = await shareContent({
-        title: this.$t('Arkade Address'),
+        title: this.$t('Arkade address'),
         text: this.activeArkadeAddress
       });
 

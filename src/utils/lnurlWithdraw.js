@@ -136,7 +136,7 @@ export function withdrawRecipient(request, t = text => text) {
   let host = '';
   try { host = new URL(request.callback).host; } catch { /* invalid request stays unpayable */ }
   return {
-    name: isCard ? 'Bolt Card' : (request.defaultDescription || t('LNURL Withdrawal')),
+    name: isCard ? 'Bolt Card' : (request.defaultDescription || t('LNURL withdrawal')),
     initial: '↓', color: '#3B82F6', addressType: 'lnurl',
     viaOverride: t('Lightning · Withdrawal'), address: host,
     ...(isCard ? { logoUrl: '/Social_Wallet_logos/BoltCard.png' } : {}),

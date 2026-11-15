@@ -277,7 +277,7 @@ test('a service\'s words keep their label in the Send field and in the dialog', 
   const vm = { ...methods, $t: t, sendResolveError: '', sendResolveSource: '', walletStore: { showPaymentError: (error, ctx) => shown.push([error, ctx]) } };
   vm.failSendResolution('This account is suspended', true, { attribution: 'Reported by the recipient' });
   assert.deepEqual([vm.sendResolveError, vm.sendResolveSource], ['This account is suspended', 'Reported by the recipient']);
-  vm.failSendResolution("We couldn't find this Lightning address", true, { attribution: null });
+  vm.failSendResolution("We couldn't find this payment address", true, { attribution: null });
   assert.equal(vm.sendResolveSource, '', 'our own words carry no label');
   vm.failSendResolution('Shop closed', false, { context: 'link', attribution: 'Reported by the server' });
   vm.failSendResolution('Our words', false, {});
@@ -824,7 +824,7 @@ test('any other address that does not resolve still says so, in its own words', 
   vm.fetchLightningAddressInfo = async () => ({});
   vm.resolveNostrTarget = async () => null;
   await quietly(() => vm.onPaymentDetected({ type: 'lightning_address', data: 'nobody@example.com' }));
-  assert.equal(vm.sendResolveError, "We couldn't find this Lightning address");
+  assert.equal(vm.sendResolveError, "We couldn't find this payment address");
 });
 
 test('Arkade onchain requires a quote for this wallet, destination and recipient amount', async () => {

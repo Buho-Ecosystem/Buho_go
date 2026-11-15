@@ -101,7 +101,7 @@
           <q-btn flat round dense class="glass-back-btn" :aria-label="$t('Back')" @click="closeScanner">
             <Icon icon="tabler:chevron-left" width="20" height="20" />
           </q-btn>
-          <div class="iform-sheet-title">{{ $t('Scan QR Code') }}</div>
+          <div class="iform-sheet-title">{{ $t('Scan QR code') }}</div>
           <div class="iform-sheet-spacer"></div>
         </header>
 
@@ -124,7 +124,7 @@
                 <p class="error-text">{{ cameraErrorMessage }}</p>
                 <q-btn
                   unelevated
-                  :label="$t('Try Again')"
+                  :label="$t('Try again')"
                   @click="retryCamera"
                   class="retry-btn"
                   :class="$q.dark.isActive ? 'dialog_add_btn_dark' : 'dialog_add_btn_light'"
@@ -135,7 +135,7 @@
               <!-- Loading State -->
               <div v-if="cameraLoading && !cameraError" class="camera-loading">
                 <q-spinner-dots color="#F7931A" size="2em"/>
-                <p class="loading-text">{{ $t('Starting camera...') }}</p>
+                <p class="loading-text">{{ $t('Starting camera…') }}</p>
               </div>
 
               <!-- Scanning Frame -->
@@ -182,7 +182,7 @@
     <ScannerOverlay
       v-if="nativeScannerActive"
       :active="nativeScannerActive"
-      :title="$t('Scan QR Code')"
+      :title="$t('Scan QR code')"
       :prompt="$t('Scan your NWC connection QR code')"
       continuous
       @scanned="handleQrScan"
@@ -858,7 +858,7 @@ export default {
     handleQrScan(qrData) {
       if (isAddressRequest(qrData)) {
         this.closeScanner();
-        this.$q.notify({ type: 'info', message: this.$t('This code asks for your Lightning address. Scan it from Home after setting up your wallet.') });
+        this.$q.notify({ type: 'info', message: this.$t('This code asks for your payment address. Scan it from Home after setting up your wallet.') });
         return;
       }
       if (!qrData) return;

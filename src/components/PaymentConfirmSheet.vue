@@ -513,7 +513,7 @@
               />
               <button v-else-if="verb === 'send' && !walletCanPay && anotherWalletCanPay" key="choose-wallet" type="button" class="primary-cta choose-wallet-cta" @click="openWalletPicker">{{ $t('Choose another wallet') }}</button>
               <!-- No other wallet to choose and this one only failed to connect: one way forward. -->
-              <button v-else-if="verb === 'send' && !walletCanPay && walletRetryable" key="retry-wallet" type="button" class="primary-cta" :disabled="walletRetrying" @click="$emit('retry-wallet')">{{ walletRetrying ? $t('Connecting...') : $t('Try again') }}</button>
+              <button v-else-if="verb === 'send' && !walletCanPay && walletRetryable" key="retry-wallet" type="button" class="primary-cta" :disabled="walletRetrying" @click="$emit('retry-wallet')">{{ walletRetrying ? $t('Connecting…') : $t('Try again') }}</button>
               <SlideToSend
                 v-else-if="requiresSlide"
                 key="slide"
@@ -1342,8 +1342,8 @@ export default {
 
     // In-flight label shown inside the filling ProgressCta.
     sendingLabel() {
-      if (this.isCard) return this.$t('Receiving sats...')
-      return this.isRedeem ? this.$t('Redeeming...') : this.$t('Sending...')
+      if (this.isCard) return this.$t('Receiving…')
+      return this.isRedeem ? this.$t('Redeeming…') : this.$t('Sending...')
     }
   },
   watch: {

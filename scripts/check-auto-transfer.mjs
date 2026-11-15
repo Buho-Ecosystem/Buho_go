@@ -133,7 +133,7 @@ const tapLine = (page, text) => sheet(page).locator('.iform-line', { hasText: te
   await sheet(page).locator('.iform-line', { hasText: 'Savings' }).click();
   await pause(500);
   const preview = await sheet(page).locator('.iform-foot').innerText();
-  assert.match(preview, /Shop holds 184,250 sats now, so nothing moves yet\./);
+  assert.match(preview, /Shop holds 184,250\ssats now, so nothing moves yet\./);
   assert.equal(await page.locator('.at-sheet .at-primary').isDisabled(), false);
   await shot(page, 'rule-filled');
 
@@ -225,7 +225,7 @@ console.log('✓ attention: the list says it, the rule page explains it, Home sh
     const { useAutoWithdrawStore } = await import('/src/stores/autoWithdraw.js');
     useAutoWithdrawStore().lastResult = { walletId: 'shop', amount: 178722, destinationName: 'Savings' };
   });
-  await page.waitForFunction(() => document.body.innerText.includes('Moved 178,722 sats'), null, { timeout: 4000 });
+  await page.waitForFunction(() => document.body.innerText.includes('Moved 178,722\u00a0sats'), null, { timeout: 4000 });
   await pause(300);
   await shot(page, 'toast');
   await pause(4500);
@@ -342,7 +342,7 @@ console.log('✓ dark: list, rule page, edit sheet');
   let state = await run(612400);
   assert.deepEqual(state.sent, [['sp1qsavingsaddress', 512400]], 'everything above the 100,000 kept, free between Spark wallets');
   assert.deepEqual(state.rule.events.map((e) => [e.outcome, e.amount]), [['sent', 512400]]);
-  await page.waitForFunction(() => document.body.innerText.includes('Moved 512,400 sats'), null, { timeout: 4000 });
+  await page.waitForFunction(() => document.body.innerText.includes('Moved 512,400\u00a0sats'), null, { timeout: 4000 });
   const stamp = await page.evaluate(async () => {
     const { useTransactionMetadataStore } = await import('/src/stores/transactionMetadata.js');
     const meta = useTransactionMetadataStore();

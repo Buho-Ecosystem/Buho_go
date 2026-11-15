@@ -153,7 +153,7 @@
             <span v-if="!isConnecting">{{ $t('Connect') }}</span>
             <template v-slot:loading>
               <q-spinner-dots class="q-mr-sm"/>
-              {{ $t('Connecting...') }}
+              {{ $t('Connecting…') }}
             </template>
           </q-btn>
         </footer>
@@ -165,7 +165,7 @@
           <q-btn flat round dense class="glass-back-btn" :aria-label="$t('Back')" @click="closeScanner">
             <Icon icon="tabler:chevron-left" width="20" height="20" />
           </q-btn>
-          <div class="iform-sheet-title">{{ $t('Scan QR Code') }}</div>
+          <div class="iform-sheet-title">{{ $t('Scan QR code') }}</div>
           <div class="iform-sheet-spacer"></div>
         </header>
 
@@ -207,7 +207,7 @@
               <p class="error-text">{{ cameraErrorMessage }}</p>
               <q-btn
                 unelevated
-                :label="$t('Try Again')"
+                :label="$t('Try again')"
                 @click="retryCamera"
                 class="retry-btn"
                 :class="$q.dark.isActive ? 'dialog_add_btn_dark' : 'dialog_add_btn_light'"
@@ -218,7 +218,7 @@
             <!-- Loading State -->
             <div v-if="cameraLoading && !cameraError" class="camera-loading">
               <q-spinner-dots color="#15DE72" size="2em"/>
-              <p class="loading-text">{{ $t('Starting camera...') }}</p>
+              <p class="loading-text">{{ $t('Starting camera…') }}</p>
             </div>
 
             <!-- Scanning Frame -->
@@ -266,7 +266,7 @@
     <ScannerOverlay
       v-if="nativeScannerActive"
       :active="nativeScannerActive"
-      :title="$t('Scan QR Code')"
+      :title="$t('Scan QR code')"
       :prompt="$t('Scan your LNbits server URL and admin key')"
       continuous
       @scanned="handleQrScan"
@@ -514,7 +514,7 @@ export default {
       if (!this.walletName.trim()) return;
 
       this.showLoadingScreen = true;
-      this.loadingText = this.$t('Adding wallet...');
+      this.loadingText = this.$t('Adding wallet…');
 
       let wallet;
       try {
@@ -525,7 +525,7 @@ export default {
           adminKey: this.adminKey.trim(),
         });
 
-        this.loadingText = this.$t('Loading wallet...');
+        this.loadingText = this.$t('Loading wallet…');
         await new Promise(resolve => setTimeout(resolve, 500));
       } catch (error) {
         console.error('Failed to add LNbits wallet:', error);
@@ -736,7 +736,7 @@ export default {
     handleQrScan(qrData) {
       if (isAddressRequest(qrData)) {
         this.closeScanner();
-        this.$q.notify({ type: 'info', message: this.$t('This code asks for your Lightning address. Scan it from Home after setting up your wallet.') });
+        this.$q.notify({ type: 'info', message: this.$t('This code asks for your payment address. Scan it from Home after setting up your wallet.') });
         return;
       }
       if (!qrData) return;

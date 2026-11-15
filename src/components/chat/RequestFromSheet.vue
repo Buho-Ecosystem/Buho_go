@@ -105,7 +105,7 @@
 
           <p v-if="lookup === 'busy'" class="request-from__status" role="status">
             <q-spinner size="16px" aria-hidden="true" />
-            {{ $t('Searching...') }}
+            {{ $t('Searching…') }}
           </p>
           <p v-else-if="status" class="request-from__status" role="status">{{ status }}</p>
         </template>

@@ -9,7 +9,7 @@
         <q-btn flat round dense class="glass-back-btn" :disable="busy" :aria-label="$t('Back')" @click="onBack">
           <Icon icon="tabler:chevron-left" width="20" height="20" />
         </q-btn>
-        <h2 class="lnaddr-title">{{ phase === 'review' ? $t('Review address') : $t('Lightning Address') }}</h2>
+        <h2 class="lnaddr-title">{{ phase === 'review' ? $t('Review address') : $t('Lightning address') }}</h2>
         <div class="lnaddr-header-spacer" aria-hidden="true"></div>
       </header>
 

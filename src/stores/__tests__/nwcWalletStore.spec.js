@@ -173,7 +173,7 @@ test('a transfer that fails keeps its code and says its amounts, so the dialog a
   console.error = () => {};
   try {
     const error = await store.transferBetweenWallets('kitty', 'hub', 21, 'Rent').catch((e) => e);
-    assert.equal(error.message, 'The network fee would be ₿ 21, more than the ₿ 10 limit. Nothing was sent. Try again later. (Kitty → Hub)');
+    assert.equal(error.message, 'The network fee would be ₿\u00a021, more than the ₿\u00a010 limit. Nothing was sent. Try again later. (Kitty → Hub)');
     assert.deepEqual([error.code, error.feeSats, error.limitSats], ['LIGHTNING_FEE_ABOVE_LIMIT', 21, 10]);
     assert.equal(error.origin, undefined, 'our words now, not a service\'s');
   } finally {

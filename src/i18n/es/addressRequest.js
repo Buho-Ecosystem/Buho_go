@@ -1,8 +1,8 @@
 export default {
-  "Review this request to share your Lightning address.": "Revisa esta solicitud para compartir tu dirección Lightning.",
-  "Share Lightning address?": "¿Compartir dirección Lightning?",
+  "Review this request to share your payment address.": "Revisa esta solicitud para compartir tu dirección de pago.",
+  "Share payment address?": "¿Compartir dirección de pago?",
   "Share address": "Compartir dirección",
-  "Your Lightning address": "Tu dirección Lightning",
+  "Your payment address": "Tu dirección de pago",
   "This lets the service send you payments.": "Esto permite al servicio enviarte pagos.",
   "Opening address request…": "Abriendo solicitud de dirección…",
   "Sharing with {domain}…": "Compartiendo con {domain}…",
@@ -19,7 +19,7 @@ export default {
   "Address request": "Solicitud de dirección",
   "Copied address request": "Solicitud de dirección copiada",
   "Copied link": "Enlace copiado",
-  "Add a Lightning address to your profile, then return here to review the request.": "Añade una dirección Lightning a tu perfil y vuelve aquí para revisar la solicitud.",
+  "Add a payment address to your profile, then return here to review the request.": "Añade una dirección de pago a tu perfil y vuelve aquí para revisar la solicitud.",
   "Your identity or payment address changed. Review the address again before sharing.": "Tu identidad o dirección de pago ha cambiado. Revisa la dirección antes de compartirla.",
   "The service may have received your address. Check there before opening a new request.": "Es posible que el servicio haya recibido tu dirección. Compruébalo allí antes de abrir una nueva solicitud.",
   "The service did not accept this request. Open a new request from the service.": "El servicio no ha aceptado esta solicitud. Abre una nueva solicitud desde el servicio.",
@@ -30,5 +30,5 @@ export default {
   "Could not reach the service. Check your connection and open the request again.": "No se pudo contactar con el servicio. Comprueba tu conexión y vuelve a abrir la solicitud.",
   "This link asks for your address. It cannot receive a payment.": "Este enlace solicita tu dirección. No puede recibir un pago.",
   "Finish the current request, then open this one again.": "Termina la solicitud actual y vuelve a abrir esta.",
-  "This code asks for your Lightning address. Scan it from Home after setting up your wallet.": "Este código solicita tu dirección Lightning. Escanéalo desde Inicio después de configurar tu cartera."
+  "This code asks for your payment address. Scan it from Home after setting up your wallet.": "Este código solicita tu dirección de pago. Escanéalo desde Inicio después de configurar tu cartera."
 };

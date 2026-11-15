@@ -79,7 +79,7 @@
             <input
               v-model="searchQuery"
               type="text"
-              :placeholder="$t('Search contacts...')"
+              :placeholder="$t('Search contacts…')"
               class="search-input"
             />
             <Icon
@@ -316,7 +316,7 @@
           <div class="balance-card" :class="{ 'balance-warning': isOverSafeLimit, 'balance-error': isOverBalance }">
             <div class="balance-header">
               <Icon icon="tabler:wallet" />
-              <span>{{ $t('Wallet Balance') }}</span>
+              <span>{{ $t('Wallet balance') }}</span>
             </div>
             <div class="balance-details">
               <div class="balance-item">
@@ -449,7 +449,7 @@
               <div class="exec-info">
                 <div class="exec-name">{{ result.contact.name }}</div>
                 <div class="exec-status">
-                  <span v-if="result.status === 'pending'" class="status-text">{{ $t('Waiting...') }}</span>
+                  <span v-if="result.status === 'pending'" class="status-text">{{ $t('Waiting…') }}</span>
                   <span v-else-if="result.status === 'sending'" class="status-text">{{ $t('Sending...') }}</span>
                   <span v-else-if="result.status === 'success'" class="status-text status-success">{{ $t('Sent') }}</span>
                   <span v-else-if="result.status === 'failed'" class="status-text status-failed">{{ result.error }}</span>
@@ -477,7 +477,7 @@
             class="cancel-btn"
             @click="cancelBatch"
           >
-            {{ $t('Cancel Remaining') }}
+            {{ $t('Cancel remaining') }}
           </q-btn>
         </section>
 
@@ -505,7 +505,7 @@
             />
 
             <div class="summary-label">
-              {{ failedCount === 0 ? $t('Batch Complete') : $t('Batch Finished') }}
+              {{ failedCount === 0 ? $t('Batch complete') : $t('Batch finished') }}
             </div>
 
             <div class="summary-total">
@@ -635,7 +635,7 @@
             class="btn-secondary"
             @click="retryFailed"
           >
-            {{ $t('Retry Failed') }}
+            {{ $t('Retry failed') }}
           </q-btn>
           <q-btn unelevated no-caps class="btn-primary" @click="close">
             {{ $t('Done') }}
@@ -651,14 +651,14 @@
       <div class="confirm-icon">
         <Icon icon="tabler:alert-circle" />
       </div>
-      <h3 class="confirm-title">{{ $t('Cancel Batch?') }}</h3>
+      <h3 class="confirm-title">{{ $t('Cancel batch?') }}</h3>
       <p class="confirm-message">{{ $t('Your selection will be lost.') }}</p>
       <div class="confirm-actions">
         <button class="confirm-btn confirm-btn-cancel" @click="showConfirmClose = false">
-          {{ $t('Go Back') }}
+          {{ $t('Go back') }}
         </button>
         <button class="confirm-btn confirm-btn-confirm" @click="confirmAndClose">
-          {{ $t('Yes, Cancel') }}
+          {{ $t('Yes, cancel') }}
         </button>
       </div>
     </div>
@@ -919,7 +919,7 @@ const batchCost = computed(() => {
   const subtotal = totalAmount.value
   const none = { state: '', feeText: '', feeNote: '', totalText: '', blocked: '', warning: '', ready: false }
   if (rows.some(row => row.kind === 'loading')) {
-    return { ...none, state: 'loading', feeNote: t('Calculating fees...') }
+    return { ...none, state: 'loading', feeNote: t('Calculating the fee…') }
   }
   if (rows.some(row => row.kind === 'failed')) {
     return { ...none, state: 'failed', blocked: t('The fee could not be calculated.') }
@@ -953,7 +953,7 @@ const batchCost = computed(() => {
 const stepTitle = computed(() => {
   const titles = {
     1: t('Select Contacts'),
-    2: t('Set Amount'),
+    2: t('Set amount'),
     3: t('Review'),
     4: t('Sending...'),
     5: t('Complete')

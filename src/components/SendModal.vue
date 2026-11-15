@@ -1136,8 +1136,8 @@ export default {
       let message = this.$t("We couldn't resolve this Nostr profile");
       let caption = this.$t('Check the npub and your connection, then try again');
       if (code === NOSTR_TARGET_ERROR.NO_ADDRESS) {
-        message = this.$t('This Nostr profile has no Lightning address yet');
-        caption = this.$t('Ask them to set a Lightning address on their profile');
+        message = this.$t('This Nostr profile has no payment address yet');
+        caption = this.$t('Ask them to set a payment address on their profile');
       } else if (code === NOSTR_TARGET_ERROR.NO_PROFILE) {
         message = this.$t("We couldn't find this Nostr profile");
         caption = this.$t('No profile was published to the relays we checked');
@@ -1627,7 +1627,7 @@ export default {
 }
 
 /* Whole helper row turns red when showing a resolution error so the
-   message (e.g. "We couldn't find this Lightning address") reads clearly. */
+   message (e.g. "We couldn't find this payment address") reads clearly. */
 .input-helper--error {
   color: #EF4444;
 }

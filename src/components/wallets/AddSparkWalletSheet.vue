@@ -51,7 +51,7 @@
 
         <button type="submit" class="form-sheet-primary add-spark-primary" :disabled="creating || !name.trim()">
           <q-spinner v-if="creating" size="18px" :aria-hidden="true" />
-          {{ creating ? $t('Creating wallet...') : $t('Create wallet') }}
+          {{ creating ? $t('Creating wallet…') : $t('Create wallet') }}
         </button>
       </form>
     </q-card>

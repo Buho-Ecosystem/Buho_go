@@ -82,7 +82,7 @@
     <!-- Fee-quote loading indicator -->
     <div v-else-if="(amountSats > 0 && isLoadingFeeQuote) || useAllBusy" class="fee-loading">
       <q-spinner-dots size="22px" />
-      <span>{{ $t('Calculating fees...') }}</span>
+      <span>{{ $t('Calculating the fee…') }}</span>
     </div>
 
     <!-- Summary panel — explicit breakdown so users know what each

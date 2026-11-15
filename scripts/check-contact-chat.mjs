@@ -343,10 +343,10 @@ try {
     await openChatFromAddressBook(bob, 'Alice');
     await bob.page.getByRole('button', { name: 'Request', exact: true }).click();
     const sheet = bob.page.getByRole('region', { name: /^Request from/ });
-    await sheet.getByText('To request money you need a Lightning address in your profile.').waitFor();
+    await sheet.getByText('To request money you need a payment address in your profile.').waitFor();
     assert.equal(await sheet.getByRole('textbox', { name: 'Amount in sats' }).count(), 0, 'no amount form');
     await snap(bob, '04-request-no-address');
-    await sheet.getByRole('button', { name: 'Set up Lightning address' }).click();
+    await sheet.getByRole('button', { name: 'Set up payment address' }).click();
     await bob.page.getByText('Get paid', { exact: true }).waitFor();
     await bob.page.keyboard.press('Escape');
     await bob.page.keyboard.press('Escape');

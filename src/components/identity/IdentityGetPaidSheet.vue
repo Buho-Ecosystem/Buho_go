@@ -51,7 +51,7 @@
                 <Icon icon="tabler:arrow-down-left" width="17" height="17" />
               </span>
               <span class="pay-row-copy">
-                <strong>{{ $t('Payment Received') }}</strong>
+                <strong>{{ $t('Payment received') }}</strong>
                 <small>
                   {{ latestIncoming.walletName }}<template v-if="relativeIncomingTime"> · {{ relativeIncomingTime }}</template>
                 </small>

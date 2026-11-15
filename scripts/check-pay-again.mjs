@@ -179,7 +179,7 @@ try {
   await paymentsSheet.waitFor();
   await pause(400);
   const stats = await paymentsSheet.locator('.payments-stat strong').allInnerTexts();
-  assert.deepEqual(stats, ['2,900 sats', '2'], 'two payments, 1,500 + 1,400 sats');
+  assert.deepEqual(stats, ['2,900\u00a0sats', '2'], 'two payments, 1,500 + 1,400 sats');
   assert.match(await paymentsSheet.innerText(), /Sent in total/);
   assert.equal(await paymentsSheet.locator('.payments-row').count(), 2);
   assert.equal(await paymentsSheet.locator('.payments-row--current').count(), 1, 'this payment is marked');
