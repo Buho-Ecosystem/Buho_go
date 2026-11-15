@@ -68,6 +68,7 @@ import { DEFAULT_RELAYS } from '../utils/nostrRelays.js';
 import { createSecretKeySigner, nip19 } from 'nostr-core';
 import { sanitizeExternalIdentities, verifiedSigner } from '../utils/externalIdentity.js';
 import { adoptBunker, bunkerSigner, closeSigner, extensionSigner } from '../services/identitySigners.js';
+import { usePaymentFlowStore } from './paymentFlow.js';
 
 const STORAGE_KEYS = Object.freeze({
   METADATA: 'buhoGO_identity_v1',
@@ -80,6 +81,22 @@ function noRawKeyError() {
   const err = new Error('This identity signs through another app');
   err.code = 'IDENTITY_NO_RAW_KEY';
   return err;
+}
+
+/**
+ * The identity in use stays while a payment is being sent
+ * (stores/paymentFlow.js `paymentBeingSent`): what that payment reports when
+ * it ends, a request paid in a chat, is kept and signed for the identity
+ * that started it. Every action that changes the identity in use asks here
+ * at the point it would change it, so no screen, link or shortcut gets
+ * around it. Nothing is queued: the caller says why and the person decides
+ * again once the payment has ended.
+ */
+function assertNoPaymentBeingSent() {
+  if (!usePaymentFlowStore().paymentBeingSent) return;
+  const err = new Error('A payment is being sent');
+  err.code = 'IDENTITY_WAITS_FOR_PAYMENT';
+  throw err;
 }
 
 /** Schema version for the metadata blob. Bump on breaking change. */
@@ -580,6 +597,9 @@ export const useIdentityStore = defineStore('identity', {
       }
 
       const envelope = await encryptString(normalised);
+      // Replacing the identity in use waits for a payment that is being
+      // sent. With none in use yet there is nothing a payment could report to.
+      if (this.bootstrapped) assertNoPaymentBeingSent();
       localStorage.setItem(STORAGE_KEYS.SEED_ENVELOPE, envelope);
 
       // Imported identities are independent of the phrase and stay; the
@@ -663,6 +683,7 @@ export const useIdentityStore = defineStore('identity', {
      * that's shared with the wallet store and must outlive identity.
      */
     async reset() {
+      assertNoPaymentBeingSent();
       for (const external of this.externalIdentities) {
         closeSigner(external.id);
         localStorage.removeItem(STORAGE_KEYS.EXTERNAL_ENVELOPE_PREFIX + external.id);
@@ -1023,6 +1044,7 @@ export const useIdentityStore = defineStore('identity', {
           nip05Handles: this.nip05Handles.map((h) => ({ ...h })),
           knownAccounts: this.nostrKnownAccounts.map((a) => ({ ...a })),
         };
+        assertNoPaymentBeingSent();
         this.nostrAccountIndex = nextAccount;
         this.nostrPubkeyHex = publicKeyHex;
         this.nostrNpub = npub;
@@ -1142,6 +1164,7 @@ export const useIdentityStore = defineStore('identity', {
           accountNip05: { ...this.nostrAccountNip05 },
           activeExternalId: this.activeExternalId,
         };
+        assertNoPaymentBeingSent();
         this._stashAndLoadNip05(nextAccount);
         this.activeExternalId = null;
         this.nostrAccountIndex = nextAccount;
@@ -1219,6 +1242,7 @@ export const useIdentityStore = defineStore('identity', {
           activeExternalId: this.activeExternalId,
           externalHandles: external?.nip05Handles,
         };
+        assertNoPaymentBeingSent();
         this._stashAndLoadNip05(account);
         this.activeExternalId = null;
         this.nostrAccountIndex = account;
@@ -1367,6 +1391,7 @@ export const useIdentityStore = defineStore('identity', {
         nip05Handles: this.nip05Handles.map((h) => ({ ...h })),
         accountNip05: { ...this.nostrAccountNip05 },
       };
+      assertNoPaymentBeingSent();
       this._stashActiveHandles();
       this.activeExternalId = id;
       this.nostrPubkeyHex = target.pubkeyHex;
@@ -1636,7 +1661,11 @@ export const useIdentityStore = defineStore('identity', {
             Math.max(pointer.active, this.nostrAccountIndex),
           );
           let upgraded = false;
-          if (pointer.active > this.nostrAccountIndex) {
+          // The roster above is learned either way. The move to the
+          // pointer's account is a change of the identity in use like any
+          // other: while a payment is being sent it is not made, this
+          // identity stays, and the other is in the list to switch to.
+          if (pointer.active > this.nostrAccountIndex && !usePaymentFlowStore().paymentBeingSent) {
             const derived = deriveNostrIdentity(mnemonic, pointer.active);
             this._stashAndLoadNip05(pointer.active);
             this.nostrAccountIndex = pointer.active;

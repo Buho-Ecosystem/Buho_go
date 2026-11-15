@@ -14,6 +14,12 @@
  * run at a time, and an Undo started from a toast after its page closed
  * still shows its progress (`switching`, for IdentitySwitchingDialog) on
  * whichever page is open.
+ *
+ * No change starts while a payment is being sent (stores/paymentFlow.js):
+ * the screens show their controls unavailable with the reason beside them
+ * (IdentityWaitsForPayment), and a change asked for from anywhere else, the
+ * Undo of a toast for one, is answered with that same line. The identity
+ * store refuses on its own as well, so nothing gets past this file either.
  */
 import { ref } from 'vue';
 import { useQuasar } from 'quasar';
@@ -21,7 +27,9 @@ import { useIdentityStore } from '../stores/identity';
 import { useProfileStore } from '../stores/profile';
 import { useAddressBookStore } from '../stores/addressBook';
 import { useSocialBucketStore } from '../stores/socialBucket';
+import { usePaymentFlowStore } from '../stores/paymentFlow.js';
 
+const UNCHANGED = Object.freeze({ changed: false, contactsLoaded: false });
 const busy = ref(false);
 /** @type {import('vue').Ref<{ name: string, picture?: string } | null>} */
 const switching = ref(null);
@@ -35,6 +43,18 @@ export function useIdentityChange(t) {
   const profile = useProfileStore();
   const addressBook = useAddressBookStore();
   const bucket = useSocialBucketStore();
+  const paymentFlow = usePaymentFlowStore();
+
+  /** A payment is being sent: the identity in use stays, and the person is told why. */
+  function waitsForPayment() {
+    if (!paymentFlow.paymentBeingSent) return false;
+    $q.notify({
+      type: 'info',
+      message: t('A Bitcoin payment is being sent. You can change your identity as soon as it has finished.'),
+      timeout: 4500,
+    });
+    return true;
+  }
 
   function notifyBusy() {
     $q.notify({
@@ -72,15 +92,20 @@ export function useIdentityChange(t) {
    * the address book flips the identity first and loads its contacts after.
    * So the outcome is read from the key, not from the result alone.
    *
-   * @param {{ change: () => Promise<unknown>, keepContacts: boolean, failMessage: string }} opts
+   * @param {{ change: () => Promise<unknown>, keepContacts: boolean, failMessage: string,
+   *   showing?: { name: string, picture?: string } }} opts
+   *   `showing`: who the person is becoming, for the progress dialog; shown
+   *   only once the change really starts.
    * @returns {Promise<{ changed: boolean, contactsLoaded: boolean }>}
    */
-  async function run({ change, keepContacts, failMessage }) {
+  async function run({ change, keepContacts, failMessage, showing = null }) {
+    if (waitsForPayment()) return UNCHANGED;
     if (busy.value || bucket.isSweeping) {
       notifyBusy();
-      return { changed: false, contactsLoaded: false };
+      return UNCHANGED;
     }
     busy.value = true;
+    switching.value = showing;
     const keyBefore = identity.nostrPubkeyHex;
     try {
       const result = await addressBook.switchContactsIdentity({
@@ -91,16 +116,18 @@ export function useIdentityChange(t) {
       const changed = identity.nostrPubkeyHex !== keyBefore;
       if (changed) await refreshForNewIdentity();
       if (result === null) notifyBusy();
-      else if (!changed) notifyFailed(failMessage, result.reason);
+      // A payment that started meanwhile: the store refused, and that is the reason to give.
+      else if (!changed && !waitsForPayment()) notifyFailed(failMessage, result.reason);
       return { changed, contactsLoaded: !!result?.ok };
     } catch (err) {
       console.warn('[identity-change] failed:', err);
       const changed = identity.nostrPubkeyHex !== keyBefore;
       if (changed) await refreshForNewIdentity().catch(() => {});
-      else notifyFailed(failMessage);
+      else if (!waitsForPayment()) notifyFailed(failMessage);
       return { changed, contactsLoaded: false };
     } finally {
       busy.value = false;
+      switching.value = null;
     }
   }
 
@@ -119,17 +146,13 @@ export function useIdentityChange(t) {
   }
 
   /** @param {{ key: number|string, name: string, picture?: string }} target */
-  async function switchAccount(target, { keepContacts = false } = {}) {
-    switching.value = { name: target.name, picture: target.picture || '' };
-    try {
-      return await run({
-        change: changeTo(target.key),
-        keepContacts,
-        failMessage: t("Couldn't switch identity"),
-      });
-    } finally {
-      switching.value = null;
-    }
+  function switchAccount(target, { keepContacts = false } = {}) {
+    return run({
+      change: changeTo(target.key),
+      keepContacts,
+      failMessage: t("Couldn't switch identity"),
+      showing: { name: target.name, picture: target.picture || '' },
+    });
   }
 
   /** "Now using {name}", noting contacts that could not load yet. */

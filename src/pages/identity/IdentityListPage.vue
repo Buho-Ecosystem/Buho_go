@@ -8,6 +8,10 @@
   so none of that repeats on every row. Adding is the list's last row (an
   action sheet: create one, or use one from another app); erasing
   everything sits apart, in its own group.
+
+  While a payment is being sent the identity in use cannot change: the rows
+  and Add stay where they are, unavailable, and the line under the list says
+  why. They are available again the moment that payment has ended.
 -->
 <template>
   <q-page class="id-sub-page identity-surface" :class="$q.dark.isActive ? 'bg-dark' : 'bg-light'">
@@ -18,7 +22,7 @@
 
       <IdentityGroup
         :title="$t('On this phone')"
-        :footer="$t('Tap an identity to use it. The same 12 words back up every identity.')"
+        :footer="flow.paymentBeingSent ? '' : $t('Tap an identity to use it. The same 12 words back up every identity.')"
       >
         <IdentityAccountRow
           v-for="row in identities"
@@ -28,14 +32,15 @@
           :mono="!originOf(row) && captionOf(row).mono"
           :picture="row.picture"
           :active="row.active"
-          :disabled="busy || bucket.isSweeping"
+          :disabled="unavailable"
           @select="onSelect(row)"
           @details="$router.push(`/identity/identities/${row.key}`)"
         />
-        <button type="button" class="add-identity" :disabled="busy || bucket.isSweeping" @click="showAddChoice = true">
+        <button type="button" class="add-identity" :disabled="unavailable" @click="showAddChoice = true">
           <span class="add-identity-glyph" aria-hidden="true"><Icon icon="tabler:plus" width="20" height="20" /></span>
           {{ $t('Add identity') }}
         </button>
+        <template #footer><IdentityWaitsForPayment /></template>
       </IdentityGroup>
 
       <IdentityGroup
@@ -79,11 +84,13 @@ import IdentityAccountRow from '../../components/identity/IdentityAccountRow.vue
 import NewIdentitySheet from '../../components/identity/NewIdentitySheet.vue';
 import ImportIdentitySheet from '../../components/identity/ImportIdentitySheet.vue';
 import IdentitySwitchingDialog from '../../components/identity/IdentitySwitchingDialog.vue';
+import IdentityWaitsForPayment from '../../components/identity/IdentityWaitsForPayment.vue';
 import SettingsHubNav from '../../components/settings/SettingsHubNav.vue';
 import { identityBack } from '../../composables/useIdentityBack';
 import { useIdentities } from '../../composables/useIdentities';
 import { useIdentityChange } from '../../composables/useIdentityChange';
 import { useIdentityStore } from '../../stores/identity';
+import { usePaymentFlowStore } from '../../stores/paymentFlow.js';
 import { useProfileStore } from '../../stores/profile';
 import { useSocialBucketStore } from '../../stores/socialBucket';
 
@@ -95,8 +102,12 @@ const route = useRoute();
 const identity = useIdentityStore();
 const profile = useProfileStore();
 const bucket = useSocialBucketStore();
+const flow = usePaymentFlowStore();
 const { identities, refresh, nameOf, captionOf, originOf } = useIdentities(t);
 const { busy, switching, switchTo } = useIdentityChange(t);
+
+/** Switching and adding wait for a change that is running, or a payment that is being sent. */
+const unavailable = computed(() => busy.value || bucket.isSweeping || flow.paymentBeingSent);
 
 /** Back goes to whichever screen opened this one. */
 const backNav = computed(() => identityBack(router, route.path));
