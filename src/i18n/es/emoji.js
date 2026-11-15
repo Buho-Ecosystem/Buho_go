@@ -1,0 +1,22 @@
+export default {
+  "Add reaction": "Añadir reacción",
+  "Change reaction": "Cambiar reacción",
+  "Emoji": "Emojis",
+  "Choose emoji": "Elegir emoji",
+  "Close emoji picker": "Cerrar selector de emojis",
+  "Search emoji": "Buscar emojis",
+  "Emoji categories": "Categorías de emojis",
+  "More emojis": "Más emojis",
+  "Recently used": "Usados recientemente",
+  "Quick reactions": "Reacciones rápidas",
+  "Smileys": "Caritas",
+  "Gestures": "Gestos",
+  "Hearts": "Corazones",
+  "Animals & Nature": "Animales y naturaleza",
+  "Food & Drink": "Comida y bebida",
+  "Activity & Travel": "Actividades y viajes",
+  "Objects": "Objetos",
+  "Symbols": "Símbolos",
+  "No emoji found": "No se encontraron emojis",
+  "Try another word, like happy or heart.": "Prueba otra palabra, como feliz o corazón."
+};

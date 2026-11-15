@@ -18,6 +18,7 @@ import { inspect } from 'node:util';
 import { createRumor, generateSecretKey, nip19 } from 'nostr-core';
 import { MAX_NOTE_LENGTH, MAX_TEXT_LENGTH, MAX_VERIFY_URL_LENGTH, REQUEST_LIFETIME_SECONDS } from '../constants.js';
 import { DM_ERROR, DmError } from '../errors.js';
+import { EMOJI_CATEGORIES } from '../../../utils/emojiCatalog.js';
 import {
   MESSAGE_TYPE,
   isFileMessage,
@@ -901,4 +902,25 @@ test('a request or payment note with a secret is refused like a message text', (
 test('parseRumor: a text reply from another NIP-17 client (no marker) keeps its quote', () => {
   const reply = { kind: 14, tags: [['p', ME], ['e', REQUEST_ID, 'wss://relay.example.com']], content: 'sure', created_at: NOW };
   assert.equal(received(reply).replyTo, REQUEST_ID);
+});
+
+test('every picker emoji survives standard text and reaction rumor round trips', () => {
+  for (const { emojis } of EMOJI_CATEGORIES) {
+    for (const { char } of emojis) {
+      const text = received(buildTextTemplate({ recipient: ME, text: `Hello ${char}`, now }));
+      assert.equal(text.text, `Hello ${char}`, char);
+      const reaction = received(buildReactionTemplate({ recipient: ME, targetId: REQUEST_ID, emoji: char, now }));
+      assert.equal(reaction.reaction.emoji, char, char);
+      assert.equal(reaction.reaction.targetId, REQUEST_ID);
+    }
+  }
+});
+
+test('standard peers can send skin tones, variation selectors, and joined emoji sequences', () => {
+  for (const char of ['👩🏽‍💻', '🏳️‍🌈', '👨‍👩‍👧‍👦', '❤️', '👍🏿']) {
+    const text = received({ kind: 14, tags: [['p', ME]], content: `Hi ${char}`, created_at: NOW });
+    assert.equal(text.text, `Hi ${char}`);
+    const reaction = received({ kind: 7, tags: [['p', ME], ['e', REQUEST_ID], ['k', '14']], content: char, created_at: NOW });
+    assert.equal(reaction.reaction.emoji, char);
+  }
 });
