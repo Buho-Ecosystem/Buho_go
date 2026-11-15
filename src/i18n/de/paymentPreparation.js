@@ -18,6 +18,7 @@ export default {
   "Getting ready to pay…": "Zahlung wird vorbereitet…",
   "This is taking longer than usual. You can try again later.": "Es dauert länger als üblich. Du kannst es später erneut versuchen.",
   "This wallet isn't available. Choose another wallet.": "Diese Wallet ist nicht verfügbar. Wähle eine andere Wallet.",
+  "This wallet isn't available right now. Try again in a moment.": "Diese Wallet ist gerade nicht verfügbar. Versuch es gleich noch einmal.",
   "Please try again in a moment.": "Versuche es gleich noch einmal.",
   "Use {name} when you pay contacts?": "{name} für Zahlungen an Kontakte verwenden?",
   "It becomes your default wallet for payments to contacts. You can change this in Settings.": "Sie wird deine Standard-Wallet für Zahlungen an Kontakte. Du kannst das in den Einstellungen ändern.",

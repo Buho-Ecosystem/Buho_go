@@ -25,7 +25,17 @@
           `showAnimation` flag so the entrance is synced with the
           rest of this surface's fade-in sequence.
         -->
-        <SuccessCheckmark :animate="showAnimation" :accent="accentColor" />
+        <!-- A payment still on its way is not a paid one: a neutral mark,
+             never the success check. The label says what it is. -->
+        <div
+          v-if="pending"
+          class="pending-mark"
+          :class="[{ 'fade-in': showAnimation }, $q.dark.isActive ? 'pending-mark--dark' : 'pending-mark--light']"
+          aria-hidden="true"
+        >
+          <Icon icon="tabler:clock" width="52" height="52" />
+        </div>
+        <SuccessCheckmark v-else :animate="showAnimation" :accent="accentColor" />
 
         <!-- Amount Display. The amount + fiat lines are hidden when we
              can't determine the paid amount (zero-amount invoice paid via
@@ -66,6 +76,15 @@
             :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'"
           >
             {{ namedRecipient(recipient) }}
+          </div>
+          <!-- Where a payment that is still on its way can be followed. -->
+          <div
+            v-if="pending"
+            class="pending-note"
+            :class="$q.dark.isActive ? 'text-grey-4' : 'text-grey-7'"
+            role="status"
+          >
+            {{ $t('It is not confirmed yet. History shows when it has arrived.') }}
           </div>
         </div>
 
@@ -293,6 +312,15 @@ export default {
     accentColor: {
       type: String,
       default: 'green'
+    },
+    /**
+     * The payment is still on its way: the wallet has it but has not said
+     * it is paid. The screen then shows a neutral mark in place of the
+     * success check and says where the payment can be followed.
+     */
+    pending: {
+      type: Boolean,
+      default: false
     },
     /**
      * Counterparty for this transaction (display string, e.g. a
@@ -606,6 +634,41 @@ export default {
 .amount-section.fade-in {
   opacity: 1;
   transform: translateY(0);
+}
+
+/* The mark of a payment still on its way: the success mark's size, no colour of success. */
+.pending-mark {
+  width: 110px;
+  height: 110px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.4s cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+
+.pending-mark.fade-in {
+  opacity: 1;
+}
+
+.pending-mark--dark {
+  background: rgba(255, 255, 255, 0.08);
+  color: #d1d5db;
+}
+
+.pending-mark--light {
+  background: rgba(0, 0, 0, 0.06);
+  color: #4b5563;
+}
+
+.pending-note {
+  font-family: 'Manrope', sans-serif;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.4;
+  margin: 0.75rem auto 0;
+  max-width: 280px;
 }
 
 .amount-label {
@@ -971,6 +1034,7 @@ export default {
 @media (prefers-reduced-motion: reduce) {
   .success-animation,
   .amount-section,
+  .pending-mark,
   .success-action-area,
   .dismiss-hint,
   .description-section {

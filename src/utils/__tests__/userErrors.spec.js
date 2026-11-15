@@ -212,9 +212,15 @@ test('"Reported by" names a party only for text that party sent', () => {
   const server = buildPaymentError(counterpartyError('Amount is above the maximum', 'Invoice request failed'), { context: 'payment' });
   assert.deepEqual([server.reason, server.reasonSource, server.reasonAttribution], ['Amount is above the maximum', 'upstream', 'Reported by the recipient']);
   // Text of unknown origin (a wallet SDK, BuhoGO itself) is shown, unlabelled.
-  for (const context of ['payment', 'transfer', 'connect', 'kiosk', 'link']) {
+  for (const context of ['transfer', 'connect', 'kiosk', 'link']) {
     const e = buildPaymentError(new Error('Route not found'), { context });
     assert.deepEqual([e.reason, e.reasonSource, e.reasonAttribution], ['Route not found', 'passthrough', null], context);
+  }
+  // A payment the person's own wallet makes never shows such text: it stays
+  // in the technical details, and BuhoGO says what it knows.
+  for (const raw of ['LNBits API error: HTTP 520', 'Unsupported payment type for Spark wallet', "Cannot read properties of null (reading 'sparkInvoice')"]) {
+    const e = buildPaymentError(new Error(raw), { context: 'payment' });
+    assert.deepEqual([e.reason, e.reasonSource, e.reasonAttribution, e.technical.raw], ['Nothing was sent.', 'curated', null, raw], raw);
   }
   // A server that gave no reason leaves our own fallback, unmarked.
   const silent = counterpartyError('  ', 'Invoice request failed');

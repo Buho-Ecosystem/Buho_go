@@ -454,6 +454,7 @@
                   <span v-else-if="result.status === 'success'" class="status-text status-success">{{ $t('Sent') }}</span>
                   <span v-else-if="result.status === 'failed'" class="status-text status-failed">{{ result.error }}</span>
                   <span v-else-if="result.status === 'skipped'" class="status-text status-skipped">{{ result.error }}</span>
+                  <span v-else-if="result.status === 'unconfirmed'" class="status-text status-skipped">{{ $t('Payment not confirmed') }}</span>
                 </div>
               </div>
               <div class="exec-amount">{{ amountText(result.amount) }}</div>
@@ -462,6 +463,7 @@
                 <Icon v-else-if="result.status === 'success'" icon="tabler:circle-check" class="icon-success" />
                 <Icon v-else-if="result.status === 'failed'" icon="tabler:circle-x" class="icon-failed" />
                 <Icon v-else-if="result.status === 'skipped'" icon="tabler:circle-minus" class="icon-skipped" />
+                <Icon v-else-if="result.status === 'unconfirmed'" icon="tabler:clock" class="icon-skipped" />
                 <Icon v-else icon="tabler:clock" class="icon-pending" />
               </div>
             </div>
@@ -548,6 +550,19 @@
               <div class="failed-header">{{ $t('Failed payments') }}:</div>
               <div
                 v-for="result in failedResults"
+                :key="result.contact.id"
+                class="failed-item"
+              >
+                <span class="failed-name">{{ result.contact.name }}</span>
+                <span class="failed-error">{{ result.error }}</span>
+              </div>
+            </div>
+
+            <!-- Not confirmed: may have gone through, so "Retry Failed" leaves these out. -->
+            <div v-if="unconfirmedResults.length > 0" class="failed-list">
+              <div class="failed-header">{{ $t('Payment not confirmed') }}:</div>
+              <div
+                v-for="result in unconfirmedResults"
                 :key="result.contact.id"
                 class="failed-item"
               >
@@ -668,6 +683,7 @@ import { lnurlToUrl } from '../utils/addressUtils'
 import { resolveSuccessAction, formatSuccessActionUrl } from '../utils/successAction.js'
 import { openInAppBrowser } from '../utils/inAppBrowser.js'
 import { buildPaymentError, formatInsufficientBalanceBreakdown } from '../utils/userErrors'
+import { isUnconfirmedPayment } from '../utils/paymentOutcome.js'
 import ContactAvatar from './AddressBook/ContactAvatar.vue'
 import SuccessCheckmark from './SuccessCheckmark.vue'
 import { haptics } from '../utils/haptics.js'
@@ -947,7 +963,7 @@ const stepTitle = computed(() => {
 // ─────────────────────────────────────────────────────────────
 const completedCount = computed(() => {
   return paymentResults.value.filter(r =>
-    r.status === 'success' || r.status === 'failed' || r.status === 'skipped'
+    r.status === 'success' || r.status === 'failed' || r.status === 'skipped' || r.status === 'unconfirmed'
   ).length
 })
 
@@ -961,6 +977,11 @@ const failedCount = computed(() => {
 
 const failedResults = computed(() => {
   return paymentResults.value.filter(r => r.status === 'failed' || r.status === 'skipped')
+})
+
+// Handed to the wallet with no word back: listed apart, never retried.
+const unconfirmedResults = computed(() => {
+  return paymentResults.value.filter(r => r.status === 'unconfirmed')
 })
 
 const totalSent = computed(() => {
@@ -1613,7 +1634,10 @@ async function startBatch() {
       }
     } catch (error) {
       console.error('Batch send payment failed:', error)
-      result.status = 'failed'
+      // A payment whose outcome is unknown may have gone through: it is
+      // neither counted as failed nor offered by "Retry Failed", which
+      // would pay it a second time.
+      result.status = isUnconfirmedPayment(error) ? 'unconfirmed' : 'failed'
       // Show the upstream reason on the row so a 20-recipient batch
       // summary lists what actually went wrong per address, not 20
       // copies of "Payment failed". Fires no global dialog: batch
