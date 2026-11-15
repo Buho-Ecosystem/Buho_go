@@ -199,6 +199,22 @@ export function transferAmount({ balanceSats, thresholdSats, keepSats = 0, route
 }
 
 /**
+ * Where an amount stands against what a destination takes (`{ minSats,
+ * maxSats }`, as utils/lnurlPay.js payRequestLimits reads them), or null
+ * when it is within them or they are not known. `amountSats` is what the
+ * rule would move, after its fee reserve.
+ *   below_minimum  the rule waits for more: nothing is tried, nothing fails
+ *   above_maximum  the transfer cannot be made; it is never split into parts
+ * @returns {{ reason: 'below_minimum'|'above_maximum', limitSats: number }|null}
+ */
+export function amountLimit(amountSats, limits) {
+  if (!limits) return null;
+  if (amountSats < limits.minSats) return { reason: 'below_minimum', limitSats: limits.minSats };
+  if (amountSats > limits.maxSats) return { reason: 'above_maximum', limitSats: limits.maxSats };
+  return null;
+}
+
+/**
  * Following rules from `startId` through wallet destinations, does the money
  * come back to `startId`? A loop would move the same sats around forever.
  * `rules` maps wallet id to rule; `proposed` is the destination being chosen.

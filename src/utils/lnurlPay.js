@@ -376,6 +376,23 @@ function payTerms(payRequest) {
   return { callback, minSendable, maxSendable, commentAllowed, currency: currencyOffer(payRequest.currency) }
 }
 
+/** The whole-sat amounts those limits leave room for (payTerms made sure there is one). */
+function satLimits({ minSendable, maxSendable }) {
+  return { minSats: Math.ceil(minSendable / 1000), maxSats: Math.floor(maxSendable / 1000) }
+}
+
+/**
+ * What a pay request takes, in whole sats, the way requestPayInvoice holds
+ * an amount to it. For a caller that has to know before it asks for an
+ * invoice: Auto-Transfer, when a rule is set up and before each transfer.
+ * @param {object} payRequest  from fetchPayRequest
+ * @returns {{ minSats: number, maxSats: number }}
+ * @throws {Error} code PAY_REQUEST_ERROR.INVALID
+ */
+export function payRequestLimits(payRequest) {
+  return satLimits(payTerms(payRequest))
+}
+
 /**
  * Check a service's answer to the first request and return it with its
  * terms normalised (`currency` is null when none can be used). Unknown
@@ -572,13 +589,12 @@ export async function requestPayInvoice(
   let sats = null
   if (!currency) {
     sats = confirmed
-    if (sats * 1000 < terms.minSendable || sats * 1000 > terms.maxSendable) {
-      const minSats = Math.ceil(terms.minSendable / 1000)
-      const maxSats = Math.floor(terms.maxSendable / 1000)
+    const { minSats, maxSats } = satLimits(terms)
+    if (sats < minSats || sats > maxSats) {
       throw payRequestError(
         PAY_REQUEST_ERROR.AMOUNT_OUT_OF_RANGE,
         `Amount must be between ${minSats} and ${maxSats} sats`,
-        { minSats, maxSats },
+        { minSats, maxSats, amountSats: sats },
       )
     }
   }

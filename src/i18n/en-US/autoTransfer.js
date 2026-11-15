@@ -76,4 +76,5 @@ export default {
   "To {name}": "To {name}",
   "Set Up": "Set Up",
   "Moved {amount}": "Moved {amount}",
+  "{name} takes at most {amount} at a time.": "{name} takes at most {amount} at a time.",
 };

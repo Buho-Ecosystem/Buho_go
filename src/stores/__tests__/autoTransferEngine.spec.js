@@ -50,6 +50,8 @@ function load({ rates = { USD: 50_000 }, rateAge = 2, deps: extra = {} } = {}) {
       },
     },
     '../utils/autoTransfer.js': rules,
+    // The address answers with a typical pay request: the engine reads its limits before a transfer.
+    '../utils/lnurlPay.js': lnurlPayWith(async () => ({ ok: true, status: 200, data: PAY_REQUEST })),
     ...extra,
   };
   const module = { exports: {} };
@@ -287,7 +289,8 @@ test('from LNbits or NWC, a Lightning address is paid only with an invoice for t
       const asked = [];
       const get = async (url) => {
         asked.push(url);
-        if (asked.length === 1) return { ok: true, status: 200, data: PAY_REQUEST };
+        // The pay request is read for its limits, and again by the payment itself.
+        if (!new URL(url).searchParams.has('amount')) return { ok: true, status: 200, data: PAY_REQUEST };
         if (answer === 'refusal') return { ok: false, status: 500, data: { status: 'ERROR', reason: 'Wallet frozen' } };
         const sats = Number(new URL(url).searchParams.get('amount')) / 1000;
         return { ok: true, status: 200, data: { pr: invoiceFor(answer === 'greedy' ? sats * 10 : sats) } };
@@ -342,4 +345,50 @@ test('Settings, the page and Home count only the rules of wallets on screen', ()
   assert.deepEqual(listed.map((entry) => entry.walletId), [id]);
   assert.equal(listed[0].status.kind, rules.ruleStatus(aw.configs[id]).kind);
   assert.deepEqual(aw.rulesOf(), []);
+});
+
+test('an amount outside what the address takes: below its minimum the rule waits, above its maximum it fails and names the limit (#512)', async () => {
+  // The address takes 1,000 to 50,000. Threshold 5,500, keep 5,000.
+  for (const shopType of ['spark', 'nwc', 'lnbits']) {
+    const asked = [];
+    const get = async (url) => {
+      asked.push(url);
+      const sats = Number(new URL(url).searchParams.get('amount')) / 1000;
+      return { ok: true, status: 200, data: sats ? { pr: invoiceFor(sats) } : { ...PAY_REQUEST, minSendable: 1_000_000, maxSendable: 50_000_000 } };
+    };
+    const paid = [];
+    const { aw, id, sent, provider, walletStore } = setup({ shopType, rule: { threshold: { sats: 5_500 }, keep: { sats: 5_000 } }, deps: {
+      '../utils/lnurlPay.js': lnurlPayWith(get),
+      '../services/nwcPayment.js': { payWithNwc: async (nwc, invoice) => { paid.push(invoice); return { payment_hash: 'h' }; } },
+    } });
+    let balance = 6_000;
+    provider.getBalance = async () => ({ balance });
+    walletStore.ensureLNBitsConnected = async () => ({ getFeeReserveSats: async () => null, payInvoice: async ({ invoice }) => { paid.push(invoice); return { payment_hash: 'h' }; } });
+    walletStore.nwcConnection = async () => ({});
+    walletStore.nwcPayOptions = () => ({ limit: null });
+    const moved = () => (shopType === 'spark' ? sent.map(([, , amount]) => amount) : paid);
+
+    // 1,000 above the keep, 990 after the fee reserve: less than the address takes.
+    await aw.checkAndExecute(id, balance, walletStore);
+    await aw.checkAndExecute(id, balance, walletStore);
+    assert.deepEqual(events(aw, id), [['skipped', 'below_minimum']], `${shopType}: it waits, on one line`);
+    assert.equal(aw.configs[id].failureStreak, 0, 'a wait is no failure');
+    assert.deepEqual(moved(), []);
+    assert.equal(asked.length, 1, 'the limits were read once, and no invoice was asked for');
+
+    // Enough has come in: the next balance moves it, with no cooldown in the way.
+    balance = 6_100;
+    await aw.checkAndExecute(id, balance, walletStore);
+    assert.deepEqual(events(aw, id)[0], ['sent', 1_089], shopType);
+    assert.deepEqual(moved(), shopType === 'spark' ? [1_089] : [invoiceFor(1_089)]);
+
+    // More than it takes at a time: nothing is sent, in whole or in part.
+    const before = moved().length;
+    balance = 80_000;
+    await aw.tryNow(id, { ...walletStore, getDisplayBalance: () => ({ balance }) });
+    const [failed] = aw.configs[id].events;
+    assert.deepEqual([failed.outcome, failed.reason, failed.detail, failed.amount], ['failed', 'above_maximum', 50_000, 74_250], shopType);
+    assert.equal(aw.configs[id].failureStreak, 1);
+    assert.equal(moved().length, before);
+  }
 });

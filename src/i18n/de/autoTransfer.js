@@ -76,4 +76,5 @@ export default {
   "To {name}": "An {name}",
   "Set Up": "Einrichten",
   "Moved {amount}": "{amount} verschoben",
+  "{name} takes at most {amount} at a time.": "{name} nimmt höchstens {amount} auf einmal an.",
 };
