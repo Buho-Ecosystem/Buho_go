@@ -101,6 +101,16 @@ export function sparkRefusedPayment(error) {
   return /\binsufficient funds\b/i.test(message) || /\binvalid (input|uuid)\b/i.test(message);
 }
 
+/**
+ * The same for a send to a Bitcoin address, where the service also turns a
+ * request down over the wallet's balance or a fee quote it no longer
+ * honours. Nothing was taken on in either case.
+ */
+function sparkRefusedWithdrawal(error) {
+  const message = String(error?.message || error || '').toLowerCase();
+  return sparkRefusedPayment(error) || message.includes('insufficient') || message.includes('balance') || message.includes('quote');
+}
+
 /** A new key for one payment, where the platform can make one. */
 function newIdempotencyKey() {
   return (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : undefined;
@@ -966,14 +976,15 @@ export class BreezSparkWalletProvider extends WalletProvider {
   /**
    * Hand a prepared payment to the SDK. From here on the payment may be
    * made, so an error is a failure only when the SDK names a reason that
-   * stops a send before it leaves (sparkRefusedPayment). Any other error,
-   * and a wait past `deadlineMs`, is PAYMENT_UNCONFIRMED, carrying what
-   * the payment can be found by (`found`).
+   * stops a send before it leaves (`refused`, sparkRefusedPayment unless
+   * the kind of send knows more). Any other error, and a wait past
+   * `deadlineMs`, is PAYMENT_UNCONFIRMED, carrying what the payment can be
+   * found by (`found`).
    *
    * `idempotencyKey` belongs to one payment: sent again with the same
    * key, Spark recognises it and does not pay a second time.
    */
-  async _sendPrepared(request, { idempotencyKey = null, deadlineMs = PAYMENT_COMPLETION_TIMEOUT_MS, found = {} } = {}) {
+  async _sendPrepared(request, { idempotencyKey = null, deadlineMs = PAYMENT_COMPLETION_TIMEOUT_MS, found = {}, refused = sparkRefusedPayment } = {}) {
     // Without a network nothing leaves: a plain failure.
     assertOnline();
     try {
@@ -983,7 +994,7 @@ export class BreezSparkWalletProvider extends WalletProvider {
         found,
       );
     } catch (error) {
-      if (isUnconfirmedPayment(error) || sparkRefusedPayment(error)) throw error;
+      if (isUnconfirmedPayment(error) || refused(error)) throw error;
       throw unconfirmedPayment(error, found);
     }
   }
@@ -1946,7 +1957,8 @@ export class BreezSparkWalletProvider extends WalletProvider {
     speed = 'medium',
     feeQuoteId,
     feeAmountSats,
-    deductFeeFromWithdrawalAmount = false
+    deductFeeFromWithdrawalAmount = false,
+    idempotencyKey = null,
   }) {
     this._ensureConnected();
 
@@ -2001,17 +2013,17 @@ export class BreezSparkWalletProvider extends WalletProvider {
         throw err;
       }
 
-      const sendResponse = await this.sdk.sendPayment({
+      // A Bitcoin-address payment cannot be taken back: from here on an
+      // error is a failure only on the service's own refusal, and the
+      // caller's key makes a second try of the same payment the same one.
+      const sendResponse = await this._sendPrepared({
         prepareResponse: prep,
         options: { type: 'bitcoinAddress', confirmationSpeed },
-        idempotencyKey: (typeof crypto !== 'undefined' && crypto.randomUUID)
-          ? crypto.randomUUID()
-          : undefined,
-      });
+      }, { idempotencyKey, refused: sparkRefusedWithdrawal });
 
       const payment = sendResponse?.payment;
       if (!payment?.id) {
-        throw new Error('Withdrawal failed: no request ID came back');
+        throw unconfirmedPayment('The wallet returned no request for the withdrawal');
       }
 
       return {
@@ -2024,6 +2036,11 @@ export class BreezSparkWalletProvider extends WalletProvider {
     } catch (error) {
       if (error?.code === 'BREEZ_NO_QUOTE' || error?.code === 'BREEZ_FEE_DRIFT') {
         throw error; // already user-facing; don't let the substring mapper rewrite it
+      }
+      // Sent off with no word on how it ended: kept as it is, by its code.
+      if (isUnconfirmedPayment(error)) {
+        this.setError(error);
+        throw error;
       }
       const msg = String(error?.message || '').toLowerCase();
       if (msg.includes('balance') || msg.includes('insufficient')) {

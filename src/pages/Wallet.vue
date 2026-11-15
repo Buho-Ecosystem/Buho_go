@@ -3420,7 +3420,9 @@ export default {
           speed: fee.speed,
           feeQuoteId: fee.feeQuoteId,
           feeAmountSats: fee.totalFeeSats,
-          deductFeeFromWithdrawalAmount: false
+          deductFeeFromWithdrawalAmount: false,
+          // This payment's own key, the same on every try of it.
+          idempotencyKey: sendKeyOf(payment),
         });
 
         // A verified business stays with the withdrawal, as on every other send.
@@ -3452,6 +3454,13 @@ export default {
         this._monitorL1Withdrawal(result.requestId, walletId);
       } catch (error) {
         console.error('Withdrawal failed:', error);
+        // Sent off, and nobody has said how it ended. A second payment to a
+        // Bitcoin address cannot be taken back: the slide is never offered
+        // again, the sheet closes and one dialog says to check History.
+        if (outcomeOfError(error) === PAYMENT_OUTCOME.UNKNOWN) {
+          this.finishUnconfirmedPayment(payment, error, { amount: amountSats, comment: null, sendingWalletId: walletId, walletType: 'spark' });
+          return;
+        }
         haptics.error();
         const msg = describeL1WithdrawError(error, this.$t.bind(this));
         this.walletStore.showPaymentError(error, {
@@ -6245,7 +6254,9 @@ export default {
           });
         } catch (error) {
           // A changed fee must be reviewed before another attempt to send.
-          await this.updateFeeEstimate({ force: true });
+          // A send whose outcome is unknown gets no other attempt, and its
+          // word must not wait on a new quote.
+          if (outcomeOfError(error) !== PAYMENT_OUTCOME.UNKNOWN) await this.updateFeeEstimate({ force: true });
           throw error;
         }
       }

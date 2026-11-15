@@ -2323,3 +2323,28 @@ test('the recipient\'s currency is offered only by a wallet that sends the amoun
   // An NWC wallet pays the estimate in Bitcoin: the recipient would not get the amount shown.
   assert.deepEqual(['biz', 'lnb', 'hub'].map(offered), ['KES', 'KES', null]);
 });
+
+test('a Bitcoin-address payment whose outcome nobody told is never offered a second time', async () => {
+  const { vm, store } = payingHarness({ active: 'biz' });
+  const keys = [], shown = [], resets = [];
+  // First the service refuses over its fee quote, then the connection drops with the request sent off.
+  const answers = [new Error('Fee quote expired. Please try again.'), paymentOutcome.unconfirmedPayment('SparkSdkError: network error')];
+  store.ensureSparkConnected = async () => ({ withdrawToL1: async ({ idempotencyKey }) => { keys.push(idempotencyKey); throw answers.shift(); } });
+  store.showPaymentError = (error, ctx) => shown.push(userErrors.buildPaymentError(error, ctx, t).title);
+  vm.$refs = { sendSheetRef: { resetSlide: () => resets.push(true) } };
+  await vm.onPaymentDetected({ type: 'bitcoin_address', data: 'bc1qxyz' });
+  Object.assign(vm, { l1Fee: { ready: true, speed: 'medium', feeQuoteId: 'q', totalFeeSats: 120, insufficient: false }, sendSheetAmountSats: 5000 });
+
+  const error = console.error;
+  console.error = () => {};
+  try {
+    await vm.executeSparkL1Withdrawal(5000);
+    assert.deepEqual([resets.length, vm.showSendSheet], [1, true], 'a refusal: nothing was sent, the slide comes back');
+    await vm.executeSparkL1Withdrawal(5000);
+  } finally { console.error = error; }
+
+  assert.ok(keys[0] && keys[0] === keys[1], 'both tries of this payment carry its one key');
+  assert.equal(shown[1], 'Payment not confirmed');
+  assert.equal(resets.length, 1, 'no slide for a payment that may have left');
+  assert.deepEqual([vm.showSendSheet, vm.pendingPayment, vm.isSendingPayment], [false, null, false]);
+});
