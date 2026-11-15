@@ -63,14 +63,14 @@ const open = async request => {
 const choose = async name => {
   await sheet().locator('.pay-with-field').click();
   await sheet().locator('.payment-wallet-picker').getByRole('radio', { name: new RegExp(name) }).click();
-  await sheet().locator('.payment-wallet-apply').click();
 };
 const details = async (request, type = null, screenshot = null) => {
   await sheet().locator('.recipient-info').click();
   await sheet().locator('.payment-details-view').waitFor();
   assert.equal(await page.locator('.q-dialog:visible').count(), 1, 'details uses the existing dialog');
   assert.ok((await sheet().locator('.payment-details-view').innerText()).includes(request), 'details retains full destination');
-  if (type) assert.match(await sheet().locator('.payment-details-view').innerText(), type, 'technical payment type is available in details');
+  if (type) assert.match(await sheet().locator('.payment-details-view').innerText(), type, 'details name the destination in plain words');
+  assert.doesNotMatch(await sheet().locator('.payment-details-view dt').allInnerTexts().then(labels => labels.join(' ')), /Lightning|LNURL|invoice/i, 'no protocol names in the labels');
   await sheet().locator('.payment-details-copy').click();
   assert.equal(await page.evaluate(() => window.__matrixCopied), request, 'copy includes the complete request');
   if (screenshot) await shot(screenshot);
@@ -96,6 +96,19 @@ const fits = async label => {
     }).map(node => node.className).slice(0, 8);
   });
   assert.deepEqual(bad, [], label);
+};
+// With the keyboard up, the amount, the fee and the total are all on screen: nothing is cut off by the scroll region.
+const inView = async label => {
+  const cut = await page.evaluate(() => {
+    const stage = document.querySelector('.sheet-card .stage-compose').getBoundingClientRect();
+    return ['.amount-input', '.recipient-cell', '.fee-row', '.payment-total-row'].flatMap(selector => {
+      const rect = document.querySelector(`.sheet-card ${selector}`)?.getBoundingClientRect();
+      if (!rect) return [`${selector} missing`];
+      const over = Math.max(stage.top - rect.top, rect.bottom - stage.bottom);
+      return over > 1 ? [`${selector} cut by ${Math.round(over)}px`] : [];
+    });
+  });
+  assert.deepEqual(cut, [], `${label}: amount, recipient, fee and total stay in view`);
 };
 
 try {
@@ -193,7 +206,7 @@ try {
     assert.ok(layout.centered < 2 && layout.aligned < 2, 'amount unit and fiat conversion form one centered group');
     assert.ok(layout.walletWidth < layout.headerWidth * .4 && layout.walletHeight >= 44, 'compact wallet selector preserves its touch target');
     assert.equal(await sheet().locator('.recipient-details').count(), 0, 'no inline long destination');
-    const before = await state(); await details(invoice, /Lightning invoice/, '01b-invoice-details'); assert.deepEqual(await state(), before);
+    const before = await state(); await details(invoice, /Payment request/, '01b-invoice-details'); assert.deepEqual(await state(), before);
     await shot('01-invoice'); await cancel();
   });
 
@@ -201,10 +214,16 @@ try {
     for (const request of ['shop@matrix.example', lnurl]) {
       await open(request); await amount().fill('7500');
       await sheet().locator('.note-input').fill('Dinner');
-      const before = await state(); await details(request); assert.deepEqual(await state(), before);
+      // No invoice to quote yet, but a Spark wallet holds the payment to a limit: it says so, in the fee and in the total.
+      assert.match((await sheet().locator('.fee-row-value').innerText()).trim(), /^Up to ₿\s75$/, 'the limit a Spark wallet holds the payment to');
+      assert.match((await sheet().locator('.payment-total-row strong').innerText()).trim(), /^Up to ₿\s7,575$/);
+      const before = await state(); await details(request, request === lnurl ? /Payment link/ : /Payment address/); assert.deepEqual(await state(), before);
       await choose('Travel'); assert.equal((await state()).amount, before.amount); assert.equal((await state()).comment, 'Dinner');
       assert.equal((await state()).wallet, 'travel');
-      assert.equal(await sheet().locator('.fee-row').count(), 0, 'no invented routing quote before an invoice');
+      assert.equal(await sheet().locator('.sheet-card .payment-wallet-picker').count(), 0, 'one tap chose the wallet and returned to the review');
+      assert.equal(await sheet().locator('.fee-row-value').count(), 0, 'no invented routing quote before an invoice');
+      assert.equal((await sheet().locator('.fee-row .payment-fee-notice').innerText()).trim(), 'Fee calculated when sending.', 'a wallet that cannot tell says so in the fee slot');
+      assert.match((await sheet().locator('.payment-total-row strong').innerText()).trim(), /^₿\s7,500 \+ fee$/, 'the total names the fee instead of guessing it');
       await shot(request === lnurl ? '03-lnurl' : '02-address'); await cancel();
     }
   });
@@ -229,7 +248,9 @@ try {
       assert.equal((await sheet().locator('.recipient-name').innerText()).trim(), 'Bitcoin payment');
       assert.ok(!(await sheet().locator('.recipient-cell').innerText()).includes(request));
       assert.ok(!(await sheet().locator('.recipient-cell').innerText()).includes(request.slice(0, 17)), 'encoded Spark destinations stay in details');
-      await details(request, request === sparkAddress ? /Spark payment/ : /Spark invoice/);
+      // Where the money goes: the address by its start and end, the whole of it in details.
+      assert.equal((await sheet().locator('.recipient-addr').innerText()).trim(), `${sparkAddress.slice(0, 10)}…${sparkAddress.slice(-8)}`);
+      await details(request, request === sparkAddress ? /Network\s+Spark[\s\S]*Address/ : /Network\s+Spark[\s\S]*Payment request/);
       await shot(request === sparkAddress ? '05-spark-address' : '06-spark-invoice'); await cancel();
     }
   });
@@ -239,7 +260,8 @@ try {
     assert.equal((await sheet().locator('.recipient-name').innerText()).trim(), 'Bitcoin payment');
     await sheet().locator('.onchain-panel .speed-card').first().waitFor();
     assert.match(await sheet().locator('.onchain-panel .summary').innerText(), /40/);
-    await details(bitcoin, /Bitcoin on-chain payment/);
+    assert.equal((await sheet().locator('.recipient-addr').innerText()).trim(), `${bitcoin.slice(0, 10)}…${bitcoin.slice(-8)}`, 'a pasted address shows its start and end on the review');
+    await details(bitcoin, /Network\s+Bitcoin/);
     assert.equal(await sheet().locator('.onchain-panel .speed-card').first().isVisible(), true);
     assert.equal(await sheet().locator('.onchain-panel .summary').isVisible(), true);
     await shot('07-bitcoin'); await cancel();
@@ -253,15 +275,16 @@ try {
     await sheet().locator('.pay-with-field').click();
     const travel = sheet().getByRole('radio', { name: /Travel/ });
     assert.equal(await travel.getAttribute('aria-disabled'), 'true');
-    await travel.click({ force: true }); await sheet().locator('.payment-wallet-apply').click();
+    await travel.click({ force: true });
     assert.equal((await state()).wallet, 'personal', 'disabled insufficient Travel cannot become selected');
-    await cancel();
+    assert.equal(await sheet().locator('.payment-wallet-picker').count(), 1, 'the chooser stays open on the reason');
+    await sheet().locator('.top-btn').click(); await cancel();
   });
 
   await step('Guesses and failed quote requests never appear as prepared numeric fees', async () => {
     for (const mode of ['guess', 'failure']) {
       quoteMode = mode; await open(invoice); await page.waitForTimeout(450);
-      assert.equal(await sheet().locator('.fee-row').count(), 0, `${mode} fee is not displayed as a quote`);
+      assert.equal(await sheet().locator('.fee-row-value').count(), 0, `${mode} fee is not displayed as a quote`);
       assert.ok(!(await sheet().innerText()).includes('9876')); await cancel();
     }
     quoteMode = 'real';
@@ -273,7 +296,7 @@ try {
     await page.evaluate(() => window.__matrixHome.onSendSheetConfirm({ amountSats: 2400, comment: '' }));
     assert.equal(await page.evaluate(() => window.__matrixSendAttempts || 0), 0, 'executor also rejects a stray confirm while a quote is pending');
     await choose('Travel'); releaseQuotes(); await page.waitForTimeout(400);
-    assert.equal((await state()).wallet, 'travel'); assert.equal(await sheet().locator('.fee-row').count(), 0);
+    assert.equal((await state()).wallet, 'travel'); assert.equal(await sheet().locator('.fee-row-value').count(), 0);
     assert.equal(await sheet().locator('.confirm-cta button.primary-cta').isEnabled(), true, 'settled unknown fees keep the existing send behavior');
     await cancel();
   });
@@ -364,11 +387,13 @@ try {
     assert.equal(viewport.matches, 1, 'unique global portal-inset selector matches runtime DOM');
     assert.ok(viewport.inner.bottom <= 461 && viewport.cardBottom <= 461, 'dialog and card anchor above the keyboard');
     assert.ok(parseFloat(viewport.safePadding) >= 34, 'card retains navigation safe-area padding');
-    await amount().fill('1200'); await fits('keyboard visualViewport smaller than layout viewport, 34px safe bottom'); await shot('11-keyboard-visual-viewport');
+    await amount().fill('1200'); await fits('keyboard visualViewport smaller than layout viewport, 34px safe bottom');
+    await sheet().locator('.payment-total-row strong').waitFor(); await inView('keyboard over the page'); await shot('11-keyboard-visual-viewport');
     await page.evaluate(() => { delete window.visualViewport.height; window.visualViewport.dispatchEvent(new Event('resize')); });
     await cancel(); await page.setViewportSize({ width: 390, height: 460 });
     await open(amountless); await amount().focus(); await amount().fill('1200');
-    await fits('reduced layout viewport, focused amount, 34px safe bottom'); await shot('12-keyboard-layout-viewport'); await cancel();
+    await fits('reduced layout viewport, focused amount, 34px safe bottom');
+    await sheet().locator('.payment-total-row strong').waitFor(); await inView('keyboard that shrinks the page'); await shot('12-keyboard-layout-viewport'); await cancel();
   });
 
   await step('Navigation icons dismiss Settings without saving and keep accessible labels and touch targets', async () => {

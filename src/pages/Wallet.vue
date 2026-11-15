@@ -692,7 +692,7 @@ import { buildPaymentError, classifyTransportFailure, unreachableReason } from '
 import { capabilitiesOf } from '../utils/nwcWallet.js';
 import { diagnoseConnection } from '../utils/connectivity.js';
 import { counterpartyError, isCounterpartyError, keepOrigin } from '../utils/errorOrigin.js';
-import { PAY_REQUEST_ERROR, fetchPayRequest, lightningAddressUrl, readPayRequest, requestPayInvoice } from '../utils/lnurlPay.js';
+import { PAY_REQUEST_ERROR, fetchPayRequest, lightningAddressUrl, payoutCeilingSats, readPayRequest, requestPayInvoice } from '../utils/lnurlPay.js';
 import {parsePayRequestMetadata, serviceTitle, normalizeServiceImage, serviceIdentity} from '../utils/lnurlMetadata.js';
 import {isLightningInvoice as isLightningInvoiceShared, isLightningAddress as isLightningAddressShared, stripWrapperScheme, nativeRailsFromBip21, canonicalLnurl, lnurlDomain, lnurlToUrl} from '../utils/addressUtils.js';
 // One rule for "what is this string", shared with the Send field and the
@@ -1820,8 +1820,17 @@ export default {
         if ((!min || local >= min) && (!max || local <= max)) amount.defaultPayout = local;
       }
 
-      // A visible number comes from the provider's prepared payment. Fee
-      // guesses and execution caps remain internal; they are not quotes.
+      // What the payment costs, said before it is confirmed:
+      //   - a number is the provider's quote for the prepared payment;
+      //   - "Up to" is a limit the payment is then held to (a Spark wallet
+      //     paying an address or a payment link, whose invoice exists only
+      //     after the confirm: sendSparkPayment / payLightningAddress);
+      //   - "Free" is said only from a quote of zero (a Spark transfer the
+      //     SDK prepared). A transfer between Arkade addresses has no quote
+      //     and nothing the app can hold it to, so no fee claim is made;
+      //   - only where the wallet can say nothing beforehand does the sheet
+      //     say that the fee is calculated when sending.
+      // A fee guess is never shown as a number.
       let feeEstimate = null;
       const payerType = this.getSendingWalletType();
       const hasQuotedFee = !this.estimatedFeeIsGuess && Number.isFinite(this.estimatedFee) && this.estimatedFee >= 0;
@@ -1835,6 +1844,18 @@ export default {
           ...(payerType === 'spark' && p.sparkAddress && this.estimatedFee === 0
             ? { label: this.$t('Free · instant') } : {}),
         };
+      } else if (payerType === 'spark' && (p.lightningAddress || p.lnurl) && p.type !== 'lnurl_withdraw') {
+        const limit = unquotedFeeLimitSats(this.payingAmountSats);
+        // An amount typed in the recipient's currency is only an estimate in
+        // Bitcoin: the service adds its own fee to the invoice, and the
+        // invoice is refused above payoutCeilingSats. The most that can be
+        // charged on top of the estimate is that allowance plus the limit.
+        if (limit > 0) {
+          feeEstimate = {
+            sats: limit, isEstimating: false, isLimit: true,
+            payoutSats: payoutCeilingSats(this.payingAmountSats) - this.payingAmountSats + limit,
+          };
+        }
       }
       const feeNotice = this.payingAmountSats > 0 && !feeEstimate && !p.bitcoinAddress
         ? this.$t('Fee calculated when sending.') : '';
@@ -2996,24 +3017,26 @@ export default {
      */
     paymentDetailsFor(payment, recipient) {
       const p = payment || {};
-      let typeLabel, networkLabel, address, addressLabel;
+      // Plain words: what was scanned is named by the label of its own row
+      // ("Payment request", "Payment link", "Payment address", "Address").
+      // A network is named only where it decides what a person can do: an
+      // address that only wallets of its kind can pay, and a payment on the
+      // Bitcoin network itself.
+      let networkLabel = '', address, addressLabel;
       if (p.sparkInvoice || p.sparkAddress) {
-        typeLabel = this.$t(p.sparkInvoice ? 'Spark invoice' : 'Spark payment');
-        networkLabel = 'Spark';
+        networkLabel = this.$t('Spark');
         address = p.sparkInvoice || p.sparkAddress;
         addressLabel = this.$t(p.sparkInvoice ? 'Payment request' : 'Address');
       } else if (p.arkadeAddress) {
-        typeLabel = this.$t('Arkade payment'); networkLabel = 'Arkade'; address = p.arkadeAddress;
+        networkLabel = this.$t('Arkade'); address = p.arkadeAddress;
       } else if (p.bitcoinAddress) {
-        typeLabel = this.$t('Bitcoin on-chain payment'); networkLabel = 'Bitcoin'; address = p.bitcoinAddress;
+        networkLabel = this.$t('Bitcoin'); address = p.bitcoinAddress;
       } else if (p.lightningAddress) {
-        typeLabel = this.$t('Lightning address'); networkLabel = 'Lightning'; address = p.lightningAddress;
+        address = p.lightningAddress; addressLabel = this.$t('Payment address');
       } else if (p.lnurl || p.type === 'lnurl' || p.type === 'lnurl_pay') {
-        typeLabel = this.$t('LNURL payment'); networkLabel = 'Lightning'; address = p.lnurl || p.data;
-        addressLabel = this.$t('Payment request');
+        address = p.lnurl || p.data; addressLabel = this.$t('Payment link');
       } else {
-        typeLabel = this.$t('Lightning invoice'); networkLabel = 'Lightning'; address = p.invoice || p.data;
-        addressLabel = this.$t('Payment request');
+        address = p.invoice || p.data; addressLabel = this.$t('Payment request');
       }
       const metadata = [];
       if (recipient?.lnService?.hint) metadata.push({ label: this.$t('Details'), value: recipient.lnService.hint });
@@ -3028,7 +3051,7 @@ export default {
         metadata.push({ label: this.$t('Expires'), value: new Date(expiresAt).toLocaleString(locale) });
       }
       return {
-        typeLabel, networkLabel, address: typeof address === 'string' ? address : '',
+        networkLabel, address: typeof address === 'string' ? address : '',
         addressLabel: addressLabel || this.$t('Address'),
         description: p.description || p.defaultDescription || p.prefill?.note || '',
         metadata,

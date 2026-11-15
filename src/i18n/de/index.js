@@ -231,7 +231,6 @@ export default {
   "This is a Spark recovery phrase, so we are restoring your Spark wallet.": "Das ist eine Spark Seed-Phrase, deshalb stellen wir dein Spark Wallet wieder her.",
   // ─── Arkade send / receive ───
   "Arkade": "Arkade",
-  "Arkade payment": "Arkade-Zahlung",
   "Arkade Address": "Arkade Adresse",
   "Arkade address copied": "Arkade Adresse kopiert",
   "Free (Arkade transfer)": "Kostenlos (Arkade Transfer)",
