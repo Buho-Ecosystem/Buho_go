@@ -2306,3 +2306,11 @@ test('a payment that arrives while another is being sent never takes its place',
   assert.equal(sent.success.amount, 1000, 'and the paid screen is its own');
   assert.equal(vm.sendInFlight(), false);
 });
+
+test('a payment still on its way never gets the paid screen', async () => {
+  const felt = [];
+  const methods = component({ '../utils/haptics.js': { haptics: { success: () => felt.push('success') } } }).methods;
+  const vm = { ...methods, $t: t, walletStore: {}, _stopDeliveryPoll() {}, getSendingWallet: () => null };
+  await vm.openSendSuccess({ amount: 0, recipient: 'bob@example.com', status: 'pending', showSaveContact: true });
+  assert.deepEqual([vm.sendSuccessPending, vm.sendSuccessLabel, vm.sendSuccessShowSaveContact, felt], [true, 'Payment on its way', false, []]);
+});

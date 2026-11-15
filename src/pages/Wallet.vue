@@ -555,6 +555,7 @@
       :recipient="sendSuccessRecipient"
       :verified-recipient="sendSuccessVerified"
       :label="sendSuccessLabel"
+      :pending="sendSuccessPending"
       :show-save-contact="sendSuccessShowSaveContact"
       :success-action="sendSuccessAction"
       :delivery-status="sendDeliveryStatus"
@@ -1076,6 +1077,8 @@ export default {
       // A Branta-verified business, named on the paid screen with its seal.
       sendSuccessVerified: null,
       sendSuccessLabel: '',
+      // The payment is still on its way: the screen shows no success mark.
+      sendSuccessPending: false,
       sendSuccessShowSaveContact: false,
       // LUD-09 message from the recipient, shown on the send-success screen.
       sendSuccessAction: null,
@@ -6401,9 +6404,10 @@ export default {
      * the fiat line; we never want a fiat-rate hiccup to block the
      * success confirmation.
      *
-     * Label adapts to the status: COMPLETED gets a definite "Payment
-     * Sent"; PENDING gets softer "Still sending…" wording since Spark
-     * may still be routing. Save-Contact is only honoured for
+     * Label and mark adapt to the status: COMPLETED gets a definite
+     * "Payment Sent" and the success check; PENDING is a payment still on
+     * its way, said as that, with a neutral mark and where to follow it
+     * (PaymentConfirmation `pending`). Save-Contact is only honoured for
      * COMPLETED — promoting a contact off a payment that may yet
      * fail would be misleading.
      */
@@ -6449,7 +6453,8 @@ export default {
         : null;
       this.sendSuccessLabel = isCompleted
         ? this.$t('Payment Sent')
-        : this.$t('Still sending…');
+        : this.$t('Payment on its way');
+      this.sendSuccessPending = !isCompleted;
       this.sendSuccessShowSaveContact = !!showSaveContact && isCompleted && this.isPaymentIdentityCurrent();
       // LUD-09 message from the recipient. Only surfaced once the payment has
       // completed — a still-pending send has no settled message to trust yet.
@@ -6497,6 +6502,7 @@ export default {
       this.sendSuccessRecipient = '';
       this.sendSuccessVerified = null;
       this.sendSuccessLabel = '';
+      this.sendSuccessPending = false;
       this.sendSuccessShowSaveContact = false;
       this.sendSuccessAction = null;
       // Reset any save payload that was pre-staged for the modal's

@@ -16,4 +16,6 @@ export default {
   "Up to {amount}": "Bis zu {amount}",
   // A payment handed to the wallet whose outcome nobody has told (utils/paymentOutcome.js).
   "This payment may have gone through. Check History before you pay again, so you do not pay twice.": "Diese Zahlung ist vielleicht durchgegangen. Sieh im Verlauf nach, bevor du noch einmal zahlst, damit du nicht doppelt zahlst.",
+  // Under "Payment on its way" on the screen after a send (PaymentConfirmation `pending`).
+  "It is not confirmed yet. History shows when it has arrived.": "Sie ist noch nicht bestätigt. Im Verlauf siehst du, wann sie angekommen ist.",
 };
