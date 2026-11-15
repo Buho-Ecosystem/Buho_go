@@ -2148,10 +2148,21 @@ export default {
     /**
      * One plain line when the default wallet from Settings sat this payment
      * out because it cannot reach this kind of destination: who pays instead.
-     * Silent when the caller or the person chose the wallet.
+     * Silent when the caller or the person chose the wallet. On Home the
+     * wallet on screen is that default: when it cannot reach the
+     * destination, the line names the wallet that pays instead of it.
      */
     paymentSheetWalletNotice() {
-      if (!this.paymentOnly || !this.pendingPayment || this.paymentIntent?.walletId || this.sendingWalletPicked) return '';
+      if (!this.pendingPayment) return '';
+      if (!this.paymentOnly) {
+        const home = this.walletStore.activeWallet;
+        const payer = this.getSendingWallet();
+        if (!home || !payer || payer.id === home.id || canWalletPay(this.walletTypeOf(home.id), this.pendingDestinationType)) return '';
+        return this.$t("{wallet} can't make this payment. {other} pays this time.", {
+          wallet: home.name || this.$t('Wallet'), other: payer.name || this.$t('Wallet'),
+        });
+      }
+      if (this.paymentIntent?.walletId || this.sendingWalletPicked) return '';
       const preferredId = this.paymentPreferences.preferredWalletId;
       const preferred = preferredId ? this.getWalletById(preferredId) : null;
       const payer = this.getSendingWallet();
@@ -5438,6 +5449,12 @@ export default {
       let amount = null;
 
       try {
+        // A request that has run out is said so in BuhoGO's words, before
+        // any wallet is asked to pay it and answers in its own.
+        if (Number.isFinite(payment.invoiceExpiresAt) && payment.invoiceExpiresAt > 0 && Date.now() >= payment.invoiceExpiresAt) {
+          throw ownWordsError(this.$t('This payment request has expired. Ask for a new one.'));
+        }
+
         // Determine the amount to send
         if (this.needsAmountInput && this.paymentAmount) {
           // Variable amount - convert to sats if user entered in fiat
