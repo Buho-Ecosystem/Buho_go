@@ -26,7 +26,7 @@ async function test(name, run) {
 
 await test('address quotes use explicit SDK fee and the actual selected amount without sending', async () => {
   const { provider, requests, sends } = harness();
-  assert.deepEqual(await provider.getSparkSendFeeEstimate(ADDRESS, 1250), { estimatedFeeSats: 0, isEstimated: false, request: ADDRESS });
+  assert.deepEqual(await provider.getSparkSendFeeEstimate(ADDRESS, 1250), { estimatedFeeSats: 0, isEstimated: false, request: ADDRESS, preparedRoute: { kind: 'sparkAddress', value: ADDRESS } });
   assert.deepEqual(requests[0], { paymentRequest: { type: 'input', input: ADDRESS }, amount: 1250n });
   assert.equal(sends.length, 0);
   assert.equal(provider.isConnected, true);

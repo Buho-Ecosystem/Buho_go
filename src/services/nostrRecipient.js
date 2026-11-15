@@ -9,7 +9,7 @@
  * network or Vue coupling so it stays unit-testable under plain Node. The async
  * profile fetch and the reactive patching live in the caller (Wallet.vue),
  * which already owns the relay pool and the async-enrich-after-render pattern
- * (see runBrantaVerification).
+ * (see services/brantaVerification.js).
  */
 import { formatUsername } from './nip05.js'
 import { nip19 } from 'nostr-core'

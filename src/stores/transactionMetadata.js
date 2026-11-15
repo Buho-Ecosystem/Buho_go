@@ -335,8 +335,10 @@ export const useTransactionMetadataStore = defineStore('transactionMetadata', {
      * @returns {object|null}
      */
     getMerchantVerificationForTransaction: (state) => (txId, walletId) => {
-      const metadata = _resolveMetadata(state, txId, walletId)
-      return metadata?.merchantVerification || null
+      // Verification is never inferred from legacy unscoped metadata: two
+      // wallets can share a transaction ID on opposite sides of a payment.
+      if (!txId || !walletId) return null
+      return state.metadata[_key(txId, walletId)]?.merchantVerification || null
     },
 
     /**
@@ -481,7 +483,7 @@ export const useTransactionMetadataStore = defineStore('transactionMetadata', {
      *
      * `merchantVerification` ({ name, logoUrl, logoLightUrl, description,
      * verifyUrl }) carries the Branta-verified business behind the send
-     * (Wallet.vue brantaReceipt), so History and Transaction Details name it
+     * (the review's receipt, services/brantaVerification.js), so History and Transaction Details name it
      * after sending. It has no address to prove its payment, so it needs a
      * matching amount. Per-payment like counterpartyAvatar above — never
      * merged into an existing link.
@@ -524,6 +526,7 @@ export const useTransactionMetadataStore = defineStore('transactionMetadata', {
       source = null,
       counterpartyAvatar = null,
       merchantVerification = null,
+      merchantProof = [],
       saleBreakdown = null,
       payAgain = null,
       refundAddress = null,
@@ -534,6 +537,9 @@ export const useTransactionMetadataStore = defineStore('transactionMetadata', {
     }) {
       await this._ensureLoaded()
       const payAgainProofIds = payAgainProof(payAgain?.proof)
+      const merchantProofIds = payAgainProof([...(Array.isArray(merchantProof) ? merchantProof : []), transactionId, ...payAgainProofIds])
+      // Merchant branding is a historical claim, never a time/amount guess.
+      if (!walletId || direction === 'incoming' || !merchantProofIds.length) merchantVerification = null
       const payAgainLink = payAgainProofIds.length ? payAgainRecord(payAgain) : null
 
       // Queue when there's anything to stamp once the tx surfaces: a recipient
@@ -599,7 +605,8 @@ export const useTransactionMetadataStore = defineStore('transactionMetadata', {
         label: label || null,
         source: source || null,
         counterpartyAvatar: counterpartyAvatar || null,
-        merchantVerification: merchantVerification || null,
+        merchantVerification: merchantVerification ? JSON.parse(JSON.stringify(merchantVerification)) : null,
+        merchantProof: merchantVerification ? merchantProofIds : [],
         saleBreakdown: saleBreakdown || null,
         payAgain: payAgainLink,
         payAgainProof: payAgainLink ? payAgainProofIds : [],
@@ -672,6 +679,16 @@ export const useTransactionMetadataStore = defineStore('transactionMetadata', {
 
       let matched = 0
       let mutated = remaining.length !== this.pendingContactLinks.length
+      // Pre-upgrade pending links may have carried branding with only time
+      // or amount evidence. Drop that claim while retaining ordinary contact
+      // metadata and its existing matching behavior.
+      for (const link of remaining) {
+        if (link.merchantVerification && (!link.walletId || !Array.isArray(link.merchantProof) || !link.merchantProof.length || link.direction === 'incoming')) {
+          link.merchantVerification = null
+          link.merchantProof = []
+          mutated = true
+        }
+      }
 
       // A tx is "stamped" once it has a contactId, a recipientAddress, a
       // successAction, a label, a source, a verified business or a refund
@@ -726,6 +743,7 @@ export const useTransactionMetadataStore = defineStore('transactionMetadata', {
         // In-window candidates that nobody else has claimed yet.
         const eligible = pool.filter(({ tx, timeMs }) => {
           if (claimed.has(tx.id)) return false
+          if (link.merchantVerification && link.walletId === walletId && provesPayment(tx, link.merchantProof)) return true
           if (link.transactionId) return tx.id === link.transactionId
           if (!timeMs) return true
           return Math.abs(timeMs - linkSentAt) <= PENDING_LINK_TIME_WINDOW_MS
@@ -765,10 +783,25 @@ export const useTransactionMetadataStore = defineStore('transactionMetadata', {
         // A send that carries a Pay again record names its payment's ids:
         // that payment is the match, before any amount or time heuristic.
         const proven = link.payAgain ? eligible.find(({ tx }) => provesPayment(tx, link.payAgainProof)) : null
-        if (!link.transactionId && needsAmountProof && !exact && !proven) continue
+        const merchantProven = link.merchantVerification && link.walletId === walletId
+          ? eligible.find(({ tx }) => provesPayment(tx, link.merchantProof)) : null
+        if (!link.transactionId && needsAmountProof && !exact && !proven && !merchantProven) continue
         if (link.payAgain && !proven && now - linkSentAt < PAY_AGAIN_PROOF_WAIT_MS) continue
 
-        const pick = proven || exact || eligible[0]
+        // A verified business is named only on the payment its ids prove.
+        // Give that payment a while to show up; after that the claim is
+        // dropped and everything else the link carries (contact, address,
+        // label, refund address) is stamped the way it always was. Losing
+        // the seal must never cost the payment its contact.
+        if (link.merchantVerification && !merchantProven) {
+          if (now - linkSentAt < PAY_AGAIN_PROOF_WAIT_MS) continue
+          // A link that carries nothing but the claim has nothing else to
+          // stamp: it keeps waiting for its payment and never takes another's.
+          const carriesMore = link.recipientAddress || link.contactId || link.successAction || link.verifyUrl || link.payLink
+            || link.label || link.source || link.counterpartyAvatar || link.saleBreakdown || link.refundAddress || link.payAgain
+          if (!carriesMore) continue
+        }
+        const pick = merchantProven || proven || exact || eligible[0]
 
         try {
           // Always stamp the durable recipient address; stamp the
@@ -800,7 +833,7 @@ export const useTransactionMetadataStore = defineStore('transactionMetadata', {
           if (link.counterpartyAvatar) {
             await this.setCounterpartyAvatarForTransaction(pick.tx.id, walletId, link.counterpartyAvatar)
           }
-          if (link.merchantVerification) {
+          if (link.merchantVerification && merchantProven) {
             await this.setMerchantVerificationForTransaction(pick.tx.id, walletId, link.merchantVerification)
           }
           if (link.saleBreakdown) {
@@ -1112,7 +1145,7 @@ export const useTransactionMetadataStore = defineStore('transactionMetadata', {
           }
         }
         if (this.metadata[key].merchantVerification) return this.metadata[key]
-        this.metadata[key].merchantVerification = verification
+        this.metadata[key].merchantVerification = JSON.parse(JSON.stringify(verification))
         this.metadata[key].updatedAt = Date.now()
         await this.persistMetadata()
         return this.metadata[key]

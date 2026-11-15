@@ -1,3 +1,4 @@
+import brantaReview from './brantaReview.js';
 import paymentSheetReview from './paymentSheetReview.js';
 import paymentPreparation from './paymentPreparation.js';
 import requests from './requests.js';
@@ -17,6 +18,7 @@ import payRequests from './payRequests.js';
 import refundAddress from './refundAddress.js';
 import tillCodes from './tillCodes.js';
 export default {
+  ...brantaReview,
   ...paymentSheetReview,
   ...paymentPreparation,
   ...requests,
@@ -2503,13 +2505,7 @@ export default {
   "Nearby Bitcoin places": "Lugares Bitcoin cercanos",
   "Close filters": "Cerrar filtros",
   "Close search": "Cerrar búsqueda",
-  "Verified by Branta": "Verificado por Branta",
   "Checking the business": "Comprobando el comercio",
-  "Opens Branta's verification.": "Abre la verificación de Branta.",
-  "This code was changed": "Este código fue modificado",
-  "The address in it is not the one the business registered with Branta. Sending could pay someone else.": "La dirección que contiene no es la que el comercio registró en Branta. El pago podría llegar a otra persona.",
-  "Nothing was sent. Ask the business for a new code.": "No se envió nada. Pide al comercio un código nuevo.",
-  "Shows a business's verified name and logo before you pay. Checked privately with Branta; your payment details are never shared.": "Muestra el nombre y el logotipo verificados de un comercio antes de pagar. Se comprueba de forma privada con Branta; tus datos de pago nunca se comparten.",
   "About Branta": "Acerca de Branta",
   "You are about to pay a Kenyan phone number": "Estás a punto de pagar a un número de teléfono de Kenia",
   "You are about to pay a Zambian phone number": "Estás a punto de pagar a un número de teléfono de Zambia",
@@ -2534,7 +2530,6 @@ export default {
   "Lightning payment": "Pago Lightning",
   "Bitcoin payment": "Pago en Bitcoin",
   "Spark payment": "Pago Spark",
-  "Merchant verification": "Verificación de comercios",
 
   // ── Envío por Nostr: pagar a un npub/nprofile + reserva NIP-05 ──
   "Nostr profile": "Perfil de Nostr",

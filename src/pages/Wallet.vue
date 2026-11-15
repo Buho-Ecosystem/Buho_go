@@ -794,7 +794,8 @@ import {payerIdentifier} from '../utils/lud18.js';
 import {npubCashAddress} from '../utils/npubCashAddress.js';
 import {useProfileStore} from '../stores/profile';
 import { namesOneOrder, sendsPayoutAmount } from '../utils/payAgain.js';
-import {BRANTA_HOLD_MS, BRANTA_LOOKUP_TIMEOUT_MS, BRANTA_STATUS, brantaAvatar, brantaLookupText, checkWithBranta} from '../utils/branta.js';
+import {BRANTA_STATUS, brantaAvatar} from '../utils/branta.js';
+import {createBrantaReview, brantaVerificationOf, PAYMENT_REVIEW_REQUIRED} from '../services/brantaVerification.js';
 import { readCachedTransactions, mergeCachedTransactions } from '../utils/txCache.js';
 import { EventBus, PAYMENT_SENT } from '../utils/eventBus.js';
 import { whenAppUnlocked } from '../utils/appLock.js';
@@ -899,6 +900,9 @@ export default {
       preparationError: '',
       preparationSlow: false,
       walletPreferenceError: '',
+      brantaConfirming: false,
+      // Why a send came back for another look (returnToReview); one line on the sheet.
+      reviewNotice: '',
       defaultWalletCandidate: null,
       awaitingDefaultWalletPrompt: false,
       showDefaultWalletPrompt: false,
@@ -1057,7 +1061,7 @@ export default {
       sendSuccessAmount: 0,
       sendSuccessFiat: '',
       sendSuccessRecipient: '',
-      // A Branta-verified business, for the paid screen's recipient pill.
+      // A Branta-verified business, named on the paid screen with its seal.
       sendSuccessVerified: null,
       sendSuccessLabel: '',
       sendSuccessShowSaveContact: false,
@@ -1519,6 +1523,7 @@ export default {
     },
     canConfirmPayment() {
       if (!this.pendingPayment) return false;
+      if (this.brantaConfirming || this.pendingPayment.brantaMismatch || this.pendingPayment.branta?.status === BRANTA_STATUS.TAMPERED) return false;
       if (this.isEstimatingFee) return false;
       // The sheet disables the slide for a wallet that cannot pay; the
       // pipeline refuses it too, so no stray event can send from one.
@@ -1739,13 +1744,13 @@ export default {
 
       if (p.contactName && !recipient.matchedContact && !p.merchant) recipient.name = p.contactName;
 
-      // ── Branta merchant verification (runBrantaVerification) ──
+      // ── Branta merchant verification (brantaReview) ──
       // While the check runs, the row holds its place. A verified business
       // becomes the recipient, a saved contact's name included: the
       // verified identity is what is being paid. Its logo is fitted whole
       // on the avatar plate. Curated retail merchants keep their own.
       if (p.branta?.status === BRANTA_STATUS.CHECKING) recipient.checking = true;
-      const bv = this.brantaVerificationOf(p);
+      const bv = brantaVerificationOf(p);
       if (bv && !p.merchant) {
         if (bv.name) recipient.name = bv.name;
         const avatar = brantaAvatar(bv);
@@ -1755,7 +1760,9 @@ export default {
           recipient.logoContain = true;
           recipient.logoInset = '';
         }
-        recipient.verification = { name: bv.name, verifyUrl: bv.verifyUrl };
+        // Keep the complete checked snapshot for current proof details:
+        // artwork, historical check time, environment and exact destination.
+        recipient.verification = { ...bv };
       }
 
       // ── Amount mode ───────────────────────────────────────────
@@ -1864,6 +1871,7 @@ export default {
         zarAmount: p.zarAmount || null,
         ratesStale: !!(p.merchant && this.ratesStale),
         connectionNotice: this.connectionNotice,
+        reviewNotice: this.reviewNotice,
         feeEstimate,
         payoutCurrency,
         refund: this.refundSheet,
@@ -2067,7 +2075,12 @@ export default {
     // other payment leaves the gate open.
     /** Branta found the visible address is not the business's: stop the payment. */
     brantaTampered() {
-      return this.pendingPayment?.branta?.status === BRANTA_STATUS.TAMPERED;
+      return !!this.pendingPayment?.brantaMismatch || this.pendingPayment?.branta?.status === BRANTA_STATUS.TAMPERED;
+    },
+
+    /** What the shown business check depends on; its watcher is the one trigger for a lookup. */
+    brantaBindingKey() {
+      return this.brantaReview().key(this.pendingPayment);
     },
 
     sendSheetCommitGate() {
@@ -2328,6 +2341,8 @@ export default {
   },
   async created() {
     this._paymentDisposed = false;
+    this._brantaOnVisibility = () => { if (document.visibilityState !== 'visible') this._brantaReview?.stale(); };
+    if (typeof document !== 'undefined') document.addEventListener('visibilitychange', this._brantaOnVisibility);
     if (this.paymentOnly) {
       this._paymentIdentity = this.identityStore.nostrPubkeyHex;
       this.paymentPreferences.initialize();
@@ -2421,6 +2436,7 @@ export default {
     );
   },
   beforeUnmount() {
+    if (typeof document !== 'undefined') document.removeEventListener('visibilitychange', this._brantaOnVisibility);
     this._paymentDisposed = true;
     this._preparationAttempt = (this._preparationAttempt || 0) + 1;
     clearTimeout(this._preparationSlowTimer);
@@ -2443,6 +2459,10 @@ export default {
     this.cancelBrantaLookup();
   },
   watch: {
+    brantaBindingKey: {
+      handler() { void this.brantaReview().run(this.pendingPayment); },
+      flush: 'sync',
+    },
     // A cleared error clears its label with it, whoever cleared it.
     sendResolveError(message) {
       if (!message) this.sendResolveSource = '';
@@ -2571,8 +2591,10 @@ export default {
       },
       // Another payment on the sheet (a deep link or a tap can replace it
       // while it is open): its refund row starts from nothing, so a pick, a
-      // decline or a refusal never carries over.
+      // decline or a refusal never carries over. Nor does the line that
+      // said why the previous one came back for review.
       'resetRefundAddress',
+      function () { this.reviewNotice = ''; },
     ],
 
     paymentAmount: {
@@ -2927,7 +2949,7 @@ export default {
      * address and patch it onto the live payment, so the confirm sheet upgrades
      * from "Cashu + npub1abc…" to the actual person a moment after it opens.
      *
-     * Fire-and-forget, mirroring runBrantaVerification: it can never block or
+     * Fire-and-forget, like the business check: it can never block or
      * break the send, every failure path resolves to "keep the baseline", and
      * an identity guard stops a late result from landing on a different payment.
      */
@@ -3323,6 +3345,8 @@ export default {
           this.transactionMetadataStore.enqueuePendingContactLink({
             amountSats,
             merchantVerification,
+            transactionId: result.requestId || null,
+            merchantProof: [result.requestId, result.id, result.txid],
             walletId,
           }).catch((err) => console.warn('[wallet] could not queue the verified business:', err));
         }
@@ -3335,6 +3359,7 @@ export default {
         // lives here (not on the sheet) because clearing pendingPayment
         // tears the sheet down.
         this.showSendSheet = false;
+        this.cancelBrantaLookup();
         this.pendingPayment = null;
         this.sendingWalletId = null;
         this.l1Fee = null;
@@ -5085,10 +5110,6 @@ export default {
           this.pendingPayment = paymentData;
         }
 
-        // Merchant verification (Branta). Starts before the sheet opens, so
-        // a checkable payment opens in its checking state; see below.
-        this.runBrantaVerification(this.pendingPayment);
-
         // Nostr-profile enrichment for npub.cash-style addresses. Same
         // fire-and-forget contract: upgrades the recipient to the real person
         // (name + avatar) when relays answer, and does nothing on a miss.
@@ -5161,52 +5182,59 @@ export default {
     },
 
     /**
-     * Merchant verification (Branta), send side.
+     * Merchant verification (Branta), send side: services/brantaVerification.js.
      *
      * A payment Branta can check opens its confirm sheet in the CHECKING
      * state: the recipient row holds its place and the commit control
      * waits. The sheet settles once, on the answer or after BRANTA_HOLD_MS,
      * so nothing changes under a finger:
-     *   - verified: the business becomes the recipient, the badge shows;
+     *   - verified: the business becomes the recipient, with its seal;
      *   - no answer, a miss or an error: the normal recipient, nothing more;
      *   - a changed code: the sheet stops the payment. This one answer still
      *     counts after the hold, until the payment is on its way.
      * Your own users' invoices (`firstParty`) and till codes are not
      * looked up: they are never on Branta.
+     *
+     * The page only tells the review who pays what. The result is read
+     * from `pendingPayment.branta`.
      */
-    runBrantaVerification(payment) {
-      if (!payment || !this.bitcoinPrefsStore.brantaVerificationEnabled) return;
-      if (payment.firstParty || payment.source === SA_RETAIL_SOURCE) return;
-      const qrText = brantaLookupText(payment);
-      if (!qrText) return;
-
-      this.cancelBrantaLookup();
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), BRANTA_LOOKUP_TIMEOUT_MS);
-      const hold = setTimeout(() => settle({ status: BRANTA_STATUS.NONE }), BRANTA_HOLD_MS);
-      this._brantaAbort = controller;
-
-      payment.branta = { status: BRANTA_STATUS.CHECKING };
-      // Each payment is a fresh object, so a late answer never lands on another.
-      const isCurrent = () => this.pendingPayment === payment;
-      const settle = (answer) => {
-        if (isCurrent() && payment.branta?.status === BRANTA_STATUS.CHECKING) payment.branta = answer;
-      };
-
-      checkWithBranta({ qrText, signal: controller.signal })
-        .then((answer) => {
-          if (answer.status === BRANTA_STATUS.TAMPERED) {
-            if (isCurrent() && !this.isSendingPayment && !this.sendDidSucceed) payment.branta = answer;
-            return;
-          }
-          settle(answer);
-        })
-        .finally(() => {
-          clearTimeout(timeout);
-          clearTimeout(hold);
-          // Never leave a payment checking: an abort settles it too.
-          settle({ status: BRANTA_STATUS.NONE });
+    brantaReview() {
+      if (!this._brantaReview) {
+        this._brantaReview = createBrantaReview({
+          payment: () => this.pendingPayment,
+          busy: () => this.isSendingPayment || this._paymentDisposed,
+          gone: () => !!this._paymentDisposed,
+          enabled: () => !!this.bitcoinPrefsStore?.brantaVerificationEnabled,
+          excluded: payment => !!payment.firstParty || payment.source === SA_RETAIL_SOURCE,
+          walletId: () => this.getSendingWallet()?.id,
+          walletType: () => this.getSendingWalletType(),
+          amount: () => this.payingAmountSats,
+          confirming: value => { this.brantaConfirming = value; },
         });
+      }
+      return this._brantaReview;
+    },
+
+    /** What a verified payment keeps on its transaction; null when not verified. */
+    brantaReceipt(payment) {
+      return this.brantaReview().receipt(payment);
+    },
+
+    /** Drop the lookup of a payment that was sent, cancelled or replaced. */
+    cancelBrantaLookup() {
+      this._brantaReview?.cancel();
+    },
+
+    /**
+     * A send that stopped for another look, before any debit: the commit
+     * control returns and one plain line on the sheet says why.
+     */
+    returnToReview(reason) {
+      this.$refs.sendSheetRef?.resetSlide();
+      if (!reason || !this.pendingPayment) return;
+      this.reviewNotice = reason === 'changed'
+        ? this.$t('The recipient changed. Review it before sending.')
+        : this.$t('The business check is not available right now. Review the payment before sending.');
     },
 
     /**
@@ -5235,30 +5263,6 @@ export default {
         EventBus.emit(PAYMENT_SENT, payload);
       } catch (error) {
         console.warn('[wallet] a payment:sent listener failed:', error?.name || 'Error');
-      }
-    },
-
-    /**
-     * Abort any in-flight Branta lookup, for a payment that was dropped or
-     * replaced (sheet cancelled, component unmounted, a newer payment).
-     */
-    /** A payment's Branta verification, once verified; null otherwise. */
-    brantaVerificationOf(payment) {
-      return payment?.branta?.status === BRANTA_STATUS.VERIFIED ? payment.branta.verification : null;
-    },
-
-    /** What a verified payment keeps on its transaction; null when not verified. */
-    brantaReceipt(payment) {
-      const bv = this.brantaVerificationOf(payment);
-      if (!bv) return null;
-      const { name, logoUrl, logoLightUrl, description, verifyUrl } = bv;
-      return { name, logoUrl, logoLightUrl, description, verifyUrl };
-    },
-
-    cancelBrantaLookup() {
-      if (this._brantaAbort) {
-        this._brantaAbort.abort();
-        this._brantaAbort = null;
       }
     },
 
@@ -5531,6 +5535,12 @@ export default {
               counterpartyAvatar,
               // Branta-verified sends only: the business, for History and details.
               merchantVerification,
+              // The ids that prove which payment it was: what the wallet
+              // returned, and the invoice's own hash (some wallets return
+              // only a preimage their history never shows).
+              merchantProof: merchantVerification
+                ? [result?.id, result?.payment_hash, result?.paymentHash, result?.preimage, this.paymentHashOf(this.pendingPayment?.invoice)]
+                : [],
               payAgain: addressPayAgain,
               // The address a refund goes to (LUD-18), as it was sent.
               refundAddress: sharedRefundAddress,
@@ -5539,7 +5549,7 @@ export default {
               walletId: sendingWalletId,
               // Spark's invoice result carries the history payment ID even
               // while pending. Never match it to a different, later payment.
-              transactionId: walletType === 'spark' && payLink ? result?.id || null : null,
+              transactionId: merchantVerification ? result?.id || result?.payment_hash || result?.paymentHash || null : (walletType === 'spark' && payLink ? result?.id || null : null),
             });
           } catch (err) {
             console.warn('[wallet] could not queue contact link:', err);
@@ -5636,6 +5646,7 @@ export default {
         });
 
         this.showSendSheet = false;
+        this.cancelBrantaLookup();
         this.pendingPayment = null;
         this.sendingWalletId = null;
         this.paymentAmount = '';
@@ -5650,6 +5661,10 @@ export default {
         await this.refreshPayerBalance(sendingWalletId);
 
       } catch (error) {
+        if (error?.code === PAYMENT_REVIEW_REQUIRED) {
+          this.returnToReview(error.reason);
+          return;
+        }
         console.error('Payment failed:', error);
         // The service turned down the refund address, or wants one: said on
         // the row, with the sheet open, and never tried again by itself (a
@@ -5710,8 +5725,16 @@ export default {
      * thumb so the user can try again without dismissing the sheet.
      */
     async onSendSheetConfirm({ amountSats, comment, payout = null }) {
-      if (this.isEstimatingFee) return;
+      if (this.isEstimatingFee || this.brantaConfirming || this.pendingPayment?.brantaMismatch) return;
       if (this.paymentOnly && (this.preparationState !== 'ready' || !this.isContextualAttemptCurrent() || !this.paymentSheetWalletCanPay || this.isSendingPayment)) return;
+      if (this.pendingPayment) {
+        this.reviewNotice = '';
+        // Only a payment that is looked up waits for its check; any other
+        // takes ownership below in this same tick.
+        const review = this.brantaReview();
+        const check = review.checks(this.pendingPayment) ? await review.accept(this.pendingPayment) : review.skip(this.pendingPayment);
+        if (!check.ok) return this.returnToReview(check.reason);
+      }
       // Acquire ownership synchronously, before an executor's first await.
       if (this.paymentOnly && this.paymentFlow.committed) return;
       if (this.paymentOnly) this.paymentFlow.setStage(this.paymentIntent.id, 'sending');
@@ -5901,6 +5924,7 @@ export default {
      * refund address), for a Lightning address or a link.
      */
     async sendSparkPayment(amount, comment, payout = null, walletId = null, payerData = null) {
+      const payment = this.pendingPayment;
       // Ensure Spark wallet is connected (auto-connects if session PIN available)
       const provider = await this.walletStore.ensureSparkConnected(walletId);
 
@@ -5942,7 +5966,8 @@ export default {
           preferSpark: true, // Auto-use Spark transfer if recipient has Spark address
           amountSats: isZeroAmountInvoice ? amount : null, // Only pass amount for zero-amount invoices
           // The fee the sheet showed; a quote of 0 ("Free") is a quote too.
-          maxFee: this.estimatedFee ?? undefined
+          maxFee: this.estimatedFee ?? undefined,
+          onPreparedRoute: route => this.brantaReview().assertPrepared(payment, route),
         });
       }
 
@@ -6264,7 +6289,7 @@ export default {
       this.sendSuccessAmount = Number(amount) || 0;
       this.sendSuccessRecipient = recipient || '';
       this.sendSuccessVerified = verifiedBusiness
-        ? { name: verifiedBusiness.name || recipient || '', avatar: brantaAvatar(verifiedBusiness) }
+        ? { ...verifiedBusiness, name: verifiedBusiness.name || recipient || '' }
         : null;
       this.sendSuccessLabel = isCompleted
         ? this.$t('Payment Sent')
@@ -6892,6 +6917,10 @@ export default {
         const fee = estimate?.estimatedFeeSats;
         this.estimatedFee = typeof fee === 'number' && Number.isFinite(fee) && fee >= 0 ? fee : null;
         this.estimatedFeeIsGuess = estimate?.isEstimated === true;
+        if (this.bitcoinPrefsStore?.brantaVerificationEnabled) {
+          const route = estimate?.isEstimated ? null : estimate?.preparedRoute;
+          this.brantaReview().prepared(payment, { walletId, amount, request: nativeRequest || invoice, target: route });
+        }
       } catch (error) {
         if (run !== this._feeEstimateRun) return;
         this.estimatedFee = null;

@@ -133,7 +133,7 @@
 
         <!-- Step 3: Confirm -->
         <section v-else-if="state.currentStep === 3 && !state.transferComplete" class="step-panel step-panel--center">
-          <div class="confirm-amount">{{ fmt(parseInt(state.amount)) }}</div>
+          <div class="confirm-amount">{{ fmt(amountSats() || 0) }}</div>
           <div class="confirm-flow">
             <div class="confirm-wallet">
               <WalletAvatar :type="state.fromWallet?.type" :wallet-id="state.fromWallet?.id" size="sm" />
@@ -164,7 +164,7 @@
         <section v-if="state.transferComplete" class="step-panel step-panel--center transfer-success">
           <SuccessCheckmark :animate="state.transferComplete" accent="green" />
           <div class="success-label">{{ $t('Transfer Complete') }}</div>
-          <div class="success-amount">{{ fmt(parseInt(state.amount)) }}</div>
+          <div class="success-amount">{{ fmt(amountSats() || 0) }}</div>
           <div class="success-route">{{ state.fromWallet?.name }} → {{ state.toWallet?.name }}</div>
         </section>
 
@@ -263,6 +263,7 @@
 
 <script setup>
 import { ref, reactive, computed, watch, nextTick, h, getCurrentInstance } from 'vue';
+import { parsePaymentAmount } from '../utils/paymentAmountInput.js';
 import { useQuasar } from 'quasar';
 import { useWalletStore } from '../stores/wallet';
 import { haptics } from '../utils/haptics';
@@ -275,6 +276,12 @@ import { internalTransferDetailsRoute } from '../utils/internalTransferDetails.j
 // component proxy — same pattern as BatchSendModal.
 const { proxy } = getCurrentInstance();
 const t = (key, params) => proxy.$t(key, params);
+
+/**
+ * The typed amount in whole units, or null when it is not one: a decimal is
+ * refused, never cut off (2.5 must not become 2).
+ */
+const amountSats = () => parsePaymentAmount(state.amount, { locales: [proxy.$i18n?.locale, undefined], precision: 0 });
 
 // ─────────────────────────────────────────────────────────────
 // Sub-components (functional)
@@ -419,7 +426,7 @@ const canProceed = computed(() => {
     const to = wallets.value.find(w => w.id === state.toWallet?.id);
     return Boolean(state.fromWallet && to?.canReceive && state.fromWallet.id !== to.id);
   }
-  if (state.currentStep === 2) return state.amount && parseInt(state.amount) > 0 && !state.amountError;
+  if (state.currentStep === 2) return amountSats() > 0 && !state.amountError;
   return true;
 });
 
@@ -522,9 +529,10 @@ function setMax() {
 
 function validateAmount() {
   state.amountError = '';
-  const n = parseInt(state.amount);
-  if (!state.amount || isNaN(n)) return;
-  if (n <= 0) state.amountError = 'Amount must be greater than 0';
+  if (state.amount === '' || state.amount == null) return;
+  const n = amountSats();
+  if (n === null) state.amountError = t('Check the amount format.');
+  else if (n <= 0) state.amountError = 'Amount must be greater than 0';
   else if (n > (state.fromWallet?.balance || 0)) state.amountError = 'Insufficient balance';
 }
 
@@ -553,11 +561,11 @@ async function doTransfer() {
   if (state.isTransferring) return;
   state.isTransferring = true;
   try {
-    const result = await store.transferBetweenWallets(state.fromWallet.id, state.toWallet.id, parseInt(state.amount));
+    const result = await store.transferBetweenWallets(state.fromWallet.id, state.toWallet.id, amountSats());
     state.transactionId = result.transactionId;
     state.transferComplete = true;
     haptics.success();
-    emit('transfer-complete', { fromWallet: state.fromWallet, toWallet: state.toWallet, amount: parseInt(state.amount) });
+    emit('transfer-complete', { fromWallet: state.fromWallet, toWallet: state.toWallet, amount: amountSats() });
   } catch (e) {
     // Surface the failure in the global payment-error dialog so the
     // transfer-fail screen looks the same as every other payment
@@ -568,7 +576,7 @@ async function doTransfer() {
       walletType: state.fromWallet?.type || null,
       walletName: state.fromWallet?.name,
       route: `Transfer (${state.fromWallet?.name || '?'} → ${state.toWallet?.name || '?'})`,
-      amountSats: parseInt(state.amount) || undefined,
+      amountSats: amountSats() || undefined,
       t: t,
     });
     haptics.error();

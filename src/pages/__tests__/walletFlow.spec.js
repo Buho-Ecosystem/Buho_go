@@ -12,6 +12,7 @@ import * as payingWallets from '../../utils/payingWallets.js';
 import * as walletCapabilities from '../../utils/walletCapabilities.js';
 import * as errorOrigin from '../../utils/errorOrigin.js';
 import * as branta from '../../utils/branta.js';
+import * as brantaReview from '../../services/brantaVerification.js';
 import * as payAgain from '../../utils/payAgain.js';
 import * as recipientPayments from '../../services/recipientPayments.js';
 import * as haptics from '../../utils/haptics.js';
@@ -46,6 +47,7 @@ const component = (dependencies = {}) => evaluate('../Wallet.vue', {
   '../utils/lnurlMetadata.js': metadata,
   '../utils/lnurlWithdraw.js': lnurlWithdraw,
   '../utils/branta.js': branta,
+  '../services/brantaVerification.js': brantaReview,
   '../utils/amountFormatting.js': { formatAmount: n => `${n} sats` },
   '../stores/autoWithdraw': { useAutoWithdrawStore: () => ({ getConfig: () => null, checkAndExecute() {} }) },
   '../utils/fiatRates': { fiatRatesService: { convertSatsToFiat: async () => null } },
@@ -2175,4 +2177,25 @@ test('submitting preserves the reviewed fee; an explicitly rejected Arkade fee c
   await vm.updateFeeEstimate({ force: true });
   assert.equal(vm.estimatedFee, 40, 'a rejected on-chain fee is refreshed for a new review');
   assert.equal(vm.arkadeFeeQuote.address, 'bc1qfee-changed');
+});
+
+
+test('current business projection preserves the complete normalized check for the shared review views', () => {
+  const { vm, options } = payingHarness();
+  const destination = { type: 'bolt11', value: 'lnbc1checked-request', isEncrypted: false };
+  const snapshot = branta.normalizeBrantaResult({
+    status: 'match', matchedDestinations: [destination],
+    payments: [{ platform: 'Kaffeehaus', destinations: [destination], platformLogoLightUrl: 'https://staging.guardrail.branta.pro/logos/coffee.svg', description: 'Coffee and cake' }],
+    verifyUrl: 'https://staging.guardrail.branta.pro/v1/verify/record#device-local',
+  }, { kind: 'lightning', value: destination.value }, { environment: 'Staging', now: 1763208000000 });
+  assert.ok(snapshot);
+  vm.pendingPayment = { ...invoicePayment(destination.value), branta: { status: branta.BRANTA_STATUS.VERIFIED, verification: snapshot } };
+  vm.resolveWalletBrand = () => null;
+  const review = options.computed.paymentSheetProps.call(vm);
+  assert.deepEqual(review.recipient.verification, snapshot, 'the adapter must not reduce the proof to name and record URL');
+  assert.equal(review.recipient.verification.checkedAt, 1763208000000);
+  assert.equal(review.recipient.verification.environment, 'Staging');
+  assert.equal(review.recipient.verification.logoLightUrl, snapshot.logoLightUrl);
+  assert.equal(review.recipient.logoUrl, snapshot.logoLightUrl);
+  assert.deepEqual(review.recipient.verification.destination, { kind: 'lightning', value: destination.value });
 });
