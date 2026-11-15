@@ -1,7 +1,7 @@
 /**
  * Contact chat components (src/components/chat/*).
  *
- * Same approach as payWithField.spec.js: the real templates are compiled (SSR)
+ * Same approach as paymentConfirmSheet.spec.js: the real templates are compiled (SSR)
  * and rendered, the real scripts run with their imports stubbed, so these
  * tests read the actual markup and the actual component logic:
  *   - chatFormat helpers: day separators, initials, npub fragment, counting
