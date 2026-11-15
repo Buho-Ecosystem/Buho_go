@@ -775,27 +775,56 @@ const VERIFIED_BUSINESS = {
   checkedAt: 1763136000000, environment: 'Production',
 }
 
-test('verified daily review shows only the centered business mark; verification lives in same-sheet details', async () => {
+test('a verified business is named in the recipient row with its seal, and the row opens its check', async () => {
   const payment = { ...sheetProps().payment, recipient: { name: 'North Cafe', address: 'lnbc-request', verification: VERIFIED_BUSINESS } }
   const html = await render(ConfirmSheet, sheetProps({ payment }), { directives: sheetDirectives })
-  assert.match(html, /verified-merchant-stage/)
-  assert.match(html, /branta-merchant-mark[^>]*aria-label="North Cafe"/)
-  assert.doesNotMatch(html, /class="recipient-cell"|branta-badge|class="recipient-name">North Cafe/)
-  assert.doesNotMatch(html, /branta-current-check/)
+  // The name is on the screen where it matters, never only in an aria-label.
+  assert.match(html, /class="recipient-name">North Cafe</)
+  assert.match(html, /class="recipient-verified"[\s\S]*?Verified business/)
+  assert.match(html, /class="recipient-identity recipient-identity--action"[^>]*role="button"[^>]*tabindex="0"/)
+  assert.doesNotMatch(html, /verified-merchant-stage|branta-badge|recipient-addr/)
+  // Without artwork it keeps its own initial, never the generic Bitcoin mark.
+  assert.doesNotMatch(html, /recipient-bitcoin-logo/)
+  assert.match(html, /recipient-info/, 'payment details stay one tap away')
+  const plain = await render(ConfirmSheet, sheetProps({ payment: { ...payment, recipient: { name: 'North Cafe', address: 'lnbc-request' } } }), { directives: sheetDirectives })
+  assert.doesNotMatch(plain, /recipient-verified|role="button"[^>]*class="recipient-identity/)
+  assert.doesNotMatch(plain, /recipient-identity--action/)
   const details = await render(ConfirmSheet, sheetProps({ payment }), { directives: sheetDirectives, data: { detailsOpen: true } })
-  assert.match(details, /branta-current-check/)
+  assert.match(details, /branta-current-check[\s\S]*?Business check/)
   const proof = await render(ConfirmSheet, sheetProps({ payment }), { directives: sheetDirectives, data: { brantaDetailsOpen: true } })
   assert.match(proof, /branta-verification-view/)
+  assert.match(proof, />Business check</, 'one name for the check, in the title')
   assert.match(proof, /Branta matched this payment to the business below/)
+  assert.equal((proof.match(/Business check/g) || []).length, 1, 'said once on the screen')
   assert.equal((readFileSync(new URL('../PaymentConfirmSheet.vue', import.meta.url), 'utf8').match(/<q-dialog\b/g) || []).length, 1)
 })
 
-test('business details Back preserves the entire payment draft and returns to payment details', () => {
-  const vm = { brantaDetailsOpen: true, displayAmount: '751', currentCurrency: 'btc', comment: 'Coffee', walletDraftId: 'personal', closeBrantaDetails: ConfirmSheet.methods.closeBrantaDetails, $nextTick() {} }
-  ConfirmSheet.methods.onTopAction.call(vm)
-  assert.equal(vm.brantaDetailsOpen, false)
-  assert.equal(vm.detailsOpen, true)
-  assert.deepEqual([vm.displayAmount, vm.currentCurrency, vm.comment, vm.walletDraftId], ['751', 'btc', 'Coffee', 'personal'])
+test('the check opens from the recipient row and from payment details, and Back returns where it came from', () => {
+  const base = () => ({
+    recipientVerification: VERIFIED_BUSINESS, brantaDetailsOpen: false, detailsOpen: false, walletPickerOpen: true, brantaDetailsFrom: 'review',
+    displayAmount: '751', currentCurrency: 'btc', comment: 'Coffee', walletDraftId: 'personal',
+    closeBrantaDetails: ConfirmSheet.methods.closeBrantaDetails, $nextTick() {}, $refs: {},
+  })
+  const fromRow = base()
+  ConfirmSheet.methods.openBrantaDetails.call(fromRow, 'review')
+  assert.deepEqual([fromRow.brantaDetailsOpen, fromRow.detailsOpen, fromRow.walletPickerOpen], [true, false, false])
+  ConfirmSheet.methods.onTopAction.call(fromRow)
+  assert.deepEqual([fromRow.brantaDetailsOpen, fromRow.detailsOpen], [false, false], 'back on the review')
+  const fromDetails = { ...base(), detailsOpen: true }
+  ConfirmSheet.methods.openBrantaDetails.call(fromDetails, 'details')
+  ConfirmSheet.methods.onTopAction.call(fromDetails)
+  assert.deepEqual([fromDetails.brantaDetailsOpen, fromDetails.detailsOpen], [false, true], 'back on payment details')
+  for (const vm of [fromRow, fromDetails]) assert.deepEqual([vm.displayAmount, vm.currentCurrency, vm.comment, vm.walletDraftId], ['751', 'btc', 'Coffee', 'personal'])
+  const sending = { ...base(), isSending: true }
+  ConfirmSheet.methods.openBrantaDetails.call(sending, 'review')
+  assert.equal(sending.brantaDetailsOpen, false)
+})
+
+test('a send that came back for another look says why in one plain line', async () => {
+  const payment = { ...sheetProps().payment, reviewNotice: 'The recipient changed. Review it before sending.' }
+  const html = await render(ConfirmSheet, sheetProps({ payment }), { directives: sheetDirectives })
+  assert.match(html, /class="wallet-hint" role="status"[\s\S]*?The recipient changed\. Review it before sending\./)
+  assert.doesNotMatch(await render(ConfirmSheet, sheetProps(), { directives: sheetDirectives }), /The recipient changed/)
 })
 
 test('fixed hero groups like the rest of the app without formatting the exact sat state', async () => {
@@ -891,8 +920,8 @@ test('incremental German BTC decimal entry survives normalization, blur and digi
   }
 })
 
-test('merchant mark missing artwork uses saved initials and supports old receipt snapshots', async () => {
-  const html = await render(MerchantMark, { merchant: { name: 'North Cafe' }, size: 40 })
+test('merchant mark missing artwork uses the saved initials, also for a record with a name only', async () => {
+  const html = await render(MerchantMark, { verification: { name: 'North Cafe' }, size: 40 })
   assert.match(html, /aria-label="North Cafe"/)
   assert.match(html, />NC<\/span>/)
   const broken = await render(MerchantMark, { verification: VERIFIED_BUSINESS }, { data: { failed: true } })
@@ -902,7 +931,8 @@ test('merchant mark missing artwork uses saved initials and supports old receipt
 
 test('saved checks do not invent a date or claim current verification, and hostile links cannot open', async () => {
   const old = await render(VerificationDetails, { context: 'historical', verification: { name: 'Old Cafe' } })
-  assert.match(old, /Saved business check/)
+  assert.match(old, /Verified business/)
+  assert.match(old, /Saved on this device/)
   assert.match(old, /before you sent it/)
   assert.doesNotMatch(old, /branta-proof-time|Branta matched this payment|branta-record-link/)
   for (const verifyUrl of ['javascript:alert(1)', 'https://guardrail.branta.pro.evil.example/v1/verify/id', 'https://user@guardrail.branta.pro/v1/verify/id', 'https://guardrail.branta.pro/']) {

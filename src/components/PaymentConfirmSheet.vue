@@ -9,14 +9,14 @@
     - One screen: recipient hero, amount (editable for free/range, locked for
       fixed), optional comment, fee. While the parent checks the recipient
       with Branta (`recipient.checking`) the row pulses in place and the
-      commit control waits; a matched business brings its centered mark,
-      with its saved check available through Payment details.
+      commit control waits; a matched business is the recipient row itself:
+      logo, name and "Verified business". Tapping the row opens its check.
     - The commit control morphs into the filling ProgressCta on submit:
       slide-to-confirm above the high-value threshold, a tap button below it.
     - Validates the entered amount against the supplied constraints before
       emitting `confirm`.
-    - "Pay with": draws the wallet choice (PayWithField) from the entries the
-      parent supplies and reports the pick. The verdict on the picked wallet
+    - "Pay with": draws the wallet choice from the entries the parent
+      supplies and reports the pick. The verdict on the picked wallet
       arrives through the same `walletCanPay` / `walletHint` pair the rail
       check always used, so a wallet that cannot pay disables the commit
       control and shows its reason in the existing banner.
@@ -58,7 +58,7 @@
           <q-btn v-else flat round dense @click="onTopAction" class="top-btn glass-back-btn" :disable="takeover ? takeoverLocked : isRedeem && (isSending || isComplete)" :aria-label="$t('Cancel')">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="m6 6 12 12M6 18 18 6" /></svg>
           </q-btn>
-          <h2 class="top-title" :id="titleId">{{ walletPickerOpen ? $t('Pay with') : brantaDetailsOpen ? $t('Recipient check') : detailsOpen ? $t('Payment details') : takeover ? takeoverTitle : topTitle }}</h2>
+          <h2 class="top-title" :id="titleId" :lang="$i18n?.locale">{{ walletPickerOpen ? $t('Pay with') : brantaDetailsOpen ? $t('Business check') : detailsOpen ? $t('Payment details') : takeover ? takeoverTitle : topTitle }}</h2>
           <button
             v-if="verb === 'send' && !walletPickerOpen && !detailsOpen && !brantaDetailsOpen && !takeover"
             ref="walletTrigger"
@@ -76,9 +76,7 @@
             <q-spinner v-if="preparationActive && !preparationFailed" size="13px" />
             <Icon v-else icon="tabler:chevron-down" width="13" height="13" />
           </button>
-          <div v-else class="top-action">
-            <BrantaVerifiedBadge v-if="verb !== 'send' && recipientVerification && !takeover" :verify-url="recipientVerification.verifyUrl" />
-          </div>
+          <div v-else class="top-action"></div>
         </header>
       </div>
 
@@ -103,10 +101,6 @@
       </div>
 
       <div v-if="!isReading" v-show="!takeover && !walletPickerOpen && !detailsOpen && !brantaDetailsOpen" class="stage stage-compose" :class="{ 'stage--refund': !!refundRow }">
-          <section v-if="verb === 'send' && recipientVerification" class="verified-merchant-stage">
-            <BrantaMerchantMark :verification="recipientVerification" :size="56" />
-            <button type="button" class="recipient-info" :aria-label="$t('Payment details')" @click="openPaymentDetails"><Icon icon="tabler:info-circle" width="20" height="20" /></button>
-          </section>
           <!-- Amount leads: the recipient was chosen on the screen before,
                so the number is this screen's job and takes the stage.
                Locked, range, or free depending on mode. -->
@@ -167,15 +161,25 @@
 
           <!-- The recipient cell: who (avatar + name), where (one quiet
                identifier line), and everything else behind the info glyph.
-               No ambiguous chevron and no verification marks the app
-               cannot honestly make. -->
+               A business Branta matched is named here like any recipient,
+               with "Verified business" under its name; the row then opens
+               the check. No verification marks the app cannot honestly make. -->
           <section
-            v-if="verb !== 'send' || !recipientVerification"
             class="recipient-cell"
             :class="{ 'recipient-cell--checking': recipientChecking }"
             :aria-busy="recipientChecking ? 'true' : null"
             :aria-label="recipientChecking ? $t('Checking the business') : null"
           >
+            <div
+              ref="recipientIdentity"
+              class="recipient-identity"
+              :class="{ 'recipient-identity--action': verifiedRecipient }"
+              :role="verifiedRecipient ? 'button' : null"
+              :tabindex="verifiedRecipient ? 0 : null"
+              @click="verifiedRecipient && openBrantaDetails('review')"
+              @keydown.enter.prevent="verifiedRecipient && openBrantaDetails('review')"
+              @keydown.space.prevent="verifiedRecipient && openBrantaDetails('review')"
+            >
             <div
               class="recipient-avatar"
               :class="{
@@ -190,7 +194,7 @@
               <img
                 v-if="showRecipientLogo"
                 :src="recipientLogo"
-                :alt="recipientName"
+                :alt="verifiedRecipient ? '' : recipientName"
                 class="recipient-logo"
                 :class="{ 'recipient-logo--contain': recipientLogoContain }"
                 :style="recipientLogoContain && recipientLogoInset
@@ -232,7 +236,12 @@
                   <span>{{ formattedCountdown }}</span>
                 </div>
               </div>
-              <div v-if="recipientAddressLabel" class="recipient-addr">{{ compactRecipientIdentifier }}</div>
+              <div v-if="verifiedRecipient" class="recipient-verified">
+                <Icon icon="tabler:rosette-discount-check-filled" width="15" height="15" />
+                <span>{{ $t('Verified business') }}</span>
+              </div>
+              <div v-else-if="recipientAddressLabel" class="recipient-addr">{{ compactRecipientIdentifier }}</div>
+            </div>
             </div>
             <button
               v-if="!recipientChecking && (verb === 'send' || addressNeedsDetails)"
@@ -305,6 +314,12 @@
             <span>{{ $t('Exchange rates may be outdated') }}</span>
           </div>
 
+          <!-- A send that came back for another look: why, in one plain line. -->
+          <div v-if="payment?.reviewNotice" class="wallet-hint" role="status">
+            <Icon icon="tabler:eye" width="14" height="14" />
+            <span>{{ payment.reviewNotice }}</span>
+          </div>
+
           <!-- The fee check reached no server: why, before the slide. -->
           <div v-if="payment?.connectionNotice" class="wallet-hint" role="status">
             <Icon icon="tabler:wifi-off" width="14" height="14" />
@@ -374,7 +389,11 @@
         <div v-if="brantaDetailsOpen && recipientVerification" class="stage branta-verification-view" tabindex="-1" ref="brantaView"><BrantaVerificationDetails :verification="recipientVerification" context="current" /></div>
 
         <div v-if="detailsOpen" class="stage payment-details-view" tabindex="-1" ref="detailsView">
-          <button v-if="recipientVerification" type="button" class="branta-current-check" :aria-label="$t('Current business check')" @click="openBrantaDetails"><Icon icon="tabler:circle-check-filled" width="20" height="20" /><span>{{ $t('Recipient check') }}</span><Icon icon="tabler:chevron-right" width="16" height="16" /></button>
+          <button v-if="recipientVerification" type="button" class="branta-current-check" @click="openBrantaDetails('details')">
+            <Icon icon="tabler:rosette-discount-check-filled" width="20" height="20" />
+            <span>{{ $t('Business check') }}</span>
+            <Icon icon="tabler:chevron-right" width="16" height="16" />
+          </button>
           <dl class="payment-details-list">
             <div v-if="paymentDetails.typeLabel"><dt>{{ $t('Payment type') }}</dt><dd>{{ paymentDetails.typeLabel }}</dd></div>
             <div v-if="paymentDetails.networkLabel"><dt>{{ $t('Network') }}</dt><dd>{{ paymentDetails.networkLabel }}</dd></div>
@@ -512,8 +531,6 @@ import { formatAmount, formatFiatAmount, formatPaymentAmount, paymentAmountParts
 import { normalizePaymentAmountInput } from '../utils/paymentAmountInput.js'
 import { FIAT_SYMBOLS } from '../utils/fiatCurrencies.js'
 import SlideToSend from './SlideToSend.vue'
-import BrantaVerifiedBadge from './BrantaVerifiedBadge.vue'
-import BrantaMerchantMark from './BrantaMerchantMark.vue'
 import BrantaVerificationDetails from './BrantaVerificationDetails.vue'
 import ProgressCta from './ProgressCta.vue'
 import WalletBrandMark from './WalletBrandMark.vue'
@@ -553,7 +570,7 @@ const amountLocales = vm => [vm.$i18n?.locale, undefined]
 
 export default {
   name: 'PaymentConfirmSheet',
-  components: { SlideToSend, BrantaMerchantMark, BrantaVerificationDetails, BrantaVerifiedBadge, ProgressCta, WalletBrandMark, HiddenAmount, RefundAddressField, CardFace },
+  components: { SlideToSend, BrantaVerificationDetails, ProgressCta, WalletBrandMark, HiddenAmount, RefundAddressField, CardFace },
   props: {
     modelValue: { type: Boolean, default: false },
     /**
@@ -640,6 +657,8 @@ export default {
       walletPickerOpen: false,
       detailsOpen: false,
       brantaDetailsOpen: false,
+      // Where the business check was opened from: Back returns there.
+      brantaDetailsFrom: 'review',
       walletDraftId: null,
       amountEdited: false,
       amountInputError: false,
@@ -706,7 +725,8 @@ export default {
     },
     recipientUsesIdentity() {
       const recipient = this.payment?.recipient
-      return !!(recipient?.matchedContact || recipient?.silhouette || recipient?.service || this.showRecipientLogo)
+      // A verified business without artwork keeps its own initial, never the generic mark.
+      return !!(recipient?.matchedContact || recipient?.silhouette || recipient?.service || recipient?.verification || this.showRecipientLogo)
     },
 
     // ───── Recipient ─────
@@ -774,12 +794,16 @@ export default {
       return this.recipientAddressLabel !== this.recipientAddress || this.recipientAddress.length > 34
     },
     // Branta: the check still running (the row waits, so does the commit
-    // control), and a verified business (the seal in the top bar).
+    // control), and a verified business (named in the recipient row).
     recipientChecking() {
       return this.payment?.recipient?.checking === true
     },
     recipientVerification() {
       return this.payment?.recipient?.verification || null
+    },
+    /** The recipient row names a verified business and opens its check. */
+    verifiedRecipient() {
+      return this.verb === 'send' && !!this.recipientVerification && !this.recipientChecking
     },
 
     // Picture-less matched contact → the app-wide silhouette mark. A
@@ -1170,11 +1194,12 @@ export default {
     takeover(active) {
       if (!active) return
       // A late changed-code verdict takes priority over every child view.
+      // Whatever fills the takeover slot marks its own first control.
       this.walletPickerOpen = false
       this.walletDraftId = null
       this.detailsOpen = false
       this.brantaDetailsOpen = false
-      this.$nextTick(() => this.$refs.card?.$el.querySelector('.changed-code-close')?.focus())
+      this.$nextTick(() => this.$refs.card?.$el.querySelector('.stage-takeover [data-autofocus]')?.focus())
     },
     /**
      * Reset only on the open transition. We deliberately do NOT watch
@@ -1255,16 +1280,23 @@ export default {
       window.removeEventListener('resize', this._viewportListener)
       this._viewportListener = null
     },
-    openBrantaDetails() {
+    /** The business check, from the recipient row ('review') or from Payment details. */
+    openBrantaDetails(from = 'details') {
       if (!this.recipientVerification || this.isSending || this.isComplete) return
+      this.brantaDetailsFrom = from === 'review' ? 'review' : 'details'
+      this.walletPickerOpen = false
       this.detailsOpen = false
       this.brantaDetailsOpen = true
       this.$nextTick(() => this.$refs.brantaView?.focus())
     },
     closeBrantaDetails() {
       this.brantaDetailsOpen = false
-      this.detailsOpen = true
-      this.$nextTick(() => this.$refs.card?.$el.querySelector('.branta-current-check')?.focus())
+      const toReview = this.brantaDetailsFrom === 'review'
+      this.detailsOpen = !toReview
+      this.$nextTick(() => {
+        if (toReview) this.$refs.recipientIdentity?.focus?.()
+        else this.$refs.card?.$el.querySelector('.branta-current-check')?.focus()
+      })
     },
     openPaymentDetails() {
       if (this.verb !== 'send') { this.showAddress = !this.showAddress; return }
@@ -1736,8 +1768,6 @@ export default {
 .sheet-card--send .stage-compose > * { flex-shrink: 0; }
 .sheet-card--send .amount-stage { padding: 18px 0 12px; }
 .sheet-card--send .amount-stage { border: 1px solid var(--border-card); border-radius: 22px; padding: 22px 12px 18px; }
-.verified-merchant-stage { position: relative; display: flex; align-items: center; justify-content: center; min-height: 72px; margin: 2px 0 4px; }
-.verified-merchant-stage .recipient-info { position: absolute; right: 0; top: 14px; background: transparent; box-shadow: none; }
 .sheet-card--send .payment-summary { border: 1px solid var(--border-card); border-radius: 20px; background: var(--bg-card); padding: 2px 0; overflow: hidden; }
 .sheet-card--send .payment-summary .fee-row { min-height: 52px; padding: 14px 16px; border-radius: 0; background: transparent; font-size: .875rem; }
 .sheet-card--send .payment-summary .payment-total-row { margin: 0 16px; padding: 16px 0; font-size: 1rem; }
@@ -1766,7 +1796,8 @@ export default {
 /* Send reviews keep the source screen underneath one sheet. Their middle
    scrolls independently so Cancel and the primary action remain reachable. */
 .sheet-card--send .top-row { gap: 8px; }
-.sheet-card--send .top-title { font-size: .9375rem; overflow-wrap: anywhere; }
+/* Long words at large text break at a syllable, with a hyphen (needs the lang above). */
+.sheet-card--send .top-title { font-size: .9375rem; overflow-wrap: anywhere; hyphens: auto; }
 .sheet-card--send .top-action { flex: 0 0 24px; width: 24px; }
 .sheet-card--send .primary-cta { height: auto; min-height: 48px; padding: 12px; font-size: 1rem; overflow-wrap: anywhere; }
 .sheet-card--send .recipient-name { font-size: 1rem; white-space: normal; overflow-wrap: anywhere; }
@@ -1924,6 +1955,34 @@ export default {
 .recipient-logo--contain { object-fit: contain; padding: 19%; }
 
 .recipient-meta { flex: 1; min-width: 0; }
+
+/* Avatar and name as one unit. For a verified business it is a button that
+   opens the check, so the whole identity is the target, not a small glyph. */
+.recipient-identity {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  flex: 1;
+  min-width: 0;
+  min-height: 44px;
+}
+.recipient-identity--action {
+  border-radius: var(--radius-sm, 10px);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.recipient-identity--action:focus-visible { outline: 2px solid var(--brand-accent-text); outline-offset: 3px; }
+
+/* The trust signal in words, with its seal: never colour alone. */
+.recipient-verified {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 2px;
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+}
+.recipient-verified :deep(svg) { flex: 0 0 auto; color: var(--brand-accent-text); }
 
 .recipient-name-row {
   display: flex;

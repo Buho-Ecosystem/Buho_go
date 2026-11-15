@@ -47,8 +47,15 @@
             context for the *amount*, not a footer afterthought. Used by
             the send-success flow; receive/withdraw don't pass it.
           -->
-          <!-- The business mark stays quiet; its receipt keeps the saved details. -->
-          <BrantaMerchantMark v-if="verifiedRecipient" class="verified-recipient" :merchant="verifiedRecipient" :size="40" />
+          <!-- A verified business: named as on the sheet and the receipt,
+               with its mark and the seal. -->
+          <div v-if="verifiedRecipient" class="verified-recipient">
+            <BrantaMerchantMark :verification="verifiedRecipient" :size="28" decorative />
+            <span class="verified-recipient-name">{{ recipientPrefix }}{{ verifiedRecipient.name }}</span>
+            <span class="verified-recipient-seal" role="img" :aria-label="$t('Verified business')">
+              <Icon icon="tabler:rosette-discount-check-filled" width="16" height="16" />
+            </span>
+          </div>
           <div
             v-else-if="recipient"
             class="recipient-line"
@@ -294,9 +301,9 @@ export default {
       default: 'To '
     },
     /**
-     * The business that was paid: { name, avatar: { url, background } | null }.
-     * Its accessible mark replaces the plain recipient line; the receipt
-     * retains its name and saved verification details.
+     * The business that was paid, as its check was saved ({ name, logoUrl,
+     * logoLightUrl, environment }). Named in place of the plain recipient
+     * line; the receipt keeps the saved check.
      */
     verifiedRecipient: {
       type: Object,
@@ -613,7 +620,20 @@ export default {
   styling so the amount stays the visual anchor. Truncates with
   ellipsis on narrow viewports rather than wrapping into the layout.
 */
-.verified-recipient { margin: 0.9rem auto 0; }
+.verified-recipient {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  max-width: 300px;
+  margin: 0.9rem auto 0;
+  font-family: 'Manrope', sans-serif;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.verified-recipient-name { min-width: 0; overflow-wrap: anywhere; }
+.verified-recipient-seal { display: inline-flex; flex: none; color: var(--brand-accent-text); }
 
 .recipient-line {
   font-family: 'Manrope', sans-serif;

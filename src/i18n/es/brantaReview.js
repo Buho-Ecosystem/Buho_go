@@ -1,7 +1,5 @@
 export default {
   "Business": "Negocio",
-  "Recipient check": "Comprobación del destinatario",
-  "Saved business check": "Comprobación guardada del negocio",
   "Branta matched this payment to the business below.": "Branta ha asociado este pago con el siguiente negocio.",
   "This payment matched the business below before you sent it.": "Este pago se asoció con el siguiente negocio antes de enviarlo.",
   "Checked {time}": "Comprobado: {time}",
@@ -12,12 +10,10 @@ export default {
   "This payment code has changed. Ask the business for a new one.": "Este código de pago ha cambiado. Pide uno nuevo al negocio.",
   "Nothing was sent.": "No se ha enviado nada.",
   "Note (optional)": "Nota (opcional)",
-  "Current business check": "Comprobación actual del negocio",
-  "Verification": "Verificación",
-  "Verification by Branta": "Verificación de Branta",
-  "Payment": "Pago",
   "Business check": "Comprobación del negocio",
   "Shows the business behind a payment when a match is available. Checked with Branta.": "Muestra el negocio detrás de un pago cuando hay una coincidencia. Comprobado con Branta.",
   "The recipient changed. Review it before sending.": "El destinatario ha cambiado. Revísalo antes de enviar.",
-  "Check the amount format.": "Revisa el formato del importe."
+  "Check the amount format.": "Revisa el formato del importe.",
+  "Verified business": "Negocio verificado",
+  "The business check is not available right now. Review the payment before sending.": "La comprobación del negocio no está disponible ahora. Revisa el pago antes de enviar."
 }

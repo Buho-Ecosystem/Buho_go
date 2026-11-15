@@ -2509,13 +2509,7 @@ export default {
   "Nearby Bitcoin places": "Bitcoin-Orte in der Nähe",
   "Close filters": "Filter schließen",
   "Close search": "Suche schließen",
-  "Verified by Branta": "Von Branta verifiziert",
   "Checking the business": "Unternehmen wird geprüft",
-  "Opens Branta's verification.": "Öffnet die Prüfung von Branta.",
-  "This code was changed": "Dieser Code wurde verändert",
-  "The address in it is not the one the business registered with Branta. Sending could pay someone else.": "Die Adresse darin ist nicht die, die das Unternehmen bei Branta hinterlegt hat. Die Zahlung könnte an jemand anderen gehen.",
-  "Nothing was sent. Ask the business for a new code.": "Es wurde nichts gesendet. Bitte das Unternehmen um einen neuen Code.",
-  "Shows a business's verified name and logo before you pay. Checked privately with Branta; your payment details are never shared.": "Zeigt vor dem Bezahlen den verifizierten Namen und das Logo eines Unternehmens. Privat mit Branta geprüft; deine Zahlungsdaten werden nie geteilt.",
   "About Branta": "Über Branta",
   "You are about to pay a Kenyan phone number": "Du zahlst gleich an eine kenianische Telefonnummer",
   "You are about to pay a Zambian phone number": "Du zahlst gleich an eine sambische Telefonnummer",
@@ -2540,7 +2534,6 @@ export default {
   "Lightning payment": "Lightning-Zahlung",
   "Bitcoin payment": "Bitcoin-Zahlung",
   "Spark payment": "Spark-Zahlung",
-  "Merchant verification": "Händler-Verifizierung",
 
   // ── Nostr-Versand: Zahlung an einen npub/nprofile + NIP-05-Fallback ──
   "Nostr profile": "Nostr-Profil",

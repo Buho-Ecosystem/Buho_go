@@ -15,7 +15,7 @@
     <h3>{{ $t('Ask for a new code') }}</h3>
     <p class="changed-code-body">{{ $t('This payment code has changed. Ask the business for a new one.') }}</p>
     <p class="changed-code-note">{{ $t('Nothing was sent.') }}</p>
-    <button type="button" class="changed-code-close" @click="$emit('close')">{{ $t('Close') }}</button>
+    <button type="button" class="changed-code-close" data-autofocus @click="$emit('close')">{{ $t('Close') }}</button>
   </div>
 </template>
 

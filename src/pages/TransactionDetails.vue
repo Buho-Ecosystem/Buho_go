@@ -1,28 +1,27 @@
 <template>
-  <q-page class="transaction-details-page" @keydown.esc="onBrantaEscape">
+  <q-page class="transaction-details-page">
     <!-- Header -->
     <div class="page-header" :class="{ 'page-header--branta': !!merchantVerification }">
       <q-btn
-        ref="receiptBack"
         flat
         round
         dense
-        @click="onReceiptBack"
+        @click="$router.back()"
         class="back-btn"
         :aria-label="$t('Back')"
       >
         <Icon icon="tabler:chevron-left" width="18" height="18" />
       </q-btn>
       <div class="header-title">
-        {{ $t(showBrantaVerification ? 'Verification' : merchantVerification ? 'Payment' : 'Transaction Details') }}
+        {{ $t(merchantVerification ? 'Payment' : 'Transaction Details') }}
       </div>
-      <div v-if="!showBrantaVerification" class="header-actions">
+      <div class="header-actions">
+        <!-- The seal of a business that was checked before paying: opens the saved check. -->
         <button
           v-if="merchantVerification"
-          ref="brantaVerificationButton"
           type="button"
           class="receipt-verification-button"
-          :aria-label="$t('Verification by Branta')"
+          :aria-label="$t('Business check')"
           @click="showBrantaVerification = true"
         ><Icon icon="tabler:rosette-discount-check-filled" width="22" height="22" /></button>
         <q-btn
@@ -64,13 +63,24 @@
       </div>
     </div>
 
-    <BrantaVerificationDetails
-      v-if="showBrantaVerification && merchantVerification"
-      class="branta-verification-view receipt-verification-view"
-      :verification="merchantVerification"
-      context="historical"
-    />
-    <div v-show="!showBrantaVerification" class="receipt-content">
+    <!-- The saved business check: a sheet over the receipt, like the other
+         detail sheets here. The dialog owns Back, Escape and focus return. -->
+    <q-dialog v-model="showBrantaVerification" position="bottom">
+      <section class="check-sheet" aria-labelledby="business-check-title">
+        <div class="form-sheet-grabber" aria-hidden="true" />
+        <header class="check-sheet__head">
+          <h2 id="business-check-title" :lang="$i18n?.locale">{{ $t('Business check') }}</h2>
+          <button type="button" class="check-sheet__done" @click="showBrantaVerification = false">{{ $t('Done') }}</button>
+        </header>
+        <BrantaVerificationDetails
+          v-if="merchantVerification"
+          class="branta-verification-view"
+          :verification="merchantVerification"
+          context="historical"
+        />
+      </section>
+    </q-dialog>
+    <div class="receipt-content">
     <!-- Skeleton Loading State -->
     <div v-if="loading">
       <!-- Hero Card skeleton -->
@@ -782,7 +792,6 @@ export default {
       loading: true,
       showDeveloperMode: false,
       showBrantaVerification: false,
-      verificationPopPending: false,
       loadedReceiptContext: '',
       loadedReceiptWalletId: null,
       showNoteEditor: false,
@@ -837,32 +846,14 @@ export default {
     }, 15000);
   },
 
-  mounted() {
-    // A local details view keeps its receipt mounted. Consume a history Back
-    // through the router guard, while ordinary navigation can still leave.
-    this._stopVerificationHistory = this.$router.options.history.listen((_to, _from, info) => {
-      this.verificationPopPending = this.showBrantaVerification && info.direction === 'back';
-    });
-  },
-  beforeRouteLeave(_to, _from, next) {
-    this.guardBrantaNavigation(next);
-  },
-  beforeRouteUpdate(_to, _from, next) {
-    this.guardBrantaNavigation(next);
-  },
   beforeUnmount() {
     this._receiptDisposed = true;
-    this._stopVerificationHistory?.();
     if (this._zapProfileTimer) clearInterval(this._zapProfileTimer);
     if (this._invoiceExpiryTimer) clearInterval(this._invoiceExpiryTimer);
   },
 
   watch: {
-    showBrantaVerification: async function (showing) {
-      await this.$nextTick();
-      const target = showing ? this.$refs.receiptBack?.$el : this.$refs.brantaVerificationButton;
-      target?.focus();
-    },
+    // Another receipt, wallet or route: the check on screen was the old one's.
     brantaReceiptContext: {
       flush: 'sync',
       handler() { this.showBrantaVerification = false; },
@@ -1067,8 +1058,8 @@ export default {
 
     /**
      * Branta merchant verification stamped on this outgoing send (see
-     * runBrantaVerification in Wallet.vue) — the receipt-side counterpart
-     * to the BrantaVerifiedBadge already shown on the confirm sheet
+     * services/brantaVerification.js): the receipt-side counterpart to the
+     * "Verified business" line on the confirm sheet
      * before sending. Outgoing only, same reasoning as
      * currentSuccessAction above (verification is only ever stamped by
      * the send path).
@@ -1935,24 +1926,6 @@ export default {
       });
     },
 
-    onReceiptBack() {
-      if (this.showBrantaVerification) this.showBrantaVerification = false;
-      else this.$router.back();
-    },
-    onBrantaEscape(event) {
-      if (!this.showBrantaVerification) return;
-      event.preventDefault();
-      event.stopPropagation();
-      this.showBrantaVerification = false;
-    },
-    guardBrantaNavigation(next) {
-      const returning = this.verificationPopPending && this.showBrantaVerification;
-      this.verificationPopPending = false;
-      this.showBrantaVerification = false;
-      if (returning) next(false);
-      else next();
-    },
-
     // LUD-21: show the fiat-delivery confirmation for this tx. Prefer a cached
     // status; otherwise do a single re-check of the stored verify URL (already
     // validated same-domain at send time). Best-effort — never blocks the view.
@@ -2021,7 +1994,35 @@ export default {
 .receipt-verification-button { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; width: 44px; height: 44px; border: 0; padding: 0; border-radius: 50%; color: var(--brand-accent-text); background: transparent; cursor: pointer; }
 .receipt-verification-button:focus-visible { outline: 2px solid var(--brand-accent-text); outline-offset: 2px; }
 .receipt-verification-button:active { background: var(--bg-input); }
-.transaction-details-page .receipt-verification-view { padding: 16px 20px 24px; }
+/* The saved business check, as a sheet (same frame as the payments sheet). */
+.check-sheet {
+  pointer-events: all;
+  width: 100%;
+  max-width: 520px;
+  max-height: min(86dvh, calc(100dvh - var(--safe-top, 0px) - 8px));
+  overflow-y: auto;
+  box-sizing: border-box;
+  padding: 0 20px calc(12px + var(--safe-bottom, 0px));
+  border-radius: var(--radius-xl) var(--radius-xl) 0 0;
+  border-top: 1px solid var(--border-card);
+  background: var(--bg-card);
+  color: var(--text-primary);
+  font-family: 'Manrope', sans-serif;
+}
+.check-sheet__head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 6px 0 4px; }
+.check-sheet__head h2 { margin: 0; min-width: 0; font-size: 1.25rem; font-weight: 800; line-height: 1.3; overflow-wrap: anywhere; hyphens: auto; }
+.check-sheet__done {
+  flex: 0 0 auto;
+  min-height: 44px;
+  padding: 0 4px;
+  border: 0;
+  background: none;
+  color: var(--brand-accent-text);
+  font: 600 1rem 'Manrope', sans-serif;
+  cursor: pointer;
+}
+.check-sheet__done:focus-visible { outline: 2px solid var(--brand-accent-text); outline-offset: -2px; }
+.check-sheet .branta-verification-details { padding-top: 8px; }
 .transaction-details-page { container-type: inline-size; }
 .page-header--branta .back-btn, .page-header--branta .share-btn, .page-header--branta .receipt-more { min-width: 44px; min-height: 44px; flex-shrink: 0; }
 @container (max-width: 18rem) {

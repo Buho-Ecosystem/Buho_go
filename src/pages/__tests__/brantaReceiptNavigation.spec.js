@@ -10,42 +10,16 @@ const module = { exports: {} };
 new Function('require', 'module', 'exports', code)(() => ({}), module, module.exports);
 const page = module.exports.default;
 
-test('receipt header Back returns from verification without leaving the payment', () => {
-  let leaves = 0;
-  const vm = { showBrantaVerification: true, $router: { back: () => leaves++ } };
-  page.methods.onReceiptBack.call(vm);
-  assert.equal(vm.showBrantaVerification, false);
-  assert.equal(leaves, 0);
-  page.methods.onReceiptBack.call(vm);
-  assert.equal(leaves, 1);
-});
-
-test('history Back closes only the open child; the next Back leaves normally', () => {
-  const results = [];
-  const vm = { showBrantaVerification: true, verificationPopPending: true };
-  page.methods.guardBrantaNavigation.call(vm, result => results.push(result));
-  assert.deepEqual(results, [false]);
-  assert.equal(vm.showBrantaVerification, false);
-  assert.equal(vm.verificationPopPending, false);
-  page.methods.guardBrantaNavigation.call(vm, result => results.push(result));
-  assert.deepEqual(results, [false, undefined]);
-});
-
-test('ordinary navigation is never cancelled by an open verification', () => {
-  let result = 'not called';
-  const vm = { showBrantaVerification: true, verificationPopPending: false };
-  page.methods.guardBrantaNavigation.call(vm, value => { result = value; });
-  assert.equal(result, undefined);
-  assert.equal(vm.showBrantaVerification, false);
-});
-
-test('leaving the route and changing a receipt share the same navigation guard', () => {
-  for (const name of ['beforeRouteLeave', 'beforeRouteUpdate']) {
-    const next = () => {};
-    let received;
-    page[name].call({ guardBrantaNavigation: value => { received = value; } }, {}, {}, next);
-    assert.equal(received, next);
-  }
+test('the saved check is a sheet over the receipt: the page keeps no back handling of its own', () => {
+  // The dialog owns Back, Escape and focus return, like every other sheet here.
+  for (const name of ['onReceiptBack', 'onBrantaEscape', 'guardBrantaNavigation']) assert.equal(page.methods[name], undefined, name);
+  for (const hook of ['beforeRouteLeave', 'beforeRouteUpdate', 'mounted']) assert.equal(page[hook], undefined, hook);
+  assert.equal(page.watch.showBrantaVerification, undefined);
+  assert.equal('verificationPopPending' in page.data.call({ $route: { params: {}, query: {} } }), false);
+  const template = source.match(/<template>([\s\S]*)<\/template>/)[1];
+  assert.match(template, /<q-dialog v-model="showBrantaVerification" position="bottom">[\s\S]*?form-sheet-grabber[\s\S]*?<BrantaVerificationDetails[\s\S]*?context="historical"/);
+  assert.doesNotMatch(template, /v-show="!showBrantaVerification"|@keydown\.esc/);
+  assert.match(template, /@click="\$router\.back\(\)"/, 'Back always leaves the receipt');
 });
 
 test('receipt identity changes close the disclosure; an unchanged receipt keeps it open', () => {
@@ -58,32 +32,6 @@ test('receipt identity changes close the disclosure; an unchanged receipt keeps 
   assert.equal(vm.showBrantaVerification, true);
   page.watch.merchantVerification.call(vm, null, receipt);
   assert.equal(vm.showBrantaVerification, false);
-});
-
-test('opening focuses Back and returning restores the exact verification control', async () => {
-  const focused = [];
-  const vm = {
-    $nextTick: async () => {},
-    $refs: {
-      receiptBack: { $el: { focus: () => focused.push('back') } },
-      brantaVerificationButton: { focus: () => focused.push('verification') },
-    },
-  };
-  await page.watch.showBrantaVerification.call(vm, true);
-  await page.watch.showBrantaVerification.call(vm, false);
-  assert.deepEqual(focused, ['back', 'verification']);
-});
-
-test('Escape closes verification without consuming unrelated page key events', () => {
-  const calls = [];
-  const event = { preventDefault: () => calls.push('prevent'), stopPropagation: () => calls.push('stop') };
-  const vm = { showBrantaVerification: false };
-  page.methods.onBrantaEscape.call(vm, event);
-  assert.deepEqual(calls, []);
-  vm.showBrantaVerification = true;
-  page.methods.onBrantaEscape.call(vm, event);
-  assert.equal(vm.showBrantaVerification, false);
-  assert.deepEqual(calls, ['prevent', 'stop']);
 });
 
 test('an incoming history row cannot inherit an outgoing business sharing its id', () => {
