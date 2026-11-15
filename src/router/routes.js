@@ -1,5 +1,6 @@
 import { Capacitor } from '@capacitor/core'
 import { savedWalletRedirect } from 'src/utils/walletHydration'
+import { BITREFILL_ENABLED } from 'src/services/bitrefill/widget.js'
 
 /**
  * Guard for the Learn & Earn (`/learn*`) routes. The feature pays out real
@@ -32,6 +33,20 @@ const shopNativeOnly = (to, from, next) => {
     return
   }
   next({ path: '/spend', query: { getApp: 'shop' } })
+}
+
+/**
+ * The Bitrefill shop opens only in a build where it was switched on
+ * (VITE_BITREFILL_ENABLED): Bitrefill approves each integration, and before
+ * that its widget answers "unverified". Any other build is sent to Spend,
+ * whose Bitrefill row then says the shop is on its way (see SpendPage).
+ */
+const bitrefillEnabledOnly = (to, from, next) => {
+  if (BITREFILL_ENABLED) {
+    next()
+    return
+  }
+  next('/spend')
 }
 
 // `/settings?section=backup` was the backup entry for years and is still
@@ -158,7 +173,8 @@ const routes = [
       { path: '/shop', component: () => import('pages/ShopPage.vue'), beforeEnter: shopNativeOnly },
       // Bitrefill shop: Bitrefill's widget in a frame, paid from the user's
       // wallets. Works on the web too (a frame needs no CORS). Lazy-loaded.
-      { path: '/bitrefill', component: () => import('pages/BitrefillPage.vue') },
+      // Off until Bitrefill approved the integration: then it leads to Spend.
+      { path: '/bitrefill', component: () => import('pages/BitrefillPage.vue'), beforeEnter: bitrefillEnabledOnly },
       // Online shops directory (BitcoinListings + BTCPay + Nostr). Lazy-loaded
       // so the adapters + Nostr code never land in the initial bundle.
       // Retired with the Spend online row: the merchant directory was too
