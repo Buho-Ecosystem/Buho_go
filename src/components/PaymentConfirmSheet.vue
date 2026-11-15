@@ -380,7 +380,7 @@
             </div>
             <div v-if="feeSlotVisible" class="fee-row" :class="{ 'fee-row--joined': !!refundRow && !preparationActive }">
               <template v-if="preparationActive || feeRowVisible">
-                <span class="fee-row-label">{{ $t('Network fee') }}</span>
+                <span class="fee-row-label">{{ preparationActive ? $t('Network fee') : feeRowLabel }}</span>
                 <span class="fee-row-value">
                   <i v-if="preparationActive" class="preparation-placeholder preparation-placeholder--fee" aria-hidden="true"></i>
                   <q-spinner-dots v-else-if="payment?.feeEstimate?.isEstimating" class="fee-pending" size="14px" />
@@ -591,6 +591,16 @@ function shownFee(payment) {
   if (!fee) return null
   if (fee.sats != null && (!Number.isSafeInteger(fee.sats) || fee.sats < 0)) return null
   return fee.isEstimating || fee.label || typeof fee.sats === 'number' ? fee : null
+}
+/**
+ * The most a payment may cost on top of its amount, for a fee shown as a
+ * limit. Typed in the recipient's currency the amount is an estimate and the
+ * service adds its own fee, so the limit is the wider one the parent gives
+ * for that case (`payoutSats`); without it, no limit can be stated.
+ */
+function feeLimitSats(vm, fee) {
+  if (!vm.isLocalDenomination) return fee.sats
+  return Number.isSafeInteger(fee.payoutSats) && fee.payoutSats >= fee.sats ? fee.payoutSats : null
 }
 /** The separators an amount may be typed with: the app language's and the device's. */
 const amountLocales = vm => [vm.$i18n?.locale, undefined]
@@ -1134,9 +1144,20 @@ export default {
       if (!fee) return ''
       if (fee.label) return fee.label
       if (typeof fee.sats !== 'number') return ''
+      if (fee.isLimit) {
+        const limit = feeLimitSats(this, fee)
+        return limit === null ? '' : this.$t('Up to {amount}', { amount: reviewAmount(this, limit) })
+      }
       if (fee.sats === 0) return this.$t('Free')
-      const amount = reviewAmount(this, fee.sats)
-      return fee.isLimit ? this.$t('Up to {amount}', { amount }) : amount
+      return reviewAmount(this, fee.sats)
+    },
+    /**
+     * "Network fee", or "Fees" when the limit shown also covers what the
+     * recipient's service adds (an amount typed in the recipient's currency).
+     */
+    feeRowLabel() {
+      const fee = shownFee(this.payment)
+      return fee?.isLimit && this.isLocalDenomination ? this.$t('Fees') : this.$t('Network fee')
     },
     /** The fee slot: a quote, a limit, "Free", the line that says the fee comes later, or its place held while getting ready. */
     feeSlotVisible() {
@@ -1154,8 +1175,9 @@ export default {
     totalRowValueText() {
       const fee = shownFee(this.payment)
       // A fee that comes later is named, never guessed into the sum.
-      if (!Number.isSafeInteger(fee?.sats)) return this.$t('{amount} + fee', { amount: reviewAmount(this, this.amountInSats) })
-      const total = reviewAmount(this, this.amountInSats + fee.sats)
+      const extra = fee?.isLimit ? feeLimitSats(this, fee) : fee?.sats
+      if (!Number.isSafeInteger(extra)) return this.$t('{amount} + fee', { amount: reviewAmount(this, this.amountInSats) })
+      const total = reviewAmount(this, this.amountInSats + extra)
       return fee.isLimit ? this.$t('Up to {amount}', { amount: total }) : total
     },
     /**

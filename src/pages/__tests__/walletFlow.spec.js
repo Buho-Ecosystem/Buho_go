@@ -643,7 +643,7 @@ function payingHarness({ wallets = PAY_WALLETS, active = 'biz', funds = PAY_FUND
     '../utils/bip21.js': { parseBip21: () => null, bip21AmountToSats: () => 0 },
     '../utils/merchantQR.js': merchantQR,
     // Only the pure address check: a request from here would be a real one.
-    '../utils/lnurlPay.js': { lightningAddressUrl: lnurlPay.lightningAddressUrl },
+    '../utils/lnurlPay.js': { lightningAddressUrl: lnurlPay.lightningAddressUrl, payoutCeilingSats: lnurlPay.payoutCeilingSats },
     '../utils/l1WithdrawErrors.js': { describeL1WithdrawError: error => ({ title: 'error', description: error.message }) },
     ...deps,
   });
@@ -1117,7 +1117,10 @@ test('a fee limit the payment is held to is shown as a limit; a fallback guess i
   // A Spark wallet paying an address: no invoice to quote before the confirm,
   // but the payment is held to this limit (unquotedFeeLimitSats), so it is said.
   Object.assign(vm, { pendingPayment: lnAddressPayment(), sendingWalletId: 'personal', sendSheetAmountSats: 2500 });
-  assert.deepEqual(review().feeEstimate, { sats: 25, isEstimating: false, isLimit: true }, 'the limit, marked as one');
+  // Typed in the recipient's currency the amount is an estimate: the limit for
+  // that case also covers what the service may add before its invoice is refused.
+  const payoutSats = lnurlPay.payoutCeilingSats(2500) - 2500 + 25;
+  assert.deepEqual(review().feeEstimate, { sats: 25, isEstimating: false, isLimit: true, payoutSats }, 'the limit, marked as one');
   assert.equal(review().feeNotice, '', 'one fee statement, not two');
   // A wallet that holds to no limit and quotes nothing says so in words.
   vm.sendingWalletId = 'hub';

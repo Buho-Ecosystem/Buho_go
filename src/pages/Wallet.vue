@@ -692,7 +692,7 @@ import { buildPaymentError, classifyTransportFailure, unreachableReason } from '
 import { capabilitiesOf } from '../utils/nwcWallet.js';
 import { diagnoseConnection } from '../utils/connectivity.js';
 import { counterpartyError, isCounterpartyError, keepOrigin } from '../utils/errorOrigin.js';
-import { PAY_REQUEST_ERROR, fetchPayRequest, lightningAddressUrl, readPayRequest, requestPayInvoice } from '../utils/lnurlPay.js';
+import { PAY_REQUEST_ERROR, fetchPayRequest, lightningAddressUrl, payoutCeilingSats, readPayRequest, requestPayInvoice } from '../utils/lnurlPay.js';
 import {parsePayRequestMetadata, serviceTitle, normalizeServiceImage, serviceIdentity} from '../utils/lnurlMetadata.js';
 import {isLightningInvoice as isLightningInvoiceShared, isLightningAddress as isLightningAddressShared, stripWrapperScheme, nativeRailsFromBip21, canonicalLnurl, lnurlDomain, lnurlToUrl} from '../utils/addressUtils.js';
 // One rule for "what is this string", shared with the Send field and the
@@ -1846,7 +1846,16 @@ export default {
         };
       } else if (payerType === 'spark' && (p.lightningAddress || p.lnurl) && p.type !== 'lnurl_withdraw') {
         const limit = unquotedFeeLimitSats(this.payingAmountSats);
-        if (limit > 0) feeEstimate = { sats: limit, isEstimating: false, isLimit: true };
+        // An amount typed in the recipient's currency is only an estimate in
+        // Bitcoin: the service adds its own fee to the invoice, and the
+        // invoice is refused above payoutCeilingSats. The most that can be
+        // charged on top of the estimate is that allowance plus the limit.
+        if (limit > 0) {
+          feeEstimate = {
+            sats: limit, isEstimating: false, isLimit: true,
+            payoutSats: payoutCeilingSats(this.payingAmountSats) - this.payingAmountSats + limit,
+          };
+        }
       }
       const feeNotice = this.payingAmountSats > 0 && !feeEstimate && !p.bitcoinAddress
         ? this.$t('Fee calculated when sending.') : '';

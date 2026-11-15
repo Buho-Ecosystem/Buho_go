@@ -7,5 +7,6 @@ export default {
   "Pay with {name}": "Mit {name} bezahlen",
   "Recipient address": "Empfängeradresse",
   "Expires": "Gültig bis",
-  "Fee calculated when sending.": "Die Gebühr wird beim Senden berechnet."
+  "Fee calculated when sending.": "Die Gebühr wird beim Senden berechnet.",
+  "Fees": "Gebühren",
 };

@@ -169,6 +169,25 @@ test('the fee row writes a quote as settings does and a limit the payment is hel
   assert.equal(row({ sats: 0, label: 'Free · instant' }), 'Free · instant')
 })
 
+test('typed in the recipient\'s currency, the limit and the total cover what the service may add', () => {
+  // 1850 sats estimated; the invoice is refused above 2045 and the route fee above 19: at most 214 on top.
+  const payoutCurrency = { code: 'KES', multiplier: 1000, decimals: 0 }
+  const fee = { sats: 19, isLimit: true, payoutSats: 214 }
+  const vm = (over = {}) => ({ payment: { feeEstimate: fee }, isLocalDenomination: true, payoutCurrency, amountInSats: 1850, useBip177Format: true, $t: t, ...over })
+  const text = (name, over) => ConfirmSheet.computed[name].call(vm(over))
+  assert.equal(text('feeRowLabel'), 'Fees', 'more than the network fee is in it')
+  assert.match(text('feeRowValueText'), /^Up to .*214/)
+  assert.match(text('totalRowValueText'), /^Up to .*2[.,]?064/, 'amount, service allowance and fee limit')
+  // In Bitcoin the invoice must equal the amount: only the network fee can be added.
+  assert.equal(text('feeRowLabel', { isLocalDenomination: false }), 'Network fee')
+  assert.equal(text('feeRowValueText', { isLocalDenomination: false }), 'Up to ₿\u00a019')
+  assert.equal(text('totalRowValueText', { isLocalDenomination: false }), `Up to ₿\u00a0${n(1869)}`)
+  // Without the wider limit nothing is promised: no "Up to" that leaves the service's part out.
+  const bare = { payment: { feeEstimate: { sats: 19, isLimit: true } } }
+  assert.equal(text('feeRowValueText', bare), '')
+  assert.doesNotMatch(text('totalRowValueText', bare), /Up to/)
+})
+
 test('canSubmit follows walletCanPay for every amount', () => {
   const vm = (walletCanPay) => ({ walletCanPay, isAmountAcceptable: true, commitGate: true })
   assert.equal(ConfirmSheet.computed.canSubmit.call(vm(true)), true)
