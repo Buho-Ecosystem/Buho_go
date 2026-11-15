@@ -9,4 +9,7 @@ export default {
   "Expires": "Vence",
   "Fee calculated when sending.": "La comisión se calcula al enviar.",
   "Fees": "Comisiones",
+  "Minimum is {amount}": "El mínimo es {amount}",
+  "Maximum is {amount}": "El máximo es {amount}",
+  "Change currency": "Cambiar moneda",
 };

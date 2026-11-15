@@ -133,6 +133,7 @@
                 type="button"
                 class="unit-pill"
                 :disabled="amountMode === 'fixed' || isSending || isComplete"
+                :aria-label="amountMode === 'fixed' ? null : $t('Change currency')"
                 @click="toggleCurrency"
               >
                 <span>{{ unitPillLabel }}</span>
@@ -503,7 +504,7 @@
                 :done="isComplete"
                 :tall="requiresSlide"
               />
-              <button v-else-if="verb === 'send' && !walletCanPay && payingWallets.length" key="choose-wallet" type="button" class="primary-cta choose-wallet-cta" @click="openWalletPicker">{{ $t('Choose another wallet') }}</button>
+              <button v-else-if="verb === 'send' && !walletCanPay && anotherWalletCanPay" key="choose-wallet" type="button" class="primary-cta choose-wallet-cta" @click="openWalletPicker">{{ $t('Choose another wallet') }}</button>
               <SlideToSend
                 v-else-if="requiresSlide"
                 key="slide"
@@ -838,10 +839,14 @@ export default {
           return this.payment?.recipient?.addressLabel || this.recipientAddress
         }
         // Where the money goes is part of the review: a pasted address
-        // shows its start and end under the name. Encoded requests
-        // (invoices, payment links) name nothing a person can compare,
-        // so they and every protocol name stay in Payment details.
+        // shows its start and end under the name, and a payment link the
+        // site it belongs to, because the name above it is whatever that
+        // site chose to call itself. An encoded request names nothing a
+        // person can compare, so it and every protocol name stay in
+        // Payment details.
         if (this.recipientIsRawAddress) return this.recipientAddress
+        const { addressType, addressLabel, name } = this.payment?.recipient || {}
+        if (addressType === 'lnurl' && addressLabel && addressLabel !== name) return addressLabel
         return ''
       }
       return this.payment?.recipient?.addressLabel || this.recipientAddress
@@ -998,8 +1003,8 @@ export default {
       const sats = this.amountInSats
       if (sats <= 0) return ''
       if (this.amountMode === 'range') {
-        if (sats < this.minSats) return this.$t('Minimum is {n} sats', { n: this.minSats.toLocaleString() })
-        if (sats > this.maxSats) return this.$t('Maximum is {n} sats', { n: this.maxSats.toLocaleString() })
+        if (sats < this.minSats) return this.$t('Minimum is {amount}', { amount: reviewAmount(this, this.minSats) })
+        if (sats > this.maxSats) return this.$t('Maximum is {amount}', { amount: reviewAmount(this, this.maxSats) })
       }
       return ''
     },
@@ -1137,7 +1142,15 @@ export default {
     //   sats         the quote, or with `isLimit` the most the payment may cost
     //   isEstimating a quote is on its way
     //   label        words instead of a number ("Free · instant")
-    feeRowVisible() { return !!shownFee(this.payment) },
+    feeRowVisible() {
+      const fee = shownFee(this.payment)
+      // A limit that cannot be stated for this denomination shows no row at all, never a label without a value.
+      return !!fee && !(fee.isLimit && feeLimitSats(this, fee) === null)
+    },
+    /** "Choose another wallet" is offered only when there is another wallet that can make this payment. */
+    anotherWalletCanPay() {
+      return this.payingWallets.some(wallet => wallet.id !== this.sendingWalletId && this.walletSelectable(wallet))
+    },
 
     feeRowValueText() {
       const fee = shownFee(this.payment)
@@ -2400,6 +2413,8 @@ export default {
   font-size: .78125rem;
   color: var(--text-secondary);
   min-height: 2rem;
+  /* At large text a long label takes its own line; the figure is never cut. */
+  flex-wrap: wrap;
 }
 
 /* With the refund row right below, the two read as one group of facts:
@@ -2422,6 +2437,8 @@ export default {
   display: inline-flex;
   align-items: center;
   font-variant-numeric: tabular-nums;
+  margin-left: auto;
+  white-space: nowrap;
 }
 
 .amount-error {

@@ -9,4 +9,7 @@ export default {
   "Expires": "Expires",
   "Fee calculated when sending.": "Fee calculated when sending.",
   "Fees": "Fees",
+  "Minimum is {amount}": "Minimum is {amount}",
+  "Maximum is {amount}": "Maximum is {amount}",
+  "Change currency": "Change currency",
 };

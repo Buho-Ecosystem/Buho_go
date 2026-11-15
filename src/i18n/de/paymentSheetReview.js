@@ -9,4 +9,7 @@ export default {
   "Expires": "Gültig bis",
   "Fee calculated when sending.": "Die Gebühr wird beim Senden berechnet.",
   "Fees": "Gebühren",
+  "Minimum is {amount}": "Mindestens {amount}",
+  "Maximum is {amount}": "Höchstens {amount}",
+  "Change currency": "Währung wechseln",
 };

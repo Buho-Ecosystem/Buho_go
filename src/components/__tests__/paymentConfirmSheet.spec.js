@@ -169,6 +169,26 @@ test('the fee row writes a quote as settings does and a limit the payment is hel
   assert.equal(row({ sats: 0, label: 'Free · instant' }), 'Free · instant')
 })
 
+test('a payment link names its site under the name the site gave itself', () => {
+  const label = (recipient, over = {}) => ConfirmSheet.computed.recipientAddressLabel.call({ verb: 'send', recipientVerification: null, recipientIsRawAddress: false, recipientAddress: '', payment: { recipient }, ...over })
+  assert.equal(label({ name: 'Pay shop', addressType: 'lnurl', addressLabel: 'shop.example' }), 'shop.example')
+  assert.equal(label({ name: 'shop.example', addressType: 'lnurl', addressLabel: 'shop.example' }), '', 'not said twice')
+  assert.equal(label({ name: 'Bitcoin payment', addressType: 'invoice', addressLabel: 'lnbc1…' }), '', 'an encoded request stays in Payment details')
+})
+
+test('"Choose another wallet" needs another wallet that can pay; a limit is said in the sheet\'s own format', () => {
+  const another = (payingWallets, sendingWalletId = 'a') => ConfirmSheet.computed.anotherWalletCanPay.call({ payingWallets, sendingWalletId, walletSelectable: ConfirmSheet.methods.walletSelectable })
+  assert.equal(another([{ id: 'a', usable: false }]), false, 'the only wallet is the one that cannot pay')
+  assert.equal(another([{ id: 'a', usable: false }, { id: 'b', usable: false }]), false)
+  assert.equal(another([{ id: 'a', usable: false }, { id: 'b', usable: true, connectionFailed: true }]), false)
+  assert.equal(another([{ id: 'a', usable: false }, { id: 'b', usable: true }]), true)
+  const reason = (amountInSats, useBip177Format = true) => ConfirmSheet.computed.amountInvalidReason.call({ amountInputError: false, displayAmount: String(amountInSats), amountMode: 'range', isLocalDenomination: false, amountInSats, minSats: 1000, maxSats: 50000, currentCurrency: 'sats', useBip177Format, $t: t })
+  assert.equal(reason(999), `Minimum is ₿\u00a0${n(1000)}`)
+  assert.equal(reason(50001), `Maximum is ₿\u00a0${n(50000)}`)
+  assert.equal(reason(999, false), `Minimum is ${n(1000)}\u00a0sats`)
+  assert.equal(reason(2000), '')
+})
+
 test('typed in the recipient\'s currency, the limit and the total cover what the service may add', () => {
   // 1850 sats estimated; the invoice is refused above 2045 and the route fee above 19: at most 214 on top.
   const payoutCurrency = { code: 'KES', multiplier: 1000, decimals: 0 }
