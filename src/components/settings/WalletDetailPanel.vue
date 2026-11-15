@@ -83,10 +83,10 @@
 
       <!-- Spark: the wallet's own Lightning address. Each Spark wallet has one;
            it can be changed here or handed to another of your wallets. -->
-      <section v-if="wallet.type === 'spark'" class="detail-group" :aria-label="$t('Lightning Address')">
+      <section v-if="wallet.type === 'spark'" class="detail-group" :aria-label="$t('Lightning address')">
         <div class="detail-group-row">
           <span class="detail-group-copy">
-            <span class="detail-group-label">{{ $t('Lightning Address') }}</span>
+            <span class="detail-group-label">{{ $t('Lightning address') }}</span>
             <span class="detail-group-value" :class="{ 'is-placeholder': !lightningAddress }">{{ lightningAddress || (wallet.metadata?.lightningAddressPending ? $t('Check address') : $t('Assigned when the wallet connects')) }}</span>
           </span>
           <button v-if="lightningAddress" type="button" class="detail-icon-button" :aria-label="$t('Copy address')" @click="$emit('copy-address', lightningAddress)">
@@ -121,7 +121,7 @@
         <button v-if="canReconnect" type="button" class="detail-button detail-secondary" :disabled="reconnecting || switching || saving" @click="$emit('reconnect', wallet.id)">
           <q-spinner v-if="reconnecting" size="20px" :aria-hidden="true" />
           <Icon icon="tabler:refresh" width="20" height="20" v-else />
-          {{ reconnecting ? $t('Reconnecting...') : $t('Reconnect') }}
+          {{ reconnecting ? $t('Reconnecting…') : $t('Reconnect') }}
         </button>
       </div>
 

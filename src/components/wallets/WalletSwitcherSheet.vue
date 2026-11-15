@@ -116,7 +116,7 @@
           @click="$emit('transfer')"
         >
           <Icon icon="tabler:arrows-exchange" width="20" height="20" class="q-mr-sm" />
-          {{ $t('Transfer Funds') }}
+          {{ $t('Transfer funds') }}
         </q-btn>
         <q-btn
           flat

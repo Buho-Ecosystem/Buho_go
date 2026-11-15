@@ -34,7 +34,7 @@
         <p v-if="attention.text">{{ attention.text }}</p>
         <button v-if="attention.canRetry" type="button" class="btn-primary" :disabled="trying" @click="tryAgain">
           <q-spinner v-if="trying" size="18px" />
-          <template v-else>{{ $t('Try Again') }}</template>
+          <template v-else>{{ $t('Try again') }}</template>
         </button>
         <button type="button" class="btn-ghost" @click="editOpen = true">{{ $t('Change Destination') }}</button>
       </section>

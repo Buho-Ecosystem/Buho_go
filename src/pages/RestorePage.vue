@@ -205,7 +205,7 @@ export default {
       isValidating: false,
       detecting: false,
       mnemonicError: '',
-      restoringStatus: this.$t('Getting things ready...'),
+      restoringStatus: this.$t('Getting things ready…'),
       selectedType: 'spark',
     };
   },
@@ -354,7 +354,7 @@ export default {
       // actually holds funds/history. This makes it impossible to silently
       // restore a funded seed as the wrong (empty) backend. When both are
       // unused there's nothing to lose, so we honour the user's explicit pick.
-      this.restoringStatus = this.$t('Checking your recovery phrase...');
+      this.restoringStatus = this.$t('Checking your recovery phrase…');
       this.detecting = true;
       let resolvedType = this.selectedType;
       try {
@@ -382,12 +382,12 @@ export default {
         this.detecting = false;
       }
 
-      this.restoringStatus = this.$t('Securing your wallet...');
+      this.restoringStatus = this.$t('Securing your wallet…');
       const onProgress = (step) => {
         const messages = {
-          encrypting: this.$t('Securing your wallet...'),
-          connecting: this.$t('Connecting...'),
-          done: this.$t('Almost done...'),
+          encrypting: this.$t('Securing your wallet…'),
+          connecting: this.$t('Connecting…'),
+          done: this.$t('Almost done…'),
         };
         this.restoringStatus = messages[step] || this.restoringStatus;
       };

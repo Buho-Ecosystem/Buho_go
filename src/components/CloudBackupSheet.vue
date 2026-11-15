@@ -54,7 +54,7 @@
       <q-card-section v-if="step === 'checking'" class="cb-body">
         <div class="cb-list-loading">
           <q-spinner-dots size="28px" />
-          <span>{{ $t('Checking Google Drive...') }}</span>
+          <span>{{ $t('Checking Google Drive…') }}</span>
         </div>
       </q-card-section>
 

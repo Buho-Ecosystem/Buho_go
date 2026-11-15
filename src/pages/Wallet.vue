@@ -164,7 +164,7 @@
         class="arkade-maintenance"
       >
         <q-spinner-dots size="14px" />
-        <span>{{ $t('Updating your wallet...') }}</span>
+        <span>{{ $t('Updating your wallet…') }}</span>
       </div>
 
       <!-- Balance Display -->
@@ -372,7 +372,7 @@
       <q-card class="dialog-card" :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'" style="max-width: 400px;">
         <q-card-section>
           <div class="dialog-title" :class="$q.dark.isActive ? 'dialog_title_dark' : 'dialog_title_light'">
-            {{ $t('Security Upgrade') }}
+            {{ $t('Security upgrade') }}
           </div>
         </q-card-section>
         <q-card-section>
@@ -2412,10 +2412,10 @@ export default {
     withdrawStatusMessage() {
       const messages = {
         'idle': '',
-        'creating': this.$t('Preparing...'),
-        'submitting': this.$t('Requesting funds...'),
-        'monitoring': this.$t('Receiving sats...'),
-        'confirmed': this.$t('Sats received!'),
+        'creating': this.$t('Preparing…'),
+        'submitting': this.$t('Requesting funds…'),
+        'monitoring': this.$t('Receiving…'),
+        'confirmed': this.$t('Bitcoin received'),
         'error': this.lnurlWithdrawError || this.$t('Redeem failed')
       };
       return messages[this.lnurlWithdrawStatus] || '';
@@ -3521,7 +3521,7 @@ export default {
       const dismissProcessing = this.$q.notify({
         type: 'ongoing',
         message: this.$t('Bitcoin withdrawal submitted'),
-        caption: this.$t('Waiting for on-chain broadcast...'),
+        caption: this.$t('Waiting for the Bitcoin network…'),
         timeout: 0,
         spinner: true
       });
@@ -6537,7 +6537,7 @@ export default {
         ? { ...verifiedBusiness, name: verifiedBusiness.name || recipient || '' }
         : null;
       this.sendSuccessLabel = isCompleted
-        ? this.$t('Payment Sent')
+        ? this.$t('Payment sent')
         : this.$t('Payment on its way');
       this.sendSuccessPending = !isCompleted;
       this.sendSuccessShowSaveContact = !!showSaveContact && isCompleted && this.isPaymentIdentityCurrent();

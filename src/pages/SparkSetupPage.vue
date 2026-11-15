@@ -43,13 +43,13 @@ export default {
       currentStep: 1,
       isProcessing: false,
       mnemonic: '',
-      creatingStatus: this.$t('Getting things ready...'),
+      creatingStatus: this.$t('Getting things ready…'),
     }
   },
   async mounted() {
     if (typeof window !== 'undefined' && window.__AUDIT__) {
       this.mnemonic = 'audit stub mnemonic twelve words for visual capture only skip real sdk'
-      this.creatingStatus = this.$t('Encrypting wallet...')
+      this.creatingStatus = this.$t('Encrypting wallet…')
       return
     }
     await this.generateAndCreate();
@@ -72,7 +72,7 @@ export default {
       }
 
       // Proceed directly to wallet creation
-      this.creatingStatus = this.$t('Encrypting wallet...');
+      this.creatingStatus = this.$t('Encrypting wallet…');
 
       try {
         // One wallet to start with; more can be added later in Settings.
@@ -81,9 +81,9 @@ export default {
           network: 'MAINNET',
           onProgress: (step) => {
             const messages = {
-              encrypting: this.$t('Encrypting wallet...'),
-              connecting: this.$t('Setting up your wallet...'),
-              done: this.$t('Almost done...'),
+              encrypting: this.$t('Encrypting wallet…'),
+              connecting: this.$t('Setting up your wallet…'),
+              done: this.$t('Almost done…'),
             };
             this.creatingStatus = messages[step] || this.creatingStatus;
           }

@@ -129,7 +129,7 @@
     <ScannerOverlay
       v-if="nativeScannerActive"
       :active="nativeScannerActive"
-      :title="$t('Scan QR Code')"
+      :title="$t('Scan QR code')"
       :prompt="$t('Point your camera at a Nostr profile, or a Lightning, Spark, or Bitcoin address.')"
       continuous
       v-model:note="photoNote"

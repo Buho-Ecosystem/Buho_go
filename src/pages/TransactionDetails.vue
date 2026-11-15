@@ -13,7 +13,7 @@
         <Icon icon="tabler:chevron-left" width="18" height="18" />
       </q-btn>
       <div class="header-title">
-        {{ $t(merchantVerification ? 'Payment' : 'Transaction Details') }}
+        {{ $t(merchantVerification ? 'Payment' : 'Transaction details') }}
       </div>
       <div class="header-actions">
         <!-- The seal of a business that was checked before paying: opens the saved check. -->
@@ -49,10 +49,10 @@
                 <q-item-section>{{ $t('Edit note') }}</q-item-section>
               </q-item>
               <q-item clickable v-close-popup @click="openContactPicker">
-                <q-item-section>{{ assignedContact ? $t('Change contact') : $t('Assign Contact') }}</q-item-section>
+                <q-item-section>{{ assignedContact ? $t('Change contact') : $t('Assign contact') }}</q-item-section>
               </q-item>
               <q-item v-if="assignedContact" clickable v-close-popup @click="removeContact">
-                <q-item-section>{{ $t('Remove Contact') }}</q-item-section>
+                <q-item-section>{{ $t('Remove contact') }}</q-item-section>
               </q-item>
               <q-item clickable v-close-popup @click="toggleDeveloperMode">
                 <q-item-section>{{ showDeveloperMode ? $t('Hide technical details') : $t('Technical details') }}</q-item-section>
@@ -258,7 +258,7 @@
             </div>
           </template>
           <div v-else class="tx-row">
-            <div class="tx-row-label">{{ $t('Date & Time') }}</div>
+            <div class="tx-row-label">{{ $t('Date & time') }}</div>
             <div class="tx-row-value">{{ formatDateTime(transaction.settled_at) }}</div>
           </div>
 
@@ -297,7 +297,7 @@
           -->
           <template v-if="showFeeBreakdown">
             <div class="tx-row">
-              <div class="tx-row-label">{{ $t('Network Fee') }}</div>
+              <div class="tx-row-label">{{ $t('Network fee') }}</div>
               <div class="tx-row-value">{{ formatAmount(transaction.fee, walletStore.useBip177Format) }}</div>
             </div>
             <div class="tx-row">
@@ -481,7 +481,7 @@
             <div class="profile-name">{{ zapperName }}</div>
             <div class="profile-meta">
               <Icon icon="tabler:bolt" class="zap-icon q-mr-xs" />
-              {{ $t('Zap Transaction') }}
+              {{ $t('Zap transaction') }}
             </div>
             <div class="profile-about" v-if="zapInfo?.note">
               “{{ zapInfo.note }}”
@@ -590,13 +590,13 @@
     <div v-else class="error-state">
       <Icon icon="tabler:alert-triangle" style="font-size: 4rem; color: red;" />
       <div class="error-title">
-        {{ $t('Transaction Not Found') }}
+        {{ $t('Transaction not found') }}
       </div>
       <div class="error-subtitle">
         {{ $t('The requested transaction could not be found or loaded.') }}
       </div>
       <q-btn
-        :label="$t('Go Back')"
+        :label="$t('Go back')"
         @click="$router.back()"
         class="go-back-btn"
       />
@@ -623,7 +623,7 @@
       <q-card class="contact-picker-dialog" :class="$q.dark.isActive ? 'card_dark_style' : 'card_light_style'">
         <q-card-section class="dialog-header">
           <div id="contact-picker-title" class="dialog-title">
-            {{ $t('Select Contact') }}
+            {{ $t('Select contact') }}
           </div>
           <q-btn
             flat
@@ -641,8 +641,8 @@
         <q-card-section class="contact-picker-search">
           <q-input
             v-model="contactSearch"
-            :placeholder="$t('Search contacts...')"
-            :aria-label="$t('Search contacts...')"
+            :placeholder="$t('Search contacts…')"
+            :aria-label="$t('Search contacts…')"
             dense
             borderless
             class="search-input"
@@ -1670,10 +1670,10 @@ export default {
 
     getTransactionTypeLabel() {
       if (this.isBitcoinTransaction()) {
-        return this.transaction.type === 'incoming' ? this.$t('Bitcoin Deposit') : this.$t('Bitcoin Withdrawal');
+        return this.transaction.type === 'incoming' ? this.$t('Bitcoin deposit') : this.$t('Bitcoin withdrawal');
       }
-      if (this.transaction.senderNpub) return this.$t('Zap Received');
-      return this.transaction.type === 'incoming' ? this.$t('Payment Received') : this.$t('Payment Sent');
+      if (this.transaction.senderNpub) return this.$t('Zap received');
+      return this.transaction.type === 'incoming' ? this.$t('Payment received') : this.$t('Payment sent');
     },
 
     getTransactionIconClass() {

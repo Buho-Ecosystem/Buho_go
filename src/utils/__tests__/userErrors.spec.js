@@ -114,7 +114,7 @@ test('unreachableReason names Spark only when the Spark SDK reported the failure
 
 test('connection copy has German and Spanish translations', () => {
   const copy = [
-    'Checking your connection...',
+    'Checking your connection…',
     ...['offline', 'no-internet'].map((kind) => unreachableReason(kind, '')),
     unreachableReason('service', SPARK_UNREACHABLE),
     unreachableReason('service', ''),

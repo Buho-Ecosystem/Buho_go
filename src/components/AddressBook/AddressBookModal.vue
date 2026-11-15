@@ -168,7 +168,7 @@
               </div>
               <textarea
                 v-model="formData.notes"
-                :placeholder="$t('e.g., Monthly rent, Coffee shop...')"
+                :placeholder="$t('e.g., Monthly rent, Coffee shop…')"
                 class="form-input notes-textarea"
                 :class="$q.dark.isActive ? 'form-input-dark' : 'form-input-light'"
                 maxlength="200"

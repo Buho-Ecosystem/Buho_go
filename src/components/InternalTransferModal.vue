@@ -14,7 +14,7 @@
       <header class="modal-header">
         <div class="header-left">
           <Icon icon="tabler:arrows-exchange" width="22" height="22" class="header-icon" />
-          <h2 class="header-title">{{ $t('Transfer Funds') }}</h2>
+          <h2 class="header-title">{{ $t('Transfer funds') }}</h2>
         </div>
         <q-btn flat round dense class="close-btn" @click="close">
           <Icon icon="tabler:x" width="20" height="20" />
@@ -38,7 +38,7 @@
         <section v-if="state.currentStep === 1" class="step-panel">
           <div v-if="state.isReconnecting" class="banner banner--info">
             <q-spinner-dots size="14px" />
-            <span>{{ $t('Connecting wallets...') }}</span>
+            <span>{{ $t('Connecting wallets…') }}</span>
           </div>
 
           <div class="field">
@@ -179,7 +179,7 @@
         -->
         <section v-if="state.transferComplete" class="step-panel step-panel--center transfer-success">
           <SuccessCheckmark :animate="state.transferComplete" accent="green" />
-          <div class="success-label">{{ $t('Transfer Complete') }}</div>
+          <div class="success-label">{{ $t('Transfer complete') }}</div>
           <!-- What was moved, and what it cost when the paying wallet reports it. -->
           <div class="success-amount">{{ fmt(state.movedSats) }}</div>
           <div v-if="state.feePaidSats > 0" class="success-route">{{ $t('Network fee') }} · {{ fmt(state.feePaidSats) }}</div>
@@ -192,8 +192,8 @@
       <footer v-if="state.transferComplete" class="modal-footer completion-actions">
         <q-btn v-if="detailsRoute" :to="detailsRoute" unelevated no-caps
           class="completion-button completion-button--details" :loading="openingDetails"
-          :aria-label="$t('Transaction Details')" @click="openDetails">
-          {{ $t('TX Details') }}
+          :aria-label="$t('Transaction details')" @click="openDetails">
+          {{ $t('TX details') }}
         </q-btn>
         <q-btn unelevated no-caps class="completion-button completion-button--done" :disable="openingDetails" @click="close">
           {{ $t('Done') }}
@@ -206,7 +206,7 @@
         </q-btn>
         <q-space />
         <q-btn unelevated no-caps class="btn-main" :disable="!canProceed" :loading="state.isTransferring" @click="goNext">
-          <span>{{ state.currentStep < 3 ? $t('Continue') : $t('Transfer Now') }}</span>
+          <span>{{ state.currentStep < 3 ? $t('Continue') : $t('Transfer now') }}</span>
           <Icon v-if="state.currentStep < 3" icon="tabler:arrow-right" width="16" height="16" />
         </q-btn>
       </footer>
@@ -216,7 +216,7 @@
     <q-dialog v-model="state.showFromPicker" position="bottom">
       <q-card class="picker-card" :class="themeClass">
         <header class="picker-header">
-          <h3>{{ $t('Select Source Wallet') }}</h3>
+          <h3>{{ $t('Select source wallet') }}</h3>
           <q-btn flat round dense v-close-popup>
             <Icon icon="tabler:x" width="20" height="20" />
           </q-btn>
@@ -248,7 +248,7 @@
     <q-dialog v-model="state.showToPicker" position="bottom">
       <q-card class="picker-card" :class="themeClass">
         <header class="picker-header">
-          <h3>{{ $t('Select Destination Wallet') }}</h3>
+          <h3>{{ $t('Select destination wallet') }}</h3>
           <q-btn flat round dense v-close-popup>
             <Icon icon="tabler:x" width="20" height="20" />
           </q-btn>

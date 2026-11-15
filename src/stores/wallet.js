@@ -998,7 +998,7 @@ export const useWalletStore = defineStore('wallet', {
       this.paymentError = {
         visible: true,
         title: built.title,
-        reason: unreachable ? t('Checking your connection...') : built.reason,
+        reason: unreachable ? t('Checking your connection…') : built.reason,
         reasonSource: built.reasonSource,
         reasonAttribution: built.reasonAttribution,
         technical: built.technical,
