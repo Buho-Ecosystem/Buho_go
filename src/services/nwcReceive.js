@@ -3,18 +3,19 @@
  * invoice on the connected wallet, tell whether it has been paid, and hear
  * about every payment the wallet receives (services/walletWatch).
  *
- * Invoices and lookups talk NIP-47 through the connection's own client
- * (`nwc.client`, the SDK's NWCClient) rather than the WebLN layer on top of
- * it (the payment list below reads WebLN's, which converts to sats). The WebLN
- * methods drop what a receiving screen needs: makeInvoice returns only the
- * invoice text (no payment hash, no expiry) and lookupInvoice expects
- * `{ paymentHash }`, so a plain hash, or `{ payment_hash }`, reaches the
- * wallet as no hash at all.
+ * Invoices, lookups and the payment list talk NIP-47 through the
+ * connection's own client (`nwc.client`, the SDK's NWCClient) rather than
+ * the WebLN layer on top of it. The WebLN methods drop what a screen needs:
+ * makeInvoice returns only the invoice text (no payment hash, no expiry),
+ * lookupInvoice expects `{ paymentHash }`, so a plain hash, or
+ * `{ payment_hash }`, reaches the wallet as no hash at all, and
+ * listTransactions rounds every amount down before handing it over.
  *
- * Amounts: NIP-47 speaks millisats; everything returned here is in sats.
+ * Amounts: NIP-47 speaks millisats; everything returned here is in sats
+ * (a listed or looked-up record through utils/nwcWallet nwcRecordInSats).
  */
 import { NWC_ERROR, nwcError } from '../utils/nwcErrors.js';
-import { nwcCapabilities, nwcPaymentHash, nwcTransactionRow, readInvoice } from '../utils/nwcWallet.js';
+import { nwcCapabilities, nwcPaymentHash, nwcRecordInSats, nwcTransactionRow, readInvoice } from '../utils/nwcWallet.js';
 import { checkNWCPaymentStatus } from '../utils/paymentMonitor.js';
 
 /** How many recent incoming payments to scan when the wallet has no lookup. */
@@ -203,13 +204,24 @@ export async function watchNwcPayments(nwc, onActivity) {
 }
 
 /**
- * Settled payments of the connection, newest first, as transaction rows.
+ * One page of the connection's payment list as the wallet keeps it, each
+ * record's amounts whole (utils/nwcWallet nwcRecordInSats). The one list
+ * read for History, the receipt and Home, so a payment shows the same
+ * figure on each: the figure the review showed, never one below it.
  * Errors are thrown: an empty list must mean "no payments", never "could
  * not read".
+ *
+ * @param {object} nwc NostrWebLNProvider
+ * @param {object} [request] NIP-47 list_transactions params
  */
+export async function listNwcTransactions(nwc, request = {}) {
+  const result = await clientOf(nwc).listTransactions(request);
+  return (result?.transactions || []).map(nwcRecordInSats);
+}
+
+/** Settled payments of the connection, newest first, as transaction rows. */
 export async function listNwcPayments(nwc, { offset = 0, limit = 50 } = {}) {
-  const result = await nwc.listTransactions({ limit, offset, unpaid: false });
-  return (result?.transactions || []).map(nwcTransactionRow);
+  return (await listNwcTransactions(nwc, { limit, offset, unpaid: false })).map(nwcTransactionRow);
 }
 
 /**
@@ -232,5 +244,5 @@ export async function findNwcPayment(nwc, paymentHash, { methods } = {}) {
     throw error;
   }
   if (!tx || typeof tx.state !== 'string' || !tx.state) return null;
-  return nwcTransactionRow({ ...tx, amount: toSats(tx.amount), fees_paid: toSats(tx.fees_paid) });
+  return nwcTransactionRow(nwcRecordInSats(tx));
 }

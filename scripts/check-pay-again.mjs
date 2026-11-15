@@ -61,7 +61,7 @@ await page.evaluate(async ({ wallet, txs }) => {
   store.activeWalletId = wallet.id;
   store.hasBackedUp = true;
   // A stand-in for the wallet's one connection: it lists the fixture, nothing else.
-  store.connectionStates[wallet.id] = { connected: true, error: null, nwcInstance: { listTransactions: async () => ({ transactions: txs }) } };
+  store.connectionStates[wallet.id] = { connected: true, error: null, nwcInstance: { client: { listTransactions: async () => ({ transactions: txs.map(tx => ({ ...tx, amount: tx.amount * 1000, fees_paid: (tx.fees_paid || 0) * 1000 })) }) } } };
   store.balanceStates[wallet.id] = { value: 184250, known: true, source: 'sync', verifiedAt: Date.now(), updatedAt: Date.now() };
   store.refreshBalance = async () => {};
   const { useTransactionMetadataStore } = await import('/src/stores/transactionMetadata.js');

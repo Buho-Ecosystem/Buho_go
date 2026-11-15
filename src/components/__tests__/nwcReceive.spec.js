@@ -46,7 +46,6 @@ function harness(t, { notifications = true, methods = ['make_invoice', 'lookup_i
   let connect = () => connection;
   const connection = {
     connected: true,
-    listTransactions: async () => ({ transactions: rows }), // WebLN amounts are sats.
     client: {
       connected: true,
       subscribeNotifications: async callback => { subscribers.push(callback); return () => { subscribers = subscribers.filter(s => s !== callback); }; },

@@ -24,7 +24,7 @@ test('NWC history grants are respected without sending a request', async () => {
 test('NWC uses its captured connection and propagates a list failure', async () => {
   const error = new Error('relay offline');
   let calls = 0;
-  const owner = { async listTransactions() { calls++; throw error; } };
+  const owner = { client: { async listTransactions() { calls++; throw error; } } };
   await assert.rejects(readLatestTransactionHistory({ wallet: { type: 'nwc' }, owner }), e => e === error);
   assert.equal(calls, 1);
 });
@@ -162,10 +162,10 @@ test('unknown ordering is retained when LNbits exact lookup has no own-wallet de
   for (const type of ['lnbits', 'nwc']) {
     const owner = type === 'lnbits'
       ? { async listPayments() { return [coffee, received]; }, async getPayment() { return null; } }
-      : { async listTransactions() { return { transactions: [
-        { payment_hash: 'coffee', type: 'outgoing', amount: 100, state: 'settled', settled_at: (now - 1000) / 1000 },
-        { payment_hash: 'paid', type: 'incoming', amount: 2100, state: 'settled', created_at: (now - 3600000) / 1000 },
-      ] }; } };
+      : { client: { async listTransactions() { return { transactions: [
+        { payment_hash: 'coffee', type: 'outgoing', amount: 100000, state: 'settled', settled_at: (now - 1000) / 1000 },
+        { payment_hash: 'paid', type: 'incoming', amount: 2100000, state: 'settled', created_at: (now - 3600000) / 1000 },
+      ] }; } } };
     const wallet = { id: 'A', type };
     const controller = createLatestTransactionPreview({ readHistory: readLatestTransactionHistory, readCache: () => [coffee], writeCache() {} });
     try {
