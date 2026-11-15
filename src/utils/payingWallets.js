@@ -67,6 +67,44 @@ export function unquotedFeeLimitSats(amountSats) {
 }
 
 /**
+ * How a payment's fee is worded, the same on every screen that states one
+ * (the payment review, batch send, a transfer between wallets): a quote as
+ * its figure, "Free" only for a fee of zero, "Up to" for a limit the send
+ * is held to. A fee nobody knows has no figure: the screen says "Fee
+ * calculated when sending." instead (see paymentTotalText).
+ * @param {number} feeSats the quote, or with `isLimit` the most it may cost
+ * @param {boolean} isLimit
+ * @param {(sats: number) => string} format the screen's amount formatter
+ * @param {(key: string, params?: object) => string} t vue-i18n translate
+ * @returns {string}
+ */
+export function paymentFeeText(feeSats, isLimit, format, t) {
+  if (isLimit) return t('Up to {amount}', { amount: format(feeSats) })
+  return feeSats === 0 ? t('Free') : format(feeSats)
+}
+
+/**
+ * The total under that fee: the sum for a quote, "Up to" the sum for a
+ * limit, and "{amount} + fee" in words where the fee is not known (any
+ * `feeSats` that is no whole number). A fee that comes later is named,
+ * never guessed into the sum.
+ * @param {number} amountSats
+ * @param {number|null} feeSats
+ * @param {boolean} isLimit
+ * @param {(sats: number) => string} format
+ * @param {(key: string, params?: object) => string} t
+ * @param {{ several?: boolean }} [options] several payments, so "fees"
+ * @returns {string}
+ */
+export function paymentTotalText(amountSats, feeSats, isLimit, format, t, { several = false } = {}) {
+  if (!Number.isSafeInteger(feeSats)) {
+    return t(several ? '{amount} + fees' : '{amount} + fee', { amount: format(amountSats) })
+  }
+  const total = format(amountSats + feeSats)
+  return isLimit ? t('Up to {amount}', { amount: total }) : total
+}
+
+/**
  * The fee reserve for the send pipeline: only what is KNOWN to be charged.
  *
  * Spark and Arkade addresses are zero-fee rails, so nothing is held back.

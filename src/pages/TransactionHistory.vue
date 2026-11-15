@@ -608,7 +608,8 @@
                         <HiddenAmount>{{ getFormattedAmount(tx) }}</HiddenAmount>
                       </span>
                       <span class="tx-row-fiat" :class="$q.dark.isActive ? 'tx-row-muted-dark' : 'tx-row-muted-light'">
-                        <HiddenAmount>{{ getFiatAmount(tx) }}</HiddenAmount><template v-if="getFeeBadge(tx)"> · {{ getFeeBadge(tx) }}</template>
+                        <!-- The fiat line is worked out once per row; without one the fee note stands alone. -->
+                        <template v-for="fiat in [getFiatAmount(tx)]" :key="fiat"><HiddenAmount v-if="fiat">{{ fiat }}</HiddenAmount><template v-if="getFeeBadge(tx)"><template v-if="fiat"> · </template>{{ getFeeBadge(tx) }}</template></template>
                       </span>
                     </span>
                   </button>
@@ -2457,49 +2458,36 @@ export default {
       }
     },
 
+    /**
+     * A row's fiat line, by the receipt's rule, so a payment reads the same
+     * on both: its value when it happened, where one was recorded; otherwise
+     * its value at today's rate, said as that.
+     */
     getFiatAmount(tx) {
-      if (this.loadingFiatRates) {
-        return '...';
+      const snapshot = tx?.fiatAtSettlement;
+      const recorded = Number(snapshot?.amount);
+      if (snapshot && Number.isFinite(recorded) && (tx.status || 'completed') === 'completed') {
+        return fiatRatesService.formatFiatAmount(recorded, snapshot.currency || 'USD');
       }
-
-      try {
-        const currency = this.walletState.preferredFiatCurrency || 'USD';
-        // Fiat tracks the row's headline amount so they can't disagree.
-        // For an outgoing payment with a fee, both reflect what the
-        // recipient received (gross − fee), not the gross deducted.
-        const fiatValue = fiatRatesService.convertSatsToFiatSync(this.getDisplayAmountSats(tx), currency);
-
-        // Handle unavailable rates
-        if (fiatValue === null) {
-          return '--';
-        }
-
-        return fiatRatesService.formatFiatAmount(fiatValue, currency);
-      } catch (error) {
-        console.error('Error converting to fiat:', error);
-        return '--';
-      }
+      // Fiat tracks the row's headline amount so they can't disagree.
+      // For an outgoing payment with a fee, both reflect what the
+      // recipient received (gross − fee), not the gross deducted.
+      return this.fiatAtTodaysRate(this.getDisplayAmountSats(tx));
     },
 
+    /** The totals span many days: always at today's rate, and said as that. */
     getFiatAmountForStats(amount) {
-      if (this.loadingFiatRates) {
-        return '...';
-      }
+      return this.fiatAtTodaysRate(Math.abs(amount));
+    },
 
-      try {
-        const currency = this.walletState.preferredFiatCurrency || 'USD';
-        const fiatValue = fiatRatesService.convertSatsToFiatSync(Math.abs(amount), currency);
-
-        // Handle unavailable rates
-        if (fiatValue === null) {
-          return '--';
-        }
-
-        return fiatRatesService.formatFiatAmount(fiatValue, currency);
-      } catch (error) {
-        console.error('Error converting to fiat:', error);
-        return '--';
-      }
+    /**
+     * "≈ $1.87 today", or nothing while the rates load or when none is
+     * current: no value beats a wrong one.
+     */
+    fiatAtTodaysRate(sats) {
+      if (this.loadingFiatRates) return '';
+      const value = fiatRatesService.formatSatsAsFiat(sats, this.walletState?.preferredFiatCurrency || 'USD');
+      return value ? `≈\u00a0${this.$t('{amount} today', { amount: value })}` : '';
     },
 
     formatTime(timestamp) {

@@ -218,28 +218,30 @@
                   type="text"
                   inputmode="decimal"
                   class="amount-input"
-                  :placeholder="currency === 'sats' ? '0' : '0.00'"
+                  :placeholder="currency === 'sats' ? '0' : (0).toFixed(fiatDigits)"
                   @input="onAmountInput"
                   @blur="formatAmount"
                 />
                 <button class="currency-toggle" @click="toggleCurrency">
-                  {{ currency === 'sats' ? 'sats' : fiatCurrency }}
+                  {{ currency === 'sats' ? bitcoinUnit : fiatCurrency }}
                 </button>
               </div>
               <div class="amount-conversion">
                 {{ currency === 'sats' ? fiatEquivalent : satsEquivalent }}
               </div>
+              <!-- No current exchange rate: the amount is typed in Bitcoin, and one line says why. -->
+              <div v-if="rateNotice" class="amount-conversion" role="status">{{ rateNotice }}</div>
             </div>
 
             <!-- Calculation Preview -->
             <div v-if="amountPerRecipient > 0" class="calc-preview">
               <div class="calc-breakdown">
-                <span class="calc-per-person">{{ formatSats(amountPerRecipient) }} sats</span>
+                <span class="calc-per-person">{{ amountText(amountPerRecipient) }}</span>
                 <span class="calc-multiply">× {{ selectedContacts.length }} {{ $t('recipients') }}</span>
               </div>
               <div class="calc-equals">=</div>
               <div class="calc-result">
-                <span class="calc-total-sats">{{ formatSats(totalAmount) }} sats</span>
+                <span class="calc-total-sats">{{ amountText(totalAmount) }}</span>
                 <span class="calc-total-fiat">{{ getFiatValue(totalAmount) }}</span>
               </div>
             </div>
@@ -297,7 +299,7 @@
                     placeholder="0"
                     @input="e => updateCustomAmount(contact.id, e.target.value)"
                   />
-                  <span class="custom-unit">sats</span>
+                  <span class="custom-unit">{{ bitcoinUnit }}</span>
                 </div>
               </div>
             </div>
@@ -305,7 +307,7 @@
             <!-- Custom Mode Total -->
             <div v-if="totalAmount > 0" class="custom-total-preview">
               <span class="custom-total-label">{{ $t('Total') }}:</span>
-              <span class="custom-total-value">{{ formatSats(totalAmount) }} sats</span>
+              <span class="custom-total-value">{{ amountText(totalAmount) }}</span>
               <span class="custom-total-fiat">{{ getFiatValue(totalAmount) }}</span>
             </div>
           </template>
@@ -319,17 +321,17 @@
             <div class="balance-details">
               <div class="balance-item">
                 <span class="balance-label">{{ $t('Available') }}</span>
-                <span class="balance-value">{{ formatSats(walletBalance) }} sats</span>
+                <span class="balance-value">{{ amountText(walletBalance) }}</span>
               </div>
               <div class="balance-item balance-sending">
                 <span class="balance-label">{{ $t('Sending') }}</span>
-                <span class="balance-value">-{{ formatSats(totalAmount) }} sats</span>
+                <span class="balance-value">-{{ amountText(totalAmount) }}</span>
               </div>
               <div class="balance-divider"></div>
               <div class="balance-item balance-remaining">
-                <span class="balance-label">{{ $t('Remaining') }}</span>
+                <span class="balance-label">{{ remainingLabel }}</span>
                 <span class="balance-value" :class="{ 'value-warning': isOverSafeLimit, 'value-error': isOverBalance }">
-                  {{ formatSats(Math.max(0, remainingBalance)) }} sats
+                  {{ amountText(Math.max(0, remainingBalance)) }}
                 </span>
               </div>
             </div>
@@ -342,7 +344,7 @@
           </div>
           <div v-else-if="isOverSafeLimit" class="warning-banner">
             <Icon icon="tabler:alert-triangle" />
-            <span>{{ $t('1% reserved for potential fees') }}</span>
+            <span>{{ $t('Fees come on top. Your balance may not cover every payment.') }}</span>
           </div>
 
           <!-- Custom Mode Validation -->
@@ -375,26 +377,42 @@
                 <div class="review-address">{{ truncateAddress(contact.address || contact.lightningAddress) }}</div>
               </div>
               <div class="review-amount">
-                <div class="amount-sats">{{ formatSats(getContactAmount(contact)) }} sats</div>
+                <div class="amount-sats">{{ amountText(getContactAmount(contact)) }}</div>
                 <div class="amount-fiat">{{ getFiatValue(getContactAmount(contact)) }}</div>
               </div>
             </div>
           </div>
 
-          <!-- Fee Summary -->
+          <!-- What the batch costs, in the review's words: the sum of the
+               amounts, then the fees as a quote, a limit the sends are held
+               to ("Up to"), "Free", or one line saying the wallet cannot
+               tell beforehand. Never a guessed figure. -->
           <div class="fee-summary">
             <div class="fee-row">
               <span>{{ $t('Subtotal') }}</span>
-              <span>{{ formatSats(totalAmount) }} sats</span>
+              <span>{{ amountText(totalAmount) }}</span>
             </div>
-            <div class="fee-row">
-              <span>{{ $t('Est. fees') }}</span>
-              <span>~{{ formatSats(estimatedFees) }} sats</span>
+            <div v-if="batchCost.feeText || batchCost.feeNote" class="fee-row">
+              <template v-if="batchCost.feeText">
+                <span>{{ $t('Fees') }}</span>
+                <span>{{ batchCost.feeText }}</span>
+              </template>
+              <span v-else role="status">{{ batchCost.feeNote }}</span>
             </div>
-            <div class="fee-row fee-total">
+            <div v-if="batchCost.totalText" class="fee-row fee-total">
               <span>{{ $t('Total') }}</span>
-              <span>{{ formatSats(totalAmount + estimatedFees) }} sats</span>
+              <span>{{ batchCost.totalText }}</span>
             </div>
+          </div>
+
+          <div v-if="batchCost.blocked" class="error-banner">
+            <Icon icon="tabler:alert-circle" />
+            <span>{{ batchCost.blocked }}</span>
+            <q-btn v-if="batchCost.state === 'failed'" flat dense no-caps size="sm" class="action-link" :label="$t('Try again')" @click="loadOnchainQuotes" />
+          </div>
+          <div v-else-if="batchCost.warning" class="warning-banner">
+            <Icon icon="tabler:alert-triangle" />
+            <span>{{ batchCost.warning }}</span>
           </div>
         </section>
 
@@ -439,7 +457,7 @@
                   <span v-else-if="result.status === 'unconfirmed'" class="status-text status-skipped">{{ $t('Payment not confirmed') }}</span>
                 </div>
               </div>
-              <div class="exec-amount">{{ formatSats(result.amount) }}</div>
+              <div class="exec-amount">{{ amountText(result.amount) }}</div>
               <div class="exec-icon">
                 <q-spinner-dots v-if="result.status === 'sending'" size="20px" color="brand-green" />
                 <Icon v-else-if="result.status === 'success'" icon="tabler:circle-check" class="icon-success" />
@@ -491,8 +509,8 @@
             </div>
 
             <div class="summary-total">
-              <strong>{{ formatSats(totalSent) }}</strong>
-              <span class="summary-total-unit">{{ $t('sats sent') }}</span>
+              <strong>{{ amountText(totalSent) }}</strong>
+              <span class="summary-total-unit">{{ $t('sent') }}</span>
             </div>
 
             <div class="summary-stats">
@@ -599,6 +617,7 @@
             unelevated
             no-caps
             class="btn-primary"
+            :disable="!batchCost.ready"
             @click="startBatch"
           >
             {{ $t('Send {count} Payments', { count: selectedContacts.length }) }}
@@ -649,11 +668,13 @@
 <script setup>
 import { assertPaymentInput } from '../utils/lud23.js';
 import { ref, computed, watch, nextTick, getCurrentInstance } from 'vue'
-import { parsePaymentAmount } from '../utils/paymentAmountInput.js'
+import { normalizePaymentAmountInput } from '../utils/paymentAmountInput.js'
+import { formatPaymentAmount, fiatDecimals } from '../utils/amountFormatting.js'
+import { unquotedFeeLimitSats, feeReserveSats, paymentFeeText, paymentTotalText } from '../utils/payingWallets.js'
 import { canWalletPay } from '../utils/walletCapabilities'
 import { useQuasar } from 'quasar'
 import { useWalletStore } from '../stores/wallet'
-import { fiatSymbol } from '../utils/fiatCurrencies.js'
+import { fiatRatesService } from '../utils/fiatRates.js'
 import { useAddressBookStore } from '../stores/addressBook'
 import { useTransactionMetadataStore } from '../stores/transactionMetadata'
 import LightningPaymentService from '../utils/lightning.js'
@@ -689,7 +710,6 @@ const transactionMetadataStore = useTransactionMetadataStore()
 // Constants
 // ─────────────────────────────────────────────────────────────
 const totalSteps = 5
-const FEE_BUFFER_PERCENT = 0.01 // 1% reserved for fees
 const DEFAULT_AVATAR_COLOR = '#3B82F6'
 const WALLET_TYPES = { SPARK: 'spark', ARKADE: 'arkade', LNBITS: 'lnbits', NWC: 'nwc' }
 
@@ -709,6 +729,19 @@ const customAmountsMode = ref(false)
 const customAmounts = ref({}) // { contactId: amountInSats }
 const quickFillAmount = ref('')
 const showConfirmClose = ref(false)
+// The moment exchange rates are judged at; read again on every amount edit
+// and step, so a rate that ages while the sheet is open stops converting.
+// The rates service is not reactive: every read of it follows this clock.
+const rateClock = ref(Date.now())
+// Fiat was asked for while no current rate exists.
+const fiatAsked = ref(false)
+// The amount each recipient gets, fixed when the review opens: what is
+// reviewed is what is sent, whatever the rates do afterwards.
+const reviewedAmount = ref(null)
+// The on-chain fee quotes the review shows, by row (quoteKey):
+// { status: 'loading' | 'ready' | 'failed', quote: { feeQuoteId, totalFee } }.
+const onchainQuotes = ref({})
+let quoteRun = 0
 
 // ─────────────────────────────────────────────────────────────
 // Computed - Visibility
@@ -729,10 +762,14 @@ const walletBalance = computed(() => walletStore.balances[walletStore.activeWall
 
 // Currency settings from wallet store
 const fiatCurrency = computed(() => walletStore.preferredFiatCurrency || 'USD')
-const exchangeRate = computed(() => {
-  const currency = fiatCurrency.value.toLowerCase()
-  return walletStore.exchangeRates?.[currency] || 0
-})
+// Only a rate the rates service judges current (fetched within the hour)
+// converts anything here: an older one is neither typed against nor shown.
+const exchangeRate = computed(() => fiatRatesService.freshRate(fiatCurrency.value, rateClock.value))
+const fiatDigits = computed(() => fiatDecimals(fiatCurrency.value.toUpperCase()))
+// Bitcoin amounts as Settings writes them: "₿ 1,234" or "1,234 sats".
+const bitcoinUnit = computed(() => (walletStore.useBip177Format ? '₿' : 'sats'))
+const rateNotice = computed(() => (fiatAsked.value && !exchangeRate.value
+  ? t('No current exchange rate. Enter the amount in Bitcoin.') : ''))
 
 // ─────────────────────────────────────────────────────────────
 // Computed - Contacts
@@ -771,13 +808,15 @@ const hasSparkOnlySelected = computed(() => {
 // Computed - Amount
 // ─────────────────────────────────────────────────────────────
 const amountPerRecipient = computed(() => {
-  const val = typedAmount() || 0
+  if (reviewedAmount.value !== null) return reviewedAmount.value
+  const typed = typedAmountText()
+  if (typed === null) return 0
   if (currency.value === 'sats') {
-    return Math.floor(val)
+    const sats = Number(typed)
+    return Number.isSafeInteger(sats) ? sats : 0
   }
-  // Convert fiat to sats using exchange rate
-  if (!exchangeRate.value) return 0
-  return Math.floor((val / exchangeRate.value) * 100000000)
+  // The rates service's rule: only at a current rate, in exact arithmetic.
+  return fiatRatesService.convertFiatToSatsSync(typed, fiatCurrency.value, rateClock.value) || 0
 })
 
 const totalAmount = computed(() => {
@@ -790,16 +829,27 @@ const totalAmount = computed(() => {
   return selectedContacts.value.length * amountPerRecipient.value
 })
 
-const maxSendable = computed(() => {
-  return Math.floor(walletBalance.value * (1 - FEE_BUFFER_PERCENT))
-})
-
 const remainingBalance = computed(() => {
   return walletBalance.value - totalAmount.value
 })
 
+// The fees are not part of this figure, and the label says so unless every
+// payment of the batch is one that is sent only without a fee.
+const batchIsFeeFree = computed(() => selectedContacts.value.length > 0
+  && selectedContacts.value.every(contact => rowCost(contact).kind === 'free'))
+const remainingLabel = computed(() => (batchIsFeeFree.value ? t('Remaining') : t('Remaining before fees')))
+
 const isOverBalance = computed(() => totalAmount.value > walletBalance.value)
-const isOverSafeLimit = computed(() => totalAmount.value > maxSendable.value && !isOverBalance.value)
+// The amounts fit, but with the app's fee reserve for each paying row
+// (feeReserveSats, for a Spark wallet the limit its sends are held to) they
+// may not: said as a warning, without a figure.
+const isOverSafeLimit = computed(() => {
+  if (isOverBalance.value || batchIsFeeFree.value || totalAmount.value <= 0) return false
+  const reserve = selectedContacts.value.reduce((sum, contact) => (
+    rowCost(contact).kind === 'free' ? sum : sum + feeReserveSats(getContactAmount(contact))
+  ), 0)
+  return totalAmount.value + reserve > walletBalance.value
+})
 
 const allContactsHaveAmount = computed(() => {
   return selectedContacts.value.every(c => {
@@ -815,34 +865,83 @@ const canProceedFromAmount = computed(() => {
   return amountPerRecipient.value > 0 && !isOverBalance.value
 })
 
-const fiatEquivalent = computed(() => {
-  if (!exchangeRate.value) return ''
-  const fiatVal = (amountPerRecipient.value / 100000000) * exchangeRate.value
-  const symbol = fiatSymbol(fiatCurrency.value)
-  return `~${symbol}${fiatVal.toFixed(2)}`
-})
+const fiatEquivalent = computed(() => getFiatValue(amountPerRecipient.value))
 
-const satsEquivalent = computed(() => {
-  return `~${formatSats(amountPerRecipient.value)} sats`
-})
+const satsEquivalent = computed(() => (amountPerRecipient.value > 0 ? `≈\u00a0${amountText(amountPerRecipient.value)}` : ''))
 
 // ─────────────────────────────────────────────────────────────
 // Computed - Fees
 // ─────────────────────────────────────────────────────────────
-const estimatedFees = computed(() => {
-  let fees = 0
-  for (const contact of selectedContacts.value) {
-    const type = contact.addressType || 'lightning'
-    const contactAmount = getContactAmount(contact)
-    if (type === 'spark' || type === 'arkade') {
-      fees += 0 // Zero fee (native ark1 / sp1 transfer)
-    } else if (type === 'lightning' || type === 'lnurl') {
-      fees += Math.ceil(contactAmount * 0.01) // ~1% (LNURL pays over Lightning)
-    } else if (type === 'bitcoin') {
-      fees += 500 // Rough estimate for on-chain
+const isSparkPayer = () => walletStore.activeWalletType === WALLET_TYPES.SPARK
+const quoteKey = (contact) => `${contact.id}|${contact.address || contact.lightningAddress}|${getContactAmount(contact)}`
+
+/**
+ * What one row can cost on top of its amount, by what the send is held to.
+ * Never a guess:
+ *   exact    an on-chain row: the quote on the review. The same quote is
+ *            submitted, and the wallet refuses a fee above it.
+ *   limit    a Spark wallet paying an address or a link: at most
+ *            unquotedFeeLimitSats of the amount; the wallet refuses a
+ *            dearer route.
+ *   free     a Spark wallet paying a Spark address: sent only when no fee
+ *            is quoted for it.
+ *   unknown  every other wallet: it cannot say before sending.
+ *   loading / failed  an on-chain quote that is not on the review (yet).
+ */
+function rowCost(contact) {
+  const type = contact.addressType || 'lightning'
+  if (isSparkPayer()) {
+    if (type === 'spark') return { kind: 'free', sats: 0 }
+    if (type === 'bitcoin') {
+      const entry = onchainQuotes.value[quoteKey(contact)]
+      if (entry?.status === 'ready') return { kind: 'exact', sats: entry.quote.totalFee }
+      return { kind: entry?.status === 'failed' ? 'failed' : 'loading', sats: null }
+    }
+    if (type === 'lightning' || type === 'lnurl') {
+      return { kind: 'limit', sats: unquotedFeeLimitSats(getContactAmount(contact)) }
     }
   }
-  return fees
+  return { kind: 'unknown', sats: null }
+}
+
+/**
+ * The review's fee and total, worded by the payment review's own functions
+ * (payingWallets): a quote as a figure, "Up to" for a limit the sends are
+ * held to, "Free" where nothing can be charged, and one line where the
+ * wallet cannot tell. The batch can be sent (`ready`) once every figure
+ * it shows is known.
+ */
+const batchCost = computed(() => {
+  const rows = selectedContacts.value.map(rowCost)
+  const subtotal = totalAmount.value
+  const none = { state: '', feeText: '', feeNote: '', totalText: '', blocked: '', warning: '', ready: false }
+  if (rows.some(row => row.kind === 'loading')) {
+    return { ...none, state: 'loading', feeNote: t('Calculating fees...') }
+  }
+  if (rows.some(row => row.kind === 'failed')) {
+    return { ...none, state: 'failed', blocked: t('The fee could not be calculated.') }
+  }
+  if (rows.some(row => row.kind === 'unknown')) {
+    return {
+      ...none, state: 'unknown', ready: true,
+      feeNote: t('Fee calculated when sending.'),
+      totalText: paymentTotalText(subtotal, null, false, amountText, t, { several: true }),
+      warning: isOverSafeLimit.value ? t('Fees come on top. Your balance may not cover every payment.') : '',
+    }
+  }
+  // Quotes and limits add up; one limit among them makes the sum a limit.
+  const fees = rows.reduce((sum, row) => sum + row.sats, 0)
+  const isLimit = rows.some(row => row.kind === 'limit')
+  const covered = subtotal + fees <= walletBalance.value
+  return {
+    ...none, state: isLimit ? 'limit' : 'exact',
+    feeText: paymentFeeText(fees, isLimit, amountText, t),
+    totalText: paymentTotalText(subtotal, fees, isLimit, amountText, t),
+    // A limit is the most, not what will be charged: it warns. A quote is charged: it holds the send.
+    ready: isLimit || covered,
+    warning: isLimit && !covered ? t('Fees come on top. Your balance may not cover every payment.') : '',
+    blocked: !isLimit && !covered ? t('The amount plus fees exceeds your balance.') : '',
+  }
 })
 
 // ─────────────────────────────────────────────────────────────
@@ -926,7 +1025,26 @@ watch(step, (newStep) => {
       amountInput.value?.focus()
     })
   }
+  // The review fixes the amounts and gets the on-chain quotes it shows;
+  // leaving it lets both go, and the amounts convert at the rate of now again.
+  if (newStep === 3) {
+    if (!customAmountsMode.value) reviewedAmount.value = amountPerRecipient.value
+    loadOnchainQuotes()
+  } else if (newStep < 3) {
+    reviewedAmount.value = null
+    quoteRun += 1
+    onchainQuotes.value = {}
+    rateClock.value = Date.now()
+  }
 })
+
+// A rate that went out of date: the amount is typed in Bitcoin from here on.
+watch(exchangeRate, (rate) => {
+  if (rate || currency.value !== 'fiat' || reviewedAmount.value !== null) return
+  fiatAsked.value = true
+  currency.value = 'sats'
+  amountDisplay.value = ''
+}, { flush: 'sync' })
 
 // ─────────────────────────────────────────────────────────────
 // Methods - Helpers
@@ -941,15 +1059,15 @@ function truncateAddress(addr) {
   return `${addr.slice(0, 8)}...${addr.slice(-6)}`
 }
 
-function formatSats(sats) {
-  return new Intl.NumberFormat().format(sats || 0)
+/** A Bitcoin amount in the person's format, through the app's formatter. */
+function amountText(sats) {
+  return formatPaymentAmount(sats || 0, { kind: 'sats', bip177: !!walletStore.useBip177Format })
 }
 
+/** The amount's value in fiat, marked as a conversion; nothing without a current rate. */
 function getFiatValue(sats) {
-  if (!exchangeRate.value) return ''
-  const fiat = (sats / 100000000) * exchangeRate.value
-  const symbol = fiatSymbol(fiatCurrency.value)
-  return `${symbol}${fiat.toFixed(2)}`
+  const value = sats > 0 ? fiatRatesService.formatSatsAsFiat(sats, fiatCurrency.value, rateClock.value) : ''
+  return value ? `≈\u00a0${value}` : ''
 }
 
 function getContactAmount(contact) {
@@ -1055,18 +1173,25 @@ function clearSelection() {
 // Methods - Amount
 // ─────────────────────────────────────────────────────────────
 /**
- * The typed amount as a number, or null when it cannot be read with
- * certainty. A comma is a decimal where the phone or the app language says
- * so; it is never dropped (2,5 must not become 25).
+ * The typed amount as plain decimal text (and as a number), or null when it
+ * cannot be read with certainty. A comma is a decimal where the phone or
+ * the app language says so; it is never dropped (2,5 must not become 25).
  */
-function typedAmount() {
-  return parsePaymentAmount(amountDisplay.value, {
+function typedAmountText() {
+  const result = normalizePaymentAmountInput(amountDisplay.value, {
     locales: [proxy.$i18n?.locale, undefined],
-    precision: currency.value === 'sats' ? 0 : 2
+    precision: currency.value === 'sats' ? 0 : fiatDigits.value
   })
+  return result.error || !result.complete || !result.value ? null : result.value
+}
+
+function typedAmount() {
+  const text = typedAmountText()
+  return text === null ? null : Number(text)
 }
 
 function onAmountInput(e) {
+  rateClock.value = Date.now()
   // Digits and the separators an amount is written with; the reading happens in typedAmount.
   amountDisplay.value = e.target.value.replace(/[^0-9.,\u00a0\u202f ]/g, '')
 }
@@ -1079,11 +1204,19 @@ function formatAmount() {
   if (currency.value === 'sats') {
     amountDisplay.value = Math.floor(val).toString()
   } else {
-    amountDisplay.value = val.toFixed(2)
+    amountDisplay.value = val.toFixed(fiatDigits.value)
   }
 }
 
 function toggleCurrency() {
+  rateClock.value = Date.now()
+  // Fiat is offered only with a current rate. Without one the amount stays
+  // in Bitcoin, one line says why, and the rates are asked for again.
+  if (currency.value === 'sats' && !exchangeRate.value) {
+    fiatAsked.value = true
+    fiatRatesService.getRates().catch(() => {}).then(() => { rateClock.value = Date.now() })
+    return
+  }
   const currentSats = amountPerRecipient.value
   currency.value = currency.value === 'sats' ? 'fiat' : 'sats'
 
@@ -1092,7 +1225,7 @@ function toggleCurrency() {
       amountDisplay.value = currentSats.toString()
     } else {
       const fiat = (currentSats / 100000000) * exchangeRate.value
-      amountDisplay.value = fiat.toFixed(2)
+      amountDisplay.value = fiat.toFixed(fiatDigits.value)
     }
   }
 }
@@ -1101,8 +1234,43 @@ function toggleCurrency() {
 // Methods - Navigation
 // ─────────────────────────────────────────────────────────────
 function nextStep() {
+  // The amounts go to the review as they convert now, not as they did when typed.
+  if (step.value === 2) {
+    rateClock.value = Date.now()
+    if (!canProceedFromAmount.value) return
+  }
   if (step.value < totalSteps) {
     step.value++
+  }
+}
+
+/**
+ * The real fee of every on-chain row, asked before the review can be
+ * confirmed. The send submits these same quotes: a quote nobody saw is
+ * never paid. One at a time, as the sends go.
+ */
+async function loadOnchainQuotes() {
+  const run = ++quoteRun
+  const rows = isSparkPayer() ? selectedContacts.value.filter(contact => contact.addressType === 'bitcoin') : []
+  onchainQuotes.value = Object.fromEntries(rows.map(contact => [quoteKey(contact), { status: 'loading', quote: null }]))
+  for (const contact of rows) {
+    const key = quoteKey(contact)
+    let entry
+    try {
+      const provider = walletStore.getActiveProvider()
+      const tiers = await provider.getWithdrawalFeeQuote(getContactAmount(contact), contact.address || contact.lightningAddress)
+      // Medium speed, as before: batch rows have no fee picker.
+      const quote = tiers?.medium
+      if (!quote?.feeQuoteId || !Number.isSafeInteger(quote.totalFee) || quote.totalFee < 0) {
+        throw new Error('No withdrawal fee quote available right now. Please try again.')
+      }
+      entry = { status: 'ready', quote: { feeQuoteId: quote.feeQuoteId, totalFee: quote.totalFee } }
+    } catch (error) {
+      console.error('Batch send fee quote failed:', error)
+      entry = { status: 'failed', quote: null }
+    }
+    if (run !== quoteRun) return
+    onchainQuotes.value = { ...onchainQuotes.value, [key]: entry }
   }
 }
 
@@ -1125,6 +1293,11 @@ function resetState() {
   customAmounts.value = {}
   quickFillAmount.value = ''
   showConfirmClose.value = false
+  rateClock.value = Date.now()
+  fiatAsked.value = false
+  reviewedAmount.value = null
+  quoteRun += 1
+  onchainQuotes.value = {}
 }
 
 function close() {
@@ -1240,7 +1413,14 @@ async function startBatch() {
   // every subsequent iteration hits the same wall, and the user lands
   // on step 5 with N identical row-level errors and no clean overall
   // message. Catching it at the door yields one clear modal instead.
-  const totalRequired = totalAmount.value
+  // Nothing is sent before every figure of the review is on it.
+  if (!batchCost.value.ready) return
+  // The amounts plus the fees that were quoted (on-chain rows).
+  const quotedFees = selectedContacts.value.reduce((sum, contact) => {
+    const cost = rowCost(contact)
+    return cost.kind === 'exact' ? sum + cost.sats : sum
+  }, 0)
+  const totalRequired = totalAmount.value + quotedFees
   const currentBalance = Number(walletBalance.value) || 0
   if (totalRequired > currentBalance) {
     const breakdown = formatInsufficientBalanceBreakdown(
@@ -1270,6 +1450,8 @@ async function startBatch() {
   paymentResults.value = selectedContacts.value.map(contact => ({
     contact,
     amount: getContactAmount(contact),
+    // The on-chain quote this row showed on the review, the only one it may pay.
+    feeQuote: rowCost(contact).kind === 'exact' ? onchainQuotes.value[quoteKey(contact)].quote : null,
     status: 'pending',
     error: null,
     // LUD-09 message this recipient returned, once the payment settles.
@@ -1376,13 +1558,14 @@ async function startBatch() {
           result.status = 'skipped'
           result.error = t('Requires Spark')
         } else {
-          // An on-chain send from Spark is a withdrawal request: quote the
-          // fee, then submit at medium speed (batch rows have no fee picker).
-          // The fee rides on top so the recipient gets the row's amount, and
-          // "success" means the request was accepted - the broadcast follows
-          // on the service's schedule, same as the single-send flow.
-          const feeQuote = await provider.getWithdrawalFeeQuote(result.amount, address)
-          const quote = feeQuote?.medium
+          // An on-chain send from Spark is a withdrawal request, submitted
+          // at medium speed (batch rows have no fee picker) with the quote
+          // the review showed: the wallet refuses a fee above it, so what
+          // was confirmed is the most that is paid. The fee rides on top so
+          // the recipient gets the row's amount, and "success" means the
+          // request was accepted - the broadcast follows on the service's
+          // schedule, same as the single-send flow.
+          const quote = result.feeQuote
           if (!quote?.feeQuoteId) {
             throw new Error('No withdrawal fee quote available right now. Please try again.')
           }

@@ -559,6 +559,7 @@
       :verified-recipient="sendSuccessVerified"
       :label="sendSuccessLabel"
       :pending="sendSuccessPending"
+      :fee-sats="sendSuccessFeeSats"
       :show-save-contact="sendSuccessShowSaveContact"
       :success-action="sendSuccessAction"
       :delivery-status="sendDeliveryStatus"
@@ -1077,6 +1078,8 @@ export default {
       // it before opening the modal.
       showSendSuccess: false,
       sendSuccessAmount: 0,
+      // The fee the paying wallet reported for the payment on the paid screen, or null.
+      sendSuccessFeeSats: null,
       sendSuccessFiat: '',
       sendSuccessRecipient: '',
       // A Branta-verified business, named on the paid screen with its seal.
@@ -5827,6 +5830,7 @@ export default {
           successAction,
           verifyUrl,
           verifiedBusiness: merchantVerification,
+          feeSats: result?.fee,
         });
 
         this.clearSendSheet();
@@ -6490,7 +6494,7 @@ export default {
      * COMPLETED — promoting a contact off a payment that may yet
      * fail would be misleading.
      */
-    async openSendSuccess({ amount, recipient, status, showSaveContact, successAction = null, verifyUrl = null, verifiedBusiness = null }) {
+    async openSendSuccess({ amount, recipient, status, showSaveContact, successAction = null, verifyUrl = null, verifiedBusiness = null, feeSats = null }) {
       const isCompleted = status === 'completed';
       // Capture the wallet that actually paid, before the executor clears it.
       const payer = this.paymentOnly ? this.getSendingWallet() : null;
@@ -6526,6 +6530,8 @@ export default {
       }
 
       this.sendSuccessAmount = Number(amount) || 0;
+      // Only what the wallet itself reported for a paid payment, as a whole figure.
+      this.sendSuccessFeeSats = isCompleted && Number.isSafeInteger(feeSats) && feeSats > 0 ? feeSats : null;
       this.sendSuccessRecipient = recipient || '';
       this.sendSuccessVerified = verifiedBusiness
         ? { ...verifiedBusiness, name: verifiedBusiness.name || recipient || '' }
@@ -6577,6 +6583,7 @@ export default {
       // results) and clear the status so the next send starts clean.
       this._stopDeliveryPoll();
       this.sendSuccessAmount = 0;
+      this.sendSuccessFeeSats = null;
       this.sendSuccessFiat = '';
       this.sendSuccessRecipient = '';
       this.sendSuccessVerified = null;

@@ -6,7 +6,8 @@
  * Alby's per-currency endpoint. Which currency uses which is declared once
  * in fiatCurrencies.js.
  */
-import { FIAT_SYMBOLS, MEMPOOL_RATE_CURRENCIES, ALBY_RATE_CURRENCIES } from './fiatCurrencies.js'
+import { FIAT_SYMBOLS, MEMPOOL_RATE_CURRENCIES, ALBY_RATE_CURRENCIES, freshRate, fiatToSats } from './fiatCurrencies.js'
+import { formatFiatAmount } from './amountFormatting.js'
 import { MEMPOOL_DEFAULT_URL, MEMPOOL_FALLBACK_URL, RETIRED_MEMPOOL_URLS } from './mempoolServer.js'
 
 // fetch() has no timeout option; a host that never answers would hold every
@@ -353,42 +354,46 @@ export class FiatRatesService {
   }
 
   /**
-   * Convert fiat to satoshis
-   * Returns null if rates are unavailable
+   * Convert fiat to satoshis (fetching the rates first when they are due).
+   * Returns null without a current rate: see convertFiatToSatsSync.
    */
   async convertFiatToSats(fiatAmount, currency) {
-    const rate = await this.getRate(currency);
-    if (!rate) return null;
-
-    const btc = fiatAmount / rate;
-    return Math.floor(btc * 100000000); // Convert BTC to sats
+    await this.getRates();
+    return this.convertFiatToSatsSync(fiatAmount, currency);
   }
 
   /**
-   * Synchronous fiat to sats conversion - returns null if rates unavailable
+   * The one rule for turning a fiat amount into Bitcoin, read by every
+   * screen an amount is typed on: only at this currency's rate while it is
+   * at most an hour old (freshRate), in exact arithmetic, rounded down.
+   * `fiatAmount` is a number or the plain decimal text of an amount field.
+   * Returns null without a current rate, so nothing is ever converted, or
+   * sent, at an old one.
    */
-  convertFiatToSatsSync(fiatAmount, currency = 'USD') {
-    if (!this.ratesAvailable) return null;
-    const rate = this.rates[currency.toUpperCase()];
+  convertFiatToSatsSync(fiatAmount, currency = 'USD', now = Date.now()) {
+    const rate = this.freshRate(currency, now);
     if (!rate) return null;
-    const btc = fiatAmount / rate;
-    return Math.floor(btc * 100000000);
+    return fiatToSats(fiatAmount, rate);
   }
 
   /**
-   * Format fiat amount with currency symbol
+   * A fiat value with its symbol, written by the one formatter every screen
+   * uses (amountFormatting): the device's number format and the currency's
+   * own decimals, grouped so a large amount stays readable.
    */
   formatFiatAmount(amount, currency) {
-    const code = currency.toUpperCase();
-    const symbol = FIAT_SYMBOLS[code] || code + ' ';
+    const code = String(currency || 'USD').toUpperCase();
+    return formatFiatAmount(Number(amount || 0), code, { symbol: FIAT_SYMBOLS[code] });
+  }
 
-    // JPY has no minor unit, so render it without decimals. Grouped in
-    // every currency: a large amount must stay readable, never 248640555.00.
-    const digits = code === 'JPY' ? 0 : 2;
-    return symbol + Number(amount || 0).toLocaleString('en-US', {
-      minimumFractionDigits: digits,
-      maximumFractionDigits: digits,
-    });
+  /**
+   * What `sats` are worth in `currency` now, written out ("€1.87"), or ''
+   * without a current rate (freshRate): a value at an old rate is not a
+   * value of today. The caller marks it as a conversion ("≈").
+   */
+  formatSatsAsFiat(sats, currency, now = Date.now()) {
+    const rate = this.freshRate(currency, now);
+    return rate ? this.formatFiatAmount(sats * rate / 100000000, currency) : '';
   }
 
   /**
@@ -441,6 +446,18 @@ export class FiatRatesService {
    */
   getRateTimes() {
     return { ...this.rateTimes };
+  }
+
+  /**
+   * The price of one bitcoin in `currency`, or 0 when it was not fetched
+   * within the hour (fiatCurrencies' freshRate). Whether a source answered
+   * just now says nothing about one currency: a rate kept from an earlier
+   * fetch keeps its age, and an old one is never a price to pay with.
+   */
+  freshRate(currency, now = Date.now()) {
+    const code = String(currency || 'USD').toUpperCase();
+    const key = code.toLowerCase();
+    return freshRate({ [key]: this.rates?.[code] }, { [key]: this.rateTimes?.[code] }, key, now);
   }
 
   /**

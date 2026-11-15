@@ -772,14 +772,15 @@ await test('a change made from a saved entry starts from it: tags add up, a pric
   await startedStore().removeTagFromTransaction('rent', 'w1', 'auto-withdraw');
   assert.deepEqual(onDisk()['w1::rent'].tags, ['rent']);
 
-  const { ratesAvailable, rates } = fiatRatesService;
-  Object.assign(fiatRatesService, { ratesAvailable: true, rates: { USD: 90000 } });
+  const { ratesAvailable, rates, rateTimes } = fiatRatesService;
+  // A rate fetched just now: the stamp takes no rate without a time (an old one would stay for good).
+  Object.assign(fiatRatesService, { ratesAvailable: true, rates: { USD: 90000 }, rateTimes: { USD: Date.now() } });
   try {
     const settledNow = { id: 'rent', type: 'outgoing', amount: -1000, timestamp: Math.floor(Date.now() / 1000) };
     assert.equal(await startedStore().stampFreshTransactions([settledNow], 'w1', 'USD'), 0);
     assert.deepEqual(onDisk()['w1::rent'].fiatAtSettlement, SAVED['w1::rent'].fiatAtSettlement);
   } finally {
-    Object.assign(fiatRatesService, { ratesAvailable, rates });
+    Object.assign(fiatRatesService, { ratesAvailable, rates, rateTimes });
   }
 });
 

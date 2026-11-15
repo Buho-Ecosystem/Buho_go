@@ -148,6 +148,9 @@
               <span>{{ limitsHelperText }}</span>
               <span v-if="verb !== 'send'" class="amount-helper-convert">{{ fiatEquivalent }}</span>
             </div>
+            <!-- No current exchange rate: the amount is typed in Bitcoin and
+                 nothing is converted. Said in one line, never silently. -->
+            <div v-if="rateNotice" class="amount-helper amount-helper--notice" role="status">{{ rateNotice }}</div>
             <!-- A till code's own rand amount, beside the person's display
                  currency, so the price at the till stays in view. -->
             <div v-if="zarSecondary" class="zar-secondary">
@@ -555,7 +558,7 @@ import ProgressCta from './ProgressCta.vue'
 import WalletBrandMark from './WalletBrandMark.vue'
 import HiddenAmount from './HiddenAmount.vue'
 import { WALLET_TYPE_LABELS } from '../providers/WalletFactory'
-import { payingWalletReasonText } from '../utils/payingWallets.js'
+import { payingWalletReasonText, paymentFeeText, paymentTotalText } from '../utils/payingWallets.js'
 import RefundAddressField from './RefundAddressField.vue'
 import CardFace from './CardFace.vue'
 import { onAndroidBack } from '../utils/androidBack.js'
@@ -578,7 +581,7 @@ function denominationOf(vm) {
   }
   if (vm.currentCurrency && vm.currentCurrency !== 'sats') {
     const code = vm.fiatCurrencyCode || vm.preferredFiatCurrency || 'USD'
-    const rate = vm.fiatRates?.[code]
+    const rate = vm.fiatRate
     if (rate > 0) return { kind: 'fiat', code, rate, decimals: fiatPrecision(vm) }
   }
   return { kind: 'sats', bip177: !!vm.useBip177Format }
@@ -703,7 +706,14 @@ export default {
       displayAmount: this.payment?.amount?.mode === 'fixed' ? String(this.payment.amount.fixedSats || 0) : '',
       currentCurrency: 'sats',
       comment: '',
-      fiatRates: {},
+      // Whether the rates were asked for since the sheet was first shown,
+      // how often, and the moment their age is judged at (read again on
+      // every keystroke, change of unit and confirm).
+      fiatRatesLoaded: false,
+      rateReads: 0,
+      rateClock: Date.now(),
+      // The person asked for fiat (or their setting does) while no current rate exists.
+      fiatAsked: false,
       logoFailed: false,
       _copyTimer: null,
       walletPickerOpen: false,
@@ -947,6 +957,27 @@ export default {
     fiatSymbol() {
       return FIAT_SYMBOLS[this.fiatCurrencyCode] || (this.fiatCurrencyCode + ' ')
     },
+    /**
+     * The price every fiat figure here is converted with: the display
+     * currency's rate as the rates service judges it current (at most an
+     * hour old), else 0. A rate the service still holds from an earlier
+     * fetch is no price to turn a typed amount into Bitcoin with.
+     */
+    fiatRate() {
+      // The service is not reactive: every read of it here follows a load or the clock.
+      void this.rateReads
+      return fiatRatesService.freshRate(this.fiatCurrencyCode, this.rateClock)
+    },
+    /** The rates were asked for and none is current: fiat is not on offer. */
+    fiatUnavailable() {
+      return this.fiatRatesLoaded && !this.fiatRate
+    },
+    /** One plain line where an amount would be typed in fiat and cannot be. */
+    rateNotice() {
+      if (!this.fiatUnavailable || this.amountMode === 'fixed' || this.payoutCurrency) return ''
+      const wanted = this.fiatAsked || !['sats', 'btc'].includes(this.denominationCurrency || 'sats')
+      return wanted ? this.$t('No current exchange rate. Enter the amount in Bitcoin.') : ''
+    },
     unitPillLabel() {
       if (this.amountMode === 'fixed') return reviewParts(this, this.fixedSats).unit
       if (this.isLocalDenomination) return this.payoutCurrency.code
@@ -974,16 +1005,16 @@ export default {
         const sats = BigInt(whole || '0') * 100000000n + BigInt(fraction.padEnd(8, '0').slice(0, 8))
         return sats <= BigInt(Number.MAX_SAFE_INTEGER) ? Number(sats) : 0
       }
-      const rate = this.fiatRates[this.fiatCurrencyCode]
-      if (!rate) return 0
-      return Math.floor((n / rate) * 100000000)
+      // The rates service's rule: only at a current rate, in exact arithmetic.
+      void this.rateReads
+      return fiatRatesService.convertFiatToSatsSync(this.displayAmount, this.fiatCurrencyCode, this.rateClock) || 0
     },
 
     amountPlaceholder() {
       if (this.isLocalDenomination) return this.payoutCurrency.decimals > 0 ? '0.00' : '0'
       if (this.currentCurrency === 'sats') return '0'
       if (this.currentCurrency === 'btc')  return '0.00000000'
-      return '0.00'
+      return (0).toFixed(fiatPrecision(this))
     },
 
     // Inline validation against fixed/range constraints. The keys are
@@ -1072,24 +1103,20 @@ export default {
         return `${parts.join(' · ')} ${code}`
       }
       // The limits speak the denomination the user is typing in. In fiat
-      // mode the min rounds UP to the cent and the max DOWN, so the row
-      // never promises an amount the sat bounds would reject.
-      if (this.denominationMode === 'fiat' && this.fiatRates) {
+      // mode the min rounds UP to the currency's last digit (a cent, a whole
+      // yen) and the max DOWN, so the row never promises an amount the sat
+      // bounds would reject.
+      if (this.denominationMode === 'fiat' && this.fiatRate) {
         const currency = this.fiatCurrencyCode
-        const min = fiatRatesService.convertSatsToFiatSync(this.minSats, currency)
-        const max = fiatRatesService.convertSatsToFiatSync(this.maxSats, currency)
-        if (min !== null && max !== null) {
-          const grouped = (v) => v.toLocaleString(undefined, {
-            minimumFractionDigits: 2,
-            maximumFractionDigits: 2
-          })
-          return this.$t('Limits {min} – {max} {unit}', {
-            min: this.fiatSymbol + grouped(Math.ceil(min * 100) / 100),
-            max: this.fiatSymbol + grouped(Math.floor(max * 100) / 100),
-            unit: currency
-          })
-        }
-        // Rates not loaded yet: fall through to the sat bounds below.
+        const scale = 10 ** fiatPrecision(this)
+        const inFiat = (sats) => sats * this.fiatRate / 100000000
+        const written = (value) => formatFiatAmount(value, currency, { symbol: this.fiatSymbol })
+        return this.$t('Limits {min} – {max} {unit}', {
+          min: written(Math.ceil(inFiat(this.minSats) * scale) / scale),
+          max: written(Math.floor(inFiat(this.maxSats) * scale) / scale),
+          unit: currency
+        })
+        // No current rate: the sat bounds below.
       }
       if (this.denominationMode === 'btc') {
         const toBtc = (sats) => (sats / 100000000).toLocaleString(undefined, { maximumFractionDigits: 8 })
@@ -1166,12 +1193,9 @@ export default {
       if (!fee) return ''
       if (fee.label) return fee.label
       if (typeof fee.sats !== 'number') return ''
-      if (fee.isLimit) {
-        const limit = feeLimitSats(this, fee)
-        return limit === null ? '' : this.$t('Up to {amount}', { amount: reviewAmount(this, limit) })
-      }
-      if (fee.sats === 0) return this.$t('Free')
-      return reviewAmount(this, fee.sats)
+      // One wording of a fee for every screen (payingWallets).
+      const sats = fee.isLimit ? feeLimitSats(this, fee) : fee.sats
+      return sats === null ? '' : paymentFeeText(sats, !!fee.isLimit, (amount) => reviewAmount(this, amount), (key, values) => this.$t(key, values))
     },
     /**
      * "Network fee", or "Fees" when the limit shown also covers what the
@@ -1198,9 +1222,7 @@ export default {
       const fee = shownFee(this.payment)
       // A fee that comes later is named, never guessed into the sum.
       const extra = fee?.isLimit ? feeLimitSats(this, fee) : fee?.sats
-      if (!Number.isSafeInteger(extra)) return this.$t('{amount} + fee', { amount: reviewAmount(this, this.amountInSats) })
-      const total = reviewAmount(this, this.amountInSats + extra)
-      return fee.isLimit ? this.$t('Up to {amount}', { amount: total }) : total
+      return paymentTotalText(this.amountInSats, extra, !!fee?.isLimit, (amount) => reviewAmount(this, amount), (key, values) => this.$t(key, values))
     },
     /**
      * A payment to an address almost always takes a note, which is only
@@ -1260,19 +1282,14 @@ export default {
       if (this.isLocalDenomination) {
         return `≈\u00a0${formatPaymentAmount(sats, { kind: 'sats', bip177: !!this.useBip177Format })}`
       }
-      if (!this.fiatRates) return ''
-      try {
-        const currency = this.fiatCurrencyCode
-        if (this.denominationMode === 'fiat') {
-          if (!this.fiatRates?.[currency]) return ''
-          return `≈\u00a0${formatPaymentAmount(sats, { kind: 'sats', bip177: !!this.useBip177Format })}`
-        }
-        const fiatValue = fiatRatesService.convertSatsToFiatSync(sats, currency)
-        if (fiatValue === null) return ''
-        return `≈\u00a0${formatFiatAmount(fiatValue, currency, { symbol: FIAT_SYMBOLS[currency] })}`
-      } catch {
-        return ''
+      // No converted figure without a current rate (see fiatRate).
+      const rate = this.fiatRate
+      if (!rate) return ''
+      if (this.denominationMode === 'fiat') {
+        return `≈\u00a0${formatPaymentAmount(sats, { kind: 'sats', bip177: !!this.useBip177Format })}`
       }
+      const currency = this.fiatCurrencyCode
+      return `≈\u00a0${formatFiatAmount(sats * rate / 100000000, currency, { symbol: FIAT_SYMBOLS[currency] })}`
     },
 
     // A converted figure says so on the anchor too, not only in the rows.
@@ -1368,6 +1385,10 @@ export default {
     amountInSats(sats) {
       this.$emit('amount-changed', sats)
     },
+    /** The rate went out of date while the sheet was open. */
+    fiatUnavailable(gone) {
+      if (gone) this.leaveFiatWithoutRate()
+    },
     /** The card's answer arrived in an open sheet: start it like a fresh open. */
     isReading(reading, wasReading) {
       if (wasReading && !reading && this.show) this.resetForFreshOpen()
@@ -1450,9 +1471,29 @@ export default {
     async loadFiatRates() {
       try {
         await fiatRatesService.ensureRatesLoaded()
-        this.fiatRates = await fiatRatesService.getRates()
       } catch (e) {
         console.error('Could not load fiat rates:', e)
+      } finally {
+        this.fiatRatesLoaded = true
+        this.rateReads += 1
+        this.rateClock = Date.now()
+        this.leaveFiatWithoutRate()
+      }
+    },
+
+    /**
+     * Without a current rate the amount is typed in Bitcoin. An amount
+     * already typed in fiat is cleared, as on any change of unit: it can no
+     * longer be turned into Bitcoin, and the sheet says why (rateNotice).
+     */
+    leaveFiatWithoutRate() {
+      if (!this.fiatUnavailable || this.denominationMode !== 'fiat' || this.isSending || this.isComplete) return
+      this.fiatAsked = true
+      this.currentCurrency = 'sats'
+      if (this.amountMode !== 'fixed') {
+        this.displayAmount = ''
+        this.amountInputError = false
+        this.amountInputPartial = false
       }
     },
 
@@ -1481,6 +1522,8 @@ export default {
       this.amountInputError = false
       this.amountInputPartial = false
       this.denominationChanged = false
+      this.fiatAsked = false
+      this.rateClock = Date.now()
       this.commentEdited = false
       // A payment made for a request starts with that request's note (the recipient must accept comments).
       this.comment = this.payment?.commentAllowed
@@ -1663,6 +1706,8 @@ export default {
         if (event?.target) event.target.value = this.amountMode === 'fixed' ? this.fixedAmountDisplay : this.displayAmount
         return
       }
+      // A rate ages while the sheet is open: each keystroke reads the clock.
+      this.rateClock = Date.now()
       const previous = this.displayAmount
       const decimalEdit = !this.amountInputError && /^\d+\.\d*$/.test(previous)
         && ((event?.inputType === 'insertText' && /^\d$/.test(event.data || ''))
@@ -1709,6 +1754,16 @@ export default {
 
     toggleCurrency() {
       if (this.amountMode === 'fixed' || this.isSending || this.isComplete) return
+      // Fiat is offered only with a current rate. Without one the amount
+      // stays in Bitcoin, the sheet says why, and the rates are asked for again.
+      if (!this.payoutCurrency && this.currentCurrency === 'sats') {
+        this.rateClock = Date.now()
+        if (!this.fiatRate) {
+          this.fiatAsked = true
+          this.loadFiatRates()
+          return
+        }
+      }
       this.denominationChanged = true
       this.amountInputError = false
       this.amountInputPartial = false
@@ -1741,6 +1796,9 @@ export default {
     },
 
     emitConfirm() {
+      // The rate a fiat amount was typed at must still be current when it is
+      // sent; if not, the amount reads as nothing and the confirm is refused.
+      this.rateClock = Date.now()
       if (!this.canSubmit) {
         this.$refs.slideRef?.reset()
         return

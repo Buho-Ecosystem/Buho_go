@@ -52,6 +52,10 @@
           <div v-if="amount > 0 && fiatAmount" class="fiat-value" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'">
             {{ fiatAmount }}
           </div>
+          <!-- What the payment cost, when the paying wallet reported it. -->
+          <div v-if="amount > 0 && feeSats > 0" class="fiat-value" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'">
+            {{ $t('Network fee') }} · {{ formatAmount(feeSats) }}
+          </div>
           <!--
             Recipient line. Renders just below the amount because it's
             context for the *amount*, not a footer afterthought. Used by
@@ -287,6 +291,15 @@ export default {
     fiatAmount: {
       type: String,
       default: ''
+    },
+    /**
+     * The fee the paying wallet reported for this payment, in sats. Shown
+     * in one line only for a figure above zero: several wallets answer 0
+     * when they report no fee, so a zero never reads as "Free" here.
+     */
+    feeSats: {
+      type: Number,
+      default: null
     },
     description: {
       type: String,

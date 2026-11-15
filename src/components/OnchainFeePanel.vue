@@ -69,7 +69,6 @@
             <Icon :icon="opt.icon" width="22" height="22" />
           </div>
           <div class="speed-name">{{ opt.label }}</div>
-          <div class="speed-time">{{ opt.timeText }}</div>
           <div class="speed-fee">{{ opt.feeText }}</div>
         </button>
       </div>
@@ -180,7 +179,8 @@ export default {
      * Speed-card view models. Building these in computed-land keeps the
      * template free of conditional formatting and lets the cards render
      * through a single `v-for`. Fee numbers come straight from the SDK
-     * quote — no third-party derivation.
+     * quote — no third-party derivation. The quote gives no time for a
+     * speed, so a card names its speed and states none.
      */
     speedOptions() {
       if (!this.feeQuote) return [];
@@ -192,21 +192,18 @@ export default {
           id: 'slow',
           icon: 'tabler:leaf',
           label: this.$t('Economy'),
-          timeText: this.$t(this.feeQuote.slow.timeEstimate),
           feeText: fmt(this.feeQuote.slow.totalFee)
         },
         {
           id: 'medium',
           icon: 'tabler:scale',
           label: this.$t('Standard'),
-          timeText: this.$t(this.feeQuote.medium.timeEstimate),
           feeText: fmt(this.feeQuote.medium.totalFee)
         },
         {
           id: 'fast',
           icon: 'tabler:rocket',
           label: this.$t('Priority'),
-          timeText: this.$t(this.feeQuote.fast.timeEstimate),
           feeText: fmt(this.feeQuote.fast.totalFee)
         }
       ];
@@ -448,7 +445,6 @@ export default {
 }
 .speed-card--selected .speed-icon { color: var(--brand-accent); }
 .speed-name { font-size: 13px; font-weight: 600; color: var(--text-primary); }
-.speed-time { font-size: 11px; color: var(--text-muted); letter-spacing: 0.01em; }
 .speed-fee {
   font-size: 12px;
   font-weight: 600;
