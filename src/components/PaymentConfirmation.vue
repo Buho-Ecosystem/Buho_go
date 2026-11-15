@@ -209,10 +209,19 @@
         </div>
       </div>
 
-      <!-- Bottom area: dismissal hint + description. The hint is the whole
-           affordance — the screen closes on its own, and any tap closes it
-           sooner, so a button would only add chrome. -->
+      <!-- Bottom area: the close button, the dismissal hint and the
+           description. The screen closes on its own and any tap closes it
+           sooner; the button is the way to close it for a keyboard, a switch
+           or a screen reader, none of which can tap "anywhere". -->
       <div class="bottom-area">
+        <button
+          type="button"
+          class="done-btn"
+          :class="{ 'fade-in': showFooter }"
+          @click.stop="closeNow"
+        >
+          {{ $t('Done') }}
+        </button>
         <div
           class="dismiss-hint"
           :class="[{ 'fade-in': showFooter }, $q.dark.isActive ? 'text-grey-6' : 'text-grey-5']"
@@ -728,6 +737,33 @@ export default {
   transform: translateY(0);
 }
 
+/* Close button: a real control, at least 44pt tall, in the neutral tone so
+   the checkmark stays the one accent on the screen. */
+.done-btn {
+  min-width: 168px;
+  min-height: 48px;
+  padding: 10px 28px;
+  border: 0;
+  border-radius: var(--radius-pill);
+  font-family: 'Manrope', sans-serif;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  opacity: 0;
+  transform: translateY(8px);
+  transition: opacity 0.4s cubic-bezier(0.2, 0.7, 0.2, 1),
+              transform 0.4s cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+.done-btn.fade-in {
+  opacity: 1;
+  transform: translateY(0);
+}
+.backdrop-dark .done-btn { background: rgba(255, 255, 255, 0.12); color: #fff; }
+.backdrop-light .done-btn { background: var(--btn-neutral-bg); color: var(--btn-neutral-fg); }
+.done-btn:focus-visible { outline-offset: 3px; }
+.backdrop-dark .done-btn:focus-visible { outline: 2px solid #fff; }
+.backdrop-light .done-btn:focus-visible { outline: 2px solid var(--btn-neutral-bg); }
+
 /* Description (e.g. "BuhoGO Payment") — centered footer */
 .description-section {
   text-align: center;
@@ -959,6 +995,7 @@ export default {
   .success-animation,
   .amount-section,
   .success-action-area,
+  .done-btn,
   .dismiss-hint,
   .description-section {
     transition: none !important;

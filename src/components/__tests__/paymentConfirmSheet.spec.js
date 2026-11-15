@@ -689,6 +689,18 @@ test('the paid screen names the recipient in the app\'s language; a caller can s
   assert.equal(named('From '), 'From Anna')
 })
 
+test('the paid screen can be closed with a button, and closing reports once', async () => {
+  const Confirmation = load('../PaymentConfirmation.vue', baseDeps)
+  const html = await render(Confirmation, { modelValue: true, amount: 1000, label: 'Payment sent' })
+  assert.match(html, /<button type="button" class="done-btn[^"]*">\s*Done\s*<\/button>/)
+  const emitted = []
+  const vm = { cleanup() {}, show: true, $emit: (name) => emitted.push(name) }
+  Confirmation.methods.closeNow.call(vm)
+  assert.deepEqual([vm.show, emitted], [false, ['closed']])
+  // The button's tap stops at the button: the surface behind it closes on a tap too.
+  assert.match(readFileSync(new URL('../PaymentConfirmation.vue', import.meta.url), 'utf8'), /class="done-btn"[\s\S]{0,80}@click\.stop="closeNow"/)
+})
+
 test('limits speak the denomination of the amount, the fee and the total', () => {
   const limits = useBip177Format => ConfirmSheet.computed.limitsHelperText.call({ amountMode: 'range', minSats: 1, maxSats: 100000, denominationMode: 'sats', useBip177Format, $t: t })
   assert.equal(limits(true), `Limits ₿\u00a01 – ₿\u00a0${n(100000)}`)
