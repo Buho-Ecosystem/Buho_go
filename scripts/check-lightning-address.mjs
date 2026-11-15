@@ -78,10 +78,10 @@ async function open({ dark = false, locale = 'en-US', width = 390, height = 844 
   await page.locator('.wallets-dialog-card [data-wallet-id="main"]').click();
   return { page, context };
 }
-async function addressSheet(page) {
+async function addressSheet(page, { empty = false } = {}) {
   await page.locator('.wallet-detail-panel .detail-group').filter({ hasText: 'main@btc.mybuho.de' }).locator('.detail-group-action').first().click();
   const sheet = page.locator('.lnaddr-sheet');
-  await sheet.locator('.lnaddr-address').waitFor();
+  await sheet.locator(empty ? '.lnaddr-input' : '.lnaddr-address').waitFor();
   return sheet;
 }
 async function shot(page, name) {
@@ -134,6 +134,55 @@ try {
     await sheet.getByText('everyday@btc.mybuho.de', { exact: true }).waitFor();
     assert.equal(await page.evaluate(() => window.addressAudit.registrations.length), 1, 'recovery reads without another registration');
     await context.close();
+
+    // A sheet kept open must not keep sharing a snapshot that another
+    // device changed, or that the store has marked as unverified.
+    const changed = await open();
+    const changedSheet = await addressSheet(changed.page);
+    await changed.page.evaluate(async () => {
+      Object.defineProperty(navigator, 'clipboard', { configurable: true, value: {
+        writeText: async value => { window.copiedAddress = value; },
+      } });
+      const store = (await import('/src/stores/wallet.js')).useWalletStore();
+      window.addressAudit.addresses.main = 'elsewhere';
+      // A stale/null event is only a signal to check; the server owns the truth.
+      await store.noteSparkLightningAddress('main', null);
+    });
+    await changedSheet.getByRole('alert').waitFor();
+    assert.equal(await changedSheet.getByRole('button', { name: 'Copy address', exact: true }).count(), 0);
+    assert.equal(await changed.page.evaluate(() => window.addressAudit.registrations.length), 0, 'a stale null event cannot rename an existing server assignment');
+    await changedSheet.getByRole('button', { name: 'Check address', exact: true }).click();
+    await changedSheet.getByText('elsewhere@btc.mybuho.de', { exact: true }).waitFor();
+    await changedSheet.getByRole('button', { name: 'Copy address', exact: true }).click();
+    assert.equal(await changed.page.evaluate(() => window.copiedAddress), 'elsewhere@btc.mybuho.de');
+    await changed.page.evaluate(async () => {
+      const store = (await import('/src/stores/wallet.js')).useWalletStore();
+      await store._markSparkAddressPending(['main']);
+    });
+    await changedSheet.getByRole('alert').waitFor();
+    assert.equal(await changedSheet.getByRole('button', { name: 'Copy address', exact: true }).count(), 0);
+    await changedSheet.getByRole('button', { name: 'Check address', exact: true }).click();
+    await changedSheet.getByText('elsewhere@btc.mybuho.de', { exact: true }).waitFor();
+    await changed.page.evaluate(async () => {
+      const store = (await import('/src/stores/wallet.js')).useWalletStore();
+      store.wallets = store.wallets.filter(wallet => wallet.id !== 'main');
+    });
+    await changedSheet.getByRole('alert').waitFor();
+    assert.equal(await changedSheet.getByRole('button', { name: 'Copy address', exact: true }).count(), 0, 'removing a wallet invalidates the open sheet');
+    await changed.context.close();
+
+    // Confirmed absence is different from an unavailable lookup: the first
+    // claim must remain usable without letting a stale SDK cache resurface.
+    const firstClaim = await open();
+    await firstClaim.page.evaluate(() => { delete window.addressAudit.addresses.main; });
+    const firstSheet = await addressSheet(firstClaim.page, { empty: true });
+    await firstSheet.locator('.lnaddr-input').fill('firstaddress');
+    await firstSheet.getByText('Available', { exact: true }).waitFor();
+    await firstSheet.locator('.lnaddr-input').press('Enter');
+    await firstSheet.getByRole('button', { name: 'Claim address', exact: true }).click();
+    await firstSheet.getByText('firstaddress@btc.mybuho.de', { exact: true }).waitFor();
+    assert.deepEqual(await firstClaim.page.evaluate(() => window.addressAudit.registrations), ['firstaddress']);
+    await firstClaim.context.close();
 
     // Availability errors remain beside the field, with a retry action.
     const retry = await open();
@@ -235,5 +284,5 @@ try {
     await probe.context.close();
   }
   assert.deepEqual(errors, [], 'no page errors or Vue warnings');
-  console.log(`PASS: ${baseline ? 'baseline captures' : 'review, confirmation, response-loss recovery, availability retry, light/dark, DE/ES at 320px, real SDK cache behavior'}`);
+  console.log(`PASS: ${baseline ? 'baseline captures' : 'review, confirmation, response-loss recovery, stale-event and open-sheet invalidation, availability retry, light/dark, DE/ES at 320px, real SDK cache behavior'}`);
 } finally { await browser.close(); }

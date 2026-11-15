@@ -87,10 +87,16 @@ export default {
   props: { modelValue: { type: Boolean, default: false }, walletId: { type: String, required: true } },
   emits: ['update:modelValue', 'changed'],
   data() {
-    return { phase: 'loading', address: null, username: '', availability: 'idle', busy: false,
+    return { phase: 'loading', address: null, addressWallet: null, username: '', availability: 'idle', busy: false,
       fieldFocused: false, error: '', updated: false, checkTimer: null, checkSeq: 0, loadSeq: 0 };
   },
   computed: {
+    currentAssignment() {
+      const store = useWalletStore();
+      const wallet = store.wallets.find(item => item.id === this.walletId);
+      return { wallet, pending: !!wallet?.metadata?.lightningAddressPending,
+        address: wallet ? store.lightningAddressOf(wallet) : null };
+    },
     domainSuffix() { return '@' + (BREEZ_LNURL_DOMAIN || 'breez.tips'); },
     proposedAddress() { return this.username + this.domainSuffix; },
     statusClass() {
@@ -104,6 +110,17 @@ export default {
     },
   },
   watch: {
+    currentAssignment(state) {
+      if (!this.modelValue) return;
+      // Removal or replacement invalidates an in-flight result too. Own
+      // pending writes can otherwise wait until submission settles.
+      if (!state.wallet || (this.addressWallet && state.wallet !== this.addressWallet)) {
+        this.invalidateAddress();
+      } else if (!this.busy && this.phase !== 'loading' && this.phase !== 'error'
+        && !this.assignmentMatches(this.address)) {
+        this.invalidateAddress();
+      }
+    },
     username(next) {
       const cleaned = String(next || '').toLowerCase();
       if (cleaned !== next) { this.invalidateCheck(); this.username = cleaned; return; }
@@ -115,6 +132,16 @@ export default {
   },
   beforeUnmount() { this.invalidateCheck(); this.loadSeq += 1; },
   methods: {
+    assignmentMatches(address) {
+      const state = this.currentAssignment;
+      return !!state.wallet && state.wallet === this.addressWallet && !state.pending
+        && state.address === address;
+    },
+    invalidateAddress() {
+      this.invalidateCheck(); this.loadSeq += 1; this.address = null; this.updated = false;
+      this.phase = 'error';
+      this.error = this.$t('The current address changed. Check it and review your change again.');
+    },
     invalidateCheck() { clearTimeout(this.checkTimer); this.checkSeq += 1; },
     close(value) { if (!this.busy) this.$emit('update:modelValue', value); },
     async onOpen() {
@@ -123,10 +150,12 @@ export default {
     },
     async loadAddress() {
       const seq = ++this.loadSeq;
+      this.addressWallet = this.currentAssignment.wallet || null;
       this.phase = 'loading'; this.error = '';
       try {
         const info = await useWalletStore().refreshSparkLightningAddress(this.walletId);
         if (seq !== this.loadSeq) return;
+        if (!this.assignmentMatches(info?.lightningAddress || null)) { this.invalidateAddress(); return; }
         this.address = info?.lightningAddress || null;
         this.phase = this.username && this.proposedAddress !== this.address ? 'change' : this.address ? 'view' : 'change';
         if (this.phase === 'change') {
@@ -172,16 +201,19 @@ export default {
     },
     reviewUsername() {
       if (this.availability !== 'available' || this.busy) return;
+      if (!this.assignmentMatches(this.address)) { this.invalidateAddress(); return; }
       this.invalidateCheck(); this.error = ''; this.phase = 'review';
     },
     async submitUsername() {
       if (this.phase !== 'review' || this.busy) return;
+      if (!this.assignmentMatches(this.address)) { this.invalidateAddress(); return; }
       this.busy = true; this.error = '';
       const walletId = this.walletId;
       const seq = this.loadSeq;
       try {
         const info = await useWalletStore().renameSparkLightningAddress(walletId, this.username, { expectedAddress: this.address });
         if (seq !== this.loadSeq) return;
+        if (!this.assignmentMatches(info.lightningAddress)) { this.invalidateAddress(); return; }
         this.address = info.lightningAddress; this.phase = 'view'; this.updated = true;
         this.$emit('changed', this.address);
       } catch (failure) {
@@ -199,6 +231,9 @@ export default {
     },
     async copyAddress() {
       if (!this.address) return;
+      // A store event and a click can share one turn, before Vue's watcher
+      // runs. Never let the displayed snapshot bypass the shared reader.
+      if (!this.assignmentMatches(this.address)) { this.invalidateAddress(); return; }
       try {
         await navigator.clipboard.writeText(this.address);
         this.$q.notify({ type: 'positive', message: this.$t('Lightning address copied') });

@@ -14,7 +14,7 @@ export function preferredProfileLightningAddress({ wallets = [], walletInfos = {
     .filter(w => w?.type === 'spark')
     .sort((a, b) => (Number(a.createdAt) || 0) - (Number(b.createdAt) || 0) || rank(a) - rank(b));
   for (const wallet of spark) {
-    if (wallet.metadata?.lightningAddressPending) continue;
+    if (wallet.metadata?.lightningAddressPending || wallet.metadata?.lightningAddressCheckedAbsent) continue;
     const address = walletInfos?.[wallet.id]?.lightningAddress || wallet.metadata?.lud16;
     if (isLightningAddress(address)) return address.toLowerCase();
   }

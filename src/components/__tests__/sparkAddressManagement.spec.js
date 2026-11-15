@@ -16,8 +16,11 @@ new Function('require', 'module', 'exports', code)(name => ({
 })[name], module, module.exports);
 const component = module.exports.default;
 function instance() {
+  store.wallets ||= [{ id: 'main', metadata: {} }];
+  if (!Object.hasOwn(store, 'currentAddress')) store.currentAddress = 'old@btc.example.com';
+  store.lightningAddressOf ||= () => store.currentAddress;
   const emitted = [];
-  const vm = { ...component.data(), walletId: 'main', modelValue: true, $t: key => key,
+  const vm = { ...component.data(), addressWallet: store.wallets.find(wallet => wallet.id === 'main'), walletId: 'main', modelValue: true, $t: key => key,
     $nextTick: fn => fn(), $refs: {}, $emit: (...args) => emitted.push(args), $q: { notify() {} } };
   for (const [name, fn] of Object.entries(component.computed)) Object.defineProperty(vm, name, { get: () => fn.call(vm) });
   for (const [name, fn] of Object.entries(component.methods)) vm[name] = fn.bind(vm);
@@ -85,6 +88,7 @@ test('review is separate from submission and a double submit cannot register twi
   assert.equal(calls.length, 1);
   assert.deepEqual(calls[0], ['main', 'newname', { expectedAddress: 'old@btc.example.com' }]);
   assert.equal(emitted.length, 0, 'dismissal is held while a mutation runs');
+  store.currentAddress = 'newname@btc.example.com';
   answer.resolve({ lightningAddress: 'newname@btc.example.com' });
   await submitting;
   assert.equal(vm.phase, 'view');
@@ -108,4 +112,68 @@ test('an unknown result removes copyable data, explains recovery, and preserves 
   assert.equal(vm.username, 'newname');
   assert.equal(vm.phase, 'change');
   component.beforeUnmount.call(vm);
+});
+
+test('a store event invalidates the displayed address and keeps the draft for another review', () => {
+  store = {};
+  const { vm } = instance();
+  vm.phase = 'review'; vm.address = store.currentAddress; vm.username = 'newname';
+  store.currentAddress = 'elsewhere@btc.example.com';
+  component.watch.currentAssignment.call(vm, vm.currentAssignment);
+  assert.equal(vm.phase, 'error');
+  assert.equal(vm.address, null);
+  assert.equal(vm.username, 'newname');
+  assert.match(vm.error, /current address changed/);
+});
+
+test('copy checks live ownership even before the store watcher runs', async () => {
+  const previousNavigator = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
+  const copied = [];
+  Object.defineProperty(globalThis, 'navigator', { configurable: true, value: { clipboard: { writeText: async value => copied.push(value) } } });
+  try {
+    for (const change of ['rename', 'pending', 'removed', 'replaced']) {
+      store = {};
+      const { vm } = instance();
+      vm.phase = 'view'; vm.address = store.currentAddress;
+      if (change === 'rename') store.currentAddress = 'elsewhere@btc.example.com';
+      if (change === 'pending') store.wallets[0].metadata.lightningAddressPending = true;
+      if (change === 'removed') store.wallets = [];
+      if (change === 'replaced') store.wallets = [{ id: 'main', metadata: {} }];
+      await vm.copyAddress();
+      assert.equal(vm.phase, 'error', change);
+      assert.equal(vm.address, null, change);
+    }
+    assert.deepEqual(copied, []);
+  } finally {
+    if (previousNavigator) Object.defineProperty(globalThis, 'navigator', previousNavigator);
+    else delete globalThis.navigator;
+  }
+});
+
+test('wallet removal during submission invalidates the late successful reply', async () => {
+  const answer = deferred();
+  store = { renameSparkLightningAddress: () => answer.promise };
+  const { vm, emitted } = instance();
+  vm.phase = 'review'; vm.address = store.currentAddress; vm.username = 'newname';
+  const submitting = vm.submitUsername();
+  store.wallets = [];
+  component.watch.currentAssignment.call(vm, vm.currentAssignment);
+  answer.resolve({ lightningAddress: 'newname@btc.example.com' });
+  await submitting;
+  assert.equal(vm.phase, 'error');
+  assert.equal(vm.address, null);
+  assert.equal(vm.busy, false);
+  assert.deepEqual(emitted, []);
+});
+
+test('an ownership change arriving before a lookup reply cannot restore a stale copyable address', async () => {
+  const answer = deferred();
+  store = { refreshSparkLightningAddress: () => answer.promise };
+  const { vm } = instance();
+  const opening = vm.onOpen();
+  store.currentAddress = 'elsewhere@btc.example.com';
+  answer.resolve({ lightningAddress: 'old@btc.example.com' });
+  await opening;
+  assert.equal(vm.phase, 'error');
+  assert.equal(vm.address, null);
 });

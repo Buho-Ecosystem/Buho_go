@@ -24,6 +24,17 @@ These choices apply Apple's [Feedback](https://developer.apple.com/design/human-
 - Keep the requested username with the pending marker. If the server confirms no assignment after a failed attempt, retry that same name when it is still available to the wallet.
 - Preserve a replacement another device already gave the source wallet after a transfer. If replacement registration is unconfirmed, withhold it until a fresh check or reconnect.
 
+### Adversarial regression checks
+
+The red-team/blue-team review found four gaps in the initial implementation and added regression coverage before merge:
+
+- A delayed SDK change event could replace a confirmed address with an old payload. A delayed null event could also cause the real provider to register a new name unnecessarily. Events now invalidate the assignment and trigger a fresh server check; their payloads never authorize a rename or establish ownership.
+- An open sheet retained its own copyable address after the store changed, marked the assignment pending, or removed the wallet. Store changes now invalidate that view, and copying checks the current assignment synchronously so a pending render cannot expose the stale address.
+- Transfer persistence briefly cleared the source wallet's pending marker before replacement recovery began. Persisted snapshots now retain the source's uncertain state continuously until it has a fresh confirmed assignment, so a restart cannot revive the live SDK's old ownership cache.
+- A restarted SDK could return an address older than the app's saved assignment or revive a freshly confirmed absence. Setup now checks mismatched snapshots and confirms the server's state before automatic registration. A separate durable absence marker suppresses old cached values while still allowing a first claim. These cases use the real provider in regression tests rather than relying on a stronger fake server.
+
+Automatic setup also checks the wallet object, provider, and reconnect epoch around asynchronous work, so a superseded attempt cannot write over a newer connection. A confirmed absence retains the former name solely for profile continuity; the absence marker prevents sharing it, and a later claim can update a profile that still points at that former name. A known transferred name is discarded from the source instead.
+
 ### Why the lookup uses a disposable SDK
 
 In the pinned [Breez SDK 0.26.1 implementation](https://github.com/breez/spark-sdk/blob/0.26.1/crates/breez-sdk/core/src/sdk/lightning_address.rs), `get_lightning_address` returns the stored registration when its cache has been populated. `sync_wallet` is not a public force-refresh API for that registration. Reading the live getter again cannot establish ownership after a lost response.
@@ -43,6 +54,8 @@ This change handles upstream rate limits without inventing an expiry or a local 
 ## Validation
 
 Run `npm test`. Address-specific cases cover lost replies, unavailable reconciliation, durable pending state, failed persistence, stale availability responses, overlapping mutations, profile following, cached SDK reads, and lookup timeout cleanup.
+
+On Node 25, the full suite also passes with `NODE_OPTIONS=--no-experimental-websocket npm test`. This isolates unit tests from Node's native relay sockets; an existing identity test can otherwise finish its assertions while leaving network connections open. The browser checks below exercise their own intercepted transport separately.
 
 For rendered checks, start a disposable development server with a fixture API key:
 
