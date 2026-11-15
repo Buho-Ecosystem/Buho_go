@@ -33,6 +33,7 @@
 
 import { BREEZ_API_KEY, BREEZ_LNURL_DOMAIN } from '../config/breez.js';
 import { createSparkNetworkObserver } from '../utils/sparkNetwork.js';
+import { sparkChainService } from './sparkChainService.js';
 
 /**
  * Observes the SDK's own Spark traffic (the WASM uses the page's fetch).
@@ -161,6 +162,15 @@ function toBreezNetwork(network) {
   throw new Error(`Breez engine does not support the ${key} network`);
 }
 
+/**
+ * Chain lookups through several servers (services/sparkChainService). If
+ * that cannot be set up, the SDK keeps its own single server.
+ */
+async function withSparkChainService(mod, builder, network) {
+  const chainService = await sparkChainService(mod, toBreezNetwork(network)).catch(() => null);
+  return chainService ? builder.withChainService(chainService) : builder;
+}
+
 function storageDirFor(walletId) {
   return `breez-${walletId}`;
 }
@@ -227,6 +237,7 @@ async function buildInstance(walletId, { mnemonic, accountNumber, network }) {
   });
   builder = builder.withAccountNumber(accountNumber);
   builder = await builder.withDefaultStorage(storageDir);
+  builder = await withSparkChainService(mod, builder, network);
   const sdk = await builder.build();
   trackDbName(storageDir);
 
@@ -309,6 +320,7 @@ export async function probeAccountActivity(mnemonic, { accountNumber, network = 
   });
   builder = builder.withAccountNumber(accountNumber);
   builder = await builder.withDefaultStorage(storageDirFor(probeId));
+  builder = await withSparkChainService(mod, builder, network);
   const sdk = await builder.build();
 
   try {

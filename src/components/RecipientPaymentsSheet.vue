@@ -58,7 +58,7 @@
 
       <footer v-if="target" class="payments-sheet__foot">
         <button type="button" class="form-sheet-primary payments-sheet__again" @click="payAgain">
-          <Icon icon="tabler:repeat" width="18" height="18" aria-hidden="true" />
+          <Icon icon="tabler:repeat" width="18" height="18" />
           {{ $t('Pay again') }}
         </button>
       </footer>

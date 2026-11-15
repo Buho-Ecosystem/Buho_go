@@ -76,3 +76,22 @@ test('transport timeout is a visible failure, while caller cancellation remains 
     assert.equal(calls, 1);
   }
 });
+test('a card or voucher that refuses with an error status still says why', async () => {
+  const read = (response) => fetchWithdrawRequest('https://card.example/tap', { get: async () => response }).catch((error) => error);
+  const behind500 = await read({ ok: false, status: 500, data: { status: 'ERROR', reason: 'This card is disabled' } });
+  assert.deepEqual([behind500.message, isCounterpartyError(behind500)], ['This card is disabled', true]);
+  const scrubbed = await read({ ok: false, status: 400, data: { status: 'ERROR', reason: 'See https://card.example/tap?k1=secret&pin=1234' } });
+  assert.ok(!/secret|1234|card\.example/.test(scrubbed.message), scrubbed.message);
+  const silent = await read({ ok: false, status: 503, data: null });
+  assert.deepEqual([silent.message, isCounterpartyError(silent)], ['Server returned 503', false]);
+});
+test('a card that refuses its callback with an error status still asks for the PIN again', async () => {
+  const rejectedWith = async (response) => submitWithdrawCallback(metadata, 'lnbc-sale', '1234', { get: async () => response }).catch((error) => error);
+  const wrongPin = await rejectedWith({ ok: false, status: 400, data: { status: 'ERROR', reason: 'Invalid PIN' } });
+  assert.deepEqual([wrongPin.code, wrongPin.message, isCounterpartyError(wrongPin)], ['INVALID_PIN', 'Invalid PIN', true]);
+  const blocked = await rejectedWith({ ok: false, status: 403, data: { status: 'ERROR', reason: 'Card blocked after too many PIN attempts' } });
+  assert.equal(blocked.code, 'CARD_BLOCKED');
+  const silent = await rejectedWith({ ok: false, status: 502, data: null });
+  assert.deepEqual([silent.message, isCounterpartyError(silent)], ['Withdraw callback failed: 502', false]);
+  assert.deepEqual(await submitWithdrawCallback(metadata, 'lnbc-sale', '1234', { get: async () => ({ ok: true, status: 200, data: { status: 'OK' } }) }), { status: 'OK' });
+});

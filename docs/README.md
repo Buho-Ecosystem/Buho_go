@@ -17,11 +17,14 @@ How each feature works and the rules that keep it right, written for developers 
 
 | Record | What it covers |
 |---|---|
+| [Incoming payments](INCOMING_PAYMENTS.md) | "Bitcoin received" for every wallet type: live hints, one ledger, once per payment |
 | [Auto-Transfer](AUTO_TRANSFER.md) | Rules that move money on their own, and when they run |
 | [Bolt Card](BOLT_CARD.md) | Taking money from a Bolt Card, in the wallet and at the kiosk |
 | [Bitrefill shop](BITREFILL.md) | Bitrefill's widget inside the app, paid from your wallets, never twice |
+| [Kiosk Mode](KIOSK_MODE.md) | The register for staff: its settings page, the PIN, and leaving the register |
 | [Merchant verification](BRANTA.md) | Showing the business you pay, and stopping a changed code (Branta) |
 | [Shared payment requests](SHARED_REQUESTS.md) | Requests from Receive and repayments from receipts |
+| [Payment review and default wallet](PAYMENT_PREPARATION.md) | Shared payment sheet, header wallet choice, optional details, immediate contact preparation and default payment wallets |
 | [Contact chat](CONTACT_CHAT.md) | Money requests and encrypted messages between contacts |
 | [LUD-08 fast withdrawal](LUD08_FAST_WITHDRAW.md) | Redeeming withdraw links in one step |
 | [Pay again](PAY_AGAIN.md) | Paying a past recipient again from History or the receipt |
@@ -30,7 +33,10 @@ How each feature works and the rules that keep it right, written for developers 
 | [LUD-14 vouchers](LUD14_VOUCHERS.md) | Vouchers with a balance |
 | [LUD-23 address sharing](LUD23_APP_WIDE_PLAN.md) | Asking for and sharing payment addresses across the app |
 | [Clipboard offer](CLIPBOARD_OFFER.md) | Offering to pay what was just copied, once |
+| [Payment links](PAYMENT_LINKS.md) | `buhogo://pay?request=…`: links that open BuhoGO in particular, for checkouts that list wallets |
+| [Pay from another wallet](PAY_FROM_ANOTHER_WALLET.md) | Receive opens another wallet app on the phone with the request; the wallet catalog for iPhone and where each link comes from |
 | [QR scanning without Play services](QR_SCANNER_FALLBACK.md) | Scanning on phones without Google Play services |
+| [Reading a QR code from a photo](SCAN_FROM_PHOTO.md) | Choose photo in every scanner: the picker, the camera, the app lock, how a picture is read |
 
 ## Backup and identity
 
@@ -47,6 +53,7 @@ How each feature works and the rules that keep it right, written for developers 
 | Record | What it covers |
 |---|---|
 | [Launch](LAUNCH.md) | From tapping the icon to holding the wallet |
+| [Quick access](QUICK_ACCESS.md) | Quick Settings tiles and Home screen shortcuts that open one screen |
 | [App updates](APP_UPDATES.md) | How native builds find and offer updates |
 | [Toasts](TOAST_INTERACTIONS.md) | When the app speaks up, and how |
 
@@ -57,7 +64,7 @@ Earlier plans and research, kept for context. Not a description of the app as it
 | Note | Status |
 |---|---|
 | [Android App Links](notes/android-app-links.md) | Open: verified links for shared cards |
-| [MoneyBadger / CryptoQR](notes/PnP_honeybadger.md) | Not built |
+| [Till codes (MoneyBadger)](notes/PnP_honeybadger.md) | Built: every till code goes to cryptoqr.net |
 | [Cloud backup plan](notes/cloud_backup.md) | Superseded by [Cloud backup setup](CLOUD_BACKUP_SETUP.md) |
 | [NWC connection refactor](notes/nwc_store_refactor.md) | Superseded by [Nostr Wallet Connect](NWC.md) |
 

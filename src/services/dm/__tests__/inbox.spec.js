@@ -105,6 +105,9 @@ function createNetwork() {
             if (behavior === 'fail') {
               return { relay, ok: false, prefix: null, message: 'down', code: DM_ERROR.RELAY_UNAVAILABLE, attempts: 1 };
             }
+            if (behavior === 'timeout') {
+              return { relay, ok: false, prefix: null, message: 'silent', code: DM_ERROR.TIMEOUT, attempts: 1 };
+            }
             if (typeof behavior === 'object') {
               return { relay, ok: false, prefix: behavior.prefix, message: 'no', code: DM_ERROR.NO_RELAY_ACCEPTED, attempts: 1 };
             }
@@ -1068,7 +1071,7 @@ test('send: ignoreBackoff retries at once (network is back)', async () => {
   assert.equal(alice.store.raw.messages.get(sent.id).delivery, 'sent');
 });
 
-test('send: gives up after maxAttempts, keeps the item for a manual retry', async () => {
+test('send: a long network outage stays queued and recovers without a manual retry', async () => {
   const { network, clock, alice, bob } = await pair({ aliceOptions: { inbox: { outbox: { maxAttempts: 3 } } } });
   network.behavior.set('wss://inbox.bob.example', 'fail');
   const sent = await alice.inbox.send({ partner: bob.pubkey, template: textTo(bob) });
@@ -1079,10 +1082,10 @@ test('send: gives up after maxAttempts, keeps the item for a manual retry', asyn
   }
   const item = alice.store.raw.outboxMap.get(sent.id);
   assert.equal(item.attempts, 3);
-  assert.equal(item.exhausted, true);
-  assert.equal(alice.store.raw.messages.get(sent.id).delivery, 'failed');
-  assert.equal(clock.pendingTimers().length, 0, 'no timer for an exhausted item');
-  assert.equal(alice.inbox.status().exhausted, 1);
+  assert.equal(item.exhausted, false);
+  assert.equal(alice.store.raw.messages.get(sent.id).delivery, 'queued');
+  assert.equal(clock.pendingTimers().length, 1);
+  assert.equal(item.nextAttemptAt, clock.ms + OUTBOX_DEFAULTS.maxDelayMs);
 
   // Not touched by a scheduled run...
   const before = network.published.length;
@@ -1094,12 +1097,13 @@ test('send: gives up after maxAttempts, keeps the item for a manual retry', asyn
   assert.equal(network.published.length, before + 1);
   await settle(alice);
 
-  // And the user can retry it.
+  // Recovery is automatic, with the same rumor id and no duplicate message.
   network.behavior.delete('wss://inbox.bob.example');
-  assert.equal(await alice.inbox.retry(sent.id), true);
+  await clock.advance(OUTBOX_DEFAULTS.maxDelayMs);
   await settle(alice);
   assert.equal(alice.store.raw.messages.get(sent.id).delivery, 'sent');
   assert.equal(alice.store.raw.outboxMap.size, 0);
+  assert.equal(alice.store.raw.messages.size, 1);
   assert.equal(await alice.inbox.retry(sent.id), false);
 });
 
@@ -1114,7 +1118,156 @@ test('send: a refusal that cannot change (blocked) fails at once; only the perso
   const before = network.published.length;
   await alice.inbox.retryOutbox({ ignoreBackoff: true });
   assert.equal(network.published.length, before);
-  assert.equal(await alice.inbox.retry(sent.id), true);
+  await assert.rejects(alice.inbox.retry(sent.id), (error) => DmError.is(error, DM_ERROR.NO_RELAY_ACCEPTED));
+});
+
+test('send: a permanent refusal refreshes the inbox once and follows a changed route', async () => {
+  const { network, alice, bob } = await pair();
+  network.behavior.set('wss://inbox.bob.example', { prefix: 'blocked' });
+  const resolve = alice.resolver.resolve;
+  alice.resolver.resolve = async (pubkey, options = {}) => options.force
+    ? { status: 'found', relays: ['wss://new-inbox.bob.example/'], checkedAt: START_MS }
+    : resolve(pubkey, options);
+  const sent = await alice.inbox.send({ partner: bob.pubkey, template: textTo(bob) });
+  await settle(alice);
+  assert.equal(alice.store.raw.messages.get(sent.id).delivery, 'sent');
+  assert.equal(alice.store.raw.messages.size, 1);
+  assert.equal(network.published.filter(p => p.relay.includes('new-inbox')).length, 1);
+});
+
+test('send: a private relay refusing random wrap authors fails without leaking to other relays', async () => {
+  const { network, alice, bob } = await pair();
+  network.behavior.set('wss://inbox.bob.example', { prefix: 'blocked' });
+  const sent = await alice.inbox.send({ partner: bob.pubkey, template: textTo(bob) });
+  await settle(alice);
+  assert.equal(alice.store.raw.messages.get(sent.id).delivery, 'failed');
+  assert.equal(alice.resolver.calls.filter(c => c.options.force).length, 1);
+  assert.equal(network.published.filter(p => p.relay.includes('bob')).length, 1);
+  assert.ok(network.published.every(p => p.relay.includes('alice') || p.relay.includes('bob')));
+  await assert.rejects(alice.inbox.retry(sent.id), error => DmError.is(error, DM_ERROR.NO_RELAY_ACCEPTED));
+  assert.equal(alice.store.raw.messages.size, 1);
+  assert.equal(alice.resolver.calls.filter(c => c.options.force).length, 2, 'one fresh lookup per send or retry');
+});
+
+test('red team: changing refused inbox routes cannot create an unbounded publish loop', async () => {
+  const { network, clock, alice, bob } = await pair();
+  network.behavior.set('wss://inbox.bob.example', { prefix: 'blocked' });
+  let refreshes = 0;
+  const resolve = alice.resolver.resolve;
+  alice.resolver.resolve = async (pubkey, options = {}) => {
+    if (!options.force) return resolve(pubkey, options);
+    const relay = `wss://refused-${++refreshes}.example`;
+    network.behavior.set(relay, { prefix: 'blocked' });
+    return { status: 'found', relays: [relay], checkedAt: START_MS };
+  };
+  const sent = await alice.inbox.send({ partner: bob.pubkey, template: textTo(bob) });
+  await settle(alice);
+  assert.equal(refreshes, 1);
+  assert.equal(alice.store.raw.messages.get(sent.id).delivery, 'failed');
+  assert.equal(network.published.filter(p => p.relay.includes('refused-')).length, 1);
+  assert.equal(clock.pendingTimers().length, 0);
+});
+
+test('red team: stopping during a forced lookup prevents late publication and state changes', async () => {
+  const { network, clock, alice, bob } = await pair();
+  await alice.inbox.start();
+  await settle(alice);
+  network.behavior.set('wss://inbox.bob.example', { prefix: 'blocked' });
+  let release;
+  const resolve = alice.resolver.resolve;
+  alice.resolver.resolve = (pubkey, options = {}) => options.force && pubkey === bob.pubkey
+    ? new Promise(done => { release = done; })
+    : resolve(pubkey, options);
+  await alice.inbox.send({ partner: bob.pubkey, template: textTo(bob) });
+  for (let i = 0; i < 10 && !release; i += 1) await flush();
+  assert.equal(typeof release, 'function');
+  alice.inbox.stop();
+  const before = clone(alice.store.outbox.list());
+  release({ status: 'found', relays: ['wss://late-inbox.example'], checkedAt: clock.ms });
+  await settle(alice);
+  assert.deepEqual(alice.store.outbox.list(), before);
+  assert.equal(network.published.some(p => p.relay.includes('late-inbox')), false);
+  assert.equal(clock.pendingTimers().length, 0);
+});
+
+test('red team: concurrent coordinator retries await the same failed attempt', async () => {
+  const { network, alice, bob } = await pair();
+  network.behavior.set('wss://inbox.bob.example', { prefix: 'blocked' });
+  const sent = await alice.inbox.send({ partner: bob.pubkey, template: textTo(bob) });
+  await settle(alice);
+  const before = network.published.filter(p => p.relay.includes('bob')).length;
+  const attempts = await Promise.allSettled([alice.inbox.retry(sent.id), alice.inbox.retry(sent.id)]);
+  assert.ok(attempts.every(result => result.status === 'rejected' && DmError.is(result.reason, DM_ERROR.NO_RELAY_ACCEPTED)));
+  assert.equal(network.published.filter(p => p.relay.includes('bob')).length, before + 1);
+  assert.equal(alice.store.raw.messages.size, 1);
+});
+
+for (const restart of [false, true]) {
+  test(`red team: a stopped lookup ${restart ? 'cannot strand an outbox after restart' : 'is cancelled even before inbox subscriptions start'}`, async () => {
+    const { network, clock, alice, bob } = await pair();
+    if (restart) {
+      await alice.inbox.start();
+      await settle(alice);
+    }
+    network.behavior.set('wss://inbox.bob.example', { prefix: 'blocked' });
+    let release;
+    const resolve = alice.resolver.resolve;
+    alice.resolver.resolve = (pubkey, options = {}) => options.force && pubkey === bob.pubkey && !release
+      ? new Promise(done => { release = done; })
+      : resolve(pubkey, options);
+    const sent = await alice.inbox.send({ partner: bob.pubkey, template: textTo(bob) });
+    for (let i = 0; i < 10 && !release; i += 1) await flush();
+    assert.equal(typeof release, 'function');
+    alice.inbox.stop();
+    alice.resolver.table.set(bob.pubkey, { status: 'found', relays: ['wss://restarted-inbox.example'], checkedAt: clock.ms });
+    if (restart) await alice.inbox.start();
+    release({ status: 'found', relays: ['wss://restarted-inbox.example'], checkedAt: clock.ms });
+    await settle(alice);
+    await clock.advance(0);
+    await settle(alice);
+    if (restart) {
+      assert.equal(alice.store.raw.messages.get(sent.id).delivery, 'sent');
+      assert.equal(alice.store.raw.messages.size, 1);
+    } else {
+      assert.equal(network.published.some(p => p.relay.includes('restarted-inbox')), false);
+      assert.equal(clock.pendingTimers().length, 0);
+    }
+    alice.inbox.stop();
+  });
+}
+
+test('blue team: an outbox waiting through a long outage recovers on restart', async () => {
+  const { network, clock, alice, bob } = await pair({ aliceOptions: { inbox: { outbox: { maxAttempts: 2 } } } });
+  network.behavior.set('wss://inbox.bob.example', 'fail');
+  const sent = await alice.inbox.send({ partner: bob.pubkey, template: textTo(bob) });
+  await settle(alice);
+  await clock.advance(OUTBOX_DEFAULTS.baseDelayMs);
+  await settle(alice);
+  assert.equal(alice.store.raw.messages.get(sent.id).delivery, 'queued');
+  alice.inbox.stop();
+  network.behavior.delete('wss://inbox.bob.example');
+  const restored = createInbox({ me: alice.pubkey, signer: alice.signer, transport: network.transport(),
+    resolver: alice.resolver, store: alice.store, now: clock.now, setTimer: clock.setTimer,
+    clearTimer: clock.clearTimer, inboxRelays: alice.inboxRelays });
+  await restored.start();
+  await restored.whenIdle();
+  assert.equal(alice.store.raw.messages.get(sent.id).delivery, 'sent');
+  assert.equal(alice.store.raw.messages.size, 1);
+  restored.stop();
+});
+
+test('send: a silent inbox refreshes its route and recovers without user action', async () => {
+  const { network, clock, alice, bob } = await pair();
+  network.behavior.set('wss://inbox.bob.example', 'timeout');
+  const sent = await alice.inbox.send({ partner: bob.pubkey, template: textTo(bob) });
+  await settle(alice);
+  assert.equal(alice.store.raw.messages.get(sent.id).delivery, 'queued');
+  assert.equal(alice.store.raw.outboxMap.get(sent.id).stale, true);
+  alice.resolver.table.set(bob.pubkey, { status: 'found', relays: ['wss://replacement.bob.example/'], checkedAt: clock.ms });
+  await clock.advance(OUTBOX_DEFAULTS.baseDelayMs);
+  await settle(alice);
+  assert.equal(alice.store.raw.messages.get(sent.id).delivery, 'sent');
+  assert.equal(alice.store.raw.messages.size, 1);
 });
 
 test('send: a transient refusal (rate-limited) is retried', async () => {
@@ -1125,6 +1278,24 @@ test('send: a transient refusal (rate-limited) is retried', async () => {
   assert.equal(alice.store.raw.messages.get(sent.id).delivery, 'queued');
   assert.equal(alice.store.raw.outboxMap.size, 1);
 });
+
+for (const prefix of ['rate-limited', 'error']) {
+  test(`send: a prolonged ${prefix} refusal waits quietly and recovers`, async () => {
+    const { network, clock, alice, bob } = await pair({ aliceOptions: { inbox: { outbox: { maxAttempts: 2 } } } });
+    network.behavior.set('wss://inbox.bob.example', { prefix });
+    const sent = await alice.inbox.send({ partner: bob.pubkey, template: textTo(bob) });
+    await settle(alice);
+    await clock.advance(OUTBOX_DEFAULTS.baseDelayMs);
+    await settle(alice);
+    assert.equal(alice.store.raw.messages.get(sent.id).delivery, 'queued');
+    assert.equal(alice.store.raw.outboxMap.get(sent.id).exhausted, false);
+    network.behavior.delete('wss://inbox.bob.example');
+    await clock.advance(OUTBOX_DEFAULTS.maxDelayMs);
+    await settle(alice);
+    assert.equal(alice.store.raw.messages.get(sent.id).delivery, 'sent');
+    assert.equal(alice.store.raw.messages.size, 1);
+  });
+}
 
 test('send: one accepting relay is enough; a failing self copy is retried without re-sending to the partner', async () => {
   const { network, clock, alice, bob } = await pair();
@@ -1412,7 +1583,7 @@ test('storage failure blocks initial publication and retries until the outbox is
   await assert.rejects(alice.inbox.send({ partner: bob.pubkey, template: textTo(bob, 'A durable request') }), error => error.code === DM_ERROR.STORAGE_UNAVAILABLE);
   const [item] = alice.store.outbox.list();
   assert.ok(item);
-  await alice.inbox.retry(item.id);
+  await assert.rejects(alice.inbox.retry(item.id), error => DmError.is(error, DM_ERROR.STORAGE_UNAVAILABLE));
   await settle(alice);
   assert.equal(network.published.length, before);
   saved = true;

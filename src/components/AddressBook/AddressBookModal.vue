@@ -227,7 +227,7 @@ import {
   isArkadeAddress,
 } from '../../utils/addressUtils.js'
 import { isSparkPaymentRequest } from '../../utils/sparkPayment.js'
-import { lnurlGetJson } from '../../utils/lnurlHttp.js'
+import { fetchPayRequest } from '../../utils/lnurlPay.js'
 import { parsePayRequestMetadata, serviceTitle, normalizeServiceImage, serviceIdentity } from '../../utils/lnurlMetadata.js'
 import { useServiceImagesStore } from '../../stores/serviceImages'
 import AddContactSearch from './AddContactSearch.vue'
@@ -559,9 +559,7 @@ export default {
       const domain = lnurlDomain(address)
       const service = { name: domain, identifier: null, domain, reusable: null, seenAt: Date.now() }
       try {
-        const response = await lnurlGetJson(url, { timeoutMs: 10000 })
-        const data = response?.data
-        if (!response?.ok || !data || data.tag !== 'payRequest' || data.status === 'ERROR') return service
+        const data = await fetchPayRequest(url, { timeoutMs: 10000 })
         const meta = parsePayRequestMetadata(data.metadata)
         normalizeServiceImage(meta.image)
           .then((dataUrl) => { if (dataUrl) useServiceImagesStore().put(serviceIdentity(address, meta).address, dataUrl) })

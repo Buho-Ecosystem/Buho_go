@@ -71,17 +71,12 @@ export default {
       return { t: this.$t.bind(this), locale: this.$i18n.locale, bip177: this.walletStore.useBip177Format, wallets: this.walletStore.wallets };
     },
     rows() {
-      return this.walletStore.wallets
-        .filter((w) => this.autoTransfer.getConfig(w.id))
-        .map((w) => {
-          const rule = this.autoTransfer.getConfig(w.id);
-          return {
-            walletId: w.id,
-            type: w.type,
-            title: `${w.name} → ${destinationLabel(rule.destination, this.ctx) || '…'}`,
-            status: statusText(rule, this.ctx),
-          };
-        });
+      return this.autoTransfer.rulesOf(this.walletStore.wallets).map(({ wallet, rule }) => ({
+        walletId: wallet.id,
+        type: wallet.type,
+        title: `${wallet.name} → ${destinationLabel(rule.destination, this.ctx) || '…'}`,
+        status: statusText(rule, this.ctx),
+      }));
     },
     /** One rule per wallet: "New Rule" stays while a wallet has none. */
     canAdd() {

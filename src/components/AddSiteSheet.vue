@@ -86,15 +86,34 @@
             </div>
           </div>
 
-          <button
-            type="button"
-            class="add-site-switch"
-            :class="$q.dark.isActive ? 'add-site-switch-dark' : 'add-site-switch-light'"
-            @click="switchTo('paste')"
-          >
-            <Icon icon="tabler:clipboard" width="14" height="14" />
-            <span>{{ $t('Paste a link instead') }}</span>
-          </button>
+          <div>
+            <!-- The two ways besides the camera, side by side and alike. -->
+            <div class="add-site-alts">
+              <QrPhotoButton
+                v-if="!detected"
+                tone="link"
+                @open="onPhotoOpen"
+                @closed="onPhotoClosed"
+                @read="onPhotoRead"
+                @fail="onPhotoFail"
+              />
+              <button
+                type="button"
+                class="add-site-switch"
+                :class="$q.dark.isActive ? 'add-site-switch-dark' : 'add-site-switch-light'"
+                @click="switchTo('paste')"
+              >
+                <Icon icon="tabler:clipboard" width="14" height="14" />
+                <span>{{ $t('Paste a link instead') }}</span>
+              </button>
+            </div>
+            <!-- Always there, so a note that appears is announced. -->
+            <p
+              class="text-center q-mb-none"
+              :class="[photoNote ? 'q-mt-sm' : '', $q.dark.isActive ? 'text-grey-4' : 'text-grey-7']"
+              aria-live="polite"
+            >{{ photoNote }}</p>
+          </div>
         </q-card-section>
       </template>
 
@@ -190,6 +209,7 @@
       :title="$t('Scan the code')"
       :prompt="$t('Point your camera at the code the website shows.')"
       continuous
+      v-model:note="photoNote"
       @scanned="onQRDetect"
       @close="switchTo('paste')"
     />
@@ -202,15 +222,16 @@ import { offerAddressRequest } from '../services/addressRequestIntake.js';
 import { Icon } from '@iconify/vue';
 import { readClipboardCrossPlatform } from '../utils/shopClipboard.js';
 import QrScanner from 'qr-scanner';
-import { createQrScanner } from '../utils/qrScanner';
+import { createPhotoPause, createQrScanner, pauseForPhoto, scannerFor } from '../utils/qrScanner';
 import { isNativeScannerAvailable } from '../utils/nativeScanner';
 import ScannerOverlay from './ScannerOverlay.vue';
+import QrPhotoButton from './QrPhotoButton.vue';
 import { LUD04_ERROR, looksLikeLud04, parseLud04Input } from '../utils/lud4';
 
 export default {
   name: 'AddSiteSheet',
 
-  components: { Icon, ScannerOverlay },
+  components: { Icon, ScannerOverlay, QrPhotoButton },
 
   props: {
     modelValue: { type: Boolean, required: true },
@@ -238,6 +259,8 @@ export default {
       // multiple times if the scanner keeps decoding the same QR for
       // a few frames before we stop it.
       detected: false,
+      // Choose photo: what the last photo gave instead of a sign-in code.
+      photoNote: '',
       // Help-sheet visibility. Opened by the (?) icon in the header,
       // shows curated example sites for first-time users.
     };
@@ -273,6 +296,16 @@ export default {
         this.showCamera = false;
       }
     },
+  },
+
+  created() {
+    this.photoPause = createPhotoPause({
+      scanner: () => this.qrScanner,
+      // A photo's code that looks like a sign-in link but does not parse
+      // moves the sheet to paste (submitText): no camera to come back to.
+      canResume: () => this.mode === 'scan' && this.showCamera && !this.cameraError && !this.detected,
+      restart: () => this.startQrScanner(),
+    });
   },
 
   beforeUnmount() {
@@ -356,6 +389,7 @@ export default {
     switchTo(target) {
       if (this.mode === target) return;
       this.mode = target;
+      this.photoNote = '';
       if (target === 'scan') {
         this.initializeCamera();
       } else {
@@ -402,13 +436,15 @@ export default {
     },
 
     async startQrScanner() {
+      // The photo picker is open: the camera comes back once it closes.
+      if (this.photoPause.paused) return;
       try {
         const videoEl = this.$refs.videoEl;
         if (!videoEl) {
           throw new Error('Video element not found');
         }
 
-        this.qrScanner = createQrScanner(
+        this.qrScanner = scannerFor(videoEl, this.qrScanner, () => createQrScanner(
           videoEl,
           (result) => {
             const text = typeof result === 'string' ? result : (result?.data || result?.text || '');
@@ -420,9 +456,11 @@ export default {
             highlightCodeOutline: true,
             preferredCamera: 'environment',
           },
-        );
+        ));
 
         await this.qrScanner.start();
+        // Choose photo was tapped while the camera was still starting.
+        if (this.photoPause.paused) pauseForPhoto(this.qrScanner);
       } catch (error) {
         console.error('[AddSiteSheet] error starting QR scanner:', error);
         this.handleCameraError(error);
@@ -447,6 +485,7 @@ export default {
     },
 
     stopScanner() {
+      this.photoPause.forget();
       this.nativeScannerActive = false;
       if (this.qrScanner) {
         try {
@@ -459,17 +498,41 @@ export default {
       }
     },
 
-    onQRDetect(text) {
+    onQRDetect(text, { fromPhoto = false } = {}) {
       if (this.detected || !text) return;
       // Pre-filter so a stray Lightning invoice / Bitcoin address
       // doesn't trigger our error path. LUD-04 and LUD-23 carriers can
       // open their respective consent flows; payments belong in Send.
-      if (!isAddressRequest(text) && !looksLikeLud04(text)) return;
+      // The camera keeps looking; a photo chosen on purpose gets an answer.
+      if (!isAddressRequest(text) && !looksLikeLud04(text)) {
+        if (fromPhoto) this.photoNote = this.$t('That code is not a sign-in code. Choose a photo of the code the website shows.');
+        return;
+      }
       this.detected = true;
       // Stop scanning immediately so the camera doesn't keep firing
       // detects while we hand off to the auth dialog.
       this.stopScanner();
       this.submitText(text);
+    },
+
+    /** Choose photo (web): the camera goes off while the picker is open. */
+    onPhotoOpen() {
+      this.photoNote = '';
+      this.photoPause.pause();
+    },
+
+    onPhotoClosed() {
+      this.photoPause.resume();
+    },
+
+    onPhotoRead(text) {
+      this.onQRDetect(text, { fromPhoto: true });
+      this.photoPause.resume();
+    },
+
+    onPhotoFail({ message }) {
+      this.photoNote = message;
+      this.photoPause.resume();
     },
 
     close() {
@@ -489,6 +552,7 @@ export default {
       this.rawInput = '';
       this.errorText = '';
       this.detected = false;
+      this.photoNote = '';
       this.mode = 'scan';
       this.cameraError = '';
     },
@@ -726,12 +790,20 @@ export default {
 
 /* ----- Mode switch link ----- */
 
+.add-site-alts {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 4px;
+  margin-top: 4px;
+}
+
 .add-site-switch {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  margin: 12px auto 0;
-  padding: 6px 12px;
+  min-height: 44px;
+  padding: 0 12px;
   background: transparent;
   border: none;
   cursor: pointer;

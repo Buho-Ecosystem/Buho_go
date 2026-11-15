@@ -11,7 +11,7 @@
       <span class="backup-coverage-copy">
         <strong>{{ $t(item.label) }}</strong>
         <span class="backup-coverage-state">
-          <Icon v-if="item.done" icon="tabler:check" width="14" height="14" aria-hidden="true" />
+          <Icon v-if="item.done" icon="tabler:check" width="14" height="14" />
           {{ $t(item.state) }}
         </span>
       </span>

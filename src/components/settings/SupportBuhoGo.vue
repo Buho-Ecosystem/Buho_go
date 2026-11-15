@@ -130,7 +130,7 @@ import { Icon } from '@iconify/vue';
 import { mapState } from 'pinia';
 import { useWalletStore } from '../../stores/wallet';
 import { formatAmount } from '../../utils/amountFormatting.js';
-import { lnurlGetJson } from '../../utils/lnurlHttp.js';
+import { fetchPayRequest, lightningAddressUrl, requestPayInvoice } from '../../utils/lnurlPay.js';
 
 export default {
   name: 'SupportBuhoGo',
@@ -168,38 +168,12 @@ export default {
       this.donationLoading = loadingKey;
 
       try {
-        const [name, domain] = this.donationAddress.split('@');
-        const lnurlPayUrl = `https://${domain}/.well-known/lnurlp/${name}`;
+        // The same request every send makes, so the invoice shown is for
+        // exactly the amount on screen.
+        const payRequest = await fetchPayRequest(lightningAddressUrl(this.donationAddress));
+        const { pr } = await requestPayInvoice(payRequest, { amountSats: amount });
 
-        const paramsResponse = await lnurlGetJson(lnurlPayUrl);
-        if (!paramsResponse.ok) {
-          throw new Error('Failed to fetch LNURL-pay params');
-        }
-        const params = paramsResponse.data;
-        if (!params || params.tag !== 'payRequest' || !params.callback || params.status === 'ERROR') {
-          throw new Error(params?.reason || 'LNURL-pay error');
-        }
-
-        const amountMsat = amount * 1000;
-        if (amountMsat < params.minSendable || amountMsat > params.maxSendable) {
-          const minSats = Math.ceil(params.minSendable / 1000);
-          const maxSats = Math.floor(params.maxSendable / 1000);
-          throw new Error(`Amount must be between ${this.formatSats(minSats)} and ${this.formatSats(maxSats)}`);
-        }
-
-        const callbackUrl = new URL(params.callback);
-        callbackUrl.searchParams.set('amount', amountMsat.toString());
-
-        const invoiceResponse = await lnurlGetJson(callbackUrl.toString());
-        if (!invoiceResponse.ok) {
-          throw new Error('Failed to fetch invoice');
-        }
-        const invoiceData = invoiceResponse.data;
-        if (!invoiceData || invoiceData.status === 'ERROR') {
-          throw new Error(invoiceData?.reason || 'Failed to generate invoice');
-        }
-
-        this.donationInvoice = invoiceData.pr;
+        this.donationInvoice = pr;
         this.donationInvoiceAmount = amount;
         this.showDonationDialog = false;
         this.customDonationAmount = null;

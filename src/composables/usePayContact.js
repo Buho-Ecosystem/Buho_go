@@ -7,19 +7,20 @@
  * moment they publish one. Before this composable existed, each surface
  * carried its own copy and the shorter ones dropped both behaviours.
  *
- * One behaviour, one place. Everything routes through the wallet page's
- * dispatcher, which is the single send pipeline (LNURL metadata, merchant
+ * One behaviour, one place. Everything uses the shared contextual payment
+ * dispatcher and the existing send pipeline (LNURL metadata, merchant
  * verification, branding, fee estimates, capability gate).
  */
 
 import { useAddressBookStore } from '../stores/addressBook';
 import { CURRENCY_CODE } from '../utils/payAgain.js';
+import { usePaymentFlowStore } from '../stores/paymentFlow.js';
 
 /** A rage-tap should not hammer the relays. */
 const RESYNC_COOLDOWN_MS = 60 * 1000;
 
 /**
- * What a caller may add to a payment it hands to the wallet page.
+ * What a caller may add to a contextual payment.
  * @typedef {object} PayOptions
  * @property {string} [walletId]  The wallet that should pay ("Pay with" preselection).
  * @property {string} [context]   Opaque string returned in the `payment:sent` event
@@ -33,34 +34,42 @@ const RESYNC_COOLDOWN_MS = 60 * 1000;
  * @property {{ code: string, amount: number }} [payout]  Amount in the recipient's own currency,
  *   used instead of `amountSats` while the recipient still offers that currency (Pay again).
  * @property {boolean} [repeat]  A payment made again: the confirm sheet always ends on the slide.
- * @property {boolean} [returnHere]  Come back to the current screen when the payment is done or
- *   cancelled (the contact chat), instead of staying on the wallet page.
+ * @property {boolean} [returnHere] Legacy caller option; contextual payments always
+ *   keep the current screen mounted and return to it when dismissed.
  */
 
-/** The optional query parameters of a hand-over. Empty values are left out. */
-function extraQuery({ walletId, context, amountSats, note, payout, repeat, returnHere } = {}, router) {
+/** Normalize optional payment details. Empty values are left out. */
+function paymentOptions({ walletId, context, amountSats, note, payout, repeat, contactId } = {}) {
   return {
-    ...(returnHere && router?.currentRoute?.value?.fullPath ? { returnTo: router.currentRoute.value.fullPath } : {}),
     ...(typeof walletId === 'string' && walletId ? { walletId } : {}),
     ...(typeof context === 'string' && context ? { context } : {}),
-    ...(Number.isSafeInteger(amountSats) && amountSats > 0 ? { prefillAmount: String(amountSats) } : {}),
-    ...(typeof note === 'string' && note ? { prefillNote: note } : {}),
-    ...(CURRENCY_CODE.test(payout?.code || '') && Number(payout.amount) > 0 ? { prefillPayout: `${payout.code}:${payout.amount}` } : {}),
-    ...(repeat === true ? { repeat: '1' } : {}),
+    ...(Number.isSafeInteger(amountSats) && amountSats > 0 ? { amountSats } : {}),
+    ...(typeof note === 'string' && note ? { note } : {}),
+    ...(CURRENCY_CODE.test(payout?.code || '') && Number.isFinite(Number(payout.amount)) && Number(payout.amount) > 0 ? { payout: { code: payout.code, amount: Number(payout.amount) } } : {}),
+    ...(repeat === true ? { repeat: true } : {}),
+    ...(typeof contactId === 'string' && contactId ? { contactId } : {}),
   };
 }
 
 /**
  * @param {{ $q: any, $t: Function, $router: any }} ctx  Component instance.
  * @returns {{
- *   payContact: (contact: object, options?: PayOptions) => void,
- *   payInvoice: (invoice: { bolt11: string, name?: string }, options?: PayOptions) => void,
- *   payAddress: (target: { address: string, addressType?: string, name?: string }, options?: PayOptions) => void,
- *   payAgain: (target: object|null, options?: { walletId?: string, name?: string }) => void,
+ *   payContact: (contact: object, options?: PayOptions) => boolean,
+ *   payInvoice: (invoice: { bolt11: string, name?: string }, options?: PayOptions) => boolean|undefined,
+ *   payAddress: (target: { address: string, addressType?: string, name?: string }, options?: PayOptions) => boolean|undefined,
+ *   payAgain: (target: object|null, options?: { walletId?: string, name?: string }) => boolean|undefined,
+ *   preparePayment: (input: object, options?: PayOptions) => boolean,
  * }}
  */
 export function usePayContact(ctx) {
   const store = useAddressBookStore();
+  const flow = usePaymentFlowStore();
+
+  // Open a contextual payment before starting network work. The canonical
+  // wallet dispatcher resolves and pays it without navigating through Home.
+  function preparePayment(input, options = {}) {
+    return flow.begin({ ...input, ...paymentOptions(options) }) !== false;
+  }
 
   /**
    * Silent re-sync for Nostr-sourced contacts. Skips manual contacts (nothing
@@ -77,8 +86,9 @@ export function usePayContact(ctx) {
     });
   }
 
+  /** @returns {boolean} true when a contextual payment was accepted */
   function payContact(contact, options = {}) {
-    if (!contact) return;
+    if (!contact) return false;
 
     // Fire the refresh before deciding anything, so it never blocks the tap.
     maybeRefresh(contact);
@@ -96,7 +106,7 @@ export function usePayContact(ctx) {
         ),
         timeout: 4500,
       });
-      return;
+      return false;
     }
 
     const address = contact.address || contact.lightningAddress;
@@ -107,44 +117,31 @@ export function usePayContact(ctx) {
         caption: ctx.$t('Add an address for this contact to pay them.'),
         timeout: 4000,
       });
-      return;
+      return false;
     }
 
     // Recency feeds the Quick pay shelf. Best effort, never blocks the tap.
     store.updateLastUsed(contact.id).catch(() => {});
 
-    ctx.$router.push({
-      path: '/wallet',
-      query: {
-        action: 'pay_contact',
-        address,
-        addressType: contact.addressType || 'lightning',
-        contactName: contact.name,
-        ...extraQuery(options, ctx.$router),
-      },
-    });
+    return preparePayment({
+      address,
+      addressType: contact.addressType || 'lightning',
+      name: contact.name,
+      contactId: contact.id,
+      contact,
+    }, options);
   }
 
   /**
    * Pay a BOLT-11 invoice (fetched for a payment request in the contact chat)
    * through the same pipeline. There is no contact address to
    * guard here: the invoice IS the destination, so the identity-only checks of
-   * `payContact` do not apply. The wallet page decodes it, checks it and shows
+   * `payContact` do not apply. The shared controller decodes it, checks it and shows
    * the confirm sheet.
    */
   function payInvoice({ bolt11, name = '' } = {}, options = {}) {
     if (typeof bolt11 !== 'string' || !bolt11.trim()) return;
-    ctx.$router.push({
-      path: '/wallet',
-      query: {
-        action: 'pay_contact',
-        address: bolt11.trim(),
-        addressType: 'invoice',
-        ...(name ? { contactName: name } : {}),
-        ...(typeof options.contactId === 'string' && options.contactId ? { contactId: options.contactId } : {}),
-        ...extraQuery(options, ctx.$router),
-      },
-    });
+    return preparePayment({ address: bolt11.trim(), addressType: 'invoice', name }, options);
   }
 
   /**
@@ -154,16 +151,7 @@ export function usePayContact(ctx) {
    */
   function payAddress({ address, addressType = 'lightning', name = '' } = {}, options = {}) {
     if (typeof address !== 'string' || !address.trim()) return;
-    ctx.$router.push({
-      path: '/wallet',
-      query: {
-        action: 'pay_contact',
-        address: address.trim(),
-        addressType,
-        ...(name ? { contactName: name } : {}),
-        ...extraQuery(options, ctx.$router),
-      },
-    });
+    return preparePayment({ address: address.trim(), addressType, name }, options);
   }
 
   /**
@@ -175,7 +163,7 @@ export function usePayContact(ctx) {
    */
   function payAgain(target, { walletId, name = '' } = {}) {
     if (!target) return;
-    payAddress({ address: target.address, addressType: target.addressType, name }, {
+    return payAddress({ address: target.address, addressType: target.addressType, name }, {
       walletId,
       amountSats: target.amountSats,
       payout: target.payout,
@@ -184,5 +172,5 @@ export function usePayContact(ctx) {
     });
   }
 
-  return { payContact, payInvoice, payAddress, payAgain };
+  return { payContact, payInvoice, payAddress, payAgain, preparePayment };
 }

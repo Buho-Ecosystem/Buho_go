@@ -123,3 +123,21 @@ test('defaults and custom types apply through the compatibility API', () => {
   assert.equal(h.items[0].config.icon, 'save'); assert.equal(h.items[0].config.position, 'top');
   h.advance(2000); assert.equal(h.items.length, 0);
 });
+
+test('a toast with onOpen opens once on tap and is gone; a swipe or timeout never opens it', () => {
+  const h = harness(); let opened = 0, dismissed = 0;
+  h.notify({ message: 'Bitcoin received', group: false, onOpen: () => opened++, onDismiss: () => dismissed++ });
+  h.open(h.items[0].id);
+  assert.equal(opened, 1); assert.equal(dismissed, 1); assert.equal(h.items.length, 0);
+  h.notify({ message: 'Bitcoin received', group: false, onOpen: () => opened++ });
+  h.dismiss(h.items[0].id);
+  h.notify({ message: 'Bitcoin received', group: false, onOpen: () => opened++ });
+  h.advance(10000);
+  assert.equal(opened, 1); assert.equal(h.items.length, 0);
+});
+
+test('open on a toast without onOpen only dismisses it', () => {
+  const h = harness(); h.notify('Copied');
+  h.open(h.items[0].id);
+  assert.equal(h.items.length, 0);
+});

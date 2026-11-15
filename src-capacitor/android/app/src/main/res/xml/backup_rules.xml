@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Android backup, Android 11 and older (Android 12 and newer read
+  data_extraction_rules.xml). Everything is backed up as before, except the
+  Quick access state (QuickAccessState.java): which tiles were added belongs
+  to this phone, and a restore would claim tiles that are not there.
+-->
+<full-backup-content>
+    <exclude domain="sharedpref" path="BuhoGoQuickAccess.xml" />
+</full-backup-content>

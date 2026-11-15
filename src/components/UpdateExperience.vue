@@ -69,7 +69,7 @@
       </div>
 
       <p v-if="note" class="update-sheet__note" :class="{ 'update-sheet__note--focus': focused }">
-        <Icon v-if="note.secure" icon="tabler:lock" width="15" height="15" aria-hidden="true" />
+        <Icon v-if="note.secure" icon="tabler:lock" width="15" height="15" />
         <span>{{ note.text }}</span>
       </p>
 

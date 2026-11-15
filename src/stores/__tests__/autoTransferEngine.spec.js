@@ -12,6 +12,8 @@ import { test } from 'node:test';
 import { readFileSync } from 'node:fs';
 import { transformSync } from 'esbuild';
 import * as rules from '../../utils/autoTransfer.js';
+import { settleRulesForWallets } from '../../utils/autoWithdrawKeys.js';
+import { PAY_REQUEST, invoiceFor, lnurlPayWith } from '../../utils/__tests__/lnurlPayFixtures.js';
 
 const LN = 'shop@getalby.com';
 const BTC = 'bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh';
@@ -24,7 +26,7 @@ globalThis.localStorage = {
   removeItem: (key) => storage.delete(key),
 };
 
-function load({ rates = { USD: 50_000 }, rateAge = 2 } = {}) {
+function load({ rates = { USD: 50_000 }, rateAge = 2, deps: extra = {} } = {}) {
   const { code } = transformSync(readFileSync(new URL('../autoWithdraw.js', import.meta.url), 'utf8'), { format: 'cjs' });
   const stamps = [];
   const deps = {
@@ -37,7 +39,7 @@ function load({ rates = { USD: 50_000 }, rateAge = 2 } = {}) {
       }),
     },
     '../providers/WalletFactory': { WALLET_TYPES: { SPARK: 'spark', ARKADE: 'arkade', NWC: 'nwc', LNBITS: 'lnbits' } },
-    '../utils/autoWithdrawKeys.js': { migratePocketConfigKeys: (configs) => ({ configs, moved: [], dropped: [] }) },
+    '../utils/autoWithdrawKeys.js': { migratePocketConfigKeys: (configs) => ({ configs, moved: [], dropped: [] }), settleRulesForWallets },
     '../utils/nwcErrors.js': { NWC_ERROR: { UNCONFIRMED: 'NWC_PAYMENT_UNCONFIRMED' } },
     '../utils/fiatRates.js': {
       fiatRatesService: {
@@ -47,19 +49,23 @@ function load({ rates = { USD: 50_000 }, rateAge = 2 } = {}) {
       },
     },
     '../utils/autoTransfer.js': rules,
+    ...extra,
   };
   const module = { exports: {} };
   new Function('require', 'module', 'exports', code)((name) => deps[name] || {}, module, module.exports);
   const options = module.exports.useAutoWithdrawStore;
   const store = { ...options.state(), ...options.actions };
+  for (const [name, getter] of Object.entries(options.getters)) {
+    Object.defineProperty(store, name, { get: () => getter(store) });
+  }
   store.stamps = stamps;
   return store;
 }
 
 let nextId = 0;
 /** One Spark wallet "Shop" with a rule, a second Spark wallet "Savings". */
-function setup({ rule = {}, rates, rateAge, shopType = 'spark' } = {}) {
-  const aw = load({ rates, rateAge });
+function setup({ rule = {}, rates, rateAge, shopType = 'spark', deps } = {}) {
+  const aw = load({ rates, rateAge, deps });
   const id = `shop-${nextId++}`; // the engine's cooldowns are module-wide
   const read = deferred();
   const sent = [];
@@ -91,6 +97,44 @@ test('a fresh-read failure skips the transfer instead of sending from a stale fi
   await aw.checkAndExecute(id, 50_000, walletStore);
   assert.deepEqual(sent, []);
   assert.deepEqual(events(aw, id), [['skipped', 'balance_unverified']]);
+});
+
+test('a sync that just finished confirms the balance: no second sync right behind it (#430)', async () => {
+  const { aw, id, sent, provider, walletStore } = setup();
+  let freshSyncs = 0;
+  provider.lastSyncedAt = () => Date.now() - 5_000; // the lifecycle's sync that triggered this run
+  provider.getCachedBalance = async () => ({ balance: 15_962 });
+  provider.getBalance = async () => { freshSyncs += 1; throw Object.assign(new Error('rate limited'), { code: 'BREEZ_SYNC_UNVERIFIED' }); };
+  await aw.checkAndExecute(id, 15_962, walletStore);
+  assert.equal(freshSyncs, 0, 'the recent sync is enough');
+  assert.equal(sent.length, 1, 'the transfer runs');
+  assert.deepEqual(events(aw, id)[0][0], 'sent');
+});
+
+test('an older sync is not enough: the balance is synced fresh first', async () => {
+  const { aw, id, read, sent, provider, walletStore } = setup();
+  let cachedReads = 0;
+  provider.lastSyncedAt = () => Date.now() - 5 * 60_000;
+  provider.getCachedBalance = async () => { cachedReads += 1; return { balance: 99_999 }; };
+  const run = aw.checkAndExecute(id, 20_000, walletStore);
+  read.resolve({ balance: 20_000 });
+  await run;
+  assert.equal(cachedReads, 0);
+  assert.deepEqual(sent, [['lightning', LN, 19_800]]);
+});
+
+test('a failed check keeps its cause, and repeats stay one line that remembers when they began (#430)', async () => {
+  const { aw, id, walletStore } = setup();
+  walletStore.providers[id].getBalance = async () => { throw Object.assign(new Error('breez sync timeout'), { code: 'BREEZ_SYNC_TIMEOUT' }); };
+  await aw.checkAndExecute(id, 50_000, walletStore);
+  const first = aw.configs[id].events[0];
+  assert.equal(first.detail, 'BREEZ_SYNC_TIMEOUT');
+  walletStore.providers[id].getBalance = async () => { throw new Error('Spark wallet is not connected'); };
+  await aw.tryNow(id, { ...walletStore, getDisplayBalance: () => ({ balance: 50_000 }) });
+  const [row, ...rest] = aw.configs[id].events;
+  assert.equal(rest.length, 0, 'one line');
+  assert.equal(row.detail, 'Spark wallet is not connected', 'a message without a code is kept as text');
+  assert.equal(row.since, first.at);
 });
 
 test('turning the rule off, rebuilding the connection or removing the wallet during the read prevents the send', async () => {
@@ -232,4 +276,69 @@ test('saving a rule switches it on and lifts a pause; old saved rules load in to
   assert.deepEqual(fresh.configs.old.threshold, { sats: 100000 });
   assert.deepEqual(fresh.configs.old.destination, { kind: 'lightning', address: LN });
   assert.ok(storage.get('buhoGO_auto_withdraw').includes('"destination"'), 'saved back in the new shape');
+});
+
+test('from LNbits or NWC, a Lightning address is paid only with an invoice for the rule\'s amount', async () => {
+  // The service answers the pay request, then an invoice: for the amount
+  // asked, for more, or with a refusal sent as an HTTP 500.
+  for (const shopType of ['lnbits', 'nwc']) {
+    for (const [answer, outcome] of [['honest', 'sent'], ['greedy', 'failed'], ['refusal', 'failed']]) {
+      const asked = [];
+      const get = async (url) => {
+        asked.push(url);
+        if (asked.length === 1) return { ok: true, status: 200, data: PAY_REQUEST };
+        if (answer === 'refusal') return { ok: false, status: 500, data: { status: 'ERROR', reason: 'Wallet frozen' } };
+        const sats = Number(new URL(url).searchParams.get('amount')) / 1000;
+        return { ok: true, status: 200, data: { pr: invoiceFor(answer === 'greedy' ? sats * 10 : sats) } };
+      };
+      const paid = [];
+      const { aw, id, provider, walletStore } = setup({ shopType, deps: {
+        '../utils/lnurlPay.js': lnurlPayWith(get),
+        '../services/nwcPayment.js': { payWithNwc: async (nwc, invoice) => { paid.push(invoice); return { payment_hash: 'h' }; } },
+      } });
+      provider.getBalance = async () => ({ balance: 50_000 });
+      walletStore.ensureLNBitsConnected = async () => ({ payInvoice: async ({ invoice }) => { paid.push(invoice); return { payment_hash: 'h' }; } });
+      walletStore.nwcConnection = async () => ({});
+      walletStore.nwcPayOptions = () => ({ limit: null });
+      await aw.checkAndExecute(id, 50_000, walletStore);
+      const [event] = aw.configs[id].events;
+      assert.equal(event.outcome, outcome, `${shopType} ${answer}`);
+      assert.equal(asked[0], 'https://getalby.com/.well-known/lnurlp/shop');
+      if (answer === 'honest') {
+        assert.deepEqual(paid, [invoiceFor(event.amount)], 'the invoice for exactly the amount moved');
+      } else {
+        assert.deepEqual(paid, [], `${shopType} ${answer}: nothing was paid`);
+        assert.equal(event.reason, answer === 'refusal' ? 'refused' : 'other');
+      }
+    }
+  }
+});
+
+test('rules left behind by removed wallets are settled when the rules load', async () => {
+  const saved = {
+    shop: { enabled: true, threshold: { sats: 5 }, destination: { kind: 'wallet', walletId: 'old-savings' } },
+    'old-savings': { enabled: true, threshold: { sats: 5 }, destination: { kind: 'lightning', address: LN } },
+    'set-aside': { enabled: true, threshold: { sats: 5 }, destination: { kind: 'lightning', address: LN } },
+  };
+  storage.set('buhoGO_auto_withdraw', JSON.stringify({ configs: saved }));
+  const aw = load();
+  await aw.initialize({ wallets: [{ id: 'shop' }], heldWalletIds: new Set(['shop', 'set-aside']) });
+  assert.deepEqual(Object.keys(aw.configs).sort(), ['set-aside', 'shop'], 'a wallet that may come back keeps its rule');
+  assert.deepEqual([aw.configs.shop.enabled, aw.configs.shop.pausedReason], [false, 'destination_removed']);
+  assert.deepEqual(Object.keys(JSON.parse(storage.get('buhoGO_auto_withdraw')).configs).sort(), ['set-aside', 'shop'], 'saved back without the dropped rule');
+
+  // Without the held wallets (the wallet list could not be read), nothing goes.
+  storage.set('buhoGO_auto_withdraw', JSON.stringify({ configs: saved }));
+  const unsure = load();
+  await unsure.initialize({ wallets: [] });
+  assert.equal(Object.keys(unsure.configs).length, 3);
+});
+
+test('Settings, the page and Home count only the rules of wallets on screen', () => {
+  const { aw, id } = setup();
+  aw.configs.ghost = rules.normalizeRule({ enabled: true, threshold: { sats: 5 }, destination: { kind: 'lightning', address: LN } });
+  const listed = aw.rulesOf([{ id, name: 'Shop' }, { id: 'savings', name: 'Savings' }]);
+  assert.deepEqual(listed.map((entry) => entry.walletId), [id]);
+  assert.equal(listed[0].status.kind, rules.ruleStatus(aw.configs[id]).kind);
+  assert.deepEqual(aw.rulesOf(), []);
 });

@@ -23,7 +23,7 @@
     <section class="request-from" :class="{ 'request-from--multiple': multiple }" :aria-labelledby="titleId">
       <div class="form-sheet-grabber" aria-hidden="true" />
       <header class="form-sheet-header">
-        <button type="button" class="form-sheet-cancel" @click="$emit('update:modelValue', false)">{{ $t('Cancel') }}</button>
+        <button type="button" class="sheet-nav-icon" :aria-label="$t('Cancel')" @click="$emit('update:modelValue', false)"><Icon icon="tabler:x" width="20" height="20" /></button>
         <h2 :id="titleId" class="form-sheet-title">{{ $t('Request from') }}</h2>
         <span aria-hidden="true" />
       </header>

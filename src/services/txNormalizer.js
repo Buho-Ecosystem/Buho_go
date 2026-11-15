@@ -121,14 +121,14 @@ export function extractLnbitsFiatAtSettlement(extra) {
  *   - Spark: the SDK's transfer amount already INCLUDES the fee (it's the
  *     gross value moved between the user's leaves and the SSP), so what the
  *     recipient actually got is amount minus fee.
- *   - LNbits / NWC: the reported amount EXCLUDES the fee — it's exactly what
- *     the recipient received (or, for a send, what we intended to deliver) —
- *     so the total deducted from the wallet is amount plus fee.
+ *   - LNbits / NWC sends: amount is what we intended to deliver; total
+ *     deducted is amount plus fee. LNbits receives are credited minus their
+ *     receiver fee; NWC receives already report the credited amount.
  *   - Arkade: only a single total is ever reported; there is no separate fee
  *     figure to subtract, so feeSats is null (not 0 — 0 would claim
  *     "free", which we don't know) and recipientSats === totalSats === amount.
  */
-export function computeAmounts(walletType, amount, fee) {
+export function computeAmounts(walletType, amount, fee, direction = 'outgoing') {
   const gross = Math.abs(Number(amount) || 0);
 
   if (walletType === 'arkade') {
@@ -139,6 +139,10 @@ export function computeAmounts(walletType, amount, fee) {
 
   if (walletType === 'spark') {
     return { recipientSats: Math.max(0, gross - feeSats), feeSats, totalSats: gross };
+  }
+
+  if (direction === 'incoming' && (walletType === 'lnbits' || walletType === 'nwc')) {
+    return { recipientSats: walletType === 'lnbits' ? Math.max(0, gross - feeSats) : gross, feeSats, totalSats: gross };
   }
 
   // LNbits / NWC (and any unrecognised provider — this is the safer default).
@@ -229,7 +233,7 @@ export function normalizeTx(rawTx, options = {}) {
   const settledAt = tx.settled_at ?? tx.timestamp ?? null;
   const createdAt = tx.created_at ?? tx.time ?? settledAt;
 
-  const { recipientSats, feeSats, totalSats } = computeAmounts(walletType, tx.amount, tx.fee);
+  const { recipientSats, feeSats, totalSats } = computeAmounts(walletType, tx.amount, tx.fee, type);
 
   const extra = (tx.extra && typeof tx.extra === 'object') ? tx.extra : null;
   const providerFiat = walletType === 'lnbits' ? extractLnbitsFiatAtSettlement(extra) : null;

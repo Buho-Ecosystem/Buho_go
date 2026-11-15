@@ -286,7 +286,8 @@ export function isLnurl(lnurl) {
 
 /** LNURL bech32 strings are long; the library's default limit is for addresses. */
 const LNURL_BECH32_LIMIT = 16384;
-const ONION_HOST_RE = /^(?:[a-z2-7]{16}|[a-z2-7]{56})\.onion$/i;
+/** A Tor v2 or v3 onion host: the only host an LNURL may reach over plain http (LUD-01). */
+export const ONION_HOST_RE = /^(?:[a-z2-7]{16}|[a-z2-7]{56})\.onion$/i;
 
 /**
  * Decode any LNURL carrier to the service URL it names, or null.

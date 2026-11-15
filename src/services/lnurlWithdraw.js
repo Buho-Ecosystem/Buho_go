@@ -10,13 +10,16 @@ export async function fetchLnurlRequest(input, { signal, get = lnurlGetJson } = 
   const inline = parseFastWithdrawRequest(url);
   if (inline) return { url, data: inline };
   const response = await get(url, { timeoutMs: 10000, ...(signal ? { signal } : {}) });
-  if (!response.ok) throw new Error(`Server returned ${response.status}`);
-  if (!response.data) throw new Error('The server did not respond or the link is no longer valid');
-  if (response.data.status === 'ERROR') {
+  // A LUD-06 refusal is read before the HTTP status: some services send
+  // their reason with an error status, and it is the only text that says
+  // what went wrong.
+  if (response.data?.status === 'ERROR') {
     const error = counterpartyError(response.data.reason, 'This link is no longer valid');
     error.message = safeWithdrawError(error.message);
     throw error;
   }
+  if (!response.ok) throw new Error(`Server returned ${response.status}`);
+  if (!response.data) throw new Error('The server did not respond or the link is no longer valid');
   return { url, data: response.data };
 }
 
@@ -65,8 +68,10 @@ export async function submitWithdrawCallback(request, bolt11, pin = null, { sign
       ? 'TimeoutError' : error?.name || 'Error';
     throw safe;
   }
-  if (!response.ok) throw new Error(`Withdraw callback failed: ${response.status}`);
-  const data = response.data || {};
+  // The refusal first, as in fetchLnurlRequest: a card that answers a wrong
+  // PIN with a 400 still says "Invalid PIN", and the PIN sheet asks again.
+  const data = response.data && typeof response.data === 'object' ? response.data : {};
+  if (data.status !== 'ERROR' && !response.ok) throw new Error(`Withdraw callback failed: ${response.status}`);
   if (data.status === 'ERROR') {
     const error = counterpartyError(data.reason, 'Withdraw service rejected the request');
     error.message = safeWithdrawError(error.message);

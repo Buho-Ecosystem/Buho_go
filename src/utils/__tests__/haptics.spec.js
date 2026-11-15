@@ -51,6 +51,7 @@ test('on the web nothing plays, and nothing throws', async () => {
 const EXPECTED = {
   'components/BatchSendModal.vue': ['error', 'success', 'warning'], // the batch's outcome
   'components/CardPinPanel.vue': ['error'], // wrong card PIN
+  'components/IncomingPaymentHost.vue': ['success'], // Bitcoin arrived on its own
   'components/InternalTransferModal.vue': ['error', 'success'], // the transfer's outcome
   'components/PinEntryDialog.vue': ['error'], // wrong app PIN (the dialog is not used today)
   'components/ReceiveModal.vue': ['success'], // a payment arrived
@@ -61,8 +62,9 @@ const EXPECTED = {
   'pages/Settings.vue': ['tap'], // turning haptics on
   'pages/TransactionHistory.vue': ['tap'], // the Pay again swipe's threshold
   // Send failed (twice: a payment, an on-chain withdrawal), a card locked, a
-  // redeem failed; a send and a redeem completed; a card read; an outcome unknown.
-  'pages/Wallet.vue': ['error', 'error', 'error', 'error', 'success', 'success', 'tap', 'warning'],
+  // redeem failed; a send and a redeem completed; a card read; an outcome
+  // unknown, or a store that turned down the refund address.
+  'pages/Wallet.vue': ['error', 'error', 'error', 'error', 'success', 'success', 'tap', 'warning', 'warning'],
 };
 
 test('haptics play only at the moments the map lists', async () => {

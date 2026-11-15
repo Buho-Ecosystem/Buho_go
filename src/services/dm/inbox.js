@@ -52,14 +52,14 @@ export const DELIVERY = Object.freeze({
 
 /**
  * Tunables of the outbox. Mobile networks come and go, so the first retries
- * are quick and later ones back off to minutes; after `maxAttempts` the
- * message shows as failed and waits for a manual retry.
+ * are quick and later ones back off to minutes. Network outages keep waiting
+ * at the capped interval; policy refusals wait for a manual retry.
  */
 /** Times a signer answers other work but not this wrap, before the wrap counts as unreadable. */
 export const MAX_WRAP_STRIKES = 3;
 
 export const OUTBOX_DEFAULTS = Object.freeze({
-  /** Delivery attempts (each one a publish round) before the inbox gives up. */
+  /** Fast attempts before transient failures move to the capped background retry interval. */
   maxAttempts: 6,
   /** Wait before the second attempt, ms; doubles after each failure. */
   baseDelayMs: 5_000,
@@ -112,7 +112,7 @@ export const MAX_HISTORY_PAGES = 20;
  * @property {{ recipient: boolean, self: boolean }} delivered Which copy a relay already holds.
  * @property {number} attempts Failed delivery rounds so far.
  * @property {number} nextAttemptAt Clock time (ms) before which the timer does not retry.
- * @property {boolean} exhausted True once retries ran out; only `retry(id)` sends it again.
+ * @property {boolean} exhausted True after a terminal failure; only `retry(id)` sends it again.
  * @property {boolean} stale True when the partner's relay list should be looked up again before the next attempt.
  * @property {string | null} lastCode A `DM_ERROR` code describing the last failure.
  */
@@ -643,7 +643,7 @@ export function createInbox({
   }
 
   function stop() {
-    if (!running && subscription === null && retryTimer === null) return;
+    if (!running && subscription === null && retryTimer === null && active.size === 0) return;
     running = false;
     epoch += 1;
     try {
@@ -756,7 +756,9 @@ export function createInbox({
     const run = promise.catch(noop).finally(() => {
       if (active.get(id) === run) active.delete(id);
       // Only now is the item no longer "being delivered", so only now can it be scheduled again.
-      if (mine === epoch) armTimer();
+      // A stopped run cannot schedule work, but if the inbox restarted while
+      // this delivery was settling, its durable item must get another turn.
+      if (mine === epoch || running) armTimer();
     });
     active.set(id, run);
     return run;
@@ -819,13 +821,21 @@ export function createInbox({
   }
 
   /** Record one failed round: wait for the next attempt, or give up when attempts ran out. */
-  function failRound(item, code, { recipientDone }) {
+  function failRound(item, code, { recipientDone, keepWaiting = NETWORK_CODES.has(code) }) {
     item.attempts += 1;
     item.lastCode = code;
     if (item.attempts >= policy.maxAttempts) {
       if (recipientDone) {
         // Only the self copy is missing: the message is out, so there is nothing to show or keep.
         store.outbox.remove(item.id);
+      } else if (keepWaiting) {
+        // A temporary outage is a clock, not a dead end. Keep the durable
+        // message waiting and retry quietly at a bounded frequency, including
+        // after a restart. A policy refusal still requires an explicit retry.
+        item.attempts = policy.maxAttempts;
+        item.nextAttemptAt = now() + policy.maxDelayMs;
+        store.setDelivery(item.id, DELIVERY.QUEUED);
+        store.outbox.put(item);
       } else {
         fail(item, code);
       }
@@ -841,7 +851,7 @@ export function createInbox({
    * delivered is published, the recipient copy to the partner's relays and the
    * self copy to ours, in parallel.
    */
-  async function deliver(item, mine) {
+  async function deliver(item, mine, { refreshedRoute = false } = {}) {
     const alive = () => mine === epoch;
 
     // Retries must respect the same persistence guarantee as the first send.
@@ -854,12 +864,14 @@ export function createInbox({
 
     if (item.relays === null || item.stale) {
       let lookup = null;
+      const forced = item.stale;
       try {
-        lookup = await resolver.resolve(item.partner, { force: item.stale });
+        lookup = await resolver.resolve(item.partner, { force: forced });
       } catch {
         lookup = null;
       }
       if (!alive()) return;
+      refreshedRoute ||= forced;
       persistSnapshot();
       if (lookup?.status === INBOX_STATUS.FOUND) {
         item.relays = lookup.relays;
@@ -903,15 +915,33 @@ export function createInbox({
 
     if (!item.delivered.recipient) {
       if (!recipient.retryable) {
+        // A permanent refusal can belong to an obsolete relay. Discover once
+        // more before giving up; only a changed, signed inbox list justifies
+        // another publish. Never route private messages to arbitrary relays.
+        if (!refreshedRoute) {
+          const lookup = await resolver.resolve(item.partner, { force: true }).catch(() => null);
+          if (!alive()) return;
+          persistSnapshot();
+          if (lookup?.status === INBOX_STATUS.FOUND
+            && (lookup.relays.length !== item.relays.length || lookup.relays.some((relay) => !item.relays.includes(relay)))) {
+            item.relays = lookup.relays;
+            item.stale = false;
+            store.outbox.put(item);
+            return deliver(item, mine, { refreshedRoute: true });
+          }
+        }
         fail(item, recipient.code);
         return;
       }
       // A relay list we trusted may be out of date: look it up again before the next try.
-      if (recipient.code === DM_ERROR.RELAY_UNAVAILABLE || recipient.code === DM_ERROR.NO_RELAY_ACCEPTED) {
+      if (NETWORK_CODES.has(recipient.code) || recipient.code === DM_ERROR.NO_RELAY_ACCEPTED) {
         item.stale = true;
         resolver.invalidate?.(item.partner);
       }
-      failRound(item, recipient.code, { recipientDone: false });
+      failRound(item, recipient.code, {
+        recipientDone: false,
+        keepWaiting: NETWORK_CODES.has(recipient.code) || recipient.code === DM_ERROR.NO_RELAY_ACCEPTED,
+      });
     } else {
       failRound(item, self?.code ?? DM_ERROR.RELAY_UNAVAILABLE, { recipientDone: true });
     }
@@ -998,17 +1028,27 @@ export function createInbox({
    *
    * @param {string} id Message (rumor) id.
    * @returns {Promise<boolean>} False when no such message is in the outbox.
+   * @throws {DmError} When the retry ends in a terminal delivery failure.
    */
   async function retry(id) {
     const item = store.outbox.list().find((entry) => entry.id === id);
     if (!item) return false;
-    item.exhausted = false;
-    item.attempts = 0;
-    item.nextAttemptAt = 0;
-    // The person asks again: look the partner's relays up again too.
-    item.stale = true;
-    store.outbox.put(item);
-    if (!active.has(id)) await track(id, deliver(item, epoch));
+    if (active.has(id)) {
+      await active.get(id);
+    } else {
+      item.exhausted = false;
+      item.attempts = 0;
+      item.nextAttemptAt = 0;
+      // The person asks again: look the partner's relays up again too.
+      item.stale = true;
+      store.setDelivery(item.id, DELIVERY.SENDING);
+      store.outbox.put(item);
+      await track(id, deliver(item, epoch));
+    }
+    const remaining = store.outbox.list().find((entry) => entry.id === id);
+    if (remaining?.exhausted && !remaining.delivered.recipient) {
+      throw new DmError(remaining.lastCode ?? DM_ERROR.NO_RELAY_ACCEPTED, 'message delivery failed');
+    }
     return true;
   }
 

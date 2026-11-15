@@ -80,6 +80,15 @@ test('NWC: same exclusive-of-fee semantics as LNbits', () => {
   assert.equal(tx.totalSats, 304)
 })
 
+test('LNbits receive deducts its receiver fee; NWC receive is already credited', () => {
+  for (const walletType of ['lnbits', 'nwc']) {
+    const tx = normalizeTx({ id: 'receive-with-fee', type: 'receive', amount: 2100, fee: 5 }, { walletType })
+    assert.equal(tx.recipientSats, walletType === 'lnbits' ? 2095 : 2100)
+    assert.equal(tx.feeSats, 5)
+    assert.equal(tx.totalSats, 2100)
+  }
+})
+
 test('Arkade: fee is unknown, not zero — feeSats is null, recipientSats === totalSats === amount', () => {
   const tx = normalizeTx(
     { id: 'arkade-1', type: 'outgoing', amount: 350, settled_at: 1000 },

@@ -7,21 +7,16 @@ import { assertPaymentInput } from './lud23.js';
  *
  * @requires @getalby/sdk - For NWC WebLN provider
  * @requires @getalby/lightning-tools - For invoice decoding
- * @requires bech32 - For LNURL decoding
  */
 
 import { payWithNwc } from '../services/nwcPayment.js';
 import { Invoice } from '@getalby/lightning-tools';
-import { bech32 } from 'bech32';
-import { parseSuccessAction } from './successAction.js';
-import { isStoreablePayLink } from './lnurlPay.js';
-import { lnurlGetJson } from './lnurlHttp.js';
-import { counterpartyError } from './errorOrigin.js';
+import { fetchPayRequest, lightningAddressUrl, requestPayInvoice } from './lnurlPay.js';
 import {
   isLightningAddress as isLightningAddressShared,
   isLightningInvoice as isLightningInvoiceShared,
   isLnurl as isLnurlShared,
-  stripWrapperScheme,
+  lnurlToUrl,
 } from './addressUtils';
 
 /**
@@ -86,6 +81,32 @@ export function resolveLUD17URL(input) {
 }
 
 /**
+ * The amount terms of a checked pay request (utils/lnurlPay.js), in the
+ * shape the NWC payment data has always had.
+ */
+function payParams(payRequest) {
+  const { minSendable, maxSendable } = payRequest;
+  // A fixed amount: the service names it by giving one limit for both.
+  const isFixedAmount = minSendable === maxSendable;
+  const fixedAmountSats = isFixedAmount ? Math.floor(minSendable / 1000) : null;
+  return {
+    callback: payRequest.callback,
+    minSendable,
+    maxSendable,
+    // Amount range in sats for UI convenience
+    minSats: Math.ceil(minSendable / 1000),
+    maxSats: Math.floor(maxSendable / 1000),
+    isFixedAmount,
+    fixedAmountSats,
+    amount: fixedAmountSats, // Pre-fill amount if fixed
+    commentAllowed: payRequest.commentAllowed,
+    metadata: payRequest.metadata,
+    // LUD-18: what the service asks to know about the payer, as sent.
+    payerData: payRequest.payerData ?? null,
+  };
+}
+
+/**
  * Payment type constants for consistent type checking
  */
 export const PaymentType = {
@@ -109,13 +130,13 @@ export class LightningPaymentService {
   /**
    * @param {object|null} [nwc] the wallet's NostrWebLNProvider from
    *   `store.nwcConnection`; none when only reading payment inputs
-   * @param {object} [options]
-   * @param {object|null} [options.limit] the connection's spending limit
-   *   (store.nwcLimitFor): a payment above it stops before it is sent
+   * @param {object} [payOptions] what each payment passes to
+   *   services/nwcPayment (store.nwcPayOptions): the connection's spending
+   *   limit, and what a payment tells back
    */
-  constructor(nwc = null, { limit = null } = {}) {
+  constructor(nwc = null, payOptions = {}) {
     this.nwc = nwc;
-    this.limit = limit;
+    this.payOptions = payOptions || {};
   }
 
   /** The wallet's connection, for anything that talks to the wallet. */
@@ -199,56 +220,20 @@ export class LightningPaymentService {
    * @returns {Promise<Object>} Payment data with minSendable, maxSendable, etc.
    */
   async handleLightningAddress(address) {
-    try {
-      // Resolve the .well-known endpoint directly over the CORS-safe
-      // transport (no third-party proxy involved), same rails as the
-      // other wallet backends.
-      const [username, domain] = address.split('@');
-      if (!username || !domain) {
-        throw new Error('Invalid Lightning address format');
-      }
-
-      const response = await lnurlGetJson(`https://${domain}/.well-known/lnurlp/${username}`);
-      if (!response.ok) {
-        throw new Error('Failed to fetch Lightning Address data');
-      }
-
-      const data = response.data;
-      if (!data || data.status === 'ERROR') {
-        throw new Error(data?.reason || 'Failed to fetch Lightning Address data');
-      }
-      if (data.tag !== 'payRequest' || !data.callback) {
-        throw new Error('Failed to fetch Lightning Address data');
-      }
-
-      const minSendable = data.minSendable || 1000;
-      const maxSendable = data.maxSendable || 100000000000;
-
-      // Detect fixed amount: when min equals max, it's a fixed amount request
-      const isFixedAmount = minSendable === maxSendable;
-      const fixedAmountSats = isFixedAmount ? Math.floor(minSendable / 1000) : null;
-
-      return {
-        type: PaymentType.LIGHTNING_ADDRESS,
-        address,
-        minSendable,
-        maxSendable,
-        // Amount range in sats for UI convenience
-        minSats: Math.ceil(minSendable / 1000),
-        maxSats: Math.floor(maxSendable / 1000),
-        // Fixed amount detection
-        isFixedAmount,
-        fixedAmountSats,
-        amount: fixedAmountSats, // Pre-fill amount if fixed
-        commentAllowed: data.commentAllowed || 0,
-        callback: data.callback,
-        metadata: data.metadata,
-        description: `Payment to ${address}`,
-      };
-    } catch (error) {
-      const message = error.message || 'Unknown error';
-      throw new Error(`Invalid Lightning Address: ${message}`);
+    // Asked for and checked by utils/lnurlPay.js, the same path every other
+    // wallet type uses. Its errors pass through as they are: a refusal keeps
+    // the service's reason, a transport failure stays recognisable.
+    const url = lightningAddressUrl(address);
+    if (!url) {
+      throw new Error('Invalid Lightning address format');
     }
+    const data = await fetchPayRequest(url);
+    return {
+      type: PaymentType.LIGHTNING_ADDRESS,
+      address,
+      ...payParams(data),
+      description: `Payment to ${address}`,
+    };
   }
 
   /**
@@ -258,52 +243,16 @@ export class LightningPaymentService {
    */
   async handleLNURL(lnurlInput) {
     assertPaymentInput(lnurlInput);
-    try {
-      const cleanLnurl = stripWrapperScheme(lnurlInput);
-      const url = this.decodeLNURL(cleanLnurl);
-
-      const response = await lnurlGetJson(url);
-      if (!response.ok) {
-        throw new Error(`LNURL fetch failed: ${response.status}`);
-      }
-
-      const data = response.data;
-
-      if (!data || data.status === 'ERROR') {
-        throw new Error(data?.reason || 'LNURL request failed');
-      }
-
-      if (data.tag !== 'payRequest') {
-        throw new Error('Unsupported LNURL type. Only LNURL-pay is supported.');
-      }
-
-      const minSendable = data.minSendable || 1000;
-      const maxSendable = data.maxSendable || 100000000000;
-
-      // Detect fixed amount: when min equals max, it's a fixed amount request
-      const isFixedAmount = minSendable === maxSendable;
-      const fixedAmountSats = isFixedAmount ? Math.floor(minSendable / 1000) : null;
-
-      return {
-        type: PaymentType.LNURL_PAY,
-        callback: data.callback,
-        minSendable,
-        maxSendable,
-        // Amount range in sats for UI convenience
-        minSats: Math.ceil(minSendable / 1000),
-        maxSats: Math.floor(maxSendable / 1000),
-        // Fixed amount detection
-        isFixedAmount,
-        fixedAmountSats,
-        amount: fixedAmountSats, // Pre-fill amount if fixed
-        commentAllowed: data.commentAllowed || 0,
-        metadata: data.metadata,
-        description: this.parseMetadataDescription(data.metadata),
-      };
-    } catch (error) {
-      const message = error.message || 'Unknown error';
-      throw new Error(`Invalid LNURL: ${message}`);
+    const url = lnurlToUrl(lnurlInput);
+    if (!url) {
+      throw new Error('Invalid LNURL');
     }
+    const data = await fetchPayRequest(url);
+    return {
+      type: PaymentType.LNURL_PAY,
+      ...payParams(data),
+      description: this.parseMetadataDescription(data.metadata),
+    };
   }
 
   /**
@@ -355,9 +304,11 @@ export class LightningPaymentService {
    * @param {Object} paymentData - The payment data from processPaymentInput
    * @param {number} [amount] - Amount in sats (required for LNURL/Lightning Address)
    * @param {string} [comment] - Optional comment for the payment
+   * @param {{ payerData?: { identifier?: string|null }|null }} [options] - LUD-18
+   *   details the person agreed to share (see requestPayInvoice)
    * @returns {Promise<Object>} Payment result with preimage
    */
-  async sendPayment(paymentData, amount = null, comment = null) {
+  async sendPayment(paymentData, amount = null, comment = null, { payerData = null } = {}) {
     this.requireNwc();
 
     switch (paymentData.type) {
@@ -366,11 +317,11 @@ export class LightningPaymentService {
         return this.payInvoice(paymentData.invoice);
 
       case PaymentType.LIGHTNING_ADDRESS:
-        return this.payLightningAddress(paymentData, amount, comment);
+        return this.payLightningAddress(paymentData, amount, comment, { payerData });
 
       case PaymentType.LNURL_PAY:
       case 'lnurl':
-        return this.payLNURL(paymentData, amount, comment);
+        return this.payLNURL(paymentData, amount, comment, { payerData });
 
       default:
         throw new Error(`Unsupported payment type: ${paymentData.type}`);
@@ -383,7 +334,7 @@ export class LightningPaymentService {
    * @returns {Promise<Object>} Payment result with preimage
    */
   async payInvoice(invoice) {
-    return payWithNwc(this.requireNwc(), invoice, { limit: this.limit });
+    return payWithNwc(this.requireNwc(), invoice, this.payOptions);
   }
 
   /**
@@ -391,54 +342,29 @@ export class LightningPaymentService {
    * @param {Object} paymentData - Payment data with address and limits
    * @param {number} amount - Amount in sats
    * @param {string} [comment] - Optional comment
+   * @param {{ payerData?: object|null }} [options] - LUD-18 details to share
    * @returns {Promise<Object>} Payment result with preimage
    */
-  async payLightningAddress(paymentData, amount, comment) {
+  async payLightningAddress(paymentData, amount, comment, { payerData = null } = {}) {
     if (!amount || amount <= 0) {
       throw new Error('Amount is required for Lightning Address payments');
     }
 
-    this.validateAmount(amount, paymentData);
+    // Reuse the pay request read when the address was first parsed; a
+    // payment resolved for another wallet type carries none, so ask again.
+    const payRequest = paymentData.callback
+      ? paymentData
+      : await this.handleLightningAddress(paymentData.address);
 
-    // Resolve the LNURL-pay callback. Reuse the one captured when the address
-    // was first parsed; fall back to a live re-resolve if absent.
-    let callback = paymentData.callback;
-    let commentAllowed = paymentData.commentAllowed || 0;
-    if (!callback) {
-      const resolved = await this.handleLightningAddress(paymentData.address);
-      callback = resolved.callback;
-      commentAllowed = resolved.commentAllowed || 0;
-      if (!callback) {
-        throw new Error('Failed to resolve Lightning address');
-      }
-    }
-
-    // Fetch the invoice ourselves rather than via lightning-tools'
-    // requestInvoice, whose return shape omits `successAction` entirely.
-    // Reading the raw callback response lets us keep the LUD-09 message,
-    // including the `aes` variant.
-    const url = new URL(callback);
-    url.searchParams.set('amount', String(amount * 1000));
-    if (comment && commentAllowed > 0) {
-      url.searchParams.set('comment', comment.substring(0, commentAllowed));
-    }
-
-    const response = await lnurlGetJson(url.toString());
-    if (!response.ok) {
-      throw new Error(`LNURL callback failed: ${response.status}`);
-    }
-    const data = response.data || {};
-    if (data.status === 'ERROR') {
-      throw counterpartyError(data.reason, 'Lightning address payment request failed');
-    }
-    if (!data.pr) {
-      throw new Error('No payment request received from Lightning address');
-    }
-
-    const result = await payWithNwc(this.requireNwc(), data.pr, { limit: this.limit });
+    // Asked for directly rather than through lightning-tools' requestInvoice,
+    // whose answer drops `successAction`. The shared request keeps the LUD-09
+    // message, including the `aes` variant, and checks the invoice's amount.
+    const invoice = await requestPayInvoice(payRequest, { amountSats: amount, comment, payerData });
+    const result = await payWithNwc(this.requireNwc(), invoice.pr, this.payOptions);
     // Preserve the recipient's LUD-09 post-payment message so the caller can
-    // surface it once the payment settles.
-    return { ...result, successAction: parseSuccessAction(data.successAction, callback) };
+    // surface it once the payment settles, and the payer details that went
+    // with the payment.
+    return { ...result, successAction: invoice.successAction, payerData: invoice.payerData };
   }
 
   /**
@@ -446,9 +372,10 @@ export class LightningPaymentService {
    * @param {Object} paymentData - Payment data with callback and limits
    * @param {number} amount - Amount in sats
    * @param {string} [comment] - Optional comment
+   * @param {{ payerData?: object|null }} [options] - LUD-18 details to share
    * @returns {Promise<Object>} Payment result with preimage
    */
-  async payLNURL(paymentData, amount, comment) {
+  async payLNURL(paymentData, amount, comment, { payerData = null } = {}) {
     if (!amount || amount <= 0) {
       throw new Error('Amount is required for LNURL payments');
     }
@@ -462,35 +389,12 @@ export class LightningPaymentService {
         { ...decoded, lnurl: paymentData.lnurl || paymentData.data },
         amount,
         comment,
+        { payerData },
       );
     }
 
-    this.validateAmount(amount, paymentData);
-
-    const amountMsat = amount * 1000;
-    const callbackUrl = new URL(paymentData.callback);
-    callbackUrl.searchParams.set('amount', amountMsat.toString());
-
-    if (comment && paymentData.commentAllowed > 0) {
-      callbackUrl.searchParams.set('comment', comment.substring(0, paymentData.commentAllowed));
-    }
-
-    const response = await lnurlGetJson(callbackUrl.toString());
-    if (!response.ok) {
-      throw new Error(`LNURL callback failed: ${response.status}`);
-    }
-
-    const data = response.data || {};
-
-    if (data.status === 'ERROR') {
-      throw counterpartyError(data.reason, 'LNURL payment request failed');
-    }
-
-    if (!data.pr) {
-      throw new Error('No payment request received from LNURL callback');
-    }
-
-    const result = await payWithNwc(this.requireNwc(), data.pr, { limit: this.limit });
+    const invoice = await requestPayInvoice(paymentData, { amountSats: amount, comment, payerData });
+    const result = await payWithNwc(this.requireNwc(), invoice.pr, this.payOptions);
     // Preserve the LUD-09 successAction (recipient's post-payment message) so
     // the caller can show it once the payment settles, and the LUD-11 verdict
     // on the link itself: `disposable: false` means this LNURL may be kept and
@@ -498,8 +402,9 @@ export class LightningPaymentService {
     const sourceLnurl = paymentData.lnurl || paymentData.data || null;
     return {
       ...result,
-      successAction: parseSuccessAction(data.successAction, paymentData.callback),
-      payLink: (isStoreablePayLink(data) && sourceLnurl) ? sourceLnurl : null,
+      successAction: invoice.successAction,
+      payLink: (invoice.storeable && sourceLnurl) ? sourceLnurl : null,
+      payerData: invoice.payerData,
     };
   }
 
@@ -604,29 +509,6 @@ export class LightningPaymentService {
   // ============================================================================
 
   /**
-   * Decodes an LNURL to a URL. Supports both bech32 (LUD-01) and URL schemes (LUD-17).
-   * @param {string} lnurl - The LNURL string (bech32-encoded or LUD-17 scheme)
-   * @returns {string} The decoded URL
-   * @throws {Error} If decoding fails
-   */
-  decodeLNURL(lnurl) {
-    const clean = stripWrapperScheme(lnurl);
-
-    // LUD-17: lnurlp://, lnurlw://, lnurlc://, keyauth://
-    const lud17Url = resolveLUD17URL(clean);
-    if (lud17Url) return lud17Url;
-
-    // LUD-01: bech32-encoded LNURL
-    try {
-      const decoded = bech32.decode(clean.toLowerCase(), 2000);
-      const bytes = bech32.fromWords(decoded.words);
-      return new TextDecoder().decode(new Uint8Array(bytes));
-    } catch (error) {
-      throw new Error(`Failed to decode LNURL: ${error.message}`);
-    }
-  }
-
-  /**
    * Parses the description from LNURL metadata
    * @param {string|Array} metadata - The LNURL metadata (JSON string or array)
    * @returns {string} The parsed description
@@ -654,23 +536,6 @@ export class LightningPaymentService {
       return isGenericLnurlDescription(text) ? '' : text;
     } catch {
       return '';
-    }
-  }
-
-  /**
-   * Validates that an amount is within the allowed range
-   * @param {number} amount - Amount in sats
-   * @param {Object} paymentData - Payment data with minSendable and maxSendable (in msats)
-   * @throws {Error} If amount is out of range
-   */
-  validateAmount(amount, paymentData) {
-    const amountMsat = amount * 1000;
-    const { minSendable, maxSendable } = paymentData;
-
-    if (amountMsat < minSendable || amountMsat > maxSendable) {
-      const minSats = Math.ceil(minSendable / 1000);
-      const maxSats = Math.floor(maxSendable / 1000);
-      throw new Error(`Amount must be between ${minSats} and ${maxSats} sats`);
     }
   }
 }

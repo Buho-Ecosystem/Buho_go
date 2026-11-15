@@ -25,7 +25,7 @@
           <ConnectWalletMark :wallet="wallet" />
         </span>
         <span class="iform-line-label">{{ nameOf(wallet) }}<small>{{ offers[wallet.id]?.subtitle || $t(wallet.subtitle) }}</small></span>
-        <Icon icon="tabler:chevron-right" width="18" height="18" class="iform-line-chevron" :aria-hidden="true" />
+        <Icon icon="tabler:chevron-right" width="18" height="18" class="iform-line-chevron" />
       </button>
     </div>
 
@@ -43,7 +43,7 @@
         </span>
         <span class="iform-line-label">{{ nameOf(wallet) }}</span>
         <span class="connect-soon__label">{{ $t('Coming soon') }}</span>
-        <Icon icon="tabler:chevron-down" width="16" height="16" class="iform-line-chevron connect-soon__chevron" :class="{ 'is-open': open === wallet.id }" :aria-hidden="true" />
+        <Icon icon="tabler:chevron-down" width="16" height="16" class="iform-line-chevron connect-soon__chevron" :class="{ 'is-open': open === wallet.id }" />
       </button>
       <p v-show="open === wallet.id" :id="`connect-about-${wallet.id}`" class="connect-soon__about">
         {{ $t(wallet.about) }}

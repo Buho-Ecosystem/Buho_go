@@ -1,22 +1,27 @@
 <!--
   NWCWalletDetails: an NWC wallet's details in Settings, the same facts the
   connect step showed: its Lightning address, its spending limit, what this
-  connection may do, and whether the wallet answered when last asked.
+  connection may do, and whether the wallet answered when last asked. A
+  limit the wallet does not share shows once a payment ran into it.
   Styled through the wallet detail panel's own tokens (--detail-*).
 -->
 <template>
   <section class="nwc-details" :aria-label="$t('Nostr Wallet Connect')">
-    <div v-if="address || limit" class="nwc-details__group">
+    <div v-if="address || limit || limitRefusal" class="nwc-details__group">
       <div v-if="address" class="nwc-details__row">
         <span class="nwc-details__label">{{ $t('Address') }}</span>
         <span class="nwc-details__value">{{ address }}</span>
         <button type="button" class="nwc-details__icon" :aria-label="$t('Copy address')" @click="$emit('copy-address', address)">
-          <Icon icon="tabler:copy" width="17" height="17" aria-hidden="true" />
+          <Icon icon="tabler:copy" width="17" height="17" />
         </button>
       </div>
       <div v-if="limit" class="nwc-details__row">
         <span class="nwc-details__label">{{ $t('Spending limit') }}<small v-if="renewsText">{{ renewsText }}</small></span>
         <span class="nwc-details__value">{{ $t('{amount} left', { amount: amountText(limit.remainingSats) }) }}</span>
+      </div>
+      <div v-else-if="limitRefusal" class="nwc-details__row">
+        <span class="nwc-details__label">{{ $t('Spending limit') }}<small>{{ $t('Not shared') }}</small></span>
+        <span class="nwc-details__value">{{ $t('Under {amount}', { amount: amountText(limitRefusal.amountSats) }) }}</span>
       </div>
     </div>
 
@@ -26,7 +31,7 @@
     <p class="nwc-details__heading">{{ $t('Connection') }}</p>
     <div class="nwc-details__group">
       <div class="nwc-details__row">
-        <Icon icon="tabler:wifi" width="17" height="17" class="nwc-details__lead" aria-hidden="true" />
+        <Icon icon="tabler:wifi" width="17" height="17" class="nwc-details__lead" />
         <span class="nwc-details__label">{{ relay || $t('Relay') }}</span>
         <span class="nwc-details__value nwc-details__status" :class="`is-${statusTone}`">{{ statusText }}</span>
       </div>
@@ -48,7 +53,12 @@ const props = defineProps({
   wallet: { type: Object, required: true },
   /** store.nwcLimitFor(): the spending limit the wallet shares, or null. */
   limit: { type: Object, default: null },
-  /** store.nwcStatus: 'answering' | 'no-answer' | 'relay', or '' while not asked yet. */
+  /**
+   * store.nwcLimitRefusals: a payment of this many sats was over a limit the
+   * wallet does not share, so the limit is lower, or null.
+   */
+  limitRefusal: { type: Object, default: null },
+  /** store.nwcStatus: 'answering' | 'no-answer' | 'relay' | 'ended', or '' while not asked yet. */
   status: { type: String, default: '' },
 });
 defineEmits(['copy-address']);
@@ -65,8 +75,9 @@ const statusText = computed(() => ({
   answering: t('Answering'),
   'no-answer': t('No reply'),
   relay: t('Not reachable'),
+  ended: t('Connection ended'),
 }[props.status] || t('Checking…')));
-const statusTone = computed(() => ({ answering: 'good', 'no-answer': 'warn', relay: 'warn' }[props.status] || 'neutral'));
+const statusTone = computed(() => ({ answering: 'good', 'no-answer': 'warn', relay: 'warn', ended: 'warn' }[props.status] || 'neutral'));
 
 const renewsText = computed(() => {
   const at = props.limit?.renewsAt;
@@ -142,7 +153,7 @@ function amountText(sats) {
 }
 .nwc-details__status.is-good { color: var(--brand-accent-text); font-weight: 600; }
 .nwc-details__status.is-warn { color: #8A5A00; font-weight: 600; }
-:global(body.body--dark) .nwc-details__status.is-warn { color: #F5C451; }
+body.body--dark .nwc-details__status.is-warn { color: #F5C451; }
 .nwc-details__icon {
   flex-shrink: 0;
   width: 40px;

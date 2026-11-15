@@ -18,8 +18,11 @@ import * as lightningAddressNames from '../../utils/lightningAddressNames.js';
 import * as nwcWallet from '../../utils/nwcWallet.js';
 import * as nwcConnection from '../../utils/nwcConnection.js';
 import * as nwcErrors from '../../utils/nwcErrors.js';
+import * as connectionEnded from '../../utils/connectionEnded.js';
 import * as walletCapabilities from '../../utils/walletCapabilities.js';
+import * as kioskPin from '../../utils/kioskPin.js';
 import * as nwcReceive from '../../services/nwcReceive.js';
+import * as nwcAtRest from '../../utils/nwcAtRest.js';
 
 export const PHRASE = 'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about';
 export const OTHER_PHRASE = 'zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo wrong';
@@ -31,6 +34,8 @@ export function memoryStorage(initial = {}) {
     getItem: (key) => (map.has(key) ? map.get(key) : null),
     setItem: (key, value) => map.set(key, String(value)),
     removeItem: (key) => map.delete(key),
+    get length() { return map.size; },
+    key: (index) => [...map.keys()][index] ?? null,
   };
 }
 
@@ -55,7 +60,7 @@ export const decrypt = async (envelope) => {
 export function createHarness({ evidence = {}, connect = null, storage = {}, exits = {}, deps: extraDeps = {}, validate = false } = {}) {
   const local = memoryStorage(storage);
   globalThis.localStorage = local;
-  const calls = { probes: [], deletedStorage: [], reconciled: [], removedConfigs: [], kitsRemoved: [], preserved: [], backupNotes: 0 };
+  const calls = { probes: [], deletedStorage: [], reconciled: [], removedConfigs: [], rulesLoaded: [], kitsRemoved: [], preserved: [], backupNotes: 0 };
   const balances = {};
   // A stand-in for the Lightning address server: one address per identity key.
   const server = { byPubkey: new Map(), random: 0, ensures: 0, failClaim: false };
@@ -133,7 +138,10 @@ export function createHarness({ evidence = {}, connect = null, storage = {}, exi
     '../utils/nwcWallet.js': nwcWallet,
     '../utils/nwcConnection.js': nwcConnection,
     '../utils/nwcErrors.js': nwcErrors,
+    '../utils/connectionEnded.js': connectionEnded,
+    '../utils/nwcAtRest.js': nwcAtRest,
     '../utils/walletCapabilities.js': walletCapabilities,
+    '../utils/kioskPin.js': kioskPin,
     '../services/nwcReceive.js': nwcReceive,
     '../utils/lightningAddressNames.js': lightningAddressNames,
     '../services/breezSdk': {
@@ -145,7 +153,7 @@ export function createHarness({ evidence = {}, connect = null, storage = {}, exi
       sparkLifecycle: () => ({ start() {}, reconcile(id) { calls.reconciled.push(id); return Promise.resolve(); } }),
       forgetSparkWallet: () => {},
     },
-    './autoWithdraw': { useAutoWithdrawStore: () => ({ checkAndExecute() {}, async initialize() {}, forgetWallet: async (id) => { calls.removedConfigs.push(id); } }) },
+    './autoWithdraw': { useAutoWithdrawStore: () => ({ checkAndExecute() {}, async initialize(options) { calls.rulesLoaded.push(options); }, forgetWallet: async (id) => { calls.removedConfigs.push(id); } }) },
     './exitKit': { useExitKitStore: () => ({ remove: (id) => calls.kitsRemoved.push(id) }) },
     './emergencyExit': { useEmergencyExitStore: () => exitStore },
     '../services/exitKit.js': {

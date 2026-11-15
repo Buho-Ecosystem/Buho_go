@@ -7,5 +7,6 @@ import UIKit
 class BuhoBridgeViewController: CAPBridgeViewController {
     override open func capacitorDidLoad() {
         bridge?.registerPluginInstance(FileExportPlugin())
+        bridge?.registerPluginInstance(WalletAppsPlugin())
     }
 }

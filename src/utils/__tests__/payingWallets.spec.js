@@ -270,6 +270,28 @@ test('default pick: the active wallet when it can pay', () => {
   assert.equal(pickDefaultPayingWallet(entries).id, 'lnbits')
 })
 
+test('preferred pick: a preference takes priority over the active wallet', () => {
+  const entries = list()
+  assert.equal(pickDefaultPayingWallet(entries, { preferredWalletId: 'lnbits' }).id, 'lnbits')
+  assert.equal(entries.find(wallet => wallet.isActive).id, 'spark-biz')
+})
+
+test('preferred pick: a blocked or disconnected preference is never silently replaced', () => {
+  const insufficient = list({ amountSats: 60_000 })
+  assert.equal(pickDefaultPayingWallet(insufficient, { preferredWalletId: 'lnbits' }).reason, 'insufficient-balance')
+  const unsupported = list({ destinationType: 'spark_address' })
+  assert.equal(pickDefaultPayingWallet(unsupported, { preferredWalletId: 'lnbits' }).reason, 'unsupported-destination')
+  const disconnected = list({ connectionStates: { lnbits: { connected: false, error: 'offline' } } })
+  assert.equal(pickDefaultPayingWallet(disconnected, { preferredWalletId: 'lnbits' }).connectionFailed, true)
+})
+
+test('preferred pick: a removed wallet has no automatic substitute; Automatic preserves legacy selection', () => {
+  const entries = list()
+  assert.equal(pickDefaultPayingWallet(entries, { preferredWalletId: 'removed-wallet' }), null)
+  assert.equal(pickDefaultPayingWallet(entries, { preferredWalletId: null }).id, 'spark-biz')
+  assert.equal(pickDefaultPayingWallet([], { preferredWalletId: 'lnbits' }), null)
+})
+
 test('default pick: the first usable wallet when the active one cannot pay', () => {
   // Arkade active, Lightning invoice: falls to the first usable in stored order.
   const entries = list({ activeWalletId: 'arkade' })

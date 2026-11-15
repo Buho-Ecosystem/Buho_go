@@ -12,9 +12,8 @@
  * Callers keep the old shape: `{ preimage }` on success, an Error with a
  * `code` otherwise (utils/nwcErrors explains it).
  */
-import { Invoice } from '@getalby/lightning-tools';
-import { NWC_ERROR, isUncertainPaymentError, nwcError } from '../utils/nwcErrors.js';
-import { spendingLimitFrom } from '../utils/nwcWallet.js';
+import { NWC_ERROR, isNotOffered, isUncertainPaymentError, nwcError } from '../utils/nwcErrors.js';
+import { readInvoice, spendingLimitFrom } from '../utils/nwcWallet.js';
 
 /** Waits between lookups of an unconfirmed payment, half a minute in all. */
 export const LOOKUP_DELAYS_MS = Object.freeze([2000, 5000, 8000, 15000]);
@@ -40,12 +39,8 @@ export async function provesPayment(preimage, paymentHash) {
 }
 
 function decode(invoice) {
-  try {
-    const decoded = new Invoice({ pr: invoice });
-    return { paymentHash: decoded.paymentHash, amountSats: Number(decoded.satoshi) || 0 };
-  } catch {
-    return { paymentHash: null, amountSats: 0 };
-  }
+  const read = readInvoice(invoice);
+  return { paymentHash: read?.paymentHash ?? null, amountSats: read?.amountSats ?? 0 };
 }
 
 /**
@@ -56,6 +51,11 @@ function decode(invoice) {
  *   the connection's spending limit as last read, when the wallet shares
  *   it: a payment above it is stopped here, with the reason, once the
  *   wallet confirms the limit still stands
+ * @param {(spent: { amountSats: number }) => void} [options.onSpent] told
+ *   once the payment is proven, so a shared limit can be read again
+ * @param {(refused: { amountSats: number }) => void} [options.onLimitRefused]
+ *   told when the wallet refused the payment over a limit (QUOTA_EXCEEDED),
+ *   also one it keeps to itself
  * @param {number[]} [options.lookupDelays]
  * @param {number} [options.lookupWait] longest wait for one lookup's answer
  * @param {(ms: number) => Promise<void>} [options.sleep]
@@ -65,6 +65,8 @@ function decode(invoice) {
  */
 export async function payWithNwc(nwc, invoice, {
   limit = null,
+  onSpent = null,
+  onLimitRefused = null,
   lookupDelays = LOOKUP_DELAYS_MS,
   lookupWait = LOOKUP_WAIT_MS,
   sleep = (ms) => new Promise((r) => setTimeout(r, ms)),
@@ -86,13 +88,25 @@ export async function payWithNwc(nwc, invoice, {
   try {
     answer = await nwc.sendPayment(invoice);
   } catch (error) {
+    // An invoice without an amount says nothing about how low the limit is.
+    if (error?.code === 'QUOTA_EXCEEDED' && amountSats > 0) tell(onLimitRefused, { amountSats });
     if (!paymentHash || !isUncertainPaymentError(error)) throw error;
   }
 
   if (answer && (!paymentHash || await provesPayment(answer.preimage, paymentHash))) {
+    tell(onSpent, { amountSats });
     return { preimage: answer.preimage, paymentHash };
   }
-  return { ...await confirmByLookup(nwc, paymentHash, { lookupDelays, lookupWait, sleep }), paymentHash };
+  const confirmed = await confirmByLookup(nwc, paymentHash, { lookupDelays, lookupWait, sleep });
+  tell(onSpent, { amountSats });
+  return { ...confirmed, paymentHash };
+}
+
+/** A caller's callback never changes how a payment ended. */
+function tell(callback, info) {
+  try {
+    callback?.(info);
+  } catch { /* the payment's outcome stands */ }
 }
 
 /**
@@ -134,7 +148,7 @@ async function confirmByLookup(nwc, paymentHash, { lookupDelays, lookupWait, sle
       try {
         tx = await withinWait(client.lookupInvoice({ payment_hash: paymentHash }), lookupWait);
       } catch (error) {
-        if (error?.code === 'NOT_IMPLEMENTED' || error?.code === 'RESTRICTED') break;
+        if (isNotOffered(error)) break;
         continue; // NOT_FOUND or no answer yet: the wallet may still be paying
       }
       if (tx?.state === 'failed') throw nwcError('PAYMENT_FAILED', 'Payment failed');

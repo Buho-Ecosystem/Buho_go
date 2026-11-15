@@ -4,12 +4,12 @@
 
 **The friendly Bitcoin wallet. Hold your own keys, pay anyone, spend anywhere.**
 
-[![Web app](https://img.shields.io/badge/Web-go.mybuho.de-15DE72)](https://go.mybuho.de)
-[![Google Play](https://img.shields.io/badge/Android-Google%20Play-3DDC84?logo=googleplay&logoColor=white)](https://play.google.com/store/apps/details?id=mybuho.buhogo)
-[![Zapstore](https://img.shields.io/badge/Android-Zapstore-9B59B6)](https://zapstore.dev/apps/mybuho.buhogo)
-[![Obtainium](https://img.shields.io/badge/Android-Obtainium-6D4AFF)](https://apps.obtainium.imranr.dev/redirect?r=obtainium://app/%7B%22id%22%3A%22mybuho.buhogo%22%2C%22url%22%3A%22https%3A%2F%2Fgithub.com%2FBuho-Ecosystem%2FBuho_go%22%2C%22author%22%3A%22Buho-Ecosystem%22%2C%22name%22%3A%22BuhoGO%22%7D)
-[![Docker](https://img.shields.io/badge/Docker-robinvonmises%2Fbuho__go-2496ED?logo=docker&logoColor=white)](https://hub.docker.com/r/robinvonmises/buho_go)
-[![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](LICENSE)
+[![Web app](.github/media/badges/web.svg)](https://go.mybuho.de)
+[![Google Play](.github/media/badges/google-play.svg)](https://play.google.com/store/apps/details?id=mybuho.buhogo)
+[![Zapstore](.github/media/badges/zapstore.svg)](https://zapstore.dev/apps/mybuho.buhogo)
+[![Obtainium](.github/media/badges/obtainium.svg)](https://apps.obtainium.imranr.dev/redirect?r=obtainium://app/%7B%22id%22%3A%22mybuho.buhogo%22%2C%22url%22%3A%22https%3A%2F%2Fgithub.com%2FBuho-Ecosystem%2FBuho_go%22%2C%22author%22%3A%22Buho-Ecosystem%22%2C%22name%22%3A%22BuhoGO%22%7D)
+[![Docker](.github/media/badges/docker.svg)](https://hub.docker.com/r/robinvonmises/buho_go)
+[![License: AGPL-3.0](.github/media/badges/license.svg)](LICENSE)
 
 [**Open the app**](https://go.mybuho.de) · [**Docs**](https://docs-buhogo.netlify.app/) · [**Developers**](#for-developers) · [**Contribute**](CONTRIBUTING.md)
 
@@ -44,9 +44,9 @@ Use as many as you like, side by side, and choose which one pays.
 - **Pay anyone.** Invoices, Lightning addresses, LNURL, Bitcoin and Spark addresses, Nostr profiles, and phone numbers in Kenya and Zambia. [How paying works](https://docs-buhogo.netlify.app/payment-scenarios)
 - **Ask for money and split the bill.** One request to several people, in equal shares or by amount, and see who has paid. [Requests](https://docs-buhogo.netlify.app/features/requests)
 - **Chat with your contacts.** Requests and payments in a private, end-to-end encrypted chat. [Contact chat](https://docs-buhogo.netlify.app/features/chat)
-- **Spend it.** A map of places that take Bitcoin, eSIMs and VPNs, gift cards, and short lessons that pay real sats. [Spend](https://docs-buhogo.netlify.app/features/spend)
+- **Spend it.** A map of places that take Bitcoin, eSIMs and VPNs, gift cards, and short lessons that pay real Bitcoin. [Spend](https://docs-buhogo.netlify.app/features/spend)
 - **Run a shop.** Kiosk mode turns a phone into a point of sale with tips, round-up and Bolt Card payments. [Kiosk](https://docs-buhogo.netlify.app/features/kiosk) · [Bolt Cards](https://docs-buhogo.netlify.app/features/bolt-card)
-- **Move money on its own.** Auto-Transfer sends what is above an amount to savings, a contact or an address, in sats or your currency. [Auto-Transfer](https://docs-buhogo.netlify.app/features/auto-transfer)
+- **Move money on its own.** Auto-Transfer sends what is above an amount to savings, a contact or an address, in Bitcoin or your currency. [Auto-Transfer](https://docs-buhogo.netlify.app/features/auto-transfer)
 - **Be someone.** Nostr identities, a username, a public page to get paid, and Lightning login. [Identities](https://docs-buhogo.netlify.app/features/identities)
 - **Stay safe.** Backups of your recovery phrase, app lock, and an emergency exit for Spark. [Backup](https://docs-buhogo.netlify.app/features/backup) · [Emergency exit](https://docs-buhogo.netlify.app/features/emergency-exit)
 

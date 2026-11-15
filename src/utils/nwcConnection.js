@@ -29,7 +29,7 @@
  * @property {string[]} relays     Every relay, in order. NIP-47 lets a
  *                                 connection name several; the extra ones
  *                                 are backups and must survive parsing.
- * @property {string} secret       Secret hex (case preserved).
+ * @property {string} secret       Secret hex, lowercased (the SDK refuses upper case).
  * @property {?string} lud16       Optional lightning address; null if absent.
  *
  * @typedef {object} NwcParseFailure
@@ -182,9 +182,11 @@ export function parseNwcConnection(raw) {
   if (!relays.every((r) => RELAY_RE.test(r))) return { ok: false, reason: NwcParseReason.InvalidRelay };
   const relay = relays[0];
 
-  const secret = url.searchParams.get('secret');
-  if (!secret) return { ok: false, reason: NwcParseReason.MissingSecret };
-  if (!HEX_64_RE.test(secret)) return { ok: false, reason: NwcParseReason.InvalidSecret };
+  const rawSecret = url.searchParams.get('secret');
+  if (!rawSecret) return { ok: false, reason: NwcParseReason.MissingSecret };
+  if (!HEX_64_RE.test(rawSecret)) return { ok: false, reason: NwcParseReason.InvalidSecret };
+  // Hex in lower case, the only form the SDK accepts. The key is the same.
+  const secret = rawSecret.toLowerCase();
 
   // Some older NWC servers emit `lud16=null` as a literal string when
   // no lightning address is configured. Treat that as absent so we

@@ -14,16 +14,16 @@
           <span v-if="choice.kind === 'wallet' && choice.covers > 1" class="backup-choice-detail">{{ $t('Covers all {count} Spark wallets', { count: choice.covers }) }}</span>
           <span v-else class="backup-choice-detail">{{ choice.detail }}</span>
           <span class="backup-choice-state" :class="{ 'is-saved': choice.saved }">
-            <Icon v-if="choice.saved" icon="tabler:check" width="14" height="14" :aria-hidden="true" />
+            <Icon v-if="choice.saved" icon="tabler:check" width="14" height="14" />
             {{ $t(choice.saved ? 'Words checked' : 'Not checked yet') }}
           </span>
           <!-- The exit kit's state sits next to the backup it belongs to. -->
           <span v-if="choice.type === 'spark' && kitLine" class="backup-choice-state" :class="{ 'is-saved': kitLine.ok }">
-            <Icon v-if="kitLine.ok" icon="tabler:check" width="14" height="14" :aria-hidden="true" />
+            <Icon v-if="kitLine.ok" icon="tabler:check" width="14" height="14" />
             {{ kitLine.text }}
           </span>
         </span>
-        <Icon icon="tabler:chevron-right" width="18" height="18" class="backup-choice-chevron" :aria-hidden="true" />
+        <Icon icon="tabler:chevron-right" width="18" height="18" class="backup-choice-chevron" />
       </button>
     </div>
     <p v-if="!groups.length" class="backup-choices-note">
@@ -36,12 +36,12 @@
          nowhere else: it only works together with the recovery words. -->
     <div class="backup-choices-more">
       <button v-if="sparkWallets.length" type="button" class="backup-choice backup-choice-quiet" data-audit="exit-kit-row" @click="$emit('select', { kind: 'exit-kit' })">
-        <span class="backup-choice-icon"><Icon icon="tabler:fire-extinguisher" width="26" height="26" :aria-hidden="true" /></span>
+        <span class="backup-choice-icon"><Icon icon="tabler:fire-extinguisher" width="26" height="26" /></span>
         <span class="backup-choice-copy">
           <strong>{{ $t('Emergency exit kit') }}</strong>
           <span class="backup-choice-detail">{{ $t('Move this wallet\'s money to plain Bitcoin without Spark\'s help.') }}</span>
         </span>
-        <Icon icon="tabler:chevron-right" width="18" height="18" class="backup-choice-chevron" :aria-hidden="true" />
+        <Icon icon="tabler:chevron-right" width="18" height="18" class="backup-choice-chevron" />
       </button>
       <button v-if="cloudAvailable" type="button" class="backup-choice backup-choice-quiet" @click="$emit('select', { kind: 'cloud' })">
         <span class="backup-choice-icon"><BackupKeyring :size="28" /></span>
@@ -49,15 +49,15 @@
           <strong>{{ $t('Google Drive backup') }}</strong>
           <span class="backup-choice-detail">{{ $t('Optional backup') }}</span>
         </span>
-        <Icon icon="tabler:chevron-right" width="18" height="18" class="backup-choice-chevron" :aria-hidden="true" />
+        <Icon icon="tabler:chevron-right" width="18" height="18" class="backup-choice-chevron" />
       </button>
       <button type="button" class="backup-choice backup-choice-quiet" @click="$emit('select', { kind: 'restore' })">
-        <span class="backup-choice-icon"><Icon icon="tabler:refresh" width="26" height="26" :aria-hidden="true" /></span>
+        <span class="backup-choice-icon"><Icon icon="tabler:refresh" width="26" height="26" /></span>
         <span class="backup-choice-copy">
           <strong>{{ $t('Restore from backup') }}</strong>
           <span class="backup-choice-detail">{{ $t('Bitcoin or identity from another phone') }}</span>
         </span>
-        <Icon icon="tabler:chevron-right" width="18" height="18" class="backup-choice-chevron" :aria-hidden="true" />
+        <Icon icon="tabler:chevron-right" width="18" height="18" class="backup-choice-chevron" />
       </button>
     </div>
   </div>

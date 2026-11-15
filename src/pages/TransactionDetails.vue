@@ -192,7 +192,7 @@
           >
             <span class="tx-row-label">{{ transaction.type === 'outgoing' ? $t('To') : $t('Paid to') }}</span>
             <span class="tx-row-value">{{ counterpartyAddressDisplay }}</span>
-            <Icon v-if="payAgainTarget" icon="tabler:chevron-right" width="16" height="16" class="tx-row-chevron" aria-hidden="true" />
+            <Icon v-if="payAgainTarget" icon="tabler:chevron-right" width="16" height="16" class="tx-row-chevron" />
           </component>
 
           <!-- The confirm sheet's seal, kept with the payment: opens Branta's
@@ -213,6 +213,13 @@
               <Icon v-if="merchantVerification.verifyUrl" icon="tabler:chevron-right" width="14" height="14" class="verified-row-chevron" />
             </span>
           </component>
+
+          <!-- Where a refund for this payment goes: the address that went
+               with it when the store asked for one (LUD-18). -->
+          <div v-if="refundAddress" class="tx-row">
+            <span class="tx-row-label">{{ $t('Refunds to') }}</span>
+            <span class="tx-row-value">{{ refundAddress }}</span>
+          </div>
 
           <!-- How this payment was made, when an auxiliary path stamped a
                source (internal transfer, batch send, kiosk sale). -->
@@ -318,7 +325,7 @@
             <span class="pay-again-copy">
               <strong class="pay-again-title">{{ $t('Pay again') }}</strong>
             </span>
-            <Icon icon="tabler:chevron-right" width="18" height="18" class="pay-again-chevron" aria-hidden="true" />
+            <Icon icon="tabler:chevron-right" width="18" height="18" class="pay-again-chevron" />
           </button>
         </div>
       </div>
@@ -735,6 +742,7 @@ import { zapInfoFromTx } from '../utils/zaps';
 import { getTxDescription, getTxMessage, isPlaceholderDescription } from '../utils/txMessage.js';
 import { zapperProfile, zapperProfileEvent } from '../services/zapperProfiles';
 import { NOSTRICH_HEAD_ICON } from '../utils/nostrIcon.js';
+import { nwcPaymentHash } from '../utils/nwcWallet.js';
 import { EARN_BRAND, earnRewardKind } from '../services/earnBrand';
 import RequestMoneyFlow from '../components/chat/RequestMoneyFlow.vue';
 import RecipientPaymentsSheet from '../components/RecipientPaymentsSheet.vue';
@@ -1035,6 +1043,12 @@ export default {
       if (!this.transaction || !this.metadataStore) return null;
       if (this.transaction.type !== 'outgoing') return null;
       return this.metadataStore.getMerchantVerificationForTransaction(this.transaction.id, this.metadataWalletId);
+    },
+
+    /** The address this payment shared for a refund (LUD-18), or null. */
+    refundAddress() {
+      if (!this.transaction || this.transaction.type !== 'outgoing') return null;
+      return this.metadataStore?.getRefundAddressForTransaction?.(this.transaction.id, this.metadataWalletId) || null;
     },
 
     /** What a screen reader hears on the verification row, when it opens a page. */
@@ -1486,7 +1500,10 @@ export default {
       const provider = await this.walletStore.ensureArkadeConnected(walletId || this.walletStore.activeWalletId);
 
       const transactions = await provider.getTransactions();
-      const found = transactions.find(tx => tx.id === txId);
+      // A link kept from before a deposit got its lasting id names it by
+      // its earlier one (its aliases).
+      const found = transactions.find(tx => tx.id === txId)
+        || transactions.find(tx => tx.aliases?.includes(txId));
 
       if (found) {
         this.transaction = this.normalizeForDetails(found, 'arkade');
@@ -1511,11 +1528,17 @@ export default {
       for (let page = 0; page < NWC_LOOKUP_PAGES; page += 1) {
         const response = await nwc.listTransactions({ limit: NWC_PAGE_SIZE, offset: page * NWC_PAGE_SIZE });
         const transactions = response?.transactions || [];
-        const found = transactions.find(tx => tx.id === txId || tx.payment_hash === txId);
+        // By the hash its invoice names (utils/nwcWallet), as History and
+        // every notification name it; the wallet's own fields still match
+        // an id saved before.
+        const wanted = String(txId).toLowerCase();
+        const found = transactions.find(tx => nwcPaymentHash(tx) === wanted || tx.id === txId || tx.payment_hash === txId);
         if (found) {
+          const paymentHash = nwcPaymentHash(found);
           this.transaction = this.normalizeForDetails({
             ...found,
-            id: found.id || found.payment_hash || txId,
+            id: paymentHash || found.id || found.payment_hash || txId,
+            payment_hash: paymentHash || found.payment_hash,
             fee: found.fee || found.fees_paid || 0,
             payment_request: found.payment_request || found.invoice || null
           }, 'nwc');

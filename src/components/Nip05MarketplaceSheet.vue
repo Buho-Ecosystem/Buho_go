@@ -799,7 +799,7 @@ export default {
 
       try {
         // NWC takes the bare code; Spark and LNbits take an object.
-        if (wallet.type === 'nwc') await payWithNwc(provider, invoice.invoice, { limit: this.walletStore.nwcLimitFor(wallet.id) });
+        if (wallet.type === 'nwc') await payWithNwc(provider, invoice.invoice, this.walletStore.nwcPayOptions(wallet.id));
         else await provider.payInvoice({ invoice: invoice.invoice });
       } catch (err) {
         console.warn('[username] payment failed:', err);

@@ -108,6 +108,15 @@ export class WalletProvider {
     throw new Error('getTransactions() must be implemented by subclass');
   }
 
+  // Incoming payments (services/walletWatch, for wallets the Spark lifecycle
+  // does not own) also use, where a backend has them:
+  //   watchPayments(onActivity) -> Promise<{ stop, revive? }>  a live "look now"
+  //     channel; its messages are hints, never proof of a payment
+  //   listPayments({ limit, offset })  like getTransactions, but throws on a
+  //     failed read instead of returning an empty list (LNbits)
+  //   getPayment(paymentHash) -> one row or null, for a hint the pages miss
+  // services/walletWatch PAYMENTS maps each wallet type to these.
+
   // ==========================================
   // Spark-specific methods (optional for NWC)
   // ==========================================

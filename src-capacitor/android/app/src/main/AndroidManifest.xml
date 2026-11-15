@@ -4,21 +4,82 @@
 
     <!-- Package visibility (Android 11+): the apps that can open a
          wallet connection request, so "Connect a wallet" can offer a wallet
-         app on this phone by name (WalletAppsPlugin). -->
+         app on this phone by name, and the apps that can pay a lightning: or
+         bitcoin: request, for "Pay from another wallet" on Receive
+         (WalletAppsPlugin). -->
     <queries>
         <intent>
             <action android:name="android.intent.action.VIEW" />
             <data android:scheme="nostr+walletauth" />
         </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="lightning" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="bitcoin" />
+        </intent>
+        <!-- Wallets opened by a web link instead (utils/walletAppLinks.js,
+             androidPackage). -->
+        <package android:name="com.squareup.cash" />
     </queries>
 
     <application
         android:allowBackup="true"
+        android:fullBackupContent="@xml/backup_rules"
+        android:dataExtractionRules="@xml/data_extraction_rules"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/AppTheme">
+
+        <!-- Quick Settings tiles (issue #445): Send and Receive open BuhoGO on
+             that screen through the open link buhogo://open/... (#444). Action
+             tiles, never switches; greyed out without a wallet and in kiosk
+             mode (QuickAccessState). -->
+        <service
+            android:name=".SendTileService"
+            android:exported="true"
+            android:icon="@drawable/ic_tile_send"
+            android:label="@string/quick_access_tile_send"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.service.quicksettings.TOGGLEABLE_TILE"
+                android:value="false" />
+        </service>
+
+        <service
+            android:name=".ReceiveTileService"
+            android:exported="true"
+            android:icon="@drawable/ic_tile_receive"
+            android:label="@string/quick_access_tile_receive"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.service.quicksettings.TOGGLEABLE_TILE"
+                android:value="false" />
+        </service>
+
+        <!-- Long-pressing a BuhoGO tile opens Quick access in Settings rather
+             than App info. No window: it hands over to MainActivity. -->
+        <activity
+            android:name=".QuickAccessSettingsActivity"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:taskAffinity=""
+            android:theme="@android:style/Theme.NoDisplay">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE_PREFERENCES" />
+            </intent-filter>
+        </activity>
 
         <activity
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|locale|smallestScreenSize|screenLayout|uiMode|navigation"
@@ -88,15 +149,26 @@
                 <data android:scheme="nostrwalletconnect" />
             </intent-filter>
 
-            <!-- Deep link: back from a wallet app that approved BuhoGO
-                 ("return_to" of a connection request opened on this phone).
-                 Carries only the request id; the connection itself arrives
-                 over the wallet's relay. -->
+            <!-- Deep link: BuhoGO's own scheme, for links meant for BuhoGO
+                 in particular, whatever wallet the phone picks for the
+                 general schemes above.
+                   buhogo://pay?request=…  a checkout's "BuhoGO" entry: the
+                                           payment, which the person confirms
+                                           (utils/paymentLink.js,
+                                           docs/PAYMENT_LINKS.md). The
+                                           buhogo:lightning:… form some wallet
+                                           lists build is read the same way.
+                   buhogo://nwc/…          back from a wallet app that approved
+                                           BuhoGO ("return_to" of a connection
+                                           request opened on this phone). Only
+                                           the request id; the connection
+                                           arrives over the wallet's relay. -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="buhogo" android:host="nwc" />
+                <data android:scheme="buhogo" />
+                <data android:scheme="BUHOGO" />
             </intent-filter>
 
             <!-- App Link: a shared card link opens the card in BuhoGO.

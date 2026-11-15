@@ -12,15 +12,16 @@
     <div v-else class="pin-error-spacer" />
 
     <div class="pin-keypad">
-      <button v-for="btn in keypadButtons" :key="btn" class="pin-key"
+      <button v-for="btn in keypadButtons" :key="btn" type="button" class="pin-key"
         :class="{
           'pin-key-num': btn !== 'delete' && btn !== '',
           'pin-key-action': btn === 'delete',
           'pin-key-empty': btn === ''
         }"
         :disabled="btn === '' || disabled"
+        :aria-label="btn === 'delete' ? $t('Delete') : btn"
         @click="handleKey(btn)">
-        <q-icon v-if="btn === 'delete'" name="backspace" size="22px" />
+        <Icon v-if="btn === 'delete'" icon="tabler:backspace" width="22" height="22" />
         <span v-else>{{ btn }}</span>
       </button>
     </div>
@@ -29,9 +30,11 @@
 
 <script>
 import { defineComponent, ref, watch } from 'vue'
+import { Icon } from '@iconify/vue'
 
 export default defineComponent({
   name: 'KioskPinPad',
+  components: { Icon },
   props: {
     title: { type: String, default: 'Enter PIN' },
     subtitle: { type: String, default: '' },
@@ -53,14 +56,16 @@ export default defineComponent({
     }
 
     watch(pin, (val) => { if (val.length === 4) emit('complete', val) })
-    watch(() => props.errorMessage, (msg) => {
-      if (msg) { hasError.value = true; shaking.value = true; pin.value = ''; setTimeout(() => { shaking.value = false }, 500) }
-    })
+    /** A wrong entry: shake and clear. The parent calls it on every wrong
+     *  entry, since a second wrong PIN leaves the same error message and the
+     *  watcher below would not run again (the pad stayed full and dead). */
+    function fail() { hasError.value = true; shaking.value = true; pin.value = ''; setTimeout(() => { shaking.value = false }, 500) }
+    watch(() => props.errorMessage, (msg) => { if (msg) fail() })
 
     function reset() { pin.value = ''; hasError.value = false; shaking.value = false }
-    expose({ reset })
+    expose({ reset, fail })
 
-    return { pin, shaking, hasError, keypadButtons, handleKey, reset }
+    return { pin, shaking, hasError, keypadButtons, handleKey, reset, fail }
   }
 })
 </script>

@@ -375,6 +375,18 @@ test('menu: a pick closes the menu first, then reports', () => {
 
 const card = (props, opts) => render(RequestCard, { amountSats: 25000, ...props }, opts)
 
+test('request card: failed delivery offers retry; a queued request cannot send a reminder', async () => {
+  const failed = await card({ outgoing: true, delivery: 'failed' })
+  assert.match(failed, /role="status"[^>]*>[\s\S]*Not sent/)
+  assert.match(failed, />\s*Send again\s*</)
+  assert.doesNotMatch(failed, />\s*Remind\s*</)
+  const queued = await card({ outgoing: true, delivery: 'queued' })
+  assert.match(queued, /Waiting to send/)
+  assert.match(queued, /<button[^>]*disabled[^>]*>\s*Remind\s*</)
+  assert.doesNotMatch(queued, />\s*Send again\s*</)
+  assert.doesNotMatch(await card({ outgoing: false, delivery: 'failed' }), /Not sent|Send again/)
+})
+
 test('request card: the payer sees Decline and a filled Pay', async () => {
   const html = await card({ partnerName: 'Anna', note: 'Pizza', fiatText: '≈ $15.00' })
   assert.ok(html.includes(`₿ ${n(25000)}`))
@@ -430,7 +442,7 @@ test('request card: an expired request always has a next action (docs 8a)', asyn
   const requester = await card({ state: 'expired', outgoing: true })
   assert.match(requester, />\s*Request again\s*</)
   assert.doesNotMatch(requester, /Send anyway|Pay/)
-  assert.deepEqual(RequestCard.emits, ['pay', 'decline', 'remind', 'withdraw', 'send-anyway', 'request-again'])
+  assert.deepEqual(RequestCard.emits, ['pay', 'decline', 'remind', 'withdraw', 'send-anyway', 'request-again', 'retry'])
 })
 
 test('request card: a paid request of the requester says where it arrived or that it is only reported', async () => {

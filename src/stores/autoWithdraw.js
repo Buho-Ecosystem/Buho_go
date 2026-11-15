@@ -12,9 +12,8 @@
 import { defineStore } from 'pinia'
 import { useTransactionMetadataStore } from './transactionMetadata'
 import { WALLET_TYPES } from '../providers/WalletFactory'
-import { lnurlGetJson } from '../utils/lnurlHttp.js'
-import { counterpartyError } from '../utils/errorOrigin.js'
-import { migratePocketConfigKeys } from '../utils/autoWithdrawKeys.js'
+import { fetchPayRequest, lightningAddressUrl, requestPayInvoice } from '../utils/lnurlPay.js'
+import { migratePocketConfigKeys, settleRulesForWallets } from '../utils/autoWithdrawKeys.js'
 import { payWithNwc } from '../services/nwcPayment.js'
 import { NWC_ERROR } from '../utils/nwcErrors.js'
 import { fiatRatesService } from '../utils/fiatRates.js'
@@ -48,10 +47,27 @@ const FAILURE_RETRY_MS = 15_000
 // out. Retrying would pay again, so the rule rests long enough for the
 // balance to show what happened.
 const UNCONFIRMED_HOLD_MS = 10 * 60_000
+// A Spark balance counts as confirmed when a network sync of that wallet
+// finished this recently. The run is usually triggered by exactly such a
+// sync; starting a second full sync right behind it is what the operators
+// rate-limit or let time out on a funded wallet (#430).
+const RECENT_SYNC_MS = 60_000
 
 // Outside Pinia state on purpose: bookkeeping, not something to render.
 const _running = new Set()
 const _lastTriggerTime = new Map()
+
+/**
+ * Why a balance check failed, short enough to keep with the entry: the
+ * provider's error code (BREEZ_SYNC_TIMEOUT, BREEZ_SYNC_UNVERIFIED, …) when
+ * it has one, otherwise the start of the message.
+ */
+function verifyFailureDetail(error) {
+  const code = String(error?.code || '')
+  if (/^[A-Z][A-Z0-9_]{2,63}$/.test(code)) return code
+  const message = String(error?.message || error || '').trim()
+  return message ? message.slice(0, 120) : null
+}
 
 export const useAutoWithdrawStore = defineStore('autoWithdraw', {
   state: () => ({
@@ -64,19 +80,29 @@ export const useAutoWithdrawStore = defineStore('autoWithdraw', {
   getters: {
     getConfig: (state) => (walletId) => state.configs[walletId] || null,
 
-    /** Rules that need the person, oldest wallet first: Home shows the first. */
-    needingAttention: (state) => Object.entries(state.configs)
-      .map(([walletId, rule]) => ({ walletId, rule, status: ruleStatus(rule) }))
-      .filter((entry) => entry.status.kind === 'attention'),
+    /**
+     * The rules of these wallets, in the wallets' order, each with its
+     * status. Every screen that lists or counts rules reads them here, with
+     * the wallets on screen, so a count can never include a rule the
+     * Auto-Transfer page does not show.
+     */
+    rulesOf: (state) => (wallets = []) => wallets
+      .filter((wallet) => state.configs[wallet.id])
+      .map((wallet) => {
+        const rule = state.configs[wallet.id]
+        return { walletId: wallet.id, wallet, rule, status: ruleStatus(rule) }
+      }),
   },
 
   actions: {
     /**
      * Load the saved rules in today's shape. With the device's wallets,
      * rules saved for a former Spark "pocket" move to the wallet that holds
-     * that account now (utils/autoWithdrawKeys.js).
+     * that account now (utils/autoWithdrawKeys.js). With the ids of every
+     * wallet the device holds (also those set aside), rules left behind by a
+     * wallet that is gone are settled as its removal would have.
      */
-    async initialize({ wallets = null } = {}) {
+    async initialize({ wallets = null, heldWalletIds = null } = {}) {
       let raw = {}
       try {
         raw = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}').configs || {}
@@ -92,10 +118,18 @@ export const useAutoWithdrawStore = defineStore('autoWithdraw', {
           if (dropped.length) console.warn(`[Auto-Transfer] ${dropped.length} rule(s) for removed accounts dropped`)
         }
       }
-      const configs = {}
+      let configs = {}
       for (const [walletId, rule] of Object.entries(raw)) {
         configs[walletId] = normalizeRule(rule)
         if (!rule.destination || rule.payoutType !== undefined) changed = true
+      }
+      if (heldWalletIds) {
+        const settled = settleRulesForWallets(configs, (walletId) => heldWalletIds.has(walletId))
+        if (settled.dropped.length || settled.paused.length) {
+          configs = settled.configs
+          changed = true
+          console.info(`[Auto-Transfer] rules of removed wallets: ${settled.dropped.length} dropped, ${settled.paused.length} paused`)
+        }
       }
       this.configs = configs
       if (changed) this.persistConfigs()
@@ -142,14 +176,9 @@ export const useAutoWithdrawStore = defineStore('autoWithdraw', {
      * it pause and say why, rather than failing at every balance tick.
      */
     async forgetWallet(walletId) {
-      delete this.configs[walletId]
+      this.configs = settleRulesForWallets(this.configs, (id) => id !== walletId).configs
       _running.delete(walletId)
       _lastTriggerTime.delete(walletId)
-      for (const [id, rule] of Object.entries(this.configs)) {
-        if (rule.destination?.kind === DESTINATION_KIND.WALLET && rule.destination.walletId === walletId) {
-          this.configs[id] = { ...rule, enabled: false, pausedReason: PAUSED.DESTINATION_REMOVED }
-        }
-      }
       await this.persistConfigs()
     },
 
@@ -223,11 +252,12 @@ export const useAutoWithdrawStore = defineStore('autoWithdraw', {
           const epoch = walletStore.walletEpoch?.(walletId)
           let fresh
           try {
-            fresh = await provider.getBalance({ requireFresh: true })
+            fresh = await this._confirmedSparkBalance(provider)
           } catch (error) {
             console.warn('[Auto-Transfer] Skipped: the balance could not be checked:', error?.message || error)
             _lastTriggerTime.set(walletId, Date.now() - COOLDOWN_MS + FAILURE_RETRY_MS)
-            this._skip(walletId, 'balance_unverified')
+            // The cause is kept with the entry, so it can be read afterwards.
+            this._skip(walletId, 'balance_unverified', { detail: verifyFailureDetail(error) })
             return
           }
           // The read can take seconds: the rule may have changed, the wallet
@@ -279,6 +309,21 @@ export const useAutoWithdrawStore = defineStore('autoWithdraw', {
       } finally {
         _running.delete(walletId)
       }
+    },
+
+    /**
+     * A Spark balance the network confirmed: the wallet's local figure when a
+     * sync of it completed within RECENT_SYNC_MS (the SDK's state is what that
+     * sync left, plus this phone's own payments since), otherwise the result
+     * of a fresh sync. A figure that is lower in truth only makes the payment
+     * fail; it never sends money that is not there.
+     */
+    async _confirmedSparkBalance(provider) {
+      const syncedAt = Number(provider.lastSyncedAt?.())
+      if (syncedAt && Date.now() - syncedAt <= RECENT_SYNC_MS && typeof provider.getCachedBalance === 'function') {
+        return provider.getCachedBalance()
+      }
+      return provider.getBalance({ requireFresh: true })
     },
 
     /**
@@ -343,21 +388,14 @@ export const useAutoWithdrawStore = defineStore('autoWithdraw', {
 
     /** A Lightning address paid from an NWC or LNbits wallet. */
     async _payLightningAddress(walletStore, walletId, walletType, address, amount) {
-      const [username, domain] = address.split('@')
-      if (!username || !domain) throw new Error('Could not resolve Lightning address')
-      const meta = await lnurlGetJson(`https://${domain}/.well-known/lnurlp/${username}`)
-      const pay = meta.ok ? meta.data : null
-      if (!pay?.callback || pay.tag !== 'payRequest' || pay.status === 'ERROR') {
-        throw new Error('Could not resolve Lightning address')
-      }
-      const separator = pay.callback.includes('?') ? '&' : '?'
-      const invoiceResponse = await lnurlGetJson(`${pay.callback}${separator}amount=${amount * 1000}`)
-      if (!invoiceResponse.ok) throw new Error('Failed to get invoice from Lightning address')
-      const invoiceData = invoiceResponse.data || {}
-      if (invoiceData.status === 'ERROR') throw counterpartyError(invoiceData.reason, 'Invoice request failed')
+      const url = lightningAddressUrl(address)
+      if (!url) throw new Error('Could not resolve Lightning address')
+      // The same request every send makes (utils/lnurlPay.js). Nobody is
+      // watching here, so its check matters most: an invoice for any other
+      // amount than the rule's is refused before anything is paid.
+      const payRequest = await fetchPayRequest(url)
       // A LUD-09 successAction is ignored: nobody is there to read it.
-      const invoice = invoiceData.pr
-      if (!invoice) throw new Error('No invoice returned')
+      const { pr: invoice } = await requestPayInvoice(payRequest, { amountSats: amount })
 
       if (walletType === WALLET_TYPES.LNBITS) {
         // ensureLNBitsConnected heals a connection a 401 marked as lost.
@@ -367,7 +405,7 @@ export const useAutoWithdrawStore = defineStore('autoWithdraw', {
       }
       // The wallet's one connection, rebuilt if it was dropped (#395).
       const nwc = await walletStore.nwcConnection(walletId)
-      const result = await payWithNwc(nwc, invoice, { limit: walletStore.nwcLimitFor(walletId) })
+      const result = await payWithNwc(nwc, invoice, walletStore.nwcPayOptions(walletId))
       return { id: result.payment_hash || result.paymentHash || result.preimage || null }
     },
 
@@ -384,8 +422,8 @@ export const useAutoWithdrawStore = defineStore('autoWithdraw', {
       }
     },
 
-    _skip(walletId, reason) {
-      this._record(walletId, { at: Date.now(), outcome: OUTCOME.SKIPPED, reason })
+    _skip(walletId, reason, extra = {}) {
+      this._record(walletId, { at: Date.now(), outcome: OUTCOME.SKIPPED, reason, ...extra })
     },
 
     /**

@@ -260,3 +260,59 @@ export async function startLiveScan({
     },
   };
 }
+
+/** The start of each cache copy's name; every read has its own copy. */
+const PICTURE_COPY = 'scanned-picture';
+
+/** A Blob as base64, without the data-URL prefix. */
+function blobToBase64(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result).replace(/^data:[^,]*,/, ''));
+    reader.onerror = () => reject(reader.error || new Error('The picture could not be read.'));
+    reader.readAsDataURL(blob);
+  });
+}
+
+/**
+ * Read a QR code from a picture with the native decoder, the same bundled
+ * model the live camera uses. It only reads files, so the picture is copied
+ * into the app's cache for the moment it takes and removed again.
+ *
+ * Resolves with the code's text, or null when the decoder found no code.
+ * Throws (`code` from NATIVE_ERROR) when the native decoder cannot be used
+ * here or cannot open the picture; the caller then reads it another way.
+ *
+ * @param {Blob} picture
+ * @returns {Promise<string|null>}
+ */
+export async function readQrFromPicture(picture) {
+  if (!isNativeScannerAvailable()) {
+    throw codedError(NATIVE_ERROR.UNAVAILABLE, 'Native scanner is not available on this platform.');
+  }
+  let BarcodeScanner;
+  let BarcodeFormat;
+  let Filesystem;
+  let Directory;
+  try {
+    [{ BarcodeScanner, BarcodeFormat }, { Filesystem, Directory }] = await Promise.all([
+      loadPlugin(),
+      import('@capacitor/filesystem'),
+    ]);
+  } catch (err) {
+    throw codedError(NATIVE_ERROR.UNAVAILABLE, 'Native scanner plugin failed to load.', err);
+  }
+  // Its own name: a read still running from a scanner that was closed must
+  // not remove the copy a new read is using.
+  const name = `${PICTURE_COPY}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+  const copy = { path: name, directory: Directory.Cache };
+  try {
+    const { uri } = await Filesystem.writeFile({ ...copy, data: await blobToBase64(picture) });
+    const { barcodes } = await BarcodeScanner.readBarcodesFromImage({ path: uri, formats: [BarcodeFormat.QrCode] });
+    return (barcodes || []).map((b) => b?.rawValue || b?.displayValue).find(Boolean) || null;
+  } catch (err) {
+    throw codedError(NATIVE_ERROR.DECODER_FAILED, err?.message || 'The native decoder could not read the picture.', err);
+  } finally {
+    Filesystem.deleteFile(copy).catch(() => { /* already gone */ });
+  }
+}

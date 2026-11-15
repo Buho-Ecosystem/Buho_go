@@ -437,7 +437,7 @@
                 >
                   <template v-if="payAgainTargets[tx.id]" #right>
                     <span class="tx-slide-action">
-                      <Icon icon="tabler:repeat" width="22" height="22" aria-hidden="true" />
+                      <Icon icon="tabler:repeat" width="22" height="22" />
                       <span>{{ $t('Pay again') }}</span>
                     </span>
                   </template>
@@ -771,6 +771,7 @@ import { splitAddressForDisplay } from '../utils/addressUtils.js';
 import { getTxDescription, getTxMessage as resolveTxMessage, isPlaceholderDescription } from '../utils/txMessage.js';
 import { readCachedTransactions, mergeCachedTransactions } from '../utils/txCache.js';
 import { payAgainTarget } from '../utils/payAgain.js';
+import { nwcPaymentHash } from '../utils/nwcWallet.js';
 import { usePayContact } from '../composables/usePayContact.js';
 import { haptics } from '../utils/haptics.js';
 
@@ -2008,11 +2009,8 @@ export default {
     },
 
     async loadNWCTransactionsBatch() {
-      const activeWallet = this.walletState.connectedWallets?.find(
-        w => w.id === this.walletState.activeWalletId
-      );
-
-      if (!activeWallet?.nwcString) {
+      const activeWallet = this.walletStore.activeWallet;
+      if (!activeWallet?.nwcUrl) {
         throw new Error('No active NWC wallet found');
       }
 
@@ -2038,12 +2036,20 @@ export default {
       // internally (see `mapNip47TransactionToTransaction` in the
       // SDK source). Values arrive in sats — no further unit
       // conversion needed here.
-      const normalizedTransactions = transactionsResponse.transactions.map(tx => this.normalizeForList({
-        ...tx,
-        id: tx.id || tx.payment_hash || `tx-${Date.now()}-${Math.random()}`,
-        fee: tx.fee || tx.fees_paid || 0,
-        payment_request: tx.payment_request || tx.invoice || null
-      }, 'nwc'));
+      //
+      // A payment's id is the hash its invoice names (utils/nwcWallet), as
+      // on Home and in every notification, so each opens the same payment
+      // even from a wallet that reports another hash.
+      const normalizedTransactions = transactionsResponse.transactions.map(tx => {
+        const paymentHash = nwcPaymentHash(tx);
+        return this.normalizeForList({
+          ...tx,
+          id: paymentHash || tx.id || tx.payment_hash || `tx-${Date.now()}-${Math.random()}`,
+          payment_hash: paymentHash || tx.payment_hash,
+          fee: tx.fee || tx.fees_paid || 0,
+          payment_request: tx.payment_request || tx.invoice || null
+        }, 'nwc');
+      });
 
       console.log(`NWC batch loaded: ${normalizedTransactions.length} transactions`);
 
@@ -4068,6 +4074,7 @@ export default {
   max-width: 100%;
   border-radius: 20px 20px 0 0;
   margin: 0;
+  padding-bottom: var(--safe-bottom, 0px);
 }
 
 .claim-action-sheet.sheet-dark {

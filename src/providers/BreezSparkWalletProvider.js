@@ -31,13 +31,10 @@
 import { WalletProvider } from './WalletProvider.js';
 import { AUTO_CLAIM_THRESHOLDS } from '../stores/bitcoinPreferences.js';
 import { Invoice } from '@getalby/lightning-tools';
-import { parseSuccessAction } from '../utils/successAction.js';
-import { validateVerifyUrl } from '../utils/lnurlVerify.js';
-import { lnurlGetJson } from '../utils/lnurlHttp.js';
-import { buildLnurlPayCallbackUrl } from '../utils/lnurlPay.js';
+import { fetchPayRequest, lightningAddressUrl, requestPayInvoice } from '../utils/lnurlPay.js';
 import { fiatRatesService } from '../utils/fiatRates.js';
 import { isBitcoinAddress } from '../utils/addressUtils.js';
-import { identityPublicKeyFromSparkAddress } from '../utils/sparkPayment.js';
+import { decodeSparkDestination, identityPublicKeyFromSparkAddress } from '../utils/sparkPayment.js';
 import { registerRandomLightningAddress } from '../utils/lightningAddressNames.js';
 import * as breezSdk from '../services/breezSdk.js';
 import {
@@ -59,8 +56,8 @@ import {
   waitQuoteFromMature,
 } from '../utils/breezPayments.js';
 import { reportSparkAttempt } from '../services/sparkReachabilityCheck.js';
-import { counterpartyError } from '../utils/errorOrigin.js';
 import { classifyTransportFailure } from '../utils/userErrors.js';
+import { FEE_RESERVE_MIN_SATS, unquotedFeeLimitSats } from '../utils/payingWallets.js';
 
 /**
  * One fresh synchronization per SDK instance at a time. Keyed by the SDK
@@ -971,9 +968,25 @@ export class BreezSparkWalletProvider extends WalletProvider {
     }
   }
 
+  /**
+   * Pay a BOLT11 invoice. The route fee is capped before any funds move:
+   *   - `maxFee` is a fee the person was shown as a quote; the cap allows
+   *     5 sats more, so a quote refreshed since then does not refuse over
+   *     rounding.
+   *   - `feeLimitSats` is a limit the person was shown ("Up to"); it holds
+   *     as it is.
+   *   - With neither, nothing was shown, and the cap is unquotedFeeLimitSats
+   *     of the amount: batch send, Auto-Transfer, transfers between wallets
+   *     and purchases never pay an unbounded fee. The amount is the
+   *     invoice's, else the one passed for an amountless invoice, else the
+   *     one the engine is about to send (an invoice this decoder cannot
+   *     read). With none of them, the cap is the limit's floor.
+   * A route above the cap is refused with code LIGHTNING_FEE_ABOVE_LIMIT.
+   */
   async payInvoice({
     invoice,
     maxFee = null,
+    feeLimitSats = null,
     preferSpark = false,
     amountSats = null,
     awaitCompletion = true,
@@ -999,14 +1012,17 @@ export class BreezSparkWalletProvider extends WalletProvider {
         preferSpark,
       });
 
-      // The engine has no SDK-side fee cap; enforce the caller's cap against
-      // the quoted route fee before any funds move. The cap carries a
-      // +5 sat headroom so a quote refreshed between estimate and send
-      // doesn't refuse over rounding.
-      const feeCap = typeof maxFee === 'number' ? maxFee + 5 : routeFee + 5;
+      // The engine has no SDK-side fee cap, so the cap is enforced here,
+      // against the quoted route fee (see the method's comment).
+      const paidSats = [decoded.isZeroAmount ? amountSats : decoded.amount, prep?.amount]
+        .map(Number).find((sats) => Number.isFinite(sats) && sats > 0);
+      const feeCap = typeof feeLimitSats === 'number' ? feeLimitSats
+        : typeof maxFee === 'number' ? maxFee + 5
+          : paidSats ? unquotedFeeLimitSats(paidSats) : FEE_RESERVE_MIN_SATS;
       if (routeFee > feeCap) {
-        throw new Error(
-          `Lightning payment failed: fee ${routeFee} sats exceeds the ${feeCap} sats limit`
+        throw Object.assign(
+          new Error(`Lightning payment failed: fee ${routeFee} sats exceeds the ${feeCap} sats limit`),
+          { code: 'LIGHTNING_FEE_ABOVE_LIMIT', feeSats: routeFee, limitSats: feeCap },
         );
       }
 
@@ -1089,68 +1105,49 @@ export class BreezSparkWalletProvider extends WalletProvider {
     throw new Error('Payment status check timed out');
   }
 
-  async payLightningAddress(lightningAddress, amountSats, comment = '', payout = null) {
+  /**
+   * Pay a Lightning address: its invoice asked for and checked by
+   * utils/lnurlPay.js, then paid with the fee limit the Send sheet shows.
+   * @param {string} lightningAddress
+   * @param {number} amountSats  the amount confirmed (in the recipient's
+   *   currency, the estimate)
+   * @param {string} [comment]
+   * @param {{code: string, amount: number}|null} [payout]  LUD-21 amount
+   * @param {{ payerData?: { identifier?: string|null }|null }} [options]  LUD-18
+   *   details the person agreed to share
+   */
+  async payLightningAddress(lightningAddress, amountSats, comment = '', payout = null, { payerData = null } = {}) {
     this._ensureConnected();
 
     try {
-      const [username, domain] = lightningAddress.split('@');
-      if (!username || !domain) {
+      // Asked for and checked by utils/lnurlPay.js: a refusal keeps the
+      // service's reason, and the invoice must be for the amount confirmed.
+      const url = lightningAddressUrl(lightningAddress);
+      if (!url) {
         throw new Error('Invalid Lightning address format');
       }
-
-      const lnurlEndpoint = `https://${domain}/.well-known/lnurlp/${username}`;
-      const response = await lnurlGetJson(lnurlEndpoint);
-
-      if (!response.ok) {
-        throw new Error('Failed to fetch Lightning address info');
-      }
-
-      const lnurlData = response.data;
-      if (!lnurlData || lnurlData.tag !== 'payRequest' || !lnurlData.callback || lnurlData.status === 'ERROR') {
-        throw counterpartyError(lnurlData?.status === 'ERROR' && lnurlData.reason, 'Failed to fetch Lightning address info');
-      }
-
-      if (!(payout && payout.code && payout.amount > 0)) {
-        const minSendable = Math.ceil((lnurlData.minSendable || 1000) / 1000);
-        const maxSendable = Math.floor((lnurlData.maxSendable || 100000000000) / 1000);
-        if (amountSats < minSendable || amountSats > maxSendable) {
-          throw new Error(`Amount must be between ${minSendable} and ${maxSendable} sats`);
-        }
-      }
-      const callbackUrl = buildLnurlPayCallbackUrl({
-        callback: lnurlData.callback,
-        amountSats,
-        payout,
-        comment,
-        commentAllowed: lnurlData.commentAllowed,
-      });
-
-      const invoiceResponse = await lnurlGetJson(callbackUrl);
-      if (!invoiceResponse.ok) {
-        throw new Error('Failed to get invoice from Lightning address');
-      }
-
-      const invoiceData = invoiceResponse.data;
-
-      if (!invoiceData || invoiceData.status === 'ERROR') {
-        throw counterpartyError(invoiceData?.reason, 'Failed to get invoice');
-      }
-      if (!invoiceData.pr) {
-        throw new Error('No payment request received from Lightning address');
-      }
+      const payRequest = await fetchPayRequest(url);
+      const invoice = await requestPayInvoice(payRequest, { amountSats, payout, comment, payerData });
 
       // Invoice already carries the amount — passing amountSats would be
-      // rejected (zero-amount invoices only).
+      // rejected (zero-amount invoices only). No fee could be quoted before
+      // the invoice existed: the limit is the one the Send sheet shows, of
+      // the amount confirmed.
       const result = await this.payInvoice({
-        invoice: invoiceData.pr,
-        preferSpark: true
+        invoice: invoice.pr,
+        preferSpark: true,
+        feeLimitSats: unquotedFeeLimitSats(amountSats),
       });
 
       return {
         ...result,
         lightningAddress: lightningAddress,
-        successAction: parseSuccessAction(invoiceData.successAction, lnurlData.callback),
-        verify: validateVerifyUrl(invoiceData.verify, lnurlData.callback),
+        // What the invoice asked for: in the recipient's currency, the
+        // estimate confirmed plus the service's fee.
+        invoiceSats: invoice.amountSats,
+        successAction: invoice.successAction,
+        verify: invoice.verify,
+        payerData: invoice.payerData,
       };
     } catch (error) {
       this.setError(error);
@@ -1174,6 +1171,29 @@ export class BreezSparkWalletProvider extends WalletProvider {
     if (quotedFee > 0) {
       throw new Error(`Transfer not sent: a ${quotedFee} sat fee was quoted on a transfer shown as fee-free`);
     }
+  }
+
+  /** Quote only the fee the SDK prepared, never an assumed native fee. */
+  async getSparkSendFeeEstimate(input, amountSats = null) {
+    this._ensureConnected();
+    const request = String(input || '').trim();
+    const destination = decodeSparkDestination(request);
+    if (destination.kind === 'token_invoice') throw new Error('Spark token payments are not supported');
+    const fixedInvoice = destination.kind === 'sats_invoice' && destination.amountSats > 0;
+    if (!fixedInvoice && (!Number.isSafeInteger(amountSats) || amountSats <= 0)) {
+      throw new Error('Amount must be a positive whole number of sats');
+    }
+    const prep = await this._prepareSend(request, { amountSats: fixedInvoice ? null : amountSats });
+    const method = prep?.paymentMethod;
+    const expectedType = destination.kind === 'address' ? 'sparkAddress' : 'sparkInvoice';
+    if (method?.type !== expectedType) throw new Error('No Spark fee quote available');
+    const rawFee = method.fee;
+    const numeric = typeof rawFee === 'number' || typeof rawFee === 'bigint'
+      || (typeof rawFee === 'string' && /^\d+$/.test(rawFee));
+    const fee = numeric ? Number(rawFee) : NaN;
+    if (!Number.isSafeInteger(fee) || fee < 0) throw new Error('No Spark fee quote available');
+    this._assertZeroSparkFee(method);
+    return { estimatedFeeSats: fee, isEstimated: false, request };
   }
 
   async transferToSparkAddress(sparkAddress, amount) {
@@ -1810,7 +1830,17 @@ export class BreezSparkWalletProvider extends WalletProvider {
 
     const pm = prep?.paymentMethod;
     const feeQuote = pm?.type === 'bitcoinAddress' ? pm.feeQuote : null;
-    if (!feeQuote) {
+    // The legacy display mapper tolerates absent legs by filling zeros.
+    // A live SDK quote must be complete before showing it or retaining it
+    // as a withdrawal quote that can authorize the eventual send.
+    const validFee = value => Number.isSafeInteger(value) && value >= 0;
+    const validQuote = feeQuote && typeof feeQuote.id === 'string' && feeQuote.id.trim().length > 0
+      && ['speedSlow', 'speedMedium', 'speedFast'].every(speed => {
+        const leg = feeQuote[speed];
+        return leg && validFee(leg.userFeeSat) && validFee(leg.l1BroadcastFeeSat)
+          && Number.isSafeInteger(leg.userFeeSat + leg.l1BroadcastFeeSat);
+      });
+    if (!validQuote) {
       throw new Error('No withdrawal fee quote available right now. Please try again.');
     }
 

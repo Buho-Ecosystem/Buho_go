@@ -651,6 +651,7 @@ export default {
   max-width: 520px;
   border-radius: 20px 20px 0 0;
   overflow: hidden;
+  padding-bottom: var(--safe-bottom, 0px);
 }
 
 .sheet-handle {

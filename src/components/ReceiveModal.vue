@@ -58,7 +58,7 @@
       <button
         v-if="vouchers.length"
         type="button"
-        class="voucher-summary"
+        class="disclosure-row"
         ref="voucherSummary"
         :aria-label="voucherSummaryTitle + ', ' + voucherSummaryLeft"
         @click="openVouchers"
@@ -66,12 +66,25 @@
         <span class="voucher-summary-icon" aria-hidden="true">
           <Icon icon="tabler:ticket" width="18" height="18" />
         </span>
-        <span class="voucher-summary-copy" aria-hidden="true">
-          <strong class="voucher-summary-title">{{ voucherSummaryTitle }}</strong>
-          <small class="voucher-summary-sub">{{ voucherSummaryLeft }}</small>
+        <span class="disclosure-row-copy" aria-hidden="true">
+          <strong class="disclosure-row-title">{{ voucherSummaryTitle }}</strong>
+          <small class="disclosure-row-sub">{{ voucherSummaryLeft }}</small>
         </span>
-        <Icon icon="tabler:chevron-right" width="18" height="18" class="voucher-summary-chevron" aria-hidden="true" />
+        <Icon icon="tabler:chevron-right" width="18" height="18" class="disclosure-row-chevron" />
       </button>
+
+      <!-- Another wallet app on this phone pays this request. Beside the
+           voucher row, outside the content section, so every receive view
+           offers it; it steps aside while the keypad is up and shows only
+           when such an app is installed. -->
+      <PayFromWallet
+        :request="payFromWalletRequest"
+        :kind="payFromWalletKind"
+        :amount-label="payFromWalletRequest ? formatInvoiceAmount(generatedInvoice.amount) : ''"
+        :row-visible="!showAmountKeypadView"
+        @need-amount="tapAmountButton"
+        @copy="copyPaymentCode"
+      />
 
       <!-- Content -->
       <q-card-section class="receive-content">
@@ -102,7 +115,7 @@
             </template>
 
             <div v-if="arkadeBoardingAddress" class="qr-section">
-              <div class="qr-card" @click="copyArkadeBoardingAddress">
+              <button type="button" class="qr-card" :aria-label="$t('Copy payment code')" @click="copyArkadeRequest">
                 <div class="qr-frame">
                   <vue-qrcode
                     ref="arkadeBoardingQr"
@@ -116,7 +129,7 @@
                     <img src="/buho_logo.svg" alt="" />
                   </span>
                 </div>
-              </div>
+              </button>
             </div>
 
             <div v-else class="default-zero-loading">
@@ -164,6 +177,12 @@
               <span class="cta-label" :class="$q.dark.isActive ? 'cta-label-dark' : 'cta-label-light'">{{ $t('Copy') }}</span>
               <q-menu anchor="top middle" self="bottom middle" :offset="[0, 6]">
                 <q-list class="copy-menu">
+                  <q-item v-close-popup clickable @click="copyArkadeRequest">
+                    <div class="copy-item">
+                      <span>{{ $t('Payment request') }}</span>
+                      <small>{{ generatedInvoice?.amount > 0 ? formatInvoiceAmount(generatedInvoice.amount) : $t('Bitcoin') + ' · Arkade' }}</small>
+                    </div>
+                  </q-item>
                   <q-item v-if="generatedInvoice && generatedInvoice.amount > 0 && generatedInvoice.payment_request" v-close-popup clickable @click="copyInvoice">
                     <div class="copy-item">
                       <span>{{ $t('Lightning invoice') }}</span>
@@ -456,8 +475,8 @@
 import VueQrcode from '@chenfengyuan/vue-qrcode';
 import ArkadeLogo from './ArkadeLogo.vue';
 import { capabilitiesOf } from '../utils/nwcWallet.js';
-import { lookupNwcInvoice } from '../services/nwcReceive.js';
-import { NWC_ERROR, nwcError } from '../utils/nwcErrors.js';
+import { lookupNwcInvoice, notifiesPayments } from '../services/nwcReceive.js';
+import { onAppVisibility } from '../utils/appVisibility.js';
 import { Invoice } from "@getalby/lightning-tools";
 import { formatAmount } from '../utils/amountFormatting.js';
 import { fiatRatesService } from '../utils/fiatRates.js';
@@ -486,11 +505,17 @@ import { getQrOptions } from '../utils/qrConfig';
 import { composeUnifiedBip21 } from '../utils/bip21';
 import PaymentConfirmation from './PaymentConfirmation.vue';
 import L1BitcoinReceive from './L1BitcoinReceive.vue';
+import PayFromWallet from './PayFromWallet.vue';
 import VoucherSheet from './VoucherSheet.vue';
 import { haptics } from '../utils/haptics.js';
+import { expectReceiveInvoice, confirmReceivePayment, forgetReceiveInvoice, expectReceiveFunds, forgetReceiveFunds } from '../services/incomingPayments.js';
+import { noteReceiptShown } from '../services/paymentReceiptsApp.js';
 
 /** NWC receive polling: start after 4 s, back off to one check every 15 s. */
-const NWC_POLLING = Object.freeze({ initialInterval: 4000, maxInterval: 15000, backoffMultiplier: 1.5, maxAttempts: 18 });
+const NWC_POLLING = Object.freeze({ initialInterval: 4000, maxInterval: 15000, backoffMultiplier: 1.5, maxAttempts: 18, expiryBuffer: 0 });
+/** Notifications lead; check once a minute in case the relay missed one.
+ * Bound the fallback to an hour, with the invoice's actual expiry deciding first. */
+const NWC_NOTIFICATION_FALLBACK = Object.freeze({ initialInterval: 60000, maxInterval: 60000, backoffMultiplier: 1, maxAttempts: 61, expiryBuffer: 0 });
 
 export default {
   name: 'ReceiveModal',
@@ -499,6 +524,7 @@ export default {
     ArkadeLogo,
     PaymentConfirmation,
     L1BitcoinReceive,
+    PayFromWallet,
     VoucherSheet,
     AmountKeypad,
   },
@@ -557,8 +583,9 @@ export default {
       // Payment monitoring
       paymentMonitor: null,
       sparkEventUnsubscribe: null, // For Spark event-based monitoring
-      sparkMonitorGeneration: 0, // bumped on stop: late async work of an old monitor is dropped
-      nwcNotificationUnsubscribe: null, // For NWC notification-based monitoring
+      receiveReceipts: null, // { walletId, addresses, stop }: shared receipts this sheet confirms
+      nwcResumeStop: null,
+      monitorGeneration: 0, // bumped on stop: late async work of an old monitor is dropped
       sparkPollState: null, // { cancelled: boolean } cancellation token for Spark invoice polling
       sparkVisibilityHandler: null, // visibilitychange listener for mobile resume catch-up
       paymentStatus: PaymentStatus.PENDING,
@@ -711,6 +738,30 @@ export default {
         && !this.showLightningAddressView;
     },
     /**
+     * What another wallet app pays: the request with its amount, '' while
+     * there is none. The Lightning invoice when there is one, since most
+     * wallets pay those, in lower case (an invoice reads the same in either
+     * case, and some wallets only recognise lower case); else (Arkade
+     * without its Lightning rail) the unified Bitcoin request with the
+     * amount.
+     */
+    payFromWalletRequest() {
+      const invoice = this.generatedInvoice;
+      if (!(invoice?.amount > 0)) return '';
+      if (invoice.payment_request) return `lightning:${invoice.payment_request.toLowerCase()}`;
+      if (this.showArkadeUnifiedView) return this.arkadeUnifiedQrValue;
+      return '';
+    },
+    /**
+     * The kind of request payFromWalletRequest is expected to be once there
+     * is an amount, so the row names the right apps before then. Every
+     * wallet hands over an invoice, except Arkade, whose request is its
+     * unified Bitcoin one unless it could also make an invoice.
+     */
+    payFromWalletKind() {
+      return this.isArkadeWallet ? 'bitcoin' : 'lightning';
+    },
+    /**
      * Public accessor — the sats amount the user currently intends to
      * receive. The wallet reads this when a withdraw (a Bolt Card or an
      * LNURL-withdraw voucher) is initiated from this modal, so the redeem
@@ -789,8 +840,8 @@ export default {
         this.resetForm();
         // Land on a scannable code with no taps: Spark mints the default
         // zero-amount invoice for the unified QR's lightning= rail; Arkade
-        // loads its boarding address and arms the live incoming-funds
-        // monitor so an ark1 receipt shows the in-modal success.
+        // loads its boarding address and takes the wallet's receipts so a
+        // payment shows the in-modal success.
         this.$nextTick(() => {
           if (this.isSparkWallet) {
             this.mintDefaultZeroInvoice();
@@ -801,8 +852,27 @@ export default {
         });
       } else {
         this.stopPaymentMonitor();
+        forgetReceiveInvoice(this.generatedInvoice?.payment_hash);
       }
-    }
+    },
+    // This sheet confirms the invoices it shows with its own screen; the
+    // app-wide announcement leaves them to it (services/incomingPayments.js).
+    // One it stops showing unpaid is news again when it is paid later.
+    generatedInvoice(next, previous) {
+      if (previous?.payment_hash && previous.payment_hash !== next?.payment_hash) {
+        forgetReceiveInvoice(previous.payment_hash);
+      }
+      if (next?.payment_hash) {
+        expectReceiveInvoice({
+          walletId: next.walletId || this.walletStore.activeWalletId,
+          paymentHash: next.payment_hash,
+          amountSats: next.amount,
+        });
+      }
+    },
+    'walletStore.activeWalletId'(next, previous) {
+      if (next !== previous) this.stopPaymentMonitor();
+    },
   },
   mounted() {
     // Listen for window resize to update QR size
@@ -893,8 +963,8 @@ export default {
         if (this.isSparkWallet && !this.generatedInvoice) {
           this.mintDefaultZeroInvoice();
         } else if (this.isArkadeWallet && !this.generatedInvoice) {
-          // The unified view's live incoming-funds monitor was stopped when
-          // the keypad took over - re-arm it.
+          // The unified view's receipt watch was stopped when the keypad
+          // took over - re-arm it.
           this.startArkadeNativeMonitor();
         }
         return;
@@ -920,8 +990,8 @@ export default {
         this.paymentStatus = PaymentStatus.PENDING;
         this.paymentStatusMessage = '';
       } else if (this.isArkadeWallet) {
-        // The native ark1 monitor runs without an invoice; stop it so the
-        // upcoming invoice's monitor is the only listener.
+        // The Arkade receipt watch runs without an invoice; stop it while
+        // the keypad is up.
         this.stopPaymentMonitor();
       }
       this.showAmountInput = true;
@@ -1043,8 +1113,17 @@ export default {
     handleBitcoinDepositClaimed(result) {
       // A pending claim already has progress feedback in the claim sheet;
       // do not cover it with a completed-payment confirmation.
-      if (result.processing) return;
+      if (result.processing || result.settled === false) return;
+      const walletId = result.walletId || this.walletStore.activeWalletId;
+      this.walletStore.recordConfirmedReceive({
+        walletId,
+        paymentId: result.paymentId || result.transferId || result.claimId || null,
+        aliases: result.aliases,
+        amountSats: result.amount,
+        settledAt: result.settledAt,
+      });
       // Show success confirmation similar to Lightning payments
+      confirmReceivePayment({ walletId, amountSats: result.amount });
       this.confirmedAmount = result.amount;
       this.confirmedFiatAmount = this.calculateFiatAmount(result.amount);
       this.showPaymentConfirmation = true;
@@ -1070,8 +1149,8 @@ export default {
      * Stop the payment monitor if running
      */
     stopPaymentMonitor() {
-      this.sparkMonitorGeneration = (this.sparkMonitorGeneration || 0) + 1;
-      // Stop polling-based monitor (NWC)
+      this.monitorGeneration = (this.monitorGeneration || 0) + 1;
+      // Stop invoice polling (LNbits and the NWC fallback).
       if (this.paymentMonitor) {
         this.paymentMonitor.stop();
         this.paymentMonitor = null;
@@ -1080,11 +1159,6 @@ export default {
       if (this.sparkEventUnsubscribe) {
         this.sparkEventUnsubscribe();
         this.sparkEventUnsubscribe = null;
-      }
-      // Unsubscribe from NWC notifications
-      if (this.nwcNotificationUnsubscribe) {
-        this.nwcNotificationUnsubscribe();
-        this.nwcNotificationUnsubscribe = null;
       }
       // Cancel Spark invoice polling
       if (this.sparkPollState) {
@@ -1096,16 +1170,15 @@ export default {
         document.removeEventListener('visibilitychange', this.sparkVisibilityHandler);
         this.sparkVisibilityHandler = null;
       }
-      // Stop the Arkade incoming-funds subscription
-      if (this._arkadeStopIncoming) {
-        try { this._arkadeStopIncoming(); } catch (e) { /* ignore */ }
-        this._arkadeStopIncoming = null;
-      }
+      this.nwcResumeStop?.();
+      this.nwcResumeStop = null;
+      this.stopReceiptMonitor();
     },
 
     /**
      * Start monitoring for payment confirmation
-     * Uses event-based for Spark (instant), polling for LNbits/NWC
+     * Spark uses SDK events; NWC consumes shared receipts with a polling
+     * fallback. LNbits checks its invoice through the existing monitor.
      */
     async startPaymentMonitor() {
       if (!this.generatedInvoice?.payment_hash) {
@@ -1121,50 +1194,49 @@ export default {
       } else if (this.isLNBitsWallet) {
         await this.startLNBitsPollingMonitor();
       } else {
-        await this.startNWCPollingMonitor();
+        this.startNWCReceiveMonitor();
       }
     },
 
     /**
-     * Live monitor for the native ark1 address tab (no generated invoice). The
-     * received amount isn't known up front, so we capture the balance at open
-     * and report the delta when funds land. Best-effort: balance/tx list still
-     * reflect the payment if the stream is unavailable.
+     * Arkade: confirm what arrives at this wallet's addresses while the
+     * sheet shows them. The app-wide watch (services/walletWatch) reads the
+     * wallet's history whenever a new output lands and announces each
+     * received payment once, by its id, with its own amount; this sheet
+     * takes those receipts, and the app-wide host leaves them to it. Change,
+     * renewals and recovered outputs are no receipt, so they never confirm
+     * here; an on-chain deposit confirms once it is spendable.
      */
-    async startArkadeNativeMonitor() {
-      let provider;
-      try {
-        provider = await this.walletStore.ensureArkadeConnected();
-      } catch (error) {
-        console.warn('Could not connect Arkade provider for native monitoring:', error);
-        return;
-      }
-      let baseline = 0;
-      try { baseline = Number((await provider.getBalance())?.balance ?? 0); } catch (e) { /* ignore */ }
-      // The awaits above race a quick modal close (and the four call sites
-      // never await this method): registering now would orphan a listener
-      // that pops the success screen with a stale baseline after close.
-      if (!this.show) return;
-      if (this._arkadeStopIncoming) {
-        try { this._arkadeStopIncoming(); } catch { /* already gone */ }
-        this._arkadeStopIncoming = null;
-      }
+    startArkadeNativeMonitor() {
+      const walletId = this.walletStore.activeWalletId;
+      if (!walletId) return;
+      const since = Date.now();
       this.paymentStatus = PaymentStatus.PENDING;
-      try {
-        this._arkadeStopIncoming = await provider.startIncomingFundsListener(async () => {
-          if (!this.show) return;
-          if (this.isPaymentConfirmed) return;
-          let received;
-          try {
-            const now = Number((await provider.getBalance())?.balance ?? 0);
-            const delta = now - baseline;
-            received = delta > 0 ? delta : undefined;
-          } catch (e) { /* fall back to unknown amount */ }
-          this.handlePaymentStatus(PaymentStatus.CONFIRMED, { amount: received });
-        });
-      } catch (error) {
-        console.warn('Could not start Arkade native incoming monitor:', error);
-      }
+      this.startReceiptMonitor(walletId, receipt => receipt.at >= since, { addresses: true });
+    },
+
+    /** The app already verified these receipts. Match the sheet's request,
+     * keeping one synchronous watcher for both invoice and address receives. */
+    startReceiptMonitor(walletId, matches, { addresses = false } = {}) {
+      this.stopReceiptMonitor();
+      if (addresses) expectReceiveFunds(walletId);
+      // Synchronously, like the app-wide host: every receipt, not the last of a batch.
+      const stop = this.$watch(() => this.walletStore.lastReceipt, (receipt) => {
+        if (!this.show || this.isPaymentConfirmed) return;
+        if (this.walletStore.activeWalletId !== walletId) return;
+        if (receipt?.walletId !== walletId || !matches(receipt)) return;
+        if (!Number.isSafeInteger(receipt.amountSats) || receipt.amountSats <= 0) return;
+        this.handlePaymentStatus(PaymentStatus.CONFIRMED, { amount: receipt.amountSats, receipt });
+      }, { flush: 'sync' });
+      this.receiveReceipts = { walletId, addresses, stop };
+    },
+
+    stopReceiptMonitor() {
+      const watching = this.receiveReceipts;
+      this.receiveReceipts = null;
+      if (!watching) return;
+      watching.stop();
+      if (watching.addresses) forgetReceiveFunds(watching.walletId);
     },
 
     /**
@@ -1191,10 +1263,10 @@ export default {
       const walletId = invoice?.walletId || this.walletStore.activeWalletId;
       const expectedHash = String(invoice?.payment_hash || '').toLowerCase();
       const invoiceId = invoice?.invoice_id;
-      const generation = this.sparkMonitorGeneration || 0;
+      const generation = this.monitorGeneration || 0;
       // Still the same monitor for the same invoice: a closed sheet or a
       // replacement invoice must not be confirmed by this one's late work.
-      const current = () => generation === (this.sparkMonitorGeneration || 0) && this.generatedInvoice === invoice;
+      const current = () => generation === (this.monitorGeneration || 0) && this.generatedInvoice === invoice;
       let provider;
       try {
         provider = await this.walletStore.ensureSparkConnected(walletId);
@@ -1278,13 +1350,13 @@ export default {
 
     async checkSparkInvoiceOnce(provider, invoiceId, walletId) {
       if (!invoiceId || this.isPaymentConfirmed) return;
-      const generation = this.sparkMonitorGeneration || 0;
+      const generation = this.monitorGeneration || 0;
       try {
         const liveProvider = walletId ? await this.walletStore.ensureSparkConnected(walletId) : provider;
         const status = await liveProvider.getLightningReceiveStatus(invoiceId);
         // The resume lookup belongs to one invoice: a newer invoice (or a
         // closed sheet) must not be confirmed by it.
-        if (this.isPaymentConfirmed || generation !== (this.sparkMonitorGeneration || 0)
+        if (this.isPaymentConfirmed || generation !== (this.monitorGeneration || 0)
           || this.generatedInvoice?.invoice_id !== invoiceId) return;
         if (status.isPaid) {
           this.handlePaymentStatus(PaymentStatus.CONFIRMED, {
@@ -1300,61 +1372,57 @@ export default {
     },
 
     /**
-     * Start NWC payment monitoring using polling
-     * Falls back to listTransactions if lookupInvoice is not supported
+     * Take the existing wallet watch's verified receipts by wallet and hash.
+     * No second relay subscription: notifications, reconnect and history
+     * verification belong to walletWatch. The invoice lookup only covers a
+     * missed notification or a connection without notifications/history.
      */
-    async startNWCPollingMonitor() {
-      let rawProvider = null;
-      let wrappedProvider = null;
+    startNWCReceiveMonitor() {
+      this.stopPaymentMonitor();
+      const invoice = this.generatedInvoice;
+      const walletId = invoice?.walletId || this.walletStore.activeWalletId;
+      const paymentHash = String(invoice?.payment_hash || '').toLowerCase();
+      const wallet = this.walletStore.wallets.find(w => w.id === walletId);
+      if (!wallet || !paymentHash || !this.show || this.isPaymentConfirmed
+        || this.walletStore.activeWalletId !== walletId) return;
+      const generation = this.monitorGeneration;
+      const current = () => generation === this.monitorGeneration && this.show && !this.isPaymentConfirmed
+        && this.walletStore.activeWalletId === walletId && this.walletStore.wallets.some(w => w.id === walletId)
+        && this.generatedInvoice === invoice;
 
-      try {
-        // The wallet's one relay connection, connected if it has none (#395).
-        rawProvider = await this.walletStore.nwcConnection(this.walletStore.activeWalletId);
-      } catch (error) {
-        console.warn('Could not get provider for payment monitoring:', error.message);
-        return;
-      }
+      this.startReceiptMonitor(walletId, receipt => current()
+        && String(receipt.paymentHash || '').toLowerCase() === paymentHash);
 
-      if (!rawProvider) {
-        console.warn('No provider available for payment monitoring');
-        return;
-      }
-
-      // One way to see an NWC invoice paid (services/nwcReceive):
-      // lookup_invoice or the recent incoming payments, as this connection
-      // was granted. A check that fails is "not paid yet"; the monitor
-      // keeps polling until the invoice expires, as before.
-      const savedMethods = this.walletStore.wallets
-        .find((w) => w.id === this.walletState.activeWalletId)?.metadata?.methods;
-      wrappedProvider = {
-        lookupInvoice: async (hash) => {
-          try {
-            return await lookupNwcInvoice(rawProvider, hash, { methods: savedMethods });
-          } catch {
-            return { paid: false };
-          }
-        }
-      };
-
-      // Start polling for payment confirmation
-      // Gentler than the default: a wallet behind NWC may be an app on a
-      // phone, and every lookup can wake it with a push. About three and a
-      // half minutes in all, like the default.
-      this.paymentMonitor = createPaymentMonitor(NWC_POLLING);
-
-      this.paymentMonitor.start({
-        invoice: {
-          payment_hash: this.generatedInvoice.payment_hash,
-          expires_at: this.generatedInvoice.expires_at,
-          amount: this.generatedInvoice.amount
+      // A lookup-only connection has no per-invoice receipts from the
+      // shared history watch. Keep its regular checks even if it advertises
+      // notifications; a balance rise cannot identify this invoice.
+      const hasReceiptNotifications = notifiesPayments(wallet) && capabilitiesOf(wallet).history;
+      const monitor = createPaymentMonitor(hasReceiptNotifications ? NWC_NOTIFICATION_FALLBACK : NWC_POLLING);
+      this.paymentMonitor = monitor;
+      monitor.start({
+        invoice: { ...invoice, payment_hash: paymentHash },
+        provider: {
+          lookupInvoice: async (hash) => {
+            if (!current()) return { paid: false };
+            // Ask the store each time: reconnects replace the connection.
+            const connection = await this.walletStore.nwcConnection(walletId);
+            if (!current()) return { paid: false };
+            return lookupNwcInvoice(connection, hash, { methods: wallet.metadata?.methods });
+          },
         },
-        provider: wrappedProvider,
         onStatusChange: (status, data) => {
-          if (!this.isPaymentConfirmed) {
-            this.handlePaymentStatus(status, data);
-          }
-        }
+          if (current()) this.handlePaymentStatus(status, data);
+        },
       });
+
+      // Covers lookup-only grants as well as a relay missed while suspended.
+      const check = () => { if (current()) monitor.checkNow(); };
+      const stopVisibility = onAppVisibility(visible => { if (visible) check(); });
+      window.addEventListener('online', check);
+      this.nwcResumeStop = () => {
+        stopVisibility();
+        window.removeEventListener('online', check);
+      };
     },
 
     /**
@@ -1419,6 +1487,26 @@ export default {
           // Idempotency guard — event and poll can both fire for the same payment.
           if (this.isPaymentConfirmed) return;
           this.isPaymentConfirmed = true;
+          // Home observes verified activity independently of the announcement
+          // ledger: this sheet can suppress a later ledger delivery entirely.
+          const receiveWalletId = data.receipt?.walletId || this.generatedInvoice?.walletId || this.walletStore.activeWalletId;
+          this.walletStore.recordConfirmedReceive({
+            walletId: receiveWalletId,
+            paymentId: data.receipt?.paymentId || data.paymentId || data.transferId || null,
+            paymentHash: data.receipt?.paymentHash || this.generatedInvoice?.payment_hash,
+            aliases: data.receipt?.aliases,
+            amountSats: data.receivedSats ?? (data.amount || this.generatedInvoice?.amount || null),
+            settledAt: data.receipt?.settledAt || data.settledAt,
+            observedAt: data.receipt?.at,
+          });
+          // This sheet confirms it; the app-wide announcement must not repeat
+          // it, now or when the wallet's history is read later.
+          confirmReceivePayment({
+            walletId: receiveWalletId,
+            paymentHash: this.generatedInvoice?.payment_hash,
+            amountSats: data.amount || this.generatedInvoice?.amount,
+          });
+          noteReceiptShown(receiveWalletId, this.generatedInvoice?.payment_hash);
           this.paymentStatusMessage = this.$t('Payment received!');
           haptics.success();
 
@@ -1436,8 +1524,8 @@ export default {
           });
 
           // Refresh wallet balance in background
-          if (this.walletStore.activeWalletId) {
-            this.walletStore.refreshWalletData(this.walletStore.activeWalletId);
+          if (receiveWalletId) {
+            this.walletStore.refreshWalletData(receiveWalletId);
           }
           break;
 
@@ -1485,6 +1573,10 @@ export default {
         return;
       }
 
+      const walletId = this.walletStore.activeWalletId;
+      const generation = this.monitorGeneration;
+      const current = () => this.show && generation === this.monitorGeneration
+        && walletId === this.walletStore.activeWalletId && this.walletStore.wallets.some(w => w.id === walletId);
       this.isCreatingInvoice = true;
       try {
         // LUD-09 note: `successAction` does not apply to a plain BOLT11 invoice.
@@ -1550,38 +1642,18 @@ export default {
             created_at: Math.floor(Date.now() / 1000)
           };
           this.showAmountInput = false;
-          // tapAmountButton stopped the native ark1 monitor; nothing
+          // tapAmountButton stopped the receipt watch; nothing
           // invoice-shaped will watch for the payment, so re-arm it.
           this.startArkadeNativeMonitor();
           this.isCreatingInvoice = false;
           return;
         } else {
-          // Use NWC for NWC wallets
-          const activeWallet = this.walletState.connectedWallets?.find(
-            w => w.id === this.walletState.activeWalletId
-          );
-
-          if (!activeWallet || !activeWallet.nwcString) {
-            throw new Error('No active wallet found');
-          }
-          const saved = this.walletStore.wallets.find(w => w.id === this.walletState.activeWalletId);
-          if (saved && !capabilitiesOf(saved).receive) {
-            throw nwcError(NWC_ERROR.RECEIVE_NOT_ALLOWED, 'This connection cannot create invoices');
-          }
-
-          // Over the wallet's one relay connection (#395).
-          const nwc = await this.walletStore.nwcConnection(activeWallet.id);
-          // @getalby/sdk's NostrWebLNProvider.makeInvoice only reads
-          // `defaultMemo` for the invoice description — passing our
-          // `description` key (as used by every other provider's
-          // createInvoice) is silently ignored, which is why NWC invoices
-          // came back with an empty d-tag despite the user typing a note.
-          invoice = await nwc.makeInvoice({
-            amount: invoiceParams.amount,
-            defaultMemo: invoiceParams.description,
-          });
+          // Reuse the same NIP-47 invoice path as transfers and the kiosk.
+          // It preserves the hash and expiry that WebLN.makeInvoice drops.
+          invoice = await this.walletStore.createInvoiceDetailsOnWallet(walletId, invoiceParams.amount, invoiceParams.description);
         }
 
+        if (!current()) return;
         const paymentRequest = invoice.paymentRequest || invoice.payment_request;
         if (!paymentRequest) {
           throw new Error('Invalid invoice: missing payment request');
@@ -1599,9 +1671,9 @@ export default {
           payment_request: paymentRequest,
           payment_hash: paymentHash,
           invoice_id: invoice.invoice_id || invoice.id || null,
-          walletId: this.walletStore.activeWalletId,
-          amount: invoice.amount || this.amountInSats,
-          description: invoice.description || this.description || 'BuhoGO Payment',
+          walletId,
+          amount: invoice.amount || invoiceParams.amount,
+          description: invoice.description || invoiceParams.description,
           expires_at: invoice.expires_at || invoice.expiresAt,
           created_at: Math.floor(Date.now() / 1000)
         };
@@ -1615,16 +1687,11 @@ export default {
           this.showAmountInput = false;
         }
 
-        this.$q.notify({
-          type: 'positive',
-          message: this.$t('Invoice ready'),
-          
-        });
-
         // Start monitoring for payment confirmation
         this.startPaymentMonitor();
 
       } catch (error) {
+        if (!current()) return;
         console.error('Error creating invoice:', error);
 
         // Funnel into the global payment-error dialog so the upstream
@@ -1736,11 +1803,24 @@ export default {
       }
     },
 
-    async copyArkadeBoardingAddress() {
-      if (!this.arkadeBoardingAddress) return;
+    /** The code on screen, copied: the invoice, or Arkade's unified request. */
+    copyPaymentCode() {
+      return this.showArkadeUnifiedView ? this.copyArkadeRequest() : this.copyInvoice();
+    },
+
+    copyArkadeRequest() {
+      return this.copyReceiveText(this.arkadeUnifiedQrValue, 'Copied payment request');
+    },
+
+    copyArkadeBoardingAddress() {
+      return this.copyReceiveText(this.arkadeBoardingAddress, 'Address copied');
+    },
+
+    async copyReceiveText(value, message) {
+      if (!value) return;
       try {
-        await navigator.clipboard.writeText(this.arkadeBoardingAddress);
-        this.$q.notify({ type: 'positive', message: this.$t('Address copied') });
+        await navigator.clipboard.writeText(value);
+        this.$q.notify({ type: 'positive', message: this.$t(message) });
       } catch (error) {
         this.$q.notify({ type: 'negative', message: this.$t('Couldn\'t copy') });
       }
@@ -1764,24 +1844,12 @@ export default {
         this.$q.notify({ type: 'positive', message: this.$t('Shared') });
       } else if (result.reason === 'unsupported' || result.reason === 'error') {
         if (result.reason === 'error') console.error('Failed to share boarding address:', result.error);
-        await this.copyArkadeBoardingAddress();
+        await this.copyArkadeRequest();
       }
     },
 
     async copyArkadeAddress() {
-      if (!this.arkadeAddress) return;
-      try {
-        await navigator.clipboard.writeText(this.arkadeAddress);
-        this.$q.notify({
-          type: 'positive',
-          message: this.$t('Arkade address copied'),
-        });
-      } catch (error) {
-        this.$q.notify({
-          type: 'negative',
-          message: this.$t('Couldn\'t copy'),
-        });
-      }
+      return this.copyReceiveText(this.arkadeAddress, 'Arkade address copied');
     },
 
     formatInvoiceAmount(sats) {
@@ -2003,6 +2071,9 @@ export default {
 }
 
 .qr-card {
+  padding: 0;
+  border: 0;
+  background: transparent;
   cursor: pointer;
   transition: transform 0.2s ease;
 }
@@ -3175,35 +3246,9 @@ export default {
 }
 
 /* ─────────────────────────────────────────────────────────────
-   LUD-14 voucher summary: one line while a saved voucher holds money
+   LUD-14 voucher summary: one line while a saved voucher holds money.
+   The row is the shared disclosure row (css/app.css); the icon is its own.
    ───────────────────────────────────────────────────────────── */
-.voucher-summary {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  width: calc(100% - 32px);
-  min-height: 52px;
-  margin: 0 16px 10px;
-  padding: 8px 12px;
-  border: 1px solid var(--border-card);
-  border-radius: 16px;
-  background: var(--bg-card);
-  color: var(--text-primary);
-  text-align: left;
-  font-family: inherit;
-  cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
-}
-
-.voucher-summary:active {
-  opacity: 0.85;
-}
-
-.voucher-summary:focus-visible {
-  outline: 2px solid var(--brand-accent);
-  outline-offset: 2px;
-}
-
 .voucher-summary-icon {
   display: grid;
   place-items: center;
@@ -3215,29 +3260,4 @@ export default {
   color: var(--brand-accent);
 }
 
-.voucher-summary-copy {
-  display: flex;
-  flex: 1;
-  min-width: 0;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.voucher-summary-title {
-  font: 700 0.9375rem/1.3 'Manrope', sans-serif;
-  color: var(--text-primary);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.voucher-summary-sub {
-  font: 0.8125rem/1.3 'Manrope', sans-serif;
-  color: var(--text-secondary);
-}
-
-.voucher-summary-chevron {
-  flex-shrink: 0;
-  color: var(--text-secondary);
-}
 </style>

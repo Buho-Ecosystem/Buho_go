@@ -44,9 +44,24 @@
 -keepattributes SourceFile,LineNumberTable
 -renamesourcefileattribute SourceFile
 
+# ── Material Components (excluded) ────────────────────────────────────────
+# app/build.gradle excludes Material. androidx navigation-ui (pulled in by
+# @capgo/capacitor-native-biometric, never used at runtime) still references
+# its views (BottomNavigationView, NavigationView) in helpers nothing calls.
+-dontwarn com.google.android.material.**
+
+# ── Component registrars (ML Kit) ─────────────────────────────────────────
+# Named in the merged manifest and created by reflection through their
+# no-argument constructor (Firebase ComponentDiscovery, which ML Kit uses). Without
+# the constructor ML Kit has no barcode client and the camera scan crashes.
+# gradle.properties keeps R8 out of strict full mode, which covers this; the
+# rule keeps it explicit, should that setting ever change.
+-keep class * implements com.google.firebase.components.ComponentRegistrar { <init>(); }
+
 # ── Notes ─────────────────────────────────────────────────────────────────
 # ML Kit, play-services, androidx and the Play in-app-update library all ship
-# their own consumer rules; they need nothing here. If a release build stops
+# their own consumer rules (written for non-strict R8, see gradle.properties);
+# beyond the registrars above they need nothing here. If a release build stops
 # with "Missing class ..." R8 writes the exact rules it wants to
 # app/build/outputs/mapping/release/missing_rules.txt - copy the ones that
 # apply into this file rather than adding a blanket -dontwarn.

@@ -61,7 +61,10 @@ const ROUTES = [
 const browser = await chromium.launch({ headless: true });
 const errors = [];
 
-/** The LNbits API the form talks to: one wallet, no Lightning address extension. */
+/**
+ * The LNbits API the form talks to: one wallet, and Pay Links (the Lightning
+ * address extension) off, which the server says with a 404.
+ */
 function fakeLnbits(route, url) {
   if (url.pathname === '/api/v1/wallet') return route.fulfill({ json: { id: 'kitty-wallet', name: 'Kitty', balance: 2100000 } });
   return route.fulfill({ status: 404, json: { detail: 'Not found' } });
@@ -185,9 +188,11 @@ try {
     await page.getByPlaceholder('https://your.lnbits.server').fill(`https://${LNBITS_HOST}`);
     await page.getByPlaceholder('Paste your admin key here').fill('stand-in-admin-key');
     await page.getByRole('button', { name: 'Connect', exact: true }).click();
-    const add = page.getByRole('button', { name: 'Add Wallet', exact: true });
-    await add.waitFor();
-    await add.click();
+    // Connect leads to the wallet's name. "Add wallet" saves it; with Pay
+    // Links off the sheet then says so, and Continue goes to the wallet.
+    await page.getByRole('button', { name: 'Add wallet', exact: true }).click();
+    await page.getByText('Pay Links is off', { exact: true }).waitFor();
+    await page.getByRole('button', { name: 'Continue', exact: true }).click();
     await at(page, '#/wallet');
     const state = await saved(page);
     assert.deepEqual(state.wallets.map((w) => `${w.type}:${w.name}`), ['spark:Wallet', 'lnbits:Kitty'], 'the LNbits wallet joins the Spark wallet');
@@ -210,7 +215,9 @@ try {
     await at(page, '#/kiosk');
     assert.deepEqual(await storeState(page), { kioskEnabled: true, kioskOwnerAccess: false }, 'still locked to the kiosk');
     const state = await saved(page);
-    assert.equal(state.kioskPin, '2468');
+    // Saved in plain text by an earlier version: only a hash is left.
+    assert.equal(state.kioskPin, undefined);
+    assert.ok(state.kioskPinHash && !state.kioskPinHash.includes('2468'));
     assert.equal(state.kioskWalletId, spark.id);
     assert.equal(state.kioskTipEnabled, true);
     assert.deepEqual(settingsOf(state), settings);

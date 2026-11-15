@@ -23,6 +23,9 @@
   <!-- Global payment-error dialog. Wired to walletStore.paymentError so
        any page or store can surface a failure via showPaymentError(). -->
   <PaymentErrorDialog />
+  <!-- Bitcoin that arrives while the app is open: the "Bitcoin received"
+       screen on Home, a toast elsewhere. Silent behind the app lock. -->
+  <IncomingPaymentHost :suspended="locked" />
   <ToastHost />
 </template>
 
@@ -35,20 +38,22 @@ import { useWalletStore } from 'src/stores/wallet'
 import { authenticate as biometricAuth, isBiometricAvailable } from 'src/utils/biometric'
 import { triggerWalletStoreHydration, readPersistedWalletState } from 'src/utils/walletHydration'
 import { useAddressBookSync } from 'src/composables/useAddressBookSync'
+import { useQuickAccessSync } from 'src/composables/useQuickAccessSync'
 import PaymentErrorDialog from 'src/components/PaymentErrorDialog.vue'
 import ToastHost from 'src/components/toasts/ToastHost.vue'
+import IncomingPaymentHost from 'src/components/IncomingPaymentHost.vue'
 import UpdateExperience from 'src/components/UpdateExperience.vue'
 import AddressRequestSheet from 'src/components/AddressRequestSheet.vue'
 import { useAddressRequestStore } from 'src/stores/addressRequest.js'
 import { useNotificationsStore } from 'src/stores/notifications'
 import { isInternalRoute, onNotificationTap } from 'src/services/paymentNotifications'
 import { EventBus } from 'src/utils/eventBus'
-import { setAppLocked } from 'src/utils/appLock'
+import { setAppLocked, leavingForPicker, backFromPickerTooLate } from 'src/utils/appLock'
 
 export default defineComponent({
   name: 'App',
 
-  components: { PaymentErrorDialog, UpdateExperience, AddressRequestSheet, ToastHost },
+  components: { PaymentErrorDialog, UpdateExperience, AddressRequestSheet, ToastHost, IncomingPaymentHost },
 
   setup () {
     const store = useWalletStore()
@@ -61,6 +66,9 @@ export default defineComponent({
     // any surface publish, whether or not the Address Book page is
     // ever opened. No-ops on kiosk devices.
     useAddressBookSync()
+    // Quick Settings tiles and launcher shortcuts follow the app's state
+    // (wallet, kiosk mode, app lock, contacts, language). Android only.
+    useQuickAccessSync()
 
     const locked = ref(false)
     // Screens that read the clipboard on foreground wait until the lock is gone.
@@ -97,6 +105,18 @@ export default defineComponent({
 
     function appLockActive () {
       return appLockEnabled() && !kioskActive()
+    }
+
+    // The system prompt opens a beat after the lock screen shows.
+    const PROMPT_DELAY_MS = 300
+
+    function promptUnlockSoon () {
+      setTimeout(() => promptUnlock(), PROMPT_DELAY_MS)
+    }
+
+    function lockAndPrompt () {
+      locked.value = true
+      promptUnlockSoon()
     }
 
     async function promptUnlock () {
@@ -179,10 +199,7 @@ export default defineComponent({
       const { App: CapApp } = await import('@capacitor/app')
 
       // Prompt biometric on cold start if enabled
-      if (appLockActive()) {
-        locked.value = true
-        setTimeout(() => promptUnlock(), 300)
-      }
+      if (appLockActive()) lockAndPrompt()
 
       // Re-read the OS permission on every return to the front: it can be
       // revoked in system settings while we are away, and a row that still
@@ -203,11 +220,17 @@ export default defineComponent({
         if (!isActive) {
           // Ignore if biometric dialog is showing or just dismissed
           if (isPrompting || (Date.now() - lastPromptEnd < 1500)) return
+          // A photo picker the app opened is not leaving the app
+          // (utils/appLock.js, openingSystemPicker).
+          if (leavingForPicker()) return
           locked.value = true
+        } else if (backFromPickerTooLate()) {
+          // Away in that picker for longer than it takes to choose a photo.
+          lockAndPrompt()
         } else if (locked.value) {
           // Came back — only prompt if not still within the cooldown window
           if (isPrompting || (Date.now() - lastPromptEnd < 1500)) return
-          setTimeout(() => promptUnlock(), 300)
+          promptUnlockSoon()
         }
       })
     })

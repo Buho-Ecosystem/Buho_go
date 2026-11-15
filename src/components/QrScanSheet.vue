@@ -13,6 +13,10 @@
     - Web/PWA: fullscreen dialog with a qr-scanner <video>, including the
       camera-permission error state and retry.
 
+  Both offer Choose photo (QrPhotoButton): the code in a picked picture
+  takes the same path as a scanned one. The camera is off while the picker
+  is open; without a camera, the button is the way left to read a code.
+
   Contract:
     - v-model         open/close
     - title           optional headline; payment flows pass none so the
@@ -79,9 +83,17 @@
               unelevated
             />
           </div>
-          <p v-if="!cameraError" class="ws-prompt">
-            {{ prompt || $t('Point your camera at a QR code') }}
-          </p>
+          <div class="ws-bottom">
+            <!-- Always there, so a note that appears is announced. -->
+            <p class="ws-prompt" :class="{ 'ws-prompt--empty': !promptText }" aria-live="polite">{{ promptText }}</p>
+            <QrPhotoButton
+              tone="camera"
+              @open="onPhotoOpen"
+              @closed="onPhotoClosed"
+              @read="onPhotoRead"
+              @fail="onPhotoFail"
+            />
+          </div>
         </div>
       </div>
     </q-dialog>
@@ -90,13 +102,14 @@
 
 <script>
 import QrScanner from 'qr-scanner';
-import { createQrScanner } from '../utils/qrScanner';
+import { createPhotoPause, createQrScanner, pauseForPhoto, scannerFor } from '../utils/qrScanner';
 import { isNativeScannerAvailable } from '../utils/nativeScanner';
 import ScannerOverlay from './ScannerOverlay.vue';
+import QrPhotoButton from './QrPhotoButton.vue';
 
 export default {
   name: 'QrScanSheet',
-  components: { ScannerOverlay },
+  components: { ScannerOverlay, QrPhotoButton },
   props: {
     modelValue: { type: Boolean, default: false },
     title: { type: String, default: '' },
@@ -113,9 +126,17 @@ export default {
       // torn down, so without this a busy QR would emit several times
       // before the close settles.
       hasEmitted: false,
+      // What the last photo gave instead of a code.
+      photoNote: '',
     };
   },
   computed: {
+    /** The line above Choose photo; nothing when the camera could not run and there is no note. */
+    promptText() {
+      if (this.photoNote) return this.photoNote;
+      if (this.cameraError) return '';
+      return this.prompt || this.$t('Point your camera at a QR code');
+    },
     show: {
       get() {
         return this.modelValue;
@@ -128,8 +149,18 @@ export default {
   watch: {
     // Re-arm the single-shot latch on every open.
     modelValue(open) {
-      if (open) this.hasEmitted = false;
+      if (open) {
+        this.hasEmitted = false;
+        this.photoNote = '';
+      }
     }
+  },
+  created() {
+    this.photoPause = createPhotoPause({
+      scanner: () => this.qrScanner,
+      canResume: () => this.show && !this.cameraError && !this.hasEmitted,
+      restart: () => this.startQrScanner(),
+    });
   },
   beforeUnmount() {
     this.stopQrScanner();
@@ -152,6 +183,26 @@ export default {
       this.show = false;
     },
 
+    /** Choose photo: the camera goes off while the picker is open. */
+    onPhotoOpen() {
+      this.photoNote = '';
+      this.photoPause.pause();
+    },
+
+    onPhotoClosed() {
+      this.photoPause.resume();
+    },
+
+    onPhotoRead(text) {
+      this.onScanned(text);
+      this.photoPause.resume();
+    },
+
+    onPhotoFail({ message }) {
+      this.photoNote = message;
+      this.photoPause.resume();
+    },
+
     async initializeCamera() {
       this.cameraError = null;
       try {
@@ -170,13 +221,16 @@ export default {
     },
 
     async startQrScanner() {
+      // The photo picker is open: the camera comes back once it closes.
+      if (this.photoPause.paused) return;
       try {
-        if (!this.$refs.videoElement) {
+        const videoEl = this.$refs.videoElement;
+        if (!videoEl) {
           throw new Error('Video element not found');
         }
 
-        this.qrScanner = createQrScanner(
-          this.$refs.videoElement,
+        this.qrScanner = scannerFor(videoEl, this.qrScanner, () => createQrScanner(
+          videoEl,
           (result) => this.onScanned(result),
           {
             returnDetailedScanResult: true,
@@ -184,9 +238,11 @@ export default {
             highlightCodeOutline: true,
             preferredCamera: 'environment'
           }
-        );
+        ));
 
         await this.qrScanner.start();
+        // Choose photo was tapped while the camera was still starting.
+        if (this.photoPause.paused) pauseForPhoto(this.qrScanner);
       } catch (error) {
         console.error('Error starting QR scanner:', error);
         this.handleCameraError(error);
@@ -194,6 +250,7 @@ export default {
     },
 
     stopQrScanner() {
+      this.photoPause.forget();
       if (this.qrScanner) {
         this.qrScanner.stop();
         this.qrScanner.destroy();
@@ -287,17 +344,49 @@ export default {
   fill: rgba(26, 26, 26, 0.18) !important;
 }
 
-.ws-prompt {
+/* Prompt and Choose photo, over the camera and over its error state alike. */
+.ws-bottom {
   position: absolute;
   left: 0;
   right: 0;
-  bottom: max(28px, var(--safe-bottom, 28px));
+  bottom: 0;
+  padding: 40px 16px max(28px, var(--safe-bottom, 28px));
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  z-index: 3;
+  /* The scrim takes no taps: only what is on it does. Dark up to the
+     prompt's line, so it reads over white paper too, then a short fade. */
+  pointer-events: none;
+  background: linear-gradient(
+    to top,
+    rgba(0, 0, 0, 0.72) 0%,
+    rgba(0, 0, 0, 0.6) calc(100% - 32px),
+    rgba(0, 0, 0, 0) 100%
+  );
+}
+.ws-bottom > * {
+  pointer-events: auto;
+}
+
+.ws-prompt {
   margin: 0;
+  max-width: 320px;
   text-align: center;
   font-family: 'Manrope', sans-serif;
   font-size: 13.5px;
-  color: rgba(255, 255, 255, 0.75);
-  z-index: 2;
+  color: rgba(255, 255, 255, 0.9);
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.7);
+}
+.ws-prompt--empty {
+  /* Nothing to say: out of sight, still in place for the next note. */
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
 }
 
 .camera-error {
@@ -308,7 +397,8 @@ export default {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 2rem;
+  /* Clear of Choose photo below, on a short screen too. */
+  padding: 2rem 2rem 176px;
   text-align: center;
 }
 

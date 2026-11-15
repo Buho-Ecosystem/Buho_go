@@ -1059,7 +1059,7 @@ watch(() => props.modelValue, (open) => { if (open) init(); });
 /* ════════════════════════════════════════════════════════════
    Picker
    ════════════════════════════════════════════════════════════ */
-.picker-card { width: 100%; max-width: 480px; border-radius: 24px 24px 0 0; background: var(--c-bg); }
+.picker-card { width: 100%; max-width: 480px; border-radius: 24px 24px 0 0; background: var(--c-bg); padding-bottom: var(--safe-bottom, 0px); }
 .picker-header { display: flex; align-items: center; justify-content: space-between; padding: 18px 20px; border-bottom: 1px solid var(--c-border); }
 .picker-header h3 { margin: 0; font-size: 17px; font-weight: 600; color: var(--c-text); }
 .picker-list { padding: 8px 12px 12px; max-height: 50vh; overflow-y: auto; }

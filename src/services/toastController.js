@@ -137,7 +137,13 @@ export function createToastController({
     if (!action || action.disable || action.disabled || action.loading) return;
     try { action.handler?.(); } finally { if (!action.noDismiss) dismiss(id); }
   }
+  // A tap on a toast that has `onOpen` opens what it announces; a swipe still only dismisses.
+  function open(id) {
+    const r = records.get(id);
+    if (!r?.config.onOpen) return dismiss(id);
+    try { r.config.onOpen(); } catch (error) { console.error('Toast open callback failed:', error); } finally { dismiss(id); }
+  }
   notify.setDefaults = options => { defaults = { ...defaults, ...options }; };
   notify.registerType = (name, options) => { types[name] = { ...options }; };
-  return { notify, dismiss, pause, resume, pauseAll, resumeAll, act };
+  return { notify, dismiss, pause, resume, pauseAll, resumeAll, act, open };
 }

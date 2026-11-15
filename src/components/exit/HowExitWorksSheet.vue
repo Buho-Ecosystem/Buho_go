@@ -58,6 +58,7 @@ export default {
 </script>
 
 <style scoped>
+.exit-how-sheet { padding-bottom: var(--safe-bottom, 0px); }
 .exit-how-body { display: flex; flex-direction: column; gap: 18px; }
 .exit-how-row { display: flex; gap: 14px; align-items: flex-start; }
 .exit-how-icon { display: grid; place-items: center; flex-shrink: 0; width: 40px; height: 40px; border-radius: 12px; background: var(--bg-input); color: var(--text-primary); }

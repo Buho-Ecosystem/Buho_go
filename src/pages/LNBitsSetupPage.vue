@@ -229,6 +229,22 @@
               <div class="frame-corner bottom-right"></div>
             </div>
           </div>
+
+          <div class="column items-center q-mt-md">
+            <QrPhotoButton
+              tone="page"
+              @open="onPhotoOpen"
+              @closed="onPhotoClosed"
+              @read="onPhotoRead"
+              @fail="onPhotoFail"
+            />
+            <!-- Always there, so a note that appears is announced. -->
+            <p
+              class="text-center q-mb-none"
+              :class="[photoNote ? 'q-mt-sm' : '', $q.dark.isActive ? 'text-grey-4' : 'text-grey-7']"
+              aria-live="polite"
+            >{{ photoNote }}</p>
+          </div>
           </div>
         </div>
 
@@ -262,8 +278,9 @@
 <script>
 import { isAddressRequest } from '../utils/lud23.js';
 import QrScanner from 'qr-scanner'
-import { createQrScanner } from '../utils/qrScanner'
+import { createPhotoPause, createQrScanner, pauseForPhoto, scannerFor } from '../utils/qrScanner'
 import { isNativeScannerAvailable } from '../utils/nativeScanner'
+import QrPhotoButton from '../components/QrPhotoButton.vue'
 import ScannerOverlay from '../components/ScannerOverlay.vue'
 import LoadingScreen from '../components/LoadingScreen.vue'
 import LNBitsMark from '../components/lnbits/LNBitsMark.vue'
@@ -279,6 +296,7 @@ import { isLndhubUri, parseLndhubUri } from '../utils/lndhub'
 export default {
   name: 'LNBitsSetupPage',
   components: {
+    QrPhotoButton,
     LoadingScreen,
     LNBitsMark,
     LNBitsWalletFound,
@@ -304,6 +322,8 @@ export default {
       scanMode: 'url', // 'url' | 'key'
       cameraError: false,
       cameraErrorMessage: '',
+      // Choose photo: what the last photo gave instead of a code.
+      photoNote: '',
       cameraLoading: true,
       qrScanner: null,
       // Which step of the sheet shows: 'connect' | 'name' | 'address' | 'paylinks'.
@@ -378,6 +398,11 @@ export default {
     // Set once the wallet is saved. Not reactive on purpose: a provider
     // holds a live connection and must never be wrapped in a Vue proxy.
     this.addressProvider = null;
+    this.photoPause = createPhotoPause({
+      scanner: () => this.qrScanner,
+      canResume: () => this.showScanner && !this.cameraError,
+      restart: () => this.startQrScanner(),
+    });
   },
   beforeUnmount() {
     this.stopQrScanner();
@@ -638,6 +663,7 @@ export default {
 
     closeScanner() {
       this.stopQrScanner();
+      this.photoNote = '';
       this.nativeScannerActive = false;
       this.showScanner = false;
       this.cameraError = false;
@@ -646,8 +672,11 @@ export default {
     },
 
     async startQrScanner() {
+      // The photo picker is open: the camera comes back once it closes.
+      if (this.photoPause.paused) return;
       try {
-        if (!this.$refs.videoElement) {
+        const videoEl = this.$refs.videoElement;
+        if (!videoEl) {
           throw new Error('Video element not found');
         }
 
@@ -656,8 +685,8 @@ export default {
           throw new Error('No camera found on this device.');
         }
 
-        this.qrScanner = createQrScanner(
-          this.$refs.videoElement,
+        this.qrScanner = scannerFor(videoEl, this.qrScanner, () => createQrScanner(
+          videoEl,
           (result) => this.handleQrScan(result.data),
           {
             returnDetailedScanResult: false,
@@ -665,9 +694,11 @@ export default {
             highlightCodeOutline: true,
             preferredCamera: 'environment'
           }
-        );
+        ));
 
         await this.qrScanner.start();
+        // Choose photo was tapped while the camera was still starting.
+        if (this.photoPause.paused) pauseForPhoto(this.qrScanner);
         this.cameraLoading = false;
         this.cameraError = false;
 
@@ -678,6 +709,7 @@ export default {
     },
 
     stopQrScanner() {
+      this.photoPause.forget();
       if (this.qrScanner) {
         this.qrScanner.stop();
         this.qrScanner.destroy();
@@ -789,6 +821,26 @@ export default {
           : this.$t('Admin key scanned'),
         timeout: 1200,
       });
+    },
+
+    /** Choose photo: the camera goes off while the picker is open. */
+    onPhotoOpen() {
+      this.photoNote = '';
+      this.photoPause.pause();
+    },
+
+    onPhotoClosed() {
+      this.photoPause.resume();
+    },
+
+    onPhotoRead(text) {
+      this.handleQrScan(text);
+      this.photoPause.resume();
+    },
+
+    onPhotoFail({ message }) {
+      this.photoNote = message;
+      this.photoPause.resume();
     },
 
     onCameraError(error) {

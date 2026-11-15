@@ -1,5 +1,6 @@
 import { strict as assert } from 'node:assert';
 import { test } from 'node:test';
+import { Amount } from '@cashu/cashu-ts';
 import {
   createTokenDeleteEvent,
   createTokenEvent,
@@ -149,4 +150,74 @@ test('a rejected replacement never deletes the last recoverable token event', as
   assert.equal(result.ok, false);
   assert.equal(result.reason, 'TOKEN_PUBLISH_FAILED');
   assert.equal(publishedKinds.includes(5), false, 'old state remains intact');
+});
+
+test('a backup written with text amounts is read back as numbers', async () => {
+  // How the Social Bucket wrote proofs while they were cashu-ts Amounts:
+  // JSON turns an Amount into "8". nostr-core's reader rejects that shape.
+  const textEvent = createTokenEvent({ mint: MINT, proofs: [proof('8', 'text')] }, SECRET);
+  assert.throws(() => parseTokenEvent(textEvent, SECRET), /Invalid Cashu proof/);
+
+  const state = await fetchNip60WalletState({
+    secretKey: SECRET,
+    pubkey: PUBKEY,
+    pool: queryPool([textEvent]),
+    relays: ['wss://relay.example'],
+  });
+
+  assert.deepEqual(state.tokensByMint, [{
+    mint: MINT,
+    proofs: [proof(8, 'text')],
+    eventIds: [textEvent.id],
+  }]);
+});
+
+test('a token event that is not ours to read stays unread', async () => {
+  const foreign = createTokenEvent({ mint: MINT, proofs: [proof('8', 'foreign')] }, OTHER_SECRET);
+  const broken = createTokenEvent({ mint: MINT, proofs: [{ id: 'k', amount: '8', secret: 's' }] }, SECRET);
+  const noMint = createTokenEvent({ mint: '', proofs: [proof('8', 'no-mint')] }, SECRET);
+
+  const state = await fetchNip60WalletState({
+    secretKey: SECRET,
+    pubkey: PUBKEY,
+    pool: queryPool([foreign, broken, noMint]),
+    relays: ['wss://relay.example'],
+  });
+
+  assert.deepEqual(state.tokensByMint, []);
+});
+
+test('cashu-ts Amount proofs are published with number amounts', async () => {
+  const published = [];
+  const pool = {
+    async ensureRelay() {
+      return { async publish(event) { published.push(event); } };
+    },
+  };
+
+  const result = await publishNip60WalletState({
+    secretKey: SECRET,
+    mint: MINT,
+    proofs: [proof(Amount.from(16), 'amount')],
+    pool,
+    relays: ['wss://relay.example'],
+  });
+
+  const tokenEvent = published.find((event) => event.id === result.tokenEventId);
+  // The standard reader, as any NIP-60 wallet would read it.
+  assert.deepEqual(parseTokenEvent(tokenEvent, SECRET).proofs, [proof(16, 'amount')]);
+});
+
+test('a snapshot that would leave a proof out is never published', async () => {
+  const published = [];
+  const pool = { async ensureRelay() { return { async publish(event) { published.push(event); } }; } };
+  await assert.rejects(publishNip60WalletState({
+    secretKey: SECRET,
+    mint: MINT,
+    proofs: [{ ...proof(8, 'broken'), C: null }],
+    previousTokenEventIds: ['a'.repeat(64)],
+    pool,
+    relays: ['wss://relay.example'],
+  }), TypeError);
+  assert.deepEqual(published, [], 'no deletion of the earlier backup either');
 });

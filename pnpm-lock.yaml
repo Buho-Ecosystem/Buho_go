@@ -9,8 +9,8 @@ importers:
   .:
     dependencies:
       '@arkade-os/sdk':
-        specifier: ^0.4.69
-        version: 0.4.69
+        specifier: 0.4.79
+        version: 0.4.79
       '@branta-ops/branta':
         specifier: 3.2.2
         version: 3.2.2
@@ -63,8 +63,8 @@ importers:
         specifier: ^5.1.2
         version: 5.2.1
       '@getalby/sdk':
-        specifier: ^7.0.0
-        version: 7.0.0
+        specifier: ^9.0.0
+        version: 9.0.0
       '@iconify/vue':
         specifier: ^5.0.0
         version: 5.0.0(vue@3.5.32)
@@ -177,8 +177,8 @@ packages:
     peerDependencies:
       ajv: '>=8'
 
-  '@arkade-os/sdk@0.4.69':
-    resolution: {integrity: sha512-pQJgx0V797XUb5upeHyShvsZMBQJohbIqcTo/ODQYfGqCu11T07kURIV+5ESIbHgmgImqyTuVTyEKLHn392Uww==}
+  '@arkade-os/sdk@0.4.79':
+    resolution: {integrity: sha512-AGvTLGtmdSG+VX5BCt7D1JXDc2KFl3QQSwXGMxAw1MqUjQ2kJHzZyuw6AiLamZ797R6jvQKZI3VSVkbbmDKFZg==}
     engines: {node: '>=22.12.0 <27'}
     peerDependencies:
       '@react-native-async-storage/async-storage': '>=1.0.0'
@@ -988,13 +988,13 @@ packages:
     resolution: {integrity: sha512-dxOmJLJAh6qJ8rsbA5/Bwj7MSI9X3RkxxqmCedl5rfP+yKwNSdfu8i4EiCZN/tk2hNBJb8GHSCcPRNZfwfmEHg==}
     engines: {node: '>=14'}
 
-  '@getalby/lightning-tools@6.1.0':
-    resolution: {integrity: sha512-rGurar9X4Gm+9xwoNYS8s9YLK7ZYqvbqv4KbHLYV0LEeB0HxZHRgmxblGqg+fYfp6iiYHx+edIgUpt9rS3VwFw==}
+  '@getalby/lightning-tools@9.0.2':
+    resolution: {integrity: sha512-h58Bw8oQg9MXdGud5agfRnjGVY24Hzj8hCljdIEZyijXjfkVdSXet2Mpjc3lz/BpIdZz51uM8CXuwnXi0BOqFg==}
     engines: {node: '>=14'}
 
-  '@getalby/sdk@7.0.0':
-    resolution: {integrity: sha512-0c8gyvFbRDHZIgHmOD/dfyPukxZLeidx/hx7SXlMIS/hsx4mXpKpo9Gx1zW90buElnd3k9TVB/S/bnFSEZPE7w==}
-    engines: {node: '>=14'}
+  '@getalby/sdk@9.0.0':
+    resolution: {integrity: sha512-lUepv1KWXVAuycHsl3qYMkgvwol1fgjjyPDKEfpeQ9soNN3nupf8YAX+mbldK+w+caGai3iXfykzFmT7kmSfBw==}
+    engines: {node: '>=22'}
 
   '@iconify-json/circle-flags@1.2.10':
     resolution: {integrity: sha512-sZRxs689a281RtZvuAiKtV7pQHv8Tk0HkinSM7QvLgdLEK8xgGRCcbDvL09Rq+/KtemmsMzGhS9/qt+r3ca+Ug==}
@@ -1244,6 +1244,10 @@ packages:
 
   '@noble/curves@2.2.0':
     resolution: {integrity: sha512-T/BoHgFXirb0ENSPBquzX0rcjXeM6Lo892a2jlYJkqk83LqZx0l1Of7DzlKJ6jkpvMrkHSnAcgb5JegL8SeIkQ==}
+    engines: {node: '>= 20.19.0'}
+
+  '@noble/curves@2.4.0':
+    resolution: {integrity: sha512-P4/62zrgfH33CneE3Dn4WhJVA22YUU0eR51wKIan4NVRvwsA0YnPTwWGpNbpuacSujmSFLvyzpyuR30+fbq2Ew==}
     engines: {node: '>= 20.19.0'}
 
   '@noble/hashes@1.4.0':
@@ -1621,6 +1625,9 @@ packages:
   '@scure/base@2.2.0':
     resolution: {integrity: sha512-b8XEupJibegiXV+tDUseI8oLQc8ei3d/4Jkb2RpbHh3MfE054ov3uIz2dhFkB3FI8iwYkEh0gGCApkrYggkPNg==}
 
+  '@scure/base@2.4.0':
+    resolution: {integrity: sha512-thZ1TuJwFwBblOhgsjDKvvGirBxNp+wSvY/DR6tJBJOTDhdAAcHJ8Vbr2eFnqaxeca4+t0i9KBf+uHYGWwZORg==}
+
   '@scure/bip32@2.0.1':
     resolution: {integrity: sha512-4Md1NI5BzoVP+bhyJaY3K6yMesEFzNS1sE/cP+9nuvE7p/b0kx9XbpDHHFl8dHtufcbdHRUUQdRqLIPHN/s7yA==}
 
@@ -1636,8 +1643,8 @@ packages:
   '@scure/bip39@2.4.0':
     resolution: {integrity: sha512-82dxFbZUYboyOf0AXiydsQrFQ5Q4h9mX+O2UkE91ROYmsc0BKMGZLwDmy96Jpa2+vrtoxomjUhy1RPIgH/r2nA==}
 
-  '@scure/btc-signer@2.0.1':
-    resolution: {integrity: sha512-vk5a/16BbSFZkhh1JIJ0+4H9nceZVo5WzKvJGGWiPp3sQOExeW+L53z3dI6u0adTPoE8ZbL+XEb6hEGzVZSvvQ==}
+  '@scure/btc-signer@2.4.1':
+    resolution: {integrity: sha512-ch6h66o9nPhEoe/KciMMUJeH2MBPB8UAJI1if35Fxl6885lKTsc9YoCRqTW0/RjI0Vv9GSg1tmKtHHODyAw81g==}
 
   '@surma/rollup-plugin-off-main-thread@2.2.3':
     resolution: {integrity: sha512-lR8q/9W7hZpMWweNiAKU7NQerBnzQQLvi8qnTDU/fxItPhtZVMbPV3lbCwjhIlNBe9Bbr5V+KHshvWmVSG9cxQ==}
@@ -1767,6 +1774,9 @@ packages:
 
   '@vue/shared@3.5.32':
     resolution: {integrity: sha512-ksNyrmRQzWJJ8n3cRDuSF7zNNontuJg1YHnmWRJd2AMu8Ij2bqwiiri2lH5rHtYPZjj4STkNcgcmiQqlOjiYGg==}
+
+  '@webbtc/webln-types@3.0.0':
+    resolution: {integrity: sha512-aXfTHLKz5lysd+6xTeWl+qHNh/p3qVYbeLo+yDN5cUDmhie2ZoGvkppfWxzbGkcFBzb6dJyQ2/i2cbmDHas+zQ==}
 
   abort-controller@3.0.0:
     resolution: {integrity: sha512-h8lQ8tacZYnR3vNQTgibj+tODHI5/+l06Au2Pcriv/Gmet0eaj4TwWH41sO9wnHDiQsEj19q0drzdWdeAHtweg==}
@@ -3019,8 +3029,8 @@ packages:
     resolution: {integrity: sha512-iclAHeNqNm68zFtnZ0e+1L2yUIdvzNoauKU4WBA3VvH/vPFieF7qfRlwUZU+DA9P9bPXIS90ulxoUoCH23sV2w==}
     engines: {node: '>= 0.6'}
 
-  micro-packed@0.8.0:
-    resolution: {integrity: sha512-AKb8znIvg9sooythbXzyFeChEY0SkW0C6iXECpy/ls0e5BtwXO45J9wD9SLzBztnS4XmF/5kwZknsq+jyynd/A==}
+  micro-packed@0.11.1:
+    resolution: {integrity: sha512-agQGBnBCw8OoKQZMUxcaQPaOowdfxyEmBsq4CNAXAXCyB8KxlRG0lTl5GADJIsMEDaFb0trhXBHKYsjTWa5kuw==}
     engines: {node: '>= 20.19.0'}
 
   mime-db@1.52.0:
@@ -4326,16 +4336,17 @@ snapshots:
       jsonpointer: 5.0.1
       leven: 3.1.0
 
-  '@arkade-os/sdk@0.4.69':
+  '@arkade-os/sdk@0.4.79':
     dependencies:
       '@bitcoinerlab/descriptors-scure': 3.1.7
       '@marcbachmann/cel-js': 8.0.0
-      '@noble/curves': 2.0.1
+      '@noble/curves': 2.4.0
       '@noble/secp256k1': 3.0.0
-      '@scure/base': 2.0.0
-      '@scure/bip39': 2.0.1
-      '@scure/btc-signer': 2.0.1
+      '@scure/base': 2.4.0
+      '@scure/bip39': 2.4.0
+      '@scure/btc-signer': 2.4.1
       bip68: 1.0.4
+      micro-packed: 0.11.1
       ws-electrumx-client: 1.0.5
     transitivePeerDependencies:
       - '@ledgerhq/ledger-bitcoin'
@@ -4999,27 +5010,27 @@ snapshots:
       '@babel/helper-string-parser': 7.27.1
       '@babel/helper-validator-identifier': 7.28.5
 
-  '@bitcoinerlab/descriptors-core@3.1.7(@noble/curves@2.2.0)(@noble/hashes@2.2.0)(@scure/base@2.2.0)(@scure/bip32@2.2.0)(@scure/btc-signer@2.0.1)':
+  '@bitcoinerlab/descriptors-core@3.1.7(@noble/curves@2.4.0)(@noble/hashes@2.4.0)(@scure/base@2.4.0)(@scure/bip32@2.2.0)(@scure/btc-signer@2.4.1)':
     dependencies:
       '@bitcoinerlab/miniscript': 2.0.0
       lodash.memoize: 4.1.2
       uint8array-tools: 0.0.9
       varuint-bitcoin: 2.0.0
     optionalDependencies:
-      '@noble/curves': 2.2.0
-      '@noble/hashes': 2.2.0
-      '@scure/base': 2.2.0
+      '@noble/curves': 2.4.0
+      '@noble/hashes': 2.4.0
+      '@scure/base': 2.4.0
       '@scure/bip32': 2.2.0
-      '@scure/btc-signer': 2.0.1
+      '@scure/btc-signer': 2.4.1
 
   '@bitcoinerlab/descriptors-scure@3.1.7':
     dependencies:
-      '@bitcoinerlab/descriptors-core': 3.1.7(@noble/curves@2.2.0)(@noble/hashes@2.2.0)(@scure/base@2.2.0)(@scure/bip32@2.2.0)(@scure/btc-signer@2.0.1)
-      '@noble/curves': 2.2.0
-      '@noble/hashes': 2.2.0
-      '@scure/base': 2.2.0
+      '@bitcoinerlab/descriptors-core': 3.1.7(@noble/curves@2.4.0)(@noble/hashes@2.4.0)(@scure/base@2.4.0)(@scure/bip32@2.2.0)(@scure/btc-signer@2.4.1)
+      '@noble/curves': 2.4.0
+      '@noble/hashes': 2.4.0
+      '@scure/base': 2.4.0
       '@scure/bip32': 2.2.0
-      '@scure/btc-signer': 2.0.1
+      '@scure/btc-signer': 2.4.1
     transitivePeerDependencies:
       - bip32
       - bitcoinjs-lib
@@ -5200,11 +5211,12 @@ snapshots:
 
   '@getalby/lightning-tools@5.2.1': {}
 
-  '@getalby/lightning-tools@6.1.0': {}
+  '@getalby/lightning-tools@9.0.2': {}
 
-  '@getalby/sdk@7.0.0':
+  '@getalby/sdk@9.0.0':
     dependencies:
-      '@getalby/lightning-tools': 6.1.0
+      '@getalby/lightning-tools': 9.0.2
+      '@webbtc/webln-types': 3.0.0
       nostr-tools: 2.23.3
     transitivePeerDependencies:
       - typescript
@@ -5453,6 +5465,10 @@ snapshots:
   '@noble/curves@2.2.0':
     dependencies:
       '@noble/hashes': 2.2.0
+
+  '@noble/curves@2.4.0':
+    dependencies:
+      '@noble/hashes': 2.4.0
 
   '@noble/hashes@1.4.0': {}
 
@@ -5823,6 +5839,8 @@ snapshots:
 
   '@scure/base@2.2.0': {}
 
+  '@scure/base@2.4.0': {}
+
   '@scure/bip32@2.0.1':
     dependencies:
       '@noble/curves': 2.0.1
@@ -5849,12 +5867,12 @@ snapshots:
     dependencies:
       '@noble/hashes': 2.4.0
 
-  '@scure/btc-signer@2.0.1':
+  '@scure/btc-signer@2.4.1':
     dependencies:
-      '@noble/curves': 2.0.1
-      '@noble/hashes': 2.0.1
-      '@scure/base': 2.0.0
-      micro-packed: 0.8.0
+      '@noble/curves': 2.4.0
+      '@noble/hashes': 2.4.0
+      '@scure/base': 2.4.0
+      micro-packed: 0.11.1
 
   '@surma/rollup-plugin-off-main-thread@2.2.3':
     dependencies:
@@ -6028,6 +6046,8 @@ snapshots:
       vue: 3.5.32
 
   '@vue/shared@3.5.32': {}
+
+  '@webbtc/webln-types@3.0.0': {}
 
   abort-controller@3.0.0:
     dependencies:
@@ -7367,9 +7387,9 @@ snapshots:
 
   methods@1.1.2: {}
 
-  micro-packed@0.8.0:
+  micro-packed@0.11.1:
     dependencies:
-      '@scure/base': 2.0.0
+      '@scure/base': 2.4.0
 
   mime-db@1.52.0: {}
 

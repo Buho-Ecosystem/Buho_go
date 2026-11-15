@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The BuhoGO mark for the app icon (mipmap-anydpi-v26/ic_launcher.xml): the
+  adaptive icon's foreground, and its monochrome layer for themed icons
+  (Android 13 and newer tint it, so only the shape counts there).
+
+  108dp canvas, as Android asks. Launchers mask it to their own shape and
+  only promise the centre circle of 66dp, so the whole mark sits inside it:
+  the leaf's lower tip, the point farthest from the centre, ends 31.8dp out.
+  The paths are the splash mark's (drawable/launch_icon.xml), 30 by 32 units,
+  scaled 1.45 and centred.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <group
+        android:translateX="32.25"
+        android:translateY="30.8"
+        android:scaleX="1.45"
+        android:scaleY="1.45">
+        <path android:fillColor="#059573" android:pathData="M0 13.4423C0 6.01833 6.01833 0 13.4423 0V18.5577C13.4423 25.9817 7.42399 32 0 32V13.4423Z" />
+        <path android:fillColor="#78D53C" android:pathData="M15.3906 7.30444C15.3906 3.27031 18.6609 0 22.6951 0C26.7292 0 29.9995 3.27031 29.9995 7.30444V7.72091C29.9995 11.755 26.7292 15.0253 22.6951 15.0253C18.6609 15.0253 15.3906 11.755 15.3906 7.72091V7.30444Z" />
+        <path android:fillColor="#43B65B" android:pathData="M15.3906 24.281C15.3906 20.2469 18.6609 16.9766 22.6951 16.9766C26.7292 16.9766 29.9995 20.2469 29.9995 24.281V24.6975C29.9995 28.7316 26.7292 32.0019 22.6951 32.0019C18.6609 32.0019 15.3906 28.7316 15.3906 24.6975V24.281Z" />
+    </group>
+</vector>

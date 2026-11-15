@@ -12,6 +12,11 @@
  *   - normalization of human punctuation, "+" and "00" markers
  *   - constructed Lightning Address shape per provider
  *   - rejection of foreign / unassigned / omitted / bare-NSN / junk inputs
+ *   - `tel:` links: a global number read as the same number typed; a local
+ *     one only with a phone-context, which picks among the countries the
+ *     number is valid in
+ *   - Mobile Money: the chosen country decides a national number, and when
+ *     a typed number is complete
  *
  * Run directly with Node:
  *   node src/services/lnAddressServices/__tests__/phoneNumbers.spec.js
@@ -21,6 +26,8 @@ import { strict as assert } from 'node:assert'
 import {
   recognizePhoneNumber,
   recognizePhoneNumberForCountry,
+  recognizeInChosenCountry,
+  isCompleteNumberIn,
   buildLightningAddress,
   formatInternational,
   formatE164,
@@ -449,6 +456,129 @@ test('Ghana adds no ambiguity to the countries already served', () => {
         )
       }
     }
+  }
+})
+
+// ---------------------------------------------------------------------------
+// tel: links (RFC 3966): the number read the way the same number typed is
+// ---------------------------------------------------------------------------
+
+test('a global tel: link is the number it calls, read the way the same number typed is', () => {
+  for (const [link, typed] of [
+    ['tel:+254712345678', '+254712345678'],
+    ['TEL:+260-971-234-567', '+260971234567'],
+    ['tel:+255(741)234.567', '+255741234567'],
+    ['tel:+233241234567', '+233241234567'],
+  ]) {
+    assert.deepEqual(recognizePhoneNumber(link), recognizePhoneNumber(typed), link)
+  }
+})
+
+test('a local tel: link without a phone-context is not read: the RFC requires one, and digits alone do not say the country', () => {
+  for (const link of ['tel:0712345678', 'tel:0751234567', 'tel:0723891234', 'tel:712345678']) {
+    assert.equal(recognizePhoneNumber(link), null, link)
+  }
+})
+
+test('a tel: phone-context picks the country among the ones the number is valid in', () => {
+  const zm = recognizePhoneNumber('tel:0751234567;phone-context=+260')
+  assert.equal(zm.country.code, 'ZM')
+  assert.equal(zm.ambiguous, false)
+  assert.equal(zm.confidence, 'exact', 'the context gives the calling code')
+  assert.equal(zm.candidates, undefined)
+  assert.equal(zm.lightningAddress, '260751234567@bitzed.xyz')
+  assert.equal(recognizePhoneNumber('tel:0751234567;phone-context=+2-6-0').country.code, 'ZM', 'separators in the context do not count')
+  assert.equal(recognizePhoneNumber('tel:0741234567;phone-context=+255').country.code, 'TZ')
+  assert.equal(recognizePhoneNumber('tel:0712345678;phone-context=+254').country.code, 'KE')
+})
+
+test('a tel: phone-context is never a prefix to add: what the number is not valid in is refused', () => {
+  for (const link of [
+    'tel:0712345678;phone-context=+260',
+    'tel:712345678;phone-context=+254',
+    'tel:0712345678;phone-context=+254-20',
+    'tel:0712345678;phone-context=+1',
+    'tel:0723891234;phone-context=+27',
+  ]) {
+    assert.equal(recognizePhoneNumber(link), null, link)
+  }
+})
+
+test('a tel: link this cannot read, or for a number nobody here pays, is no payout number', () => {
+  for (const link of [
+    'tel:+254712345678;ext=101',
+    'tel:+254712345678;isub=1',
+    'tel:+254 712 345 678',
+    'tel:%2B254712345678',
+    'tel://+254712345678',
+    'tel:0712345678;phone-context=example.com',
+    'tel:+12125551212',
+    'tel:+27723891234',
+    'sms:+254712345678',
+  ]) {
+    assert.equal(recognizePhoneNumber(link), null, link)
+  }
+})
+
+test('chosen in Mobile Money, a tel: link is read in that country, unless the link says otherwise', () => {
+  assert.equal(recognizePhoneNumberForCountry('ZM', 'tel:0751234567;phone-context=+260').lightningAddress, '260751234567@bitzed.xyz')
+  assert.equal(recognizePhoneNumberForCountry('KE', 'tel:712345678;phone-context=+254').lightningAddress, '254712345678@bitcoin.co.ke', 'a bare number, as typed there')
+  assert.equal(recognizePhoneNumberForCountry('KE', 'tel:+254712345678').country.code, 'KE')
+  assert.equal(recognizePhoneNumberForCountry('ZM', 'tel:0751234567'), null, 'not in the RFC\'s form, not even here')
+  assert.equal(recognizePhoneNumberForCountry('ZM', 'tel:0751234567;phone-context=+254'), null, 'the link names another country')
+  assert.equal(recognizePhoneNumberForCountry('KE', 'tel:+260971234567'), null, 'another country\'s number')
+  assert.equal(recognizePhoneNumberForCountry('KE', 'tel:+254712345678;ext=1'), null)
+})
+
+// ---------------------------------------------------------------------------
+// Mobile Money: the chosen country decides a national number
+// ---------------------------------------------------------------------------
+
+test('chosen: a national number is read in that country only, never in another', () => {
+  // Real numbers in the chosen country, on networks its service does not pay
+  // (TZ: Yas 71, TTCL 73; GH: 057), and numbers that are none of its own.
+  for (const [code, number] of [['TZ', '0712345678'], ['TZ', '0731234567'], ['GH', '0571234567'], ['ZM', '0712345678'], ['KE', '0971234567']]) {
+    assert.ok(recognizePhoneNumber(number), `${number} is a payout number somewhere`)
+    assert.equal(recognizeInChosenCountry(code, number), null, `${code} chosen, ${number}`)
+  }
+})
+
+test('chosen: the country picks among the ones a number is valid in, and takes its bare number', () => {
+  assert.equal(recognizeInChosenCountry('ZM', '0751234567').lightningAddress, '260751234567@bitzed.xyz')
+  assert.equal(recognizeInChosenCountry('TZ', '0751234567').lightningAddress, '255751234567@chapsmart.com')
+  assert.equal(recognizeInChosenCountry('KE', '712345678').lightningAddress, '254712345678@bitcoin.co.ke')
+  assert.equal(recognizeInChosenCountry('ZM', '0751234567').ambiguous, false)
+})
+
+test('chosen: a number that names its own country reads there', () => {
+  for (const number of ['+254712345678', '254712345678', '00254712345678', 'tel:+254712345678', 'tel:0712345678;phone-context=+254']) {
+    assert.equal(recognizeInChosenCountry('TZ', number)?.country.code, 'KE', number)
+  }
+  assert.equal(recognizeInChosenCountry('KE', '+255712345678'), null, 'named, but not a number its service pays')
+})
+
+test('isCompleteNumberIn: every digit of a number there, in a form typed there', () => {
+  for (const number of ['0712345678', '0712 345 678', '(071) 234-5678', '712345678', '254712345678', '+254712345678', '00254712345678']) {
+    assert.equal(isCompleteNumberIn('KE', number), true, number)
+  }
+  for (const number of ['', '0', '071234567', '07123456789', '71234567', '25471234567', '+1 212 555 1212', 'tel:0712345678', 'abc', null]) {
+    assert.equal(isCompleteNumberIn('KE', number), false, String(number))
+  }
+  assert.equal(isCompleteNumberIn('XX', '0712345678'), false, 'not a payout country')
+})
+
+test('isCompleteNumberIn: not while a number with a calling code is being typed, nor one naming another country', () => {
+  // Nine digits, but the start of +254 712 345 678, a Kenyan number.
+  for (const number of ['+254712345', '254712345', '00254712345', '+256712345']) {
+    assert.equal(isCompleteNumberIn('TZ', number), false, number)
+  }
+  // Another country's: a calling code that isn't Tanzania's, or a tel: link naming Zambia.
+  for (const number of ['+712345678', '00712345678', '+254712345678', 'tel:+254712345678', 'tel:0712345678;phone-context=+260']) {
+    assert.equal(isCompleteNumberIn('TZ', number), false, number)
+  }
+  // Tanzania's own, in every form it is read in.
+  for (const number of ['0712345678', '712345678', '255712345678', '+255712345678', '00255712345678', 'tel:+255712345678', 'tel:0712345678;phone-context=+255']) {
+    assert.equal(isCompleteNumberIn('TZ', number), true, number)
   }
 })
 

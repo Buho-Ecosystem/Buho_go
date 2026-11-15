@@ -10,7 +10,7 @@
     <span class="shop-card-body">
       <span class="shop-card-line1">
         <span class="shop-card-name" :class="$q.dark.isActive ? 'item-label-dark' : 'item-label-light'">{{ shop.name }}</span>
-        <Icon v-if="shop.verified" icon="tabler:rosette-discount-check-filled" width="15" height="15" class="shop-card-verified" :aria-label="$t('Verified')" />
+        <Icon v-if="shop.verified" icon="tabler:rosette-discount-check-filled" width="15" height="15" class="shop-card-verified" :aria-label="$t('Verified')" :aria-hidden="false" />
         <Icon v-if="shop.payments && shop.payments.lightning" icon="tabler:bolt" width="14" height="14" class="shop-card-bolt" />
         <Icon v-else-if="shop.payments && shop.payments.onchain" icon="tabler:currency-bitcoin" width="14" height="14" class="shop-card-onchain" :class="$q.dark.isActive ? 'text-grey-5' : 'text-grey-6'" />
       </span>

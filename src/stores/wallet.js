@@ -1,4 +1,5 @@
 import { preferredProfileLightningAddress as preferredProfileAddress } from '../utils/profilePaymentAddress.js';
+import { walletLightningAddress } from '../utils/walletLightningAddress.js';
 /**
  * Wallet Store
  *
@@ -7,15 +8,16 @@ import { preferredProfileLightningAddress as preferredProfileAddress } from '../
  */
 
 import { defineStore } from 'pinia';
-import { NostrWebLNProvider } from '@getalby/sdk';
+import { createNwcProvider } from '../services/nwcClient.js';
 import { parseNwcConnection } from '../utils/nwcConnection.js';
-import { capabilitiesOf, nip47Methods, spendingLimitFrom, suggestedWalletName } from '../utils/nwcWallet.js';
-import { NWC_ERROR, isRelayFailure, nwcError } from '../utils/nwcErrors.js';
+import { capabilitiesOf, cleanWalletText, nip47Methods, spendingLimitFrom, suggestedWalletName, walletAddressOf, walletKeyOf } from '../utils/nwcWallet.js';
+import { NWC_ERROR, isNotOffered, isRelayFailure, nwcError } from '../utils/nwcErrors.js';
+import { isConnectionEnded } from '../utils/connectionEnded.js';
 import { probeNwcConnection } from '../services/nwcProbe.js';
 import { payWithNwc } from '../services/nwcPayment.js';
 import { lookupNwcInvoice, makeNwcInvoice } from '../services/nwcReceive.js';
 import { fiatRatesService } from '../utils/fiatRates.js';
-import { SELECTABLE_FIAT_CURRENCIES } from '../utils/fiatCurrencies.js';
+import { SELECTABLE_FIAT_CURRENCIES, RATE_MAX_AGE_MS } from '../utils/fiatCurrencies.js';
 import { LNBitsWalletProvider } from '../providers/LNBitsWalletProvider';
 import { ArkadeWalletProvider } from '../providers/ArkadeWalletProvider';
 import { ARKADE_MAINNET_SERVER, ARKADE_DEFAULT_NETWORK } from '../utils/arkadeKeys';
@@ -39,7 +41,8 @@ import {
   summarizeTotal,
 } from '../utils/balanceState.js';
 import { sparkLifecycle, forgetSparkWallet } from '../services/sparkLifecycleApp.js';
-import { startAutoTransferWatch } from '../services/autoTransferWatch.js';
+import { forgetWalletReceipts } from '../services/paymentReceiptsApp.js';
+import { startWalletWatch, walletWatch } from '../services/walletWatch.js';
 import { scanSparkAccounts } from '../services/sparkAccountScan.js';
 import {
   SPARK_ACCOUNT_ORDER,
@@ -66,8 +69,8 @@ export function depositClaimKey(txId, outputIndex) {
 const observedBalance = new Map();
 // Shared by page ticks and store refreshes; the newest request owns its result.
 const balanceReads = new Map();
-// walletId -> { epoch, promise }: one store-level Spark connection attempt.
-const sparkConnects = new Map();
+// walletId -> { epoch, promise }: one connection attempt per seed-based wallet.
+const seedConnects = new Map();
 // walletId -> promise: the one NWC connect in flight; a second asker shares it.
 const nwcConnects = new Map();
 // walletId -> bumped on disconnect, rebuild and removal. Work started under
@@ -82,6 +85,19 @@ const removingWallets = new Set();
 // takes a wallet for saved that may still be undone.
 const addingWallets = new Set();
 const epochOf = (walletId) => walletEpochs.get(walletId) || 0;
+const CONFIRMED_RECEIVE_LIMIT = 64;
+const receiveIdentity = (value) => {
+  if (value == null || value === '') return null;
+  const text = String(value);
+  return /^[a-f0-9]{64}$/i.test(text) ? text.toLowerCase() : text;
+};
+const receiveIdentities = (activity) => [activity.paymentId, activity.paymentHash, ...(activity.aliases || [])]
+  .map(receiveIdentity).filter(Boolean);
+const receiveTimeMs = (value) => {
+  if (value == null) return null;
+  const number = typeof value === 'number' ? value : Date.parse(value);
+  return Number.isFinite(number) && number > 0 ? (number < 1e11 ? number * 1000 : number) : null;
+};
 
 /** Close an NWC connection; closing is best-effort and never throws. */
 function closeNwc(nwc) {
@@ -122,6 +138,17 @@ function setAsideOtherPhrases() {
     return JSON.parse(localStorage.getItem(SPARK_SET_ASIDE_KEY) || '[]')
       .filter((entry) => entry?.reason === 'other_phrase' && entry.wallet?.connectionData?.encryptedMnemonic)
       .map(({ wallet }) => ({ id: wallet.id, name: wallet.name || '', encryptedMnemonic: wallet.connectionData.encryptedMnemonic }));
+  } catch {
+    return [];
+  }
+}
+
+/** Ids of every Spark entry set aside, for whatever reason. */
+function setAsideSparkWalletIds() {
+  try {
+    return JSON.parse(localStorage.getItem(SPARK_SET_ASIDE_KEY) || '[]')
+      .map((entry) => entry?.wallet?.id)
+      .filter(Boolean);
   } catch {
     return [];
   }
@@ -193,15 +220,15 @@ import {
   classifyTransportFailure,
   getUnsupportedBolt12OfferCopy,
   getUnsupportedSilentPaymentCopy,
-  getUserFriendlyError,
-  getUserFriendlyErrorMessage,
   unreachableReason,
 } from '../utils/userErrors';
 import { diagnoseConnection } from '../utils/connectivity.js';
 import * as deviceCrypto from '../utils/deviceCrypto';
+import { createNwcAtRest } from '../utils/nwcAtRest.js';
 import { clearCachedTransactions } from '../utils/txCache.js';
 import { i18n } from '../boot/i18n';
 import { canWalletPay, canWalletReceiveLightning } from '../utils/walletCapabilities.js';
+import { hashKioskPin, kioskPinMatches, savedKioskPinHash } from '../utils/kioskPin.js';
 import {
   setScreenPrivacyEnabled as nativeSetScreenPrivacyEnabled,
   isScreenPrivacyEnabled as nativeIsScreenPrivacyEnabled,
@@ -235,6 +262,15 @@ function setAsideUnreadableState(raw) {
   console.warn(`[wallet-store] The saved wallets could not be read; kept as ${key}`);
 }
 
+/** Is a saved wallet list kept aside as unreadable, from this or an earlier start? */
+function hasUnreadableWalletState() {
+  const prefix = `${STORAGE_KEYS.UNREADABLE_WALLET_STORE}_`;
+  for (let i = 0; i < localStorage.length; i += 1) {
+    if (localStorage.key(i)?.startsWith(prefix)) return true;
+  }
+  return false;
+}
+
 /**
  * The wallet entries saved right now. This store only ever writes JSON it
  * built, so a value it cannot read was written elsewhere: it counts as a
@@ -262,6 +298,19 @@ const claimedDepositRegistry = createClaimedDepositRegistry({
 // reconsidered until this window has passed.
 const recentDepositClaims = new Map();
 const CLAIM_MARK_SETTLE_MS = 10 * 60 * 1000;
+
+// NWC connection strings are saved encrypted with the device key, and kept
+// plain in memory (utils/nwcAtRest). SEAL_PASSES bounds the sealing a save
+// waits for (persistState).
+const SEAL_PASSES = 3;
+
+/** NWC wallets that list get_budget but will not run it: see refreshNwcLimit. */
+const budgetNotOffered = new Set();
+const nwcAtRest = createNwcAtRest({
+  encrypt: (plain) => deviceCrypto.encryptString(plain),
+  decrypt: (envelope) => deviceCrypto.decryptString(envelope),
+  warn: (...args) => console.warn(...args),
+});
 
 /**
  * Thin adapter exposing the device-key crypto under the historical
@@ -299,9 +348,17 @@ export const useWalletStore = defineStore('wallet', {
     // Unclaimed on-chain deposits per Spark wallet, discovered by the
     // lifecycle for every wallet regardless of selection.
     pendingDepositsByWallet: {},
-    // The most recent detected receipt { walletId, amountSats, at }, for
-    // in-app surfaces; system notifications are posted by the lifecycle.
+    // The most recent detected receipt, for in-app surfaces
+    // (IncomingPaymentHost): { walletId, amountSats, at, paymentId,
+    // paymentHash, settledWhileAway }. paymentId and paymentHash are null
+    // when only the balance said so (an NWC connection that may not read
+    // its history); paymentHash also for payments that have none (Arkade).
     lastReceipt: null,
+    // Runtime display activity, independent of whether a receive was already
+    // announced by its sheet. These are observations, never synthetic history.
+    confirmedReceiveActivity: null,
+    confirmedReceivesByWallet: {},
+    confirmedReceiveSequence: 0,
     // Funds the wallet holds but cannot spend yet, keyed by wallet ID:
     // { pending, recoverable }. Arkade is the only backend that reports a
     // split today (boarding UTXOs awaiting confirmation, and subdust or
@@ -311,11 +368,18 @@ export const useWalletStore = defineStore('wallet', {
     balanceDetails: {},
     walletInfos: {},
     // NWC connections, runtime only: the spending limit the wallet shares
-    // (utils/nwcWallet spendingLimitFrom, null = no limit or not shared) and
-    // whether it answered last time it was asked: 'answering' | 'no-answer'
-    // | 'relay' (its relay could not be reached).
+    // (utils/nwcWallet spendingLimitFrom, null = no limit or not shared),
+    // the last payment a limit it keeps to itself refused ({ amountSats, at }),
+    // and whether it answered last time it was asked: 'answering' |
+    // 'no-answer' | 'relay' (its relay could not be reached) | 'ended'
+    // (the wallet no longer knows this connection).
     nwcLimits: {},
+    nwcLimitRefusals: {},
     nwcStatus: {},
+    // Connected wallets (NWC, LNbits) whose other side ended the
+    // connection (utils/connectionEnded), runtime only: walletId -> true.
+    // Cleared by the next answer.
+    connectionEnded: {},
 
     // User preferences
     preferredFiatCurrency: 'USD',
@@ -337,6 +401,9 @@ export const useWalletStore = defineStore('wallet', {
     exchangeRates: {},
     exchangeRatesAvailable: false,
     exchangeRatesLastUpdate: null,
+    // When each rate was fetched (ms), keyed like exchangeRates; a rate is
+    // used to price a sale only while freshRate() accepts its time.
+    exchangeRateTimes: {},
     exchangeRatesError: null,
 
     // Seed backup tracking
@@ -385,7 +452,7 @@ export const useWalletStore = defineStore('wallet', {
 
     // Kiosk Mode
     kioskEnabled: false,
-    kioskPin: '',
+    kioskPinHash: '', // utils/kioskPin.js: salted hash, never the PIN itself
     kioskOwnerAccess: false, // true = merchant unlocked, false = locked to POS
     kioskWalletId: null, // which wallet receives kiosk payments
 
@@ -414,6 +481,13 @@ export const useWalletStore = defineStore('wallet', {
     // drains and clears this on mount, so the intent is never lost to the race
     // between Capacitor's getLaunchUrl resolution and Vue's component lifecycle.
     pendingDeepLink: null,
+
+    // A screen to open, asked for from outside the app (a Quick Settings tile,
+    // a launcher shortcut): { kind, contactId, source, receivedAt, seq }.
+    // Written by services/openActionIntake.js once the app lock is passed,
+    // drained by Wallet.vue the same way as pendingDeepLink. Runtime only,
+    // never saved.
+    pendingOpenAction: null,
 
     // Error tracking
     lastError: null,
@@ -465,6 +539,19 @@ export const useWalletStore = defineStore('wallet', {
   }),
 
   getters: {
+    /** Catch-up lists newest first; its last observed receipt can be older.
+     * Seed Home by known settlement order, using observation order only when
+     * either time is unknown or both receipts settled in the same instant. */
+    latestConfirmedReceive: (state) => (walletId) => {
+      let settled = null, unknown = null;
+      for (const entry of state.confirmedReceivesByWallet[walletId] || []) {
+        if (!entry.settledAt) {
+          if (!unknown || entry.sequence > unknown.sequence) unknown = entry;
+        } else if (!settled || entry.settledAt > settled.settledAt
+          || (entry.settledAt === settled.settledAt && entry.sequence > settled.sequence)) settled = entry;
+      }
+      return unknown && (!settled || unknown.sequence > settled.sequence) ? unknown : settled;
+    },
     // Compatibility view for existing consumers, derived from the same state.
     balances: (state) => Object.fromEntries(Object.entries(state.balanceStates)
       .filter(([, balance]) => balance.value != null)
@@ -566,74 +653,19 @@ export const useWalletStore = defineStore('wallet', {
     },
 
     /**
-     * Lightning address of the active wallet (user@domain), if any.
-     *
-     * Resolution order (wallet-type agnostic):
-     *   1. `wallet.metadata.lud16` — the canonical storage slot, set by any flow
-     *      that configures a lightning address (NWC lud16 param, LNBits lnurlp setup, etc.)
-     *   2. For NWC wallets only: parse the `lud16` query param from `nwcUrl` as a fallback
-     *      so wallets added before lud16 extraction was implemented still light up.
-     *
-     * Always returns a validated `user@domain` string or null. Spark
-     * wallets carry a Breez-hosted address registered server-side against
-     * the wallet identity.
+     * Lightning address of the active wallet (user@domain), if any
+     * (utils/walletLightningAddress.js says where it is read from).
      */
-    activeWalletLightningAddress: (state) => {
-      const activeWallet = state.wallets.find((w) => w.id === state.activeWalletId);
-      if (!activeWallet) return null;
+    activeWalletLightningAddress: (state) => walletLightningAddress(
+      state.wallets.find((w) => w.id === state.activeWalletId),
+      state.walletInfos,
+    ),
 
-      // Helper: validate lightning address format (user@domain)
-      const isValidLnAddress = (addr) => {
-        if (!addr || typeof addr !== 'string') return false;
-        const parts = addr.split('@');
-        return parts.length === 2 && parts[0].length > 0 && parts[1].includes('.') && !addr.includes('://');
-      };
-
-      // Spark: live wallet info wins; the persisted metadata copy keeps
-      // the address visible while the wallet is locked or not yet
-      // connected.
-      if (activeWallet.type === 'spark') {
-        const breezAddress = state.walletInfos?.[activeWallet.id]?.lightningAddress
-          || activeWallet.metadata?.lud16;
-        return isValidLnAddress(breezAddress) ? breezAddress : null;
-      }
-
-      // Helper: extract lud16 from NWC URL string
-      const extractLud16FromUrl = (url) => {
-        if (!url) return null;
-        try {
-          const parsed = new URL(url.replace('nostr+walletconnect://', 'http://'));
-          const lud16Raw = parsed.searchParams.get('lud16');
-          if (lud16Raw && lud16Raw !== 'null' && isValidLnAddress(lud16Raw)) {
-            return lud16Raw;
-          }
-        } catch (e) { /* ignore */ }
-        return null;
-      };
-
-      // Check if already in metadata
-      if (activeWallet.metadata?.lud16) {
-        const stored = activeWallet.metadata.lud16;
-        // Validate it's actually a clean lightning address
-        if (isValidLnAddress(stored)) {
-          return stored;
-        }
-        // metadata.lud16 might be corrupted (lud16 + NWC URI concatenated)
-        // Extract the lightning address part before any protocol scheme
-        if (stored.includes('@')) {
-          const cleaned = stored.split(/nostr[+\s]/)[0];
-          if (cleaned && isValidLnAddress(cleaned)) {
-            return cleaned;
-          }
-        }
-      }
-
-      // Extract from nwcUrl for wallets added before lud16 extraction was implemented
-      const extracted = extractLud16FromUrl(activeWallet.nwcUrl);
-      if (extracted) return extracted;
-
-      return null;
-    },
+    /**
+     * Any wallet's own Lightning address, as written, or null. The refund row
+     * of the confirm sheet and the profile's Get paid sheet read it here.
+     */
+    lightningAddressOf: (state) => (wallet) => walletLightningAddress(wallet, state.walletInfos),
 
     /**
      * Check if any Spark wallet exists
@@ -881,6 +913,62 @@ export const useWalletStore = defineStore('wallet', {
 
   actions: {
     /**
+     * A verified receive happened, even when its sheet already announced it.
+     * This never drives notifications or writes a fabricated history row.
+     * Identityless balance observations remain separate: matching by amount
+     * or observation time would collapse real payments or invent identity.
+     */
+    recordConfirmedReceive(input) {
+      const walletId = input?.walletId;
+      if (!walletId || removingWallets.has(walletId) || !this.wallets.some((wallet) => wallet.id === walletId)) return null;
+      const amountSats = input.amountSats == null ? null : Number(input.amountSats);
+      if (amountSats !== null && (!Number.isSafeInteger(amountSats) || amountSats <= 0)) return null;
+      const activity = {
+        walletId,
+        paymentId: receiveIdentity(input.paymentId),
+        paymentHash: input.paymentHash ? String(input.paymentHash).toLowerCase() : null,
+        aliases: [...new Set((Array.isArray(input.aliases) ? input.aliases : []).map(receiveIdentity).filter(Boolean))],
+        amountSats,
+        settledAt: receiveTimeMs(input.settledAt),
+        observedAt: receiveTimeMs(input.observedAt) || Date.now(),
+      };
+      activity.aliases = [...new Set(receiveIdentities(activity))];
+      const identities = new Set(receiveIdentities(activity));
+      const previous = this.confirmedReceivesByWallet[walletId] || [];
+      const index = identities.size ? previous.findIndex((entry) => receiveIdentities(entry).some((id) => identities.has(id))) : -1;
+      let next;
+      if (index !== -1) {
+        const known = previous[index];
+        next = {
+          ...known,
+          paymentId: activity.paymentId && !known.aliases.includes(activity.paymentId)
+            ? activity.paymentId : known.paymentId || activity.paymentId,
+          paymentHash: activity.paymentHash || known.paymentHash,
+          aliases: [...new Set([...known.aliases, ...receiveIdentities(known), ...activity.aliases])],
+          amountSats: activity.amountSats ?? known.amountSats,
+          settledAt: activity.settledAt ?? known.settledAt,
+          observedAt: known.observedAt,
+        };
+        // A repeated signal adds no arrival and does not wake Home again.
+        if (next.paymentId === known.paymentId && next.paymentHash === known.paymentHash
+            && next.amountSats === known.amountSats && next.settledAt === known.settledAt
+            && next.aliases.length === known.aliases.length && next.aliases.every((id) => known.aliases.includes(id))) return known;
+        next.revision = known.revision + 1;
+        this.confirmedReceivesByWallet[walletId] = previous.map((entry, i) => i === index ? next : entry);
+      } else {
+        next = { ...activity, sequence: ++this.confirmedReceiveSequence, revision: 1 };
+        this.confirmedReceivesByWallet[walletId] = [...previous, next].slice(-CONFIRMED_RECEIVE_LIMIT);
+      }
+      this.confirmedReceiveActivity = next;
+      return next;
+    },
+
+    forgetConfirmedReceives(walletId) {
+      delete this.confirmedReceivesByWallet[walletId];
+      if (this.confirmedReceiveActivity?.walletId === walletId) this.confirmedReceiveActivity = null;
+    },
+
+    /**
      * Surface any user-facing failure via the global error dialog.
      * Funnels payment, withdraw, transfer, kiosk, link-resolution,
      * wallet-setup, identity, earn-payout and L1 errors into one
@@ -897,7 +985,7 @@ export const useWalletStore = defineStore('wallet', {
      */
     showPaymentError(error, ctx = {}) {
       const t = ctx.t || ((key) => key);
-      const built = buildPaymentError(error, ctx, t);
+      const built = buildPaymentError(error, { useBip177Format: this.useBip177Format, ...ctx }, t);
       // No server answered: say whether the phone is offline, its network
       // has no internet, or only that service is down. A caller's own
       // reason still wins.
@@ -1212,6 +1300,19 @@ export const useWalletStore = defineStore('wallet', {
       this._internalTransfers.push({ toWalletId, paymentHash: String(paymentHash).toLowerCase(), until: Date.now() + windowMs });
     },
 
+    /**
+     * True, once, when an internal transfer to this wallet is in flight: a
+     * balance rise there is the user's own move. For wallets that report no
+     * payment, where isInternalTransferReceipt cannot match a hash.
+     */
+    takeInternalTransferTo(walletId) {
+      const list = (this._internalTransfers || []).filter((t) => t.until > Date.now());
+      const idx = list.findIndex((t) => t.toWalletId === walletId);
+      if (idx !== -1) list.splice(idx, 1);
+      this._internalTransfers = list;
+      return idx !== -1;
+    },
+
     isInternalTransferReceipt(walletId, payment) {
       const list = (this._internalTransfers || []).filter((t) => t.until > Date.now());
       this._internalTransfers = list;
@@ -1287,13 +1388,17 @@ export const useWalletStore = defineStore('wallet', {
             let ratesStillValid = false;
             if (parsed.exchangeRatesLastUpdate) {
               const lastUpdate = new Date(parsed.exchangeRatesLastUpdate);
-              const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
-              ratesStillValid = lastUpdate > oneHourAgo;
+              ratesStillValid = lastUpdate > new Date(Date.now() - RATE_MAX_AGE_MS);
             }
+
+            // Connection strings are saved encrypted (utils/nwcAtRest); one
+            // saved plain by an earlier version is sealed by the save below.
+            const opened = await Promise.all((parsed.wallets || []).map((wallet) => nwcAtRest.fromSaved(wallet)));
+            if (opened.some((entry) => entry.plain)) migrationNeedsPersist = true;
 
             // Migrate old wallets without type field
             const storeBackedUp = parsed.hasBackedUp || false;
-            const migratedWallets = (parsed.wallets || []).map(wallet => {
+            const migratedWallets = opened.map(({ wallet }) => {
               const migrated = {
                 ...wallet,
                 type: wallet.type || inferWalletType(wallet)
@@ -1301,6 +1406,15 @@ export const useWalletStore = defineStore('wallet', {
               // Migrate hasBackedUp from store-level to per-wallet metadata (pre-1.6.0 wallets)
               if (migrated.type === WALLET_TYPES.SPARK && migrated.metadata && migrated.metadata.hasBackedUp === undefined) {
                 migrated.metadata.hasBackedUp = storeBackedUp;
+              }
+              // NWC connections saved with upper-case hex: the SDK opens
+              // only lower case, the same keys (#390). Rewritten once.
+              if (migrated.type === WALLET_TYPES.NWC && typeof migrated.nwcUrl === 'string') {
+                const parsedNwc = parseNwcConnection(migrated.nwcUrl);
+                if (parsedNwc.ok && parsedNwc.normalized !== migrated.nwcUrl) {
+                  migrated.nwcUrl = parsedNwc.normalized;
+                  migrationNeedsPersist = true;
+                }
               }
               return migrated;
             });
@@ -1324,6 +1438,8 @@ export const useWalletStore = defineStore('wallet', {
               migrationNeedsPersist = true;
             }
 
+            if (parsed.kioskPin) migrationNeedsPersist = true;
+
             console.log(`[wallet-store] Loading ${migratedWallets.length} wallet(s):`, migratedWallets.map(w => `${w.type}:${w.name}`));
 
             this.$patch({
@@ -1337,6 +1453,7 @@ export const useWalletStore = defineStore('wallet', {
               exchangeRates: ratesStillValid ? (parsed.exchangeRates || {}) : {},
               exchangeRatesAvailable: ratesStillValid && parsed.exchangeRatesAvailable,
               exchangeRatesLastUpdate: ratesStillValid ? parsed.exchangeRatesLastUpdate : null,
+              exchangeRateTimes: ratesStillValid ? (parsed.exchangeRateTimes || {}) : {},
               hasBackedUp: parsed.hasBackedUp || false,
               biometricsEnabled: parsed.biometricsEnabled || false,
               // Screen privacy: off by default. Only an explicitly
@@ -1345,9 +1462,10 @@ export const useWalletStore = defineStore('wallet', {
               privacyScreenEnabled: parsed.privacyScreenEnabled !== undefined
                 ? !!parsed.privacyScreenEnabled
                 : false,
-              // Kiosk
+              // Kiosk. A PIN an earlier version saved in plain text is hashed
+              // here and saved again below, so the plain copy leaves storage.
               kioskEnabled: parsed.kioskEnabled || false,
-              kioskPin: parsed.kioskPin || '',
+              kioskPinHash: savedKioskPinHash(parsed),
               kioskOwnerAccess: this.kioskOwnerAccess || false, // preserve if already unlocked this session
               kioskWalletId: parsed.kioskWalletId || null,
               kioskTipEnabled: parsed.kioskTipEnabled || false,
@@ -1389,11 +1507,19 @@ export const useWalletStore = defineStore('wallet', {
           // fresh ones arrive reactively instead of holding up startup.
           this.loadExchangeRates().catch(() => {});
 
-          // Auto-Transfer: the saved rules, and the watch that keeps the
-          // balances of their wallets current (Spark has its own lifecycle).
+          // Auto-Transfer: the saved rules (the wallet watch below keeps
+          // the balances of their wallets current).
           const autoWithdrawStore = useAutoWithdrawStore();
-          await autoWithdrawStore.initialize({ wallets: this.wallets });
-          if (typeof window !== 'undefined' && !window.__AUDIT__) startAutoTransferWatch(this, autoWithdrawStore).catch(() => {});
+          // Rules of removed wallets are settled only against a wallet list
+          // read from disk. None was read, or one was set aside as
+          // unreadable (now or on an earlier start): its wallets may come
+          // back, so their rules stay (rulesOf keeps them out of every
+          // count and list meanwhile).
+          const walletsRead = Array.isArray(parsed?.wallets) && !hasUnreadableWalletState();
+          await autoWithdrawStore.initialize({
+            wallets: this.wallets,
+            heldWalletIds: walletsRead ? this._heldWalletIds() : null,
+          });
 
           // Auto-connect Spark wallets — detect if migration from PIN is needed
           if (this.sparkWallets.length > 0) {
@@ -1406,7 +1532,9 @@ export const useWalletStore = defineStore('wallet', {
                 this.needsPinMigration = true;
                 console.log('[wallet] PIN migration required — waiting for user to enter PIN one last time');
               } else {
-                await this.connectAllSparkWallets({ waitFor: [this.activeWalletId, this.kioskWalletId] });
+                // The register's wallet only matters while kiosk is on (turning it
+                // off keeps the choice for next time).
+                await this.connectAllSparkWallets({ waitFor: [this.activeWalletId, this.kioskEnabled ? this.kioskWalletId : null] });
               }
             }
           }
@@ -1431,6 +1559,9 @@ export const useWalletStore = defineStore('wallet', {
           if (this.sparkWallets.length > 0 && !(typeof window !== 'undefined' && window.__AUDIT__)) {
             sparkLifecycle?.()?.start();
           }
+          // Every other wallet is watched by the app too: incoming payments
+          // and Auto-Transfer balances, whichever wallet is on screen.
+          if (typeof window !== 'undefined' && !window.__AUDIT__) startWalletWatch?.(this, autoWithdrawStore);
           // A restore that could not check every account yet carries on.
           if (!this.needsPinMigration) this._resumeSparkDiscovery();
         } catch (error) {
@@ -1761,6 +1892,8 @@ export const useWalletStore = defineStore('wallet', {
      * wallet store keeps no static dependency on the backup store.
      */
     _noteWalletsChanged() {
+      // New wallets are watched for payments; removed ones no longer.
+      walletWatch?.()?.sync();
       import('./cloudBackup.js')
         .then(({ useCloudBackupStore }) => useCloudBackupStore().noteWalletsChanged())
         .catch((error) => console.warn('[wallet] backup refresh not scheduled:', error?.message || error));
@@ -1925,16 +2058,21 @@ export const useWalletStore = defineStore('wallet', {
      * Connect to a Spark wallet using device key
      * @param {string} walletId - Wallet ID
      */
-    async connectSparkWallet(walletId, { forceReinit = false } = {}) {
-      if (removingWallets.has(walletId)) throw new Error('Spark connection was cancelled');
+    async connectSparkWallet(walletId, options = {}) {
+      return this._connectSeedWallet(walletId, '_initializeSparkWallet', options);
+    },
+
+    /** Share initialization and cancellation rules across seed-based engines. */
+    async _connectSeedWallet(walletId, initialize, { forceReinit = false } = {}) {
+      if (removingWallets.has(walletId)) throw new Error('Wallet connection was cancelled');
       // Serialized per wallet: concurrent callers (startup, lifecycle,
       // switch, transfer) share one attempt instead of building separate
       // providers that race to publish.
-      const pending = sparkConnects.get(walletId);
+      const pending = seedConnects.get(walletId);
       if (pending) {
         if (!forceReinit && pending.epoch === epochOf(walletId)) return pending.promise;
         await pending.promise.catch(() => {});
-        return this.connectSparkWallet(walletId, { forceReinit });
+        return this._connectSeedWallet(walletId, initialize, { forceReinit });
       }
       if (!forceReinit && this.providers[walletId]?.isConnected && this.connectionStates[walletId]?.connected) {
         return;
@@ -1944,12 +2082,12 @@ export const useWalletStore = defineStore('wallet', {
         if (this.providers[walletId]) this.providers[walletId].isConnected = false;
       }
       const entry = { epoch: epochOf(walletId), promise: null };
-      entry.promise = this._initializeSparkWallet(walletId, { forceReinit, epoch: entry.epoch });
-      sparkConnects.set(walletId, entry);
+      entry.promise = this[initialize](walletId, { forceReinit, epoch: entry.epoch });
+      seedConnects.set(walletId, entry);
       try {
         return await entry.promise;
       } finally {
-        if (sparkConnects.get(walletId) === entry) sparkConnects.delete(walletId);
+        if (seedConnects.get(walletId) === entry) seedConnects.delete(walletId);
       }
     },
 
@@ -2477,13 +2615,30 @@ export const useWalletStore = defineStore('wallet', {
      * @param {string} walletId
      */
     async connectArkadeWallet(walletId) {
+      return this._connectSeedWallet(walletId, '_initializeArkadeWallet');
+    },
+
+    async _initializeArkadeWallet(walletId, { epoch }) {
       const wallet = this.wallets.find((w) => w.id === walletId);
       if (!wallet || wallet.type !== WALLET_TYPES.ARKADE) {
         throw new Error('Arkade wallet not found');
       }
+      // Its databases may be being deleted right now.
+      if (removingWallets.has(walletId)) throw new Error('Wallet is being removed');
 
+      const current = () => epochOf(walletId) === epoch && this.wallets.includes(wallet) && !removingWallets.has(walletId);
+      const assertCurrent = () => {
+        if (!current()) throw new Error('Arkade connection was cancelled');
+      };
+      let provider;
       try {
-        const provider = new ArkadeWalletProvider(walletId, {
+        const previous = this.providers[walletId];
+        if (previous) {
+          await previous.disconnect();
+          if (this.providers[walletId] === previous) delete this.providers[walletId];
+        }
+        assertCurrent();
+        provider = new ArkadeWalletProvider(walletId, {
           name: wallet.name,
           network: wallet.connectionData.network,
           arkServerUrl: wallet.connectionData.arkServerUrl,
@@ -2495,18 +2650,26 @@ export const useWalletStore = defineStore('wallet', {
         });
 
         provider._onRestoreScanComplete = () => {
+          if (!current()) return;
           if (!wallet.metadata) wallet.metadata = {};
           wallet.metadata.arkadeRestoreScanned = true;
         };
 
+        // A deposit keeps one id from the mempool on; what earlier versions
+        // kept under its commitment id moves to it.
+        provider._onIdChanged = (oldId, newId) => {
+          Promise.resolve(useTransactionMetadataStore().adoptTransactionId(walletId, oldId, newId)).catch(() => {});
+        };
+
         // Mirror background VTXO maintenance into reactive store state so the
         // UI can show a subtle indicator while a settlement is in flight.
-        provider._onMaintenance = (active) => { this.arkadeMaintaining = active; };
+        provider._onMaintenance = (active) => { if (current()) this.arkadeMaintaining = active; };
 
         // Background swap lifecycle (autonomous claims of incoming Lightning,
         // auto-refunds of failed outgoing swaps) changes the balance without a
         // user action — refresh so the UI reflects it promptly.
         provider._onSwapActivity = (kind, swap, error) => {
+          if (!current()) return;
           if (kind === 'failed') {
             console.warn('[arkade] swap failed, auto-refund handling engaged:',
               swap?.id, error?.message || error);
@@ -2515,6 +2678,7 @@ export const useWalletStore = defineStore('wallet', {
         };
 
         await provider.connect();
+        assertCurrent();
 
         this.providers[walletId] = provider;
         this.connectionStates[walletId] = {
@@ -2524,8 +2688,10 @@ export const useWalletStore = defineStore('wallet', {
         };
 
         await this.refreshBalance(walletId, { provider, source: 'connect' });
+        assertCurrent();
 
         const info = await provider.getInfo();
+        assertCurrent();
         this.walletInfos[walletId] = info;
 
         // Cache the ark1 address on the wallet so it renders while locked /
@@ -2535,6 +2701,9 @@ export const useWalletStore = defineStore('wallet', {
           wallet.metadata.arkadeAddress = info.arkadeAddress;
         }
       } catch (error) {
+        await provider?.disconnect().catch(() => {});
+        if (this.providers[walletId] === provider) delete this.providers[walletId];
+        if (!current()) throw error;
         this.connectionStates[walletId] = {
           connected: false,
           lastConnected: Date.now(),
@@ -2625,7 +2794,7 @@ export const useWalletStore = defineStore('wallet', {
         // other callers (cloud restore) test here.
         const tested = walletData.probe || await probeNwcConnection(parsed.normalized);
 
-        const nwc = new NostrWebLNProvider({ nostrWalletConnectUrl: tested.normalized });
+        const nwc = createNwcProvider(tested.normalized);
         await nwc.enable();
 
         const wallet = {
@@ -2687,7 +2856,7 @@ export const useWalletStore = defineStore('wallet', {
      * connection's grants in their wallet app) and repairs wallets saved
      * before these details were read correctly.
      *
-     * @returns {Promise<'answering'|'no-answer'|'relay'>}
+     * @returns {Promise<'answering'|'no-answer'|'relay'|'ended'>}
      */
     async refreshNwcDetails(walletId) {
       const wallet = this.wallets.find((w) => w.id === walletId);
@@ -2701,25 +2870,29 @@ export const useWalletStore = defineStore('wallet', {
         const meta = wallet.metadata || {};
         const next = {
           ...meta,
-          alias: String(info?.alias || ''),
-          pubkey: String(info?.pubkey || meta.pubkey || ''),
+          alias: cleanWalletText(info?.alias),
+          // A placeholder saved before keys were checked is dropped here.
+          pubkey: walletKeyOf(info?.pubkey) || walletKeyOf(meta.pubkey),
           walletPubkey: meta.walletPubkey || parseNwcConnection(wallet.nwcUrl).pubkey || '',
           network: info?.network || meta.network || 'mainnet',
           // No methods in the answer: keep what was saved, as saved.
           methods: methods.length ? methods : (meta.methods || []),
           notifications: Array.isArray(info?.notifications) ? info.notifications : (meta.notifications || []),
-          lud16: meta.lud16 || info?.lud16 || null,
+          // Checked here too: one saved before addresses were checked is dropped.
+          lud16: walletAddressOf(meta.lud16) || walletAddressOf(info?.lud16),
         };
         if (JSON.stringify(next) !== JSON.stringify(meta)) {
           wallet.metadata = next;
           this._schedulePersist();
         }
-        this.nwcLimits[walletId] = capabilitiesOf(wallet).limit
-          ? await client.getBudget().then(spendingLimitFrom).catch(() => this.nwcLimits[walletId] ?? null)
-          : null;
+        await this.refreshNwcLimit(walletId);
+        this._noteConnection(walletId);
       } catch (error) {
-        // A connection that may not ask who it is still answered.
-        if (error?.code === 'RESTRICTED' || error?.code === 'NOT_IMPLEMENTED') status = 'answering';
+        // A connection that may not ask who it is still answered, so the
+        // wallet knows it.
+        this._noteConnection(walletId, isNotOffered(error) ? null : error);
+        if (isNotOffered(error)) status = 'answering';
+        else if (this.connectionEnded[walletId]) status = 'ended';
         else status = isRelayFailure(error) ? 'relay' : 'no-answer';
         if (status !== 'answering') console.warn('[nwc] wallet did not answer:', error?.message || error);
       }
@@ -2730,6 +2903,56 @@ export const useWalletStore = defineStore('wallet', {
       // wallet lists. Settings shows the status and offers Reconnect.
       this.nwcStatus[walletId] = status;
       return status;
+    },
+
+    /**
+     * Read the spending limit an NWC connection shares (NWC-13 get_budget)
+     * again. A connection that may not ask has none to show; an unanswered
+     * read keeps the last one. A wallet that lists get_budget yet will not
+     * run it is not asked again this session: each ask after a payment
+     * would be a wasted request, and on a phone wallet perhaps a notice.
+     */
+    async refreshNwcLimit(walletId) {
+      const wallet = this.wallets.find((w) => w.id === walletId);
+      const client = this.connectionStates[walletId]?.nwcInstance?.client;
+      if (!wallet || !capabilitiesOf(wallet).limit || budgetNotOffered.has(walletId)) {
+        this.nwcLimits[walletId] = null;
+        return null;
+      }
+      if (!client) return this.nwcLimits[walletId] ?? null;
+      try {
+        this.nwcLimits[walletId] = spendingLimitFrom(await client.getBudget());
+      } catch (error) {
+        // Otherwise the last known limit stands.
+        if (isNotOffered(error)) {
+          budgetNotOffered.add(walletId);
+          this.nwcLimits[walletId] = null;
+        }
+      }
+      return this.nwcLimits[walletId] ?? null;
+    },
+
+    /**
+     * What a payment from an NWC wallet passes to services/nwcPayment: the
+     * limit the wallet shares, so a payment above it stops before it is sent,
+     * and what the payment teaches back. After a payment the shared limit is
+     * read again, so Settings shows what is left; a refusal over a limit the
+     * wallet keeps to itself is remembered, so Settings can say one exists.
+     * Every NWC payment path takes these.
+     */
+    nwcPayOptions(walletId) {
+      return {
+        limit: this.nwcLimitFor(walletId),
+        onSpent: ({ amountSats }) => {
+          const refusal = this.nwcLimitRefusals[walletId];
+          if (refusal && amountSats >= refusal.amountSats) delete this.nwcLimitRefusals[walletId];
+          this.refreshNwcLimit(walletId).catch(() => {});
+        },
+        onLimitRefused: ({ amountSats }) => {
+          this.nwcLimitRefusals[walletId] = { amountSats };
+          this.refreshNwcLimit(walletId).catch(() => {});
+        },
+      };
     },
 
     /**
@@ -2854,6 +3077,7 @@ export const useWalletStore = defineStore('wallet', {
       if (!wallet || wallet.type !== WALLET_TYPES.LNBITS) {
         throw new Error('LNBits wallet not found');
       }
+      if (removingWallets.has(walletId)) throw new Error('Wallet is being removed');
 
       try {
         // Create provider
@@ -2861,8 +3085,18 @@ export const useWalletStore = defineStore('wallet', {
           name: wallet.name,
           serverUrl: wallet.connectionData.serverUrl,
           adminKey: wallet.connectionData.adminKey,
+          walletId: wallet.connectionData.walletId,
+          invoiceKey: wallet.connectionData.invoiceKey,
           metadata: wallet.metadata,
         });
+        // The read-only key for live payments, fetched once with the admin
+        // key, is kept with it: saved like it, never in a backup (it can
+        // always be asked for again).
+        provider._onInvoiceKey = (invoiceKey) => {
+          if (!this.wallets.includes(wallet) || wallet.connectionData.invoiceKey === invoiceKey) return;
+          wallet.connectionData.invoiceKey = invoiceKey;
+          this._schedulePersist();
+        };
 
         // Connect
         await provider.connect();
@@ -2883,8 +3117,10 @@ export const useWalletStore = defineStore('wallet', {
         // Get info
         const info = await provider.getInfo();
         this.walletInfos[walletId] = info;
+        this._noteConnection(walletId);
 
       } catch (error) {
+        this._noteConnection(walletId, error);
         this.connectionStates[walletId] = {
           connected: false,
           lastConnected: Date.now(),
@@ -2997,6 +3233,11 @@ export const useWalletStore = defineStore('wallet', {
       });
     },
 
+    /** True while a wallet is on its way off this phone. */
+    isRemovingWallet(walletId) {
+      return removingWallets.has(walletId);
+    },
+
     /**
      * Everything that belongs to one wallet leaves with it: connection,
      * engine databases, caches, lifecycle work, exit kit metadata (the kit
@@ -3016,6 +3257,9 @@ export const useWalletStore = defineStore('wallet', {
     async _dropWalletEntry(wallet) {
       const walletId = wallet.id;
       this._bumpWalletEpoch(walletId);
+      this.forgetConfirmedReceives(walletId);
+      // Its live payment channel closes before the connection does.
+      walletWatch?.()?.forget(walletId);
 
       if (wallet.type === WALLET_TYPES.SPARK) {
         // The databases are about to be deleted with their exit chains: take
@@ -3052,8 +3296,11 @@ export const useWalletStore = defineStore('wallet', {
       if (index !== -1) this.wallets.splice(index, 1);
       delete this.connectionStates[walletId];
       this.forgetBalance(walletId);
-      forgetSparkWallet?.(walletId);
+      if (wallet.type === WALLET_TYPES.SPARK) forgetSparkWallet?.(walletId);
+      else forgetWalletReceipts?.(walletId);
       delete this.walletInfos[walletId];
+      delete this.connectionEnded[walletId];
+      delete this.nwcStatus[walletId];
       try { useExitKitStore().remove(walletId); } catch { /* metadata only */ }
       await useAutoWithdrawStore().forgetWallet(walletId);
       if (this.kioskWalletId === walletId) this.kioskWalletId = null;
@@ -3213,7 +3460,7 @@ export const useWalletStore = defineStore('wallet', {
       const attempt = (async () => {
         if (removingWallets.has(walletId)) throw new Error('Wallet is being removed');
         const epoch = epochOf(walletId);
-        const nwc = new NostrWebLNProvider({ nostrWalletConnectUrl: wallet.nwcUrl });
+        const nwc = createNwcProvider(wallet.nwcUrl);
         try {
           await nwc.enable();
           if (epochOf(walletId) !== epoch) throw new Error('Wallet was disconnected');
@@ -3268,6 +3515,7 @@ export const useWalletStore = defineStore('wallet', {
           await provider.disconnect();
           delete this.providers[walletId];
         }
+        if (wallet?.type === WALLET_TYPES.ARKADE) this.arkadeMaintaining = false;
       } else if (state) {
         closeNwc(state.nwcInstance);
       }
@@ -3308,6 +3556,7 @@ export const useWalletStore = defineStore('wallet', {
         if (!this.isBalanceReadCurrent(read)) return false;
         const result = await provider.getBalance();
         if (!this.isBalanceReadCurrent(read)) return false;
+        this._noteConnection(walletId);
         const accepted = this.applyBalance(walletId, result.balance, {
           read, source: result.fresh === false ? 'cache' : source,
           fresh: result.fresh !== false, error: result.syncError || null,
@@ -3320,7 +3569,10 @@ export const useWalletStore = defineStore('wallet', {
         }
         return accepted;
       } catch (error) {
-        if (this.isBalanceReadCurrent(read)) this.markBalanceError(walletId, error.message || 'Balance could not be refreshed');
+        if (this.isBalanceReadCurrent(read)) {
+          this._noteConnection(walletId, error);
+          this.markBalanceError(walletId, error.message || 'Balance could not be refreshed');
+        }
         return false;
       } finally {
         if (this.isBalanceReadCurrent(read)) this.markBalanceRefresh(walletId, false);
@@ -3357,18 +3609,25 @@ export const useWalletStore = defineStore('wallet', {
     },
 
     /**
-     * Tell the user money arrived while they were looking at something else.
+     * A wallet's balance went UP between two refreshes.
      *
-     * A balance that went UP between two refreshes is the honest, rail-agnostic
-     * signal here: it covers a Lightning receive, an on-chain deposit landing
-     * and a transfer in, without this store having to understand any of them.
-     * A send lowers the balance and is never announced.
+     * Spark wallets, and every wallet whose history can be read (LNbits,
+     * Arkade, an NWC connection allowed list_transactions), are announced by
+     * payment, each once with its own amount: the Spark lifecycle and
+     * services/walletWatch. For those a rise only asks the watch to look now.
      *
-     * Deliberately quiet in three cases: the first reading of a session (we
-     * have nothing to compare against, and "you received your whole balance"
-     * on launch would be a lie), while the app is on screen (the UI is already
-     * showing it — the service checks this), and when the user has not asked
-     * for notifications at all.
+     * Only a wallet whose history cannot be read (an NWC connection without
+     * list_transactions) is announced from the rise itself: it covers a
+     * Lightning receive and a transfer in, without this store having to
+     * understand either. A send lowers the balance and is never announced.
+     *
+     * Each rise is reported as `lastReceipt`, which IncomingPaymentHost shows
+     * in the app. The system notification stays quiet in three cases: the
+     * first reading of a session (we have nothing to compare against, and
+     * "you received your whole balance" on launch would be a lie), while the
+     * app is on screen (the host shows it; the service checks this), and when
+     * the user has not asked for notifications at all. A rise on a wallet an
+     * internal transfer is heading to is the user's own move: neither.
      *
      * Fire-and-forget: a notification is never worth failing a refresh over.
      */
@@ -3389,6 +3648,15 @@ export const useWalletStore = defineStore('wallet', {
       if (previous === undefined) return;
       const received = balanceAfter - previous;
       if (received <= 0) return;
+      // A wallet whose history the watch reads is announced by payment,
+      // with each payment's own amount (services/walletWatch): the rise
+      // only asks the watch to look now.
+      if (walletWatch?.()?.hint(wallet.id)) return;
+      if (this.takeInternalTransferTo(wallet.id)) return;
+
+      const settledWhileAway = typeof document !== 'undefined' && document.visibilityState === 'hidden';
+      this.recordConfirmedReceive({ walletId: wallet.id, amountSats: received });
+      this.lastReceipt = { walletId: wallet.id, amountSats: received, at: Date.now(), paymentId: null, paymentHash: null, settledWhileAway };
 
       const notifications = useNotificationsStore();
       if (!notifications.canNotifyPayments) return;
@@ -3643,7 +3911,8 @@ export const useWalletStore = defineStore('wallet', {
      * Keep the wallets this version can use. An entry it cannot use (a
      * missing secret, a type it does not know) leaves the list but never the
      * disk: it moves to `_unusableWallets`, which every save writes back as
-     * it was read, so a newer version or a repair can still reach it.
+     * it was read (an NWC string sealed, see persistState), so a newer
+     * version or a repair can still reach it.
      */
     async validateWallets() {
       const unusable = [];
@@ -3696,6 +3965,8 @@ export const useWalletStore = defineStore('wallet', {
 
       this.wallets = [];
       this.activeWalletId = null;
+      this.confirmedReceiveActivity = null;
+      this.confirmedReceivesByWallet = {};
       this.connectionStates = {};
       for (const id of Object.keys(this.balanceStates || {})) forgetSparkWallet?.(id);
       this.balanceStates = {};
@@ -3913,17 +4184,38 @@ export const useWalletStore = defineStore('wallet', {
      * reason, NWC message, LNbits detail) verbatim when it's safe, so
      * the modal shows "Insufficient balance (A → B)" instead of the
      * generic "Transfer failed (A → B)". Tech-only failures fall back
-     * to a curated string inside getUserFriendlyError.
+     * to a curated string inside buildPaymentError.
      *
      * The raw error is logged at the call site via `console.error` for
      * debugging; the return value here is what the user actually sees.
      */
     _friendlyTransferError(error, fromWallet, toWallet, phase = 'transfer') {
-      const { description } = getUserFriendlyError(error, 'transfer');
+      // Translated, and with amounts as settings writes them: coded copy
+      // fills in figures ("The network fee would be ₿ 12, ...").
+      const { reason: description } = buildPaymentError(error, {
+        context: 'transfer',
+        useBip177Format: this.useBip177Format,
+      }, i18n.global.t.bind(i18n.global));
       const suffix = phase === 'invoice'
         ? `(${toWallet.name})`
         : `(${fromWallet.name} → ${toWallet.name})`;
       return `${description} ${suffix}`;
+    },
+
+    /**
+     * The error a failed transfer throws: _friendlyTransferError's text,
+     * with the original's code and the figures its copy reads. The payment
+     * dialog then says the same as for any payment, and Auto-Transfer still
+     * knows what happened (utils/autoTransfer.js failureReason) instead of
+     * guessing from the words. The text is ours, so it carries no
+     * service's mark (utils/errorOrigin.js).
+     */
+    _transferError(error, fromWallet, toWallet, phase = 'transfer') {
+      const friendly = new Error(this._friendlyTransferError(error, fromWallet, toWallet, phase));
+      for (const field of ['code', 'feeSats', 'limitSats', 'minSats', 'maxSats']) {
+        if (error?.[field] !== undefined) friendly[field] = error[field];
+      }
+      return friendly;
     },
 
     /**
@@ -3984,7 +4276,7 @@ export const useWalletStore = defineStore('wallet', {
           paymentResult = await fromProvider.transferToSparkAddress(sparkAddress, amountSats);
         } catch (sparkError) {
           console.error('Spark-native transfer error:', sparkError);
-          throw new Error(this._friendlyTransferError(sparkError, fromWallet, toWallet));
+          throw this._transferError(sparkError, fromWallet, toWallet);
         }
       } else {
         // Lightning path: create invoice on destination, pay from source
@@ -3992,16 +4284,15 @@ export const useWalletStore = defineStore('wallet', {
           invoice = await this.createInvoiceOnWallet(toWalletId, amountSats, transferMemo);
         } catch (invoiceError) {
           console.error('Invoice creation error:', invoiceError);
-          throw new Error(this._friendlyTransferError(invoiceError, fromWallet, toWallet, 'invoice'));
+          throw this._transferError(invoiceError, fromWallet, toWallet, 'invoice');
         }
 
-        if (toType === 'spark') {
-          // The receiving half will settle this invoice: identify that
-          // receipt by its payment hash so it is not announced as income.
-          try {
-            this.noteInternalTransfer(toWalletId, new Invoice({ pr: String(invoice) }).paymentHash || null);
-          } catch { /* unidentified: not suppressed */ }
-        }
+        // The receiving half will settle this invoice: identify that
+        // receipt by its payment hash so it is not announced as income
+        // (every wallet type's receipts are matched by hash).
+        try {
+          this.noteInternalTransfer(toWalletId, new Invoice({ pr: String(invoice) }).paymentHash || null);
+        } catch { /* unidentified: not suppressed */ }
 
         try {
           if (fromType === 'spark' || fromType === 'lnbits' || fromType === 'arkade') {
@@ -4010,11 +4301,11 @@ export const useWalletStore = defineStore('wallet', {
             paymentResult = await fromProvider.payInvoice({ invoice });
           } else {
             // NWC: proof-checked, never resent on its own (services/nwcPayment).
-            paymentResult = await payWithNwc(fromProvider, invoice, { limit: this.nwcLimitFor(fromWalletId) });
+            paymentResult = await payWithNwc(fromProvider, invoice, this.nwcPayOptions(fromWalletId));
           }
         } catch (payError) {
           console.error('Payment error:', payError);
-          throw new Error(this._friendlyTransferError(payError, fromWallet, toWallet, 'pay'));
+          throw this._transferError(payError, fromWallet, toWallet, 'pay');
         }
       }
 
@@ -4089,6 +4380,12 @@ export const useWalletStore = defineStore('wallet', {
           // entry; keep a previously known rate if the response omits it.
           this.exchangeRates = Object.fromEntries(
             SELECTABLE_FIAT_CURRENCIES.map((code) => [code.toLowerCase(), rates[code] || this.exchangeRates[code.toLowerCase()] || 0])
+          );
+          // Each rate's own fetch time, never this moment: a rate the service
+          // kept from an earlier fetch keeps its age (#456).
+          const times = fiatRatesService.getRateTimes();
+          this.exchangeRateTimes = Object.fromEntries(
+            SELECTABLE_FIAT_CURRENCIES.map((code) => [code.toLowerCase(), rates[code] ? times[code] || 0 : this.exchangeRateTimes[code.toLowerCase()] || 0])
           );
           this.exchangeRatesAvailable = true;
           this.exchangeRatesLastUpdate = new Date().toISOString();
@@ -4208,6 +4505,40 @@ export const useWalletStore = defineStore('wallet', {
     },
 
     /**
+     * Every wallet this device holds: the list, the entries it cannot use
+     * now (validateWallets), and Spark entries set aside by the migration.
+     * Only read once the saved state is loaded; a wallet that may come back
+     * is held.
+     */
+    _heldWalletIds() {
+      return new Set([
+        ...[...this.wallets, ...this._unusableWallets].map((w) => w.id),
+        ...setAsideSparkWalletIds(),
+      ]);
+    },
+
+    /**
+     * Record what a connected wallet's last answer says about its
+     * connection: an answer clears "ended"; an error that says the other
+     * side ended it sets it (utils/connectionEnded); any other error says
+     * nothing about it and leaves it as it was.
+     */
+    _noteConnection(walletId, error = null) {
+      const wallet = this.wallets.find((w) => w.id === walletId);
+      const type = wallet?.type || WALLET_TYPES.NWC;
+      if (!error) {
+        if (!this.connectionEnded[walletId]) return;
+        delete this.connectionEnded[walletId];
+        // The NWC status says the same as the flag, whichever read saw it.
+        if (type === WALLET_TYPES.NWC && this.nwcStatus[walletId] === 'ended') this.nwcStatus[walletId] = 'answering';
+        return;
+      }
+      if (!wallet || !isConnectionEnded(type, error)) return;
+      this.connectionEnded[walletId] = true;
+      if (type === WALLET_TYPES.NWC) this.nwcStatus[walletId] = 'ended';
+    },
+
+    /**
      * Refuse, with the code a save would give, when saving cannot be done
      * safely now. A save replaces everything on disk, so two rules keep it
      * from destroying what it replaces: nothing is written before the saved
@@ -4237,9 +4568,21 @@ export const useWalletStore = defineStore('wallet', {
      */
     async persistState({ requireDurable = false, admit = [] } = {}) {
       try {
+        // Every connection string is sealed first (asynchronous, once per
+        // string), so that from here the state is read and written in one
+        // step: a slower save can never write an older state over a newer
+        // one. A wallet added while sealing is sealed in the next pass; one
+        // still added after the last is saved plain by this save and sealed
+        // by the next, so a save always ends.
+        // Wallets set aside are sealed too: one is often set aside for a
+        // string that is not quite right, which can still hold a secret.
+        const kept = () => [...this.wallets, ...this._unusableWallets];
+        for (let pass = 0; pass < SEAL_PASSES && !nwcAtRest.isSealed(kept()); pass += 1) {
+          await nwcAtRest.seal(kept());
+        }
         this._assertSavable();
         const listed = this.wallets.filter((w) => !addingWallets.has(w.id) || admit.includes(w.id));
-        const wallets = [...listed, ...this._unusableWallets];
+        const wallets = [...listed, ...this._unusableWallets].map((w) => nwcAtRest.toSaved(w));
 
         // Save new format
         const stateToSave = {
@@ -4254,12 +4597,13 @@ export const useWalletStore = defineStore('wallet', {
           exchangeRates: this.exchangeRates,
           exchangeRatesAvailable: this.exchangeRatesAvailable,
           exchangeRatesLastUpdate: this.exchangeRatesLastUpdate,
+          exchangeRateTimes: this.exchangeRateTimes,
           hasBackedUp: this.hasBackedUp,
           biometricsEnabled: this.biometricsEnabled,
           privacyScreenEnabled: this.privacyScreenEnabled,
           // Kiosk
           kioskEnabled: this.kioskEnabled,
-          kioskPin: this.kioskPin,
+          kioskPinHash: this.kioskPinHash,
           kioskWalletId: this.kioskWalletId,
           kioskTipEnabled: this.kioskTipEnabled,
           kioskTipValues: this.kioskTipValues,
@@ -4279,7 +4623,6 @@ export const useWalletStore = defineStore('wallet', {
             id: w.id,
             name: w.name,
             type: w.type || 'nwc',
-            nwcString: w.nwcUrl,
             balance: this.balances[w.id] || 0,
           })),
           activeWalletId: this.activeWalletId,
@@ -4353,7 +4696,9 @@ export const useWalletStore = defineStore('wallet', {
       sparkPhraseEpoch += 1;
       for (const wallet of this.wallets) {
         this._bumpWalletEpoch(wallet.id);
+        walletWatch?.()?.forget(wallet.id);
         if (wallet.type === WALLET_TYPES.SPARK) forgetSparkWallet?.(wallet.id);
+        else forgetWalletReceipts?.(wallet.id);
       }
       if (this._persistTimer) { clearTimeout(this._persistTimer); this._persistTimer = null; }
       // Close all connections first
@@ -4392,27 +4737,26 @@ export const useWalletStore = defineStore('wallet', {
 
     async enableKiosk(pin, walletId) {
       this.kioskEnabled = true;
-      this.kioskPin = pin;
+      this.kioskPinHash = hashKioskPin(pin);
       this.kioskWalletId = walletId || null;
       this.kioskOwnerAccess = true; // merchant keeps full access after setup
       await this.persistState();
     },
 
+    /**
+     * Turns kiosk off. Only the PIN goes: the wallet, tips, round-up and
+     * display stay for the next time it is turned on (issue #449).
+     */
     async disableKiosk() {
       this.pendingDeepLink = null;
       this.kioskEnabled = false;
-      this.kioskPin = '';
+      this.kioskPinHash = '';
       this.kioskOwnerAccess = false;
-      this.kioskWalletId = null;
-      this.kioskTipEnabled = false;
-      this.kioskTipValues = [5, 10, 20];
-      this.kioskRoundUpEnabled = false;
-      this.kioskDisplayCurrency = 'sats';
       await this.persistState();
     },
 
     unlockToOwnerMode(pin) {
-      if (pin === this.kioskPin) {
+      if (kioskPinMatches(pin, this.kioskPinHash)) {
         if (this.pendingDeepLink?.target === 'kiosk') this.pendingDeepLink = null;
         this.kioskOwnerAccess = true;
         return true;
@@ -4430,12 +4774,8 @@ export const useWalletStore = defineStore('wallet', {
       this.kioskOwnerAccess = false;
     },
 
-    verifyKioskPin(pin) {
-      return pin === this.kioskPin;
-    },
-
     async changeKioskPin(newPin) {
-      this.kioskPin = newPin;
+      this.kioskPinHash = hashKioskPin(newPin);
       await this.persistState();
     },
 

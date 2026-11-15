@@ -23,9 +23,9 @@
       <!-- ── The rule ─────────────────────────────────────────────── -->
       <template v-if="view === 'rule'">
         <header class="iform-sheet-top">
-          <button type="button" class="at-bar-action" @click="close">{{ $t('Cancel') }}</button>
+          <button type="button" class="sheet-nav-icon" :aria-label="$t('Cancel')" @click="close"><Icon icon="tabler:x" width="20" height="20" /></button>
           <div class="iform-sheet-title">{{ title }}</div>
-          <span class="at-bar-action at-bar-action--ghost" aria-hidden="true">{{ $t('Cancel') }}</span>
+          <span class="sheet-nav-icon at-bar-action--ghost" aria-hidden="true" />
         </header>
         <div class="iform-sheet-scroll">
           <div class="iform-body">
@@ -245,7 +245,8 @@ import { useWalletStore } from '../../stores/wallet';
 import { useAutoWithdrawStore } from '../../stores/autoWithdraw';
 import { useAddressBookStore } from '../../stores/addressBook';
 import { keypadSats } from '../../utils/amountKeypad.js';
-import { lnurlGetJson } from '../../utils/lnurlHttp.js';
+import { fetchPayRequest, lightningAddressUrl } from '../../utils/lnurlPay.js';
+import { readPayerRequest } from '../../utils/lud18.js';
 import { readClipboardCrossPlatform } from '../../utils/shopClipboard.js';
 import {
   DESTINATION_KIND,
@@ -282,7 +283,7 @@ export default {
       keypad: { value: '', fiat: false, currency: 'USD' },
       keepSome: false,
       candidate: null,
-      candidateState: null, // 'checking' | 'unknown' | 'problem' | 'silent'
+      candidateState: null, // 'checking' | 'unknown' | 'problem' | 'silent' | 'details'
       candidateAttempt: 0,
       scanning: false,
       saving: false,
@@ -408,6 +409,7 @@ export default {
       if (this.candidateState === 'checking') return this.$t('Checking…');
       if (this.candidateState === 'unknown') return this.$t('That is not an address this wallet can send to.');
       if (this.candidateState === 'silent') return this.reason('unreachable', this.candidate);
+      if (this.candidateState === 'details') return this.reason('details', this.candidate);
       return this.reason(destinationProblem({ source: this.wallet, destination: this.candidate, wallets: this.walletStore.wallets, rules: this.otherRules }), this.candidate);
     },
   },
@@ -567,24 +569,33 @@ export default {
       }
       if (read.kind === DESTINATION_KIND.LIGHTNING) {
         this.candidateState = 'checking';
-        const answers = await this.lightningAddressAnswers(read.address);
+        const problem = await this.lightningAddressProblem(read.address);
         if (attempt !== this.candidateAttempt) return;
-        if (!answers) {
-          this.candidateState = 'silent';
+        if (problem) {
+          this.candidateState = problem;
           return;
         }
       }
       this.candidateState = null;
       this.choose(read);
     },
-    async lightningAddressAnswers(address) {
-      const [user, domain] = address.split('@');
+    /**
+     * Why a rule could not pay this address, or null when it can: 'silent'
+     * when it does not answer, 'details' when it will not take a payment
+     * without details about the payer (LUD-18), which no one is there to
+     * give when a transfer runs.
+     */
+    async lightningAddressProblem(address) {
+      const url = lightningAddressUrl(address);
+      if (!url) return 'silent';
       try {
-        // A person is waiting on this: give up sooner than a payment would.
-        const response = await lnurlGetJson(`https://${domain}/.well-known/lnurlp/${user}`, { timeoutMs: 8000 });
-        return response.ok && response.data?.tag === 'payRequest' && !!response.data.callback;
+        // The check a transfer makes, so an address accepted here is one the
+        // rule can pay. A person is waiting: give up sooner than a payment would.
+        const payRequest = await fetchPayRequest(url, { timeoutMs: 8000 });
+        const asks = readPayerRequest(payRequest?.payerData);
+        return asks.identifierRequired || asks.unmetRequired.length ? 'details' : null;
       } catch {
-        return false;
+        return 'silent';
       }
     },
 
@@ -613,18 +624,6 @@ export default {
 .at-sheet {
   pointer-events: all;
   height: min(760px, calc(100dvh - var(--safe-top, 0px) - 10px));
-}
-.at-bar-action {
-  flex-shrink: 0;
-  min-width: 64px;
-  min-height: 40px;
-  padding: 0 6px;
-  border: 0;
-  background: none;
-  color: var(--brand-accent-text);
-  font: 600 15px 'Manrope', sans-serif;
-  text-align: left;
-  cursor: pointer;
 }
 .at-bar-action--ghost { visibility: hidden; }
 .at-seclabel { margin: 18px 4px 8px; }

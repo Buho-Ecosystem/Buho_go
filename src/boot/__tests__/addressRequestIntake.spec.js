@@ -1,5 +1,7 @@
 import * as kioskIntake from '../../services/kioskPaymentIntake.js';
+import * as paymentLink from '../../utils/paymentLink.js';
 import * as nwcIntake from '../../services/nwcConnectionIntake.js';
+import * as openActionIntake from '../../services/openActionIntake.js';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { readFileSync } from 'node:fs';
@@ -33,6 +35,8 @@ function harness(file, launchInput, kiosk = false) {
       getLaunchUrl: async () => ({ url: launchInput }),
     } },
     '../services/nwcConnectionIntake.js': nwcIntake,
+    '../services/openActionIntake.js': openActionIntake,
+    '../services/quickAccess.js': { reportShortcutUsed() {} },
     '../services/addressRequestIntake.js': { offerAddressRequest: input => {
       if (!isAddressRequest(input)) return false;
       session.open(input);
@@ -43,6 +47,7 @@ function harness(file, launchInput, kiosk = false) {
     '../utils/walletHydration': { triggerWalletStoreHydration: () => assert.fail('must not connect wallets for sharing') },
     '../utils/nostrLookup': { classifyIdentifier: () => null },
     '../utils/deepLinkRouting': { cardRouteForDeepLink: () => null, createDeepLinkDeduper },
+    '../utils/paymentLink': paymentLink,
     '../utils/logRedaction': { redactPaymentInput: () => '(redacted)' },
     '../utils/nfc': {
       addNfcListener: callback => { foregroundScan = callback; }, addNfcErrorListener: () => {}, isNfcAvailable: async () => true,

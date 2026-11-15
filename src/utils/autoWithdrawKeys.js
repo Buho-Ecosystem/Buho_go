@@ -12,6 +12,7 @@
  */
 
 import { sparkAccountNumberOf } from './sparkAccounts.js';
+import { DESTINATION_KIND, PAUSED } from './autoTransfer.js';
 
 /**
  * @param {Record<string, object>} configs  saved rules by key
@@ -48,4 +49,42 @@ export function migratePocketConfigKeys(configs, wallets) {
 
 function isPocketKey(key) {
   return /:\d+$/.test(key);
+}
+
+/**
+ * The rules for the wallets this device still holds. A rule whose own
+ * wallet has left goes with it; a rule that sends to a wallet that has left
+ * stays, switched off, and says why, so the person can pick a new
+ * destination.
+ *
+ * Removing a wallet applies this for that wallet (stores/autoWithdraw
+ * forgetWallet). Wallets removed before removal did so left their rules
+ * behind, so the saved rules are settled the same way when they load.
+ *
+ * Pure.
+ *
+ * @param {Record<string, object>} configs      saved rules by wallet id
+ * @param {(walletId: string) => boolean} holds does the device still hold this wallet
+ * @returns {{ configs: Record<string, object>, dropped: string[], paused: string[] }}
+ */
+export function settleRulesForWallets(configs, holds) {
+  const result = {};
+  const dropped = [];
+  const paused = [];
+  for (const [walletId, rule] of Object.entries(configs || {})) {
+    if (!holds(walletId)) {
+      dropped.push(walletId);
+      continue;
+    }
+    const destination = rule?.destination;
+    const destinationGone = destination?.kind === DESTINATION_KIND.WALLET && !holds(destination.walletId);
+    const alreadySaysSo = rule?.enabled === false && rule?.pausedReason === PAUSED.DESTINATION_REMOVED;
+    if (destinationGone && !alreadySaysSo) {
+      result[walletId] = { ...rule, enabled: false, pausedReason: PAUSED.DESTINATION_REMOVED };
+      paused.push(walletId);
+    } else {
+      result[walletId] = rule;
+    }
+  }
+  return { configs: result, dropped, paused };
 }

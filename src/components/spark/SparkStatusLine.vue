@@ -14,9 +14,9 @@
     data-audit="spark-status-line"
     @click="open = true"
   >
-    <Icon :icon="line.icon" width="16" height="16" class="spark-status-line__icon" aria-hidden="true" />
+    <Icon :icon="line.icon" width="16" height="16" class="spark-status-line__icon" />
     <span class="spark-status-line__text">{{ line.text }}</span>
-    <Icon icon="tabler:chevron-right" width="14" height="14" class="spark-status-line__chevron" aria-hidden="true" />
+    <Icon icon="tabler:chevron-right" width="14" height="14" class="spark-status-line__chevron" />
   </button>
 
   <SparkStatusSheet v-model="open" :state="state" :wallet-id="walletId" />

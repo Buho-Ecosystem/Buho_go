@@ -35,7 +35,6 @@
         icon="tabler:chevron-down"
         class="settings-section-chevron"
         :class="{ 'settings-section-chevron-expanded': expanded }"
-        :aria-hidden="true"
       />
     </header>
     <q-slide-transition>

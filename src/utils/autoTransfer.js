@@ -22,6 +22,7 @@
 
 import { canWalletPay, canWalletReceiveLightning } from './walletCapabilities.js';
 import { classifyDestination, normalizeDestination } from './clipboardSuggestion.js';
+import { isCounterpartyError } from './errorOrigin.js';
 
 export const DESTINATION_KIND = Object.freeze({
   WALLET: 'wallet',
@@ -249,8 +250,21 @@ export function failureReason(error) {
   const code = String(error?.code || '');
   const message = String(error?.message || '').toLowerCase();
   if (code === 'NWC_PAYMENT_UNCONFIRMED') return 'unconfirmed';
-  if (error?.counterparty || code === 'COUNTERPARTY_ERROR') return 'refused';
+  // The route cost more than a payment with no fee shown may
+  // (providers/BreezSparkWalletProvider.js). Named before the words are
+  // read: its copy mentions the network, which is not a lost connection.
+  if (code === 'LIGHTNING_FEE_ABOVE_LIMIT') return 'fee';
+  // The destination will not take a payment without details about the
+  // payer (LUD-18); nobody is there to give them, so it stops.
+  if (code === 'LNURL_PAYER_DATA_UNSUPPORTED' || code === 'LNURL_PAYER_DATA_REQUIRED') return 'details';
+  // The destination's service said no: its own reason (utils/errorOrigin.js),
+  // a refusal that came without one, or an amount outside what it accepts
+  // (utils/lnurlPay.js).
+  if (isCounterpartyError(error) || error?.counterparty || code === 'COUNTERPARTY_ERROR'
+      || code === 'LNURL_REFUSED' || code === 'LNURL_AMOUNT_OUT_OF_RANGE') return 'refused';
   if (/insufficient|not enough|balance too low/.test(message)) return 'insufficient';
+  // It answered, but with an HTTP error or no pay request: as good as no answer.
+  if (code === 'LNURL_HTTP_ERROR' || code === 'LNURL_REDIRECTED' || code === 'LNURL_NOT_PAY_REQUEST') return 'unreachable';
   if (/invalid .*address|no .*address configured|could not resolve|failed to fetch|not found|404/.test(message)) return 'unreachable';
   if (/timeout|timed out|network|offline|connect|unreachable|transport/.test(message)) return 'offline';
   return 'other';
@@ -259,15 +273,34 @@ export function failureReason(error) {
 /**
  * Add an event to a rule's recent activity, newest first. A skip with the
  * same reason as the newest event only moves its time, so a rule that waits
- * on every balance tick keeps one line, not twenty.
+ * on every balance tick keeps one line, not twenty. The line remembers when
+ * the wait began (`since`) and the latest cause (`detail`), so a wait that
+ * never ends can be told apart from one that just started.
  */
 export function addEvent(events, event) {
   const list = Array.isArray(events) ? events : [];
   const [newest] = list;
   if (event.outcome === OUTCOME.SKIPPED && newest?.outcome === OUTCOME.SKIPPED && newest.reason === event.reason) {
-    return [{ ...newest, at: event.at }, ...list.slice(1)];
+    const merged = { ...newest, at: event.at, since: newest.since ?? newest.at };
+    if (event.detail != null) merged.detail = event.detail;
+    return [merged, ...list.slice(1)];
   }
   return [event, ...list].slice(0, MAX_EVENTS);
+}
+
+/**
+ * A wait the person has to hear about once it has lasted this long: the
+ * balance could not be confirmed on every try (#430). A rule that waits for
+ * an exchange rate or for more money is fine as it is.
+ */
+export const STUCK_WAIT_MS = 10 * 60 * 1000;
+const STUCK_WAIT_REASONS = new Set(['balance_unverified']);
+
+/** The newest event is a wait of that kind that has gone on too long. */
+export function isStuckWait(event, now = Date.now()) {
+  if (event?.outcome !== OUTCOME.SKIPPED || !STUCK_WAIT_REASONS.has(event.reason)) return false;
+  const since = Number(event.since ?? event.at);
+  return Number.isFinite(since) && now - since >= STUCK_WAIT_MS;
 }
 
 const BLOCKING = new Set(Object.values(DESTINATION_PROBLEM));
@@ -275,18 +308,20 @@ const BLOCKING = new Set(Object.values(DESTINATION_PROBLEM));
 /**
  * Where a rule stands, for its row and its page:
  *   'attention' its newest transfer failed, it cannot reach its destination
- *               at all, or it paused itself after failures; `event` says why
+ *               at all, it paused itself after failures, or it has not been
+ *               able to check its balance for STUCK_WAIT_MS; `event` says why
  *   'paused'    switched off (with `reason` when the app switched it off)
  *   'sent'      it moved money; `event` is the newest transfer
  *   'waiting'   on, nothing moved yet
  * A wait (no rate yet, a balance not checked) never hides the last transfer.
  */
-export function ruleStatus(rule) {
+export function ruleStatus(rule, { now = Date.now() } = {}) {
   const events = rule?.events || [];
   const newest = events.find((e) => e.outcome !== OUTCOME.SKIPPED) || null;
   if (rule?.pausedReason === PAUSED.FAILURES) return { kind: 'attention', event: newest };
   if (!rule?.enabled) return { kind: 'paused', reason: rule?.pausedReason || null };
   if (events[0]?.outcome === OUTCOME.SKIPPED && BLOCKING.has(events[0].reason)) return { kind: 'attention', event: events[0] };
+  if (isStuckWait(events[0], now)) return { kind: 'attention', event: events[0] };
   if (newest?.outcome === OUTCOME.FAILED) return { kind: 'attention', event: newest };
   if (newest?.outcome === OUTCOME.SENT) return { kind: 'sent', event: newest };
   return { kind: 'waiting' };

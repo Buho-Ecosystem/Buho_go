@@ -657,6 +657,7 @@ export function createChatRuntime(deps = {}) {
   /**
    * Send a failed or waiting message again, with a fresh retry budget.
    * @returns {Promise<boolean>} False when the message is not in the outbox.
+   * @throws {DmError} When the retry ends in a terminal delivery failure.
    */
   async function retry(messageId) {
     assertUsable();

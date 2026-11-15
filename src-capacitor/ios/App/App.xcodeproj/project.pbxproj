@@ -9,6 +9,7 @@
 /* Begin PBXBuildFile section */
 		2FAD9763203C412B000D30F8 /* config.xml in Resources */ = {isa = PBXBuildFile; fileRef = 2FAD9762203C412B000D30F8 /* config.xml */; };
 		36167E05352B23DCDF876BEA /* FileExportPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1698E251AC98CE1CECD0A04 /* FileExportPlugin.swift */; };
+		58034EAA70A9959ED87B02D5 /* WalletAppsPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = 877FB6A37B65ECD26F1E7313 /* WalletAppsPlugin.swift */; };
 		50379B232058CBB4000EE86E /* capacitor.config.json in Resources */ = {isa = PBXBuildFile; fileRef = 50379B222058CBB4000EE86E /* capacitor.config.json */; };
 		504EC3081FED79650016851F /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 504EC3071FED79650016851F /* AppDelegate.swift */; };
 		504EC30D1FED79650016851F /* Main.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 504EC30B1FED79650016851F /* Main.storyboard */; };
@@ -33,6 +34,7 @@
 		AF277DCFFFF123FFC6DF26C7 /* Pods_App.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Pods_App.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		AF51FD2D460BCFE21FA515B2 /* Pods-App.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-App.release.xcconfig"; path = "Pods/Target Support Files/Pods-App/Pods-App.release.xcconfig"; sourceTree = "<group>"; };
 		D1698E251AC98CE1CECD0A04 /* FileExportPlugin.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = FileExportPlugin.swift; sourceTree = "<group>"; };
+		877FB6A37B65ECD26F1E7313 /* WalletAppsPlugin.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WalletAppsPlugin.swift; sourceTree = "<group>"; };
 		FC68EB0AF532CFC21C3344DD /* Pods-App.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-App.debug.xcconfig"; path = "Pods/Target Support Files/Pods-App/Pods-App.debug.xcconfig"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -87,6 +89,7 @@
 				50B271D01FEDC1A000F3C39B /* public */,
 				02A4F3CBAB9A15C818F27B6A /* BuhoBridgeViewController.swift */,
 				D1698E251AC98CE1CECD0A04 /* FileExportPlugin.swift */,
+				877FB6A37B65ECD26F1E7313 /* WalletAppsPlugin.swift */,
 			);
 			path = App;
 			sourceTree = "<group>";
@@ -216,6 +219,7 @@
 				504EC3081FED79650016851F /* AppDelegate.swift in Sources */,
 				ECDC304636B09C53434872A4 /* BuhoBridgeViewController.swift in Sources */,
 				36167E05352B23DCDF876BEA /* FileExportPlugin.swift in Sources */,
+				58034EAA70A9959ED87B02D5 /* WalletAppsPlugin.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

@@ -117,6 +117,30 @@ test('pollVerify fires onUpdate when the status changes and never throws on erro
   assert.equal(seen.length, 1) // one change: undelivered -> delivered (the throw is swallowed)
 })
 
+test('pollVerify never follows a redirect, on the LNURL transport or a plain fetch', async () => {
+  const seen = []
+  const fetchImpl = async (url, options) => {
+    seen.push(options)
+    return { ok: true, json: async () => ({ settled: true, mpesa: { delivered: true } }) }
+  }
+  await pollVerify('https://x/verify/1', null, { fetchImpl, intervalMs: 0 })
+  await pollVerify('https://x/verify/1', null, { fetchImpl, intervalMs: 0, fetchTimeoutMs: 0 })
+  assert.equal(seen.length, 2)
+  for (const options of seen) {
+    assert.equal(options.disableRedirects, true)
+    assert.equal(options.redirect, 'manual')
+  }
+})
+
+test('pollVerify treats a redirect as no answer: it keeps polling, and reports nothing it did not read', async () => {
+  let t = 0
+  let calls = 0
+  const fetchImpl = async () => { calls += 1; return { ok: false, status: 302, json: async () => ({ settled: true, mpesa: { delivered: true } }) } }
+  const r = await pollVerify('https://x/verify/1', null, { fetchImpl, timeoutMs: 25, intervalMs: 0, now: () => (t += 10) })
+  assert.equal(r, null)
+  assert.ok(calls >= 2)
+})
+
 test('pollVerify stops immediately when the abort signal is already set', async () => {
   let calls = 0
   const fetchImpl = async () => { calls += 1; return { ok: true, json: async () => ({ settled: true }) } }

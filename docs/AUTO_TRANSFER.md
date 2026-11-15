@@ -47,7 +47,7 @@ Words come from one place, `utils/autoTransferCopy.js`: a rule is a sentence, a 
 
 ## Keeping balances current
 
-A rule only runs when a verified balance arrives. Spark wallets get them from the Spark lifecycle, all of them, all the time. Other wallets (NWC, LNbits, Arkade) were read only for the active wallet while Home was open, so a rule on any other of them never ran. `services/autoTransferWatch.js` reads every wallet with a switched-on rule that Spark does not cover: right away when the app starts (the rules are saved, so they watch again after the app was closed), every 60 seconds while it runs, and once when it comes back to the front.
+A rule only runs when a verified balance arrives. Spark wallets get them from the Spark lifecycle, all of them, all the time. Other wallets (NWC, LNbits, Arkade) were read only for the active wallet while Home was open, so a rule on any other of them never ran. `services/walletWatch.js`, which also watches every such wallet for incoming payments (docs/INCOMING_PAYMENTS.md), reads the balance of every wallet with a switched-on rule that Spark does not cover: right away when the app starts (the rules are saved, so they watch again after the app was closed), every 60 seconds while it runs, and once when it comes back to the front.
 
 ## In the background
 
@@ -65,7 +65,7 @@ So a payment that arrives while the app is closed or frozen moves on the next re
 
 ## Checking
 
-- `node --test src/utils/__tests__/autoTransfer.spec.js src/stores/__tests__/autoTransferEngine.spec.js src/services/__tests__/autoTransferWatch.spec.js`
+- `node --test src/utils/__tests__/autoTransfer.spec.js src/stores/__tests__/autoTransferEngine.spec.js src/services/__tests__/walletWatch.spec.js`
 - `node scripts/check-auto-transfer-cold-start.mjs`: a cold boot with saved wallets and a rule; the rule's wallet must be read within 15 s.
 - `node scripts/check-auto-transfer.mjs` (dev server on port 9031): setup through the real sheet, destinations, attention on the list, page and Home, history, the wallet's details, dark, and the real chain from a verified balance through the engine and a wallet-to-wallet transfer to the toast, failures and recovery.
 - On a device: `scripts/device/auto-transfer-timeline.mjs` (steps in its header) runs the open → background → resume timeline above.

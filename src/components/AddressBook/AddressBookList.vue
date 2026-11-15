@@ -41,10 +41,10 @@
             :aria-label="unreadAll > 0 ? `${$t('Messages')}, ${$t('New messages')}: ${unreadAll}` : $t('Messages')"
             @click="messagesOpen = true"
           >
-            <Icon icon="tabler:messages" width="18" height="18" aria-hidden="true" />
+            <Icon icon="tabler:messages" width="18" height="18" />
             <span class="msg-row-label">{{ $t('Messages') }}</span>
             <span v-if="unreadAll > 0" class="msg-row-count" aria-hidden="true">{{ unreadBadge }}</span>
-            <Icon icon="tabler:chevron-right" width="16" height="16" class="msg-row-chev" aria-hidden="true" />
+            <Icon icon="tabler:chevron-right" width="16" height="16" class="msg-row-chev" />
           </button>
 
           <template v-if="!searchQuery && recentlyPaidEntries.length > 0">

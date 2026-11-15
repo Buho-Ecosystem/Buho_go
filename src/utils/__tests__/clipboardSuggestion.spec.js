@@ -40,6 +40,13 @@ assert.equal(offerLabelKey('bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq', 'spark'
 assert.equal(offerLabelKey('LNURL1DP68GURN8GHJ7MRWW4EXCTNXD9SHG6NPVCHXXMMD9AKXUATJDSKHQCTED', 'spark'), 'Copied link');
 assert.equal(offerLabelKey(`nostr:${npub}`, 'spark'), 'Copied Nostr profile');
 assert.equal(offerLabelKey('+254712345678', 'spark'), 'Copied phone number');
+// A copied `tel:` link is the phone number it calls: offered as one when a
+// payout service takes it, not offered at all when none does.
+assert.equal(offerLabelKey('tel:+254712345678', 'spark'), 'Copied phone number');
+assert.equal(isSuggestibleDestination('tel:+254712345678', 'spark'), true);
+assert.equal(isSuggestibleDestination('tel:+12125551212', 'spark'), false);
+assert.equal(isSuggestibleDestination('tel:+254712345678;ext=1', 'spark'), false);
+assert.equal(isSuggestibleDestination('tel:0712345678', 'spark'), false, 'a local link that does not say its country');
 
 // Only fingerprints reach storage; session memory survives storage failure.
 const store = new Map();

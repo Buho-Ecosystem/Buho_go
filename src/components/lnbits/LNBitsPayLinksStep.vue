@@ -27,12 +27,12 @@
       <button type="button" class="pay-links__row" @click="openExtensions">
         <span class="pay-links__tile" aria-hidden="true"><Icon icon="tabler:user-cog" width="17" height="17" /></span>
         <span class="pay-links__text">{{ $t('I do') }}<small>{{ $t('Turn it on in Extensions') }}</small></span>
-        <Icon icon="tabler:external-link" width="16" height="16" class="pay-links__chevron" aria-hidden="true" />
+        <Icon icon="tabler:external-link" width="16" height="16" class="pay-links__chevron" />
       </button>
       <button type="button" class="pay-links__row" @click="askOwner">
         <span class="pay-links__tile" aria-hidden="true"><Icon icon="tabler:send" width="16" height="16" /></span>
         <span class="pay-links__text">{{ $t('Someone else') }}<small>{{ $t('Ask them to turn it on') }}</small></span>
-        <Icon icon="tabler:chevron-right" width="16" height="16" class="pay-links__chevron" aria-hidden="true" />
+        <Icon icon="tabler:chevron-right" width="16" height="16" class="pay-links__chevron" />
       </button>
     </div>
     <p class="pay-links__foot" role="status">

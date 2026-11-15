@@ -11,7 +11,7 @@ import {
   APP_RETURN_URL, CODE_REQUEST, PAIRING_TTL_MS, RETURN_PATH, returnRequestId,
   answerRelays, approvalUrl, connectionFor, createPairingRequest, isPairingExpired,
   knownConnection, normalizeWalletUrl, pairingReturnRoute, readReturn,
-  readWalletAnswer, returnUrlFor, walletAuthUri,
+  readWalletAnswer, returnUrlFor, walletAuthUri, pairingExpiresAt,
 } from '../nwcPairing.js';
 import { CODE_RELAYS, PAIRING, connectWallet } from '../connectWallets.js';
 import { parseNwcConnection } from '../nwcConnection.js';
@@ -50,6 +50,14 @@ test('the code names BuhoGO, its key, the state and what it asks for, never the 
   assert.equal(params.get('optional_request_methods'), 'get_budget');
   assert.equal(params.get('notification_types'), 'payment_received payment_sent');
   assert.ok(!uri.includes('+pay'), 'spaces as %20, not +');
+});
+
+test('the code says when BuhoGO stops listening, so a late approval is refused', () => {
+  const at = createPairingRequest(CODE_REQUEST, { now: 1_800_000_000_000 });
+  const params = new URL(walletAuthUri(at).replace('nostr+walletauth://', 'https://')).searchParams;
+  assert.equal(params.get('link_expires_at'), String(1_800_000_000 + PAIRING_TTL_MS / 1000));
+  assert.equal(pairingExpiresAt(at) * 1000, at.createdAt + PAIRING_TTL_MS, 'the same moment the request is dropped');
+  assert.equal(pairingExpiresAt({}), null);
 });
 
 test('only a code opened on this phone asks the wallet app to send the person back', () => {

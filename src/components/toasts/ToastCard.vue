@@ -21,10 +21,13 @@
           <div v-if="toast.config.caption" class="app-toast__caption">{{ toast.config.caption }}</div>
         </div>
         <!-- A real button supplies the tap/keyboard/VoiceOver alternative.
-             It overlays only the message, never the separate action buttons. -->
-        <button v-if="simple" type="button" class="app-toast__tap-dismiss" :aria-label="$t('Dismiss')" :aria-describedby="`toast-copy-${toast.id}`" @click="dismiss" />
+             It overlays only the message, never the separate action buttons.
+             With `onOpen` a tap opens what the toast announces. -->
+        <button v-if="simple" type="button" class="app-toast__tap-dismiss" :aria-label="tapLabel" :aria-describedby="`toast-copy-${toast.id}`" @click="tap" />
       </div>
       <span v-if="toast.count > 1" class="app-toast__count" :aria-label="`${toast.count}`">{{ toast.count }}</span>
+      <!-- A toast that opens something shows it: the tap target above is invisible. -->
+      <Icon v-if="simple && toast.config.onOpen" icon="tabler:chevron-right" width="16" height="16" class="app-toast__chevron" />
     </div>
     <div v-if="!simple" class="app-toast__actions">
       <button type="button" class="app-toast__dismiss" :aria-describedby="`toast-copy-${toast.id}`" @click="dismiss">{{ dismissLabel }}</button>
@@ -49,11 +52,12 @@ import { Icon } from '@iconify/vue';
 import { i18n } from '../../boot/i18n.js';
 
 const props = defineProps({ toast: { type: Object, required: true } });
-const emit = defineEmits(['dismiss', 'pause', 'resume', 'action']);
+const emit = defineEmits(['dismiss', 'pause', 'resume', 'action', 'open']);
 const card = ref(null), dx = ref(0), dragging = ref(false), leaving = ref(false);
 let pointer = null, leaveTimer = null, suppressUntil = 0, returnFocus = null;
 const simple = computed(() => props.toast.duration > 0 && !props.toast.config.actions.length && !props.toast.config.closeBtn);
 const dismissLabel = computed(() => typeof props.toast.config.closeBtn === 'string' ? props.toast.config.closeBtn : i18n.global.t('Dismiss'));
+const tapLabel = computed(() => (props.toast.config.onOpen && props.toast.config.openLabel) || i18n.global.t('Dismiss'));
 const icon = computed(() => props.toast.config.icon === 'las la-exclamation-triangle' ? 'warning' : (props.toast.config.icon || ''));
 const colorClass = computed(() => `app-toast--${props.toast.config.color || props.toast.config.type || 'neutral'}`);
 const motionStyle = computed(() => ({ '--toast-x': `${dx.value}px`, '--toast-opacity': leaving.value ? 0 : Math.max(0.45, 1 - Math.abs(dx.value) / 420) }));
@@ -66,6 +70,12 @@ function dismiss() {
   if (leaving.value) return;
   leaving.value = true;
   emit('dismiss');
+}
+function tap() {
+  if (!props.toast.config.onOpen) return dismiss();
+  if (leaving.value) return;
+  leaving.value = true;
+  emit('open');
 }
 function pointerDown(event) {
   if (!event.isPrimary || event.button !== 0 || leaving.value || pointer) return;
@@ -173,6 +183,7 @@ body.body--dark .app-toast--info { --toast-accent: #9ccbff; --toast-tint: #2d445
 .app-toast button:focus-visible { outline: 2px solid currentColor; outline-offset: -2px; }
 .app-toast button:active { background: #8882; }
 .app-toast__tap-dismiss { position: absolute; inset: 0; width: 100%; height: 100%; min-height: 0 !important; }
+.app-toast__chevron { flex-shrink: 0; margin-right: -6px; opacity: .55; }
 .app-toast__dismiss { flex-shrink: 0; padding: 0 8px; }
 .app-toast__actions { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 8px; }
 .app-toast__actions button { display: flex; gap: 6px; align-items: center; justify-content: center; padding: 0 12px; color: var(--toast-accent); }

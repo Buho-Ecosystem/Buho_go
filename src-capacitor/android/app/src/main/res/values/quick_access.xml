@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Quick access (issues #445, #446): the Quick Settings tiles and the launcher
+  shortcuts. The tile names here are what Android shows before the app has
+  set them in its own language (QuickAccessState), and in the panel's edit
+  list. Icon colours follow the app: the brand green on a light green disc
+  for the actions, the grey placeholder (the light theme's input background
+  and muted text in src/css/app.css) for a contact without a picture.
+-->
+<resources>
+    <string name="quick_access_tile_send">Send</string>
+    <string name="quick_access_tile_receive">Receive</string>
+
+    <color name="quick_access_icon_background">#E2F3EC</color>
+    <color name="quick_access_icon_glyph">#059573</color>
+    <color name="quick_access_placeholder_background">#F3EFE3</color>
+    <color name="quick_access_placeholder_glyph">#928D83</color>
+</resources>

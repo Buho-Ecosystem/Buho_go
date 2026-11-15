@@ -10,9 +10,9 @@
 -->
 <template>
   <button v-if="entry" type="button" class="at-line" data-audit="auto-transfer-line" @click="open = true">
-    <Icon icon="tabler:arrow-autofit-right" width="16" height="16" class="at-line__icon" aria-hidden="true" />
+    <Icon icon="tabler:arrow-autofit-right" width="16" height="16" class="at-line__icon" />
     <span class="at-line__text">{{ copy.line }}</span>
-    <Icon icon="tabler:chevron-right" width="14" height="14" class="at-line__chevron" aria-hidden="true" />
+    <Icon icon="tabler:chevron-right" width="14" height="14" class="at-line__chevron" />
   </button>
 
   <q-dialog v-model="open" position="bottom">
@@ -50,11 +50,11 @@ const open = ref(false)
 const trying = ref(false)
 const titleId = `at-alert-${Math.random().toString(36).slice(2, 8)}`
 
-/** The first rule needing attention whose wallet is still here. */
-const entry = computed(() => autoTransfer.needingAttention.find((e) => walletStore.wallets.some((w) => w.id === e.walletId)) || null)
+/** The first rule needing attention, in the wallets' order. */
+const entry = computed(() => autoTransfer.rulesOf(walletStore.wallets).find((e) => e.status.kind === 'attention') || null)
 
 const copy = computed(() => {
-  const wallet = walletStore.wallets.find((w) => w.id === entry.value?.walletId)
+  const wallet = entry.value?.wallet
   if (!wallet) return {}
   const ctx = { t: (key, values) => proxy.$t(key, values), locale: proxy.$i18n.locale, bip177: walletStore.useBip177Format, wallets: walletStore.wallets }
   return attentionCopy(entry.value.rule, { walletName: wallet.name, balanceSats: walletStore.getDisplayBalance(wallet.id)?.balance ?? 0 }, ctx) || {}

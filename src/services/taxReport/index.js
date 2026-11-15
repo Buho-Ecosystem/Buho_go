@@ -74,6 +74,8 @@ function filenameFor(meta, extension) {
  *   the rate the app recorded at settlement, when it has one
  * @param {(txId: string, walletId: string) => string} [input.counterpartyFor]
  * @param {string} input.currency
+ * @param {string[]} [input.rateServers] Mempool API URLs to ask for historical
+ *   rates, in order; the app's own default and fallback when left out
  * @param {{ fromMs: number|null, toMs: number|null }} input.period
  * @param {string} [input.locale]
  * @param {(p: object) => void} [input.onProgress]
@@ -88,6 +90,7 @@ export async function buildReport({
   snapshotFor,
   counterpartyFor,
   currency,
+  rateServers,
   period = { fromMs: null, toMs: null },
   locale,
   onProgress,
@@ -118,7 +121,7 @@ export async function buildReport({
 
   // Rates second, and only for what survived the filter: looking one up for a
   // transaction outside the period would be work nobody asked for.
-  const lookup = createRateLookup({ currency: cur });
+  const lookup = createRateLookup({ currency: cur, servers: rateServers });
   const rows = [];
   let done = 0;
   for (const tx of kept) {

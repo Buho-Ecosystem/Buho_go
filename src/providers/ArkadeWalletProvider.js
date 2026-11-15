@@ -40,8 +40,9 @@
 import { WalletProvider } from './WalletProvider';
 import {
   Wallet,
+  isContractVtxoEvent,
   ESPLORA_URL,
-  Ramps,
+  createDefaultPaymentRouter,
   RestArkProvider,
   RestIndexerProvider,
   EsploraProvider,
@@ -87,6 +88,42 @@ async function deleteDatabase(name) {
   }
 }
 
+/**
+ * One SDK history record as the app's transaction row (see getTransactions
+ * for why a boarding deposit keeps its on-chain id).
+ */
+export function arkadeTransactionRow(tx) {
+  const key = tx.key || {};
+  const id = key.boardingTxid || key.arkTxid || key.commitmentTxid || '';
+  // BuhoGO's tx list (and the LNbits/NWC providers) speak unix SECONDS.
+  // The SDK's `createdAt` is documented as ms-epoch — but normalize by
+  // magnitude anyway so a unit change in a future SDK can't shift
+  // timestamps by x1000. (ms now ≈ 1.7e12; seconds ≈ 1.7e9; 1e11 cleanly
+  // separates them and stays correct for decades.)
+  const raw = tx.createdAt ? Number(tx.createdAt) : 0;
+  const timestamp = raw >= 1e11 ? Math.round(raw / 1000) : Math.round(raw);
+  // `settled` means "anchored on Bitcoin via a batch swap" — but an
+  // offchain Arkade transaction (arkTxid set) is final and spendable
+  // the moment it exists, so showing it as pending would tell a user
+  // their received (and spendable) money hasn't arrived. Only boarding
+  // deposits genuinely await something (the settlement that converts
+  // them into spendable balance).
+  const spendable = tx.settled || Boolean(key.arkTxid);
+  // A boarded deposit was listed under its commitment transaction before
+  // (earlier versions, and the SDK's own batch row while the chain catches
+  // up): that id still names this payment.
+  const aliases = key.boardingTxid && key.commitmentTxid ? [key.commitmentTxid] : [];
+  return {
+    id,
+    type: tx.type === 'RECEIVED' ? 'incoming' : 'outgoing',
+    amount: Number(tx.amount || 0),
+    timestamp: Number.isFinite(timestamp) && timestamp > 0 ? timestamp : 0,
+    status: spendable ? 'completed' : 'pending',
+    description: '',
+    ...(aliases.length ? { aliases } : {}),
+  };
+}
+
 export class ArkadeWalletProvider extends WalletProvider {
   constructor(walletId, walletData) {
     super(walletId, walletData);
@@ -96,7 +133,8 @@ export class ArkadeWalletProvider extends WalletProvider {
     this.network = walletData.network || ARKADE_DEFAULT_NETWORK;
     this.arkServerUrl = walletData.arkServerUrl || ARKADE_MAINNET_SERVER;
 
-    this._lastRecoveryCheck = 0;
+    this._nextRecoveryCheckAt = 0;
+    this._recoveryCheck = null;
     // Optional callback the store wires up to mirror "a recovery settlement
     // is in flight" into reactive state (subtle wallet-maintenance indicator).
     this._onMaintenance = null;
@@ -108,9 +146,15 @@ export class ArkadeWalletProvider extends WalletProvider {
     // restore scan finished" onto the wallet's metadata.
     this._onRestoreScanComplete = null;
 
-    // Stop handle for the notifyIncomingFunds subscription; tracked here so
-    // disconnect() can always tear it down.
-    this._stopIncoming = null;
+    // Payment watches this provider opened (watchPayments); disconnect()
+    // stops them all.
+    this._watches = new Set();
+    this._watchGeneration = 0;
+    // Optional callback the store wires up to move what is kept about a
+    // payment (notes, labels, price at settlement) from an id it had in
+    // earlier versions to the id it has now: `(oldId, newId) => void`.
+    this._onIdChanged = null;
+    this._idsAdopted = new Set();
   }
 
   getType() {
@@ -119,6 +163,12 @@ export class ArkadeWalletProvider extends WalletProvider {
 
   isArkade() {
     return true;
+  }
+
+  // A read/validation failure does not dispose the SDK or its background
+  // managers. Keep using that instance until an explicit disconnect.
+  setError(error) {
+    this.connectionError = error instanceof Error ? error.message : error;
   }
 
   // ==========================================
@@ -263,6 +313,7 @@ export class ArkadeWalletProvider extends WalletProvider {
       });
       this.clearError();
     } catch (error) {
+      this.isConnected = false;
       this.setError(error);
       throw error;
     } finally {
@@ -297,12 +348,8 @@ export class ArkadeWalletProvider extends WalletProvider {
   }
 
   async disconnect() {
-    try {
-      if (this._stopIncoming) this._stopIncoming();
-    } catch (error) {
-      console.warn('[arkade] error stopping incoming-funds listener:', error);
-    }
-    this._stopIncoming = null;
+    this._watchGeneration++;
+    for (const watch of [...this._watches]) watch.stop();
     // Tear down the SDK wallet's background machinery (contract watcher,
     // settlement poll, provider streams) — 0.4.x wallets own live resources.
     try {
@@ -369,40 +416,80 @@ export class ArkadeWalletProvider extends WalletProvider {
     }
   }
 
-  async getTransactions() {
+  /**
+   * The wallet's history newest first, as the app's transaction rows; a
+   * page of it with `limit` (the SDK always builds the whole history).
+   *
+   * Ids stay the same for the life of a payment. A boarding deposit is
+   * keyed by its on-chain transaction from the mempool on: once it boards,
+   * the SDK adds the commitment transaction to its key, and an id taken
+   * from that would change under links, notes and the receipt ledger.
+   * Outputs of one transaction share a key and become one row.
+   *
+   * @param {{ offset?: number, limit?: number }} [page]
+   */
+  async getTransactions({ offset = 0, limit } = {}) {
     this._ensureConnected();
     try {
       const history = await this.wallet.getTransactionHistory();
-      return (history || []).map((tx) => {
-        const key = tx.key || {};
-        const id = key.arkTxid || key.commitmentTxid || key.boardingTxid || '';
-        // BuhoGO's tx list (and the LNbits/NWC providers) speak unix SECONDS.
-        // The SDK's `createdAt` is documented as ms-epoch — but normalize by
-        // magnitude anyway so a unit change in a future SDK can't shift
-        // timestamps by x1000. (ms now ≈ 1.7e12; seconds ≈ 1.7e9; 1e11 cleanly
-        // separates them and stays correct for decades.)
-        const raw = tx.createdAt ? Number(tx.createdAt) : 0;
-        const timestamp = raw >= 1e11 ? Math.round(raw / 1000) : Math.round(raw);
-        // `settled` means "anchored on Bitcoin via a batch swap" — but an
-        // offchain Arkade transaction (arkTxid set) is final and spendable
-        // the moment it exists, so showing it as pending would tell a user
-        // their received (and spendable) money hasn't arrived. Only boarding
-        // deposits genuinely await something (the settlement that converts
-        // them into spendable balance).
-        const spendable = tx.settled || Boolean(key.arkTxid);
-        return {
-          id,
-          type: tx.type === 'RECEIVED' ? 'incoming' : 'outgoing',
-          amount: Number(tx.amount || 0),
-          timestamp: Number.isFinite(timestamp) && timestamp > 0 ? timestamp : 0,
-          status: spendable ? 'completed' : 'pending',
-          description: '',
-        };
-      });
+      const rows = [];
+      const byId = new Map();
+      for (const tx of history || []) {
+        const row = arkadeTransactionRow(tx);
+        for (const oldId of row.aliases || []) this._adoptId(oldId, row.id);
+        const same = byId.get(`${row.type}:${row.id}`);
+        if (same) {
+          same.amount += row.amount;
+          continue;
+        }
+        byId.set(`${row.type}:${row.id}`, row);
+        rows.push(row);
+      }
+      return limit == null ? rows.slice(offset) : rows.slice(offset, offset + limit);
     } catch (error) {
       this.setError(error);
       throw error;
     }
+  }
+
+  /** Tell the store, once per session, that a payment's earlier id is now `newId`. */
+  _adoptId(oldId, newId) {
+    if (!this._onIdChanged || this._idsAdopted.has(oldId)) return;
+    this._idsAdopted.add(oldId);
+    try { this._onIdChanged(oldId, newId); } catch { /* kept under the old id */ }
+  }
+
+  /**
+   * Watch for money arriving: the SDK's contract stream, which every
+   * connected wallet already runs (reconnecting and catching up on its
+   * own), reports each new output on one of the wallet's own addresses.
+   * That includes change, renewals and recovered outputs, so it only says
+   * "look now" (`onActivity({})`); the history decides what was received.
+   *
+   * @param {(hint: object) => void} onActivity
+   * @returns {Promise<{ stop: () => void }>}
+   */
+  async watchPayments(onActivity) {
+    this._ensureConnected();
+    const generation = this._watchGeneration;
+    const manager = await this.wallet.getContractManager();
+    if (generation !== this._watchGeneration || !this.isConnected) return { stop() {} };
+    let stopped = false;
+    const unsubscribe = manager.onContractEvent((event) => {
+      // A watch-only script is not the wallet's own (no contract).
+      if (stopped || event?.type !== 'vtxo_received' || !isContractVtxoEvent(event)) return;
+      onActivity({});
+    });
+    const watch = {
+      stop: () => {
+        if (stopped) return;
+        stopped = true;
+        this._watches.delete(watch);
+        try { unsubscribe(); } catch { /* the wallet is gone */ }
+      },
+    };
+    this._watches.add(watch);
+    return watch;
   }
 
   // ==========================================
@@ -463,9 +550,12 @@ export class ArkadeWalletProvider extends WalletProvider {
    * @param {number} params.amount - amount in sats
    * @returns {Promise<{id: string, status: string}>}
    */
-  async offboardToBitcoin({ bitcoinAddress, amount }) {
+  async _quoteOffboard({ bitcoinAddress, amount }) {
     this._ensureConnected();
-    const sats = Math.floor(Number(amount) || 0);
+    const sats = Number(amount);
+    if (!Number.isSafeInteger(sats) || sats <= 0) {
+      throw new Error('Amount must be a positive whole number of sats');
+    }
     const info = await this.wallet.arkProvider.getInfo();
     // A collaborative exit is subject to the server's dust / output minimums.
     // Surface a friendly floor BEFORE Ramps rejects with a raw SDK error.
@@ -480,13 +570,30 @@ export class ArkadeWalletProvider extends WalletProvider {
       err.minSats = floor;
       throw err;
     }
+    // Naming the inputs lets the SDK include their fees and the change fee
+    // in its receiver-exact quote. Reuse the SDK's pricing and settlement.
+    const selectedVtxos = await this.wallet.getSpendableVtxos({
+      withRecoverable: false, withUnrolled: false, genericallySpendableOnly: true,
+    });
+    return createDefaultPaymentRouter(this.wallet).route({ raw: bitcoinAddress, amount: sats, selectedVtxos });
+  }
+
+  async getBitcoinSendFeeEstimate(params) {
+    const { amount, fee, total } = await this._quoteOffboard(params);
+    return { amount, fee, total };
+  }
+
+  async offboardToBitcoin({ bitcoinAddress, amount, maxFee }) {
     try {
-      const txid = await new Ramps(this.wallet).offboard(
-        bitcoinAddress,
-        info.fees,
-        BigInt(sats)
-      );
-      return { id: txid, status: 'completed' };
+      const quote = await this._quoteOffboard({ bitcoinAddress, amount });
+      if (!Number.isSafeInteger(maxFee) || maxFee < 0 || quote.fee > maxFee) {
+        const err = new Error('The Bitcoin fee changed. Review the updated fee and try again.');
+        err.code = 'ARKADE_OFFBOARD_FEE_CHANGED';
+        throw err;
+      }
+      const handle = await quote.send();
+      const { txid } = await handle.settled();
+      return { id: txid, status: 'completed', fee: quote.fee };
     } catch (error) {
       if (!error.code) error.code = 'ARKADE_OFFBOARD_FAILED';
       this.setError(error);
@@ -546,28 +653,6 @@ export class ArkadeWalletProvider extends WalletProvider {
     throw this._lightningUnavailable();
   }
 
-  /**
-   * Subscribe to incoming funds (native ark1 receipts land as VTXOs here).
-   * Returns/stores a stop handle that disconnect() also tears down.
-   * @param {(funds: any) => void} callback
-   * @returns {Promise<() => void>}
-   */
-  async startIncomingFundsListener(callback) {
-    this._ensureConnected();
-    if (this._stopIncoming) {
-      try { this._stopIncoming(); } catch { /* ignore */ }
-      this._stopIncoming = null;
-    }
-    this._stopIncoming = await this.wallet.notifyIncomingFunds((funds) => {
-      try {
-        callback(funds);
-      } catch (error) {
-        console.warn('[arkade] incoming-funds callback error:', error);
-      }
-    });
-    return this._stopIncoming;
-  }
-
   // ==========================================
   // VTXO recovery (Arkade-only — no analog in the other backends)
   // ==========================================
@@ -611,28 +696,37 @@ export class ArkadeWalletProvider extends WalletProvider {
   async checkLiveness({ force = false } = {}) {
     const out = { recovered: false };
     if (!this.wallet || !this.isConnected) return out;
+    if (this._recoveryCheck) return this._recoveryCheck;
+    if (!force && Date.now() < this._nextRecoveryCheckAt) return out;
 
-    const THROTTLE_MS = 6 * 60 * 60 * 1000;
-    const now = Date.now();
-    if (!force && now - this._lastRecoveryCheck < THROTTLE_MS) return out;
-    this._lastRecoveryCheck = now;
-
-    try {
-      const manager = await this.wallet.getVtxoManager();
-      const rec = await manager.getRecoverableBalance();
-      if (rec && Number(rec.recoverable) > 0) {
-        this._notifyMaintenance(true);
-        try {
-          await manager.recoverVtxos();
-          out.recovered = true;
-        } finally {
-          this._notifyMaintenance(false);
+    const attempt = (async () => {
+      try {
+        const manager = await this.wallet.getVtxoManager();
+        const rec = await manager.getRecoverableBalance();
+        if (rec && Number(rec.recoverable) > 0) {
+          this._notifyMaintenance(true);
+          try {
+            await manager.recoverVtxos();
+            out.recovered = true;
+          } finally {
+            this._notifyMaintenance(false);
+          }
         }
+        // Long cooldown only after a successful check. A transient failure
+        // retries on the next normal refresh after a short backoff.
+        this._nextRecoveryCheckAt = Date.now() + 6 * 60 * 60 * 1000;
+      } catch (error) {
+        this._nextRecoveryCheckAt = Date.now() + 30 * 1000;
+        console.warn('[arkade] VTXO recovery check failed:', error?.message || error);
       }
-    } catch (error) {
-      console.warn('[arkade] VTXO recovery check failed:', error?.message || error);
+      return out;
+    })();
+    this._recoveryCheck = attempt;
+    try {
+      return await attempt;
+    } finally {
+      this._recoveryCheck = null;
     }
-    return out;
   }
 
   _notifyMaintenance(active) {

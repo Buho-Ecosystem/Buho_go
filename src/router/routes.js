@@ -138,6 +138,8 @@ const routes = [
       { path: '/address-book', component: () => import('pages/AddressBook.vue') },
       { path: '/auto-transfer', component: () => import('pages/AutoTransferPage.vue') },
       { path: '/auto-transfer/:walletId', component: () => import('pages/AutoTransferRulePage.vue') },
+      // Kiosk Mode's settings (issue #449). The register itself is /kiosk.
+      { path: '/kiosk-mode', component: () => import('pages/KioskModePage.vue') },
       // A contact's own page: identity, pay, and the payments between you.
       { path: '/address-book/:id', component: () => import('pages/ContactProfilePage.vue') },
       // The contact chat: money requests, payments and short encrypted

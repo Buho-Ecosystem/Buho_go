@@ -107,6 +107,7 @@
               :fiat-text="row.item.request.fiatText || ''"
               :note="row.item.request.note || ''"
               :outgoing="row.item.request.outgoing"
+              :delivery="row.item.request.delivery || 'sent'"
               :state="row.item.request.state"
               :partner-name="partnerName"
               :valid-until="row.item.request.validUntil ?? null"
@@ -125,6 +126,7 @@
               @withdraw="forward('withdraw-request', row.item.request.id)"
               @send-anyway="forward('send-anyway-request', row.item.request.id)"
               @request-again="forward('request-again', row.item.request.id)"
+              @retry="forward('retry', row.item.request.id)"
             >
               <template #footer><slot name="request-footer" :request="row.item.request" /></template>
             </RequestCard>

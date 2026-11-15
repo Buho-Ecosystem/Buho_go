@@ -71,7 +71,7 @@
               <small class="voucher-sub">{{ secondary(voucher) }}</small>
             </span>
             <q-spinner v-if="isChecking(voucher)" size="16px" class="voucher-trailing" aria-hidden="true" />
-            <Icon v-else icon="tabler:chevron-right" width="18" height="18" class="voucher-trailing" aria-hidden="true" />
+            <Icon v-else icon="tabler:chevron-right" width="18" height="18" class="voucher-trailing" />
           </button>
 
           <div v-else class="voucher-row voucher-row--editing">

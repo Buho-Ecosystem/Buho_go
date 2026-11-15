@@ -33,6 +33,25 @@ const DEFINITE_FAILURES = new Set([
   'FEE_LIMIT_EXCEEDED', NWC_ERROR.LIMIT_TOO_LOW, NWC_ERROR.RECEIVE_NOT_ALLOWED,
 ]);
 
+/**
+ * The wallet will not run this method for this connection. NIP-47 has two
+ * codes for it, RESTRICTED (not granted) and NOT_IMPLEMENTED (not built),
+ * and wallets use them interchangeably: some answer RESTRICTED for a method
+ * they do not have at all. Either way, asking again changes nothing.
+ */
+export function isNotOffered(error) {
+  return error?.code === 'RESTRICTED' || error?.code === 'NOT_IMPLEMENTED';
+}
+
+/**
+ * The wallet will not do this for this connection, now or later: the
+ * method is not offered, or the wallet does not know the connection
+ * (UNAUTHORIZED). Readers stop asking instead of retrying.
+ */
+export function isRefusal(error) {
+  return isNotOffered(error) || error?.code === 'UNAUTHORIZED';
+}
+
 function messageOf(error) {
   return String(error?.message || error || '');
 }
@@ -63,14 +82,16 @@ export function isRelayFailure(error) {
 
 /**
  * Failures that happen before a request leaves: nothing can have been paid.
- * Only two qualify: no wallet info event (the SDK does not send without it)
- * and a relay socket that never opened. "failed to publish" does not: the
- * relay library writes the event to the socket first and only then waits
- * for the relay's OK, so a missing OK says nothing about whether the
- * wallet received the request.
+ * Three qualify: no wallet info event (the SDK does not send without it), a
+ * relay socket that never opened, and a publish whose every relay failed to
+ * connect (the SDK lists each relay's reason on `relayErrors`). Any other
+ * publish failure does not: the event may have gone out before the relay
+ * refused it or the socket dropped, so the wallet may have the request.
  */
 function neverSent(error) {
-  return isMissingWallet(error) || /failed to connect to/i.test(sdkTransportMessage(error));
+  if (isMissingWallet(error) || /failed to connect to/i.test(sdkTransportMessage(error))) return true;
+  const relays = Array.isArray(error?.relayErrors) ? error.relayErrors : [];
+  return relays.length > 0 && relays.every((relay) => /^connection failure/i.test(String(relay?.reason || '')));
 }
 
 /**
@@ -109,7 +130,8 @@ export function nwcErrorText(error, t, { walletName = '', locale } = {}) {
   const wallet = walletName || t('your wallet app');
   switch (error?.code) {
     case 'QUOTA_EXCEEDED':
-      return t('This connection has used up its spending limit. Raise it in {wallet}, or wait until it resets.', { wallet });
+      // A limit per payment and a budget used up both answer this.
+      return t('This payment is over what this connection may spend right now. Pay less, or raise the limit in {wallet}.', { wallet });
     case NWC_ERROR.LIMIT_TOO_LOW:
       return error.renewsAt
         ? t('This connection has {amount} sats left until {date}. Raise the limit in {wallet}, or pay less.', { amount: Number(error.remainingSats || 0).toLocaleString(locale), date: dayOf(error.renewsAt, locale), wallet })

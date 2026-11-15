@@ -93,6 +93,12 @@ export function createPairingRequest(walletId, { baseUrl = '', now = Date.now() 
   };
 }
 
+/** When BuhoGO stops listening for an answer to the request, in Unix seconds; null when unknown. */
+export function pairingExpiresAt(request) {
+  const createdAt = Number(request?.createdAt);
+  return createdAt > 0 ? Math.floor((createdAt + PAIRING_TTL_MS) / 1000) : null;
+}
+
 /** True when the request is older than PAIRING_TTL_MS. */
 export function isPairingExpired(request, now = Date.now()) {
   return !request || now - Number(request.createdAt || 0) > PAIRING_TTL_MS;
@@ -156,6 +162,11 @@ export function approvalUrl(request, wallet, { returnUrl = RETURN_URL } = {}) {
  * `returnTo` is only for a link opened on this phone: a wallet app that
  * reads it (Alby Go) sends the person back to BuhoGO after approving. A
  * code shown to another device leaves it out.
+ *
+ * `link_expires_at` says when BuhoGO stops listening. It is not part of
+ * NWC-08: a wallet that reads it refuses an approval that would come too
+ * late (a connection nobody would ever use), and the others ignore it, as
+ * they do any parameter they do not know.
  */
 export function walletAuthUri(request, { relays = CODE_RELAYS, returnTo = '' } = {}) {
   const params = new URLSearchParams();
@@ -167,6 +178,8 @@ export function walletAuthUri(request, { relays = CODE_RELAYS, returnTo = '' } =
   params.set('optional_request_methods', OPTIONAL_METHODS.join(' '));
   params.set('notification_types', NOTIFICATION_TYPES.join(' '));
   if (returnTo) params.set('return_to', `${returnTo}?request=${request.id}`);
+  const expiresAt = pairingExpiresAt(request);
+  if (expiresAt) params.set('link_expires_at', String(expiresAt));
   return `nostr+walletauth://${request.pubkey}?${params.toString().replace(/\+/g, '%20')}`;
 }
 

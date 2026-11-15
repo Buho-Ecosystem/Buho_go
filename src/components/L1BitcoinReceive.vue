@@ -66,7 +66,7 @@
       @click="copyValue(lightningAddress, $t('Lightning address copied'))"
     >
       <span class="ln-address-text">{{ lightningAddress }}</span>
-      <Icon icon="tabler:copy" width="13" height="13" class="ln-address-copy" aria-hidden="true" />
+      <Icon icon="tabler:copy" width="13" height="13" class="ln-address-copy" />
     </button>
     </div>
 
@@ -275,7 +275,7 @@
                 data-audit="deposit-speed-up"
                 @click="openSpeedUp"
               >
-                <Icon icon="tabler:gauge" width="19" height="19" aria-hidden="true" />
+                <Icon icon="tabler:gauge" width="19" height="19" />
                 {{ $t('Speed up') }}
               </button>
             </div>
@@ -978,7 +978,7 @@ export default {
           await this.walletStore.refreshWalletData(walletId);
         }
         if (!current()) return;
-        this.$emit('deposit-claimed', { success: true, amount: classification.creditSats });
+        this.$emit('deposit-claimed', { success: true, amount: classification.creditSats, walletId, claimId: result?.claimId, settled: result?.settled });
         this.walletStore.signalDepositsRefresh(walletId);
         this.showClaimDialog = false;
         this.claimingDeposit = null;
@@ -1068,7 +1068,7 @@ export default {
           // Start polling for balance update
           this.startBalancePolling();
 
-          this.$emit('deposit-claimed', result);
+          this.$emit('deposit-claimed', { ...result, walletId });
           // Tell the parent banner to drop this deposit immediately so the
           // "Ready to claim" pill on the wallet home doesn't outlive the
           // sheet by 30 seconds.
@@ -1089,7 +1089,7 @@ export default {
         }
 
         if (!current()) return;
-        this.$emit('deposit-claimed', result);
+        this.$emit('deposit-claimed', { ...result, walletId });
         this.walletStore.signalDepositsRefresh(walletId);
         this.showClaimDialog = false;
 

@@ -205,5 +205,13 @@ test('one bad relay among several rejects the connection', () => {
   assert.equal(r.reason, NwcParseReason.InvalidRelay);
 });
 
+test('upper-case hex is accepted and stored in lower case, the only form the SDK opens', () => {
+  const r = parseNwcConnection(`nostr+walletconnect://${PK.toUpperCase()}?relay=${RELAY_ENC}&secret=${SECRET.toUpperCase()}`);
+  assert.equal(r.ok, true);
+  assert.equal(r.secret, SECRET.toLowerCase());
+  assert.equal(r.pubkey, PK.toLowerCase());
+  assert.ok(!/[A-F]/.test(new URL(r.normalized.replace('nostr+walletconnect://', 'https://')).searchParams.get('secret')));
+});
+
 console.log(`\n  ${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);

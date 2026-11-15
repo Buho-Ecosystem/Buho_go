@@ -82,27 +82,45 @@
     />
 
     <!-- Footer actions. "Scan again" shows as soon as a code has stopped
-         the scanner; "Paste instead" is always offered as the escape
-         hatch (the parent tab control reuses it to flip to Search). -->
-    <div class="scan-actions">
-      <button
-        v-if="detected"
-        type="button"
-        class="scan-secondary-btn"
-        @click="restart"
-      >
-        <Icon icon="tabler:refresh" width="14" height="14" />
-        <span>{{ $t('Scan again') }}</span>
-      </button>
-      <button
-        v-else
-        type="button"
-        class="scan-secondary-btn"
-        @click="$emit('switch-to-search')"
-      >
-        <Icon icon="tabler:keyboard" width="14" height="14" />
-        <span>{{ $t('Paste instead') }}</span>
-      </button>
+         the scanner. Before that the two ways besides the camera are a
+         pair, alike and as wide as each other: Choose photo (web; the
+         app's scanner has its own) and Paste instead (the parent tab
+         control reuses it to flip to Search). -->
+    <div>
+      <div class="scan-actions">
+        <button
+          v-if="detected"
+          type="button"
+          class="scan-secondary-btn"
+          @click="restart"
+        >
+          <Icon icon="tabler:refresh" width="14" height="14" />
+          <span>{{ $t('Scan again') }}</span>
+        </button>
+        <template v-else>
+          <QrPhotoButton
+            tone="outline"
+            @open="onPhotoOpen"
+            @closed="onPhotoClosed"
+            @read="onPhotoRead"
+            @fail="onPhotoFail"
+          />
+          <button
+            type="button"
+            class="scan-secondary-btn"
+            @click="$emit('switch-to-search')"
+          >
+            <Icon icon="tabler:keyboard" width="14" height="14" />
+            <span>{{ $t('Paste instead') }}</span>
+          </button>
+        </template>
+      </div>
+      <!-- Always there, so a note that appears is announced. -->
+      <p
+        class="text-center q-mb-none"
+        :class="[photoNote ? 'q-mt-sm' : '', $q.dark.isActive ? 'text-grey-4' : 'text-grey-7']"
+        aria-live="polite"
+      >{{ photoNote }}</p>
     </div>
 
     <!-- Native MLKit scanner (iOS/Android). Continuous: keeps scanning until a
@@ -114,6 +132,7 @@
       :title="$t('Scan QR Code')"
       :prompt="$t('Point your camera at a Nostr profile, or a Lightning, Spark, or Bitcoin address.')"
       continuous
+      v-model:note="photoNote"
       @scanned="onDetect"
       @close="$emit('switch-to-search')"
     />
@@ -124,9 +143,10 @@
 import { isAddressRequest } from '../../utils/lud23.js';
 import { Icon } from '@iconify/vue';
 import QrScanner from 'qr-scanner';
-import { createQrScanner } from '../../utils/qrScanner';
+import { createPhotoPause, createQrScanner, pauseForPhoto, scannerFor } from '../../utils/qrScanner';
 import { isNativeScannerAvailable } from '../../utils/nativeScanner';
 import ScannerOverlay from '../ScannerOverlay.vue';
+import QrPhotoButton from '../QrPhotoButton.vue';
 import { useAddressBookStore } from '../../stores/addressBook';
 import { mapActions } from 'pinia';
 import { classifyIdentifier, lookupIdentifier } from '../../utils/nostrLookup.js';
@@ -139,7 +159,7 @@ import { parseProfileLink } from '../../utils/profileLink.js';
 export default {
   name: 'AddContactScan',
 
-  components: { Icon, NostrContactPreview, ScannerOverlay },
+  components: { Icon, NostrContactPreview, ScannerOverlay, QrPhotoButton },
 
   props: {
     /**
@@ -160,6 +180,8 @@ export default {
       cameraError: '',
       qrScanner: null,
       detected: false,
+      // Choose photo: what the last photo gave instead of a contact.
+      photoNote: '',
       // Result state mirrors AddContactSearch so the preview can
       // render identically regardless of how we got here.
       resolved: null,
@@ -187,6 +209,14 @@ export default {
       if (isActive) this.startCamera();
       else this.teardown();
     },
+  },
+
+  created() {
+    this.photoPause = createPhotoPause({
+      scanner: () => this.qrScanner,
+      canResume: () => this.showCamera && !this.cameraError && !this.detected,
+      restart: () => this.startQrScanner(),
+    });
   },
 
   mounted() {
@@ -226,11 +256,13 @@ export default {
     },
 
     async startQrScanner() {
+      // The photo picker is open: the camera comes back once it closes.
+      if (this.photoPause.paused) return;
       try {
         const videoEl = this.$refs.videoEl;
         if (!videoEl) throw new Error('Video element not found');
 
-        this.qrScanner = createQrScanner(
+        this.qrScanner = scannerFor(videoEl, this.qrScanner, () => createQrScanner(
           videoEl,
           (result) => {
             const text = typeof result === 'string' ? result : (result?.data || result?.text || '');
@@ -242,8 +274,10 @@ export default {
             highlightCodeOutline: true,
             preferredCamera: 'environment',
           },
-        );
+        ));
         await this.qrScanner.start();
+        // Choose photo was tapped while the camera was still starting.
+        if (this.photoPause.paused) pauseForPhoto(this.qrScanner);
       } catch (err) {
         console.error('[AddContactScan] start error:', err);
         this.handleCameraError(err);
@@ -264,6 +298,7 @@ export default {
     },
 
     stopScanner() {
+      this.photoPause.forget();
       this.nativeScannerActive = false;
       if (this.qrScanner) {
         try {
@@ -285,6 +320,7 @@ export default {
       this.resolved = null;
       this.profileEvent = null;
       this.resultError = '';
+      this.photoNote = '';
     },
 
     async restart() {
@@ -313,7 +349,7 @@ export default {
      * as `nip05`, which we deliberately skip in step 1 so step 2's
      * Lightning-address check can claim it instead.
      */
-    onDetect(text) {
+    onDetect(text, { fromPhoto = false } = {}) {
       if (this.detected || !text) return;
       if (isAddressRequest(text)) {
         this.detected = true; this.stopScanner(); this.showCamera = false;
@@ -356,6 +392,29 @@ export default {
         this.$emit('detected-address', candidate);
         return;
       }
+
+      // The camera keeps looking; a photo chosen on purpose gets an answer.
+      if (fromPhoto) this.photoNote = this.$t('That code is not a profile or an address. Choose a photo of the code you want to add.');
+    },
+
+    /** Choose photo (web): the camera goes off while the picker is open. */
+    onPhotoOpen() {
+      this.photoNote = '';
+      this.photoPause.pause();
+    },
+
+    onPhotoClosed() {
+      this.photoPause.resume();
+    },
+
+    onPhotoRead(text) {
+      this.onDetect(text, { fromPhoto: true });
+      this.photoPause.resume();
+    },
+
+    onPhotoFail({ message }) {
+      this.photoNote = message;
+      this.photoPause.resume();
     },
 
     async resolveAndFetch(text) {
@@ -598,16 +657,27 @@ export default {
   }
 }
 
+/* A column as wide as its widest button: the sheet is too narrow for a
+   row in most languages. */
 .scan-actions {
   display: flex;
-  justify-content: center;
+  flex-direction: column;
+  align-items: stretch;
+  width: fit-content;
+  margin: 0 auto;
+  gap: 8px;
+}
+.scan-actions :deep(.qpb) {
+  width: 100%;
 }
 
 .scan-secondary-btn {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 0.4rem;
-  padding: 0.5rem 0.9rem;
+  min-height: 44px;
+  padding: 0 0.9rem;
   border-radius: var(--radius-pill);
   background: transparent;
   border: 1px solid var(--border-card);
