@@ -450,6 +450,8 @@
       :wallet-can-pay="paymentSheetWalletCanPay"
       :wallet-hint="paymentSheetWalletHint"
       :wallet-notice="paymentSheetWalletNotice"
+      :wallet-retryable="sendingWalletRetryable"
+      :wallet-retrying="walletReconnecting"
       :paying-wallets="payingWalletEntries"
       :sending-wallet-id="sendingWalletId"
       :is-sending="isSendingPayment"
@@ -460,6 +462,7 @@
       @amount-changed="sendSheetAmountSats = $event"
       @update:sending-wallet-id="onSendingWalletChange"
       @retry-preparation="prepareContextualPayment"
+      @retry-wallet="retrySendingWallet"
       @refund-pick="onRefundPick"
       @confirm="onSendSheetConfirm"
       @cancel="onSendSheetCancel"
@@ -989,6 +992,8 @@ export default {
       sendingWalletId: null,
       // The person picked the paying wallet in the sheet (contact payments).
       sendingWalletPicked: false,
+      // The paying wallet is being connected again from the sheet's "Try again".
+      walletReconnecting: false,
       pendingPayment: null,
       merchantCountdown: 0,
       merchantCountdownTimer: null,
@@ -2100,6 +2105,16 @@ export default {
       return !this.sendingWalletBlock;
     },
 
+    /**
+     * The wallet that pays is held back only by a connection that failed:
+     * connecting it again can change that, so the sheet offers "Try again"
+     * where there is no other wallet to choose.
+     */
+    sendingWalletRetryable() {
+      const block = this.sendingWalletBlock;
+      return block?.reason === 'unavailable' && block.connectionFailed === true;
+    },
+
     // Spark on-chain send: mounts the L1 fee panel in the sheet's extras
     // slot and reroutes confirm to the withdrawal executor. It is the
     // paying wallet that must be Spark, not necessarily the active one.
@@ -2177,7 +2192,14 @@ export default {
     paymentSheetWalletHint() {
       const block = this.sendingWalletBlock;
       if (!block) return '';
-      if (block.reason === 'unavailable') return this.$t("This wallet isn't available. Choose another wallet.");
+      if (block.reason === 'unavailable') {
+        // "Choose another" only where there is one; a wallet that merely
+        // failed to connect can be tried again instead.
+        const canChoose = this.payingWalletEntries.some((w) => w.usable && !w.connectionFailed && w.id !== block.id);
+        return canChoose || !this.sendingWalletRetryable
+          ? this.$t("This wallet isn't available. Choose another wallet.")
+          : this.$t("This wallet isn't available right now. Try again in a moment.");
+      }
       if (block.reason === 'spark_sender_mismatch') return this.sparkInvoiceProblemMessage('sender_mismatch');
       const hasAlternative = this.payingWalletEntries.some((w) => w.usable && w.id !== block.id);
       return payingWalletHint(block, this.pendingDestinationType, this.$t.bind(this), { hasAlternative });
@@ -4257,6 +4279,25 @@ export default {
       }
       // An on-chain fee quote was priced for the previous wallet.
       this.l1Fee = null;
+    },
+
+    /**
+     * "Try again" on a paying wallet whose connection failed: connect that
+     * wallet again. Whether it can pay now follows from the store's
+     * connection state (sendingWalletBlock), so a failure simply leaves the
+     * same line and the same control on the sheet.
+     */
+    async retrySendingWallet() {
+      const walletId = this.payerWalletId;
+      if (!walletId || !this.sendingWalletRetryable || this.walletReconnecting || this.sendInFlight()) return;
+      this.walletReconnecting = true;
+      try {
+        await this.walletStore.ensureWalletConnectedForTransfer(walletId);
+      } catch (error) {
+        console.warn('The paying wallet could not be connected:', error?.message || error);
+      } finally {
+        this.walletReconnecting = false;
+      }
     },
 
     /**

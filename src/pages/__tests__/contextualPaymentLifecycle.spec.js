@@ -440,3 +440,22 @@ test('Save Contact finishes before the default popup, and cancellation cannot re
   assert.equal(vm.showDefaultWalletPrompt, false)
   assert.equal(vm.paymentPreferences.promptDismissed, false, 'automatic dismissal is not a user choice')
 })
+
+test('the only wallet failed to connect: the sheet offers Try again, which connects it, and never "choose another"', async () => {
+  const { vm, walletStore } = controller()
+  for (const key of ['sendingWalletRetryable', 'paymentSheetWalletHint']) {
+    Object.defineProperty(vm, key, { configurable: true, get: () => options.computed[key].call(vm) })
+  }
+  walletStore.wallets = [walletStore.activeWallet]
+  walletStore.connectionStates.home = { connected: false, error: 'offline' }
+  vm.pendingPayment = { type: 'lightning_invoice', amount: 25000 }
+  vm.sendingWalletId = 'home'
+  assert.deepEqual([vm.paymentSheetWalletCanPay, vm.sendingWalletRetryable], [false, true])
+  assert.equal(vm.paymentSheetWalletHint, "This wallet isn't available right now. Try again in a moment.")
+  // Try again connects that wallet; whether it can pay follows from the store's state.
+  const connected = []
+  walletStore.ensureWalletConnectedForTransfer = async id => { connected.push(id); walletStore.connectionStates.home = { connected: true, error: null } }
+  await vm.retrySendingWallet()
+  assert.deepEqual(connected, ['home'])
+  assert.deepEqual([vm.paymentSheetWalletCanPay, vm.sendingWalletRetryable, vm.walletReconnecting], [true, false, false])
+})
