@@ -18,6 +18,5 @@ export default {
   "Objects": "Objects",
   "Symbols": "Symbols",
   "No emoji found": "No emoji found",
-  "Try another word, like happy or heart.": "Try another word, like happy or heart.",
-  "A little expression goes a long way": "A little expression goes a long way"
+  "Try another word, like happy or heart.": "Try another word, like happy or heart."
 };

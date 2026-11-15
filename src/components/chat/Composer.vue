@@ -11,9 +11,12 @@
       blocked and the reason is shown, because a pasted key cannot be taken
       back. (The parent decides with protocol.containsSecretKey.)
     - reply: preview of the message being answered, with a cancel button.
+    - Emoji button: inside the field, only for a mouse or trackpad (a touch
+      screen has emoji on its keyboard). It emits `emoji`; the parent opens
+      the picker and calls `insertEmoji`, which writes at the caret.
 
-  `v-model` is the text. Events: `send`, `cancel-reply`. The component never
-  clears the text itself: the parent does it once the message is queued.
+  `v-model` is the text. Events: `send`, `cancel-reply`, `emoji`. The component
+  never clears the text itself: the parent does it once the message is queued.
 -->
 <template>
   <div class="composer">
@@ -36,7 +39,7 @@
     </div>
 
     <div class="composer__row">
-      <div class="composer__field" :class="{ 'composer__field--invalid': invalid, 'composer__field--disabled': disabled }">
+      <div class="composer__field" :class="{ 'composer__field--focused': typing, 'composer__field--invalid': invalid, 'composer__field--disabled': disabled }">
         <textarea
           ref="input"
           class="composer__input"
@@ -50,11 +53,9 @@
           :aria-invalid="invalid ? 'true' : undefined"
           :aria-describedby="showCounter ? counterId : undefined"
           :disabled="disabled"
-          @input="onInput"
-          @select="rememberSelection"
-          @keyup="rememberSelection"
-          @click="rememberSelection"
-          @blur="rememberSelection"
+          @input="$emit('update:modelValue', $event.target.value)"
+          @focus="typing = true"
+          @blur="typing = false"
           @keydown.enter="onEnter"
         />
         <button ref="emojiButton" type="button" class="composer__icon-btn composer__emoji" :disabled="disabled"
@@ -105,7 +106,10 @@ export default {
     autofocus: { type: Boolean, default: false }
   },
   emits: ['update:modelValue', 'send', 'cancel-reply', 'emoji'],
-  data() { return { selection: null } },
+  data() {
+    // The caret is in the text: the field wears the focus ring.
+    return { typing: false }
+  },
   computed: {
     counterId() { return `composer-counter-${this.$.uid}` },
     length() { return countChars(this.modelValue) },
@@ -126,38 +130,48 @@ export default {
   mounted() {
     this.fitHeight()
     // Opening the dock or rotating a phone can wrap an unchanged draft.
-    // Observe width only, so growing the field does not create a resize loop.
+    // Width only: the field's own growth must not start another round.
     if (typeof ResizeObserver === 'function') {
-      this.sizeObserver = new ResizeObserver(([entry]) => {
-        const width = entry.contentRect.width
-        if (width === this.observedWidth) return
-        this.observedWidth = width
-        this.fitHeight()
-      })
+      this.sizeObserver = new ResizeObserver(([entry]) => this.onWidth(entry.contentRect.width))
       this.sizeObserver.observe(this.$refs.input)
     }
     if (this.autofocus) this.focus()
   },
-  beforeUnmount() { this.sizeObserver?.disconnect() },
+  beforeUnmount() {
+    this.sizeObserver?.disconnect()
+    if (this.fitFrame) cancelAnimationFrame(this.fitFrame)
+  },
   methods: {
-    onInput(event) {
-      this.rememberSelection(event)
-      this.$emit('update:modelValue', event.target.value)
+    /**
+     * The field got wider or narrower. The refit waits for the next frame:
+     * resizing the observed element inside its own callback makes the browser
+     * report an undelivered-notifications error on every refit.
+     */
+    onWidth(width) {
+      if (width === this.observedWidth) return
+      this.observedWidth = width
+      if (this.fitFrame) return
+      this.fitFrame = requestAnimationFrame(() => {
+        this.fitFrame = null
+        this.fitHeight()
+      })
     },
-    rememberSelection(event) {
-      this.selection = { start: event.target.selectionStart, end: event.target.selectionEnd }
-    },
+    /**
+     * Write an emoji at the caret, replacing a selection. The caret is read
+     * from the field at this moment (a blurred field keeps its selection), so
+     * a draft that was restored or changed in between cannot shift it.
+     */
     insertEmoji(char, { focus = false } = {}) {
       if (this.disabled) return
       const text = this.modelValue
-      const start = Math.min(this.selection?.start ?? text.length, text.length)
-      const end = Math.min(this.selection?.end ?? start, text.length)
+      const field = this.$refs.input
+      const start = Math.min(field?.selectionStart ?? text.length, text.length)
+      const end = Math.max(start, Math.min(field?.selectionEnd ?? start, text.length))
       this.$emit('update:modelValue', text.slice(0, start) + char + text.slice(end))
       const caret = start + char.length
-      this.selection = { start: caret, end: caret }
       this.$nextTick(() => {
-        if (focus) this.$refs.input?.focus({ preventScroll: true })
-        this.$refs.input?.setSelectionRange(caret, caret)
+        if (focus) field?.focus({ preventScroll: true })
+        field?.setSelectionRange(caret, caret)
       })
     },
     focusEmojiButton() { this.$refs.emojiButton?.focus({ preventScroll: true }) },
@@ -253,12 +267,19 @@ export default {
   border-radius: 24px;
   background: var(--bg-input);
 }
-.composer__field:focus-within { border-color: var(--chat-focus); box-shadow: 0 0 0 1px var(--chat-focus); }
+/* The ring belongs to the text: the emoji button inside shows its own focus. */
+.composer__field--focused { border-color: var(--chat-focus); box-shadow: 0 0 0 1px var(--chat-focus); }
 .composer__field--invalid { border-color: var(--chat-danger); }
-.composer__field--invalid:focus-within { box-shadow: 0 0 0 1px var(--chat-danger); }
+.composer__field--invalid.composer__field--focused { box-shadow: 0 0 0 1px var(--chat-danger); }
 .composer__field--disabled { opacity: .6; }
-.composer__emoji { align-self: flex-end; }
-.composer__emoji:hover:not(:disabled) { color: var(--text-primary); background: var(--bg-card); }
+
+/* A touch screen types emoji with its own keyboard: the button is for a mouse
+   or trackpad (the same query as composables/useEmojiPicker.js). */
+.composer__emoji { display: none; align-self: flex-end; }
+@media (hover: hover) and (pointer: fine) {
+  .composer__emoji { display: grid; }
+  .composer__emoji:hover:not(:disabled) { color: var(--text-primary); background: var(--bg-card); }
+}
 .composer__emoji[aria-expanded='true'] { color: var(--brand-accent-text); background: var(--brand-accent-soft); }
 .composer__field .composer__emoji:focus-visible { outline-offset: -3px; }
 .composer__icon-btn:disabled { cursor: default; }

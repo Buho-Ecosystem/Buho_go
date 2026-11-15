@@ -71,6 +71,8 @@ const RequestCard = loadSfc('RequestCard.vue', base)
 const MoneyBar = loadSfc('MoneyBar.vue', base)
 const Composer = loadSfc('Composer.vue', { ...base, '../../services/dm/constants.js': constants })
 const EmojiPicker = loadSfc('EmojiPicker.vue', { ...base, '../../utils/emojiCatalog.js': emojiCatalog, '../../utils/emojiSearch.js': emojiSearch })
+// The panel loads the picker on first use; here the import resolves at once.
+const EmojiPanel = loadSfc('EmojiPanel.vue', { vue: Vue, './EmojiPicker.vue': { __esModule: true, default: EmojiPicker }, '../../composables/useEmojiPicker.js': { hasFinePointer: () => true } })
 // The keypad is AmountKeypad.vue (its rules: utils/amountKeypad.js, tested below); a marker stands in for it.
 const AmountKeypadStub = { props: ['modelValue', 'fiat', 'fiatCode', 'fiatRate'], render() { return Vue.h('div', { class: 'keypad-stub' }, this.$slots.default?.()) } }
 const RequestSheet = loadSfc('RequestSheet.vue', {
@@ -287,7 +289,9 @@ test('bubble: reply quote, reactions as pressed-state buttons, a spoken label', 
   assert.match(html, /role="group" aria-label="Reactions"/)
   const chips = tags(html, 'bubble__reaction"')
   assert.equal(chips.length, 2)
-  assert.match(chips[0], /aria-pressed="true"/)
+  // The user's own reaction opens the picker to change it; someone else's is a toggle to join in.
+  assert.match(chips[0], /aria-haspopup="dialog"/)
+  assert.doesNotMatch(chips[0], /aria-pressed/)
   assert.match(chips[1], /aria-pressed="false"/)
   assert.match(html, /bubble__reaction-count[^>]*>2</)
   assert.match(html, /role="button"[^>]*aria-label="Them: Reply to You: Sounds good. Perfect"/)
@@ -580,18 +584,27 @@ test('money bar: disabled buttons are real disabled buttons', async () => {
 
 test('emoji search ranks exact matches globally, deduplicates recents, and accepts localized terms', () => {
   const { vm } = vmOf(EmojiPicker, {}, { recents: ['😃', '⭐'] })
-  for (const [query, first] of [['eyes', '👀'], ['tongue', '👅'], ['star', '⭐']]) {
+  for (const [query, first] of [['eyes', '👀'], ['tongue', '👅'], ['star', '⭐'], ['hunde', '🐶'], ['pferd', '🐴'], ['pand', '🐼']]) {
     vm.query = query
-    assert.equal(vm.sections[0].emojis[0].char, first)
+    assert.equal(vm.sections[0].emojis[0].char, first, query)
     const chars = vm.sections.flatMap(section => section.emojis.map(e => e.char))
     assert.equal(new Set(chars).size, chars.length)
   }
-  for (const query of ['lachen', 'glücklich', 'feliz', 'corazón', '🦉']) {
+  // A word, the start of one, with or without its accents; and the emoji itself.
+  for (const query of ['lachen', 'lach', 'glücklich', 'feliz', 'corazón', 'coraz', '🦉']) {
     vm.query = query
     assert.ok(vm.sections[0]?.emojis.length, query)
   }
   vm.query = 'unfindablezzzz'
   assert.deepEqual(vm.sections, [])
+})
+
+test('emoji search: a category\'s name in the app\'s language finds its emoji', () => {
+  const german = { 'Animals & Nature': 'Tiere & Natur' }
+  const { vm } = vmOf(EmojiPicker, {}, { $t: key => german[key] || key })
+  vm.query = 'Tiere'
+  const animals = emojiCatalog.EMOJI_CATEGORIES.find(category => category.id === 'animals').emojis.length
+  assert.equal(vm.sections[0].emojis.length, animals)
 })
 
 test('emoji search does not select on IME confirmation', () => {
@@ -600,15 +613,138 @@ test('emoji search does not select on IME confirmation', () => {
   assert.deepEqual(emitted, [])
 })
 
-test('composer inserts at a UTF-16 selection, replaces text, and respects disabled state', () => {
-  const { vm, emitted } = vmOf(Composer, { modelValue: 'Hi 🦉 Bob' })
-  vm.rememberSelection({ target: { selectionStart: 6, selectionEnd: 9 } })
+test('emoji picker: the chrome is outline icons and words, the cells are the emoji and nothing else', async () => {
+  const html = await render(EmojiPicker, {})
+  const rail = html.match(/<nav[^>]*emoji-picker__rail[\s\S]*?<\/nav>/)[0]
+  assert.equal((rail.match(/data-icon="tabler:[a-z0-9-]+"/g) || []).length, 9, 'one outline icon per category')
+  assert.doesNotMatch(rail, /\p{Extended_Pictographic}/u, 'the rail is navigation, not more emoji')
+  assert.doesNotMatch(html, /emoji-picker__preview|goes a long way/, 'no footer, no tagline')
+  // The emoji is the label: screen readers name it in the system language.
+  const cell = tags(html, 'emoji-picker__cell')[0]
+  assert.doesNotMatch(cell, /aria-label|title=/)
+  assert.match(cell, /tabindex="0"/)
+  assert.equal(tags(html, 'emoji-picker__cell').filter(tag => tag.includes('tabindex="0"')).length, 1, 'one stop in the tab order')
+  // A mouse gets the name on hover.
+  assert.match(tags(await render(EmojiPicker, { finePointer: true }), 'emoji-picker__cell')[0], /title="[a-z ]+"/)
+  // Nothing found: an outline icon, not an emoji.
+  const empty = await render(EmojiPicker, {}, { data: { query: 'unfindablezzzz' } })
+  assert.match(empty, /role="status"[^>]*><i data-icon="tabler:search-off"/)
+  assert.doesNotMatch(empty, /<nav/)
+})
+
+test('emoji picker: the search takes focus only for a mouse; recents are read from the old key once and saved under the new', () => {
+  const focused = []
+  const mount = (finePointer) => {
+    const { vm } = vmOf(EmojiPicker, { finePointer }, { $refs: { search: { focus: () => focused.push(finePointer) } } })
+    EmojiPicker.mounted.call(vm)
+  }
+  mount(false)
+  mount(true)
+  assert.deepEqual(focused, [true], 'focus on touch would raise the keyboard over the list')
+
+  const saved = new Map([['buho:emoji-recents', JSON.stringify(['🦉', 'not an emoji', '🦉', 7])]])
+  const previous = globalThis.localStorage
+  globalThis.localStorage = { getItem: key => saved.get(key) ?? null, setItem: (key, value) => saved.set(key, value), removeItem: key => saved.delete(key) }
+  try {
+    const { vm, emitted } = vmOf(EmojiPicker)
+    assert.deepEqual(vm.recents, ['🦉'], 'only known emoji, once')
+    vm.pick(emojiCatalog.emojiEntry('🍕'))
+    assert.deepEqual(emitted, [['select', '🍕']])
+    assert.deepEqual([...saved.entries()], [['buho.emojiRecents', JSON.stringify(['🍕', '🦉'])]])
+    saved.set('buho.emojiRecents', '{broken')
+    assert.deepEqual(vmOf(EmojiPicker).vm.recents, [], 'broken storage never blocks choosing')
+  } finally { globalThis.localStorage = previous }
+})
+
+test('emoji panel: docked beside the chat or a bottom sheet, never both; it reports when it has left the screen', async () => {
+  const dock = await render(EmojiPanel, { modelValue: true, docked: true })
+  assert.match(dock, /<aside id="chat-emoji-panel" class="emoji-panel"/)
+  assert.match(dock, /class="emoji-picker"/)
+  assert.doesNotMatch(dock, /emoji-sheet/)
+
+  const sheet = await render(EmojiPanel, { modelValue: true, docked: false })
+  assert.match(sheet, /id="chat-emoji-panel" class="emoji-sheet"><div class="form-sheet-grabber" aria-hidden="true"/)
+  assert.match(sheet, /class="emoji-picker"/)
+  assert.doesNotMatch(sheet, /<aside/)
+
+  assert.doesNotMatch(await render(EmojiPanel, { modelValue: false, docked: true }), /emoji-picker|<aside/)
+  assert.doesNotMatch(await render(EmojiPanel, { modelValue: false, docked: false }), /emoji-picker"/)
+
+  // The dock is gone with the next render; the sheet reports from its dialog's hide instead.
+  const docked = vmOf(EmojiPanel, { modelValue: true, docked: true })
+  EmojiPanel.watch.modelValue.call(docked.vm, false)
+  assert.deepEqual(docked.emitted, [['closed']])
+  const sheeted = vmOf(EmojiPanel, { modelValue: true, docked: false })
+  EmojiPanel.watch.modelValue.call(sheeted.vm, false)
+  assert.deepEqual(sheeted.emitted, [])
+  sheeted.vm.close()
+  assert.deepEqual(sheeted.emitted, [['update:modelValue', false]])
+  assert.match(read('EmojiPanel.vue'), /@hide="\$emit\('closed'\)"/)
+})
+
+test('composer inserts at the caret the field has now, replaces a selection, and respects disabled state', () => {
+  const field = { selectionStart: 6, selectionEnd: 9, setSelectionRange(start, end) { this.selectionStart = start; this.selectionEnd = end }, focus() { this.focused = true } }
+  const { vm, emitted } = vmOf(Composer, { modelValue: 'Hi 🦉 Bob' }, { $refs: { input: field } })
   vm.insertEmoji('❤️')
   assert.deepEqual(emitted, [['update:modelValue', 'Hi 🦉 ❤️']])
-  assert.deepEqual(vm.selection, { start: 8, end: 8 })
+  assert.deepEqual([field.selectionStart, field.selectionEnd], [8, 8], 'the caret sits after the emoji (UTF-16 units)')
+  assert.equal(field.focused, undefined, 'focus only when asked')
+
+  // A draft put back after a failed send: the field's caret is at its end, wherever it was before.
+  vm.modelValue = 'Back again'
+  Object.assign(field, { selectionStart: 10, selectionEnd: 10 })
+  vm.insertEmoji('🚀', { focus: true })
+  assert.deepEqual(emitted.at(-1), ['update:modelValue', 'Back again🚀'])
+  assert.equal(field.focused, true)
+
+  // A caret beyond a shorter text is clamped, never out of range.
+  vm.modelValue = 'Hi'
+  vm.insertEmoji('👍')
+  assert.deepEqual(emitted.at(-1), ['update:modelValue', 'Hi👍'])
+
   vm.disabled = true
   vm.insertEmoji('😀')
-  assert.equal(emitted.length, 1)
+  assert.equal(emitted.length, 3)
+})
+
+test('composer: a width change refits the draft on the next frame, once, and unmounting cancels it', () => {
+  const frames = new Map()
+  let nextFrame = 1
+  const cancelled = []
+  const globals = { requestAnimationFrame: globalThis.requestAnimationFrame, cancelAnimationFrame: globalThis.cancelAnimationFrame, ResizeObserver: globalThis.ResizeObserver }
+  let observer
+  globalThis.requestAnimationFrame = (fn) => { frames.set(nextFrame, fn); return nextFrame++ }
+  globalThis.cancelAnimationFrame = (id) => { cancelled.push(id); frames.delete(id) }
+  globalThis.ResizeObserver = class { constructor(fn) { this.fn = fn; observer = this } observe(el) { this.el = el } disconnect() { this.el = null } }
+  try {
+    // scrollHeight says what the text needs at the current width.
+    const field = { style: {}, scrollHeight: 66 }
+    const { vm } = vmOf(Composer, { modelValue: 'A draft that wraps' }, { $refs: { input: field } })
+    Composer.mounted.call(vm)
+    assert.equal(field.style.height, '66px')
+    assert.equal(observer.el, field)
+
+    // The dock opens: the field is narrower and the same text needs another line.
+    field.scrollHeight = 88
+    observer.fn([{ contentRect: { width: 300 } }])
+    assert.equal(field.style.height, '66px', 'not inside the observer callback: that is what makes the browser complain')
+    assert.equal(frames.size, 1)
+    observer.fn([{ contentRect: { width: 280 } }])
+    assert.equal(frames.size, 1, 'one frame for a burst of changes')
+    for (const run of [...frames.values()]) run()
+    frames.clear()
+    assert.equal(field.style.height, '88px')
+
+    // The refit changed the height, not the width: the observer's report of it starts nothing.
+    observer.fn([{ contentRect: { width: 280 } }])
+    assert.equal(frames.size, 0)
+
+    observer.fn([{ contentRect: { width: 320 } }])
+    assert.equal(frames.size, 1)
+    Composer.beforeUnmount.call(vm)
+    assert.equal(observer.el, null, 'observer disconnected')
+    assert.equal(cancelled.length, 1, 'the pending refit never runs on a field that is gone')
+  } finally { Object.assign(globalThis, globals) }
 })
 
 test('more reactions waits for the action sheet to hide before opening another surface', () => {
@@ -667,6 +803,10 @@ test('composer: the reply preview names the author and can be cancelled', async 
   assert.match(html, /See you at 7/)
   assert.match(html, /aria-label="Cancel reply"/)
   assert.deepEqual(Composer.emits, ['update:modelValue', 'send', 'cancel-reply', 'emoji'])
+  // Touch types emoji with its own keyboard: the button only shows for a mouse or trackpad.
+  const style = read('Composer.vue')
+  assert.match(style, /\.composer__emoji \{ display: none;/)
+  assert.match(style, /@media \(hover: hover\) and \(pointer: fine\) \{\s*\.composer__emoji \{ display: grid; \}/)
 })
 
 test('composer: Enter sends, except while an IME is composing or with Shift (a new line); it never clears the text itself', () => {

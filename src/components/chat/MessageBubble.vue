@@ -11,9 +11,14 @@
     - Long press (touch), right click or the context-menu key opens the
       MessageMenu: react, reply, copy, send again. The bubble is a button so a
       keyboard or screen-reader user reaches the same menu with Enter.
+    - Reactions sit under the bubble as pills. Tapping someone else's adds the
+      same one; tapping your own, or the plus beside them, asks for the emoji
+      picker (`more-reactions`). With a mouse, a message without reactions
+      shows a React button beside it on hover or focus.
 
-  Presentational: props in, events out (`react(emoji)`, `reply`, `copy(text)`,
-  `retry`). The clipboard, the store and the composer belong to the page.
+  Presentational: props in, events out (`react(emoji)`, `more-reactions`,
+  `reply`, `copy(text)`, `retry`). The clipboard, the store, the picker and
+  the composer belong to the page.
 -->
 <template>
   <div class="bubble-row" :class="outgoing ? 'bubble-row--out' : 'bubble-row--in'">
@@ -46,8 +51,14 @@
         <p class="bubble__text">{{ text }}</p>
       </div>
 
-      <button v-if="canReact && !degraded && !reactions.length" type="button" class="bubble__react-button"
-        :aria-label="$t('React')" :title="$t('React')" @click="$emit('more-reactions')">
+      <button
+        v-if="canReact && !degraded && !reactions.length"
+        type="button"
+        class="bubble__react-button"
+        :aria-label="$t('React')"
+        :title="$t('React')"
+        @click="$emit('more-reactions')"
+      >
         <Icon icon="tabler:mood-plus" width="20" height="20" />
       </button>
 
@@ -63,19 +74,27 @@
           type="button"
           class="bubble__reaction"
           :class="{ 'bubble__reaction--mine': reaction.mine }"
-          :aria-pressed="reaction.mine ? 'true' : 'false'"
+          :aria-pressed="reaction.mine ? undefined : 'false'"
+          :aria-haspopup="reaction.mine ? 'dialog' : undefined"
           :aria-label="reactionLabel(reaction)"
           :disabled="!canReact"
           :title="reaction.mine ? $t('Change reaction') : $t('React with {emoji}', { emoji: reaction.emoji })"
           @click="reaction.mine ? $emit('more-reactions') : $emit('react', reaction.emoji)"
         >
           <span class="bubble__reaction-pill">
-          <span aria-hidden="true">{{ reaction.emoji }}</span>
-          <span v-if="reaction.count > 1" class="bubble__reaction-count" aria-hidden="true">{{ reaction.count }}</span>
+            <span class="bubble__reaction-emoji" aria-hidden="true">{{ reaction.emoji }}</span>
+            <span v-if="reaction.count > 1" class="bubble__reaction-count" aria-hidden="true">{{ reaction.count }}</span>
           </span>
         </button>
-        <button v-if="canReact && !degraded" type="button" class="bubble__add-reaction" :aria-label="$t('Add reaction')"
-          :title="$t('Add reaction')" @click="$emit('more-reactions')">
+        <button
+          v-if="canReact && !degraded"
+          type="button"
+          class="bubble__add-reaction"
+          aria-haspopup="dialog"
+          :aria-label="$t('Add reaction')"
+          :title="$t('Add reaction')"
+          @click="$emit('more-reactions')"
+        >
           <span class="bubble__reaction-pill"><Icon icon="tabler:mood-plus" width="16" height="16" /></span>
         </button>
       </div>
@@ -226,17 +245,36 @@ export default {
   flex-direction: column;
   max-width: min(80%, 34rem);
 }
-.bubble__react-button { display: none; width: 44px; height: 44px; padding: 0; align-items: center; justify-content: center; border: 1px solid var(--border-card); border-radius: 50%; background: var(--bg-card); color: var(--text-secondary); cursor: pointer; position: absolute; top: 0; }
+
+/* React, beside a message that has no reactions yet. Only for a mouse or
+   trackpad (the query of composables/useEmojiPicker.js): touch has the long press. */
+.bubble__react-button {
+  position: absolute;
+  top: 0;
+  width: 44px;
+  height: 44px;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid var(--border-card);
+  border-radius: 50%;
+  background: var(--bg-card);
+  color: var(--text-secondary);
+  cursor: pointer;
+}
 .bubble-row--in .bubble__react-button { left: calc(100% + 6px); }
 .bubble-row--out .bubble__react-button { right: calc(100% + 6px); }
+/* Bridges the 6px gap, so the pointer does not lose the button on its way over. */
 .bubble__react-button::before { content: ''; position: absolute; top: 0; bottom: 0; width: 6px; }
 .bubble-row--in .bubble__react-button::before { right: 100%; }
 .bubble-row--out .bubble__react-button::before { left: 100%; }
-.bubble__react-button:hover { color: var(--text-primary); background: var(--bg-input); }
 .bubble__react-button:focus-visible { outline: 2px solid var(--chat-focus); outline-offset: 2px; }
-@media (min-width: 1024px) and (hover: hover) and (pointer: fine) {
+@media (hover: hover) and (pointer: fine) {
   .bubble__react-button { display: flex; visibility: hidden; opacity: 0; }
-  .bubble-wrap:hover .bubble__react-button, .bubble-wrap:focus-within .bubble__react-button { visibility: visible; opacity: 1; }
+  .bubble-wrap:hover .bubble__react-button,
+  .bubble-wrap:focus-within .bubble__react-button { visibility: visible; opacity: 1; }
+  .bubble__react-button:hover { color: var(--text-primary); background: var(--bg-input); }
 }
 .bubble-row--out .bubble-wrap { align-items: flex-end; }
 
@@ -317,14 +355,44 @@ export default {
   cursor: pointer;
 }
 /* Compact pills inside separate 44px targets: adjacent actions never overlap. */
-.bubble__reaction-pill { display: inline-flex; align-items: center; justify-content: center; gap: 3px; box-sizing: border-box; min-height: 26px; min-width: 32px; padding: 1px 7px; border: 1px solid var(--border-card); border-radius: 999px; background: var(--bg-card); }
+.bubble__reaction-pill {
+  box-sizing: border-box;
+  min-width: 32px;
+  min-height: 26px;
+  /* Another app may send words as a reaction: the pill stays a pill. */
+  max-width: 8rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  padding: 1px 7px;
+  border: 1px solid var(--border-card);
+  border-radius: var(--radius-pill);
+  background: var(--bg-card);
+}
+.bubble__reaction-emoji { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .bubble__reaction:disabled { cursor: default; }
 .bubble__reaction--mine .bubble__reaction-pill { border-color: var(--brand-accent); background: var(--brand-accent-soft); }
 .bubble__reaction:focus-visible { outline: 2px solid var(--chat-focus); outline-offset: 1px; }
-.bubble__add-reaction { position: relative; display: inline-flex; align-items: center; justify-content: center; min-width: 44px; min-height: 44px; padding: 0; border: 0; border-radius: 999px; background: transparent; color: var(--text-secondary); cursor: pointer; }
-.bubble__add-reaction:hover { color: var(--text-primary); }
-.bubble__add-reaction:hover .bubble__reaction-pill { background: var(--bg-input); }
+.bubble__add-reaction {
+  position: relative;
+  min-width: 44px;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
 .bubble__add-reaction:focus-visible { outline: 2px solid var(--chat-focus); outline-offset: 1px; }
+@media (hover: hover) {
+  .bubble__add-reaction:hover { color: var(--text-primary); }
+  .bubble__add-reaction:hover .bubble__reaction-pill { background: var(--bg-input); }
+}
 
 .bubble__meta {
   display: flex;

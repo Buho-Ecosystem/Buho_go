@@ -1,4 +1,12 @@
-// Adapted from Lotus src/lib/emoji/catalog.ts. Unicode characters use the system emoji font.
+/**
+ * The curated emoji set behind the chat's picker. Every entry carries an
+ * English name and extra keywords, so the picker can be searched by word
+ * (utils/emojiSearch.js). A curated list keeps the bundle small; the system
+ * emoji keyboard remains the long tail. Glyphs come from the system font.
+ *
+ * A category's `icon` is an outline icon for the picker's rail: the rail is
+ * navigation, so it must not look like more emoji to pick.
+ */
 function parse(lines) {
   return lines.map((line) => {
     const gap = line.indexOf(" ");
@@ -520,14 +528,14 @@ const SYMBOLS = [
   "⬜ white large square"
 ];
 const EMOJI_CATEGORIES = [
-  { id: "smileys", icon: "😀", title: "Smileys", emojis: parse(SMILEYS) },
-  { id: "people", icon: "👋", title: "Gestures", emojis: parse(PEOPLE) },
-  { id: "hearts", icon: "❤️", title: "Hearts", emojis: parse(HEARTS) },
-  { id: "animals", icon: "🐻", title: "Animals & Nature", emojis: parse(ANIMALS) },
-  { id: "food", icon: "🍔", title: "Food & Drink", emojis: parse(FOOD) },
-  { id: "activity", icon: "⚽", title: "Activity & Travel", emojis: parse(ACTIVITY) },
-  { id: "objects", icon: "💡", title: "Objects", emojis: parse(OBJECTS) },
-  { id: "symbols", icon: "✅", title: "Symbols", emojis: parse(SYMBOLS) }
+  { id: "smileys", icon: "tabler:mood-happy", title: "Smileys", emojis: parse(SMILEYS) },
+  { id: "people", icon: "tabler:hand-stop", title: "Gestures", emojis: parse(PEOPLE) },
+  { id: "hearts", icon: "tabler:heart", title: "Hearts", emojis: parse(HEARTS) },
+  { id: "animals", icon: "tabler:paw", title: "Animals & Nature", emojis: parse(ANIMALS) },
+  { id: "food", icon: "tabler:tools-kitchen-2", title: "Food & Drink", emojis: parse(FOOD) },
+  { id: "activity", icon: "tabler:ball-football", title: "Activity & Travel", emojis: parse(ACTIVITY) },
+  { id: "objects", icon: "tabler:bulb", title: "Objects", emojis: parse(OBJECTS) },
+  { id: "symbols", icon: "tabler:hash", title: "Symbols", emojis: parse(SYMBOLS) }
 ];
 const BY_CHAR = new Map(
   EMOJI_CATEGORIES.flatMap((c) => c.emojis).map((e) => [e.char, e])

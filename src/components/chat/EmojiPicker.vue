@@ -1,3 +1,22 @@
+<!--
+  EmojiPicker
+  The searchable emoji list, the same in the desktop dock and the bottom
+  sheet (EmojiPanel.vue decides which).
+
+    - Search first: one ranked list across all categories (utils/emojiSearch.js),
+      in English, German and Spanish words.
+    - Browsing: the last 24 picks (or the quick reactions), then the curated
+      catalog by category. The rail jumps to a category; its outline icons are
+      navigation, not emoji to pick.
+    - Keyboard: arrows move through the grid, Enter in the search field picks
+      the best match, Home / End jump.
+    - `finePointer` (a mouse or trackpad): the search field takes focus on
+      opening and cells show their name on hover. On touch neither happens:
+      focus would raise the keyboard over the list.
+
+  Each cell's label is the emoji itself, which screen readers name in the
+  system language. Events: `select` (the character), `close`.
+-->
 <template>
   <section class="emoji-picker" :aria-label="$t('Emoji')">
     <header class="emoji-picker__header">
@@ -6,80 +25,132 @@
         <Icon icon="tabler:x" width="20" height="20" />
       </button>
     </header>
+
     <div class="emoji-picker__search">
       <Icon icon="tabler:search" width="19" height="19" />
-      <input ref="search" v-model="query" type="search" :placeholder="$t('Search emoji')"
-        :aria-label="$t('Search emoji')" autocomplete="off" autocapitalize="none" spellcheck="false"
-        @keydown="onSearchKeydown" />
+      <input
+        ref="search"
+        v-model="query"
+        type="search"
+        autocomplete="off"
+        autocapitalize="none"
+        spellcheck="false"
+        :placeholder="$t('Search emoji')"
+        :aria-label="$t('Search emoji')"
+        @keydown="onSearchKeydown"
+      />
     </div>
+
     <div class="emoji-picker__body">
-      <nav v-if="sections.length && !query.trim()" class="emoji-picker__rail" :aria-label="$t('Emoji categories')">
-        <button v-for="section in sections" :key="section.id" type="button" class="emoji-picker__category"
-          :aria-label="$t(section.title)" :title="$t(section.title)" :aria-current="activeId === section.id ? 'true' : undefined"
-          @click="jumpTo(section.id)">
-          <Icon v-if="section.id === 'recent'" icon="tabler:history" width="21" height="21" />
-          <span v-else aria-hidden="true">{{ section.icon }}</span>
+      <nav v-if="sections.length && !searching" class="emoji-picker__rail" :aria-label="$t('Emoji categories')">
+        <button
+          v-for="section in sections"
+          :key="section.id"
+          type="button"
+          class="emoji-picker__category"
+          :aria-label="$t(section.title)"
+          :title="finePointer ? $t(section.title) : undefined"
+          :aria-current="activeId === section.id ? 'true' : undefined"
+          @click="jumpTo(section.id)"
+        >
+          <Icon :icon="section.icon" width="21" height="21" />
         </button>
       </nav>
+
       <div ref="scroller" class="emoji-picker__list" @scroll.passive="onScroll" @keydown="onGridKeydown">
         <section v-for="section in sections" :key="section.id" :data-section="section.id">
           <h3>{{ $t(section.title) }}</h3>
           <div class="emoji-picker__grid">
-            <button v-for="entry in section.emojis" :key="entry.char" type="button" class="emoji-picker__cell"
-              :data-emoji="entry.char" :aria-label="entry.name" :title="entry.name"
-              :tabindex="tabStop === section.id + entry.char || (!tabStop && section === sections[0] && entry === section.emojis[0]) ? 0 : -1"
-              @focus="tabStop = section.id + entry.char; preview = entry"
-              @mouseenter="preview = entry" @click="pick(entry)">{{ entry.char }}</button>
+            <button
+              v-for="entry in section.emojis"
+              :key="entry.char"
+              type="button"
+              class="emoji-picker__cell"
+              :data-emoji="entry.char"
+              :title="finePointer ? entry.name : undefined"
+              :tabindex="isTabStop(section, entry) ? 0 : -1"
+              @focus="tabStop = section.id + entry.char"
+              @click="pick(entry)"
+            >{{ entry.char }}</button>
           </div>
         </section>
+
         <div v-if="!sections.length" class="emoji-picker__empty" role="status">
-          <span aria-hidden="true">🔎</span>
+          <Icon icon="tabler:search-off" width="30" height="30" />
           <strong>{{ $t('No emoji found') }}</strong>
           <p>{{ $t('Try another word, like happy or heart.') }}</p>
         </div>
       </div>
     </div>
-    <footer class="emoji-picker__preview" aria-hidden="true">
-      <span>{{ preview?.char || '☺️' }}</span>
-      <span>{{ preview?.name || $t('A little expression goes a long way') }}</span>
-    </footer>
   </section>
 </template>
 
 <script>
 import { Icon } from '@iconify/vue'
 import { EMOJI_CATEGORIES, emojiEntry } from '../../utils/emojiCatalog.js'
-import { normalizeQuery, scoreEmoji, scoreTitle } from '../../utils/emojiSearch.js'
+import { normalizeQuery, scoreMatch, scoreTitle, translatedTerms } from '../../utils/emojiSearch.js'
 import { REACTION_EMOJIS } from './chatFormat.js'
+import './chatTokens.css'
 
-const RECENTS_KEY = 'buho:emoji-recents'
-// Accept only known Unicode entries. Broken or unavailable storage never blocks choosing.
+/** Device preference, like the app's other `buho.<name>` keys. */
+const RECENTS_KEY = 'buho.emojiRecents'
+/** The key of the first version; read once so nobody loses their recents. */
+const LEGACY_RECENTS_KEY = 'buho:emoji-recents'
+const MAX_RECENTS = 24
+
+/** Only emoji the catalog knows. Broken or unavailable storage never blocks choosing. */
 function loadRecents() {
   try {
-    const saved = JSON.parse(localStorage.getItem(RECENTS_KEY) || '[]')
-    return Array.isArray(saved) ? [...new Set(saved.filter(char => typeof char === 'string' && emojiEntry(char)))].slice(0, 24) : []
+    const saved = JSON.parse(localStorage.getItem(RECENTS_KEY) ?? localStorage.getItem(LEGACY_RECENTS_KEY) ?? '[]')
+    if (!Array.isArray(saved)) return []
+    return [...new Set(saved.filter(char => typeof char === 'string' && emojiEntry(char)))].slice(0, MAX_RECENTS)
   } catch { return [] }
+}
+
+function saveRecents(recents) {
+  try {
+    localStorage.setItem(RECENTS_KEY, JSON.stringify(recents))
+    localStorage.removeItem(LEGACY_RECENTS_KEY)
+  } catch { /* recents are a convenience */ }
 }
 
 export default {
   name: 'EmojiPicker',
   components: { Icon },
-  props: { reaction: Boolean },
+  props: {
+    /** Picking a reaction (title "React") rather than emoji for the draft. */
+    reaction: { type: Boolean, default: false },
+    /** A mouse or trackpad: focus the search on opening, name cells on hover. */
+    finePointer: { type: Boolean, default: false }
+  },
   emits: ['select', 'close'],
-  data() { return { query: '', recents: loadRecents(), activeId: 'recent', preview: null, tabStop: null } },
+  data() {
+    return { query: '', recents: loadRecents(), activeId: 'recent', tabStop: null }
+  },
   computed: {
+    searching() { return normalizeQuery(this.query) !== '' },
     sections() {
       const recent = this.recents.length ? this.recents : REACTION_EMOJIS
-      const all = [{ id: 'recent', title: this.recents.length ? 'Recently used' : 'Quick reactions', emojis: recent.map(emojiEntry).filter(Boolean) }, ...EMOJI_CATEGORIES]
+      const all = [
+        {
+          id: 'recent',
+          icon: 'tabler:history',
+          title: this.recents.length ? 'Recently used' : 'Quick reactions',
+          emojis: recent.map(emojiEntry).filter(Boolean)
+        },
+        ...EMOJI_CATEGORIES
+      ]
       const query = normalizeQuery(this.query)
       if (!query) return all
       // Search is about the best match, regardless of its shelf or recent use.
+      const translated = translatedTerms(query)
       const found = new Map()
       for (const section of all) {
-        const titleMatches = scoreTitle(section.title, query) || scoreTitle(this.$t(section.title).toLowerCase(), this.query.trim().toLowerCase())
+        // The shelf's name in the app's language finds its emoji too ("Tiere").
+        const localTitle = scoreTitle(normalizeQuery(this.$t(section.title)), query) ? 1 : 0
         for (const entry of section.emojis) {
-          const score = Math.max(scoreEmoji({ ...entry, keywords: [...entry.keywords, entry.char] }, query), titleMatches ? 1 : 0)
-          if (score && (!found.has(entry.char) || found.get(entry.char).score < score)) found.set(entry.char, { entry, score })
+          const score = Math.max(scoreMatch({ ...entry, keywords: [...entry.keywords, entry.char] }, section.title, query, translated), localTitle)
+          if (score && (found.get(entry.char)?.score ?? 0) < score) found.set(entry.char, { entry, score })
         }
       }
       const emojis = [...found.values()].sort((a, b) => b.score - a.score).map(({ entry }) => entry)
@@ -88,7 +159,6 @@ export default {
   },
   watch: {
     query() {
-      this.preview = null
       this.tabStop = null
       this.$nextTick(() => {
         if (this.$refs.scroller) this.$refs.scroller.scrollTop = 0
@@ -97,14 +167,17 @@ export default {
     }
   },
   mounted() {
-    // On phones, opening the picker must not immediately bring up the keyboard.
-    if (window.matchMedia('(min-width: 1024px)').matches) this.$refs.search.focus({ preventScroll: true })
+    if (this.finePointer) this.$refs.search?.focus({ preventScroll: true })
   },
   methods: {
+    /** One cell is in the tab order: the last one focused, else the first. */
+    isTabStop(section, entry) {
+      if (this.tabStop) return this.tabStop === section.id + entry.char
+      return section === this.sections[0] && entry === section.emojis[0]
+    },
     pick(entry) {
-      this.preview = entry
-      this.recents = [entry.char, ...this.recents.filter(char => char !== entry.char)].slice(0, 24)
-      try { localStorage.setItem(RECENTS_KEY, JSON.stringify(this.recents)) } catch { /* optional */ }
+      this.recents = [entry.char, ...this.recents.filter(char => char !== entry.char)].slice(0, MAX_RECENTS)
+      saveRecents(this.recents)
       this.$emit('select', entry.char)
     },
     jumpTo(id) {
@@ -176,33 +249,158 @@ export default {
 </script>
 
 <style scoped>
-.emoji-picker { display: flex; flex-direction: column; height: 100%; min-height: 0; background: var(--bg-card); color: var(--text-primary); font-family: 'Manrope', sans-serif; }
-.emoji-picker__header { display: flex; align-items: center; justify-content: space-between; padding: 12px 12px 4px 20px; }
+.emoji-picker {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  height: 100%;
+  min-height: 0;
+  background: var(--bg-card);
+  color: var(--text-primary);
+  font-family: 'Manrope', sans-serif;
+}
+
+.emoji-picker__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 12px 4px 20px;
+}
 .emoji-picker__header h2 { margin: 0; font-size: 1.125rem; font-weight: 750; line-height: 1.5; }
-.emoji-picker__button, .emoji-picker__category { display: grid; place-items: center; width: 44px; height: 44px; flex-shrink: 0; border: 0; border-radius: 14px; background: transparent; color: var(--text-secondary); cursor: pointer; }
-.emoji-picker__button:hover, .emoji-picker__category:hover { background: var(--bg-input); }
-.emoji-picker__search { display: flex; align-items: center; gap: 9px; margin: 8px 16px 14px; padding: 0 12px; min-height: 46px; border: 1px solid var(--border-card); border-radius: 24px; background: var(--bg-input); color: var(--text-secondary); }
+
+.emoji-picker__button,
+.emoji-picker__category {
+  flex: 0 0 auto;
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: var(--radius-ms);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.emoji-picker__search {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 46px;
+  margin: 8px 16px 14px;
+  padding: 0 12px;
+  border: 1px solid var(--border-card);
+  border-radius: var(--radius-xl);
+  background: var(--bg-input);
+  color: var(--text-secondary);
+}
 .emoji-picker__search:focus-within { outline: 2px solid var(--chat-focus); outline-offset: 2px; }
-.emoji-picker__search input { min-width: 0; width: 100%; min-height: 44px; background: transparent; border: 0; outline: 0; color: var(--text-primary); font: inherit; font-size: 1rem; }
+.emoji-picker__search input {
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--text-primary);
+  font: inherit;
+  /* 16px: below this iOS zooms the page on focus. */
+  font-size: 1rem;
+}
 .emoji-picker__search input::placeholder { color: var(--text-secondary); }
+
 .emoji-picker__body { display: flex; flex: 1; min-height: 0; }
-.emoji-picker__rail { display: flex; flex-direction: column; gap: 3px; padding: 0 5px 8px; overflow-y: auto; scrollbar-width: none; flex-shrink: 0; }
-.emoji-picker__category { font-size: 21px; position: relative; }
+
+.emoji-picker__rail {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 0 5px 8px;
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+.emoji-picker__category { position: relative; }
 .emoji-picker__category[aria-current='true'] { background: var(--brand-accent-soft); color: var(--text-primary); }
-.emoji-picker__category[aria-current='true']::before { content: ''; position: absolute; left: 0; height: 18px; width: 3px; border-radius: 3px; background: var(--brand-accent); }
-.emoji-picker__list { flex: 1; min-width: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; padding: 0 12px 16px 4px; }
-.emoji-picker__list h3 { position: sticky; top: 0; z-index: 1; background: var(--bg-card); margin: 0; padding: 10px 4px 7px; font-size: 0.75rem; font-weight: 700; color: var(--text-secondary); line-height: 1.5; }
+.emoji-picker__category[aria-current='true']::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  width: 3px;
+  height: 18px;
+  border-radius: 3px;
+  background: var(--brand-accent);
+}
+
+.emoji-picker__list {
+  flex: 1;
+  min-width: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  /* The list is the sheet's last element: it clears the home indicator. */
+  padding: 0 12px max(16px, var(--safe-bottom, 0px)) 4px;
+}
+.emoji-picker__list h3 {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  margin: 0;
+  padding: 10px 4px 7px;
+  background: var(--bg-card);
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+  font-weight: 700;
+  line-height: 1.5;
+}
 .emoji-picker__grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(44px, 1fr)); gap: 2px; }
-.emoji-picker__cell { display: grid; place-items: center; min-width: 44px; min-height: 46px; padding: 0; border: 0; border-radius: 13px; background: transparent; cursor: pointer; font-size: 26px; line-height: 1; }
-.emoji-picker__cell:hover { background: var(--bg-input); transform: scale(1.08); }
+.emoji-picker__cell {
+  min-width: 44px;
+  min-height: 46px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-ms);
+  background: transparent;
+  cursor: pointer;
+  /* rem, so the glyphs follow the system text size like the rest of the chat. */
+  font-size: 1.625rem;
+  line-height: 1;
+}
 .emoji-picker__cell:active { transform: scale(.96); }
-.emoji-picker__cell:focus-visible, .emoji-picker__category:focus-visible, .emoji-picker__button:focus-visible { outline: 2px solid var(--chat-focus); outline-offset: -2px; background: var(--bg-input); }
-.emoji-picker__preview { display: flex; align-items: center; gap: 12px; min-height: 64px; padding: 10px 18px max(10px, var(--safe-bottom, 0px)); border-top: 1px solid var(--border-card); }
-.emoji-picker__preview > span:first-child { font-size: 30px; flex-shrink: 0; }
-.emoji-picker__preview > span:last-child { font-size: 0.75rem; color: var(--text-secondary); line-height: 1.5; }
-.emoji-picker__empty { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; padding: 36px 18px; text-align: center; }
-.emoji-picker__empty > span { font-size: 36px; }
-.emoji-picker__empty strong { font-size: .9375rem; }
-.emoji-picker__empty p { color: var(--text-secondary); font-size: .8125rem; margin: 0; }
-@media (prefers-reduced-motion: reduce) { .emoji-picker__cell:hover, .emoji-picker__cell:active { transform: none; } }
+.emoji-picker__cell:focus-visible,
+.emoji-picker__category:focus-visible,
+.emoji-picker__button:focus-visible { outline: 2px solid var(--chat-focus); outline-offset: -2px; background: var(--bg-input); }
+
+/* Hover is a pointer's affair: a tapped cell must not stay highlighted on touch. */
+@media (hover: hover) {
+  .emoji-picker__button:hover,
+  .emoji-picker__category:hover { background: var(--bg-input); }
+  .emoji-picker__cell:hover { background: var(--bg-input); transform: scale(1.08); }
+}
+
+.emoji-picker__empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 36px 18px;
+  text-align: center;
+  color: var(--text-secondary);
+}
+.emoji-picker__empty strong { color: var(--text-primary); font-size: 0.9375rem; }
+.emoji-picker__empty p { margin: 0; font-size: 0.8125rem; }
+
+/* The narrowest phones: the grid gets the rail's width, search and the section names still find everything. */
+@media (max-width: 359px) {
+  .emoji-picker__rail { display: none; }
+  .emoji-picker__list { padding-left: 12px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .emoji-picker__cell:hover,
+  .emoji-picker__cell:active { transform: none; }
+}
 </style>

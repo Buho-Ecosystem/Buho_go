@@ -18,6 +18,5 @@ export default {
   "Objects": "Objetos",
   "Symbols": "Símbolos",
   "No emoji found": "No se encontraron emojis",
-  "Try another word, like happy or heart.": "Prueba otra palabra, como feliz o corazón.",
-  "A little expression goes a long way": "Un pequeño gesto dice mucho"
+  "Try another word, like happy or heart.": "Prueba otra palabra, como feliz o corazón."
 };
