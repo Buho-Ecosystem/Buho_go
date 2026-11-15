@@ -365,6 +365,57 @@ export async function probeAccountActivity(mnemonic, { accountNumber, network = 
 }
 
 /**
+ * Authoritative address lookup without the live SDK's cached registration.
+ * In 0.26.1 getLightningAddress only contacts LNURL when its storage has never
+ * recovered an address. A quiet, disposable instance gives that supported API
+ * an empty cache. It never syncs balances, claims deposits, or joins the live
+ * registry. The phrase exists only while constructing this instance.
+ */
+export async function lookupLightningAddress(mnemonic, { timeoutMs = 15000, ...options } = {}) {
+  let timer;
+  try {
+    return await Promise.race([
+      readLightningAddress(mnemonic, options),
+      new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('Lightning address lookup timed out')), timeoutMs); }),
+    ]);
+  } finally { clearTimeout(timer); }
+}
+
+// A timed-out caller never receives a late result. The read is allowed to
+// settle only so its disposable SDK and database can always be cleaned up.
+async function readLightningAddress(mnemonic, { accountNumber, network = 'MAINNET', transfereePubkey }) {
+  if (!BREEZ_API_KEY) throw new Error('Breez API key is missing');
+  const mod = await ensureWasmInit();
+  // The server preset also disables leaf/token optimization. Simply turning
+  // off backgroundTasksEnabled on the client preset is rejected by 0.26.1.
+  const config = mod.defaultServerConfig(toBreezNetwork(network));
+  config.apiKey = BREEZ_API_KEY;
+  config.lnurlDomain = BREEZ_LNURL_DOMAIN || 'breez.tips';
+  config.backgroundTasksEnabled = false;
+  config.realTimeSyncServerUrl = undefined;
+  config.maxDepositClaimFee = { type: 'fixed', amount: 0 };
+  const id = `address-lookup-${crypto.randomUUID()}`;
+  let sdk;
+  try {
+    let builder = mod.SdkBuilder.new(config, { type: 'mnemonic', mnemonic, passphrase: undefined });
+    builder = builder.withAccountNumber(accountNumber);
+    builder = await builder.withDefaultStorage(storageDirFor(id));
+    sdk = await builder.build();
+    const info = await sdk.getLightningAddress();
+    if (!info) return null;
+    // Authorization also reads the SDK cache. Produce it on this freshly
+    // recovered instance, never on a live instance that may sign an old name.
+    if (transfereePubkey) {
+      return { ...info, transferAuthorization: await sdk.authorizeLightningAddressTransfer({ transfereePubkey }) };
+    }
+    return info;
+  } finally {
+    if (sdk) await sdk.disconnect().catch(() => {});
+    await deleteWalletStorage(id);
+  }
+}
+
+/**
  * Get (or build) the live SDK instance for a wallet. Deduped: a second
  * acquire for the same wallet returns the existing instance; concurrent
  * acquires share one in-flight build. `forceReinit` tears the instance down

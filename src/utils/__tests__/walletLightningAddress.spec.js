@@ -54,3 +54,14 @@ test('Arkade, and anything that is not an address, gives none', () => {
   }
   for (const wallet of [null, undefined, 'spark', 0]) assert.equal(walletLightningAddress(wallet), null);
 });
+
+test('an unresolved Spark address is withheld from receive, copy, and refund callers even after reload', () => {
+  const wallet = { id: 's', type: 'spark', metadata: { lud16: 'kept@spark.example', lightningAddressPending: true } };
+  assert.equal(walletLightningAddress(wallet, { s: { lightningAddress: 'cached@spark.example' } }), null);
+  assert.equal(walletLightningAddress(JSON.parse(JSON.stringify(wallet))), null);
+});
+
+test('a confirmed absence cannot be overwritten by a late cached wallet-info read', () => {
+  const wallet = { id: 's', type: 'spark', metadata: { lightningAddressCheckedAbsent: true } };
+  assert.equal(walletLightningAddress(wallet, { s: { lightningAddress: 'old@spark.example' } }), null);
+});

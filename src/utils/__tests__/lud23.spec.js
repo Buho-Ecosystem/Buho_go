@@ -23,6 +23,10 @@ test('the profile default is the oldest Spark wallet with an address, whichever 
   assert.equal(preferredProfileLightningAddress({ wallets: [null, { type: 'arkade' }] }), null);
   assert.equal(preferredProfileLightningAddress({ wallets: null }), null);
   assert.equal(preferredProfileLightningAddress({ wallets: [business], walletInfos: null }), 'business@example.com');
+  const absent = { ...business, metadata: { lightningAddressCheckedAbsent: true } };
+  assert.equal(preferredProfileLightningAddress({ wallets: [absent, personal], walletInfos: {
+    business: { lightningAddress: 'old-cached@example.com' },
+  } }), 'personal@example.com', 'a late cached read cannot publish a confirmed absent destination');
 });
 
 test('the profile default reaches every account, legacy account 0 and accounts 3 to 5 included', () => {

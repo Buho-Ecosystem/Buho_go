@@ -1,135 +1,80 @@
 <template>
   <q-dialog
-    :model-value="modelValue"
-    position="bottom"
-    transition-show="slide-up"
-    transition-hide="slide-down"
-    @update:model-value="$emit('update:modelValue', $event)"
-    @show="onOpen"
+    :model-value="modelValue" position="bottom" transition-show="slide-up" transition-hide="slide-down"
+    :persistent="busy" @update:model-value="close" @show="onOpen"
   >
-    <q-card class="lnaddr-sheet" :class="$q.dark.isActive ? 'lnaddr-dark' : 'lnaddr-light'">
+    <q-card class="lnaddr-sheet" :class="$q.dark.isActive ? 'lnaddr-dark' : 'lnaddr-light'" :aria-busy="busy || phase === 'loading'">
       <div class="lnaddr-grabber" aria-hidden="true"><div class="lnaddr-grabber-bar"></div></div>
-
-      <div class="lnaddr-header">
-        <q-btn
-          flat round dense
-          class="glass-back-btn"
-          :aria-label="$t('Back')"
-          @click="onBack"
-        >
+      <header class="lnaddr-header">
+        <q-btn flat round dense class="glass-back-btn" :disable="busy" :aria-label="$t('Back')" @click="onBack">
           <Icon icon="tabler:chevron-left" width="20" height="20" />
         </q-btn>
-        <div class="lnaddr-title">{{ $t('Lightning Address') }}</div>
+        <h2 class="lnaddr-title">{{ phase === 'review' ? $t('Review address') : $t('Lightning Address') }}</h2>
         <div class="lnaddr-header-spacer" aria-hidden="true"></div>
-      </div>
+      </header>
 
-      <!-- Loading current state -->
-      <div v-if="phase === 'loading'" class="lnaddr-body lnaddr-center">
-        <q-spinner size="28px" />
+      <div v-if="phase === 'loading'" class="lnaddr-body lnaddr-center" role="status">
+        <q-spinner size="28px" aria-hidden="true" /><span>{{ $t('Checking current address…') }}</span>
       </div>
-
-      <!-- Address held: show + copy + change -->
+      <template v-else-if="phase === 'error'">
+        <div class="lnaddr-body"><p class="lnaddr-caption" role="alert">{{ error }}</p></div>
+        <div class="lnaddr-cta-row"><q-btn unelevated no-caps class="lnaddr-cta-primary" :label="$t('Check address')" @click="loadAddress" /></div>
+      </template>
       <template v-else-if="phase === 'view'">
         <div class="lnaddr-body">
-          <div class="lnaddr-icon-tile">
-            <Icon icon="tabler:at" width="26" height="26" />
-          </div>
+          <div class="lnaddr-icon-tile"><Icon icon="tabler:at" width="26" height="26" /></div>
           <div class="lnaddr-address">{{ address }}</div>
-          <div class="lnaddr-caption">
-            {{ $t('Payments sent to this address arrive in this wallet. It stays yours after reinstalling or restoring from your recovery phrase.') }}
-          </div>
+          <p v-if="updated" class="lnaddr-caption" role="status">{{ $t('Address updated. Share this address and update any saved payout details.') }}</p>
+          <p v-else class="lnaddr-caption">{{ $t('Payments sent to this address arrive in this wallet. It stays yours after reinstalling or restoring from your recovery phrase.') }}</p>
         </div>
-
         <div class="lnaddr-cta-row">
-          <q-btn
-            unelevated no-caps
-            class="lnaddr-cta-primary"
-            :label="$t('Copy address')"
-            @click="copyAddress"
-          />
-          <q-btn
-            flat no-caps
-            class="lnaddr-cta-secondary"
-            :label="$t('Change address')"
-            @click="enterChange"
-          />
+          <q-btn unelevated no-caps class="lnaddr-cta-primary" :label="$t('Copy address')" @click="copyAddress" />
+          <q-btn flat no-caps class="lnaddr-cta-secondary" :label="$t('Change address')" @click="enterChange" />
         </div>
       </template>
-
-      <!-- Pick a new name (also the first claim when none exists yet) -->
-      <template v-else>
+      <template v-else-if="phase === 'review'">
         <div class="lnaddr-body">
-          <div class="lnaddr-icon-tile">
-            <Icon icon="tabler:at" width="26" height="26" />
+          <div class="lnaddr-icon-tile"><Icon icon="tabler:at" width="26" height="26" /></div>
+          <p class="lnaddr-caption">{{ $t('New receiving address') }}</p>
+          <div class="lnaddr-address">{{ proposedAddress }}</div>
+          <div v-if="address" class="lnaddr-consequence">
+            <p>{{ $t('{address} will stop receiving payments. Its name stays reserved for this wallet.', { address }) }}</p>
+            <p>{{ $t('Update saved contacts, shared QR codes and automatic payouts to use the new address.') }}</p>
           </div>
-          <div class="lnaddr-caption lnaddr-caption-lead">
-            <template v-if="address">
-              {{ $t('Pick a new name. Your current name stays reserved for this wallet.') }}
-            </template>
-            <template v-else>
-              {{ $t('Pick a name. Payments sent to it arrive in this wallet.') }}
-            </template>
-          </div>
-
+          <p v-else class="lnaddr-caption">{{ $t('Payments sent to it arrive in this wallet.') }}</p>
+          <p v-if="error" class="lnaddr-error" role="alert">{{ error }}</p>
+        </div>
+        <div class="lnaddr-cta-row">
+          <q-btn unelevated no-caps class="lnaddr-cta-primary" :label="busy ? $t('Updating address…') : address ? $t('Change address') : $t('Claim address')" :loading="busy" @click="submitUsername" />
+          <q-btn flat no-caps class="lnaddr-cta-secondary" :label="$t('Cancel')" :disable="busy" @click="onBack" />
+        </div>
+      </template>
+      <form v-else @submit.prevent="reviewUsername">
+        <div class="lnaddr-body">
+          <div class="lnaddr-icon-tile"><Icon icon="tabler:at" width="26" height="26" /></div>
+          <p class="lnaddr-caption lnaddr-caption-lead">{{ $t('Pick a name. Payments sent to it arrive in this wallet.') }}</p>
+          <label for="lnaddr-username" class="lnaddr-label">{{ $t('Address name') }}</label>
           <div class="lnaddr-field" :class="{ 'lnaddr-field-focus': fieldFocused }">
-            <input
-              ref="usernameInput"
-              v-model="username"
-              class="lnaddr-input"
-              type="text"
-              autocomplete="off"
-              autocapitalize="off"
-              autocorrect="off"
-              spellcheck="false"
-              inputmode="text"
-              :placeholder="$t('name')"
-              maxlength="32"
-              @focus="fieldFocused = true"
-              @blur="fieldFocused = false"
-            />
+            <input id="lnaddr-username" ref="usernameInput" v-model="username" class="lnaddr-input" type="text"
+              autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" inputmode="text"
+              :placeholder="$t('name')" maxlength="32" aria-describedby="lnaddr-status" :aria-invalid="availability === 'invalid' || availability === 'taken'"
+              @focus="fieldFocused = true" @blur="fieldFocused = false" />
             <span class="lnaddr-suffix">{{ domainSuffix }}</span>
           </div>
-
-          <div class="lnaddr-status" :class="statusClass">
-            <q-spinner v-if="availability === 'checking'" size="12px" class="q-mr-xs" />
-            <Icon v-else-if="availability === 'available'" icon="tabler:circle-check" width="14" height="14" class="q-mr-xs" />
-            <Icon v-else-if="availability === 'taken' || availability === 'invalid'" icon="tabler:circle-x" width="14" height="14" class="q-mr-xs" />
+          <div id="lnaddr-status" class="lnaddr-status" :class="statusClass" role="status" aria-live="polite">
+            <q-spinner v-if="availability === 'checking'" size="12px" class="q-mr-xs" aria-hidden="true" />
             <span>{{ statusText }}</span>
           </div>
+          <q-btn v-if="availability === 'error'" flat no-caps :label="$t('Check availability')" @click="scheduleAvailabilityCheck" />
+          <p v-if="error" class="lnaddr-error" role="alert">{{ error }}</p>
         </div>
-
-        <div class="lnaddr-cta-row">
-          <q-btn
-            unelevated no-caps
-            class="lnaddr-cta-primary"
-            :label="address ? $t('Use this name') : $t('Claim address')"
-            :disable="availability !== 'available'"
-            :loading="busy"
-            @click="submitUsername"
-          />
-        </div>
-      </template>
+        <div class="lnaddr-cta-row"><q-btn type="submit" unelevated no-caps class="lnaddr-cta-primary" :label="$t('Review address')" :disable="availability !== 'available'" /></div>
+      </form>
     </q-card>
   </q-dialog>
 </template>
 
 <script>
-/**
- * Bottom sheet for a Spark wallet's Lightning address (user@<domain>).
- * Wallets receive a random address automatically at creation; this sheet
- * shows it and lets the user replace it.
- *
- * There is deliberately no remove action - the rule is that every wallet
- * holds an address. Changing is a single register call: the server keys a
- * registration by (domain, pubkey), so claiming a new name atomically
- * replaces the old one AND reserves the old name to this wallet, which can
- * therefore take it back later. A failed change leaves the current address
- * untouched - nothing to roll back.
- *
- * The server is the authority on username rules; the client pre-validates
- * lowercase a-z0-9 (3-32 chars) and surfaces the server's verdict through
- * a debounced availability check.
- */
 import { Icon } from '@iconify/vue';
 import { useWalletStore } from '../stores/wallet';
 import { BREEZ_LNURL_DOMAIN } from '../config/breez';
@@ -139,159 +84,160 @@ const USERNAME_RE = /^[a-z0-9]{3,32}$/;
 export default {
   name: 'SparkLightningAddressSheet',
   components: { Icon },
-  props: {
-    modelValue: { type: Boolean, default: false },
-    walletId: { type: String, required: true },
-  },
+  props: { modelValue: { type: Boolean, default: false }, walletId: { type: String, required: true } },
   emits: ['update:modelValue', 'changed'],
   data() {
-    return {
-      phase: 'loading', // 'loading' | 'view' | 'change'
-      address: null,
-      username: '',
-      availability: 'idle', // 'idle' | 'invalid' | 'checking' | 'available' | 'taken' | 'error'
-      busy: false,
-      fieldFocused: false,
-      _checkTimer: null,
-      _checkSeq: 0,
-    };
+    return { phase: 'loading', address: null, addressWallet: null, username: '', availability: 'idle', busy: false,
+      fieldFocused: false, error: '', updated: false, checkTimer: null, checkSeq: 0, loadSeq: 0 };
   },
   computed: {
-    domainSuffix() {
-      return '@' + (BREEZ_LNURL_DOMAIN || 'breez.tips');
+    currentAssignment() {
+      const store = useWalletStore();
+      const wallet = store.wallets.find(item => item.id === this.walletId);
+      return { wallet, pending: !!wallet?.metadata?.lightningAddressPending,
+        address: wallet ? store.lightningAddressOf(wallet) : null };
     },
+    domainSuffix() { return '@' + (BREEZ_LNURL_DOMAIN || 'breez.tips'); },
+    proposedAddress() { return this.username + this.domainSuffix; },
     statusClass() {
-      if (this.availability === 'available') return 'lnaddr-status-ok';
-      if (this.availability === 'taken' || this.availability === 'invalid' || this.availability === 'error') return 'lnaddr-status-bad';
-      return '';
+      return this.availability === 'available' ? 'lnaddr-status-ok'
+        : ['taken', 'invalid', 'error'].includes(this.availability) ? 'lnaddr-status-bad' : '';
     },
     statusText() {
-      switch (this.availability) {
-        case 'checking': return this.$t('Checking availability');
-        case 'available': return this.$t('Available');
-        case 'taken': return this.$t('Taken. Try another name.');
-        case 'invalid': return this.$t('Use 3 to 32 lowercase letters or numbers');
-        case 'error': return this.$t('Could not check right now. Try again.');
-        default: return ' ';
-      }
+      const messages = { checking: 'Checking availability', available: 'Available', taken: 'Taken. Try another name.',
+        invalid: 'Use 3 to 32 lowercase letters or numbers', error: 'Could not check right now. Try again.', current: 'This is your current address.' };
+      return messages[this.availability] ? this.$t(messages[this.availability]) : ' ';
     },
   },
   watch: {
-    username(next) {
-      const cleaned = String(next || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-      if (cleaned !== next) {
-        this.username = cleaned;
-        return; // watcher re-fires with the cleaned value
+    currentAssignment(state) {
+      if (!this.modelValue) return;
+      // Removal or replacement invalidates an in-flight result too. Own
+      // pending writes can otherwise wait until submission settles.
+      if (!state.wallet || (this.addressWallet && state.wallet !== this.addressWallet)) {
+        this.invalidateAddress();
+      } else if (!this.busy && this.phase !== 'loading' && this.phase !== 'error'
+        && !this.assignmentMatches(this.address)) {
+        this.invalidateAddress();
       }
+    },
+    username(next) {
+      const cleaned = String(next || '').toLowerCase();
+      if (cleaned !== next) { this.invalidateCheck(); this.username = cleaned; return; }
+      this.error = '';
       this.scheduleAvailabilityCheck();
     },
+    modelValue(visible) { if (!visible) { this.invalidateCheck(); this.loadSeq += 1; } },
+    walletId() { if (this.modelValue) this.onOpen(); },
   },
-  beforeUnmount() {
-    if (this._checkTimer) clearTimeout(this._checkTimer);
-  },
+  beforeUnmount() { this.invalidateCheck(); this.loadSeq += 1; },
   methods: {
-    _provider() {
-      const store = useWalletStore();
-      return store.providers[this.walletId] || null;
+    assignmentMatches(address) {
+      const state = this.currentAssignment;
+      return !!state.wallet && state.wallet === this.addressWallet && !state.pending
+        && state.address === address;
     },
+    invalidateAddress() {
+      this.invalidateCheck(); this.loadSeq += 1; this.address = null; this.updated = false;
+      this.phase = 'error';
+      this.error = this.$t('The current address changed. Check it and review your change again.');
+    },
+    invalidateCheck() { clearTimeout(this.checkTimer); this.checkSeq += 1; },
+    close(value) { if (!this.busy) this.$emit('update:modelValue', value); },
     async onOpen() {
-      this.phase = 'loading';
-      this.username = '';
-      this.availability = 'idle';
+      this.invalidateCheck(); this.username = ''; this.availability = 'idle'; this.updated = false;
+      await this.loadAddress();
+    },
+    async loadAddress() {
+      const seq = ++this.loadSeq;
+      this.addressWallet = this.currentAssignment.wallet || null;
+      this.phase = 'loading'; this.error = '';
       try {
-        const provider = this._provider();
-        const info = provider?.getLightningAddress ? await provider.getLightningAddress() : null;
+        const info = await useWalletStore().refreshSparkLightningAddress(this.walletId);
+        if (seq !== this.loadSeq) return;
+        if (!this.assignmentMatches(info?.lightningAddress || null)) { this.invalidateAddress(); return; }
         this.address = info?.lightningAddress || null;
-      } catch (e) {
-        this.address = null;
-      }
-      // Addresses are auto-assigned, so 'view' is the normal case; the
-      // change form doubles as the manual claim when auto-assign failed.
-      this.phase = this.address ? 'view' : 'change';
-      if (this.phase === 'change') {
-        this.$nextTick(() => this.$refs.usernameInput?.focus());
+        this.phase = this.username && this.proposedAddress !== this.address ? 'change' : this.address ? 'view' : 'change';
+        if (this.phase === 'change') {
+          this.scheduleAvailabilityCheck();
+          this.$nextTick(() => this.$refs.usernameInput?.focus());
+        }
+      } catch {
+        if (seq !== this.loadSeq) return;
+        this.address = null; this.phase = 'error';
+        this.error = this.$t('Could not verify the current address. Check your connection and try again.');
       }
     },
     onBack() {
-      // From the change form, back returns to the address view when there
-      // is one; everywhere else the sheet closes.
-      if (this.phase === 'change' && this.address) {
-        this.phase = 'view';
-        this.username = '';
-        this.availability = 'idle';
-        return;
-      }
-      this.$emit('update:modelValue', false);
+      if (this.busy) return;
+      this.invalidateCheck(); this.error = '';
+      if (this.phase === 'review') { this.phase = 'change'; this.scheduleAvailabilityCheck(); return; }
+      if (this.phase === 'change' && this.address) { this.phase = 'view'; return; }
+      this.close(false);
     },
     enterChange() {
-      this.phase = 'change';
-      this.username = '';
-      this.availability = 'idle';
+      this.phase = 'change'; this.username = ''; this.availability = 'idle'; this.error = '';
       this.$nextTick(() => this.$refs.usernameInput?.focus());
     },
     scheduleAvailabilityCheck() {
-      if (this._checkTimer) clearTimeout(this._checkTimer);
+      this.invalidateCheck();
       const name = this.username;
-      if (!name) {
-        this.availability = 'idle';
-        return;
-      }
-      if (!USERNAME_RE.test(name)) {
-        this.availability = 'invalid';
-        return;
-      }
+      if (!name) { this.availability = 'idle'; return; }
+      if (!USERNAME_RE.test(name)) { this.availability = 'invalid'; return; }
+      if (this.proposedAddress === this.address) { this.availability = 'current'; return; }
       this.availability = 'checking';
-      const seq = ++this._checkSeq;
-      this._checkTimer = setTimeout(async () => {
+      const seq = this.checkSeq;
+      const walletId = this.walletId;
+      this.checkTimer = setTimeout(async () => {
         try {
-          const provider = this._provider();
+          const provider = useWalletStore().providers[walletId];
           const free = await provider.checkLightningAddressAvailable(name);
-          if (seq !== this._checkSeq) return; // stale response
+          if (seq !== this.checkSeq) return;
           this.availability = free ? 'available' : 'taken';
-        } catch (e) {
-          if (seq !== this._checkSeq) return;
-          this.availability = 'error';
+        } catch {
+          if (seq === this.checkSeq) this.availability = 'error';
         }
       }, 400);
     },
-    async submitUsername() {
+    reviewUsername() {
       if (this.availability !== 'available' || this.busy) return;
-      const firstClaim = !this.address;
-      this.busy = true;
+      if (!this.assignmentMatches(this.address)) { this.invalidateAddress(); return; }
+      this.invalidateCheck(); this.error = ''; this.phase = 'review';
+    },
+    async submitUsername() {
+      if (this.phase !== 'review' || this.busy) return;
+      if (!this.assignmentMatches(this.address)) { this.invalidateAddress(); return; }
+      this.busy = true; this.error = '';
+      const walletId = this.walletId;
+      const seq = this.loadSeq;
       try {
-        const provider = this._provider();
-        const info = await provider.registerLightningAddress(this.username);
-        const address = info?.lightningAddress || `${this.username}${this.domainSuffix}`;
-        this.address = address;
-        this.phase = 'view';
-        const store = useWalletStore();
-        await store.setSparkLightningAddress(this.walletId, address);
-        this.$emit('changed', address);
-        this.$q.notify({
-          type: 'positive',
-          message: firstClaim ? this.$t('Lightning address ready') : this.$t('Lightning address updated'),
-        });
-      } catch (e) {
-        const msg = String(e?.message || '').toLowerCase();
-        this.$q.notify({
-          type: 'negative',
-          message: msg.includes('taken') || msg.includes('exists') || msg.includes('unavailable') || msg.includes('in use')
-            ? this.$t('Taken. Try another name.')
-            : this.$t('Could not claim the address. Try again.'),
-        });
-        this.scheduleAvailabilityCheck();
-      } finally {
-        this.busy = false;
-      }
+        const info = await useWalletStore().renameSparkLightningAddress(walletId, this.username, { expectedAddress: this.address });
+        if (seq !== this.loadSeq) return;
+        if (!this.assignmentMatches(info.lightningAddress)) { this.invalidateAddress(); return; }
+        this.address = info.lightningAddress; this.phase = 'view'; this.updated = true;
+        this.$emit('changed', this.address);
+      } catch (failure) {
+        if (seq !== this.loadSeq) return;
+        const messages = {
+          LN_ADDRESS_UNCONFIRMED: 'The change could not be confirmed. Check the current address before sharing it or trying again.',
+          LN_ADDRESS_RATE_LIMITED: 'Too many address changes. Wait before trying again.',
+          LN_ADDRESS_TAKEN: 'Taken. Try another name.',
+          LN_ADDRESS_BUSY: 'An address change is already in progress. Check the current address in a moment.',
+          LN_ADDRESS_CHANGED: 'The current address changed. Check it and review your change again.',
+        };
+        this.error = this.$t(messages[failure?.code] || 'Could not update the address. Check the current address before trying again.');
+        this.phase = 'error'; this.address = null;
+      } finally { this.busy = false; }
     },
     async copyAddress() {
       if (!this.address) return;
+      // A store event and a click can share one turn, before Vue's watcher
+      // runs. Never let the displayed snapshot bypass the shared reader.
+      if (!this.assignmentMatches(this.address)) { this.invalidateAddress(); return; }
       try {
         await navigator.clipboard.writeText(this.address);
         this.$q.notify({ type: 'positive', message: this.$t('Lightning address copied') });
-      } catch (e) {
-        this.$q.notify({ type: 'negative', message: this.$t('Failed to copy') });
-      }
+      } catch { this.$q.notify({ type: 'negative', message: this.$t('Failed to copy') }); }
     },
   },
 };
@@ -300,6 +246,9 @@ export default {
 <style scoped>
 .lnaddr-sheet {
   width: 100%;
+  max-width: 560px;
+  max-height: 92dvh;
+  overflow-y: auto;
   border-radius: 20px 20px 0 0;
   padding-bottom: max(16px, env(safe-area-inset-bottom));
 }
@@ -330,6 +279,7 @@ export default {
   padding: 8px 16px 4px;
 }
 .lnaddr-title {
+  margin: 0;
   flex: 1;
   text-align: center;
   font-size: 17px;
@@ -337,7 +287,7 @@ export default {
   letter-spacing: -0.2px;
 }
 .lnaddr-header-spacer {
-  width: 32px; /* mirrors the glass back button so the title centers */
+  width: 44px; /* mirrors the back button so the title centers */
   flex-shrink: 0;
 }
 
@@ -375,10 +325,11 @@ export default {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 16px;
   font-weight: 600;
-  word-break: break-all;
+  overflow-wrap: anywhere;
   margin-bottom: 10px;
 }
 .lnaddr-caption {
+  margin: 0;
   font-size: 13px;
   line-height: 1.45;
   opacity: 0.65;
@@ -436,14 +387,14 @@ export default {
   opacity: 0.75;
 }
 .lnaddr-status-ok {
-  color: #15a35b;
+  color: #187344;
   opacity: 1;
 }
 .lnaddr-dark .lnaddr-status-ok {
   color: #15de72;
 }
 .lnaddr-status-bad {
-  color: #d84c4c;
+  color: #b83f3f;
   opacity: 1;
 }
 
@@ -468,8 +419,18 @@ export default {
   color: #0c2417;
 }
 .lnaddr-cta-secondary {
-  height: 40px;
+  min-height: 44px;
+  border-radius: 14px;
   font-size: 14px;
   opacity: 0.8;
 }
+.lnaddr-label { width: 100%; max-width: 320px; margin-bottom: 6px; font-size: 13px; text-align: start; }
+.lnaddr-consequence { margin-top: 18px; padding: 14px 16px; border-radius: 14px; background: rgba(128, 128, 128, .1); text-align: start; font-size: 13px; line-height: 1.5; overflow-wrap: anywhere; }
+.lnaddr-consequence p { margin: 0; }
+.lnaddr-consequence p + p { margin-top: 10px; }
+.lnaddr-error { font-size: 13px; line-height: 1.5; margin: 12px 0 0; color: var(--color-negative); }
+.lnaddr-center { gap: 12px; }
+.lnaddr-suffix { flex-shrink: 0; }
+.lnaddr-dark .lnaddr-status-bad { color: #ff8a8a; }
+.lnaddr-header .glass-back-btn { width: 44px; height: 44px; min-height: 44px; }
 </style>
