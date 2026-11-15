@@ -7,7 +7,5 @@ export default {
   "Pay with {name}": "Pagar con {name}",
   "Recipient address": "Dirección del destinatario",
   "Expires": "Vence",
-  "Spark invoice": "Factura Spark",
-  "Bitcoin on-chain payment": "Pago Bitcoin en cadena",
   "Fee calculated when sending.": "La comisión se calcula al enviar."
 };

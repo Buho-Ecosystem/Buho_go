@@ -7,7 +7,5 @@ export default {
   "Pay with {name}": "Pay with {name}",
   "Recipient address": "Recipient address",
   "Expires": "Expires",
-  "Spark invoice": "Spark invoice",
-  "Bitcoin on-chain payment": "Bitcoin on-chain payment",
   "Fee calculated when sending.": "Fee calculated when sending."
 };
