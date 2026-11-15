@@ -311,22 +311,24 @@ export const useAutoWithdrawStore = defineStore('autoWithdraw', {
           this._stopAtLimit(walletId, amount, limit)
           return
         }
-        // From here money moves: the cooldown starts now, not on every
-        // check, so a rule just below its threshold still runs on the next
-        // balance that passes it.
-        _lastTriggerTime.set(walletId, Date.now())
-
         const name = destinationName(rule.destination, walletStore.wallets)
         // A wallet whose server holds the fee wants that server's reserve
         // left, not the route's: the amount follows the invoice it will pay.
+        // Still before the cooldown: a lower amount that is too little, for
+        // the wallet or for the address, is a wait like any other.
         let invoice = null
         if (serverHoldsFee(walletType, route)) {
           ({ amountSats: amount, invoice } = await this._invoiceWithinServerReserve(walletStore, wallet, rule, target, amount, verified - keepSats))
+          if (this.configs[walletId] !== rule || !rule.enabled) return
           if (!invoice) {
             this._skip(walletId, 'below_minimum')
             return
           }
         }
+        // From here money moves: the cooldown starts now, not on every
+        // check, so a rule just below its threshold still runs on the next
+        // balance that passes it.
+        _lastTriggerTime.set(walletId, Date.now())
         const result = target
           ? await walletStore.transferBetweenWallets(walletId, target.id, amount, '', { source: 'auto-transfer', label: name, ...(invoice ? { invoice } : {}) })
           : await this._sendToAddress(walletStore, wallet, walletType, rule, amount, quote, invoice)
@@ -342,6 +344,9 @@ export const useAutoWithdrawStore = defineStore('autoWithdraw', {
         // its limits changed after they were read. That ends the same way.
         const refused = error?.code === 'LNURL_AMOUNT_OUT_OF_RANGE' ? amountLimit(error.amountSats, error) : null
         if (refused) {
+          // Too little for the address is a wait, whenever it turns out: no
+          // payment was tried, so no cooldown is left behind either.
+          if (refused.reason === 'below_minimum') _lastTriggerTime.delete(walletId)
           this._stopAtLimit(walletId, error.amountSats, refused)
           return
         }

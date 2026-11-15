@@ -78,7 +78,7 @@ export function reasonText(reason, { t, wallet = '', destination = '', detail = 
     case 'balance_unverified': return balanceUnverifiedText(detail, { t, wallet });
     case 'no_rate': return t('Waiting for an exchange rate.');
     case 'below_minimum': return t('Too little to move.');
-    case 'above_maximum': return t('{name} takes at most {amount} at a time.', { name: destination, amount: formatSats(detail, { bip177 }) });
+    case 'above_maximum': return t('At most {amount} can be sent to {name} at a time.', { name: destination, amount: formatSats(detail, { bip177 }) });
     case 'cannot_pay': return t('{name} can\'t pay this destination right now.', { name: wallet });
     case 'cannot_receive': return t('{name} can\'t receive payments.', { name: destination });
     case 'missing': return t('{name} is no longer on this phone.', { name: destination || t('The destination') });

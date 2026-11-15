@@ -347,6 +347,27 @@ test('from LNbits, a transfer leaves the fee reserve the server states, so what 
     if (moved) assert.ok(moved + serverReserve(moved) <= 95_000, 'the amount and the most it can cost leave the 5,000');
     assert.equal(aw.configs[id].failureStreak, 0);
   }
+
+  // A wait for the server's reserve leaves no cooldown behind: nothing was
+  // tried, so the next balance that is enough moves at once.
+  let reserve = () => 94_995;
+  const amountOf = new Map();
+  const get = async (url) => {
+    const sats = Number(new URL(url).searchParams.get('amount')) / 1000;
+    if (!sats) return { ok: true, status: 200, data: PAY_REQUEST };
+    amountOf.set(invoiceFor(sats), sats);
+    return { ok: true, status: 200, data: { pr: invoiceFor(sats) } };
+  };
+  const paid = [];
+  const { aw, id, walletStore } = setup({ shopType: 'lnbits', rule: { keep: { sats: 5_000 } }, deps: { '../utils/lnurlPay.js': lnurlPayWith(get) } });
+  walletStore.ensureLNBitsConnected = async () => ({
+    getFeeReserveSats: async (invoice) => reserve(amountOf.get(invoice)),
+    payInvoice: async ({ invoice }) => { paid.push(amountOf.get(invoice)); return { payment_hash: 'h' }; },
+  });
+  await aw.checkAndExecute(id, 100_000, walletStore);
+  reserve = (sats) => Math.ceil(sats * 0.01);
+  await aw.checkAndExecute(id, 100_000, walletStore);
+  assert.deepEqual(paid, [94_050], 'sent on the very next run');
 });
 
 test('rules left behind by removed wallets are settled when the rules load', async () => {

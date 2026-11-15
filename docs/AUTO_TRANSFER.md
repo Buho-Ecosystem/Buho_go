@@ -42,7 +42,7 @@ Words come from one place, `utils/autoTransferCopy.js`: a rule is a sentence, a 
 | Sent | toast "Moved 512,400 sats · To Savings"; 60 s before the rule runs again |
 | Failed | no alert; Home's line "Auto-Transfer couldn't send to Savings ›"; retry after 15 s |
 | Less than the destination takes | waits: "Too little to move."; it runs on the next balance that leaves enough |
-| More than the destination takes at a time | fails: "shop@example.com takes at most 500,000 sats at a time." |
+| More than the destination takes at a time | fails: "At most 500,000 sats can be sent to shop@example.com at a time." |
 | Outcome unknown (NWC) | rests 10 minutes: it may have gone through |
 | 5 failures in a row | the rule pauses itself; "Try Again" switches it back on and runs it |
 | Destination wallet removed | the rule pauses: "Paused: where it sent is no longer on this phone." |
