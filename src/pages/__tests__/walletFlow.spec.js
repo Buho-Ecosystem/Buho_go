@@ -1232,15 +1232,23 @@ test('Pay with: each wallet type pays through ITS OWN provider; the active walle
   }
 });
 
-test('a fee cap or fallback guess is never presented as a quoted payment fee', () => {
+test('a fee limit the payment is held to is shown as a limit; a fallback guess is never shown as a fee', () => {
   const { vm, options } = payingHarness({ active: 'biz' });
   vm.resolveWalletBrand = () => null;
   const review = () => options.computed.paymentSheetProps.call(vm);
+  // A Spark wallet paying an address: no invoice to quote before the confirm,
+  // but the payment is held to this limit (unquotedFeeLimitSats), so it is said.
   Object.assign(vm, { pendingPayment: lnAddressPayment(), sendingWalletId: 'personal', sendSheetAmountSats: 2500 });
-  assert.equal(review().feeEstimate, null, 'the execution cap is not an SDK quote');
+  assert.deepEqual(review().feeEstimate, { sats: 25, isEstimating: false, isLimit: true }, 'the limit, marked as one');
+  assert.equal(review().feeNotice, '', 'one fee statement, not two');
+  // A wallet that holds to no limit and quotes nothing says so in words.
+  vm.sendingWalletId = 'hub';
+  assert.equal(review().feeEstimate, null, 'no number for a wallet that cannot tell');
   assert.equal(review().feeNotice, 'Fee calculated when sending.');
+  vm.sendingWalletId = 'personal';
   Object.assign(vm, { pendingPayment: { type: 'lightning_invoice', invoice: 'lnbc-request', amount: 2500 }, estimatedFee: 9876, estimatedFeeIsGuess: true });
   assert.equal(review().feeEstimate, null, 'provider fallback is never an actual fee');
+  assert.equal(review().feeNotice, 'Fee calculated when sending.');
   vm.estimatedFeeIsGuess = false; vm.estimatedFee = 7;
   assert.deepEqual(review().feeEstimate, { sats: 7, isEstimating: false });
   for (const invalid of [NaN, Infinity, -1, '7']) {
@@ -1248,6 +1256,7 @@ test('a fee cap or fallback guess is never presented as a quoted payment fee', (
     assert.equal(review().feeEstimate, null, String(invalid));
   }
   Object.assign(vm, { pendingPayment: lnAddressPayment(), estimatedFee: null, sendSheetAmountSats: 0 });
+  assert.equal(review().feeEstimate, null, 'no limit before there is an amount');
   assert.equal(review().feeNotice, '', 'no fee discussion before a free amount is entered');
 });
 
@@ -1519,12 +1528,14 @@ test('Pay with: an estimate for the previous wallet cannot land on the new one',
   assert.equal(vm.isEstimatingFee, false);
 });
 
-test('native fee-free information requires an actual quote from the selected wallet', () => {
+test('a transfer between two Arkade addresses is free; Spark says so from its quote', () => {
   const { vm, options } = payingHarness({ active: 'hub' });
   vm.resolveWalletBrand = () => null;
   const fee = () => options.computed.paymentSheetProps.call(vm).feeEstimate;
   Object.assign(vm, { pendingPayment: { type: 'arkade_address', data: 'ark1xyz', arkadeAddress: 'ark1xyz' }, sendingWalletId: 'ark' });
-  assert.equal(fee(), null, 'no Arkade fee quote is available');
+  assert.deepEqual(fee(), { sats: 0, isEstimating: false, label: 'Free · instant' }, 'an Arkade wallet paying an Arkade address');
+  vm.sendingWalletId = 'hub';
+  assert.equal(fee(), null, 'another kind of wallet cannot pay it, and says nothing about its fee');
   vm.pendingPayment = { type: 'spark_address', data: 'spark1abc', sparkAddress: 'spark1abc' };
   vm.sendingWalletId = 'personal';
   assert.equal(fee(), null, 'do not assume a native quote before SDK preparation');
@@ -2312,7 +2323,8 @@ test('payment details preserve the signed Spark invoice while the main card stay
   assert.equal(review.recipient.name, 'Bitcoin payment');
   assert.equal(review.recipient.address, 'spark1receiver');
   assert.equal(review.details.address, 'spark1signed-request');
-  assert.equal(review.details.typeLabel, 'Spark invoice');
+  assert.equal(review.details.addressLabel, 'Payment request');
+  assert.equal(review.details.typeLabel, undefined, 'no protocol name for the kind of request');
   assert.equal(review.details.networkLabel, 'Spark');
   assert.equal(review.details.description, 'Coffee');
   assert.equal(review.details.metadata[0].value, 'spark1receiver');
@@ -2320,19 +2332,22 @@ test('payment details preserve the signed Spark invoice while the main card stay
   assert.equal(options.computed.paymentSheetProps.call(vm).recipient.name, 'Anna');
 });
 
-test('details distinguish requests without changing the generic main payment label', () => {
+test('details name what was scanned in plain words, and a network only where it decides what a person can do', () => {
   const { vm, options } = payingHarness();
   vm.resolveWalletBrand = () => null;
   for (const [payment, label, network, address] of [
-    [{ type: 'lightning_invoice', invoice: 'lnbc1request', amount: 1000 }, 'Lightning invoice', 'Lightning', 'lnbc1request'],
-    [{ type: 'lightning_address', lightningAddress: 'anna@example.com', minSendable: 1000, maxSendable: 1e9 }, 'Lightning address', 'Lightning', 'anna@example.com'],
-    [{ type: 'lnurl', lnurl: 'lnurl1original', data: 'lnurl1original', minSendable: 1000, maxSendable: 1e9 }, 'LNURL payment', 'Lightning', 'lnurl1original'],
-    [{ type: 'bitcoin_address', bitcoinAddress: 'bc1qreceiver', rawInput: 'bitcoin:bc1qreceiver?amount=0.00001' }, 'Bitcoin on-chain payment', 'Bitcoin', 'bc1qreceiver'],
+    [{ type: 'lightning_invoice', invoice: 'lnbc1request', amount: 1000 }, 'Payment request', '', 'lnbc1request'],
+    [{ type: 'lightning_address', lightningAddress: 'anna@example.com', minSendable: 1000, maxSendable: 1e9 }, 'Payment address', '', 'anna@example.com'],
+    [{ type: 'lnurl', lnurl: 'lnurl1original', data: 'lnurl1original', minSendable: 1000, maxSendable: 1e9 }, 'Payment link', '', 'lnurl1original'],
+    [{ type: 'bitcoin_address', bitcoinAddress: 'bc1qreceiver', rawInput: 'bitcoin:bc1qreceiver?amount=0.00001' }, 'Address', 'Bitcoin', 'bc1qreceiver'],
+    [{ type: 'spark_address', sparkAddress: 'spark1receiver' }, 'Address', 'Spark', 'spark1receiver'],
+    [{ type: 'arkade_address', arkadeAddress: 'ark1receiver' }, 'Address', 'Arkade', 'ark1receiver'],
   ]) {
     vm.pendingPayment = payment;
     const review = options.computed.paymentSheetProps.call(vm);
-    assert.equal(review.details.typeLabel, label);
+    assert.equal(review.details.addressLabel, label);
     assert.equal(review.details.networkLabel, network);
+    assert.doesNotMatch(`${review.details.addressLabel} ${review.details.networkLabel}`, /Lightning|LNURL|invoice/i, 'no protocol names in the labels');
     assert.equal(review.details.address, address);
     if (payment.type !== 'lnurl') assert.equal(review.recipient.name, 'Bitcoin payment');
   }

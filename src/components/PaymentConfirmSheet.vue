@@ -26,6 +26,14 @@
       the service just refused, holds the commit control. A service that
       requires details BuhoGO never shares (`payment.payerBlocked`) holds it
       too, with the reason above.
+    - What it costs, in one fee slot with the total under it: the quote, a
+      limit the payment is held to ("Up to"), "Free", or one line saying the
+      fee is calculated when sending. The slot keeps its place while a quote
+      is on its way and while a contact payment is still being made ready
+      (`preparing`), so the rows below it never move.
+    - In the wallet chooser one tap on a wallet that can pay chooses it and
+      returns to the review; a wallet that cannot pay keeps its reason in
+      its row.
 
   It does NOT route to Spark / LNbits / NWC, fetch LNURL data, or talk to
   fiat-rate services beyond the small util import — the parent owns the
@@ -41,7 +49,7 @@
     :style="sendViewportStyle"
     @escape-key="onEscape"
   >
-    <q-card ref="card" class="sheet-card" :class="[{ 'sheet-card--redeem': isRedeem, 'sheet-card--contextual': contextual, 'sheet-card--send': verb === 'send' }, $q.dark.isActive ? 'sheet-card-dark' : 'sheet-card-light']" @keydown.esc="onEscape">
+    <q-card ref="card" class="sheet-card" :class="[{ 'sheet-card--redeem': isRedeem, 'sheet-card--contextual': contextual, 'sheet-card--send': verb === 'send', 'sheet-card--compact': keyboardCompact }, $q.dark.isActive ? 'sheet-card-dark' : 'sheet-card-light']" @keydown.esc="onEscape">
       <!-- Swipe down anywhere on the grab bar or the header to close. -->
       <div class="sheet-top" v-touch-swipe.mouse.down="onHeaderSwipe">
         <div v-if="!isRedeem" class="grab-bar"></div>
@@ -135,7 +143,7 @@
             </div>
             <!-- Keep the denomination and its conversion together; limits
                  remain a separate helper so neither pushes the other away. -->
-            <div v-if="limitsHelperText || (verb !== 'send' && fiatEquivalent)" class="amount-helper">
+            <div v-if="limitsHelperText || limitsHelperReserved || (verb !== 'send' && fiatEquivalent)" class="amount-helper">
               <span>{{ limitsHelperText }}</span>
               <span v-if="verb !== 'send'" class="amount-helper-convert">{{ fiatEquivalent }}</span>
             </div>
@@ -333,55 +341,62 @@
                stays out of the way. -->
           <slot v-if="!preparationActive" name="extras" />
 
+          <!-- Facts about the payment, read as one group: the note, what it
+               costs and, when the service asks for one, the refund address.
+               One fee slot, whatever is known: a pulse while the payment is
+               made ready or quoted, the quote, a limit ("Up to"), "Free", or
+               one line saying the fee is calculated when sending (a wallet
+               that cannot tell beforehand). The total sits under it in the
+               same states, so the group keeps its rows from the first
+               moment to the last and nothing below it moves. -->
           <div
-            v-if="preparationActive"
-            class="payment-preparation-details"
+            v-if="factGroupVisible"
+            class="fact-group"
+            :class="{ 'payment-summary': verb === 'send', 'payment-preparation-details': preparationActive }"
             :aria-busy="preparing ? 'true' : null"
-            :aria-label="$t('Getting ready to pay')"
+            :aria-label="preparationActive ? $t('Getting ready to pay') : null"
           >
-            <div class="preparation-fee">
-              <span>{{ $t('Network fee') }}</span>
-              <i class="preparation-placeholder preparation-placeholder--fee" aria-hidden="true"></i>
+            <div v-if="noteRowReserved" class="note-row" aria-hidden="true">
+              <span class="note-label">{{ $t('Note (optional)') }}</span>
+              <i class="preparation-placeholder preparation-placeholder--note"></i>
             </div>
-          </div>
-
-          <!-- Facts about the payment, read as one group: the network fee and,
-               when the service asks for one, the refund address.
-               Fee row: surfaced when the parent supplies an estimate or a
-               static label (e.g. "Free (Spark transfer)"). NWC/LNbits
-               can't pre-estimate fees, so the parent simply omits this
-               object on those paths and we show nothing. -->
-          <div v-if="!preparationActive && (feeRowVisible || refundRow || payment?.commentAllowed || payment?.feeNotice)" class="fact-group" :class="{ 'payment-summary': verb === 'send' }">
-            <div v-if="feeRowVisible" class="fee-row" :class="{ 'fee-row--joined': !!refundRow }">
-              <span class="fee-row-label">{{ payment?.feeEstimate?.title || $t('Network fee') }}</span>
-              <span class="fee-row-value">
-                <q-spinner-dots v-if="payment?.feeEstimate?.isEstimating" class="fee-pending" size="14px" />
-                <span v-else>{{ feeRowValueText }}</span>
-              </span>
+            <div v-else-if="!preparationActive && payment?.commentAllowed" class="note-row">
+              <label :for="noteId" class="note-label">{{ $t('Note (optional)') }}</label>
+              <input
+                :id="noteId"
+                :value="comment"
+                :readonly="isSending || isComplete"
+                @input="onCommentChange"
+                type="text"
+                :placeholder="$t('Add a note')"
+                class="note-input"
+                :maxlength="payment?.commentMaxLength || 100"
+              />
             </div>
-            <p v-if="payment?.feeNotice" class="payment-fee-notice" role="status">{{ payment.feeNotice }}</p>
+            <div v-if="feeSlotVisible" class="fee-row" :class="{ 'fee-row--joined': !!refundRow && !preparationActive }">
+              <template v-if="preparationActive || feeRowVisible">
+                <span class="fee-row-label">{{ $t('Network fee') }}</span>
+                <span class="fee-row-value">
+                  <i v-if="preparationActive" class="preparation-placeholder preparation-placeholder--fee" aria-hidden="true"></i>
+                  <q-spinner-dots v-else-if="payment?.feeEstimate?.isEstimating" class="fee-pending" size="14px" />
+                  <span v-else>{{ feeRowValueText }}</span>
+                </span>
+              </template>
+              <span v-else class="fee-row-label payment-fee-notice" role="status">{{ payment.feeNotice }}</span>
+            </div>
 
             <RefundAddressField
-              v-if="refundRow"
+              v-if="refundRow && !preparationActive"
               :refund="refundRow"
-              :joined="feeRowVisible"
+              :joined="feeSlotVisible"
               :disabled="isSending || isComplete"
               @pick="onRefundPick"
             />
-          <div v-if="payment?.commentAllowed" class="note-row">
-            <label :for="noteId" class="note-label">{{ $t('Note (optional)') }}</label>
-            <input
-              :id="noteId"
-              :value="comment"
-              :readonly="isSending || isComplete"
-              @input="onCommentChange"
-              type="text"
-              :placeholder="$t('Add a note')"
-              class="note-input"
-              :maxlength="payment?.commentMaxLength || 100"
-            />
-          </div>
-            <div v-if="totalRowVisible" class="payment-total-row"><span>{{ $t('Total') }}</span><strong>{{ totalRowValueText }}</strong></div>
+            <div v-if="totalRowVisible" class="payment-total-row">
+              <span>{{ $t('Total') }}</span>
+              <i v-if="totalRowPending" class="preparation-placeholder preparation-placeholder--total" aria-hidden="true"></i>
+              <strong v-else>{{ totalRowValueText }}</strong>
+            </div>
           </div>
 
         </div>
@@ -417,10 +432,10 @@
               class="payment-wallet-option"
               :data-wallet-id="wallet.id"
               :tabindex="wallet.id === walletPickerTabId ? 0 : -1"
-              :class="{ 'payment-wallet-option--selected': wallet.id === walletDraftId }"
-              :aria-checked="wallet.id === walletDraftId ? 'true' : 'false'"
+              :class="{ 'payment-wallet-option--selected': wallet.id === sendingWalletId }"
+              :aria-checked="wallet.id === sendingWalletId ? 'true' : 'false'"
               :aria-disabled="walletSelectable(wallet) ? undefined : 'true'"
-              @click="chooseWalletDraft(wallet)"
+              @click="pickWallet(wallet)"
             >
               <span class="payment-wallet-tile" :class="{ 'payment-wallet-tile--arkade': wallet.type === 'arkade' }">
                 <WalletBrandMark :type="wallet.type" :size="20" />
@@ -430,12 +445,12 @@
                   <strong>{{ wallet.name || $t('Wallet') }}</strong>
                   <span v-if="wallet.id === preferredWalletId" class="payment-wallet-preferred">{{ $t('Default') }}</span>
                 </span>
-                <small>
+                <small v-balance-updating="walletPickerBalancePending(wallet)">
                   {{ walletPickerDetail(wallet) }}<template v-if="walletPickerBalance(wallet) !== null"> · <HiddenAmount :class="{ 'balance-stale': walletPickerBalanceOutdated(wallet) }">{{ walletPickerBalance(wallet) }}</HiddenAmount></template>
                 </small>
               </span>
               <Icon
-                :icon="wallet.id === walletDraftId ? 'tabler:circle-check-filled' : 'tabler:circle'"
+                :icon="wallet.id === sendingWalletId ? 'tabler:circle-check-filled' : 'tabler:circle'"
                 width="21"
                 height="21"
                 class="payment-wallet-radio"
@@ -446,13 +461,9 @@
           <p class="payment-wallet-note">{{ $t('This is just for this payment.') }}</p>
         </div>
 
-        <div v-if="walletPickerOpen" class="cta-row confirm-cta">
-          <button type="button" class="primary-cta payment-wallet-apply" :disabled="!walletSelectable(walletDraft)" @click="applyWalletDraft">
-            {{ $t('Use {name}', { name: walletDraft?.name || $t('Wallet') }) }}
-          </button>
-        </div>
-
-        <div v-else-if="preparationActive && !detailsOpen && !brantaDetailsOpen" class="cta-row confirm-cta preparation-cta">
+        <!-- Getting ready: the commit control's own place says so, with no
+             extra line above it that would later leave a gap. -->
+        <div v-if="preparationActive && !detailsOpen && !brantaDetailsOpen" class="cta-row confirm-cta preparation-cta">
           <div v-if="preparationFailed" class="preparation-error" role="status">
             <Icon icon="tabler:alert-circle" width="17" height="17" />
             <span>
@@ -460,15 +471,14 @@
               <small>{{ preparationError }}</small>
             </span>
           </div>
-          <div v-else class="preparation-status" role="status" aria-live="polite">
-            <q-spinner size="16px" aria-hidden="true" />
-            <span>
-              {{ $t('Getting ready to pay…') }}
-              <small v-if="preparationSlow">{{ $t('This is taking longer than usual. You can try again later.') }}</small>
-            </span>
-          </div>
           <button v-if="preparationFailed" type="button" class="primary-cta preparation-retry" @click="$emit('retry-preparation')">{{ $t('Try again') }}</button>
-          <button v-else type="button" class="primary-cta" disabled>{{ $t('Send') }}</button>
+          <template v-else>
+            <div class="primary-cta primary-cta--waiting preparation-status" role="status" aria-live="polite">
+              <q-spinner size="16px" aria-hidden="true" />
+              <span>{{ $t('Getting ready to pay…') }}</span>
+            </div>
+            <div v-if="preparationSlow" class="fee-footnote preparation-slow" role="status">{{ $t('This is taking longer than usual. You can try again later.') }}</div>
+          </template>
         </div>
 
         <!-- Commit control — pinned OUTSIDE the scroll region so the commit
@@ -478,7 +488,7 @@
              the filling ProgressCta — trickle while in flight, then 100% +
              check on success — bridging cleanly into the confirmation screen
              with no separate confirm step and no blank in between. -->
-        <div v-else-if="!isReading" v-show="!takeover && !detailsOpen && !brantaDetailsOpen" class="cta-row confirm-cta">
+        <div v-else-if="!isReading" v-show="!takeover && !walletPickerOpen && !detailsOpen && !brantaDetailsOpen" class="cta-row confirm-cta">
             <transition name="cta-swap" mode="out-in">
               <ProgressCta
                 v-if="isSending || isComplete"
@@ -515,7 +525,7 @@
             <div v-if="isSending && statusMessage && statusMessage !== sendingLabel" class="fee-footnote status-line">
               {{ statusMessage }}
             </div>
-            <div v-else-if="!isSending && !isComplete && !feeRowVisible && !payment?.feeNotice && !hasExtras && verb === 'send'" class="fee-footnote">
+            <div v-else-if="!isSending && !isComplete && !feeSlotVisible && !hasExtras && verb === 'send'" class="fee-footnote">
               {{ $t('Network fees apply') }}
             </div>
         </div>
@@ -540,6 +550,7 @@ import { payingWalletReasonText } from '../utils/payingWallets.js'
 import RefundAddressField from './RefundAddressField.vue'
 import CardFace from './CardFace.vue'
 import { onAndroidBack } from '../utils/androidBack.js'
+import balanceUpdating from '../directives/balanceUpdating.js'
 
 // Below this, a tap "Send" button; above it, slide-to-confirm. Both morph into
 // the same filling ProgressCta once committed.
@@ -565,12 +576,23 @@ function denominationOf(vm) {
 }
 const reviewParts = (vm, sats) => paymentAmountParts(sats, denominationOf(vm))
 const reviewAmount = (vm, sats) => formatPaymentAmount(sats, denominationOf(vm))
+/**
+ * The fee estimate the fee row can show, or null: none given, or a number
+ * that is no whole count of sats (never shown as a price or in a total).
+ */
+function shownFee(payment) {
+  const fee = payment?.feeEstimate
+  if (!fee) return null
+  if (fee.sats != null && (!Number.isSafeInteger(fee.sats) || fee.sats < 0)) return null
+  return fee.isEstimating || fee.label || typeof fee.sats === 'number' ? fee : null
+}
 /** The separators an amount may be typed with: the app language's and the device's. */
 const amountLocales = vm => [vm.$i18n?.locale, undefined]
 
 export default {
   name: 'PaymentConfirmSheet',
   components: { SlideToSend, BrantaVerificationDetails, ProgressCta, WalletBrandMark, HiddenAmount, RefundAddressField, CardFace },
+  directives: { balanceUpdating },
   props: {
     modelValue: { type: Boolean, default: false },
     /**
@@ -659,7 +681,6 @@ export default {
       brantaDetailsOpen: false,
       // Where the business check was opened from: Back returns there.
       brantaDetailsFrom: 'review',
-      walletDraftId: null,
       amountEdited: false,
       amountInputError: false,
       amountInputPartial: false,
@@ -672,6 +693,11 @@ export default {
   computed: {
     titleId() { return `payment-confirm-title-${this.$.uid}` },
     noteId() { return `payment-note-${this.$.uid}` },
+    /** The keyboard is up: less air, so the amount, the fee and the total stay in view above it. */
+    keyboardCompact() {
+      return this.verb === 'send' && this.visualViewportHeight !== null
+        && (this.visualViewportBottom > 0 || this.visualViewportHeight < 540)
+    },
     sendViewportStyle() {
       return this.verb === 'send' && this.visualViewportHeight ? {
         '--payment-viewport-height': `${this.visualViewportHeight}px`,
@@ -695,17 +721,21 @@ export default {
       if (this.selectedPayingWallet) return this.selectedPayingWallet.name || this.$t('Wallet')
       return this.sendingWalletId ? this.$t('Wallet unavailable') : this.$t('Wallet')
     },
-    walletDraft() { return this.payingWallets.find(wallet => wallet.id === this.walletDraftId) || null },
+    /** The row Tab lands on: the paying wallet when it can pay, else the first that can. */
     walletPickerTabId() {
-      return this.walletSelectable(this.walletDraft) ? this.walletDraftId : this.payingWallets.find(wallet => this.walletSelectable(wallet))?.id
+      return this.walletSelectable(this.selectedPayingWallet) ? this.sendingWalletId : this.payingWallets.find(wallet => this.walletSelectable(wallet))?.id
     },
+    // `payment.details`: { typeLabel?, networkLabel?, address, addressLabel?,
+    // description?, metadata? }. Without it, the destination is named in
+    // plain words and a network only where it decides what a person can do.
     paymentDetails() {
-      const fallbackType = {
-        bitcoin: 'Bitcoin on-chain payment', spark: 'Spark payment', arkade: 'Arkade payment',
-        lightning: 'Lightning address', invoice: 'Lightning invoice', lnurl: 'LNURL payment',
-      }[this.payment?.recipient?.addressType]
-      return this.payment?.details || {
-        typeLabel: fallbackType ? this.$t(fallbackType) : '',
+      if (this.payment?.details) return this.payment.details
+      const type = this.payment?.recipient?.addressType
+      const network = { bitcoin: 'Bitcoin', spark: 'Spark', arkade: 'Arkade' }[type]
+      const label = { lightning: 'Payment address', invoice: 'Payment request', lnurl: 'Payment link' }[type]
+      return {
+        networkLabel: network ? this.$t(network) : '',
+        addressLabel: this.$t(label || 'Address'),
         address: this.recipientAddress,
         description: this.payment?.description || '',
       }
@@ -721,7 +751,14 @@ export default {
     },
     compactRecipientIdentifier() {
       const identifier = this.recipientAddressLabel
+      // A raw address is compared by its ends: the start and the end, short
+      // enough to read at a glance. The whole of it is in Payment details.
+      if (this.recipientIsRawAddress) return identifier.length > 24 ? `${identifier.slice(0, 10)}…${identifier.slice(-8)}` : identifier
       return identifier.length > 36 ? `${identifier.slice(0, 17)}…${identifier.slice(-12)}` : identifier
+    },
+    /** A send to an address of its own kind: Bitcoin, Spark or Arkade. */
+    recipientIsRawAddress() {
+      return this.verb === 'send' && ['bitcoin', 'spark', 'arkade'].includes(this.payment?.recipient?.addressType) && !!this.recipientAddress
     },
     recipientUsesIdentity() {
       const recipient = this.payment?.recipient
@@ -780,7 +817,11 @@ export default {
         if (this.payment?.recipient?.addressType === 'lightning') {
           return this.payment?.recipient?.addressLabel || this.recipientAddress
         }
-        // Protocol names and encoded destinations belong in Payment details.
+        // Where the money goes is part of the review: a pasted address
+        // shows its start and end under the name. Encoded requests
+        // (invoices, payment links) name nothing a person can compare,
+        // so they and every protocol name stay in Payment details.
+        if (this.recipientIsRawAddress) return this.recipientAddress
         return ''
       }
       return this.payment?.recipient?.addressLabel || this.recipientAddress
@@ -1024,6 +1065,13 @@ export default {
           unit: 'BTC'
         })
       }
+      // The same form as the amount, the fee and the total: "₿ 1" or "1 sats".
+      if (this.useBip177Format) {
+        const bitcoin = { kind: 'sats', bip177: true }
+        return this.$t('Limits {min} – {max} {unit}', {
+          min: formatPaymentAmount(this.minSats, bitcoin), max: formatPaymentAmount(this.maxSats, bitcoin), unit: '',
+        }).trim()
+      }
       return this.$t('Limits {min} – {max} {unit}', {
         min: this.minSats.toLocaleString(),
         max: this.maxSats.toLocaleString(),
@@ -1065,33 +1113,57 @@ export default {
     },
 
     // ───── Fee estimate ─────
-    feeRowVisible() {
-      const fe = this.payment?.feeEstimate
-      if (!fe) return false
-      if (fe.isGuess || fe.isEstimated || fe.guessed || fe.isLimit) return false
-      if (fe.sats != null && (!Number.isSafeInteger(fe.sats) || fe.sats < 0)) return false
-      if (fe.isEstimating) return true
-      if (fe.label) return true
-      return typeof fe.sats === 'number'
-    },
+    // `payment.feeEstimate`: { sats, isEstimating, label?, isLimit? }.
+    //   sats         the quote, or with `isLimit` the most the payment may cost
+    //   isEstimating a quote is on its way
+    //   label        words instead of a number ("Free · instant")
+    feeRowVisible() { return !!shownFee(this.payment) },
 
     feeRowValueText() {
-      const fe = this.payment?.feeEstimate
-      if (!fe) return ''
-      if (fe.isGuess || fe.isEstimated || fe.guessed || fe.isLimit) return ''
-      if (fe.sats != null && (!Number.isSafeInteger(fe.sats) || fe.sats < 0)) return ''
-      if (fe.label) return fe.label
-      if (typeof fe.sats !== 'number') return ''
-      if (fe.sats === 0) return this.$t('Free')
-      return reviewAmount(this, fe.sats)
+      const fee = shownFee(this.payment)
+      if (!fee) return ''
+      if (fee.label) return fee.label
+      if (typeof fee.sats !== 'number') return ''
+      if (fee.sats === 0) return this.$t('Free')
+      const amount = reviewAmount(this, fee.sats)
+      return fee.isLimit ? this.$t('Up to {amount}', { amount }) : amount
     },
+    /** The fee slot: a quote, a limit, "Free", the line that says the fee comes later, or its place held while getting ready. */
+    feeSlotVisible() {
+      if (this.preparationActive) return this.amountInSats > 0
+      return this.feeRowVisible || !!this.payment?.feeNotice
+    },
+    /** What is paid in all, under the fee, whenever the fee slot shows (the on-chain panel has its own breakdown). */
     totalRowVisible() {
-      const fee = this.payment?.feeEstimate
-      return this.verb === 'send' && this.feeRowVisible && !fee.isEstimating && !this.hasExtras
-        && Number.isSafeInteger(fee.sats) && fee.sats >= 0 && this.amountInSats > 0
+      return this.verb === 'send' && this.feeSlotVisible && !this.hasExtras && this.amountInSats > 0
+    },
+    /** The total waits with the fee it depends on. */
+    totalRowPending() {
+      return this.preparationActive || !!this.payment?.feeEstimate?.isEstimating
     },
     totalRowValueText() {
-      return reviewAmount(this, this.amountInSats + this.payment.feeEstimate.sats)
+      const fee = shownFee(this.payment)
+      // A fee that comes later is named, never guessed into the sum.
+      if (!Number.isSafeInteger(fee?.sats)) return this.$t('{amount} + fee', { amount: reviewAmount(this, this.amountInSats) })
+      const total = reviewAmount(this, this.amountInSats + fee.sats)
+      return fee.isLimit ? this.$t('Up to {amount}', { amount: total }) : total
+    },
+    /**
+     * A payment to an address almost always takes a note, which is only
+     * known once the address has answered: its row is held while the payment
+     * is made ready, so the review does not grow when it is.
+     */
+    noteRowReserved() {
+      return this.preparationActive && ['lightning', 'lnurl'].includes(this.payment?.recipient?.addressType)
+    },
+    /** The group of facts under the recipient shows when it has a row to show. */
+    factGroupVisible() {
+      if (this.preparationActive) return this.feeSlotVisible || this.noteRowReserved
+      return this.feeSlotVisible || !!this.refundRow || !!this.payment?.commentAllowed
+    },
+    /** While a payment is made ready its limits are not known yet: their line is held, so the amount card keeps its height. */
+    limitsHelperReserved() {
+      return this.verb === 'send' && this.preparing && this.amountMode !== 'fixed'
     },
 
     requiresSlide() {
@@ -1196,7 +1268,6 @@ export default {
       // A late changed-code verdict takes priority over every child view.
       // Whatever fills the takeover slot marks its own first control.
       this.walletPickerOpen = false
-      this.walletDraftId = null
       this.detailsOpen = false
       this.brantaDetailsOpen = false
       this.$nextTick(() => this.$refs.card?.$el.querySelector('.stage-takeover [data-autofocus]')?.focus())
@@ -1216,6 +1287,9 @@ export default {
         this.loadFiatRates()
       } else { this.walletPickerOpen = false; this.detailsOpen = false; this.brantaDetailsOpen = false }
       this.listenForBack(v)
+      // The keyboard is followed only while there is a sheet to keep above it.
+      if (v) this.startViewportTracking()
+      else this.stopViewportTracking()
     },
     preparing(pending, wasPending) {
       // Resolving metadata must never erase an amount typed while waiting.
@@ -1241,9 +1315,9 @@ export default {
     }
   },
   mounted() {
-    this.startViewportTracking()
     // The contextual host can mount directly into its first visible payment.
     if (this.show) {
+      this.startViewportTracking()
       this.resetForFreshOpen()
       this.loadFiatRates()
       this.listenForBack(true)
@@ -1266,7 +1340,7 @@ export default {
       this.visualViewportBottom = Math.max(0, Math.round(window.innerHeight - (viewport.offsetTop || 0) - viewport.height))
     },
     startViewportTracking() {
-      if (this.verb !== 'send' || typeof window === 'undefined') return
+      if (this.verb !== 'send' || typeof window === 'undefined' || this._viewportListener) return
       this._viewportListener = () => this.syncVisualViewport()
       window.visualViewport?.addEventListener('resize', this._viewportListener, { passive: true })
       window.visualViewport?.addEventListener('scroll', this._viewportListener, { passive: true })
@@ -1279,6 +1353,8 @@ export default {
       window.visualViewport?.removeEventListener('scroll', this._viewportListener)
       window.removeEventListener('resize', this._viewportListener)
       this._viewportListener = null
+      this.visualViewportHeight = null
+      this.visualViewportBottom = 0
     },
     /** The business check, from the recipient row ('review') or from Payment details. */
     openBrantaDetails(from = 'details') {
@@ -1340,7 +1416,6 @@ export default {
       this.walletPickerOpen = false
       this.detailsOpen = false
       this.brantaDetailsOpen = false
-      this.walletDraftId = null
       this.showAddress = false
       this.addressCopied = false
       this.amountEdited = false
@@ -1404,17 +1479,6 @@ export default {
       }
     },
 
-    /**
-     * The user picked another wallet in "Pay with". The parent owns the
-     * selection (it re-evaluates capability, balance and fees for it), so this
-     * only reports the id. A pick can never arrive mid-send: the field is
-     * disabled then, and this guard covers a stray event all the same.
-     */
-    onPayWithPick(walletId) {
-      if (this.isSending || this.isComplete) return
-      this.$emit('update:sendingWalletId', walletId)
-    },
-
     walletSelectable(wallet) { return !!wallet?.usable && !wallet.connectionFailed },
 
     walletPickerDetail(wallet) {
@@ -1432,33 +1496,39 @@ export default {
       const balance = useWalletStore().getDisplayBalance(wallet.id)
       return wallet.connectionFailed || balance?.outdated || balance?.isCached
     },
+    /** A balance still being read pulses in its row; there is no label for it. */
+    walletPickerBalancePending(wallet) {
+      const balance = useWalletStore().getDisplayBalance(wallet.id)
+      return !!balance?.refreshing && !wallet.connectionFailed
+    },
 
     openWalletPicker() {
       if (this.verb !== 'send' || this.preparationActive || this.isSending || this.isComplete) return
       this.detailsOpen = false
-      this.walletDraftId = this.sendingWalletId
       this.walletPickerOpen = true
       this.$nextTick(() => this.$refs.card?.$el.querySelector('.payment-wallet-option[tabindex="0"]')?.focus())
     },
 
-    chooseWalletDraft(wallet) {
-      if (!this.walletSelectable(wallet)) return
-      this.walletDraftId = wallet.id
-    },
-
     closeWalletPicker() {
       this.walletPickerOpen = false
-      this.walletDraftId = null
       this.$nextTick(() => this.$refs.walletTrigger?.focus())
     },
 
-    applyWalletDraft() {
-      if (this.isSending || this.isComplete || !this.walletSelectable(this.walletDraft)) return
-      const id = this.walletDraftId
-      this.$emit('update:sendingWalletId', id)
+    /**
+     * One tap chooses: the wallet pays this payment and the review is back.
+     * The parent owns the selection (it re-evaluates capability, balance and
+     * fees for it), so this only reports the id. A wallet that cannot pay
+     * says why in its row and stays where it is. A pick can never arrive
+     * mid-send: the trigger is disabled then, and this guard covers a stray
+     * event all the same.
+     */
+    pickWallet(wallet) {
+      if (this.isSending || this.isComplete || !this.walletSelectable(wallet)) return
+      this.$emit('update:sendingWalletId', wallet.id)
       this.closeWalletPicker()
     },
 
+    /** Arrow keys move through the wallets that can pay; Enter or Space chooses. */
     onWalletPickerKeydown(event) {
       if (!['ArrowDown', 'ArrowUp', 'ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return
       const options = Array.from(event.currentTarget.querySelectorAll('[role="radio"]:not([aria-disabled="true"])'))
@@ -1467,8 +1537,6 @@ export default {
       const next = event.key === 'Home' ? 0 : event.key === 'End' ? options.length - 1
         : ['ArrowDown', 'ArrowRight'].includes(event.key) ? (at + 1) % options.length : at < 0 ? options.length - 1 : (at - 1 + options.length) % options.length
       event.preventDefault()
-      const wallet = this.payingWallets.find(wallet => wallet.id === options[next].dataset.walletId)
-      this.chooseWalletDraft(wallet)
       options[next].focus()
     },
 
@@ -1775,12 +1843,22 @@ export default {
 .sheet-card--send .payment-summary .note-row { min-height: 52px; padding: 12px 16px; border-radius: 0; background: transparent; flex-wrap: wrap; }
 .note-label { color: var(--text-secondary); font-size: .8125rem; line-height: 1.5; }
 .sheet-card--send .payment-summary .note-input { flex: 1 1 140px; text-align: right; font-size: 1rem; }
-.sheet-card--send .payment-summary .payment-fee-notice { padding: 14px 16px; }
 .branta-current-check { display: flex; align-items: center; gap: 9px; min-height: 48px; padding: 10px 0; border: 0; background: transparent; font: inherit; font-size: .875rem; color: var(--brand-accent-text); cursor: pointer; text-align: left; }
 .branta-current-check > :last-child { margin-left: auto; }
 .branta-current-check:focus-visible { outline: 2px solid var(--brand-accent-text); outline-offset: 3px; }
 .sheet-card--send .note-input { font-size: 1rem; min-width: 0; }
 .sheet-card--send .recipient-avatar--type { background: transparent !important; box-shadow: none; text-shadow: none; }
+/* Keyboard up (keyboardCompact): the same rows with less air between them. */
+.sheet-card--compact .stage { gap: 8px; padding-top: 2px; padding-bottom: 4px; }
+.sheet-card--compact .confirm-cta { padding-top: 6px; }
+.sheet-card--compact .amount-stage { padding: 8px 12px 6px; }
+.sheet-card--compact .amount-input { font-size: 32px; }
+.sheet-card--compact .unit-pill { min-height: 36px; }
+.sheet-card--compact .recipient-cell { padding: 6px 12px; }
+.sheet-card--compact .recipient-avatar { width: 36px; height: 36px; min-width: 36px; font-size: 15px; }
+.sheet-card--compact .payment-summary .fee-row { min-height: 40px; padding: 8px 16px; }
+.sheet-card--compact .payment-summary .note-row { min-height: 44px; padding: 6px 16px; }
+.sheet-card--compact .payment-summary .payment-total-row { padding: 10px 0; }
 .recipient-bitcoin-logo { width: 44px; height: 44px; display: block; }
 .payment-details-view { padding-top: 12px; }
 .payment-details-list { margin: 0; }
@@ -1789,9 +1867,11 @@ export default {
 .payment-details-list dd { margin: 6px 0 0; font-size: .9375rem; line-height: 1.65; color: var(--text-primary); overflow-wrap: anywhere; white-space: pre-wrap; }
 .payment-details-list .payment-details-address { font-family: ui-monospace, SFMono-Regular, monospace; font-size: .8125rem; user-select: text; }
 .payment-details-copy { display: grid; place-items: center; width: 44px; height: 44px; padding: 0; flex-shrink: 0; border: 0; border-radius: 50%; background: var(--bg-input); color: var(--text-primary); cursor: pointer; }
-.payment-fee-notice { margin: 0; padding: 5px 2px; font-size: .8125rem; line-height: 1.5; color: var(--text-secondary); }
+/* The fee slot when the wallet cannot tell the fee beforehand: one line in the fee row's place. */
+.payment-fee-notice { font-size: .8125rem; line-height: 1.5; font-weight: 400; letter-spacing: 0; }
 .payment-total-row { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 13px 12px; border-top: 1px solid var(--border-card); color: var(--text-primary); font-size: .875rem; }
 .payment-total-row strong { font-weight: 650; text-align: right; }
+.payment-total-row .preparation-placeholder { align-self: center; }
 
 /* Send reviews keep the source screen underneath one sheet. Their middle
    scrolls independently so Cancel and the primary action remain reachable. */
@@ -1809,19 +1889,20 @@ export default {
 .amount-denomination { display: contents; }
 .sheet-card--send .amount-denomination { display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 4px 12px; max-width: 100%; }
 .sheet-card--send .amount-conversion { font-size: .875rem; line-height: 1.5; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
-.sheet-card--send .amount-helper { justify-content: center; text-align: center; }
+/* One line, held even while its text is still to come (limitsHelperReserved). */
+.sheet-card--send .amount-helper { justify-content: center; text-align: center; line-height: 1.5; min-height: 1.5em; }
 .sheet-card--send .unit-pill:disabled { opacity: 1; }
 .sheet-card--send button:focus-visible { outline: 2px solid var(--brand-accent-text); outline-offset: 3px; }
 
-.payment-preparation-details { display: flex; flex-direction: column; gap: 12px; }
+/* Getting ready: the rows of the ready review, their values still to come. */
 .preparation-placeholder { display: block; height: 10px; border-radius: 4px; background: var(--border-card); }
 .preparation-placeholder--fee { width: 46px; }
-.preparation-fee { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 2px; color: var(--text-secondary); font-size: .8125rem; }
-.preparation-status,
+.preparation-placeholder--total { width: 72px; height: 12px; }
+.preparation-placeholder--note { width: 64px; margin-left: auto; }
+/* The commit control's place while there is nothing to commit yet. */
+.primary-cta--waiting { gap: 9px; opacity: .55; cursor: default; }
 .preparation-error { display: flex; align-items: flex-start; gap: 9px; color: var(--text-secondary); font-size: .8125rem; line-height: 1.5; text-align: left; padding: 0 2px 12px; }
-.preparation-status > :first-child,
 .preparation-error > :first-child { flex-shrink: 0; margin-top: 3px; }
-.preparation-status small,
 .preparation-error small { display: block; margin-top: 4px; font-size: .75rem; color: var(--text-muted); }
 .preparation-error strong { font-weight: 600; color: var(--text-primary); }
 .payment-wallet-intro,
@@ -1865,6 +1946,10 @@ export default {
   }
   .sheet-card--send {
     max-height: min(94dvh, calc(var(--payment-viewport-height, 100dvh) - var(--safe-top, 0px) - 8px));
+  }
+  /* What the keyboard leaves is all there is: the sheet may take it whole. */
+  .sheet-card--send.sheet-card--compact {
+    max-height: calc(var(--payment-viewport-height, 100dvh) - var(--safe-top, 0px) - 8px);
   }
 }
 /* ─── Recipient ───
@@ -2275,9 +2360,9 @@ export default {
   padding: 8px 14px;
   border-radius: var(--radius-md);
   background: var(--bg-input);
-  font-size: 12.5px;
+  font-size: .78125rem;
   color: var(--text-secondary);
-  min-height: 32px;
+  min-height: 2rem;
 }
 
 /* With the refund row right below, the two read as one group of facts:

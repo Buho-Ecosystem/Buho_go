@@ -3,6 +3,8 @@ export default {
   "Payment type": "Zahlungsart",
   "Network": "Netzwerk",
   "Choose wallet": "Wallet wählen",
+  "Payment link": "Zahlungslink",
+  "{amount} + fee": "{amount} + Gebühr",
   "Pay with {name}": "Mit {name} bezahlen",
   "Payment request": "Zahlungsanfrage",
   "Recipient address": "Empfängeradresse",

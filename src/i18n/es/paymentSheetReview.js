@@ -3,6 +3,8 @@ export default {
   "Payment type": "Tipo de pago",
   "Network": "Red",
   "Choose wallet": "Elegir cartera",
+  "Payment link": "Enlace de pago",
+  "{amount} + fee": "{amount} + comisión",
   "Pay with {name}": "Pagar con {name}",
   "Payment request": "Solicitud de pago",
   "Recipient address": "Dirección del destinatario",
