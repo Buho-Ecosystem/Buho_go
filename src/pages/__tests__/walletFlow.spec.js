@@ -2223,3 +2223,57 @@ test('current business projection preserves the complete normalized check for th
   assert.equal(review.recipient.logoUrl, snapshot.logoLightUrl);
   assert.deepEqual(review.recipient.verification.destination, { kind: 'lightning', value: destination.value });
 });
+
+// ─────────────────────────────────────────────────────────────────────────
+// A payment's result is told as the wallet told it.
+// ─────────────────────────────────────────────────────────────────────────
+
+/** True when `promise` settles within `ms`; a payment must never wait on what comes after it. */
+const settlesWithin = (promise, ms = 1500) => {
+  let timer;
+  const late = new Promise(resolve => { timer = setTimeout(() => resolve(false), ms); });
+  return Promise.race([promise.then(() => true), late]).finally(() => clearTimeout(timer));
+};
+
+test('only the wallet\'s own "completed" is a paid payment: anything else is on its way, and "failed" is a failure', async () => {
+  const pay = async (status) => {
+    const events = [];
+    const harness = payingHarness({ active: 'lnb', bus: { emit: (name, data) => events.push(data) } });
+    const errors = [];
+    harness.store.showPaymentError = (error) => errors.push(error);
+    harness.store.ensureLNBitsConnected = async () => ({ payInvoice: async () => ({ paymentHash: 'h', ...(status ? { status } : {}) }) });
+    Object.assign(harness.vm, { pendingPayment: lnAddressPayment(), paymentAmount: '2500' });
+    const error = console.error;
+    console.error = () => {};
+    try { await quietly(() => harness.vm.confirmPayment()); } finally { console.error = error; }
+    return { ...harness, events, errors };
+  };
+
+  const paid = await pay('completed');
+  assert.deepEqual([paid.sent.success.status, paid.sent.success.showSaveContact, paid.events[0].status], ['completed', true, 'completed']);
+
+  for (const status of ['pending', 'unknown', 'in_flight']) {
+    const open = await pay(status);
+    assert.equal(open.errors.length, 0, status);
+    assert.equal(open.sent.success.showSaveContact, false, `${status}: nothing a paid payment offers`);
+    assert.equal(open.events[0].status, 'pending', `${status}: recorded, never announced as paid`);
+  }
+
+  // The reviewer's case: LNbits handed back a failed payment and it was shown as sent.
+  const failed = await pay('failed');
+  assert.equal(failed.sent.success, undefined, 'no paid screen');
+  assert.deepEqual(failed.errors.map(error => error.code), ['PAYMENT_FAILED']);
+  assert.deepEqual(failed.events, [], 'nothing announced');
+  assert.notEqual(failed.vm.pendingPayment, null, 'the payment stays on the sheet');
+});
+
+test('the paid screen says "sent" only for a completed payment', async () => {
+  const methods = component({ '../utils/haptics.js': { haptics: { success() {} } } }).methods;
+  for (const [status, label] of [['completed', 'Payment Sent'], ['failed', null], ['pending', null], [undefined, null]]) {
+    const vm = { ...methods, $t: t, walletStore: {}, _stopDeliveryPoll() {}, getSendingWallet: () => null };
+    await vm.openSendSuccess({ amount: 0, recipient: '', status, showSaveContact: true, successAction: { tag: 'message', message: 'x' } });
+    assert.equal(vm.sendSuccessLabel === 'Payment Sent', label === 'Payment Sent', String(status));
+    assert.equal(vm.sendSuccessShowSaveContact, status === 'completed', String(status));
+    assert.equal(!!vm.sendSuccessAction, status === 'completed', String(status));
+  }
+});

@@ -234,6 +234,11 @@ export class LNBitsWalletProvider extends WalletProvider {
     }
   }
 
+  /**
+   * Pay an invoice. "completed" is returned only when LNbits says the
+   * payment is paid; one it marks failed is thrown as PAYMENT_FAILED;
+   * anything else is still on its way ("pending").
+   */
   async payInvoice({ invoice, maxFee }) {
     this._ensureConnected();
 
@@ -252,26 +257,28 @@ export class LNBitsWalletProvider extends WalletProvider {
         throw new Error('Payment failed: No response from LNBits');
       }
 
-      // Check payment status
+      // LNbits 1.x answers with the payment itself; older servers only with
+      // its hash, which says nothing about how it stands.
       const paymentHash = response.payment_hash;
-      let status = 'pending';
+      let status = this._outgoingStatus(response);
       let preimage = response.preimage || null;
       let fee = 0;
 
-      // Try to get payment details for more info
+      // The payment's own record says more, and is the newer word.
       try {
-        const paymentDetails = await this._apiRequest(`/api/v1/payments/${paymentHash}`);
-        if (paymentDetails) {
-          // LNBits uses status string: "pending", "success", "failed"
-          status = this._parsePaymentStatus(paymentDetails.status, paymentDetails.pending);
-          preimage = paymentDetails.preimage || preimage;
-          fee = paymentDetails.fee ? Math.floor(Math.abs(paymentDetails.fee) / 1000) : 0;
+        const record = await this._apiRequest(`/api/v1/payments/${paymentHash}`);
+        if (record) {
+          const details = record.details && typeof record.details === 'object' ? record.details : record;
+          status = this._outgoingStatus(record);
+          preimage = record.preimage || details.preimage || preimage;
+          fee = details.fee ? Math.floor(Math.abs(details.fee) / 1000) : 0;
         }
       } catch (e) {
-        // If we can't get details, check if payment response indicates success
-        if (response.preimage) {
-          status = 'completed';
-        }
+        // The record could not be read: the pay call's own answer stands.
+      }
+
+      if (status === 'failed') {
+        throw Object.assign(new Error('LNbits marked the payment as failed'), { code: 'PAYMENT_FAILED', paymentHash });
       }
 
       return {
@@ -284,6 +291,25 @@ export class LNBitsWalletProvider extends WalletProvider {
       this.setError(error);
       throw error;
     }
+  }
+
+  /**
+   * How an outgoing payment stands, read from LNbits' record of it
+   * (`{ paid, status?, details? }`) or from the payment itself. Only
+   * `paid: true` or a "success" status says paid, and only "failed" says
+   * not paid. A record that says neither is a payment still on its way.
+   */
+  _outgoingStatus(record) {
+    if (!record || typeof record !== 'object') return 'pending';
+    if (record.paid === true) return 'completed';
+    const details = record.details && typeof record.details === 'object' ? record.details : record;
+    const said = [details.status, record.status].find((value) => typeof value === 'string');
+    const status = said === undefined ? null : this._parsePaymentStatus(said);
+    if (status === 'failed') return 'failed';
+    if (record.paid === false) return 'pending';
+    if (status) return status;
+    // Before LNbits had a status, a record carried only `pending`.
+    return details.pending === false ? 'completed' : 'pending';
   }
 
   async lookupInvoice(paymentHash) {

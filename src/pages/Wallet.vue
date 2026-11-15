@@ -5385,6 +5385,10 @@ export default {
         } else {
           result = await this.sendNWCPayment(amount, comment, sendingWalletId, payerData);
         }
+        // A wallet that hands back a failed payment has said it was not made.
+        if (result?.status === 'failed') {
+          throw Object.assign(new Error('The wallet marked the payment as failed'), { code: 'PAYMENT_FAILED' });
+        }
 
         // What went to the recipient: the invoice's amount. In the recipient's
         // currency that is the estimate confirmed plus the service's fee, and
@@ -5412,9 +5416,11 @@ export default {
         // Address-book context: do we know this recipient, and is the
         // recipient saveable at all? Computed up-front because both the
         // pending-link queue and the success modal depend on it.
-        // Terminal status of the send (Spark may still be routing → 'pending').
+        // How the send stands. Only the wallet's own "completed" is a paid
+        // payment (an executor that returns no status returns only on proof);
+        // anything else it returned is still on its way.
         const status = (result && typeof result === 'object' && result.status) || 'completed';
-        const isCompletedSend = status !== 'pending';
+        const isCompletedSend = status === 'completed';
 
         // LUD-11: the service said this LNURL is reusable (disposable: false),
         // which makes it a durable handle on the recipient. It is stamped in
@@ -6275,7 +6281,7 @@ export default {
      * fail would be misleading.
      */
     async openSendSuccess({ amount, recipient, status, showSaveContact, successAction = null, verifyUrl = null, verifiedBusiness = null }) {
-      const isCompleted = status !== 'pending';
+      const isCompleted = status === 'completed';
       // Capture the wallet that actually paid, before the executor clears it.
       const payer = this.paymentOnly ? this.getSendingWallet() : null;
       // Offered only to someone who picked this wallet in the sheet: a payment
