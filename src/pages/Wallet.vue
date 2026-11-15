@@ -706,6 +706,7 @@ import {classifyDestination, normalizeDestination} from '../utils/clipboardSugge
 import {classifyIdentifier} from '../utils/nostrLookup.js';
 import {canWalletPay} from '../utils/walletCapabilities.js';
 import {
+  APP_MAX_PAYMENT_SATS,
   PAYING_REASON,
   listPayingWallets,
   pickDefaultPayingWallet,
@@ -1817,7 +1818,11 @@ export default {
         const wanted = p.prefill?.amountSats;
         if (wanted >= amount.minSats && wanted <= amount.maxSats) amount.defaultAmount = wanted;
       } else {
-        amount = { mode: 'free' };
+        // No maximum from the recipient: the app's own applies
+        // (validatePaymentAmount), and the sheet says it like a recipient's.
+        // A Bitcoin address paid from a Spark wallet is not held to it
+        // (executeSparkL1Withdrawal).
+        amount = { mode: 'free', ...(this.isSparkL1Payment ? {} : { maxSats: APP_MAX_PAYMENT_SATS }) };
         if (p.prefill?.amountSats > 0) amount.defaultAmount = p.prefill.amountSats;
       }
 
@@ -5450,6 +5455,11 @@ export default {
       }
     },
 
+    /**
+     * True when the amount may be sent, else why not. A limit is worded as
+     * the sheet words it before its slide can be used (amountInvalidReason),
+     * so a refusal here can be said on the review (confirmPayment).
+     */
     validatePaymentAmount(amount) {
       if (!this.pendingPayment) return 'No payment details';
 
@@ -5460,7 +5470,7 @@ export default {
 
       // Use minSats/maxSats from lightning.js if available
       const minSats = this.pendingPayment.minSats || (this.pendingPayment.minSendable ? Math.ceil(this.pendingPayment.minSendable / 1000) : 1);
-      const maxSats = this.pendingPayment.maxSats || (this.pendingPayment.maxSendable ? Math.floor(this.pendingPayment.maxSendable / 1000) : 100000000);
+      const maxSats = this.pendingPayment.maxSats || (this.pendingPayment.maxSendable ? Math.floor(this.pendingPayment.maxSendable / 1000) : APP_MAX_PAYMENT_SATS);
 
       // Convert to sats if user is entering in fiat
       let satsToValidate = amountNum;
@@ -5471,18 +5481,24 @@ export default {
       }
 
       if (satsToValidate < minSats) {
-        return `Minimum amount is ${formatAmount(minSats, this.walletStore.useBip177Format)}`;
+        return this.$t('Minimum is {amount}', { amount: formatAmount(minSats, this.walletStore.useBip177Format) });
       }
 
       if (satsToValidate > maxSats) {
-        return `Maximum amount is ${formatAmount(maxSats, this.walletStore.useBip177Format)}`;
+        return this.$t('Maximum is {amount}', { amount: formatAmount(maxSats, this.walletStore.useBip177Format) });
       }
 
       return true;
     },
 
     async confirmPayment() {
-      if (!this.canConfirmPayment) return;
+      if (!this.canConfirmPayment) {
+        // An amount outside the limits is never dropped without a word: it
+        // goes back to the review with the limit said.
+        const verdict = this.sendAmountSats > 0 && !this.sendPayout ? this.validatePaymentAmount(this.paymentAmount) : true;
+        if (verdict !== true) this.reviewNotice = verdict;
+        return;
+      }
       if (this.getSendingWalletType() === 'arkade' && this.pendingPayment?.bitcoinAddress && !this.sendSheetCommitGate) return;
 
       this.isSendingPayment = true;
@@ -5566,13 +5582,15 @@ export default {
         const isCompletedSend = outcome === PAYMENT_OUTCOME.SETTLED;
         const status = isCompletedSend ? 'completed' : 'pending';
 
-        // What went to the recipient: the invoice's amount. In the recipient's
-        // currency that is the estimate confirmed plus the service's fee, and
-        // it is what History shows, so the success screen and the records
-        // that find this payment in History use it too. Otherwise it is the
-        // amount confirmed (requestPayInvoice holds the invoice to it).
-        const invoiceSats = Number(result?.invoiceSats);
-        const sentSats = Number.isFinite(invoiceSats) && invoiceSats > 0 ? Math.ceil(invoiceSats) : amount;
+        // What went to the recipient, as the one whole figure the success
+        // screen and the records use. The wallet's own report of the payment
+        // wins where it gives one (a Spark wallet: the figure History lists).
+        // Else the invoice's amount: in the recipient's currency that is the
+        // estimate confirmed plus the service's fee. Else the amount
+        // confirmed (requestPayInvoice holds the invoice to it), which for a
+        // request is its amount as decoded (utils/lightningInvoice.js).
+        const sentSats = [result?.amountSats, result?.invoiceSats].map(Number)
+          .find((sats) => Number.isSafeInteger(sats) && sats > 0) ?? amount;
         // Where a refund goes, as the request path reports it went (none
         // when the service no longer asked): kept for Transaction Details.
         // An address that only said who paid is not a refund address.

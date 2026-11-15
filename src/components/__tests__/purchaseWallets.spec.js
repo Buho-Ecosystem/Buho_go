@@ -6,6 +6,7 @@ import { parse } from '@vue/compiler-sfc';
 import * as nwcPayment from '../../services/nwcPayment.js';
 import * as userErrors from '../../utils/userErrors.js';
 import * as paymentOutcome from '../../utils/paymentOutcome.js';
+import * as lightningInvoice from '../../utils/lightningInvoice.js';
 import * as nwcAtRest from '../../utils/nwcAtRest.js';
 
 // Load the real handlers and store accessor without starting wallet SDKs.
@@ -29,7 +30,7 @@ const walletOptions = load('../../stores/wallet.js', {
   '../utils/nwcAtRest.js': nwcAtRest,
 }).useWalletStore;
 // NWC pays through the real proof-checking helper (services/nwcPayment).
-const shop = load('../shop/PurchaseSheet.vue', { '../../services/nwcPayment.js': nwcPayment, '../../utils/userErrors.js': userErrors, '../../utils/paymentOutcome.js': paymentOutcome }).default;
+const shop = load('../shop/PurchaseSheet.vue', { '../../services/nwcPayment.js': nwcPayment, '../../utils/userErrors.js': userErrors, '../../utils/paymentOutcome.js': paymentOutcome, '../../utils/lightningInvoice.js': lightningInvoice }).default;
 const username = load('../Nip05MarketplaceSheet.vue', { '../services/nwcPayment.js': nwcPayment, '../utils/userErrors.js': userErrors, '../utils/paymentOutcome.js': paymentOutcome }).default;
 
 function harness(flow, type = 'nwc', { available = true, failPayment = false, settled = false } = {}) {

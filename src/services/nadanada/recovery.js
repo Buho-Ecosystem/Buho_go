@@ -27,6 +27,7 @@
  */
 
 import { Invoice } from '@getalby/lightning-tools';
+import { invoiceSats } from '../../utils/lightningInvoice.js';
 import { ORDER_KIND, ORDER_STATE, newOrderId } from './orders.js';
 
 /**
@@ -90,7 +91,7 @@ export function parseNadanadaInvoice(bolt11) {
       checkoutId: m[1].toLowerCase(),
       paymentHash: invoice.paymentHash || null,
       description,
-      amountSats: Number.isFinite(invoice.satoshi) ? invoice.satoshi : null,
+      amountSats: Number.isFinite(invoice.satoshi) ? invoiceSats(invoice) : null,
       expiresAt: toIsoDate(invoice.expiryDate),
     };
   }

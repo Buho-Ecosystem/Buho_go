@@ -1046,9 +1046,13 @@ export default {
       }
       const sats = this.amountInSats
       if (sats <= 0) return ''
-      if (this.amountMode === 'range') {
-        if (sats < this.minSats) return this.$t('Minimum is {amount}', { amount: reviewAmount(this, this.minSats) })
-        if (sats > this.maxSats) return this.$t('Maximum is {amount}', { amount: reviewAmount(this, this.maxSats) })
+      if (this.amountMode === 'range' && sats < this.minSats) {
+        return this.$t('Minimum is {amount}', { amount: reviewAmount(this, this.minSats) })
+      }
+      // The recipient's maximum (range), or one the parent sets for a free
+      // amount (`amount.maxSats`): said the same way, in the same place.
+      if ((this.amountMode === 'range' || this.maxSats > 0) && sats > this.maxSats) {
+        return this.$t('Maximum is {amount}', { amount: reviewAmount(this, this.maxSats) })
       }
       return ''
     },

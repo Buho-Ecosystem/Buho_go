@@ -5,6 +5,14 @@
  */
 
 /**
+ * The digits of a whole-number Bitcoin amount ("₿ 2,408", "2,408 sats"):
+ * grouped as the device does, and never with a decimal part. Amounts are
+ * whole before they are shown: a request that names a fraction is rounded
+ * up where it is decoded (utils/lightningInvoice.js).
+ */
+const wholeDigits = (amount) => amount.toLocaleString(undefined, { maximumFractionDigits: 0 })
+
+/**
  * Format satoshi amount according to user preference
  * @param {number} amount - Amount in satoshis
  * @param {boolean} useBip177 - Use BIP-177 format (₿) vs legacy (sats)
@@ -20,7 +28,7 @@ export function formatSatoshis(amount, useBip177 = true, options = {}) {
 
   const absAmount = Math.abs(amount)
   const formattedNumber = useLocaleString
-    ? absAmount.toLocaleString()
+    ? wholeDigits(absAmount)
     : absAmount.toString()
 
   if (useBip177) {
@@ -65,7 +73,7 @@ export function formatMainBalance(amount, useBip177 = true) {
  */
 export function formatAmount(amount, useBip177 = true) {
   const absAmount = Math.abs(amount)
-  const formattedNumber = absAmount.toLocaleString()
+  const formattedNumber = wholeDigits(absAmount)
 
   if (useBip177) {
     // BIP-177: ₿ 1,234 (with space for consistency and readability)
@@ -85,7 +93,7 @@ export function formatAmount(amount, useBip177 = true) {
  */
 export function formatAmountWithPrefix(amount, useBip177 = true, sign = '') {
   const absAmount = Math.abs(amount)
-  const formattedNumber = absAmount.toLocaleString()
+  const formattedNumber = wholeDigits(absAmount)
 
   if (useBip177) {
     // BIP-177: ₿ +1,234 or ₿ -1,234

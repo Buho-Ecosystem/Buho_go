@@ -8,6 +8,7 @@
  */
 import { Invoice } from '@getalby/lightning-tools';
 import { isLightningAddress } from './addressUtils.js';
+import { invoiceSats } from './lightningInvoice.js';
 
 /** Older wallets were saved with WebLN method names; read both vocabularies. */
 const WEBLN_TO_NIP47 = Object.freeze({
@@ -214,8 +215,9 @@ const HASH = /^[0-9a-f]{64}$/;
 
 /**
  * What a BOLT11 invoice says about itself: its payment hash (lower-case
- * hex, or null), amount in sats (0 when it names none) and expiry in unix
- * seconds (or null). Null when it is not a readable invoice. The one place
+ * hex, or null), amount in whole sats (0 when it names none; a fraction is
+ * rounded up, see utils/lightningInvoice.js) and expiry in unix seconds (or
+ * null). Null when it is not a readable invoice. The one place
  * NWC code decodes an invoice.
  */
 export function readInvoice(invoice) {
@@ -226,7 +228,7 @@ export function readInvoice(invoice) {
     const expiresAt = decoded.expiryDate instanceof Date ? Math.floor(decoded.expiryDate.getTime() / 1000) : 0;
     return {
       paymentHash: HASH.test(hash) ? hash : null,
-      amountSats: Number(decoded.satoshi) || 0,
+      amountSats: invoiceSats(decoded),
       expiresAt: expiresAt > 0 ? expiresAt : null,
     };
   } catch {

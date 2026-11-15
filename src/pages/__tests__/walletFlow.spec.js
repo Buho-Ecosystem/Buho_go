@@ -1077,6 +1077,21 @@ test('Pay with: zero-fee rails reserve nothing, so a whole balance can be sent',
   assert.equal(ln.vm.paymentSheetWalletCanPay, false, '1000 + 7 > 1000');
 });
 
+test('an amount above the app\'s own maximum is told to the sheet, and the pipeline never refuses it without a word', async () => {
+  const max = payingWallets.APP_MAX_PAYMENT_SATS;
+  const { vm, options, calls } = payingHarness();
+  vm.resolveWalletBrand = () => null;
+  await vm.onPaymentDetected({ type: 'spark_address', data: 'spark1friend', sendingWalletId: 'biz' });
+  // The sheet is given the limit the pipeline holds to, so it can say it before the slide.
+  assert.equal(options.computed.paymentSheetProps.call(vm).amount.maxSats, max);
+  Object.assign(vm, { paymentAmount: String(max + 1), sendDenomination: 'sats' });
+  const before = calls.length;
+  await vm.confirmPayment();
+  assert.equal(vm.reviewNotice, `Maximum is ${max} sats`, 'said in the words the sheet uses');
+  assert.equal(calls.length, before, 'nothing was sent');
+  assert.notEqual(vm.pendingPayment, null, 'the review stays open');
+});
+
 test('Pay with: a guessed Spark fee is shown but never held back from the balance', async () => {
   const funds = { ...PAY_FUNDS, biz: 1000 };
   for (const [isEstimated, canPay] of [[true, true], [false, false]]) {
@@ -1151,7 +1166,8 @@ test('a fee limit the payment is held to is shown as a limit; a fallback guess i
 });
 
 test('the success screen and History records carry what the invoice charged, in the recipient\'s currency too', async () => {
-  for (const [invoiceSats, shown] of [[2060, 2060], [2500, 2500], [undefined, 2500], [2059.4, 2060]]) {
+  // The invoice's amount arrives as a whole figure: a fraction is rounded up where it is decoded (utils/lightningInvoice.js).
+  for (const [invoiceSats, shown] of [[2060, 2060], [2500, 2500], [undefined, 2500]]) {
     const { vm, sent } = payingHarness({ active: 'biz' });
     vm.fetchLightningAddressInvoice = async () => ({ pr: 'lnbc-resolved', invoiceSats, successAction: null, verify: null });
     Object.assign(vm, { pendingPayment: lnAddressPayment(), sendingWalletId: 'lnb', paymentAmount: '2500', sendSheetAmountSats: 2500 });
