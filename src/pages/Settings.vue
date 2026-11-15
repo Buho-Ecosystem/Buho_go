@@ -741,7 +741,7 @@
           :connection-error="connectionProblemText(detailWallet)"
           :connection-ended="!!walletStore.connectionEnded[detailWallet.id]"
           :rename-wallet="walletStore.updateWalletName"
-          :lightning-address="detailWallet.type === 'spark' ? (walletInfos[detailWallet.id]?.lightningAddress || detailWallet.metadata?.lud16 || '') : ''"
+          :lightning-address="detailWallet.type === 'spark' ? (walletStore.lightningAddressOf(detailWallet) || '') : ''"
           :can-move-address="sparkWallets.length > 1"
           :nwc-limit="walletStore.nwcLimitFor(detailWallet.id)"
           :nwc-limit-refusal="walletStore.nwcLimitRefusals[detailWallet.id] || null"

@@ -142,6 +142,7 @@ export class BreezSparkWalletProvider extends WalletProvider {
 
     this._identityPubkey = null;
     this._lightningAddress = null;
+    this._hasLightningAddressSnapshot = false;
     this._cachedL1Address = null;
     this._eventUnsubscribers = new Set();
     // invoice -> { prepareResponse, at } (fee estimate reused by the send)
@@ -356,8 +357,12 @@ export class BreezSparkWalletProvider extends WalletProvider {
    *   wallet is known to have held (user@domain or bare username)
    * @returns {Promise<string>} the wallet's address (kept, reclaimed, or new)
    */
-  async ensureLightningAddress({ previousAddress = null } = {}) {
+  async ensureLightningAddress({ previousAddress = null, beforeRegister = async () => {} } = {}) {
     this._ensureConnected();
+    if (this._hasLightningAddressSnapshot) {
+      if (this._lightningAddress) return this._lightningAddress;
+      return registerRandomLightningAddress(this, { beforeRegister });
+    }
 
     let info;
     try {
@@ -374,18 +379,19 @@ export class BreezSparkWalletProvider extends WalletProvider {
       ? String(previousAddress).trim().split('@')[0]
       : '';
     if (previousUsername) {
-      try {
-        const reclaimed = await this.sdk.registerLightningAddress({ username: previousUsername });
+      // Only a confirmed collision justifies abandoning the remembered name.
+      // Network errors and rate limits must not consume another reservation.
+      if (await this.checkLightningAddressAvailable(previousUsername)) {
+        await beforeRegister(previousUsername);
+        const reclaimed = await this.registerLightningAddress(previousUsername);
         if (reclaimed?.lightningAddress) {
           this._lightningAddress = reclaimed.lightningAddress;
           return reclaimed.lightningAddress;
         }
-      } catch (err) {
-        console.warn('Could not reclaim the previous Lightning address:', err?.message || err);
       }
     }
 
-    return registerRandomLightningAddress(this);
+    return registerRandomLightningAddress(this, { beforeRegister });
   }
 
   async connect() {
@@ -412,6 +418,7 @@ export class BreezSparkWalletProvider extends WalletProvider {
     this._lightningAddress = null;
     this._cachedL1Address = null;
     this.isConnected = false;
+    this._hasLightningAddressSnapshot = false;
   }
 
   enablePrivacyMode() {
@@ -657,15 +664,20 @@ export class BreezSparkWalletProvider extends WalletProvider {
     return this._lightningAddress;
   }
 
+  /** A server lookup by the store can be newer than the SDK's local cache. */
+  noteLightningAddress(info) {
+    this._lightningAddress = info?.lightningAddress || null;
+    this._hasLightningAddressSnapshot = true;
+  }
+
   async getLightningAddress() {
     this._ensureConnected();
-    try {
-      const info = await this.sdk.getLightningAddress();
-      this._lightningAddress = info?.lightningAddress || null;
-      return info || null;
-    } catch (error) {
-      return null;
+    if (this._hasLightningAddressSnapshot) {
+      return this._lightningAddress ? { lightningAddress: this._lightningAddress, username: this._lightningAddress.split('@')[0] } : null;
     }
+    const info = await this.sdk.getLightningAddress();
+    this._lightningAddress = info?.lightningAddress || null;
+    return info || null;
   }
 
   async checkLightningAddressAvailable(username) {
@@ -676,6 +688,7 @@ export class BreezSparkWalletProvider extends WalletProvider {
   async registerLightningAddress(username, description = undefined) {
     this._ensureConnected();
     const info = await this.sdk.registerLightningAddress({ username, description });
+    if (!info?.lightningAddress) throw new Error('Registration returned no address');
     this._lightningAddress = info?.lightningAddress || null;
     return info;
   }

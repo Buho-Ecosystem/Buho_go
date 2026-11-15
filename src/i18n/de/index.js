@@ -1,3 +1,4 @@
+import lightningAddress from './lightningAddress.js';
 import emoji from './emoji.js';
 import brantaReview from './brantaReview.js';
 import paymentSheetReview from './paymentSheetReview.js';
@@ -19,6 +20,7 @@ import payRequests from './payRequests.js';
 import refundAddress from './refundAddress.js';
 import tillCodes from './tillCodes.js';
 export default {
+  ...lightningAddress,
   ...emoji,
   ...brantaReview,
   ...paymentSheetReview,

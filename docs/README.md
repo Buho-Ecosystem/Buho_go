@@ -9,6 +9,7 @@ How each feature works and the rules that keep it right, written for developers 
 | Record | What it covers |
 |---|---|
 | [Spark wallets](SPARK_WALLETS.md) | One recovery phrase, up to six Spark wallets |
+| [Lightning address changes](LIGHTNING_ADDRESS_CHANGES.md) | Reviewing receiving consequences and recovering uncertain renames and moves |
 | [Nostr Wallet Connect](NWC.md) | Connecting a wallet over NWC (NIP-47), and the rules that keep it honest |
 | [Taking a wallet off this phone](WALLET_REMOVAL.md) | "Remove from this phone" and "Disconnect", never "delete" |
 | [Emergency exit](EMERGENCY_EXIT.md) | Leaving Spark to plain Bitcoin without Spark's help |
