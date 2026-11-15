@@ -656,9 +656,7 @@ export default {
   "No wallet connected. Please connect a wallet first.": "Keine Wallet verbunden. Verbinde zuerst eine Wallet.",
   "LNbits wallet is not connected.": "Die LNbits-Wallet ist nicht verbunden.",
   "Spark wallet not unlocked. Please try again.": "Spark-Wallet nicht entsperrt. Bitte versuche es erneut.",
-  "{wallet} can't make this payment. Choose another wallet.": "{wallet} kann diese Zahlung nicht ausführen. Wähle eine andere Wallet.",
-  "{wallet} can't make this payment.": "{wallet} kann diese Zahlung nicht ausführen.",
-  "You have no wallet that can make this payment.": "Du hast keine Wallet, die diese Zahlung ausführen kann.",
+  "This payment needs a different wallet.": "Für diese Zahlung brauchst du eine andere Wallet.",
   "No Wallet": "Keine Wallet",
   // NWC / LNbits setup
   "Invalid connection string format": "Ungültiges Format der Verbindungszeichenfolge",

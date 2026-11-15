@@ -6,7 +6,7 @@
  *     addressTypes) collapse to the same rail
  *   - the wallet × rail matrix matches the product rules (Spark-only,
  *     Arkade-only, on-chain via Spark or Arkade, Lightning everywhere)
- *   - the hint for a wallet that cannot pay names the wallet, not the rail
+ *   - the hint for a destination the wallet cannot pay names no rail
  *
  * Run directly with Node:
  *   node src/utils/__tests__/walletCapabilities.spec.js
@@ -82,17 +82,9 @@ test('contact addressTypes gate identically to payment types', () => {
   assert.equal(canWalletPay('lnbits', 'lnurl'), true);
 });
 
-test('the hint for a wallet that cannot pay names the wallet, never the technology', () => {
-  const said = (key, values = {}) => key.replace(/\{(\w+)\}/g, (_, name) => values[name]);
+test('the hint for a destination the wallet cannot pay is one sentence that names no technology', () => {
   for (const type of ['spark_address', 'arkade', 'lightning_invoice', 'bitcoin_address', 'unknown']) {
-    assert.equal(walletSwitchHint(type, said, { wallet: 'Savings' }), "Savings can't make this payment. Choose another wallet.");
-    // Another wallet is suggested only when there is one.
-    assert.equal(walletSwitchHint(type, said, { wallet: 'Savings', hasAlternative: false }), "Savings can't make this payment.");
-    // Asked before any wallet is chosen (the Send field): about all of them.
-    assert.equal(walletSwitchHint(type, said), 'You have no wallet that can make this payment.');
-    for (const hint of [walletSwitchHint(type, said, { wallet: 'Savings' }), walletSwitchHint(type, said)]) {
-      assert.doesNotMatch(hint, /Spark|Arkade|Lightning|on-chain/i);
-    }
+    assert.equal(walletSwitchHint(type, t), 'This payment needs a different wallet.');
   }
 });
 

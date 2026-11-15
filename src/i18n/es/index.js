@@ -656,9 +656,7 @@ export default {
   "No wallet connected. Please connect a wallet first.": "No hay ninguna cartera conectada. Conecta una cartera primero.",
   "LNbits wallet is not connected.": "La cartera LNbits no está conectada.",
   "Spark wallet not unlocked. Please try again.": "La cartera Spark no está desbloqueada. Inténtalo de nuevo.",
-  "{wallet} can't make this payment. Choose another wallet.": "{wallet} no puede realizar este pago. Elige otra cartera.",
-  "{wallet} can't make this payment.": "{wallet} no puede realizar este pago.",
-  "You have no wallet that can make this payment.": "No tienes ninguna cartera que pueda realizar este pago.",
+  "This payment needs a different wallet.": "Para este pago necesitas otra cartera.",
   "No Wallet": "Sin cartera",
   // NWC / LNbits setup
   "Invalid connection string format": "Formato de cadena de conexión inválido",

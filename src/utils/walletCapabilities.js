@@ -74,27 +74,22 @@ export function canWalletPay(walletType, type) {
 }
 
 /**
- * The one localized explanation for a wallet that cannot pay a destination:
- * every surface shows the same words for the same constraint. Callers only
- * render this after canWalletPay() said no.
+ * The one localized explanation for a destination the wallet in question
+ * cannot pay: every surface shows the same words for the same constraint.
+ * Callers only render this after canWalletPay() said no.
  *
- * The words name the wallet, never the technology: which kind of wallet a
- * destination needs is not something the person paying has to know, and the
- * "Pay with" rows already show which of their wallets can pay. Another wallet
- * is suggested only when the caller says there is one. Without a wallet name
- * the sentence speaks about all of the person's wallets (the Send field asks
- * before any wallet is chosen).
+ * The words name no technology: which kind of wallet a destination needs is
+ * not something the person paying has to know, and the "Pay with" rows show
+ * which of their wallets can pay. One sentence is true for every caller: the
+ * review (the chosen wallet cannot pay, with or without another that can) and
+ * the Send field (none of the person's wallets can).
  * @param {string} type  payment type or addressType; the words are the same
  *   for every rail
- * @param {(key: string, params?: object) => string} t  vue-i18n translate
- * @param {{ wallet?: string, hasAlternative?: boolean }} [options]
+ * @param {(key: string) => string} t  vue-i18n translate
  * @returns {string}
  */
-export function walletSwitchHint(type, t, { wallet = '', hasAlternative = true } = {}) {
-  if (!wallet) return t('You have no wallet that can make this payment.')
-  return hasAlternative
-    ? t("{wallet} can't make this payment. Choose another wallet.", { wallet })
-    : t("{wallet} can't make this payment.", { wallet })
+export function walletSwitchHint(type, t) {
+  return t('This payment needs a different wallet.')
 }
 
 /**

@@ -149,10 +149,10 @@ test('single-wallet sends retain their wallet identity; incoming card flows keep
 test('a wallet that cannot pay disables the commit control and its hint shows in the existing banner', async () => {
   const blocked = await render(ConfirmSheet, sheetProps({
     walletCanPay: false,
-    walletHint: "Savings can't make this payment. Choose another wallet.",
+    walletHint: 'This payment needs a different wallet.',
   }), { directives: sheetDirectives })
   assert.match(blocked, /wallet-hint/)
-  assert.match(blocked, /Savings can(&#39;|')t make this payment/)
+  assert.match(blocked, /This payment needs a different wallet\./)
   assert.match(blocked, /choose-wallet-cta/, 'an unavailable source offers the same wallet chooser for every send')
   const open = await render(ConfirmSheet, sheetProps(), { directives: sheetDirectives })
   assert.doesNotMatch(open, /class="primary-cta"[^>]*disabled/)

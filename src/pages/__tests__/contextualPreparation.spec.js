@@ -163,7 +163,7 @@ function preparing(intent) {
 test('a handed-over lookup that fails says its own reason and whether another try can help', async () => {
   for (const [failure, expected] of [
     [{ message: 'This request can no longer be paid.', retryable: false }, { text: 'This request can no longer be paid.', retryable: false }],
-    [{ message: "Their payment address didn't answer. Try again in a moment.", retryable: true }, { text: "Their payment address didn't answer. Try again in a moment.", retryable: true }],
+    [{ message: "Their Lightning address didn't answer. Try again in a moment.", retryable: true }, { text: "Their Lightning address didn't answer. Try again in a moment.", retryable: true }],
     // A surface without words of its own, or with broken ones, gets the general line and a retry.
     [null, { text: 'Please try again in a moment.', retryable: true }],
     [{ message: '' }, { text: 'Please try again in a moment.', retryable: true }],
