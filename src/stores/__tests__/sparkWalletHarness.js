@@ -15,6 +15,8 @@ import * as exitLedger from '../../utils/exitLedger.js';
 import * as sparkAccountScan from '../../services/sparkAccountScan.js';
 import * as addressUtils from '../../utils/addressUtils.js';
 import * as lightningAddressNames from '../../utils/lightningAddressNames.js';
+import * as walletLightningAddress from '../../utils/walletLightningAddress.js';
+import * as lightningAddressErrors from '../../utils/lightningAddressErrors.js';
 import * as nwcWallet from '../../utils/nwcWallet.js';
 import * as nwcConnection from '../../utils/nwcConnection.js';
 import * as nwcErrors from '../../utils/nwcErrors.js';
@@ -82,6 +84,16 @@ export function createHarness({ evidence = {}, connect = null, storage = {}, exi
         const name = server.byPubkey.get(pubkey);
         return name ? { lightningAddress: `${name}@${domain}`, username: name } : null;
       },
+      async checkLightningAddressAvailable(username) {
+        if (server.offlineFor === pubkey) throw new Error('lookup failed');
+        return !holder(username) || holder(username) === pubkey;
+      },
+      async registerLightningAddress(username) {
+        if (server.offlineFor === pubkey || server.failRegistrationFor === pubkey) throw new Error('registration failed');
+        server.byPubkey.set(pubkey, username);
+        if (server.loseRegistrationResponse) throw new Error('response lost after registration');
+        return { lightningAddress: `${username}@${domain}`, username };
+      },
       async ensureLightningAddress({ previousAddress } = {}) {
         server.ensures += 1;
         await tick();
@@ -106,6 +118,7 @@ export function createHarness({ evidence = {}, connect = null, storage = {}, exi
         if (authorization.pubkey !== pubkey) throw new Error('not for this wallet');
         server.byPubkey.delete(holder(authorization.username));
         server.byPubkey.set(pubkey, authorization.username);
+        if (server.loseClaimResponse) throw new Error('response lost after transfer');
         return { lightningAddress: `${authorization.username}@${domain}`, username: authorization.username };
       },
       async disconnect() { this.isConnected = false; },
@@ -144,7 +157,18 @@ export function createHarness({ evidence = {}, connect = null, storage = {}, exi
     '../utils/kioskPin.js': kioskPin,
     '../services/nwcReceive.js': nwcReceive,
     '../utils/lightningAddressNames.js': lightningAddressNames,
+    '../utils/walletLightningAddress.js': walletLightningAddress,
+    '../utils/lightningAddressErrors.js': lightningAddressErrors,
     '../services/breezSdk': {
+      lookupLightningAddress: async (_mnemonic, { accountNumber, transfereePubkey }) => {
+        const pubkey = `pk-${accountNumber}`;
+        if (server.lookupGate) await server.lookupGate;
+        if (server.offlineFor === pubkey || server.lookupOffline) throw new Error('lookup failed');
+        const username = server.byPubkey.get(pubkey);
+        return username ? { lightningAddress: `${username}@${domain}`, username,
+          ...(transfereePubkey ? { transferAuthorization: { username, pubkey: transfereePubkey, domain, signature: `sig-${pubkey}`, timestamp: 1 } } : {}),
+        } : null;
+      },
       deleteWalletStorage: async (id) => { calls.deletedStorage.push(id); },
       deleteAllStorage: async () => {},
       probeAccountActivity,

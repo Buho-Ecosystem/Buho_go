@@ -49,6 +49,7 @@ function lud16FromConnection(nwcUrl) {
 export function walletLightningAddress(wallet, walletInfos = {}) {
   if (!wallet || typeof wallet !== 'object') return null
   if (wallet.type === 'spark') {
+    if (wallet.metadata?.lightningAddressPending || wallet.metadata?.lightningAddressCheckedAbsent) return null
     return address(walletInfos?.[wallet.id]?.lightningAddress) || address(wallet.metadata?.lud16)
   }
   const stored = wallet.metadata?.lud16

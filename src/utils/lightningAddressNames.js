@@ -146,7 +146,7 @@ export function generateRandomUsername() {
  * Register a random Lightning address on a wallet provider.
  *
  * Generates a username, checks availability, and registers it. Retries with
- * a NEW name on collision or transient failure (up to maxAttempts).
+ * a NEW name only when availability confirms a collision (up to maxAttempts).
  *
  * @param {Object} provider - Wallet provider exposing
  *   checkLightningAddressAvailable(username) and
@@ -156,26 +156,23 @@ export function generateRandomUsername() {
  * @returns {Promise<string>} The registered address (user@domain)
  * @throws {Error} If every attempt fails
  */
-export async function registerRandomLightningAddress(provider, { maxAttempts = 5 } = {}) {
-  let lastError = null;
+export async function registerRandomLightningAddress(provider, { maxAttempts = 5, beforeRegister = async () => {} } = {}) {
+  // A lost reply may have followed a successful registration. Only a
+  // confirmed collision permits choosing another name; other failures escape.
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     const username = generateRandomUsername();
-    try {
-      const available = await provider.checkLightningAddressAvailable(username);
-      if (!available) {
-        console.warn(`[lightning-address] "${username}" taken, retrying (${attempt}/${maxAttempts})`);
-        continue;
-      }
-      const result = await provider.registerLightningAddress(username);
-      const address = result?.lightningAddress;
-      if (address) return address;
-      lastError = new Error('Registration returned no address');
-    } catch (err) {
-      console.warn(`[lightning-address] Attempt ${attempt} failed:`, err?.message || err);
-      lastError = err;
+    const available = await provider.checkLightningAddressAvailable(username);
+    if (!available) {
+      console.warn(`[lightning-address] "${username}" taken, retrying (${attempt}/${maxAttempts})`);
+      continue;
     }
+    await beforeRegister(username);
+    const result = await provider.registerLightningAddress(username);
+    if (!result?.lightningAddress) throw new Error('Registration returned no address');
+    return result.lightningAddress;
   }
-  throw lastError || new Error(`Failed to register Lightning address after ${maxAttempts} attempts`);
+  throw new Error(`Failed to register Lightning address after ${maxAttempts} attempts`);
 }
+
 
 export const _wordlists = { ADJECTIVES, ANIMALS };
