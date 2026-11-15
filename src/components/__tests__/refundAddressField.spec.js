@@ -67,8 +67,7 @@ function load(file, extra = {}) {
 }
 
 const RefundAddressField = load('../RefundAddressField.vue')
-const PayWithField = load('../PayWithField.vue')
-const ConfirmSheet = load('../PaymentConfirmSheet.vue', { './PayWithField.vue': PayWithField, './RefundAddressField.vue': RefundAddressField })
+const ConfirmSheet = load('../PaymentConfirmSheet.vue', { './RefundAddressField.vue': RefundAddressField })
 
 async function render(component, props, { data } = {}) {
   const options = data ? { ...component, data: () => ({ ...(component.data?.() || {}), ...data }) } : component

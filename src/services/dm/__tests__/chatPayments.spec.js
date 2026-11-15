@@ -45,21 +45,20 @@ test('hand-over: a request is paid with its invoice, its note and a context nami
   const message = { id: 'b'.repeat(64), request: { amountSats: 8_000, note: 'Cinema tickets' } };
   const invoice = { bolt11: 'lnbc80u1...', verifyUrl: 'https://pay.example/verify/1' };
   const [target, options] = requestPaymentHandover({
-    partner, message, invoice, name: 'Lena', contactId: 'c1', payer: { id: 'spark', usable: true },
+    partner, message, invoice, name: 'Lena', contactId: 'c1',
   });
   assert.deepEqual(target, { bolt11: 'lnbc80u1...', name: 'Lena' });
+  // No wallet is named: the confirm sheet picks it (the default wallet, else the automatic pick).
   assert.deepEqual(options, {
-    walletId: 'spark',
     context: buildChatPaymentContext(partner, message.id, invoice.verifyUrl),
     contactId: 'c1',
     note: 'Cinema tickets',
-    returnHere: true,
   });
-  const [, unusable] = requestPaymentHandover({
-    partner, message: { ...message, request: { amountSats: 8_000, note: null } }, invoice, payer: { id: 'arkade', usable: false },
+  const [, plain] = requestPaymentHandover({
+    partner, message: { ...message, request: { amountSats: 8_000, note: null } }, invoice,
   });
-  assert.equal(unusable.walletId, undefined, 'an unusable wallet is left for the confirm sheet to explain');
-  assert.equal(unusable.note, undefined);
+  assert.equal('walletId' in plain, false);
+  assert.equal(plain.note, undefined);
 });
 
 test('context: builders refuse malformed ids, the parser refuses everything that is not exactly a chat context', () => {

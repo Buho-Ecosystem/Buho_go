@@ -100,7 +100,7 @@ const runtime = useChatRuntime()
 const addressBook = useAddressBookStore()
 const walletStore = useWalletStore()
 const vouchersStore = useWithdrawVouchersStore()
-const payContact = usePayContact({ $q: useQuasar(), $t: t, $router: router })
+const payContact = usePayContact({ $q: useQuasar(), $t: t })
 const { requests, vouchers, hasAny } = useWaiting()
 
 const titleId = `waiting-for-you-${proxy.$.uid}`

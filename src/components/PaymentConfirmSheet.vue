@@ -15,8 +15,8 @@
       slide-to-confirm above the high-value threshold, a tap button below it.
     - Validates the entered amount against the supplied constraints before
       emitting `confirm`.
-    - "Pay with": draws the wallet choice (PayWithField) from the entries the
-      parent supplies and reports the pick. The verdict on the picked wallet
+    - "Pay with": draws the wallet choice (the header pill and its chooser
+      view) from the entries the parent supplies and reports the pick. The verdict on the picked wallet
       arrives through the same `walletCanPay` / `walletHint` pair the rail
       check always used, so a wallet that cannot pay disables the commit
       control and shows its reason in the existing banner.
@@ -1323,17 +1323,6 @@ export default {
           this.currentCurrency = this.payoutCurrency.code
         }
       }
-    },
-
-    /**
-     * The user picked another wallet in "Pay with". The parent owns the
-     * selection (it re-evaluates capability, balance and fees for it), so this
-     * only reports the id. A pick can never arrive mid-send: the field is
-     * disabled then, and this guard covers a stray event all the same.
-     */
-    onPayWithPick(walletId) {
-      if (this.isSending || this.isComplete) return
-      this.$emit('update:sendingWalletId', walletId)
     },
 
     walletSelectable(wallet) { return !!wallet?.usable && !wallet.connectionFailed },

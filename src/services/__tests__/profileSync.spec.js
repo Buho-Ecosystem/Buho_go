@@ -591,6 +591,9 @@ function mountSheet(identity, profile, props = {}) {
     '../utils/addressUtils': { invoiceAmountMsat: () => 0 },
     '../utils/fiatRates': { fiatRatesService: {} },
     '../utils/timeFormatting': { formatCalendarDate: () => '' },
+    // No test here pays: the sheet's own wallet payment must never start.
+    '../services/nwcPayment.js': { payWithNwc: async () => assert.fail('these tests never pay from a wallet') },
+    '../utils/payingWallets.js': { feeReserveSats: () => 0 },
   };
   const module = { exports: {} };
   new Function('require', 'module', 'exports', 'setTimeout', 'clearTimeout', transformSync(source, { format: 'cjs' }).code)(
