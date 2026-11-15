@@ -2431,10 +2431,13 @@ export default {
     // any subsequent write while we are mounted. We clear the buffer before
     // processing so a remount does not double-process.
     this.$watch(
-      () => [this.walletStore.pendingDeepLink, this.paymentFlow.active],
+      // The busy flags are watched too, so a link that waited is taken up
+      // as soon as the payment before it is over.
+      () => [this.walletStore.pendingDeepLink, this.paymentFlow.active, this.isSendingPayment, this.brantaConfirming],
       ([paymentData, contextualPaymentActive]) => {
-        // Keep external intake buffered until the current task has ended.
-        if (contextualPaymentActive) return;
+        // Keep external intake buffered until the current task has ended: a
+        // contact payment, or a payment that is being confirmed or sent.
+        if (contextualPaymentActive || this.sendInFlight()) return;
         if (!paymentData || paymentData.target === 'kiosk') return;
         this.walletStore.pendingDeepLink = null;
         // Dispatch once the wallets are ready: a cold-start intent can
@@ -2445,7 +2448,7 @@ export default {
           .catch(() => {})
           .then(() => {
             if (this._paymentDisposed) return;
-            if (this.paymentFlow.active) {
+            if (this.paymentFlow.active || this.sendInFlight()) {
               if (!this.walletStore.pendingDeepLink) this.walletStore.pendingDeepLink = paymentData;
               return;
             }
@@ -2627,7 +2630,16 @@ export default {
       // decline or a refusal never carries over. Nor does the line that
       // said why the previous one came back for review.
       'resetRefundAddress',
-      function () { this.reviewNotice = ''; },
+      function (next, before) {
+        this.reviewNotice = '';
+        // Home: the amount, note and currency typed for the payment before
+        // are not this one's. A contact payment keeps what was typed while
+        // its details were still being made ready.
+        if (this.paymentOnly || !next || !before || next === before || !this.showSendSheet) return;
+        this.$nextTick(() => {
+          if (this.pendingPayment === next && this.showSendSheet) this.$refs.sendSheetRef?.resetForFreshOpen?.();
+        });
+      },
     ],
 
     paymentAmount: {
@@ -2677,6 +2689,15 @@ export default {
     },
   },
   methods: {
+    /**
+     * A payment is being confirmed or sent (the business check before the
+     * slide commits, the confirm itself, the wallet's send). From here to
+     * its result nothing may take its place on the sheet.
+     */
+    sendInFlight() {
+      return !!(this.isSendingPayment || this.brantaConfirming || this._sendConfirming);
+    },
+
     isPaymentIdentityCurrent() {
       return !this.paymentOnly || this._paymentIdentity === this.identityStore?.nostrPubkeyHex;
     },
@@ -3359,6 +3380,9 @@ export default {
       // Bound to the wallet that pays before anything is awaited, so a later
       // wallet switch cannot move a withdrawal that is already under way.
       const walletId = this.getSendingWallet()?.id || null;
+      // So are the payment and where it goes.
+      const payment = this.pendingPayment;
+      const destinationAddress = this.l1DestinationAddress;
 
       this.isSendingPayment = true;
       try {
@@ -3367,7 +3391,7 @@ export default {
 
         const result = await provider.withdrawToL1({
           amountSats,
-          destinationAddress: this.l1DestinationAddress,
+          destinationAddress,
           speed: fee.speed,
           feeQuoteId: fee.feeQuoteId,
           feeAmountSats: fee.totalFeeSats,
@@ -3375,7 +3399,7 @@ export default {
         });
 
         // A verified business stays with the withdrawal, as on every other send.
-        const merchantVerification = this.brantaReceipt(this.pendingPayment);
+        const merchantVerification = this.brantaReceipt(payment);
         if (merchantVerification) {
           this.transactionMetadataStore.enqueuePendingContactLink({
             amountSats,
@@ -3386,7 +3410,7 @@ export default {
           }).catch((err) => console.warn('[wallet] could not queue the verified business:', err));
         }
         // So does what Pay again may pay: the withdrawal's id is the one its payment is listed under.
-        const payAgain = this.payAgainRecordFor({ result: { id: result.requestId }, amount: amountSats, payLink: null, walletType: 'spark', isNostrSend: false });
+        const payAgain = this.payAgainRecordFor({ result: { id: result.requestId }, amount: amountSats, payLink: null, walletType: 'spark', isNostrSend: false, payment });
         if (payAgain) this.queueOnChainPayAgain(payAgain, result.requestId, walletId);
 
         // Same post-submit lifecycle as before the fold: close the sheet,
@@ -4711,11 +4735,21 @@ export default {
       return paymentData;
     },
 
-    async onPaymentDetected(paymentData) {
+    /**
+     * A destination was handed over: look it up and put it on the sheet.
+     *
+     * On Home the sheet has one owner at a time. Each call is a new lookup
+     * (`lookup`; a call that re-dispatches itself passes its own on), and
+     * only the newest may put its payment on the sheet: an older one that
+     * answers late is dropped. None may while a payment is being confirmed
+     * or sent, so the payment on screen is always the one that is paid.
+     */
+    async onPaymentDetected(paymentData, lookup = null) {
       const attempt = this._preparationAttempt;
+      if (!this.paymentOnly) lookup ??= this._paymentLookup = (this._paymentLookup || 0) + 1;
       const alive = () => this.paymentOnly
         ? this.isContextualAttemptCurrent(attempt)
-        : !this._paymentDisposed && !this.paymentFlow?.active;
+        : !this._paymentDisposed && !this.paymentFlow?.active && lookup === this._paymentLookup && !this.sendInFlight();
       if (!alive()) return;
 
       if (!this.paymentOnly && offerAddressRequest(paymentData.data, { t: this.$t.bind(this), paymentOnly: !!paymentData.paymentOnly || !!paymentData.nostrPubkey })) {
@@ -4734,6 +4768,7 @@ export default {
       const fromField = this.paymentOnly || this.showSendModal || this.clipboardResolving;
       let delegated = false; // a nested re-dispatch (NIP-05 rescue) owns the outcome
       let resolved = true;   // assume we'll reach a confirm sheet / handoff
+      let cardRead = null;   // this call's "reading the card" sheet, while it is up
       if (fromField) { this.sendResolving = true; this.sendResolveError = ''; }
 
       // Consume any amount stashed by the Receive modal's "Redeem" button
@@ -4836,7 +4871,7 @@ export default {
             nostrProfileEvent: target.profileEvent,
             nostrRelayHints: target.relayHints,
             sendingWalletId: requestedWalletId,
-          });
+          }, lookup);
         }
 
         if (paymentData.type === 'lightning_invoice' && paymentData.data) {
@@ -4868,7 +4903,6 @@ export default {
 
           // A card (lnurlw://) gets its sheet on the tap itself: the card on
           // screen while its service answers, instead of nothing at all.
-          let cardRead = null;
           if (!fromField && isCardLink(paymentData.data)) {
             this.resetWithdrawState();
             cardRead = Symbol('card read');
@@ -4983,7 +5017,7 @@ export default {
                 nostrProfileEvent: rescued.profileEvent,
                 nostrRelayHints: rescued.relayHints,
                 sendingWalletId: requestedWalletId,
-              });
+              }, lookup);
             }
           }
 
@@ -5188,8 +5222,14 @@ export default {
         // payment. Nested Nostr resolution owns its own final outcome.
         if (!alive()) {
           // An old Home/clipboard lookup must not stack its result over a
-          // newer contextual task. Its own field can stop spinning safely.
-          if (!this.paymentOnly) this.sendResolving = false;
+          // newer task. Its own field can stop spinning safely; a newer
+          // lookup's keeps spinning for that one.
+          if (!this.paymentOnly && lookup === this._paymentLookup) this.sendResolving = false;
+          // Nor may its card sheet stay up with nothing left to answer it.
+          if (cardRead && this.withdrawReading?.id === cardRead) {
+            this.withdrawReading = null;
+            this.showWithdrawSheet = false;
+          }
           return;
         }
         if (this.paymentOnly && !delegated) {
@@ -5347,7 +5387,11 @@ export default {
       // address goes only to the till's own service: if its terms name
       // another callback by the time the invoice is asked for, the request
       // stops (utils/lnurlPay.js).
+      // The payment itself is bound the same way: this object, from here to
+      // its result. The executors and everything after them read it, never
+      // whatever is on the sheet by then.
       const payment = this.pendingPayment;
+      const payout = this.sendPayout;
       const refundShown = this.payerRule.show;
       const refundPurpose = this.payerRule.purpose;
       const refundAddress = this.refundAddress;
@@ -5366,18 +5410,18 @@ export default {
         if (this.needsAmountInput && this.paymentAmount) {
           // Variable amount - convert to sats if user entered in fiat
           amount = this.sendAmountSats;
-        } else if (this.pendingPayment.fixedAmountSats) {
+        } else if (payment.fixedAmountSats) {
           // Fixed-amount LNURL/Lightning Address - use fixedAmountSats from lightning.js
-          amount = this.pendingPayment.fixedAmountSats;
-        } else if (this.pendingPayment.amount > 0) {
+          amount = payment.fixedAmountSats;
+        } else if (payment.amount > 0) {
           // Fixed amount invoice
-          amount = this.pendingPayment.amount;
-        } else if ((this.pendingPayment.type === 'lnurl' ||
-                    this.pendingPayment.type === 'lnurl_pay' ||
-                    this.pendingPayment.type === 'lightning_address') &&
-                   this.pendingPayment.minSendable === this.pendingPayment.maxSendable) {
+          amount = payment.amount;
+        } else if ((payment.type === 'lnurl' ||
+                    payment.type === 'lnurl_pay' ||
+                    payment.type === 'lightning_address') &&
+                   payment.minSendable === payment.maxSendable) {
           // Fallback: calculate fixed amount from minSendable
-          amount = Math.floor(this.pendingPayment.minSendable / 1000);
+          amount = Math.floor(payment.minSendable / 1000);
         }
 
         const comment = this.paymentComment || null;
@@ -5389,13 +5433,13 @@ export default {
         // executor that wallet's id: it connects that wallet on demand and
         // sends through its provider, so the active wallet is never involved.
         if (walletType === 'spark') {
-          result = await this.sendSparkPayment(amount, comment, this.sendPayout, sendingWalletId, payerData);
+          result = await this.sendSparkPayment(amount, comment, payout, sendingWalletId, payerData, payment);
         } else if (walletType === 'arkade') {
-          result = await this.sendArkadePayment(amount, comment, this.sendPayout, sendingWalletId, payerData);
+          result = await this.sendArkadePayment(amount, comment, payout, sendingWalletId, payerData, payment);
         } else if (walletType === 'lnbits') {
-          result = await this.sendLNBitsPayment(amount, comment, this.sendPayout, sendingWalletId, payerData);
+          result = await this.sendLNBitsPayment(amount, comment, payout, sendingWalletId, payerData, payment);
         } else {
-          result = await this.sendNWCPayment(amount, comment, sendingWalletId, payerData);
+          result = await this.sendNWCPayment(amount, comment, sendingWalletId, payerData, payment);
         }
         // How the send ended, read once (utils/paymentOutcome.js). A wallet
         // that hands back a failed payment has said it was not made.
@@ -5443,8 +5487,8 @@ export default {
         // is what other apps and the shared contacts understand. A one-shot
         // link stamps nothing. Pending sends keep their identity for settlement.
         const payLink = canonicalLnurl(result?.payLink);
-        let recipientAddress = this.getRecipientAddress();
-        let recipientAddressType = this.getRecipientAddressType();
+        let recipientAddress = this.getRecipientAddress(payment);
+        let recipientAddressType = this.getRecipientAddressType(payment);
         const isServiceSend = !recipientAddress && !!payLink;
         const serviceMeta = isServiceSend ? (result?.serviceMeta || null) : null;
         const serviceDomain = isServiceSend ? lnurlDomain(payLink) : '';
@@ -5455,12 +5499,12 @@ export default {
           recipientAddressType = identity.addressType;
         }
         const addressNostrIdentity = npubFromLightningAddress(
-          this.pendingPayment?.lightningAddress,
+          payment.lightningAddress,
         );
-        const recipientNostrPubkey = this.pendingPayment?.nostrPubkey
+        const recipientNostrPubkey = payment.nostrPubkey
           || addressNostrIdentity?.pubkey
           || null;
-        const recipientNostrNpub = this.pendingPayment?.nostrNpub
+        const recipientNostrNpub = payment.nostrNpub
           || addressNostrIdentity?.npub
           || null;
         const isNostrSend = !!recipientNostrPubkey;
@@ -5477,14 +5521,14 @@ export default {
             : null
         );
         // A paid invoice has no address to find the contact by: the chat names it.
-        const invoiceContactId = this.pendingPayment?.type === 'lightning_invoice' && this.pendingPayment.paymentContactId
-          && this.addressBookStore.getEntryById(this.pendingPayment.paymentContactId)
-          ? this.pendingPayment.paymentContactId : null;
+        const invoiceContactId = payment.type === 'lightning_invoice' && payment.paymentContactId
+          && this.addressBookStore.getEntryById(payment.paymentContactId)
+          ? payment.paymentContactId : null;
         const shouldOfferSave = isCompletedSend && !!(recipientAddress && !existingContact);
-        const tillStoreName = this.pendingPayment?.source === SA_RETAIL_SOURCE ? (this.pendingPayment.merchant?.displayName || null) : null;
+        const tillStoreName = payment.source === SA_RETAIL_SOURCE ? (payment.merchant?.displayName || null) : null;
         const recipientLabel = isServiceSend && !existingContact
           ? serviceName
-          : this.getRecipientDisplayLabel(existingContact);
+          : this.getRecipientDisplayLabel(existingContact, payment);
 
         // LUD-21 fiat delivery: only meaningful for a recognized fiat-payout
         // provider (ChapSmart/Tando/Bitzed) — an ordinary LNURL/LUD-21 endpoint
@@ -5514,11 +5558,11 @@ export default {
         const paymentSource = isPayoutProvider ? 'phone' : (isNostrSend ? 'nostr' : null);
 
         // A verified business stays with the payment (History, details).
-        const merchantVerification = this.brantaReceipt(this.pendingPayment);
+        const merchantVerification = this.brantaReceipt(payment);
         // What Pay again may pay later, kept only on a payment it can prove.
         // An on-chain send has no address stamp to be matched by, so its
         // record waits on its own for the payment's id.
-        const payAgain = this.payAgainRecordFor({ result, amount, payLink, walletType, isNostrSend });
+        const payAgain = this.payAgainRecordFor({ result, amount, payLink, walletType, isNostrSend, payment, payout });
         if (payAgain?.addressType === 'bitcoin') this.queueOnChainPayAgain(payAgain, result?.id, sendingWalletId);
         const addressPayAgain = payAgain?.addressType === 'bitcoin' ? null : payAgain;
 
@@ -5542,9 +5586,9 @@ export default {
             let counterpartyLabel = null;
             if (isNostrSend) {
               const npub = recipientNostrNpub;
-              const picture = sanitizeImageUrl(this.pendingPayment?.nostrProfile?.picture) || null;
+              const picture = sanitizeImageUrl(payment.nostrProfile?.picture) || null;
               counterpartyAvatar = { kind: 'nostr', npub, picture };
-              counterpartyLabel = profileDisplayName(this.pendingPayment?.nostrProfile) || shortenNpub(npub) || null;
+              counterpartyLabel = profileDisplayName(payment.nostrProfile) || shortenNpub(npub) || null;
             } else if (tillStoreName) {
               // A till payment: the store's name on the row, never the code.
               counterpartyLabel = tillStoreName;
@@ -5580,7 +5624,7 @@ export default {
               // returned, and the invoice's own hash (some wallets return
               // only a preimage their history never shows).
               merchantProof: merchantVerification
-                ? [result?.id, result?.payment_hash, result?.paymentHash, result?.preimage, this.paymentHashOf(this.pendingPayment?.invoice)]
+                ? [result?.id, result?.payment_hash, result?.paymentHash, result?.preimage, this.paymentHashOf(payment.invoice)]
                 : [],
               payAgain: addressPayAgain,
               // The address a refund goes to (LUD-18), as it was sent.
@@ -5606,16 +5650,16 @@ export default {
           // contact reads clearly as a mobile-money recipient. Empty for any
           // other address.
           const payoutService = matchLnAddressService(recipientAddress);
-          const profile = this.pendingPayment?.nostrProfile || null;
-          const profileEvent = this.pendingPayment?.nostrProfileEvent || null;
+          const profile = payment.nostrProfile || null;
+          const profileEvent = payment.nostrProfileEvent || null;
           const nostrIdentity = recipientNostrPubkey && recipientNostrNpub && profileEvent
             ? {
                 pubkey: recipientNostrPubkey,
                 npub: recipientNostrNpub,
                 profile,
                 profileEvent,
-                relayHints: Array.isArray(this.pendingPayment?.nostrRelayHints)
-                  ? this.pendingPayment.nostrRelayHints
+                relayHints: Array.isArray(payment.nostrRelayHints)
+                  ? payment.nostrRelayHints
                   : [],
               }
             : null;
@@ -5658,14 +5702,14 @@ export default {
         // so a request it pays is never offered for paying twice.
         this.emitPaymentSent({
           contactId: existingContact?.id || invoiceContactId,
-          destination: recipientAddress || this.pendingPayment?.invoice || null,
+          destination: recipientAddress || payment.invoice || null,
           amountSats: sentSats,
           preimage: result?.preimage || null,
           sendingWalletId,
           note: comment,
-          context: this.pendingPayment?.paymentContext || null,
+          context: payment.paymentContext || null,
           status: isCompletedSend ? 'completed' : 'pending',
-          paymentHash: result?.paymentHash || result?.payment_hash || this.paymentHashOf(this.pendingPayment?.invoice),
+          paymentHash: result?.paymentHash || result?.payment_hash || this.paymentHashOf(payment.invoice),
         });
 
         this.sendDidSucceed = true;
@@ -5731,7 +5775,7 @@ export default {
           context: 'payment',
           walletType,
           walletName: this.getWalletById(sendingWalletId)?.name,
-          route: this.routeLabelForPendingPayment(),
+          route: this.routeLabelForPendingPayment(payment),
           amountSats: typeof amount === 'number' ? amount : undefined,
           t: this.$t.bind(this),
         });
@@ -5751,7 +5795,7 @@ export default {
     finishUnconfirmedPayment(payment, error, { amount, comment, sendingWalletId, walletType }) {
       // Attention, not an error: nothing is known to have failed.
       haptics.warning();
-      const route = this.routeLabelForPendingPayment();
+      const route = this.routeLabelForPendingPayment(payment);
       if (payment) {
         this.emitPaymentSent({
           contactId: payment.paymentContactId || null,
@@ -5812,8 +5856,7 @@ export default {
      * details panel of the global payment-error dialog so a copied
      * report tells a developer what path actually ran.
      */
-    routeLabelForPendingPayment() {
-      const p = this.pendingPayment;
+    routeLabelForPendingPayment(p = this.pendingPayment) {
       if (!p) return null;
       if (p.bitcoinAddress)    return 'Bitcoin on-chain';
       if (p.sparkAddress)      return 'Spark transfer';
@@ -6017,18 +6060,19 @@ export default {
      * `payerData` holds the LUD-18 details the person agreed to share (the
      * refund address), for a Lightning address or a link.
      */
-    async sendSparkPayment(amount, comment, payout = null, walletId = null, payerData = null) {
-      const payment = this.pendingPayment;
+    async sendSparkPayment(amount, comment, payout = null, walletId = null, payerData = null, payment = this.pendingPayment) {
       // This payment's own key, the same on every try of it.
       const idempotencyKey = sendKeyOf(payment);
+      // The fee the sheet showed, read before anything is awaited.
+      const quotedFee = this.estimatedFee;
       // Ensure Spark wallet is connected (auto-connects if session PIN available)
       const provider = await this.walletStore.ensureSparkConnected(walletId);
 
       // Spark invoice — must go through fulfill; transfer() rejects invoice
       // strings. Checked before the plain-address branch because invoice
       // payments also carry the decoded receiver in `sparkAddress`.
-      if (this.pendingPayment.sparkInvoice) {
-        const invoice = this.pendingPayment.sparkInvoice;
+      if (payment.sparkInvoice) {
+        const invoice = payment.sparkInvoice;
         // Re-evaluate refusal conditions at pay time: the sheet may have
         // been open past the expiry, and sender pinning could only be
         // finally decided now that the wallet is connected.
@@ -6049,35 +6093,35 @@ export default {
       }
 
       // Spark address transfer (zero-fee)
-      if (this.pendingPayment.sparkAddress) {
-        return await provider.transferToSparkAddress(this.pendingPayment.sparkAddress, amount, { idempotencyKey });
+      if (payment.sparkAddress) {
+        return await provider.transferToSparkAddress(payment.sparkAddress, amount, { idempotencyKey });
       }
 
       // Lightning invoice
-      if (this.pendingPayment.invoice) {
+      if (payment.invoice) {
         // For zero-amount invoices, pass user-provided amount
-        const isZeroAmountInvoice = !this.pendingPayment.amount || this.pendingPayment.amount === 0;
+        const isZeroAmountInvoice = !payment.amount || payment.amount === 0;
 
         return await provider.payInvoice({
-          invoice: this.pendingPayment.invoice,
+          invoice: payment.invoice,
           preferSpark: true, // Auto-use Spark transfer if recipient has Spark address
           amountSats: isZeroAmountInvoice ? amount : null, // Only pass amount for zero-amount invoices
           // The fee the sheet showed; a quote of 0 ("Free") is a quote too.
-          maxFee: this.estimatedFee ?? undefined,
+          maxFee: quotedFee ?? undefined,
           onPreparedRoute: route => this.brantaReview().assertPrepared(payment, route),
           idempotencyKey,
         });
       }
 
       // Lightning address
-      if (this.pendingPayment.lightningAddress) {
-        return await provider.payLightningAddress(this.pendingPayment.lightningAddress, amount, comment || '', payout, { payerData, idempotencyKey });
+      if (payment.lightningAddress) {
+        return await provider.payLightningAddress(payment.lightningAddress, amount, comment || '', payout, { payerData, idempotencyKey });
       }
 
       // LNURL - decode and fetch invoice, then pay
       // Note: LNURL invoices already have amount encoded, so don't pass amountSats
-      if (this.pendingPayment.lnurl) {
-        const { pr, invoiceSats, successAction, verify, payLink, serviceMeta, payerData: shared } = await this.fetchLNURLInvoice(this.pendingPayment.lnurl, amount, payout, comment, payerData);
+      if (payment.lnurl) {
+        const { pr, invoiceSats, successAction, verify, payLink, serviceMeta, payerData: shared } = await this.fetchLNURLInvoice(payment.lnurl, amount, payout, comment, payerData);
         const result = await provider.payInvoice({
           invoice: pr,
           preferSpark: true,
@@ -6104,27 +6148,27 @@ export default {
      * fetch exactly like the LNbits path: the swap pays whatever bolt11 the
      * provider returned, and the metadata is threaded onto the result.
      */
-    async sendArkadePayment(amount, comment, payout = null, walletId = null, payerData = null) {
+    async sendArkadePayment(amount, comment, payout = null, walletId = null, payerData = null, payment = this.pendingPayment) {
       const maxFee = this.currentArkadeFeeQuote?.fee;
       const provider = await this.walletStore.ensureArkadeConnected(walletId);
 
       // Native ark1 → ark1: instant, near-zero fee fast path.
-      if (this.pendingPayment.arkadeAddress) {
+      if (payment.arkadeAddress) {
         return await provider.transferToArkadeAddress({
-          arkadeAddress: this.pendingPayment.arkadeAddress,
+          arkadeAddress: payment.arkadeAddress,
           amount,
         });
       }
 
       // BOLT11 invoice → Boltz submarine swap.
-      if (this.pendingPayment.invoice) {
-        return await provider.payInvoice({ invoice: this.pendingPayment.invoice });
+      if (payment.invoice) {
+        return await provider.payInvoice({ invoice: payment.invoice });
       }
 
       // Lightning address → fetch a bolt11 for the amount, then swap.
-      if (this.pendingPayment.lightningAddress) {
+      if (payment.lightningAddress) {
         const { pr, invoiceSats, successAction, verify, payerData: shared } = await this.fetchLightningAddressInvoice(
-          this.pendingPayment.lightningAddress,
+          payment.lightningAddress,
           amount,
           comment,
           payout,
@@ -6135,17 +6179,17 @@ export default {
       }
 
       // LNURL-pay → fetch the encoded-amount invoice, then swap.
-      if (this.pendingPayment.lnurl) {
-        const { pr, invoiceSats, successAction, verify, payLink, serviceMeta, payerData: shared } = await this.fetchLNURLInvoice(this.pendingPayment.lnurl, amount, payout, comment, payerData);
+      if (payment.lnurl) {
+        const { pr, invoiceSats, successAction, verify, payLink, serviceMeta, payerData: shared } = await this.fetchLNURLInvoice(payment.lnurl, amount, payout, comment, payerData);
         const result = await provider.payInvoice({ invoice: pr });
         return { ...result, invoiceSats, successAction, verify, payLink, serviceMeta, payerData: shared };
       }
 
       // On-chain (bc1…): collaborative exit (offboard) via Ramps.
-      if (this.pendingPayment.bitcoinAddress) {
+      if (payment.bitcoinAddress) {
         try {
           return await provider.offboardToBitcoin({
-            bitcoinAddress: this.pendingPayment.bitcoinAddress,
+            bitcoinAddress: payment.bitcoinAddress,
             amount,
             maxFee,
           });
@@ -6159,7 +6203,7 @@ export default {
       throw new Error('Unsupported payment type for Arkade wallet');
     },
 
-    async sendNWCPayment(amount, comment, walletId = null, payerData = null) {
+    async sendNWCPayment(amount, comment, walletId = null, payerData = null, payment = this.pendingPayment) {
       // Over the wallet's one relay connection (store.nwcConnection, #395).
       const id = walletId || this.walletStore.activeWalletId;
       if (!this.getNwcUrl(id)) {
@@ -6167,7 +6211,7 @@ export default {
       }
       const nwc = await this.walletStore.nwcConnection(id);
       const lightningService = new LightningPaymentService(nwc, this.walletStore.nwcPayOptions(id));
-      return await lightningService.sendPayment(this.getNwcPaymentData(), amount, comment, { payerData });
+      return await lightningService.sendPayment(this.getNwcPaymentData(payment), amount, comment, { payerData });
     },
 
     /**
@@ -6178,31 +6222,30 @@ export default {
      * re-resolve a Lightning address. A payment resolved for an NWC wallet
      * already has it and passes through untouched.
      */
-    getNwcPaymentData() {
-      const p = this.pendingPayment;
+    getNwcPaymentData(p = this.pendingPayment) {
       if (p?.type === 'lightning_address' && !p.address && p.lightningAddress) {
         return { ...p, address: p.lightningAddress };
       }
       return p;
     },
 
-    async sendLNBitsPayment(amount, comment, payout = null, walletId = null, payerData = null) {
+    async sendLNBitsPayment(amount, comment, payout = null, walletId = null, payerData = null, payment = this.pendingPayment) {
       // Route through ensureLNBitsConnected so a stale `isConnected` flag
       // (e.g. cleared by a prior 401) self-heals before the send rather than
       // failing with "wallet is not connected" until app restart.
       const provider = await this.walletStore.ensureLNBitsConnected(walletId);
 
       // Lightning invoice payment
-      if (this.pendingPayment.invoice) {
+      if (payment.invoice) {
         return await provider.payInvoice({
-          invoice: this.pendingPayment.invoice
+          invoice: payment.invoice
         });
       }
 
       // Lightning address - fetch invoice first then pay
-      if (this.pendingPayment.lightningAddress) {
+      if (payment.lightningAddress) {
         const { pr, invoiceSats, successAction, verify, payerData: shared } = await this.fetchLightningAddressInvoice(
-          this.pendingPayment.lightningAddress,
+          payment.lightningAddress,
           amount,
           comment,
           payout,
@@ -6213,8 +6256,8 @@ export default {
       }
 
       // LNURL - fetch invoice then pay
-      if (this.pendingPayment.lnurl) {
-        const { pr, invoiceSats, successAction, verify, payLink, serviceMeta, payerData: shared } = await this.fetchLNURLInvoice(this.pendingPayment.lnurl, amount, payout, comment, payerData);
+      if (payment.lnurl) {
+        const { pr, invoiceSats, successAction, verify, payLink, serviceMeta, payerData: shared } = await this.fetchLNURLInvoice(payment.lnurl, amount, payout, comment, payerData);
         const result = await provider.payInvoice({ invoice: pr });
         return { ...result, invoiceSats, successAction, verify, payLink, serviceMeta, payerData: shared };
       }
@@ -6236,17 +6279,17 @@ export default {
     },
 
     // Helper: Get recipient address from pending payment
-    getRecipientAddress() {
-      if (!this.pendingPayment) return null;
+    getRecipientAddress(p = this.pendingPayment) {
+      if (!p) return null;
       // A till code pays one sale: never an address to save, find a contact
       // by, or keep with the payment. The store's name is kept instead.
-      if (this.pendingPayment.source === SA_RETAIL_SOURCE) return null;
+      if (p.source === SA_RETAIL_SOURCE) return null;
       // Lightning address
-      if (this.pendingPayment.lightningAddress) return this.pendingPayment.lightningAddress;
+      if (p.lightningAddress) return p.lightningAddress;
       // Spark address
-      if (this.pendingPayment.sparkAddress) return this.pendingPayment.sparkAddress;
+      if (p.sparkAddress) return p.sparkAddress;
       // Arkade address
-      if (this.pendingPayment.arkadeAddress) return this.pendingPayment.arkadeAddress;
+      if (p.arkadeAddress) return p.arkadeAddress;
       // LNURL is not saveable as a stable address
       return null;
     },
@@ -6262,8 +6305,8 @@ export default {
      * it as such. `proof` is the ids this payment will show up under in the
      * wallet's history; without one nothing is recorded.
      */
-    payAgainRecordFor({ result, amount, payLink, walletType, isNostrSend }) {
-      const p = this.pendingPayment;
+    payAgainRecordFor({ result, amount, payLink, walletType, isNostrSend, payment = this.pendingPayment, payout = this.sendPayout }) {
+      const p = payment;
       const orderCode = p?.bip21 && (!p.bitcoinAddress || namesOneOrder(p.bip21));
       // A verified business (Branta) is a merchant's checkout, and its seal
       // stays the only thing stamped on the payment.
@@ -6278,7 +6321,7 @@ export default {
       return {
         ...destination,
         amountSats: amount,
-        payout: sendsPayoutAmount(walletType) ? this.sendPayout : null,
+        payout: sendsPayoutAmount(walletType) ? payout : null,
         proof: [result?.id, result?.paymentHash, result?.payment_hash, result?.preimage],
       };
     },
@@ -6299,10 +6342,10 @@ export default {
     },
 
     // Helper: Get recipient address type from pending payment
-    getRecipientAddressType() {
-      if (!this.pendingPayment) return 'lightning';
-      if (this.pendingPayment.sparkAddress) return 'spark';
-      if (this.pendingPayment.arkadeAddress) return 'arkade';
+    getRecipientAddressType(p = this.pendingPayment) {
+      if (!p) return 'lightning';
+      if (p.sparkAddress) return 'spark';
+      if (p.arkadeAddress) return 'arkade';
       return 'lightning';
     },
 
@@ -6319,19 +6362,13 @@ export default {
      * @param {object|null} existingContact - May be null for new recipients.
      * @returns {string}
      */
-    getRecipientDisplayLabel(existingContact) {
+    getRecipientDisplayLabel(existingContact, p = this.pendingPayment) {
       if (existingContact?.name) return existingContact.name;
-      if (!this.pendingPayment) return '';
-      if (this.pendingPayment.merchant?.displayName) return this.pendingPayment.merchant.displayName;
-      if (this.pendingPayment.lightningAddress) {
-        return this.pendingPayment.lightningAddress;
-      }
-      if (this.pendingPayment.sparkAddress) {
-        return this.truncateAddress(this.pendingPayment.sparkAddress);
-      }
-      if (this.pendingPayment.arkadeAddress) {
-        return this.truncateAddress(this.pendingPayment.arkadeAddress);
-      }
+      if (!p) return '';
+      if (p.merchant?.displayName) return p.merchant.displayName;
+      if (p.lightningAddress) return p.lightningAddress;
+      if (p.sparkAddress) return this.truncateAddress(p.sparkAddress);
+      if (p.arkadeAddress) return this.truncateAddress(p.arkadeAddress);
       return '';
     },
 

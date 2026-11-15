@@ -2280,3 +2280,25 @@ test('a payment whose outcome nobody told is not "failed", and its slide is neve
   assert.deepEqual([events.length, events[0].status, events[0].context, events[0].paymentHash],
     [1, 'pending', 'chat:abc', nwcWallet.readInvoice(invoice).paymentHash]);
 });
+
+test('a payment that arrives while another is being sent never takes its place', async () => {
+  // Invoice A is confirmed on a wallet that still has to connect.
+  const { vm, store, sent } = payingHarness({ active: 'lnb' });
+  const connecting = deferred();
+  const paid = [];
+  store.ensureLNBitsConnected = async () => {
+    await connecting.promise;
+    return { payInvoice: async ({ invoice }) => { paid.push(invoice); return { status: 'completed' }; } };
+  };
+  await vm.onPaymentDetected({ type: 'lightning_invoice', data: 'inv-1000' });
+  const sending = quietly(() => vm.onSendSheetConfirm({ amountSats: 1000, comment: '' }));
+  await Promise.resolve();
+  assert.equal(vm.sendInFlight(), true, 'what keeps a link or a tag buffered until the send is over');
+  // A tag with invoice B (45,000) is handed over during the connect.
+  await vm.onPaymentDetected({ type: 'lightning_invoice', data: 'inv-big' });
+  connecting.resolve();
+  await sending;
+  assert.deepEqual(paid, ['inv-1000'], 'the payment that was confirmed is the one that is paid');
+  assert.equal(sent.success.amount, 1000, 'and the paid screen is its own');
+  assert.equal(vm.sendInFlight(), false);
+});
