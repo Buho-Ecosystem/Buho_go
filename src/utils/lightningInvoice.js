@@ -11,5 +11,7 @@ export function parseLightningInvoice(input) {
     amount: decoded.satoshi,
     description: decoded.description || '',
     expiry: decoded.timestamp + (decoded.expiry ?? 3600),
+    // The invoice's identity: what a wallet's records are asked about.
+    paymentHash: decoded.paymentHash || null,
   };
 }

@@ -35,9 +35,10 @@
         </button>
 
         <!-- Bitrefill: gift cards, mobile top-ups and more, bought inside
-             the app and paid from this wallet. The store is not built yet;
-             the door is here so the shape of Spend is settled. -->
-        <button type="button" class="spend-row" @click="showBitrefill = true">
+             the app and paid from this wallet (pages/BitrefillPage.vue).
+             Until Bitrefill approved the integration the shop is off
+             (VITE_BITREFILL_ENABLED) and the door says it is on its way. -->
+        <button type="button" class="spend-row" @click="openBitrefill">
           <span class="spend-row-icon spend-row-icon--brand">
             <img src="/Bitrefill/bitrefill-mark.png" alt="" />
           </span>
@@ -105,6 +106,7 @@ import SettingsHubHeader from '../components/settings/SettingsHubHeader.vue';
 import SettingsHubNav from '../components/settings/SettingsHubNav.vue';
 import GetAppDialog from '../components/GetAppDialog.vue';
 import ComingSoonSheet from '../components/ComingSoonSheet.vue';
+import { BITREFILL_ENABLED } from '../services/bitrefill/widget.js';
 import SpendMapPreview from '../components/settings/SpendMapPreview.vue';
 
 /**
@@ -165,6 +167,10 @@ export default {
     },
   },
   methods: {
+    openBitrefill() {
+      if (BITREFILL_ENABLED) this.$router.push('/bitrefill');
+      else this.showBitrefill = true;
+    },
     onShopSelect() {
       if (!this.isNativeApp) {
         // The shop talks to nadanada directly, and nadanada's API is not
