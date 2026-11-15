@@ -799,6 +799,9 @@ import { isOpenActionCurrent } from '../services/openActionIntake.js';
 import { findShortcutContact } from '../utils/quickAccessPlan.js';
 import { usePayContact } from '../composables/usePayContact.js';
 
+/** How long a typed amount rests before the paying wallet is asked for its fee. */
+const TYPED_AMOUNT_QUOTE_DELAY_MS = 350;
+
 function emptySaveContactData() {
   return {
     address: '',
@@ -5784,6 +5787,10 @@ export default {
       // Acquire ownership synchronously, before an executor's first await.
       if (this.paymentOnly && this.paymentFlow.committed) return;
       if (this.paymentOnly) this.paymentFlow.setStage(this.paymentIntent.id, 'sending');
+      // Home has no lease: this latch covers a second confirm that arrives
+      // before the executor has marked itself busy.
+      if (this.isSendingPayment || this._sendConfirming) return;
+      this._sendConfirming = true;
       try {
         // Spark on-chain rides its own submit lifecycle (withdrawal request
         // + background monitor), not the instant-payment pipeline.
@@ -5812,6 +5819,7 @@ export default {
           this.$refs.sendSheetRef?.resetSlide();
         }
       } finally {
+        this._sendConfirming = false;
         // Validation/PIN may return before the executor ever marks itself busy.
         if (this.paymentOnly && this.paymentFlow.isCurrent(this.paymentIntent.id) && !this.isSendingPayment && this.paymentFlow.stage !== 'choosing-default') {
           this.paymentFlow.setStage(this.paymentIntent.id, this.showSendSuccess || this.showSaveContactDialog ? 'complete' : 'ready');
@@ -6945,6 +6953,12 @@ export default {
       const walletId = this.getSendingWallet()?.id || null;
       this.isEstimatingFee = true;
       try {
+        // A typed amount changes with every key: quote the one the person
+        // stops on, not each digit on the way. A fixed amount is quoted at once.
+        if (!(this.getFixedPaymentSats() > 0)) {
+          await new Promise((resolve) => setTimeout(resolve, TYPED_AMOUNT_QUOTE_DELAY_MS));
+          if (run !== this._feeEstimateRun) return;
+        }
         const provider = await this.walletStore.ensureSparkConnected(walletId);
         if (run !== this._feeEstimateRun) return;
         const estimate = nativeRequest
