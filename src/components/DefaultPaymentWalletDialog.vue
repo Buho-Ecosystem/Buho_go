@@ -1,11 +1,12 @@
 <template>
   <q-dialog v-model="open" :aria-labelledby="titleId" :aria-describedby="descriptionId" @hide="$emit('hidden')">
     <q-card class="default-wallet-dialog">
-      <span class="default-wallet-icon"><Icon icon="tabler:wallet" width="28" height="28" /></span>
-      <I18nT :id="titleId" tag="h2" keypath="Use {name} for future payments?" scope="global">
+      <!-- The wallet's own mark: the question is about this wallet. -->
+      <span class="default-wallet-icon"><WalletBrandMark :type="walletType || 'nwc'" :size="28" color="currentColor" /></span>
+      <I18nT :id="titleId" tag="h2" keypath="Use {name} when you pay contacts?" scope="global">
         <template #name><strong>{{ walletName }}</strong></template>
       </I18nT>
-      <p :id="descriptionId">{{ $t('You can change this in Settings.') }}</p>
+      <p :id="descriptionId">{{ $t('It becomes your default wallet for payments to contacts. You can change this in Settings.') }}</p>
       <p v-if="error" class="default-wallet-error" role="alert">{{ error }}</p>
       <div class="default-wallet-actions">
         <button type="button" class="default-wallet-use" @click="$emit('accept')">{{ $t('Use {name}', { name: walletName }) }}</button>
@@ -16,24 +17,27 @@
 </template>
 
 <script>
-import { Icon } from '@iconify/vue'
 import { Translation as I18nT } from 'vue-i18n'
+import WalletBrandMark from './WalletBrandMark.vue'
 
 export default {
   name: 'DefaultPaymentWalletDialog',
-  components: { Icon, I18nT },
+  components: { I18nT, WalletBrandMark },
   props: {
     modelValue: { type: Boolean, default: false },
     walletName: { type: String, default: '' },
+    walletType: { type: String, default: '' },
     error: { type: String, default: '' },
   },
-  emits: ['accept', 'dismiss', 'hidden'],
+  // `dismiss` is the answer "Not now". `later` is a tap beside the dialog or
+  // Escape: no answer was given, so nothing is remembered.
+  emits: ['accept', 'dismiss', 'later', 'hidden'],
   computed: {
     titleId() { return `default-wallet-title-${this.$.uid}` },
     descriptionId() { return `default-wallet-description-${this.$.uid}` },
     open: {
       get() { return this.modelValue },
-      set(value) { if (!value) this.$emit('dismiss') },
+      set(value) { if (!value) this.$emit('later') },
     },
   },
 }

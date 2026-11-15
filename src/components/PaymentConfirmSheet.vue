@@ -281,8 +281,13 @@
 
           <!-- Wallet capability hint (e.g. Bitcoin/Spark needs Spark wallet). -->
           <div v-if="!preparationActive && !walletCanPay && walletHint" class="wallet-hint">
-            <Icon icon="tabler:info-circle" width="14" height="14" />
+            <Icon icon="tabler:alert-circle" width="14" height="14" />
             <span>{{ walletHint }}</span>
+          </div>
+          <!-- The default wallet sat this one out: who pays instead. -->
+          <div v-else-if="!preparationActive && walletNotice" class="wallet-hint" role="status">
+            <Icon icon="tabler:switch-horizontal" width="14" height="14" />
+            <span>{{ walletNotice }}</span>
           </div>
 
           <!-- LUD-18: the service will not take the payment without details
@@ -541,6 +546,8 @@ export default {
      */
     walletCanPay: { type: Boolean, default: true },
     walletHint: { type: String, default: '' },
+    /** A plain line about the paying wallet that blocks nothing (the default wallet sat this one out). */
+    walletNotice: { type: String, default: '' },
     /**
      * "Pay with": the user's wallets for this payment, as built by
      * utils/payingWallets.listPayingWallets (active wallet first). Empty by
