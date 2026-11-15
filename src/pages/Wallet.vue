@@ -5685,9 +5685,13 @@ export default {
         this.isEstimatingFee = false;
         this.sendDidSucceed = false;
 
+        // The payment is over: the next one must not open as "sending" while
+        // this wallet's balance is still being read (a read can hang).
+        this.isSendingPayment = false;
         // Refresh the balance behind the now-visible success screen: the
         // paying wallet's, which is the active one unless "Pay with" said so.
-        await this.refreshPayerBalance(sendingWalletId);
+        Promise.resolve(this.refreshPayerBalance(sendingWalletId))
+          .catch((error) => console.warn('Could not refresh the balance after the payment:', error?.message || error));
 
       } catch (error) {
         if (error?.code === PAYMENT_REVIEW_REQUIRED) {

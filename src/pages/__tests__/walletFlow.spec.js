@@ -2277,3 +2277,33 @@ test('the paid screen says "sent" only for a completed payment', async () => {
     assert.equal(!!vm.sendSuccessAction, status === 'completed', String(status));
   }
 });
+
+test('the sending flag comes down with the payment, not with the balance read that follows it', async () => {
+  for (const payer of ['lnb', 'personal']) {
+    // The reviewer's case: a balance read that never answers (LNbits reads have no timeout).
+    const { vm, store, sent } = payingHarness({ active: 'lnb' });
+    const never = new Promise(() => {});
+    vm.updateWalletBalance = () => never;
+    store.reconcileSpark = () => never;
+    await vm.onPaymentDetected({ type: 'lightning_invoice', data: 'inv-1000', sendingWalletId: payer });
+    assert.equal(await settlesWithin(quietly(() => vm.confirmPayment())), true, `${payer}: the payment ends without the read`);
+    assert.equal(vm.isSendingPayment, false);
+    assert.equal(sent.success.amount, 1000);
+    // The next payment's sheet opens ready, and may be closed.
+    await vm.onPaymentDetected({ type: 'lightning_invoice', data: 'inv-big' });
+    assert.equal(vm.showSendSheet, true);
+    assert.equal(vm.isSendingPayment, false);
+  }
+  // A read that fails is only a read that failed: the payment was made.
+  const { vm, sent } = payingHarness({ active: 'lnb' });
+  vm.updateWalletBalance = async () => { throw new Error('read failed'); };
+  const warn = console.warn;
+  console.warn = () => {};
+  try {
+    await vm.onPaymentDetected({ type: 'lightning_invoice', data: 'inv-1000' });
+    await quietly(() => vm.confirmPayment());
+    await new Promise(resolve => setTimeout(resolve, 0));
+  } finally { console.warn = warn; }
+  assert.equal(sent.success.amount, 1000);
+  assert.equal(vm.isSendingPayment, false);
+});
