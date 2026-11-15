@@ -688,7 +688,7 @@ import {LightningPaymentService, resolveLUD17URL} from '../utils/lightning.js';
 import {resolveSuccessAction} from '../utils/successAction.js';
 import {pollVerify} from '../utils/lnurlVerify.js';
 import {lnurlFetch} from '../utils/lnurlHttp.js';
-import { buildPaymentError, classifyTransportFailure, unreachableReason } from '../utils/userErrors.js';
+import { buildPaymentError, classifyTransportFailure, ownWordsError, unreachableReason } from '../utils/userErrors.js';
 import { capabilitiesOf } from '../utils/nwcWallet.js';
 import { diagnoseConnection } from '../utils/connectivity.js';
 import { counterpartyError, isCounterpartyError, keepOrigin } from '../utils/errorOrigin.js';
@@ -2968,7 +2968,8 @@ export default {
         // Asking again cannot change what this destination is.
         this._sendResolveFinal = dialogOpts.retryable === false;
       } else {
-        const error = attribution ? counterpartyError(message, message) : new Error(message);
+        // A service's words keep their label; anything else is BuhoGO's own sentence.
+        const error = attribution ? counterpartyError(message, message) : ownWordsError(message);
         this.walletStore.showPaymentError(error, {
           context: dialogOpts.context || 'payment',
           route: dialogOpts.route || 'Payment dispatch',
@@ -5233,7 +5234,11 @@ export default {
           return;
         }
         if (this.paymentOnly && !delegated) {
-          this.finishContextualPreparation(resolved, resolved ? null : { message: this.sendResolveError, retryable: !this._sendResolveFinal });
+          // A service's own words are said as the service's.
+          const message = this.sendResolveSource && this.sendResolveError
+            ? `${this.sendResolveSource}: ${this.sendResolveError}`
+            : this.sendResolveError;
+          this.finishContextualPreparation(resolved, resolved ? null : { message, retryable: !this._sendResolveFinal });
         }
         // The nested NIP-05 rescue call already settled the outcome (closed the
         // sheet or set the inline error); don't clobber it from the outer call.
@@ -6082,7 +6087,7 @@ export default {
           ownIdentityPublicKey: identityPublicKeyFromSparkAddress(ownAddress),
         });
         if (problem) {
-          throw new Error(this.sparkInvoiceProblemMessage(problem));
+          throw ownWordsError(this.sparkInvoiceProblemMessage(problem));
         }
         return await provider.fulfillSparkInvoice(invoice, {
           // An encoded amount wins SDK-side; only free-amount invoices take
@@ -6666,8 +6671,8 @@ export default {
      * send field / error dialog can show. Timeouts and network failures
      * (browser fetch strings and the native HTTP plugin's platform
      * messages alike, via the shared classifier) map to existing
-     * translated copy; anything else keeps its message for the
-     * technical-details pane.
+     * translated copy, and so does anything else: a library's own text is
+     * never shown as the reason.
      */
     describeLnurlTransportError(error) {
       const kind = error?.name === 'AbortError'
@@ -6679,8 +6684,8 @@ export default {
       if (kind === 'offline') {
         return this.$t("Couldn't reach the network. Please check your internet and try again.");
       }
-      return error?.message
-        || this.$t('The server did not respond or the link is no longer valid');
+      // Any other failure's own text is a library's, not a reason to show.
+      return this.$t('The server did not respond or the link is no longer valid');
     },
 
     /**
@@ -6994,7 +6999,12 @@ export default {
           this.estimatedFee = quote.fee;
           this.arkadeFeeQuote = { ...quote, walletId, address };
         } catch (error) {
-          if (run === this._feeEstimateRun) this.connectionNotice = buildPaymentError(error, { context: 'send', amountSats: amount }, this.$t.bind(this)).reason;
+          if (run === this._feeEstimateRun) {
+            // A reason BuhoGO has words for, else plainly that the fee could
+            // not be read: a wallet's raw text is never the line on the sheet.
+            const built = buildPaymentError(error, { context: 'send', amountSats: amount }, this.$t.bind(this));
+            this.connectionNotice = built.reasonSource === 'curated' ? built.reason : this.$t("Couldn't get fee quote");
+          }
         } finally {
           if (run === this._feeEstimateRun) this.isEstimatingFee = false;
         }
