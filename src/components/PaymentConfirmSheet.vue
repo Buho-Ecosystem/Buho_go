@@ -227,6 +227,9 @@
                 </div>
               </div>
               <div v-if="recipientAddressLabel" class="recipient-addr">{{ compactRecipientIdentifier }}</div>
+              <!-- What is being paid for, when the parent knows it in plain
+                   words: a shop order's product (`recipient.caption`). -->
+              <div v-else-if="payment?.recipient?.caption" class="recipient-caption">{{ payment.recipient.caption }}</div>
             </div>
             <button
               v-if="!recipientChecking && (verb === 'send' || addressNeedsDetails)"
@@ -1847,6 +1850,18 @@ export default {
 
 /* The one identifier line: the raw destination, quiet and single-line.
    The full string lives in the detail panel behind the info glyph. */
+.recipient-caption {
+  margin-top: 2px;
+  font-size: 0.8125rem;
+  line-height: 1.4;
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+
 .recipient-addr {
   margin-top: 2px;
   font-family: var(--font-mono);

@@ -5,14 +5,10 @@
     :persistent="busy"
     transition-show="slide-up"
     transition-hide="slide-down"
+    :aria-labelledby="titleId"
     @update:model-value="onDialogModel"
   >
-    <q-card
-      class="brmail-sheet"
-      :class="$q.dark.isActive ? 'brmail-dark' : 'brmail-light'"
-      role="dialog"
-      :aria-labelledby="titleId"
-    >
+    <q-card class="brmail-sheet">
       <div class="brmail-grabber" aria-hidden="true"><div class="brmail-grabber-bar"></div></div>
 
       <form class="brmail-body" novalidate @submit.prevent="onSubmit">
@@ -38,9 +34,11 @@
           maxlength="254"
           placeholder="you@example.com"
           :aria-invalid="showError ? 'true' : 'false'"
-          :aria-describedby="showError ? `${errorId} ${leadId}` : leadId"
+          :aria-describedby="describedBy"
         >
         <p v-if="showError" :id="errorId" class="brmail-error" role="alert">{{ $t('Enter a valid email address.') }}</p>
+        <!-- Changing it mid-visit: say what it does and does not change. -->
+        <p v-if="editing" :id="effectId" class="brmail-effect">{{ $t('Applies to your next order. The shop reloads when you save.') }}</p>
 
         <ul class="brmail-notes">
           <li>
@@ -82,7 +80,9 @@ import { isValidEmail } from '../../services/bitrefill/widget.js';
  * Asks once for the email Bitrefill sends vouchers to, before the first visit
  * to the shop. The title, the field's label and the button all say that this
  * address receives the vouchers. "Not now" leaves the email to Bitrefill's
- * own checkout. Opened again from the shop's header to change or remove it.
+ * own checkout. Opened again from the shop's header to change or remove it:
+ * then it says that the change applies to the next order and reloads the
+ * shop, and the page asks before removing (`remove` is a request, not done).
  *
  * UI only: the shop page stores the address (encrypted) on `save`.
  */
@@ -108,6 +108,10 @@ export default {
     inputId() { return `brmail-input-${this.$.uid}`; },
     errorId() { return `brmail-error-${this.$.uid}`; },
     leadId() { return `brmail-lead-${this.$.uid}`; },
+    effectId() { return `brmail-effect-${this.$.uid}`; },
+    describedBy() {
+      return [this.showError ? this.errorId : '', this.leadId, this.editing ? this.effectId : ''].filter(Boolean).join(' ');
+    },
     showError() { return this.submitted && !isValidEmail(this.email); },
   },
   watch: {
@@ -145,15 +149,15 @@ export default {
 .brmail-sheet {
   width: 100%;
   max-width: 520px;
-  border-radius: 20px 20px 0 0;
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
   padding-bottom: max(16px, var(--safe-bottom, 0px));
   font-family: 'Manrope', sans-serif;
+  background: var(--bg-card);
+  color: var(--text-primary);
 }
-.brmail-light { background: #ffffff; color: #1a1a1a; }
-.brmail-dark { background: #1e1e1e; color: #f0f0f0; }
 
 .brmail-grabber { display: flex; justify-content: center; padding-top: 8px; }
-.brmail-grabber-bar { width: 36px; height: 4px; border-radius: 2px; background: rgba(128, 128, 128, 0.35); }
+.brmail-grabber-bar { width: 36px; height: 4px; border-radius: 2px; background: var(--text-muted); opacity: 0.5; }
 
 .brmail-body { display: flex; flex-direction: column; padding: 12px 20px 8px; }
 
@@ -163,34 +167,36 @@ export default {
 }
 .brmail-tile img { width: 100%; height: 100%; display: block; }
 
-.brmail-title { margin: 0; text-align: center; font-size: 20px; font-weight: 700; letter-spacing: -0.01em; line-height: 1.25; }
-.brmail-lead { margin: 8px 0 20px; text-align: center; font-size: 15px; line-height: 1.45; opacity: 0.72; }
+.brmail-title { margin: 0; text-align: center; font-size: 1.25rem; font-weight: 700; letter-spacing: -0.01em; line-height: 1.25; }
+.brmail-lead { margin: 8px 0 20px; text-align: center; font-size: 0.9375rem; line-height: 1.45; color: var(--text-secondary); }
 
-.brmail-label { font-size: 13px; font-weight: 600; margin: 0 0 6px 4px; opacity: 0.72; }
+.brmail-label { font-size: 0.8125rem; font-weight: 600; margin: 0 0 6px 4px; color: var(--text-secondary); }
+/* 1rem at least: a smaller field makes iOS zoom the page on focus. */
 .brmail-input {
   width: 100%; min-height: 48px; padding: 0 14px;
-  border-radius: 12px; border: 1px solid transparent; outline: none;
-  font: 500 16px 'Manrope', sans-serif;
+  border-radius: var(--radius-ms); border: 1px solid transparent; outline: none;
+  font: 500 1rem 'Manrope', sans-serif;
+  background: var(--bg-input);
+  color: var(--text-primary);
 }
-.brmail-light .brmail-input { background: #f2f2f4; color: #1a1a1a; }
-.brmail-dark .brmail-input { background: #2a2a2a; color: #f5f5f5; }
-.brmail-input:focus-visible { border-color: var(--brand-accent-text, #15DE72); }
-.brmail-input[aria-invalid='true'] { border-color: #ff453a; }
-.brmail-error { margin: 6px 4px 0; font-size: 13px; color: #ff453a; }
+.brmail-input:focus-visible { border-color: var(--brand-accent-text); }
+.brmail-input[aria-invalid='true'] { border-color: var(--color-negative); }
+.brmail-error { margin: 6px 4px 0; font-size: 0.8125rem; color: var(--color-negative); }
+.brmail-effect { margin: 8px 4px 0; font-size: 0.8125rem; line-height: 1.45; color: var(--text-secondary); }
 
 .brmail-notes { list-style: none; margin: 18px 0 20px; padding: 0; display: grid; gap: 12px; }
-.brmail-notes li { display: flex; gap: 10px; align-items: flex-start; font-size: 14px; line-height: 1.45; }
-.brmail-notes li span { opacity: 0.8; }
-.brmail-notes :deep(svg) { flex: none; margin-top: 1px; color: var(--brand-accent-text, #15DE72); }
+.brmail-notes li { display: flex; gap: 10px; align-items: flex-start; font-size: 0.875rem; line-height: 1.45; }
+.brmail-notes li span { color: var(--text-secondary); }
+.brmail-notes :deep(svg) { flex: none; margin-top: 1px; color: var(--brand-accent-text); }
 
-.brmail-primary { min-height: 50px; border-radius: 14px; font-size: 16px; font-weight: 700; }
+.brmail-primary { min-height: 50px; border-radius: 14px; font-size: 1rem; font-weight: 700; }
 
 .brmail-secondary {
   margin-top: 6px; min-height: 44px;
   border: 0; background: none; cursor: pointer;
-  font: 600 15px 'Manrope', sans-serif;
-  color: var(--brand-accent-text, #15DE72);
+  font: 600 0.9375rem 'Manrope', sans-serif;
+  color: var(--brand-accent-text);
 }
-.brmail-secondary--destructive { color: #ff453a; }
-.brmail-secondary:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; border-radius: 8px; }
+.brmail-secondary--destructive { color: var(--color-negative); }
+.brmail-secondary:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; border-radius: var(--radius-sm); }
 </style>
