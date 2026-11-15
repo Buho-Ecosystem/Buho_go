@@ -1882,7 +1882,8 @@ export default {
         feeEstimate = { sats: null, isEstimating: true };
       } else if (serverHeld && Number.isSafeInteger(this.serverFeeLimitSats)) {
         // A limit of nothing is a payment that cannot cost anything.
-        feeEstimate = { sats: this.serverFeeLimitSats, isEstimating: false, isLimit: this.serverFeeLimitSats > 0 };
+        // The server's figure covers its own service fee too, where it charges one.
+        feeEstimate = { sats: this.serverFeeLimitSats, isEstimating: false, isLimit: this.serverFeeLimitSats > 0, coversServiceFee: true };
       } else if (canQuote && hasQuotedFee) {
         feeEstimate = {
           sats: this.estimatedFee, isEstimating: false,
@@ -4030,34 +4031,6 @@ export default {
       return iconMap[currency.toUpperCase()] || 'tabler:currency-dollar';
     },
 
-    getSecondaryDisplayValue() {
-      if (!this.secondaryValue) return '';
-      // Remove "₿" prefix if present (for BIP-177)
-      if (this.secondaryValue.startsWith('₿')) {
-        return this.secondaryValue.replace('₿', '').trim();
-      }
-      // Remove "sats" suffix if present (for Legacy format)
-      if (this.secondaryValue.endsWith(' sats')) {
-        return this.secondaryValue.replace(' sats', '').trim();
-      }
-      // Otherwise it's a fiat value, return as is
-      return this.secondaryValue;
-    },
-
-    getSecondaryDisplayType() {
-      if (!this.secondaryValue) return '';
-      // Check if it starts with ₿ symbol (BIP-177 bitcoin format)
-      if (this.secondaryValue.startsWith('₿')) {
-        return 'bitcoin';
-      }
-      // Check if it ends with "sats" (Legacy bitcoin format)
-      if (this.secondaryValue.endsWith(' sats')) {
-        return 'bitcoin';
-      }
-      // Otherwise it's fiat
-      return 'fiat';
-    },
-
     async getSecondaryValue(balance) {
       switch (this.currentDisplayMode) {
         case 'bitcoin':
@@ -4630,7 +4603,7 @@ export default {
       const provider = this.walletStore.getActiveProvider();
       if (!provider) {
         this.lnurlWithdrawStatus = 'error';
-        this.lnurlWithdrawError = 'No provider available for monitoring';
+        this.lnurlWithdrawError = this.$t('Could not check payment status. Please check again.');
         return;
       }
 
@@ -4648,7 +4621,7 @@ export default {
             this.handleWithdrawConfirmed(data.amount || amountSats);
           } else if (status === PaymentStatus.EXPIRED || status === PaymentStatus.ERROR) {
             this.lnurlWithdrawStatus = 'error';
-            this.lnurlWithdrawError = data.message || 'Payment monitoring failed';
+            this.lnurlWithdrawError = this.$t(status === PaymentStatus.EXPIRED ? 'Payment expired' : 'Could not check payment status. Please check again.');
           }
         }
       });
@@ -4679,7 +4652,7 @@ export default {
             this.handleWithdrawConfirmed(data.amount || amountSats);
           } else if (status === PaymentStatus.EXPIRED || status === PaymentStatus.ERROR) {
             this.lnurlWithdrawStatus = 'error';
-            this.lnurlWithdrawError = data.message || 'Payment monitoring failed';
+            this.lnurlWithdrawError = this.$t(status === PaymentStatus.EXPIRED ? 'Payment expired' : 'Could not check payment status. Please check again.');
           }
         }
       });

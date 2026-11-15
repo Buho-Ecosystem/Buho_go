@@ -76,7 +76,7 @@ export class PaymentMonitor {
 
     // Notify that monitoring has started
     this._notifyStatus(PaymentStatus.PENDING, {
-      message: 'Waiting for payment...',
+      message: 'Waiting for payment…',
       attempt: 0
     });
 
@@ -183,7 +183,7 @@ export class PaymentMonitor {
 
       // Still pending - notify and schedule next check
       this._notifyStatus(PaymentStatus.PENDING, {
-        message: 'Waiting for payment...',
+        message: 'Waiting for payment…',
         attempt: this.attemptCount,
         nextCheckIn: Math.round(this.currentInterval / 1000)
       });

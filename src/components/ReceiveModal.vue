@@ -274,7 +274,7 @@
             <!-- Status -->
             <div class="ln-status" :class="paymentStatusClass">
               <div class="ln-status-dot"></div>
-              <span>{{ paymentStatusMessage || $t('Waiting for payment...') }}</span>
+              <span>{{ paymentStatusMessage || $t('Waiting for payment…') }}</span>
             </div>
           </div>
 
@@ -1187,7 +1187,7 @@ export default {
       }
 
       this.paymentStatus = PaymentStatus.PENDING;
-      this.paymentStatusMessage = this.$t('Waiting for payment...');
+      this.paymentStatusMessage = this.$t('Waiting for payment…');
 
       if (this.isSparkWallet) {
         await this.startSparkEventMonitor();
@@ -1541,12 +1541,12 @@ export default {
           break;
 
         case PaymentStatus.ERROR:
-          this.paymentStatusMessage = data.message || this.$t('Error checking payment');
+          this.paymentStatusMessage = this.$t('Error checking payment');
           break;
 
         case PaymentStatus.PENDING:
         default:
-          this.paymentStatusMessage = this.$t('Waiting for payment...');
+          this.paymentStatusMessage = this.$t('Waiting for payment…');
           break;
       }
     },

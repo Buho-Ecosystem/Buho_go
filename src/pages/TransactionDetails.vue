@@ -531,7 +531,7 @@
               class="tx-row tx-row-clickable"
               @click="copyToClipboard(transaction.paymentHash || transaction.payment_hash)"
             >
-              <div class="tx-row-label">{{ $t('Payment Hash') }}</div>
+              <div class="tx-row-label">{{ $t('Payment hash') }}</div>
               <div class="tx-row-value tx-row-value-copy">
                 <span>{{ truncateMiddle(transaction.paymentHash || transaction.payment_hash) }}</span>
                 <Icon icon="tabler:copy" width="14" height="14" class="copy-icon" />

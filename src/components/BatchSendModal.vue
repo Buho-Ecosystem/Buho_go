@@ -55,7 +55,7 @@
                 no-caps
                 dense
                 size="sm"
-                :label="$t('Select All')"
+                :label="$t('Select all')"
                 class="action-link"
                 @click="selectAll"
                 :disable="selectableContacts.length === 0"
@@ -450,7 +450,7 @@
                 <div class="exec-name">{{ result.contact.name }}</div>
                 <div class="exec-status">
                   <span v-if="result.status === 'pending'" class="status-text">{{ $t('Waiting…') }}</span>
-                  <span v-else-if="result.status === 'sending'" class="status-text">{{ $t('Sending...') }}</span>
+                  <span v-else-if="result.status === 'sending'" class="status-text">{{ $t('Sending…') }}</span>
                   <span v-else-if="result.status === 'success'" class="status-text status-success">{{ $t('Sent') }}</span>
                   <span v-else-if="result.status === 'failed'" class="status-text status-failed">{{ result.error }}</span>
                   <span v-else-if="result.status === 'skipped'" class="status-text status-skipped">{{ result.error }}</span>
@@ -955,7 +955,7 @@ const stepTitle = computed(() => {
     1: t('Select Contacts'),
     2: t('Set amount'),
     3: t('Review'),
-    4: t('Sending...'),
+    4: t('Sending…'),
     5: t('Complete')
   }
   return titles[step.value]

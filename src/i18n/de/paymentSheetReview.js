@@ -19,5 +19,5 @@ export default {
   "{amount} stays in {wallet} for the fee.": "{amount} bleibt für die Gebühr in {wallet}.",
   "{amount} today": "{amount} heute",
   "Your balance does not cover the fee.": "Dein Guthaben reicht nicht für die Gebühr.",
-  "The amount for your whole balance could not be confirmed. Try again, or enter an amount.": "Der Betrag für dein ganzes Guthaben konnte nicht bestätigt werden. Versuch es nochmal oder gib einen Betrag ein.",
+  "The amount for your whole balance could not be confirmed. Try again, or enter an amount.": "Der Betrag für dein ganzes Guthaben konnte nicht bestätigt werden. Versuche es erneut oder gib einen Betrag ein.",
 };

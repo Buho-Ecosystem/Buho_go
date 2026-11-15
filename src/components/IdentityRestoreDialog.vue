@@ -74,12 +74,13 @@
             :class="$q.dark.isActive ? 'dialog_add_btn_dark' : 'dialog_add_btn_light'"
             :label="$t('Replace and restore identity')"
             :loading="isApplying"
-            :disable="paymentFlow.paymentBeingSent"
+            :disable="identity.bootstrapped && paymentFlow.paymentBeingSent"
             @click="apply"
           />
           <!-- Replacing the identity in use waits for a payment that is
-               being sent; this says so for as long as it does. -->
-          <IdentityWaitsForPayment />
+               being sent; this says so for as long as it does. With no
+               identity in use yet there is nothing to wait for. -->
+          <IdentityWaitsForPayment v-if="identity.bootstrapped" />
           <q-btn
             flat
             no-caps
@@ -335,6 +336,7 @@ export default {
       }
 
       this.isApplying = true;
+      let waiting = false;
       try {
         await this.identity.importMnemonic(phrase, true);
         this.$q.notify({
@@ -348,16 +350,20 @@ export default {
       } catch (err) {
         console.error('[IdentityRestore] importMnemonic failed', err);
         // The store refused because a payment started meanwhile: nothing was
-        // replaced, the words stay, and the reason given is that one.
-        this.errorText = err?.code === 'IDENTITY_WAITS_FOR_PAYMENT'
-          ? this.$t('A Bitcoin payment is being sent. You can change your identity as soon as it has finished.')
-          : this.$t('Identity could not be restored. Check your words and try again.');
+        // replaced and the words stay. The line by the button says why and
+        // goes by itself when the payment has ended; an error text here
+        // would outlive it.
+        if (err?.code === 'IDENTITY_WAITS_FOR_PAYMENT') {
+          waiting = true;
+          return;
+        }
+        this.errorText = this.$t('Identity could not be restored. Check your words and try again.');
         this.step = 'enter';
       } finally {
         this.isApplying = false;
         // Best-effort wipe so the visible inputs (and the in-memory
         // ref the composable holds) don't outlive the apply call.
-        if (!this.errorText) this.resetMnemonic();
+        if (!this.errorText && !waiting) this.resetMnemonic();
       }
     },
 

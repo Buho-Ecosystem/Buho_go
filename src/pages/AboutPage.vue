@@ -141,7 +141,7 @@ export default {
     /** The row's value: what the last check found. */
     updateValue() {
       const { stage, status, release } = this.updateStore;
-      if (status === 'checking') return this.$t('Checking...');
+      if (status === 'checking') return this.$t('Checking…');
       if (stage === 'ready') return this.$t('Ready to install');
       if (stage === 'required') return this.$t('Update required');
       if (stage) {

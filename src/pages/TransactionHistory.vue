@@ -1361,7 +1361,7 @@ export default {
       if (!tx) return { full: '', kind: 'generic' };
       if (tx.status === 'pending') {
         return {
-          full: tx.type === 'incoming' ? this.$t('Awaiting payment') : this.$t('Sending...'),
+          full: tx.type === 'incoming' ? this.$t('Awaiting payment') : this.$t('Sending…'),
           kind: 'status'
         };
       }
