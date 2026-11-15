@@ -5,6 +5,8 @@ import { readFileSync } from 'node:fs';
 import { transformSync } from 'esbuild';
 import * as payAgain from '../../utils/payAgain.js';
 
+const warmed = [];
+
 function load(store, flow) {
   const source = readFileSync(new URL('../usePayContact.js', import.meta.url), 'utf8');
   const { code } = transformSync(source, { format: 'cjs' });
@@ -13,6 +15,7 @@ function load(store, flow) {
     '../utils/payAgain.js': payAgain,
     '../stores/addressBook': { useAddressBookStore: () => store },
     '../stores/paymentFlow.js': { usePaymentFlowStore: () => flow },
+    '../components/contactPaymentPipeline.js': { preloadContactPaymentPipeline: () => { warmed.push(true); } },
   };
   new Function('require', 'module', 'exports', code)((name) => {
     assert.ok(name in modules, `Unexpected dependency ${name}`);
@@ -124,4 +127,11 @@ test('deferred preparation hands the resolver over without running it and report
   flow.accepts = false;
   assert.equal(pay.preparePayment({ resolve }), false);
   assert.equal(begun.length, 1);
+});
+
+test('a surface that can pay a contact has the payment sheet fetched before the tap', () => {
+  warmed.length = 0;
+  const { begun } = harness();
+  assert.equal(warmed.length, 1);
+  assert.deepEqual(begun, [], 'warming up starts no payment');
 });

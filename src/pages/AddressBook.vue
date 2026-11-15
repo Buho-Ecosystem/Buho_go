@@ -159,6 +159,7 @@
 <script>
 import { useAddressBookStore } from '../stores/addressBook'
 import { usePayContact } from '../composables/usePayContact'
+import { preloadContactPaymentPipeline } from '../components/contactPaymentPipeline.js'
 import { useChatRuntime } from '../composables/useChatRuntime'
 import { contactTapPath } from '../components/chat/threadRows.js'
 import { useIdentityStore } from '../stores/identity'
@@ -206,6 +207,7 @@ export default {
   // not only while this page is mounted. This page keeps just the
   // explicit actions: manual sync and kebab restore.
   async created() {
+    preloadContactPaymentPipeline()
     await this.initializeAddressBook()
     if (this.creatingFromRoute) this.showAddModal()
   },

@@ -15,6 +15,7 @@
 import { useAddressBookStore } from '../stores/addressBook';
 import { CURRENCY_CODE } from '../utils/payAgain.js';
 import { usePaymentFlowStore } from '../stores/paymentFlow.js';
+import { preloadContactPaymentPipeline } from '../components/contactPaymentPipeline.js';
 
 /** A rage-tap should not hammer the relays. */
 const RESYNC_COOLDOWN_MS = 60 * 1000;
@@ -65,6 +66,8 @@ function paymentOptions({ walletId, context, amountSats, note, payout, repeat, c
 export function usePayContact(ctx) {
   const store = useAddressBookStore();
   const flow = usePaymentFlowStore();
+  // A surface that can pay a contact is on screen: have the sheet's code ready.
+  preloadContactPaymentPipeline();
 
   // Open a contextual payment before starting network work. The canonical
   // wallet dispatcher resolves and pays it without navigating through Home.

@@ -146,6 +146,7 @@ import { useAddressBookStore } from '../stores/addressBook'
 import { useWalletStore } from '../stores/wallet'
 import { useTransactionMetadataStore } from '../stores/transactionMetadata'
 import { usePayContact } from '../composables/usePayContact'
+import { preloadContactPaymentPipeline } from '../components/contactPaymentPipeline.js'
 import { loadRecipientPayments } from '../services/recipientPayments.js'
 import ContactAvatar from '../components/AddressBook/ContactAvatar.vue'
 import AddressBookModal from '../components/AddressBook/AddressBookModal.vue'
@@ -231,6 +232,7 @@ export default {
   },
 
   async created() {
+    preloadContactPaymentPipeline()
     // The page can be the first one opened (a reload, a link): the
     // transaction links Between you matches by are read here as well.
     await Promise.all([this.addressBook.initialize(), this.txMetadata.initialize()])

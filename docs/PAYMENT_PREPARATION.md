@@ -28,7 +28,7 @@ Matching text Cancel/Back controls in form-sheet headers use familiar icons: an 
 
 ## Lifecycle and ownership
 
-`paymentFlow` holds one volatile intent; no destination, invoice or draft is persisted. `ContactPaymentHost` mounts the canonical Wallet payment controller in payment-only mode under MainLayout, leaving the source page mounted. That mode omits Home and skips Home’s initialization, intake watchers and background polling. It waits for saved wallet configuration, while provider connections and balance sync continue independently.
+`paymentFlow` holds one volatile intent; no destination, invoice or draft is persisted. `ContactPaymentHost` mounts the canonical Wallet payment controller in payment-only mode under MainLayout, leaving the source page mounted. That mode omits Home and skips Home’s initialization, intake watchers and background polling. It waits for saved wallet configuration, while provider connections and balance sync continue independently. The controller is the wallet page, so the host fetches it on its own (`contactPaymentPipeline.js`) and never with the layout, which also serves the public profile and setup screens; every surface that can pay a contact warms it up when it mounts. If it cannot be fetched (the web app, offline), the tap is given back with a short notice.
 
 | Phase | Behavior |
 |---|---|
