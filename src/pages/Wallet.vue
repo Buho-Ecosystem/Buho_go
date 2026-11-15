@@ -729,7 +729,7 @@ import {fiatRatesService} from '../utils/fiatRates.js';
 import {fiatSymbol} from '../utils/fiatCurrencies.js';
 import {formatMainBalance as formatMainBalanceUtil, formatAmount} from '../utils/amountFormatting.js';
 import {haptics} from '../utils/haptics.js';
-import { NWC_ERROR } from '../utils/nwcErrors.js';
+import { PAYMENT_FAILED, PAYMENT_OUTCOME, outcomeOfError, outcomeOfResult } from '../utils/paymentOutcome.js';
 import {isNfcAvailable} from '../utils/nfc.js';
 import NumberFlow from '@number-flow/vue';
 import LatestTransactionCard from '../components/LatestTransactionCard.vue';
@@ -805,6 +805,18 @@ import { usePayContact } from '../composables/usePayContact.js';
 
 /** How long a typed amount rests before the paying wallet is asked for its fee. */
 const TYPED_AMOUNT_QUOTE_DELAY_MS = 350;
+
+/**
+ * One key per payment on the sheet, kept for as long as that payment is on
+ * it. A wallet that knows such keys (Spark) recognises a second try of the
+ * same payment and does not pay twice.
+ */
+const sendKeys = new WeakMap();
+function sendKeyOf(payment) {
+  if (!payment || typeof crypto === 'undefined' || !crypto.randomUUID) return null;
+  if (!sendKeys.has(payment)) sendKeys.set(payment, crypto.randomUUID());
+  return sendKeys.get(payment);
+}
 
 function emptySaveContactData() {
   return {
@@ -5385,10 +5397,15 @@ export default {
         } else {
           result = await this.sendNWCPayment(amount, comment, sendingWalletId, payerData);
         }
-        // A wallet that hands back a failed payment has said it was not made.
-        if (result?.status === 'failed') {
-          throw Object.assign(new Error('The wallet marked the payment as failed'), { code: 'PAYMENT_FAILED' });
+        // How the send ended, read once (utils/paymentOutcome.js). A wallet
+        // that hands back a failed payment has said it was not made.
+        const outcome = outcomeOfResult(result);
+        if (outcome === PAYMENT_OUTCOME.FAILED) {
+          throw Object.assign(new Error('The wallet marked the payment as failed'), { code: PAYMENT_FAILED });
         }
+        // Paid, or still on its way: the two ends the screens below tell apart.
+        const isCompletedSend = outcome === PAYMENT_OUTCOME.SETTLED;
+        const status = isCompletedSend ? 'completed' : 'pending';
 
         // What went to the recipient: the invoice's amount. In the recipient's
         // currency that is the estimate confirmed plus the service's fee, and
@@ -5416,11 +5433,6 @@ export default {
         // Address-book context: do we know this recipient, and is the
         // recipient saveable at all? Computed up-front because both the
         // pending-link queue and the success modal depend on it.
-        // How the send stands. Only the wallet's own "completed" is a paid
-        // payment (an executor that returns no status returns only on proof);
-        // anything else it returned is still on its way.
-        const status = (result && typeof result === 'object' && result.status) || 'completed';
-        const isCompletedSend = status === 'completed';
 
         // LUD-11: the service said this LNURL is reusable (disposable: false),
         // which makes it a durable handle on the recipient. It is stamped in
@@ -5674,16 +5686,7 @@ export default {
           verifiedBusiness: merchantVerification,
         });
 
-        this.showSendSheet = false;
-        this.cancelBrantaLookup();
-        this.pendingPayment = null;
-        this.sendingWalletId = null;
-        this.paymentAmount = '';
-        this.paymentComment = '';
-        this.sendPayout = null;
-        this.estimatedFee = null;
-        this.isEstimatingFee = false;
-        this.sendDidSucceed = false;
+        this.clearSendSheet();
 
         // The payment is over: the next one must not open as "sending" while
         // this wallet's balance is still being read (a read can hang).
@@ -5699,6 +5702,15 @@ export default {
           return;
         }
         console.error('Payment failed:', error);
+        // Handed to the wallet, and nobody has said how it ended: it may have
+        // gone through, so it is neither failed nor offered for another try.
+        if (outcomeOfError(error) === PAYMENT_OUTCOME.UNKNOWN) {
+          this.finishUnconfirmedPayment(payment, error, { amount, comment: this.paymentComment || null, sendingWalletId, walletType });
+          return;
+        }
+        // The wallet said this payment failed: its key is spent on that
+        // answer, and another try is a new payment.
+        if (error?.code === PAYMENT_FAILED) sendKeys.delete(payment);
         // The service turned down the refund address, or wants one: said on
         // the row, with the sheet open, and never tried again by itself (a
         // retry without the address would quietly give up the refund). Only
@@ -5708,9 +5720,7 @@ export default {
           haptics.warning();
           return;
         }
-        // A payment whose outcome is unknown needs attention; it has not failed.
-        if (error?.code === NWC_ERROR.UNCONFIRMED) haptics.warning();
-        else haptics.error();
+        haptics.error();
         // The provider's refusal of a till code, in plain words where its
         // code has some; any other refusal stays in the service's own words.
         const tillReason = payment?.source === SA_RETAIL_SOURCE && isCounterpartyError(error)
@@ -5728,6 +5738,72 @@ export default {
       } finally {
         this.isSendingPayment = false;
       }
+    },
+
+    /**
+     * A payment that was handed to the wallet and whose outcome nobody has
+     * told. The sheet closes: its slide would ask for the same payment
+     * again, and for an address or a link that is a second payment. Whoever
+     * handed the payment over hears of it as still on its way, with the id
+     * it can be found by, so a request it pays is settled or freed later and
+     * never offered for paying twice meanwhile. One dialog says what to do.
+     */
+    finishUnconfirmedPayment(payment, error, { amount, comment, sendingWalletId, walletType }) {
+      // Attention, not an error: nothing is known to have failed.
+      haptics.warning();
+      const route = this.routeLabelForPendingPayment();
+      if (payment) {
+        this.emitPaymentSent({
+          contactId: payment.paymentContactId || null,
+          destination: payment.lightningAddress || payment.invoice || null,
+          amountSats: amount,
+          preimage: null,
+          sendingWalletId,
+          note: comment,
+          context: payment.paymentContext || null,
+          status: 'pending',
+          paymentHash: error?.paymentHash || this.paymentHashOf(payment.invoice),
+        });
+      }
+      // Only while this payment is still the one on the sheet.
+      if (this.pendingPayment === payment) {
+        this.clearSendSheet();
+        this.returnAfterPayment();
+      }
+      this.walletStore.showPaymentError(error, {
+        context: 'payment',
+        walletType,
+        walletName: this.getWalletById(sendingWalletId)?.name,
+        route,
+        amountSats: typeof amount === 'number' ? amount : undefined,
+        t: this.$t.bind(this),
+      });
+      // The balance tells part of the story; a read that fails changes nothing.
+      Promise.resolve(this.refreshPayerBalance(sendingWalletId)).catch(() => {});
+    },
+
+    /**
+     * The payment on the sheet is over (sent, unconfirmed or cancelled): the
+     * sheet closes and nothing of it is left for the next one.
+     */
+    clearSendSheet() {
+      this.showSendSheet = false;
+      this.cancelBrantaLookup();
+      this.pendingPayment = null;
+      // The next payment starts from its own default pick, not this one's choice.
+      this.sendingWalletId = null;
+      this.paymentAmount = '';
+      this.paymentComment = '';
+      this.sendPayout = null;
+      this.estimatedFee = null;
+      this.estimatedFeeIsGuess = false;
+      this.isEstimatingFee = false;
+      this.connectionNotice = '';
+      this.sendDidSucceed = false;
+      // On-chain state must not leak into the next open: a stale quote
+      // would gate (or worse, price) a different payment.
+      this.l1Fee = null;
+      this.sendSheetAmountSats = 0;
     },
 
     /**
@@ -5889,22 +5965,7 @@ export default {
     onSendSheetCancel() {
       if (this.paymentOnly && !this.paymentFlow.cancel(this.paymentIntent.id)) return;
       this.returnAfterPayment();
-      this.cancelBrantaLookup();
-      this.showSendSheet = false;
-      this.sendDidSucceed = false;
-      this.pendingPayment = null;
-      // The next payment starts from its own default pick, not this one's choice.
-      this.sendingWalletId = null;
-      this.paymentAmount = '';
-      this.paymentComment = '';
-      this.sendPayout = null;
-      this.estimatedFee = null;
-      this.isEstimatingFee = false;
-      this.connectionNotice = '';
-      // On-chain state must not leak into the next open: a stale quote
-      // would gate (or worse, price) a different payment.
-      this.l1Fee = null;
-      this.sendSheetAmountSats = 0;
+      this.clearSendSheet();
     },
 
     /**
@@ -5958,6 +6019,8 @@ export default {
      */
     async sendSparkPayment(amount, comment, payout = null, walletId = null, payerData = null) {
       const payment = this.pendingPayment;
+      // This payment's own key, the same on every try of it.
+      const idempotencyKey = sendKeyOf(payment);
       // Ensure Spark wallet is connected (auto-connects if session PIN available)
       const provider = await this.walletStore.ensureSparkConnected(walletId);
 
@@ -5981,12 +6044,13 @@ export default {
           // An encoded amount wins SDK-side; only free-amount invoices take
           // the amount from the sheet.
           amountSats: dest.amountSats > 0 ? null : amount,
+          idempotencyKey,
         });
       }
 
       // Spark address transfer (zero-fee)
       if (this.pendingPayment.sparkAddress) {
-        return await provider.transferToSparkAddress(this.pendingPayment.sparkAddress, amount);
+        return await provider.transferToSparkAddress(this.pendingPayment.sparkAddress, amount, { idempotencyKey });
       }
 
       // Lightning invoice
@@ -6001,12 +6065,13 @@ export default {
           // The fee the sheet showed; a quote of 0 ("Free") is a quote too.
           maxFee: this.estimatedFee ?? undefined,
           onPreparedRoute: route => this.brantaReview().assertPrepared(payment, route),
+          idempotencyKey,
         });
       }
 
       // Lightning address
       if (this.pendingPayment.lightningAddress) {
-        return await provider.payLightningAddress(this.pendingPayment.lightningAddress, amount, comment || '', payout, { payerData });
+        return await provider.payLightningAddress(this.pendingPayment.lightningAddress, amount, comment || '', payout, { payerData, idempotencyKey });
       }
 
       // LNURL - decode and fetch invoice, then pay
@@ -6018,6 +6083,7 @@ export default {
           preferSpark: true,
           // The limit the sheet showed: there was no invoice to quote.
           feeLimitSats: unquotedFeeLimitSats(amount),
+          idempotencyKey,
           // amountSats intentionally omitted - LNURL invoice has amount encoded
         });
         return { ...result, invoiceSats, successAction, verify, payLink, serviceMeta, payerData: shared };

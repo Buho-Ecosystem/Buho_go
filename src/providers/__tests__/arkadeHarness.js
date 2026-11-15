@@ -3,6 +3,7 @@ import { transformSync } from 'esbuild';
 import * as sdk from '@arkade-os/sdk';
 import * as keys from '../../utils/arkadeKeys.js';
 import { WalletProvider } from '../WalletProvider.js';
+import * as paymentOutcome from '../../utils/paymentOutcome.js';
 
 /** Run the real provider with the installed SDK and a replaceable decryptor. */
 export function arkadeProviderClass(overrides = {}) {
@@ -13,6 +14,7 @@ export function arkadeProviderClass(overrides = {}) {
     '@arkade-os/sdk': sdk,
     '../utils/arkadeKeys': keys,
     '../utils/deviceCrypto': { decryptString: async () => 'test-only phrase' },
+    '../utils/paymentOutcome.js': paymentOutcome,
     ...overrides,
   };
   const module = { exports: {} };

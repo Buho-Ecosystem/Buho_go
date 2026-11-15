@@ -14,4 +14,6 @@ export default {
   "The service is busy. Wait a few minutes, then try again.": "The service is busy. Wait a few minutes, then try again.",
   "The network fee would be {fee}, more than the {limit} limit. Nothing was sent. Try again later.": "The network fee would be {fee}, more than the {limit} limit. Nothing was sent. Try again later.",
   "Up to {amount}": "Up to {amount}",
+  // A payment handed to the wallet whose outcome nobody has told (utils/paymentOutcome.js).
+  "This payment may have gone through. Check History before you pay again, so you do not pay twice.": "This payment may have gone through. Check History before you pay again, so you do not pay twice.",
 };

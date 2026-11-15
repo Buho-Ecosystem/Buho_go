@@ -39,6 +39,22 @@ const LN_ADDRESS_DEFAULTS = Object.freeze({
 import { WalletProvider } from './WalletProvider';
 import { payLinksStatusOf } from '../utils/lnbitsAddress.js';
 import { SUCCESS_ACTION_MAX_CHARS } from '../utils/successAction.js';
+import { readInvoice } from '../utils/nwcWallet.js';
+import { PAYMENT_COMPLETION_TIMEOUT_MS, PAYMENT_FAILED, PAYMENT_LOOKUP_WAIT_MS, assertOnline, unconfirmedPayment, withinPaymentDeadline } from '../utils/paymentOutcome.js';
+
+/**
+ * True when LNbits itself turned a pay call down, so nothing was paid: a
+ * request it refused (4xx), or its own payment error (HTTP 520 with its
+ * reason) that does not call the payment pending. No answer at all, a
+ * proxy's error page, a timeout or any other server error says nothing
+ * about the payment: LNbits may have it and still be paying.
+ */
+export function lnbitsRefusedPayment(error) {
+  const status = error?.status;
+  if (!Number.isInteger(status) || error.paymentStatus === 'pending') return false;
+  if (status >= 400 && status < 500) return status !== 408;
+  return status === 520 && error.fromLnbits === true;
+}
 
 /**
  * What one live message says: `{ paymentHash }` for a payment record, an
@@ -90,6 +106,10 @@ export class LNBitsWalletProvider extends WalletProvider {
    *   - `error.status`         : HTTP status code, when the server responded
    *   - `error.isNetworkError` : true when fetch itself rejected (offline,
    *                              DNS, TLS, refused). No status available.
+   *   - `error.fromLnbits`     : true when the error body was LNbits' own
+   *                              JSON reason, not a proxy's page
+   *   - `error.paymentStatus`  : the `status` LNbits put beside that reason
+   *                              ("failed" or "pending"), when it did
    */
   async _apiRequest(endpoint, options = {}) {
     const url = `${this.serverUrl}${endpoint}`;
@@ -117,14 +137,20 @@ export class LNBitsWalletProvider extends WalletProvider {
     if (!response.ok) {
       const errorText = await response.text().catch(() => '');
       let detail;
+      let fromLnbits = false;
+      let paymentStatus = null;
       try {
         const errorJson = JSON.parse(errorText);
         detail = errorJson.detail || errorJson.message || errorText;
+        fromLnbits = !!errorJson && typeof errorJson === 'object' && !!(errorJson.detail || errorJson.message);
+        paymentStatus = typeof errorJson?.status === 'string' ? errorJson.status.toLowerCase() : null;
       } catch {
         detail = errorText || `HTTP ${response.status}`;
       }
       const apiError = new Error(`LNBits API error: ${detail}`);
       apiError.status = response.status;
+      apiError.fromLnbits = fromLnbits;
+      apiError.paymentStatus = paymentStatus;
       throw apiError;
     }
 
@@ -238,8 +264,13 @@ export class LNBitsWalletProvider extends WalletProvider {
    * Pay an invoice. "completed" is returned only when LNbits says the
    * payment is paid; one it marks failed is thrown as PAYMENT_FAILED;
    * anything else is still on its way ("pending").
+   *
+   * Once the pay call has left, an error is a failure only when LNbits
+   * itself refused (lnbitsRefusedPayment). A dropped connection, a wait
+   * past PAYMENT_COMPLETION_TIMEOUT_MS or an answer that cannot be read
+   * is PAYMENT_UNCONFIRMED: LNbits may have paid.
    */
-  async payInvoice({ invoice, maxFee }) {
+  async payInvoice({ invoice, maxFee, completionTimeoutMs = PAYMENT_COMPLETION_TIMEOUT_MS }) {
     this._ensureConnected();
 
     try {
@@ -248,13 +279,18 @@ export class LNBitsWalletProvider extends WalletProvider {
         bolt11: invoice
       };
 
-      const response = await this._apiRequest('/api/v1/payments', {
-        method: 'POST',
-        body: JSON.stringify(payload)
-      });
-
-      if (!response) {
-        throw new Error('Payment failed: No response from LNBits');
+      // Without a network nothing leaves: a plain failure.
+      assertOnline();
+      let response;
+      try {
+        response = await withinPaymentDeadline(this._apiRequest('/api/v1/payments', {
+          method: 'POST',
+          body: JSON.stringify(payload)
+        }), completionTimeoutMs);
+        if (!response) throw new Error('No answer to the pay call from LNBits');
+      } catch (error) {
+        // The invoice's hash is what History lists the payment under.
+        throw lnbitsRefusedPayment(error) ? error : unconfirmedPayment(error, { paymentHash: readInvoice(invoice)?.paymentHash ?? null });
       }
 
       // LNbits 1.x answers with the payment itself; older servers only with
@@ -264,9 +300,10 @@ export class LNBitsWalletProvider extends WalletProvider {
       let preimage = response.preimage || null;
       let fee = 0;
 
-      // The payment's own record says more, and is the newer word.
+      // The payment's own record says more, and is the newer word. A read
+      // that fails or takes too long changes nothing about the payment.
       try {
-        const record = await this._apiRequest(`/api/v1/payments/${paymentHash}`);
+        const record = await withinPaymentDeadline(this._apiRequest(`/api/v1/payments/${paymentHash}`), PAYMENT_LOOKUP_WAIT_MS);
         if (record) {
           const details = record.details && typeof record.details === 'object' ? record.details : record;
           status = this._outgoingStatus(record);
@@ -278,7 +315,7 @@ export class LNBitsWalletProvider extends WalletProvider {
       }
 
       if (status === 'failed') {
-        throw Object.assign(new Error('LNbits marked the payment as failed'), { code: 'PAYMENT_FAILED', paymentHash });
+        throw Object.assign(new Error('LNbits marked the payment as failed'), { code: PAYMENT_FAILED, paymentHash });
       }
 
       return {

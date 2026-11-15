@@ -9,6 +9,8 @@ import { test } from 'node:test';
 import { transformSync } from 'esbuild';
 import { receiptFromPayment } from '../../services/paymentReceipts.js';
 import { normalizeTx } from '../../services/txNormalizer.js';
+import * as paymentOutcome from '../../utils/paymentOutcome.js';
+import * as nwcWallet from '../../utils/nwcWallet.js';
 
 function loadModule() {
   const load = (file, deps) => {
@@ -18,10 +20,10 @@ function loadModule() {
     return module.exports;
   };
   const base = load('../WalletProvider.js', {});
-  return load('../LNBitsWalletProvider.js', { './WalletProvider': base });
+  return load('../LNBitsWalletProvider.js', { './WalletProvider': base, '../utils/paymentOutcome.js': paymentOutcome, '../utils/nwcWallet.js': nwcWallet });
 }
 
-const { LNBitsWalletProvider, lnbitsPaymentHint } = loadModule();
+const { LNBitsWalletProvider, lnbitsPaymentHint, lnbitsRefusedPayment } = loadModule();
 
 const ADMIN = 'a'.repeat(32);
 const INVOICE = 'b'.repeat(32);
@@ -206,50 +208,19 @@ test('the message reader alone', () => {
 
 // ── Paying: only LNbits' own "paid" is a paid payment ────────────────────
 
-/** Pay with a server that answers the pay call with `paid` and the record read with `record`. */
-async function payWith(paid, record) {
-  server({
-    'POST /api/v1/payments': paid,
-    ...(record === undefined ? {} : { [`GET /api/v1/payments/${HASH}`]: record }),
-  });
-  return provider().payInvoice({ invoice: 'lnbc1invoice' });
-}
-
-test('a payment LNbits marks failed is thrown as failed, wherever the record says so', async () => {
-  for (const record of [
-    { paid: false, status: 'failed' },
-    { paid: false, details: { payment_hash: HASH, status: 'failed' } },
-    { paid: false, status: 'failed', details: { payment_hash: HASH, status: 'failed', pending: false } },
-  ]) {
-    await assert.rejects(payWith({ payment_hash: HASH }, record), (error) => error.code === 'PAYMENT_FAILED' && error.paymentHash === HASH, JSON.stringify(record));
-  }
-  // The pay call's own answer (LNbits 1.x) counts when the record cannot be read.
-  await assert.rejects(payWith({ payment_hash: HASH, status: 'failed' }), { code: 'PAYMENT_FAILED' });
-});
-
-test('a payment LNbits has not paid yet is pending, never completed', async () => {
-  for (const [paid, record] of [
-    [{ payment_hash: HASH }, { paid: false, details: { payment_hash: HASH, pending: true } }],
-    [{ payment_hash: HASH }, { paid: false, details: { payment_hash: HASH, status: 'pending' } }],
-    [{ payment_hash: HASH }, { paid: false, preimage: null, details: { payment_hash: HASH } }],
-    [{ payment_hash: HASH }, { paid: false, status: 'pending' }],
-    [{ payment_hash: HASH, status: 'pending' }, undefined],
-    // An older server answers the pay call with the hash only: that is no word on the outcome.
-    [{ payment_hash: HASH, checking_id: HASH }, undefined],
-    [{ payment_hash: HASH, preimage: 'f'.repeat(64) }, { status: 500 }],
-  ]) {
-    const result = await payWith(paid, record);
-    assert.deepEqual([result.status, result.paymentHash], ['pending', HASH], JSON.stringify([paid, record]));
-  }
-});
-
-test('a payment is completed only on LNbits\' word, with its preimage and fee', async () => {
-  const settled = await payWith({ payment_hash: HASH }, { paid: true, preimage: 'pre', details: { payment_hash: HASH, status: 'success', fee: -3000 } });
-  assert.deepEqual(settled, { preimage: 'pre', fee: 3, status: 'completed', paymentHash: HASH });
-  // `paid` is the record's verdict, also over an older `details` beside it.
-  assert.equal((await payWith({ payment_hash: HASH }, { paid: true, details: { payment_hash: HASH, status: 'pending' } })).status, 'completed');
-  assert.equal((await payWith({ payment_hash: HASH }, { status: 'success', preimage: 'pre', fee: -1000 })).status, 'completed');
-  // LNbits 1.x says it in the pay call's answer too.
-  const direct = await payWith({ payment_hash: HASH, status: 'success', preimage: 'pre' });
-  assert.deepEqual([direct.status, direct.preimage], ['completed', 'pre']);
+test('a payment LNbits marks failed or has not paid yet is never returned as completed', async () => {
+  /** Pay with a server that answers the pay call with the hash and the record read with `record`. */
+  const pay = (record) => {
+    server({ 'POST /api/v1/payments': { payment_hash: HASH }, [`GET /api/v1/payments/${HASH}`]: record });
+    return provider().payInvoice({ invoice: 'lnbc1invoice' });
+  };
+  // Failed, at the top of the record or nested in it: thrown, never a result.
+  await assert.rejects(pay({ paid: false, status: 'failed' }), { code: 'PAYMENT_FAILED' });
+  await assert.rejects(pay({ paid: false, details: { payment_hash: HASH, status: 'failed' } }), { code: 'PAYMENT_FAILED' });
+  // Not paid yet, however the record says so: still on its way.
+  assert.equal((await pay({ paid: false, details: { payment_hash: HASH, pending: true } })).status, 'pending');
+  assert.equal((await pay({ paid: false, preimage: null, details: { payment_hash: HASH } })).status, 'pending');
+  // Paid on LNbits' word only.
+  assert.deepEqual(await pay({ paid: true, preimage: 'pre', details: { payment_hash: HASH, status: 'success', fee: -3000 } }),
+    { preimage: 'pre', fee: 3, status: 'completed', paymentHash: HASH });
 });

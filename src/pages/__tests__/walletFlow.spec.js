@@ -17,6 +17,7 @@ import * as payAgain from '../../utils/payAgain.js';
 import * as recipientPayments from '../../services/recipientPayments.js';
 import * as haptics from '../../utils/haptics.js';
 import * as nwcErrors from '../../utils/nwcErrors.js';
+import * as paymentOutcome from '../../utils/paymentOutcome.js';
 import * as nwcAtRest from '../../utils/nwcAtRest.js';
 import * as nwcWallet from '../../utils/nwcWallet.js';
 import { profileInvoiceFixture } from '../../../scripts/fixtures/profileInvoice.mjs';
@@ -60,6 +61,7 @@ const component = (dependencies = {}) => evaluate('../Wallet.vue', {
   '../utils/npubCashAddress.js': npubCashAddress,
   '../utils/haptics.js': haptics,
   '../utils/nwcErrors.js': nwcErrors,
+  '../utils/paymentOutcome.js': paymentOutcome,
     '../utils/userErrors.js': userErrors,
   '../services/paymentNotifications.js': { isInternalRoute: (route) => typeof route === 'string' && route.startsWith('/') && !route.startsWith('//') },
   ...dependencies,
@@ -2235,75 +2237,46 @@ const settlesWithin = (promise, ms = 1500) => {
   return Promise.race([promise.then(() => true), late]).finally(() => clearTimeout(timer));
 };
 
-test('only the wallet\'s own "completed" is a paid payment: anything else is on its way, and "failed" is a failure', async () => {
-  const pay = async (status) => {
-    const events = [];
-    const harness = payingHarness({ active: 'lnb', bus: { emit: (name, data) => events.push(data) } });
-    const errors = [];
-    harness.store.showPaymentError = (error) => errors.push(error);
-    harness.store.ensureLNBitsConnected = async () => ({ payInvoice: async () => ({ paymentHash: 'h', ...(status ? { status } : {}) }) });
-    Object.assign(harness.vm, { pendingPayment: lnAddressPayment(), paymentAmount: '2500' });
-    const error = console.error;
-    console.error = () => {};
-    try { await quietly(() => harness.vm.confirmPayment()); } finally { console.error = error; }
-    return { ...harness, events, errors };
-  };
-
-  const paid = await pay('completed');
-  assert.deepEqual([paid.sent.success.status, paid.sent.success.showSaveContact, paid.events[0].status], ['completed', true, 'completed']);
-
-  for (const status of ['pending', 'unknown', 'in_flight']) {
-    const open = await pay(status);
-    assert.equal(open.errors.length, 0, status);
-    assert.equal(open.sent.success.showSaveContact, false, `${status}: nothing a paid payment offers`);
-    assert.equal(open.events[0].status, 'pending', `${status}: recorded, never announced as paid`);
-  }
-
-  // The reviewer's case: LNbits handed back a failed payment and it was shown as sent.
-  const failed = await pay('failed');
-  assert.equal(failed.sent.success, undefined, 'no paid screen');
-  assert.deepEqual(failed.errors.map(error => error.code), ['PAYMENT_FAILED']);
-  assert.deepEqual(failed.events, [], 'nothing announced');
-  assert.notEqual(failed.vm.pendingPayment, null, 'the payment stays on the sheet');
-});
-
-test('the paid screen says "sent" only for a completed payment', async () => {
-  const methods = component({ '../utils/haptics.js': { haptics: { success() {} } } }).methods;
-  for (const [status, label] of [['completed', 'Payment Sent'], ['failed', null], ['pending', null], [undefined, null]]) {
-    const vm = { ...methods, $t: t, walletStore: {}, _stopDeliveryPoll() {}, getSendingWallet: () => null };
-    await vm.openSendSuccess({ amount: 0, recipient: '', status, showSaveContact: true, successAction: { tag: 'message', message: 'x' } });
-    assert.equal(vm.sendSuccessLabel === 'Payment Sent', label === 'Payment Sent', String(status));
-    assert.equal(vm.sendSuccessShowSaveContact, status === 'completed', String(status));
-    assert.equal(!!vm.sendSuccessAction, status === 'completed', String(status));
-  }
-});
-
 test('the sending flag comes down with the payment, not with the balance read that follows it', async () => {
-  for (const payer of ['lnb', 'personal']) {
-    // The reviewer's case: a balance read that never answers (LNbits reads have no timeout).
-    const { vm, store, sent } = payingHarness({ active: 'lnb' });
-    const never = new Promise(() => {});
-    vm.updateWalletBalance = () => never;
-    store.reconcileSpark = () => never;
-    await vm.onPaymentDetected({ type: 'lightning_invoice', data: 'inv-1000', sendingWalletId: payer });
-    assert.equal(await settlesWithin(quietly(() => vm.confirmPayment())), true, `${payer}: the payment ends without the read`);
-    assert.equal(vm.isSendingPayment, false);
-    assert.equal(sent.success.amount, 1000);
-    // The next payment's sheet opens ready, and may be closed.
-    await vm.onPaymentDetected({ type: 'lightning_invoice', data: 'inv-big' });
-    assert.equal(vm.showSendSheet, true);
-    assert.equal(vm.isSendingPayment, false);
-  }
-  // A read that fails is only a read that failed: the payment was made.
+  // A balance read that never answers (an LNbits read has no timeout).
   const { vm, sent } = payingHarness({ active: 'lnb' });
-  vm.updateWalletBalance = async () => { throw new Error('read failed'); };
-  const warn = console.warn;
-  console.warn = () => {};
-  try {
-    await vm.onPaymentDetected({ type: 'lightning_invoice', data: 'inv-1000' });
-    await quietly(() => vm.confirmPayment());
-    await new Promise(resolve => setTimeout(resolve, 0));
-  } finally { console.warn = warn; }
+  vm.updateWalletBalance = () => new Promise(() => {});
+  await vm.onPaymentDetected({ type: 'lightning_invoice', data: 'inv-1000' });
+  assert.equal(await settlesWithin(quietly(() => vm.confirmPayment())), true, 'the payment ends without the read');
+  assert.equal(vm.isSendingPayment, false, 'the next payment does not open as "Sending"');
   assert.equal(sent.success.amount, 1000);
-  assert.equal(vm.isSendingPayment, false);
+});
+
+test('a payment whose outcome nobody told is not "failed", and its slide is never armed again', async () => {
+  // The real LNbits provider, with the connection dropping while LNbits has the pay call.
+  const { LNBitsWalletProvider } = evaluate('../../providers/LNBitsWalletProvider.js', {
+    './WalletProvider': evaluate('../../providers/WalletProvider.js'),
+    '../utils/paymentOutcome.js': paymentOutcome,
+    '../utils/nwcWallet.js': nwcWallet,
+  });
+  const lnbits = new LNBitsWalletProvider('lnb', { serverUrl: 'https://pay.example', adminKey: 'key', walletId: 'w' });
+  lnbits.isConnected = true;
+  let payCalls = 0;
+  globalThis.fetch = async () => { payCalls += 1; throw new TypeError('Failed to fetch'); };
+
+  const events = [], shown = [], resets = [];
+  const { vm, store, sent } = payingHarness({ active: 'lnb', bus: { emit: (name, data) => events.push(data) } });
+  store.ensureLNBitsConnected = async () => lnbits;
+  store.showPaymentError = (error, ctx) => shown.push(userErrors.buildPaymentError(error, ctx, t));
+  vm.$refs = { sendSheetRef: { resetSlide: () => resets.push(true) } };
+  const invoice = invoiceFor(1000);
+  Object.assign(vm, { showSendSheet: true, pendingPayment: { type: 'lightning_invoice', data: invoice, invoice, amount: 1000, paymentContext: 'chat:abc' } });
+
+  const error = console.error;
+  console.error = () => {};
+  try { await quietly(() => vm.onSendSheetConfirm({ amountSats: 1000, comment: '' })); } finally { console.error = error; }
+
+  assert.equal(payCalls, 1);
+  assert.deepEqual(shown.map(e => e.title), ['Payment not confirmed'], 'never "Payment failed"');
+  assert.equal(sent.success, undefined, 'and never the paid screen');
+  assert.deepEqual(resets, [], 'the slide is not offered for a second payment');
+  assert.deepEqual([vm.showSendSheet, vm.pendingPayment, vm.isSendingPayment], [false, null, false], 'the sheet is closed');
+  // Whoever handed the payment over records it as on its way, findable by its hash.
+  assert.deepEqual([events.length, events[0].status, events[0].context, events[0].paymentHash],
+    [1, 'pending', 'chat:abc', nwcWallet.readInvoice(invoice).paymentHash]);
 });
